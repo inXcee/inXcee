@@ -1,0 +1,10 @@
+{
+  "name": "yys",
+  "private": true,
+  "workspaces": ["backend", "frontend"],
+  "scripts": {
+    "dev": "concurrently \"npm run dev -w backend\" \"npm run dev -w frontend\"",
+    "test": "npm run test -w backend"
+  },
+  "devDependencies": { "concurrently": "^8.2.0" }
+}
