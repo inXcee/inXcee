@@ -3,4 +3,5 @@ dist/
 *.db
 *.db-journal
 uploads/
+!backend/src/shared/uploads/middleware.js
 .superpowers/
