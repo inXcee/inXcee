@@ -163,4 +163,82 @@ BEGIN
   SELECT RAISE(ABORT,'Bu oda karantinada — atama yapılamaz')
   WHERE (SELECT status FROM rooms WHERE id=NEW.room_id) = 'quarantine';
 END;
+
+-- -------------------------------------------------------
+-- VARDIYA YÖNETİM MODÜLİ
+-- -------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS departments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE,
+  color_class TEXT NOT NULL,
+  description TEXT
+);
+
+CREATE TABLE IF NOT EXISTS shift_definitions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE,
+  start_hour INTEGER NOT NULL,
+  end_hour INTEGER NOT NULL,
+  color_class TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS shift_schedule (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  personnel_id INTEGER NOT NULL REFERENCES personnel(id),
+  dept_id INTEGER NOT NULL REFERENCES departments(id),
+  shift_def_id INTEGER NOT NULL REFERENCES shift_definitions(id),
+  work_date TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'scheduled'
+    CHECK(status IN ('scheduled','worked','absent','on_leave','overtime')),
+  created_by INTEGER REFERENCES users(id),
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(personnel_id, work_date)
+);
+
+CREATE TABLE IF NOT EXISTS leave_requests (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  personnel_id INTEGER NOT NULL REFERENCES personnel(id),
+  leave_type TEXT NOT NULL
+    CHECK(leave_type IN ('annual','sick','emergency','maternity','paternity','marriage','bereavement')),
+  start_date TEXT NOT NULL,
+  end_date TEXT NOT NULL,
+  total_days INTEGER NOT NULL,
+  reason TEXT,
+  status TEXT NOT NULL DEFAULT 'pending'
+    CHECK(status IN ('pending','approved','rejected')),
+  approved_by INTEGER REFERENCES users(id),
+  approved_at DATETIME,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS leave_balance (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  personnel_id INTEGER NOT NULL REFERENCES personnel(id),
+  year INTEGER NOT NULL,
+  annual_total INTEGER DEFAULT 15,
+  annual_used INTEGER DEFAULT 0,
+  sick_used INTEGER DEFAULT 0,
+  emergency_used INTEGER DEFAULT 0,
+  UNIQUE(personnel_id, year)
+);
+
+CREATE TABLE IF NOT EXISTS overtime_records (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  personnel_id INTEGER NOT NULL REFERENCES personnel(id),
+  work_date TEXT NOT NULL,
+  hours REAL NOT NULL,
+  reason TEXT,
+  approved_by INTEGER REFERENCES users(id),
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS attendance_logs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  personnel_id INTEGER NOT NULL REFERENCES personnel(id),
+  shift_schedule_id INTEGER REFERENCES shift_schedule(id),
+  check_in_at DATETIME,
+  check_out_at DATETIME,
+  actual_hours REAL
+);
 `

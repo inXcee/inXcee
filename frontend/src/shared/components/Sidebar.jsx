@@ -9,6 +9,7 @@ const LINKS = [
   { to: '/housekeeping', label: '🧹 Housekeeping', roles: ['campus_manager','housekeeper'] },
   { to: '/maintenance', label: '🔧 Teknik Servis', roles: ['campus_manager','shift_supervisor','technical'] },
   { to: '/discipline', label: '⚠️ Disiplin', roles: ['campus_manager','shift_supervisor'] },
+  { to: '/shifts', label: '📅 Vardiya', roles: ['campus_manager','shift_supervisor'] },
 ]
 
 export default function Sidebar() {

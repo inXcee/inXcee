@@ -10,6 +10,7 @@ import MaintenancePage from './modules/maintenance/MaintenancePage.jsx'
 import DisciplinePage from './modules/discipline/DisciplinePage.jsx'
 import SelfServicePage from './modules/self-service/SelfServicePage.jsx'
 import DashboardPage from './modules/dashboard/DashboardPage.jsx'
+import ShiftsPage from './modules/shifts/ShiftsPage.jsx'
 
 function PrivateRoute({ children }) {
   const token = useAuthStore(s => s.token)
@@ -29,6 +30,7 @@ export default function App() {
         <Route path="housekeeping" element={<HousekeepingPage />} />
         <Route path="maintenance" element={<MaintenancePage />} />
         <Route path="discipline" element={<DisciplinePage />} />
+        <Route path="shifts" element={<ShiftsPage />} />
       </Route>
     </Routes>
   )
