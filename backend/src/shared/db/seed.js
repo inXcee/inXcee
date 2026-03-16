@@ -151,9 +151,10 @@ export function seedDev() {
     schedTx()
   }
 
-  // Örnek izin talepleri
-  if (personnelIds.length >= 5) {
-    const leaveInsert = db.prepare(`INSERT OR IGNORE INTO leave_requests(personnel_id,leave_type,start_date,end_date,total_days,reason,status) VALUES(?,?,?,?,?,?,?)`)
+  // Örnek izin talepleri - sadece ilk çalışmada ekle
+  const leaveCount = db.prepare('SELECT COUNT(*) as c FROM leave_requests').get().c
+  if (leaveCount === 0 && personnelIds.length >= 5) {
+    const leaveInsert = db.prepare(`INSERT INTO leave_requests(personnel_id,leave_type,start_date,end_date,total_days,reason,status) VALUES(?,?,?,?,?,?,?)`)
     leaveInsert.run(personnelIds[0].id, 'annual', '2026-03-17', '2026-03-21', 5, 'Yıllık izin talebi', 'pending')
     leaveInsert.run(personnelIds[1].id, 'sick', '2026-03-15', '2026-03-16', 2, 'Hastalık raporu', 'approved')
     leaveInsert.run(personnelIds[2].id, 'emergency', '2026-03-14', '2026-03-14', 1, 'Aile ziyareti', 'approved')
@@ -161,9 +162,10 @@ export function seedDev() {
     leaveInsert.run(personnelIds[4].id, 'marriage', '2026-03-22', '2026-03-25', 4, 'Evlilik izni', 'pending')
   }
 
-  // Örnek mesai kayıtları
-  if (personnelIds.length >= 3) {
-    const otInsert = db.prepare(`INSERT OR IGNORE INTO overtime_records(personnel_id,work_date,hours,reason) VALUES(?,?,?,?)`)
+  // Örnek mesai kayıtları - sadece ilk çalışmada ekle
+  const otCount = db.prepare('SELECT COUNT(*) as c FROM overtime_records').get().c
+  if (otCount === 0 && personnelIds.length >= 3) {
+    const otInsert = db.prepare(`INSERT INTO overtime_records(personnel_id,work_date,hours,reason) VALUES(?,?,?,?)`)
     otInsert.run(personnelIds[0].id, '2026-03-14', 2.5, 'Proje teslimi')
     otInsert.run(personnelIds[1].id, '2026-03-13', 3.0, 'Ekstra güvenlik')
     otInsert.run(personnelIds[2].id, '2026-03-12', 1.5, 'Acil bakım')
