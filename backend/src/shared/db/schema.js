@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS rooms (
   status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','quarantine','maintenance')),
   floor_supervisor_id INTEGER REFERENCES users(id),
   UNIQUE(block, room_no),
-  CHECK(CASE WHEN block='S2' THEN capacity<=4 ELSE capacity<=6 END),
+  CHECK(CASE WHEN block='S2' AND floor=2 THEN capacity<=4 ELSE capacity<=6 END),
   CHECK(active_beds <= capacity),
   CHECK(active_beds >= 0)
 );
@@ -104,14 +104,37 @@ CREATE TABLE IF NOT EXISTS maintenance_requests (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   location TEXT NOT NULL,
   description TEXT NOT NULL,
-  status TEXT DEFAULT 'open' CHECK(status IN ('open','in_progress','done')),
-  reporter_personnel_id INTEGER REFERENCES personnel(id),
+  status TEXT DEFAULT 'open' CHECK(status IN ('open','assigned','in_progress','review','done')),
+  priority TEXT DEFAULT 'medium' CHECK(priority IN ('high','medium','low')),
   reporter_user_id INTEGER REFERENCES users(id),
-  assigned_to INTEGER REFERENCES users(id),
+  assigned_to INTEGER REFERENCES technicians(id),
+  assigned_at DATETIME,
+  started_at DATETIME,
+  photo_before TEXT,
   photo_url TEXT,
-  is_preventive INTEGER DEFAULT 0,
+  wait_reason TEXT,
   opened_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   closed_at DATETIME
+);
+
+CREATE TABLE IF NOT EXISTS technicians (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  full_name TEXT NOT NULL,
+  phone TEXT,
+  specialty TEXT DEFAULT 'genel' CHECK(specialty IN ('elektrik','tesisat','genel','klima','boya')),
+  shift TEXT DEFAULT '1' CHECK(shift IN ('1','2','3')),
+  is_active INTEGER DEFAULT 1,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS maintenance_comments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  request_id INTEGER NOT NULL REFERENCES maintenance_requests(id),
+  user_id INTEGER REFERENCES users(id),
+  technician_id INTEGER REFERENCES technicians(id),
+  comment TEXT NOT NULL,
+  photo_url TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS discipline_records (
@@ -141,6 +164,9 @@ CREATE TABLE IF NOT EXISTS cleaning_tasks (
   task_type TEXT DEFAULT 'common_area',
   scheduled_at DATETIME NOT NULL,
   completed_at DATETIME,
+  skipped INTEGER DEFAULT 0,
+  skip_reason TEXT,
+  checklist TEXT,
   assigned_to INTEGER REFERENCES users(id),
   verified_by_qr INTEGER DEFAULT 0,
   qr_location TEXT
@@ -155,6 +181,27 @@ CREATE TABLE IF NOT EXISTS notifications (
   module TEXT,
   is_read INTEGER DEFAULT 0,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS cleaning_staff (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  full_name TEXT NOT NULL,
+  phone TEXT,
+  assigned_block TEXT,
+  assigned_floor INTEGER,
+  is_active INTEGER DEFAULT 1,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS whatsapp_messages (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  sender TEXT NOT NULL DEFAULT 'Manuel Giriş',
+  group_name TEXT NOT NULL DEFAULT 'Genel',
+  text TEXT NOT NULL,
+  is_fault INTEGER NOT NULL DEFAULT 0,
+  fault_id INTEGER,
+  parsed_location TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
 
 CREATE TRIGGER IF NOT EXISTS block_quarantine_assignment

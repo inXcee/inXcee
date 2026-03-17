@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Yatakhane Blok Doluluk</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #0d1117;
+    --surface: #111820;
+    --surface2: #161d27;
+    --border: #1e2a3a;
+    --border-glow: #22c55e;
+    --green: #22c55e;
+    --green-dim: #166534;
+    --red: #ef4444;
+    --amber: #f59e0b;
+    --blue: #3b82f6;
+    --purple: #a855f7;
+    --teal: #14b8a6;
+    --text: #e2e8f0;
+    --text2: #94a3b8;
+    --text3: #475569;
+    --mono: 'IBM Plex Mono', monospace;
+    --sans: 'IBM Plex Sans', sans-serif;
+    --display: 'Bebas Neue', sans-serif;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Ambient grid background */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background:
+      linear-gradient(rgba(34,197,94,.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(34,197,94,.03) 1px, transparent 1px);
+    background-size: 60px 60px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* Scan line effect */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,.03) 2px,
+      rgba(0,0,0,.03) 4px
+    );
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 40px 24px;
+    position: relative;
+    z-index: 1;
+  }
+
+  /* Header */
+  .header {
+    margin-bottom: 40px;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+  }
+
+  .header h1 {
+    font-family: var(--display);
+    font-size: 42px;
+    letter-spacing: 8px;
+    color: var(--text);
+    line-height: 1;
+  }
+
+  .header h1 span {
+    color: var(--green);
+    text-shadow: 0 0 20px rgba(34,197,94,.4);
+  }
+
+  .header-sub {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text3);
+    letter-spacing: 3px;
+    margin-top: 6px;
+  }
+
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .live-pulse {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 8px var(--green);
+    animation: pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; box-shadow: 0 0 8px var(--green); }
+    50% { opacity: .5; box-shadow: 0 0 16px var(--green), 0 0 32px rgba(34,197,94,.2); }
+  }
+
+  .live-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--green);
+    letter-spacing: 3px;
+  }
+
+  /* Summary strip */
+  .summary {
+    display: flex;
+    gap: 2px;
+    margin-bottom: 32px;
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+  }
+
+  .summary-item {
+    flex: 1;
+    padding: 16px 20px;
+    background: var(--surface);
+    text-align: center;
+    position: relative;
+  }
+
+  .summary-item::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+  }
+
+  .summary-item:nth-child(1)::after { background: var(--text2); }
+  .summary-item:nth-child(2)::after { background: var(--green); }
+  .summary-item:nth-child(3)::after { background: var(--amber); }
+  .summary-item:nth-child(4)::after { background: var(--red); }
+
+  .summary-value {
+    font-family: var(--display);
+    font-size: 36px;
+    line-height: 1;
+    letter-spacing: 2px;
+  }
+
+  .summary-label {
+    font-family: var(--mono);
+    font-size: 8px;
+    letter-spacing: 2px;
+    color: var(--text3);
+    margin-top: 6px;
+  }
+
+  /* Grid */
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+  }
+
+  @media (max-width: 900px) { .grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 580px) { .grid { grid-template-columns: 1fr; } }
+
+  /* Card */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    position: relative;
+    transition: all .3s ease;
+  }
+
+  .card::before {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    border-radius: 13px;
+    padding: 1px;
+    background: linear-gradient(135deg, rgba(34,197,94,.3), transparent 40%, transparent 60%, rgba(34,197,94,.15));
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity .3s ease;
+  }
+
+  .card:hover {
+    transform: translateY(-4px);
+    border-color: rgba(34,197,94,.3);
+    box-shadow:
+      0 8px 32px rgba(0,0,0,.4),
+      0 0 60px rgba(34,197,94,.06),
+      inset 0 1px 0 rgba(34,197,94,.1);
+  }
+
+  .card:hover::before { opacity: 1; }
+
+  /* Card top glow line */
+  .card-glow {
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--green), transparent);
+    opacity: .6;
+  }
+
+  .card.type-s .card-glow {
+    background: linear-gradient(90deg, transparent, var(--purple), transparent);
+  }
+
+  /* Card header */
+  .card-head {
+    padding: 18px 20px 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .card-block-name {
+    font-family: var(--display);
+    font-size: 40px;
+    letter-spacing: 4px;
+    line-height: 1;
+    color: var(--text);
+  }
+
+  .card.type-m .card-block-name { color: var(--blue); }
+  .card.type-s .card-block-name { color: var(--purple); }
+
+  .card-badges {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+
+  .badge {
+    font-family: var(--mono);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    padding: 3px 10px;
+    border-radius: 4px;
+  }
+
+  .badge-m {
+    background: rgba(59,130,246,.12);
+    color: var(--blue);
+    border: 1px solid rgba(59,130,246,.25);
+  }
+
+  .badge-s {
+    background: rgba(168,85,247,.12);
+    color: var(--purple);
+    border: 1px solid rgba(168,85,247,.25);
+  }
+
+  .badge-exc {
+    background: rgba(245,158,11,.12);
+    color: var(--amber);
+    border: 1px solid rgba(245,158,11,.3);
+    animation: excBlink 3s ease-in-out infinite;
+  }
+
+  @keyframes excBlink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: .6; }
+  }
+
+  /* Card stats grid */
+  .card-stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px;
+    background: var(--border);
+    margin: 0 1px;
+  }
+
+  .stat {
+    background: var(--surface);
+    padding: 14px 16px;
+    text-align: center;
+  }
+
+  .stat-value {
+    font-family: var(--display);
+    font-size: 30px;
+    line-height: 1;
+    letter-spacing: 1px;
+  }
+
+  .stat-label {
+    font-family: var(--mono);
+    font-size: 7.5px;
+    letter-spacing: 2px;
+    color: var(--text3);
+    margin-top: 5px;
+  }
+
+  .stat-total .stat-value { color: var(--text); }
+  .stat-full .stat-value { color: var(--green); }
+  .stat-empty .stat-value { color: var(--text2); }
+
+  /* Card footer - progress */
+  .card-footer {
+    padding: 14px 20px 18px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .pct-text {
+    font-family: var(--display);
+    font-size: 24px;
+    letter-spacing: 1px;
+    min-width: 52px;
+    line-height: 1;
+  }
+
+  .pct-label {
+    font-family: var(--mono);
+    font-size: 7px;
+    letter-spacing: 1.5px;
+    color: var(--text3);
+  }
+
+  .prog-track {
+    flex: 1;
+    height: 6px;
+    background: var(--surface2);
+    border-radius: 3px;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .prog-fill {
+    height: 100%;
+    border-radius: 3px;
+    position: relative;
+    transition: width 1.2s cubic-bezier(.4,0,.2,1);
+  }
+
+  .prog-fill::after {
+    content: '';
+    position: absolute;
+    top: 0; right: 0; bottom: 0;
+    width: 30px;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,.15));
+    border-radius: 0 3px 3px 0;
+  }
+
+  .prog-green { background: linear-gradient(90deg, var(--green-dim), var(--green)); }
+  .prog-amber { background: linear-gradient(90deg, #92400e, var(--amber)); }
+  .prog-red   { background: linear-gradient(90deg, #991b1b, var(--red)); }
+
+  /* Room count detail */
+  .card-detail {
+    padding: 0 20px 14px;
+    display: flex;
+    gap: 14px;
+    font-family: var(--mono);
+    font-size: 9px;
+    color: var(--text3);
+    letter-spacing: .5px;
+  }
+
+  .card-detail span { display: flex; align-items: center; gap: 4px; }
+  .dot { width: 5px; height: 5px; border-radius: 50%; }
+  .dot-active { background: var(--green); box-shadow: 0 0 4px rgba(34,197,94,.5); }
+  .dot-maint { background: var(--amber); }
+  .dot-quar { background: var(--red); }
+
+  /* Entry animation */
+  .card { opacity: 0; transform: translateY(20px); animation: cardIn .5s ease forwards; }
+  .card:nth-child(1) { animation-delay: .1s; }
+  .card:nth-child(2) { animation-delay: .18s; }
+  .card:nth-child(3) { animation-delay: .26s; }
+  .card:nth-child(4) { animation-delay: .34s; }
+  .card:nth-child(5) { animation-delay: .42s; }
+  .card:nth-child(6) { animation-delay: .5s; }
+
+  @keyframes cardIn {
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .summary { opacity: 0; animation: fadeUp .5s ease .05s forwards; }
+  .header  { opacity: 0; animation: fadeUp .5s ease forwards; }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <!-- Header -->
+  <div class="header">
+    <div>
+      <h1>BLOK <span>DOLULUK</span></h1>
+      <div class="header-sub">YATAKHANE KAPASİTE DURUMU</div>
+    </div>
+    <div class="header-right">
+      <div class="live-pulse"></div>
+      <div class="live-label">CANLI</div>
+    </div>
+  </div>
+
+  <!-- Summary strip -->
+  <div class="summary">
+    <div class="summary-item">
+      <div class="summary-value" style="color: var(--text)">1944</div>
+      <div class="summary-label">TOPLAM YATAK</div>
+    </div>
+    <div class="summary-item">
+      <div class="summary-value" style="color: var(--green)">1412</div>
+      <div class="summary-label">DOLU YATAK</div>
+    </div>
+    <div class="summary-item">
+      <div class="summary-value" style="color: var(--amber)">532</div>
+      <div class="summary-label">BOŞ YATAK</div>
+    </div>
+    <div class="summary-item">
+      <div class="summary-value" style="color: var(--red)">%73</div>
+      <div class="summary-label">GENEL DOLULUK</div>
+    </div>
+  </div>
+
+  <!-- Block cards grid -->
+  <div class="grid" id="cards"></div>
+</div>
+
+<script>
+const blocks = [
+  { name: 'M1', type: 'm', rooms: 60, beds: 360, occupied: 312, active: 58, maint: 2, quar: 0 },
+  { name: 'M2', type: 'm', rooms: 60, beds: 360, occupied: 285, active: 60, maint: 0, quar: 0 },
+  { name: 'M3', type: 'm', rooms: 60, beds: 360, occupied: 198, active: 57, maint: 2, quar: 1 },
+  { name: 'S1', type: 's', rooms: 48, beds: 288, occupied: 244, active: 46, maint: 1, quar: 1 },
+  { name: 'S2', type: 's', rooms: 48, beds: 240, occupied: 189, active: 48, maint: 0, quar: 0, exception: true },
+  { name: 'S3', type: 's', rooms: 48, beds: 288, occupied: 184, active: 47, maint: 1, quar: 0 },
+]
+
+const grid = document.getElementById('cards')
+
+blocks.forEach(b => {
+  const empty = b.beds - b.occupied
+  const pct = Math.round((b.occupied / b.beds) * 100)
+  const progClass = pct >= 90 ? 'prog-red' : pct >= 70 ? 'prog-amber' : 'prog-green'
+  const pctColor = pct >= 90 ? 'var(--red)' : pct >= 70 ? 'var(--amber)' : 'var(--green)'
+
+  const card = document.createElement('div')
+  card.className = `card type-${b.type}`
+  card.innerHTML = `
+    <div class="card-glow"></div>
+    <div class="card-head">
+      <div class="card-block-name">${b.name}</div>
+      <div class="card-badges">
+        <span class="badge badge-${b.type}">${b.type === 'm' ? 'M BLOK' : 'S BLOK'}</span>
+        ${b.exception ? '<span class="badge badge-exc">İSTİSNA</span>' : ''}
+      </div>
+    </div>
+    <div class="card-stats">
+      <div class="stat stat-total">
+        <div class="stat-value">${b.beds}</div>
+        <div class="stat-label">TOPLAM YATAK</div>
+      </div>
+      <div class="stat stat-full">
+        <div class="stat-value">${b.occupied}</div>
+        <div class="stat-label">DOLU</div>
+      </div>
+      <div class="stat stat-empty">
+        <div class="stat-value">${empty}</div>
+        <div class="stat-label">BOŞ</div>
+      </div>
+    </div>
+    <div class="card-detail">
+      <span><div class="dot dot-active"></div>${b.active} aktif oda</span>
+      ${b.maint > 0 ? `<span><div class="dot dot-maint"></div>${b.maint} bakımda</span>` : ''}
+      ${b.quar > 0 ? `<span><div class="dot dot-quar"></div>${b.quar} karantina</span>` : ''}
+      <span>${b.rooms} toplam oda</span>
+    </div>
+    <div class="card-footer">
+      <div>
+        <div class="pct-text" style="color: ${pctColor}">%${pct}</div>
+        <div class="pct-label">DOLULUK</div>
+      </div>
+      <div class="prog-track">
+        <div class="prog-fill ${progClass}" style="width: 0%"></div>
+      </div>
+    </div>
+  `
+  grid.appendChild(card)
+})
+
+// Animate progress bars after page load
+setTimeout(() => {
+  document.querySelectorAll('.prog-fill').forEach((bar, i) => {
+    const pct = Math.round((blocks[i].occupied / blocks[i].beds) * 100)
+    setTimeout(() => { bar.style.width = pct + '%' }, i * 80)
+  })
+}, 600)
+</script>
+
+</body>
+</html>

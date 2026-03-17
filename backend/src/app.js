@@ -9,11 +9,13 @@ import { disciplineRouter } from './modules/discipline/routes.js'
 import { selfServiceRouter } from './modules/self-service/routes.js'
 import { dashboardRouter } from './modules/dashboard/routes.js'
 import { shiftsRouter } from './modules/shifts/routes.js'
+import { roomHistoryRouter } from './modules/room-history/routes.js'
 import { authRouter } from './shared/auth/routes.js'
 import { notificationsRouter } from './shared/notifications/routes.js'
+import { whatsappRouter } from './shared/whatsapp/routes.js'
 
 const app = express()
-app.use(cors({ origin: ['http://localhost:5173', 'http://localhost:5174'] }))
+app.use(cors({ origin: process.env.VERCEL ? true : ['http://localhost:5173', 'http://localhost:5174'] }))
 app.use(express.json())
 app.use('/uploads', express.static('uploads'))
 
@@ -27,6 +29,8 @@ app.use('/api/discipline', disciplineRouter)
 app.use('/api/self-service', selfServiceRouter)
 app.use('/api/dashboard', dashboardRouter)
 app.use('/api/shifts', shiftsRouter)
+app.use('/api/room-history', roomHistoryRouter)
 app.use('/api/notifications', notificationsRouter)
+app.use('/api/whatsapp', whatsappRouter)
 
 export default app

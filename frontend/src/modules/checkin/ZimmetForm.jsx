@@ -12,6 +12,7 @@ export default function ZimmetForm({ personnelId, onDone }) {
   const [items, setItems] = useState(DEFAULT_ITEMS.map(i => ({ ...i, checked: true })))
   const [signing, setSigning] = useState(false)
   const [submitted, setSubmitted] = useState(false)
+  const [saving, setSaving] = useState(false)
   const canvasRef = useRef(null)
   const drawing = useRef(false)
   const lastPos = useRef(null)
@@ -34,8 +35,9 @@ export default function ZimmetForm({ personnelId, onDone }) {
     const ctx = canvas.getContext('2d')
     const pos = getPos(e, canvas)
     ctx.beginPath()
-    ctx.strokeStyle = '#60a5fa'
+    ctx.strokeStyle = 'var(--accent)'
     ctx.lineWidth = 2
+    ctx.lineCap = 'round'
     ctx.moveTo(lastPos.current.x, lastPos.current.y)
     ctx.lineTo(pos.x, pos.y)
     ctx.stroke()
@@ -50,6 +52,7 @@ export default function ZimmetForm({ personnelId, onDone }) {
   }
 
   const handleSubmit = async () => {
+    setSaving(true)
     const canvas = canvasRef.current
     const signature = canvas.toDataURL()
     const selectedItems = items.filter(i => i.checked).map(({ item_name, quantity }) => ({ item_name, quantity }))
@@ -60,47 +63,87 @@ export default function ZimmetForm({ personnelId, onDone }) {
       onDone?.()
     } catch (e) {
       alert('Zimmet kaydedilemedi: ' + (e.response?.data?.error || e.message))
-    }
+    } finally { setSaving(false) }
   }
 
-  if (submitted) return <div className="text-green-400 text-center py-4">✅ Zimmet kaydedildi ve imzalandı</div>
+  if (submitted) {
+    return (
+      <div className="alert alert-success" style={{ margin: 0 }}>
+        <span style={{ fontSize: '18px' }}>✓</span>
+        <div>
+          <div style={{ fontWeight: 600 }}>Zimmet kaydedildi ve imzalandı</div>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: '10px', marginTop: '2px', opacity: 0.8 }}>İşlem tamamlandı</div>
+        </div>
+      </div>
+    )
+  }
 
   return (
-    <div className="space-y-4">
-      <h3 className="font-medium text-slate-200">Zimmet Listesi</h3>
-      <div className="space-y-2">
-        {items.map((item, i) => (
-          <label key={i} className="flex items-center gap-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={item.checked}
-              onChange={e => setItems(prev => prev.map((it, j) => j === i ? { ...it, checked: e.target.checked } : it))}
-              className="w-4 h-4"
-            />
-            <span className="text-sm text-slate-300">{item.item_name}</span>
-            <input
-              type="number"
-              value={item.quantity}
-              min={1}
-              onChange={e => setItems(prev => prev.map((it, j) => j === i ? { ...it, quantity: +e.target.value } : it))}
-              className="w-16 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-slate-100"
-            />
-          </label>
-        ))}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      {/* Items list */}
+      <div>
+        <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '2px', marginBottom: '10px' }}>
+          ZİMMET KALEMLERİ
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {items.map((item, i) => (
+            <label key={i} style={{
+              display: 'flex', alignItems: 'center', gap: '12px',
+              padding: '10px 12px', borderRadius: '7px', cursor: 'pointer',
+              background: item.checked ? 'rgba(240,165,0,.06)' : 'var(--surface2)',
+              border: `1px solid ${item.checked ? 'rgba(240,165,0,.2)' : 'var(--border)'}`,
+              transition: 'all 0.15s',
+            }}>
+              <div style={{
+                width: '18px', height: '18px', borderRadius: '4px', flexShrink: 0,
+                border: `2px solid ${item.checked ? 'var(--accent)' : 'var(--border2)'}`,
+                background: item.checked ? 'var(--accent)' : 'transparent',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                {item.checked && <span style={{ fontSize: '10px', color: '#000', fontWeight: 700 }}>✓</span>}
+              </div>
+              <input
+                type="checkbox"
+                checked={item.checked}
+                onChange={e => setItems(prev => prev.map((it, j) => j === i ? { ...it, checked: e.target.checked } : it))}
+                style={{ display: 'none' }}
+              />
+              <span style={{ flex: 1, fontSize: '13px', color: 'var(--text)' }}>{item.item_name}</span>
+              <input
+                type="number"
+                value={item.quantity}
+                min={1}
+                onClick={e => e.preventDefault()}
+                onChange={e => setItems(prev => prev.map((it, j) => j === i ? { ...it, quantity: +e.target.value } : it))}
+                style={{
+                  width: '48px', background: 'var(--surface3)', border: '1px solid var(--border)',
+                  borderRadius: '5px', padding: '4px 8px', textAlign: 'center',
+                  fontFamily: 'var(--mono)', fontSize: '12px', color: 'var(--text)', outline: 'none',
+                }}
+              />
+            </label>
+          ))}
+        </div>
       </div>
 
+      {/* Signature */}
       {!signing ? (
-        <button onClick={() => setSigning(true)} className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm">
-          İmza Al
+        <button onClick={() => setSigning(true)} className="btn btn-ghost" style={{ alignSelf: 'flex-start' }}>
+          ✍ İMZA AL
         </button>
       ) : (
         <div>
-          <p className="text-xs text-slate-400 mb-2">Lütfen aşağıya imzanızı atın:</p>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '2px', marginBottom: '8px' }}>
+            İMZA ALANI
+          </div>
           <canvas
             ref={canvasRef}
-            width={400}
+            width={500}
             height={150}
-            className="bg-slate-800 border border-slate-600 rounded-lg touch-none cursor-crosshair"
+            style={{
+              background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '7px',
+              width: '100%', height: '150px', cursor: 'crosshair', touchAction: 'none', display: 'block',
+            }}
             onMouseDown={startDraw}
             onMouseMove={draw}
             onMouseUp={stopDraw}
@@ -109,9 +152,16 @@ export default function ZimmetForm({ personnelId, onDone }) {
             onTouchMove={draw}
             onTouchEnd={stopDraw}
           />
-          <div className="flex gap-2 mt-2">
-            <button onClick={clearCanvas} className="px-3 py-1 bg-slate-700 text-slate-300 rounded text-xs">Temizle</button>
-            <button onClick={handleSubmit} className="px-3 py-1 bg-green-700 hover:bg-green-600 text-white rounded text-xs">Kaydet</button>
+          <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
+            <button onClick={clearCanvas} className="btn btn-ghost btn-sm">⌫ TEMİZLE</button>
+            <button
+              onClick={handleSubmit}
+              disabled={saving}
+              className="btn btn-primary btn-sm"
+              style={{ opacity: saving ? 0.6 : 1 }}
+            >
+              {saving ? 'KAYDEDİLİYOR...' : '✓ ZİMMETİ KAYDET'}
+            </button>
           </div>
         </div>
       )}

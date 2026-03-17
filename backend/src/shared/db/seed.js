@@ -5,46 +5,98 @@ export function seedDev() {
   const db = getDB()
   const hash = bcrypt.hashSync('admin123', 10)
 
+  // ── Kullanıcılar ────────────────────────────────────────────────────────────
   const roles = [
-    ['mudur', hash, 'campus_manager', 'Kampüs Müdürü', null, null],
-    ['vardiya', hash, 'shift_supervisor', 'Vardiya Amiri', 'M1', 1],
-    ['teknik', hash, 'technical', 'Teknik Servis', null, null],
-    ['camasir', hash, 'laundry', 'Çamaşırhane Görevlisi', null, null],
-    ['meydanci', hash, 'housekeeper', 'Meydancı', 'M1', 1],
+    ['mudur',    hash, 'campus_manager',   'Kampüs Müdürü',          null, null],
+    ['vardiya',  hash, 'shift_supervisor', 'Vardiya Amiri',           'M1', 1],
+    ['teknik',   hash, 'technical',        'Teknik Servis',           null, null],
+    ['camasir',  hash, 'laundry',          'Çamaşırhane Görevlisi',   null, null],
+    ['meydanci', hash, 'housekeeper',      'Meydancı',                'M1', 1],
   ]
-
-  const insert = db.prepare(`
+  const userInsert = db.prepare(`
     INSERT OR IGNORE INTO users(username,password_hash,role,full_name,assigned_block,assigned_floor)
     VALUES(?,?,?,?,?,?)
   `)
-  roles.forEach(r => insert.run(...r))
+  roles.forEach(r => userInsert.run(...r))
 
-  // Örnek odalar
-  const blocks = ['M1','M2','S1','S2','S3']
+  // ── Odalar ──────────────────────────────────────────────────────────────────
+  //
+  //  M1, M2, M3  →  2 kat × 30 oda = 60 oda/blok
+  //                  Kat 1: 101–130  |  Kat 2: 201–230
+  //                  Kapasite: 6 kişilik
+  //                  Tuvalet/Banyo: ORTAK (koridor uçlarında)
+  //
+  //  S1, S2, S3  →  2 kat × 24 oda = 48 oda/blok
+  //                  Kat 1: 101–124  |  Kat 2: 201–224
+  //                  Kapasite: 6 kişilik (S2 tüm odalar 4 kişilik — DB kısıtı)
+  //                  Tuvalet/Banyo: HER ODADA ÖZEL
+  //
+  //  Tek numaralı odalar (101,103,…) = SOL TARAF
+  //  Çift numaralı odalar (102,104,…) = SAĞ TARAF
+
   const roomInsert = db.prepare(`
     INSERT OR IGNORE INTO rooms(block,floor,room_no,capacity,active_beds,status)
     VALUES(?,?,?,?,?,?)
   `)
-  blocks.forEach(block => {
-    const cap = block === 'S2' ? 4 : 6
-    for (let floor = 1; floor <= 3; floor++) {
-      for (let r = 1; r <= 10; r++) {
-        const roomNo = `${floor}0${r}`
+
+  const M_BLOCKS = ['M1', 'M2', 'M3']
+  const S_BLOCKS = ['S1', 'S2', 'S3']
+
+  M_BLOCKS.forEach(block => {
+    for (let floor = 1; floor <= 2; floor++) {
+      const base = floor === 1 ? 100 : 200
+      for (let r = 1; r <= 30; r++) {
+        const roomNo = String(base + r)  // 101–130 veya 201–230
+        roomInsert.run(block, floor, roomNo, 6, 6, 'active')
+      }
+    }
+  })
+
+  S_BLOCKS.forEach(block => {
+    for (let floor = 1; floor <= 2; floor++) {
+      // S2 sadece 2. kat 4 kişilik, geri kalan her yer 6
+      const cap = (block === 'S2' && floor === 2) ? 4 : 6
+      const base = floor === 1 ? 100 : 200
+      for (let r = 1; r <= 24; r++) {
+        const roomNo = String(base + r)  // 101–124 veya 201–224
         roomInsert.run(block, floor, roomNo, cap, cap, 'active')
       }
     }
   })
 
-  // Örnek makineler
+  // ── Makineler ───────────────────────────────────────────────────────────────
   const machineInsert = db.prepare(`INSERT OR IGNORE INTO machines(id,name,status) VALUES(?,?,?)`)
   machineInsert.run(1, 'Makine 1', 'idle')
   machineInsert.run(2, 'Makine 2', 'idle')
   machineInsert.run(3, 'Makine 3', 'idle')
 
-  // Deterjan stok
-  const invInsert = db.prepare(`INSERT OR IGNORE INTO inventory(item_name,quantity,unit,reorder_threshold,category) VALUES(?,?,?,?,?)`)
+  // ── Stok ────────────────────────────────────────────────────────────────────
+  const invInsert = db.prepare(`
+    INSERT OR IGNORE INTO inventory(item_name,quantity,unit,reorder_threshold,category)
+    VALUES(?,?,?,?,?)
+  `)
   invInsert.run('Sanayi Deterjanı', 50000, 'g', 5000, 'laundry')
   invInsert.run('Çamaşır Suyu', 20000, 'ml', 2000, 'laundry')
+
+  // ── Temizlik Personeli ─────────────────────────────────────────────────────
+  const staffInsert = db.prepare(`
+    INSERT OR IGNORE INTO cleaning_staff(id,full_name,phone,assigned_block,assigned_floor)
+    VALUES(?,?,?,?,?)
+  `)
+  staffInsert.run(1, 'Ayşe Yılmaz', '05551112233', 'M1', 1)
+  staffInsert.run(2, 'Fatma Demir', '05552223344', 'M1', 2)
+  staffInsert.run(3, 'Zeynep Kaya', '05553334455', 'M2', 1)
+
+  // ── Teknisyenler ──────────────────────────────────────────────────────────
+  const techInsert = db.prepare(`
+    INSERT OR IGNORE INTO technicians(id,full_name,phone,specialty,shift)
+    VALUES(?,?,?,?,?)
+  `)
+  techInsert.run(1, 'Mehmet Usta', '05554445566', 'elektrik', '1')
+  techInsert.run(2, 'Ali Çelik', '05555556677', 'tesisat', '1')
+  techInsert.run(3, 'Hasan Demir', '05556667788', 'genel', '2')
+  techInsert.run(4, 'Yusuf Kara', '05557778899', 'elektrik', '2')
+  techInsert.run(5, 'Emre Yıldız', '05558889900', 'genel', '3')
 
   // -------------------------------------------------------
   // VARDIYA YÖNETİM MODÜLİ SEED

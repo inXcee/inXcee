@@ -13,55 +13,109 @@ export default function LoginPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    setLoading(true)
-    setError('')
+    setLoading(true); setError('')
     try {
       const res = await api.post('/auth/login', { username, password })
       login(res.data.token, res.data.user)
       navigate('/')
-    } catch {
-      setError('Kullanıcı adı veya şifre hatalı')
-    } finally {
-      setLoading(false)
-    }
+    } catch { setError('Kullanıcı adı veya şifre hatalı') }
+    finally { setLoading(false) }
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-      <div className="w-80 bg-slate-900 rounded-xl p-8 shadow-2xl border border-slate-800">
-        <div className="text-center mb-8">
-          <div className="text-3xl font-bold text-blue-400">YYS</div>
-          <div className="text-sm text-slate-500 mt-1">Yatakhane Yönetim Sistemi</div>
+    <div style={{
+      minHeight: '100vh',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      background: 'var(--bg)',
+      padding: '16px',
+      position: 'relative',
+    }}>
+      {/* Grid overlay already via body::before */}
+      {/* Glow */}
+      <div style={{
+        position: 'fixed', top: '20%', left: '50%', transform: 'translateX(-50%)',
+        width: '400px', height: '400px', borderRadius: '50%',
+        background: 'radial-gradient(circle, rgba(240,165,0,0.06) 0%, transparent 70%)',
+        pointerEvents: 'none',
+      }} />
+
+      <div style={{ width: '100%', maxWidth: '360px', position: 'relative', zIndex: 1 }} className="fade-up">
+        {/* Logo */}
+        <div style={{ textAlign: 'center', marginBottom: '36px' }}>
+          <div style={{
+            width: '60px', height: '60px',
+            background: 'linear-gradient(135deg, var(--accent), var(--accent3))',
+            borderRadius: '12px',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontFamily: 'var(--display)', fontSize: '20px', color: '#000',
+            letterSpacing: '1px',
+            margin: '0 auto 16px',
+            boxShadow: '0 8px 32px rgba(240,165,0,0.3)',
+          }}>
+            ŞKY
+          </div>
+          <h1 style={{ fontSize: '28px', letterSpacing: '6px', color: 'var(--text)' }}>YYS</h1>
+          <p style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', marginTop: '6px', letterSpacing: '3px' }}>
+            ŞANTİYE YÖNETİM SİSTEMİ
+          </p>
         </div>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-xs text-slate-400 mb-1">Kullanıcı Adı</label>
-            <input
-              type="text"
-              value={username}
-              onChange={e => setUsername(e.target.value)}
-              className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-blue-500"
-              autoFocus
-            />
-          </div>
-          <div>
-            <label className="block text-xs text-slate-400 mb-1">Şifre</label>
-            <input
-              type="password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-blue-500"
-            />
-          </div>
-          {error && <div className="text-red-400 text-xs">{error}</div>}
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-blue-800 text-white rounded-lg px-4 py-2 text-sm font-medium transition-colors"
-          >
-            {loading ? 'Giriş yapılıyor...' : 'Giriş Yap'}
-          </button>
-        </form>
+
+        {/* Form card */}
+        <div style={{
+          background: 'var(--surface)',
+          borderRadius: '12px',
+          border: '1px solid var(--border)',
+          overflow: 'hidden',
+          boxShadow: 'var(--shadow)',
+        }}>
+          {/* Top accent */}
+          <div style={{ height: '2px', background: 'linear-gradient(90deg, var(--accent), var(--accent3))' }} />
+
+          <form onSubmit={handleSubmit} style={{ padding: '28px' }}>
+            <div style={{ marginBottom: '14px' }}>
+              <label className="form-label">Kullanıcı Adı</label>
+              <input
+                type="text"
+                value={username}
+                onChange={e => setUsername(e.target.value)}
+                autoFocus
+                className="form-input"
+                placeholder="kullanici_adi"
+              />
+            </div>
+            <div style={{ marginBottom: '20px' }}>
+              <label className="form-label">Şifre</label>
+              <input
+                type="password"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                className="form-input"
+                placeholder="••••••••"
+              />
+            </div>
+
+            {error && (
+              <div className="alert alert-danger" style={{ marginBottom: '16px' }}>
+                <span>⚠</span><span>{error}</span>
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="btn btn-primary"
+              style={{ width: '100%', justifyContent: 'center', padding: '11px', fontSize: '12px', opacity: loading ? 0.6 : 1 }}
+            >
+              {loading ? 'GİRİŞ YAPILIYOR...' : 'GİRİŞ YAP'}
+            </button>
+          </form>
+        </div>
+
+        <div style={{ textAlign: 'center', marginTop: '20px', fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text4)', letterSpacing: '1px' }}>
+          ŞKY v3.0 · YYS SİSTEMİ
+        </div>
       </div>
     </div>
   )

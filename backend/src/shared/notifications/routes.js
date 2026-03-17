@@ -22,8 +22,4 @@ notificationsRouter.patch('/:id/read', requireAuth, (req, res) => {
   res.json({ ok: true })
 })
 
-notificationsRouter.post('/whatsapp', requireAuth, (req, res) => {
-  // WhatsApp gateway stub
-  console.log('[WhatsApp Stub]', req.body)
-  res.json({ ok: true, stub: true })
-})
+// WhatsApp moved to /api/whatsapp

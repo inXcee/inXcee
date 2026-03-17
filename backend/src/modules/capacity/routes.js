@@ -25,8 +25,19 @@ capacityRouter.patch('/rooms/:id/beds', ...requireRole('campus_manager'), (req, 
 })
 
 capacityRouter.patch('/rooms/:id/status', ...requireRole('campus_manager'), (req, res) => {
-  svc.updateRoomStatusService(+req.params.id, req.body.status)
+  const status = req.body.status
+  if (!['active', 'quarantine', 'maintenance'].includes(status)) return res.status(400).json({ error: 'Geçersiz durum' })
+  svc.updateRoomStatusService(+req.params.id, status, req.user.id)
   res.json({ ok: true })
+})
+
+capacityRouter.patch('/rooms/:id/notes', ...mgmt, (req, res) => {
+  svc.updateRoomNotesService(+req.params.id, req.body.notes ?? null)
+  res.json({ ok: true })
+})
+
+capacityRouter.get('/personnel/search', ...mgmt, (req, res) => {
+  res.json(svc.searchPersonnelService(req.query.q || ''))
 })
 
 capacityRouter.patch('/floor-supervisor', ...requireRole('campus_manager'), (req, res) => {
@@ -39,4 +50,55 @@ capacityRouter.post('/reassign', ...mgmt, (req, res) => {
     svc.reassignPersonnelService(req.body.personnel_id, req.body.room_id, req.user.id)
     res.json({ ok: true })
   } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+capacityRouter.post('/remove-from-room', ...mgmt, (req, res) => {
+  try {
+    const { personnel_id } = req.body
+    if (!personnel_id) return res.status(400).json({ error: 'Personel ID gerekli' })
+    const result = svc.removeFromRoomService(personnel_id, req.user.id)
+    res.json({ ok: true, ...result })
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+// ── Unassigned Personnel ──────────────────────────────────────────────────────
+
+capacityRouter.get('/unassigned', ...mgmt, (req, res) => {
+  res.json(svc.getUnassignedPersonnelService(req.query.q || null))
+})
+
+capacityRouter.post('/bulk/assign', ...mgmt, (req, res) => {
+  try {
+    const { personnel_ids, room_id } = req.body
+    if (!Array.isArray(personnel_ids) || personnel_ids.length === 0) return res.status(400).json({ error: 'Personel listesi gerekli' })
+    if (!room_id) return res.status(400).json({ error: 'Oda ID gerekli' })
+    svc.bulkAssignToRoomService(personnel_ids, room_id, req.user.id)
+    res.json({ ok: true, count: personnel_ids.length })
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+capacityRouter.post('/bulk/remove', ...mgmt, (req, res) => {
+  try {
+    const { personnel_ids } = req.body
+    if (!Array.isArray(personnel_ids) || personnel_ids.length === 0) return res.status(400).json({ error: 'Personel listesi gerekli' })
+    svc.bulkRemoveFromRoomsService(personnel_ids, req.user.id)
+    res.json({ ok: true, count: personnel_ids.length })
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+// ── Bulk Operations (#6) ────────────────────────────────────────────────────
+
+capacityRouter.post('/bulk/room-status', ...requireRole('campus_manager'), (req, res) => {
+  const { room_ids, status } = req.body
+  if (!Array.isArray(room_ids) || room_ids.length === 0) return res.status(400).json({ error: 'Oda listesi gerekli' })
+  if (!['active', 'quarantine', 'maintenance'].includes(status)) return res.status(400).json({ error: 'Geçersiz durum' })
+  svc.bulkUpdateRoomStatusService(room_ids, status, req.user.id)
+  res.json({ ok: true, count: room_ids.length })
+})
+
+capacityRouter.post('/bulk/checkout', ...requireRole('campus_manager'), (req, res) => {
+  const { personnel_ids } = req.body
+  if (!Array.isArray(personnel_ids) || personnel_ids.length === 0) return res.status(400).json({ error: 'Personel listesi gerekli' })
+  svc.bulkCheckoutService(personnel_ids, req.user.id)
+  res.json({ ok: true, count: personnel_ids.length })
 })

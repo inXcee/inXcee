@@ -1,6 +1,25 @@
 export default {
   content: ['./index.html', './src/**/*.{js,jsx}'],
-  theme: { extend: {} },
+  theme: {
+    extend: {
+      colors: {
+        accent: '#f59e0b',
+        'accent-hover': '#fbbf24',
+        'bg-primary': '#09090b',
+        'bg-secondary': '#121214',
+        'bg-card': 'rgba(24,24,27,0.65)',
+      },
+      fontFamily: {
+        outfit: ['Outfit', 'Inter', 'sans-serif'],
+        inter: ['Inter', 'system-ui', 'sans-serif'],
+      },
+      backdropBlur: { card: '12px' },
+      boxShadow: {
+        accent: '0 0 20px rgba(245,158,11,0.4)',
+        card: '0 8px 32px rgba(0,0,0,0.4)',
+      },
+    },
+  },
   plugins: [],
   safelist: [
     // Department colors (stored as strings in DB)

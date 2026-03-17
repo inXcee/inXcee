@@ -1,33 +1,59 @@
 export default function BlacklistAlert({ person, onClose }) {
   return (
-    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
-      <div className="bg-red-950 border-2 border-red-500 rounded-2xl p-8 max-w-lg w-full mx-4 shadow-2xl">
-        <div className="text-center">
-          <div className="text-6xl mb-4">🚫</div>
-          <h2 className="text-2xl font-bold text-red-400 mb-2">KARA LİSTE UYARISI</h2>
-          <p className="text-xl font-semibold text-white mb-4">{person.full_name}</p>
-          <div className="bg-red-900 rounded-lg p-4 mb-6 text-left">
-            <p className="text-sm text-red-300 mb-1"><span className="font-medium">Sebep:</span></p>
-            <p className="text-red-100">{person.blacklist_reason || 'Belirtilmemiş'}</p>
-            {person.blacklisted_at && (
-              <p className="text-xs text-red-400 mt-2">Tarih: {new Date(person.blacklisted_at).toLocaleDateString('tr-TR')}</p>
-            )}
+    <div style={{
+      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 500,
+      backdropFilter: 'blur(4px)',
+    }}>
+      <div style={{
+        background: 'var(--surface)',
+        border: '2px solid rgba(231,76,60,0.6)',
+        borderRadius: '12px',
+        padding: '36px',
+        maxWidth: '460px', width: '90%',
+        boxShadow: '0 0 60px rgba(231,76,60,0.2)',
+        textAlign: 'center',
+        position: 'relative', overflow: 'hidden',
+      }}>
+        {/* Top accent */}
+        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '3px', background: 'linear-gradient(90deg,var(--red),var(--red2))' }} />
+
+        <div style={{ fontSize: '48px', marginBottom: '12px' }}>⛔</div>
+
+        <div style={{ fontFamily: 'var(--display)', fontSize: '22px', letterSpacing: '4px', color: 'var(--red)', marginBottom: '8px' }}>
+          KARA LİSTE UYARISI
+        </div>
+
+        <div style={{ fontFamily: 'var(--display)', fontSize: '18px', letterSpacing: '2px', color: 'var(--text)', marginBottom: '16px' }}>
+          {person.full_name}
+        </div>
+
+        <div style={{
+          background: 'rgba(231,76,60,.08)', border: '1px solid rgba(231,76,60,.2)',
+          borderRadius: '8px', padding: '14px', marginBottom: '16px', textAlign: 'left',
+        }}>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '2px', marginBottom: '6px' }}>SEBEP</div>
+          <div style={{ fontSize: '13px', color: 'var(--text)', marginBottom: '6px' }}>
+            {person.blacklist_reason || 'Belirtilmemiş'}
           </div>
-          <p className="text-red-300 text-sm mb-6">Bu kişiye check-in yapılamaz. Güvenlik birimini bilgilendirin.</p>
-          <div className="flex gap-3 justify-center">
-            <button
-              onClick={() => window.print()}
-              className="px-4 py-2 bg-red-800 hover:bg-red-700 text-white rounded-lg text-sm"
-            >
-              Tutanak Yazdır
-            </button>
-            <button
-              onClick={onClose}
-              className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-sm"
-            >
-              Kapat
-            </button>
-          </div>
+          {person.blacklisted_at && (
+            <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)' }}>
+              {new Date(person.blacklisted_at).toLocaleDateString('tr-TR')}
+            </div>
+          )}
+        </div>
+
+        <p style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)', marginBottom: '20px', letterSpacing: '0.5px' }}>
+          Bu kişiye check-in yapılamaz. Güvenlik birimini bilgilendirin.
+        </p>
+
+        <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+          <button onClick={() => window.print()} className="btn btn-ghost btn-sm">
+            ⎙ TUTANAK YAZDIR
+          </button>
+          <button onClick={onClose} className="btn btn-danger btn-sm">
+            KAPAT
+          </button>
         </div>
       </div>
     </div>

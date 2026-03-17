@@ -1,6 +1,5 @@
 import cron from 'node-cron'
 import { generateDailyTasks } from '../../modules/housekeeping/queries.js'
-import { generatePreventiveTasks } from '../../modules/maintenance/queries.js'
 import { createNotification } from '../notifications/service.js'
 import { getDB } from '../db/index.js'
 
@@ -11,14 +10,6 @@ export function startCronJobs() {
       const count = generateDailyTasks()
       console.log(`[Cron] ${count} temizlik görevi oluşturuldu`)
     } catch (e) { console.error('[Cron] Temizlik görev hatası:', e) }
-  })
-
-  // Her ay 1'inde önleyici bakım kontrol
-  cron.schedule('0 6 1 * *', () => {
-    try {
-      const count = generatePreventiveTasks()
-      if (count > 0) console.log(`[Cron] ${count} önleyici bakım emri oluşturuldu`)
-    } catch (e) { console.error('[Cron] Bakım cron hatası:', e) }
   })
 
   // Her saat stok kontrolü
