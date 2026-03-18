@@ -63,3 +63,12 @@ Varsayılan geliştirme kullanıcıları (seed'den): `mudur/admin123`, `vardiya/
 - Karantina odalarına atama — INSERT trigger ile bloke
 - Zimmet imzası — canvas base64 olarak `digital_signature` kolonuna kaydedilir
 - SSE endpoint: `GET /api/notifications/stream` — token header ile
+
+## Kod Kurallari (Zorunlu)
+
+- **Test olmadan commit yok** — backend dosyasi degistiyse `npx vitest run` gecmeli, test yoksa once yaz
+- **`any` tipi yasak** — TypeScript dosyalarinda `any` kullanma, dogru tipi tanimla veya `unknown` kullan
+- **`console.log` birakma** — debug icin kullanilabilir ama commit oncesi temizle, production'da `console.log` olmamali
+- **`.env` dosyalarina dokunma** — secrets elle yonetilir, AI editlememeli
+- **SQL injection yasak** — parametreli sorgular zorunlu, string concatenation ile SQL yazma
+- **Semantic commit mesajlari** — `feat:`, `fix:`, `chore:`, `refactor:`, `docs:`, `test:` prefix'leri kullan

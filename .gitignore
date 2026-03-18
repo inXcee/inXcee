@@ -8,3 +8,5 @@ uploads/
 !backend/src/shared/uploads/middleware.js
 .superpowers/
 .claude/
+.env*
+.DS_Store
