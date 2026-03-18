@@ -88,29 +88,30 @@ export function completeFloorTasks(block, floor, date, userId) {
 export function getDNDRooms() {
   const db = getDB()
   const hour = new Date().getHours()
-  // Night shift (20:00-08:00) sleeps during day → DND 08:00-18:00
-  // Day shift (08:00-17:00) sleeps during night → DND 22:00-08:00
-  const isDayTime = hour >= 8 && hour < 18
-  const isNightTime = hour >= 22 || hour < 8
+  // Gece vardiyası (night) → gündüz uyur → DND 08:00–18:00
+  // Gündüz vardiyası (day) → gece uyur → DND 20:00–08:00
+  // Shift kaydı olmayan personel → DND gösterme
+  const nightSleeping = hour >= 8 && hour < 18   // gece vardiyası gündüz uyur
+  const daySleeping = hour >= 20 || hour < 8      // gündüz vardiyası gece uyur
 
   return db.prepare(`
     SELECT DISTINCT r.id, r.block, r.floor, r.room_no,
       CASE
         WHEN s.shift_type = 'night' AND ? THEN 'night_sleeping'
-        WHEN (s.shift_type = 'day' OR s.shift_type IS NULL) AND ? THEN 'day_sleeping'
+        WHEN s.shift_type = 'day' AND ? THEN 'day_sleeping'
         ELSE 'occupied'
       END as dnd_reason,
       s.shift_type
     FROM rooms r
     JOIN room_assignments ra ON ra.room_id=r.id AND ra.check_out_at IS NULL
     JOIN personnel p ON p.id=ra.personnel_id
-    LEFT JOIN shifts s ON s.personnel_id=p.id
+    JOIN shifts s ON s.personnel_id=p.id
     WHERE (
       (s.shift_type = 'night' AND ?)
-      OR ((s.shift_type = 'day' OR s.shift_type IS NULL) AND ?)
+      OR (s.shift_type = 'day' AND ?)
     )
     AND p.check_out_date IS NULL
-  `).all(isDayTime ? 1 : 0, isNightTime ? 1 : 0, isDayTime ? 1 : 0, isNightTime ? 1 : 0)
+  `).all(nightSleeping ? 1 : 0, daySleeping ? 1 : 0, nightSleeping ? 1 : 0, daySleeping ? 1 : 0)
 }
 
 export function getRoomWithFaults(block, roomNo) {
