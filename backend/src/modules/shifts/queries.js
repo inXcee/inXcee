@@ -486,3 +486,68 @@ export function searchPersonnel(term) {
 export function deleteScheduleEntry(personnelId, workDate) {
   getDB().prepare('DELETE FROM shift_schedule WHERE personnel_id=? AND work_date=?').run(personnelId, workDate)
 }
+
+// ── Personnel detail / profile ──
+export function getPersonnelDetail(personnelId) {
+  const db = getDB()
+
+  const person = db.prepare(`
+    SELECT p.*, d.name as dept_name, d.color_class as dept_color
+    FROM personnel p
+    LEFT JOIN departments d ON d.id = p.department_id
+    WHERE p.id = ?
+  `).get(personnelId)
+  if (!person) throw new Error('Personel bulunamadi')
+
+  const shiftHistory = db.prepare(`
+    SELECT ss.work_date, ss.status,
+      sd.name as shift_name, sd.start_hour, sd.end_hour, sd.color_class as shift_color,
+      d.name as dept_name, d.color_class as dept_color
+    FROM shift_schedule ss
+    JOIN shift_definitions sd ON sd.id = ss.shift_def_id
+    JOIN departments d ON d.id = ss.dept_id
+    WHERE ss.personnel_id = ?
+    ORDER BY ss.work_date DESC
+    LIMIT 100
+  `).all(personnelId)
+
+  const leaveHistory = db.prepare(`
+    SELECT lr.*
+    FROM leave_requests lr
+    WHERE lr.personnel_id = ?
+    ORDER BY lr.created_at DESC
+    LIMIT 50
+  `).all(personnelId)
+
+  const overtimeRecords = db.prepare(`
+    SELECT ot.*
+    FROM overtime_records ot
+    WHERE ot.personnel_id = ?
+    ORDER BY ot.work_date DESC
+    LIMIT 50
+  `).all(personnelId)
+
+  const attendanceLogs = db.prepare(`
+    SELECT al.*
+    FROM attendance_logs al
+    WHERE al.personnel_id = ?
+    ORDER BY al.check_in_at DESC
+    LIMIT 50
+  `).all(personnelId)
+
+  // Summary stats
+  const totalShifts = db.prepare('SELECT COUNT(*) as count FROM shift_schedule WHERE personnel_id=?').get(personnelId).count
+  const workedShifts = db.prepare("SELECT COUNT(*) as count FROM shift_schedule WHERE personnel_id=? AND status='worked'").get(personnelId).count
+  const totalOvertime = db.prepare('SELECT COALESCE(SUM(hours),0) as total FROM overtime_records WHERE personnel_id=?').get(personnelId).total
+  const totalLeave = db.prepare("SELECT COUNT(*) as count FROM leave_requests WHERE personnel_id=? AND status='approved'").get(personnelId).count
+  const absentCount = db.prepare("SELECT COUNT(*) as count FROM shift_schedule WHERE personnel_id=? AND status='absent'").get(personnelId).count
+
+  return {
+    person,
+    shiftHistory,
+    leaveHistory,
+    overtimeRecords,
+    attendanceLogs,
+    stats: { totalShifts, workedShifts, totalOvertime, totalLeave, absentCount }
+  }
+}

@@ -85,10 +85,10 @@ function ModalOverlay({ children, onClose }) {
 }
 
 // ─── PersonnelSearch component ────────────────────────────────────────────────
-function PersonnelSearch({ value, onChange, placeholder = 'Personel ara...' }) {
+function PersonnelSearch({ value, onChange, placeholder = 'Personel ara...', onPersonClick }) {
+  const [inputValue, setInputValue] = useState('')
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
-  const [selectedName, setSelectedName] = useState('')
   const wrapRef = useRef(null)
   const timerRef = useRef(null)
 
@@ -107,7 +107,7 @@ function PersonnelSearch({ value, onChange, placeholder = 'Personel ara...' }) {
   }, [])
 
   const handleInput = (val) => {
-    setSelectedName('')
+    setInputValue(val)
     onChange('')
     clearTimeout(timerRef.current)
     timerRef.current = setTimeout(() => setQuery(val), 300)
@@ -116,7 +116,7 @@ function PersonnelSearch({ value, onChange, placeholder = 'Personel ara...' }) {
 
   const select = (person) => {
     onChange(person.id)
-    setSelectedName(person.full_name)
+    setInputValue(person.full_name)
     setQuery('')
     setOpen(false)
   }
@@ -126,9 +126,9 @@ function PersonnelSearch({ value, onChange, placeholder = 'Personel ara...' }) {
       <input
         className="form-input"
         placeholder={placeholder}
-        value={selectedName || ''}
+        value={inputValue}
         onChange={e => handleInput(e.target.value)}
-        onFocus={() => { if (results.length > 0 && !selectedName) setOpen(true) }}
+        onFocus={() => { if (results.length > 0 && !value) setOpen(true) }}
       />
       {open && results.length > 0 && (
         <div style={{
@@ -152,7 +152,10 @@ function PersonnelSearch({ value, onChange, placeholder = 'Personel ara...' }) {
               <span style={{ color: p.gender === 'female' ? '#f472b6' : 'var(--blue)', fontSize: '11px' }}>
                 {p.gender === 'female' ? '\u2640' : '\u2642'}
               </span>
-              <span>{p.full_name}</span>
+              <span
+                onClick={(e) => { if (onPersonClick) { e.stopPropagation(); select(p); onPersonClick(p.id) } }}
+                style={{ cursor: onPersonClick ? 'pointer' : 'inherit' }}
+              >{p.full_name}</span>
               {p.dept_name && (
                 <span style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', marginLeft: 'auto' }}>
                   {p.dept_name}
@@ -162,6 +165,262 @@ function PersonnelSearch({ value, onChange, placeholder = 'Personel ara...' }) {
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+// ─── Personnel Detail Panel ──────────────────────────────────────────────────
+function PersonnelDetailPanel({ personnelId, onClose }) {
+  const [detailTab, setDetailTab] = useState('overview')
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['personnel-detail', personnelId],
+    queryFn: () => api.get(`/shifts/personnel/${personnelId}/detail`).then(r => r.data),
+    enabled: !!personnelId,
+  })
+
+  if (!personnelId) return null
+
+  const DETAIL_TABS = [
+    { id: 'overview', label: 'OZET' },
+    { id: 'shifts', label: 'VARDIYALAR' },
+    { id: 'leave', label: 'IZINLER' },
+    { id: 'overtime', label: 'MESAI' },
+    { id: 'attendance', label: 'YOKLAMA' },
+  ]
+
+  const person = data?.person
+  const stats = data?.stats
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 55,
+        background: 'rgba(0,0,0,.65)',
+        display: 'flex', justifyContent: 'flex-end',
+      }}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          width: '100%', maxWidth: '600px', height: '100vh',
+          background: 'var(--bg)', borderLeft: '1px solid var(--border)',
+          overflowY: 'auto', padding: '24px',
+          animation: 'slideInRight .25s ease-out',
+        }}
+      >
+        {isLoading ? (
+          <div className="empty-state"><div className="empty-sub">Yukleniyor...</div></div>
+        ) : !data ? (
+          <div className="empty-state"><div className="empty-sub">Veri bulunamadi</div></div>
+        ) : (
+          <>
+            {/* Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
+                  <span style={{
+                    width: '36px', height: '36px', borderRadius: '50%',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    background: person.gender === 'female' ? 'rgba(244,114,182,.15)' : 'rgba(59,140,240,.15)',
+                    color: person.gender === 'female' ? '#f472b6' : 'var(--blue)',
+                    fontSize: '18px',
+                  }}>
+                    {person.gender === 'female' ? '\u2640' : '\u2642'}
+                  </span>
+                  <div>
+                    <h3 style={{ fontFamily: 'var(--display)', fontSize: '22px', letterSpacing: '2px', color: 'var(--text)', margin: 0 }}>
+                      {person.full_name}
+                    </h3>
+                    <div style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)', letterSpacing: '1px', marginTop: '2px' }}>
+                      TC: {person.tc_no || '—'} &middot; ID: {person.id}
+                    </div>
+                  </div>
+                </div>
+                {person.dept_name && (
+                  <span className="badge badge-blue" style={{ marginTop: '4px' }}>{person.dept_name}</span>
+                )}
+                <div style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)', marginTop: '6px' }}>
+                  Giris: {person.check_in_date ? new Date(person.check_in_date).toLocaleDateString('tr-TR') : '—'}
+                  {person.check_out_date && ` · Cikis: ${new Date(person.check_out_date).toLocaleDateString('tr-TR')}`}
+                </div>
+              </div>
+              <button onClick={onClose} className="btn btn-ghost btn-sm" style={{ fontSize: '18px', lineHeight: 1 }}>✕</button>
+            </div>
+
+            {/* Stats cards */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '8px', marginBottom: '20px' }}>
+              {[
+                { label: 'Toplam Vardiya', value: stats.totalShifts, color: 'var(--blue)' },
+                { label: 'Calisti', value: stats.workedShifts, color: 'var(--green)' },
+                { label: 'Mesai (saat)', value: stats.totalOvertime, color: 'var(--accent)' },
+                { label: 'Izin', value: stats.totalLeave, color: 'var(--purple)' },
+                { label: 'Devamsiz', value: stats.absentCount, color: 'var(--red)' },
+              ].map(s => (
+                <div key={s.label} className="panel" style={{ padding: '10px', textAlign: 'center' }}>
+                  <div style={{ fontFamily: 'var(--display)', fontSize: '22px', color: s.color, letterSpacing: '1px' }}>{s.value}</div>
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text3)', letterSpacing: '1px', marginTop: '2px' }}>{s.label.toUpperCase()}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Detail tabs */}
+            <div style={{ display: 'flex', gap: '2px', marginBottom: '16px', borderBottom: '1px solid var(--border)' }}>
+              {DETAIL_TABS.map(t => (
+                <button key={t.id} onClick={() => setDetailTab(t.id)}
+                  className={`filter-chip ${detailTab === t.id ? 'active' : ''}`}
+                  style={{ borderRadius: '7px 7px 0 0', borderBottom: detailTab === t.id ? '2px solid var(--accent)' : '2px solid transparent', fontSize: '10px' }}>
+                  {t.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Overview tab */}
+            {detailTab === 'overview' && (
+              <div>
+                <h4 style={{ fontFamily: 'var(--display)', fontSize: '14px', color: 'var(--accent)', letterSpacing: '2px', marginBottom: '10px' }}>SON VARDIYALAR</h4>
+                {data.shiftHistory.length === 0 ? (
+                  <div className="empty-state" style={{ padding: '16px' }}><div className="empty-sub">Vardiya kaydi yok</div></div>
+                ) : (
+                  <div className="panel" style={{ marginBottom: '16px' }}>
+                    <table className="data-table">
+                      <thead><tr><th>Tarih</th><th>Vardiya</th><th>Departman</th><th>Durum</th></tr></thead>
+                      <tbody>
+                        {data.shiftHistory.slice(0, 10).map((s, i) => {
+                          const sc = shiftColor(s.shift_color)
+                          return (
+                            <tr key={i}>
+                              <td style={{ fontFamily: 'var(--mono)', fontSize: '11px' }}>{new Date(s.work_date).toLocaleDateString('tr-TR')}</td>
+                              <td><span style={{ background: sc.bg, color: sc.text, padding: '2px 8px', borderRadius: '10px', fontSize: '10px', fontWeight: 600 }}>{s.shift_name}</span></td>
+                              <td style={{ fontSize: '11px' }}>{s.dept_name}</td>
+                              <td><span className={`badge ${s.status === 'worked' ? 'badge-green' : s.status === 'on_leave' ? 'badge-amber' : s.status === 'absent' ? 'badge-red' : 'badge-blue'}`}>{s.status}</span></td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                <h4 style={{ fontFamily: 'var(--display)', fontSize: '14px', color: 'var(--accent)', letterSpacing: '2px', marginBottom: '10px' }}>SON MESAILER</h4>
+                {data.overtimeRecords.length === 0 ? (
+                  <div className="empty-state" style={{ padding: '16px' }}><div className="empty-sub">Mesai kaydi yok</div></div>
+                ) : (
+                  <div className="panel">
+                    <table className="data-table">
+                      <thead><tr><th>Tarih</th><th>Saat</th><th>Sebep</th></tr></thead>
+                      <tbody>
+                        {data.overtimeRecords.slice(0, 5).map((o, i) => (
+                          <tr key={i}>
+                            <td style={{ fontFamily: 'var(--mono)', fontSize: '11px' }}>{new Date(o.work_date).toLocaleDateString('tr-TR')}</td>
+                            <td><span className="badge badge-amber">{o.hours} saat</span></td>
+                            <td style={{ fontSize: '11px', color: 'var(--text2)' }}>{o.reason || '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Shifts tab */}
+            {detailTab === 'shifts' && (
+              <div className="panel">
+                {data.shiftHistory.length === 0 ? (
+                  <div className="empty-state" style={{ padding: '16px' }}><div className="empty-sub">Vardiya kaydi yok</div></div>
+                ) : (
+                  <table className="data-table">
+                    <thead><tr><th>Tarih</th><th>Vardiya</th><th>Saat</th><th>Departman</th><th>Durum</th></tr></thead>
+                    <tbody>
+                      {data.shiftHistory.map((s, i) => {
+                        const sc = shiftColor(s.shift_color)
+                        return (
+                          <tr key={i}>
+                            <td style={{ fontFamily: 'var(--mono)', fontSize: '11px' }}>{new Date(s.work_date).toLocaleDateString('tr-TR')}</td>
+                            <td><span style={{ background: sc.bg, color: sc.text, padding: '2px 8px', borderRadius: '10px', fontSize: '10px', fontWeight: 600 }}>{s.shift_name}</span></td>
+                            <td style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text2)' }}>{s.start_hour}:00–{s.end_hour === 24 ? '00' : s.end_hour}:00</td>
+                            <td style={{ fontSize: '11px' }}>{s.dept_name}</td>
+                            <td><span className={`badge ${s.status === 'worked' ? 'badge-green' : s.status === 'on_leave' ? 'badge-amber' : s.status === 'absent' ? 'badge-red' : 'badge-blue'}`}>{s.status}</span></td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            )}
+
+            {/* Leave tab */}
+            {detailTab === 'leave' && (
+              <div className="panel">
+                {data.leaveHistory.length === 0 ? (
+                  <div className="empty-state" style={{ padding: '16px' }}><div className="empty-sub">Izin kaydi yok</div></div>
+                ) : (
+                  <table className="data-table">
+                    <thead><tr><th>Tur</th><th>Baslangic</th><th>Bitis</th><th>Gun</th><th>Durum</th></tr></thead>
+                    <tbody>
+                      {data.leaveHistory.map((l, i) => (
+                        <tr key={i}>
+                          <td><span className={`badge ${LEAVE_TYPES[l.leave_type]?.badge || 'badge-gray'}`}>{LEAVE_TYPES[l.leave_type]?.label || l.leave_type}</span></td>
+                          <td style={{ fontFamily: 'var(--mono)', fontSize: '11px' }}>{new Date(l.start_date).toLocaleDateString('tr-TR')}</td>
+                          <td style={{ fontFamily: 'var(--mono)', fontSize: '11px' }}>{new Date(l.end_date).toLocaleDateString('tr-TR')}</td>
+                          <td style={{ fontFamily: 'var(--mono)', fontSize: '11px', textAlign: 'center' }}>{l.total_days}</td>
+                          <td><span className={`badge ${STATUS_MAP[l.status]?.badge || 'badge-gray'}`}>{STATUS_MAP[l.status]?.label || l.status}</span></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            )}
+
+            {/* Overtime tab */}
+            {detailTab === 'overtime' && (
+              <div className="panel">
+                {data.overtimeRecords.length === 0 ? (
+                  <div className="empty-state" style={{ padding: '16px' }}><div className="empty-sub">Mesai kaydi yok</div></div>
+                ) : (
+                  <table className="data-table">
+                    <thead><tr><th>Tarih</th><th>Saat</th><th>Sebep</th></tr></thead>
+                    <tbody>
+                      {data.overtimeRecords.map((o, i) => (
+                        <tr key={i}>
+                          <td style={{ fontFamily: 'var(--mono)', fontSize: '11px' }}>{new Date(o.work_date).toLocaleDateString('tr-TR')}</td>
+                          <td><span className="badge badge-amber">{o.hours} saat</span></td>
+                          <td style={{ fontSize: '11px', color: 'var(--text2)' }}>{o.reason || '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            )}
+
+            {/* Attendance tab */}
+            {detailTab === 'attendance' && (
+              <div className="panel">
+                {data.attendanceLogs.length === 0 ? (
+                  <div className="empty-state" style={{ padding: '16px' }}><div className="empty-sub">Yoklama kaydi yok</div></div>
+                ) : (
+                  <table className="data-table">
+                    <thead><tr><th>Giris</th><th>Cikis</th><th>Sure (saat)</th></tr></thead>
+                    <tbody>
+                      {data.attendanceLogs.map((a, i) => (
+                        <tr key={i}>
+                          <td style={{ fontFamily: 'var(--mono)', fontSize: '11px' }}>{a.check_in_at ? new Date(a.check_in_at).toLocaleString('tr-TR') : '—'}</td>
+                          <td style={{ fontFamily: 'var(--mono)', fontSize: '11px' }}>{a.check_out_at ? new Date(a.check_out_at).toLocaleString('tr-TR') : '—'}</td>
+                          <td style={{ fontFamily: 'var(--mono)', fontSize: '11px', textAlign: 'center' }}>{a.actual_hours ?? '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            )}
+          </>
+        )}
+      </div>
     </div>
   )
 }
@@ -193,7 +452,7 @@ function deptColor(colorClass) {
 // ═══════════════════════════════════════════════════════════════════════════════
 //  TAB 1 — Cizelge (Schedule)
 // ═══════════════════════════════════════════════════════════════════════════════
-function ScheduleTab({ departments, shiftDefs }) {
+function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
   const qc = useQueryClient()
   const user = useAuthStore(s => s.user)
   const canEdit = ['campus_manager', 'shift_supervisor'].includes(user?.role)
@@ -329,7 +588,9 @@ function ScheduleTab({ departments, shiftDefs }) {
                           <span style={{ color: person.gender === 'female' ? '#f472b6' : 'var(--blue)', fontSize: '11px' }}>
                             {person.gender === 'female' ? '\u2640' : '\u2642'}
                           </span>
-                          <span style={{ fontSize: '12px', color: 'var(--text)', maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          <span
+                            onClick={() => onPersonClick && onPersonClick(person.id)}
+                            style={{ fontSize: '12px', color: 'var(--text)', maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: onPersonClick ? 'pointer' : 'default', borderBottom: onPersonClick ? '1px dashed var(--text3)' : 'none' }}>
                             {person.full_name}
                           </span>
                         </div>
@@ -1701,6 +1962,7 @@ const TABS = [
 
 export default function ShiftsPage() {
   const [activeTab, setActiveTab] = useState('schedule')
+  const [selectedPersonnel, setSelectedPersonnel] = useState(null)
 
   const { data: departments = [] } = useQuery({
     queryKey: ['departments'],
@@ -1747,13 +2009,18 @@ export default function ShiftsPage() {
       </div>
 
       {/* Tab content */}
-      {activeTab === 'schedule'    && <ScheduleTab departments={departments} shiftDefs={shiftDefs} />}
+      {activeTab === 'schedule'    && <ScheduleTab departments={departments} shiftDefs={shiftDefs} onPersonClick={setSelectedPersonnel} />}
       {activeTab === 'leave'       && <LeaveTab departments={departments} />}
       {activeTab === 'overtime'    && <OvertimeTab departments={departments} />}
       {activeTab === 'attendance'  && <AttendanceTab departments={departments} />}
       {activeTab === 'departments' && <DepartmentsTab />}
       {activeTab === 'swap'        && <SwapTab />}
       {activeTab === 'settings'    && <SettingsTab departments={departments} shiftDefs={shiftDefs} />}
+
+      {/* Personnel detail slide-over */}
+      {selectedPersonnel && (
+        <PersonnelDetailPanel personnelId={selectedPersonnel} onClose={() => setSelectedPersonnel(null)} />
+      )}
     </div>
   )
 }

@@ -7,7 +7,8 @@ import {
   createDepartment, updateDepartment, deleteDepartment, assignPersonnelDepartment,
   createShiftDefinition, updateShiftDefinition, deleteShiftDefinition,
   cancelLeaveRequest, createSwapRequest, getSwapRequests, approveSwapRequest, rejectSwapRequest,
-  copyWeekSchedule, applyRotationTemplate, searchPersonnel, deleteScheduleEntry
+  copyWeekSchedule, applyRotationTemplate, searchPersonnel, deleteScheduleEntry,
+  getPersonnelDetail
 } from './queries.js'
 
 export function departmentsService() {
@@ -160,4 +161,8 @@ export function searchPersonnelService(term) {
 
 export function deleteScheduleService(personnelId, workDate) {
   deleteScheduleEntry(personnelId, workDate)
+}
+
+export function personnelDetailService(personnelId) {
+  return getPersonnelDetail(personnelId)
 }

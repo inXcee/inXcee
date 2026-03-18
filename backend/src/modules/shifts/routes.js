@@ -8,7 +8,8 @@ import {
   createDepartmentService, updateDepartmentService, deleteDepartmentService, assignDeptService,
   createShiftDefService, updateShiftDefService, deleteShiftDefService,
   cancelLeaveService, createSwapService, swapListService, approveSwapService, rejectSwapService,
-  copyWeekService, rotationService, searchPersonnelService, deleteScheduleService
+  copyWeekService, rotationService, searchPersonnelService, deleteScheduleService,
+  personnelDetailService
 } from './service.js'
 
 export const shiftsRouter = Router()
@@ -236,6 +237,15 @@ shiftsRouter.post('/schedule/rotation', ...managerOrSupervisor, (req, res) => {
 // Personnel search
 shiftsRouter.get('/personnel/search', ...allStaff, (req, res) => {
   res.json(searchPersonnelService(req.query.q))
+})
+
+// Personnel detail
+shiftsRouter.get('/personnel/:id/detail', ...allStaff, (req, res) => {
+  try {
+    res.json(personnelDetailService(req.params.id))
+  } catch (e) {
+    res.status(404).json({ error: e.message })
+  }
 })
 
 // Delete schedule entry

@@ -183,6 +183,7 @@ h1, h2, h3, h4 { font-family: var(--display); letter-spacing: 2px; }
 
 /* Animations */
 @keyframes fadeUp { from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)} }
+@keyframes slideInRight { from{transform:translateX(100%)}to{transform:translateX(0)} }
 .fade-up { animation: fadeUp .3s ease both; }
 .fade-up-1 { animation: fadeUp .3s ease .05s both; }
 .fade-up-2 { animation: fadeUp .3s ease .1s both; }
