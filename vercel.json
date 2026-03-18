@@ -3,7 +3,7 @@
   "buildCommand": "cd frontend && npm run build",
   "outputDirectory": "frontend/dist",
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "https://inxcee-backend.onrender.com/api/$1" },
+    { "source": "/api/(.*)", "destination": "https://inxcee-1.onrender.com/api/$1" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]
 }
