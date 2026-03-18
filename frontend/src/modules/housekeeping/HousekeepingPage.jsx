@@ -95,12 +95,13 @@ function GhostTile({ rno }) {
 
 // ── Room Tile ─────────────────────────────────────────────────────────────────
 // State priority: done > skipped > DND > noClean > pending > noTask
-function RoomTile({ rno, task, roomInfo, isDnd, dndInfo, isM, isS2Floor2, selected, onSelect }) {
+function RoomTile({ rno, task, roomInfo, isDnd, dndInfo, isM, isS2Floor2, selected, onSelect, faultCount }) {
   const isDone    = !!task?.completed_at
   const isSkipped = task?.skipped === 1
   const noClean   = roomInfo?.no_clean === 1
   const hasTask   = !!task
   const hasNote   = !!roomInfo?.notes
+  const hasFault  = (faultCount || 0) > 0
   const showBath  = !isM  // S bloklarda her odada özel banyo/tuvalet
 
   // ── Visual state ──
@@ -214,6 +215,19 @@ function RoomTile({ rno, task, roomInfo, isDnd, dndInfo, isM, isS2Floor2, select
       {/* noClean badge */}
       {noClean && !isDone && (
         <div style={{ position: 'absolute', top: '5px', left: '3px', fontFamily: 'var(--mono)', fontSize: '5px', color: 'var(--text4)', background: 'var(--surface3)', borderRadius: '2px', padding: '0 2px', lineHeight: 1.5 }}>⊘</div>
+      )}
+      {/* Fault indicator */}
+      {hasFault && (
+        <div style={{
+          position: 'absolute', bottom: '3px', left: '3px',
+          width: '14px', height: '14px', borderRadius: '50%',
+          background: 'var(--red)', color: '#fff',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: '8px', fontWeight: 700, fontFamily: 'var(--mono)',
+          boxShadow: '0 0 0 1.5px var(--surface)',
+        }} title={`${faultCount} açık arıza`}>
+          {faultCount > 9 ? '!' : faultCount}
+        </div>
       )}
       {/* Skip reason tooltip indicator */}
       {isSkipped && task?.skip_reason && (
@@ -372,9 +386,7 @@ function RoomDetailPanel({ block, floor, roomNo, task, isPrivateBath, onComplete
       fd.append('description', faultDesc)
       fd.append('priority', faultPriority)
       if (faultPhoto) fd.append('photo', faultPhoto)
-      return api.post('/housekeeping/fault-report', fd, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      })
+      return api.post('/housekeeping/fault-report', fd)
     },
     onSuccess: () => {
       setFaultDesc(''); setFaultPriority('medium'); clearFaultPhoto()
@@ -671,37 +683,77 @@ function RoomDetailPanel({ block, floor, roomNo, task, isPrivateBath, onComplete
         {/* ── RIGHT: Faults ── */}
         <div style={{ padding: '18px 20px' }}>
 
-          {/* Open faults header */}
-          <div style={{ display: 'flex', alignItems: 'center', marginBottom: '10px' }}>
-            <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '2px', flex: 1 }}>AÇIK ARIZALAR</div>
-            {faults.length > 0 && (
-              <span style={{ background: 'var(--red)', color: '#fff', borderRadius: '10px', padding: '1px 8px', fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 700 }}>
-                {faults.length}
-              </span>
-            )}
-          </div>
+          {/* Faults header */}
+          {(() => {
+            const openFaults = faults.filter(f => f.status !== 'done')
+            const closedFaults = faults.filter(f => f.status === 'done')
+            return (<>
+              <div style={{ display: 'flex', alignItems: 'center', marginBottom: '10px' }}>
+                <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '2px', flex: 1 }}>ARIZALAR</div>
+                {openFaults.length > 0 && (
+                  <span style={{ background: 'var(--red)', color: '#fff', borderRadius: '10px', padding: '1px 8px', fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 700 }}>
+                    {openFaults.length} açık
+                  </span>
+                )}
+              </div>
 
-          {detailLoading ? (
-            <div style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)', marginBottom: '14px' }}>Yükleniyor...</div>
-          ) : faults.length === 0 ? (
-            <div style={{ padding: '12px', borderRadius: '7px', textAlign: 'center', background: 'var(--surface2)', border: '1px solid var(--border)', marginBottom: '14px' }}>
-              <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)' }}>✓ Açık arıza yok</div>
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '7px', marginBottom: '14px' }}>
-              {faults.map(f => (
-                <div key={f.id} style={{ padding: '10px 13px', borderRadius: '7px', background: 'rgba(231,76,60,.06)', border: '1px solid rgba(231,76,60,.2)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                    <span className={`badge badge-${f.status === 'open' ? 'red' : 'amber'}`} style={{ fontSize: '8px', padding: '1px 6px' }}>
-                      {f.status === 'open' ? 'YENİ' : 'İŞLEMDE'}
-                    </span>
-                    <span style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text3)' }}>#{f.id} · {new Date(f.opened_at).toLocaleDateString('tr-TR')}</span>
-                  </div>
-                  <div style={{ fontSize: '12.5px', color: 'var(--text)', lineHeight: 1.4 }}>{f.description}</div>
+              {detailLoading ? (
+                <div style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)', marginBottom: '14px' }}>Yükleniyor...</div>
+              ) : faults.length === 0 ? (
+                <div style={{ padding: '12px', borderRadius: '7px', textAlign: 'center', background: 'var(--surface2)', border: '1px solid var(--border)', marginBottom: '14px' }}>
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)' }}>Arıza kaydı yok</div>
                 </div>
-              ))}
-            </div>
-          )}
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '7px', marginBottom: '14px', maxHeight: '340px', overflowY: 'auto' }}>
+                  {faults.map(f => {
+                    const isDone = f.status === 'done'
+                    const borderColor = isDone ? 'rgba(39,201,106,.25)' : 'rgba(231,76,60,.2)'
+                    const bgColor = isDone ? 'rgba(39,201,106,.04)' : 'rgba(231,76,60,.06)'
+                    return (
+                      <div key={f.id} style={{ padding: '10px 13px', borderRadius: '7px', background: bgColor, border: `1px solid ${borderColor}` }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                          <span className={`badge badge-${isDone ? 'green' : f.status === 'open' ? 'red' : 'amber'}`} style={{ fontSize: '8px', padding: '1px 6px' }}>
+                            {isDone ? 'KAPANDI' : f.status === 'open' ? 'YENİ' : 'İŞLEMDE'}
+                          </span>
+                          {f.priority && (
+                            <span style={{
+                              fontFamily: 'var(--mono)', fontSize: '7px', padding: '1px 4px', borderRadius: '3px',
+                              color: f.priority === 'high' ? 'var(--red)' : f.priority === 'medium' ? 'var(--accent)' : 'var(--blue)',
+                              background: f.priority === 'high' ? 'rgba(231,76,60,.1)' : f.priority === 'medium' ? 'rgba(240,165,0,.1)' : 'rgba(59,140,240,.1)',
+                            }}>
+                              {f.priority === 'high' ? 'YÜKSEK' : f.priority === 'medium' ? 'ORTA' : 'DÜŞÜK'}
+                            </span>
+                          )}
+                          <span style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text3)' }}>
+                            #{f.id} · {new Date(f.opened_at).toLocaleDateString('tr-TR')}
+                            {isDone && f.closed_at && ` → ${new Date(f.closed_at).toLocaleDateString('tr-TR')}`}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '12.5px', color: 'var(--text)', lineHeight: 1.4 }}>{f.description}</div>
+                        {/* Before / After photos */}
+                        {(f.photo_before || f.photo_url) && (
+                          <div style={{ display: 'flex', gap: '8px', marginTop: '8px', flexWrap: 'wrap' }}>
+                            {f.photo_before && (
+                              <div style={{ flex: 1, minWidth: '80px' }}>
+                                <div style={{ fontFamily: 'var(--mono)', fontSize: '7px', color: 'var(--red)', letterSpacing: '1px', marginBottom: '3px' }}>ÖNCE</div>
+                                <img src={f.photo_before} alt="" style={{ width: '100%', maxHeight: '100px', objectFit: 'cover', borderRadius: '6px', border: '1px solid var(--border)' }} />
+                              </div>
+                            )}
+                            {f.photo_url && (
+                              <div style={{ flex: 1, minWidth: '80px' }}>
+                                <div style={{ fontFamily: 'var(--mono)', fontSize: '7px', color: 'var(--green)', letterSpacing: '1px', marginBottom: '3px' }}>SONRA</div>
+                                <img src={f.photo_url} alt="" style={{ width: '100%', maxHeight: '100px', objectFit: 'cover', borderRadius: '6px', border: '1px solid var(--border)' }} />
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </>)
+          })()}
 
           {/* Divider */}
           <div style={{ borderTop: '1px solid var(--border)', marginBottom: '14px' }} />
@@ -836,6 +888,7 @@ function BlockFloorView({ block, floor, tasks, dndRooms, blockRooms, selectedRoo
     { stripe: 'var(--accent)',  label: 'DND' },
     { stripe: 'var(--border2)', label: 'ATLANDI' },
     { stripe: 'transparent',    label: 'GÖREV YOK' },
+    { stripe: 'var(--red)',      label: 'ARIZA VAR', isFault: true },
   ]
 
   return (
@@ -845,7 +898,11 @@ function BlockFloorView({ block, floor, tasks, dndRooms, blockRooms, selectedRoo
         <div style={{ display: 'flex', gap: '14px', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap' }}>
           {legend.map(l => (
             <div key={l.label} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-              <div style={{ width: '12px', height: '12px', borderRadius: '3px', borderTop: `3px solid ${l.stripe}`, background: 'var(--surface2)', border: '1px solid var(--border)', borderTopColor: l.stripe }} />
+              {l.isFault ? (
+                <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: 'var(--red)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '7px', color: '#fff', fontWeight: 700 }}>!</div>
+              ) : (
+                <div style={{ width: '12px', height: '12px', borderRadius: '3px', borderTop: `3px solid ${l.stripe}`, background: 'var(--surface2)', border: '1px solid var(--border)', borderTopColor: l.stripe }} />
+              )}
               <span style={{ fontFamily: 'var(--mono)', fontSize: '8.5px', color: 'var(--text3)' }}>{l.label}</span>
             </div>
           ))}
@@ -912,7 +969,8 @@ function BlockFloorView({ block, floor, tasks, dndRooms, blockRooms, selectedRoo
                   return (
                     <RoomTile key={n} rno={n} task={roomTaskMap[n]} roomInfo={roomInfoMap[n]}
                       isDnd={dndSet.has(n)} dndInfo={dndMap[n]} isM={isM} isS2Floor2={isS2Floor2}
-                      selected={selectedRoomNo === n} onSelect={onSelect} />
+                      selected={selectedRoomNo === n} onSelect={onSelect}
+                      faultCount={roomInfoMap[n]?.open_fault_count || 0} />
                   )
                 })}
               </div>
@@ -935,7 +993,8 @@ function BlockFloorView({ block, floor, tasks, dndRooms, blockRooms, selectedRoo
                   return (
                     <RoomTile key={n} rno={n} task={roomTaskMap[n]} roomInfo={roomInfoMap[n]}
                       isDnd={dndSet.has(n)} dndInfo={dndMap[n]} isM={isM} isS2Floor2={isS2Floor2}
-                      selected={selectedRoomNo === n} onSelect={onSelect} />
+                      selected={selectedRoomNo === n} onSelect={onSelect}
+                      faultCount={roomInfoMap[n]?.open_fault_count || 0} />
                   )
                 })}
               </div>

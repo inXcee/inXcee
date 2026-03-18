@@ -431,7 +431,7 @@ function DetailPanel({ requestId, onClose }) {
     mutationFn: () => {
       const fd = new FormData()
       if (closePhoto) fd.append('photo', closePhoto)
-      return api.patch(`/maintenance/requests/${requestId}/close`, fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+      return api.patch(`/maintenance/requests/${requestId}/close`, fd)
     },
     onSuccess: () => { setClosePhoto(null); inv() },
   })
@@ -440,7 +440,7 @@ function DetailPanel({ requestId, onClose }) {
       const fd = new FormData()
       fd.append('comment', newComment.trim())
       if (commentPhoto) fd.append('photo', commentPhoto)
-      return api.post(`/maintenance/requests/${requestId}/comments`, fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+      return api.post(`/maintenance/requests/${requestId}/comments`, fd)
     },
     onSuccess: () => {
       setNewComment('')
@@ -700,7 +700,7 @@ export default function MaintenancePage() {
       fd.append('description', form.description)
       fd.append('priority', form.priority)
       if (formPhoto) fd.append('photo_before', formPhoto)
-      return api.post('/maintenance/requests', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+      return api.post('/maintenance/requests', fd)
     },
     onSuccess: () => {
       setShowForm(false)

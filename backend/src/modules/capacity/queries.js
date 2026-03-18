@@ -9,6 +9,10 @@ export function getRooms({ block, floor, status } = {}) {
     SELECT r.*,
       COUNT(ra.id) as occupied,
       u.full_name as supervisor_name,
+      (SELECT COUNT(*) FROM maintenance_requests mr
+       WHERE mr.status != 'done'
+         AND mr.location LIKE '%' || r.block || '%Oda ' || r.room_no || '%'
+      ) as open_fault_count,
       (SELECT COALESCE(s2.shift_type,'day') FROM room_assignments ra2
        LEFT JOIN shifts s2 ON s2.personnel_id=ra2.personnel_id
        WHERE ra2.room_id=r.id AND ra2.check_out_at IS NULL LIMIT 1) as room_shift,

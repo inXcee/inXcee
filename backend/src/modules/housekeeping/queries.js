@@ -117,10 +117,10 @@ export function getRoomWithFaults(block, roomNo) {
   const db = getDB()
   const room = db.prepare(`SELECT * FROM rooms WHERE block=? AND room_no=?`).get(block, roomNo)
   const faults = db.prepare(`
-    SELECT id, location, description, status, opened_at
+    SELECT id, location, description, status, priority, opened_at, closed_at,
+           photo_before, photo_url
     FROM maintenance_requests
     WHERE (location LIKE ? OR location LIKE ?)
-      AND status != 'done'
     ORDER BY opened_at DESC
   `).all(`%${block}%${roomNo}%`, `%Oda ${roomNo}%`)
   return { room: room || null, faults }
