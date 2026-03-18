@@ -25,7 +25,6 @@ const NAV_GROUPS = [
       { to: '/housekeeping', icon: '\u25C8', label: 'Housekeeping', roles: ['campus_manager','housekeeper'] },
       { to: '/maintenance', icon: '\u2699', label: 'Teknik Servis', roles: ['campus_manager','shift_supervisor','technical'], badge: true },
       { to: '/discipline', icon: '\u26A0', label: 'Disiplin', roles: ['campus_manager','shift_supervisor'] },
-      { to: '/shifts', icon: '\u{1F4C5}', label: 'Vardiya', roles: ['campus_manager','shift_supervisor'] },
     ]
   },
   {

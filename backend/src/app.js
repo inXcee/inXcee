@@ -8,7 +8,6 @@ import { maintenanceRouter } from './modules/maintenance/routes.js'
 import { disciplineRouter } from './modules/discipline/routes.js'
 import { selfServiceRouter } from './modules/self-service/routes.js'
 import { dashboardRouter } from './modules/dashboard/routes.js'
-import { shiftsRouter } from './modules/shifts/routes.js'
 import { roomHistoryRouter } from './modules/room-history/routes.js'
 import { authRouter } from './shared/auth/routes.js'
 import { notificationsRouter } from './shared/notifications/routes.js'
@@ -32,7 +31,6 @@ app.use('/api/maintenance', maintenanceRouter)
 app.use('/api/discipline', disciplineRouter)
 app.use('/api/self-service', selfServiceRouter)
 app.use('/api/dashboard', dashboardRouter)
-app.use('/api/shifts', shiftsRouter)
 app.use('/api/room-history', roomHistoryRouter)
 app.use('/api/notifications', notificationsRouter)
 app.use('/api/whatsapp', whatsappRouter)
