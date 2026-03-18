@@ -160,6 +160,9 @@ export function initDB() {
   // ── Improvement #8: Maintenance SLA ──
   try { db.exec('ALTER TABLE maintenance_requests ADD COLUMN sla_deadline DATETIME') } catch(_) {}
 
+  // phone_number replaces hometown usage in UI
+  try { db.exec('ALTER TABLE personnel ADD COLUMN phone_number TEXT') } catch(_) {}
+
   return db
 }
 

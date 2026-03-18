@@ -168,7 +168,7 @@ export function seedDev() {
     const deptId = (i % 8) + 1
     const daysAgo = 30 + (i % 60)
     const res = personnelInsert.run(tcNo, fullName, company, hometown, gender, deptId, daysAgo)
-    if (res.lastInsertRowid) {
+    if (res.changes > 0) {
       const pid = res.lastInsertRowid
       personnelIds.push({ id: pid, deptId, gender })
       const annualUsed = Math.floor(Math.random() * 5)

@@ -117,7 +117,16 @@ export function getRoomWithFaults(block, roomNo) {
     WHERE (location LIKE ? OR location LIKE ?)
     ORDER BY opened_at DESC
   `).all(`%${block}%${roomNo}%`, `%Oda ${roomNo}%`)
-  return { room: room || null, faults }
+  const personnel = room ? db.prepare(`
+    SELECT p.id, p.full_name, p.company, p.phone_number, ra.bed_no,
+      COALESCE(s.shift_type, 'day') as shift_type
+    FROM room_assignments ra
+    JOIN personnel p ON p.id = ra.personnel_id
+    LEFT JOIN shifts s ON s.personnel_id = p.id
+    WHERE ra.room_id = ? AND ra.check_out_at IS NULL AND p.check_out_date IS NULL
+    ORDER BY ra.bed_no
+  `).all(room.id) : []
+  return { room: room || null, faults, personnel }
 }
 
 export function toggleNoClean(roomId, value) {

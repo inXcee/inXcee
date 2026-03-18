@@ -130,7 +130,7 @@ export default function SelfServicePage() {
             <h2 className="font-medium text-slate-300">Kişisel Bilgiler</h2>
             {[
               { label: 'Şirket', value: myInfo.company },
-              { label: 'Memleket', value: myInfo.hometown },
+              { label: 'Telefon', value: myInfo.phone_number },
               { label: 'Giriş Tarihi', value: myInfo.check_in_date ? new Date(myInfo.check_in_date).toLocaleDateString('tr-TR') : '-' },
               { label: 'Disiplin Puanı', value: myInfo.discipline_points ?? 0 },
             ].map(item => (

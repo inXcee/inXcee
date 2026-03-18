@@ -11,7 +11,7 @@ export function searchByName(name) {
   const db = getDB()
   const term = `%${name}%`
   return db.prepare(`
-    SELECT p.id, p.full_name, p.company, p.hometown, p.job_title, p.tc_no,
+    SELECT p.id, p.full_name, p.company, p.phone_number, p.job_title, p.tc_no,
       p.is_blacklisted, p.blacklist_reason, p.blacklisted_at,
       ra.room_id, r.block, r.floor, r.room_no,
       s.shift_type
@@ -157,7 +157,7 @@ export function getJobDistribution() {
 export function getCompanyPersonnel(company) {
   const db = getDB()
   return db.prepare(`
-    SELECT p.id, p.full_name, p.hometown, p.tc_no, p.job_title,
+    SELECT p.id, p.full_name, p.phone_number, p.tc_no, p.job_title,
       ra.room_id, r.block, r.floor, r.room_no, ra.bed_no,
       s.shift_type, s.start_hour, s.end_hour
     FROM personnel p
@@ -194,13 +194,13 @@ export function insertPersonnel(data) {
     passport_no: data.passport_no ?? null,
     full_name: data.full_name,
     company: data.company ?? null,
-    hometown: data.hometown ?? null,
+    phone_number: data.phone_number ?? null,
     job_title: data.job_title ?? null,
     preferred_block: data.preferred_block ?? null,
   }
   const r = db.prepare(`
-    INSERT INTO personnel(tc_no,passport_no,full_name,company,hometown,job_title,preferred_block,check_in_date)
-    VALUES(@tc_no,@passport_no,@full_name,@company,@hometown,@job_title,@preferred_block,datetime('now'))
+    INSERT INTO personnel(tc_no,passport_no,full_name,company,phone_number,job_title,preferred_block,check_in_date)
+    VALUES(@tc_no,@passport_no,@full_name,@company,@phone_number,@job_title,@preferred_block,datetime('now'))
   `).run(row)
   return r.lastInsertRowid
 }

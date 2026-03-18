@@ -680,8 +680,66 @@ function RoomDetailPanel({ block, floor, roomNo, task, isPrivateBath, onComplete
           )}
         </div>
 
-        {/* ── RIGHT: Faults ── */}
+        {/* ── RIGHT: Occupants + Faults ── */}
         <div style={{ padding: '18px 20px' }}>
+
+          {/* Occupants */}
+          <div style={{ marginBottom: '16px' }}>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '2px', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              ODADAKI KİŞİLER
+              {!detailLoading && (
+                <span style={{ background: 'var(--surface3)', color: 'var(--text2)', borderRadius: '10px', padding: '1px 7px', fontSize: '9px', fontFamily: 'var(--mono)' }}>
+                  {details?.personnel?.length || 0}
+                </span>
+              )}
+            </div>
+            {detailLoading ? (
+              <div style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)' }}>Yükleniyor...</div>
+            ) : !details?.personnel?.length ? (
+              <div style={{ padding: '10px 12px', borderRadius: '7px', background: 'var(--surface2)', border: '1px solid var(--border)', fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text4)' }}>
+                Odada kimse yok
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                {details.personnel.map((p, i) => (
+                  <div key={p.id || i} style={{
+                    display: 'flex', alignItems: 'center', gap: '10px',
+                    padding: '8px 11px', borderRadius: '7px',
+                    background: 'var(--surface2)', border: '1px solid var(--border)',
+                  }}>
+                    <div style={{
+                      width: '26px', height: '26px', borderRadius: '50%', flexShrink: 0,
+                      background: p.shift_type === 'night' ? 'rgba(99,102,241,.25)' : 'rgba(240,165,0,.2)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontFamily: 'var(--display)', fontSize: '11px',
+                      color: p.shift_type === 'night' ? 'var(--purple)' : 'var(--accent)',
+                    }}>
+                      {p.full_name.charAt(0).toUpperCase()}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {p.full_name}
+                      </div>
+                      <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text3)', marginTop: '1px', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                        {p.company && <span>{p.company}</span>}
+                        {p.phone_number && <span style={{ color: 'var(--teal)' }}>📞 {p.phone_number}</span>}
+                      </div>
+                    </div>
+                    <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
+                      <span style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text4)', background: 'var(--surface3)', borderRadius: '3px', padding: '1px 5px' }}>
+                        YATAK {p.bed_no}
+                      </span>
+                      <span style={{ fontFamily: 'var(--mono)', fontSize: '7px', color: p.shift_type === 'night' ? 'var(--purple)' : 'var(--accent)' }}>
+                        {p.shift_type === 'night' ? '☾ GECE' : '☀ GÜNDÜZ'}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div style={{ borderTop: '1px solid var(--border)', marginBottom: '14px' }} />
 
           {/* Faults header */}
           {(() => {
@@ -754,9 +812,6 @@ function RoomDetailPanel({ block, floor, roomNo, task, isPrivateBath, onComplete
               )}
             </>)
           })()}
-
-          {/* Divider */}
-          <div style={{ borderTop: '1px solid var(--border)', marginBottom: '14px' }} />
 
           {/* Report fault */}
           <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '2px', marginBottom: '10px' }}>ARIZA BİLDİR</div>

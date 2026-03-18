@@ -405,7 +405,7 @@ export default function CheckinPage() {
   const [nameSearching, setNameSearching] = useState(false)
   const [foundPerson, setFoundPerson] = useState(null)
   const [blacklistPerson, setBlacklistPerson] = useState(null)
-  const [formData, setFormData] = useState({ full_name: '', company: '', job_title: '', preferred_block: '' })
+  const [formData, setFormData] = useState({ full_name: '', company: '', job_title: '', preferred_block: '', phone_number: '' })
   const [shiftType, setShiftType] = useState('day')
   const [personnelId, setPersonnelId] = useState(null)
   const [suggestedRoom, setSuggestedRoom] = useState(null)
@@ -507,7 +507,7 @@ export default function CheckinPage() {
 
   const resetFlow = () => {
     setStep(0); setTcNo(''); setPassportNo(''); setNameSearch(''); setNameResults([])
-    setFoundPerson(null); setFormData({ full_name: '', company: '', job_title: '', preferred_block: '' })
+    setFoundPerson(null); setFormData({ full_name: '', company: '', job_title: '', preferred_block: '', phone_number: '' })
     setShiftType('day'); setPersonnelId(null); setSuggestedRoom(null); setSelectedRoom(null)
     setAssignedBed(null); setError('')
   }
@@ -645,6 +645,11 @@ export default function CheckinPage() {
                   suggestions={companyNames} placeholder="Firma adı yazın..." />
                 <AutoInput label="Meslek / Ne İşçisi" value={formData.job_title} onChange={v => setFormData(p => ({ ...p, job_title: v }))}
                   suggestions={jobNames} placeholder="Kalıpçı, Elektrikçi, Boyacı..." />
+                <div>
+                  <label className="form-label">Telefon Numarası</label>
+                  <input value={formData.phone_number} onChange={e => setFormData(p => ({ ...p, phone_number: e.target.value }))}
+                    className="form-input" placeholder="05XX XXX XX XX" type="tel" />
+                </div>
 
                 {/* Shift */}
                 <div>

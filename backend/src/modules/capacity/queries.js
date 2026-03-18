@@ -38,7 +38,7 @@ export function getRooms({ block, floor, status } = {}) {
 export function getRoomPersonnel(roomId) {
   const db = getDB()
   return db.prepare(`
-    SELECT p.id, p.full_name, p.company, p.hometown, ra.bed_no, ra.assigned_at,
+    SELECT p.id, p.full_name, p.company, p.phone_number, ra.bed_no, ra.assigned_at,
       COALESCE(s.shift_type, 'day') as shift_type
     FROM room_assignments ra
     JOIN personnel p ON p.id=ra.personnel_id
@@ -91,7 +91,7 @@ export function searchPersonnel(q) {
   const db = getDB()
   const term = `%${q}%`
   return db.prepare(`
-    SELECT p.id, p.full_name, p.company, p.hometown, p.tc_no,
+    SELECT p.id, p.full_name, p.company, p.phone_number, p.tc_no,
       ra.room_id, r.block, r.floor, r.room_no
     FROM personnel p
     LEFT JOIN room_assignments ra ON ra.personnel_id=p.id AND ra.check_out_at IS NULL
@@ -104,7 +104,7 @@ export function searchPersonnel(q) {
 export function getUnassignedPersonnel(search) {
   const db = getDB()
   let q = `
-    SELECT p.id, p.full_name, p.company, p.hometown, p.tc_no, p.check_in_date
+    SELECT p.id, p.full_name, p.company, p.phone_number, p.tc_no, p.check_in_date
     FROM personnel p
     LEFT JOIN room_assignments ra ON ra.personnel_id=p.id AND ra.check_out_at IS NULL
     WHERE p.check_out_date IS NULL AND ra.id IS NULL

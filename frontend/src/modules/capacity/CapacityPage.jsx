@@ -334,7 +334,7 @@ function RoomDetailPanel({ room, onClose, onRoomUpdated }) {
                   <tr>
                     <th>AD SOYAD</th>
                     <th>FİRMA</th>
-                    <th>MEMLEKET</th>
+                    <th>TELEFON</th>
                     <th>VARDİYA</th>
                     <th>YATAK</th>
                     <th>ATANMA</th>
@@ -346,7 +346,7 @@ function RoomDetailPanel({ room, onClose, onRoomUpdated }) {
                     <tr key={p.id || i}>
                       <td style={{ fontWeight: 600, fontSize: '13px' }}>{p.full_name}</td>
                       <td style={{ fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--text2)' }}>{p.company || '—'}</td>
-                      <td style={{ fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--text2)' }}>{p.hometown || '—'}</td>
+                      <td style={{ fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--text2)' }}>{p.phone_number || '—'}</td>
                       <td>
                         <span className={`badge badge-${p.shift_type === 'night' ? 'purple' : 'amber'}`} style={{ fontSize: '8px' }}>
                           {p.shift_type === 'night' ? '☾ GECE' : '☀ GÜNDÜZ'}
@@ -411,7 +411,7 @@ function RoomDetailPanel({ room, onClose, onRoomUpdated }) {
                       <div style={{ flex: 1 }}>
                         <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)' }}>{p.full_name}</div>
                         <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', marginTop: '2px' }}>
-                          {p.company || '—'} · {p.hometown || '—'}
+                          {p.company || '—'} · {p.phone_number || '—'}
                           {p.room_no && (
                             <span style={{ color: 'var(--accent)', marginLeft: '6px' }}>
                               ⚠ Şu an: {p.block} {p.room_no}
@@ -1001,7 +1001,7 @@ function UnassignedPool({ selectedRoom, onAssigned }) {
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: '13px', fontWeight: 600 }}>{p.full_name}</div>
                     <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', marginTop: '1px' }}>
-                      {p.company || '—'} · {p.hometown || '—'}
+                      {p.company || '—'} · {p.phone_number || '—'}
                       {p.check_in_date && (
                         <span style={{ marginLeft: '6px' }}>
                           giriş: {new Date(p.check_in_date).toLocaleDateString('tr-TR')}

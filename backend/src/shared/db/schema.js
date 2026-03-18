@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS personnel (
   full_name TEXT NOT NULL,
   company TEXT,
   hometown TEXT,
+  phone_number TEXT,
   preferred_block TEXT,
   is_blacklisted INTEGER DEFAULT 0,
   blacklist_reason TEXT,
