@@ -1,5 +1,6 @@
 import express from 'express'
 import cors from 'cors'
+import rateLimit from 'express-rate-limit'
 import { checkinRouter } from './modules/checkin/routes.js'
 import { capacityRouter } from './modules/capacity/routes.js'
 import { laundryRouter } from './modules/laundry/routes.js'
@@ -9,6 +10,7 @@ import { disciplineRouter } from './modules/discipline/routes.js'
 import { selfServiceRouter } from './modules/self-service/routes.js'
 import { dashboardRouter } from './modules/dashboard/routes.js'
 import { roomHistoryRouter } from './modules/room-history/routes.js'
+import { shiftsRouter } from './modules/shifts/routes.js'
 import { authRouter } from './shared/auth/routes.js'
 import { notificationsRouter } from './shared/notifications/routes.js'
 import { whatsappRouter } from './shared/whatsapp/routes.js'
@@ -22,7 +24,14 @@ app.use(cors({
 app.use(express.json())
 app.use('/uploads', express.static('uploads'))
 
-app.use('/api/auth', authRouter)
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  message: { error: 'Çok fazla giriş denemesi. 15 dakika sonra tekrar deneyin.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+})
+app.use('/api/auth', authLimiter, authRouter)
 app.use('/api/checkin', checkinRouter)
 app.use('/api/capacity', capacityRouter)
 app.use('/api/laundry', laundryRouter)
@@ -34,5 +43,6 @@ app.use('/api/dashboard', dashboardRouter)
 app.use('/api/room-history', roomHistoryRouter)
 app.use('/api/notifications', notificationsRouter)
 app.use('/api/whatsapp', whatsappRouter)
+app.use('/api/shifts', shiftsRouter)
 
 export default app

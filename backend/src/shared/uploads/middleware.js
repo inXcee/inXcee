@@ -13,4 +13,14 @@ const storage = multer.diskStorage({
   }
 })
 
-export const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 } })
+const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+
+function fileFilter(req, file, cb) {
+  if (allowedMimeTypes.includes(file.mimetype)) {
+    cb(null, true)
+  } else {
+    cb(new Error('Sadece resim dosyalari yuklenebilir (JPEG, PNG, GIF, WebP)'))
+  }
+}
+
+export const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 }, fileFilter })

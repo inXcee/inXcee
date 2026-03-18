@@ -7,52 +7,53 @@ export const housekeepingRouter = Router()
 const hkAccess = requireRole('campus_manager', 'housekeeper')
 
 housekeepingRouter.get('/tasks', ...hkAccess, (req, res) => {
-  res.json(svc.getTasksService(req.query))
+  try { res.json(svc.getTasksService(req.query)) }
+  catch (e) { res.status(500).json({ error: e.message }) }
 })
 
 housekeepingRouter.post('/tasks/generate-daily', ...hkAccess, (req, res) => {
-  const count = svc.generateDailyTasksService()
-  res.status(201).json({ count })
+  try { const count = svc.generateDailyTasksService(); res.status(201).json({ count }) }
+  catch (e) { res.status(400).json({ error: e.message }) }
 })
 
 housekeepingRouter.post('/tasks/complete-floor', ...hkAccess, (req, res) => {
-  const { block, floor, date } = req.body
-  svc.completeFloorTasksService(block, +floor, date, req.user.id)
-  res.json({ ok: true })
+  try { const { block, floor, date } = req.body; svc.completeFloorTasksService(block, +floor, date, req.user.id); res.json({ ok: true }) }
+  catch (e) { res.status(400).json({ error: e.message }) }
 })
 
 housekeepingRouter.post('/tasks/:id/complete', ...hkAccess, (req, res) => {
-  svc.completeTaskService(+req.params.id, req.user.id, req.body.checklist || null)
-  res.json({ ok: true })
+  try { svc.completeTaskService(+req.params.id, req.user.id, req.body.checklist || null); res.json({ ok: true }) }
+  catch (e) { res.status(400).json({ error: e.message }) }
 })
 
 housekeepingRouter.patch('/tasks/:id/uncomplete', ...hkAccess, (req, res) => {
-  svc.uncompleteTaskService(+req.params.id)
-  res.json({ ok: true })
+  try { svc.uncompleteTaskService(+req.params.id); res.json({ ok: true }) }
+  catch (e) { res.status(400).json({ error: e.message }) }
 })
 
 housekeepingRouter.patch('/tasks/:id/skip', ...hkAccess, (req, res) => {
-  svc.skipTaskService(+req.params.id, req.body.reason, req.user.id)
-  res.json({ ok: true })
+  try { svc.skipTaskService(+req.params.id, req.body.reason, req.user.id); res.json({ ok: true }) }
+  catch (e) { res.status(400).json({ error: e.message }) }
 })
 
 housekeepingRouter.patch('/tasks/:id/unskip', ...hkAccess, (req, res) => {
-  svc.unskipTaskService(+req.params.id)
-  res.json({ ok: true })
+  try { svc.unskipTaskService(+req.params.id); res.json({ ok: true }) }
+  catch (e) { res.status(400).json({ error: e.message }) }
 })
 
 housekeepingRouter.get('/room-details', ...hkAccess, (req, res) => {
-  res.json(svc.getRoomWithFaultsService(req.query.block, req.query.room_no))
+  try { res.json(svc.getRoomWithFaultsService(req.query.block, req.query.room_no)) }
+  catch (e) { res.status(500).json({ error: e.message }) }
 })
 
 housekeepingRouter.patch('/rooms/:id/no-clean', ...hkAccess, (req, res) => {
-  svc.toggleNoCleanService(+req.params.id, req.body.no_clean)
-  res.json({ ok: true })
+  try { svc.toggleNoCleanService(+req.params.id, req.body.no_clean); res.json({ ok: true }) }
+  catch (e) { res.status(400).json({ error: e.message }) }
 })
 
 housekeepingRouter.patch('/rooms/:id/notes', ...hkAccess, (req, res) => {
-  svc.updateRoomNotesService(+req.params.id, req.body.notes ?? null)
-  res.json({ ok: true })
+  try { svc.updateRoomNotesService(+req.params.id, req.body.notes ?? null); res.json({ ok: true }) }
+  catch (e) { res.status(400).json({ error: e.message }) }
 })
 
 housekeepingRouter.post('/fault-report', ...hkAccess, upload.single('photo'), (req, res) => {
@@ -64,14 +65,16 @@ housekeepingRouter.post('/fault-report', ...hkAccess, upload.single('photo'), (r
 })
 
 housekeepingRouter.get('/dnd-rooms', ...hkAccess, (req, res) => {
-  res.json(svc.getDNDRoomsService())
+  try { res.json(svc.getDNDRoomsService()) }
+  catch (e) { res.status(500).json({ error: e.message }) }
 })
 
 // ── Cleaning Staff ───────────────────────────────────────────────────────────
 const staffAccess = requireRole('campus_manager', 'shift_supervisor', 'housekeeper')
 
 housekeepingRouter.get('/staff', ...staffAccess, (req, res) => {
-  res.json(svc.getStaffService(req.query.block))
+  try { res.json(svc.getStaffService(req.query.block)) }
+  catch (e) { res.status(500).json({ error: e.message }) }
 })
 
 housekeepingRouter.post('/staff', ...staffAccess, (req, res) => {
@@ -82,11 +85,11 @@ housekeepingRouter.post('/staff', ...staffAccess, (req, res) => {
 })
 
 housekeepingRouter.put('/staff/:id', ...staffAccess, (req, res) => {
-  svc.updateStaffService(+req.params.id, req.body)
-  res.json({ ok: true })
+  try { svc.updateStaffService(+req.params.id, req.body); res.json({ ok: true }) }
+  catch (e) { res.status(400).json({ error: e.message }) }
 })
 
 housekeepingRouter.delete('/staff/:id', ...staffAccess, (req, res) => {
-  svc.deleteStaffService(+req.params.id)
-  res.json({ ok: true })
+  try { svc.deleteStaffService(+req.params.id); res.json({ ok: true }) }
+  catch (e) { res.status(400).json({ error: e.message }) }
 })

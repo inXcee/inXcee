@@ -37,7 +37,8 @@ laundryRouter.post('/machines/:id/finish', ...laundryAccess, (req, res) => {
 })
 
 laundryRouter.get('/distribution-route', ...laundryAccess, (req, res) => {
-  res.json(svc.getDistributionRouteService())
+  try { res.json(svc.getDistributionRouteService()) }
+  catch (e) { res.status(500).json({ error: e.message }) }
 })
 
 laundryRouter.post('/bags/:id/distribute', ...laundryAccess, (req, res) => {

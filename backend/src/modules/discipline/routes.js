@@ -45,7 +45,8 @@ disciplineRouter.delete('/records/:id', ...requireRole('campus_manager'), (req, 
 })
 
 disciplineRouter.get('/records/:personnelId', ...mgmt, (req, res) => {
-  res.json(svc.getRecordsService(+req.params.personnelId))
+  try { res.json(svc.getRecordsService(+req.params.personnelId)) }
+  catch (e) { res.status(500).json({ error: e.message }) }
 })
 
 // ── Blacklist ───────────────────────────────────────────────────────────────
@@ -64,15 +65,18 @@ disciplineRouter.post('/blacklist/remove', ...requireRole('campus_manager'), (re
 })
 
 disciplineRouter.get('/blacklisted', ...mgmt, (req, res) => {
-  res.json(svc.getBlacklistedService())
+  try { res.json(svc.getBlacklistedService()) }
+  catch (e) { res.status(500).json({ error: e.message }) }
 })
 
 // ── Stats & Suggestions ────────────────────────────────────────────────────
 
 disciplineRouter.get('/stats', ...mgmt, (req, res) => {
-  res.json(svc.getStatsService())
+  try { res.json(svc.getStatsService()) }
+  catch (e) { res.status(500).json({ error: e.message }) }
 })
 
 disciplineRouter.get('/reason-suggestions', ...mgmt, (req, res) => {
-  res.json(svc.getReasonSuggestionsService())
+  try { res.json(svc.getReasonSuggestionsService()) }
+  catch (e) { res.status(500).json({ error: e.message }) }
 })

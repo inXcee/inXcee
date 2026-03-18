@@ -59,7 +59,7 @@ export function deleteRecord(recordId) {
   const points = rec.card_type === 'red' ? 2 : 1
   const tx = db.transaction(() => {
     db.prepare('DELETE FROM discipline_records WHERE id=?').run(recordId)
-    db.prepare('UPDATE personnel SET discipline_points=MAX(0, discipline_points-?) WHERE id=?').run(points, rec.personnel_id)
+    db.prepare('UPDATE personnel SET discipline_points=CASE WHEN discipline_points-? < 0 THEN 0 ELSE discipline_points-? END WHERE id=?').run(points, points, rec.personnel_id)
   })
   tx()
 }

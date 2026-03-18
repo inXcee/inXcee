@@ -6,15 +6,18 @@ export const capacityRouter = Router()
 const mgmt = requireRole('campus_manager', 'shift_supervisor')
 
 capacityRouter.get('/rooms', ...mgmt, (req, res) => {
-  res.json(svc.getRoomsService(req.query))
+  try { res.json(svc.getRoomsService(req.query)) }
+  catch (e) { res.status(500).json({ error: e.message }) }
 })
 
 capacityRouter.get('/rooms/:id/personnel', ...mgmt, (req, res) => {
-  res.json(svc.getRoomPersonnelService(+req.params.id))
+  try { res.json(svc.getRoomPersonnelService(+req.params.id)) }
+  catch (e) { res.status(500).json({ error: e.message }) }
 })
 
 capacityRouter.get('/block/:block/personnel', ...mgmt, (req, res) => {
-  res.json(svc.getBlockPersonnelService(req.params.block))
+  try { res.json(svc.getBlockPersonnelService(req.params.block)) }
+  catch (e) { res.status(500).json({ error: e.message }) }
 })
 
 capacityRouter.patch('/rooms/:id/beds', ...requireRole('campus_manager'), (req, res) => {
@@ -32,17 +35,18 @@ capacityRouter.patch('/rooms/:id/status', ...requireRole('campus_manager'), (req
 })
 
 capacityRouter.patch('/rooms/:id/notes', ...mgmt, (req, res) => {
-  svc.updateRoomNotesService(+req.params.id, req.body.notes ?? null)
-  res.json({ ok: true })
+  try { svc.updateRoomNotesService(+req.params.id, req.body.notes ?? null); res.json({ ok: true }) }
+  catch (e) { res.status(500).json({ error: e.message }) }
 })
 
 capacityRouter.get('/personnel/search', ...mgmt, (req, res) => {
-  res.json(svc.searchPersonnelService(req.query.q || ''))
+  try { res.json(svc.searchPersonnelService(req.query.q || '')) }
+  catch (e) { res.status(500).json({ error: e.message }) }
 })
 
 capacityRouter.patch('/floor-supervisor', ...requireRole('campus_manager'), (req, res) => {
-  svc.updateFloorSupervisorService(req.body.block, req.body.floor, req.body.user_id)
-  res.json({ ok: true })
+  try { svc.updateFloorSupervisorService(req.body.block, req.body.floor, req.body.user_id); res.json({ ok: true }) }
+  catch (e) { res.status(500).json({ error: e.message }) }
 })
 
 capacityRouter.post('/reassign', ...mgmt, (req, res) => {
@@ -64,7 +68,8 @@ capacityRouter.post('/remove-from-room', ...mgmt, (req, res) => {
 // ── Unassigned Personnel ──────────────────────────────────────────────────────
 
 capacityRouter.get('/unassigned', ...mgmt, (req, res) => {
-  res.json(svc.getUnassignedPersonnelService(req.query.q || null))
+  try { res.json(svc.getUnassignedPersonnelService(req.query.q || null)) }
+  catch (e) { res.status(500).json({ error: e.message }) }
 })
 
 capacityRouter.post('/bulk/assign', ...mgmt, (req, res) => {

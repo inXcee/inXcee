@@ -28,7 +28,8 @@ maintenanceRouter.post('/requests', ...techAccess, upload.single('photo_before')
 })
 
 maintenanceRouter.get('/requests', ...techAccess, (req, res) => {
-  res.json(svc.getRequestsService(req.query))
+  try { res.json(svc.getRequestsService(req.query)) }
+  catch (e) { res.status(500).json({ error: e.message }) }
 })
 
 maintenanceRouter.get('/requests/:id', ...techAccess, (req, res) => {
@@ -38,13 +39,13 @@ maintenanceRouter.get('/requests/:id', ...techAccess, (req, res) => {
 })
 
 maintenanceRouter.patch('/requests/:id/wait-reason', ...techAccess, (req, res) => {
-  svc.updateWaitReasonService(+req.params.id, req.body.wait_reason)
-  res.json({ ok: true })
+  try { svc.updateWaitReasonService(+req.params.id, req.body.wait_reason); res.json({ ok: true }) }
+  catch (e) { res.status(400).json({ error: e.message }) }
 })
 
 maintenanceRouter.patch('/requests/:id/priority', ...techAccess, (req, res) => {
-  svc.updateRequestPriorityService(+req.params.id, req.body.priority)
-  res.json({ ok: true })
+  try { svc.updateRequestPriorityService(+req.params.id, req.body.priority); res.json({ ok: true }) }
+  catch (e) { res.status(400).json({ error: e.message }) }
 })
 
 maintenanceRouter.patch('/requests/:id/close', ...techAccess, upload.single('photo'), (req, res) => {
@@ -54,35 +55,39 @@ maintenanceRouter.patch('/requests/:id/close', ...techAccess, upload.single('pho
 })
 
 maintenanceRouter.patch('/requests/:id/reopen', ...techAccess, (req, res) => {
-  svc.reopenRequestService(+req.params.id)
-  res.json({ ok: true })
+  try { svc.reopenRequestService(+req.params.id); res.json({ ok: true }) }
+  catch (e) { res.status(400).json({ error: e.message }) }
 })
 
 maintenanceRouter.delete('/requests/:id', ...requireRole('campus_manager'), (req, res) => {
-  svc.deleteRequestService(+req.params.id)
-  res.json({ ok: true })
+  try { svc.deleteRequestService(+req.params.id); res.json({ ok: true }) }
+  catch (e) { res.status(400).json({ error: e.message }) }
 })
 
 // ── Stats ────────────────────────────────────────────────────────────────────
 
 maintenanceRouter.get('/stats', ...techAccess, (req, res) => {
-  res.json(svc.getStatsService())
+  try { res.json(svc.getStatsService()) }
+  catch (e) { res.status(500).json({ error: e.message }) }
 })
 
 // ── Location suggestions ────────────────────────────────────────────────────
 
 maintenanceRouter.get('/location-suggestions', ...techAccess, (req, res) => {
-  res.json(svc.getLocationSuggestionsService())
+  try { res.json(svc.getLocationSuggestionsService()) }
+  catch (e) { res.status(500).json({ error: e.message }) }
 })
 
 // ── Technicians ──────────────────────────────────────────────────────────────
 
 maintenanceRouter.get('/technicians', ...techAccess, (req, res) => {
-  res.json(svc.getTechniciansService())
+  try { res.json(svc.getTechniciansService()) }
+  catch (e) { res.status(500).json({ error: e.message }) }
 })
 
 maintenanceRouter.get('/technicians/available', ...techAccess, (req, res) => {
-  res.json(svc.getAvailableTechniciansService())
+  try { res.json(svc.getAvailableTechniciansService()) }
+  catch (e) { res.status(500).json({ error: e.message }) }
 })
 
 maintenanceRouter.post('/technicians', ...requireRole('campus_manager', 'technical'), (req, res) => {
@@ -93,23 +98,26 @@ maintenanceRouter.post('/technicians', ...requireRole('campus_manager', 'technic
 })
 
 maintenanceRouter.put('/technicians/:id', ...requireRole('campus_manager', 'technical'), (req, res) => {
-  svc.updateTechnicianService(+req.params.id, req.body)
-  res.json({ ok: true })
+  try { svc.updateTechnicianService(+req.params.id, req.body); res.json({ ok: true }) }
+  catch (e) { res.status(400).json({ error: e.message }) }
 })
 
 maintenanceRouter.delete('/technicians/:id', ...requireRole('campus_manager', 'technical'), (req, res) => {
-  svc.deleteTechnicianService(+req.params.id)
-  res.json({ ok: true })
+  try { svc.deleteTechnicianService(+req.params.id); res.json({ ok: true }) }
+  catch (e) { res.status(400).json({ error: e.message }) }
 })
 
 // ── Comments ─────────────────────────────────────────────────────────────────
 
 maintenanceRouter.get('/requests/:id/comments', ...techAccess, (req, res) => {
-  res.json(svc.getCommentsService(+req.params.id))
+  try { res.json(svc.getCommentsService(+req.params.id)) }
+  catch (e) { res.status(500).json({ error: e.message }) }
 })
 
 maintenanceRouter.post('/requests/:id/comments', ...techAccess, upload.single('photo'), (req, res) => {
-  const photoUrl = req.file ? `/uploads/${req.file.filename}` : null
-  const id = svc.addCommentService(+req.params.id, req.user.id, req.body.comment, photoUrl)
-  res.status(201).json({ id })
+  try {
+    const photoUrl = req.file ? `/uploads/${req.file.filename}` : null
+    const id = svc.addCommentService(+req.params.id, req.user.id, req.body.comment, photoUrl)
+    res.status(201).json({ id })
+  } catch (e) { res.status(400).json({ error: e.message }) }
 })

@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS personnel (
   blacklisted_by INTEGER REFERENCES users(id),
   discipline_points INTEGER DEFAULT 0,
   gender TEXT CHECK(gender IN ('male','female')),
+  job_title TEXT,
   department_id INTEGER REFERENCES departments(id),
   check_in_date DATETIME,
   check_out_date DATETIME,
@@ -41,6 +42,8 @@ CREATE TABLE IF NOT EXISTS rooms (
   capacity INTEGER NOT NULL,
   active_beds INTEGER NOT NULL,
   status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','quarantine','maintenance')),
+  no_clean INTEGER DEFAULT 0,
+  notes TEXT,
   floor_supervisor_id INTEGER REFERENCES users(id),
   UNIQUE(block, room_no),
   CHECK(CASE WHEN block='S2' AND floor=2 THEN capacity<=4 ELSE capacity<=6 END),
@@ -76,6 +79,8 @@ CREATE TABLE IF NOT EXISTS zimmet (
   quantity INTEGER DEFAULT 1,
   digital_signature TEXT,
   signed_at DATETIME,
+  returned_at DATETIME,
+  return_condition TEXT,
   created_by INTEGER REFERENCES users(id),
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -115,6 +120,7 @@ CREATE TABLE IF NOT EXISTS maintenance_requests (
   photo_before TEXT,
   photo_url TEXT,
   wait_reason TEXT,
+  sla_deadline DATETIME,
   opened_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   closed_at DATETIME
 );
@@ -290,4 +296,27 @@ CREATE TABLE IF NOT EXISTS attendance_logs (
   check_out_at DATETIME,
   actual_hours REAL
 );
+
+-- -------------------------------------------------------
+-- AUDIT LOG
+-- -------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS audit_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER REFERENCES users(id),
+  action TEXT NOT NULL,
+  module TEXT,
+  target_id INTEGER,
+  detail TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- -------------------------------------------------------
+-- INDEXES
+-- -------------------------------------------------------
+
+CREATE INDEX IF NOT EXISTS idx_personnel_checkout ON personnel(check_out_date);
+CREATE INDEX IF NOT EXISTS idx_maintenance_status ON maintenance_requests(status);
+CREATE INDEX IF NOT EXISTS idx_maintenance_location ON maintenance_requests(location);
+CREATE INDEX IF NOT EXISTS idx_cleaning_tasks_date ON cleaning_tasks(scheduled_at);
 `

@@ -8,7 +8,7 @@ export function startCronJobs() {
   cron.schedule('50 5 * * *', () => {
     try {
       const count = generateDailyTasks()
-      console.log(`[Cron] ${count} temizlik görevi oluşturuldu`)
+      // daily task generation completed
     } catch (e) { console.error('[Cron] Temizlik görev hatası:', e) }
   })
 
@@ -26,5 +26,5 @@ export function startCronJobs() {
     } catch (e) { console.error('[Cron] Stok cron hatası:', e) }
   })
 
-  console.log('[Cron] Zamanlayıcılar başlatıldı')
+  // cron jobs initialized
 }
