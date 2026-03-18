@@ -237,6 +237,23 @@ function RoomTile({ rno, task, roomInfo, isDnd, dndInfo, isM, isS2Floor2, select
   )
 }
 
+// ── Facility Cell (M blocks — shared WC/shower) ──────────────────────────────
+function FacilityCell({ type, height = 74 }) {
+  const isWC = type === 'WC'
+  return (
+    <div style={{
+      height, width: '34px', flexShrink: 0, display: 'flex', flexDirection: 'column',
+      alignItems: 'center', justifyContent: 'center', gap: '2px',
+      background: isWC ? 'rgba(59,140,240,.08)' : 'rgba(26,188,156,.08)',
+      border: `1px solid ${isWC ? 'rgba(59,140,240,.25)' : 'rgba(26,188,156,.25)'}`,
+      borderRadius: '5px',
+    }}>
+      <span style={{ fontSize: '11px' }}>{isWC ? '🚽' : '🚿'}</span>
+      <span style={{ fontFamily: 'var(--mono)', fontSize: '5.5px', letterSpacing: '0.3px', color: isWC ? 'var(--blue)' : 'var(--teal)', fontWeight: 700 }}>{type}</span>
+    </div>
+  )
+}
+
 // ── Ortak Alan Card (M blocks) ────────────────────────────────────────────────
 function OrtakAlanCard({ task, onComplete, onUncomplete, onSkip }) {
   const [showSkip, setShowSkip] = useState(false)
@@ -1010,6 +1027,7 @@ function BlockFloorView({ block, floor, tasks, dndRooms, blockRooms, selectedRoo
             {/* SOL — odd */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '4px' }}>
               <div style={{ width: '44px', flexShrink: 0, textAlign: 'center', fontFamily: 'var(--mono)', fontSize: '7.5px', color: 'var(--text3)', lineHeight: 1.6 }}>SOL<br/>TEK</div>
+              {isM && <FacilityCell type="BANYO" />}
               <div style={{ display: 'flex', gap: '3px' }}>
                 {oddNos.map(n => {
                   const hasRoom = !!roomInfoMap[n]
@@ -1023,17 +1041,31 @@ function BlockFloorView({ block, floor, tasks, dndRooms, blockRooms, selectedRoo
                   )
                 })}
               </div>
+              {isM && <FacilityCell type="WC" />}
             </div>
             {/* Corridor */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px', height: '24px', margin: '4px 0' }}>
               <div style={{ width: '44px', flexShrink: 0 }} />
+              {isM && (
+                <div style={{ width: '34px', flexShrink: 0, height: '100%', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                  <div style={{ flex: 1, borderRadius: '2px', background: 'rgba(26,188,156,.12)', border: '1px solid rgba(26,188,156,.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--mono)', fontSize: '5.5px', color: 'var(--teal)' }}>BANYO</div>
+                  <div style={{ flex: 1, borderRadius: '2px', background: 'rgba(59,140,240,.12)', border: '1px solid rgba(59,140,240,.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--mono)', fontSize: '5.5px', color: 'var(--blue)' }}>WC</div>
+                </div>
+              )}
               <div style={{ flex: 1, height: '100%', background: 'linear-gradient(90deg,rgba(0,0,0,.25),rgba(35,45,63,.4),rgba(0,0,0,.25))', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <span style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text4)', letterSpacing: '6px' }}>KORİDOR</span>
               </div>
+              {isM && (
+                <div style={{ width: '34px', flexShrink: 0, height: '100%', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                  <div style={{ flex: 1, borderRadius: '2px', background: 'rgba(59,140,240,.12)', border: '1px solid rgba(59,140,240,.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--mono)', fontSize: '5.5px', color: 'var(--blue)' }}>WC</div>
+                  <div style={{ flex: 1, borderRadius: '2px', background: 'rgba(26,188,156,.12)', border: '1px solid rgba(26,188,156,.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--mono)', fontSize: '5.5px', color: 'var(--teal)' }}>BANYO</div>
+                </div>
+              )}
             </div>
             {/* SAĞ — even */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '4px' }}>
               <div style={{ width: '44px', flexShrink: 0, textAlign: 'center', fontFamily: 'var(--mono)', fontSize: '7.5px', color: 'var(--text3)', lineHeight: 1.6 }}>SAĞ<br/>ÇİFT</div>
+              {isM && <FacilityCell type="WC" />}
               <div style={{ display: 'flex', gap: '3px' }}>
                 {evenNos.map(n => {
                   const hasRoom = !!roomInfoMap[n]
@@ -1047,6 +1079,7 @@ function BlockFloorView({ block, floor, tasks, dndRooms, blockRooms, selectedRoo
                   )
                 })}
               </div>
+              {isM && <FacilityCell type="BANYO" />}
             </div>
           </div>
         </div>

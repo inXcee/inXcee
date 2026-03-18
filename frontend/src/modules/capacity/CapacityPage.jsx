@@ -29,12 +29,13 @@ function RoomCell({ room, selected, onClick, defaultCap }) {
   const cls = roomCls(room, defaultCap)
   const isDND = room.is_dnd
   const shiftIcon = room.room_shift === 'night' ? '☾' : room.room_shift === 'day' ? '☀' : ''
+  const isS = room.block && !room.block.startsWith('M')
 
   return (
     <div
       className={`r-cell ${cls} ${selected ? 'r-selected' : ''}`}
       onClick={() => onClick(room)}
-      title={`Oda ${room.room_no} — ${occ}/${cap} kişi${room.room_shift ? ` · ${room.room_shift === 'night' ? 'Gece' : 'Gündüz'} vardiyası` : ''}${isDND ? ' · DND' : ''}`}
+      title={`Oda ${room.room_no} — ${occ}/${cap} kişi${room.room_shift ? ` · ${room.room_shift === 'night' ? 'Gece' : 'Gündüz'} vardiyası` : ''}${isDND ? ' · DND' : ''}${isS ? ' · Özel banyo' : ''}`}
       style={{
         width: '56px', height: '68px', aspectRatio: 'unset',
         flexDirection: 'column', gap: '2px', flexShrink: 0,
@@ -50,6 +51,12 @@ function RoomCell({ room, selected, onClick, defaultCap }) {
           padding: '1px 3px', borderRadius: '3px', fontFamily: 'var(--mono)',
           letterSpacing: '0.5px', lineHeight: 1.2,
         }}>DND</div>
+      )}
+      {isS && (
+        <div style={{
+          position: 'absolute', bottom: '3px', right: '3px',
+          fontSize: '9px', lineHeight: 1, opacity: 0.7,
+        }} title="Özel banyo + tuvalet">🚿</div>
       )}
       <div style={{ fontFamily: 'var(--mono)', fontSize: '11px', fontWeight: 700, lineHeight: 1 }}>
         {room.room_no}
