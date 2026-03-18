@@ -15,7 +15,11 @@ import { notificationsRouter } from './shared/notifications/routes.js'
 import { whatsappRouter } from './shared/whatsapp/routes.js'
 
 const app = express()
-app.use(cors({ origin: process.env.VERCEL ? true : ['http://localhost:5173', 'http://localhost:5174'] }))
+app.use(cors({
+  origin: process.env.NODE_ENV === 'production'
+    ? true
+    : ['http://localhost:5173', 'http://localhost:5174']
+}))
 app.use(express.json())
 app.use('/uploads', express.static('uploads'))
 

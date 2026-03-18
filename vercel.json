@@ -1,9 +1,9 @@
 {
+  "installCommand": "cd frontend && npm install",
   "buildCommand": "cd frontend && npm run build",
   "outputDirectory": "frontend/dist",
-  "installCommand": "npm install",
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api" },
+    { "source": "/api/(.*)", "destination": "https://inxcee-backend.onrender.com/api/$1" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]
 }

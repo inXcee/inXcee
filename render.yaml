@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: inxcee-backend
+    runtime: node
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: node src/server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DB_PATH
+        value: /tmp/yys.db
+      - key: JWT_SECRET
+        value: yys-render-secret-2026
+    autoDeploy: true
