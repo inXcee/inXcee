@@ -209,8 +209,8 @@ function RoomTile({ rno, task, roomInfo, isDnd, dndInfo, isM, isS2Floor2, select
       {/* DND badge */}
       {isDnd && !isDone && (
         <div style={{ position: 'absolute', top: '5px', left: '3px', fontFamily: 'var(--mono)', fontSize: '5px', color: 'var(--accent)', background: 'rgba(240,165,0,.3)', borderRadius: '2px', padding: '0 2px', lineHeight: 1.5 }}
-          title={dndInfo?.dnd_reason === 'night_sleeping' ? 'Gece vardiyası uyuyor' : dndInfo?.dnd_reason === 'day_sleeping' ? 'Gündüz vardiyası uyuyor' : 'DND'}
-        >{dndInfo?.shift_type === 'night' ? '☾DND' : 'DND'}</div>
+          title="Gece vardiyası uyuyor"
+        >☾DND</div>
       )}
       {/* noClean badge */}
       {noClean && !isDone && (
@@ -869,7 +869,7 @@ function BlockFloorView({ block, floor, tasks, dndRooms, blockRooms, selectedRoo
   blockRooms.filter(r => r.floor === floor).forEach(r => { roomInfoMap[r.room_no] = r })
 
   const floorDnd = dndRooms.filter(r => r.block === block && r.floor === floor)
-  const dndSet = new Set(floorDnd.map(r => r.room_no))
+  const dndSet = new Set(floorDnd.filter(r => r.occupied_count > 0).map(r => r.room_no))
   const dndMap = {}
   floorDnd.forEach(r => { dndMap[r.room_no] = r })
 
@@ -926,28 +926,22 @@ function BlockFloorView({ block, floor, tasks, dndRooms, blockRooms, selectedRoo
         </div>
       )}
 
-      {dndSet.size > 0 && (() => {
-        const nightDnd = floorDnd.filter(r => r.shift_type === 'night')
-        const dayDnd = floorDnd.filter(r => r.shift_type === 'day' || !r.shift_type)
-        return (
-          <div className="alert alert-warn" style={{ marginBottom: '10px' }}>
-            <span>🚫</span>
-            <div>
-              <strong>{dndSet.size} oda DND</strong>
-              {nightDnd.length > 0 && (
-                <div style={{ fontFamily: 'var(--mono)', fontSize: '10px', marginTop: '2px' }}>
-                  ☾ Gece vardiyası uyuyor: {nightDnd.map(r => r.room_no).sort().join(', ')}
-                </div>
-              )}
-              {dayDnd.length > 0 && (
-                <div style={{ fontFamily: 'var(--mono)', fontSize: '10px', marginTop: '2px' }}>
-                  ☀ Gündüz vardiyası uyuyor: {dayDnd.map(r => r.room_no).sort().join(', ')}
-                </div>
-              )}
+      {dndSet.size > 0 && (
+        <div className="alert alert-warn" style={{ marginBottom: '10px' }}>
+          <span>🚫</span>
+          <div>
+            <strong>{dndSet.size} oda DND</strong>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: '10px', marginTop: '2px' }}>
+              ☾ Gece vardiyası uyuyor: {floorDnd.map(r => r.room_no).sort().join(', ')}
             </div>
+            {floorDnd.some(r => r.occupied_count === 0) && (
+              <div style={{ fontFamily: 'var(--mono)', fontSize: '10px', marginTop: '2px', color: 'var(--green)' }}>
+                ✓ Boş odalar (temizlenebilir): {floorDnd.filter(r => r.occupied_count === 0).map(r => r.room_no).sort().join(', ')}
+              </div>
+            )}
           </div>
-        )
-      })()}
+        </div>
+      )}
 
       {roomTasks.length === 0 ? (
         <div className="empty-state" style={{ padding: '20px 0' }}>

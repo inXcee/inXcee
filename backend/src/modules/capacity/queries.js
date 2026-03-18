@@ -3,9 +3,8 @@ import { getDB } from '../../shared/db/index.js'
 export function getRooms({ block, floor, status } = {}) {
   const db = getDB()
   const hour = new Date().getHours()
-  // Gece vardiyası gündüz uyur (08-18), gündüz vardiyası gece uyur (20-08)
-  const nightSleeping = hour >= 8 && hour < 18
-  const daySleeping = hour >= 20 || hour < 8
+  // Sadece gece vardiyası gündüz uyur → DND 07:00–19:00
+  const nightShiftSleeping = hour >= 7 && hour < 19
   let q = `
     SELECT r.*,
       COUNT(ra.id) as occupied,
@@ -20,10 +19,7 @@ export function getRooms({ block, floor, status } = {}) {
       CASE
         WHEN COUNT(ra.id) > 0 AND (SELECT s3.shift_type FROM room_assignments ra3
           JOIN shifts s3 ON s3.personnel_id=ra3.personnel_id
-          WHERE ra3.room_id=r.id AND ra3.check_out_at IS NULL LIMIT 1) = 'night' AND ${nightSleeping ? 1 : 0} THEN 1
-        WHEN COUNT(ra.id) > 0 AND (SELECT s4.shift_type FROM room_assignments ra4
-          JOIN shifts s4 ON s4.personnel_id=ra4.personnel_id
-          WHERE ra4.room_id=r.id AND ra4.check_out_at IS NULL LIMIT 1) = 'day' AND ${daySleeping ? 1 : 0} THEN 1
+          WHERE ra3.room_id=r.id AND ra3.check_out_at IS NULL LIMIT 1) = 'night' AND ${nightShiftSleeping ? 1 : 0} THEN 1
         ELSE 0
       END as is_dnd
     FROM rooms r
