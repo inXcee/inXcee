@@ -8,18 +8,30 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [slowHint, setSlowHint] = useState(false)
   const login = useAuthStore(s => s.login)
   const navigate = useNavigate()
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    setLoading(true); setError('')
+    setLoading(true); setError(''); setSlowHint(false)
+    const slowTimer = setTimeout(() => setSlowHint(true), 4000)
     try {
       const res = await api.post('/auth/login', { username, password })
       login(res.data.token, res.data.user)
       navigate('/')
-    } catch { setError('Kullanıcı adı veya şifre hatalı') }
-    finally { setLoading(false) }
+    } catch (err) {
+      if (err.response?.status === 401) {
+        setError('Kullanici adi veya sifre hatali')
+      } else if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
+        setError('Sunucu yanitlamiyor — birkaç saniye bekleyip tekrar deneyin')
+      } else if (!err.response) {
+        setError('Sunucuya ulasilamiyor — internet baglantinizi kontrol edin')
+      } else {
+        setError('Bir hata olustu, tekrar deneyin')
+      }
+    }
+    finally { clearTimeout(slowTimer); setLoading(false); setSlowHint(false) }
   }
 
   return (
@@ -108,7 +120,7 @@ export default function LoginPage() {
               className="btn btn-primary"
               style={{ width: '100%', justifyContent: 'center', padding: '11px', fontSize: '12px', opacity: loading ? 0.6 : 1 }}
             >
-              {loading ? 'GİRİŞ YAPILIYOR...' : 'GİRİŞ YAP'}
+              {loading ? (slowHint ? 'SUNUCU UYANDIRILYOR...' : 'GIRIS YAPILIYOR...') : 'GIRIS YAP'}
             </button>
           </form>
         </div>
