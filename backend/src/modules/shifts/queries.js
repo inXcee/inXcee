@@ -288,3 +288,201 @@ export function getDepartmentSummary() {
     ORDER BY d.id
   `).all()
 }
+
+// ── Department CRUD ──
+export function createDepartment(name, colorClass, description) {
+  return getDB().prepare('INSERT INTO departments(name, color_class, description) VALUES(?,?,?)').run(name, colorClass, description || null).lastInsertRowid
+}
+
+export function updateDepartment(id, data) {
+  const db = getDB()
+  const sets = []
+  const params = []
+  if (data.name !== undefined) { sets.push('name=?'); params.push(data.name) }
+  if (data.color_class !== undefined) { sets.push('color_class=?'); params.push(data.color_class) }
+  if (data.description !== undefined) { sets.push('description=?'); params.push(data.description) }
+  if (sets.length === 0) return
+  params.push(id)
+  db.prepare(`UPDATE departments SET ${sets.join(',')} WHERE id=?`).run(...params)
+}
+
+export function deleteDepartment(id) {
+  const db = getDB()
+  db.prepare('UPDATE personnel SET department_id=NULL WHERE department_id=?').run(id)
+  db.prepare('DELETE FROM departments WHERE id=?').run(id)
+}
+
+export function assignPersonnelDepartment(personnelId, deptId) {
+  getDB().prepare('UPDATE personnel SET department_id=? WHERE id=?').run(deptId, personnelId)
+}
+
+// ── Shift Definition CRUD ──
+export function createShiftDefinition(name, startHour, endHour, colorClass) {
+  return getDB().prepare('INSERT INTO shift_definitions(name, start_hour, end_hour, color_class) VALUES(?,?,?,?)').run(name, startHour, endHour, colorClass).lastInsertRowid
+}
+
+export function updateShiftDefinition(id, data) {
+  const db = getDB()
+  const sets = []
+  const params = []
+  if (data.name !== undefined) { sets.push('name=?'); params.push(data.name) }
+  if (data.start_hour !== undefined) { sets.push('start_hour=?'); params.push(data.start_hour) }
+  if (data.end_hour !== undefined) { sets.push('end_hour=?'); params.push(data.end_hour) }
+  if (data.color_class !== undefined) { sets.push('color_class=?'); params.push(data.color_class) }
+  if (sets.length === 0) return
+  params.push(id)
+  db.prepare(`UPDATE shift_definitions SET ${sets.join(',')} WHERE id=?`).run(...params)
+}
+
+export function deleteShiftDefinition(id) {
+  getDB().prepare('DELETE FROM shift_definitions WHERE id=?').run(id)
+}
+
+// ── Leave cancellation ──
+export function cancelLeaveRequest(id) {
+  const db = getDB()
+  const req = db.prepare('SELECT * FROM leave_requests WHERE id=?').get(id)
+  if (!req) throw new Error('İzin talebi bulunamadı')
+  db.prepare("UPDATE leave_requests SET status='rejected' WHERE id=?").run(id)
+  // restore shift statuses
+  db.prepare(`UPDATE shift_schedule SET status='scheduled' WHERE personnel_id=? AND work_date BETWEEN ? AND ? AND status='on_leave'`).run(req.personnel_id, req.start_date, req.end_date)
+}
+
+// ── Shift swap requests ──
+// First create the table if needed
+export function ensureSwapTable() {
+  getDB().exec(`CREATE TABLE IF NOT EXISTS shift_swap_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    requester_id INTEGER NOT NULL REFERENCES personnel(id),
+    target_id INTEGER NOT NULL REFERENCES personnel(id),
+    swap_date TEXT NOT NULL,
+    requester_shift_id INTEGER REFERENCES shift_definitions(id),
+    target_shift_id INTEGER REFERENCES shift_definitions(id),
+    reason TEXT,
+    status TEXT DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected')),
+    approved_by INTEGER REFERENCES users(id),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`)
+}
+
+export function createSwapRequest(data) {
+  ensureSwapTable()
+  return getDB().prepare(`
+    INSERT INTO shift_swap_requests(requester_id, target_id, swap_date, requester_shift_id, target_shift_id, reason)
+    VALUES(@requester_id, @target_id, @swap_date, @requester_shift_id, @target_shift_id, @reason)
+  `).run(data).lastInsertRowid
+}
+
+export function getSwapRequests(filters = {}) {
+  ensureSwapTable()
+  let query = `
+    SELECT sr.*,
+      p1.full_name as requester_name, p1.gender as requester_gender,
+      p2.full_name as target_name, p2.gender as target_gender,
+      sd1.name as requester_shift_name, sd2.name as target_shift_name
+    FROM shift_swap_requests sr
+    JOIN personnel p1 ON p1.id = sr.requester_id
+    JOIN personnel p2 ON p2.id = sr.target_id
+    LEFT JOIN shift_definitions sd1 ON sd1.id = sr.requester_shift_id
+    LEFT JOIN shift_definitions sd2 ON sd2.id = sr.target_shift_id
+    WHERE 1=1
+  `
+  const params = []
+  if (filters.status) { query += ' AND sr.status=?'; params.push(filters.status) }
+  query += ' ORDER BY sr.created_at DESC LIMIT 100'
+  return getDB().prepare(query).all(...params)
+}
+
+export function approveSwapRequest(id, approvedBy) {
+  ensureSwapTable()
+  const db = getDB()
+  const swap = db.prepare('SELECT * FROM shift_swap_requests WHERE id=? AND status=?').get(id, 'pending')
+  if (!swap) throw new Error('Takas talebi bulunamadı veya zaten işlenmiş')
+
+  db.transaction(() => {
+    // Swap the shift definitions in shift_schedule
+    if (swap.requester_shift_id && swap.target_shift_id) {
+      db.prepare('UPDATE shift_schedule SET shift_def_id=? WHERE personnel_id=? AND work_date=?').run(swap.target_shift_id, swap.requester_id, swap.swap_date)
+      db.prepare('UPDATE shift_schedule SET shift_def_id=? WHERE personnel_id=? AND work_date=?').run(swap.requester_shift_id, swap.target_id, swap.swap_date)
+    }
+    db.prepare("UPDATE shift_swap_requests SET status='approved', approved_by=? WHERE id=?").run(approvedBy, id)
+  })()
+}
+
+export function rejectSwapRequest(id, approvedBy) {
+  ensureSwapTable()
+  getDB().prepare("UPDATE shift_swap_requests SET status='rejected', approved_by=? WHERE id=?").run(approvedBy, id)
+}
+
+// ── Copy week schedule ──
+export function copyWeekSchedule(sourceWeekStart, targetWeekStart, createdBy) {
+  const db = getDB()
+  const sourceEnd = addDaysStr(sourceWeekStart, 6)
+  const rows = db.prepare('SELECT personnel_id, dept_id, shift_def_id, work_date FROM shift_schedule WHERE work_date BETWEEN ? AND ?').all(sourceWeekStart, sourceEnd)
+
+  const dayDiff = Math.round((new Date(targetWeekStart) - new Date(sourceWeekStart)) / 86400000)
+
+  const upsert = db.prepare(`
+    INSERT INTO shift_schedule(personnel_id, dept_id, shift_def_id, work_date, status, created_by)
+    VALUES(?, ?, ?, ?, 'scheduled', ?)
+    ON CONFLICT(personnel_id, work_date) DO UPDATE SET shift_def_id=excluded.shift_def_id, dept_id=excluded.dept_id, status='scheduled'
+  `)
+
+  db.transaction(() => {
+    rows.forEach(r => {
+      const newDate = addDaysStr(r.work_date, dayDiff)
+      upsert.run(r.personnel_id, r.dept_id, r.shift_def_id, newDate, createdBy)
+    })
+  })()
+
+  return rows.length
+}
+
+function addDaysStr(dateStr, n) {
+  const d = new Date(dateStr)
+  d.setDate(d.getDate() + n)
+  return d.toISOString().split('T')[0]
+}
+
+// ── Rotation templates ──
+export function applyRotationTemplate(personnelIds, deptId, shiftDefIds, startDate, weeks, createdBy) {
+  const db = getDB()
+  const upsert = db.prepare(`
+    INSERT INTO shift_schedule(personnel_id, dept_id, shift_def_id, work_date, status, created_by)
+    VALUES(?, ?, ?, ?, 'scheduled', ?)
+    ON CONFLICT(personnel_id, work_date) DO UPDATE SET shift_def_id=excluded.shift_def_id, dept_id=excluded.dept_id, status='scheduled'
+  `)
+
+  let count = 0
+  db.transaction(() => {
+    for (let w = 0; w < weeks; w++) {
+      for (let d = 0; d < 7; d++) {
+        const date = addDaysStr(startDate, w * 7 + d)
+        personnelIds.forEach((pid, idx) => {
+          const shiftIdx = (idx + w) % shiftDefIds.length
+          upsert.run(pid, deptId, shiftDefIds[shiftIdx], date, createdBy)
+          count++
+        })
+      }
+    }
+  })()
+  return count
+}
+
+// ── Personnel search for forms ──
+export function searchPersonnel(term) {
+  const db = getDB()
+  return db.prepare(`
+    SELECT p.id, p.full_name, p.tc_no, p.gender, d.name as dept_name
+    FROM personnel p
+    LEFT JOIN departments d ON d.id = p.department_id
+    WHERE p.check_out_date IS NULL AND p.check_in_date IS NOT NULL
+      AND (p.full_name LIKE ? OR CAST(p.id AS TEXT) LIKE ?)
+    ORDER BY p.full_name LIMIT 20
+  `).all(`%${term}%`, `%${term}%`)
+}
+
+// ── Delete shift schedule entry ──
+export function deleteScheduleEntry(personnelId, workDate) {
+  getDB().prepare('DELETE FROM shift_schedule WHERE personnel_id=? AND work_date=?').run(personnelId, workDate)
+}

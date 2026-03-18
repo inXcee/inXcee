@@ -138,6 +138,10 @@ export function initDB() {
   try { db.exec('ALTER TABLE maintenance_requests ADD COLUMN assigned_to INTEGER REFERENCES technicians(id)') } catch(_) {}
   try { db.exec("ALTER TABLE technicians ADD COLUMN shift TEXT DEFAULT '1'") } catch(_) {}
 
+  // Shifts module migrations
+  try { db.exec("ALTER TABLE personnel ADD COLUMN gender TEXT CHECK(gender IN ('male','female'))") } catch(_) {}
+  try { db.exec('ALTER TABLE personnel ADD COLUMN department_id INTEGER REFERENCES departments(id)') } catch(_) {}
+
   // ── Improvement #3: Audit logging ──
   try { db.exec(`CREATE TABLE IF NOT EXISTS audit_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

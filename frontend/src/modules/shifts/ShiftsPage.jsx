@@ -1,20 +1,32 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { useAuthStore } from '../../shared/store/authStore.js'
 
-// ─── Sabitler ──────────────────────────────────────────────────────────────
+// ─── Constants ────────────────────────────────────────────────────────────────
 const LEAVE_TYPES = {
-  annual:      { label: 'Yıllık',   color: 'bg-blue-500/20 text-blue-300' },
-  sick:        { label: 'Hastalık', color: 'bg-red-500/20 text-red-300' },
-  emergency:   { label: 'Acil',     color: 'bg-orange-500/20 text-orange-300' },
-  maternity:   { label: 'Doğum',    color: 'bg-pink-500/20 text-pink-300' },
-  paternity:   { label: 'Babalık',  color: 'bg-indigo-500/20 text-indigo-300' },
-  marriage:    { label: 'Evlilik',  color: 'bg-purple-500/20 text-purple-300' },
-  bereavement: { label: 'Ölüm',     color: 'bg-slate-500/20 text-slate-300' },
+  annual:      { label: 'Yillik',     badge: 'badge-blue' },
+  sick:        { label: 'Hastalik',   badge: 'badge-red' },
+  emergency:   { label: 'Acil',       badge: 'badge-amber' },
+  maternity:   { label: 'Dogum',      badge: 'badge-red' },
+  paternity:   { label: 'Babalik',    badge: 'badge-blue' },
+  marriage:    { label: 'Evlilik',    badge: 'badge-amber' },
+  bereavement: { label: 'Olum',       badge: 'badge-gray' },
 }
 
-// ─── Tarih yardımcıları ────────────────────────────────────────────────────
+const STATUS_MAP = {
+  pending:  { label: 'Bekliyor',    badge: 'badge-amber' },
+  approved: { label: 'Onayli',      badge: 'badge-green' },
+  rejected: { label: 'Reddedildi',  badge: 'badge-red' },
+}
+
+const SWAP_STATUS = {
+  pending:  { label: 'Bekliyor',  badge: 'badge-amber' },
+  approved: { label: 'Onaylandi', badge: 'badge-green' },
+  rejected: { label: 'Reddedildi', badge: 'badge-red' },
+}
+
+// ─── Date helpers ─────────────────────────────────────────────────────────────
 function getWeekStart(date) {
   const d = new Date(date)
   const day = d.getDay()
@@ -37,54 +49,150 @@ function shortDay(dateStr) {
   return new Date(dateStr).toLocaleDateString('tr-TR', { weekday: 'short' })
 }
 
-// ─── Sub-components ────────────────────────────────────────────────────────
+function todayStr() {
+  return new Date().toISOString().split('T')[0]
+}
 
-function StatCard({ label, value, sub, color = 'text-white' }) {
+// ─── Shared modal overlay ─────────────────────────────────────────────────────
+function ModalOverlay({ children, onClose }) {
   return (
-    <div className="bg-slate-900 rounded-xl p-4">
-      <div className={`text-2xl md:text-3xl font-bold ${color}`}>{value}</div>
-      <div className="text-xs text-slate-400 mt-1">{label}</div>
-      {sub && <div className="text-xs text-slate-500 mt-1">{sub}</div>}
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 50,
+        background: 'rgba(0,0,0,.65)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: '16px',
+      }}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          background: 'var(--surface)',
+          border: '1px solid var(--border)',
+          borderRadius: '10px',
+          padding: '24px',
+          width: '100%',
+          maxWidth: '460px',
+          maxHeight: '85vh',
+          overflowY: 'auto',
+        }}
+      >
+        {children}
+      </div>
     </div>
   )
 }
 
-function GenderBadge({ gender }) {
-  return gender === 'female'
-    ? <span title="Kadın" className="text-pink-400 text-xs">♀</span>
-    : <span title="Erkek" className="text-blue-400 text-xs">♂</span>
-}
+// ─── PersonnelSearch component ────────────────────────────────────────────────
+function PersonnelSearch({ value, onChange, placeholder = 'Personel ara...' }) {
+  const [query, setQuery] = useState('')
+  const [open, setOpen] = useState(false)
+  const [selectedName, setSelectedName] = useState('')
+  const wrapRef = useRef(null)
+  const timerRef = useRef(null)
 
-function ShiftBadge({ shiftName, colorClass, startHour, endHour }) {
-  if (!shiftName) return <span className="text-slate-600 text-xs">—</span>
-  const bgMap = {
-    'bg-blue-400':   'bg-blue-400/20 text-blue-300',
-    'bg-orange-400': 'bg-orange-400/20 text-orange-300',
-    'bg-indigo-600': 'bg-indigo-600/20 text-indigo-300',
+  const { data: results = [] } = useQuery({
+    queryKey: ['personnel-search', query],
+    queryFn: () => api.get('/shifts/personnel/search', { params: { q: query } }).then(r => r.data),
+    enabled: query.length >= 2,
+  })
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const handleInput = (val) => {
+    setSelectedName('')
+    onChange('')
+    clearTimeout(timerRef.current)
+    timerRef.current = setTimeout(() => setQuery(val), 300)
+    setOpen(true)
   }
-  const cls = bgMap[colorClass] || 'bg-slate-700 text-slate-300'
+
+  const select = (person) => {
+    onChange(person.id)
+    setSelectedName(person.full_name)
+    setQuery('')
+    setOpen(false)
+  }
+
   return (
-    <span className={`px-1.5 py-0.5 rounded text-xs font-medium whitespace-nowrap ${cls}`}>
-      {shiftName} {startHour}–{endHour}
-    </span>
+    <div ref={wrapRef} style={{ position: 'relative' }}>
+      <input
+        className="form-input"
+        placeholder={placeholder}
+        value={selectedName || ''}
+        onChange={e => handleInput(e.target.value)}
+        onFocus={() => { if (results.length > 0 && !selectedName) setOpen(true) }}
+      />
+      {open && results.length > 0 && (
+        <div style={{
+          position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 60,
+          background: 'var(--surface2)', border: '1px solid var(--border)',
+          borderRadius: '0 0 7px 7px', maxHeight: '200px', overflowY: 'auto',
+        }}>
+          {results.map(p => (
+            <div
+              key={p.id}
+              onClick={() => select(p)}
+              style={{
+                padding: '8px 13px', cursor: 'pointer',
+                borderBottom: '1px solid var(--border)',
+                fontSize: '12.5px', color: 'var(--text)',
+                display: 'flex', alignItems: 'center', gap: '8px',
+              }}
+              onMouseEnter={e => e.currentTarget.style.background = 'var(--surface3)'}
+              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+            >
+              <span style={{ color: p.gender === 'female' ? '#f472b6' : 'var(--blue)', fontSize: '11px' }}>
+                {p.gender === 'female' ? '\u2640' : '\u2642'}
+              </span>
+              <span>{p.full_name}</span>
+              {p.dept_name && (
+                <span style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', marginLeft: 'auto' }}>
+                  {p.dept_name}
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 
-function DeptBadge({ name, colorClass }) {
-  const bgMap = {
-    'bg-red-600':    'bg-red-600/20 text-red-300',
-    'bg-green-600':  'bg-green-600/20 text-green-300',
-    'bg-orange-500': 'bg-orange-500/20 text-orange-300',
-    'bg-blue-600':   'bg-blue-600/20 text-blue-300',
-    'bg-yellow-500': 'bg-yellow-500/20 text-yellow-300',
-    'bg-lime-500':   'bg-lime-500/20 text-lime-300',
-    'bg-pink-500':   'bg-pink-500/20 text-pink-300',
-    'bg-purple-600': 'bg-purple-600/20 text-purple-300',
+// ─── Shift color helpers ──────────────────────────────────────────────────────
+function shiftColor(colorClass) {
+  const map = {
+    'bg-blue-400':   { bg: 'rgba(59,140,240,.15)', text: 'var(--blue)' },
+    'bg-orange-400': { bg: 'rgba(240,165,0,.15)',   text: 'var(--accent)' },
+    'bg-indigo-600': { bg: 'rgba(155,89,182,.15)',  text: 'var(--purple)' },
   }
-  return <span className={`px-2 py-0.5 rounded text-xs whitespace-nowrap ${bgMap[colorClass] || 'bg-slate-700 text-slate-300'}`}>{name}</span>
+  return map[colorClass] || { bg: 'var(--surface3)', text: 'var(--text2)' }
 }
 
-// ─── Tab: Çizelge ──────────────────────────────────────────────────────────
+function deptColor(colorClass) {
+  const map = {
+    'bg-red-600':    { bg: 'rgba(231,76,60,.12)',   text: 'var(--red)' },
+    'bg-green-600':  { bg: 'rgba(39,201,106,.12)',  text: 'var(--green)' },
+    'bg-orange-500': { bg: 'rgba(240,165,0,.12)',   text: 'var(--accent)' },
+    'bg-blue-600':   { bg: 'rgba(59,140,240,.12)',  text: 'var(--blue)' },
+    'bg-yellow-500': { bg: 'rgba(245,200,66,.12)',  text: 'var(--accent3)' },
+    'bg-lime-500':   { bg: 'rgba(39,201,106,.12)',  text: 'var(--green)' },
+    'bg-pink-500':   { bg: 'rgba(244,114,182,.12)', text: '#f472b6' },
+    'bg-purple-600': { bg: 'rgba(155,89,182,.12)',  text: 'var(--purple)' },
+  }
+  return map[colorClass] || { bg: 'var(--surface3)', text: 'var(--text2)' }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  TAB 1 — Cizelge (Schedule)
+// ═══════════════════════════════════════════════════════════════════════════════
 function ScheduleTab({ departments, shiftDefs }) {
   const qc = useQueryClient()
   const user = useAuthStore(s => s.user)
@@ -110,12 +218,8 @@ function ScheduleTab({ departments, shiftDefs }) {
     rows.forEach(r => {
       if (!map.has(r.personnel_id)) {
         map.set(r.personnel_id, {
-          id: r.personnel_id,
-          full_name: r.full_name,
-          gender: r.gender,
-          dept_id: r.dept_id,
-          dept_name: r.dept_name,
-          dept_color: r.dept_color,
+          id: r.personnel_id, full_name: r.full_name, gender: r.gender,
+          dept_id: r.dept_id, dept_name: r.dept_name, dept_color: r.dept_color,
           days: {}
         })
       }
@@ -134,6 +238,17 @@ function ScheduleTab({ departments, shiftDefs }) {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['schedule'] }); setEditModal(null) }
   })
 
+  const deleteShift = useMutation({
+    mutationFn: ({ personnelId, date }) =>
+      api.delete(`/shifts/schedule/${personnelId}/${date}`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['schedule'] }); setEditModal(null) }
+  })
+
+  const copyWeek = useMutation({
+    mutationFn: () => api.post('/shifts/schedule/copy-week', { source_week: weekStart }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['schedule'] }) }
+  })
+
   const openEdit = (person, date) => {
     if (!canEdit) return
     const existing = person.days[date]
@@ -142,113 +257,138 @@ function ScheduleTab({ departments, shiftDefs }) {
   }
 
   return (
-    <div>
+    <div className="fade-up">
       {/* Controls */}
-      <div className="flex flex-wrap items-center gap-2 mb-4">
-        <button onClick={() => setWeekStart(addDays(weekStart, -7))}
-          className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded text-sm text-slate-300">← Önceki</button>
-        <span className="text-sm text-slate-300 font-medium whitespace-nowrap">
-          {formatDate(weekStart)} – {formatDate(weekEnd)}
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
+        <button className="btn btn-ghost btn-sm" onClick={() => setWeekStart(addDays(weekStart, -7))}>
+          &larr; Onceki
+        </button>
+        <span style={{ fontFamily: 'var(--mono)', fontSize: '12px', color: 'var(--text2)', whiteSpace: 'nowrap' }}>
+          {formatDate(weekStart)} &ndash; {formatDate(weekEnd)}
         </span>
-        <button onClick={() => setWeekStart(addDays(weekStart, 7))}
-          className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded text-sm text-slate-300">Sonraki →</button>
-        <button onClick={() => setWeekStart(getWeekStart(new Date()))}
-          className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded text-sm text-slate-300">Bu Hafta</button>
-        <select
-          value={deptFilter}
-          onChange={e => setDeptFilter(e.target.value)}
-          className="bg-slate-800 border border-slate-700 rounded px-3 py-1.5 text-sm text-slate-300"
-        >
-          <option value="">Tüm Bölümler</option>
+        <button className="btn btn-ghost btn-sm" onClick={() => setWeekStart(addDays(weekStart, 7))}>
+          Sonraki &rarr;
+        </button>
+        <button className="btn btn-ghost btn-sm" onClick={() => setWeekStart(getWeekStart(new Date()))}>
+          Bu Hafta
+        </button>
+
+        <select className="form-select" value={deptFilter} onChange={e => setDeptFilter(e.target.value)}
+          style={{ width: 'auto', minWidth: '140px', padding: '5px 11px', fontSize: '11px' }}>
+          <option value="">Tum Bolumler</option>
           {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
         </select>
+
+        {canEdit && (
+          <button className="btn btn-primary btn-sm" onClick={() => copyWeek.mutate()}
+            disabled={copyWeek.isPending}
+            style={{ marginLeft: 'auto' }}>
+            {copyWeek.isPending ? 'Kopyalaniyor...' : 'Haftayi Kopyala'}
+          </button>
+        )}
       </div>
 
       {/* Legend */}
-      <div className="flex flex-wrap gap-3 mb-4 text-xs text-slate-400">
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', marginBottom: '16px' }}>
         {shiftDefs.map(s => {
-          const dot = { 'bg-blue-400': 'bg-blue-400', 'bg-orange-400': 'bg-orange-400', 'bg-indigo-600': 'bg-indigo-600' }
+          const c = shiftColor(s.color_class)
           return (
-            <span key={s.id} className="flex items-center gap-1">
-              <span className={`w-3 h-3 rounded ${dot[s.color_class] || 'bg-slate-500'}`}></span>
-              {s.name} ({s.start_hour}:00–{s.end_hour === 24 ? '00' : s.end_hour}:00)
+            <span key={s.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text2)' }}>
+              <span style={{ width: '10px', height: '10px', borderRadius: '3px', background: c.text, display: 'inline-block' }} />
+              {s.name} ({s.start_hour}:00&ndash;{s.end_hour === 24 ? '00' : s.end_hour}:00)
             </span>
           )
         })}
-        <span className="flex items-center gap-1"><span className="text-blue-400">♂</span> Erkek</span>
-        <span className="flex items-center gap-1"><span className="text-pink-400">♀</span> Kadın</span>
       </div>
 
       {isLoading ? (
-        <div className="text-slate-500 text-sm py-8 text-center">Yükleniyor...</div>
+        <div className="empty-state"><div className="empty-sub">Yukleniyor...</div></div>
       ) : (
-        <div className="overflow-x-auto -mx-4 md:mx-0">
-          <div className="min-w-max px-4 md:px-0">
-            <table className="w-full text-xs border-collapse">
+        <div className="panel">
+          <div style={{ overflowX: 'auto' }}>
+            <table className="data-table">
               <thead>
                 <tr>
-                  <th className="text-left p-2 bg-slate-900 text-slate-400 font-medium sticky left-0 z-10 min-w-36">Personel</th>
-                  <th className="text-left p-2 bg-slate-900 text-slate-400 font-medium min-w-20 hidden sm:table-cell">Bölüm</th>
+                  <th style={{ position: 'sticky', left: 0, zIndex: 10, background: 'var(--surface)', minWidth: '150px' }}>Personel</th>
+                  <th>Bolum</th>
                   {weekDays.map(d => (
-                    <th key={d} className="text-center p-2 bg-slate-900 text-slate-400 font-medium min-w-24">
-                      <div className="capitalize">{shortDay(d)}</div>
-                      <div className="text-slate-500">{formatDate(d)}</div>
+                    <th key={d} style={{ textAlign: 'center', minWidth: '100px' }}>
+                      <div style={{ textTransform: 'capitalize' }}>{shortDay(d)}</div>
+                      <div style={{ color: 'var(--text3)', fontWeight: 400 }}>{formatDate(d)}</div>
                     </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {personnelList.map(person => (
-                  <tr key={person.id} className="border-t border-slate-800 hover:bg-slate-900/50">
-                    <td className="p-2 sticky left-0 z-10 bg-slate-950">
-                      <div className={`flex items-center gap-1 border-l-4 pl-2 ${person.gender === 'female' ? 'border-pink-400' : 'border-blue-400'}`}>
-                        <GenderBadge gender={person.gender} />
-                        <span className="text-slate-200 truncate max-w-28">{person.full_name}</span>
-                      </div>
-                      <div className="sm:hidden mt-0.5 pl-6">
-                        <DeptBadge name={person.dept_name} colorClass={person.dept_color} />
-                      </div>
-                    </td>
-                    <td className="p-2 hidden sm:table-cell">
-                      <DeptBadge name={person.dept_name} colorClass={person.dept_color} />
-                    </td>
-                    {weekDays.map(d => {
-                      const cell = person.days[d]
-                      return (
-                        <td key={d} className="p-1 text-center">
-                          {cell ? (
+                {personnelList.map(person => {
+                  const dc = deptColor(person.dept_color)
+                  return (
+                    <tr key={person.id}>
+                      <td style={{ position: 'sticky', left: 0, zIndex: 10, background: 'var(--surface)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', borderLeft: `3px solid ${person.gender === 'female' ? '#f472b6' : 'var(--blue)'}`, paddingLeft: '8px' }}>
+                          <span style={{ color: person.gender === 'female' ? '#f472b6' : 'var(--blue)', fontSize: '11px' }}>
+                            {person.gender === 'female' ? '\u2640' : '\u2642'}
+                          </span>
+                          <span style={{ fontSize: '12px', color: 'var(--text)', maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {person.full_name}
+                          </span>
+                        </div>
+                      </td>
+                      <td>
+                        <span style={{
+                          display: 'inline-block', padding: '2px 8px', borderRadius: '10px',
+                          background: dc.bg, color: dc.text,
+                          fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 600,
+                          whiteSpace: 'nowrap',
+                        }}>{person.dept_name}</span>
+                      </td>
+                      {weekDays.map(d => {
+                        const cell = person.days[d]
+                        const sc = cell ? shiftColor(cell.shift_color) : null
+                        return (
+                          <td key={d} style={{ textAlign: 'center', padding: '6px 8px' }}>
                             <button
                               onClick={() => openEdit(person, d)}
-                              className={`w-full px-1 py-1 rounded transition-opacity hover:opacity-80 ${canEdit ? 'cursor-pointer' : 'cursor-default'}`}
                               disabled={!canEdit}
+                              style={{
+                                width: '100%', padding: '4px 6px', borderRadius: '5px',
+                                border: 'none', cursor: canEdit ? 'pointer' : 'default',
+                                background: cell
+                                  ? cell.status === 'on_leave' ? 'rgba(240,165,0,.12)'
+                                  : cell.status === 'absent' ? 'rgba(231,76,60,.12)'
+                                  : sc?.bg || 'transparent'
+                                  : 'transparent',
+                                color: cell
+                                  ? cell.status === 'on_leave' ? 'var(--accent)'
+                                  : cell.status === 'absent' ? 'var(--red)'
+                                  : sc?.text || 'var(--text2)'
+                                  : 'var(--text3)',
+                                fontFamily: 'var(--mono)', fontSize: '10px', fontWeight: 600,
+                                transition: 'opacity .15s',
+                              }}
+                              onMouseEnter={e => { if (canEdit) e.currentTarget.style.opacity = '0.8' }}
+                              onMouseLeave={e => { e.currentTarget.style.opacity = '1' }}
                             >
-                              {cell.status === 'on_leave' ? (
-                                <span className="block px-1 py-0.5 rounded bg-amber-500/20 text-amber-300 text-xs whitespace-nowrap">İzin</span>
-                              ) : cell.status === 'absent' ? (
-                                <span className="block px-1 py-0.5 rounded bg-red-500/20 text-red-400 text-xs">Yok</span>
-                              ) : (
-                                <ShiftBadge
-                                  shiftName={cell.shift_name}
-                                  colorClass={cell.shift_color}
-                                  startHour={cell.start_hour}
-                                  endHour={cell.end_hour === 24 ? '00' : cell.end_hour}
-                                />
-                              )}
+                              {cell
+                                ? cell.status === 'on_leave' ? 'Izin'
+                                : cell.status === 'absent' ? 'Yok'
+                                : `${cell.shift_name} ${cell.start_hour}\u2013${cell.end_hour === 24 ? '00' : cell.end_hour}`
+                                : '\u2014'}
                             </button>
-                          ) : (
-                            <button
-                              onClick={() => openEdit(person, d)}
-                              className={`w-full px-1 py-1 rounded text-slate-600 text-xs ${canEdit ? 'hover:bg-slate-800 cursor-pointer' : 'cursor-default'}`}
-                              disabled={!canEdit}
-                            >—</button>
-                          )}
-                        </td>
-                      )
-                    })}
-                  </tr>
-                ))}
+                          </td>
+                        )
+                      })}
+                    </tr>
+                  )
+                })}
                 {personnelList.length === 0 && (
-                  <tr><td colSpan={weekDays.length + 2} className="text-center text-slate-500 py-8">Bu hafta için vardiya verisi bulunamadı</td></tr>
+                  <tr><td colSpan={9} style={{ textAlign: 'center' }}>
+                    <div className="empty-state">
+                      <div className="empty-icon">&#128197;</div>
+                      <div className="empty-title">VERI YOK</div>
+                      <div className="empty-sub">Bu hafta icin vardiya verisi bulunamadi</div>
+                    </div>
+                  </td></tr>
                 )}
               </tbody>
             </table>
@@ -258,38 +398,57 @@ function ScheduleTab({ departments, shiftDefs }) {
 
       {/* Edit Modal */}
       {editModal && (
-        <div className="fixed inset-0 bg-black/60 flex items-end sm:items-center justify-center z-50 p-4" onClick={() => setEditModal(null)}>
-          <div className="bg-slate-900 border border-slate-700 rounded-xl p-5 w-full max-w-sm" onClick={e => e.stopPropagation()}>
-            <h3 className="font-semibold text-slate-100 mb-4">Vardiya Değiştir — {formatDate(editModal.date)}</h3>
-            <div className="space-y-2 mb-4">
-              {shiftDefs.map(s => (
+        <ModalOverlay onClose={() => setEditModal(null)}>
+          <h3 style={{ fontFamily: 'var(--display)', fontSize: '18px', letterSpacing: '2px', marginBottom: '16px' }}>
+            VARDIYA DEGISTIR &mdash; {formatDate(editModal.date)}
+          </h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
+            {shiftDefs.map(s => {
+              const active = editShiftDef === s.id.toString()
+              return (
                 <button
                   key={s.id}
                   onClick={() => setEditShiftDef(s.id.toString())}
-                  className={`w-full px-3 py-3 rounded border-2 text-sm text-left transition-colors ${editShiftDef === s.id.toString() ? 'border-blue-500 bg-blue-900/20 text-blue-200' : 'border-slate-700 text-slate-400 hover:border-slate-600'}`}
+                  style={{
+                    width: '100%', padding: '12px 14px', borderRadius: '7px',
+                    textAlign: 'left', fontSize: '13px', cursor: 'pointer',
+                    border: `2px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
+                    background: active ? 'rgba(240,165,0,.08)' : 'var(--surface2)',
+                    color: active ? 'var(--accent)' : 'var(--text2)',
+                    fontFamily: 'var(--sans)',
+                    transition: 'all .15s',
+                  }}
                 >
-                  {s.name} — {s.start_hour}:00 – {s.end_hour === 24 ? '00:00' : `${s.end_hour}:00`}
+                  {s.name} &mdash; {s.start_hour}:00 &ndash; {s.end_hour === 24 ? '00:00' : `${s.end_hour}:00`}
                 </button>
-              ))}
-            </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => updateShift.mutate({ ...editModal, shiftDefId: parseInt(editShiftDef) })}
-                disabled={!editShiftDef || updateShift.isPending}
-                className="flex-1 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 text-white rounded text-sm"
-              >
-                {updateShift.isPending ? 'Kaydediliyor...' : 'Kaydet'}
-              </button>
-              <button onClick={() => setEditModal(null)} className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-sm">İptal</button>
-            </div>
+              )
+            })}
           </div>
-        </div>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button
+              className="btn btn-primary"
+              onClick={() => updateShift.mutate({ ...editModal, shiftDefId: parseInt(editShiftDef) })}
+              disabled={!editShiftDef || updateShift.isPending}
+              style={{ flex: 1, opacity: (!editShiftDef || updateShift.isPending) ? 0.5 : 1 }}
+            >
+              {updateShift.isPending ? 'Kaydediliyor...' : 'Kaydet'}
+            </button>
+            <button className="btn btn-danger btn-sm"
+              onClick={() => deleteShift.mutate({ personnelId: editModal.personnelId, date: editModal.date })}
+              disabled={deleteShift.isPending}>
+              {deleteShift.isPending ? 'Siliniyor...' : 'Vardiyayi Sil'}
+            </button>
+            <button className="btn btn-ghost" onClick={() => setEditModal(null)}>Iptal</button>
+          </div>
+        </ModalOverlay>
       )}
     </div>
   )
 }
 
-// ─── Tab: İzinler ──────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+//  TAB 2 — Izinler (Leave)
+// ═══════════════════════════════════════════════════════════════════════════════
 function LeaveTab({ departments }) {
   const qc = useQueryClient()
   const user = useAuthStore(s => s.user)
@@ -304,183 +463,214 @@ function LeaveTab({ departments }) {
     queryFn: () => api.get('/shifts/leave', { params: filters }).then(r => r.data),
   })
 
+  const { data: balance } = useQuery({
+    queryKey: ['leave-balance', form.personnel_id],
+    queryFn: () => api.get(`/shifts/leave/balance/${form.personnel_id}`).then(r => r.data),
+    enabled: false, // lazy
+  })
+
   const approveMut = useMutation({
     mutationFn: ({ id, status }) => api.patch(`/shifts/leave/${id}`, { status }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['leaves'] }),
   })
 
+  const cancelMut = useMutation({
+    mutationFn: (id) => api.delete(`/shifts/leave/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['leaves'] }),
+  })
+
   const createMut = useMutation({
     mutationFn: data => api.post('/shifts/leave', data),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['leaves'] }); setNewLeave(false); setForm({ personnel_id: '', leave_type: 'annual', start_date: '', end_date: '', reason: '' }) },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['leaves'] })
+      setNewLeave(false)
+      setForm({ personnel_id: '', leave_type: 'annual', start_date: '', end_date: '', reason: '' })
+    },
     onError: e => alert(e.response?.data?.error || 'Hata'),
   })
 
-  const statusBadge = s => {
-    const m = { pending: 'bg-amber-500/20 text-amber-300', approved: 'bg-green-500/20 text-green-300', rejected: 'bg-red-500/20 text-red-300' }
-    const l = { pending: 'Bekliyor', approved: 'Onaylı', rejected: 'Reddedildi' }
-    return <span className={`px-2 py-0.5 rounded text-xs whitespace-nowrap ${m[s]}`}>{l[s]}</span>
-  }
+  // Summary counts
+  const countByType = Object.fromEntries(
+    Object.keys(LEAVE_TYPES).map(k => [k, leaves.filter(l => l.leave_type === k).length])
+  )
 
   return (
-    <div>
+    <div className="fade-up">
       {/* Filters */}
-      <div className="flex flex-wrap items-center gap-2 mb-4">
-        <select value={filters.status} onChange={e => setFilters(p => ({ ...p, status: e.target.value }))}
-          className="bg-slate-800 border border-slate-700 rounded px-3 py-1.5 text-sm text-slate-300 flex-1 min-w-0">
-          <option value="">Tüm Durumlar</option>
-          <option value="pending">Bekliyor</option>
-          <option value="approved">Onaylı</option>
-          <option value="rejected">Reddedildi</option>
-        </select>
-        <select value={filters.dept_id} onChange={e => setFilters(p => ({ ...p, dept_id: e.target.value }))}
-          className="bg-slate-800 border border-slate-700 rounded px-3 py-1.5 text-sm text-slate-300 flex-1 min-w-0">
-          <option value="">Tüm Bölümler</option>
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
+        {['', 'pending', 'approved', 'rejected'].map(s => (
+          <button
+            key={s}
+            className={`filter-chip ${filters.status === s ? 'active' : ''}`}
+            onClick={() => setFilters(p => ({ ...p, status: s }))}
+          >
+            {s === '' ? 'Tumunu' : STATUS_MAP[s]?.label}
+          </button>
+        ))}
+        <select className="form-select" value={filters.dept_id} onChange={e => setFilters(p => ({ ...p, dept_id: e.target.value }))}
+          style={{ width: 'auto', minWidth: '140px', padding: '5px 11px', fontSize: '11px' }}>
+          <option value="">Tum Bolumler</option>
           {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
         </select>
-        <button onClick={() => setNewLeave(true)} className="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded text-sm whitespace-nowrap">+ Yeni İzin</button>
+        <button className="btn btn-primary btn-sm" onClick={() => setNewLeave(true)} style={{ marginLeft: 'auto' }}>
+          + Yeni Izin
+        </button>
       </div>
 
       {/* Summary cards */}
-      <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-7 gap-2 mb-5">
-        {Object.entries(LEAVE_TYPES).map(([k, v]) => {
-          const count = leaves.filter(l => l.leave_type === k).length
-          return (
-            <div key={k} className={`rounded-lg p-2.5 ${v.color} border border-current/20`}>
-              <div className="text-xl font-bold">{count}</div>
-              <div className="text-xs opacity-80 leading-tight mt-0.5">{v.label}</div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: '8px', marginBottom: '20px' }}>
+        {Object.entries(LEAVE_TYPES).map(([k, v]) => (
+          <div key={k} style={{
+            padding: '10px 12px', background: 'var(--surface2)',
+            border: '1px solid var(--border)', borderRadius: '8px',
+          }}>
+            <div style={{ fontFamily: 'var(--display)', fontSize: '24px', color: 'var(--text)', lineHeight: 1 }}>
+              {countByType[k]}
             </div>
-          )
-        })}
-      </div>
-
-      {/* Cards on mobile, table on desktop */}
-      <div className="md:hidden space-y-3">
-        {leaves.length === 0 && <div className="text-center text-slate-500 py-8 text-sm">İzin talebi bulunamadı</div>}
-        {leaves.map(l => (
-          <div key={l.id} className="bg-slate-900 rounded-xl p-4 space-y-2">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5">
-                <GenderBadge gender={l.gender} />
-                <span className="text-slate-100 text-sm font-medium">{l.full_name}</span>
-              </div>
-              {statusBadge(l.status)}
+            <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text3)', letterSpacing: '1px', marginTop: '4px' }}>
+              {v.label.toUpperCase()}
             </div>
-            <div className="flex flex-wrap gap-2">
-              <DeptBadge name={l.dept_name} colorClass={l.dept_color} />
-              <span className={`px-2 py-0.5 rounded text-xs ${LEAVE_TYPES[l.leave_type]?.color}`}>{LEAVE_TYPES[l.leave_type]?.label}</span>
-            </div>
-            <div className="text-xs text-slate-400">{formatDate(l.start_date)} – {formatDate(l.end_date)} · <span className="text-slate-300">{l.total_days} gün</span></div>
-            {canApprove && l.status === 'pending' && (
-              <div className="flex gap-2 pt-1">
-                <button onClick={() => approveMut.mutate({ id: l.id, status: 'approved' })}
-                  className="flex-1 px-3 py-1.5 bg-green-700 hover:bg-green-600 text-white rounded text-xs">Onayla</button>
-                <button onClick={() => approveMut.mutate({ id: l.id, status: 'rejected' })}
-                  className="flex-1 px-3 py-1.5 bg-red-800 hover:bg-red-700 text-white rounded text-xs">Reddet</button>
-              </div>
-            )}
           </div>
         ))}
       </div>
 
-      <div className="hidden md:block bg-slate-900 rounded-xl overflow-hidden">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-slate-800">
-              <th className="text-left p-3 text-slate-400 font-medium">Personel</th>
-              <th className="text-left p-3 text-slate-400 font-medium">Bölüm</th>
-              <th className="text-left p-3 text-slate-400 font-medium">İzin Türü</th>
-              <th className="text-left p-3 text-slate-400 font-medium">Tarih</th>
-              <th className="text-left p-3 text-slate-400 font-medium">Gün</th>
-              <th className="text-left p-3 text-slate-400 font-medium">Durum</th>
-              {canApprove && <th className="text-left p-3 text-slate-400 font-medium">İşlem</th>}
-            </tr>
-          </thead>
-          <tbody>
-            {leaves.map(l => (
-              <tr key={l.id} className="border-t border-slate-800 hover:bg-slate-800/50">
-                <td className="p-3">
-                  <div className="flex items-center gap-1">
-                    <GenderBadge gender={l.gender} />
-                    <span className="text-slate-200">{l.full_name}</span>
-                  </div>
-                </td>
-                <td className="p-3"><DeptBadge name={l.dept_name} colorClass={l.dept_color} /></td>
-                <td className="p-3"><span className={`px-2 py-0.5 rounded text-xs ${LEAVE_TYPES[l.leave_type]?.color}`}>{LEAVE_TYPES[l.leave_type]?.label}</span></td>
-                <td className="p-3 text-slate-400 text-xs whitespace-nowrap">{formatDate(l.start_date)} – {formatDate(l.end_date)}</td>
-                <td className="p-3 text-slate-300">{l.total_days}</td>
-                <td className="p-3">{statusBadge(l.status)}</td>
-                {canApprove && (
-                  <td className="p-3">
-                    {l.status === 'pending' && (
-                      <div className="flex gap-2">
-                        <button onClick={() => approveMut.mutate({ id: l.id, status: 'approved' })}
-                          className="px-2 py-1 bg-green-700 hover:bg-green-600 text-white rounded text-xs">Onayla</button>
-                        <button onClick={() => approveMut.mutate({ id: l.id, status: 'rejected' })}
-                          className="px-2 py-1 bg-red-800 hover:bg-red-700 text-white rounded text-xs">Reddet</button>
-                      </div>
-                    )}
-                  </td>
-                )}
-              </tr>
-            ))}
-            {leaves.length === 0 && (
-              <tr><td colSpan={canApprove ? 7 : 6} className="text-center text-slate-500 py-8">İzin talebi bulunamadı</td></tr>
-            )}
-          </tbody>
-        </table>
+      {/* Leave table */}
+      <div className="panel">
+        <div className="panel-header">
+          <div>
+            <div className="panel-title">IZIN TALEPLERI</div>
+            <div className="panel-subtitle">{leaves.length} KAYIT</div>
+          </div>
+        </div>
+        <div className="panel-body" style={{ padding: 0 }}>
+          {leaves.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-icon">&#127796;</div>
+              <div className="empty-title">IZIN YOK</div>
+              <div className="empty-sub">Izin talebi bulunamadi</div>
+            </div>
+          ) : (
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Personel</th>
+                  <th>Bolum</th>
+                  <th>Tur</th>
+                  <th>Tarih</th>
+                  <th>Gun</th>
+                  <th>Durum</th>
+                  {canApprove && <th>Islem</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {leaves.map(l => {
+                  const dc = deptColor(l.dept_color)
+                  return (
+                    <tr key={l.id}>
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span style={{ color: l.gender === 'female' ? '#f472b6' : 'var(--blue)', fontSize: '11px' }}>
+                            {l.gender === 'female' ? '\u2640' : '\u2642'}
+                          </span>
+                          <span>{l.full_name}</span>
+                        </div>
+                      </td>
+                      <td>
+                        <span style={{
+                          display: 'inline-block', padding: '2px 8px', borderRadius: '10px',
+                          background: dc.bg, color: dc.text,
+                          fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 600,
+                        }}>{l.dept_name}</span>
+                      </td>
+                      <td><span className={`badge ${LEAVE_TYPES[l.leave_type]?.badge || 'badge-gray'}`}>{LEAVE_TYPES[l.leave_type]?.label}</span></td>
+                      <td style={{ fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--text2)', whiteSpace: 'nowrap' }}>
+                        {formatDate(l.start_date)} &ndash; {formatDate(l.end_date)}
+                      </td>
+                      <td style={{ fontFamily: 'var(--mono)' }}>{l.total_days}</td>
+                      <td><span className={`badge ${STATUS_MAP[l.status]?.badge}`}>{STATUS_MAP[l.status]?.label}</span></td>
+                      {canApprove && (
+                        <td>
+                          <div style={{ display: 'flex', gap: '6px' }}>
+                            {l.status === 'pending' && (
+                              <>
+                                <button className="btn btn-sm" style={{ background: 'var(--green)', color: '#000' }}
+                                  onClick={() => approveMut.mutate({ id: l.id, status: 'approved' })}>Onayla</button>
+                                <button className="btn btn-danger btn-sm"
+                                  onClick={() => approveMut.mutate({ id: l.id, status: 'rejected' })}>Reddet</button>
+                              </>
+                            )}
+                            {l.status === 'approved' && (
+                              <button className="btn btn-danger btn-sm"
+                                onClick={() => cancelMut.mutate(l.id)}
+                                disabled={cancelMut.isPending}>
+                                Iptal Et
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
       </div>
 
       {/* New Leave Modal */}
       {newLeave && (
-        <div className="fixed inset-0 bg-black/60 flex items-end sm:items-center justify-center z-50 p-4" onClick={() => setNewLeave(false)}>
-          <div className="bg-slate-900 border border-slate-700 rounded-xl p-5 w-full max-w-md" onClick={e => e.stopPropagation()}>
-            <h3 className="font-semibold text-slate-100 mb-4">Yeni İzin Talebi</h3>
-            <div className="space-y-3">
+        <ModalOverlay onClose={() => setNewLeave(false)}>
+          <h3 style={{ fontFamily: 'var(--display)', fontSize: '18px', letterSpacing: '2px', marginBottom: '16px' }}>
+            YENI IZIN TALEBI
+          </h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div>
+              <label className="form-label">Personel</label>
+              <PersonnelSearch value={form.personnel_id} onChange={v => setForm(p => ({ ...p, personnel_id: v }))} />
+            </div>
+            <div>
+              <label className="form-label">Izin Turu</label>
+              <select className="form-select" value={form.leave_type} onChange={e => setForm(p => ({ ...p, leave_type: e.target.value }))}>
+                {Object.entries(LEAVE_TYPES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+              </select>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
               <div>
-                <label className="text-xs text-slate-400 mb-1 block">Personel ID</label>
-                <input value={form.personnel_id} onChange={e => setForm(p => ({ ...p, personnel_id: e.target.value }))}
-                  placeholder="Personel ID" className="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2.5 text-sm text-slate-100" />
+                <label className="form-label">Baslangic</label>
+                <input type="date" className="form-input" value={form.start_date}
+                  onChange={e => setForm(p => ({ ...p, start_date: e.target.value }))} />
               </div>
               <div>
-                <label className="text-xs text-slate-400 mb-1 block">İzin Türü</label>
-                <select value={form.leave_type} onChange={e => setForm(p => ({ ...p, leave_type: e.target.value }))}
-                  className="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2.5 text-sm text-slate-300">
-                  {Object.entries(LEAVE_TYPES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-                </select>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs text-slate-400 mb-1 block">Başlangıç</label>
-                  <input type="date" value={form.start_date} onChange={e => setForm(p => ({ ...p, start_date: e.target.value }))}
-                    className="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2.5 text-sm text-slate-100" />
-                </div>
-                <div>
-                  <label className="text-xs text-slate-400 mb-1 block">Bitiş</label>
-                  <input type="date" value={form.end_date} onChange={e => setForm(p => ({ ...p, end_date: e.target.value }))}
-                    className="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2.5 text-sm text-slate-100" />
-                </div>
-              </div>
-              <div>
-                <label className="text-xs text-slate-400 mb-1 block">Açıklama (isteğe bağlı)</label>
-                <textarea value={form.reason} onChange={e => setForm(p => ({ ...p, reason: e.target.value }))}
-                  rows={2} className="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm text-slate-100 resize-none" />
+                <label className="form-label">Bitis</label>
+                <input type="date" className="form-input" value={form.end_date}
+                  onChange={e => setForm(p => ({ ...p, end_date: e.target.value }))} />
               </div>
             </div>
-            <div className="flex gap-2 mt-4">
-              <button onClick={() => createMut.mutate(form)} disabled={createMut.isPending || !form.personnel_id || !form.start_date || !form.end_date}
-                className="flex-1 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 text-white rounded text-sm">
-                {createMut.isPending ? 'Kaydediliyor...' : 'Gönder'}
-              </button>
-              <button onClick={() => setNewLeave(false)} className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-sm">İptal</button>
+            <div>
+              <label className="form-label">Aciklama (istege bagli)</label>
+              <textarea className="form-textarea" value={form.reason}
+                onChange={e => setForm(p => ({ ...p, reason: e.target.value }))} rows={2}
+                style={{ minHeight: '60px' }} />
             </div>
           </div>
-        </div>
+          <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
+            <button className="btn btn-primary" style={{ flex: 1, opacity: (createMut.isPending || !form.personnel_id || !form.start_date || !form.end_date) ? 0.5 : 1 }}
+              onClick={() => createMut.mutate(form)}
+              disabled={createMut.isPending || !form.personnel_id || !form.start_date || !form.end_date}>
+              {createMut.isPending ? 'Kaydediliyor...' : 'Gonder'}
+            </button>
+            <button className="btn btn-ghost" onClick={() => setNewLeave(false)}>Iptal</button>
+          </div>
+        </ModalOverlay>
       )}
     </div>
   )
 }
 
-// ─── Tab: Mesai ────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+//  TAB 3 — Mesai (Overtime)
+// ═══════════════════════════════════════════════════════════════════════════════
 function OvertimeTab({ departments }) {
   const qc = useQueryClient()
   const user = useAuthStore(s => s.user)
@@ -514,268 +704,1001 @@ function OvertimeTab({ departments }) {
   })
 
   const totalHours = records.reduce((s, r) => s + r.hours, 0)
+  const uniquePersonnel = new Set(records.map(r => r.personnel_id)).size
 
   return (
-    <div>
+    <div className="fade-up">
       {/* Controls */}
-      <div className="flex flex-wrap items-center gap-2 mb-5">
-        <input type="month" value={month} onChange={e => setMonth(e.target.value)}
-          className="bg-slate-800 border border-slate-700 rounded px-3 py-1.5 text-sm text-slate-300" />
-        <select value={deptFilter} onChange={e => setDeptFilter(e.target.value)}
-          className="bg-slate-800 border border-slate-700 rounded px-3 py-1.5 text-sm text-slate-300 flex-1 min-w-0">
-          <option value="">Tüm Bölümler</option>
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px', marginBottom: '20px' }}>
+        <input type="month" className="form-input" value={month} onChange={e => setMonth(e.target.value)}
+          style={{ width: 'auto', padding: '5px 11px', fontSize: '12px' }} />
+        <select className="form-select" value={deptFilter} onChange={e => setDeptFilter(e.target.value)}
+          style={{ width: 'auto', minWidth: '140px', padding: '5px 11px', fontSize: '11px' }}>
+          <option value="">Tum Bolumler</option>
           {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
         </select>
         {canAdd && (
-          <button onClick={() => setShowForm(true)} className="px-4 py-1.5 bg-purple-700 hover:bg-purple-600 text-white rounded text-sm whitespace-nowrap">+ Mesai Ekle</button>
+          <button className="btn btn-primary btn-sm" onClick={() => setShowForm(true)} style={{ marginLeft: 'auto' }}>
+            + Mesai Ekle
+          </button>
         )}
       </div>
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
-        <StatCard label="Toplam Mesai" value={`${totalHours.toFixed(1)}s`} color="text-purple-400" />
-        <StatCard label="Mesai Kaydı" value={records.length} color="text-slate-100" />
-        <StatCard label="Kişi Sayısı" value={new Set(records.map(r => r.personnel_id)).size} color="text-blue-400" />
-        <StatCard label="Ort./Kişi" value={records.length ? (totalHours / new Set(records.map(r => r.personnel_id)).size).toFixed(1) + 's' : '—'} color="text-orange-400" />
-      </div>
-
-      {/* Dept summary */}
-      {summary.length > 0 && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
-          {summary.map(s => (
-            <div key={s.dept_id} className="bg-slate-900 rounded-xl p-3">
-              <DeptBadge name={s.dept_name} colorClass={s.color_class} />
-              <div className="text-xl font-bold text-slate-100 mt-2">{s.total_hours?.toFixed(1)}s</div>
-              <div className="text-xs text-slate-500">{s.personnel_count} kişi</div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Cards on mobile, table on desktop */}
-      <div className="md:hidden space-y-3">
-        {records.length === 0 && <div className="text-center text-slate-500 py-8 text-sm">Bu ay mesai kaydı yok</div>}
-        {records.map(r => (
-          <div key={r.id} className="bg-slate-900 rounded-xl p-4">
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-1.5">
-                <GenderBadge gender={r.gender} />
-                <span className="text-slate-100 text-sm font-medium">{r.full_name}</span>
-              </div>
-              <span className="text-purple-400 font-bold">{r.hours}s</span>
-            </div>
-            <div className="flex flex-wrap gap-2 text-xs">
-              <DeptBadge name={r.dept_name} colorClass={r.dept_color} />
-              <span className="text-slate-400">{formatDate(r.work_date)}</span>
-              {r.reason && <span className="text-slate-500">{r.reason}</span>}
-            </div>
+      {/* Summary */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '10px', marginBottom: '20px' }}>
+        {[
+          { label: 'TOPLAM MESAI', value: `${totalHours.toFixed(1)}s`, color: 'var(--purple)' },
+          { label: 'MESAI KAYDI', value: records.length, color: 'var(--text)' },
+          { label: 'KISI SAYISI', value: uniquePersonnel, color: 'var(--blue)' },
+          { label: 'ORT./KISI', value: uniquePersonnel ? `${(totalHours / uniquePersonnel).toFixed(1)}s` : '\u2014', color: 'var(--accent)' },
+        ].map(s => (
+          <div key={s.label} style={{
+            padding: '14px', background: 'var(--surface2)',
+            border: '1px solid var(--border)', borderRadius: '8px',
+          }}>
+            <div style={{ fontFamily: 'var(--display)', fontSize: '28px', color: s.color, lineHeight: 1 }}>{s.value}</div>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text3)', letterSpacing: '1px', marginTop: '6px' }}>{s.label}</div>
           </div>
         ))}
       </div>
 
-      <div className="hidden md:block bg-slate-900 rounded-xl overflow-hidden">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-slate-800">
-              <th className="text-left p-3 text-slate-400 font-medium">Personel</th>
-              <th className="text-left p-3 text-slate-400 font-medium">Bölüm</th>
-              <th className="text-left p-3 text-slate-400 font-medium">Tarih</th>
-              <th className="text-left p-3 text-slate-400 font-medium">Saat</th>
-              <th className="text-left p-3 text-slate-400 font-medium">Sebep</th>
-            </tr>
-          </thead>
-          <tbody>
-            {records.map(r => (
-              <tr key={r.id} className="border-t border-slate-800 hover:bg-slate-800/50">
-                <td className="p-3">
-                  <div className="flex items-center gap-1">
-                    <GenderBadge gender={r.gender} />
-                    <span className="text-slate-200">{r.full_name}</span>
-                  </div>
-                </td>
-                <td className="p-3"><DeptBadge name={r.dept_name} colorClass={r.dept_color} /></td>
-                <td className="p-3 text-slate-400 text-xs">{formatDate(r.work_date)}</td>
-                <td className="p-3 font-medium text-purple-400">{r.hours}s</td>
-                <td className="p-3 text-slate-400">{r.reason || '—'}</td>
-              </tr>
-            ))}
-            {records.length === 0 && (
-              <tr><td colSpan={5} className="text-center text-slate-500 py-8">Bu ay mesai kaydı yok</td></tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Add Modal */}
-      {showForm && (
-        <div className="fixed inset-0 bg-black/60 flex items-end sm:items-center justify-center z-50 p-4" onClick={() => setShowForm(false)}>
-          <div className="bg-slate-900 border border-slate-700 rounded-xl p-5 w-full max-w-md" onClick={e => e.stopPropagation()}>
-            <h3 className="font-semibold text-slate-100 mb-4">Mesai Kaydı Ekle</h3>
-            <div className="space-y-3">
-              <div>
-                <label className="text-xs text-slate-400 mb-1 block">Personel ID</label>
-                <input value={form.personnel_id} onChange={e => setForm(p => ({ ...p, personnel_id: e.target.value }))}
-                  className="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2.5 text-sm text-slate-100" />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs text-slate-400 mb-1 block">Tarih</label>
-                  <input type="date" value={form.work_date} onChange={e => setForm(p => ({ ...p, work_date: e.target.value }))}
-                    className="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2.5 text-sm text-slate-100" />
-                </div>
-                <div>
-                  <label className="text-xs text-slate-400 mb-1 block">Saat</label>
-                  <input type="number" step="0.5" min="0.5" max="12" value={form.hours} onChange={e => setForm(p => ({ ...p, hours: e.target.value }))}
-                    className="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2.5 text-sm text-slate-100" />
-                </div>
-              </div>
-              <div>
-                <label className="text-xs text-slate-400 mb-1 block">Sebep</label>
-                <input value={form.reason} onChange={e => setForm(p => ({ ...p, reason: e.target.value }))}
-                  className="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2.5 text-sm text-slate-100" />
-              </div>
-            </div>
-            <div className="flex gap-2 mt-4">
-              <button onClick={() => createMut.mutate({ ...form, personnel_id: parseInt(form.personnel_id), hours: parseFloat(form.hours) })}
-                disabled={createMut.isPending || !form.personnel_id || !form.work_date || !form.hours}
-                className="flex-1 px-4 py-2.5 bg-purple-700 hover:bg-purple-600 disabled:bg-slate-700 text-white rounded text-sm">
-                {createMut.isPending ? 'Kaydediliyor...' : 'Kaydet'}
-              </button>
-              <button onClick={() => setShowForm(false)} className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-sm">İptal</button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ─── Tab: İstatistikler ─────────────────────────────────────────────────────
-function StatisticsTab() {
-  const today = new Date().toISOString().split('T')[0]
-  const [date, setDate] = useState(today)
-
-  const { data: stats } = useQuery({
-    queryKey: ['shift-stats', date],
-    queryFn: () => api.get('/shifts/statistics', { params: { date } }).then(r => r.data),
-  })
-
-  const { data: deptSummary = [] } = useQuery({
-    queryKey: ['dept-summary'],
-    queryFn: () => api.get('/shifts/departments/summary').then(r => r.data),
-  })
-
-  if (!stats) return <div className="text-slate-500 text-sm mt-4">Yükleniyor...</div>
-
-  const totalScheduled = stats.byShift?.reduce((s, r) => s + r.total, 0) || 0
-  const totalMale = stats.byShift?.reduce((s, r) => s + r.male_count, 0) || 0
-  const totalFemale = stats.byShift?.reduce((s, r) => s + r.female_count, 0) || 0
-
-  return (
-    <div className="space-y-5">
-      {/* Date picker */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <label className="text-sm text-slate-400">Tarih:</label>
-        <input type="date" value={date} onChange={e => setDate(e.target.value)}
-          className="bg-slate-800 border border-slate-700 rounded px-3 py-1.5 text-sm text-slate-300" />
-        <button onClick={() => setDate(today)} className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded text-sm text-slate-300">Bugün</button>
-      </div>
-
-      {/* Top summary */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <StatCard label="Aktif Vardiya" value={totalScheduled} color="text-blue-400" sub={formatDate(date)} />
-        <StatCard label="İzinli" value={stats.onLeave || 0} color="text-amber-400" />
-        <StatCard label="Devamsız" value={stats.absent || 0} color="text-red-400" />
-        <StatCard label="Bekleyen İzin" value={stats.pendingLeave || 0} color="text-orange-400" />
-      </div>
-
-      {/* Gender breakdown */}
-      <div className="bg-slate-900 rounded-xl p-4">
-        <h3 className="font-medium text-slate-200 mb-3">Cinsiyet Dağılımı</h3>
-        <div className="flex items-center gap-4">
-          <div className="text-center min-w-12">
-            <div className="text-2xl font-bold text-blue-400">{totalMale}</div>
-            <div className="text-xs text-slate-400 mt-0.5">♂ Erkek</div>
-          </div>
-          <div className="flex-1 bg-slate-800 rounded-full h-4 overflow-hidden">
-            {totalScheduled > 0 && (
-              <>
-                <div className="h-full bg-blue-500 float-left transition-all" style={{ width: `${(totalMale / totalScheduled) * 100}%` }}></div>
-                <div className="h-full bg-pink-500" style={{ width: `${(totalFemale / totalScheduled) * 100}%` }}></div>
-              </>
-            )}
-          </div>
-          <div className="text-center min-w-12">
-            <div className="text-2xl font-bold text-pink-400">{totalFemale}</div>
-            <div className="text-xs text-slate-400 mt-0.5">♀ Kadın</div>
-          </div>
-        </div>
-      </div>
-
-      {/* Shift breakdown */}
-      {stats.byShift?.length > 0 && (
-        <div className="bg-slate-900 rounded-xl p-4">
-          <h3 className="font-medium text-slate-200 mb-3">Vardiyalara Göre Dağılım</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            {stats.byShift.map(s => {
-              const borderMap = { 'bg-blue-400': 'border-blue-400', 'bg-orange-400': 'border-orange-400', 'bg-indigo-600': 'border-indigo-500' }
-              return (
-                <div key={s.shift_def_id} className={`bg-slate-800 rounded-lg p-4 border-l-4 ${borderMap[s.color_class] || 'border-slate-600'}`}>
-                  <div className="font-semibold text-slate-100">{s.shift_name}</div>
-                  <div className="text-xs text-slate-400 mb-2">{s.start_hour}:00 – {s.end_hour === 24 ? '00:00' : `${s.end_hour}:00`}</div>
-                  <div className="text-3xl font-bold text-slate-100">{s.total}</div>
-                  <div className="flex gap-3 mt-2 text-xs">
-                    <span className="text-blue-400">♂ {s.male_count}</span>
-                    <span className="text-pink-400">♀ {s.female_count}</span>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Department breakdown */}
-      <div className="bg-slate-900 rounded-xl p-4">
-        <h3 className="font-medium text-slate-200 mb-3">Bölüm Bazlı Personel</h3>
-        <div className="space-y-2">
-          {deptSummary.map(d => {
-            const maxCount = Math.max(...deptSummary.map(x => x.personnel_count), 1)
+      {/* Dept summary */}
+      {summary.length > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '10px', marginBottom: '20px' }}>
+          {summary.map(s => {
+            const dc = deptColor(s.color_class)
             return (
-              <div key={d.id} className="flex items-center gap-2">
-                <div className="w-20 text-xs text-slate-400 text-right truncate">{d.name}</div>
-                <div className="flex-1 bg-slate-800 rounded-full h-5 overflow-hidden relative">
-                  <div className={`h-full ${d.color_class} transition-all`} style={{ width: `${(d.personnel_count / maxCount) * 100}%` }}></div>
-                  <span className="absolute inset-0 flex items-center pl-2 text-xs text-white font-medium">{d.personnel_count}</span>
+              <div key={s.dept_id} style={{
+                padding: '12px', background: 'var(--surface2)',
+                border: '1px solid var(--border)', borderRadius: '8px',
+              }}>
+                <span style={{
+                  display: 'inline-block', padding: '2px 8px', borderRadius: '10px',
+                  background: dc.bg, color: dc.text,
+                  fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 600,
+                }}>{s.dept_name}</span>
+                <div style={{ fontFamily: 'var(--display)', fontSize: '22px', color: 'var(--text)', lineHeight: 1, marginTop: '8px' }}>
+                  {s.total_hours?.toFixed(1)}s
                 </div>
-                <div className="text-xs text-slate-500 w-16 text-right whitespace-nowrap">
-                  <span className="text-blue-400">♂{d.male_count}</span> <span className="text-pink-400">♀{d.female_count}</span>
+                <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', marginTop: '2px' }}>
+                  {s.personnel_count} kisi
                 </div>
               </div>
             )
           })}
         </div>
+      )}
+
+      {/* Records table */}
+      <div className="panel">
+        <div className="panel-header">
+          <div>
+            <div className="panel-title">MESAI KAYITLARI</div>
+            <div className="panel-subtitle">{records.length} KAYIT</div>
+          </div>
+        </div>
+        <div className="panel-body" style={{ padding: 0 }}>
+          {records.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-icon">&#9201;</div>
+              <div className="empty-title">MESAI YOK</div>
+              <div className="empty-sub">Bu ay mesai kaydi yok</div>
+            </div>
+          ) : (
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Personel</th>
+                  <th>Bolum</th>
+                  <th>Tarih</th>
+                  <th>Saat</th>
+                  <th>Sebep</th>
+                </tr>
+              </thead>
+              <tbody>
+                {records.map(r => {
+                  const dc = deptColor(r.dept_color)
+                  return (
+                    <tr key={r.id}>
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span style={{ color: r.gender === 'female' ? '#f472b6' : 'var(--blue)', fontSize: '11px' }}>
+                            {r.gender === 'female' ? '\u2640' : '\u2642'}
+                          </span>
+                          <span>{r.full_name}</span>
+                        </div>
+                      </td>
+                      <td>
+                        <span style={{
+                          display: 'inline-block', padding: '2px 8px', borderRadius: '10px',
+                          background: dc.bg, color: dc.text,
+                          fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 600,
+                        }}>{r.dept_name}</span>
+                      </td>
+                      <td style={{ fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--text2)' }}>{formatDate(r.work_date)}</td>
+                      <td style={{ fontFamily: 'var(--display)', fontSize: '18px', color: 'var(--purple)' }}>{r.hours}s</td>
+                      <td style={{ color: 'var(--text2)' }}>{r.reason || '\u2014'}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
       </div>
 
-      {/* Overtime summary */}
-      <div className="bg-slate-900 rounded-xl p-4">
-        <h3 className="font-medium text-slate-200 mb-2">Bu Ay Mesai</h3>
-        <div className="flex gap-6">
-          <div>
-            <div className="text-2xl font-bold text-purple-400">{stats.overtimeMonth?.total_hours?.toFixed(1) || 0}s</div>
-            <div className="text-xs text-slate-500">Toplam Saat</div>
+      {/* Add Modal */}
+      {showForm && (
+        <ModalOverlay onClose={() => setShowForm(false)}>
+          <h3 style={{ fontFamily: 'var(--display)', fontSize: '18px', letterSpacing: '2px', marginBottom: '16px' }}>
+            MESAI KAYDI EKLE
+          </h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div>
+              <label className="form-label">Personel</label>
+              <PersonnelSearch value={form.personnel_id} onChange={v => setForm(p => ({ ...p, personnel_id: v }))} />
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+              <div>
+                <label className="form-label">Tarih</label>
+                <input type="date" className="form-input" value={form.work_date}
+                  onChange={e => setForm(p => ({ ...p, work_date: e.target.value }))} />
+              </div>
+              <div>
+                <label className="form-label">Saat</label>
+                <input type="number" step="0.5" min="0.5" max="12" className="form-input" value={form.hours}
+                  onChange={e => setForm(p => ({ ...p, hours: e.target.value }))} />
+              </div>
+            </div>
+            <div>
+              <label className="form-label">Sebep</label>
+              <input className="form-input" value={form.reason}
+                onChange={e => setForm(p => ({ ...p, reason: e.target.value }))} />
+            </div>
           </div>
-          <div>
-            <div className="text-2xl font-bold text-slate-300">{stats.overtimeMonth?.record_count || 0}</div>
-            <div className="text-xs text-slate-500">Kayıt</div>
+          <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
+            <button className="btn btn-primary" style={{ flex: 1, opacity: (createMut.isPending || !form.personnel_id || !form.work_date || !form.hours) ? 0.5 : 1 }}
+              onClick={() => createMut.mutate({ ...form, personnel_id: parseInt(form.personnel_id), hours: parseFloat(form.hours) })}
+              disabled={createMut.isPending || !form.personnel_id || !form.work_date || !form.hours}>
+              {createMut.isPending ? 'Kaydediliyor...' : 'Kaydet'}
+            </button>
+            <button className="btn btn-ghost" onClick={() => setShowForm(false)}>Iptal</button>
           </div>
+        </ModalOverlay>
+      )}
+    </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  TAB 4 — Yoklama (Attendance) — NEW
+// ═══════════════════════════════════════════════════════════════════════════════
+function AttendanceTab({ departments }) {
+  const qc = useQueryClient()
+  const [date, setDate] = useState(todayStr())
+  const [deptFilter, setDeptFilter] = useState('')
+
+  const { data: records = [], isLoading } = useQuery({
+    queryKey: ['attendance', date, deptFilter],
+    queryFn: () => api.get('/shifts/attendance', { params: { date, dept_id: deptFilter || undefined } }).then(r => r.data),
+  })
+
+  const checkinMut = useMutation({
+    mutationFn: (personnelId) => api.post('/shifts/attendance/checkin', { personnel_id: personnelId, date }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['attendance'] }),
+  })
+
+  const checkoutMut = useMutation({
+    mutationFn: (personnelId) => api.post('/shifts/attendance/checkout', { personnel_id: personnelId, date }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['attendance'] }),
+  })
+
+  const totalPresent = records.filter(r => r.check_in_time).length
+  const totalLate = records.filter(r => r.is_late).length
+
+  return (
+    <div className="fade-up">
+      {/* Controls */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
+        <input type="date" className="form-input" value={date} onChange={e => setDate(e.target.value)}
+          style={{ width: 'auto', padding: '5px 11px', fontSize: '12px' }} />
+        <button className="btn btn-ghost btn-sm" onClick={() => setDate(todayStr())}>Bugun</button>
+        <select className="form-select" value={deptFilter} onChange={e => setDeptFilter(e.target.value)}
+          style={{ width: 'auto', minWidth: '140px', padding: '5px 11px', fontSize: '11px' }}>
+          <option value="">Tum Bolumler</option>
+          {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+        </select>
+      </div>
+
+      {/* Summary */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '10px', marginBottom: '20px' }}>
+        {[
+          { label: 'TOPLAM', value: records.length, color: 'var(--text)' },
+          { label: 'MEVCUT', value: totalPresent, color: 'var(--green)' },
+          { label: 'GEC KALAN', value: totalLate, color: 'var(--red)' },
+          { label: 'GELMEDI', value: records.length - totalPresent, color: 'var(--accent)' },
+        ].map(s => (
+          <div key={s.label} style={{
+            padding: '14px', background: 'var(--surface2)',
+            border: '1px solid var(--border)', borderRadius: '8px',
+          }}>
+            <div style={{ fontFamily: 'var(--display)', fontSize: '28px', color: s.color, lineHeight: 1 }}>{s.value}</div>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text3)', letterSpacing: '1px', marginTop: '6px' }}>{s.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Attendance table */}
+      <div className="panel">
+        <div className="panel-header">
+          <div>
+            <div className="panel-title">YOKLAMA</div>
+            <div className="panel-subtitle">{formatDate(date)}</div>
+          </div>
+        </div>
+        <div className="panel-body" style={{ padding: 0 }}>
+          {isLoading ? (
+            <div className="empty-state"><div className="empty-sub">Yukleniyor...</div></div>
+          ) : records.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-icon">&#128203;</div>
+              <div className="empty-title">KAYIT YOK</div>
+              <div className="empty-sub">Bu tarih icin yoklama kaydi bulunamadi</div>
+            </div>
+          ) : (
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Personel</th>
+                  <th>Bolum</th>
+                  <th>Giris</th>
+                  <th>Cikis</th>
+                  <th>Sure</th>
+                  <th>Durum</th>
+                  <th>Islem</th>
+                </tr>
+              </thead>
+              <tbody>
+                {records.map(r => {
+                  const dc = deptColor(r.dept_color)
+                  return (
+                    <tr key={r.personnel_id} style={r.is_late ? { background: 'rgba(231,76,60,.04)' } : undefined}>
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span style={{ color: r.gender === 'female' ? '#f472b6' : 'var(--blue)', fontSize: '11px' }}>
+                            {r.gender === 'female' ? '\u2640' : '\u2642'}
+                          </span>
+                          <span>{r.full_name}</span>
+                        </div>
+                      </td>
+                      <td>
+                        <span style={{
+                          display: 'inline-block', padding: '2px 8px', borderRadius: '10px',
+                          background: dc.bg, color: dc.text,
+                          fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 600,
+                        }}>{r.dept_name}</span>
+                      </td>
+                      <td style={{ fontFamily: 'var(--mono)', fontSize: '11px', color: r.check_in_time ? 'var(--green)' : 'var(--text3)' }}>
+                        {r.check_in_time || '\u2014'}
+                      </td>
+                      <td style={{ fontFamily: 'var(--mono)', fontSize: '11px', color: r.check_out_time ? 'var(--blue)' : 'var(--text3)' }}>
+                        {r.check_out_time || '\u2014'}
+                      </td>
+                      <td style={{ fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--text2)' }}>
+                        {r.actual_hours ? `${r.actual_hours}s` : '\u2014'}
+                      </td>
+                      <td>
+                        {r.is_late && <span className="badge badge-red">GEC</span>}
+                        {r.check_in_time && !r.is_late && <span className="badge badge-green">ZAMANINDA</span>}
+                        {!r.check_in_time && <span className="badge badge-gray">BEKLENIYOR</span>}
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', gap: '6px' }}>
+                          {!r.check_in_time && (
+                            <button className="btn btn-sm" style={{ background: 'var(--green)', color: '#000' }}
+                              onClick={() => checkinMut.mutate(r.personnel_id)}
+                              disabled={checkinMut.isPending}>
+                              Giris Yap
+                            </button>
+                          )}
+                          {r.check_in_time && !r.check_out_time && (
+                            <button className="btn btn-sm" style={{ background: 'var(--blue)', color: '#fff' }}
+                              onClick={() => checkoutMut.mutate(r.personnel_id)}
+                              disabled={checkoutMut.isPending}>
+                              Cikis Yap
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
     </div>
   )
 }
 
-// ─── Ana Bileşen ────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+//  TAB 5 — Departmanlar (Departments) — NEW
+// ═══════════════════════════════════════════════════════════════════════════════
+function DepartmentsTab() {
+  const qc = useQueryClient()
+
+  const [editDept, setEditDept] = useState(null) // null = closed, {} = new, {...} = edit
+  const [deptForm, setDeptForm] = useState({ name: '', color_class: 'bg-blue-600' })
+  const [assignModal, setAssignModal] = useState(false)
+  const [assignForm, setAssignForm] = useState({ personnel_id: '', dept_id: '' })
+
+  const { data: deptSummary = [] } = useQuery({
+    queryKey: ['departments-summary'],
+    queryFn: () => api.get('/shifts/departments/summary').then(r => r.data),
+  })
+
+  const { data: departments = [] } = useQuery({
+    queryKey: ['departments'],
+    queryFn: () => api.get('/shifts/departments').then(r => r.data),
+  })
+
+  const createDept = useMutation({
+    mutationFn: data => api.post('/shifts/departments', data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['departments'] })
+      qc.invalidateQueries({ queryKey: ['departments-summary'] })
+      setEditDept(null)
+    },
+    onError: e => alert(e.response?.data?.error || 'Hata'),
+  })
+
+  const updateDept = useMutation({
+    mutationFn: ({ id, ...data }) => api.put(`/shifts/departments/${id}`, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['departments'] })
+      qc.invalidateQueries({ queryKey: ['departments-summary'] })
+      setEditDept(null)
+    },
+    onError: e => alert(e.response?.data?.error || 'Hata'),
+  })
+
+  const deleteDept = useMutation({
+    mutationFn: (id) => api.delete(`/shifts/departments/${id}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['departments'] })
+      qc.invalidateQueries({ queryKey: ['departments-summary'] })
+    },
+  })
+
+  const assignMut = useMutation({
+    mutationFn: data => api.post('/shifts/departments/assign', data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['departments-summary'] })
+      setAssignModal(false)
+      setAssignForm({ personnel_id: '', dept_id: '' })
+    },
+    onError: e => alert(e.response?.data?.error || 'Hata'),
+  })
+
+  const openNew = () => {
+    setDeptForm({ name: '', color_class: 'bg-blue-600' })
+    setEditDept({})
+  }
+
+  const openEditDept = (d) => {
+    setDeptForm({ name: d.name, color_class: d.color_class || 'bg-blue-600' })
+    setEditDept(d)
+  }
+
+  const maxCount = Math.max(...deptSummary.map(d => d.personnel_count || 0), 1)
+
+  const COLOR_OPTIONS = [
+    'bg-red-600', 'bg-green-600', 'bg-orange-500', 'bg-blue-600',
+    'bg-yellow-500', 'bg-lime-500', 'bg-pink-500', 'bg-purple-600',
+  ]
+
+  return (
+    <div className="fade-up">
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+        <div />
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button className="btn btn-ghost btn-sm" onClick={() => setAssignModal(true)}>Personel Ata</button>
+          <button className="btn btn-primary btn-sm" onClick={openNew}>+ Yeni Bolum</button>
+        </div>
+      </div>
+
+      {/* Department list */}
+      <div className="panel">
+        <div className="panel-header">
+          <div>
+            <div className="panel-title">BOLUMLER</div>
+            <div className="panel-subtitle">{deptSummary.length} BOLUM</div>
+          </div>
+        </div>
+        <div className="panel-body">
+          {deptSummary.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-icon">&#127970;</div>
+              <div className="empty-title">BOLUM YOK</div>
+              <div className="empty-sub">Henuz bolum tanimlanmamis</div>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {deptSummary.map(d => {
+                const dc = deptColor(d.color_class)
+                const pct = ((d.personnel_count || 0) / maxCount) * 100
+                return (
+                  <div key={d.id} style={{
+                    display: 'flex', alignItems: 'center', gap: '12px',
+                    padding: '12px 14px', background: 'var(--surface2)',
+                    border: '1px solid var(--border)', borderRadius: '8px',
+                  }}>
+                    <div style={{ width: '100px', flexShrink: 0 }}>
+                      <span style={{
+                        display: 'inline-block', padding: '2px 8px', borderRadius: '10px',
+                        background: dc.bg, color: dc.text,
+                        fontFamily: 'var(--mono)', fontSize: '10px', fontWeight: 600,
+                      }}>{d.name}</span>
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                        <span style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text2)' }}>
+                          {d.personnel_count || 0} personel
+                        </span>
+                        <span style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)' }}>
+                          {d.male_count !== undefined && (<><span style={{ color: 'var(--blue)' }}>{'\u2642'}{d.male_count}</span>{' '}<span style={{ color: '#f472b6' }}>{'\u2640'}{d.female_count}</span></>)}
+                        </span>
+                      </div>
+                      <div className="prog-bar">
+                        <div className="prog-fill prog-blue" style={{ width: `${pct}%` }} />
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                      <button className="btn btn-ghost btn-sm" onClick={() => openEditDept(d)}>Duzenle</button>
+                      <button className="btn btn-danger btn-sm"
+                        onClick={() => { if (confirm(`${d.name} bolumunu silmek istediginizden emin misiniz?`)) deleteDept.mutate(d.id) }}>
+                        Sil
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Edit/Create dept modal */}
+      {editDept !== null && (
+        <ModalOverlay onClose={() => setEditDept(null)}>
+          <h3 style={{ fontFamily: 'var(--display)', fontSize: '18px', letterSpacing: '2px', marginBottom: '16px' }}>
+            {editDept.id ? 'BOLUM DUZENLE' : 'YENI BOLUM'}
+          </h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div>
+              <label className="form-label">Bolum Adi</label>
+              <input className="form-input" value={deptForm.name}
+                onChange={e => setDeptForm(p => ({ ...p, name: e.target.value }))} />
+            </div>
+            <div>
+              <label className="form-label">Renk</label>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                {COLOR_OPTIONS.map(c => {
+                  const dc = deptColor(c)
+                  return (
+                    <button key={c} onClick={() => setDeptForm(p => ({ ...p, color_class: c }))}
+                      style={{
+                        width: '32px', height: '32px', borderRadius: '6px',
+                        background: dc.bg, border: `2px solid ${deptForm.color_class === c ? dc.text : 'transparent'}`,
+                        cursor: 'pointer',
+                      }} />
+                  )
+                })}
+              </div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
+            <button className="btn btn-primary" style={{ flex: 1, opacity: !deptForm.name ? 0.5 : 1 }}
+              disabled={!deptForm.name}
+              onClick={() => {
+                if (editDept.id) updateDept.mutate({ id: editDept.id, ...deptForm })
+                else createDept.mutate(deptForm)
+              }}>
+              {editDept.id ? 'Guncelle' : 'Olustur'}
+            </button>
+            <button className="btn btn-ghost" onClick={() => setEditDept(null)}>Iptal</button>
+          </div>
+        </ModalOverlay>
+      )}
+
+      {/* Assign personnel modal */}
+      {assignModal && (
+        <ModalOverlay onClose={() => setAssignModal(false)}>
+          <h3 style={{ fontFamily: 'var(--display)', fontSize: '18px', letterSpacing: '2px', marginBottom: '16px' }}>
+            PERSONEL BOLUM ATAMASI
+          </h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div>
+              <label className="form-label">Personel</label>
+              <PersonnelSearch value={assignForm.personnel_id}
+                onChange={v => setAssignForm(p => ({ ...p, personnel_id: v }))} />
+            </div>
+            <div>
+              <label className="form-label">Bolum</label>
+              <select className="form-select" value={assignForm.dept_id}
+                onChange={e => setAssignForm(p => ({ ...p, dept_id: e.target.value }))}>
+                <option value="">Bolum secin...</option>
+                {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+              </select>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
+            <button className="btn btn-primary" style={{ flex: 1, opacity: (!assignForm.personnel_id || !assignForm.dept_id) ? 0.5 : 1 }}
+              disabled={!assignForm.personnel_id || !assignForm.dept_id || assignMut.isPending}
+              onClick={() => assignMut.mutate({ personnel_id: parseInt(assignForm.personnel_id), dept_id: parseInt(assignForm.dept_id) })}>
+              {assignMut.isPending ? 'Ataniyor...' : 'Ata'}
+            </button>
+            <button className="btn btn-ghost" onClick={() => setAssignModal(false)}>Iptal</button>
+          </div>
+        </ModalOverlay>
+      )}
+    </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  TAB 6 — Takas (Swap) — NEW
+// ═══════════════════════════════════════════════════════════════════════════════
+function SwapTab() {
+  const qc = useQueryClient()
+  const user = useAuthStore(s => s.user)
+  const canApprove = ['campus_manager', 'shift_supervisor'].includes(user?.role)
+
+  const [showForm, setShowForm] = useState(false)
+  const [form, setForm] = useState({
+    requester_id: '', target_id: '',
+    requester_date: '', target_date: '',
+    reason: '',
+  })
+
+  const { data: swaps = [] } = useQuery({
+    queryKey: ['swaps'],
+    queryFn: () => api.get('/shifts/swaps').then(r => r.data),
+  })
+
+  const createSwap = useMutation({
+    mutationFn: data => api.post('/shifts/swaps', data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['swaps'] })
+      setShowForm(false)
+      setForm({ requester_id: '', target_id: '', requester_date: '', target_date: '', reason: '' })
+    },
+    onError: e => alert(e.response?.data?.error || 'Hata'),
+  })
+
+  const approveMut = useMutation({
+    mutationFn: (id) => api.patch(`/shifts/swaps/${id}/approve`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['swaps'] }),
+  })
+
+  const rejectMut = useMutation({
+    mutationFn: (id) => api.patch(`/shifts/swaps/${id}/reject`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['swaps'] }),
+  })
+
+  return (
+    <div className="fade-up">
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '16px' }}>
+        <button className="btn btn-primary btn-sm" onClick={() => setShowForm(true)}>+ Takas Talebi</button>
+      </div>
+
+      <div className="panel">
+        <div className="panel-header">
+          <div>
+            <div className="panel-title">VARDIYA TAKAS TALEPLERI</div>
+            <div className="panel-subtitle">{swaps.length} TALEP</div>
+          </div>
+        </div>
+        <div className="panel-body" style={{ padding: 0 }}>
+          {swaps.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-icon">&#128260;</div>
+              <div className="empty-title">TAKAS YOK</div>
+              <div className="empty-sub">Henuz takas talebi yok</div>
+            </div>
+          ) : (
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Talep Eden</th>
+                  <th>Tarih</th>
+                  <th>Hedef Kisi</th>
+                  <th>Tarih</th>
+                  <th>Sebep</th>
+                  <th>Durum</th>
+                  {canApprove && <th>Islem</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {swaps.map(s => (
+                  <tr key={s.id}>
+                    <td style={{ fontSize: '12.5px' }}>{s.requester_name || `#${s.requester_id}`}</td>
+                    <td style={{ fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--text2)' }}>
+                      {s.requester_date ? formatDate(s.requester_date) : '\u2014'}
+                    </td>
+                    <td style={{ fontSize: '12.5px' }}>{s.target_name || `#${s.target_id}`}</td>
+                    <td style={{ fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--text2)' }}>
+                      {s.target_date ? formatDate(s.target_date) : '\u2014'}
+                    </td>
+                    <td style={{ color: 'var(--text2)', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {s.reason || '\u2014'}
+                    </td>
+                    <td>
+                      <span className={`badge ${SWAP_STATUS[s.status]?.badge || 'badge-gray'}`}>
+                        {SWAP_STATUS[s.status]?.label || s.status}
+                      </span>
+                    </td>
+                    {canApprove && (
+                      <td>
+                        {s.status === 'pending' && (
+                          <div style={{ display: 'flex', gap: '6px' }}>
+                            <button className="btn btn-sm" style={{ background: 'var(--green)', color: '#000' }}
+                              onClick={() => approveMut.mutate(s.id)}
+                              disabled={approveMut.isPending}>Onayla</button>
+                            <button className="btn btn-danger btn-sm"
+                              onClick={() => rejectMut.mutate(s.id)}
+                              disabled={rejectMut.isPending}>Reddet</button>
+                          </div>
+                        )}
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+
+      {/* Create swap modal */}
+      {showForm && (
+        <ModalOverlay onClose={() => setShowForm(false)}>
+          <h3 style={{ fontFamily: 'var(--display)', fontSize: '18px', letterSpacing: '2px', marginBottom: '16px' }}>
+            YENI TAKAS TALEBI
+          </h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div>
+              <label className="form-label">Talep Eden Personel</label>
+              <PersonnelSearch value={form.requester_id}
+                onChange={v => setForm(p => ({ ...p, requester_id: v }))}
+                placeholder="Talep eden personeli ara..." />
+            </div>
+            <div>
+              <label className="form-label">Talep Eden Tarih</label>
+              <input type="date" className="form-input" value={form.requester_date}
+                onChange={e => setForm(p => ({ ...p, requester_date: e.target.value }))} />
+            </div>
+            <div>
+              <label className="form-label">Hedef Personel</label>
+              <PersonnelSearch value={form.target_id}
+                onChange={v => setForm(p => ({ ...p, target_id: v }))}
+                placeholder="Hedef personeli ara..." />
+            </div>
+            <div>
+              <label className="form-label">Hedef Tarih</label>
+              <input type="date" className="form-input" value={form.target_date}
+                onChange={e => setForm(p => ({ ...p, target_date: e.target.value }))} />
+            </div>
+            <div>
+              <label className="form-label">Sebep</label>
+              <textarea className="form-textarea" value={form.reason}
+                onChange={e => setForm(p => ({ ...p, reason: e.target.value }))} rows={2}
+                style={{ minHeight: '60px' }} />
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
+            <button className="btn btn-primary" style={{
+              flex: 1,
+              opacity: (!form.requester_id || !form.target_id || !form.requester_date || !form.target_date) ? 0.5 : 1
+            }}
+              disabled={!form.requester_id || !form.target_id || !form.requester_date || !form.target_date || createSwap.isPending}
+              onClick={() => createSwap.mutate({
+                requester_id: parseInt(form.requester_id),
+                target_id: parseInt(form.target_id),
+                requester_date: form.requester_date,
+                target_date: form.target_date,
+                reason: form.reason,
+              })}>
+              {createSwap.isPending ? 'Gonderiliyor...' : 'Gonder'}
+            </button>
+            <button className="btn btn-ghost" onClick={() => setShowForm(false)}>Iptal</button>
+          </div>
+        </ModalOverlay>
+      )}
+    </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  TAB 7 — Ayarlar (Settings) — NEW
+// ═══════════════════════════════════════════════════════════════════════════════
+function SettingsTab({ departments, shiftDefs }) {
+  const qc = useQueryClient()
+
+  // Shift definitions CRUD
+  const [defModal, setDefModal] = useState(null) // null=closed, {}=new, {...}=edit
+  const [defForm, setDefForm] = useState({ name: '', start_hour: '', end_hour: '', color_class: 'bg-blue-400' })
+
+  // Rotation
+  const [rotForm, setRotForm] = useState({
+    dept_id: '', personnel_ids: '', shift_def_ids: '',
+    start_date: '', weeks: '4',
+  })
+
+  const createDef = useMutation({
+    mutationFn: data => api.post('/shifts/definitions', data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['shift-defs'] }); setDefModal(null) },
+    onError: e => alert(e.response?.data?.error || 'Hata'),
+  })
+
+  const updateDef = useMutation({
+    mutationFn: ({ id, ...data }) => api.put(`/shifts/definitions/${id}`, data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['shift-defs'] }); setDefModal(null) },
+    onError: e => alert(e.response?.data?.error || 'Hata'),
+  })
+
+  const deleteDef = useMutation({
+    mutationFn: (id) => api.delete(`/shifts/definitions/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['shift-defs'] }),
+  })
+
+  const applyRotation = useMutation({
+    mutationFn: data => api.post('/shifts/schedule/rotation', data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['schedule'] })
+      alert('Rotasyon basariyla uygulandi.')
+    },
+    onError: e => alert(e.response?.data?.error || 'Hata'),
+  })
+
+  const openNewDef = () => {
+    setDefForm({ name: '', start_hour: '', end_hour: '', color_class: 'bg-blue-400' })
+    setDefModal({})
+  }
+
+  const openEditDef = (d) => {
+    setDefForm({ name: d.name, start_hour: d.start_hour?.toString() || '', end_hour: d.end_hour?.toString() || '', color_class: d.color_class || 'bg-blue-400' })
+    setDefModal(d)
+  }
+
+  const DEF_COLORS = ['bg-blue-400', 'bg-orange-400', 'bg-indigo-600']
+
+  return (
+    <div className="fade-up">
+      {/* ─── Shift Definitions ─── */}
+      <div className="sect">
+        <div className="sect-title">VARDIYA TANIMLARI</div>
+        <div className="sect-line" />
+      </div>
+
+      <div className="panel" style={{ marginBottom: '28px' }}>
+        <div className="panel-header">
+          <div>
+            <div className="panel-title">VARDIYA TANIMLARI</div>
+            <div className="panel-subtitle">{shiftDefs.length} TANIM</div>
+          </div>
+          <button className="btn btn-primary btn-sm" onClick={openNewDef}>+ Yeni Tanim</button>
+        </div>
+        <div className="panel-body" style={{ padding: 0 }}>
+          {shiftDefs.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-icon">&#9881;</div>
+              <div className="empty-title">TANIM YOK</div>
+              <div className="empty-sub">Henuz vardiya tanimi yapilmamis</div>
+            </div>
+          ) : (
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Renk</th>
+                  <th>Ad</th>
+                  <th>Baslangic</th>
+                  <th>Bitis</th>
+                  <th>Islem</th>
+                </tr>
+              </thead>
+              <tbody>
+                {shiftDefs.map(s => {
+                  const sc = shiftColor(s.color_class)
+                  return (
+                    <tr key={s.id}>
+                      <td>
+                        <span style={{
+                          width: '16px', height: '16px', borderRadius: '4px',
+                          background: sc.text, display: 'inline-block',
+                        }} />
+                      </td>
+                      <td style={{ fontWeight: 600 }}>{s.name}</td>
+                      <td style={{ fontFamily: 'var(--mono)', color: 'var(--text2)' }}>{s.start_hour}:00</td>
+                      <td style={{ fontFamily: 'var(--mono)', color: 'var(--text2)' }}>{s.end_hour === 24 ? '00:00' : `${s.end_hour}:00`}</td>
+                      <td>
+                        <div style={{ display: 'flex', gap: '6px' }}>
+                          <button className="btn btn-ghost btn-sm" onClick={() => openEditDef(s)}>Duzenle</button>
+                          <button className="btn btn-danger btn-sm"
+                            onClick={() => { if (confirm(`${s.name} tanimini silmek istediginizden emin misiniz?`)) deleteDef.mutate(s.id) }}>
+                            Sil
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+
+      {/* ─── Rotation Template ─── */}
+      <div className="sect">
+        <div className="sect-title">ROTASYON SABLONU</div>
+        <div className="sect-line" />
+      </div>
+
+      <div className="panel">
+        <div className="panel-header">
+          <div>
+            <div className="panel-title">ROTASYON UYGULA</div>
+            <div className="panel-subtitle">OTOMATIK VARDIYA CIZELGESI</div>
+          </div>
+        </div>
+        <div className="panel-body">
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+            <div>
+              <label className="form-label">Bolum</label>
+              <select className="form-select" value={rotForm.dept_id}
+                onChange={e => setRotForm(p => ({ ...p, dept_id: e.target.value }))}>
+                <option value="">Bolum secin...</option>
+                {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="form-label">Baslangic Tarihi</label>
+              <input type="date" className="form-input" value={rotForm.start_date}
+                onChange={e => setRotForm(p => ({ ...p, start_date: e.target.value }))} />
+            </div>
+            <div>
+              <label className="form-label">Personel ID'leri (virgul ile)</label>
+              <input className="form-input" value={rotForm.personnel_ids} placeholder="1,2,3,4..."
+                onChange={e => setRotForm(p => ({ ...p, personnel_ids: e.target.value }))} />
+            </div>
+            <div>
+              <label className="form-label">Vardiya Tanimlari (virgul ile ID)</label>
+              <input className="form-input" value={rotForm.shift_def_ids} placeholder="1,2,3..."
+                onChange={e => setRotForm(p => ({ ...p, shift_def_ids: e.target.value }))} />
+            </div>
+            <div>
+              <label className="form-label">Hafta Sayisi</label>
+              <input type="number" min="1" max="52" className="form-input" value={rotForm.weeks}
+                onChange={e => setRotForm(p => ({ ...p, weeks: e.target.value }))} />
+            </div>
+          </div>
+
+          {/* Available shift defs reference */}
+          {shiftDefs.length > 0 && (
+            <div style={{ marginTop: '14px', padding: '10px 12px', background: 'var(--surface2)', borderRadius: '7px', border: '1px solid var(--border)' }}>
+              <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '1px', marginBottom: '6px' }}>MEVCUT VARDIYA TANIMLARI</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                {shiftDefs.map(s => {
+                  const sc = shiftColor(s.color_class)
+                  return (
+                    <span key={s.id} style={{
+                      display: 'inline-flex', alignItems: 'center', gap: '5px',
+                      padding: '3px 9px', borderRadius: '20px',
+                      background: sc.bg, color: sc.text,
+                      fontFamily: 'var(--mono)', fontSize: '10px', fontWeight: 600,
+                    }}>
+                      ID:{s.id} &mdash; {s.name}
+                    </span>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          <div style={{ marginTop: '16px' }}>
+            <button className="btn btn-primary"
+              disabled={!rotForm.dept_id || !rotForm.start_date || !rotForm.personnel_ids || !rotForm.shift_def_ids || applyRotation.isPending}
+              style={{ opacity: (!rotForm.dept_id || !rotForm.start_date || !rotForm.personnel_ids || !rotForm.shift_def_ids) ? 0.5 : 1 }}
+              onClick={() => applyRotation.mutate({
+                dept_id: parseInt(rotForm.dept_id),
+                start_date: rotForm.start_date,
+                weeks: parseInt(rotForm.weeks) || 4,
+                personnel_ids: rotForm.personnel_ids.split(',').map(s => parseInt(s.trim())).filter(Boolean),
+                shift_def_ids: rotForm.shift_def_ids.split(',').map(s => parseInt(s.trim())).filter(Boolean),
+              })}>
+              {applyRotation.isPending ? 'Uygulaniyor...' : 'Rotasyonu Uygula'}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Definition modal */}
+      {defModal !== null && (
+        <ModalOverlay onClose={() => setDefModal(null)}>
+          <h3 style={{ fontFamily: 'var(--display)', fontSize: '18px', letterSpacing: '2px', marginBottom: '16px' }}>
+            {defModal.id ? 'VARDIYA TANIMINI DUZENLE' : 'YENI VARDIYA TANIMI'}
+          </h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div>
+              <label className="form-label">Vardiya Adi</label>
+              <input className="form-input" value={defForm.name}
+                onChange={e => setDefForm(p => ({ ...p, name: e.target.value }))} />
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+              <div>
+                <label className="form-label">Baslangic Saati</label>
+                <input type="number" min="0" max="23" className="form-input" value={defForm.start_hour}
+                  onChange={e => setDefForm(p => ({ ...p, start_hour: e.target.value }))} />
+              </div>
+              <div>
+                <label className="form-label">Bitis Saati</label>
+                <input type="number" min="0" max="24" className="form-input" value={defForm.end_hour}
+                  onChange={e => setDefForm(p => ({ ...p, end_hour: e.target.value }))} />
+              </div>
+            </div>
+            <div>
+              <label className="form-label">Renk</label>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                {DEF_COLORS.map(c => {
+                  const sc = shiftColor(c)
+                  return (
+                    <button key={c} onClick={() => setDefForm(p => ({ ...p, color_class: c }))}
+                      style={{
+                        width: '32px', height: '32px', borderRadius: '6px',
+                        background: sc.bg, border: `2px solid ${defForm.color_class === c ? sc.text : 'transparent'}`,
+                        cursor: 'pointer',
+                      }}>
+                      <span style={{ width: '12px', height: '12px', borderRadius: '3px', background: sc.text, display: 'inline-block' }} />
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
+            <button className="btn btn-primary" style={{ flex: 1, opacity: (!defForm.name || !defForm.start_hour || !defForm.end_hour) ? 0.5 : 1 }}
+              disabled={!defForm.name || !defForm.start_hour || !defForm.end_hour}
+              onClick={() => {
+                const payload = { name: defForm.name, start_hour: parseInt(defForm.start_hour), end_hour: parseInt(defForm.end_hour), color_class: defForm.color_class }
+                if (defModal.id) updateDef.mutate({ id: defModal.id, ...payload })
+                else createDef.mutate(payload)
+              }}>
+              {defModal.id ? 'Guncelle' : 'Olustur'}
+            </button>
+            <button className="btn btn-ghost" onClick={() => setDefModal(null)}>Iptal</button>
+          </div>
+        </ModalOverlay>
+      )}
+    </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  MAIN — ShiftsPage
+// ═══════════════════════════════════════════════════════════════════════════════
+const TABS = [
+  { id: 'schedule',    label: 'CIZELGE' },
+  { id: 'leave',       label: 'IZINLER' },
+  { id: 'overtime',    label: 'MESAI' },
+  { id: 'attendance',  label: 'YOKLAMA' },
+  { id: 'departments', label: 'DEPARTMANLAR' },
+  { id: 'swap',        label: 'TAKAS' },
+  { id: 'settings',    label: 'AYARLAR' },
+]
+
 export default function ShiftsPage() {
   const [activeTab, setActiveTab] = useState('schedule')
 
@@ -789,25 +1712,34 @@ export default function ShiftsPage() {
     queryFn: () => api.get('/shifts/definitions').then(r => r.data),
   })
 
-  const tabs = [
-    { id: 'schedule',   label: '📅 Çizelge' },
-    { id: 'leave',      label: '🏖 İzinler' },
-    { id: 'overtime',   label: '⏱ Mesai' },
-    { id: 'statistics', label: '📊 İstatistik' },
-  ]
-
   return (
-    <div className="max-w-full">
-      <h1 className="text-lg md:text-xl font-bold text-slate-100 mb-1">Vardiya Yönetimi</h1>
-      <p className="text-xs text-slate-400 mb-4">200 personel · 3 vardiya · 8 bölüm</p>
+    <div className="fade-up" style={{ position: 'relative', zIndex: 1 }}>
+      {/* Page header */}
+      <div style={{ marginBottom: '20px' }}>
+        <h2 style={{ fontFamily: 'var(--display)', fontSize: '28px', letterSpacing: '4px', color: 'var(--text)' }}>
+          VARDIYA YONETIMI
+        </h2>
+        <p style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)', marginTop: '4px', letterSpacing: '1px' }}>
+          PERSONEL CIZELGE &middot; IZIN &middot; MESAI &middot; YOKLAMA
+        </p>
+      </div>
 
-      {/* Tabs — scrollable on mobile */}
-      <div className="flex gap-1 mb-5 border-b border-slate-800 overflow-x-auto">
-        {tabs.map(t => (
+      {/* Tabs */}
+      <div style={{
+        display: 'flex', gap: '2px', marginBottom: '20px',
+        borderBottom: '1px solid var(--border)',
+        overflowX: 'auto',
+      }}>
+        {TABS.map(t => (
           <button
             key={t.id}
             onClick={() => setActiveTab(t.id)}
-            className={`px-3 md:px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === t.id ? 'border-blue-500 text-blue-400' : 'border-transparent text-slate-400 hover:text-slate-300'}`}
+            className={`filter-chip ${activeTab === t.id ? 'active' : ''}`}
+            style={{
+              borderRadius: '7px 7px 0 0',
+              borderBottom: activeTab === t.id ? '2px solid var(--accent)' : '2px solid transparent',
+              whiteSpace: 'nowrap',
+            }}
           >
             {t.label}
           </button>
@@ -815,10 +1747,13 @@ export default function ShiftsPage() {
       </div>
 
       {/* Tab content */}
-      {activeTab === 'schedule'   && <ScheduleTab   departments={departments} shiftDefs={shiftDefs} />}
-      {activeTab === 'leave'      && <LeaveTab       departments={departments} />}
-      {activeTab === 'overtime'   && <OvertimeTab    departments={departments} />}
-      {activeTab === 'statistics' && <StatisticsTab />}
+      {activeTab === 'schedule'    && <ScheduleTab departments={departments} shiftDefs={shiftDefs} />}
+      {activeTab === 'leave'       && <LeaveTab departments={departments} />}
+      {activeTab === 'overtime'    && <OvertimeTab departments={departments} />}
+      {activeTab === 'attendance'  && <AttendanceTab departments={departments} />}
+      {activeTab === 'departments' && <DepartmentsTab />}
+      {activeTab === 'swap'        && <SwapTab />}
+      {activeTab === 'settings'    && <SettingsTab departments={departments} shiftDefs={shiftDefs} />}
     </div>
   )
 }

@@ -26,6 +26,8 @@ CREATE TABLE IF NOT EXISTS personnel (
   blacklisted_at DATETIME,
   blacklisted_by INTEGER REFERENCES users(id),
   discipline_points INTEGER DEFAULT 0,
+  gender TEXT CHECK(gender IN ('male','female')),
+  department_id INTEGER REFERENCES departments(id),
   check_in_date DATETIME,
   check_out_date DATETIME,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP

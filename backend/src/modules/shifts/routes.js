@@ -4,7 +4,11 @@ import {
   departmentsService, shiftDefinitionsService, scheduleService, bulkAssignService,
   personnelStatusService, createLeaveService, approveLeaveService, leaveListService,
   leaveBalanceService, createOvertimeService, overtimeListService, overtimeSummaryService,
-  checkInService, checkOutService, attendanceListService, statisticsService, departmentSummaryService
+  checkInService, checkOutService, attendanceListService, statisticsService, departmentSummaryService,
+  createDepartmentService, updateDepartmentService, deleteDepartmentService, assignDeptService,
+  createShiftDefService, updateShiftDefService, deleteShiftDefService,
+  cancelLeaveService, createSwapService, swapListService, approveSwapService, rejectSwapService,
+  copyWeekService, rotationService, searchPersonnelService, deleteScheduleService
 } from './service.js'
 
 export const shiftsRouter = Router()
@@ -126,4 +130,118 @@ shiftsRouter.post('/attendance/checkout', ...allStaff, (req, res) => {
 shiftsRouter.get('/statistics', ...allStaff, (req, res) => {
   const date = req.query.date || new Date().toISOString().split('T')[0]
   res.json(statisticsService(date))
+})
+
+// Department CRUD
+shiftsRouter.post('/departments', ...managerOrSupervisor, (req, res) => {
+  try {
+    const id = createDepartmentService(req.body)
+    res.status(201).json({ id })
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+shiftsRouter.put('/departments/:id', ...managerOrSupervisor, (req, res) => {
+  try {
+    updateDepartmentService(req.params.id, req.body)
+    res.json({ ok: true })
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+shiftsRouter.delete('/departments/:id', ...managerOrSupervisor, (req, res) => {
+  try {
+    deleteDepartmentService(req.params.id)
+    res.json({ ok: true })
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+shiftsRouter.post('/departments/assign', ...managerOrSupervisor, (req, res) => {
+  try {
+    assignDeptService(req.body.personnel_id, req.body.dept_id)
+    res.json({ ok: true })
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+// Shift definition CRUD
+shiftsRouter.post('/definitions', ...managerOrSupervisor, (req, res) => {
+  try {
+    const id = createShiftDefService(req.body)
+    res.status(201).json({ id })
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+shiftsRouter.put('/definitions/:id', ...managerOrSupervisor, (req, res) => {
+  try {
+    updateShiftDefService(req.params.id, req.body)
+    res.json({ ok: true })
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+shiftsRouter.delete('/definitions/:id', ...managerOrSupervisor, (req, res) => {
+  try {
+    deleteShiftDefService(req.params.id)
+    res.json({ ok: true })
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+// Leave cancel
+shiftsRouter.delete('/leave/:id', ...managerOrSupervisor, (req, res) => {
+  try {
+    cancelLeaveService(req.params.id)
+    res.json({ ok: true })
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+// Swap requests
+shiftsRouter.get('/swaps', ...allStaff, (req, res) => {
+  res.json(swapListService(req.query))
+})
+
+shiftsRouter.post('/swaps', ...allStaff, (req, res) => {
+  try {
+    const id = createSwapService(req.body)
+    res.status(201).json({ id })
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+shiftsRouter.patch('/swaps/:id/approve', ...managerOrSupervisor, (req, res) => {
+  try {
+    approveSwapService(req.params.id, req.user.id)
+    res.json({ ok: true })
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+shiftsRouter.patch('/swaps/:id/reject', ...managerOrSupervisor, (req, res) => {
+  try {
+    rejectSwapService(req.params.id, req.user.id)
+    res.json({ ok: true })
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+// Copy week
+shiftsRouter.post('/schedule/copy-week', ...managerOrSupervisor, (req, res) => {
+  try {
+    const count = copyWeekService(req.body.source_week, req.body.target_week, req.user.id)
+    res.json({ ok: true, copied: count })
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+// Rotation template
+shiftsRouter.post('/schedule/rotation', ...managerOrSupervisor, (req, res) => {
+  try {
+    const count = rotationService(req.body, req.user.id)
+    res.json({ ok: true, assigned: count })
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+// Personnel search
+shiftsRouter.get('/personnel/search', ...allStaff, (req, res) => {
+  res.json(searchPersonnelService(req.query.q))
+})
+
+// Delete schedule entry
+shiftsRouter.delete('/schedule/:personnelId/:date', ...managerOrSupervisor, (req, res) => {
+  try {
+    deleteScheduleService(req.params.personnelId, req.params.date)
+    res.json({ ok: true })
+  } catch (e) { res.status(400).json({ error: e.message }) }
 })
