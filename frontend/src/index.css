@@ -204,7 +204,7 @@ h1, h2, h3, h4 { font-family: var(--display); letter-spacing: 2px; }
 .empty-title { font-family: var(--display); font-size: 18px; letter-spacing: 2px; color: var(--text2); margin-bottom: 6px; }
 .empty-sub { font-family: var(--mono); font-size: 10px; color: var(--text3); }
 
-/* ── Mobile Responsiveness (#5) ──────────────────────────────────────────── */
+/* ── Mobile Responsiveness ──────────────────────────────────────────────── */
 
 @media (max-width: 768px) {
   :root { --sidebar: 0px; }
@@ -223,35 +223,92 @@ h1, h2, h3, h4 { font-family: var(--display); letter-spacing: 2px; }
   .mobile-header {
     display: flex !important;
     align-items: center; gap: 12px;
-    padding: 12px 16px;
+    padding: 10px 16px;
     background: var(--surface);
     border-bottom: 1px solid var(--border);
     position: sticky; top: 0; z-index: 50;
   }
   .mobile-menu-btn {
-    width: 36px; height: 36px; border-radius: 8px;
+    width: 40px; height: 40px; border-radius: 8px;
     background: var(--surface2); border: 1px solid var(--border);
     color: var(--text); display: flex; align-items: center; justify-content: center;
-    cursor: pointer; font-size: 18px;
+    cursor: pointer; font-size: 18px; flex-shrink: 0;
   }
 
-  .main-content { padding: 12px !important; }
+  .main-content { padding: 16px 12px !important; padding-bottom: 80px !important; }
 
+  /* Page headers — stack vertically */
+  .page-header { flex-direction: column !important; align-items: flex-start !important; gap: 12px !important; }
+  .page-header h1 { font-size: 22px !important; }
+
+  /* Tables — horizontal scroll */
   .data-table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
   .data-table th, .data-table td { padding: 8px 10px; font-size: 11px; }
 
+  /* Panels — tighter padding */
   .panel-header { padding: 10px 14px; flex-wrap: wrap; gap: 8px; }
   .panel-body { padding: 12px 14px; }
 
-  .form-input, .form-select, .form-textarea { font-size: 16px; padding: 12px 13px; }
+  /* Forms — prevent iOS zoom on focus */
+  .form-input, .form-select, .form-textarea { font-size: 16px !important; padding: 12px 13px; }
 
+  /* Buttons — touch-friendly 44px minimum */
   .btn { min-height: 44px; min-width: 44px; padding: 10px 16px; }
-  .filter-chip { min-height: 36px; padding: 8px 14px; font-size: 11px; }
-  .r-cell { min-width: 36px; min-height: 36px; font-size: 9px; }
+  .btn-sm { min-height: 38px; min-width: 38px; padding: 8px 12px; }
+  .btn-xs { min-height: 34px; min-width: 34px; padding: 6px 10px; }
 
+  /* Filter chips — touch targets */
+  .filter-chip { min-height: 38px; padding: 8px 14px; font-size: 11px; }
+
+  /* Room cells */
+  .r-cell { min-width: 42px; min-height: 42px; font-size: 9px; }
+  .r-cell:hover { transform: none; }
+
+  /* KPI cards — full width on small screens */
+  .kpi-card { min-width: 0 !important; }
+  .kpi-card:hover { transform: none; }
+
+  /* Headings */
   h1 { font-size: 22px !important; }
+
+  /* Maint row — stack on mobile */
+  .maint-row { flex-wrap: wrap; }
+
+  /* Section dividers */
+  .sect { margin: 0 0 12px; }
+
+  /* Hide hover effects on touch */
+  .heatmap-block:hover { transform: none; }
+
+  /* Notification dropdown — full width */
+  .notif-dropdown { width: calc(100vw - 32px) !important; right: -60px !important; max-height: 60vh !important; }
+
+  /* Scrollbar — wider on touch */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+
+  /* Bottom safe area for notch devices */
+  @supports (padding-bottom: env(safe-area-inset-bottom)) {
+    .main-content { padding-bottom: calc(80px + env(safe-area-inset-bottom)) !important; }
+  }
+}
+
+/* Small phones */
+@media (max-width: 400px) {
+  .main-content { padding: 12px 8px !important; }
+  .panel-header { padding: 8px 10px; }
+  .panel-body { padding: 10px; }
+  .r-cell { min-width: 36px; min-height: 36px; }
+  h1 { font-size: 18px !important; letter-spacing: 2px !important; }
+  .badge { font-size: 8px; padding: 2px 6px; }
+  .filter-chip { font-size: 10px; padding: 6px 10px; min-height: 34px; }
 }
 
 @media (min-width: 769px) {
   .mobile-header { display: none !important; }
+  .mobile-only { display: none !important; }
+}
+
+/* Pull to refresh - prevent overscroll bounce */
+@media (max-width: 768px) {
+  html { overscroll-behavior-y: contain; }
 }

@@ -15,6 +15,8 @@ import DashboardPage from './modules/dashboard/DashboardPage.jsx'
 import RoomHistoryPage from './modules/room-history/RoomHistoryPage.jsx'
 import WhatsAppPage from './modules/whatsapp/WhatsAppPage.jsx'
 import ShiftsPage from './modules/shifts/ShiftsPage.jsx'
+import CheckoutPage from './modules/checkout/CheckoutPage.jsx'
+import InventoryPage from './modules/inventory/InventoryPage.jsx'
 
 function PrivateRoute({ children }) {
   const token = useAuthStore(s => s.token)
@@ -72,6 +74,8 @@ export default function App() {
             <Route path="room-history" element={<RoomHistoryPage />} />
             <Route path="whatsapp" element={<WhatsAppPage />} />
             <Route path="shifts" element={<ShiftsPage />} />
+            <Route path="checkout" element={<CheckoutPage />} />
+            <Route path="inventory" element={<InventoryPage />} />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>

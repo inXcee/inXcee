@@ -5,6 +5,7 @@ import api from '../../shared/api/client.js'
 import KPICard from './KPICard.jsx'
 import HeatMap from './HeatMap.jsx'
 import { useNotifications } from '../../shared/hooks/useNotifications.js'
+import { useOccupancy } from '../../shared/hooks/useOccupancy.js'
 import { useAuthStore } from '../../shared/store/authStore.js'
 
 function PriorityBar({ priority }) {
@@ -95,7 +96,7 @@ function BedOccupancyPanel({ data }) {
                 </div>
 
                 {/* Stats */}
-                <div style={{ display: 'flex', gap: '12px', flexShrink: 0 }}>
+                <div style={{ display: 'flex', gap: '12px', flexShrink: 0, flexWrap: 'wrap' }}>
                   <div style={{ textAlign: 'center' }}>
                     <div style={{ fontFamily: 'var(--display)', fontSize: '18px', color: 'var(--green)', lineHeight: 1 }}>{b.empty}</div>
                     <div style={{ fontFamily: 'var(--mono)', fontSize: '7px', color: 'var(--text3)', letterSpacing: '1px' }}>BOŞ</div>
@@ -125,9 +126,22 @@ function BedOccupancyPanel({ data }) {
 }
 
 function AuditLogPanel() {
+  const [auditSearch, setAuditSearch] = useState('')
+  const [auditModule, setAuditModule] = useState('')
+  const [auditDateFrom, setAuditDateFrom] = useState('')
+  const [auditDateTo, setAuditDateTo] = useState('')
+  const [auditLimit, setAuditLimit] = useState(30)
+
+  const auditParams = new URLSearchParams()
+  auditParams.set('limit', auditLimit)
+  if (auditSearch) auditParams.set('search', auditSearch)
+  if (auditModule) auditParams.set('module', auditModule)
+  if (auditDateFrom) auditParams.set('date_from', auditDateFrom)
+  if (auditDateTo) auditParams.set('date_to', auditDateTo)
+
   const { data: logs = [] } = useQuery({
-    queryKey: ['audit-log'],
-    queryFn: () => api.get('/dashboard/audit-log?limit=20').then(r => r.data),
+    queryKey: ['audit-log', auditSearch, auditModule, auditDateFrom, auditDateTo, auditLimit],
+    queryFn: () => api.get(`/dashboard/audit-log?${auditParams}`).then(r => r.data),
     refetchInterval: 60000,
   })
 
@@ -136,6 +150,7 @@ function AuditLogPanel() {
     discipline_delete: 'Kart Silme',
     blacklist_add: 'Kara Listeye Ekleme',
     blacklist_remove: 'Kara Listeden Çıkarma',
+    auto_blacklist: 'Otomatik Kara Liste',
     personnel_register: 'Personel Kaydı',
     room_assign: 'Oda Ataması',
     room_reassign: 'Oda Değişikliği',
@@ -147,30 +162,72 @@ function AuditLogPanel() {
     bulk_checkout: 'Toplu Çıkış',
     bulk_assign: 'Toplu Oda Atama',
     bulk_remove: 'Toplu Odadan Çıkarma',
+    assign: 'Teknisyen Atama',
+    start: 'İş Başlat',
+    submit_review: 'İncelemeye Gönder',
+    reject: 'Teknisyen Red',
+    inventory_add: 'Stok Ekleme',
+    inventory_update: 'Stok Güncelleme',
+    inventory_in: 'Stok Giriş',
+    inventory_out: 'Stok Çıkış',
   }
 
-  if (logs.length === 0) return null
+  const actionColor = (action) => {
+    if (action.includes('delete') || action.includes('quarantine') || action.includes('blacklist') || action === 'reject') return 'red'
+    if (action.includes('assign') || action.includes('register')) return 'blue'
+    if (action.includes('inventory')) return 'purple'
+    return 'gray'
+  }
+
+  const modules = [...new Set(logs.map(l => l.module).filter(Boolean))]
 
   return (
     <div className="panel" style={{ marginBottom: '28px' }}>
       <div className="panel-header">
         <div>
           <div className="panel-title">SON İŞLEMLER</div>
-          <div className="panel-subtitle">DENETİM KAYDI</div>
+          <div className="panel-subtitle">DENETİM KAYDI · {logs.length} KAYIT</div>
         </div>
       </div>
-      <div className="panel-body" style={{ padding: '0', maxHeight: '300px', overflowY: 'auto' }}>
+      {/* Filters */}
+      <div style={{ padding: '8px 14px', borderBottom: '1px solid rgba(35,45,63,.3)', display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+        <input className="form-input" value={auditSearch} onChange={e => setAuditSearch(e.target.value)}
+          placeholder="Ara..." style={{ fontSize: '11px', width: '140px', minWidth: '80px', padding: '4px 8px', flex: '1 1 80px', maxWidth: '200px' }} />
+        <select className="form-select" value={auditModule} onChange={e => setAuditModule(e.target.value)}
+          style={{ fontSize: '11px', padding: '4px 6px', width: 'auto' }}>
+          <option value="">Tüm Modüller</option>
+          {modules.map(m => <option key={m} value={m}>{m}</option>)}
+        </select>
+        <input type="date" className="form-input" value={auditDateFrom} onChange={e => setAuditDateFrom(e.target.value)}
+          style={{ fontSize: '10px', padding: '4px 6px', width: 'auto' }} />
+        <span style={{ fontSize: '10px', color: 'var(--text3)' }}>—</span>
+        <input type="date" className="form-input" value={auditDateTo} onChange={e => setAuditDateTo(e.target.value)}
+          style={{ fontSize: '10px', padding: '4px 6px', width: 'auto' }} />
+        {(auditSearch || auditModule || auditDateFrom || auditDateTo) && (
+          <button className="btn btn-ghost btn-xs" style={{ fontSize: '9px' }}
+            onClick={() => { setAuditSearch(''); setAuditModule(''); setAuditDateFrom(''); setAuditDateTo('') }}>TEMİZLE</button>
+        )}
+        <button className="btn btn-ghost btn-xs" style={{ fontSize: '9px', marginLeft: 'auto' }}
+          onClick={() => setAuditLimit(l => l + 30)}>DAHA FAZLA</button>
+      </div>
+      <div className="panel-body" style={{ padding: '0', maxHeight: '400px', overflowY: 'auto' }}>
+        {logs.length === 0 && (
+          <div style={{ padding: '20px', textAlign: 'center', fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--text4)' }}>Kayıt bulunamadı</div>
+        )}
         {logs.map(log => (
           <div key={log.id} style={{
-            display: 'flex', alignItems: 'center', gap: '10px',
-            padding: '8px 20px', borderBottom: '1px solid rgba(35,45,63,.3)',
-            fontSize: '12px',
+            display: 'flex', alignItems: 'center', gap: '8px',
+            padding: '8px 14px', borderBottom: '1px solid rgba(35,45,63,.3)',
+            fontSize: '12px', flexWrap: 'wrap',
           }}>
-            <span className={`badge badge-${log.action.includes('delete') || log.action.includes('quarantine') ? 'red' : 'blue'}`} style={{ fontSize: '8px', padding: '2px 6px' }}>
+            <span className={`badge badge-${actionColor(log.action)}`} style={{ fontSize: '8px', padding: '2px 6px', flexShrink: 0 }}>
               {actionLabels[log.action] || log.action}
             </span>
-            <span style={{ flex: 1, color: 'var(--text2)' }}>{log.detail || '—'}</span>
-            <span style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)' }}>
+            <span style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text4)', flexShrink: 0 }}>
+              {log.module || '—'}
+            </span>
+            <span style={{ flex: '1 1 120px', color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{log.detail || '—'}</span>
+            <span style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', flexShrink: 0 }}>
               {log.user_name} · {new Date(log.created_at).toLocaleString('tr-TR', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })}
             </span>
           </div>
@@ -202,6 +259,19 @@ function ExportButtons() {
       </button>
       <button className="btn btn-ghost btn-sm" onClick={() => download('/dashboard/export/maintenance', 'arizalar.csv')}>
         Arızalar CSV
+      </button>
+      <span style={{ width: '1px', height: '20px', background: 'var(--border)', margin: '0 4px' }} />
+      <button className="btn btn-ghost btn-sm" style={{ color: 'var(--red)' }} onClick={() => download('/reports/housekeeping', 'temizlik-raporu.pdf')}>
+        Temizlik PDF
+      </button>
+      <button className="btn btn-ghost btn-sm" style={{ color: 'var(--amber)' }} onClick={() => download('/reports/maintenance', 'bakim-raporu.pdf')}>
+        Bakım PDF
+      </button>
+      <button className="btn btn-ghost btn-sm" style={{ color: 'var(--blue)' }} onClick={() => download('/reports/occupancy', 'doluluk-raporu.pdf')}>
+        Doluluk PDF
+      </button>
+      <button className="btn btn-ghost btn-sm" style={{ color: 'var(--purple)' }} onClick={() => download('/reports/discipline', 'disiplin-raporu.pdf')}>
+        Disiplin PDF
       </button>
     </div>
   )
@@ -407,6 +477,7 @@ export default function DashboardPage() {
   })
 
   const { notifications } = useNotifications()
+  useOccupancy()
   const criticalNotifs = notifications.filter(n => n.type === 'critical').slice(0, 3)
 
   const occupancyColor = !kpi ? 'blue' : kpi.occupancy_pct > 95 ? 'red' : kpi.occupancy_pct > 80 ? 'orange' : 'green'
@@ -415,14 +486,14 @@ export default function DashboardPage() {
   return (
     <div className="fade-up" style={{ position: 'relative', zIndex: 1 }}>
       {/* Header */}
-      <div style={{ marginBottom: '20px', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
+      <div className="page-header" style={{ marginBottom: '20px', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
         <div>
           <h1 style={{ fontSize: '28px', letterSpacing: '4px', color: 'var(--text)' }}>DASHBOARD</h1>
           <p style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)', marginTop: '4px', letterSpacing: '1px' }}>
             ŞANTİYE YATAKHANE — GENEL DURUM
           </p>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
           {isManager && <ExportButtons />}
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <div className="live-dot" />
@@ -512,7 +583,7 @@ export default function DashboardPage() {
               <div className="empty-sub">Açık arıza yok</div>
             </div>
           ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px,1fr))', gap: '0 24px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(340px, 100%), 1fr))', gap: '0 24px' }}>
               {maintRequests.slice(0, 6).map(req => (
                 <div key={req.id} className="maint-row">
                   <PriorityBar priority={req.priority} />

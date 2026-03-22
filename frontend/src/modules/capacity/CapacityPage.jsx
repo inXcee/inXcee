@@ -2,6 +2,7 @@ import { useState, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 import api from '../../shared/api/client.js'
+import { useAuthStore } from '../../shared/store/authStore.js'
 
 // ── Block definitions ─────────────────────────────────────────────────────────
 const M_BLOCKS = ['M1', 'M2', 'M3']
@@ -23,7 +24,7 @@ function roomCls(room, defaultCap = 6) {
 }
 
 // ── Room cell ────────────────────────────────────────────────────────────────
-function RoomCell({ room, selected, onClick, defaultCap }) {
+function RoomCell({ room, selected, onClick, defaultCap, onDropPersonnel, dragOverRoomId, onDragOverRoom }) {
   const occ = room.occupied || 0
   const cap = room.active_beds || room.capacity || defaultCap
   const cls = roomCls(room, defaultCap)
@@ -31,10 +32,15 @@ function RoomCell({ room, selected, onClick, defaultCap }) {
   const shiftIcon = room.room_shift === 'night' ? '☾' : room.room_shift === 'day' ? '☀' : ''
   const isS = room.block && !room.block.startsWith('M')
 
+  const isDropTarget = dragOverRoomId === room.id
+
   return (
     <div
       className={`r-cell ${cls} ${selected ? 'r-selected' : ''}`}
       onClick={() => onClick(room)}
+      onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; onDragOverRoom?.(room.id) }}
+      onDragLeave={() => onDragOverRoom?.(null)}
+      onDrop={e => { e.preventDefault(); onDragOverRoom?.(null); const pid = e.dataTransfer.getData('personnel-id'); if (pid) onDropPersonnel?.(+pid, room.id) }}
       title={`Oda ${room.room_no} — ${occ}/${cap} kişi${room.room_shift ? ` · ${room.room_shift === 'night' ? 'Gece' : 'Gündüz'} vardiyası` : ''}${isDND ? ' · DND' : ''}${isS ? ' · Özel banyo' : ''}`}
       style={{
         width: '56px', height: '68px', aspectRatio: 'unset',
@@ -42,6 +48,7 @@ function RoomCell({ room, selected, onClick, defaultCap }) {
         borderRadius: '6px', cursor: 'pointer',
         position: 'relative',
         ...(isDND ? { boxShadow: 'inset 0 0 0 2px rgba(245,166,35,.5)' } : {}),
+        ...(isDropTarget ? { boxShadow: '0 0 12px var(--accent)', border: '2px solid var(--accent)', transform: 'scale(1.08)', transition: 'all .15s' } : {}),
       }}
     >
       {isDND && (
@@ -171,13 +178,134 @@ function ZimmetPanel({ personnelId, personnelName }) {
   )
 }
 
-function RoomDetailPanel({ room, onClose, onRoomUpdated }) {
+// ── Unreturned Zimmet Modal ──────────────────────────────────────────────────
+function UnreturnedZimmetModal({ details, personnelIds, onClose, onSuccess }) {
+  const qc = useQueryClient()
+  const user = useAuthStore(s => s.user)
+  const isCampusManager = user?.role === 'campus_manager'
+
+  const returnAllAndCheckout = useMutation({
+    mutationFn: async () => {
+      // Return all zimmet for each person
+      for (const person of details) {
+        await api.post('/checkin/zimmet/return-all', { personnel_id: person.personnel_id, condition: 'normal' })
+      }
+      // Retry checkout
+      await api.post('/capacity/bulk/checkout', { personnel_ids: personnelIds })
+    },
+    onSuccess: () => {
+      qc.invalidateQueries(['rooms'])
+      qc.invalidateQueries(['room-personnel'])
+      qc.invalidateQueries(['unassigned-personnel'])
+      onSuccess?.()
+      onClose()
+    },
+  })
+
+  const forceCheckout = useMutation({
+    mutationFn: () => api.post('/capacity/bulk/checkout', { personnel_ids: personnelIds, force: true }),
+    onSuccess: () => {
+      qc.invalidateQueries(['rooms'])
+      qc.invalidateQueries(['room-personnel'])
+      qc.invalidateQueries(['unassigned-personnel'])
+      onSuccess?.()
+      onClose()
+    },
+  })
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 9999,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      background: 'rgba(0,0,0,.6)', backdropFilter: 'blur(4px)',
+    }} onClick={onClose}>
+      <div style={{
+        background: 'var(--surface)', border: '1px solid var(--border)',
+        borderRadius: '12px', padding: '0', maxWidth: '560px', width: '90%',
+        maxHeight: '80vh', overflow: 'hidden', display: 'flex', flexDirection: 'column',
+      }} onClick={e => e.stopPropagation()}>
+        <div style={{
+          height: '3px', background: 'linear-gradient(90deg, var(--red), var(--accent))',
+        }} />
+        <div style={{ padding: '20px 24px 14px', borderBottom: '1px solid var(--border)' }}>
+          <div style={{ fontFamily: 'var(--display)', fontSize: '18px', fontWeight: 700, letterSpacing: '2px', color: 'var(--red)' }}>
+            IADE EDILMEMIS ZIMMET
+          </div>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)', marginTop: '4px', letterSpacing: '1px' }}>
+            ASAGIDAKI PERSONELLERIN IADE EDILMEMIS ZIMMETLERI VAR
+          </div>
+        </div>
+
+        <div style={{ padding: '16px 24px', overflowY: 'auto', flex: 1 }}>
+          {details.map(person => (
+            <div key={person.personnel_id} style={{ marginBottom: '16px' }}>
+              <div style={{ fontWeight: 600, fontSize: '14px', marginBottom: '6px', color: 'var(--text)' }}>
+                {person.full_name}
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                {person.items.map(item => (
+                  <div key={item.id} style={{
+                    display: 'flex', alignItems: 'center', gap: '10px',
+                    padding: '6px 10px', background: 'var(--surface2)', border: '1px solid var(--border)',
+                    borderRadius: '6px',
+                  }}>
+                    <div style={{ flex: 1, fontFamily: 'var(--mono)', fontSize: '12px' }}>
+                      {item.item_name} x{item.quantity}
+                    </div>
+                    <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)' }}>
+                      {new Date(item.created_at).toLocaleDateString('tr-TR')}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{
+          padding: '16px 24px', borderTop: '1px solid var(--border)',
+          display: 'flex', gap: '10px', justifyContent: 'flex-end', flexWrap: 'wrap',
+        }}>
+          <button className="btn btn-ghost btn-sm" onClick={onClose}>
+            IPTAL
+          </button>
+          <button
+            className="btn btn-primary btn-sm"
+            onClick={() => returnAllAndCheckout.mutate()}
+            disabled={returnAllAndCheckout.isPending}
+          >
+            {returnAllAndCheckout.isPending ? 'ISLENIYOR...' : 'IADE ET VE CIKIS YAP'}
+          </button>
+          {isCampusManager && (
+            <button
+              className="btn btn-danger btn-sm"
+              onClick={() => { if (confirm('Zimmetler iade edilmeden zorla cikis yapilacak. Emin misiniz?')) forceCheckout.mutate() }}
+              disabled={forceCheckout.isPending}
+            >
+              {forceCheckout.isPending ? 'ISLENIYOR...' : 'ZORLA CIKIS'}
+            </button>
+          )}
+        </div>
+
+        {(returnAllAndCheckout.isError || forceCheckout.isError) && (
+          <div className="alert alert-danger" style={{ margin: '0 24px 16px', borderRadius: '6px' }}>
+            <span>!</span>
+            <span>{returnAllAndCheckout.error?.response?.data?.error || forceCheckout.error?.response?.data?.error || 'Islem basarisiz.'}</span>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function RoomDetailPanel({ room, onClose, onRoomUpdated, swapSource, onSwapSelect, onSwapCancel }) {
   const qc = useQueryClient()
   const [tab, setTab] = useState('personel') // personel | duzenle | ariza | zimmet
   const [zimmetPerson, setZimmetPerson] = useState(null)
   const [noteText, setNoteText] = useState(room.notes || '')
   const [faultDesc, setFaultDesc] = useState('')
   const [faultLoc, setFaultLoc] = useState(`${room.block} Blok - Oda ${room.room_no}`)
+  const [zimmetModal, setZimmetModal] = useState(null) // { details, personnelIds }
   const [faultPriority, setFaultPriority] = useState('medium')
   const [searchQ, setSearchQ] = useState('')
   const [activeBeds, setActiveBeds] = useState(room.active_beds || room.capacity || 6)
@@ -257,6 +385,34 @@ function RoomDetailPanel({ room, onClose, onRoomUpdated }) {
     },
   })
 
+  const mutBulkCheckout = useMutation({
+    mutationFn: (personnelIds) => api.post('/capacity/bulk/checkout', { personnel_ids: personnelIds }),
+    onSuccess: () => {
+      qc.invalidateQueries(['room-personnel', room.id])
+      qc.invalidateQueries(['rooms'])
+      qc.invalidateQueries(['unassigned-personnel'])
+      onRoomUpdated?.()
+    },
+    onError: (e) => {
+      if (e.response?.data?.error === 'UNRETURNED_ZIMMET') {
+        setZimmetModal({
+          details: e.response.data.details,
+          personnelIds: personnel.map(p => p.id),
+        })
+      }
+    },
+  })
+
+  const mutSwap = useMutation({
+    mutationFn: ({ personAId, personBId }) => api.post('/capacity/swap', { person_a_id: personAId, person_b_id: personBId }),
+    onSuccess: () => {
+      qc.invalidateQueries(['room-personnel'])
+      qc.invalidateQueries(['rooms'])
+      onSwapCancel?.()
+      onRoomUpdated?.()
+    },
+  })
+
   const TAB_STYLE = (active) => ({
     padding: '8px 18px', border: 'none', cursor: 'pointer',
     fontFamily: 'var(--mono)', fontSize: '10px', fontWeight: 700, letterSpacing: '1px',
@@ -288,7 +444,7 @@ function RoomDetailPanel({ room, onClose, onRoomUpdated }) {
       </div>
 
       {/* Stats strip */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '1px', background: 'var(--border)' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100px, 100%), 1fr))', gap: '1px', background: 'var(--border)' }}>
         {[
           { label: 'KAPASİTE', value: cap, color: 'var(--text)' },
           { label: 'AKTİF YATAK', value: activeBeds, color: 'var(--blue)' },
@@ -324,6 +480,30 @@ function RoomDetailPanel({ room, onClose, onRoomUpdated }) {
       </div>
 
       <div className="panel-body">
+        {/* Swap mode banner */}
+        {swapSource && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: '10px',
+            padding: '10px 14px', marginBottom: '14px',
+            background: 'rgba(142,68,230,.1)', border: '1px solid rgba(142,68,230,.4)',
+            borderRadius: '7px',
+          }}>
+            <span style={{ fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--purple)', fontWeight: 600 }}>
+              TAKAS MODU: {swapSource.name} ({swapSource.roomLabel}) secildi — hedef kisiyi secin
+            </span>
+            <button className="btn btn-ghost btn-xs" style={{ marginLeft: 'auto', fontSize: '9px' }} onClick={onSwapCancel}>
+              IPTAL
+            </button>
+          </div>
+        )}
+
+        {/* Swap error */}
+        {mutSwap.isError && (
+          <div className="alert alert-danger" style={{ marginBottom: '12px' }}>
+            <span>!</span><span>{mutSwap.error?.response?.data?.error || 'Takas basarisiz.'}</span>
+          </div>
+        )}
+
         {/* ── Tab: Personel ── */}
         {tab === 'personel' && (
           <div>
@@ -350,8 +530,22 @@ function RoomDetailPanel({ room, onClose, onRoomUpdated }) {
                 </thead>
                 <tbody>
                   {personnel.map((p, i) => (
-                    <tr key={p.id || i}>
-                      <td style={{ fontWeight: 600, fontSize: '13px' }}>{p.full_name}</td>
+                    <tr key={p.id || i} draggable style={{ cursor: 'grab' }}
+                      onDragStart={e => { e.dataTransfer.setData('personnel-id', String(p.id)); e.dataTransfer.effectAllowed = 'move'; e.currentTarget.style.opacity = '0.4' }}
+                      onDragEnd={e => { e.currentTarget.style.opacity = '1' }}>
+                      <td style={{ fontWeight: 600, fontSize: '13px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        {p.photo_url ? (
+                          <img src={p.photo_url} alt="" style={{ width: '28px', height: '28px', borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
+                        ) : (
+                          <div style={{
+                            width: '28px', height: '28px', borderRadius: '50%', flexShrink: 0,
+                            background: 'linear-gradient(135deg,var(--accent),var(--purple))',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            fontFamily: 'var(--display)', fontSize: '11px', color: '#fff',
+                          }}>{(p.full_name || '?').charAt(0).toUpperCase()}</div>
+                        )}
+                        {p.full_name}
+                      </td>
                       <td style={{ fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--text2)' }}>{p.company || '—'}</td>
                       <td style={{ fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--text2)' }}>{p.phone_number || '—'}</td>
                       <td>
@@ -364,19 +558,63 @@ function RoomDetailPanel({ room, onClose, onRoomUpdated }) {
                         {p.assigned_at ? new Date(p.assigned_at).toLocaleDateString('tr-TR') : '—'}
                       </td>
                       <td>
-                        <button
-                          className="btn btn-danger btn-xs"
-                          style={{ fontSize: '9px', padding: '3px 8px' }}
-                          onClick={() => { if (confirm(`${p.full_name} odadan çıkarılsın mı?`)) mutRemove.mutate(p.id) }}
-                          disabled={mutRemove.isPending}
-                        >
-                          ODADAN ÇIKAR
-                        </button>
+                        <div style={{ display: 'flex', gap: '4px' }}>
+                          {swapSource && swapSource.id !== p.id && swapSource.roomId !== room.id ? (
+                            <button
+                              className="btn btn-primary btn-xs"
+                              style={{ fontSize: '9px', padding: '3px 8px', background: 'var(--purple)', borderColor: 'var(--purple)' }}
+                              onClick={() => {
+                                if (confirm(`${swapSource.name} (${swapSource.roomLabel}) ↔ ${p.full_name} (${room.block}-${room.room_no}) takası yapılsın mı?`))
+                                  mutSwap.mutate({ personAId: swapSource.id, personBId: p.id })
+                              }}
+                              disabled={mutSwap.isPending}
+                            >
+                              {mutSwap.isPending ? '...' : 'TAKAS HEDEF'}
+                            </button>
+                          ) : (
+                            <button
+                              className="btn btn-ghost btn-xs"
+                              style={{ fontSize: '9px', padding: '3px 8px', color: swapSource?.id === p.id ? 'var(--accent)' : 'var(--purple)' }}
+                              onClick={() => onSwapSelect?.({ id: p.id, name: p.full_name, roomId: room.id, roomLabel: `${room.block}-${room.room_no}` })}
+                            >
+                              {swapSource?.id === p.id ? 'SEÇİLDİ' : 'TAKAS'}
+                            </button>
+                          )}
+                          <button
+                            className="btn btn-danger btn-xs"
+                            style={{ fontSize: '9px', padding: '3px 8px' }}
+                            onClick={() => { if (confirm(`${p.full_name} odadan çıkarılsın mı?`)) mutRemove.mutate(p.id) }}
+                            disabled={mutRemove.isPending}
+                          >
+                            ÇIKAR
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+            )}
+
+            {/* Bulk checkout button */}
+            {personnel.length > 0 && (
+              <div style={{ borderTop: '1px solid var(--border)', paddingTop: '14px', marginBottom: '14px', display: 'flex', gap: '10px', alignItems: 'center' }}>
+                <button
+                  className="btn btn-danger btn-sm"
+                  onClick={() => {
+                    if (confirm(`Bu odadaki ${personnel.length} kisiyi tamamen cikis yapmak istediginize emin misiniz?`))
+                      mutBulkCheckout.mutate(personnel.map(p => p.id))
+                  }}
+                  disabled={mutBulkCheckout.isPending}
+                >
+                  {mutBulkCheckout.isPending ? 'ISLENIYOR...' : `TOPLU CIKIS (${personnel.length} KISI)`}
+                </button>
+                {mutBulkCheckout.isError && !zimmetModal && (
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--red)' }}>
+                    {mutBulkCheckout.error?.response?.data?.error || 'Hata olustu.'}
+                  </span>
+                )}
+              </div>
             )}
 
             {/* Assign personnel */}
@@ -448,7 +686,7 @@ function RoomDetailPanel({ room, onClose, onRoomUpdated }) {
 
         {/* ── Tab: Düzenle ── */}
         {tab === 'duzenle' && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(280px, 100%), 1fr))', gap: '20px' }}>
             {/* Active beds editor */}
             <div>
               <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '2px', marginBottom: '12px' }}>
@@ -574,7 +812,7 @@ function RoomDetailPanel({ room, onClose, onRoomUpdated }) {
 
         {/* ── Tab: Arıza / Not ── */}
         {tab === 'ariza' && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(280px, 100%), 1fr))', gap: '20px' }}>
             {/* Fault recording */}
             <div>
               <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '2px', marginBottom: '12px' }}>
@@ -654,12 +892,26 @@ function RoomDetailPanel({ room, onClose, onRoomUpdated }) {
           </div>
         )}
       </div>
+
+      {/* Unreturned Zimmet Modal */}
+      {zimmetModal && (
+        <UnreturnedZimmetModal
+          details={zimmetModal.details}
+          personnelIds={zimmetModal.personnelIds}
+          onClose={() => setZimmetModal(null)}
+          onSuccess={() => {
+            qc.invalidateQueries(['room-personnel', room.id])
+            qc.invalidateQueries(['rooms'])
+            onRoomUpdated?.()
+          }}
+        />
+      )}
     </div>
   )
 }
 
 // ── Corridor plan ─────────────────────────────────────────────────────────────
-function CorridorPlan({ block, floor, rooms, selectedRoom, onSelect }) {
+function CorridorPlan({ block, floor, rooms, selectedRoom, onSelect, onDropPersonnel, dragOverRoomId, onDragOverRoom }) {
   const isM = block.startsWith('M')
   const isS2Floor2 = block === 'S2' && floor === 2
   const defaultCap = isS2Floor2 ? 4 : 6
@@ -693,7 +945,7 @@ function CorridorPlan({ block, floor, rooms, selectedRoom, onSelect }) {
       {/* Floor stats */}
       {floorRooms.length > 0 && (
         <>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '8px', marginBottom: '12px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100px, 100%), 1fr))', gap: '8px', marginBottom: '12px' }}>
             {[
               { label: 'TOPLAM YATAK', value: totalCap, color: 'var(--text)' },
               { label: 'DOLU YATAK',   value: totalOcc, color: 'var(--accent)' },
@@ -749,7 +1001,7 @@ function CorridorPlan({ block, floor, rooms, selectedRoom, onSelect }) {
                 const key = String(no)
                 const room = byNo[key]
                 return room
-                  ? <RoomCell key={no} room={room} selected={selectedRoom?.id === room.id} onClick={onSelect} defaultCap={defaultCap} />
+                  ? <RoomCell key={no} room={room} selected={selectedRoom?.id === room.id} onClick={onSelect} defaultCap={defaultCap} onDropPersonnel={onDropPersonnel} dragOverRoomId={dragOverRoomId} onDragOverRoom={onDragOverRoom} />
                   : <GhostCell key={no} roomNo={no} />
               })}
             </div>
@@ -794,7 +1046,7 @@ function CorridorPlan({ block, floor, rooms, selectedRoom, onSelect }) {
                 const key = String(no)
                 const room = byNo[key]
                 return room
-                  ? <RoomCell key={no} room={room} selected={selectedRoom?.id === room.id} onClick={onSelect} defaultCap={defaultCap} />
+                  ? <RoomCell key={no} room={room} selected={selectedRoom?.id === room.id} onClick={onSelect} defaultCap={defaultCap} onDropPersonnel={onDropPersonnel} dragOverRoomId={dragOverRoomId} onDragOverRoom={onDragOverRoom} />
                   : <GhostCell key={no} roomNo={no} />
               })}
             </div>
@@ -992,11 +1244,14 @@ function UnassignedPool({ selectedRoom, onAssigned }) {
               {filtered.map(p => (
                 <div
                   key={p.id}
+                  draggable
+                  onDragStart={e => { e.dataTransfer.setData('personnel-id', String(p.id)); e.dataTransfer.effectAllowed = 'move'; e.currentTarget.style.opacity = '0.4' }}
+                  onDragEnd={e => { e.currentTarget.style.opacity = '1' }}
                   style={{
                     display: 'flex', alignItems: 'center', gap: '10px',
                     padding: '8px 14px', borderBottom: '1px solid rgba(35,45,63,.3)',
                     background: selected.has(p.id) ? 'rgba(245,166,35,.08)' : 'transparent',
-                    transition: 'background .1s',
+                    transition: 'background .1s', cursor: 'grab',
                   }}
                 >
                   <input
@@ -1051,12 +1306,27 @@ export default function CapacityPage() {
   const [selectedBlock, setSelectedBlock] = useState(blockParam || 'M1')
   const [floor, setFloor] = useState(1)
   const [selectedRoom, setSelectedRoom] = useState(null)
+  const [emptyOnly, setEmptyOnly] = useState(false)
+  const [roomCompanyFilter, setRoomCompanyFilter] = useState('')
+  const [swapSource, setSwapSource] = useState(null)
+  const [dragOverRoomId, setDragOverRoomId] = useState(null)
+  const [dropMsg, setDropMsg] = useState(null)
   const qc = useQueryClient()
 
   const { data: rooms = [] } = useQuery({
-    queryKey: ['rooms', selectedBlock],
-    queryFn: () => api.get(`/capacity/rooms?block=${selectedBlock}`).then(r => r.data),
+    queryKey: ['rooms', selectedBlock, emptyOnly, roomCompanyFilter],
+    queryFn: () => {
+      let url = `/capacity/rooms?block=${selectedBlock}`
+      if (emptyOnly) url += '&empty_only=true'
+      if (roomCompanyFilter) url += `&company=${encodeURIComponent(roomCompanyFilter)}`
+      return api.get(url).then(r => r.data)
+    },
     enabled: !!selectedBlock,
+  })
+
+  const { data: companySuggestions = [] } = useQuery({
+    queryKey: ['company-suggestions'],
+    queryFn: () => api.get('/checkin/company-suggestions').then(r => r.data),
   })
 
   const blocks = blockType === 'M' ? M_BLOCKS : S_BLOCKS
@@ -1071,6 +1341,25 @@ export default function CapacityPage() {
   function handleRoomSelect(room) {
     setSelectedRoom(prev => prev?.id === room.id ? null : room)
   }
+  const mutDropAssign = useMutation({
+    mutationFn: ({ personnelId, roomId }) => api.post('/capacity/reassign', { personnel_id: personnelId, room_id: roomId }),
+    onSuccess: () => {
+      setDropMsg({ ok: true, msg: 'Personel odaya taşındı.' })
+      qc.invalidateQueries(['rooms'])
+      qc.invalidateQueries(['room-personnel'])
+      qc.invalidateQueries(['unassigned-personnel'])
+      setTimeout(() => setDropMsg(null), 3000)
+    },
+    onError: (e) => {
+      setDropMsg({ ok: false, msg: e.response?.data?.error || 'Taşıma başarısız.' })
+      setTimeout(() => setDropMsg(null), 4000)
+    },
+  })
+
+  function handleDropPersonnel(personnelId, roomId) {
+    mutDropAssign.mutate({ personnelId, roomId })
+  }
+
   function handleRoomUpdated() {
     qc.invalidateQueries(['rooms', selectedBlock])
     // Re-fetch to update selectedRoom data
@@ -1085,7 +1374,7 @@ export default function CapacityPage() {
   return (
     <div className="fade-up" style={{ position: 'relative', zIndex: 1 }}>
       {/* Header */}
-      <div style={{ marginBottom: '24px', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+      <div className="page-header" style={{ marginBottom: '24px', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
         <div>
           <h1 style={{ fontSize: '30px', letterSpacing: '4px', color: 'var(--text)' }}>KAPASİTE YÖNETİMİ</h1>
           <p style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)', marginTop: '4px', letterSpacing: '1px' }}>
@@ -1162,6 +1451,37 @@ export default function CapacityPage() {
         </div>
       </div>
 
+      {/* Filters row */}
+      <div style={{ display: 'flex', gap: '10px', marginBottom: '16px', alignItems: 'center', flexWrap: 'wrap' }}>
+        <button
+          onClick={() => { setEmptyOnly(v => !v); setSelectedRoom(null) }}
+          className={`filter-chip${emptyOnly ? ' active' : ''}`}
+          style={{ background: emptyOnly ? 'var(--green)' : undefined, borderColor: emptyOnly ? 'var(--green)' : undefined, color: emptyOnly ? '#000' : undefined }}
+        >
+          {emptyOnly ? '✓ ' : ''}Bos Odalar
+        </button>
+        <select
+          className="form-select"
+          value={roomCompanyFilter}
+          onChange={e => { setRoomCompanyFilter(e.target.value); setSelectedRoom(null) }}
+          style={{ fontSize: '12px', padding: '6px 10px', minWidth: '160px', maxWidth: '260px' }}
+        >
+          <option value="">Tum Sirketler</option>
+          {companySuggestions.map(c => (
+            <option key={c.company || c} value={c.company || c}>{c.company || c}</option>
+          ))}
+        </select>
+        {(emptyOnly || roomCompanyFilter) && (
+          <button
+            className="btn btn-ghost btn-xs"
+            onClick={() => { setEmptyOnly(false); setRoomCompanyFilter(''); setSelectedRoom(null) }}
+            style={{ fontSize: '9px' }}
+          >
+            Filtreleri Temizle
+          </button>
+        )}
+      </div>
+
       {/* Plan panel */}
       <div className="panel" style={{ marginBottom: '0' }}>
         <div style={{ height: '2px', background: blockType === 'M' ? 'linear-gradient(90deg,var(--blue),var(--purple))' : 'linear-gradient(90deg,var(--purple),var(--teal))' }} />
@@ -1192,9 +1512,37 @@ export default function CapacityPage() {
             rooms={rooms}
             selectedRoom={selectedRoom}
             onSelect={handleRoomSelect}
+            onDropPersonnel={handleDropPersonnel}
+            dragOverRoomId={dragOverRoomId}
+            onDragOverRoom={setDragOverRoomId}
           />
         </div>
       </div>
+
+      {/* Drop feedback message */}
+      {dropMsg && (
+        <div className={`alert ${dropMsg.ok ? 'alert-success' : 'alert-danger'}`} style={{ marginTop: '12px' }}>
+          <span>{dropMsg.ok ? '✓' : '!'}</span><span>{dropMsg.msg}</span>
+        </div>
+      )}
+
+      {/* Swap mode banner at page level */}
+      {swapSource && !currentRoom && (
+        <div className="panel fade-up" style={{ marginTop: '18px', padding: '14px 20px' }}>
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: '10px',
+            background: 'rgba(142,68,230,.1)', border: '1px solid rgba(142,68,230,.4)',
+            borderRadius: '7px', padding: '10px 14px',
+          }}>
+            <span style={{ fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--purple)', fontWeight: 600 }}>
+              TAKAS MODU: {swapSource.name} ({swapSource.roomLabel}) secildi — baska bir oda secip hedef kisiyi secin
+            </span>
+            <button className="btn btn-ghost btn-xs" style={{ marginLeft: 'auto', fontSize: '9px' }} onClick={() => setSwapSource(null)}>
+              IPTAL
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Room detail panel */}
       {currentRoom && (
@@ -1203,6 +1551,9 @@ export default function CapacityPage() {
           room={currentRoom}
           onClose={() => setSelectedRoom(null)}
           onRoomUpdated={handleRoomUpdated}
+          swapSource={swapSource}
+          onSwapSelect={(person) => setSwapSource(person)}
+          onSwapCancel={() => setSwapSource(null)}
         />
       )}
 

@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 
@@ -22,6 +22,14 @@ const SHIFTS = {
   '3': { label: '3. Vardiya', hours: '00:00–08:00', color: 'var(--purple)' },
 }
 
+const STATUSES = [
+  { key: 'open', label: 'AÇIK', color: 'var(--red)', dotColor: '#e74c3c' },
+  { key: 'in_progress', label: 'DEVAM EDİYOR', color: 'var(--amber)', dotColor: '#f0a500' },
+  { key: 'done', label: 'TAMAMLANDI', color: 'var(--green)', dotColor: '#27c96a' },
+]
+
+function statusInfo(s) { return STATUSES.find(x => x.key === s) || STATUSES[0] }
+
 const WAIT_REASONS = [
   'Yetkili servis çağrıldı',
   'Odada kişi var, gündüz bakılacak',
@@ -39,6 +47,279 @@ function getCurrentShift() {
   if (h >= 8 && h < 15) return '1'
   if (h >= 15 && h < 24) return '2'
   return '3'
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SLA Countdown
+   ═══════════════════════════════════════════════════════════════════════════ */
+function SLACountdown({ deadline }) {
+  const [now, setNow] = useState(() => Date.now())
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(id)
+  }, [])
+
+  if (!deadline) return null
+
+  const deadlineMs = new Date(deadline).getTime()
+  const diff = deadlineMs - now
+  const isOverdue = diff <= 0
+  const absDiff = Math.abs(diff)
+
+  const hours = Math.floor(absDiff / 3600000)
+  const minutes = Math.floor((absDiff % 3600000) / 60000)
+  const seconds = Math.floor((absDiff % 60000) / 1000)
+  const formatted = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+
+  let color = 'var(--text2)'
+  if (isOverdue) color = 'var(--red)'
+  else if (diff <= 3600000) color = 'var(--red)'
+  else if (diff <= 14400000) color = 'var(--amber)'
+
+  return (
+    <span style={{
+      fontFamily: 'var(--mono)', fontSize: '9px', padding: '2px 8px', borderRadius: '4px',
+      color,
+      background: isOverdue ? 'rgba(231,76,60,.12)' : diff <= 3600000 ? 'rgba(231,76,60,.08)' : diff <= 14400000 ? 'rgba(240,165,0,.08)' : 'rgba(148,163,184,.08)',
+      border: isOverdue ? '1px solid rgba(231,76,60,.3)' : diff <= 3600000 ? '1px solid rgba(231,76,60,.2)' : diff <= 14400000 ? '1px solid rgba(240,165,0,.2)' : '1px solid var(--border)',
+      animation: isOverdue ? 'sla-pulse 1.5s ease-in-out infinite' : 'none',
+      display: 'inline-flex', alignItems: 'center', gap: '4px', letterSpacing: '0.5px',
+    }}>
+      {isOverdue ? `SLA AŞILDI +${formatted}` : formatted}
+    </span>
+  )
+}
+
+/* inject SLA pulse keyframes once */
+if (typeof document !== 'undefined' && !document.getElementById('sla-pulse-style')) {
+  const style = document.createElement('style')
+  style.id = 'sla-pulse-style'
+  style.textContent = `@keyframes sla-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }`
+  document.head.appendChild(style)
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Status Timeline
+   ═══════════════════════════════════════════════════════════════════════════ */
+function StatusTimeline({ status }) {
+  const currentIdx = STATUSES.findIndex(s => s.key === status)
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+      {STATUSES.map((s, i) => {
+        const isActive = i <= currentIdx
+        const isCurrent = i === currentIdx
+        return (
+          <div key={s.key} style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+            <div style={{
+              width: isCurrent ? '10px' : '7px',
+              height: isCurrent ? '10px' : '7px',
+              borderRadius: '50%',
+              background: isActive ? s.dotColor : 'var(--border2)',
+              boxShadow: isCurrent ? `0 0 6px ${s.dotColor}` : 'none',
+              transition: 'all .2s',
+            }} title={s.label} />
+            {i < STATUSES.length - 1 && (
+              <div style={{
+                width: '12px', height: '2px',
+                background: i < currentIdx ? STATUSES[i + 1].dotColor : 'var(--border2)',
+                borderRadius: '1px',
+              }} />
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Status Action Buttons
+   ═══════════════════════════════════════════════════════════════════════════ */
+function StatusActions({ request, onSuccess }) {
+  const qc = useQueryClient()
+
+  const inv = () => {
+    qc.invalidateQueries({ queryKey: ['maintenance-requests'] })
+    qc.invalidateQueries({ queryKey: ['maintenance-stats'] })
+    qc.invalidateQueries({ queryKey: ['maintenance-detail', request.id] })
+    if (onSuccess) onSuccess()
+  }
+
+  const statusMut = useMutation({
+    mutationFn: (status) => api.patch(`/maintenance/requests/${request.id}/status`, { status }),
+    onSuccess: inv,
+  })
+
+  if (request.status === 'open') {
+    return (
+      <button className="btn btn-primary btn-xs" onClick={e => { e.stopPropagation(); statusMut.mutate('in_progress') }}
+        disabled={statusMut.isPending}
+        style={{ background: 'var(--amber)', borderColor: 'var(--amber)', fontSize: '9px', letterSpacing: '1px' }}>
+        {statusMut.isPending ? '...' : 'BAŞLA'}
+      </button>
+    )
+  }
+
+  if (request.status === 'in_progress') {
+    return (
+      <button className="btn btn-primary btn-xs" onClick={e => { e.stopPropagation(); statusMut.mutate('done') }}
+        disabled={statusMut.isPending}
+        style={{ background: 'var(--green)', borderColor: 'var(--green)', fontSize: '9px', letterSpacing: '1px' }}>
+        {statusMut.isPending ? '...' : 'TAMAMLA'}
+      </button>
+    )
+  }
+
+  return null
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Kanban View
+   ═══════════════════════════════════════════════════════════════════════════ */
+function KanbanView({ requests, onSelect }) {
+  const qc = useQueryClient()
+  const [dragId, setDragId] = useState(null)
+  const [dragOver, setDragOver] = useState(null)
+
+  const statusMut = useMutation({
+    mutationFn: ({ id, status }) => api.patch(`/maintenance/requests/${id}/status`, { status }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['maintenance-requests'] })
+      qc.invalidateQueries({ queryKey: ['maintenance-stats'] })
+    },
+  })
+
+  const handleDragStart = (e, id) => {
+    setDragId(id)
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', id)
+    e.currentTarget.style.opacity = '0.4'
+  }
+
+  const handleDragEnd = (e) => {
+    e.currentTarget.style.opacity = '1'
+    setDragId(null)
+    setDragOver(null)
+  }
+
+  const handleDragOver = (e, statusKey) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    setDragOver(statusKey)
+  }
+
+  const handleDrop = (e, targetStatus) => {
+    e.preventDefault()
+    setDragOver(null)
+    if (!dragId) return
+    const req = requests.find(r => r.id === dragId)
+    if (req && req.status !== targetStatus) {
+      statusMut.mutate({ id: dragId, status: targetStatus })
+    }
+    setDragId(null)
+  }
+
+  return (
+    <div style={{
+      display: 'flex', gap: '10px', overflowX: 'auto', paddingBottom: '8px',
+    }}>
+      {STATUSES.map(st => {
+        const items = requests.filter(r => r.status === st.key)
+        const isOver = dragOver === st.key
+        return (
+          <div key={st.key}
+            onDragOver={e => handleDragOver(e, st.key)}
+            onDragLeave={() => setDragOver(null)}
+            onDrop={e => handleDrop(e, st.key)}
+            style={{
+              flex: '1 0 200px', minWidth: '200px', maxWidth: '320px',
+              background: isOver ? `color-mix(in srgb, ${st.dotColor} 8%, var(--surface2))` : 'var(--surface2)',
+              border: isOver ? `2px dashed ${st.dotColor}` : '1px solid var(--border)',
+              borderRadius: '10px',
+              display: 'flex', flexDirection: 'column',
+              transition: 'all .2s',
+            }}>
+            <div style={{
+              padding: '10px 14px', borderBottom: '1px solid var(--border)',
+              display: 'flex', alignItems: 'center', gap: '8px',
+            }}>
+              <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: st.dotColor }} />
+              <span style={{
+                fontFamily: 'var(--mono)', fontSize: '9px', letterSpacing: '1.5px',
+                color: st.color, fontWeight: 700,
+              }}>{st.label}</span>
+              <span style={{
+                marginLeft: 'auto', fontFamily: 'var(--mono)', fontSize: '9px',
+                color: 'var(--text4)',
+              }}>{items.length}</span>
+            </div>
+            <div style={{
+              padding: '8px', display: 'flex', flexDirection: 'column', gap: '6px',
+              flex: 1, overflowY: 'auto', maxHeight: '60vh',
+              minHeight: '80px',
+            }}>
+              {items.length === 0 && (
+                <div style={{
+                  fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text4)',
+                  padding: '20px 0', textAlign: 'center',
+                  border: isOver ? 'none' : '2px dashed var(--border2)',
+                  borderRadius: '8px', margin: '4px',
+                }}>
+                  {isOver ? 'Buraya bırak' : 'Kayıt yok'}
+                </div>
+              )}
+              {items.map(req => {
+                const pri = priInfo(req.priority)
+                return (
+                  <div key={req.id}
+                    draggable
+                    onDragStart={e => handleDragStart(e, req.id)}
+                    onDragEnd={handleDragEnd}
+                    onClick={() => onSelect(req.id)}
+                    style={{
+                      padding: '10px 12px', borderRadius: '8px', cursor: 'grab',
+                      background: 'var(--surface)', border: '1px solid var(--border)',
+                      borderLeft: `3px solid ${pri.color}`,
+                      transition: 'all .15s',
+                      userSelect: 'none',
+                    }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                      <span style={{ fontFamily: 'var(--sans)', fontSize: '12px', fontWeight: 600, color: 'var(--text)' }}>
+                        {req.location}
+                      </span>
+                      <span style={{
+                        fontFamily: 'var(--mono)', fontSize: '8px', padding: '1px 6px', borderRadius: '3px',
+                        color: pri.color,
+                        background: `color-mix(in srgb, ${pri.color} 12%, transparent)`,
+                      }}>{pri.label}</span>
+                    </div>
+                    <div style={{
+                      fontSize: '11px', color: 'var(--text2)', marginBottom: '4px',
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }}>{req.description}</div>
+                    <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text3)', display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+                      <span>#{req.id}</span>
+                      {req.wait_reason && (
+                        <span style={{
+                          padding: '1px 5px', borderRadius: '3px',
+                          background: 'rgba(240,165,0,.1)', border: '1px solid rgba(240,165,0,.2)',
+                          color: 'var(--amber)',
+                        }}>{req.wait_reason}</span>
+                      )}
+                      {req.sla_deadline && req.status !== 'done' && (
+                        <SLACountdown deadline={req.sla_deadline} />
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -460,12 +741,15 @@ function DetailPanel({ requestId, onClose }) {
         <div style={{ flex: 1 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
             <div className="panel-title">#{request.id} — {request.location}</div>
-            <span style={{
-              fontFamily: 'var(--mono)', fontSize: '8.5px', letterSpacing: '1px', padding: '2px 8px',
-              borderRadius: '4px', color: request.status === 'done' ? 'var(--green)' : 'var(--red)',
-              background: request.status === 'done' ? 'rgba(39,201,106,.12)' : 'rgba(231,76,60,.12)',
-              border: request.status === 'done' ? '1px solid rgba(39,201,106,.3)' : '1px solid rgba(231,76,60,.3)',
-            }}>{request.status === 'done' ? 'TAMAMLANDI' : 'AÇIK'}</span>
+            {(() => { const si = statusInfo(request.status); return (
+              <span style={{
+                fontFamily: 'var(--mono)', fontSize: '8.5px', letterSpacing: '1px', padding: '2px 8px',
+                borderRadius: '4px', color: si.color,
+                background: `color-mix(in srgb, ${si.color} 12%, transparent)`,
+                border: `1px solid color-mix(in srgb, ${si.color} 30%, transparent)`,
+              }}>{si.label}</span>
+            ) })()}
+            <StatusTimeline status={request.status} />
             <span style={{
               fontFamily: 'var(--mono)', fontSize: '8.5px', padding: '2px 8px', borderRadius: '4px',
               color: pri.color, background: `color-mix(in srgb, ${pri.color} 12%, transparent)`,
@@ -503,6 +787,27 @@ function DetailPanel({ requestId, onClose }) {
         }}>
           <div style={{ fontSize: '13px', color: 'var(--text)', lineHeight: 1.6 }}>{request.description}</div>
         </div>
+
+        {/* Workflow Actions */}
+        {request.status !== 'done' && (
+          <div style={{
+            padding: '10px 14px', background: 'var(--surface2)', border: '1px solid var(--border)',
+            borderRadius: '8px', marginBottom: '14px',
+            display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap',
+          }}>
+            <span style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text3)', letterSpacing: '1.5px' }}>İŞLEM:</span>
+            <div style={{ position: 'relative' }}>
+              <StatusActions request={request} onSuccess={() => {}} />
+            </div>
+            {request.technician_name && (
+              <span style={{
+                fontFamily: 'var(--mono)', fontSize: '9px', padding: '2px 8px', borderRadius: '4px',
+                background: 'rgba(52,152,219,.1)', border: '1px solid rgba(52,152,219,.2)',
+                color: 'var(--blue)', marginLeft: 'auto',
+              }}>Teknisyen: {request.technician_name}</span>
+            )}
+          </div>
+        )}
 
         {/* Wait reason */}
         {request.status !== 'done' && (
@@ -584,8 +889,8 @@ function DetailPanel({ requestId, onClose }) {
           </div>
         )}
 
-        {/* Close / Complete */}
-        {request.status !== 'done' && (
+        {/* Close / Complete — from in_progress status */}
+        {request.status === 'in_progress' && (
           <div style={{
             padding: '12px 14px', background: 'rgba(39,201,106,.04)', border: '1px solid rgba(39,201,106,.15)',
             borderRadius: '8px', marginBottom: '14px',
@@ -594,7 +899,7 @@ function DetailPanel({ requestId, onClose }) {
             <button className="btn btn-primary btn-sm" disabled={closeMut.isPending}
               onClick={() => closeMut.mutate()}
               style={{ background: 'var(--green)', borderColor: 'var(--green)', marginTop: '10px' }}>
-              {closeMut.isPending ? '...' : 'TAMAMLA'}
+              {closeMut.isPending ? '...' : 'KAPAT'}
             </button>
           </div>
         )}
@@ -674,6 +979,7 @@ export default function MaintenancePage() {
   const [filter, setFilter] = useState('open')
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedId, setSelectedId] = useState(null)
+  const [viewMode, setViewMode] = useState('list') // 'list' | 'kanban'
 
   const { data: stats } = useQuery({
     queryKey: ['maintenance-stats'],
@@ -683,15 +989,27 @@ export default function MaintenancePage() {
 
   const buildQuery = () => {
     let url = '/maintenance/requests?'
-    if (filter !== 'all') url += `status=${filter}&`
+    if (filter === 'overdue') url += 'status=open&'
+    else if (filter === 'all' || filter === 'kanban') { /* no status filter */ }
+    else url += `status=${filter}&`
     if (searchTerm.trim()) url += `search=${encodeURIComponent(searchTerm.trim())}&`
     return url
   }
 
-  const { data: requests = [], isLoading } = useQuery({
-    queryKey: ['maintenance-requests', filter, searchTerm],
-    queryFn: () => api.get(buildQuery()).then(r => r.data),
+  const kanbanQuery = () => {
+    let url = '/maintenance/requests?'
+    if (searchTerm.trim()) url += `search=${encodeURIComponent(searchTerm.trim())}&`
+    return url
+  }
+
+  const { data: rawRequests = [], isLoading } = useQuery({
+    queryKey: ['maintenance-requests', viewMode === 'kanban' ? 'all' : filter, searchTerm],
+    queryFn: () => api.get(viewMode === 'kanban' ? kanbanQuery() : buildQuery()).then(r => r.data),
   })
+
+  const requests = filter === 'overdue'
+    ? rawRequests.filter(r => r.sla_deadline && new Date(r.sla_deadline) < new Date())
+    : rawRequests
 
   const createRequest = useMutation({
     mutationFn: () => {
@@ -714,7 +1032,7 @@ export default function MaintenancePage() {
   return (
     <div style={{ position: 'relative', zIndex: 1 }} className="fade-up">
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: '20px', flexWrap: 'wrap', gap: '8px' }}>
+      <div className="page-header" style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: '20px', flexWrap: 'wrap', gap: '8px' }}>
         <div>
           <h1 style={{ fontSize: '28px', letterSpacing: '4px', color: 'var(--text)' }}>TEKNİK SERVİS</h1>
           <p style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)', marginTop: '4px', letterSpacing: '1px' }}>
@@ -824,6 +1142,8 @@ export default function MaintenancePage() {
       <div style={{ display: 'flex', gap: '8px', marginBottom: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
         {[
           { key: 'open', label: 'AÇIK' },
+          { key: 'in_progress', label: 'DEVAM EDİYOR' },
+          { key: 'overdue', label: 'GECİKEN' },
           { key: 'done', label: 'TAMAMLANDI' },
           { key: 'all', label: 'TÜMÜ' },
         ].map(f => (
@@ -836,8 +1156,30 @@ export default function MaintenancePage() {
                 borderRadius: '8px', padding: '0 5px', fontSize: '8px', fontWeight: 700,
               }}>{stats.open}</span>
             )}
+            {f.key === 'overdue' && stats?.overdue > 0 && (
+              <span style={{
+                marginLeft: '4px', background: 'var(--red)', color: '#fff',
+                borderRadius: '8px', padding: '0 5px', fontSize: '8px', fontWeight: 700,
+              }}>{stats.overdue}</span>
+            )}
           </button>
         ))}
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: '4px' }}>
+          <button onClick={() => setViewMode('list')}
+            style={{
+              padding: '4px 10px', borderRadius: '5px', cursor: 'pointer', border: 'none',
+              background: viewMode === 'list' ? 'var(--accent)' : 'var(--surface2)',
+              color: viewMode === 'list' ? '#fff' : 'var(--text3)',
+              fontFamily: 'var(--mono)', fontSize: '9px', letterSpacing: '1px',
+            }}>LİSTE</button>
+          <button onClick={() => setViewMode('kanban')}
+            style={{
+              padding: '4px 10px', borderRadius: '5px', cursor: 'pointer', border: 'none',
+              background: viewMode === 'kanban' ? 'var(--accent)' : 'var(--surface2)',
+              color: viewMode === 'kanban' ? '#fff' : 'var(--text3)',
+              fontFamily: 'var(--mono)', fontSize: '9px', letterSpacing: '1px',
+            }}>KANBAN</button>
+        </div>
       </div>
 
       <div style={{ marginBottom: '16px' }}>
@@ -855,11 +1197,14 @@ export default function MaintenancePage() {
           <div className="empty-title">ARIZA YOK</div>
           <div className="empty-sub">{filter === 'open' ? 'Açık arıza kaydı bulunmuyor' : 'Bu filtrede kayıt yok'}</div>
         </div>
+      ) : viewMode === 'kanban' ? (
+        <KanbanView requests={requests} onSelect={id => setSelectedId(selectedId === id ? null : id)} />
       ) : (
         <div className="panel">
           <div style={{ padding: '4px 16px' }}>
             {requests.map(req => {
               const pri = priInfo(req.priority)
+              const si = statusInfo(req.status)
               const isSelected = selectedId === req.id
               return (
                 <div key={req.id}>
@@ -889,7 +1234,16 @@ export default function MaintenancePage() {
                           background: `color-mix(in srgb, ${pri.color} 12%, transparent)`,
                           border: `1px solid color-mix(in srgb, ${pri.color} 25%, transparent)`,
                         }}>{pri.label}</span>
+                        <span style={{
+                          fontFamily: 'var(--mono)', fontSize: '8.5px', padding: '2px 8px', borderRadius: '4px',
+                          color: si.color,
+                          background: `color-mix(in srgb, ${si.color} 12%, transparent)`,
+                          border: `1px solid color-mix(in srgb, ${si.color} 25%, transparent)`,
+                        }}>{si.label}</span>
                         {req.photo_before && <span style={{ fontSize: '11px' }} title="Fotoğraf var">📷</span>}
+                        {req.sla_deadline && req.status !== 'done' && (
+                          <SLACountdown deadline={req.sla_deadline} />
+                        )}
                       </div>
                       <div style={{
                         fontSize: '12px', color: 'var(--text2)', marginBottom: '4px',
@@ -898,6 +1252,13 @@ export default function MaintenancePage() {
                       <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
                         <span>{new Date(req.opened_at).toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
                         <span>#{req.id}</span>
+                        {req.technician_name && (
+                          <span style={{
+                            padding: '1px 6px', borderRadius: '4px',
+                            background: 'rgba(52,152,219,.1)', border: '1px solid rgba(52,152,219,.2)',
+                            color: 'var(--blue)', fontSize: '8px',
+                          }}>{req.technician_name}</span>
+                        )}
                         {req.wait_reason && (
                           <span style={{
                             padding: '1px 6px', borderRadius: '4px',
@@ -905,10 +1266,16 @@ export default function MaintenancePage() {
                             color: 'var(--amber)', fontSize: '8px',
                           }}>{req.wait_reason}</span>
                         )}
+                        <StatusTimeline status={req.status} />
                       </div>
                     </div>
-                    <div style={{ fontFamily: 'var(--mono)', fontSize: '16px', color: 'var(--text4)', flexShrink: 0 }}>
-                      {isSelected ? '▾' : '▸'}
+                    <div style={{ position: 'relative', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      {req.status !== 'done' && (
+                        <StatusActions request={req} />
+                      )}
+                      <div style={{ fontFamily: 'var(--mono)', fontSize: '16px', color: 'var(--text4)', flexShrink: 0 }}>
+                        {isSelected ? '▾' : '▸'}
+                      </div>
                     </div>
                   </div>
                 </div>

@@ -178,6 +178,75 @@ function StatsDashboard({ stats }) {
         </div>
       )}
 
+      {/* Trend Chart (last 30 days) */}
+      {stats.trend?.length > 0 && (
+        <div className="panel">
+          <div className="panel-header">
+            <div className="panel-title">30 GUNLUK TREND</div>
+          </div>
+          <div style={{ padding: '16px', overflowX: 'auto' }}>
+            {(() => {
+              const maxVal = Math.max(...stats.trend.map(d => d.yellow + d.red), 1)
+              const barW = Math.max(16, Math.min(32, 600 / stats.trend.length))
+              return (
+                <div style={{ display: 'flex', alignItems: 'flex-end', gap: '2px', height: '120px', minWidth: stats.trend.length * (barW + 2) }}>
+                  {stats.trend.map(d => {
+                    const yH = (d.yellow / maxVal) * 100
+                    const rH = (d.red / maxVal) * 100
+                    const dateLabel = d.date.slice(5)
+                    return (
+                      <div key={d.date} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: barW + 'px' }} title={`${d.date}: ${d.yellow}S ${d.red}K`}>
+                        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', width: '100%' }}>
+                          {d.red > 0 && <div style={{ height: rH + '%', minHeight: '3px', background: 'var(--red)', borderRadius: '2px 2px 0 0' }} />}
+                          {d.yellow > 0 && <div style={{ height: yH + '%', minHeight: '3px', background: 'var(--amber)', borderRadius: d.red ? '0' : '2px 2px 0 0' }} />}
+                        </div>
+                        <div style={{ fontFamily: 'var(--mono)', fontSize: '7px', color: 'var(--text4)', marginTop: '4px', transform: 'rotate(-45deg)', transformOrigin: 'top left', whiteSpace: 'nowrap' }}>
+                          {dateLabel}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )
+            })()}
+            <div style={{ display: 'flex', gap: '16px', marginTop: '20px', justifyContent: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <div style={{ width: '12px', height: '12px', borderRadius: '2px', background: 'var(--amber)' }} />
+                <span style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)' }}>SARI KART</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <div style={{ width: '12px', height: '12px', borderRadius: '2px', background: 'var(--red)' }} />
+                <span style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)' }}>KIRMIZI KART</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reason distribution */}
+      {stats.reasonStats?.length > 0 && (
+        <div className="panel">
+          <div className="panel-header">
+            <div className="panel-title">SEBEP DAGILIMI</div>
+          </div>
+          <div style={{ padding: '8px 16px' }}>
+            {stats.reasonStats.map((r, i) => {
+              const maxCnt = stats.reasonStats[0]?.cnt || 1
+              const pct = (r.cnt / maxCnt) * 100
+              return (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '6px 0', borderBottom: '1px solid rgba(35,45,63,.2)' }}>
+                  <div style={{ flex: 1, fontSize: '11px', color: 'var(--text2)' }}>{r.reason || '—'}</div>
+                  <div style={{ width: '100px', height: '6px', background: 'var(--border)', borderRadius: '3px', overflow: 'hidden' }}>
+                    <div style={{ width: pct + '%', height: '100%', borderRadius: '3px', background: r.card_type === 'yellow' ? 'var(--amber)' : 'var(--red)' }} />
+                  </div>
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)', width: '24px', textAlign: 'right' }}>{r.cnt}</span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Recent activity */}
       {stats.recentActivity?.length > 0 && (
         <div className="panel">
@@ -301,12 +370,21 @@ export default function DisciplinePage() {
   const [blacklistReason, setBlacklistReason] = useState('')
   const [showBlacklist, setShowBlacklist] = useState(false)
   const [searching, setSearching] = useState(false)
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
   const debounceRef = useRef(null)
 
   // Stats
   const { data: stats } = useQuery({
-    queryKey: ['discipline-stats'],
-    queryFn: () => api.get('/discipline/stats').then(r => r.data),
+    queryKey: ['discipline-stats', dateFrom, dateTo],
+    queryFn: () => {
+      let url = '/discipline/stats'
+      const params = []
+      if (dateFrom) params.push(`date_from=${dateFrom}`)
+      if (dateTo) params.push(`date_to=${dateTo}`)
+      if (params.length) url += '?' + params.join('&')
+      return api.get(url).then(r => r.data)
+    },
   })
 
   // Reason suggestions
@@ -417,7 +495,7 @@ export default function DisciplinePage() {
   ]
 
   return (
-    <div style={{ maxWidth: '800px', position: 'relative', zIndex: 1 }} className="fade-up">
+    <div style={{ maxWidth: '800px', width: '100%', position: 'relative', zIndex: 1 }} className="fade-up">
       {/* Header */}
       <div style={{ marginBottom: '20px' }}>
         <h1 style={{ fontSize: '28px', letterSpacing: '4px', color: 'var(--text)' }}>DİSİPLİN YÖNETİMİ</h1>
@@ -451,7 +529,49 @@ export default function DisciplinePage() {
       </div>
 
       {/* ── Stats Tab ───────────────────────────────────────────────────────── */}
-      {tab === 'stats' && <StatsDashboard stats={stats} />}
+      {tab === 'stats' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          {/* Date range filter */}
+          <div className="panel">
+            <div className="panel-header">
+              <div className="panel-title">TARİH ARALIĞI</div>
+              {(dateFrom || dateTo) && (
+                <button className="btn btn-ghost btn-xs" onClick={() => { setDateFrom(''); setDateTo('') }} style={{ fontSize: '9px' }}>
+                  Temizle
+                </button>
+              )}
+            </div>
+            <div className="panel-body" style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <label style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '1px' }}>BAŞLANGIÇ</label>
+                <input
+                  type="date"
+                  className="form-input"
+                  value={dateFrom}
+                  onChange={e => setDateFrom(e.target.value)}
+                  style={{ fontSize: '12px', padding: '6px 10px', width: '150px' }}
+                />
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <label style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '1px' }}>BİTİŞ</label>
+                <input
+                  type="date"
+                  className="form-input"
+                  value={dateTo}
+                  onChange={e => setDateTo(e.target.value)}
+                  style={{ fontSize: '12px', padding: '6px 10px', width: '150px' }}
+                />
+              </div>
+              {(dateFrom || dateTo) && (
+                <span style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--accent)', letterSpacing: '0.5px' }}>
+                  Filtre aktif
+                </span>
+              )}
+            </div>
+          </div>
+          <StatsDashboard stats={stats} />
+        </div>
+      )}
 
       {/* ── Blacklist Tab ───────────────────────────────────────────────────── */}
       {tab === 'blacklist' && <BlacklistPanel />}
@@ -546,7 +666,9 @@ export default function DisciplinePage() {
                           {selectedPerson.discipline_points ?? 0}
                         </span>
                       </div>
-                      {selectedPerson.is_blacklisted ? (
+                      {selectedPerson.is_blacklisted && selectedPerson.blacklist_reason?.includes('Otomatik') ? (
+                        <span className="badge badge-red">OTOMATİK KARA LİSTE</span>
+                      ) : selectedPerson.is_blacklisted ? (
                         <span className="badge badge-red">KARA LİSTE</span>
                       ) : null}
                       {selectedPerson.discipline_points >= 3 && !selectedPerson.is_blacklisted && (
@@ -559,6 +681,13 @@ export default function DisciplinePage() {
                         <span className="badge badge-green">TEMİZ</span>
                       )}
                     </div>
+                    {selectedPerson.discipline_points === 4 && !selectedPerson.is_blacklisted && (
+                      <div style={{ marginTop: '8px', padding: '8px 10px', background: 'rgba(240,165,0,.08)', borderRadius: '6px', border: '1px solid rgba(240,165,0,.25)' }}>
+                        <div style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--accent)', fontWeight: 600, letterSpacing: '0.5px' }}>
+                          UYARI: 1 puan daha kara listeye otomatik eklenecek
+                        </div>
+                      </div>
+                    )}
                     {selectedPerson.is_blacklisted && (
                       <div style={{ marginTop: '8px', padding: '8px 10px', background: 'rgba(231,76,60,.06)', borderRadius: '6px', border: '1px solid rgba(231,76,60,.15)' }}>
                         <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--red)', letterSpacing: '1px', marginBottom: '2px' }}>KARA LİSTE SEBEBİ</div>

@@ -462,7 +462,7 @@ function RoomDetailPanel({ block, floor, roomNo, task, isPrivateBath, onComplete
       </div>
 
       {/* Two-column body */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', borderTop: '1px solid var(--border)' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(300px, 100%), 1fr))', borderTop: '1px solid var(--border)' }}>
 
         {/* ── LEFT: Checklist + Actions ── */}
         <div style={{ padding: '18px 20px', borderRight: '1px solid var(--border)' }}>
@@ -1094,12 +1094,13 @@ export default function HousekeepingPage() {
   const [block, setBlock]           = useState('M1')
   const [floor, setFloor]           = useState(1)
   const [selectedRoomNo, setSelected] = useState(null)
+  const [uncleanedOnly, setUncleanedOnly] = useState(false)
 
   const isM = block.startsWith('M')
 
   const { data: tasks = [], isLoading } = useQuery({
-    queryKey: ['cleaning-tasks', TODAY],
-    queryFn: () => api.get(`/housekeeping/tasks?date=${TODAY}`).then(r => r.data),
+    queryKey: ['cleaning-tasks', TODAY, uncleanedOnly],
+    queryFn: () => api.get(`/housekeeping/tasks?date=${TODAY}${uncleanedOnly ? '&uncleaned=true' : ''}`).then(r => r.data),
     refetchInterval: 30000,
   })
 
@@ -1188,7 +1189,7 @@ export default function HousekeepingPage() {
   return (
     <div className="fade-up" style={{ position: 'relative', zIndex: 1 }}>
       {/* Header */}
-      <div style={{ marginBottom: '20px', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+      <div className="page-header" style={{ marginBottom: '20px', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
         <div>
           <h1 style={{ fontSize: '30px', letterSpacing: '4px', color: 'var(--text)' }}>HOUSEKEEPING</h1>
           <p style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)', marginTop: '4px', letterSpacing: '1px' }}>
@@ -1228,6 +1229,30 @@ export default function HousekeepingPage() {
               className={`filter-chip${floor === f ? ' active' : ''}`}>KAT {f}</button>
           ))}
         </div>
+        <button
+          onClick={() => setUncleanedOnly(v => !v)}
+          className={`filter-chip${uncleanedOnly ? ' active' : ''}`}
+          style={{ background: uncleanedOnly ? 'var(--red)' : undefined, borderColor: uncleanedOnly ? 'var(--red)' : undefined, color: uncleanedOnly ? '#fff' : undefined }}
+        >
+          {uncleanedOnly ? '✓ ' : ''}Temizlenmemiş
+        </button>
+        {/* Task stats summary */}
+        {tasks.length > 0 && (() => {
+          const done = tasks.filter(t => t.completed_at).length
+          const skipped = tasks.filter(t => t.skipped).length
+          const pending = tasks.length - done - skipped
+          const pct = Math.round((done / tasks.length) * 100)
+          return (
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginLeft: '8px' }}>
+              <div style={{ width: '60px', height: '6px', background: 'var(--border)', borderRadius: '3px', overflow: 'hidden' }}>
+                <div style={{ width: `${pct}%`, height: '100%', background: 'var(--green)', borderRadius: '3px', transition: 'width .4s' }} />
+              </div>
+              <span style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)' }}>
+                %{pct} · {done}✓ {pending > 0 ? `${pending}◻` : ''} {skipped > 0 ? `${skipped}⊘` : ''}
+              </span>
+            </div>
+          )
+        })()}
         <div style={{ marginLeft: 'auto', display: 'flex', gap: '10px', alignItems: 'center' }}>
           {bTotal > 0 && (
             <>

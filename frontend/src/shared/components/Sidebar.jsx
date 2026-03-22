@@ -17,6 +17,7 @@ const NAV_GROUPS = [
     links: [
       { to: '/checkin', icon: '\u2197', label: 'Check-in', roles: ['campus_manager','shift_supervisor'] },
       { to: '/capacity', icon: '\u229E', label: 'Kapasiteler', roles: ['campus_manager','shift_supervisor'] },
+      { to: '/checkout', icon: '\u2199', label: 'Check-out', roles: ['campus_manager','shift_supervisor'] },
     ]
   },
   {
@@ -26,6 +27,12 @@ const NAV_GROUPS = [
       { to: '/maintenance', icon: '\u2699', label: 'Teknik Servis', roles: ['campus_manager','shift_supervisor','technical'], badge: true },
       { to: '/discipline', icon: '\u26A0', label: 'Disiplin', roles: ['campus_manager','shift_supervisor'] },
       { to: '/shifts', icon: '\u29D7', label: 'Vardiyalar', roles: ['campus_manager','shift_supervisor'] },
+    ]
+  },
+  {
+    label: 'YONETIM',
+    links: [
+      { to: '/inventory', icon: '\u25A8', label: 'Envanter', roles: ['campus_manager','shift_supervisor','laundry','housekeeper'] },
     ]
   },
   {

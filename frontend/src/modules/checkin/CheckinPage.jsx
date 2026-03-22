@@ -14,14 +14,14 @@ const STEPS = [
 
 function StepBar({ step }) {
   return (
-    <div style={{ display: 'flex', gap: '0', marginBottom: '24px' }}>
+    <div style={{ display: 'flex', gap: '0', marginBottom: '24px', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
       {STEPS.map((s, i) => {
         const done = i < step, active = i === step
         return (
-          <div key={s.key} style={{ flex: 1, display: 'flex', alignItems: 'center' }}>
-            <div style={{ flex: 1 }}>
+          <div key={s.key} style={{ flex: '1 0 auto', display: 'flex', alignItems: 'center', minWidth: 0 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{
-                display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', borderRadius: '7px',
+                display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 8px', borderRadius: '7px',
                 background: active ? 'rgba(240,165,0,.1)' : done ? 'rgba(39,201,106,.08)' : 'var(--surface2)',
                 border: `1px solid ${active ? 'rgba(240,165,0,.3)' : done ? 'rgba(39,201,106,.2)' : 'var(--border)'}`,
               }}>
@@ -32,11 +32,13 @@ function StepBar({ step }) {
                   fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 700,
                   color: active || done ? '#000' : 'var(--text3)',
                 }}>{done ? '✓' : i + 1}</div>
-                <span style={{ fontFamily: 'var(--mono)', fontSize: '9px', letterSpacing: '1px',
-                  color: active ? 'var(--accent)' : done ? 'var(--green)' : 'var(--text3)' }}>{s.label}</span>
+                <span className="step-label" style={{ fontFamily: 'var(--mono)', fontSize: '9px', letterSpacing: '1px', whiteSpace: 'nowrap',
+                  color: active ? 'var(--accent)' : done ? 'var(--green)' : 'var(--text3)',
+                  display: active ? 'inline' : 'none',
+                }}>{s.label}</span>
               </div>
             </div>
-            {i < STEPS.length - 1 && <div style={{ width: '16px', height: '1px', flexShrink: 0, background: done ? 'rgba(39,201,106,.4)' : 'var(--border)' }} />}
+            {i < STEPS.length - 1 && <div style={{ width: '12px', height: '1px', flexShrink: 0, background: done ? 'rgba(39,201,106,.4)' : 'var(--border)' }} />}
           </div>
         )
       })}
@@ -407,6 +409,8 @@ export default function CheckinPage() {
   const [blacklistPerson, setBlacklistPerson] = useState(null)
   const [formData, setFormData] = useState({ full_name: '', company: '', job_title: '', preferred_block: '', phone_number: '' })
   const [shiftType, setShiftType] = useState('day')
+  const [photoFile, setPhotoFile] = useState(null)
+  const [photoPreview, setPhotoPreview] = useState(null)
   const [personnelId, setPersonnelId] = useState(null)
   const [suggestedRoom, setSuggestedRoom] = useState(null)
   const [selectedRoom, setSelectedRoom] = useState(null)
@@ -478,6 +482,13 @@ export default function CheckinPage() {
       const res = await api.post('/checkin/register', { tc_no: tcNo || undefined, passport_no: passportNo || undefined, ...formData })
       setPersonnelId(res.data.id)
       try { await api.post('/checkin/set-shift', { personnel_id: res.data.id, shift_type: shiftType }) } catch {}
+      if (photoFile) {
+        try {
+          const fd = new FormData()
+          fd.append('photo', photoFile)
+          await api.post(`/checkin/photo/${res.data.id}`, fd)
+        } catch {}
+      }
       qc.invalidateQueries(['company-suggestions'])
       qc.invalidateQueries(['job-suggestions'])
       try {
@@ -516,7 +527,7 @@ export default function CheckinPage() {
     <div style={{ position: 'relative', zIndex: 1 }} className="fade-up">
       {blacklistPerson && <BlacklistAlert person={blacklistPerson} onClose={() => setBlacklistPerson(null)} />}
 
-      <div style={{ marginBottom: '20px', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+      <div className="page-header" style={{ marginBottom: '20px', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
         <div>
           <h1 style={{ fontSize: '28px', letterSpacing: '4px', color: 'var(--text)' }}>CHECK-IN</h1>
           <p style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)', marginTop: '4px', letterSpacing: '1px' }}>
@@ -649,6 +660,42 @@ export default function CheckinPage() {
                   <label className="form-label">Telefon Numarası</label>
                   <input value={formData.phone_number} onChange={e => setFormData(p => ({ ...p, phone_number: e.target.value }))}
                     className="form-input" placeholder="05XX XXX XX XX" type="tel" />
+                </div>
+
+                {/* Photo */}
+                <div>
+                  <label className="form-label">Profil Fotoğrafı</label>
+                  {photoPreview ? (
+                    <div style={{ position: 'relative', display: 'inline-block' }}>
+                      <img src={photoPreview} alt="" style={{ width: '80px', height: '80px', borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--border)' }} />
+                      <button onClick={() => { setPhotoFile(null); setPhotoPreview(null) }} style={{
+                        position: 'absolute', top: '-4px', right: '-4px', width: '20px', height: '20px', borderRadius: '50%',
+                        background: 'var(--red)', color: '#fff', border: 'none', cursor: 'pointer', fontSize: '10px',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      }}>✕</button>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <label style={{
+                        flex: 1, padding: '12px', borderRadius: '8px', cursor: 'pointer',
+                        border: '2px dashed var(--border)', background: 'rgba(15,23,42,.3)',
+                        color: 'var(--text2)', textAlign: 'center',
+                        fontFamily: 'var(--mono)', fontSize: '10px', letterSpacing: '1px',
+                      }}>
+                        📷 FOTOGRAF YUKLE
+                        <input type="file" accept="image/*" capture="user" style={{ display: 'none' }}
+                          onChange={e => {
+                            const file = e.target.files?.[0]
+                            if (file) {
+                              setPhotoFile(file)
+                              const reader = new FileReader()
+                              reader.onload = ev => setPhotoPreview(ev.target.result)
+                              reader.readAsDataURL(file)
+                            }
+                          }} />
+                      </label>
+                    </div>
+                  )}
                 </div>
 
                 {/* Shift */}
