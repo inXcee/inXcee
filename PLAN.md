@@ -33,11 +33,12 @@
 - [x] PWA: manifest.json, service worker, SVG ikonlar, offline cache
 - [x] Dark/Light theme toggle (localStorage'da kalıcı, sidebar'da buton)
 
-### Faz 3 — Güvenlik & Performans
-- [ ] Rate limiting iyileştirmeleri (modül bazlı)
-- [ ] Input sanitization katmanı
-- [ ] DB indexleri (sık kullanılan sorgular için)
-- [ ] API response caching
+### Faz 3 — Güvenlik & Performans ✅
+- [x] Rate limiting: yazma endpoint'lerine 60 req/min limiter
+- [x] Input sanitization: HTML tag stripping middleware (XSS koruması)
+- [x] DB indexleri: 6 yeni index (room_assignments, rooms, shifts, notifications, maintenance, discipline)
+- [x] Response caching: dashboard endpoint'lerine Cache-Control (KPI 30s, heatmap 60s, projection 5m)
+- [x] Health check endpoint: GET /api/health
 
 ### Faz 4 — İleri Özellikler
 - [ ] WhatsApp entegrasyonu (bildirimler)

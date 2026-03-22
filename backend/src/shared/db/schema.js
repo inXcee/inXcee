@@ -320,4 +320,12 @@ CREATE INDEX IF NOT EXISTS idx_personnel_checkout ON personnel(check_out_date);
 CREATE INDEX IF NOT EXISTS idx_maintenance_status ON maintenance_requests(status);
 CREATE INDEX IF NOT EXISTS idx_maintenance_location ON maintenance_requests(location);
 CREATE INDEX IF NOT EXISTS idx_cleaning_tasks_date ON cleaning_tasks(scheduled_at);
+
+-- Performance indexes for frequent JOINs
+CREATE INDEX IF NOT EXISTS idx_room_assignments_room ON room_assignments(room_id);
+CREATE INDEX IF NOT EXISTS idx_rooms_status ON rooms(status);
+CREATE INDEX IF NOT EXISTS idx_shifts_personnel ON shifts(personnel_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(target_user_id, is_read, created_at);
+CREATE INDEX IF NOT EXISTS idx_maintenance_assigned ON maintenance_requests(assigned_to, status);
+CREATE INDEX IF NOT EXISTS idx_discipline_personnel ON discipline_records(personnel_id);
 `

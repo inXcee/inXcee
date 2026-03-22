@@ -1,6 +1,7 @@
 import express from 'express'
 import cors from 'cors'
 import rateLimit from 'express-rate-limit'
+import { sanitizeBody } from './shared/middleware/sanitize.js'
 import { checkinRouter } from './modules/checkin/routes.js'
 import { capacityRouter } from './modules/capacity/routes.js'
 import { laundryRouter } from './modules/laundry/routes.js'
@@ -24,8 +25,12 @@ app.use(cors({
     ? true
     : ['http://localhost:5173', 'http://localhost:5174']
 }))
-app.use(express.json())
+app.use(express.json({ limit: '5mb' }))
+app.use(sanitizeBody)
 app.use('/uploads', express.static('uploads'))
+
+// Health check
+app.get('/api/health', (req, res) => res.json({ status: 'ok', uptime: process.uptime() }))
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -34,21 +39,31 @@ const authLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 })
+
+// Write endpoint rate limiter — 60 req/min
+const writeLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  message: { error: 'Çok fazla istek. Lütfen bekleyin.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+})
+
 app.use('/api/auth', authLimiter, authRouter)
-app.use('/api/checkin', checkinRouter)
+app.use('/api/checkin', writeLimiter, checkinRouter)
 app.use('/api/capacity', capacityRouter)
-app.use('/api/laundry', laundryRouter)
-app.use('/api/housekeeping', housekeepingRouter)
-app.use('/api/maintenance', maintenanceRouter)
-app.use('/api/discipline', disciplineRouter)
+app.use('/api/laundry', writeLimiter, laundryRouter)
+app.use('/api/housekeeping', writeLimiter, housekeepingRouter)
+app.use('/api/maintenance', writeLimiter, maintenanceRouter)
+app.use('/api/discipline', writeLimiter, disciplineRouter)
 app.use('/api/self-service', selfServiceRouter)
 app.use('/api/dashboard', dashboardRouter)
 app.use('/api/room-history', roomHistoryRouter)
 app.use('/api/notifications', notificationsRouter)
 app.use('/api/whatsapp', whatsappRouter)
-app.use('/api/shifts', shiftsRouter)
-app.use('/api/checkout', checkoutRouter)
+app.use('/api/shifts', writeLimiter, shiftsRouter)
+app.use('/api/checkout', writeLimiter, checkoutRouter)
 app.use('/api/reports', reportsRouter)
-app.use('/api/inventory', inventoryRouter)
+app.use('/api/inventory', writeLimiter, inventoryRouter)
 
 export default app
