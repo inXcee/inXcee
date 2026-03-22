@@ -32,13 +32,14 @@ export function generateDailyTasks(date = new Date()) {
   return count
 }
 
-export function getTasks({ assigned_to, date, block } = {}) {
+export function getTasks({ assigned_to, date, block, uncleaned } = {}) {
   const db = getDB()
   let q = `SELECT ct.*, u.full_name as assignee_name FROM cleaning_tasks ct LEFT JOIN users u ON u.id=ct.assigned_to WHERE 1=1`
   const params = []
   if (assigned_to) { q += ' AND ct.assigned_to=?'; params.push(assigned_to) }
   if (date)        { q += ' AND DATE(ct.scheduled_at)=?'; params.push(date) }
   if (block)       { q += ' AND ct.block=?'; params.push(block) }
+  if (uncleaned)   { q += ' AND ct.completed_at IS NULL AND ct.skipped=0' }
   q += ' ORDER BY ct.scheduled_at'
   return db.prepare(q).all(...params)
 }

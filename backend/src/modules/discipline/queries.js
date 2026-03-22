@@ -47,6 +47,10 @@ export function addRecord({ personnelId, cardType, reason, createdBy }) {
         'critical', 'discipline', 'campus_manager'
       )
     }
+    if (p.discipline_points >= 5) {
+      db.prepare("UPDATE personnel SET is_blacklisted=1, blacklist_reason='Otomatik: disiplin limiti aşıldı (5+ puan)', blacklisted_at=datetime('now') WHERE id=? AND is_blacklisted=0").run(personnelId)
+      db.prepare("INSERT INTO audit_log(user_id, action, module, target_id, detail) VALUES(?, 'auto_blacklist', 'discipline', ?, 'Otomatik kara liste: 5+ disiplin puanı')").run(createdBy, personnelId)
+    }
     return p
   })
   return tx()
@@ -64,13 +68,16 @@ export function deleteRecord(recordId) {
   tx()
 }
 
-export function getRecords(personnelId) {
+export function getRecords(personnelId, { date_from, date_to } = {}) {
   const db = getDB()
-  return db.prepare(`
-    SELECT dr.*, u.full_name as created_by_name FROM discipline_records dr
+  let q = `SELECT dr.*, u.full_name as created_by_name FROM discipline_records dr
     JOIN users u ON u.id=dr.created_by
-    WHERE dr.personnel_id=? ORDER BY dr.created_at DESC
-  `).all(personnelId)
+    WHERE dr.personnel_id=?`
+  const params = [personnelId]
+  if (date_from) { q += ' AND DATE(dr.created_at)>=?'; params.push(date_from) }
+  if (date_to)   { q += ' AND DATE(dr.created_at)<=?'; params.push(date_to) }
+  q += ' ORDER BY dr.created_at DESC'
+  return db.prepare(q).all(...params)
 }
 
 // ── Blacklist ───────────────────────────────────────────────────────────────
@@ -100,16 +107,23 @@ export function getBlacklisted() {
 
 // ── Stats ───────────────────────────────────────────────────────────────────
 
-export function getStats() {
+export function getStats({ date_from, date_to } = {}) {
   const db = getDB()
+  const hasDateFilter = date_from || date_to
+
+  let dateWhere = ''
+  const dateParams = []
+  if (date_from) { dateWhere += ' AND DATE(dr.created_at)>=?'; dateParams.push(date_from) }
+  if (date_to)   { dateWhere += ' AND DATE(dr.created_at)<=?'; dateParams.push(date_to) }
 
   const overview = db.prepare(`
     SELECT
       COUNT(*) as total_records,
       SUM(CASE WHEN card_type='yellow' THEN 1 ELSE 0 END) as yellow_cards,
       SUM(CASE WHEN card_type='red' THEN 1 ELSE 0 END) as red_cards
-    FROM discipline_records
-  `).get()
+    FROM discipline_records dr
+    WHERE 1=1${dateWhere}
+  `).get(...dateParams)
 
   const blacklisted = db.prepare(`SELECT COUNT(*) as cnt FROM personnel WHERE is_blacklisted=1`).get()
   const critical = db.prepare(`SELECT COUNT(*) as cnt FROM personnel WHERE discipline_points>=3 AND is_blacklisted=0 AND check_out_date IS NULL`).get()
@@ -121,9 +135,9 @@ export function getStats() {
       SUM(CASE WHEN dr.card_type='red' THEN 1 ELSE 0 END) as red
     FROM discipline_records dr
     JOIN personnel p ON p.id=dr.personnel_id
-    WHERE p.company IS NOT NULL AND p.company != ''
+    WHERE p.company IS NOT NULL AND p.company != ''${dateWhere}
     GROUP BY p.company ORDER BY total DESC
-  `).all()
+  `).all(...dateParams)
 
   const topOffenders = db.prepare(`
     SELECT p.id, p.full_name, p.company, p.job_title, p.discipline_points, p.is_blacklisted,
@@ -132,11 +146,11 @@ export function getStats() {
       SUM(CASE WHEN dr.card_type='red' THEN 1 ELSE 0 END) as red
     FROM personnel p
     JOIN discipline_records dr ON dr.personnel_id=p.id
-    WHERE p.check_out_date IS NULL
+    WHERE p.check_out_date IS NULL${dateWhere}
     GROUP BY p.id
     ORDER BY p.discipline_points DESC
     LIMIT 15
-  `).all()
+  `).all(...dateParams)
 
   const recentActivity = db.prepare(`
     SELECT dr.id, dr.card_type, dr.reason, dr.created_at,
@@ -145,17 +159,29 @@ export function getStats() {
     FROM discipline_records dr
     JOIN personnel p ON p.id=dr.personnel_id
     JOIN users u ON u.id=dr.created_by
+    WHERE 1=1${dateWhere}
     ORDER BY dr.created_at DESC
     LIMIT 20
-  `).all()
+  `).all(...dateParams)
 
   const reasonStats = db.prepare(`
-    SELECT reason, COUNT(*) as cnt, card_type
-    FROM discipline_records
-    GROUP BY reason, card_type
+    SELECT dr.reason, COUNT(*) as cnt, dr.card_type
+    FROM discipline_records dr
+    WHERE 1=1${dateWhere}
+    GROUP BY dr.reason, dr.card_type
     ORDER BY cnt DESC
     LIMIT 15
-  `).all()
+  `).all(...dateParams)
+
+  const trend = db.prepare(`
+    SELECT DATE(dr.created_at) as date,
+      SUM(CASE WHEN dr.card_type='yellow' THEN 1 ELSE 0 END) as yellow,
+      SUM(CASE WHEN dr.card_type='red' THEN 1 ELSE 0 END) as red
+    FROM discipline_records dr
+    WHERE dr.created_at >= datetime('now', '-30 days')${dateWhere}
+    GROUP BY DATE(dr.created_at)
+    ORDER BY date
+  `).all(...dateParams)
 
   return {
     ...overview,
@@ -166,6 +192,7 @@ export function getStats() {
     topOffenders,
     recentActivity,
     reasonStats,
+    trend,
   }
 }
 

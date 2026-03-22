@@ -4,11 +4,13 @@ import app from '../../app.js'
 import { initDB } from '../../shared/db/index.js'
 import { seedDev } from '../../shared/db/seed.js'
 
-let token
+let token, managerToken
 beforeAll(async () => {
   process.env.DB_PATH = ':memory:'; initDB(); seedDev()
   const res = await request(app).post('/api/auth/login').send({ username: 'vardiya', password: 'admin123' })
   token = res.body.token
+  const res2 = await request(app).post('/api/auth/login').send({ username: 'mudur', password: 'admin123' })
+  managerToken = res2.body.token
 })
 
 describe('Check-in', () => {
@@ -37,5 +39,55 @@ describe('Check-in', () => {
       .send({ company: 'ABC Ltd', hometown: 'Konya' })
     expect(res.status).toBe(200)
     expect(res.body.room_id).toBeTruthy()
+  })
+
+  it('blocks checkout when unreturned zimmet exists', async () => {
+    const db = (await import('../../shared/db/index.js')).getDB()
+
+    // Create personnel
+    const regRes = await request(app)
+      .post('/api/checkin/register')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ tc_no: '33333333333', full_name: 'Zimmet Test Kisi', company: 'Test Ltd' })
+    expect(regRes.status).toBe(201)
+    const personnelId = regRes.body.id
+
+    // Assign to a room
+    const rooms = db.prepare("SELECT id FROM rooms WHERE status='active' LIMIT 1").get()
+    await request(app)
+      .post('/api/checkin/assign-room')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ personnel_id: personnelId, room_id: rooms.id })
+
+    // Add zimmet
+    await request(app)
+      .post('/api/checkin/zimmet')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ personnel_id: personnelId, items: [{ item_name: 'Yatak Takimi', quantity: 1 }] })
+
+    // Try bulk checkout — should fail with 409
+    const checkoutRes = await request(app)
+      .post('/api/capacity/bulk/checkout')
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({ personnel_ids: [personnelId] })
+    expect(checkoutRes.status).toBe(409)
+    expect(checkoutRes.body.error).toBe('UNRETURNED_ZIMMET')
+    expect(checkoutRes.body.details).toHaveLength(1)
+    expect(checkoutRes.body.details[0].personnel_id).toBe(personnelId)
+    expect(checkoutRes.body.details[0].items).toHaveLength(1)
+
+    // Return zimmet
+    await request(app)
+      .post('/api/checkin/zimmet/return-all')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ personnel_id: personnelId, condition: 'normal' })
+
+    // Retry checkout — should succeed
+    const retryRes = await request(app)
+      .post('/api/capacity/bulk/checkout')
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({ personnel_ids: [personnelId] })
+    expect(retryRes.status).toBe(200)
+    expect(retryRes.body.ok).toBe(true)
   })
 })

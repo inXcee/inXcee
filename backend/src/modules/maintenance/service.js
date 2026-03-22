@@ -1,5 +1,6 @@
 import * as q from './queries.js'
 import { createNotification } from '../../shared/notifications/service.js'
+import { logAudit } from '../../shared/audit.js'
 
 export function createRequestService(data) {
   const id = q.createRequest(data)
@@ -42,6 +43,33 @@ export function reopenRequestService(id) {
     module: 'maintenance',
     target_role: 'technical',
   })
+}
+
+export function startRequestService(id, userId) {
+  const changes = q.startRequest(id)
+  if (!changes) throw new Error('Başlatılamadı — talep açık durumda değil')
+  const req = q.getRequestById(id)
+  createNotification({
+    message: `Arıza #${id} (${req?.location || ''}) üzerinde çalışılmaya başlandı`,
+    type: 'info',
+    module: 'maintenance',
+    target_role: 'technical',
+  })
+  logAudit(userId, 'start', 'maintenance', id, null)
+}
+
+export function updateStatusService(id, newStatus, userId) {
+  const labels = { open: 'Açık', in_progress: 'Devam Ediyor', done: 'Tamamlandı' }
+  const changes = q.updateStatus(id, newStatus)
+  if (!changes) throw new Error('Durum güncellenemedi')
+  const req = q.getRequestById(id)
+  createNotification({
+    message: `Arıza #${id} (${req?.location || ''}) durumu değişti: ${labels[newStatus] || newStatus}`,
+    type: newStatus === 'done' ? 'info' : 'warning',
+    module: 'maintenance',
+    target_role: newStatus === 'done' ? 'campus_manager' : 'technical',
+  })
+  logAudit(userId, `status_${newStatus}`, 'maintenance', id, `Durum: ${labels[newStatus]}`)
 }
 
 export const deleteRequestService = q.deleteRequest

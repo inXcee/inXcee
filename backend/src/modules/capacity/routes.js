@@ -49,6 +49,15 @@ capacityRouter.patch('/floor-supervisor', ...requireRole('campus_manager'), (req
   catch (e) { res.status(500).json({ error: e.message }) }
 })
 
+capacityRouter.post('/swap', ...mgmt, (req, res) => {
+  try {
+    const { person_a_id, person_b_id } = req.body
+    if (!person_a_id || !person_b_id) return res.status(400).json({ error: 'İki personel ID gerekli' })
+    svc.swapPersonnelService(person_a_id, person_b_id, req.user.id)
+    res.json({ ok: true })
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
 capacityRouter.post('/reassign', ...mgmt, (req, res) => {
   try {
     svc.reassignPersonnelService(req.body.personnel_id, req.body.room_id, req.user.id)
@@ -102,8 +111,15 @@ capacityRouter.post('/bulk/room-status', ...requireRole('campus_manager'), (req,
 })
 
 capacityRouter.post('/bulk/checkout', ...requireRole('campus_manager'), (req, res) => {
-  const { personnel_ids } = req.body
-  if (!Array.isArray(personnel_ids) || personnel_ids.length === 0) return res.status(400).json({ error: 'Personel listesi gerekli' })
-  svc.bulkCheckoutService(personnel_ids, req.user.id)
-  res.json({ ok: true, count: personnel_ids.length })
+  try {
+    const { personnel_ids, force } = req.body
+    if (!Array.isArray(personnel_ids) || personnel_ids.length === 0) return res.status(400).json({ error: 'Personel listesi gerekli' })
+    svc.bulkCheckoutService(personnel_ids, req.user.id, !!force)
+    res.json({ ok: true, count: personnel_ids.length })
+  } catch (e) {
+    if (e.code === 'UNRETURNED_ZIMMET') {
+      return res.status(409).json({ error: 'UNRETURNED_ZIMMET', details: e.details })
+    }
+    res.status(400).json({ error: e.message })
+  }
 })

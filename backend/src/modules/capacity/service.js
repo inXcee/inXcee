@@ -1,5 +1,5 @@
 import * as q from './queries.js'
-import { createNotification } from '../../shared/notifications/service.js'
+import { createNotification, broadcastOccupancy } from '../../shared/notifications/service.js'
 import { getDB } from '../../shared/db/index.js'
 import { logAudit } from '../../shared/audit.js'
 
@@ -30,21 +30,30 @@ export function updateRoomStatusService(roomId, status, userId) {
     })
   }
   logAudit(userId, status === 'quarantine' ? 'room_quarantine' : status === 'maintenance' ? 'room_maintenance' : 'room_activate', 'capacity', roomId, `${roomLabel} → ${status}${evicted > 0 ? ` (${evicted} kişi çıkarıldı)` : ''}`)
+  broadcastOccupancy()
 }
 
 export const updateFloorSupervisorService = q.updateFloorSupervisor
 export const updateRoomNotesService = q.updateRoomNotes
 export const searchPersonnelService = q.searchPersonnel
 
+export function swapPersonnelService(personAId, personBId, userId) {
+  const result = q.swapPersonnel(personAId, personBId, userId)
+  logAudit(userId, 'room_swap', 'capacity', null, `Takas: ${result.personA.from} ↔ ${result.personB.from}`)
+  broadcastOccupancy()
+}
+
 export function reassignPersonnelService(personnelId, newRoomId, userId) {
   const detail = q.getReassignDetail(personnelId, newRoomId)
   q.reassignPersonnel(personnelId, newRoomId, userId)
   logAudit(userId, 'room_reassign', 'capacity', personnelId, `${detail.name}: ${detail.from} → ${detail.to}`)
+  broadcastOccupancy()
 }
 
 export function removeFromRoomService(personnelId, userId) {
   const assignment = q.removeFromRoom(personnelId)
   logAudit(userId, 'room_remove', 'capacity', personnelId, `${assignment.full_name}: ${assignment.block}-${assignment.room_no} → odadan çıkarıldı`)
+  broadcastOccupancy()
   return assignment
 }
 
@@ -55,11 +64,13 @@ export function bulkAssignToRoomService(personnelIds, roomId, userId) {
   const room = db.prepare('SELECT block, room_no FROM rooms WHERE id=?').get(roomId)
   q.bulkAssignToRoom(personnelIds, roomId, userId)
   logAudit(userId, 'bulk_assign', 'capacity', roomId, `${personnelIds.length} kişi → ${room?.block || '?'}-${room?.room_no || '?'}`)
+  broadcastOccupancy()
 }
 
 export function bulkRemoveFromRoomsService(personnelIds, userId) {
   q.bulkRemoveFromRooms(personnelIds)
   logAudit(userId, 'bulk_remove', 'capacity', null, `${personnelIds.length} kişi odadan çıkarıldı`)
+  broadcastOccupancy()
 }
 
 export function bulkUpdateRoomStatusService(roomIds, status, userId) {
@@ -67,7 +78,8 @@ export function bulkUpdateRoomStatusService(roomIds, status, userId) {
   logAudit(userId, 'bulk_room_status', 'capacity', null, `${roomIds.length} oda → ${status}`)
 }
 
-export function bulkCheckoutService(personnelIds, userId) {
-  q.bulkCheckout(personnelIds)
-  logAudit(userId, 'bulk_checkout', 'capacity', null, `${personnelIds.length} kişi çıkış`)
+export function bulkCheckoutService(personnelIds, userId, force = false) {
+  q.bulkCheckout(personnelIds, userId, force)
+  logAudit(userId, 'bulk_checkout', 'capacity', null, `${personnelIds.length} kişi çıkış${force ? ' (zorla)' : ''}`)
+  broadcastOccupancy()
 }

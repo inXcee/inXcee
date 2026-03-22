@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import { requireRole } from '../../shared/auth/middleware.js'
+import { upload } from '../../shared/uploads/middleware.js'
 import * as svc from './service.js'
 
 export const checkinRouter = Router()
@@ -111,4 +112,18 @@ checkinRouter.post('/zimmet/return-all', ...allowed, (req, res) => {
   if (!personnel_id) return res.status(400).json({ error: 'Personel ID gerekli' })
   svc.returnAllZimmetService(personnel_id, condition)
   res.json({ ok: true })
+})
+
+checkinRouter.get('/zimmet/:personnelId/unreturned', ...allowed, (req, res) => {
+  res.json(svc.getUnreturnedZimmetService(+req.params.personnelId))
+})
+
+// ── Photo Upload ──────────────────────────────────────────────────────────────
+checkinRouter.post('/photo/:personnelId', ...allowed, upload.single('photo'), (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'Fotoğraf gerekli' })
+    const photoUrl = `/uploads/${req.file.filename}`
+    svc.updatePhotoService(+req.params.personnelId, photoUrl)
+    res.json({ photo_url: photoUrl })
+  } catch (e) { res.status(400).json({ error: e.message }) }
 })

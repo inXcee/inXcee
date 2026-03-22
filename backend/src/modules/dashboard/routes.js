@@ -26,7 +26,11 @@ dashboardRouter.get('/bed-occupancy', ...mgmt, (req, res) => {
 })
 
 dashboardRouter.get('/audit-log', ...requireRole('campus_manager'), (req, res) => {
-  try { const limit = Math.min(+(req.query.limit || 50), 200); res.json(getAuditLog(limit)) }
+  try {
+    const limit = Math.min(+(req.query.limit || 50), 200)
+    const filters = { action: req.query.action, module: req.query.module, user_id: req.query.user_id ? +req.query.user_id : null, date_from: req.query.date_from, date_to: req.query.date_to, search: req.query.search }
+    res.json(getAuditLog(limit, filters))
+  }
   catch (e) { res.status(500).json({ error: e.message }) }
 })
 

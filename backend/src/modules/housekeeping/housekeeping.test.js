@@ -30,4 +30,17 @@ describe('Housekeeping', () => {
     expect(res.status).toBe(200)
     expect(Array.isArray(res.body)).toBe(true)
   })
+  it('filters uncleaned tasks only', async () => {
+    const all = await request(app).get('/api/housekeeping/tasks').set('Authorization', `Bearer ${token}`)
+    const uncleaned = await request(app).get('/api/housekeeping/tasks?uncleaned=true').set('Authorization', `Bearer ${token}`)
+    expect(uncleaned.status).toBe(200)
+    expect(Array.isArray(uncleaned.body)).toBe(true)
+    // uncleaned should exclude completed and skipped tasks
+    uncleaned.body.forEach(t => {
+      expect(t.completed_at).toBeNull()
+      expect(t.skipped).toBe(0)
+    })
+    // uncleaned count should be <= total count
+    expect(uncleaned.body.length).toBeLessThanOrEqual(all.body.length)
+  })
 })

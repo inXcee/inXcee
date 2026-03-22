@@ -48,6 +48,22 @@ maintenanceRouter.patch('/requests/:id/priority', ...techAccess, (req, res) => {
   catch (e) { res.status(400).json({ error: e.message }) }
 })
 
+maintenanceRouter.patch('/requests/:id/start', ...techAccess, (req, res) => {
+  try {
+    svc.startRequestService(+req.params.id, req.user.id)
+    res.json({ ok: true })
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+maintenanceRouter.patch('/requests/:id/status', ...techAccess, (req, res) => {
+  try {
+    const { status } = req.body
+    if (!status) return res.status(400).json({ error: 'Durum belirtilmeli' })
+    svc.updateStatusService(+req.params.id, status, req.user.id)
+    res.json({ ok: true })
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
 maintenanceRouter.patch('/requests/:id/close', ...techAccess, upload.single('photo'), (req, res) => {
   const photoUrl = req.file ? `/uploads/${req.file.filename}` : req.body.photo_url || null
   svc.closeRequestService(+req.params.id, photoUrl)

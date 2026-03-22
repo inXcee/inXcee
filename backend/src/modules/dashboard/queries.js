@@ -87,15 +87,19 @@ export function getProjection() {
   return leaving
 }
 
-export function getAuditLog(limit = 50) {
+export function getAuditLog(limit = 50, { action, module, user_id, date_from, date_to, search } = {}) {
   const db = getDB()
-  return db.prepare(`
-    SELECT a.*, u.full_name as user_name
-    FROM audit_log a
-    LEFT JOIN users u ON u.id=a.user_id
-    ORDER BY a.created_at DESC
-    LIMIT ?
-  `).all(limit)
+  let q = `SELECT a.*, u.full_name as user_name FROM audit_log a LEFT JOIN users u ON u.id=a.user_id WHERE 1=1`
+  const params = []
+  if (action) { q += ' AND a.action=?'; params.push(action) }
+  if (module) { q += ' AND a.module=?'; params.push(module) }
+  if (user_id) { q += ' AND a.user_id=?'; params.push(user_id) }
+  if (date_from) { q += ' AND DATE(a.created_at)>=?'; params.push(date_from) }
+  if (date_to) { q += ' AND DATE(a.created_at)<=?'; params.push(date_to) }
+  if (search) { q += ' AND (a.detail LIKE ? OR u.full_name LIKE ?)'; params.push(`%${search}%`, `%${search}%`) }
+  q += ' ORDER BY a.created_at DESC LIMIT ?'
+  params.push(limit)
+  return db.prepare(q).all(...params)
 }
 
 // ── Export queries (#4) ──────────────────────────────────────────────────────

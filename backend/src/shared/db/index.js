@@ -163,6 +163,12 @@ export function initDB() {
   // phone_number replaces hometown usage in UI
   try { db.exec('ALTER TABLE personnel ADD COLUMN phone_number TEXT') } catch(_) {}
 
+  // ── Checkout module: damage_note on zimmet ──
+  try { db.exec('ALTER TABLE zimmet ADD COLUMN damage_note TEXT') } catch(_) {}
+
+  // ── Profile photo ──
+  try { db.exec('ALTER TABLE personnel ADD COLUMN photo_url TEXT') } catch(_) {}
+
   return db
 }
 

@@ -3,9 +3,9 @@ import { logAudit } from '../../shared/audit.js'
 
 export const searchPersonnelService     = q.searchPersonnel
 export const getPersonnelByIdService    = q.getPersonnelById
-export const getRecordsService          = q.getRecords
+export function getRecordsService(personnelId, filters) { return q.getRecords(personnelId, filters) }
 export const getBlacklistedService      = q.getBlacklisted
-export const getStatsService            = q.getStats
+export function getStatsService(filters) { return q.getStats(filters) }
 export const getReasonSuggestionsService = q.getReasonSuggestions
 
 export function addRecordService(data) {

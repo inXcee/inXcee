@@ -45,8 +45,10 @@ disciplineRouter.delete('/records/:id', ...requireRole('campus_manager'), (req, 
 })
 
 disciplineRouter.get('/records/:personnelId', ...mgmt, (req, res) => {
-  try { res.json(svc.getRecordsService(+req.params.personnelId)) }
-  catch (e) { res.status(500).json({ error: e.message }) }
+  try {
+    const { date_from, date_to } = req.query
+    res.json(svc.getRecordsService(+req.params.personnelId, { date_from, date_to }))
+  } catch (e) { res.status(500).json({ error: e.message }) }
 })
 
 // ── Blacklist ───────────────────────────────────────────────────────────────
@@ -72,8 +74,10 @@ disciplineRouter.get('/blacklisted', ...mgmt, (req, res) => {
 // ── Stats & Suggestions ────────────────────────────────────────────────────
 
 disciplineRouter.get('/stats', ...mgmt, (req, res) => {
-  try { res.json(svc.getStatsService()) }
-  catch (e) { res.status(500).json({ error: e.message }) }
+  try {
+    const { date_from, date_to } = req.query
+    res.json(svc.getStatsService({ date_from, date_to }))
+  } catch (e) { res.status(500).json({ error: e.message }) }
 })
 
 disciplineRouter.get('/reason-suggestions', ...mgmt, (req, res) => {

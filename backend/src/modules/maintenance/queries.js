@@ -17,9 +17,11 @@ export function getRequests({ status, search, priority } = {}) {
   const db = getDB()
   let q = `
     SELECT mr.*,
-      ru.full_name as reporter_name
+      ru.full_name as reporter_name,
+      t.full_name as technician_name
     FROM maintenance_requests mr
     LEFT JOIN users ru ON ru.id = mr.reporter_user_id
+    LEFT JOIN technicians t ON t.id = mr.assigned_to
     WHERE 1=1
   `
   const params = []
@@ -38,9 +40,11 @@ export function getRequestById(id) {
   const db = getDB()
   return db.prepare(`
     SELECT mr.*,
-      ru.full_name as reporter_name
+      ru.full_name as reporter_name,
+      t.full_name as technician_name
     FROM maintenance_requests mr
     LEFT JOIN users ru ON ru.id = mr.reporter_user_id
+    LEFT JOIN technicians t ON t.id = mr.assigned_to
     WHERE mr.id=?
   `).get(id)
 }
@@ -71,6 +75,29 @@ export function reopenRequest(id) {
     SET status='open', closed_at=NULL
     WHERE id=?
   `).run(id)
+}
+
+export function startRequest(id) {
+  const db = getDB()
+  const r = db.prepare(`
+    UPDATE maintenance_requests
+    SET status='in_progress', started_at=datetime('now')
+    WHERE id=? AND status='open'
+  `).run(id)
+  return r.changes
+}
+
+export function updateStatus(id, newStatus) {
+  const db = getDB()
+  const allowed = ['open', 'in_progress', 'done']
+  if (!allowed.includes(newStatus)) throw new Error('Geçersiz durum')
+  const extras = []
+  if (newStatus === 'in_progress') extras.push("started_at=datetime('now')")
+  if (newStatus === 'done') { extras.push("closed_at=datetime('now')"); extras.push("wait_reason=NULL") }
+  if (newStatus === 'open') { extras.push("closed_at=NULL"); extras.push("started_at=NULL") }
+  const setClause = ['status=?', ...extras].join(', ')
+  const r = db.prepare(`UPDATE maintenance_requests SET ${setClause} WHERE id=?`).run(newStatus, id)
+  return r.changes
 }
 
 export function deleteRequest(id) {

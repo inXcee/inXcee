@@ -1,5 +1,5 @@
 import * as q from './queries.js'
-import { createNotification } from '../../shared/notifications/service.js'
+import { createNotification, broadcastOccupancy } from '../../shared/notifications/service.js'
 import { logAudit } from '../../shared/audit.js'
 import { getDB } from '../../shared/db/index.js'
 
@@ -19,6 +19,7 @@ export const zimmetService             = q.addZimmet
 export const getPersonnelZimmetService = q.getPersonnelZimmet
 export const returnZimmetService       = q.returnZimmet
 export const returnAllZimmetService    = q.returnAllZimmet
+export const getUnreturnedZimmetService = q.getUnreturnedZimmet
 
 export function registerService(data, userId) {
   const existing = q.lookupPerson(data.tc_no, data.passport_no)
@@ -34,11 +35,17 @@ export function registerService(data, userId) {
   return { id, existing: false }
 }
 
+export function updatePhotoService(personnelId, photoUrl) {
+  const db = getDB()
+  db.prepare('UPDATE personnel SET photo_url=? WHERE id=?').run(photoUrl, personnelId)
+}
+
 export function assignRoomService(personnelId, roomId, userId) {
   const db = getDB()
   const person = db.prepare('SELECT full_name FROM personnel WHERE id=?').get(personnelId)
   const room = db.prepare('SELECT block, room_no FROM rooms WHERE id=?').get(roomId)
   const bedNo = q.assignRoom(personnelId, roomId, userId)
   logAudit(userId, 'room_assign', 'checkin', personnelId, `${person?.full_name || '?'} → ${room?.block || '?'}-${room?.room_no || '?'} yatak ${bedNo}`)
+  broadcastOccupancy()
   return bedNo
 }

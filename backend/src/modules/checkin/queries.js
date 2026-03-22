@@ -11,7 +11,7 @@ export function searchByName(name) {
   const db = getDB()
   const term = `%${name}%`
   return db.prepare(`
-    SELECT p.id, p.full_name, p.company, p.phone_number, p.job_title, p.tc_no,
+    SELECT p.id, p.full_name, p.company, p.phone_number, p.job_title, p.tc_no, p.photo_url,
       p.is_blacklisted, p.blacklist_reason, p.blacklisted_at,
       ra.room_id, r.block, r.floor, r.room_no,
       s.shift_type
@@ -300,4 +300,14 @@ export function returnZimmet(zimmetId, condition) {
 export function returnAllZimmet(personnelId, condition) {
   const db = getDB()
   db.prepare("UPDATE zimmet SET returned_at=datetime('now'), return_condition=? WHERE personnel_id=? AND returned_at IS NULL").run(condition || 'normal', personnelId)
+}
+
+export function getUnreturnedZimmet(personnelId) {
+  const db = getDB()
+  return db.prepare(`
+    SELECT z.id, z.item_name, z.quantity, z.created_at
+    FROM zimmet z
+    WHERE z.personnel_id=? AND z.returned_at IS NULL
+    ORDER BY z.created_at DESC
+  `).all(personnelId)
 }

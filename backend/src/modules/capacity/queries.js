@@ -1,6 +1,6 @@
 import { getDB } from '../../shared/db/index.js'
 
-export function getRooms({ block, floor, status } = {}) {
+export function getRooms({ block, floor, status, empty_only, company } = {}) {
   const db = getDB()
   const hour = new Date().getHours()
   // Sadece gece vardiyası gündüz uyur → DND 07:00–19:00
@@ -30,15 +30,21 @@ export function getRooms({ block, floor, status } = {}) {
   if (block) { where.push('r.block=?'); params.push(block) }
   if (floor) { where.push('r.floor=?'); params.push(floor) }
   if (status) { where.push('r.status=?'); params.push(status) }
+  if (company) {
+    where.push(`r.id IN (SELECT ra2.room_id FROM room_assignments ra2 JOIN personnel p2 ON p2.id=ra2.personnel_id WHERE ra2.check_out_at IS NULL AND p2.company=?)`)
+    params.push(company)
+  }
   if (where.length) q += ' WHERE ' + where.join(' AND ')
-  q += ' GROUP BY r.id ORDER BY r.block, r.floor, r.room_no'
+  q += ' GROUP BY r.id'
+  if (empty_only) { q += ' HAVING COUNT(ra.id)=0' }
+  q += ' ORDER BY r.block, r.floor, r.room_no'
   return db.prepare(q).all(...params)
 }
 
 export function getRoomPersonnel(roomId) {
   const db = getDB()
   return db.prepare(`
-    SELECT p.id, p.full_name, p.company, p.phone_number, ra.bed_no, ra.assigned_at,
+    SELECT p.id, p.full_name, p.company, p.phone_number, p.photo_url, ra.bed_no, ra.assigned_at,
       COALESCE(s.shift_type, 'day') as shift_type
     FROM room_assignments ra
     JOIN personnel p ON p.id=ra.personnel_id
@@ -179,9 +185,46 @@ export function bulkUpdateRoomStatus(roomIds, status) {
   return roomIds.length
 }
 
-export function bulkCheckout(personnelIds) {
+export function bulkCheckout(personnelIds, userId, force = false) {
   const db = getDB()
+
+  // Check for unreturned zimmet before checkout
+  if (!force) {
+    const unreturnedByPerson = []
+    for (const pid of personnelIds) {
+      const items = db.prepare(`
+        SELECT z.id, z.item_name, z.quantity, z.created_at
+        FROM zimmet z
+        WHERE z.personnel_id=? AND z.returned_at IS NULL
+        ORDER BY z.created_at DESC
+      `).all(pid)
+      if (items.length > 0) {
+        const person = db.prepare('SELECT full_name FROM personnel WHERE id=?').get(pid)
+        unreturnedByPerson.push({ personnel_id: pid, full_name: person?.full_name || '?', items })
+      }
+    }
+    if (unreturnedByPerson.length > 0) {
+      const err = new Error('UNRETURNED_ZIMMET')
+      err.code = 'UNRETURNED_ZIMMET'
+      err.details = unreturnedByPerson
+      throw err
+    }
+  }
+
   const tx = db.transaction(() => {
+    if (force && userId) {
+      // Log forced checkout audit for each person with unreturned zimmet
+      for (const pid of personnelIds) {
+        const items = db.prepare('SELECT id, item_name FROM zimmet WHERE personnel_id=? AND returned_at IS NULL').all(pid)
+        if (items.length > 0) {
+          const person = db.prepare('SELECT full_name FROM personnel WHERE id=?').get(pid)
+          db.prepare('INSERT INTO audit_log(user_id,action,module,target_id,detail) VALUES(?,?,?,?,?)').run(
+            userId, 'forced_checkout_with_zimmet', 'capacity', pid,
+            `${person?.full_name || '?'} — ${items.length} iade edilmemiş zimmet ile zorla çıkış`
+          )
+        }
+      }
+    }
     for (const pid of personnelIds) {
       db.prepare("UPDATE room_assignments SET check_out_at=datetime('now') WHERE personnel_id=? AND check_out_at IS NULL").run(pid)
       db.prepare("UPDATE personnel SET check_out_date=datetime('now') WHERE id=?").run(pid)
@@ -219,6 +262,32 @@ export function getReassignDetail(personnelId, newRoomId) {
     from: oldAssignment ? `${oldAssignment.block}-${oldAssignment.room_no}` : 'yok',
     to: newRoom ? `${newRoom.block}-${newRoom.room_no}` : '?',
   }
+}
+
+export function swapPersonnel(personAId, personBId, userId) {
+  const db = getDB()
+  const tx = db.transaction(() => {
+    // Get current assignments
+    const assignA = db.prepare('SELECT ra.*, r.block, r.room_no FROM room_assignments ra JOIN rooms r ON r.id=ra.room_id WHERE ra.personnel_id=? AND ra.check_out_at IS NULL').get(personAId)
+    const assignB = db.prepare('SELECT ra.*, r.block, r.room_no FROM room_assignments ra JOIN rooms r ON r.id=ra.room_id WHERE ra.personnel_id=? AND ra.check_out_at IS NULL').get(personBId)
+
+    if (!assignA || !assignB) throw new Error('Her iki kişinin de aktif oda ataması olmalı')
+    if (assignA.room_id === assignB.room_id) throw new Error('Aynı odadaki kişiler takas edilemez')
+
+    // Remove both from current rooms
+    db.prepare("UPDATE room_assignments SET check_out_at=datetime('now') WHERE personnel_id=? AND check_out_at IS NULL").run(personAId)
+    db.prepare("UPDATE room_assignments SET check_out_at=datetime('now') WHERE personnel_id=? AND check_out_at IS NULL").run(personBId)
+
+    // Assign A to B's room and B to A's room
+    db.prepare('INSERT INTO room_assignments(personnel_id,room_id,bed_no,assigned_by) VALUES(?,?,?,?)').run(personAId, assignB.room_id, assignB.bed_no, userId)
+    db.prepare('INSERT INTO room_assignments(personnel_id,room_id,bed_no,assigned_by) VALUES(?,?,?,?)').run(personBId, assignA.room_id, assignA.bed_no, userId)
+
+    return {
+      personA: { name: null, from: `${assignA.block}-${assignA.room_no}`, to: `${assignB.block}-${assignB.room_no}` },
+      personB: { name: null, from: `${assignB.block}-${assignB.room_no}`, to: `${assignA.block}-${assignA.room_no}` },
+    }
+  })
+  return tx()
 }
 
 export function reassignPersonnel(personnelId, newRoomId, userId) {
