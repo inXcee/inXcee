@@ -11,6 +11,9 @@ import { selfServiceRouter } from './modules/self-service/routes.js'
 import { dashboardRouter } from './modules/dashboard/routes.js'
 import { roomHistoryRouter } from './modules/room-history/routes.js'
 import { shiftsRouter } from './modules/shifts/routes.js'
+import { checkoutRouter } from './modules/checkout/routes.js'
+import { reportsRouter } from './modules/reports/routes.js'
+import { inventoryRouter } from './modules/inventory/routes.js'
 import { authRouter } from './shared/auth/routes.js'
 import { notificationsRouter } from './shared/notifications/routes.js'
 import { whatsappRouter } from './shared/whatsapp/routes.js'
@@ -44,5 +47,8 @@ app.use('/api/room-history', roomHistoryRouter)
 app.use('/api/notifications', notificationsRouter)
 app.use('/api/whatsapp', whatsappRouter)
 app.use('/api/shifts', shiftsRouter)
+app.use('/api/checkout', checkoutRouter)
+app.use('/api/reports', reportsRouter)
+app.use('/api/inventory', inventoryRouter)
 
 export default app
