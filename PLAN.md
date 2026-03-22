@@ -40,11 +40,12 @@
 - [x] Response caching: dashboard endpoint'lerine Cache-Control (KPI 30s, heatmap 60s, projection 5m)
 - [x] Health check endpoint: GET /api/health
 
-### Faz 4 — İleri Özellikler
-- [ ] WhatsApp entegrasyonu (bildirimler)
-- [ ] Excel/CSV import/export
-- [ ] Detaylı loglama & audit dashboard
-- [ ] Kullanıcı yönetim paneli
+### Faz 4 — İleri Özellikler ✅
+- [x] WhatsApp entegrasyonu — zaten mevcut (mesaj parse, arıza oluşturma)
+- [x] CSV export — zaten mevcut (personel, doluluk, arıza)
+- [x] CSV import — personel toplu yükleme endpoint'i
+- [x] Audit dashboard — filtreleme, arama, modül/işlem bazlı görünüm
+- [x] Kullanıcı yönetim paneli — CRUD, rol atama, şifre değiştirme (9 test)
 
 ### Faz 5 — Deployment & CI/CD
 - [ ] GitHub Actions CI pipeline

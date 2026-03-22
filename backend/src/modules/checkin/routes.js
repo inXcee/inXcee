@@ -118,6 +118,37 @@ checkinRouter.get('/zimmet/:personnelId/unreturned', ...allowed, (req, res) => {
   res.json(svc.getUnreturnedZimmetService(+req.params.personnelId))
 })
 
+// ── CSV Import ──────────────────────────────────────────────────────────────
+checkinRouter.post('/import-csv', ...allowed, (req, res) => {
+  try {
+    const { rows } = req.body
+    if (!Array.isArray(rows) || rows.length === 0) return res.status(400).json({ error: 'Veri bulunamadı' })
+    const results = { success: 0, errors: [] }
+    for (const row of rows) {
+      try {
+        if (!row.full_name || row.full_name.trim().length < 3) {
+          results.errors.push(`${row.full_name || 'Boş'}: Ad soyad en az 3 karakter`)
+          continue
+        }
+        svc.registerService({
+          full_name: row.full_name.trim(),
+          tc_no: row.tc_no || null,
+          passport_no: row.passport_no || null,
+          company: row.company || null,
+          job_title: row.job_title || null,
+          hometown: row.hometown || null,
+          phone_number: row.phone_number || null,
+          gender: row.gender || null,
+        }, req.user.id)
+        results.success++
+      } catch (e) {
+        results.errors.push(`${row.full_name}: ${e.message}`)
+      }
+    }
+    res.json(results)
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
 // ── Photo Upload ──────────────────────────────────────────────────────────────
 checkinRouter.post('/photo/:personnelId', ...allowed, upload.single('photo'), (req, res) => {
   try {

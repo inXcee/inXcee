@@ -15,6 +15,7 @@ import { shiftsRouter } from './modules/shifts/routes.js'
 import { checkoutRouter } from './modules/checkout/routes.js'
 import { reportsRouter } from './modules/reports/routes.js'
 import { inventoryRouter } from './modules/inventory/routes.js'
+import { usersRouter } from './modules/users/routes.js'
 import { authRouter } from './shared/auth/routes.js'
 import { notificationsRouter } from './shared/notifications/routes.js'
 import { whatsappRouter } from './shared/whatsapp/routes.js'
@@ -65,5 +66,6 @@ app.use('/api/shifts', writeLimiter, shiftsRouter)
 app.use('/api/checkout', writeLimiter, checkoutRouter)
 app.use('/api/reports', reportsRouter)
 app.use('/api/inventory', writeLimiter, inventoryRouter)
+app.use('/api/users', writeLimiter, usersRouter)
 
 export default app

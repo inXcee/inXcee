@@ -16,6 +16,8 @@ const PAGE_TITLES = {
   '/room-history': 'Oda Geçmişi',
   '/whatsapp': 'WhatsApp',
   '/reports': 'Raporlar',
+  '/users': 'Kullanicilar',
+  '/audit': 'Audit Log',
 }
 
 export default function Layout() {

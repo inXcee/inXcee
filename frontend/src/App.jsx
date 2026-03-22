@@ -19,6 +19,8 @@ const ShiftsPage = lazy(() => import('./modules/shifts/ShiftsPage.jsx'))
 const CheckoutPage = lazy(() => import('./modules/checkout/CheckoutPage.jsx'))
 const InventoryPage = lazy(() => import('./modules/inventory/InventoryPage.jsx'))
 const ReportsPage = lazy(() => import('./modules/reports/ReportsPage.jsx'))
+const AuditPage = lazy(() => import('./modules/admin/AuditPage.jsx'))
+const UsersPage = lazy(() => import('./modules/admin/UsersPage.jsx'))
 
 function PrivateRoute({ children }) {
   const token = useAuthStore(s => s.token)
@@ -79,6 +81,8 @@ export default function App() {
             <Route path="checkout" element={<CheckoutPage />} />
             <Route path="inventory" element={<InventoryPage />} />
             <Route path="reports" element={<ReportsPage />} />
+            <Route path="audit" element={<AuditPage />} />
+            <Route path="users" element={<UsersPage />} />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>
