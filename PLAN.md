@@ -22,11 +22,11 @@
 
 ## Sonraki Fazlar
 
-### Faz 1 — Frontend Eksiklikleri
-- [ ] Reports sayfası: PDF indirme butonları (temizlik, bakım, doluluk, disiplin)
-- [ ] Shifts yönetim sayfası (varsa)
-- [ ] Room History görüntüleme sayfası
-- [ ] Code splitting (628KB chunk → lazy loading ile küçült)
+### Faz 1 — Frontend Eksiklikleri ✅
+- [x] Reports sayfası: PDF indirme butonları (temizlik, bakım, doluluk, disiplin)
+- [x] Shifts yönetim sayfası — zaten mevcut
+- [x] Room History görüntüleme sayfası — zaten mevcut
+- [x] Code splitting (628KB → 274KB ana bundle + sayfa bazlı lazy loading)
 
 ### Faz 2 — UX & Mobil
 - [ ] Responsive tasarım iyileştirmeleri (mobil uyumlu sidebar)

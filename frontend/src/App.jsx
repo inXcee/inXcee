@@ -1,22 +1,24 @@
-import { useState, useEffect, Suspense } from 'react'
+import { useState, useEffect, Suspense, lazy } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useAuthStore } from './shared/store/authStore.js'
 import ErrorBoundary from './shared/components/ErrorBoundary.jsx'
 import ToastContainer from './shared/components/ToastContainer.jsx'
 import LoginPage from './modules/auth/LoginPage.jsx'
 import Layout from './shared/components/Layout.jsx'
-import CheckinPage from './modules/checkin/CheckinPage.jsx'
-import CapacityPage from './modules/capacity/CapacityPage.jsx'
-import HousekeepingPage from './modules/housekeeping/HousekeepingPage.jsx'
-import MaintenancePage from './modules/maintenance/MaintenancePage.jsx'
-import DisciplinePage from './modules/discipline/DisciplinePage.jsx'
-import SelfServicePage from './modules/self-service/SelfServicePage.jsx'
-import DashboardPage from './modules/dashboard/DashboardPage.jsx'
-import RoomHistoryPage from './modules/room-history/RoomHistoryPage.jsx'
-import WhatsAppPage from './modules/whatsapp/WhatsAppPage.jsx'
-import ShiftsPage from './modules/shifts/ShiftsPage.jsx'
-import CheckoutPage from './modules/checkout/CheckoutPage.jsx'
-import InventoryPage from './modules/inventory/InventoryPage.jsx'
+
+const DashboardPage = lazy(() => import('./modules/dashboard/DashboardPage.jsx'))
+const CheckinPage = lazy(() => import('./modules/checkin/CheckinPage.jsx'))
+const CapacityPage = lazy(() => import('./modules/capacity/CapacityPage.jsx'))
+const HousekeepingPage = lazy(() => import('./modules/housekeeping/HousekeepingPage.jsx'))
+const MaintenancePage = lazy(() => import('./modules/maintenance/MaintenancePage.jsx'))
+const DisciplinePage = lazy(() => import('./modules/discipline/DisciplinePage.jsx'))
+const SelfServicePage = lazy(() => import('./modules/self-service/SelfServicePage.jsx'))
+const RoomHistoryPage = lazy(() => import('./modules/room-history/RoomHistoryPage.jsx'))
+const WhatsAppPage = lazy(() => import('./modules/whatsapp/WhatsAppPage.jsx'))
+const ShiftsPage = lazy(() => import('./modules/shifts/ShiftsPage.jsx'))
+const CheckoutPage = lazy(() => import('./modules/checkout/CheckoutPage.jsx'))
+const InventoryPage = lazy(() => import('./modules/inventory/InventoryPage.jsx'))
+const ReportsPage = lazy(() => import('./modules/reports/ReportsPage.jsx'))
 
 function PrivateRoute({ children }) {
   const token = useAuthStore(s => s.token)
@@ -76,6 +78,7 @@ export default function App() {
             <Route path="shifts" element={<ShiftsPage />} />
             <Route path="checkout" element={<CheckoutPage />} />
             <Route path="inventory" element={<InventoryPage />} />
+            <Route path="reports" element={<ReportsPage />} />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>
