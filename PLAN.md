@@ -47,8 +47,8 @@
 - [x] Audit dashboard — filtreleme, arama, modül/işlem bazlı görünüm
 - [x] Kullanıcı yönetim paneli — CRUD, rol atama, şifre değiştirme (9 test)
 
-### Faz 5 — Deployment & CI/CD
-- [ ] GitHub Actions CI pipeline
-- [ ] Otomatik test + lint + build
-- [ ] Staging ortamı
-- [ ] Otomatik smoke test (post-deploy)
+### Faz 5 — Deployment & CI/CD ✅
+- [x] GitHub Actions CI pipeline (.github/workflows/ci.yml)
+- [x] Otomatik test + build + console.log kontrolü
+- [x] Pre-deploy & post-deploy smoke test scriptleri (scripts/deploy/)
+- [ ] Staging ortamı (Render/Vercel'de ayrı branch deploy gerekli)
