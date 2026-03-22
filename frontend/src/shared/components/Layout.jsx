@@ -15,6 +15,7 @@ const PAGE_TITLES = {
   '/inventory': 'Envanter',
   '/room-history': 'Oda Geçmişi',
   '/whatsapp': 'WhatsApp',
+  '/reports': 'Raporlar',
 }
 
 export default function Layout() {

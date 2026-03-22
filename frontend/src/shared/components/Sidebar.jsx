@@ -3,6 +3,7 @@ import { NavLink } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useAuthStore } from '../store/authStore.js'
 import { useNotifications } from '../hooks/useNotifications.js'
+import { useTheme } from '../hooks/useTheme.js'
 import api from '../api/client.js'
 
 const NAV_GROUPS = [
@@ -62,6 +63,7 @@ export default function Sidebar({ mobileOpen, onClose }) {
   const user = useAuthStore(s => s.user)
   const logout = useAuthStore(s => s.logout)
   const { unreadCount } = useNotifications()
+  const { theme, toggle: toggleTheme } = useTheme()
 
   const { data: kpi } = useQuery({
     queryKey: ['dashboard-kpi'],
@@ -202,12 +204,25 @@ export default function Sidebar({ mobileOpen, onClose }) {
           </div>
         </div>
 
-        {/* Date + user + logout */}
+        {/* Date + user + theme + logout */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <div style={{ flex: 1 }}>
             <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', marginBottom: '2px' }}>{dateStr}</div>
             <div style={{ fontFamily: 'var(--sans)', fontSize: '12px', color: 'var(--text2)', fontWeight: 500 }}>{user?.username}</div>
           </div>
+          <button
+            onClick={toggleTheme}
+            title={theme === 'dark' ? 'Acik tema' : 'Koyu tema'}
+            style={{
+              background: 'var(--surface3)', border: '1px solid var(--border)', borderRadius: '6px',
+              color: 'var(--text3)', padding: '6px 8px', cursor: 'pointer', fontSize: '13px',
+              transition: 'all 0.15s',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.color = 'var(--accent)'; e.currentTarget.style.borderColor = 'rgba(240,165,0,0.4)' }}
+            onMouseLeave={e => { e.currentTarget.style.color = 'var(--text3)'; e.currentTarget.style.borderColor = 'var(--border)' }}
+          >
+            {theme === 'dark' ? '\u2600' : '\u263E'}
+          </button>
           <button
             onClick={logout}
             title="Cikis"

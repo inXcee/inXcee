@@ -28,10 +28,10 @@
 - [x] Room History görüntüleme sayfası — zaten mevcut
 - [x] Code splitting (628KB → 274KB ana bundle + sayfa bazlı lazy loading)
 
-### Faz 2 — UX & Mobil
-- [ ] Responsive tasarım iyileştirmeleri (mobil uyumlu sidebar)
-- [ ] PWA desteği (offline erişim, push notifications)
-- [ ] Dark mode
+### Faz 2 — UX & Mobil ✅
+- [x] Responsive sidebar: slide-in animasyon (translateX)
+- [x] PWA: manifest.json, service worker, SVG ikonlar, offline cache
+- [x] Dark/Light theme toggle (localStorage'da kalıcı, sidebar'da buton)
 
 ### Faz 3 — Güvenlik & Performans
 - [ ] Rate limiting iyileştirmeleri (modül bazlı)
