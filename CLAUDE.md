@@ -64,6 +64,25 @@ Varsayılan geliştirme kullanıcıları (seed'den): `mudur/admin123`, `vardiya/
 - Zimmet imzası — canvas base64 olarak `digital_signature` kolonuna kaydedilir
 - SSE endpoint: `GET /api/notifications/stream` — token header ile
 
+## Veritabanı Değişiklik Kuralları
+
+- Şema veya seed değişikliğinden sonra mutlaka doğrula: 1) Migration temiz çalışıyor, 2) Seed verisi doğru DB dosyasını hedefliyor (`yys.db`), 3) Foreign key referansları mevcut şemayla uyumlu
+- DB değişikliğinden sonra login akışını test et
+- Yanlış DB'ye yazmamak için seed sonrası `yys.db` dosya boyutunu kontrol et
+
+## Çalışma Akışı
+
+- Çok fazlı planlar (5+ faz) için her seferde tek faz uygula ve commit at
+- Fazlar arası test çalıştır — bir sonraki faza testler geçmeden geçme
+- Tüm fazları tek oturumda bitirmeye çalışma — `/phase` komutunu kullan
+- Bug düzeltmeden sonra düzeltmeyi bağlamında doğrula: değişken scope'da mı, sayfa renderlanıyor mu, console hatası var mı
+
+## Deploy
+
+- Deploy öncesi: `bash scripts/deploy/pre-deploy-check.sh`
+- Deploy sonrası: `BACKEND_URL=https://... bash scripts/deploy/post-deploy-smoke.sh`
+- Cold start timeout olasılığına karşı smoke test 30sn bekler ve tekrar dener
+
 ## Kod Kurallari (Zorunlu)
 
 - **Test olmadan commit yok** — backend dosyasi degistiyse `npx vitest run` gecmeli, test yoksa once yaz
