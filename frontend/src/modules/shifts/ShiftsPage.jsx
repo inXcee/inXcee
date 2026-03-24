@@ -550,10 +550,137 @@ function StaffDetailPanel({ staffId, onClose }) {
         )}
       </div>
 
-      {/* Placeholder — sekmeler Task 4'te eklenecek */}
-      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: 10 }}>
-        Sekmeler yükleniyor...
-      </div>
+      {/* ── Tab bar ── */}
+      {!isLoading && person && (
+        <>
+          <div style={{
+            display: 'flex', overflowX: 'auto', flexShrink: 0,
+            borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)',
+            marginTop: 14, background: 'var(--surface)',
+          }}>
+            {[
+              { id: 'overview', icon: '◈', label: 'ÖZET' },
+              { id: 'info',     icon: '👤', label: 'BİLGİ' },
+              { id: 'shifts',   icon: '📅', label: 'VARDİYA' },
+              { id: 'leave',    icon: '🏖️', label: 'İZİN' },
+              { id: 'overtime', icon: '⏰', label: 'MESAİ' },
+            ].map(t => (
+              <button key={t.id} onClick={() => setDetailTab(t.id)} style={{
+                padding: '10px 18px', border: 'none', background: 'none', cursor: 'pointer',
+                borderBottom: detailTab === t.id ? '2px solid var(--accent)' : '2px solid transparent',
+                color: detailTab === t.id ? 'var(--accent)' : 'var(--text3)',
+                fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '1px',
+                display: 'flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap',
+                transition: 'color .15s',
+              }}>
+                <span style={{ fontSize: 13 }}>{t.icon}</span> {t.label}
+              </button>
+            ))}
+          </div>
+
+          {/* ── Scrollable content area ── */}
+          <div style={{ flex: 1, overflowY: 'auto', padding: '16px 24px', position: 'relative' }}>
+
+            {/* ActionForm overlay — Task 6'da implemente edilecek */}
+            {activeForm && (
+              <div style={{
+                position: 'absolute', inset: 0, zIndex: 10,
+                background: 'var(--bg)', padding: '20px 24px',
+                animation: 'fadeIn .15s ease',
+              }}>
+                <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', marginBottom: 12 }}>
+                  FORM: {activeForm} — Task 6'da implemente edilecek
+                </div>
+                <button className="btn btn-ghost btn-sm" onClick={() => setActiveForm(null)}>İptal</button>
+              </div>
+            )}
+
+            {/* ÖZET — Activity Timeline */}
+            {detailTab === 'overview' && (() => {
+              const events = [
+                ...shiftHistory.map(s => ({
+                  date: s.work_date,
+                  type: 'shift',
+                  color: 'var(--blue)',
+                  icon: '📅',
+                  label: s.shift_name ? `${s.shift_name} · ${s.start_hour}:00–${s.end_hour === 24 ? '00' : s.end_hour}:00` : 'Vardiya',
+                  sub: s.status === 'worked' ? 'Çalıştı' : s.status === 'absent' ? 'Gelmedi' : s.status === 'on_leave' ? 'İzinli' : 'Planlandı',
+                })),
+                ...leaveHistory.map(l => ({
+                  date: l.start_date,
+                  type: 'leave',
+                  color: 'var(--purple)',
+                  icon: '🏖️',
+                  label: `${LEAVE_TYPES[l.leave_type]?.label || l.leave_type} · ${l.total_days} gün`,
+                  sub: STATUS_MAP[l.status]?.label || l.status,
+                })),
+                ...overtimeRecords.map(o => ({
+                  date: o.work_date,
+                  type: 'overtime',
+                  color: 'var(--accent)',
+                  icon: '⏰',
+                  label: `${o.hours} saat mesai`,
+                  sub: o.reason || '',
+                })),
+              ].sort((a, b) => (b.date || '').localeCompare(a.date || '')).slice(0, 20)
+
+              return events.length === 0 ? (
+                <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: 11 }}>Kayıt yok</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  {events.map((e, i) => (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 8, background: i % 2 === 0 ? 'var(--surface2)' : 'transparent' }}>
+                      <div style={{ width: 4, height: 32, borderRadius: 2, background: e.color, flexShrink: 0 }} />
+                      <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', minWidth: 70 }}>
+                        {new Date(e.date).toLocaleDateString('tr-TR', { day: '2-digit', month: 'short' })}
+                      </span>
+                      <span style={{ fontSize: 14 }}>{e.icon}</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 12, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.label}</div>
+                        {e.sub && <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 1 }}>{e.sub}</div>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )
+            })()}
+
+            {/* BİLGİ — Info Grid */}
+            {detailTab === 'info' && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                {[
+                  { icon: '🪪', label: 'TC NO',      value: person.tc_no },
+                  { icon: '📞', label: 'TELEFON',     value: person.phone },
+                  { icon: '✉️', label: 'E-POSTA',     value: person.email },
+                  { icon: '🩸', label: 'KAN GRUBU',   value: person.blood_type },
+                  { icon: '🎂', label: 'DOĞUM',       value: person.birth_date ? `${new Date(person.birth_date).toLocaleDateString('tr-TR')} (${calcAge(person.birth_date)} yaş)` : null },
+                  { icon: '📋', label: 'İŞE GİRİŞ',  value: person.hire_date ? new Date(person.hire_date).toLocaleDateString('tr-TR') : null },
+                  { icon: '🚨', label: 'ACİL KİŞİ',  value: person.emergency_contact },
+                  { icon: '📱', label: 'ACİL TEL',    value: person.emergency_phone },
+                  { icon: '💰', label: 'MAAŞ',        value: person.salary ? `${Number(person.salary).toLocaleString('tr-TR')} ₺` : null },
+                  { icon: '👤', label: 'CİNSİYET',    value: person.gender === 'male' ? 'Erkek' : person.gender === 'female' ? 'Kadın' : null },
+                  { icon: '📍', label: 'ADRES',       value: person.address, full: true },
+                ].map(f => (
+                  <div key={f.label} style={f.full ? { gridColumn: '1/-1' } : undefined}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 3 }}>
+                      <span style={{ fontSize: 12 }}>{f.icon}</span>
+                      <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--text3)', letterSpacing: '1px' }}>{f.label}</span>
+                    </div>
+                    <div style={{ fontSize: 12, color: f.value ? 'var(--text)' : 'var(--text4)', paddingLeft: 18 }}>{f.value || '—'}</div>
+                  </div>
+                ))}
+                {person.notes && (
+                  <div style={{ gridColumn: '1/-1', padding: '10px 12px', background: 'var(--surface2)', borderRadius: 8, border: '1px solid var(--border)' }}>
+                    <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--text3)', letterSpacing: '1px', marginBottom: 4 }}>NOTLAR</div>
+                    <div style={{ fontSize: 11, color: 'var(--text2)' }}>{person.notes}</div>
+                  </div>
+                )}
+              </div>
+            )}
+
+          </div>
+        </>
+      )}
     </BottomSheet>
   )
 }
