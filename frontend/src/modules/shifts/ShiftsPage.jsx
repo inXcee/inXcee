@@ -1056,19 +1056,19 @@ function StaffTab({ departments, onPersonClick }) {
     <div className="fade-up">
       {/* Summary cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: '10px', marginBottom: '20px' }}>
-        <div style={{ padding: '14px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '8px' }}>
+        <div style={{ padding: '16px 18px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '12px', borderLeft: '3px solid var(--text2)' }}>
           <div style={{ fontFamily: 'var(--display)', fontSize: '28px', color: 'var(--text)', lineHeight: 1 }}>{staffList.length}</div>
           <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text3)', letterSpacing: '1px', marginTop: '6px' }}>TOPLAM PERSONEL</div>
         </div>
-        <div style={{ padding: '14px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '8px' }}>
+        <div style={{ padding: '16px 18px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '12px', borderLeft: '3px solid var(--blue)' }}>
           <div style={{ fontFamily: 'var(--display)', fontSize: '28px', color: 'var(--blue)', lineHeight: 1 }}>{maleCount}</div>
           <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text3)', letterSpacing: '1px', marginTop: '6px' }}>ERKEK</div>
         </div>
-        <div style={{ padding: '14px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '8px' }}>
+        <div style={{ padding: '16px 18px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '12px', borderLeft: '3px solid #f472b6' }}>
           <div style={{ fontFamily: 'var(--display)', fontSize: '28px', color: '#f472b6', lineHeight: 1 }}>{femaleCount}</div>
           <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text3)', letterSpacing: '1px', marginTop: '6px' }}>KADIN</div>
         </div>
-        <div style={{ padding: '14px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '8px' }}>
+        <div style={{ padding: '16px 18px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '12px', borderLeft: '3px solid var(--green)' }}>
           <div style={{ fontFamily: 'var(--display)', fontSize: '28px', color: 'var(--green)', lineHeight: 1 }}>{Object.keys(deptCounts).length}</div>
           <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text3)', letterSpacing: '1px', marginTop: '6px' }}>DEPARTMAN</div>
         </div>
@@ -1125,15 +1125,15 @@ function StaffTab({ departments, onPersonClick }) {
             return (
               <div key={s.id} style={{
                 background: 'var(--surface)', border: '1px solid var(--border)',
-                borderRadius: '12px', overflow: 'hidden',
+                borderRadius: '14px', overflow: 'hidden',
                 transition: 'box-shadow .2s, transform .15s',
                 cursor: 'pointer',
               }}
-                onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 4px 20px rgba(0,0,0,.2)'; e.currentTarget.style.transform = 'translateY(-2px)' }}
+                onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 8px 32px rgba(0,0,0,.25)'; e.currentTarget.style.transform = 'translateY(-2px)' }}
                 onMouseLeave={e => { e.currentTarget.style.boxShadow = 'none'; e.currentTarget.style.transform = 'none' }}
               >
                 {/* Card header — dept color stripe */}
-                <div style={{ height: '4px', background: dc.text || 'var(--border)' }} />
+                <div style={{ height: 4, background: dc.bg || 'var(--border)' }} />
 
                 <div style={{ padding: '16px' }}>
                   {/* Avatar + name row */}
@@ -1630,26 +1630,26 @@ function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
         {/* Week navigation */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <button onClick={() => setWeekStart(addDays(weekStart, -7))} style={{
-            width: '32px', height: '32px', borderRadius: '8px',
+            width: '32px', height: '32px', borderRadius: '50%',
             background: 'var(--surface2)', border: '1px solid var(--border)',
             cursor: 'pointer', fontSize: '14px', color: 'var(--text2)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>‹</button>
-          <div style={{ textAlign: 'center', minWidth: '160px' }}>
+          <div style={{ textAlign: 'center', minWidth: '160px', background: 'var(--surface2)', borderRadius: '10px', padding: '4px 16px' }}>
             <div style={{ fontFamily: 'var(--display)', fontSize: '15px', letterSpacing: '1px', color: 'var(--text)' }}>
               {formatDate(weekStart)} — {formatDate(weekEnd)}
             </div>
           </div>
           <button onClick={() => setWeekStart(addDays(weekStart, 7))} style={{
-            width: '32px', height: '32px', borderRadius: '8px',
+            width: '32px', height: '32px', borderRadius: '50%',
             background: 'var(--surface2)', border: '1px solid var(--border)',
             cursor: 'pointer', fontSize: '14px', color: 'var(--text2)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>›</button>
           <button onClick={() => setWeekStart(getWeekStart(new Date()))} style={{
             padding: '6px 12px', borderRadius: '8px', fontSize: '11px',
-            background: 'var(--surface2)', border: '1px solid var(--border)',
-            cursor: 'pointer', color: 'var(--text2)', fontFamily: 'var(--mono)',
+            background: 'rgba(240,165,0,.15)', border: '1px solid rgba(240,165,0,.4)',
+            cursor: 'pointer', color: 'var(--accent)', fontFamily: 'var(--mono)',
           }}>Bugün</button>
         </div>
 
@@ -1662,13 +1662,13 @@ function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
 
         {/* Stats chips */}
         <div style={{ display: 'flex', gap: '6px', marginLeft: '4px' }}>
-          <span style={{ padding: '4px 10px', borderRadius: '20px', fontSize: '11px', fontFamily: 'var(--mono)', background: 'rgba(39,201,106,.12)', color: 'var(--green)', fontWeight: 600 }}>
+          <span style={{ padding: '5px 12px', borderRadius: '20px', fontSize: '10px', fontFamily: 'var(--mono)', background: 'rgba(39,201,106,.12)', color: 'var(--green)', fontWeight: 600 }}>
             {weekStats.total} Personel
           </span>
           {shiftDefs.map(s => {
             const c = shiftColor(s.color_class)
             return (
-              <span key={s.id} style={{ padding: '4px 10px', borderRadius: '20px', fontSize: '11px', fontFamily: 'var(--mono)', background: c.bg, color: c.text, fontWeight: 600 }}>
+              <span key={s.id} style={{ padding: '5px 12px', borderRadius: '20px', fontSize: '10px', fontFamily: 'var(--mono)', background: c.bg, color: c.text, fontWeight: 600 }}>
                 {s.name}
               </span>
             )
@@ -1709,7 +1709,7 @@ function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
       {isLoading ? (
         <div className="empty-state"><div className="empty-sub">Yükleniyor...</div></div>
       ) : (
-        <div style={{ overflowX: 'auto', borderRadius: '12px', border: '1px solid var(--border)' }}>
+        <div style={{ overflowX: 'auto', borderRadius: '12px', border: '1px solid var(--border)', boxShadow: '0 4px 24px rgba(0,0,0,.15)' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '700px' }}>
             {/* Header row */}
             <thead>
@@ -1718,6 +1718,7 @@ function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
                   position: 'sticky', left: 0, zIndex: 10,
                   background: 'var(--surface2)', borderRight: '2px solid var(--border)',
                   padding: '12px 16px', minWidth: '180px', textAlign: 'left',
+                  borderBottom: '2px solid var(--border)',
                 }}>
                   <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', letterSpacing: '2px', color: 'var(--text3)' }}>
                     PERSONEL · {weekStats.total}
@@ -1731,6 +1732,7 @@ function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
                       padding: '10px 8px', textAlign: 'center', minWidth: '110px',
                       borderRight: i < 6 ? '1px solid var(--border)' : 'none',
                       background: isToday ? 'rgba(59,140,240,.1)' : sun ? 'rgba(240,165,0,.07)' : undefined,
+                      borderBottom: isToday ? '2px solid var(--blue)' : sun ? '2px solid var(--accent)' : '2px solid var(--border)',
                     }}>
                       <div style={{
                         fontFamily: 'var(--display)', fontSize: '13px', letterSpacing: '1px',
@@ -1762,7 +1764,7 @@ function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
                 const dc = deptColor(person.dept_color)
                 const avatarColor = person.gender === 'female' ? { bg: 'rgba(244,114,182,.2)', text: '#f472b6' } : { bg: 'rgba(59,140,240,.2)', text: 'var(--blue)' }
                 return (
-                  <tr key={person.id} style={{ borderTop: '1px solid var(--border)', background: rowIdx % 2 === 0 ? 'var(--bg)' : 'var(--surface)' }}>
+                  <tr key={person.id} style={{ borderTop: '1px solid var(--border)', background: rowIdx % 2 === 0 ? 'var(--bg)' : 'var(--surface)', borderLeft: `3px solid ${dc.bg || 'transparent'}` }}>
                     {/* Person cell */}
                     <td style={{
                       position: 'sticky', left: 0, zIndex: 5,
@@ -1776,7 +1778,7 @@ function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
                       >
                         {/* Avatar */}
                         <div style={{
-                          width: '34px', height: '34px', borderRadius: '50%', flexShrink: 0,
+                          width: '34px', height: '34px', borderRadius: '10px', flexShrink: 0,
                           background: avatarColor.bg, color: avatarColor.text,
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
                           fontFamily: 'var(--display)', fontSize: '14px', fontWeight: 700,
@@ -1832,7 +1834,7 @@ function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
                             onClick={e => openCellPopover(e, person, d)}
                             disabled={!canEdit}
                             style={{
-                              width: '100%', minHeight: '48px', padding: '6px 4px',
+                              width: '100%', minHeight: pillLabel ? '54px' : '48px', padding: '6px 4px',
                               borderRadius: '8px', border: pillLabel ? 'none' : `1px dashed ${canEdit ? 'var(--border)' : 'transparent'}`,
                               cursor: canEdit ? 'pointer' : 'default',
                               background: pillBg,
@@ -1854,7 +1856,7 @@ function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
                                 )}
                               </>
                             ) : (
-                              <span style={{ fontSize: '16px', color: 'var(--border)', opacity: canEdit ? 1 : 0 }}>+</span>
+                              <span style={{ fontSize: '18px', color: 'var(--border)', opacity: canEdit ? 0.3 : 0 }}>+</span>
                             )}
                           </button>
                         </td>
@@ -3407,7 +3409,7 @@ export default function ShiftsPage() {
       <nav style={{
         width: navExpanded ? '180px' : '64px',
         flexShrink: 0,
-        background: 'var(--surface)',
+        background: 'linear-gradient(180deg, var(--surface) 0%, color-mix(in srgb, var(--surface) 95%, var(--accent)) 100%)',
         borderRight: '1px solid var(--border)',
         display: 'flex',
         flexDirection: 'column',
@@ -3451,9 +3453,10 @@ export default function ShiftsPage() {
                 style={{
                   width: '100%', padding: '12px 0',
                   paddingLeft: navExpanded ? '16px' : 0,
-                  background: active ? 'rgba(240,165,0,.12)' : 'none',
+                  background: active ? 'rgba(240,165,0,.18)' : 'none',
                   border: 'none',
                   borderLeft: active ? '3px solid var(--accent)' : '3px solid transparent',
+                  boxShadow: active ? 'inset 0 0 0 1px rgba(240,165,0,.3)' : 'none',
                   cursor: 'pointer',
                   display: 'flex', alignItems: 'center',
                   justifyContent: navExpanded ? 'flex-start' : 'center',
@@ -3462,7 +3465,7 @@ export default function ShiftsPage() {
                 }}
                 title={item.label}
               >
-                <span style={{ fontSize: '18px', flexShrink: 0 }}>{item.icon}</span>
+                <span style={{ fontSize: '18px', flexShrink: 0, filter: active ? 'drop-shadow(0 0 6px var(--accent))' : 'none' }}>{item.icon}</span>
                 {navExpanded && (
                   <span style={{
                     fontFamily: 'var(--mono)', fontSize: '10px', letterSpacing: '1px',
@@ -3477,6 +3480,11 @@ export default function ShiftsPage() {
             )
           })}
         </div>
+        <div style={{ padding: '12px 0', borderTop: '1px solid var(--border)', textAlign: 'center' }}>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text3)', letterSpacing: '1px' }}>
+            {new Date().toLocaleDateString('tr-TR', { day: '2-digit', month: 'short', year: '2-digit' })}
+          </div>
+        </div>
       </nav>
 
       {/* ── Main content ── */}
@@ -3485,12 +3493,13 @@ export default function ShiftsPage() {
         {/* Sticky top bar */}
         <div style={{
           position: 'sticky', top: 0, zIndex: 20,
-          background: 'var(--bg)',
-          borderBottom: '1px solid var(--border)',
+          background: 'color-mix(in srgb, var(--bg) 80%, transparent)',
+          backdropFilter: 'blur(12px)',
+          borderBottom: '2px solid var(--accent)',
           padding: '0 28px',
           display: 'flex', alignItems: 'center', gap: '12px',
           minHeight: '56px',
-          boxShadow: '0 2px 8px rgba(0,0,0,.2)',
+          boxShadow: '0 1px 0 var(--border), 0 4px 16px rgba(0,0,0,.15)',
         }}>
           <span style={{ fontSize: '22px' }}>{activeNav?.icon}</span>
           <div>
