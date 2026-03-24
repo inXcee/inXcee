@@ -286,7 +286,7 @@ function StaffSearch({ value, onChange, placeholder = 'Personel ara...', onPerso
           {results.map(p => (
             <div
               key={p.id}
-              onClick={e => { select(p); if (onPersonClick) onPersonClick(p.id, e.currentTarget.getBoundingClientRect()) }}
+              onClick={e => { select(p); if (onPersonClick) onPersonClick(p.id) }}
               style={{
                 padding: '8px 13px', cursor: 'pointer',
                 borderBottom: '1px solid var(--border)',
@@ -786,7 +786,7 @@ function StaffTab({ departments, onPersonClick }) {
                   {/* Avatar + name row */}
                   <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', marginBottom: '12px' }}>
                     <div
-                      onClick={e => onPersonClick && onPersonClick(s.id, e.currentTarget.getBoundingClientRect())}
+                      onClick={() => onPersonClick && onPersonClick(s.id)}
                       style={{
                         width: '46px', height: '46px', borderRadius: '50%', flexShrink: 0,
                         background: avatarBg, color: avatarColor,
@@ -798,7 +798,7 @@ function StaffTab({ departments, onPersonClick }) {
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div
-                        onClick={e => onPersonClick && onPersonClick(s.id, e.currentTarget.getBoundingClientRect())}
+                        onClick={() => onPersonClick && onPersonClick(s.id)}
                         style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text)', marginBottom: '3px', lineHeight: 1.2 }}
                       >
                         {s.full_name}
@@ -1418,7 +1418,7 @@ function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
                       padding: '8px 12px',
                     }}>
                       <div
-                        onClick={e => onPersonClick?.(person.id, e.currentTarget.getBoundingClientRect())}
+                        onClick={() => onPersonClick?.(person.id)}
                         style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}
                       >
                         {/* Avatar */}
@@ -2015,7 +2015,7 @@ function LeaveTab({ departments, onPersonClick }) {
                     <tr key={l.id}>
                       <td>
                         <div
-                          onClick={e => l.staff_id && onPersonClick && onPersonClick(l.staff_id, e.currentTarget.getBoundingClientRect())}
+                          onClick={() => l.staff_id && onPersonClick && onPersonClick(l.staff_id)}
                           style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', cursor: 'pointer', borderBottom: '1px dashed var(--text3)' }}>
                           <span style={{ color: l.gender === 'female' ? '#f472b6' : 'var(--blue)', fontSize: '11px' }}>
                             {l.gender === 'female' ? '\u2640' : '\u2642'}
@@ -2248,7 +2248,7 @@ function OvertimeTab({ departments, onPersonClick }) {
                     <tr key={r.id}>
                       <td>
                         <div
-                          onClick={e => r.staff_id && onPersonClick && onPersonClick(r.staff_id, e.currentTarget.getBoundingClientRect())}
+                          onClick={() => r.staff_id && onPersonClick && onPersonClick(r.staff_id)}
                           style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', cursor: 'pointer', borderBottom: '1px dashed var(--text3)' }}>
                           <span style={{ color: r.gender === 'female' ? '#f472b6' : 'var(--blue)', fontSize: '11px' }}>{r.gender === 'female' ? '\u2640' : '\u2642'}</span>
                           <span>{r.full_name}</span>
@@ -2356,171 +2356,6 @@ function OvertimeTab({ departments, onPersonClick }) {
           </div>
         </SidePanel>
       )}
-    </div>
-  )
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-//  TAB 4 — Yoklama (Attendance)
-// ═══════════════════════════════════════════════════════════════════════════════
-function AttendanceTab({ departments, onPersonClick }) {
-  const qc = useQueryClient()
-  const [date, setDate] = useState(todayStr())
-  const [deptFilter, setDeptFilter] = useState('')
-
-  // Attendance logs (checked-in)
-  const { data: records = [], isLoading: logsLoading } = useQuery({
-    queryKey: ['attendance', date, deptFilter],
-    queryFn: () => api.get('/shifts/attendance', { params: { date, dept_id: deptFilter || undefined } }).then(r => r.data),
-  })
-
-  // Scheduled staff for the day
-  const { data: personnel = [], isLoading: personnelLoading } = useQuery({
-    queryKey: ['personnel', date, deptFilter],
-    queryFn: () => api.get('/shifts/personnel', { params: { date, dept_id: deptFilter || undefined } }).then(r => r.data),
-  })
-
-  const checkinMut = useMutation({
-    mutationFn: (staffId) => api.post('/shifts/attendance/checkin', { staff_id: staffId }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['attendance'] }),
-  })
-
-  const checkoutMut = useMutation({
-    mutationFn: (logId) => api.post('/shifts/attendance/checkout', { log_id: logId }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['attendance'] }),
-  })
-
-  const isLoading = logsLoading || personnelLoading
-
-  // Merge: scheduled staff + attendance logs
-  const merged = useMemo(() => {
-    const logMap = new Map(records.map(r => [r.staff_id, r]))
-    const result = []
-    const seen = new Set()
-
-    // All active scheduled staff (exclude on_leave)
-    personnel.forEach(p => {
-      if (p.shift_status === 'on_leave') return
-      seen.add(p.id)
-      result.push({
-        staffId: p.id, fullName: p.full_name, gender: p.gender,
-        deptName: p.dept_name, deptColor: p.dept_color,
-        shiftName: p.shift_name, shiftStart: p.start_hour, shiftEnd: p.end_hour,
-        log: logMap.get(p.id) || null,
-      })
-    })
-    // Records not in scheduled list (manual check-ins)
-    records.forEach(r => {
-      if (!seen.has(r.staff_id)) {
-        result.push({
-          staffId: r.staff_id, fullName: r.full_name, gender: r.gender,
-          deptName: r.dept_name, deptColor: r.dept_color,
-          shiftName: null, shiftStart: null, shiftEnd: null,
-          log: r,
-        })
-      }
-    })
-    return result.sort((a, b) => (a.fullName || '').localeCompare(b.fullName || '', 'tr'))
-  }, [records, personnel])
-
-  const checkedIn = merged.filter(r => r.log?.check_in_at).length
-  const checkedOut = merged.filter(r => r.log?.check_out_at).length
-  const notYet = merged.filter(r => !r.log?.check_in_at).length
-
-  return (
-    <div className="fade-up">
-      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
-        <input type="date" className="form-input" value={date} onChange={e => setDate(e.target.value)}
-          style={{ width: 'auto', padding: '5px 11px', fontSize: '12px' }} />
-        <button className="btn btn-ghost btn-sm" onClick={() => setDate(todayStr())}>Bugun</button>
-        <select className="form-select" value={deptFilter} onChange={e => setDeptFilter(e.target.value)}
-          style={{ width: 'auto', minWidth: '140px', padding: '5px 11px', fontSize: '11px' }}>
-          <option value="">Tum Bolumler</option>
-          {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-        </select>
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '10px', marginBottom: '20px' }}>
-        {[
-          { label: 'PLANLI', value: merged.length, color: 'var(--text)' },
-          { label: 'GIRIS YAPTI', value: checkedIn, color: 'var(--green)' },
-          { label: 'CIKIS YAPTI', value: checkedOut, color: 'var(--blue)' },
-          { label: 'BEKLIYOR', value: notYet, color: notYet > 0 ? 'var(--amber)' : 'var(--text3)' },
-        ].map(s => (
-          <div key={s.label} style={{ padding: '14px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '8px' }}>
-            <div style={{ fontFamily: 'var(--display)', fontSize: '28px', color: s.color, lineHeight: 1 }}>{s.value}</div>
-            <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text3)', letterSpacing: '1px', marginTop: '6px' }}>{s.label}</div>
-          </div>
-        ))}
-      </div>
-
-      <div className="panel">
-        <div className="panel-header"><div><div className="panel-title">YOKLAMA</div><div className="panel-subtitle">{formatDate(date)}</div></div></div>
-        <div className="panel-body" style={{ padding: 0 }}>
-          {isLoading ? (
-            <div className="empty-state"><div className="empty-sub">Yukleniyor...</div></div>
-          ) : merged.length === 0 ? (
-            <div className="empty-state">
-              <div className="empty-icon">&#128203;</div>
-              <div className="empty-title">PLANLI PERSONEL YOK</div>
-              <div className="empty-sub">Bu tarih icin vardiya planlamasi bulunamadi</div>
-            </div>
-          ) : (
-            <table className="data-table">
-              <thead><tr><th>Personel</th><th>Bolum</th><th>Vardiya</th><th>Giris</th><th>Cikis</th><th>Sure</th><th>Islem</th></tr></thead>
-              <tbody>
-                {merged.map(r => {
-                  const dc = deptColor(r.deptColor)
-                  const checkedIn = !!r.log?.check_in_at
-                  const checkedOut = !!r.log?.check_out_at
-                  return (
-                    <tr key={r.staffId} style={{ opacity: checkedOut ? 0.7 : 1 }}>
-                      <td>
-                        <div
-                          onClick={() => onPersonClick?.(r.staffId)}
-                          style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', cursor: 'pointer', borderBottom: '1px dashed var(--text3)' }}>
-                          <span style={{ color: r.gender === 'female' ? '#f472b6' : 'var(--blue)', fontSize: '11px' }}>{r.gender === 'female' ? '\u2640' : '\u2642'}</span>
-                          <span>{r.fullName}</span>
-                        </div>
-                      </td>
-                      <td>{r.deptName ? <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: '10px', background: dc.bg, color: dc.text, fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 600 }}>{r.deptName}</span> : '\u2014'}</td>
-                      <td style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text2)' }}>
-                        {r.shiftName ? `${r.shiftName} ${r.shiftStart}:00\u2013${r.shiftEnd === 24 ? '00:00' : `${r.shiftEnd}:00`}` : '\u2014'}
-                      </td>
-                      <td style={{ fontFamily: 'var(--mono)', fontSize: '11px', color: checkedIn ? 'var(--green)' : 'var(--text3)' }}>
-                        {checkedIn ? new Date(r.log.check_in_at).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : '\u2014'}
-                      </td>
-                      <td style={{ fontFamily: 'var(--mono)', fontSize: '11px', color: checkedOut ? 'var(--blue)' : 'var(--text3)' }}>
-                        {checkedOut ? new Date(r.log.check_out_at).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : '\u2014'}
-                      </td>
-                      <td style={{ fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--text2)' }}>
-                        {r.log?.actual_hours ? `${r.log.actual_hours}s` : '\u2014'}
-                      </td>
-                      <td>
-                        {!checkedIn && (
-                          <button className="btn btn-sm" style={{ background: 'var(--green)', color: '#000', fontSize: '10px' }}
-                            onClick={() => checkinMut.mutate(r.staffId)} disabled={checkinMut.isPending}>
-                            Giris Yap
-                          </button>
-                        )}
-                        {checkedIn && !checkedOut && (
-                          <button className="btn btn-sm" style={{ background: 'var(--blue)', color: '#fff', fontSize: '10px' }}
-                            onClick={() => checkoutMut.mutate(r.log.id)} disabled={checkoutMut.isPending}>
-                            Cikis Yap
-                          </button>
-                        )}
-                        {checkedOut && (
-                          <span style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)' }}>TAMAMLANDI</span>
-                        )}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          )}
-        </div>
-      </div>
     </div>
   )
 }
@@ -3064,7 +2899,7 @@ function PuantajTab({ departments, onPersonClick }) {
                         position: 'sticky', left: 0, background: 'var(--surface)',
                         zIndex: 1, cursor: 'pointer',
                       }}
-                        onClick={e => onPersonClick?.(r.id, e.currentTarget.getBoundingClientRect())}
+                        onClick={() => onPersonClick?.(r.id)}
                       >
                         <div style={{ fontWeight: 600, fontSize: '11px' }}>{r.full_name}</div>
                         {r.position && <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text3)' }}>{r.position}</div>}
@@ -3183,7 +3018,6 @@ function PuantajTab({ departments, onPersonClick }) {
 const NAV_ITEMS = [
   { id: 'schedule',    icon: '📅', label: 'Çizelge' },
   { id: 'staff',       icon: '👥', label: 'Personel' },
-  { id: 'attendance',  icon: '✅', label: 'Yoklama' },
   { id: 'leave',       icon: '🏖️', label: 'İzinler' },
   { id: 'overtime',    icon: '⏰', label: 'Mesai' },
   { id: 'puantaj',     icon: '📊', label: 'Puantaj' },
@@ -3207,8 +3041,8 @@ export default function ShiftsPage() {
     queryFn: () => api.get('/shifts/definitions').then(r => r.data),
   })
 
-  const handlePersonClick = useCallback((id, rect) => {
-    setSelectedStaff({ id, rect: rect || null })
+  const handlePersonClick = useCallback((id) => {
+    setSelectedStaff(id)
   }, [])
 
   const activeNav = NAV_ITEMS.find(n => n.id === activeTab)
@@ -3320,7 +3154,6 @@ export default function ShiftsPage() {
         <div style={{ flex: 1, overflowY: 'auto', padding: '24px 28px' }}>
           {activeTab === 'schedule'    && <ScheduleTab departments={departments} shiftDefs={shiftDefs} onPersonClick={handlePersonClick} />}
           {activeTab === 'staff'       && <StaffTab departments={departments} onPersonClick={handlePersonClick} />}
-          {activeTab === 'attendance'  && <AttendanceTab departments={departments} onPersonClick={handlePersonClick} />}
           {activeTab === 'leave'       && <LeaveTab departments={departments} onPersonClick={handlePersonClick} />}
           {activeTab === 'overtime'    && <OvertimeTab departments={departments} onPersonClick={handlePersonClick} />}
           {activeTab === 'puantaj'     && <PuantajTab departments={departments} onPersonClick={handlePersonClick} />}
@@ -3332,7 +3165,7 @@ export default function ShiftsPage() {
 
       {/* Staff detail side panel */}
       {selectedStaff && (
-        <StaffDetailPanel staffId={selectedStaff.id} anchorRect={selectedStaff.rect} onClose={() => setSelectedStaff(null)} />
+        <StaffDetailPanel staffId={selectedStaff} onClose={() => setSelectedStaff(null)} />
       )}
     </div>
   )
