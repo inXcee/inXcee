@@ -432,6 +432,12 @@ function StaffDetailPanel({ staffId, onClose }) {
     return () => document.removeEventListener('keydown', h)
   }, [activeForm, onClose])
 
+  // Reset tabs when staffId changes
+  useEffect(() => {
+    setDetailTab('overview')
+    setActiveForm(null)
+  }, [staffId])
+
   const person = data?.person
   const stats = data?.stats || { totalShifts: 0, workedShifts: 0, totalOvertime: 0, totalLeave: 0, absentCount: 0 }
   const shiftHistory = data?.shiftHistory || []
@@ -596,7 +602,7 @@ function StaffDetailPanel({ staffId, onClose }) {
             )}
 
             {/* ÖZET — Activity Timeline */}
-            {detailTab === 'overview' && (() => {
+            {!activeForm && detailTab === 'overview' && (() => {
               const events = [
                 ...shiftHistory.map(s => ({
                   date: s.work_date,
@@ -629,7 +635,7 @@ function StaffDetailPanel({ staffId, onClose }) {
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                   {events.map((e, i) => (
-                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 8, background: i % 2 === 0 ? 'var(--surface2)' : 'transparent' }}>
+                    <div key={`${e.type}-${e.date}-${e.label}`} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 8, background: i % 2 === 0 ? 'var(--surface2)' : 'transparent' }}>
                       <div style={{ width: 4, height: 32, borderRadius: 2, background: e.color, flexShrink: 0 }} />
                       <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', minWidth: 70 }}>
                         {new Date(e.date).toLocaleDateString('tr-TR', { day: '2-digit', month: 'short' })}
@@ -646,7 +652,7 @@ function StaffDetailPanel({ staffId, onClose }) {
             })()}
 
             {/* BİLGİ — Info Grid */}
-            {detailTab === 'info' && (
+            {!activeForm && detailTab === 'info' && (
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 {[
                   { icon: '🪪', label: 'TC NO',      value: person.tc_no },
