@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useLayoutEffect, useRef, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { useAuthStore } from '../../shared/store/authStore.js'
@@ -159,20 +160,20 @@ function BottomSheet({ onClose, children }) {
   // NOT: Esc listener BURAYA eklenmez — StaffDetailPanel kendi yönetir
   // (çift listener → activeForm açıkken sheet de kapanır, spec ihlali)
 
-  return (
+  return createPortal(
     <>
       {/* Backdrop */}
       <div
         onClick={onClose}
         style={{
-          position: 'fixed', inset: 0, zIndex: 54,
+          position: 'fixed', inset: 0, zIndex: 1054,
           background: 'rgba(0,0,0,0.6)',
           animation: 'fadeIn .2s ease',
         }}
       />
       {/* Sheet */}
       <div style={{
-        position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 55,
+        position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 1055,
         height: '82vh', maxHeight: '82vh',
         background: 'var(--bg)',
         borderRadius: '20px 20px 0 0',
@@ -188,7 +189,8 @@ function BottomSheet({ onClose, children }) {
         </div>
         {children}
       </div>
-    </>
+    </>,
+    document.body
   )
 }
 
