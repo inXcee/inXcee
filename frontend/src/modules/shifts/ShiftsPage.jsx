@@ -140,6 +140,58 @@ function SidePanel({ title, subtitle, icon, onClose, children, width = 340, anch
   )
 }
 
+// ─── Bottom Sheet ─────────────────────────────────────────────────────────────
+function BottomSheet({ onClose, children }) {
+  const [visible, setVisible] = useState(false)
+
+  // Body scroll lock
+  useEffect(() => {
+    document.body.style.overflow = 'hidden'
+    return () => { document.body.style.overflow = '' }
+  }, [])
+
+  // Animate in
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => setVisible(true))
+    return () => cancelAnimationFrame(raf)
+  }, [])
+
+  // NOT: Esc listener BURAYA eklenmez — StaffDetailPanel kendi yönetir
+  // (çift listener → activeForm açıkken sheet de kapanır, spec ihlali)
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div
+        onClick={onClose}
+        style={{
+          position: 'fixed', inset: 0, zIndex: 54,
+          background: 'rgba(0,0,0,0.6)',
+          animation: 'fadeIn .2s ease',
+        }}
+      />
+      {/* Sheet */}
+      <div style={{
+        position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 55,
+        height: '82vh', maxHeight: '82vh',
+        background: 'var(--bg)',
+        borderRadius: '20px 20px 0 0',
+        boxShadow: '0 -8px 40px rgba(0,0,0,.4)',
+        display: 'flex', flexDirection: 'column',
+        overflow: 'hidden',
+        transform: visible ? 'translateY(0)' : 'translateY(100%)',
+        transition: visible ? '0.28s cubic-bezier(0.32,0.72,0,1)' : 'none',
+      }}>
+        {/* Drag handle */}
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '10px 0 6px' }}>
+          <div style={{ width: 32, height: 4, borderRadius: 2, background: 'var(--border)' }} />
+        </div>
+        {children}
+      </div>
+    </>
+  )
+}
+
 // ─── Shared modal overlay ─────────────────────────────────────────────────────
 function ModalOverlay({ children, onClose, wide }) {
   return (
