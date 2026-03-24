@@ -370,266 +370,191 @@ function StaffSearch({ value, onChange, placeholder = 'Personel ara...', onPerso
   )
 }
 
-// ─── Staff Detail Panel (slide-over) ────────────────────────────────────────
-function StaffDetailPanel({ staffId, anchorRect, onClose }) {
+// ─── Staff Detail Panel (Bottom Sheet) ────────────────────────────────────────
+function StaffDetailPanel({ staffId, onClose }) {
+  const qc = useQueryClient()
+  const [activeForm, setActiveForm] = useState(null)
   const [detailTab, setDetailTab] = useState('overview')
+  const [shiftPage, setShiftPage] = useState(30)
+  const [shiftFilter, setShiftFilter] = useState('')
+  const [formData, setFormData] = useState({})
 
-  const { data, isLoading, isFetching } = useQuery({
+  const { data, isLoading } = useQuery({
     queryKey: ['staff-detail', staffId],
     queryFn: () => api.get(`/shifts/staff/${staffId}/detail`).then(r => r.data),
     enabled: !!staffId,
     staleTime: 60000,
   })
 
-  // Esc closes panel
+  const { data: departments = [] } = useQuery({
+    queryKey: ['departments'],
+    queryFn: () => api.get('/shifts/departments').then(r => r.data),
+  })
+
+  const { data: shiftDefs = [] } = useQuery({
+    queryKey: ['shift-defs'],
+    queryFn: () => api.get('/shifts/definitions').then(r => r.data),
+  })
+
+  const assignShiftMut = useMutation({
+    mutationFn: d => api.post('/shifts/schedule', { entries: [{ staff_id: staffId, dept_id: d.dept_id, shift_def_id: d.shift_def_id || null, work_date: d.work_date, status: 'scheduled' }] }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['staff-detail', staffId] }); qc.invalidateQueries({ queryKey: ['schedule'] }); setActiveForm(null) },
+    onError: e => alert(e.response?.data?.error || 'Hata'),
+  })
+
+  const addLeaveMut = useMutation({
+    mutationFn: d => api.post('/shifts/leave', d),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['staff-detail', staffId] }); setActiveForm(null) },
+    onError: e => alert(e.response?.data?.error || 'Hata'),
+  })
+
+  const addOvertimeMut = useMutation({
+    mutationFn: d => api.post('/shifts/overtime', d),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['staff-detail', staffId] }); setActiveForm(null) },
+    onError: e => alert(e.response?.data?.error || 'Hata'),
+  })
+
+  const updateStaffMut = useMutation({
+    mutationFn: d => api.put(`/shifts/staff/${staffId}`, d),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['staff-detail', staffId] }); qc.invalidateQueries({ queryKey: ['staff-list'] }); setActiveForm(null) },
+    onError: e => alert(e.response?.data?.error || 'Hata'),
+  })
+
+  // Esc: önce formu kapat, yoksa sheet'i
   useEffect(() => {
-    const handler = (e) => { if (e.key === 'Escape') onClose() }
-    document.addEventListener('keydown', handler)
-    return () => document.removeEventListener('keydown', handler)
-  }, [onClose])
-
-  if (!staffId) return null
-
-  const DETAIL_TABS = [
-    { id: 'overview', label: 'OZET' },
-    { id: 'info', label: 'BILGI' },
-    { id: 'shifts', label: 'VARDIYA' },
-    { id: 'leave', label: 'IZIN' },
-    { id: 'overtime', label: 'MESAI' },
-  ]
+    const h = e => {
+      if (e.key === 'Escape') {
+        if (activeForm) setActiveForm(null)
+        else onClose()
+      }
+    }
+    document.addEventListener('keydown', h)
+    return () => document.removeEventListener('keydown', h)
+  }, [activeForm, onClose])
 
   const person = data?.person
   const stats = data?.stats || { totalShifts: 0, workedShifts: 0, totalOvertime: 0, totalLeave: 0, absentCount: 0 }
   const shiftHistory = data?.shiftHistory || []
   const leaveHistory = data?.leaveHistory || []
   const overtimeRecords = data?.overtimeRecords || []
-  const attendanceLogs = data?.attendanceLogs || []
 
-  const STATUS_LABEL = { worked: 'Calisti', scheduled: 'Planli', on_leave: 'Izinli', absent: 'Yok', overtime: 'Mesai' }
-  const STATUS_COLOR = { worked: 'var(--green)', scheduled: 'var(--blue)', on_leave: 'var(--teal)', absent: 'var(--red)', overtime: 'var(--purple)' }
+  const dept = deptColor(person?.dept_color)
+  const deptBg = person ? dept.bg : 'var(--border)'
+  const attendRate = stats.totalShifts > 0 ? Math.round((stats.workedShifts / stats.totalShifts) * 100) : 0
+
+  const STAT_ITEMS = [
+    { label: 'VARDİYA', value: stats.totalShifts,          color: 'var(--blue)' },
+    { label: 'ÇALIŞTI', value: stats.workedShifts,         color: 'var(--green)', showBar: true },
+    { label: 'MESAİ',   value: `${stats.totalOvertime}s`,  color: 'var(--accent)' },
+    { label: 'İZİN',    value: `${stats.totalLeave}g`,     color: 'var(--purple)' },
+    { label: 'YOK',     value: stats.absentCount,          color: 'var(--red)' },
+  ]
+
+  const openForm = (key) => {
+    if (key === 'edit' && person) {
+      setFormData({
+        full_name: person.full_name || '', tc_no: person.tc_no || '',
+        phone: person.phone || '', email: person.email || '',
+        position: person.position || '', department_id: person.department_id?.toString() || '',
+        hire_date: person.hire_date || '', birth_date: person.birth_date || '',
+        address: person.address || '', emergency_contact: person.emergency_contact || '',
+        emergency_phone: person.emergency_phone || '', blood_type: person.blood_type || '',
+        gender: person.gender || 'male', salary: person.salary?.toString() || '',
+        notes: person.notes || '',
+      })
+    } else {
+      setFormData({})
+    }
+    setActiveForm(key)
+  }
 
   return (
-    <SidePanel
-      title="PERSONEL DETAY"
-      subtitle={person ? person.full_name : isLoading ? 'Yukleniyor...' : ''}
-      icon="&#128100;"
-      onClose={onClose}
-      width={400}
-      anchorRect={anchorRect}
-    >
+    <BottomSheet onClose={onClose}>
+      {/* Dept color band */}
+      <div style={{ height: 4, background: deptBg, flexShrink: 0, marginTop: -2 }} />
+
+      {/* Header */}
+      <div style={{ padding: '14px 24px 0', background: 'var(--surface)', flexShrink: 0 }}>
         {isLoading ? (
-          <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--text3)' }}>Yukleniyor...</div>
+          <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: 11 }}>Yükleniyor...</div>
         ) : !person ? (
-          <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--text3)' }}>Veri bulunamadi</div>
+          <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: 11 }}>Veri bulunamadı</div>
         ) : (
           <>
-            {/* Header — compact */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
-              <span style={{
-                width: '42px', height: '42px', borderRadius: '50%', flexShrink: 0,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                background: person.gender === 'female' ? 'rgba(244,114,182,.15)' : 'rgba(59,140,240,.15)',
-                color: person.gender === 'female' ? '#f472b6' : 'var(--blue)',
-                fontSize: '20px', fontWeight: 700,
-              }}>
-                {person.full_name?.charAt(0)?.toUpperCase() || '?'}
-              </span>
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontFamily: 'var(--display)', fontSize: '17px', letterSpacing: '1px', color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {person.full_name}
+            {/* Avatar + identity + actions */}
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
+              {/* Left: avatar + identity */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14, flex: 1, minWidth: 200 }}>
+                <div style={{
+                  width: 64, height: 64, borderRadius: '50%', flexShrink: 0,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  background: person.gender === 'female' ? 'rgba(244,114,182,0.15)' : 'rgba(59,130,246,0.15)',
+                  border: `2px solid ${dept.text}`,
+                  color: person.gender === 'female' ? '#f472b6' : 'var(--blue)',
+                  fontFamily: 'var(--display)', fontSize: 28, fontWeight: 700,
+                }}>
+                  {person.full_name?.charAt(0)?.toUpperCase() || '?'}
                 </div>
-                <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '1px' }}>
-                  {person.position || 'Pozisyon yok'} &middot; #{person.id}
-                </div>
-                <div style={{ display: 'flex', gap: '4px', marginTop: '4px', flexWrap: 'wrap' }}>
-                  {person.dept_name && <span className="badge badge-blue" style={{ fontSize: '8px', padding: '1px 6px' }}>{person.dept_name}</span>}
-                  {person.blood_type && <span className="badge badge-red" style={{ fontSize: '8px', padding: '1px 6px' }}>{person.blood_type}</span>}
-                  <span className={`badge ${person.is_active ? 'badge-green' : 'badge-gray'}`} style={{ fontSize: '8px', padding: '1px 6px' }}>
-                    {person.is_active ? 'AKTIF' : 'PASIF'}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Stats — inline row */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '4px', marginBottom: '14px' }}>
-              {[
-                { label: 'VARDIYA', value: stats.totalShifts, color: 'var(--blue)' },
-                { label: 'CALISTI', value: stats.workedShifts, color: 'var(--green)' },
-                { label: 'MESAI', value: stats.totalOvertime, color: 'var(--accent)' },
-                { label: 'IZIN', value: stats.totalLeave, color: 'var(--purple)' },
-                { label: 'YOK', value: stats.absentCount, color: 'var(--red)' },
-              ].map(s => (
-                <div key={s.label} style={{ textAlign: 'center', padding: '6px 2px', background: 'var(--surface2)', borderRadius: '6px', border: '1px solid var(--border)' }}>
-                  <div style={{ fontFamily: 'var(--display)', fontSize: '16px', color: s.color }}>{s.value}</div>
-                  <div style={{ fontFamily: 'var(--mono)', fontSize: '7px', color: 'var(--text3)', letterSpacing: '1px' }}>{s.label}</div>
-                </div>
-              ))}
-            </div>
-
-            {/* Tabs */}
-            <div style={{ display: 'flex', gap: '1px', marginBottom: '12px', borderBottom: '1px solid var(--border)', overflowX: 'auto' }}>
-              {DETAIL_TABS.map(t => (
-                <button key={t.id} onClick={() => setDetailTab(t.id)}
-                  className={`filter-chip ${detailTab === t.id ? 'active' : ''}`}
-                  style={{ borderRadius: '6px 6px 0 0', borderBottom: detailTab === t.id ? '2px solid var(--accent)' : '2px solid transparent', fontSize: '9px', padding: '5px 8px', whiteSpace: 'nowrap' }}>
-                  {t.label}
-                </button>
-              ))}
-            </div>
-
-            {/* Info tab */}
-            {detailTab === 'info' && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                {[
-                  { label: 'TC NO', value: person.tc_no },
-                  { label: 'TELEFON', value: person.phone },
-                  { label: 'E-POSTA', value: person.email },
-                  { label: 'KAN GRUBU', value: person.blood_type },
-                  { label: 'DOGUM', value: person.birth_date ? `${new Date(person.birth_date).toLocaleDateString('tr-TR')} (${calcAge(person.birth_date)})` : null },
-                  { label: 'ISE GIRIS', value: person.hire_date ? new Date(person.hire_date).toLocaleDateString('tr-TR') : null },
-                  { label: 'ACIL KISI', value: person.emergency_contact },
-                  { label: 'ACIL TEL', value: person.emergency_phone },
-                  { label: 'MAAS', value: person.salary ? `${Number(person.salary).toLocaleString('tr-TR')} TL` : null },
-                  { label: 'CINSIYET', value: person.gender === 'male' ? 'Erkek' : person.gender === 'female' ? 'Kadin' : null },
-                  { label: 'ADRES', value: person.address, full: true },
-                ].map(f => (
-                  <div key={f.label} style={f.full ? { gridColumn: '1 / -1' } : undefined}>
-                    <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text3)', letterSpacing: '1px', marginBottom: '2px' }}>{f.label}</div>
-                    <div style={{ fontSize: '12px', color: f.value ? 'var(--text)' : 'var(--text3)' }}>{f.value || '\u2014'}</div>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontFamily: 'var(--display)', fontSize: 20, letterSpacing: '1px', color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {person.full_name}
                   </div>
-                ))}
-                {person.notes && (
-                  <div style={{ gridColumn: '1 / -1', padding: '8px 10px', background: 'var(--surface2)', borderRadius: '6px', border: '1px solid var(--border)', marginTop: '4px' }}>
-                    <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text3)', letterSpacing: '1px', marginBottom: '3px' }}>NOTLAR</div>
-                    <div style={{ fontSize: '11px', color: 'var(--text2)' }}>{person.notes}</div>
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', marginTop: 2 }}>
+                    {person.position || 'Pozisyon yok'} · #{person.id}
                   </div>
-                )}
-              </div>
-            )}
-
-            {/* Overview tab */}
-            {detailTab === 'overview' && (
-              <div>
-                <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '1px', marginBottom: '6px' }}>SON VARDIYALAR</div>
-                {shiftHistory.length === 0 ? (
-                  <div style={{ padding: '12px', textAlign: 'center', color: 'var(--text3)', fontSize: '11px' }}>Kayit yok</div>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginBottom: '14px' }}>
-                    {shiftHistory.slice(0, 12).map((s, i) => {
-                      const sc = s.shift_color ? shiftColor(s.shift_color) : { bg: 'var(--surface3)', text: 'var(--text2)' }
-                      return (
-                        <div key={i} style={{
-                          display: 'flex', alignItems: 'center', gap: '8px', padding: '5px 8px',
-                          background: i % 2 === 0 ? 'var(--surface2)' : 'transparent', borderRadius: '4px', fontSize: '11px',
-                        }}>
-                          <span style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)', minWidth: '70px' }}>
-                            {new Date(s.work_date).toLocaleDateString('tr-TR', { day: '2-digit', month: 'short', weekday: 'short' })}
-                          </span>
-                          {s.shift_name ? (
-                            <span style={{ padding: '1px 6px', borderRadius: '8px', background: sc.bg, color: sc.text, fontSize: '9px', fontWeight: 600 }}>{s.shift_name}</span>
-                          ) : null}
-                          <span style={{ marginLeft: 'auto', fontSize: '9px', color: STATUS_COLOR[s.status] || 'var(--text3)', fontWeight: 600 }}>
-                            {STATUS_LABEL[s.status] || s.status}
-                          </span>
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
-
-                <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '1px', marginBottom: '6px' }}>SON MESAILER</div>
-                {overtimeRecords.length === 0 ? (
-                  <div style={{ padding: '12px', textAlign: 'center', color: 'var(--text3)', fontSize: '11px' }}>Kayit yok</div>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                    {overtimeRecords.slice(0, 6).map((o, i) => (
-                      <div key={i} style={{
-                        display: 'flex', alignItems: 'center', gap: '8px', padding: '5px 8px',
-                        background: i % 2 === 0 ? 'var(--surface2)' : 'transparent', borderRadius: '4px', fontSize: '11px',
-                      }}>
-                        <span style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)', minWidth: '70px' }}>
-                          {new Date(o.work_date).toLocaleDateString('tr-TR', { day: '2-digit', month: 'short' })}
-                        </span>
-                        <span style={{ fontWeight: 700, color: 'var(--purple)' }}>{o.hours}s</span>
-                        <span style={{ color: 'var(--text2)', fontSize: '10px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.reason || '\u2014'}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Shifts tab */}
-            {detailTab === 'shifts' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                {shiftHistory.length === 0 ? (
-                  <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text3)', fontSize: '11px' }}>Vardiya kaydi yok</div>
-                ) : shiftHistory.map((s, i) => {
-                  const sc = s.shift_color ? shiftColor(s.shift_color) : { bg: 'var(--surface3)', text: 'var(--text2)' }
-                  return (
-                    <div key={i} style={{
-                      display: 'flex', alignItems: 'center', gap: '6px', padding: '5px 8px',
-                      background: i % 2 === 0 ? 'var(--surface2)' : 'transparent', borderRadius: '4px', fontSize: '11px',
-                    }}>
-                      <span style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)', minWidth: '70px' }}>
-                        {new Date(s.work_date).toLocaleDateString('tr-TR', { day: '2-digit', month: 'short', weekday: 'short' })}
-                      </span>
-                      {s.shift_name && <span style={{ padding: '1px 6px', borderRadius: '8px', background: sc.bg, color: sc.text, fontSize: '9px', fontWeight: 600 }}>{s.shift_name}</span>}
-                      {s.shift_name && <span style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)' }}>{s.start_hour}:00-{s.end_hour === 24 ? '00' : s.end_hour}:00</span>}
-                      <span style={{ marginLeft: 'auto', fontSize: '9px', color: STATUS_COLOR[s.status] || 'var(--text3)', fontWeight: 600 }}>{STATUS_LABEL[s.status] || s.status}</span>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-
-            {/* Leave tab */}
-            {detailTab === 'leave' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                {leaveHistory.length === 0 ? (
-                  <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text3)', fontSize: '11px' }}>Izin kaydi yok</div>
-                ) : leaveHistory.map((l, i) => (
-                  <div key={i} style={{
-                    padding: '8px 10px', background: 'var(--surface2)', borderRadius: '6px',
-                    border: '1px solid var(--border)', fontSize: '11px',
-                  }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                      <span className={`badge ${LEAVE_TYPES[l.leave_type]?.badge || 'badge-gray'}`} style={{ fontSize: '8px' }}>{LEAVE_TYPES[l.leave_type]?.label || l.leave_type}</span>
-                      <span className={`badge ${STATUS_MAP[l.status]?.badge || 'badge-gray'}`} style={{ fontSize: '8px' }}>{STATUS_MAP[l.status]?.label || l.status}</span>
-                    </div>
-                    <div style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text2)' }}>
-                      {new Date(l.start_date).toLocaleDateString('tr-TR')} &rarr; {new Date(l.end_date).toLocaleDateString('tr-TR')}
-                      <span style={{ marginLeft: '8px', color: 'var(--accent)', fontWeight: 600 }}>{l.total_days} gun</span>
-                    </div>
-                    {l.reason && <div style={{ fontSize: '10px', color: 'var(--text3)', marginTop: '3px' }}>{l.reason}</div>}
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Overtime tab */}
-            {detailTab === 'overtime' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                {overtimeRecords.length === 0 ? (
-                  <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text3)', fontSize: '11px' }}>Mesai kaydi yok</div>
-                ) : overtimeRecords.map((o, i) => (
-                  <div key={i} style={{
-                    display: 'flex', alignItems: 'center', gap: '8px', padding: '5px 8px',
-                    background: i % 2 === 0 ? 'var(--surface2)' : 'transparent', borderRadius: '4px', fontSize: '11px',
-                  }}>
-                    <span style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)', minWidth: '70px' }}>
-                      {new Date(o.work_date).toLocaleDateString('tr-TR', { day: '2-digit', month: 'short' })}
+                  <div style={{ display: 'flex', gap: 4, marginTop: 5, flexWrap: 'wrap' }}>
+                    {person.dept_name && <span className="badge badge-blue" style={{ fontSize: 8, padding: '1px 6px' }}>{person.dept_name}</span>}
+                    {person.blood_type && <span className="badge badge-red" style={{ fontSize: 8, padding: '1px 6px' }}>{person.blood_type}</span>}
+                    <span className={`badge ${person.is_active ? 'badge-green' : 'badge-gray'}`} style={{ fontSize: 8, padding: '1px 6px' }}>
+                      {person.is_active ? 'AKTİF' : 'PASİF'}
                     </span>
-                    <span style={{ fontWeight: 700, color: 'var(--purple)', minWidth: '30px' }}>{o.hours}s</span>
-                    <span style={{ color: 'var(--text2)', fontSize: '10px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.reason || '\u2014'}</span>
                   </div>
+                </div>
+              </div>
+
+              {/* Right: action buttons */}
+              <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+                {[
+                  { key: 'edit',     label: '✎ Düzenle' },
+                  { key: 'shift',    label: '+ Vardiya' },
+                  { key: 'leave',    label: '+ İzin' },
+                  { key: 'overtime', label: '+ Mesai' },
+                ].map(a => (
+                  <button key={a.key} onClick={() => openForm(a.key)}
+                    className="btn btn-ghost btn-xs"
+                    style={{ borderRadius: 8, fontFamily: 'var(--mono)', fontSize: 9, letterSpacing: '0.5px' }}>
+                    {a.label}
+                  </button>
                 ))}
               </div>
-            )}
+            </div>
+
+            {/* Stat grid */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 6, marginTop: 14 }}>
+              {STAT_ITEMS.map(s => (
+                <div key={s.label} style={{
+                  background: 'var(--surface2)', border: '1px solid var(--border)',
+                  borderRadius: 10, padding: '10px 4px', textAlign: 'center',
+                }}>
+                  <div style={{ fontFamily: 'var(--display)', fontSize: 22, color: s.color, lineHeight: 1 }}>{s.value}</div>
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--text3)', letterSpacing: '1px', marginTop: 3 }}>{s.label}</div>
+                  {s.showBar && stats.totalShifts > 0 && (
+                    <div style={{ margin: '5px 6px 0', height: 3, borderRadius: 2, background: 'var(--border)' }}>
+                      <div style={{ height: '100%', borderRadius: 2, background: 'var(--green)', width: `${attendRate}%`, transition: 'width .4s ease' }} />
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
           </>
         )}
-    </SidePanel>
+      </div>
+
+      {/* Placeholder — sekmeler Task 4'te eklenecek */}
+      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: 10 }}>
+        Sekmeler yükleniyor...
+      </div>
+    </BottomSheet>
   )
 }
 
