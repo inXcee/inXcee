@@ -669,12 +669,13 @@ function StaffDetailPanel({ staffId, onClose }) {
                     <div style={{ fontSize: 12, color: f.value ? 'var(--text)' : 'var(--text4)', paddingLeft: 18 }}>{f.value || '—'}</div>
                   </div>
                 ))}
-                {person.notes && (
-                  <div style={{ gridColumn: '1/-1', padding: '10px 12px', background: 'var(--surface2)', borderRadius: 8, border: '1px solid var(--border)' }}>
-                    <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--text3)', letterSpacing: '1px', marginBottom: 4 }}>NOTLAR</div>
-                    <div style={{ fontSize: 11, color: 'var(--text2)' }}>{person.notes}</div>
+                <div style={{ gridColumn: '1/-1' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 3 }}>
+                    <span style={{ fontSize: 12 }}>📝</span>
+                    <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--text3)', letterSpacing: '1px' }}>NOTLAR</span>
                   </div>
-                )}
+                  <div style={{ fontSize: 12, color: person.notes ? 'var(--text)' : 'var(--text4)', paddingLeft: 18 }}>{person.notes || '—'}</div>
+                </div>
               </div>
             )}
 
