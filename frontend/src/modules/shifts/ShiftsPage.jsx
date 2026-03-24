@@ -685,6 +685,116 @@ function StaffDetailPanel({ staffId, onClose }) {
               </div>
             )}
 
+            {/* VARDİYA */}
+            {!activeForm && detailTab === 'shifts' && (() => {
+              const filtered = shiftFilter ? shiftHistory.filter(s => s.status === shiftFilter) : shiftHistory
+              const visible = filtered.slice(0, shiftPage)
+              return (
+                <div>
+                  <div style={{ display: 'flex', gap: 4, marginBottom: 12, flexWrap: 'wrap' }}>
+                    {[['', 'TÜM'], ['worked','ÇALIŞTI'], ['scheduled','PLANLI'], ['on_leave','İZİNLİ'], ['absent','YOK']].map(([k, l]) => (
+                      <button key={k} onClick={() => { setShiftFilter(k); setShiftPage(30) }}
+                        className={`btn btn-xs ${shiftFilter === k ? 'btn-primary' : 'btn-ghost'}`}
+                        style={{ borderRadius: 8, fontFamily: 'var(--mono)', fontSize: 9 }}>{l}</button>
+                    ))}
+                  </div>
+                  {visible.length === 0 ? (
+                    <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text3)', fontSize: 11 }}>Kayıt yok</div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      {visible.map((s, i) => {
+                        const sc = shiftColor(s.shift_color)
+                        const STATUS_C = { worked: 'var(--green)', scheduled: 'var(--blue)', on_leave: 'var(--purple)', absent: 'var(--red)', overtime: 'var(--accent)' }
+                        const STATUS_L = { worked: 'Çalıştı', scheduled: 'Planlandı', on_leave: 'İzinli', absent: 'Gelmedi', overtime: 'Mesai' }
+                        return (
+                          <div key={`${s.work_date}-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', borderRadius: 8, background: i % 2 === 0 ? 'var(--surface2)' : 'transparent' }}>
+                            <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', minWidth: 80 }}>
+                              {new Date(s.work_date).toLocaleDateString('tr-TR', { day: '2-digit', month: 'short', weekday: 'short' })}
+                            </span>
+                            {s.shift_name && (
+                              <span style={{ padding: '2px 8px', borderRadius: 8, background: sc.bg, color: sc.text, fontSize: 9, fontWeight: 600 }}>{s.shift_name}</span>
+                            )}
+                            {s.start_hour != null && (
+                              <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>{s.start_hour}:00–{s.end_hour === 24 ? '00' : s.end_hour}:00</span>
+                            )}
+                            <span style={{ marginLeft: 'auto', fontSize: 9, fontWeight: 600, color: STATUS_C[s.status] || 'var(--text3)' }}>{STATUS_L[s.status] || s.status}</span>
+                          </div>
+                        )
+                      })}
+                      {filtered.length > shiftPage && (
+                        <button className="btn btn-ghost btn-sm" onClick={() => setShiftPage(p => p + 30)}
+                          style={{ marginTop: 8, borderRadius: 10, fontFamily: 'var(--mono)', fontSize: 9 }}>
+                          Daha fazla göster ({filtered.length - shiftPage} kaldı)
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
+
+            {/* İZİN */}
+            {!activeForm && detailTab === 'leave' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {leaveHistory.length === 0 ? (
+                  <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text3)', fontSize: 11 }}>İzin kaydı yok</div>
+                ) : leaveHistory.map((l, i) => {
+                  const bandColor = l.status === 'approved' ? 'var(--green)' : l.status === 'rejected' ? 'var(--red)' : 'var(--accent)'
+                  return (
+                    <div key={`leave-${l.id || i}`} style={{ display: 'flex', borderRadius: 10, overflow: 'hidden', border: '1px solid var(--border)', background: 'var(--surface2)' }}>
+                      <div style={{ width: 4, background: bandColor, flexShrink: 0 }} />
+                      <div style={{ padding: '10px 14px', flex: 1 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                          <span className={`badge ${LEAVE_TYPES[l.leave_type]?.badge || 'badge-gray'}`} style={{ fontSize: 8 }}>{LEAVE_TYPES[l.leave_type]?.label || l.leave_type}</span>
+                          <span className={`badge ${STATUS_MAP[l.status]?.badge || 'badge-gray'}`} style={{ fontSize: 8 }}>{STATUS_MAP[l.status]?.label || l.status}</span>
+                        </div>
+                        <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text2)' }}>
+                          {new Date(l.start_date).toLocaleDateString('tr-TR')} → {new Date(l.end_date).toLocaleDateString('tr-TR')}
+                          <span style={{ marginLeft: 10, color: 'var(--accent)', fontWeight: 700 }}>{l.total_days} gün</span>
+                        </div>
+                        {l.reason && <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 4 }}>{l.reason}</div>}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
+            {/* MESAİ */}
+            {!activeForm && detailTab === 'overtime' && (
+              <div>
+                {overtimeRecords.length > 0 && (
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 12px', borderRadius: 20, background: 'rgba(155,89,182,.12)', border: '1px solid rgba(155,89,182,.2)', marginBottom: 12 }}>
+                    <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>TOPLAM</span>
+                    <span style={{ fontFamily: 'var(--display)', fontSize: 16, color: 'var(--purple)', fontWeight: 700 }}>
+                      {overtimeRecords.reduce((sum, o) => sum + (o.hours || 0), 0)}s
+                    </span>
+                  </div>
+                )}
+                {overtimeRecords.length === 0 ? (
+                  <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text3)', fontSize: 11 }}>Mesai kaydı yok</div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    {overtimeRecords.map((o, i) => (
+                      <div key={`ot-${o.id || i}`} style={{
+                        display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 8,
+                        background: i % 2 === 0 ? 'var(--surface2)' : 'transparent',
+                        transition: 'background .15s',
+                      }}
+                        onMouseEnter={e => e.currentTarget.style.background = 'var(--surface2)'}
+                        onMouseLeave={e => e.currentTarget.style.background = i % 2 === 0 ? 'var(--surface2)' : 'transparent'}>
+                        <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', minWidth: 70 }}>
+                          {new Date(o.work_date).toLocaleDateString('tr-TR', { day: '2-digit', month: 'short' })}
+                        </span>
+                        <span style={{ fontFamily: 'var(--display)', fontSize: 18, fontWeight: 700, color: 'var(--purple)', minWidth: 40 }}>{o.hours}s</span>
+                        <span style={{ fontSize: 11, color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.reason || '—'}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
           </div>
         </>
       )}
