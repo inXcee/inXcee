@@ -689,6 +689,8 @@ function StaffDetailPanel({ staffId, onClose }) {
             {!activeForm && detailTab === 'shifts' && (() => {
               const filtered = shiftFilter ? shiftHistory.filter(s => s.status === shiftFilter) : shiftHistory
               const visible = filtered.slice(0, shiftPage)
+              const STATUS_C = { worked: 'var(--green)', scheduled: 'var(--blue)', on_leave: 'var(--purple)', absent: 'var(--red)', overtime: 'var(--accent)' }
+              const STATUS_L = { worked: 'Çalıştı', scheduled: 'Planlandı', on_leave: 'İzinli', absent: 'Gelmedi', overtime: 'Mesai' }
               return (
                 <div>
                   <div style={{ display: 'flex', gap: 4, marginBottom: 12, flexWrap: 'wrap' }}>
@@ -704,10 +706,8 @@ function StaffDetailPanel({ staffId, onClose }) {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                       {visible.map((s, i) => {
                         const sc = shiftColor(s.shift_color)
-                        const STATUS_C = { worked: 'var(--green)', scheduled: 'var(--blue)', on_leave: 'var(--purple)', absent: 'var(--red)', overtime: 'var(--accent)' }
-                        const STATUS_L = { worked: 'Çalıştı', scheduled: 'Planlandı', on_leave: 'İzinli', absent: 'Gelmedi', overtime: 'Mesai' }
                         return (
-                          <div key={`${s.work_date}-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', borderRadius: 8, background: i % 2 === 0 ? 'var(--surface2)' : 'transparent' }}>
+                          <div key={s.id || `${s.work_date}-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', borderRadius: 8, background: i % 2 === 0 ? 'var(--surface2)' : 'transparent' }}>
                             <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', minWidth: 80 }}>
                               {new Date(s.work_date).toLocaleDateString('tr-TR', { day: '2-digit', month: 'short', weekday: 'short' })}
                             </span>
