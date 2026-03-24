@@ -398,25 +398,25 @@ function StaffDetailPanel({ staffId, onClose }) {
 
   const assignShiftMut = useMutation({
     mutationFn: d => api.post('/shifts/schedule', { entries: [{ staff_id: staffId, dept_id: d.dept_id, shift_def_id: d.shift_def_id || null, work_date: d.work_date, status: 'scheduled' }] }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['staff-detail', staffId] }); qc.invalidateQueries({ queryKey: ['schedule'] }); setActiveForm(null) },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['staff-detail', staffId] }); qc.invalidateQueries({ queryKey: ['schedule'] }); setActiveForm(null); setFormData({}) },
     onError: e => alert(e.response?.data?.error || 'Hata'),
   })
 
   const addLeaveMut = useMutation({
     mutationFn: d => api.post('/shifts/leave', d),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['staff-detail', staffId] }); setActiveForm(null) },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['staff-detail', staffId] }); setActiveForm(null); setFormData({}) },
     onError: e => alert(e.response?.data?.error || 'Hata'),
   })
 
   const addOvertimeMut = useMutation({
     mutationFn: d => api.post('/shifts/overtime', d),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['staff-detail', staffId] }); setActiveForm(null) },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['staff-detail', staffId] }); setActiveForm(null); setFormData({}) },
     onError: e => alert(e.response?.data?.error || 'Hata'),
   })
 
   const updateStaffMut = useMutation({
     mutationFn: d => api.put(`/shifts/staff/${staffId}`, d),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['staff-detail', staffId] }); qc.invalidateQueries({ queryKey: ['staff-list'] }); setActiveForm(null) },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['staff-detail', staffId] }); qc.invalidateQueries({ queryKey: ['staff-list'] }); setActiveForm(null); setFormData({}) },
     onError: e => alert(e.response?.data?.error || 'Hata'),
   })
 
@@ -600,7 +600,7 @@ function StaffDetailPanel({ staffId, onClose }) {
                   <div style={{ fontFamily: 'var(--display)', fontSize: 14, letterSpacing: '2px' }}>
                     {activeForm === 'edit' ? '✎ DÜZENLE' : activeForm === 'shift' ? '+ VARDİYA' : activeForm === 'leave' ? '+ İZİN' : '+ MESAİ'}
                   </div>
-                  <button className="btn btn-ghost btn-xs" onClick={() => setActiveForm(null)} style={{ borderRadius: 8 }}>✕ İptal</button>
+                  <button className="btn btn-ghost btn-xs" onClick={() => { setActiveForm(null); setFormData({}) }} style={{ borderRadius: 8 }}>✕ İptal</button>
                 </div>
 
                 {/* Düzenle formu */}
