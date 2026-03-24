@@ -2,14 +2,15 @@ import { Router } from 'express'
 import { requireRole, requireAuth } from '../../shared/auth/middleware.js'
 import {
   departmentsService, shiftDefinitionsService, scheduleService, bulkAssignService,
-  personnelStatusService, createLeaveService, approveLeaveService, leaveListService,
-  leaveBalanceService, createOvertimeService, overtimeListService, overtimeSummaryService,
+  staffStatusService, createLeaveService, approveLeaveService, leaveListService,
+  leaveBalanceService, createOvertimeService, updateOvertimeService, deleteOvertimeService, overtimeListService, overtimeSummaryService, puantajService,
   checkInService, checkOutService, attendanceListService, statisticsService, departmentSummaryService,
   createDepartmentService, updateDepartmentService, deleteDepartmentService, assignDeptService,
   createShiftDefService, updateShiftDefService, deleteShiftDefService,
   cancelLeaveService, createSwapService, swapListService, approveSwapService, rejectSwapService,
-  copyWeekService, rotationService, searchPersonnelService, deleteScheduleService,
-  personnelDetailService
+  copyWeekService, rotationService, searchStaffService, deleteScheduleService,
+  staffDetailService,
+  staffListService, staffGetService, staffCreateService, staffUpdateService, staffDeleteService
 } from './service.js'
 
 export const shiftsRouter = Router()
@@ -17,7 +18,59 @@ export const shiftsRouter = Router()
 const managerOrSupervisor = requireRole('campus_manager', 'shift_supervisor')
 const allStaff = [requireAuth]
 
-// Departments & definitions
+// ── Staff CRUD ──
+shiftsRouter.get('/staff', ...allStaff, (req, res) => {
+  res.json(staffListService(req.query))
+})
+
+shiftsRouter.get('/staff/search', ...allStaff, (req, res) => {
+  res.json(searchStaffService(req.query.q))
+})
+
+shiftsRouter.get('/staff/:id', ...allStaff, (req, res) => {
+  try {
+    res.json(staffGetService(req.params.id))
+  } catch (e) {
+    res.status(404).json({ error: e.message })
+  }
+})
+
+shiftsRouter.get('/staff/:id/detail', ...allStaff, (req, res) => {
+  try {
+    res.json(staffDetailService(req.params.id))
+  } catch (e) {
+    res.status(404).json({ error: e.message })
+  }
+})
+
+shiftsRouter.post('/staff', ...managerOrSupervisor, (req, res) => {
+  try {
+    const id = staffCreateService(req.body)
+    res.status(201).json({ id })
+  } catch (e) {
+    res.status(400).json({ error: e.message })
+  }
+})
+
+shiftsRouter.put('/staff/:id', ...managerOrSupervisor, (req, res) => {
+  try {
+    staffUpdateService(req.params.id, req.body)
+    res.json({ ok: true })
+  } catch (e) {
+    res.status(400).json({ error: e.message })
+  }
+})
+
+shiftsRouter.delete('/staff/:id', ...managerOrSupervisor, (req, res) => {
+  try {
+    staffDeleteService(req.params.id)
+    res.json({ ok: true })
+  } catch (e) {
+    res.status(400).json({ error: e.message })
+  }
+})
+
+// ── Departments & definitions ──
 shiftsRouter.get('/departments', ...allStaff, (req, res) => {
   res.json(departmentsService())
 })
@@ -30,7 +83,7 @@ shiftsRouter.get('/definitions', ...allStaff, (req, res) => {
   res.json(shiftDefinitionsService())
 })
 
-// Schedule
+// ── Schedule ──
 shiftsRouter.get('/schedule', ...allStaff, (req, res) => {
   const { week, week_end, dept_id } = req.query
   if (!week) return res.status(400).json({ error: 'week parametresi gerekli (YYYY-MM-DD)' })
@@ -52,15 +105,15 @@ shiftsRouter.post('/schedule', ...managerOrSupervisor, (req, res) => {
   }
 })
 
-// Personnel status
+// ── Personnel status (now staff) ──
 shiftsRouter.get('/personnel', ...allStaff, (req, res) => {
   const date = req.query.date || new Date().toISOString().split('T')[0]
-  res.json(personnelStatusService(date, req.query.dept_id || null))
+  res.json(staffStatusService(date, req.query.dept_id || null))
 })
 
-// Leave requests
-shiftsRouter.get('/leave/balance/:personnelId', ...allStaff, (req, res) => {
-  res.json(leaveBalanceService(req.params.personnelId))
+// ── Leave requests ──
+shiftsRouter.get('/leave/balance/:staffId', ...allStaff, (req, res) => {
+  res.json(leaveBalanceService(req.params.staffId))
 })
 
 shiftsRouter.get('/leave', ...allStaff, (req, res) => {
@@ -85,7 +138,7 @@ shiftsRouter.patch('/leave/:id', ...managerOrSupervisor, (req, res) => {
   }
 })
 
-// Overtime
+// ── Overtime ──
 shiftsRouter.get('/overtime/summary', ...allStaff, (req, res) => {
   const month = req.query.month || new Date().toISOString().substring(0, 7)
   res.json(overtimeSummaryService(month))
@@ -104,7 +157,21 @@ shiftsRouter.post('/overtime', ...managerOrSupervisor, (req, res) => {
   }
 })
 
-// Attendance
+shiftsRouter.put('/overtime/:id', ...managerOrSupervisor, (req, res) => {
+  try {
+    updateOvertimeService(req.params.id, req.body)
+    res.json({ ok: true })
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+shiftsRouter.delete('/overtime/:id', ...managerOrSupervisor, (req, res) => {
+  try {
+    deleteOvertimeService(req.params.id)
+    res.json({ ok: true })
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+// ── Attendance ──
 shiftsRouter.get('/attendance', ...allStaff, (req, res) => {
   res.json(attendanceListService(req.query))
 })
@@ -127,13 +194,19 @@ shiftsRouter.post('/attendance/checkout', ...allStaff, (req, res) => {
   }
 })
 
-// Statistics
+// ── Puantaj (Timesheet) ──
+shiftsRouter.get('/puantaj', ...allStaff, (req, res) => {
+  const month = req.query.month || new Date().toISOString().substring(0, 7)
+  res.json(puantajService(month, req.query.dept_id || null))
+})
+
+// ── Statistics ──
 shiftsRouter.get('/statistics', ...allStaff, (req, res) => {
   const date = req.query.date || new Date().toISOString().split('T')[0]
   res.json(statisticsService(date))
 })
 
-// Department CRUD
+// ── Department CRUD ──
 shiftsRouter.post('/departments', ...managerOrSupervisor, (req, res) => {
   try {
     const id = createDepartmentService(req.body)
@@ -157,12 +230,12 @@ shiftsRouter.delete('/departments/:id', ...managerOrSupervisor, (req, res) => {
 
 shiftsRouter.post('/departments/assign', ...managerOrSupervisor, (req, res) => {
   try {
-    assignDeptService(req.body.personnel_id, req.body.dept_id)
+    assignDeptService(req.body.staff_id, req.body.dept_id)
     res.json({ ok: true })
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
-// Shift definition CRUD
+// ── Shift definition CRUD ──
 shiftsRouter.post('/definitions', ...managerOrSupervisor, (req, res) => {
   try {
     const id = createShiftDefService(req.body)
@@ -184,7 +257,7 @@ shiftsRouter.delete('/definitions/:id', ...managerOrSupervisor, (req, res) => {
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
-// Leave cancel
+// ── Leave cancel ──
 shiftsRouter.delete('/leave/:id', ...managerOrSupervisor, (req, res) => {
   try {
     cancelLeaveService(req.params.id)
@@ -192,7 +265,7 @@ shiftsRouter.delete('/leave/:id', ...managerOrSupervisor, (req, res) => {
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
-// Swap requests
+// ── Swap requests ──
 shiftsRouter.get('/swaps', ...allStaff, (req, res) => {
   res.json(swapListService(req.query))
 })
@@ -218,7 +291,7 @@ shiftsRouter.patch('/swaps/:id/reject', ...managerOrSupervisor, (req, res) => {
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
-// Copy week
+// ── Copy week ──
 shiftsRouter.post('/schedule/copy-week', ...managerOrSupervisor, (req, res) => {
   try {
     const count = copyWeekService(req.body.source_week, req.body.target_week, req.user.id)
@@ -226,7 +299,7 @@ shiftsRouter.post('/schedule/copy-week', ...managerOrSupervisor, (req, res) => {
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
-// Rotation template
+// ── Rotation template ──
 shiftsRouter.post('/schedule/rotation', ...managerOrSupervisor, (req, res) => {
   try {
     const count = rotationService(req.body, req.user.id)
@@ -234,24 +307,10 @@ shiftsRouter.post('/schedule/rotation', ...managerOrSupervisor, (req, res) => {
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
-// Personnel search
-shiftsRouter.get('/personnel/search', ...allStaff, (req, res) => {
-  res.json(searchPersonnelService(req.query.q))
-})
-
-// Personnel detail
-shiftsRouter.get('/personnel/:id/detail', ...allStaff, (req, res) => {
+// ── Delete schedule entry ──
+shiftsRouter.delete('/schedule/:staffId/:date', ...managerOrSupervisor, (req, res) => {
   try {
-    res.json(personnelDetailService(req.params.id))
-  } catch (e) {
-    res.status(404).json({ error: e.message })
-  }
-})
-
-// Delete schedule entry
-shiftsRouter.delete('/schedule/:personnelId/:date', ...managerOrSupervisor, (req, res) => {
-  try {
-    deleteScheduleService(req.params.personnelId, req.params.date)
+    deleteScheduleService(req.params.staffId, req.params.date)
     res.json({ ok: true })
   } catch (e) { res.status(400).json({ error: e.message }) }
 })

@@ -1,14 +1,15 @@
 import {
   getDepartments, getShiftDefinitions, getSchedule, bulkAssignShifts,
-  getPersonnelWithShiftStatus, createLeaveRequest, approveLeaveRequest,
-  getLeaveRequests, getLeaveBalance, createOvertime, getOvertimeRecords,
-  getOvertimeSummary, createAttendanceLog, updateCheckout, getAttendanceLogs,
+  getStaffWithShiftStatus, createLeaveRequest, approveLeaveRequest,
+  getLeaveRequests, getLeaveBalance, createOvertime, updateOvertime, deleteOvertime, getOvertimeRecords,
+  getOvertimeSummary, createAttendanceLog, updateCheckout, getAttendanceLogs, getPuantaj,
   getShiftStatistics, getDepartmentSummary,
-  createDepartment, updateDepartment, deleteDepartment, assignPersonnelDepartment,
+  createDepartment, updateDepartment, deleteDepartment, assignStaffDepartment,
   createShiftDefinition, updateShiftDefinition, deleteShiftDefinition,
   cancelLeaveRequest, createSwapRequest, getSwapRequests, approveSwapRequest, rejectSwapRequest,
-  copyWeekSchedule, applyRotationTemplate, searchPersonnel, deleteScheduleEntry,
-  getPersonnelDetail
+  copyWeekSchedule, applyRotationTemplate, searchStaff, deleteScheduleEntry,
+  getStaffDetail,
+  getStaffList, getStaffById, createStaff, updateStaff, deleteStaff
 } from './queries.js'
 
 export function departmentsService() {
@@ -28,12 +29,41 @@ export function bulkAssignService(entries, createdBy) {
   bulkAssignShifts(entries, createdBy)
 }
 
-export function personnelStatusService(date, deptId) {
-  return getPersonnelWithShiftStatus(date, deptId)
+export function staffStatusService(date, deptId) {
+  return getStaffWithShiftStatus(date, deptId)
 }
 
+// ── Staff CRUD ──
+export function staffListService(filters) {
+  return getStaffList(filters)
+}
+
+export function staffGetService(id) {
+  const staff = getStaffById(id)
+  if (!staff) throw new Error('Personel bulunamadı')
+  return staff
+}
+
+export function staffCreateService(data) {
+  if (!data.full_name) throw new Error('Ad soyad zorunlu')
+  return createStaff(data)
+}
+
+export function staffUpdateService(id, data) {
+  updateStaff(id, data)
+}
+
+export function staffDeleteService(id) {
+  deleteStaff(id)
+}
+
+export function searchStaffService(term) {
+  return searchStaff(term || '')
+}
+
+// ── Leave ──
 export function createLeaveService(data) {
-  if (!data.personnel_id || !data.leave_type || !data.start_date || !data.end_date)
+  if (!data.staff_id || !data.leave_type || !data.start_date || !data.end_date)
     throw new Error('Zorunlu alanlar eksik')
   const start = new Date(data.start_date)
   const end = new Date(data.end_date)
@@ -51,13 +81,13 @@ export function leaveListService(filters) {
   return getLeaveRequests(filters)
 }
 
-export function leaveBalanceService(personnelId) {
+export function leaveBalanceService(staffId) {
   const year = new Date().getFullYear()
-  return getLeaveBalance(personnelId, year)
+  return getLeaveBalance(staffId, year)
 }
 
 export function createOvertimeService(data, userId) {
-  if (!data.personnel_id || !data.work_date || !data.hours)
+  if (!data.staff_id || !data.work_date || !data.hours)
     throw new Error('Zorunlu alanlar eksik')
   if (data.hours <= 0 || data.hours > 12) throw new Error('Mesai saati 0-12 arasında olmalı')
   return createOvertime({ ...data, approved_by: userId })
@@ -65,6 +95,16 @@ export function createOvertimeService(data, userId) {
 
 export function overtimeListService(filters) {
   return getOvertimeRecords(filters)
+}
+
+export function updateOvertimeService(id, data) {
+  if (data.hours !== undefined && (data.hours <= 0 || data.hours > 12))
+    throw new Error('Mesai saati 0-12 arasında olmalı')
+  updateOvertime(id, data)
+}
+
+export function deleteOvertimeService(id) {
+  deleteOvertime(id)
 }
 
 export function overtimeSummaryService(month) {
@@ -104,8 +144,8 @@ export function deleteDepartmentService(id) {
   deleteDepartment(id)
 }
 
-export function assignDeptService(personnelId, deptId) {
-  assignPersonnelDepartment(personnelId, deptId)
+export function assignDeptService(staffId, deptId) {
+  assignStaffDepartment(staffId, deptId)
 }
 
 export function createShiftDefService(data) {
@@ -150,19 +190,23 @@ export function copyWeekService(sourceWeek, targetWeek, userId) {
 }
 
 export function rotationService(data, userId) {
-  if (!data.personnel_ids?.length || !data.shift_def_ids?.length || !data.start_date || !data.weeks)
+  if (!data.staff_ids?.length || !data.shift_def_ids?.length || !data.start_date || !data.weeks)
     throw new Error('Zorunlu alanlar eksik')
-  return applyRotationTemplate(data.personnel_ids, data.dept_id, data.shift_def_ids, data.start_date, data.weeks, userId)
+  return applyRotationTemplate(data.staff_ids, data.dept_id, data.shift_def_ids, data.start_date, data.weeks, userId)
 }
 
-export function searchPersonnelService(term) {
-  return searchPersonnel(term || '')
+export function deleteScheduleService(staffId, workDate) {
+  deleteScheduleEntry(staffId, workDate)
 }
 
-export function deleteScheduleService(personnelId, workDate) {
-  deleteScheduleEntry(personnelId, workDate)
+export function staffDetailService(staffId) {
+  return getStaffDetail(staffId)
 }
 
-export function personnelDetailService(personnelId) {
-  return getPersonnelDetail(personnelId)
+export function puantajService(month, deptId) {
+  const [year, mon] = month.split('-').map(Number)
+  const monthStart = `${year}-${String(mon).padStart(2, '0')}-01`
+  const lastDay = new Date(year, mon, 0).getDate()
+  const monthEnd = `${year}-${String(mon).padStart(2, '0')}-${lastDay}`
+  return getPuantaj(monthStart, monthEnd, deptId)
 }

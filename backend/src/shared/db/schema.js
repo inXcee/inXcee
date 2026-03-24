@@ -162,8 +162,37 @@ CREATE TABLE IF NOT EXISTS inventory (
   unit TEXT NOT NULL,
   reorder_threshold REAL NOT NULL DEFAULT 0,
   category TEXT NOT NULL CHECK(category IN ('laundry','maintenance','housekeeping','general')),
+  location TEXT DEFAULT NULL,
+  unit_price REAL DEFAULT 0,
   last_updated DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS stock_movements (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  item_id INTEGER NOT NULL REFERENCES inventory(id) ON DELETE CASCADE,
+  type TEXT NOT NULL CHECK(type IN ('in','out','count','initial')),
+  delta REAL NOT NULL,
+  quantity_after REAL NOT NULL,
+  reason TEXT,
+  created_by INTEGER NOT NULL REFERENCES users(id),
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_stock_movements_item ON stock_movements(item_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS inventory_checkouts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  item_id INTEGER NOT NULL REFERENCES inventory(id) ON DELETE CASCADE,
+  personnel_id INTEGER NOT NULL REFERENCES personnel(id),
+  quantity REAL NOT NULL,
+  note TEXT,
+  checked_out_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  returned_at DATETIME,
+  returned_qty REAL DEFAULT 0,
+  created_by INTEGER NOT NULL REFERENCES users(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_inv_checkouts_active ON inventory_checkouts(item_id, returned_at);
 
 CREATE TABLE IF NOT EXISTS cleaning_tasks (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -239,22 +268,44 @@ CREATE TABLE IF NOT EXISTS shift_definitions (
   color_class TEXT NOT NULL
 );
 
+-- Kampüs yönetim ekibi (yatakhane personelinden ayrı)
+CREATE TABLE IF NOT EXISTS staff (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tc_no TEXT UNIQUE,
+  full_name TEXT NOT NULL,
+  phone TEXT,
+  email TEXT,
+  position TEXT,
+  department_id INTEGER REFERENCES departments(id),
+  hire_date TEXT,
+  birth_date TEXT,
+  address TEXT,
+  emergency_contact TEXT,
+  emergency_phone TEXT,
+  blood_type TEXT CHECK(blood_type IN ('A+','A-','B+','B-','AB+','AB-','0+','0-')),
+  gender TEXT CHECK(gender IN ('male','female')),
+  salary REAL,
+  notes TEXT,
+  is_active INTEGER DEFAULT 1,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS shift_schedule (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  personnel_id INTEGER NOT NULL REFERENCES personnel(id),
-  dept_id INTEGER NOT NULL REFERENCES departments(id),
-  shift_def_id INTEGER NOT NULL REFERENCES shift_definitions(id),
+  staff_id INTEGER NOT NULL REFERENCES staff(id),
+  dept_id INTEGER REFERENCES departments(id),
+  shift_def_id INTEGER REFERENCES shift_definitions(id),
   work_date TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'scheduled'
     CHECK(status IN ('scheduled','worked','absent','on_leave','overtime')),
   created_by INTEGER REFERENCES users(id),
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE(personnel_id, work_date)
+  UNIQUE(staff_id, work_date)
 );
 
 CREATE TABLE IF NOT EXISTS leave_requests (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  personnel_id INTEGER NOT NULL REFERENCES personnel(id),
+  staff_id INTEGER NOT NULL REFERENCES staff(id),
   leave_type TEXT NOT NULL
     CHECK(leave_type IN ('annual','sick','emergency','maternity','paternity','marriage','bereavement')),
   start_date TEXT NOT NULL,
@@ -270,18 +321,18 @@ CREATE TABLE IF NOT EXISTS leave_requests (
 
 CREATE TABLE IF NOT EXISTS leave_balance (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  personnel_id INTEGER NOT NULL REFERENCES personnel(id),
+  staff_id INTEGER NOT NULL REFERENCES staff(id),
   year INTEGER NOT NULL,
   annual_total INTEGER DEFAULT 15,
   annual_used INTEGER DEFAULT 0,
   sick_used INTEGER DEFAULT 0,
   emergency_used INTEGER DEFAULT 0,
-  UNIQUE(personnel_id, year)
+  UNIQUE(staff_id, year)
 );
 
 CREATE TABLE IF NOT EXISTS overtime_records (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  personnel_id INTEGER NOT NULL REFERENCES personnel(id),
+  staff_id INTEGER NOT NULL REFERENCES staff(id),
   work_date TEXT NOT NULL,
   hours REAL NOT NULL,
   reason TEXT,
@@ -291,12 +342,47 @@ CREATE TABLE IF NOT EXISTS overtime_records (
 
 CREATE TABLE IF NOT EXISTS attendance_logs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  personnel_id INTEGER NOT NULL REFERENCES personnel(id),
+  staff_id INTEGER NOT NULL REFERENCES staff(id),
   shift_schedule_id INTEGER REFERENCES shift_schedule(id),
   check_in_at DATETIME,
   check_out_at DATETIME,
   actual_hours REAL
 );
+
+CREATE INDEX IF NOT EXISTS idx_staff_dept ON staff(department_id);
+CREATE INDEX IF NOT EXISTS idx_staff_active ON staff(is_active);
+CREATE INDEX IF NOT EXISTS idx_shift_schedule_date ON shift_schedule(work_date);
+CREATE INDEX IF NOT EXISTS idx_shift_schedule_staff ON shift_schedule(staff_id);
+CREATE INDEX IF NOT EXISTS idx_leave_requests_staff ON leave_requests(staff_id);
+CREATE INDEX IF NOT EXISTS idx_overtime_staff ON overtime_records(staff_id);
+
+-- -------------------------------------------------------
+-- MAL GIRIS (GOODS RECEIPTS)
+-- -------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS goods_receipts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  receipt_no TEXT UNIQUE NOT NULL,
+  supplier TEXT NOT NULL,
+  invoice_no TEXT,
+  receipt_date TEXT NOT NULL DEFAULT (date('now')),
+  notes TEXT,
+  total_value REAL DEFAULT 0,
+  created_by INTEGER NOT NULL REFERENCES users(id),
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS goods_receipt_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  receipt_id INTEGER NOT NULL REFERENCES goods_receipts(id) ON DELETE CASCADE,
+  item_id INTEGER NOT NULL REFERENCES inventory(id),
+  quantity REAL NOT NULL,
+  unit_price REAL DEFAULT 0,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_goods_receipt_date ON goods_receipts(receipt_date DESC);
+CREATE INDEX IF NOT EXISTS idx_goods_receipt_items_receipt ON goods_receipt_items(receipt_id);
 
 -- -------------------------------------------------------
 -- AUDIT LOG

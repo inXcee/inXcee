@@ -57,3 +57,14 @@ export function distributeBag(bagId, damageNote) {
   const db = getDB()
   db.prepare("UPDATE laundry_bags SET status='distributed', distributed_at=datetime('now'), damage_note=? WHERE id=?").run(damageNote || null, bagId)
 }
+
+export function getAllBags() {
+  const db = getDB()
+  return db.prepare(`
+    SELECT lb.*, r.block, r.floor, r.room_no
+    FROM laundry_bags lb
+    LEFT JOIN rooms r ON r.id = lb.room_id
+    WHERE lb.status != 'distributed'
+    ORDER BY lb.id DESC
+  `).all()
+}

@@ -12,6 +12,7 @@ const PAGE_TITLES = {
   '/maintenance': 'Teknik Servis',
   '/discipline': 'Disiplin',
   '/shifts': 'Vardiyalar',
+  '/laundry': 'Camasirhane',
   '/inventory': 'Envanter',
   '/room-history': 'Oda Geçmişi',
   '/whatsapp': 'WhatsApp',

@@ -72,20 +72,42 @@ export function seedDev() {
 
   // ── Stok ────────────────────────────────────────────────────────────────────
   const invInsert = db.prepare(`
-    INSERT OR IGNORE INTO inventory(item_name,quantity,unit,reorder_threshold,category)
-    VALUES(?,?,?,?,?)
+    INSERT OR IGNORE INTO inventory(item_name,quantity,unit,reorder_threshold,category,location,unit_price)
+    VALUES(?,?,?,?,?,?,?)
   `)
-  invInsert.run('Sanayi Deterjanı', 50000, 'g', 5000, 'laundry')
-  invInsert.run('Çamaşır Suyu', 20000, 'ml', 2000, 'laundry')
+  // Camasir
+  invInsert.run('Sanayi Deterjanı', 50000, 'g', 5000, 'laundry', 'Camasirhane Depo', 0.12)
+  invInsert.run('Çamaşır Suyu', 20000, 'ml', 2000, 'laundry', 'Camasirhane Depo', 0.05)
+  invInsert.run('Yumuşatıcı', 15, 'litre', 3, 'laundry', 'Camasirhane Depo', 60)
+  invInsert.run('Çamaşır Torbası', 200, 'adet', 50, 'laundry', 'Camasirhane Depo', 8)
+  // Temizlik
+  invInsert.run('Yuzey Temizleyici', 30, 'litre', 5, 'housekeeping', 'Temizlik Dolabi', 35)
+  invInsert.run('Tuvalet Temizleyici', 25, 'litre', 4, 'housekeeping', 'Temizlik Dolabi', 28)
+  invInsert.run('Cam Silici', 12, 'litre', 3, 'housekeeping', 'Temizlik Dolabi', 22)
+  invInsert.run('Cop Torbasi', 500, 'adet', 100, 'housekeeping', 'Temizlik Dolabi', 2)
+  invInsert.run('Paspas Basi', 10, 'adet', 3, 'housekeeping', 'Temizlik Dolabi', 45)
+  invInsert.run('Eldiven (M)', 100, 'adet', 20, 'housekeeping', 'Temizlik Dolabi', 5)
+  // Bakim
+  invInsert.run('Ampul LED 9W', 50, 'adet', 10, 'maintenance', 'Teknik Depo', 15)
+  invInsert.run('Musluk Contasi', 30, 'adet', 10, 'maintenance', 'Teknik Depo', 8)
+  invInsert.run('Elektrik Bandı', 20, 'adet', 5, 'maintenance', 'Teknik Depo', 12)
+  invInsert.run('Silikon', 8, 'adet', 2, 'maintenance', 'Teknik Depo', 35)
+  invInsert.run('Priz', 15, 'adet', 5, 'maintenance', 'Teknik Depo', 18)
+  // Genel
+  invInsert.run('Yatak Carsafi', 300, 'adet', 50, 'general', 'Ana Depo', 75)
+  invInsert.run('Yastik Kilifi', 300, 'adet', 50, 'general', 'Ana Depo', 25)
+  invInsert.run('Battaniye', 150, 'adet', 20, 'general', 'Ana Depo', 120)
+  invInsert.run('Havlu', 200, 'adet', 40, 'general', 'Ana Depo', 35)
+  invInsert.run('Sabun', 500, 'adet', 100, 'general', 'Ana Depo', 4)
 
   // ── Temizlik Personeli ─────────────────────────────────────────────────────
-  const staffInsert = db.prepare(`
+  const cleanInsert = db.prepare(`
     INSERT OR IGNORE INTO cleaning_staff(id,full_name,phone,assigned_block,assigned_floor)
     VALUES(?,?,?,?,?)
   `)
-  staffInsert.run(1, 'Ayşe Yılmaz', '05551112233', 'M1', 1)
-  staffInsert.run(2, 'Fatma Demir', '05552223344', 'M1', 2)
-  staffInsert.run(3, 'Zeynep Kaya', '05553334455', 'M2', 1)
+  cleanInsert.run(1, 'Ayşe Yılmaz', '05551112233', 'M1', 1)
+  cleanInsert.run(2, 'Fatma Demir', '05552223344', 'M1', 2)
+  cleanInsert.run(3, 'Zeynep Kaya', '05553334455', 'M2', 1)
 
   // ── Teknisyenler ──────────────────────────────────────────────────────────
   const techInsert = db.prepare(`
@@ -122,104 +144,132 @@ export function seedDev() {
   shiftDefInsert.run(2, 'Akşam',  15, 24, 'bg-orange-400')
   shiftDefInsert.run(3, 'Gece',   0,  8,  'bg-indigo-600')
 
-  // 200 Personel (100 erkek + 100 kadın)
+  // ── KAMPÜS YÖNETİM EKİBİ (staff tablosu) ──
   const maleFirstNames = ['Ahmet','Mehmet','Mustafa','Ali','Hasan','Hüseyin','İbrahim','İsmail','Osman','Yusuf',
     'Ömer','Murat','Emre','Burak','Serkan','Kemal','Tarık','Ercan','Fikret','Güven',
     'Orhan','Kadir','Selim','Bülent','Cengiz','Davut','Erdal','Faruk','Gökhan','Haluk',
-    'İlhan','Kamil','Levent','Metin','Nuri','Okan','Pınar','Ramazan','Sinan','Tolga',
-    'Uğur','Volkan','Yılmaz','Zafer','Adem','Bahadır','Cem','Deniz','Engin','Fatih',
-    'Haydar','İrfan','Kenan','Lokman','Nadir','Oktay','Polat','Recep','Sabri','Taner',
-    'Ulaş','Veysel','Yasin','Zeki','Alper','Barış','Cenk','Doğan','Erhan','Fikri',
-    'Hakan','İlker','Kaan','Lütfi','Necati','Onur','Poyraz','Rıza','Soner','Tunç',
-    'Ufuk','Vedat','Yiğit','Ziya','Arda','Berk','Cihan','Doruk','Ege','Furkan',
-    'Harun','İsmet','Kağan','Lemi','Nihat','Olcay','Petek','Ruhi','Şahin','Tayfun']
+    'İlhan','Kamil','Levent','Metin','Nuri','Okan','Ramazan','Sinan','Tolga','Uğur',
+    'Volkan','Yılmaz','Zafer','Adem','Bahadır','Cem','Deniz','Engin','Fatih','Haydar']
   const femaleFirstNames = ['Ayşe','Fatma','Hatice','Zeynep','Emine','Elif','Zehra','Merve','Büşra','Esra',
     'Selin','Gülşen','Özlem','Nurcan','Serap','Hülya','Sibel','Melek','Aslı','Ceren',
     'Derya','Ebru','Filiz','Gamze','Hacer','İlknur','Kadriye','Leman','Müge','Neşe',
-    'Özge','Pınar','Reyhan','Sevgi','Tülay','Ülkü','Vildan','Yasemin','Zülfikar','Açelya',
-    'Bahar','Cansu','Dilek','Elvan','Feride','Gönül','Hatun','İnci','Kevser','Latife',
-    'Mihrimah','Nazan','Olga','Pembe','Rabia','Selma','Tijen','Ümran','Vahide','Yıldız',
-    'Zühal','Aylin','Belgin','Cemre','Duygu','Eda','Fulya','Gizem','Hazal','İrem',
-    'Kübra','Leyla','Meryem','Nuray','Oya','Pervin','Rumeysa','Şule','Tuğba','Umut',
-    'Vesile','Yaren','Zeynep','Alev','Buse','Ceylan','Damla','Ezgi','Figen','Gülay',
-    'Hilal','İlayda','Kıymet','Lale','Nur','Nurgül','Özden','Pelin','Rana','Sevinç']
+    'Özge','Pınar','Reyhan','Sevgi','Tülay','Ülkü','Vildan','Yasemin','Açelya','Bahar',
+    'Cansu','Dilek','Elvan','Feride','Gönül','İnci','Kevser','Latife','Nazan','Selma']
   const lastNames = ['Yılmaz','Kaya','Demir','Çelik','Şahin','Doğan','Kılıç','Arslan','Taş','Aydın',
     'Özdemir','Erdoğan','Koç','Kurt','Özkan','Yıldız','Çetin','Yıldırım','Güneş','Avcı',
     'Polat','Aktaş','Koçak','Keskin','Demirtaş','Karahan','Güler','Bulut','Kaplan','Öztürk']
-  const companies = ['İnşaat A','İnşaat B','Yapı C','Servis D','Lojistik E','Temizlik F','Güvenlik G','Catering H']
-  const hometowns = ['İstanbul','Ankara','İzmir','Bursa','Adana','Konya','Gaziantep','Mersin','Diyarbakır','Samsun']
+  const positions = [
+    'Güvenlik Görevlisi','Güvenlik Amiri','Temizlik Görevlisi','Temizlik Şefi',
+    'Aşçı','Aşçıbaşı','Garson','Mutfak Yardımcısı',
+    'İdari Personel','Sekreter','Muhasebeci','İK Uzmanı',
+    'Elektrikçi','Tesisatçı','Klimacı','Boyacı','Genel Bakım',
+    'Bahçıvan','Peyzaj Uzmanı',
+    'Hemşire','Sağlık Memuru',
+    'Çamaşırhane Görevlisi','Ütücü','Çamaşırhane Şefi'
+  ]
+  const bloodTypes = ['A+','A-','B+','B-','AB+','AB-','0+','0-']
+  const cities = ['İstanbul','Ankara','İzmir','Bursa','Adana','Konya','Gaziantep','Mersin','Diyarbakır','Samsun',
+    'Trabzon','Kayseri','Eskişehir','Antalya','Malatya']
 
-  const personnelInsert = db.prepare(`
-    INSERT OR IGNORE INTO personnel(tc_no,full_name,company,hometown,gender,department_id,check_in_date)
-    VALUES(?,?,?,?,?,?,datetime('now','-' || ? || ' days'))
+  const staffInsert = db.prepare(`
+    INSERT OR IGNORE INTO staff(tc_no,full_name,phone,email,position,department_id,hire_date,birth_date,address,
+      emergency_contact,emergency_phone,blood_type,gender,salary,notes,is_active)
+    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)
   `)
-  const balanceInsert = db.prepare(`INSERT OR IGNORE INTO leave_balance(personnel_id,year,annual_total,annual_used,sick_used,emergency_used) VALUES(?,?,15,?,?,?)`)
+  const balanceInsert = db.prepare(`INSERT OR IGNORE INTO leave_balance(staff_id,year,annual_total,annual_used,sick_used,emergency_used) VALUES(?,?,15,?,?,?)`)
 
-  const personnelIds = []
-  for (let i = 0; i < 200; i++) {
-    const isMale = i < 100
+  const staffIds = []
+  for (let i = 0; i < 120; i++) {
+    const isMale = i < 60
     const gender = isMale ? 'male' : 'female'
-    const firstName = isMale ? maleFirstNames[i % maleFirstNames.length] : femaleFirstNames[(i - 100) % femaleFirstNames.length]
+    const firstName = isMale ? maleFirstNames[i % maleFirstNames.length] : femaleFirstNames[(i - 60) % femaleFirstNames.length]
     const lastName = lastNames[i % lastNames.length]
     const fullName = `${firstName} ${lastName}`
-    const tcNo = `${10000000000 + i * 37 + 12345}`
-    const company = companies[i % companies.length]
-    const hometown = hometowns[i % hometowns.length]
+    const tcNo = `${20000000000 + i * 41 + 56789}`
+    const phone = `05${300 + (i % 50)}${String(1000000 + i * 73).slice(0, 7)}`
+    const email = `${firstName.toLowerCase().replace(/[İıÖöÜüŞşÇçĞğ]/g, c => ({İ:'i',ı:'i',Ö:'o',ö:'o',Ü:'u',ü:'u',Ş:'s',ş:'s',Ç:'c',ç:'c',Ğ:'g',ğ:'g'}[c]||c))}.${lastName.toLowerCase().replace(/[İıÖöÜüŞşÇçĞğ]/g, c => ({İ:'i',ı:'i',Ö:'o',ö:'o',Ü:'u',ü:'u',Ş:'s',ş:'s',Ç:'c',ç:'c',Ğ:'g',ğ:'g'}[c]||c))}@kampus.com`
     const deptId = (i % 8) + 1
-    const daysAgo = 30 + (i % 60)
-    const res = personnelInsert.run(tcNo, fullName, company, hometown, gender, deptId, daysAgo)
+    const position = positions[i % positions.length]
+    const hireYear = 2020 + (i % 6)
+    const hireMonth = String((i % 12) + 1).padStart(2, '0')
+    const hireDate = `${hireYear}-${hireMonth}-${String((i % 28) + 1).padStart(2, '0')}`
+    const birthYear = 1975 + (i % 25)
+    const birthMonth = String((i % 12) + 1).padStart(2, '0')
+    const birthDate = `${birthYear}-${birthMonth}-${String((i % 28) + 1).padStart(2, '0')}`
+    const address = `${cities[i % cities.length]}, ${['Merkez','Yenişehir','Çankaya','Nilüfer','Seyhan','Selçuklu'][i % 6]} Mah. ${i + 1}. Sok. No:${(i % 50) + 1}`
+    const emergencyContact = `${isMale ? femaleFirstNames[i % femaleFirstNames.length] : maleFirstNames[i % maleFirstNames.length]} ${lastNames[(i + 5) % lastNames.length]}`
+    const emergencyPhone = `05${400 + (i % 50)}${String(2000000 + i * 91).slice(0, 7)}`
+    const bloodType = bloodTypes[i % bloodTypes.length]
+    const salary = 15000 + (i % 8) * 2500 + Math.floor(i / 8) * 500
+    const notes = i % 5 === 0 ? 'Deneyimli personel' : null
+
+    const res = staffInsert.run(tcNo, fullName, phone, email, position, deptId, hireDate, birthDate, address,
+      emergencyContact, emergencyPhone, bloodType, gender, salary, notes)
     if (res.changes > 0) {
-      const pid = res.lastInsertRowid
-      personnelIds.push({ id: pid, deptId, gender })
+      const sid = Number(res.lastInsertRowid)
+      staffIds.push({ id: sid, deptId, gender })
       const annualUsed = Math.floor(Math.random() * 5)
       const sickUsed = Math.floor(Math.random() * 3)
       const emergUsed = Math.floor(Math.random() * 2)
-      balanceInsert.run(pid, 2026, annualUsed, sickUsed, emergUsed)
+      balanceInsert.run(sid, 2026, annualUsed, sickUsed, emergUsed)
     }
   }
 
-  // Haftalık vardiya çizelgesi (bu hafta için)
-  const scheduleInsert = db.prepare(`INSERT OR IGNORE INTO shift_schedule(personnel_id,dept_id,shift_def_id,work_date,status) VALUES(?,?,?,?,?)`)
-  const today = new Date('2026-03-15')
+  // Haftalık vardiya çizelgesi (bu hafta + geçen hafta)
+  const scheduleInsert = db.prepare(`INSERT OR IGNORE INTO shift_schedule(staff_id,dept_id,shift_def_id,work_date,status) VALUES(?,?,?,?,?)`)
+  const today = new Date('2026-03-22')
   const monday = new Date(today)
-  monday.setDate(today.getDate() - today.getDay() + 1) // Pazartesi
+  monday.setDate(today.getDate() - today.getDay() + 1)
 
-  const shiftPattern = [1, 1, 2, 2, 3, 3, 1] // Pzt-Paz için vardiya türleri
-
-  if (personnelIds.length > 0) {
+  if (staffIds.length > 0) {
     const schedTx = db.transaction(() => {
-      personnelIds.forEach((p, idx) => {
-        for (let day = 0; day < 7; day++) {
-          const workDate = new Date(monday)
-          workDate.setDate(monday.getDate() + day)
-          const dateStr = workDate.toISOString().split('T')[0]
-          const shiftDefId = shiftPattern[(idx + day) % 3] // Rotasyonlu vardiya
-          const isWeekend = day >= 5
-          const status = isWeekend && idx % 7 === 0 ? 'on_leave' : 'scheduled'
-          scheduleInsert.run(p.id, p.deptId, shiftDefId, dateStr, status)
-        }
-      })
+      // Bu hafta + geçen hafta (14 gün)
+      for (let weekOffset = -1; weekOffset <= 0; weekOffset++) {
+        staffIds.forEach((s, idx) => {
+          for (let day = 0; day < 7; day++) {
+            const workDate = new Date(monday)
+            workDate.setDate(monday.getDate() + weekOffset * 7 + day)
+            const dateStr = workDate.toISOString().split('T')[0]
+            const shiftDefId = ((idx + day) % 3) + 1
+            const isWeekend = day >= 5
+            let status = 'scheduled'
+            if (weekOffset === -1) status = idx % 5 === 0 ? 'on_leave' : 'worked'
+            else if (isWeekend && idx % 7 === 0) status = 'on_leave'
+            scheduleInsert.run(s.id, s.deptId, shiftDefId, dateStr, status)
+          }
+        })
+      }
     })
     schedTx()
   }
 
-  // Örnek izin talepleri - sadece ilk çalışmada ekle
+  // Örnek izin talepleri
   const leaveCount = db.prepare('SELECT COUNT(*) as c FROM leave_requests').get().c
-  if (leaveCount === 0 && personnelIds.length >= 5) {
-    const leaveInsert = db.prepare(`INSERT INTO leave_requests(personnel_id,leave_type,start_date,end_date,total_days,reason,status) VALUES(?,?,?,?,?,?,?)`)
-    leaveInsert.run(personnelIds[0].id, 'annual', '2026-03-17', '2026-03-21', 5, 'Yıllık izin talebi', 'pending')
-    leaveInsert.run(personnelIds[1].id, 'sick', '2026-03-15', '2026-03-16', 2, 'Hastalık raporu', 'approved')
-    leaveInsert.run(personnelIds[2].id, 'emergency', '2026-03-14', '2026-03-14', 1, 'Aile ziyareti', 'approved')
-    leaveInsert.run(personnelIds[3].id, 'annual', '2026-03-20', '2026-03-27', 8, 'Yaz tatili', 'pending')
-    leaveInsert.run(personnelIds[4].id, 'marriage', '2026-03-22', '2026-03-25', 4, 'Evlilik izni', 'pending')
+  if (leaveCount === 0 && staffIds.length >= 10) {
+    const leaveInsert = db.prepare(`INSERT INTO leave_requests(staff_id,leave_type,start_date,end_date,total_days,reason,status) VALUES(?,?,?,?,?,?,?)`)
+    leaveInsert.run(staffIds[0].id, 'annual', '2026-03-23', '2026-03-27', 5, 'Yıllık izin talebi', 'pending')
+    leaveInsert.run(staffIds[1].id, 'sick', '2026-03-20', '2026-03-21', 2, 'Hastalık raporu', 'approved')
+    leaveInsert.run(staffIds[2].id, 'emergency', '2026-03-19', '2026-03-19', 1, 'Aile acil durumu', 'approved')
+    leaveInsert.run(staffIds[3].id, 'annual', '2026-03-25', '2026-04-01', 8, 'Yaz tatili', 'pending')
+    leaveInsert.run(staffIds[4].id, 'marriage', '2026-03-28', '2026-03-31', 4, 'Evlilik izni', 'pending')
+    leaveInsert.run(staffIds[5].id, 'paternity', '2026-03-22', '2026-03-26', 5, 'Babalık izni', 'approved')
+    leaveInsert.run(staffIds[6].id, 'sick', '2026-03-18', '2026-03-20', 3, 'Grip', 'approved')
+    leaveInsert.run(staffIds[7].id, 'bereavement', '2026-03-15', '2026-03-17', 3, 'Vefat izni', 'approved')
+    leaveInsert.run(staffIds[8].id, 'annual', '2026-04-01', '2026-04-05', 5, 'Bayram tatili uzatma', 'pending')
+    leaveInsert.run(staffIds[9].id, 'emergency', '2026-03-21', '2026-03-21', 1, 'Kişisel acil', 'rejected')
   }
 
-  // Örnek mesai kayıtları - sadece ilk çalışmada ekle
+  // Örnek mesai kayıtları
   const otCount = db.prepare('SELECT COUNT(*) as c FROM overtime_records').get().c
-  if (otCount === 0 && personnelIds.length >= 3) {
-    const otInsert = db.prepare(`INSERT INTO overtime_records(personnel_id,work_date,hours,reason) VALUES(?,?,?,?)`)
-    otInsert.run(personnelIds[0].id, '2026-03-14', 2.5, 'Proje teslimi')
-    otInsert.run(personnelIds[1].id, '2026-03-13', 3.0, 'Ekstra güvenlik')
-    otInsert.run(personnelIds[2].id, '2026-03-12', 1.5, 'Acil bakım')
+  if (otCount === 0 && staffIds.length >= 8) {
+    const otInsert = db.prepare(`INSERT INTO overtime_records(staff_id,work_date,hours,reason) VALUES(?,?,?,?)`)
+    otInsert.run(staffIds[0].id, '2026-03-19', 2.5, 'Proje teslimi')
+    otInsert.run(staffIds[1].id, '2026-03-18', 3.0, 'Ekstra güvenlik nöbeti')
+    otInsert.run(staffIds[2].id, '2026-03-17', 1.5, 'Acil bakım onarım')
+    otInsert.run(staffIds[3].id, '2026-03-20', 4.0, 'Etkinlik hazırlığı')
+    otInsert.run(staffIds[4].id, '2026-03-19', 2.0, 'Temizlik operasyonu')
+    otInsert.run(staffIds[5].id, '2026-03-21', 3.5, 'Gece nöbeti uzatma')
+    otInsert.run(staffIds[6].id, '2026-03-16', 2.0, 'Hafta sonu çalışma')
+    otInsert.run(staffIds[7].id, '2026-03-15', 1.0, 'Yemekhane hazırlık')
   }
 }

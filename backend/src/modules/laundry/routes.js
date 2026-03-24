@@ -5,6 +5,11 @@ import * as svc from './service.js'
 export const laundryRouter = Router()
 const laundryAccess = requireRole('campus_manager', 'laundry')
 
+laundryRouter.get('/bags', ...laundryAccess, (req, res) => {
+  try { res.json(svc.getAllBagsService()) }
+  catch (e) { res.status(500).json({ error: e.message }) }
+})
+
 laundryRouter.post('/bags/generate', ...laundryAccess, (req, res) => {
   try {
     const { room_id } = req.body

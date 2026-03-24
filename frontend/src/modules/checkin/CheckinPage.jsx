@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import BlacklistAlert from './BlacklistAlert.jsx'
 import ZimmetForm from './ZimmetForm.jsx'
+import CsvImport from './CsvImport.jsx'
 
 const ALL_BLOCKS = ['M1','M2','M3','S1','S2','S3']
 const STEPS = [
@@ -417,6 +418,7 @@ export default function CheckinPage() {
   const [assignedBed, setAssignedBed] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [showImport, setShowImport] = useState(false)
 
   const qc = useQueryClient()
 
@@ -534,7 +536,12 @@ export default function CheckinPage() {
             GİRİŞ KAYDI · ODA ATAMASI · VARDİYA YÖNETİMİ
           </p>
         </div>
+        <button onClick={() => setShowImport(true)} className="btn btn-ghost btn-sm">
+          CSV TOPLU KAYIT
+        </button>
       </div>
+
+      {showImport && <CsvImport onClose={() => setShowImport(false)} />}
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', alignItems: 'start' }}>
         {/* LEFT: Check-in flow */}

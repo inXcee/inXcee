@@ -60,3 +60,173 @@ describe('Shifts', () => {
     expect(res.body.id).toBeTruthy()
   })
 })
+
+describe('Staff CRUD', () => {
+  let createdStaffId
+
+  it('GET /staff returns array', async () => {
+    const res = await request(app).get('/api/shifts/staff').set('Authorization', `Bearer ${shiftToken}`)
+    expect(res.status).toBe(200)
+    expect(Array.isArray(res.body)).toBe(true)
+    expect(res.body.length).toBeGreaterThan(0)
+  })
+
+  it('GET /staff with filters', async () => {
+    const res = await request(app).get('/api/shifts/staff?is_active=1&gender=male').set('Authorization', `Bearer ${shiftToken}`)
+    expect(res.status).toBe(200)
+    expect(Array.isArray(res.body)).toBe(true)
+  })
+
+  it('GET /staff/search returns results', async () => {
+    const res = await request(app).get('/api/shifts/staff/search?q=Ali').set('Authorization', `Bearer ${shiftToken}`)
+    expect(res.status).toBe(200)
+    expect(Array.isArray(res.body)).toBe(true)
+  })
+
+  it('POST /staff creates a staff member (manager)', async () => {
+    const res = await request(app)
+      .post('/api/shifts/staff')
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({
+        full_name: 'Test Personel',
+        tc_no: '99999999999',
+        phone: '05551112233',
+        email: 'test@test.com',
+        position: 'Test Pozisyon',
+        gender: 'male',
+        blood_type: 'A+'
+      })
+    expect(res.status).toBe(201)
+    expect(res.body.id).toBeTruthy()
+    createdStaffId = res.body.id
+  })
+
+  it('GET /staff/:id returns the created staff', async () => {
+    const res = await request(app).get(`/api/shifts/staff/${createdStaffId}`).set('Authorization', `Bearer ${shiftToken}`)
+    expect(res.status).toBe(200)
+    expect(res.body.full_name).toBe('Test Personel')
+    expect(res.body.tc_no).toBe('99999999999')
+  })
+
+  it('GET /staff/:id/detail returns detailed info', async () => {
+    const res = await request(app).get(`/api/shifts/staff/${createdStaffId}/detail`).set('Authorization', `Bearer ${shiftToken}`)
+    expect(res.status).toBe(200)
+    expect(res.body.person).toBeTruthy()
+    expect(res.body.person.full_name).toBe('Test Personel')
+  })
+
+  it('PUT /staff/:id updates staff (manager)', async () => {
+    const res = await request(app)
+      .put(`/api/shifts/staff/${createdStaffId}`)
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({ full_name: 'Güncellenmiş Personel', position: 'Yeni Pozisyon' })
+    expect(res.status).toBe(200)
+    expect(res.body.ok).toBe(true)
+  })
+
+  it('DELETE /staff/:id soft-deletes staff (manager)', async () => {
+    const res = await request(app)
+      .delete(`/api/shifts/staff/${createdStaffId}`)
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(res.status).toBe(200)
+    expect(res.body.ok).toBe(true)
+  })
+
+  it('POST /staff rejects without full_name', async () => {
+    const res = await request(app)
+      .post('/api/shifts/staff')
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({ phone: '05551112233' })
+    expect(res.status).toBe(400)
+  })
+})
+
+describe('Leave & Overtime (staff_id)', () => {
+  it('POST /leave creates a leave request with staff_id', async () => {
+    const staffRes = await request(app).get('/api/shifts/staff').set('Authorization', `Bearer ${shiftToken}`)
+    const staffId = staffRes.body[0]?.id
+    if (!staffId) return
+
+    const res = await request(app)
+      .post('/api/shifts/leave')
+      .set('Authorization', `Bearer ${shiftToken}`)
+      .send({ staff_id: staffId, leave_type: 'annual', start_date: '2026-04-01', end_date: '2026-04-03', reason: 'Test izin' })
+    expect(res.status).toBe(201)
+    expect(res.body.id).toBeTruthy()
+  })
+
+  it('GET /leave returns leave list', async () => {
+    const res = await request(app).get('/api/shifts/leave').set('Authorization', `Bearer ${shiftToken}`)
+    expect(res.status).toBe(200)
+    expect(Array.isArray(res.body)).toBe(true)
+  })
+
+  it('POST /overtime creates overtime with staff_id', async () => {
+    const staffRes = await request(app).get('/api/shifts/staff').set('Authorization', `Bearer ${managerToken}`)
+    const staffId = staffRes.body[0]?.id
+    if (!staffId) return
+
+    const res = await request(app)
+      .post('/api/shifts/overtime')
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({ staff_id: staffId, work_date: '2026-03-20', hours: 3, reason: 'Test mesai' })
+    expect(res.status).toBe(201)
+    expect(res.body.id).toBeTruthy()
+  })
+
+  it('GET /overtime returns overtime list', async () => {
+    const res = await request(app).get('/api/shifts/overtime').set('Authorization', `Bearer ${shiftToken}`)
+    expect(res.status).toBe(200)
+    expect(Array.isArray(res.body)).toBe(true)
+  })
+})
+
+describe('Departments CRUD', () => {
+  let deptId
+
+  it('POST /departments creates department', async () => {
+    const res = await request(app)
+      .post('/api/shifts/departments')
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({ name: 'CRUD Test Dept', color_class: 'bg-red-500', description: 'Test' })
+    expect(res.status).toBe(201)
+    deptId = res.body.id
+  })
+
+  it('PUT /departments/:id updates department', async () => {
+    const res = await request(app)
+      .put(`/api/shifts/departments/${deptId}`)
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({ name: 'Updated Dept', color_class: 'bg-red-600' })
+    expect(res.status).toBe(200)
+  })
+
+  it('DELETE /departments/:id deletes department', async () => {
+    const res = await request(app)
+      .delete(`/api/shifts/departments/${deptId}`)
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(res.status).toBe(200)
+  })
+
+  it('POST /departments/assign assigns staff to dept', async () => {
+    const staffRes = await request(app).get('/api/shifts/staff').set('Authorization', `Bearer ${shiftToken}`)
+    const staffId = staffRes.body[0]?.id
+    const deptRes = await request(app).get('/api/shifts/departments').set('Authorization', `Bearer ${shiftToken}`)
+    const dId = deptRes.body[0]?.id
+    if (!staffId || !dId) return
+
+    const res = await request(app)
+      .post('/api/shifts/departments/assign')
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({ staff_id: staffId, dept_id: dId })
+    expect(res.status).toBe(200)
+  })
+})
+
+describe('Swap requests', () => {
+  it('GET /swaps returns array', async () => {
+    const res = await request(app).get('/api/shifts/swaps').set('Authorization', `Bearer ${shiftToken}`)
+    expect(res.status).toBe(200)
+    expect(Array.isArray(res.body)).toBe(true)
+  })
+})

@@ -12,3 +12,4 @@ export const loadMachineService = q.loadMachine
 export const finishWashService = q.finishWash
 export const getDistributionRouteService = q.getDistributionRoute
 export const distributeBagService = q.distributeBag
+export const getAllBagsService = q.getAllBags

@@ -169,6 +169,34 @@ export function initDB() {
   // ── Profile photo ──
   try { db.exec('ALTER TABLE personnel ADD COLUMN photo_url TEXT') } catch(_) {}
 
+  // ── Fix shift_schedule: allow nullable shift_def_id (on_leave days) and dept_id ──
+  try {
+    const ss = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='shift_schedule'").get()
+    if (ss && (ss.sql.includes('shift_def_id INTEGER NOT NULL') || ss.sql.includes('dept_id INTEGER NOT NULL REFERENCES departments'))) {
+      db.exec('PRAGMA foreign_keys=OFF')
+      db.transaction(() => {
+        db.exec(`CREATE TABLE IF NOT EXISTS shift_schedule_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          staff_id INTEGER NOT NULL REFERENCES staff(id),
+          dept_id INTEGER REFERENCES departments(id),
+          shift_def_id INTEGER REFERENCES shift_definitions(id),
+          work_date TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'scheduled'
+            CHECK(status IN ('scheduled','worked','absent','on_leave','overtime')),
+          created_by INTEGER REFERENCES users(id),
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(staff_id, work_date)
+        )`)
+        db.exec(`INSERT OR IGNORE INTO shift_schedule_new SELECT * FROM shift_schedule`)
+        db.exec(`DROP TABLE shift_schedule`)
+        db.exec(`ALTER TABLE shift_schedule_new RENAME TO shift_schedule`)
+        db.exec(`CREATE INDEX IF NOT EXISTS idx_shift_schedule_date ON shift_schedule(work_date)`)
+        db.exec(`CREATE INDEX IF NOT EXISTS idx_shift_schedule_staff ON shift_schedule(staff_id)`)
+      })()
+      db.exec('PRAGMA foreign_keys=ON')
+    }
+  } catch(_) {}
+
   return db
 }
 
