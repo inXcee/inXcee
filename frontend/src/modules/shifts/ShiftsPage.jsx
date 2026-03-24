@@ -587,17 +587,147 @@ function StaffDetailPanel({ staffId, onClose }) {
           {/* ── Scrollable content area ── */}
           <div style={{ flex: 1, overflowY: 'auto', padding: '16px 24px', position: 'relative' }}>
 
-            {/* ActionForm overlay — Task 6'da implemente edilecek */}
+            {/* ActionForm overlay */}
             {activeForm && (
               <div style={{
                 position: 'absolute', inset: 0, zIndex: 10,
                 background: 'var(--bg)', padding: '20px 24px',
+                overflowY: 'auto',
                 animation: 'fadeIn .15s ease',
               }}>
-                <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', marginBottom: 12 }}>
-                  FORM: {activeForm} — Task 6'da implemente edilecek
+                {/* Form header */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                  <div style={{ fontFamily: 'var(--display)', fontSize: 14, letterSpacing: '2px' }}>
+                    {activeForm === 'edit' ? '✎ DÜZENLE' : activeForm === 'shift' ? '+ VARDİYA' : activeForm === 'leave' ? '+ İZİN' : '+ MESAİ'}
+                  </div>
+                  <button className="btn btn-ghost btn-xs" onClick={() => setActiveForm(null)} style={{ borderRadius: 8 }}>✕ İptal</button>
                 </div>
-                <button className="btn btn-ghost btn-sm" onClick={() => setActiveForm(null)}>İptal</button>
+
+                {/* Düzenle formu */}
+                {activeForm === 'edit' && (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                    {[
+                      { key: 'full_name', label: 'Ad Soyad', type: 'text' },
+                      { key: 'tc_no', label: 'TC No', type: 'text' },
+                      { key: 'phone', label: 'Telefon', type: 'text' },
+                      { key: 'email', label: 'E-posta', type: 'email' },
+                      { key: 'position', label: 'Pozisyon', type: 'text' },
+                      { key: 'hire_date', label: 'İşe Giriş', type: 'date' },
+                      { key: 'birth_date', label: 'Doğum Tarihi', type: 'date' },
+                      { key: 'salary', label: 'Maaş (₺)', type: 'number' },
+                      { key: 'emergency_contact', label: 'Acil Kişi', type: 'text' },
+                      { key: 'emergency_phone', label: 'Acil Tel', type: 'text' },
+                    ].map(f => (
+                      <div key={f.key}>
+                        <label style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: '1px', display: 'block', marginBottom: 4 }}>{f.label}</label>
+                        <input className="form-input" type={f.type} value={formData[f.key] || ''}
+                          onChange={e => setFormData(p => ({ ...p, [f.key]: e.target.value }))}
+                          style={{ width: '100%', borderRadius: 8 }} />
+                      </div>
+                    ))}
+                    <div>
+                      <label style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: '1px', display: 'block', marginBottom: 4 }}>CİNSİYET</label>
+                      <select className="form-input" value={formData.gender || ''} onChange={e => setFormData(p => ({ ...p, gender: e.target.value }))} style={{ width: '100%', borderRadius: 8 }}>
+                        <option value="male">Erkek</option>
+                        <option value="female">Kadın</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: '1px', display: 'block', marginBottom: 4 }}>KAN GRUBU</label>
+                      <select className="form-input" value={formData.blood_type || ''} onChange={e => setFormData(p => ({ ...p, blood_type: e.target.value }))} style={{ width: '100%', borderRadius: 8 }}>
+                        <option value="">—</option>
+                        {BLOOD_TYPES.map(b => <option key={b} value={b}>{b}</option>)}
+                      </select>
+                    </div>
+                    <div style={{ gridColumn: '1/-1' }}>
+                      <label style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: '1px', display: 'block', marginBottom: 4 }}>ADRES</label>
+                      <textarea className="form-input" value={formData.address || ''} onChange={e => setFormData(p => ({ ...p, address: e.target.value }))} rows={2} style={{ width: '100%', borderRadius: 8, resize: 'vertical' }} />
+                    </div>
+                    <div style={{ gridColumn: '1/-1', display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
+                      <button className="btn btn-primary" onClick={() => updateStaffMut.mutate({ ...formData, department_id: formData.department_id ? parseInt(formData.department_id) : null, salary: formData.salary ? parseFloat(formData.salary) : null })} disabled={!formData.full_name || updateStaffMut.isPending} style={{ borderRadius: 10 }}>
+                        {updateStaffMut.isPending ? '...' : 'Kaydet'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Vardiya formu */}
+                {activeForm === 'shift' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <div>
+                      <label style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: '1px', display: 'block', marginBottom: 4 }}>TARİH</label>
+                      <input className="form-input" type="date" value={formData.work_date || ''} onChange={e => setFormData(p => ({ ...p, work_date: e.target.value }))} style={{ width: '100%', borderRadius: 8 }} />
+                    </div>
+                    <div>
+                      <label style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: '1px', display: 'block', marginBottom: 4 }}>VARDİYA</label>
+                      <select className="form-input" value={formData.shift_def_id || ''} onChange={e => setFormData(p => ({ ...p, shift_def_id: e.target.value }))} style={{ width: '100%', borderRadius: 8 }}>
+                        <option value="">Vardiyasız (İzin/Yok)</option>
+                        {shiftDefs.map(d => <option key={d.id} value={d.id}>{d.name} ({d.start_hour}:00–{d.end_hour === 24 ? '00' : d.end_hour}:00)</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: '1px', display: 'block', marginBottom: 4 }}>DEPARTMAN</label>
+                      <select className="form-input" value={formData.dept_id || ''} onChange={e => setFormData(p => ({ ...p, dept_id: e.target.value }))} style={{ width: '100%', borderRadius: 8 }}>
+                        <option value="">Varsayılan</option>
+                        {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                      </select>
+                    </div>
+                    <button className="btn btn-primary" onClick={() => assignShiftMut.mutate({ ...formData, dept_id: formData.dept_id ? parseInt(formData.dept_id) : (person?.department_id || null), shift_def_id: formData.shift_def_id ? parseInt(formData.shift_def_id) : null })} disabled={!formData.work_date || assignShiftMut.isPending} style={{ borderRadius: 10 }}>
+                      {assignShiftMut.isPending ? '...' : 'Vardiya Ata'}
+                    </button>
+                  </div>
+                )}
+
+                {/* İzin formu */}
+                {activeForm === 'leave' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <div>
+                      <label style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: '1px', display: 'block', marginBottom: 4 }}>İZİN TİPİ</label>
+                      <select className="form-input" value={formData.leave_type || ''} onChange={e => setFormData(p => ({ ...p, leave_type: e.target.value }))} style={{ width: '100%', borderRadius: 8 }}>
+                        <option value="">Seçin</option>
+                        {Object.entries(LEAVE_TYPES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                      </select>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                      <div>
+                        <label style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: '1px', display: 'block', marginBottom: 4 }}>BAŞLANGIÇ</label>
+                        <input className="form-input" type="date" value={formData.start_date || ''} onChange={e => setFormData(p => ({ ...p, start_date: e.target.value }))} style={{ width: '100%', borderRadius: 8 }} />
+                      </div>
+                      <div>
+                        <label style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: '1px', display: 'block', marginBottom: 4 }}>BİTİŞ</label>
+                        <input className="form-input" type="date" value={formData.end_date || ''} onChange={e => setFormData(p => ({ ...p, end_date: e.target.value }))} style={{ width: '100%', borderRadius: 8 }} />
+                      </div>
+                    </div>
+                    <div>
+                      <label style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: '1px', display: 'block', marginBottom: 4 }}>AÇIKLAMA</label>
+                      <textarea className="form-input" value={formData.reason || ''} onChange={e => setFormData(p => ({ ...p, reason: e.target.value }))} rows={2} style={{ width: '100%', borderRadius: 8, resize: 'vertical' }} />
+                    </div>
+                    <button className="btn btn-primary" onClick={() => addLeaveMut.mutate({ staff_id: staffId, leave_type: formData.leave_type, start_date: formData.start_date, end_date: formData.end_date, reason: formData.reason || null })} disabled={!formData.leave_type || !formData.start_date || !formData.end_date || addLeaveMut.isPending} style={{ borderRadius: 10 }}>
+                      {addLeaveMut.isPending ? '...' : 'İzin Ekle'}
+                    </button>
+                  </div>
+                )}
+
+                {/* Mesai formu */}
+                {activeForm === 'overtime' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <div>
+                      <label style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: '1px', display: 'block', marginBottom: 4 }}>TARİH</label>
+                      <input className="form-input" type="date" value={formData.work_date || ''} onChange={e => setFormData(p => ({ ...p, work_date: e.target.value }))} style={{ width: '100%', borderRadius: 8 }} />
+                    </div>
+                    <div>
+                      <label style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: '1px', display: 'block', marginBottom: 4 }}>SAAT MİKTARI</label>
+                      <input className="form-input" type="number" min="0.5" max="12" step="0.5" value={formData.hours || ''} onChange={e => setFormData(p => ({ ...p, hours: e.target.value }))} style={{ width: '100%', borderRadius: 8 }} />
+                    </div>
+                    <div>
+                      <label style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: '1px', display: 'block', marginBottom: 4 }}>NEDEN</label>
+                      <textarea className="form-input" value={formData.reason || ''} onChange={e => setFormData(p => ({ ...p, reason: e.target.value }))} rows={2} style={{ width: '100%', borderRadius: 8, resize: 'vertical' }} />
+                    </div>
+                    <button className="btn btn-primary" onClick={() => addOvertimeMut.mutate({ staff_id: staffId, work_date: formData.work_date, hours: parseFloat(formData.hours), reason: formData.reason || null })} disabled={!formData.work_date || !formData.hours || addOvertimeMut.isPending} style={{ borderRadius: 10 }}>
+                      {addOvertimeMut.isPending ? '...' : 'Mesai Ekle'}
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 
