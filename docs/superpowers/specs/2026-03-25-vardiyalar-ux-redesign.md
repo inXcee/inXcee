@@ -44,7 +44,15 @@ Mevcut 8 öğeden 7'ye:
 Nav genişletildiğinde (`navExpanded = true`) bazı sekmelerde küçük sayı badge'i:
 
 - **İzinler**: bekleyen (`status='pending'`) izin talebi sayısı — kırmızı badge
-- Badge verisi: mevcut `useQuery(['leave'])` listesinden `useMemo` ile türetilir — ekstra API çağrısı yok
+- Badge verisi: ShiftsPage root'una eklenen tek bir `useQuery` ile — mevcut tab'ların içindeki query'ler ShiftsPage seviyesinde erişilemez:
+  ```js
+  const { data: pendingLeaves = [] } = useQuery({
+    queryKey: ['leaves', 'badge'],
+    queryFn: () => api.get('/shifts/leave?status=pending').then(r => r.data),
+    staleTime: 60000,
+  })
+  const pendingLeaveCount = pendingLeaves.length
+  ```
 - Badge 0 ise gizlenir
 
 ### Nav item layout (genişletilmiş)
@@ -74,7 +82,27 @@ Daraltık: sadece ikon + badge (badge köşede küçük nokta olarak)
 - Excel Import
 - + Çizelgeye Kişi Ekle
 
-Dropdown: `position: absolute`, `z-index: 100`, `background: var(--surface)`, `border: 1px solid var(--border)`, `border-radius: 10px`, `box-shadow`. Dışarı tıklayınca kapanır.
+Dropdown: `position: fixed`, buton click'inde `getBoundingClientRect()` ile konumlanır (aynı `InlinePopover` pattern'i). `ScheduleTab`'ı içeren content area `overflow: hidden` + `overflowY: auto` ancestor'lara sahip, `position: absolute` dropdown clipping riski taşır.
+
+```js
+const [toolsRect, setToolsRect] = useState(null)
+const openTools = (e) => setToolsRect(e.currentTarget.getBoundingClientRect())
+
+// Dropdown style:
+{
+  position: 'fixed',
+  top: toolsRect.bottom + 4,
+  right: window.innerWidth - toolsRect.right,
+  zIndex: 100,
+  background: 'var(--surface)',
+  border: '1px solid var(--border)',
+  borderRadius: '10px',
+  boxShadow: '0 8px 24px rgba(0,0,0,.3)',
+  minWidth: '200px',
+}
+```
+
+Dışarı tıklayınca kapanır (`mousedown` handler, `InlinePopover` ile aynı pattern).
 
 ### 3.2 Görünüm modları
 
@@ -82,7 +110,7 @@ State: `const [scheduleView, setScheduleView] = useState('weekly')` — `'weekly
 
 **HAFTALIK görünüm:** Mevcut hafta×personel grid (değiştirilmez, sadece popover fix + D&D eklenir).
 
-**GÜNLÜK görünüm:** Yeni bileşen `DailyView`. Seçili tarih o anki `weekStart`'ın ilk günü — veya günlük moda geçince `today`. Tarih seçici (← gün →) toolbar'da.
+**GÜNLÜK görünüm:** Yeni bileşen `DailyView`. Başlangıç tarihi: günlük moda geçilince `today` (bugün). Tarih seçici (← gün →) toolbar'da.
 
 ```
 [Tarih seçici: ← 25 Mart 2026 →]
@@ -101,25 +129,42 @@ State: `const [scheduleView, setScheduleView] = useState('weekly')` — `'weekly
 
 Veri kaynağı: mevcut `GET /shifts/personnel?date=YYYY-MM-DD` — `staffStatusService`. Yeni API yok.
 
+`DailyView` gruplama mantığı: `getStaffWithShiftStatus` şu kolonları döndürür: `shift_status` (shift_schedule.status), `leave_status` (leave_requests.status — sadece approved olanlar), `shift_name`, `dept_name`.
+
+Gruplama kuralları (her personel kaydı için):
+- `leave_status === 'approved'` → **İzinde** (approved leave_request var, tarih aralığında)
+- `shift_status === 'on_leave'` → **İzinde** (shift_schedule'da on_leave olarak işaretli)
+- `shift_status === 'scheduled'` veya `'overtime'` → shift_name'e göre alt grup (Sabah/Öğlen/Gece...)
+- `shift_status === null && leave_status === null` → **Yokta** (hiç kayıt yok)
+
+Her departman grubu kendi kartında gösterilir (`dept_name`'e göre). Kart içinde alt gruplar: her shift_name için kişi sayısı + progress bar, İzinde ve Yokta bölümleri.
+
 ### 3.3 Popover Fix (kritik bug)
 
-**Problem:** `InlinePopover` bileşeni (`ShiftsPage.jsx` ~satır 228) `rect` prop'una göre konumlanıyor. Ancak `rect` `getBoundingClientRect()` döndürüyor — bu değerler viewport-relative. `position: absolute` ile kullanılınca scroll ile kayıyor.
+**Gerçek kök neden:** `SidePanel` ve `InlinePopover` zaten `position: fixed` kullanıyor — bu doğru. Asıl sorun: `ScheduleTab` `<div className="fade-up">` döndürüyor. `index.css`'de `@keyframes fadeUp` şu anda:
 
-**Fix:** `InlinePopover`'ı `position: fixed` yapılır. Zaten `rect.top/left` viewport-relative olduğundan `position: fixed` ile doğru konumlanır.
-
-Ek: Viewport kenar kontrolü — eğer `rect.top > window.innerHeight / 2` ise popover `top: rect.top - popoverHeight` (yukarı açılır), değilse `top: rect.bottom` (aşağı açılır).
-
-```js
-const openUpward = rect.top > window.innerHeight / 2
-const style = {
-  position: 'fixed',
-  left: Math.min(rect.left, window.innerWidth - 280),
-  top: openUpward ? rect.top - estimatedHeight : rect.bottom + 4,
-  zIndex: 200,
-}
+```css
+@keyframes fadeUp { from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)} }
+.fade-up { animation: fadeUp .3s ease both; }
 ```
 
-`estimatedHeight`: popover içeriğine göre `~240px` sabit.
+`animation-fill-mode: both` — animasyon bitince `to` keyframe'indeki değerler kalıcı olarak uygulanır. `to` keyframe'inde `transform: translateY(0)` var. CSS spec'e göre **herhangi bir `transform` değeri** (kimlik transform dahil) o elementi `position: fixed` child'lar için "containing block" yapar. Sonuç: `SidePanel` viewport yerine `.fade-up` div'e göre konumlanır. Kullanıcı sayfayı scroll ettiğinde containing block da kayar, panel off-screen gider (yukarı).
+
+**Fix:** `index.css`'deki üç `@keyframes` kuralında `to` keyframe'i `transform: none` olarak güncellenir:
+
+```css
+/* ÖNCE */
+@keyframes fadeUp   { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+@keyframes fadeIn   { from{opacity:0;transform:translateY(-4px)} to{opacity:1;transform:translateY(0)} }
+@keyframes slideInRight { from{transform:translateX(100%)} to{transform:translateX(0)} }
+
+/* SONRA */
+@keyframes fadeUp   { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:none} }
+@keyframes fadeIn   { from{opacity:0;transform:translateY(-4px)} to{opacity:1;transform:none} }
+@keyframes slideInRight { from{transform:translateX(100%)} to{transform:none} }
+```
+
+Üç kural da `animation-fill-mode: both/forwards` ile kullanılıyor; `to` keyframe'inde `transform: TranslateY/X(0)` kalması her biri için aynı containing block sorununu yaratıyor. `transform: none` ile artık containing block oluşturulmaz. `SidePanel` / `InlinePopover` bileşenlerinde kod değişikliği gerekmez.
 
 ### 3.4 Drag & Drop vardiya ataması
 
@@ -133,8 +178,12 @@ Her item `draggable={true}`, `onDragStart` ile `shiftDefId` set edilir (HTML5 Da
 
 Çizelge hücreleri `onDragOver` + `onDrop`:
 - `onDragOver`: `e.preventDefault()`, hücreye highlight class ekler
-- `onDrop`: `bulkAssignService` çağrısı (mevcut API) — `{ staff_id, work_date, shift_def_id, status: 'scheduled' }`
-- Drop sonrası `['schedule', weekStart, deptFilter]` query invalidate
+- `onDrop`: mevcut `assignCell` mutation kullanılır (`ScheduleTab` içinde tanımlı, satır ~1401):
+  - `assignCell.mutate({ staffId, deptId, shiftDefId, date, status: 'scheduled' })`
+  - `assignCell.isPending` kontrolü: pending iken aynı hücreye drop kabul edilmez (`onDragOver`'da `e.preventDefault()` çağrılmaz)
+  - `assignCell` zaten `onSuccess`'te `['schedule']` query invalidate ediyor — ek invalidate gerekmez
+  - `onError` handler `assignCell` tanımına eklenir: kullanıcıya inline hata gösterilir (mevcut toast/notification mekanizması)
+  - Drop sırasında hücre `opacity: 0.5, cursor: wait` görünür
 
 Kısıtlar:
 - Sadece `canEdit` kullanıcılar için aktif (manager/supervisor)
@@ -142,9 +191,7 @@ Kısıtlar:
 
 ### 3.5 İsim → Profil (çizelgeden)
 
-Mevcut: `ScheduleTab` personel adına tıklanınca `onPersonClick(staffId)` çağrılıyor — fakat bu şu an sadece `StaffTab`'da var, `ScheduleTab`'da yok.
-
-**Fix:** `ScheduleTab`'daki personel adı (`<td>` sticky sol kolon) onClick'ine `() => onPersonClick(row.id)` eklenir. Mevcut `onPersonClick` prop zaten `ShiftsPage` level'dan geliyor.
+**Durum: Zaten uygulanmış.** `ScheduleTab`'daki sticky sol kolon (satır ~1776) zaten `onClick={() => onPersonClick?.(person.id)}` içeriyor. Implementasyon gerekmez — doğrulama yeterli.
 
 ---
 
@@ -190,6 +237,9 @@ Backend değişikliği yok.
 - Drag & Drop: HTML5 native API (harici kütüphane yok)
 - `DailyView` için yeni API çağrısı yok — `GET /shifts/personnel` kullanılır
 - Takas sekmesi backend'de tutulur, sadece `NAV_ITEMS` dizisinden çıkarılır
-- Badge verisi client-side hesaplanır — ekstra endpoint yok
+- Badge verisi için ShiftsPage root'una `useQuery(['leaves', 'badge'])` eklenir — küçük bir API çağrısı, yalnızca pending kayıtlar
 - Mobile'da D&D devre dışı
-- `InlinePopover` refactor: `position: absolute → fixed`, viewport kenar kontrolü eklenir
+- Popover fix: `index.css`'de `fadeUp`, `fadeIn`, `slideInRight` keyframes'inin `to` keyframe'i `transform: none` olur — `SidePanel`/`InlinePopover` bileşen kodunda değişiklik yok
+- D&D drop işlemi mevcut `assignCell` mutation kullanır; `onError` handler + `isPending` guard eklenir
+- Araçlar dropdown'u: `position: fixed` + `getBoundingClientRect()` (overflow clipping'den kaçınmak için)
+- İsim → profil geçişi zaten ScheduleTab'da uygulanmış — doğrulama yeterli
