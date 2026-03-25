@@ -1350,6 +1350,8 @@ function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
   const [excelModal, setExcelModal] = useState(false)
   const [excelPreview, setExcelPreview] = useState(null) // { matched, unmatched, entries }
   const [excelError, setExcelError] = useState('')
+  const [dragShiftId, setDragShiftId] = useState(null)    // drag'deki shiftDefId
+  const [dragOverCell, setDragOverCell] = useState(null)  // 'staffId-date' format
 
   const weekDays = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart])
   const weekEnd = weekDays[6]
@@ -1407,7 +1409,11 @@ function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
       api.post('/shifts/schedule', {
         entries: [{ staff_id: staffId, dept_id: deptId, shift_def_id: shiftDefId || null, work_date: date, status: status || 'scheduled' }]
       }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['schedule'] }); setCellPopover(null) }
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['schedule'] }); setCellPopover(null) },
+    onError: (err) => {
+      const msg = err?.response?.data?.error || 'Vardiya atanamadı'
+      alert(msg)
+    },
   })
 
   const deleteShift = useMutation({
@@ -1751,6 +1757,57 @@ function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
         )}
       </div>
 
+      {/* ── Shift palette (D&D) ── */}
+      {scheduleView === 'weekly' && canEdit && !('ontouchstart' in window) && (
+        <div style={{
+          display: 'flex', gap: '8px', marginBottom: '12px',
+          padding: '8px 12px', background: 'var(--surface2)',
+          borderRadius: '8px', border: '1px solid var(--border)',
+          alignItems: 'center',
+        }}>
+          <span style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '1px', marginRight: '4px' }}>
+            SÜRÜKLE:
+          </span>
+          {shiftDefs.map(s => {
+            const sc = shiftColor(s.color_class)
+            return (
+              <div
+                key={s.id}
+                draggable
+                onDragStart={e => {
+                  e.dataTransfer.setData('shiftDefId', String(s.id))
+                  setDragShiftId(s.id)
+                }}
+                onDragEnd={() => setDragShiftId(null)}
+                style={{
+                  padding: '5px 12px', borderRadius: '6px',
+                  background: sc.bg, color: sc.text,
+                  fontFamily: 'var(--mono)', fontSize: '10px', fontWeight: 700,
+                  cursor: 'grab', userSelect: 'none',
+                  border: `1px solid ${sc.text}33`,
+                }}
+              >
+                {s.name} {s.start_hour}–{s.end_hour === 24 ? '00' : s.end_hour}
+              </div>
+            )
+          })}
+          <div
+            draggable
+            onDragStart={e => { e.dataTransfer.setData('shiftDefId', 'delete'); setDragShiftId('delete') }}
+            onDragEnd={() => setDragShiftId(null)}
+            style={{
+              padding: '5px 12px', borderRadius: '6px',
+              background: 'rgba(231,76,60,.12)', color: 'var(--red)',
+              fontFamily: 'var(--mono)', fontSize: '10px', fontWeight: 700,
+              cursor: 'grab', userSelect: 'none',
+              border: '1px solid rgba(231,76,60,.3)',
+            }}
+          >
+            ✕ Sil
+          </div>
+        </div>
+      )}
+
       {/* ── Schedule grid ── */}
       {isLoading ? (
         <div className="empty-state"><div className="empty-sub">Yükleniyor...</div></div>
@@ -1871,11 +1928,36 @@ function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
                       }
 
                       return (
-                        <td key={d} style={{
-                          padding: '6px 4px', textAlign: 'center',
-                          borderRight: i < 6 ? '1px solid var(--border)' : 'none',
-                          background: isToday ? 'rgba(59,140,240,.04)' : sun ? 'rgba(240,165,0,.03)' : 'transparent',
-                        }}>
+                        <td key={d}
+                          onDragOver={e => {
+                            if (!canEdit || !dragShiftId || 'ontouchstart' in window) return
+                            if (assignCell.isPending) return
+                            e.preventDefault()
+                            setDragOverCell(`${person.id}-${d}`)
+                          }}
+                          onDragLeave={() => setDragOverCell(null)}
+                          onDrop={e => {
+                            e.preventDefault()
+                            setDragOverCell(null)
+                            if (!canEdit || assignCell.isPending) return
+                            const rawId = e.dataTransfer.getData('shiftDefId')
+                            setDragShiftId(null)
+                            if (rawId === 'delete') {
+                              deleteShift.mutate({ staffId: person.id, date: d })
+                            } else {
+                              const shiftDefId = parseInt(rawId)
+                              assignCell.mutate({ staffId: person.id, deptId: person.dept_id, shiftDefId, date: d, status: 'scheduled' })
+                            }
+                          }}
+                          style={{
+                            padding: '6px 4px', textAlign: 'center',
+                            borderRight: i < 6 ? '1px solid var(--border)' : 'none',
+                            background: dragOverCell === `${person.id}-${d}`
+                              ? 'rgba(240,165,0,.15)'
+                              : isToday ? 'rgba(59,140,240,.04)' : sun ? 'rgba(240,165,0,.03)' : 'transparent',
+                            transition: 'background .1s',
+                            outline: dragOverCell === `${person.id}-${d}` ? '2px dashed rgba(240,165,0,.6)' : 'none',
+                          }}>
                           <button
                             onClick={e => openCellPopover(e, person, d)}
                             disabled={!canEdit}
