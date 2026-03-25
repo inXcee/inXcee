@@ -3,6 +3,7 @@ import request from 'supertest'
 import app from '../../app.js'
 import { initDB } from '../../shared/db/index.js'
 import { seedDev } from '../../shared/db/seed.js'
+import { calcTax, workDaysInMonth } from './service.js'
 
 let managerToken, shiftToken
 beforeAll(async () => {
@@ -228,5 +229,48 @@ describe('Swap requests', () => {
     const res = await request(app).get('/api/shifts/swaps').set('Authorization', `Bearer ${shiftToken}`)
     expect(res.status).toBe(200)
     expect(Array.isArray(res.body)).toBe(true)
+  })
+})
+
+describe('calcTax — Turkish progressive income tax', () => {
+  it('returns 0 for 0 gross', () => {
+    expect(calcTax(0)).toBe(0)
+  })
+
+  it('taxes 110,000 TL entirely at 15%', () => {
+    expect(calcTax(110_000)).toBe(16_500)
+  })
+
+  it('taxes 230,000 TL in two brackets', () => {
+    // 110,000 × 0.15 = 16,500; 120,000 × 0.20 = 24,000; total = 40,500
+    expect(calcTax(230_000)).toBe(40_500)
+  })
+
+  it('calculates marginal tax for 150,000 TL', () => {
+    // 110,000 × 0.15 = 16,500; 40,000 × 0.20 = 8,000; total = 24,500
+    expect(calcTax(150_000)).toBe(24_500)
+  })
+
+  it('handles amounts above top bracket', () => {
+    // 110k×0.15 + 120k×0.20 + 640k×0.27 + 2,130k×0.35 + 500k×0.40
+    // = 16,500 + 24,000 + 172,800 + 745,500 + 200,000 = 1,158,800
+    expect(calcTax(3_500_000)).toBe(1_158_800)
+  })
+})
+
+describe('workDaysInMonth', () => {
+  it('March 2024 has 26 non-Sunday days', () => {
+    // March 2024: 31 days, 5 Sundays (3,10,17,24,31) → 26
+    expect(workDaysInMonth(2024, 3)).toBe(26)
+  })
+
+  it('February 2024 (leap) has 25 non-Sunday days', () => {
+    // Feb 2024: 29 days, 4 Sundays (4,11,18,25) → 25
+    expect(workDaysInMonth(2024, 2)).toBe(25)
+  })
+
+  it('January 2024 has 27 non-Sunday days', () => {
+    // Jan 2024: 31 days, 4 Sundays (7,14,21,28) → 27
+    expect(workDaysInMonth(2024, 1)).toBe(27)
   })
 })

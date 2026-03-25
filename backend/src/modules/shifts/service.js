@@ -12,6 +12,41 @@ import {
   getStaffList, getStaffById, createStaff, updateStaff, deleteStaff
 } from './queries.js'
 
+// ── Tax helpers (2024 brackets — update annually per GIB tebliği) ──
+// TODO: Her yıl GİB tebliğine göre güncelle
+const TAX_BRACKETS = [
+  { limit: 110_000,   rate: 0.15 },
+  { limit: 230_000,   rate: 0.20 },
+  { limit: 870_000,   rate: 0.27 },
+  { limit: 3_000_000, rate: 0.35 },
+  { limit: Infinity,  rate: 0.40 },
+]
+
+export function calcTax(ytdGross) {
+  let tax = 0
+  let prev = 0
+  for (const { limit, rate } of TAX_BRACKETS) {
+    if (ytdGross <= prev) break
+    const slice = Math.min(ytdGross, limit) - prev
+    tax += slice * rate
+    prev = limit
+  }
+  return Math.round(tax * 100) / 100
+}
+
+export function workDaysInMonth(year, month) {
+  const days = new Date(year, month, 0).getDate()
+  let count = 0
+  for (let d = 1; d <= days; d++) {
+    if (new Date(year, month - 1, d).getDay() !== 0) count++
+  }
+  return count
+}
+
+function round2(x) {
+  return Math.round(x * 100) / 100
+}
+
 export function departmentsService() {
   return getDepartments()
 }
