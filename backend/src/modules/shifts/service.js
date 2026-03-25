@@ -22,6 +22,10 @@ const TAX_BRACKETS = [
   { limit: Infinity,  rate: 0.40 },
 ]
 
+function round2(x) {
+  return Math.round(x * 100) / 100
+}
+
 export function calcTax(ytdGross) {
   let tax = 0
   let prev = 0
@@ -31,9 +35,12 @@ export function calcTax(ytdGross) {
     tax += slice * rate
     prev = limit
   }
-  return Math.round(tax * 100) / 100
+  return round2(tax)
 }
 
+// Non-Sunday days — excludes only Sundays.
+// Turkish İş Kanunu allows 6-day work weeks; Saturdays may be worked.
+// Used for monthly payroll proration (attend_rate calculation).
 export function workDaysInMonth(year, month) {
   const days = new Date(year, month, 0).getDate()
   let count = 0
@@ -41,10 +48,6 @@ export function workDaysInMonth(year, month) {
     if (new Date(year, month - 1, d).getDay() !== 0) count++
   }
   return count
-}
-
-function round2(x) {
-  return Math.round(x * 100) / 100
 }
 
 export function departmentsService() {
