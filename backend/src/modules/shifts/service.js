@@ -282,6 +282,54 @@ export function staffDetailService(staffId) {
   return getStaffDetail(staffId)
 }
 
+export function puantajCsvService(month, deptId) {
+  if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+    throw Object.assign(new Error('month parametresi YYYY-MM formatında gereklidir'), { statusCode: 400 })
+  }
+  const rows = puantajService(month, deptId)
+
+  const headers = [
+    'TC No', 'Ad Soyad', 'Departman',
+    'İş Günü', 'Çalıştı', 'İzin(Yıllık)', 'İzin(Acil)', 'İzin(Hastalık)', 'İzin(Diğer)',
+    'Devamsız', 'Mesai(s)',
+    'Brüt', 'SGK İşçi', 'İşsizlik İşçi', 'Gelir Vergisi', 'Damga Vergisi', 'Net',
+    'İşveren SGK', 'İşveren İşsizlik', 'Toplam Maliyet',
+  ]
+
+  const escape = (v) => {
+    const s = v == null ? '—' : String(v)
+    return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s
+  }
+
+  const lines = [
+    '\uFEFF' + headers.join(','),
+    ...rows.map(r => [
+      r.tc_no || '—',
+      r.full_name,
+      r.dept_name || '—',
+      r.work_days_in_month,
+      r.worked_days,
+      r.annual_leave_days,
+      r.emergency_leave_days,
+      r.sick_leave_days,
+      r.other_leave_days,
+      r.absent_days,
+      r.overtime_hours,
+      r.gross,
+      r.ssi_worker,
+      r.unemployment_worker,
+      r.income_tax,
+      r.stamp_tax,
+      r.net,
+      r.ssi_employer,
+      r.unemployment_employer,
+      r.employer_total_cost,
+    ].map(escape).join(',')),
+  ]
+
+  return lines.join('\r\n')
+}
+
 export function puantajService(month, deptId) {
   if (!month || !/^\d{4}-\d{2}$/.test(month)) {
     throw Object.assign(new Error('month parametresi YYYY-MM formatında gereklidir'), { statusCode: 400 })

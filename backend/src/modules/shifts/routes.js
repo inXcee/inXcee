@@ -10,7 +10,8 @@ import {
   cancelLeaveService, createSwapService, swapListService, approveSwapService, rejectSwapService,
   copyWeekService, rotationService, searchStaffService, deleteScheduleService,
   staffDetailService,
-  staffListService, staffGetService, staffCreateService, staffUpdateService, staffDeleteService
+  staffListService, staffGetService, staffCreateService, staffUpdateService, staffDeleteService,
+  puantajCsvService
 } from './service.js'
 
 export const shiftsRouter = Router()
@@ -200,6 +201,20 @@ shiftsRouter.get('/puantaj', ...allStaff, (req, res) => {
     const { month, dept_id } = req.query
     if (!month) return res.status(400).json({ error: 'month parametresi YYYY-MM formatında gereklidir' })
     res.json(puantajService(month, dept_id || null))
+  } catch (e) {
+    res.status(e.statusCode || 400).json({ error: e.message })
+  }
+})
+
+// ── Puantaj CSV Export (must be before /:staffId routes) ──
+shiftsRouter.get('/puantaj/export/csv', ...allStaff, (req, res) => {
+  try {
+    const { month, dept_id } = req.query
+    if (!month) return res.status(400).json({ error: 'month parametresi YYYY-MM formatında gereklidir' })
+    const csv = puantajCsvService(month, dept_id || null)
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8')
+    res.setHeader('Content-Disposition', `attachment; filename="puantaj-${month}.csv"`)
+    res.send(csv)
   } catch (e) {
     res.status(e.statusCode || 400).json({ error: e.message })
   }

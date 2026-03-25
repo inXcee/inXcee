@@ -330,6 +330,38 @@ describe('Enhanced GET /shifts/puantaj', () => {
   })
 })
 
+describe('GET /shifts/puantaj/export/csv', () => {
+  it('returns 400 without month', async () => {
+    const res = await request(app)
+      .get('/api/shifts/puantaj/export/csv')
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(res.status).toBe(400)
+  })
+
+  it('returns CSV with correct content-type', async () => {
+    const res = await request(app)
+      .get('/api/shifts/puantaj/export/csv?month=2026-03')
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(res.status).toBe(200)
+    expect(res.headers['content-type']).toMatch(/text\/csv/)
+    expect(res.headers['content-disposition']).toMatch(/puantaj-2026-03\.csv/)
+  })
+
+  it('CSV starts with UTF-8 BOM and correct header', async () => {
+    const res = await request(app)
+      .get('/api/shifts/puantaj/export/csv?month=2026-03')
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(res.status).toBe(200)
+    // BOM: \uFEFF
+    expect(res.text.startsWith('\uFEFF')).toBe(true)
+    const firstLine = res.text.replace('\uFEFF', '').split('\n')[0]
+    expect(firstLine).toContain('TC No')
+    expect(firstLine).toContain('Ad Soyad')
+    expect(firstLine).toContain('Brüt')
+    expect(firstLine).toContain('Net')
+  })
+})
+
 describe('getYtdGross', () => {
   it('returns 0 for January (no prior months)', async () => {
     // Any staff_id, month=1 means no prior months → ytdGross=0
