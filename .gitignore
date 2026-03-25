@@ -10,3 +10,4 @@ uploads/
 .claude/
 .env*
 .DS_Store
+.worktrees/
