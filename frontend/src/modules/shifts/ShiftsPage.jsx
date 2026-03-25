@@ -3376,7 +3376,6 @@ const NAV_ITEMS = [
   { id: 'leave',       icon: '🏖️', label: 'İzinler' },
   { id: 'overtime',    icon: '⏰', label: 'Mesai' },
   { id: 'puantaj',     icon: '📊', label: 'Puantaj' },
-  { id: 'swap',        icon: '🔄', label: 'Takas' },
   { id: 'departments', icon: '🏢', label: 'Bölümler' },
   { id: 'settings',    icon: '⚙️', label: 'Ayarlar' },
 ]
@@ -3395,6 +3394,13 @@ export default function ShiftsPage() {
     queryKey: ['shift-defs'],
     queryFn: () => api.get('/shifts/definitions').then(r => r.data),
   })
+
+  const { data: pendingLeaves = [] } = useQuery({
+    queryKey: ['leaves', 'badge'],
+    queryFn: () => api.get('/shifts/leave?status=pending').then(r => r.data),
+    staleTime: 60000,
+  })
+  const pendingLeaveCount = pendingLeaves.length
 
   const handlePersonClick = useCallback((id) => {
     setSelectedStaff(id)
@@ -3446,6 +3452,7 @@ export default function ShiftsPage() {
         <div style={{ flex: 1, padding: '8px 0', overflowY: 'auto' }}>
           {NAV_ITEMS.map(item => {
             const active = activeTab === item.id
+            const badge = item.id === 'leave' && pendingLeaveCount > 0 ? pendingLeaveCount : 0
             return (
               <button
                 key={item.id}
@@ -3462,18 +3469,40 @@ export default function ShiftsPage() {
                   justifyContent: navExpanded ? 'flex-start' : 'center',
                   gap: '10px',
                   transition: 'all .15s',
+                  position: 'relative',
                 }}
                 title={item.label}
               >
-                <span style={{ fontSize: '18px', flexShrink: 0, filter: active ? 'drop-shadow(0 0 6px var(--accent))' : 'none' }}>{item.icon}</span>
+                {/* İkon + collapsed badge (küçük nokta) */}
+                <span style={{ fontSize: '18px', flexShrink: 0, filter: active ? 'drop-shadow(0 0 6px var(--accent))' : 'none', position: 'relative' }}>
+                  {item.icon}
+                  {badge > 0 && !navExpanded && (
+                    <span style={{
+                      position: 'absolute', top: '-2px', right: '-4px',
+                      width: '8px', height: '8px', borderRadius: '50%',
+                      background: 'var(--red)', border: '1px solid var(--bg)',
+                    }} />
+                  )}
+                </span>
                 {navExpanded && (
                   <span style={{
                     fontFamily: 'var(--mono)', fontSize: '10px', letterSpacing: '1px',
                     color: active ? 'var(--accent)' : 'var(--text2)',
                     fontWeight: active ? 700 : 400,
-                    whiteSpace: 'nowrap',
+                    whiteSpace: 'nowrap', flex: 1,
                   }}>
                     {item.label.toUpperCase()}
+                  </span>
+                )}
+                {/* Genişletilmiş badge (sayı) */}
+                {badge > 0 && navExpanded && (
+                  <span style={{
+                    fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 600,
+                    background: 'var(--red)', color: '#fff',
+                    borderRadius: '999px', padding: '1px 5px',
+                    marginRight: '8px', flexShrink: 0,
+                  }}>
+                    {badge}
                   </span>
                 )}
               </button>
