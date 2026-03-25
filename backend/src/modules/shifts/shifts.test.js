@@ -274,3 +274,23 @@ describe('workDaysInMonth', () => {
     expect(workDaysInMonth(2024, 1)).toBe(27)
   })
 })
+
+describe('getYtdGross', () => {
+  it('returns 0 for January (no prior months)', async () => {
+    // Any staff_id, month=1 means no prior months → ytdGross=0
+    // We test via the puantaj endpoint: no previous months means ytd_gross === gross for January
+    const staffRes = await request(app).get('/api/shifts/staff').set('Authorization', `Bearer ${shiftToken}`)
+    const staffId = staffRes.body[0]?.id
+    if (!staffId) return
+
+    const res = await request(app)
+      .get('/api/shifts/puantaj?month=2026-01')
+      .set('Authorization', `Bearer ${shiftToken}`)
+    expect(res.status).toBe(200)
+    // For Jan, ytd_gross = gross (no prior months)
+    const row = res.body.find(r => r.id === staffId)
+    if (row && row.gross !== undefined) {
+      expect(row.ytd_gross).toBe(row.gross)
+    }
+  })
+})

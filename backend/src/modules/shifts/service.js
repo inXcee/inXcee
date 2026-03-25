@@ -11,6 +11,7 @@ import {
   getStaffDetail,
   getStaffList, getStaffById, createStaff, updateStaff, deleteStaff
 } from './queries.js'
+import { getDB } from '../../shared/db/index.js'
 
 // ── Tax helpers (2024 brackets — update annually per GIB tebliği) ──
 // TODO: Her yıl GİB tebliğine göre güncelle
@@ -24,6 +25,46 @@ const TAX_BRACKETS = [
 
 function round2(x) {
   return Math.round(x * 100) / 100
+}
+
+function getYtdGross(db, staffId, year, month) {
+  // month is 1-based. Returns gross from Jan 1 to (month-01) exclusive.
+  // Must mirror puantajService pay logic: only 'worked'/'overtime' days + annual/emergency leave are paid.
+  if (month <= 1) return 0
+  const janStart = `${year}-01-01`
+  const monthStart = `${year}-${String(month).padStart(2, '0')}-01`
+
+  const staff = db.prepare('SELECT salary FROM staff WHERE id = ?').get(staffId)
+  const salary = staff?.salary || 0
+  if (salary === 0) return 0
+
+  const dailyRate = salary / 30
+
+  // Worked days (worked + overtime statuses only — on_leave excluded here)
+  const sch = db.prepare(`
+    SELECT COALESCE(COUNT(CASE WHEN status IN ('worked','overtime') THEN 1 END), 0) as worked_days
+    FROM shift_schedule
+    WHERE staff_id = ? AND work_date >= ? AND work_date < ?
+  `).get(staffId, janStart, monthStart)
+
+  // Paid leave days: only annual + emergency (matching puantajService leave_pay rule)
+  const lv = db.prepare(`
+    SELECT COALESCE(SUM(CASE WHEN leave_type IN ('annual','emergency') THEN total_days ELSE 0 END), 0) as paid_leave_days
+    FROM leave_requests
+    WHERE staff_id = ? AND status = 'approved'
+      AND start_date >= ? AND start_date < ?
+  `).get(staffId, janStart, monthStart)
+
+  const ot = db.prepare(`
+    SELECT COALESCE(SUM(hours), 0) as hours
+    FROM overtime_records
+    WHERE staff_id = ? AND work_date >= ? AND work_date < ?
+  `).get(staffId, janStart, monthStart)
+
+  return (
+    dailyRate * ((sch?.worked_days || 0) + (lv?.paid_leave_days || 0)) +
+    (dailyRate / 8) * 1.5 * (ot?.hours || 0)
+  )
 }
 
 export function calcTax(ytdGross) {
