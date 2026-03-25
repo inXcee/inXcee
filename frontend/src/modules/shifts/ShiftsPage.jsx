@@ -2138,19 +2138,27 @@ function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
                             onClick={e => openCellPopover(e, person, d)}
                             disabled={!canEdit}
                             style={{
-                              width: '100%', minHeight: pillLabel ? '54px' : '48px', padding: '6px 4px',
+                              width: '100%', minHeight: pillLabel ? '58px' : '54px', padding: '6px 4px',
                               borderRadius: '8px', border: pillLabel ? 'none' : `1px dashed ${canEdit ? 'var(--border)' : 'transparent'}`,
                               cursor: canEdit ? 'pointer' : 'default',
                               background: pillBg,
                               display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '2px',
                               transition: 'filter .15s, transform .1s',
                             }}
-                            onMouseEnter={e => { if (canEdit) e.currentTarget.style.filter = 'brightness(1.15)' }}
-                            onMouseLeave={e => { e.currentTarget.style.filter = 'none' }}
+                            onMouseEnter={e => {
+                              if (canEdit) {
+                                e.currentTarget.style.filter = 'brightness(1.15)'
+                                if (!pillLabel) e.currentTarget.style.borderStyle = 'solid'
+                              }
+                            }}
+                            onMouseLeave={e => {
+                              e.currentTarget.style.filter = 'none'
+                              if (!pillLabel) e.currentTarget.style.borderStyle = 'dashed'
+                            }}
                           >
                             {pillLabel ? (
                               <>
-                                <span style={{ fontFamily: 'var(--display)', fontSize: '11px', letterSpacing: '1px', color: pillColor, fontWeight: 700 }}>
+                                <span style={{ fontFamily: 'var(--mono)', fontSize: '10px', letterSpacing: '0.5px', color: pillColor, fontWeight: 700 }}>
                                   {pillLabel}
                                 </span>
                                 {pillSub && (
