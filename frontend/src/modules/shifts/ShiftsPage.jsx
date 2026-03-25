@@ -1320,6 +1320,170 @@ function StaffTab({ departments, onPersonClick }) {
   )
 }
 
+// ─── Daily View ───────────────────────────────────────────────────────────────
+function DailyView({ departments, date, onDateChange }) {
+  const { data: rows = [], isLoading } = useQuery({
+    queryKey: ['personnel-daily', date],
+    queryFn: () => api.get(`/shifts/personnel?date=${date}`).then(r => r.data),
+    staleTime: 30000,
+  })
+
+  // Group by department, then by shift/status
+  const deptGroups = useMemo(() => {
+    const map = new Map()
+    rows.forEach(row => {
+      const deptName = row.dept_name || 'Departmansız'
+      const deptColor = row.dept_color || 'gray'
+      if (!map.has(deptName)) {
+        map.set(deptName, { deptName, deptColor, shifts: new Map(), leave: [], absent: [] })
+      }
+      const g = map.get(deptName)
+      if (row.leave_status === 'approved') {
+        g.leave.push(row)
+      } else if (row.shift_status === 'on_leave') {
+        g.leave.push(row)
+      } else if (row.shift_status === 'scheduled' || row.shift_status === 'overtime') {
+        const shiftKey = row.shift_name || 'Bilinmiyor'
+        if (!g.shifts.has(shiftKey)) {
+          g.shifts.set(shiftKey, { name: shiftKey, start: row.start_hour, end: row.end_hour, color: row.shift_color, staff: [] })
+        }
+        g.shifts.get(shiftKey).staff.push(row)
+      } else {
+        g.absent.push(row)
+      }
+    })
+    return Array.from(map.values())
+  }, [rows])
+
+  // shiftColor2: DailyView'a özel. Module-level shiftColor() uses different return format.
+  const shiftColor2 = (cls) => {
+    const map = { 'shift-blue': { bg: 'rgba(52,152,219,.18)', text: '#3498db' }, 'shift-teal': { bg: 'rgba(26,188,156,.18)', text: '#1abc9c' }, 'shift-amber': { bg: 'rgba(240,165,0,.18)', text: '#f0a500' }, 'shift-red': { bg: 'rgba(231,76,60,.18)', text: '#e74c3c' }, 'shift-purple': { bg: 'rgba(155,89,182,.18)', text: '#9b59b6' } }
+    return map[cls] || { bg: 'var(--surface2)', text: 'var(--text2)' }
+  }
+
+  const deptColorMap = { 'dept-blue': 'var(--blue)', 'dept-teal': 'var(--teal)', 'dept-amber': 'var(--accent)', 'dept-red': 'var(--red)', 'dept-purple': '#9b59b6', 'dept-green': 'var(--green)' }
+
+  return (
+    <div>
+      {/* Tarih seçici */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px' }}>
+        <button onClick={() => onDateChange(addDays(date, -1))} style={{
+          width: '32px', height: '32px', borderRadius: '50%',
+          background: 'var(--surface2)', border: '1px solid var(--border)',
+          cursor: 'pointer', fontSize: '14px', color: 'var(--text2)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>‹</button>
+        <div style={{
+          fontFamily: 'var(--display)', fontSize: '16px', letterSpacing: '2px', color: 'var(--text)',
+          background: 'var(--surface2)', borderRadius: '10px', padding: '6px 20px',
+        }}>
+          {new Date(date).toLocaleDateString('tr-TR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+        </div>
+        <button onClick={() => onDateChange(addDays(date, 1))} style={{
+          width: '32px', height: '32px', borderRadius: '50%',
+          background: 'var(--surface2)', border: '1px solid var(--border)',
+          cursor: 'pointer', fontSize: '14px', color: 'var(--text2)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>›</button>
+        {date !== (typeof todayStr === 'function' ? todayStr() : todayStr) && (
+          <button onClick={() => onDateChange(typeof todayStr === 'function' ? todayStr() : todayStr)} style={{
+            padding: '6px 12px', borderRadius: '8px', fontSize: '11px',
+            background: 'rgba(240,165,0,.15)', border: '1px solid rgba(240,165,0,.4)',
+            cursor: 'pointer', color: 'var(--accent)', fontFamily: 'var(--mono)',
+          }}>Bugün</button>
+        )}
+      </div>
+
+      {isLoading && <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: '11px' }}>YÜKLENİYOR...</div>}
+
+      {/* Dept cards */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        {deptGroups.map(g => {
+          const totalStaff = Array.from(g.shifts.values()).reduce((s, sh) => s + sh.staff.length, 0) + g.leave.length + g.absent.length
+          const accentColor = deptColorMap[g.deptColor] || 'var(--accent)'
+          return (
+            <div key={g.deptName} style={{
+              borderRadius: '14px', border: '1px solid var(--border)',
+              background: 'var(--surface)', overflow: 'hidden',
+            }}>
+              {/* Card header */}
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: '12px',
+                padding: '12px 16px',
+                borderLeft: `4px solid ${accentColor}`,
+                background: 'var(--surface2)',
+              }}>
+                <div style={{ fontFamily: 'var(--display)', fontSize: '13px', letterSpacing: '2px', color: 'var(--text)', flex: 1 }}>
+                  {g.deptName.toUpperCase()}
+                </div>
+                <div style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)' }}>
+                  {totalStaff} kişi
+                </div>
+              </div>
+
+              {/* Shift groups */}
+              <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {Array.from(g.shifts.values()).map(sh => {
+                  const sc = shiftColor2(sh.color)
+                  const pct = totalStaff > 0 ? (sh.staff.length / totalStaff) * 100 : 0
+                  return (
+                    <div key={sh.name}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '3px' }}>
+                        <span style={{
+                          padding: '2px 8px', borderRadius: '4px',
+                          background: sc.bg, color: sc.text,
+                          fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 700,
+                        }}>{sh.name}</span>
+                        {sh.start != null && (
+                          <span style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)' }}>
+                            {sh.start}:00–{sh.end === 24 ? '00' : sh.end}:00
+                          </span>
+                        )}
+                        <span style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text2)', fontWeight: 600, marginLeft: 'auto' }}>
+                          {sh.staff.length} kişi
+                        </span>
+                      </div>
+                      <div style={{ height: '6px', borderRadius: '3px', background: 'var(--surface3)', overflow: 'hidden' }}>
+                        <div style={{ height: '100%', width: `${pct}%`, background: sc.text, borderRadius: '3px', transition: 'width .3s' }} />
+                      </div>
+                    </div>
+                  )
+                })}
+
+                {g.leave.length > 0 && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{
+                      padding: '2px 8px', borderRadius: '4px',
+                      background: 'rgba(26,188,156,.12)', color: 'var(--teal)',
+                      fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 700,
+                    }}>İZİNDE</span>
+                    <span style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)' }}>
+                      {g.leave.map(s => s.full_name).join(' · ')}
+                    </span>
+                  </div>
+                )}
+
+                {g.absent.length > 0 && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{
+                      padding: '2px 8px', borderRadius: '4px',
+                      background: 'var(--surface3)', color: 'var(--text3)',
+                      fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 700,
+                    }}>YOKTA</span>
+                    <span style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)', opacity: 0.7 }}>
+                      {g.absent.map(s => s.full_name).join(' · ')}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 //  TAB 1 — Cizelge (Schedule) — HAFTA DOLDUR + PAZAR IZIN + PUANTAJ
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1808,6 +1972,18 @@ function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
         </div>
       )}
 
+      {/* View: GÜNLÜK */}
+      {scheduleView === 'daily' && (
+        <DailyView
+          departments={departments}
+          date={dailyDate}
+          onDateChange={setDailyDate}
+        />
+      )}
+
+      {/* View: HAFTALIK */}
+      {scheduleView === 'weekly' && (
+      <>
       {/* ── Schedule grid ── */}
       {isLoading ? (
         <div className="empty-state"><div className="empty-sub">Yükleniyor...</div></div>
@@ -2021,6 +2197,8 @@ function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
             </tbody>
           </table>
         </div>
+      )}
+      </>
       )}
 
       {/* Cell panel — vardiya/izin atama */}
