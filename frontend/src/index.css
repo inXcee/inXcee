@@ -213,10 +213,10 @@ h1, h2, h3, h4 { font-family: var(--display); letter-spacing: 2px; }
 .live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); animation: blink 2s infinite; }
 
 /* Animations */
-@keyframes fadeUp { from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)} }
-@keyframes slideInRight { from{transform:translateX(100%)}to{transform:translateX(0)} }
-@keyframes slideInLeft { from{transform:translateX(-100%)}to{transform:translateX(0)} }
-@keyframes fadeIn { from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)} }
+@keyframes fadeUp { from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none} }
+@keyframes slideInRight { from{transform:translateX(100%)}to{transform:none} }
+@keyframes slideInLeft { from{transform:translateX(-100%)}to{transform:none} }
+@keyframes fadeIn { from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none} }
 .fade-up { animation: fadeUp .3s ease both; }
 .fade-up-1 { animation: fadeUp .3s ease .05s both; }
 .fade-up-2 { animation: fadeUp .3s ease .1s both; }
