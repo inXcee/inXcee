@@ -1330,6 +1330,10 @@ function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
 
   const [weekStart, setWeekStart] = useState(getWeekStart(new Date()))
   const [deptFilter, setDeptFilter] = useState('')
+  const [scheduleView, setScheduleView] = useState('weekly') // 'weekly' | 'daily'
+  const [dailyDate, setDailyDate] = useState(todayStr())
+  const [toolsOpen, setToolsOpen] = useState(false)
+  const [toolsRect, setToolsRect] = useState(null)
   const [cellPopover, setCellPopover] = useState(null)
   const [weekFillPopover, setWeekFillPopover] = useState(null) // { person, rect }
   const [weekFillDef, setWeekFillDef] = useState('')
@@ -1617,6 +1621,17 @@ function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
     return { working, onLeave, empty, total: staffGrid.length, perDay }
   }, [staffGrid, weekDays])
 
+  useEffect(() => {
+    if (!toolsOpen) return
+    const handler = (e) => {
+      setToolsOpen(false)
+      setToolsRect(null)
+    }
+    // setTimeout to skip the same click event that opened the dropdown
+    const t = setTimeout(() => document.addEventListener('mousedown', handler), 0)
+    return () => { clearTimeout(t); document.removeEventListener('mousedown', handler) }
+  }, [toolsOpen])
+
   return (
     <div className="fade-up">
 
@@ -1627,7 +1642,7 @@ function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
         background: 'var(--surface)', border: '1px solid var(--border)',
         borderRadius: '12px', padding: '12px 16px',
       }}>
-        {/* Week navigation */}
+        {/* Hafta navigasyonu */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <button onClick={() => setWeekStart(addDays(weekStart, -7))} style={{
             width: '32px', height: '32px', borderRadius: '50%',
@@ -1653,6 +1668,18 @@ function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
           }}>Bugün</button>
         </div>
 
+        {/* View toggle: HAFTALIK / GÜNLÜK */}
+        <div style={{ display: 'flex', gap: '4px' }}>
+          <button
+            className={`filter-chip${scheduleView === 'weekly' ? ' active' : ''}`}
+            onClick={() => setScheduleView('weekly')}
+          >HAFTALIK</button>
+          <button
+            className={`filter-chip${scheduleView === 'daily' ? ' active' : ''}`}
+            onClick={() => { setScheduleView('daily'); setDailyDate(typeof todayStr === 'function' ? todayStr() : todayStr) }}
+          >GÜNLÜK</button>
+        </div>
+
         {/* Dept filter */}
         <select className="form-select" value={deptFilter} onChange={e => setDeptFilter(e.target.value)}
           style={{ width: 'auto', minWidth: '150px' }}>
@@ -1660,47 +1687,66 @@ function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
           {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
         </select>
 
-        {/* Stats chips */}
-        <div style={{ display: 'flex', gap: '6px', marginLeft: '4px' }}>
-          <span style={{ padding: '5px 12px', borderRadius: '20px', fontSize: '10px', fontFamily: 'var(--mono)', background: 'rgba(39,201,106,.12)', color: 'var(--green)', fontWeight: 600 }}>
-            {weekStats.total} Personel
-          </span>
-          {shiftDefs.map(s => {
-            const c = shiftColor(s.color_class)
-            return (
-              <span key={s.id} style={{ padding: '5px 12px', borderRadius: '20px', fontSize: '10px', fontFamily: 'var(--mono)', background: c.bg, color: c.text, fontWeight: 600 }}>
-                {s.name}
-              </span>
-            )
-          })}
-        </div>
-
-        {/* Action buttons */}
+        {/* Araçlar dropdown */}
         {canEdit && (
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-            <button onClick={() => setAddPersonModal(true)} style={{
-              padding: '7px 14px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer',
-              background: 'var(--surface2)', border: '1px solid var(--border)', color: 'var(--text2)',
-            }}>+ Personel</button>
-            <button onClick={() => setBulkFillModal(true)} style={{
-              padding: '7px 14px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer',
-              background: 'var(--surface2)', border: '1px solid var(--border)', color: 'var(--text2)',
-            }}>Bölüm Doldur</button>
-            <button onClick={() => { setAllFillDef(shiftDefs[0]?.id?.toString() || ''); setAllFillModal(true) }} style={{
-              padding: '7px 14px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer',
-              background: 'rgba(26,188,156,.12)', border: '1px solid rgba(26,188,156,.4)', color: 'var(--teal)',
-            }}>⚡ Tümünü Doldur</button>
-            <button onClick={() => { setExcelModal(true); setExcelPreview(null); setExcelError('') }} style={{
-              padding: '7px 14px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer',
-              background: 'rgba(52,152,219,.12)', border: '1px solid rgba(52,152,219,.4)', color: 'var(--blue)',
-            }}>📊 Excel</button>
-            <button onClick={() => { if (confirm('Bu haftayı sonraki haftaya kopyalayalım mı?')) copyWeek.mutate() }}
-              disabled={copyWeek.isPending} style={{
-              padding: '7px 14px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer',
-              background: 'var(--accent)', border: 'none', color: '#000', fontWeight: 600,
-            }}>
-              {copyWeek.isPending ? '...' : '↗ Kopyala'}
+          <div style={{ marginLeft: 'auto', position: 'relative' }}>
+            <button
+              onClick={e => {
+                if (toolsOpen) {
+                  setToolsOpen(false); setToolsRect(null)
+                } else {
+                  setToolsRect(e.currentTarget.getBoundingClientRect())
+                  setToolsOpen(true)
+                }
+              }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '6px',
+                padding: '7px 14px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer',
+                background: 'var(--surface2)', border: '1px solid var(--border)', color: 'var(--text2)',
+              }}
+            >
+              <span style={{ fontSize: '16px', letterSpacing: '-1px' }}>⋯</span>
+              <span style={{ fontFamily: 'var(--mono)', fontSize: '10px' }}>Araçlar</span>
+              <span style={{ fontSize: '10px', opacity: 0.6 }}>▾</span>
             </button>
+
+            {toolsOpen && toolsRect && createPortal(
+              <div
+                onMouseDown={e => e.stopPropagation()}
+                style={{
+                  position: 'fixed',
+                  top: toolsRect.bottom + 4,
+                  right: window.innerWidth - toolsRect.right,
+                  zIndex: 100,
+                  background: 'var(--surface)',
+                  border: '1px solid var(--border)',
+                  borderRadius: '10px',
+                  boxShadow: '0 8px 24px rgba(0,0,0,.3)',
+                  minWidth: '200px',
+                  overflow: 'hidden',
+                }}
+              >
+                {[
+                  { label: 'Toplu Vardiya Doldur', action: () => { setBulkFillModal(true); setToolsOpen(false) } },
+                  { label: 'Tüm Personeli Doldur', action: () => { setAllFillDef(shiftDefs[0]?.id?.toString() || ''); setAllFillModal(true); setToolsOpen(false) } },
+                  { label: 'Haftayı Kopyala', action: () => { if (confirm('Bu haftayı sonraki haftaya kopyalayalım mı?')) { copyWeek.mutate(); setToolsOpen(false) } } },
+                  { label: 'Excel Import', action: () => { setExcelModal(true); setExcelPreview(null); setExcelError(''); setToolsOpen(false) } },
+                  { label: '+ Çizelgeye Personel Ekle', action: () => { setAddPersonModal(true); setToolsOpen(false) } },
+                ].map(({ label, action }) => (
+                  <button key={label} onClick={action} style={{
+                    display: 'block', width: '100%', textAlign: 'left',
+                    padding: '10px 16px', background: 'none', border: 'none',
+                    borderBottom: '1px solid var(--border)',
+                    cursor: 'pointer', fontFamily: 'var(--sans)', fontSize: '13px', color: 'var(--text2)',
+                    transition: 'background .1s',
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'var(--surface2)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'none'}
+                  >{label}</button>
+                ))}
+              </div>,
+              document.body
+            )}
           </div>
         )}
       </div>
