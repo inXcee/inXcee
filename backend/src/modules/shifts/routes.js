@@ -11,7 +11,7 @@ import {
   copyWeekService, rotationService, searchStaffService, deleteScheduleService,
   staffDetailService,
   staffListService, staffGetService, staffCreateService, staffUpdateService, staffDeleteService,
-  puantajCsvService
+  puantajCsvService, staffDayBreakdownService
 } from './service.js'
 
 export const shiftsRouter = Router()
@@ -215,6 +215,15 @@ shiftsRouter.get('/puantaj/export/csv', ...allStaff, (req, res) => {
     res.setHeader('Content-Type', 'text/csv; charset=utf-8')
     res.setHeader('Content-Disposition', `attachment; filename="puantaj-${month}.csv"`)
     res.send(csv)
+  } catch (e) {
+    res.status(e.statusCode || 400).json({ error: e.message })
+  }
+})
+
+// ── Puantaj day breakdown (after CSV route to avoid staffId='export') ──
+shiftsRouter.get('/puantaj/:staffId/days', ...allStaff, (req, res) => {
+  try {
+    res.json(staffDayBreakdownService(req.params.staffId, req.query.month))
   } catch (e) {
     res.status(e.statusCode || 400).json({ error: e.message })
   }

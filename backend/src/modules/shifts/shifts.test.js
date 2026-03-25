@@ -362,6 +362,65 @@ describe('GET /shifts/puantaj/export/csv', () => {
   })
 })
 
+describe('GET /shifts/puantaj/:staffId/days', () => {
+  let existingStaffId
+
+  beforeAll(async () => {
+    const staffRes = await request(app).get('/api/shifts/staff').set('Authorization', `Bearer ${shiftToken}`)
+    existingStaffId = staffRes.body[0]?.id
+  })
+
+  it('returns 400 without month', async () => {
+    const res = await request(app)
+      .get(`/api/shifts/puantaj/${existingStaffId}/days`)
+      .set('Authorization', `Bearer ${shiftToken}`)
+    expect(res.status).toBe(400)
+  })
+
+  it('returns 400 for non-numeric staffId', async () => {
+    const res = await request(app)
+      .get('/api/shifts/puantaj/notanumber/days?month=2026-03')
+      .set('Authorization', `Bearer ${shiftToken}`)
+    expect(res.status).toBe(400)
+  })
+
+  it('returns array with one entry per day of the month', async () => {
+    if (!existingStaffId) return
+    const res = await request(app)
+      .get(`/api/shifts/puantaj/${existingStaffId}/days?month=2026-03`)
+      .set('Authorization', `Bearer ${shiftToken}`)
+    expect(res.status).toBe(200)
+    expect(Array.isArray(res.body)).toBe(true)
+    // March 2026 has 31 days
+    expect(res.body.length).toBe(31)
+  })
+
+  it('each entry has date, day_of_week, and status', async () => {
+    if (!existingStaffId) return
+    const res = await request(app)
+      .get(`/api/shifts/puantaj/${existingStaffId}/days?month=2026-03`)
+      .set('Authorization', `Bearer ${shiftToken}`)
+    expect(res.status).toBe(200)
+    res.body.forEach(entry => {
+      expect(entry).toHaveProperty('date')
+      expect(entry).toHaveProperty('day_of_week')
+      expect(entry).toHaveProperty('status')
+      expect(['worked','absent','on_leave','overtime','scheduled','sunday','no_record']).toContain(entry.status)
+    })
+  })
+
+  it('Sundays have status sunday', async () => {
+    if (!existingStaffId) return
+    const res = await request(app)
+      .get(`/api/shifts/puantaj/${existingStaffId}/days?month=2026-03`)
+      .set('Authorization', `Bearer ${shiftToken}`)
+    // March 1 2026 is a Sunday (day_of_week=0)
+    const march1 = res.body.find(e => e.date === '2026-03-01')
+    expect(march1).toBeDefined()
+    expect(march1.status).toBe('sunday')
+  })
+})
+
 describe('getYtdGross', () => {
   it('returns 0 for January (no prior months)', async () => {
     // Any staff_id, month=1 means no prior months → ytdGross=0

@@ -9,7 +9,8 @@ import {
   cancelLeaveRequest, createSwapRequest, getSwapRequests, approveSwapRequest, rejectSwapRequest,
   copyWeekSchedule, applyRotationTemplate, searchStaff, deleteScheduleEntry,
   getStaffDetail,
-  getStaffList, getStaffById, createStaff, updateStaff, deleteStaff
+  getStaffList, getStaffById, createStaff, updateStaff, deleteStaff,
+  getStaffDayBreakdown
 } from './queries.js'
 import { getDB } from '../../shared/db/index.js'
 
@@ -328,6 +329,46 @@ export function puantajCsvService(month, deptId) {
   ]
 
   return lines.join('\r\n')
+}
+
+export function staffDayBreakdownService(staffId, month) {
+  if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+    throw Object.assign(new Error('month parametresi YYYY-MM formatında gereklidir'), { statusCode: 400 })
+  }
+  if (!staffId || isNaN(Number(staffId))) {
+    throw Object.assign(new Error('staffId sayısal olmalıdır'), { statusCode: 400 })
+  }
+  const [year, mon] = month.split('-').map(Number)
+  const monthStart = `${year}-${String(mon).padStart(2, '0')}-01`
+  const lastDay = new Date(year, mon, 0).getDate()
+  const monthEnd = `${year}-${String(mon).padStart(2, '0')}-${lastDay}`
+
+  // DB records for days that have schedule entries
+  const dbRows = getStaffDayBreakdown(Number(staffId), monthStart, monthEnd)
+  const dbMap = {}
+  dbRows.forEach(r => { dbMap[r.date] = r })
+
+  // Build full month array
+  const result = []
+  for (let d = 1; d <= lastDay; d++) {
+    const date = `${year}-${String(mon).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+    const dow = new Date(year, mon - 1, d).getDay() // 0=Sunday
+    if (dow === 0) {
+      result.push({ date, day_of_week: 0, status: 'sunday' })
+      continue
+    }
+    const row = dbMap[date]
+    if (!row) {
+      result.push({ date, day_of_week: dow, status: 'no_record' })
+      continue
+    }
+    const entry = { date, day_of_week: dow, status: row.status }
+    if (row.shift_name) { entry.shift_name = row.shift_name; entry.start_hour = row.start_hour; entry.end_hour = row.end_hour }
+    if (row.leave_type) entry.leave_type = row.leave_type
+    if (row.overtime_hours) entry.overtime_hours = row.overtime_hours
+    result.push(entry)
+  }
+  return result
 }
 
 export function puantajService(month, deptId) {

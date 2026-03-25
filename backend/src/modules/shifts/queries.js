@@ -658,6 +658,30 @@ export function getStaffDetail(staffId) {
   }
 }
 
+// ── Puantaj day breakdown ──
+export function getStaffDayBreakdown(staffId, monthStart, monthEnd) {
+  const db = getDB()
+  return db.prepare(`
+    SELECT
+      ss.work_date as date,
+      ss.status,
+      sd.name as shift_name,
+      sd.start_hour,
+      sd.end_hour,
+      lr.leave_type,
+      ot.hours as overtime_hours
+    FROM shift_schedule ss
+    LEFT JOIN shift_definitions sd ON sd.id = ss.shift_def_id
+    LEFT JOIN leave_requests lr ON lr.staff_id = ss.staff_id
+      AND lr.status = 'approved'
+      AND ss.work_date BETWEEN lr.start_date AND lr.end_date
+    LEFT JOIN overtime_records ot ON ot.staff_id = ss.staff_id
+      AND ot.work_date = ss.work_date
+    WHERE ss.staff_id = ? AND ss.work_date BETWEEN ? AND ?
+    ORDER BY ss.work_date
+  `).all(staffId, monthStart, monthEnd)
+}
+
 // ── Puantaj (Timesheet) ──
 export function getPuantaj(monthStart, monthEnd, deptId) {
   const db = getDB()
