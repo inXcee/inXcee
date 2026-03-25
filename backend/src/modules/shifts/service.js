@@ -283,9 +283,62 @@ export function staffDetailService(staffId) {
 }
 
 export function puantajService(month, deptId) {
+  if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+    throw Object.assign(new Error('month parametresi YYYY-MM formatında gereklidir'), { statusCode: 400 })
+  }
   const [year, mon] = month.split('-').map(Number)
   const monthStart = `${year}-${String(mon).padStart(2, '0')}-01`
   const lastDay = new Date(year, mon, 0).getDate()
   const monthEnd = `${year}-${String(mon).padStart(2, '0')}-${lastDay}`
-  return getPuantaj(monthStart, monthEnd, deptId)
+  const wdm = workDaysInMonth(year, mon)
+  const db = getDB()
+
+  const rows = getPuantaj(monthStart, monthEnd, deptId)
+
+  return rows.map(row => {
+    const salary = row.salary || 0
+    const dailyRate = salary / 30
+    const basePay = round2(dailyRate * (row.worked_days || 0))
+    const overtimePay = round2((dailyRate / 8) * 1.5 * (row.overtime_hours || 0))
+    const leavePay = round2(dailyRate * ((row.annual_leave_days || 0) + (row.emergency_leave_days || 0)))
+    const gross = round2(basePay + overtimePay + leavePay)
+
+    const ytdGrossPrev = getYtdGross(db, row.id, year, mon)
+    const ytdGross = round2(ytdGrossPrev + gross)
+
+    const ssiWorker = round2(gross * 0.14)
+    const unemploymentWorker = round2(gross * 0.01)
+    const incomeTax = round2(calcTax(ytdGross) - calcTax(ytdGrossPrev))
+    const stampTax = round2(gross * 0.00759)
+    const totalDeductions = round2(ssiWorker + unemploymentWorker + incomeTax + stampTax)
+    const net = round2(gross - totalDeductions)
+
+    const ssiEmployer = round2(gross * 0.205)
+    const unemploymentEmployer = round2(gross * 0.02)
+    const employerTotalCost = round2(gross + ssiEmployer + unemploymentEmployer)
+
+    const attendRate = wdm > 0 ? Math.round(((row.worked_days || 0) / wdm) * 100) : 0
+
+    return {
+      ...row,
+      daily_rate: round2(dailyRate),
+      base_pay: basePay,
+      overtime_pay: overtimePay,
+      leave_pay: leavePay,
+      gross,
+      ssi_worker: ssiWorker,
+      unemployment_worker: unemploymentWorker,
+      income_tax: incomeTax,
+      stamp_tax: stampTax,
+      total_deductions: totalDeductions,
+      net,
+      ssi_employer: ssiEmployer,
+      unemployment_employer: unemploymentEmployer,
+      employer_total_cost: employerTotalCost,
+      attend_rate: attendRate,
+      work_days_in_month: wdm,
+      ytd_gross: ytdGross,
+      ytd_tax: round2(calcTax(ytdGross)),
+    }
+  })
 }

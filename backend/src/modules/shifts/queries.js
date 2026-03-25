@@ -663,7 +663,7 @@ export function getPuantaj(monthStart, monthEnd, deptId) {
   const db = getDB()
   let query = `
     SELECT
-      s.id, s.full_name, s.position, s.salary, s.gender, s.department_id,
+      s.id, s.full_name, s.position, s.salary, s.gender, s.tc_no, s.department_id,
       d.name as dept_name, d.color_class as dept_color,
       COALESCE(sch.worked_days, 0) as worked_days,
       COALESCE(sch.scheduled_days, 0) as scheduled_days,
@@ -671,7 +671,11 @@ export function getPuantaj(monthStart, monthEnd, deptId) {
       COALESCE(sch.absent_days, 0) as absent_days,
       COALESCE(sch.total_days, 0) as total_days,
       COALESCE(ot.overtime_hours, 0) as overtime_hours,
-      COALESCE(ot.overtime_count, 0) as overtime_count
+      COALESCE(ot.overtime_count, 0) as overtime_count,
+      COALESCE(lv.annual_days, 0) as annual_leave_days,
+      COALESCE(lv.sick_days, 0) as sick_leave_days,
+      COALESCE(lv.emergency_days, 0) as emergency_leave_days,
+      COALESCE(lv.other_days, 0) as other_leave_days
     FROM staff s
     LEFT JOIN departments d ON d.id = s.department_id
     LEFT JOIN (
@@ -693,10 +697,20 @@ export function getPuantaj(monthStart, monthEnd, deptId) {
       WHERE work_date BETWEEN ? AND ?
       GROUP BY staff_id
     ) ot ON ot.staff_id = s.id
+    LEFT JOIN (
+      SELECT staff_id,
+        COALESCE(SUM(CASE WHEN leave_type='annual' THEN total_days ELSE 0 END), 0) as annual_days,
+        COALESCE(SUM(CASE WHEN leave_type='sick' THEN total_days ELSE 0 END), 0) as sick_days,
+        COALESCE(SUM(CASE WHEN leave_type='emergency' THEN total_days ELSE 0 END), 0) as emergency_days,
+        COALESCE(SUM(CASE WHEN leave_type NOT IN ('annual','sick','emergency') THEN total_days ELSE 0 END), 0) as other_days
+      FROM leave_requests
+      WHERE status = 'approved' AND start_date <= ? AND end_date >= ?
+      GROUP BY staff_id
+    ) lv ON lv.staff_id = s.id
     WHERE s.is_active = 1
   `
-  const params = [monthStart, monthEnd, monthStart, monthEnd]
-  if (deptId) { query += ' AND s.department_id=?'; params.push(deptId) }
+  const params = [monthStart, monthEnd, monthStart, monthEnd, monthEnd, monthStart]
+  if (deptId) { query += ' AND s.department_id = ?'; params.push(deptId) }
   query += ' ORDER BY d.name, s.full_name'
   return db.prepare(query).all(...params)
 }

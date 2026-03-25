@@ -275,6 +275,61 @@ describe('workDaysInMonth', () => {
   })
 })
 
+describe('Enhanced GET /shifts/puantaj', () => {
+  it('returns 200 with valid month', async () => {
+    const res = await request(app)
+      .get('/api/shifts/puantaj?month=2026-03')
+      .set('Authorization', `Bearer ${shiftToken}`)
+    expect(res.status).toBe(200)
+    expect(Array.isArray(res.body)).toBe(true)
+  })
+
+  it('returns 400 without month param', async () => {
+    const res = await request(app)
+      .get('/api/shifts/puantaj')
+      .set('Authorization', `Bearer ${shiftToken}`)
+    expect(res.status).toBe(400)
+  })
+
+  it('returns 400 for invalid month format', async () => {
+    const res = await request(app)
+      .get('/api/shifts/puantaj?month=2026/03')
+      .set('Authorization', `Bearer ${shiftToken}`)
+    expect(res.status).toBe(400)
+  })
+
+  it('each row has all required financial fields', async () => {
+    const res = await request(app)
+      .get('/api/shifts/puantaj?month=2026-03')
+      .set('Authorization', `Bearer ${shiftToken}`)
+    expect(res.status).toBe(200)
+    if (res.body.length === 0) return // seed may have no data for this month
+    const row = res.body[0]
+    const required = [
+      'annual_leave_days', 'sick_leave_days', 'emergency_leave_days', 'other_leave_days',
+      'daily_rate', 'base_pay', 'overtime_pay', 'leave_pay', 'gross',
+      'ssi_worker', 'unemployment_worker', 'income_tax', 'stamp_tax',
+      'total_deductions', 'net',
+      'ssi_employer', 'unemployment_employer', 'employer_total_cost',
+      'attend_rate', 'work_days_in_month', 'ytd_gross', 'ytd_tax',
+    ]
+    required.forEach(field => {
+      expect(row).toHaveProperty(field)
+      expect(typeof row[field]).toBe('number')
+    })
+  })
+
+  it('net equals gross minus total_deductions', async () => {
+    const res = await request(app)
+      .get('/api/shifts/puantaj?month=2026-03')
+      .set('Authorization', `Bearer ${shiftToken}`)
+    expect(res.status).toBe(200)
+    res.body.forEach(row => {
+      expect(row.net).toBeCloseTo(row.gross - row.total_deductions, 1)
+    })
+  })
+})
+
 describe('getYtdGross', () => {
   it('returns 0 for January (no prior months)', async () => {
     // Any staff_id, month=1 means no prior months → ytdGross=0

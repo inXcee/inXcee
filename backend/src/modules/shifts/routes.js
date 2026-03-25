@@ -196,8 +196,13 @@ shiftsRouter.post('/attendance/checkout', ...allStaff, (req, res) => {
 
 // ── Puantaj (Timesheet) ──
 shiftsRouter.get('/puantaj', ...allStaff, (req, res) => {
-  const month = req.query.month || new Date().toISOString().substring(0, 7)
-  res.json(puantajService(month, req.query.dept_id || null))
+  try {
+    const { month, dept_id } = req.query
+    if (!month) return res.status(400).json({ error: 'month parametresi YYYY-MM formatında gereklidir' })
+    res.json(puantajService(month, dept_id || null))
+  } catch (e) {
+    res.status(e.statusCode || 400).json({ error: e.message })
+  }
 })
 
 // ── Statistics ──
