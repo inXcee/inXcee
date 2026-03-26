@@ -1484,6 +1484,84 @@ function DailyView({ departments, date, onDateChange }) {
   )
 }
 
+function CellAssignSheet({ cellPopover, setCellPopover, shiftDefs, assignCell, deleteShift, formatDate, shortDay, shiftColor }) {
+  const [error, setError] = useState(null)
+
+  useEffect(() => {
+    const onEsc = e => { if (e.key === 'Escape') setCellPopover(null) }
+    document.addEventListener('keydown', onEsc)
+    return () => document.removeEventListener('keydown', onEsc)
+  }, [setCellPopover])
+
+  return (
+    <BottomSheet onClose={() => setCellPopover(null)}>
+      <div style={{ padding: '0 20px 12px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <div style={{ fontFamily: 'var(--display)', fontSize: '16px', letterSpacing: '1px' }}>📅 VARDIYA ATA</div>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', marginTop: '2px' }}>
+              {cellPopover.personName} · {formatDate(cellPopover.date)} {shortDay(cellPopover.date)}
+            </div>
+          </div>
+          <button onClick={() => setCellPopover(null)} className="btn btn-ghost btn-sm">✕</button>
+        </div>
+      </div>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '1px', marginBottom: '4px' }}>VARDIYA SEÇ</div>
+        {shiftDefs.map(s => {
+          const isActive = cellPopover.existing?.shift_def_id === s.id && cellPopover.existing?.status !== 'on_leave'
+          const sc = shiftColor(s.color_class)
+          return (
+            <button key={s.id}
+              onClick={() => { setError(null); assignCell.mutate({ staffId: cellPopover.staffId, deptId: cellPopover.deptId, shiftDefId: s.id, date: cellPopover.date, status: 'scheduled' }, { onError: () => setError('Vardiya atanamadı. Tekrar deneyin.') }) }}
+              disabled={assignCell.isPending}
+              style={{
+                width: '100%', padding: '10px 14px', borderRadius: '8px', textAlign: 'left',
+                fontSize: '13px', cursor: 'pointer', fontFamily: 'var(--sans)',
+                border: `2px solid ${isActive ? sc.text : 'var(--border)'}`,
+                background: isActive ? sc.bg : 'var(--surface2)',
+                color: isActive ? sc.text : 'var(--text2)',
+              }}>
+              <span style={{ fontWeight: 600 }}>{s.name}</span>
+              <span style={{ fontFamily: 'var(--mono)', fontSize: '10px', marginLeft: '8px', opacity: .6 }}>
+                {s.start_hour}:00–{s.end_hour === 24 ? '00' : s.end_hour}:00
+              </span>
+              {isActive && <span style={{ float: 'right', fontSize: '10px' }}>✓ Aktif</span>}
+            </button>
+          )
+        })}
+        <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+          <button
+            onClick={() => { setError(null); assignCell.mutate({ staffId: cellPopover.staffId, deptId: cellPopover.deptId, shiftDefId: null, date: cellPopover.date, status: 'on_leave' }, { onError: () => setError('İşlem başarısız. Tekrar deneyin.') }) }}
+            disabled={assignCell.isPending}
+            style={{
+              flex: 1, padding: '10px', borderRadius: '8px', cursor: 'pointer',
+              border: `2px solid ${cellPopover.existing?.status === 'on_leave' ? 'var(--teal)' : 'var(--border)'}`,
+              background: cellPopover.existing?.status === 'on_leave' ? 'rgba(26,188,156,.12)' : 'var(--surface2)',
+              color: cellPopover.existing?.status === 'on_leave' ? 'var(--teal)' : 'var(--text2)',
+              fontFamily: 'var(--mono)', fontSize: '11px', fontWeight: 600,
+            }}>
+            İZİN {cellPopover.existing?.status === 'on_leave' && '✓'}
+          </button>
+          {cellPopover.existing && (
+            <button
+              onClick={() => { setError(null); deleteShift.mutate({ staffId: cellPopover.staffId, date: cellPopover.date }, { onError: () => setError('Silme başarısız. Tekrar deneyin.') }) }}
+              disabled={deleteShift.isPending}
+              style={{
+                flex: 1, padding: '10px', borderRadius: '8px', cursor: 'pointer',
+                border: '2px solid var(--border)', background: 'var(--surface2)',
+                color: 'var(--red)', fontFamily: 'var(--mono)', fontSize: '11px', fontWeight: 600,
+              }}>
+              KALDIR
+            </button>
+          )}
+        </div>
+        {error && <div style={{ color: 'var(--red)', fontFamily: 'var(--mono)', fontSize: '10px', marginTop: '4px' }}>{error}</div>}
+      </div>
+    </BottomSheet>
+  )
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 //  TAB 1 — Cizelge (Schedule) — HAFTA DOLDUR + PAZAR IZIN + PUANTAJ
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1754,9 +1832,8 @@ function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
 
   const openCellPopover = (e, person, date) => {
     if (!canEdit) return
-    const rect = e.currentTarget.getBoundingClientRect()
     const existing = person.days[date]
-    setCellPopover({ staffId: person.id, deptId: person.dept_id, date, personName: person.full_name, rect, existing })
+    setCellPopover({ staffId: person.id, deptId: person.dept_id, date, personName: person.full_name, existing })
   }
 
   const openWeekFill = (e, person) => {
@@ -2211,64 +2288,16 @@ function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
 
       {/* Cell panel — vardiya/izin atama */}
       {cellPopover && (
-        <SidePanel
-          title="VARDIYA ATA"
-          subtitle={`${cellPopover.personName} · ${formatDate(cellPopover.date)} ${shortDay(cellPopover.date)}`}
-          icon="&#128197;"
-          onClose={() => setCellPopover(null)}
-          width={300}
-          anchorRect={cellPopover.rect}
-        >
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '12px' }}>
-            <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '1px', marginBottom: '4px' }}>VARDIYA SEC</div>
-            {shiftDefs.map(s => {
-              const isActive = cellPopover.existing?.shift_def_id === s.id && cellPopover.existing?.status !== 'on_leave'
-              const sc = shiftColor(s.color_class)
-              return (
-                <button key={s.id}
-                  onClick={() => assignCell.mutate({ staffId: cellPopover.staffId, deptId: cellPopover.deptId, shiftDefId: s.id, date: cellPopover.date, status: 'scheduled' })}
-                  disabled={assignCell.isPending}
-                  style={{
-                    width: '100%', padding: '10px 14px', borderRadius: '8px', textAlign: 'left',
-                    fontSize: '13px', cursor: 'pointer', fontFamily: 'var(--sans)',
-                    border: `2px solid ${isActive ? sc.text : 'var(--border)'}`,
-                    background: isActive ? sc.bg : 'var(--surface2)',
-                    color: isActive ? sc.text : 'var(--text2)',
-                  }}>
-                  <span style={{ fontWeight: 600 }}>{s.name}</span>
-                  <span style={{ fontFamily: 'var(--mono)', fontSize: '10px', marginLeft: '8px', opacity: .6 }}>
-                    {s.start_hour}:00&ndash;{s.end_hour === 24 ? '00' : s.end_hour}:00
-                  </span>
-                  {isActive && <span style={{ float: 'right', fontSize: '10px' }}>✓ Aktif</span>}
-                </button>
-              )
-            })}
-          </div>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <button
-              onClick={() => assignCell.mutate({ staffId: cellPopover.staffId, deptId: cellPopover.deptId, shiftDefId: null, date: cellPopover.date, status: 'on_leave' })}
-              disabled={assignCell.isPending}
-              style={{
-                flex: 1, padding: '10px', borderRadius: '8px', cursor: 'pointer',
-                border: `2px solid ${cellPopover.existing?.status === 'on_leave' ? 'var(--teal)' : 'var(--border)'}`,
-                background: cellPopover.existing?.status === 'on_leave' ? 'rgba(26,188,156,.12)' : 'var(--surface2)',
-                color: cellPopover.existing?.status === 'on_leave' ? 'var(--teal)' : 'var(--text2)',
-                fontFamily: 'var(--mono)', fontSize: '11px', fontWeight: 600,
-              }}>
-              IZIN {cellPopover.existing?.status === 'on_leave' && '✓'}
-            </button>
-            <button
-              onClick={() => deleteShift.mutate({ staffId: cellPopover.staffId, date: cellPopover.date })}
-              disabled={deleteShift.isPending}
-              style={{
-                flex: 1, padding: '10px', borderRadius: '8px', cursor: 'pointer',
-                border: '2px solid var(--border)', background: 'var(--surface2)',
-                color: 'var(--red)', fontFamily: 'var(--mono)', fontSize: '11px', fontWeight: 600,
-              }}>
-              KALDIR
-            </button>
-          </div>
-        </SidePanel>
+        <CellAssignSheet
+          cellPopover={cellPopover}
+          setCellPopover={setCellPopover}
+          shiftDefs={shiftDefs}
+          assignCell={assignCell}
+          deleteShift={deleteShift}
+          formatDate={formatDate}
+          shortDay={shortDay}
+          shiftColor={shiftColor}
+        />
       )}
 
       {/* Week fill panel */}
