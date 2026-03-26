@@ -3356,15 +3356,19 @@ function SettingsTab({ departments, shiftDefs }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-//  PuantajTab — Monthly Timesheet / Payroll
+//  PuantajTab — Professional Payroll / Monthly Timesheet
 // ═══════════════════════════════════════════════════════════════════════════════
-function PuantajTab({ departments, onPersonClick }) {
+const COMPANY_NAME = 'YYS Kampüs' // TODO: Şirket adını burada güncelle
+
+function PuantajTab({ departments }) {
   const today = new Date()
   const [month, setMonth] = useState(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`)
   const [deptFilter, setDeptFilter] = useState('')
   const [search, setSearch] = useState('')
-  const [detailPopover, setDetailPopover] = useState(null) // { row, rect }
-  const [sortBy, setSortBy] = useState('name') // name, worked, absent, salary, net
+  const [viewMode, setViewMode] = useState('list') // 'list' | 'calendar' | 'summary'
+  const [showEmployer, setShowEmployer] = useState(false)
+  const [selectedRow, setSelectedRow] = useState(null) // row object for bordro detail
+  const [sortBy, setSortBy] = useState('name')
 
   const { data: rows = [], isLoading } = useQuery({
     queryKey: ['puantaj', month, deptFilter],
@@ -3376,72 +3380,38 @@ function PuantajTab({ departments, onPersonClick }) {
   })
 
   const [y, m] = month.split('-').map(Number)
-  const daysInMonth = new Date(y, m, 0).getDate()
-  // Workdays in month (exclude Sundays)
-  const workDays = useMemo(() => {
-    let count = 0
-    for (let d = 1; d <= daysInMonth; d++) {
-      if (new Date(y, m - 1, d).getDay() !== 0) count++
-    }
-    return count
-  }, [y, m, daysInMonth])
 
   const formatMoney = (val) => {
-    if (!val) return '-'
-    return new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY', minimumFractionDigits: 0 }).format(val)
+    if (val == null || val === 0) return '—'
+    return new Intl.NumberFormat('tr-TR', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(val) + ' ₺'
   }
-
-  const calcDetails = useCallback((row) => {
-    const dailyRate = row.salary ? row.salary / 30 : 0
-    const basePay = dailyRate * (row.worked_days || 0)
-    const overtimeRate = dailyRate * 1.5 / 8
-    const overtimePay = overtimeRate * (row.overtime_hours || 0)
-    const leavePay = dailyRate * (row.leave_days || 0) // paid leave
-    const gross = basePay + overtimePay + leavePay
-    const ssiDeduction = Math.round(gross * 0.14) // %14 SSI worker share
-    const taxDeduction = Math.round(gross * 0.15) // %15 income tax (simplified)
-    const net = Math.round(gross - ssiDeduction - taxDeduction)
-    const attendRate = row.total_days > 0 ? Math.round(((row.worked_days || 0) / workDays) * 100) : 0
-    return { dailyRate: Math.round(dailyRate), basePay: Math.round(basePay), overtimePay: Math.round(overtimePay), leavePay: Math.round(leavePay), gross: Math.round(gross), ssiDeduction, taxDeduction, net, attendRate }
-  }, [workDays])
 
   const filtered = useMemo(() => {
     let list = rows
     if (search) {
       const q = search.toLowerCase()
-      list = list.filter(r => r.full_name?.toLowerCase().includes(q) || r.position?.toLowerCase().includes(q))
+      list = list.filter(r => r.full_name?.toLowerCase().includes(q) || r.dept_name?.toLowerCase().includes(q))
     }
-    // Sort
     return [...list].sort((a, b) => {
       if (sortBy === 'worked') return (b.worked_days || 0) - (a.worked_days || 0)
       if (sortBy === 'absent') return (b.absent_days || 0) - (a.absent_days || 0)
-      if (sortBy === 'salary') return (b.salary || 0) - (a.salary || 0)
-      if (sortBy === 'net') return calcDetails(b).net - calcDetails(a).net
+      if (sortBy === 'net') return (b.net || 0) - (a.net || 0)
       return (a.full_name || '').localeCompare(b.full_name || '', 'tr')
     })
-  }, [rows, search, sortBy, calcDetails])
+  }, [rows, search, sortBy])
 
-  const totals = useMemo(() => {
-    const t = filtered.reduce((acc, r) => {
-      const d = calcDetails(r)
-      return {
-        worked: acc.worked + (r.worked_days || 0),
-        scheduled: acc.scheduled + (r.scheduled_days || 0),
-        leave: acc.leave + (r.leave_days || 0),
-        absent: acc.absent + (r.absent_days || 0),
-        overtime_hours: acc.overtime_hours + (r.overtime_hours || 0),
-        gross: acc.gross + d.gross,
-        net: acc.net + d.net,
-        salary: acc.salary + (r.salary || 0),
-      }
-    }, { worked: 0, scheduled: 0, leave: 0, absent: 0, overtime_hours: 0, gross: 0, net: 0, salary: 0 })
-    return t
-  }, [filtered, calcDetails])
+  const totals = useMemo(() => filtered.reduce((acc, r) => ({
+    worked: acc.worked + (r.worked_days || 0),
+    leave: acc.leave + (r.leave_days || 0),
+    absent: acc.absent + (r.absent_days || 0),
+    overtime_hours: acc.overtime_hours + (r.overtime_hours || 0),
+    gross: acc.gross + (r.gross || 0),
+    net: acc.net + (r.net || 0),
+    employer_total_cost: acc.employer_total_cost + (r.employer_total_cost || 0),
+  }), { worked: 0, leave: 0, absent: 0, overtime_hours: 0, gross: 0, net: 0, employer_total_cost: 0 }),
+  [filtered])
 
-  const monthLabel = (() => {
-    const d = new Date(y, m - 1, 1)
-    return d.toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' }).toUpperCase()
-  })()
+  const monthLabel = new Date(y, m - 1, 1).toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' }).toUpperCase()
 
   const prevMonth = () => {
     const d = new Date(y, m - 2, 1)
@@ -3452,230 +3422,88 @@ function PuantajTab({ departments, onPersonClick }) {
     setMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
   }
 
-  // Mini bar for attendance
-  const AttendBar = ({ worked, total }) => {
-    const pct = total > 0 ? Math.min(100, Math.round((worked / workDays) * 100)) : 0
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-        <div style={{ width: '40px', height: '6px', borderRadius: '3px', background: 'var(--surface3)', overflow: 'hidden' }}>
-          <div style={{ width: `${pct}%`, height: '100%', borderRadius: '3px', background: pct >= 80 ? 'var(--green)' : pct >= 50 ? 'var(--accent)' : 'var(--red)', transition: 'width .3s' }} />
-        </div>
-        <span style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)' }}>%{pct}</span>
-      </div>
-    )
+  const downloadCsv = async () => {
+    try {
+      const params = { month }
+      if (deptFilter) params.dept_id = deptFilter
+      const res = await api.get('/shifts/puantaj/export/csv', { params, responseType: 'blob' })
+      const url = URL.createObjectURL(res.data)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `puantaj-${month}.csv`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      // CSV download error — intentionally no console.log per project rules
+    }
   }
 
   return (
     <div className="fade-up">
-      {/* Header */}
+      {/* Top bar */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center', marginBottom: '12px' }}>
-        <button className="btn btn-ghost btn-sm" onClick={prevMonth}>&larr;</button>
-        <div style={{ fontFamily: 'var(--display)', fontSize: '15px', color: 'var(--text)', letterSpacing: '1px' }}>
-          {monthLabel}
-        </div>
-        <button className="btn btn-ghost btn-sm" onClick={nextMonth}>&rarr;</button>
+        <button className="btn btn-ghost btn-sm" onClick={prevMonth}>←</button>
+        <span style={{ fontFamily: 'var(--display)', fontSize: '14px', letterSpacing: '1px' }}>{monthLabel}</span>
+        <button className="btn btn-ghost btn-sm" onClick={nextMonth}>→</button>
         <button className="btn btn-ghost btn-sm" onClick={() => setMonth(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`)}>Bu Ay</button>
 
         <select className="form-select" value={deptFilter} onChange={e => setDeptFilter(e.target.value)}
-          style={{ width: 'auto', minWidth: '150px', padding: '5px 11px', fontSize: '11px' }}>
-          <option value="">Tum Departmanlar</option>
+          style={{ width: 'auto', minWidth: '150px', fontSize: '11px', padding: '5px 11px' }}>
+          <option value="">Tüm Departmanlar</option>
           {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
         </select>
-        <input className="form-input" placeholder="Ara..." value={search}
-          onChange={e => setSearch(e.target.value)} style={{ width: '160px', padding: '5px 11px', fontSize: '11px' }} />
+        <input className="form-input" placeholder="Ara..." value={search} onChange={e => setSearch(e.target.value)}
+          style={{ width: '150px', fontSize: '11px', padding: '5px 11px' }} />
 
-        <div style={{ marginLeft: 'auto', fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '1px' }}>
-          {daysInMonth} GUN &middot; {workDays} IS GUNU
+        {/* View mode */}
+        <div style={{ display: 'flex', gap: '2px', background: 'var(--surface2)', borderRadius: '8px', padding: '2px', border: '1px solid var(--border)' }}>
+          {[['list','📋 LİSTE'],['calendar','📅 TAKVİM'],['summary','🏢 ÖZET']].map(([id, label]) => (
+            <button key={id} onClick={() => setViewMode(id)}
+              style={{
+                padding: '4px 10px', borderRadius: '6px', fontSize: '10px', fontFamily: 'var(--mono)',
+                letterSpacing: '0.5px', border: 'none', cursor: 'pointer',
+                background: viewMode === id ? 'var(--accent)' : 'transparent',
+                color: viewMode === id ? '#000' : 'var(--text3)',
+              }}>
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: '6px' }}>
+          <button className="btn btn-ghost btn-sm" onClick={() => setShowEmployer(v => !v)}
+            style={{ fontSize: '10px' }}>
+            💼 {showEmployer ? 'Maliyet Gizle' : 'Maliyet Göster'}
+          </button>
+          <button className="btn btn-ghost btn-sm" onClick={downloadCsv} style={{ fontSize: '10px' }}>
+            ⬇ CSV İndir
+          </button>
         </div>
       </div>
 
-      {/* Summary cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '8px', marginBottom: '16px' }}>
-        {[
-          { label: 'PERSONEL', value: filtered.length, color: 'var(--blue)' },
-          { label: 'CALISAN GUN', value: totals.worked, color: 'var(--green)' },
-          { label: 'PLANLI GUN', value: totals.scheduled, color: 'var(--blue)' },
-          { label: 'IZIN GUN', value: totals.leave, color: 'var(--teal)' },
-          { label: 'DEVAMSIZ', value: totals.absent, color: 'var(--red)' },
-          { label: 'MESAI SAAT', value: totals.overtime_hours, color: 'var(--purple)' },
-          { label: 'BRUT TOPLAM', value: formatMoney(totals.gross), color: 'var(--text)' },
-          { label: 'NET TOPLAM', value: formatMoney(totals.net), color: 'var(--green)' },
-        ].map((c, i) => (
-          <div key={i} style={{
-            background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '8px',
-            padding: '10px 12px', textAlign: 'center',
-          }}>
-            <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text3)', letterSpacing: '1px', marginBottom: '3px' }}>{c.label}</div>
-            <div style={{ fontFamily: 'var(--display)', fontSize: '17px', color: c.color, letterSpacing: '1px' }}>{c.value}</div>
-          </div>
-        ))}
-      </div>
+      {/* Mode content */}
+      {viewMode === 'list' && (
+        <PuantajListView
+          filtered={filtered} totals={totals} isLoading={isLoading}
+          month={month} monthLabel={monthLabel}
+          showEmployer={showEmployer} sortBy={sortBy} setSortBy={setSortBy}
+          formatMoney={formatMoney} onRowClick={setSelectedRow}
+        />
+      )}
+      {viewMode === 'calendar' && (
+        <PuantajCalendarView filtered={filtered} month={month} y={y} m={m} isLoading={isLoading} />
+      )}
+      {viewMode === 'summary' && (
+        <PuantajSummaryView filtered={filtered} formatMoney={formatMoney} />
+      )}
 
-      {/* Table */}
-      <div className="panel">
-        <div className="panel-header">
-          <div>
-            <div className="panel-title">PUANTAJ TABLOSU</div>
-            <div className="panel-subtitle">{filtered.length} PERSONEL &middot; {monthLabel}</div>
-          </div>
-          <div style={{ display: 'flex', gap: '4px' }}>
-            {[
-              { id: 'name', label: 'AD' },
-              { id: 'worked', label: 'CALISAN' },
-              { id: 'absent', label: 'DEVAMSIZ' },
-              { id: 'net', label: 'UCRET' },
-            ].map(s => (
-              <button key={s.id} onClick={() => setSortBy(s.id)}
-                className={`filter-chip ${sortBy === s.id ? 'active' : ''}`}
-                style={{ fontSize: '9px', padding: '3px 8px' }}>
-                {s.label}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="panel-body" style={{ padding: 0, overflowX: 'auto' }}>
-          {isLoading ? (
-            <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text3)' }}>Yukleniyor...</div>
-          ) : filtered.length === 0 ? (
-            <div className="empty-state">
-              <div className="empty-icon">&#128203;</div>
-              <div className="empty-title">KAYIT YOK</div>
-              <div className="empty-desc">Bu ay icin puantaj verisi bulunamadi.</div>
-            </div>
-          ) : (
-            <table className="data-table" style={{ fontSize: '11px' }}>
-              <thead>
-                <tr>
-                  <th style={{ position: 'sticky', left: 0, background: 'var(--surface2)', zIndex: 2, minWidth: '140px' }}>AD SOYAD</th>
-                  <th>DEPT</th>
-                  <th style={{ textAlign: 'center' }}>DEVAM</th>
-                  <th style={{ textAlign: 'center', color: 'var(--green)' }}>IS</th>
-                  <th style={{ textAlign: 'center', color: 'var(--teal)' }}>IZIN</th>
-                  <th style={{ textAlign: 'center', color: 'var(--red)' }}>YOK</th>
-                  <th style={{ textAlign: 'center', color: 'var(--purple)' }}>MESAI</th>
-                  <th style={{ textAlign: 'right' }}>BRUT</th>
-                  <th style={{ textAlign: 'right' }}>NET</th>
-                  <th style={{ textAlign: 'center', width: '40px' }}>+</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map(r => {
-                  const d = calcDetails(r)
-                  const dc = deptColor(r.dept_color)
-                  return (
-                    <tr key={r.id}>
-                      <td style={{
-                        position: 'sticky', left: 0, background: 'var(--surface)',
-                        zIndex: 1, cursor: 'pointer',
-                      }}
-                        onClick={() => onPersonClick?.(r.id)}
-                      >
-                        <div style={{ fontWeight: 600, fontSize: '11px' }}>{r.full_name}</div>
-                        {r.position && <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text3)' }}>{r.position}</div>}
-                      </td>
-                      <td>
-                        {r.dept_name ? (
-                          <span style={{
-                            padding: '1px 6px', borderRadius: '10px', fontSize: '9px', fontWeight: 600,
-                            background: dc.bg, color: dc.text, whiteSpace: 'nowrap',
-                          }}>{r.dept_name}</span>
-                        ) : <span style={{ color: 'var(--text3)' }}>-</span>}
-                      </td>
-                      <td style={{ textAlign: 'center' }}><AttendBar worked={r.worked_days || 0} total={r.total_days || 0} /></td>
-                      <td style={{ textAlign: 'center', fontWeight: 700, color: 'var(--green)', fontFamily: 'var(--mono)' }}>{r.worked_days || 0}</td>
-                      <td style={{ textAlign: 'center', color: 'var(--teal)', fontFamily: 'var(--mono)' }}>{r.leave_days || 0}</td>
-                      <td style={{ textAlign: 'center', color: r.absent_days > 0 ? 'var(--red)' : 'var(--text3)', fontWeight: r.absent_days > 0 ? 700 : 400, fontFamily: 'var(--mono)' }}>{r.absent_days || 0}</td>
-                      <td style={{ textAlign: 'center', color: r.overtime_hours > 0 ? 'var(--purple)' : 'var(--text3)', fontFamily: 'var(--mono)', fontWeight: r.overtime_hours > 0 ? 700 : 400 }}>{r.overtime_hours || 0}s</td>
-                      <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text2)' }}>{formatMoney(d.gross)}</td>
-                      <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', fontSize: '10px', fontWeight: 700, color: d.net > 0 ? 'var(--green)' : 'var(--text3)' }}>{formatMoney(d.net)}</td>
-                      <td style={{ textAlign: 'center' }}>
-                        <button className="btn btn-ghost btn-sm" style={{ fontSize: '9px', padding: '2px 5px' }}
-                          onClick={(e) => {
-                            const rect = e.currentTarget.getBoundingClientRect()
-                            setDetailPopover({ row: r, details: d, rect })
-                          }}>
-                          Detay
-                        </button>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-              <tfoot>
-                <tr style={{ fontWeight: 700, borderTop: '2px solid var(--border)' }}>
-                  <td style={{ position: 'sticky', left: 0, background: 'var(--surface2)', zIndex: 1 }}>TOPLAM ({filtered.length})</td>
-                  <td />
-                  <td />
-                  <td style={{ textAlign: 'center', color: 'var(--green)', fontFamily: 'var(--mono)' }}>{totals.worked}</td>
-                  <td style={{ textAlign: 'center', color: 'var(--teal)', fontFamily: 'var(--mono)' }}>{totals.leave}</td>
-                  <td style={{ textAlign: 'center', color: 'var(--red)', fontFamily: 'var(--mono)' }}>{totals.absent}</td>
-                  <td style={{ textAlign: 'center', color: 'var(--purple)', fontFamily: 'var(--mono)' }}>{totals.overtime_hours}s</td>
-                  <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', fontSize: '10px' }}>{formatMoney(totals.gross)}</td>
-                  <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--green)' }}>{formatMoney(totals.net)}</td>
-                  <td />
-                </tr>
-              </tfoot>
-            </table>
-          )}
-        </div>
-      </div>
-
-      {/* Detail — side panel */}
-      {detailPopover && (
-        <SidePanel
-          title="MAAS DETAYI"
-          subtitle={`${detailPopover.row.full_name} · ${monthLabel}`}
-          icon="&#128176;"
-          onClose={() => setDetailPopover(null)}
-          width={340}
-          anchorRect={detailPopover.rect}
-        >
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '13px' }}>
-            {[
-              { label: 'Brut Maas', value: formatMoney(detailPopover.row.salary), color: 'var(--text)' },
-              { label: `Gunluk Ucret (maas/30)`, value: formatMoney(detailPopover.details.dailyRate), color: 'var(--text2)' },
-              { label: `Calisilan Gun (${detailPopover.row.worked_days || 0})`, value: formatMoney(detailPopover.details.basePay), color: 'var(--green)' },
-              { label: `Izin Gunu (${detailPopover.row.leave_days || 0})`, value: formatMoney(detailPopover.details.leavePay), color: 'var(--teal)' },
-              { label: `Mesai (${detailPopover.row.overtime_hours || 0}s x1.5)`, value: formatMoney(detailPopover.details.overtimePay), color: 'var(--purple)' },
-            ].map((item, i) => (
-              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
-                <span style={{ color: 'var(--text2)' }}>{item.label}</span>
-                <span style={{ fontFamily: 'var(--mono)', fontWeight: 600, color: item.color }}>{item.value}</span>
-              </div>
-            ))}
-
-            <div style={{ paddingTop: '4px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                <span style={{ color: 'var(--text)' }}>Brut Toplam</span>
-                <span style={{ fontFamily: 'var(--mono)', fontWeight: 700, fontSize: '15px' }}>{formatMoney(detailPopover.details.gross)}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                <span style={{ color: 'var(--red)', fontSize: '12px' }}>SGK (%14)</span>
-                <span style={{ fontFamily: 'var(--mono)', color: 'var(--red)', fontSize: '12px' }}>-{formatMoney(detailPopover.details.ssiDeduction)}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                <span style={{ color: 'var(--red)', fontSize: '12px' }}>Gelir Vergisi (%15)</span>
-                <span style={{ fontFamily: 'var(--mono)', color: 'var(--red)', fontSize: '12px' }}>-{formatMoney(detailPopover.details.taxDeduction)}</span>
-              </div>
-            </div>
-
-            <div style={{ background: 'rgba(39,201,106,.08)', border: '1px solid rgba(39,201,106,.25)', borderRadius: '10px', padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontFamily: 'var(--display)', letterSpacing: '1px', fontSize: '13px', color: 'var(--text)' }}>NET UCRET</span>
-              <span style={{ fontFamily: 'var(--mono)', fontWeight: 700, fontSize: '18px', color: 'var(--green)' }}>{formatMoney(detailPopover.details.net)}</span>
-            </div>
-
-            <div style={{ display: 'flex', gap: '12px', marginTop: '4px' }}>
-              <div style={{ flex: 1, padding: '10px', background: 'var(--surface2)', borderRadius: '8px', textAlign: 'center' }}>
-                <div style={{ fontFamily: 'var(--mono)', fontSize: '18px', fontWeight: 700, color: 'var(--blue)' }}>%{detailPopover.details.attendRate}</div>
-                <div style={{ fontSize: '11px', color: 'var(--text3)', marginTop: '2px' }}>Devam</div>
-              </div>
-              <div style={{ flex: 1, padding: '10px', background: 'var(--surface2)', borderRadius: '8px', textAlign: 'center' }}>
-                <div style={{ fontFamily: 'var(--mono)', fontSize: '18px', fontWeight: 700, color: 'var(--red)' }}>{detailPopover.row.absent_days || 0}</div>
-                <div style={{ fontSize: '11px', color: 'var(--text3)', marginTop: '2px' }}>Devamsiz Gun</div>
-              </div>
-            </div>
-          </div>
-        </SidePanel>
+      {/* Bordro detail bottom sheet */}
+      {selectedRow && (
+        <BordroDetailSheet
+          row={selectedRow} month={month} monthLabel={monthLabel}
+          formatMoney={formatMoney}
+          onClose={() => setSelectedRow(null)}
+        />
       )}
     </div>
   )
