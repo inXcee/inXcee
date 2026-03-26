@@ -3433,15 +3433,18 @@ function PuantajCalendarView({ filtered, month, y, m, isLoading }) {
   const daysInMonth = new Date(y, m, 0).getDate()
   const dayNumbers = Array.from({ length: daysInMonth }, (_, i) => i + 1)
 
+  const loadedIds = useRef(new Set())
+
   // When calendar view loads, lazy-fetch day breakdowns for all staff
   useEffect(() => {
     filtered.forEach(r => {
-      if (dayData[r.id]) return // already loaded
+      if (loadedIds.current.has(r.id)) return
+      loadedIds.current.add(r.id)
       api.get(`/shifts/puantaj/${r.id}/days`, { params: { month } })
         .then(res => setDayData(prev => ({ ...prev, [r.id]: res.data })))
-        .catch(() => {})
+        .catch(() => { loadedIds.current.delete(r.id) }) // allow retry on error
     })
-  }, [filtered, month]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [filtered, month])
 
   const STATUS_COLORS = {
     worked: { bg: 'var(--green)', text: '#fff' },
@@ -3691,7 +3694,6 @@ function BordroDetailSheet({ row, month, monthLabel, formatMoney, onClose }) {
   const TABS = [['hesap', '💰 HESAP'], ['gun', '📅 GÜN DÖKÜMÜ'], ['ytd', '📈 YIL']]
 
   const [y, m] = month.split('-').map(Number)
-  const daysInMonth = new Date(y, m, 0).getDate()
 
   // Mini calendar grid helpers
   const firstDow = new Date(y, m - 1, 1).getDay() // 0=Sun
