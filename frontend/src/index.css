@@ -344,3 +344,41 @@ h1, h2, h3, h4 { font-family: var(--display); letter-spacing: 2px; }
 @media (max-width: 768px) {
   html { overscroll-behavior-y: contain; }
 }
+
+/* ── Bordro Print Slip ────────────────────────────────────────────────── */
+.bordro-slip {
+  visibility: hidden;
+  position: absolute;
+  pointer-events: none;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  color: #000;
+  background: #fff;
+  padding: 20px;
+  max-width: 600px;
+  page-break-after: always;
+}
+.bordro-slip * { visibility: hidden; }
+.bordro-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
+.bordro-divider { border-top: 1px solid #000; margin: 6px 0; }
+.bordro-info { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 16px; margin: 6px 0; }
+.bordro-info span { color: #555; }
+.bordro-section-title { font-weight: bold; font-size: 10px; letter-spacing: 1px; margin: 4px 0; }
+.bordro-line { display: flex; justify-content: space-between; padding: 2px 0; }
+.bordro-row { display: flex; gap: 8px; padding: 4px 0; font-size: 10px; }
+.bordro-total { font-weight: bold; padding-top: 4px; }
+.bordro-net { font-size: 14px; font-weight: bold; padding: 6px 0; }
+.bordro-footer { display: flex; justify-content: space-between; padding-top: 12px; }
+
+@media print {
+  body * { visibility: hidden; }
+  .bordro-slip,
+  .bordro-slip * { visibility: visible; }
+  .bordro-slip {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+  }
+  @page { margin: 15mm; }
+}
