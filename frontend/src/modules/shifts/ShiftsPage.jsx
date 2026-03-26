@@ -1484,6 +1484,90 @@ function DailyView({ departments, date, onDateChange }) {
   )
 }
 
+function WeekFillSheet({ weekFillPopover, setWeekFillPopover, shiftDefs, weekFillDef, setWeekFillDef, weekFillOffDay, setWeekFillOffDay, fillWeek, weekStart, weekEnd, formatDate, shiftColor }) {
+  const [error, setError] = useState(null)
+
+  useEffect(() => {
+    const onEsc = e => { if (e.key === 'Escape') setWeekFillPopover(null) }
+    document.addEventListener('keydown', onEsc)
+    return () => document.removeEventListener('keydown', onEsc)
+  }, [setWeekFillPopover])
+
+  const DAY_LABELS = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz']
+
+  return (
+    <BottomSheet onClose={() => setWeekFillPopover(null)}>
+      <div style={{ padding: '0 20px 12px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <div style={{ fontFamily: 'var(--display)', fontSize: '16px', letterSpacing: '1px' }}>📆 HAFTA DOLDUR</div>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', marginTop: '2px' }}>
+              {weekFillPopover.person.full_name} · {formatDate(weekStart)}–{formatDate(weekEnd)}
+            </div>
+          </div>
+          <button onClick={() => setWeekFillPopover(null)} className="btn btn-ghost btn-sm">✕</button>
+        </div>
+      </div>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px' }}>
+        <div style={{ marginBottom: '16px' }}>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '1px', marginBottom: '8px' }}>VARDIYA SEÇ</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            {shiftDefs.map(s => {
+              const active = weekFillDef === s.id.toString()
+              const sc = shiftColor(s.color_class)
+              return (
+                <button key={s.id} onClick={() => setWeekFillDef(s.id.toString())}
+                  style={{
+                    width: '100%', padding: '10px 14px', borderRadius: '8px', textAlign: 'left',
+                    fontSize: '13px', cursor: 'pointer',
+                    border: `2px solid ${active ? sc.text : 'var(--border)'}`,
+                    background: active ? sc.bg : 'var(--surface2)',
+                    color: active ? sc.text : 'var(--text2)',
+                  }}>
+                  <span style={{ fontWeight: 600 }}>{s.name}</span>
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: '10px', marginLeft: '8px', opacity: .7 }}>
+                    {s.start_hour}:00–{s.end_hour === 24 ? '00:00' : `${s.end_hour}:00`}
+                  </span>
+                  {active && <span style={{ float: 'right', fontSize: '10px' }}>✓</span>}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+        <div style={{ marginBottom: '16px' }}>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '1px', marginBottom: '8px' }}>İZİN GÜNÜ</div>
+          <div style={{ display: 'flex', gap: '4px' }}>
+            {DAY_LABELS.map((lbl, i) => (
+              <button key={i} onClick={() => setWeekFillOffDay(i)}
+                style={{
+                  flex: 1, padding: '8px 2px', borderRadius: '6px', cursor: 'pointer',
+                  border: `2px solid ${weekFillOffDay === i ? 'var(--teal)' : 'var(--border)'}`,
+                  background: weekFillOffDay === i ? 'rgba(26,188,156,.12)' : 'var(--surface2)',
+                  color: weekFillOffDay === i ? 'var(--teal)' : 'var(--text3)',
+                  fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 600, textAlign: 'center',
+                }}>
+                {lbl}
+              </button>
+            ))}
+          </div>
+        </div>
+        <button className="btn btn-primary" style={{ width: '100%', opacity: !weekFillDef ? 0.5 : 1 }}
+          disabled={!weekFillDef || fillWeek.isPending}
+          onClick={() => {
+            setError(null)
+            fillWeek.mutate(
+              { staffId: weekFillPopover.person.id, deptId: weekFillPopover.person.dept_id, shiftDefId: parseInt(weekFillDef), offDayIdx: weekFillOffDay },
+              { onError: () => setError('Hafta doldurulamadı. Tekrar deneyin.') }
+            )
+          }}>
+          {fillWeek.isPending ? 'Dolduruluyor...' : '6 Gün Doldur + 1 İzin'}
+        </button>
+        {error && <div style={{ color: 'var(--red)', fontFamily: 'var(--mono)', fontSize: '10px', marginTop: '8px' }}>{error}</div>}
+      </div>
+    </BottomSheet>
+  )
+}
+
 function CellAssignSheet({ cellPopover, setCellPopover, shiftDefs, assignCell, deleteShift, formatDate, shortDay, shiftColor }) {
   const [error, setError] = useState(null)
 
@@ -1838,10 +1922,9 @@ function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
 
   const openWeekFill = (e, person) => {
     if (!canEdit) return
-    const rect = e.currentTarget.getBoundingClientRect()
     setWeekFillDef(shiftDefs[0]?.id?.toString() || '')
     setWeekFillOffDay(6) // default Sunday
-    setWeekFillPopover({ person, rect })
+    setWeekFillPopover({ person })
   }
 
   const isSunday = (dateStr) => new Date(dateStr).getDay() === 0
@@ -2302,69 +2385,20 @@ function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
 
       {/* Week fill panel */}
       {weekFillPopover && (
-        <SidePanel
-          title="HAFTA DOLDUR"
-          subtitle={`${weekFillPopover.person.full_name} · ${formatDate(weekStart)}–${formatDate(weekEnd)}`}
-          icon="&#128198;"
-          onClose={() => setWeekFillPopover(null)}
-          width={320}
-          anchorRect={weekFillPopover.rect}
-        >
-          <div style={{ marginBottom: '16px' }}>
-            <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '1px', marginBottom: '8px' }}>VARDIYA SEC</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              {shiftDefs.map(s => {
-                const active = weekFillDef === s.id.toString()
-                const sc = shiftColor(s.color_class)
-                return (
-                  <button key={s.id} onClick={() => setWeekFillDef(s.id.toString())}
-                    style={{
-                      width: '100%', padding: '10px 14px', borderRadius: '8px',
-                      textAlign: 'left', fontSize: '13px', cursor: 'pointer',
-                      border: `2px solid ${active ? sc.text : 'var(--border)'}`,
-                      background: active ? sc.bg : 'var(--surface2)',
-                      color: active ? sc.text : 'var(--text2)',
-                    }}>
-                    <span style={{ fontWeight: 600 }}>{s.name}</span>
-                    <span style={{ fontFamily: 'var(--mono)', fontSize: '10px', marginLeft: '8px', opacity: .7 }}>
-                      {s.start_hour}:00&ndash;{s.end_hour === 24 ? '00:00' : `${s.end_hour}:00`}
-                    </span>
-                    {active && <span style={{ float: 'right', fontSize: '10px' }}>✓</span>}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-
-          <div style={{ marginBottom: '16px' }}>
-            <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '1px', marginBottom: '8px' }}>IZIN GUNU</div>
-            <div style={{ display: 'flex', gap: '4px' }}>
-              {DAY_LABELS.map((lbl, i) => (
-                <button key={i} onClick={() => setWeekFillOffDay(i)}
-                  style={{
-                    flex: 1, padding: '8px 2px', borderRadius: '6px', cursor: 'pointer',
-                    border: `2px solid ${weekFillOffDay === i ? 'var(--teal)' : 'var(--border)'}`,
-                    background: weekFillOffDay === i ? 'rgba(26,188,156,.12)' : 'var(--surface2)',
-                    color: weekFillOffDay === i ? 'var(--teal)' : 'var(--text3)',
-                    fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 600, textAlign: 'center',
-                  }}>
-                  {lbl}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <button className="btn btn-primary" style={{ width: '100%', opacity: !weekFillDef ? 0.5 : 1 }}
-            disabled={!weekFillDef || fillWeek.isPending}
-            onClick={() => fillWeek.mutate({
-              staffId: weekFillPopover.person.id,
-              deptId: weekFillPopover.person.dept_id,
-              shiftDefId: parseInt(weekFillDef),
-              offDayIdx: weekFillOffDay,
-            })}>
-            {fillWeek.isPending ? 'Dolduruluyor...' : '6 Gun Doldur + 1 Izin'}
-          </button>
-        </SidePanel>
+        <WeekFillSheet
+          weekFillPopover={weekFillPopover}
+          setWeekFillPopover={setWeekFillPopover}
+          shiftDefs={shiftDefs}
+          weekFillDef={weekFillDef}
+          setWeekFillDef={setWeekFillDef}
+          weekFillOffDay={weekFillOffDay}
+          setWeekFillOffDay={setWeekFillOffDay}
+          fillWeek={fillWeek}
+          weekStart={weekStart}
+          weekEnd={weekEnd}
+          formatDate={formatDate}
+          shiftColor={shiftColor}
+        />
       )}
 
       {/* Bulk fill modal — entire dept */}
@@ -2584,10 +2618,9 @@ function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
                 if (s) {
                   setAddPersonModal(false); setAddPersonId('')
                   // directly fill their week
-                  const fakeRect = { top: window.innerHeight / 2 - 100, bottom: window.innerHeight / 2, left: window.innerWidth / 2 - 130, width: 260 }
                   setWeekFillDef(shiftDefs[0]?.id?.toString() || '')
                   setWeekFillOffDay(6)
-                  setWeekFillPopover({ person: { id: s.id, full_name: s.full_name, dept_id: s.department_id, dept_name: s.dept_name }, rect: fakeRect })
+                  setWeekFillPopover({ person: { id: s.id, full_name: s.full_name, dept_id: s.department_id, dept_name: s.dept_name } })
                 }
               }}>
               Hafta Doldur
