@@ -48,13 +48,15 @@ User expectation: every action that opens a panel should use BottomSheet, like t
 - Header: person name + date
 - Shift selector: list of shift definitions for the department, radio-style chips
 - "İzin Olarak İşaretle" toggle/button
-- "Vardiyayı Sil" delete button (only shown if existing shift)
+- "Vardiyayı Sil" delete button (behavior improvement: only shown if existing shift — current SidePanel shows it unconditionally)
 - Uygula / İptal buttons
 
 **Behavior:**
 - Opens when `cellPopover !== null`
-- Closes on Esc, backdrop click, or after successful mutation
+- Closes on backdrop click or after successful mutation
 - After mutation (assign/delete), invalidates query and closes
+- On mutation error: display inline error message below action buttons, do not close
+- **Esc handling:** Add a `keydown` listener inside `CellAssignSheet` (not inside BottomSheet — see BottomSheet comment at line ~160: Esc is intentionally NOT handled in BottomSheet itself, each consumer manages its own priority)
 
 ### 2. HAFTA DOLDUR BottomSheet
 
@@ -69,7 +71,9 @@ User expectation: every action that opens a panel should use BottomSheet, like t
 
 **Behavior:**
 - Opens when `weekFillPopover !== null`
-- Closes on Esc, backdrop click, or after successful mutation
+- Closes on backdrop click or after successful mutation
+- On mutation error: display inline error message, do not close
+- **Esc handling:** Add a `keydown` listener inside `WeekFillSheet` (same pattern as CellAssignSheet — not inside BottomSheet)
 
 ### 3. Personel Düzenle / Yeni Personel BottomSheet
 
@@ -104,10 +108,11 @@ User expectation: every action that opens a panel should use BottomSheet, like t
 
 **Behavior:**
 - Opens when `showForm === true`
-- Tab state: local `useState('temel')` inside the sheet component
+- Tab state: local `useState('temel')` inside the sheet component. Tab resets naturally on each open because the component unmounts when `showForm === false` — no explicit reset effect needed.
 - On save: submit mutation, close on success
+- On mutation error: display inline error inside the sheet, do not close
 - On close: reset `showForm = false`, `editStaff = null`
-- Esc closes the sheet
+- **Esc handling:** Add a `keydown` listener inside `StaffFormSheet`. Esc closes the sheet directly (no sub-form priority needed — unlike StaffDetailPanel, there are no nested action forms)
 
 ---
 
@@ -126,8 +131,8 @@ User expectation: every action that opens a panel should use BottomSheet, like t
 - `ModalOverlay` usage in staff form render
 
 **State changes:**
-- `cellPopover`: remove `rect` field (no longer needed for positioning)
-- `weekFillPopover`: remove `rect` field (no longer needed for positioning)
+- `cellPopover`: remove `rect` field (no longer needed for positioning). One setter call site.
+- `weekFillPopover`: remove `rect` field (no longer needed). **Two setter call sites** — one in the weekly view and one in the daily view (DailyView component, uses `fakeRect`). Both must be updated.
 - All other state variables unchanged
 
 **No backend changes.** All mutations stay the same.
