@@ -286,6 +286,12 @@ export function initDB() {
     }
   } catch(_) {}
 
+  // Laundry phone_override kolonu (sonradan eklendi)
+  try { db.exec(`ALTER TABLE laundry_items ADD COLUMN phone_override TEXT`) } catch(_) {}
+
+  // Laundry timer_started_at kolonu (sonradan eklendi)
+  try { db.exec(`ALTER TABLE laundry_machines ADD COLUMN timer_started_at TEXT`) } catch(_) {}
+
   // Performans indeksleri
   try { db.exec(`CREATE INDEX IF NOT EXISTS idx_laundry_items_status ON laundry_items(status)`) } catch(_) {}
   try { db.exec(`CREATE INDEX IF NOT EXISTS idx_laundry_items_room ON laundry_items(room_id)`) } catch(_) {}

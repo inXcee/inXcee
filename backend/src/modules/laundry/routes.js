@@ -1,7 +1,9 @@
 import { Router } from 'express'
 import { requireRole } from '../../shared/auth/middleware.js'
 import { upload } from '../../shared/uploads/middleware.js'
+import { getDB } from '../../shared/db/index.js'
 import * as svc from './service.js'
+import { notifyItemReady } from './whatsapp.js'
 
 export const laundryRouter = Router()
 
@@ -50,7 +52,12 @@ laundryRouter.post('/items', ...laundryFull, (req, res) => {
 
 laundryRouter.patch('/items/:id/advance', ...laundryFull, (req, res) => {
   try {
-    const item = svc.advanceItemService(+req.params.id, req.body, req.user.id)
+    const { machine_id, shelf_location, timer_minutes } = req.body
+    const item = svc.advanceItemService(
+      +req.params.id,
+      { machine_id, shelf_location, timer_minutes: timer_minutes ? +timer_minutes : null },
+      req.user.id
+    )
     res.json(item)
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
@@ -196,6 +203,34 @@ laundryRouter.get('/reports/export', ...laundryRead, (req, res) => {
     res.setHeader('Content-Type', 'text/csv; charset=utf-8')
     res.setHeader('Content-Disposition', `attachment; filename="camasir-${new Date().toISOString().slice(0,10)}.csv"`)
     res.send('\uFEFF' + csv)
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+// Oda sakininin telefon bilgisi
+laundryRouter.get('/room-occupant/:room_id', ...laundryFull, (req, res) => {
+  try {
+    const db = getDB()
+    const row = db.prepare(`
+      SELECT p.full_name, p.phone_number
+      FROM room_assignments ra
+      JOIN personnel p ON p.id = ra.personnel_id
+      WHERE ra.room_id = ? AND ra.check_out_at IS NULL
+      LIMIT 1
+    `).get(+req.params.room_id)
+    res.json(row || {})
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+// Manuel WhatsApp bildirimi
+laundryRouter.post('/items/:id/notify-whatsapp', ...laundryFull, async (req, res) => {
+  try {
+    const item = svc.getItemService(+req.params.id)
+    if (!item) return res.status(404).json({ error: 'Kayıt bulunamadı' })
+    // phone override in body takes priority
+    const phone = req.body.phone || item.phone_number
+    if (!phone) return res.status(400).json({ error: 'Telefon numarası bulunamadı' })
+    await notifyItemReady(+req.params.id)
+    res.json({ ok: true, phone })
   } catch (e) { res.status(500).json({ error: e.message }) }
 })
 

@@ -17,11 +17,11 @@ const TRANSITIONS = {
 // ITEM CRUD
 // ═══════════════════════════════════════════════════════════════════════════
 
-export function createItemService({ room_id, item_count, item_details, notes, urgent, photo_url }, userId) {
+export function createItemService({ room_id, item_count, item_details, notes, urgent, photo_url, phone_override }, userId) {
   if (!room_id) throw new Error('Oda seçilmeli')
   if (!item_count || item_count < 1) throw new Error('Parça adedi en az 1 olmalı')
 
-  const id = q.insertItemQuery({ room_id, item_count, item_details, notes, urgent, photo_url, created_by: userId })
+  const id = q.insertItemQuery({ room_id, item_count, item_details, notes, urgent, photo_url, phone_override, created_by: userId })
   q.insertHistoryQuery({ item_id: id, from_status: null, to_status: 'dirty', action_by: userId, notes: `${item_count} parça kayıt` })
 
   if (urgent) {
@@ -32,7 +32,7 @@ export function createItemService({ room_id, item_count, item_details, notes, ur
   return q.getItemQuery(id)
 }
 
-export function advanceItemService(id, { machine_id, shelf_location }, userId) {
+export function advanceItemService(id, { machine_id, shelf_location, timer_minutes }, userId) {
   const item = q.getItemQuery(id)
   if (!item) throw new Error('Kayıt bulunamadı')
   if (!TRANSITIONS[item.status]) throw new Error(`"${item.status}" durumundan ilerlenemez`)
@@ -43,7 +43,15 @@ export function advanceItemService(id, { machine_id, shelf_location }, userId) {
   if (nextStatus === 'washing') {
     if (!machine_id) throw new Error('Makine seçilmeli')
     extra.machine_id = machine_id
-    q.updateMachineQuery(machine_id, { status: 'running' })
+    const now = new Date()
+    const timerEnd = (timer_minutes && timer_minutes > 0)
+      ? new Date(now.getTime() + timer_minutes * 60000).toISOString()
+      : null
+    q.updateMachineQuery(machine_id, {
+      status: 'running',
+      timer_end: timerEnd,
+      timer_started_at: timerEnd ? now.toISOString() : null,
+    })
     q.removeItemFromQueueQuery(id)
   }
 

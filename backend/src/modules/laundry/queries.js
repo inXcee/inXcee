@@ -4,12 +4,12 @@ import { getDB } from '../../shared/db/index.js'
 // ITEMS
 // ═══════════════════════════════════════════════════════════════════════════
 
-export function insertItemQuery({ room_id, item_count = 1, item_details, notes, urgent = 0, photo_url, created_by }) {
+export function insertItemQuery({ room_id, item_count = 1, item_details, notes, urgent = 0, photo_url, phone_override, created_by }) {
   const db = getDB()
   const r = db.prepare(`
-    INSERT INTO laundry_items(room_id, item_count, item_details, notes, urgent, photo_url, created_by, updated_at)
-    VALUES(?, ?, ?, ?, ?, ?, ?, datetime('now'))
-  `).run(room_id, item_count, item_details || null, notes || null, urgent ? 1 : 0, photo_url || null, created_by)
+    INSERT INTO laundry_items(room_id, item_count, item_details, notes, urgent, photo_url, phone_override, created_by, updated_at)
+    VALUES(?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+  `).run(room_id, item_count, item_details || null, notes || null, urgent ? 1 : 0, photo_url || null, phone_override || null, created_by)
   return r.lastInsertRowid
 }
 
@@ -20,11 +20,15 @@ export function getItemQuery(id) {
            r.block, r.room_no, r.floor,
            u.full_name as created_by_name,
            m.name as machine_name,
-           (SELECT COUNT(*) FROM laundry_damages WHERE item_id = li.id) as damage_count
+           (SELECT COUNT(*) FROM laundry_damages WHERE item_id = li.id) as damage_count,
+           COALESCE(li.phone_override, p.phone_number) as phone_number,
+           p.full_name as occupant_name
     FROM laundry_items li
     LEFT JOIN rooms r ON r.id = li.room_id
     LEFT JOIN users u ON u.id = li.created_by
     LEFT JOIN laundry_machines m ON m.id = li.machine_id
+    LEFT JOIN room_assignments ra ON ra.room_id = li.room_id AND ra.check_out_at IS NULL
+    LEFT JOIN personnel p ON p.id = ra.personnel_id
     WHERE li.id = ?
   `).get(id)
 }
@@ -61,11 +65,15 @@ export function listItemsQuery({ status, urgent, sla_only, search } = {}) {
              THEN ROUND((julianday('now') - julianday(COALESCE(li.updated_at, li.created_at))) * 24, 1)
              ELSE NULL
            END as hours_in_status,
-           (SELECT COUNT(*) FROM laundry_damages WHERE item_id = li.id) as damage_count
+           (SELECT COUNT(*) FROM laundry_damages WHERE item_id = li.id) as damage_count,
+           COALESCE(li.phone_override, p.phone_number) as phone_number,
+           p.full_name as occupant_name
     FROM laundry_items li
     LEFT JOIN rooms r ON r.id = li.room_id
     LEFT JOIN users u ON u.id = li.created_by
     LEFT JOIN laundry_machines m ON m.id = li.machine_id
+    LEFT JOIN room_assignments ra ON ra.room_id = li.room_id AND ra.check_out_at IS NULL
+    LEFT JOIN personnel p ON p.id = ra.personnel_id
     WHERE ${where}
     ORDER BY li.urgent DESC, li.updated_at ASC
   `).all(...params)
@@ -132,7 +140,7 @@ export function insertMachineQuery({ name, type = 'washer', capacity_kg = 10 }) 
 
 export function updateMachineQuery(id, fields) {
   const db = getDB()
-  const allowed = ['name', 'type', 'status', 'timer_end', 'capacity_kg', 'maintenance_notes']
+  const allowed = ['name', 'type', 'status', 'timer_end', 'timer_started_at', 'capacity_kg', 'maintenance_notes']
   const entries = Object.entries(fields).filter(([k]) => allowed.includes(k))
   if (!entries.length) return
   const sets = entries.map(([k]) => `${k} = ?`)

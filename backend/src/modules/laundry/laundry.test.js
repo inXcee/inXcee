@@ -134,6 +134,37 @@ describe('State machine', () => {
     expect(m.status).toBe('running')
   })
 
+  it('dirty → washing: timer_minutes verilince machine.timer_end set edilir', async () => {
+    const db = getDB()
+    // Yeni bir item oluştur
+    const itemRes = await request(app)
+      .post('/api/laundry/items')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ room_id: roomId, item_count: 1, notes: 'timer test' })
+    expect(itemRes.status).toBe(201)
+    const newItemId = itemRes.body.id
+
+    const machine = db.prepare("SELECT id FROM laundry_machines WHERE status='idle' LIMIT 1").get()
+    const before = new Date()
+
+    const res = await request(app)
+      .patch(`/api/laundry/items/${newItemId}/advance`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ machine_id: machine.id, timer_minutes: 45 })
+
+    expect(res.status).toBe(200)
+    expect(res.body.status).toBe('washing')
+
+    const m = db.prepare('SELECT timer_end, timer_started_at FROM laundry_machines WHERE id=?').get(machine.id)
+    expect(m.timer_end).toBeTruthy()
+    expect(m.timer_started_at).toBeTruthy()
+
+    const timerEnd = new Date(m.timer_end)
+    const timerStarted = new Date(m.timer_started_at)
+    const diffMinutes = (timerEnd - timerStarted) / 60000
+    expect(Math.round(diffMinutes)).toBe(45)
+  })
+
   it('washing → ready: shelf_location ile OK', async () => {
     const res = await request(app)
       .patch(`/api/laundry/items/${itemId}/advance`)
