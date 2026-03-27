@@ -38,7 +38,7 @@ export const laundryApi = {
   uploadPhoto: (file) => {
     const fd = new FormData()
     fd.append('photo', file)
-    return api.post('/uploads/photo', fd, {
+    return api.post('/laundry/upload-photo', fd, {
       headers: { 'Content-Type': 'multipart/form-data' }
     }).then(r => r.data)
   },

@@ -20,6 +20,9 @@ const CheckoutPage = lazy(() => import('./modules/checkout/CheckoutPage.jsx'))
 const InventoryPage = lazy(() => import('./modules/inventory/InventoryPage.jsx'))
 const ReportsPage = lazy(() => import('./modules/reports/ReportsPage.jsx'))
 const LaundryPage = lazy(() => import('./modules/laundry/LaundryPage.jsx'))
+const LaundryDashboard = lazy(() => import('./modules/laundry/LaundryDashboard.jsx'))
+const LaundryReport = lazy(() => import('./modules/laundry/LaundryReport.jsx'))
+const LaundrySettings = lazy(() => import('./modules/laundry/LaundrySettings.jsx'))
 const AuditPage = lazy(() => import('./modules/admin/AuditPage.jsx'))
 const UsersPage = lazy(() => import('./modules/admin/UsersPage.jsx'))
 
@@ -81,6 +84,9 @@ export default function App() {
             <Route path="shifts" element={<ShiftsPage />} />
             <Route path="checkout" element={<CheckoutPage />} />
             <Route path="laundry" element={<LaundryPage />} />
+            <Route path="laundry/dashboard" element={<LaundryDashboard />} />
+            <Route path="laundry/report" element={<LaundryReport />} />
+            <Route path="laundry/settings" element={<LaundrySettings />} />
             <Route path="inventory" element={<InventoryPage />} />
             <Route path="reports" element={<ReportsPage />} />
             <Route path="audit" element={<AuditPage />} />

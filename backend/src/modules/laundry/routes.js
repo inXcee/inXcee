@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import { requireRole } from '../../shared/auth/middleware.js'
+import { upload } from '../../shared/uploads/middleware.js'
 import * as svc from './service.js'
 
 export const laundryRouter = Router()
@@ -195,4 +196,14 @@ laundryRouter.get('/reports/export', ...laundryRead, (req, res) => {
     res.setHeader('Content-Disposition', `attachment; filename="camasir-${new Date().toISOString().slice(0,10)}.csv"`)
     res.send('\uFEFF' + csv)
   } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PHOTO UPLOAD
+// ═══════════════════════════════════════════════════════════════════════════
+
+laundryRouter.post('/upload-photo', ...laundryFull, upload.single('photo'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'Dosya bulunamadı' })
+  const path = `/uploads/${req.file.filename}`
+  res.json({ url: path, filename: req.file.filename })
 })
