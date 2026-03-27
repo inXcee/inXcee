@@ -100,7 +100,7 @@ function MachineCard({ m, onTimer, onReset, loading }) {
   const [now, setNow] = useState(Date.now())
   useEffect(() => {
     if (m.status !== 'running') return
-    const id = setInterval(() => setNow(Date.now()), 30000)
+    const id = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(id)
   }, [m.status])
 
@@ -108,11 +108,12 @@ function MachineCard({ m, onTimer, onReset, loading }) {
     ? Math.max(0, Math.round((new Date(m.timer_end) - now) / 60000))
     : null
 
-  // Estimate total from timer_end and a rough start — default to 45 if unknown
-  const totalMinutes = 45
+  const totalMinutes = m.timer_started_at && m.timer_end
+    ? Math.round((new Date(m.timer_end) - new Date(m.timer_started_at)) / 60000)
+    : 60
 
-  const typeLabel = m.machine_type === 'dryer' ? 'D' : 'W'
-  const typeColor = m.machine_type === 'dryer' ? 'var(--accent2)' : 'var(--blue)'
+  const typeLabel = m.type === 'dryer' ? 'D' : 'W'
+  const typeColor = m.type === 'dryer' ? 'var(--accent2)' : 'var(--blue)'
 
   return (
     <div className={`ms-card ${m.status}`}>
