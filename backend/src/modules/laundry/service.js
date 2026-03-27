@@ -1,6 +1,7 @@
 import * as q from './queries.js'
 import { createNotification } from '../../shared/notifications/service.js'
 import { logAudit } from '../../shared/audit.js'
+import { notifyItemReady } from './whatsapp.js'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // STATE MACHINE
@@ -57,6 +58,8 @@ export function advanceItemService(id, { machine_id, shelf_location }, userId) {
       module: 'laundry',
       target_role: 'laundry',
     })
+    // WhatsApp bildirimi — fire and forget
+    notifyItemReady(id).catch(() => {})
   }
 
   q.updateItemStatusQuery(id, nextStatus, extra)

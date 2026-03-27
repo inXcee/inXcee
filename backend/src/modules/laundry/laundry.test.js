@@ -291,3 +291,40 @@ describe('Laundry routes — yetki kontrolleri', () => {
     expect(res.headers['content-type']).toContain('text/csv')
   })
 })
+
+describe('SLA engine', () => {
+  it('checkSlaViolations hata vermez', async () => {
+    const { checkSlaViolations } = await import('./sla.js')
+    const count = checkSlaViolations()
+    expect(typeof count).toBe('number')
+  })
+
+  it('checkMachineTimers hata vermez', async () => {
+    const { checkMachineTimers } = await import('./sla.js')
+    const count = checkMachineTimers()
+    expect(typeof count).toBe('number')
+  })
+
+  it('süresi dolan makine done olur', async () => {
+    const db = getDB()
+    const machine = db.prepare("SELECT id FROM laundry_machines WHERE status='idle' LIMIT 1").get()
+    if (machine) {
+      db.prepare("UPDATE laundry_machines SET status='running', timer_end=datetime('now','-1 minute') WHERE id=?").run(machine.id)
+      const { checkMachineTimers } = await import('./sla.js')
+      const count = checkMachineTimers()
+      expect(count).toBeGreaterThan(0)
+      const m = db.prepare('SELECT status FROM laundry_machines WHERE id=?').get(machine.id)
+      expect(m.status).toBe('done')
+      db.prepare("UPDATE laundry_machines SET status='idle', timer_end=NULL WHERE id=?").run(machine.id)
+    }
+  })
+})
+
+describe('WhatsApp', () => {
+  it('WHATSAPP_TOKEN olmadan hata vermiyor', async () => {
+    delete process.env.WHATSAPP_TOKEN
+    delete process.env.WHATSAPP_PHONE_ID
+    const { notifyItemReady } = await import('./whatsapp.js')
+    await expect(notifyItemReady(999)).resolves.toBeUndefined()
+  })
+})
