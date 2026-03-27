@@ -188,7 +188,7 @@ function MachineCard({ m, onTimer, onReset, loading }) {
 }
 
 /* ── Strip ──────────────────────────────────────────────────── */
-export default function MachineStrip({ machines = [] }) {
+export default function MachineStrip({ machines = [], hideHeader = false }) {
   const qc = useQueryClient()
 
   const setTimer = useMutation({
@@ -211,26 +211,28 @@ export default function MachineStrip({ machines = [] }) {
 
   return (
     <div style={{ marginBottom: 18 }}>
-      <div className="sect" style={{ marginBottom: 10 }}>
-        <span className="sect-title">MAKİNELER</span>
-        {running > 0 && (
-          <span style={{
-            fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--accent)',
-            marginLeft: 10, letterSpacing: 0.5,
-          }}>
-            {running} çalışıyor
-          </span>
-        )}
-        {done > 0 && (
-          <span style={{
-            fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--red)',
-            marginLeft: 10, letterSpacing: 0.5,
-          }}>
-            {done} bekleniyor
-          </span>
-        )}
-        <span className="sect-line" />
-      </div>
+      {!hideHeader && (
+        <div className="sect" style={{ marginBottom: 10 }}>
+          <span className="sect-title">MAKİNELER</span>
+          {running > 0 && (
+            <span style={{
+              fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--accent)',
+              marginLeft: 10, letterSpacing: 0.5,
+            }}>
+              {running} çalışıyor
+            </span>
+          )}
+          {done > 0 && (
+            <span style={{
+              fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--red)',
+              marginLeft: 10, letterSpacing: 0.5,
+            }}>
+              {done} bekleniyor
+            </span>
+          )}
+          <span className="sect-line" />
+        </div>
+      )}
       <div style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 6, paddingTop: 2 }}>
         {machines.map(m => (
           <MachineCard

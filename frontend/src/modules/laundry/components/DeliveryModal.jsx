@@ -74,6 +74,37 @@ export default function DeliveryModal({ item, onClose }) {
         </div>
 
         <div className="panel-body" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* Telefon / WA bilgisi */}
+          {item.phone_number && (
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '8px 12px', borderRadius: 8,
+              background: 'rgba(37,211,102,0.07)', border: '1px solid rgba(37,211,102,0.18)',
+            }}>
+              <div>
+                {item.occupant_name && (
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text2)', marginBottom: 2 }}>
+                    {item.occupant_name}
+                  </div>
+                )}
+                <div style={{ fontFamily: 'var(--mono)', fontSize: 12, color: '#25D366', letterSpacing: 0.5 }}>
+                  {item.phone_number}
+                </div>
+              </div>
+              <a
+                href={`https://wa.me/${item.phone_number.replace(/\D/g,'').replace(/^0/,'90')}`}
+                target="_blank" rel="noreferrer"
+                style={{
+                  padding: '6px 12px', borderRadius: 6, textDecoration: 'none',
+                  background: '#25D366', color: '#000',
+                  fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 700, letterSpacing: 1,
+                }}
+              >
+                WP →
+              </a>
+            </div>
+          )}
+
           {/* İsim */}
           <div>
             <label className="form-label">TESLİM ALAN *</label>
@@ -81,7 +112,7 @@ export default function DeliveryModal({ item, onClose }) {
               className="form-input"
               value={name}
               onChange={e => setName(e.target.value)}
-              placeholder="Ad Soyad..."
+              placeholder={item.occupant_name || 'Ad Soyad...'}
               autoFocus
               style={{ fontSize: 14 }}
             />

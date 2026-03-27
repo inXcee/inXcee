@@ -1,12 +1,13 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { laundryApi } from '../api.js'
 import api from '../../../shared/api/client.js'
 
 export default function NewItemModal({ onClose }) {
   const qc = useQueryClient()
-  const [form, setForm] = useState({ room_id: '', item_count: 1, notes: '', urgent: false, item_details: '' })
+  const [form, setForm] = useState({ room_id: '', item_count: 1, notes: '', urgent: false, item_details: '', phone_override: '' })
   const [roomSearch, setRoomSearch] = useState('')
+  const [phoneLoading, setPhoneLoading] = useState(false)
 
   const { data: rooms = [] } = useQuery({
     queryKey: ['rooms-list'],
@@ -22,11 +23,21 @@ export default function NewItemModal({ onClose }) {
       ...form,
       room_id: +form.room_id,
       urgent: form.urgent ? 1 : 0,
+      phone_override: form.phone_override || undefined,
     }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['laundry-items'] }); onClose() },
   })
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+
+  // Auto-fill phone when room changes
+  useEffect(() => {
+    if (!form.room_id) return
+    setPhoneLoading(true)
+    laundryApi.getRoomOccupant(form.room_id)
+      .then(data => { if (data?.phone_number) set('phone_override', data.phone_number) })
+      .finally(() => setPhoneLoading(false))
+  }, [form.room_id])
 
   const selectedRoom = rooms.find(r => (r.room_id || r.id) === +form.room_id)
 
@@ -150,6 +161,27 @@ export default function NewItemModal({ onClose }) {
             <input className="form-input" value={form.notes}
               onChange={e => set('notes', e.target.value)}
               placeholder="Açıklama..." />
+          </div>
+
+          {/* Phone */}
+          <div>
+            <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span>WHATSAPP TELEFon</span>
+              {phoneLoading && <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>yükleniyor...</span>}
+              {form.phone_override && !phoneLoading && (
+                <a
+                  href={`https://wa.me/${form.phone_override.replace(/\D/g,'').replace(/^0/,'90')}`}
+                  target="_blank" rel="noreferrer"
+                  style={{ fontFamily: 'var(--mono)', fontSize: 9, color: '#25D366', textDecoration: 'none', letterSpacing: 0.5 }}
+                >
+                  WA →
+                </a>
+              )}
+            </label>
+            <input className="form-input" value={form.phone_override}
+              onChange={e => set('phone_override', e.target.value)}
+              placeholder="Oda sakininden otomatik · veya gir..."
+              style={{ fontFamily: 'var(--mono)' }} />
           </div>
 
           {/* Urgent */}
