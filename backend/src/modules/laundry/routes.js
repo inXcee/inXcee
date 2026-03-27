@@ -6,7 +6,8 @@ import * as svc from './service.js'
 export const laundryRouter = Router()
 
 // Yetki seviyeleri
-const laundryFull = requireRole('laundry')
+// campus_manager tüm işlemlere erişebilir (en yetkili)
+const laundryFull = requireRole('laundry', 'campus_manager')
 const laundryRead = requireRole('laundry', 'shift_supervisor', 'campus_manager')
 const slaWrite    = requireRole('laundry', 'campus_manager')
 
