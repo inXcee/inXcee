@@ -99,7 +99,7 @@ frontend/src/modules/laundry/DistributionRoute.jsx
 
 ---
 
-## FAZ 1 — DB Migration + Çekirdek Backend
+## ✅ FAZ 1 — DB Migration + Çekirdek Backend
 
 ### Task 1: DB Migration — 7 yeni tablo + seed
 
@@ -1430,7 +1430,7 @@ cd backend && git add src/modules/laundry/routes.js src/modules/laundry/laundry.
 
 ---
 
-## FAZ 2 — SLA Motoru + WhatsApp
+## ✅ FAZ 2 — SLA Motoru + WhatsApp
 
 ### Task 5: SLA motoru + cron entegrasyonu
 
@@ -1687,7 +1687,7 @@ cd backend && git add src/modules/laundry/whatsapp.js src/modules/laundry/servic
 
 ---
 
-## FAZ 3 — Frontend Çekirdek
+## ✅ FAZ 3 — Frontend Çekirdek
 
 ### Task 7: Frontend API client
 
@@ -2746,7 +2746,7 @@ cd frontend && git add src/modules/laundry/ && git commit -m "feat: laundry Laun
 
 ---
 
-## FAZ 4 — Queue + Dashboard + Routes
+## ✅ FAZ 4 — Queue + Dashboard + Routes
 
 ### Task 11: Frontend — QueuePanel + LaundryDashboard
 
@@ -3157,7 +3157,7 @@ git add frontend/src/App.jsx frontend/src/shared/components/Layout.jsx frontend/
 
 ---
 
-## FAZ 5 — Raporlama + Ayarlar + Final
+## ✅ FAZ 5 — Raporlama + Ayarlar + Final
 
 ### Task 13: Frontend — LaundryReport + LaundrySettings
 
