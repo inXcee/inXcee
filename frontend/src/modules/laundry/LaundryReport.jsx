@@ -55,10 +55,10 @@ export default function LaundryReport() {
           {/* SUMMARY CARDS */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 16 }}>
             {[
-              { label: 'Toplam Kayıt', value: stats.total || 0, color: 'var(--text2)' },
-              { label: 'Teslim Edilen', value: stats.delivered || 0, color: 'var(--green)' },
-              { label: 'SLA İhlali', value: stats.sla_violations || 0, color: 'var(--red)' },
-              { label: 'Ort. Süre (saat)', value: stats.avg_hours != null ? stats.avg_hours.toFixed(1) : '—', color: 'var(--accent)' },
+              { label: 'Toplam Kayıt',   value: stats.period_total?.count ?? 0, color: 'var(--text2)' },
+              { label: 'Teslim Edilen',  value: stats.period_delivered?.count ?? 0, color: 'var(--green)' },
+              { label: 'SLA İhlali',     value: stats.sla_violations?.count ?? 0, color: 'var(--red)' },
+              { label: 'Bugün Teslim',   value: stats.delivered_today?.count ?? 0, color: 'var(--accent)' },
             ].map(s => (
               <div key={s.label} className="kpi-card panel" style={{ padding: '10px 12px', textAlign: 'center', borderTop: `2px solid ${s.color}` }}>
                 <div style={{ fontFamily: 'var(--display)', fontSize: 26, letterSpacing: 2, color: s.color, lineHeight: 1 }}>

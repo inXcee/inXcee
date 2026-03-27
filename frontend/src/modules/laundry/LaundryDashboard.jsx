@@ -268,7 +268,7 @@ export default function LaundryDashboard() {
           { label: 'Yıkaniyor',     value: washing.length,                                  color: 'var(--blue)'   },
           { label: 'Rafta Hazır',   value: ready.length,                                    color: 'var(--green)'  },
           { label: 'SLA İhlal',     value: violations.length,                               color: 'var(--red)'    },
-          { label: 'Bugün Teslim',  value: stats?.delivered_today ?? 0,                     color: 'var(--teal)'   },
+          { label: 'Bugün Teslim',  value: stats?.delivered_today?.count ?? 0,              color: 'var(--teal)'   },
         ].map(s => (
           <div key={s.label} style={{
             background: 'var(--surface)',
