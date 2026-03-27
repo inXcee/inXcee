@@ -1,6 +1,9 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { laundryApi } from '../api.js'
+import AssignModal from './AssignModal.jsx'
+import ShelfModal  from './ShelfModal.jsx'
+import LostModal   from './LostModal.jsx'
 
 /* ── Status config ─────────────────────────────────────────── */
 const FLOW = ['dirty', 'washing', 'ready', 'delivered']
@@ -188,15 +191,11 @@ function Chip({ color, children }) {
 export default function ItemCard({ item, machines = [], onDeliver, onDamage, selected, onSelect }) {
   const qc = useQueryClient()
   const [expanded, setExpanded] = useState(false)
+  const [assignOpen, setAssignOpen] = useState(false)
+  const [shelfOpen,  setShelfOpen]  = useState(false)
+  const [lostOpen,   setLostOpen]   = useState(false)
+  const [deleteStep, setDeleteStep] = useState(false)
 
-  const advance = useMutation({
-    mutationFn: (data) => laundryApi.advanceItem(item.id, data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['laundry-items'] }),
-  })
-  const markLost = useMutation({
-    mutationFn: () => laundryApi.lostItem(item.id, {}),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['laundry-items'] }),
-  })
   const deleteItem = useMutation({
     mutationFn: () => laundryApi.deleteItem(item.id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['laundry-items'] }),
@@ -296,29 +295,17 @@ export default function ItemCard({ item, machines = [], onDeliver, onDamage, sel
         {item.status !== 'lost' && item.status !== 'delivered' && (
           <div style={{ display: 'flex', gap: 6, marginTop: 12, flexWrap: 'wrap' }}>
             {item.status === 'dirty' && (
-              <select
-                className="lc-select"
-                onChange={e => e.target.value && advance.mutate({ machine_id: +e.target.value })}
-                defaultValue=""
-                disabled={advance.isPending}
+              <button
+                className="lc-action-btn primary"
+                onClick={() => setAssignOpen(true)}
               >
-                <option value="">⚙ Makineye At...</option>
-                {machines.filter(m => m.status === 'idle').map(m => (
-                  <option key={m.id} value={m.id}>{m.name}</option>
-                ))}
-                {machines.filter(m => m.status === 'idle').length === 0 && (
-                  <option disabled>Boş makine yok</option>
-                )}
-              </select>
+                ⚙ Makineye At
+              </button>
             )}
             {item.status === 'washing' && (
               <button
                 className="lc-action-btn primary"
-                onClick={() => {
-                  const shelf = prompt('Raf konumu (örn: 2. Kat A):')
-                  if (shelf !== null) advance.mutate({ shelf_location: shelf })
-                }}
-                disabled={advance.isPending}
+                onClick={() => setShelfOpen(true)}
               >
                 ▣ Rafa Koy
               </button>
@@ -336,7 +323,7 @@ export default function ItemCard({ item, machines = [], onDeliver, onDamage, sel
             <button
               className="lc-action-btn ghost"
               style={{ flex: 'none', padding: '8px 12px' }}
-              onClick={() => setExpanded(!expanded)}
+              onClick={() => { setExpanded(!expanded); setDeleteStep(false) }}
             >
               {expanded ? '▲' : '▾'}
             </button>
@@ -345,30 +332,52 @@ export default function ItemCard({ item, machines = [], onDeliver, onDamage, sel
 
         {/* ── Genişletilmiş ── */}
         {expanded && (
-          <div style={{
-            display: 'flex', gap: 6, marginTop: 10,
-            paddingTop: 10, borderTop: '1px solid var(--border)',
-          }}>
+          <div style={{ display: 'flex', gap: 6, marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
             <button className="lc-action-btn ghost"
               style={{ fontSize: 9 }}
-              onClick={() => { if (confirm('Kayıp olarak işaretle?')) markLost.mutate() }}>
+              onClick={() => setLostOpen(true)}
+            >
               Kayıp İşaretle
             </button>
             {item.status === 'dirty' && (
-              <button className="lc-action-btn danger"
-                style={{ fontSize: 9 }}
-                onClick={() => { if (confirm('Kaydı sil?')) deleteItem.mutate() }}>
-                Sil
-              </button>
+              deleteStep ? (
+                <button className="lc-action-btn danger"
+                  style={{ fontSize: 9 }}
+                  onClick={() => { deleteItem.mutate(); setDeleteStep(false) }}
+                >
+                  Emin misin? Sil
+                </button>
+              ) : (
+                <button className="lc-action-btn danger"
+                  style={{ fontSize: 9 }}
+                  onClick={() => setDeleteStep(true)}
+                >
+                  Sil
+                </button>
+              )
             )}
           </div>
         )}
 
-        {/* ── Hata ── */}
-        {advance.isError && (
-          <div className="alert alert-danger" style={{ marginTop: 8, padding: '6px 10px', fontSize: 11 }}>
-            {advance.error?.response?.data?.error || 'İşlem hatası'}
-          </div>
+        {/* ── Modals ── */}
+        {assignOpen && (
+          <AssignModal
+            item={item}
+            machines={machines}
+            onClose={() => setAssignOpen(false)}
+          />
+        )}
+        {shelfOpen && (
+          <ShelfModal
+            item={item}
+            onClose={() => setShelfOpen(false)}
+          />
+        )}
+        {lostOpen && (
+          <LostModal
+            item={item}
+            onClose={() => setLostOpen(false)}
+          />
         )}
       </div>
     </div>
