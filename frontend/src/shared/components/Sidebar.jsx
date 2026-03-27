@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { NavLink } from 'react-router-dom'
+import { NavLink, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useAuthStore } from '../store/authStore.js'
 import { useNotifications } from '../hooks/useNotifications.js'
@@ -28,7 +28,15 @@ const NAV_GROUPS = [
       { to: '/maintenance', icon: '\u2699', label: 'Teknik Servis', roles: ['campus_manager','shift_supervisor','technical'], badge: true },
       { to: '/discipline', icon: '\u26A0', label: 'Disiplin', roles: ['campus_manager','shift_supervisor'] },
       { to: '/shifts', icon: '\u29D7', label: 'Vardiyalar', roles: ['campus_manager','shift_supervisor'] },
-      { to: '/laundry', icon: '\u2668', label: 'Camasirhane', roles: ['campus_manager','laundry'] },
+      {
+        to: '/laundry', icon: '\u2668', label: 'Camasirhane', roles: ['campus_manager','laundry'],
+        sublinks: [
+          { to: '/laundry/dashboard', label: 'Dashboard' },
+          { to: '/laundry/list',      label: 'Kayıtlar' },
+          { to: '/laundry/report',    label: 'Raporlar' },
+          { to: '/laundry/settings',  label: 'Ayarlar' },
+        ],
+      },
     ]
   },
   {
@@ -64,6 +72,7 @@ function LiveClock() {
 
 export default function Sidebar({ mobileOpen, onClose }) {
   const user = useAuthStore(s => s.user)
+  const location = useLocation()
   const logout = useAuthStore(s => s.logout)
   const { unreadCount } = useNotifications()
   const { theme, toggle: toggleTheme } = useTheme()
@@ -147,37 +156,79 @@ export default function Sidebar({ mobileOpen, onClose }) {
               }}>
                 {group.label}
               </div>
-              {visible.map(link => (
-                <NavLink key={link.to} to={link.to} end={link.to === '/'} onClick={onClose} style={{ textDecoration: 'none', display: 'block' }}>
-                  {({ isActive }) => (
-                    <div
-                      className={`sidebar-nav-item ${isActive ? 'active' : ''}`}
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: '10px',
-                        padding: '9px 10px', borderRadius: '7px', marginBottom: '2px',
-                        cursor: 'pointer', position: 'relative', transition: 'all 0.15s',
-                        background: isActive ? 'rgba(240,165,0,0.1)' : 'transparent',
-                        borderLeft: isActive ? '2px solid var(--accent)' : '2px solid transparent',
-                        color: isActive ? 'var(--text)' : 'var(--text2)',
+              {visible.map(link => {
+                const parentActive = location.pathname === link.to ||
+                  (link.sublinks && link.sublinks.some(s => location.pathname === s.to))
+                return (
+                  <div key={link.to}>
+                    <NavLink to={link.sublinks ? link.sublinks[0].to : link.to} end={link.to === '/'} onClick={onClose} style={{ textDecoration: 'none', display: 'block' }}>
+                      {({ isActive: navActive }) => {
+                        const active = link.sublinks ? parentActive : navActive
+                        return (
+                          <div
+                            className={`sidebar-nav-item ${active ? 'active' : ''}`}
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: '10px',
+                              padding: '9px 10px', borderRadius: '7px', marginBottom: '2px',
+                              cursor: 'pointer', position: 'relative', transition: 'all 0.15s',
+                              background: active ? 'rgba(240,165,0,0.1)' : 'transparent',
+                              borderLeft: active ? '2px solid var(--accent)' : '2px solid transparent',
+                              color: active ? 'var(--text)' : 'var(--text2)',
+                            }}
+                          >
+                            <span style={{ fontSize: '14px', width: '18px', textAlign: 'center', flexShrink: 0 }}>{link.icon}</span>
+                            <span style={{ fontFamily: 'var(--sans)', fontSize: '13px', fontWeight: active ? 600 : 400, flex: 1 }}>
+                              {link.label}
+                            </span>
+                            {link.badge && kpi?.open_maintenance > 0 && (
+                              <span style={{
+                                fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 600,
+                                background: 'var(--red)', color: '#fff',
+                                padding: '1px 6px', borderRadius: '10px', minWidth: '18px', textAlign: 'center',
+                              }}>
+                                {kpi.open_maintenance}
+                              </span>
+                            )}
+                            {link.sublinks && (
+                              <span style={{ fontSize: '9px', color: 'var(--text3)', marginLeft: 2 }}>
+                                {parentActive ? '▾' : '›'}
+                              </span>
+                            )}
+                          </div>
+                        )
                       }}
-                    >
-                      <span style={{ fontSize: '14px', width: '18px', textAlign: 'center', flexShrink: 0 }}>{link.icon}</span>
-                      <span style={{ fontFamily: 'var(--sans)', fontSize: '13px', fontWeight: isActive ? 600 : 400, flex: 1 }}>
-                        {link.label}
-                      </span>
-                      {link.badge && kpi?.open_maintenance > 0 && (
-                        <span style={{
-                          fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 600,
-                          background: 'var(--red)', color: '#fff',
-                          padding: '1px 6px', borderRadius: '10px', minWidth: '18px', textAlign: 'center',
-                        }}>
-                          {kpi.open_maintenance}
-                        </span>
-                      )}
-                    </div>
-                  )}
-                </NavLink>
-              ))}
+                    </NavLink>
+                    {/* Sub-links — show when parent is active */}
+                    {link.sublinks && parentActive && (
+                      <div style={{ marginLeft: 28, marginBottom: 4 }}>
+                        {link.sublinks.map(sub => (
+                          <NavLink key={sub.to} to={sub.to} end={sub.exact || false} onClick={onClose}
+                            style={{ textDecoration: 'none', display: 'block' }}>
+                            {({ isActive }) => (
+                              <div style={{
+                                display: 'flex', alignItems: 'center', gap: 8,
+                                padding: '6px 10px', borderRadius: 6, marginBottom: 1,
+                                cursor: 'pointer', transition: 'all 0.15s',
+                                background: isActive ? 'rgba(240,165,0,0.08)' : 'transparent',
+                                color: isActive ? 'var(--accent)' : 'var(--text3)',
+                                borderLeft: isActive ? '1px solid rgba(240,165,0,0.4)' : '1px solid var(--border)',
+                              }}
+                                onMouseEnter={e => { if (!isActive) e.currentTarget.style.color = 'var(--text2)' }}
+                                onMouseLeave={e => { if (!isActive) e.currentTarget.style.color = 'var(--text3)' }}
+                              >
+                                <span style={{ width: 4, height: 4, borderRadius: '50%', background: 'currentColor', flexShrink: 0 }} />
+                                <span style={{ fontFamily: 'var(--sans)', fontSize: '12px', fontWeight: isActive ? 600 : 400 }}>
+                                  {sub.label}
+                                </span>
+                              </div>
+                            )}
+                          </NavLink>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
             </div>
           )
         })}

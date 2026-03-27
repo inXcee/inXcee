@@ -83,8 +83,9 @@ export default function App() {
             <Route path="whatsapp" element={<WhatsAppPage />} />
             <Route path="shifts" element={<ShiftsPage />} />
             <Route path="checkout" element={<CheckoutPage />} />
-            <Route path="laundry" element={<LaundryPage />} />
+            <Route path="laundry" element={<Navigate to="/laundry/dashboard" replace />} />
             <Route path="laundry/dashboard" element={<LaundryDashboard />} />
+            <Route path="laundry/list" element={<LaundryPage />} />
             <Route path="laundry/report" element={<LaundryReport />} />
             <Route path="laundry/settings" element={<LaundrySettings />} />
             <Route path="inventory" element={<InventoryPage />} />
