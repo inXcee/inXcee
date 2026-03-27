@@ -163,6 +163,7 @@ describe('State machine', () => {
     const timerStarted = new Date(m.timer_started_at)
     const diffMinutes = (timerEnd - timerStarted) / 60000
     expect(Math.round(diffMinutes)).toBe(45)
+    expect(timerStarted.getTime()).toBeGreaterThanOrEqual(before.getTime())
   })
 
   it('washing → ready: shelf_location ile OK', async () => {
