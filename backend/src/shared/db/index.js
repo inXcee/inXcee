@@ -197,6 +197,102 @@ export function initDB() {
     }
   } catch(_) {}
 
+  // ═══════════════════════════════════════════════════════
+  // Laundry v2 — Kişisel Parça Takibi
+  // ═══════════════════════════════════════════════════════
+
+  try { db.exec(`CREATE TABLE IF NOT EXISTS laundry_machines (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    type TEXT NOT NULL DEFAULT 'washer' CHECK(type IN ('washer','dryer')),
+    status TEXT NOT NULL DEFAULT 'idle' CHECK(status IN ('idle','running','done','maintenance')),
+    timer_end TEXT,
+    capacity_kg REAL DEFAULT 10,
+    maintenance_notes TEXT
+  )`) } catch(_) {}
+
+  try { db.exec(`CREATE TABLE IF NOT EXISTS laundry_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    room_id INTEGER REFERENCES rooms(id),
+    status TEXT NOT NULL DEFAULT 'dirty' CHECK(status IN ('dirty','washing','ready','delivered','lost')),
+    machine_id INTEGER REFERENCES laundry_machines(id),
+    urgent INTEGER NOT NULL DEFAULT 0,
+    item_count INTEGER NOT NULL DEFAULT 1,
+    item_details TEXT,
+    shelf_location TEXT,
+    photo_url TEXT,
+    notes TEXT,
+    created_by INTEGER REFERENCES users(id),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`) } catch(_) {}
+
+  try { db.exec(`CREATE TABLE IF NOT EXISTS laundry_queue (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_id INTEGER NOT NULL REFERENCES laundry_items(id) ON DELETE CASCADE,
+    machine_id INTEGER REFERENCES laundry_machines(id),
+    priority TEXT NOT NULL DEFAULT 'normal' CHECK(priority IN ('normal','urgent')),
+    position INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`) } catch(_) {}
+
+  try { db.exec(`CREATE TABLE IF NOT EXISTS laundry_deliveries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_id INTEGER NOT NULL REFERENCES laundry_items(id) ON DELETE CASCADE,
+    delivered_to TEXT NOT NULL,
+    signature_data TEXT,
+    delivered_by INTEGER REFERENCES users(id),
+    delivered_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`) } catch(_) {}
+
+  try { db.exec(`CREATE TABLE IF NOT EXISTS laundry_damages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_id INTEGER NOT NULL REFERENCES laundry_items(id) ON DELETE CASCADE,
+    photo_url TEXT,
+    description TEXT NOT NULL,
+    reported_by INTEGER REFERENCES users(id),
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`) } catch(_) {}
+
+  try { db.exec(`CREATE TABLE IF NOT EXISTS laundry_sla_config (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    stage TEXT NOT NULL UNIQUE CHECK(stage IN ('dirty','washing','ready')),
+    warning_hours REAL NOT NULL DEFAULT 24,
+    critical_hours REAL NOT NULL DEFAULT 48,
+    updated_by INTEGER REFERENCES users(id),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`) } catch(_) {}
+
+  try { db.exec(`CREATE TABLE IF NOT EXISTS laundry_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_id INTEGER NOT NULL REFERENCES laundry_items(id) ON DELETE CASCADE,
+    from_status TEXT,
+    to_status TEXT NOT NULL,
+    action_by INTEGER REFERENCES users(id),
+    notes TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`) } catch(_) {}
+
+  // SLA varsayılan konfigürasyon
+  try { db.exec(`INSERT OR IGNORE INTO laundry_sla_config(stage,warning_hours,critical_hours) VALUES
+    ('dirty',24,48),('washing',1,2),('ready',24,48)`) } catch(_) {}
+
+  // Varsayılan makineler (ilk kurulumda seed)
+  try {
+    const mCount = db.prepare('SELECT COUNT(*) as c FROM laundry_machines').get()
+    if (mCount.c === 0) {
+      db.exec(`INSERT INTO laundry_machines(name,type,capacity_kg) VALUES
+        ('Makine 1','washer',10),('Makine 2','washer',10),('Makine 3','washer',8),('Kurutucu 1','dryer',10)`)
+    }
+  } catch(_) {}
+
+  // Performans indeksleri
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_laundry_items_status ON laundry_items(status)`) } catch(_) {}
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_laundry_items_room ON laundry_items(room_id)`) } catch(_) {}
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_laundry_items_updated ON laundry_items(updated_at)`) } catch(_) {}
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_laundry_queue_position ON laundry_queue(position)`) } catch(_) {}
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_laundry_history_item ON laundry_history(item_id)`) } catch(_) {}
+
   return db
 }
 
