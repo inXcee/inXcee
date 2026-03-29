@@ -1,15 +1,15 @@
 import { useQuery } from '@tanstack/react-query'
 import { laundryApi } from '../api.js'
 
+const STATUS_COLORS = { dirty: 'var(--accent)', washing: 'var(--blue)', ready: 'var(--green)', delivered: 'var(--teal)', lost: 'var(--red)' }
+const STATUS_LABELS = { dirty: 'Sepette', washing: 'Yıkanıyor', ready: 'Rafta', delivered: 'Teslim', lost: 'Kayıp' }
+
 export default function PersonPanel({ name, onClose }) {
   const { data, isLoading } = useQuery({
     queryKey: ['person-history', name],
     queryFn: () => laundryApi.getPersonHistory(name),
     enabled: !!name,
   })
-
-  const STATUS_COLORS = { dirty: 'var(--accent)', washing: 'var(--blue)', ready: 'var(--green)', delivered: 'var(--teal)', lost: 'var(--red)' }
-  const STATUS_LABELS = { dirty: 'Sepette', washing: 'Yıkanıyor', ready: 'Rafta', delivered: 'Teslim', lost: 'Kayıp' }
 
   return (
     <>
@@ -26,7 +26,6 @@ export default function PersonPanel({ name, onClose }) {
         boxShadow: '-8px 0 32px rgba(0,0,0,0.4)',
         animation: 'slideInRight 0.2s ease',
       }}>
-        <style>{`@keyframes slideInRight { from { transform: translateX(100%) } to { transform: translateX(0) } }`}</style>
 
         {/* Header */}
         <div style={{
@@ -78,7 +77,9 @@ export default function PersonPanel({ name, onClose }) {
             {/* Geçmiş Listesi */}
             <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: 2, marginBottom: 8 }}>GEÇMİŞ</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {data.items.map(item => (
+              {[...(data.items ?? [])].sort(
+                (a, b) => new Date(b.created_at) - new Date(a.created_at)
+              ).map(item => (
                 <div key={item.id} style={{
                   padding: '10px 12px', background: 'var(--surface2)',
                   border: '1px solid var(--border)', borderRadius: 8,
