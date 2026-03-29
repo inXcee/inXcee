@@ -40,8 +40,13 @@ export function getItemQuery(id) {
 
 export function listItemsQuery({ status, urgent, sla_only, search } = {}) {
   const db = getDB()
-  const conditions = ["li.status != 'delivered'"]
+  const conditions = []
   const params = []
+
+  // Only exclude delivered if we're not specifically querying for delivered
+  if (!status || status !== 'delivered') {
+    conditions.push("li.status != 'delivered'")
+  }
 
   if (status) { conditions.push('li.status = ?'); params.push(status) }
   if (urgent) { conditions.push('li.urgent = 1') }

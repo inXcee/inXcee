@@ -20,8 +20,6 @@ const CheckoutPage = lazy(() => import('./modules/checkout/CheckoutPage.jsx'))
 const InventoryPage = lazy(() => import('./modules/inventory/InventoryPage.jsx'))
 const ReportsPage = lazy(() => import('./modules/reports/ReportsPage.jsx'))
 const LaundryHub = lazy(() => import('./modules/laundry/LaundryHub.jsx'))
-const LaundryReport = lazy(() => import('./modules/laundry/LaundryReport.jsx'))
-const LaundrySettings = lazy(() => import('./modules/laundry/LaundrySettings.jsx'))
 const AuditPage = lazy(() => import('./modules/admin/AuditPage.jsx'))
 const UsersPage = lazy(() => import('./modules/admin/UsersPage.jsx'))
 
@@ -82,11 +80,8 @@ export default function App() {
             <Route path="whatsapp" element={<WhatsAppPage />} />
             <Route path="shifts" element={<ShiftsPage />} />
             <Route path="checkout" element={<CheckoutPage />} />
-            <Route path="laundry" element={<Navigate to="/laundry/dashboard" replace />} />
-            <Route path="laundry/dashboard" element={<LaundryHub defaultView="kanban" />} />
-            <Route path="laundry/list"      element={<LaundryHub defaultView="liste"  />} />
-            <Route path="laundry/report" element={<LaundryReport />} />
-            <Route path="laundry/settings" element={<LaundrySettings />} />
+            <Route path="laundry" element={<LaundryHub />} />
+            <Route path="laundry/*" element={<LaundryHub />} />
             <Route path="inventory" element={<InventoryPage />} />
             <Route path="reports" element={<ReportsPage />} />
             <Route path="audit" element={<AuditPage />} />

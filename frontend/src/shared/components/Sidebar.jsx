@@ -28,15 +28,7 @@ const NAV_GROUPS = [
       { to: '/maintenance', icon: '\u2699', label: 'Teknik Servis', roles: ['campus_manager','shift_supervisor','technical'], badge: true },
       { to: '/discipline', icon: '\u26A0', label: 'Disiplin', roles: ['campus_manager','shift_supervisor'] },
       { to: '/shifts', icon: '\u29D7', label: 'Vardiyalar', roles: ['campus_manager','shift_supervisor'] },
-      {
-        to: '/laundry', icon: '\u2668', label: 'Camasirhane', roles: ['campus_manager','laundry'],
-        sublinks: [
-          { to: '/laundry/dashboard', label: 'Dashboard' },
-          { to: '/laundry/list',      label: 'Kayıtlar' },
-          { to: '/laundry/report',    label: 'Raporlar' },
-          { to: '/laundry/settings',  label: 'Ayarlar' },
-        ],
-      },
+      { to: '/laundry', icon: '\u2668', label: 'Camasirhane', roles: ['campus_manager','laundry'] },
     ]
   },
   {

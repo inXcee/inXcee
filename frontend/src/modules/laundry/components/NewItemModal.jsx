@@ -120,12 +120,7 @@ export default function NewItemModal({ onClose }) {
   const totalCount = clothing.reduce((s, c) => s + c.qty, 0) || 1
 
   const addClothing = (type) => {
-    const existing = clothing.find(c => c.type === type)
-    if (existing) {
-      setClothing(prev => prev.map(c => c.type === type ? { ...c, qty: c.qty + 1 } : c))
-    } else {
-      setClothing(prev => [...prev, { type, color: '', qty: 1 }])
-    }
+    setClothing(prev => [...prev, { type, color: '', qty: 1 }])
   }
 
   const removeClothing = (idx) => setClothing(prev => prev.filter((_, i) => i !== idx))
