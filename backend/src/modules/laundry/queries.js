@@ -4,12 +4,12 @@ import { getDB } from '../../shared/db/index.js'
 // ITEMS
 // ═══════════════════════════════════════════════════════════════════════════
 
-export function insertItemQuery({ room_id, item_count = 1, item_details, notes, urgent = 0, photo_url, phone_override, created_by }) {
+export function insertItemQuery({ room_id, item_count = 1, item_details, notes, urgent = 0, photo_url, phone_override, intake_name, intake_signature, clothing_items, created_by }) {
   const db = getDB()
   const r = db.prepare(`
-    INSERT INTO laundry_items(room_id, item_count, item_details, notes, urgent, photo_url, phone_override, created_by, updated_at)
-    VALUES(?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-  `).run(room_id, item_count, item_details || null, notes || null, urgent ? 1 : 0, photo_url || null, phone_override || null, created_by)
+    INSERT INTO laundry_items(room_id, item_count, item_details, notes, urgent, photo_url, phone_override, intake_name, intake_signature, clothing_items, created_by, updated_at)
+    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+  `).run(room_id, item_count, item_details || null, notes || null, urgent ? 1 : 0, photo_url || null, phone_override || null, intake_name || null, intake_signature || null, clothing_items ? JSON.stringify(clothing_items) : null, created_by)
   return r.lastInsertRowid
 }
 
@@ -22,7 +22,12 @@ export function getItemQuery(id) {
            m.name as machine_name,
            (SELECT COUNT(*) FROM laundry_damages WHERE item_id = li.id) as damage_count,
            COALESCE(li.phone_override, p.phone_number) as phone_number,
-           p.full_name as occupant_name
+           p.full_name as occupant_name,
+           li.intake_name,
+           li.clothing_items,
+           (SELECT COUNT(*) FROM laundry_items li2
+            WHERE li2.room_id = li.room_id
+            AND li2.status NOT IN ('delivered','lost')) as room_active_count
     FROM laundry_items li
     LEFT JOIN rooms r ON r.id = li.room_id
     LEFT JOIN users u ON u.id = li.created_by
@@ -67,7 +72,13 @@ export function listItemsQuery({ status, urgent, sla_only, search } = {}) {
            END as hours_in_status,
            (SELECT COUNT(*) FROM laundry_damages WHERE item_id = li.id) as damage_count,
            COALESCE(li.phone_override, p.phone_number) as phone_number,
-           p.full_name as occupant_name
+           p.full_name as occupant_name,
+           li.intake_name,
+           li.clothing_items,
+           (SELECT COUNT(*) FROM laundry_items li2
+            WHERE li2.room_id = li.room_id
+            AND li2.status NOT IN ('delivered','lost')
+            AND li2.id != li.id) + 1 as room_active_count
     FROM laundry_items li
     LEFT JOIN rooms r ON r.id = li.room_id
     LEFT JOIN users u ON u.id = li.created_by
@@ -365,4 +376,40 @@ export function getStatsQuery({ from_date, to_date } = {}) {
   `).all()
 
   return { by_status, delivered_today, avg_hours, sla_violations, period_total, period_delivered, machine_stats }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PERSON HISTORY
+// ═══════════════════════════════════════════════════════════════════════════
+
+export function getPersonHistoryQuery(name) {
+  const db = getDB()
+  return db.prepare(`
+    SELECT li.*,
+           r.block, r.room_no,
+           COALESCE(li.phone_override, p.phone_number) as phone_number,
+           p.full_name as occupant_name,
+           ld.delivered_at,
+           CASE WHEN ld.delivered_at IS NOT NULL
+             THEN ROUND((julianday(ld.delivered_at) - julianday(li.created_at)) * 24, 1)
+             ELSE NULL
+           END as total_hours
+    FROM laundry_items li
+    LEFT JOIN rooms r ON r.id = li.room_id
+    LEFT JOIN room_assignments ra ON ra.room_id = li.room_id AND ra.check_out_at IS NULL
+    LEFT JOIN personnel p ON p.id = ra.personnel_id
+    LEFT JOIN laundry_deliveries ld ON ld.item_id = li.id
+    WHERE (p.full_name = ? OR li.intake_name = ?)
+    ORDER BY li.created_at DESC
+  `).all(name, name)
+}
+
+export function markFoundQuery(id, userId) {
+  const db = getDB()
+  db.prepare(`UPDATE laundry_items SET status='ready', updated_at=datetime('now') WHERE id=?`).run(id)
+  db.prepare(`
+    INSERT INTO laundry_history(item_id, from_status, to_status, action_by, notes)
+    VALUES(?, 'lost', 'ready', ?, 'Kayıp bulundu')
+  `).run(id, userId)
+  return db.prepare(`SELECT * FROM laundry_items WHERE id=?`).get(id)
 }
