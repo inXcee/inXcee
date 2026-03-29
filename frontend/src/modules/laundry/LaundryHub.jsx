@@ -13,6 +13,7 @@ import AssignModal        from './components/AssignModal.jsx'
 import ShelfModal         from './components/ShelfModal.jsx'
 import LostModal          from './components/LostModal.jsx'
 import MachineManagerPanel from './components/MachineManagerPanel.jsx'
+import PersonPanel         from './components/PersonPanel.jsx'
 
 // ── WA link helper ─────────────────────────────────────────────
 function waLink(phone) {
@@ -616,6 +617,7 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
       {deliverItem  && <DeliveryModal item={deliverItem} onClose={() => setDeliverItem(null)} />}
       {damageItem   && <DamageModal   item={damageItem}  onClose={() => setDamageItem(null)} />}
       {showMgr      && <MachineManagerPanel machines={machines} onClose={() => setShowMgr(false)} />}
+      {personPanelName && <PersonPanel name={personPanelName} onClose={() => setPersonPanelName(null)} />}
     </div>
   )
 }
