@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { laundryApi } from './api.js'
 import LaundryReport from './LaundryReport.jsx'
 import LaundrySettings from './LaundrySettings.jsx'
@@ -444,6 +444,77 @@ function QuickNotes({ visible }) {
   )
 }
 
+// ── QuickAdd ───────────────────────────────────────────────────
+function QuickAdd({ onClose }) {
+  const qc = useQueryClient()
+  const [name, setName] = useState('')
+  const [selected, setSelected] = useState([])
+  const QUICK_TYPES = ['Pantolon','Gömlek','T-Shirt','Çorap','Boxer','Havlu Tkm','Kazak','Şort']
+
+  const toggle = (type) => setSelected(prev =>
+    prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]
+  )
+
+  const create = useMutation({
+    mutationFn: () => laundryApi.createItem({
+      room_id: null,
+      intake_name: name.trim(),
+      item_count: selected.length || 1,
+      clothing_items: selected.length > 0
+        ? selected.map(t => ({ type: t, color: '', qty: 1 }))
+        : undefined,
+      urgent: 0,
+    }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['laundry-items'] }); onClose() },
+  })
+
+  return (
+    <div style={{
+      background: 'var(--surface)', border: '1px solid var(--border)',
+      borderTop: '2px solid var(--accent)', borderRadius: 10,
+      padding: '14px 16px', marginBottom: 14,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
+        <input
+          className="form-input"
+          value={name}
+          onChange={e => setName(e.target.value)}
+          placeholder="Ad Soyad (zorunlu)..."
+          style={{ flex: '1 1 180px', minWidth: 140 }}
+          autoFocus
+        />
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+          {QUICK_TYPES.map(type => (
+            <button key={type} onClick={() => toggle(type)} style={{
+              padding: '4px 10px', borderRadius: 16, cursor: 'pointer',
+              background: selected.includes(type) ? 'rgba(240,165,0,0.15)' : 'var(--surface2)',
+              border: `1px solid ${selected.includes(type) ? 'rgba(240,165,0,0.4)' : 'var(--border)'}`,
+              color: selected.includes(type) ? 'var(--accent)' : 'var(--text2)',
+              fontFamily: 'var(--mono)', fontSize: 10,
+            }}>
+              {CLOTHING_ICONS[type] || ''} {type}
+            </button>
+          ))}
+        </div>
+        <button
+          className="btn btn-primary"
+          onClick={() => create.mutate()}
+          disabled={!name.trim() || create.isPending}
+          style={{ whiteSpace: 'nowrap' }}
+        >
+          {create.isPending ? '...' : `+ Kaydet${selected.length > 0 ? ` (${selected.length})` : ''}`}
+        </button>
+        <button className="btn btn-ghost btn-xs" onClick={onClose}>İptal</button>
+      </div>
+      {create.isError && (
+        <div className="alert alert-danger" style={{ marginTop: 6, fontSize: 10 }}>
+          {create.error?.response?.data?.error || 'Hata oluştu'}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── FullRecordsView ────────────────────────────────────────────
 function FullRecordsView() {
   const [status, setStatus] = useState('all')
@@ -617,6 +688,7 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
   const [foundItem,      setFoundItem]      = useState(null)
   const [activeItem,     setActiveItem]     = useState(null)
   const [overCol,        setOverCol]        = useState(null)
+  const [showQuickAdd,   setShowQuickAdd]   = useState(false)
 
   const sensors = useSensors(useSensor(PointerSensor, {
     activationConstraint: { distance: 5, delay: 100, tolerance: 5 },
@@ -763,14 +835,27 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           {section === 'hub' && (
-            <button className="btn btn-primary" onClick={() => setShowNew(true)} style={{ letterSpacing: 1 }}>
-              + Yeni Kayıt
-            </button>
+            <>
+              <button className="btn btn-ghost btn-xs"
+                onClick={() => setShowQuickAdd(s => !s)}
+                style={{
+                  border: `1px solid ${showQuickAdd ? 'rgba(240,165,0,0.3)' : 'var(--border)'}`,
+                  color: showQuickAdd ? 'var(--accent)' : 'var(--text3)',
+                }}
+              >
+                ⚡ Hızlı Ekle
+              </button>
+              <button className="btn btn-primary" onClick={() => setShowNew(true)} style={{ letterSpacing: 1 }}>
+                + Yeni Kayıt
+              </button>
+            </>
           )}
         </div>
       </div>
 
       {section === 'hub' && (<>
+
+      {showQuickAdd && <QuickAdd onClose={() => setShowQuickAdd(false)} />}
 
       {/* ── SLA ── */}
       <SlaAlert violations={violations} />
