@@ -34,6 +34,12 @@ export const laundryApi = {
   getStats: (params) => api.get('/laundry/reports/stats', { params }).then(r => r.data),
   exportCsv: (params) => api.get('/laundry/reports/export', { params, responseType: 'blob' }).then(r => r.data),
 
+  // ── Person History ─────────────────────────────────────────────────────────
+  getPersonHistory: (name) => api.get(`/laundry/person/${encodeURIComponent(name)}`).then(r => r.data),
+
+  // ── Found ─────────────────────────────────────────────────────────────────
+  markFound: (id, send_whatsapp = false) => api.post(`/laundry/items/${id}/found`, { send_whatsapp }).then(r => r.data),
+
   // ── WhatsApp ───────────────────────────────────────────────────────────
   notifyWhatsApp: (id, phone) => api.post(`/laundry/items/${id}/notify-whatsapp`, { phone }).then(r => r.data),
   getRoomOccupant: (roomId) => api.get(`/laundry/room-occupant/${roomId}`).then(r => r.data).catch(() => ({})),
