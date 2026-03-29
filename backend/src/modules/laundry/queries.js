@@ -350,6 +350,12 @@ export function getStatsQuery({ from_date, to_date } = {}) {
     WHERE date(delivered_at) = date('now')
   `).get()
 
+  const washed_today = db.prepare(`
+    SELECT COUNT(*) as count FROM laundry_history
+    WHERE to_status = 'washing'
+      AND date(created_at) = date('now')
+  `).get()
+
   const avg_hours = db.prepare(`
     SELECT li.status,
       ROUND(AVG((julianday('now') - julianday(COALESCE(li.updated_at, li.created_at))) * 24), 1) as avg_h
@@ -438,7 +444,7 @@ export function getStatsQuery({ from_date, to_date } = {}) {
       .slice(0, 10)
   }
 
-  return { by_status, delivered_today, avg_hours, sla_violations, period_total, period_delivered, machine_stats, by_room, lost_period, avg_delivery_hours, clothing_breakdown }
+  return { by_status, delivered_today, washed_today, avg_hours, sla_violations, period_total, period_delivered, machine_stats, by_room, lost_period, avg_delivery_hours, clothing_breakdown }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

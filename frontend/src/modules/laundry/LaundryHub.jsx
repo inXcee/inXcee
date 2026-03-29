@@ -776,13 +776,14 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
       <SlaAlert violations={violations} />
 
       {/* ── KPI STRIP ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8, marginBottom: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 8, marginBottom: 16 }}>
         {[
           { label: 'Sepette',      value: counts.dirty,                         color: 'var(--accent)', sub: activeTotal > 0 ? (counts.dirty / activeTotal) * 100 : 0 },
           { label: 'Yıkaniyor',    value: counts.washing,                       color: 'var(--blue)',   sub: activeTotal > 0 ? (counts.washing / activeTotal) * 100 : 0 },
           { label: 'Rafta Hazır',  value: counts.ready,                         color: 'var(--green)',  sub: activeTotal > 0 ? (counts.ready / activeTotal) * 100 : 0 },
           { label: 'SLA İhlali',   value: violations.length,                    color: 'var(--red)',    sub: null },
           { label: 'Bugün Teslim', value: stats?.delivered_today?.count ?? 0,   color: 'var(--teal)',   sub: null },
+          { label: 'Bugün Yıkanan', value: stats?.washed_today?.count ?? 0, color: 'var(--blue)', sub: null },
         ].map(s => (
           <div key={s.label} style={{
             background: 'var(--surface)', border: '1px solid var(--border)',
