@@ -124,9 +124,14 @@ function DraggableKanbanCard({ item, ...props }) {
     <div
       ref={setNodeRef}
       style={{
-        transform: CSS.Translate.toString(transform),
-        opacity: isDragging ? 0.4 : 1,
+        transform: CSS.Transform.toString(transform),
+        opacity: isDragging ? 0.3 : 1,
         cursor: isDragging ? 'grabbing' : 'grab',
+        transition: isDragging ? 'none' : 'transform 0.2s ease, opacity 0.2s ease',
+        zIndex: isDragging ? 999 : 'auto',
+        position: 'relative',
+        boxShadow: isDragging ? '0 12px 40px rgba(0,0,0,0.5)' : 'none',
+        scale: isDragging ? '1.03' : '1',
       }}
       {...attributes}
       {...listeners}
@@ -600,7 +605,9 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
   const [activeItem,     setActiveItem]     = useState(null)
   const [overCol,        setOverCol]        = useState(null)
 
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
+  const sensors = useSensors(useSensor(PointerSensor, {
+    activationConstraint: { distance: 5, delay: 100, tolerance: 5 },
+  }))
 
   const handleDragStart = ({ active }) => {
     setActiveItem(active.data.current.item)
