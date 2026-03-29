@@ -56,6 +56,19 @@ const COLOR_PALETTE = [
   { name: 'Pembe',    hex: '#ec4899' },
 ]
 
+const PATTERN_LIST = [
+  { name: 'B/L Çizgili',     bg: 'repeating-linear-gradient(90deg,#f0f0f0 0 4px,#1a2e5e 4px 8px)' },
+  { name: 'B/K Çizgili',     bg: 'repeating-linear-gradient(90deg,#f0f0f0 0 4px,#dc2626 4px 8px)' },
+  { name: 'B/Y Çizgili',     bg: 'repeating-linear-gradient(90deg,#f0f0f0 0 4px,#eab308 4px 8px)' },
+  { name: 'S/B Çizgili',     bg: 'repeating-linear-gradient(90deg,#888 0 4px,#f0f0f0 4px 8px)' },
+  { name: 'Çapraz Çizgili',  bg: 'repeating-linear-gradient(45deg,#f0f0f0 0 4px,#1a2e5e 4px 8px)' },
+  { name: 'Gri Kareli',      bg: 'repeating-conic-gradient(#888 0% 25%,#f0f0f0 0% 50%) 0 0/8px 8px' },
+  { name: 'L/B Kareli',      bg: 'repeating-conic-gradient(#1a2e5e 0% 25%,#f0f0f0 0% 50%) 0 0/8px 8px' },
+  { name: 'Renkli Karnaval', bg: 'repeating-linear-gradient(90deg,#e74c3c 0 6px,#f0a500 6px 12px,#2563eb 12px 18px,#16a34a 18px 24px)' },
+  { name: 'L/B İki Renk',    bg: 'linear-gradient(135deg,#1a2e5e 50%,#f0f0f0 50%)' },
+  { name: 'K/B İki Renk',    bg: 'linear-gradient(135deg,#dc2626 50%,#f0f0f0 50%)' },
+]
+
 function SignatureCanvas({ onSign, onClear }) {
   const canvasRef = useRef(null)
   const drawing = useRef(false)
@@ -285,30 +298,52 @@ export default function NewItemModal({ onClose }) {
                       {CLOTHING_ICONS[c.type] || ''} {c.type}
                     </span>
                     {/* Color palette */}
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center', flex: 1 }}>
-                      {COLOR_PALETTE.map(col => (
-                        <button
-                          key={col.name}
-                          title={col.name}
-                          onClick={() => updateClothing(idx, 'color', c.color === col.name ? '' : col.name)}
-                          style={{
-                            width: 18, height: 18, borderRadius: '50%', border: `2px solid ${c.color === col.name ? 'var(--accent)' : 'transparent'}`,
-                            background: col.hex, cursor: 'pointer', padding: 0, flexShrink: 0,
-                            boxShadow: c.color === col.name ? '0 0 0 1px var(--accent)' : 'none',
-                            transition: 'border 0.1s',
-                          }}
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {/* Renk paleti */}
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
+                        {COLOR_PALETTE.map(col => (
+                          <button
+                            key={col.name}
+                            title={col.name}
+                            onClick={() => updateClothing(idx, 'color', c.color === col.name ? '' : col.name)}
+                            style={{
+                              width: 18, height: 18, borderRadius: '50%', border: `2px solid ${c.color === col.name ? 'var(--accent)' : 'transparent'}`,
+                              background: col.hex, cursor: 'pointer', padding: 0, flexShrink: 0,
+                              boxShadow: c.color === col.name ? '0 0 0 1px var(--accent)' : 'none',
+                              transition: 'border 0.1s',
+                            }}
+                          />
+                        ))}
+                        <input
+                          className="form-input"
+                          value={COLOR_PALETTE.some(cp => cp.name === c.color) || PATTERN_LIST.some(p => p.name === c.color) ? '' : c.color}
+                          onChange={e => updateClothing(idx, 'color', e.target.value)}
+                          placeholder="Diğer..."
+                          style={{ width: 60, padding: '3px 6px', fontSize: 9, flexShrink: 0 }}
                         />
-                      ))}
-                      <input
-                        className="form-input"
-                        value={COLOR_PALETTE.some(cp => cp.name === c.color) ? '' : c.color}
-                        onChange={e => updateClothing(idx, 'color', e.target.value)}
-                        placeholder="Diğer..."
-                        style={{ width: 60, padding: '3px 6px', fontSize: 9, flexShrink: 0 }}
-                      />
-                      {c.color && (
-                        <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', flexShrink: 0 }}>{c.color}</span>
-                      )}
+                        {c.color && (
+                          <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', flexShrink: 0 }}>{c.color}</span>
+                        )}
+                      </div>
+                      {/* Desen satırı */}
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
+                        <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--text3)', flexShrink: 0 }}>DESEN:</span>
+                        {PATTERN_LIST.map(pat => (
+                          <button
+                            key={pat.name}
+                            title={pat.name}
+                            onClick={() => updateClothing(idx, 'color', c.color === pat.name ? '' : pat.name)}
+                            style={{
+                              width: 24, height: 24, borderRadius: 4,
+                              border: `2px solid ${c.color === pat.name ? 'var(--accent)' : 'transparent'}`,
+                              background: pat.bg, cursor: 'pointer', padding: 0, flexShrink: 0,
+                              boxShadow: c.color === pat.name ? '0 0 0 1px var(--accent)' : 'none',
+                              transition: 'border 0.1s',
+                              outline: 'none',
+                            }}
+                          />
+                        ))}
+                      </div>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       <button onClick={() => updateClothing(idx, 'qty', c.qty - 1)}
