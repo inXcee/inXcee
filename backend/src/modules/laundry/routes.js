@@ -110,17 +110,7 @@ laundryRouter.post('/items/:id/found', ...laundryFull, async (req, res) => {
   try {
     const item = svc.markFoundService(+req.params.id, req.user.id)
     if (req.body.send_whatsapp && item) {
-      const full = getDB().prepare(`
-        SELECT li.item_count, li.shelf_location, li.clothing_items,
-               r.block, r.room_no,
-               COALESCE(li.phone_override, p.phone_number) as phone_number,
-               p.full_name, li.intake_name
-        FROM laundry_items li
-        LEFT JOIN rooms r ON r.id = li.room_id
-        LEFT JOIN room_assignments ra ON ra.room_id = li.room_id AND ra.check_out_at IS NULL
-        LEFT JOIN personnel p ON p.id = ra.personnel_id
-        WHERE li.id = ?
-      `).get(+req.params.id)
+      const full = svc.getItemService(+req.params.id)
       if (full) await sendFoundMessage(full)
     }
     res.json(item)
