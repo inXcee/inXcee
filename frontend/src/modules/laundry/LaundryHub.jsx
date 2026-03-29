@@ -22,8 +22,85 @@ function waLink(phone) {
   return `https://wa.me/${normalized}`
 }
 
+// ── ExpandedSection ────────────────────────────────────────────
+function ExpandedSection({ item, onLost, onFound }) {
+  const { data: history = [], isLoading } = useQuery({
+    queryKey: ['item-history', item.id],
+    queryFn: () => laundryApi.getItemHistory(item.id),
+    enabled: true,
+  })
+
+  const STATUS_LABELS = { dirty: 'Kirli sepete eklendi', washing: 'Makineye atandı', ready: 'Rafa kondu', delivered: 'Teslim edildi', lost: 'Kayıp işaretlendi' }
+  const STATUS_COLORS = { dirty: 'var(--accent)', washing: 'var(--blue)', ready: 'var(--green)', delivered: 'var(--teal)', lost: 'var(--red)' }
+
+  return (
+    <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid var(--border)' }}>
+      {/* Kıyafet detayı */}
+      {item.clothing_items && (() => {
+        try {
+          const cl = JSON.parse(item.clothing_items)
+          return (
+            <div style={{ marginBottom: 8 }}>
+              <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--text3)', letterSpacing: 1, marginBottom: 4 }}>KIYAFETler</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                {cl.map((c, i) => (
+                  <span key={i} style={{
+                    padding: '2px 8px', borderRadius: 12, fontSize: 9, fontFamily: 'var(--mono)',
+                    background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text2)',
+                  }}>
+                    {c.qty}× {c.type}{c.color ? ` (${c.color})` : ''}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )
+        } catch { return null }
+      })()}
+
+      {/* Timeline */}
+      <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--text3)', letterSpacing: 1, marginBottom: 6 }}>TİMELİNE</div>
+      {isLoading ? (
+        <div style={{ fontSize: 9, color: 'var(--text3)', fontFamily: 'var(--mono)' }}>yükleniyor...</div>
+      ) : history.map((h, idx) => {
+        const next = history[idx + 1]
+        const dur = next
+          ? Math.round((new Date(next.created_at) - new Date(h.created_at)) / 60000)
+          : null
+        return (
+          <div key={h.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 6, marginBottom: 4 }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: STATUS_COLORS[h.to_status] || 'var(--text3)', flexShrink: 0, marginTop: 3 }} />
+            <div>
+              <span style={{ color: 'var(--text2)', fontSize: 9 }}>{STATUS_LABELS[h.to_status] || h.to_status}</span>
+              {h.actor_name && <span style={{ color: 'var(--text3)', fontSize: 8 }}> · {h.actor_name}</span>}
+              {dur != null && <span style={{ color: 'var(--text3)', fontSize: 8 }}> · {dur < 60 ? `${dur}dk` : `${Math.round(dur/60)}s`} bekledi</span>}
+              <div style={{ fontSize: 8, color: 'var(--text3)' }}>{new Date(h.created_at).toLocaleString('tr-TR', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' })}</div>
+            </div>
+          </div>
+        )
+      })}
+
+      {/* Alt butonlar */}
+      <div style={{ display: 'flex', gap: 5, marginTop: 6 }}>
+        {item.status === 'lost' ? (
+          <button onClick={onFound} style={{
+            flex: 1, padding: '4px 6px', borderRadius: 5,
+            background: 'rgba(39,201,106,0.08)', border: '1px solid rgba(39,201,106,0.25)',
+            color: 'var(--green)', fontFamily: 'var(--mono)', fontSize: 8, cursor: 'pointer', fontWeight: 700,
+          }}>Bulundu →</button>
+        ) : (
+          <button onClick={onLost} style={{
+            flex: 1, padding: '4px 6px', borderRadius: 5,
+            background: 'transparent', border: '1px solid var(--border)',
+            color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: 8, cursor: 'pointer',
+          }}>Kayıp</button>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── KanbanCard ─────────────────────────────────────────────────
-function KanbanCard({ item, machines, onDeliver, onDamage }) {
+function KanbanCard({ item, machines, onDeliver, onDamage, onPersonClick, onFound }) {
   const [assignOpen, setAssignOpen] = useState(false)
   const [shelfOpen,  setShelfOpen]  = useState(false)
   const [lostOpen,   setLostOpen]   = useState(false)
@@ -53,9 +130,22 @@ function KanbanCard({ item, machines, onDeliver, onDamage }) {
     >
       {/* Row 1: oda + badges */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
-        <span style={{ fontFamily: 'var(--display)', fontSize: 16, letterSpacing: 2, color: 'var(--text)', lineHeight: 1 }}>
-          {item.block} · {item.room_no}
-        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span
+            onClick={() => onPersonClick && item.occupant_name && onPersonClick(item.occupant_name)}
+            style={{
+              fontFamily: 'var(--display)', fontSize: 16, letterSpacing: 2, color: 'var(--text)', lineHeight: 1,
+              cursor: item.occupant_name ? 'pointer' : 'default',
+              textDecoration: item.occupant_name ? 'underline dotted' : 'none',
+              textDecorationColor: 'var(--text3)',
+            }}
+          >
+            {item.block} · {item.room_no}
+          </span>
+          {item.room_active_count > 1 && (
+            <span className="badge badge-amber" style={{ fontSize: 7 }}>×{item.room_active_count}</span>
+          )}
+        </div>
         <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
           {isUrgent && <span className="badge badge-red" style={{ fontSize: 7 }}>ACİL</span>}
           {isSlaRed && <span style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--red)', fontWeight: 700 }}>{item.hours_in_status}s</span>}
@@ -67,6 +157,13 @@ function KanbanCard({ item, machines, onDeliver, onDamage }) {
       {/* Row 2: meta */}
       <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', marginBottom: 8, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
         <span>{item.item_count} parça</span>
+        {item.clothing_items && (() => {
+          try {
+            const cl = JSON.parse(item.clothing_items)
+            const preview = cl.slice(0, 2).map(c => `${c.qty} ${c.type}`).join(' · ')
+            return <span style={{ color: 'var(--text2)' }}>· {preview}{cl.length > 2 ? ` +${cl.length - 2}` : ''}</span>
+          } catch { return null }
+        })()}
         {item.occupant_name && <span style={{ color: 'var(--text2)' }}>· {item.occupant_name}</span>}
         {item.machine_name && <span>· ⚙ {item.machine_name}</span>}
         {item.shelf_location && <span>· ▣ {item.shelf_location}</span>}
@@ -147,13 +244,11 @@ function KanbanCard({ item, machines, onDeliver, onDamage }) {
 
       {/* Expanded */}
       {expanded && (
-        <div style={{ display: 'flex', gap: 5, marginTop: 6, paddingTop: 6, borderTop: '1px solid var(--border)' }}>
-          <button onClick={() => setLostOpen(true)} style={{
-            flex: 1, padding: '4px 6px', borderRadius: 5,
-            background: 'transparent', border: '1px solid var(--border)',
-            color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: 8, cursor: 'pointer',
-          }}>Kayıp</button>
-        </div>
+        <ExpandedSection
+          item={item}
+          onLost={() => setLostOpen(true)}
+          onFound={() => onFound && onFound(item)}
+        />
       )}
 
       {/* Modals */}
@@ -165,7 +260,7 @@ function KanbanCard({ item, machines, onDeliver, onDamage }) {
 }
 
 // ── KanbanCol ──────────────────────────────────────────────────
-function KanbanCol({ title, color, items, machines, onDeliver, onDamage }) {
+function KanbanCol({ title, color, items, machines, onDeliver, onDamage, onPersonClick, onFound }) {
   return (
     <div style={{
       flex: 1, minWidth: 220, display: 'flex', flexDirection: 'column',
@@ -188,7 +283,8 @@ function KanbanCol({ title, color, items, machines, onDeliver, onDamage }) {
             boş
           </div>
         ) : items.map(item => (
-          <KanbanCard key={item.id} item={item} machines={machines} onDeliver={onDeliver} onDamage={onDamage} />
+          <KanbanCard key={item.id} item={item} machines={machines} onDeliver={onDeliver} onDamage={onDamage}
+            onPersonClick={onPersonClick} onFound={onFound} />
         ))}
       </div>
     </div>

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { laundryApi } from '../api.js'
 import AssignModal from './AssignModal.jsx'
 import ShelfModal  from './ShelfModal.jsx'
@@ -187,8 +187,85 @@ function Chip({ color, children }) {
   )
 }
 
+/* ── ExpandedSection (inline copy — intentional YAGNI) ──────── */
+function ExpandedSection({ item, onLost, onFound }) {
+  const { data: history = [], isLoading } = useQuery({
+    queryKey: ['item-history', item.id],
+    queryFn: () => laundryApi.getItemHistory(item.id),
+    enabled: true,
+  })
+
+  const STATUS_LABELS = { dirty: 'Kirli sepete eklendi', washing: 'Makineye atandı', ready: 'Rafa kondu', delivered: 'Teslim edildi', lost: 'Kayıp işaretlendi' }
+  const STATUS_COLORS = { dirty: 'var(--accent)', washing: 'var(--blue)', ready: 'var(--green)', delivered: 'var(--teal)', lost: 'var(--red)' }
+
+  return (
+    <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid var(--border)' }}>
+      {/* Kıyafet detayı */}
+      {item.clothing_items && (() => {
+        try {
+          const cl = JSON.parse(item.clothing_items)
+          return (
+            <div style={{ marginBottom: 8 }}>
+              <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--text3)', letterSpacing: 1, marginBottom: 4 }}>KIYAFETler</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                {cl.map((c, i) => (
+                  <span key={i} style={{
+                    padding: '2px 8px', borderRadius: 12, fontSize: 9, fontFamily: 'var(--mono)',
+                    background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text2)',
+                  }}>
+                    {c.qty}× {c.type}{c.color ? ` (${c.color})` : ''}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )
+        } catch { return null }
+      })()}
+
+      {/* Timeline */}
+      <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--text3)', letterSpacing: 1, marginBottom: 6 }}>TİMELİNE</div>
+      {isLoading ? (
+        <div style={{ fontSize: 9, color: 'var(--text3)', fontFamily: 'var(--mono)' }}>yükleniyor...</div>
+      ) : history.map((h, idx) => {
+        const next = history[idx + 1]
+        const dur = next
+          ? Math.round((new Date(next.created_at) - new Date(h.created_at)) / 60000)
+          : null
+        return (
+          <div key={h.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 6, marginBottom: 4 }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: STATUS_COLORS[h.to_status] || 'var(--text3)', flexShrink: 0, marginTop: 3 }} />
+            <div>
+              <span style={{ color: 'var(--text2)', fontSize: 9 }}>{STATUS_LABELS[h.to_status] || h.to_status}</span>
+              {h.actor_name && <span style={{ color: 'var(--text3)', fontSize: 8 }}> · {h.actor_name}</span>}
+              {dur != null && <span style={{ color: 'var(--text3)', fontSize: 8 }}> · {dur < 60 ? `${dur}dk` : `${Math.round(dur/60)}s`} bekledi</span>}
+              <div style={{ fontSize: 8, color: 'var(--text3)' }}>{new Date(h.created_at).toLocaleString('tr-TR', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' })}</div>
+            </div>
+          </div>
+        )
+      })}
+
+      {/* Alt butonlar */}
+      <div style={{ display: 'flex', gap: 5, marginTop: 6 }}>
+        {item.status === 'lost' ? (
+          <button onClick={onFound} style={{
+            flex: 1, padding: '4px 6px', borderRadius: 5,
+            background: 'rgba(39,201,106,0.08)', border: '1px solid rgba(39,201,106,0.25)',
+            color: 'var(--green)', fontFamily: 'var(--mono)', fontSize: 8, cursor: 'pointer', fontWeight: 700,
+          }}>Bulundu →</button>
+        ) : (
+          <button onClick={onLost} style={{
+            flex: 1, padding: '4px 6px', borderRadius: 5,
+            background: 'transparent', border: '1px solid var(--border)',
+            color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: 8, cursor: 'pointer',
+          }}>Kayıp</button>
+        )}
+      </div>
+    </div>
+  )
+}
+
 /* ── Main component ─────────────────────────────────────────── */
-export default function ItemCard({ item, machines = [], onDeliver, onDamage, selected, onSelect }) {
+export default function ItemCard({ item, machines = [], onDeliver, onDamage, selected, onSelect, onPersonClick }) {
   const qc = useQueryClient()
   const [expanded, setExpanded] = useState(false)
   const [assignOpen, setAssignOpen] = useState(false)
@@ -227,11 +304,20 @@ export default function ItemCard({ item, machines = [], onDeliver, onDamage, sel
               <input type="checkbox" checked={selected} onChange={() => onSelect(item.id)}
                 style={{ accentColor: 'var(--accent)', width: 14, height: 14 }} />
             )}
-            <span style={{
-              fontFamily: 'var(--display)', fontSize: 18, letterSpacing: 2.5, color: 'var(--text)', lineHeight: 1,
-            }}>
-              {item.block || '?'} · {item.room_no || '?'}
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span
+                onClick={() => onPersonClick && item.occupant_name && onPersonClick(item.occupant_name)}
+                style={{
+                  fontFamily: 'var(--display)', fontSize: 18, letterSpacing: 2.5, color: 'var(--text)', lineHeight: 1,
+                  cursor: item.occupant_name ? 'pointer' : 'default',
+                }}
+              >
+                {item.block || '?'} · {item.room_no || '?'}
+              </span>
+              {item.room_active_count > 1 && (
+                <span className="badge badge-amber" style={{ fontSize: 7 }}>×{item.room_active_count}</span>
+              )}
+            </div>
           </div>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
             {isUrgent && <span className="badge badge-red" style={{ fontSize: 8 }}>ACİL</span>}
@@ -251,6 +337,14 @@ export default function ItemCard({ item, machines = [], onDeliver, onDamage, sel
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
           <Chip color={accentColor}>
             {item.item_count} parça
+            {item.clothing_items && (() => {
+              try {
+                const cl = JSON.parse(item.clothing_items)
+                return <span style={{ color: 'var(--text2)', fontSize: 10, fontFamily: 'var(--mono)', marginLeft: 6 }}>
+                  {cl.slice(0, 2).map(c => `${c.qty}× ${c.type}`).join(' · ')}{cl.length > 2 ? ` +${cl.length - 2}` : ''}
+                </span>
+              } catch { return null }
+            })()}
           </Chip>
           {item.machine_name && (
             <Chip color="var(--blue)">
@@ -332,29 +426,29 @@ export default function ItemCard({ item, machines = [], onDeliver, onDamage, sel
 
         {/* ── Genişletilmiş ── */}
         {expanded && (
-          <div style={{ display: 'flex', gap: 6, marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
-            <button className="lc-action-btn ghost"
-              style={{ fontSize: 9 }}
-              onClick={() => setLostOpen(true)}
-            >
-              Kayıp İşaretle
-            </button>
-            {item.status === 'dirty' && (
-              deleteStep ? (
-                <button className="lc-action-btn danger"
-                  style={{ fontSize: 9 }}
-                  onClick={() => { deleteItem.mutate(); setDeleteStep(false) }}
-                >
-                  Emin misin? Sil
-                </button>
-              ) : (
-                <button className="lc-action-btn danger"
-                  style={{ fontSize: 9 }}
-                  onClick={() => setDeleteStep(true)}
-                >
-                  Sil
-                </button>
-              )
+          <ExpandedSection
+            item={item}
+            onLost={() => setLostOpen(true)}
+            onFound={() => {}}
+          />
+        )}
+        {/* Sil butonu (dirty + expand) */}
+        {expanded && item.status === 'dirty' && (
+          <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+            {deleteStep ? (
+              <button className="lc-action-btn danger"
+                style={{ fontSize: 9 }}
+                onClick={() => { deleteItem.mutate(); setDeleteStep(false) }}
+              >
+                Emin misin? Sil
+              </button>
+            ) : (
+              <button className="lc-action-btn danger"
+                style={{ fontSize: 9 }}
+                onClick={() => setDeleteStep(true)}
+              >
+                Sil
+              </button>
             )}
           </div>
         )}
