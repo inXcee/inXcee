@@ -353,8 +353,8 @@ const FILTERS = [
   { key: 'lost',    label: 'Kayıp',   dot: 'var(--text3)' },
 ]
 
-// ── QuickNotes ─────────────────────────────────────────────────
-function QuickNotes() {
+// ── QuickNotes (Sabit Sticker) ─────────────────────────────────
+function QuickNotes({ visible }) {
   const [open, setOpen] = useState(false)
   const [notes, setNotes] = useState(() => {
     try { return localStorage.getItem('laundry-notes') || '' } catch { return '' }
@@ -367,67 +367,80 @@ function QuickNotes() {
 
   const lineCount = notes.split('\n').filter(l => l.trim()).length
 
+  if (!visible) return null
+
   return (
-    <>
-      <button
-        className="btn btn-ghost btn-xs"
-        onClick={() => setOpen(o => !o)}
-        style={{
-          position: 'relative',
-          background: open ? 'rgba(240,165,0,0.1)' : 'transparent',
-          border: `1px solid ${open ? 'rgba(240,165,0,0.3)' : 'var(--border)'}`,
-          color: lineCount > 0 ? 'var(--accent)' : 'var(--text3)',
-        }}
-        title="Hızlı Notlar"
-      >
-        📋 {lineCount > 0 ? lineCount : ''}
-      </button>
-      {open && (
-        <>
-          <div onClick={() => setOpen(false)}
-            style={{ position: 'fixed', inset: 0, zIndex: 990 }} />
+    <div style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 980 }}>
+      {open ? (
+        <div style={{
+          width: 220, background: 'linear-gradient(135deg,#f5e642,#f0c030)',
+          borderRadius: '4px 12px 12px 4px',
+          borderLeft: '4px solid #c8a020',
+          boxShadow: '4px 6px 20px rgba(0,0,0,0.5)',
+          transform: 'rotate(-1.5deg)',
+          overflow: 'hidden',
+        }}>
           <div style={{
-            position: 'absolute', top: '100%', right: 0, marginTop: 6,
-            width: 280, zIndex: 991,
-            background: 'var(--surface)', border: '1px solid var(--border)',
-            borderRadius: 10, boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
-            overflow: 'hidden',
+            padding: '8px 10px 4px',
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
           }}>
-            <div style={{
-              padding: '10px 12px', borderBottom: '1px solid var(--border)',
-              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-              background: 'linear-gradient(135deg, rgba(240,165,0,0.06), transparent)',
-            }}>
-              <span style={{ fontFamily: 'var(--mono)', fontSize: 9, letterSpacing: 2, color: 'var(--accent)' }}>NOTLAR</span>
-              <button className="btn btn-ghost btn-xs" onClick={() => setOpen(false)} style={{ fontSize: 10 }}>✕</button>
-            </div>
-            <textarea
-              value={notes}
-              onChange={e => save(e.target.value)}
-              placeholder="Her satır ayrı not — kayıplar, özel talepler, acil..."
-              style={{
-                width: '100%', minHeight: 160, padding: '10px 12px',
-                background: 'var(--surface2)', border: 'none', resize: 'vertical',
-                fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text)',
-                lineHeight: 1.6, outline: 'none', boxSizing: 'border-box',
-              }}
-              autoFocus
-            />
-            {notes.trim() && (
-              <div style={{ padding: '6px 12px', borderTop: '1px solid var(--border)' }}>
-                <button
-                  className="btn btn-ghost btn-xs"
-                  onClick={() => save('')}
-                  style={{ color: 'var(--text3)', fontSize: 9 }}
-                >
-                  Temizle
-                </button>
-              </div>
-            )}
+            <span style={{ fontFamily: 'var(--mono)', fontSize: 9, fontWeight: 700, color: '#2a1a00', letterSpacing: 1 }}>
+              📋 NOTLAR
+            </span>
+            <button onClick={() => setOpen(false)} style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              fontSize: 12, color: '#2a1a00', padding: '0 2px',
+            }}>✕</button>
           </div>
-        </>
+          <textarea
+            value={notes}
+            onChange={e => save(e.target.value)}
+            placeholder="Kayıplar, özel talepler, acil notlar..."
+            autoFocus
+            style={{
+              width: '100%', minHeight: 160, padding: '6px 10px 10px',
+              background: 'transparent', border: 'none', resize: 'none',
+              fontFamily: 'var(--mono)', fontSize: 11, color: '#1a1000',
+              lineHeight: 1.7, outline: 'none', boxSizing: 'border-box',
+            }}
+          />
+          {notes.trim() && (
+            <div style={{ padding: '4px 10px 8px', display: 'flex', justifyContent: 'flex-end' }}>
+              <button onClick={() => save('')} style={{
+                background: 'rgba(0,0,0,0.1)', border: 'none', cursor: 'pointer',
+                fontFamily: 'var(--mono)', fontSize: 8, color: '#2a1a00',
+                padding: '2px 8px', borderRadius: 4,
+              }}>Temizle</button>
+            </div>
+          )}
+        </div>
+      ) : (
+        <button
+          onClick={() => setOpen(true)}
+          style={{
+            width: 44, height: 44, borderRadius: '50%',
+            background: 'linear-gradient(135deg,#f5e642,#f0c030)',
+            border: '2px solid #c8a020',
+            boxShadow: '2px 4px 12px rgba(0,0,0,0.4)',
+            cursor: 'pointer', fontSize: 18,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            position: 'relative',
+          }}
+          title="Notlar"
+        >
+          📋
+          {lineCount > 0 && (
+            <span style={{
+              position: 'absolute', top: -4, right: -4,
+              width: 18, height: 18, borderRadius: '50%',
+              background: 'var(--red)', color: '#fff',
+              fontFamily: 'var(--mono)', fontSize: 9, fontWeight: 700,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>{lineCount}</span>
+          )}
+        </button>
       )}
-    </>
+    </div>
   )
 }
 
@@ -874,10 +887,6 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
         {search && (
           <button className="btn btn-ghost btn-xs" onClick={() => setSearch('')}>✕</button>
         )}
-        {/* QuickNotes */}
-        <div style={{ position: 'relative' }}>
-          <QuickNotes />
-        </div>
         {/* View toggle */}
         <div style={{ display: 'flex', gap: 0, background: 'var(--surface2)', borderRadius: 8, border: '1px solid var(--border)', overflow: 'hidden', flexShrink: 0 }}>
           {[
@@ -1030,6 +1039,8 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
       {showMgr      && <MachineManagerPanel machines={machines} onClose={() => setShowMgr(false)} />}
       {personPanelName && <PersonPanel name={personPanelName} onClose={() => setPersonPanelName(null)} />}
       {foundItem && <FoundModal item={foundItem} onClose={() => setFoundItem(null)} />}
+      {/* Not Sticker — sadece hub'da */}
+      <QuickNotes visible={section === 'hub'} />
     </div>
   )
 }
