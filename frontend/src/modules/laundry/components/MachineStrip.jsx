@@ -175,13 +175,17 @@ function MachineCard({ m, onTimer, onReset, loading }) {
       )}
 
       {/* Footer */}
-      {m.active_items > 0 && (
+      {(m.active_items > 0 || m.total_runs > 0) && (
         <div style={{
           marginTop: 4, paddingTop: 6, borderTop: '1px solid var(--border)',
           fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)',
           textAlign: 'center', letterSpacing: 0.5,
+          display: 'flex', justifyContent: 'center', gap: 8,
         }}>
-          {m.active_items} yıkama
+          {m.active_items > 0 && <span>{m.active_items} yüklü</span>}
+          {m.total_runs > 0 && (
+            <span style={{ color: 'var(--text4)' }}>{m.total_runs}× çalıştı</span>
+          )}
         </div>
       )}
     </div>
