@@ -10,6 +10,35 @@ const CLOTHING_TYPES = [
   'Yastık K.','İş Mont','İş Pantalonu','Şort','Atlet','Diğer',
 ]
 
+export const CLOTHING_ICONS = {
+  'Pantolon':      '👖',
+  'Gömlek':        '👔',
+  'T-Shirt':       '👕',
+  'Kazak':         '🧥',
+  'Sweat':         '👕',
+  'Polar':         '🧥',
+  'Mont':          '🧥',
+  'Hırka':         '🧶',
+  'Body':          '🩲',
+  'İçlik':         '🩳',
+  'Alt Eşofman':   '🩲',
+  'Üst Eşofman':   '👕',
+  'Boxer':         '🩲',
+  'Külot':         '🩲',
+  'Çorap':         '🧦',
+  'Havlu Tkm':     '🏖️',
+  'El Havlusu':    '🧻',
+  'Ayak Havlusu':  '🧻',
+  'Büyük Havlu':   '🛁',
+  'Ceket':         '🥼',
+  'Yastık K.':     '🛏️',
+  'İş Mont':       '🦺',
+  'İş Pantalonu':  '👖',
+  'Şort':          '🩳',
+  'Atlet':         '👕',
+  'Diğer':         '📦',
+}
+
 const COLOR_PALETTE = [
   { name: 'Beyaz',    hex: '#f0f0f0' },
   { name: 'Siyah',    hex: '#222222' },
@@ -238,7 +267,7 @@ export default function NewItemModal({ onClose }) {
                     color: active ? 'var(--accent)' : 'var(--text2)',
                     fontFamily: 'var(--mono)', fontSize: 10, transition: 'all 0.15s',
                   }}>
-                    {active && '✓ '}{type}
+                    {active && '✓ '}{CLOTHING_ICONS[type] || ''} {type}
                   </button>
                 )
               })}
@@ -252,7 +281,9 @@ export default function NewItemModal({ onClose }) {
                     padding: '6px 10px', background: 'var(--surface2)',
                     border: '1px solid var(--border)', borderRadius: 7,
                   }}>
-                    <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text)', flex: '0 0 70px' }}>{c.type}</span>
+                    <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text)', flex: '0 0 90px' }}>
+                      {CLOTHING_ICONS[c.type] || ''} {c.type}
+                    </span>
                     {/* Color palette */}
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center', flex: 1 }}>
                       {COLOR_PALETTE.map(col => (

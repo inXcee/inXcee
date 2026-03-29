@@ -18,7 +18,7 @@ import { CSS } from '@dnd-kit/utilities'
 import MachineStrip       from './components/MachineStrip.jsx'
 import SlaAlert           from './components/SlaAlert.jsx'
 import ItemCard           from './components/ItemCard.jsx'
-import NewItemModal       from './components/NewItemModal.jsx'
+import NewItemModal, { CLOTHING_ICONS } from './components/NewItemModal.jsx'
 import DeliveryModal      from './components/DeliveryModal.jsx'
 import DamageModal        from './components/DamageModal.jsx'
 import AssignModal        from './components/AssignModal.jsx'
@@ -62,7 +62,7 @@ function ExpandedSection({ item, onLost, onFound }) {
                     padding: '2px 8px', borderRadius: 12, fontSize: 9, fontFamily: 'var(--mono)',
                     background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text2)',
                   }}>
-                    {c.qty}× {c.type}{c.color ? ` (${c.color})` : ''}
+                    {CLOTHING_ICONS[c.type] || ''} {c.qty}× {c.type}{c.color ? ` (${c.color})` : ''}
                   </span>
                 ))}
               </div>
@@ -202,7 +202,7 @@ function KanbanCard({ item, machines, onDeliver, onDamage, onPersonClick, onFoun
         {item.clothing_items && (() => {
           try {
             const cl = JSON.parse(item.clothing_items)
-            const preview = cl.slice(0, 2).map(c => `${c.qty} ${c.type}`).join(' · ')
+            const preview = cl.slice(0, 2).map(c => `${CLOTHING_ICONS[c.type] || ''}${c.qty} ${c.type}`).join(' · ')
             return <span style={{ color: 'var(--text2)' }}>· {preview}{cl.length > 2 ? ` +${cl.length - 2}` : ''}</span>
           } catch { return null }
         })()}
@@ -575,7 +575,7 @@ function FullRecordsView() {
                         background: 'var(--surface2)', border: '1px solid var(--border)',
                         borderRadius: 12, color: 'var(--text2)',
                       }}>
-                        {c.qty}× {c.type}{c.color ? ` (${c.color})` : ''}
+                        {CLOTHING_ICONS[c.type] || ''} {c.qty}× {c.type}{c.color ? ` (${c.color})` : ''}
                       </span>
                     ))}
                   </div>
