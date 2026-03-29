@@ -291,6 +291,7 @@ export function initDB() {
 
   // Laundry timer_started_at kolonu (sonradan eklendi)
   try { db.exec(`ALTER TABLE laundry_machines ADD COLUMN timer_started_at TEXT`) } catch(_) {}
+  try { db.exec(`ALTER TABLE laundry_machines ADD COLUMN total_runs INTEGER DEFAULT 0`) } catch(_) {}
 
   // Performans indeksleri
   try { db.exec(`CREATE INDEX IF NOT EXISTS idx_laundry_items_status ON laundry_items(status)`) } catch(_) {}

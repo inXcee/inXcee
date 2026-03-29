@@ -156,11 +156,16 @@ export function insertMachineQuery({ name, type = 'washer', capacity_kg = 10 }) 
 
 export function updateMachineQuery(id, fields) {
   const db = getDB()
-  const allowed = ['name', 'type', 'status', 'timer_end', 'timer_started_at', 'capacity_kg', 'maintenance_notes']
-  const entries = Object.entries(fields).filter(([k]) => allowed.includes(k))
-  if (!entries.length) return
+  const { increment_runs, ...rest } = fields
+  const allowed = ['name', 'type', 'status', 'timer_end', 'timer_started_at', 'capacity_kg', 'maintenance_notes', 'total_runs']
+  const entries = Object.entries(rest).filter(([k]) => allowed.includes(k))
+  if (!entries.length && !increment_runs) return
   const sets = entries.map(([k]) => `${k} = ?`)
   const vals = entries.map(([, v]) => v)
+  if (increment_runs) {
+    sets.push('total_runs = total_runs + 1')
+  }
+  if (!sets.length) return
   db.prepare(`UPDATE laundry_machines SET ${sets.join(', ')} WHERE id = ?`).run(...vals, id)
 }
 

@@ -144,6 +144,17 @@ describe('Laundry queries', () => {
     const item = getItemQuery(id)
     expect(item.status).toBe('ready')
   })
+
+  it('makine total_runs timer başlatınca artar', async () => {
+    const { listMachinesQuery, updateMachineQuery, getMachineQuery } = await import('./queries.js')
+    const machines = listMachinesQuery()
+    const m = machines[0]
+    const before = m.total_runs ?? 0
+    const timerEnd = new Date(Date.now() + 60 * 60000).toISOString()
+    updateMachineQuery(m.id, { status: 'running', timer_end: timerEnd, increment_runs: true })
+    const after = getMachineQuery(m.id)
+    expect(after.total_runs).toBe(before + 1)
+  })
 })
 
 describe('State machine', () => {

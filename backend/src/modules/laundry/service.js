@@ -51,6 +51,7 @@ export function advanceItemService(id, { machine_id, shelf_location, timer_minut
       status: 'running',
       timer_end: timerEnd,
       timer_started_at: timerEnd ? now.toISOString() : null,
+      increment_runs: true,
     })
     q.removeItemFromQueueQuery(id)
   }
