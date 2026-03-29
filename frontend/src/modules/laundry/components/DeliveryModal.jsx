@@ -5,14 +5,13 @@ import { laundryApi } from '../api.js'
 export default function DeliveryModal({ item, onClose }) {
   const qc = useQueryClient()
   const [name, setName] = useState('')
-  const [signing, setSigning] = useState(false)
   const canvasRef = useRef(null)
   const drawing = useRef(false)
   const [hasSig, setHasSig] = useState(false)
 
   const deliver = useMutation({
     mutationFn: () => {
-      const sig = signing && canvasRef.current ? canvasRef.current.toDataURL() : undefined
+      const sig = hasSig && canvasRef.current ? canvasRef.current.toDataURL() : undefined
       return laundryApi.deliverItem(item.id, { delivered_to: name, signature_data: sig })
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['laundry-items'] }); onClose() },
@@ -118,52 +117,30 @@ export default function DeliveryModal({ item, onClose }) {
             />
           </div>
 
-          {/* İmza toggle */}
-          <label style={{
-            display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer',
-            padding: '10px 12px', borderRadius: 8,
-            background: signing ? 'rgba(59,140,240,0.07)' : 'var(--surface2)',
-            border: `1px solid ${signing ? 'rgba(59,140,240,0.2)' : 'var(--border)'}`,
-            transition: 'all 0.2s',
-          }}>
-            <input type="checkbox" checked={signing}
-              onChange={e => setSigning(e.target.checked)}
-              style={{ accentColor: 'var(--blue)', width: 14, height: 14 }} />
-            <span style={{
-              fontFamily: 'var(--mono)', fontSize: 11,
-              color: signing ? 'var(--blue)' : 'var(--text2)',
-              fontWeight: 600, letterSpacing: 0.5,
-            }}>
-              İMZA AL (OPSİYONEL)
-            </span>
-          </label>
-
           {/* İmza canvas */}
-          {signing && (
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                <label className="form-label" style={{ margin: 0 }}>
-                  {hasSig ? '✓ İmza alındı' : 'Buraya imza atın'}
-                </label>
-                {hasSig && (
-                  <button className="btn btn-ghost btn-xs" onClick={clearSig}>Temizle</button>
-                )}
-              </div>
-              <canvas
-                ref={canvasRef} width={380} height={130}
-                style={{
-                  background: 'var(--surface2)',
-                  border: `1px solid ${hasSig ? 'rgba(59,140,240,0.3)' : 'var(--border)'}`,
-                  borderRadius: 8, display: 'block',
-                  cursor: 'crosshair', touchAction: 'none', width: '100%',
-                  transition: 'border-color 0.2s',
-                }}
-                onMouseDown={startDraw} onMouseMove={draw}
-                onMouseUp={stopDraw} onMouseLeave={stopDraw}
-                onTouchStart={startDraw} onTouchMove={draw} onTouchEnd={stopDraw}
-              />
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+              <label className="form-label" style={{ margin: 0 }}>
+                TESLİM ALAN İMZASI {hasSig ? '✓' : '*'}
+              </label>
+              {hasSig && (
+                <button className="btn btn-ghost btn-xs" onClick={clearSig}>Temizle</button>
+              )}
             </div>
-          )}
+            <canvas
+              ref={canvasRef} width={380} height={130}
+              style={{
+                background: 'var(--surface2)',
+                border: `1px solid ${hasSig ? 'rgba(39,201,106,0.3)' : 'var(--border)'}`,
+                borderRadius: 8, display: 'block',
+                cursor: 'crosshair', touchAction: 'none', width: '100%',
+                transition: 'border-color 0.2s',
+              }}
+              onMouseDown={startDraw} onMouseMove={draw}
+              onMouseUp={stopDraw} onMouseLeave={stopDraw}
+              onTouchStart={startDraw} onTouchMove={draw} onTouchEnd={stopDraw}
+            />
+          </div>
 
           {deliver.isError && (
             <div className="alert alert-danger">
