@@ -301,7 +301,7 @@ function KanbanCol({ title, color, items, colStatus, isOver, machines, onDeliver
   const { setNodeRef } = useDroppable({ id: colStatus })
   return (
     <div style={{
-      flex: 1, minWidth: 220, display: 'flex', flexDirection: 'column',
+      flex: 1, minWidth: 260, display: 'flex', flexDirection: 'column',
       background: 'var(--surface)', border: `1px solid ${isOver ? color : 'var(--border)'}`,
       borderTop: `2px solid ${color}`, borderRadius: 10, overflow: 'hidden',
       transition: 'border-color 0.15s',
@@ -319,7 +319,7 @@ function KanbanCol({ title, color, items, colStatus, isOver, machines, onDeliver
       <div
         ref={setNodeRef}
         style={{
-          flex: 1, overflowY: 'auto', padding: 8, display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 520,
+          flex: 1, overflowY: 'auto', padding: 10, display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 680,
           background: isOver ? `${color}08` : 'transparent',
           transition: 'background 0.15s',
         }}
@@ -711,12 +711,12 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
   const today = new Date().toLocaleDateString('tr-TR', { day: '2-digit', month: 'long', year: 'numeric' })
 
   return (
-    <div style={{ maxWidth: view === 'kanban' ? 1200 : 880, position: 'relative', zIndex: 1 }} className="fade-up">
+    <div style={{ maxWidth: view === 'kanban' ? 1600 : 1000, position: 'relative', zIndex: 1 }} className="fade-up">
 
       {/* ── HEADER ── */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
         <div>
-          <h1 style={{ fontFamily: 'var(--display)', fontSize: 30, letterSpacing: 5, color: 'var(--text)', lineHeight: 1, marginBottom: 8 }}>
+          <h1 style={{ fontFamily: 'var(--display)', fontSize: 36, letterSpacing: 5, color: 'var(--text)', lineHeight: 1, marginBottom: 8 }}>
             ÇAMAŞIRHANE
           </h1>
           {/* Section tabs */}
@@ -731,7 +731,7 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
                 onClick={() => setSection(s.key)}
                 style={{
                   padding: '4px 12px', borderRadius: 6, cursor: 'pointer',
-                  fontFamily: 'var(--mono)', fontSize: 9, letterSpacing: 1,
+                  fontFamily: 'var(--mono)', fontSize: 11, letterSpacing: 1,
                   background: section === s.key ? 'rgba(240,165,0,0.12)' : 'transparent',
                   border: `1px solid ${section === s.key ? 'rgba(240,165,0,0.3)' : 'var(--border)'}`,
                   color: section === s.key ? 'var(--accent)' : 'var(--text3)',
@@ -774,10 +774,10 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
             onMouseLeave={e => e.currentTarget.style.transform = ''}
           >
             <div style={{ position: 'absolute', top: -20, right: -20, width: 70, height: 70, borderRadius: '50%', background: s.color, opacity: 0.04 }} />
-            <div style={{ fontFamily: 'var(--display)', fontSize: 44, letterSpacing: 2, color: s.color, lineHeight: 1, marginBottom: 6 }}>
+            <div style={{ fontFamily: 'var(--display)', fontSize: 52, letterSpacing: 2, color: s.color, lineHeight: 1, marginBottom: 6 }}>
               {s.value}
             </div>
-            <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 2 }}>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 2 }}>
               {s.label}
             </div>
             {s.sub != null && (
