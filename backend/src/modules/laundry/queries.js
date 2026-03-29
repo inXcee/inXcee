@@ -375,7 +375,60 @@ export function getStatsQuery({ from_date, to_date } = {}) {
     FROM laundry_machines lm ORDER BY lm.type, lm.name
   `).all()
 
-  return { by_status, delivered_today, avg_hours, sla_violations, period_total, period_delivered, machine_stats }
+  // En aktif odalar (seçili dönem)
+  let by_room = []
+  let clothing_breakdown = []
+  let lost_period = { count: 0 }
+  let avg_delivery_hours = null
+
+  if (from_date && to_date) {
+    by_room = db.prepare(`
+      SELECT r.block, r.room_no,
+        COUNT(*) as total,
+        SUM(CASE WHEN li.status='delivered' THEN 1 ELSE 0 END) as delivered,
+        SUM(CASE WHEN li.status='lost' THEN 1 ELSE 0 END) as lost
+      FROM laundry_items li
+      LEFT JOIN rooms r ON r.id = li.room_id
+      WHERE li.created_at >= ? AND li.created_at <= ?
+      GROUP BY li.room_id
+      ORDER BY total DESC
+      LIMIT 10
+    `).all(from_date, to_date)
+
+    lost_period = db.prepare(`
+      SELECT COUNT(*) as count FROM laundry_items
+      WHERE status='lost' AND created_at >= ? AND created_at <= ?
+    `).get(from_date, to_date)
+
+    avg_delivery_hours = db.prepare(`
+      SELECT ROUND(AVG((julianday(ld.delivered_at) - julianday(li.created_at)) * 24), 1) as avg_h
+      FROM laundry_deliveries ld
+      JOIN laundry_items li ON li.id = ld.item_id
+      WHERE ld.delivered_at >= ? AND ld.delivered_at <= ?
+    `).get(from_date, to_date)?.avg_h
+
+    // Kıyafet tipi dağılımı (clothing_items JSON parse)
+    const rawItems = db.prepare(`
+      SELECT clothing_items FROM laundry_items
+      WHERE clothing_items IS NOT NULL AND created_at >= ? AND created_at <= ?
+    `).all(from_date, to_date)
+
+    const typeCounts = {}
+    for (const row of rawItems) {
+      try {
+        const items = JSON.parse(row.clothing_items)
+        for (const item of items) {
+          typeCounts[item.type] = (typeCounts[item.type] || 0) + (item.qty || 1)
+        }
+      } catch {}
+    }
+    clothing_breakdown = Object.entries(typeCounts)
+      .map(([type, qty]) => ({ type, qty }))
+      .sort((a, b) => b.qty - a.qty)
+      .slice(0, 10)
+  }
+
+  return { by_status, delivered_today, avg_hours, sla_violations, period_total, period_delivered, machine_stats, by_room, lost_period, avg_delivery_hours, clothing_breakdown }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
