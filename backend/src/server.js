@@ -9,3 +9,4 @@ startCronJobs()
 
 const port = process.env.PORT || 3001
 app.listen(port, () => console.log(`YYS Backend http://localhost:${port}`))
+
