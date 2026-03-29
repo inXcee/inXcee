@@ -265,7 +265,7 @@ function ExpandedSection({ item, onLost, onFound }) {
 }
 
 /* ── Main component ─────────────────────────────────────────── */
-export default function ItemCard({ item, machines = [], onDeliver, onDamage, selected, onSelect, onPersonClick }) {
+export default function ItemCard({ item, machines = [], onDeliver, onDamage, selected, onSelect, onPersonClick, onFound }) {
   const qc = useQueryClient()
   const [expanded, setExpanded] = useState(false)
   const [assignOpen, setAssignOpen] = useState(false)
@@ -429,7 +429,7 @@ export default function ItemCard({ item, machines = [], onDeliver, onDamage, sel
           <ExpandedSection
             item={item}
             onLost={() => setLostOpen(true)}
-            onFound={() => {}}
+            onFound={onFound}
           />
         )}
         {/* Sil butonu (dirty + expand) */}

@@ -306,16 +306,18 @@ const FILTERS = [
 export default function LaundryHub({ defaultView = 'kanban' }) {
   useLaundrySSE()
 
-  const [view,         setView]         = useState(defaultView)
-  const [filter,       setFilter]       = useState('all')
-  const [search,       setSearch]       = useState('')
-  const [showNew,      setShowNew]      = useState(false)
-  const [deliverItem,  setDeliverItem]  = useState(null)
-  const [damageItem,   setDamageItem]   = useState(null)
-  const [showMachines, setShowMachines] = useState(true)
-  const [showMgr,      setShowMgr]      = useState(false)
-  const [batchMode,    setBatchMode]    = useState(false)
-  const [selectedIds,  setSelectedIds]  = useState(new Set())
+  const [view,           setView]           = useState(defaultView)
+  const [filter,         setFilter]         = useState('all')
+  const [search,         setSearch]         = useState('')
+  const [showNew,        setShowNew]        = useState(false)
+  const [deliverItem,    setDeliverItem]    = useState(null)
+  const [damageItem,     setDamageItem]     = useState(null)
+  const [showMachines,   setShowMachines]   = useState(true)
+  const [showMgr,        setShowMgr]        = useState(false)
+  const [batchMode,      setBatchMode]      = useState(false)
+  const [selectedIds,    setSelectedIds]    = useState(new Set())
+  const [personPanelName, setPersonPanelName] = useState(null)
+  const [foundItem,      setFoundItem]      = useState(null)
 
   const { data: allItems = [] } = useQuery({
     queryKey: ['laundry-items', 'all'],
@@ -566,9 +568,9 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
       {/* ── CONTENT ── */}
       {view === 'kanban' ? (
         <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-          <KanbanCol title="KİRLİ SEPET"  color="var(--accent)" items={dirty}   machines={machines} onDeliver={setDeliverItem} onDamage={setDamageItem} />
-          <KanbanCol title="YIKANIYOR"    color="var(--blue)"   items={washing} machines={machines} onDeliver={setDeliverItem} onDamage={setDamageItem} />
-          <KanbanCol title="RAFTA HAZIR"  color="var(--green)"  items={ready}   machines={machines} onDeliver={setDeliverItem} onDamage={setDamageItem} />
+          <KanbanCol title="KİRLİ SEPET"  color="var(--accent)" items={dirty}   machines={machines} onDeliver={setDeliverItem} onDamage={setDamageItem} onPersonClick={setPersonPanelName} onFound={setFoundItem} />
+          <KanbanCol title="YIKANIYOR"    color="var(--blue)"   items={washing} machines={machines} onDeliver={setDeliverItem} onDamage={setDamageItem} onPersonClick={setPersonPanelName} onFound={setFoundItem} />
+          <KanbanCol title="RAFTA HAZIR"  color="var(--green)"  items={ready}   machines={machines} onDeliver={setDeliverItem} onDamage={setDamageItem} onPersonClick={setPersonPanelName} onFound={setFoundItem} />
         </div>
       ) : (
         <div>
@@ -599,6 +601,8 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
                     onDamage={setDamageItem}
                     selected={selectedIds.has(item.id)}
                     onSelect={batchMode ? toggleSelect : undefined}
+                    onPersonClick={setPersonPanelName}
+                    onFound={setFoundItem}
                   />
                 </div>
               ))}
