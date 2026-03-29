@@ -13,7 +13,7 @@ export default function FoundModal({ item, onClose }) {
   const waMsg = `Merhaba${firstName ? ' ' + firstName : ''}!\n\nKayıp olarak bildirilen ${item.item_count} parça çamaşırınız bulundu.\nRaf: ${shelf}\nTeslim için çamaşırhaneye gelebilirsiniz.`
 
   const found = useMutation({
-    mutationFn: () => laundryApi.markFound(item.id),
+    mutationFn: () => laundryApi.markFound(item.id, sendWA && !!item.phone_number),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['laundry-items'] })
       onClose()
@@ -33,7 +33,7 @@ export default function FoundModal({ item, onClose }) {
         }}>
           <div>
             <span className="panel-title" style={{ color: 'var(--green)' }}>KAYIP BULUNDU</span>
-            <div className="panel-subtitle">{item.block} · {item.room_no} — {item.item_count} parça</div>
+            <div className="panel-subtitle">{item.block} · {item.room_no} · {item.item_count} parça</div>
           </div>
           <button className="btn btn-ghost btn-xs" onClick={onClose}>ESC</button>
         </div>
