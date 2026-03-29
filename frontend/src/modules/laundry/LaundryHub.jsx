@@ -346,6 +346,84 @@ const FILTERS = [
   { key: 'lost',    label: 'Kayıp',   dot: 'var(--text3)' },
 ]
 
+// ── QuickNotes ─────────────────────────────────────────────────
+function QuickNotes() {
+  const [open, setOpen] = useState(false)
+  const [notes, setNotes] = useState(() => {
+    try { return localStorage.getItem('laundry-notes') || '' } catch { return '' }
+  })
+
+  const save = (val) => {
+    setNotes(val)
+    try { localStorage.setItem('laundry-notes', val) } catch {}
+  }
+
+  const lineCount = notes.split('\n').filter(l => l.trim()).length
+
+  return (
+    <>
+      <button
+        className="btn btn-ghost btn-xs"
+        onClick={() => setOpen(o => !o)}
+        style={{
+          position: 'relative',
+          background: open ? 'rgba(240,165,0,0.1)' : 'transparent',
+          border: `1px solid ${open ? 'rgba(240,165,0,0.3)' : 'var(--border)'}`,
+          color: lineCount > 0 ? 'var(--accent)' : 'var(--text3)',
+        }}
+        title="Hızlı Notlar"
+      >
+        📋 {lineCount > 0 ? lineCount : ''}
+      </button>
+      {open && (
+        <>
+          <div onClick={() => setOpen(false)}
+            style={{ position: 'fixed', inset: 0, zIndex: 990 }} />
+          <div style={{
+            position: 'absolute', top: '100%', right: 0, marginTop: 6,
+            width: 280, zIndex: 991,
+            background: 'var(--surface)', border: '1px solid var(--border)',
+            borderRadius: 10, boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+            overflow: 'hidden',
+          }}>
+            <div style={{
+              padding: '10px 12px', borderBottom: '1px solid var(--border)',
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              background: 'linear-gradient(135deg, rgba(240,165,0,0.06), transparent)',
+            }}>
+              <span style={{ fontFamily: 'var(--mono)', fontSize: 9, letterSpacing: 2, color: 'var(--accent)' }}>NOTLAR</span>
+              <button className="btn btn-ghost btn-xs" onClick={() => setOpen(false)} style={{ fontSize: 10 }}>✕</button>
+            </div>
+            <textarea
+              value={notes}
+              onChange={e => save(e.target.value)}
+              placeholder="Her satır ayrı not — kayıplar, özel talepler, acil..."
+              style={{
+                width: '100%', minHeight: 160, padding: '10px 12px',
+                background: 'var(--surface2)', border: 'none', resize: 'vertical',
+                fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text)',
+                lineHeight: 1.6, outline: 'none', boxSizing: 'border-box',
+              }}
+              autoFocus
+            />
+            {notes.trim() && (
+              <div style={{ padding: '6px 12px', borderTop: '1px solid var(--border)' }}>
+                <button
+                  className="btn btn-ghost btn-xs"
+                  onClick={() => save('')}
+                  style={{ color: 'var(--text3)', fontSize: 9 }}
+                >
+                  Temizle
+                </button>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </>
+  )
+}
+
 // ── LaundryHub ─────────────────────────────────────────────────
 export default function LaundryHub({ defaultView = 'kanban' }) {
   useLaundrySSE()
@@ -449,6 +527,7 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
   const dirty   = kanbanItems.filter(i => i.status === 'dirty')
   const washing = kanbanItems.filter(i => i.status === 'washing')
   const ready   = kanbanItems.filter(i => i.status === 'ready')
+  const lost    = allItems.filter(i => i.status === 'lost')
 
   const counts = {
     dirty:   allItems.filter(i => i.status === 'dirty').length,
@@ -589,7 +668,10 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
             return (
               <button key={f.key}
                 className={`filter-chip ${filter === f.key ? 'active' : ''}`}
-                onClick={() => setFilter(f.key)}
+                onClick={() => {
+                  setFilter(f.key)
+                  if (view === 'kanban' && f.key !== 'all') setView('liste')
+                }}
                 style={{ display: 'flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }}
               >
                 {f.dot && (
@@ -610,6 +692,10 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
         {search && (
           <button className="btn btn-ghost btn-xs" onClick={() => setSearch('')}>✕</button>
         )}
+        {/* QuickNotes */}
+        <div style={{ position: 'relative' }}>
+          <QuickNotes />
+        </div>
         {/* View toggle */}
         <div style={{ display: 'flex', gap: 0, background: 'var(--surface2)', borderRadius: 8, border: '1px solid var(--border)', overflow: 'hidden', flexShrink: 0 }}>
           {[
@@ -671,6 +757,44 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
               </div>
             )}
           </DragOverlay>
+          {lost.length > 0 && (
+            <div style={{ marginTop: 16 }}>
+              <div style={{
+                fontFamily: 'var(--mono)', fontSize: 9, letterSpacing: 2, color: 'var(--red)',
+                marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8,
+              }}>
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--red)', display: 'inline-block' }} />
+                KAYIP ({lost.length})
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {lost.map(item => (
+                  <div key={item.id} style={{
+                    flex: '0 0 calc(33% - 6px)', minWidth: 200,
+                    background: 'var(--surface)', border: '1px solid rgba(231,76,60,0.25)',
+                    borderTop: '2px solid var(--red)', borderRadius: 8, padding: '10px 12px',
+                  }}>
+                    <div style={{ fontFamily: 'var(--display)', fontSize: 14, letterSpacing: 2, color: 'var(--red)', marginBottom: 4 }}>
+                      {item.block} · {item.room_no}
+                    </div>
+                    <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text2)', marginBottom: 4 }}>
+                      {item.item_count} parça {item.occupant_name ? `· ${item.occupant_name}` : ''}
+                    </div>
+                    <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--text3)', marginBottom: 8 }}>
+                      {new Date(item.created_at).toLocaleDateString('tr-TR')}
+                      {item.intake_name ? ` · ${item.intake_name}` : ''}
+                    </div>
+                    <button
+                      className="btn btn-xs"
+                      style={{ background: 'rgba(39,201,106,0.12)', color: 'var(--green)', border: '1px solid rgba(39,201,106,0.25)', fontSize: 9 }}
+                      onClick={() => setFoundItem(item)}
+                    >
+                      ✓ Bulundu →
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </DndContext>
       ) : (
         <div>

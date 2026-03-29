@@ -3,7 +3,29 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { laundryApi } from '../api.js'
 import api from '../../../shared/api/client.js'
 
-const CLOTHING_TYPES = ['Tişört', 'Pantolon', 'Çorap', 'İçlik', 'Kazak', 'Şort', 'Atlet', 'Diğer']
+const CLOTHING_TYPES = [
+  'Pantolon','Gömlek','T-Shirt','Kazak','Sweat','Polar','Mont','Hırka',
+  'Body','İçlik','Alt Eşofman','Üst Eşofman','Boxer','Külot','Çorap',
+  'Havlu Tkm','El Havlusu','Ayak Havlusu','Büyük Havlu','Ceket',
+  'Yastık K.','İş Mont','İş Pantalonu','Şort','Atlet','Diğer',
+]
+
+const COLOR_PALETTE = [
+  { name: 'Beyaz',    hex: '#f0f0f0' },
+  { name: 'Siyah',    hex: '#222222' },
+  { name: 'Gri',      hex: '#888888' },
+  { name: 'Lacivert', hex: '#1a2e5e' },
+  { name: 'Mavi',     hex: '#2563eb' },
+  { name: 'Açık Mavi',hex: '#7ec8e3' },
+  { name: 'Kırmızı',  hex: '#dc2626' },
+  { name: 'Yeşil',    hex: '#16a34a' },
+  { name: 'Sarı',     hex: '#eab308' },
+  { name: 'Turuncu',  hex: '#ea580c' },
+  { name: 'Kahve',    hex: '#92400e' },
+  { name: 'Bej',      hex: '#d4b896' },
+  { name: 'Mor',      hex: '#7c3aed' },
+  { name: 'Pembe',    hex: '#ec4899' },
+]
 
 function SignatureCanvas({ onSign, onClear }) {
   const canvasRef = useRef(null)
@@ -236,13 +258,32 @@ export default function NewItemModal({ onClose }) {
                     border: '1px solid var(--border)', borderRadius: 7,
                   }}>
                     <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text)', flex: '0 0 70px' }}>{c.type}</span>
-                    <input
-                      className="form-input"
-                      value={c.color}
-                      onChange={e => updateClothing(idx, 'color', e.target.value)}
-                      placeholder="Renk"
-                      style={{ flex: 1, padding: '4px 8px', fontSize: 10 }}
-                    />
+                    {/* Color palette */}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center', flex: 1 }}>
+                      {COLOR_PALETTE.map(col => (
+                        <button
+                          key={col.name}
+                          title={col.name}
+                          onClick={() => updateClothing(idx, 'color', c.color === col.name ? '' : col.name)}
+                          style={{
+                            width: 18, height: 18, borderRadius: '50%', border: `2px solid ${c.color === col.name ? 'var(--accent)' : 'transparent'}`,
+                            background: col.hex, cursor: 'pointer', padding: 0, flexShrink: 0,
+                            boxShadow: c.color === col.name ? '0 0 0 1px var(--accent)' : 'none',
+                            transition: 'border 0.1s',
+                          }}
+                        />
+                      ))}
+                      <input
+                        className="form-input"
+                        value={COLOR_PALETTE.some(cp => cp.name === c.color) ? '' : c.color}
+                        onChange={e => updateClothing(idx, 'color', e.target.value)}
+                        placeholder="Diğer..."
+                        style={{ width: 60, padding: '3px 6px', fontSize: 9, flexShrink: 0 }}
+                      />
+                      {c.color && (
+                        <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', flexShrink: 0 }}>{c.color}</span>
+                      )}
+                    </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       <button onClick={() => updateClothing(idx, 'qty', c.qty - 1)}
                         style={{ width: 24, height: 24, borderRadius: 4, background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text2)', cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>−</button>
