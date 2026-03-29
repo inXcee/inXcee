@@ -2,6 +2,16 @@ import { useState, useMemo } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { laundryApi } from './api.js'
 import { useLaundrySSE } from '../../shared/hooks/useLaundrySSE.js'
+import {
+  DndContext,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragOverlay,
+  useDroppable,
+  useDraggable,
+} from '@dnd-kit/core'
+import { CSS } from '@dnd-kit/utilities'
 
 import MachineStrip       from './components/MachineStrip.jsx'
 import SlaAlert           from './components/SlaAlert.jsx'
@@ -97,6 +107,29 @@ function ExpandedSection({ item, onLost, onFound }) {
           }}>Kayıp</button>
         )}
       </div>
+    </div>
+  )
+}
+
+// ── DraggableKanbanCard ────────────────────────────────────────
+function DraggableKanbanCard({ item, ...props }) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: `item-${item.id}`,
+    data: { item },
+  })
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Translate.toString(transform),
+        opacity: isDragging ? 0.4 : 1,
+        cursor: isDragging ? 'grabbing' : 'grab',
+      }}
+      {...attributes}
+      {...listeners}
+    >
+      <KanbanCard item={item} {...props} />
     </div>
   )
 }
@@ -262,12 +295,14 @@ function KanbanCard({ item, machines, onDeliver, onDamage, onPersonClick, onFoun
 }
 
 // ── KanbanCol ──────────────────────────────────────────────────
-function KanbanCol({ title, color, items, machines, onDeliver, onDamage, onPersonClick, onFound }) {
+function KanbanCol({ title, color, items, colStatus, isOver, machines, onDeliver, onDamage, onPersonClick, onFound }) {
+  const { setNodeRef } = useDroppable({ id: colStatus })
   return (
     <div style={{
       flex: 1, minWidth: 220, display: 'flex', flexDirection: 'column',
-      background: 'var(--surface)', border: '1px solid var(--border)',
+      background: 'var(--surface)', border: `1px solid ${isOver ? color : 'var(--border)'}`,
       borderTop: `2px solid ${color}`, borderRadius: 10, overflow: 'hidden',
+      transition: 'border-color 0.15s',
     }}>
       <div style={{
         padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -279,13 +314,20 @@ function KanbanCol({ title, color, items, machines, onDeliver, onDamage, onPerso
           {items.length}
         </span>
       </div>
-      <div style={{ flex: 1, overflowY: 'auto', padding: 8, display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 520 }}>
+      <div
+        ref={setNodeRef}
+        style={{
+          flex: 1, overflowY: 'auto', padding: 8, display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 520,
+          background: isOver ? `${color}08` : 'transparent',
+          transition: 'background 0.15s',
+        }}
+      >
         {items.length === 0 ? (
           <div style={{ padding: '28px 0', textAlign: 'center', fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text4)' }}>
             boş
           </div>
         ) : items.map(item => (
-          <KanbanCard key={item.id} item={item} machines={machines} onDeliver={onDeliver} onDamage={onDamage}
+          <DraggableKanbanCard key={item.id} item={item} machines={machines} onDeliver={onDeliver} onDamage={onDamage}
             onPersonClick={onPersonClick} onFound={onFound} />
         ))}
       </div>
@@ -308,6 +350,8 @@ const FILTERS = [
 export default function LaundryHub({ defaultView = 'kanban' }) {
   useLaundrySSE()
 
+  const qc = useQueryClient()
+
   const [view,           setView]           = useState(defaultView)
   const [filter,         setFilter]         = useState('all')
   const [search,         setSearch]         = useState('')
@@ -320,6 +364,36 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
   const [selectedIds,    setSelectedIds]    = useState(new Set())
   const [personPanelName, setPersonPanelName] = useState(null)
   const [foundItem,      setFoundItem]      = useState(null)
+  const [activeItem,     setActiveItem]     = useState(null)
+  const [overCol,        setOverCol]        = useState(null)
+
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
+
+  const handleDragStart = ({ active }) => {
+    setActiveItem(active.data.current.item)
+  }
+
+  const handleDragOver = ({ over }) => {
+    setOverCol(over?.id || null)
+  }
+
+  const handleDragEnd = ({ active, over }) => {
+    setActiveItem(null); setOverCol(null)
+    if (!over) return
+    const item = active.data.current.item
+    const targetStatus = over.id
+    if (item.status === targetStatus) return
+
+    if (item.status === 'dirty' && targetStatus === 'washing') {
+      const idleMachine = machines.find(m => m.status === 'idle')
+      if (!idleMachine) { alert('Boş makine yok — makine seçimi için kart butonunu kullan'); return }
+      laundryApi.advanceItem(item.id, { machine_id: idleMachine.id })
+        .then(() => qc.invalidateQueries({ queryKey: ['laundry-items'] }))
+    } else if (item.status === 'washing' && targetStatus === 'ready') {
+      laundryApi.advanceItem(item.id, { shelf_location: null })
+        .then(() => qc.invalidateQueries({ queryKey: ['laundry-items'] }))
+    }
+  }
 
   const { data: allItems = [] } = useQuery({
     queryKey: ['laundry-items', 'all'],
@@ -569,11 +643,31 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
 
       {/* ── CONTENT ── */}
       {view === 'kanban' ? (
-        <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-          <KanbanCol title="KİRLİ SEPET"  color="var(--accent)" items={dirty}   machines={machines} onDeliver={setDeliverItem} onDamage={setDamageItem} onPersonClick={setPersonPanelName} onFound={setFoundItem} />
-          <KanbanCol title="YIKANIYOR"    color="var(--blue)"   items={washing} machines={machines} onDeliver={setDeliverItem} onDamage={setDamageItem} onPersonClick={setPersonPanelName} onFound={setFoundItem} />
-          <KanbanCol title="RAFTA HAZIR"  color="var(--green)"  items={ready}   machines={machines} onDeliver={setDeliverItem} onDamage={setDamageItem} onPersonClick={setPersonPanelName} onFound={setFoundItem} />
-        </div>
+        <DndContext
+          sensors={sensors}
+          onDragStart={handleDragStart}
+          onDragOver={handleDragOver}
+          onDragEnd={handleDragEnd}
+        >
+          <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+            <KanbanCol title="KİRLİ SEPET"  color="var(--accent)" items={dirty}   colStatus="dirty"   isOver={overCol === 'dirty'}   machines={machines} onDeliver={setDeliverItem} onDamage={setDamageItem} onPersonClick={setPersonPanelName} onFound={setFoundItem} />
+            <KanbanCol title="YIKANIYOR"    color="var(--blue)"   items={washing} colStatus="washing" isOver={overCol === 'washing'} machines={machines} onDeliver={setDeliverItem} onDamage={setDamageItem} onPersonClick={setPersonPanelName} onFound={setFoundItem} />
+            <KanbanCol title="RAFTA HAZIR"  color="var(--green)"  items={ready}   colStatus="ready"   isOver={overCol === 'ready'}   machines={machines} onDeliver={setDeliverItem} onDamage={setDamageItem} onPersonClick={setPersonPanelName} onFound={setFoundItem} />
+          </div>
+          <DragOverlay>
+            {activeItem && (
+              <div style={{
+                opacity: 0.9, transform: 'rotate(2deg)',
+                background: 'var(--surface2)', border: '1px solid var(--accent)',
+                borderRadius: 8, padding: '10px 12px',
+                boxShadow: '0 8px 32px rgba(240,165,0,0.2)',
+                fontFamily: 'var(--display)', fontSize: 16, letterSpacing: 2, color: 'var(--accent)',
+              }}>
+                {activeItem.block} · {activeItem.room_no} — {activeItem.item_count} parça
+              </div>
+            )}
+          </DragOverlay>
+        </DndContext>
       ) : (
         <div>
           {isLoading ? (
