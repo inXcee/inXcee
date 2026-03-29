@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { laundryApi } from '../api.js'
 import api from '../../../shared/api/client.js'
 
-const CLOTHING_TYPES = [
+const DEFAULT_CLOTHING_TYPES = [
   'Pantolon','Gömlek','T-Shirt','Kazak','Sweat','Polar','Mont','Hırka',
   'Body','İçlik','Alt Eşofman','Üst Eşofman','Boxer','Külot','Çorap',
   'Havlu Tkm','El Havlusu','Ayak Havlusu','Büyük Havlu','Ceket',
@@ -130,6 +130,13 @@ function SignatureCanvas({ onSign, onClear }) {
 }
 
 export default function NewItemModal({ onClose }) {
+  const CLOTHING_TYPES = (() => {
+    try {
+      const saved = localStorage.getItem('custom-clothing-types')
+      return saved ? JSON.parse(saved) : DEFAULT_CLOTHING_TYPES
+    } catch { return DEFAULT_CLOTHING_TYPES }
+  })()
+
   const qc = useQueryClient()
   const [form, setForm] = useState({
     room_id: '', notes: '', urgent: false, phone_override: '',

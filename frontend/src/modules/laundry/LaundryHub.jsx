@@ -868,7 +868,18 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
           { label: 'Rafta Hazır',  value: counts.ready,                         color: 'var(--green)',  sub: activeTotal > 0 ? (counts.ready / activeTotal) * 100 : 0 },
           { label: 'SLA İhlali',   value: violations.length,                    color: 'var(--red)',    sub: null },
           { label: 'Bugün Teslim', value: stats?.delivered_today?.count ?? 0,   color: 'var(--teal)',   sub: null },
-          { label: 'Bugün Yıkanan', value: stats?.washed_today?.count ?? 0, color: 'var(--blue)', sub: null },
+          {
+            label: 'Bugün Yıkanan',
+            value: stats?.washed_today?.count ?? 0,
+            color: (() => {
+              try {
+                const goal = parseInt(localStorage.getItem('laundry-daily-goal') || '50')
+                const val = stats?.washed_today?.count ?? 0
+                return val >= goal ? 'var(--green)' : 'var(--blue)'
+              } catch { return 'var(--blue)' }
+            })(),
+            sub: null,
+          },
         ].map(s => (
           <div key={s.label} style={{
             background: 'var(--surface)', border: '1px solid var(--border)',
