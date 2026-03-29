@@ -429,7 +429,7 @@ export default function ItemCard({ item, machines = [], onDeliver, onDamage, sel
           <ExpandedSection
             item={item}
             onLost={() => setLostOpen(true)}
-            onFound={onFound}
+            onFound={() => onFound && onFound(item)}
           />
         )}
         {/* Sil butonu (dirty + expand) */}
