@@ -3,7 +3,7 @@ import { requireRole } from '../../shared/auth/middleware.js'
 import { upload } from '../../shared/uploads/middleware.js'
 import { getDB } from '../../shared/db/index.js'
 import * as svc from './service.js'
-import { notifyItemReady } from './whatsapp.js'
+import { notifyItemReady, sendFoundMessage } from './whatsapp.js'
 
 export const laundryRouter = Router()
 
@@ -97,6 +97,33 @@ laundryRouter.post('/items/:id/damages', ...laundryFull, (req, res) => {
   try {
     const damages = svc.reportDamageService(+req.params.id, req.body, req.user.id)
     res.status(201).json(damages)
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+laundryRouter.get('/person/:name', ...laundryRead, (req, res) => {
+  try {
+    res.json(svc.getPersonHistoryService(decodeURIComponent(req.params.name)))
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+laundryRouter.post('/items/:id/found', ...laundryFull, async (req, res) => {
+  try {
+    const item = svc.markFoundService(+req.params.id, req.user.id)
+    if (req.body.send_whatsapp && item) {
+      const full = getDB().prepare(`
+        SELECT li.item_count, li.shelf_location, li.clothing_items,
+               r.block, r.room_no,
+               COALESCE(li.phone_override, p.phone_number) as phone_number,
+               p.full_name, li.intake_name
+        FROM laundry_items li
+        LEFT JOIN rooms r ON r.id = li.room_id
+        LEFT JOIN room_assignments ra ON ra.room_id = li.room_id AND ra.check_out_at IS NULL
+        LEFT JOIN personnel p ON p.id = ra.personnel_id
+        WHERE li.id = ?
+      `).get(+req.params.id)
+      if (full) await sendFoundMessage(full)
+    }
+    res.json(item)
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
 

@@ -51,3 +51,29 @@ export async function notifyItemReady(itemId) {
     console.error('[WhatsApp] Hata:', e.message)
   }
 }
+
+export async function sendFoundMessage(item) {
+  if (!process.env.WHATSAPP_TOKEN || !process.env.WHATSAPP_PHONE_ID) return
+
+  try {
+    const phone = (item.phone_number || '').replace(/\D/g, '')
+    if (!phone) return
+
+    const name = item.full_name || item.intake_name || ''
+    const firstName = name ? ' ' + name.split(' ')[0] : ''
+    const shelf = item.shelf_location ? `Raf: ${item.shelf_location}.` : ''
+    const msg = `Merhaba${firstName}!\n\nKayıp olarak bildirilen ${item.item_count} parça çamaşırınız bulundu. ${shelf}\nTeslim için çamaşırhaneye gelebilirsiniz.`
+
+    const res = await fetch(
+      `https://graph.facebook.com/v19.0/${process.env.WHATSAPP_PHONE_ID}/messages`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}` },
+        body: JSON.stringify({ messaging_product: 'whatsapp', to: phone, type: 'text', text: { body: msg } }),
+      }
+    )
+    if (!res.ok) console.error('[WhatsApp] Found msg error:', await res.text())
+  } catch (e) {
+    console.error('[WhatsApp] sendFoundMessage error:', e.message)
+  }
+}

@@ -17,11 +17,11 @@ const TRANSITIONS = {
 // ITEM CRUD
 // ═══════════════════════════════════════════════════════════════════════════
 
-export function createItemService({ room_id, item_count, item_details, notes, urgent, photo_url, phone_override }, userId) {
+export function createItemService({ room_id, item_count, item_details, notes, urgent, photo_url, phone_override, intake_name, intake_signature, clothing_items }, userId) {
   if (!room_id) throw new Error('Oda seçilmeli')
   if (!item_count || item_count < 1) throw new Error('Parça adedi en az 1 olmalı')
 
-  const id = q.insertItemQuery({ room_id, item_count, item_details, notes, urgent, photo_url, phone_override, created_by: userId })
+  const id = q.insertItemQuery({ room_id, item_count, item_details, notes, urgent, photo_url, phone_override, intake_name, intake_signature, clothing_items, created_by: userId })
   q.insertHistoryQuery({ item_id: id, from_status: null, to_status: 'dirty', action_by: userId, notes: `${item_count} parça kayıt` })
 
   if (urgent) {
@@ -213,4 +213,24 @@ export function upsertSlaConfigService(data) {
 
 export function listAllItemsService(filters) {
   return q.listAllItemsQuery(filters)
+}
+
+export function markFoundService(id, userId) {
+  const item = q.getItemQuery(id)
+  if (!item) throw new Error('Kayıt bulunamadı')
+  if (item.status !== 'lost') throw new Error('Yalnızca kayıp kayıtlar bulundu işaretlenebilir')
+  return q.markFoundQuery(id, userId)
+}
+
+export function getPersonHistoryService(name) {
+  if (!name) throw new Error('İsim gerekli')
+  const items = q.getPersonHistoryQuery(name)
+  const total_given = items.length
+  const total_delivered = items.filter(i => i.status === 'delivered').length
+  const total_lost = items.filter(i => i.status === 'lost').length
+  const hoursArr = items.map(i => i.total_hours).filter(h => h != null)
+  const avg_hours = hoursArr.length > 0 ? Math.round(hoursArr.reduce((a, b) => a + b, 0) / hoursArr.length) : null
+  const phone = items[0]?.phone_number || null
+  const room = items[0] ? `${items[0].block} · ${items[0].room_no}` : null
+  return { name, phone, room, total_given, total_delivered, total_lost, avg_hours, items }
 }
