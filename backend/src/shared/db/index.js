@@ -299,6 +299,11 @@ export function initDB() {
   try { db.exec(`CREATE INDEX IF NOT EXISTS idx_laundry_queue_position ON laundry_queue(position)`) } catch(_) {}
   try { db.exec(`CREATE INDEX IF NOT EXISTS idx_laundry_history_item ON laundry_history(item_id)`) } catch(_) {}
 
+  // ── Laundry v3 — kıyafet detayı + imza ────────────────────────────────────
+  try { db.exec(`ALTER TABLE laundry_items ADD COLUMN intake_name TEXT`) } catch(_) {}
+  try { db.exec(`ALTER TABLE laundry_items ADD COLUMN intake_signature TEXT`) } catch(_) {}
+  try { db.exec(`ALTER TABLE laundry_items ADD COLUMN clothing_items TEXT`) } catch(_) {}
+
   return db
 }
 
