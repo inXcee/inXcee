@@ -383,15 +383,19 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
     const item = active.data.current.item
     const targetStatus = over.id
     if (item.status === targetStatus) return
+    const ALLOWED = { dirty: 'washing', washing: 'ready' }
+    if (ALLOWED[item.status] !== targetStatus) return
 
     if (item.status === 'dirty' && targetStatus === 'washing') {
       const idleMachine = machines.find(m => m.status === 'idle')
       if (!idleMachine) { alert('Boş makine yok — makine seçimi için kart butonunu kullan'); return }
       laundryApi.advanceItem(item.id, { machine_id: idleMachine.id })
         .then(() => qc.invalidateQueries({ queryKey: ['laundry-items'] }))
+        .catch(err => alert(err?.response?.data?.message || 'Makineye atama başarısız'))
     } else if (item.status === 'washing' && targetStatus === 'ready') {
       laundryApi.advanceItem(item.id, { shelf_location: null })
         .then(() => qc.invalidateQueries({ queryKey: ['laundry-items'] }))
+        .catch(err => alert(err?.response?.data?.message || 'Rafa koyma başarısız'))
     }
   }
 
@@ -657,7 +661,7 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
           <DragOverlay>
             {activeItem && (
               <div style={{
-                opacity: 0.9, transform: 'rotate(2deg)',
+                opacity: 0.9, transform: 'rotate(2deg) scale(1.04)',
                 background: 'var(--surface2)', border: '1px solid var(--accent)',
                 borderRadius: 8, padding: '10px 12px',
                 boxShadow: '0 8px 32px rgba(240,165,0,0.2)',
