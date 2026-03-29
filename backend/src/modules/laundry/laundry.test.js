@@ -97,6 +97,53 @@ describe('Laundry queries', () => {
     expect(history.length).toBe(2)
     expect(history[0].to_status).toBe('dirty')
   })
+
+  it('intake_name ve clothing_items ile item oluşturur', async () => {
+    const { insertItemQuery, getItemQuery } = await import('./queries.js')
+    const clothing = [{ type: 'Tişört', color: 'Beyaz', qty: 2 }, { type: 'Pantolon', color: 'Siyah', qty: 1 }]
+    const id = insertItemQuery({
+      room_id: roomId, item_count: 3, created_by: userId,
+      intake_name: 'Ahmet Yılmaz',
+      intake_signature: 'data:image/png;base64,abc123',
+      clothing_items: clothing,
+    })
+    const item = getItemQuery(id)
+    expect(item.intake_name).toBe('Ahmet Yılmaz')
+    expect(item.intake_signature).toBeTruthy()
+    expect(JSON.parse(item.clothing_items)).toHaveLength(2)
+    expect(JSON.parse(item.clothing_items)[0].type).toBe('Tişört')
+  })
+
+  it('room_active_count doğru sayıyı döner', async () => {
+    const { insertItemQuery, listItemsQuery } = await import('./queries.js')
+    const r2 = getDB().prepare('SELECT id FROM rooms LIMIT 1 OFFSET 1').get()
+    const rid = r2?.id || roomId
+    insertItemQuery({ room_id: rid, item_count: 1, created_by: userId })
+    insertItemQuery({ room_id: rid, item_count: 1, created_by: userId })
+    const items = listItemsQuery({ status: 'dirty' })
+    const roomItems = items.filter(i => i.room_id === rid)
+    if (roomItems.length >= 2) {
+      expect(roomItems[0].room_active_count).toBeGreaterThanOrEqual(2)
+    }
+  })
+
+  it('getPersonHistoryQuery — kişi geçmişi döner', async () => {
+    const { insertItemQuery, getPersonHistoryQuery } = await import('./queries.js')
+    insertItemQuery({ room_id: roomId, item_count: 2, intake_name: 'Test Kişi', created_by: userId })
+    insertItemQuery({ room_id: roomId, item_count: 1, intake_name: 'Test Kişi', created_by: userId })
+    const history = getPersonHistoryQuery('Test Kişi')
+    expect(history.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('markFoundQuery — lost → ready geçişi yapar', async () => {
+    const { insertItemQuery, markFoundQuery, getItemQuery } = await import('./queries.js')
+    const id = insertItemQuery({ room_id: roomId, item_count: 1, created_by: userId })
+    // Manuel lost yap
+    getDB().prepare("UPDATE laundry_items SET status='lost' WHERE id=?").run(id)
+    markFoundQuery(id, userId)
+    const item = getItemQuery(id)
+    expect(item.status).toBe('ready')
+  })
 })
 
 describe('State machine', () => {
