@@ -386,9 +386,9 @@ export default function ItemCard({ item, machines = [], onDeliver, onDamage, sel
         )}
 
         {/* ── Aksiyonlar ── */}
-        {item.status !== 'lost' && item.status !== 'delivered' && (
+        {item.status !== 'delivered' && (
           <div style={{ display: 'flex', gap: 6, marginTop: 12, flexWrap: 'wrap' }}>
-            {item.status === 'dirty' && (
+            {item.status !== 'lost' && item.status === 'dirty' && (
               <button
                 className="lc-action-btn primary"
                 onClick={() => setAssignOpen(true)}
@@ -396,7 +396,7 @@ export default function ItemCard({ item, machines = [], onDeliver, onDamage, sel
                 ⚙ Makineye At
               </button>
             )}
-            {item.status === 'washing' && (
+            {item.status !== 'lost' && item.status === 'washing' && (
               <button
                 className="lc-action-btn primary"
                 onClick={() => setShelfOpen(true)}
@@ -404,12 +404,12 @@ export default function ItemCard({ item, machines = [], onDeliver, onDamage, sel
                 ▣ Rafa Koy
               </button>
             )}
-            {item.status === 'ready' && (
+            {item.status !== 'lost' && item.status === 'ready' && (
               <button className="lc-action-btn success" onClick={() => onDeliver(item)}>
                 ✓ Teslim Et
               </button>
             )}
-            {onDamage && (
+            {item.status !== 'lost' && onDamage && (
               <button className="lc-action-btn ghost" onClick={() => onDamage(item)}>
                 ⚠ Hasar
               </button>

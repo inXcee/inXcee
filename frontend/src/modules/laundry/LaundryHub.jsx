@@ -193,9 +193,9 @@ function KanbanCard({ item, machines, onDeliver, onDamage, onPersonClick, onFoun
       )}
 
       {/* Actions */}
-      {item.status !== 'lost' && item.status !== 'delivered' && (
+      {item.status !== 'delivered' && (
         <div style={{ display: 'flex', gap: 5 }}>
-          {item.status === 'dirty' && (
+          {item.status !== 'lost' && item.status === 'dirty' && (
             <button onClick={() => setAssignOpen(true)} style={{
               flex: 1, padding: '5px 8px', borderRadius: 6,
               background: 'rgba(240,165,0,0.08)', border: '1px solid rgba(240,165,0,0.25)',
@@ -205,7 +205,7 @@ function KanbanCard({ item, machines, onDeliver, onDamage, onPersonClick, onFoun
               ⚙ Makineye At…
             </button>
           )}
-          {item.status === 'washing' && (
+          {item.status !== 'lost' && item.status === 'washing' && (
             <button onClick={() => setShelfOpen(true)} style={{
               flex: 1, padding: '5px 8px', borderRadius: 6,
               background: 'rgba(59,140,240,0.08)', border: '1px solid rgba(59,140,240,0.25)',
@@ -215,7 +215,7 @@ function KanbanCard({ item, machines, onDeliver, onDamage, onPersonClick, onFoun
               ▣ Rafa Koy →
             </button>
           )}
-          {item.status === 'ready' && (
+          {item.status !== 'lost' && item.status === 'ready' && (
             <button onClick={() => onDeliver(item)} style={{
               flex: 1, padding: '5px 8px', borderRadius: 6,
               background: 'rgba(39,201,106,0.08)', border: '1px solid rgba(39,201,106,0.25)',
@@ -225,7 +225,7 @@ function KanbanCard({ item, machines, onDeliver, onDamage, onPersonClick, onFoun
               ✓ Teslim Et →
             </button>
           )}
-          {onDamage && (
+          {item.status !== 'lost' && onDamage && (
             <button onClick={() => onDamage(item)} style={{
               padding: '5px 8px', borderRadius: 6,
               background: 'transparent', border: '1px solid var(--border)',
