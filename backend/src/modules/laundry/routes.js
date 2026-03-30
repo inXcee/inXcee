@@ -69,6 +69,15 @@ laundryRouter.patch('/items/:id/deliver', ...laundryFull, (req, res) => {
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
+laundryRouter.patch('/items/:id/revert', ...laundryFull, (req, res) => {
+  try {
+    const { target_status } = req.body
+    if (!target_status) return res.status(400).json({ error: 'target_status gerekli' })
+    const item = svc.revertItemService(+req.params.id, target_status, req.user.id)
+    res.json(item)
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
 laundryRouter.patch('/items/:id/lost', ...laundryFull, (req, res) => {
   try {
     const item = svc.lostItemService(+req.params.id, req.body, req.user.id)

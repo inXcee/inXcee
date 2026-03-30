@@ -8,6 +8,7 @@ export const laundryApi = {
   getItemDamages: (id) => api.get(`/laundry/items/${id}/damages`).then(r => r.data),
   createItem: (data) => api.post('/laundry/items', data).then(r => r.data),
   advanceItem: (id, data) => api.patch(`/laundry/items/${id}/advance`, data).then(r => r.data),
+  revertItem: (id, targetStatus) => api.patch(`/laundry/items/${id}/revert`, { target_status: targetStatus }).then(r => r.data),
   deliverItem: (id, data) => api.patch(`/laundry/items/${id}/deliver`, data).then(r => r.data),
   lostItem: (id, data) => api.patch(`/laundry/items/${id}/lost`, data).then(r => r.data),
   deleteItem: (id) => api.delete(`/laundry/items/${id}`).then(r => r.data),

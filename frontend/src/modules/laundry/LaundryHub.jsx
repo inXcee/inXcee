@@ -182,7 +182,7 @@ function ExpandedSection({ item, onLost, onFound }) {
 
 // ── DraggableKanbanCard ────────────────────────────────────────
 function DraggableKanbanCard({ item, ...props }) {
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `item-${item.id}`,
     data: { item },
   })
@@ -191,9 +191,13 @@ function DraggableKanbanCard({ item, ...props }) {
     <div
       ref={setNodeRef}
       style={{
-        opacity: isDragging ? 0 : 1,
-        cursor: 'grab',
-        transition: 'opacity 0.1s',
+        transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
+        opacity: isDragging ? 0.85 : 1,
+        zIndex: isDragging ? 999 : undefined,
+        position: isDragging ? 'relative' : undefined,
+        cursor: isDragging ? 'grabbing' : 'grab',
+        boxShadow: isDragging ? '0 12px 40px rgba(0,0,0,0.5)' : undefined,
+        transition: isDragging ? 'none' : 'opacity 0.1s',
       }}
       {...attributes}
       {...listeners}
@@ -298,54 +302,52 @@ function KanbanCard({ item, machines, onDeliver, onDamage, onPersonClick, onFoun
       )}
 
       {/* Actions */}
-      {item.status !== 'delivered' && (
-        <div style={{ display: 'flex', gap: 5 }}>
-          {item.status !== 'lost' && item.status === 'dirty' && (
-            <button onPointerDown={e => e.stopPropagation()} onClick={() => setAssignOpen(true)} style={{
-              flex: 1, padding: '5px 8px', borderRadius: 6,
-              background: 'rgba(240,165,0,0.08)', border: '1px solid rgba(240,165,0,0.25)',
-              color: 'var(--accent)', fontFamily: 'var(--mono)', fontSize: 9,
-              cursor: 'pointer', fontWeight: 700,
-            }}>
-              ⚙ Makineye At…
-            </button>
-          )}
-          {item.status !== 'lost' && item.status === 'washing' && (
-            <button onPointerDown={e => e.stopPropagation()} onClick={() => setShelfOpen(true)} style={{
-              flex: 1, padding: '5px 8px', borderRadius: 6,
-              background: 'rgba(59,140,240,0.08)', border: '1px solid rgba(59,140,240,0.25)',
-              color: 'var(--blue)', fontFamily: 'var(--mono)', fontSize: 9,
-              cursor: 'pointer', fontWeight: 700,
-            }}>
-              ▣ Rafa Koy →
-            </button>
-          )}
-          {item.status !== 'lost' && item.status === 'ready' && (
-            <button onPointerDown={e => e.stopPropagation()} onClick={() => onDeliver(item)} style={{
-              flex: 1, padding: '5px 8px', borderRadius: 6,
-              background: 'rgba(39,201,106,0.08)', border: '1px solid rgba(39,201,106,0.25)',
-              color: 'var(--green)', fontFamily: 'var(--mono)', fontSize: 9,
-              cursor: 'pointer', fontWeight: 700,
-            }}>
-              ✓ Teslim Et →
-            </button>
-          )}
-          {item.status !== 'lost' && onDamage && (
-            <button onPointerDown={e => e.stopPropagation()} onClick={() => onDamage(item)} style={{
-              padding: '5px 8px', borderRadius: 6,
-              background: 'transparent', border: '1px solid var(--border)',
-              color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: 9, cursor: 'pointer',
-            }}>⚠</button>
-          )}
-          <button onPointerDown={e => e.stopPropagation()} onClick={() => setExpanded(s => !s)} style={{
+      <div style={{ display: 'flex', gap: 5 }}>
+        {item.status !== 'delivered' && item.status !== 'lost' && item.status === 'dirty' && (
+          <button onPointerDown={e => e.stopPropagation()} onClick={() => setAssignOpen(true)} style={{
+            flex: 1, padding: '5px 8px', borderRadius: 6,
+            background: 'rgba(240,165,0,0.08)', border: '1px solid rgba(240,165,0,0.25)',
+            color: 'var(--accent)', fontFamily: 'var(--mono)', fontSize: 9,
+            cursor: 'pointer', fontWeight: 700,
+          }}>
+            ⚙ Makineye At…
+          </button>
+        )}
+        {item.status !== 'delivered' && item.status !== 'lost' && item.status === 'washing' && (
+          <button onPointerDown={e => e.stopPropagation()} onClick={() => setShelfOpen(true)} style={{
+            flex: 1, padding: '5px 8px', borderRadius: 6,
+            background: 'rgba(59,140,240,0.08)', border: '1px solid rgba(59,140,240,0.25)',
+            color: 'var(--blue)', fontFamily: 'var(--mono)', fontSize: 9,
+            cursor: 'pointer', fontWeight: 700,
+          }}>
+            ▣ Rafa Koy →
+          </button>
+        )}
+        {item.status !== 'delivered' && item.status !== 'lost' && item.status === 'ready' && (
+          <button onPointerDown={e => e.stopPropagation()} onClick={() => onDeliver(item)} style={{
+            flex: 1, padding: '5px 8px', borderRadius: 6,
+            background: 'rgba(39,201,106,0.08)', border: '1px solid rgba(39,201,106,0.25)',
+            color: 'var(--green)', fontFamily: 'var(--mono)', fontSize: 9,
+            cursor: 'pointer', fontWeight: 700,
+          }}>
+            ✓ Teslim Et →
+          </button>
+        )}
+        {item.status !== 'delivered' && item.status !== 'lost' && onDamage && (
+          <button onPointerDown={e => e.stopPropagation()} onClick={() => onDamage(item)} style={{
             padding: '5px 8px', borderRadius: 6,
             background: 'transparent', border: '1px solid var(--border)',
             color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: 9, cursor: 'pointer',
-          }}>
-            {expanded ? '▲' : '▾'}
-          </button>
-        </div>
-      )}
+          }}>⚠</button>
+        )}
+        <button onPointerDown={e => e.stopPropagation()} onClick={() => setExpanded(s => !s)} style={{
+          padding: '5px 8px', borderRadius: 6,
+          background: 'transparent', border: '1px solid var(--border)',
+          color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: 9, cursor: 'pointer',
+        }}>
+          {expanded ? '▲' : '▾'}
+        </button>
+      </div>
 
       {/* Expanded */}
       {expanded && (
@@ -771,19 +773,28 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
     const item = active.data.current.item
     const targetStatus = over.id
     if (item.status === targetStatus) return
-    const ALLOWED = { dirty: 'washing', washing: 'ready' }
-    if (ALLOWED[item.status] !== targetStatus) return
 
-    if (item.status === 'dirty' && targetStatus === 'washing') {
-      const idleMachine = machines.find(m => m.status === 'idle')
-      if (!idleMachine) { alert('Boş makine yok — makine seçimi için kart butonunu kullan'); return }
-      laundryApi.advanceItem(item.id, { machine_id: idleMachine.id })
+    const FORWARD = { dirty: 'washing', washing: 'ready' }
+    const BACKWARD = { washing: ['dirty'], ready: ['washing', 'dirty'] }
+
+    if (FORWARD[item.status] === targetStatus) {
+      // İleri geçiş
+      if (item.status === 'dirty') {
+        const idleMachine = machines.find(m => m.status === 'idle')
+        if (!idleMachine) { alert('Boş makine yok — kart butonunu kullan'); return }
+        laundryApi.advanceItem(item.id, { machine_id: idleMachine.id })
+          .then(() => qc.invalidateQueries({ queryKey: ['laundry-items'] }))
+          .catch(err => alert(err?.response?.data?.message || 'Makineye atama başarısız'))
+      } else {
+        laundryApi.advanceItem(item.id, {})
+          .then(() => qc.invalidateQueries({ queryKey: ['laundry-items'] }))
+          .catch(err => alert(err?.response?.data?.message || 'İşlem başarısız'))
+      }
+    } else if (BACKWARD[item.status]?.includes(targetStatus)) {
+      // Geri geçiş
+      laundryApi.revertItem(item.id, targetStatus)
         .then(() => qc.invalidateQueries({ queryKey: ['laundry-items'] }))
-        .catch(err => alert(err?.response?.data?.message || 'Makineye atama başarısız'))
-    } else if (item.status === 'washing' && targetStatus === 'ready') {
-      laundryApi.advanceItem(item.id, { shelf_location: null })
-        .then(() => qc.invalidateQueries({ queryKey: ['laundry-items'] }))
-        .catch(err => alert(err?.response?.data?.message || 'Rafa koyma başarısız'))
+        .catch(err => alert(err?.response?.data?.message || 'Geri alma başarısız'))
     }
   }
 
@@ -1101,20 +1112,7 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
             <KanbanCol title="YIKANIYOR"    color="var(--blue)"   items={washing} colStatus="washing" isOver={overCol === 'washing'} machines={machines} onDeliver={setDeliverItem} onDamage={setDamageItem} onPersonClick={setPersonPanelName} onFound={setFoundItem} />
             <KanbanCol title="RAFTA HAZIR"  color="var(--green)"  items={ready}   colStatus="ready"   isOver={overCol === 'ready'}   machines={machines} onDeliver={setDeliverItem} onDamage={setDamageItem} onPersonClick={setPersonPanelName} onFound={setFoundItem} />
           </div>
-          <DragOverlay dropAnimation={null}>
-            {activeItem ? (
-              <div style={{ transform: 'rotate(1.5deg) scale(1.03)', pointerEvents: 'none', filter: 'drop-shadow(0 8px 24px rgba(0,0,0,0.4))' }}>
-                <KanbanCard
-                  item={activeItem}
-                  machines={machines}
-                  onDeliver={() => {}}
-                  onDamage={() => {}}
-                  onPersonClick={() => {}}
-                  onFound={() => {}}
-                />
-              </div>
-            ) : null}
-          </DragOverlay>
+          <DragOverlay>{null}</DragOverlay>
           {lost.length > 0 && (
             <div style={{ marginTop: 16 }}>
               <div style={{

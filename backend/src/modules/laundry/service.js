@@ -134,6 +134,43 @@ export function lostItemService(id, { notes }, userId) {
   return q.getItemQuery(id)
 }
 
+export function revertItemService(id, targetStatus, userId) {
+  const item = q.getItemQuery(id)
+  if (!item) throw new Error('Kayıt bulunamadı')
+
+  const validReverts = { washing: ['dirty'], ready: ['washing', 'dirty'] }
+  if (!validReverts[item.status]?.includes(targetStatus)) {
+    throw new Error(`"${item.status}" → "${targetStatus}" geri alma desteklenmiyor`)
+  }
+
+  const extra = {}
+
+  if (item.status === 'washing') {
+    // washing → dirty: makineyi serbest bırak
+    if (item.machine_id) q.updateMachineQuery(item.machine_id, { status: 'idle' })
+    extra.machine_id = null
+  }
+
+  if (item.status === 'ready' && targetStatus === 'washing') {
+    // ready → washing: boş makine ata
+    const idleMachine = q.listMachinesQuery().find(m => m.status === 'idle')
+    if (!idleMachine) throw new Error('Boş makine yok — Kirli Sepet\'e sürükle veya kart butonunu kullan')
+    extra.machine_id = idleMachine.id
+    extra.shelf_location = null
+    q.updateMachineQuery(idleMachine.id, { status: 'running', increment_runs: true })
+  }
+
+  if (item.status === 'ready' && targetStatus === 'dirty') {
+    extra.shelf_location = null
+  }
+
+  q.updateItemStatusQuery(id, targetStatus, extra)
+  q.insertHistoryQuery({ item_id: id, from_status: item.status, to_status: targetStatus, action_by: userId, notes: 'Geri alındı' })
+  logAudit(userId, 'laundry_revert', 'laundry', id, `${item.status} → ${targetStatus}`)
+
+  return q.getItemQuery(id)
+}
+
 export function deleteItemService(id, userId) {
   const item = q.getItemQuery(id)
   if (!item) throw new Error('Kayıt bulunamadı')
