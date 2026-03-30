@@ -130,12 +130,12 @@ function SignatureCanvas({ onSign, onClear }) {
 }
 
 export default function NewItemModal({ onClose }) {
-  const CLOTHING_TYPES = (() => {
+  const [CLOTHING_TYPES] = useState(() => {
     try {
       const saved = localStorage.getItem('custom-clothing-types')
       return saved ? JSON.parse(saved) : DEFAULT_CLOTHING_TYPES
     } catch { return DEFAULT_CLOTHING_TYPES }
-  })()
+  })
 
   const qc = useQueryClient()
   const [form, setForm] = useState({

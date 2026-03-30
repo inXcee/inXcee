@@ -800,6 +800,14 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
       .then(() => { setSelectedIds(new Set()); setBatchMode(false) })
   }
 
+  const washedTodayColor = useMemo(() => {
+    try {
+      const goal = parseInt(localStorage.getItem('laundry-daily-goal') || '50')
+      const val = stats?.washed_today?.count ?? 0
+      return val >= goal ? 'var(--green)' : 'var(--blue)'
+    } catch { return 'var(--blue)' }
+  }, [stats?.washed_today?.count])
+
   const today = new Date().toLocaleDateString('tr-TR', { day: '2-digit', month: 'long', year: 'numeric' })
 
   return (
@@ -869,15 +877,9 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
           { label: 'SLA İhlali',   value: violations.length,                    color: 'var(--red)',    sub: null },
           { label: 'Bugün Teslim', value: stats?.delivered_today?.count ?? 0,   color: 'var(--teal)',   sub: null },
           {
-            label: 'Bugün Yıkanan',
+            label: 'Bugün Yıkamaya',
             value: stats?.washed_today?.count ?? 0,
-            color: (() => {
-              try {
-                const goal = parseInt(localStorage.getItem('laundry-daily-goal') || '50')
-                const val = stats?.washed_today?.count ?? 0
-                return val >= goal ? 'var(--green)' : 'var(--blue)'
-              } catch { return 'var(--blue)' }
-            })(),
+            color: washedTodayColor,
             sub: null,
           },
         ].map(s => (
