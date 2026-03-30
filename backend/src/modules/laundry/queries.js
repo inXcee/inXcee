@@ -288,18 +288,14 @@ export function getItemHistoryQuery(itemId) {
       u.full_name AS actor_name,
       ld.delivered_to,
       ld.signature_data,
-      ld.delivered_by_name
+      u2.full_name AS delivered_by_name
     FROM laundry_history lh
     LEFT JOIN users u ON u.id = lh.action_by
-    LEFT JOIN (
-      SELECT ld2.item_id, ld2.delivered_to, ld2.signature_data, u2.full_name AS delivered_by_name
-      FROM laundry_deliveries ld2
-      LEFT JOIN users u2 ON u2.id = ld2.delivered_by
-      WHERE ld2.item_id = ?
-    ) ld ON lh.to_status = 'delivered'
+    LEFT JOIN laundry_deliveries ld ON ld.item_id = lh.item_id AND lh.to_status = 'delivered'
+    LEFT JOIN users u2 ON u2.id = ld.delivered_by
     WHERE lh.item_id = ?
     ORDER BY lh.created_at ASC
-  `).all(itemId, itemId)
+  `).all(itemId)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

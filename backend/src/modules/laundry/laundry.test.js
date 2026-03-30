@@ -111,6 +111,22 @@ describe('Laundry queries', () => {
     expect(deliveredRow.signature_data).toBe('data:image/png;base64,abc')
   })
 
+  it('history — delivered_to sadece delivered satırında dolu, dirty satırında NULL', async () => {
+    const { insertItemQuery, insertHistoryQuery, getItemHistoryQuery, insertDeliveryQuery } = await import('./queries.js')
+    const itemId = insertItemQuery({ room_id: roomId, item_count: 1, created_by: userId })
+    insertHistoryQuery({ item_id: itemId, from_status: null, to_status: 'dirty', action_by: userId })
+    insertHistoryQuery({ item_id: itemId, from_status: 'dirty', to_status: 'washing', action_by: userId })
+    insertHistoryQuery({ item_id: itemId, from_status: 'washing', to_status: 'delivered', action_by: userId })
+    insertDeliveryQuery({ item_id: itemId, delivered_to: 'Test Kişi', signature_data: 'data:image/png;base64,xyz', delivered_by: userId })
+    const history = getItemHistoryQuery(itemId)
+    expect(history.length).toBe(3)
+    const dirtyRow = history.find(h => h.to_status === 'dirty')
+    const deliveredRow = history.find(h => h.to_status === 'delivered')
+    expect(dirtyRow.delivered_to).toBeNull()
+    expect(deliveredRow.delivered_to).toBe('Test Kişi')
+    expect(deliveredRow.signature_data).toBe('data:image/png;base64,xyz')
+  })
+
   it('intake_name ve clothing_items ile item oluşturur', async () => {
     const { insertItemQuery, getItemQuery } = await import('./queries.js')
     const clothing = [{ type: 'Tişört', color: 'Beyaz', qty: 2 }, { type: 'Pantolon', color: 'Siyah', qty: 1 }]

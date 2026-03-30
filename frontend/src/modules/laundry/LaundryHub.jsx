@@ -860,7 +860,11 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
     const name = prompt('Toplu teslim — alıcı adı:')
     if (!name) return
     laundryApi.batchDeliver({ item_ids: [...selectedIds], delivered_to: name })
-      .then(() => { setSelectedIds(new Set()); setBatchMode(false) })
+      .then(() => {
+        qc.invalidateQueries({ queryKey: ['laundry-items'] })
+        setSelectedIds(new Set())
+        setBatchMode(false)
+      })
   }
 
   const washedTodayColor = useMemo(() => {
