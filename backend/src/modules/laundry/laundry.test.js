@@ -184,6 +184,21 @@ describe('Laundry queries', () => {
     const after = getMachineQuery(m.id)
     expect(after.total_runs).toBe(before + 1)
   })
+
+  it('listItemsQuery washing items include timer_end field', async () => {
+    const db = getDB()
+    const { listItemsQuery, updateItemStatusQuery, insertItemQuery } = await import('./queries.js')
+    const machine = db.prepare("INSERT INTO laundry_machines(name, type) VALUES('W1','washer')").run()
+    const room = db.prepare("INSERT INTO rooms(block, floor, room_no, capacity, active_beds) VALUES('T',1,'101',4,4)").run()
+    const itemId = insertItemQuery({ room_id: room.lastInsertRowid, item_count: 1, created_by: 1 })
+    updateItemStatusQuery(itemId, 'washing', { machine_id: machine.lastInsertRowid })
+    db.prepare("UPDATE laundry_machines SET status='running', timer_end=datetime('now','+60 minutes') WHERE id=?").run(machine.lastInsertRowid)
+    const items = listItemsQuery({ status: 'washing' })
+    const found = items.find(i => i.id === itemId)
+    expect(found).toBeDefined()
+    expect(found).toHaveProperty('timer_end')
+    expect(found.timer_end).not.toBeNull()
+  })
 })
 
 describe('State machine', () => {

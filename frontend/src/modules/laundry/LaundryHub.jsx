@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { laundryApi } from './api.js'
 import LaundryReport from './LaundryReport.jsx'
@@ -231,6 +231,12 @@ function KanbanCard({ item, machines, onDeliver, onDamage, onPersonClick, onFoun
   const [lostOpen,   setLostOpen]   = useState(false)
   const [expanded,   setExpanded]   = useState(false)
   const [photoOpen,  setPhotoOpen]  = useState(false)
+  const [now, setNow] = useState(Date.now())
+  useEffect(() => {
+    if (item.status !== 'washing' || !item.timer_end) return
+    const id = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(id)
+  }, [item.status, item.timer_end])
 
   const isSlaWarn = item.hours_in_status > 24
   const isSlaRed  = item.hours_in_status > 48
@@ -294,6 +300,18 @@ function KanbanCard({ item, machines, onDeliver, onDamage, onPersonClick, onFoun
         {item.occupant_name && <span style={{ color: 'var(--text2)' }}>· {item.occupant_name}</span>}
         {item.machine_name && <span>· ⚙ {item.machine_name}</span>}
         {item.shelf_location && <span>· ▣ {item.shelf_location}</span>}
+        {item.status === 'washing' && item.timer_end && (() => {
+          const minsLeft = Math.max(0, Math.round((new Date(item.timer_end) - now) / 60000))
+          const isLow = minsLeft < 5
+          return (
+            <span style={{
+              color: isLow ? 'var(--red)' : 'var(--blue)',
+              fontWeight: isLow ? 700 : undefined,
+            }}>
+              · ⏱ {String(Math.floor(minsLeft / 60)).padStart(2, '0')}:{String(minsLeft % 60).padStart(2, '0')}
+            </span>
+          )
+        })()}
         {item.notes && <span style={{ color: 'var(--text2)', fontStyle: 'italic' }}>· {item.notes}</span>}
       </div>
 

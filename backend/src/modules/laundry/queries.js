@@ -70,6 +70,8 @@ export function listItemsQuery({ status, urgent, sla_only, search } = {}) {
            r.block, r.room_no,
            u.full_name as created_by_name,
            m.name as machine_name,
+           m.timer_end,
+           m.timer_started_at,
            CASE
              WHEN li.status IN ('dirty','washing','ready')
              THEN ROUND((julianday('now') - julianday(COALESCE(li.updated_at, li.created_at))) * 24, 1)
