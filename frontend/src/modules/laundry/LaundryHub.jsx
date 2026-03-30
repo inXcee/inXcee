@@ -168,7 +168,7 @@ function KanbanCard({ item, machines, onDeliver, onDamage, onPersonClick, onFoun
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <span
-            onPointerDown={e => e.stopPropagation()}
+            onPointerDown={item.occupant_name ? e => e.stopPropagation() : undefined}
             onClick={() => onPersonClick && item.occupant_name && onPersonClick(item.occupant_name)}
             style={{
               fontFamily: 'var(--display)', fontSize: 16, letterSpacing: 2, color: 'var(--text)', lineHeight: 1,
