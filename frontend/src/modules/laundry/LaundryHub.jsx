@@ -13,7 +13,6 @@ import {
   useDroppable,
   useDraggable,
 } from '@dnd-kit/core'
-import { CSS } from '@dnd-kit/utilities'
 
 import MachineStrip       from './components/MachineStrip.jsx'
 import SlaAlert           from './components/SlaAlert.jsx'
@@ -115,7 +114,7 @@ function ExpandedSection({ item, onLost, onFound }) {
 
 // ── DraggableKanbanCard ────────────────────────────────────────
 function DraggableKanbanCard({ item, ...props }) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `item-${item.id}`,
     data: { item },
   })
@@ -124,14 +123,9 @@ function DraggableKanbanCard({ item, ...props }) {
     <div
       ref={setNodeRef}
       style={{
-        transform: CSS.Transform.toString(transform),
-        opacity: isDragging ? 0.3 : 1,
-        cursor: isDragging ? 'grabbing' : 'grab',
-        transition: isDragging ? 'none' : 'transform 0.2s ease, opacity 0.2s ease',
-        zIndex: isDragging ? 999 : 'auto',
-        position: 'relative',
-        boxShadow: isDragging ? '0 12px 40px rgba(0,0,0,0.5)' : 'none',
-        scale: isDragging ? '1.03' : '1',
+        opacity: isDragging ? 0 : 1,
+        cursor: 'grab',
+        transition: 'opacity 0.1s',
       }}
       {...attributes}
       {...listeners}
@@ -174,6 +168,7 @@ function KanbanCard({ item, machines, onDeliver, onDamage, onPersonClick, onFoun
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <span
+            onPointerDown={e => e.stopPropagation()}
             onClick={() => onPersonClick && item.occupant_name && onPersonClick(item.occupant_name)}
             style={{
               fontFamily: 'var(--display)', fontSize: 16, letterSpacing: 2, color: 'var(--text)', lineHeight: 1,
@@ -221,7 +216,7 @@ function KanbanCard({ item, machines, onDeliver, onDamage, onPersonClick, onFoun
         }}>
           <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text2)', flex: 1 }}>📱 {phone}</span>
           {wa && (
-            <a href={wa} target="_blank" rel="noopener noreferrer" style={{
+            <a href={wa} target="_blank" rel="noopener noreferrer" onPointerDown={e => e.stopPropagation()} style={{
               display: 'inline-flex', alignItems: 'center', gap: 3,
               padding: '2px 8px', borderRadius: 4,
               background: 'rgba(37,211,102,0.12)', border: '1px solid rgba(37,211,102,0.3)',
@@ -238,7 +233,7 @@ function KanbanCard({ item, machines, onDeliver, onDamage, onPersonClick, onFoun
       {item.status !== 'delivered' && (
         <div style={{ display: 'flex', gap: 5 }}>
           {item.status !== 'lost' && item.status === 'dirty' && (
-            <button onClick={() => setAssignOpen(true)} style={{
+            <button onPointerDown={e => e.stopPropagation()} onClick={() => setAssignOpen(true)} style={{
               flex: 1, padding: '5px 8px', borderRadius: 6,
               background: 'rgba(240,165,0,0.08)', border: '1px solid rgba(240,165,0,0.25)',
               color: 'var(--accent)', fontFamily: 'var(--mono)', fontSize: 9,
@@ -248,7 +243,7 @@ function KanbanCard({ item, machines, onDeliver, onDamage, onPersonClick, onFoun
             </button>
           )}
           {item.status !== 'lost' && item.status === 'washing' && (
-            <button onClick={() => setShelfOpen(true)} style={{
+            <button onPointerDown={e => e.stopPropagation()} onClick={() => setShelfOpen(true)} style={{
               flex: 1, padding: '5px 8px', borderRadius: 6,
               background: 'rgba(59,140,240,0.08)', border: '1px solid rgba(59,140,240,0.25)',
               color: 'var(--blue)', fontFamily: 'var(--mono)', fontSize: 9,
@@ -258,7 +253,7 @@ function KanbanCard({ item, machines, onDeliver, onDamage, onPersonClick, onFoun
             </button>
           )}
           {item.status !== 'lost' && item.status === 'ready' && (
-            <button onClick={() => onDeliver(item)} style={{
+            <button onPointerDown={e => e.stopPropagation()} onClick={() => onDeliver(item)} style={{
               flex: 1, padding: '5px 8px', borderRadius: 6,
               background: 'rgba(39,201,106,0.08)', border: '1px solid rgba(39,201,106,0.25)',
               color: 'var(--green)', fontFamily: 'var(--mono)', fontSize: 9,
@@ -268,13 +263,13 @@ function KanbanCard({ item, machines, onDeliver, onDamage, onPersonClick, onFoun
             </button>
           )}
           {item.status !== 'lost' && onDamage && (
-            <button onClick={() => onDamage(item)} style={{
+            <button onPointerDown={e => e.stopPropagation()} onClick={() => onDamage(item)} style={{
               padding: '5px 8px', borderRadius: 6,
               background: 'transparent', border: '1px solid var(--border)',
               color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: 9, cursor: 'pointer',
             }}>⚠</button>
           )}
-          <button onClick={() => setExpanded(s => !s)} style={{
+          <button onPointerDown={e => e.stopPropagation()} onClick={() => setExpanded(s => !s)} style={{
             padding: '5px 8px', borderRadius: 6,
             background: 'transparent', border: '1px solid var(--border)',
             color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: 9, cursor: 'pointer',
@@ -691,7 +686,7 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
   const [showQuickAdd,   setShowQuickAdd]   = useState(false)
 
   const sensors = useSensors(useSensor(PointerSensor, {
-    activationConstraint: { distance: 5, delay: 100, tolerance: 5 },
+    activationConstraint: { distance: 8 },
   }))
 
   const handleDragStart = ({ active }) => {
@@ -1034,18 +1029,19 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
             <KanbanCol title="YIKANIYOR"    color="var(--blue)"   items={washing} colStatus="washing" isOver={overCol === 'washing'} machines={machines} onDeliver={setDeliverItem} onDamage={setDamageItem} onPersonClick={setPersonPanelName} onFound={setFoundItem} />
             <KanbanCol title="RAFTA HAZIR"  color="var(--green)"  items={ready}   colStatus="ready"   isOver={overCol === 'ready'}   machines={machines} onDeliver={setDeliverItem} onDamage={setDamageItem} onPersonClick={setPersonPanelName} onFound={setFoundItem} />
           </div>
-          <DragOverlay>
-            {activeItem && (
-              <div style={{
-                opacity: 0.9, transform: 'rotate(2deg) scale(1.04)',
-                background: 'var(--surface2)', border: '1px solid var(--accent)',
-                borderRadius: 8, padding: '10px 12px',
-                boxShadow: '0 8px 32px rgba(240,165,0,0.2)',
-                fontFamily: 'var(--display)', fontSize: 16, letterSpacing: 2, color: 'var(--accent)',
-              }}>
-                {activeItem.block} · {activeItem.room_no} — {activeItem.item_count} parça
+          <DragOverlay dropAnimation={null}>
+            {activeItem ? (
+              <div style={{ transform: 'rotate(1.5deg) scale(1.03)', pointerEvents: 'none', filter: 'drop-shadow(0 8px 24px rgba(0,0,0,0.4))' }}>
+                <KanbanCard
+                  item={activeItem}
+                  machines={machines}
+                  onDeliver={() => {}}
+                  onDamage={() => {}}
+                  onPersonClick={() => {}}
+                  onFound={() => {}}
+                />
               </div>
-            )}
+            ) : null}
           </DragOverlay>
           {lost.length > 0 && (
             <div style={{ marginTop: 16 }}>
