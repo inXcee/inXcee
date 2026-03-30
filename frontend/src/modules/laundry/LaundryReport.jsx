@@ -132,7 +132,7 @@ export default function LaundryReport() {
               <div className="panel-body" style={{ padding: 0 }}>
                 <table className="data-table">
                   <thead>
-                    <tr><th>Makine</th><th>Tip</th><th>Durum</th><th>Aktif Yük</th></tr>
+                    <tr><th>Makine</th><th>Tip</th><th>Durum</th><th>Aktif Yük</th><th>Toplam Çalışma</th></tr>
                   </thead>
                   <tbody>
                     {stats.machine_stats.map(m => (
@@ -146,6 +146,12 @@ export default function LaundryReport() {
                         </td>
                         <td style={{ fontFamily: 'var(--display)', fontSize: 16, color: m.active_loads > 0 ? 'var(--blue)' : 'var(--text3)' }}>
                           {m.active_loads > 0 ? m.active_loads : '—'}
+                        </td>
+                        <td style={{
+                          fontFamily: 'var(--display)', fontSize: 16,
+                          color: m.needs_maintenance ? 'var(--red)' : m.total_runs > 40 ? 'var(--accent)' : 'var(--text3)',
+                        }}>
+                          {m.total_runs || 0}{m.needs_maintenance ? ' ⚠' : ''}
                         </td>
                       </tr>
                     ))}

@@ -395,8 +395,9 @@ export function getStatsQuery({ from_date, to_date } = {}) {
   }
 
   const machine_stats = db.prepare(`
-    SELECT lm.name, lm.type, lm.status,
-      (SELECT COUNT(*) FROM laundry_items WHERE machine_id = lm.id AND status = 'washing') as active_loads
+    SELECT lm.name, lm.type, lm.status, lm.total_runs, lm.maintenance_notes,
+      (SELECT COUNT(*) FROM laundry_items WHERE machine_id = lm.id AND status = 'washing') as active_loads,
+      CASE WHEN lm.total_runs >= 50 THEN 1 ELSE 0 END as needs_maintenance
     FROM laundry_machines lm ORDER BY lm.type, lm.name
   `).all()
 

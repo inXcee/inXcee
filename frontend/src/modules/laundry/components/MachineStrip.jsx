@@ -180,11 +180,21 @@ function MachineCard({ m, onTimer, onReset, loading }) {
           marginTop: 4, paddingTop: 6, borderTop: '1px solid var(--border)',
           fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)',
           textAlign: 'center', letterSpacing: 0.5,
-          display: 'flex', justifyContent: 'center', gap: 8,
+          display: 'flex', justifyContent: 'center', gap: 8, flexWrap: 'wrap',
         }}>
           {m.active_items > 0 && <span>{m.active_items} yüklü</span>}
           {m.total_runs > 0 && (
-            <span style={{ color: 'var(--text4)' }}>{m.total_runs}× çalıştı</span>
+            <span style={{
+              color: m.total_runs >= 50 ? 'var(--red)' : m.total_runs >= 40 ? 'var(--accent)' : 'var(--text4)',
+              fontWeight: m.total_runs >= 50 ? 700 : undefined,
+            }}>
+              {m.total_runs >= 50 ? '⚠ ' : ''}{m.total_runs}× çalıştı
+            </span>
+          )}
+          {m.maintenance_notes && (
+            <span style={{ color: 'var(--red)', fontSize: 8, display: 'block', width: '100%', marginTop: 2 }}>
+              {m.maintenance_notes}
+            </span>
           )}
         </div>
       )}

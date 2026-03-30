@@ -439,6 +439,12 @@ describe('SLA engine', () => {
     expect(typeof count).toBe('number')
   })
 
+  it('checkMachineMaintenanceAlerts does not throw', async () => {
+    const { checkMachineMaintenanceAlerts } = await import('./sla.js')
+    getDB().prepare("INSERT INTO laundry_machines(name, type, total_runs) VALUES('W99','washer',55)").run()
+    expect(() => checkMachineMaintenanceAlerts()).not.toThrow()
+  })
+
   it('süresi dolan makine done olur', async () => {
     const db = getDB()
     const machine = db.prepare("SELECT id FROM laundry_machines WHERE status='idle' LIMIT 1").get()

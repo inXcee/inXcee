@@ -59,3 +59,24 @@ export function checkMachineTimers() {
 
   return done.length
 }
+
+const MAINTENANCE_THRESHOLD = 50
+
+export function checkMachineMaintenanceAlerts() {
+  const db = getDB()
+  const machines = db.prepare(`
+    SELECT * FROM laundry_machines
+    WHERE total_runs >= ? AND status != 'maintenance'
+  `).all(MAINTENANCE_THRESHOLD)
+
+  for (const m of machines) {
+    createNotification({
+      message: `${m.name} bakım gerekiyor — ${m.total_runs} çalışma tamamlandı`,
+      type: 'warning',
+      module: 'laundry',
+      target_role: 'campus_manager',
+    })
+  }
+
+  return machines.length
+}
