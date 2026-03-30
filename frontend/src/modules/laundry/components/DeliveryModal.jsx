@@ -20,7 +20,9 @@ export default function DeliveryModal({ item, onClose }) {
   const getPos = useCallback((e) => {
     const rect = canvasRef.current.getBoundingClientRect()
     const touch = e.touches ? e.touches[0] : e
-    return { x: touch.clientX - rect.left, y: touch.clientY - rect.top }
+    const scaleX = canvasRef.current.width / rect.width
+    const scaleY = canvasRef.current.height / rect.height
+    return { x: (touch.clientX - rect.left) * scaleX, y: (touch.clientY - rect.top) * scaleY }
   }, [])
 
   const startDraw = useCallback((e) => {
