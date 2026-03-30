@@ -283,12 +283,23 @@ export function insertHistoryQuery({ item_id, from_status, to_status, action_by,
 export function getItemHistoryQuery(itemId) {
   const db = getDB()
   return db.prepare(`
-    SELECT lh.*, u.full_name as action_by_name
+    SELECT
+      lh.*,
+      u.full_name AS actor_name,
+      ld.delivered_to,
+      ld.signature_data,
+      ld.delivered_by_name
     FROM laundry_history lh
     LEFT JOIN users u ON u.id = lh.action_by
+    LEFT JOIN (
+      SELECT ld2.item_id, ld2.delivered_to, ld2.signature_data, u2.full_name AS delivered_by_name
+      FROM laundry_deliveries ld2
+      LEFT JOIN users u2 ON u2.id = ld2.delivered_by
+      WHERE ld2.item_id = ?
+    ) ld ON lh.to_status = 'delivered'
     WHERE lh.item_id = ?
     ORDER BY lh.created_at ASC
-  `).all(itemId)
+  `).all(itemId, itemId)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
