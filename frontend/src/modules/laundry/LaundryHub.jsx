@@ -27,6 +27,14 @@ import MachineManagerPanel from './components/MachineManagerPanel.jsx'
 import PersonPanel         from './components/PersonPanel.jsx'
 import FoundModal          from './components/FoundModal.jsx'
 
+const COLOR_MAP = {
+  'Beyaz': '#f0f0f0', 'Siyah': '#222', 'Gri': '#888',
+  'Lacivert': '#1a2e5e', 'Mavi': '#2563eb', 'Açık Mavi': '#7ec8e3',
+  'Kırmızı': '#dc2626', 'Yeşil': '#16a34a', 'Sarı': '#eab308',
+  'Turuncu': '#f97316', 'Mor': '#7c3aed', 'Pembe': '#ec4899',
+  'Bej': '#d4b896', 'Kahve': '#78350f',
+}
+
 // ── WA link helper ─────────────────────────────────────────────
 function waLink(phone) {
   if (!phone) return null
@@ -61,8 +69,17 @@ function ExpandedSection({ item, onLost, onFound }) {
                   <span key={i} style={{
                     padding: '2px 8px', borderRadius: 12, fontSize: 9, fontFamily: 'var(--mono)',
                     background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text2)',
+                    display: 'flex', alignItems: 'center', gap: 5,
                   }}>
-                    {CLOTHING_ICONS[c.type] || ''} {c.qty}× {c.type}{c.color ? ` (${c.color})` : ''}
+                    {CLOTHING_ICONS[c.type] || ''} {c.qty}× {c.type}
+                    {c.color && (
+                      <span style={{
+                        width: 10, height: 10, borderRadius: '50%',
+                        background: COLOR_MAP[c.color] || '#888',
+                        border: '1px solid rgba(255,255,255,0.2)',
+                        flexShrink: 0, display: 'inline-block',
+                      }} title={c.color} />
+                    )}
                   </span>
                 ))}
               </div>
@@ -213,6 +230,7 @@ function KanbanCard({ item, machines, onDeliver, onDamage, onPersonClick, onFoun
   const [shelfOpen,  setShelfOpen]  = useState(false)
   const [lostOpen,   setLostOpen]   = useState(false)
   const [expanded,   setExpanded]   = useState(false)
+  const [photoOpen,  setPhotoOpen]  = useState(false)
 
   const isSlaWarn = item.hours_in_status > 24
   const isSlaRed  = item.hours_in_status > 48
@@ -278,6 +296,32 @@ function KanbanCard({ item, machines, onDeliver, onDamage, onPersonClick, onFoun
         {item.shelf_location && <span>· ▣ {item.shelf_location}</span>}
         {item.notes && <span style={{ color: 'var(--text2)', fontStyle: 'italic' }}>· {item.notes}</span>}
       </div>
+
+      {/* Photo thumbnail */}
+      {item.photo_url && (
+        <>
+          <div
+            onPointerDown={e => e.stopPropagation()}
+            onClick={() => setPhotoOpen(true)}
+            style={{
+              marginBottom: 8, cursor: 'pointer', borderRadius: 6, overflow: 'hidden',
+              border: '1px solid var(--border)', height: 56, background: 'var(--surface2)',
+            }}
+          >
+            <img src={item.photo_url} alt="fotoğraf"
+              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+          </div>
+          {photoOpen && (
+            <div onPointerDown={e => e.stopPropagation()} onClick={() => setPhotoOpen(false)} style={{
+              position: 'fixed', inset: 0, zIndex: 2000,
+              background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <img src={item.photo_url} alt="fotoğraf"
+                style={{ maxWidth: '90vw', maxHeight: '90vh', borderRadius: 8, objectFit: 'contain' }} />
+            </div>
+          )}
+        </>
+      )}
 
       {/* Phone */}
       {phone && (
