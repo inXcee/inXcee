@@ -37,6 +37,7 @@ function waLink(phone) {
 
 // ── ExpandedSection ────────────────────────────────────────────
 function ExpandedSection({ item, onLost, onFound }) {
+  const [sigModal, setSigModal] = useState(null)
   const { data: history = [], isLoading } = useQuery({
     queryKey: ['item-history', item.id],
     queryFn: () => laundryApi.getItemHistory(item.id),
@@ -80,13 +81,41 @@ function ExpandedSection({ item, onLost, onFound }) {
           ? Math.round((new Date(next.created_at) - new Date(h.created_at)) / 60000)
           : null
         return (
-          <div key={h.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 6, marginBottom: 4 }}>
-            <span style={{ width: 6, height: 6, borderRadius: '50%', background: STATUS_COLORS[h.to_status] || 'var(--text3)', flexShrink: 0, marginTop: 3 }} />
-            <div>
+          <div key={h.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 6, marginBottom: 6 }}>
+            <span style={{
+              width: 6, height: 6, borderRadius: '50%',
+              background: STATUS_COLORS[h.to_status] || 'var(--text3)',
+              flexShrink: 0, marginTop: 3,
+            }} />
+            <div style={{ flex: 1 }}>
               <span style={{ color: 'var(--text2)', fontSize: 9 }}>{STATUS_LABELS[h.to_status] || h.to_status}</span>
               {h.actor_name && <span style={{ color: 'var(--text3)', fontSize: 8 }}> · {h.actor_name}</span>}
               {dur != null && <span style={{ color: 'var(--text3)', fontSize: 8 }}> · {dur < 60 ? `${dur}dk` : `${Math.round(dur/60)}s`} bekledi</span>}
-              <div style={{ fontSize: 8, color: 'var(--text3)' }}>{new Date(h.created_at).toLocaleString('tr-TR', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' })}</div>
+              <div style={{ fontSize: 8, color: 'var(--text3)' }}>
+                {new Date(h.created_at).toLocaleString('tr-TR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+              </div>
+              {h.to_status === 'delivered' && h.delivered_to && (
+                <div style={{ marginTop: 4 }}>
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--teal)' }}>
+                    ✓ {h.delivered_to}
+                  </span>
+                  {h.signature_data && (
+                    <button
+                      onClick={() => setSigModal(h.signature_data)}
+                      style={{
+                        display: 'block', marginTop: 4, padding: 0, border: '1px solid var(--border)',
+                        borderRadius: 4, background: 'var(--surface)', cursor: 'pointer', overflow: 'hidden',
+                      }}
+                    >
+                      <img
+                        src={h.signature_data}
+                        alt="imza"
+                        style={{ width: 120, height: 36, objectFit: 'contain', display: 'block', filter: 'invert(0.85)' }}
+                      />
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         )
@@ -108,6 +137,45 @@ function ExpandedSection({ item, onLost, onFound }) {
           }}>Kayıp</button>
         )}
       </div>
+
+      {/* İmza modal */}
+      {sigModal && (
+        <div
+          onClick={() => setSigModal(null)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 2000,
+            background: 'rgba(0,0,0,0.7)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: 'var(--surface2)', border: '1px solid var(--border)',
+              borderRadius: 10, padding: 16,
+            }}
+          >
+            <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', marginBottom: 8, letterSpacing: 1 }}>
+              TESLİM İMZASI
+            </div>
+            <img
+              src={sigModal}
+              alt="imza"
+              style={{ width: 400, height: 120, objectFit: 'contain', display: 'block', filter: 'invert(0.85)', borderRadius: 6 }}
+            />
+            <button
+              onClick={() => setSigModal(null)}
+              style={{
+                marginTop: 10, width: '100%', padding: '5px 0',
+                background: 'transparent', border: '1px solid var(--border)',
+                color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: 8, cursor: 'pointer', borderRadius: 5,
+              }}
+            >
+              kapat
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
