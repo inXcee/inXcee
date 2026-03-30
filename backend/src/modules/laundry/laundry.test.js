@@ -88,6 +88,13 @@ describe('Laundry queries', () => {
     expect(filtered).toHaveProperty('by_status')
   })
 
+  it('getStatsQuery includes weekly_trend array', async () => {
+    const { getStatsQuery } = await import('./queries.js')
+    const stats = getStatsQuery()
+    expect(stats).toHaveProperty('weekly_trend')
+    expect(Array.isArray(stats.weekly_trend)).toBe(true)
+  })
+
   it('history — kayıt geçmişi eklenir ve okunur', async () => {
     const { insertItemQuery, insertHistoryQuery, getItemHistoryQuery } = await import('./queries.js')
     const itemId = insertItemQuery({ room_id: roomId, item_count: 1, created_by: userId })

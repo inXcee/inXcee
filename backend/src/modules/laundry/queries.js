@@ -454,7 +454,18 @@ export function getStatsQuery({ from_date, to_date } = {}) {
       .slice(0, 10)
   }
 
-  return { by_status, delivered_today, washed_today, avg_hours, sla_violations, period_total, period_delivered, machine_stats, by_room, lost_period, avg_delivery_hours, clothing_breakdown }
+  const weekly_trend = db.prepare(`
+    SELECT
+      date(created_at) as day,
+      COUNT(*) as received,
+      SUM(CASE WHEN status = 'delivered' THEN 1 ELSE 0 END) as delivered
+    FROM laundry_items
+    WHERE date(created_at) >= date('now', '-6 days')
+    GROUP BY date(created_at)
+    ORDER BY day ASC
+  `).all()
+
+  return { by_status, delivered_today, washed_today, avg_hours, sla_violations, period_total, period_delivered, machine_stats, by_room, lost_period, avg_delivery_hours, clothing_breakdown, weekly_trend }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
