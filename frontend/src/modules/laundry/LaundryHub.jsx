@@ -1313,6 +1313,7 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
 
       {/* ── CONTENT ── */}
       {view === 'kanban' ? (
+        <>
         <DndContext
           sensors={sensors}
           onDragStart={handleDragStart}
@@ -1368,6 +1369,7 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
           )}
         </DndContext>
         <DeliveredTodaySection />
+        </>
       ) : (
         <div>
           {isLoading ? (
