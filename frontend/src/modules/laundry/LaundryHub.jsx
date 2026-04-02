@@ -28,6 +28,8 @@ import PersonPanel         from './components/PersonPanel.jsx'
 import FoundModal          from './components/FoundModal.jsx'
 import BatchAssignModal         from './components/BatchAssignModal.jsx'
 import ItemVerificationModal    from './components/ItemVerificationModal.jsx'
+import ArchiveTable             from './components/ArchiveTable.jsx'
+import ArchiveDetailPanel       from './components/ArchiveDetailPanel.jsx'
 
 const COLOR_MAP = {
   'Beyaz': '#f0f0f0', 'Siyah': '#222', 'Gri': '#888',
@@ -907,6 +909,7 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
   const [selectedIds,    setSelectedIds]    = useState(new Set())
   const [showBatchAssign, setShowBatchAssign] = useState(false)
   const [verificationTarget, setVerificationTarget] = useState(null)
+  const [archiveSelectedItem, setArchiveSelectedItem] = useState(null)
   const [groupByRoom,    setGroupByRoom]    = useState(
     () => localStorage.getItem('laundry_group_by_room') === '1'
   )
@@ -1092,6 +1095,7 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
             {[
               { key: 'hub',      label: '⊞ Kontrol' },
               { key: 'records',  label: '≡ Kayıtlar' },
+              { key: 'archive',  label: '▣ Arşiv' },
               { key: 'reports',  label: '◈ Raporlar' },
               { key: 'settings', label: '⚙ Ayarlar' },
             ].map(s => (
@@ -1406,6 +1410,14 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
       </>)}
 
       {section === 'records'  && <FullRecordsView />}
+      {section === 'archive'  && (
+        <div style={{ position: 'relative' }}>
+          <ArchiveTable onSelectItem={setArchiveSelectedItem} />
+          {archiveSelectedItem && (
+            <ArchiveDetailPanel item={archiveSelectedItem} onClose={() => setArchiveSelectedItem(null)} />
+          )}
+        </div>
+      )}
       {section === 'reports'  && <LaundryReport />}
       {section === 'settings' && <LaundrySettings />}
 

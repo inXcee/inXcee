@@ -251,6 +251,50 @@ export function removeItemFromQueueQuery(itemId) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// ARCHIVE
+// ═══════════════════════════════════════════════════════════════════════════
+
+export function archiveItemsQuery({ from, to, status, room, search, page = 1, limit = 50 } = {}) {
+  const db = getDB()
+  const conditions = [`li.status IN ('delivered','lost')`]
+  const params = []
+
+  if (status) { conditions.push(`li.status = ?`); params.push(status) }
+  if (from)   { conditions.push(`date(li.created_at) >= date(?)`); params.push(from) }
+  if (to)     { conditions.push(`date(li.created_at) <= date(?)`); params.push(to) }
+  if (room)   { conditions.push(`(r.block || '-' || r.room_no) = ?`); params.push(room) }
+  if (search) {
+    conditions.push(`(r.room_no LIKE ? OR li.intake_name LIKE ?)`)
+    params.push(`%${search}%`, `%${search}%`)
+  }
+
+  const where = conditions.join(' AND ')
+  const offset = (page - 1) * limit
+
+  const total = db.prepare(`
+    SELECT COUNT(*) as c FROM laundry_items li
+    LEFT JOIN rooms r ON r.id = li.room_id
+    WHERE ${where}
+  `).get(...params).c
+
+  const items = db.prepare(`
+    SELECT li.*,
+      r.block, r.room_no,
+      ld.delivered_to, ld.delivered_at,
+      ROUND((julianday(COALESCE(ld.delivered_at, li.updated_at)) - julianday(li.created_at)) * 24, 1) as total_hours,
+      lv.all_present
+    FROM laundry_items li
+    LEFT JOIN rooms r ON r.id = li.room_id
+    LEFT JOIN laundry_deliveries ld ON ld.item_id = li.id
+    LEFT JOIN laundry_verifications lv ON lv.item_id = li.id AND lv.stage = 'washing_to_ready'
+    WHERE ${where}
+    ORDER BY li.updated_at DESC
+    LIMIT ? OFFSET ?
+  `).all(...params, limit, offset)
+
+  return { items, total, page, limit }
+}
+
 // DELIVERIES
 // ═══════════════════════════════════════════════════════════════════════════
 

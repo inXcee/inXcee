@@ -5,6 +5,7 @@ import { initDB, getDB } from '../../shared/db/index.js'
 import { seedDev } from '../../shared/db/seed.js'
 import { batchAssignService, batchLostService, advanceItemService, createVerificationService } from './service.js'
 import * as q from './queries.js'
+const { archiveItemsQuery } = q
 
 let token, userId, roomId
 
@@ -612,5 +613,28 @@ describe('verification', () => {
       all_present: false,
       missing_notes: null,
     }, 'user1')).toThrow(/not.*zorunlu/i)
+  })
+})
+
+describe('archive', () => {
+  test('delivered itemlar listelenir', () => {
+    const db = getDB()
+    const room = db.prepare("SELECT id FROM rooms LIMIT 1").get()
+    const id = q.insertItemQuery({ room_id: room.id, item_count: 1, created_by: 1 })
+    db.prepare("UPDATE laundry_items SET status='delivered' WHERE id=?").run(id)
+
+    const result = archiveItemsQuery({})
+    expect(result.items.some(i => i.id === id)).toBe(true)
+  })
+
+  test('tarih filtresi çalışır', () => {
+    const result = archiveItemsQuery({ from: '2020-01-01', to: '2020-01-02' })
+    expect(Array.isArray(result.items)).toBe(true)
+  })
+
+  test('pagination çalışır', () => {
+    const r1 = archiveItemsQuery({ page: 1, limit: 2 })
+    expect(r1.items.length).toBeLessThanOrEqual(2)
+    expect(typeof r1.total).toBe('number')
   })
 })

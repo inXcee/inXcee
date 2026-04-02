@@ -17,6 +17,18 @@ const slaWrite    = requireRole('laundry', 'campus_manager')
 // ITEMS
 // ═══════════════════════════════════════════════════════════════════════════
 
+// Archive must be before /:id routes
+laundryRouter.get('/items/archive', ...laundryRead, (req, res) => {
+  try {
+    const { from, to, status, room, search, page, limit } = req.query
+    res.json(svc.archiveItemsService({
+      from, to, status, room, search,
+      page: page ? +page : 1,
+      limit: limit ? Math.min(+limit, 100) : 50,
+    }))
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
 laundryRouter.get('/items', ...laundryRead, (req, res) => {
   try {
     const { status, urgent, sla_only, search } = req.query
@@ -246,18 +258,27 @@ laundryRouter.get('/reports/stats', ...laundryRead, (req, res) => {
 
 laundryRouter.get('/reports/export', ...laundryRead, (req, res) => {
   try {
-    const items = svc.listAllItemsService(req.query)
-    const header = 'ID,Blok,Oda,Durum,Parça,Acil,Notlar,Oluşturulma'
-    const rows = items.map(i => [
-      i.id,
-      i.block || '',
-      i.room_no || '',
-      i.status,
-      i.item_count,
-      i.urgent ? 'Evet' : 'Hayır',
-      (i.notes || '').replace(/,/g, ';').replace(/\n/g, ' '),
-      i.created_at,
-    ].join(','))
+    const { from, to, status, include_verifications } = req.query
+    const items = svc.listAllItemsService({ from, to, status })
+    const baseHeader = 'ID,Blok,Oda,Durum,Parça,Acil,Notlar,Oluşturulma,Ütü'
+    const verifHeader = include_verifications === '1' ? ',Doğrulandı,Eksik Not' : ''
+    const header = baseHeader + verifHeader
+
+    const rows = items.map(i => {
+      const base = [
+        i.id, i.block || '', i.room_no || '', i.status, i.item_count,
+        i.urgent ? 'Evet' : 'Hayır',
+        (i.notes || '').replace(/,/g, ';').replace(/\n/g, ' '),
+        i.created_at,
+        i.needs_ironing ? 'Evet' : 'Hayır',
+      ]
+      if (include_verifications === '1') {
+        base.push(i.all_present === 1 ? 'Evet' : i.all_present === 0 ? 'Hayır' : '')
+        base.push((i.verification_notes || '').replace(/,/g, ';'))
+      }
+      return base.join(',')
+    })
+
     const csv = [header, ...rows].join('\n')
     res.setHeader('Content-Type', 'text/csv; charset=utf-8')
     res.setHeader('Content-Disposition', `attachment; filename="camasir-${new Date().toISOString().slice(0,10)}.csv"`)

@@ -320,6 +320,10 @@ export function listAllItemsService(filters) {
   return q.listAllItemsQuery(filters)
 }
 
+export function archiveItemsService(filters) {
+  return q.archiveItemsQuery(filters)
+}
+
 export function markFoundService(id, userId) {
   const item = q.getItemQuery(id)
   if (!item) throw new Error('Kayıt bulunamadı')
