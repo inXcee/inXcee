@@ -343,3 +343,6 @@ export function getPersonHistoryService(name) {
   const room = items[0] ? `${items[0].block} · ${items[0].room_no}` : null
   return { name, phone, room, total_given, total_delivered, total_lost, avg_hours, items }
 }
+
+export const getSettingsService  = q.getSettingsQuery
+export const updateSettingService = q.updateSettingQuery

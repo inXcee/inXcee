@@ -232,14 +232,14 @@ laundryRouter.get('/sla-config', ...laundryRead, (req, res) => {
 
 laundryRouter.put('/sla-config', ...slaWrite, (req, res) => {
   try {
-    const { stage, warning_hours, critical_hours } = req.body
+    const { stage, warning_hours, critical_hours, whatsapp_notify } = req.body
     if (!stage || warning_hours == null || critical_hours == null) {
       return res.status(400).json({ error: 'stage, warning_hours, critical_hours zorunlu' })
     }
     if (+critical_hours <= +warning_hours) {
       return res.status(400).json({ error: 'Kritik eşik uyarıdan büyük olmalı' })
     }
-    svc.upsertSlaConfigService({ stage, warning_hours: +warning_hours, critical_hours: +critical_hours, updated_by: req.user.id })
+    svc.upsertSlaConfigService({ stage, warning_hours: +warning_hours, critical_hours: +critical_hours, whatsapp_notify: whatsapp_notify ? 1 : 0, updated_by: req.user.id })
     res.json({ ok: true })
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
@@ -312,6 +312,23 @@ laundryRouter.post('/items/:id/notify-whatsapp', ...laundryFull, async (req, res
     await notifyItemReady(+req.params.id)
     res.json({ ok: true, phone })
   } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SETTINGS
+// ═══════════════════════════════════════════════════════════════════════════
+
+laundryRouter.get('/settings', ...laundryRead, (req, res) => {
+  res.json(svc.getSettingsService())
+})
+
+laundryRouter.put('/settings/:key', ...slaWrite, (req, res) => {
+  try {
+    const { value } = req.body
+    if (value == null) return res.status(400).json({ error: 'value zorunlu' })
+    svc.updateSettingService(req.params.key, String(value))
+    res.json({ ok: true })
+  } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
 // ═══════════════════════════════════════════════════════════════════════════

@@ -378,17 +378,30 @@ export function getSlaConfigQuery() {
   return db.prepare('SELECT * FROM laundry_sla_config ORDER BY stage').all()
 }
 
-export function upsertSlaConfigQuery({ stage, warning_hours, critical_hours, updated_by }) {
+export function upsertSlaConfigQuery({ stage, warning_hours, critical_hours, whatsapp_notify, updated_by }) {
   const db = getDB()
   db.prepare(`
-    INSERT INTO laundry_sla_config(stage, warning_hours, critical_hours, updated_by, updated_at)
-    VALUES(?, ?, ?, ?, datetime('now'))
+    INSERT INTO laundry_sla_config(stage, warning_hours, critical_hours, whatsapp_notify, updated_by, updated_at)
+    VALUES(?, ?, ?, ?, ?, datetime('now'))
     ON CONFLICT(stage) DO UPDATE SET
       warning_hours = excluded.warning_hours,
       critical_hours = excluded.critical_hours,
+      whatsapp_notify = excluded.whatsapp_notify,
       updated_by = excluded.updated_by,
       updated_at = excluded.updated_at
-  `).run(stage, warning_hours, critical_hours, updated_by)
+  `).run(stage, warning_hours, critical_hours, whatsapp_notify ? 1 : 0, updated_by)
+}
+
+export function getSettingsQuery() {
+  const db = getDB()
+  const rows = db.prepare('SELECT key, value FROM laundry_global_settings').all()
+  return Object.fromEntries(rows.map(r => [r.key, r.value]))
+}
+
+export function updateSettingQuery(key, value) {
+  const db = getDB()
+  db.prepare(`INSERT INTO laundry_global_settings(key, value) VALUES(?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(key, value)
 }
 
 export function getSlaViolationsQuery() {

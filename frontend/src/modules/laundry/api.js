@@ -50,6 +50,10 @@ export const laundryApi = {
   notifyWhatsApp: (id, phone) => api.post(`/laundry/items/${id}/notify-whatsapp`, { phone }).then(r => r.data),
   getRoomOccupant: (roomId) => api.get(`/laundry/room-occupant/${roomId}`).then(r => r.data).catch(() => ({})),
 
+  // ── Settings ───────────────────────────────────────────────────────────
+  getLaundrySettings: () => api.get('/laundry/settings').then(r => r.data),
+  updateLaundrySetting: (key, value) => api.put(`/laundry/settings/${encodeURIComponent(key)}`, { value }).then(r => r.data),
+
   // ── Photo Upload ───────────────────────────────────────────────────────
   uploadPhoto: (file) => {
     const fd = new FormData()

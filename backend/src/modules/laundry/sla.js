@@ -1,17 +1,18 @@
 import { getDB } from '../../shared/db/index.js'
 import { createNotification } from '../../shared/notifications/service.js'
+import { sendSlaAlert, shouldSendSlaNotification } from './whatsapp.js'
 
 /**
  * SLA ihlallerini kontrol eder ve SSE bildirimi gönderir.
  * Her 15 dakikada cron ile çalışır.
  */
-export function checkSlaViolations() {
+export async function checkSlaViolations() {
   const db = getDB()
   const violations = db.prepare(`
     SELECT li.id, li.status, li.item_count,
            r.block, r.room_no,
            ROUND((julianday('now') - julianday(COALESCE(li.updated_at, li.created_at))) * 24, 1) as hours,
-           sc.warning_hours, sc.critical_hours
+           sc.warning_hours, sc.critical_hours, sc.whatsapp_notify
     FROM laundry_items li
     LEFT JOIN rooms r ON r.id = li.room_id
     LEFT JOIN laundry_sla_config sc ON sc.stage = li.status
@@ -30,6 +31,10 @@ export function checkSlaViolations() {
       module: 'laundry',
       target_role: isCritical ? null : 'shift_supervisor',
     })
+
+    if (v.whatsapp_notify && shouldSendSlaNotification(db, v.id, v.status)) {
+      await sendSlaAlert(v.id, v.hours, db).catch(() => {})
+    }
   }
 
   return violations.length

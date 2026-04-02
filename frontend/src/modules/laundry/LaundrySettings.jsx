@@ -7,17 +7,22 @@ const STAGE_LABELS = { dirty: 'Sepet (Kirli)', washing: 'Yıkama', ready: 'Hazı
 function SlaRow({ config, onSave }) {
   const [warn, setWarn] = useState(config.warning_hours)
   const [crit, setCrit] = useState(config.critical_hours)
+  const [waNotify, setWaNotify] = useState(!!config.whatsapp_notify)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
-  useEffect(() => { setWarn(config.warning_hours); setCrit(config.critical_hours) }, [config])
+  useEffect(() => {
+    setWarn(config.warning_hours)
+    setCrit(config.critical_hours)
+    setWaNotify(!!config.whatsapp_notify)
+  }, [config])
 
   const handleSave = async () => {
     setError('')
     if (+crit <= +warn) { setError('Kritik eşik uyarıdan büyük olmalı'); return }
     setSaving(true)
     try {
-      await onSave({ stage: config.stage, warning_hours: +warn, critical_hours: +crit })
+      await onSave({ stage: config.stage, warning_hours: +warn, critical_hours: +crit, whatsapp_notify: waNotify ? 1 : 0 })
     } finally { setSaving(false) }
   }
 
@@ -33,6 +38,12 @@ function SlaRow({ config, onSave }) {
         <input type="number" className="form-input" style={{ width: 70 }}
           value={crit} min={1} onChange={e => setCrit(e.target.value)} />
         <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', marginLeft: 4 }}>saat</span>
+      </td>
+      <td>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+          <input type="checkbox" checked={waNotify} onChange={e => setWaNotify(e.target.checked)} />
+          <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>WA</span>
+        </label>
       </td>
       <td>
         <button className="btn btn-sm" style={{ background: 'var(--accent)', color: '#000' }}
@@ -226,7 +237,7 @@ export default function LaundrySettings() {
             ) : (
               <table className="data-table">
                 <thead>
-                  <tr><th>Aşama</th><th>Uyarı</th><th>Kritik</th><th></th></tr>
+                  <tr><th>Aşama</th><th>Uyarı</th><th>Kritik</th><th>WhatsApp</th><th></th></tr>
                 </thead>
                 <tbody>
                   {slaConfig.map(cfg => (

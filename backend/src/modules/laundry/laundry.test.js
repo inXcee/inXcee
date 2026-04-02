@@ -3,7 +3,7 @@ import request from 'supertest'
 import app from '../../app.js'
 import { initDB, getDB } from '../../shared/db/index.js'
 import { seedDev } from '../../shared/db/seed.js'
-import { batchAssignService, batchLostService, advanceItemService, createVerificationService } from './service.js'
+import { batchAssignService, batchLostService, advanceItemService, createVerificationService, getSettingsService, updateSettingService } from './service.js'
 import * as q from './queries.js'
 const { archiveItemsQuery } = q
 
@@ -439,7 +439,7 @@ describe('Laundry routes — yetki kontrolleri', () => {
 describe('SLA engine', () => {
   it('checkSlaViolations hata vermez', async () => {
     const { checkSlaViolations } = await import('./sla.js')
-    const count = checkSlaViolations()
+    const count = await checkSlaViolations()
     expect(typeof count).toBe('number')
   })
 
@@ -636,5 +636,25 @@ describe('archive', () => {
     const r1 = archiveItemsQuery({ page: 1, limit: 2 })
     expect(r1.items.length).toBeLessThanOrEqual(2)
     expect(typeof r1.total).toBe('number')
+  })
+})
+
+describe('laundry_global_settings', () => {
+  test('setting kaydedilir ve okunur', () => {
+    updateSettingService('test_key', 'hello')
+    const settings = getSettingsService()
+    expect(settings.test_key).toBe('hello')
+  })
+
+  test('setting güncellenir', () => {
+    updateSettingService('test_key', 'world')
+    const settings = getSettingsService()
+    expect(settings.test_key).toBe('world')
+  })
+
+  test('sla_config whatsapp_notify kolonu var', () => {
+    const db = getDB()
+    const cols = db.prepare('PRAGMA table_info(laundry_sla_config)').all().map(c => c.name)
+    expect(cols).toContain('whatsapp_notify')
   })
 })

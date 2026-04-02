@@ -367,6 +367,21 @@ export function initDB() {
   )`) } catch(_) {}
   try { db.exec(`CREATE INDEX IF NOT EXISTS idx_laundry_verif_item ON laundry_verifications(item_id)`) } catch(_) {}
 
+  // ── Laundry v6 — SLA WhatsApp bildirimleri ────────────────────────────────
+  try { db.exec(`CREATE TABLE IF NOT EXISTS laundry_sla_notifications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_id INTEGER NOT NULL REFERENCES laundry_items(id) ON DELETE CASCADE,
+    stage TEXT NOT NULL,
+    sent_at TEXT NOT NULL DEFAULT (datetime('now')),
+    phone TEXT NOT NULL,
+    UNIQUE(item_id, stage, date(sent_at))
+  )`) } catch(_) {}
+  try { db.exec(`CREATE TABLE IF NOT EXISTS laundry_global_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT
+  )`) } catch(_) {}
+  try { db.exec(`ALTER TABLE laundry_sla_config ADD COLUMN whatsapp_notify INTEGER DEFAULT 0`) } catch(_) {}
+
   return db
 }
 
