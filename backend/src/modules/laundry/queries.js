@@ -27,15 +27,40 @@ export function getItemQuery(id) {
            li.clothing_items,
            (SELECT COUNT(*) FROM laundry_items li2
             WHERE li2.room_id = li.room_id
-            AND li2.status NOT IN ('delivered','lost')) as room_active_count
+            AND li2.status NOT IN ('delivered','lost')) as room_active_count,
+           lv.all_present,
+           lv.missing_notes as verification_notes
     FROM laundry_items li
     LEFT JOIN rooms r ON r.id = li.room_id
     LEFT JOIN users u ON u.id = li.created_by
     LEFT JOIN laundry_machines m ON m.id = li.machine_id
     LEFT JOIN room_assignments ra ON ra.room_id = li.room_id AND ra.check_out_at IS NULL
     LEFT JOIN personnel p ON p.id = ra.personnel_id
+    LEFT JOIN laundry_verifications lv ON lv.item_id = li.id
+      AND lv.stage IN ('washing_to_ready','ironing_to_ready')
+      AND lv.rowid = (
+        SELECT MAX(rowid) FROM laundry_verifications
+        WHERE item_id = li.id AND stage IN ('washing_to_ready','ironing_to_ready')
+      )
     WHERE li.id = ?
   `).get(id)
+}
+
+export function insertVerificationQuery({ item_id, stage, verified_by, items_json, missing_notes, all_present }) {
+  const db = getDB()
+  const result = db.prepare(`
+    INSERT INTO laundry_verifications(item_id, stage, verified_by, items_json, missing_notes, all_present)
+    VALUES (?,?,?,?,?,?)
+  `).run(item_id, stage, verified_by,
+    typeof items_json === 'string' ? items_json : JSON.stringify(items_json),
+    missing_notes || null,
+    all_present ? 1 : 0)
+  return db.prepare('SELECT * FROM laundry_verifications WHERE id=?').get(result.lastInsertRowid)
+}
+
+export function getVerificationsForItemQuery(itemId) {
+  const db = getDB()
+  return db.prepare('SELECT * FROM laundry_verifications WHERE item_id=? ORDER BY verified_at').all(itemId)
 }
 
 export function listItemsQuery({ status, urgent, sla_only, search } = {}) {

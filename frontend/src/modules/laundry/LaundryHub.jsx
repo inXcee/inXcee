@@ -26,7 +26,8 @@ import LostModal          from './components/LostModal.jsx'
 import MachineManagerPanel from './components/MachineManagerPanel.jsx'
 import PersonPanel         from './components/PersonPanel.jsx'
 import FoundModal          from './components/FoundModal.jsx'
-import BatchAssignModal    from './components/BatchAssignModal.jsx'
+import BatchAssignModal         from './components/BatchAssignModal.jsx'
+import ItemVerificationModal    from './components/ItemVerificationModal.jsx'
 
 const COLOR_MAP = {
   'Beyaz': '#f0f0f0', 'Siyah': '#222', 'Gri': '#888',
@@ -905,6 +906,7 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
   const [batchMode,      setBatchMode]      = useState(false)
   const [selectedIds,    setSelectedIds]    = useState(new Set())
   const [showBatchAssign, setShowBatchAssign] = useState(false)
+  const [verificationTarget, setVerificationTarget] = useState(null)
   const [groupByRoom,    setGroupByRoom]    = useState(
     () => localStorage.getItem('laundry_group_by_room') === '1'
   )
@@ -944,6 +946,16 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
         laundryApi.advanceItem(item.id, { machine_id: idleMachine.id })
           .then(() => qc.invalidateQueries({ queryKey: ['laundry-items'] }))
           .catch(err => alert(err?.response?.data?.message || 'Makineye atama başarısız'))
+      } else if ((item.status === 'washing' && !item.needs_ironing) || item.status === 'ironing') {
+        // Doğrulama gereken geçiş: washing→ready veya ironing→ready
+        if (item.clothing_items) {
+          const stage = item.status === 'washing' ? 'washing_to_ready' : 'ironing_to_ready'
+          setVerificationTarget({ item, stage })
+        } else {
+          laundryApi.advanceItem(item.id, {})
+            .then(() => qc.invalidateQueries({ queryKey: ['laundry-items'] }))
+            .catch(err => alert(err?.response?.data?.message || 'İşlem başarısız'))
+        }
       } else {
         laundryApi.advanceItem(item.id, {})
           .then(() => qc.invalidateQueries({ queryKey: ['laundry-items'] }))
@@ -1409,6 +1421,19 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
           selectedIds={selectedIds}
           onClose={() => setShowBatchAssign(false)}
           onSuccess={() => { setShowBatchAssign(false); setSelectedIds(new Set()); setBatchMode(false) }}
+        />
+      )}
+      {verificationTarget && (
+        <ItemVerificationModal
+          item={verificationTarget.item}
+          stage={verificationTarget.stage}
+          onClose={() => setVerificationTarget(null)}
+          onSuccess={() => {
+            const { item, stage: _stage } = verificationTarget
+            setVerificationTarget(null)
+            laundryApi.advanceItem(item.id, {})
+              .then(() => qc.invalidateQueries({ queryKey: ['laundry-items'] }))
+          }}
         />
       )}
       {/* Not Sticker — sadece hub'da */}

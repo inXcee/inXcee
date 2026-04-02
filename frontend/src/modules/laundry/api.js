@@ -16,6 +16,8 @@ export const laundryApi = {
   batchAssign: (item_ids, machine_id, timer_minutes) => api.post('/laundry/items/batch-assign', { item_ids, machine_id, timer_minutes }).then(r => r.data),
   batchLost: (item_ids, notes) => api.post('/laundry/items/batch-lost', { item_ids, notes }).then(r => r.data),
   reportDamage: (id, data) => api.post(`/laundry/items/${id}/damages`, data).then(r => r.data),
+  createVerification: (id, data) => api.post(`/laundry/items/${id}/verify`, data).then(r => r.data),
+  getVerifications: (id) => api.get(`/laundry/items/${id}/verifications`).then(r => r.data),
 
   // ── Machines ───────────────────────────────────────────────────────────
   getMachines: () => api.get('/laundry/machines').then(r => r.data),

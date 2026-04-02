@@ -335,6 +335,22 @@ export default function ItemCard({ item, machines = [], onDeliver, onDamage, sel
               </span>
             )}
             {item.status === 'lost' && <span className="badge badge-gray">KAYIP</span>}
+            {item.all_present === 1 && (
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', gap: 3,
+                padding: '1px 6px', borderRadius: 4, fontSize: 8,
+                background: 'rgba(39,201,106,0.12)', border: '1px solid rgba(39,201,106,0.25)',
+                color: 'var(--green)', fontFamily: 'var(--mono)', letterSpacing: 0.5,
+              }}>✓ Doğrulandı</span>
+            )}
+            {item.all_present === 0 && (
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', gap: 3,
+                padding: '1px 6px', borderRadius: 4, fontSize: 8,
+                background: 'rgba(231,165,0,0.12)', border: '1px solid rgba(231,165,0,0.25)',
+                color: 'var(--accent)', fontFamily: 'var(--mono)', letterSpacing: 0.5,
+              }} title={item.verification_notes || ''}>⚠ Eksik</span>
+            )}
           </div>
         </div>
 

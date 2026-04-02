@@ -3,7 +3,7 @@ import request from 'supertest'
 import app from '../../app.js'
 import { initDB, getDB } from '../../shared/db/index.js'
 import { seedDev } from '../../shared/db/seed.js'
-import { batchAssignService, batchLostService, advanceItemService } from './service.js'
+import { batchAssignService, batchLostService, advanceItemService, createVerificationService } from './service.js'
 import * as q from './queries.js'
 
 let token, userId, roomId
@@ -569,5 +569,48 @@ describe('ironing state machine', () => {
     advanceItemService(id, {}, 1) // washing → ironing
     advanceItemService(id, {}, 1) // ironing → ready
     expect(q.getItemQuery(id).status).toBe('ready')
+  })
+})
+
+describe('verification', () => {
+  test('washing_to_ready aşaması kaydedilir', () => {
+    const db = getDB()
+    const room = db.prepare("SELECT id FROM rooms LIMIT 1").get()
+    const id = q.insertItemQuery({ room_id: room.id, item_count: 2, created_by: 1 })
+
+    const items = [
+      { name: 'Gömlek', count: 1, checked: true },
+      { name: 'Pantolon', count: 1, checked: true },
+    ]
+    const result = createVerificationService(id, {
+      stage: 'washing_to_ready',
+      items,
+      all_present: true,
+      missing_notes: null,
+    }, 'test_user')
+
+    expect(result.all_present).toBe(1)
+    expect(result.item_id).toBe(id)
+  })
+
+  test('aynı item+stage için ikinci kayıt hata verir', () => {
+    const db = getDB()
+    const room = db.prepare("SELECT id FROM rooms LIMIT 1").get()
+    const id = q.insertItemQuery({ room_id: room.id, item_count: 1, created_by: 1 })
+    const payload = { stage: 'washing_to_ready', items: [{ name: 'X', count: 1, checked: true }], all_present: true, missing_notes: null }
+    createVerificationService(id, payload, 'user1')
+    expect(() => createVerificationService(id, payload, 'user1')).toThrow()
+  })
+
+  test('eksik parça varsa missing_notes zorunlu', () => {
+    const db = getDB()
+    const room = db.prepare("SELECT id FROM rooms LIMIT 1").get()
+    const id = q.insertItemQuery({ room_id: room.id, item_count: 2, created_by: 1 })
+    expect(() => createVerificationService(id, {
+      stage: 'washing_to_ready',
+      items: [{ name: 'A', count: 1, checked: false }],
+      all_present: false,
+      missing_notes: null,
+    }, 'user1')).toThrow(/not.*zorunlu/i)
   })
 })

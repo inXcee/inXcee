@@ -353,6 +353,20 @@ export function initDB() {
     }
   } catch(_) {}
 
+  // ── Laundry v5 — parça doğrulama ─────────────────────────────────────────
+  try { db.exec(`CREATE TABLE IF NOT EXISTS laundry_verifications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_id INTEGER NOT NULL REFERENCES laundry_items(id) ON DELETE CASCADE,
+    stage TEXT NOT NULL CHECK(stage IN ('washing_to_ready','ironing_to_ready','delivery')),
+    verified_by TEXT NOT NULL,
+    verified_at TEXT NOT NULL DEFAULT (datetime('now')),
+    items_json TEXT NOT NULL,
+    missing_notes TEXT,
+    all_present INTEGER NOT NULL DEFAULT 1,
+    UNIQUE(item_id, stage)
+  )`) } catch(_) {}
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_laundry_verif_item ON laundry_verifications(item_id)`) } catch(_) {}
+
   return db
 }
 

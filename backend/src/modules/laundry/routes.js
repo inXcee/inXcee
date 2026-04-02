@@ -129,6 +129,19 @@ laundryRouter.post('/items/:id/damages', ...laundryFull, (req, res) => {
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
+laundryRouter.post('/items/:id/verify', ...laundryFull, (req, res) => {
+  try {
+    const { stage, items, all_present, missing_notes } = req.body
+    if (!stage || !items) return res.status(400).json({ error: 'stage ve items zorunlu' })
+    const result = svc.createVerificationService(+req.params.id, { stage, items, all_present, missing_notes }, req.user.username || String(req.user.id))
+    res.status(201).json(result)
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+laundryRouter.get('/items/:id/verifications', ...laundryRead, (req, res) => {
+  res.json(svc.getVerificationsService(+req.params.id))
+})
+
 laundryRouter.get('/person/:name', ...laundryRead, (req, res) => {
   try {
     res.json(svc.getPersonHistoryService(decodeURIComponent(req.params.name)))

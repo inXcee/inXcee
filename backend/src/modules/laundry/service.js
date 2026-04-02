@@ -252,6 +252,23 @@ export function reportDamageService(itemId, { description, photo_url }, userId) 
 // PASSTHROUGH SERVICES
 // ═══════════════════════════════════════════════════════════════════════════
 
+export function createVerificationService(itemId, { stage, items, all_present, missing_notes }, verifiedBy) {
+  const item = q.getItemQuery(itemId)
+  if (!item) throw new Error('Kayıt bulunamadı')
+  if (!all_present && !missing_notes?.trim()) throw new Error('Eksik parça varsa not zorunlu')
+
+  return q.insertVerificationQuery({
+    item_id: itemId,
+    stage,
+    verified_by: verifiedBy,
+    items_json: items,
+    missing_notes: missing_notes?.trim() || null,
+    all_present,
+  })
+}
+
+export const getVerificationsService = q.getVerificationsForItemQuery
+
 export const listItemsService       = q.listItemsQuery
 export const getItemService         = q.getItemQuery
 export const getItemHistoryService  = q.getItemHistoryQuery
