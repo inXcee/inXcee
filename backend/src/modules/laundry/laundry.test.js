@@ -3,7 +3,7 @@ import request from 'supertest'
 import app from '../../app.js'
 import { initDB, getDB } from '../../shared/db/index.js'
 import { seedDev } from '../../shared/db/seed.js'
-import { batchAssignService, batchLostService } from './service.js'
+import { batchAssignService, batchLostService, advanceItemService } from './service.js'
 import * as q from './queries.js'
 
 let token, userId, roomId
@@ -529,5 +529,45 @@ describe('batch-lost', () => {
 
     const result = batchLostService([id1], null, 1)
     expect(result.failed).toHaveLength(1)
+  })
+})
+
+describe('ironing state machine', () => {
+  test('needs_ironing=1 ise washing→ironing geçişi yapılır', () => {
+    const db = getDB()
+    const room = db.prepare("SELECT id FROM rooms LIMIT 1").get()
+    db.prepare("INSERT INTO laundry_machines(name,type,status) VALUES('IronM1','washer','idle')").run()
+    const machine = db.prepare("SELECT id FROM laundry_machines WHERE status='idle' LIMIT 1").get()
+
+    const id = q.insertItemQuery({ room_id: room.id, item_count: 2, needs_ironing: 1, created_by: 1 })
+    advanceItemService(id, { machine_id: machine.id }, 1)
+    advanceItemService(id, {}, 1)
+    const item = q.getItemQuery(id)
+    expect(item.status).toBe('ironing')
+  })
+
+  test('needs_ironing=0 ise washing→ready normal akış', () => {
+    const db = getDB()
+    const room = db.prepare("SELECT id FROM rooms LIMIT 1").get()
+    db.prepare("INSERT INTO laundry_machines(name,type,status) VALUES('IronM2','washer','idle')").run()
+    const machine = db.prepare("SELECT id FROM laundry_machines WHERE status='idle' LIMIT 1").get()
+
+    const id = q.insertItemQuery({ room_id: room.id, item_count: 1, needs_ironing: 0, created_by: 1 })
+    advanceItemService(id, { machine_id: machine.id }, 1)
+    advanceItemService(id, { shelf_location: 'B2' }, 1)
+    expect(q.getItemQuery(id).status).toBe('ready')
+  })
+
+  test('ironing → ready geçişi advanceItemService ile yapılır', () => {
+    const db = getDB()
+    const room = db.prepare("SELECT id FROM rooms LIMIT 1").get()
+    db.prepare("INSERT INTO laundry_machines(name,type,status) VALUES('IronM3','washer','idle')").run()
+    const machine = db.prepare("SELECT id FROM laundry_machines WHERE status='idle' LIMIT 1").get()
+
+    const id = q.insertItemQuery({ room_id: room.id, item_count: 1, needs_ironing: 1, created_by: 1 })
+    advanceItemService(id, { machine_id: machine.id }, 1)
+    advanceItemService(id, {}, 1) // washing → ironing
+    advanceItemService(id, {}, 1) // ironing → ready
+    expect(q.getItemQuery(id).status).toBe('ready')
   })
 })

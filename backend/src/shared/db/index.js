@@ -305,6 +305,54 @@ export function initDB() {
   try { db.exec(`ALTER TABLE laundry_items ADD COLUMN intake_signature TEXT`) } catch(_) {}
   try { db.exec(`ALTER TABLE laundry_items ADD COLUMN clothing_items TEXT`) } catch(_) {}
 
+  // ── Laundry v4 — ütü aşaması + intake detay ──────────────────────────────
+  try { db.exec(`ALTER TABLE laundry_items ADD COLUMN needs_ironing INTEGER DEFAULT 0`) } catch(_) {}
+  try { db.exec(`ALTER TABLE laundry_items ADD COLUMN occupant_signature TEXT`) } catch(_) {}
+  try { db.exec(`ALTER TABLE laundry_damages ADD COLUMN at_intake INTEGER DEFAULT 0`) } catch(_) {}
+
+  // ── Laundry v4b — status CHECK constraint'e 'ironing' ekle ───────────────
+  // SQLite'ta constraint değiştirmek için tabloyu yeniden oluştur
+  try {
+    const hasIroning = db.prepare(
+      "SELECT sql FROM sqlite_master WHERE type='table' AND name='laundry_items'"
+    ).get()
+    if (hasIroning && !hasIroning.sql.includes("'ironing'")) {
+      db.pragma('foreign_keys = OFF')
+      const migrate = db.transaction(() => {
+        db.exec(`CREATE TABLE laundry_items_v4b (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          room_id INTEGER REFERENCES rooms(id),
+          status TEXT NOT NULL DEFAULT 'dirty' CHECK(status IN ('dirty','washing','ironing','ready','delivered','lost')),
+          machine_id INTEGER REFERENCES laundry_machines(id),
+          urgent INTEGER NOT NULL DEFAULT 0,
+          item_count INTEGER NOT NULL DEFAULT 1,
+          item_details TEXT,
+          shelf_location TEXT,
+          photo_url TEXT,
+          notes TEXT,
+          phone_override TEXT,
+          intake_name TEXT,
+          intake_signature TEXT,
+          clothing_items TEXT,
+          needs_ironing INTEGER DEFAULT 0,
+          occupant_signature TEXT,
+          created_by INTEGER REFERENCES users(id),
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )`)
+        db.exec(`INSERT INTO laundry_items_v4b
+          SELECT id, room_id, status, machine_id, urgent, item_count, item_details, shelf_location,
+                 photo_url, notes, phone_override, intake_name, intake_signature, clothing_items,
+                 needs_ironing, occupant_signature, created_by, created_at, updated_at
+          FROM laundry_items`)
+        db.exec(`DROP TABLE laundry_items`)
+        db.exec(`ALTER TABLE laundry_items_v4b RENAME TO laundry_items`)
+      })
+      migrate()
+      db.pragma('foreign_keys = ON')
+    }
+  } catch(_) {}
+
   return db
 }
 

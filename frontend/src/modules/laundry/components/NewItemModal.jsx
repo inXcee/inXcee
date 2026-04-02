@@ -143,6 +143,7 @@ export default function NewItemModal({ onClose }) {
     intake_name: '', intake_signature: '',
   })
   const [clothing, setClothing] = useState([])
+  const [needsIroning, setNeedsIroning] = useState(false)
   const [roomSearch, setRoomSearch] = useState('')
   const [phoneLoading, setPhoneLoading] = useState(false)
 
@@ -181,6 +182,7 @@ export default function NewItemModal({ onClose }) {
       ...form,
       room_id: +form.room_id,
       urgent: form.urgent ? 1 : 0,
+      needs_ironing: needsIroning ? 1 : 0,
       item_count: totalCount,
       clothing_items: clothing.length > 0 ? clothing : undefined,
       phone_override: form.phone_override || undefined,
@@ -416,6 +418,26 @@ export default function NewItemModal({ onClose }) {
             }}>ACİL İŞARETLE</span>
             {form.urgent && (
               <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--red)', opacity: 0.7, marginLeft: 'auto' }}>Öncelikli yıkama</span>
+            )}
+          </label>
+
+          {/* ── Ütü ── */}
+          <label style={{
+            display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer',
+            padding: '10px 12px', borderRadius: 8,
+            background: needsIroning ? 'rgba(99,102,241,0.08)' : 'var(--surface2)',
+            border: `1px solid ${needsIroning ? 'rgba(99,102,241,0.25)' : 'var(--border)'}`,
+            transition: 'all 0.2s',
+          }}>
+            <input type="checkbox" checked={needsIroning}
+              onChange={e => setNeedsIroning(e.target.checked)}
+              style={{ accentColor: '#6366f1', width: 14, height: 14 }} />
+            <span style={{
+              fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 700, letterSpacing: 1,
+              color: needsIroning ? '#6366f1' : 'var(--text2)',
+            }}>ÜTÜ GEREKİYOR</span>
+            {needsIroning && (
+              <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: '#6366f1', opacity: 0.7, marginLeft: 'auto' }}>Yıkama sonrası ütülenecek</span>
             )}
           </label>
 

@@ -9,7 +9,8 @@ import { notifyItemReady } from './whatsapp.js'
 
 const TRANSITIONS = {
   dirty: 'washing',
-  washing: 'ready',
+  washing: 'ready',   // needs_ironing=1 ise 'ironing' olur — advanceItemService'de override
+  ironing: 'ready',
   ready: 'delivered',
 }
 
@@ -17,11 +18,11 @@ const TRANSITIONS = {
 // ITEM CRUD
 // ═══════════════════════════════════════════════════════════════════════════
 
-export function createItemService({ room_id, item_count, item_details, notes, urgent, photo_url, phone_override, intake_name, intake_signature, clothing_items }, userId) {
+export function createItemService({ room_id, item_count, item_details, notes, urgent, photo_url, phone_override, intake_name, intake_signature, clothing_items, needs_ironing }, userId) {
   if (!room_id) throw new Error('Oda seçilmeli')
   if (!item_count || item_count < 1) throw new Error('Parça adedi en az 1 olmalı')
 
-  const id = q.insertItemQuery({ room_id, item_count, item_details, notes, urgent, photo_url, phone_override, intake_name, intake_signature, clothing_items, created_by: userId })
+  const id = q.insertItemQuery({ room_id, item_count, item_details, notes, urgent, photo_url, phone_override, intake_name, intake_signature, clothing_items, needs_ironing, created_by: userId })
   q.insertHistoryQuery({ item_id: id, from_status: null, to_status: 'dirty', action_by: userId, notes: `${item_count} parça kayıt` })
 
   if (urgent) {
@@ -32,12 +33,16 @@ export function createItemService({ room_id, item_count, item_details, notes, ur
   return q.getItemQuery(id)
 }
 
-export function advanceItemService(id, { machine_id, shelf_location, timer_minutes }, userId) {
+export function advanceItemService(id, { machine_id, shelf_location, timer_minutes } = {}, userId) {
   const item = q.getItemQuery(id)
   if (!item) throw new Error('Kayıt bulunamadı')
   if (!TRANSITIONS[item.status]) throw new Error(`"${item.status}" durumundan ilerlenemez`)
 
-  const nextStatus = TRANSITIONS[item.status]
+  let nextStatus = TRANSITIONS[item.status]
+  // ironing override: washing → ironing (needs_ironing=1 ise)
+  if (item.status === 'washing' && item.needs_ironing) {
+    nextStatus = 'ironing'
+  }
   const extra = {}
 
   if (nextStatus === 'washing') {
@@ -56,9 +61,16 @@ export function advanceItemService(id, { machine_id, shelf_location, timer_minut
     q.removeItemFromQueueQuery(id)
   }
 
+  if (nextStatus === 'ironing') {
+    // washing → ironing: makineyi serbest bırak
+    if (item.machine_id) {
+      q.updateMachineQuery(item.machine_id, { status: 'done' })
+    }
+  }
+
   if (nextStatus === 'ready') {
     extra.shelf_location = shelf_location || null
-    if (item.machine_id) {
+    if (item.machine_id && item.status === 'washing') {
       q.updateMachineQuery(item.machine_id, { status: 'done' })
     }
     createNotification({

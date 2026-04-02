@@ -4,12 +4,12 @@ import { getDB } from '../../shared/db/index.js'
 // ITEMS
 // ═══════════════════════════════════════════════════════════════════════════
 
-export function insertItemQuery({ room_id, item_count = 1, item_details, notes, urgent = 0, photo_url, phone_override, intake_name, intake_signature, clothing_items, created_by }) {
+export function insertItemQuery({ room_id, item_count = 1, item_details, notes, urgent = 0, photo_url, phone_override, intake_name, intake_signature, clothing_items, needs_ironing = 0, created_by }) {
   const db = getDB()
   const r = db.prepare(`
-    INSERT INTO laundry_items(room_id, item_count, item_details, notes, urgent, photo_url, phone_override, intake_name, intake_signature, clothing_items, created_by, updated_at)
-    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-  `).run(room_id, item_count, item_details || null, notes || null, urgent ? 1 : 0, photo_url || null, phone_override || null, intake_name || null, intake_signature || null, clothing_items ? JSON.stringify(clothing_items) : null, created_by)
+    INSERT INTO laundry_items(room_id, item_count, item_details, notes, urgent, photo_url, phone_override, intake_name, intake_signature, clothing_items, needs_ironing, created_by, updated_at)
+    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+  `).run(room_id, item_count, item_details || null, notes || null, urgent ? 1 : 0, photo_url || null, phone_override || null, intake_name || null, intake_signature || null, clothing_items ? (typeof clothing_items === 'string' ? clothing_items : JSON.stringify(clothing_items)) : null, needs_ironing ? 1 : 0, created_by)
   return r.lastInsertRowid
 }
 

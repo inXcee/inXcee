@@ -1006,17 +1006,19 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
 
   const dirty   = kanbanItems.filter(i => i.status === 'dirty')
   const washing = kanbanItems.filter(i => i.status === 'washing')
+  const ironing = kanbanItems.filter(i => i.status === 'ironing')
   const ready   = kanbanItems.filter(i => i.status === 'ready')
   const lost    = allItems.filter(i => i.status === 'lost')
 
   const counts = {
     dirty:   allItems.filter(i => i.status === 'dirty').length,
     washing: allItems.filter(i => i.status === 'washing').length,
+    ironing: allItems.filter(i => i.status === 'ironing').length,
     ready:   allItems.filter(i => i.status === 'ready').length,
     sla:     violations.length,
     lost:    allItems.filter(i => i.status === 'lost').length,
   }
-  const activeTotal = counts.dirty + counts.washing + counts.ready
+  const activeTotal = counts.dirty + counts.washing + counts.ironing + counts.ready
 
   const toggleSelect = (id) => {
     setSelectedIds(prev => {
@@ -1304,6 +1306,9 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
           <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
             <KanbanCol title="KİRLİ SEPET"  color="var(--accent)" items={dirty}   colStatus="dirty"   isOver={overCol === 'dirty'}   machines={machines} onDeliver={setDeliverItem} onDamage={setDamageItem} onPersonClick={setPersonPanelName} onFound={setFoundItem} groupByRoom={groupByRoom} />
             <KanbanCol title="YIKANIYOR"    color="var(--blue)"   items={washing} colStatus="washing" isOver={overCol === 'washing'} machines={machines} onDeliver={setDeliverItem} onDamage={setDamageItem} onPersonClick={setPersonPanelName} onFound={setFoundItem} groupByRoom={groupByRoom} />
+            {ironing.length > 0 && (
+              <KanbanCol title="ÜTÜDE" color="#6366f1" items={ironing} colStatus="ironing" isOver={overCol === 'ironing'} machines={machines} onDeliver={setDeliverItem} onDamage={setDamageItem} onPersonClick={setPersonPanelName} onFound={setFoundItem} groupByRoom={groupByRoom} />
+            )}
             <KanbanCol title="RAFTA HAZIR"  color="var(--green)"  items={ready}   colStatus="ready"   isOver={overCol === 'ready'}   machines={machines} onDeliver={setDeliverItem} onDamage={setDamageItem} onPersonClick={setPersonPanelName} onFound={setFoundItem} groupByRoom={groupByRoom} />
           </div>
           <DragOverlay>{null}</DragOverlay>

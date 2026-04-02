@@ -321,6 +321,14 @@ export default function ItemCard({ item, machines = [], onDeliver, onDamage, sel
           </div>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
             {isUrgent && <span className="badge badge-red" style={{ fontSize: 8 }}>ACİL</span>}
+            {item.needs_ironing === 1 && (
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', gap: 3,
+                padding: '1px 6px', borderRadius: 4, fontSize: 8,
+                background: 'rgba(99,102,241,0.12)', border: '1px solid rgba(99,102,241,0.25)',
+                color: '#6366f1', fontFamily: 'var(--mono)', letterSpacing: 0.5,
+              }}>ÜTÜ</span>
+            )}
             {item.damage_count > 0 && (
               <span className="badge badge-amber" style={{ fontSize: 8 }}>
                 ⚠ {item.damage_count} HASAR
