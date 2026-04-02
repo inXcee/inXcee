@@ -1,3 +1,5 @@
+
+
 # Çamaşırhane Kapsamlı Geliştirme — İmplementasyon Planı
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -51,7 +53,7 @@ Bu fazda yeni tablo gerekmez. Geç.
 - Modify: `backend/src/modules/laundry/routes.js`
 - Modify: `backend/src/modules/laundry/laundry.test.js`
 
-- [ ] **Step 1: Testi yaz (önce başarısız olacak)**
+- [x] **Step 1: Testi yaz (önce başarısız olacak)**
 
 `laundry.test.js` sonuna ekle:
 
@@ -111,7 +113,7 @@ describe('batch-lost', () => {
 })
 ```
 
-- [ ] **Step 2: Testi çalıştır — başarısız olmalı**
+- [x] **Step 2: Testi çalıştır — başarısız olmalı**
 
 ```bash
 cd backend && npx vitest run src/modules/laundry/laundry.test.js
@@ -119,7 +121,7 @@ cd backend && npx vitest run src/modules/laundry/laundry.test.js
 
 Beklenen: `batchAssignService is not a function` hatası
 
-- [ ] **Step 3: service.js'e batchAssignService ve batchLostService ekle**
+- [x] **Step 3: service.js'e batchAssignService ve batchLostService ekle**
 
 `service.js` içinde `batchDeliverService`'den sonra ekle:
 
@@ -160,7 +162,7 @@ export function batchLostService(itemIds, notes, userId) {
 }
 ```
 
-- [ ] **Step 4: Test importlarını güncelle**
+- [x] **Step 4: Test importlarını güncelle**
 
 `laundry.test.js` başındaki import satırına `batchAssignService` ve `batchLostService` ekle:
 
@@ -178,7 +180,7 @@ import {
 } from './service.js'
 ```
 
-- [ ] **Step 5: routes.js'e endpoint'leri ekle**
+- [x] **Step 5: routes.js'e endpoint'leri ekle**
 
 `/items/batch-deliver` route'undan hemen önce ekle:
 
@@ -204,7 +206,7 @@ laundryRouter.post('/items/batch-lost', ...laundryFull, (req, res) => {
 })
 ```
 
-- [ ] **Step 6: Testleri çalıştır — geçmeli**
+- [x] **Step 6: Testleri çalıştır — geçmeli**
 
 ```bash
 cd backend && npx vitest run src/modules/laundry/laundry.test.js
@@ -222,7 +224,7 @@ Beklenen: Tüm testler PASS
 - Modify: `frontend/src/modules/laundry/components/ItemCard.jsx`
 - Modify: `frontend/src/modules/laundry/api.js`
 
-- [ ] **Step 1: api.js'e batch endpoint'leri ekle**
+- [x] **Step 1: api.js'e batch endpoint'leri ekle**
 
 ```javascript
 export const batchAssign = (item_ids, machine_id, timer_minutes) =>
@@ -232,7 +234,7 @@ export const batchLost = (item_ids, notes) =>
   api.post('/laundry/items/batch-lost', { item_ids, notes })
 ```
 
-- [ ] **Step 2: BatchAssignModal.jsx oluştur**
+- [x] **Step 2: BatchAssignModal.jsx oluştur**
 
 ```jsx
 import { useState } from 'react'
@@ -298,7 +300,7 @@ export default function BatchAssignModal({ selectedIds, onClose, onSuccess }) {
 }
 ```
 
-- [ ] **Step 3: ItemCard.jsx'e batch checkbox ekle**
+- [x] **Step 3: ItemCard.jsx'e batch checkbox ekle**
 
 `ItemCard.jsx`'te kart container div'ine `group` class'ı ekle ve üst köşeye checkbox koy:
 
@@ -318,7 +320,7 @@ export default function BatchAssignModal({ selectedIds, onClose, onSuccess }) {
 )}
 ```
 
-- [ ] **Step 4: LaundryHub.jsx'e batch state ve floating bar ekle**
+- [x] **Step 4: LaundryHub.jsx'e batch state ve floating bar ekle**
 
 `LaundryHub.jsx` içine state ekle:
 
@@ -374,7 +376,7 @@ Floating action bar (kanban altına):
 )}
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 cd "$(git rev-parse --show-toplevel)" && git add backend/src/modules/laundry/service.js backend/src/modules/laundry/routes.js backend/src/modules/laundry/laundry.test.js frontend/src/modules/laundry/api.js frontend/src/modules/laundry/components/BatchAssignModal.jsx frontend/src/modules/laundry/LaundryHub.jsx frontend/src/modules/laundry/components/ItemCard.jsx && git commit -m "feat: laundry batch assign/lost — API + UI"
@@ -389,7 +391,7 @@ Mevcut `PATCH /laundry/machines/:id` zaten `status` ve `maintenance_notes` günc
 **Files:**
 - Modify: `frontend/src/modules/laundry/components/MachineManagerPanel.jsx`
 
-- [ ] **Step 1: MachineManagerPanel.jsx'e bakım toggle ekle**
+- [x] **Step 1: MachineManagerPanel.jsx'e bakım toggle ekle**
 
 Her makine kartında (status gösteriminin yanına) ekle:
 
@@ -432,7 +434,7 @@ Makine kart badge'ine ekle:
 export const updateMachine = (id, data) => api.patch(`/laundry/machines/${id}`, data)
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add frontend/src/modules/laundry/components/MachineManagerPanel.jsx frontend/src/modules/laundry/api.js && git commit -m "feat: makine bakım UI toggle"
@@ -445,7 +447,7 @@ git add frontend/src/modules/laundry/components/MachineManagerPanel.jsx frontend
 **Files:**
 - Modify: `frontend/src/modules/laundry/LaundryHub.jsx`
 
-- [ ] **Step 1: LaundryHub.jsx'e gruplama toggle ekle**
+- [x] **Step 1: LaundryHub.jsx'e gruplama toggle ekle**
 
 ```jsx
 const [groupByRoom, setGroupByRoom] = useState(
@@ -495,7 +497,7 @@ function renderColumn(items) {
 }
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add frontend/src/modules/laundry/LaundryHub.jsx && git commit -m "feat: kanban oda bazlı gruplama toggle"
@@ -510,7 +512,7 @@ git add frontend/src/modules/laundry/LaundryHub.jsx && git commit -m "feat: kanb
 **Files:**
 - Modify: `backend/src/shared/db/index.js`
 
-- [ ] **Step 1: index.js'e migration ekle**
+- [x] **Step 1: index.js'e migration ekle**
 
 `initDB()` fonksiyonu içinde mevcut `// ── Laundry v3 ...` bloğundan sonra ekle:
 
@@ -523,7 +525,7 @@ try { db.exec(`ALTER TABLE laundry_damages ADD COLUMN at_intake INTEGER DEFAULT 
 // Uygulama katmanında kontrol edilir
 ```
 
-- [ ] **Step 2: Migration'ı test et**
+- [x] **Step 2: Migration'ı test et**
 
 ```bash
 cd backend && node -e "import('./src/shared/db/index.js').then(m=>m.initDB()).then(()=>console.log('OK'))"
@@ -540,7 +542,7 @@ Beklenen: `OK`
 - Modify: `backend/src/modules/laundry/queries.js`
 - Modify: `backend/src/modules/laundry/laundry.test.js`
 
-- [ ] **Step 1: Test yaz**
+- [x] **Step 1: Test yaz**
 
 ```javascript
 describe('ironing state machine', () => {
@@ -583,13 +585,13 @@ describe('ironing state machine', () => {
 })
 ```
 
-- [ ] **Step 2: Testi çalıştır — başarısız olmalı**
+- [x] **Step 2: Testi çalıştır — başarısız olmalı**
 
 ```bash
 cd backend && npx vitest run src/modules/laundry/laundry.test.js 2>&1 | tail -20
 ```
 
-- [ ] **Step 3: queries.js'de insertItemQuery'ye needs_ironing ekle**
+- [x] **Step 3: queries.js'de insertItemQuery'ye needs_ironing ekle**
 
 `insertItemQuery` fonksiyonunu bul ve `needs_ironing` parametresini ekle:
 
@@ -609,7 +611,7 @@ export function insertItemQuery({ room_id, item_count, item_details, notes, urge
 }
 ```
 
-- [ ] **Step 4: service.js'de TRANSITIONS ve advanceItemService'i güncelle**
+- [x] **Step 4: service.js'de TRANSITIONS ve advanceItemService'i güncelle**
 
 ```javascript
 const TRANSITIONS = {
@@ -632,7 +634,7 @@ if (item.status === 'washing' && item.needs_ironing) {
 }
 ```
 
-- [ ] **Step 5: service.js'de createItemService'e needs_ironing ekle**
+- [x] **Step 5: service.js'de createItemService'e needs_ironing ekle**
 
 ```javascript
 export function createItemService({ room_id, item_count, item_details, notes, urgent, photo_url,
@@ -645,7 +647,7 @@ export function createItemService({ room_id, item_count, item_details, notes, ur
   // ... geri kalan aynı
 ```
 
-- [ ] **Step 6: Testleri çalıştır — geçmeli**
+- [x] **Step 6: Testleri çalıştır — geçmeli**
 
 ```bash
 cd backend && npx vitest run src/modules/laundry/laundry.test.js
@@ -658,7 +660,7 @@ cd backend && npx vitest run src/modules/laundry/laundry.test.js
 **Files:**
 - Modify: `frontend/src/modules/laundry/components/NewItemModal.jsx`
 
-- [ ] **Step 1: NewItemModal.jsx'te her kıyafet satırına renk + not alanı ekle**
+- [x] **Step 1: NewItemModal.jsx'te her kıyafet satırına renk + not alanı ekle**
 
 Kıyafet satırı render'ını bul (clothing_items array'ini map eden kısım) ve her satıra ekle:
 
@@ -687,7 +689,7 @@ Kıyafet satırı render'ını bul (clothing_items array'ini map eden kısım) v
 </div>
 ```
 
-- [ ] **Step 2: Ütü checkbox ekle**
+- [x] **Step 2: Ütü checkbox ekle**
 
 Form'da submit butonundan önce:
 
@@ -707,7 +709,7 @@ State ekle: `const [needsIroning, setNeedsIroning] = useState(false)`
 
 Submit'te: `needs_ironing: needsIroning ? 1 : 0` ekle.
 
-- [ ] **Step 3: Kanban'a Ütü sütunu ekle**
+- [x] **Step 3: Kanban'a Ütü sütunu ekle**
 
 `LaundryHub.jsx`'te `COLUMNS` veya sütun listesini bul. `ironing` sütununu ekle:
 
@@ -723,7 +725,7 @@ const STATUSES = [
 
 `hideIfEmpty: true` ise ve o sütunda item yoksa sütunu render etme.
 
-- [ ] **Step 4: ItemCard.jsx'e ütü badge ekle**
+- [x] **Step 4: ItemCard.jsx'e ütü badge ekle**
 
 ```jsx
 {item.needs_ironing === 1 && (
@@ -731,7 +733,7 @@ const STATUSES = [
 )}
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/src/shared/db/index.js backend/src/modules/laundry/service.js backend/src/modules/laundry/queries.js backend/src/modules/laundry/laundry.test.js frontend/src/modules/laundry/components/NewItemModal.jsx frontend/src/modules/laundry/components/ItemCard.jsx frontend/src/modules/laundry/LaundryHub.jsx && git commit -m "feat: laundry ütü aşaması + intake renk/not/ütü toggle"
@@ -746,7 +748,7 @@ git add backend/src/shared/db/index.js backend/src/modules/laundry/service.js ba
 **Files:**
 - Modify: `backend/src/shared/db/index.js`
 
-- [ ] **Step 1: index.js'e tablo ekle**
+- [x] **Step 1: index.js'e tablo ekle**
 
 `initDB()` içinde Laundry v4 bloğundan sonra:
 
@@ -767,7 +769,7 @@ try { db.exec(`CREATE TABLE IF NOT EXISTS laundry_verifications (
 try { db.exec(`CREATE INDEX IF NOT EXISTS idx_laundry_verif_item ON laundry_verifications(item_id)`) } catch(_) {}
 ```
 
-- [ ] **Step 2: Migration test**
+- [x] **Step 2: Migration test**
 
 ```bash
 cd backend && node -e "import('./src/shared/db/index.js').then(m=>m.initDB()).then(db=>{ const r=db.prepare('SELECT name FROM sqlite_master WHERE name=?').get('laundry_verifications'); console.log(r?'OK':'FAIL') })"
@@ -783,7 +785,7 @@ cd backend && node -e "import('./src/shared/db/index.js').then(m=>m.initDB()).th
 - Modify: `backend/src/modules/laundry/routes.js`
 - Modify: `backend/src/modules/laundry/laundry.test.js`
 
-- [ ] **Step 1: Test yaz**
+- [x] **Step 1: Test yaz**
 
 ```javascript
 describe('verification', () => {
@@ -830,13 +832,13 @@ describe('verification', () => {
 })
 ```
 
-- [ ] **Step 2: Testi çalıştır — başarısız olmalı**
+- [x] **Step 2: Testi çalıştır — başarısız olmalı**
 
 ```bash
 cd backend && npx vitest run src/modules/laundry/laundry.test.js 2>&1 | tail -15
 ```
 
-- [ ] **Step 3: queries.js'e insertVerificationQuery ve getVerificationsForItemQuery ekle**
+- [x] **Step 3: queries.js'e insertVerificationQuery ve getVerificationsForItemQuery ekle**
 
 ```javascript
 export function insertVerificationQuery({ item_id, stage, verified_by, items_json, missing_notes, all_present }) {
@@ -857,7 +859,7 @@ export function getVerificationsForItemQuery(itemId) {
 }
 ```
 
-- [ ] **Step 4: service.js'e createVerificationService ekle**
+- [x] **Step 4: service.js'e createVerificationService ekle**
 
 ```javascript
 export function createVerificationService(itemId, { stage, items, all_present, missing_notes }, verifiedBy) {
@@ -878,7 +880,7 @@ export function createVerificationService(itemId, { stage, items, all_present, m
 export const getVerificationsService = q.getVerificationsForItemQuery
 ```
 
-- [ ] **Step 5: routes.js'e endpoint ekle**
+- [x] **Step 5: routes.js'e endpoint ekle**
 
 `/items/:id/damages` route'undan sonra:
 
@@ -897,7 +899,7 @@ laundryRouter.get('/items/:id/verifications', ...laundryRead, (req, res) => {
 })
 ```
 
-- [ ] **Step 6: Testleri çalıştır**
+- [x] **Step 6: Testleri çalıştır**
 
 ```bash
 cd backend && npx vitest run src/modules/laundry/laundry.test.js
@@ -913,7 +915,7 @@ cd backend && npx vitest run src/modules/laundry/laundry.test.js
 - Modify: `frontend/src/modules/laundry/components/ItemCard.jsx`
 - Modify: `frontend/src/modules/laundry/api.js`
 
-- [ ] **Step 1: api.js'e verification endpoint ekle**
+- [x] **Step 1: api.js'e verification endpoint ekle**
 
 ```javascript
 export const createVerification = (itemId, data) =>
@@ -923,7 +925,7 @@ export const getVerifications = (itemId) =>
   api.get(`/laundry/items/${itemId}/verifications`)
 ```
 
-- [ ] **Step 2: ItemVerificationModal.jsx oluştur**
+- [x] **Step 2: ItemVerificationModal.jsx oluştur**
 
 ```jsx
 import { useState } from 'react'
@@ -1039,7 +1041,7 @@ export default function ItemVerificationModal({ item, stage, onClose, onSuccess 
 }
 ```
 
-- [ ] **Step 3: LaundryHub.jsx'te advance geçişinde verification modal tetikle**
+- [x] **Step 3: LaundryHub.jsx'te advance geçişinde verification modal tetikle**
 
 `washing → ready` ve `ironing → ready` geçişlerinde önce doğrulama aç:
 
@@ -1073,7 +1075,7 @@ function handleAdvance(item) {
 )}
 ```
 
-- [ ] **Step 4: ItemCard.jsx'e doğrulama rozeti ekle**
+- [x] **Step 4: ItemCard.jsx'e doğrulama rozeti ekle**
 
 ```jsx
 {item.all_present === 1 && (
@@ -1086,7 +1088,7 @@ function handleAdvance(item) {
 
 `getItemQuery`'ye `all_present` ve `missing_notes` JOIN ekle (`laundry_verifications` son kaydından).
 
-- [ ] **Step 5: queries.js getItemQuery güncelle**
+- [x] **Step 5: queries.js getItemQuery güncelle**
 
 ```javascript
 // queries.js içindeki getItemQuery fonksiyonunu tamamen şu hale getir:
@@ -1112,7 +1114,7 @@ export function getItemQuery(id) {
 }
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add backend/src/shared/db/index.js backend/src/modules/laundry/queries.js backend/src/modules/laundry/service.js backend/src/modules/laundry/routes.js backend/src/modules/laundry/laundry.test.js frontend/src/modules/laundry/components/ItemVerificationModal.jsx frontend/src/modules/laundry/LaundryHub.jsx frontend/src/modules/laundry/components/ItemCard.jsx frontend/src/modules/laundry/api.js && git commit -m "feat: parça tik kontrol sistemi (laundry_verifications)"
@@ -1130,7 +1132,7 @@ git add backend/src/shared/db/index.js backend/src/modules/laundry/queries.js ba
 - Modify: `backend/src/modules/laundry/routes.js`
 - Modify: `backend/src/modules/laundry/laundry.test.js`
 
-- [ ] **Step 1: Test yaz**
+- [x] **Step 1: Test yaz**
 
 ```javascript
 describe('archive', () => {
@@ -1157,7 +1159,7 @@ describe('archive', () => {
 })
 ```
 
-- [ ] **Step 2: queries.js'e archiveItemsQuery ekle**
+- [x] **Step 2: queries.js'e archiveItemsQuery ekle**
 
 ```javascript
 export function archiveItemsQuery({ from, to, status, room, search, page = 1, limit = 50 }) {
@@ -1205,7 +1207,7 @@ export function archiveItemsQuery({ from, to, status, room, search, page = 1, li
 }
 ```
 
-- [ ] **Step 3: service.js'e export ekle**
+- [x] **Step 3: service.js'e export ekle**
 
 ```javascript
 export function archiveItemsService(filters) {
@@ -1213,7 +1215,7 @@ export function archiveItemsService(filters) {
 }
 ```
 
-- [ ] **Step 4: routes.js'e endpoint ekle**
+- [x] **Step 4: routes.js'e endpoint ekle**
 
 `/items/batch-deliver` route'undan önce (static routes before dynamic ones):
 
@@ -1230,7 +1232,7 @@ laundryRouter.get('/items/archive', ...laundryRead, (req, res) => {
 })
 ```
 
-- [ ] **Step 5: CSV export'a yeni parametreler ekle**
+- [x] **Step 5: CSV export'a yeni parametreler ekle**
 
 `routes.js` içinde export route'u güncelle:
 
@@ -1266,7 +1268,7 @@ laundryRouter.get('/reports/export', ...laundryRead, (req, res) => {
 })
 ```
 
-- [ ] **Step 6: Testleri çalıştır**
+- [x] **Step 6: Testleri çalıştır**
 
 ```bash
 cd backend && npx vitest run src/modules/laundry/laundry.test.js
@@ -1282,14 +1284,14 @@ cd backend && npx vitest run src/modules/laundry/laundry.test.js
 - Modify: `frontend/src/modules/laundry/LaundryHub.jsx`
 - Modify: `frontend/src/modules/laundry/api.js`
 
-- [ ] **Step 1: api.js'e archive endpoint ekle**
+- [x] **Step 1: api.js'e archive endpoint ekle**
 
 ```javascript
 export const getArchive = (params) =>
   api.get('/laundry/items/archive', { params })
 ```
 
-- [ ] **Step 2: ArchiveTable.jsx oluştur**
+- [x] **Step 2: ArchiveTable.jsx oluştur**
 
 ```jsx
 import { useState } from 'react'
@@ -1407,7 +1409,7 @@ export default function ArchiveTable({ onSelectItem }) {
 }
 ```
 
-- [ ] **Step 3: ArchiveDetailPanel.jsx oluştur**
+- [x] **Step 3: ArchiveDetailPanel.jsx oluştur**
 
 ```jsx
 import { useQuery } from '@tanstack/react-query'
@@ -1495,7 +1497,7 @@ export default function ArchiveDetailPanel({ item, onClose }) {
 }
 ```
 
-- [ ] **Step 4: LaundryHub.jsx'e Arşiv sekmesi ekle**
+- [x] **Step 4: LaundryHub.jsx'e Arşiv sekmesi ekle**
 
 `LaundryHub.jsx` başına tab state ekle:
 
@@ -1531,7 +1533,7 @@ Ana render:
 {activeTab === 'reports' && <LaundryReport />}
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/src/modules/laundry/queries.js backend/src/modules/laundry/service.js backend/src/modules/laundry/routes.js backend/src/modules/laundry/laundry.test.js frontend/src/modules/laundry/components/ArchiveTable.jsx frontend/src/modules/laundry/components/ArchiveDetailPanel.jsx frontend/src/modules/laundry/LaundryHub.jsx frontend/src/modules/laundry/api.js && git commit -m "feat: laundry arşiv sekmesi + tarih filtresi + CSV güncelleme"
@@ -1546,7 +1548,7 @@ git add backend/src/modules/laundry/queries.js backend/src/modules/laundry/servi
 **Files:**
 - Modify: `backend/src/shared/db/index.js`
 
-- [ ] **Step 1: index.js'e tablo ekle**
+- [x] **Step 1: index.js'e tablo ekle**
 
 ```javascript
 // ── Laundry v6 — SLA WhatsApp bildirimleri ───────────────────────────────
@@ -1567,7 +1569,7 @@ try { db.exec(`CREATE TABLE IF NOT EXISTS laundry_global_settings (
 try { db.exec(`ALTER TABLE laundry_sla_config ADD COLUMN whatsapp_notify INTEGER DEFAULT 0`) } catch(_) {}
 ```
 
-- [ ] **Step 2: Migration test**
+- [x] **Step 2: Migration test**
 
 ```bash
 cd backend && node -e "import('./src/shared/db/index.js').then(m=>m.initDB()).then(db=>{ const r=db.prepare('SELECT name FROM sqlite_master WHERE name=?').get('laundry_sla_notifications'); console.log(r?'OK':'FAIL') })"
@@ -1582,7 +1584,7 @@ cd backend && node -e "import('./src/shared/db/index.js').then(m=>m.initDB()).th
 - Modify: `backend/src/modules/laundry/sla.js`
 - Modify: `backend/src/modules/laundry/laundry.test.js`
 
-- [ ] **Step 1: Test yaz**
+- [x] **Step 1: Test yaz**
 
 ```javascript
 describe('SLA WhatsApp notification dedup', () => {
@@ -1622,13 +1624,13 @@ describe('SLA WhatsApp notification dedup', () => {
 })
 ```
 
-- [ ] **Step 2: Testi çalıştır — başarısız olmalı**
+- [x] **Step 2: Testi çalıştır — başarısız olmalı**
 
 ```bash
 cd backend && npx vitest run src/modules/laundry/laundry.test.js 2>&1 | tail -15
 ```
 
-- [ ] **Step 3: whatsapp.js'e SLA mesaj fonksiyonu ekle**
+- [x] **Step 3: whatsapp.js'e SLA mesaj fonksiyonu ekle**
 
 ```javascript
 export async function sendSlaAlert(itemId, hours, db) {
@@ -1660,7 +1662,7 @@ export async function sendSlaAlert(itemId, hours, db) {
 }
 ```
 
-- [ ] **Step 4: shouldSendSlaNotification yardımcı fonksiyon ekle (whatsapp.js'e)**
+- [x] **Step 4: shouldSendSlaNotification yardımcı fonksiyon ekle (whatsapp.js'e)**
 
 ```javascript
 export function shouldSendSlaNotification(db, itemId, stage) {
@@ -1675,7 +1677,7 @@ export function shouldSendSlaNotification(db, itemId, stage) {
 }
 ```
 
-- [ ] **Step 5: sla.js'e WhatsApp entegrasyonu ekle**
+- [x] **Step 5: sla.js'e WhatsApp entegrasyonu ekle**
 
 `checkSlaViolations` fonksiyonunu güncelle:
 
@@ -1720,7 +1722,7 @@ export async function checkSlaViolations() {
 
 `checkSlaViolations` artık async olduğu için cron dosyasındaki çağrıyı kontrol et.
 
-- [ ] **Step 6: Testleri çalıştır**
+- [x] **Step 6: Testleri çalıştır**
 
 ```bash
 cd backend && npx vitest run src/modules/laundry/laundry.test.js
@@ -1735,7 +1737,7 @@ cd backend && npx vitest run src/modules/laundry/laundry.test.js
 - Modify: `frontend/src/modules/laundry/api.js`
 - Modify: `backend/src/modules/laundry/routes.js`
 
-- [ ] **Step 1: routes.js'e global settings endpoint'leri ekle**
+- [x] **Step 1: routes.js'e global settings endpoint'leri ekle**
 
 ```javascript
 // SLA global settings
@@ -1759,7 +1761,7 @@ laundryRouter.put('/settings', ...slaWrite, (req, res) => {
 })
 ```
 
-- [ ] **Step 2: api.js'e settings endpoint ekle**
+- [x] **Step 2: api.js'e settings endpoint ekle**
 
 ```javascript
 export const getLaundrySettings = () => api.get('/laundry/settings')
@@ -1767,7 +1769,7 @@ export const updateLaundrySetting = (key, value) => api.put('/laundry/settings',
 export const updateSlaConfig = (stage, data) => api.put('/laundry/sla-config', { stage, ...data })
 ```
 
-- [ ] **Step 3: LaundrySettings.jsx'e SLA bildirim bölümü ekle**
+- [x] **Step 3: LaundrySettings.jsx'e SLA bildirim bölümü ekle**
 
 Mevcut SLA bölümünden sonra ekle:
 
@@ -1823,7 +1825,7 @@ useEffect(() => {
 </div>
 ```
 
-- [ ] **Step 4: Tüm testleri çalıştır**
+- [x] **Step 4: Tüm testleri çalıştır**
 
 ```bash
 cd backend && npx vitest run src/modules/laundry/laundry.test.js
@@ -1831,7 +1833,7 @@ cd backend && npx vitest run src/modules/laundry/laundry.test.js
 
 Beklenen: Tüm testler PASS
 
-- [ ] **Step 5: Final commit**
+- [x] **Step 5: Final commit**
 
 ```bash
 git add backend/src/shared/db/index.js backend/src/modules/laundry/whatsapp.js backend/src/modules/laundry/sla.js backend/src/modules/laundry/routes.js backend/src/modules/laundry/laundry.test.js frontend/src/modules/laundry/LaundrySettings.jsx frontend/src/modules/laundry/api.js && git commit -m "feat: WhatsApp SLA kritik bildirimi + global settings"
