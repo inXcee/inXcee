@@ -110,6 +110,44 @@ export function batchDeliverService(itemIds, { delivered_to, signature_data }, u
   return { delivered, errors }
 }
 
+export function batchAssignService(itemIds, machineId, timerMinutes, userId) {
+  if (!Array.isArray(itemIds) || !itemIds.length) throw new Error('En az 1 kayıt seçilmeli')
+  const machine = q.getMachineQuery(machineId)
+  if (!machine) throw new Error('Makine bulunamadı')
+
+  if (machine.status === 'maintenance' || machine.status === 'running') {
+    const errMsg = machine.status === 'maintenance' ? 'Makine bakımda — atama yapılamaz' : 'Makine meşgul — atama yapılamaz'
+    return { success: [], failed: itemIds.map(id => ({ id, error: errMsg })) }
+  }
+
+  const success = []
+  const failed = []
+  for (const id of itemIds) {
+    try {
+      advanceItemService(id, { machine_id: machineId, timer_minutes: timerMinutes }, userId)
+      success.push(id)
+    } catch (e) {
+      failed.push({ id, error: e.message })
+    }
+  }
+  return { success, failed }
+}
+
+export function batchLostService(itemIds, notes, userId) {
+  if (!Array.isArray(itemIds) || !itemIds.length) throw new Error('En az 1 kayıt seçilmeli')
+  const success = []
+  const failed = []
+  for (const id of itemIds) {
+    try {
+      lostItemService(id, { notes }, userId)
+      success.push(id)
+    } catch (e) {
+      failed.push({ id, error: e.message })
+    }
+  }
+  return { success, failed }
+}
+
 export function lostItemService(id, { notes }, userId) {
   const item = q.getItemQuery(id)
   if (!item) throw new Error('Kayıt bulunamadı')

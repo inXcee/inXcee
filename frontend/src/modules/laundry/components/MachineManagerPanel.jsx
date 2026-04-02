@@ -113,7 +113,15 @@ export default function MachineManagerPanel({ machines, onClose }) {
                   </div>
                 </div>
                 <button
-                  onClick={() => update.mutate({ id: m.id, fields: { status: inMaint ? 'idle' : 'maintenance' } })}
+                  onClick={() => {
+                    if (inMaint) {
+                      update.mutate({ id: m.id, fields: { status: 'idle', maintenance_notes: null } })
+                    } else {
+                      const note = window.prompt('Bakım notu (opsiyonel):')
+                      if (note === null) return
+                      update.mutate({ id: m.id, fields: { status: 'maintenance', maintenance_notes: note || null } })
+                    }
+                  }}
                   disabled={m.status === 'running' || update.isPending}
                   style={{
                     padding: '5px 10px', borderRadius: 6, cursor: m.status === 'running' ? 'not-allowed' : 'pointer',

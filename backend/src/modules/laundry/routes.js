@@ -92,6 +92,26 @@ laundryRouter.delete('/items/:id', ...laundryFull, (req, res) => {
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
+laundryRouter.post('/items/batch-assign', ...laundryFull, (req, res) => {
+  try {
+    const { item_ids, machine_id, timer_minutes } = req.body
+    if (!Array.isArray(item_ids) || !machine_id) {
+      return res.status(400).json({ error: 'item_ids[] ve machine_id zorunlu' })
+    }
+    const result = svc.batchAssignService(item_ids, +machine_id, timer_minutes ? +timer_minutes : null, req.user.id)
+    res.json(result)
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+laundryRouter.post('/items/batch-lost', ...laundryFull, (req, res) => {
+  try {
+    const { item_ids, notes } = req.body
+    if (!Array.isArray(item_ids)) return res.status(400).json({ error: 'item_ids[] zorunlu' })
+    const result = svc.batchLostService(item_ids, notes, req.user.id)
+    res.json(result)
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
 // Toplu teslim — batch-deliver must come before /:id routes
 laundryRouter.post('/items/batch-deliver', ...laundryFull, (req, res) => {
   try {

@@ -26,6 +26,7 @@ import LostModal          from './components/LostModal.jsx'
 import MachineManagerPanel from './components/MachineManagerPanel.jsx'
 import PersonPanel         from './components/PersonPanel.jsx'
 import FoundModal          from './components/FoundModal.jsx'
+import BatchAssignModal    from './components/BatchAssignModal.jsx'
 
 const COLOR_MAP = {
   'Beyaz': '#f0f0f0', 'Siyah': '#222', 'Gri': '#888',
@@ -491,8 +492,41 @@ function DeliveredTodaySection() {
 }
 
 // ── KanbanCol ──────────────────────────────────────────────────
-function KanbanCol({ title, color, items, colStatus, isOver, machines, onDeliver, onDamage, onPersonClick, onFound }) {
+function KanbanCol({ title, color, items, colStatus, isOver, machines, onDeliver, onDamage, onPersonClick, onFound, groupByRoom }) {
   const { setNodeRef } = useDroppable({ id: colStatus })
+
+  function renderItems() {
+    if (!groupByRoom) {
+      return items.map(item => (
+        <DraggableKanbanCard key={item.id} item={item} machines={machines} onDeliver={onDeliver} onDamage={onDamage}
+          onPersonClick={onPersonClick} onFound={onFound} />
+      ))
+    }
+    const groups = {}
+    for (const item of items) {
+      const key = item.room_no ? `${item.block}-${item.room_no}` : 'Bilinmiyor'
+      if (!groups[key]) groups[key] = []
+      groups[key].push(item)
+    }
+    return Object.entries(groups).map(([roomKey, roomItems]) => (
+      <div key={roomKey} style={{ marginBottom: 4 }}>
+        <div style={{
+          fontFamily: 'var(--mono)', fontSize: 8, fontWeight: 700,
+          color: 'var(--text3)', letterSpacing: 1.5,
+          padding: '4px 6px', borderBottom: '1px solid var(--border)', marginBottom: 4,
+        }}>
+          {roomKey} <span style={{ color: 'var(--text4)' }}>({roomItems.length})</span>
+        </div>
+        {roomItems.map(item => (
+          <div key={item.id} style={{ marginBottom: 8 }}>
+            <DraggableKanbanCard item={item} machines={machines} onDeliver={onDeliver} onDamage={onDamage}
+              onPersonClick={onPersonClick} onFound={onFound} />
+          </div>
+        ))}
+      </div>
+    ))
+  }
+
   return (
     <div style={{
       flex: 1, minWidth: 260, display: 'flex', flexDirection: 'column',
@@ -522,10 +556,7 @@ function KanbanCol({ title, color, items, colStatus, isOver, machines, onDeliver
           <div style={{ padding: '28px 0', textAlign: 'center', fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text4)' }}>
             boş
           </div>
-        ) : items.map(item => (
-          <DraggableKanbanCard key={item.id} item={item} machines={machines} onDeliver={onDeliver} onDamage={onDamage}
-            onPersonClick={onPersonClick} onFound={onFound} />
-        ))}
+        ) : renderItems()}
       </div>
     </div>
   )
@@ -873,6 +904,10 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
   const [showMgr,        setShowMgr]        = useState(false)
   const [batchMode,      setBatchMode]      = useState(false)
   const [selectedIds,    setSelectedIds]    = useState(new Set())
+  const [showBatchAssign, setShowBatchAssign] = useState(false)
+  const [groupByRoom,    setGroupByRoom]    = useState(
+    () => localStorage.getItem('laundry_group_by_room') === '1'
+  )
   const [personPanelName, setPersonPanelName] = useState(null)
   const [foundItem,      setFoundItem]      = useState(null)
   const [activeItem,     setActiveItem]     = useState(null)
@@ -1000,6 +1035,23 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
         setSelectedIds(new Set())
         setBatchMode(false)
       })
+  }
+
+  const handleBatchLost = () => {
+    if (!window.confirm(`${selectedIds.size} kaydı kayıp işaretlemek istediğinize emin misiniz?`)) return
+    laundryApi.batchLost([...selectedIds], null)
+      .then(() => {
+        qc.invalidateQueries({ queryKey: ['laundry-items'] })
+        setSelectedIds(new Set())
+        setBatchMode(false)
+      })
+  }
+
+  const toggleGroupByRoom = () => {
+    setGroupByRoom(v => {
+      localStorage.setItem('laundry_group_by_room', v ? '0' : '1')
+      return !v
+    })
   }
 
   const washedTodayColor = useMemo(() => {
@@ -1208,18 +1260,36 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
             </button>
           ))}
         </div>
-        {/* Batch mode (sadece liste view) */}
+        {/* Batch mode */}
         {view === 'liste' && (
           <>
             {batchMode && selectedIds.size > 0 && (
-              <button className="btn btn-sm" style={{ background: 'var(--green)', color: '#000' }} onClick={handleBatchDeliver}>
-                Toplu Teslim ({selectedIds.size})
-              </button>
+              <>
+                <button className="btn btn-sm" style={{ background: 'var(--blue)', color: '#fff' }} onClick={() => setShowBatchAssign(true)}>
+                  Makineye Ata ({selectedIds.size})
+                </button>
+                <button className="btn btn-sm" style={{ background: 'var(--green)', color: '#000' }} onClick={handleBatchDeliver}>
+                  Teslim ({selectedIds.size})
+                </button>
+                <button className="btn btn-sm" style={{ background: 'rgba(231,76,60,0.15)', color: 'var(--red)', border: '1px solid rgba(231,76,60,0.3)' }} onClick={handleBatchLost}>
+                  Kayıp ({selectedIds.size})
+                </button>
+              </>
             )}
             <button className="btn btn-ghost btn-sm" onClick={() => { setBatchMode(!batchMode); setSelectedIds(new Set()) }}>
               {batchMode ? 'İptal' : 'Toplu'}
             </button>
           </>
+        )}
+        {/* Kanban oda gruplama */}
+        {view === 'kanban' && (
+          <button
+            className="btn btn-ghost btn-sm"
+            style={{ background: groupByRoom ? 'var(--accent)' : undefined, color: groupByRoom ? '#000' : undefined }}
+            onClick={toggleGroupByRoom}
+          >
+            Odaya Göre
+          </button>
         )}
       </div>
 
@@ -1232,9 +1302,9 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
           onDragEnd={handleDragEnd}
         >
           <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-            <KanbanCol title="KİRLİ SEPET"  color="var(--accent)" items={dirty}   colStatus="dirty"   isOver={overCol === 'dirty'}   machines={machines} onDeliver={setDeliverItem} onDamage={setDamageItem} onPersonClick={setPersonPanelName} onFound={setFoundItem} />
-            <KanbanCol title="YIKANIYOR"    color="var(--blue)"   items={washing} colStatus="washing" isOver={overCol === 'washing'} machines={machines} onDeliver={setDeliverItem} onDamage={setDamageItem} onPersonClick={setPersonPanelName} onFound={setFoundItem} />
-            <KanbanCol title="RAFTA HAZIR"  color="var(--green)"  items={ready}   colStatus="ready"   isOver={overCol === 'ready'}   machines={machines} onDeliver={setDeliverItem} onDamage={setDamageItem} onPersonClick={setPersonPanelName} onFound={setFoundItem} />
+            <KanbanCol title="KİRLİ SEPET"  color="var(--accent)" items={dirty}   colStatus="dirty"   isOver={overCol === 'dirty'}   machines={machines} onDeliver={setDeliverItem} onDamage={setDamageItem} onPersonClick={setPersonPanelName} onFound={setFoundItem} groupByRoom={groupByRoom} />
+            <KanbanCol title="YIKANIYOR"    color="var(--blue)"   items={washing} colStatus="washing" isOver={overCol === 'washing'} machines={machines} onDeliver={setDeliverItem} onDamage={setDamageItem} onPersonClick={setPersonPanelName} onFound={setFoundItem} groupByRoom={groupByRoom} />
+            <KanbanCol title="RAFTA HAZIR"  color="var(--green)"  items={ready}   colStatus="ready"   isOver={overCol === 'ready'}   machines={machines} onDeliver={setDeliverItem} onDamage={setDamageItem} onPersonClick={setPersonPanelName} onFound={setFoundItem} groupByRoom={groupByRoom} />
           </div>
           <DragOverlay>{null}</DragOverlay>
           {lost.length > 0 && (
@@ -1329,6 +1399,13 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
       {showMgr      && <MachineManagerPanel machines={machines} onClose={() => setShowMgr(false)} />}
       {personPanelName && <PersonPanel name={personPanelName} onClose={() => setPersonPanelName(null)} />}
       {foundItem && <FoundModal item={foundItem} onClose={() => setFoundItem(null)} />}
+      {showBatchAssign && (
+        <BatchAssignModal
+          selectedIds={selectedIds}
+          onClose={() => setShowBatchAssign(false)}
+          onSuccess={() => { setShowBatchAssign(false); setSelectedIds(new Set()); setBatchMode(false) }}
+        />
+      )}
       {/* Not Sticker — sadece hub'da */}
       <QuickNotes visible={section === 'hub'} />
     </div>

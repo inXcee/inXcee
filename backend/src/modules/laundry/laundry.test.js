@@ -1,8 +1,10 @@
-import { describe, it, expect, beforeAll } from 'vitest'
+import { describe, it, test, expect, beforeAll } from 'vitest'
 import request from 'supertest'
 import app from '../../app.js'
 import { initDB, getDB } from '../../shared/db/index.js'
 import { seedDev } from '../../shared/db/seed.js'
+import { batchAssignService, batchLostService } from './service.js'
+import * as q from './queries.js'
 
 let token, userId, roomId
 
@@ -473,5 +475,59 @@ describe('WhatsApp', () => {
     delete process.env.WHATSAPP_PHONE_ID
     const { notifyItemReady } = await import('./whatsapp.js')
     await expect(notifyItemReady(999)).resolves.toBeUndefined()
+  })
+})
+
+describe('batch-assign', () => {
+  test('birden fazla dirty item tek makinaya atanır', () => {
+    const db = getDB()
+    const room = db.prepare("SELECT id FROM rooms LIMIT 1").get()
+    const machine = db.prepare("SELECT id FROM laundry_machines WHERE status='idle' LIMIT 1").get()
+
+    const id1 = q.insertItemQuery({ room_id: room.id, item_count: 2, created_by: 1 })
+    const id2 = q.insertItemQuery({ room_id: room.id, item_count: 1, created_by: 1 })
+
+    const result = batchAssignService([id1, id2], machine.id, null, 1)
+    expect(result.success).toHaveLength(2)
+    expect(result.failed).toHaveLength(0)
+
+    const item1 = q.getItemQuery(id1)
+    expect(item1.status).toBe('washing')
+    expect(item1.machine_id).toBe(machine.id)
+  })
+
+  test('maintenance makinaya assign reddedilir', () => {
+    const db = getDB()
+    const room = db.prepare("SELECT id FROM rooms LIMIT 1").get()
+    db.prepare("INSERT INTO laundry_machines(name,type,status) VALUES('TestM','washer','maintenance')").run()
+    const machine = db.prepare("SELECT id FROM laundry_machines WHERE status='maintenance' LIMIT 1").get()
+    const id1 = q.insertItemQuery({ room_id: room.id, item_count: 1, created_by: 1 })
+
+    const result = batchAssignService([id1], machine.id, null, 1)
+    expect(result.failed).toHaveLength(1)
+    expect(result.failed[0].error).toMatch(/bakımda|maintenance/i)
+  })
+})
+
+describe('batch-lost', () => {
+  test('dirty/washing/ready itemlar kayıp işaretlenir', () => {
+    const db = getDB()
+    const room = db.prepare("SELECT id FROM rooms LIMIT 1").get()
+    const id1 = q.insertItemQuery({ room_id: room.id, item_count: 1, created_by: 1 })
+    const id2 = q.insertItemQuery({ room_id: room.id, item_count: 1, created_by: 1 })
+
+    const result = batchLostService([id1, id2], 'test notu', 1)
+    expect(result.success).toHaveLength(2)
+    expect(q.getItemQuery(id1).status).toBe('lost')
+  })
+
+  test('delivered item kayıp işaretlenemez', () => {
+    const db = getDB()
+    const room = db.prepare("SELECT id FROM rooms LIMIT 1").get()
+    const id1 = q.insertItemQuery({ room_id: room.id, item_count: 1, created_by: 1 })
+    db.prepare("UPDATE laundry_items SET status='delivered' WHERE id=?").run(id1)
+
+    const result = batchLostService([id1], null, 1)
+    expect(result.failed).toHaveLength(1)
   })
 })
