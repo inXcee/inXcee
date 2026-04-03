@@ -318,6 +318,23 @@ laundryRouter.post('/items/:id/notify-whatsapp', ...laundryFull, async (req, res
 // BLOCK CONFIG
 // ═══════════════════════════════════════════════════════════════════════════
 
+// ═══════════════════════════════════════════════════════════════════════════
+// ROOMS (laundry modülü için oda listesi)
+// ═══════════════════════════════════════════════════════════════════════════
+
+laundryRouter.get('/rooms', ...laundryRead, (req, res) => {
+  try {
+    const db = getDB()
+    const rooms = db.prepare(`
+      SELECT id, block, floor, room_no, capacity, active_beds, status
+      FROM rooms
+      WHERE status != 'quarantine'
+      ORDER BY block ASC, room_no ASC
+    `).all()
+    res.json(rooms)
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
 laundryRouter.get('/block-config', ...laundryRead, (req, res) => {
   try { res.json(svc.getBlockConfigService()) }
   catch (e) { res.status(500).json({ error: e.message }) }

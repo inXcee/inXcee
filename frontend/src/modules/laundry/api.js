@@ -76,6 +76,9 @@ export const laundryApi = {
   deleteMessage: (id) => api.delete(`/laundry/messages/${id}`).then(r => r.data),
   pinMessage: (id, is_pinned) => api.patch(`/laundry/messages/${id}/pin`, { is_pinned }).then(r => r.data),
 
+  // ── Rooms ──────────────────────────────────────────────────────────────────
+  getRooms: () => api.get('/laundry/rooms').then(r => r.data),
+
   // ── Photo Upload ───────────────────────────────────────────────────────
   uploadPhoto: (file) => {
     const fd = new FormData()

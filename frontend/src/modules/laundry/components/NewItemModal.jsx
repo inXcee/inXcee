@@ -1,7 +1,6 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { laundryApi } from '../api.js'
-import api from '../../../shared/api/client.js'
 import PremiumIntakeModal from './PremiumIntakeModal.jsx'
 
 const DEFAULT_CLOTHING_TYPES = [
@@ -166,7 +165,7 @@ export default function NewItemModal({ onClose }) {
 
   const { data: rooms = [] } = useQuery({
     queryKey: ['rooms-list'],
-    queryFn: () => api.get('/checkin/available-rooms').then(r => r.data).catch(() => []),
+    queryFn: () => laundryApi.getRooms(),
   })
 
   const filtered = rooms.filter(r =>
@@ -181,7 +180,7 @@ export default function NewItemModal({ onClose }) {
       .finally(() => setPhoneLoading(false))
   }, [form.room_id])
 
-  const selectedRoom = rooms.find(r => (r.room_id || r.id) === +form.room_id)
+  const selectedRoom = rooms.find(r => r.id === +form.room_id)
   const totalCount = clothing.reduce((s, c) => s + c.qty, 0) || 1
 
   const saveDraft = useCallback((list) => {
@@ -309,7 +308,7 @@ export default function NewItemModal({ onClose }) {
               {filtered.length === 0 ? (
                 <div style={{ padding: '10px 12px', fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)' }}>Oda bulunamadı</div>
               ) : filtered.slice(0, 20).map(r => {
-                const id = r.room_id || r.id
+                const id = r.id
                 const isSelected = +form.room_id === id
                 return (
                   <div key={id} onClick={() => { set('room_id', id); setRoomSearch('') }}
