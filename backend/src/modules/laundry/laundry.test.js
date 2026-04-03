@@ -3,7 +3,7 @@ import request from 'supertest'
 import app from '../../app.js'
 import { initDB, getDB } from '../../shared/db/index.js'
 import { seedDev } from '../../shared/db/seed.js'
-import { batchAssignService, batchLostService, advanceItemService, createVerificationService, getSettingsService, updateSettingService, sendMessageService, getMessagesService, deleteMessageService, createItemService, getBlockConfigService, upsertBlockConfigService, addPremiumGarmentsService, getPremiumGarmentsService } from './service.js'
+import { batchAssignService, batchLostService, advanceItemService, createVerificationService, getSettingsService, updateSettingService, sendMessageService, getMessagesService, deleteMessageService, createItemService, getBlockConfigService, upsertBlockConfigService, addPremiumGarmentsService, getPremiumGarmentsService, advancePremiumGarmentService, bulkAdvancePremiumGarmentsService, syncParentStatusService } from './service.js'
 import * as q from './queries.js'
 const { archiveItemsQuery } = q
 
@@ -786,5 +786,63 @@ describe('premium garment CRUD', () => {
     const { getPremiumGarmentByCodeQuery } = q
     const found = getPremiumGarmentByCodeQuery(first.garment_code)
     expect(found?.id).toBe(first.id)
+  })
+})
+
+describe('premium garment state machine', () => {
+  let itemId, adminUser
+
+  beforeAll(() => {
+    const db = getDB()
+    adminUser = db.prepare("SELECT * FROM users WHERE role='campus_manager' LIMIT 1").get()
+    const room = db.prepare("SELECT id FROM rooms WHERE block='A' LIMIT 1").get()
+    if (room) {
+      const item = createItemService({ room_id: room.id, item_count: 2 }, adminUser.id)
+      itemId = item.id
+      addPremiumGarmentsService(itemId, [
+        { garment_type: 'Gömlek' },
+        { garment_type: 'Pantolon' },
+      ], adminUser.id)
+    }
+  })
+
+  test('advancePremiumGarmentService received→ironing geçişi yapar', () => {
+    if (!itemId) return
+    const garments = getPremiumGarmentsService(itemId)
+    const g = garments[0]
+    expect(g.status).toBe('received')
+    const updated = advancePremiumGarmentService(g.id, adminUser.id)
+    expect(updated.status).toBe('ironing')
+  })
+
+  test('ironing→ready geçişi çalışır', () => {
+    if (!itemId) return
+    const garments = getPremiumGarmentsService(itemId)
+    const ironingG = garments.find(g => g.status === 'ironing')
+    if (!ironingG) return
+    const updated = advancePremiumGarmentService(ironingG.id, adminUser.id)
+    expect(updated.status).toBe('ready')
+  })
+
+  test('bulkAdvancePremiumGarmentsService toplu ilerletme yapar', () => {
+    if (!itemId) return
+    const garments = getPremiumGarmentsService(itemId)
+    const receivedIds = garments.filter(g => g.status === 'received').map(g => g.id)
+    if (receivedIds.length === 0) return
+    bulkAdvancePremiumGarmentsService(itemId, receivedIds, 'ironing', adminUser.id)
+    const after = getPremiumGarmentsService(itemId)
+    after.filter(g => receivedIds.includes(g.id)).forEach(g => {
+      expect(g.status).toBe('ironing')
+    })
+  })
+
+  test('syncParentStatusService tüm parça ready→parent ready olur', () => {
+    if (!itemId) return
+    const db = getDB()
+    // Tüm garments'ı ready yap
+    db.prepare("UPDATE premium_garments SET status='ready' WHERE item_id=?").run(itemId)
+    syncParentStatusService(itemId)
+    const item = q.getItemQuery(itemId)
+    expect(item.status).toBe('ready')
   })
 })

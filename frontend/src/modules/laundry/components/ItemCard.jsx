@@ -4,6 +4,7 @@ import { laundryApi } from '../api.js'
 import AssignModal from './AssignModal.jsx'
 import ShelfModal  from './ShelfModal.jsx'
 import LostModal   from './LostModal.jsx'
+import PremiumGarmentList from './PremiumGarmentList.jsx'
 
 /* ── Status config ─────────────────────────────────────────── */
 const FLOW = ['dirty', 'washing', 'ready', 'delivered']
@@ -450,11 +451,14 @@ export default function ItemCard({ item, machines = [], onDeliver, onDamage, sel
 
         {/* ── Genişletilmiş ── */}
         {expanded && (
-          <ExpandedSection
-            item={item}
-            onLost={() => setLostOpen(true)}
-            onFound={() => onFound && onFound(item)}
-          />
+          <>
+            {item.is_premium === 1 && <PremiumGarmentList item={item} />}
+            <ExpandedSection
+              item={item}
+              onLost={() => setLostOpen(true)}
+              onFound={() => onFound && onFound(item)}
+            />
+          </>
         )}
         {/* Sil butonu (dirty + expand) */}
         {expanded && item.status === 'dirty' && (

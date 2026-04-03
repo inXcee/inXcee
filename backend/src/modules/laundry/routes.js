@@ -415,3 +415,21 @@ laundryRouter.post('/items/:id/garments', ...laundryFull, (req, res) => {
     res.status(201).json(svc.addPremiumGarmentsService(+req.params.id, garments, req.user.id))
   } catch (e) { res.status(e.status || 400).json({ error: e.message }) }
 })
+
+laundryRouter.patch('/garments/:id/advance', ...laundryFull, (req, res) => {
+  try {
+    const garment = svc.advancePremiumGarmentService(+req.params.id, req.user.id)
+    res.json(garment)
+  } catch (e) { res.status(e.status || 400).json({ error: e.message }) }
+})
+
+laundryRouter.post('/items/:id/garments/bulk-advance', ...laundryFull, (req, res) => {
+  try {
+    const { garment_ids, to_status } = req.body
+    if (!Array.isArray(garment_ids) || !to_status) {
+      return res.status(400).json({ error: 'garment_ids[] ve to_status zorunlu' })
+    }
+    const result = svc.bulkAdvancePremiumGarmentsService(+req.params.id, garment_ids, to_status, req.user.id)
+    res.json(result)
+  } catch (e) { res.status(e.status || 400).json({ error: e.message }) }
+})
