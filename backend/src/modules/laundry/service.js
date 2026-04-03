@@ -394,3 +394,26 @@ export function pinMessageService(id, is_pinned, user) {
   if (!msg) throw Object.assign(new Error('Mesaj bulunamadı'), { status: 404 })
   return q.pinMessageQuery(id, is_pinned)
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PREMIUM GARMENTS
+// ═══════════════════════════════════════════════════════════════════════════
+
+export function addPremiumGarmentsService(item_id, garments, userId) {
+  const item = q.getItemQuery(item_id)
+  if (!item) throw Object.assign(new Error('Kayıt bulunamadı'), { status: 404 })
+  if (!item.is_premium) throw Object.assign(new Error('Bu kayıt premium değil'), { status: 400 })
+  if (!garments?.length) throw new Error('En az bir parça gerekli')
+  const codes = q.insertPremiumGarmentsQuery(item_id, garments)
+  return { codes, garments: q.getPremiumGarmentsQuery(item_id) }
+}
+
+export function getPremiumGarmentsService(item_id) {
+  return q.getPremiumGarmentsQuery(item_id)
+}
+
+export function getPremiumGarmentByCodeService(code) {
+  const g = q.getPremiumGarmentByCodeQuery(code)
+  if (!g) throw Object.assign(new Error('Parça bulunamadı'), { status: 404 })
+  return g
+}

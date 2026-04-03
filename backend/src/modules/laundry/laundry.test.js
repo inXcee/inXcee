@@ -3,7 +3,7 @@ import request from 'supertest'
 import app from '../../app.js'
 import { initDB, getDB } from '../../shared/db/index.js'
 import { seedDev } from '../../shared/db/seed.js'
-import { batchAssignService, batchLostService, advanceItemService, createVerificationService, getSettingsService, updateSettingService, sendMessageService, getMessagesService, deleteMessageService, createItemService, getBlockConfigService, upsertBlockConfigService } from './service.js'
+import { batchAssignService, batchLostService, advanceItemService, createVerificationService, getSettingsService, updateSettingService, sendMessageService, getMessagesService, deleteMessageService, createItemService, getBlockConfigService, upsertBlockConfigService, addPremiumGarmentsService, getPremiumGarmentsService } from './service.js'
 import * as q from './queries.js'
 const { archiveItemsQuery } = q
 
@@ -732,5 +732,59 @@ describe('premium blok altyapısı', () => {
     const admin = db.prepare("SELECT id FROM users WHERE role='campus_manager' LIMIT 1").get()
     const item = createItemService({ room_id: room.id, item_count: 1 }, admin.id)
     expect(item.is_premium).toBe(1)
+  })
+})
+
+describe('premium garment CRUD', () => {
+  let premiumItemId, adminUser
+
+  beforeAll(() => {
+    const db = getDB()
+    adminUser = db.prepare("SELECT * FROM users WHERE role='campus_manager' LIMIT 1").get()
+    // Premium oda (A bloğu)
+    const room = db.prepare("SELECT id FROM rooms WHERE block='A' LIMIT 1").get()
+    if (room) {
+      const item = createItemService({ room_id: room.id, item_count: 3 }, adminUser.id)
+      premiumItemId = item.id
+    }
+  })
+
+  test('insertPremiumGarmentsQuery — 3 parça, A*-001/002/003 kodları üretilir', () => {
+    if (!premiumItemId) return
+    const { codes } = addPremiumGarmentsService(premiumItemId, [
+      { garment_type: 'Gömlek', brand: 'Polo', size: 'L', color: 'Beyaz' },
+      { garment_type: 'Pantolon', brand: 'Levi\'s', size: '32' },
+      { garment_type: 'T-Shirt' },
+    ], adminUser.id)
+    expect(codes).toHaveLength(3)
+    expect(codes[0]).toMatch(/-001$/)
+    expect(codes[1]).toMatch(/-002$/)
+    expect(codes[2]).toMatch(/-003$/)
+  })
+
+  test('aynı item\'a 2. ekleme yapılınca numara 004\'ten devam eder', () => {
+    if (!premiumItemId) return
+    const { codes } = addPremiumGarmentsService(premiumItemId, [
+      { garment_type: 'Kazak' },
+    ], adminUser.id)
+    expect(codes[0]).toMatch(/-004$/)
+  })
+
+  test('regular item\'a garment eklemeye çalışınca hata fırlatır', () => {
+    const db = getDB()
+    const regularRoom = db.prepare("SELECT id FROM rooms WHERE block='M' LIMIT 1").get()
+    if (!regularRoom) return
+    const item = createItemService({ room_id: regularRoom.id, item_count: 1 }, adminUser.id)
+    expect(() => addPremiumGarmentsService(item.id, [{ garment_type: 'Gömlek' }], adminUser.id))
+      .toThrow('premium değil')
+  })
+
+  test('getPremiumGarmentByCodeQuery kodu doğru parçayı döner', () => {
+    if (!premiumItemId) return
+    const garments = getPremiumGarmentsService(premiumItemId)
+    const first = garments[0]
+    const { getPremiumGarmentByCodeQuery } = q
+    const found = getPremiumGarmentByCodeQuery(first.garment_code)
+    expect(found?.id).toBe(first.id)
   })
 })

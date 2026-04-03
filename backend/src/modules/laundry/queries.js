@@ -656,3 +656,63 @@ export function pinMessageQuery(id, is_pinned) {
   db.prepare(`UPDATE laundry_messages SET is_pinned=? WHERE id=?`).run(is_pinned ? 1 : 0, id)
   return db.prepare(`SELECT * FROM laundry_messages WHERE id=?`).get(id)
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PREMIUM GARMENTS
+// ═══════════════════════════════════════════════════════════════════════════
+
+export function generateNextGarmentSeqQuery(item_id) {
+  const db = getDB()
+  const row = db.prepare(`SELECT COUNT(*) as cnt FROM premium_garments WHERE item_id=?`).get(item_id)
+  return (row?.cnt || 0) + 1
+}
+
+export function insertPremiumGarmentsQuery(item_id, garments) {
+  const db = getDB()
+  // Oda bilgisini al (block + room_no)
+  const item = db.prepare(`
+    SELECT r.block, r.room_no FROM laundry_items li
+    JOIN rooms r ON r.id = li.room_id
+    WHERE li.id = ?
+  `).get(item_id)
+  if (!item) throw new Error('Kayıt bulunamadı')
+
+  const prefix = `${item.block}${item.room_no}`
+
+  const insert = db.prepare(`
+    INSERT INTO premium_garments(item_id, garment_code, garment_type, brand, model, size, color, pattern, condition_notes)
+    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `)
+
+  const insertMany = db.transaction((list) => {
+    const codes = []
+    for (const g of list) {
+      const seq = generateNextGarmentSeqQuery(item_id)
+      const code = `${prefix}-${String(seq).padStart(3, '0')}`
+      insert.run(
+        item_id, code,
+        g.garment_type, g.brand || null, g.model || null,
+        g.size || null, g.color || null, g.pattern || null, g.condition_notes || null
+      )
+      codes.push(code)
+    }
+    return codes
+  })
+
+  return insertMany(garments)
+}
+
+export function getPremiumGarmentsQuery(item_id) {
+  const db = getDB()
+  return db.prepare(`SELECT * FROM premium_garments WHERE item_id=? ORDER BY garment_code ASC`).all(item_id)
+}
+
+export function getPremiumGarmentByCodeQuery(code) {
+  const db = getDB()
+  return db.prepare(`SELECT * FROM premium_garments WHERE garment_code=?`).get(code)
+}
+
+export function getPremiumGarmentQuery(garment_id) {
+  const db = getDB()
+  return db.prepare(`SELECT * FROM premium_garments WHERE id=?`).get(garment_id)
+}

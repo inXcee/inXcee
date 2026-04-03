@@ -392,3 +392,26 @@ laundryRouter.patch('/messages/:id/pin', ...slaWrite, (req, res) => {
     res.json(msg)
   } catch (e) { res.status(e.status || 400).json({ error: e.message }) }
 })
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PREMIUM GARMENTS
+// ═══════════════════════════════════════════════════════════════════════════
+
+// by-code must be before /:id routes
+laundryRouter.get('/garments/by-code/:code', ...laundryRead, (req, res) => {
+  try { res.json(svc.getPremiumGarmentByCodeService(req.params.code)) }
+  catch (e) { res.status(e.status || 500).json({ error: e.message }) }
+})
+
+laundryRouter.get('/items/:id/garments', ...laundryRead, (req, res) => {
+  try { res.json(svc.getPremiumGarmentsService(+req.params.id)) }
+  catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+laundryRouter.post('/items/:id/garments', ...laundryFull, (req, res) => {
+  try {
+    const garments = req.body
+    if (!Array.isArray(garments)) return res.status(400).json({ error: 'Dizi bekleniyor' })
+    res.status(201).json(svc.addPremiumGarmentsService(+req.params.id, garments, req.user.id))
+  } catch (e) { res.status(e.status || 400).json({ error: e.message }) }
+})

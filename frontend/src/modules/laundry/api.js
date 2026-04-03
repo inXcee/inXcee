@@ -54,6 +54,11 @@ export const laundryApi = {
   getLaundrySettings: () => api.get('/laundry/settings').then(r => r.data),
   updateLaundrySetting: (key, value) => api.put(`/laundry/settings/${encodeURIComponent(key)}`, { value }).then(r => r.data),
 
+  // ── Premium Garments ───────────────────────────────────────────────────
+  getPremiumGarments: (item_id) => api.get(`/laundry/items/${item_id}/garments`).then(r => r.data),
+  addPremiumGarments: (item_id, garments) => api.post(`/laundry/items/${item_id}/garments`, garments).then(r => r.data),
+  getPremiumGarmentByCode: (code) => api.get(`/laundry/garments/by-code/${encodeURIComponent(code)}`).then(r => r.data),
+
   // ── Block Config ───────────────────────────────────────────────────────
   getBlockConfig: () => api.get('/laundry/block-config').then(r => r.data),
   updateBlockConfig: (block, is_premium) => api.put(`/laundry/block-config/${block}`, { is_premium }).then(r => r.data),

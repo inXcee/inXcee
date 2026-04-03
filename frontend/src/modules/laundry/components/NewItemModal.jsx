@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { laundryApi } from '../api.js'
 import api from '../../../shared/api/client.js'
+import PremiumIntakeModal from './PremiumIntakeModal.jsx'
 
 const DEFAULT_CLOTHING_TYPES = [
   'Pantolon','Gömlek','T-Shirt','Kazak','Sweat','Polar','Mont','Hırka',
@@ -151,6 +152,7 @@ export default function NewItemModal({ onClose }) {
   const [needsIroning, setNeedsIroning] = useState(false)
   const [roomSearch, setRoomSearch] = useState('')
   const [phoneLoading, setPhoneLoading] = useState(false)
+  const [premiumItem, setPremiumItem] = useState(null)
   const [draftBanner, setDraftBanner] = useState(() => {
     try {
       const d = localStorage.getItem('laundry-draft-items')
@@ -225,8 +227,20 @@ export default function NewItemModal({ onClose }) {
       phone_override: form.phone_override || undefined,
       intake_signature: form.intake_signature || undefined,
     }),
-    onSuccess: () => { clearDraft(); qc.invalidateQueries({ queryKey: ['laundry-items'] }); onClose() },
+    onSuccess: (createdItem) => {
+      clearDraft()
+      qc.invalidateQueries({ queryKey: ['laundry-items'] })
+      if (createdItem?.is_premium) {
+        setPremiumItem(createdItem)
+      } else {
+        onClose()
+      }
+    },
   })
+
+  if (premiumItem) {
+    return <PremiumIntakeModal item={premiumItem} onClose={onClose} />
+  }
 
   return (
     <div style={{
