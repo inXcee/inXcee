@@ -1,7 +1,6 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { laundryApi } from '../api.js'
-import PremiumIntakeModal from './PremiumIntakeModal.jsx'
 
 const DEFAULT_CLOTHING_TYPES = [
   'Pantolon','Gömlek','T-Shirt','Kazak','Sweat','Polar','Mont','Hırka',
@@ -43,6 +42,7 @@ const COLOR_PALETTE = [
   { name: 'Beyaz',    hex: '#f0f0f0' },
   { name: 'Siyah',    hex: '#222222' },
   { name: 'Gri',      hex: '#888888' },
+  { name: 'Füme',     hex: '#4a4a4a' },
   { name: 'Lacivert', hex: '#1a2e5e' },
   { name: 'Mavi',     hex: '#2563eb' },
   { name: 'Açık Mavi',hex: '#7ec8e3' },
@@ -57,16 +57,10 @@ const COLOR_PALETTE = [
 ]
 
 const PATTERN_LIST = [
-  { name: 'B/L Çizgili',     bg: 'repeating-linear-gradient(90deg,#f0f0f0 0 4px,#1a2e5e 4px 8px)' },
-  { name: 'B/K Çizgili',     bg: 'repeating-linear-gradient(90deg,#f0f0f0 0 4px,#dc2626 4px 8px)' },
-  { name: 'B/Y Çizgili',     bg: 'repeating-linear-gradient(90deg,#f0f0f0 0 4px,#eab308 4px 8px)' },
-  { name: 'S/B Çizgili',     bg: 'repeating-linear-gradient(90deg,#888 0 4px,#f0f0f0 4px 8px)' },
-  { name: 'Çapraz Çizgili',  bg: 'repeating-linear-gradient(45deg,#f0f0f0 0 4px,#1a2e5e 4px 8px)' },
-  { name: 'Gri Kareli',      bg: 'repeating-conic-gradient(#888 0% 25%,#f0f0f0 0% 50%) 0 0/8px 8px' },
-  { name: 'L/B Kareli',      bg: 'repeating-conic-gradient(#1a2e5e 0% 25%,#f0f0f0 0% 50%) 0 0/8px 8px' },
-  { name: 'Renkli Karnaval', bg: 'repeating-linear-gradient(90deg,#e74c3c 0 6px,#f0a500 6px 12px,#2563eb 12px 18px,#16a34a 18px 24px)' },
-  { name: 'L/B İki Renk',    bg: 'linear-gradient(135deg,#1a2e5e 50%,#f0f0f0 50%)' },
-  { name: 'K/B İki Renk',    bg: 'linear-gradient(135deg,#dc2626 50%,#f0f0f0 50%)' },
+  { name: 'Çizgili', bg: 'repeating-linear-gradient(90deg,#f0f0f0 0 4px,#1a2e5e 4px 8px)' },
+  { name: 'Benekli', bg: 'radial-gradient(circle,#1a2e5e 2px,transparent 2px) 0 0/8px 8px,#f0f0f0' },
+  { name: 'Kareli',  bg: 'repeating-conic-gradient(#888 0% 25%,#f0f0f0 0% 50%) 0 0/8px 8px' },
+  { name: 'Renkli',  bg: 'repeating-linear-gradient(90deg,#e74c3c 0 6px,#f0a500 6px 12px,#2563eb 12px 18px,#16a34a 18px 24px)' },
 ]
 
 function SignatureCanvas({ onSign, onClear }) {
@@ -151,7 +145,6 @@ export default function NewItemModal({ onClose }) {
   const [needsIroning, setNeedsIroning] = useState(false)
   const [roomSearch, setRoomSearch] = useState('')
   const [phoneLoading, setPhoneLoading] = useState(false)
-  const [premiumItem, setPremiumItem] = useState(null)
   const [draftBanner, setDraftBanner] = useState(() => {
     try {
       const d = localStorage.getItem('laundry-draft-items')
@@ -226,20 +219,12 @@ export default function NewItemModal({ onClose }) {
       phone_override: form.phone_override || undefined,
       intake_signature: form.intake_signature || undefined,
     }),
-    onSuccess: (createdItem) => {
+    onSuccess: () => {
       clearDraft()
       qc.invalidateQueries({ queryKey: ['laundry-items'] })
-      if (createdItem?.is_premium) {
-        setPremiumItem(createdItem)
-      } else {
-        onClose()
-      }
+      onClose()
     },
   })
-
-  if (premiumItem) {
-    return <PremiumIntakeModal item={premiumItem} onClose={onClose} />
-  }
 
   return (
     <div style={{

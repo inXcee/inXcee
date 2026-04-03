@@ -121,11 +121,11 @@ export default function PremiumIntakeModal({ item, onClose }) {
                 </span>
                 {save.error && (
                   <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--red)' }}>
-                    {save.error.message}
+                    {save.error.response?.data?.error || save.error.message}
                   </span>
                 )}
                 <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-                  <button className="btn btn-ghost btn-sm" onClick={onClose}>İptal</button>
+                  <button className="btn btn-ghost btn-sm" onClick={onClose}>Daha Sonra</button>
                   <button
                     className="btn btn-primary"
                     onClick={() => save.mutate()}

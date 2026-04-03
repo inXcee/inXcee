@@ -403,8 +403,14 @@ export function initDB() {
   try { db.exec(`INSERT OR IGNORE INTO laundry_block_config(block, is_premium) VALUES
     ('A1',1),('A2',1),('A3',1),('A4',1),('G',1),('F',1),
     ('E',1),('D',1),('C',1),('H',1),('J',1),('A',1),('B',1),
-    ('M1',1),('M2',0),('M3',0),
+    ('M1',0),('M2',0),('M3',0),
     ('M',0),('S',0),('S1',0),('S2',0),('S3',0)`) } catch(_) {}
+  // Mevcut non-M/S blokları premium yap (varolan kayıtları güncelle)
+  try { db.exec(`UPDATE laundry_block_config SET is_premium=1 WHERE block NOT LIKE 'M%' AND block NOT LIKE 'S%'`) } catch(_) {}
+  // Mevcut laundry_items'ı düzelt — non-M/S blok odalarındaki kayıtlar premium olmalı
+  try { db.exec(`UPDATE laundry_items SET is_premium=1 WHERE room_id IN (
+    SELECT r.id FROM rooms r WHERE r.block NOT LIKE 'M%' AND r.block NOT LIKE 'S%'
+  ) AND is_premium=0`) } catch(_) {}
   try { db.exec(`ALTER TABLE laundry_items ADD COLUMN is_premium INTEGER DEFAULT 0`) } catch(_) {}
   try { db.exec(`CREATE TABLE IF NOT EXISTS premium_garments (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

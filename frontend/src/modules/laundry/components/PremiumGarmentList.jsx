@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { laundryApi } from '../api.js'
+import PremiumIntakeModal from './PremiumIntakeModal.jsx'
 
 const STATUS_LABELS = {
   received: 'Teslim Alındı',
@@ -32,6 +33,7 @@ export default function PremiumGarmentList({ item }) {
   const qc = useQueryClient()
   const [selected, setSelected] = useState(new Set())
   const [bulkStatus, setBulkStatus] = useState('ironing')
+  const [addOpen, setAddOpen] = useState(false)
 
   const { data: garments = [], isLoading } = useQuery({
     queryKey: ['premium-garments', item.id],
@@ -78,7 +80,16 @@ export default function PremiumGarmentList({ item }) {
   }
 
   if (garments.length === 0) {
-    return <div style={{ fontSize: 9, color: 'var(--text3)', fontFamily: 'var(--mono)', padding: '8px 0' }}>Henüz kıyafet eklenmedi.</div>
+    return (
+      <div style={{ padding: '8px 0' }}>
+        <div style={{ fontSize: 9, color: 'var(--text3)', fontFamily: 'var(--mono)', marginBottom: 6 }}>Henüz kıyafet eklenmedi.</div>
+        <button className="btn btn-ghost btn-xs" onClick={() => setAddOpen(true)}
+          style={{ border: '1px solid var(--border)', fontFamily: 'var(--mono)', fontSize: 9 }}>
+          + Parça Ekle
+        </button>
+        {addOpen && <PremiumIntakeModal item={item} onClose={() => { setAddOpen(false); qc.invalidateQueries({ queryKey: ['premium-garments', item.id] }) }} />}
+      </div>
+    )
   }
 
   const movableCount = garments.filter(g => g.status !== 'delivered').length
@@ -89,16 +100,23 @@ export default function PremiumGarmentList({ item }) {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
         <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--text3)', letterSpacing: 1 }}>
-          PREMİUM KIYAFETler ({garments.length})
+          KIYAFETler ({garments.length})
         </span>
-        {movableCount > 0 && (
-          <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
-            <input type="checkbox" checked={allSelected} onChange={toggleAll}
-              style={{ accentColor: 'var(--accent)', width: 11, height: 11 }} />
-            <span style={{ fontSize: 9, color: 'var(--text3)', fontFamily: 'var(--mono)' }}>Tümü</span>
-          </label>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <button className="btn btn-ghost btn-xs" onClick={() => setAddOpen(true)}
+            style={{ border: '1px solid var(--border)', fontFamily: 'var(--mono)', fontSize: 8, padding: '1px 6px' }}>
+            + Ekle
+          </button>
+          {movableCount > 0 && (
+            <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
+              <input type="checkbox" checked={allSelected} onChange={toggleAll}
+                style={{ accentColor: 'var(--accent)', width: 11, height: 11 }} />
+              <span style={{ fontSize: 9, color: 'var(--text3)', fontFamily: 'var(--mono)' }}>Tümü</span>
+            </label>
+          )}
+        </div>
       </div>
+      {addOpen && <PremiumIntakeModal item={item} onClose={() => { setAddOpen(false); qc.invalidateQueries({ queryKey: ['premium-garments', item.id] }) }} />}
 
       {/* Garment rows */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>

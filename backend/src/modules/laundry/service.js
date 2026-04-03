@@ -140,7 +140,7 @@ export function deliverPremiumGarmentService(garment_id, { delivered_to, signatu
 export function bulkDeliverPremiumGarmentsService(item_id, garment_ids, { delivered_to, signature_data }, userId) {
   if (!delivered_to || !delivered_to.trim()) throw new Error('Teslim alanın adı zorunlu')
   const item = q.getItemQuery(item_id)
-  if (!item?.is_premium) throw Object.assign(new Error('Premium kayıt değil'), { status: 400 })
+  if (!item) throw Object.assign(new Error('Kayıt bulunamadı'), { status: 404 })
   let delivered = 0
   for (const gid of garment_ids) {
     const g = q.getPremiumGarmentQuery(gid)
@@ -451,7 +451,6 @@ export function pinMessageService(id, is_pinned, user) {
 export function addPremiumGarmentsService(item_id, garments, userId) {
   const item = q.getItemQuery(item_id)
   if (!item) throw Object.assign(new Error('Kayıt bulunamadı'), { status: 404 })
-  if (!item.is_premium) throw Object.assign(new Error('Bu kayıt premium değil'), { status: 400 })
   if (!garments?.length) throw new Error('En az bir parça gerekli')
   const codes = q.insertPremiumGarmentsQuery(item_id, garments)
   return { codes, garments: q.getPremiumGarmentsQuery(item_id) }
@@ -496,7 +495,7 @@ export function bulkAdvancePremiumGarmentsService(item_id, garment_ids, to_statu
   const VALID = ['ironing', 'ready', 'lost']
   if (!VALID.includes(to_status)) throw new Error('Geçersiz hedef durum')
   const item = q.getItemQuery(item_id)
-  if (!item?.is_premium) throw Object.assign(new Error('Premium kayıt değil'), { status: 400 })
+  if (!item) throw Object.assign(new Error('Kayıt bulunamadı'), { status: 404 })
   for (const gid of garment_ids) {
     const g = q.getPremiumGarmentQuery(gid)
     if (g && g.item_id === item_id) q.advancePremiumGarmentQuery(gid, to_status, userId)

@@ -434,7 +434,7 @@ export default function ItemCard({ item, machines = [], onDeliver, onDamage, sel
             {item.status !== 'lost' && item.status === 'ready' && (
               <button
                 className="lc-action-btn success"
-                onClick={() => item.is_premium ? setPremiumDeliveryOpen(true) : onDeliver(item)}
+                onClick={() => (item.is_premium === 1 || (item.block && !item.block.startsWith('M') && !item.block.startsWith('S'))) ? setPremiumDeliveryOpen(true) : onDeliver(item)}
               >
                 ✓ Teslim Et
               </button>
@@ -457,7 +457,9 @@ export default function ItemCard({ item, machines = [], onDeliver, onDamage, sel
         {/* ── Genişletilmiş ── */}
         {expanded && (
           <>
-            {item.is_premium === 1 && <PremiumGarmentList item={item} />}
+            {(item.is_premium === 1 || (item.block && !item.block.startsWith('M') && !item.block.startsWith('S'))) && (
+              <PremiumGarmentList item={item} />
+            )}
             <ExpandedSection
               item={item}
               onLost={() => setLostOpen(true)}

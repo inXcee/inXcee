@@ -38,7 +38,9 @@ export function upsertBlockConfigQuery(block, is_premium, userId) {
 export function isBlockPremiumQuery(block) {
   const db = getDB()
   const row = db.prepare(`SELECT is_premium FROM laundry_block_config WHERE block=?`).get(block)
-  return row ? row.is_premium === 1 : false
+  if (row) return row.is_premium === 1
+  // Konfigürasyonda yoksa: M* ve S* blokları değilse premium kabul et
+  return !block.startsWith('M') && !block.startsWith('S')
 }
 
 export function getItemQuery(id) {
@@ -866,12 +868,12 @@ export function getRoomGarmentsForScanQuery(block, room_no) {
   const items = db.prepare(`
     SELECT id, status, item_count, created_at, needs_ironing, is_premium
     FROM laundry_items
-    WHERE room_id=? AND is_premium=1 AND status NOT IN ('delivered','lost')
+    WHERE room_id=? AND status NOT IN ('delivered','lost')
     ORDER BY created_at DESC
     LIMIT 5
   `).all(room.id)
 
-  if (items.length === 0) return { room_id: room.id, block, room_no, items: [] }
+  if (items.length === 0) return { room_id: room.id, block, room_no, items: [], garments: [] }
 
   const itemIds = items.map(i => i.id)
   const placeholders = itemIds.map(() => '?').join(',')
