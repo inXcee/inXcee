@@ -64,6 +64,29 @@ export function seedDev() {
     }
   })
 
+  // ── A ve diğer bloklar ──────────────────────────────────────────────────────
+  // A1, A2, A3, A4: premium bloklar — 2 kat × 20 oda
+  const A_NUMBERED = ['A1', 'A2', 'A3', 'A4']
+  const A_LETTERED = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'J']
+
+  A_NUMBERED.forEach(block => {
+    for (let floor = 1; floor <= 2; floor++) {
+      const base = floor === 1 ? 100 : 200
+      for (let r = 1; r <= 20; r++) {
+        roomInsert.run(block, floor, String(base + r), 6, 6, 'active')
+      }
+    }
+  })
+
+  A_LETTERED.forEach(block => {
+    for (let floor = 1; floor <= 2; floor++) {
+      const base = floor === 1 ? 100 : 200
+      for (let r = 1; r <= 20; r++) {
+        roomInsert.run(block, floor, String(base + r), 6, 6, 'active')
+      }
+    }
+  })
+
   // ── Makineler ───────────────────────────────────────────────────────────────
   const machineInsert = db.prepare(`INSERT OR IGNORE INTO machines(id,name,status) VALUES(?,?,?)`)
   machineInsert.run(1, 'Makine 1', 'idle')

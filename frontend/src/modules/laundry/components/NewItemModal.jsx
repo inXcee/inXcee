@@ -307,7 +307,7 @@ export default function NewItemModal({ onClose }) {
             <div style={{ maxHeight: 140, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 7, background: 'var(--surface2)' }}>
               {filtered.length === 0 ? (
                 <div style={{ padding: '10px 12px', fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)' }}>Oda bulunamadı</div>
-              ) : filtered.slice(0, 20).map(r => {
+              ) : filtered.slice(0, 50).map(r => {
                 const id = r.id
                 const isSelected = +form.room_id === id
                 return (
@@ -332,7 +332,7 @@ export default function NewItemModal({ onClose }) {
 
           {/* ── Teslim Eden ── */}
           <div>
-            <label className="form-label">TESLİM EDEN *</label>
+            <label className="form-label">TESLİM EDEN</label>
             <input className="form-input" value={form.intake_name}
               onChange={e => set('intake_name', e.target.value)}
               placeholder="Ad Soyad..." style={{ marginBottom: 10 }} />
@@ -521,7 +521,7 @@ export default function NewItemModal({ onClose }) {
           <div style={{ display: 'flex', gap: 8 }}>
             <button className="btn btn-primary" style={{ flex: 1, padding: '10px', letterSpacing: 1 }}
               onClick={() => create.mutate()}
-              disabled={!form.room_id || !form.intake_name.trim() || create.isPending}>
+              disabled={!form.room_id || create.isPending}>
               {create.isPending ? 'Kaydediliyor...' : `+ KAYDET (${totalCount} parça)`}
             </button>
             <button className="btn btn-ghost" onClick={onClose}>İptal</button>
