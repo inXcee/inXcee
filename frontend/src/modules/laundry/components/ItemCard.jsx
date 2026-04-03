@@ -270,11 +270,14 @@ function ExpandedSection({ item, onLost, onFound }) {
 export default function ItemCard({ item, machines = [], onDeliver, onDamage, selected, onSelect, onPersonClick, onFound }) {
   const qc = useQueryClient()
   const [expanded, setExpanded] = useState(false)
+  const [garmentOpen, setGarmentOpen] = useState(false)
   const [assignOpen, setAssignOpen] = useState(false)
   const [shelfOpen,  setShelfOpen]  = useState(false)
   const [lostOpen,   setLostOpen]   = useState(false)
   const [deleteStep, setDeleteStep] = useState(false)
   const [premiumDeliveryOpen, setPremiumDeliveryOpen] = useState(false)
+
+  const isPremiumItem = item.is_premium === 1 || (item.block && !item.block.startsWith('M') && !item.block.startsWith('S'))
 
   const deleteItem = useMutation({
     mutationFn: () => laundryApi.deleteItem(item.id),
@@ -416,27 +419,34 @@ export default function ItemCard({ item, machines = [], onDeliver, onDamage, sel
         {item.status !== 'delivered' && (
           <div style={{ display: 'flex', gap: 6, marginTop: 12, flexWrap: 'wrap' }}>
             {item.status !== 'lost' && item.status === 'dirty' && (
-              <button
-                className="lc-action-btn primary"
-                onClick={() => setAssignOpen(true)}
-              >
+              <button className="lc-action-btn primary" onClick={() => setAssignOpen(true)}>
                 ⚙ Makineye At
               </button>
             )}
             {item.status !== 'lost' && item.status === 'washing' && (
-              <button
-                className="lc-action-btn primary"
-                onClick={() => setShelfOpen(true)}
-              >
+              <button className="lc-action-btn primary" onClick={() => setShelfOpen(true)}>
                 ▣ Rafa Koy
               </button>
             )}
             {item.status !== 'lost' && item.status === 'ready' && (
               <button
                 className="lc-action-btn success"
-                onClick={() => (item.is_premium === 1 || (item.block && !item.block.startsWith('M') && !item.block.startsWith('S'))) ? setPremiumDeliveryOpen(true) : onDeliver(item)}
+                onClick={() => isPremiumItem ? setPremiumDeliveryOpen(true) : onDeliver(item)}
               >
                 ✓ Teslim Et
+              </button>
+            )}
+            {isPremiumItem && item.status !== 'delivered' && item.status !== 'lost' && (
+              <button
+                className="lc-action-btn ghost"
+                onClick={() => setGarmentOpen(o => !o)}
+                style={{
+                  border: garmentOpen ? '1px solid rgba(240,165,0,0.4)' : undefined,
+                  color: garmentOpen ? 'var(--accent)' : undefined,
+                  background: garmentOpen ? 'rgba(240,165,0,0.06)' : undefined,
+                }}
+              >
+                ★ Parçalar
               </button>
             )}
             {item.status !== 'lost' && onDamage && (
@@ -454,18 +464,18 @@ export default function ItemCard({ item, machines = [], onDeliver, onDamage, sel
           </div>
         )}
 
-        {/* ── Genişletilmiş ── */}
+        {/* ── Parça paneli (bağımsız toggle) ── */}
+        {garmentOpen && isPremiumItem && (
+          <PremiumGarmentList item={item} />
+        )}
+
+        {/* ── Genişletilmiş (timeline + hasar) ── */}
         {expanded && (
-          <>
-            {(item.is_premium === 1 || (item.block && !item.block.startsWith('M') && !item.block.startsWith('S'))) && (
-              <PremiumGarmentList item={item} />
-            )}
-            <ExpandedSection
-              item={item}
-              onLost={() => setLostOpen(true)}
-              onFound={() => onFound && onFound(item)}
-            />
-          </>
+          <ExpandedSection
+            item={item}
+            onLost={() => setLostOpen(true)}
+            onFound={() => onFound && onFound(item)}
+          />
         )}
         {/* Sil butonu (dirty + expand) */}
         {expanded && item.status === 'dirty' && (
