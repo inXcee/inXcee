@@ -256,6 +256,30 @@ laundryRouter.get('/reports/stats', ...laundryRead, (req, res) => {
   res.json(svc.getStatsService(req.query))
 })
 
+laundryRouter.get('/reports/premium', ...laundryRead, (req, res) => {
+  try {
+    const { from, to } = req.query
+    res.json(svc.getPremiumReportService({ from_date: from, to_date: to }))
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+laundryRouter.get('/reports/export-premium', ...laundryRead, (req, res) => {
+  try {
+    const { from, to } = req.query
+    const rows = svc.exportPremiumGarmentsService({ from_date: from, to_date: to })
+    const header = 'Kod,Blok,Oda,Tip,Marka,Model,Beden,Renk,Durum,Giriş,Teslim,Toplam Saat'
+    const csv = [header, ...rows.map(r => [
+      r.garment_code, r.block, r.room_no, r.garment_type,
+      r.brand || '', r.model || '', r.size || '', r.color || '',
+      r.status, r.intake_date?.slice(0, 10) || '',
+      r.delivered_at?.slice(0, 10) || '', r.total_hours ?? '',
+    ].join(','))].join('\n')
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8')
+    res.setHeader('Content-Disposition', `attachment; filename="premium-garments-${new Date().toISOString().slice(0,10)}.csv"`)
+    res.send('\uFEFF' + csv)
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
 laundryRouter.get('/reports/export', ...laundryRead, (req, res) => {
   try {
     const { from, to, status, include_verifications } = req.query

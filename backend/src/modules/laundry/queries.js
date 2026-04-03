@@ -853,3 +853,101 @@ export function getRoomGarmentHistoryQuery(room_id, { from_date, to_date } = {})
     ORDER BY li.created_at DESC, pg.garment_code ASC
   `).all(...params)
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PREMIUM REPORTS
+// ═══════════════════════════════════════════════════════════════════════════
+
+export function getPremiumReportQuery({ from_date, to_date } = {}) {
+  const db = getDB()
+  const dateFilter = []
+  const dateParams = []
+  if (from_date) { dateFilter.push("li.created_at >= ?"); dateParams.push(from_date) }
+  if (to_date)   { dateFilter.push("li.created_at <= ?"); dateParams.push(to_date + ' 23:59:59') }
+  const dateWhere = dateFilter.length ? `AND ${dateFilter.join(' AND ')}` : ''
+
+  const byBlock = db.prepare(`
+    SELECT r.block, COUNT(*) AS total,
+           SUM(CASE WHEN pg.status='lost' THEN 1 ELSE 0 END) AS lost,
+           SUM(CASE WHEN pg.status='delivered' THEN 1 ELSE 0 END) AS delivered
+    FROM premium_garments pg
+    JOIN laundry_items li ON li.id = pg.item_id
+    JOIN rooms r ON r.id = li.room_id
+    WHERE 1=1 ${dateWhere}
+    GROUP BY r.block ORDER BY total DESC
+  `).all(...dateParams)
+
+  const byType = db.prepare(`
+    SELECT pg.garment_type, COUNT(*) AS total,
+           SUM(CASE WHEN pg.status='lost' THEN 1 ELSE 0 END) AS lost
+    FROM premium_garments pg
+    JOIN laundry_items li ON li.id = pg.item_id
+    WHERE 1=1 ${dateWhere}
+    GROUP BY pg.garment_type ORDER BY total DESC
+    LIMIT 15
+  `).all(...dateParams)
+
+  const lostList = db.prepare(`
+    SELECT pg.garment_code, pg.garment_type, pg.brand, pg.model, pg.size, pg.color,
+           r.block, r.room_no, li.created_at AS intake_date
+    FROM premium_garments pg
+    JOIN laundry_items li ON li.id = pg.item_id
+    JOIN rooms r ON r.id = li.room_id
+    WHERE pg.status='lost' ${dateWhere}
+    ORDER BY li.created_at DESC
+    LIMIT 50
+  `).all(...dateParams)
+
+  const topRooms = db.prepare(`
+    SELECT r.block, r.room_no, COUNT(*) AS total
+    FROM premium_garments pg
+    JOIN laundry_items li ON li.id = pg.item_id
+    JOIN rooms r ON r.id = li.room_id
+    WHERE 1=1 ${dateWhere}
+    GROUP BY r.block, r.room_no ORDER BY total DESC
+    LIMIT 10
+  `).all(...dateParams)
+
+  const avgDelivery = db.prepare(`
+    SELECT
+      ROUND(AVG(CASE WHEN li.is_premium=1
+        THEN (julianday(li.updated_at) - julianday(li.created_at)) * 24 END), 1) AS premium_avg_hours,
+      ROUND(AVG(CASE WHEN li.is_premium=0
+        THEN (julianday(li.updated_at) - julianday(li.created_at)) * 24 END), 1) AS regular_avg_hours
+    FROM laundry_items li
+    WHERE li.status='delivered' ${dateWhere.replace(/li\.created_at/g, 'li.created_at')}
+  `).get(...dateParams)
+
+  const totals = db.prepare(`
+    SELECT COUNT(*) AS total,
+           SUM(CASE WHEN pg.status='lost' THEN 1 ELSE 0 END) AS total_lost,
+           SUM(CASE WHEN pg.status='delivered' THEN 1 ELSE 0 END) AS total_delivered,
+           SUM(CASE WHEN pg.status='ready' THEN 1 ELSE 0 END) AS total_ready,
+           SUM(CASE WHEN pg.status IN ('received','ironing') THEN 1 ELSE 0 END) AS total_in_progress
+    FROM premium_garments pg
+    JOIN laundry_items li ON li.id = pg.item_id
+    WHERE 1=1 ${dateWhere}
+  `).get(...dateParams)
+
+  return { totals, byBlock, byType, lostList, topRooms, avgDelivery }
+}
+
+export function exportPremiumGarmentsQuery({ from_date, to_date } = {}) {
+  const db = getDB()
+  const conditions = ['li.is_premium=1']
+  const params = []
+  if (from_date) { conditions.push("li.created_at >= ?"); params.push(from_date) }
+  if (to_date)   { conditions.push("li.created_at <= ?"); params.push(to_date + ' 23:59:59') }
+
+  return db.prepare(`
+    SELECT pg.garment_code, r.block, r.room_no, pg.garment_type,
+           pg.brand, pg.model, pg.size, pg.color, pg.status,
+           li.created_at AS intake_date, pg.delivered_at,
+           ROUND((julianday(COALESCE(pg.delivered_at, datetime('now'))) - julianday(li.created_at)) * 24, 1) AS total_hours
+    FROM premium_garments pg
+    JOIN laundry_items li ON li.id = pg.item_id
+    JOIN rooms r ON r.id = li.room_id
+    WHERE ${conditions.join(' AND ')}
+    ORDER BY li.created_at DESC, pg.garment_code ASC
+  `).all(...params)
+}

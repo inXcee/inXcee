@@ -3,7 +3,7 @@ import request from 'supertest'
 import app from '../../app.js'
 import { initDB, getDB } from '../../shared/db/index.js'
 import { seedDev } from '../../shared/db/seed.js'
-import { batchAssignService, batchLostService, advanceItemService, createVerificationService, getSettingsService, updateSettingService, sendMessageService, getMessagesService, deleteMessageService, createItemService, getBlockConfigService, upsertBlockConfigService, addPremiumGarmentsService, getPremiumGarmentsService, advancePremiumGarmentService, bulkAdvancePremiumGarmentsService, syncParentStatusService, deliverPremiumGarmentService, bulkDeliverPremiumGarmentsService, getPremiumDeliveryReceiptService, searchPremiumGarmentsService, getRoomGarmentHistoryService } from './service.js'
+import { batchAssignService, batchLostService, advanceItemService, createVerificationService, getSettingsService, updateSettingService, sendMessageService, getMessagesService, deleteMessageService, createItemService, getBlockConfigService, upsertBlockConfigService, addPremiumGarmentsService, getPremiumGarmentsService, advancePremiumGarmentService, bulkAdvancePremiumGarmentsService, syncParentStatusService, deliverPremiumGarmentService, bulkDeliverPremiumGarmentsService, getPremiumDeliveryReceiptService, searchPremiumGarmentsService, getRoomGarmentHistoryService, getPremiumReportService, exportPremiumGarmentsService } from './service.js'
 import * as q from './queries.js'
 const { archiveItemsQuery } = q
 
@@ -957,5 +957,41 @@ describe('premium garment arama', () => {
     expect(history.length).toBeGreaterThan(0)
     expect(history[0]).toHaveProperty('garment_code')
     expect(history.every(g => g.item_id != null)).toBe(true)
+  })
+})
+
+describe('premium raporlar', () => {
+  test('getPremiumReportQuery kayıp sayısını doğru hesaplar', () => {
+    const report = getPremiumReportService({})
+    expect(report).toHaveProperty('totals')
+    expect(report).toHaveProperty('byBlock')
+    expect(report).toHaveProperty('lostList')
+    expect(typeof report.totals.total_lost).toBe('number')
+    // Daha önce lost parça oluşturuldu (FAZ 5 testinde), kayıp sayısı > 0 olmalı
+    expect(report.totals.total_lost).toBeGreaterThan(0)
+    expect(report.lostList.every(g => g.garment_code)).toBe(true)
+  })
+
+  test('exportPremiumGarmentsQuery garment_code sütununu içerir', () => {
+    const rows = exportPremiumGarmentsService({})
+    expect(Array.isArray(rows)).toBe(true)
+    if (rows.length > 0) {
+      expect(rows[0]).toHaveProperty('garment_code')
+      expect(rows[0]).toHaveProperty('block')
+      expect(rows[0]).toHaveProperty('garment_type')
+    }
+  })
+
+  test('blok config PUT → GET güncel gelir', () => {
+    const db = getDB()
+    const admin = db.prepare("SELECT id FROM users WHERE role='campus_manager' LIMIT 1").get()
+    // M2'yi premium yap
+    upsertBlockConfigService('M2', 1, admin.id)
+    const blocks = getBlockConfigService()
+    expect(blocks.find(b => b.block === 'M2')?.is_premium).toBe(1)
+    // Geri al
+    upsertBlockConfigService('M2', 0, admin.id)
+    const blocks2 = getBlockConfigService()
+    expect(blocks2.find(b => b.block === 'M2')?.is_premium).toBe(0)
   })
 })

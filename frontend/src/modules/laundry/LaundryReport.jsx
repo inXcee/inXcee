@@ -77,13 +77,35 @@ export default function LaundryReport() {
     })
   }
 
+  const handlePremiumExport = () => {
+    laundryApi.exportPremiumCsv({ from, to }).then(blob => {
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `premium-kiyafetler-${from}-${to}.csv`
+      a.click()
+      URL.revokeObjectURL(url)
+    })
+  }
+
+  const { data: premiumReport } = useQuery({
+    queryKey: ['laundry-premium-report', from, to],
+    queryFn: () => laundryApi.getPremiumReport({ from, to }),
+  })
+
   return (
     <div style={{ maxWidth: 860, position: 'relative', zIndex: 1 }} className="fade-up">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
         <h1 style={{ fontFamily: 'var(--display)', fontSize: 28, letterSpacing: 4, color: 'var(--text)' }}>
           ÇAMAŞIRHANE RAPOR
         </h1>
-        <button className="btn btn-ghost btn-sm" onClick={handleExport}>CSV İndir</button>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button className="btn btn-ghost btn-sm" onClick={handleExport}>CSV İndir</button>
+          <button className="btn btn-ghost btn-sm" onClick={handlePremiumExport}
+            style={{ color: 'var(--accent)', borderColor: 'rgba(240,165,0,0.3)' }}>
+            ★ Premium CSV
+          </button>
+        </div>
       </div>
 
       {/* DATE RANGE */}
@@ -341,6 +363,139 @@ export default function LaundryReport() {
             </div>
           </div>
         </>
+      )}
+
+      {/* ── PREMİUM ÖZET ── */}
+      {premiumReport && premiumReport.totals?.total > 0 && (
+        <div className="panel fade-up" style={{ marginTop: 16 }}>
+          <div className="panel-header">
+            <span className="panel-title" style={{ color: 'var(--accent)' }}>★ PREMİUM KIYAFET ÖZET</span>
+          </div>
+          <div className="panel-body" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+            {/* KPI */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8 }}>
+              {[
+                ['TOPLAM', premiumReport.totals.total, 'var(--accent)'],
+                ['TESLİM EDİLDİ', premiumReport.totals.total_delivered, 'var(--green)'],
+                ['DEVAM EDIYOR', premiumReport.totals.total_in_progress, 'var(--blue)'],
+                ['KAYIP', premiumReport.totals.total_lost, 'var(--red)'],
+              ].map(([label, val, color]) => (
+                <div key={label} style={{
+                  padding: '10px 12px', borderRadius: 8, textAlign: 'center',
+                  background: `${color}0d`, border: `1px solid ${color}25`,
+                }}>
+                  <div style={{ fontFamily: 'var(--display)', fontSize: 24, color, lineHeight: 1 }}>{val ?? 0}</div>
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--text3)', marginTop: 3, letterSpacing: 1 }}>{label}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Ortalama teslim süresi */}
+            {premiumReport.avgDelivery && (
+              <div style={{ display: 'flex', gap: 12 }}>
+                {[
+                  ['Premium Ort. Süre', premiumReport.avgDelivery.premium_avg_hours, 'var(--accent)'],
+                  ['Regular Ort. Süre', premiumReport.avgDelivery.regular_avg_hours, 'var(--text2)'],
+                ].map(([label, val, color]) => (
+                  <div key={label} style={{
+                    flex: 1, padding: '8px 12px', borderRadius: 7,
+                    background: 'var(--surface2)', border: '1px solid var(--border)',
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  }}>
+                    <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)' }}>{label}</span>
+                    <span style={{ fontFamily: 'var(--mono)', fontSize: 13, color, fontWeight: 700 }}>
+                      {val != null ? `${val} saat` : '—'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Blok bazında */}
+            {premiumReport.byBlock?.length > 0 && (
+              <div>
+                <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: 1, marginBottom: 6 }}>BLOK DAĞILIMI</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {premiumReport.byBlock.map(b => (
+                    <div key={b.block} style={{
+                      padding: '5px 10px', borderRadius: 6,
+                      background: 'rgba(240,165,0,0.07)', border: '1px solid rgba(240,165,0,0.2)',
+                      fontFamily: 'var(--mono)', fontSize: 10,
+                    }}>
+                      <span style={{ color: 'var(--accent)', fontWeight: 700 }}>{b.block}</span>
+                      <span style={{ color: 'var(--text2)', marginLeft: 6 }}>{b.total} parça</span>
+                      {b.lost > 0 && <span style={{ color: 'var(--red)', marginLeft: 6 }}>✗ {b.lost}</span>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Tip bazında + Kayıp listesi yan yana */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              {/* Tip bazında */}
+              {premiumReport.byType?.length > 0 && (
+                <div>
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: 1, marginBottom: 6 }}>TİP DAĞILIMI</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                    {premiumReport.byType.slice(0, 8).map(t => (
+                      <div key={t.garment_type} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 10 }}>
+                        <span style={{ fontFamily: 'var(--mono)', color: 'var(--text)', flex: 1 }}>{t.garment_type}</span>
+                        <span style={{ fontFamily: 'var(--mono)', color: 'var(--accent)', fontWeight: 700 }}>{t.total}</span>
+                        {t.lost > 0 && <span style={{ fontFamily: 'var(--mono)', color: 'var(--red)', fontSize: 9 }}>✗{t.lost}</span>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* En aktif odalar */}
+              {premiumReport.topRooms?.length > 0 && (
+                <div>
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: 1, marginBottom: 6 }}>EN AKTİF ODALAR</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                    {premiumReport.topRooms.slice(0, 8).map((r, i) => (
+                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 10 }}>
+                        <span style={{ fontFamily: 'var(--mono)', color: 'var(--text3)', fontSize: 9, width: 14 }}>{i+1}.</span>
+                        <span style={{ fontFamily: 'var(--display)', letterSpacing: 1, color: 'var(--text)', flex: 1 }}>
+                          {r.block} · {r.room_no}
+                        </span>
+                        <span style={{ fontFamily: 'var(--mono)', color: 'var(--accent)', fontWeight: 700 }}>{r.total}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Kayıp listesi */}
+            {premiumReport.lostList?.length > 0 && (
+              <div>
+                <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--red)', letterSpacing: 1, marginBottom: 6 }}>
+                  KAYIP PARÇALAR ({premiumReport.lostList.length})
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 3, maxHeight: 160, overflowY: 'auto' }}>
+                  {premiumReport.lostList.map(g => (
+                    <div key={g.garment_code} style={{
+                      display: 'flex', alignItems: 'center', gap: 8, padding: '4px 8px',
+                      background: 'rgba(231,76,60,0.06)', borderRadius: 5, border: '1px solid rgba(231,76,60,0.15)',
+                    }}>
+                      <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--accent)', flexShrink: 0 }}>{g.garment_code}</span>
+                      <span style={{ fontFamily: 'var(--display)', fontSize: 11, letterSpacing: 1 }}>{g.block} · {g.room_no}</span>
+                      <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text2)', flex: 1 }}>
+                        {g.garment_type}{g.brand ? ` · ${g.brand}` : ''}{g.size ? ` · ${g.size}` : ''}
+                      </span>
+                      <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--text3)', flexShrink: 0 }}>
+                        {g.intake_date?.slice(0, 10)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       )}
     </div>
   )

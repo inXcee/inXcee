@@ -512,3 +512,11 @@ export function searchPremiumGarmentsService(params) {
 export function getRoomGarmentHistoryService(room_id, params) {
   return q.getRoomGarmentHistoryQuery(room_id, params)
 }
+
+export function getPremiumReportService(params) {
+  return q.getPremiumReportQuery(params)
+}
+
+export function exportPremiumGarmentsService(params) {
+  return q.exportPremiumGarmentsQuery(params)
+}
