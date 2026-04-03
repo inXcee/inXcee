@@ -855,6 +855,46 @@ export function getRoomGarmentHistoryQuery(room_id, { from_date, to_date } = {})
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// ROOM SCAN
+// ═══════════════════════════════════════════════════════════════════════════
+
+export function getRoomGarmentsForScanQuery(block, room_no) {
+  const db = getDB()
+  const room = db.prepare(`SELECT id FROM rooms WHERE block=? AND room_no=?`).get(block, room_no)
+  if (!room) return null
+
+  const items = db.prepare(`
+    SELECT id, status, item_count, created_at, needs_ironing, is_premium
+    FROM laundry_items
+    WHERE room_id=? AND is_premium=1 AND status NOT IN ('delivered','lost')
+    ORDER BY created_at DESC
+    LIMIT 5
+  `).all(room.id)
+
+  if (items.length === 0) return { room_id: room.id, block, room_no, items: [] }
+
+  const itemIds = items.map(i => i.id)
+  const placeholders = itemIds.map(() => '?').join(',')
+  const garments = db.prepare(`
+    SELECT pg.*, li.status AS item_status
+    FROM premium_garments pg
+    JOIN laundry_items li ON li.id = pg.item_id
+    WHERE pg.item_id IN (${placeholders})
+    ORDER BY pg.item_id DESC, pg.garment_code ASC
+  `).all(...itemIds)
+
+  return { room_id: room.id, block, room_no, items, garments }
+}
+
+export function insertScanLogQuery(room_id, block, room_no, garment_id, action, userId) {
+  const db = getDB()
+  db.prepare(`
+    INSERT INTO garment_scan_log(room_id, block, room_no, garment_id, scanned_by, action)
+    VALUES(?, ?, ?, ?, ?, ?)
+  `).run(room_id || null, block || null, room_no || null, garment_id || null, userId || null, action)
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // PREMIUM REPORTS
 // ═══════════════════════════════════════════════════════════════════════════
 

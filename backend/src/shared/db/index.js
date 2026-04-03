@@ -452,6 +452,17 @@ export function initDB() {
   )`) } catch(_) {}
   try { db.exec(`CREATE INDEX IF NOT EXISTS idx_pgd_item ON premium_garment_deliveries(item_id)`) } catch(_) {}
   try { db.exec(`CREATE INDEX IF NOT EXISTS idx_li_room_created ON laundry_items(room_id, created_at DESC)`) } catch(_) {}
+  try { db.exec(`CREATE TABLE IF NOT EXISTS garment_scan_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    room_id INTEGER REFERENCES rooms(id),
+    block TEXT,
+    room_no TEXT,
+    garment_id INTEGER REFERENCES premium_garments(id),
+    scanned_by INTEGER REFERENCES users(id),
+    action TEXT NOT NULL CHECK(action IN ('lookup','advance','deliver','lost')),
+    scanned_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`) } catch(_) {}
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_scan_log_room ON garment_scan_log(room_id, scanned_at DESC)`) } catch(_) {}
 
   return db
 }
