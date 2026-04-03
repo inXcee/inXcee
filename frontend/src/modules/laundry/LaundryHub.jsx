@@ -995,6 +995,7 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
     queryKey: ['laundry-items', 'all'],
     queryFn: () => laundryApi.getItems({}),
     refetchInterval: 20000,
+    placeholderData: (prev) => prev,
   })
   const { data: machines = [] } = useQuery({
     queryKey: ['laundry-machines'],
@@ -1038,6 +1039,7 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
       return laundryApi.getItems(params)
     },
     refetchInterval: 20000,
+    placeholderData: (prev) => prev,
   })
 
   // Kanban: always use allItems filtered by status (no extra filter applied)

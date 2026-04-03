@@ -436,7 +436,7 @@ export default function ItemCard({ item, machines = [], onDeliver, onDamage, sel
                 ✓ Teslim Et
               </button>
             )}
-            {isPremiumItem && item.status !== 'delivered' && item.status !== 'lost' && (
+            {item.status !== 'delivered' && item.status !== 'lost' && (
               <button
                 className="lc-action-btn ghost"
                 onClick={() => setGarmentOpen(o => !o)}
@@ -465,7 +465,7 @@ export default function ItemCard({ item, machines = [], onDeliver, onDamage, sel
         )}
 
         {/* ── Parça paneli (bağımsız toggle) ── */}
-        {garmentOpen && isPremiumItem && (
+        {garmentOpen && (
           <PremiumGarmentList item={item} />
         )}
 
