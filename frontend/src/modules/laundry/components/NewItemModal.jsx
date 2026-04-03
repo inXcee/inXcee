@@ -151,6 +151,14 @@ export default function NewItemModal({ onClose }) {
   const [needsIroning, setNeedsIroning] = useState(false)
   const [roomSearch, setRoomSearch] = useState('')
   const [phoneLoading, setPhoneLoading] = useState(false)
+  const [draftBanner, setDraftBanner] = useState(() => {
+    try {
+      const d = localStorage.getItem('laundry-draft-items')
+      if (d) { const p = JSON.parse(d); return p.length > 0 ? p : null }
+    } catch {}
+    return null
+  })
+  const draftTimerRef = useRef(null)
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
@@ -174,13 +182,37 @@ export default function NewItemModal({ onClose }) {
   const selectedRoom = rooms.find(r => (r.room_id || r.id) === +form.room_id)
   const totalCount = clothing.reduce((s, c) => s + c.qty, 0) || 1
 
-  const addClothing = (type) => {
-    setClothing(prev => [...prev, { type, color: '', qty: 1 }])
+  const saveDraft = useCallback((list) => {
+    if (draftTimerRef.current) clearTimeout(draftTimerRef.current)
+    draftTimerRef.current = setTimeout(() => {
+      try { localStorage.setItem('laundry-draft-items', JSON.stringify(list)) } catch {}
+    }, 300)
+  }, [])
+
+  const clearDraft = () => {
+    try { localStorage.removeItem('laundry-draft-items') } catch {}
   }
 
-  const removeClothing = (idx) => setClothing(prev => prev.filter((_, i) => i !== idx))
+  const addClothing = (type) => {
+    setClothing(prev => {
+      const next = [...prev, { type, color: '', qty: 1 }]
+      saveDraft(next)
+      return next
+    })
+  }
+
+  const removeClothing = (idx) => setClothing(prev => {
+    const next = prev.filter((_, i) => i !== idx)
+    saveDraft(next)
+    return next
+  })
+
   const updateClothing = (idx, field, val) =>
-    setClothing(prev => prev.map((c, i) => i === idx ? { ...c, [field]: field === 'qty' ? Math.max(1, +val || 1) : val } : c))
+    setClothing(prev => {
+      const next = prev.map((c, i) => i === idx ? { ...c, [field]: field === 'qty' ? Math.max(1, +val || 1) : val } : c)
+      saveDraft(next)
+      return next
+    })
 
   const create = useMutation({
     mutationFn: () => laundryApi.createItem({
@@ -193,7 +225,7 @@ export default function NewItemModal({ onClose }) {
       phone_override: form.phone_override || undefined,
       intake_signature: form.intake_signature || undefined,
     }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['laundry-items'] }); onClose() },
+    onSuccess: () => { clearDraft(); qc.invalidateQueries({ queryKey: ['laundry-items'] }); onClose() },
   })
 
   return (
@@ -215,6 +247,29 @@ export default function NewItemModal({ onClose }) {
         </div>
 
         <div className="panel-body" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+          {/* ── Draft Banner ── */}
+          {draftBanner && (
+            <div style={{
+              padding: '10px 14px', borderRadius: 8,
+              background: 'rgba(240,165,0,0.08)', border: '1px solid rgba(240,165,0,0.25)',
+              display: 'flex', flexDirection: 'column', gap: 8,
+            }}>
+              <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--accent)', fontWeight: 700 }}>
+                📋 Kaydedilmemiş taslak bulundu ({draftBanner.length} parça)
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="btn btn-sm" style={{ background: 'var(--accent)', color: '#000' }}
+                  onClick={() => { setClothing(draftBanner); setDraftBanner(null) }}>
+                  Taslağı Yükle
+                </button>
+                <button className="btn btn-ghost btn-sm"
+                  onClick={() => { clearDraft(); setDraftBanner(null) }}>
+                  Yeni Başla
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* ── Oda Seçimi ── */}
           <div>

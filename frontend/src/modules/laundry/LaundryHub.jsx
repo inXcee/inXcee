@@ -646,39 +646,38 @@ function QuickNotes() {
           transform: open ? 'rotate(180deg)' : '',
         }}>▼</span>
       </button>
-      {open && (
-        <div style={{
-          background: 'linear-gradient(135deg,rgba(245,230,66,0.07),rgba(240,192,48,0.04))',
-          border: '1px solid rgba(245,230,66,0.18)',
-          borderTop: 'none', borderLeft: '3px solid #c8a020',
-          borderRadius: '0 0 8px 8px', padding: '8px 14px 10px',
-          maxHeight: 180, overflow: 'hidden',
-        }}>
-          <textarea
-            value={notes}
-            onChange={e => handleChange(e.target.value)}
-            placeholder="Kayıplar, özel talepler, acil notlar..."
-            style={{
-              width: '100%', height: 130, padding: 0,
-              background: 'transparent', border: 'none', resize: 'none',
-              fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text)',
-              lineHeight: 1.7, outline: 'none', boxSizing: 'border-box',
-            }}
-          />
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            {notes.trim() ? (
-              <button onClick={() => handleChange('')} style={{
-                background: 'rgba(0,0,0,0.1)', border: 'none', cursor: 'pointer',
-                fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--text3)',
-                padding: '2px 8px', borderRadius: 4,
-              }}>Temizle</button>
-            ) : <span />}
-            {savedFlash && (
-              <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--green)' }}>✓ Kaydedildi</span>
-            )}
-          </div>
+      <div style={{
+        background: 'linear-gradient(135deg,rgba(245,230,66,0.07),rgba(240,192,48,0.04))',
+        border: open ? '1px solid rgba(245,230,66,0.18)' : 'none',
+        borderTop: 'none', borderLeft: open ? '3px solid #c8a020' : 'none',
+        borderRadius: '0 0 8px 8px', padding: open ? '8px 14px 10px' : '0 14px',
+        maxHeight: open ? 200 : 0, overflow: 'hidden',
+        transition: 'max-height 0.22s ease, padding 0.15s ease',
+      }}>
+        <textarea
+          value={notes}
+          onChange={e => handleChange(e.target.value)}
+          placeholder="Kayıplar, özel talepler, acil notlar..."
+          style={{
+            width: '100%', height: 130, padding: 0,
+            background: 'transparent', border: 'none', resize: 'none',
+            fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text)',
+            lineHeight: 1.7, outline: 'none', boxSizing: 'border-box',
+          }}
+        />
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          {notes.trim() ? (
+            <button onClick={() => handleChange('')} style={{
+              background: 'rgba(0,0,0,0.1)', border: 'none', cursor: 'pointer',
+              fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--text3)',
+              padding: '2px 8px', borderRadius: 4,
+            }}>Temizle</button>
+          ) : <span />}
+          {savedFlash && (
+            <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--green)' }}>✓ Kaydedildi</span>
+          )}
         </div>
-      )}
+      </div>
     </div>
   )
 }
@@ -1014,6 +1013,15 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
     queryFn: laundryApi.getLaundrySettings,
     staleTime: 30_000,
   })
+  const { data: chatMessages = [] } = useQuery({
+    queryKey: ['laundry-messages'],
+    queryFn: laundryApi.getMessages,
+    refetchInterval: 30_000,
+  })
+  const unreadMsgCount = useMemo(() => {
+    const lastSeen = parseInt(localStorage.getItem('laundry_last_seen_msg') || '0')
+    return chatMessages.filter(m => m.id > lastSeen).length
+  }, [chatMessages])
 
   // Filtered items for both views
   const { data: listItems = [], isLoading } = useQuery({
@@ -1128,8 +1136,18 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
                   border: `1px solid ${section === s.key ? 'rgba(240,165,0,0.3)' : 'var(--border)'}`,
                   color: section === s.key ? 'var(--accent)' : 'var(--text3)',
                   transition: 'all 0.15s',
+                  display: 'flex', alignItems: 'center', gap: 5, position: 'relative',
                 }}
-              >{s.label}</button>
+              >
+                {s.label}
+                {s.key === 'hub' && unreadMsgCount > 0 && section !== 'hub' && (
+                  <span style={{
+                    background: 'var(--red)', color: '#fff',
+                    fontFamily: 'var(--mono)', fontSize: 7, fontWeight: 700,
+                    padding: '1px 4px', borderRadius: 4, lineHeight: 1.4,
+                  }}>{unreadMsgCount}</span>
+                )}
+              </button>
             ))}
           </div>
         </div>
