@@ -315,6 +315,23 @@ laundryRouter.post('/items/:id/notify-whatsapp', ...laundryFull, async (req, res
 })
 
 // ═══════════════════════════════════════════════════════════════════════════
+// BLOCK CONFIG
+// ═══════════════════════════════════════════════════════════════════════════
+
+laundryRouter.get('/block-config', ...laundryRead, (req, res) => {
+  try { res.json(svc.getBlockConfigService()) }
+  catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+laundryRouter.put('/block-config/:block', ...slaWrite, (req, res) => {
+  try {
+    const { is_premium } = req.body
+    if (is_premium == null) return res.status(400).json({ error: 'is_premium zorunlu' })
+    res.json(svc.upsertBlockConfigService(req.params.block, is_premium, req.user.id))
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
 // SETTINGS
 // ═══════════════════════════════════════════════════════════════════════════
 

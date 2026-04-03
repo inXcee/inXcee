@@ -1,4 +1,5 @@
 import * as q from './queries.js'
+import { getDB } from '../../shared/db/index.js'
 import { createNotification } from '../../shared/notifications/service.js'
 import { logAudit } from '../../shared/audit.js'
 import { notifyItemReady } from './whatsapp.js'
@@ -22,7 +23,12 @@ export function createItemService({ room_id, item_count, item_details, notes, ur
   if (!room_id) throw new Error('Oda seçilmeli')
   if (!item_count || item_count < 1) throw new Error('Parça adedi en az 1 olmalı')
 
-  const id = q.insertItemQuery({ room_id, item_count, item_details, notes, urgent, photo_url, phone_override, intake_name, intake_signature, clothing_items, needs_ironing, created_by: userId })
+  // Oda bloğunu al ve premium kontrolü yap
+  const db = getDB()
+  const room = db.prepare(`SELECT block FROM rooms WHERE id=?`).get(room_id)
+  const is_premium = room ? q.isBlockPremiumQuery(room.block) : false
+
+  const id = q.insertItemQuery({ room_id, item_count, item_details, notes, urgent, photo_url, phone_override, intake_name, intake_signature, clothing_items, needs_ironing, is_premium, created_by: userId })
   q.insertHistoryQuery({ item_id: id, from_status: null, to_status: 'dirty', action_by: userId, notes: `${item_count} parça kayıt` })
 
   if (urgent) {
@@ -346,6 +352,15 @@ export function getPersonHistoryService(name) {
 
 export const getSettingsService  = q.getSettingsQuery
 export const updateSettingService = q.updateSettingQuery
+
+// ═══════════════════════════════════════════════════════════════════════════
+// BLOCK CONFIG
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const getBlockConfigService = q.getBlockConfigQuery
+export function upsertBlockConfigService(block, is_premium, userId) {
+  return q.upsertBlockConfigQuery(block, is_premium, userId)
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // MESSAGES

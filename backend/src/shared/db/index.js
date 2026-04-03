@@ -393,6 +393,54 @@ export function initDB() {
   )`) } catch(_) {}
   try { db.exec(`CREATE INDEX IF NOT EXISTS idx_lm_created ON laundry_messages(created_at DESC)`) } catch(_) {}
 
+  // ── Premium block config ──
+  try { db.exec(`CREATE TABLE IF NOT EXISTS laundry_block_config (
+    block TEXT PRIMARY KEY,
+    is_premium INTEGER NOT NULL DEFAULT 0,
+    updated_by INTEGER REFERENCES users(id),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`) } catch(_) {}
+  try { db.exec(`INSERT OR IGNORE INTO laundry_block_config(block, is_premium) VALUES
+    ('A1',1),('A2',1),('A3',1),('A4',1),('G',1),('F',1),
+    ('E',1),('D',1),('C',1),('H',1),('J',1),('A',1),('B',1),
+    ('M',0),('S',0),('S1',0),('S2',0)`) } catch(_) {}
+  try { db.exec(`ALTER TABLE laundry_items ADD COLUMN is_premium INTEGER DEFAULT 0`) } catch(_) {}
+  try { db.exec(`CREATE TABLE IF NOT EXISTS premium_garments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_id INTEGER NOT NULL REFERENCES laundry_items(id) ON DELETE CASCADE,
+    garment_code TEXT NOT NULL UNIQUE,
+    garment_type TEXT NOT NULL,
+    brand TEXT,
+    model TEXT,
+    size TEXT,
+    color TEXT,
+    pattern TEXT,
+    condition_notes TEXT,
+    status TEXT NOT NULL DEFAULT 'received'
+      CHECK(status IN ('received','ironing','ready','delivered','lost')),
+    ironed_by INTEGER REFERENCES users(id),
+    ironed_at TEXT,
+    delivered_to TEXT,
+    delivered_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`) } catch(_) {}
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_pg_item ON premium_garments(item_id)`) } catch(_) {}
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_pg_code ON premium_garments(garment_code)`) } catch(_) {}
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_pg_status ON premium_garments(status)`) } catch(_) {}
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_pg_type ON premium_garments(garment_type)`) } catch(_) {}
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_pg_brand ON premium_garments(brand)`) } catch(_) {}
+  try { db.exec(`CREATE TABLE IF NOT EXISTS premium_garment_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    garment_id INTEGER NOT NULL REFERENCES premium_garments(id) ON DELETE CASCADE,
+    from_status TEXT,
+    to_status TEXT NOT NULL,
+    action_by INTEGER REFERENCES users(id),
+    notes TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`) } catch(_) {}
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_pgh_garment ON premium_garment_history(garment_id)`) } catch(_) {}
+
   return db
 }
 

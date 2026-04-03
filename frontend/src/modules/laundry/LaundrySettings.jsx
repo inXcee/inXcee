@@ -232,6 +232,7 @@ export default function LaundrySettings() {
           { key: 'machines', label: '⚙ Makineler' },
           { key: 'clothing', label: '👕 Kıyafetler' },
           { key: 'goals',    label: '🎯 Hedefler' },
+          { key: 'blocks',   label: '🏢 Bloklar' },
         ].map(t => (
           <button key={t.key} onClick={() => setTab(t.key)} style={{
             padding: '5px 12px', borderRadius: 6, cursor: 'pointer',
@@ -340,6 +341,80 @@ export default function LaundrySettings() {
 
       {tab === 'clothing' && <ClothingSettings />}
       {tab === 'goals' && <GoalsSettings />}
+      {tab === 'blocks' && <BlockSettings />}
+    </div>
+  )
+}
+
+function BlockSettings() {
+  const qc = useQueryClient()
+  const { data: blocks = [] } = useQuery({
+    queryKey: ['laundry-block-config'],
+    queryFn: laundryApi.getBlockConfig,
+  })
+
+  const update = useMutation({
+    mutationFn: ({ block, is_premium }) => laundryApi.updateBlockConfig(block, is_premium),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['laundry-block-config'] }),
+  })
+
+  const premiumBlocks = blocks.filter(b => b.is_premium)
+  const regularBlocks = blocks.filter(b => !b.is_premium)
+
+  return (
+    <div>
+      <label className="form-label">BLOK TİPİ YÖNETİMİ</label>
+      <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', marginBottom: 14, lineHeight: 1.6 }}>
+        Premium bloklar kıyafet-bazlı takip sistemini kullanır (garment kodları, brand/model/beden).
+        Regular bloklar mevcut sistemde çalışır.
+      </div>
+      <table className="data-table" style={{ marginBottom: 0 }}>
+        <thead>
+          <tr>
+            <th>Blok</th>
+            <th>Tip</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {blocks.map(b => (
+            <tr key={b.block}>
+              <td>
+                <span style={{
+                  fontFamily: 'var(--mono)', fontWeight: 700,
+                  color: b.is_premium ? 'var(--accent)' : 'var(--text)',
+                }}>
+                  {b.block}
+                </span>
+              </td>
+              <td>
+                <span style={{
+                  fontFamily: 'var(--mono)', fontSize: 9,
+                  padding: '2px 8px', borderRadius: 4,
+                  background: b.is_premium ? 'rgba(240,165,0,0.12)' : 'var(--surface2)',
+                  border: `1px solid ${b.is_premium ? 'rgba(240,165,0,0.3)' : 'var(--border)'}`,
+                  color: b.is_premium ? 'var(--accent)' : 'var(--text3)',
+                }}>
+                  {b.is_premium ? '★ Premium' : 'Regular'}
+                </span>
+              </td>
+              <td>
+                <button
+                  className="btn btn-ghost btn-xs"
+                  onClick={() => update.mutate({ block: b.block, is_premium: b.is_premium ? 0 : 1 })}
+                  disabled={update.isPending}
+                  style={{ fontSize: 9 }}
+                >
+                  {b.is_premium ? 'Regular yap' : 'Premium yap'}
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div style={{ marginTop: 12, fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>
+        Premium: {premiumBlocks.map(b => b.block).join(', ')} · Regular: {regularBlocks.map(b => b.block).join(', ')}
+      </div>
     </div>
   )
 }

@@ -3,7 +3,7 @@ import request from 'supertest'
 import app from '../../app.js'
 import { initDB, getDB } from '../../shared/db/index.js'
 import { seedDev } from '../../shared/db/seed.js'
-import { batchAssignService, batchLostService, advanceItemService, createVerificationService, getSettingsService, updateSettingService, sendMessageService, getMessagesService, deleteMessageService } from './service.js'
+import { batchAssignService, batchLostService, advanceItemService, createVerificationService, getSettingsService, updateSettingService, sendMessageService, getMessagesService, deleteMessageService, createItemService, getBlockConfigService, upsertBlockConfigService } from './service.js'
 import * as q from './queries.js'
 const { archiveItemsQuery } = q
 
@@ -701,5 +701,36 @@ describe('laundry_messages', () => {
     const otherUser = db.prepare("SELECT * FROM users WHERE role='campus_manager' LIMIT 1").get()
     const msg = sendMessageService({ message: 'manager mesajı' }, otherUser)
     expect(() => deleteMessageService(msg.id, msgUser)).toThrow('Yetkisiz')
+  })
+})
+
+describe('premium blok altyapısı', () => {
+  test('laundry_block_config tablosu oluşur, A1 premium=1 varsayılan', () => {
+    const blocks = getBlockConfigService()
+    const a1 = blocks.find(b => b.block === 'A1')
+    expect(a1).toBeTruthy()
+    expect(a1.is_premium).toBe(1)
+    const m = blocks.find(b => b.block === 'M')
+    expect(m.is_premium).toBe(0)
+  })
+
+  test('upsertBlockConfigQuery premium değerini günceller', () => {
+    const db = getDB()
+    const admin = db.prepare("SELECT id FROM users WHERE role='campus_manager' LIMIT 1").get()
+    upsertBlockConfigService('M', 1, admin.id)
+    const blocks = getBlockConfigService()
+    expect(blocks.find(b => b.block === 'M').is_premium).toBe(1)
+    // Geri al
+    upsertBlockConfigService('M', 0, admin.id)
+  })
+
+  test('createItemService — premium odada is_premium=1 set edilir', () => {
+    const db = getDB()
+    // A bloku premium — A bloğunda oda ara
+    const room = db.prepare("SELECT id FROM rooms WHERE block='A' LIMIT 1").get()
+    if (!room) return // seed'de A bloğu yoksa skip
+    const admin = db.prepare("SELECT id FROM users WHERE role='campus_manager' LIMIT 1").get()
+    const item = createItemService({ room_id: room.id, item_count: 1 }, admin.id)
+    expect(item.is_premium).toBe(1)
   })
 })

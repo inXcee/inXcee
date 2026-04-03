@@ -54,6 +54,10 @@ export const laundryApi = {
   getLaundrySettings: () => api.get('/laundry/settings').then(r => r.data),
   updateLaundrySetting: (key, value) => api.put(`/laundry/settings/${encodeURIComponent(key)}`, { value }).then(r => r.data),
 
+  // ── Block Config ───────────────────────────────────────────────────────
+  getBlockConfig: () => api.get('/laundry/block-config').then(r => r.data),
+  updateBlockConfig: (block, is_premium) => api.put(`/laundry/block-config/${block}`, { is_premium }).then(r => r.data),
+
   // ── Messages ───────────────────────────────────────────────────────────
   getMessages: (params = {}) => api.get('/laundry/messages', { params }).then(r => r.data),
   sendMessage: (data) => api.post('/laundry/messages', data).then(r => r.data),
