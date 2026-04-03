@@ -520,3 +520,40 @@ export function getPremiumReportService(params) {
 export function exportPremiumGarmentsService(params) {
   return q.exportPremiumGarmentsQuery(params)
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ROOM SCAN
+// ═══════════════════════════════════════════════════════════════════════════
+
+export function getRoomGarmentsForScanService(block, room_no) {
+  if (!block || !room_no) throw Object.assign(new Error('Blok ve oda numarası zorunlu'), { status: 400 })
+  const result = q.getRoomGarmentsForScanQuery(block, room_no)
+  if (!result) throw Object.assign(new Error('Oda bulunamadı'), { status: 404 })
+  return result
+}
+
+export function scanActionService(block, room_no, garment_id, action, userId) {
+  const VALID_ACTIONS = ['advance', 'deliver', 'lost']
+  if (!VALID_ACTIONS.includes(action)) throw Object.assign(new Error('Geçersiz aksiyon'), { status: 400 })
+
+  const db = getDB()
+  const room = db.prepare(`SELECT id FROM rooms WHERE block=? AND room_no=?`).get(block, room_no)
+  if (!room) throw Object.assign(new Error('Oda bulunamadı'), { status: 404 })
+
+  const g = q.getPremiumGarmentQuery(garment_id)
+  if (!g) throw Object.assign(new Error('Parça bulunamadı'), { status: 404 })
+
+  let result
+  if (action === 'advance') {
+    result = advancePremiumGarmentService(garment_id, userId)
+  } else if (action === 'deliver') {
+    result = deliverPremiumGarmentService(garment_id, { delivered_to: `${block} ${room_no}` }, userId)
+  } else if (action === 'lost') {
+    q.advancePremiumGarmentQuery(garment_id, 'lost', userId)
+    syncParentStatusService(g.item_id)
+    result = q.getPremiumGarmentQuery(garment_id)
+  }
+
+  q.insertScanLogQuery(room.id, block, room_no, garment_id, action, userId)
+  return result
+}

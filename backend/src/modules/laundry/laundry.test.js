@@ -3,7 +3,7 @@ import request from 'supertest'
 import app from '../../app.js'
 import { initDB, getDB } from '../../shared/db/index.js'
 import { seedDev } from '../../shared/db/seed.js'
-import { batchAssignService, batchLostService, advanceItemService, createVerificationService, getSettingsService, updateSettingService, sendMessageService, getMessagesService, deleteMessageService, createItemService, getBlockConfigService, upsertBlockConfigService, addPremiumGarmentsService, getPremiumGarmentsService, advancePremiumGarmentService, bulkAdvancePremiumGarmentsService, syncParentStatusService, deliverPremiumGarmentService, bulkDeliverPremiumGarmentsService, getPremiumDeliveryReceiptService, searchPremiumGarmentsService, getRoomGarmentHistoryService, getPremiumReportService, exportPremiumGarmentsService } from './service.js'
+import { batchAssignService, batchLostService, advanceItemService, createVerificationService, getSettingsService, updateSettingService, sendMessageService, getMessagesService, deleteMessageService, createItemService, getBlockConfigService, upsertBlockConfigService, addPremiumGarmentsService, getPremiumGarmentsService, advancePremiumGarmentService, bulkAdvancePremiumGarmentsService, syncParentStatusService, deliverPremiumGarmentService, bulkDeliverPremiumGarmentsService, getPremiumDeliveryReceiptService, searchPremiumGarmentsService, getRoomGarmentHistoryService, getPremiumReportService, exportPremiumGarmentsService, getRoomGarmentsForScanService, scanActionService } from './service.js'
 import * as q from './queries.js'
 const { archiveItemsQuery } = q
 
@@ -993,5 +993,45 @@ describe('premium raporlar', () => {
     upsertBlockConfigService('M2', 0, admin.id)
     const blocks2 = getBlockConfigService()
     expect(blocks2.find(b => b.block === 'M2')?.is_premium).toBe(0)
+  })
+})
+
+describe('oda tara (room scan)', () => {
+  test('getRoomGarmentsForScanService M1 odasını döner', () => {
+    const db = getDB()
+    const room = db.prepare("SELECT block, room_no FROM rooms WHERE block='M1' LIMIT 1").get()
+    if (!room) return
+    const result = getRoomGarmentsForScanService(room.block, room.room_no)
+    expect(result).toBeTruthy()
+    expect(result.block).toBe(room.block)
+    expect(result.room_no).toBe(room.room_no)
+    expect(Array.isArray(result.garments)).toBe(true)
+  })
+
+  test('getRoomGarmentsForScanService geçersiz oda 404 atar', () => {
+    expect(() => getRoomGarmentsForScanService('ZZZ', '9999')).toThrow('Oda bulunamadı')
+  })
+
+  test('scanActionService advance parçanın durumunu günceller', () => {
+    const db = getDB()
+    const room = db.prepare("SELECT block, room_no, id FROM rooms WHERE block='M1' LIMIT 1").get()
+    if (!room) return
+
+    // Önce premium item ve garment oluştur
+    const item = createItemService({ room_id: room.id, item_count: 1, needs_ironing: 0 }, userId)
+    if (!item.is_premium) return
+
+    addPremiumGarmentsService(item.id, [{ garment_type: 'Gömlek', brand: 'Test', color: 'Mavi' }], userId)
+    const garments = getPremiumGarmentsService(item.id)
+    const g = garments[0]
+    expect(g.status).toBe('received')
+
+    const result = scanActionService(room.block, room.room_no, g.id, 'advance', userId)
+    expect(result.status).toBe('ironing')
+
+    // Scan log kaydedildi mi?
+    const log = db.prepare("SELECT * FROM garment_scan_log WHERE garment_id=? ORDER BY id DESC LIMIT 1").get(g.id)
+    expect(log).toBeTruthy()
+    expect(log.action).toBe('advance')
   })
 })

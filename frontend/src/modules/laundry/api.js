@@ -80,6 +80,8 @@ export const laundryApi = {
 
   // ── Rooms ──────────────────────────────────────────────────────────────────
   getRooms: () => api.get('/laundry/rooms').then(r => r.data),
+  getRoomForScan: (block, room_no) => api.get('/laundry/rooms-scan', { params: { block, room_no } }).then(r => r.data),
+  scanAction: (data) => api.post('/laundry/garments/scan-action', data).then(r => r.data),
 
   // ── Photo Upload ───────────────────────────────────────────────────────
   uploadPhoto: (file) => {

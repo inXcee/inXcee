@@ -32,6 +32,7 @@ import ArchiveTable             from './components/ArchiveTable.jsx'
 import ArchiveDetailPanel       from './components/ArchiveDetailPanel.jsx'
 import LaundryChat              from './components/LaundryChat.jsx'
 import PremiumSearchPanel       from './components/PremiumSearchPanel.jsx'
+import GarmentScanModal         from './components/GarmentScanModal.jsx'
 
 const COLOR_MAP = {
   'Beyaz': '#f0f0f0', 'Siyah': '#222', 'Gri': '#888',
@@ -935,6 +936,7 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
   const [activeItem,     setActiveItem]     = useState(null)
   const [overCol,        setOverCol]        = useState(null)
   const [showQuickAdd,   setShowQuickAdd]   = useState(false)
+  const [showScanModal,  setShowScanModal]  = useState(false)
 
   const sensors = useSensors(useSensor(PointerSensor, {
     activationConstraint: { distance: 8 },
@@ -1164,6 +1166,12 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
                 }}
               >
                 ⚡ Hızlı Ekle
+              </button>
+              <button className="btn btn-ghost btn-xs"
+                onClick={() => setShowScanModal(true)}
+                style={{ border: '1px solid var(--border)', color: 'var(--text3)' }}
+              >
+                ⊡ Oda Tara
               </button>
               <button className="btn btn-primary" onClick={() => setShowNew(true)} style={{ letterSpacing: 1 }}>
                 + Yeni Kayıt
@@ -1471,6 +1479,7 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
       {section === 'settings' && <LaundrySettings />}
 
       {/* ── MODALS ── */}
+      {showScanModal && <GarmentScanModal onClose={() => setShowScanModal(false)} />}
       {showNew      && <NewItemModal onClose={() => setShowNew(false)} />}
       {deliverItem  && <DeliveryModal item={deliverItem} onClose={() => setDeliverItem(null)} />}
       {damageItem   && <DamageModal   item={damageItem}  onClose={() => setDamageItem(null)} />}

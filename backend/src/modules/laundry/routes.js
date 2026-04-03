@@ -517,3 +517,22 @@ laundryRouter.get('/rooms/:room_id/garment-history', ...laundryRead, (req, res) 
     res.json(svc.getRoomGarmentHistoryService(+req.params.room_id, { from_date: from, to_date: to }))
   } catch (e) { res.status(500).json({ error: e.message }) }
 })
+
+// rooms-scan must be before /rooms/:room_id
+laundryRouter.get('/rooms-scan', ...laundryFull, (req, res) => {
+  try {
+    const { block, room_no } = req.query
+    res.json(svc.getRoomGarmentsForScanService(block, room_no))
+  } catch (e) { res.status(e.status || 500).json({ error: e.message }) }
+})
+
+laundryRouter.post('/garments/scan-action', ...laundryFull, (req, res) => {
+  try {
+    const { block, room_no, garment_id, action } = req.body
+    if (!block || !room_no || !garment_id || !action) {
+      return res.status(400).json({ error: 'block, room_no, garment_id, action zorunlu' })
+    }
+    const result = svc.scanActionService(block, room_no, +garment_id, action, req.user.id)
+    res.json(result)
+  } catch (e) { res.status(e.status || 400).json({ error: e.message }) }
+})
