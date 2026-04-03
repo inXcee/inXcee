@@ -433,3 +433,26 @@ laundryRouter.post('/items/:id/garments/bulk-advance', ...laundryFull, (req, res
     res.json(result)
   } catch (e) { res.status(e.status || 400).json({ error: e.message }) }
 })
+
+laundryRouter.patch('/garments/:id/deliver', ...laundryFull, (req, res) => {
+  try {
+    const garment = svc.deliverPremiumGarmentService(+req.params.id, req.body, req.user.id)
+    res.json(garment)
+  } catch (e) { res.status(e.status || 400).json({ error: e.message }) }
+})
+
+laundryRouter.post('/items/:id/premium-deliver', ...laundryFull, (req, res) => {
+  try {
+    const { garment_ids, delivered_to, signature_data } = req.body
+    if (!Array.isArray(garment_ids) || !delivered_to) {
+      return res.status(400).json({ error: 'garment_ids[] ve delivered_to zorunlu' })
+    }
+    const result = svc.bulkDeliverPremiumGarmentsService(+req.params.id, garment_ids, { delivered_to, signature_data }, req.user.id)
+    res.json(result)
+  } catch (e) { res.status(e.status || 400).json({ error: e.message }) }
+})
+
+laundryRouter.get('/items/:id/delivery-receipt', ...laundryRead, (req, res) => {
+  try { res.json(svc.getPremiumDeliveryReceiptService(+req.params.id)) }
+  catch (e) { res.status(e.status || 500).json({ error: e.message }) }
+})

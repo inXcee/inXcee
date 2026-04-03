@@ -60,6 +60,9 @@ export const laundryApi = {
   getPremiumGarmentByCode: (code) => api.get(`/laundry/garments/by-code/${encodeURIComponent(code)}`).then(r => r.data),
   advancePremiumGarment: (id) => api.patch(`/laundry/garments/${id}/advance`).then(r => r.data),
   bulkAdvancePremiumGarments: (item_id, garment_ids, to_status) => api.post(`/laundry/items/${item_id}/garments/bulk-advance`, { garment_ids, to_status }).then(r => r.data),
+  deliverPremiumGarment: (id, data) => api.patch(`/laundry/garments/${id}/deliver`, data).then(r => r.data),
+  bulkDeliverPremiumGarments: (item_id, garment_ids, delivered_to, signature_data) => api.post(`/laundry/items/${item_id}/premium-deliver`, { garment_ids, delivered_to, signature_data }).then(r => r.data),
+  getPremiumDeliveryReceipt: (item_id) => api.get(`/laundry/items/${item_id}/delivery-receipt`).then(r => r.data),
 
   // ── Block Config ───────────────────────────────────────────────────────
   getBlockConfig: () => api.get('/laundry/block-config').then(r => r.data),

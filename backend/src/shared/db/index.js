@@ -440,6 +440,16 @@ export function initDB() {
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   )`) } catch(_) {}
   try { db.exec(`CREATE INDEX IF NOT EXISTS idx_pgh_garment ON premium_garment_history(garment_id)`) } catch(_) {}
+  try { db.exec(`CREATE TABLE IF NOT EXISTS premium_garment_deliveries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    garment_id INTEGER NOT NULL REFERENCES premium_garments(id),
+    item_id INTEGER NOT NULL REFERENCES laundry_items(id),
+    delivered_to TEXT NOT NULL,
+    signature_data TEXT,
+    delivered_by INTEGER REFERENCES users(id),
+    delivered_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`) } catch(_) {}
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_pgd_item ON premium_garment_deliveries(item_id)`) } catch(_) {}
 
   return db
 }

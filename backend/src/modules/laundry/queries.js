@@ -716,3 +716,75 @@ export function getPremiumGarmentQuery(garment_id) {
   const db = getDB()
   return db.prepare(`SELECT * FROM premium_garments WHERE id=?`).get(garment_id)
 }
+
+export function advancePremiumGarmentQuery(garment_id, to_status, userId) {
+  const db = getDB()
+  const g = db.prepare(`SELECT * FROM premium_garments WHERE id=?`).get(garment_id)
+  if (!g) throw new Error('Parça bulunamadı')
+  db.prepare(`
+    UPDATE premium_garments SET status=?, updated_at=datetime('now')
+    WHERE id=?
+  `).run(to_status, garment_id)
+  db.prepare(`
+    INSERT INTO premium_garment_history(garment_id, from_status, to_status, action_by)
+    VALUES(?, ?, ?, ?)
+  `).run(garment_id, g.status, to_status, userId || null)
+  return db.prepare(`SELECT * FROM premium_garments WHERE id=?`).get(garment_id)
+}
+
+export function checkAllGarmentsStatusQuery(item_id) {
+  const db = getDB()
+  const rows = db.prepare(`SELECT status FROM premium_garments WHERE item_id=?`).all(item_id)
+  const counts = { total: rows.length, received: 0, ironing: 0, ready: 0, delivered: 0, lost: 0 }
+  for (const r of rows) counts[r.status] = (counts[r.status] || 0) + 1
+  return counts
+}
+
+export function bulkSetGarmentsStatusQuery(item_id, to_status, userId) {
+  const db = getDB()
+  const garments = db.prepare(`SELECT id, status FROM premium_garments WHERE item_id=?`).all(item_id)
+  const update = db.prepare(`UPDATE premium_garments SET status=?, updated_at=datetime('now') WHERE id=?`)
+  const hist = db.prepare(`INSERT INTO premium_garment_history(garment_id, from_status, to_status, action_by) VALUES(?,?,?,?)`)
+  const run = db.transaction(() => {
+    for (const g of garments) {
+      update.run(to_status, g.id)
+      hist.run(g.id, g.status, to_status, userId || null)
+    }
+  })
+  run()
+  return garments.length
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PREMIUM GARMENT DELIVERIES
+// ═══════════════════════════════════════════════════════════════════════════
+
+export function deliverPremiumGarmentQuery(garment_id, item_id, { delivered_to, signature_data }, userId) {
+  const db = getDB()
+  db.prepare(`
+    UPDATE premium_garments
+    SET status='delivered', delivered_to=?, delivered_at=datetime('now'), updated_at=datetime('now')
+    WHERE id=?
+  `).run(delivered_to, garment_id)
+  db.prepare(`
+    INSERT INTO premium_garment_history(garment_id, from_status, to_status, action_by, notes)
+    VALUES(?, 'ready', 'delivered', ?, ?)
+  `).run(garment_id, userId || null, `Teslim: ${delivered_to}`)
+  db.prepare(`
+    INSERT INTO premium_garment_deliveries(garment_id, item_id, delivered_to, signature_data, delivered_by)
+    VALUES(?, ?, ?, ?, ?)
+  `).run(garment_id, item_id, delivered_to, signature_data || null, userId || null)
+}
+
+export function getPremiumDeliveryReceiptQuery(item_id) {
+  const db = getDB()
+  return db.prepare(`
+    SELECT pg.id, pg.garment_code, pg.garment_type, pg.brand, pg.model, pg.size, pg.color,
+           pg.status, pg.delivered_to, pg.delivered_at,
+           pgd.signature_data, pgd.delivered_at AS receipt_at
+    FROM premium_garments pg
+    LEFT JOIN premium_garment_deliveries pgd ON pgd.garment_id = pg.id
+    WHERE pg.item_id = ?
+    ORDER BY pg.garment_code ASC
+  `).all(item_id)
+}

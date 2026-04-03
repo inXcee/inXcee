@@ -5,6 +5,7 @@ import AssignModal from './AssignModal.jsx'
 import ShelfModal  from './ShelfModal.jsx'
 import LostModal   from './LostModal.jsx'
 import PremiumGarmentList from './PremiumGarmentList.jsx'
+import PremiumDeliveryModal from './PremiumDeliveryModal.jsx'
 
 /* ── Status config ─────────────────────────────────────────── */
 const FLOW = ['dirty', 'washing', 'ready', 'delivered']
@@ -273,6 +274,7 @@ export default function ItemCard({ item, machines = [], onDeliver, onDamage, sel
   const [shelfOpen,  setShelfOpen]  = useState(false)
   const [lostOpen,   setLostOpen]   = useState(false)
   const [deleteStep, setDeleteStep] = useState(false)
+  const [premiumDeliveryOpen, setPremiumDeliveryOpen] = useState(false)
 
   const deleteItem = useMutation({
     mutationFn: () => laundryApi.deleteItem(item.id),
@@ -430,7 +432,10 @@ export default function ItemCard({ item, machines = [], onDeliver, onDamage, sel
               </button>
             )}
             {item.status !== 'lost' && item.status === 'ready' && (
-              <button className="lc-action-btn success" onClick={() => onDeliver(item)}>
+              <button
+                className="lc-action-btn success"
+                onClick={() => item.is_premium ? setPremiumDeliveryOpen(true) : onDeliver(item)}
+              >
                 ✓ Teslim Et
               </button>
             )}
@@ -499,6 +504,12 @@ export default function ItemCard({ item, machines = [], onDeliver, onDamage, sel
           <LostModal
             item={item}
             onClose={() => setLostOpen(false)}
+          />
+        )}
+        {premiumDeliveryOpen && (
+          <PremiumDeliveryModal
+            item={item}
+            onClose={() => { setPremiumDeliveryOpen(false); qc.invalidateQueries({ queryKey: ['laundry-items'] }) }}
           />
         )}
       </div>

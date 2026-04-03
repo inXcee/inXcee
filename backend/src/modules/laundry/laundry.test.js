@@ -3,7 +3,7 @@ import request from 'supertest'
 import app from '../../app.js'
 import { initDB, getDB } from '../../shared/db/index.js'
 import { seedDev } from '../../shared/db/seed.js'
-import { batchAssignService, batchLostService, advanceItemService, createVerificationService, getSettingsService, updateSettingService, sendMessageService, getMessagesService, deleteMessageService, createItemService, getBlockConfigService, upsertBlockConfigService, addPremiumGarmentsService, getPremiumGarmentsService, advancePremiumGarmentService, bulkAdvancePremiumGarmentsService, syncParentStatusService } from './service.js'
+import { batchAssignService, batchLostService, advanceItemService, createVerificationService, getSettingsService, updateSettingService, sendMessageService, getMessagesService, deleteMessageService, createItemService, getBlockConfigService, upsertBlockConfigService, addPremiumGarmentsService, getPremiumGarmentsService, advancePremiumGarmentService, bulkAdvancePremiumGarmentsService, syncParentStatusService, deliverPremiumGarmentService, bulkDeliverPremiumGarmentsService, getPremiumDeliveryReceiptService } from './service.js'
 import * as q from './queries.js'
 const { archiveItemsQuery } = q
 
@@ -844,5 +844,75 @@ describe('premium garment state machine', () => {
     syncParentStatusService(itemId)
     const item = q.getItemQuery(itemId)
     expect(item.status).toBe('ready')
+  })
+})
+
+describe('premium garment teslim akışı', () => {
+  let itemId, adminUser
+
+  beforeAll(() => {
+    const db = getDB()
+    adminUser = db.prepare("SELECT * FROM users WHERE role='campus_manager' LIMIT 1").get()
+    const room = db.prepare("SELECT id FROM rooms WHERE block='A' LIMIT 1").get()
+    if (room) {
+      const item = createItemService({ room_id: room.id, item_count: 2 }, adminUser.id)
+      itemId = item.id
+      addPremiumGarmentsService(itemId, [
+        { garment_type: 'Gömlek' },
+        { garment_type: 'Pantolon' },
+      ], adminUser.id)
+      // Her ikisini ready yap
+      const garments = getPremiumGarmentsService(itemId)
+      for (const g of garments) {
+        q.advancePremiumGarmentQuery(g.id, 'ironing', adminUser.id)
+        q.advancePremiumGarmentQuery(g.id, 'ready', adminUser.id)
+      }
+      syncParentStatusService(itemId)
+    }
+  })
+
+  test('tüm ready garments teslim → parent delivered olur', () => {
+    if (!itemId) return
+    const garments = getPremiumGarmentsService(itemId)
+    const ids = garments.map(g => g.id)
+    bulkDeliverPremiumGarmentsService(itemId, ids, { delivered_to: 'Ahmet Yılmaz', signature_data: null }, adminUser.id)
+    const item = q.getItemQuery(itemId)
+    expect(item.status).toBe('delivered')
+    const after = getPremiumGarmentsService(itemId)
+    expect(after.every(g => g.status === 'delivered')).toBe(true)
+  })
+
+  test('kısmi teslim — sadece seçili garments delivered, parent ready kalır', () => {
+    if (!itemId) return
+    const db = getDB()
+    const room = db.prepare("SELECT id FROM rooms WHERE block='A' LIMIT 1").get()
+    if (!room) return
+    const item2 = createItemService({ room_id: room.id, item_count: 2 }, adminUser.id)
+    addPremiumGarmentsService(item2.id, [
+      { garment_type: 'Kazak' },
+      { garment_type: 'Mont' },
+    ], adminUser.id)
+    const garments2 = getPremiumGarmentsService(item2.id)
+    for (const g of garments2) {
+      q.advancePremiumGarmentQuery(g.id, 'ironing', adminUser.id)
+      q.advancePremiumGarmentQuery(g.id, 'ready', adminUser.id)
+    }
+    syncParentStatusService(item2.id)
+    // Sadece ilkini teslim et
+    bulkDeliverPremiumGarmentsService(item2.id, [garments2[0].id], { delivered_to: 'Test Kişi' }, adminUser.id)
+    const after = getPremiumGarmentsService(item2.id)
+    expect(after.find(g => g.id === garments2[0].id).status).toBe('delivered')
+    expect(after.find(g => g.id === garments2[1].id).status).toBe('ready')
+    expect(q.getItemQuery(item2.id).status).toBe('ready')
+  })
+
+  test('getPremiumDeliveryReceiptService doğru garment kodlarını içerir', () => {
+    if (!itemId) return
+    const receipt = getPremiumDeliveryReceiptService(itemId)
+    expect(receipt.item.id).toBe(itemId)
+    expect(Array.isArray(receipt.garments)).toBe(true)
+    expect(receipt.garments.length).toBeGreaterThan(0)
+    expect(receipt.garments[0]).toHaveProperty('garment_code')
+    expect(receipt.garments.every(g => g.garment_code.length > 0)).toBe(true)
   })
 })

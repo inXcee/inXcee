@@ -89,6 +89,12 @@ export function advanceItemService(id, { machine_id, shelf_location, timer_minut
     notifyItemReady(id).catch(() => {})
   }
 
+  // Premium item: washing → ironing/ready ise garments'ı toplu güncelle
+  if (item.is_premium && item.status === 'washing') {
+    const garmentStatus = nextStatus === 'ironing' ? 'ironing' : 'ready'
+    q.bulkSetGarmentsStatusQuery(id, garmentStatus, userId)
+  }
+
   q.updateItemStatusQuery(id, nextStatus, extra)
   q.insertHistoryQuery({ item_id: id, from_status: item.status, to_status: nextStatus, action_by: userId })
   logAudit(userId, 'laundry_advance', 'laundry', id, `${item.status} → ${nextStatus}`)
@@ -103,12 +109,55 @@ export function deliverItemService(id, { delivered_to, signature_data }, userId)
   if (!item) throw new Error('Kayıt bulunamadı')
   if (item.status !== 'ready') throw new Error('Sadece rafta hazır kayıtlar teslim edilebilir')
 
+  // Premium item: tüm ready garments delivered yapılır
+  if (item.is_premium) {
+    const garments = q.getPremiumGarmentsQuery(id)
+    const readyGarments = garments.filter(g => g.status === 'ready')
+    for (const g of readyGarments) {
+      q.deliverPremiumGarmentQuery(g.id, id, { delivered_to: delivered_to.trim(), signature_data }, userId)
+    }
+    syncParentStatusService(id)
+  }
+
   q.insertDeliveryQuery({ item_id: id, delivered_to: delivered_to.trim(), signature_data, delivered_by: userId })
   q.updateItemStatusQuery(id, 'delivered')
   q.insertHistoryQuery({ item_id: id, from_status: 'ready', to_status: 'delivered', action_by: userId, notes: `Teslim: ${delivered_to.trim()}` })
   logAudit(userId, 'laundry_deliver', 'laundry', id, `→ ${delivered_to.trim()}`)
 
   return q.getItemQuery(id)
+}
+
+export function deliverPremiumGarmentService(garment_id, { delivered_to, signature_data }, userId) {
+  if (!delivered_to || !delivered_to.trim()) throw new Error('Teslim alanın adı zorunlu')
+  const g = q.getPremiumGarmentQuery(garment_id)
+  if (!g) throw Object.assign(new Error('Parça bulunamadı'), { status: 404 })
+  if (g.status !== 'ready') throw new Error('Sadece hazır parçalar teslim edilebilir')
+  q.deliverPremiumGarmentQuery(garment_id, g.item_id, { delivered_to: delivered_to.trim(), signature_data }, userId)
+  syncParentStatusService(g.item_id)
+  return q.getPremiumGarmentQuery(garment_id)
+}
+
+export function bulkDeliverPremiumGarmentsService(item_id, garment_ids, { delivered_to, signature_data }, userId) {
+  if (!delivered_to || !delivered_to.trim()) throw new Error('Teslim alanın adı zorunlu')
+  const item = q.getItemQuery(item_id)
+  if (!item?.is_premium) throw Object.assign(new Error('Premium kayıt değil'), { status: 400 })
+  let delivered = 0
+  for (const gid of garment_ids) {
+    const g = q.getPremiumGarmentQuery(gid)
+    if (g && g.item_id === item_id && g.status === 'ready') {
+      q.deliverPremiumGarmentQuery(gid, item_id, { delivered_to: delivered_to.trim(), signature_data }, userId)
+      delivered++
+    }
+  }
+  syncParentStatusService(item_id)
+  return { delivered }
+}
+
+export function getPremiumDeliveryReceiptService(item_id) {
+  const item = q.getItemQuery(item_id)
+  if (!item) throw Object.assign(new Error('Kayıt bulunamadı'), { status: 404 })
+  const garments = q.getPremiumDeliveryReceiptQuery(item_id)
+  return { item, garments }
 }
 
 export function batchDeliverService(itemIds, { delivered_to, signature_data }, userId) {
@@ -416,4 +465,42 @@ export function getPremiumGarmentByCodeService(code) {
   const g = q.getPremiumGarmentByCodeQuery(code)
   if (!g) throw Object.assign(new Error('Parça bulunamadı'), { status: 404 })
   return g
+}
+
+// ── Durum akışı ──────────────────────────────────────────────────────────
+
+const GARMENT_TRANSITIONS = { received: 'ironing', ironing: 'ready' }
+
+export function syncParentStatusService(item_id) {
+  const counts = q.checkAllGarmentsStatusQuery(item_id)
+  if (counts.total === 0) return
+  let parentStatus = null
+  if (counts.delivered === counts.total) parentStatus = 'delivered'
+  else if (counts.ready === counts.total) parentStatus = 'ready'
+  else if (counts.ironing > 0) parentStatus = 'ironing'
+  else if (counts.received > 0) parentStatus = 'washing' // hepsi received = henüz yıkamada
+  if (parentStatus) q.updateItemStatusQuery(item_id, parentStatus)
+}
+
+export function advancePremiumGarmentService(garment_id, userId) {
+  const g = q.getPremiumGarmentQuery(garment_id)
+  if (!g) throw Object.assign(new Error('Parça bulunamadı'), { status: 404 })
+  const next = GARMENT_TRANSITIONS[g.status]
+  if (!next) throw Object.assign(new Error(`"${g.status}" durumundan ilerlenemez`), { status: 400 })
+  const updated = q.advancePremiumGarmentQuery(garment_id, next, userId)
+  syncParentStatusService(g.item_id)
+  return updated
+}
+
+export function bulkAdvancePremiumGarmentsService(item_id, garment_ids, to_status, userId) {
+  const VALID = ['ironing', 'ready', 'lost']
+  if (!VALID.includes(to_status)) throw new Error('Geçersiz hedef durum')
+  const item = q.getItemQuery(item_id)
+  if (!item?.is_premium) throw Object.assign(new Error('Premium kayıt değil'), { status: 400 })
+  for (const gid of garment_ids) {
+    const g = q.getPremiumGarmentQuery(gid)
+    if (g && g.item_id === item_id) q.advancePremiumGarmentQuery(gid, to_status, userId)
+  }
+  syncParentStatusService(item_id)
+  return q.getPremiumGarmentsQuery(item_id)
 }
