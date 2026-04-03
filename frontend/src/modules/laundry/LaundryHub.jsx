@@ -30,6 +30,7 @@ import BatchAssignModal         from './components/BatchAssignModal.jsx'
 import ItemVerificationModal    from './components/ItemVerificationModal.jsx'
 import ArchiveTable             from './components/ArchiveTable.jsx'
 import ArchiveDetailPanel       from './components/ArchiveDetailPanel.jsx'
+import LaundryChat              from './components/LaundryChat.jsx'
 
 const COLOR_MAP = {
   'Beyaz': '#f0f0f0', 'Siyah': '#222', 'Gri': '#888',
@@ -1430,6 +1431,9 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
           )}
         </div>
       )}
+
+      {/* ── MESAJLAŞMA ── */}
+      <LaundryChat />
 
       </>)}
 

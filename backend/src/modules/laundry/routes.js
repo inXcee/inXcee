@@ -340,3 +340,38 @@ laundryRouter.post('/upload-photo', ...laundryFull, upload.single('photo'), (req
   const path = `/uploads/${req.file.filename}`
   res.json({ url: path, filename: req.file.filename })
 })
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MESSAGES
+// ═══════════════════════════════════════════════════════════════════════════
+
+laundryRouter.get('/messages', ...laundryRead, (req, res) => {
+  try {
+    const { before_id, limit } = req.query
+    res.json(svc.getMessagesService({
+      before_id: before_id ? +before_id : undefined,
+      limit: limit ? +limit : 50,
+    }))
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+laundryRouter.post('/messages', ...laundryFull, (req, res) => {
+  try {
+    const msg = svc.sendMessageService(req.body, req.user)
+    res.status(201).json(msg)
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+laundryRouter.delete('/messages/:id', ...laundryFull, (req, res) => {
+  try {
+    svc.deleteMessageService(+req.params.id, req.user)
+    res.json({ ok: true })
+  } catch (e) { res.status(e.status || 400).json({ error: e.message }) }
+})
+
+laundryRouter.patch('/messages/:id/pin', ...slaWrite, (req, res) => {
+  try {
+    const msg = svc.pinMessageService(+req.params.id, req.body.is_pinned, req.user)
+    res.json(msg)
+  } catch (e) { res.status(e.status || 400).json({ error: e.message }) }
+})

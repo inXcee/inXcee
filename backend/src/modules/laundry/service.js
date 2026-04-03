@@ -346,3 +346,36 @@ export function getPersonHistoryService(name) {
 
 export const getSettingsService  = q.getSettingsQuery
 export const updateSettingService = q.updateSettingQuery
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MESSAGES
+// ═══════════════════════════════════════════════════════════════════════════
+
+export function getMessagesService(opts = {}) {
+  return q.getMessagesQuery(opts)
+}
+
+export function sendMessageService({ message, message_type = 'normal' }, user) {
+  if (!message?.trim()) throw new Error('Mesaj boş olamaz')
+  return q.insertMessageQuery({
+    sender_id: user.id,
+    sender_name: user.full_name || user.username,
+    message: message.trim(),
+    message_type,
+  })
+}
+
+export function deleteMessageService(id, user) {
+  const msg = q.getMessageQuery(id)
+  if (!msg) throw Object.assign(new Error('Mesaj bulunamadı'), { status: 404 })
+  if (msg.sender_id !== user.id && user.role !== 'campus_manager') {
+    throw Object.assign(new Error('Yetkisiz'), { status: 403 })
+  }
+  return q.deleteMessageQuery(id)
+}
+
+export function pinMessageService(id, is_pinned, user) {
+  const msg = q.getMessageQuery(id)
+  if (!msg) throw Object.assign(new Error('Mesaj bulunamadı'), { status: 404 })
+  return q.pinMessageQuery(id, is_pinned)
+}

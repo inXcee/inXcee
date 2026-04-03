@@ -3,7 +3,7 @@ import request from 'supertest'
 import app from '../../app.js'
 import { initDB, getDB } from '../../shared/db/index.js'
 import { seedDev } from '../../shared/db/seed.js'
-import { batchAssignService, batchLostService, advanceItemService, createVerificationService, getSettingsService, updateSettingService } from './service.js'
+import { batchAssignService, batchLostService, advanceItemService, createVerificationService, getSettingsService, updateSettingService, sendMessageService, getMessagesService, deleteMessageService } from './service.js'
 import * as q from './queries.js'
 const { archiveItemsQuery } = q
 
@@ -671,5 +671,35 @@ describe('laundry_global_settings', () => {
     const parsed = JSON.parse(settings.clothing_types)
     expect(parsed).toContain('Özel Tip')
     expect(parsed).toHaveLength(3)
+  })
+})
+
+describe('laundry_messages', () => {
+  let msgUser
+
+  beforeAll(() => {
+    const db = getDB()
+    msgUser = db.prepare("SELECT * FROM users WHERE role='laundry' LIMIT 1").get()
+  })
+
+  test('sendMessageService mesajı kaydeder, getMessagesService döner', () => {
+    const msg = sendMessageService({ message: 'Test mesajı' }, msgUser)
+    expect(msg.id).toBeTruthy()
+    expect(msg.message).toBe('Test mesajı')
+    expect(msg.message_type).toBe('normal')
+    const list = getMessagesService()
+    expect(list.some(m => m.id === msg.id)).toBe(true)
+  })
+
+  test('message_type urgent gönderilince kayıt doğru tipi taşır', () => {
+    const msg = sendMessageService({ message: 'Acil durum!', message_type: 'urgent' }, msgUser)
+    expect(msg.message_type).toBe('urgent')
+  })
+
+  test('kendi olmayan mesajı laundry rolü silmeye çalışırsa 403', () => {
+    const db = getDB()
+    const otherUser = db.prepare("SELECT * FROM users WHERE role='campus_manager' LIMIT 1").get()
+    const msg = sendMessageService({ message: 'manager mesajı' }, otherUser)
+    expect(() => deleteMessageService(msg.id, msgUser)).toThrow('Yetkisiz')
   })
 })

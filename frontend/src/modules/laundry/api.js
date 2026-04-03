@@ -54,6 +54,12 @@ export const laundryApi = {
   getLaundrySettings: () => api.get('/laundry/settings').then(r => r.data),
   updateLaundrySetting: (key, value) => api.put(`/laundry/settings/${encodeURIComponent(key)}`, { value }).then(r => r.data),
 
+  // ── Messages ───────────────────────────────────────────────────────────
+  getMessages: (params = {}) => api.get('/laundry/messages', { params }).then(r => r.data),
+  sendMessage: (data) => api.post('/laundry/messages', data).then(r => r.data),
+  deleteMessage: (id) => api.delete(`/laundry/messages/${id}`).then(r => r.data),
+  pinMessage: (id, is_pinned) => api.patch(`/laundry/messages/${id}/pin`, { is_pinned }).then(r => r.data),
+
   // ── Photo Upload ───────────────────────────────────────────────────────
   uploadPhoto: (file) => {
     const fd = new FormData()
