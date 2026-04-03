@@ -63,6 +63,8 @@ export const laundryApi = {
   deliverPremiumGarment: (id, data) => api.patch(`/laundry/garments/${id}/deliver`, data).then(r => r.data),
   bulkDeliverPremiumGarments: (item_id, garment_ids, delivered_to, signature_data) => api.post(`/laundry/items/${item_id}/premium-deliver`, { garment_ids, delivered_to, signature_data }).then(r => r.data),
   getPremiumDeliveryReceipt: (item_id) => api.get(`/laundry/items/${item_id}/delivery-receipt`).then(r => r.data),
+  searchPremiumGarments: (params) => api.get('/laundry/garments/search', { params }).then(r => r.data),
+  getRoomGarmentHistory: (room_id, params) => api.get(`/laundry/rooms/${room_id}/garment-history`, { params }).then(r => r.data),
 
   // ── Block Config ───────────────────────────────────────────────────────
   getBlockConfig: () => api.get('/laundry/block-config').then(r => r.data),

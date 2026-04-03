@@ -504,3 +504,11 @@ export function bulkAdvancePremiumGarmentsService(item_id, garment_ids, to_statu
   syncParentStatusService(item_id)
   return q.getPremiumGarmentsQuery(item_id)
 }
+
+export function searchPremiumGarmentsService(params) {
+  return q.searchPremiumGarmentsQuery(params)
+}
+
+export function getRoomGarmentHistoryService(room_id, params) {
+  return q.getRoomGarmentHistoryQuery(room_id, params)
+}

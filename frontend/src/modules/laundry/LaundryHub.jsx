@@ -31,6 +31,7 @@ import ItemVerificationModal    from './components/ItemVerificationModal.jsx'
 import ArchiveTable             from './components/ArchiveTable.jsx'
 import ArchiveDetailPanel       from './components/ArchiveDetailPanel.jsx'
 import LaundryChat              from './components/LaundryChat.jsx'
+import PremiumSearchPanel       from './components/PremiumSearchPanel.jsx'
 
 const COLOR_MAP = {
   'Beyaz': '#f0f0f0', 'Siyah': '#222', 'Gri': '#888',
@@ -1123,8 +1124,9 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
             {[
               { key: 'hub',      label: '⊞ Kontrol' },
               { key: 'records',  label: '≡ Kayıtlar' },
-              { key: 'archive',  label: '▣ Arşiv' },
-              { key: 'reports',  label: '◈ Raporlar' },
+              { key: 'archive',       label: '▣ Arşiv' },
+              { key: 'premium-search', label: '◎ Premium Ara' },
+              { key: 'reports',       label: '◈ Raporlar' },
               { key: 'settings', label: '⚙ Ayarlar' },
             ].map(s => (
               <button key={s.key}
@@ -1464,6 +1466,7 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
           )}
         </div>
       )}
+      {section === 'premium-search' && <PremiumSearchPanel />}
       {section === 'reports'  && <LaundryReport />}
       {section === 'settings' && <LaundrySettings />}
 

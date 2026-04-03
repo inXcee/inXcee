@@ -456,3 +456,23 @@ laundryRouter.get('/items/:id/delivery-receipt', ...laundryRead, (req, res) => {
   try { res.json(svc.getPremiumDeliveryReceiptService(+req.params.id)) }
   catch (e) { res.status(e.status || 500).json({ error: e.message }) }
 })
+
+// garments/search must be before /garments/:id routes
+laundryRouter.get('/garments/search', ...laundryRead, (req, res) => {
+  try {
+    const { block, room_no, type, brand, size, color, status, from, to, page, limit } = req.query
+    res.json(svc.searchPremiumGarmentsService({
+      block, room_no, garment_type: type, brand, size, color, status,
+      from_date: from, to_date: to,
+      page: page ? +page : 1,
+      limit: limit ? Math.min(+limit, 100) : 50,
+    }))
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+laundryRouter.get('/rooms/:room_id/garment-history', ...laundryRead, (req, res) => {
+  try {
+    const { from, to } = req.query
+    res.json(svc.getRoomGarmentHistoryService(+req.params.room_id, { from_date: from, to_date: to }))
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})

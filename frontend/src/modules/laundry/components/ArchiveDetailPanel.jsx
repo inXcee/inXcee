@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { laundryApi } from '../api.js'
+import PremiumGarmentList from './PremiumGarmentList.jsx'
 
 const STAGE_LABELS = {
   washing_to_ready: 'Yıkama sonrası',
@@ -76,8 +77,16 @@ export default function ArchiveDetailPanel({ item, onClose }) {
           ))}
         </div>
 
+        {/* Premium Garment detayı (readonly) */}
+        {item.is_premium === 1 && (
+          <div>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: 1.5, marginBottom: 6 }}>PREMİUM KIYAFETler</div>
+            <PremiumGarmentList item={item} />
+          </div>
+        )}
+
         {/* Kıyafetler */}
-        {clothing.length > 0 && (
+        {clothing.length > 0 && item.is_premium !== 1 && (
           <div>
             <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: 1.5, marginBottom: 8 }}>KIYAFETler</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>

@@ -661,9 +661,9 @@ export function pinMessageQuery(id, is_pinned) {
 // PREMIUM GARMENTS
 // ═══════════════════════════════════════════════════════════════════════════
 
-export function generateNextGarmentSeqQuery(item_id) {
+export function generateNextGarmentSeqQuery(prefix) {
   const db = getDB()
-  const row = db.prepare(`SELECT COUNT(*) as cnt FROM premium_garments WHERE item_id=?`).get(item_id)
+  const row = db.prepare(`SELECT COUNT(*) as cnt FROM premium_garments WHERE garment_code LIKE ?`).get(`${prefix}-%`)
   return (row?.cnt || 0) + 1
 }
 
@@ -687,7 +687,7 @@ export function insertPremiumGarmentsQuery(item_id, garments) {
   const insertMany = db.transaction((list) => {
     const codes = []
     for (const g of list) {
-      const seq = generateNextGarmentSeqQuery(item_id)
+      const seq = generateNextGarmentSeqQuery(prefix)
       const code = `${prefix}-${String(seq).padStart(3, '0')}`
       insert.run(
         item_id, code,
@@ -787,4 +787,69 @@ export function getPremiumDeliveryReceiptQuery(item_id) {
     WHERE pg.item_id = ?
     ORDER BY pg.garment_code ASC
   `).all(item_id)
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PREMIUM GARMENT SEARCH
+// ═══════════════════════════════════════════════════════════════════════════
+
+export function searchPremiumGarmentsQuery({ block, room_no, garment_type, brand, size, color, status, from_date, to_date, page = 1, limit = 50 } = {}) {
+  const db = getDB()
+  const conditions = []
+  const params = []
+
+  if (block)        { conditions.push('r.block = ?');           params.push(block) }
+  if (room_no)      { conditions.push('r.room_no = ?');         params.push(room_no) }
+  if (garment_type) { conditions.push('pg.garment_type LIKE ?'); params.push(`%${garment_type}%`) }
+  if (brand)        { conditions.push('pg.brand LIKE ?');       params.push(`%${brand}%`) }
+  if (size)         { conditions.push('pg.size = ?');           params.push(size) }
+  if (color)        { conditions.push('pg.color LIKE ?');       params.push(`%${color}%`) }
+  if (status)       { conditions.push('pg.status = ?');         params.push(status) }
+  if (from_date)    { conditions.push("li.created_at >= ?");    params.push(from_date) }
+  if (to_date)      { conditions.push("li.created_at <= ?");    params.push(to_date + ' 23:59:59') }
+
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
+  const offset = (page - 1) * limit
+
+  const rows = db.prepare(`
+    SELECT pg.id, pg.garment_code, pg.garment_type, pg.brand, pg.model, pg.size, pg.color, pg.status,
+           pg.condition_notes, pg.delivered_to, pg.delivered_at,
+           li.id AS item_id, li.created_at AS intake_date,
+           r.block, r.room_no
+    FROM premium_garments pg
+    JOIN laundry_items li ON li.id = pg.item_id
+    JOIN rooms r ON r.id = li.room_id
+    ${where}
+    ORDER BY li.created_at DESC, pg.garment_code ASC
+    LIMIT ? OFFSET ?
+  `).all(...params, limit, offset)
+
+  const total = db.prepare(`
+    SELECT COUNT(*) AS cnt
+    FROM premium_garments pg
+    JOIN laundry_items li ON li.id = pg.item_id
+    JOIN rooms r ON r.id = li.room_id
+    ${where}
+  `).get(...params)
+
+  return { rows, total: total.cnt, page, limit }
+}
+
+export function getRoomGarmentHistoryQuery(room_id, { from_date, to_date } = {}) {
+  const db = getDB()
+  const conditions = ['li.room_id = ?']
+  const params = [room_id]
+
+  if (from_date) { conditions.push("li.created_at >= ?"); params.push(from_date) }
+  if (to_date)   { conditions.push("li.created_at <= ?"); params.push(to_date + ' 23:59:59') }
+
+  return db.prepare(`
+    SELECT pg.id, pg.garment_code, pg.garment_type, pg.brand, pg.model, pg.size, pg.color, pg.status,
+           pg.delivered_to, pg.delivered_at,
+           li.id AS item_id, li.created_at AS intake_date
+    FROM premium_garments pg
+    JOIN laundry_items li ON li.id = pg.item_id
+    WHERE ${conditions.join(' AND ')}
+    ORDER BY li.created_at DESC, pg.garment_code ASC
+  `).all(...params)
 }

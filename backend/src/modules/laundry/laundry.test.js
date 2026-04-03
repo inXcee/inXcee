@@ -3,7 +3,7 @@ import request from 'supertest'
 import app from '../../app.js'
 import { initDB, getDB } from '../../shared/db/index.js'
 import { seedDev } from '../../shared/db/seed.js'
-import { batchAssignService, batchLostService, advanceItemService, createVerificationService, getSettingsService, updateSettingService, sendMessageService, getMessagesService, deleteMessageService, createItemService, getBlockConfigService, upsertBlockConfigService, addPremiumGarmentsService, getPremiumGarmentsService, advancePremiumGarmentService, bulkAdvancePremiumGarmentsService, syncParentStatusService, deliverPremiumGarmentService, bulkDeliverPremiumGarmentsService, getPremiumDeliveryReceiptService } from './service.js'
+import { batchAssignService, batchLostService, advanceItemService, createVerificationService, getSettingsService, updateSettingService, sendMessageService, getMessagesService, deleteMessageService, createItemService, getBlockConfigService, upsertBlockConfigService, addPremiumGarmentsService, getPremiumGarmentsService, advancePremiumGarmentService, bulkAdvancePremiumGarmentsService, syncParentStatusService, deliverPremiumGarmentService, bulkDeliverPremiumGarmentsService, getPremiumDeliveryReceiptService, searchPremiumGarmentsService, getRoomGarmentHistoryService } from './service.js'
 import * as q from './queries.js'
 const { archiveItemsQuery } = q
 
@@ -727,7 +727,7 @@ describe('premium blok altyapısı', () => {
   test('createItemService — premium odada is_premium=1 set edilir', () => {
     const db = getDB()
     // A bloku premium — A bloğunda oda ara
-    const room = db.prepare("SELECT id FROM rooms WHERE block='A' LIMIT 1").get()
+    const room = db.prepare("SELECT id FROM rooms WHERE block='M1' LIMIT 1").get()
     if (!room) return // seed'de A bloğu yoksa skip
     const admin = db.prepare("SELECT id FROM users WHERE role='campus_manager' LIMIT 1").get()
     const item = createItemService({ room_id: room.id, item_count: 1 }, admin.id)
@@ -742,7 +742,7 @@ describe('premium garment CRUD', () => {
     const db = getDB()
     adminUser = db.prepare("SELECT * FROM users WHERE role='campus_manager' LIMIT 1").get()
     // Premium oda (A bloğu)
-    const room = db.prepare("SELECT id FROM rooms WHERE block='A' LIMIT 1").get()
+    const room = db.prepare("SELECT id FROM rooms WHERE block='M1' LIMIT 1").get()
     if (room) {
       const item = createItemService({ room_id: room.id, item_count: 3 }, adminUser.id)
       premiumItemId = item.id
@@ -795,7 +795,7 @@ describe('premium garment state machine', () => {
   beforeAll(() => {
     const db = getDB()
     adminUser = db.prepare("SELECT * FROM users WHERE role='campus_manager' LIMIT 1").get()
-    const room = db.prepare("SELECT id FROM rooms WHERE block='A' LIMIT 1").get()
+    const room = db.prepare("SELECT id FROM rooms WHERE block='M1' LIMIT 1").get()
     if (room) {
       const item = createItemService({ room_id: room.id, item_count: 2 }, adminUser.id)
       itemId = item.id
@@ -853,7 +853,7 @@ describe('premium garment teslim akışı', () => {
   beforeAll(() => {
     const db = getDB()
     adminUser = db.prepare("SELECT * FROM users WHERE role='campus_manager' LIMIT 1").get()
-    const room = db.prepare("SELECT id FROM rooms WHERE block='A' LIMIT 1").get()
+    const room = db.prepare("SELECT id FROM rooms WHERE block='M1' LIMIT 1").get()
     if (room) {
       const item = createItemService({ room_id: room.id, item_count: 2 }, adminUser.id)
       itemId = item.id
@@ -885,7 +885,7 @@ describe('premium garment teslim akışı', () => {
   test('kısmi teslim — sadece seçili garments delivered, parent ready kalır', () => {
     if (!itemId) return
     const db = getDB()
-    const room = db.prepare("SELECT id FROM rooms WHERE block='A' LIMIT 1").get()
+    const room = db.prepare("SELECT id FROM rooms WHERE block='M1' LIMIT 1").get()
     if (!room) return
     const item2 = createItemService({ room_id: room.id, item_count: 2 }, adminUser.id)
     addPremiumGarmentsService(item2.id, [
@@ -914,5 +914,48 @@ describe('premium garment teslim akışı', () => {
     expect(receipt.garments.length).toBeGreaterThan(0)
     expect(receipt.garments[0]).toHaveProperty('garment_code')
     expect(receipt.garments.every(g => g.garment_code.length > 0)).toBe(true)
+  })
+})
+
+describe('premium garment arama', () => {
+  let adminUser, aRoomId
+
+  beforeAll(() => {
+    const db = getDB()
+    adminUser = db.prepare("SELECT * FROM users WHERE role='campus_manager' LIMIT 1").get()
+    const room = db.prepare("SELECT id FROM rooms WHERE block='M1' LIMIT 1").get()
+    if (room) {
+      aRoomId = room.id
+      const item = createItemService({ room_id: room.id, item_count: 3 }, adminUser.id)
+      addPremiumGarmentsService(item.id, [
+        { garment_type: 'Gömlek', brand: 'Polo', size: 'M', color: 'Beyaz' },
+        { garment_type: 'Pantolon', brand: 'Mavi', size: '32' },
+        { garment_type: 'Kazak', status: 'lost' },
+      ], adminUser.id)
+      // 3. parçayı lost yap
+      const garments = getPremiumGarmentsService(item.id)
+      q.advancePremiumGarmentQuery(garments[2].id, 'lost', adminUser.id)
+    }
+  })
+
+  test('searchPremiumGarmentsQuery blok filtresi çalışır', () => {
+    const result = searchPremiumGarmentsService({ block: 'M1' })
+    expect(result.rows.every(g => g.block === 'M1')).toBe(true)
+    expect(result.total).toBeGreaterThan(0)
+  })
+
+  test('status=lost filtresi sadece kayıpları döner', () => {
+    const result = searchPremiumGarmentsService({ status: 'lost' })
+    expect(result.rows.every(g => g.status === 'lost')).toBe(true)
+    expect(result.total).toBeGreaterThan(0)
+  })
+
+  test('getRoomGarmentHistoryQuery belirli oda için çalışır', () => {
+    if (!aRoomId) return
+    const history = getRoomGarmentHistoryService(aRoomId, {})
+    expect(Array.isArray(history)).toBe(true)
+    expect(history.length).toBeGreaterThan(0)
+    expect(history[0]).toHaveProperty('garment_code')
+    expect(history.every(g => g.item_id != null)).toBe(true)
   })
 })

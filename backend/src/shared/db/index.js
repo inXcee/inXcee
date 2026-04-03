@@ -403,7 +403,8 @@ export function initDB() {
   try { db.exec(`INSERT OR IGNORE INTO laundry_block_config(block, is_premium) VALUES
     ('A1',1),('A2',1),('A3',1),('A4',1),('G',1),('F',1),
     ('E',1),('D',1),('C',1),('H',1),('J',1),('A',1),('B',1),
-    ('M',0),('S',0),('S1',0),('S2',0)`) } catch(_) {}
+    ('M1',1),('M2',0),('M3',0),
+    ('M',0),('S',0),('S1',0),('S2',0),('S3',0)`) } catch(_) {}
   try { db.exec(`ALTER TABLE laundry_items ADD COLUMN is_premium INTEGER DEFAULT 0`) } catch(_) {}
   try { db.exec(`CREATE TABLE IF NOT EXISTS premium_garments (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -450,6 +451,7 @@ export function initDB() {
     delivered_at TEXT NOT NULL DEFAULT (datetime('now'))
   )`) } catch(_) {}
   try { db.exec(`CREATE INDEX IF NOT EXISTS idx_pgd_item ON premium_garment_deliveries(item_id)`) } catch(_) {}
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_li_room_created ON laundry_items(room_id, created_at DESC)`) } catch(_) {}
 
   return db
 }
