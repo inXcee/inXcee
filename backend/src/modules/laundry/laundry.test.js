@@ -657,4 +657,19 @@ describe('laundry_global_settings', () => {
     const cols = db.prepare('PRAGMA table_info(laundry_sla_config)').all().map(c => c.name)
     expect(cols).toContain('whatsapp_notify')
   })
+
+  test('shared_notes backend sync: kaydedilir ve okunur', () => {
+    updateSettingService('shared_notes', 'test notu')
+    const settings = getSettingsService()
+    expect(settings.shared_notes).toBe('test notu')
+  })
+
+  test('clothing_types backend sync: JSON kaydedilir ve okunur', () => {
+    const types = ['Pantolon', 'Gömlek', 'Özel Tip']
+    updateSettingService('clothing_types', JSON.stringify(types))
+    const settings = getSettingsService()
+    const parsed = JSON.parse(settings.clothing_types)
+    expect(parsed).toContain('Özel Tip')
+    expect(parsed).toHaveLength(3)
+  })
 })

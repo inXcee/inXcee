@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { laundryApi } from './api.js'
 
@@ -64,17 +64,28 @@ function ClothingSettings() {
     'Yastık K.','İş Mont','İş Pantalonu','Şort','Atlet','Diğer',
   ]
 
-  const [types, setTypes] = useState(() => {
-    try {
-      const saved = localStorage.getItem('custom-clothing-types')
-      return saved ? JSON.parse(saved) : DEFAULT_TYPES
-    } catch { return DEFAULT_TYPES }
+  const qc = useQueryClient()
+  const { data: settings = {} } = useQuery({
+    queryKey: ['laundry-settings'],
+    queryFn: laundryApi.getLaundrySettings,
   })
+
+  const types = useMemo(() => {
+    if (settings.clothing_types) {
+      try { return JSON.parse(settings.clothing_types) } catch {}
+    }
+    return DEFAULT_TYPES
+  }, [settings.clothing_types])
+
   const [newType, setNewType] = useState('')
 
+  const updateSetting = useMutation({
+    mutationFn: ({ key, value }) => laundryApi.updateLaundrySetting(key, value),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['laundry-settings'] }),
+  })
+
   const save = (list) => {
-    setTypes(list)
-    try { localStorage.setItem('custom-clothing-types', JSON.stringify(list)) } catch {}
+    updateSetting.mutate({ key: 'clothing_types', value: JSON.stringify(list) })
   }
 
   const add = () => {
@@ -128,13 +139,20 @@ function ClothingSettings() {
 }
 
 function GoalsSettings() {
-  const [goal, setGoal] = useState(() => {
-    try { return parseInt(localStorage.getItem('laundry-daily-goal') || '50') } catch { return 50 }
+  const qc = useQueryClient()
+  const { data: settings = {} } = useQuery({
+    queryKey: ['laundry-settings'],
+    queryFn: laundryApi.getLaundrySettings,
   })
+  const [goal, setGoal] = useState(50)
+  useEffect(() => {
+    if (settings.daily_goal !== undefined) setGoal(parseInt(settings.daily_goal) || 50)
+  }, [settings.daily_goal])
   const [saved, setSaved] = useState(false)
 
-  const save = () => {
-    try { localStorage.setItem('laundry-daily-goal', String(goal)) } catch {}
+  const save = async () => {
+    await laundryApi.updateLaundrySetting('daily_goal', String(goal))
+    qc.invalidateQueries({ queryKey: ['laundry-settings'] })
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
   }

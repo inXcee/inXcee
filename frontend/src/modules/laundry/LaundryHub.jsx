@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { laundryApi } from './api.js'
 import LaundryReport from './LaundryReport.jsx'
@@ -576,96 +576,112 @@ const FILTERS = [
   { key: 'lost',    label: 'Kayıp',   dot: 'var(--text3)' },
 ]
 
-// ── QuickNotes (Sabit Sticker) ─────────────────────────────────
-function QuickNotes({ visible }) {
+// ── QuickNotes (Inline Panel — KPI altı) ─────────────────────────────────
+function QuickNotes() {
+  const qc = useQueryClient()
   const [open, setOpen] = useState(false)
-  const [notes, setNotes] = useState(() => {
-    try { return localStorage.getItem('laundry-notes') || '' } catch { return '' }
+  const [notes, setNotes] = useState('')
+  const [savedFlash, setSavedFlash] = useState(false)
+  const timerRef = useRef(null)
+  const flashRef = useRef(null)
+
+  const { data: settings = {} } = useQuery({
+    queryKey: ['laundry-settings'],
+    queryFn: laundryApi.getLaundrySettings,
+    staleTime: 30_000,
   })
 
-  const save = (val) => {
+  useEffect(() => {
+    if (settings.shared_notes !== undefined) setNotes(settings.shared_notes)
+  }, [settings.shared_notes])
+
+  const updateSetting = useMutation({
+    mutationFn: ({ key, value }) => laundryApi.updateLaundrySetting(key, value),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['laundry-settings'] })
+      setSavedFlash(true)
+      if (flashRef.current) clearTimeout(flashRef.current)
+      flashRef.current = setTimeout(() => setSavedFlash(false), 1500)
+    },
+  })
+
+  const handleChange = (val) => {
     setNotes(val)
-    try { localStorage.setItem('laundry-notes', val) } catch {}
+    if (timerRef.current) clearTimeout(timerRef.current)
+    timerRef.current = setTimeout(() => {
+      updateSetting.mutate({ key: 'shared_notes', value: val })
+    }, 500)
   }
 
   const lineCount = notes.split('\n').filter(l => l.trim()).length
 
-  if (!visible) return null
-
   return (
-    <div style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 980 }}>
-      {open ? (
+    <div style={{ marginBottom: 12 }}>
+      <button
+        onClick={() => setOpen(v => !v)}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+          height: 40, padding: '0 14px',
+          background: 'linear-gradient(90deg,rgba(245,230,66,0.10),rgba(240,192,48,0.06))',
+          border: '1px solid rgba(245,230,66,0.22)',
+          borderLeft: '3px solid #c8a020',
+          borderRadius: open ? '8px 8px 0 0' : 8,
+          cursor: 'pointer', transition: 'border-radius 0.15s',
+        }}
+      >
+        <span style={{ fontFamily: 'var(--mono)', fontSize: 9, fontWeight: 700, color: '#c8a020', letterSpacing: 2 }}>
+          📋 NOTLAR
+        </span>
+        {lineCount > 0 && (
+          <span style={{
+            background: 'rgba(200,160,32,0.18)', color: '#c8a020',
+            fontFamily: 'var(--mono)', fontSize: 8, padding: '1px 7px',
+            borderRadius: 4, letterSpacing: 1,
+          }}>● {lineCount} satır</span>
+        )}
+        <span style={{
+          marginLeft: 'auto', color: 'var(--text3)', fontSize: 10,
+          transition: 'transform 0.2s', display: 'inline-block',
+          transform: open ? 'rotate(180deg)' : '',
+        }}>▼</span>
+      </button>
+      {open && (
         <div style={{
-          width: 220, background: 'linear-gradient(135deg,#f5e642,#f0c030)',
-          borderRadius: '4px 12px 12px 4px',
-          borderLeft: '4px solid #c8a020',
-          boxShadow: '4px 6px 20px rgba(0,0,0,0.5)',
-          transform: 'rotate(-1.5deg)',
-          overflow: 'hidden',
+          background: 'linear-gradient(135deg,rgba(245,230,66,0.07),rgba(240,192,48,0.04))',
+          border: '1px solid rgba(245,230,66,0.18)',
+          borderTop: 'none', borderLeft: '3px solid #c8a020',
+          borderRadius: '0 0 8px 8px', padding: '8px 14px 10px',
+          maxHeight: 180, overflow: 'hidden',
         }}>
-          <div style={{
-            padding: '8px 10px 4px',
-            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-          }}>
-            <span style={{ fontFamily: 'var(--mono)', fontSize: 9, fontWeight: 700, color: '#2a1a00', letterSpacing: 1 }}>
-              📋 NOTLAR
-            </span>
-            <button onClick={() => setOpen(false)} style={{
-              background: 'none', border: 'none', cursor: 'pointer',
-              fontSize: 12, color: '#2a1a00', padding: '0 2px',
-            }}>✕</button>
-          </div>
           <textarea
             value={notes}
-            onChange={e => save(e.target.value)}
+            onChange={e => handleChange(e.target.value)}
             placeholder="Kayıplar, özel talepler, acil notlar..."
-            autoFocus
             style={{
-              width: '100%', minHeight: 160, padding: '6px 10px 10px',
+              width: '100%', height: 130, padding: 0,
               background: 'transparent', border: 'none', resize: 'none',
-              fontFamily: 'var(--mono)', fontSize: 11, color: '#1a1000',
+              fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text)',
               lineHeight: 1.7, outline: 'none', boxSizing: 'border-box',
             }}
           />
-          {notes.trim() && (
-            <div style={{ padding: '4px 10px 8px', display: 'flex', justifyContent: 'flex-end' }}>
-              <button onClick={() => save('')} style={{
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            {notes.trim() ? (
+              <button onClick={() => handleChange('')} style={{
                 background: 'rgba(0,0,0,0.1)', border: 'none', cursor: 'pointer',
-                fontFamily: 'var(--mono)', fontSize: 8, color: '#2a1a00',
+                fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--text3)',
                 padding: '2px 8px', borderRadius: 4,
               }}>Temizle</button>
-            </div>
-          )}
+            ) : <span />}
+            {savedFlash && (
+              <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--green)' }}>✓ Kaydedildi</span>
+            )}
+          </div>
         </div>
-      ) : (
-        <button
-          onClick={() => setOpen(true)}
-          style={{
-            width: 44, height: 44, borderRadius: '50%',
-            background: 'linear-gradient(135deg,#f5e642,#f0c030)',
-            border: '2px solid #c8a020',
-            boxShadow: '2px 4px 12px rgba(0,0,0,0.4)',
-            cursor: 'pointer', fontSize: 18,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            position: 'relative',
-          }}
-          title="Notlar"
-        >
-          📋
-          {lineCount > 0 && (
-            <span style={{
-              position: 'absolute', top: -4, right: -4,
-              width: 18, height: 18, borderRadius: '50%',
-              background: 'var(--red)', color: '#fff',
-              fontFamily: 'var(--mono)', fontSize: 9, fontWeight: 700,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}>{lineCount}</span>
-          )}
-        </button>
       )}
     </div>
   )
 }
+
 
 // ── QuickAdd ───────────────────────────────────────────────────
 function QuickAdd({ onClose }) {
@@ -992,6 +1008,11 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
     queryFn: () => laundryApi.getStats({}),
     refetchInterval: 60000,
   })
+  const { data: laundrySettings = {} } = useQuery({
+    queryKey: ['laundry-settings'],
+    queryFn: laundryApi.getLaundrySettings,
+    staleTime: 30_000,
+  })
 
   // Filtered items for both views
   const { data: listItems = [], isLoading } = useQuery({
@@ -1072,12 +1093,10 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
   }
 
   const washedTodayColor = useMemo(() => {
-    try {
-      const goal = parseInt(localStorage.getItem('laundry-daily-goal') || '50')
-      const val = stats?.washed_today?.count ?? 0
-      return val >= goal ? 'var(--green)' : 'var(--blue)'
-    } catch { return 'var(--blue)' }
-  }, [stats?.washed_today?.count])
+    const goal = parseInt(laundrySettings.daily_goal || '50')
+    const val = stats?.washed_today?.count ?? 0
+    return val >= goal ? 'var(--green)' : 'var(--blue)'
+  }, [stats?.washed_today?.count, laundrySettings.daily_goal])
 
   const today = new Date().toLocaleDateString('tr-TR', { day: '2-digit', month: 'long', year: 'numeric' })
 
@@ -1179,6 +1198,9 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
           </div>
         ))}
       </div>
+
+      {/* ── NOTLAR ── */}
+      <QuickNotes />
 
       {/* ── MAKİNELER ── */}
       <div style={{ marginBottom: 14 }}>
@@ -1450,8 +1472,6 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
           }}
         />
       )}
-      {/* Not Sticker — sadece hub'da */}
-      <QuickNotes visible={section === 'hub'} />
     </div>
   )
 }

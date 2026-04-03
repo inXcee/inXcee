@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from 'react'
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { laundryApi } from '../api.js'
 import api from '../../../shared/api/client.js'
@@ -130,14 +130,19 @@ function SignatureCanvas({ onSign, onClear }) {
 }
 
 export default function NewItemModal({ onClose }) {
-  const [CLOTHING_TYPES] = useState(() => {
-    try {
-      const saved = localStorage.getItem('custom-clothing-types')
-      return saved ? JSON.parse(saved) : DEFAULT_CLOTHING_TYPES
-    } catch { return DEFAULT_CLOTHING_TYPES }
-  })
-
   const qc = useQueryClient()
+
+  const { data: ctSettings = {} } = useQuery({
+    queryKey: ['laundry-settings'],
+    queryFn: laundryApi.getLaundrySettings,
+    staleTime: 60_000,
+  })
+  const CLOTHING_TYPES = useMemo(() => {
+    if (ctSettings.clothing_types) {
+      try { return JSON.parse(ctSettings.clothing_types) } catch {}
+    }
+    return DEFAULT_CLOTHING_TYPES
+  }, [ctSettings.clothing_types])
   const [form, setForm] = useState({
     room_id: '', notes: '', urgent: false, phone_override: '',
     intake_name: '', intake_signature: '',
