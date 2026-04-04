@@ -758,9 +758,7 @@ export default function NewItemModal({ onClose }) {
                     onClose()
                   }}
                 >
-                  {addedGarments.length > 0
-                    ? `Tamamla & Kapat (${addedGarments.length} parça)`
-                    : 'Tamamla & Kapat'}
+                  {`Tamamla & Kapat (${addedGarments.length} parça)`}
                 </button>
                 <button className="btn btn-ghost" onClick={onClose}>Daha Sonra</button>
               </div>
