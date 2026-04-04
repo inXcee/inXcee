@@ -9,6 +9,8 @@ const DEFAULT_CLOTHING_TYPES = [
   'Yastık K.','İş Mont','İş Pantalonu','Şort','Atlet','Diğer',
 ]
 
+const SIZES = ['XS','S','M','L','XL','XXL','3XL','4XL','36','38','40','42','44','46','48']
+
 export const CLOTHING_ICONS = {
   'Pantolon':      '👖',
   'Gömlek':        '👔',
@@ -142,6 +144,12 @@ export default function NewItemModal({ onClose }) {
     intake_name: '', intake_signature: '',
   })
   const [clothing, setClothing] = useState([])
+  const [step, setStep] = useState(1)
+  const [createdItem, setCreatedItem] = useState(null)
+  const [garmentType, setGarmentType] = useState('')
+  const [garmentForm, setGarmentForm] = useState({ color: '', brand: '', model: '', size: '', condition_notes: '' })
+  const [addedGarments, setAddedGarments] = useState([])
+  const colorRef = useRef(null)
   const [needsIroning, setNeedsIroning] = useState(false)
   const [roomSearch, setRoomSearch] = useState('')
   const [phoneLoading, setPhoneLoading] = useState(false)
@@ -174,6 +182,7 @@ export default function NewItemModal({ onClose }) {
   }, [form.room_id])
 
   const selectedRoom = rooms.find(r => r.id === +form.room_id)
+  const isPremium = selectedRoom && !['M','S','S1','S2'].includes(selectedRoom.block)
   const totalCount = clothing.reduce((s, c) => s + c.qty, 0) || 1
 
   const saveDraft = useCallback((list) => {
@@ -219,12 +228,42 @@ export default function NewItemModal({ onClose }) {
       phone_override: form.phone_override || undefined,
       intake_signature: form.intake_signature || undefined,
     }),
-    onSuccess: () => {
+    onSuccess: (data) => {
       clearDraft()
       qc.invalidateQueries({ queryKey: ['laundry-items'] })
-      onClose()
+      if (isPremium) {
+        setCreatedItem(data)
+        setStep(2)
+      } else {
+        onClose()
+      }
     },
   })
+
+  const addGarment = useMutation({
+    mutationFn: () => laundryApi.addPremiumGarments(createdItem.id, [{
+      garment_type: garmentType,
+      color: garmentForm.color,
+      brand: garmentForm.brand || undefined,
+      model: garmentForm.model || undefined,
+      size: garmentForm.size || undefined,
+      condition_notes: garmentForm.condition_notes || undefined,
+    }]),
+    onSuccess: (data) => {
+      setAddedGarments(prev => [...prev, {
+        code: data.codes[0],
+        garment_type: garmentType,
+        color: garmentForm.color,
+        brand: garmentForm.brand,
+        size: garmentForm.size,
+      }])
+      setGarmentType('')
+      setGarmentForm({ color: '', brand: '', model: '', size: '', condition_notes: '' })
+      qc.invalidateQueries({ queryKey: ['premium-garments', createdItem?.id] })
+    },
+  })
+
+  const canAddGarment = !!garmentType && !!garmentForm.color
 
   return (
     <div style={{
@@ -238,13 +277,26 @@ export default function NewItemModal({ onClose }) {
           borderBottom: '1px solid rgba(240,165,0,0.12)',
         }}>
           <div>
-            <span className="panel-title">YENİ ÇAMAŞIR KAYDI</span>
-            <div className="panel-subtitle">Oda · Teslim Eden · Kıyafet · Kaydet</div>
+            {step === 1 ? (
+              <>
+                <span className="panel-title">YENİ ÇAMAŞIR KAYDI</span>
+                <div className="panel-subtitle">Oda · Teslim Eden · Kıyafet · Kaydet</div>
+              </>
+            ) : (
+              <>
+                <span className="panel-title">★ PARÇA GİRİŞİ</span>
+                <div className="panel-subtitle">
+                  {selectedRoom?.block}{selectedRoom?.room_no} · {addedGarments.length} parça eklendi
+                </div>
+              </>
+            )}
           </div>
           <button className="btn btn-ghost btn-xs" onClick={onClose}>ESC</button>
         </div>
 
         <div className="panel-body" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+          {step === 1 && (<>
 
           {/* ── Draft Banner ── */}
           {draftBanner && (
@@ -511,6 +563,14 @@ export default function NewItemModal({ onClose }) {
             </button>
             <button className="btn btn-ghost" onClick={onClose}>İptal</button>
           </div>
+
+          </>)}
+
+          {step === 2 && createdItem && (
+            <div style={{ padding: '8px 0', fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)' }}>
+              Parça girişi yükleniyor...
+            </div>
+          )}
         </div>
       </div>
     </div>
