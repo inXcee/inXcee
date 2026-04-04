@@ -33,6 +33,7 @@ import ArchiveDetailPanel       from './components/ArchiveDetailPanel.jsx'
 import LaundryChat              from './components/LaundryChat.jsx'
 import PremiumSearchPanel       from './components/PremiumSearchPanel.jsx'
 import GarmentScanModal         from './components/GarmentScanModal.jsx'
+import PremiumGarmentList       from './components/PremiumGarmentList.jsx'
 
 const COLOR_MAP = {
   'Beyaz': '#f0f0f0', 'Siyah': '#222', 'Gri': '#888',
@@ -233,11 +234,12 @@ function DraggableKanbanCard({ item, ...props }) {
 
 // ── KanbanCard ─────────────────────────────────────────────────
 function KanbanCard({ item, machines, onDeliver, onDamage, onPersonClick, onFound }) {
-  const [assignOpen, setAssignOpen] = useState(false)
-  const [shelfOpen,  setShelfOpen]  = useState(false)
-  const [lostOpen,   setLostOpen]   = useState(false)
-  const [expanded,   setExpanded]   = useState(false)
-  const [photoOpen,  setPhotoOpen]  = useState(false)
+  const [assignOpen,   setAssignOpen]   = useState(false)
+  const [shelfOpen,    setShelfOpen]    = useState(false)
+  const [lostOpen,     setLostOpen]     = useState(false)
+  const [expanded,     setExpanded]     = useState(false)
+  const [photoOpen,    setPhotoOpen]    = useState(false)
+  const [garmentOpen,  setGarmentOpen]  = useState(false)
   const [now, setNow] = useState(Date.now())
   useEffect(() => {
     if (item.status !== 'washing' || !item.timer_end) return
@@ -409,6 +411,15 @@ function KanbanCard({ item, machines, onDeliver, onDamage, onPersonClick, onFoun
             color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: 9, cursor: 'pointer',
           }}>⚠</button>
         )}
+        {item.status !== 'delivered' && item.status !== 'lost' && (
+          <button onPointerDown={e => e.stopPropagation()} onClick={() => setGarmentOpen(o => !o)} style={{
+            padding: '5px 8px', borderRadius: 6,
+            background: garmentOpen ? 'rgba(240,165,0,0.1)' : 'transparent',
+            border: `1px solid ${garmentOpen ? 'rgba(240,165,0,0.4)' : 'var(--border)'}`,
+            color: garmentOpen ? 'var(--accent)' : 'var(--text3)',
+            fontFamily: 'var(--mono)', fontSize: 9, cursor: 'pointer', fontWeight: garmentOpen ? 700 : undefined,
+          }}>★</button>
+        )}
         <button onPointerDown={e => e.stopPropagation()} onClick={() => setExpanded(s => !s)} style={{
           padding: '5px 8px', borderRadius: 6,
           background: 'transparent', border: '1px solid var(--border)',
@@ -417,6 +428,13 @@ function KanbanCard({ item, machines, onDeliver, onDamage, onPersonClick, onFoun
           {expanded ? '▲' : '▾'}
         </button>
       </div>
+
+      {/* Garment panel */}
+      {garmentOpen && (
+        <div onPointerDown={e => e.stopPropagation()}>
+          <PremiumGarmentList item={item} />
+        </div>
+      )}
 
       {/* Expanded */}
       {expanded && (

@@ -32,8 +32,6 @@ export default function PremiumGarmentList({ item }) {
   const qc = useQueryClient()
   const [form, setForm] = useState(emptyForm())
   const [showForm, setShowForm] = useState(false)
-  const [selected, setSelected] = useState(new Set())
-  const [bulkStatus, setBulkStatus] = useState('ironing')
   const brandRef = useRef(null)
 
   const { data: garments = [], isLoading } = useQuery({
@@ -65,19 +63,16 @@ export default function PremiumGarmentList({ item }) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['premium-garments', item.id] })
       qc.invalidateQueries({ queryKey: ['laundry-items'] })
-      setSelected(new Set())
     },
   })
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
   const canAdd = !!form.garment_type
 
-  const toggleSelect = (id) => setSelected(prev => {
-    const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n
-  })
-
-  const movableIds = garments.filter(g => g.status !== 'delivered' && g.status !== 'lost').map(g => g.id)
-  const allSelected = movableIds.length > 0 && movableIds.every(id => selected.has(id))
+  // Counts
+  const ironingIds = garments.filter(g => g.status === 'ironing').map(g => g.id)
+  const readyCount = garments.filter(g => g.status === 'ready' || g.status === 'delivered').length
+  const totalActive = garments.filter(g => g.status !== 'lost').length
 
   const inp = {
     background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 5,
@@ -91,17 +86,45 @@ export default function PremiumGarmentList({ item }) {
 
       {/* ── Header ── */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-        <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: 1 }}>
-          KIYAFETler {garments.length > 0 && `(${garments.length})`}
-        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: 1 }}>
+            KIYAFETler {garments.length > 0 && `(${garments.length})`}
+          </span>
+          {/* Ütü progress */}
+          {ironingIds.length > 0 && (
+            <span style={{
+              fontFamily: 'var(--mono)', fontSize: 9,
+              color: '#6366f1', background: 'rgba(99,102,241,0.1)',
+              border: '1px solid rgba(99,102,241,0.25)',
+              padding: '1px 8px', borderRadius: 4,
+            }}>
+              ütüde: {ironingIds.length}
+            </span>
+          )}
+          {garments.length > 0 && totalActive > 0 && readyCount === totalActive && (
+            <span style={{
+              fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--green)',
+              background: 'rgba(39,201,106,0.1)', border: '1px solid rgba(39,201,106,0.25)',
+              padding: '1px 8px', borderRadius: 4,
+            }}>✓ Tümü Hazır</span>
+          )}
+        </div>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          {movableIds.length > 0 && (
-            <label style={{ display: 'flex', alignItems: 'center', gap: 3, cursor: 'pointer' }}>
-              <input type="checkbox" checked={allSelected}
-                onChange={() => setSelected(allSelected ? new Set() : new Set(movableIds))}
-                style={{ accentColor: 'var(--accent)', width: 11, height: 11 }} />
-              <span style={{ fontSize: 9, color: 'var(--text3)', fontFamily: 'var(--mono)' }}>Tümü</span>
-            </label>
+          {/* Hepsini hazır yap — ironing varsa */}
+          {ironingIds.length > 0 && (
+            <button
+              onClick={() => bulkMut.mutate({ ids: ironingIds, to_status: 'ready' })}
+              disabled={bulkMut.isPending}
+              style={{
+                padding: '3px 10px', borderRadius: 5,
+                border: '1px solid rgba(39,201,106,0.4)',
+                background: 'rgba(39,201,106,0.1)',
+                color: 'var(--green)',
+                fontFamily: 'var(--mono)', fontSize: 9, cursor: 'pointer', fontWeight: 700,
+              }}
+            >
+              {bulkMut.isPending ? '...' : `✓ Tümünü Hazır (${ironingIds.length})`}
+            </button>
           )}
           <button
             onClick={() => setShowForm(s => !s)}
@@ -141,7 +164,7 @@ export default function PremiumGarmentList({ item }) {
             </div>
           </div>
 
-          {/* Detay satırı — marka / model / beden / renk */}
+          {/* Detay satırı */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto 1fr', gap: 6, marginBottom: 8 }}>
             <div>
               <div style={{ fontSize: 8, color: 'var(--text3)', fontFamily: 'var(--mono)', marginBottom: 3 }}>MARKA</div>
@@ -220,19 +243,15 @@ export default function PremiumGarmentList({ item }) {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
           {garments.map(g => {
+            const isIroning = g.status === 'ironing'
             const canMove = g.status !== 'delivered' && g.status !== 'lost'
             return (
               <div key={g.id} style={{
                 display: 'flex', alignItems: 'center', gap: 6,
-                padding: '5px 8px', borderRadius: 5,
-                background: selected.has(g.id) ? 'rgba(240,165,0,0.05)' : 'var(--surface2)',
-                border: `1px solid ${selected.has(g.id) ? 'rgba(240,165,0,0.2)' : 'var(--border)'}`,
+                padding: '6px 8px', borderRadius: 6,
+                background: isIroning ? 'rgba(99,102,241,0.06)' : 'var(--surface2)',
+                border: `1px solid ${isIroning ? 'rgba(99,102,241,0.2)' : 'var(--border)'}`,
               }}>
-                {canMove
-                  ? <input type="checkbox" checked={selected.has(g.id)} onChange={() => toggleSelect(g.id)}
-                      style={{ accentColor: 'var(--accent)', width: 11, height: 11, flexShrink: 0 }} />
-                  : <div style={{ width: 11, flexShrink: 0 }} />
-                }
 
                 {/* Kod */}
                 <span style={{
@@ -256,51 +275,33 @@ export default function PremiumGarmentList({ item }) {
 
                 <Badge status={g.status} />
 
-                {canMove && (
+                {/* Ütüde ise: büyük ✓ Tamam butonu */}
+                {isIroning && (
+                  <button onClick={() => advanceMut.mutate(g.id)} disabled={advanceMut.isPending}
+                    style={{
+                      padding: '3px 12px', borderRadius: 5, border: 'none', cursor: 'pointer',
+                      background: 'rgba(39,201,106,0.15)', color: 'var(--green)',
+                      fontFamily: 'var(--mono)', fontSize: 9, fontWeight: 700, flexShrink: 0,
+                      border: '1px solid rgba(39,201,106,0.35)',
+                    }}>
+                    ✓ Tamam
+                  </button>
+                )}
+
+                {/* Diğer durumlarda: İlerlet */}
+                {!isIroning && canMove && (
                   <button onClick={() => advanceMut.mutate(g.id)} disabled={advanceMut.isPending}
                     style={{
                       padding: '2px 8px', borderRadius: 4, border: 'none', cursor: 'pointer',
                       background: 'var(--accent)', color: '#000',
                       fontFamily: 'var(--mono)', fontSize: 8, fontWeight: 700, flexShrink: 0,
                     }}>
-                    İlerlet
+                    →
                   </button>
                 )}
               </div>
             )
           })}
-        </div>
-      )}
-
-      {/* ── Toplu işlem ── */}
-      {selected.size > 0 && (
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 6, marginTop: 6,
-          padding: '5px 8px', borderRadius: 6,
-          background: 'rgba(240,165,0,0.06)', border: '1px solid rgba(240,165,0,0.18)',
-        }}>
-          <span style={{ fontSize: 9, color: 'var(--text2)', fontFamily: 'var(--mono)', flexShrink: 0 }}>
-            {selected.size} seçili →
-          </span>
-          <select value={bulkStatus} onChange={e => setBulkStatus(e.target.value)}
-            style={{
-              flex: 1, background: 'var(--surface2)', border: '1px solid var(--border)',
-              borderRadius: 4, padding: '3px 6px', color: 'var(--text)',
-              fontFamily: 'var(--mono)', fontSize: 9, outline: 'none',
-            }}>
-            <option value="ironing">Ütüye Al</option>
-            <option value="ready">Hazır Yap</option>
-            <option value="lost">Kayıp</option>
-          </select>
-          <button onClick={() => bulkMut.mutate({ ids: [...selected], to_status: bulkStatus })}
-            disabled={bulkMut.isPending}
-            style={{
-              padding: '3px 12px', borderRadius: 4, border: 'none', cursor: 'pointer',
-              background: 'var(--accent)', color: '#000',
-              fontFamily: 'var(--mono)', fontSize: 9, fontWeight: 700,
-            }}>
-            Uygula
-          </button>
         </div>
       )}
     </div>
