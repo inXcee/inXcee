@@ -279,10 +279,9 @@ export default function PremiumGarmentList({ item }) {
                 {isIroning && (
                   <button onClick={() => advanceMut.mutate(g.id)} disabled={advanceMut.isPending}
                     style={{
-                      padding: '3px 12px', borderRadius: 5, border: 'none', cursor: 'pointer',
+                      padding: '3px 12px', borderRadius: 5, border: '1px solid rgba(39,201,106,0.35)', cursor: 'pointer',
                       background: 'rgba(39,201,106,0.15)', color: 'var(--green)',
                       fontFamily: 'var(--mono)', fontSize: 9, fontWeight: 700, flexShrink: 0,
-                      border: '1px solid rgba(39,201,106,0.35)',
                     }}>
                     ✓ Tamam
                   </button>
