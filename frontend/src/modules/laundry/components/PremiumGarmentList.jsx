@@ -16,8 +16,9 @@ function Badge({ status }) {
   const c = STATUS_COLOR[status] || '#64748b'
   return (
     <span style={{
-      padding: '1px 7px', borderRadius: 4, fontSize: 9,
+      padding: '2px 8px', borderRadius: 4, fontSize: 9,
       fontFamily: 'var(--mono)', background: c + '18', border: `1px solid ${c}30`, color: c,
+      flexShrink: 0,
     }}>
       {STATUS_LABEL[status] || status}
     </span>
@@ -32,6 +33,7 @@ export default function PremiumGarmentList({ item }) {
   const qc = useQueryClient()
   const [form, setForm] = useState(emptyForm())
   const [showForm, setShowForm] = useState(false)
+  const [deliveredTo, setDeliveredTo] = useState('')
   const brandRef = useRef(null)
 
   const { data: garments = [], isLoading } = useQuery({
@@ -66,13 +68,27 @@ export default function PremiumGarmentList({ item }) {
     },
   })
 
+  const deliverMut = useMutation({
+    mutationFn: (to) => laundryApi.bulkDeliverPremiumGarments(
+      item.id,
+      readyGarments.map(g => g.id),
+      to
+    ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['premium-garments', item.id] })
+      qc.invalidateQueries({ queryKey: ['laundry-items'] })
+      setDeliveredTo('')
+    },
+  })
+
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
   const canAdd = !!form.garment_type
 
-  // Counts
-  const ironingIds = garments.filter(g => g.status === 'ironing').map(g => g.id)
-  const readyCount = garments.filter(g => g.status === 'ready' || g.status === 'delivered').length
-  const totalActive = garments.filter(g => g.status !== 'lost').length
+  const ironingGarments  = garments.filter(g => g.status === 'ironing')
+  const readyGarments    = garments.filter(g => g.status === 'ready')
+  const activeGarments   = garments.filter(g => g.status !== 'lost')
+  const allIroned        = activeGarments.length > 0 && ironingGarments.length === 0 && readyGarments.length > 0
+  const hasIroning       = ironingGarments.length > 0
 
   const inp = {
     background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 5,
@@ -90,18 +106,14 @@ export default function PremiumGarmentList({ item }) {
           <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: 1 }}>
             KIYAFETler {garments.length > 0 && `(${garments.length})`}
           </span>
-          {/* Ütü progress */}
-          {ironingIds.length > 0 && (
+          {hasIroning && (
             <span style={{
-              fontFamily: 'var(--mono)', fontSize: 9,
-              color: '#6366f1', background: 'rgba(99,102,241,0.1)',
-              border: '1px solid rgba(99,102,241,0.25)',
+              fontFamily: 'var(--mono)', fontSize: 9, color: '#6366f1',
+              background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.25)',
               padding: '1px 8px', borderRadius: 4,
-            }}>
-              ütüde: {ironingIds.length}
-            </span>
+            }}>ütüde: {ironingGarments.length}</span>
           )}
-          {garments.length > 0 && totalActive > 0 && readyCount === totalActive && (
+          {allIroned && (
             <span style={{
               fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--green)',
               background: 'rgba(39,201,106,0.1)', border: '1px solid rgba(39,201,106,0.25)',
@@ -109,27 +121,25 @@ export default function PremiumGarmentList({ item }) {
             }}>✓ Tümü Hazır</span>
           )}
         </div>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          {/* Hepsini hazır yap — ironing varsa */}
-          {ironingIds.length > 0 && (
+        <div style={{ display: 'flex', gap: 6 }}>
+          {hasIroning && (
             <button
-              onClick={() => bulkMut.mutate({ ids: ironingIds, to_status: 'ready' })}
+              onClick={() => bulkMut.mutate({ ids: ironingGarments.map(g => g.id), to_status: 'ready' })}
               disabled={bulkMut.isPending}
               style={{
                 padding: '3px 10px', borderRadius: 5,
-                border: '1px solid rgba(39,201,106,0.4)',
-                background: 'rgba(39,201,106,0.1)',
-                color: 'var(--green)',
-                fontFamily: 'var(--mono)', fontSize: 9, cursor: 'pointer', fontWeight: 700,
+                border: '1px solid rgba(39,201,106,0.4)', background: 'rgba(39,201,106,0.1)',
+                color: 'var(--green)', fontFamily: 'var(--mono)', fontSize: 9, cursor: 'pointer', fontWeight: 700,
               }}
             >
-              {bulkMut.isPending ? '...' : `✓ Tümünü Hazır (${ironingIds.length})`}
+              {bulkMut.isPending ? '...' : `✓ Tümünü Hazır (${ironingGarments.length})`}
             </button>
           )}
           <button
             onClick={() => setShowForm(s => !s)}
             style={{
-              padding: '2px 10px', borderRadius: 5, border: `1px solid ${showForm ? 'rgba(240,165,0,0.4)' : 'var(--border)'}`,
+              padding: '2px 10px', borderRadius: 5,
+              border: `1px solid ${showForm ? 'rgba(240,165,0,0.4)' : 'var(--border)'}`,
               background: showForm ? 'rgba(240,165,0,0.08)' : 'transparent',
               color: showForm ? 'var(--accent)' : 'var(--text3)',
               fontFamily: 'var(--mono)', fontSize: 9, cursor: 'pointer',
@@ -146,14 +156,14 @@ export default function PremiumGarmentList({ item }) {
           background: 'var(--surface2)', border: '1px solid rgba(240,165,0,0.15)',
           borderRadius: 8, padding: 10, marginBottom: 10,
         }}>
-          {/* Tip seçimi — chip butonlar */}
           <div style={{ marginBottom: 8 }}>
             <div style={{ fontSize: 9, color: 'var(--text3)', fontFamily: 'var(--mono)', marginBottom: 5, letterSpacing: 1 }}>TİP *</div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
               {GARMENT_TYPES.map(t => (
                 <button key={t} onClick={() => { set('garment_type', t); brandRef.current?.focus() }}
                   style={{
-                    padding: '3px 10px', borderRadius: 12, border: `1px solid ${form.garment_type === t ? 'rgba(240,165,0,0.5)' : 'var(--border)'}`,
+                    padding: '3px 10px', borderRadius: 12,
+                    border: `1px solid ${form.garment_type === t ? 'rgba(240,165,0,0.5)' : 'var(--border)'}`,
                     background: form.garment_type === t ? 'rgba(240,165,0,0.12)' : 'transparent',
                     color: form.garment_type === t ? 'var(--accent)' : 'var(--text3)',
                     fontFamily: 'var(--mono)', fontSize: 9, cursor: 'pointer', transition: 'all 0.1s',
@@ -163,21 +173,17 @@ export default function PremiumGarmentList({ item }) {
               ))}
             </div>
           </div>
-
-          {/* Detay satırı */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto 1fr', gap: 6, marginBottom: 8 }}>
             <div>
               <div style={{ fontSize: 8, color: 'var(--text3)', fontFamily: 'var(--mono)', marginBottom: 3 }}>MARKA</div>
               <input ref={brandRef} style={inp} value={form.brand}
-                onChange={e => set('brand', e.target.value)}
-                placeholder="örn: Adidas"
+                onChange={e => set('brand', e.target.value)} placeholder="örn: Adidas"
                 onKeyDown={e => e.key === 'Enter' && canAdd && addMut.mutate()} />
             </div>
             <div>
               <div style={{ fontSize: 8, color: 'var(--text3)', fontFamily: 'var(--mono)', marginBottom: 3 }}>MODEL</div>
               <input style={inp} value={form.model}
-                onChange={e => set('model', e.target.value)}
-                placeholder="örn: Track Suit"
+                onChange={e => set('model', e.target.value)} placeholder="örn: Track Suit"
                 onKeyDown={e => e.key === 'Enter' && canAdd && addMut.mutate()} />
             </div>
             <div>
@@ -190,33 +196,24 @@ export default function PremiumGarmentList({ item }) {
             <div>
               <div style={{ fontSize: 8, color: 'var(--text3)', fontFamily: 'var(--mono)', marginBottom: 3 }}>RENK</div>
               <input style={inp} value={form.color}
-                onChange={e => set('color', e.target.value)}
-                placeholder="örn: Lacivert"
+                onChange={e => set('color', e.target.value)} placeholder="örn: Lacivert"
                 onKeyDown={e => e.key === 'Enter' && canAdd && addMut.mutate()} />
             </div>
           </div>
-
-          {/* Not */}
           <div style={{ marginBottom: 8 }}>
             <input style={{ ...inp, fontSize: 10 }} value={form.condition_notes}
-              onChange={e => set('condition_notes', e.target.value)}
-              placeholder="Not (opsiyonel)"
+              onChange={e => set('condition_notes', e.target.value)} placeholder="Not (opsiyonel)"
               onKeyDown={e => e.key === 'Enter' && canAdd && addMut.mutate()} />
           </div>
-
-          {/* Butonlar */}
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-            <button
-              onClick={() => addMut.mutate()}
-              disabled={!canAdd || addMut.isPending}
+            <button onClick={() => addMut.mutate()} disabled={!canAdd || addMut.isPending}
               style={{
                 padding: '6px 18px', borderRadius: 6, border: 'none', cursor: 'pointer',
                 background: canAdd ? 'var(--accent)' : 'var(--surface)',
                 color: canAdd ? '#000' : 'var(--text3)',
                 fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 700,
                 opacity: addMut.isPending ? 0.6 : 1,
-              }}
-            >
+              }}>
               {addMut.isPending ? '...' : '+ Ekle (Enter)'}
             </button>
             <button onClick={() => setForm(emptyForm())} style={{
@@ -238,69 +235,187 @@ export default function PremiumGarmentList({ item }) {
         <div style={{ fontSize: 9, color: 'var(--text3)', fontFamily: 'var(--mono)' }}>yükleniyor...</div>
       ) : garments.length === 0 ? (
         <div style={{ fontSize: 9, color: 'var(--text3)', fontFamily: 'var(--mono)', padding: '4px 0' }}>
-          Henüz kıyafet eklenmedi — yukarıdan ekle.
+          Henüz kıyafet eklenmedi.
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           {garments.map(g => {
-            const isIroning = g.status === 'ironing'
-            const canMove = g.status !== 'delivered' && g.status !== 'lost'
+            const isIroning   = g.status === 'ironing'
+            const isReady     = g.status === 'ready'
+            const isDelivered = g.status === 'delivered'
+            const isLost      = g.status === 'lost'
+            const canMove     = !isDelivered && !isLost
+
             return (
               <div key={g.id} style={{
-                display: 'flex', alignItems: 'center', gap: 6,
-                padding: '6px 8px', borderRadius: 6,
-                background: isIroning ? 'rgba(99,102,241,0.06)' : 'var(--surface2)',
-                border: `1px solid ${isIroning ? 'rgba(99,102,241,0.2)' : 'var(--border)'}`,
+                borderRadius: 7,
+                background: isIroning ? 'rgba(99,102,241,0.06)' : isReady ? 'rgba(16,185,129,0.04)' : 'var(--surface2)',
+                border: `1px solid ${isIroning ? 'rgba(99,102,241,0.25)' : isReady ? 'rgba(16,185,129,0.2)' : 'var(--border)'}`,
+                overflow: 'hidden',
               }}>
+                {/* Ana satır */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px' }}>
 
-                {/* Kod */}
-                <span style={{
-                  fontFamily: 'var(--mono)', fontSize: 9, flexShrink: 0,
-                  padding: '1px 5px', borderRadius: 3,
-                  background: 'rgba(240,165,0,0.08)', border: '1px solid rgba(240,165,0,0.2)',
-                  color: 'var(--accent)',
-                }}>
-                  {g.garment_code}
-                </span>
+                  {/* Checkbox-tik (ironing için) */}
+                  {isIroning && (
+                    <button
+                      onClick={() => advanceMut.mutate(g.id)}
+                      disabled={advanceMut.isPending}
+                      title="Ütülendi olarak işaretle"
+                      style={{
+                        width: 24, height: 24, borderRadius: 5, flexShrink: 0,
+                        border: '2px solid rgba(99,102,241,0.5)',
+                        background: 'rgba(99,102,241,0.08)',
+                        cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        color: '#6366f1', fontSize: 13, fontWeight: 900,
+                        transition: 'all 0.15s',
+                      }}
+                    >
+                      {advanceMut.isPending ? '·' : ''}
+                    </button>
+                  )}
+                  {isReady && (
+                    <div style={{
+                      width: 24, height: 24, borderRadius: 5, flexShrink: 0,
+                      border: '2px solid rgba(16,185,129,0.5)',
+                      background: 'rgba(16,185,129,0.12)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      color: 'var(--green)', fontSize: 13, fontWeight: 900,
+                    }}>✓</div>
+                  )}
+                  {isDelivered && (
+                    <div style={{
+                      width: 24, height: 24, borderRadius: 5, flexShrink: 0,
+                      border: '2px solid rgba(100,116,139,0.3)',
+                      background: 'rgba(100,116,139,0.08)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      color: '#64748b', fontSize: 11,
+                    }}>✓✓</div>
+                  )}
+                  {isLost && (
+                    <div style={{
+                      width: 24, height: 24, borderRadius: 5, flexShrink: 0,
+                      border: '2px solid rgba(239,68,68,0.3)',
+                      background: 'rgba(239,68,68,0.08)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      color: '#ef4444', fontSize: 11,
+                    }}>✕</div>
+                  )}
 
-                {/* Tip + detay */}
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <span style={{ fontSize: 10, color: 'var(--text)', fontFamily: 'var(--mono)' }}>{g.garment_type}</span>
-                  {(g.brand || g.model || g.size || g.color) && (
-                    <span style={{ fontSize: 9, color: 'var(--text3)', marginLeft: 6 }}>
-                      {[g.brand, g.model, g.size ? `(${g.size})` : '', g.color].filter(Boolean).join(' ')}
-                    </span>
+                  {/* Kod */}
+                  <span style={{
+                    fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 700,
+                    padding: '2px 7px', borderRadius: 4, flexShrink: 0,
+                    background: 'rgba(240,165,0,0.08)', border: '1px solid rgba(240,165,0,0.2)',
+                    color: 'var(--accent)', letterSpacing: 0.5,
+                  }}>
+                    {g.garment_code}
+                  </span>
+
+                  {/* Tip */}
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text)', fontWeight: 600, flexShrink: 0 }}>
+                    {g.garment_type}
+                  </span>
+
+                  <Badge status={g.status} />
+
+                  {/* İlerlet butonu (received durumu için) */}
+                  {g.status === 'received' && (
+                    <button onClick={() => advanceMut.mutate(g.id)} disabled={advanceMut.isPending}
+                      style={{
+                        marginLeft: 'auto', padding: '2px 10px', borderRadius: 4, border: 'none', cursor: 'pointer',
+                        background: 'var(--accent)', color: '#000',
+                        fontFamily: 'var(--mono)', fontSize: 9, fontWeight: 700, flexShrink: 0,
+                      }}>→</button>
                   )}
                 </div>
 
-                <Badge status={g.status} />
-
-                {/* Ütüde ise: büyük ✓ Tamam butonu */}
-                {isIroning && (
-                  <button onClick={() => advanceMut.mutate(g.id)} disabled={advanceMut.isPending}
-                    style={{
-                      padding: '3px 12px', borderRadius: 5, border: '1px solid rgba(39,201,106,0.35)', cursor: 'pointer',
-                      background: 'rgba(39,201,106,0.15)', color: 'var(--green)',
-                      fontFamily: 'var(--mono)', fontSize: 9, fontWeight: 700, flexShrink: 0,
-                    }}>
-                    ✓ Tamam
-                  </button>
-                )}
-
-                {/* Diğer durumlarda: İlerlet */}
-                {!isIroning && canMove && (
-                  <button onClick={() => advanceMut.mutate(g.id)} disabled={advanceMut.isPending}
-                    style={{
-                      padding: '2px 8px', borderRadius: 4, border: 'none', cursor: 'pointer',
-                      background: 'var(--accent)', color: '#000',
-                      fontFamily: 'var(--mono)', fontSize: 8, fontWeight: 700, flexShrink: 0,
-                    }}>
-                    →
-                  </button>
+                {/* Detay satırı — her zaman görünür, alanlar varsa */}
+                {(g.brand || g.model || g.size || g.color || g.condition_notes) && (
+                  <div style={{
+                    display: 'flex', flexWrap: 'wrap', gap: 6, padding: '4px 10px 8px 42px',
+                    borderTop: `1px solid ${isIroning ? 'rgba(99,102,241,0.1)' : 'var(--border)'}`,
+                  }}>
+                    {g.brand && (
+                      <span style={{
+                        fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text2)',
+                        background: 'var(--surface)', border: '1px solid var(--border)',
+                        borderRadius: 4, padding: '2px 8px',
+                      }}>{g.brand}</span>
+                    )}
+                    {g.model && (
+                      <span style={{
+                        fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)',
+                        background: 'var(--surface)', border: '1px solid var(--border)',
+                        borderRadius: 4, padding: '2px 8px',
+                      }}>{g.model}</span>
+                    )}
+                    {g.size && (
+                      <span style={{
+                        fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 700, color: 'var(--text2)',
+                        background: 'var(--surface)', border: '1px solid var(--border)',
+                        borderRadius: 4, padding: '2px 8px',
+                      }}>{g.size}</span>
+                    )}
+                    {g.color && (
+                      <span style={{
+                        fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text2)',
+                        background: 'var(--surface)', border: '1px solid var(--border)',
+                        borderRadius: 4, padding: '2px 8px',
+                      }}>{g.color}</span>
+                    )}
+                    {g.condition_notes && (
+                      <span style={{
+                        fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', fontStyle: 'italic',
+                        padding: '2px 4px',
+                      }}>{g.condition_notes}</span>
+                    )}
+                  </div>
                 )}
               </div>
             )
           })}
+        </div>
+      )}
+
+      {/* ── Teslim Et bölümü — tüm garments hazır olunca çıkar ── */}
+      {allIroned && readyGarments.length > 0 && (
+        <div style={{
+          marginTop: 10, padding: '10px 12px', borderRadius: 8,
+          background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.25)',
+        }}>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--green)', fontWeight: 700, marginBottom: 8, letterSpacing: 1 }}>
+            ✓ TÜM PARÇALAR HAZIR — TESLİM ET
+          </div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <input
+              className="form-input"
+              value={deliveredTo}
+              onChange={e => setDeliveredTo(e.target.value)}
+              placeholder="Teslim alan adı..."
+              style={{ flex: 1, fontSize: 11 }}
+              onKeyDown={e => { if (e.key === 'Enter' && deliveredTo.trim()) deliverMut.mutate(deliveredTo.trim()) }}
+            />
+            <button
+              onClick={() => deliverMut.mutate(deliveredTo.trim())}
+              disabled={!deliveredTo.trim() || deliverMut.isPending}
+              style={{
+                padding: '7px 16px', borderRadius: 6, cursor: 'pointer', flexShrink: 0,
+                background: deliveredTo.trim() ? 'var(--green)' : 'var(--surface)',
+                border: `1px solid ${deliveredTo.trim() ? 'var(--green)' : 'var(--border)'}`,
+                color: deliveredTo.trim() ? '#000' : 'var(--text3)',
+                fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 700,
+                transition: 'all 0.15s',
+              }}
+            >
+              {deliverMut.isPending ? '...' : `✓ Teslim Et (${readyGarments.length})`}
+            </button>
+          </div>
+          {deliverMut.isError && (
+            <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--red)', marginTop: 6 }}>
+              {deliverMut.error?.response?.data?.error || 'Hata oluştu'}
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -184,6 +184,11 @@ export default function NewItemModal({ onClose }) {
 
   const selectedRoom = rooms.find(r => r.id === +form.room_id)
   const isPremium = selectedRoom && !['M','S','S1','S2'].includes(selectedRoom.block)
+
+  // Premium blok seçilince ütü otomatik aktif
+  useEffect(() => {
+    if (isPremium) setNeedsIroning(true)
+  }, [isPremium])
   const totalCount = clothing.reduce((s, c) => s + c.qty, 0) || 1
 
   const saveDraft = useCallback((list) => {
@@ -708,8 +713,8 @@ export default function NewItemModal({ onClose }) {
             )}
           </label>
 
-          {/* ── Ütü ── */}
-          <label style={{
+          {/* ── Ütü (premium blokta otomatik, gösterilmez) ── */}
+          {!isPremium && <label style={{
             display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer',
             padding: '10px 12px', borderRadius: 8,
             background: needsIroning ? 'rgba(99,102,241,0.08)' : 'var(--surface2)',
@@ -726,7 +731,7 @@ export default function NewItemModal({ onClose }) {
             {needsIroning && (
               <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: '#6366f1', opacity: 0.7, marginLeft: 'auto' }}>Yıkama sonrası ütülenecek</span>
             )}
-          </label>
+          </label>}
 
           {create.isError && (
             <div className="alert alert-danger">{create.error?.response?.data?.error || 'Hata oluştu'}</div>
