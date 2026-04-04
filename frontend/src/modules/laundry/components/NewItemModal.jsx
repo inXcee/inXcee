@@ -241,14 +241,17 @@ export default function NewItemModal({ onClose }) {
   })
 
   const addGarment = useMutation({
-    mutationFn: () => laundryApi.addPremiumGarments(createdItem.id, [{
-      garment_type: garmentType,
-      color: garmentForm.color,
-      brand: garmentForm.brand || undefined,
-      model: garmentForm.model || undefined,
-      size: garmentForm.size || undefined,
-      condition_notes: garmentForm.condition_notes || undefined,
-    }]),
+    mutationFn: () => {
+      if (!createdItem?.id) return Promise.reject(new Error('Item bulunamadı'))
+      return laundryApi.addPremiumGarments(createdItem.id, [{
+        garment_type: garmentType,
+        color: garmentForm.color,
+        brand: garmentForm.brand || undefined,
+        model: garmentForm.model || undefined,
+        size: garmentForm.size || undefined,
+        condition_notes: garmentForm.condition_notes || undefined,
+      }])
+    },
     onSuccess: (data) => {
       setAddedGarments(prev => [...prev, {
         code: data.codes[0],
@@ -567,8 +570,201 @@ export default function NewItemModal({ onClose }) {
           </>)}
 
           {step === 2 && createdItem && (
-            <div style={{ padding: '8px 0', fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)' }}>
-              Parça girişi yükleniyor...
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+              {/* ── Tip seçimi ── */}
+              <div>
+                <label className="form-label">TİP SEÇ</label>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {CLOTHING_TYPES.map(type => (
+                    <button
+                      key={type}
+                      onClick={() => {
+                        setGarmentType(t => t === type ? '' : type)
+                        setGarmentForm({ color: '', brand: '', model: '', size: '', condition_notes: '' })
+                        setTimeout(() => colorRef.current?.focus(), 50)
+                      }}
+                      style={{
+                        padding: '6px 14px', borderRadius: 20, cursor: 'pointer',
+                        background: garmentType === type ? 'rgba(240,165,0,0.15)' : 'var(--surface2)',
+                        border: `1px solid ${garmentType === type ? 'rgba(240,165,0,0.4)' : 'var(--border)'}`,
+                        color: garmentType === type ? 'var(--accent)' : 'var(--text2)',
+                        fontFamily: 'var(--mono)', fontSize: 10, transition: 'all 0.15s',
+                      }}
+                    >
+                      {garmentType === type && '★ '}{CLOTHING_ICONS[type] || ''} {type}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* ── Parça formu ── */}
+              {garmentType && (
+                <div style={{
+                  padding: '14px 16px', borderRadius: 8,
+                  background: 'rgba(240,165,0,0.05)', border: '1px solid rgba(240,165,0,0.15)',
+                }}>
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--accent)', marginBottom: 12, fontWeight: 700 }}>
+                    {CLOTHING_ICONS[garmentType] || ''} {garmentType}
+                    <span style={{ color: 'var(--text3)', fontWeight: 400, fontSize: 9, marginLeft: 8 }}>
+                      #{addedGarments.length + 1}
+                    </span>
+                  </div>
+
+                  {/* Renk */}
+                  <div style={{ marginBottom: 10 }}>
+                    <label className="form-label" style={{ fontSize: 9 }}>
+                      RENK <span style={{ color: 'var(--red)' }}>*</span>
+                    </label>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, alignItems: 'center' }}>
+                      {COLOR_PALETTE.map(col => (
+                        <button
+                          key={col.name}
+                          title={col.name}
+                          onClick={() => setGarmentForm(f => ({ ...f, color: f.color === col.name ? '' : col.name }))}
+                          style={{
+                            width: 22, height: 22, borderRadius: '50%', padding: 0, cursor: 'pointer',
+                            background: col.hex,
+                            border: `2px solid ${garmentForm.color === col.name ? 'var(--accent)' : 'transparent'}`,
+                            boxShadow: garmentForm.color === col.name ? '0 0 0 1px var(--accent)' : 'none',
+                            transition: 'all 0.1s', flexShrink: 0,
+                          }}
+                        />
+                      ))}
+                      <input
+                        ref={colorRef}
+                        className="form-input"
+                        value={COLOR_PALETTE.some(c => c.name === garmentForm.color) ? '' : garmentForm.color}
+                        onChange={e => setGarmentForm(f => ({ ...f, color: e.target.value }))}
+                        placeholder="Diğer..."
+                        style={{ width: 70, padding: '3px 6px', fontSize: 9, flexShrink: 0 }}
+                      />
+                      {garmentForm.color && (
+                        <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--accent)', flexShrink: 0 }}>
+                          {garmentForm.color}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Marka / Model */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+                    <div>
+                      <label className="form-label" style={{ fontSize: 9 }}>MARKA</label>
+                      <input className="form-input" value={garmentForm.brand}
+                        onChange={e => setGarmentForm(f => ({ ...f, brand: e.target.value }))}
+                        placeholder="Opsiyonel" style={{ fontSize: 10 }} />
+                    </div>
+                    <div>
+                      <label className="form-label" style={{ fontSize: 9 }}>MODEL</label>
+                      <input className="form-input" value={garmentForm.model}
+                        onChange={e => setGarmentForm(f => ({ ...f, model: e.target.value }))}
+                        placeholder="Opsiyonel" style={{ fontSize: 10 }} />
+                    </div>
+                  </div>
+
+                  {/* Beden / Not */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '100px 1fr', gap: 8, marginBottom: 12 }}>
+                    <div>
+                      <label className="form-label" style={{ fontSize: 9 }}>BEDEN</label>
+                      <select
+                        value={garmentForm.size}
+                        onChange={e => setGarmentForm(f => ({ ...f, size: e.target.value }))}
+                        style={{
+                          width: '100%', fontFamily: 'var(--mono)', fontSize: 10,
+                          background: 'var(--surface2)', border: '1px solid var(--border)',
+                          borderRadius: 4, padding: '5px 6px', color: 'var(--text)',
+                        }}
+                      >
+                        <option value="">-</option>
+                        {SIZES.map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="form-label" style={{ fontSize: 9 }}>NOT</label>
+                      <input
+                        className="form-input"
+                        value={garmentForm.condition_notes}
+                        onChange={e => setGarmentForm(f => ({ ...f, condition_notes: e.target.value }))}
+                        onKeyDown={e => { if (e.key === 'Enter' && canAddGarment && !addGarment.isPending) addGarment.mutate() }}
+                        placeholder="Opsiyonel" style={{ fontSize: 10 }}
+                      />
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10 }}>
+                    {addGarment.isError && (
+                      <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--red)' }}>
+                        {addGarment.error?.response?.data?.error || 'Hata oluştu'}
+                      </span>
+                    )}
+                    <button
+                      className="btn btn-primary"
+                      onClick={() => addGarment.mutate()}
+                      disabled={!canAddGarment || addGarment.isPending}
+                      style={{ padding: '7px 22px', letterSpacing: 1, fontWeight: 700 }}
+                    >
+                      {addGarment.isPending ? '...' : '✓ Ekle →'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* ── Eklenen parçalar ── */}
+              {addedGarments.length > 0 && (
+                <div>
+                  <label className="form-label">EKLENEN PARÇALAR ({addedGarments.length})</label>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    {addedGarments.map((g, i) => (
+                      <div key={i} style={{
+                        display: 'flex', alignItems: 'center', gap: 8,
+                        padding: '6px 10px', borderRadius: 6,
+                        background: 'var(--surface2)', border: '1px solid var(--border)',
+                      }}>
+                        <span style={{
+                          fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 700,
+                          color: 'var(--accent)', letterSpacing: 1, flexShrink: 0,
+                        }}>{g.code}</span>
+                        <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text2)' }}>
+                          {CLOTHING_ICONS[g.garment_type] || ''} {g.garment_type}
+                        </span>
+                        <span style={{
+                          width: 12, height: 12, borderRadius: '50%', flexShrink: 0,
+                          background: COLOR_PALETTE.find(c => c.name === g.color)?.hex || '#888',
+                          border: '1px solid rgba(255,255,255,0.15)',
+                        }} title={g.color} />
+                        <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>{g.color}</span>
+                        {g.brand && <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>{g.brand}</span>}
+                        {g.size && (
+                          <span style={{
+                            fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)',
+                            background: 'var(--surface)', border: '1px solid var(--border)',
+                            borderRadius: 3, padding: '1px 5px',
+                          }}>{g.size}</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* ── Alt aksiyonlar ── */}
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  className="btn btn-primary"
+                  style={{ flex: 1, padding: '10px', letterSpacing: 1 }}
+                  onClick={() => {
+                    qc.invalidateQueries({ queryKey: ['laundry-items'] })
+                    onClose()
+                  }}
+                >
+                  {addedGarments.length > 0
+                    ? `Tamamla & Kapat (${addedGarments.length} parça)`
+                    : 'Tamamla & Kapat'}
+                </button>
+                <button className="btn btn-ghost" onClick={onClose}>Daha Sonra</button>
+              </div>
+
             </div>
           )}
         </div>
