@@ -9,8 +9,6 @@ const DEFAULT_CLOTHING_TYPES = [
   'Yastık K.','İş Mont','İş Pantalonu','Şort','Atlet','Diğer',
 ]
 
-const SIZES = ['XS','S','M','L','XL','XXL','3XL','4XL','36','38','40','42','44','46','48']
-
 export const CLOTHING_ICONS = {
   'Pantolon':      '👖',
   'Gömlek':        '👔',
@@ -39,6 +37,8 @@ export const CLOTHING_ICONS = {
   'Atlet':         '👕',
   'Diğer':         '📦',
 }
+
+const SIZES = ['XS','S','M','L','XL','XXL','3XL','4XL','36','38','40','42','44','46','48']
 
 const COLOR_PALETTE = [
   { name: 'Beyaz',    hex: '#f0f0f0' },
@@ -133,28 +133,18 @@ export default function NewItemModal({ onClose }) {
     queryFn: laundryApi.getLaundrySettings,
     staleTime: 60_000,
   })
-  const { data: blockConfig = [] } = useQuery({
-    queryKey: ['block-config'],
-    queryFn: laundryApi.getBlockConfig,
-    staleTime: 60_000,
-  })
   const CLOTHING_TYPES = useMemo(() => {
     if (ctSettings.clothing_types) {
       try { return JSON.parse(ctSettings.clothing_types) } catch {}
     }
     return DEFAULT_CLOTHING_TYPES
   }, [ctSettings.clothing_types])
+
   const [form, setForm] = useState({
     room_id: '', notes: '', urgent: false, phone_override: '',
     intake_name: '', intake_signature: '',
   })
   const [clothing, setClothing] = useState([])
-  const [step, setStep] = useState(1)
-  const [createdItem, setCreatedItem] = useState(null)
-  const [garmentType, setGarmentType] = useState('')
-  const [garmentForm, setGarmentForm] = useState({ color: '', brand: '', model: '', size: '', condition_notes: '' })
-  const [addedGarments, setAddedGarments] = useState([])
-  const colorRef = useRef(null)
   const [needsIroning, setNeedsIroning] = useState(false)
   const [roomSearch, setRoomSearch] = useState('')
   const [phoneLoading, setPhoneLoading] = useState(false)
@@ -166,6 +156,12 @@ export default function NewItemModal({ onClose }) {
     return null
   })
   const draftTimerRef = useRef(null)
+
+  // Premium parça girişi (local buffer — API'ye tek seferde gönderilir)
+  const [premiumRows, setPremiumRows] = useState([])
+  const [gType, setGType] = useState('')
+  const [gForm, setGForm] = useState({ color: '', brand: '', model: '', size: '', condition_notes: '' })
+  const colorRef = useRef(null)
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
@@ -187,11 +183,7 @@ export default function NewItemModal({ onClose }) {
   }, [form.room_id])
 
   const selectedRoom = rooms.find(r => r.id === +form.room_id)
-  const isPremium = selectedRoom && (
-    blockConfig.length > 0
-      ? blockConfig.find(b => b.block === selectedRoom.block)?.is_premium === 1
-      : !['M','S','S1','S2'].includes(selectedRoom.block)
-  )
+  const isPremium = selectedRoom && !['M','S','S1','S2'].includes(selectedRoom.block)
   const totalCount = clothing.reduce((s, c) => s + c.qty, 0) || 1
 
   const saveDraft = useCallback((list) => {
@@ -226,56 +218,47 @@ export default function NewItemModal({ onClose }) {
       return next
     })
 
+  // Premium parça local ekleme
+  const canAddPremium = !!gType && !!gForm.color
+  const addPremiumRow = () => {
+    if (!canAddPremium) return
+    setPremiumRows(prev => [...prev, {
+      garment_type: gType,
+      color: gForm.color,
+      brand: gForm.brand || undefined,
+      model: gForm.model || undefined,
+      size: gForm.size || undefined,
+      condition_notes: gForm.condition_notes || undefined,
+    }])
+    setGType('')
+    setGForm({ color: '', brand: '', model: '', size: '', condition_notes: '' })
+    setTimeout(() => colorRef.current?.focus(), 30)
+  }
+  const removePremiumRow = (idx) => setPremiumRows(prev => prev.filter((_, i) => i !== idx))
+
   const create = useMutation({
-    mutationFn: () => laundryApi.createItem({
-      ...form,
-      room_id: +form.room_id,
-      urgent: form.urgent ? 1 : 0,
-      needs_ironing: needsIroning ? 1 : 0,
-      item_count: totalCount,
-      clothing_items: clothing.length > 0 ? clothing : undefined,
-      phone_override: form.phone_override || undefined,
-      intake_signature: form.intake_signature || undefined,
-    }),
-    onSuccess: (data) => {
+    mutationFn: async () => {
+      const item = await laundryApi.createItem({
+        ...form,
+        room_id: +form.room_id,
+        urgent: form.urgent ? 1 : 0,
+        needs_ironing: needsIroning ? 1 : 0,
+        item_count: isPremium && premiumRows.length > 0 ? premiumRows.length : totalCount,
+        clothing_items: clothing.length > 0 ? clothing : undefined,
+        phone_override: form.phone_override || undefined,
+        intake_signature: form.intake_signature || undefined,
+      })
+      if (isPremium && premiumRows.length > 0) {
+        await laundryApi.addPremiumGarments(item.id, premiumRows)
+      }
+      return item
+    },
+    onSuccess: () => {
       clearDraft()
       qc.invalidateQueries({ queryKey: ['laundry-items'] })
-      if (isPremium) {
-        setCreatedItem(data)
-        setStep(2)
-      } else {
-        onClose()
-      }
+      onClose()
     },
   })
-
-  const addGarment = useMutation({
-    mutationFn: () => {
-      if (!createdItem?.id) return Promise.reject(new Error('Item bulunamadı'))
-      return laundryApi.addPremiumGarments(createdItem.id, [{
-        garment_type: garmentType,
-        color: garmentForm.color,
-        brand: garmentForm.brand || undefined,
-        model: garmentForm.model || undefined,
-        size: garmentForm.size || undefined,
-        condition_notes: garmentForm.condition_notes || undefined,
-      }])
-    },
-    onSuccess: (data) => {
-      setAddedGarments(prev => [...prev, {
-        code: data.codes?.[0] ?? '',
-        garment_type: garmentType,
-        color: garmentForm.color,
-        brand: garmentForm.brand,
-        size: garmentForm.size,
-      }])
-      setGarmentType('')
-      setGarmentForm({ color: '', brand: '', model: '', size: '', condition_notes: '' })
-      qc.invalidateQueries({ queryKey: ['premium-garments', createdItem?.id] })
-    },
-  })
-
-  const canAddGarment = !!garmentType && !!garmentForm.color
 
   return (
     <div style={{
@@ -283,32 +266,21 @@ export default function NewItemModal({ onClose }) {
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       zIndex: 1000, backdropFilter: 'blur(4px)',
     }} onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="panel fade-up" style={{ width: 460, maxWidth: '94vw', maxHeight: '92vh', overflow: 'auto' }}>
+      <div className="panel fade-up" style={{ width: 500, maxWidth: '96vw', maxHeight: '94vh', overflow: 'auto' }}>
         <div className="panel-header" style={{
           background: 'linear-gradient(135deg, rgba(240,165,0,0.08), transparent)',
           borderBottom: '1px solid rgba(240,165,0,0.12)',
         }}>
           <div>
-            {step === 1 ? (
-              <>
-                <span className="panel-title">YENİ ÇAMAŞIR KAYDI</span>
-                <div className="panel-subtitle">Oda · Teslim Eden · Kıyafet · Kaydet</div>
-              </>
-            ) : (
-              <>
-                <span className="panel-title">★ PARÇA GİRİŞİ</span>
-                <div className="panel-subtitle">
-                  {selectedRoom?.block}{selectedRoom?.room_no} · {addedGarments.length} parça eklendi
-                </div>
-              </>
-            )}
+            <span className="panel-title">YENİ ÇAMAŞIR KAYDI</span>
+            <div className="panel-subtitle">
+              {isPremium ? '★ Premium Blok · Parça Detayı Girilebilir' : 'Oda · Teslim Eden · Kıyafet · Kaydet'}
+            </div>
           </div>
           <button className="btn btn-ghost btn-xs" onClick={onClose}>ESC</button>
         </div>
 
         <div className="panel-body" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-
-          {step === 1 && (<>
 
           {/* ── Draft Banner ── */}
           {draftBanner && (
@@ -343,13 +315,14 @@ export default function NewItemModal({ onClose }) {
             {selectedRoom && (
               <div style={{
                 padding: '6px 10px', borderRadius: 6, marginBottom: 6,
-                background: 'rgba(240,165,0,0.08)', border: '1px solid rgba(240,165,0,0.2)',
+                background: isPremium ? 'rgba(240,165,0,0.1)' : 'rgba(240,165,0,0.08)',
+                border: `1px solid ${isPremium ? 'rgba(240,165,0,0.35)' : 'rgba(240,165,0,0.2)'}`,
                 fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--accent)',
                 display: 'flex', justifyContent: 'space-between', alignItems: 'center',
               }}>
-                <span>✓ {selectedRoom.block} - {selectedRoom.room_no}</span>
+                <span>{isPremium ? '★ ' : '✓ '}{selectedRoom.block} - {selectedRoom.room_no}{isPremium ? ' · Premium' : ''}</span>
                 <button className="btn btn-ghost btn-xs"
-                  onClick={() => { set('room_id', ''); setRoomSearch('') }}
+                  onClick={() => { set('room_id', ''); setRoomSearch(''); setPremiumRows([]); setGType('') }}
                   style={{ padding: '2px 6px' }}>✕</button>
               </div>
             )}
@@ -391,110 +364,302 @@ export default function NewItemModal({ onClose }) {
             />
           </div>
 
-          {/* ── Kıyafet Girişi ── */}
-          <div>
-            <label className="form-label">
-              KIYAFETler
-              {totalCount > 0 && (
-                <span style={{ marginLeft: 8, color: 'var(--accent)', fontWeight: 700 }}>{totalCount} parça</span>
-              )}
-            </label>
-            {/* Chip'ler */}
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
-              {CLOTHING_TYPES.map(type => {
-                const active = clothing.some(c => c.type === type)
-                return (
-                  <button key={type} onClick={() => addClothing(type)} style={{
-                    padding: '5px 12px', borderRadius: 20, cursor: 'pointer',
-                    background: active ? 'rgba(240,165,0,0.15)' : 'var(--surface2)',
-                    border: `1px solid ${active ? 'rgba(240,165,0,0.4)' : 'var(--border)'}`,
-                    color: active ? 'var(--accent)' : 'var(--text2)',
-                    fontFamily: 'var(--mono)', fontSize: 10, transition: 'all 0.15s',
+          {/* ── Premium Parça Girişi (sadece premium blok seçiliyse) ── */}
+          {isPremium && (
+            <div style={{
+              borderRadius: 10,
+              border: '1px solid rgba(240,165,0,0.2)',
+              background: 'rgba(240,165,0,0.03)',
+              overflow: 'hidden',
+            }}>
+              {/* Başlık */}
+              <div style={{
+                padding: '8px 14px',
+                background: 'rgba(240,165,0,0.08)',
+                borderBottom: '1px solid rgba(240,165,0,0.15)',
+                fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--accent)', fontWeight: 700,
+                display: 'flex', alignItems: 'center', gap: 8,
+              }}>
+                ★ PREMIUM PARÇALAR
+                {premiumRows.length > 0 && (
+                  <span style={{
+                    background: 'var(--accent)', color: '#000',
+                    borderRadius: 10, padding: '1px 8px', fontSize: 9, fontWeight: 700,
+                  }}>{premiumRows.length}</span>
+                )}
+              </div>
+
+              <div style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+
+                {/* Eklenen parçalar listesi */}
+                {premiumRows.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginBottom: 4 }}>
+                    {premiumRows.map((g, i) => (
+                      <div key={i} style={{
+                        display: 'flex', alignItems: 'center', gap: 6,
+                        padding: '5px 8px', borderRadius: 6,
+                        background: 'var(--surface2)', border: '1px solid var(--border)',
+                      }}>
+                        <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', minWidth: 18 }}>#{i + 1}</span>
+                        <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text)', flex: 1 }}>
+                          {CLOTHING_ICONS[g.garment_type] || ''} {g.garment_type}
+                        </span>
+                        <span style={{
+                          width: 12, height: 12, borderRadius: '50%', flexShrink: 0,
+                          background: COLOR_PALETTE.find(c => c.name === g.color)?.hex || '#888',
+                          border: '1px solid rgba(255,255,255,0.15)',
+                        }} title={g.color} />
+                        <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>{g.color}</span>
+                        {g.brand && <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>{g.brand}</span>}
+                        {g.size && (
+                          <span style={{
+                            fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)',
+                            background: 'var(--surface)', border: '1px solid var(--border)',
+                            borderRadius: 3, padding: '1px 5px',
+                          }}>{g.size}</span>
+                        )}
+                        <button onClick={() => removePremiumRow(i)}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', fontSize: 12, padding: '0 2px', flexShrink: 0 }}>✕</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Tip seçimi */}
+                <div>
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--text3)', letterSpacing: 1, marginBottom: 5 }}>TİP SEÇ</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                    {CLOTHING_TYPES.map(type => (
+                      <button
+                        key={type}
+                        onClick={() => {
+                          setGType(t => t === type ? '' : type)
+                          setGForm(f => ({ ...f, color: '' }))
+                          if (gType !== type) setTimeout(() => colorRef.current?.focus(), 30)
+                        }}
+                        style={{
+                          padding: '4px 10px', borderRadius: 16, cursor: 'pointer',
+                          background: gType === type ? 'rgba(240,165,0,0.15)' : 'var(--surface)',
+                          border: `1px solid ${gType === type ? 'rgba(240,165,0,0.4)' : 'var(--border)'}`,
+                          color: gType === type ? 'var(--accent)' : 'var(--text2)',
+                          fontFamily: 'var(--mono)', fontSize: 9, transition: 'all 0.12s',
+                        }}
+                      >
+                        {gType === type && '★ '}{CLOTHING_ICONS[type] || ''} {type}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Detay formu — sadece tip seçiliyse */}
+                {gType && (
+                  <div style={{
+                    padding: '10px 12px', borderRadius: 7,
+                    background: 'var(--surface2)', border: '1px solid rgba(240,165,0,0.12)',
                   }}>
-                    {active && '✓ '}{CLOTHING_ICONS[type] || ''} {type}
-                  </button>
-                )
-              })}
-            </div>
-            {/* Satır Listesi */}
-            {clothing.length > 0 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {clothing.map((c, idx) => (
-                  <div key={idx} style={{
-                    display: 'flex', alignItems: 'center', gap: 8,
-                    padding: '6px 10px', background: 'var(--surface2)',
-                    border: '1px solid var(--border)', borderRadius: 7,
-                  }}>
-                    <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text)', flex: '0 0 90px' }}>
-                      {CLOTHING_ICONS[c.type] || ''} {c.type}
-                    </span>
-                    {/* Color palette */}
-                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      {/* Renk paleti */}
+                    <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--accent)', fontWeight: 700, marginBottom: 8 }}>
+                      {CLOTHING_ICONS[gType] || ''} {gType}
+                      <span style={{ fontWeight: 400, color: 'var(--text3)', fontSize: 9, marginLeft: 6 }}>#{premiumRows.length + 1}</span>
+                    </div>
+
+                    {/* Renk */}
+                    <div style={{ marginBottom: 8 }}>
+                      <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--text3)', letterSpacing: 1, marginBottom: 4 }}>
+                        RENK <span style={{ color: 'var(--red)' }}>*</span>
+                      </div>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
                         {COLOR_PALETTE.map(col => (
                           <button
                             key={col.name}
                             title={col.name}
-                            onClick={() => updateClothing(idx, 'color', c.color === col.name ? '' : col.name)}
+                            onClick={() => setGForm(f => ({ ...f, color: f.color === col.name ? '' : col.name }))}
                             style={{
-                              width: 18, height: 18, borderRadius: '50%', border: `2px solid ${c.color === col.name ? 'var(--accent)' : 'transparent'}`,
-                              background: col.hex, cursor: 'pointer', padding: 0, flexShrink: 0,
-                              boxShadow: c.color === col.name ? '0 0 0 1px var(--accent)' : 'none',
-                              transition: 'border 0.1s',
+                              width: 20, height: 20, borderRadius: '50%', padding: 0, cursor: 'pointer',
+                              background: col.hex, flexShrink: 0,
+                              border: `2px solid ${gForm.color === col.name ? 'var(--accent)' : 'transparent'}`,
+                              boxShadow: gForm.color === col.name ? '0 0 0 1px var(--accent)' : 'none',
+                              transition: 'all 0.1s',
                             }}
                           />
                         ))}
                         <input
+                          ref={colorRef}
                           className="form-input"
-                          value={COLOR_PALETTE.some(cp => cp.name === c.color) || PATTERN_LIST.some(p => p.name === c.color) ? '' : c.color}
-                          onChange={e => updateClothing(idx, 'color', e.target.value)}
+                          value={COLOR_PALETTE.some(c => c.name === gForm.color) ? '' : gForm.color}
+                          onChange={e => setGForm(f => ({ ...f, color: e.target.value }))}
                           placeholder="Diğer..."
-                          style={{ width: 60, padding: '3px 6px', fontSize: 9, flexShrink: 0 }}
+                          style={{ width: 65, padding: '3px 6px', fontSize: 9, flexShrink: 0 }}
                         />
-                        {c.color && (
-                          <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', flexShrink: 0 }}>{c.color}</span>
+                        {gForm.color && (
+                          <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--accent)', flexShrink: 0 }}>{gForm.color}</span>
                         )}
                       </div>
-                      {/* Desen satırı */}
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
-                        <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--text3)', flexShrink: 0 }}>DESEN:</span>
-                        {PATTERN_LIST.map(pat => (
-                          <button
-                            key={pat.name}
-                            title={pat.name}
-                            onClick={() => updateClothing(idx, 'color', c.color === pat.name ? '' : pat.name)}
-                            style={{
-                              width: 24, height: 24, borderRadius: 4,
-                              border: `2px solid ${c.color === pat.name ? 'var(--accent)' : 'transparent'}`,
-                              background: pat.bg, cursor: 'pointer', padding: 0, flexShrink: 0,
-                              boxShadow: c.color === pat.name ? '0 0 0 1px var(--accent)' : 'none',
-                              transition: 'border 0.1s',
-                              outline: 'none',
-                            }}
-                          />
-                        ))}
+                    </div>
+
+                    {/* Marka / Model / Beden */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 80px', gap: 6, marginBottom: 6 }}>
+                      <div>
+                        <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--text3)', marginBottom: 3 }}>MARKA</div>
+                        <input className="form-input" value={gForm.brand}
+                          onChange={e => setGForm(f => ({ ...f, brand: e.target.value }))}
+                          placeholder="Opsiyonel" style={{ fontSize: 10 }} />
+                      </div>
+                      <div>
+                        <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--text3)', marginBottom: 3 }}>MODEL</div>
+                        <input className="form-input" value={gForm.model}
+                          onChange={e => setGForm(f => ({ ...f, model: e.target.value }))}
+                          placeholder="Opsiyonel" style={{ fontSize: 10 }} />
+                      </div>
+                      <div>
+                        <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--text3)', marginBottom: 3 }}>BEDEN</div>
+                        <select value={gForm.size} onChange={e => setGForm(f => ({ ...f, size: e.target.value }))}
+                          style={{
+                            width: '100%', fontFamily: 'var(--mono)', fontSize: 10,
+                            background: 'var(--surface)', border: '1px solid var(--border)',
+                            borderRadius: 4, padding: '5px 4px', color: 'var(--text)',
+                          }}>
+                          <option value="">-</option>
+                          {SIZES.map(s => <option key={s} value={s}>{s}</option>)}
+                        </select>
                       </div>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <button onClick={() => updateClothing(idx, 'qty', c.qty - 1)}
-                        style={{ width: 24, height: 24, borderRadius: 4, background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text2)', cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>−</button>
-                      <span style={{ fontFamily: 'var(--display)', fontSize: 18, color: 'var(--accent)', minWidth: 20, textAlign: 'center', lineHeight: 1 }}>{c.qty}</span>
-                      <button onClick={() => updateClothing(idx, 'qty', c.qty + 1)}
-                        style={{ width: 24, height: 24, borderRadius: 4, background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text2)', cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
+
+                    {/* Not + Ekle */}
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'flex-end' }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--text3)', marginBottom: 3 }}>NOT</div>
+                        <input className="form-input" value={gForm.condition_notes}
+                          onChange={e => setGForm(f => ({ ...f, condition_notes: e.target.value }))}
+                          onKeyDown={e => { if (e.key === 'Enter' && canAddPremium) addPremiumRow() }}
+                          placeholder="Opsiyonel" style={{ fontSize: 10 }} />
+                      </div>
+                      <button
+                        onClick={addPremiumRow}
+                        disabled={!canAddPremium}
+                        style={{
+                          padding: '7px 16px', borderRadius: 6, cursor: canAddPremium ? 'pointer' : 'not-allowed',
+                          background: canAddPremium ? 'var(--accent)' : 'var(--surface)',
+                          border: `1px solid ${canAddPremium ? 'var(--accent)' : 'var(--border)'}`,
+                          color: canAddPremium ? '#000' : 'var(--text3)',
+                          fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap',
+                          transition: 'all 0.15s',
+                        }}
+                      >
+                        + Ekle
+                      </button>
                     </div>
-                    <button onClick={() => removeClothing(idx)}
-                      style={{ color: 'var(--text3)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, padding: '0 4px' }}>✕</button>
                   </div>
-                ))}
+                )}
+
+                {premiumRows.length === 0 && !gType && (
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', textAlign: 'center', padding: '4px 0' }}>
+                    Yukarıdan tip seç → detay gir → Ekle
+                  </div>
+                )}
               </div>
-            )}
-            {clothing.length === 0 && (
-              <div style={{ padding: '8px 12px', fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', background: 'var(--surface2)', borderRadius: 6, border: '1px dashed var(--border)' }}>
-                Yukarıdan kıyafet tipi seç veya boş bırak
+            </div>
+          )}
+
+          {/* ── Kıyafet Girişi (regular) ── */}
+          {!isPremium && (
+            <div>
+              <label className="form-label">
+                KIYAFETler
+                {totalCount > 0 && (
+                  <span style={{ marginLeft: 8, color: 'var(--accent)', fontWeight: 700 }}>{totalCount} parça</span>
+                )}
+              </label>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+                {CLOTHING_TYPES.map(type => {
+                  const active = clothing.some(c => c.type === type)
+                  return (
+                    <button key={type} onClick={() => addClothing(type)} style={{
+                      padding: '5px 12px', borderRadius: 20, cursor: 'pointer',
+                      background: active ? 'rgba(240,165,0,0.15)' : 'var(--surface2)',
+                      border: `1px solid ${active ? 'rgba(240,165,0,0.4)' : 'var(--border)'}`,
+                      color: active ? 'var(--accent)' : 'var(--text2)',
+                      fontFamily: 'var(--mono)', fontSize: 10, transition: 'all 0.15s',
+                    }}>
+                      {active && '✓ '}{CLOTHING_ICONS[type] || ''} {type}
+                    </button>
+                  )
+                })}
               </div>
-            )}
-          </div>
+              {clothing.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {clothing.map((c, idx) => (
+                    <div key={idx} style={{
+                      display: 'flex', alignItems: 'center', gap: 8,
+                      padding: '6px 10px', background: 'var(--surface2)',
+                      border: '1px solid var(--border)', borderRadius: 7,
+                    }}>
+                      <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text)', flex: '0 0 90px' }}>
+                        {CLOTHING_ICONS[c.type] || ''} {c.type}
+                      </span>
+                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
+                          {COLOR_PALETTE.map(col => (
+                            <button
+                              key={col.name}
+                              title={col.name}
+                              onClick={() => updateClothing(idx, 'color', c.color === col.name ? '' : col.name)}
+                              style={{
+                                width: 18, height: 18, borderRadius: '50%', border: `2px solid ${c.color === col.name ? 'var(--accent)' : 'transparent'}`,
+                                background: col.hex, cursor: 'pointer', padding: 0, flexShrink: 0,
+                                boxShadow: c.color === col.name ? '0 0 0 1px var(--accent)' : 'none',
+                                transition: 'border 0.1s',
+                              }}
+                            />
+                          ))}
+                          <input
+                            className="form-input"
+                            value={COLOR_PALETTE.some(cp => cp.name === c.color) || PATTERN_LIST.some(p => p.name === c.color) ? '' : c.color}
+                            onChange={e => updateClothing(idx, 'color', e.target.value)}
+                            placeholder="Diğer..."
+                            style={{ width: 60, padding: '3px 6px', fontSize: 9, flexShrink: 0 }}
+                          />
+                          {c.color && (
+                            <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', flexShrink: 0 }}>{c.color}</span>
+                          )}
+                        </div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
+                          <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--text3)', flexShrink: 0 }}>DESEN:</span>
+                          {PATTERN_LIST.map(pat => (
+                            <button
+                              key={pat.name}
+                              title={pat.name}
+                              onClick={() => updateClothing(idx, 'color', c.color === pat.name ? '' : pat.name)}
+                              style={{
+                                width: 24, height: 24, borderRadius: 4,
+                                border: `2px solid ${c.color === pat.name ? 'var(--accent)' : 'transparent'}`,
+                                background: pat.bg, cursor: 'pointer', padding: 0, flexShrink: 0,
+                                boxShadow: c.color === pat.name ? '0 0 0 1px var(--accent)' : 'none',
+                                transition: 'border 0.1s', outline: 'none',
+                              }}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <button onClick={() => updateClothing(idx, 'qty', c.qty - 1)}
+                          style={{ width: 24, height: 24, borderRadius: 4, background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text2)', cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>−</button>
+                        <span style={{ fontFamily: 'var(--display)', fontSize: 18, color: 'var(--accent)', minWidth: 20, textAlign: 'center', lineHeight: 1 }}>{c.qty}</span>
+                        <button onClick={() => updateClothing(idx, 'qty', c.qty + 1)}
+                          style={{ width: 24, height: 24, borderRadius: 4, background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text2)', cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
+                      </div>
+                      <button onClick={() => removeClothing(idx)}
+                        style={{ color: 'var(--text3)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, padding: '0 4px' }}>✕</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {clothing.length === 0 && (
+                <div style={{ padding: '8px 12px', fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', background: 'var(--surface2)', borderRadius: 6, border: '1px dashed var(--border)' }}>
+                  Yukarıdan kıyafet tipi seç veya boş bırak
+                </div>
+              )}
+            </div>
+          )}
 
           {/* ── Notlar ── */}
           <div>
@@ -571,209 +736,15 @@ export default function NewItemModal({ onClose }) {
             <button className="btn btn-primary" style={{ flex: 1, padding: '10px', letterSpacing: 1 }}
               onClick={() => create.mutate()}
               disabled={!form.room_id || create.isPending}>
-              {create.isPending ? 'Kaydediliyor...' : `+ KAYDET (${totalCount} parça)`}
+              {create.isPending
+                ? 'Kaydediliyor...'
+                : isPremium && premiumRows.length > 0
+                  ? `+ KAYDET (${premiumRows.length} premium parça)`
+                  : `+ KAYDET (${totalCount} parça)`}
             </button>
             <button className="btn btn-ghost" onClick={onClose}>İptal</button>
           </div>
 
-          </>)}
-
-          {step === 2 && createdItem && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-
-              {/* ── Tip seçimi ── */}
-              <div>
-                <label className="form-label">TİP SEÇ</label>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                  {CLOTHING_TYPES.map(type => (
-                    <button
-                      key={type}
-                      onClick={() => {
-                        setGarmentType(t => t === type ? '' : type)
-                        setGarmentForm({ color: '', brand: '', model: '', size: '', condition_notes: '' })
-                        setTimeout(() => colorRef.current?.focus(), 50)
-                      }}
-                      style={{
-                        padding: '6px 14px', borderRadius: 20, cursor: 'pointer',
-                        background: garmentType === type ? 'rgba(240,165,0,0.15)' : 'var(--surface2)',
-                        border: `1px solid ${garmentType === type ? 'rgba(240,165,0,0.4)' : 'var(--border)'}`,
-                        color: garmentType === type ? 'var(--accent)' : 'var(--text2)',
-                        fontFamily: 'var(--mono)', fontSize: 10, transition: 'all 0.15s',
-                      }}
-                    >
-                      {garmentType === type && '★ '}{CLOTHING_ICONS[type] || ''} {type}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* ── Parça formu ── */}
-              {garmentType && (
-                <div style={{
-                  padding: '14px 16px', borderRadius: 8,
-                  background: 'rgba(240,165,0,0.05)', border: '1px solid rgba(240,165,0,0.15)',
-                }}>
-                  <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--accent)', marginBottom: 12, fontWeight: 700 }}>
-                    {CLOTHING_ICONS[garmentType] || ''} {garmentType}
-                    <span style={{ color: 'var(--text3)', fontWeight: 400, fontSize: 9, marginLeft: 8 }}>
-                      #{addedGarments.length + 1}
-                    </span>
-                  </div>
-
-                  {/* Renk */}
-                  <div style={{ marginBottom: 10 }}>
-                    <label className="form-label" style={{ fontSize: 9 }}>
-                      RENK <span style={{ color: 'var(--red)' }}>*</span>
-                    </label>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, alignItems: 'center' }}>
-                      {COLOR_PALETTE.map(col => (
-                        <button
-                          key={col.name}
-                          title={col.name}
-                          onClick={() => setGarmentForm(f => ({ ...f, color: f.color === col.name ? '' : col.name }))}
-                          style={{
-                            width: 22, height: 22, borderRadius: '50%', padding: 0, cursor: 'pointer',
-                            background: col.hex,
-                            border: `2px solid ${garmentForm.color === col.name ? 'var(--accent)' : 'transparent'}`,
-                            boxShadow: garmentForm.color === col.name ? '0 0 0 1px var(--accent)' : 'none',
-                            transition: 'all 0.1s', flexShrink: 0,
-                          }}
-                        />
-                      ))}
-                      <input
-                        ref={colorRef}
-                        className="form-input"
-                        value={COLOR_PALETTE.some(c => c.name === garmentForm.color) ? '' : garmentForm.color}
-                        onChange={e => setGarmentForm(f => ({ ...f, color: e.target.value }))}
-                        placeholder="Diğer..."
-                        style={{ width: 70, padding: '3px 6px', fontSize: 9, flexShrink: 0 }}
-                      />
-                      {garmentForm.color && (
-                        <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--accent)', flexShrink: 0 }}>
-                          {garmentForm.color}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Marka / Model */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
-                    <div>
-                      <label className="form-label" style={{ fontSize: 9 }}>MARKA</label>
-                      <input className="form-input" value={garmentForm.brand}
-                        onChange={e => setGarmentForm(f => ({ ...f, brand: e.target.value }))}
-                        placeholder="Opsiyonel" style={{ fontSize: 10 }} />
-                    </div>
-                    <div>
-                      <label className="form-label" style={{ fontSize: 9 }}>MODEL</label>
-                      <input className="form-input" value={garmentForm.model}
-                        onChange={e => setGarmentForm(f => ({ ...f, model: e.target.value }))}
-                        placeholder="Opsiyonel" style={{ fontSize: 10 }} />
-                    </div>
-                  </div>
-
-                  {/* Beden / Not */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '100px 1fr', gap: 8, marginBottom: 12 }}>
-                    <div>
-                      <label className="form-label" style={{ fontSize: 9 }}>BEDEN</label>
-                      <select
-                        value={garmentForm.size}
-                        onChange={e => setGarmentForm(f => ({ ...f, size: e.target.value }))}
-                        style={{
-                          width: '100%', fontFamily: 'var(--mono)', fontSize: 10,
-                          background: 'var(--surface2)', border: '1px solid var(--border)',
-                          borderRadius: 4, padding: '5px 6px', color: 'var(--text)',
-                        }}
-                      >
-                        <option value="">-</option>
-                        {SIZES.map(s => <option key={s} value={s}>{s}</option>)}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="form-label" style={{ fontSize: 9 }}>NOT</label>
-                      <input
-                        className="form-input"
-                        value={garmentForm.condition_notes}
-                        onChange={e => setGarmentForm(f => ({ ...f, condition_notes: e.target.value }))}
-                        onKeyDown={e => { if (e.key === 'Enter' && canAddGarment && !addGarment.isPending) addGarment.mutate() }}
-                        placeholder="Opsiyonel" style={{ fontSize: 10 }}
-                      />
-                    </div>
-                  </div>
-
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10 }}>
-                    {addGarment.isError && (
-                      <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--red)' }}>
-                        {addGarment.error?.response?.data?.error || 'Hata oluştu'}
-                      </span>
-                    )}
-                    <button
-                      className="btn btn-primary"
-                      onClick={() => addGarment.mutate()}
-                      disabled={!canAddGarment || addGarment.isPending}
-                      style={{ padding: '7px 22px', letterSpacing: 1, fontWeight: 700 }}
-                    >
-                      {addGarment.isPending ? '...' : '✓ Ekle →'}
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* ── Eklenen parçalar ── */}
-              {addedGarments.length > 0 && (
-                <div>
-                  <label className="form-label">EKLENEN PARÇALAR ({addedGarments.length})</label>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    {addedGarments.map((g, i) => (
-                      <div key={i} style={{
-                        display: 'flex', alignItems: 'center', gap: 8,
-                        padding: '6px 10px', borderRadius: 6,
-                        background: 'var(--surface2)', border: '1px solid var(--border)',
-                      }}>
-                        <span style={{
-                          fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 700,
-                          color: 'var(--accent)', letterSpacing: 1, flexShrink: 0,
-                        }}>{g.code}</span>
-                        <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text2)' }}>
-                          {CLOTHING_ICONS[g.garment_type] || ''} {g.garment_type}
-                        </span>
-                        <span style={{
-                          width: 12, height: 12, borderRadius: '50%', flexShrink: 0,
-                          background: COLOR_PALETTE.find(c => c.name === g.color)?.hex || '#888',
-                          border: '1px solid rgba(255,255,255,0.15)',
-                        }} title={g.color} />
-                        <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>{g.color}</span>
-                        {g.brand && <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>{g.brand}</span>}
-                        {g.size && (
-                          <span style={{
-                            fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)',
-                            background: 'var(--surface)', border: '1px solid var(--border)',
-                            borderRadius: 3, padding: '1px 5px',
-                          }}>{g.size}</span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* ── Alt aksiyonlar ── */}
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button
-                  className="btn btn-primary"
-                  style={{ flex: 1, padding: '10px', letterSpacing: 1 }}
-                  onClick={() => {
-                    qc.invalidateQueries({ queryKey: ['laundry-items'] })
-                    onClose()
-                  }}
-                >
-                  {`Tamamla & Kapat (${addedGarments.length} parça)`}
-                </button>
-                <button className="btn btn-ghost" onClick={onClose}>Daha Sonra</button>
-              </div>
-
-            </div>
-          )}
         </div>
       </div>
     </div>
