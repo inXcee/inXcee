@@ -133,6 +133,11 @@ export default function NewItemModal({ onClose }) {
     queryFn: laundryApi.getLaundrySettings,
     staleTime: 60_000,
   })
+  const { data: blockConfig = [] } = useQuery({
+    queryKey: ['block-config'],
+    queryFn: laundryApi.getBlockConfig,
+    staleTime: 60_000,
+  })
   const CLOTHING_TYPES = useMemo(() => {
     if (ctSettings.clothing_types) {
       try { return JSON.parse(ctSettings.clothing_types) } catch {}
@@ -182,7 +187,11 @@ export default function NewItemModal({ onClose }) {
   }, [form.room_id])
 
   const selectedRoom = rooms.find(r => r.id === +form.room_id)
-  const isPremium = selectedRoom && !['M','S','S1','S2'].includes(selectedRoom.block)
+  const isPremium = selectedRoom && (
+    blockConfig.length > 0
+      ? blockConfig.find(b => b.block === selectedRoom.block)?.is_premium === 1
+      : !['M','S','S1','S2'].includes(selectedRoom.block)
+  )
   const totalCount = clothing.reduce((s, c) => s + c.qty, 0) || 1
 
   const saveDraft = useCallback((list) => {
@@ -254,7 +263,7 @@ export default function NewItemModal({ onClose }) {
     },
     onSuccess: (data) => {
       setAddedGarments(prev => [...prev, {
-        code: data.codes[0],
+        code: data.codes?.[0] ?? '',
         garment_type: garmentType,
         color: garmentForm.color,
         brand: garmentForm.brand,
