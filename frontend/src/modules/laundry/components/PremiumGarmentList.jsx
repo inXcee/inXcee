@@ -29,7 +29,7 @@ const GARMENT_TYPE_ALIASES = {
   'diğer': 'Diğer', 'diger': 'Diğer',
 }
 
-const QUICK_COLORS = ['Beyaz','Siyah','Gri','Füme','Lacivert','Mavi','Açık Mavi','Kırmızı','Yeşil','Sarı','Turuncu','Kahve','Bej','Mor','Pembe']
+const QUICK_COLORS = ['Beyaz','Siyah','Füme','Lacivert','Açık Mavi','Mavi','Gri','Kırmızı','Yeşil','Sarı','Turuncu','Kahve','Bej','Mor','Pembe']
 const QUICK_PATTERNS = ['Çizgili','Kareli','Desenli','Renkli']
 const QUICK_SIZES = new Set(['XS','S','M','L','XL','XXL','3XL','36','38','40','42','44','46','48'])
 
@@ -45,11 +45,14 @@ function parseQuickText(text) {
   }
 
   // Kıyafet tipi (çok kelimeli önce)
-  const lower = rem.toLowerCase()
   for (const [key, val] of Object.entries(GARMENT_TYPE_ALIASES)) {
-    if (lower.includes(key)) {
+    const pattern = key.includes('-') || key.includes(' ')
+      ? key
+      : `(?<![a-zçğışöü])${key}(?![a-zçğışöü])`
+    const regex = new RegExp(pattern, 'i')
+    if (regex.test(rem)) {
       result.garment_type = val
-      rem = rem.replace(new RegExp(key, 'i'), ' ').replace(/\s+/g, ' ').trim()
+      rem = rem.replace(regex, ' ').replace(/\s+/g, ' ').trim()
       break
     }
   }
@@ -221,6 +224,21 @@ export default function PremiumGarmentList({ item }) {
   const selectedIroning  = selectedGarments.filter(g => g.status === 'ironing')
   const selectedReady    = selectedGarments.filter(g => g.status === 'ready')
 
+  function applyQuickText() {
+    if (!quickText.trim()) return
+    const parsed = parseQuickText(quickText)
+    setForm(f => ({
+      ...f,
+      garment_type: parsed.garment_type || f.garment_type,
+      colors: parsed.colors.length > 0 ? parsed.colors : f.colors,
+      pattern: parsed.pattern || f.pattern,
+      size: parsed.size || f.size,
+      brand: parsed.brand || f.brand,
+      quantity: parsed.quantity,
+    }))
+    setQuickText('')
+  }
+
   const inp = {
     background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 5,
     color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 11, padding: '5px 8px',
@@ -380,37 +398,12 @@ export default function PremiumGarmentList({ item }) {
                 onChange={e => setQuickText(e.target.value)}
                 placeholder="örn: 3 mavi gömlek M Lacoste"
                 onKeyDown={e => {
-                  if (e.key === 'Enter' && quickText.trim()) {
-                    const parsed = parseQuickText(quickText)
-                    setForm(f => ({
-                      ...f,
-                      garment_type: parsed.garment_type || f.garment_type,
-                      colors: parsed.colors.length > 0 ? parsed.colors : f.colors,
-                      pattern: parsed.pattern || f.pattern,
-                      size: parsed.size || f.size,
-                      brand: parsed.brand || f.brand,
-                      quantity: parsed.quantity,
-                    }))
-                    setQuickText('')
-                  }
+                  if (e.key === 'Enter') applyQuickText()
                 }}
               />
               <button
                 type="button"
-                onClick={() => {
-                  if (!quickText.trim()) return
-                  const parsed = parseQuickText(quickText)
-                  setForm(f => ({
-                    ...f,
-                    garment_type: parsed.garment_type || f.garment_type,
-                    colors: parsed.colors.length > 0 ? parsed.colors : f.colors,
-                    pattern: parsed.pattern || f.pattern,
-                    size: parsed.size || f.size,
-                    brand: parsed.brand || f.brand,
-                    quantity: parsed.quantity,
-                  }))
-                  setQuickText('')
-                }}
+                onClick={applyQuickText}
                 style={{
                   padding: '5px 12px', borderRadius: 5, cursor: 'pointer',
                   background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.35)',
