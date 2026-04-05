@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { laundryApi } from '../api.js'
+import ColorPatternPicker, { ColorPatternDisplay, parseColors, colorHex } from './ColorPatternPicker.jsx'
 
 const GARMENT_TYPES = [
   'Pantolon','Gömlek','T-Shirt','Kazak','Sweat','Mont','Ceket',
@@ -26,7 +27,7 @@ function Badge({ status }) {
 }
 
 function emptyForm() {
-  return { garment_type: '', brand: '', model: '', size: '', color: '', condition_notes: '' }
+  return { garment_type: '', brand: '', model: '', size: '', colors: [], pattern: '', condition_notes: '' }
 }
 
 export default function PremiumGarmentList({ item }) {
@@ -34,6 +35,8 @@ export default function PremiumGarmentList({ item }) {
   const [form, setForm] = useState(emptyForm())
   const [showForm, setShowForm] = useState(false)
   const [deliveredTo, setDeliveredTo] = useState('')
+  const [selected, setSelected] = useState(new Set())
+  const [bulkDeliverTo, setBulkDeliverTo] = useState('')
   const brandRef = useRef(null)
 
   const { data: garments = [], isLoading } = useQuery({
@@ -43,7 +46,15 @@ export default function PremiumGarmentList({ item }) {
   })
 
   const addMut = useMutation({
-    mutationFn: () => laundryApi.addPremiumGarments(item.id, [form]),
+    mutationFn: () => laundryApi.addPremiumGarments(item.id, [{
+      garment_type: form.garment_type,
+      brand: form.brand || undefined,
+      model: form.model || undefined,
+      size: form.size || undefined,
+      color: form.colors.length > 0 ? form.colors.join(', ') : undefined,
+      pattern: form.pattern || undefined,
+      condition_notes: form.condition_notes || undefined,
+    }]),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['premium-garments', item.id] })
       qc.invalidateQueries({ queryKey: ['laundry-items'] })
@@ -65,6 +76,7 @@ export default function PremiumGarmentList({ item }) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['premium-garments', item.id] })
       qc.invalidateQueries({ queryKey: ['laundry-items'] })
+      setSelected(new Set())
     },
   })
 
@@ -81,6 +93,16 @@ export default function PremiumGarmentList({ item }) {
     },
   })
 
+  const bulkDeliverMut = useMutation({
+    mutationFn: ({ ids, to }) => laundryApi.bulkDeliverPremiumGarments(item.id, ids, to),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['premium-garments', item.id] })
+      qc.invalidateQueries({ queryKey: ['laundry-items'] })
+      setSelected(new Set())
+      setBulkDeliverTo('')
+    },
+  })
+
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
   const canAdd = !!form.garment_type
 
@@ -89,6 +111,34 @@ export default function PremiumGarmentList({ item }) {
   const activeGarments   = garments.filter(g => g.status !== 'lost')
   const allIroned        = activeGarments.length > 0 && ironingGarments.length === 0 && readyGarments.length > 0
   const hasIroning       = ironingGarments.length > 0
+
+  // Selection logic
+  const selectableIds = garments
+    .filter(g => g.status !== 'delivered' && g.status !== 'lost')
+    .map(g => g.id)
+  const allSelected = selectableIds.length > 0 && selectableIds.every(id => selected.has(id))
+
+  function toggleAll() {
+    if (allSelected) {
+      setSelected(new Set())
+    } else {
+      setSelected(new Set(selectableIds))
+    }
+  }
+
+  function toggleSelect(id) {
+    setSelected(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  // Bulk action bar state
+  const selectedGarments = garments.filter(g => selected.has(g.id))
+  const selectedIroning  = selectedGarments.filter(g => g.status === 'ironing' || g.status === 'received')
+  const selectedReady    = selectedGarments.filter(g => g.status === 'ready')
 
   const inp = {
     background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 5,
@@ -103,6 +153,16 @@ export default function PremiumGarmentList({ item }) {
       {/* ── Header ── */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {/* Tümünü Seç checkbox */}
+          {selectableIds.length > 0 && (
+            <input
+              type="checkbox"
+              checked={allSelected}
+              onChange={toggleAll}
+              title="Tümünü Seç"
+              style={{ cursor: 'pointer', accentColor: 'var(--accent)', width: 14, height: 14, flexShrink: 0 }}
+            />
+          )}
           <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: 1 }}>
             KIYAFETler {garments.length > 0 && `(${garments.length})`}
           </span>
@@ -150,6 +210,72 @@ export default function PremiumGarmentList({ item }) {
         </div>
       </div>
 
+      {/* ── Bulk Action Bar ── */}
+      {selected.size > 0 && (
+        <div style={{
+          display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8,
+          padding: '8px 10px', borderRadius: 7, marginBottom: 8,
+          background: 'rgba(240,165,0,0.06)', border: '1px solid rgba(240,165,0,0.2)',
+        }}>
+          <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--accent)', fontWeight: 700 }}>
+            {selected.size} seçili
+          </span>
+          {selectedIroning.length > 0 && (
+            <button
+              onClick={() => bulkMut.mutate({ ids: selectedIroning.map(g => g.id), to_status: 'ready' })}
+              disabled={bulkMut.isPending}
+              style={{
+                padding: '3px 10px', borderRadius: 5,
+                border: '1px solid rgba(39,201,106,0.4)', background: 'rgba(39,201,106,0.1)',
+                color: 'var(--green)', fontFamily: 'var(--mono)', fontSize: 9, cursor: 'pointer', fontWeight: 700,
+              }}
+            >
+              {bulkMut.isPending ? '...' : `Hazır Yap (${selectedIroning.length})`}
+            </button>
+          )}
+          {selectedReady.length > 0 && (
+            <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+              <input
+                value={bulkDeliverTo}
+                onChange={e => setBulkDeliverTo(e.target.value)}
+                placeholder="Teslim alan..."
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && bulkDeliverTo.trim()) {
+                    bulkDeliverMut.mutate({ ids: selectedReady.map(g => g.id), to: bulkDeliverTo.trim() })
+                  }
+                }}
+                style={{
+                  background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 5,
+                  color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 10, padding: '4px 8px',
+                  outline: 'none', width: 130,
+                }}
+              />
+              <button
+                onClick={() => bulkDeliverMut.mutate({ ids: selectedReady.map(g => g.id), to: bulkDeliverTo.trim() })}
+                disabled={!bulkDeliverTo.trim() || bulkDeliverMut.isPending}
+                style={{
+                  padding: '3px 10px', borderRadius: 5,
+                  border: `1px solid ${bulkDeliverTo.trim() ? 'var(--green)' : 'var(--border)'}`,
+                  background: bulkDeliverTo.trim() ? 'rgba(16,185,129,0.1)' : 'transparent',
+                  color: bulkDeliverTo.trim() ? 'var(--green)' : 'var(--text3)',
+                  fontFamily: 'var(--mono)', fontSize: 9, cursor: 'pointer', fontWeight: 700,
+                }}
+              >
+                {bulkDeliverMut.isPending ? '...' : `Teslim Et (${selectedReady.length})`}
+              </button>
+            </div>
+          )}
+          <button
+            onClick={() => setSelected(new Set())}
+            style={{
+              padding: '3px 8px', borderRadius: 5, marginLeft: 'auto',
+              border: '1px solid var(--border)', background: 'transparent',
+              color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: 9, cursor: 'pointer',
+            }}
+          >✕ Seçimi Kaldır</button>
+        </div>
+      )}
+
       {/* ── Inline Add Form ── */}
       {showForm && (
         <div style={{
@@ -173,7 +299,7 @@ export default function PremiumGarmentList({ item }) {
               ))}
             </div>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto 1fr', gap: 6, marginBottom: 8 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 6, marginBottom: 8 }}>
             <div>
               <div style={{ fontSize: 8, color: 'var(--text3)', fontFamily: 'var(--mono)', marginBottom: 3 }}>MARKA</div>
               <input ref={brandRef} style={inp} value={form.brand}
@@ -193,12 +319,15 @@ export default function PremiumGarmentList({ item }) {
                 {SIZES.map(s => <option key={s}>{s}</option>)}
               </select>
             </div>
-            <div>
-              <div style={{ fontSize: 8, color: 'var(--text3)', fontFamily: 'var(--mono)', marginBottom: 3 }}>RENK</div>
-              <input style={inp} value={form.color}
-                onChange={e => set('color', e.target.value)} placeholder="örn: Lacivert"
-                onKeyDown={e => e.key === 'Enter' && canAdd && addMut.mutate()} />
-            </div>
+          </div>
+          <div style={{ marginBottom: 8 }}>
+            <div style={{ fontSize: 8, color: 'var(--text3)', fontFamily: 'var(--mono)', marginBottom: 6, letterSpacing: 1 }}>RENK & DESEN</div>
+            <ColorPatternPicker
+              colors={form.colors}
+              pattern={form.pattern}
+              onChange={({ colors, pattern }) => setForm(f => ({ ...f, colors, pattern }))}
+              compact
+            />
           </div>
           <div style={{ marginBottom: 8 }}>
             <input style={{ ...inp, fontSize: 10 }} value={form.condition_notes}
@@ -245,16 +374,38 @@ export default function PremiumGarmentList({ item }) {
             const isDelivered = g.status === 'delivered'
             const isLost      = g.status === 'lost'
             const canMove     = !isDelivered && !isLost
+            const isSelectable = canMove
+            const isSelected   = selected.has(g.id)
+            const colorDots    = parseColors(g.color)
+            const hasDetail    = g.brand || g.model || g.size || g.color || g.pattern || g.condition_notes
 
             return (
               <div key={g.id} style={{
                 borderRadius: 7,
-                background: isIroning ? 'rgba(99,102,241,0.06)' : isReady ? 'rgba(16,185,129,0.04)' : 'var(--surface2)',
-                border: `1px solid ${isIroning ? 'rgba(99,102,241,0.25)' : isReady ? 'rgba(16,185,129,0.2)' : 'var(--border)'}`,
+                background: isSelected
+                  ? 'rgba(240,165,0,0.06)'
+                  : isIroning ? 'rgba(99,102,241,0.06)' : isReady ? 'rgba(16,185,129,0.04)' : 'var(--surface2)',
+                border: `1px solid ${
+                  isSelected
+                    ? 'rgba(240,165,0,0.3)'
+                    : isIroning ? 'rgba(99,102,241,0.25)' : isReady ? 'rgba(16,185,129,0.2)' : 'var(--border)'
+                }`,
                 overflow: 'hidden',
               }}>
                 {/* Ana satır */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px' }}>
+
+                  {/* Seçim checkbox */}
+                  {isSelectable ? (
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => toggleSelect(g.id)}
+                      style={{ cursor: 'pointer', accentColor: 'var(--accent)', width: 14, height: 14, flexShrink: 0 }}
+                    />
+                  ) : (
+                    <div style={{ width: 14, flexShrink: 0 }} />
+                  )}
 
                   {/* Checkbox-tik (ironing için) */}
                   {isIroning && (
@@ -319,6 +470,24 @@ export default function PremiumGarmentList({ item }) {
 
                   <Badge status={g.status} />
 
+                  {/* Renk noktaları inline (10px) */}
+                  {colorDots.length > 0 && (
+                    <span style={{ display: 'inline-flex', gap: 3, alignItems: 'center', flexShrink: 0 }}>
+                      {colorDots.map(name => (
+                        <span
+                          key={name}
+                          title={name}
+                          style={{
+                            width: 10, height: 10, borderRadius: '50%',
+                            background: colorHex(name),
+                            border: '1px solid rgba(0,0,0,0.2)',
+                            display: 'inline-block', flexShrink: 0,
+                          }}
+                        />
+                      ))}
+                    </span>
+                  )}
+
                   {/* İlerlet butonu (received durumu için) */}
                   {g.status === 'received' && (
                     <button onClick={() => advanceMut.mutate(g.id)} disabled={advanceMut.isPending}
@@ -330,11 +499,12 @@ export default function PremiumGarmentList({ item }) {
                   )}
                 </div>
 
-                {/* Detay satırı — her zaman görünür, alanlar varsa */}
-                {(g.brand || g.model || g.size || g.color || g.condition_notes) && (
+                {/* Detay satırı — alanlar varsa */}
+                {hasDetail && (
                   <div style={{
-                    display: 'flex', flexWrap: 'wrap', gap: 6, padding: '4px 10px 8px 42px',
+                    display: 'flex', flexWrap: 'wrap', gap: 6, padding: '4px 10px 8px 52px',
                     borderTop: `1px solid ${isIroning ? 'rgba(99,102,241,0.1)' : 'var(--border)'}`,
+                    alignItems: 'center',
                   }}>
                     {g.brand && (
                       <span style={{
@@ -357,12 +527,8 @@ export default function PremiumGarmentList({ item }) {
                         borderRadius: 4, padding: '2px 8px',
                       }}>{g.size}</span>
                     )}
-                    {g.color && (
-                      <span style={{
-                        fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text2)',
-                        background: 'var(--surface)', border: '1px solid var(--border)',
-                        borderRadius: 4, padding: '2px 8px',
-                      }}>{g.color}</span>
+                    {(g.color || g.pattern) && (
+                      <ColorPatternDisplay color={g.color} pattern={g.pattern} />
                     )}
                     {g.condition_notes && (
                       <span style={{
