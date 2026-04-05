@@ -30,7 +30,7 @@ function sanitizeObject(obj) {
 
 export function sanitizeBody(req, res, next) {
   if (req.body && typeof req.body === 'object') {
-    req.body = sanitizeObject(req.body)
+    req.body = sanitizeValue(req.body)
   }
   next()
 }
