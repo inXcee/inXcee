@@ -127,7 +127,7 @@ export default function LaundryReport() {
       ) : !stats ? null : (
         <>
           {/* SUMMARY CARDS */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 16, alignItems: 'stretch' }}>
             {[
               { label: 'Toplam Kayıt',      value: stats.period_total?.count ?? 0,     color: 'var(--text2)' },
               { label: 'Teslim Edilen',     value: stats.period_delivered?.count ?? 0, color: 'var(--green)' },
@@ -136,7 +136,7 @@ export default function LaundryReport() {
               { label: 'Kayıp (Dönem)',     value: stats.lost_period?.count ?? 0,      color: 'var(--red)' },
               { label: 'Ort. Teslim (saat)', value: stats.avg_delivery_hours ?? '—',   color: 'var(--teal)' },
             ].map(s => (
-              <div key={s.label} className="kpi-card panel" style={{ padding: '10px 12px', textAlign: 'center', borderTop: `2px solid ${s.color}` }}>
+              <div key={s.label} className="kpi-card panel" style={{ padding: '10px 12px', textAlign: 'center', borderTop: `2px solid ${s.color}`, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
                 <div style={{ fontFamily: 'var(--display)', fontSize: 26, letterSpacing: 2, color: s.color, lineHeight: 1 }}>
                   {s.value}
                 </div>
