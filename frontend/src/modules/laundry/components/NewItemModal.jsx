@@ -159,6 +159,9 @@ export default function NewItemModal({ onClose }) {
   })
   const draftTimerRef = useRef(null)
 
+  // Hızlı metin girişi (regular kıyafet)
+  const [quickCloth, setQuickCloth] = useState('')
+
   // Premium parça girişi (local buffer — API'ye tek seferde gönderilir)
   const [premiumRows, setPremiumRows] = useState([])
   const [gType, setGType] = useState('')
@@ -201,6 +204,48 @@ export default function NewItemModal({ onClose }) {
 
   const clearDraft = () => {
     try { localStorage.removeItem('laundry-draft-items') } catch {}
+  }
+
+  const parseClothingText = (text) => {
+    const lower = text.toLowerCase()
+    let rem = lower
+    // Qty: sayı bul, metinden çıkar
+    let qty = 1
+    const numMatch = rem.match(/(?:^|\s)(\d+)(?:\s|$)/)
+    if (numMatch) {
+      qty = Math.max(1, Math.min(99, +numMatch[1]))
+      rem = rem.replace(numMatch[1], ' ').trim()
+    }
+    // Tip: en uzun eşleşme önce
+    const typesSorted = [...CLOTHING_TYPES].sort((a, b) => b.length - a.length)
+    let type = ''
+    for (const t of typesSorted) {
+      if (rem.includes(t.toLowerCase())) { type = t; rem = rem.replace(t.toLowerCase(), ' ').trim(); break }
+    }
+    // Renk: en uzun isim önce (Açık Mavi, Mavi gibi çakışmalar için)
+    const colorsSorted = [...COLOR_PALETTE].sort((a, b) => b.name.length - a.name.length)
+    let color = ''
+    for (const cp of colorsSorted) {
+      if (rem.includes(cp.name.toLowerCase())) { color = cp.name; break }
+    }
+    if (!color) {
+      for (const p of PATTERN_LIST) {
+        if (rem.includes(p.name.toLowerCase())) { color = p.name; break }
+      }
+    }
+    return { type, color, qty }
+  }
+
+  const parsedCloth = useMemo(() => parseClothingText(quickCloth), [quickCloth, CLOTHING_TYPES])
+
+  const addQuickClothing = () => {
+    if (!parsedCloth.type) return
+    setClothing(prev => {
+      const next = [...prev, { type: parsedCloth.type, color: parsedCloth.color, qty: parsedCloth.qty }]
+      saveDraft(next)
+      return next
+    })
+    setQuickCloth('')
   }
 
   const addClothing = (type) => {
@@ -557,10 +602,62 @@ export default function NewItemModal({ onClose }) {
             <div>
               <label className="form-label">
                 KIYAFETler
-                {totalCount > 0 && (
+                {clothing.length > 0 && (
                   <span style={{ marginLeft: 8, color: 'var(--accent)', fontWeight: 700 }}>{totalCount} parça</span>
                 )}
               </label>
+
+              {/* ⚡ Hızlı metin girişi */}
+              <div style={{ marginBottom: 10 }}>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <input
+                    className="form-input"
+                    value={quickCloth}
+                    onChange={e => setQuickCloth(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') addQuickClothing() }}
+                    placeholder="⚡ Hızlı: 3 gömlek mavi · 2 pantolon siyah · çorap beyaz..."
+                    style={{ flex: 1, fontFamily: 'var(--mono)', fontSize: 10 }}
+                  />
+                  <button
+                    onClick={addQuickClothing}
+                    disabled={!parsedCloth.type}
+                    style={{
+                      padding: '6px 14px', borderRadius: 6, cursor: parsedCloth.type ? 'pointer' : 'not-allowed',
+                      background: parsedCloth.type ? 'var(--accent)' : 'var(--surface2)',
+                      border: `1px solid ${parsedCloth.type ? 'var(--accent)' : 'var(--border)'}`,
+                      color: parsedCloth.type ? '#000' : 'var(--text3)',
+                      fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap',
+                      transition: 'all 0.15s',
+                    }}
+                  >↵ Ekle</button>
+                </div>
+                {quickCloth.trim() && (
+                  <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 5, alignItems: 'center' }}>
+                    {parsedCloth.qty > 1 && (
+                      <span style={{ fontFamily: 'var(--mono)', fontSize: 9, background: 'rgba(240,165,0,0.12)', border: '1px solid rgba(240,165,0,0.3)', color: 'var(--accent)', borderRadius: 4, padding: '1px 6px' }}>
+                        ×{parsedCloth.qty}
+                      </span>
+                    )}
+                    {parsedCloth.type ? (
+                      <span style={{ fontFamily: 'var(--mono)', fontSize: 9, background: 'rgba(37,99,235,0.12)', border: '1px solid rgba(37,99,235,0.3)', color: '#60a5fa', borderRadius: 4, padding: '1px 6px' }}>
+                        {CLOTHING_ICONS[parsedCloth.type] || ''} {parsedCloth.type}
+                      </span>
+                    ) : (
+                      <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--red)', opacity: 0.7 }}>tip bulunamadı</span>
+                    )}
+                    {parsedCloth.color && (() => {
+                      const cp = COLOR_PALETTE.find(c => c.name === parsedCloth.color)
+                      return (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: 'var(--mono)', fontSize: 9, background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 4, padding: '1px 6px' }}>
+                          {cp && <span style={{ width: 8, height: 8, borderRadius: '50%', background: cp.hex, border: '1px solid rgba(255,255,255,0.2)', flexShrink: 0 }} />}
+                          {parsedCloth.color}
+                        </span>
+                      )
+                    })()}
+                  </div>
+                )}
+              </div>
+
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
                 {CLOTHING_TYPES.map(type => {
                   const active = clothing.some(c => c.type === type)
