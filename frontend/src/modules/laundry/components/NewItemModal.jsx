@@ -146,6 +146,7 @@ export default function NewItemModal({ onClose }) {
     intake_name: '', intake_signature: '',
   })
   const [clothing, setClothing] = useState([])
+  const [itemCount, setItemCount] = useState(1)
   const [needsIroning, setNeedsIroning] = useState(false)
   const [roomSearch, setRoomSearch] = useState('')
   const [phoneLoading, setPhoneLoading] = useState(false)
@@ -248,7 +249,7 @@ export default function NewItemModal({ onClose }) {
         room_id: +form.room_id,
         urgent: form.urgent ? 1 : 0,
         needs_ironing: needsIroning ? 1 : 0,
-        item_count: isPremium && premiumRows.length > 0 ? premiumRows.length : totalCount,
+        item_count: isPremium && premiumRows.length > 0 ? premiumRows.length : (clothing.length > 0 ? totalCount : itemCount),
         clothing_items: clothing.length > 0 ? clothing : undefined,
         phone_override: form.phone_override || undefined,
         intake_signature: form.intake_signature || undefined,
@@ -645,8 +646,17 @@ export default function NewItemModal({ onClose }) {
                 </div>
               )}
               {clothing.length === 0 && (
-                <div style={{ padding: '8px 12px', fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', background: 'var(--surface2)', borderRadius: 6, border: '1px dashed var(--border)' }}>
-                  Yukarıdan kıyafet tipi seç veya boş bırak
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: 'var(--surface2)', borderRadius: 6, border: '1px dashed var(--border)' }}>
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', flex: 1 }}>
+                    Kıyafet seçilmedi — toplam adet:
+                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <button onClick={() => setItemCount(c => Math.max(1, c - 1))}
+                      style={{ width: 24, height: 24, borderRadius: 4, background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text2)', cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>−</button>
+                    <span style={{ fontFamily: 'var(--display)', fontSize: 18, color: 'var(--accent)', minWidth: 24, textAlign: 'center', lineHeight: 1 }}>{itemCount}</span>
+                    <button onClick={() => setItemCount(c => Math.min(99, c + 1))}
+                      style={{ width: 24, height: 24, borderRadius: 4, background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text2)', cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
+                  </div>
                 </div>
               )}
             </div>
@@ -731,7 +741,9 @@ export default function NewItemModal({ onClose }) {
                 ? 'Kaydediliyor...'
                 : isPremium && premiumRows.length > 0
                   ? `+ KAYDET (${premiumRows.length} premium parça)`
-                  : `+ KAYDET (${totalCount} parça)`}
+                  : clothing.length > 0
+                    ? `+ KAYDET (${totalCount} parça)`
+                    : `+ KAYDET (${itemCount} parça)`}
             </button>
             <button className="btn btn-ghost" onClick={onClose}>İptal</button>
           </div>

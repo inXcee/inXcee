@@ -723,10 +723,12 @@ function QuickNotes() {
 // ── QuickAdd ───────────────────────────────────────────────────
 function QuickAdd({ onClose }) {
   const qc = useQueryClient()
-  const [roomNo, setRoomNo]         = useState('')
+  const [roomNo, setRoomNo]             = useState('')
   const [selectedRoom, setSelectedRoom] = useState(null)
-  const [name, setName]             = useState('')
-  const [selected, setSelected]     = useState([])
+  const [name, setName]                 = useState('')
+  const [selected, setSelected]         = useState([])
+  const [quickText, setQuickText]       = useState('')
+  const [itemCount, setItemCount]       = useState(1)
   const QUICK_TYPES = ['Pantolon','Gömlek','T-Shirt','Çorap','Boxer','Havlu Tkm','Kazak','Şort']
 
   const { data: rooms = [] } = useQuery({
@@ -749,19 +751,38 @@ function QuickAdd({ onClose }) {
     prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]
   )
 
+  const parseQuickInput = (text) => {
+    const lower = text.toLowerCase()
+    const numMatch = lower.match(/\b(\d+)\b/)
+    const count = numMatch ? Math.min(99, Math.max(1, +numMatch[1])) : null
+    const types = QUICK_TYPES.filter(t => lower.includes(t.toLowerCase()))
+    return { types, count }
+  }
+
+  const handleQuickText = (val) => {
+    setQuickText(val)
+    const { types, count } = parseQuickInput(val)
+    if (types.length > 0) setSelected(types)
+    if (count !== null) setItemCount(count)
+  }
+
   const canSubmit = !!selectedRoom && name.trim().length > 0
+
+  const resetForm = () => {
+    setName(''); setSelected([]); setQuickText(''); setItemCount(1)
+  }
 
   const create = useMutation({
     mutationFn: () => laundryApi.createItem({
       room_id: selectedRoom.id,
       intake_name: name.trim(),
-      item_count: selected.length || 1,
+      item_count: itemCount,
       clothing_items: selected.length > 0
         ? selected.map(t => ({ type: t, color: '', qty: 1 }))
         : undefined,
       urgent: 0,
     }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['laundry-items'] }); onClose() },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['laundry-items'] }); resetForm() },
   })
 
   const roomStatus = roomNo.trim()
@@ -823,7 +844,18 @@ function QuickAdd({ onClose }) {
         />
       </div>
 
-      {/* Kıyafet tipleri */}
+      {/* ⚡ Hızlı metin */}
+      <div style={{ marginBottom: 8 }}>
+        <input
+          className="form-input"
+          value={quickText}
+          onChange={e => handleQuickText(e.target.value)}
+          placeholder="⚡ Hızlı: gömlek çorap 3  →  tipleri seçer, sayıyı ayarlar"
+          style={{ width: '100%', fontFamily: 'var(--mono)', fontSize: 10 }}
+        />
+      </div>
+
+      {/* Kıyafet tipleri + adet + kaydet */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
           {QUICK_TYPES.map(type => (
@@ -838,15 +870,28 @@ function QuickAdd({ onClose }) {
             </button>
           ))}
         </div>
+
+        {/* Adet stepper */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: 'auto' }}>
+          <button
+            onClick={() => setItemCount(c => Math.max(1, c - 1))}
+            style={{ width: 22, height: 22, borderRadius: 4, background: 'var(--surface2)', border: '1px solid var(--border)', color: 'var(--text2)', cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>−</button>
+          <span style={{ fontFamily: 'var(--display)', fontSize: 16, color: 'var(--accent)', minWidth: 22, textAlign: 'center' }}>{itemCount}</span>
+          <button
+            onClick={() => setItemCount(c => Math.min(99, c + 1))}
+            style={{ width: 22, height: 22, borderRadius: 4, background: 'var(--surface2)', border: '1px solid var(--border)', color: 'var(--text2)', cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
+          <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>parça</span>
+        </div>
+
         <button
           className="btn btn-primary"
           onClick={() => create.mutate()}
           disabled={!canSubmit || create.isPending}
-          style={{ whiteSpace: 'nowrap', marginLeft: 'auto' }}
+          style={{ whiteSpace: 'nowrap' }}
         >
-          {create.isPending ? '...' : `+ Kaydet${selected.length > 0 ? ` (${selected.length})` : ''}`}
+          {create.isPending ? '...' : `+ Kaydet (${itemCount})`}
         </button>
-        <button className="btn btn-ghost btn-xs" onClick={onClose}>İptal</button>
+        <button className="btn btn-ghost btn-xs" onClick={onClose}>Kapat</button>
       </div>
 
       {create.isError && (
