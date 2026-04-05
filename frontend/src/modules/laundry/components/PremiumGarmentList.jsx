@@ -27,7 +27,7 @@ function Badge({ status }) {
 }
 
 function emptyForm() {
-  return { garment_type: '', brand: '', model: '', size: '', colors: [], pattern: '', condition_notes: '' }
+  return { garment_type: '', brand: '', model: '', size: '', colors: [], pattern: '', condition_notes: '', quantity: 1 }
 }
 
 export default function PremiumGarmentList({ item }) {
@@ -46,15 +46,19 @@ export default function PremiumGarmentList({ item }) {
   })
 
   const addMut = useMutation({
-    mutationFn: () => laundryApi.addPremiumGarments(item.id, [{
-      garment_type: form.garment_type,
-      brand: form.brand || undefined,
-      model: form.model || undefined,
-      size: form.size || undefined,
-      color: form.colors.length > 0 ? form.colors.join(', ') : undefined,
-      pattern: form.pattern || undefined,
-      condition_notes: form.condition_notes || undefined,
-    }]),
+    mutationFn: () => {
+      const garmentObj = {
+        garment_type: form.garment_type,
+        brand: form.brand || undefined,
+        model: form.model || undefined,
+        size: form.size || undefined,
+        color: form.colors.length > 0 ? form.colors.join(', ') : undefined,
+        pattern: form.pattern || undefined,
+        condition_notes: form.condition_notes || undefined,
+      }
+      const items = Array.from({ length: form.quantity }, () => ({ ...garmentObj }))
+      return laundryApi.addPremiumGarments(item.id, items)
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['premium-garments', item.id] })
       qc.invalidateQueries({ queryKey: ['laundry-items'] })
@@ -304,7 +308,7 @@ export default function PremiumGarmentList({ item }) {
               ))}
             </div>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 6, marginBottom: 8 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 68px 56px', gap: 6, marginBottom: 8 }}>
             <div>
               <div style={{ fontSize: 8, color: 'var(--text3)', fontFamily: 'var(--mono)', marginBottom: 3 }}>MARKA</div>
               <input ref={brandRef} style={inp} value={form.brand}
@@ -319,10 +323,20 @@ export default function PremiumGarmentList({ item }) {
             </div>
             <div>
               <div style={{ fontSize: 8, color: 'var(--text3)', fontFamily: 'var(--mono)', marginBottom: 3 }}>BEDEN</div>
-              <select style={{ ...sel, width: 68 }} value={form.size} onChange={e => set('size', e.target.value)}>
+              <select style={{ ...sel, width: '100%' }} value={form.size} onChange={e => set('size', e.target.value)}>
                 <option value="">-</option>
                 {SIZES.map(s => <option key={s}>{s}</option>)}
               </select>
+            </div>
+            <div>
+              <div style={{ fontSize: 8, color: 'var(--accent)', fontFamily: 'var(--mono)', marginBottom: 3, fontWeight: 700 }}>ADET</div>
+              <input
+                type="number" min={1} max={20}
+                style={{ ...inp, textAlign: 'center', border: '1px solid rgba(240,165,0,0.35)', color: 'var(--accent)' }}
+                value={form.quantity}
+                onChange={e => set('quantity', Math.min(20, Math.max(1, parseInt(e.target.value) || 1)))}
+                onKeyDown={e => e.key === 'Enter' && canAdd && addMut.mutate()}
+              />
             </div>
           </div>
           <div style={{ marginBottom: 8 }}>
@@ -348,7 +362,7 @@ export default function PremiumGarmentList({ item }) {
                 fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 700,
                 opacity: addMut.isPending ? 0.6 : 1,
               }}>
-              {addMut.isPending ? '...' : '+ Ekle (Enter)'}
+              {addMut.isPending ? '...' : form.quantity > 1 ? `+ ${form.quantity} Adet Ekle` : '+ Ekle (Enter)'}
             </button>
             <button onClick={() => setForm(emptyForm())} style={{
               padding: '6px 12px', borderRadius: 6, border: '1px solid var(--border)',
