@@ -995,6 +995,29 @@ describe('premium garment arama', () => {
     expect(history[0]).toHaveProperty('garment_code')
     expect(history.every(g => g.item_id != null)).toBe(true)
   })
+
+  test('intake_name filtresi çalışır', () => {
+    const db = getDB()
+    // intake_name ile item oluştur
+    const user = db.prepare("SELECT * FROM users WHERE role='campus_manager' LIMIT 1").get()
+    const room = db.prepare("SELECT id FROM rooms WHERE block='M1' LIMIT 1").get()
+    const item = createItemService({ room_id: room.id, item_count: 1, intake_name: 'Test Kişi' }, user.id)
+    addPremiumGarmentsService(item.id, [{ garment_type: 'Gömlek' }], user.id)
+    const result = searchPremiumGarmentsService({ intake_name: 'Test Kişi' })
+    expect(result.rows.length).toBeGreaterThan(0)
+    expect(result.rows.every(g => g.intake_name === 'Test Kişi')).toBe(true)
+  })
+
+  test('pattern filtresi çalışır', () => {
+    const db = getDB()
+    const user = db.prepare("SELECT * FROM users WHERE role='campus_manager' LIMIT 1").get()
+    const room = db.prepare("SELECT id FROM rooms WHERE block='M1' LIMIT 1").get()
+    const item = createItemService({ room_id: room.id, item_count: 1 }, user.id)
+    addPremiumGarmentsService(item.id, [{ garment_type: 'Gömlek', pattern: 'Çizgili' }], user.id)
+    const result = searchPremiumGarmentsService({ pattern: 'Çizgili' })
+    expect(result.rows.length).toBeGreaterThan(0)
+    expect(result.rows.every(g => g.pattern === 'Çizgili')).toBe(true)
+  })
 })
 
 describe('premium raporlar', () => {

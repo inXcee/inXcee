@@ -501,9 +501,9 @@ laundryRouter.get('/items/:id/delivery-receipt', ...laundryRead, (req, res) => {
 // garments/search must be before /garments/:id routes
 laundryRouter.get('/garments/search', ...laundryRead, (req, res) => {
   try {
-    const { block, room_no, type, brand, size, color, status, from, to, page, limit } = req.query
+    const { block, room_no, type, brand, size, color, pattern, intake_name, status, from, to, page, limit } = req.query
     res.json(svc.searchPremiumGarmentsService({
-      block, room_no, garment_type: type, brand, size, color, status,
+      block, room_no, garment_type: type, brand, size, color, pattern, intake_name, status,
       from_date: from, to_date: to,
       page: page ? +page : 1,
       limit: limit ? Math.min(+limit, 100) : 50,

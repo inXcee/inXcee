@@ -796,28 +796,30 @@ export function getPremiumDeliveryReceiptQuery(item_id) {
 // PREMIUM GARMENT SEARCH
 // ═══════════════════════════════════════════════════════════════════════════
 
-export function searchPremiumGarmentsQuery({ block, room_no, garment_type, brand, size, color, status, from_date, to_date, page = 1, limit = 50 } = {}) {
+export function searchPremiumGarmentsQuery({ block, room_no, garment_type, brand, size, color, pattern, intake_name, status, from_date, to_date, page = 1, limit = 50 } = {}) {
   const db = getDB()
   const conditions = []
   const params = []
 
-  if (block)        { conditions.push('r.block = ?');           params.push(block) }
-  if (room_no)      { conditions.push('r.room_no = ?');         params.push(room_no) }
+  if (block)        { conditions.push('r.block = ?');            params.push(block) }
+  if (room_no)      { conditions.push('r.room_no = ?');          params.push(room_no) }
   if (garment_type) { conditions.push('pg.garment_type LIKE ?'); params.push(`%${garment_type}%`) }
-  if (brand)        { conditions.push('pg.brand LIKE ?');       params.push(`%${brand}%`) }
-  if (size)         { conditions.push('pg.size = ?');           params.push(size) }
-  if (color)        { conditions.push('pg.color LIKE ?');       params.push(`%${color}%`) }
-  if (status)       { conditions.push('pg.status = ?');         params.push(status) }
-  if (from_date)    { conditions.push("li.created_at >= ?");    params.push(from_date) }
-  if (to_date)      { conditions.push("li.created_at <= ?");    params.push(to_date + ' 23:59:59') }
+  if (brand)        { conditions.push('pg.brand LIKE ?');        params.push(`%${brand}%`) }
+  if (size)         { conditions.push('pg.size = ?');            params.push(size) }
+  if (color)        { conditions.push('pg.color LIKE ?');        params.push(`%${color}%`) }
+  if (pattern)      { conditions.push('pg.pattern LIKE ?');      params.push(`%${pattern}%`) }
+  if (intake_name)  { conditions.push('li.intake_name LIKE ?');  params.push(`%${intake_name}%`) }
+  if (status)       { conditions.push('pg.status = ?');          params.push(status) }
+  if (from_date)    { conditions.push("li.created_at >= ?");     params.push(from_date) }
+  if (to_date)      { conditions.push("li.created_at <= ?");     params.push(to_date + ' 23:59:59') }
 
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
   const offset = (page - 1) * limit
 
   const rows = db.prepare(`
-    SELECT pg.id, pg.garment_code, pg.garment_type, pg.brand, pg.model, pg.size, pg.color, pg.status,
-           pg.condition_notes, pg.delivered_to, pg.delivered_at,
-           li.id AS item_id, li.created_at AS intake_date,
+    SELECT pg.id, pg.garment_code, pg.garment_type, pg.brand, pg.model, pg.size, pg.color,
+           pg.pattern, pg.status, pg.condition_notes, pg.delivered_to, pg.delivered_at,
+           li.id AS item_id, li.created_at AS intake_date, li.intake_name,
            r.block, r.room_no
     FROM premium_garments pg
     JOIN laundry_items li ON li.id = pg.item_id
