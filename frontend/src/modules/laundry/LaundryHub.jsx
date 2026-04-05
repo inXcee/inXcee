@@ -391,6 +391,26 @@ function KanbanCard({ item, machines, onDeliver, onDamage, onPersonClick, onFoun
             ▣ Rafa Koy →
           </button>
         )}
+        {item.status !== 'delivered' && item.status !== 'lost' && item.status === 'ironing' && (
+          <button onPointerDown={e => e.stopPropagation()} onClick={() => setShelfOpen(true)} style={{
+            flex: 1, padding: '5px 8px', borderRadius: 6,
+            background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.25)',
+            color: '#6366f1', fontFamily: 'var(--mono)', fontSize: 9,
+            cursor: 'pointer', fontWeight: 700,
+          }}>
+            ▣ Rafa Koy →
+          </button>
+        )}
+        {item.status !== 'delivered' && item.status !== 'lost' && item.status === 'ironing' && (
+          <button onPointerDown={e => e.stopPropagation()} onClick={() => onDeliver(item)} style={{
+            flex: 1, padding: '5px 8px', borderRadius: 6,
+            background: 'rgba(39,201,106,0.08)', border: '1px solid rgba(39,201,106,0.25)',
+            color: 'var(--green)', fontFamily: 'var(--mono)', fontSize: 9,
+            cursor: 'pointer', fontWeight: 700,
+          }}>
+            ✓ Teslim Et →
+          </button>
+        )}
         {item.status !== 'delivered' && item.status !== 'lost' && item.status === 'ready' && (
           <button onPointerDown={e => e.stopPropagation()} onClick={() => onDeliver(item)} style={{
             flex: 1, padding: '5px 8px', borderRadius: 6,
@@ -1002,8 +1022,20 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
     const targetStatus = over.id
     if (item.status === targetStatus) return
 
-    const FORWARD = { dirty: 'washing', washing: 'ready' }
-    const BACKWARD = { washing: ['dirty'], ready: ['washing', 'dirty'] }
+    const FORWARD = { dirty: 'washing', washing: 'ready', ironing: 'ready' }
+    const BACKWARD = { washing: ['dirty'], ready: ['washing', 'dirty'], ironing: ['washing', 'dirty'] }
+
+    // Özel durum: ütü gereken item washing → ironing sütununa sürüklenebilir
+    if (item.status === 'washing' && targetStatus === 'ironing' && item.needs_ironing) {
+      if (item.clothing_items) {
+        setVerificationTarget({ item, stage: 'washing_to_ready' })
+      } else {
+        laundryApi.advanceItem(item.id, {})
+          .then(() => qc.invalidateQueries({ queryKey: ['laundry-items'] }))
+          .catch(err => alert(err?.response?.data?.message || 'İşlem başarısız'))
+      }
+      return
+    }
 
     if (FORWARD[item.status] === targetStatus) {
       // İleri geçiş
@@ -1418,12 +1450,10 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
           onDragOver={handleDragOver}
           onDragEnd={handleDragEnd}
         >
-          <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+          <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', overflowX: 'auto', paddingBottom: 4 }}>
             <KanbanCol title="KİRLİ SEPET"  color="var(--accent)" items={dirty}   colStatus="dirty"   isOver={overCol === 'dirty'}   machines={machines} onDeliver={setDeliverItem} onDamage={setDamageItem} onPersonClick={setPersonPanelName} onFound={setFoundItem} groupByRoom={groupByRoom} />
             <KanbanCol title="YIKANIYOR"    color="var(--blue)"   items={washing} colStatus="washing" isOver={overCol === 'washing'} machines={machines} onDeliver={setDeliverItem} onDamage={setDamageItem} onPersonClick={setPersonPanelName} onFound={setFoundItem} groupByRoom={groupByRoom} />
-            {ironing.length > 0 && (
-              <KanbanCol title="ÜTÜDE" color="#6366f1" items={ironing} colStatus="ironing" isOver={overCol === 'ironing'} machines={machines} onDeliver={setDeliverItem} onDamage={setDamageItem} onPersonClick={setPersonPanelName} onFound={setFoundItem} groupByRoom={groupByRoom} />
-            )}
+            <KanbanCol title="ÜTÜDE" color="#6366f1" items={ironing} colStatus="ironing" isOver={overCol === 'ironing'} machines={machines} onDeliver={setDeliverItem} onDamage={setDamageItem} onPersonClick={setPersonPanelName} onFound={setFoundItem} groupByRoom={groupByRoom} />
             <KanbanCol title="RAFTA HAZIR"  color="var(--green)"  items={ready}   colStatus="ready"   isOver={overCol === 'ready'}   machines={machines} onDeliver={setDeliverItem} onDamage={setDamageItem} onPersonClick={setPersonPanelName} onFound={setFoundItem} groupByRoom={groupByRoom} />
           </div>
           <DragOverlay dropAnimation={null}>
