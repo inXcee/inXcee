@@ -162,7 +162,6 @@ export default function NewItemModal({ onClose }) {
   const [premiumRows, setPremiumRows] = useState([])
   const [gType, setGType] = useState('')
   const [gForm, setGForm] = useState({ colors: [], pattern: '', brand: '', model: '', size: '', condition_notes: '' })
-  const colorRef = useRef(null)
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
