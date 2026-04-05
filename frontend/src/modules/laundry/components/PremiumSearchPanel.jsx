@@ -38,6 +38,8 @@ export default function PremiumSearchPanel() {
   const [lostOnly, setLostOnly] = useState(false)
   const [page, setPage] = useState(1)
   const [activeFilters, setActiveFilters] = useState(null)
+  const isFirstRender = useRef(true)
+  const debounceRef = useRef(null)
 
   const { data, isLoading } = useQuery({
     queryKey: ['premium-search', activeFilters, page],
@@ -52,6 +54,7 @@ export default function PremiumSearchPanel() {
 
   const reset = () => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
+    isFirstRender.current = true
     setFilters({ block: '', room_no: '', type: '', brand: '', size: '', color: '', pattern: '', intake_name: '', status: '', from: '', to: '' })
     setLostOnly(false)
     setActiveFilters(null)
@@ -59,9 +62,6 @@ export default function PremiumSearchPanel() {
   }
 
   const set = useCallback((k, v) => setFilters(prev => ({ ...prev, [k]: v })), [])
-
-  const isFirstRender = useRef(true)
-  const debounceRef = useRef(null)
   useEffect(() => {
     if (isFirstRender.current) { isFirstRender.current = false; return }
     if (debounceRef.current) clearTimeout(debounceRef.current)
@@ -98,7 +98,10 @@ export default function PremiumSearchPanel() {
           </p>
         </div>
         <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-          <input type="checkbox" checked={lostOnly} onChange={e => { setLostOnly(e.target.checked); if (e.target.checked) set('status', 'lost') }}
+          <input type="checkbox" checked={lostOnly} onChange={e => {
+              setLostOnly(e.target.checked)
+              if (!e.target.checked) set('status', '')
+            }}
             style={{ accentColor: 'var(--red)', width: 14, height: 14 }} />
           <span style={{ fontSize: 10, color: 'var(--red)', fontFamily: 'var(--mono)', fontWeight: 700 }}>
             Kayıp Araştırması
