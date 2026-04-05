@@ -80,6 +80,12 @@ export default function PremiumGarmentList({ item }) {
     },
   })
 
+  const ironingGarments  = garments.filter(g => g.status === 'ironing')
+  const readyGarments    = garments.filter(g => g.status === 'ready')
+  const activeGarments   = garments.filter(g => g.status !== 'lost')
+  const allIroned        = activeGarments.length > 0 && ironingGarments.length === 0 && readyGarments.length > 0
+  const hasIroning       = ironingGarments.length > 0
+
   const deliverMut = useMutation({
     mutationFn: (to) => laundryApi.bulkDeliverPremiumGarments(
       item.id,
@@ -106,12 +112,6 @@ export default function PremiumGarmentList({ item }) {
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
   const canAdd = !!form.garment_type
 
-  const ironingGarments  = garments.filter(g => g.status === 'ironing')
-  const readyGarments    = garments.filter(g => g.status === 'ready')
-  const activeGarments   = garments.filter(g => g.status !== 'lost')
-  const allIroned        = activeGarments.length > 0 && ironingGarments.length === 0 && readyGarments.length > 0
-  const hasIroning       = ironingGarments.length > 0
-
   // Selection logic
   const selectableIds = garments
     .filter(g => g.status !== 'delivered' && g.status !== 'lost')
@@ -137,7 +137,7 @@ export default function PremiumGarmentList({ item }) {
 
   // Bulk action bar state
   const selectedGarments = garments.filter(g => selected.has(g.id))
-  const selectedIroning  = selectedGarments.filter(g => g.status === 'ironing' || g.status === 'received')
+  const selectedIroning  = selectedGarments.filter(g => g.status === 'ironing')
   const selectedReady    = selectedGarments.filter(g => g.status === 'ready')
 
   const inp = {
@@ -291,7 +291,7 @@ export default function PremiumGarmentList({ item }) {
             <div style={{ fontSize: 9, color: 'var(--text3)', fontFamily: 'var(--mono)', marginBottom: 5, letterSpacing: 1 }}>TİP *</div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
               {GARMENT_TYPES.map(t => (
-                <button key={t} onClick={() => { set('garment_type', t); brandRef.current?.focus() }}
+                <button key={t} type="button" onClick={() => { set('garment_type', t); brandRef.current?.focus() }}
                   style={{
                     padding: '3px 10px', borderRadius: 12,
                     border: `1px solid ${form.garment_type === t ? 'rgba(240,165,0,0.5)' : 'var(--border)'}`,
