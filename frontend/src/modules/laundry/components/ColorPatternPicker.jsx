@@ -43,7 +43,7 @@ export function parseColors(colorStr) {
 
 // ── ColorPatternDisplay — salt okunur görünüm ─────────────────────────────────
 
-export function ColorPatternDisplay({ color, pattern, style }) {
+export function ColorPatternDisplay({ color, pattern, style = {} }) {
   const colorNames = parseColors(color)
 
   return (
@@ -92,7 +92,7 @@ export function ColorPatternDisplay({ color, pattern, style }) {
             marginLeft: colorNames.length ? 2 : 0,
           }}
         >
-          {pattern}
+          {PATTERNS.find(p => p.name === pattern)?.icon} {pattern}
         </span>
       )}
     </span>
