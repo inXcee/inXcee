@@ -66,6 +66,39 @@ const PATTERN_LIST = [
   { name: 'Renkli',  bg: 'repeating-linear-gradient(90deg,#e74c3c 0 6px,#f0a500 6px 12px,#2563eb 12px 18px,#16a34a 18px 24px)' },
 ]
 
+// ── Fuzzy matching (Türkçe normalize) ──────────────────────────
+const TR_MAP = { ğ:'g',Ğ:'g',ş:'s',Ş:'s',ı:'i',İ:'i',ö:'o',Ö:'o',ü:'u',Ü:'u',ç:'c',Ç:'c' }
+function normTR(s) {
+  return s.toLowerCase().replace(/[ğĞşŞıİöÖüÜçÇ]/g, c => TR_MAP[c] || c).replace(/[^a-z0-9]/g, '')
+}
+function fuzzyFind(word, candidates) {
+  const n = normTR(word)
+  if (n.length < 2) return null
+  return candidates.find(c => normTR(c) === n)
+    || candidates.find(c => normTR(c).startsWith(n))
+    || candidates.find(c => n.length >= 3 && n.startsWith(normTR(c).slice(0, Math.max(3, Math.floor(normTR(c).length * 0.65)))))
+    || null
+}
+function parseQuickPremium(text, clothingTypes) {
+  if (!text.trim()) return { type:'', color:'', pattern:'', brand:'', size:'', qty:1 }
+  const words = text.trim().split(/\s+/)
+  let type='', color='', pattern='', brand='', size='', qty=1
+  const colorNames = COLOR_PALETTE.map(c => c.name)
+  const patternNames = PATTERN_LIST.map(p => p.name)
+  const remaining = []
+  for (const w of words) {
+    if (!type) { const t = fuzzyFind(w, clothingTypes); if (t) { type = t; continue } }
+    if (!color) { const c = fuzzyFind(w, colorNames); if (c) { color = c; continue } }
+    if (!pattern) { const p = fuzzyFind(w, patternNames); if (p) { pattern = p; continue } }
+    if (!size) { const sz = SIZES.find(s => s.toLowerCase() === w.toLowerCase()); if (sz) { size = sz; continue } }
+    if (qty === 1 && /^\d+$/.test(w)) { qty = Math.min(99, Math.max(1, +w)); continue }
+    remaining.push(w)
+  }
+  brand = remaining.join(' ')
+  return { type, color, pattern, brand, size, qty }
+}
+// ───────────────────────────────────────────────────────────────
+
 function SignatureCanvas({ onSign, onClear }) {
   const canvasRef = useRef(null)
   const drawing = useRef(false)
@@ -161,11 +194,16 @@ export default function NewItemModal({ onClose }) {
 
   // Hızlı metin girişi (regular kıyafet)
   const [quickCloth, setQuickCloth] = useState('')
+  // Başarılı kayıt sonrası banner
+  const [savedMsg, setSavedMsg] = useState(false)
+  const [signatureKey, setSignatureKey] = useState(0)
 
   // Premium parça girişi (local buffer — API'ye tek seferde gönderilir)
   const [premiumRows, setPremiumRows] = useState([])
   const [gType, setGType] = useState('')
   const [gForm, setGForm] = useState({ colors: [], pattern: '', brand: '', model: '', size: '', condition_notes: '' })
+  const [gQty, setGQty] = useState(1)
+  const [quickPremium, setQuickPremium] = useState('')
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
@@ -269,11 +307,13 @@ export default function NewItemModal({ onClose }) {
       return next
     })
 
+  const parsedPremium = useMemo(() => parseQuickPremium(quickPremium, CLOTHING_TYPES), [quickPremium, CLOTHING_TYPES])
+
   // Premium parça local ekleme
   const canAddPremium = !!gType
   const addPremiumRow = () => {
     if (!canAddPremium) return
-    setPremiumRows(prev => [...prev, {
+    const row = {
       garment_type: gType,
       color: gForm.colors.length > 0 ? gForm.colors.join(', ') : undefined,
       pattern: gForm.pattern || undefined,
@@ -281,10 +321,26 @@ export default function NewItemModal({ onClose }) {
       model: gForm.model || undefined,
       size: gForm.size || undefined,
       condition_notes: gForm.condition_notes || undefined,
-    }])
+    }
+    setPremiumRows(prev => [...prev, ...Array.from({ length: gQty }, () => ({ ...row }))])
     setGType('')
     setGForm({ colors: [], pattern: '', brand: '', model: '', size: '', condition_notes: '' })
+    setGQty(1)
   }
+
+  const addQuickPremiumRow = () => {
+    if (!parsedPremium.type) return
+    const row = {
+      garment_type: parsedPremium.type,
+      color: parsedPremium.color || undefined,
+      pattern: parsedPremium.pattern || undefined,
+      brand: parsedPremium.brand || undefined,
+      size: parsedPremium.size || undefined,
+    }
+    setPremiumRows(prev => [...prev, ...Array.from({ length: parsedPremium.qty }, () => ({ ...row }))])
+    setQuickPremium('')
+  }
+
   const removePremiumRow = (idx) => setPremiumRows(prev => prev.filter((_, i) => i !== idx))
 
   const create = useMutation({
@@ -307,7 +363,20 @@ export default function NewItemModal({ onClose }) {
     onSuccess: () => {
       clearDraft()
       qc.invalidateQueries({ queryKey: ['laundry-items'] })
-      onClose()
+      // Oda seçimini koru, geri kalanı sıfırla
+      setForm(f => ({ room_id: f.room_id, notes: '', urgent: false, phone_override: f.phone_override, intake_name: '', intake_signature: '' }))
+      setClothing([])
+      setPremiumRows([])
+      setGType('')
+      setGForm({ colors: [], pattern: '', brand: '', model: '', size: '', condition_notes: '' })
+      setGQty(1)
+      setNeedsIroning(!!isPremium)
+      setQuickCloth('')
+      setQuickPremium('')
+      setItemCount(1)
+      setSignatureKey(k => k + 1)
+      setSavedMsg(true)
+      setTimeout(() => setSavedMsg(false), 3000)
     },
   })
 
@@ -332,6 +401,19 @@ export default function NewItemModal({ onClose }) {
         </div>
 
         <div className="panel-body" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+          {/* ── Kayıt Başarı Banner ── */}
+          {savedMsg && (
+            <div style={{
+              padding: '10px 14px', borderRadius: 8,
+              background: 'rgba(22,163,74,0.1)', border: '1px solid rgba(22,163,74,0.3)',
+              display: 'flex', alignItems: 'center', gap: 8,
+              fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--green)', fontWeight: 700,
+            }}>
+              ✓ Kaydedildi — oda seçili, yeni giriş yapabilirsiniz
+              <button className="btn btn-ghost btn-xs" onClick={onClose} style={{ marginLeft: 'auto' }}>Kapat</button>
+            </div>
+          )}
 
           {/* ── Draft Banner ── */}
           {draftBanner && (
@@ -410,6 +492,7 @@ export default function NewItemModal({ onClose }) {
               onChange={e => set('intake_name', e.target.value)}
               placeholder="Ad Soyad..." style={{ marginBottom: 10 }} />
             <SignatureCanvas
+              key={signatureKey}
               onSign={sig => set('intake_signature', sig)}
               onClear={() => set('intake_signature', '')}
             />
@@ -484,6 +567,59 @@ export default function NewItemModal({ onClose }) {
                     ))}
                   </div>
                 )}
+
+                {/* ⚡ Premium hızlı giriş */}
+                <div style={{ marginBottom: 4 }}>
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--accent)', letterSpacing: 1, marginBottom: 5 }}>⚡ HIZLI GİRİŞ</div>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <input
+                      className="form-input"
+                      value={quickPremium}
+                      onChange={e => setQuickPremium(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') addQuickPremiumRow() }}
+                      placeholder="3 gömlek mavi çizgili L Lacoste  →  Enter ile ekle"
+                      style={{ flex: 1, fontFamily: 'var(--mono)', fontSize: 10 }}
+                      autoFocus={false}
+                    />
+                    <button
+                      onClick={addQuickPremiumRow}
+                      disabled={!parsedPremium.type}
+                      style={{
+                        padding: '6px 14px', borderRadius: 6,
+                        cursor: parsedPremium.type ? 'pointer' : 'not-allowed',
+                        background: parsedPremium.type ? 'var(--accent)' : 'var(--surface2)',
+                        border: `1px solid ${parsedPremium.type ? 'var(--accent)' : 'var(--border)'}`,
+                        color: parsedPremium.type ? '#000' : 'var(--text3)',
+                        fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap',
+                        transition: 'all 0.15s',
+                      }}
+                    >↵ Ekle{parsedPremium.qty > 1 ? ` (×${parsedPremium.qty})` : ''}</button>
+                  </div>
+                  {quickPremium.trim() && (
+                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 5, alignItems: 'center' }}>
+                      {parsedPremium.qty > 1 && (
+                        <span style={{ fontFamily:'var(--mono)', fontSize:9, background:'rgba(240,165,0,0.12)', border:'1px solid rgba(240,165,0,0.3)', color:'var(--accent)', borderRadius:4, padding:'1px 6px' }}>×{parsedPremium.qty}</span>
+                      )}
+                      {parsedPremium.type
+                        ? <span style={{ fontFamily:'var(--mono)', fontSize:9, background:'rgba(37,99,235,0.12)', border:'1px solid rgba(37,99,235,0.3)', color:'#60a5fa', borderRadius:4, padding:'1px 6px' }}>{CLOTHING_ICONS[parsedPremium.type]||''} {parsedPremium.type}</span>
+                        : <span style={{ fontFamily:'var(--mono)', fontSize:9, color:'var(--red)', opacity:0.7 }}>tip bulunamadı</span>
+                      }
+                      {parsedPremium.color && (() => {
+                        const cp = COLOR_PALETTE.find(c => c.name === parsedPremium.color)
+                        return <span style={{ display:'inline-flex', alignItems:'center', gap:3, fontFamily:'var(--mono)', fontSize:9, background:'rgba(255,255,255,0.04)', border:'1px solid var(--border)', color:'var(--text2)', borderRadius:4, padding:'1px 6px' }}>{cp && <span style={{ width:8, height:8, borderRadius:'50%', background:cp.hex, border:'1px solid rgba(255,255,255,0.2)', flexShrink:0 }}/>}{parsedPremium.color}</span>
+                      })()}
+                      {parsedPremium.pattern && (
+                        <span style={{ fontFamily:'var(--mono)', fontSize:9, color:'#818cf8', background:'rgba(99,102,241,0.1)', border:'1px solid rgba(99,102,241,0.2)', borderRadius:4, padding:'1px 6px' }}>{parsedPremium.pattern}</span>
+                      )}
+                      {parsedPremium.size && (
+                        <span style={{ fontFamily:'var(--mono)', fontSize:9, color:'var(--text3)', background:'var(--surface)', border:'1px solid var(--border)', borderRadius:4, padding:'1px 6px' }}>{parsedPremium.size}</span>
+                      )}
+                      {parsedPremium.brand && (
+                        <span style={{ fontFamily:'var(--mono)', fontSize:9, color:'var(--text3)', background:'var(--surface)', border:'1px solid var(--border)', borderRadius:4, padding:'1px 6px' }}>🏷 {parsedPremium.brand}</span>
+                      )}
+                    </div>
+                  )}
+                </div>
 
                 {/* Tip seçimi */}
                 <div>
@@ -561,7 +697,7 @@ export default function NewItemModal({ onClose }) {
                       </div>
                     </div>
 
-                    {/* Not + Ekle */}
+                    {/* Not + Adet + Ekle */}
                     <div style={{ display: 'flex', gap: 6, alignItems: 'flex-end' }}>
                       <div style={{ flex: 1 }}>
                         <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--text3)', marginBottom: 3 }}>NOT</div>
@@ -570,11 +706,19 @@ export default function NewItemModal({ onClose }) {
                           onKeyDown={e => { if (e.key === 'Enter' && canAddPremium) addPremiumRow() }}
                           placeholder="Opsiyonel" style={{ fontSize: 10 }} />
                       </div>
+                      {/* Adet stepper */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                        <button onClick={() => setGQty(q => Math.max(1, q - 1))}
+                          style={{ width: 22, height: 22, borderRadius: 4, background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text2)', cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>−</button>
+                        <span style={{ fontFamily: 'var(--display)', fontSize: 15, color: 'var(--accent)', minWidth: 20, textAlign: 'center' }}>{gQty}</span>
+                        <button onClick={() => setGQty(q => Math.min(99, q + 1))}
+                          style={{ width: 22, height: 22, borderRadius: 4, background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text2)', cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
+                      </div>
                       <button
                         onClick={addPremiumRow}
                         disabled={!canAddPremium}
                         style={{
-                          padding: '7px 16px', borderRadius: 6, cursor: canAddPremium ? 'pointer' : 'not-allowed',
+                          padding: '7px 14px', borderRadius: 6, cursor: canAddPremium ? 'pointer' : 'not-allowed',
                           background: canAddPremium ? 'var(--accent)' : 'var(--surface)',
                           border: `1px solid ${canAddPremium ? 'var(--accent)' : 'var(--border)'}`,
                           color: canAddPremium ? '#000' : 'var(--text3)',
@@ -582,15 +726,15 @@ export default function NewItemModal({ onClose }) {
                           transition: 'all 0.15s',
                         }}
                       >
-                        + Ekle
+                        + Ekle{gQty > 1 ? ` (×${gQty})` : ''}
                       </button>
                     </div>
                   </div>
                 )}
 
-                {premiumRows.length === 0 && !gType && (
+                {premiumRows.length === 0 && !gType && !quickPremium && (
                   <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', textAlign: 'center', padding: '4px 0' }}>
-                    Yukarıdan tip seç → detay gir → Ekle
+                    ⚡ Hızlı giriş veya tip seç → detay gir → Ekle
                   </div>
                 )}
               </div>
