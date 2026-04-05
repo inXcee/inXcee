@@ -19,7 +19,7 @@ const PG_STATUS_COLORS = { received: '#f59e0b', ironing: '#6366f1', ready: '#10b
 function formatDuration(item) {
   const start = new Date(item.created_at)
   const end = (item.status === 'delivered' || item.status === 'lost')
-    ? new Date(item.updated_at)
+    ? new Date(item.updated_at ?? item.created_at)
     : new Date()
   const ms = Math.max(0, end - start)
   const hours = Math.floor(ms / 3600000)
@@ -128,7 +128,7 @@ export default function AllRecordsTab() {
         <input
           className="form-input"
           value={search}
-          onChange={e => setSearch(e.target.value)}
+          onChange={e => { setSearch(e.target.value); setExpandedId(null) }}
           placeholder="Oda no veya isim..."
           style={{ flex: '1 1 180px', minWidth: 140 }}
         />
