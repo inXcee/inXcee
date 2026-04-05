@@ -51,6 +51,7 @@ export default function PremiumSearchPanel() {
   }
 
   const reset = () => {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
     setFilters({ block: '', room_no: '', type: '', brand: '', size: '', color: '', pattern: '', intake_name: '', status: '', from: '', to: '' })
     setLostOnly(false)
     setActiveFilters(null)
@@ -59,8 +60,10 @@ export default function PremiumSearchPanel() {
 
   const set = useCallback((k, v) => setFilters(prev => ({ ...prev, [k]: v })), [])
 
+  const isFirstRender = useRef(true)
   const debounceRef = useRef(null)
   useEffect(() => {
+    if (isFirstRender.current) { isFirstRender.current = false; return }
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => {
       setPage(1)
