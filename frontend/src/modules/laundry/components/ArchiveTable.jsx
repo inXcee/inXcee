@@ -42,14 +42,14 @@ export default function ArchiveTable({ onSelectItem }) {
   }
   const td = {
     fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text2)',
-    padding: '9px 10px', borderBottom: '1px solid var(--border)',
+    padding: '12px 10px', borderBottom: '1px solid var(--border)',
   }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       {/* Filtre bar */}
       <div style={{
-        display: 'flex', flexWrap: 'wrap', gap: 8,
+        display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center',
         padding: '12px 16px', background: 'var(--surface2)',
         border: '1px solid var(--border)', borderRadius: 10,
       }}>
@@ -105,7 +105,7 @@ export default function ArchiveTable({ onSelectItem }) {
           <thead>
             <tr>
               {['ODA', 'TESLİM EDEN', 'PARÇA', 'GİRİŞ', 'TESLİM', 'SÜRE', 'DURUM', 'DOĞRULAMA'].map(h => (
-                <th key={h} style={th}>{h}</th>
+                <th key={h} style={{ ...th, textAlign: ['PARÇA', 'SÜRE'].includes(h) ? 'right' : 'left' }}>{h}</th>
               ))}
             </tr>
           </thead>
@@ -127,10 +127,10 @@ export default function ArchiveTable({ onSelectItem }) {
                   {item.block} · {item.room_no}
                 </td>
                 <td style={td}>{item.intake_name || '—'}</td>
-                <td style={{ ...td, color: 'var(--accent)' }}>{item.item_count}</td>
+                <td style={{ ...td, color: 'var(--accent)', textAlign: 'right' }}>{item.item_count}</td>
                 <td style={{ ...td, color: 'var(--text3)' }}>{item.created_at?.slice(0, 10)}</td>
                 <td style={{ ...td, color: 'var(--text3)' }}>{item.delivered_at?.slice(0, 10) || '—'}</td>
-                <td style={td}>{item.total_hours != null ? `${item.total_hours}s` : '—'}</td>
+                <td style={{ ...td, textAlign: 'right' }}>{item.total_hours != null ? `${item.total_hours}s` : '—'}</td>
                 <td style={td}>
                   <span style={{
                     display: 'inline-flex', alignItems: 'center',
