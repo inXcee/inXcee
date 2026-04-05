@@ -137,6 +137,7 @@ export function listItemsQuery({ status, urgent, sla_only, search } = {}) {
            p.full_name as occupant_name,
            li.intake_name,
            li.clothing_items,
+           (SELECT COUNT(*) FROM premium_garments WHERE item_id = li.id) as premium_garment_count,
            (SELECT COUNT(*) FROM laundry_items li2
             WHERE li2.room_id = li.room_id
             AND li2.status NOT IN ('delivered','lost')

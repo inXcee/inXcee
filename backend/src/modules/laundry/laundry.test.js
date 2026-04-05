@@ -40,6 +40,25 @@ describe('Laundry queries', () => {
     expect(dirty.every(i => i.status === 'dirty')).toBe(true)
   })
 
+  it('listItemsQuery returns premium_garment_count field', async () => {
+    const { listItemsQuery, insertItemQuery, insertPremiumGarmentsQuery } = await import('./queries.js')
+
+    // Insert a new item
+    const itemId = insertItemQuery({ room_id: 1, item_count: 1, intake_name: 'PremTest' })
+
+    // Before any premium garments: count should be 0
+    let items = listItemsQuery({ status: 'dirty' })
+    const before = items.find(i => i.id === itemId)
+    expect(before).toBeTruthy()
+    expect(before.premium_garment_count).toBe(0)
+
+    // After adding a premium garment: count should be 1
+    insertPremiumGarmentsQuery(itemId, [{ garment_type: 'Pantolon', brand: null, model: null, size: null, color: null, pattern: null, condition_notes: null }])
+    items = listItemsQuery({ status: 'dirty' })
+    const after = items.find(i => i.id === itemId)
+    expect(after.premium_garment_count).toBe(1)
+  })
+
   it('makine CRUD çalışıyor', async () => {
     const { listMachinesQuery, getMachineQuery, insertMachineQuery, updateMachineQuery } = await import('./queries.js')
     const machines = listMachinesQuery()
