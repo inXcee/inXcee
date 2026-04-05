@@ -263,6 +263,11 @@ export default function PremiumGarmentList({ item }) {
               >
                 {bulkDeliverMut.isPending ? '...' : `Teslim Et (${selectedReady.length})`}
               </button>
+              {bulkDeliverMut.isError && (
+                <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--red)' }}>
+                  {bulkDeliverMut.error?.response?.data?.error || 'Hata oluştu'}
+                </span>
+              )}
             </div>
           )}
           <button
