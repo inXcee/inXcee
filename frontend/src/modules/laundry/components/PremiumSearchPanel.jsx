@@ -1,6 +1,7 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { laundryApi } from '../api.js'
+import { ColorPatternDisplay } from './ColorPatternPicker.jsx'
 
 const STATUS_LABELS = {
   received: 'Teslim Alındı', ironing: 'Ütüde',
@@ -32,7 +33,7 @@ const SELECT_STYLE = { ...INPUT_STYLE, cursor: 'pointer' }
 
 export default function PremiumSearchPanel() {
   const [filters, setFilters] = useState({
-    block: '', room_no: '', type: '', brand: '', size: '', color: '', status: '', from: '', to: '',
+    block: '', room_no: '', type: '', brand: '', size: '', color: '', pattern: '', intake_name: '', status: '', from: '', to: '',
   })
   const [lostOnly, setLostOnly] = useState(false)
   const [page, setPage] = useState(1)
@@ -50,13 +51,23 @@ export default function PremiumSearchPanel() {
   }
 
   const reset = () => {
-    setFilters({ block: '', room_no: '', type: '', brand: '', size: '', color: '', status: '', from: '', to: '' })
+    setFilters({ block: '', room_no: '', type: '', brand: '', size: '', color: '', pattern: '', intake_name: '', status: '', from: '', to: '' })
     setLostOnly(false)
     setActiveFilters(null)
     setPage(1)
   }
 
   const set = useCallback((k, v) => setFilters(prev => ({ ...prev, [k]: v })), [])
+
+  const debounceRef = useRef(null)
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => {
+      setPage(1)
+      setActiveFilters(lostOnly ? { ...filters, status: 'lost' } : filters)
+    }, 400)
+    return () => clearTimeout(debounceRef.current)
+  }, [filters, lostOnly])
 
   const exportCsv = () => {
     if (!data?.rows?.length) return
@@ -114,6 +125,18 @@ export default function PremiumSearchPanel() {
         </FilterRow>
         <FilterRow label="RENK">
           <input style={INPUT_STYLE} value={filters.color} onChange={e => set('color', e.target.value)} placeholder="Beyaz, Mavi…" />
+        </FilterRow>
+        <FilterRow label="DESEN">
+          <select style={SELECT_STYLE} value={filters.pattern} onChange={e => set('pattern', e.target.value)}>
+            <option value="">Tümü</option>
+            <option value="Çizgili">Çizgili</option>
+            <option value="Kareli">Kareli</option>
+            <option value="Desenli">Desenli</option>
+            <option value="Renkli">Renkli</option>
+          </select>
+        </FilterRow>
+        <FilterRow label="KİŞİ ADI">
+          <input style={INPUT_STYLE} value={filters.intake_name} onChange={e => set('intake_name', e.target.value)} placeholder="Teslim eden..." />
         </FilterRow>
         <FilterRow label="DURUM">
           <select style={SELECT_STYLE} value={lostOnly ? 'lost' : filters.status} onChange={e => set('status', e.target.value)} disabled={lostOnly}>
@@ -190,14 +213,25 @@ export default function PremiumSearchPanel() {
                       {g.block} · {g.room_no}
                     </span>
 
-                    {/* Type + brand */}
-                    <span style={{ flex: 1, fontSize: 10, color: 'var(--text)', fontFamily: 'var(--mono)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {g.garment_type}
-                      {g.brand ? ` · ${g.brand}` : ''}
-                      {g.model ? ` ${g.model}` : ''}
-                      {g.size ? ` · ${g.size}` : ''}
-                      {g.color ? ` · ${g.color}` : ''}
+                    {/* Type + brand + renk + desen */}
+                    <span style={{ flex: 1, fontSize: 10, color: 'var(--text)', fontFamily: 'var(--mono)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ flexShrink: 0 }}>
+                        {g.garment_type}
+                        {g.brand ? ` · ${g.brand}` : ''}
+                        {g.model ? ` ${g.model}` : ''}
+                        {g.size ? ` · ${g.size}` : ''}
+                      </span>
+                      {(g.color || g.pattern) && (
+                        <ColorPatternDisplay color={g.color} pattern={g.pattern} />
+                      )}
                     </span>
+
+                    {/* intake_name */}
+                    {g.intake_name && (
+                      <span style={{ fontSize: 9, color: 'var(--text3)', fontFamily: 'var(--mono)', flexShrink: 0, maxWidth: 100, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {g.intake_name}
+                      </span>
+                    )}
 
                     {/* Status */}
                     <span style={{
