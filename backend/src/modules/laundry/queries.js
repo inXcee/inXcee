@@ -106,8 +106,8 @@ export function listItemsQuery({ status, urgent, sla_only, search } = {}) {
   if (status) { conditions.push('li.status = ?'); params.push(status) }
   if (urgent) { conditions.push('li.urgent = 1') }
   if (search) {
-    conditions.push("(r.block || ' ' || r.room_no LIKE ? OR li.notes LIKE ?)")
-    params.push(`%${search}%`, `%${search}%`)
+    conditions.push("(r.block || ' ' || r.room_no LIKE ? OR li.notes LIKE ? OR li.intake_name LIKE ?)")
+    params.push(`%${search}%`, `%${search}%`, `%${search}%`)
   }
   if (sla_only) {
     conditions.push(`(

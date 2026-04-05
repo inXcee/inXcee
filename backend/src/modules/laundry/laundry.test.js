@@ -59,6 +59,24 @@ describe('Laundry queries', () => {
     expect(after.premium_garment_count).toBe(1)
   })
 
+  it('listItemsQuery search filters by intake_name', async () => {
+    const { listItemsQuery, insertItemQuery } = await import('./queries.js')
+
+    // Insert items with distinct intake names
+    const uniqueName = 'TestSearchName_' + Date.now()
+    const itemId = insertItemQuery({ room_id: 1, item_count: 1, intake_name: uniqueName })
+
+    // Search by intake_name should find the item
+    const results = listItemsQuery({ search: uniqueName })
+    const found = results.find(i => i.id === itemId)
+    expect(found).toBeDefined()
+
+    // Search with partial name should also work
+    const partialResults = listItemsQuery({ search: 'TestSearchName' })
+    const foundPartial = partialResults.find(i => i.id === itemId)
+    expect(foundPartial).toBeDefined()
+  })
+
   it('makine CRUD çalışıyor', async () => {
     const { listMachinesQuery, getMachineQuery, insertMachineQuery, updateMachineQuery } = await import('./queries.js')
     const machines = listMachinesQuery()
