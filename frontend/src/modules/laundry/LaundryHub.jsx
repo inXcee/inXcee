@@ -34,6 +34,7 @@ import LaundryChat              from './components/LaundryChat.jsx'
 import PremiumSearchPanel       from './components/PremiumSearchPanel.jsx'
 import GarmentScanModal         from './components/GarmentScanModal.jsx'
 import PremiumGarmentList       from './components/PremiumGarmentList.jsx'
+import AllRecordsTab            from './components/AllRecordsTab.jsx'
 
 const COLOR_MAP = {
   'Beyaz': '#f0f0f0', 'Siyah': '#222', 'Gri': '#888',
@@ -776,6 +777,7 @@ function QuickAdd({ onClose }) {
 
 // ── FullRecordsView ────────────────────────────────────────────
 function FullRecordsView() {
+  const [recordsTab, setRecordsTab] = useState('all')
   const [status, setStatus] = useState('all')
   const [search, setSearch] = useState('')
   const [dateFrom, setDateFrom] = useState('')
@@ -797,6 +799,33 @@ function FullRecordsView() {
 
   return (
     <div>
+      {/* Tab nav */}
+      <div style={{ display: 'flex', gap: 4, marginBottom: 16, borderBottom: '1px solid var(--border)', paddingBottom: 0 }}>
+        {[
+          { key: 'all', label: '★ Tümü' },
+          { key: 'filtered', label: '≡ Filtrele' },
+        ].map(t => (
+          <button
+            key={t.key}
+            type="button"
+            onClick={() => setRecordsTab(t.key)}
+            style={{
+              padding: '8px 16px', background: 'none', border: 'none', cursor: 'pointer',
+              fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: 1,
+              color: recordsTab === t.key ? 'var(--accent)' : 'var(--text3)',
+              borderBottom: recordsTab === t.key ? '2px solid var(--accent)' : '2px solid transparent',
+              marginBottom: -1,
+            }}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {recordsTab === 'all' ? (
+        <AllRecordsTab />
+      ) : (
+        <>
       {/* Filters */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
         <input
@@ -921,6 +950,8 @@ function FullRecordsView() {
             )
           })}
         </div>
+      )}
+        </>
       )}
     </div>
   )
