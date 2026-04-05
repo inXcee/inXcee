@@ -10,6 +10,82 @@ const GARMENT_TYPES = [
 ]
 const SIZES = ['XS','S','M','L','XL','XXL','3XL','36','38','40','42','44','46','48']
 
+const GARMENT_TYPE_ALIASES = {
+  'gömlek': 'Gömlek', 'gomlek': 'Gömlek',
+  'pantolon': 'Pantolon',
+  't-shirt': 'T-Shirt', 'tişört': 'T-Shirt', 'tisort': 'T-Shirt', 'tshirt': 'T-Shirt',
+  'kazak': 'Kazak',
+  'sweat': 'Sweat',
+  'mont': 'Mont',
+  'ceket': 'Ceket',
+  'hırka': 'Hırka', 'hirka': 'Hırka',
+  'polar': 'Polar',
+  'etek': 'Etek',
+  'elbise': 'Elbise',
+  'şort': 'Şort', 'sort': 'Şort',
+  'atlet': 'Atlet',
+  'çorap': 'Çorap', 'corap': 'Çorap',
+  'havlu': 'Havlu',
+  'diğer': 'Diğer', 'diger': 'Diğer',
+}
+
+const QUICK_COLORS = ['Beyaz','Siyah','Gri','Füme','Lacivert','Mavi','Açık Mavi','Kırmızı','Yeşil','Sarı','Turuncu','Kahve','Bej','Mor','Pembe']
+const QUICK_PATTERNS = ['Çizgili','Kareli','Desenli','Renkli']
+const QUICK_SIZES = new Set(['XS','S','M','L','XL','XXL','3XL','36','38','40','42','44','46','48'])
+
+function parseQuickText(text) {
+  let rem = text.trim()
+  const result = { garment_type: '', colors: [], pattern: '', size: '', brand: '', quantity: 1 }
+
+  // Adet: "3 adet", "3x", "x3", veya satır başı sayı
+  const qMatch = rem.match(/^(\d{1,2})\s*(adet|x|×)?\s+/i) || rem.match(/\b[x×](\d{1,2})\b/i)
+  if (qMatch) {
+    result.quantity = Math.min(20, Math.max(1, parseInt(qMatch[1])))
+    rem = rem.replace(qMatch[0], ' ').trim()
+  }
+
+  // Kıyafet tipi (çok kelimeli önce)
+  const lower = rem.toLowerCase()
+  for (const [key, val] of Object.entries(GARMENT_TYPE_ALIASES)) {
+    if (lower.includes(key)) {
+      result.garment_type = val
+      rem = rem.replace(new RegExp(key, 'i'), ' ').replace(/\s+/g, ' ').trim()
+      break
+    }
+  }
+
+  // Renkler
+  for (const color of QUICK_COLORS) {
+    if (rem.toLowerCase().includes(color.toLowerCase())) {
+      result.colors.push(color)
+      rem = rem.replace(new RegExp(color, 'i'), ' ').replace(/\s+/g, ' ').trim()
+    }
+  }
+
+  // Desen
+  for (const pat of QUICK_PATTERNS) {
+    if (rem.toLowerCase().includes(pat.toLowerCase())) {
+      result.pattern = pat
+      rem = rem.replace(new RegExp(pat, 'i'), ' ').replace(/\s+/g, ' ').trim()
+      break
+    }
+  }
+
+  // Beden (tam kelime eşleşmesi)
+  const words = rem.split(/\s+/)
+  const remaining = []
+  for (const w of words) {
+    if (!result.size && QUICK_SIZES.has(w.toUpperCase())) {
+      result.size = w.toUpperCase()
+    } else if (w) {
+      remaining.push(w)
+    }
+  }
+
+  result.brand = remaining.join(' ').trim()
+  return result
+}
+
 const STATUS_LABEL = { received:'Alındı', ironing:'Ütüde', ready:'Hazır', delivered:'Teslim', lost:'Kayıp' }
 const STATUS_COLOR = { received:'#f59e0b', ironing:'#6366f1', ready:'#10b981', delivered:'#64748b', lost:'#ef4444' }
 
@@ -38,6 +114,7 @@ export default function PremiumGarmentList({ item }) {
   const [selected, setSelected] = useState(new Set())
   const [bulkDeliverTo, setBulkDeliverTo] = useState('')
   const brandRef = useRef(null)
+  const [quickText, setQuickText] = useState('')
 
   const { data: garments = [], isLoading } = useQuery({
     queryKey: ['premium-garments', item.id],
@@ -291,6 +368,74 @@ export default function PremiumGarmentList({ item }) {
           background: 'var(--surface2)', border: '1px solid rgba(240,165,0,0.15)',
           borderRadius: 8, padding: 10, marginBottom: 10,
         }}>
+          {/* ── Hızlı Giriş ── */}
+          <div style={{ marginBottom: 10 }}>
+            <div style={{ fontSize: 9, color: '#818cf8', fontFamily: 'var(--mono)', marginBottom: 5, letterSpacing: 1 }}>
+              ⚡ HIZLI GİRİŞ
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <input
+                style={{ ...inp, flex: 1, border: quickText ? '1px solid rgba(99,102,241,0.4)' : '1px solid var(--border)', color: quickText ? '#a5b4fc' : 'var(--text3)' }}
+                value={quickText}
+                onChange={e => setQuickText(e.target.value)}
+                placeholder="örn: 3 mavi gömlek M Lacoste"
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && quickText.trim()) {
+                    const parsed = parseQuickText(quickText)
+                    setForm(f => ({
+                      ...f,
+                      garment_type: parsed.garment_type || f.garment_type,
+                      colors: parsed.colors.length > 0 ? parsed.colors : f.colors,
+                      pattern: parsed.pattern || f.pattern,
+                      size: parsed.size || f.size,
+                      brand: parsed.brand || f.brand,
+                      quantity: parsed.quantity,
+                    }))
+                    setQuickText('')
+                  }
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  if (!quickText.trim()) return
+                  const parsed = parseQuickText(quickText)
+                  setForm(f => ({
+                    ...f,
+                    garment_type: parsed.garment_type || f.garment_type,
+                    colors: parsed.colors.length > 0 ? parsed.colors : f.colors,
+                    pattern: parsed.pattern || f.pattern,
+                    size: parsed.size || f.size,
+                    brand: parsed.brand || f.brand,
+                    quantity: parsed.quantity,
+                  }))
+                  setQuickText('')
+                }}
+                style={{
+                  padding: '5px 12px', borderRadius: 5, cursor: 'pointer',
+                  background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.35)',
+                  color: '#818cf8', fontFamily: 'var(--mono)', fontSize: 10,
+                }}
+              >
+                ↵ Doldur
+              </button>
+            </div>
+            {/* Parse etiketleri — anlık önizleme */}
+            {quickText.trim() && (() => {
+              const p = parseQuickText(quickText)
+              return (
+                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 5 }}>
+                  {p.garment_type && <span style={{ background: 'rgba(240,165,0,0.1)', border: '1px solid rgba(240,165,0,0.3)', padding: '1px 7px', borderRadius: 10, fontSize: 9, color: 'var(--accent)', fontFamily: 'var(--mono)' }}>✓ {p.garment_type}</span>}
+                  {p.colors.map(c => <span key={c} style={{ background: 'rgba(37,99,235,0.1)', border: '1px solid rgba(37,99,235,0.3)', padding: '1px 7px', borderRadius: 10, fontSize: 9, color: '#60a5fa', fontFamily: 'var(--mono)' }}>● {c}</span>)}
+                  {p.pattern && <span style={{ background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.3)', padding: '1px 7px', borderRadius: 10, fontSize: 9, color: '#818cf8', fontFamily: 'var(--mono)' }}>{p.pattern}</span>}
+                  {p.size && <span style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)', padding: '1px 7px', borderRadius: 10, fontSize: 9, color: 'var(--text3)', fontFamily: 'var(--mono)' }}>{p.size}</span>}
+                  {p.brand && <span style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)', padding: '1px 7px', borderRadius: 10, fontSize: 9, color: 'var(--text3)', fontFamily: 'var(--mono)' }}>{p.brand}</span>}
+                  {p.quantity > 1 && <span style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)', padding: '1px 7px', borderRadius: 10, fontSize: 9, color: 'var(--green)', fontFamily: 'var(--mono)' }}>×{p.quantity}</span>}
+                </div>
+              )
+            })()}
+          </div>
+
           <div style={{ marginBottom: 8 }}>
             <div style={{ fontSize: 9, color: 'var(--text3)', fontFamily: 'var(--mono)', marginBottom: 5, letterSpacing: 1 }}>TİP *</div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
