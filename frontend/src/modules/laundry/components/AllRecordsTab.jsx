@@ -108,7 +108,7 @@ export default function AllRecordsTab() {
   const [expandedId, setExpandedId] = useState(null)
 
   const { data: rawItems = [], isLoading } = useQuery({
-    queryKey: ['laundry-all-records', statusFilter, search],
+    queryKey: ['laundry-records-tab-all', statusFilter, search],
     queryFn: () => {
       const params = {}
       if (statusFilter !== 'all') params.status = statusFilter
