@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { laundryApi } from '../api.js'
+import ColorPatternPicker from './ColorPatternPicker.jsx'
 
 const GARMENT_TYPES = [
   'Pantolon','Gömlek','T-Shirt','Kazak','Sweat','Polar','Mont','Hırka',
@@ -35,7 +36,17 @@ function GarmentRow({ row, idx, onChange, onRemove }) {
           {SIZES.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
       </td>
-      <td><input className="form-input" style={{ fontSize: 10, width: 80 }} value={row.color} onChange={e => onChange(idx, 'color', e.target.value)} placeholder="Renk" /></td>
+      <td style={{ minWidth: 200 }}>
+        <ColorPatternPicker
+          colors={row.colors || []}
+          pattern={row.pattern || ''}
+          compact
+          onChange={({ colors, pattern }) => {
+            onChange(idx, 'colors', colors)
+            onChange(idx, 'pattern', pattern)
+          }}
+        />
+      </td>
       <td><input className="form-input" style={{ fontSize: 10 }} value={row.condition_notes} onChange={e => onChange(idx, 'condition_notes', e.target.value)} placeholder="Not" /></td>
       <td>
         <button onClick={() => onRemove(idx)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', fontSize: 14, padding: '0 4px' }}>✕</button>
@@ -45,7 +56,7 @@ function GarmentRow({ row, idx, onChange, onRemove }) {
 }
 
 function emptyRow() {
-  return { garment_type: '', brand: '', model: '', size: '', color: '', pattern: '', condition_notes: '' }
+  return { garment_type: '', brand: '', model: '', size: '', colors: [], pattern: '', condition_notes: '' }
 }
 
 export default function PremiumIntakeModal({ item, onClose }) {
@@ -60,7 +71,15 @@ export default function PremiumIntakeModal({ item, onClose }) {
 
   const save = useMutation({
     mutationFn: () => {
-      const valid = rows.filter(r => r.garment_type)
+      const valid = rows.filter(r => r.garment_type).map(r => ({
+        garment_type: r.garment_type,
+        brand: r.brand || undefined,
+        model: r.model || undefined,
+        size: r.size || undefined,
+        color: r.colors?.length > 0 ? r.colors.join(', ') : undefined,
+        pattern: r.pattern || undefined,
+        condition_notes: r.condition_notes || undefined,
+      }))
       if (!valid.length) throw new Error('En az bir parça tipi seçilmeli')
       return laundryApi.addPremiumGarments(item.id, valid)
     },
@@ -101,7 +120,7 @@ export default function PremiumIntakeModal({ item, onClose }) {
                       <th style={{ minWidth: 100 }}>Marka</th>
                       <th style={{ minWidth: 90 }}>Model</th>
                       <th style={{ minWidth: 70 }}>Beden</th>
-                      <th style={{ minWidth: 80 }}>Renk</th>
+                      <th style={{ minWidth: 200 }}>Renk & Desen</th>
                       <th>Not</th>
                       <th style={{ width: 30 }}></th>
                     </tr>
