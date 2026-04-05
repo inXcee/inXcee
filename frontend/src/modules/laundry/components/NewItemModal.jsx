@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { laundryApi } from '../api.js'
+import ColorPatternPicker from './ColorPatternPicker.jsx'
 
 const DEFAULT_CLOTHING_TYPES = [
   'Pantolon','Gömlek','T-Shirt','Kazak','Sweat','Polar','Mont','Hırka',
@@ -160,7 +161,7 @@ export default function NewItemModal({ onClose }) {
   // Premium parça girişi (local buffer — API'ye tek seferde gönderilir)
   const [premiumRows, setPremiumRows] = useState([])
   const [gType, setGType] = useState('')
-  const [gForm, setGForm] = useState({ color: '', brand: '', model: '', size: '', condition_notes: '' })
+  const [gForm, setGForm] = useState({ colors: [], pattern: '', brand: '', model: '', size: '', condition_notes: '' })
   const colorRef = useRef(null)
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
@@ -224,20 +225,20 @@ export default function NewItemModal({ onClose }) {
     })
 
   // Premium parça local ekleme
-  const canAddPremium = !!gType && !!gForm.color
+  const canAddPremium = !!gType
   const addPremiumRow = () => {
     if (!canAddPremium) return
     setPremiumRows(prev => [...prev, {
       garment_type: gType,
-      color: gForm.color,
+      color: gForm.colors.length > 0 ? gForm.colors.join(', ') : undefined,
+      pattern: gForm.pattern || undefined,
       brand: gForm.brand || undefined,
       model: gForm.model || undefined,
       size: gForm.size || undefined,
       condition_notes: gForm.condition_notes || undefined,
     }])
     setGType('')
-    setGForm({ color: '', brand: '', model: '', size: '', condition_notes: '' })
-    setTimeout(() => colorRef.current?.focus(), 30)
+    setGForm({ colors: [], pattern: '', brand: '', model: '', size: '', condition_notes: '' })
   }
   const removePremiumRow = (idx) => setPremiumRows(prev => prev.filter((_, i) => i !== idx))
 
@@ -409,12 +410,21 @@ export default function NewItemModal({ onClose }) {
                         <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text)', flex: 1 }}>
                           {CLOTHING_ICONS[g.garment_type] || ''} {g.garment_type}
                         </span>
-                        <span style={{
-                          width: 12, height: 12, borderRadius: '50%', flexShrink: 0,
-                          background: COLOR_PALETTE.find(c => c.name === g.color)?.hex || '#888',
-                          border: '1px solid rgba(255,255,255,0.15)',
-                        }} title={g.color} />
-                        <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>{g.color}</span>
+                        {g.color && g.color.split(', ').filter(Boolean).map(c => (
+                          <span key={c} style={{
+                            width: 12, height: 12, borderRadius: '50%', flexShrink: 0,
+                            background: COLOR_PALETTE.find(cp => cp.name === c)?.hex || '#888',
+                            border: '1px solid rgba(255,255,255,0.15)',
+                          }} title={c} />
+                        ))}
+                        {g.color && <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>{g.color}</span>}
+                        {g.pattern && (
+                          <span style={{
+                            fontFamily: 'var(--mono)', fontSize: 9, color: '#818cf8',
+                            background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.2)',
+                            borderRadius: 3, padding: '1px 5px',
+                          }}>{g.pattern}</span>
+                        )}
                         {g.brand && <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>{g.brand}</span>}
                         {g.size && (
                           <span style={{
@@ -439,8 +449,7 @@ export default function NewItemModal({ onClose }) {
                         key={type}
                         onClick={() => {
                           setGType(t => t === type ? '' : type)
-                          setGForm(f => ({ ...f, color: '' }))
-                          if (gType !== type) setTimeout(() => colorRef.current?.focus(), 30)
+                          setGForm(f => ({ ...f, colors: [], pattern: '' }))
                         }}
                         style={{
                           padding: '4px 10px', borderRadius: 16, cursor: 'pointer',
@@ -467,38 +476,16 @@ export default function NewItemModal({ onClose }) {
                       <span style={{ fontWeight: 400, color: 'var(--text3)', fontSize: 9, marginLeft: 6 }}>#{premiumRows.length + 1}</span>
                     </div>
 
-                    {/* Renk */}
+                    {/* Renk & Desen */}
                     <div style={{ marginBottom: 8 }}>
                       <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--text3)', letterSpacing: 1, marginBottom: 4 }}>
-                        RENK <span style={{ color: 'var(--red)' }}>*</span>
+                        RENK & DESEN
                       </div>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
-                        {COLOR_PALETTE.map(col => (
-                          <button
-                            key={col.name}
-                            title={col.name}
-                            onClick={() => setGForm(f => ({ ...f, color: f.color === col.name ? '' : col.name }))}
-                            style={{
-                              width: 20, height: 20, borderRadius: '50%', padding: 0, cursor: 'pointer',
-                              background: col.hex, flexShrink: 0,
-                              border: `2px solid ${gForm.color === col.name ? 'var(--accent)' : 'transparent'}`,
-                              boxShadow: gForm.color === col.name ? '0 0 0 1px var(--accent)' : 'none',
-                              transition: 'all 0.1s',
-                            }}
-                          />
-                        ))}
-                        <input
-                          ref={colorRef}
-                          className="form-input"
-                          value={COLOR_PALETTE.some(c => c.name === gForm.color) ? '' : gForm.color}
-                          onChange={e => setGForm(f => ({ ...f, color: e.target.value }))}
-                          placeholder="Diğer..."
-                          style={{ width: 65, padding: '3px 6px', fontSize: 9, flexShrink: 0 }}
-                        />
-                        {gForm.color && (
-                          <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--accent)', flexShrink: 0 }}>{gForm.color}</span>
-                        )}
-                      </div>
+                      <ColorPatternPicker
+                        colors={gForm.colors}
+                        pattern={gForm.pattern}
+                        onChange={({ colors, pattern }) => setGForm(f => ({ ...f, colors, pattern }))}
+                      />
                     </div>
 
                     {/* Marka / Model / Beden */}
