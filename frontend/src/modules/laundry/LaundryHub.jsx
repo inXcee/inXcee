@@ -208,7 +208,7 @@ function ExpandedSection({ item, onLost, onFound }) {
 
 // ── DraggableKanbanCard ────────────────────────────────────────
 function DraggableKanbanCard({ item, ...props }) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `item-${item.id}`,
     data: { item },
   })
@@ -217,12 +217,8 @@ function DraggableKanbanCard({ item, ...props }) {
     <div
       ref={setNodeRef}
       style={{
-        transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
-        opacity: isDragging ? 0.85 : 1,
-        zIndex: isDragging ? 999 : undefined,
-        position: isDragging ? 'relative' : undefined,
+        opacity: isDragging ? 0.3 : 1,
         cursor: isDragging ? 'grabbing' : 'grab',
-        boxShadow: isDragging ? '0 12px 40px rgba(0,0,0,0.5)' : undefined,
         transition: isDragging ? 'none' : 'opacity 0.1s',
       }}
       {...attributes}
@@ -1430,7 +1426,13 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
             )}
             <KanbanCol title="RAFTA HAZIR"  color="var(--green)"  items={ready}   colStatus="ready"   isOver={overCol === 'ready'}   machines={machines} onDeliver={setDeliverItem} onDamage={setDamageItem} onPersonClick={setPersonPanelName} onFound={setFoundItem} groupByRoom={groupByRoom} />
           </div>
-          <DragOverlay>{null}</DragOverlay>
+          <DragOverlay dropAnimation={null}>
+            {activeItem ? (
+              <div style={{ pointerEvents: 'none', opacity: 0.95, boxShadow: '0 16px 48px rgba(0,0,0,0.45)', cursor: 'grabbing', borderRadius: 8 }}>
+                <KanbanCard item={activeItem} machines={machines} onDeliver={() => {}} onDamage={() => {}} onPersonClick={() => {}} onFound={() => {}} />
+              </div>
+            ) : null}
+          </DragOverlay>
           {lost.length > 0 && (
             <div style={{ marginTop: 16 }}>
               <div style={{
