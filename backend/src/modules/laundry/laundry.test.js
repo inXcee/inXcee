@@ -510,6 +510,9 @@ describe('SLA engine', () => {
     const { getSlaPreWarningsQuery } = await import('./queries.js')
     const { insertItemQuery } = await import('./queries.js')
     const db = getDB()
+    // Pre-warning varsayılan değerinin 2 olduğunu doğrula
+    const config = db.prepare("SELECT pre_warning_hours FROM laundry_sla_config WHERE stage='dirty'").get()
+    expect(config.pre_warning_hours).toBe(2)
     // dirty için warning_hours=24, pre_warning_hours=2 (default)
     // 23 saat önce oluşturulmuş item → 24-23=1 saat kaldı → pre_warning penceresinde
     const id = insertItemQuery({ room_id: roomId, item_count: 1 })
