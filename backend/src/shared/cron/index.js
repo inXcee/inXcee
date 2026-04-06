@@ -38,8 +38,8 @@ export function startCronJobs() {
   cron.schedule('*/15 * * * *', async () => {
     try {
       await checkSlaViolations()
-      checkSlaPreWarnings()
-      checkMachineMaintenanceAlerts()
+      await checkSlaPreWarnings()
+      await checkMachineMaintenanceAlerts()
     } catch (e) { console.error('[Cron] Laundry SLA hatası:', e.message) }
   })
 
