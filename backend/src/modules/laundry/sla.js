@@ -41,6 +41,49 @@ export async function checkSlaViolations() {
 }
 
 /**
+ * SLA ihlali yaklaşan öğeleri kontrol eder (pre_warning_hours içinde).
+ * Her 15 dakikada cron ile çalışır.
+ */
+export function checkSlaPreWarnings() {
+  const db = getDB()
+  const approaching = db.prepare(`
+    WITH aged AS (
+      SELECT li.id, li.status, li.item_count,
+             r.block, r.room_no,
+             sc.warning_hours, sc.pre_warning_hours,
+             ROUND((julianday('now') - julianday(COALESCE(li.updated_at, li.created_at))) * 24, 2) AS hours
+      FROM laundry_items li
+      LEFT JOIN rooms r ON r.id = li.room_id
+      LEFT JOIN laundry_sla_config sc ON sc.stage = li.status
+      WHERE li.status IN ('dirty','washing','ready')
+        AND sc.warning_hours IS NOT NULL
+        AND sc.pre_warning_hours IS NOT NULL
+    )
+    SELECT * FROM aged
+    WHERE hours < warning_hours
+      AND (warning_hours - hours) <= pre_warning_hours
+  `).all()
+
+  for (const v of approaching) {
+    const stage = 'pre_warning_' + v.status
+    if (!shouldSendSlaNotification(db, v.id, stage)) continue
+    const label = { dirty: 'Kirli sepette', washing: 'Makinede', ready: 'Rafta hazır' }[v.status] || v.status
+    const hoursLeft = Math.round((v.warning_hours - v.hours) * 10) / 10
+    createNotification({
+      message: `⚠️ SLA YAKLAŞIYOR: ${v.block || '?'}·${v.room_no || '?'} — ${label}, ${hoursLeft}s kaldı`,
+      type: 'warning',
+      module: 'laundry',
+      target_role: 'laundry',
+    })
+    // Aynı gün tekrar gönderme — laundry_sla_notifications tablosuna kaydet
+    db.prepare(`INSERT OR IGNORE INTO laundry_sla_notifications(item_id, stage, phone) VALUES(?,?,NULL)`)
+      .run(v.id, stage)
+  }
+
+  return approaching.length
+}
+
+/**
  * Süresi dolan makineleri 'done' olarak işaretler ve bildirim gönderir.
  */
 export function checkMachineTimers() {

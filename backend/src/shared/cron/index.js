@@ -2,7 +2,7 @@ import cron from 'node-cron'
 import { generateDailyTasks } from '../../modules/housekeeping/queries.js'
 import { createNotification } from '../notifications/service.js'
 import { getDB } from '../db/index.js'
-import { checkSlaViolations, checkMachineTimers } from '../../modules/laundry/sla.js'
+import { checkSlaViolations, checkMachineTimers, checkSlaPreWarnings, checkMachineMaintenanceAlerts } from '../../modules/laundry/sla.js'
 
 export function startCronJobs() {
   // Her gün 05:50'de günlük temizlik görevleri oluştur
@@ -27,11 +27,19 @@ export function startCronJobs() {
     } catch (e) { console.error('[Cron] Stok cron hatası:', e) }
   })
 
-  // Laundry — her 15 dakikada SLA kontrolü + makine zamanlayıcı
+  // Her 1 dakikada makine zamanlayıcı kontrolü
+  cron.schedule('*/1 * * * *', () => {
+    try {
+      checkMachineTimers()
+    } catch (e) { console.error('[Cron] Makine timer hatası:', e.message) }
+  })
+
+  // Her 15 dakikada SLA kontrolü
   cron.schedule('*/15 * * * *', () => {
     try {
       checkSlaViolations()
-      checkMachineTimers()
+      checkSlaPreWarnings()
+      checkMachineMaintenanceAlerts()
     } catch (e) { console.error('[Cron] Laundry SLA hatası:', e.message) }
   })
 
