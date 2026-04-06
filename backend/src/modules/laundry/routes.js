@@ -248,6 +248,10 @@ laundryRouter.get('/sla/violations', ...laundryRead, (req, res) => {
   res.json(svc.getSlaViolationsService())
 })
 
+laundryRouter.get('/sla/pre-warnings', ...laundryRead, (req, res) => {
+  res.json(svc.getSlaPreWarningsService())
+})
+
 // ═══════════════════════════════════════════════════════════════════════════
 // REPORTS
 // ═══════════════════════════════════════════════════════════════════════════

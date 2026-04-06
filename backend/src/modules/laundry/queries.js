@@ -455,6 +455,24 @@ export function getSlaViolationsQuery() {
   `).all()
 }
 
+export function getSlaPreWarningsQuery() {
+  const db = getDB()
+  return db.prepare(`
+    SELECT li.*, r.block, r.room_no,
+      sc.warning_hours, sc.pre_warning_hours,
+      ROUND((julianday('now') - julianday(COALESCE(li.updated_at, li.created_at))) * 24, 1) as hours_in_status
+    FROM laundry_items li
+    LEFT JOIN rooms r ON r.id = li.room_id
+    LEFT JOIN laundry_sla_config sc ON sc.stage = li.status
+    WHERE li.status IN ('dirty','washing','ready')
+      AND sc.warning_hours IS NOT NULL
+      AND sc.pre_warning_hours IS NOT NULL
+      AND ROUND((julianday('now') - julianday(COALESCE(li.updated_at, li.created_at))) * 24, 1) < sc.warning_hours
+      AND (sc.warning_hours - ROUND((julianday('now') - julianday(COALESCE(li.updated_at, li.created_at))) * 24, 1)) <= sc.pre_warning_hours
+    ORDER BY hours_in_status DESC
+  `).all()
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // REPORTS / STATS
 // ═══════════════════════════════════════════════════════════════════════════

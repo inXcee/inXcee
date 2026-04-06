@@ -381,6 +381,7 @@ export function initDB() {
     value TEXT
   )`) } catch(_) {}
   try { db.exec(`ALTER TABLE laundry_sla_config ADD COLUMN whatsapp_notify INTEGER DEFAULT 0`) } catch(_) {}
+  try { db.exec(`ALTER TABLE laundry_sla_config ADD COLUMN pre_warning_hours INTEGER DEFAULT 2`) } catch(_) {}
   try { db.exec(`CREATE TABLE IF NOT EXISTS laundry_messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     sender_id INTEGER NOT NULL REFERENCES users(id),

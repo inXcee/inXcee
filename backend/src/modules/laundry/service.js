@@ -333,6 +333,7 @@ export const getMachineService      = q.getMachineQuery
 export const getQueueService        = q.getQueueQuery
 export const getSlaConfigService    = q.getSlaConfigQuery
 export const getSlaViolationsService = q.getSlaViolationsQuery
+export const getSlaPreWarningsService = q.getSlaPreWarningsQuery
 export const getStatsService        = q.getStatsQuery
 
 export function createMachineService({ name, type, capacity_kg }, userId) {

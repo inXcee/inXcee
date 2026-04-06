@@ -505,6 +505,22 @@ describe('SLA engine', () => {
       db.prepare("UPDATE laundry_machines SET status='idle', timer_end=NULL WHERE id=?").run(machine.id)
     }
   })
+
+  it('getSlaPreWarningsQuery — SLA yaklaşan öğeyi döner', async () => {
+    const { getSlaPreWarningsQuery } = await import('./queries.js')
+    const { insertItemQuery } = await import('./queries.js')
+    const db = getDB()
+    // dirty için warning_hours=24, pre_warning_hours=2 (default)
+    // 23 saat önce oluşturulmuş item → 24-23=1 saat kaldı → pre_warning penceresinde
+    const id = insertItemQuery({ room_id: roomId, item_count: 1 })
+    db.prepare("UPDATE laundry_items SET updated_at=datetime('now','-23 hours') WHERE id=?").run(id)
+    const result = getSlaPreWarningsQuery()
+    expect(result.some(v => v.id === id)).toBe(true)
+    // Henüz gerçek ihlal değil
+    const { getSlaViolationsQuery } = await import('./queries.js')
+    const violations = getSlaViolationsQuery()
+    expect(violations.some(v => v.id === id)).toBe(false)
+  })
 })
 
 describe('WhatsApp', () => {
