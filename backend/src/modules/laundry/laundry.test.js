@@ -553,6 +553,59 @@ describe('SLA engine', () => {
     db.prepare('DELETE FROM laundry_items WHERE id=?').run(itemId)
     db.prepare("DELETE FROM laundry_sla_notifications WHERE item_id=?").run(itemId)
   })
+
+  it('checkMachineTimers — tamamlanan makinenin mesajı oda bilgisi içerir', async () => {
+    const { checkMachineTimers } = await import('./sla.js')
+    const db = getDB()
+
+    // Bir makine oluştur ve timer'ı geçmiş yap
+    const machineId = db.prepare(
+      "INSERT INTO laundry_machines(name,type,capacity_kg) VALUES('Test W','washer',10)"
+    ).run().lastInsertRowid
+
+    // Bu makineye bağlı washing item oluştur
+    const itemId = db.prepare(
+      'INSERT INTO laundry_items(room_id,item_count,status,machine_id,created_by) VALUES(?,1,?,?,?)'
+    ).run(roomId, 'washing', machineId, userId).lastInsertRowid
+
+    db.prepare(
+      "UPDATE laundry_machines SET status='running', timer_end=datetime('now','-1 minute') WHERE id=?"
+    ).run(machineId)
+
+    checkMachineTimers()
+
+    // Bildirim mesajının oda bilgisi içerip içermediğini kontrol et
+    const notif = db.prepare(
+      "SELECT * FROM notifications WHERE module='laundry' ORDER BY id DESC LIMIT 1"
+    ).get()
+    expect(notif.message).toContain('Test W')
+    expect(notif.message).toMatch(/[A-Z0-9]+·[0-9]+/) // "BLOK·ODA_NO" formatı
+
+    // Temizlik
+    db.prepare('DELETE FROM laundry_items WHERE id=?').run(itemId)
+    db.prepare('DELETE FROM laundry_machines WHERE id=?').run(machineId)
+  })
+
+  it('checkMachineTimers — total_runs artar', async () => {
+    const { checkMachineTimers } = await import('./sla.js')
+    const db = getDB()
+
+    const machineId = db.prepare(
+      "INSERT INTO laundry_machines(name,type,capacity_kg,total_runs) VALUES('Test W2','washer',10,5)"
+    ).run().lastInsertRowid
+
+    db.prepare(
+      "UPDATE laundry_machines SET status='running', timer_end=datetime('now','-1 minute') WHERE id=?"
+    ).run(machineId)
+
+    checkMachineTimers()
+
+    const m = db.prepare('SELECT * FROM laundry_machines WHERE id=?').get(machineId)
+    expect(m.total_runs).toBe(6)
+
+    // Temizlik
+    db.prepare('DELETE FROM laundry_machines WHERE id=?').run(machineId)
+  })
 })
 
 describe('WhatsApp', () => {

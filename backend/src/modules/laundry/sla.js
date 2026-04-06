@@ -85,20 +85,27 @@ export function checkSlaPreWarnings() {
 
 /**
  * Süresi dolan makineleri 'done' olarak işaretler ve bildirim gönderir.
+ * Her 1 dakikada cron ile çalışır.
  */
 export function checkMachineTimers() {
   const db = getDB()
   const done = db.prepare(`
-    SELECT * FROM laundry_machines
-    WHERE status = 'running'
-      AND timer_end IS NOT NULL
-      AND datetime('now') >= datetime(timer_end)
+    SELECT lm.*,
+      GROUP_CONCAT(r.block || '·' || r.room_no, ', ') as rooms
+    FROM laundry_machines lm
+    LEFT JOIN laundry_items li ON li.machine_id = lm.id AND li.status = 'washing'
+    LEFT JOIN rooms r ON r.id = li.room_id
+    WHERE lm.status = 'running'
+      AND lm.timer_end IS NOT NULL
+      AND datetime('now') >= datetime(lm.timer_end)
+    GROUP BY lm.id
   `).all()
 
   for (const m of done) {
-    db.prepare("UPDATE laundry_machines SET status = 'done' WHERE id = ?").run(m.id)
+    db.prepare("UPDATE laundry_machines SET status = 'done', total_runs = total_runs + 1 WHERE id = ?").run(m.id)
+    const roomInfo = m.rooms ? ` — ${m.rooms}` : ''
     createNotification({
-      message: `${m.name} tamamlandı — çamaşırları rafa kaldırın`,
+      message: `${m.name} tamamlandı${roomInfo}`,
       type: 'info',
       module: 'laundry',
       target_role: 'laundry',
