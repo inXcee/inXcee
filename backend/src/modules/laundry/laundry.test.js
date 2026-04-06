@@ -524,6 +524,35 @@ describe('SLA engine', () => {
     const violations = getSlaViolationsQuery()
     expect(violations.some(v => v.id === id)).toBe(false)
   })
+
+  it('checkSlaPreWarnings — bildirim oluşturur ve aynı gün tekrar göndermez', async () => {
+    const { checkSlaPreWarnings } = await import('./sla.js')
+    const db = getDB()
+
+    // dirty item, 23 saat önce (warning_hours=24 → 1 saat kaldı, pre_warning=2 içinde)
+    const itemId = db.prepare(
+      'INSERT INTO laundry_items(room_id,item_count,status,created_by) VALUES(?,1,?,?)'
+    ).run(roomId, 'dirty', userId).lastInsertRowid
+    db.prepare("UPDATE laundry_items SET updated_at=datetime('now','-23 hours') WHERE id=?").run(itemId)
+
+    // Bildirim sayısını kaydet
+    const countBefore = db.prepare("SELECT COUNT(*) as c FROM notifications WHERE module='laundry'").get().c
+
+    // İlk çağrı — bildirim oluşturmalı
+    checkSlaPreWarnings()
+    const countAfter = db.prepare("SELECT COUNT(*) as c FROM notifications WHERE module='laundry'").get().c
+    expect(countAfter).toBeGreaterThan(countBefore)
+
+    // Aynı gün ikinci çağrı — dedup yüzünden yeni bildirim oluşturmamalı
+    const countAfter2 = db.prepare("SELECT COUNT(*) as c FROM notifications WHERE module='laundry'").get().c
+    checkSlaPreWarnings()
+    const countAfter3 = db.prepare("SELECT COUNT(*) as c FROM notifications WHERE module='laundry'").get().c
+    expect(countAfter3).toBe(countAfter2)
+
+    // Temizlik
+    db.prepare('DELETE FROM laundry_items WHERE id=?').run(itemId)
+    db.prepare("DELETE FROM laundry_sla_notifications WHERE item_id=?").run(itemId)
+  })
 })
 
 describe('WhatsApp', () => {

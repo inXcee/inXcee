@@ -35,9 +35,9 @@ export function startCronJobs() {
   })
 
   // Her 15 dakikada SLA kontrolü
-  cron.schedule('*/15 * * * *', () => {
+  cron.schedule('*/15 * * * *', async () => {
     try {
-      checkSlaViolations()
+      await checkSlaViolations()
       checkSlaPreWarnings()
       checkMachineMaintenanceAlerts()
     } catch (e) { console.error('[Cron] Laundry SLA hatası:', e.message) }

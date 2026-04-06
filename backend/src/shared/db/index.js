@@ -373,9 +373,9 @@ export function initDB() {
     item_id INTEGER NOT NULL REFERENCES laundry_items(id) ON DELETE CASCADE,
     stage TEXT NOT NULL,
     sent_at TEXT NOT NULL DEFAULT (datetime('now')),
-    phone TEXT NOT NULL,
-    UNIQUE(item_id, stage, date(sent_at))
+    phone TEXT
   )`) } catch(_) {}
+  try { db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_laundry_sla_notif_dedup ON laundry_sla_notifications(item_id, stage, date(sent_at))`) } catch(_) {}
   try { db.exec(`CREATE TABLE IF NOT EXISTS laundry_global_settings (
     key TEXT PRIMARY KEY,
     value TEXT
