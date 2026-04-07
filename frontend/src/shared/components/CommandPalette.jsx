@@ -27,7 +27,7 @@ export default function CommandPalette({ open, close, query, setQuery }) {
     queryKey: ['cmd-search', debouncedQuery],
     queryFn: () => api.get('/checkin/search', { params: { q: debouncedQuery } }).then(r => r.data),
     enabled: debouncedQuery.length >= 2,
-    staleTime: 30_000,
+    staleTime: 5_000,
   })
 
   // Statik komut fuzzy match
@@ -76,7 +76,7 @@ export default function CommandPalette({ open, close, query, setQuery }) {
     }
   }, [navigate, close])
 
-  const handleKeyDown = (e) => {
+  const handleKeyDown = useCallback((e) => {
     if (e.key === 'ArrowDown') {
       e.preventDefault()
       setActiveIdx(i => Math.min(i + 1, allItems.length - 1))
@@ -87,7 +87,7 @@ export default function CommandPalette({ open, close, query, setQuery }) {
       e.preventDefault()
       if (allItems[activeIdx]) executeItem(allItems[activeIdx])
     }
-  }
+  }, [allItems, activeIdx, executeItem])
 
   // Active item'ı scroll içinde görünür yap
   useEffect(() => {
@@ -146,7 +146,9 @@ export default function CommandPalette({ open, close, query, setQuery }) {
     )
   }
 
-  let globalIdx = 0
+  const navOffset    = 0
+  const actionOffset = navItems.length
+  const personOffset = navItems.length + actionItems.length
 
   return (
     <>
@@ -214,7 +216,7 @@ export default function CommandPalette({ open, close, query, setQuery }) {
           {navItems.length > 0 && (
             <>
               <div style={sectionLabel}>Sayfalar</div>
-              {navItems.map(item => renderItem({ ...item, _group: 'nav' }, globalIdx++))}
+              {navItems.map((item, i) => renderItem({ ...item, _group: 'nav' }, navOffset + i))}
             </>
           )}
 
@@ -222,7 +224,7 @@ export default function CommandPalette({ open, close, query, setQuery }) {
           {actionItems.length > 0 && (
             <>
               <div style={sectionLabel}>Hızlı Eylemler</div>
-              {actionItems.map(item => renderItem({ ...item, _group: 'action' }, globalIdx++))}
+              {actionItems.map((item, i) => renderItem({ ...item, _group: 'action' }, actionOffset + i))}
             </>
           )}
 
@@ -230,9 +232,9 @@ export default function CommandPalette({ open, close, query, setQuery }) {
           {persons.length > 0 && (
             <>
               <div style={sectionLabel}>Kişiler</div>
-              {persons.map(p => renderItem(
+              {persons.map((p, i) => renderItem(
                 { ...p, type: 'person', _group: 'person', id: `person-${p.id}`, icon: '◎' },
-                globalIdx++
+                personOffset + i
               ))}
             </>
           )}
