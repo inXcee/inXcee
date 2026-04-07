@@ -1336,6 +1336,8 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
   const ready   = kanbanItems.filter(i => i.status === 'ready')
   const lost    = allItems.filter(i => i.status === 'lost')
 
+  const colEmptyLabel = (filterBlock !== 'all' || filterUrgent || !!search.trim()) ? 'filtre sonucu boş' : 'boş'
+
   const counts = {
     dirty:   allItems.filter(i => i.status === 'dirty').length,
     washing: allItems.filter(i => i.status === 'washing').length,
@@ -1595,7 +1597,7 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
         </button>
 
         {/* Aktif filtre badge */}
-        {(filterBlock !== 'all' || filterUrgent) && (
+        {(filterBlock !== 'all' || filterUrgent || !!search.trim()) && (
           <span style={{
             fontSize: 9, fontFamily: 'var(--mono)', letterSpacing: 1,
             color: 'var(--accent)', textTransform: 'uppercase', opacity: 0.8,
@@ -1700,10 +1702,10 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
           onDragEnd={handleDragEnd}
         >
           <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', overflowX: 'auto', paddingBottom: 4 }}>
-            <KanbanCol title="KİRLİ SEPET"  color="var(--accent)" items={dirty}   colStatus="dirty"   isOver={overCol === 'dirty'}   machines={machines} onDeliver={setDeliverItem} onDamage={setDamageItem} onPersonClick={setPersonPanelName} onFound={setFoundItem} groupByRoom={groupByRoom} emptyLabel={(filterBlock !== 'all' || filterUrgent) ? 'filtre sonucu boş' : 'boş'} />
-            <KanbanCol title="YIKANIYOR"    color="var(--blue)"   items={washing} colStatus="washing" isOver={overCol === 'washing'} machines={machines} onDeliver={setDeliverItem} onDamage={setDamageItem} onPersonClick={setPersonPanelName} onFound={setFoundItem} groupByRoom={groupByRoom} emptyLabel={(filterBlock !== 'all' || filterUrgent) ? 'filtre sonucu boş' : 'boş'} />
-            <KanbanCol title="ÜTÜDE" color="#6366f1" items={ironing} colStatus="ironing" isOver={overCol === 'ironing'} machines={machines} onDeliver={setDeliverItem} onDamage={setDamageItem} onPersonClick={setPersonPanelName} onFound={setFoundItem} groupByRoom={groupByRoom} emptyLabel={(filterBlock !== 'all' || filterUrgent) ? 'filtre sonucu boş' : 'boş'} />
-            <KanbanCol title="RAFTA HAZIR"  color="var(--green)"  items={ready}   colStatus="ready"   isOver={overCol === 'ready'}   machines={machines} onDeliver={setDeliverItem} onDamage={setDamageItem} onPersonClick={setPersonPanelName} onFound={setFoundItem} groupByRoom={groupByRoom} batchMode={batchMode} selectedIds={selectedIds} onSelect={toggleSelect} onSelectBlock={selectBlock} emptyLabel={(filterBlock !== 'all' || filterUrgent) ? 'filtre sonucu boş' : 'boş'} />
+            <KanbanCol title="KİRLİ SEPET"  color="var(--accent)" items={dirty}   colStatus="dirty"   isOver={overCol === 'dirty'}   machines={machines} onDeliver={setDeliverItem} onDamage={setDamageItem} onPersonClick={setPersonPanelName} onFound={setFoundItem} groupByRoom={groupByRoom} emptyLabel={colEmptyLabel} />
+            <KanbanCol title="YIKANIYOR"    color="var(--blue)"   items={washing} colStatus="washing" isOver={overCol === 'washing'} machines={machines} onDeliver={setDeliverItem} onDamage={setDamageItem} onPersonClick={setPersonPanelName} onFound={setFoundItem} groupByRoom={groupByRoom} emptyLabel={colEmptyLabel} />
+            <KanbanCol title="ÜTÜDE" color="#6366f1" items={ironing} colStatus="ironing" isOver={overCol === 'ironing'} machines={machines} onDeliver={setDeliverItem} onDamage={setDamageItem} onPersonClick={setPersonPanelName} onFound={setFoundItem} groupByRoom={groupByRoom} emptyLabel={colEmptyLabel} />
+            <KanbanCol title="RAFTA HAZIR"  color="var(--green)"  items={ready}   colStatus="ready"   isOver={overCol === 'ready'}   machines={machines} onDeliver={setDeliverItem} onDamage={setDamageItem} onPersonClick={setPersonPanelName} onFound={setFoundItem} groupByRoom={groupByRoom} batchMode={batchMode} selectedIds={selectedIds} onSelect={toggleSelect} onSelectBlock={selectBlock} emptyLabel={colEmptyLabel} />
           </div>
           <DragOverlay dropAnimation={null}>
             {activeItem ? (
