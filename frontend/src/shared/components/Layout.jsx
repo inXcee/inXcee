@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import Sidebar from './Sidebar.jsx'
 import NotificationBell from './NotificationBell.jsx'
+import CommandPalette from './CommandPalette.jsx'
+import { useCommandPalette } from '../hooks/useCommandPalette.js'
 
 const PAGE_TITLES = {
   '/': 'Dashboard',
@@ -28,9 +30,12 @@ export default function Layout() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const location = useLocation()
   const pageTitle = PAGE_TITLES[location.pathname] || 'YYS'
+  const { open, close, query, setQuery } = useCommandPalette()
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>
+      <CommandPalette open={open} close={close} query={query} setQuery={setQuery} />
+
       {/* Mobile header */}
       <div className="mobile-header">
         <button className="mobile-menu-btn" onClick={() => setMobileOpen(true)}>&#9776;</button>
