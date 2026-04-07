@@ -1180,6 +1180,8 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
   const [overCol,        setOverCol]        = useState(null)
   const [showQuickAdd,   setShowQuickAdd]   = useState(false)
   const [showScanModal,  setShowScanModal]  = useState(false)
+  const [filterBlock,    setFilterBlock]    = useState('all')  // 'all' | 'A' | 'B' | 'S2'
+  const [filterUrgent,   setFilterUrgent]   = useState(false)
 
   useEffect(() => {
     const handler = (e) => {
@@ -1319,8 +1321,14 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
         `${i.block} ${i.room_no} ${i.notes || ''} ${i.occupant_name || ''}`.toLowerCase().includes(q)
       )
     }
+    if (filterBlock !== 'all') {
+      list = list.filter(i => i.block === filterBlock)
+    }
+    if (filterUrgent) {
+      list = list.filter(i => i.urgent === 1)
+    }
     return list
-  }, [allItems, search])
+  }, [allItems, search, filterBlock, filterUrgent])
 
   const dirty   = kanbanItems.filter(i => i.status === 'dirty')
   const washing = kanbanItems.filter(i => i.status === 'washing')
