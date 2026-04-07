@@ -1568,44 +1568,46 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
           placeholder="Ara (oda, kişi, not)…"
         />
 
-        {/* Blok filtresi */}
-        <select
-          value={filterBlock}
-          onChange={e => setFilterBlock(e.target.value)}
-          className="form-input"
-          style={{ width: 110, padding: '6px 8px', fontSize: 11, cursor: 'pointer' }}
-        >
-          <option value="all">Tüm Bloklar</option>
-          <option value="A">A Blok</option>
-          <option value="B">B Blok</option>
-          <option value="S2">S2</option>
-        </select>
+        {view === 'kanban' && (<>
+          {/* Blok filtresi */}
+          <select
+            value={filterBlock}
+            onChange={e => setFilterBlock(e.target.value)}
+            className="form-input"
+            style={{ width: 110, padding: '6px 8px', fontSize: 11, cursor: 'pointer' }}
+          >
+            <option value="all">Tüm Bloklar</option>
+            <option value="A">A Blok</option>
+            <option value="B">B Blok</option>
+            <option value="S2">S2</option>
+          </select>
 
-        {/* Acil toggle */}
-        <button
-          onClick={() => setFilterUrgent(v => !v)}
-          className="btn btn-ghost btn-xs"
-          aria-pressed={filterUrgent}
-          style={{
-            border: `1px solid ${filterUrgent ? 'rgba(231,76,60,0.6)' : 'var(--border)'}`,
-            background: filterUrgent ? 'rgba(231,76,60,0.12)' : 'transparent',
-            color: filterUrgent ? 'var(--red)' : 'var(--text3)',
-            fontWeight: filterUrgent ? 700 : 400,
-          }}
-        >
-          <span aria-hidden="true">⚠</span> Acil
-        </button>
+          {/* Acil toggle */}
+          <button
+            onClick={() => setFilterUrgent(v => !v)}
+            className="btn btn-ghost btn-xs"
+            aria-pressed={filterUrgent}
+            style={{
+              border: `1px solid ${filterUrgent ? 'rgba(231,76,60,0.6)' : 'var(--border)'}`,
+              background: filterUrgent ? 'rgba(231,76,60,0.12)' : 'transparent',
+              color: filterUrgent ? 'var(--red)' : 'var(--text3)',
+              fontWeight: filterUrgent ? 700 : 400,
+            }}
+          >
+            <span aria-hidden="true">⚠</span> Acil
+          </button>
 
-        {/* Aktif filtre badge */}
-        {(filterBlock !== 'all' || filterUrgent || !!search.trim()) && (
-          <span style={{
-            fontSize: 9, fontFamily: 'var(--mono)', letterSpacing: 1,
-            color: 'var(--accent)', textTransform: 'uppercase', opacity: 0.8,
-            alignSelf: 'center',
-          }}>
-            Filtre aktif
-          </span>
-        )}
+          {/* Aktif filtre badge */}
+          {(filterBlock !== 'all' || filterUrgent || !!search.trim()) && (
+            <span style={{
+              fontSize: 9, fontFamily: 'var(--mono)', letterSpacing: 1,
+              color: 'var(--accent)', textTransform: 'uppercase', opacity: 0.8,
+              alignSelf: 'center',
+            }}>
+              Filtre aktif
+            </span>
+          )}
+        </>)}
 
         <div style={{ display: 'flex', gap: 4, flex: 1, overflowX: 'auto' }}>
           {FILTERS.map(f => {
