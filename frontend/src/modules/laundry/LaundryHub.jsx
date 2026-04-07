@@ -1583,6 +1583,7 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
         <button
           onClick={() => setFilterUrgent(v => !v)}
           className="btn btn-ghost btn-xs"
+          aria-pressed={filterUrgent}
           style={{
             border: `1px solid ${filterUrgent ? 'rgba(231,76,60,0.6)' : 'var(--border)'}`,
             background: filterUrgent ? 'rgba(231,76,60,0.12)' : 'transparent',
@@ -1590,7 +1591,7 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
             fontWeight: filterUrgent ? 700 : 400,
           }}
         >
-          ⚠ Acil
+          <span aria-hidden="true">⚠</span> Acil
         </button>
 
         {/* Aktif filtre badge */}
