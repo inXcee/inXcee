@@ -35,6 +35,7 @@ export const laundryApi = {
   getSlaConfig: () => api.get('/laundry/sla-config').then(r => r.data),
   updateSlaConfig: (data) => api.put('/laundry/sla-config', data).then(r => r.data),
   getSlaViolations: () => api.get('/laundry/sla/violations').then(r => r.data),
+  getSlaPreWarnings: () => api.get('/laundry/sla/pre-warnings').then(r => r.data),
 
   // ── Reports ────────────────────────────────────────────────────────────
   getStats: (params) => api.get('/laundry/reports/stats', { params }).then(r => r.data),

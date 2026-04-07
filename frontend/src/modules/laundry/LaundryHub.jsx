@@ -1196,6 +1196,11 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
     queryFn: laundryApi.getSlaViolations,
     refetchInterval: 60000,
   })
+  const { data: preWarnings = [] } = useQuery({
+    queryKey: ['laundry-sla-pre-warnings'],
+    queryFn: laundryApi.getSlaPreWarnings,
+    refetchInterval: 60_000,
+  })
   const { data: stats } = useQuery({
     queryKey: ['laundry-stats'],
     queryFn: () => laundryApi.getStats({}),
@@ -1377,7 +1382,7 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
       {showQuickAdd && <QuickAdd onClose={() => setShowQuickAdd(false)} />}
 
       {/* ── SLA ── */}
-      <SlaAlert violations={violations} />
+      <SlaAlert violations={violations} preWarnings={preWarnings} />
 
       {/* ── KPI STRIP ── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 8, marginBottom: 16 }}>
