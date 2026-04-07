@@ -533,10 +533,76 @@ function DeliveredTodaySection() {
 }
 
 // ── KanbanCol ──────────────────────────────────────────────────
-function KanbanCol({ title, color, items, colStatus, isOver, machines, onDeliver, onDamage, onPersonClick, onFound, groupByRoom }) {
+function KanbanCol({ title, color, items, colStatus, isOver, machines, onDeliver, onDamage, onPersonClick, onFound, groupByRoom, batchMode, selectedIds, onSelect, onSelectBlock }) {
   const { setNodeRef } = useDroppable({ id: colStatus })
 
   function renderItems() {
+    // batchMode + ready kolonu → blok bazlı grupla + "Tümünü Seç" butonları
+    if (batchMode && colStatus === 'ready') {
+      const blocks = {}
+      for (const item of items) {
+        const key = item.block || 'Bilinmiyor'
+        if (!blocks[key]) blocks[key] = []
+        blocks[key].push(item)
+      }
+      return Object.entries(blocks).sort(([a], [b]) => a.localeCompare(b)).map(([block, blockItems]) => {
+        const allSelected = blockItems.length > 0 && blockItems.every(item => selectedIds.has(item.id))
+        return (
+          <div key={block} style={{ marginBottom: 8 }}>
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              padding: '4px 6px', borderBottom: '1px solid var(--border)', marginBottom: 4,
+            }}>
+              <span style={{
+                fontFamily: 'var(--mono)', fontSize: 8, fontWeight: 700,
+                color: 'var(--green)', letterSpacing: 1.5, flex: 1,
+              }}>
+                {block} <span style={{ color: 'var(--text4)' }}>({blockItems.length})</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => onSelectBlock(blockItems)}
+                style={{
+                  padding: '2px 8px', borderRadius: 4, fontSize: 8, fontFamily: 'var(--mono)',
+                  background: allSelected ? 'rgba(16,185,129,0.1)' : 'var(--surface2)',
+                  border: `1px solid ${allSelected ? 'rgba(16,185,129,0.3)' : 'var(--border)'}`,
+                  color: allSelected ? 'var(--green)' : 'var(--text3)', cursor: 'pointer',
+                }}
+              >
+                {allSelected ? '✓ Seçildi' : 'Tümünü Seç'}
+              </button>
+            </div>
+            {blockItems.map(item => (
+              <div
+                key={item.id}
+                style={{
+                  marginBottom: 8, position: 'relative',
+                  outline: selectedIds.has(item.id) ? '2px solid var(--green)' : 'none',
+                  borderRadius: 8,
+                }}
+              >
+                <DraggableKanbanCard item={item} machines={machines} onDeliver={onDeliver} onDamage={onDamage}
+                  onPersonClick={onPersonClick} onFound={onFound} />
+                <div
+                  onClick={() => onSelect(item.id)}
+                  style={{
+                    position: 'absolute', inset: 0, cursor: 'pointer', borderRadius: 8,
+                    background: selectedIds.has(item.id) ? 'rgba(16,185,129,0.05)' : 'transparent',
+                  }}
+                />
+                <input
+                  type="checkbox"
+                  checked={selectedIds.has(item.id)}
+                  onChange={() => onSelect(item.id)}
+                  style={{ position: 'absolute', top: 8, right: 8, cursor: 'pointer', accentColor: 'var(--green)' }}
+                />
+              </div>
+            ))}
+          </div>
+        )
+      })
+    }
+
     if (!groupByRoom) {
       return items.map(item => (
         <DraggableKanbanCard key={item.id} item={item} machines={machines} onDeliver={onDeliver} onDamage={onDamage}
@@ -1272,6 +1338,16 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
     })
   }
 
+  const selectBlock = (blockItems) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      const allSelected = blockItems.every(item => prev.has(item.id))
+      if (allSelected) blockItems.forEach(item => next.delete(item.id))
+      else blockItems.forEach(item => next.add(item.id))
+      return next
+    })
+  }
+
   const handleBatchDeliver = () => {
     const name = prompt('Toplu teslim — alıcı adı:')
     if (!name) return
@@ -1571,7 +1647,7 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
             <KanbanCol title="KİRLİ SEPET"  color="var(--accent)" items={dirty}   colStatus="dirty"   isOver={overCol === 'dirty'}   machines={machines} onDeliver={setDeliverItem} onDamage={setDamageItem} onPersonClick={setPersonPanelName} onFound={setFoundItem} groupByRoom={groupByRoom} />
             <KanbanCol title="YIKANIYOR"    color="var(--blue)"   items={washing} colStatus="washing" isOver={overCol === 'washing'} machines={machines} onDeliver={setDeliverItem} onDamage={setDamageItem} onPersonClick={setPersonPanelName} onFound={setFoundItem} groupByRoom={groupByRoom} />
             <KanbanCol title="ÜTÜDE" color="#6366f1" items={ironing} colStatus="ironing" isOver={overCol === 'ironing'} machines={machines} onDeliver={setDeliverItem} onDamage={setDamageItem} onPersonClick={setPersonPanelName} onFound={setFoundItem} groupByRoom={groupByRoom} />
-            <KanbanCol title="RAFTA HAZIR"  color="var(--green)"  items={ready}   colStatus="ready"   isOver={overCol === 'ready'}   machines={machines} onDeliver={setDeliverItem} onDamage={setDamageItem} onPersonClick={setPersonPanelName} onFound={setFoundItem} groupByRoom={groupByRoom} />
+            <KanbanCol title="RAFTA HAZIR"  color="var(--green)"  items={ready}   colStatus="ready"   isOver={overCol === 'ready'}   machines={machines} onDeliver={setDeliverItem} onDamage={setDamageItem} onPersonClick={setPersonPanelName} onFound={setFoundItem} groupByRoom={groupByRoom} batchMode={batchMode} selectedIds={selectedIds} onSelect={toggleSelect} onSelectBlock={selectBlock} />
           </div>
           <DragOverlay dropAnimation={null}>
             {activeItem ? (
