@@ -58,11 +58,11 @@ if (!document.getElementById(STYLE_ID)) {
 const R = 20
 const C = 2 * Math.PI * R // ≈ 125.7
 
-function RingTimer({ minutesLeft, totalMinutes, color }) {
-  const pct = totalMinutes > 0 ? Math.max(0, minutesLeft / totalMinutes) : 0
+function RingTimer({ secondsLeft, totalSeconds, color }) {
+  const pct = totalSeconds > 0 ? Math.max(0, secondsLeft / totalSeconds) : 0
   const offset = C * (1 - pct)
-  const h = String(Math.floor(minutesLeft / 60)).padStart(2, '0')
-  const m = String(minutesLeft % 60).padStart(2, '0')
+  const mm = String(Math.floor(secondsLeft / 60)).padStart(2, '0')
+  const ss = String(secondsLeft % 60).padStart(2, '0')
 
   return (
     <div style={{ position: 'relative', width: 56, height: 56, margin: '4px auto 8px' }}>
@@ -85,10 +85,10 @@ function RingTimer({ minutesLeft, totalMinutes, color }) {
         alignItems: 'center', justifyContent: 'center',
       }}>
         <span style={{
-          fontFamily: 'var(--display)', fontSize: minutesLeft >= 60 ? 13 : 16,
+          fontFamily: 'var(--display)', fontSize: secondsLeft >= 3600 ? 13 : 16,
           letterSpacing: 1, color, lineHeight: 1,
         }}>
-          {h}:{m}
+          {mm}:{ss}
         </span>
       </div>
     </div>
@@ -104,13 +104,13 @@ function MachineCard({ m, onTimer, onReset, loading }) {
     return () => clearInterval(id)
   }, [m.status])
 
-  const minutesLeft = m.timer_end
-    ? Math.max(0, Math.round((new Date(m.timer_end) - now) / 60000))
+  const secondsLeft = m.timer_end
+    ? Math.max(0, Math.floor((new Date(m.timer_end) - now) / 1000))
     : null
 
-  const totalMinutes = m.timer_started_at && m.timer_end
-    ? Math.round((new Date(m.timer_end) - new Date(m.timer_started_at)) / 60000)
-    : 60
+  const totalSeconds = m.timer_started_at && m.timer_end
+    ? Math.round((new Date(m.timer_end) - new Date(m.timer_started_at)) / 1000)
+    : 3600
 
   const typeLabel = m.type === 'dryer' ? 'D' : 'W'
   const typeColor = m.type === 'dryer' ? 'var(--accent2)' : 'var(--blue)'
@@ -140,11 +140,11 @@ function MachineCard({ m, onTimer, onReset, loading }) {
       </div>
 
       {/* Body */}
-      {m.status === 'running' && minutesLeft !== null ? (
+      {m.status === 'running' && secondsLeft !== null ? (
         <RingTimer
-          minutesLeft={minutesLeft}
-          totalMinutes={totalMinutes}
-          color={minutesLeft < 5 ? 'var(--red)' : minutesLeft < 15 ? 'var(--accent)' : 'var(--blue)'}
+          secondsLeft={secondsLeft}
+          totalSeconds={totalSeconds}
+          color={secondsLeft < 300 ? 'var(--red)' : secondsLeft < 900 ? 'var(--accent)' : 'var(--blue)'}
         />
       ) : m.status === 'done' ? (
         <div style={{ textAlign: 'center', padding: '8px 0 10px' }}>
