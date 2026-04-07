@@ -18,10 +18,10 @@ export const COMMANDS = [
 
   // ── Hızlı Eylemler ──────────────────────────────────────────────
   { id: 'act-new-laundry',  type: 'action', label: 'Yeni Çamaşır Kaydı',   icon: '＋', path: '/laundry',      action: 'open-new-laundry' },
-  { id: 'act-new-checkin',  type: 'action', label: 'Yeni Check-in',         icon: '＋', path: '/checkin',      action: 'open-checkin' },
-  { id: 'act-new-checkout', type: 'action', label: 'Yeni Check-out',        icon: '＋', path: '/checkout',     action: 'open-checkout' },
+  { id: 'act-new-checkin',  type: 'nav',    label: 'Yeni Check-in',         icon: '＋', path: '/checkin' },
+  { id: 'act-new-checkout', type: 'nav',    label: 'Yeni Check-out',        icon: '＋', path: '/checkout' },
   { id: 'act-new-maint',    type: 'action', label: 'Yeni Teknik Talep',     icon: '＋', path: '/maintenance',  action: 'open-maintenance' },
-  { id: 'act-new-house',    type: 'action', label: 'Yeni Temizlik Talebi',  icon: '＋', path: '/housekeeping', action: 'open-housekeeping' },
+  { id: 'act-new-house',    type: 'nav',    label: 'Yeni Temizlik Talebi',  icon: '＋', path: '/housekeeping' },
 ]
 
 /** Basit fuzzy match: query'nin her kelimesi label'da geçiyor mu */

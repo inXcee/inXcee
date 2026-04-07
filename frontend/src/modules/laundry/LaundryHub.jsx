@@ -1163,14 +1163,6 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
   const [search,         setSearch]         = useState('')
   const [showNew,        setShowNew]        = useState(false)
   const [deliverItem,    setDeliverItem]    = useState(null)
-
-  useEffect(() => {
-    const handler = (e) => {
-      if (e.detail?.action === 'open-new-laundry') setShowNew(true)
-    }
-    window.addEventListener('yys:open-modal', handler)
-    return () => window.removeEventListener('yys:open-modal', handler)
-  }, [])
   const [damageItem,     setDamageItem]     = useState(null)
   const [showMachines,   setShowMachines]   = useState(true)
   const [showMgr,        setShowMgr]        = useState(false)
@@ -1188,6 +1180,14 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
   const [overCol,        setOverCol]        = useState(null)
   const [showQuickAdd,   setShowQuickAdd]   = useState(false)
   const [showScanModal,  setShowScanModal]  = useState(false)
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.detail?.action === 'open-new-laundry') setShowNew(true)
+    }
+    window.addEventListener('yys:open-modal', handler)
+    return () => window.removeEventListener('yys:open-modal', handler)
+  }, [])
 
   const sensors = useSensors(useSensor(PointerSensor, {
     activationConstraint: { distance: 8 },
