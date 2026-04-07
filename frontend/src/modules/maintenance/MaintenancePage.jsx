@@ -974,6 +974,13 @@ export default function MaintenancePage() {
   const qc = useQueryClient()
   const [showForm, setShowForm] = useState(false)
   const [showTechs, setShowTechs] = useState(false)
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.detail?.action === 'open-maintenance') setShowForm(true)
+    }
+    window.addEventListener('yys:open-modal', handler)
+    return () => window.removeEventListener('yys:open-modal', handler)
+  }, [])
   const [form, setForm] = useState({ location: '', description: '', priority: 'medium' })
   const [formPhoto, setFormPhoto] = useState(null)
   const [filter, setFilter] = useState('open')
