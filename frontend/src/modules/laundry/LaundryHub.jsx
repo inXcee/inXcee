@@ -1325,7 +1325,7 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
       list = list.filter(i => i.block === filterBlock)
     }
     if (filterUrgent) {
-      list = list.filter(i => i.urgent === 1)
+      list = list.filter(i => !!i.urgent)
     }
     return list
   }, [allItems, search, filterBlock, filterUrgent])
