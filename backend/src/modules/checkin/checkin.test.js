@@ -97,6 +97,7 @@ describe('Check-in', () => {
       .set('Authorization', `Bearer ${token}`)
     expect(res.status).toBe(200)
     expect(Array.isArray(res.body)).toBe(true)
+    expect(res.body.some(p => p.full_name === 'Mehmet Demir')).toBe(true)
     // Seed'deki Mehmet Demir kaydı (önceki testte oluşturulmuştu)
     // Sonuç boş bile olsa array dönmeli
   })
