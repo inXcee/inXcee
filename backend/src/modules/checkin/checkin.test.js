@@ -90,4 +90,22 @@ describe('Check-in', () => {
     expect(retryRes.status).toBe(200)
     expect(retryRes.body.ok).toBe(true)
   })
+
+  it('GET /checkin/search?q= — isim veya oda ile arama', async () => {
+    const res = await request(app)
+      .get('/api/checkin/search?q=Mehmet')
+      .set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(200)
+    expect(Array.isArray(res.body)).toBe(true)
+    // Seed'deki Mehmet Demir kaydı (önceki testte oluşturulmuştu)
+    // Sonuç boş bile olsa array dönmeli
+  })
+
+  it('GET /checkin/search — 1 karakterde boş array döner', async () => {
+    const res = await request(app)
+      .get('/api/checkin/search?q=A')
+      .set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(200)
+    expect(res.body).toEqual([])
+  })
 })

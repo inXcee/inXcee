@@ -5,6 +5,7 @@ import { getDB } from '../../shared/db/index.js'
 
 export const lookupService             = q.lookupPerson
 export const searchByNameService       = q.searchByName
+export const searchResidentsService    = q.searchResidents
 export const suggestRoomService        = q.suggestRoom
 export const getCompanyDistributionService = q.getCompanyDistribution
 export const getJobDistributionService = q.getJobDistribution

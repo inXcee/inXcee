@@ -25,6 +25,23 @@ export function searchByName(name) {
   `).all(term, term, term)
 }
 
+export function searchResidents(q) {
+  const db = getDB()
+  const term = `%${q}%`
+  return db.prepare(`
+    SELECT p.id, p.full_name, p.job_title, p.company,
+      r.block, r.room_no, ra.bed_no,
+      p.check_out_date
+    FROM personnel p
+    LEFT JOIN room_assignments ra ON ra.personnel_id=p.id AND ra.check_out_at IS NULL
+    LEFT JOIN rooms r ON r.id=ra.room_id
+    WHERE p.check_out_date IS NULL
+      AND (p.full_name LIKE ? OR r.room_no LIKE ?)
+    ORDER BY p.full_name
+    LIMIT 10
+  `).all(term, term)
+}
+
 // ── Company & Job autocomplete ──────────────────────────────────────────────
 
 export function getCompanySuggestions() {

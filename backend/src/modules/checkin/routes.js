@@ -19,6 +19,12 @@ checkinRouter.post('/search-name', ...allowed, (req, res) => {
   res.json(svc.searchByNameService(name.trim()))
 })
 
+checkinRouter.get('/search', ...allowed, (req, res) => {
+  const { q } = req.query
+  if (!q || q.trim().length < 2) return res.json([])
+  res.json(svc.searchResidentsService(q.trim()))
+})
+
 checkinRouter.post('/register', ...allowed, (req, res) => {
   try {
     const { full_name, tc_no, passport_no } = req.body
