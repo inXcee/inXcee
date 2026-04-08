@@ -4,9 +4,9 @@ let toastId = 0
 
 export const useToastStore = create(set => ({
   toasts: [],
-  addToast: (message, type = 'error') => {
+  addToast: (message, type = 'error', onUndo = null) => {
     const id = ++toastId
-    set(s => ({ toasts: [...s.toasts, { id, message, type }] }))
+    set(s => ({ toasts: [...s.toasts, { id, message, type, onUndo }] }))
     setTimeout(() => {
       set(s => ({ toasts: s.toasts.filter(t => t.id !== id) }))
     }, 5000)

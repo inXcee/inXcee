@@ -14,6 +14,9 @@ import {
   useDraggable,
 } from '@dnd-kit/core'
 
+import { useUndoStore }   from '../../shared/store/useUndoStore.js'
+import { useToastStore }  from '../../shared/store/toastStore.js'
+import UndoPanel          from './components/UndoPanel.jsx'
 import MachineStrip       from './components/MachineStrip.jsx'
 import SlaAlert           from './components/SlaAlert.jsx'
 import ItemCard           from './components/ItemCard.jsx'
@@ -1182,6 +1185,11 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
   const [showScanModal,  setShowScanModal]  = useState(false)
   const [filterBlock,    setFilterBlock]    = useState('all')  // 'all' | 'A' | 'B' | 'S2'
   const [filterUrgent,   setFilterUrgent]   = useState(false)
+  const [undoPanelOpen,  setUndoPanelOpen]  = useState(false)
+
+  const pushUndo   = useUndoStore(s => s.push)
+  const removeUndo = useUndoStore(s => s.remove)
+  const addToast   = useToastStore(s => s.addToast)
 
   useEffect(() => {
     const handler = (e) => {
@@ -1191,9 +1199,52 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
     return () => window.removeEventListener('yys:open-modal', handler)
   }, [])
 
+  useEffect(() => {
+    const handleKey = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault()
+        setUndoPanelOpen(prev => !prev)
+      }
+    }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [])
+
   const sensors = useSensors(useSensor(PointerSensor, {
     activationConstraint: { distance: 8 },
   }))
+
+  const STATUS_TR = { washing: 'Yıkamaya atandı', ironing: 'Ütüye alındı', ready: 'Rafa alındı', delivered: 'Teslim edildi' }
+
+  const advanceWithUndo = (item, extra = {}) => {
+    const prevStatus = item.status
+    return laundryApi.advanceItem(item.id, extra)
+      .then(newItem => {
+        qc.invalidateQueries({ queryKey: ['laundry-items'] })
+        const label = `Oda ${newItem.room_no} — ${STATUS_TR[newItem.status] || newItem.status}`
+        const entryId = pushUndo({
+          label,
+          undo: async () => {
+            await laundryApi.revertItem(item.id, prevStatus)
+            qc.invalidateQueries({ queryKey: ['laundry-items'] })
+          },
+        })
+        addToast(label, 'success', async () => {
+          try {
+            await laundryApi.revertItem(item.id, prevStatus)
+            qc.invalidateQueries({ queryKey: ['laundry-items'] })
+            removeUndo(entryId)
+            addToast('Geri alındı', 'info')
+          } catch (err) {
+            addToast(err?.response?.data?.error || 'Geri alma başarısız', 'error')
+          }
+        })
+        return newItem
+      })
+      .catch(err => {
+        alert(err?.response?.data?.message || 'İşlem başarısız')
+      })
+  }
 
   const handleDragStart = ({ active }) => {
     setActiveItem(active.data.current.item)
@@ -1218,9 +1269,7 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
       if (item.clothing_items) {
         setVerificationTarget({ item, stage: 'washing_to_ready' })
       } else {
-        laundryApi.advanceItem(item.id, {})
-          .then(() => qc.invalidateQueries({ queryKey: ['laundry-items'] }))
-          .catch(err => alert(err?.response?.data?.message || 'İşlem başarısız'))
+        advanceWithUndo(item, {})
       }
       return
     }
@@ -1230,23 +1279,17 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
       if (item.status === 'dirty') {
         const idleMachine = machines.find(m => m.status === 'idle')
         if (!idleMachine) { alert('Boş makine yok — kart butonunu kullan'); return }
-        laundryApi.advanceItem(item.id, { machine_id: idleMachine.id })
-          .then(() => qc.invalidateQueries({ queryKey: ['laundry-items'] }))
-          .catch(err => alert(err?.response?.data?.message || 'Makineye atama başarısız'))
+        advanceWithUndo(item, { machine_id: idleMachine.id })
       } else if ((item.status === 'washing' && !item.needs_ironing) || item.status === 'ironing') {
         // Doğrulama gereken geçiş: washing→ready veya ironing→ready
         if (item.clothing_items) {
           const stage = item.status === 'washing' ? 'washing_to_ready' : 'ironing_to_ready'
           setVerificationTarget({ item, stage })
         } else {
-          laundryApi.advanceItem(item.id, {})
-            .then(() => qc.invalidateQueries({ queryKey: ['laundry-items'] }))
-            .catch(err => alert(err?.response?.data?.message || 'İşlem başarısız'))
+          advanceWithUndo(item, {})
         }
       } else {
-        laundryApi.advanceItem(item.id, {})
-          .then(() => qc.invalidateQueries({ queryKey: ['laundry-items'] }))
-          .catch(err => alert(err?.response?.data?.message || 'İşlem başarısız'))
+        advanceWithUndo(item, {})
       }
     } else if (BACKWARD[item.status]?.includes(targetStatus)) {
       // Geri geçiş
@@ -1835,13 +1878,29 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
           stage={verificationTarget.stage}
           onClose={() => setVerificationTarget(null)}
           onSuccess={() => {
-            const { item, stage: _stage } = verificationTarget
+            const { item } = verificationTarget
             setVerificationTarget(null)
-            laundryApi.advanceItem(item.id, {})
-              .then(() => qc.invalidateQueries({ queryKey: ['laundry-items'] }))
+            advanceWithUndo(item, {})
           }}
         />
       )}
+
+      {undoPanelOpen && <UndoPanel onClose={() => setUndoPanelOpen(false)} />}
+
+      <button
+        onClick={() => setUndoPanelOpen(prev => !prev)}
+        title="Son İşlemler (Ctrl+Z)"
+        style={{
+          position: 'fixed', bottom: 24, right: 24, zIndex: 9998,
+          width: 40, height: 40, borderRadius: '50%',
+          background: 'var(--surface2)', border: '1px solid var(--border)',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+          cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 16, color: 'var(--text2)',
+        }}
+      >
+        ↩
+      </button>
     </div>
   )
 }
