@@ -3,7 +3,7 @@ import request from 'supertest'
 import app from '../../app.js'
 import { initDB, getDB } from '../../shared/db/index.js'
 import { seedDev } from '../../shared/db/seed.js'
-import { batchAssignService, batchLostService, advanceItemService, createVerificationService, getSettingsService, updateSettingService, sendMessageService, getMessagesService, deleteMessageService, createItemService, getBlockConfigService, upsertBlockConfigService, addPremiumGarmentsService, getPremiumGarmentsService, advancePremiumGarmentService, bulkAdvancePremiumGarmentsService, syncParentStatusService, deliverPremiumGarmentService, bulkDeliverPremiumGarmentsService, getPremiumDeliveryReceiptService, searchPremiumGarmentsService, getRoomGarmentHistoryService, getPremiumReportService, exportPremiumGarmentsService, getRoomGarmentsForScanService, scanActionService } from './service.js'
+import { batchAssignService, batchLostService, advanceItemService, createVerificationService, getSettingsService, updateSettingService, sendMessageService, getMessagesService, deleteMessageService, createItemService, getBlockConfigService, upsertBlockConfigService, addPremiumGarmentsService, getPremiumGarmentsService, advancePremiumGarmentService, bulkAdvancePremiumGarmentsService, syncParentStatusService, deliverPremiumGarmentService, bulkDeliverPremiumGarmentsService, getPremiumDeliveryReceiptService, searchPremiumGarmentsService, getRoomGarmentHistoryService, getPremiumReportService, exportPremiumGarmentsService, getRoomGarmentsForScanService, scanActionService, revertItemService, lostItemService, reportDamageService, deleteDamageService, deliverItemService } from './service.js'
 import * as q from './queries.js'
 const { archiveItemsQuery } = q
 
@@ -1192,5 +1192,38 @@ describe('oda tara (room scan)', () => {
     const log = db.prepare("SELECT * FROM garment_scan_log WHERE garment_id=? ORDER BY id DESC LIMIT 1").get(g.id)
     expect(log).toBeTruthy()
     expect(log.action).toBe('advance')
+  })
+})
+
+describe('Undo — revert genişletilmiş', () => {
+  it('delivered → ready geri alınır', async () => {
+    const db = getDB()
+    const id = createItemService({ room_id: roomId, item_count: 1 }, userId).id
+    const machineId = db.prepare("SELECT id FROM laundry_machines WHERE type='washer' LIMIT 1").get()?.id
+    if (!machineId) return
+    advanceItemService(id, { machine_id: machineId }, userId) // → washing
+    advanceItemService(id, {}, userId) // → ready
+    const delivered = deliverItemService(id, { delivered_to: 'Test' }, userId)
+    expect(delivered.status).toBe('delivered')
+    const reverted = revertItemService(id, 'ready', userId)
+    expect(reverted.status).toBe('ready')
+  })
+
+  it('lost → dirty geri alınır', () => {
+    const id = createItemService({ room_id: roomId, item_count: 1 }, userId).id
+    lostItemService(id, {}, userId)
+    const reverted = revertItemService(id, 'dirty', userId)
+    expect(reverted.status).toBe('dirty')
+  })
+
+  it('damage silinir', () => {
+    const db = getDB()
+    const id = createItemService({ room_id: roomId, item_count: 1 }, userId).id
+    reportDamageService(id, { description: 'Test hasar' }, userId)
+    const damage = db.prepare(`SELECT id FROM laundry_damages WHERE item_id = ? LIMIT 1`).get(id)
+    expect(damage).toBeTruthy()
+    deleteDamageService(damage.id, userId)
+    const after = db.prepare(`SELECT id FROM laundry_damages WHERE id = ?`).get(damage.id)
+    expect(after).toBeUndefined()
   })
 })

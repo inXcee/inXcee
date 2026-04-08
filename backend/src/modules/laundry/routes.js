@@ -141,6 +141,13 @@ laundryRouter.post('/items/:id/damages', ...laundryFull, (req, res) => {
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
+laundryRouter.delete('/damages/:id', ...laundryFull, (req, res) => {
+  try {
+    svc.deleteDamageService(+req.params.id, req.user.id)
+    res.json({ ok: true })
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
 laundryRouter.post('/items/:id/verify', ...laundryFull, (req, res) => {
   try {
     const { stage, items, all_present, missing_notes } = req.body

@@ -370,6 +370,12 @@ export function getDamagesForItemQuery(itemId) {
   `).all(itemId)
 }
 
+export function deleteDamageQuery(damageId) {
+  const db = getDB()
+  const r = db.prepare(`DELETE FROM laundry_damages WHERE id = ?`).run(damageId)
+  return r.changes > 0
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // HISTORY
 // ═══════════════════════════════════════════════════════════════════════════

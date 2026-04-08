@@ -243,7 +243,13 @@ export function revertItemService(id, targetStatus, userId) {
   const item = q.getItemQuery(id)
   if (!item) throw new Error('Kayıt bulunamadı')
 
-  const validReverts = { washing: ['dirty'], ready: ['washing', 'dirty'] }
+  const validReverts = {
+    washing:   ['dirty'],
+    ironing:   ['dirty'],
+    ready:     ['washing', 'dirty', 'lost'],
+    delivered: ['ready'],
+    lost:      ['dirty'],
+  }
   if (!validReverts[item.status]?.includes(targetStatus)) {
     throw new Error(`"${item.status}" → "${targetStatus}" geri alma desteklenmiyor`)
   }
@@ -256,6 +262,10 @@ export function revertItemService(id, targetStatus, userId) {
     extra.machine_id = null
   }
 
+  if (item.status === 'ironing' && targetStatus === 'dirty') {
+    // ironing → dirty: önceki makine zaten serbest bırakılmıştı
+  }
+
   if (item.status === 'ready' && targetStatus === 'washing') {
     // ready → washing: boş makine ata
     const idleMachine = q.listMachinesQuery().find(m => m.status === 'idle')
@@ -266,6 +276,20 @@ export function revertItemService(id, targetStatus, userId) {
   }
 
   if (item.status === 'ready' && targetStatus === 'dirty') {
+    extra.shelf_location = null
+  }
+
+  if (item.status === 'ready' && targetStatus === 'lost') {
+    // bulunan geri alınır (found undo)
+    extra.shelf_location = null
+  }
+
+  if (item.status === 'delivered' && targetStatus === 'ready') {
+    // teslim geri alınır — imza logu laundry_history'de kalır
+  }
+
+  if (item.status === 'lost' && targetStatus === 'dirty') {
+    // kayıp geri alınır
     extra.shelf_location = null
   }
 
@@ -290,6 +314,15 @@ export function deleteItemService(id, userId) {
 // ═══════════════════════════════════════════════════════════════════════════
 // DAMAGE
 // ═══════════════════════════════════════════════════════════════════════════
+
+export function deleteDamageService(damageId, userId) {
+  const db = getDB()
+  const damage = db.prepare(`SELECT * FROM laundry_damages WHERE id = ?`).get(damageId)
+  if (!damage) throw new Error('Hasar kaydı bulunamadı')
+  const ok = q.deleteDamageQuery(damageId)
+  if (!ok) throw new Error('Hasar silinemedi')
+  logAudit(userId, 'laundry_damage_delete', 'laundry', damageId, 'Geri alındı')
+}
 
 export function reportDamageService(itemId, { description, photo_url }, userId) {
   if (!description || !description.trim()) throw new Error('Hasar açıklaması zorunlu')
