@@ -547,3 +547,70 @@ laundryRouter.post('/garments/scan-action', ...laundryFull, (req, res) => {
     res.json(result)
   } catch (e) { res.status(e.status || 400).json({ error: e.message }) }
 })
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SUPPLIES
+// ═══════════════════════════════════════════════════════════════════════════
+
+laundryRouter.get('/supplies/alerts', ...laundryRead, (req, res) => {
+  try {
+    res.json(svc.getAlertSuppliesService())
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+laundryRouter.get('/supplies', ...laundryRead, (req, res) => {
+  try {
+    res.json(svc.listSuppliesService(req.query.include_inactive === '1'))
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+laundryRouter.post('/supplies', ...slaWrite, (req, res) => {
+  try {
+    const supply = svc.createSupplyService(req.body, req.user.id)
+    res.status(201).json(supply)
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+laundryRouter.patch('/supplies/:id', ...slaWrite, (req, res) => {
+  try {
+    const supply = svc.updateSupplyService(+req.params.id, req.body, req.user.id)
+    res.json(supply)
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+laundryRouter.post('/supplies/:id/add-stock', ...slaWrite, (req, res) => {
+  try {
+    const { amount, note } = req.body
+    const supply = svc.addStockService(+req.params.id, amount, note, req.user.id)
+    res.json(supply)
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+laundryRouter.post('/supplies/:id/set-stock', ...slaWrite, (req, res) => {
+  try {
+    const { new_stock } = req.body
+    const supply = svc.setStockService(+req.params.id, new_stock, req.user.id)
+    res.json(supply)
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+laundryRouter.get('/supplies/:id/log', ...laundryRead, (req, res) => {
+  try {
+    res.json(svc.getSupplyLogService(+req.params.id))
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+laundryRouter.put('/machines/:machine_id/supplies/:supply_id', ...slaWrite, (req, res) => {
+  try {
+    const { per_wash_amount } = req.body
+    svc.upsertMachineSupplyService(+req.params.machine_id, +req.params.supply_id, per_wash_amount, req.user.id)
+    res.json({ ok: true })
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+laundryRouter.delete('/machines/:machine_id/supplies/:supply_id', ...slaWrite, (req, res) => {
+  try {
+    svc.deleteMachineSupplyService(+req.params.machine_id, +req.params.supply_id, req.user.id)
+    res.json({ ok: true })
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})

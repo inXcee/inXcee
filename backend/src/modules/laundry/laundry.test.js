@@ -3,7 +3,7 @@ import request from 'supertest'
 import app from '../../app.js'
 import { initDB, getDB } from '../../shared/db/index.js'
 import { seedDev } from '../../shared/db/seed.js'
-import { batchAssignService, batchLostService, advanceItemService, createVerificationService, getSettingsService, updateSettingService, sendMessageService, getMessagesService, deleteMessageService, createItemService, getBlockConfigService, upsertBlockConfigService, addPremiumGarmentsService, getPremiumGarmentsService, advancePremiumGarmentService, bulkAdvancePremiumGarmentsService, syncParentStatusService, deliverPremiumGarmentService, bulkDeliverPremiumGarmentsService, getPremiumDeliveryReceiptService, searchPremiumGarmentsService, getRoomGarmentHistoryService, getPremiumReportService, exportPremiumGarmentsService, getRoomGarmentsForScanService, scanActionService, revertItemService, lostItemService, reportDamageService, deleteDamageService, deliverItemService } from './service.js'
+import { batchAssignService, batchLostService, advanceItemService, createVerificationService, getSettingsService, updateSettingService, sendMessageService, getMessagesService, deleteMessageService, createItemService, getBlockConfigService, upsertBlockConfigService, addPremiumGarmentsService, getPremiumGarmentsService, advancePremiumGarmentService, bulkAdvancePremiumGarmentsService, syncParentStatusService, deliverPremiumGarmentService, bulkDeliverPremiumGarmentsService, getPremiumDeliveryReceiptService, searchPremiumGarmentsService, getRoomGarmentHistoryService, getPremiumReportService, exportPremiumGarmentsService, getRoomGarmentsForScanService, scanActionService, revertItemService, lostItemService, reportDamageService, deleteDamageService, deliverItemService, createSupplyService, addStockService, setStockService, upsertMachineSupplyService, getAlertSuppliesService } from './service.js'
 import * as q from './queries.js'
 const { archiveItemsQuery } = q
 
@@ -1192,6 +1192,73 @@ describe('oda tara (room scan)', () => {
     const log = db.prepare("SELECT * FROM garment_scan_log WHERE garment_id=? ORDER BY id DESC LIMIT 1").get(g.id)
     expect(log).toBeTruthy()
     expect(log.action).toBe('advance')
+  })
+})
+
+describe('Supplies (A5)', () => {
+  it('ürün oluşturur', () => {
+    const supply = createSupplyService(
+      { name: 'Test Deterjan', unit: 'kg', current_stock: 10, warning_threshold: 3, critical_threshold: 1 },
+      userId
+    )
+    expect(supply.id).toBeTruthy()
+    expect(supply.name).toBe('Test Deterjan')
+    expect(supply.current_stock).toBe(10)
+  })
+
+  it('stok ekler', () => {
+    const supply = createSupplyService(
+      { name: 'Stok Testi', unit: 'kg', current_stock: 5, warning_threshold: 2, critical_threshold: 1 },
+      userId
+    )
+    const updated = addStockService(supply.id, 3, 'Giriş testi', userId)
+    expect(updated.current_stock).toBe(8)
+  })
+
+  it('stok 0 altına düşmez', () => {
+    const supply = createSupplyService(
+      { name: 'Sıfır Testi', unit: 'kg', current_stock: 0.5, warning_threshold: 1, critical_threshold: 0.5 },
+      userId
+    )
+    const db = getDB()
+    db.prepare(`UPDATE laundry_supplies SET current_stock = MAX(0, current_stock - 10) WHERE id = ?`).run(supply.id)
+    const after = db.prepare(`SELECT current_stock FROM laundry_supplies WHERE id = ?`).get(supply.id)
+    expect(after.current_stock).toBe(0)
+  })
+
+  it('stok düzeltmesi yapar', () => {
+    const supply = createSupplyService(
+      { name: 'Düzeltme Testi', unit: 'kg', current_stock: 7, warning_threshold: 2, critical_threshold: 1 },
+      userId
+    )
+    const updated = setStockService(supply.id, 4, userId)
+    expect(updated.current_stock).toBe(4)
+  })
+
+  it('alert ürünleri döner', () => {
+    const supply = createSupplyService(
+      { name: 'Kritik Ürün', unit: 'kg', current_stock: 0.3, warning_threshold: 2, critical_threshold: 1 },
+      userId
+    )
+    const alerts = getAlertSuppliesService()
+    const found = alerts.find(s => s.id === supply.id)
+    expect(found).toBeTruthy()
+    expect(found.alert_level).toBe('critical')
+  })
+
+  it('advance item otomatik stok düşürür', () => {
+    const supply = createSupplyService(
+      { name: 'Oto Tüketim', unit: 'kg', current_stock: 5, warning_threshold: 1, critical_threshold: 0.5 },
+      userId
+    )
+    const db = getDB()
+    const machine = db.prepare("SELECT id FROM laundry_machines WHERE type='washer' LIMIT 1").get()
+    if (!machine) return
+    upsertMachineSupplyService(machine.id, supply.id, 0.5, userId)
+    const item = createItemService({ room_id: roomId, item_count: 1 }, userId)
+    advanceItemService(item.id, { machine_id: machine.id }, userId)
+    const after = db.prepare(`SELECT current_stock FROM laundry_supplies WHERE id = ?`).get(supply.id)
+    expect(after.current_stock).toBe(4.5)
   })
 })
 

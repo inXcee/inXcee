@@ -65,6 +65,16 @@ export function advanceItemService(id, { machine_id, shelf_location, timer_minut
       increment_runs: true,
     })
     q.removeItemFromQueueQuery(id)
+    // Washing'e geçişte: makineye bağlı ürünlerin stoğunu otomatik düş
+    const machineSupplies = q.getMachineSuppliesQuery(machine_id)
+    for (const ms of machineSupplies) {
+      q.adjustStockQuery(ms.supply_id, -ms.per_wash_amount, {
+        reason: 'wash_auto',
+        item_id: id,
+        machine_id: machine_id,
+        created_by: userId,
+      })
+    }
   }
 
   if (nextStatus === 'ironing') {
@@ -589,4 +599,62 @@ export function scanActionService(block, room_no, garment_id, action, userId) {
 
   q.insertScanLogQuery(room.id, block, room_no, garment_id, action, userId)
   return result
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SUPPLIES
+// ═══════════════════════════════════════════════════════════════════════════
+
+export function listSuppliesService(includeInactive = false) {
+  return q.listSuppliesQuery(includeInactive)
+}
+
+export function createSupplyService({ name, unit, current_stock, warning_threshold, critical_threshold }, userId) {
+  if (!name || !name.trim()) throw new Error('Ürün adı zorunlu')
+  if (warning_threshold > 0 && critical_threshold > 0 && critical_threshold >= warning_threshold) {
+    throw new Error('Kritik eşik uyarı eşiğinden küçük olmalı')
+  }
+  const id = q.insertSupplyQuery({ name: name.trim(), unit, current_stock, warning_threshold, critical_threshold })
+  logAudit(userId, 'supply_create', 'laundry', id, name.trim())
+  return q.getSupplyQuery(id)
+}
+
+export function updateSupplyService(id, fields, userId) {
+  const supply = q.getSupplyQuery(id)
+  if (!supply) throw new Error('Ürün bulunamadı')
+  const updated = q.updateSupplyQuery(id, fields)
+  logAudit(userId, 'supply_update', 'laundry', id, JSON.stringify(fields))
+  return updated
+}
+
+export function addStockService(supplyId, amount, note, userId) {
+  if (!amount || amount <= 0) throw new Error('Miktar pozitif olmalı')
+  const supply = q.getSupplyQuery(supplyId)
+  if (!supply) throw new Error('Ürün bulunamadı')
+  return q.adjustStockQuery(supplyId, +amount, { reason: 'manual_add', note, created_by: userId })
+}
+
+export function setStockService(supplyId, newStock, userId) {
+  if (newStock < 0) throw new Error('Stok negatif olamaz')
+  return q.setStockQuery(supplyId, +newStock, userId)
+}
+
+export function upsertMachineSupplyService(machine_id, supply_id, per_wash_amount, userId) {
+  if (!machine_id || !supply_id) throw new Error('machine_id ve supply_id zorunlu')
+  if (per_wash_amount < 0) throw new Error('Tüketim miktarı negatif olamaz')
+  q.upsertMachineSupplyQuery(+machine_id, +supply_id, +per_wash_amount)
+  logAudit(userId, 'machine_supply_upsert', 'laundry', machine_id, `supply:${supply_id} amount:${per_wash_amount}`)
+}
+
+export function deleteMachineSupplyService(machine_id, supply_id, userId) {
+  q.deleteMachineSupplyQuery(+machine_id, +supply_id)
+  logAudit(userId, 'machine_supply_delete', 'laundry', machine_id, `supply:${supply_id}`)
+}
+
+export function getSupplyLogService(supply_id) {
+  return q.getSupplyLogQuery(+supply_id)
+}
+
+export function getAlertSuppliesService() {
+  return q.getAlertSuppliesQuery()
 }
