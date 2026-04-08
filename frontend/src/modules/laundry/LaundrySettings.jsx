@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { laundryApi } from './api.js'
+import SupplySettings from './components/SupplySettings.jsx'
 
 const STAGE_LABELS = { dirty: 'Sepet (Kirli)', washing: 'Yıkama', ready: 'Hazır' }
 
@@ -233,6 +234,7 @@ export default function LaundrySettings() {
           { key: 'clothing', label: '👕 Kıyafetler' },
           { key: 'goals',    label: '🎯 Hedefler' },
           { key: 'blocks',   label: '🏢 Bloklar' },
+          { key: 'stock',    label: '📦 Stok' },
         ].map(t => (
           <button key={t.key} onClick={() => setTab(t.key)} style={{
             padding: '5px 12px', borderRadius: 6, cursor: 'pointer',
@@ -342,6 +344,7 @@ export default function LaundrySettings() {
       {tab === 'clothing' && <ClothingSettings />}
       {tab === 'goals' && <GoalsSettings />}
       {tab === 'blocks' && <BlockSettings />}
+      {tab === 'stock' && <SupplySettings />}
     </div>
   )
 }

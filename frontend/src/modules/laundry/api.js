@@ -85,6 +85,20 @@ export const laundryApi = {
   getRoomForScan: (block, room_no) => api.get('/laundry/rooms-scan', { params: { block, room_no } }).then(r => r.data),
   scanAction: (data) => api.post('/laundry/garments/scan-action', data).then(r => r.data),
 
+  // ── Supplies ───────────────────────────────────────────────────────────
+  getSupplies: (includeInactive = false) =>
+    api.get('/laundry/supplies', { params: includeInactive ? { include_inactive: 1 } : {} }).then(r => r.data),
+  getSupplyAlerts: () => api.get('/laundry/supplies/alerts').then(r => r.data),
+  createSupply: (data) => api.post('/laundry/supplies', data).then(r => r.data),
+  updateSupply: (id, data) => api.patch(`/laundry/supplies/${id}`, data).then(r => r.data),
+  addStock: (id, amount, note) => api.post(`/laundry/supplies/${id}/add-stock`, { amount, note }).then(r => r.data),
+  setStock: (id, new_stock) => api.post(`/laundry/supplies/${id}/set-stock`, { new_stock }).then(r => r.data),
+  getSupplyLog: (id) => api.get(`/laundry/supplies/${id}/log`).then(r => r.data),
+  setMachineSupply: (machine_id, supply_id, per_wash_amount) =>
+    api.put(`/laundry/machines/${machine_id}/supplies/${supply_id}`, { per_wash_amount }).then(r => r.data),
+  deleteMachineSupply: (machine_id, supply_id) =>
+    api.delete(`/laundry/machines/${machine_id}/supplies/${supply_id}`).then(r => r.data),
+
   // ── Photo Upload ───────────────────────────────────────────────────────
   uploadPhoto: (file) => {
     const fd = new FormData()

@@ -17,6 +17,7 @@ import {
 import { useUndoStore }   from '../../shared/store/useUndoStore.js'
 import { useToastStore }  from '../../shared/store/toastStore.js'
 import UndoPanel          from './components/UndoPanel.jsx'
+import SupplyWidget       from './components/SupplyWidget.jsx'
 import MachineStrip       from './components/MachineStrip.jsx'
 import SlaAlert           from './components/SlaAlert.jsx'
 import ItemCard           from './components/ItemCard.jsx'
@@ -1595,6 +1596,7 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
           </button>
         </div>
         {showMachines && <MachineStrip machines={machines} hideHeader />}
+        <SupplyWidget onNavigateSettings={() => setSection('settings')} />
       </div>
 
       {/* ── TOOLBAR: SEARCH + FILTERS + VIEW TOGGLE ── */}
