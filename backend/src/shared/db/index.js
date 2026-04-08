@@ -471,6 +471,52 @@ export function initDB() {
   )`) } catch(_) {}
   try { db.exec(`CREATE INDEX IF NOT EXISTS idx_scan_log_room ON garment_scan_log(room_id, scanned_at DESC)`) } catch(_) {}
 
+  // laundry_supplies
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS laundry_supplies (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        unit TEXT NOT NULL DEFAULT 'kg',
+        current_stock REAL NOT NULL DEFAULT 0,
+        warning_threshold REAL NOT NULL DEFAULT 0,
+        critical_threshold REAL NOT NULL DEFAULT 0,
+        is_active INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      )
+    `)
+  } catch(_) {}
+
+  // laundry_machine_supplies
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS laundry_machine_supplies (
+        machine_id INTEGER NOT NULL REFERENCES laundry_machines(id) ON DELETE CASCADE,
+        supply_id  INTEGER NOT NULL REFERENCES laundry_supplies(id) ON DELETE CASCADE,
+        per_wash_amount REAL NOT NULL DEFAULT 0.1,
+        PRIMARY KEY (machine_id, supply_id)
+      )
+    `)
+  } catch(_) {}
+
+  // laundry_supply_log
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS laundry_supply_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        supply_id  INTEGER NOT NULL REFERENCES laundry_supplies(id),
+        delta      REAL NOT NULL,
+        reason     TEXT NOT NULL,
+        item_id    INTEGER,
+        machine_id INTEGER,
+        note       TEXT,
+        created_by INTEGER REFERENCES users(id),
+        created_at TEXT DEFAULT (datetime('now'))
+      )
+    `)
+  } catch(_) {}
+
   return db
 }
 
