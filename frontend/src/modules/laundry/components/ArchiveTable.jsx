@@ -1,11 +1,13 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { laundryApi } from '../api.js'
+import CompensationModal from './CompensationModal.jsx'
 
 const mono = { fontFamily: 'var(--mono)' }
 
 export default function ArchiveTable({ onSelectItem }) {
   const [filters, setFilters] = useState({ from: '', to: '', status: '', search: '', page: 1 })
+  const [compensationItem, setCompensationItem] = useState(null)
 
   const { data, isLoading } = useQuery({
     queryKey: ['laundry-archive', filters],
@@ -104,7 +106,7 @@ export default function ArchiveTable({ onSelectItem }) {
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr>
-              {['ODA', 'TESLİM EDEN', 'PARÇA', 'GİRİŞ', 'TESLİM', 'SÜRE', 'DURUM', 'DOĞRULAMA'].map(h => (
+              {['ODA', 'TESLİM EDEN', 'PARÇA', 'GİRİŞ', 'TESLİM', 'SÜRE', 'DURUM', 'DOĞRULAMA', 'TAZMİNAT'].map(h => (
                 <th key={h} style={{ ...th, textAlign: ['PARÇA', 'SÜRE'].includes(h) ? 'right' : 'left' }}>{h}</th>
               ))}
             </tr>
@@ -112,7 +114,7 @@ export default function ArchiveTable({ onSelectItem }) {
           <tbody>
             {items.length === 0 && !isLoading ? (
               <tr>
-                <td colSpan={8} style={{ ...td, textAlign: 'center', padding: '32px', color: 'var(--text4)' }}>
+                <td colSpan={9} style={{ ...td, textAlign: 'center', padding: '32px', color: 'var(--text4)' }}>
                   Kayıt bulunamadı
                 </td>
               </tr>
@@ -147,6 +149,29 @@ export default function ArchiveTable({ onSelectItem }) {
                   {item.all_present === 0 && <span style={{ color: 'var(--accent)', fontSize: 12 }}>⚠</span>}
                   {item.all_present == null && <span style={{ color: 'var(--text4)', fontSize: 10 }}>—</span>}
                 </td>
+                <td style={td} onClick={e => { if (item.status === 'lost') { e.stopPropagation(); setCompensationItem(item) } }}>
+                  {item.status === 'lost' ? (
+                    item.compensation_value != null ? (
+                      <span style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 4,
+                        padding: '2px 8px', borderRadius: 4, fontSize: 9, cursor: 'pointer',
+                        background: 'rgba(39,201,106,0.1)', border: '1px solid rgba(39,201,106,0.25)',
+                        color: 'var(--green)', fontWeight: 700,
+                      }}>
+                        ₺{Number(item.compensation_value).toLocaleString('tr-TR')}
+                      </span>
+                    ) : (
+                      <span style={{
+                        display: 'inline-flex', alignItems: 'center',
+                        padding: '2px 8px', borderRadius: 4, fontSize: 9, cursor: 'pointer',
+                        background: 'var(--surface2)', border: '1px solid var(--border)',
+                        color: 'var(--text3)',
+                      }}>
+                        + Değer Gir
+                      </span>
+                    )
+                  ) : null}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -178,6 +203,10 @@ export default function ArchiveTable({ onSelectItem }) {
             }}
           >→</button>
         </div>
+      )}
+
+      {compensationItem && (
+        <CompensationModal item={compensationItem} onClose={() => setCompensationItem(null)} />
       )}
     </div>
   )

@@ -20,6 +20,7 @@ export const laundryApi = {
   createVerification: (id, data) => api.post(`/laundry/items/${id}/verify`, data).then(r => r.data),
   getVerifications: (id) => api.get(`/laundry/items/${id}/verifications`).then(r => r.data),
   getArchive: (params) => api.get('/laundry/items/archive', { params }).then(r => r.data),
+  setCompensation: (id, data) => api.patch(`/laundry/items/${id}/compensation`, data).then(r => r.data),
 
   // ── Machines ───────────────────────────────────────────────────────────
   getMachines: () => api.get('/laundry/machines').then(r => r.data),
