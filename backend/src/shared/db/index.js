@@ -353,6 +353,10 @@ export function initDB() {
     }
   } catch(_) {}
 
+  // ── Laundry v4c — compensation tracking (tazminat) ────────────────────────
+  try { db.exec(`ALTER TABLE laundry_items ADD COLUMN compensation_value REAL DEFAULT NULL`) } catch(_) {}
+  try { db.exec(`ALTER TABLE laundry_items ADD COLUMN compensation_note TEXT DEFAULT NULL`) } catch(_) {}
+
   // ── Laundry v5 — parça doğrulama ─────────────────────────────────────────
   try { db.exec(`CREATE TABLE IF NOT EXISTS laundry_verifications (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
