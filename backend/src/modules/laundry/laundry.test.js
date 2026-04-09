@@ -1,9 +1,9 @@
-import { describe, it, test, expect, beforeAll } from 'vitest'
+import { describe, it, test, expect, beforeAll, beforeEach } from 'vitest'
 import request from 'supertest'
 import app from '../../app.js'
 import { initDB, getDB } from '../../shared/db/index.js'
 import { seedDev } from '../../shared/db/seed.js'
-import { batchAssignService, batchLostService, advanceItemService, createVerificationService, getSettingsService, updateSettingService, sendMessageService, getMessagesService, deleteMessageService, createItemService, getBlockConfigService, upsertBlockConfigService, addPremiumGarmentsService, getPremiumGarmentsService, advancePremiumGarmentService, bulkAdvancePremiumGarmentsService, syncParentStatusService, deliverPremiumGarmentService, bulkDeliverPremiumGarmentsService, getPremiumDeliveryReceiptService, searchPremiumGarmentsService, getRoomGarmentHistoryService, getPremiumReportService, exportPremiumGarmentsService, getRoomGarmentsForScanService, scanActionService, revertItemService, lostItemService, reportDamageService, deleteDamageService, deliverItemService, createSupplyService, addStockService, setStockService, upsertMachineSupplyService, getAlertSuppliesService } from './service.js'
+import { batchAssignService, batchLostService, advanceItemService, createVerificationService, getSettingsService, updateSettingService, sendMessageService, getMessagesService, deleteMessageService, createItemService, getBlockConfigService, upsertBlockConfigService, addPremiumGarmentsService, getPremiumGarmentsService, advancePremiumGarmentService, bulkAdvancePremiumGarmentsService, syncParentStatusService, deliverPremiumGarmentService, bulkDeliverPremiumGarmentsService, getPremiumDeliveryReceiptService, searchPremiumGarmentsService, getRoomGarmentHistoryService, getPremiumReportService, exportPremiumGarmentsService, getRoomGarmentsForScanService, scanActionService, revertItemService, lostItemService, reportDamageService, deleteDamageService, deliverItemService, createSupplyService, addStockService, setStockService, upsertMachineSupplyService, getAlertSuppliesService, setCompensationService } from './service.js'
 import * as q from './queries.js'
 const { archiveItemsQuery } = q
 
@@ -1292,5 +1292,43 @@ describe('Undo — revert genişletilmiş', () => {
     deleteDamageService(damage.id, userId)
     const after = db.prepare(`SELECT id FROM laundry_damages WHERE id = ?`).get(damage.id)
     expect(after).toBeUndefined()
+  })
+})
+
+describe('compensation', () => {
+  let id
+
+  beforeEach(() => {
+    // lost item oluştur
+    const created = createItemService({ room_id: roomId, item_count: 2 }, userId)
+    lostItemService(created.id, { notes: 'Test' }, userId)
+    id = created.id
+  })
+
+  it('lost item\'a tazminat değeri kaydedilir', async () => {
+    const res = await request(app)
+      .patch(`/api/laundry/items/${id}/compensation`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ value: 1250, note: 'Sakin beyanı' })
+    expect(res.status).toBe(200)
+    expect(res.body.compensation_value).toBe(1250)
+    expect(res.body.compensation_note).toBe('Sakin beyanı')
+  })
+
+  it('lost olmayan item → 400', async () => {
+    const other = createItemService({ room_id: roomId, item_count: 1 }, userId)
+    const res = await request(app)
+      .patch(`/api/laundry/items/${other.id}/compensation`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ value: 500 })
+    expect(res.status).toBe(400)
+  })
+
+  it('negatif değer → 400', async () => {
+    const res = await request(app)
+      .patch(`/api/laundry/items/${id}/compensation`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ value: -100 })
+    expect(res.status).toBe(400)
   })
 })

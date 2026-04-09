@@ -376,6 +376,12 @@ export function deleteDamageQuery(damageId) {
   return r.changes > 0
 }
 
+export function updateCompensationQuery(id, value, note) {
+  getDB().prepare(
+    `UPDATE laundry_items SET compensation_value=?, compensation_note=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`
+  ).run(value, note ?? null, id)
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // HISTORY
 // ═══════════════════════════════════════════════════════════════════════════

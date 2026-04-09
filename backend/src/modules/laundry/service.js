@@ -249,6 +249,16 @@ export function lostItemService(id, { notes }, userId) {
   return q.getItemQuery(id)
 }
 
+export function setCompensationService(id, { value, note }, userId) {
+  if (value === undefined || value === null) throw new Error('Değer zorunlu')
+  if (value < 0) throw new Error('Değer negatif olamaz')
+  const item = q.getItemQuery(id)
+  if (!item) throw new Error('Kayıt bulunamadı')
+  if (item.status !== 'lost') throw new Error('Tazminat sadece kayıp kıyafetler için girilebilir')
+  q.updateCompensationQuery(id, value, note)
+  return q.getItemQuery(id)
+}
+
 export function revertItemService(id, targetStatus, userId) {
   const item = q.getItemQuery(id)
   if (!item) throw new Error('Kayıt bulunamadı')

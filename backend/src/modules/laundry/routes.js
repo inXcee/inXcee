@@ -97,6 +97,13 @@ laundryRouter.patch('/items/:id/lost', ...laundryFull, (req, res) => {
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
+laundryRouter.patch('/items/:id/compensation', ...laundryFull, (req, res) => {
+  try {
+    const item = svc.setCompensationService(+req.params.id, req.body, req.user.id)
+    res.json(item)
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
 laundryRouter.delete('/items/:id', ...laundryFull, (req, res) => {
   try {
     svc.deleteItemService(+req.params.id, req.user.id)
