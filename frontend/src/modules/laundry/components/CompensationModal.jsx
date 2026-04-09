@@ -28,9 +28,12 @@ export default function CompensationModal({ item, onClose }) {
   const [value, setValue] = useState(item.compensation_value ?? '')
   const [note, setNote] = useState(item.compensation_note ?? '')
 
+  const parsed = parseFloat(value)
+  const isValid = value !== '' && !isNaN(parsed) && isFinite(parsed) && parsed >= 0
+
   const save = useMutation({
     mutationFn: () => laundryApi.setCompensation(item.id, {
-      value: parseFloat(value),
+      value: parsed,
       note: note.trim() || null,
     }),
     onSuccess: () => {
@@ -38,8 +41,6 @@ export default function CompensationModal({ item, onClose }) {
       onClose()
     },
   })
-
-  const isValid = value !== '' && !isNaN(parseFloat(value)) && parseFloat(value) >= 0
 
   return (
     <div style={overlay} onClick={e => e.target === e.currentTarget && onClose()}>
@@ -89,7 +90,7 @@ export default function CompensationModal({ item, onClose }) {
             onClick={() => save.mutate()}
             disabled={!isValid || save.isPending}
             style={{
-              flex: 1, padding: 10, borderRadius: 8, cursor: isValid ? 'pointer' : 'not-allowed',
+              flex: 1, padding: 10, borderRadius: 8, cursor: (!isValid || save.isPending) ? 'not-allowed' : 'pointer',
               background: isValid ? 'rgba(39,201,106,0.12)' : 'var(--surface2)',
               color: isValid ? 'var(--green)' : 'var(--text4)',
               border: `1px solid ${isValid ? 'rgba(39,201,106,0.3)' : 'var(--border)'}`,
