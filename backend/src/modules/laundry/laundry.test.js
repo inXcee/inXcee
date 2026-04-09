@@ -1331,4 +1331,21 @@ describe('compensation', () => {
       .send({ value: -100 })
     expect(res.status).toBe(400)
   })
+
+  it('value=0 kabul edilir', async () => {
+    const res = await request(app)
+      .patch(`/api/laundry/items/${id}/compensation`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ value: 0 })
+    expect(res.status).toBe(200)
+    expect(res.body.compensation_value).toBe(0)
+  })
+
+  it('value eksik → 400', async () => {
+    const res = await request(app)
+      .patch(`/api/laundry/items/${id}/compensation`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({})
+    expect(res.status).toBe(400)
+  })
 })

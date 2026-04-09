@@ -250,12 +250,13 @@ export function lostItemService(id, { notes }, userId) {
 }
 
 export function setCompensationService(id, { value, note }, userId) {
-  if (value === undefined || value === null) throw new Error('Değer zorunlu')
-  if (value < 0) throw new Error('Değer negatif olamaz')
   const item = q.getItemQuery(id)
   if (!item) throw new Error('Kayıt bulunamadı')
   if (item.status !== 'lost') throw new Error('Tazminat sadece kayıp kıyafetler için girilebilir')
+  if (value === undefined || value === null) throw new Error('Değer zorunlu')
+  if (value < 0) throw new Error('Değer negatif olamaz')
   q.updateCompensationQuery(id, value, note)
+  logAudit(userId, 'laundry_compensation', 'laundry', id, `₺${value}`)
   return q.getItemQuery(id)
 }
 

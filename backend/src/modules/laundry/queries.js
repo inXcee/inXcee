@@ -377,9 +377,11 @@ export function deleteDamageQuery(damageId) {
 }
 
 export function updateCompensationQuery(id, value, note) {
-  getDB().prepare(
+  const db = getDB()
+  const r = db.prepare(
     `UPDATE laundry_items SET compensation_value=?, compensation_note=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`
   ).run(value, note ?? null, id)
+  return r.changes > 0
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
