@@ -158,3 +158,67 @@ describe('Inventory Module', () => {
     expect(res.status).toBe(404)
   })
 })
+
+describe('Inventory Forecast', () => {
+  it('returns empty array when no out movements', async () => {
+    const res = await request(app).get('/api/inventory/forecast').set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(200)
+    expect(Array.isArray(res.body)).toBe(true)
+    // seed'de son 14 günde out hareketi olmayan item'lar dahil edilmemeli
+    res.body.forEach(item => {
+      expect(item.daily_avg).toBeGreaterThan(0)
+      expect(item.days_left).toBeLessThanOrEqual(7)
+    })
+  })
+
+  it('calculates severity correctly', async () => {
+    const db = (await import('../../shared/db/index.js')).getDB()
+    // Yeni item oluştur, düşük stok + son 14 günde out hareketi ekle
+    const item = db.prepare(
+      "INSERT INTO inventory(item_name,quantity,unit,category,reorder_threshold) VALUES('Forecast Test',5,'litre','laundry',1)"
+    ).run()
+    const itemId = item.lastInsertRowid
+    const user = db.prepare("SELECT id FROM users LIMIT 1").get()
+    // 14 günde toplamda 28 litre çıkış → daily_avg = 2, days_left = 2.5
+    db.prepare(
+      "INSERT INTO stock_movements(item_id,type,delta,quantity_after,reason,created_by,created_at) VALUES(?,?,?,?,?,?,datetime('now','-3 days'))"
+    ).run(itemId, 'out', -28, 5, 'test', user.id)
+
+    const res = await request(app).get('/api/inventory/forecast').set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(200)
+    const found = res.body.find(i => i.id === itemId)
+    expect(found).toBeTruthy()
+    expect(found.severity).toBe('critical')
+    expect(found.days_left).toBeLessThanOrEqual(3)
+  })
+
+  it('excludes items with no out movements', async () => {
+    const db = (await import('../../shared/db/index.js')).getDB()
+    const item = db.prepare(
+      "INSERT INTO inventory(item_name,quantity,unit,category,reorder_threshold) VALUES('No Movement',100,'adet','general',0)"
+    ).run()
+    const itemId = item.lastInsertRowid
+
+    const res = await request(app).get('/api/inventory/forecast').set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(200)
+    const found = res.body.find(i => i.id === itemId)
+    expect(found).toBeUndefined()
+  })
+
+  it('excludes items with days_left > 7', async () => {
+    const db = (await import('../../shared/db/index.js')).getDB()
+    const user = db.prepare("SELECT id FROM users LIMIT 1").get()
+    const item = db.prepare(
+      "INSERT INTO inventory(item_name,quantity,unit,category,reorder_threshold) VALUES('Uzun Omurlu',100,'adet','general',0)"
+    ).run()
+    const itemId = item.lastInsertRowid
+    // 14 günde 7 çıkış → daily_avg=0.5, days_left=200 → dahil edilmemeli
+    db.prepare(
+      "INSERT INTO stock_movements(item_id,type,delta,quantity_after,reason,created_by,created_at) VALUES(?,?,?,?,?,?,datetime('now','-1 days'))"
+    ).run(itemId, 'out', -7, 93, 'test', user.id)
+
+    const res = await request(app).get('/api/inventory/forecast').set('Authorization', `Bearer ${token}`)
+    const found = res.body.find(i => i.id === itemId)
+    expect(found).toBeUndefined()
+  })
+})

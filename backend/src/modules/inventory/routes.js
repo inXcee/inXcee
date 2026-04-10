@@ -17,6 +17,12 @@ inventoryRouter.get('/movements/recent', ...mgrAccess, (req, res) => {
   catch (e) { res.status(500).json({ error: e.message }) }
 })
 
+// ── Forecast ─────────────────────────────────────────────────────────────────
+inventoryRouter.get('/forecast', ...mgrAccess, (req, res) => {
+  try { res.json(service.getForecast(req.user.id)) }
+  catch (e) { res.status(500).json({ error: e.message }) }
+})
+
 // ── CRUD ────────────────────────────────────────────────────────────────────
 inventoryRouter.get('/', ...mgrAccess, (req, res) => {
   if (req.query.search) return res.json(service.search(req.query.search))
