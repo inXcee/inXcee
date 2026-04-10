@@ -360,3 +360,13 @@ export function getForecast() {
     ORDER BY days_left ASC
   `).all()
 }
+
+export function recentForecastNotify() {
+  const db = getDB()
+  return db.prepare(`
+    SELECT id FROM audit_log
+    WHERE action='inventory_forecast_notify'
+      AND created_at >= datetime('now', '-24 hours')
+    LIMIT 1
+  `).get()
+}

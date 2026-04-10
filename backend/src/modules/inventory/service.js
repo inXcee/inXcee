@@ -1,7 +1,6 @@
 import * as queries from './queries.js'
 import { logAudit } from '../../shared/audit.js'
 import { createNotification } from '../../shared/notifications/service.js'
-import { getDB } from '../../shared/db/index.js'
 
 export function listItems(category) {
   return queries.getAllItems(category)
@@ -64,7 +63,6 @@ export function getStats() {
 }
 
 export function getForecast(userId) {
-  const db = getDB()
   const items = queries.getForecast()
 
   // severity ekle
@@ -75,12 +73,7 @@ export function getForecast(userId) {
 
   // 24 saatte bir bildirim gönder
   if (result.length > 0 && userId) {
-    const recent = db.prepare(`
-      SELECT id FROM audit_log
-      WHERE action='inventory_forecast_notify'
-        AND created_at >= datetime('now', '-24 hours')
-      LIMIT 1
-    `).get()
+    const recent = queries.recentForecastNotify()
 
     if (!recent) {
       const criticals = result.filter(i => i.severity === 'critical')
@@ -101,9 +94,7 @@ export function getForecast(userId) {
         target_role: 'campus_manager',
       })
 
-      db.prepare(
-        "INSERT INTO audit_log(user_id, action, module, detail) VALUES(?,?,?,?)"
-      ).run(userId, 'inventory_forecast_notify', 'inventory', `${result.length} urun`)
+      logAudit(userId, 'inventory_forecast_notify', 'inventory', null, `${result.length} urun`)
     }
   }
 
