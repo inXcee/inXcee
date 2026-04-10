@@ -162,7 +162,7 @@ function LowStockAlert({ items }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // ITEM CARD — Premium
 // ─────────────────────────────────────────────────────────────────────────────
-function ItemCard({ item, onAdjust, onCheckout, onEdit, onShowLog }) {
+function ItemCard({ item, onAdjust, onCheckout, onEdit, onShowLog, forecastEntry }) {
   const ct = cat(item.category)
   const isLow = item.reorder_threshold > 0 && item.quantity <= item.reorder_threshold
   const isOut = item.quantity === 0
@@ -188,7 +188,27 @@ function ItemCard({ item, onAdjust, onCheckout, onEdit, onShowLog }) {
           }}>{ct?.icon}</div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '6px' }}>
-              <div style={{ fontWeight: 600, fontSize: '13px', color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.item_name}</div>
+              <div style={{ fontWeight: 600, fontSize: '13px', color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {item.item_name}
+                {forecastEntry && (
+                  <span style={{
+                    marginLeft: '8px',
+                    fontFamily: 'var(--mono)',
+                    fontSize: '9px',
+                    padding: '2px 6px',
+                    borderRadius: '4px',
+                    letterSpacing: '0.5px',
+                    background: forecastEntry.severity === 'critical'
+                      ? 'rgba(231,76,60,.15)' : 'rgba(240,165,0,.15)',
+                    color: forecastEntry.severity === 'critical'
+                      ? 'var(--red)' : 'var(--amber)',
+                    border: `1px solid ${forecastEntry.severity === 'critical'
+                      ? 'rgba(231,76,60,.3)' : 'rgba(240,165,0,.3)'}`,
+                  }}>
+                    ~{forecastEntry.days_left}g
+                  </span>
+                )}
+              </div>
               {isOut && <span style={{ padding: '2px 8px', borderRadius: '6px', fontSize: '8px', fontWeight: 700, background: 'rgba(231,76,60,.1)', color: 'var(--red)', fontFamily: 'var(--mono)', flexShrink: 0 }}>TUKENDI</span>}
               {!isOut && isLow && <span style={{ padding: '2px 8px', borderRadius: '6px', fontSize: '8px', fontWeight: 700, background: 'rgba(240,165,0,.1)', color: 'var(--amber)', fontFamily: 'var(--mono)', flexShrink: 0 }}>DUSUK</span>}
             </div>
@@ -1024,11 +1044,22 @@ export default function InventoryPage() {
 
   const { data: items = [] } = useQuery({ queryKey: ['inventory'], queryFn: () => api.get('/inventory').then(r => r.data) })
   const { data: stats } = useQuery({ queryKey: ['inventory-stats'], queryFn: () => api.get('/inventory/stats').then(r => r.data), staleTime: 15000 })
+  const { data: forecast = [] } = useQuery({
+    queryKey: ['inventory-forecast'],
+    queryFn: () => api.get('/inventory/forecast').then(r => r.data),
+    refetchInterval: 5 * 60 * 1000,
+  })
 
   const createMut = useMutation({ mutationFn: d => api.post('/inventory', d), onSuccess: () => { inv(); setShowNew(false) } })
   const updateMut = useMutation({ mutationFn: ({ id, ...d }) => api.put(`/inventory/${id}`, d), onSuccess: () => { inv(); setEditItem(null) } })
   const deleteMut = useMutation({ mutationFn: id => api.delete(`/inventory/${id}`), onSuccess: inv })
   const adjustMut = useMutation({ mutationFn: ({ id, delta, reason }) => api.patch(`/inventory/${id}/adjust`, { delta, reason }), onSuccess: () => { inv(); setAdjustItem(null) } })
+
+  const forecastMap = useMemo(() => {
+    const m = {}
+    forecast.forEach(f => { m[f.id] = f })
+    return m
+  }, [forecast])
 
   const filtered = useMemo(() => {
     let list = items
@@ -1063,6 +1094,37 @@ export default function InventoryPage() {
       <KPIRow stats={stats} />
       <CategoryChart stats={stats} />
       <LowStockAlert items={items} />
+
+      {forecast.length > 0 && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: '10px',
+          padding: '10px 14px', borderRadius: '10px', marginBottom: '16px',
+          background: forecast.some(i => i.severity === 'critical')
+            ? 'rgba(231,76,60,.08)' : 'rgba(240,165,0,.08)',
+          border: `1px solid ${forecast.some(i => i.severity === 'critical')
+            ? 'rgba(231,76,60,.25)' : 'rgba(240,165,0,.25)'}`,
+        }}>
+          <span style={{ fontSize: '16px' }}>⌛</span>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text4)', letterSpacing: '2px', marginBottom: '3px' }}>
+              TÜKENME YAKLAŞAN
+            </div>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: '11px', color: forecast.some(i => i.severity === 'critical') ? 'var(--red)' : 'var(--amber)' }}>
+              {forecast.filter(i => i.severity === 'critical').length > 0 && (
+                <span style={{ marginRight: '10px' }}>
+                  🔴 {forecast.filter(i => i.severity === 'critical').length} ürün ≤3 gün:{' '}
+                  {forecast.filter(i => i.severity === 'critical').map(i => `${i.item_name} (~${i.days_left}g)`).join(', ')}
+                </span>
+              )}
+              {forecast.filter(i => i.severity === 'warning').length > 0 && (
+                <span>
+                  🟡 {forecast.filter(i => i.severity === 'warning').length} ürün ≤7 gün
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Tab Navigation */}
       <div style={{
@@ -1122,7 +1184,8 @@ export default function InventoryPage() {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '12px' }} className="fade-up-2">
               {filtered.map(item => (
                 <ItemCard key={item.id} item={item}
-                  onAdjust={setAdjustItem} onCheckout={setCheckoutItem} onEdit={setEditItem} onShowLog={setLogItem} />
+                  onAdjust={setAdjustItem} onCheckout={setCheckoutItem} onEdit={setEditItem} onShowLog={setLogItem}
+                  forecastEntry={forecastMap[item.id]} />
               ))}
               {filtered.length === 0 && (
                 <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '48px', fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--text3)' }}>
@@ -1151,7 +1214,27 @@ export default function InventoryPage() {
                         const val = (item.quantity || 0) * (item.unit_price || 0)
                         return (
                           <tr key={item.id} style={{ background: isOut ? 'rgba(231,76,60,.02)' : isLow ? 'rgba(240,165,0,.02)' : undefined }}>
-                            <td style={{ fontWeight: 600, fontSize: '12px' }}>{item.item_name}</td>
+                            <td style={{ fontWeight: 600, fontSize: '12px' }}>
+                              {item.item_name}
+                              {forecastMap[item.id] && (
+                                <span style={{
+                                  marginLeft: '8px',
+                                  fontFamily: 'var(--mono)',
+                                  fontSize: '9px',
+                                  padding: '2px 6px',
+                                  borderRadius: '4px',
+                                  letterSpacing: '0.5px',
+                                  background: forecastMap[item.id].severity === 'critical'
+                                    ? 'rgba(231,76,60,.15)' : 'rgba(240,165,0,.15)',
+                                  color: forecastMap[item.id].severity === 'critical'
+                                    ? 'var(--red)' : 'var(--amber)',
+                                  border: `1px solid ${forecastMap[item.id].severity === 'critical'
+                                    ? 'rgba(231,76,60,.3)' : 'rgba(240,165,0,.3)'}`,
+                                }}>
+                                  ~{forecastMap[item.id].days_left}g
+                                </span>
+                              )}
+                            </td>
                             <td><span style={{ padding: '3px 8px', borderRadius: '6px', fontSize: '9px', fontWeight: 600,
                               background: ct?.bg, color: ct?.color, fontFamily: 'var(--mono)' }}>{ct?.icon} {ct?.label}</span></td>
                             <td style={{ fontFamily: 'var(--mono)', fontWeight: 700, color: isOut ? 'var(--red)' : isLow ? 'var(--amber)' : 'var(--text)' }}>
