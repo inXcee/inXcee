@@ -1,6 +1,7 @@
 import * as queries from './queries.js'
 import { logAudit } from '../../shared/audit.js'
 import { createNotification } from '../../shared/notifications/service.js'
+import { getDB } from '../../shared/db/index.js'
 
 export function listItems(category) {
   return queries.getAllItems(category)
@@ -60,6 +61,53 @@ export function getRecentMovements(limit) {
 
 export function getStats() {
   return queries.getStats()
+}
+
+export function getForecast(userId) {
+  const db = getDB()
+  const items = queries.getForecast()
+
+  // severity ekle
+  const result = items.map(item => ({
+    ...item,
+    severity: item.days_left <= 3 ? 'critical' : 'warning',
+  }))
+
+  // 24 saatte bir bildirim gönder
+  if (result.length > 0 && userId) {
+    const recent = db.prepare(`
+      SELECT id FROM audit_log
+      WHERE action='inventory_forecast_notify'
+        AND created_at >= datetime('now', '-24 hours')
+      LIMIT 1
+    `).get()
+
+    if (!recent) {
+      const criticals = result.filter(i => i.severity === 'critical')
+      const warnings = result.filter(i => i.severity === 'warning')
+
+      let msg = 'Stok tükenme uyarısı: '
+      if (criticals.length > 0) {
+        msg += `${criticals.length} ürün 3 gün içinde biter (${criticals.map(i => i.item_name).join(', ')})`
+      }
+      if (warnings.length > 0) {
+        msg += `${criticals.length > 0 ? '; ' : ''}${warnings.length} ürün 7 gün içinde biter`
+      }
+
+      createNotification({
+        message: msg,
+        type: criticals.length > 0 ? 'critical' : 'warning',
+        module: 'inventory',
+        target_role: 'campus_manager',
+      })
+
+      db.prepare(
+        "INSERT INTO audit_log(user_id, action, module, detail) VALUES(?,?,?,?)"
+      ).run(userId, 'inventory_forecast_notify', 'inventory', `${result.length} urun`)
+    }
+  }
+
+  return result
 }
 
 export function bulkStockCount(items, userId) {
