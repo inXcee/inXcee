@@ -334,3 +334,29 @@ export function deleteReceipt(id) {
   const db = getDB()
   db.prepare('DELETE FROM goods_receipts WHERE id=?').run(id)
 }
+
+// ── Forecast (Tahmin) ───────────────────────────────────────────────────────
+
+export function getForecast() {
+  const db = getDB()
+  return db.prepare(`
+    SELECT
+      i.id,
+      i.item_name,
+      i.quantity,
+      i.unit,
+      i.category,
+      ROUND(SUM(CASE WHEN sm.type='out' AND sm.delta < 0 THEN ABS(sm.delta) ELSE 0 END) / 14.0, 4) as daily_avg,
+      CASE
+        WHEN ROUND(SUM(CASE WHEN sm.type='out' AND sm.delta < 0 THEN ABS(sm.delta) ELSE 0 END) / 14.0, 4) > 0
+        THEN ROUND(i.quantity / (ROUND(SUM(CASE WHEN sm.type='out' AND sm.delta < 0 THEN ABS(sm.delta) ELSE 0 END) / 14.0, 4)), 1)
+        ELSE NULL
+      END as days_left
+    FROM inventory i
+    LEFT JOIN stock_movements sm ON sm.item_id = i.id
+      AND sm.created_at >= datetime('now', '-14 days')
+    GROUP BY i.id
+    HAVING daily_avg > 0 AND days_left <= 7
+    ORDER BY days_left ASC
+  `).all()
+}
