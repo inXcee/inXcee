@@ -160,7 +160,7 @@ describe('Inventory Module', () => {
 })
 
 describe('Inventory Forecast', () => {
-  it('returns empty array when no out movements', async () => {
+  it('returns 200 with valid array structure', async () => {
     const res = await request(app).get('/api/inventory/forecast').set('Authorization', `Bearer ${token}`)
     expect(res.status).toBe(200)
     expect(Array.isArray(res.body)).toBe(true)
@@ -182,7 +182,7 @@ describe('Inventory Forecast', () => {
     // 14 günde toplamda 28 litre çıkış → daily_avg = 2, days_left = 2.5
     db.prepare(
       "INSERT INTO stock_movements(item_id,type,delta,quantity_after,reason,created_by,created_at) VALUES(?,?,?,?,?,?,datetime('now','-3 days'))"
-    ).run(itemId, 'out', -28, 5, 'test', user.id)
+    ).run(itemId, 'out', -28, -23, 'test', user.id)
 
     const res = await request(app).get('/api/inventory/forecast').set('Authorization', `Bearer ${token}`)
     expect(res.status).toBe(200)
