@@ -211,13 +211,16 @@ export function insertPersonnel(data) {
     passport_no: data.passport_no ?? null,
     full_name: data.full_name,
     company: data.company ?? null,
+    hometown: data.hometown ?? null,
     phone_number: data.phone_number ?? null,
     job_title: data.job_title ?? null,
     preferred_block: data.preferred_block ?? null,
+    emergency_name: data.emergency_name ?? null,
+    emergency_phone: data.emergency_phone ?? null,
   }
   const r = db.prepare(`
-    INSERT INTO personnel(tc_no,passport_no,full_name,company,phone_number,job_title,preferred_block,check_in_date)
-    VALUES(@tc_no,@passport_no,@full_name,@company,@phone_number,@job_title,@preferred_block,datetime('now'))
+    INSERT INTO personnel(tc_no,passport_no,full_name,company,hometown,phone_number,job_title,preferred_block,emergency_name,emergency_phone,check_in_date)
+    VALUES(@tc_no,@passport_no,@full_name,@company,@hometown,@phone_number,@job_title,@preferred_block,@emergency_name,@emergency_phone,datetime('now'))
   `).run(row)
   return r.lastInsertRowid
 }

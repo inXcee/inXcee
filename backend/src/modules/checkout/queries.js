@@ -3,7 +3,8 @@ import { getDB } from '../../shared/db/index.js'
 export function getCheckoutPreview(personnelId) {
   const db = getDB()
   const person = db.prepare(`
-    SELECT p.*, ra.room_id, r.block, r.floor, r.room_no, ra.bed_no,
+    SELECT p.*, p.emergency_name, p.emergency_phone,
+      ra.room_id, r.block, r.floor, r.room_no, ra.bed_no,
       COALESCE(s.shift_type, 'day') as shift_type
     FROM personnel p
     LEFT JOIN room_assignments ra ON ra.personnel_id=p.id AND ra.check_out_at IS NULL

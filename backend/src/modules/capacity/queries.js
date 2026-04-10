@@ -44,7 +44,9 @@ export function getRooms({ block, floor, status, empty_only, company } = {}) {
 export function getRoomPersonnel(roomId) {
   const db = getDB()
   return db.prepare(`
-    SELECT p.id, p.full_name, p.company, p.phone_number, p.photo_url, ra.bed_no, ra.assigned_at,
+    SELECT p.id, p.full_name, p.company, p.phone_number, p.photo_url,
+      p.emergency_name, p.emergency_phone,
+      ra.bed_no, ra.assigned_at,
       COALESCE(s.shift_type, 'day') as shift_type
     FROM room_assignments ra
     JOIN personnel p ON p.id=ra.personnel_id

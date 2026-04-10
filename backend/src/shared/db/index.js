@@ -521,6 +521,10 @@ export function initDB() {
     `)
   } catch(_) {}
 
+  // ── Emergency contact fields ──
+  try { db.exec('ALTER TABLE personnel ADD COLUMN emergency_name TEXT') } catch(_) {}
+  try { db.exec('ALTER TABLE personnel ADD COLUMN emergency_phone TEXT') } catch(_) {}
+
   return db
 }
 
