@@ -190,25 +190,25 @@ function ItemCard({ item, onAdjust, onCheckout, onEdit, onShowLog, forecastEntry
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '6px' }}>
               <div style={{ fontWeight: 600, fontSize: '13px', color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {item.item_name}
-                {forecastEntry && (
-                  <span style={{
-                    marginLeft: '8px',
-                    fontFamily: 'var(--mono)',
-                    fontSize: '9px',
-                    padding: '2px 6px',
-                    borderRadius: '4px',
-                    letterSpacing: '0.5px',
-                    background: forecastEntry.severity === 'critical'
-                      ? 'rgba(231,76,60,.15)' : 'rgba(240,165,0,.15)',
-                    color: forecastEntry.severity === 'critical'
-                      ? 'var(--red)' : 'var(--amber)',
-                    border: `1px solid ${forecastEntry.severity === 'critical'
-                      ? 'rgba(231,76,60,.3)' : 'rgba(240,165,0,.3)'}`,
-                  }}>
-                    ~{forecastEntry.days_left}g
-                  </span>
-                )}
               </div>
+              {forecastEntry && (
+                <span style={{
+                  fontFamily: 'var(--mono)',
+                  fontSize: '9px',
+                  padding: '2px 6px',
+                  borderRadius: '4px',
+                  letterSpacing: '0.5px',
+                  flexShrink: 0,
+                  background: forecastEntry.severity === 'critical'
+                    ? 'rgba(231,76,60,.15)' : 'rgba(240,165,0,.15)',
+                  color: forecastEntry.severity === 'critical'
+                    ? 'var(--red)' : 'var(--amber)',
+                  border: `1px solid ${forecastEntry.severity === 'critical'
+                    ? 'rgba(231,76,60,.3)' : 'rgba(240,165,0,.3)'}`,
+                }}>
+                  ~{forecastEntry.days_left}g
+                </span>
+              )}
               {isOut && <span style={{ padding: '2px 8px', borderRadius: '6px', fontSize: '8px', fontWeight: 700, background: 'rgba(231,76,60,.1)', color: 'var(--red)', fontFamily: 'var(--mono)', flexShrink: 0 }}>TUKENDI</span>}
               {!isOut && isLow && <span style={{ padding: '2px 8px', borderRadius: '6px', fontSize: '8px', fontWeight: 700, background: 'rgba(240,165,0,.1)', color: 'var(--amber)', fontFamily: 'var(--mono)', flexShrink: 0 }}>DUSUK</span>}
             </div>
