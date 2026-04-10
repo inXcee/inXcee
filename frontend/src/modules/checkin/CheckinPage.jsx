@@ -408,7 +408,7 @@ export default function CheckinPage() {
   const [nameSearching, setNameSearching] = useState(false)
   const [foundPerson, setFoundPerson] = useState(null)
   const [blacklistPerson, setBlacklistPerson] = useState(null)
-  const [formData, setFormData] = useState({ full_name: '', company: '', job_title: '', preferred_block: '', phone_number: '' })
+  const [formData, setFormData] = useState({ full_name: '', company: '', job_title: '', preferred_block: '', phone_number: '', emergency_name: '', emergency_phone: '' })
   const [shiftType, setShiftType] = useState('day')
   const [photoFile, setPhotoFile] = useState(null)
   const [photoPreview, setPhotoPreview] = useState(null)
@@ -450,7 +450,7 @@ export default function CheckinPage() {
     if (person.is_blacklisted) { setBlacklistPerson(person); return }
     setFoundPerson(person)
     setPersonnelId(person.id)
-    setFormData({ full_name: person.full_name, company: person.company || '', job_title: person.job_title || '', preferred_block: person.preferred_block || '' })
+    setFormData({ full_name: person.full_name, company: person.company || '', job_title: person.job_title || '', preferred_block: person.preferred_block || '', emergency_name: '', emergency_phone: '' })
     setShiftType(person.shift_type || 'day')
     setNameResults([])
     setError('')
@@ -520,7 +520,7 @@ export default function CheckinPage() {
 
   const resetFlow = () => {
     setStep(0); setTcNo(''); setPassportNo(''); setNameSearch(''); setNameResults([])
-    setFoundPerson(null); setFormData({ full_name: '', company: '', job_title: '', preferred_block: '', phone_number: '' })
+    setFoundPerson(null); setFormData({ full_name: '', company: '', job_title: '', preferred_block: '', phone_number: '', emergency_name: '', emergency_phone: '' })
     setShiftType('day'); setPersonnelId(null); setSuggestedRoom(null); setSelectedRoom(null)
     setAssignedBed(null); setError('')
   }
