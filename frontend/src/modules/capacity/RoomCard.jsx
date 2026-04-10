@@ -59,10 +59,17 @@ export default function RoomCard({ room, onUpdated }) {
             personnel && personnel.length > 0 ? (
               <div className="space-y-1">
                 {personnel.map(p => (
-                  <div key={p.id} className="text-xs text-slate-300 flex items-center gap-2">
-                    <span className="font-mono text-slate-500">Yatak {p.bed_no}</span>
-                    <span>{p.full_name}</span>
-                    {p.company && <span className="text-slate-500">{p.company}</span>}
+                  <div key={p.id} className="text-xs text-slate-300 flex flex-col gap-0.5">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-slate-500">Yatak {p.bed_no}</span>
+                      <span>{p.full_name}</span>
+                      {p.company && <span className="text-slate-500">{p.company}</span>}
+                    </div>
+                    {(p.emergency_name || p.emergency_phone) && (
+                      <div className="font-mono text-slate-600 text-xs pl-10">
+                        🆘 {p.emergency_name || '—'}{p.emergency_phone ? ` · ${p.emergency_phone}` : ''}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

@@ -324,6 +324,12 @@ export default function CheckoutPage() {
               <InfoRow label="MESLEK" value={preview.person.job_title || '—'} />
               <InfoRow label="ODA" value={preview.person.block ? `${preview.person.block}-${preview.person.room_no} / Yatak ${preview.person.bed_no}` : 'Atanmamis'} />
               <InfoRow label="VARDIYA" value={preview.person.shift_type === 'night' ? 'Gece' : 'Gunduz'} />
+              {preview.person.emergency_name && (
+                <InfoRow label="ACİL KİŞİ" value={preview.person.emergency_name} />
+              )}
+              {preview.person.emergency_phone && (
+                <InfoRow label="ACİL TEL" value={preview.person.emergency_phone} />
+              )}
             </div>
           </div>
 
