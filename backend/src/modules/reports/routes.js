@@ -9,6 +9,7 @@ const mgrAccess = requireRole('campus_manager', 'shift_supervisor')
 reportsRouter.get('/housekeeping/data', ...mgrAccess, (req, res) => {
   try {
     const date = req.query.date || new Date().toISOString().split('T')[0]
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: 'Invalid date format' })
     res.json(service.getHousekeepingReport(date))
   } catch (e) { res.status(500).json({ error: e.message }) }
 })

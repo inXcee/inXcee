@@ -114,8 +114,16 @@ describe('Reports JSON endpoints', () => {
     expect(Array.isArray(res.body.records)).toBe(true)
   })
 
-  it('rejects unauthenticated data request', async () => {
-    const res = await request(app).get('/api/reports/housekeeping/data')
-    expect(res.status).toBe(401)
+  it('rejects unauthenticated data requests', async () => {
+    const endpoints = [
+      '/api/reports/housekeeping/data',
+      '/api/reports/maintenance/data',
+      '/api/reports/occupancy/data',
+      '/api/reports/discipline/data',
+    ]
+    for (const endpoint of endpoints) {
+      const res = await request(app).get(endpoint)
+      expect(res.status).toBe(401)
+    }
   })
 })
