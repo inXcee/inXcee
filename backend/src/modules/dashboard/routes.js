@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import { requireRole } from '../../shared/auth/middleware.js'
 import { cacheFor } from '../../shared/middleware/cache.js'
-import { getKPI, getHeatmap, getProjection, getBedOccupancy, getAuditLog, exportPersonnel, exportOccupancy, exportMaintenance } from './queries.js'
+import { getKPI, getHeatmap, getProjection, getBedOccupancy, getAuditLog, exportPersonnel, exportOccupancy, exportMaintenance, getTrends } from './queries.js'
 
 export const dashboardRouter = Router()
 const mgmt = requireRole('campus_manager', 'shift_supervisor')
@@ -24,6 +24,17 @@ dashboardRouter.get('/projection', ...mgmt, cacheFor(300), (req, res) => {
 dashboardRouter.get('/bed-occupancy', ...mgmt, cacheFor(60), (req, res) => {
   try { res.json(getBedOccupancy()) }
   catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+dashboardRouter.get('/trends', ...mgmt, cacheFor(300), (req, res) => {
+  try {
+    const days = Math.max(7, Math.min(90, Number(req.query.days) || 30))
+    const allMetrics = ['occupancy', 'sla', 'housekeeping', 'checkins']
+    const metrics = req.query.metrics
+      ? req.query.metrics.split(',').filter(m => allMetrics.includes(m))
+      : allMetrics
+    res.json(getTrends(metrics, days))
+  } catch (e) { res.status(500).json({ error: e.message }) }
 })
 
 dashboardRouter.get('/audit-log', ...requireRole('campus_manager'), (req, res) => {

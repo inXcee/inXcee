@@ -25,6 +25,33 @@ describe('Dashboard', () => {
     expect(res.status).toBe(200)
     expect(Array.isArray(res.body)).toBe(true)
   })
+
+  it('returns trends for default metrics', async () => {
+    const res = await request(app)
+      .get('/api/dashboard/trends?days=7')
+      .set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(200)
+    expect(res.body).toHaveProperty('occupancy')
+    expect(res.body).toHaveProperty('sla')
+    expect(res.body).toHaveProperty('housekeeping')
+    expect(res.body).toHaveProperty('checkins')
+    expect(res.body.occupancy).toHaveLength(7)
+  })
+
+  it('returns only requested metrics', async () => {
+    const res = await request(app)
+      .get('/api/dashboard/trends?metrics=occupancy,sla&days=7')
+      .set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(200)
+    expect(res.body).toHaveProperty('occupancy')
+    expect(res.body).toHaveProperty('sla')
+    expect(res.body).not.toHaveProperty('housekeeping')
+  })
+
+  it('rejects unauthenticated trends request', async () => {
+    const res = await request(app).get('/api/dashboard/trends')
+    expect(res.status).toBe(401)
+  })
 })
 
 describe('getTrends', () => {
