@@ -142,6 +142,8 @@ export function exportMaintenance() {
   `).all()
 }
 
+// ── Trend queries ─────────────────────────────────────────────────────────────
+
 export function getTrends(metrics, days = 30) {
   const db = getDB()
   const n = Math.max(1, Math.min(90, Number(days) || 30))
@@ -165,26 +167,27 @@ export function getTrends(metrics, days = 30) {
       const totalBeds = db.prepare(
         `SELECT COALESCE(SUM(active_beds), 1) as t FROM rooms WHERE status='active'`
       ).get().t
+      // NOTE: denominator is current active bed count — historical room changes not tracked
+      const occupancyStmt = db.prepare(
+        `SELECT COUNT(*) as c FROM room_assignments
+         WHERE date(assigned_at) <= ? AND (check_out_at IS NULL OR date(check_out_at) > ?)`
+      )
       result.occupancy = dateSeries.map(d => ({
         date: d,
-        value: Math.round(
-          db.prepare(
-            `SELECT COUNT(*) as c FROM room_assignments
-             WHERE date(assigned_at) <= ? AND (check_out_at IS NULL OR date(check_out_at) > ?)`
-          ).get(d, d).c * 100 / totalBeds
-        ),
+        value: Math.round(occupancyStmt.get(d, d).c * 100 / totalBeds),
       }))
     }
 
     if (metric === 'sla') {
+      const slaStmt = db.prepare(`
+        SELECT
+          COUNT(*) as total,
+          COUNT(CASE WHEN sla_deadline >= closed_at THEN 1 END) as ontime
+        FROM maintenance_requests
+        WHERE status='done' AND date(closed_at) = ? AND sla_deadline IS NOT NULL
+      `)
       result.sla = dateSeries.map(d => {
-        const row = db.prepare(
-          `SELECT
-            COUNT(*) as total,
-            COUNT(CASE WHEN sla_deadline IS NULL OR sla_deadline >= closed_at THEN 1 END) as ontime
-           FROM maintenance_requests
-           WHERE status='done' AND date(closed_at) = ?`
-        ).get(d)
+        const row = slaStmt.get(d)
         return {
           date: d,
           value: row.total === 0 ? 100 : Math.round(row.ontime * 100 / row.total),
@@ -193,14 +196,15 @@ export function getTrends(metrics, days = 30) {
     }
 
     if (metric === 'housekeeping') {
+      const housekeepingStmt = db.prepare(
+        `SELECT
+          COUNT(*) as total,
+          COUNT(CASE WHEN completed_at IS NOT NULL THEN 1 END) as done
+         FROM cleaning_tasks
+         WHERE DATE(scheduled_at) = ?`
+      )
       result.housekeeping = dateSeries.map(d => {
-        const row = db.prepare(
-          `SELECT
-            COUNT(*) as total,
-            COUNT(CASE WHEN completed_at IS NOT NULL THEN 1 END) as done
-           FROM cleaning_tasks
-           WHERE DATE(scheduled_at) = ?`
-        ).get(d)
+        const row = housekeepingStmt.get(d)
         return {
           date: d,
           value: row.total === 0 ? 100 : Math.round(row.done * 100 / row.total),
@@ -209,11 +213,22 @@ export function getTrends(metrics, days = 30) {
     }
 
     if (metric === 'checkins') {
-      result.checkins = dateSeries.map(d => ({
-        date: d,
-        in: db.prepare(`SELECT COUNT(*) as c FROM personnel WHERE date(check_in_date) = ?`).get(d).c,
-        out: db.prepare(`SELECT COUNT(*) as c FROM personnel WHERE date(check_out_date) = ?`).get(d).c,
-      }))
+      const rows = db.prepare(`
+        WITH RECURSIVE dates(d) AS (
+          SELECT date('now', '-' || (? - 1) || ' days')
+          UNION ALL
+          SELECT date(d, '+1 day') FROM dates WHERE d < date('now')
+        )
+        SELECT d.d AS date,
+          COALESCE(SUM(CASE WHEN date(p.check_in_date)  = d.d THEN 1 ELSE 0 END), 0) AS "in",
+          COALESCE(SUM(CASE WHEN date(p.check_out_date) = d.d THEN 1 ELSE 0 END), 0) AS "out"
+        FROM dates d
+        LEFT JOIN personnel p
+          ON date(p.check_in_date) = d.d OR date(p.check_out_date) = d.d
+        GROUP BY d.d
+        ORDER BY d.d
+      `).all(n)
+      result.checkins = rows
     }
   }
 
