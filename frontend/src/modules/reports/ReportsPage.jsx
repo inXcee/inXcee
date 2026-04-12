@@ -94,7 +94,7 @@ function getNestedValue(obj, key) {
 
 function ReportCard({ report, selectedDate }) {
   const token = useAuthStore(s => s.token)
-  const [downloading, setDownloading] = useState(null)
+  const [downloading, setDownloading] = useState(false)
   const [expanded, setExpanded] = useState(false)
 
   const queryKey = report.hasDate
