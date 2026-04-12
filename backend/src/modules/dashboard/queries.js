@@ -179,6 +179,9 @@ export function getTrends(metrics, days = 30) {
     }
 
     if (metric === 'sla') {
+      // NOTE: Only counts requests with an explicit sla_deadline (NULL = no SLA set).
+      // This means trend % reflects tracked-SLA requests only — intentionally different
+      // from the PDF report's overdue count which uses a different time window (last 7 days).
       const slaStmt = db.prepare(`
         SELECT
           COUNT(*) as total,
