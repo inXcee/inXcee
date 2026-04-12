@@ -3,6 +3,7 @@ import request from 'supertest'
 import app from '../../app.js'
 import { initDB } from '../../shared/db/index.js'
 import { seedDev } from '../../shared/db/seed.js'
+import { getTrends } from './queries.js'
 
 let token
 beforeAll(async () => {
@@ -23,5 +24,46 @@ describe('Dashboard', () => {
     const res = await request(app).get('/api/dashboard/heatmap').set('Authorization', `Bearer ${token}`)
     expect(res.status).toBe(200)
     expect(Array.isArray(res.body)).toBe(true)
+  })
+})
+
+describe('getTrends', () => {
+  it('returns all 4 metrics for 7 days', () => {
+    const result = getTrends(['occupancy', 'sla', 'housekeeping', 'checkins'], 7)
+    expect(result).toHaveProperty('occupancy')
+    expect(result).toHaveProperty('sla')
+    expect(result).toHaveProperty('housekeeping')
+    expect(result).toHaveProperty('checkins')
+    expect(result.occupancy).toHaveLength(7)
+    expect(result.sla).toHaveLength(7)
+    expect(result.housekeeping).toHaveLength(7)
+    expect(result.checkins).toHaveLength(7)
+  })
+
+  it('each occupancy point has date and value', () => {
+    const result = getTrends(['occupancy'], 7)
+    const point = result.occupancy[0]
+    expect(point).toHaveProperty('date')
+    expect(point).toHaveProperty('value')
+    expect(typeof point.value).toBe('number')
+  })
+
+  it('each checkins point has date, in, out', () => {
+    const result = getTrends(['checkins'], 7)
+    const point = result.checkins[0]
+    expect(point).toHaveProperty('date')
+    expect(point).toHaveProperty('in')
+    expect(point).toHaveProperty('out')
+  })
+
+  it('ignores unknown metric names', () => {
+    const result = getTrends(['occupancy', 'unknown_metric'], 7)
+    expect(result).toHaveProperty('occupancy')
+    expect(result).not.toHaveProperty('unknown_metric')
+  })
+
+  it('respects days=30', () => {
+    const result = getTrends(['housekeeping'], 30)
+    expect(result.housekeeping).toHaveLength(30)
   })
 })

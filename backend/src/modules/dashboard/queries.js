@@ -141,3 +141,81 @@ export function exportMaintenance() {
     ORDER BY mr.opened_at DESC
   `).all()
 }
+
+export function getTrends(metrics, days = 30) {
+  const db = getDB()
+  const n = Math.max(1, Math.min(90, Number(days) || 30))
+
+  const dateSeries = db.prepare(`
+    WITH RECURSIVE dates(d) AS (
+      SELECT date('now', '-' || (? - 1) || ' days')
+      UNION ALL
+      SELECT date(d, '+1 day') FROM dates WHERE d < date('now')
+    )
+    SELECT d FROM dates
+  `).all(n).map(r => r.d)
+
+  const result = {}
+  const allowed = ['occupancy', 'sla', 'housekeeping', 'checkins']
+
+  for (const metric of metrics) {
+    if (!allowed.includes(metric)) continue
+
+    if (metric === 'occupancy') {
+      const totalBeds = db.prepare(
+        `SELECT COALESCE(SUM(active_beds), 1) as t FROM rooms WHERE status='active'`
+      ).get().t
+      result.occupancy = dateSeries.map(d => ({
+        date: d,
+        value: Math.round(
+          db.prepare(
+            `SELECT COUNT(*) as c FROM room_assignments
+             WHERE date(assigned_at) <= ? AND (check_out_at IS NULL OR date(check_out_at) > ?)`
+          ).get(d, d).c * 100 / totalBeds
+        ),
+      }))
+    }
+
+    if (metric === 'sla') {
+      result.sla = dateSeries.map(d => {
+        const row = db.prepare(
+          `SELECT
+            COUNT(*) as total,
+            COUNT(CASE WHEN sla_deadline IS NULL OR sla_deadline >= closed_at THEN 1 END) as ontime
+           FROM maintenance_requests
+           WHERE status='done' AND date(closed_at) = ?`
+        ).get(d)
+        return {
+          date: d,
+          value: row.total === 0 ? 100 : Math.round(row.ontime * 100 / row.total),
+        }
+      })
+    }
+
+    if (metric === 'housekeeping') {
+      result.housekeeping = dateSeries.map(d => {
+        const row = db.prepare(
+          `SELECT
+            COUNT(*) as total,
+            COUNT(CASE WHEN completed_at IS NOT NULL THEN 1 END) as done
+           FROM cleaning_tasks
+           WHERE DATE(scheduled_at) = ?`
+        ).get(d)
+        return {
+          date: d,
+          value: row.total === 0 ? 100 : Math.round(row.done * 100 / row.total),
+        }
+      })
+    }
+
+    if (metric === 'checkins') {
+      result.checkins = dateSeries.map(d => ({
+        date: d,
+        in: db.prepare(`SELECT COUNT(*) as c FROM personnel WHERE date(check_in_date) = ?`).get(d).c,
+        out: db.prepare(`SELECT COUNT(*) as c FROM personnel WHERE date(check_out_date) = ?`).get(d).c,
+      }))
+    }
+  }
+
+  return result
+}
