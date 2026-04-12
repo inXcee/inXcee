@@ -40,8 +40,8 @@ function formatDate(dateStr) {
 
 function getTrend(data, cfg) {
   if (!data || data.length < 2) return null
-  const last = cfg.type === 'line2' ? (data[data.length - 1].in || 0) : (data[data.length - 1].value || 0)
-  const prev = cfg.type === 'line2' ? (data[data.length - 2].in || 0) : (data[data.length - 2].value || 0)
+  const last = cfg.type === 'line2' ? (data[data.length - 1].in ?? 0) : (data[data.length - 1].value ?? 0)
+  const prev = cfg.type === 'line2' ? (data[data.length - 2].in ?? 0) : (data[data.length - 2].value ?? 0)
   if (last > prev) return { arrow: '↑', color: 'var(--green)' }
   if (last < prev) return { arrow: '↓', color: 'var(--red)' }
   return { arrow: '→', color: 'var(--text3)' }
@@ -56,8 +56,6 @@ export default function TrendCard({ metric, data }) {
   const displayValue = cfg.type === 'line2'
     ? `${lastPoint.in ?? 0} / ${lastPoint.out ?? 0}`
     : `${lastPoint.value ?? 0}${cfg.unit}`
-
-  const tickFormatter = (v) => formatDate(v)
 
   return (
     <div className="panel" style={{ overflow: 'hidden' }}>
@@ -91,7 +89,7 @@ export default function TrendCard({ metric, data }) {
           {cfg.type === 'line2' ? (
             <LineChart data={data} margin={{ top: 0, right: 0, left: -30, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-              <XAxis dataKey="date" tickFormatter={tickFormatter} tick={{ fontSize: 8, fill: 'var(--text3)', fontFamily: 'var(--mono)' }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
+              <XAxis dataKey="date" tickFormatter={formatDate} tick={{ fontSize: 8, fill: 'var(--text3)', fontFamily: 'var(--mono)' }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
               <YAxis tick={{ fontSize: 8, fill: 'var(--text3)' }} tickLine={false} axisLine={false} />
               <Tooltip
                 contentStyle={{ background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '6px', fontFamily: 'var(--mono)', fontSize: '11px' }}
@@ -110,7 +108,7 @@ export default function TrendCard({ metric, data }) {
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-              <XAxis dataKey="date" tickFormatter={tickFormatter} tick={{ fontSize: 8, fill: 'var(--text3)', fontFamily: 'var(--mono)' }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
+              <XAxis dataKey="date" tickFormatter={formatDate} tick={{ fontSize: 8, fill: 'var(--text3)', fontFamily: 'var(--mono)' }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
               <YAxis domain={[0, 100]} tick={{ fontSize: 8, fill: 'var(--text3)' }} tickLine={false} axisLine={false} />
               <Tooltip
                 contentStyle={{ background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '6px', fontFamily: 'var(--mono)', fontSize: '11px' }}
