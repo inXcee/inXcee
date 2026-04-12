@@ -6,6 +6,28 @@ import * as service from './service.js'
 export const reportsRouter = Router()
 const mgrAccess = requireRole('campus_manager', 'shift_supervisor')
 
+reportsRouter.get('/housekeeping/data', ...mgrAccess, (req, res) => {
+  try {
+    const date = req.query.date || new Date().toISOString().split('T')[0]
+    res.json(service.getHousekeepingReport(date))
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+reportsRouter.get('/maintenance/data', ...mgrAccess, (req, res) => {
+  try { res.json(service.getMaintenanceReport()) }
+  catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+reportsRouter.get('/occupancy/data', ...mgrAccess, (req, res) => {
+  try { res.json(service.getOccupancyReport()) }
+  catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+reportsRouter.get('/discipline/data', ...mgrAccess, (req, res) => {
+  try { res.json(service.getDisciplineReport()) }
+  catch (e) { res.status(500).json({ error: e.message }) }
+})
+
 reportsRouter.get('/housekeeping', ...mgrAccess, (req, res) => {
   try {
     const date = req.query.date || new Date().toISOString().split('T')[0]
