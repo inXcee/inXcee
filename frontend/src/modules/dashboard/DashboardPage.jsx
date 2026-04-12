@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import api from '../../shared/api/client.js'
 import KPICard from './KPICard.jsx'
 import HeatMap from './HeatMap.jsx'
+import TrendChartsSection from './TrendChartsSection.jsx'
 import { useNotifications } from '../../shared/hooks/useNotifications.js'
 import { useOccupancy } from '../../shared/hooks/useOccupancy.js'
 import { useAuthStore } from '../../shared/store/authStore.js'
@@ -555,6 +556,9 @@ export default function DashboardPage() {
       <div style={{ marginBottom: '28px' }} className="fade-up-2">
         <BedOccupancyPanel data={bedOccupancy} />
       </div>
+
+      {/* Trend Grafikleri */}
+      <TrendChartsSection />
 
       {/* Blok Durumu */}
       <div className="sect fade-up-3">
