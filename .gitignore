@@ -9,5 +9,6 @@ uploads/
 .superpowers/
 .claude/
 .env*
+!.env.example
 .DS_Store
 .worktrees/

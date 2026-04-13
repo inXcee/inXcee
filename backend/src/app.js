@@ -21,11 +21,19 @@ import { notificationsRouter } from './shared/notifications/routes.js'
 import { whatsappRouter } from './shared/whatsapp/routes.js'
 import { emailRouter } from './modules/email/routes.js'
 
+const allowedOrigins = process.env.ALLOWED_ORIGIN
+  ? process.env.ALLOWED_ORIGIN.split(',').map(o => o.trim())
+  : ['http://localhost:5173', 'http://localhost:5174']
+
 const app = express()
 app.use(cors({
-  origin: process.env.NODE_ENV === 'production'
-    ? true
-    : ['http://localhost:5173', 'http://localhost:5174']
+  origin: (origin, callback) => {
+    // Postman, curl gibi origin'siz isteklere izin ver (server-to-server, healthcheck)
+    if (!origin) return callback(null, true)
+    if (allowedOrigins.includes(origin)) return callback(null, true)
+    callback(new Error(`CORS: ${origin} origin'ine izin verilmiyor`))
+  },
+  credentials: true,
 }))
 app.use(express.json({ limit: '5mb' }))
 app.use(sanitizeBody)

@@ -32,3 +32,20 @@ describe('JWT_SECRET zorunlu', () => {
     expect(typeof verifyToken).toBe('function')
   })
 })
+
+describe('CORS', () => {
+  it('localhost:5173 origin\'ine izin verir', async () => {
+    const res = await request(app)
+      .options('/api/health')
+      .set('Origin', 'http://localhost:5173')
+    expect(res.headers['access-control-allow-origin']).toBe('http://localhost:5173')
+  })
+
+  it('izin verilmeyen origin reddedilir', async () => {
+    const res = await request(app)
+      .get('/api/health')
+      .set('Origin', 'http://evil.example.com')
+    // CORS hatası — CORS header olmamalı
+    expect(res.headers['access-control-allow-origin']).toBeUndefined()
+  })
+})
