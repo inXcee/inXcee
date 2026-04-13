@@ -81,7 +81,7 @@ export function buildReportHtml() {
 <h2>Doluluk — Blok Bazlı</h2>
 ${table(
   ['Blok', 'Oda', 'Toplam Yatak', 'Dolu', 'Boş'],
-  ['block', 'oda_sayisi', 'toplam_yatak', 'dolu_yatak'],
+  ['block', 'oda_sayisi', 'toplam_yatak', 'dolu_yatak', 'boş'],
   occupancy.blocks.map(b => ({ ...b, dolu_yatak: b.dolu_yatak, boş: b.toplam_yatak - b.dolu_yatak }))
 )}
 
