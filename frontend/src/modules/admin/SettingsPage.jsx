@@ -19,7 +19,7 @@ export default function SettingsPage() {
   const save = useMutation({
     mutationFn: body => api.put('/settings/email', body),
     onSuccess: () => {
-      qc.invalidateQueries(['email-settings'])
+      qc.invalidateQueries({ queryKey: ['email-settings'] })
       setForm(null)
       showToast('Ayarlar kaydedildi', 'success')
     },
@@ -47,10 +47,14 @@ export default function SettingsPage() {
     })
   }
 
-  if (isLoading) return <div style={{ padding: '32px' }}>Yükleniyor...</div>
+  if (isLoading || !current) return <div style={{ padding: '32px' }}>Yükleniyor...</div>
 
   return (
     <div style={{ padding: '24px', maxWidth: '560px' }}>
+      <h2 style={{ fontSize: '24px', letterSpacing: '4px', marginBottom: '4px' }}>AYARLAR</h2>
+      <p style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)', marginBottom: '24px', letterSpacing: '2px' }}>
+        E-POSTA RAPORU KONFIGURASYONU
+      </p>
       {toast && (
         <div style={{
           padding: '10px 16px', marginBottom: '16px', borderRadius: '6px',

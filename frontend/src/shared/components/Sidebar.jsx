@@ -37,7 +37,7 @@ const NAV_GROUPS = [
       { to: '/inventory', icon: '\u25A8', label: 'Envanter', roles: ['campus_manager','shift_supervisor','laundry','housekeeper'] },
       { to: '/users', icon: '\u2302', label: 'Kullanicilar', roles: ['campus_manager'] },
       { to: '/audit', icon: '\u2637', label: 'Audit Log', roles: ['campus_manager'] },
-      { to: '/settings', icon: '\u2699', label: 'Ayarlar', roles: ['campus_manager'] },
+      { to: '/settings', icon: '\u2393', label: 'Ayarlar', roles: ['campus_manager'] },
     ]
   },
   {
