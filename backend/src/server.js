@@ -1,17 +1,32 @@
 import app from './app.js'
 import { initDB } from './shared/db/index.js'
+import { initProdDB } from './shared/db/initProd.js'
 import { startCronJobs } from './shared/cron/index.js'
 import { seedDev } from './shared/db/seed.js'
 
-// Zorunlu env kontrolü
+// Zorunlu env kontrolü (Task 1'de eklendi)
 if (!process.env.JWT_SECRET) {
   console.error('[Startup] HATA: JWT_SECRET env değişkeni tanımlı değil.')
   console.error('[Startup] .env dosyanıza JWT_SECRET=guclu-rastgele-deger ekleyin.')
   process.exit(1)
 }
 
+process.on('unhandledRejection', (reason) => {
+  console.error('[UnhandledRejection]', reason)
+})
+process.on('uncaughtException', (err) => {
+  console.error('[UncaughtException]', err)
+  process.exit(1)
+})
+
 initDB()
-seedDev()
+
+if (process.env.NODE_ENV === 'production') {
+  initProdDB()
+} else {
+  seedDev()
+}
+
 startCronJobs()
 
 const port = process.env.PORT || 3001
