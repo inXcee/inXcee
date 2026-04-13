@@ -12,6 +12,10 @@ function runMigrations(database) {
 }
 
 export function initDB() {
+  // DB_PATH env ile yapılandırılır.
+  // Development default: 'yys.db' (proje kökü)
+  // Production: DB_PATH=/var/data/yys.db — kalıcı disk (VPS) veya Render persistent disk
+  // /tmp kullanmak VERİ KAYBI yaratır — restart/deploy'da silinir!
   const path = process.env.DB_PATH || 'yys.db'
   db = new Database(path)
   db.exec(SCHEMA)
