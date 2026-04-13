@@ -188,6 +188,7 @@ export default function UsersPage() {
                   <th>Kullanici Adi</th>
                   <th>Ad Soyad</th>
                   <th>Rol</th>
+                  <th>E-Posta</th>
                   <th>Blok</th>
                   <th>Kat</th>
                   <th>Islemler</th>
@@ -203,6 +204,7 @@ export default function UsersPage() {
                         {ROLES.find(r => r.value === u.role)?.label || u.role}
                       </span>
                     </td>
+                    <td style={{ fontFamily: 'var(--mono)', fontSize: '11px' }}>{u.email || '-'}</td>
                     <td style={{ fontFamily: 'var(--mono)', fontSize: '11px' }}>{u.assigned_block || '-'}</td>
                     <td style={{ fontFamily: 'var(--mono)', fontSize: '11px' }}>{u.assigned_floor || '-'}</td>
                     <td>
