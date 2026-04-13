@@ -81,8 +81,8 @@ export function buildReportHtml() {
 <h2>Doluluk — Blok Bazlı</h2>
 ${table(
   ['Blok', 'Oda', 'Toplam Yatak', 'Dolu', 'Boş'],
-  ['block', 'oda_sayisi', 'toplam_yatak', 'dolu_yatak', 'boş'],
-  occupancy.blocks.map(b => ({ ...b, dolu_yatak: b.dolu_yatak, boş: b.toplam_yatak - b.dolu_yatak }))
+  ['block', 'oda_sayisi', 'toplam_yatak', 'dolu_yatak', 'bos'],
+  occupancy.blocks.map(b => ({ ...b, dolu_yatak: b.dolu_yatak, bos: b.toplam_yatak - b.dolu_yatak }))
 )}
 
 <h2>Temizlik Özeti — Bugün</h2>
@@ -139,5 +139,10 @@ export async function sendMorningReport() {
     html,
   }
 
-  await transport.sendMail(mailOptions)
+  try {
+    await transport.sendMail(mailOptions)
+  } catch (e) {
+    console.error('[Email] SMTP gönderim hatası:', e.message)
+    throw e
+  }
 }
