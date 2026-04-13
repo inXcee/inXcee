@@ -26,6 +26,7 @@ function UserForm({ user, onSubmit, onCancel }) {
     full_name: user?.full_name || '',
     assigned_block: user?.assigned_block || '',
     assigned_floor: user?.assigned_floor || '',
+    email: user?.email || '',
   })
 
   return (
@@ -69,6 +70,12 @@ function UserForm({ user, onSubmit, onCancel }) {
             <label className="form-label">KAT</label>
             <input className="form-input" type="number" value={form.assigned_floor}
               onChange={e => setForm(f => ({ ...f, assigned_floor: e.target.value }))} />
+          </div>
+          <div>
+            <label className="form-label">E-POSTA</label>
+            <input className="form-input" type="email" value={form.email}
+              placeholder="kullanici@ornek.com"
+              onChange={e => setForm(f => ({ ...f, email: e.target.value }))} />
           </div>
         </div>
         <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
