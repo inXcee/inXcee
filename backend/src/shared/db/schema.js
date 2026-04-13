@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS users (
   full_name TEXT NOT NULL,
   assigned_block TEXT,
   assigned_floor INTEGER,
+  email TEXT,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -414,4 +415,10 @@ CREATE INDEX IF NOT EXISTS idx_shifts_personnel ON shifts(personnel_id);
 CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(target_user_id, is_read, created_at);
 CREATE INDEX IF NOT EXISTS idx_maintenance_assigned ON maintenance_requests(assigned_to, status);
 CREATE INDEX IF NOT EXISTS idx_discipline_personnel ON discipline_records(personnel_id);
+
+CREATE TABLE IF NOT EXISTS system_settings (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at TEXT DEFAULT (datetime('now'))
+);
 `

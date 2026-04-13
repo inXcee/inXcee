@@ -6,18 +6,30 @@ export function seedDev() {
   const hash = bcrypt.hashSync('admin123', 10)
 
   // ── Kullanıcılar ────────────────────────────────────────────────────────────
-  const roles = [
-    ['mudur',    hash, 'campus_manager',   'Kampüs Müdürü',          null, null],
-    ['vardiya',  hash, 'shift_supervisor', 'Vardiya Amiri',           'M1', 1],
-    ['teknik',   hash, 'technical',        'Teknik Servis',           null, null],
-    ['camasir',  hash, 'laundry',          'Çamaşırhane Görevlisi',   null, null],
-    ['meydanci', hash, 'housekeeper',      'Meydancı',                'M1', 1],
-  ]
   const userInsert = db.prepare(`
-    INSERT OR IGNORE INTO users(username,password_hash,role,full_name,assigned_block,assigned_floor)
-    VALUES(?,?,?,?,?,?)
+    INSERT OR IGNORE INTO users(username,password_hash,role,full_name,assigned_block,assigned_floor,email)
+    VALUES(?,?,?,?,?,?,?)
   `)
+  const roles = [
+    ['mudur',    hash, 'campus_manager',   'Kampüs Müdürü',          null, null, 'mudur@yys.local'],
+    ['vardiya',  hash, 'shift_supervisor', 'Vardiya Amiri',           'M1', 1,    null],
+    ['teknik',   hash, 'technical',        'Teknik Servis',           null, null, null],
+    ['camasir',  hash, 'laundry',          'Çamaşırhane Görevlisi',   null, null, null],
+    ['meydanci', hash, 'housekeeper',      'Meydancı',                'M1', 1,    null],
+  ]
   roles.forEach(r => userInsert.run(...r))
+
+  // ── Sistem Ayarları ────────────────────────────────────────────────────────
+  const settingInsert = db.prepare(`
+    INSERT OR IGNORE INTO system_settings(key, value) VALUES(?, ?)
+  `)
+  const defaultSettings = [
+    ['email_enabled', 'false'],
+    ['email_hour',    '7'],
+    ['email_minute',  '0'],
+    ['email_cc',      ''],
+  ]
+  defaultSettings.forEach(([k, v]) => settingInsert.run(k, v))
 
   // ── Odalar ──────────────────────────────────────────────────────────────────
   //
