@@ -9,6 +9,5 @@ services:
         value: production
       - key: DB_PATH
         value: /tmp/yys.db
-      - key: JWT_SECRET
-        value: yys-render-secret-2026
+      # JWT_SECRET — Render Dashboard > Settings > Environment Variables'dan ayarlayın
     autoDeploy: true

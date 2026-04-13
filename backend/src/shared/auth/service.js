@@ -2,7 +2,11 @@ import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import { getDB } from '../db/index.js'
 
-const SECRET = process.env.JWT_SECRET || 'yys-dev-secret-change-in-prod'
+const SECRET = process.env.JWT_SECRET
+if (!SECRET) {
+  console.error('[Auth] JWT_SECRET env değişkeni tanımlı değil! Sunucu başlatılamaz.')
+  process.exit(1)
+}
 
 export function login(username, password) {
   const db = getDB()
