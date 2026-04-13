@@ -68,6 +68,6 @@ app.use('/api/checkout', writeLimiter, checkoutRouter)
 app.use('/api/reports', reportsRouter)
 app.use('/api/inventory', writeLimiter, inventoryRouter)
 app.use('/api/users', writeLimiter, usersRouter)
-app.use('/api/settings/email', emailRouter)
+app.use('/api/settings/email', writeLimiter, emailRouter)
 
 export default app

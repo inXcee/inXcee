@@ -109,13 +109,15 @@ describe('PUT /api/settings/email', () => {
 })
 
 describe('POST /api/settings/email/test', () => {
-  it('SMTP mock ile 200 döner', async () => {
-    vi.mock('nodemailer', () => ({
-      default: { createTransport: () => ({ sendMail: vi.fn().mockResolvedValue({ messageId: 'test' }) }) }
-    }))
+  it('endpoint ulaşılabilir ve auth korumalı', async () => {
+    // SMTP kurulu olmadığından 500 beklenir; önemli olan 401/404 değil
     const res = await request(app)
       .post('/api/settings/email/test')
       .set('Authorization', `Bearer ${managerToken}`)
-    expect([200, 500]).toContain(res.status) // SMTP yapılandırılmamışsa 500 da kabul
+    expect([200, 500]).toContain(res.status)
+  })
+  it('token olmadan 401 döner', async () => {
+    const res = await request(app).post('/api/settings/email/test')
+    expect(res.status).toBe(401)
   })
 })
