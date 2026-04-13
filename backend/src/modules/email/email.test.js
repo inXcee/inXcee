@@ -6,6 +6,7 @@ import {
   getEmailSettings, setEmailSettings,
   getManagerEmails
 } from './queries.js'
+import { buildReportHtml } from './service.js'
 
 beforeAll(() => {
   process.env.DB_PATH = ':memory:'
@@ -49,5 +50,24 @@ describe('getManagerEmails', () => {
     const emails = getManagerEmails()
     expect(Array.isArray(emails)).toBe(true)
     expect(emails).toContain('mudur@yys.local')
+  })
+})
+
+describe('buildReportHtml', () => {
+  it('string döndürür', () => {
+    const html = buildReportHtml()
+    expect(typeof html).toBe('string')
+  })
+  it('6 bölüm başlığı içerir', () => {
+    const html = buildReportHtml()
+    const sections = [
+      'KPI Özeti',
+      'Doluluk',
+      'Temizlik',
+      'Bakım',
+      'Giriş / Çıkış',
+      'Çamaşırhane',
+    ]
+    sections.forEach(s => expect(html).toContain(s))
   })
 })
