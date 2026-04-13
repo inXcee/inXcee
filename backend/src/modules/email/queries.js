@@ -1,5 +1,6 @@
 import { getDB } from '../../shared/db/index.js'
 
+/** @returns {string|null} stored value, or null if key does not exist */
 export function getSetting(key) {
   const db = getDB()
   const row = db.prepare('SELECT value FROM system_settings WHERE key=?').get(key)
