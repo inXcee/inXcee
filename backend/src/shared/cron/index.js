@@ -45,3 +45,7 @@ export function startCronJobs() {
 
   // cron jobs initialized
 }
+
+export function scheduleMorningReport() {
+  // Will be implemented in Task 5
+}

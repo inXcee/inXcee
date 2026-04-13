@@ -19,6 +19,7 @@ import { usersRouter } from './modules/users/routes.js'
 import { authRouter } from './shared/auth/routes.js'
 import { notificationsRouter } from './shared/notifications/routes.js'
 import { whatsappRouter } from './shared/whatsapp/routes.js'
+import { emailRouter } from './modules/email/routes.js'
 
 const app = express()
 app.use(cors({
@@ -67,5 +68,6 @@ app.use('/api/checkout', writeLimiter, checkoutRouter)
 app.use('/api/reports', reportsRouter)
 app.use('/api/inventory', writeLimiter, inventoryRouter)
 app.use('/api/users', writeLimiter, usersRouter)
+app.use('/api/settings/email', emailRouter)
 
 export default app
