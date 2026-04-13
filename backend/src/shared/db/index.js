@@ -17,6 +17,7 @@ export function initDB() {
   db.exec(SCHEMA)
   runMigrations(db)
   // migrations — safe to run on existing DB
+  try { db.exec('ALTER TABLE users ADD COLUMN email TEXT') } catch(_) {}
   try { db.exec('ALTER TABLE rooms ADD COLUMN notes TEXT') } catch(_) {}
   try { db.exec('ALTER TABLE rooms ADD COLUMN no_clean INTEGER DEFAULT 0') } catch(_) {}
   try { db.exec('ALTER TABLE personnel ADD COLUMN job_title TEXT') } catch(_) {}
