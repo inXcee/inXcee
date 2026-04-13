@@ -3,6 +3,10 @@ import { generateDailyTasks } from '../../modules/housekeeping/queries.js'
 import { createNotification } from '../notifications/service.js'
 import { getDB } from '../db/index.js'
 import { checkSlaViolations, checkMachineTimers, checkSlaPreWarnings, checkMachineMaintenanceAlerts } from '../../modules/laundry/sla.js'
+import { getEmailSettings } from '../../modules/email/queries.js'
+import { sendMorningReport } from '../../modules/email/service.js'
+
+let emailJob = null
 
 export function startCronJobs() {
   // Her gün 05:50'de günlük temizlik görevleri oluştur
@@ -44,8 +48,14 @@ export function startCronJobs() {
   })
 
   // cron jobs initialized
+  scheduleMorningReport()
 }
 
 export function scheduleMorningReport() {
-  // Will be implemented in Task 5
+  if (emailJob) { emailJob.stop(); emailJob = null }
+  const { enabled, hour, minute } = getEmailSettings()
+  if (!enabled) return
+  emailJob = cron.schedule(`${minute} ${hour} * * *`, () => {
+    sendMorningReport().catch(e => console.error('[Cron] Email hatası:', e))
+  })
 }
