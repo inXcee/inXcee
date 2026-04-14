@@ -22,6 +22,7 @@ const STATUS_COLORS = {
 
 export default function SelfServicePage() {
   const [tcNo, setTcNo] = useState('')
+  const [pin, setPin] = useState('')
   const [kioskToken, setKioskToken] = useState(null)
   const [loginError, setLoginError] = useState('')
   const [activeTab, setActiveTab] = useState('info')
@@ -38,10 +39,10 @@ export default function SelfServicePage() {
     e.preventDefault()
     setLoginError('')
     try {
-      const res = await api.post('/auth/kiosk-login', { tc_no: tcNo })
+      const res = await api.post('/auth/kiosk-login', { tc_no: tcNo, pin })
       setKioskToken(res.data.token)
-    } catch {
-      setLoginError('TC No bulunamadı veya çıkış yapılmış')
+    } catch (err) {
+      setLoginError(err.response?.data?.error || 'Giris basarisiz')
     }
   }
 
@@ -84,9 +85,22 @@ export default function SelfServicePage() {
                 autoFocus
               />
             </div>
+            <div>
+              <label className="block text-sm text-slate-400 mb-2">PIN (4 hane)</label>
+              <input
+                type="password"
+                inputMode="numeric"
+                maxLength={4}
+                value={pin}
+                onChange={e => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 text-center text-2xl tracking-widest focus:outline-none focus:border-amber-500"
+                placeholder="····"
+                required
+              />
+            </div>
             {loginError && <div className="text-red-400 text-sm text-center">{loginError}</div>}
-            <button type="submit" disabled={tcNo.length < 11} className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 text-white rounded-xl py-3 text-base font-medium transition-colors">
-              Giriş Yap
+            <button type="submit" disabled={tcNo.length < 11 || pin.length !== 4} className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 text-white rounded-xl py-3 text-base font-medium transition-colors">
+              Giris Yap
             </button>
           </form>
         </div>
