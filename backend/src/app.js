@@ -37,7 +37,11 @@ app.use(cors({
 }))
 app.use(express.json({ limit: '5mb' }))
 app.use(sanitizeBody)
-app.use('/uploads', express.static('uploads'))
+app.use('/uploads', (req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff')
+  res.setHeader('Content-Disposition', 'attachment')
+  next()
+}, express.static('uploads'))
 
 // Health check
 app.get('/api/health', (req, res) => res.json({ status: 'ok', uptime: process.uptime() }))
@@ -61,21 +65,28 @@ const writeLimiter = rateLimit({
 
 app.use('/api/auth', authLimiter, authRouter)
 app.use('/api/checkin', writeLimiter, checkinRouter)
-app.use('/api/capacity', capacityRouter)
+app.use('/api/capacity', writeLimiter, capacityRouter)
 app.use('/api/laundry', writeLimiter, laundryRouter)
 app.use('/api/housekeeping', writeLimiter, housekeepingRouter)
 app.use('/api/maintenance', writeLimiter, maintenanceRouter)
 app.use('/api/discipline', writeLimiter, disciplineRouter)
-app.use('/api/self-service', selfServiceRouter)
+app.use('/api/self-service', writeLimiter, selfServiceRouter)
 app.use('/api/dashboard', dashboardRouter)
 app.use('/api/room-history', roomHistoryRouter)
-app.use('/api/notifications', notificationsRouter)
-app.use('/api/whatsapp', whatsappRouter)
+app.use('/api/notifications', writeLimiter, notificationsRouter)
+app.use('/api/whatsapp', writeLimiter, whatsappRouter)
 app.use('/api/shifts', writeLimiter, shiftsRouter)
 app.use('/api/checkout', writeLimiter, checkoutRouter)
 app.use('/api/reports', reportsRouter)
 app.use('/api/inventory', writeLimiter, inventoryRouter)
 app.use('/api/users', writeLimiter, usersRouter)
 app.use('/api/settings/email', writeLimiter, emailRouter)
+
+// ── Global Error Handler ─────────────────────────────────────────────────────
+app.use((err, req, res, _next) => {
+  console.error('[Express]', err.stack || err.message)
+  const status = err.status || err.statusCode || 500
+  res.status(status).json({ error: status < 500 ? err.message : 'Sunucu hatası' })
+})
 
 export default app
