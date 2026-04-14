@@ -1,8 +1,16 @@
 import { getDB } from '../db/index.js'
 
+const MAX_SSE_CLIENTS = 100
 const sseClients = new Set()
 
-export function addSSEClient(res) { sseClients.add(res) }
+export function addSSEClient(res) {
+  if (sseClients.size >= MAX_SSE_CLIENTS) {
+    const oldest = sseClients.values().next().value
+    try { oldest.end() } catch { /* bağlantı zaten kapalı */ }
+    sseClients.delete(oldest)
+  }
+  sseClients.add(res)
+}
 export function removeSSEClient(res) { sseClients.delete(res) }
 
 export function createNotification({ message, type = 'info', module, target_role, target_user_id }) {
