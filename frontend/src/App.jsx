@@ -30,6 +30,12 @@ function PrivateRoute({ children }) {
   return token ? children : <Navigate to="/login" />
 }
 
+function RoleRoute({ roles, children }) {
+  const user = useAuthStore(s => s.user)
+  if (!roles.includes(user?.role)) return <Navigate to="/" replace />
+  return children
+}
+
 function NotFound() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', fontFamily: 'var(--mono)', color: 'var(--fg)' }}>
@@ -86,10 +92,10 @@ export default function App() {
             <Route path="laundry/*" element={<LaundryHub />} />
             <Route path="inventory" element={<InventoryPage />} />
             <Route path="reports" element={<ReportsPage />} />
-            <Route path="audit" element={<AuditPage />} />
-            <Route path="users" element={<UsersPage />} />
-            <Route path="kiosk-pins" element={<KioskPinPage />} />
-            <Route path="settings" element={<SettingsPage />} />
+            <Route path="audit" element={<RoleRoute roles={['campus_manager']}><AuditPage /></RoleRoute>} />
+            <Route path="users" element={<RoleRoute roles={['campus_manager']}><UsersPage /></RoleRoute>} />
+            <Route path="settings" element={<RoleRoute roles={['campus_manager']}><SettingsPage /></RoleRoute>} />
+            <Route path="kiosk-pins" element={<RoleRoute roles={['campus_manager']}><KioskPinPage /></RoleRoute>} />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>
