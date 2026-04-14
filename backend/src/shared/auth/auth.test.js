@@ -80,6 +80,28 @@ describe('PATCH /api/auth/password', () => {
   })
 })
 
+describe('token refresh', () => {
+  it('geçerli token ile yeni token alınır', async () => {
+    const res = await request(app)
+      .post('/api/auth/refresh')
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(res.status).toBe(200)
+    expect(res.body.token).toBeTruthy()
+  })
+
+  it('geçersiz token reddedilir', async () => {
+    const res = await request(app)
+      .post('/api/auth/refresh')
+      .set('Authorization', 'Bearer gecersiz.token.burada')
+    expect(res.status).toBe(401)
+  })
+
+  it('token olmadan 401 döner', async () => {
+    const res = await request(app).post('/api/auth/refresh')
+    expect(res.status).toBe(401)
+  })
+})
+
 describe('CORS', () => {
   it('localhost:5173 origin\'ine izin verir', async () => {
     const res = await request(app)

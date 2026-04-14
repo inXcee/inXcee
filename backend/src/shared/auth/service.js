@@ -61,6 +61,30 @@ export function verifyToken(token) {
   return jwt.verify(token, SECRET)
 }
 
+export function refreshToken(oldToken) {
+  let payload
+  try {
+    payload = jwt.verify(oldToken, SECRET)
+  } catch (e) {
+    if (e.name === 'TokenExpiredError') {
+      payload = jwt.decode(oldToken)
+    } else {
+      return { error: 'Geçersiz token', status: 401 }
+    }
+  }
+  if (!payload) return { error: 'Token payload boş', status: 401 }
+  if (payload.role === 'kiosk') return { error: 'Kiosk token yenilenemiyor', status: 403 }
+  const db = getDB()
+  const user = db.prepare('SELECT id, role, username, full_name FROM users WHERE id=?').get(payload.id)
+  if (!user) return { error: 'Kullanıcı bulunamadı', status: 401 }
+  const newToken = jwt.sign(
+    { id: user.id, role: user.role, username: user.username, full_name: user.full_name },
+    SECRET,
+    { expiresIn: '12h' }
+  )
+  return { token: newToken, user: { id: user.id, role: user.role, username: user.username, full_name: user.full_name } }
+}
+
 export function changeOwnPassword(userId, currentPassword, newPassword) {
   if (!newPassword || newPassword.length < 8) {
     return { error: 'Yeni şifre en az 8 karakter olmalı', status: 400 }
