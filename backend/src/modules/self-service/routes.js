@@ -35,10 +35,15 @@ selfServiceRouter.get('/laundry-status', requireKioskOrStaff, (req, res) => {
 
 selfServiceRouter.post('/maintenance', requireKioskOrStaff, (req, res) => {
   if (!req.user.personnelId) return res.status(403).json({ error: 'Kiosk token gerekli' })
+  const { location, description } = req.body
+  if (!location || location.trim().length < 3)
+    return res.status(400).json({ error: 'location en az 3 karakter olmalıdır' })
+  if (!description || description.trim().length < 10)
+    return res.status(400).json({ error: 'description en az 10 karakter olmalıdır' })
   try {
     const id = createRequest({
-      location: req.body.location,
-      description: req.body.description,
+      location: location.trim(),
+      description: description.trim(),
       reporterUserId: req.user.userId || null
     })
     res.status(201).json({ id })

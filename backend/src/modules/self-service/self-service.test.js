@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll } from 'vitest'
 import request from 'supertest'
+import jwt from 'jsonwebtoken'
 import app from '../../app.js'
 import { initDB } from '../../shared/db/index.js'
 import { seedDev } from '../../shared/db/seed.js'
@@ -39,5 +40,27 @@ describe('Self-Service', () => {
   it('unauthenticated request gets 401', async () => {
     const res = await request(app).get('/api/self-service/my-info')
     expect(res.status).toBe(401)
+  })
+})
+
+describe('self-service maintenance validasyon', () => {
+  it('kısa location reddedilir', async () => {
+    const kioskToken = jwt.sign({ personnelId: 1, role: 'kiosk' }, process.env.JWT_SECRET, { expiresIn: '1h' })
+    const res = await request(app)
+      .post('/api/self-service/maintenance')
+      .set('Authorization', `Bearer ${kioskToken}`)
+      .send({ location: 'AB', description: 'Bu yeterince uzun bir aciklama metnidir' })
+    expect(res.status).toBe(400)
+    expect(res.body.error).toMatch(/location/)
+  })
+
+  it('kısa description reddedilir', async () => {
+    const kioskToken = jwt.sign({ personnelId: 1, role: 'kiosk' }, process.env.JWT_SECRET, { expiresIn: '1h' })
+    const res = await request(app)
+      .post('/api/self-service/maintenance')
+      .set('Authorization', `Bearer ${kioskToken}`)
+      .send({ location: 'Oda 101', description: 'kisa' })
+    expect(res.status).toBe(400)
+    expect(res.body.error).toMatch(/description/)
   })
 })
