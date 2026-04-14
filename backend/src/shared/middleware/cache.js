@@ -4,7 +4,7 @@
  */
 export function cacheFor(seconds) {
   return (req, res, next) => {
-    res.set('Cache-Control', `public, max-age=${seconds}`)
+    res.set('Cache-Control', `private, max-age=${seconds}`)
     next()
   }
 }

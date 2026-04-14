@@ -48,7 +48,7 @@ disciplineRouter.get('/records/:personnelId', ...mgmt, (req, res) => {
   try {
     const { date_from, date_to } = req.query
     res.json(svc.getRecordsService(+req.params.personnelId, { date_from, date_to }))
-  } catch (e) { res.status(500).json({ error: e.message }) }
+  } catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 // ── Blacklist ───────────────────────────────────────────────────────────────
@@ -68,7 +68,7 @@ disciplineRouter.post('/blacklist/remove', ...requireRole('campus_manager'), (re
 
 disciplineRouter.get('/blacklisted', ...mgmt, (req, res) => {
   try { res.json(svc.getBlacklistedService()) }
-  catch (e) { res.status(500).json({ error: e.message }) }
+  catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 // ── Stats & Suggestions ────────────────────────────────────────────────────
@@ -77,10 +77,10 @@ disciplineRouter.get('/stats', ...mgmt, (req, res) => {
   try {
     const { date_from, date_to } = req.query
     res.json(svc.getStatsService({ date_from, date_to }))
-  } catch (e) { res.status(500).json({ error: e.message }) }
+  } catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 disciplineRouter.get('/reason-suggestions', ...mgmt, (req, res) => {
   try { res.json(svc.getReasonSuggestionsService()) }
-  catch (e) { res.status(500).json({ error: e.message }) }
+  catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })

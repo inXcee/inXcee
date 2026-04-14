@@ -49,5 +49,8 @@ export function sanitizeBody(req, res, next) {
   if (req.body && typeof req.body === 'object') {
     req.body = sanitizeValue(req.body)
   }
+  if (req.query && typeof req.query === 'object') {
+    req.query = sanitizeObject(req.query)
+  }
   next()
 }

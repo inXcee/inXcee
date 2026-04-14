@@ -13,7 +13,7 @@ whatsappRouter.post('/messages', ...access, (req, res) => {
     const results = wp.submitMessages(text, sender, groupName)
     res.json({ ok: true, messages: results, count: results.length, faults: results.filter(r => r.isFault).length })
   } catch (e) {
-    res.status(500).json({ error: e.message })
+    console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" })
   }
 })
 

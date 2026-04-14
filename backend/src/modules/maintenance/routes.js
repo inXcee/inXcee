@@ -46,7 +46,7 @@ maintenanceRouter.get('/requests', ...techAccess, (req, res) => {
     }
     res.json(svc.getRequestsService(req.query))
   }
-  catch (e) { res.status(500).json({ error: e.message }) }
+  catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 maintenanceRouter.get('/requests/:id', ...techAccess, (req, res) => {
@@ -101,26 +101,26 @@ maintenanceRouter.delete('/requests/:id', ...requireRole('campus_manager'), (req
 
 maintenanceRouter.get('/stats', ...techAccess, (req, res) => {
   try { res.json(svc.getStatsService()) }
-  catch (e) { res.status(500).json({ error: e.message }) }
+  catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 // ── Location suggestions ────────────────────────────────────────────────────
 
 maintenanceRouter.get('/location-suggestions', ...techAccess, (req, res) => {
   try { res.json(svc.getLocationSuggestionsService()) }
-  catch (e) { res.status(500).json({ error: e.message }) }
+  catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 // ── Technicians ──────────────────────────────────────────────────────────────
 
 maintenanceRouter.get('/technicians', ...techAccess, (req, res) => {
   try { res.json(svc.getTechniciansService()) }
-  catch (e) { res.status(500).json({ error: e.message }) }
+  catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 maintenanceRouter.get('/technicians/available', ...techAccess, (req, res) => {
   try { res.json(svc.getAvailableTechniciansService()) }
-  catch (e) { res.status(500).json({ error: e.message }) }
+  catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 maintenanceRouter.post('/technicians', ...requireRole('campus_manager', 'technical'), (req, res) => {
@@ -144,7 +144,7 @@ maintenanceRouter.delete('/technicians/:id', ...requireRole('campus_manager', 't
 
 maintenanceRouter.get('/requests/:id/comments', ...techAccess, (req, res) => {
   try { res.json(svc.getCommentsService(+req.params.id)) }
-  catch (e) { res.status(500).json({ error: e.message }) }
+  catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 maintenanceRouter.post('/requests/:id/comments', ...techAccess, upload.single('photo'), (req, res) => {

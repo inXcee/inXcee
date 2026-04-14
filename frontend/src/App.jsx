@@ -1,4 +1,4 @@
-import { useState, useEffect, Suspense, lazy } from 'react'
+import { Suspense, lazy } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useAuthStore } from './shared/store/authStore.js'
 import ErrorBoundary from './shared/components/ErrorBoundary.jsx'
@@ -46,34 +46,11 @@ function NotFound() {
   )
 }
 
-function OfflineBanner() {
-  const [offline, setOffline] = useState(!navigator.onLine)
-  useEffect(() => {
-    const on = () => setOffline(false)
-    const off = () => setOffline(true)
-    window.addEventListener('online', on)
-    window.addEventListener('offline', off)
-    return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off) }
-  }, [])
-  if (!offline) return null
-  return (
-    <div style={{
-      position: 'fixed', top: 0, left: 0, right: 0, zIndex: 9999,
-      background: 'var(--red)', color: '#fff', textAlign: 'center',
-      padding: '8px 16px', fontFamily: 'var(--mono)', fontSize: '11px',
-      letterSpacing: '1px',
-    }}>
-      &#x26A0; BAGLANTI KESILDI — Veriler guncellenmeyecek
-    </div>
-  )
-}
-
 export default function App() {
   return (
     <ErrorBoundary>
-      <OfflineBanner />
       <ToastContainer />
-      <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', fontFamily: 'var(--mono)', letterSpacing: '2px', fontSize: '13px' }}>YUKLENIYOR...</div>}>
+      <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}><span className="page-spinner" /></div>}>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/kiosk" element={<SelfServicePage />} />

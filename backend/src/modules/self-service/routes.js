@@ -17,7 +17,7 @@ selfServiceRouter.get('/my-info', requireKioskOrStaff, (req, res) => {
       WHERE ra.personnel_id=? AND ra.check_out_at IS NULL
     `).get(req.user.personnelId)
     res.json({ ...p, room: assignment || null })
-  } catch (e) { res.status(500).json({ error: e.message }) }
+  } catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 selfServiceRouter.get('/laundry-status', requireKioskOrStaff, (req, res) => {
@@ -30,7 +30,7 @@ selfServiceRouter.get('/laundry-status', requireKioskOrStaff, (req, res) => {
     if (!assignment) return res.json([])
     const bags = db.prepare('SELECT * FROM laundry_bags WHERE room_id=? ORDER BY collected_at DESC LIMIT 10').all(assignment.room_id)
     res.json(bags)
-  } catch (e) { res.status(500).json({ error: e.message }) }
+  } catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 selfServiceRouter.post('/maintenance', requireKioskOrStaff, (req, res) => {

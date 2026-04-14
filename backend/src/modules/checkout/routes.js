@@ -22,5 +22,5 @@ checkoutRouter.post('/process', ...mgmt, (req, res) => {
 
 checkoutRouter.get('/recent', ...mgmt, (req, res) => {
   try { res.json(svc.getRecentCheckoutsService(+req.query.limit || 20)) }
-  catch (e) { res.status(500).json({ error: e.message }) }
+  catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })

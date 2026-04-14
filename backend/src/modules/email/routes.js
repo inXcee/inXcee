@@ -10,7 +10,7 @@ const adminOnly = requireRole('campus_manager')
 emailRouter.get('/', ...adminOnly, (req, res) => {
   try {
     res.json(getEmailSettings())
-  } catch (e) { res.status(500).json({ error: e.message }) }
+  } catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 emailRouter.put('/', ...adminOnly, (req, res) => {
@@ -25,12 +25,12 @@ emailRouter.put('/', ...adminOnly, (req, res) => {
     setEmailSettings({ enabled: !!enabled, hour, minute, cc: cc ?? '' })
     scheduleMorningReport()
     res.json({ ok: true })
-  } catch (e) { res.status(500).json({ error: e.message }) }
+  } catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 emailRouter.post('/test', ...adminOnly, async (req, res) => {
   try {
     await sendMorningReport()
     res.json({ ok: true })
-  } catch (e) { res.status(500).json({ error: e.message }) }
+  } catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })

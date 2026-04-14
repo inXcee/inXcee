@@ -50,6 +50,7 @@ app.use(cors({
   },
   credentials: true,
 }))
+// 5mb limit: zimmet imzası canvas base64 ve profil fotoğrafları JSON body'de taşınıyor
 app.use(express.json({ limit: '5mb' }))
 app.use(sanitizeBody)
 app.use('/uploads', (req, res, next) => {

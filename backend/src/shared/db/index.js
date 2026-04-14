@@ -548,6 +548,63 @@ export function initDB() {
     if (!e.message?.includes('already exists')) console.error('[Migration] idx_notif_dedup:', e.message)
   }
 
+  // ── CASCADE DELETE: room_assignments + notifications ──────────────────────
+  try {
+    const raSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='room_assignments'").get()
+    if (raSql && !raSql.sql.includes('ON DELETE CASCADE')) {
+      db.exec('PRAGMA foreign_keys=OFF')
+      db.transaction(() => {
+        db.exec(`CREATE TABLE IF NOT EXISTS room_assignments_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          personnel_id INTEGER NOT NULL REFERENCES personnel(id) ON DELETE CASCADE,
+          room_id INTEGER NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+          bed_no INTEGER NOT NULL,
+          assigned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          check_out_at DATETIME,
+          assigned_by INTEGER REFERENCES users(id)
+        )`)
+        db.exec(`INSERT INTO room_assignments_new SELECT * FROM room_assignments`)
+        db.exec(`DROP TABLE room_assignments`)
+        db.exec(`ALTER TABLE room_assignments_new RENAME TO room_assignments`)
+        db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_active_assignment ON room_assignments(personnel_id) WHERE check_out_at IS NULL`)
+        db.exec(`CREATE INDEX IF NOT EXISTS idx_room_assignments_room ON room_assignments(room_id)`)
+        db.exec(`CREATE TRIGGER IF NOT EXISTS block_quarantine_assignment
+          BEFORE INSERT ON room_assignments
+          BEGIN
+            SELECT RAISE(ABORT,'Bu oda karantinada — atama yapılamaz')
+            WHERE (SELECT status FROM rooms WHERE id=NEW.room_id) = 'quarantine';
+          END`)
+      })()
+      db.exec('PRAGMA foreign_keys=ON')
+    }
+  } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] room_assignments cascade:', e.message) }
+
+  try {
+    const notifSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='notifications'").get()
+    if (notifSql && !notifSql.sql.includes('ON DELETE CASCADE')) {
+      db.exec('PRAGMA foreign_keys=OFF')
+      db.transaction(() => {
+        db.exec(`CREATE TABLE IF NOT EXISTS notifications_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          target_role TEXT,
+          target_user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+          message TEXT NOT NULL,
+          type TEXT DEFAULT 'info' CHECK(type IN ('info','warning','critical')),
+          module TEXT,
+          is_read INTEGER DEFAULT 0,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          dedup_key TEXT
+        )`)
+        db.exec(`INSERT INTO notifications_new SELECT * FROM notifications`)
+        db.exec(`DROP TABLE notifications`)
+        db.exec(`ALTER TABLE notifications_new RENAME TO notifications`)
+        db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_notif_dedup ON notifications(dedup_key) WHERE dedup_key IS NOT NULL`)
+        db.exec(`CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(target_user_id, is_read, created_at)`)
+      })()
+      db.exec('PRAGMA foreign_keys=ON')
+    }
+  } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] notifications cascade:', e.message) }
+
   return db
 }
 

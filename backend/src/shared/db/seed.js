@@ -252,7 +252,12 @@ export function seedDev() {
 
   // Haftalık vardiya çizelgesi (bu hafta + geçen hafta)
   const scheduleInsert = db.prepare(`INSERT OR IGNORE INTO shift_schedule(staff_id,dept_id,shift_def_id,work_date,status) VALUES(?,?,?,?,?)`)
-  const today = new Date('2026-03-22')
+  const today = new Date()
+  const d = (offset) => {
+    const dt = new Date(today)
+    dt.setDate(today.getDate() + offset)
+    return dt.toISOString().split('T')[0]
+  }
   const monday = new Date(today)
   monday.setDate(today.getDate() - today.getDay() + 1)
 
@@ -282,29 +287,29 @@ export function seedDev() {
   const leaveCount = db.prepare('SELECT COUNT(*) as c FROM leave_requests').get().c
   if (leaveCount === 0 && staffIds.length >= 10) {
     const leaveInsert = db.prepare(`INSERT INTO leave_requests(staff_id,leave_type,start_date,end_date,total_days,reason,status) VALUES(?,?,?,?,?,?,?)`)
-    leaveInsert.run(staffIds[0].id, 'annual', '2026-03-23', '2026-03-27', 5, 'Yıllık izin talebi', 'pending')
-    leaveInsert.run(staffIds[1].id, 'sick', '2026-03-20', '2026-03-21', 2, 'Hastalık raporu', 'approved')
-    leaveInsert.run(staffIds[2].id, 'emergency', '2026-03-19', '2026-03-19', 1, 'Aile acil durumu', 'approved')
-    leaveInsert.run(staffIds[3].id, 'annual', '2026-03-25', '2026-04-01', 8, 'Yaz tatili', 'pending')
-    leaveInsert.run(staffIds[4].id, 'marriage', '2026-03-28', '2026-03-31', 4, 'Evlilik izni', 'pending')
-    leaveInsert.run(staffIds[5].id, 'paternity', '2026-03-22', '2026-03-26', 5, 'Babalık izni', 'approved')
-    leaveInsert.run(staffIds[6].id, 'sick', '2026-03-18', '2026-03-20', 3, 'Grip', 'approved')
-    leaveInsert.run(staffIds[7].id, 'bereavement', '2026-03-15', '2026-03-17', 3, 'Vefat izni', 'approved')
-    leaveInsert.run(staffIds[8].id, 'annual', '2026-04-01', '2026-04-05', 5, 'Bayram tatili uzatma', 'pending')
-    leaveInsert.run(staffIds[9].id, 'emergency', '2026-03-21', '2026-03-21', 1, 'Kişisel acil', 'rejected')
+    leaveInsert.run(staffIds[0].id, 'annual', d(1),   d(5),   5, 'Yıllık izin talebi', 'pending')
+    leaveInsert.run(staffIds[1].id, 'sick',   d(-2),  d(-1),  2, 'Hastalık raporu', 'approved')
+    leaveInsert.run(staffIds[2].id, 'emergency', d(-3), d(-3), 1, 'Aile acil durumu', 'approved')
+    leaveInsert.run(staffIds[3].id, 'annual', d(3),   d(10),  8, 'Yaz tatili', 'pending')
+    leaveInsert.run(staffIds[4].id, 'marriage', d(6), d(9),   4, 'Evlilik izni', 'pending')
+    leaveInsert.run(staffIds[5].id, 'paternity', d(0), d(4),  5, 'Babalık izni', 'approved')
+    leaveInsert.run(staffIds[6].id, 'sick',   d(-4),  d(-2),  3, 'Grip', 'approved')
+    leaveInsert.run(staffIds[7].id, 'bereavement', d(-7), d(-5), 3, 'Vefat izni', 'approved')
+    leaveInsert.run(staffIds[8].id, 'annual', d(17),  d(21),  5, 'Bayram tatili uzatma', 'pending')
+    leaveInsert.run(staffIds[9].id, 'emergency', d(-1), d(-1), 1, 'Kişisel acil', 'rejected')
   }
 
   // Örnek mesai kayıtları
   const otCount = db.prepare('SELECT COUNT(*) as c FROM overtime_records').get().c
   if (otCount === 0 && staffIds.length >= 8) {
     const otInsert = db.prepare(`INSERT INTO overtime_records(staff_id,work_date,hours,reason) VALUES(?,?,?,?)`)
-    otInsert.run(staffIds[0].id, '2026-03-19', 2.5, 'Proje teslimi')
-    otInsert.run(staffIds[1].id, '2026-03-18', 3.0, 'Ekstra güvenlik nöbeti')
-    otInsert.run(staffIds[2].id, '2026-03-17', 1.5, 'Acil bakım onarım')
-    otInsert.run(staffIds[3].id, '2026-03-20', 4.0, 'Etkinlik hazırlığı')
-    otInsert.run(staffIds[4].id, '2026-03-19', 2.0, 'Temizlik operasyonu')
-    otInsert.run(staffIds[5].id, '2026-03-21', 3.5, 'Gece nöbeti uzatma')
-    otInsert.run(staffIds[6].id, '2026-03-16', 2.0, 'Hafta sonu çalışma')
-    otInsert.run(staffIds[7].id, '2026-03-15', 1.0, 'Yemekhane hazırlık')
+    otInsert.run(staffIds[0].id, d(-3), 2.5, 'Proje teslimi')
+    otInsert.run(staffIds[1].id, d(-4), 3.0, 'Ekstra güvenlik nöbeti')
+    otInsert.run(staffIds[2].id, d(-5), 1.5, 'Acil bakım onarım')
+    otInsert.run(staffIds[3].id, d(-2), 4.0, 'Etkinlik hazırlığı')
+    otInsert.run(staffIds[4].id, d(-3), 2.0, 'Temizlik operasyonu')
+    otInsert.run(staffIds[5].id, d(-1), 3.5, 'Gece nöbeti uzatma')
+    otInsert.run(staffIds[6].id, d(-6), 2.0, 'Hafta sonu çalışma')
+    otInsert.run(staffIds[7].id, d(-7), 1.0, 'Yemekhane hazırlık')
   }
 }

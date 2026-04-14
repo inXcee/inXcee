@@ -170,7 +170,7 @@ checkinRouter.delete('/:id/kiosk-pin', ...requireRole('campus_manager'), (req, r
   try {
     getDB().prepare('UPDATE personnel SET kiosk_pin=NULL WHERE id=?').run(+req.params.id)
     res.json({ ok: true })
-  } catch (e) { res.status(500).json({ error: e.message }) }
+  } catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 // ── Photo Upload ──────────────────────────────────────────────────────────────
