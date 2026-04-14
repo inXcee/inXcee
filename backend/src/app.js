@@ -1,7 +1,9 @@
 import express from 'express'
 import cors from 'cors'
+import helmet from 'helmet'
 import rateLimit from 'express-rate-limit'
 import { sanitizeBody } from './shared/middleware/sanitize.js'
+import { getDB } from './shared/db/index.js'
 import { checkinRouter } from './modules/checkin/routes.js'
 import { capacityRouter } from './modules/capacity/routes.js'
 import { laundryRouter } from './modules/laundry/routes.js'
@@ -26,6 +28,19 @@ const allowedOrigins = process.env.ALLOWED_ORIGIN
   : ['http://localhost:5173', 'http://localhost:5174']
 
 const app = express()
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "blob:"],
+      connectSrc: ["'self'"],
+      fontSrc: ["'self'", "data:"],
+    }
+  },
+  crossOriginEmbedderPolicy: false,
+}))
 app.use(cors({
   origin: (origin, callback) => {
     // Postman, curl gibi origin'siz isteklere izin ver (server-to-server, healthcheck)
@@ -44,7 +59,15 @@ app.use('/uploads', (req, res, next) => {
 }, express.static('uploads'))
 
 // Health check
-app.get('/api/health', (req, res) => res.json({ status: 'ok', uptime: process.uptime() }))
+app.get('/api/health', (req, res) => {
+  let dbStatus = 'ok'
+  try { getDB().prepare('SELECT 1').get() } catch { dbStatus = 'error' }
+  res.status(dbStatus === 'ok' ? 200 : 503).json({
+    status: dbStatus === 'ok' ? 'ok' : 'degraded',
+    uptime: Math.floor(process.uptime()),
+    db: dbStatus,
+  })
+})
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
