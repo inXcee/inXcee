@@ -9,6 +9,16 @@ export function getAllItems(category) {
   return db.prepare(q).all(...params)
 }
 
+export function getAllItemsPaginated(category, limit, offset) {
+  const db = getDB()
+  let q = 'SELECT * FROM inventory'
+  const params = []
+  if (category) { q += ' WHERE category=?'; params.push(category) }
+  q += ' ORDER BY category, item_name LIMIT ? OFFSET ?'
+  params.push(limit, offset)
+  return db.prepare(q).all(...params)
+}
+
 export function searchItems(query) {
   const db = getDB()
   return db.prepare("SELECT * FROM inventory WHERE item_name LIKE ? ORDER BY category, item_name")

@@ -1,6 +1,14 @@
 import { Router } from 'express'
 import { requireRole } from '../../shared/auth/middleware.js'
+import { getDB } from '../../shared/db/index.js'
 import * as service from './service.js'
+
+function paginate(req) {
+  const page = Math.max(1, parseInt(req.query.page) || 1)
+  const limit = Math.min(200, Math.max(1, parseInt(req.query.limit) || 50))
+  const offset = (page - 1) * limit
+  return { page, limit, offset }
+}
 
 export const inventoryRouter = Router()
 const mgrAccess = requireRole('campus_manager', 'shift_supervisor', 'laundry', 'housekeeper')
@@ -26,6 +34,16 @@ inventoryRouter.get('/forecast', ...mgrAccess, (req, res) => {
 // ── CRUD ────────────────────────────────────────────────────────────────────
 inventoryRouter.get('/', ...mgrAccess, (req, res) => {
   if (req.query.search) return res.json(service.search(req.query.search))
+  if (req.query.page || req.query.limit) {
+    const { page, limit, offset } = paginate(req)
+    const db = getDB()
+    let countQ = 'SELECT COUNT(*) as c FROM inventory'
+    const params = []
+    if (req.query.category) { countQ += ' WHERE category=?'; params.push(req.query.category) }
+    const total = db.prepare(countQ).get(...params).c
+    const data = service.listItemsPaginated(req.query.category, limit, offset)
+    return res.json({ data, total, page, limit })
+  }
   res.json(service.listItems(req.query.category))
 })
 

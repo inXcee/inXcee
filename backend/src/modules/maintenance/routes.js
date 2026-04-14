@@ -1,7 +1,15 @@
 import { Router } from 'express'
 import { requireRole } from '../../shared/auth/middleware.js'
 import { upload } from '../../shared/uploads/middleware.js'
+import { getDB } from '../../shared/db/index.js'
 import * as svc from './service.js'
+
+function paginate(req) {
+  const page = Math.max(1, parseInt(req.query.page) || 1)
+  const limit = Math.min(200, Math.max(1, parseInt(req.query.limit) || 50))
+  const offset = (page - 1) * limit
+  return { page, limit, offset }
+}
 
 export const maintenanceRouter = Router()
 const techAccess = requireRole('campus_manager', 'shift_supervisor', 'technical')
@@ -28,7 +36,16 @@ maintenanceRouter.post('/requests', ...techAccess, upload.single('photo_before')
 })
 
 maintenanceRouter.get('/requests', ...techAccess, (req, res) => {
-  try { res.json(svc.getRequestsService(req.query)) }
+  try {
+    if (req.query.page || req.query.limit) {
+      const { page, limit, offset } = paginate(req)
+      const db = getDB()
+      const total = db.prepare('SELECT COUNT(*) as c FROM maintenance_requests').get().c
+      const data = svc.getRequestsService({ ...req.query, _limit: limit, _offset: offset })
+      return res.json({ data, total, page, limit })
+    }
+    res.json(svc.getRequestsService(req.query))
+  }
   catch (e) { res.status(500).json({ error: e.message }) }
 })
 

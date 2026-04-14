@@ -6,6 +6,10 @@ export function listItems(category) {
   return queries.getAllItems(category)
 }
 
+export function listItemsPaginated(category, limit, offset) {
+  return queries.getAllItemsPaginated(category, limit, offset)
+}
+
 export function search(query) {
   return queries.searchItems(query)
 }

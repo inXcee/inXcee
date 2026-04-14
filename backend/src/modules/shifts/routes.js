@@ -1,5 +1,13 @@
 import { Router } from 'express'
 import { requireRole, requireAuth } from '../../shared/auth/middleware.js'
+import { getDB } from '../../shared/db/index.js'
+
+function paginate(req) {
+  const page = Math.max(1, parseInt(req.query.page) || 1)
+  const limit = Math.min(200, Math.max(1, parseInt(req.query.limit) || 50))
+  const offset = (page - 1) * limit
+  return { page, limit, offset }
+}
 import {
   departmentsService, shiftDefinitionsService, scheduleService, bulkAssignService,
   staffStatusService, createLeaveService, approveLeaveService, leaveListService,
@@ -21,6 +29,13 @@ const allStaff = [requireAuth]
 
 // ── Staff CRUD ──
 shiftsRouter.get('/staff', ...allStaff, (req, res) => {
+  if (req.query.page || req.query.limit) {
+    const { page, limit, offset } = paginate(req)
+    const db = getDB()
+    const total = db.prepare('SELECT COUNT(*) as c FROM staff').get().c
+    const data = staffListService({ ...req.query, _limit: limit, _offset: offset })
+    return res.json({ data, total, page, limit })
+  }
   res.json(staffListService(req.query))
 })
 
