@@ -32,10 +32,14 @@ else
 fi
 cd ..
 
-# 3. Console.log kontrolü
+# 3. Console.log kontrolü — server.js başlatma/kapanış logları meşru, test dosyaları hariç
 echo ""
 echo "[3/5] Console.log kontrolü..."
-CONSOLE_LOGS=$(grep -r "console\.log" backend/src/ --include="*.js" -l 2>/dev/null | grep -v node_modules | grep -v ".test." || true)
+CONSOLE_LOGS=$(grep -r "console\.log" backend/src/ --include="*.js" -l 2>/dev/null \
+  | grep -v node_modules \
+  | grep -v "\.test\." \
+  | grep -v "server\.js" \
+  || true)
 if [ -z "$CONSOLE_LOGS" ]; then
   echo "✓ Production'da console.log yok"
 else
@@ -43,10 +47,10 @@ else
   echo "$CONSOLE_LOGS"
 fi
 
-# 4. .env kontrolü — git'te olmamalı
+# 4. .env kontrolü — git'te .env (tam adıyla) olmamalı; .env.example hariç
 echo ""
 echo "[4/5] .env güvenlik kontrolü..."
-if git ls-files --cached | grep -q "\.env"; then
+if git ls-files --cached | grep -qE "^\.env$|^backend/\.env$|^frontend/\.env$"; then
   echo "✗ .env dosyası git'te tracked!"
   ERRORS=$((ERRORS + 1))
 else
