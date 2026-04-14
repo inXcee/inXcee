@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { requireRole } from '../../shared/auth/middleware.js'
-import { upload } from '../../shared/uploads/middleware.js'
+import { upload, verifyMagicBytes } from '../../shared/uploads/middleware.js'
 import * as svc from './service.js'
 
 export const housekeepingRouter = Router()
@@ -56,7 +56,7 @@ housekeepingRouter.patch('/rooms/:id/notes', ...hkAccess, (req, res) => {
   catch (e) { res.status(400).json({ error: e.message }) }
 })
 
-housekeepingRouter.post('/fault-report', ...hkAccess, upload.single('photo'), (req, res) => {
+housekeepingRouter.post('/fault-report', ...hkAccess, upload.single('photo'), verifyMagicBytes, (req, res) => {
   try {
     const photoBefore = req.file ? `/uploads/${req.file.filename}` : null
     const id = svc.reportFaultService(req.body.location, req.body.description, req.user.id, req.body.priority, photoBefore)

@@ -27,8 +27,8 @@ export const shiftsRouter = Router()
 const managerOrSupervisor = requireRole('campus_manager', 'shift_supervisor')
 const allStaff = [requireAuth]
 
-// ── Staff CRUD ──
-shiftsRouter.get('/staff', ...allStaff, (req, res) => {
+// ── Staff CRUD — Personel bilgileri (maaş, TC, adres) sadece yönetim rollerine ──
+shiftsRouter.get('/staff', ...managerOrSupervisor, (req, res) => {
   if (req.query.page || req.query.limit) {
     const { page, limit, offset } = paginate(req)
     const db = getDB()
@@ -39,11 +39,11 @@ shiftsRouter.get('/staff', ...allStaff, (req, res) => {
   res.json(staffListService(req.query))
 })
 
-shiftsRouter.get('/staff/search', ...allStaff, (req, res) => {
+shiftsRouter.get('/staff/search', ...managerOrSupervisor, (req, res) => {
   res.json(searchStaffService(req.query.q))
 })
 
-shiftsRouter.get('/staff/:id', ...allStaff, (req, res) => {
+shiftsRouter.get('/staff/:id', ...managerOrSupervisor, (req, res) => {
   try {
     res.json(staffGetService(req.params.id))
   } catch (e) {

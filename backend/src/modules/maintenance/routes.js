@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { requireRole } from '../../shared/auth/middleware.js'
-import { upload } from '../../shared/uploads/middleware.js'
+import { upload, verifyMagicBytes } from '../../shared/uploads/middleware.js'
 import { getDB } from '../../shared/db/index.js'
 import * as svc from './service.js'
 
@@ -16,7 +16,7 @@ const techAccess = requireRole('campus_manager', 'shift_supervisor', 'technical'
 
 // ── Requests ─────────────────────────────────────────────────────────────────
 
-maintenanceRouter.post('/requests', ...techAccess, upload.single('photo_before'), (req, res) => {
+maintenanceRouter.post('/requests', ...techAccess, upload.single('photo_before'), verifyMagicBytes, (req, res) => {
   try {
     const { location, description, priority } = req.body
     if (!location || location.trim().length < 2) return res.status(400).json({ error: 'Konum gerekli' })
@@ -81,8 +81,10 @@ maintenanceRouter.patch('/requests/:id/status', ...techAccess, (req, res) => {
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
-maintenanceRouter.patch('/requests/:id/close', ...techAccess, upload.single('photo'), (req, res) => {
-  const photoUrl = req.file ? `/uploads/${req.file.filename}` : req.body.photo_url || null
+maintenanceRouter.patch('/requests/:id/close', ...techAccess, upload.single('photo'), verifyMagicBytes, (req, res) => {
+  const photoUrl = req.file
+    ? `/uploads/${req.file.filename}`
+    : (req.body.photo_url?.startsWith('/uploads/') ? req.body.photo_url : null)
   svc.closeRequestService(+req.params.id, photoUrl)
   res.json({ ok: true })
 })
@@ -147,7 +149,7 @@ maintenanceRouter.get('/requests/:id/comments', ...techAccess, (req, res) => {
   catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
-maintenanceRouter.post('/requests/:id/comments', ...techAccess, upload.single('photo'), (req, res) => {
+maintenanceRouter.post('/requests/:id/comments', ...techAccess, upload.single('photo'), verifyMagicBytes, (req, res) => {
   try {
     const photoUrl = req.file ? `/uploads/${req.file.filename}` : null
     const id = svc.addCommentService(+req.params.id, req.user.id, req.body.comment, photoUrl)

@@ -1,15 +1,18 @@
 import { getDB } from '../db/index.js'
 
 const MAX_SSE_CLIENTS = 100
-const sseClients = new Set()
+// Map<res, {res, userId, role}> — userId/role ile filtrelenmiş SSE broadcast için
+const sseClients = new Map()
 
-export function addSSEClient(res) {
+const MANAGEMENT_ROLES = new Set(['campus_manager', 'shift_supervisor'])
+
+export function addSSEClient(res, userId, role) {
   if (sseClients.size >= MAX_SSE_CLIENTS) {
-    const oldest = sseClients.values().next().value
+    const oldest = sseClients.keys().next().value
     try { oldest.end() } catch { /* bağlantı zaten kapalı */ }
     sseClients.delete(oldest)
   }
-  sseClients.add(res)
+  sseClients.set(res, { res, userId, role })
 }
 export function removeSSEClient(res) { sseClients.delete(res) }
 
@@ -28,8 +31,10 @@ export function createNotification({ message, type = 'info', module, target_role
   ).run(message, type, module || null, target_role || null, target_user_id || null, dedup_key || null)
 
   const notif = db.prepare('SELECT * FROM notifications WHERE id=?').get(r.lastInsertRowid)
-  sseClients.forEach(client => {
-    try { client.write(`data: ${JSON.stringify(notif)}\n\n`) } catch { sseClients.delete(client) }
+  sseClients.forEach(({ res: client, userId: uid, role }, resKey) => {
+    if (notif.target_user_id && notif.target_user_id !== uid) return
+    if (notif.target_role && notif.target_role !== role) return
+    try { client.write(`data: ${JSON.stringify(notif)}\n\n`) } catch { sseClients.delete(resKey) }
   })
   return notif
 }
@@ -71,7 +76,9 @@ export function broadcastOccupancy() {
   const data = { blocks, totals }
   const payload = `event: occupancy\ndata: ${JSON.stringify(data)}\n\n`
 
-  sseClients.forEach(client => {
-    try { client.write(payload) } catch { sseClients.delete(client) }
+  // Doluluk verisi sadece yönetim rollerine gönderilir
+  sseClients.forEach(({ res: client, role }, resKey) => {
+    if (!MANAGEMENT_ROLES.has(role)) return
+    try { client.write(payload) } catch { sseClients.delete(resKey) }
   })
 }

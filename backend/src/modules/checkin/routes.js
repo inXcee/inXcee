@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { requireRole } from '../../shared/auth/middleware.js'
-import { upload } from '../../shared/uploads/middleware.js'
+import { upload, verifyMagicBytes } from '../../shared/uploads/middleware.js'
 import { setKioskPin } from '../../shared/auth/service.js'
 import { getDB } from '../../shared/db/index.js'
 import * as svc from './service.js'
@@ -174,7 +174,7 @@ checkinRouter.delete('/:id/kiosk-pin', ...requireRole('campus_manager'), (req, r
 })
 
 // ── Photo Upload ──────────────────────────────────────────────────────────────
-checkinRouter.post('/photo/:personnelId', ...allowed, upload.single('photo'), (req, res) => {
+checkinRouter.post('/photo/:personnelId', ...allowed, upload.single('photo'), verifyMagicBytes, (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'Fotoğraf gerekli' })
     const photoUrl = `/uploads/${req.file.filename}`

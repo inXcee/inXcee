@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { requireRole } from '../../shared/auth/middleware.js'
-import { upload } from '../../shared/uploads/middleware.js'
+import { upload, verifyMagicBytes } from '../../shared/uploads/middleware.js'
 import { getDB } from '../../shared/db/index.js'
 import * as svc from './service.js'
 import { notifyItemReady, sendFoundMessage } from './whatsapp.js'
@@ -411,7 +411,7 @@ laundryRouter.put('/settings/:key', ...slaWrite, (req, res) => {
 // PHOTO UPLOAD
 // ═══════════════════════════════════════════════════════════════════════════
 
-laundryRouter.post('/upload-photo', ...laundryFull, upload.single('photo'), (req, res) => {
+laundryRouter.post('/upload-photo', ...laundryFull, upload.single('photo'), verifyMagicBytes, (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Dosya bulunamadı' })
   const path = `/uploads/${req.file.filename}`
   res.json({ url: path, filename: req.file.filename })
