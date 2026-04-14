@@ -87,6 +87,15 @@ const writeLimiter = rateLimit({
   legacyHeaders: false,
 })
 
+// Read-only endpoint rate limiter — 120 req/min
+const readLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 120,
+  message: { error: 'Çok fazla istek. Lütfen bekleyin.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+})
+
 app.use('/api/auth', authLimiter, authRouter)
 app.use('/api/checkin', writeLimiter, checkinRouter)
 app.use('/api/capacity', writeLimiter, capacityRouter)
@@ -95,8 +104,8 @@ app.use('/api/housekeeping', writeLimiter, housekeepingRouter)
 app.use('/api/maintenance', writeLimiter, maintenanceRouter)
 app.use('/api/discipline', writeLimiter, disciplineRouter)
 app.use('/api/self-service', writeLimiter, selfServiceRouter)
-app.use('/api/dashboard', dashboardRouter)
-app.use('/api/room-history', roomHistoryRouter)
+app.use('/api/dashboard', readLimiter, dashboardRouter)
+app.use('/api/room-history', readLimiter, roomHistoryRouter)
 app.use('/api/notifications', writeLimiter, notificationsRouter)
 app.use('/api/whatsapp', writeLimiter, whatsappRouter)
 app.use('/api/shifts', writeLimiter, shiftsRouter)

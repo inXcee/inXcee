@@ -22,11 +22,12 @@ export function initProdDB() {
     "INSERT INTO users(username, password_hash, role, full_name) VALUES(?, ?, 'campus_manager', 'Admin')"
   ).run('admin', hash)
 
-  console.log('╔════════════════════════════════════════════════════╗')
-  console.log('║  YYS İLK KURULUM                                   ║')
-  console.log('║  Admin kullanıcı oluşturuldu:                      ║')
-  console.log(`║  Kullanıcı adı : admin                             ║`)
-  console.log(`║  Şifre         : ${tempPassword.padEnd(36)}║`)
-  console.log('║  Giriş yaptıktan sonra şifrenizi değiştirin!       ║')
-  console.log('╚════════════════════════════════════════════════════╝')
+  // Şifre stdout yerine stderr'e yazılır — uygulama log akışından ayrı tutulur
+  process.stderr.write('╔════════════════════════════════════════════════════╗\n')
+  process.stderr.write('║  YYS İLK KURULUM                                   ║\n')
+  process.stderr.write('║  Admin kullanıcı oluşturuldu:                      ║\n')
+  process.stderr.write(`║  Kullanıcı adı : admin                             ║\n`)
+  process.stderr.write(`║  Şifre         : ${tempPassword.padEnd(36)}║\n`)
+  process.stderr.write('║  Giriş yaptıktan sonra şifrenizi değiştirin!       ║\n')
+  process.stderr.write('╚════════════════════════════════════════════════════╝\n')
 }

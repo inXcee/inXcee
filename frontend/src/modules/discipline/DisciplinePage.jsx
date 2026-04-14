@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
+import { useToastStore } from '../../shared/store/toastStore.js'
 
 /* ── helpers ─────────────────────────────────────────────────────────────── */
 const fmt = d => d ? new Date(d).toLocaleDateString('tr-TR') : '—'
@@ -362,6 +363,7 @@ function BlacklistPanel() {
 /* ── Main Page ───────────────────────────────────────────────────────────── */
 export default function DisciplinePage() {
   const qc = useQueryClient()
+  const addToast = useToastStore(s => s.addToast)
   const [tab, setTab] = useState('search') // search | stats | blacklist
   const [searchTerm, setSearchTerm] = useState('')
   const [searchResults, setSearchResults] = useState([])
@@ -433,17 +435,17 @@ export default function DisciplinePage() {
 
   const addCard = useMutation({
     mutationFn: () => api.post('/discipline/records', { personnel_id: selectedPerson.id, ...cardForm }),
-    onSuccess: async (res) => {
+    onSuccess: async () => {
       setCardForm({ card_type: 'yellow', reason: '' })
       qc.invalidateQueries({ queryKey: ['discipline-records'] })
       qc.invalidateQueries({ queryKey: ['discipline-stats'] })
       qc.invalidateQueries({ queryKey: ['discipline-reason-suggestions'] })
-      // Re-fetch person to update points
       try {
         const p = await api.get(`/discipline/personnel/${selectedPerson.id}`)
         setSelectedPerson(p.data)
       } catch {}
     },
+    onError: (e) => addToast(e?.response?.data?.error || 'Kart eklenemedi', 'error'),
   })
 
   const deleteCard = useMutation({
@@ -456,6 +458,7 @@ export default function DisciplinePage() {
         setSelectedPerson(p.data)
       } catch {}
     },
+    onError: (e) => addToast(e?.response?.data?.error || 'Kart silinemedi', 'error'),
   })
 
   const addBlacklist = useMutation({
@@ -469,6 +472,7 @@ export default function DisciplinePage() {
         setSelectedPerson(p.data)
       } catch {}
     },
+    onError: (e) => addToast(e?.response?.data?.error || 'Kara listeye eklenemedi', 'error'),
   })
 
   const removeBlacklist = useMutation({
@@ -481,6 +485,7 @@ export default function DisciplinePage() {
         setSelectedPerson(p.data)
       } catch {}
     },
+    onError: (e) => addToast(e?.response?.data?.error || 'Kara listeden çıkarılamadı', 'error'),
   })
 
   const disciplineColor = !selectedPerson ? 'var(--text2)'
