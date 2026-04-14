@@ -1,5 +1,5 @@
 import app from './app.js'
-import { initDB } from './shared/db/index.js'
+import { initDB, getDB } from './shared/db/index.js'
 import { initProdDB } from './shared/db/initProd.js'
 import { startCronJobs } from './shared/cron/index.js'
 import { seedDev } from './shared/db/seed.js'
@@ -30,4 +30,14 @@ if (process.env.NODE_ENV === 'production') {
 startCronJobs()
 
 const port = process.env.PORT || 3001
-app.listen(port, () => console.log(`YYS Backend http://localhost:${port}`))
+const server = app.listen(port, () => console.log(`YYS Backend http://localhost:${port}`))
+
+process.on('SIGTERM', () => {
+  console.log('[Shutdown] SIGTERM alındı, bağlantılar kapatılıyor...')
+  server.close(() => {
+    try { getDB().close() } catch { /* ignore */ }
+    console.log('[Shutdown] Tamamlandı')
+    process.exit(0)
+  })
+  setTimeout(() => process.exit(1), 10000)
+})
