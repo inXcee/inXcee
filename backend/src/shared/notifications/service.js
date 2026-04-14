@@ -13,9 +13,20 @@ export function addSSEClient(res) {
 }
 export function removeSSEClient(res) { sseClients.delete(res) }
 
-export function createNotification({ message, type = 'info', module, target_role, target_user_id }) {
+export function createNotification({ message, type = 'info', module, target_role, target_user_id, dedup_key }) {
   const db = getDB()
-  const r = db.prepare('INSERT INTO notifications(message,type,module,target_role,target_user_id) VALUES(?,?,?,?,?)').run(message, type, module || null, target_role || null, target_user_id || null)
+
+  if (dedup_key) {
+    const existing = db.prepare(
+      "SELECT id FROM notifications WHERE dedup_key=? AND date(created_at)=date('now')"
+    ).get(dedup_key)
+    if (existing) return null
+  }
+
+  const r = db.prepare(
+    'INSERT INTO notifications(message,type,module,target_role,target_user_id,dedup_key) VALUES(?,?,?,?,?,?)'
+  ).run(message, type, module || null, target_role || null, target_user_id || null, dedup_key || null)
+
   const notif = db.prepare('SELECT * FROM notifications WHERE id=?').get(r.lastInsertRowid)
   sseClients.forEach(client => {
     try { client.write(`data: ${JSON.stringify(notif)}\n\n`) } catch { sseClients.delete(client) }

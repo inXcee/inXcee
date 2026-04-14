@@ -539,6 +539,15 @@ export function initDB() {
     if (!e.message?.includes('duplicate column')) console.error('[Migration] kiosk_pin:', e.message)
   }
 
+  // ── Bildirim deduplication ─────────────────────────────────────────────────
+  try { db.exec('ALTER TABLE notifications ADD COLUMN dedup_key TEXT') } catch(e) {
+    if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists'))
+      console.error('[Migration] dedup_key:', e.message)
+  }
+  try { db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_notif_dedup ON notifications(dedup_key) WHERE dedup_key IS NOT NULL') } catch(e) {
+    if (!e.message?.includes('already exists')) console.error('[Migration] idx_notif_dedup:', e.message)
+  }
+
   return db
 }
 

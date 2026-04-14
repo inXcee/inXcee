@@ -25,7 +25,8 @@ export function startCronJobs() {
       low.forEach(item => {
         createNotification({
           message: `Stok uyarısı: ${item.item_name} kritik seviyede (${item.quantity} ${item.unit})`,
-          type: 'warning', module: 'inventory', target_role: 'campus_manager'
+          type: 'warning', module: 'inventory', target_role: 'campus_manager',
+          dedup_key: `stock_low_${item.id}_${new Date().toISOString().split('T')[0]}`,
         })
       })
     } catch (e) { console.error('[Cron] Stok cron hatası:', e) }
