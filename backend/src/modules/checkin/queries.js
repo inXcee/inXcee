@@ -29,9 +29,10 @@ export function searchResidents(q) {
   const db = getDB()
   const term = `%${q}%`
   return db.prepare(`
-    SELECT p.id, p.full_name, p.job_title, p.company,
+    SELECT p.id, p.full_name, p.job_title, p.company, p.tc_no,
       r.block, r.room_no, ra.bed_no,
-      p.check_out_date
+      p.check_out_date,
+      CASE WHEN p.kiosk_pin IS NOT NULL THEN 1 ELSE 0 END as has_kiosk_pin
     FROM personnel p
     LEFT JOIN room_assignments ra ON ra.personnel_id=p.id AND ra.check_out_at IS NULL
     LEFT JOIN rooms r ON r.id=ra.room_id

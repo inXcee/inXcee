@@ -1,6 +1,8 @@
 import { Router } from 'express'
 import { requireRole } from '../../shared/auth/middleware.js'
 import { upload } from '../../shared/uploads/middleware.js'
+import { setKioskPin } from '../../shared/auth/service.js'
+import { getDB } from '../../shared/db/index.js'
 import * as svc from './service.js'
 
 export const checkinRouter = Router()
@@ -153,6 +155,22 @@ checkinRouter.post('/import-csv', ...allowed, (req, res) => {
     }
     res.json(results)
   } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+// ── Kiosk PIN Yönetimi (admin only) ──────────────────────────────────────────
+checkinRouter.patch('/:id/kiosk-pin', ...requireRole('campus_manager'), (req, res) => {
+  const { pin } = req.body
+  if (!pin) return res.status(400).json({ error: 'PIN gerekli' })
+  const result = setKioskPin(+req.params.id, pin)
+  if (result.error) return res.status(result.status).json({ error: result.error })
+  res.json(result)
+})
+
+checkinRouter.delete('/:id/kiosk-pin', ...requireRole('campus_manager'), (req, res) => {
+  try {
+    getDB().prepare('UPDATE personnel SET kiosk_pin=NULL WHERE id=?').run(+req.params.id)
+    res.json({ ok: true })
+  } catch (e) { res.status(500).json({ error: e.message }) }
 })
 
 // ── Photo Upload ──────────────────────────────────────────────────────────────

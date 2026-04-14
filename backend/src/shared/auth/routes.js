@@ -12,9 +12,10 @@ authRouter.post('/login', (req, res) => {
 })
 
 authRouter.post('/kiosk-login', (req, res) => {
-  const { tc_no } = req.body
-  const result = loginKiosk(tc_no)
-  if (!result) return res.status(401).json({ error: 'TC No bulunamadı veya çıkış yapılmış' })
+  const { tc_no, pin } = req.body
+  if (!tc_no || !pin) return res.status(400).json({ error: 'TC No ve PIN gerekli' })
+  const result = loginKiosk(tc_no, pin)
+  if (result.error) return res.status(result.status).json({ error: result.error })
   res.json(result)
 })
 

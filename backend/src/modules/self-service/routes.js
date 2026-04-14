@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { requireKioskOrStaff } from '../../shared/auth/middleware.js'
 import { getDB } from '../../shared/db/index.js'
 import { createRequest } from '../maintenance/queries.js'
+import { changeKioskPin } from '../../shared/auth/service.js'
 
 export const selfServiceRouter = Router()
 
@@ -42,4 +43,13 @@ selfServiceRouter.post('/maintenance', requireKioskOrStaff, (req, res) => {
     })
     res.status(201).json({ id })
   } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+selfServiceRouter.post('/set-pin', requireKioskOrStaff, (req, res) => {
+  if (!req.user.personnelId) return res.status(403).json({ error: 'Kiosk token gerekli' })
+  const { currentPin, newPin } = req.body
+  if (!currentPin || !newPin) return res.status(400).json({ error: 'Mevcut ve yeni PIN gerekli' })
+  const result = changeKioskPin(req.user.personnelId, currentPin, newPin)
+  if (result.error) return res.status(result.status).json({ error: result.error })
+  res.json(result)
 })

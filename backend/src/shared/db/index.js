@@ -5,10 +5,14 @@ let db
 
 function runMigrations(database) {
   const cols = database.prepare('PRAGMA table_info(personnel)').all().map(c => c.name)
-  if (!cols.includes('gender'))
-    database.exec("ALTER TABLE personnel ADD COLUMN gender TEXT CHECK(gender IN ('male','female'))")
-  if (!cols.includes('department_id'))
-    database.exec('ALTER TABLE personnel ADD COLUMN department_id INTEGER REFERENCES departments(id)')
+  if (!cols.includes('gender')) {
+    try { database.exec("ALTER TABLE personnel ADD COLUMN gender TEXT CHECK(gender IN ('male','female'))") }
+    catch(e) { if (!e.message?.includes('duplicate column')) console.error('[Migration] gender:', e.message) }
+  }
+  if (!cols.includes('department_id')) {
+    try { database.exec('ALTER TABLE personnel ADD COLUMN department_id INTEGER REFERENCES departments(id)') }
+    catch(e) { if (!e.message?.includes('duplicate column')) console.error('[Migration] department_id:', e.message) }
+  }
 }
 
 export function initDB() {
@@ -21,13 +25,13 @@ export function initDB() {
   db.exec(SCHEMA)
   runMigrations(db)
   // migrations — safe to run on existing DB
-  try { db.exec('ALTER TABLE users ADD COLUMN email TEXT') } catch(_) {}
-  try { db.exec('ALTER TABLE rooms ADD COLUMN notes TEXT') } catch(_) {}
-  try { db.exec('ALTER TABLE rooms ADD COLUMN no_clean INTEGER DEFAULT 0') } catch(_) {}
-  try { db.exec('ALTER TABLE personnel ADD COLUMN job_title TEXT') } catch(_) {}
-  try { db.exec('ALTER TABLE cleaning_tasks ADD COLUMN checklist TEXT') } catch(_) {}
-  try { db.exec('ALTER TABLE cleaning_tasks ADD COLUMN skipped INTEGER DEFAULT 0') } catch(_) {}
-  try { db.exec('ALTER TABLE cleaning_tasks ADD COLUMN skip_reason TEXT') } catch(_) {}
+  try { db.exec('ALTER TABLE users ADD COLUMN email TEXT') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
+  try { db.exec('ALTER TABLE rooms ADD COLUMN notes TEXT') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
+  try { db.exec('ALTER TABLE rooms ADD COLUMN no_clean INTEGER DEFAULT 0') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
+  try { db.exec('ALTER TABLE personnel ADD COLUMN job_title TEXT') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
+  try { db.exec('ALTER TABLE cleaning_tasks ADD COLUMN checklist TEXT') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
+  try { db.exec('ALTER TABLE cleaning_tasks ADD COLUMN skipped INTEGER DEFAULT 0') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
+  try { db.exec('ALTER TABLE cleaning_tasks ADD COLUMN skip_reason TEXT') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
   try { db.exec(`CREATE TABLE IF NOT EXISTS cleaning_staff (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     full_name TEXT NOT NULL,
@@ -36,13 +40,13 @@ export function initDB() {
     assigned_floor INTEGER,
     is_active INTEGER DEFAULT 1,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  )`) } catch(_) {}
+  )`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
   // maintenance upgrades
-  try { db.exec('ALTER TABLE maintenance_requests ADD COLUMN priority TEXT DEFAULT \'medium\'') } catch(_) {}
-  try { db.exec('ALTER TABLE maintenance_requests ADD COLUMN photo_before TEXT') } catch(_) {}
-  try { db.exec('ALTER TABLE maintenance_requests ADD COLUMN assigned_at DATETIME') } catch(_) {}
-  try { db.exec('ALTER TABLE maintenance_requests ADD COLUMN started_at DATETIME') } catch(_) {}
-  try { db.exec('ALTER TABLE maintenance_requests ADD COLUMN review_at DATETIME') } catch(_) {}
+  try { db.exec('ALTER TABLE maintenance_requests ADD COLUMN priority TEXT DEFAULT \'medium\'') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
+  try { db.exec('ALTER TABLE maintenance_requests ADD COLUMN photo_before TEXT') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
+  try { db.exec('ALTER TABLE maintenance_requests ADD COLUMN assigned_at DATETIME') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
+  try { db.exec('ALTER TABLE maintenance_requests ADD COLUMN started_at DATETIME') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
+  try { db.exec('ALTER TABLE maintenance_requests ADD COLUMN review_at DATETIME') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
   try { db.exec(`CREATE TABLE IF NOT EXISTS technicians (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     full_name TEXT NOT NULL,
@@ -50,7 +54,7 @@ export function initDB() {
     specialty TEXT DEFAULT 'genel',
     is_active INTEGER DEFAULT 1,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  )`) } catch(_) {}
+  )`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
   try { db.exec(`CREATE TABLE IF NOT EXISTS maintenance_comments (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     request_id INTEGER NOT NULL REFERENCES maintenance_requests(id),
@@ -59,7 +63,7 @@ export function initDB() {
     comment TEXT NOT NULL,
     photo_url TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  )`) } catch(_) {}
+  )`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
 
   // Rebuild maintenance_requests to fix CHECK constraint + foreign key
   try {
@@ -97,7 +101,7 @@ export function initDB() {
       db.exec('ALTER TABLE maintenance_requests_new RENAME TO maintenance_requests')
       db.exec('PRAGMA foreign_keys=ON')
     }
-  } catch(_) {}
+  } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
 
   // Rebuild rooms table: S2 only floor 2 is max 4, floor 1 is max 6
   try {
@@ -134,18 +138,18 @@ export function initDB() {
       })()
       db.exec('PRAGMA foreign_keys=ON')
     }
-  } catch(_) {}
+  } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
   // Clean up leftover temp table
-  try { db.exec('DROP TABLE IF EXISTS rooms_new') } catch(_) {}
+  try { db.exec('DROP TABLE IF EXISTS rooms_new') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
 
   // maintenance simplification: add wait_reason, shift column, assigned_to
-  try { db.exec('ALTER TABLE maintenance_requests ADD COLUMN wait_reason TEXT') } catch(_) {}
-  try { db.exec('ALTER TABLE maintenance_requests ADD COLUMN assigned_to INTEGER REFERENCES technicians(id)') } catch(_) {}
-  try { db.exec("ALTER TABLE technicians ADD COLUMN shift TEXT DEFAULT '1'") } catch(_) {}
+  try { db.exec('ALTER TABLE maintenance_requests ADD COLUMN wait_reason TEXT') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
+  try { db.exec('ALTER TABLE maintenance_requests ADD COLUMN assigned_to INTEGER REFERENCES technicians(id)') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
+  try { db.exec("ALTER TABLE technicians ADD COLUMN shift TEXT DEFAULT '1'") } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
 
   // Shifts module migrations
-  try { db.exec("ALTER TABLE personnel ADD COLUMN gender TEXT CHECK(gender IN ('male','female'))") } catch(_) {}
-  try { db.exec('ALTER TABLE personnel ADD COLUMN department_id INTEGER REFERENCES departments(id)') } catch(_) {}
+  try { db.exec("ALTER TABLE personnel ADD COLUMN gender TEXT CHECK(gender IN ('male','female'))") } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
+  try { db.exec('ALTER TABLE personnel ADD COLUMN department_id INTEGER REFERENCES departments(id)') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
 
   // ── Improvement #3: Audit logging ──
   try { db.exec(`CREATE TABLE IF NOT EXISTS audit_log (
@@ -156,23 +160,23 @@ export function initDB() {
     target_id INTEGER,
     detail TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  )`) } catch(_) {}
+  )`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
 
   // ── Improvement #7: Zimmet return tracking ──
-  try { db.exec('ALTER TABLE zimmet ADD COLUMN returned_at DATETIME') } catch(_) {}
-  try { db.exec('ALTER TABLE zimmet ADD COLUMN return_condition TEXT') } catch(_) {}
+  try { db.exec('ALTER TABLE zimmet ADD COLUMN returned_at DATETIME') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
+  try { db.exec('ALTER TABLE zimmet ADD COLUMN return_condition TEXT') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
 
   // ── Improvement #8: Maintenance SLA ──
-  try { db.exec('ALTER TABLE maintenance_requests ADD COLUMN sla_deadline DATETIME') } catch(_) {}
+  try { db.exec('ALTER TABLE maintenance_requests ADD COLUMN sla_deadline DATETIME') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
 
   // phone_number replaces hometown usage in UI
-  try { db.exec('ALTER TABLE personnel ADD COLUMN phone_number TEXT') } catch(_) {}
+  try { db.exec('ALTER TABLE personnel ADD COLUMN phone_number TEXT') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
 
   // ── Checkout module: damage_note on zimmet ──
-  try { db.exec('ALTER TABLE zimmet ADD COLUMN damage_note TEXT') } catch(_) {}
+  try { db.exec('ALTER TABLE zimmet ADD COLUMN damage_note TEXT') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
 
   // ── Profile photo ──
-  try { db.exec('ALTER TABLE personnel ADD COLUMN photo_url TEXT') } catch(_) {}
+  try { db.exec('ALTER TABLE personnel ADD COLUMN photo_url TEXT') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
 
   // ── Fix shift_schedule: allow nullable shift_def_id (on_leave days) and dept_id ──
   try {
@@ -200,7 +204,7 @@ export function initDB() {
       })()
       db.exec('PRAGMA foreign_keys=ON')
     }
-  } catch(_) {}
+  } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
 
   // ═══════════════════════════════════════════════════════
   // Laundry v2 — Kişisel Parça Takibi
@@ -214,7 +218,7 @@ export function initDB() {
     timer_end TEXT,
     capacity_kg REAL DEFAULT 10,
     maintenance_notes TEXT
-  )`) } catch(_) {}
+  )`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
 
   try { db.exec(`CREATE TABLE IF NOT EXISTS laundry_items (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -230,7 +234,7 @@ export function initDB() {
     created_by INTEGER REFERENCES users(id),
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`) } catch(_) {}
+  )`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
 
   try { db.exec(`CREATE TABLE IF NOT EXISTS laundry_queue (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -239,7 +243,7 @@ export function initDB() {
     priority TEXT NOT NULL DEFAULT 'normal' CHECK(priority IN ('normal','urgent')),
     position INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`) } catch(_) {}
+  )`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
 
   try { db.exec(`CREATE TABLE IF NOT EXISTS laundry_deliveries (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -248,7 +252,7 @@ export function initDB() {
     signature_data TEXT,
     delivered_by INTEGER REFERENCES users(id),
     delivered_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`) } catch(_) {}
+  )`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
 
   try { db.exec(`CREATE TABLE IF NOT EXISTS laundry_damages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -257,7 +261,7 @@ export function initDB() {
     description TEXT NOT NULL,
     reported_by INTEGER REFERENCES users(id),
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`) } catch(_) {}
+  )`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
 
   try { db.exec(`CREATE TABLE IF NOT EXISTS laundry_sla_config (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -266,7 +270,7 @@ export function initDB() {
     critical_hours REAL NOT NULL DEFAULT 48,
     updated_by INTEGER REFERENCES users(id),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`) } catch(_) {}
+  )`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
 
   try { db.exec(`CREATE TABLE IF NOT EXISTS laundry_history (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -276,11 +280,11 @@ export function initDB() {
     action_by INTEGER REFERENCES users(id),
     notes TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`) } catch(_) {}
+  )`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
 
   // SLA varsayılan konfigürasyon
   try { db.exec(`INSERT OR IGNORE INTO laundry_sla_config(stage,warning_hours,critical_hours) VALUES
-    ('dirty',24,48),('washing',1,2),('ready',24,48)`) } catch(_) {}
+    ('dirty',24,48),('washing',1,2),('ready',24,48)`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
 
   // Varsayılan makineler (ilk kurulumda seed)
   try {
@@ -289,31 +293,31 @@ export function initDB() {
       db.exec(`INSERT INTO laundry_machines(name,type,capacity_kg) VALUES
         ('Makine 1','washer',10),('Makine 2','washer',10),('Makine 3','washer',8),('Kurutucu 1','dryer',10)`)
     }
-  } catch(_) {}
+  } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
 
   // Laundry phone_override kolonu (sonradan eklendi)
-  try { db.exec(`ALTER TABLE laundry_items ADD COLUMN phone_override TEXT`) } catch(_) {}
+  try { db.exec(`ALTER TABLE laundry_items ADD COLUMN phone_override TEXT`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
 
   // Laundry timer_started_at kolonu (sonradan eklendi)
-  try { db.exec(`ALTER TABLE laundry_machines ADD COLUMN timer_started_at TEXT`) } catch(_) {}
-  try { db.exec(`ALTER TABLE laundry_machines ADD COLUMN total_runs INTEGER DEFAULT 0`) } catch(_) {}
+  try { db.exec(`ALTER TABLE laundry_machines ADD COLUMN timer_started_at TEXT`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
+  try { db.exec(`ALTER TABLE laundry_machines ADD COLUMN total_runs INTEGER DEFAULT 0`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
 
   // Performans indeksleri
-  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_laundry_items_status ON laundry_items(status)`) } catch(_) {}
-  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_laundry_items_room ON laundry_items(room_id)`) } catch(_) {}
-  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_laundry_items_updated ON laundry_items(updated_at)`) } catch(_) {}
-  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_laundry_queue_position ON laundry_queue(position)`) } catch(_) {}
-  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_laundry_history_item ON laundry_history(item_id)`) } catch(_) {}
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_laundry_items_status ON laundry_items(status)`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_laundry_items_room ON laundry_items(room_id)`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_laundry_items_updated ON laundry_items(updated_at)`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_laundry_queue_position ON laundry_queue(position)`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_laundry_history_item ON laundry_history(item_id)`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
 
   // ── Laundry v3 — kıyafet detayı + imza ────────────────────────────────────
-  try { db.exec(`ALTER TABLE laundry_items ADD COLUMN intake_name TEXT`) } catch(_) {}
-  try { db.exec(`ALTER TABLE laundry_items ADD COLUMN intake_signature TEXT`) } catch(_) {}
-  try { db.exec(`ALTER TABLE laundry_items ADD COLUMN clothing_items TEXT`) } catch(_) {}
+  try { db.exec(`ALTER TABLE laundry_items ADD COLUMN intake_name TEXT`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
+  try { db.exec(`ALTER TABLE laundry_items ADD COLUMN intake_signature TEXT`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
+  try { db.exec(`ALTER TABLE laundry_items ADD COLUMN clothing_items TEXT`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
 
   // ── Laundry v4 — ütü aşaması + intake detay ──────────────────────────────
-  try { db.exec(`ALTER TABLE laundry_items ADD COLUMN needs_ironing INTEGER DEFAULT 0`) } catch(_) {}
-  try { db.exec(`ALTER TABLE laundry_items ADD COLUMN occupant_signature TEXT`) } catch(_) {}
-  try { db.exec(`ALTER TABLE laundry_damages ADD COLUMN at_intake INTEGER DEFAULT 0`) } catch(_) {}
+  try { db.exec(`ALTER TABLE laundry_items ADD COLUMN needs_ironing INTEGER DEFAULT 0`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
+  try { db.exec(`ALTER TABLE laundry_items ADD COLUMN occupant_signature TEXT`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
+  try { db.exec(`ALTER TABLE laundry_damages ADD COLUMN at_intake INTEGER DEFAULT 0`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
 
   // ── Laundry v4b — status CHECK constraint'e 'ironing' ekle ───────────────
   // SQLite'ta constraint değiştirmek için tabloyu yeniden oluştur
@@ -356,11 +360,11 @@ export function initDB() {
       migrate()
       db.pragma('foreign_keys = ON')
     }
-  } catch(_) {}
+  } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
 
   // ── Laundry v4c — compensation tracking (tazminat) ────────────────────────
-  try { db.exec(`ALTER TABLE laundry_items ADD COLUMN compensation_value REAL DEFAULT NULL`) } catch(_) {}
-  try { db.exec(`ALTER TABLE laundry_items ADD COLUMN compensation_note TEXT DEFAULT NULL`) } catch(_) {}
+  try { db.exec(`ALTER TABLE laundry_items ADD COLUMN compensation_value REAL DEFAULT NULL`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
+  try { db.exec(`ALTER TABLE laundry_items ADD COLUMN compensation_note TEXT DEFAULT NULL`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
 
   // ── Laundry v5 — parça doğrulama ─────────────────────────────────────────
   try { db.exec(`CREATE TABLE IF NOT EXISTS laundry_verifications (
@@ -373,8 +377,8 @@ export function initDB() {
     missing_notes TEXT,
     all_present INTEGER NOT NULL DEFAULT 1,
     UNIQUE(item_id, stage)
-  )`) } catch(_) {}
-  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_laundry_verif_item ON laundry_verifications(item_id)`) } catch(_) {}
+  )`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_laundry_verif_item ON laundry_verifications(item_id)`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
 
   // ── Laundry v6 — SLA WhatsApp bildirimleri ────────────────────────────────
   try { db.exec(`CREATE TABLE IF NOT EXISTS laundry_sla_notifications (
@@ -383,14 +387,14 @@ export function initDB() {
     stage TEXT NOT NULL,
     sent_at TEXT NOT NULL DEFAULT (datetime('now')),
     phone TEXT
-  )`) } catch(_) {}
-  try { db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_laundry_sla_notif_dedup ON laundry_sla_notifications(item_id, stage, date(sent_at))`) } catch(_) {}
+  )`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
+  try { db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_laundry_sla_notif_dedup ON laundry_sla_notifications(item_id, stage, date(sent_at))`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
   try { db.exec(`CREATE TABLE IF NOT EXISTS laundry_global_settings (
     key TEXT PRIMARY KEY,
     value TEXT
-  )`) } catch(_) {}
-  try { db.exec(`ALTER TABLE laundry_sla_config ADD COLUMN whatsapp_notify INTEGER DEFAULT 0`) } catch(_) {}
-  try { db.exec(`ALTER TABLE laundry_sla_config ADD COLUMN pre_warning_hours INTEGER DEFAULT 2`) } catch(_) {}
+  )`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
+  try { db.exec(`ALTER TABLE laundry_sla_config ADD COLUMN whatsapp_notify INTEGER DEFAULT 0`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
+  try { db.exec(`ALTER TABLE laundry_sla_config ADD COLUMN pre_warning_hours INTEGER DEFAULT 2`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
   try { db.exec(`CREATE TABLE IF NOT EXISTS laundry_messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     sender_id INTEGER NOT NULL REFERENCES users(id),
@@ -400,8 +404,8 @@ export function initDB() {
       CHECK(message_type IN ('normal','urgent','system')),
     is_pinned INTEGER DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`) } catch(_) {}
-  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_lm_created ON laundry_messages(created_at DESC)`) } catch(_) {}
+  )`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_lm_created ON laundry_messages(created_at DESC)`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
 
   // ── Premium block config ──
   try { db.exec(`CREATE TABLE IF NOT EXISTS laundry_block_config (
@@ -409,19 +413,19 @@ export function initDB() {
     is_premium INTEGER NOT NULL DEFAULT 0,
     updated_by INTEGER REFERENCES users(id),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`) } catch(_) {}
+  )`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
   try { db.exec(`INSERT OR IGNORE INTO laundry_block_config(block, is_premium) VALUES
     ('A1',1),('A2',1),('A3',1),('A4',1),('G',1),('F',1),
     ('E',1),('D',1),('C',1),('H',1),('J',1),('A',1),('B',1),
     ('M1',0),('M2',0),('M3',0),
-    ('M',0),('S',0),('S1',0),('S2',0),('S3',0)`) } catch(_) {}
+    ('M',0),('S',0),('S1',0),('S2',0),('S3',0)`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
   // Mevcut non-M/S blokları premium yap (varolan kayıtları güncelle)
-  try { db.exec(`UPDATE laundry_block_config SET is_premium=1 WHERE block NOT LIKE 'M%' AND block NOT LIKE 'S%'`) } catch(_) {}
+  try { db.exec(`UPDATE laundry_block_config SET is_premium=1 WHERE block NOT LIKE 'M%' AND block NOT LIKE 'S%'`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
   // Mevcut laundry_items'ı düzelt — non-M/S blok odalarındaki kayıtlar premium olmalı
   try { db.exec(`UPDATE laundry_items SET is_premium=1 WHERE room_id IN (
     SELECT r.id FROM rooms r WHERE r.block NOT LIKE 'M%' AND r.block NOT LIKE 'S%'
-  ) AND is_premium=0`) } catch(_) {}
-  try { db.exec(`ALTER TABLE laundry_items ADD COLUMN is_premium INTEGER DEFAULT 0`) } catch(_) {}
+  ) AND is_premium=0`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
+  try { db.exec(`ALTER TABLE laundry_items ADD COLUMN is_premium INTEGER DEFAULT 0`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
   try { db.exec(`CREATE TABLE IF NOT EXISTS premium_garments (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     item_id INTEGER NOT NULL REFERENCES laundry_items(id) ON DELETE CASCADE,
@@ -441,12 +445,12 @@ export function initDB() {
     delivered_at TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`) } catch(_) {}
-  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_pg_item ON premium_garments(item_id)`) } catch(_) {}
-  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_pg_code ON premium_garments(garment_code)`) } catch(_) {}
-  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_pg_status ON premium_garments(status)`) } catch(_) {}
-  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_pg_type ON premium_garments(garment_type)`) } catch(_) {}
-  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_pg_brand ON premium_garments(brand)`) } catch(_) {}
+  )`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_pg_item ON premium_garments(item_id)`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_pg_code ON premium_garments(garment_code)`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_pg_status ON premium_garments(status)`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_pg_type ON premium_garments(garment_type)`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_pg_brand ON premium_garments(brand)`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
   try { db.exec(`CREATE TABLE IF NOT EXISTS premium_garment_history (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     garment_id INTEGER NOT NULL REFERENCES premium_garments(id) ON DELETE CASCADE,
@@ -455,8 +459,8 @@ export function initDB() {
     action_by INTEGER REFERENCES users(id),
     notes TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`) } catch(_) {}
-  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_pgh_garment ON premium_garment_history(garment_id)`) } catch(_) {}
+  )`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_pgh_garment ON premium_garment_history(garment_id)`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
   try { db.exec(`CREATE TABLE IF NOT EXISTS premium_garment_deliveries (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     garment_id INTEGER NOT NULL REFERENCES premium_garments(id),
@@ -465,9 +469,9 @@ export function initDB() {
     signature_data TEXT,
     delivered_by INTEGER REFERENCES users(id),
     delivered_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`) } catch(_) {}
-  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_pgd_item ON premium_garment_deliveries(item_id)`) } catch(_) {}
-  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_li_room_created ON laundry_items(room_id, created_at DESC)`) } catch(_) {}
+  )`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_pgd_item ON premium_garment_deliveries(item_id)`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_li_room_created ON laundry_items(room_id, created_at DESC)`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
   try { db.exec(`CREATE TABLE IF NOT EXISTS garment_scan_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     room_id INTEGER REFERENCES rooms(id),
@@ -477,8 +481,8 @@ export function initDB() {
     scanned_by INTEGER REFERENCES users(id),
     action TEXT NOT NULL CHECK(action IN ('lookup','advance','deliver','lost')),
     scanned_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`) } catch(_) {}
-  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_scan_log_room ON garment_scan_log(room_id, scanned_at DESC)`) } catch(_) {}
+  )`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_scan_log_room ON garment_scan_log(room_id, scanned_at DESC)`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
 
   // laundry_supplies
   try {
@@ -495,7 +499,7 @@ export function initDB() {
         updated_at TEXT DEFAULT (datetime('now'))
       )
     `)
-  } catch(_) {}
+  } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
 
   // laundry_machine_supplies
   try {
@@ -507,7 +511,7 @@ export function initDB() {
         PRIMARY KEY (machine_id, supply_id)
       )
     `)
-  } catch(_) {}
+  } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
 
   // laundry_supply_log
   try {
@@ -524,11 +528,16 @@ export function initDB() {
         created_at TEXT DEFAULT (datetime('now'))
       )
     `)
-  } catch(_) {}
+  } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
 
   // ── Emergency contact fields ──
-  try { db.exec('ALTER TABLE personnel ADD COLUMN emergency_name TEXT') } catch(_) {}
-  try { db.exec('ALTER TABLE personnel ADD COLUMN emergency_phone TEXT') } catch(_) {}
+  try { db.exec('ALTER TABLE personnel ADD COLUMN emergency_name TEXT') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
+  try { db.exec('ALTER TABLE personnel ADD COLUMN emergency_phone TEXT') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
+
+  // ── Kiosk PIN sistemi ──────────────────────────────────────────────────────
+  try { db.exec('ALTER TABLE personnel ADD COLUMN kiosk_pin TEXT') } catch(e) {
+    if (!e.message?.includes('duplicate column')) console.error('[Migration] kiosk_pin:', e.message)
+  }
 
   return db
 }
