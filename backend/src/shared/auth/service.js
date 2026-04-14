@@ -36,3 +36,18 @@ export function loginKiosk(tcNo) {
 export function verifyToken(token) {
   return jwt.verify(token, SECRET)
 }
+
+export function changeOwnPassword(userId, currentPassword, newPassword) {
+  if (!newPassword || newPassword.length < 8) {
+    return { error: 'Yeni şifre en az 8 karakter olmalı', status: 400 }
+  }
+  const db = getDB()
+  const user = db.prepare('SELECT * FROM users WHERE id=?').get(userId)
+  if (!user) return { error: 'Kullanıcı bulunamadı', status: 404 }
+  if (!bcrypt.compareSync(currentPassword, user.password_hash)) {
+    return { error: 'Mevcut şifre hatalı', status: 401 }
+  }
+  const hash = bcrypt.hashSync(newPassword, 10)
+  db.prepare('UPDATE users SET password_hash=? WHERE id=?').run(hash, userId)
+  return { ok: true }
+}

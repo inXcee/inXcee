@@ -4,7 +4,9 @@ import { useQuery } from '@tanstack/react-query'
 import { useAuthStore } from '../store/authStore.js'
 import { useNotifications } from '../hooks/useNotifications.js'
 import { useTheme } from '../hooks/useTheme.js'
+import { useToastStore } from '../store/toastStore.js'
 import api from '../api/client.js'
+import ChangePasswordModal from './ChangePasswordModal.jsx'
 
 const NAV_GROUPS = [
   {
@@ -69,6 +71,8 @@ export default function Sidebar({ mobileOpen, onClose }) {
   const logout = useAuthStore(s => s.logout)
   const { unreadCount } = useNotifications()
   const { theme, toggle: toggleTheme } = useTheme()
+  const addToast = useToastStore(s => s.addToast)
+  const [showChangePw, setShowChangePw] = useState(false)
 
   const { data: kpi } = useQuery({
     queryKey: ['dashboard-kpi'],
@@ -82,6 +86,12 @@ export default function Sidebar({ mobileOpen, onClose }) {
 
   return (
     <>
+    {showChangePw && (
+      <ChangePasswordModal onClose={result => {
+        setShowChangePw(false)
+        if (result === 'success') addToast('Sifre basariyla degistirildi', 'success')
+      }} />
+    )}
     {mobileOpen && <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 99 }} />}
     <nav className={mobileOpen ? 'sidebar-container mobile-open' : 'sidebar-container'} style={{
       width: '240px',
@@ -269,6 +279,19 @@ export default function Sidebar({ mobileOpen, onClose }) {
             onMouseLeave={e => { e.currentTarget.style.color = 'var(--text3)'; e.currentTarget.style.borderColor = 'var(--border)' }}
           >
             {theme === 'dark' ? '\u2600' : '\u263E'}
+          </button>
+          <button
+            onClick={() => setShowChangePw(true)}
+            title="Sifre degistir"
+            style={{
+              background: 'var(--surface3)', border: '1px solid var(--border)', borderRadius: '6px',
+              color: 'var(--text3)', padding: '6px 8px', cursor: 'pointer', fontSize: '13px',
+              transition: 'all 0.15s',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.color = 'var(--accent)'; e.currentTarget.style.borderColor = 'rgba(240,165,0,0.4)' }}
+            onMouseLeave={e => { e.currentTarget.style.color = 'var(--text3)'; e.currentTarget.style.borderColor = 'var(--border)' }}
+          >
+            &#128273;
           </button>
           <button
             onClick={logout}
