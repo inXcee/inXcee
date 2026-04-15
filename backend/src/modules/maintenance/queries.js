@@ -2,14 +2,14 @@ import { getDB } from '../../shared/db/index.js'
 
 // ── Maintenance Requests ─────────────────────────────────────────────────────
 
-export function createRequest({ location, description, priority, reporterUserId, photoBefore, waitReason }) {
+export function createRequest({ location, description, priority, reporterUserId, reporterPersonnelId, photoBefore, waitReason }) {
   const db = getDB()
   // SLA: high=4h, medium=24h, low=72h
   const slaHours = priority === 'high' ? 4 : priority === 'low' ? 72 : 24
   const r = db.prepare(`
-    INSERT INTO maintenance_requests(location,description,priority,reporter_user_id,photo_before,wait_reason,sla_deadline)
-    VALUES(?,?,?,?,?,?,datetime('now','+${slaHours} hours'))
-  `).run(location, description, priority || 'medium', reporterUserId || null, photoBefore || null, waitReason || null)
+    INSERT INTO maintenance_requests(location,description,priority,reporter_user_id,reporter_personnel_id,photo_before,wait_reason,sla_deadline)
+    VALUES(?,?,?,?,?,?,?,datetime('now','+${slaHours} hours'))
+  `).run(location, description, priority || 'medium', reporterUserId || null, reporterPersonnelId || null, photoBefore || null, waitReason || null)
   return r.lastInsertRowid
 }
 

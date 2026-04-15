@@ -312,4 +312,12 @@ export function seedDev() {
     otInsert.run(staffIds[6].id, d(-6), 2.0, 'Hafta sonu çalışma')
     otInsert.run(staffIds[7].id, d(-7), 1.0, 'Yemekhane hazırlık')
   }
+
+  // ── Test personeli (kiosk testleri için id=1 gerekli) ──────────────────────
+  try {
+    db.prepare(`
+      INSERT OR IGNORE INTO personnel(id,full_name,company,hometown,check_in_date,discipline_points,expected_departure)
+      VALUES(1,'Test Personeli','Test Şirketi','Ankara','2024-01-01',0,NULL)
+    `).run()
+  } catch(e) { /* ignore if already exists */ }
 }
