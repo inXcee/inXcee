@@ -26,7 +26,7 @@ export function getEmailSettings() {
     sections: sectionsRaw.split(','),
     smtp: {
       host:  getSetting('smtp_host') ?? '',
-      port:  getSetting('smtp_port') ?? '',
+      port:  parseInt(getSetting('smtp_port') ?? '587', 10) || 587,
       user:  getSetting('smtp_user') ?? '',
       pass:  getSetting('smtp_pass') ?? '',
       from:  getSetting('smtp_from') ?? '',
