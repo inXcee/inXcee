@@ -606,8 +606,8 @@ export function initDB() {
   } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] notifications cascade:', e.message) }
 
   // ── Faz 1 migrations ──────────────────────────────────────────────────────
-  try { db.exec('ALTER TABLE personnel ADD COLUMN expected_departure TEXT') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
-  try { db.exec('ALTER TABLE maintenance_requests ADD COLUMN reporter_personnel_id INTEGER REFERENCES personnel(id)') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
+  try { db.exec('ALTER TABLE personnel ADD COLUMN expected_departure TEXT') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] personnel.expected_departure:', e.message) }
+  try { db.exec('ALTER TABLE maintenance_requests ADD COLUMN reporter_personnel_id INTEGER REFERENCES personnel(id)') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] maintenance_requests.reporter_personnel_id:', e.message) }
   try { db.exec(`CREATE TABLE IF NOT EXISTS announcements (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   title TEXT NOT NULL,
@@ -615,21 +615,21 @@ export function initDB() {
   created_by INTEGER REFERENCES users(id),
   created_at TEXT DEFAULT (datetime('now')),
   expires_at TEXT
-)`) } catch(e) { console.error('[Migration] announcements:', e.message) }
+)`) } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] announcements:', e.message) }
   try { db.exec(`CREATE TABLE IF NOT EXISTS feedback (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   personnel_id INTEGER REFERENCES personnel(id),
   type TEXT NOT NULL CHECK(type IN ('complaint','suggestion','other')),
   message TEXT NOT NULL,
   created_at TEXT DEFAULT (datetime('now'))
-)`) } catch(e) { console.error('[Migration] feedback:', e.message) }
+)`) } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] feedback:', e.message) }
   try { db.exec(`CREATE TABLE IF NOT EXISTS email_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   sent_at TEXT DEFAULT (datetime('now')),
   recipients TEXT NOT NULL,
   status TEXT NOT NULL CHECK(status IN ('success','error')),
   error_msg TEXT
-)`) } catch(e) { console.error('[Migration] email_log:', e.message) }
+)`) } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] email_log:', e.message) }
 
   return db
 }
