@@ -94,6 +94,12 @@ describe('GET /api/self-service/my-discipline', () => {
     expect(res.status).toBe(200)
     expect(Array.isArray(res.body)).toBe(true)
   })
+  it('staff token ile 403 döner', async () => {
+    const res = await request(app)
+      .get('/api/self-service/my-discipline')
+      .set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(403)
+  })
 })
 
 describe('GET /api/self-service/announcements', () => {
