@@ -121,3 +121,51 @@ describe('POST /api/settings/email/test', () => {
     expect(res.status).toBe(401)
   })
 })
+
+describe('days & sections settings', () => {
+  it('varsayılan days hafta içi döner', () => {
+    const s = getEmailSettings()
+    expect(s.days).toEqual([1, 2, 3, 4, 5])
+  })
+  it('varsayılan sections 5 bölüm döner', () => {
+    const s = getEmailSettings()
+    expect(s.sections).toContain('occupancy')
+    expect(s.sections).toContain('maintenance')
+  })
+  it('setEmailSettings days kaydeder', () => {
+    setEmailSettings({ enabled: false, hour: 7, minute: 0, cc: '', days: [1, 2, 3], sections: ['occupancy', 'maintenance'] })
+    const s = getEmailSettings()
+    expect(s.days).toEqual([1, 2, 3])
+    expect(s.sections).toEqual(['occupancy', 'maintenance'])
+    // geri al
+    setEmailSettings({ enabled: false, hour: 7, minute: 0, cc: '', days: [1,2,3,4,5], sections: ['occupancy','housekeeping','maintenance','laundry','checkinout'] })
+  })
+})
+
+describe('buildReportHtml section filter', () => {
+  it('yalnızca seçili bölümleri içerir', () => {
+    const html = buildReportHtml(['occupancy'])
+    expect(html).toContain('Doluluk')
+    expect(html).not.toContain('Çamaşırhane')
+  })
+})
+
+describe('GET /api/settings/email/preview', () => {
+  it('200 ve HTML string döner', async () => {
+    const res = await request(app)
+      .get('/api/settings/email/preview')
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(res.status).toBe(200)
+    expect(res.headers['content-type']).toMatch(/html/)
+  })
+})
+
+describe('GET /api/settings/email/log', () => {
+  it('200 ve dizi döner', async () => {
+    const res = await request(app)
+      .get('/api/settings/email/log')
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(res.status).toBe(200)
+    expect(Array.isArray(res.body)).toBe(true)
+  })
+})
