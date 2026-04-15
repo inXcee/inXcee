@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { requireRole } from '../../shared/auth/middleware.js'
-import { getEmailSettings, setEmailSettings, getEmailLog } from './queries.js'
+import { getEmailSettings, setEmailSettings, getEmailLog, getSetting, setSetting } from './queries.js'
 import { sendMorningReport, buildReportHtml } from './service.js'
 import { scheduleMorningReport } from '../../shared/cron/index.js'
 
@@ -48,4 +48,19 @@ emailRouter.post('/test', ...adminOnly, async (req, res) => {
     await sendMorningReport()
     res.json({ ok: true })
   } catch (e) { console.error('[Route]', e); res.status(500).json({ error: e.message }) }
+})
+
+emailRouter.get('/kiosk', ...adminOnly, (req, res) => {
+  try { res.json({ login_method: getSetting('kiosk_login_method') ?? 'both' }) }
+  catch (e) { res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+emailRouter.put('/kiosk', ...adminOnly, (req, res) => {
+  try {
+    const { login_method } = req.body
+    if (!['tc_no','name','both'].includes(login_method))
+      return res.status(400).json({ error: 'Geçersiz yöntem: tc_no, name veya both olmalı' })
+    setSetting('kiosk_login_method', login_method)
+    res.json({ ok: true })
+  } catch (e) { res.status(500).json({ error: 'Sunucu hatası' }) }
 })

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 
@@ -24,6 +24,14 @@ export default function SelfServicePage() {
   const [loginError, setLoginError] = useState('')
   const [activeTab, setActiveTab]   = useState('info')
 
+  // İsimle giriş
+  const [nameQuery, setNameQuery] = useState('')
+  const [nameResults, setNameResults] = useState([])
+  const [selectedPerson, setSelectedPerson] = useState(null)
+  const [namePin, setNamePin] = useState('')
+  const [loginTab, setLoginTab] = useState('tc') // 'tc' | 'name'
+  const searchTimeout = useRef(null)
+
   // Arıza alt mod: 'report' | 'track'
   const [maintMode, setMaintMode] = useState('report')
   const [maintForm, setMaintForm] = useState({ location:'', description:'' })
@@ -38,6 +46,13 @@ export default function SelfServicePage() {
     try { return JSON.parse(localStorage.getItem('kiosk_read_ann') || '[]') } catch { return [] }
   })
 
+  const { data: kioskConfig } = useQuery({
+    queryKey: ['kiosk-config'],
+    queryFn: () => api.get('/auth/kiosk-config').then(r => r.data),
+    staleTime: 60000,
+  })
+  const loginMethod = kioskConfig?.login_method ?? 'both'
+
   const kioskApi = {
     get: (url) => api.get(url, { headers: { Authorization: `Bearer ${kioskToken}` } }),
     post: (url, data) => api.post(url, data, { headers: { Authorization: `Bearer ${kioskToken}` } }),
@@ -47,6 +62,28 @@ export default function SelfServicePage() {
     e.preventDefault(); setLoginError('')
     try {
       const res = await api.post('/auth/kiosk-login', { tc_no: tcNo, pin })
+      setKioskToken(res.data.token)
+    } catch (err) { setLoginError(err.response?.data?.error || 'Giriş başarısız') }
+  }
+
+  const handleNameSearch = (val) => {
+    setNameQuery(val)
+    setSelectedPerson(null)
+    clearTimeout(searchTimeout.current)
+    if (val.length < 2) { setNameResults([]); return }
+    searchTimeout.current = setTimeout(async () => {
+      try {
+        const res = await api.get(`/auth/kiosk-search?q=${encodeURIComponent(val)}`)
+        setNameResults(res.data)
+      } catch { setNameResults([]) }
+    }, 300)
+  }
+
+  const handleNameLogin = async (e) => {
+    e.preventDefault(); setLoginError('')
+    if (!selectedPerson) return setLoginError('Listeden bir kişi seçin')
+    try {
+      const res = await api.post('/auth/kiosk-login', { personnel_id: selectedPerson.id, pin: namePin })
       setKioskToken(res.data.token)
     } catch (err) { setLoginError(err.response?.data?.error || 'Giriş başarısız') }
   }
@@ -106,34 +143,110 @@ export default function SelfServicePage() {
 
   // ─── Login ─────────────────────────────────────────────────
   if (!kioskToken) {
+    const showTc   = loginMethod === 'tc_no' || loginMethod === 'both'
+    const showName = loginMethod === 'name'  || loginMethod === 'both'
+    const activeLt = loginMethod === 'tc_no' ? 'tc' : loginMethod === 'name' ? 'name' : loginTab
+
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
         <div className="w-full max-w-sm">
-          <div className="text-center mb-10">
+          <div className="text-center mb-8">
             <div className="text-5xl mb-4">🏨</div>
             <h1 className="text-2xl font-bold text-slate-100">Personel Self-Servis</h1>
-            <p className="text-slate-500 text-sm mt-2">TC kimlik numaranızı girerek giriş yapın</p>
           </div>
-          <form onSubmit={handleLogin} className="bg-slate-900 rounded-2xl p-6 space-y-4">
-            <div>
-              <label className="block text-sm text-slate-400 mb-2">TC Kimlik No</label>
-              <input type="text" value={tcNo} onChange={e => setTcNo(e.target.value)}
-                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-lg text-slate-100 text-center font-mono tracking-widest focus:outline-none focus:border-blue-500"
-                maxLength={11} autoFocus />
+
+          {/* Yöntem seçici — sadece 'both' modunda */}
+          {loginMethod === 'both' && (
+            <div className="flex gap-2 mb-4">
+              <button onClick={() => setLoginTab('tc')}
+                className={`flex-1 py-2 rounded-xl text-sm font-medium transition-colors ${activeLt==='tc' ? 'bg-blue-700 text-white' : 'bg-slate-800 text-slate-400'}`}>
+                TC No ile
+              </button>
+              <button onClick={() => setLoginTab('name')}
+                className={`flex-1 py-2 rounded-xl text-sm font-medium transition-colors ${activeLt==='name' ? 'bg-blue-700 text-white' : 'bg-slate-800 text-slate-400'}`}>
+                İsimle Ara
+              </button>
             </div>
-            <div>
-              <label className="block text-sm text-slate-400 mb-2">PIN (4 hane)</label>
-              <input type="password" inputMode="numeric" maxLength={4} value={pin}
-                onChange={e => setPin(e.target.value.replace(/\D/g,'').slice(0,4))}
-                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 text-center text-2xl tracking-widest focus:outline-none focus:border-amber-500"
-                placeholder="····" required />
-            </div>
-            {loginError && <div className="text-red-400 text-sm text-center">{loginError}</div>}
-            <button type="submit" disabled={tcNo.length < 11 || pin.length !== 4}
-              className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 text-white rounded-xl py-3 text-base font-medium transition-colors">
-              Giriş Yap
-            </button>
-          </form>
+          )}
+
+          {/* TC No formu */}
+          {showTc && activeLt === 'tc' && (
+            <form onSubmit={handleLogin} className="bg-slate-900 rounded-2xl p-6 space-y-4">
+              <div>
+                <label className="block text-sm text-slate-400 mb-2">TC Kimlik No</label>
+                <input type="text" value={tcNo} onChange={e => setTcNo(e.target.value)}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-lg text-slate-100 text-center font-mono tracking-widest focus:outline-none focus:border-blue-500"
+                  maxLength={11} autoFocus />
+              </div>
+              <div>
+                <label className="block text-sm text-slate-400 mb-2">PIN (4 hane)</label>
+                <input type="password" inputMode="numeric" maxLength={4} value={pin}
+                  onChange={e => setPin(e.target.value.replace(/\D/g,'').slice(0,4))}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 text-center text-2xl tracking-widest focus:outline-none focus:border-amber-500"
+                  placeholder="····" required />
+              </div>
+              {loginError && <div className="text-red-400 text-sm text-center">{loginError}</div>}
+              <button type="submit" disabled={tcNo.length < 11 || pin.length !== 4}
+                className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 text-white rounded-xl py-3 text-base font-medium transition-colors">
+                Giriş Yap
+              </button>
+            </form>
+          )}
+
+          {/* İsimle arama formu */}
+          {showName && activeLt === 'name' && (
+            <form onSubmit={handleNameLogin} className="bg-slate-900 rounded-2xl p-6 space-y-4">
+              <div>
+                <label className="block text-sm text-slate-400 mb-2">Ad Soyad ile Ara</label>
+                <input type="text" value={nameQuery} onChange={e => handleNameSearch(e.target.value)}
+                  placeholder="En az 2 karakter..."
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 focus:outline-none focus:border-blue-500"
+                  autoFocus />
+              </div>
+
+              {/* Arama sonuçları */}
+              {nameResults.length > 0 && !selectedPerson && (
+                <div className="bg-slate-800 rounded-xl overflow-hidden">
+                  {nameResults.map(p => (
+                    <button key={p.id} type="button" onClick={() => { setSelectedPerson(p); setNameResults([]) }}
+                      className={`w-full text-left px-4 py-3 hover:bg-slate-700 transition-colors border-b border-slate-700 last:border-0 ${!p.has_pin ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      disabled={!p.has_pin}>
+                      <div className="text-sm text-slate-200 font-medium">{p.full_name}</div>
+                      <div className="text-xs text-slate-500">{p.company || '—'} {!p.has_pin ? '· PIN tanımlı değil' : ''}</div>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Seçilen kişi */}
+              {selectedPerson && (
+                <div className="flex items-center justify-between bg-slate-800 rounded-xl px-4 py-3">
+                  <div>
+                    <div className="text-sm text-slate-200 font-medium">{selectedPerson.full_name}</div>
+                    <div className="text-xs text-slate-500">{selectedPerson.company || '—'}</div>
+                  </div>
+                  <button type="button" onClick={() => { setSelectedPerson(null); setNamePin(''); setNameQuery('') }}
+                    className="text-xs text-slate-500 hover:text-slate-300">Değiştir</button>
+                </div>
+              )}
+
+              {selectedPerson && (
+                <div>
+                  <label className="block text-sm text-slate-400 mb-2">PIN (4 hane)</label>
+                  <input type="password" inputMode="numeric" maxLength={4} value={namePin}
+                    onChange={e => setNamePin(e.target.value.replace(/\D/g,'').slice(0,4))}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 text-center text-2xl tracking-widest focus:outline-none focus:border-amber-500"
+                    placeholder="····" autoFocus />
+                </div>
+              )}
+
+              {loginError && <div className="text-red-400 text-sm text-center">{loginError}</div>}
+              <button type="submit" disabled={!selectedPerson || namePin.length !== 4}
+                className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 text-white rounded-xl py-3 text-base font-medium transition-colors">
+                Giriş Yap
+              </button>
+            </form>
+          )}
         </div>
       </div>
     )

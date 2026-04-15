@@ -29,6 +29,16 @@ export default function SettingsPage() {
   const [previewHtml, setPreviewHtml] = useState(null)
   const [previewLoading, setPreviewLoading] = useState(false)
 
+  const { data: kioskCfg, isLoading: kioskLoading } = useQuery({
+    queryKey: ['kiosk-settings'],
+    queryFn: () => api.get('/settings/email/kiosk').then(r => r.data),
+  })
+  const saveKiosk = useMutation({
+    mutationFn: body => api.put('/settings/email/kiosk', body),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['kiosk-settings'] }); showToast('Kiosk ayarı kaydedildi','success') },
+    onError: e => showToast(e.response?.data?.error ?? 'Hata','error'),
+  })
+
   const { data, isLoading } = useQuery({
     queryKey: ['email-settings'],
     queryFn: () => api.get('/settings/email').then(r => r.data),
@@ -215,6 +225,28 @@ export default function SettingsPage() {
             <input className="form-input" placeholder="YYS <noreply@yys.local>"
               value={current.smtp?.from ?? ''} onChange={e => patchSmtp({ from: e.target.value })} />
           </div>
+        </Panel>
+
+        {/* Bölüm 4b: Kiosk Giriş Yöntemi */}
+        <Panel title="KİOSK GİRİŞ YÖNTEMİ">
+          <p style={{ fontSize:'12px', color:'#64748b', marginBottom:'12px' }}>Personel kiosk ekranına nasıl giriş yapabilsin?</p>
+          {kioskLoading ? <p style={{ fontSize:'13px', color:'#94a3b8' }}>Yükleniyor...</p> : (
+            <div style={{ display:'flex', gap:'8px', flexWrap:'wrap' }}>
+              {[
+                { val:'tc_no', label:'TC No + PIN' },
+                { val:'name',  label:'İsimle Ara + PIN' },
+                { val:'both',  label:'Her İkisi (kullanıcı seçer)' },
+              ].map(({ val, label }) => (
+                <button key={val} type="button"
+                  onClick={() => saveKiosk.mutate({ login_method: val })}
+                  style={{ padding:'8px 16px', borderRadius:'8px', border:'none', cursor:'pointer', fontSize:'13px', fontWeight:600, transition:'all 0.15s',
+                    background: (kioskCfg?.login_method ?? 'both') === val ? 'var(--accent)' : '#e2e8f0',
+                    color: (kioskCfg?.login_method ?? 'both') === val ? '#fff' : '#64748b' }}>
+                  {(kioskCfg?.login_method ?? 'both') === val ? '✓ ' : ''}{label}
+                </button>
+              ))}
+            </div>
+          )}
         </Panel>
 
         {/* Kaydet + Test butonları */}

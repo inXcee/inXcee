@@ -1,5 +1,6 @@
 import { Router } from 'express'
-import { login, loginKiosk, changeOwnPassword, refreshToken } from './service.js'
+import { login, loginKiosk, loginKioskById, searchKioskPersonnel, changeOwnPassword, refreshToken } from './service.js'
+import { getSetting } from '../../modules/email/queries.js'
 import { requireAuth } from './middleware.js'
 
 export const authRouter = Router()
@@ -12,11 +13,27 @@ authRouter.post('/login', (req, res) => {
 })
 
 authRouter.post('/kiosk-login', (req, res) => {
-  const { tc_no, pin } = req.body
+  const { tc_no, pin, personnel_id } = req.body
+  if (personnel_id) {
+    if (!pin) return res.status(400).json({ error: 'PIN gerekli' })
+    const result = loginKioskById(Number(personnel_id), pin)
+    if (result.error) return res.status(result.status).json({ error: result.error })
+    return res.json(result)
+  }
   if (!tc_no || !pin) return res.status(400).json({ error: 'TC No ve PIN gerekli' })
   const result = loginKiosk(tc_no, pin)
   if (result.error) return res.status(result.status).json({ error: result.error })
   res.json(result)
+})
+
+authRouter.get('/kiosk-search', (req, res) => {
+  const q = (req.query.q || '').trim()
+  if (q.length < 2) return res.json([])
+  res.json(searchKioskPersonnel(q))
+})
+
+authRouter.get('/kiosk-config', (req, res) => {
+  res.json({ login_method: getSetting('kiosk_login_method') ?? 'both' })
 })
 
 authRouter.post('/refresh', (req, res) => {
