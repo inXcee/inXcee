@@ -26,6 +26,7 @@ const SettingsPage = lazy(() => import('./modules/admin/SettingsPage.jsx'))
 const KioskPinPage = lazy(() => import('./modules/admin/KioskPinPage.jsx'))
 const AnnouncementsPage = lazy(() => import('./modules/admin/AnnouncementsPage.jsx'))
 const AvsWorkersPage = lazy(() => import('./modules/admin/AvsWorkersPage.jsx'))
+const LaundryKioskPage = lazy(() => import('./modules/laundry-kiosk/LaundryKioskPage.jsx'))
 
 function PrivateRoute({ children }) {
   const token = useAuthStore(s => s.token)
@@ -56,6 +57,7 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/kiosk" element={<SelfServicePage />} />
+          <Route path="/laundry-kiosk" element={<LaundryKioskPage />} />
           <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
             <Route index element={<DashboardPage />} />
             <Route path="checkin" element={<CheckinPage />} />

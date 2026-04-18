@@ -1,0 +1,712 @@
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import api from '../../shared/api/client.js'
+
+const GARMENT_TYPES = ['Gömlek', 'Pantolon', 'Tişört', 'Kazak', 'Mont', 'Takım Elbise', 'Diğer']
+
+// ── İmza canvas ──────────────────────────────────────────────────────────────
+function SigPad({ sigRef }) {
+  const canvasRef = useRef(null)
+  const drawing = useRef(false)
+  const [hasSig, setHasSig] = useState(false)
+
+  // expose clear + toDataURL via ref
+  useEffect(() => {
+    if (sigRef) {
+      sigRef.current = {
+        isEmpty: () => !hasSig,
+        toDataURL: () => canvasRef.current?.toDataURL(),
+        clear: () => {
+          canvasRef.current?.getContext('2d').clearRect(0, 0, canvasRef.current.width, canvasRef.current.height)
+          setHasSig(false)
+        },
+      }
+    }
+  })
+
+  const getPos = useCallback((e) => {
+    const rect = canvasRef.current.getBoundingClientRect()
+    const touch = e.touches ? e.touches[0] : e
+    const scaleX = canvasRef.current.width / rect.width
+    const scaleY = canvasRef.current.height / rect.height
+    return { x: (touch.clientX - rect.left) * scaleX, y: (touch.clientY - rect.top) * scaleY }
+  }, [])
+
+  const startDraw = useCallback((e) => {
+    e.preventDefault(); drawing.current = true
+    const ctx = canvasRef.current.getContext('2d')
+    const pos = getPos(e)
+    ctx.beginPath(); ctx.moveTo(pos.x, pos.y)
+  }, [getPos])
+
+  const draw = useCallback((e) => {
+    if (!drawing.current) return
+    e.preventDefault()
+    const ctx = canvasRef.current.getContext('2d')
+    const pos = getPos(e)
+    ctx.lineTo(pos.x, pos.y)
+    ctx.strokeStyle = '#e2e8f0'; ctx.lineWidth = 2; ctx.lineCap = 'round'; ctx.stroke()
+    setHasSig(true)
+  }, [getPos])
+
+  const stopDraw = useCallback(() => { drawing.current = false }, [])
+
+  return (
+    <div>
+      <canvas ref={canvasRef} width={400} height={140}
+        style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 12, display: 'block', cursor: 'crosshair', touchAction: 'none', width: '100%' }}
+        onMouseDown={startDraw} onMouseMove={draw} onMouseUp={stopDraw} onMouseLeave={stopDraw}
+        onTouchStart={startDraw} onTouchMove={draw} onTouchEnd={stopDraw}
+      />
+      {hasSig && (
+        <button type="button" onClick={() => sigRef.current?.clear()}
+          className="mt-1 text-xs text-slate-500 hover:text-slate-300">Temizle</button>
+      )}
+    </div>
+  )
+}
+
+// ── Blok seçici ──────────────────────────────────────────────────────────────
+function BlockPicker({ blocks, block, setBlock }) {
+  return (
+    <div className="flex gap-2 flex-wrap">
+      {blocks.map(b => (
+        <button key={b} type="button" onClick={() => setBlock(b)}
+          className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors ${block === b ? 'bg-blue-700 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>
+          {b}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+// ── Ana bileşen ───────────────────────────────────────────────────────────────
+export default function LaundryKioskPage() {
+  const [avsToken, setAvsToken] = useState(null)
+  const [workerInfo, setWorkerInfo] = useState(null)
+  const [loginError, setLoginError] = useState('')
+  const [nameQuery, setNameQuery] = useState('')
+  const [nameResults, setNameResults] = useState([])
+  const [selectedWorker, setSelectedWorker] = useState(null)
+  const [pinInput, setPinInput] = useState('')
+  const [activeAction, setActiveAction] = useState(null)
+  const searchTimer = useRef(null)
+
+  const kioskApi = {
+    get: url => api.get(url, { headers: { Authorization: `Bearer ${avsToken}` } }),
+    post: (url, data) => api.post(url, data, { headers: { Authorization: `Bearer ${avsToken}` } }),
+    put: (url, data) => api.put(url, data, { headers: { Authorization: `Bearer ${avsToken}` } }),
+  }
+
+  const handleNameSearch = val => {
+    setNameQuery(val)
+    setSelectedWorker(null)
+    clearTimeout(searchTimer.current)
+    if (val.length < 2) { setNameResults([]); return }
+    searchTimer.current = setTimeout(async () => {
+      try {
+        const res = await api.get(`/auth/avs-search?q=${encodeURIComponent(val)}`)
+        setNameResults(res.data)
+      } catch { setNameResults([]) }
+    }, 300)
+  }
+
+  const handleLogin = async e => {
+    e.preventDefault(); setLoginError('')
+    if (!selectedWorker) return setLoginError('Listeden bir kişi seçin')
+    try {
+      const res = await api.post('/auth/avs-login', { worker_id: selectedWorker.id, pin: pinInput })
+      setAvsToken(res.data.token)
+      setWorkerInfo(res.data.worker)
+    } catch (err) { setLoginError(err.response?.data?.error || 'Giriş başarısız') }
+  }
+
+  // ── Login ekranı ────────────────────────────────────────────────────────────
+  if (!avsToken) {
+    return (
+      <div style={{ minHeight: '100vh', background: '#020617', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+        <div style={{ width: '100%', maxWidth: 380 }}>
+          <div style={{ textAlign: 'center', marginBottom: 32 }}>
+            <div style={{ fontSize: 56, marginBottom: 12 }}>🧺</div>
+            <h1 style={{ fontSize: 24, fontWeight: 700, color: '#f1f5f9', margin: 0 }}>Çamaşırhane</h1>
+            <p style={{ color: '#64748b', fontSize: 13, marginTop: 4 }}>AVS Personel Girişi</p>
+          </div>
+          <form onSubmit={handleLogin} style={{ background: '#0f172a', borderRadius: 16, padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div>
+              <label style={{ display: 'block', fontSize: 13, color: '#94a3b8', marginBottom: 8 }}>İsimle Ara</label>
+              <input type="text" value={nameQuery} onChange={e => handleNameSearch(e.target.value)}
+                placeholder="En az 2 karakter..."
+                autoFocus
+                style={{ width: '100%', background: '#1e293b', border: '1px solid #334155', borderRadius: 12, padding: '12px 16px', color: '#f1f5f9', fontSize: 14, boxSizing: 'border-box', outline: 'none' }}
+              />
+            </div>
+
+            {nameResults.length > 0 && !selectedWorker && (
+              <div style={{ background: '#1e293b', borderRadius: 12, overflow: 'hidden' }}>
+                {nameResults.map(w => (
+                  <button key={w.id} type="button"
+                    onClick={() => { setSelectedWorker(w); setNameResults([]) }}
+                    disabled={!w.has_pin}
+                    style={{
+                      width: '100%', textAlign: 'left', padding: '12px 16px',
+                      background: 'transparent', border: 'none', borderBottom: '1px solid #334155',
+                      color: w.has_pin ? '#e2e8f0' : '#475569', cursor: w.has_pin ? 'pointer' : 'not-allowed',
+                    }}>
+                    <div style={{ fontSize: 14, fontWeight: 500 }}>{w.full_name}</div>
+                    <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
+                      {w.role_label || '—'}{!w.has_pin ? ' · PIN tanımlı değil' : ''}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {selectedWorker && (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#1e293b', borderRadius: 12, padding: '12px 16px' }}>
+                <div>
+                  <div style={{ fontSize: 14, color: '#e2e8f0', fontWeight: 500 }}>{selectedWorker.full_name}</div>
+                  <div style={{ fontSize: 12, color: '#64748b' }}>{selectedWorker.role_label || '—'}</div>
+                </div>
+                <button type="button" onClick={() => { setSelectedWorker(null); setNameQuery(''); setPinInput('') }}
+                  style={{ background: 'transparent', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: 12 }}>
+                  Değiştir
+                </button>
+              </div>
+            )}
+
+            {selectedWorker && (
+              <div>
+                <label style={{ display: 'block', fontSize: 13, color: '#94a3b8', marginBottom: 8 }}>PIN (4 hane)</label>
+                <input type="password" inputMode="numeric" maxLength={4} value={pinInput}
+                  onChange={e => setPinInput(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                  placeholder="····"
+                  autoFocus
+                  style={{ width: '100%', background: '#1e293b', border: '1px solid #334155', borderRadius: 12, padding: '12px 16px', color: '#f1f5f9', fontSize: 24, textAlign: 'center', letterSpacing: 8, boxSizing: 'border-box', outline: 'none' }}
+                />
+              </div>
+            )}
+
+            {loginError && <div style={{ color: '#f87171', fontSize: 13, textAlign: 'center' }}>{loginError}</div>}
+
+            <button type="submit" disabled={!selectedWorker || pinInput.length !== 4}
+              style={{
+                padding: '14px', borderRadius: 12, border: 'none', fontWeight: 600, fontSize: 15, cursor: 'pointer',
+                background: (!selectedWorker || pinInput.length !== 4) ? '#1e293b' : '#2563eb',
+                color: (!selectedWorker || pinInput.length !== 4) ? '#475569' : '#fff',
+              }}>
+              Giriş Yap
+            </button>
+          </form>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Ana ekran ───────────────────────────────────────────────────────────────
+  return (
+    <div style={{ minHeight: '100vh', background: '#020617', display: 'flex', flexDirection: 'column', maxWidth: 480, margin: '0 auto', padding: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 0', marginBottom: 16 }}>
+        <div>
+          <div style={{ fontWeight: 600, color: '#f1f5f9', fontSize: 15 }}>{workerInfo?.full_name}</div>
+          {workerInfo?.role_label && <div style={{ fontSize: 12, color: '#64748b' }}>{workerInfo.role_label}</div>}
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {activeAction && (
+            <button onClick={() => setActiveAction(null)}
+              style={{ fontSize: 12, color: '#94a3b8', padding: '6px 12px', background: '#1e293b', border: 'none', borderRadius: 8, cursor: 'pointer' }}>
+              ← Geri
+            </button>
+          )}
+          <button onClick={() => { setAvsToken(null); setWorkerInfo(null); setActiveAction(null) }}
+            style={{ fontSize: 12, color: '#64748b', padding: '6px 12px', background: '#1e293b', border: 'none', borderRadius: 8, cursor: 'pointer' }}>
+            Çıkış
+          </button>
+        </div>
+      </div>
+
+      {!activeAction && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          {[
+            { key: 'bag',     icon: '🧺', label: 'Torba Al',       bg: '#1e3a5f' },
+            { key: 'ready',   icon: '✅', label: 'Hazır İşaretle',  bg: '#14532d' },
+            { key: 'garment', icon: '👔', label: 'Kıyafet Gir',     bg: '#3b0764' },
+            { key: 'deliver', icon: '🚚', label: 'Teslim Et',        bg: '#451a03' },
+            { key: 'iron',    icon: '🔥', label: 'Ütü',              bg: '#164e63' },
+            { key: 'machine', icon: '⚙️', label: 'Makine',           bg: '#1e293b' },
+          ].map(a => (
+            <button key={a.key} onClick={() => setActiveAction(a.key)}
+              style={{
+                background: a.bg, border: 'none', borderRadius: 16, padding: '28px 16px',
+                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10,
+                cursor: 'pointer', transition: 'opacity 0.15s',
+              }}
+              onMouseEnter={e => e.currentTarget.style.opacity = '0.85'}
+              onMouseLeave={e => e.currentTarget.style.opacity = '1'}
+            >
+              <span style={{ fontSize: 40 }}>{a.icon}</span>
+              <span style={{ fontSize: 14, fontWeight: 600, color: '#f1f5f9' }}>{a.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {activeAction === 'bag'     && <BagForm kioskApi={kioskApi} onDone={() => setActiveAction(null)} />}
+      {activeAction === 'ready'   && <StatusUpdateView kioskApi={kioskApi} targetStatus="ready" label="Hazır İşaretle" onDone={() => setActiveAction(null)} />}
+      {activeAction === 'deliver' && <DeliverView kioskApi={kioskApi} onDone={() => setActiveAction(null)} />}
+      {activeAction === 'garment' && <GarmentForm kioskApi={kioskApi} onDone={() => setActiveAction(null)} />}
+      {activeAction === 'iron'    && <IronView kioskApi={kioskApi} onDone={() => setActiveAction(null)} />}
+      {activeAction === 'machine' && <MachineView kioskApi={kioskApi} onDone={() => setActiveAction(null)} />}
+    </div>
+  )
+}
+
+// ── Blok listesi (public, token gerekmez) ─────────────────────────────────────
+function useBlocks() {
+  return useQuery({
+    queryKey: ['kiosk-blocks'],
+    queryFn: () => api.get('/self-service/laundry-kiosk/blocks').then(r => r.data),
+    staleTime: 60000,
+  }).data ?? []
+}
+
+const card = { background: '#0f172a', borderRadius: 16, padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }
+const input = { width: '100%', background: '#1e293b', border: '1px solid #334155', borderRadius: 12, padding: '12px 16px', color: '#f1f5f9', fontSize: 14, boxSizing: 'border-box', outline: 'none' }
+const lbl = { display: 'block', fontSize: 11, color: '#64748b', letterSpacing: 1, marginBottom: 8, textTransform: 'uppercase' }
+const btn = (bg, color = '#fff') => ({ padding: '12px 20px', borderRadius: 12, border: 'none', background: bg, color, fontWeight: 600, fontSize: 14, cursor: 'pointer' })
+
+// ── Torba Al ──────────────────────────────────────────────────────────────────
+function BagForm({ kioskApi, onDone }) {
+  const sigRef = useRef(null)
+  const blocks = useBlocks()
+  const [block, setBlock] = useState('')
+  const [roomNo, setRoomNo] = useState('')
+  const [persons, setPersons] = useState([])
+  const [selectedPerson, setSelectedPerson] = useState(null)
+  const [itemCount, setItemCount] = useState(1)
+  const [isPremium, setIsPremium] = useState(false)
+  const [garmentItems, setGarmentItems] = useState([{ type: 'Gömlek', count: 1 }])
+  const [notes, setNotes] = useState('')
+  const [urgent, setUrgent] = useState(false)
+  const [success, setSuccess] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (block && roomNo) {
+      kioskApi.get(`/self-service/laundry-kiosk/room-persons?block=${block}&room_no=${roomNo}`)
+        .then(r => { setPersons(r.data); setSelectedPerson(null) })
+        .catch(() => setPersons([]))
+    }
+  }, [block, roomNo])
+
+  async function handleSubmit() {
+    setError('')
+    if (!block || !roomNo) return setError('Blok ve oda no gerekli')
+    const sig = sigRef.current?.isEmpty() ? null : sigRef.current?.toDataURL()
+    try {
+      await kioskApi.post('/self-service/laundry-kiosk/bag', {
+        block, room_no: roomNo,
+        personnel_id: selectedPerson?.id || null,
+        item_count: itemCount,
+        is_premium: isPremium,
+        clothing_items: isPremium ? garmentItems : null,
+        notes: notes || null,
+        urgent,
+        intake_signature: sig,
+      })
+      setSuccess(true)
+    } catch (e) { setError(e.response?.data?.error || 'Hata oluştu') }
+  }
+
+  if (success) return (
+    <div style={{ textAlign: 'center', padding: '48px 0' }}>
+      <div style={{ fontSize: 56 }}>✅</div>
+      <div style={{ color: '#4ade80', fontWeight: 600, fontSize: 18, marginTop: 12 }}>Torba kaydedildi!</div>
+      <button onClick={onDone} style={{ ...btn('#1e293b', '#60a5fa'), marginTop: 24 }}>Ana Ekrana Dön</button>
+    </div>
+  )
+
+  return (
+    <div style={card}>
+      <h2 style={{ fontSize: 18, fontWeight: 600, color: '#cbd5e1', margin: 0 }}>🧺 Torba Al</h2>
+
+      <div><label style={lbl}>Blok</label><BlockPicker blocks={blocks} block={block} setBlock={setBlock} /></div>
+
+      <div><label style={lbl}>Oda No</label>
+        <input type="text" inputMode="numeric" value={roomNo} onChange={e => setRoomNo(e.target.value)} placeholder="ör. 205" style={input} />
+      </div>
+
+      {persons.length > 0 && (
+        <div>
+          <label style={lbl}>Kişi (opsiyonel)</label>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <button type="button" onClick={() => setSelectedPerson(null)}
+              style={{ ...btn(!selectedPerson ? '#334155' : '#1e293b', !selectedPerson ? '#e2e8f0' : '#64748b'), textAlign: 'left' }}>
+              Kişisiz
+            </button>
+            {persons.map(p => (
+              <button key={p.id} type="button" onClick={() => setSelectedPerson(p)}
+                style={{ ...btn(selectedPerson?.id === p.id ? '#1d4ed8' : '#1e293b', selectedPerson?.id === p.id ? '#fff' : '#94a3b8'), textAlign: 'left' }}>
+                {p.full_name}{p.company ? ` · ${p.company}` : ''}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div><label style={lbl}>Adet</label>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {[1,2,3,4,5,6,7,8].map(n => (
+            <button key={n} type="button" onClick={() => setItemCount(n)}
+              style={{ width: 44, height: 44, borderRadius: 12, border: 'none', background: itemCount === n ? '#1d4ed8' : '#1e293b', color: itemCount === n ? '#fff' : '#64748b', fontWeight: 700, fontSize: 15, cursor: 'pointer' }}>
+              {n}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <button type="button" onClick={() => setIsPremium(v => !v)}
+          style={{ ...btn(isPremium ? '#581c87' : '#1e293b', isPremium ? '#e9d5ff' : '#64748b'), fontSize: 13 }}>
+          👔 Premium Kıyafet {isPremium ? '(Açık)' : ''}
+        </button>
+      </div>
+
+      {isPremium && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {garmentItems.map((g, i) => (
+            <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <select value={g.type} onChange={e => setGarmentItems(its => its.map((it, idx) => idx === i ? { ...it, type: e.target.value } : it))}
+                style={{ flex: 1, background: '#1e293b', border: '1px solid #334155', borderRadius: 10, padding: '8px 12px', color: '#f1f5f9', fontSize: 13 }}>
+                {GARMENT_TYPES.map(t => <option key={t}>{t}</option>)}
+              </select>
+              <input type="number" min={1} max={20} value={g.count}
+                onChange={e => setGarmentItems(its => its.map((it, idx) => idx === i ? { ...it, count: Number(e.target.value) } : it))}
+                style={{ width: 60, background: '#1e293b', border: '1px solid #334155', borderRadius: 10, padding: '8px', color: '#f1f5f9', fontSize: 13, textAlign: 'center' }} />
+              {garmentItems.length > 1 && (
+                <button type="button" onClick={() => setGarmentItems(its => its.filter((_, idx) => idx !== i))}
+                  style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 16 }}>✕</button>
+              )}
+            </div>
+          ))}
+          <button type="button" onClick={() => setGarmentItems(its => [...its, { type: 'Gömlek', count: 1 }])}
+            style={{ background: 'transparent', border: 'none', color: '#60a5fa', cursor: 'pointer', fontSize: 13, textAlign: 'left' }}>+ Kıyafet Ekle</button>
+        </div>
+      )}
+
+      <div><label style={lbl}>Not (opsiyonel)</label>
+        <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Özel not..."
+          style={{ ...input, padding: '10px 14px' }} />
+      </div>
+
+      <label style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }}>
+        <input type="checkbox" checked={urgent} onChange={e => setUrgent(e.target.checked)} style={{ width: 18, height: 18 }} />
+        <span style={{ fontSize: 14, color: '#fbbf24', fontWeight: 600 }}>⚡ Acil</span>
+      </label>
+
+      <div><label style={lbl}>İmza</label><SigPad sigRef={sigRef} /></div>
+
+      {error && <div style={{ color: '#f87171', fontSize: 13 }}>{error}</div>}
+      <button onClick={handleSubmit} style={{ ...btn('#2563eb'), padding: '14px' }}>Kaydet</button>
+    </div>
+  )
+}
+
+// ── Durum güncelle (Hazır) ────────────────────────────────────────────────────
+function StatusUpdateView({ kioskApi, targetStatus, label, onDone }) {
+  const blocks = useBlocks()
+  const [block, setBlock] = useState('')
+  const [roomNo, setRoomNo] = useState('')
+  const [bags, setBags] = useState([])
+  const [success, setSuccess] = useState(false)
+
+  const STATUS_LABEL = { collected: 'Toplandı', washing: 'Yıkanıyor', ready: 'Hazır', delivered: 'Teslim' }
+
+  async function search() {
+    if (!block) return
+    const params = new URLSearchParams({ block })
+    if (roomNo) params.set('room_no', roomNo)
+    const res = await kioskApi.get(`/self-service/laundry-kiosk/bags?${params}`)
+    setBags(res.data)
+  }
+
+  async function update(id) {
+    await kioskApi.put(`/self-service/laundry-kiosk/bags/${id}/status`, { status: targetStatus })
+    setBags(bags => bags.filter(b => b.id !== id))
+    setSuccess(true); setTimeout(() => setSuccess(false), 2000)
+  }
+
+  return (
+    <div style={card}>
+      <h2 style={{ fontSize: 18, fontWeight: 600, color: '#cbd5e1', margin: 0 }}>{label}</h2>
+      {success && <div style={{ color: '#4ade80', fontSize: 13 }}>✓ Güncellendi</div>}
+      <div><label style={lbl}>Blok</label><BlockPicker blocks={blocks} block={block} setBlock={setBlock} /></div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <input value={roomNo} onChange={e => setRoomNo(e.target.value)} placeholder="Oda (opsiyonel)"
+          style={{ ...input, flex: 1 }} />
+        <button onClick={search} style={btn('#1d4ed8')}>Ara</button>
+      </div>
+      {bags.length === 0 && <div style={{ color: '#475569', fontSize: 13 }}>Torba bulunamadı</div>}
+      {bags.map(b => (
+        <div key={b.id} style={{ background: '#1e293b', borderRadius: 12, padding: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+            <div style={{ fontSize: 14, color: '#e2e8f0', fontWeight: 500 }}>{b.block} — {b.room_no}</div>
+            <div style={{ fontSize: 12, color: '#64748b' }}>
+              {b.item_count} torba · {STATUS_LABEL[b.status] || b.status}
+              {b.urgent ? ' · ⚡' : ''}{b.intake_name ? ` · ${b.intake_name}` : ''}
+            </div>
+          </div>
+          <button onClick={() => update(b.id)} style={{ ...btn('#047857', '#d1fae5'), fontSize: 12, padding: '8px 14px' }}>{label}</button>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ── Teslim Et ─────────────────────────────────────────────────────────────────
+function DeliverView({ kioskApi, onDone }) {
+  const sigRef = useRef(null)
+  const blocks = useBlocks()
+  const [block, setBlock] = useState('')
+  const [bags, setBags] = useState([])
+  const [selectedBag, setSelectedBag] = useState(null)
+  const [success, setSuccess] = useState(false)
+  const [error, setError] = useState('')
+
+  async function searchReady() {
+    const res = await kioskApi.get(`/self-service/laundry-kiosk/bags?status=ready${block ? `&block=${block}` : ''}`)
+    setBags(res.data)
+  }
+
+  async function deliver() {
+    if (!selectedBag) return
+    setError('')
+    try {
+      await kioskApi.put(`/self-service/laundry-kiosk/bags/${selectedBag.id}/status`, { status: 'delivered' })
+      setSuccess(true); setSelectedBag(null); setBags(bags => bags.filter(b => b.id !== selectedBag.id))
+      setTimeout(() => setSuccess(false), 2000)
+    } catch (e) { setError(e.response?.data?.error || 'Hata') }
+  }
+
+  return (
+    <div style={card}>
+      <h2 style={{ fontSize: 18, fontWeight: 600, color: '#cbd5e1', margin: 0 }}>🚚 Teslim Et</h2>
+      {success && <div style={{ color: '#4ade80', fontSize: 13 }}>✓ Teslim edildi</div>}
+      <div>
+        <label style={lbl}>Blok (opsiyonel)</label>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button type="button" onClick={() => setBlock('')}
+            style={{ ...btn(!block ? '#1d4ed8' : '#1e293b', !block ? '#fff' : '#64748b'), fontSize: 13, padding: '8px 16px' }}>Tümü</button>
+          {blocks.map(b => (
+            <button key={b} type="button" onClick={() => setBlock(b)}
+              style={{ ...btn(block === b ? '#1d4ed8' : '#1e293b', block === b ? '#fff' : '#64748b'), fontSize: 13, padding: '8px 16px' }}>{b}</button>
+          ))}
+        </div>
+      </div>
+      <button onClick={searchReady} style={{ ...btn('#334155', '#e2e8f0') }}>Hazır Torbaları Getir</button>
+      {bags.map(b => (
+        <div key={b.id} onClick={() => setSelectedBag(b)}
+          style={{ background: '#1e293b', borderRadius: 12, padding: 12, cursor: 'pointer', border: `2px solid ${selectedBag?.id === b.id ? '#3b82f6' : 'transparent'}` }}>
+          <div style={{ fontSize: 14, color: '#e2e8f0', fontWeight: 500 }}>{b.block} — {b.room_no}</div>
+          <div style={{ fontSize: 12, color: '#64748b' }}>{b.item_count} torba{b.intake_name ? ` · ${b.intake_name}` : ''}</div>
+        </div>
+      ))}
+      {selectedBag && (
+        <>
+          <div><label style={lbl}>Teslim İmzası</label><SigPad sigRef={sigRef} /></div>
+          {error && <div style={{ color: '#f87171', fontSize: 13 }}>{error}</div>}
+          <button onClick={deliver} style={{ ...btn('#b45309'), padding: 14 }}>Teslim Onayla</button>
+        </>
+      )}
+    </div>
+  )
+}
+
+// ── Kıyafet Gir ───────────────────────────────────────────────────────────────
+function GarmentForm({ kioskApi, onDone }) {
+  const sigRef = useRef(null)
+  const blocks = useBlocks()
+  const [block, setBlock] = useState('')
+  const [roomNo, setRoomNo] = useState('')
+  const [persons, setPersons] = useState([])
+  const [selectedPerson, setSelectedPerson] = useState(null)
+  const [items, setItems] = useState([{ type: 'Gömlek', count: 1 }])
+  const [success, setSuccess] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (block && roomNo) {
+      kioskApi.get(`/self-service/laundry-kiosk/room-persons?block=${block}&room_no=${roomNo}`)
+        .then(r => { setPersons(r.data); setSelectedPerson(null) })
+        .catch(() => setPersons([]))
+    }
+  }, [block, roomNo])
+
+  async function submit() {
+    setError('')
+    if (!block || !roomNo) return setError('Blok ve oda no gerekli')
+    const sig = sigRef.current?.isEmpty() ? null : sigRef.current?.toDataURL()
+    try {
+      await kioskApi.post('/self-service/laundry-kiosk/garment', {
+        block, room_no: roomNo, personnel_id: selectedPerson?.id || null, clothing_items: items, intake_signature: sig,
+      })
+      setSuccess(true)
+    } catch (e) { setError(e.response?.data?.error || 'Hata') }
+  }
+
+  if (success) return (
+    <div style={{ textAlign: 'center', padding: '48px 0' }}>
+      <div style={{ fontSize: 56 }}>✅</div>
+      <div style={{ color: '#4ade80', fontWeight: 600, fontSize: 18, marginTop: 12 }}>Kıyafetler kaydedildi!</div>
+      <button onClick={onDone} style={{ ...btn('#1e293b', '#60a5fa'), marginTop: 24 }}>Ana Ekrana Dön</button>
+    </div>
+  )
+
+  return (
+    <div style={card}>
+      <h2 style={{ fontSize: 18, fontWeight: 600, color: '#cbd5e1', margin: 0 }}>👔 Kıyafet Gir</h2>
+      <div><label style={lbl}>Blok</label><BlockPicker blocks={blocks} block={block} setBlock={setBlock} /></div>
+      <div><label style={lbl}>Oda No</label>
+        <input value={roomNo} onChange={e => setRoomNo(e.target.value)} placeholder="ör. 205" style={input} />
+      </div>
+      {persons.length > 0 && (
+        <div>
+          <label style={lbl}>Kişi</label>
+          {persons.map(p => (
+            <button key={p.id} type="button" onClick={() => setSelectedPerson(p)}
+              style={{ ...btn(selectedPerson?.id === p.id ? '#6d28d9' : '#1e293b', selectedPerson?.id === p.id ? '#fff' : '#94a3b8'), width: '100%', textAlign: 'left', marginBottom: 4 }}>
+              {p.full_name}
+            </button>
+          ))}
+        </div>
+      )}
+      <div>
+        <label style={lbl}>Kıyafetler</label>
+        {items.map((g, i) => (
+          <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+            <select value={g.type} onChange={e => setItems(its => its.map((it, idx) => idx === i ? { ...it, type: e.target.value } : it))}
+              style={{ flex: 1, background: '#1e293b', border: '1px solid #334155', borderRadius: 10, padding: '8px 12px', color: '#f1f5f9', fontSize: 13 }}>
+              {GARMENT_TYPES.map(t => <option key={t}>{t}</option>)}
+            </select>
+            <input type="number" min={1} max={20} value={g.count}
+              onChange={e => setItems(its => its.map((it, idx) => idx === i ? { ...it, count: Number(e.target.value) } : it))}
+              style={{ width: 60, background: '#1e293b', border: '1px solid #334155', borderRadius: 10, padding: 8, color: '#f1f5f9', textAlign: 'center' }} />
+            {items.length > 1 && (
+              <button type="button" onClick={() => setItems(its => its.filter((_, idx) => idx !== i))}
+                style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 16 }}>✕</button>
+            )}
+          </div>
+        ))}
+        <button type="button" onClick={() => setItems(its => [...its, { type: 'Gömlek', count: 1 }])}
+          style={{ background: 'transparent', border: 'none', color: '#60a5fa', cursor: 'pointer', fontSize: 13 }}>+ Ekle</button>
+      </div>
+      <div><label style={lbl}>İmza</label><SigPad sigRef={sigRef} /></div>
+      {error && <div style={{ color: '#f87171', fontSize: 13 }}>{error}</div>}
+      <button onClick={submit} style={{ ...btn('#6d28d9'), padding: 14 }}>Kaydet</button>
+    </div>
+  )
+}
+
+// ── Ütü ───────────────────────────────────────────────────────────────────────
+function IronView({ kioskApi, onDone }) {
+  const blocks = useBlocks()
+  const [block, setBlock] = useState('')
+  const [bags, setBags] = useState([])
+  const [success, setSuccess] = useState(false)
+
+  async function search() {
+    const res = await kioskApi.get(`/self-service/laundry-kiosk/bags${block ? `?block=${block}` : ''}`)
+    setBags(res.data)
+  }
+
+  async function toggleIron(bag) {
+    await kioskApi.put(`/self-service/laundry-kiosk/bags/${bag.id}/ironing`, { needs_ironing: !bag.needs_ironing })
+    setBags(bags => bags.map(b => b.id === bag.id ? { ...b, needs_ironing: !bag.needs_ironing } : b))
+    setSuccess(true); setTimeout(() => setSuccess(false), 2000)
+  }
+
+  return (
+    <div style={card}>
+      <h2 style={{ fontSize: 18, fontWeight: 600, color: '#cbd5e1', margin: 0 }}>🔥 Ütü</h2>
+      {success && <div style={{ color: '#4ade80', fontSize: 13 }}>✓ Güncellendi</div>}
+      <div>
+        <label style={lbl}>Blok (opsiyonel)</label>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button type="button" onClick={() => setBlock('')}
+            style={{ ...btn(!block ? '#1d4ed8' : '#1e293b', !block ? '#fff' : '#64748b'), fontSize: 13, padding: '8px 14px' }}>Tümü</button>
+          {blocks.map(b => (
+            <button key={b} type="button" onClick={() => setBlock(b)}
+              style={{ ...btn(block === b ? '#1d4ed8' : '#1e293b', block === b ? '#fff' : '#64748b'), fontSize: 13, padding: '8px 14px' }}>{b}</button>
+          ))}
+        </div>
+      </div>
+      <button onClick={search} style={{ ...btn('#334155', '#e2e8f0') }}>Torbaları Getir</button>
+      {bags.map(b => (
+        <div key={b.id} style={{ background: '#1e293b', borderRadius: 12, padding: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+            <div style={{ fontSize: 14, color: '#e2e8f0', fontWeight: 500 }}>{b.block} — {b.room_no}</div>
+            <div style={{ fontSize: 12, color: '#64748b' }}>{b.item_count} adet{b.intake_name ? ` · ${b.intake_name}` : ''}</div>
+          </div>
+          <button onClick={() => toggleIron(b)}
+            style={{ ...btn(b.needs_ironing ? '#9a3412' : '#334155', b.needs_ironing ? '#fed7aa' : '#94a3b8'), fontSize: 12, padding: '8px 14px' }}>
+            {b.needs_ironing ? '🔥 Ütü Var' : 'Ütü Yok'}
+          </button>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ── Makine ────────────────────────────────────────────────────────────────────
+function MachineView({ kioskApi, onDone }) {
+  const [machines, setMachines] = useState([])
+  const [bags, setBags] = useState([])
+  const [selectedBag, setSelectedBag] = useState(null)
+  const [success, setSuccess] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    kioskApi.get('/self-service/laundry-kiosk/machines').then(r => setMachines(r.data)).catch(() => {})
+    kioskApi.get('/self-service/laundry-kiosk/bags?status=collected').then(r => setBags(r.data)).catch(() => {})
+  }, [])
+
+  async function assign(machineId) {
+    if (!selectedBag) return setError('Önce bir torba seçin')
+    setError('')
+    try {
+      await kioskApi.put(`/self-service/laundry-kiosk/machines/${machineId}/assign`, { item_id: selectedBag.id })
+      setBags(bags => bags.filter(b => b.id !== selectedBag.id))
+      setSelectedBag(null); setSuccess(true); setTimeout(() => setSuccess(false), 2000)
+    } catch (e) { setError(e.response?.data?.error || 'Hata') }
+  }
+
+  return (
+    <div style={card}>
+      <h2 style={{ fontSize: 18, fontWeight: 600, color: '#cbd5e1', margin: 0 }}>⚙️ Makine</h2>
+      {success && <div style={{ color: '#4ade80', fontSize: 13 }}>✓ Makineye atandı</div>}
+      {error && <div style={{ color: '#f87171', fontSize: 13 }}>{error}</div>}
+      <div>
+        <label style={lbl}>Torba Seç (Toplandı)</label>
+        {bags.length === 0 && <div style={{ color: '#475569', fontSize: 13 }}>Toplanmış torba yok</div>}
+        {bags.map(b => (
+          <button key={b.id} type="button" onClick={() => setSelectedBag(b)}
+            style={{ ...btn(selectedBag?.id === b.id ? '#1d4ed8' : '#1e293b', selectedBag?.id === b.id ? '#fff' : '#94a3b8'), width: '100%', textAlign: 'left', marginBottom: 4 }}>
+            {b.block} — {b.room_no} · {b.item_count} adet{b.intake_name ? ` · ${b.intake_name}` : ''}
+          </button>
+        ))}
+      </div>
+      {selectedBag && (
+        <div>
+          <label style={lbl}>Makine Seç</label>
+          {machines.map(m => (
+            <button key={m.id} type="button" onClick={() => assign(m.id)}
+              style={{ ...btn('#1e293b', '#cbd5e1'), width: '100%', textAlign: 'left', marginBottom: 4 }}
+              onMouseEnter={e => e.currentTarget.style.background = '#164e63'}
+              onMouseLeave={e => e.currentTarget.style.background = '#1e293b'}>
+              {m.name} · {m.type === 'washer' ? '🫧 Çamaşır' : '💨 Kurutucu'} · {m.active_items || 0} aktif
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
