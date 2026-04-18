@@ -79,7 +79,7 @@ function AutoInput({ label, value, onChange, suggestions, placeholder }) {
 }
 
 // ── Room Picker ─────────────────────────────────────────────────────────────
-function RoomPicker({ onSelect, selectedRoom, suggestedRoom }) {
+function RoomPicker({ onSelect, selectedRoom, suggestedRoom, onQuickFill }) {
   const [block, setBlock] = useState(suggestedRoom?.block || 'M1')
   const [floor, setFloor] = useState(suggestedRoom?.floor || 1)
 
@@ -184,6 +184,18 @@ function RoomPicker({ onSelect, selectedRoom, suggestedRoom }) {
           </div>
         </div>
       </div>
+
+      {onQuickFill && selectedRoom && (
+        <button
+          onClick={e => { e.stopPropagation(); onQuickFill(selectedRoom) }}
+          style={{
+            marginTop: '8px', padding: '6px 12px', borderRadius: '6px', border: 'none',
+            background: 'rgba(59,130,246,.15)', color: '#60a5fa', cursor: 'pointer',
+            fontFamily: 'var(--mono)', fontSize: '10px', letterSpacing: '1px',
+          }}>
+          ⚡ HIZLI EKLE — {selectedRoom.block} {selectedRoom.room_no}
+        </button>
+      )}
 
       {/* Legend */}
       <div style={{ display: 'flex', gap: '12px', marginTop: '8px', flexWrap: 'wrap' }}>
@@ -419,6 +431,9 @@ export default function CheckinPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [showImport, setShowImport] = useState(false)
+  const [quickFillRoom, setQuickFillRoom] = useState(null)
+  const [quickFillCount, setQuickFillCount] = useState(1)
+  const [quickFillLoading, setQuickFillLoading] = useState(false)
 
   const qc = useQueryClient()
 
@@ -516,6 +531,21 @@ export default function CheckinPage() {
       setStep(3)
     } catch (e) { setError(e.response?.data?.error || 'Oda atama hatası') }
     finally { setLoading(false) }
+  }
+
+  async function handleQuickFill() {
+    if (!quickFillRoom || quickFillCount < 1) return
+    setQuickFillLoading(true)
+    try {
+      await api.post('/checkin/placeholder-batch', { room_id: quickFillRoom.room_id, count: quickFillCount })
+      setQuickFillRoom(null)
+      qc.invalidateQueries({ queryKey: ['available-rooms'] })
+      qc.invalidateQueries({ queryKey: ['checkin-stats'] })
+    } catch (e) {
+      alert(e.response?.data?.error || 'Hata oluştu')
+    } finally {
+      setQuickFillLoading(false)
+    }
   }
 
   const resetFlow = () => {
@@ -802,6 +832,7 @@ export default function CheckinPage() {
                   suggestedRoom={suggestedRoom}
                   selectedRoom={selectedRoom}
                   onSelect={setSelectedRoom}
+                  onQuickFill={r => { setQuickFillRoom(r); setQuickFillCount(1) }}
                 />
 
                 {/* Selected room info */}
@@ -864,6 +895,56 @@ export default function CheckinPage() {
         {/* RIGHT: Stats Dashboard */}
         <StatsDashboard />
       </div>
+
+      {quickFillRoom && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', zIndex: 1000,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px',
+        }}>
+          <div className="panel" style={{ width: '100%', maxWidth: '360px' }}>
+            <div style={{ height: '2px', background: 'var(--accent)' }} />
+            <div className="panel-header">
+              <div>
+                <div className="panel-title">HIZLI DOLULUK</div>
+                <div className="panel-subtitle">{quickFillRoom.block} BLOK — ODA {quickFillRoom.room_no}</div>
+              </div>
+            </div>
+            <div className="panel-body" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div style={{ fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--text3)' }}>
+                Mevcut: {quickFillRoom.current_count}/{quickFillRoom.active_beds} kişi
+              </div>
+              <div>
+                <div style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)', marginBottom: '8px' }}>
+                  KAÇ KİŞİ EKLENECEK?
+                </div>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  {Array.from({ length: Math.max(0, quickFillRoom.active_beds - quickFillRoom.current_count) }, (_, i) => i + 1).map(n => (
+                    <button key={n} onClick={() => setQuickFillCount(n)}
+                      style={{
+                        width: '44px', height: '44px', borderRadius: '8px', border: 'none', cursor: 'pointer',
+                        fontFamily: 'var(--display)', fontSize: '18px', fontWeight: 700,
+                        background: quickFillCount === n ? 'var(--accent)' : 'var(--surface2)',
+                        color: quickFillCount === n ? '#000' : 'var(--text)',
+                      }}>
+                      {n}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text4)' }}>
+                {quickFillCount} adet "Anonim" kayıt oluşturulur. Detaylar sonra doldurulabilir.
+              </div>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button onClick={() => setQuickFillRoom(null)} className="btn btn-ghost">İptal</button>
+                <button onClick={handleQuickFill} disabled={quickFillLoading}
+                  className="btn btn-primary" style={{ flex: 1, justifyContent: 'center' }}>
+                  {quickFillLoading ? 'Ekleniyor...' : `✓ ${quickFillCount} Kişi Ekle`}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

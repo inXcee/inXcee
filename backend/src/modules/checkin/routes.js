@@ -4,6 +4,7 @@ import { upload, verifyMagicBytes } from '../../shared/uploads/middleware.js'
 import { setKioskPin } from '../../shared/auth/service.js'
 import { getDB } from '../../shared/db/index.js'
 import * as svc from './service.js'
+import { insertPlaceholderBatch } from './queries.js'
 
 export const checkinRouter = Router()
 const allowed = requireRole('campus_manager', 'shift_supervisor')
@@ -180,5 +181,16 @@ checkinRouter.post('/photo/:personnelId', ...allowed, upload.single('photo'), ve
     const photoUrl = `/uploads/${req.file.filename}`
     svc.updatePhotoService(+req.params.personnelId, photoUrl)
     res.json({ photo_url: photoUrl })
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+// ── Placeholder Batch ─────────────────────────────────────────────────────────
+checkinRouter.post('/placeholder-batch', ...allowed, (req, res) => {
+  const { room_id, count } = req.body
+  if (!room_id || !count || count < 1 || count > 10)
+    return res.status(400).json({ error: 'room_id ve count (1-10) gerekli' })
+  try {
+    const ids = insertPlaceholderBatch(Number(room_id), Number(count), req.user.id)
+    res.status(201).json({ ids })
   } catch (e) { res.status(400).json({ error: e.message }) }
 })

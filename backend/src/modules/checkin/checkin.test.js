@@ -110,3 +110,46 @@ describe('Check-in', () => {
     expect(res.body).toEqual([])
   })
 })
+
+describe('Placeholder batch', () => {
+  it('POST /checkin/placeholder-batch oda bulunamadıysa hata', async () => {
+    const res = await request(app)
+      .post('/api/checkin/placeholder-batch')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ room_id: 99999, count: 2 })
+    expect(res.status).toBe(400)
+  })
+
+  it('POST /checkin/placeholder-batch geçerli oda ile çalışır', async () => {
+    const rooms = await request(app)
+      .get('/api/checkin/available-rooms')
+      .set('Authorization', `Bearer ${token}`)
+    const firstRoom = rooms.body[0]
+    if (!firstRoom) return
+
+    const res = await request(app)
+      .post('/api/checkin/placeholder-batch')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ room_id: firstRoom.room_id, count: 1 })
+    expect(res.status).toBe(201)
+    expect(Array.isArray(res.body.ids)).toBe(true)
+    expect(res.body.ids).toHaveLength(1)
+  })
+
+  it('POST /checkin/placeholder-batch count 0 reddedilir', async () => {
+    const res = await request(app)
+      .post('/api/checkin/placeholder-batch')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ room_id: 1, count: 0 })
+    expect(res.status).toBe(400)
+  })
+
+  it('yetkisiz kullanıcı 403 alır', async () => {
+    const laundryToken = (await request(app).post('/api/auth/login').send({ username: 'camasir', password: 'admin123' })).body.token
+    const res = await request(app)
+      .post('/api/checkin/placeholder-batch')
+      .set('Authorization', `Bearer ${laundryToken}`)
+      .send({ room_id: 1, count: 1 })
+    expect(res.status).toBe(403)
+  })
+})
