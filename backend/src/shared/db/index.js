@@ -645,8 +645,8 @@ export function initDB() {
 
   // ── Laundry v5 — pending_collection statüsü + torba takip ─────────────────
   try {
-    const v5Check = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='laundry_items'").get()
-    if (v5Check && !v5Check.sql.includes("'pending_collection'")) {
+    const v5ColCheck = db.prepare("SELECT COUNT(*) as c FROM pragma_table_info('laundry_items') WHERE name='bag_no'").get()
+    if (v5ColCheck.c === 0) {
       db.pragma('foreign_keys = OFF')
       const migrateV5 = db.transaction(() => {
         db.exec(`CREATE TABLE laundry_items_v5 (
@@ -701,7 +701,10 @@ export function initDB() {
       migrateV5()
       db.pragma('foreign_keys = ON')
     }
-  } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] laundry_v5:', e.message) }
+  } catch(e) {
+    db.pragma('foreign_keys = ON')
+    if (!e.message?.includes('already exists')) console.error('[Migration] laundry_v5:', e.message)
+  }
 
   return db
 }
