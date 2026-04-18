@@ -1349,3 +1349,37 @@ describe('compensation', () => {
     expect(res.status).toBe(400)
   })
 })
+
+describe('laundry v5 migrations', () => {
+  test('laundry_items accepts pending_collection status', () => {
+    const db = getDB()
+    // Oda oluştur
+    const roomId = db.prepare(
+      "INSERT INTO rooms(block,floor,room_no,capacity,active_beds) VALUES('T',1,'201',4,4)"
+    ).run().lastInsertRowid
+    // pending_collection ile insert
+    const r = db.prepare(
+      "INSERT INTO laundry_items(room_id, status, item_count) VALUES(?,?,?)"
+    ).run(roomId, 'pending_collection', 1)
+    expect(r.lastInsertRowid).toBeGreaterThan(0)
+  })
+
+  test('laundry_items has bag_no column', () => {
+    const db = getDB()
+    const cols = db.prepare('PRAGMA table_info(laundry_items)').all().map(c => c.name)
+    expect(cols).toContain('bag_no')
+    expect(cols).toContain('collected_by')
+    expect(cols).toContain('collected_at')
+  })
+
+  test('bag_no is unique', () => {
+    const db = getDB()
+    const roomId = db.prepare(
+      "INSERT INTO rooms(block,floor,room_no,capacity,active_beds) VALUES('T',1,'102',4,4)"
+    ).run().lastInsertRowid
+    db.prepare("INSERT INTO laundry_items(room_id,item_count,bag_no) VALUES(?,?,?)").run(roomId, 1, 'T-99999')
+    expect(() =>
+      db.prepare("INSERT INTO laundry_items(room_id,item_count,bag_no) VALUES(?,?,?)").run(roomId, 1, 'T-99999')
+    ).toThrow()
+  })
+})
