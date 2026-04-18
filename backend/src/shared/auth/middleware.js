@@ -20,6 +20,18 @@ export function requireRole(...roles) {
   }]
 }
 
+export function requireAvsKiosk(req, res, next) {
+  const h = req.headers.authorization
+  if (!h?.startsWith('Bearer ')) return res.status(401).json({ error: 'Token gerekli' })
+  try {
+    req.user = verifyToken(h.slice(7))
+    if (req.user.role !== 'avs_kiosk') return res.status(403).json({ error: 'AVS kiosk token gerekli' })
+    next()
+  } catch {
+    res.status(401).json({ error: 'Geçersiz token' })
+  }
+}
+
 export function requireKioskOrStaff(req, res, next) {
   const h = req.headers.authorization
   if (!h?.startsWith('Bearer ')) return res.status(401).json({ error: 'Token gerekli' })

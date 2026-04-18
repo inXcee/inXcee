@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import { login, loginKiosk, loginKioskById, searchKioskPersonnel, changeOwnPassword, refreshToken } from './service.js'
+import { login, loginKiosk, loginKioskById, searchKioskPersonnel, loginAvsKiosk, searchAvsWorkers, changeOwnPassword, refreshToken } from './service.js'
 import { getSetting } from '../../modules/email/queries.js'
 import { requireAuth } from './middleware.js'
 
@@ -34,6 +34,20 @@ authRouter.get('/kiosk-search', (req, res) => {
 
 authRouter.get('/kiosk-config', (req, res) => {
   res.json({ login_method: getSetting('kiosk_login_method') ?? 'both' })
+})
+
+authRouter.get('/avs-search', (req, res) => {
+  const q = (req.query.q || '').trim()
+  if (q.length < 2) return res.json([])
+  res.json(searchAvsWorkers(q))
+})
+
+authRouter.post('/avs-login', (req, res) => {
+  const { worker_id, pin } = req.body
+  if (!worker_id || !pin) return res.status(400).json({ error: 'worker_id ve pin gerekli' })
+  const result = loginAvsKiosk(Number(worker_id), pin)
+  if (result.error) return res.status(result.status).json({ error: result.error })
+  res.json(result)
 })
 
 authRouter.post('/refresh', (req, res) => {

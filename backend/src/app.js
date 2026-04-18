@@ -23,6 +23,7 @@ import { notificationsRouter } from './shared/notifications/routes.js'
 import { whatsappRouter } from './shared/whatsapp/routes.js'
 import { emailRouter } from './modules/email/routes.js'
 import { announcementsRouter } from './modules/announcements/routes.js'
+import { avsWorkersRouter } from './modules/avs-workers/routes.js'
 
 const allowedOrigins = process.env.ALLOWED_ORIGIN
   ? process.env.ALLOWED_ORIGIN.split(',').map(o => o.trim())
@@ -116,6 +117,7 @@ app.use('/api/inventory', writeLimiter, inventoryRouter)
 app.use('/api/users', writeLimiter, usersRouter)
 app.use('/api/settings/email', writeLimiter, emailRouter)
 app.use('/api/announcements', writeLimiter, announcementsRouter)
+app.use('/api/avs-workers', writeLimiter, avsWorkersRouter)
 
 // ── Global Error Handler ─────────────────────────────────────────────────────
 app.use((err, req, res, _next) => {

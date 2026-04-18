@@ -59,6 +59,29 @@ export function loginKioskById(personnelId, pin) {
   return { token, personnel: { id: p.id, full_name: p.full_name } }
 }
 
+export function searchAvsWorkers(q) {
+  const db = getDB()
+  return db.prepare(
+    `SELECT id, full_name, role_label, kiosk_pin IS NOT NULL as has_pin
+     FROM avs_workers WHERE is_active=1 AND full_name LIKE ?
+     ORDER BY full_name LIMIT 10`
+  ).all(`%${q}%`)
+}
+
+export function loginAvsKiosk(workerId, pin) {
+  const db = getDB()
+  const w = db.prepare('SELECT * FROM avs_workers WHERE id=? AND is_active=1').get(workerId)
+  if (!w) return { error: 'Çalışan bulunamadı veya pasif', status: 401 }
+  if (!w.kiosk_pin) return { error: 'PIN tanımlı değil. Yöneticinizden PIN alın.', status: 403 }
+  if (!bcrypt.compareSync(pin, w.kiosk_pin)) return { error: 'PIN hatalı', status: 401 }
+  const token = jwt.sign(
+    { workerId: w.id, role: 'avs_kiosk', full_name: w.full_name },
+    SECRET,
+    { expiresIn: '4h' }
+  )
+  return { token, worker: { id: w.id, full_name: w.full_name, role_label: w.role_label } }
+}
+
 export function setKioskPin(personnelId, newPin) {
   if (!newPin || !/^\d{4}$/.test(newPin)) return { error: 'PIN 4 haneli rakam olmalıdır', status: 400 }
   const db = getDB()
