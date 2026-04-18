@@ -631,6 +631,18 @@ export function initDB() {
   error_msg TEXT
 )`) } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] email_log:', e.message) }
 
+  try { db.exec(`CREATE TABLE IF NOT EXISTS avs_workers (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  full_name  TEXT NOT NULL,
+  role_label TEXT,
+  kiosk_pin  TEXT,
+  is_active  INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT DEFAULT (datetime('now'))
+)`) } catch(e) { console.error('[Migration] avs_workers:', e.message) }
+
+  try { db.exec('ALTER TABLE personnel ADD COLUMN is_placeholder INTEGER DEFAULT 0') }
+    catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
+
   return db
 }
 
