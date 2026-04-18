@@ -25,6 +25,7 @@ const UsersPage = lazy(() => import('./modules/admin/UsersPage.jsx'))
 const SettingsPage = lazy(() => import('./modules/admin/SettingsPage.jsx'))
 const KioskPinPage = lazy(() => import('./modules/admin/KioskPinPage.jsx'))
 const AnnouncementsPage = lazy(() => import('./modules/admin/AnnouncementsPage.jsx'))
+const AvsWorkersPage = lazy(() => import('./modules/admin/AvsWorkersPage.jsx'))
 
 function PrivateRoute({ children }) {
   const token = useAuthStore(s => s.token)
@@ -75,6 +76,7 @@ export default function App() {
             <Route path="settings" element={<RoleRoute roles={['campus_manager']}><SettingsPage /></RoleRoute>} />
             <Route path="kiosk-pins" element={<RoleRoute roles={['campus_manager']}><KioskPinPage /></RoleRoute>} />
             <Route path="announcements" element={<RoleRoute roles={['campus_manager']}><AnnouncementsPage /></RoleRoute>} />
+            <Route path="avs-workers" element={<RoleRoute roles={['campus_manager']}><AvsWorkersPage /></RoleRoute>} />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>

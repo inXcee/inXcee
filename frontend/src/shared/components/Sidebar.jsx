@@ -40,6 +40,7 @@ const NAV_GROUPS = [
       { to: '/users', icon: '\u2302', label: 'Kullanicilar', roles: ['campus_manager'] },
       { to: '/kiosk-pins', icon: '\u2316', label: 'Kiosk PIN', roles: ['campus_manager'] },
       { to: '/announcements', icon: '📢', label: 'Duyurular', roles: ['campus_manager'] },
+      { to: '/avs-workers', icon: '👷', label: 'AVS Calisanlari', roles: ['campus_manager'] },
       { to: '/audit', icon: '\u2637', label: 'Audit Log', roles: ['campus_manager'] },
       { to: '/settings', icon: '\u2393', label: 'Ayarlar', roles: ['campus_manager'] },
     ]
