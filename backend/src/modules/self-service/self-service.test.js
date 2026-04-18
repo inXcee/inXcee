@@ -153,3 +153,70 @@ describe('GET /api/self-service/my-info expected_departure', () => {
     expect('expected_departure' in res.body).toBe(true)
   })
 })
+
+describe('Laundry Kiosk endpoints', () => {
+  let avsToken
+
+  beforeAll(async () => {
+    const adminToken = (await request(app).post('/api/auth/login').send({ username: 'mudur', password: 'admin123' })).body.token
+    const w = (await request(app).post('/api/avs-workers')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ full_name: 'Kiosk Test Worker' })).body
+    await request(app).put(`/api/avs-workers/${w.id}/pin`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ new_pin: '0000' })
+    const loginRes = await request(app).post('/api/auth/avs-login').send({ worker_id: w.id, pin: '0000' })
+    avsToken = loginRes.body.token
+  })
+
+  it('GET /laundry-kiosk/blocks token gerektirmez', async () => {
+    const res = await request(app).get('/api/self-service/laundry-kiosk/blocks')
+    expect(res.status).toBe(200)
+    expect(Array.isArray(res.body)).toBe(true)
+  })
+
+  it('GET /laundry-kiosk/room-persons AVS token olmadan 401', async () => {
+    const res = await request(app).get('/api/self-service/laundry-kiosk/room-persons?block=A&room_no=101')
+    expect(res.status).toBe(401)
+  })
+
+  it('GET /laundry-kiosk/room-persons AVS token ile çalışır', async () => {
+    const res = await request(app)
+      .get('/api/self-service/laundry-kiosk/room-persons?block=A&room_no=101')
+      .set('Authorization', `Bearer ${avsToken}`)
+    expect(res.status).toBe(200)
+    expect(Array.isArray(res.body)).toBe(true)
+  })
+
+  it('GET /laundry-kiosk/bags AVS token ile çalışır', async () => {
+    const res = await request(app)
+      .get('/api/self-service/laundry-kiosk/bags')
+      .set('Authorization', `Bearer ${avsToken}`)
+    expect(res.status).toBe(200)
+    expect(Array.isArray(res.body)).toBe(true)
+  })
+
+  it('PUT /laundry-kiosk/bags/:id/status geçersiz durum reddedilir', async () => {
+    const res = await request(app)
+      .put('/api/self-service/laundry-kiosk/bags/1/status')
+      .set('Authorization', `Bearer ${avsToken}`)
+      .send({ status: 'invalid_status' })
+    expect(res.status).toBe(400)
+  })
+
+  it('GET /laundry-kiosk/machines AVS token ile çalışır', async () => {
+    const res = await request(app)
+      .get('/api/self-service/laundry-kiosk/machines')
+      .set('Authorization', `Bearer ${avsToken}`)
+    expect(res.status).toBe(200)
+    expect(Array.isArray(res.body)).toBe(true)
+  })
+
+  it('Kiosk token (role:kiosk) laundry-kiosk endpoint\'lerine erişemez', async () => {
+    const kioskToken = jwt.sign({ personnelId: 1, role: 'kiosk' }, process.env.JWT_SECRET, { expiresIn: '1h' })
+    const res = await request(app)
+      .get('/api/self-service/laundry-kiosk/machines')
+      .set('Authorization', `Bearer ${kioskToken}`)
+    expect(res.status).toBe(403)
+  })
+})
