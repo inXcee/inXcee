@@ -225,34 +225,51 @@ export default function LaundryKioskPage() {
       </div>
 
       {!activeAction && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          {[
-            { key: 'bag',     icon: '🧺', label: 'Torba Bırak',     bg: '#1e3a5f' },
-            { key: 'collect', icon: '📦', label: 'Torba Topla',      bg: '#14532d' },
-            { key: 'machine', icon: '⚙️', label: 'Makineye Yükle',   bg: '#1e293b' },
-            { key: 'deliver', icon: '🚚', label: 'Teslim Et',         bg: '#451a03' },
-            { key: 'status',  icon: '📋', label: 'Durum Görüntüle',   bg: '#1c1917' },
-            { key: 'garment', icon: '👔', label: 'Kıyafet Gir',       bg: '#3b0764' },
-          ].map(a => (
-            <button key={a.key} onClick={() => setActiveAction(a.key)}
-              style={{
-                background: a.bg, border: 'none', borderRadius: 16, padding: '28px 16px',
-                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10,
-                cursor: 'pointer', transition: 'opacity 0.15s',
-              }}
-              onMouseEnter={e => e.currentTarget.style.opacity = '0.85'}
-              onMouseLeave={e => e.currentTarget.style.opacity = '1'}
-            >
-              <span style={{ fontSize: 40 }}>{a.icon}</span>
-              <span style={{ fontSize: 14, fontWeight: 600, color: '#f1f5f9' }}>{a.label}</span>
-            </button>
-          ))}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            {[
+              { key: 'bag',     icon: '🧺', label: 'Torba Bırak', bg: '#1e3a5f' },
+              { key: 'ironing', icon: '🫧', label: 'Ütü',          bg: '#4a1d96' },
+            ].map(a => (
+              <button key={a.key} onClick={() => setActiveAction(a.key)}
+                style={{
+                  background: a.bg, border: 'none', borderRadius: 16, padding: '28px 16px',
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10,
+                  cursor: 'pointer', transition: 'opacity 0.15s',
+                }}
+                onMouseEnter={e => e.currentTarget.style.opacity = '0.85'}
+                onMouseLeave={e => e.currentTarget.style.opacity = '1'}
+              >
+                <span style={{ fontSize: 40 }}>{a.icon}</span>
+                <span style={{ fontSize: 14, fontWeight: 600, color: '#f1f5f9' }}>{a.label}</span>
+              </button>
+            ))}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+            {[
+              { key: 'deliver', icon: '🚚', label: 'Teslim Et',   bg: '#451a03' },
+              { key: 'status',  icon: '📋', label: 'Durum',        bg: '#1c1917' },
+              { key: 'garment', icon: '👔', label: 'Kıyafet Gir', bg: '#3b0764' },
+            ].map(a => (
+              <button key={a.key} onClick={() => setActiveAction(a.key)}
+                style={{
+                  background: a.bg, border: 'none', borderRadius: 16, padding: '20px 6px',
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
+                  cursor: 'pointer', transition: 'opacity 0.15s',
+                }}
+                onMouseEnter={e => e.currentTarget.style.opacity = '0.85'}
+                onMouseLeave={e => e.currentTarget.style.opacity = '1'}
+              >
+                <span style={{ fontSize: 32 }}>{a.icon}</span>
+                <span style={{ fontSize: 12, fontWeight: 600, color: '#f1f5f9', textAlign: 'center' }}>{a.label}</span>
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
       {activeAction === 'bag'     && <BagForm kioskApi={kioskApi} onDone={() => setActiveAction(null)} />}
-      {activeAction === 'collect' && <CollectView kioskApi={kioskApi} onDone={() => setActiveAction(null)} />}
-      {activeAction === 'machine' && <MachineView kioskApi={kioskApi} onDone={() => setActiveAction(null)} />}
+      {activeAction === 'ironing' && <IroningView kioskApi={kioskApi} onDone={() => setActiveAction(null)} />}
       {activeAction === 'deliver' && <DeliverView kioskApi={kioskApi} onDone={() => setActiveAction(null)} />}
       {activeAction === 'status'  && <StatusView kioskApi={kioskApi} onDone={() => setActiveAction(null)} />}
       {activeAction === 'garment' && <GarmentForm kioskApi={kioskApi} onDone={() => setActiveAction(null)} />}
@@ -414,61 +431,140 @@ function BagForm({ kioskApi, onDone }) {
   )
 }
 
-// ── Torba Topla ───────────────────────────────────────────────────────────────
-function CollectView({ kioskApi, onDone }) {
+// ── Ütü ──────────────────────────────────────────────────────────────────────
+function IroningView({ kioskApi, onDone }) {
   const [bags, setBags] = useState([])
+  const [selectedBag, setSelectedBag] = useState(null)
+  const [garments, setGarments] = useState([])
+  const [ticked, setTicked] = useState({})
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(false)
   const [error, setError] = useState('')
-  const [filter, setFilter] = useState('')
 
   async function load() {
     setLoading(true)
     try {
-      const res = await kioskApi.get('/self-service/laundry-kiosk/pending-bags')
+      const res = await kioskApi.get('/self-service/laundry-kiosk/bags?status=ironing')
       setBags(res.data)
     } catch { setError('Yüklenemedi') } finally { setLoading(false) }
   }
 
   useEffect(() => { load() }, [])
 
-  async function collect(bag) {
+  function selectBag(bag) {
+    setSelectedBag(bag)
+    setError('')
+    setTicked({})
+    try {
+      const parsed = bag.garments_json ? JSON.parse(bag.garments_json) : []
+      setGarments(parsed)
+    } catch { setGarments([]) }
+  }
+
+  function toggleTick(idx) {
+    setTicked(prev => ({ ...prev, [idx]: !prev[idx] }))
+  }
+
+  const allTicked = garments.length > 0 && garments.every((_, i) => ticked[i])
+  const tickedCount = Object.values(ticked).filter(Boolean).length
+
+  async function complete() {
+    if (!selectedBag || !allTicked) return
     setError('')
     try {
-      await kioskApi.post(`/self-service/laundry-kiosk/bags/${bag.id}/collect`)
-      setBags(prev => prev.filter(b => b.id !== bag.id))
-      setSuccess(true); setTimeout(() => setSuccess(false), 2000)
+      await kioskApi.post(`/self-service/laundry-kiosk/bags/${selectedBag.id}/ironing-complete`, {})
+      setSuccess(true)
+      setBags(prev => prev.filter(b => b.id !== selectedBag.id))
+      setSelectedBag(null)
+      setTimeout(() => setSuccess(false), 2000)
     } catch (e) { setError(e.response?.data?.error || 'Hata') }
   }
 
-  const filtered = filter
-    ? bags.filter(b => b.bag_no?.includes(filter.toUpperCase()) || b.block?.includes(filter.toUpperCase()) || b.room_no?.includes(filter))
-    : bags
-
   return (
     <div style={card}>
-      <h2 style={{ fontSize: 18, fontWeight: 600, color: '#cbd5e1', margin: 0 }}>📦 Torba Topla</h2>
-      {success && <div style={{ color: '#4ade80', fontSize: 13 }}>✓ Toplandı — kirli olarak işaretlendi</div>}
+      <h2 style={{ fontSize: 18, fontWeight: 600, color: '#cbd5e1', margin: 0 }}>🫧 Ütü</h2>
+      {success && <div style={{ color: '#4ade80', fontSize: 13 }}>✓ Torba hazıra alındı</div>}
       {error && <div style={{ color: '#f87171', fontSize: 13 }}>{error}</div>}
-      <div style={{ display: 'flex', gap: 8 }}>
-        <input value={filter} onChange={e => setFilter(e.target.value)}
-          placeholder="Torba no, blok veya oda ara..."
-          style={{ ...input, flex: 1 }} />
-        <button onClick={load} style={btn('#334155', '#e2e8f0')} disabled={loading}>{loading ? '...' : '↻'}</button>
-      </div>
-      {filtered.length === 0 && !loading && <div style={{ color: '#475569', fontSize: 13 }}>Bekleyen torba yok</div>}
-      {filtered.map(b => (
-        <div key={b.id} style={{ background: '#1e293b', borderRadius: 12, padding: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div>
-            <div style={{ fontSize: 13, color: '#38bdf8', fontFamily: 'monospace', fontWeight: 700 }}>{b.bag_no || `#${b.id}`}</div>
-            <div style={{ fontSize: 14, color: '#e2e8f0', fontWeight: 500 }}>{b.block} — {b.room_no}</div>
-            <div style={{ fontSize: 11, color: '#64748b' }}>
-              {b.item_count} adet{b.urgent ? ' · ⚡ Acil' : ''}{b.intake_name ? ` · ${b.intake_name}` : ''}
-            </div>
+
+      {!selectedBag && (
+        <>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ fontSize: 12, color: '#64748b' }}>Ütülenecek torbalar ({bags.length})</div>
+            <button onClick={load} style={{ ...btn('#334155', '#e2e8f0'), padding: '6px 12px', fontSize: 12 }} disabled={loading}>
+              {loading ? '...' : '↻'}
+            </button>
           </div>
-          <button onClick={() => collect(b)} style={{ ...btn('#047857', '#d1fae5'), fontSize: 12, padding: '8px 14px' }}>Toplandı</button>
-        </div>
-      ))}
+          {bags.length === 0 && !loading && <div style={{ color: '#475569', fontSize: 13 }}>Ütülenecek torba yok</div>}
+          {bags.map(b => (
+            <div key={b.id} onClick={() => selectBag(b)}
+              style={{ background: '#1e293b', borderRadius: 12, padding: 14, cursor: 'pointer', borderLeft: '3px solid #a78bfa' }}>
+              <div style={{ fontSize: 11, color: '#a78bfa', fontFamily: 'monospace', marginBottom: 2 }}>{b.bag_no || `#${b.id}`}</div>
+              <div style={{ fontSize: 15, fontWeight: 600, color: '#e2e8f0' }}>{b.block} Blok — {b.room_no}</div>
+              <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
+                {b.item_count} kıyafet{b.intake_name ? ` · ${b.intake_name}` : ''}
+              </div>
+            </div>
+          ))}
+        </>
+      )}
+
+      {selectedBag && (
+        <>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button onClick={() => setSelectedBag(null)} style={{ ...btn('#1e293b', '#94a3b8'), padding: '6px 12px', fontSize: 12 }}>← Geri</button>
+            <div style={{ fontSize: 13, color: '#a78bfa', fontFamily: 'monospace', fontWeight: 700 }}>{selectedBag.bag_no}</div>
+            <div style={{ fontSize: 13, color: '#94a3b8' }}>{selectedBag.block} — {selectedBag.room_no}</div>
+          </div>
+
+          <div style={{ fontSize: 11, color: '#64748b', letterSpacing: 1 }}>KIYAFETLERİ DOĞRULA</div>
+
+          {garments.length === 0 && (
+            <div style={{ color: '#475569', fontSize: 13 }}>Kıyafet bilgisi yok — tüm torbayı doğrulayarak devam edin</div>
+          )}
+
+          {garments.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {garments.map((g, i) => (
+                <div key={i} onClick={() => toggleTick(i)}
+                  style={{
+                    background: '#1e293b', borderRadius: 10, padding: '10px 14px',
+                    display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer',
+                    border: `1px solid ${ticked[i] ? '#22c55e' : '#334155'}`,
+                  }}>
+                  <div style={{
+                    width: 28, height: 28, borderRadius: '50%', flexShrink: 0,
+                    background: ticked[i] ? '#15803d' : '#1e293b',
+                    border: `2px solid ${ticked[i] ? '#22c55e' : '#475569'}`,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    color: '#fff', fontSize: 16, fontWeight: 700,
+                  }}>
+                    {ticked[i] ? '✓' : ''}
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 14, color: '#e2e8f0', fontWeight: 500 }}>
+                      {g.emoji || '👔'} {g.type_name} × {g.count}
+                    </div>
+                    <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
+                      {[g.color_label, g.pattern_label && g.pattern_label !== 'Düz' ? g.pattern_label : null].filter(Boolean).join(' · ')}
+                    </div>
+                  </div>
+                </div>
+              ))}
+              <div style={{ fontSize: 12, color: '#64748b' }}>{tickedCount}/{garments.length} doğrulandı</div>
+            </div>
+          )}
+
+          <button onClick={complete}
+            disabled={garments.length > 0 && !allTicked}
+            style={{
+              ...btn(garments.length > 0 && !allTicked ? '#1e293b' : '#15803d', garments.length > 0 && !allTicked ? '#475569' : '#fff'),
+              padding: 14, fontSize: 14,
+            }}>
+            ✓ Ütü Tamamla — Hazıra Al
+            {garments.length > 0 && !allTicked ? ` (${garments.length}/${garments.length} gerekli)` : ''}
+          </button>
+        </>
+      )}
     </div>
   )
 }

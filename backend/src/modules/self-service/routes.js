@@ -191,7 +191,7 @@ selfServiceRouter.get('/laundry-kiosk/bags', requireAvsKiosk, (req, res) => {
   try {
     const db = getDB()
     let q = `SELECT li.id, li.bag_no, li.status, li.item_count, li.urgent, li.is_premium, li.needs_ironing,
-                    li.created_at, li.intake_name, r.block, r.room_no
+                    li.created_at, li.intake_name, li.garments_json, r.block, r.room_no
              FROM laundry_items li JOIN rooms r ON r.id = li.room_id WHERE 1=1`
     const params = []
     if (block)   { q += ' AND r.block=?';   params.push(block) }
