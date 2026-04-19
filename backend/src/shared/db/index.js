@@ -738,6 +738,9 @@ export function initDB() {
     }
   } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] garment_types seed:', e.message) }
 
+  // ── Laundry v8 — garments_json kolonu ────────────────────────────────────
+  try { db.exec(`ALTER TABLE laundry_items ADD COLUMN garments_json TEXT`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] garments_json:', e.message) }
+
   return db
 }
 

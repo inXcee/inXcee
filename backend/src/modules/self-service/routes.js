@@ -148,8 +148,16 @@ selfServiceRouter.get('/laundry-kiosk/room-persons', requireAvsKiosk, (req, res)
   } catch (e) { res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
+selfServiceRouter.get('/laundry-kiosk/garment-types', requireAvsKiosk, (req, res) => {
+  try {
+    const db = getDB()
+    const types = db.prepare('SELECT * FROM laundry_garment_types WHERE is_active=1 ORDER BY sort_order ASC').all()
+    res.json(types)
+  } catch (e) { res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
 selfServiceRouter.post('/laundry-kiosk/bag', requireAvsKiosk, (req, res) => {
-  const { block, room_no, personnel_id, item_count, is_premium, notes, urgent, intake_signature, clothing_items } = req.body
+  const { block, room_no, personnel_id, item_count, is_premium, notes, urgent, intake_signature, clothing_items, garments } = req.body
   if (!block || !room_no) return res.status(400).json({ error: 'block ve room_no gerekli' })
   const count = Number(item_count)
   if (!count || count < 1 || count > 8) return res.status(400).json({ error: 'Geçersiz adet (1-8)' })
@@ -170,6 +178,7 @@ selfServiceRouter.post('/laundry-kiosk/bag', requireAvsKiosk, (req, res) => {
       intake_signature: intake_signature || null,
       intake_name: intake_name || null,
       clothing_items: clothing_items ? JSON.stringify(clothing_items) : null,
+      garments_json: garments && garments.length > 0 ? JSON.stringify(garments) : null,
       created_by: null,
     })
     const bag_no = setBagNoQuery(id)

@@ -101,6 +101,13 @@ export const laundryApi = {
   deleteMachineSupply: (machine_id, supply_id) =>
     api.delete(`/laundry/machines/${machine_id}/supplies/${supply_id}`).then(r => r.data),
 
+  // ── Garment Types ──────────────────────────────────────────────────────
+  getGarmentTypes: () => api.get('/laundry/garment-types').then(r => r.data),
+  getGarmentTypesAll: () => api.get('/laundry/garment-types/all').then(r => r.data),
+  createGarmentType: (data) => api.post('/laundry/garment-types', data).then(r => r.data),
+  updateGarmentType: (id, data) => api.patch(`/laundry/garment-types/${id}`, data).then(r => r.data),
+  reorderGarmentTypes: (items) => api.post('/laundry/garment-types/reorder', items).then(r => r.data),
+
   // ── Photo Upload ───────────────────────────────────────────────────────
   uploadPhoto: (file) => {
     const fd = new FormData()

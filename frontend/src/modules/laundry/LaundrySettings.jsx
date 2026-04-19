@@ -3,6 +3,125 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { laundryApi } from './api.js'
 import SupplySettings from './components/SupplySettings.jsx'
 
+function GarmentTypesSettings() {
+  const qc = useQueryClient()
+  const [newName, setNewName] = useState('')
+  const [newEmoji, setNewEmoji] = useState('')
+  const [editId, setEditId] = useState(null)
+  const [editName, setEditName] = useState('')
+  const [editEmoji, setEditEmoji] = useState('')
+  const [error, setError] = useState('')
+
+  const { data: types = [] } = useQuery({
+    queryKey: ['garment-types-all'],
+    queryFn: laundryApi.getGarmentTypesAll,
+  })
+
+  const create = useMutation({
+    mutationFn: laundryApi.createGarmentType,
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['garment-types-all'] }); setNewName(''); setNewEmoji(''); setError('') },
+    onError: (e) => setError(e?.response?.data?.error || 'Hata'),
+  })
+
+  const update = useMutation({
+    mutationFn: ({ id, data }) => laundryApi.updateGarmentType(id, data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['garment-types-all'] }); setEditId(null) },
+    onError: (e) => setError(e?.response?.data?.error || 'Hata'),
+  })
+
+  const reorder = useMutation({
+    mutationFn: laundryApi.reorderGarmentTypes,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['garment-types-all'] }),
+  })
+
+  function handleCreate() {
+    if (!newName.trim()) return setError('İsim gerekli')
+    create.mutate({ name: newName.trim(), emoji: newEmoji.trim() || null, sort_order: types.length + 1 })
+  }
+
+  function handleSaveEdit(t) {
+    update.mutate({ id: t.id, data: { name: editName, emoji: editEmoji || null } })
+  }
+
+  function handleToggleActive(t) {
+    update.mutate({ id: t.id, data: { is_active: t.is_active ? 0 : 1 } })
+  }
+
+  function handleMove(t, dir) {
+    const active = [...types].sort((a, b) => a.sort_order - b.sort_order)
+    const idx = active.findIndex(x => x.id === t.id)
+    const swapIdx = idx + dir
+    if (swapIdx < 0 || swapIdx >= active.length) return
+    const items = active.map((x, i) => {
+      if (i === idx) return { id: x.id, sort_order: active[swapIdx].sort_order }
+      if (i === swapIdx) return { id: x.id, sort_order: active[idx].sort_order }
+      return { id: x.id, sort_order: x.sort_order }
+    })
+    reorder.mutate(items)
+  }
+
+  const sorted = [...types].sort((a, b) => a.sort_order - b.sort_order)
+
+  return (
+    <div>
+      <table className="data-table">
+        <thead>
+          <tr>
+            <th>Sıra</th><th>Emoji</th><th>İsim</th><th>Durum</th><th>İşlem</th>
+          </tr>
+        </thead>
+        <tbody>
+          {sorted.map((t, idx) => (
+            <tr key={t.id} style={{ opacity: t.is_active ? 1 : 0.45 }}>
+              <td>
+                <div style={{ display: 'flex', gap: 4 }}>
+                  <button onClick={() => handleMove(t, -1)} disabled={idx === 0} style={{ background: 'transparent', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 12 }}>▲</button>
+                  <button onClick={() => handleMove(t, 1)} disabled={idx === sorted.length - 1} style={{ background: 'transparent', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 12 }}>▼</button>
+                </div>
+              </td>
+              <td>
+                {editId === t.id
+                  ? <input value={editEmoji} onChange={e => setEditEmoji(e.target.value)} style={{ width: 50, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 4, padding: '2px 6px', color: 'var(--text)', fontSize: 14 }} />
+                  : <span style={{ fontSize: 20 }}>{t.emoji || '—'}</span>}
+              </td>
+              <td>
+                {editId === t.id
+                  ? <input value={editName} onChange={e => setEditName(e.target.value)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 4, padding: '2px 8px', color: 'var(--text)', fontSize: 12 }} />
+                  : <span style={{ fontFamily: 'var(--mono)', fontSize: 12 }}>{t.name}</span>}
+              </td>
+              <td>
+                <button onClick={() => handleToggleActive(t)}
+                  style={{ padding: '2px 8px', borderRadius: 4, border: 'none', background: t.is_active ? 'rgba(74,222,128,0.15)' : 'rgba(100,116,139,0.15)', color: t.is_active ? '#4ade80' : '#64748b', fontSize: 10, cursor: 'pointer', fontFamily: 'var(--mono)', letterSpacing: 1 }}>
+                  {t.is_active ? 'AKTİF' : 'PASİF'}
+                </button>
+              </td>
+              <td>
+                {editId === t.id
+                  ? <div style={{ display: 'flex', gap: 4 }}>
+                      <button onClick={() => handleSaveEdit(t)} style={{ padding: '2px 8px', borderRadius: 4, border: 'none', background: 'rgba(74,222,128,0.15)', color: '#4ade80', fontSize: 10, cursor: 'pointer' }}>Kaydet</button>
+                      <button onClick={() => setEditId(null)} style={{ padding: '2px 8px', borderRadius: 4, border: 'none', background: 'transparent', color: 'var(--text3)', fontSize: 10, cursor: 'pointer' }}>İptal</button>
+                    </div>
+                  : <button onClick={() => { setEditId(t.id); setEditName(t.name); setEditEmoji(t.emoji || '') }}
+                      style={{ padding: '2px 8px', borderRadius: 4, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text3)', fontSize: 10, cursor: 'pointer' }}>Düzenle</button>}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <div style={{ marginTop: 16, display: 'flex', gap: 8, alignItems: 'center' }}>
+        <input value={newEmoji} onChange={e => setNewEmoji(e.target.value)} placeholder="emoji" style={{ width: 60, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 8px', color: 'var(--text)', fontSize: 14 }} />
+        <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Yeni tip adı..." style={{ flex: 1, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px', color: 'var(--text)', fontSize: 12 }} />
+        <button onClick={handleCreate} disabled={create.isPending}
+          style={{ padding: '6px 14px', borderRadius: 6, border: 'none', background: 'rgba(240,165,0,0.15)', color: 'var(--accent)', fontSize: 11, cursor: 'pointer', fontFamily: 'var(--mono)', letterSpacing: 1 }}>
+          + EKLE
+        </button>
+      </div>
+      {error && <div style={{ marginTop: 6, color: '#f87171', fontSize: 11 }}>{error}</div>}
+    </div>
+  )
+}
+
 const STAGE_LABELS = { dirty: 'Sepet (Kirli)', washing: 'Yıkama', ready: 'Hazır' }
 
 function SlaRow({ config, onSave }) {
@@ -235,6 +354,7 @@ export default function LaundrySettings() {
           { key: 'goals',    label: '🎯 Hedefler' },
           { key: 'blocks',   label: '🏢 Bloklar' },
           { key: 'stock',    label: '📦 Stok' },
+          { key: 'garment-types', label: '👔 Kıyafet Tipleri' },
         ].map(t => (
           <button key={t.key} onClick={() => setTab(t.key)} style={{
             padding: '5px 12px', borderRadius: 6, cursor: 'pointer',
@@ -345,6 +465,12 @@ export default function LaundrySettings() {
       {tab === 'goals' && <GoalsSettings />}
       {tab === 'blocks' && <BlockSettings />}
       {tab === 'stock' && <SupplySettings />}
+      {tab === 'garment-types' && (
+        <div className="panel">
+          <div className="panel-header"><span className="panel-title">KIYAFet TİPLERİ</span></div>
+          <div className="panel-body"><GarmentTypesSettings /></div>
+        </div>
+      )}
     </div>
   )
 }
