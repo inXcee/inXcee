@@ -706,6 +706,38 @@ export function initDB() {
     if (!e.message?.includes('already exists')) console.error('[Migration] laundry_v5:', e.message)
   }
 
+  // ── Laundry v7 — kıyafet tip kataloğu ────────────────────────────────────
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS laundry_garment_types (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      name       TEXT NOT NULL,
+      emoji      TEXT,
+      image_url  TEXT,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      is_active  INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )`)
+  } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] garment_types:', e.message) }
+
+  try {
+    const gtCount = db.prepare('SELECT COUNT(*) as c FROM laundry_garment_types').get()
+    if (gtCount.c === 0) {
+      db.exec(`INSERT INTO laundry_garment_types(name, emoji, sort_order) VALUES
+        ('Gömlek',      '👔', 1),
+        ('Pantolon',    '👖', 2),
+        ('Tişört',      '👕', 3),
+        ('Kazak',       '🧣', 4),
+        ('Mont',        '🧥', 5),
+        ('Elbise',      '👗', 6),
+        ('İç Çamaşır',  '🩲', 7),
+        ('Çorap',       '🧤', 8),
+        ('Şort',        '🩳', 9),
+        ('Pijama',      '🌙', 10),
+        ('Havlu',       '🪣', 11),
+        ('Takım Elbise','🤵', 12)`)
+    }
+  } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] garment_types seed:', e.message) }
+
   return db
 }
 

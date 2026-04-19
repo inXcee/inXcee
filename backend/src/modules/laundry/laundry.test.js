@@ -1350,6 +1350,22 @@ describe('compensation', () => {
   })
 })
 
+describe('Garment Types', () => {
+  it('laundry_garment_types tablosu oluşturuldu', () => {
+    const db = getDB()
+    const tbl = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='laundry_garment_types'").get()
+    expect(tbl).toBeTruthy()
+  })
+
+  it('seed tipleri mevcut', () => {
+    const db = getDB()
+    const rows = db.prepare("SELECT * FROM laundry_garment_types WHERE is_active=1 ORDER BY sort_order").all()
+    expect(rows.length).toBeGreaterThanOrEqual(7)
+    expect(rows[0].emoji).toBeTruthy()
+    expect(rows[0].name).toBeTruthy()
+  })
+})
+
 describe('laundry v5 migrations', () => {
   test('laundry_items accepts pending_collection status', () => {
     const db = getDB()
