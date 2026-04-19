@@ -1,123 +1,145 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { laundryApi } from './api.js'
 import SupplySettings from './components/SupplySettings.jsx'
 
-function GarmentTypesSettings() {
+function GarmentTypesAdmin() {
   const qc = useQueryClient()
-  const [newName, setNewName] = useState('')
-  const [newEmoji, setNewEmoji] = useState('')
+  const fileRef = useRef(null)
+  const [form, setForm] = useState({ name: '', emoji: '' })
+  const [uploading, setUploading] = useState(false)
+  const [imageUrl, setImageUrl] = useState('')
   const [editId, setEditId] = useState(null)
-  const [editName, setEditName] = useState('')
-  const [editEmoji, setEditEmoji] = useState('')
+  const [editForm, setEditForm] = useState({})
+  const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
-  const { data: types = [] } = useQuery({
+  const { data: types = [], isLoading } = useQuery({
     queryKey: ['garment-types-all'],
     queryFn: laundryApi.getGarmentTypesAll,
   })
 
-  const create = useMutation({
-    mutationFn: laundryApi.createGarmentType,
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['garment-types-all'] }); setNewName(''); setNewEmoji(''); setError('') },
-    onError: (e) => setError(e?.response?.data?.error || 'Hata'),
-  })
-
-  const update = useMutation({
-    mutationFn: ({ id, data }) => laundryApi.updateGarmentType(id, data),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['garment-types-all'] }); setEditId(null) },
-    onError: (e) => setError(e?.response?.data?.error || 'Hata'),
-  })
-
-  const reorder = useMutation({
-    mutationFn: laundryApi.reorderGarmentTypes,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['garment-types-all'] }),
-  })
-
-  function handleCreate() {
-    if (!newName.trim()) return setError('İsim gerekli')
-    create.mutate({ name: newName.trim(), emoji: newEmoji.trim() || null, sort_order: types.length + 1 })
+  async function uploadImage(file) {
+    setUploading(true)
+    try {
+      const result = await laundryApi.uploadPhoto(file)
+      setImageUrl(result.url || result)
+    } catch { setError('Resim yüklenemedi') } finally { setUploading(false) }
   }
 
-  function handleSaveEdit(t) {
-    update.mutate({ id: t.id, data: { name: editName, emoji: editEmoji || null } })
+  async function createType() {
+    if (!form.name.trim()) return setError('İsim zorunlu')
+    setSaving(true); setError('')
+    try {
+      await laundryApi.createGarmentType({ name: form.name.trim(), emoji: form.emoji.trim() || null, image_url: imageUrl || null, sort_order: types.length + 1 })
+      setForm({ name: '', emoji: '' }); setImageUrl('')
+      qc.invalidateQueries({ queryKey: ['garment-types-all'] })
+      qc.invalidateQueries({ queryKey: ['garment-types'] })
+    } catch(e) { setError(e?.response?.data?.error || 'Hata') } finally { setSaving(false) }
   }
 
-  function handleToggleActive(t) {
-    update.mutate({ id: t.id, data: { is_active: t.is_active ? 0 : 1 } })
+  async function toggleActive(type) {
+    await laundryApi.updateGarmentType(type.id, { is_active: type.is_active ? 0 : 1 })
+    qc.invalidateQueries({ queryKey: ['garment-types-all'] })
+    qc.invalidateQueries({ queryKey: ['garment-types'] })
   }
 
-  function handleMove(t, dir) {
-    const active = [...types].sort((a, b) => a.sort_order - b.sort_order)
-    const idx = active.findIndex(x => x.id === t.id)
-    const swapIdx = idx + dir
-    if (swapIdx < 0 || swapIdx >= active.length) return
-    const items = active.map((x, i) => {
-      if (i === idx) return { id: x.id, sort_order: active[swapIdx].sort_order }
-      if (i === swapIdx) return { id: x.id, sort_order: active[idx].sort_order }
-      return { id: x.id, sort_order: x.sort_order }
-    })
-    reorder.mutate(items)
+  async function moveOrder(type, dir) {
+    const sorted = [...types].sort((a, b) => a.sort_order - b.sort_order)
+    const idx = sorted.findIndex(t => t.id === type.id)
+    const swap = sorted[idx + dir]
+    if (!swap) return
+    await laundryApi.reorderGarmentTypes([
+      { id: type.id, sort_order: swap.sort_order },
+      { id: swap.id, sort_order: type.sort_order },
+    ])
+    qc.invalidateQueries({ queryKey: ['garment-types-all'] })
+    qc.invalidateQueries({ queryKey: ['garment-types'] })
   }
 
-  const sorted = [...types].sort((a, b) => a.sort_order - b.sort_order)
+  async function saveEdit(id) {
+    setSaving(true); setError('')
+    try {
+      await laundryApi.updateGarmentType(id, editForm)
+      setEditId(null); setEditForm({})
+      qc.invalidateQueries({ queryKey: ['garment-types-all'] })
+      qc.invalidateQueries({ queryKey: ['garment-types'] })
+    } catch(e) { setError(e?.response?.data?.error || 'Hata') } finally { setSaving(false) }
+  }
+
+  if (isLoading) return <div style={{ color: 'var(--text3)', fontSize: 13 }}>Yükleniyor...</div>
 
   return (
-    <div>
-      <table className="data-table">
-        <thead>
-          <tr>
-            <th>Sıra</th><th>Emoji</th><th>İsim</th><th>Durum</th><th>İşlem</th>
-          </tr>
-        </thead>
-        <tbody>
-          {sorted.map((t, idx) => (
-            <tr key={t.id} style={{ opacity: t.is_active ? 1 : 0.45 }}>
-              <td>
-                <div style={{ display: 'flex', gap: 4 }}>
-                  <button onClick={() => handleMove(t, -1)} disabled={idx === 0} style={{ background: 'transparent', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 12 }}>▲</button>
-                  <button onClick={() => handleMove(t, 1)} disabled={idx === sorted.length - 1} style={{ background: 'transparent', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 12 }}>▼</button>
-                </div>
-              </td>
-              <td>
-                {editId === t.id
-                  ? <input value={editEmoji} onChange={e => setEditEmoji(e.target.value)} style={{ width: 50, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 4, padding: '2px 6px', color: 'var(--text)', fontSize: 14 }} />
-                  : <span style={{ fontSize: 20 }}>{t.emoji || '—'}</span>}
-              </td>
-              <td>
-                {editId === t.id
-                  ? <input value={editName} onChange={e => setEditName(e.target.value)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 4, padding: '2px 8px', color: 'var(--text)', fontSize: 12 }} />
-                  : <span style={{ fontFamily: 'var(--mono)', fontSize: 12 }}>{t.name}</span>}
-              </td>
-              <td>
-                <button onClick={() => handleToggleActive(t)}
-                  style={{ padding: '2px 8px', borderRadius: 4, border: 'none', background: t.is_active ? 'rgba(74,222,128,0.15)' : 'rgba(100,116,139,0.15)', color: t.is_active ? '#4ade80' : '#64748b', fontSize: 10, cursor: 'pointer', fontFamily: 'var(--mono)', letterSpacing: 1 }}>
-                  {t.is_active ? 'AKTİF' : 'PASİF'}
-                </button>
-              </td>
-              <td>
-                {editId === t.id
-                  ? <div style={{ display: 'flex', gap: 4 }}>
-                      <button onClick={() => handleSaveEdit(t)} style={{ padding: '2px 8px', borderRadius: 4, border: 'none', background: 'rgba(74,222,128,0.15)', color: '#4ade80', fontSize: 10, cursor: 'pointer' }}>Kaydet</button>
-                      <button onClick={() => setEditId(null)} style={{ padding: '2px 8px', borderRadius: 4, border: 'none', background: 'transparent', color: 'var(--text3)', fontSize: 10, cursor: 'pointer' }}>İptal</button>
-                    </div>
-                  : <button onClick={() => { setEditId(t.id); setEditName(t.name); setEditEmoji(t.emoji || '') }}
-                      style={{ padding: '2px 8px', borderRadius: 4, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text3)', fontSize: 10, cursor: 'pointer' }}>Düzenle</button>}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-
-      <div style={{ marginTop: 16, display: 'flex', gap: 8, alignItems: 'center' }}>
-        <input value={newEmoji} onChange={e => setNewEmoji(e.target.value)} placeholder="emoji" style={{ width: 60, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 8px', color: 'var(--text)', fontSize: 14 }} />
-        <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Yeni tip adı..." style={{ flex: 1, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px', color: 'var(--text)', fontSize: 12 }} />
-        <button onClick={handleCreate} disabled={create.isPending}
-          style={{ padding: '6px 14px', borderRadius: 6, border: 'none', background: 'rgba(240,165,0,0.15)', color: 'var(--accent)', fontSize: 11, cursor: 'pointer', fontFamily: 'var(--mono)', letterSpacing: 1 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* Yeni tip ekleme */}
+      <div style={{ background: 'var(--bg2)', borderRadius: 12, padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text3)', letterSpacing: 1 }}>YENİ TİP EKLE</div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+            placeholder="İsim (örn. Bornoz)"
+            style={{ flex: 1, minWidth: 120, background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px', color: 'var(--text)', fontSize: 12 }} />
+          <input value={form.emoji} onChange={e => setForm(f => ({ ...f, emoji: e.target.value }))}
+            placeholder="Emoji"
+            style={{ width: 70, background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 8px', color: 'var(--text)', fontSize: 14, textAlign: 'center' }} />
+          <button onClick={() => fileRef.current?.click()}
+            style={{ padding: '6px 12px', borderRadius: 6, border: '1px dashed var(--border)', background: 'transparent', color: imageUrl ? '#4ade80' : 'var(--text3)', cursor: 'pointer', fontSize: 12 }}>
+            {uploading ? '...' : imageUrl ? '✓ Resim' : '📷 Resim'}
+          </button>
+          <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }}
+            onChange={e => e.target.files[0] && uploadImage(e.target.files[0])} />
+        </div>
+        {error && <div style={{ color: '#f87171', fontSize: 12 }}>{error}</div>}
+        <button onClick={createType} disabled={saving || !form.name.trim()}
+          style={{ alignSelf: 'flex-start', padding: '6px 18px', borderRadius: 6, border: 'none', background: 'rgba(240,165,0,0.15)', color: 'var(--accent)', cursor: 'pointer', fontSize: 11, fontFamily: 'var(--mono)', letterSpacing: 1 }}>
           + EKLE
         </button>
       </div>
-      {error && <div style={{ marginTop: 6, color: '#f87171', fontSize: 11 }}>{error}</div>}
+
+      {/* Tip listesi */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        {[...types].sort((a, b) => a.sort_order - b.sort_order).map((type, idx, arr) => (
+          <div key={type.id} style={{
+            background: 'var(--bg2)', borderRadius: 10, padding: '10px 12px',
+            display: 'flex', alignItems: 'center', gap: 10,
+            opacity: type.is_active ? 1 : 0.45,
+          }}>
+            {type.image_url
+              ? <img src={type.image_url} alt={type.name} style={{ width: 28, height: 28, objectFit: 'contain', borderRadius: 4 }} />
+              : <span style={{ fontSize: 22 }}>{type.emoji || '•'}</span>
+            }
+            {editId === type.id ? (
+              <div style={{ flex: 1, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                <input value={editForm.name ?? type.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))}
+                  style={{ width: 130, background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 4, padding: '4px 8px', color: 'var(--text)', fontSize: 13 }} />
+                <input value={editForm.emoji ?? (type.emoji || '')} onChange={e => setEditForm(f => ({ ...f, emoji: e.target.value }))}
+                  placeholder="Emoji"
+                  style={{ width: 60, background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 4, padding: '4px 8px', color: 'var(--text)', fontSize: 13 }} />
+                <button onClick={() => saveEdit(type.id)} disabled={saving}
+                  style={{ padding: '4px 12px', borderRadius: 6, border: 'none', background: '#1d4ed8', color: '#fff', fontSize: 12, cursor: 'pointer' }}>Kaydet</button>
+                <button onClick={() => { setEditId(null); setEditForm({}) }}
+                  style={{ padding: '4px 8px', borderRadius: 6, border: 'none', background: 'transparent', color: 'var(--text3)', fontSize: 12, cursor: 'pointer' }}>İptal</button>
+              </div>
+            ) : (
+              <div style={{ flex: 1 }}>
+                <span style={{ fontSize: 13, color: 'var(--text)', fontWeight: 600 }}>{type.name}</span>
+                {!type.is_active && <span style={{ fontSize: 10, color: 'var(--text3)', marginLeft: 8 }}>(gizli)</span>}
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 4 }}>
+              <button onClick={() => moveOrder(type, -1)} disabled={idx === 0}
+                style={{ padding: '3px 7px', borderRadius: 6, border: 'none', background: 'var(--bg)', color: idx === 0 ? 'var(--border)' : 'var(--text3)', cursor: 'pointer', fontSize: 12 }}>↑</button>
+              <button onClick={() => moveOrder(type, 1)} disabled={idx === arr.length - 1}
+                style={{ padding: '3px 7px', borderRadius: 6, border: 'none', background: 'var(--bg)', color: idx === arr.length - 1 ? 'var(--border)' : 'var(--text3)', cursor: 'pointer', fontSize: 12 }}>↓</button>
+              <button onClick={() => { setEditId(type.id); setEditForm({}) }}
+                style={{ padding: '3px 8px', borderRadius: 6, border: 'none', background: 'var(--bg)', color: '#60a5fa', cursor: 'pointer', fontSize: 12 }}>✏</button>
+              <button onClick={() => toggleActive(type)}
+                style={{ padding: '3px 8px', borderRadius: 6, border: 'none', background: 'var(--bg)', color: type.is_active ? '#f87171' : '#4ade80', cursor: 'pointer', fontSize: 12 }}>
+                {type.is_active ? 'Gizle' : 'Göster'}
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
@@ -468,7 +490,7 @@ export default function LaundrySettings() {
       {tab === 'garment-types' && (
         <div className="panel">
           <div className="panel-header"><span className="panel-title">KIYAFet TİPLERİ</span></div>
-          <div className="panel-body"><GarmentTypesSettings /></div>
+          <div className="panel-body"><GarmentTypesAdmin /></div>
         </div>
       )}
     </div>

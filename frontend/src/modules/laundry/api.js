@@ -106,7 +106,7 @@ export const laundryApi = {
   getGarmentTypesAll: () => api.get('/laundry/garment-types/all').then(r => r.data),
   createGarmentType: (data) => api.post('/laundry/garment-types', data).then(r => r.data),
   updateGarmentType: (id, data) => api.patch(`/laundry/garment-types/${id}`, data).then(r => r.data),
-  reorderGarmentTypes: (items) => api.post('/laundry/garment-types/reorder', items).then(r => r.data),
+  reorderGarmentTypes: (items) => api.post('/laundry/garment-types/reorder', { items }).then(r => r.data),
 
   // ── Photo Upload ───────────────────────────────────────────────────────
   uploadPhoto: (file) => {

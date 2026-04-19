@@ -1,107 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
-
-const GARMENT_TYPES = ['Gömlek', 'Pantolon', 'Tişört', 'Kazak', 'Mont', 'Takım Elbise', 'Diğer']
-const GARMENT_COLORS = ['Beyaz', 'Mavi', 'Siyah', 'Gri', 'Kırmızı', 'Yeşil', 'Sarı', 'Mor', 'Bej', 'Kahve']
-const GARMENT_PATTERNS = ['Çizgili', 'Kareli', 'Desenli', 'Renkli']
-
-function GarmentPicker({ kioskApi, value, onChange }) {
-  const [types, setTypes] = useState([])
-  const [selectedType, setSelectedType] = useState(null)
-  const [selectedColors, setSelectedColors] = useState([])
-  const [count, setCount] = useState(1)
-  const [editIndex, setEditIndex] = useState(null)
-
-  useEffect(() => {
-    kioskApi.get('/self-service/laundry-kiosk/garment-types')
-      .then(r => setTypes(r.data))
-      .catch(() => {})
-  }, [])
-
-  function handleAdd() {
-    if (!selectedType) return
-    const item = { type_id: selectedType.id, type_name: selectedType.name, emoji: selectedType.emoji, image_url: selectedType.image_url || null, colors: selectedColors, count }
-    const next = editIndex !== null ? value.map((g, i) => i === editIndex ? item : g) : [...value, item]
-    onChange(next)
-    setSelectedType(null)
-    setSelectedColors([])
-    setCount(1)
-    setEditIndex(null)
-  }
-
-  function handleEdit(i) {
-    const g = value[i]
-    setSelectedType(types.find(t => t.id === g.type_id) || { id: g.type_id, name: g.type_name, emoji: g.emoji })
-    setSelectedColors(g.colors || [])
-    setCount(g.count)
-    setEditIndex(i)
-  }
-
-  function toggleColor(c) {
-    setSelectedColors(cs => cs.includes(c) ? cs.filter(x => x !== c) : [...cs, c])
-  }
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6 }}>
-        {types.map(t => (
-          <button key={t.id} type="button" onClick={() => { setSelectedType(t); setSelectedColors([]); setCount(1); setEditIndex(null) }}
-            style={{ minHeight: 70, borderRadius: 12, border: '2px solid', borderColor: selectedType?.id === t.id ? '#3b82f6' : '#334155', background: selectedType?.id === t.id ? '#1d3a6e' : '#1e293b', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3, cursor: 'pointer', padding: '6px 4px' }}>
-            {t.image_url ? <img src={t.image_url} style={{ width: 28, height: 28, objectFit: 'contain' }} alt="" /> : <span style={{ fontSize: 26 }}>{t.emoji}</span>}
-            <span style={{ fontSize: 10, color: selectedType?.id === t.id ? '#93c5fd' : '#94a3b8', textAlign: 'center', lineHeight: 1.2 }}>{t.name}</span>
-          </button>
-        ))}
-      </div>
-
-      {selectedType && (
-        <div style={{ background: '#0f172a', borderRadius: 12, padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <div>
-            <div style={{ fontSize: 10, color: '#475569', letterSpacing: 1, marginBottom: 6 }}>RENK / DESEN</div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-              {[...GARMENT_COLORS, ...GARMENT_PATTERNS].map(c => (
-                <button key={c} type="button" onClick={() => toggleColor(c)}
-                  style={{ padding: '4px 10px', borderRadius: 20, border: '1px solid', borderColor: selectedColors.includes(c) ? '#3b82f6' : '#334155', background: selectedColors.includes(c) ? '#1d3a6e' : 'transparent', color: selectedColors.includes(c) ? '#93c5fd' : '#64748b', fontSize: 11, cursor: 'pointer' }}>
-                  {c}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <button type="button" onClick={() => setCount(c => Math.max(1, c - 1))}
-                style={{ width: 34, height: 34, borderRadius: 8, border: 'none', background: '#1e293b', color: '#f1f5f9', fontSize: 18, cursor: 'pointer' }}>−</button>
-              <span style={{ fontSize: 18, fontWeight: 700, color: '#f1f5f9', minWidth: 22, textAlign: 'center' }}>{count}</span>
-              <button type="button" onClick={() => setCount(c => c + 1)}
-                style={{ width: 34, height: 34, borderRadius: 8, border: 'none', background: '#1e293b', color: '#f1f5f9', fontSize: 18, cursor: 'pointer' }}>+</button>
-            </div>
-            <button type="button" onClick={handleAdd}
-              style={{ flex: 1, padding: '9px', borderRadius: 10, border: 'none', background: '#1d4ed8', color: '#fff', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
-              {editIndex !== null ? '✏️ Güncelle' : '+ Ekle'}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {value.length > 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-          <div style={{ fontSize: 10, color: '#475569', letterSpacing: 1 }}>EKLENENler ({value.length})</div>
-          {value.map((g, i) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#1e293b', borderRadius: 10, padding: '8px 12px' }}>
-              <span style={{ fontSize: 18 }}>{g.emoji || '👔'}</span>
-              <div style={{ flex: 1 }}>
-                <div style={{ color: '#f1f5f9', fontSize: 12, fontWeight: 500 }}>{g.type_name} × {g.count}</div>
-                {g.colors?.length > 0 && <div style={{ fontSize: 10, color: '#64748b' }}>{g.colors.join(', ')}</div>}
-              </div>
-              <button type="button" onClick={() => handleEdit(i)} style={{ background: 'transparent', border: 'none', color: '#60a5fa', cursor: 'pointer', fontSize: 13 }}>✏️</button>
-              <button type="button" onClick={() => onChange(value.filter((_, idx) => idx !== i))} style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 13 }}>✕</button>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
+import GarmentPicker from './GarmentPicker.jsx'
+import { laundryApi } from '../laundry/api.js'
 
 // ── İmza canvas ──────────────────────────────────────────────────────────────
 function SigPad({ sigRef }) {
@@ -368,6 +269,14 @@ function useBlocks() {
   }).data ?? []
 }
 
+function useGarmentTypes() {
+  return useQuery({
+    queryKey: ['garment-types'],
+    queryFn: laundryApi.getGarmentTypes,
+    staleTime: 300000,
+  }).data ?? []
+}
+
 const card = { background: '#0f172a', borderRadius: 16, padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }
 const input = { width: '100%', background: '#1e293b', border: '1px solid #334155', borderRadius: 12, padding: '12px 16px', color: '#f1f5f9', fontSize: 14, boxSizing: 'border-box', outline: 'none' }
 const lbl = { display: 'block', fontSize: 11, color: '#64748b', letterSpacing: 1, marginBottom: 8, textTransform: 'uppercase' }
@@ -377,6 +286,7 @@ const btn = (bg, color = '#fff') => ({ padding: '12px 20px', borderRadius: 12, b
 function BagForm({ kioskApi, onDone }) {
   const sigRef = useRef(null)
   const blocks = useBlocks()
+  const garmentTypes = useGarmentTypes()
   const [block, setBlock] = useState('')
   const [roomNo, setRoomNo] = useState('')
   const [persons, setPersons] = useState([])
@@ -480,9 +390,9 @@ function BagForm({ kioskApi, onDone }) {
       </div>
 
       {isPremium && (
-        <div>
-          <label style={lbl}>Kıyafetler</label>
-          <GarmentPicker kioskApi={kioskApi} value={garments} onChange={setGarments} />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ fontSize: 11, color: '#64748b', letterSpacing: 1, textTransform: 'uppercase' }}>Kıyafetler</div>
+          <GarmentPicker garmentTypes={garmentTypes} value={garments} onChange={setGarments} />
         </div>
       )}
 
@@ -801,11 +711,12 @@ function ResidentDeliverForm({ onBack }) {
 function GarmentForm({ kioskApi, onDone }) {
   const sigRef = useRef(null)
   const blocks = useBlocks()
+  const garmentTypes = useGarmentTypes()
   const [block, setBlock] = useState('')
   const [roomNo, setRoomNo] = useState('')
   const [persons, setPersons] = useState([])
   const [selectedPerson, setSelectedPerson] = useState(null)
-  const [items, setItems] = useState([{ type: 'Gömlek', count: 1 }])
+  const [garments, setGarments] = useState([])
   const [success, setSuccess] = useState(false)
   const [error, setError] = useState('')
 
@@ -820,10 +731,12 @@ function GarmentForm({ kioskApi, onDone }) {
   async function submit() {
     setError('')
     if (!block || !roomNo) return setError('Blok ve oda no gerekli')
+    if (garments.length === 0) return setError('En az bir kıyafet ekleyin')
     const sig = sigRef.current?.isEmpty() ? null : sigRef.current?.toDataURL()
     try {
       await kioskApi.post('/self-service/laundry-kiosk/garment', {
-        block, room_no: roomNo, personnel_id: selectedPerson?.id || null, clothing_items: items, intake_signature: sig,
+        block, room_no: roomNo, personnel_id: selectedPerson?.id || null,
+        clothing_items: garments, intake_signature: sig,
       })
       setSuccess(true)
     } catch (e) { setError(e.response?.data?.error || 'Hata') }
@@ -857,27 +770,17 @@ function GarmentForm({ kioskApi, onDone }) {
       )}
       <div>
         <label style={lbl}>Kıyafetler</label>
-        {items.map((g, i) => (
-          <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'center' }}>
-            <select value={g.type} onChange={e => setItems(its => its.map((it, idx) => idx === i ? { ...it, type: e.target.value } : it))}
-              style={{ flex: 1, background: '#1e293b', border: '1px solid #334155', borderRadius: 10, padding: '8px 12px', color: '#f1f5f9', fontSize: 13 }}>
-              {GARMENT_TYPES.map(t => <option key={t}>{t}</option>)}
-            </select>
-            <input type="number" min={1} max={20} value={g.count}
-              onChange={e => setItems(its => its.map((it, idx) => idx === i ? { ...it, count: Number(e.target.value) } : it))}
-              style={{ width: 60, background: '#1e293b', border: '1px solid #334155', borderRadius: 10, padding: 8, color: '#f1f5f9', textAlign: 'center' }} />
-            {items.length > 1 && (
-              <button type="button" onClick={() => setItems(its => its.filter((_, idx) => idx !== i))}
-                style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 16 }}>✕</button>
-            )}
-          </div>
-        ))}
-        <button type="button" onClick={() => setItems(its => [...its, { type: 'Gömlek', count: 1 }])}
-          style={{ background: 'transparent', border: 'none', color: '#60a5fa', cursor: 'pointer', fontSize: 13 }}>+ Ekle</button>
+        {garmentTypes.length === 0
+          ? <div style={{ color: '#475569', fontSize: 12 }}>Yükleniyor...</div>
+          : <GarmentPicker garmentTypes={garmentTypes} value={garments} onChange={setGarments} />
+        }
       </div>
       <div><label style={lbl}>İmza</label><SigPad sigRef={sigRef} /></div>
       {error && <div style={{ color: '#f87171', fontSize: 13 }}>{error}</div>}
-      <button onClick={submit} style={{ ...btn('#6d28d9'), padding: 14 }}>Kaydet</button>
+      <button onClick={submit} disabled={garments.length === 0}
+        style={{ ...btn(garments.length === 0 ? '#1e293b' : '#6d28d9', garments.length === 0 ? '#475569' : '#fff'), padding: 14 }}>
+        Kaydet
+      </button>
     </div>
   )
 }
