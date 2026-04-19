@@ -741,6 +741,10 @@ export function initDB() {
   // ── Laundry v8 — garments_json kolonu ────────────────────────────────────
   try { db.exec(`ALTER TABLE laundry_items ADD COLUMN garments_json TEXT`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] garments_json:', e.message) }
 
+  // ── Laundry v9 — deliver tracking kolonları ──────────────────────────────
+  try { db.exec(`ALTER TABLE laundry_items ADD COLUMN delivered_name TEXT`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] delivered_name:', e.message) }
+  try { db.exec(`ALTER TABLE laundry_items ADD COLUMN file_count INTEGER DEFAULT NULL`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] file_count:', e.message) }
+
   return db
 }
 
