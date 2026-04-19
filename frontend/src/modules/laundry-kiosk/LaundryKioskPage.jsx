@@ -628,177 +628,185 @@ function StatusView({ kioskApi, onDone }) {
 }
 
 // ── Teslim Et ─────────────────────────────────────────────────────────────────
+const BLOCK_GROUPS = [
+  { label: 'M Blokları', keys: ['M1', 'M2', 'M3'] },
+  { label: 'S Blokları', keys: ['S1', 'S2', 'S3'] },
+]
+const SINGLE_BLOCKS = ['C']
+const PREMIUM_BLOCKS = new Set(['C'])
+
+function isPremiumBlock(blockKey) {
+  return blockKey === 'other' || PREMIUM_BLOCKS.has(blockKey)
+}
+
 function DeliverView({ kioskApi, onDone }) {
-  const [mode, setMode] = useState(null) // 'staff' | 'resident'
+  const sigRef = useRef(null)
+  const [selectedBlock, setSelectedBlock] = useState(null)
+  const [otherBlock, setOtherBlock] = useState('')
+  const [roomNo, setRoomNo] = useState('')
+  const [deliveredName, setDeliveredName] = useState('')
+  const [bags, setBags] = useState([])
+  const [selectedBag, setSelectedBag] = useState(null)
+  const [fileCount, setFileCount] = useState(1)
+  const [success, setSuccess] = useState(false)
+  const [error, setError] = useState('')
+
+  const effectiveBlock = selectedBlock === 'other' ? otherBlock.trim() : selectedBlock
+  const isPremium = selectedBlock ? isPremiumBlock(selectedBlock) : null
+
+  useEffect(() => {
+    setSelectedBag(null)
+    setBags([])
+    if (!effectiveBlock || !roomNo) return
+    kioskApi.get(`/self-service/laundry-kiosk/bags?status=ready&block=${effectiveBlock}&room_no=${roomNo}`)
+      .then(r => { setBags(r.data); if (r.data.length === 1) setSelectedBag(r.data[0]) })
+      .catch(() => setBags([]))
+  }, [effectiveBlock, roomNo])
+
+  async function deliver() {
+    setError('')
+    if (!effectiveBlock || !roomNo.trim()) return setError('Blok ve oda no gerekli')
+    if (!deliveredName.trim()) return setError('Ad soyad gerekli')
+    if (!selectedBag) return setError('Torba seçilmedi')
+    const sig = sigRef.current?.isEmpty() ? null : sigRef.current?.toDataURL()
+    if (!sig) return setError('İmza gerekli')
+    try {
+      await kioskApi.post(`/self-service/laundry-kiosk/bags/${selectedBag.id}/deliver`, {
+        delivered_name: deliveredName.trim(),
+        file_count: fileCount,
+        signature: sig,
+      })
+      setSuccess(true)
+    } catch (e) { setError(e.response?.data?.error || 'Hata') }
+  }
+
+  if (success) return (
+    <div style={{ textAlign: 'center', padding: '48px 0' }}>
+      <div style={{ fontSize: 56 }}>✅</div>
+      <div style={{ color: '#4ade80', fontWeight: 600, fontSize: 18, marginTop: 12 }}>Teslim tamamlandı!</div>
+      <button onClick={onDone} style={{ ...btn('#1e293b', '#60a5fa'), marginTop: 24 }}>Ana Ekrana Dön</button>
+    </div>
+  )
 
   return (
     <div style={card}>
       <h2 style={{ fontSize: 18, fontWeight: 600, color: '#cbd5e1', margin: 0 }}>🚚 Teslim Et</h2>
-      {!mode && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <button onClick={() => setMode('staff')}
-            style={{ ...btn('#1e3a5f', '#93c5fd'), padding: 20, fontSize: 15, borderRadius: 14, display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <span>👷 Personel Teslimi</span>
-            <span style={{ fontSize: 11, color: '#60a5fa' }}>AVS görevlisi hazır torbayı teslim eder</span>
-          </button>
-          <button onClick={() => setMode('resident')}
-            style={{ ...btn('#14532d', '#86efac'), padding: 20, fontSize: 15, borderRadius: 14, display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <span>🙋 Sakin Teslimi</span>
-            <span style={{ fontSize: 11, color: '#4ade80' }}>Sakin kendi torbalarını alır, imzalar</span>
-          </button>
-        </div>
-      )}
-      {mode === 'staff'    && <StaffDeliverForm kioskApi={kioskApi} onBack={() => setMode(null)} />}
-      {mode === 'resident' && <ResidentDeliverForm onBack={() => setMode(null)} />}
-    </div>
-  )
-}
 
-function StaffDeliverForm({ kioskApi, onBack }) {
-  const blocks = useBlocks()
-  const [block, setBlock] = useState('')
-  const [bags, setBags] = useState([])
-  const [selectedBag, setSelectedBag] = useState(null)
-  const [success, setSuccess] = useState(false)
-  const [error, setError] = useState('')
-
-  async function searchReady() {
-    const res = await kioskApi.get(`/self-service/laundry-kiosk/bags?status=ready${block ? `&block=${block}` : ''}`)
-    setBags(res.data)
-  }
-
-  async function deliver() {
-    if (!selectedBag) return
-    setError('')
-    try {
-      await kioskApi.put(`/self-service/laundry-kiosk/bags/${selectedBag.id}/status`, { status: 'delivered' })
-      setSuccess(true); setSelectedBag(null); setBags(bags => bags.filter(b => b.id !== selectedBag.id))
-      setTimeout(() => setSuccess(false), 2000)
-    } catch (e) { setError(e.response?.data?.error || 'Hata') }
-  }
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <button onClick={onBack} style={{ ...btn('#1e293b', '#94a3b8'), fontSize: 12, alignSelf: 'flex-start', padding: '6px 12px' }}>← Geri</button>
-      <h3 style={{ fontSize: 15, color: '#93c5fd', margin: 0 }}>👷 Personel Teslimi</h3>
-      {success && <div style={{ color: '#4ade80', fontSize: 13 }}>✓ Teslim edildi</div>}
       <div>
-        <label style={lbl}>Blok (opsiyonel)</label>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <button type="button" onClick={() => setBlock('')}
-            style={{ ...btn(!block ? '#1d4ed8' : '#1e293b', !block ? '#fff' : '#64748b'), fontSize: 13, padding: '8px 16px' }}>Tümü</button>
-          {blocks.map(b => (
-            <button key={b} type="button" onClick={() => setBlock(b)}
-              style={{ ...btn(block === b ? '#1d4ed8' : '#1e293b', block === b ? '#fff' : '#64748b'), fontSize: 13, padding: '8px 16px' }}>{b}</button>
-          ))}
-        </div>
-      </div>
-      <button onClick={searchReady} style={{ ...btn('#334155', '#e2e8f0') }}>Hazır Torbaları Getir</button>
-      {bags.map(b => (
-        <div key={b.id} onClick={() => setSelectedBag(b)}
-          style={{ background: '#1e293b', borderRadius: 12, padding: 12, cursor: 'pointer', border: `2px solid ${selectedBag?.id === b.id ? '#3b82f6' : 'transparent'}` }}>
-          {b.bag_no && <div style={{ fontSize: 11, color: '#38bdf8', fontFamily: 'monospace' }}>{b.bag_no}</div>}
-          <div style={{ fontSize: 14, color: '#e2e8f0', fontWeight: 500 }}>{b.block} — {b.room_no}</div>
-          <div style={{ fontSize: 12, color: '#64748b' }}>{b.item_count} torba{b.intake_name ? ` · ${b.intake_name}` : ''}</div>
-        </div>
-      ))}
-      {selectedBag && (
-        <>
-          {error && <div style={{ color: '#f87171', fontSize: 13 }}>{error}</div>}
-          <button onClick={deliver} style={{ ...btn('#b45309'), padding: 14 }}>Teslim Onayla</button>
-        </>
-      )}
-    </div>
-  )
-}
-
-function ResidentDeliverForm({ onBack }) {
-  const sigRef = useRef(null)
-  const [step, setStep] = useState('search') // 'search' | 'bags'
-  const [query, setQuery] = useState('')
-  const [results, setResults] = useState([])
-  const [residentToken, setResidentToken] = useState(null)
-  const [bags, setBags] = useState([])
-  const [selectedBag, setSelectedBag] = useState(null)
-  const [success, setSuccess] = useState(false)
-  const [error, setError] = useState('')
-
-  async function searchResident() {
-    if (query.trim().length < 2) return
-    try {
-      const res = await api.get(`/checkin/search?q=${encodeURIComponent(query.trim())}`)
-      setResults(res.data)
-    } catch { setError('Arama başarısız') }
-  }
-
-  async function loginResident(person) {
-    try {
-      const res = await api.get('/self-service/laundry-kiosk/bags?status=ready')
-      setBags(res.data)
-      setResidentToken(person)
-      setStep('bags')
-    } catch { setError('Yüklenemedi') }
-  }
-
-  async function deliver() {
-    if (!selectedBag || !residentToken) return
-    setError('')
-    const sig = sigRef.current?.isEmpty() ? null : sigRef.current?.toDataURL()
-    try {
-      await api.post(`/self-service/laundry-kiosk/deliver-resident/${selectedBag.id}`, { signature: sig })
-      setBags(prev => prev.filter(b => b.id !== selectedBag.id))
-      setSelectedBag(null)
-      setSuccess(true); setTimeout(() => setSuccess(false), 2000)
-    } catch (e) { setError(e.response?.data?.error || 'Hata') }
-  }
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <button onClick={onBack} style={{ ...btn('#1e293b', '#94a3b8'), fontSize: 12, alignSelf: 'flex-start', padding: '6px 12px' }}>← Geri</button>
-      <h3 style={{ fontSize: 15, color: '#86efac', margin: 0 }}>🙋 Sakin Teslimi</h3>
-      {success && <div style={{ color: '#4ade80', fontSize: 13 }}>✓ Teslim edildi</div>}
-      {error && <div style={{ color: '#f87171', fontSize: 13 }}>{error}</div>}
-      {step === 'search' && (
-        <>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <input value={query} onChange={e => setQuery(e.target.value)}
-              placeholder="İsim ile ara..." onKeyDown={e => e.key === 'Enter' && searchResident()}
-              style={{ ...input, flex: 1 }} />
-            <button onClick={searchResident} style={btn('#1d4ed8')}>Ara</button>
+        <label style={lbl}>Blok</label>
+        {BLOCK_GROUPS.map(group => (
+          <div key={group.label} style={{ marginBottom: 8 }}>
+            <div style={{ fontSize: 9, color: '#475569', letterSpacing: 1, marginBottom: 4 }}>{group.label.toUpperCase()}</div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {group.keys.map(k => (
+                <button key={k} type="button" onClick={() => setSelectedBlock(k)}
+                  style={{
+                    padding: '8px 16px', borderRadius: 10, border: 'none', cursor: 'pointer',
+                    background: selectedBlock === k ? '#1d4ed8' : '#1e293b',
+                    color: selectedBlock === k ? '#fff' : '#94a3b8',
+                    fontWeight: 700, fontSize: 14,
+                  }}>
+                  {k}
+                </button>
+              ))}
+            </div>
           </div>
-          {results.map(p => (
-            <button key={p.id} onClick={() => loginResident(p)}
-              style={{ ...btn('#1e293b', '#e2e8f0'), textAlign: 'left', width: '100%', marginBottom: 4 }}>
-              <div style={{ fontWeight: 500 }}>{p.full_name}</div>
-              <div style={{ fontSize: 11, color: '#64748b' }}>{p.company || ''} {p.room_no ? `· Oda ${p.room_no}` : ''}</div>
+        ))}
+        <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+          {SINGLE_BLOCKS.map(k => (
+            <button key={k} type="button" onClick={() => setSelectedBlock(k)}
+              style={{
+                padding: '8px 16px', borderRadius: 10, border: 'none', cursor: 'pointer',
+                background: selectedBlock === k ? '#1d4ed8' : '#1e293b',
+                color: selectedBlock === k ? '#fff' : '#94a3b8',
+                fontWeight: 700, fontSize: 14,
+              }}>
+              {k}
             </button>
           ))}
-        </>
-      )}
-      {step === 'bags' && (
-        <>
-          <div style={{ fontSize: 13, color: '#94a3b8' }}>
-            Sakin: <strong style={{ color: '#e2e8f0' }}>{residentToken?.full_name}</strong>
-            <button onClick={() => { setStep('search'); setResults([]); setBags([]); setResidentToken(null) }}
-              style={{ marginLeft: 12, background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: 11 }}>Değiştir</button>
+          <button type="button" onClick={() => setSelectedBlock('other')}
+            style={{
+              padding: '8px 14px', borderRadius: 10, border: `1px dashed ${selectedBlock === 'other' ? '#3b82f6' : '#475569'}`,
+              cursor: 'pointer', background: selectedBlock === 'other' ? '#1e3a5f' : '#1e293b',
+              color: selectedBlock === 'other' ? '#93c5fd' : '#64748b', fontSize: 13,
+            }}>
+            Diğer…
+          </button>
+        </div>
+        {selectedBlock === 'other' && (
+          <input value={otherBlock} onChange={e => setOtherBlock(e.target.value)}
+            placeholder="Blok adı girin (ör. B, D2…)"
+            style={{ ...input, marginTop: 8 }} />
+        )}
+        {selectedBlock && (
+          <div style={{ marginTop: 8, display: 'inline-flex', alignItems: 'center', gap: 6, background: isPremium ? '#3b0764' : '#1e3a5f', borderRadius: 20, padding: '4px 10px' }}>
+            <span style={{ fontSize: 10, color: isPremium ? '#ddd6fe' : '#93c5fd' }}>
+              {isPremium ? '🟣 Premium' : '⚪ Regular'}
+            </span>
           </div>
-          {bags.length === 0 && <div style={{ color: '#475569', fontSize: 13 }}>Hazır torba yok</div>}
-          {bags.map(b => (
-            <div key={b.id} onClick={() => setSelectedBag(b)}
-              style={{ background: '#1e293b', borderRadius: 12, padding: 12, cursor: 'pointer', border: `2px solid ${selectedBag?.id === b.id ? '#22c55e' : 'transparent'}` }}>
-              {b.bag_no && <div style={{ fontSize: 11, color: '#38bdf8', fontFamily: 'monospace' }}>{b.bag_no}</div>}
-              <div style={{ fontSize: 14, color: '#e2e8f0', fontWeight: 500 }}>{b.block} — {b.room_no}</div>
-              <div style={{ fontSize: 12, color: '#64748b' }}>{b.item_count} torba</div>
-            </div>
-          ))}
-          {selectedBag && (
-            <>
-              <div><label style={lbl}>İmza</label><SigPad sigRef={sigRef} /></div>
-              <button onClick={deliver} style={{ ...btn('#15803d'), padding: 14 }}>Teslim Onayla</button>
-            </>
-          )}
-        </>
+        )}
+      </div>
+
+      <div>
+        <label style={lbl}>Oda No</label>
+        <input type="text" inputMode="numeric" value={roomNo} onChange={e => setRoomNo(e.target.value)}
+          placeholder="ör. 205" style={input} />
+      </div>
+
+      <div>
+        <label style={lbl}>Ad Soyad</label>
+        <input type="text" value={deliveredName} onChange={e => setDeliveredName(e.target.value)}
+          placeholder="Teslim alan kişi" style={input} />
+      </div>
+
+      {(effectiveBlock && roomNo) && (
+        <div>
+          <label style={lbl}>Torba {effectiveBlock && roomNo ? `(${effectiveBlock}-${roomNo} hazır)` : ''}</label>
+          {bags.length === 0
+            ? <div style={{ color: '#475569', fontSize: 13 }}>Hazır torba bulunamadı</div>
+            : bags.map(b => (
+                <div key={b.id} onClick={() => setSelectedBag(b)}
+                  style={{
+                    background: '#1e293b', borderRadius: 10, padding: '10px 14px', marginBottom: 6, cursor: 'pointer',
+                    border: `2px solid ${selectedBag?.id === b.id ? '#3b82f6' : '#334155'}`,
+                  }}>
+                  <div style={{ fontSize: 11, color: '#38bdf8', fontFamily: 'monospace' }}>{b.bag_no || `#${b.id}`}</div>
+                  <div style={{ color: '#e2e8f0', fontSize: 13, fontWeight: 600 }}>
+                    {b.item_count} parça{b.intake_name ? ` · ${b.intake_name}` : ''}
+                    {b.is_premium ? ' · 🟣 Premium' : ' · ⚪ Regular'}
+                  </div>
+                </div>
+              ))
+          }
+        </div>
       )}
+
+      <div>
+        <label style={lbl}>File Adedi</label>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <button type="button" onClick={() => setFileCount(c => Math.max(1, c - 1))}
+            style={{ width: 40, height: 40, borderRadius: 10, border: 'none', background: '#1e293b', color: '#f1f5f9', fontSize: 20, cursor: 'pointer', fontWeight: 700 }}>
+            −
+          </button>
+          <span style={{ fontSize: 24, fontWeight: 800, color: '#f1f5f9', minWidth: 32, textAlign: 'center' }}>{fileCount}</span>
+          <button type="button" onClick={() => setFileCount(c => c + 1)}
+            style={{ width: 40, height: 40, borderRadius: 10, border: 'none', background: '#1e293b', color: '#f1f5f9', fontSize: 20, cursor: 'pointer', fontWeight: 700 }}>
+            +
+          </button>
+        </div>
+      </div>
+
+      <div>
+        <label style={lbl}>İmza</label>
+        <SigPad sigRef={sigRef} />
+      </div>
+
+      {error && <div style={{ color: '#f87171', fontSize: 13 }}>{error}</div>}
+
+      <button onClick={deliver}
+        style={{ ...btn('#b45309'), padding: 14, fontSize: 15 }}>
+        ✓ Teslim Et
+      </button>
     </div>
   )
 }
