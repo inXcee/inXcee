@@ -4,13 +4,33 @@ import { getDB } from '../../shared/db/index.js'
 // ITEMS
 // ═══════════════════════════════════════════════════════════════════════════
 
-export function insertItemQuery({ room_id, item_count = 1, item_details, notes, urgent = 0, photo_url, phone_override, intake_name, intake_signature, clothing_items, needs_ironing = 0, is_premium = 0, created_by }) {
+export function insertItemQuery({ room_id, item_count = 1, item_details, notes, urgent = 0, photo_url, phone_override, intake_name, intake_signature, clothing_items, needs_ironing = 0, is_premium = 0, created_by, status = 'dirty' }) {
   const db = getDB()
   const r = db.prepare(`
-    INSERT INTO laundry_items(room_id, item_count, item_details, notes, urgent, photo_url, phone_override, intake_name, intake_signature, clothing_items, needs_ironing, is_premium, created_by, updated_at)
-    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-  `).run(room_id, item_count, item_details || null, notes || null, urgent ? 1 : 0, photo_url || null, phone_override || null, intake_name || null, intake_signature || null, clothing_items ? (typeof clothing_items === 'string' ? clothing_items : JSON.stringify(clothing_items)) : null, needs_ironing ? 1 : 0, is_premium ? 1 : 0, created_by)
+    INSERT INTO laundry_items(room_id, status, item_count, item_details, notes, urgent, photo_url, phone_override, intake_name, intake_signature, clothing_items, needs_ironing, is_premium, created_by, updated_at)
+    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+  `).run(room_id, status, item_count, item_details || null, notes || null, urgent ? 1 : 0, photo_url || null, phone_override || null, intake_name || null, intake_signature || null, clothing_items ? (typeof clothing_items === 'string' ? clothing_items : JSON.stringify(clothing_items)) : null, needs_ironing ? 1 : 0, is_premium ? 1 : 0, created_by)
   return r.lastInsertRowid
+}
+
+export function collectItemQuery(id, avsWorkerId) {
+  const db = getDB()
+  db.prepare(`
+    UPDATE laundry_items
+    SET status='dirty', collected_by=?, collected_at=strftime('%s','now'), updated_at=datetime('now')
+    WHERE id=? AND status='pending_collection'
+  `).run(avsWorkerId || null, id)
+}
+
+export function generateBagNoQuery(id) {
+  return 'T-' + String(id).padStart(5, '0')
+}
+
+export function setBagNoQuery(id) {
+  const db = getDB()
+  const bagNo = generateBagNoQuery(id)
+  db.prepare(`UPDATE laundry_items SET bag_no=? WHERE id=?`).run(bagNo, id)
+  return bagNo
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

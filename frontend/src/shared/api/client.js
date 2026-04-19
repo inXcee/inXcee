@@ -6,7 +6,7 @@ const api = axios.create({ baseURL: '/api', timeout: 45000 })
 
 api.interceptors.request.use(cfg => {
   const token = useAuthStore.getState().token
-  if (token) cfg.headers.Authorization = `Bearer ${token}`
+  if (token && !cfg.headers.Authorization) cfg.headers.Authorization = `Bearer ${token}`
   return cfg
 })
 

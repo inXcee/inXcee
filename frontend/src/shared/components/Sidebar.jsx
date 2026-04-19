@@ -41,6 +41,7 @@ const NAV_GROUPS = [
       { to: '/kiosk-pins', icon: '\u2316', label: 'Kiosk PIN', roles: ['campus_manager'] },
       { to: '/announcements', icon: '📢', label: 'Duyurular', roles: ['campus_manager'] },
       { to: '/avs-workers', icon: '👷', label: 'AVS Calisanlari', roles: ['campus_manager'] },
+      { to: '/laundry-kiosk', icon: '🧺', label: 'Camasir Kiosk', roles: ['campus_manager'], external: true },
       { to: '/audit', icon: '\u2637', label: 'Audit Log', roles: ['campus_manager'] },
       { to: '/settings', icon: '\u2393', label: 'Ayarlar', roles: ['campus_manager'] },
     ]
@@ -167,6 +168,15 @@ export default function Sidebar({ mobileOpen, onClose }) {
                   (link.sublinks && link.sublinks.some(s => location.pathname === s.to))
                 return (
                   <div key={link.to}>
+                    {link.external ? (
+                      <a href={link.to} target="_blank" rel="noopener noreferrer" onClick={onClose} style={{ textDecoration: 'none', display: 'block' }}>
+                        <div className="sidebar-nav-item" style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 10px', borderRadius: '7px', marginBottom: '2px', cursor: 'pointer', transition: 'all 0.15s', borderLeft: '2px solid transparent', color: 'var(--text2)' }}>
+                          <span style={{ fontSize: '14px', width: '18px', textAlign: 'center', flexShrink: 0 }}>{link.icon}</span>
+                          <span style={{ fontFamily: 'var(--sans)', fontSize: '13px', fontWeight: 400, flex: 1 }}>{link.label}</span>
+                          <span style={{ fontSize: '9px', color: 'var(--text4)' }}>↗</span>
+                        </div>
+                      </a>
+                    ) : (
                     <NavLink to={link.sublinks ? link.sublinks[0].to : link.to} end={link.to === '/'} onClick={onClose} style={{ textDecoration: 'none', display: 'block' }}>
                       {({ isActive: navActive }) => {
                         const active = link.sublinks ? parentActive : navActive
@@ -204,6 +214,7 @@ export default function Sidebar({ mobileOpen, onClose }) {
                         )
                       }}
                     </NavLink>
+                    )}
                     {/* Sub-links — show when parent is active */}
                     {link.sublinks && parentActive && (
                       <div style={{ marginLeft: 28, marginBottom: 4 }}>
