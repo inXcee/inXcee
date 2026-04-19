@@ -219,4 +219,35 @@ describe('Laundry Kiosk endpoints', () => {
       .set('Authorization', `Bearer ${kioskToken}`)
     expect(res.status).toBe(403)
   })
+
+  it('POST /laundry-kiosk/bags/:id/ironing-complete — ironing olmayan torba 400 döner', async () => {
+    const bagRes = await request(app)
+      .post('/api/self-service/laundry-kiosk/bag')
+      .set('Authorization', `Bearer ${avsToken}`)
+      .send({ block: 'A', room_no: '101', item_count: 2 })
+    expect(bagRes.status).toBe(201)
+    const bagId = bagRes.body.id
+    // status = pending_collection, ironing-complete reddedilmeli
+    const res = await request(app)
+      .post(`/api/self-service/laundry-kiosk/bags/${bagId}/ironing-complete`)
+      .set('Authorization', `Bearer ${avsToken}`)
+      .send({})
+    expect(res.status).toBe(400)
+    expect(res.body).toHaveProperty('error')
+  })
+
+  it('POST /laundry-kiosk/bags/:id/deliver — delivered_name ve file_count zorunlu', async () => {
+    const bagRes = await request(app)
+      .post('/api/self-service/laundry-kiosk/bag')
+      .set('Authorization', `Bearer ${avsToken}`)
+      .send({ block: 'A', room_no: '101', item_count: 1 })
+    const bagId = bagRes.body.id
+    // delivered_name olmadan
+    const res = await request(app)
+      .post(`/api/self-service/laundry-kiosk/bags/${bagId}/deliver`)
+      .set('Authorization', `Bearer ${avsToken}`)
+      .send({ file_count: 2 })
+    expect(res.status).toBe(400)
+    expect(res.body).toHaveProperty('error')
+  })
 })

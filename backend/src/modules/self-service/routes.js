@@ -265,6 +265,37 @@ selfServiceRouter.put('/laundry-kiosk/bags/:id/ironing', requireAvsKiosk, (req, 
   } catch (e) { res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
+selfServiceRouter.post('/laundry-kiosk/bags/:id/ironing-complete', requireAvsKiosk, (req, res) => {
+  try {
+    const db = getDB()
+    const item = db.prepare('SELECT id, status FROM laundry_items WHERE id=?').get(Number(req.params.id))
+    if (!item) return res.status(404).json({ error: 'Torba bulunamadı' })
+    if (item.status !== 'ironing') return res.status(400).json({ error: 'Torba ironing durumunda değil' })
+    db.prepare("UPDATE laundry_items SET status='ready', updated_at=datetime('now') WHERE id=?")
+      .run(item.id)
+    res.json({ ok: true })
+  } catch (e) { res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+selfServiceRouter.post('/laundry-kiosk/bags/:id/deliver', requireAvsKiosk, (req, res) => {
+  const { delivered_name, file_count, signature } = req.body
+  if (!delivered_name || !delivered_name.trim()) return res.status(400).json({ error: 'delivered_name gerekli' })
+  const fc = Number(file_count)
+  if (!fc || fc < 1) return res.status(400).json({ error: 'file_count en az 1 olmalı' })
+  try {
+    const db = getDB()
+    const item = db.prepare('SELECT id, status FROM laundry_items WHERE id=?').get(Number(req.params.id))
+    if (!item) return res.status(404).json({ error: 'Torba bulunamadı' })
+    if (item.status !== 'ready') return res.status(400).json({ error: 'Torba ready durumunda değil' })
+    db.prepare(`
+      UPDATE laundry_items
+      SET status='delivered', delivered_name=?, file_count=?, occupant_signature=?, updated_at=datetime('now')
+      WHERE id=?
+    `).run(delivered_name.trim(), fc, signature || null, item.id)
+    res.json({ ok: true })
+  } catch (e) { res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
 selfServiceRouter.post('/laundry-kiosk/garment', requireAvsKiosk, (req, res) => {
   const { block, room_no, personnel_id, clothing_items, intake_signature } = req.body
   if (!block || !room_no) return res.status(400).json({ error: 'block ve room_no gerekli' })
