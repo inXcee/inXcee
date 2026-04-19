@@ -3,7 +3,7 @@ import { requireKioskOrStaff, requireAvsKiosk } from '../../shared/auth/middlewa
 import { getDB } from '../../shared/db/index.js'
 import { createRequest } from '../maintenance/queries.js'
 import { changeKioskPin } from '../../shared/auth/service.js'
-import { insertItemQuery, updateItemStatusQuery, listMachinesQuery, addToQueueQuery } from '../laundry/queries.js'
+import { insertItemQuery, updateItemStatusQuery, listMachinesQuery, addToQueueQuery, collectItemQuery, setBagNoQuery } from '../laundry/queries.js'
 
 export const selfServiceRouter = Router()
 
@@ -163,6 +163,7 @@ selfServiceRouter.post('/laundry-kiosk/bag', requireAvsKiosk, (req, res) => {
     const id = insertItemQuery({
       room_id: room.id,
       item_count: count,
+      status: 'pending_collection',
       is_premium: is_premium ? 1 : 0,
       notes: notes || null,
       urgent: urgent ? 1 : 0,
@@ -171,7 +172,8 @@ selfServiceRouter.post('/laundry-kiosk/bag', requireAvsKiosk, (req, res) => {
       clothing_items: clothing_items ? JSON.stringify(clothing_items) : null,
       created_by: null,
     })
-    res.status(201).json({ id })
+    const bag_no = setBagNoQuery(id)
+    res.status(201).json({ id, bag_no })
   } catch (e) { res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
@@ -179,7 +181,7 @@ selfServiceRouter.get('/laundry-kiosk/bags', requireAvsKiosk, (req, res) => {
   const { block, room_no, status } = req.query
   try {
     const db = getDB()
-    let q = `SELECT li.id, li.status, li.item_count, li.urgent, li.is_premium, li.needs_ironing,
+    let q = `SELECT li.id, li.bag_no, li.status, li.item_count, li.urgent, li.is_premium, li.needs_ironing,
                     li.created_at, li.intake_name, r.block, r.room_no
              FROM laundry_items li JOIN rooms r ON r.id = li.room_id WHERE 1=1`
     const params = []
@@ -194,10 +196,52 @@ selfServiceRouter.get('/laundry-kiosk/bags', requireAvsKiosk, (req, res) => {
 
 selfServiceRouter.put('/laundry-kiosk/bags/:id/status', requireAvsKiosk, (req, res) => {
   const { status } = req.body
-  const ALLOWED = ['collected', 'washing', 'ready', 'delivered']
-  if (!ALLOWED.includes(status)) return res.status(400).json({ error: 'Geçersiz durum (collected, washing, ready, delivered)' })
+  const ALLOWED = ['pending_collection', 'washing', 'ironing', 'ready', 'delivered']
+  if (!ALLOWED.includes(status)) return res.status(400).json({ error: 'Geçersiz durum' })
   try {
     updateItemStatusQuery(Number(req.params.id), status)
+    res.json({ ok: true })
+  } catch (e) { res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+selfServiceRouter.get('/laundry-kiosk/pending-bags', requireAvsKiosk, (req, res) => {
+  try {
+    const db = getDB()
+    const bags = db.prepare(`
+      SELECT li.id, li.bag_no, li.item_count, li.urgent, li.is_premium,
+             li.intake_name, li.created_at, r.block, r.room_no
+      FROM laundry_items li JOIN rooms r ON r.id = li.room_id
+      WHERE li.status = 'pending_collection'
+      ORDER BY li.urgent DESC, li.created_at ASC LIMIT 100
+    `).all()
+    res.json(bags)
+  } catch (e) { res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+selfServiceRouter.post('/laundry-kiosk/bags/:id/collect', requireAvsKiosk, (req, res) => {
+  try {
+    const db = getDB()
+    const item = db.prepare('SELECT id, status FROM laundry_items WHERE id=?').get(Number(req.params.id))
+    if (!item) return res.status(404).json({ error: 'Torba bulunamadı' })
+    if (item.status !== 'pending_collection') return res.status(400).json({ error: 'Torba pending_collection değil' })
+    collectItemQuery(Number(req.params.id), req.user.workerId || null)
+    res.json({ ok: true })
+  } catch (e) { res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+selfServiceRouter.post('/laundry-kiosk/deliver-resident/:id', requireKioskOrStaff, (req, res) => {
+  if (!req.user.personnelId) return res.status(403).json({ error: 'Kiosk token gerekli' })
+  const { signature } = req.body
+  try {
+    const db = getDB()
+    const item = db.prepare(`
+      SELECT li.id, li.status FROM laundry_items li
+      JOIN room_assignments ra ON ra.room_id = li.room_id
+      WHERE li.id=? AND ra.personnel_id=? AND ra.check_out_at IS NULL AND li.status='ready'
+    `).get(Number(req.params.id), req.user.personnelId)
+    if (!item) return res.status(403).json({ error: 'Torba bulunamadı veya hazır değil' })
+    db.prepare(`UPDATE laundry_items SET status='delivered', occupant_signature=?, updated_at=datetime('now') WHERE id=?`)
+      .run(signature || null, item.id)
     res.json({ ok: true })
   } catch (e) { res.status(500).json({ error: 'Sunucu hatası' }) }
 })

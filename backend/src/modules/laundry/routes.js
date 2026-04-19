@@ -3,6 +3,7 @@ import { requireRole } from '../../shared/auth/middleware.js'
 import { upload, verifyMagicBytes } from '../../shared/uploads/middleware.js'
 import { getDB } from '../../shared/db/index.js'
 import * as svc from './service.js'
+import { collectItemQuery } from './queries.js'
 import { notifyItemReady, sendFoundMessage } from './whatsapp.js'
 
 export const laundryRouter = Router()
@@ -60,6 +61,16 @@ laundryRouter.post('/items', ...laundryFull, (req, res) => {
     const item = svc.createItemService(req.body, req.user.id)
     res.status(201).json(item)
   } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+laundryRouter.post('/items/:id/collect', ...laundryFull, (req, res) => {
+  try {
+    const item = getDB().prepare('SELECT id, status FROM laundry_items WHERE id=?').get(+req.params.id)
+    if (!item) return res.status(404).json({ error: 'Kayıt bulunamadı' })
+    if (item.status !== 'pending_collection') return res.status(400).json({ error: 'Durum pending_collection değil' })
+    collectItemQuery(+req.params.id, null)
+    res.json({ ok: true })
+  } catch (e) { res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 laundryRouter.patch('/items/:id/advance', ...laundryFull, (req, res) => {
