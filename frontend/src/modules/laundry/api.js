@@ -12,6 +12,7 @@ export const laundryApi = {
   deliverItem: (id, data) => api.patch(`/laundry/items/${id}/deliver`, data).then(r => r.data),
   lostItem: (id, data) => api.patch(`/laundry/items/${id}/lost`, data).then(r => r.data),
   deleteItem: (id) => api.delete(`/laundry/items/${id}`).then(r => r.data),
+  collectItem: (id) => api.post(`/laundry/items/${id}/collect`).then(r => r.data),
   batchDeliver: (data) => api.post('/laundry/items/batch-deliver', data).then(r => r.data),
   batchAssign: (item_ids, machine_id, timer_minutes) => api.post('/laundry/items/batch-assign', { item_ids, machine_id, timer_minutes }).then(r => r.data),
   batchLost: (item_ids, notes) => api.post('/laundry/items/batch-lost', { item_ids, notes }).then(r => r.data),

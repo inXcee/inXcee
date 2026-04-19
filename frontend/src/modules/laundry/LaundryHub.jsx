@@ -235,6 +235,7 @@ function DraggableKanbanCard({ item, ...props }) {
 
 // ── KanbanCard ─────────────────────────────────────────────────
 function KanbanCard({ item, machines, onDeliver, onDamage, onPersonClick, onFound }) {
+  const qc = useQueryClient()
   const [assignOpen,   setAssignOpen]   = useState(false)
   const [shelfOpen,    setShelfOpen]    = useState(false)
   const [lostOpen,     setLostOpen]     = useState(false)
@@ -296,6 +297,13 @@ function KanbanCard({ item, machines, onDeliver, onDamage, onPersonClick, onFoun
           {item.damage_count > 0 && <span className="badge badge-amber" style={{ fontSize: 7 }}>⚠{item.damage_count}</span>}
         </div>
       </div>
+
+      {/* Row 1b: bag_no */}
+      {item.bag_no && (
+        <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: '#38bdf8', letterSpacing: 1, marginBottom: 4 }}>
+          {item.bag_no}
+        </div>
+      )}
 
       {/* Row 2: meta */}
       <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', marginBottom: 8, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -375,6 +383,21 @@ function KanbanCard({ item, machines, onDeliver, onDamage, onPersonClick, onFoun
 
       {/* Actions */}
       <div style={{ display: 'flex', gap: 5 }}>
+        {item.status === 'pending_collection' && (
+          <button onPointerDown={e => e.stopPropagation()} onClick={async () => {
+            try {
+              await laundryApi.collectItem(item.id)
+              qc.invalidateQueries({ queryKey: ['laundry-items'] })
+            } catch {}
+          }} style={{
+            flex: 1, padding: '5px 8px', borderRadius: 6,
+            background: 'rgba(3,105,161,0.12)', border: '1px solid rgba(3,105,161,0.35)',
+            color: '#38bdf8', fontFamily: 'var(--mono)', fontSize: 9,
+            cursor: 'pointer', fontWeight: 700,
+          }}>
+            ✓ Toplandı
+          </button>
+        )}
         {item.status !== 'delivered' && item.status !== 'lost' && item.status === 'dirty' && (
           <button onPointerDown={e => e.stopPropagation()} onClick={() => setAssignOpen(true)} style={{
             flex: 1, padding: '5px 8px', borderRadius: 6,
@@ -1374,6 +1397,7 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
     return list
   }, [allItems, search, filterBlock, filterUrgent])
 
+  const pending = kanbanItems.filter(i => i.status === 'pending_collection')
   const dirty   = kanbanItems.filter(i => i.status === 'dirty')
   const washing = kanbanItems.filter(i => i.status === 'washing')
   const ironing = kanbanItems.filter(i => i.status === 'ironing')
@@ -1383,6 +1407,7 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
   const colEmptyLabel = (filterBlock !== 'all' || filterUrgent || !!search.trim()) ? 'filtre sonucu boş' : 'boş'
 
   const counts = {
+    pending: allItems.filter(i => i.status === 'pending_collection').length,
     dirty:   allItems.filter(i => i.status === 'dirty').length,
     washing: allItems.filter(i => i.status === 'washing').length,
     ironing: allItems.filter(i => i.status === 'ironing').length,
@@ -1390,7 +1415,7 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
     sla:     violations.length,
     lost:    allItems.filter(i => i.status === 'lost').length,
   }
-  const activeTotal = counts.dirty + counts.washing + counts.ironing + counts.ready
+  const activeTotal = counts.pending + counts.dirty + counts.washing + counts.ironing + counts.ready
 
   const toggleSelect = (id) => {
     setSelectedIds(prev => {
@@ -1749,6 +1774,7 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
           onDragEnd={handleDragEnd}
         >
           <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', overflowX: 'auto', paddingBottom: 4 }}>
+            <KanbanCol title="BEKLİYOR"     color="#0369a1"       items={pending} colStatus="pending_collection" isOver={false} machines={machines} onDeliver={setDeliverItem} onDamage={setDamageItem} onPersonClick={setPersonPanelName} onFound={setFoundItem} groupByRoom={groupByRoom} emptyLabel={colEmptyLabel} />
             <KanbanCol title="KİRLİ SEPET"  color="var(--accent)" items={dirty}   colStatus="dirty"   isOver={overCol === 'dirty'}   machines={machines} onDeliver={setDeliverItem} onDamage={setDamageItem} onPersonClick={setPersonPanelName} onFound={setFoundItem} groupByRoom={groupByRoom} emptyLabel={colEmptyLabel} />
             <KanbanCol title="YIKANIYOR"    color="var(--blue)"   items={washing} colStatus="washing" isOver={overCol === 'washing'} machines={machines} onDeliver={setDeliverItem} onDamage={setDamageItem} onPersonClick={setPersonPanelName} onFound={setFoundItem} groupByRoom={groupByRoom} emptyLabel={colEmptyLabel} />
             <KanbanCol title="ÜTÜDE" color="#6366f1" items={ironing} colStatus="ironing" isOver={overCol === 'ironing'} machines={machines} onDeliver={setDeliverItem} onDamage={setDamageItem} onPersonClick={setPersonPanelName} onFound={setFoundItem} groupByRoom={groupByRoom} emptyLabel={colEmptyLabel} />

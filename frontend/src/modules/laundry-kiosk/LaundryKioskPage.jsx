@@ -227,12 +227,12 @@ export default function LaundryKioskPage() {
       {!activeAction && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           {[
-            { key: 'bag',     icon: '🧺', label: 'Torba Al',       bg: '#1e3a5f' },
-            { key: 'ready',   icon: '✅', label: 'Hazır İşaretle',  bg: '#14532d' },
-            { key: 'garment', icon: '👔', label: 'Kıyafet Gir',     bg: '#3b0764' },
-            { key: 'deliver', icon: '🚚', label: 'Teslim Et',        bg: '#451a03' },
-            { key: 'iron',    icon: '🔥', label: 'Ütü',              bg: '#164e63' },
-            { key: 'machine', icon: '⚙️', label: 'Makine',           bg: '#1e293b' },
+            { key: 'bag',     icon: '🧺', label: 'Torba Bırak',     bg: '#1e3a5f' },
+            { key: 'collect', icon: '📦', label: 'Torba Topla',      bg: '#14532d' },
+            { key: 'machine', icon: '⚙️', label: 'Makineye Yükle',   bg: '#1e293b' },
+            { key: 'deliver', icon: '🚚', label: 'Teslim Et',         bg: '#451a03' },
+            { key: 'status',  icon: '📋', label: 'Durum Görüntüle',   bg: '#1c1917' },
+            { key: 'garment', icon: '👔', label: 'Kıyafet Gir',       bg: '#3b0764' },
           ].map(a => (
             <button key={a.key} onClick={() => setActiveAction(a.key)}
               style={{
@@ -251,11 +251,11 @@ export default function LaundryKioskPage() {
       )}
 
       {activeAction === 'bag'     && <BagForm kioskApi={kioskApi} onDone={() => setActiveAction(null)} />}
-      {activeAction === 'ready'   && <StatusUpdateView kioskApi={kioskApi} targetStatus="ready" label="Hazır İşaretle" onDone={() => setActiveAction(null)} />}
-      {activeAction === 'deliver' && <DeliverView kioskApi={kioskApi} onDone={() => setActiveAction(null)} />}
-      {activeAction === 'garment' && <GarmentForm kioskApi={kioskApi} onDone={() => setActiveAction(null)} />}
-      {activeAction === 'iron'    && <IronView kioskApi={kioskApi} onDone={() => setActiveAction(null)} />}
+      {activeAction === 'collect' && <CollectView kioskApi={kioskApi} onDone={() => setActiveAction(null)} />}
       {activeAction === 'machine' && <MachineView kioskApi={kioskApi} onDone={() => setActiveAction(null)} />}
+      {activeAction === 'deliver' && <DeliverView kioskApi={kioskApi} onDone={() => setActiveAction(null)} />}
+      {activeAction === 'status'  && <StatusView kioskApi={kioskApi} onDone={() => setActiveAction(null)} />}
+      {activeAction === 'garment' && <GarmentForm kioskApi={kioskApi} onDone={() => setActiveAction(null)} />}
     </div>
   )
 }
@@ -288,6 +288,7 @@ function BagForm({ kioskApi, onDone }) {
   const [notes, setNotes] = useState('')
   const [urgent, setUrgent] = useState(false)
   const [success, setSuccess] = useState(false)
+  const [bagNo, setBagNo] = useState(null)
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -303,7 +304,7 @@ function BagForm({ kioskApi, onDone }) {
     if (!block || !roomNo) return setError('Blok ve oda no gerekli')
     const sig = sigRef.current?.isEmpty() ? null : sigRef.current?.toDataURL()
     try {
-      await kioskApi.post('/self-service/laundry-kiosk/bag', {
+      const res = await kioskApi.post('/self-service/laundry-kiosk/bag', {
         block, room_no: roomNo,
         personnel_id: selectedPerson?.id || null,
         item_count: itemCount,
@@ -313,6 +314,7 @@ function BagForm({ kioskApi, onDone }) {
         urgent,
         intake_signature: sig,
       })
+      setBagNo(res.data.bag_no)
       setSuccess(true)
     } catch (e) { setError(e.response?.data?.error || 'Hata oluştu') }
   }
@@ -321,6 +323,13 @@ function BagForm({ kioskApi, onDone }) {
     <div style={{ textAlign: 'center', padding: '48px 0' }}>
       <div style={{ fontSize: 56 }}>✅</div>
       <div style={{ color: '#4ade80', fontWeight: 600, fontSize: 18, marginTop: 12 }}>Torba kaydedildi!</div>
+      {bagNo && (
+        <div style={{ marginTop: 16, background: '#0f172a', borderRadius: 12, padding: '16px 24px', display: 'inline-block' }}>
+          <div style={{ fontSize: 11, color: '#64748b', letterSpacing: 2, marginBottom: 4 }}>TORBA NO</div>
+          <div style={{ fontSize: 32, fontWeight: 700, color: '#38bdf8', fontFamily: 'monospace', letterSpacing: 4 }}>{bagNo}</div>
+          <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>Torbayı görevliye teslim edin</div>
+        </div>
+      )}
       <button onClick={onDone} style={{ ...btn('#1e293b', '#60a5fa'), marginTop: 24 }}>Ana Ekrana Dön</button>
     </div>
   )
@@ -411,15 +420,78 @@ function BagForm({ kioskApi, onDone }) {
   )
 }
 
-// ── Durum güncelle (Hazır) ────────────────────────────────────────────────────
-function StatusUpdateView({ kioskApi, targetStatus, label, onDone }) {
+// ── Torba Topla ───────────────────────────────────────────────────────────────
+function CollectView({ kioskApi, onDone }) {
+  const [bags, setBags] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [success, setSuccess] = useState(false)
+  const [error, setError] = useState('')
+  const [filter, setFilter] = useState('')
+
+  async function load() {
+    setLoading(true)
+    try {
+      const res = await kioskApi.get('/self-service/laundry-kiosk/pending-bags')
+      setBags(res.data)
+    } catch { setError('Yüklenemedi') } finally { setLoading(false) }
+  }
+
+  useEffect(() => { load() }, [])
+
+  async function collect(bag) {
+    setError('')
+    try {
+      await kioskApi.post(`/self-service/laundry-kiosk/bags/${bag.id}/collect`)
+      setBags(prev => prev.filter(b => b.id !== bag.id))
+      setSuccess(true); setTimeout(() => setSuccess(false), 2000)
+    } catch (e) { setError(e.response?.data?.error || 'Hata') }
+  }
+
+  const filtered = filter
+    ? bags.filter(b => b.bag_no?.includes(filter.toUpperCase()) || b.block?.includes(filter.toUpperCase()) || b.room_no?.includes(filter))
+    : bags
+
+  return (
+    <div style={card}>
+      <h2 style={{ fontSize: 18, fontWeight: 600, color: '#cbd5e1', margin: 0 }}>📦 Torba Topla</h2>
+      {success && <div style={{ color: '#4ade80', fontSize: 13 }}>✓ Toplandı — kirli olarak işaretlendi</div>}
+      {error && <div style={{ color: '#f87171', fontSize: 13 }}>{error}</div>}
+      <div style={{ display: 'flex', gap: 8 }}>
+        <input value={filter} onChange={e => setFilter(e.target.value)}
+          placeholder="Torba no, blok veya oda ara..."
+          style={{ ...input, flex: 1 }} />
+        <button onClick={load} style={btn('#334155', '#e2e8f0')} disabled={loading}>{loading ? '...' : '↻'}</button>
+      </div>
+      {filtered.length === 0 && !loading && <div style={{ color: '#475569', fontSize: 13 }}>Bekleyen torba yok</div>}
+      {filtered.map(b => (
+        <div key={b.id} style={{ background: '#1e293b', borderRadius: 12, padding: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+            <div style={{ fontSize: 13, color: '#38bdf8', fontFamily: 'monospace', fontWeight: 700 }}>{b.bag_no || `#${b.id}`}</div>
+            <div style={{ fontSize: 14, color: '#e2e8f0', fontWeight: 500 }}>{b.block} — {b.room_no}</div>
+            <div style={{ fontSize: 11, color: '#64748b' }}>
+              {b.item_count} adet{b.urgent ? ' · ⚡ Acil' : ''}{b.intake_name ? ` · ${b.intake_name}` : ''}
+            </div>
+          </div>
+          <button onClick={() => collect(b)} style={{ ...btn('#047857', '#d1fae5'), fontSize: 12, padding: '8px 14px' }}>Toplandı</button>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ── Durum Görüntüle ────────────────────────────────────────────────────────────
+function StatusView({ kioskApi, onDone }) {
   const blocks = useBlocks()
   const [block, setBlock] = useState('')
   const [roomNo, setRoomNo] = useState('')
   const [bags, setBags] = useState([])
   const [success, setSuccess] = useState(false)
 
-  const STATUS_LABEL = { collected: 'Toplandı', washing: 'Yıkanıyor', ready: 'Hazır', delivered: 'Teslim' }
+  const STATUS_LABEL = {
+    pending_collection: 'Toplanmayı Bekliyor',
+    dirty: 'Kirli', washing: 'Yıkanıyor', ironing: 'Ütüleniyor',
+    ready: 'Hazır', delivered: 'Teslim', lost: 'Kayıp',
+  }
 
   async function search() {
     if (!block) return
@@ -429,15 +501,15 @@ function StatusUpdateView({ kioskApi, targetStatus, label, onDone }) {
     setBags(res.data)
   }
 
-  async function update(id) {
-    await kioskApi.put(`/self-service/laundry-kiosk/bags/${id}/status`, { status: targetStatus })
-    setBags(bags => bags.filter(b => b.id !== id))
+  async function markReady(id) {
+    await kioskApi.put(`/self-service/laundry-kiosk/bags/${id}/status`, { status: 'ready' })
+    setBags(bags => bags.map(b => b.id === id ? { ...b, status: 'ready' } : b))
     setSuccess(true); setTimeout(() => setSuccess(false), 2000)
   }
 
   return (
     <div style={card}>
-      <h2 style={{ fontSize: 18, fontWeight: 600, color: '#cbd5e1', margin: 0 }}>{label}</h2>
+      <h2 style={{ fontSize: 18, fontWeight: 600, color: '#cbd5e1', margin: 0 }}>📋 Torba Durumu</h2>
       {success && <div style={{ color: '#4ade80', fontSize: 13 }}>✓ Güncellendi</div>}
       <div><label style={lbl}>Blok</label><BlockPicker blocks={blocks} block={block} setBlock={setBlock} /></div>
       <div style={{ display: 'flex', gap: 8 }}>
@@ -449,13 +521,16 @@ function StatusUpdateView({ kioskApi, targetStatus, label, onDone }) {
       {bags.map(b => (
         <div key={b.id} style={{ background: '#1e293b', borderRadius: 12, padding: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
+            {b.bag_no && <div style={{ fontSize: 11, color: '#38bdf8', fontFamily: 'monospace' }}>{b.bag_no}</div>}
             <div style={{ fontSize: 14, color: '#e2e8f0', fontWeight: 500 }}>{b.block} — {b.room_no}</div>
             <div style={{ fontSize: 12, color: '#64748b' }}>
               {b.item_count} torba · {STATUS_LABEL[b.status] || b.status}
               {b.urgent ? ' · ⚡' : ''}{b.intake_name ? ` · ${b.intake_name}` : ''}
             </div>
           </div>
-          <button onClick={() => update(b.id)} style={{ ...btn('#047857', '#d1fae5'), fontSize: 12, padding: '8px 14px' }}>{label}</button>
+          {b.status === 'ironing' && (
+            <button onClick={() => markReady(b.id)} style={{ ...btn('#047857', '#d1fae5'), fontSize: 12, padding: '8px 14px' }}>Hazır</button>
+          )}
         </div>
       ))}
     </div>
@@ -464,7 +539,32 @@ function StatusUpdateView({ kioskApi, targetStatus, label, onDone }) {
 
 // ── Teslim Et ─────────────────────────────────────────────────────────────────
 function DeliverView({ kioskApi, onDone }) {
-  const sigRef = useRef(null)
+  const [mode, setMode] = useState(null) // 'staff' | 'resident'
+
+  return (
+    <div style={card}>
+      <h2 style={{ fontSize: 18, fontWeight: 600, color: '#cbd5e1', margin: 0 }}>🚚 Teslim Et</h2>
+      {!mode && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <button onClick={() => setMode('staff')}
+            style={{ ...btn('#1e3a5f', '#93c5fd'), padding: 20, fontSize: 15, borderRadius: 14, display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <span>👷 Personel Teslimi</span>
+            <span style={{ fontSize: 11, color: '#60a5fa' }}>AVS görevlisi hazır torbayı teslim eder</span>
+          </button>
+          <button onClick={() => setMode('resident')}
+            style={{ ...btn('#14532d', '#86efac'), padding: 20, fontSize: 15, borderRadius: 14, display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <span>🙋 Sakin Teslimi</span>
+            <span style={{ fontSize: 11, color: '#4ade80' }}>Sakin kendi torbalarını alır, imzalar</span>
+          </button>
+        </div>
+      )}
+      {mode === 'staff'    && <StaffDeliverForm kioskApi={kioskApi} onBack={() => setMode(null)} />}
+      {mode === 'resident' && <ResidentDeliverForm onBack={() => setMode(null)} />}
+    </div>
+  )
+}
+
+function StaffDeliverForm({ kioskApi, onBack }) {
   const blocks = useBlocks()
   const [block, setBlock] = useState('')
   const [bags, setBags] = useState([])
@@ -488,8 +588,9 @@ function DeliverView({ kioskApi, onDone }) {
   }
 
   return (
-    <div style={card}>
-      <h2 style={{ fontSize: 18, fontWeight: 600, color: '#cbd5e1', margin: 0 }}>🚚 Teslim Et</h2>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <button onClick={onBack} style={{ ...btn('#1e293b', '#94a3b8'), fontSize: 12, alignSelf: 'flex-start', padding: '6px 12px' }}>← Geri</button>
+      <h3 style={{ fontSize: 15, color: '#93c5fd', margin: 0 }}>👷 Personel Teslimi</h3>
       {success && <div style={{ color: '#4ade80', fontSize: 13 }}>✓ Teslim edildi</div>}
       <div>
         <label style={lbl}>Blok (opsiyonel)</label>
@@ -506,15 +607,106 @@ function DeliverView({ kioskApi, onDone }) {
       {bags.map(b => (
         <div key={b.id} onClick={() => setSelectedBag(b)}
           style={{ background: '#1e293b', borderRadius: 12, padding: 12, cursor: 'pointer', border: `2px solid ${selectedBag?.id === b.id ? '#3b82f6' : 'transparent'}` }}>
+          {b.bag_no && <div style={{ fontSize: 11, color: '#38bdf8', fontFamily: 'monospace' }}>{b.bag_no}</div>}
           <div style={{ fontSize: 14, color: '#e2e8f0', fontWeight: 500 }}>{b.block} — {b.room_no}</div>
           <div style={{ fontSize: 12, color: '#64748b' }}>{b.item_count} torba{b.intake_name ? ` · ${b.intake_name}` : ''}</div>
         </div>
       ))}
       {selectedBag && (
         <>
-          <div><label style={lbl}>Teslim İmzası</label><SigPad sigRef={sigRef} /></div>
           {error && <div style={{ color: '#f87171', fontSize: 13 }}>{error}</div>}
           <button onClick={deliver} style={{ ...btn('#b45309'), padding: 14 }}>Teslim Onayla</button>
+        </>
+      )}
+    </div>
+  )
+}
+
+function ResidentDeliverForm({ onBack }) {
+  const sigRef = useRef(null)
+  const [step, setStep] = useState('search') // 'search' | 'bags'
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState([])
+  const [residentToken, setResidentToken] = useState(null)
+  const [bags, setBags] = useState([])
+  const [selectedBag, setSelectedBag] = useState(null)
+  const [success, setSuccess] = useState(false)
+  const [error, setError] = useState('')
+
+  async function searchResident() {
+    if (query.trim().length < 2) return
+    try {
+      const res = await api.get(`/checkin/search?q=${encodeURIComponent(query.trim())}`)
+      setResults(res.data)
+    } catch { setError('Arama başarısız') }
+  }
+
+  async function loginResident(person) {
+    try {
+      const res = await api.get('/self-service/laundry-kiosk/bags?status=ready')
+      setBags(res.data)
+      setResidentToken(person)
+      setStep('bags')
+    } catch { setError('Yüklenemedi') }
+  }
+
+  async function deliver() {
+    if (!selectedBag || !residentToken) return
+    setError('')
+    const sig = sigRef.current?.isEmpty() ? null : sigRef.current?.toDataURL()
+    try {
+      await api.post(`/self-service/laundry-kiosk/deliver-resident/${selectedBag.id}`, { signature: sig })
+      setBags(prev => prev.filter(b => b.id !== selectedBag.id))
+      setSelectedBag(null)
+      setSuccess(true); setTimeout(() => setSuccess(false), 2000)
+    } catch (e) { setError(e.response?.data?.error || 'Hata') }
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <button onClick={onBack} style={{ ...btn('#1e293b', '#94a3b8'), fontSize: 12, alignSelf: 'flex-start', padding: '6px 12px' }}>← Geri</button>
+      <h3 style={{ fontSize: 15, color: '#86efac', margin: 0 }}>🙋 Sakin Teslimi</h3>
+      {success && <div style={{ color: '#4ade80', fontSize: 13 }}>✓ Teslim edildi</div>}
+      {error && <div style={{ color: '#f87171', fontSize: 13 }}>{error}</div>}
+      {step === 'search' && (
+        <>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input value={query} onChange={e => setQuery(e.target.value)}
+              placeholder="İsim ile ara..." onKeyDown={e => e.key === 'Enter' && searchResident()}
+              style={{ ...input, flex: 1 }} />
+            <button onClick={searchResident} style={btn('#1d4ed8')}>Ara</button>
+          </div>
+          {results.map(p => (
+            <button key={p.id} onClick={() => loginResident(p)}
+              style={{ ...btn('#1e293b', '#e2e8f0'), textAlign: 'left', width: '100%', marginBottom: 4 }}>
+              <div style={{ fontWeight: 500 }}>{p.full_name}</div>
+              <div style={{ fontSize: 11, color: '#64748b' }}>{p.company || ''} {p.room_no ? `· Oda ${p.room_no}` : ''}</div>
+            </button>
+          ))}
+        </>
+      )}
+      {step === 'bags' && (
+        <>
+          <div style={{ fontSize: 13, color: '#94a3b8' }}>
+            Sakin: <strong style={{ color: '#e2e8f0' }}>{residentToken?.full_name}</strong>
+            <button onClick={() => { setStep('search'); setResults([]); setBags([]); setResidentToken(null) }}
+              style={{ marginLeft: 12, background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: 11 }}>Değiştir</button>
+          </div>
+          {bags.length === 0 && <div style={{ color: '#475569', fontSize: 13 }}>Hazır torba yok</div>}
+          {bags.map(b => (
+            <div key={b.id} onClick={() => setSelectedBag(b)}
+              style={{ background: '#1e293b', borderRadius: 12, padding: 12, cursor: 'pointer', border: `2px solid ${selectedBag?.id === b.id ? '#22c55e' : 'transparent'}` }}>
+              {b.bag_no && <div style={{ fontSize: 11, color: '#38bdf8', fontFamily: 'monospace' }}>{b.bag_no}</div>}
+              <div style={{ fontSize: 14, color: '#e2e8f0', fontWeight: 500 }}>{b.block} — {b.room_no}</div>
+              <div style={{ fontSize: 12, color: '#64748b' }}>{b.item_count} torba</div>
+            </div>
+          ))}
+          {selectedBag && (
+            <>
+              <div><label style={lbl}>İmza</label><SigPad sigRef={sigRef} /></div>
+              <button onClick={deliver} style={{ ...btn('#15803d'), padding: 14 }}>Teslim Onayla</button>
+            </>
+          )}
         </>
       )}
     </div>
@@ -606,57 +798,7 @@ function GarmentForm({ kioskApi, onDone }) {
   )
 }
 
-// ── Ütü ───────────────────────────────────────────────────────────────────────
-function IronView({ kioskApi, onDone }) {
-  const blocks = useBlocks()
-  const [block, setBlock] = useState('')
-  const [bags, setBags] = useState([])
-  const [success, setSuccess] = useState(false)
-
-  async function search() {
-    const res = await kioskApi.get(`/self-service/laundry-kiosk/bags${block ? `?block=${block}` : ''}`)
-    setBags(res.data)
-  }
-
-  async function toggleIron(bag) {
-    await kioskApi.put(`/self-service/laundry-kiosk/bags/${bag.id}/ironing`, { needs_ironing: !bag.needs_ironing })
-    setBags(bags => bags.map(b => b.id === bag.id ? { ...b, needs_ironing: !bag.needs_ironing } : b))
-    setSuccess(true); setTimeout(() => setSuccess(false), 2000)
-  }
-
-  return (
-    <div style={card}>
-      <h2 style={{ fontSize: 18, fontWeight: 600, color: '#cbd5e1', margin: 0 }}>🔥 Ütü</h2>
-      {success && <div style={{ color: '#4ade80', fontSize: 13 }}>✓ Güncellendi</div>}
-      <div>
-        <label style={lbl}>Blok (opsiyonel)</label>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <button type="button" onClick={() => setBlock('')}
-            style={{ ...btn(!block ? '#1d4ed8' : '#1e293b', !block ? '#fff' : '#64748b'), fontSize: 13, padding: '8px 14px' }}>Tümü</button>
-          {blocks.map(b => (
-            <button key={b} type="button" onClick={() => setBlock(b)}
-              style={{ ...btn(block === b ? '#1d4ed8' : '#1e293b', block === b ? '#fff' : '#64748b'), fontSize: 13, padding: '8px 14px' }}>{b}</button>
-          ))}
-        </div>
-      </div>
-      <button onClick={search} style={{ ...btn('#334155', '#e2e8f0') }}>Torbaları Getir</button>
-      {bags.map(b => (
-        <div key={b.id} style={{ background: '#1e293b', borderRadius: 12, padding: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div>
-            <div style={{ fontSize: 14, color: '#e2e8f0', fontWeight: 500 }}>{b.block} — {b.room_no}</div>
-            <div style={{ fontSize: 12, color: '#64748b' }}>{b.item_count} adet{b.intake_name ? ` · ${b.intake_name}` : ''}</div>
-          </div>
-          <button onClick={() => toggleIron(b)}
-            style={{ ...btn(b.needs_ironing ? '#9a3412' : '#334155', b.needs_ironing ? '#fed7aa' : '#94a3b8'), fontSize: 12, padding: '8px 14px' }}>
-            {b.needs_ironing ? '🔥 Ütü Var' : 'Ütü Yok'}
-          </button>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-// ── Makine ────────────────────────────────────────────────────────────────────
+// ── Makineye Yükle ────────────────────────────────────────────────────────────
 function MachineView({ kioskApi, onDone }) {
   const [machines, setMachines] = useState([])
   const [bags, setBags] = useState([])
@@ -666,7 +808,7 @@ function MachineView({ kioskApi, onDone }) {
 
   useEffect(() => {
     kioskApi.get('/self-service/laundry-kiosk/machines').then(r => setMachines(r.data)).catch(() => {})
-    kioskApi.get('/self-service/laundry-kiosk/bags?status=collected').then(r => setBags(r.data)).catch(() => {})
+    kioskApi.get('/self-service/laundry-kiosk/bags?status=dirty').then(r => setBags(r.data)).catch(() => {})
   }, [])
 
   async function assign(machineId) {
@@ -681,30 +823,37 @@ function MachineView({ kioskApi, onDone }) {
 
   return (
     <div style={card}>
-      <h2 style={{ fontSize: 18, fontWeight: 600, color: '#cbd5e1', margin: 0 }}>⚙️ Makine</h2>
+      <h2 style={{ fontSize: 18, fontWeight: 600, color: '#cbd5e1', margin: 0 }}>⚙️ Makineye Yükle</h2>
       {success && <div style={{ color: '#4ade80', fontSize: 13 }}>✓ Makineye atandı</div>}
       {error && <div style={{ color: '#f87171', fontSize: 13 }}>{error}</div>}
       <div>
-        <label style={lbl}>Torba Seç (Toplandı)</label>
-        {bags.length === 0 && <div style={{ color: '#475569', fontSize: 13 }}>Toplanmış torba yok</div>}
+        <label style={lbl}>Torba Seç (Kirli)</label>
+        {bags.length === 0 && <div style={{ color: '#475569', fontSize: 13 }}>Kirli torba yok</div>}
         {bags.map(b => (
           <button key={b.id} type="button" onClick={() => setSelectedBag(b)}
             style={{ ...btn(selectedBag?.id === b.id ? '#1d4ed8' : '#1e293b', selectedBag?.id === b.id ? '#fff' : '#94a3b8'), width: '100%', textAlign: 'left', marginBottom: 4 }}>
-            {b.block} — {b.room_no} · {b.item_count} adet{b.intake_name ? ` · ${b.intake_name}` : ''}
+            {b.bag_no ? `${b.bag_no} · ` : ''}{b.block} — {b.room_no} · {b.item_count} adet{b.intake_name ? ` · ${b.intake_name}` : ''}
           </button>
         ))}
       </div>
       {selectedBag && (
         <div>
           <label style={lbl}>Makine Seç</label>
-          {machines.map(m => (
-            <button key={m.id} type="button" onClick={() => assign(m.id)}
-              style={{ ...btn('#1e293b', '#cbd5e1'), width: '100%', textAlign: 'left', marginBottom: 4 }}
-              onMouseEnter={e => e.currentTarget.style.background = '#164e63'}
-              onMouseLeave={e => e.currentTarget.style.background = '#1e293b'}>
-              {m.name} · {m.type === 'washer' ? '🫧 Çamaşır' : '💨 Kurutucu'} · {m.active_items || 0} aktif
-            </button>
-          ))}
+          {machines.map(m => {
+            let timerLabel = ''
+            if (m.timer_end) {
+              const remaining = Math.ceil((new Date(m.timer_end) - new Date()) / 60000)
+              timerLabel = remaining > 0 ? ` · ⏱ ${remaining}dk` : ' · ✓ Bitti'
+            }
+            return (
+              <button key={m.id} type="button" onClick={() => assign(m.id)}
+                style={{ ...btn('#1e293b', '#cbd5e1'), width: '100%', textAlign: 'left', marginBottom: 4 }}
+                onMouseEnter={e => e.currentTarget.style.background = '#164e63'}
+                onMouseLeave={e => e.currentTarget.style.background = '#1e293b'}>
+                {m.name} · {m.type === 'washer' ? '🫧 Çamaşır' : '💨 Kurutucu'} · {m.active_items || 0} aktif{timerLabel}
+              </button>
+            )
+          })}
         </div>
       )}
     </div>
