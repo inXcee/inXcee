@@ -730,10 +730,10 @@ export function initDB() {
         ('Mont',        '🧥', 5),
         ('Elbise',      '👗', 6),
         ('İç Çamaşır',  '🩲', 7),
-        ('Çorap',       '🧤', 8),
+        ('Çorap',       '🧦', 8),
         ('Şort',        '🩳', 9),
         ('Pijama',      '🌙', 10),
-        ('Havlu',       '🪣', 11),
+        ('Havlu',       '🧺', 11),
         ('Takım Elbise','🤵', 12)`)
     }
   } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] garment_types seed:', e.message) }

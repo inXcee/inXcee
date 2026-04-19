@@ -1364,6 +1364,16 @@ describe('Garment Types', () => {
     expect(rows[0].emoji).toBeTruthy()
     expect(rows[0].name).toBeTruthy()
   })
+
+  it('tablo kolonları doğru', () => {
+    const db = getDB()
+    const cols = db.prepare("PRAGMA table_info(laundry_garment_types)").all().map(c => c.name)
+    expect(cols).toContain('name')
+    expect(cols).toContain('emoji')
+    expect(cols).toContain('sort_order')
+    expect(cols).toContain('is_active')
+    expect(cols).toContain('image_url')
+  })
 })
 
 describe('laundry v5 migrations', () => {
