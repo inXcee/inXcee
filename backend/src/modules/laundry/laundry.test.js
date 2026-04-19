@@ -1374,6 +1374,53 @@ describe('Garment Types', () => {
     expect(cols).toContain('is_active')
     expect(cols).toContain('image_url')
   })
+
+  it('GET /laundry/garment-types aktif tipleri döner', async () => {
+    const res = await request(app)
+      .get('/api/laundry/garment-types')
+      .set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(200)
+    expect(Array.isArray(res.body)).toBe(true)
+    expect(res.body.length).toBeGreaterThan(0)
+    expect(res.body[0]).toHaveProperty('id')
+    expect(res.body[0]).toHaveProperty('name')
+    expect(res.body[0]).toHaveProperty('emoji')
+    expect(res.body[0]).toHaveProperty('sort_order')
+  })
+
+  it('POST /laundry/garment-types yeni tip ekler', async () => {
+    const res = await request(app)
+      .post('/api/laundry/garment-types')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Bornoz', emoji: '🛁', sort_order: 99 })
+    expect(res.status).toBe(201)
+    expect(res.body.name).toBe('Bornoz')
+    expect(res.body.id).toBeTruthy()
+  })
+
+  it('PATCH /laundry/garment-types/:id günceller', async () => {
+    const db = getDB()
+    const existing = db.prepare('SELECT id FROM laundry_garment_types LIMIT 1').get()
+    const res = await request(app)
+      .patch(`/api/laundry/garment-types/${existing.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Gömlek (güncellendi)' })
+    expect(res.status).toBe(200)
+    expect(res.body.name).toBe('Gömlek (güncellendi)')
+  })
+
+  it('GET /laundry/garment-types/all pasifler dahil döner', async () => {
+    const db = getDB()
+    const first = db.prepare('SELECT id FROM laundry_garment_types LIMIT 1').get()
+    db.prepare("UPDATE laundry_garment_types SET is_active=0 WHERE id=?").run(first.id)
+    const res = await request(app)
+      .get('/api/laundry/garment-types/all')
+      .set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(200)
+    expect(res.body.some(t => t.is_active === 0)).toBe(true)
+    // restore
+    db.prepare("UPDATE laundry_garment_types SET is_active=1 WHERE id=?").run(first.id)
+  })
 })
 
 describe('laundry v5 migrations', () => {

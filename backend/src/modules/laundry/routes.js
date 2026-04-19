@@ -3,7 +3,7 @@ import { requireRole } from '../../shared/auth/middleware.js'
 import { upload, verifyMagicBytes } from '../../shared/uploads/middleware.js'
 import { getDB } from '../../shared/db/index.js'
 import * as svc from './service.js'
-import { collectItemQuery } from './queries.js'
+import { collectItemQuery, listGarmentTypesQuery, insertGarmentTypeQuery, updateGarmentTypeQuery, reorderGarmentTypesQuery } from './queries.js'
 import { notifyItemReady, sendFoundMessage } from './whatsapp.js'
 
 export const laundryRouter = Router()
@@ -631,4 +631,47 @@ laundryRouter.delete('/machines/:machine_id/supplies/:supply_id', ...slaWrite, (
     svc.deleteMachineSupplyService(+req.params.machine_id, +req.params.supply_id, req.user.id)
     res.json({ ok: true })
   } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
+// GARMENT TYPES
+// ═══════════════════════════════════════════════════════════════════════════
+
+laundryRouter.get('/garment-types/all', ...laundryFull, (req, res) => {
+  try {
+    res.json(listGarmentTypesQuery(true))
+  } catch(e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+laundryRouter.get('/garment-types', ...laundryRead, (req, res) => {
+  try {
+    res.json(listGarmentTypesQuery(false))
+  } catch(e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+laundryRouter.post('/garment-types', ...laundryFull, (req, res) => {
+  try {
+    const { name, emoji, image_url, sort_order } = req.body
+    if (!name) return res.status(400).json({ error: 'İsim zorunlu' })
+    const result = insertGarmentTypeQuery({ name, emoji, image_url, sort_order })
+    res.status(201).json(result)
+  } catch(e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+laundryRouter.patch('/garment-types/:id', ...laundryFull, (req, res) => {
+  try {
+    const { name, emoji, image_url, sort_order, is_active } = req.body
+    const result = updateGarmentTypeQuery(+req.params.id, { name, emoji, image_url, sort_order, is_active })
+    if (!result) return res.status(404).json({ error: 'Bulunamadı' })
+    res.json(result)
+  } catch(e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+laundryRouter.post('/garment-types/reorder', ...laundryFull, (req, res) => {
+  try {
+    const { items } = req.body
+    if (!Array.isArray(items)) return res.status(400).json({ error: 'items array gerekli' })
+    reorderGarmentTypesQuery(items)
+    res.json({ ok: true })
+  } catch(e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
