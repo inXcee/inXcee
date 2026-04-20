@@ -48,6 +48,12 @@ const COLOR_MAP = {
   'Bej': '#d4b896', 'Kahve': '#78350f',
 }
 
+const GARMENT_COLOR_HEX = {
+  white: '#f8fafc', black: '#0f172a', gray: '#94a3b8', navy: '#1d4ed8',
+  blue: '#3b82f6', red: '#dc2626', green: '#16a34a', yellow: '#ca8a04',
+  orange: '#ea580c', purple: '#7c3aed', pink: '#db2777', brown: '#92400e', charcoal: '#4b5563',
+}
+
 // ── WA link helper ─────────────────────────────────────────────
 function waLink(phone) {
   if (!phone) return null
@@ -70,35 +76,82 @@ function ExpandedSection({ item, onLost, onFound }) {
 
   return (
     <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid var(--border)' }}>
-      {/* Kıyafet detayı */}
-      {item.clothing_items && (() => {
-        try {
-          const cl = JSON.parse(item.clothing_items)
-          return (
-            <div style={{ marginBottom: 8 }}>
-              <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--text3)', letterSpacing: 1, marginBottom: 4 }}>KIYAFETler</div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                {cl.map((c, i) => (
-                  <span key={i} style={{
-                    padding: '2px 8px', borderRadius: 12, fontSize: 9, fontFamily: 'var(--mono)',
-                    background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text2)',
-                    display: 'flex', alignItems: 'center', gap: 5,
-                  }}>
-                    {CLOTHING_ICONS[c.type] || ''} {c.qty}× {c.type}
-                    {c.color && (
-                      <span style={{
-                        width: 10, height: 10, borderRadius: '50%',
-                        background: COLOR_MAP[c.color] || '#888',
-                        border: '1px solid rgba(255,255,255,0.2)',
-                        flexShrink: 0, display: 'inline-block',
-                      }} title={c.color} />
-                    )}
-                  </span>
-                ))}
+      {/* Kıyafet detayı — garments_json (yeni format) öncelikli, clothing_items fallback */}
+      {(() => {
+        if (item.garments_json) {
+          try {
+            const gs = JSON.parse(item.garments_json)
+            if (!Array.isArray(gs) || gs.length === 0) return null
+            return (
+              <div style={{ marginBottom: 8 }}>
+                <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--text3)', letterSpacing: 1, marginBottom: 4 }}>KIYAFETler ({gs.length})</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {gs.map((g, i) => {
+                    const colors = g.colors ?? (g.color ? [{ key: g.color, label: g.color_label || g.color }] : [])
+                    return (
+                      <div key={i} style={{
+                        display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap',
+                        padding: '4px 8px', borderRadius: 6,
+                        background: 'var(--surface)', border: '1px solid var(--border)',
+                      }}>
+                        <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text)', fontWeight: 600, flexShrink: 0 }}>
+                          {g.emoji || '👔'} {g.type_name}
+                        </span>
+                        {g.count > 1 && (
+                          <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', flexShrink: 0 }}>×{g.count}</span>
+                        )}
+                        {colors.map(c => (
+                          <span key={c.key} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
+                            <span style={{
+                              width: 10, height: 10, borderRadius: '50%',
+                              background: GARMENT_COLOR_HEX[c.key] || '#888',
+                              border: c.key === 'white' ? '1px solid rgba(255,255,255,0.3)' : 'none',
+                              display: 'inline-block',
+                            }} title={c.label} />
+                            <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>{c.label}</span>
+                          </span>
+                        ))}
+                        {g.pattern && g.pattern !== 'solid' && g.pattern_label && (
+                          <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', fontStyle: 'italic' }}>{g.pattern_label}</span>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
               </div>
-            </div>
-          )
-        } catch { return null }
+            )
+          } catch { return null }
+        }
+        if (item.clothing_items) {
+          try {
+            const cl = JSON.parse(item.clothing_items)
+            return (
+              <div style={{ marginBottom: 8 }}>
+                <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--text3)', letterSpacing: 1, marginBottom: 4 }}>KIYAFETler</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                  {cl.map((c, i) => (
+                    <span key={i} style={{
+                      padding: '2px 8px', borderRadius: 12, fontSize: 9, fontFamily: 'var(--mono)',
+                      background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text2)',
+                      display: 'flex', alignItems: 'center', gap: 5,
+                    }}>
+                      {CLOTHING_ICONS[c.type] || ''} {c.qty}× {c.type}
+                      {c.color && (
+                        <span style={{
+                          width: 10, height: 10, borderRadius: '50%',
+                          background: COLOR_MAP[c.color] || '#888',
+                          border: '1px solid rgba(255,255,255,0.2)',
+                          flexShrink: 0, display: 'inline-block',
+                        }} title={c.color} />
+                      )}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )
+          } catch { return null }
+        }
+        return null
       })()}
 
       {/* Timeline */}
@@ -308,8 +361,14 @@ function KanbanCard({ item, machines, onDeliver, onDamage, onPersonClick, onFoun
       {/* Row 2: meta */}
       <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', marginBottom: 8, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
         <span>{item.item_count} parça</span>
-        {item.clothing_items && (() => {
+        {(item.garments_json || item.clothing_items) && (() => {
           try {
+            if (item.garments_json) {
+              const gs = JSON.parse(item.garments_json)
+              if (!Array.isArray(gs) || gs.length === 0) return null
+              const preview = gs.slice(0, 2).map(g => `${g.emoji || ''}${g.count > 1 ? `${g.count}× ` : ''}${g.type_name}`).join(' · ')
+              return <span style={{ color: 'var(--text2)' }}>· {preview}{gs.length > 2 ? ` +${gs.length - 2}` : ''}</span>
+            }
             const cl = JSON.parse(item.clothing_items)
             const preview = cl.slice(0, 2).map(c => `${CLOTHING_ICONS[c.type] || ''}${c.qty} ${c.type}`).join(' · ')
             return <span style={{ color: 'var(--text2)' }}>· {preview}{cl.length > 2 ? ` +${cl.length - 2}` : ''}</span>
