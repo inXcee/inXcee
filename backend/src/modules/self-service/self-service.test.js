@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll } from 'vitest'
 import request from 'supertest'
 import jwt from 'jsonwebtoken'
 import app from '../../app.js'
-import { initDB } from '../../shared/db/index.js'
+import { initDB, getDB } from '../../shared/db/index.js'
 import { seedDev } from '../../shared/db/seed.js'
 
 let token
@@ -227,7 +227,7 @@ describe('Laundry Kiosk endpoints', () => {
       .send({ block: 'A', room_no: '101', item_count: 2 })
     expect(bagRes.status).toBe(201)
     const bagId = bagRes.body.id
-    // status = pending_collection, ironing-complete reddedilmeli
+    // status = dirty, ironing-complete reddedilmeli
     const res = await request(app)
       .post(`/api/self-service/laundry-kiosk/bags/${bagId}/ironing-complete`)
       .set('Authorization', `Bearer ${avsToken}`)
@@ -249,5 +249,46 @@ describe('Laundry Kiosk endpoints', () => {
       .send({ file_count: 2 })
     expect(res.status).toBe(400)
     expect(res.body).toHaveProperty('error')
+  })
+
+  it('POST /laundry-kiosk/bag — direkt dirty olur (pending_collection değil)', async () => {
+    const res = await request(app)
+      .post('/api/self-service/laundry-kiosk/bag')
+      .set('Authorization', `Bearer ${avsToken}`)
+      .send({ block: 'A', room_no: '101', item_count: 1 })
+    expect(res.status).toBe(201)
+    const db = getDB()
+    const item = db.prepare('SELECT status FROM laundry_items WHERE id=?').get(res.body.id)
+    expect(item.status).toBe('dirty')
+  })
+
+  it('POST /laundry-kiosk/garment — M1 blok dirty olur', async () => {
+    const res = await request(app)
+      .post('/api/self-service/laundry-kiosk/garment')
+      .set('Authorization', `Bearer ${avsToken}`)
+      .send({
+        block: 'M1', room_no: '101',
+        clothing_items: [{ type_id: 1, type_name: 'Gömlek', emoji: '👔', count: 1, colors: [], pattern: 'solid', pattern_label: 'Düz' }],
+      })
+    expect(res.status).toBe(201)
+    const db = getDB()
+    const item = db.prepare('SELECT status, needs_ironing FROM laundry_items WHERE id=?').get(res.body.id)
+    expect(item.status).toBe('dirty')
+    expect(item.needs_ironing).toBe(0)
+  })
+
+  it('POST /laundry-kiosk/garment — A blok (M/S dışı) ironing olur', async () => {
+    const res = await request(app)
+      .post('/api/self-service/laundry-kiosk/garment')
+      .set('Authorization', `Bearer ${avsToken}`)
+      .send({
+        block: 'A', room_no: '101',
+        clothing_items: [{ type_id: 1, type_name: 'Gömlek', emoji: '👔', count: 1, colors: [], pattern: 'solid', pattern_label: 'Düz' }],
+      })
+    expect(res.status).toBe(201)
+    const db = getDB()
+    const item = db.prepare('SELECT status, needs_ironing FROM laundry_items WHERE id=?').get(res.body.id)
+    expect(item.status).toBe('ironing')
+    expect(item.needs_ironing).toBe(1)
   })
 })

@@ -171,7 +171,7 @@ selfServiceRouter.post('/laundry-kiosk/bag', requireAvsKiosk, (req, res) => {
     const id = insertItemQuery({
       room_id: room.id,
       item_count: count,
-      status: 'pending_collection',
+      status: 'dirty',
       is_premium: is_premium ? 1 : 0,
       notes: notes || null,
       urgent: urgent ? 1 : 0,
@@ -296,6 +296,8 @@ selfServiceRouter.post('/laundry-kiosk/bags/:id/deliver', requireAvsKiosk, (req,
   } catch (e) { res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
+const MS_BLOCKS = new Set(['M1', 'M2', 'M3', 'S1', 'S2', 'S3'])
+
 selfServiceRouter.post('/laundry-kiosk/garment', requireAvsKiosk, (req, res) => {
   const { block, room_no, personnel_id, clothing_items, intake_signature } = req.body
   if (!block || !room_no) return res.status(400).json({ error: 'block ve room_no gerekli' })
@@ -309,11 +311,15 @@ selfServiceRouter.post('/laundry-kiosk/garment', requireAvsKiosk, (req, res) => 
       ? db.prepare('SELECT full_name FROM personnel WHERE id=?').get(Number(personnel_id))?.full_name
       : null
     const total = clothing_items.reduce((s, c) => s + (Number(c.count) || 1), 0)
+    const isMS = MS_BLOCKS.has(block.toUpperCase())
+    const itemStatus = isMS ? 'dirty' : 'ironing'
     const id = insertItemQuery({
       room_id: room.id,
       item_count: total,
+      status: itemStatus,
+      needs_ironing: isMS ? 0 : 1,
       is_premium: 1,
-      clothing_items: JSON.stringify(clothing_items),
+      garments_json: JSON.stringify(clothing_items),
       intake_name: intake_name || null,
       intake_signature: intake_signature || null,
       created_by: null,
