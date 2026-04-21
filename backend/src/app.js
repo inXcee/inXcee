@@ -24,6 +24,7 @@ import { whatsappRouter } from './shared/whatsapp/routes.js'
 import { emailRouter } from './modules/email/routes.js'
 import { announcementsRouter } from './modules/announcements/routes.js'
 import { avsWorkersRouter } from './modules/avs-workers/routes.js'
+import { mobileAuthRouter } from './modules/mobile-auth/routes.js'
 
 const allowedOrigins = process.env.ALLOWED_ORIGIN
   ? process.env.ALLOWED_ORIGIN.split(',').map(o => o.trim())
@@ -99,6 +100,7 @@ const readLimiter = rateLimit({
 })
 
 app.use('/api/auth', authLimiter, authRouter)
+app.use('/api/mobile/auth', writeLimiter, mobileAuthRouter)
 app.use('/api/checkin', writeLimiter, checkinRouter)
 app.use('/api/capacity', writeLimiter, capacityRouter)
 app.use('/api/laundry', writeLimiter, laundryRouter)
