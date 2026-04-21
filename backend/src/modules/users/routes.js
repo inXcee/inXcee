@@ -38,3 +38,9 @@ usersRouter.delete('/:id', ...adminOnly, (req, res) => {
   if (result.error) return res.status(result.status).json({ error: result.error })
   res.json(result)
 })
+
+usersRouter.patch('/:id/mobile-pin', ...adminOnly, (req, res) => {
+  const result = service.setMobilePinService(+req.params.id, req.body.pin ?? null, req.user.id)
+  if (result.error) return res.status(result.status).json({ error: result.error })
+  res.json(result)
+})

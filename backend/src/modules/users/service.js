@@ -1,5 +1,6 @@
 import bcrypt from 'bcryptjs'
 import * as queries from './queries.js'
+import { getDB } from '../../shared/db/index.js'
 import { logAudit } from '../../shared/audit.js'
 
 const VALID_ROLES = ['campus_manager', 'shift_supervisor', 'technical', 'laundry', 'housekeeper']
@@ -67,5 +68,19 @@ export function removeUser(id, removedBy) {
 
   queries.deleteUser(id)
   logAudit(removedBy, 'user_delete', 'users', id, existing.username)
+  return { ok: true }
+}
+
+export function setMobilePinService(userId, pin, actorId) {
+  const db = getDB()
+  const user = db.prepare('SELECT id FROM users WHERE id=?').get(userId)
+  if (!user) return { error: 'Kullanıcı bulunamadı', status: 404 }
+  if (pin === null || pin === '') {
+    db.prepare('UPDATE users SET mobile_pin=NULL WHERE id=?').run(userId)
+    return { ok: true }
+  }
+  if (!/^\d{4}$/.test(pin)) return { error: 'PIN 4 haneli rakam olmalı', status: 400 }
+  const hashed = bcrypt.hashSync(pin, 10)
+  db.prepare('UPDATE users SET mobile_pin=? WHERE id=?').run(hashed, userId)
   return { ok: true }
 }
