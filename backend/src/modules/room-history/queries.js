@@ -148,5 +148,17 @@ export function getRoomTimeline(block, roomNo, days = 7) {
     ORDER BY ra.bed_no
   `).all(room?.id)
 
-  return { room, occupants, cleanings, faults }
+  // Geçmiş sakinler
+  const pastOccupants = db.prepare(`
+    SELECT p.full_name, p.company, ra.bed_no, ra.assigned_at, ra.check_out_at,
+      u.full_name as assigned_by_name
+    FROM room_assignments ra
+    JOIN personnel p ON p.id = ra.personnel_id
+    LEFT JOIN users u ON u.id = ra.assigned_by
+    WHERE ra.room_id = ? AND ra.check_out_at IS NOT NULL
+      AND DATE(ra.check_out_at) >= DATE('now', ?)
+    ORDER BY ra.check_out_at DESC
+  `).all(room?.id, `-${days} days`)
+
+  return { room, occupants, pastOccupants, cleanings, faults }
 }

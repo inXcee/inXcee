@@ -45,6 +45,18 @@ export function reopenRequestService(id) {
   })
 }
 
+export function assignRequestService(id, technicianId, userId) {
+  q.assignRequest(id, technicianId)
+  const req = q.getRequestById(id)
+  createNotification({
+    message: `Arıza #${id} (${req?.location || ''}) teknisyene atandı`,
+    type: 'info',
+    module: 'maintenance',
+    target_role: 'technical',
+  })
+  logAudit(userId, 'assign', 'maintenance', id, `Teknisyen ID: ${technicianId}`)
+}
+
 export function startRequestService(id, userId) {
   const changes = q.startRequest(id)
   if (!changes) throw new Error('Başlatılamadı — talep açık durumda değil')

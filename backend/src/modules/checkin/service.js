@@ -25,7 +25,7 @@ export const getUnreturnedZimmetService = q.getUnreturnedZimmet
 export function registerService(data, userId) {
   const existing = q.lookupPerson(data.tc_no, data.passport_no)
   if (existing) return { id: existing.id, existing: true }
-  const id = q.insertPersonnel(data)
+  const id = q.insertPersonnel({ ...data, created_by: userId })
   createNotification({
     message: `Yeni personel kaydı: ${data.full_name}${data.company ? ' (' + data.company + ')' : ''}`,
     type: 'info',

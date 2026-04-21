@@ -33,7 +33,8 @@ CREATE TABLE IF NOT EXISTS personnel (
   department_id INTEGER REFERENCES departments(id),
   check_in_date DATETIME,
   check_out_date DATETIME,
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  created_by INTEGER REFERENCES users(id)
 );
 
 CREATE TABLE IF NOT EXISTS rooms (

@@ -77,6 +77,16 @@ export function reopenRequest(id) {
   `).run(id)
 }
 
+export function assignRequest(id, technicianId) {
+  const db = getDB()
+  const tech = db.prepare('SELECT id FROM technicians WHERE id=?').get(technicianId)
+  if (!tech) throw new Error('Teknisyen bulunamadı')
+  const r = db.prepare(
+    "UPDATE maintenance_requests SET assigned_to=? WHERE id=?"
+  ).run(technicianId, id)
+  if (!r.changes) throw new Error('Talep bulunamadı')
+}
+
 export function startRequest(id) {
   const db = getDB()
   const r = db.prepare(`

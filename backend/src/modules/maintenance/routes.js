@@ -3,13 +3,7 @@ import { requireRole } from '../../shared/auth/middleware.js'
 import { upload, verifyMagicBytes } from '../../shared/uploads/middleware.js'
 import { getDB } from '../../shared/db/index.js'
 import * as svc from './service.js'
-
-function paginate(req) {
-  const page = Math.max(1, parseInt(req.query.page) || 1)
-  const limit = Math.min(200, Math.max(1, parseInt(req.query.limit) || 50))
-  const offset = (page - 1) * limit
-  return { page, limit, offset }
-}
+import { paginate } from '../../shared/paginate.js'
 
 export const maintenanceRouter = Router()
 const techAccess = requireRole('campus_manager', 'shift_supervisor', 'technical')
@@ -63,6 +57,15 @@ maintenanceRouter.patch('/requests/:id/wait-reason', ...techAccess, (req, res) =
 maintenanceRouter.patch('/requests/:id/priority', ...techAccess, (req, res) => {
   try { svc.updateRequestPriorityService(+req.params.id, req.body.priority); res.json({ ok: true }) }
   catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+maintenanceRouter.patch('/requests/:id/assign', ...techAccess, (req, res) => {
+  try {
+    const { technician_id } = req.body
+    if (!technician_id) return res.status(400).json({ error: 'Teknisyen ID gerekli' })
+    svc.assignRequestService(+req.params.id, +technician_id, req.user.id)
+    res.json({ ok: true })
+  } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
 maintenanceRouter.patch('/requests/:id/start', ...techAccess, (req, res) => {

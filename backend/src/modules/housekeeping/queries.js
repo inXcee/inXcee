@@ -44,14 +44,14 @@ export function getTasks({ assigned_to, date, block, uncleaned } = {}) {
   return db.prepare(q).all(...params)
 }
 
-export function completeTask(taskId, userId, checklist) {
+export function completeTask(taskId, userId, checklist, viaQr = false) {
   const db = getDB()
   db.prepare(`
     UPDATE cleaning_tasks
-    SET completed_at=datetime('now'), assigned_to=?, verified_by_qr=1,
+    SET completed_at=datetime('now'), assigned_to=?, verified_by_qr=?,
         skipped=0, skip_reason=NULL, checklist=?
     WHERE id=?
-  `).run(userId, checklist ? JSON.stringify(checklist) : null, taskId)
+  `).run(userId, viaQr ? 1 : 0, checklist ? JSON.stringify(checklist) : null, taskId)
 }
 
 export function uncompleteTask(taskId) {
@@ -77,13 +77,24 @@ export function unskipTask(taskId) {
   db.prepare(`UPDATE cleaning_tasks SET skipped=0, skip_reason=NULL WHERE id=?`).run(taskId)
 }
 
+export function getFloorTaskPreview(block, floor, date) {
+  const db = getDB()
+  return db.prepare(`
+    SELECT id, area, task_type
+    FROM cleaning_tasks
+    WHERE block=? AND floor=? AND DATE(scheduled_at)=? AND completed_at IS NULL AND skipped=0
+    ORDER BY area
+  `).all(block, floor, date)
+}
+
 export function completeFloorTasks(block, floor, date, userId) {
   const db = getDB()
-  db.prepare(`
+  const r = db.prepare(`
     UPDATE cleaning_tasks
     SET completed_at=datetime('now'), assigned_to=?, skipped=0, skip_reason=NULL
     WHERE block=? AND floor=? AND DATE(scheduled_at)=? AND completed_at IS NULL AND skipped=0
   `).run(userId, block, floor, date)
+  return r.changes
 }
 
 export function getDNDRooms() {

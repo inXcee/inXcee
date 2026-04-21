@@ -34,6 +34,17 @@ export function getCheckoutPreview(personnelId) {
 export function processCheckout(personnelId, zimmetActions, userId) {
   const db = getDB()
   const tx = db.transaction(() => {
+    const unreturned = db.prepare(
+      "SELECT id FROM zimmet WHERE personnel_id=? AND returned_at IS NULL"
+    ).all(personnelId)
+    if (unreturned.length > 0) {
+      const actionedIds = new Set((zimmetActions || []).map(a => a.zimmet_id))
+      const unhandled = unreturned.filter(z => !actionedIds.has(z.id))
+      if (unhandled.length > 0) {
+        throw new Error(`${unhandled.length} adet zimmet işlenmeden çıkış yapılamaz`)
+      }
+    }
+
     // Process zimmet actions: each item can be 'return', 'damaged', 'lost'
     if (zimmetActions && zimmetActions.length > 0) {
       for (const action of zimmetActions) {

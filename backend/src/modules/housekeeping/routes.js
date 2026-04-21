@@ -16,13 +16,29 @@ housekeepingRouter.post('/tasks/generate-daily', ...hkAccess, (req, res) => {
   catch (e) { res.status(400).json({ error: e.message }) }
 })
 
+housekeepingRouter.get('/tasks/floor-preview', ...hkAccess, (req, res) => {
+  try {
+    const { block, floor, date } = req.query
+    if (!block || !floor || !date) return res.status(400).json({ error: 'block, floor, date gerekli' })
+    const tasks = svc.getFloorTaskPreviewService(block, +floor, date)
+    res.json({ count: tasks.length, tasks })
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
 housekeepingRouter.post('/tasks/complete-floor', ...hkAccess, (req, res) => {
-  try { const { block, floor, date } = req.body; svc.completeFloorTasksService(block, +floor, date, req.user.id); res.json({ ok: true }) }
+  try {
+    const { block, floor, date } = req.body
+    const count = svc.completeFloorTasksService(block, +floor, date, req.user.id)
+    res.json({ ok: true, count })
+  }
   catch (e) { res.status(400).json({ error: e.message }) }
 })
 
 housekeepingRouter.post('/tasks/:id/complete', ...hkAccess, (req, res) => {
-  try { svc.completeTaskService(+req.params.id, req.user.id, req.body.checklist || null); res.json({ ok: true }) }
+  try {
+    svc.completeTaskService(+req.params.id, req.user.id, req.body.checklist || null, !!req.body.via_qr)
+    res.json({ ok: true })
+  }
   catch (e) { res.status(400).json({ error: e.message }) }
 })
 

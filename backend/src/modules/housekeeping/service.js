@@ -6,20 +6,23 @@ export const generateDailyTasksService  = q.generateDailyTasks
 export const getTasksService            = q.getTasks
 export const getDNDRoomsService         = q.getDNDRooms
 
+export const getFloorTaskPreviewService = q.getFloorTaskPreview
+
 export function completeFloorTasksService(block, floor, date, userId) {
-  q.completeFloorTasks(block, floor, date, userId)
-  logAudit(userId, 'floor_complete', 'housekeeping', null, `${block} Kat ${floor} - ${date}`)
+  const count = q.completeFloorTasks(block, floor, date, userId)
+  logAudit(userId, 'floor_complete', 'housekeeping', null, `${block} Kat ${floor} - ${date} (${count} görev)`)
   createNotification({
-    message: `${block} Kat ${floor} tüm temizlikler tamamlandı`,
+    message: `${block} Kat ${floor} tüm temizlikler tamamlandı (${count} görev)`,
     type: 'info',
     module: 'housekeeping',
     target_role: 'campus_manager',
   })
+  return count
 }
 
-export function completeTaskService(taskId, userId, checklist) {
-  q.completeTask(taskId, userId, checklist)
-  logAudit(userId, 'task_complete', 'housekeeping', taskId)
+export function completeTaskService(taskId, userId, checklist, viaQr = false) {
+  q.completeTask(taskId, userId, checklist, viaQr)
+  logAudit(userId, 'task_complete', 'housekeeping', taskId, viaQr ? 'via_qr' : null)
 }
 
 export const uncompleteTaskService = q.uncompleteTask

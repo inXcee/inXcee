@@ -745,6 +745,9 @@ export function initDB() {
   try { db.exec(`ALTER TABLE laundry_items ADD COLUMN delivered_name TEXT`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] delivered_name:', e.message) }
   try { db.exec(`ALTER TABLE laundry_items ADD COLUMN file_count INTEGER DEFAULT NULL`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] file_count:', e.message) }
 
+  // ── Audit — personnel.created_by ─────────────────────────────────────────
+  try { db.exec('ALTER TABLE personnel ADD COLUMN created_by INTEGER REFERENCES users(id)') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] personnel.created_by:', e.message) }
+
   return db
 }
 

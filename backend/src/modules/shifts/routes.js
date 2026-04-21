@@ -1,13 +1,7 @@
 import { Router } from 'express'
 import { requireRole, requireAuth } from '../../shared/auth/middleware.js'
 import { getDB } from '../../shared/db/index.js'
-
-function paginate(req) {
-  const page = Math.max(1, parseInt(req.query.page) || 1)
-  const limit = Math.min(200, Math.max(1, parseInt(req.query.limit) || 50))
-  const offset = (page - 1) * limit
-  return { page, limit, offset }
-}
+import { paginate } from '../../shared/paginate.js'
 import {
   departmentsService, shiftDefinitionsService, scheduleService, bulkAssignService,
   staffStatusService, createLeaveService, approveLeaveService, leaveListService,

@@ -240,7 +240,7 @@ export function lostItemService(id, { notes }, userId) {
   logAudit(userId, 'laundry_lost', 'laundry', id, notes || '')
 
   createNotification({
-    message: `⚠️ ${item.block || '?'} ${item.room_no || '?'} — ${item.item_count} parça KAYIP olarak işaretlendi`,
+    message: `⚠️ ${item.block || '?'} ${item.room_no || '?'} — ${item.item_count} parça KAYIP olarak işaretlendi. Tazminat girişi yapılması gerekiyor.`,
     type: 'warning',
     module: 'laundry',
     target_role: 'shift_supervisor',

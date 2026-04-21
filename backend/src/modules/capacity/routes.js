@@ -2,16 +2,10 @@ import { Router } from 'express'
 import { requireRole } from '../../shared/auth/middleware.js'
 import { getDB } from '../../shared/db/index.js'
 import * as svc from './service.js'
+import { paginate } from '../../shared/paginate.js'
 
 export const capacityRouter = Router()
 const mgmt = requireRole('campus_manager', 'shift_supervisor')
-
-function paginate(req) {
-  const page = Math.max(1, parseInt(req.query.page) || 1)
-  const limit = Math.min(200, Math.max(1, parseInt(req.query.limit) || 50))
-  const offset = (page - 1) * limit
-  return { page, limit, offset }
-}
 
 capacityRouter.get('/rooms', ...mgmt, (req, res) => {
   try {

@@ -65,6 +65,19 @@ describe('Checkout Module', () => {
     expect(res.status).toBe(404)
   })
 
+  it('rejects checkout when zimmet items are unhandled', async () => {
+    const items = db.prepare('SELECT id FROM zimmet WHERE personnel_id=? AND returned_at IS NULL').all(personnelId)
+    // Only handle 1 of 3 — should fail
+    const res = await request(app)
+      .post('/api/checkout/process')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ personnel_id: personnelId, zimmet_actions: [
+        { zimmet_id: items[0].id, action: 'return' }
+      ] })
+    expect(res.status).toBe(400)
+    expect(res.body.error).toMatch(/zimmet/)
+  })
+
   it('processes checkout with damaged/lost items', async () => {
     const items = db.prepare('SELECT id, item_name FROM zimmet WHERE personnel_id=? AND returned_at IS NULL').all(personnelId)
     const zimmetActions = [
