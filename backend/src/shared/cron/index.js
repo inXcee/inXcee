@@ -2,7 +2,7 @@ import cron from 'node-cron'
 import { generateDailyTasks } from '../../modules/housekeeping/queries.js'
 import { createNotification } from '../notifications/service.js'
 import { getDB } from '../db/index.js'
-import { checkSlaViolations, checkMachineTimers, checkSlaPreWarnings, checkMachineMaintenanceAlerts } from '../../modules/laundry/sla.js'
+import { checkSlaViolations, checkMachineTimers, checkSlaPreWarnings, checkMachineMaintenanceAlerts, checkStuckWashingItems } from '../../modules/laundry/sla.js'
 import { getEmailSettings } from '../../modules/email/queries.js'
 import { sendMorningReport } from '../../modules/email/service.js'
 
@@ -45,6 +45,7 @@ export function startCronJobs() {
       await checkSlaViolations()
       await checkSlaPreWarnings()
       await checkMachineMaintenanceAlerts()
+      checkStuckWashingItems()
     } catch (e) { console.error('[Cron] Laundry SLA hatası:', e.message) }
   })
 

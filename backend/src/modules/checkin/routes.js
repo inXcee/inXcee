@@ -85,7 +85,9 @@ checkinRouter.get('/job-stats', ...allowed, (req, res) => {
 })
 
 checkinRouter.get('/company-personnel/:company', ...allowed, (req, res) => {
-  res.json(svc.getCompanyPersonnelService(req.params.company))
+  const limit = Math.min(500, Math.max(1, parseInt(req.query.limit) || 200))
+  const offset = Math.max(0, parseInt(req.query.offset) || 0)
+  res.json(svc.getCompanyPersonnelService(req.params.company, { limit, offset }))
 })
 
 checkinRouter.get('/company-suggestions', ...allowed, (req, res) => {

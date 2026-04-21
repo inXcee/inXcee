@@ -135,3 +135,38 @@ export function checkMachineMaintenanceAlerts() {
 
   return machines.length
 }
+
+const STUCK_WASHING_HOURS = 2
+
+/**
+ * Makinesi bitmiş ama item'ı hâlâ 'washing' olan kayıtları bulur.
+ * Her 15 dakikada SLA cron ile çalışır.
+ */
+export function checkStuckWashingItems() {
+  const db = getDB()
+  const stuck = db.prepare(`
+    SELECT li.id, li.item_count,
+      r.block, r.room_no,
+      lm.name as machine_name,
+      ROUND((julianday('now') - julianday(lm.timer_end)) * 24, 1) as hours_overdue
+    FROM laundry_items li
+    JOIN laundry_machines lm ON lm.id = li.machine_id
+    LEFT JOIN rooms r ON r.id = li.room_id
+    WHERE li.status = 'washing'
+      AND lm.status = 'done'
+      AND lm.timer_end IS NOT NULL
+      AND (julianday('now') - julianday(lm.timer_end)) * 24 >= ?
+  `).all(STUCK_WASHING_HOURS)
+
+  for (const item of stuck) {
+    createNotification({
+      message: `⚠️ ${item.block || '?'} ${item.room_no || '?'} — ${item.item_count} parça ${item.machine_name} makinesinde ${item.hours_overdue}s süredir bekliyor, teslim alınmadı`,
+      type: 'warning',
+      module: 'laundry',
+      target_role: 'laundry',
+      dedup_key: `stuck_washing_${item.id}_${new Date().toISOString().slice(0, 13)}`,
+    })
+  }
+
+  return stuck.length
+}

@@ -172,9 +172,12 @@ export function getJobDistribution() {
   `).all()
 }
 
-export function getCompanyPersonnel(company) {
+export function getCompanyPersonnel(company, { limit = 200, offset = 0 } = {}) {
   const db = getDB()
-  return db.prepare(`
+  const total = db.prepare(
+    'SELECT COUNT(*) as c FROM personnel WHERE company=? AND check_out_date IS NULL'
+  ).get(company).c
+  const data = db.prepare(`
     SELECT p.id, p.full_name, p.phone_number, p.tc_no, p.job_title,
       ra.room_id, r.block, r.floor, r.room_no, ra.bed_no,
       s.shift_type, s.start_hour, s.end_hour
@@ -184,7 +187,9 @@ export function getCompanyPersonnel(company) {
     LEFT JOIN shifts s ON s.personnel_id=p.id
     WHERE p.company=? AND p.check_out_date IS NULL
     ORDER BY s.shift_type, p.full_name
-  `).all(company)
+    LIMIT ? OFFSET ?
+  `).all(company, limit, offset)
+  return { data, total }
 }
 
 // ── Shift ───────────────────────────────────────────────────────────────────
