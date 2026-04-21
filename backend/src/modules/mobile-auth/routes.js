@@ -5,10 +5,15 @@ import { requireMobile } from './middleware.js'
 export const mobileAuthRouter = Router()
 
 mobileAuthRouter.post('/login', (req, res) => {
-  const { pin, role } = req.body
-  const result = loginMobile(pin, role)
-  if (result.error) return res.status(result.status).json({ error: result.error })
-  res.json(result)
+  try {
+    const { pin, role } = req.body
+    const result = loginMobile(pin, role)
+    if (result.error) return res.status(result.status).json({ error: result.error })
+    res.json(result)
+  } catch (e) {
+    console.error('[MobileAuth]', e)
+    res.status(500).json({ error: 'Sunucu hatası' })
+  }
 })
 
 mobileAuthRouter.get('/me', requireMobile(), (req, res) => {
