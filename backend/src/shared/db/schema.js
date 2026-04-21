@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS users (
   assigned_block TEXT,
   assigned_floor INTEGER,
   email TEXT,
+  mobile_pin TEXT,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 

@@ -748,6 +748,9 @@ export function initDB() {
   // ── Audit — personnel.created_by ─────────────────────────────────────────
   try { db.exec('ALTER TABLE personnel ADD COLUMN created_by INTEGER REFERENCES users(id)') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] personnel.created_by:', e.message) }
 
+  // ── Mobile PIN auth ───────────────────────────────────────────────────────
+  try { db.exec('ALTER TABLE users ADD COLUMN mobile_pin TEXT') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] mobile_pin:', e.message) }
+
   return db
 }
 
