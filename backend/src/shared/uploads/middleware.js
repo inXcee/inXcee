@@ -3,8 +3,8 @@ import path from 'path'
 import fs from 'fs'
 import { fileTypeFromBuffer } from 'file-type'
 
-const uploadDir = 'uploads'
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir)
+const uploadDir = process.env.UPLOADS_DIR || 'uploads'
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true })
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadDir),

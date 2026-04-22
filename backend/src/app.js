@@ -60,7 +60,7 @@ app.use('/uploads', (req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff')
   res.setHeader('Content-Disposition', 'attachment')
   next()
-}, express.static('uploads'))
+}, express.static(process.env.UPLOADS_DIR || 'uploads'))
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -79,6 +79,17 @@ const authLimiter = rateLimit({
   message: { error: 'Çok fazla giriş denemesi. 15 dakika sonra tekrar deneyin.' },
   standardHeaders: true,
   legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test',
+})
+
+// Mobile PIN login — PIN sadece 4 haneli (10000 olasılık), brute-force riskli
+const mobileAuthLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: { error: 'Çok fazla PIN denemesi. 15 dakika sonra tekrar deneyin.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test',
 })
 
 // Write endpoint rate limiter — 60 req/min
@@ -100,7 +111,7 @@ const readLimiter = rateLimit({
 })
 
 app.use('/api/auth', authLimiter, authRouter)
-app.use('/api/mobile/auth', writeLimiter, mobileAuthRouter)
+app.use('/api/mobile/auth', mobileAuthLimiter, mobileAuthRouter)
 app.use('/api/checkin', writeLimiter, checkinRouter)
 app.use('/api/capacity', writeLimiter, capacityRouter)
 app.use('/api/laundry', writeLimiter, laundryRouter)
