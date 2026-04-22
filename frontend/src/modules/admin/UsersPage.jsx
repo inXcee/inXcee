@@ -87,6 +87,38 @@ function UserForm({ user, onSubmit, onCancel }) {
   )
 }
 
+function PinModal({ userId, onClose }) {
+  const [pin, setPin] = useState('')
+  const qc = useQueryClient()
+  const mutation = useMutation({
+    mutationFn: () => api.patch(`/users/${userId}/mobile-pin`, { pin: pin || null }),
+    onSuccess: () => { onClose(); qc.invalidateQueries({ queryKey: ['users'] }) },
+  })
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+      onClick={onClose}>
+      <div className="panel" style={{ width: '360px' }} onClick={e => e.stopPropagation()}>
+        <div style={{ height: '2px', background: 'var(--accent)' }} />
+        <div className="panel-header"><div className="panel-title">MOBİL PIN YÖNETİMİ</div></div>
+        <div className="panel-body">
+          <label className="form-label">4 HANELİ PIN (boş bırak = PIN kaldır)</label>
+          <input className="form-input" type="password" inputMode="numeric" maxLength={4}
+            value={pin} onChange={e => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
+            placeholder="1234" autoFocus />
+          {mutation.error && <div className="alert alert-danger" style={{ marginTop: '8px' }}>{mutation.error.response?.data?.error || 'Hata'}</div>}
+          <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+            <button className="btn btn-primary" onClick={() => mutation.mutate()} disabled={mutation.isPending}>
+              {mutation.isPending ? 'KAYDEDİLİYOR...' : 'KAYDET'}
+            </button>
+            <button className="btn btn-ghost" onClick={onClose}>İPTAL</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function PasswordModal({ userId, onClose }) {
   const [pw, setPw] = useState('')
   const qc = useQueryClient()
@@ -121,6 +153,7 @@ export default function UsersPage() {
   const [showForm, setShowForm] = useState(false)
   const [editUser, setEditUser] = useState(null)
   const [pwUserId, setPwUserId] = useState(null)
+  const [pinUserId, setPinUserId] = useState(null)
   const qc = useQueryClient()
 
   const { data: users, isLoading } = useQuery({
@@ -211,6 +244,9 @@ export default function UsersPage() {
                       <div style={{ display: 'flex', gap: '4px' }}>
                         <button className="btn btn-ghost btn-xs" onClick={() => setEditUser(u)}>Duzenle</button>
                         <button className="btn btn-ghost btn-xs" onClick={() => setPwUserId(u.id)}>Sifre</button>
+                        {(u.role === 'housekeeper' || u.role === 'technical') && (
+                          <button className="btn btn-ghost btn-xs" onClick={() => setPinUserId(u.id)}>PIN</button>
+                        )}
                         <button className="btn btn-danger btn-xs"
                           onClick={() => { if (confirm(`${u.username} silinsin mi?`)) deleteMut.mutate(u.id) }}>
                           Sil
@@ -226,6 +262,7 @@ export default function UsersPage() {
       </div>
 
       {pwUserId && <PasswordModal userId={pwUserId} onClose={() => setPwUserId(null)} />}
+      {pinUserId && <PinModal userId={pinUserId} onClose={() => setPinUserId(null)} />}
     </div>
   )
 }

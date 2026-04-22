@@ -5,6 +5,8 @@ import ErrorBoundary from './shared/components/ErrorBoundary.jsx'
 import ToastContainer from './shared/components/ToastContainer.jsx'
 import LoginPage from './modules/auth/LoginPage.jsx'
 import Layout from './shared/components/Layout.jsx'
+import MobileLayout from './modules/mobile/shared/MobileLayout.jsx'
+import MobileProtected from './modules/mobile/shared/MobileProtected.jsx'
 
 const DashboardPage = lazy(() => import('./modules/dashboard/DashboardPage.jsx'))
 const CheckinPage = lazy(() => import('./modules/checkin/CheckinPage.jsx'))
@@ -27,6 +29,14 @@ const KioskPinPage = lazy(() => import('./modules/admin/KioskPinPage.jsx'))
 const AnnouncementsPage = lazy(() => import('./modules/admin/AnnouncementsPage.jsx'))
 const AvsWorkersPage = lazy(() => import('./modules/admin/AvsWorkersPage.jsx'))
 const LaundryKioskPage = lazy(() => import('./modules/laundry-kiosk/LaundryKioskPage.jsx'))
+const MobileLogin = lazy(() => import('./modules/mobile/auth/MobileLogin.jsx'))
+const HousekeeperHome = lazy(() => import('./modules/mobile/housekeeper/HousekeeperHome.jsx'))
+const TaskDetail = lazy(() => import('./modules/mobile/housekeeper/TaskDetail.jsx'))
+const FaultReport = lazy(() => import('./modules/mobile/housekeeper/FaultReport.jsx'))
+const TaskHistory = lazy(() => import('./modules/mobile/housekeeper/TaskHistory.jsx'))
+const TechnicianHome = lazy(() => import('./modules/mobile/technician/TechnicianHome.jsx'))
+const RequestDetail = lazy(() => import('./modules/mobile/technician/RequestDetail.jsx'))
+const QuickFault = lazy(() => import('./modules/mobile/technician/QuickFault.jsx'))
 
 function PrivateRoute({ children }) {
   const token = useAuthStore(s => s.token)
@@ -37,6 +47,33 @@ function RoleRoute({ roles, children }) {
   const user = useAuthStore(s => s.user)
   if (!roles.includes(user?.role)) return <Navigate to="/" replace />
   return children
+}
+
+const HOUSEKEEPER_TABS = [
+  { to: '/mobile/housekeeper', label: 'Görevler', icon: '🧹' },
+  { to: '/mobile/housekeeper/fault', label: 'Arıza', icon: '⚠️' },
+  { to: '/mobile/housekeeper/history', label: 'Geçmiş', icon: '📋' },
+]
+
+const TECHNICIAN_TABS = [
+  { to: '/mobile/technician', label: 'Talepler', icon: '🔧' },
+  { to: '/mobile/technician/quick-fault', label: 'Yeni Talep', icon: '➕' },
+]
+
+function HousekeeperShell() {
+  return (
+    <MobileProtected role="housekeeper">
+      <MobileLayout tabs={HOUSEKEEPER_TABS} />
+    </MobileProtected>
+  )
+}
+
+function TechnicianShell() {
+  return (
+    <MobileProtected role="technical">
+      <MobileLayout tabs={TECHNICIAN_TABS} />
+    </MobileProtected>
+  )
 }
 
 function NotFound() {
@@ -79,6 +116,18 @@ export default function App() {
             <Route path="kiosk-pins" element={<RoleRoute roles={['campus_manager']}><KioskPinPage /></RoleRoute>} />
             <Route path="announcements" element={<RoleRoute roles={['campus_manager']}><AnnouncementsPage /></RoleRoute>} />
             <Route path="avs-workers" element={<RoleRoute roles={['campus_manager']}><AvsWorkersPage /></RoleRoute>} />
+          </Route>
+          <Route path="/mobile" element={<MobileLogin />} />
+          <Route path="/mobile/housekeeper" element={<HousekeeperShell />}>
+            <Route index element={<HousekeeperHome />} />
+            <Route path="task/:id" element={<TaskDetail />} />
+            <Route path="fault" element={<FaultReport />} />
+            <Route path="history" element={<TaskHistory />} />
+          </Route>
+          <Route path="/mobile/technician" element={<TechnicianShell />}>
+            <Route index element={<TechnicianHome />} />
+            <Route path="request/:id" element={<RequestDetail />} />
+            <Route path="quick-fault" element={<QuickFault />} />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>
