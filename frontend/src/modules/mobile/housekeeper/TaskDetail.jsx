@@ -3,6 +3,33 @@ import { useParams, useLocation, useNavigate } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import mobileApi from '../auth/mobileApi.js'
 
+const CHECKLISTS = {
+  room: [
+    'Zemin süpürüldü',
+    'Zemin paspaslı temizlendi',
+    'Çöp boşaltıldı',
+    'Yatak düzenlendi / çarşaf değiştirildi',
+    'Toz alındı',
+    'Pencere / cam silindi',
+    'Banyo / tuvalet temizlendi',
+  ],
+  common_area: [
+    'Zemin süpürüldü',
+    'Zemin paspaslı temizlendi',
+    'Çöp boşaltıldı',
+    'Cam / pencere silindi',
+    'Koridor & merdiven temizlendi',
+  ],
+}
+
+function initChecklist(taskType, savedChecklist) {
+  if (savedChecklist) {
+    try { return JSON.parse(savedChecklist) } catch {}
+  }
+  const items = CHECKLISTS[taskType] || CHECKLISTS.common_area
+  return items.map(item => ({ item, done: false }))
+}
+
 export default function TaskDetail() {
   const { id } = useParams()
   const { state } = useLocation()
@@ -11,9 +38,12 @@ export default function TaskDetail() {
   const task = state?.task
   const [skipReason, setSkipReason] = useState('')
   const [showSkip, setShowSkip] = useState(false)
+  const [checklist, setChecklist] = useState(() =>
+    initChecklist(task?.task_type, task?.checklist)
+  )
 
   const completeMut = useMutation({
-    mutationFn: () => mobileApi.post(`/housekeeping/tasks/${id}/complete`, {}),
+    mutationFn: () => mobileApi.post(`/housekeeping/tasks/${id}/complete`, { checklist }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['mobile-hk-tasks'] }); navigate(-1) },
   })
 
@@ -31,6 +61,12 @@ export default function TaskDetail() {
 
   const isDone = !!task.completed_at
   const isSkipped = task.skipped && !task.completed_at
+  const allChecked = checklist.every(i => i.done)
+  const checkedCount = checklist.filter(i => i.done).length
+
+  function toggle(idx) {
+    setChecklist(prev => prev.map((item, i) => i === idx ? { ...item, done: !item.done } : item))
+  }
 
   return (
     <div style={{ padding: '16px' }}>
@@ -39,9 +75,9 @@ export default function TaskDetail() {
         ← Geri
       </button>
 
-      <div style={{ background: '#fff', borderRadius: '16px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,.08)', marginBottom: '16px' }}>
+      <div style={{ background: '#fff', borderRadius: '16px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,.08)', marginBottom: '12px' }}>
         <h2 style={{ fontSize: '18px', fontWeight: 700, margin: '0 0 4px' }}>{task.block} — {task.area}</h2>
-        <p style={{ fontSize: '14px', color: '#6b7280', margin: '0 0 20px' }}>{task.task_type}</p>
+        <p style={{ fontSize: '14px', color: '#6b7280', margin: '0 0 20px' }}>{task.task_type === 'room' ? 'Oda Temizliği' : 'Ortak Alan'}</p>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
           <Row label="Tarih" value={task.scheduled_at?.slice(0, 10)} />
@@ -52,11 +88,55 @@ export default function TaskDetail() {
         </div>
       </div>
 
+      {/* Checklist */}
+      <div style={{ background: '#fff', borderRadius: '16px', padding: '16px', boxShadow: '0 1px 4px rgba(0,0,0,.06)', marginBottom: '12px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+          <span style={{ fontSize: '12px', fontWeight: 700, color: '#6b7280', letterSpacing: '0.5px' }}>
+            TEMİZLİK KONTROLLİSTESİ
+          </span>
+          <span style={{ fontSize: '12px', fontWeight: 700, color: allChecked ? '#10b981' : '#f59e0b' }}>
+            {checkedCount}/{checklist.length}
+          </span>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+          {checklist.map((item, idx) => (
+            <button
+              key={idx}
+              onClick={() => !isDone && !isSkipped && toggle(idx)}
+              disabled={isDone || isSkipped}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 8px',
+                borderRadius: '8px', border: 'none', background: item.done ? '#f0fdf4' : 'transparent',
+                cursor: isDone || isSkipped ? 'default' : 'pointer', textAlign: 'left', width: '100%',
+              }}>
+              <div style={{
+                width: '20px', height: '20px', borderRadius: '6px', flexShrink: 0,
+                border: `2px solid ${item.done ? '#10b981' : '#d1d5db'}`,
+                background: item.done ? '#10b981' : '#fff',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                {item.done && <span style={{ color: '#fff', fontSize: '13px', fontWeight: 700 }}>✓</span>}
+              </div>
+              <span style={{ fontSize: '14px', color: item.done ? '#10b981' : '#374151', textDecoration: item.done ? 'line-through' : 'none' }}>
+                {item.item}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+
       {!isDone && !isSkipped && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          <button onClick={() => completeMut.mutate()} disabled={completeMut.isPending}
-            style={btn('#10b981')}>
-            {completeMut.isPending ? 'İşleniyor...' : '✓ Tamamlandı Olarak İşaretle'}
+          <button
+            onClick={() => completeMut.mutate()}
+            disabled={completeMut.isPending || !allChecked}
+            style={{ ...btn(allChecked ? '#10b981' : '#9ca3af'), opacity: allChecked ? 1 : 0.6 }}>
+            {completeMut.isPending
+              ? 'İşleniyor...'
+              : allChecked
+                ? '✓ Tamamlandı Olarak İşaretle'
+                : `${checklist.length - checkedCount} madde kaldı`}
           </button>
 
           {!showSkip ? (
