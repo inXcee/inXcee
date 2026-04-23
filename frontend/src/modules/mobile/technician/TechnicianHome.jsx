@@ -38,7 +38,21 @@ export default function TechnicianHome() {
       </div>
 
       {isLoading ? (
-        <div style={{ textAlign: 'center', padding: '40px', color: '#9ca3af' }}>Yükleniyor...</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {[1,2,3].map(i => (
+            <div key={i} style={{ background: '#fff', borderRadius: '12px', padding: '14px', boxShadow: '0 1px 3px rgba(0,0,0,.06)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
+                <div style={{ height: '14px', background: '#e5e7eb', borderRadius: '4px', width: '55%' }} />
+                <div style={{ height: '12px', background: '#f3f4f6', borderRadius: '4px', width: '15%' }} />
+              </div>
+              <div style={{ height: '11px', background: '#f3f4f6', borderRadius: '4px', width: '80%', marginBottom: '10px' }} />
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <div style={{ height: '10px', background: '#f3f4f6', borderRadius: '4px', width: '30%' }} />
+                <div style={{ height: '18px', background: '#e5e7eb', borderRadius: '6px', width: '20%' }} />
+              </div>
+            </div>
+          ))}
+        </div>
       ) : displayed.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '48px', color: '#9ca3af' }}>
           {showDone ? 'Tamamlanan talep yok' : 'Aktif talep yok 🎉'}

@@ -31,6 +31,7 @@ export default function MobileLogin() {
 
   function pressDigit(d) {
     if (pin.length < 4) {
+      navigator.vibrate?.(8)
       const next = pin + d
       setPin(next)
       if (next.length === 4) setTimeout(handleSubmit, 100)
@@ -46,6 +47,7 @@ export default function MobileLogin() {
           {r.label}
         </button>
       ))}
+      <p style={{ fontSize: '11px', color: '#d1d5db', marginTop: '40px' }}>v1.0.0</p>
     </div>
   )
 

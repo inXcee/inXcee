@@ -23,7 +23,7 @@ export default function FaultReport() {
       if (photo) fd.append('photo', await compressImage(photo))
       return mobileApi.post('/housekeeping/fault-report', fd)
     },
-    onSuccess: () => setSuccess(true),
+    onSuccess: () => { navigator.vibrate?.([20, 60, 20]); setSuccess(true) },
   })
 
   function reset() {

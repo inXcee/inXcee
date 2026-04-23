@@ -75,7 +75,17 @@ export default function HousekeeperHome() {
       </div>
 
       {isLoading ? (
-        <div style={{ textAlign: 'center', padding: '40px', color: '#9ca3af' }}>Yükleniyor...</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {[1,2,3,4].map(i => (
+            <div key={i} style={{ background: '#fff', borderRadius: '12px', padding: '14px', boxShadow: '0 1px 3px rgba(0,0,0,.06)', display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#e5e7eb', flexShrink: 0 }} />
+              <div style={{ flex: 1 }}>
+                <div style={{ height: '14px', background: '#e5e7eb', borderRadius: '4px', marginBottom: '8px', width: '60%' }} />
+                <div style={{ height: '11px', background: '#f3f4f6', borderRadius: '4px', width: '40%' }} />
+              </div>
+            </div>
+          ))}
+        </div>
       ) : filtered.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '48px 24px', color: '#9ca3af' }}>
           {filter === 'pending' ? '🎉 Tüm görevler tamamlandı!' : 'Görev yok'}
@@ -93,7 +103,7 @@ export default function HousekeeperHome() {
               </div>
               {filter === 'pending' && (
                 <button
-                  onClick={e => { e.stopPropagation(); completeMut.mutate(t.id) }}
+                  onClick={e => { e.stopPropagation(); navigator.vibrate?.([15, 30, 15]); completeMut.mutate(t.id) }}
                   disabled={completeMut.isPending}
                   style={{ padding: '8px 16px', borderRadius: '8px', background: '#10b981', color: '#fff', border: 'none', fontSize: '16px', fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>
                   ✓
