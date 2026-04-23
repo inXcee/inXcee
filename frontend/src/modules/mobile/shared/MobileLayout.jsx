@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useMobileAuth } from '../auth/useMobileAuth.js'
 import { useMobileSSE } from '../../../shared/hooks/useMobileSSE.js'
 import { getQueue, clearQueue } from '../../../shared/utils/offlineQueue.js'
+import { useMobilePrefs } from '../../../shared/store/mobilePrefsStore.js'
 
 const MODULE_KEYS = {
   housekeeping: [['mobile-hk-tasks']],
@@ -12,6 +13,7 @@ const MODULE_KEYS = {
 
 export default function MobileLayout({ tabs }) {
   const { logout } = useMobileAuth()
+  const { darkMode, toggleDarkMode } = useMobilePrefs()
   const qc = useQueryClient()
   const [isOnline, setIsOnline] = useState(navigator.onLine)
   const [pendingCount, setPendingCount] = useState(() => getQueue().length)
@@ -89,21 +91,27 @@ export default function MobileLayout({ tabs }) {
   )
 
   return (
-    <div style={{ display:'flex', flexDirection:'column', minHeight:'100vh', background:'#f9fafb', maxWidth:'480px', margin:'0 auto' }}>
+    <div className={darkMode ? 'mobile-dark' : ''} style={{ display:'flex', flexDirection:'column', minHeight:'100vh', background:'#f9fafb', maxWidth:'480px', margin:'0 auto' }}>
       {offlineBanner}
       <main style={{ flex:1, overflowY:'auto', paddingBottom:'calc(72px + env(safe-area-inset-bottom))', paddingTop: isOnline ? 0 : '36px' }}>
         <Outlet />
       </main>
-      <nav style={{ position:'fixed', bottom:0, left:'50%', transform:'translateX(-50%)', width:'100%', maxWidth:'480px', display:'flex', background:'#fff', borderTop:'1px solid #e5e7eb', zIndex:100, paddingBottom:'env(safe-area-inset-bottom)' }}>
+      <nav aria-label="Ana navigasyon" style={{ position:'fixed', bottom:0, left:'50%', transform:'translateX(-50%)', width:'100%', maxWidth:'480px', display:'flex', background:'#fff', borderTop:'1px solid #e5e7eb', zIndex:100, paddingBottom:'env(safe-area-inset-bottom)' }}>
         {tabs.map(t => (
-          <NavLink key={t.to} to={t.to} end
+          <NavLink key={t.to} to={t.to} end aria-label={t.label}
             style={({ isActive }) => ({ flex:1, display:'flex', flexDirection:'column', alignItems:'center', padding:'10px 0', color: isActive ? '#3b82f6' : '#9ca3af', textDecoration:'none', fontSize:'11px', fontWeight:600, gap:'4px' })}>
-            <span style={{ fontSize:'20px' }}>{t.icon}</span>
+            <span aria-hidden="true" style={{ fontSize:'20px' }}>{t.icon}</span>
             {t.label}
           </NavLink>
         ))}
-        <button onClick={logout} style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', padding:'10px 0', background:'none', border:'none', color:'#9ca3af', fontSize:'11px', fontWeight:600, gap:'4px', cursor:'pointer' }}>
-          <span style={{ fontSize:'20px' }}>🚪</span>Çıkış
+        <button onClick={toggleDarkMode} aria-label={darkMode ? 'Açık mod' : 'Koyu mod'}
+          style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', padding:'10px 0', background:'none', border:'none', color:'#9ca3af', fontSize:'11px', fontWeight:600, gap:'4px', cursor:'pointer' }}>
+          <span aria-hidden="true" style={{ fontSize:'20px' }}>{darkMode ? '☀️' : '🌙'}</span>
+          {darkMode ? 'Açık' : 'Koyu'}
+        </button>
+        <button onClick={logout} aria-label="Çıkış yap"
+          style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', padding:'10px 0', background:'none', border:'none', color:'#9ca3af', fontSize:'11px', fontWeight:600, gap:'4px', cursor:'pointer' }}>
+          <span aria-hidden="true" style={{ fontSize:'20px' }}>🚪</span>Çıkış
         </button>
       </nav>
     </div>

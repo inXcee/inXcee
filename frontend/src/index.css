@@ -76,6 +76,17 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* Mobile dark mode — CSS filter technique works with inline styles */
+.mobile-dark {
+  filter: invert(1) hue-rotate(180deg);
+}
+/* Preserve true colors for images/videos under the filter */
+.mobile-dark img,
+.mobile-dark video,
+.mobile-dark canvas {
+  filter: invert(1) hue-rotate(180deg);
+}
+
 body {
   font-family: var(--sans);
   background: var(--bg);
