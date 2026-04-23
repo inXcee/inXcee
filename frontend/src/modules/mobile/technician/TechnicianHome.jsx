@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import mobileApi from '../auth/mobileApi.js'
+import { usePullToRefresh } from '../../../shared/hooks/usePullToRefresh.js'
 
 const PRIORITY_COLOR = { high: '#ef4444', medium: '#f59e0b', low: '#10b981' }
 const PRIORITY_LABEL = { high: 'Yüksek', medium: 'Orta', low: 'Düşük' }
@@ -12,18 +13,23 @@ export default function TechnicianHome() {
   const [showDone, setShowDone] = useState(false)
   const navigate = useNavigate()
 
-  const { data: allRequests = [], isLoading } = useQuery({
+  const { data: allRequests = [], isLoading, refetch } = useQuery({
     queryKey: ['mobile-tech-requests'],
     queryFn: () => mobileApi.get('/maintenance/requests?reporter_user_id=me').then(r => r.data),
     refetchInterval: 60000,
   })
+
+  const { isPulling, handlers } = usePullToRefresh(refetch)
 
   const active = allRequests.filter(r => ACTIVE_STATUSES.has(r.status))
   const done = allRequests.filter(r => r.status === 'done')
   const displayed = showDone ? done : active
 
   return (
-    <div style={{ padding: '16px' }}>
+    <div style={{ padding: '16px' }} {...handlers}>
+      {isPulling && (
+        <div style={{ textAlign: 'center', padding: '8px 0 4px', fontSize: '13px', color: '#3b82f6' }}>↓ Yenileniyor...</div>
+      )}
       <h1 style={{ fontSize: '20px', fontWeight: 700, marginBottom: '16px' }}>Teknik Talepler</h1>
 
       <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>

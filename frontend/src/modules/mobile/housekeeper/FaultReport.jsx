@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import mobileApi from '../auth/mobileApi.js'
+import { compressImage } from '../../../shared/utils/compressImage.js'
 
 const PRIORITIES = [
   { value: 'high', label: 'Yüksek', color: '#ef4444' },
@@ -14,12 +15,12 @@ export default function FaultReport() {
   const [success, setSuccess] = useState(false)
 
   const mutation = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       const fd = new FormData()
       fd.append('location', form.location)
       fd.append('description', form.description)
       fd.append('priority', form.priority)
-      if (photo) fd.append('photo', photo)
+      if (photo) fd.append('photo', await compressImage(photo))
       return mobileApi.post('/housekeeping/fault-report', fd)
     },
     onSuccess: () => setSuccess(true),

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import mobileApi from '../auth/mobileApi.js'
+import { compressImage } from '../../../shared/utils/compressImage.js'
 
 const PRIORITY_COLOR = { high: '#ef4444', medium: '#f59e0b', low: '#10b981' }
 const PRIORITY_LABEL = { high: 'Yüksek', medium: 'Orta', low: 'Düşük' }
@@ -40,9 +41,9 @@ export default function RequestDetail() {
   })
 
   const closeMut = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       const fd = new FormData()
-      if (closePhoto) fd.append('photo', closePhoto)
+      if (closePhoto) fd.append('photo', await compressImage(closePhoto))
       return mobileApi.patch(`/maintenance/requests/${id}/close`, fd)
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['mobile-tech-requests'] }); navigate(-1) },

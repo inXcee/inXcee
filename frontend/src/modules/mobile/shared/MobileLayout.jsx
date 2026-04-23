@@ -14,6 +14,30 @@ export default function MobileLayout({ tabs }) {
     return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off) }
   }, [])
 
+  useEffect(() => {
+    async function tryRefresh() {
+      const { token, login } = useMobileAuth.getState()
+      if (!token) return
+      try {
+        const payload = JSON.parse(atob(token.split('.')[1]))
+        const msLeft = payload.exp * 1000 - Date.now()
+        if (msLeft > 0 && msLeft < 60 * 60 * 1000) {
+          const res = await fetch('/api/mobile/auth/refresh', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}` },
+          })
+          if (res.ok) {
+            const data = await res.json()
+            login(data.token, data.user)
+          }
+        }
+      } catch {}
+    }
+    tryRefresh()
+    const id = setInterval(tryRefresh, 15 * 60 * 1000)
+    return () => clearInterval(id)
+  }, [])
+
   return (
     <div style={{ display:'flex', flexDirection:'column', minHeight:'100vh', background:'#f9fafb', maxWidth:'480px', margin:'0 auto' }}>
       {!isOnline && (

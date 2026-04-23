@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import mobileApi from '../auth/mobileApi.js'
 import { useMobileAuth } from '../auth/useMobileAuth.js'
+import { usePullToRefresh } from '../../../shared/hooks/usePullToRefresh.js'
 
 const today = new Date().toISOString().slice(0, 10)
 
@@ -21,13 +22,15 @@ export default function HousekeeperHome() {
   const navigate = useNavigate()
   const qc = useQueryClient()
 
-  const { data: tasks = [], isLoading } = useQuery({
+  const { data: tasks = [], isLoading, refetch } = useQuery({
     queryKey: ['mobile-hk-tasks', today],
     queryFn: () => mobileApi.get('/housekeeping/tasks', {
       params: { date: today, ...(user?.assigned_block ? { block: user.assigned_block } : {}) },
     }).then(r => r.data),
     refetchInterval: 60000,
   })
+
+  const { isPulling, handlers } = usePullToRefresh(refetch)
 
   const completeMut = useMutation({
     mutationFn: id => mobileApi.post(`/housekeeping/tasks/${id}/complete`, {}),
@@ -48,7 +51,10 @@ export default function HousekeeperHome() {
   const filtered = tasks.filter(t => taskStatus(t) === filter)
 
   return (
-    <div style={{ padding: '16px' }}>
+    <div style={{ padding: '16px' }} {...handlers}>
+      {isPulling && (
+        <div style={{ textAlign: 'center', padding: '8px 0 4px', fontSize: '13px', color: '#3b82f6' }}>↓ Yenileniyor...</div>
+      )}
       <div style={{ marginBottom: '16px' }}>
         <h1 style={{ fontSize: '20px', fontWeight: 700, margin: 0 }}>Günlük Görevler</h1>
         <p style={{ fontSize: '12px', color: '#6b7280', margin: '4px 0 0' }}>{today}</p>
