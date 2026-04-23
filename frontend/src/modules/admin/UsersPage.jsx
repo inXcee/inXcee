@@ -245,7 +245,10 @@ export default function UsersPage() {
                         <button className="btn btn-ghost btn-xs" onClick={() => setEditUser(u)}>Duzenle</button>
                         <button className="btn btn-ghost btn-xs" onClick={() => setPwUserId(u.id)}>Sifre</button>
                         {(u.role === 'housekeeper' || u.role === 'technical') && (
-                          <button className="btn btn-ghost btn-xs" onClick={() => setPinUserId(u.id)}>PIN</button>
+                          <button className="btn btn-ghost btn-xs" onClick={() => setPinUserId(u.id)}
+                            style={{ borderColor: u.has_pin ? '#10b981' : '#e5e7eb', color: u.has_pin ? '#10b981' : undefined }}>
+                            {u.has_pin ? '✓ PIN' : '✗ PIN'}
+                          </button>
                         )}
                         <button className="btn btn-danger btn-xs"
                           onClick={() => { if (confirm(`${u.username} silinsin mi?`)) deleteMut.mutate(u.id) }}>

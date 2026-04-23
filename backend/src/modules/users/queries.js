@@ -3,14 +3,19 @@ import { getDB } from '../../shared/db/index.js'
 export function getAllUsers() {
   const db = getDB()
   return db.prepare(`
-    SELECT id, username, role, full_name, assigned_block, assigned_floor, email, created_at
+    SELECT id, username, role, full_name, assigned_block, assigned_floor, email, created_at,
+      CASE WHEN mobile_pin IS NOT NULL THEN 1 ELSE 0 END as has_pin
     FROM users ORDER BY role, full_name
   `).all()
 }
 
 export function getUserById(id) {
   const db = getDB()
-  return db.prepare('SELECT id, username, role, full_name, assigned_block, assigned_floor, email, created_at FROM users WHERE id=?').get(id)
+  return db.prepare(`
+    SELECT id, username, role, full_name, assigned_block, assigned_floor, email, created_at,
+      CASE WHEN mobile_pin IS NOT NULL THEN 1 ELSE 0 END as has_pin
+    FROM users WHERE id=?
+  `).get(id)
 }
 
 export function createUser({ username, password_hash, role, full_name, assigned_block, assigned_floor, email }) {

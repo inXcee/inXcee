@@ -13,7 +13,7 @@ export function createRequest({ location, description, priority, reporterUserId,
   return r.lastInsertRowid
 }
 
-export function getRequests({ status, search, priority } = {}) {
+export function getRequests({ status, search, priority, reporter_user_id } = {}) {
   const db = getDB()
   let q = `
     SELECT mr.*,
@@ -27,6 +27,7 @@ export function getRequests({ status, search, priority } = {}) {
   const params = []
   if (status) { q += ' AND mr.status=?'; params.push(status) }
   if (priority) { q += ' AND mr.priority=?'; params.push(priority) }
+  if (reporter_user_id) { q += ' AND mr.reporter_user_id=?'; params.push(reporter_user_id) }
   if (search) {
     q += ' AND (mr.location LIKE ? OR mr.description LIKE ? OR mr.wait_reason LIKE ?)'
     const like = `%${search}%`

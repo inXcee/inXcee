@@ -10,6 +10,7 @@ const PRIORITIES = [
 
 export default function FaultReport() {
   const [form, setForm] = useState({ location: '', description: '', priority: 'medium' })
+  const [photo, setPhoto] = useState(null)
   const [success, setSuccess] = useState(false)
 
   const mutation = useMutation({
@@ -18,6 +19,7 @@ export default function FaultReport() {
       fd.append('location', form.location)
       fd.append('description', form.description)
       fd.append('priority', form.priority)
+      if (photo) fd.append('photo', photo)
       return mobileApi.post('/housekeeping/fault-report', fd)
     },
     onSuccess: () => setSuccess(true),
@@ -25,6 +27,7 @@ export default function FaultReport() {
 
   function reset() {
     setForm({ location: '', description: '', priority: 'medium' })
+    setPhoto(null)
     setSuccess(false)
   }
 
@@ -68,6 +71,15 @@ export default function FaultReport() {
               </button>
             ))}
           </div>
+        </Field>
+
+        <Field label="FOTOĞRAF (opsiyonel)">
+          <input type="file" accept="image/*" capture="environment"
+            onChange={e => setPhoto(e.target.files[0] || null)}
+            style={{ ...inputStyle, padding: '10px', cursor: 'pointer' }} />
+          {photo && (
+            <p style={{ fontSize: '12px', color: '#10b981', margin: '4px 0 0' }}>✓ {photo.name}</p>
+          )}
         </Field>
 
         {mutation.error && (

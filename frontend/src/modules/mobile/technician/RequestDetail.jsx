@@ -19,6 +19,7 @@ export default function RequestDetail() {
   const qc = useQueryClient()
   const [comment, setComment] = useState('')
   const [showClose, setShowClose] = useState(false)
+  const [closePhoto, setClosePhoto] = useState(null)
 
   const { data: request, isLoading } = useQuery({
     queryKey: ['mobile-tech-request', id],
@@ -36,7 +37,11 @@ export default function RequestDetail() {
   })
 
   const closeMut = useMutation({
-    mutationFn: () => mobileApi.patch(`/maintenance/requests/${id}/close`),
+    mutationFn: () => {
+      const fd = new FormData()
+      if (closePhoto) fd.append('photo', closePhoto)
+      return mobileApi.patch(`/maintenance/requests/${id}/close`, fd)
+    },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['mobile-tech-requests'] }); navigate(-1) },
   })
 
@@ -96,6 +101,15 @@ export default function RequestDetail() {
           {canClose && showClose && (
             <div style={{ background: '#fff', borderRadius: '12px', padding: '16px', boxShadow: '0 1px 4px rgba(0,0,0,.08)' }}>
               <p style={{ fontSize: '14px', margin: '0 0 12px', color: '#374151' }}>Talebi kapatmak istediğinizden emin misiniz?</p>
+              <div style={{ marginBottom: '12px' }}>
+                <label style={{ fontSize: '11px', fontWeight: 700, color: '#6b7280', letterSpacing: '0.5px', display: 'block', marginBottom: '6px' }}>
+                  SONRASI FOTOĞRAF (opsiyonel)
+                </label>
+                <input type="file" accept="image/*" capture="environment"
+                  onChange={e => setClosePhoto(e.target.files[0] || null)}
+                  style={{ width: '100%', fontSize: '13px', cursor: 'pointer' }} />
+                {closePhoto && <p style={{ fontSize: '12px', color: '#10b981', margin: '4px 0 0' }}>✓ {closePhoto.name}</p>}
+              </div>
               <div style={{ display: 'flex', gap: '8px' }}>
                 <button onClick={() => closeMut.mutate()} disabled={closeMut.isPending}
                   style={{ ...actionBtn('#10b981'), flex: 1 }}>

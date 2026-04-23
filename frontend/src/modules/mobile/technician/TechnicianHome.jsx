@@ -14,7 +14,7 @@ export default function TechnicianHome() {
 
   const { data: allRequests = [], isLoading } = useQuery({
     queryKey: ['mobile-tech-requests'],
-    queryFn: () => mobileApi.get('/maintenance/requests').then(r => r.data),
+    queryFn: () => mobileApi.get('/maintenance/requests?reporter_user_id=me').then(r => r.data),
     refetchInterval: 60000,
   })
 

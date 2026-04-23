@@ -31,14 +31,16 @@ maintenanceRouter.post('/requests', ...techAccess, upload.single('photo_before')
 
 maintenanceRouter.get('/requests', ...techAccess, (req, res) => {
   try {
+    const query = { ...req.query }
+    if (query.reporter_user_id === 'me') query.reporter_user_id = req.user.id
     if (req.query.page || req.query.limit) {
       const { page, limit, offset } = paginate(req)
       const db = getDB()
       const total = db.prepare('SELECT COUNT(*) as c FROM maintenance_requests').get().c
-      const data = svc.getRequestsService({ ...req.query, _limit: limit, _offset: offset })
+      const data = svc.getRequestsService({ ...query, _limit: limit, _offset: offset })
       return res.json({ data, total, page, limit })
     }
-    res.json(svc.getRequestsService(req.query))
+    res.json(svc.getRequestsService(query))
   }
   catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
