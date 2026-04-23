@@ -20,6 +20,9 @@ export default function RequestDetail() {
   const [comment, setComment] = useState('')
   const [showClose, setShowClose] = useState(false)
   const [closePhoto, setClosePhoto] = useState(null)
+  const [editWaitReason, setEditWaitReason] = useState(false)
+  const [waitReason, setWaitReason] = useState('')
+  const [editPriority, setEditPriority] = useState(false)
 
   const { data: request, isLoading } = useQuery({
     queryKey: ['mobile-tech-request', id],
@@ -43,6 +46,16 @@ export default function RequestDetail() {
       return mobileApi.patch(`/maintenance/requests/${id}/close`, fd)
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['mobile-tech-requests'] }); navigate(-1) },
+  })
+
+  const waitReasonMut = useMutation({
+    mutationFn: () => mobileApi.patch(`/maintenance/requests/${id}/wait-reason`, { wait_reason: waitReason }),
+    onSuccess: () => { setEditWaitReason(false); qc.invalidateQueries({ queryKey: ['mobile-tech-request', id] }) },
+  })
+
+  const priorityMut = useMutation({
+    mutationFn: (priority) => mobileApi.patch(`/maintenance/requests/${id}/priority`, { priority }),
+    onSuccess: () => { setEditPriority(false); qc.invalidateQueries({ queryKey: ['mobile-tech-request', id] }) },
   })
 
   const commentMut = useMutation({
@@ -81,7 +94,45 @@ export default function RequestDetail() {
           <Row label="Bildiren"><span>{request.reporter_name || '—'}</span></Row>
           <Row label="Tarih"><span>{request.opened_at?.slice(0, 10)}</span></Row>
           {request.technician_name && <Row label="Teknisyen"><span>{request.technician_name}</span></Row>}
-          {request.wait_reason && <Row label="Bekleme sebebi"><span style={{ color: '#9ca3af' }}>{request.wait_reason}</span></Row>}
+
+          <Row label="Öncelik">
+            {editPriority ? (
+              <div style={{ display: 'flex', gap: '6px' }}>
+                {['high', 'medium', 'low'].map(p => (
+                  <button key={p} onClick={() => priorityMut.mutate(p)} disabled={priorityMut.isPending}
+                    style={{ padding: '4px 10px', borderRadius: '6px', border: `1.5px solid ${PRIORITY_COLOR[p]}`, background: request.priority === p ? PRIORITY_COLOR[p] + '20' : '#fff', color: PRIORITY_COLOR[p], fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}>
+                    {PRIORITY_LABEL[p]}
+                  </button>
+                ))}
+                <button onClick={() => setEditPriority(false)} style={{ padding: '4px 8px', borderRadius: '6px', border: '1.5px solid #e5e7eb', background: '#fff', fontSize: '12px', cursor: 'pointer', color: '#9ca3af' }}>✕</button>
+              </div>
+            ) : (
+              <button onClick={() => setEditPriority(true)}
+                style={{ background: 'none', border: 'none', fontWeight: 700, color: PRIORITY_COLOR[request.priority], fontSize: '13px', cursor: 'pointer', padding: 0 }}>
+                {PRIORITY_LABEL[request.priority]} ✎
+              </button>
+            )}
+          </Row>
+
+          <Row label="Bekleme sebebi">
+            {editWaitReason ? (
+              <div style={{ display: 'flex', gap: '6px', flex: 1, marginLeft: '8px' }}>
+                <input value={waitReason} onChange={e => setWaitReason(e.target.value)}
+                  placeholder="Bekleme sebebini girin..."
+                  style={{ flex: 1, padding: '6px 8px', borderRadius: '6px', border: '1px solid #d1d5db', fontSize: '13px' }} />
+                <button onClick={() => waitReasonMut.mutate()} disabled={waitReasonMut.isPending}
+                  style={{ padding: '6px 10px', borderRadius: '6px', background: '#3b82f6', color: '#fff', border: 'none', fontSize: '12px', cursor: 'pointer' }}>
+                  {waitReasonMut.isPending ? '...' : 'Kaydet'}
+                </button>
+                <button onClick={() => setEditWaitReason(false)} style={{ padding: '6px 8px', borderRadius: '6px', border: '1.5px solid #e5e7eb', background: '#fff', fontSize: '12px', cursor: 'pointer', color: '#9ca3af' }}>✕</button>
+              </div>
+            ) : (
+              <button onClick={() => { setWaitReason(request.wait_reason || ''); setEditWaitReason(true) }}
+                style={{ background: 'none', border: 'none', color: request.wait_reason ? '#9ca3af' : '#d1d5db', fontSize: '13px', cursor: 'pointer', padding: 0 }}>
+                {request.wait_reason || 'Ekle...'} ✎
+              </button>
+            )}
+          </Row>
         </div>
       </div>
 
