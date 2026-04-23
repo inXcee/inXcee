@@ -31,7 +31,16 @@ export default function HousekeeperHome() {
 
   const completeMut = useMutation({
     mutationFn: id => mobileApi.post(`/housekeeping/tasks/${id}/complete`, {}),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['mobile-hk-tasks'] }),
+    onMutate: async (taskId) => {
+      await qc.cancelQueries({ queryKey: ['mobile-hk-tasks', today] })
+      const prev = qc.getQueryData(['mobile-hk-tasks', today])
+      qc.setQueryData(['mobile-hk-tasks', today], old =>
+        (old || []).map(t => t.id === taskId ? { ...t, completed_at: new Date().toISOString() } : t)
+      )
+      return { prev }
+    },
+    onError: (_, __, ctx) => qc.setQueryData(['mobile-hk-tasks', today], ctx.prev),
+    onSettled: () => qc.invalidateQueries({ queryKey: ['mobile-hk-tasks'] }),
   })
 
   const counts = { pending: 0, done: 0, skipped: 0 }

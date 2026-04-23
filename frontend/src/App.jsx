@@ -37,6 +37,7 @@ const TaskHistory = lazy(() => import('./modules/mobile/housekeeper/TaskHistory.
 const TechnicianHome = lazy(() => import('./modules/mobile/technician/TechnicianHome.jsx'))
 const RequestDetail = lazy(() => import('./modules/mobile/technician/RequestDetail.jsx'))
 const QuickFault = lazy(() => import('./modules/mobile/technician/QuickFault.jsx'))
+const DndRooms = lazy(() => import('./modules/mobile/housekeeper/DndRooms.jsx'))
 
 function PrivateRoute({ children }) {
   const token = useAuthStore(s => s.token)
@@ -52,6 +53,7 @@ function RoleRoute({ roles, children }) {
 const HOUSEKEEPER_TABS = [
   { to: '/mobile/housekeeper', label: 'Görevler', icon: '🧹' },
   { to: '/mobile/housekeeper/fault', label: 'Arıza', icon: '⚠️' },
+  { to: '/mobile/housekeeper/dnd', label: 'DnD', icon: '🚫' },
   { to: '/mobile/housekeeper/history', label: 'Geçmiş', icon: '📋' },
 ]
 
@@ -122,6 +124,7 @@ export default function App() {
             <Route index element={<HousekeeperHome />} />
             <Route path="task/:id" element={<TaskDetail />} />
             <Route path="fault" element={<FaultReport />} />
+            <Route path="dnd" element={<DndRooms />} />
             <Route path="history" element={<TaskHistory />} />
           </Route>
           <Route path="/mobile/technician" element={<TechnicianShell />}>
