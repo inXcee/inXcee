@@ -751,6 +751,12 @@ export function initDB() {
   // ── Mobile PIN auth ───────────────────────────────────────────────────────
   try { db.exec('ALTER TABLE users ADD COLUMN mobile_pin TEXT') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] mobile_pin:', e.message) }
 
+  // ── WebAuthn / Biometric auth ─────────────────────────────────────────────
+  try { db.exec('ALTER TABLE users ADD COLUMN webauthn_credential_id TEXT') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] webauthn_credential_id:', e.message) }
+  try { db.exec('ALTER TABLE users ADD COLUMN webauthn_public_key TEXT') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] webauthn_public_key:', e.message) }
+  try { db.exec('ALTER TABLE users ADD COLUMN webauthn_counter INTEGER DEFAULT 0') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] webauthn_counter:', e.message) }
+  try { db.exec('ALTER TABLE users ADD COLUMN webauthn_challenge TEXT') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] webauthn_challenge:', e.message) }
+
   return db
 }
 
