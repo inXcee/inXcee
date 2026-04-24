@@ -44,15 +44,15 @@ export async function enqueue(type, payload, blobs = []) {
     }
 
     const bStore = tx.objectStore('offline_blobs')
-    const blobIds = []
+    const blobIds = new Array(blobs.length)
     let pending = blobs.length
 
-    blobs.forEach(blob => {
+    blobs.forEach((blob, i) => {
       const req = bStore.add({ blob })
       req.onsuccess = () => {
         const blobId = req.result
         _blobCache.set(blobId, blob)
-        blobIds.push(blobId)
+        blobIds[i] = blobId
         if (--pending === 0) {
           const qReq = qStore.add({ type, payload, blobIds, ts: Date.now(), retries: 0 })
           qReq.onsuccess = () => resolve(qReq.result)
@@ -74,7 +74,7 @@ export async function dequeue(id) {
   })
   if (!item) return
   await new Promise((resolve, reject) => {
-    const stores = item.blobIds.length > 0 ? ['offline_queue', 'offline_blobs'] : ['offline_queue']
+    const stores = (item.blobIds?.length > 0) ? ['offline_queue', 'offline_blobs'] : ['offline_queue']
     const tx = db.transaction(stores, 'readwrite')
     item.blobIds.forEach(bid => {
       tx.objectStore('offline_blobs').delete(bid)
