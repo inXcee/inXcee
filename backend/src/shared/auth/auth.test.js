@@ -1,9 +1,10 @@
-import { describe, it, expect, beforeAll } from 'vitest'
+import { describe, it, expect, beforeAll, beforeEach } from 'vitest'
 import request from 'supertest'
 import app from '../../app.js'
-import { initDB } from '../db/index.js'
+import { initDB, getDB } from '../db/index.js'
 import { seedDev } from '../db/seed.js'
-import { verifyToken } from './service.js'
+import { verifyToken, loginKioskById, loginKiosk } from './service.js'
+import bcrypt from 'bcryptjs'
 
 let managerToken
 
@@ -116,5 +117,67 @@ describe('CORS', () => {
       .set('Origin', 'http://evil.example.com')
     // CORS hatası — CORS header olmamalı
     expect(res.headers['access-control-allow-origin']).toBeUndefined()
+  })
+})
+
+describe('PIN lockout — loginKioskById', () => {
+  beforeEach(() => {
+    process.env.DB_PATH = ':memory:'
+    process.env.JWT_SECRET = 'test-secret-for-testing-only-32chars'
+    initDB()
+    seedDev()
+    const db = getDB()
+    const hash = bcrypt.hashSync('1234', 10)
+    db.prepare("INSERT OR IGNORE INTO personnel(id, full_name, tc_no, kiosk_pin, pin_attempts) VALUES(9001, 'Test Kiosk', '98765432100', ?, 0)").run(hash)
+  })
+
+  it('5 hatalı denemede hesap kilitlenir', () => {
+    for (let i = 0; i < 5; i++) loginKioskById(9001, '0000')
+    const result = loginKioskById(9001, '1234')
+    expect(result.status).toBe(429)
+    expect(result.error).toMatch(/kilitlendi/)
+  })
+
+  it('doğru PIN ile giriş başarılı ve attempts sıfırlanır', () => {
+    const result = loginKioskById(9001, '1234')
+    expect(result.token).toBeDefined()
+    const p = getDB().prepare('SELECT pin_attempts FROM personnel WHERE id=9001').get()
+    expect(p.pin_attempts).toBe(0)
+  })
+
+  it('hatalı PIN attempts artırır', () => {
+    loginKioskById(9001, '0000')
+    const p = getDB().prepare('SELECT pin_attempts FROM personnel WHERE id=9001').get()
+    expect(p.pin_attempts).toBe(1)
+  })
+
+  it('4 hatalı denemeden sonra doğru PIN ile giriş yapılabilir', () => {
+    for (let i = 0; i < 4; i++) loginKioskById(9001, '0000')
+    const result = loginKioskById(9001, '1234')
+    expect(result.token).toBeDefined()
+  })
+})
+
+describe('PIN lockout — loginKiosk (TC no)', () => {
+  beforeEach(() => {
+    process.env.DB_PATH = ':memory:'
+    process.env.JWT_SECRET = 'test-secret-for-testing-only-32chars'
+    initDB()
+    seedDev()
+    const db = getDB()
+    const hash = bcrypt.hashSync('5678', 10)
+    db.prepare("INSERT OR IGNORE INTO personnel(id, full_name, tc_no, kiosk_pin, pin_attempts) VALUES(9002, 'TC Kiosk', '11122233344', ?, 0)").run(hash)
+  })
+
+  it('5 hatalı denemede hesap kilitlenir', () => {
+    for (let i = 0; i < 5; i++) loginKiosk('11122233344', '0000')
+    const result = loginKiosk('11122233344', '5678')
+    expect(result.status).toBe(429)
+    expect(result.error).toMatch(/kilitlendi/)
+  })
+
+  it('doğru PIN ile giriş başarılı', () => {
+    const result = loginKiosk('11122233344', '5678')
+    expect(result.token).toBeDefined()
   })
 })

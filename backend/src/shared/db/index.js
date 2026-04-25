@@ -751,6 +751,12 @@ export function initDB() {
   // ── Audit — personnel.created_by ─────────────────────────────────────────
   try { db.exec('ALTER TABLE personnel ADD COLUMN created_by INTEGER REFERENCES users(id)') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] personnel.created_by:', e.message) }
 
+  // ── PIN lockout koruması ──────────────────────────────────────────────────
+  try { db.exec('ALTER TABLE personnel ADD COLUMN pin_attempts INTEGER DEFAULT 0') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] pin_attempts:', e.message) }
+  try { db.exec('ALTER TABLE personnel ADD COLUMN pin_locked_until TEXT') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] pin_locked_until:', e.message) }
+  try { db.exec('ALTER TABLE avs_workers ADD COLUMN pin_attempts INTEGER DEFAULT 0') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] avs_workers.pin_attempts:', e.message) }
+  try { db.exec('ALTER TABLE avs_workers ADD COLUMN pin_locked_until TEXT') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] avs_workers.pin_locked_until:', e.message) }
+
   // ── Mobile PIN auth ───────────────────────────────────────────────────────
   try { db.exec('ALTER TABLE users ADD COLUMN mobile_pin TEXT') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] mobile_pin:', e.message) }
 
