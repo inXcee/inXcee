@@ -3482,7 +3482,7 @@ function SettingsTab({ departments, shiftDefs }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 //  PuantajTab — Professional Payroll / Monthly Timesheet
 // ═══════════════════════════════════════════════════════════════════════════════
-const COMPANY_NAME = 'YYS Kampüs' // TODO: Şirket adını burada güncelle
+const COMPANY_NAME = import.meta.env.VITE_COMPANY_NAME || 'YYS Kampüs'
 
 function PuantajSummaryView({ filtered, formatMoney }) {
   const byDept = useMemo(() => {
