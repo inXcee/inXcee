@@ -21,6 +21,12 @@ api.interceptors.response.use(
 
     if (error.response?.status === 401 && !original._retry) {
       if (isRefreshing) {
+        if (refreshQueue.length >= 10) {
+          refreshQueue.forEach(p => p.reject(new Error('Refresh queue dolu')))
+          refreshQueue = []
+          useAuthStore.getState().logout()
+          return Promise.reject(error)
+        }
         return new Promise((resolve, reject) => {
           refreshQueue.push({ resolve, reject })
         }).then(token => {
