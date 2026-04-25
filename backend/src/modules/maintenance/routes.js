@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { requireRole } from '../../shared/auth/middleware.js'
 import { upload, verifyMagicBytes } from '../../shared/uploads/middleware.js'
 import { getDB } from '../../shared/db/index.js'
+import { logAudit } from '../../shared/audit.js'
 import * as svc from './service.js'
 import { paginate } from '../../shared/paginate.js'
 
@@ -25,6 +26,7 @@ maintenanceRouter.post('/requests', ...techAccess, upload.single('photo_before')
       photoBefore,
       waitReason: req.body.wait_reason || null,
     })
+    logAudit(req.user.id, 'maintenance_create', 'maintenance', id, `${location.trim()}: ${description.trim()}`)
     res.status(201).json({ id })
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
@@ -66,6 +68,7 @@ maintenanceRouter.patch('/requests/:id/assign', ...techAccess, (req, res) => {
     const { technician_id } = req.body
     if (!technician_id) return res.status(400).json({ error: 'Teknisyen ID gerekli' })
     svc.assignRequestService(+req.params.id, +technician_id, req.user.id)
+    logAudit(req.user.id, 'maintenance_assign', 'maintenance', +req.params.id, `teknisyen:${technician_id}`)
     res.json({ ok: true })
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
@@ -82,6 +85,7 @@ maintenanceRouter.patch('/requests/:id/status', ...techAccess, (req, res) => {
     const { status } = req.body
     if (!status) return res.status(400).json({ error: 'Durum belirtilmeli' })
     svc.updateStatusService(+req.params.id, status, req.user.id)
+    logAudit(req.user.id, 'maintenance_status_change', 'maintenance', +req.params.id, status)
     res.json({ ok: true })
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
@@ -91,6 +95,7 @@ maintenanceRouter.patch('/requests/:id/close', ...techAccess, upload.single('pho
     ? `/uploads/${req.file.filename}`
     : (req.body.photo_url?.startsWith('/uploads/') ? req.body.photo_url : null)
   svc.closeRequestService(+req.params.id, photoUrl)
+  logAudit(req.user.id, 'maintenance_close', 'maintenance', +req.params.id, null)
   res.json({ ok: true })
 })
 
@@ -100,8 +105,11 @@ maintenanceRouter.patch('/requests/:id/reopen', ...techAccess, (req, res) => {
 })
 
 maintenanceRouter.delete('/requests/:id', ...requireRole('campus_manager'), (req, res) => {
-  try { svc.deleteRequestService(+req.params.id); res.json({ ok: true }) }
-  catch (e) { res.status(400).json({ error: e.message }) }
+  try {
+    svc.deleteRequestService(+req.params.id)
+    logAudit(req.user.id, 'maintenance_delete', 'maintenance', +req.params.id, null)
+    res.json({ ok: true })
+  } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
 // ── Stats ────────────────────────────────────────────────────────────────────
