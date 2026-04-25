@@ -1,6 +1,8 @@
 import { useState, useMemo, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
+import { useDraft } from '../../shared/hooks/useDraft.js'
+import DraftBanner from '../../shared/components/DraftBanner.jsx'
 
 const CATEGORIES = [
   { key: 'laundry', label: 'Camasir', color: 'var(--blue)', icon: '♨', bg: 'rgba(52,152,219,.08)' },
@@ -492,10 +494,19 @@ function LogModal({ item, onClose }) {
 // EDIT MODAL
 // ─────────────────────────────────────────────────────────────────────────────
 function EditModal({ item, onClose, onSave, isPending }) {
-  const [f, sf] = useState(item || { item_name: '', quantity: 0, unit: 'adet', reorder_threshold: 0, category: 'general', location: '', unit_price: 0 })
+  const INIT_F = { item_name: '', quantity: 0, unit: 'adet', reorder_threshold: 0, category: 'general', location: '', unit_price: 0 }
+  const [f, sf] = useState(item || INIT_F)
   const u = (k, v) => sf(p => ({ ...p, [k]: v }))
+  const draftKey = item?.id ? null : 'draft:inventory:new-item'
+  const { hasDraft, restoreDraft, discardDraft, onSubmitSuccess } = useDraft(
+    draftKey ?? 'draft:inventory:new-item',
+    f,
+    sf,
+    item || INIT_F,
+  )
   return (
     <Modal onClose={onClose} title={item?.id ? 'URUN DUZENLE' : 'YENI URUN'} sub="ENVANTER KAYIT FORMU" color="var(--accent),var(--blue)">
+      {!item?.id && <DraftBanner hasDraft={hasDraft} onRestore={restoreDraft} onDiscard={discardDraft} />}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
         <div style={{ gridColumn: '1 / -1' }}>
           <label className="form-label">Urun Adi</label>
@@ -510,7 +521,7 @@ function EditModal({ item, onClose, onSave, isPending }) {
       </div>
       <div style={{ display: 'flex', gap: '8px', marginTop: '18px', justifyContent: 'flex-end' }}>
         <button className="btn btn-ghost" onClick={onClose} style={{ borderRadius: '10px' }}>IPTAL</button>
-        <button className="btn btn-primary" disabled={!f.item_name || isPending} onClick={() => onSave(f)} style={{ borderRadius: '10px' }}>
+        <button className="btn btn-primary" disabled={!f.item_name || isPending} onClick={() => { if (!item?.id) onSubmitSuccess(); onSave(f) }} style={{ borderRadius: '10px' }}>
           {isPending ? '...' : item?.id ? 'GUNCELLE' : 'KAYDET'}
         </button>
       </div>

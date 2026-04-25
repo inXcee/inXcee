@@ -2,6 +2,8 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
+import { useDraft } from '../../shared/hooks/useDraft.js'
+import DraftBanner from '../../shared/components/DraftBanner.jsx'
 
 /* ── helpers ─────────────────────────────────────────────────────────────── */
 const fmt = d => d ? new Date(d).toLocaleDateString('tr-TR') : '—'
@@ -368,7 +370,9 @@ export default function DisciplinePage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [searchResults, setSearchResults] = useState([])
   const [selectedPerson, setSelectedPerson] = useState(null)
-  const [cardForm, setCardForm] = useState({ card_type: 'yellow', reason: '' })
+  const INIT_CARD = { card_type: 'yellow', reason: '' }
+  const [cardForm, setCardForm] = useState(INIT_CARD)
+  const { hasDraft: hasDraftCard, restoreDraft: restoreDraftCard, discardDraft: discardDraftCard, onSubmitSuccess: onCardSubmitSuccess } = useDraft('draft:discipline', cardForm, setCardForm, INIT_CARD)
   const [blacklistReason, setBlacklistReason] = useState('')
   const [showBlacklist, setShowBlacklist] = useState(false)
   const [searching, setSearching] = useState(false)
@@ -436,7 +440,8 @@ export default function DisciplinePage() {
   const addCard = useMutation({
     mutationFn: () => api.post('/discipline/records', { personnel_id: selectedPerson.id, ...cardForm }),
     onSuccess: async () => {
-      setCardForm({ card_type: 'yellow', reason: '' })
+      onCardSubmitSuccess()
+      setCardForm(INIT_CARD)
       qc.invalidateQueries({ queryKey: ['discipline-records'] })
       qc.invalidateQueries({ queryKey: ['discipline-stats'] })
       qc.invalidateQueries({ queryKey: ['discipline-reason-suggestions'] })
@@ -782,6 +787,7 @@ export default function DisciplinePage() {
                       </span>
                     </div>
 
+                    <DraftBanner hasDraft={hasDraftCard} onRestore={restoreDraftCard} onDiscard={discardDraftCard} />
                     {/* Card type buttons */}
                     <div style={{ display: 'flex', gap: '8px' }}>
                       <button

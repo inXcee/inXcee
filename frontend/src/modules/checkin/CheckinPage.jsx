@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import BlacklistAlert from './BlacklistAlert.jsx'
+import { useDraft } from '../../shared/hooks/useDraft.js'
+import DraftBanner from '../../shared/components/DraftBanner.jsx'
 import ZimmetForm from './ZimmetForm.jsx'
 import CsvImport from './CsvImport.jsx'
 
@@ -420,7 +422,9 @@ export default function CheckinPage() {
   const [nameSearching, setNameSearching] = useState(false)
   const [foundPerson, setFoundPerson] = useState(null)
   const [blacklistPerson, setBlacklistPerson] = useState(null)
-  const [formData, setFormData] = useState({ full_name: '', company: '', job_title: '', preferred_block: '', phone_number: '', emergency_name: '', emergency_phone: '' })
+  const INIT_FORM_DATA = { full_name: '', company: '', job_title: '', preferred_block: '', phone_number: '', emergency_name: '', emergency_phone: '' }
+  const [formData, setFormData] = useState(INIT_FORM_DATA)
+  const { hasDraft, restoreDraft, discardDraft, onSubmitSuccess } = useDraft('draft:checkin', formData, setFormData, INIT_FORM_DATA)
   const [shiftType, setShiftType] = useState('day')
   const [photoFile, setPhotoFile] = useState(null)
   const [photoPreview, setPhotoPreview] = useState(null)
@@ -513,6 +517,7 @@ export default function CheckinPage() {
         setSuggestedRoom(roomRes.data)
         setSelectedRoom(roomRes.data)
       } catch { setSuggestedRoom(null); setSelectedRoom(null) }
+      onSubmitSuccess()
       setStep(2)
     } catch (e) { setError(e.response?.data?.error || 'Kayıt hatası') }
     finally { setLoading(false) }
@@ -684,6 +689,7 @@ export default function CheckinPage() {
                 <div><div className="panel-title">YENİ PERSONEL KAYDI</div><div className="panel-subtitle">BİLGİLERİ GİRİN</div></div>
               </div>
               <div className="panel-body" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <DraftBanner hasDraft={hasDraft} onRestore={restoreDraft} onDiscard={discardDraft} />
                 <div>
                   <label className="form-label">Ad Soyad *</label>
                   <input value={formData.full_name} onChange={e => setFormData(p => ({ ...p, full_name: e.target.value }))}

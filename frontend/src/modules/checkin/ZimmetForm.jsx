@@ -1,5 +1,7 @@
-import { useRef, useState } from 'react'
+import { useRef, useState, useMemo } from 'react'
 import api from '../../shared/api/client.js'
+import { useDraft } from '../../shared/hooks/useDraft.js'
+import DraftBanner from '../../shared/components/DraftBanner.jsx'
 
 const DEFAULT_ITEMS = [
   { item_name: 'Yatak Çarşafı', quantity: 2 },
@@ -10,6 +12,8 @@ const DEFAULT_ITEMS = [
 
 export default function ZimmetForm({ personnelId, onDone }) {
   const [items, setItems] = useState(DEFAULT_ITEMS.map(i => ({ ...i, checked: true })))
+  const INIT_ITEMS = useMemo(() => DEFAULT_ITEMS.map(i => ({ ...i, checked: true })), [])
+  const { hasDraft, restoreDraft, discardDraft, onSubmitSuccess } = useDraft(`draft:zimmet:${personnelId}`, items, setItems, INIT_ITEMS)
   const [signing, setSigning] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -59,6 +63,7 @@ export default function ZimmetForm({ personnelId, onDone }) {
     try {
       await api.post('/checkin/zimmet', { personnel_id: personnelId, items: selectedItems })
       await api.post('/checkin/zimmet/sign', { personnel_id: personnelId, signature })
+      onSubmitSuccess()
       setSubmitted(true)
       onDone?.()
     } catch (e) {
@@ -80,6 +85,7 @@ export default function ZimmetForm({ personnelId, onDone }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      <DraftBanner hasDraft={hasDraft} onRestore={restoreDraft} onDiscard={discardDraft} />
       {/* Items list */}
       <div>
         <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '2px', marginBottom: '10px' }}>

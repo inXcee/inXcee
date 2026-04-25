@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
+import { useDraft } from '../../shared/hooks/useDraft.js'
+import DraftBanner from '../../shared/components/DraftBanner.jsx'
 
 const PRIORITIES = [
   { key: 'high', label: 'ACİL', color: 'var(--red)' },
@@ -981,7 +983,9 @@ export default function MaintenancePage() {
     window.addEventListener('yys:open-modal', handler)
     return () => window.removeEventListener('yys:open-modal', handler)
   }, [])
-  const [form, setForm] = useState({ location: '', description: '', priority: 'medium' })
+  const INIT_MAINTENANCE = { location: '', description: '', priority: 'medium' }
+  const [form, setForm] = useState(INIT_MAINTENANCE)
+  const { hasDraft, restoreDraft, discardDraft, onSubmitSuccess } = useDraft('draft:maintenance', form, setForm, INIT_MAINTENANCE)
   const [formPhoto, setFormPhoto] = useState(null)
   const [filter, setFilter] = useState('open')
   const [searchTerm, setSearchTerm] = useState('')
@@ -1028,8 +1032,9 @@ export default function MaintenancePage() {
       return api.post('/maintenance/requests', fd)
     },
     onSuccess: () => {
+      onSubmitSuccess()
       setShowForm(false)
-      setForm({ location: '', description: '', priority: 'medium' })
+      setForm(INIT_MAINTENANCE)
       setFormPhoto(null)
       qc.invalidateQueries({ queryKey: ['maintenance-requests'] })
       qc.invalidateQueries({ queryKey: ['maintenance-stats'] })
@@ -1111,6 +1116,7 @@ export default function MaintenancePage() {
             <div className="panel-title">YENİ ARIZA KAYDI</div>
           </div>
           <div className="panel-body" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <DraftBanner hasDraft={hasDraft} onRestore={restoreDraft} onDiscard={discardDraft} />
             <LocationPicker value={form.location} onChange={v => setForm(p => ({ ...p, location: v }))} />
             <div>
               <label className="form-label">Açıklama</label>

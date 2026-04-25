@@ -1,11 +1,15 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
+import { useDraft } from '../../shared/hooks/useDraft.js'
+import DraftBanner from '../../shared/components/DraftBanner.jsx'
 
 export default function AnnouncementsPage() {
   const qc = useQueryClient()
   const [toast, setToast] = useState(null)
-  const [form, setForm] = useState({ title:'', body:'', expires_at:'' })
+  const INIT_FORM = { title: '', body: '', expires_at: '' }
+  const [form, setForm] = useState(INIT_FORM)
+  const { hasDraft, restoreDraft, discardDraft, onSubmitSuccess } = useDraft('draft:announcement', form, setForm, INIT_FORM)
 
   const { data: list = [], isLoading } = useQuery({
     queryKey: ['admin-announcements'],
@@ -15,8 +19,9 @@ export default function AnnouncementsPage() {
   const create = useMutation({
     mutationFn: body => api.post('/announcements', body),
     onSuccess: () => {
+      onSubmitSuccess()
+      setForm(INIT_FORM)
       qc.invalidateQueries({ queryKey: ['admin-announcements'] })
-      setForm({ title:'', body:'', expires_at:'' })
       showToast('Duyuru oluşturuldu','success')
     },
     onError: e => showToast(e.response?.data?.error ?? 'Hata','error'),
@@ -59,6 +64,7 @@ export default function AnnouncementsPage() {
         <div className="panel-header"><div className="panel-title">YENİ DUYURU</div></div>
         <div className="panel-body">
           <form onSubmit={handleSubmit}>
+            <DraftBanner hasDraft={hasDraft} onRestore={restoreDraft} onDiscard={discardDraft} />
             <div style={{ marginBottom:'12px' }}>
               <label className="form-label">BAŞLIK</label>
               <input className="form-input" placeholder="Duyuru başlığı" maxLength={100}
