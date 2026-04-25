@@ -5,13 +5,13 @@ import { useDraft } from '../../shared/hooks/useDraft.js'
 import DraftBanner from '../../shared/components/DraftBanner.jsx'
 
 const CATEGORIES = [
-  { key: 'laundry', label: 'Camasir', color: 'var(--blue)', icon: '♨', bg: 'rgba(52,152,219,.08)' },
-  { key: 'maintenance', label: 'Bakim', color: 'var(--amber)', icon: '⚙', bg: 'rgba(240,165,0,.08)' },
+  { key: 'laundry', label: 'Çamaşır', color: 'var(--blue)', icon: '♨', bg: 'rgba(52,152,219,.08)' },
+  { key: 'maintenance', label: 'Bakım', color: 'var(--amber)', icon: '⚙', bg: 'rgba(240,165,0,.08)' },
   { key: 'housekeeping', label: 'Temizlik', color: 'var(--green)', icon: '◈', bg: 'rgba(39,201,106,.08)' },
   { key: 'general', label: 'Genel', color: 'var(--purple)', icon: '▨', bg: 'rgba(155,89,182,.08)' },
 ]
 const UNITS = ['adet', 'kg', 'litre', 'paket', 'kutu', 'set', 'metre', 'g', 'ml']
-const MOVE_LABEL = { in: 'GIRIS', out: 'CIKIS', count: 'SAYIM', initial: 'KAYIT' }
+const MOVE_LABEL = { in: 'GİRİŞ', out: 'ÇIKIŞ', count: 'SAYIM', initial: 'KAYIT' }
 const MOVE_COLOR = { in: 'var(--green)', out: 'var(--red)', count: 'var(--blue)', initial: 'var(--text3)' }
 const TABS = [
   { key: 'stock', label: 'STOK', icon: '▦' },
@@ -164,7 +164,7 @@ const LowStockAlert = memo(function LowStockAlert({ items }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // ITEM CARD — Premium
 // ─────────────────────────────────────────────────────────────────────────────
-const ItemCard = memo(function ItemCard({ item, onAdjust, onCheckout, onEdit, onShowLog, forecastEntry }) {
+const ItemCard = memo(function ItemCard({ item, onAdjust, onCheckout, onEdit, onShowLog, onDelete, forecastEntry }) {
   const ct = cat(item.category)
   const isLow = item.reorder_threshold > 0 && item.quantity <= item.reorder_threshold
   const isOut = item.quantity === 0
@@ -236,18 +236,24 @@ const ItemCard = memo(function ItemCard({ item, onAdjust, onCheckout, onEdit, on
             {item.reorder_threshold > 0 && <span style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text4)' }}>min {item.reorder_threshold}</span>}
             {val > 0 && <span style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--accent)', fontWeight: 600 }}>{money(val)}</span>}
           </div>
+          {item.last_updated && (
+            <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text4)', marginTop: '4px' }}>
+              güncellendi: {fmt(item.last_updated)}
+            </div>
+          )}
         </div>
 
         {/* Actions */}
         <div style={{ display: 'flex', gap: '4px', borderTop: '1px solid var(--border)', paddingTop: '10px' }}>
           {[
-            { label: '+/- STOK', color: 'var(--green)', fn: () => onAdjust(item) },
-            { label: 'TESLIM', color: 'var(--blue)', fn: () => onCheckout(item) },
-            { label: 'LOG', color: 'var(--purple)', fn: () => onShowLog(item) },
-            { label: 'DUZ', color: 'var(--accent)', fn: () => onEdit(item) },
+            { label: '+/-', color: 'var(--green)', fn: () => onAdjust(item), flex: true },
+            { label: 'TESLİM', color: 'var(--blue)', fn: () => onCheckout(item), flex: true },
+            { label: 'LOG', color: 'var(--purple)', fn: () => onShowLog(item), flex: false },
+            { label: 'DÜZ', color: 'var(--accent)', fn: () => onEdit(item), flex: false },
+            { label: 'SİL', color: 'var(--red)', fn: () => onDelete(item), flex: false },
           ].map(a => (
             <button key={a.label} onClick={a.fn} style={{
-              flex: a.label === '+/- STOK' || a.label === 'TESLIM' ? 1 : 'none',
+              flex: a.flex ? 1 : 'none',
               padding: '6px 8px', border: '1px solid var(--border)', borderRadius: '8px',
               background: 'var(--surface)', color: a.color, fontSize: '9px', fontWeight: 700,
               fontFamily: 'var(--mono)', cursor: 'pointer', transition: 'all .15s',
@@ -651,7 +657,10 @@ function ReceiptModal({ items, onClose }) {
   const [receiptDate, setReceiptDate] = useState(new Date().toISOString().slice(0, 10))
   const [notes, setNotes] = useState('')
   const [lines, setLines] = useState([{ item_id: '', quantity: '', unit_price: '' }])
+  const [lineSearches, setLineSearches] = useState({})
   const [result, setResult] = useState(null)
+
+  const updateLineSearch = (idx, val) => setLineSearches(p => ({ ...p, [idx]: val }))
 
   const addLine = () => setLines(p => [...p, { item_id: '', quantity: '', unit_price: '' }])
   const removeLine = idx => setLines(p => p.filter((_, i) => i !== idx))
@@ -727,14 +736,18 @@ function ReceiptModal({ items, onClose }) {
                 padding: '10px 12px', background: 'var(--surface2)', borderRadius: '10px', border: '1px solid var(--border)',
               }}>
                 <div>
-                  <label style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text4)', letterSpacing: '1px', display: 'block', marginBottom: '3px' }}>URUN</label>
+                  <label style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text4)', letterSpacing: '1px', display: 'block', marginBottom: '3px' }}>ÜRÜN</label>
+                  <input className="form-input" placeholder="Ürün ara..." value={lineSearches[idx] ?? ''}
+                    onChange={e => updateLineSearch(idx, e.target.value)}
+                    style={{ borderRadius: '8px', fontSize: '11px', marginBottom: '3px' }} />
                   <select className="form-select" value={line.item_id} onChange={e => {
                     updateLine(idx, 'item_id', e.target.value)
+                    updateLineSearch(idx, '')
                     const it = items.find(i => i.id === +e.target.value)
                     if (it && !line.unit_price) updateLine(idx, 'unit_price', it.unit_price || '')
                   }} style={{ borderRadius: '8px', fontSize: '11px' }}>
-                    <option value="">Urun sec...</option>
-                    {items.map(i => <option key={i.id} value={i.id}>{i.item_name} ({i.quantity} {i.unit})</option>)}
+                    <option value="">Ürün seç...</option>
+                    {items.filter(i => !lineSearches[idx] || i.item_name.toLowerCase().includes(lineSearches[idx].toLowerCase())).map(i => <option key={i.id} value={i.id}>{i.item_name} ({i.quantity} {i.unit})</option>)}
                   </select>
                 </div>
                 <div>
@@ -853,6 +866,8 @@ function ReceiptDetailModal({ receiptId, onClose }) {
 function ActiveCheckoutsPanel({ fullView }) {
   const qc = useQueryClient()
   const inv = () => { qc.invalidateQueries({ queryKey: ['inventory'] }); qc.invalidateQueries({ queryKey: ['inventory-stats'] }); qc.invalidateQueries({ queryKey: ['checkouts-active'] }) }
+  const [returningId, setReturningId] = useState(null)
+  const [returnQty, setReturnQty] = useState(1)
 
   const { data: checkouts = [] } = useQuery({
     queryKey: ['checkouts-active'],
@@ -861,8 +876,8 @@ function ActiveCheckoutsPanel({ fullView }) {
   })
 
   const returnMut = useMutation({
-    mutationFn: id => api.post(`/inventory/return/${id}`),
-    onSuccess: inv,
+    mutationFn: ({ id, qty }) => api.post(`/inventory/return/${id}`, { quantity: qty }),
+    onSuccess: () => { inv(); setReturningId(null) },
   })
 
   if (!fullView && checkouts.length === 0) return null
@@ -871,7 +886,7 @@ function ActiveCheckoutsPanel({ fullView }) {
       <div style={{ height: '2px', background: 'linear-gradient(90deg,var(--blue),var(--red))' }} />
       <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
-          <div style={{ fontFamily: 'var(--display)', fontSize: '14px', letterSpacing: '2px' }}>AKTIF TESLIMLER</div>
+          <div style={{ fontFamily: 'var(--display)', fontSize: '14px', letterSpacing: '2px' }}>AKTİF TESLİMLER</div>
           <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', marginTop: '2px' }}>{checkouts.length} MALZEME PERSONELDE</div>
         </div>
       </div>
@@ -880,7 +895,7 @@ function ActiveCheckoutsPanel({ fullView }) {
       ) : (
         <div style={{ overflowX: 'auto' }}>
           <table className="data-table" style={{ margin: 0 }}>
-            <thead><tr><th>PERSONEL</th><th>ODA</th><th>MALZEME</th><th>ADET</th><th>TARIH</th><th>VEREN</th><th></th></tr></thead>
+            <thead><tr><th>PERSONEL</th><th>ODA</th><th>MALZEME</th><th>ADET</th><th>TARİH</th><th>VEREN</th><th>İADE</th></tr></thead>
             <tbody>
               {checkouts.map(co => {
                 const remaining = co.quantity - co.returned_qty
@@ -896,22 +911,102 @@ function ActiveCheckoutsPanel({ fullView }) {
                     <td style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)', whiteSpace: 'nowrap' }}>{fmt(co.checked_out_at)}</td>
                     <td style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)' }}>{co.given_by}</td>
                     <td>
-                      <button onClick={() => returnMut.mutate(co.id)} disabled={returnMut.isPending}
-                        style={{
-                          padding: '5px 12px', border: '1px solid rgba(39,201,106,.2)', borderRadius: '8px',
-                          background: 'rgba(39,201,106,.05)', color: 'var(--green)', fontSize: '9px', fontWeight: 700,
-                          fontFamily: 'var(--mono)', cursor: 'pointer', transition: 'all .15s',
-                        }}
-                        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(39,201,106,.1)' }}
-                        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(39,201,106,.05)' }}>
-                        IADE
-                      </button>
+                      {returningId === co.id ? (
+                        <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                          <input type="number" min="1" max={remaining} value={returnQty}
+                            onChange={e => setReturnQty(Math.max(1, Math.min(remaining, +e.target.value)))}
+                            style={{ width: '52px', padding: '4px 6px', borderRadius: '6px', border: '1px solid var(--border)', fontFamily: 'var(--mono)', fontSize: '12px', fontWeight: 700, textAlign: 'center', background: 'var(--surface)', color: 'var(--text)' }} />
+                          <button onClick={() => returnMut.mutate({ id: co.id, qty: returnQty })} disabled={returnMut.isPending}
+                            style={{ padding: '4px 8px', border: '1px solid rgba(39,201,106,.3)', borderRadius: '6px', background: 'rgba(39,201,106,.08)', color: 'var(--green)', fontSize: '11px', cursor: 'pointer', fontWeight: 700 }}>✓</button>
+                          <button onClick={() => setReturningId(null)}
+                            style={{ padding: '4px 8px', border: '1px solid var(--border)', borderRadius: '6px', background: 'var(--surface2)', color: 'var(--text3)', fontSize: '11px', cursor: 'pointer' }}>✕</button>
+                        </div>
+                      ) : (
+                        <button onClick={() => { setReturningId(co.id); setReturnQty(remaining) }}
+                          style={{
+                            padding: '5px 12px', border: '1px solid rgba(39,201,106,.2)', borderRadius: '8px',
+                            background: 'rgba(39,201,106,.05)', color: 'var(--green)', fontSize: '9px', fontWeight: 700,
+                            fontFamily: 'var(--mono)', cursor: 'pointer',
+                          }}
+                          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(39,201,106,.1)' }}
+                          onMouseLeave={e => { e.currentTarget.style.background = 'rgba(39,201,106,.05)' }}>
+                          İADE
+                        </button>
+                      )}
                     </td>
                   </tr>
                 )
               })}
             </tbody>
           </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CHECKOUTS TAB VIEW — Aktif + Geçmiş toggle
+// ─────────────────────────────────────────────────────────────────────────────
+function CheckoutsTabView() {
+  const [view, setView] = useState('active')
+  const { data: history = [] } = useQuery({
+    queryKey: ['checkouts-history'],
+    queryFn: () => api.get('/inventory/checkouts/history?limit=100').then(r => r.data),
+    enabled: view === 'history',
+  })
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: '2px', marginBottom: '16px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '12px', padding: '3px', width: 'fit-content' }}>
+        {[['active', 'AKTİF'], ['history', 'GEÇMİŞ']].map(([key, label]) => (
+          <button key={key} onClick={() => setView(key)} style={{
+            padding: '7px 20px', border: 'none', borderRadius: '9px', cursor: 'pointer',
+            fontFamily: 'var(--mono)', fontSize: '10px', fontWeight: 700, letterSpacing: '1px',
+            background: view === key ? 'var(--accent)' : 'transparent',
+            color: view === key ? '#000' : 'var(--text3)',
+          }}>{label}</button>
+        ))}
+      </div>
+      {view === 'active' && <ActiveCheckoutsPanel fullView />}
+      {view === 'history' && (
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '14px', overflow: 'hidden' }}>
+          <div style={{ height: '2px', background: 'linear-gradient(90deg,var(--purple),var(--blue))' }} />
+          <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)' }}>
+            <div style={{ fontFamily: 'var(--display)', fontSize: '14px', letterSpacing: '2px' }}>TESLİM GEÇMİŞİ</div>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', marginTop: '2px' }}>{history.length} KAYIT (İADE EDİLENLER DAHİL)</div>
+          </div>
+          {history.length === 0 ? (
+            <div style={{ padding: '32px', textAlign: 'center', fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--text3)' }}>Geçmiş kayıt yok</div>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table className="data-table" style={{ margin: 0 }}>
+                <thead><tr><th>PERSONEL</th><th>MALZEME</th><th>ADET</th><th>TESLİM TARİHİ</th><th>İADE TARİHİ</th><th>VEREN</th><th>DURUM</th></tr></thead>
+                <tbody>
+                  {history.map(co => (
+                    <tr key={co.id} style={{ opacity: co.returned_at ? 0.7 : 1 }}>
+                      <td>
+                        <div style={{ fontWeight: 500, fontSize: '12px' }}>{co.personnel_name}</div>
+                        <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)' }}>{co.company || '-'}</div>
+                      </td>
+                      <td style={{ fontSize: '12px' }}>{co.item_name}</td>
+                      <td style={{ fontFamily: 'var(--mono)', fontWeight: 700 }}>{co.quantity} <span style={{ fontSize: '9px', fontWeight: 400, color: 'var(--text3)' }}>{co.unit}</span></td>
+                      <td style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)', whiteSpace: 'nowrap' }}>{fmt(co.checked_out_at)}</td>
+                      <td style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: co.returned_at ? 'var(--green)' : 'var(--text4)', whiteSpace: 'nowrap' }}>
+                        {co.returned_at ? fmt(co.returned_at) : '—'}
+                      </td>
+                      <td style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)' }}>{co.given_by}</td>
+                      <td>
+                        {co.returned_at
+                          ? <span style={{ padding: '2px 8px', borderRadius: '6px', fontSize: '8px', fontWeight: 700, background: 'rgba(39,201,106,.08)', color: 'var(--green)', fontFamily: 'var(--mono)' }}>İADE</span>
+                          : <span style={{ padding: '2px 8px', borderRadius: '6px', fontSize: '8px', fontWeight: 700, background: 'rgba(52,152,219,.08)', color: 'var(--blue)', fontFamily: 'var(--mono)' }}>AKTİF</span>
+                        }
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -987,24 +1082,42 @@ function ReceiptsListPanel({ onNewReceipt }) {
 // RECENT MOVEMENTS PANEL
 // ─────────────────────────────────────────────────────────────────────────────
 function RecentMovements({ fullView }) {
+  const [typeFilter, setTypeFilter] = useState('')
   const { data: moves = [] } = useQuery({
     queryKey: ['inv-recent-moves'],
-    queryFn: () => api.get(`/inventory/movements/recent?limit=${fullView ? 50 : 8}`).then(r => r.data),
+    queryFn: () => api.get(`/inventory/movements/recent?limit=${fullView ? 100 : 8}`).then(r => r.data),
     refetchInterval: 30000,
   })
+  const displayed = typeFilter ? moves.filter(m => m.type === typeFilter) : moves
   if (!fullView && !moves.length) return null
   return (
     <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '14px', overflow: 'hidden', ...(fullView ? {} : { marginTop: '20px' }) }}>
       <div style={{ height: '2px', background: 'linear-gradient(90deg,var(--accent),var(--purple))' }} />
-      <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)' }}>
-        <div style={{ fontFamily: 'var(--display)', fontSize: '14px', letterSpacing: '2px' }}>SON HAREKETLER</div>
-        <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', marginTop: '2px' }}>{fullView ? `${moves.length} HAREKET` : 'SON 8 STOK ISLEM'}</div>
+      <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+        <div>
+          <div style={{ fontFamily: 'var(--display)', fontSize: '14px', letterSpacing: '2px' }}>SON HAREKETLER</div>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', marginTop: '2px' }}>{fullView ? `${displayed.length} hareket gösteriliyor` : 'SON 8 STOK İŞLEM'}</div>
+        </div>
+        {fullView && (
+          <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+            {[['', 'TÜMÜ'], ['in', 'GİRİŞ'], ['out', 'ÇIKIŞ'], ['count', 'SAYIM'], ['initial', 'KAYIT']].map(([key, label]) => (
+              <button key={key} onClick={() => setTypeFilter(key)}
+                style={{
+                  padding: '4px 10px', border: '1px solid var(--border)', borderRadius: '8px', cursor: 'pointer',
+                  fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 700, letterSpacing: '0.5px',
+                  background: typeFilter === key ? (key === 'in' ? 'var(--green)' : key === 'out' ? 'var(--red)' : key === 'count' ? 'var(--blue)' : 'var(--accent)') : 'var(--surface)',
+                  color: typeFilter === key ? '#000' : key === 'in' ? 'var(--green)' : key === 'out' ? 'var(--red)' : key === 'count' ? 'var(--blue)' : 'var(--text3)',
+                  borderColor: typeFilter === key ? 'transparent' : 'var(--border)',
+                }}>{label}</button>
+            ))}
+          </div>
+        )}
       </div>
-      {moves.length === 0 ? (
+      {displayed.length === 0 ? (
         <div style={{ padding: '32px', textAlign: 'center', fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--text3)' }}>Hareket yok</div>
       ) : (
         <div style={{ padding: '0 18px 14px' }}>
-          {moves.map(m => (
+          {(fullView ? displayed : displayed.slice(0, 8)).map(m => (
             <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '9px 0', borderBottom: '1px solid var(--border)' }}>
               <div style={{
                 width: '32px', height: '32px', borderRadius: '10px', flexShrink: 0,
@@ -1094,7 +1207,7 @@ export default function InventoryPage() {
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
         <div>
           <h1 style={{ fontSize: '30px', letterSpacing: '5px', color: 'var(--text)', margin: 0 }}>ENVANTER</h1>
-          <p style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)', marginTop: '5px', letterSpacing: '1.5px' }}>STOK TAKIP · MAL GIRIS · MALZEME TESLIM · SAYIM</p>
+          <p style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)', marginTop: '5px', letterSpacing: '1.5px' }}>STOK TAKİP · MAL GİRİŞ · MALZEME TESLİM · SAYIM</p>
         </div>
         <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
           <button onClick={() => api.get('/inventory/export/csv', { responseType: 'blob' }).then(r => { const url = URL.createObjectURL(r.data); const a = document.createElement('a'); a.href = url; a.download = 'envanter.csv'; a.click(); URL.revokeObjectURL(url) })} className="btn btn-ghost btn-sm" style={{ borderRadius: '10px' }}>CSV</button>
@@ -1200,6 +1313,7 @@ export default function InventoryPage() {
               {filtered.map(item => (
                 <ItemCard key={item.id} item={item}
                   onAdjust={setAdjustItem} onCheckout={setCheckoutItem} onEdit={setEditItem} onShowLog={setLogItem}
+                  onDelete={it => { if (window.confirm(`"${it.item_name}" silinsin mi?`)) deleteMut.mutate(it.id) }}
                   forecastEntry={forecastMap[item.id]} />
               ))}
               {filtered.length === 0 && (
@@ -1293,7 +1407,7 @@ export default function InventoryPage() {
 
       {/* ═══════════════ TAB: CHECKOUTS ═══════════════ */}
       {activeTab === 'checkouts' && (
-        <ActiveCheckoutsPanel fullView />
+        <CheckoutsTabView />
       )}
 
       {/* ═══════════════ TAB: HISTORY ═══════════════ */}
