@@ -27,6 +27,12 @@ import { announcementsRouter } from './modules/announcements/routes.js'
 import { avsWorkersRouter } from './modules/avs-workers/routes.js'
 import { mobileAuthRouter } from './modules/mobile-auth/routes.js'
 
+if (process.env.NODE_ENV === 'production' && !process.env.ALLOWED_ORIGIN) {
+  console.error('[Startup] HATA: ALLOWED_ORIGIN env değişkeni production\'da zorunludur.')
+  console.error('[Startup] Render Dashboard\'a ALLOWED_ORIGIN=https://yourdomain.com ekleyin.')
+  process.exit(1)
+}
+
 const allowedOrigins = process.env.ALLOWED_ORIGIN
   ? process.env.ALLOWED_ORIGIN.split(',').map(o => o.trim())
   : ['http://localhost:5173', 'http://localhost:5174']
@@ -177,7 +183,7 @@ app.use('/api/notifications', notificationsLimiter, notificationsRouter)
 app.use('/api/whatsapp', writeLimiter, whatsappRouter)
 app.use('/api/shifts', writeLimiter, shiftsRouter)
 app.use('/api/checkout', writeLimiter, checkoutRouter)
-app.use('/api/reports', reportsRouter)
+app.use('/api/reports', readLimiter, reportsRouter)
 app.use('/api/inventory', writeLimiter, inventoryRouter)
 app.use('/api/users', writeLimiter, usersRouter)
 app.use('/api/settings/email', writeLimiter, emailRouter)
