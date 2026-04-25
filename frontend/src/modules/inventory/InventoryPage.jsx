@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from 'react'
+import { useState, useMemo, useRef, memo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { useDraft } from '../../shared/hooks/useDraft.js'
@@ -56,7 +56,7 @@ function Modal({ children, onClose, title, sub, color = 'var(--accent),var(--blu
 // ─────────────────────────────────────────────────────────────────────────────
 // KPI ROW — Premium
 // ─────────────────────────────────────────────────────────────────────────────
-function KPIRow({ stats }) {
+const KPIRow = memo(function KPIRow({ stats }) {
   if (!stats) return null
   const kpis = [
     { label: 'TOPLAM URUN', val: stats.total_items, color: 'var(--accent)', icon: '▦', gradient: 'linear-gradient(135deg, rgba(240,165,0,.06), rgba(240,165,0,.02))' },
@@ -82,12 +82,12 @@ function KPIRow({ stats }) {
       ))}
     </div>
   )
-}
+})
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CATEGORY CHART — Premium
 // ─────────────────────────────────────────────────────────────────────────────
-function CategoryChart({ stats }) {
+const CategoryChart = memo(function CategoryChart({ stats }) {
   if (!stats?.by_category?.length) return null
   const mx = Math.max(...stats.by_category.map(c => c.value || 0), 1)
   return (
@@ -128,12 +128,12 @@ function CategoryChart({ stats }) {
       </div>
     </div>
   )
-}
+})
 
 // ─────────────────────────────────────────────────────────────────────────────
 // LOW STOCK ALERT — Premium
 // ─────────────────────────────────────────────────────────────────────────────
-function LowStockAlert({ items }) {
+const LowStockAlert = memo(function LowStockAlert({ items }) {
   const low = items.filter(i => i.reorder_threshold > 0 && i.quantity <= i.reorder_threshold)
   if (!low.length) return null
   return (
@@ -159,12 +159,12 @@ function LowStockAlert({ items }) {
       </div>
     </div>
   )
-}
+})
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ITEM CARD — Premium
 // ─────────────────────────────────────────────────────────────────────────────
-function ItemCard({ item, onAdjust, onCheckout, onEdit, onShowLog, forecastEntry }) {
+const ItemCard = memo(function ItemCard({ item, onAdjust, onCheckout, onEdit, onShowLog, forecastEntry }) {
   const ct = cat(item.category)
   const isLow = item.reorder_threshold > 0 && item.quantity <= item.reorder_threshold
   const isOut = item.quantity === 0
@@ -174,7 +174,7 @@ function ItemCard({ item, onAdjust, onCheckout, onEdit, onShowLog, forecastEntry
     <div style={{
       background: 'var(--surface)',
       border: `1px solid ${isOut ? 'rgba(231,76,60,.2)' : isLow ? 'rgba(240,165,0,.2)' : 'var(--border)'}`,
-      borderRadius: '14px', overflow: 'hidden', transition: 'all 0.2s ease',
+      borderRadius: '14px', overflow: 'hidden', transition: 'transform .2s ease, box-shadow .2s ease',
     }}
       onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 8px 24px rgba(0,0,0,.06)' }}
       onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = 'none' }}>
@@ -262,7 +262,7 @@ function ItemCard({ item, onAdjust, onCheckout, onEdit, onShowLog, forecastEntry
       </div>
     </div>
   )
-}
+})
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ADJUST MODAL
@@ -493,8 +493,9 @@ function LogModal({ item, onClose }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // EDIT MODAL
 // ─────────────────────────────────────────────────────────────────────────────
+const INIT_F = { item_name: '', quantity: 0, unit: 'adet', reorder_threshold: 0, category: 'general', location: '', unit_price: 0 }
+
 function EditModal({ item, onClose, onSave, isPending }) {
-  const INIT_F = { item_name: '', quantity: 0, unit: 'adet', reorder_threshold: 0, category: 'general', location: '', unit_price: 0 }
   const [f, sf] = useState(item || INIT_F)
   const u = (k, v) => sf(p => ({ ...p, [k]: v }))
   const draftKey = item?.id ? null : 'draft:inventory:new-item'

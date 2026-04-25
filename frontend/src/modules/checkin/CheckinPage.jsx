@@ -411,6 +411,8 @@ function StatsDashboard() {
   )
 }
 
+const INIT_FORM_DATA = { full_name: '', company: '', job_title: '', preferred_block: '', phone_number: '', emergency_name: '', emergency_phone: '' }
+
 // ── Main Page ───────────────────────────────────────────────────────────────
 export default function CheckinPage() {
   const [step, setStep] = useState(0)
@@ -422,7 +424,6 @@ export default function CheckinPage() {
   const [nameSearching, setNameSearching] = useState(false)
   const [foundPerson, setFoundPerson] = useState(null)
   const [blacklistPerson, setBlacklistPerson] = useState(null)
-  const INIT_FORM_DATA = { full_name: '', company: '', job_title: '', preferred_block: '', phone_number: '', emergency_name: '', emergency_phone: '' }
   const [formData, setFormData] = useState(INIT_FORM_DATA)
   const { hasDraft, restoreDraft, discardDraft, onSubmitSuccess } = useDraft('draft:checkin', formData, setFormData, INIT_FORM_DATA)
   const [shiftType, setShiftType] = useState('day')

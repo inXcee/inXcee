@@ -4,10 +4,11 @@ import api from '../../shared/api/client.js'
 import { useDraft } from '../../shared/hooks/useDraft.js'
 import DraftBanner from '../../shared/components/DraftBanner.jsx'
 
+const INIT_FORM = { title: '', body: '', expires_at: '' }
+
 export default function AnnouncementsPage() {
   const qc = useQueryClient()
   const [toast, setToast] = useState(null)
-  const INIT_FORM = { title: '', body: '', expires_at: '' }
   const [form, setForm] = useState(INIT_FORM)
   const { hasDraft, restoreDraft, discardDraft, onSubmitSuccess } = useDraft('draft:announcement', form, setForm, INIT_FORM)
 

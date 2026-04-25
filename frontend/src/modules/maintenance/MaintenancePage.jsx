@@ -969,6 +969,8 @@ function DetailPanel({ requestId, onClose }) {
   )
 }
 
+const INIT_MAINTENANCE = { location: '', description: '', priority: 'medium' }
+
 /* ═══════════════════════════════════════════════════════════════════════════
    Main Page
    ═══════════════════════════════════════════════════════════════════════════ */
@@ -983,7 +985,6 @@ export default function MaintenancePage() {
     window.addEventListener('yys:open-modal', handler)
     return () => window.removeEventListener('yys:open-modal', handler)
   }, [])
-  const INIT_MAINTENANCE = { location: '', description: '', priority: 'medium' }
   const [form, setForm] = useState(INIT_MAINTENANCE)
   const { hasDraft, restoreDraft, discardDraft, onSubmitSuccess } = useDraft('draft:maintenance', form, setForm, INIT_MAINTENANCE)
   const [formPhoto, setFormPhoto] = useState(null)

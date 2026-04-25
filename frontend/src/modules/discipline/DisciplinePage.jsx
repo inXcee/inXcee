@@ -362,6 +362,8 @@ function BlacklistPanel() {
   )
 }
 
+const INIT_CARD = { card_type: 'yellow', reason: '' }
+
 /* ── Main Page ───────────────────────────────────────────────────────────── */
 export default function DisciplinePage() {
   const qc = useQueryClient()
@@ -370,7 +372,6 @@ export default function DisciplinePage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [searchResults, setSearchResults] = useState([])
   const [selectedPerson, setSelectedPerson] = useState(null)
-  const INIT_CARD = { card_type: 'yellow', reason: '' }
   const [cardForm, setCardForm] = useState(INIT_CARD)
   const { hasDraft: hasDraftCard, restoreDraft: restoreDraftCard, discardDraft: discardDraftCard, onSubmitSuccess: onCardSubmitSuccess } = useDraft('draft:discipline', cardForm, setCardForm, INIT_CARD)
   const [blacklistReason, setBlacklistReason] = useState('')
