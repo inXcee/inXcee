@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import { requireRole } from '../../shared/auth/middleware.js'
+import { logAudit } from '../../shared/audit.js'
 import * as svc from './service.js'
 
 export const disciplineRouter = Router()
@@ -33,6 +34,7 @@ disciplineRouter.post('/records', ...mgmt, (req, res) => {
       reason: reason.trim(),
       createdBy: req.user.id
     })
+    logAudit(req.user.id, `discipline_${card_type}_card`, 'discipline', personnel_id, reason.trim())
     res.status(201).json({ ok: true, discipline_points: result.discipline_points })
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
@@ -40,6 +42,7 @@ disciplineRouter.post('/records', ...mgmt, (req, res) => {
 disciplineRouter.delete('/records/:id', ...requireRole('campus_manager'), (req, res) => {
   try {
     svc.deleteRecordService(+req.params.id, req.user.id)
+    logAudit(req.user.id, 'discipline_record_delete', 'discipline', +req.params.id, null)
     res.json({ ok: true })
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
@@ -57,12 +60,14 @@ disciplineRouter.post('/blacklist', ...requireRole('campus_manager'), (req, res)
   if (!req.body.personnel_id) return res.status(400).json({ error: 'Personel ID gerekli' })
   if (!req.body.reason || req.body.reason.trim().length < 3) return res.status(400).json({ error: 'Sebep gerekli' })
   svc.addToBlacklistService(req.body.personnel_id, req.body.reason.trim(), req.user.id)
+  logAudit(req.user.id, 'blacklist_add', 'discipline', req.body.personnel_id, req.body.reason.trim())
   res.json({ ok: true })
 })
 
 disciplineRouter.post('/blacklist/remove', ...requireRole('campus_manager'), (req, res) => {
   if (!req.body.personnel_id) return res.status(400).json({ error: 'Personel ID gerekli' })
   svc.removeFromBlacklistService(req.body.personnel_id, req.user.id)
+  logAudit(req.user.id, 'blacklist_remove', 'discipline', req.body.personnel_id, null)
   res.json({ ok: true })
 })
 
