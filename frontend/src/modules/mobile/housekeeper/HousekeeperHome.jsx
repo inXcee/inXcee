@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import mobileApi from '../auth/mobileApi.js'
 import { useMobileAuth } from '../auth/useMobileAuth.js'
 import { usePullToRefresh } from '../../../shared/hooks/usePullToRefresh.js'
-import { enqueue } from '../../../shared/utils/offlineQueue.js'
+import { enqueue } from '../../../shared/utils/offlineDB.js'
 
 const today = new Date().toISOString().slice(0, 10)
 
@@ -45,7 +45,7 @@ export default function HousekeeperHome() {
     },
     onError: (_, taskId, ctx) => {
       qc.setQueryData(['mobile-hk-tasks', today], ctx.prev)
-      if (!navigator.onLine) enqueue({ type: 'complete_task', taskId })
+      if (!navigator.onLine) enqueue('complete_task', { taskId, checklist: [] })
     },
     onSettled: () => qc.invalidateQueries({ queryKey: ['mobile-hk-tasks'] }),
   })

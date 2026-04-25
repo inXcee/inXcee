@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import mobileApi from '../auth/mobileApi.js'
 import { compressImage } from '../../../shared/utils/compressImage.js'
+import { enqueue } from '../../../shared/utils/offlineDB.js'
 
 const PRIORITIES = [
   { value: 'high', label: 'Yüksek', color: '#ef4444' },
@@ -13,6 +14,7 @@ export default function FaultReport() {
   const [form, setForm] = useState({ location: '', description: '', priority: 'medium' })
   const [photo, setPhoto] = useState(null)
   const [success, setSuccess] = useState(false)
+  const [isQueued, setIsQueued] = useState(false)
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -24,19 +26,32 @@ export default function FaultReport() {
       return mobileApi.post('/housekeeping/fault-report', fd)
     },
     onSuccess: () => { navigator.vibrate?.([20, 60, 20]); setSuccess(true) },
+    onError: async () => {
+      if (!navigator.onLine) {
+        const blobs = photo ? [await compressImage(photo)] : []
+        await enqueue('fault_report', { location: form.location, description: form.description, priority: form.priority }, blobs)
+        setIsQueued(true)
+        setSuccess(true)
+      }
+    },
   })
 
   function reset() {
     setForm({ location: '', description: '', priority: 'medium' })
     setPhoto(null)
     setSuccess(false)
+    setIsQueued(false)
   }
 
   if (success) return (
     <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '70vh', textAlign: 'center' }}>
-      <div style={{ fontSize: '56px', marginBottom: '16px' }}>✅</div>
-      <h2 style={{ fontWeight: 700, margin: '0 0 8px' }}>Arıza Bildirildi</h2>
-      <p style={{ color: '#6b7280', margin: '0 0 32px' }}>Teknik ekip bilgilendirildi</p>
+      <div style={{ fontSize: '56px', marginBottom: '16px' }}>{isQueued ? '📴' : '✅'}</div>
+      <h2 style={{ fontWeight: 700, margin: '0 0 8px' }}>
+        {isQueued ? 'Çevrimdışı Kaydedildi' : 'Arıza Bildirildi'}
+      </h2>
+      <p style={{ color: '#6b7280', margin: '0 0 32px' }}>
+        {isQueued ? 'İnternet gelince otomatik gönderilecek' : 'Teknik ekip bilgilendirildi'}
+      </p>
       <button onClick={reset} style={submitBtn('#3b82f6', true)}>Yeni Bildirim Yap</button>
     </div>
   )

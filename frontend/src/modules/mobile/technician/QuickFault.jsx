@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import mobileApi from '../auth/mobileApi.js'
+import { enqueue } from '../../../shared/utils/offlineDB.js'
 
 const PRIORITIES = [
   { value: 'high', label: 'Yüksek', color: '#ef4444' },
@@ -12,6 +13,7 @@ export default function QuickFault() {
   const qc = useQueryClient()
   const [form, setForm] = useState({ location: '', description: '', priority: 'medium' })
   const [success, setSuccess] = useState(null)
+  const [isQueued, setIsQueued] = useState(false)
 
   const mutation = useMutation({
     mutationFn: () => mobileApi.post('/maintenance/requests', form),
@@ -19,19 +21,31 @@ export default function QuickFault() {
       setSuccess(res.data.id)
       qc.invalidateQueries({ queryKey: ['mobile-tech-requests'] })
     },
+    onError: async () => {
+      if (!navigator.onLine) {
+        await enqueue('quick_fault', form)
+        setIsQueued(true)
+        setSuccess('offline')
+      }
+    },
   })
 
   function reset() {
     setForm({ location: '', description: '', priority: 'medium' })
     setSuccess(null)
+    setIsQueued(false)
   }
 
   if (success) return (
     <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '70vh', textAlign: 'center' }}>
-      <div style={{ fontSize: '56px', marginBottom: '16px' }}>🔧</div>
-      <h2 style={{ fontWeight: 700, margin: '0 0 8px' }}>Talep Oluşturuldu</h2>
-      <p style={{ color: '#6b7280', margin: '0 0 4px' }}>Talep #{success}</p>
-      <p style={{ color: '#9ca3af', fontSize: '13px', margin: '0 0 32px' }}>Talep sisteme kaydedildi</p>
+      <div style={{ fontSize: '56px', marginBottom: '16px' }}>{isQueued ? '📴' : '🔧'}</div>
+      <h2 style={{ fontWeight: 700, margin: '0 0 8px' }}>
+        {isQueued ? 'Çevrimdışı Kaydedildi' : 'Talep Oluşturuldu'}
+      </h2>
+      {!isQueued && <p style={{ color: '#6b7280', margin: '0 0 4px' }}>Talep #{success}</p>}
+      <p style={{ color: '#9ca3af', fontSize: '13px', margin: '0 0 32px' }}>
+        {isQueued ? 'İnternet gelince otomatik gönderilecek' : 'Talep sisteme kaydedildi'}
+      </p>
       <button onClick={reset} style={submitBtn('#3b82f6', true)}>Yeni Talep Oluştur</button>
     </div>
   )

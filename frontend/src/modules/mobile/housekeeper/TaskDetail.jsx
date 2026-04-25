@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useParams, useLocation, useNavigate } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import mobileApi from '../auth/mobileApi.js'
+import { enqueue } from '../../../shared/utils/offlineDB.js'
 
 const CHECKLISTS = {
   room: [
@@ -45,11 +46,23 @@ export default function TaskDetail() {
   const completeMut = useMutation({
     mutationFn: () => mobileApi.post(`/housekeeping/tasks/${id}/complete`, { checklist }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['mobile-hk-tasks'] }); navigate(-1) },
+    onError: () => {
+      if (!navigator.onLine) {
+        enqueue('complete_task', { taskId: id, checklist })
+        navigate(-1)
+      }
+    },
   })
 
   const skipMut = useMutation({
     mutationFn: () => mobileApi.patch(`/housekeeping/tasks/${id}/skip`, { reason: skipReason }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['mobile-hk-tasks'] }); navigate(-1) },
+    onError: () => {
+      if (!navigator.onLine) {
+        enqueue('skip_task', { taskId: id, reason: skipReason })
+        navigate(-1)
+      }
+    },
   })
 
   if (!task) return (
