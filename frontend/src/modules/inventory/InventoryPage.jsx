@@ -31,7 +31,7 @@ const cat = key => CATEGORIES.find(c => c.key === key)
 function Modal({ children, onClose, title, sub, color = 'var(--accent),var(--blue)', wide }) {
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.6)', backdropFilter: 'blur(6px)' }} />
+      <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.6)' }} />
       <div className="fade-up" style={{
         position: 'relative', width: wide ? '680px' : '480px', maxWidth: '95vw', maxHeight: '88vh',
         background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '16px', overflow: 'auto',
@@ -555,7 +555,7 @@ function CountModal({ items, onClose }) {
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.6)', backdropFilter: 'blur(6px)' }} />
+      <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.6)' }} />
       <div className="fade-up" style={{ position: 'relative', width: '720px', maxWidth: '95vw', maxHeight: '90vh', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '16px', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 24px 48px rgba(0,0,0,.25)' }}>
         <div style={{ height: '3px', background: 'linear-gradient(90deg,var(--teal),var(--green))' }} />
 
@@ -1041,7 +1041,9 @@ export default function InventoryPage() {
   const qc = useQueryClient()
   const [activeTab, setActiveTab] = useState('stock')
   const [view, setView] = useState('grid')
+  const [searchInput, setSearchInput] = useState('')
   const [searchQ, setSearchQ] = useState('')
+  const searchTimer = useRef(null)
   const [catFilter, setCatFilter] = useState('')
   const [sortBy, setSortBy] = useState('name')
   const [adjustItem, setAdjustItem] = useState(null)
@@ -1164,7 +1166,8 @@ export default function InventoryPage() {
             display: 'flex', gap: '8px', marginBottom: '16px', flexWrap: 'wrap', alignItems: 'center',
             background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '14px', padding: '12px 16px',
           }}>
-            <input className="form-input" value={searchQ} onChange={e => setSearchQ(e.target.value)}
+            <input className="form-input" value={searchInput}
+              onChange={e => { const v = e.target.value; setSearchInput(v); clearTimeout(searchTimer.current); searchTimer.current = setTimeout(() => setSearchQ(v), 150) }}
               placeholder="Urun veya konum ara..." style={{ flex: '1 1 180px', fontSize: '12px', borderRadius: '10px' }} />
             <div style={{ display: 'flex', gap: '3px' }}>
               <button onClick={() => setCatFilter('')} className={`btn btn-xs ${!catFilter ? 'btn-primary' : 'btn-ghost'}`} style={{ borderRadius: '8px' }}>TUMU</button>
