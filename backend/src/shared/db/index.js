@@ -22,6 +22,9 @@ export function initDB() {
   // /tmp kullanmak VERİ KAYBI yaratır — restart/deploy'da silinir!
   const path = process.env.DB_PATH || 'yys.db'
   db = new Database(path)
+  db.pragma('journal_mode = WAL')
+  db.pragma('busy_timeout = 5000')
+  db.pragma('synchronous = NORMAL')
   db.exec(SCHEMA)
   runMigrations(db)
   // migrations — safe to run on existing DB
