@@ -8,6 +8,13 @@ services:
       - key: NODE_ENV
         value: production
       - key: DB_PATH
-        value: /tmp/yys.db
+        value: /var/data/yys.db
+      - key: TRUST_PROXY
+        value: "1"
       # JWT_SECRET — Render Dashboard > Settings > Environment Variables'dan ayarlayın
+      # ALLOWED_ORIGIN — örn: https://yourdomain.vercel.app,https://www.yourdomain.com
     autoDeploy: true
+    disk:
+      name: yys-data
+      mountPath: /var/data
+      sizeGB: 1
