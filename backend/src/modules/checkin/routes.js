@@ -134,6 +134,7 @@ checkinRouter.post('/import-csv', ...allowed, (req, res) => {
   try {
     const { rows } = req.body
     if (!Array.isArray(rows) || rows.length === 0) return res.status(400).json({ error: 'Veri bulunamadı' })
+    if (rows.length > 1000) return res.status(400).json({ error: 'Maksimum 1000 satır import edilebilir' })
     const results = { success: 0, errors: [] }
     for (const row of rows) {
       try {

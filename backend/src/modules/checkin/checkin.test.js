@@ -152,4 +152,14 @@ describe('Placeholder batch', () => {
       .send({ room_id: 1, count: 1 })
     expect(res.status).toBe(403)
   })
+
+  it('CSV import 1001 satırda 400 döner', async () => {
+    const rows = Array.from({ length: 1001 }, (_, i) => ({ full_name: `Test Kişi ${i}` }))
+    const res = await request(app)
+      .post('/api/checkin/import-csv')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ rows })
+    expect(res.status).toBe(400)
+    expect(res.body.error).toMatch(/1000/)
+  })
 })
