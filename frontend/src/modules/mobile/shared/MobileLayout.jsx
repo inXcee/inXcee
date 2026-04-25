@@ -3,7 +3,8 @@ import { NavLink, Outlet } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { useMobileAuth } from '../auth/useMobileAuth.js'
 import { useMobileSSE } from '../../../shared/hooks/useMobileSSE.js'
-import { getQueue, clearQueue } from '../../../shared/utils/offlineQueue.js'
+import { getQueue, dequeue, updateRetries, getBlob } from '../../../shared/utils/offlineDB.js'
+import { useToastStore } from '../../../shared/store/toastStore.js'
 import { useMobilePrefs } from '../../../shared/store/mobilePrefsStore.js'
 
 const MODULE_KEYS = {
@@ -15,8 +16,13 @@ export default function MobileLayout({ tabs }) {
   const { logout } = useMobileAuth()
   const { darkMode, toggleDarkMode } = useMobilePrefs()
   const qc = useQueryClient()
+  const { addToast } = useToastStore()
   const [isOnline, setIsOnline] = useState(navigator.onLine)
-  const [pendingCount, setPendingCount] = useState(() => getQueue().length)
+  const [pendingCount, setPendingCount] = useState(0)
+
+  useEffect(() => {
+    getQueue().then(q => setPendingCount(q.length)).catch(() => {})
+  }, [])
 
   useEffect(() => {
     const on = () => setIsOnline(true)
@@ -26,28 +32,70 @@ export default function MobileLayout({ tabs }) {
     return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off) }
   }, [])
 
-  // Drain offline queue when coming back online
   useEffect(() => {
     if (!isOnline) return
-    const queue = getQueue()
-    if (queue.length === 0) return
 
-    const { token } = useMobileAuth.getState()
-    clearQueue()
-    setPendingCount(0)
-
-    queue.forEach(async item => {
-      try {
-        if (item.type === 'complete_task') {
-          await fetch(`/api/housekeeping/tasks/${item.taskId}/complete`, {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({}),
-          })
-          qc.invalidateQueries({ queryKey: ['mobile-hk-tasks'] })
+    async function replayItem(item, token) {
+      const headers = { Authorization: `Bearer ${token}` }
+      const ok = r => { if (!r.ok) throw new Error(r.status) }
+      if (item.type === 'complete_task') {
+        ok(await fetch(`/api/housekeeping/tasks/${item.payload.taskId}/complete`, {
+          method: 'POST',
+          headers: { ...headers, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ checklist: item.payload.checklist ?? [] }),
+        }))
+      } else if (item.type === 'skip_task') {
+        ok(await fetch(`/api/housekeeping/tasks/${item.payload.taskId}/skip`, {
+          method: 'PATCH',
+          headers: { ...headers, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reason: item.payload.reason }),
+        }))
+      } else if (item.type === 'fault_report') {
+        const fd = new FormData()
+        fd.append('location', item.payload.location)
+        fd.append('description', item.payload.description)
+        fd.append('priority', item.payload.priority)
+        if (item.blobIds?.length > 0) {
+          const blob = await getBlob(item.blobIds[0])
+          if (blob) fd.append('photo', blob, 'photo.jpg')
         }
-      } catch {}
-    })
+        ok(await fetch('/api/housekeeping/fault-report', { method: 'POST', headers, body: fd }))
+      } else if (item.type === 'quick_fault') {
+        ok(await fetch('/api/maintenance/requests', {
+          method: 'POST',
+          headers: { ...headers, 'Content-Type': 'application/json' },
+          body: JSON.stringify(item.payload),
+        }))
+      }
+    }
+
+    async function drain() {
+      const queue = await getQueue()
+      if (queue.length === 0) return
+      const { token } = useMobileAuth.getState()
+      for (const item of queue) {
+        try {
+          await replayItem(item, token)
+          await dequeue(item.id)
+          if (item.type === 'complete_task' || item.type === 'skip_task') {
+            qc.invalidateQueries({ queryKey: ['mobile-hk-tasks'] })
+          }
+          if (item.type === 'quick_fault') {
+            qc.invalidateQueries({ queryKey: ['mobile-tech-requests'] })
+          }
+        } catch {
+          if (item.retries >= 2) {
+            addToast(`Çevrimdışı işlem gönderilemedi — silindi (${item.type})`, 'error')
+            await dequeue(item.id)
+          } else {
+            await updateRetries(item.id, item.retries + 1)
+          }
+        }
+      }
+      setPendingCount(0)
+    }
+
+    drain().catch(() => {})
   }, [isOnline])
 
   // Token auto-refresh
