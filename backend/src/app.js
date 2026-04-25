@@ -1,7 +1,8 @@
 import express from 'express'
 import cors from 'cors'
 import helmet from 'helmet'
-import rateLimit from 'express-rate-limit'
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit'
+import jwt from 'jsonwebtoken'
 import { sanitizeBody } from './shared/middleware/sanitize.js'
 import { getDB } from './shared/db/index.js'
 import { checkinRouter } from './modules/checkin/routes.js'
@@ -31,6 +32,19 @@ const allowedOrigins = process.env.ALLOWED_ORIGIN
   : ['http://localhost:5173', 'http://localhost:5174']
 
 const app = express()
+
+// Reverse proxy (Render/Railway/Nginx) arkasında req.ip'nin gerçek client IP'sini döndürmesi için.
+// TRUST_PROXY env: sayı (proxy hop sayısı), 'loopback', 'true'/'false'. Prod'da genelde '1'.
+const TRUST_PROXY_RAW = process.env.TRUST_PROXY ?? 'loopback'
+const TRUST_PROXY = TRUST_PROXY_RAW === 'false'
+  ? false
+  : TRUST_PROXY_RAW === 'true'
+    ? true
+    : Number.isFinite(+TRUST_PROXY_RAW)
+      ? +TRUST_PROXY_RAW
+      : TRUST_PROXY_RAW
+app.set('trust proxy', TRUST_PROXY)
+
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
@@ -73,41 +87,79 @@ app.get('/api/health', (req, res) => {
   })
 })
 
+// Rate-limit key: kimlik doğrulaması yapılmış isteklerde kullanıcı ID'si,
+// aksi halde IP. Aynı NAT/WiFi arkasındaki kullanıcıların birbirini bloke
+// etmesini önler. JWT sadece decode edilir (verify değil) — rate-limit
+// kovası için tutarlı bir anahtar yeterli, güvenlik yetki kontrolüne bağlı.
+const rateLimitKey = (req, _res) => {
+  const h = req.headers.authorization
+  if (h?.startsWith('Bearer ')) {
+    try {
+      const p = jwt.decode(h.slice(7))
+      const id = p?.id ?? p?.personnelId ?? p?.workerId
+      if (id) return `u:${p.role || 'x'}:${id}`
+    } catch { /* token parse edilemezse IP'ye düş */ }
+  }
+  return `ip:${ipKeyGenerator(req.ip)}`
+}
+
+// Login endpoint — brute-force koruması için per-IP, window başına 30 deneme
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 20,
+  max: 30,
   message: { error: 'Çok fazla giriş denemesi. 15 dakika sonra tekrar deneyin.' },
   standardHeaders: true,
   legacyHeaders: false,
   skip: () => process.env.NODE_ENV === 'test',
 })
 
-// Mobile PIN login — PIN sadece 4 haneli (10000 olasılık), brute-force riskli
+// Mobile PIN login — 4 haneli PIN brute-force riski; per-IP sıkı
 const mobileAuthLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 10,
+  max: 20,
   message: { error: 'Çok fazla PIN denemesi. 15 dakika sonra tekrar deneyin.' },
   standardHeaders: true,
   legacyHeaders: false,
   skip: () => process.env.NODE_ENV === 'test',
 })
 
-// Write endpoint rate limiter — 60 req/min
+// Write endpoint limiter — per-user 300/dk (5/sn). Modern SPA tek sayfa
+// açılışında rahat 15+ istek atar; 60/dk çok sıkıydı.
 const writeLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 60,
+  max: 300,
   message: { error: 'Çok fazla istek. Lütfen bekleyin.' },
   standardHeaders: true,
   legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test',
+  keyGenerator: rateLimitKey,
 })
 
-// Read-only endpoint rate limiter — 120 req/min
+// Read endpoint limiter — per-user 600/dk (10/sn), dashboard'lar için rahat
 const readLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 120,
+  max: 600,
   message: { error: 'Çok fazla istek. Lütfen bekleyin.' },
   standardHeaders: true,
   legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test',
+  keyGenerator: rateLimitKey,
+})
+
+// Notifications: 4 ayrı hook (useNotifications/useOccupancy/useLaundrySSE/
+// useMobileSSE) aynı /stream endpoint'ine uzun ömürlü SSE bağlantısı açıyor
+// ve reconnect'ler yüzünden write limit'e takılıyordu. SSE'yi tamamen bypass,
+// polling PATCH/GET için bol limit.
+const notificationsLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 600,
+  message: { error: 'Çok fazla istek. Lütfen bekleyin.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => process.env.NODE_ENV === 'test'
+    || req.path === '/stream'
+    || req.originalUrl.startsWith('/api/notifications/stream'),
+  keyGenerator: rateLimitKey,
 })
 
 app.use('/api/auth', authLimiter, authRouter)
@@ -121,7 +173,7 @@ app.use('/api/discipline', writeLimiter, disciplineRouter)
 app.use('/api/self-service', writeLimiter, selfServiceRouter)
 app.use('/api/dashboard', readLimiter, dashboardRouter)
 app.use('/api/room-history', readLimiter, roomHistoryRouter)
-app.use('/api/notifications', writeLimiter, notificationsRouter)
+app.use('/api/notifications', notificationsLimiter, notificationsRouter)
 app.use('/api/whatsapp', writeLimiter, whatsappRouter)
 app.use('/api/shifts', writeLimiter, shiftsRouter)
 app.use('/api/checkout', writeLimiter, checkoutRouter)

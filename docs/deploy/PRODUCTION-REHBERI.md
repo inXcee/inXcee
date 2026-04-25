@@ -138,6 +138,12 @@ DB_PATH=/var/data/yys.db
 # ZORUNLU — sadece kendi domain'in
 ALLOWED_ORIGIN=https://yys.ornek.com
 
+# ZORUNLU (reverse proxy arkasında) — rate limiter'ın gerçek client IP'yi görmesi için
+# Render/Railway/Nginx/Cloudflare gibi tek proxy varsa "1", iç içe proxy varsa hop sayısı.
+# Ayarlanmazsa tüm kullanıcılar proxy'nin IP'sinden geliyormuş gibi sayılır ve
+# "Çok fazla istek" hatası alırlar. Lokalde ayarlamaya gerek yok (default: loopback).
+TRUST_PROXY=1
+
 # OPSİYONEL — e-posta raporu için
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
