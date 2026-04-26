@@ -424,11 +424,11 @@ export function initDB() {
     ('M',0),('S',0),('S1',0),('S2',0),('S3',0)`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
   // Mevcut non-M/S blokları premium yap (varolan kayıtları güncelle)
   try { db.exec(`UPDATE laundry_block_config SET is_premium=1 WHERE block NOT LIKE 'M%' AND block NOT LIKE 'S%'`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
+  try { db.exec(`ALTER TABLE laundry_items ADD COLUMN is_premium INTEGER DEFAULT 0`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
   // Mevcut laundry_items'ı düzelt — non-M/S blok odalarındaki kayıtlar premium olmalı
   try { db.exec(`UPDATE laundry_items SET is_premium=1 WHERE room_id IN (
     SELECT r.id FROM rooms r WHERE r.block NOT LIKE 'M%' AND r.block NOT LIKE 'S%'
   ) AND is_premium=0`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
-  try { db.exec(`ALTER TABLE laundry_items ADD COLUMN is_premium INTEGER DEFAULT 0`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
   try { db.exec(`CREATE TABLE IF NOT EXISTS premium_garments (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     item_id INTEGER NOT NULL REFERENCES laundry_items(id) ON DELETE CASCADE,
