@@ -26,6 +26,7 @@ import { emailRouter } from './modules/email/routes.js'
 import { announcementsRouter } from './modules/announcements/routes.js'
 import { avsWorkersRouter } from './modules/avs-workers/routes.js'
 import { mobileAuthRouter } from './modules/mobile-auth/routes.js'
+import { setupRouter } from './modules/setup/routes.js'
 
 if (process.env.NODE_ENV === 'production' && !process.env.ALLOWED_ORIGIN) {
   console.error('[Startup] HATA: ALLOWED_ORIGIN env değişkeni production\'da zorunludur.')
@@ -168,6 +169,9 @@ const notificationsLimiter = rateLimit({
   keyGenerator: rateLimitKey,
 })
 
+// Setup — auth gerektirmez, ilk kurulum sihirbazı için açık endpoint.
+// authLimiter brute-force korur (15dk içinde 30 deneme).
+app.use('/api/setup', authLimiter, setupRouter)
 app.use('/api/auth', authLimiter, authRouter)
 app.use('/api/mobile/auth', mobileAuthLimiter, mobileAuthRouter)
 app.use('/api/checkin', writeLimiter, checkinRouter)

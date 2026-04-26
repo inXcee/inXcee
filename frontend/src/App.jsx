@@ -1,9 +1,11 @@
 import { Suspense, lazy } from 'react'
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import { useAuthStore } from './shared/store/authStore.js'
 import ErrorBoundary from './shared/components/ErrorBoundary.jsx'
 import ToastContainer from './shared/components/ToastContainer.jsx'
 import LoginPage from './modules/auth/LoginPage.jsx'
+import api from './shared/api/client.js'
 import Layout from './shared/components/Layout.jsx'
 import MobileLayout from './modules/mobile/shared/MobileLayout.jsx'
 import MobileProtected from './modules/mobile/shared/MobileProtected.jsx'
@@ -38,6 +40,7 @@ const TechnicianHome = lazy(() => import('./modules/mobile/technician/Technician
 const RequestDetail = lazy(() => import('./modules/mobile/technician/RequestDetail.jsx'))
 const QuickFault = lazy(() => import('./modules/mobile/technician/QuickFault.jsx'))
 const DndRooms = lazy(() => import('./modules/mobile/housekeeper/DndRooms.jsx'))
+const SetupPage = lazy(() => import('./modules/setup/SetupPage.jsx'))
 
 function PrivateRoute({ children }) {
   const token = useAuthStore(s => s.token)
@@ -88,12 +91,36 @@ function NotFound() {
   )
 }
 
+function SetupGate({ children }) {
+  const location = useLocation()
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ['setup-status'],
+    queryFn: () => api.get('/setup/status').then(r => r.data),
+    staleTime: Infinity,
+    retry: 1,
+  })
+
+  if (isLoading) {
+    return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}><span className="page-spinner" /></div>
+  }
+
+  // Backend down ise normal login akışına bırak — setup zorlamasın
+  if (isError) return children
+
+  const onSetup = location.pathname === '/setup'
+  if (data?.needs_setup && !onSetup) return <Navigate to="/setup" replace />
+  if (!data?.needs_setup && onSetup) return <Navigate to="/login" replace />
+  return children
+}
+
 export default function App() {
   return (
     <ErrorBoundary>
       <ToastContainer />
       <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}><span className="page-spinner" /></div>}>
+        <SetupGate>
         <Routes>
+          <Route path="/setup" element={<SetupPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/kiosk" element={<SelfServicePage />} />
           <Route path="/laundry-kiosk" element={<LaundryKioskPage />} />
@@ -134,6 +161,7 @@ export default function App() {
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>
+        </SetupGate>
       </Suspense>
     </ErrorBoundary>
   )
