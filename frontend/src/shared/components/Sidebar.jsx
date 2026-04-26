@@ -46,6 +46,7 @@ const NAV_GROUPS = [
       { to: '/error-log', icon: '\u26a0', label: 'Hata Loglari', roles: ['campus_manager'] },
       { to: '/backup', icon: '\u26c1', label: 'Yedekleme', roles: ['campus_manager'] },
       { to: '/kvkk-admin', icon: '\u00a7', label: 'KVKK', roles: ['campus_manager'] },
+      { to: '/system', icon: '\u2665', label: 'Sistem Sagligi', roles: ['campus_manager'] },
       { to: '/settings', icon: '\u2393', label: 'Ayarlar', roles: ['campus_manager'] },
     ]
   },

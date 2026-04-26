@@ -28,6 +28,7 @@ const PAGE_TITLES = {
   '/error-log': 'Hata Loglari',
   '/backup': 'Yedekleme',
   '/kvkk-admin': 'KVKK Yönetimi',
+  '/system': 'Sistem Sağlığı',
 }
 
 export default function Layout() {
