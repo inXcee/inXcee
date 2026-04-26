@@ -48,9 +48,9 @@ export default function TaskDetail() {
   const completeMut = useMutation({
     mutationFn: (opts = {}) => mobileApi.post(`/housekeeping/tasks/${id}/complete`, { checklist, ...opts }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['mobile-hk-tasks'] }); navigate(-1) },
-    onError: () => {
+    onError: (_err, opts) => {
       if (!navigator.onLine) {
-        enqueue('complete_task', { taskId: id, checklist })
+        enqueue('complete_task', { taskId: id, checklist, via_qr: opts?.via_qr ?? false })
         navigate(-1)
       }
     },
@@ -154,7 +154,8 @@ export default function TaskDetail() {
           {task.qr_location && (
             <button
               onClick={() => setShowQR(true)}
-              style={{ ...btn('#8b5cf6'), marginBottom: '4px' }}>
+              disabled={completeMut.isPending}
+              style={{ ...btn('#8b5cf6'), marginBottom: '4px', opacity: completeMut.isPending ? 0.5 : 1 }}>
               📷 QR ile Tamamla
             </button>
           )}
@@ -218,6 +219,10 @@ function QRScannerModal({ expectedQR, onMatch, onClose }) {
   const canvasRef = useRef(null)
   const streamRef = useRef(null)
   const rafRef = useRef(null)
+  const onMatchRef = useRef(onMatch)
+  const onCloseRef = useRef(onClose)
+  useEffect(() => { onMatchRef.current = onMatch }, [onMatch])
+  useEffect(() => { onCloseRef.current = onClose }, [onClose])
 
   useEffect(() => {
     let active = true
@@ -228,14 +233,14 @@ function QRScannerModal({ expectedQR, onMatch, onClose }) {
         streamRef.current = stream
         if (videoRef.current) videoRef.current.srcObject = stream
       })
-      .catch(() => { if (active) onClose() })
+      .catch(() => { if (active) onCloseRef.current() })
 
     return () => {
       active = false
       cancelAnimationFrame(rafRef.current)
       streamRef.current?.getTracks().forEach(t => t.stop())
     }
-  }, [onClose])
+  }, [])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -253,7 +258,7 @@ function QRScannerModal({ expectedQR, onMatch, onClose }) {
         if (code) {
           if (!expectedQR || code.data === expectedQR) {
             streamRef.current?.getTracks().forEach(t => t.stop())
-            onMatch(code.data)
+            onMatchRef.current(code.data)
             return
           }
         }
@@ -264,7 +269,7 @@ function QRScannerModal({ expectedQR, onMatch, onClose }) {
     const onPlay = () => { rafRef.current = requestAnimationFrame(tick) }
     video.addEventListener('play', onPlay)
     return () => video.removeEventListener('play', onPlay)
-  }, [expectedQR, onMatch])
+  }, [expectedQR])
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.85)', zIndex: 100, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '16px' }}>

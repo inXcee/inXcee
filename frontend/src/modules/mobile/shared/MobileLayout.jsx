@@ -44,7 +44,7 @@ export default function MobileLayout({ tabs }) {
         ok(await fetch(`/api/housekeeping/tasks/${item.payload.taskId}/complete`, {
           method: 'POST',
           headers: { ...headers, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ checklist: item.payload.checklist ?? [] }),
+          body: JSON.stringify({ checklist: item.payload.checklist ?? [], via_qr: item.payload.via_qr ?? false }),
         }))
       } else if (item.type === 'skip_task') {
         ok(await fetch(`/api/housekeeping/tasks/${item.payload.taskId}/skip`, {
