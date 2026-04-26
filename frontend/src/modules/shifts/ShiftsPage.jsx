@@ -1845,11 +1845,21 @@ function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
     setExcelError('')
     setExcelPreview(null)
     try {
-      const XLSX = await import('xlsx')
+      const ExcelJS = (await import('exceljs')).default
       const buf = await file.arrayBuffer()
-      const wb = XLSX.read(buf, { type: 'array' })
-      const ws = wb.Sheets[wb.SheetNames[0]]
-      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })
+      const wb = new ExcelJS.Workbook()
+      await wb.xlsx.load(buf)
+      const ws = wb.worksheets[0]
+      if (!ws) { setExcelError('Boş dosya'); return }
+      const rows = []
+      ws.eachRow(row => {
+        rows.push(row.values.slice(1).map(v => {
+          if (v == null) return ''
+          if (typeof v === 'object' && v.text != null) return v.text
+          if (typeof v === 'object' && v.result != null) return v.result
+          return v
+        }))
+      })
       if (!rows.length) { setExcelError('Bos dosya'); return }
 
       // Detect header row (first row with at least 3 cells)
