@@ -27,6 +27,7 @@ const PAGE_TITLES = {
   '/audit': 'Audit Log',
   '/error-log': 'Hata Loglari',
   '/backup': 'Yedekleme',
+  '/kvkk-admin': 'KVKK Yönetimi',
 }
 
 export default function Layout() {

@@ -43,6 +43,8 @@ const DndRooms = lazy(() => import('./modules/mobile/housekeeper/DndRooms.jsx'))
 const SetupPage = lazy(() => import('./modules/setup/SetupPage.jsx'))
 const ErrorLogPage = lazy(() => import('./modules/admin/ErrorLogPage.jsx'))
 const BackupPage = lazy(() => import('./modules/admin/BackupPage.jsx'))
+const KvkkAdminPage = lazy(() => import('./modules/admin/KvkkAdminPage.jsx'))
+const KvkkPage = lazy(() => import('./modules/kvkk/KvkkPage.jsx'))
 
 function PrivateRoute({ children }) {
   const token = useAuthStore(s => s.token)
@@ -110,7 +112,10 @@ function SetupGate({ children }) {
   if (isError) return children
 
   const onSetup = location.pathname === '/setup'
-  if (data?.needs_setup && !onSetup) return <Navigate to="/setup" replace />
+  // Public sayfalar setup zorunluluğundan muaf (KVKK kanun gereği herkese açık)
+  const publicPaths = ['/setup', '/kvkk']
+  const onPublic = publicPaths.includes(location.pathname)
+  if (data?.needs_setup && !onPublic) return <Navigate to="/setup" replace />
   if (!data?.needs_setup && onSetup) return <Navigate to="/login" replace />
   return children
 }
@@ -124,6 +129,7 @@ export default function App() {
         <Routes>
           <Route path="/setup" element={<SetupPage />} />
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/kvkk" element={<KvkkPage />} />
           <Route path="/kiosk" element={<SelfServicePage />} />
           <Route path="/laundry-kiosk" element={<LaundryKioskPage />} />
           <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
@@ -144,6 +150,7 @@ export default function App() {
             <Route path="audit" element={<RoleRoute roles={['campus_manager']}><AuditPage /></RoleRoute>} />
             <Route path="error-log" element={<RoleRoute roles={['campus_manager']}><ErrorLogPage /></RoleRoute>} />
             <Route path="backup" element={<RoleRoute roles={['campus_manager']}><BackupPage /></RoleRoute>} />
+            <Route path="kvkk-admin" element={<RoleRoute roles={['campus_manager']}><KvkkAdminPage /></RoleRoute>} />
             <Route path="users" element={<RoleRoute roles={['campus_manager']}><UsersPage /></RoleRoute>} />
             <Route path="settings" element={<RoleRoute roles={['campus_manager']}><SettingsPage /></RoleRoute>} />
             <Route path="kiosk-pins" element={<RoleRoute roles={['campus_manager']}><KioskPinPage /></RoleRoute>} />

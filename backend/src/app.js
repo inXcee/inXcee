@@ -30,6 +30,7 @@ import { setupRouter } from './modules/setup/routes.js'
 import { errorLogRouter } from './modules/error-log/routes.js'
 import { reportErrorService } from './modules/error-log/service.js'
 import { backupRouter } from './modules/backup/routes.js'
+import { kvkkRouter } from './modules/kvkk/routes.js'
 
 if (process.env.NODE_ENV === 'production' && !process.env.ALLOWED_ORIGIN) {
   console.error('[Startup] HATA: ALLOWED_ORIGIN env değişkeni production\'da zorunludur.')
@@ -199,6 +200,7 @@ app.use('/api/avs-workers', writeLimiter, avsWorkersRouter)
 // Error log: POST writeLimiter (frontend hata flood'una karşı), GET/DELETE admin
 app.use('/api/error-log', writeLimiter, errorLogRouter)
 app.use('/api/backup', writeLimiter, backupRouter)
+app.use('/api/kvkk', readLimiter, kvkkRouter)
 
 // ── 404 Handler ──────────────────────────────────────────────────────────────
 app.use((req, res) => {

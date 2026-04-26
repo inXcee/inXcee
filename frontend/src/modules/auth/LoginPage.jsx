@@ -127,6 +127,8 @@ export default function LoginPage() {
 
         <div style={{ textAlign: 'center', marginTop: '20px', fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text4)', letterSpacing: '1px' }}>
           ŞKY v3.0 · YYS SİSTEMİ
+          <span style={{ margin: '0 8px', color: 'var(--text4)' }}>·</span>
+          <a href="/kvkk" style={{ color: 'var(--text3)', textDecoration: 'none' }}>KVKK</a>
         </div>
       </div>
     </div>
