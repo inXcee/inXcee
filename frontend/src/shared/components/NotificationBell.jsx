@@ -57,6 +57,11 @@ export default function NotificationBell() {
                   fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text3)', letterSpacing: '0.5px',
                 }}>TUMUNU OKU</button>
               )}
+              <a href="/notifications/preferences" title="Tercihler" style={{
+                border: '1px solid var(--border)', borderRadius: '4px',
+                padding: '2px 8px', textDecoration: 'none',
+                fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text3)', letterSpacing: '0.5px',
+              }}>⚙ TERCİHLER</a>
             </div>
           </div>
           <div style={{ overflowY: 'auto', flex: 1 }}>

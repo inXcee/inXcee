@@ -180,6 +180,15 @@ export function initDB() {
   )`) } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration]', e.message) }
   try { db.exec(`CREATE INDEX IF NOT EXISTS idx_error_log_created_at ON error_log(created_at DESC)`) } catch { /* ignore */ }
 
+  // ── Bildirim tercihleri (kullanıcı bazında modül kapatma) ──
+  try { db.exec(`CREATE TABLE IF NOT EXISTS notification_preferences (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    module TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY(user_id, module)
+  )`) } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration]', e.message) }
+
   // ── Improvement #7: Zimmet return tracking ──
   try { db.exec('ALTER TABLE zimmet ADD COLUMN returned_at DATETIME') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
   try { db.exec('ALTER TABLE zimmet ADD COLUMN return_condition TEXT') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }

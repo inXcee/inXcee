@@ -1,4 +1,5 @@
 import { getDB } from '../db/index.js'
+import { isNotificationEnabledForUser } from '../../modules/notification-prefs/service.js'
 
 const MAX_SSE_CLIENTS = 100
 // Map<res, {res, userId, role}> — userId/role ile filtrelenmiş SSE broadcast için
@@ -34,6 +35,8 @@ export function createNotification({ message, type = 'info', module, target_role
   sseClients.forEach(({ res: client, userId: uid, role }, resKey) => {
     if (notif.target_user_id && notif.target_user_id !== uid) return
     if (notif.target_role && notif.target_role !== role) return
+    // Kullanıcı bu modül için bildirim almak istemiyorsa SSE'de de gönderme
+    if (notif.module && !isNotificationEnabledForUser(uid, notif.module)) return
     try { client.write(`data: ${JSON.stringify(notif)}\n\n`) } catch { sseClients.delete(resKey) }
   })
   return notif
@@ -41,11 +44,13 @@ export function createNotification({ message, type = 'info', module, target_role
 
 export function getNotifications(userId, role) {
   const db = getDB()
-  return db.prepare(`
+  const rows = db.prepare(`
     SELECT * FROM notifications
     WHERE (target_user_id=? OR target_role=? OR (target_user_id IS NULL AND target_role IS NULL))
     ORDER BY created_at DESC LIMIT 50
   `).all(userId, role)
+  // Kullanıcı tercihlerine göre devre dışı modülleri filtrele
+  return rows.filter(n => !n.module || isNotificationEnabledForUser(userId, n.module))
 }
 
 export function markRead(id) {
