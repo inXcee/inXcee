@@ -190,6 +190,11 @@ app.use('/api/settings/email', writeLimiter, emailRouter)
 app.use('/api/announcements', writeLimiter, announcementsRouter)
 app.use('/api/avs-workers', writeLimiter, avsWorkersRouter)
 
+// ── 404 Handler ──────────────────────────────────────────────────────────────
+app.use((req, res) => {
+  res.status(404).json({ error: 'Endpoint bulunamadı' })
+})
+
 // ── Global Error Handler ─────────────────────────────────────────────────────
 app.use((err, req, res, _next) => {
   console.error('[Express]', err.stack || err.message)
