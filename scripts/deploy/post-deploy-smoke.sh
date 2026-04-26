@@ -1,5 +1,5 @@
 #!/bin/bash
-# Post-deploy smoke test
+# Post-deploy smoke test — production safe (seed kullanıcısı kullanmaz)
 # Kullanım: BACKEND_URL=https://your-app.onrender.com bash scripts/deploy/post-deploy-smoke.sh
 
 BACKEND_URL="${BACKEND_URL:-http://localhost:3001}"
@@ -11,68 +11,64 @@ echo "  Backend: $BACKEND_URL"
 echo "========================================="
 echo ""
 
-# 1. Health check
-echo "[1/3] Health check..."
-HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$BACKEND_URL/api/health" 2>/dev/null || echo "000")
-if [ "$HTTP_CODE" = "200" ]; then
-  echo "✓ Backend erişilebilir"
-else
-  echo "✗ Backend yanıt vermiyor (HTTP $HTTP_CODE)"
-  echo "  Cold start olabilir, 30sn bekleniyor..."
-  sleep 30
+# 1. Health check (cold start için yeniden dene)
+echo "[1/4] Health check..."
+for attempt in 1 2 3; do
   HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$BACKEND_URL/api/health" 2>/dev/null || echo "000")
   if [ "$HTTP_CODE" = "200" ]; then
-    echo "✓ Backend erişilebilir (cold start sonrası)"
+    echo "✓ Backend erişilebilir"
+    break
+  fi
+  if [ "$attempt" -lt 3 ]; then
+    echo "  Cold start bekleniyor (${attempt}/3)... 30sn"
+    sleep 30
   else
-    echo "✗ Backend hala yanıt vermiyor — durduruldu"
+    echo "✗ Backend yanıt vermiyor (HTTP $HTTP_CODE) — durduruldu"
     exit 1
   fi
+done
+
+# 2. Auth endpoint çalışıyor mu (yanlış şifre → 401 veya 400, 500 değil)
+echo ""
+echo "[2/4] Auth endpoint kontrolü..."
+AUTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BACKEND_URL/api/auth/login" \
+  -H "Content-Type: application/json" \
+  -d '{"username":"__smoke_test__","password":"wrong"}' 2>/dev/null || echo "000")
+if [ "$AUTH_STATUS" = "401" ] || [ "$AUTH_STATUS" = "400" ]; then
+  echo "✓ Auth endpoint çalışıyor (HTTP $AUTH_STATUS — beklenen)"
+else
+  echo "✗ Auth endpoint beklenmedik yanıt (HTTP $AUTH_STATUS)"
+  ERRORS=$((ERRORS + 1))
 fi
 
-# 2. Login testi
+# 3. Korunan route'lar token olmadan 401 dönmeli
 echo ""
-echo "[2/3] Login testleri..."
-USERS=("mudur" "vardiya" "teknik" "camasir" "meydanci")
-for user in "${USERS[@]}"; do
-  RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BACKEND_URL/api/auth/login" \
-    -H "Content-Type: application/json" \
-    -d "{\"username\":\"$user\",\"password\":\"admin123\"}" 2>/dev/null || echo "000")
-  if [ "$RESPONSE" = "200" ]; then
-    echo "  ✓ $user login başarılı"
+echo "[3/4] Korunan route'lar (token olmadan 401 bekleniyor)..."
+ROUTES=("/api/dashboard" "/api/capacity" "/api/checkin" "/api/maintenance" "/api/discipline" "/api/users")
+for route in "${ROUTES[@]}"; do
+  HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$BACKEND_URL$route" 2>/dev/null || echo "000")
+  if [ "$HTTP_CODE" = "401" ]; then
+    echo "  ✓ $route → 401 (auth korumalı)"
   else
-    echo "  ✗ $user login başarısız (HTTP $RESPONSE)"
+    echo "  ✗ $route → HTTP $HTTP_CODE (401 bekleniyordu)"
     ERRORS=$((ERRORS + 1))
   fi
 done
 
-# 3. Token alıp route kontrolleri
+# 4. 404 handler JSON döndürüyor mu
 echo ""
-echo "[3/3] API route kontrolleri..."
-AUTH_BEARER=$(curl -s -X POST "$BACKEND_URL/api/auth/login" \
-  -H "Content-Type: application/json" \
-  -d '{"username":"mudur","password":"admin123"}' 2>/dev/null | grep -oP '"token"\s*:\s*"\K[^"]+' || true)
-
-if [ -z "$AUTH_BEARER" ]; then
-  echo "  ✗ Token alınamadı, route testleri atlanıyor"
-  ERRORS=$((ERRORS + 1))
+echo "[4/4] JSON 404 handler..."
+BODY=$(curl -s "$BACKEND_URL/api/nonexistent_route_smoke" 2>/dev/null || echo "")
+if echo "$BODY" | grep -q '"error"'; then
+  echo "✓ 404 handler JSON döndürüyor"
 else
-  ROUTES=("/api/dashboard" "/api/capacity" "/api/checkin" "/api/housekeeping" "/api/maintenance" "/api/discipline")
-  for route in "${ROUTES[@]}"; do
-    HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$BACKEND_URL$route" \
-      -H "Authorization: Bearer $AUTH_BEARER" 2>/dev/null || echo "000")
-    if [ "$HTTP_CODE" = "200" ]; then
-      echo "  ✓ $route OK"
-    else
-      echo "  ✗ $route BAŞARISIZ (HTTP $HTTP_CODE)"
-      ERRORS=$((ERRORS + 1))
-    fi
-  done
+  echo "⚠ 404 handler JSON döndürmüyor (HTML veya boş): $BODY"
 fi
 
 echo ""
 echo "========================================="
 if [ $ERRORS -eq 0 ]; then
-  echo "  ✓ SMOKE TEST GEÇTİ"
+  echo "  ✓ SMOKE TEST GEÇTİ — deploy başarılı"
 else
   echo "  ✗ $ERRORS SORUN BULUNDU"
 fi
