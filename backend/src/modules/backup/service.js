@@ -1,0 +1,127 @@
+import fs from 'fs'
+import path from 'path'
+import Database from 'better-sqlite3'
+import { fileURLToPath } from 'url'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+
+function getDbPath() {
+  return process.env.DB_PATH || path.join(__dirname, '..', '..', '..', '..', 'yys.db')
+}
+
+function getBackupDir() {
+  return process.env.BACKUP_DIR || path.join(path.dirname(getDbPath()), 'backups')
+}
+
+function pad(n) { return String(n).padStart(2, '0') }
+
+function timestamp() {
+  const d = new Date()
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
+         `_${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`
+}
+
+// Path traversal koruması — dosya adı sadece yedek dizini altında olabilir
+function safeBackupPath(name) {
+  if (!name || /[\\/]/.test(name) || name.includes('..')) return null
+  if (!/^[a-zA-Z0-9._-]+\.db$/.test(name)) return null
+  const dir = getBackupDir()
+  const full = path.join(dir, name)
+  // path.resolve karşılaştırması — symlink/path tricks güvenliği
+  const resolved = path.resolve(full)
+  const resolvedDir = path.resolve(dir)
+  if (!resolved.startsWith(resolvedDir + path.sep) && resolved !== resolvedDir) return null
+  return resolved
+}
+
+export function listBackupsService() {
+  const dir = getBackupDir()
+  if (!fs.existsSync(dir)) return []
+  return fs.readdirSync(dir)
+    .filter(f => f.startsWith('yys_') && f.endsWith('.db'))
+    .map(f => {
+      const full = path.join(dir, f)
+      const stat = fs.statSync(full)
+      return { name: f, size: stat.size, created_at: stat.mtime.toISOString() }
+    })
+    .sort((a, b) => b.created_at.localeCompare(a.created_at))
+}
+
+export async function runBackupService() {
+  const dbPath = getDbPath()
+  const dir = getBackupDir()
+  if (!fs.existsSync(dbPath)) return { error: 'Veritabanı dosyası bulunamadı', status: 500 }
+  fs.mkdirSync(dir, { recursive: true })
+
+  const dest = path.join(dir, `yys_${timestamp()}.db`)
+  const db = new Database(dbPath, { readonly: true })
+  try {
+    await db.backup(dest)
+  } finally {
+    db.close()
+  }
+  const stat = fs.statSync(dest)
+  return { ok: true, name: path.basename(dest), size: stat.size, created_at: stat.mtime.toISOString() }
+}
+
+export function getBackupFileService(name) {
+  const full = safeBackupPath(name)
+  if (!full) return { error: 'Geçersiz dosya adı', status: 400 }
+  if (!fs.existsSync(full)) return { error: 'Yedek bulunamadı', status: 404 }
+  return { ok: true, path: full, name }
+}
+
+export function deleteBackupService(name) {
+  const full = safeBackupPath(name)
+  if (!full) return { error: 'Geçersiz dosya adı', status: 400 }
+  if (!fs.existsSync(full)) return { error: 'Yedek bulunamadı', status: 404 }
+  fs.unlinkSync(full)
+  return { ok: true }
+}
+
+// Restore: yüklenen dosyayı doğrula → mevcut DB'yi pre-restore yedeğine al → değiştir
+// Geri dönüş: process.exit(0) çağrılır, PM2 restart eder. Standalone'da manuel restart şart.
+export async function restoreBackupService(uploadedPath) {
+  if (!uploadedPath || !fs.existsSync(uploadedPath)) {
+    return { error: 'Yüklenen dosya bulunamadı', status: 400 }
+  }
+
+  // Geçerli SQLite mi kontrol et
+  let testDb
+  try {
+    testDb = new Database(uploadedPath, { readonly: true })
+    testDb.prepare('SELECT name FROM sqlite_master LIMIT 1').get()
+  } catch (e) {
+    try { fs.unlinkSync(uploadedPath) } catch { /* ignore */ }
+    return { error: 'Geçersiz SQLite dosyası', status: 400 }
+  } finally {
+    try { testDb?.close() } catch { /* ignore */ }
+  }
+
+  const dbPath = getDbPath()
+  const dir = getBackupDir()
+  fs.mkdirSync(dir, { recursive: true })
+
+  // Mevcut DB'yi pre-restore yedeği olarak sakla
+  const preName = `yys_pre-restore_${timestamp()}.db`
+  const prePath = path.join(dir, preName)
+  if (fs.existsSync(dbPath)) {
+    try {
+      const cur = new Database(dbPath, { readonly: true })
+      try { await cur.backup(prePath) } finally { cur.close() }
+    } catch (e) {
+      try { fs.unlinkSync(uploadedPath) } catch { /* ignore */ }
+      return { error: 'Mevcut yedek alınamadı: ' + e.message, status: 500 }
+    }
+  }
+
+  // Replace
+  try {
+    fs.copyFileSync(uploadedPath, dbPath)
+    fs.unlinkSync(uploadedPath)
+  } catch (e) {
+    return { error: 'DB dosyası değiştirilemedi: ' + e.message, status: 500 }
+  }
+
+  return { ok: true, pre_restore_backup: preName, requires_restart: true }
+}
