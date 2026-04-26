@@ -74,7 +74,7 @@ export default function TechnicianHome() {
                 </span>
               </div>
               <p style={{ fontSize: '13px', color: '#6b7280', margin: '0 0 8px', lineHeight: 1.4 }}>
-                {r.description.length > 80 ? r.description.slice(0, 80) + '...' : r.description}
+                {(r.description ?? '').length > 80 ? r.description.slice(0, 80) + '...' : (r.description ?? '')}
               </p>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontSize: '11px', color: '#9ca3af' }}>#{r.id} · {r.opened_at?.slice(0, 10)}</span>
