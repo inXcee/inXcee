@@ -43,6 +43,7 @@ const NAV_GROUPS = [
       { to: '/avs-workers', icon: '👷', label: 'AVS Calisanlari', roles: ['campus_manager'] },
       { to: '/laundry-kiosk', icon: '🧺', label: 'Camasir Kiosk', roles: ['campus_manager'], external: true },
       { to: '/audit', icon: '\u2637', label: 'Audit Log', roles: ['campus_manager'] },
+      { to: '/error-log', icon: '\u26a0', label: 'Hata Loglari', roles: ['campus_manager'] },
       { to: '/settings', icon: '\u2393', label: 'Ayarlar', roles: ['campus_manager'] },
     ]
   },

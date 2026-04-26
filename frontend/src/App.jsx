@@ -41,6 +41,7 @@ const RequestDetail = lazy(() => import('./modules/mobile/technician/RequestDeta
 const QuickFault = lazy(() => import('./modules/mobile/technician/QuickFault.jsx'))
 const DndRooms = lazy(() => import('./modules/mobile/housekeeper/DndRooms.jsx'))
 const SetupPage = lazy(() => import('./modules/setup/SetupPage.jsx'))
+const ErrorLogPage = lazy(() => import('./modules/admin/ErrorLogPage.jsx'))
 
 function PrivateRoute({ children }) {
   const token = useAuthStore(s => s.token)
@@ -140,6 +141,7 @@ export default function App() {
             <Route path="inventory" element={<InventoryPage />} />
             <Route path="reports" element={<ReportsPage />} />
             <Route path="audit" element={<RoleRoute roles={['campus_manager']}><AuditPage /></RoleRoute>} />
+            <Route path="error-log" element={<RoleRoute roles={['campus_manager']}><ErrorLogPage /></RoleRoute>} />
             <Route path="users" element={<RoleRoute roles={['campus_manager']}><UsersPage /></RoleRoute>} />
             <Route path="settings" element={<RoleRoute roles={['campus_manager']}><SettingsPage /></RoleRoute>} />
             <Route path="kiosk-pins" element={<RoleRoute roles={['campus_manager']}><KioskPinPage /></RoleRoute>} />

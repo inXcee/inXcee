@@ -27,6 +27,8 @@ import { announcementsRouter } from './modules/announcements/routes.js'
 import { avsWorkersRouter } from './modules/avs-workers/routes.js'
 import { mobileAuthRouter } from './modules/mobile-auth/routes.js'
 import { setupRouter } from './modules/setup/routes.js'
+import { errorLogRouter } from './modules/error-log/routes.js'
+import { reportErrorService } from './modules/error-log/service.js'
 
 if (process.env.NODE_ENV === 'production' && !process.env.ALLOWED_ORIGIN) {
   console.error('[Startup] HATA: ALLOWED_ORIGIN env değişkeni production\'da zorunludur.')
@@ -193,6 +195,8 @@ app.use('/api/users', writeLimiter, usersRouter)
 app.use('/api/settings/email', writeLimiter, emailRouter)
 app.use('/api/announcements', writeLimiter, announcementsRouter)
 app.use('/api/avs-workers', writeLimiter, avsWorkersRouter)
+// Error log: POST writeLimiter (frontend hata flood'una karşı), GET/DELETE admin
+app.use('/api/error-log', writeLimiter, errorLogRouter)
 
 // ── 404 Handler ──────────────────────────────────────────────────────────────
 app.use((req, res) => {
@@ -203,6 +207,20 @@ app.use((req, res) => {
 app.use((err, req, res, _next) => {
   console.error('[Express]', err.stack || err.message)
   const status = err.status || err.statusCode || 500
+  // 5xx hataları DB'ye logla (4xx normal akış — istemci hatası)
+  if (status >= 500 && process.env.NODE_ENV !== 'test') {
+    try {
+      reportErrorService({
+        source: 'backend',
+        severity: 'error',
+        message: err.message || 'Bilinmeyen hata',
+        stack: err.stack,
+        url: `${req.method} ${req.originalUrl}`,
+        user_id: req.user?.id || req.user?.userId || null,
+        context: { status, ip: req.ip },
+      })
+    } catch { /* ignore — hata loglarken hata olursa sessiz */ }
+  }
   res.status(status).json({ error: status < 500 ? err.message : 'Sunucu hatası' })
 })
 

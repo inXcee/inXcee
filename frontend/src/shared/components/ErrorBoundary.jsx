@@ -1,4 +1,5 @@
 import { Component } from 'react'
+import { reportError } from '../utils/errorReporter.js'
 
 export default class ErrorBoundary extends Component {
   constructor(props) {
@@ -8,6 +9,14 @@ export default class ErrorBoundary extends Component {
 
   static getDerivedStateFromError(error) {
     return { hasError: true, error }
+  }
+
+  componentDidCatch(error, errorInfo) {
+    reportError({
+      message: error?.message || 'React render hatası',
+      stack: error?.stack,
+      context: { componentStack: errorInfo?.componentStack?.slice(0, 500) },
+    })
   }
 
   handleRetry = () => {

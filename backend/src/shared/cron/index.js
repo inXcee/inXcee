@@ -49,13 +49,15 @@ export function startCronJobs() {
     } catch (e) { console.error('[Cron] Laundry SLA hatası:', e.message) }
   })
 
-  // Her gece 02:00 — eski audit log ve okunmuş bildirimler temizle (90+ gün)
+  // Her gece 02:00 — eski audit log + okunmuş bildirimler 90 gün, hata logları 30 gün
   cron.schedule('0 2 * * *', () => {
     try {
       const db = getDB()
-      const cutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString()
-      db.prepare('DELETE FROM audit_log WHERE created_at < ?').run(cutoff)
-      db.prepare('DELETE FROM notifications WHERE is_read=1 AND created_at < ?').run(cutoff)
+      const cutoff90 = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString()
+      const cutoff30 = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+      db.prepare('DELETE FROM audit_log WHERE created_at < ?').run(cutoff90)
+      db.prepare('DELETE FROM notifications WHERE is_read=1 AND created_at < ?').run(cutoff90)
+      try { db.prepare('DELETE FROM error_log WHERE created_at < ?').run(cutoff30) } catch { /* tablo yoksa atla */ }
     } catch (e) { console.error('[Cron] Temizleme hatası:', e.message) }
   })
 

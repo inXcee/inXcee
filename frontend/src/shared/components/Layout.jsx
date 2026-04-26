@@ -25,6 +25,7 @@ const PAGE_TITLES = {
   '/reports': 'Raporlar',
   '/users': 'Kullanicilar',
   '/audit': 'Audit Log',
+  '/error-log': 'Hata Loglari',
 }
 
 export default function Layout() {

@@ -165,6 +165,21 @@ export function initDB() {
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
 
+  // ── Error tracking (frontend + backend production hatası) ──
+  try { db.exec(`CREATE TABLE IF NOT EXISTS error_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source TEXT NOT NULL,
+    severity TEXT DEFAULT 'error',
+    message TEXT NOT NULL,
+    stack TEXT,
+    url TEXT,
+    user_id INTEGER REFERENCES users(id),
+    user_agent TEXT,
+    context TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`) } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration]', e.message) }
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_error_log_created_at ON error_log(created_at DESC)`) } catch { /* ignore */ }
+
   // ── Improvement #7: Zimmet return tracking ──
   try { db.exec('ALTER TABLE zimmet ADD COLUMN returned_at DATETIME') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
   try { db.exec('ALTER TABLE zimmet ADD COLUMN return_condition TEXT') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration]', e.message) }
