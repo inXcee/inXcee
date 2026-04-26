@@ -29,7 +29,7 @@ describe('Users Module', () => {
     const res = await request(app)
       .post('/api/users')
       .set('Authorization', `Bearer ${token}`)
-      .send({ username: 'testuser', password: 'test123', role: 'technical', full_name: 'Test Kullanici' })
+      .send({ username: 'testuser', password: 'test1234', role: 'technical', full_name: 'Test Kullanici' })
     expect(res.status).toBe(201)
     expect(res.body.id).toBeTruthy()
     newUserId = res.body.id
@@ -39,16 +39,17 @@ describe('Users Module', () => {
     const res = await request(app)
       .post('/api/users')
       .set('Authorization', `Bearer ${token}`)
-      .send({ username: 'testuser', password: 'test123', role: 'technical', full_name: 'Duplicate' })
+      .send({ username: 'testuser', password: 'test1234', role: 'technical', full_name: 'Duplikat' })
     expect(res.status).toBe(409)
   })
 
-  it('rejects short password', async () => {
+  it('rejects short password (7 chars)', async () => {
     const res = await request(app)
       .post('/api/users')
       .set('Authorization', `Bearer ${token}`)
-      .send({ username: 'shortpw', password: '12', role: 'technical', full_name: 'Short PW' })
+      .send({ username: 'shortpw', password: 'abc1234', role: 'technical', full_name: 'Short PW' })
     expect(res.status).toBe(400)
+    expect(res.body.error).toMatch(/8 karakter/)
   })
 
   it('rejects invalid role', async () => {

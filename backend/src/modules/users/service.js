@@ -23,8 +23,8 @@ export function addUser(data, createdBy) {
   if (data.username.length < 3) {
     return { error: 'Kullanıcı adı en az 3 karakter olmalı', status: 400 }
   }
-  if (data.password.length < 6) {
-    return { error: 'Şifre en az 6 karakter olmalı', status: 400 }
+  if (data.password.length < 8) {
+    return { error: 'Şifre en az 8 karakter olmalı', status: 400 }
   }
   if (queries.usernameExists(data.username)) {
     return { error: 'Bu kullanıcı adı zaten mevcut', status: 409 }
@@ -49,8 +49,8 @@ export function editUser(id, data, updatedBy) {
 }
 
 export function changePassword(id, newPassword, changedBy) {
-  if (!newPassword || newPassword.length < 6) {
-    return { error: 'Şifre en az 6 karakter olmalı', status: 400 }
+  if (!newPassword || newPassword.length < 8) {
+    return { error: 'Şifre en az 8 karakter olmalı', status: 400 }
   }
   const existing = queries.getUserById(id)
   if (!existing) return { error: 'Kullanıcı bulunamadı', status: 404 }
