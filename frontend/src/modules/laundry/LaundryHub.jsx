@@ -39,6 +39,7 @@ import PremiumSearchPanel       from './components/PremiumSearchPanel.jsx'
 import GarmentScanModal         from './components/GarmentScanModal.jsx'
 import PremiumGarmentList       from './components/PremiumGarmentList.jsx'
 import AllRecordsTab            from './components/AllRecordsTab.jsx'
+import IroningQueuePanel       from './components/IroningQueuePanel.jsx'
 
 const COLOR_MAP = {
   'Beyaz': '#f0f0f0', 'Siyah': '#222', 'Gri': '#888',
@@ -1077,6 +1078,15 @@ function FullRecordsView() {
     refetchInterval: 30000,
   })
 
+  const { data: ironingItems = [] } = useQuery({
+    queryKey: ['ironing-queue'],
+    queryFn: () => laundryApi.getItems({ status: 'ironing' }),
+    staleTime: 30_000,
+    gcTime: 300_000,
+    refetchInterval: 60_000,
+  })
+  const ironingCount = ironingItems.length
+
   return (
     <div>
       {/* Tab nav */}
@@ -1084,6 +1094,16 @@ function FullRecordsView() {
         {[
           { key: 'all', label: '★ Tümü' },
           { key: 'filtered', label: '≡ Filtrele' },
+          {
+            key: 'ironing',
+            label: ironingCount > 0
+              ? <>Ütü Kuyruğu <span style={{
+                  background: 'var(--red)', color: '#fff',
+                  borderRadius: 10, padding: '0px 6px', fontSize: 9,
+                  fontFamily: 'var(--mono)', marginLeft: 4, verticalAlign: 'middle',
+                }}>{ironingCount}</span></>
+              : 'Ütü Kuyruğu',
+          },
         ].map(t => (
           <button
             key={t.key}
@@ -1104,6 +1124,8 @@ function FullRecordsView() {
 
       {recordsTab === 'all' ? (
         <AllRecordsTab />
+      ) : recordsTab === 'ironing' ? (
+        <IroningQueuePanel />
       ) : (
         <>
       {/* Filters */}
