@@ -100,30 +100,33 @@ export default function MobileLayout({ tabs }) {
     drain().catch(() => {})
   }, [isOnline])
 
-  // Token auto-refresh
+  // Token silent refresh
   useEffect(() => {
-    async function tryRefresh() {
-      const { token, login } = useMobileAuth.getState()
-      if (!token) return
-      try {
-        const payload = JSON.parse(atob(token.split('.')[1]))
-        const msLeft = payload.exp * 1000 - Date.now()
-        if (msLeft > 0 && msLeft < 60 * 60 * 1000) {
-          const res = await fetch('/api/mobile/auth/refresh', {
+    if (!mobileToken) return
+    let timer
+    try {
+      const payload = JSON.parse(atob(mobileToken.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')))
+      const msUntilRefresh = payload.exp * 1000 - Date.now() - 60 * 60 * 1000
+      if (msUntilRefresh <= 0) return
+      timer = setTimeout(async () => {
+        try {
+          const r = await fetch('/api/mobile/auth/refresh', {
             method: 'POST',
-            headers: { Authorization: `Bearer ${token}` },
+            headers: { Authorization: `Bearer ${mobileToken}` },
           })
-          if (res.ok) {
-            const data = await res.json()
-            login(data.token, data.user)
+          if (r.ok) {
+            const { token } = await r.json()
+            useMobileAuth.getState().login(token, useMobileAuth.getState().user)
+          } else {
+            logout()
           }
+        } catch {
+          logout()
         }
-      } catch {}
-    }
-    tryRefresh()
-    const id = setInterval(tryRefresh, 15 * 60 * 1000)
-    return () => clearInterval(id)
-  }, [])
+      }, msUntilRefresh)
+    } catch {}
+    return () => clearTimeout(timer)
+  }, [mobileToken, logout])
 
   // SSE: real-time query invalidation
   const handleSSEEvent = useCallback((event) => {
