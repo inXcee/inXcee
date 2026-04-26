@@ -49,6 +49,16 @@ export function startCronJobs() {
     } catch (e) { console.error('[Cron] Laundry SLA hatası:', e.message) }
   })
 
+  // Her gece 02:00 — eski audit log ve okunmuş bildirimler temizle (90+ gün)
+  cron.schedule('0 2 * * *', () => {
+    try {
+      const db = getDB()
+      const cutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString()
+      db.prepare('DELETE FROM audit_log WHERE created_at < ?').run(cutoff)
+      db.prepare('DELETE FROM notifications WHERE is_read=1 AND created_at < ?').run(cutoff)
+    } catch (e) { console.error('[Cron] Temizleme hatası:', e.message) }
+  })
+
   // cron jobs initialized
   scheduleMorningReport()
 }
