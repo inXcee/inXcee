@@ -766,6 +766,18 @@ export function initDB() {
   try { db.exec('ALTER TABLE users ADD COLUMN webauthn_counter INTEGER DEFAULT 0') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] webauthn_counter:', e.message) }
   try { db.exec('ALTER TABLE users ADD COLUMN webauthn_challenge TEXT') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] webauthn_challenge:', e.message) }
 
+  // ── Performans index'leri ─────────────────────────────────────────────────
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_maintenance_status ON maintenance_requests(status)') } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] idx_maintenance_status:', e.message) }
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_maintenance_opened ON maintenance_requests(opened_at DESC)') } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] idx_maintenance_opened:', e.message) }
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_discipline_personnel ON discipline_records(personnel_id, created_at DESC)') } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] idx_discipline_personnel:', e.message) }
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_personnel_checkout ON personnel(check_out_date)') } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] idx_personnel_checkout:', e.message) }
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_personnel_company ON personnel(company)') } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] idx_personnel_company:', e.message) }
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_personnel_blacklist ON personnel(is_blacklisted, discipline_points)') } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] idx_personnel_blacklist:', e.message) }
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_audit_entity ON audit_log(entity_type, entity_id)') } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] idx_audit_entity:', e.message) }
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_log(created_at DESC)') } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] idx_audit_created:', e.message) }
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_hk_tasks_date_status ON housekeeping_tasks(assigned_date, status)') } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] idx_hk_tasks_date_status:', e.message) }
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_inventory_category ON inventory_items(category)') } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] idx_inventory_category:', e.message) }
+
   return db
 }
 
