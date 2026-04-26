@@ -279,7 +279,7 @@ function QRScannerModal({ expectedQR, onMatch, onClose }) {
       <video ref={videoRef} autoPlay playsInline muted
         style={{ width: '280px', height: '280px', borderRadius: '12px', objectFit: 'cover', border: '3px solid #10b981' }} />
       <canvas ref={canvasRef} style={{ display: 'none' }} />
-      <button onClick={onClose}
+      <button onClick={() => onCloseRef.current()}
         style={{ padding: '12px 32px', borderRadius: '10px', background: '#fff', color: '#111', border: 'none', fontWeight: 700, fontSize: '14px', cursor: 'pointer' }}>
         İptal
       </button>
