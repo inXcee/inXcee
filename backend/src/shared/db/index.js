@@ -773,10 +773,10 @@ export function initDB() {
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_personnel_checkout ON personnel(check_out_date)') } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] idx_personnel_checkout:', e.message) }
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_personnel_company ON personnel(company)') } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] idx_personnel_company:', e.message) }
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_personnel_blacklist ON personnel(is_blacklisted, discipline_points)') } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] idx_personnel_blacklist:', e.message) }
-  try { db.exec('CREATE INDEX IF NOT EXISTS idx_audit_entity ON audit_log(entity_type, entity_id)') } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] idx_audit_entity:', e.message) }
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_audit_module ON audit_log(module, target_id)') } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] idx_audit_module:', e.message) }
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_log(created_at DESC)') } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] idx_audit_created:', e.message) }
-  try { db.exec('CREATE INDEX IF NOT EXISTS idx_hk_tasks_date_status ON housekeeping_tasks(assigned_date, status)') } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] idx_hk_tasks_date_status:', e.message) }
-  try { db.exec('CREATE INDEX IF NOT EXISTS idx_inventory_category ON inventory_items(category)') } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] idx_inventory_category:', e.message) }
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_cleaning_tasks_scheduled ON cleaning_tasks(scheduled_at, skipped)') } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] idx_cleaning_tasks_scheduled:', e.message) }
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_inventory_category ON inventory(category)') } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] idx_inventory_category:', e.message) }
 
   return db
 }
