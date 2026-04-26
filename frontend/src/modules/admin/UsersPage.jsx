@@ -44,8 +44,8 @@ function UserForm({ user, onSubmit, onCancel }) {
           </div>
           {!user && (
             <div>
-              <label className="form-label">SIFRE</label>
-              <input className="form-input" type="password" value={form.password}
+              <label className="form-label">SIFRE (min 8 karakter)</label>
+              <input className="form-input" type="password" value={form.password} minLength={8}
                 onChange={e => setForm(f => ({ ...f, password: e.target.value }))} />
             </div>
           )}
@@ -134,8 +134,8 @@ function PasswordModal({ userId, onClose }) {
         <div style={{ height: '2px', background: 'var(--accent)' }} />
         <div className="panel-header"><div className="panel-title">SIFRE DEGISTIR</div></div>
         <div className="panel-body">
-          <label className="form-label">YENI SIFRE</label>
-          <input className="form-input" type="password" value={pw} onChange={e => setPw(e.target.value)} autoFocus />
+          <label className="form-label">YENI SIFRE (min 8 karakter)</label>
+          <input className="form-input" type="password" value={pw} onChange={e => setPw(e.target.value)} minLength={8} autoFocus />
           {mutation.error && <div className="alert alert-danger" style={{ marginTop: '8px' }}>{mutation.error.response?.data?.error || 'Hata'}</div>}
           <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
             <button className="btn btn-primary" onClick={() => mutation.mutate()} disabled={mutation.isPending}>
