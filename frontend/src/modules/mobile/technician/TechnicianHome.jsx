@@ -10,20 +10,24 @@ const PRIORITY_LABEL = { high: 'Yüksek', medium: 'Orta', low: 'Düşük' }
 const ACTIVE_STATUSES = new Set(['open', 'assigned', 'in_progress', 'review'])
 
 export default function TechnicianHome() {
-  const [showDone, setShowDone] = useState(false)
+  const [tab, setTab] = useState('active')
   const navigate = useNavigate()
 
   const { data: allRequests = [], isLoading, refetch } = useQuery({
     queryKey: ['mobile-tech-requests'],
-    queryFn: () => mobileApi.get('/maintenance/requests?reporter_user_id=me').then(r => r.data),
+    queryFn: () => mobileApi.get('/maintenance/requests').then(r => r.data),
+    staleTime: 30_000,
+    gcTime: 300_000,
     refetchInterval: 60000,
   })
 
   const { isPulling, handlers } = usePullToRefresh(refetch)
 
   const active = allRequests.filter(r => ACTIVE_STATUSES.has(r.status))
+  const assigned = allRequests.filter(r => ACTIVE_STATUSES.has(r.status) && r.technician_name)
   const done = allRequests.filter(r => r.status === 'done')
-  const displayed = showDone ? done : active
+
+  const displayed = tab === 'active' ? active : tab === 'assigned' ? assigned : done
 
   return (
     <div style={{ padding: '16px' }} {...handlers}>
@@ -32,9 +36,10 @@ export default function TechnicianHome() {
       )}
       <h1 style={{ fontSize: '20px', fontWeight: 700, marginBottom: '16px' }}>Teknik Talepler</h1>
 
-      <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
-        <TabBtn label={`Aktif (${active.length})`} active={!showDone} color="#3b82f6" onClick={() => setShowDone(false)} />
-        <TabBtn label={`Tamamlanan (${done.length})`} active={showDone} color="#10b981" onClick={() => setShowDone(true)} />
+      <div style={{ display: 'flex', gap: '6px', marginBottom: '16px' }}>
+        <TabBtn label={`Tüm Aktif (${active.length})`} active={tab === 'active'} color="#3b82f6" onClick={() => setTab('active')} />
+        <TabBtn label={`Atanmış (${assigned.length})`} active={tab === 'assigned'} color="#6366f1" onClick={() => setTab('assigned')} />
+        <TabBtn label={`Bitti (${done.length})`} active={tab === 'done'} color="#10b981" onClick={() => setTab('done')} />
       </div>
 
       {isLoading ? (
@@ -55,7 +60,7 @@ export default function TechnicianHome() {
         </div>
       ) : displayed.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '48px', color: '#9ca3af' }}>
-          {showDone ? 'Tamamlanan talep yok' : 'Aktif talep yok 🎉'}
+          {tab === 'done' ? 'Tamamlanan talep yok' : 'Aktif talep yok 🎉'}
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -73,7 +78,14 @@ export default function TechnicianHome() {
               </p>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontSize: '11px', color: '#9ca3af' }}>#{r.id} · {r.opened_at?.slice(0, 10)}</span>
-                <StatusBadge status={r.status} />
+                <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                  {r.technician_name && (
+                    <span style={{ fontSize: '10px', fontWeight: 700, padding: '2px 7px', borderRadius: '5px', background: '#dbeafe', color: '#1d4ed8' }}>
+                      {r.technician_name}
+                    </span>
+                  )}
+                  <StatusBadge status={r.status} />
+                </div>
               </div>
             </div>
           ))}
@@ -103,7 +115,7 @@ function StatusBadge({ status }) {
 function TabBtn({ label, active, color, onClick }) {
   return (
     <button onClick={onClick}
-      style={{ flex: 1, padding: '10px', borderRadius: '10px', border: `2px solid ${active ? color : '#e5e7eb'}`, background: active ? color + '15' : '#fff', color: active ? color : '#9ca3af', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}>
+      style={{ flex: 1, padding: '9px 6px', borderRadius: '10px', border: `2px solid ${active ? color : '#e5e7eb'}`, background: active ? color + '15' : '#fff', color: active ? color : '#9ca3af', fontWeight: 700, fontSize: '11px', cursor: 'pointer' }}>
       {label}
     </button>
   )
