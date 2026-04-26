@@ -12,6 +12,8 @@ export default function TaskHistory() {
     queryFn: () => mobileApi.get('/housekeeping/tasks', {
       params: { date: today, ...(user?.assigned_block ? { block: user.assigned_block } : {}) },
     }).then(r => r.data),
+    staleTime: 30_000,
+    gcTime: 300_000,
   })
 
   const done = tasks.filter(t => t.completed_at)

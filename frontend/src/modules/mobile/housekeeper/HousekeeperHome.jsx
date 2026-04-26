@@ -28,6 +28,8 @@ export default function HousekeeperHome() {
     queryFn: () => mobileApi.get('/housekeeping/tasks', {
       params: { date: today, ...(user?.assigned_block ? { block: user.assigned_block } : {}) },
     }).then(r => r.data),
+    staleTime: 30_000,
+    gcTime: 300_000,
     refetchInterval: 60000,
   })
 
