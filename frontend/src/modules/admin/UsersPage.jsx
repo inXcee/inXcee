@@ -108,7 +108,7 @@ function PinModal({ userId, onClose }) {
             placeholder="1234" autoFocus />
           {mutation.error && <div className="alert alert-danger" style={{ marginTop: '8px' }}>{mutation.error.response?.data?.error || 'Hata'}</div>}
           <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
-            <button className="btn btn-primary" onClick={() => mutation.mutate()} disabled={mutation.isPending}>
+            <button className="btn btn-primary" onClick={() => mutation.mutate()} disabled={mutation.isPending || (pin.length > 0 && pin.length < 4)}>
               {mutation.isPending ? 'KAYDEDİLİYOR...' : 'KAYDET'}
             </button>
             <button className="btn btn-ghost" onClick={onClose}>İPTAL</button>
