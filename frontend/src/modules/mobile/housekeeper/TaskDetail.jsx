@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useParams, useLocation, useNavigate } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import jsQR from 'jsqr'
 import mobileApi from '../auth/mobileApi.js'
 import { enqueue } from '../../../shared/utils/offlineDB.js'
 
@@ -42,9 +43,10 @@ export default function TaskDetail() {
   const [checklist, setChecklist] = useState(() =>
     initChecklist(task?.task_type, task?.checklist)
   )
+  const [showQR, setShowQR] = useState(false)
 
   const completeMut = useMutation({
-    mutationFn: () => mobileApi.post(`/housekeeping/tasks/${id}/complete`, { checklist }),
+    mutationFn: (opts = {}) => mobileApi.post(`/housekeeping/tasks/${id}/complete`, { checklist, ...opts }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['mobile-hk-tasks'] }); navigate(-1) },
     onError: () => {
       if (!navigator.onLine) {
@@ -139,8 +141,23 @@ export default function TaskDetail() {
         </div>
       </div>
 
+      {showQR && (
+        <QRScannerModal
+          expectedQR={task.qr_location}
+          onMatch={() => { setShowQR(false); completeMut.mutate({ via_qr: true }) }}
+          onClose={() => setShowQR(false)}
+        />
+      )}
+
       {!isDone && !isSkipped && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          {task.qr_location && (
+            <button
+              onClick={() => setShowQR(true)}
+              style={{ ...btn('#8b5cf6'), marginBottom: '4px' }}>
+              📷 QR ile Tamamla
+            </button>
+          )}
           <button
             onClick={() => completeMut.mutate()}
             disabled={completeMut.isPending || !allChecked}
@@ -194,4 +211,73 @@ function Row({ label, value }) {
 
 function btn(bg) {
   return { width: '100%', padding: '14px', borderRadius: '12px', background: bg, color: '#fff', border: 'none', fontSize: '15px', fontWeight: 600, cursor: 'pointer' }
+}
+
+function QRScannerModal({ expectedQR, onMatch, onClose }) {
+  const videoRef = useRef(null)
+  const canvasRef = useRef(null)
+  const streamRef = useRef(null)
+  const rafRef = useRef(null)
+
+  useEffect(() => {
+    let active = true
+
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+      .then(stream => {
+        if (!active) { stream.getTracks().forEach(t => t.stop()); return }
+        streamRef.current = stream
+        if (videoRef.current) videoRef.current.srcObject = stream
+      })
+      .catch(() => { if (active) onClose() })
+
+    return () => {
+      active = false
+      cancelAnimationFrame(rafRef.current)
+      streamRef.current?.getTracks().forEach(t => t.stop())
+    }
+  }, [onClose])
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    const video = videoRef.current
+    if (!canvas || !video) return
+
+    function tick() {
+      if (video.readyState === video.HAVE_ENOUGH_DATA) {
+        canvas.width = video.videoWidth
+        canvas.height = video.videoHeight
+        const ctx = canvas.getContext('2d')
+        ctx.drawImage(video, 0, 0)
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+        const code = jsQR(imageData.data, imageData.width, imageData.height)
+        if (code) {
+          if (!expectedQR || code.data === expectedQR) {
+            streamRef.current?.getTracks().forEach(t => t.stop())
+            onMatch(code.data)
+            return
+          }
+        }
+      }
+      rafRef.current = requestAnimationFrame(tick)
+    }
+
+    const onPlay = () => { rafRef.current = requestAnimationFrame(tick) }
+    video.addEventListener('play', onPlay)
+    return () => video.removeEventListener('play', onPlay)
+  }, [expectedQR, onMatch])
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.85)', zIndex: 100, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '16px' }}>
+      <p style={{ color: '#fff', fontSize: '14px', textAlign: 'center', margin: 0 }}>
+        {expectedQR ? 'Oda QR kodunu okutun' : 'QR kodu okutun'}
+      </p>
+      <video ref={videoRef} autoPlay playsInline muted
+        style={{ width: '280px', height: '280px', borderRadius: '12px', objectFit: 'cover', border: '3px solid #10b981' }} />
+      <canvas ref={canvasRef} style={{ display: 'none' }} />
+      <button onClick={onClose}
+        style={{ padding: '12px 32px', borderRadius: '10px', background: '#fff', color: '#111', border: 'none', fontWeight: 700, fontSize: '14px', cursor: 'pointer' }}>
+        İptal
+      </button>
+    </div>
+  )
 }
