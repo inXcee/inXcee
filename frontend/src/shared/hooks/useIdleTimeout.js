@@ -2,14 +2,14 @@ import { useEffect, useRef, useCallback } from 'react'
 import { useAuthStore } from '../store/authStore.js'
 import { useToastStore } from '../store/toastStore.js'
 
-const TIMEOUT_MS = 30 * 60 * 1000  // 30 dakika
-const WARN_MS   = 25 * 60 * 1000  // 25. dakikada uyar
-const EVENTS    = ['mousemove', 'keydown', 'click', 'touchstart', 'scroll']
+const EVENTS = ['mousemove', 'keydown', 'click', 'touchstart', 'scroll']
 
-export function useIdleTimeout() {
-  const logout   = useAuthStore(s => s.logout)
-  const token    = useAuthStore(s => s.token)
-  const addToast = useToastStore(s => s.addToast)
+export function useIdleTimeout({ timeoutMs = 30 * 60 * 1000, warnBeforeMs = 5 * 60 * 1000, token: tokenProp, onLogout } = {}) {
+  const logoutStore = useAuthStore(s => s.logout)
+  const tokenStore  = useAuthStore(s => s.token)
+  const addToast    = useToastStore(s => s.addToast)
+  const token  = tokenProp !== undefined ? tokenProp : tokenStore
+  const logout = onLogout ?? logoutStore
   const timer    = useRef(null)
   const warned   = useRef(false)
 
@@ -21,13 +21,14 @@ export function useIdleTimeout() {
     timer.current = setTimeout(() => {
       if (!warned.current) {
         warned.current = true
-        addToast('Oturum 5 dakika içinde otomatik kapatılacak — aktif kalmak için hareket edin', 'warning')
+        const mins = Math.round(warnBeforeMs / 60000)
+        addToast(`Oturum ${mins} dakika içinde otomatik kapatılacak — aktif kalmak için hareket edin`, 'warning')
         timer.current = setTimeout(() => {
           logout()
-        }, TIMEOUT_MS - WARN_MS)
+        }, warnBeforeMs)
       }
-    }, WARN_MS)
-  }, [token, logout, addToast])
+    }, timeoutMs - warnBeforeMs)
+  }, [token, logout, addToast, timeoutMs, warnBeforeMs])
 
   useEffect(() => {
     if (!token) return

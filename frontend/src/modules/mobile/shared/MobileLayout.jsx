@@ -6,6 +6,7 @@ import { useMobileSSE } from '../../../shared/hooks/useMobileSSE.js'
 import { getQueue, dequeue, updateRetries, getBlob } from '../../../shared/utils/offlineDB.js'
 import { useToastStore } from '../../../shared/store/toastStore.js'
 import { useMobilePrefs } from '../../../shared/store/mobilePrefsStore.js'
+import { useIdleTimeout } from '../../../shared/hooks/useIdleTimeout.js'
 
 const MODULE_KEYS = {
   housekeeping: [['mobile-hk-tasks']],
@@ -13,7 +14,8 @@ const MODULE_KEYS = {
 }
 
 export default function MobileLayout({ tabs }) {
-  const { logout } = useMobileAuth()
+  const { logout, token: mobileToken } = useMobileAuth()
+  useIdleTimeout({ timeoutMs: 15 * 60 * 1000, warnBeforeMs: 2 * 60 * 1000, token: mobileToken, onLogout: logout })
   const { darkMode, toggleDarkMode } = useMobilePrefs()
   const qc = useQueryClient()
   const { addToast } = useToastStore()
