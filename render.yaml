@@ -2,6 +2,7 @@ services:
   - type: web
     name: inxcee-backend
     runtime: node
+    nodeVersion: "22.x"
     buildCommand: cd backend && npm install
     startCommand: cd backend && node src/server.js
     envVars:
@@ -9,10 +10,15 @@ services:
         value: production
       - key: DB_PATH
         value: /var/data/yys.db
+      - key: UPLOADS_DIR
+        value: /var/data/uploads
       - key: TRUST_PROXY
         value: "1"
+      - key: BACKUP_DIR
+        value: /var/data/backups
       # JWT_SECRET — Render Dashboard > Settings > Environment Variables'dan ayarlayın
       # ALLOWED_ORIGIN — örn: https://yourdomain.vercel.app,https://www.yourdomain.com
+    healthCheckPath: /api/health
     autoDeploy: true
     disk:
       name: yys-data
