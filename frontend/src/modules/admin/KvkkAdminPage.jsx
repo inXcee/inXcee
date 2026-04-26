@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
+import HelpHint from '../../shared/components/HelpHint.jsx'
 
 export default function KvkkAdminPage() {
   const qc = useQueryClient()
@@ -51,7 +52,9 @@ export default function KvkkAdminPage() {
   return (
     <div>
       <div className="fade-up" style={{ marginBottom: 24 }}>
-        <h2 style={{ fontSize: 28, letterSpacing: 4 }}>KVKK YÖNETİMİ</h2>
+        <h2 style={{ fontSize: 28, letterSpacing: 4 }}>
+          KVKK YÖNETİMİ<HelpHint topic="kvkk" title="KVKK" />
+        </h2>
         <p style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', letterSpacing: 1, marginTop: 4 }}>
           AYDINLATMA METNİ + KİŞİSEL VERİ EXPORT
         </p>

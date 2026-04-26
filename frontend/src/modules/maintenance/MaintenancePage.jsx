@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
+import HelpHint from '../../shared/components/HelpHint.jsx'
 import { useDraft } from '../../shared/hooks/useDraft.js'
 import DraftBanner from '../../shared/components/DraftBanner.jsx'
 
@@ -1047,7 +1048,9 @@ export default function MaintenancePage() {
       {/* Header */}
       <div className="page-header" style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: '20px', flexWrap: 'wrap', gap: '8px' }}>
         <div>
-          <h1 style={{ fontSize: '28px', letterSpacing: '4px', color: 'var(--text)' }}>TEKNİK SERVİS</h1>
+          <h1 style={{ fontSize: '28px', letterSpacing: '4px', color: 'var(--text)' }}>
+            TEKNİK SERVİS<HelpHint topic="maintenance" title="TEKNİK SERVİS" />
+          </h1>
           <p style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)', marginTop: '4px', letterSpacing: '1px' }}>
             ARIZA BİLDİRİM VE TAKİP
           </p>

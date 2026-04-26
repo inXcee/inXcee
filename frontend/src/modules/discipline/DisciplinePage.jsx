@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
+import HelpHint from '../../shared/components/HelpHint.jsx'
 import { useToastStore } from '../../shared/store/toastStore.js'
 import { useDraft } from '../../shared/hooks/useDraft.js'
 import DraftBanner from '../../shared/components/DraftBanner.jsx'
@@ -509,7 +510,9 @@ export default function DisciplinePage() {
     <div style={{ maxWidth: '800px', width: '100%', position: 'relative', zIndex: 1 }} className="fade-up">
       {/* Header */}
       <div style={{ marginBottom: '20px' }}>
-        <h1 style={{ fontSize: '28px', letterSpacing: '4px', color: 'var(--text)' }}>DİSİPLİN YÖNETİMİ</h1>
+        <h1 style={{ fontSize: '28px', letterSpacing: '4px', color: 'var(--text)' }}>
+          DİSİPLİN YÖNETİMİ<HelpHint topic="discipline" title="DİSİPLİN" />
+        </h1>
         <p style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)', marginTop: '4px', letterSpacing: '1px' }}>
           KART · KARA LİSTE · İSTATİSTİK
         </p>

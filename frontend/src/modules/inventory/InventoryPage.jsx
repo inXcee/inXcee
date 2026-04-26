@@ -1,6 +1,7 @@
 import { useState, useMemo, useRef, memo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
+import HelpHint from '../../shared/components/HelpHint.jsx'
 import { useDraft } from '../../shared/hooks/useDraft.js'
 import DraftBanner from '../../shared/components/DraftBanner.jsx'
 
@@ -1206,7 +1207,9 @@ export default function InventoryPage() {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
         <div>
-          <h1 style={{ fontSize: '30px', letterSpacing: '5px', color: 'var(--text)', margin: 0 }}>ENVANTER</h1>
+          <h1 style={{ fontSize: '30px', letterSpacing: '5px', color: 'var(--text)', margin: 0 }}>
+            ENVANTER<HelpHint topic="inventory" title="ENVANTER" />
+          </h1>
           <p style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)', marginTop: '5px', letterSpacing: '1.5px' }}>STOK TAKİP · MAL GİRİŞ · MALZEME TESLİM · SAYIM</p>
         </div>
         <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>

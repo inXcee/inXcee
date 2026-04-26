@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
+import HelpHint from '../../shared/components/HelpHint.jsx'
 import api from '../../shared/api/client.js'
 import { useAuthStore } from '../../shared/store/authStore.js'
 
@@ -1376,7 +1377,9 @@ export default function CapacityPage() {
       {/* Header */}
       <div className="page-header" style={{ marginBottom: '24px', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
         <div>
-          <h1 style={{ fontSize: '30px', letterSpacing: '4px', color: 'var(--text)' }}>KAPASİTE YÖNETİMİ</h1>
+          <h1 style={{ fontSize: '30px', letterSpacing: '4px', color: 'var(--text)' }}>
+            KAPASİTE YÖNETİMİ<HelpHint topic="capacity" title="KAPASİTE" />
+          </h1>
           <p style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)', marginTop: '4px', letterSpacing: '1px' }}>
             KORIDOR PLANI · ODA VE YATAK DURUMU · PERSONEL YÖNETİMİ
           </p>

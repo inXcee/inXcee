@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
+import HelpHint from '../../shared/components/HelpHint.jsx'
 
 function formatBytes(b) {
   if (b == null) return '—'
@@ -34,7 +35,9 @@ export default function SystemHealthPage() {
     <div>
       <div className="fade-up" style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
-          <h2 style={{ fontSize: 28, letterSpacing: 4 }}>SİSTEM SAĞLIĞI</h2>
+          <h2 style={{ fontSize: 28, letterSpacing: 4 }}>
+            SİSTEM SAĞLIĞI<HelpHint topic="system" title="SİSTEM" />
+          </h2>
           <p style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', letterSpacing: 1, marginTop: 4 }}>
             ANLIK DURUM · 30SN OTOMATİK YENİLENİR
           </p>

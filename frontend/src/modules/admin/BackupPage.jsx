@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
+import HelpHint from '../../shared/components/HelpHint.jsx'
 
 function formatSize(bytes) {
   if (bytes < 1024) return `${bytes} B`
@@ -78,7 +79,9 @@ export default function BackupPage() {
   return (
     <div>
       <div className="fade-up" style={{ marginBottom: 24 }}>
-        <h2 style={{ fontSize: 28, letterSpacing: 4 }}>YEDEKLEME</h2>
+        <h2 style={{ fontSize: 28, letterSpacing: 4 }}>
+          YEDEKLEME<HelpHint topic="backup" title="YEDEKLEME" />
+        </h2>
         <p style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', letterSpacing: 1, marginTop: 4 }}>
           VERİTABANI YEDEK YÖNETİMİ · OTOMATİK GECE 03:00 · 7 GÜN SAKLAMA
         </p>

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useAuthStore } from '../../shared/store/authStore.js'
+import HelpHint from '../../shared/components/HelpHint.jsx'
 import api from '../../shared/api/client.js'
 
 const API_BASE = '/api'
@@ -259,7 +260,9 @@ export default function ReportsPage() {
     <div>
       <div className="fade-up" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '24px', flexWrap: 'wrap', gap: '12px' }}>
         <div>
-          <h2 style={{ fontSize: '28px', letterSpacing: '4px' }}>RAPORLAR</h2>
+          <h2 style={{ fontSize: '28px', letterSpacing: '4px' }}>
+            RAPORLAR<HelpHint topic="reports" title="RAPORLAR" />
+          </h2>
           <p style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)', letterSpacing: '1px', marginTop: '4px' }}>
             İNTERAKTİF RAPOR MERKEZİ
           </p>

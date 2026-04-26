@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
+import HelpHint from '../../shared/components/HelpHint.jsx'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const ALL_BLOCKS = ['M1','M2','M3','S1','S2','S3']
@@ -1191,7 +1192,9 @@ export default function HousekeepingPage() {
       {/* Header */}
       <div className="page-header" style={{ marginBottom: '20px', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
         <div>
-          <h1 style={{ fontSize: '30px', letterSpacing: '4px', color: 'var(--text)' }}>HOUSEKEEPING</h1>
+          <h1 style={{ fontSize: '30px', letterSpacing: '4px', color: 'var(--text)' }}>
+            HOUSEKEEPING<HelpHint topic="housekeeping" title="TEMİZLİK" />
+          </h1>
           <p style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)', marginTop: '4px', letterSpacing: '1px' }}>
             GÜNLÜK TEMİZLİK YÖNETİMİ
           </p>

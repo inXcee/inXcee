@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
+import HelpHint from '../../shared/components/HelpHint.jsx'
 
 export default function ErrorLogPage() {
   const qc = useQueryClient()
@@ -38,7 +39,9 @@ export default function ErrorLogPage() {
   return (
     <div>
       <div className="fade-up" style={{ marginBottom: 24 }}>
-        <h2 style={{ fontSize: 28, letterSpacing: 4 }}>HATA LOGLARI</h2>
+        <h2 style={{ fontSize: 28, letterSpacing: 4 }}>
+          HATA LOGLARI<HelpHint topic="error-log" title="HATA LOGLARI" />
+        </h2>
         <p style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', letterSpacing: 1, marginTop: 4 }}>
           FRONTEND + BACKEND HATA KAYITLARI · 30 GUN SAKLAMA
         </p>

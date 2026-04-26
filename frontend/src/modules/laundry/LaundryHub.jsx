@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { laundryApi } from './api.js'
+import HelpHint from '../../shared/components/HelpHint.jsx'
 import LaundryReport from './LaundryReport.jsx'
 import LaundrySettings from './LaundrySettings.jsx'
 import { useLaundrySSE } from '../../shared/hooks/useLaundrySSE.js'
@@ -1559,7 +1560,7 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
         <div>
           <h1 style={{ fontFamily: 'var(--display)', fontSize: 36, letterSpacing: 5, color: 'var(--text)', lineHeight: 1, marginBottom: 8 }}>
-            ÇAMAŞIRHANE
+            ÇAMAŞIRHANE<HelpHint topic="laundry" title="ÇAMAŞIRHANE" />
           </h1>
           {/* Section tabs */}
           <div style={{ display: 'flex', gap: 4 }}>

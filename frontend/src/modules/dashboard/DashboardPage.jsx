@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
+import HelpHint from '../../shared/components/HelpHint.jsx'
 import api from '../../shared/api/client.js'
 import KPICard from './KPICard.jsx'
 import HeatMap from './HeatMap.jsx'
@@ -489,7 +490,9 @@ export default function DashboardPage() {
       {/* Header */}
       <div className="page-header" style={{ marginBottom: '20px', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
         <div>
-          <h1 style={{ fontSize: '28px', letterSpacing: '4px', color: 'var(--text)' }}>DASHBOARD</h1>
+          <h1 style={{ fontSize: '28px', letterSpacing: '4px', color: 'var(--text)' }}>
+            DASHBOARD<HelpHint topic="dashboard" title="DASHBOARD" />
+          </h1>
           <p style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)', marginTop: '4px', letterSpacing: '1px' }}>
             ŞANTİYE YATAKHANE — GENEL DURUM
           </p>
