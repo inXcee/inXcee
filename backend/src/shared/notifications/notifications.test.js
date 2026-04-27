@@ -60,18 +60,30 @@ describe('Notification deduplication', () => {
 })
 
 describe('SSE client eviction', () => {
-  it('evicts oldest client when limit reached', () => {
-    // Create 100 fake clients and verify set size stays bounded
+  it('evicts oldest client when global limit reached', () => {
+    // Her client'a unique userId vererek per-user limitini bypass et
     const fakeClients = []
     let evicted = 0
-    for (let i = 0; i < 101; i++) {
+    for (let i = 0; i < 501; i++) {
       const client = { write: () => {}, end: () => { evicted++ } }
       fakeClients.push(client)
-      addSSEClient(client)
+      addSSEClient(client, i, 'campus_manager')
     }
-    // First client should have been evicted when 101st was added
+    // 501. client eklenince en eski client evict edilmeli
     expect(evicted).toBe(1)
-    // Cleanup
+    fakeClients.forEach(c => removeSSEClient(c))
+  })
+
+  it('evicts oldest per-user client when same user opens too many tabs', () => {
+    const fakeClients = []
+    let evicted = 0
+    // Aynı user'dan 5 bağlantı aç (limit 4) — en eskisi evict olmalı
+    for (let i = 0; i < 5; i++) {
+      const client = { write: () => {}, end: () => { evicted++ } }
+      fakeClients.push(client)
+      addSSEClient(client, 42, 'campus_manager')
+    }
+    expect(evicted).toBe(1)
     fakeClients.forEach(c => removeSSEClient(c))
   })
 })

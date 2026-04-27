@@ -1,13 +1,26 @@
 import { getDB } from '../db/index.js'
 import { isNotificationEnabledForUser } from '../../modules/notification-prefs/service.js'
 
-const MAX_SSE_CLIENTS = 100
+const MAX_SSE_CLIENTS = 500
+const MAX_PER_USER = 4 // bir user max 4 sekme; fazlası eski bağlantıyı düşürür
 // Map<res, {res, userId, role}> — userId/role ile filtrelenmiş SSE broadcast için
 const sseClients = new Map()
 
 const MANAGEMENT_ROLES = new Set(['campus_manager', 'shift_supervisor'])
 
 export function addSSEClient(res, userId, role) {
+  // Aynı user'ın eski bağlantılarını say; limit aşıldıysa en eskisini düşür
+  let userConnections = []
+  for (const [key, val] of sseClients) {
+    if (val.userId === userId) userConnections.push(key)
+  }
+  while (userConnections.length >= MAX_PER_USER) {
+    const oldest = userConnections.shift()
+    try { oldest.end() } catch { /* ignore */ }
+    sseClients.delete(oldest)
+  }
+
+  // Global limit — en eskiyi düşür (fairness için sıralı Map iteration)
   if (sseClients.size >= MAX_SSE_CLIENTS) {
     const oldest = sseClients.keys().next().value
     try { oldest.end() } catch { /* bağlantı zaten kapalı */ }

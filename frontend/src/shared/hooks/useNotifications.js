@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useAuthStore } from '../store/authStore.js'
+import { useEventStream } from './useEventStream.js'
 import api from '../api/client.js'
 
 function playNotificationSound() {
@@ -39,32 +40,30 @@ export function useNotifications() {
   const [browserEnabled, setBrowserEnabled] = useState(() => localStorage.getItem('yys-notif-browser') !== 'off')
   const token = useAuthStore(s => s.token)
   const initialLoadDone = useRef(false)
+  const soundRef = useRef(soundEnabled)
+  const browserRef = useRef(browserEnabled)
+  soundRef.current = soundEnabled
+  browserRef.current = browserEnabled
 
   useEffect(() => {
     if (!token) return
     initialLoadDone.current = false
-
     api.get('/notifications').then(r => {
       setNotifications(r.data)
       setUnreadCount(r.data.filter(n => !n.is_read).length)
       initialLoadDone.current = true
     }).catch(() => {})
+  }, [token])
 
-    const es = new EventSource(`/api/notifications/stream?token=${token}`)
-    es.onmessage = (e) => {
-      const notif = JSON.parse(e.data)
-      setNotifications(prev => [notif, ...prev.slice(0, 49)])
-      setUnreadCount(prev => prev + 1)
-
-      if (initialLoadDone.current) {
-        if (soundEnabled) playNotificationSound()
-        if (browserEnabled) sendBrowserNotification(notif)
-      }
+  useEventStream('/api/notifications/stream', token, ({ event, data }) => {
+    if (event !== 'message') return
+    setNotifications(prev => [data, ...prev.slice(0, 49)])
+    setUnreadCount(prev => prev + 1)
+    if (initialLoadDone.current) {
+      if (soundRef.current) playNotificationSound()
+      if (browserRef.current) sendBrowserNotification(data)
     }
-    es.onerror = () => es.close()
-
-    return () => es.close()
-  }, [token, soundEnabled, browserEnabled])
+  })
 
   const markRead = async (id) => {
     await api.patch(`/notifications/${id}/read`)

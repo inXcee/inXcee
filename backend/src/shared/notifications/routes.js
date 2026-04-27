@@ -1,11 +1,11 @@
 import { Router } from 'express'
-import { requireAuth } from '../auth/middleware.js'
+import { requireAuth, requireSSEAuth } from '../auth/middleware.js'
 import { getDB } from '../db/index.js'
 import { addSSEClient, removeSSEClient, getNotifications, markRead } from './service.js'
 
 export const notificationsRouter = Router()
 
-notificationsRouter.get('/stream', requireAuth, (req, res) => {
+notificationsRouter.get('/stream', requireSSEAuth, (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream')
   res.setHeader('Cache-Control', 'no-cache')
   res.setHeader('Connection', 'keep-alive')
