@@ -28,6 +28,19 @@ export default function EditModal({ item, onClose, onSave, isPending }) {
         <div><label className="form-label">Min. Esik</label><input className="form-input" type="number" min="0" value={f.reorder_threshold} onChange={e => u('reorder_threshold', +e.target.value)} style={{ borderRadius: '10px' }} /></div>
         <div><label className="form-label">Konum</label><input className="form-input" value={f.location || ''} onChange={e => u('location', e.target.value)} style={{ borderRadius: '10px' }} /></div>
         <div><label className="form-label">Birim Fiyat (TL)</label><input className="form-input" type="number" min="0" step="any" value={f.unit_price || 0} onChange={e => u('unit_price', +e.target.value)} style={{ borderRadius: '10px' }} /></div>
+        <div><label className="form-label">Tedarik Suresi (gun)</label><input className="form-input" type="number" min="0" value={f.lead_time_days ?? 7} onChange={e => u('lead_time_days', +e.target.value)} style={{ borderRadius: '10px' }} /></div>
+        <div><label className="form-label">Guvenli Stok (gun)</label><input className="form-input" type="number" min="0" value={f.safety_stock_days ?? 3} onChange={e => u('safety_stock_days', +e.target.value)} style={{ borderRadius: '10px' }} /></div>
+        <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--text2)' }}>
+            <input type="checkbox" checked={!!f.track_lots} onChange={e => u('track_lots', e.target.checked ? 1 : 0)} /> Lot izleme (FIFO)
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--text2)' }}>
+            <input type="checkbox" checked={!!f.track_expiry} onChange={e => u('track_expiry', e.target.checked ? 1 : 0)} /> Son kullanma izleme
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--text2)' }}>
+            <input type="checkbox" checked={!!f.track_locations} onChange={e => u('track_locations', e.target.checked ? 1 : 0)} /> Lokasyon izleme
+          </label>
+        </div>
       </div>
       <div style={{ display: 'flex', gap: '8px', marginTop: '18px', justifyContent: 'flex-end' }}>
         <button className="btn btn-ghost" onClick={onClose} style={{ borderRadius: '10px' }}>IPTAL</button>

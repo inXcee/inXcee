@@ -190,9 +190,36 @@ export function checkoutItem(itemId, personnelId, qty, note, userId) {
     db.prepare(
       'INSERT INTO inventory_checkouts(item_id,personnel_id,quantity,note,created_by) VALUES(?,?,?,?,?)'
     ).run(itemId, personnelId, qty, note || null, userId)
-    db.prepare(
-      'INSERT INTO stock_movements(item_id,type,delta,quantity_after,reason,created_by) VALUES(?,?,?,?,?,?)'
-    ).run(itemId, 'out', -qty, newQty, `Teslim: ${note || '-'}`, userId)
+
+    if (item.track_lots) {
+      // FIFO: en eski active lot'tan tuket, her lot icin ayri stock_movements
+      let remaining = qty
+      const lots = db.prepare(`
+        SELECT * FROM inventory_lots WHERE item_id = ? AND status = 'active'
+        ORDER BY received_at ASC, id ASC
+      `).all(itemId)
+      for (const lot of lots) {
+        if (remaining <= 0) break
+        const take = Math.min(lot.quantity, remaining)
+        const newLotQty = lot.quantity - take
+        const newStatus = newLotQty <= 0 ? 'depleted' : 'active'
+        db.prepare('UPDATE inventory_lots SET quantity = ?, status = ? WHERE id = ?').run(newLotQty, newStatus, lot.id)
+        db.prepare(
+          'INSERT INTO stock_movements(item_id,type,delta,quantity_after,reason,lot_id,created_by) VALUES(?,?,?,?,?,?,?)'
+        ).run(itemId, 'out', -take, newQty, `Teslim: ${note || '-'} (lot ${lot.lot_no || lot.id})`, lot.id, userId)
+        remaining -= take
+      }
+      if (remaining > 0) {
+        // lot'lardan yeterince cikmadi (track_lots bayraga ragmen lot girisi yapilmamis) — fallback
+        db.prepare(
+          'INSERT INTO stock_movements(item_id,type,delta,quantity_after,reason,created_by) VALUES(?,?,?,?,?,?)'
+        ).run(itemId, 'out', -remaining, newQty, `Teslim: ${note || '-'} (lotsuz)`, userId)
+      }
+    } else {
+      db.prepare(
+        'INSERT INTO stock_movements(item_id,type,delta,quantity_after,reason,created_by) VALUES(?,?,?,?,?,?)'
+      ).run(itemId, 'out', -qty, newQty, `Teslim: ${note || '-'}`, userId)
+    }
   })
   tx()
   return { ok: true, quantity: newQty }

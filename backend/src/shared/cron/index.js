@@ -58,6 +58,33 @@ export function startCronJobs() {
     checkStuckWashingItems()
   }))
 
+  // Her gün 06:00 — son kullanma 30 gün altı lot uyarısı (campus_manager)
+  cron.schedule('0 6 * * *', withLock('lot-expiry', () => {
+    try {
+      const db = getDB()
+      const today = new Date().toISOString().split('T')[0]
+      const lots = db.prepare(`
+        SELECT l.id, l.lot_no, l.expiry_date, i.item_name, i.unit, l.quantity,
+          CAST(julianday(l.expiry_date) - julianday('now') AS INTEGER) as days_left
+        FROM inventory_lots l JOIN inventory i ON i.id = l.item_id
+        WHERE l.status = 'active'
+          AND l.expiry_date IS NOT NULL
+          AND l.expiry_date <= date('now', '+30 days')
+      `).all()
+      lots.forEach(lot => {
+        const msg = lot.days_left <= 0
+          ? `Son kullanma gecti: ${lot.item_name} (lot ${lot.lot_no || lot.id}) — ${lot.quantity} ${lot.unit}`
+          : `Son kullanmaya ${lot.days_left} gun: ${lot.item_name} (lot ${lot.lot_no || lot.id}) — ${lot.quantity} ${lot.unit}`
+        createNotification({
+          message: msg,
+          type: lot.days_left <= 7 ? 'critical' : 'warning',
+          module: 'inventory', target_role: 'campus_manager',
+          dedup_key: `expiry_${lot.id}_${today}`,
+        })
+      })
+    } catch (e) { console.error('[Cron] Lot expiry hatasi:', e.message) }
+  }))
+
   // Her gece 02:00 — eski audit log + okunmuş bildirimler 90 gün, hata logları 30 gün
   cron.schedule('0 2 * * *', () => {
     try {

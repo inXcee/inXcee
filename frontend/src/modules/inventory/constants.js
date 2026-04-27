@@ -17,6 +17,7 @@ export const TABS = [
   { key: 'suppliers', label: 'TEDARIKCI', icon: '⛓' },
   { key: 'po', label: 'SIPARIS', icon: '📦' },
   { key: 'requests', label: 'TALEPLER', icon: '📝' },
+  { key: 'lots', label: 'LOT/SKT', icon: '⏳' },
   { key: 'history', label: 'HAREKETLER', icon: '↺' },
 ]
 
