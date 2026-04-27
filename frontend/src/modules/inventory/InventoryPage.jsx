@@ -16,6 +16,7 @@ import CheckoutsTab from './tabs/CheckoutsTab.jsx'
 import MovementsTab from './tabs/MovementsTab.jsx'
 import SuppliersTab from './tabs/SuppliersTab.jsx'
 import PurchaseOrdersTab from './tabs/PurchaseOrdersTab.jsx'
+import RequestsTab from './tabs/RequestsTab.jsx'
 
 export default function InventoryPage() {
   const qc = useQueryClient()
@@ -164,6 +165,9 @@ export default function InventoryPage() {
 
       {/* TAB: PURCHASE ORDERS */}
       {activeTab === 'po' && <PurchaseOrdersTab items={items} />}
+
+      {/* TAB: REQUESTS */}
+      {activeTab === 'requests' && <RequestsTab items={items} />}
 
       {/* TAB: HISTORY */}
       {activeTab === 'history' && <MovementsTab />}

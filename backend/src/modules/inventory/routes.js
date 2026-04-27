@@ -5,10 +5,12 @@ import * as service from './service.js'
 import { paginate } from '../../shared/paginate.js'
 import { suppliersRouter } from './suppliers/routes.js'
 import { poRouter } from './purchase-orders/routes.js'
+import { requestsRouter } from './requests/routes.js'
 
 export const inventoryRouter = Router()
 inventoryRouter.use('/suppliers', suppliersRouter)
 inventoryRouter.use('/po', poRouter)
+inventoryRouter.use('/requests', requestsRouter)
 const mgrAccess = requireRole('campus_manager', 'shift_supervisor', 'laundry', 'housekeeper')
 const editAccess = requireRole('campus_manager', 'shift_supervisor')
 
