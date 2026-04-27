@@ -802,6 +802,73 @@ export function initDB() {
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_cleaning_tasks_scheduled ON cleaning_tasks(scheduled_at, skipped)') } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] idx_cleaning_tasks_scheduled:', e.message) }
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_inventory_category ON inventory(category)') } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] idx_inventory_category:', e.message) }
 
+  // ── Envanter Genisletme F2: kolon ve tablo migration'lari ──
+  // inventory yeni kolonlari
+  try { db.exec('ALTER TABLE inventory ADD COLUMN sku TEXT') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] inventory.sku:', e.message) }
+  try { db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_inventory_sku ON inventory(sku) WHERE sku IS NOT NULL') } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] idx_inventory_sku:', e.message) }
+  try { db.exec('ALTER TABLE inventory ADD COLUMN photo_url TEXT') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] inventory.photo_url:', e.message) }
+  try { db.exec('ALTER TABLE inventory ADD COLUMN preferred_supplier_id INTEGER REFERENCES suppliers(id)') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] inventory.preferred_supplier_id:', e.message) }
+  try { db.exec('ALTER TABLE inventory ADD COLUMN lead_time_days INTEGER DEFAULT 7') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] inventory.lead_time_days:', e.message) }
+  try { db.exec('ALTER TABLE inventory ADD COLUMN safety_stock_days INTEGER DEFAULT 3') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] inventory.safety_stock_days:', e.message) }
+  try { db.exec('ALTER TABLE inventory ADD COLUMN track_lots INTEGER DEFAULT 0') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] inventory.track_lots:', e.message) }
+  try { db.exec('ALTER TABLE inventory ADD COLUMN track_expiry INTEGER DEFAULT 0') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] inventory.track_expiry:', e.message) }
+  try { db.exec('ALTER TABLE inventory ADD COLUMN track_locations INTEGER DEFAULT 0') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] inventory.track_locations:', e.message) }
+
+  // inventory_checkouts.request_id
+  try { db.exec('ALTER TABLE inventory_checkouts ADD COLUMN request_id INTEGER REFERENCES inventory_requests(id)') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] inventory_checkouts.request_id:', e.message) }
+
+  // goods_receipts.supplier_id + data migration (eski supplier string -> suppliers tablosu)
+  try {
+    const grCols = db.prepare('PRAGMA table_info(goods_receipts)').all().map(c => c.name)
+    if (!grCols.includes('supplier_id')) {
+      db.exec('ALTER TABLE goods_receipts ADD COLUMN supplier_id INTEGER REFERENCES suppliers(id)')
+      const distinctSuppliers = db.prepare("SELECT DISTINCT supplier FROM goods_receipts WHERE supplier IS NOT NULL AND supplier != ''").all()
+      const insertSupplier = db.prepare("INSERT OR IGNORE INTO suppliers(name) VALUES(?)")
+      const updateReceipt = db.prepare("UPDATE goods_receipts SET supplier_id = (SELECT id FROM suppliers WHERE name = ?) WHERE supplier = ? AND supplier_id IS NULL")
+      db.transaction(() => {
+        for (const s of distinctSuppliers) {
+          insertSupplier.run(s.supplier)
+          updateReceipt.run(s.supplier, s.supplier)
+        }
+      })()
+    }
+  } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] goods_receipts.supplier_id:', e.message) }
+
+  // stock_movements rebuild — yeni CHECK enum (damage/loss/transfer/po_receive/request_fulfill) + lot_id + from/to_location_id
+  try {
+    const smCols = db.prepare('PRAGMA table_info(stock_movements)').all().map(c => c.name)
+    if (!smCols.includes('lot_id')) {
+      db.exec('PRAGMA foreign_keys=OFF')
+      db.transaction(() => {
+        db.exec('DROP TABLE IF EXISTS stock_movements_new')
+        db.exec(`
+          CREATE TABLE stock_movements_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            item_id INTEGER NOT NULL REFERENCES inventory(id) ON DELETE CASCADE,
+            type TEXT NOT NULL CHECK(type IN ('in','out','count','initial','damage','loss','transfer','po_receive','request_fulfill')),
+            delta REAL NOT NULL,
+            quantity_after REAL NOT NULL,
+            reason TEXT,
+            lot_id INTEGER REFERENCES inventory_lots(id),
+            from_location_id INTEGER REFERENCES inventory_locations(id),
+            to_location_id INTEGER REFERENCES inventory_locations(id),
+            created_by INTEGER NOT NULL REFERENCES users(id),
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+          )
+        `)
+        db.exec(`
+          INSERT INTO stock_movements_new(id, item_id, type, delta, quantity_after, reason, created_by, created_at)
+          SELECT id, item_id, type, delta, quantity_after, reason, created_by, created_at FROM stock_movements
+        `)
+        db.exec('DROP TABLE stock_movements')
+        db.exec('ALTER TABLE stock_movements_new RENAME TO stock_movements')
+        db.exec('CREATE INDEX IF NOT EXISTS idx_stock_movements_item ON stock_movements(item_id, created_at DESC)')
+      })()
+      db.exec('PRAGMA foreign_keys=ON')
+    }
+  } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] stock_movements rebuild:', e.message) }
+  try { db.exec('DROP TABLE IF EXISTS stock_movements_new') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] stock_movements_new cleanup:', e.message) }
+
   return db
 }
 

@@ -388,6 +388,110 @@ CREATE INDEX IF NOT EXISTS idx_goods_receipt_date ON goods_receipts(receipt_date
 CREATE INDEX IF NOT EXISTS idx_goods_receipt_items_receipt ON goods_receipt_items(receipt_id);
 
 -- -------------------------------------------------------
+-- ENVANTER GENISLETME (suppliers, lots, locations, PO, requests)
+-- -------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS suppliers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  tax_no TEXT,
+  contact_name TEXT,
+  phone TEXT,
+  email TEXT,
+  address TEXT,
+  payment_term TEXT DEFAULT 'cash' CHECK(payment_term IN ('cash','net_30','net_60','net_90')),
+  default_lead_time_days INTEGER DEFAULT 7,
+  notes TEXT,
+  is_active INTEGER NOT NULL DEFAULT 1,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_suppliers_active ON suppliers(is_active);
+
+CREATE TABLE IF NOT EXISTS supplier_prices (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  supplier_id INTEGER NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE,
+  item_id INTEGER NOT NULL REFERENCES inventory(id) ON DELETE CASCADE,
+  unit_price REAL NOT NULL,
+  effective_from DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  source TEXT NOT NULL CHECK(source IN ('manual','goods_receipt','po')),
+  source_ref_id INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_supplier_prices_lookup ON supplier_prices(item_id, supplier_id, effective_from DESC);
+
+CREATE TABLE IF NOT EXISTS inventory_locations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  block TEXT,
+  name TEXT NOT NULL,
+  notes TEXT,
+  is_active INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS inventory_lots (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  item_id INTEGER NOT NULL REFERENCES inventory(id) ON DELETE CASCADE,
+  lot_no TEXT,
+  quantity REAL NOT NULL,
+  expiry_date DATE,
+  received_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  supplier_id INTEGER REFERENCES suppliers(id),
+  unit_cost REAL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','depleted','expired','damaged'))
+);
+CREATE INDEX IF NOT EXISTS idx_lots_fifo ON inventory_lots(item_id, status, received_at);
+CREATE INDEX IF NOT EXISTS idx_lots_expiry ON inventory_lots(expiry_date) WHERE expiry_date IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS inventory_stock_by_location (
+  item_id INTEGER NOT NULL REFERENCES inventory(id) ON DELETE CASCADE,
+  location_id INTEGER NOT NULL REFERENCES inventory_locations(id) ON DELETE CASCADE,
+  quantity REAL NOT NULL DEFAULT 0,
+  PRIMARY KEY(item_id, location_id)
+);
+
+CREATE TABLE IF NOT EXISTS purchase_orders (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  po_no TEXT UNIQUE NOT NULL,
+  supplier_id INTEGER NOT NULL REFERENCES suppliers(id),
+  status TEXT NOT NULL DEFAULT 'draft'
+    CHECK(status IN ('draft','sent','partial_received','received','cancelled')),
+  expected_date DATE,
+  notes TEXT,
+  total_value REAL DEFAULT 0,
+  created_by INTEGER NOT NULL REFERENCES users(id),
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  sent_at DATETIME,
+  received_at DATETIME
+);
+CREATE INDEX IF NOT EXISTS idx_po_status ON purchase_orders(status, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS purchase_order_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  po_id INTEGER NOT NULL REFERENCES purchase_orders(id) ON DELETE CASCADE,
+  item_id INTEGER NOT NULL REFERENCES inventory(id),
+  qty_ordered REAL NOT NULL,
+  qty_received REAL NOT NULL DEFAULT 0,
+  unit_price REAL NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_po_items_po ON purchase_order_items(po_id);
+
+CREATE TABLE IF NOT EXISTS inventory_requests (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  requester_id INTEGER NOT NULL REFERENCES users(id),
+  item_id INTEGER NOT NULL REFERENCES inventory(id),
+  quantity REAL NOT NULL,
+  reason TEXT,
+  preferred_supplier_id INTEGER REFERENCES suppliers(id),
+  status TEXT NOT NULL DEFAULT 'pending'
+    CHECK(status IN ('pending','approved','rejected','fulfilled','cancelled')),
+  approved_by INTEGER REFERENCES users(id),
+  decision_at DATETIME,
+  rejection_reason TEXT,
+  fulfillment_checkout_id INTEGER REFERENCES inventory_checkouts(id),
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_requests_status ON inventory_requests(status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_requests_requester ON inventory_requests(requester_id, created_at DESC);
+
+-- -------------------------------------------------------
 -- AUDIT LOG
 -- -------------------------------------------------------
 
