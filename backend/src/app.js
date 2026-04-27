@@ -1,6 +1,7 @@
 import express from 'express'
 import cors from 'cors'
 import helmet from 'helmet'
+import compression from 'compression'
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit'
 import jwt from 'jsonwebtoken'
 import { sanitizeBody } from './shared/middleware/sanitize.js'
@@ -58,15 +59,31 @@ const TRUST_PROXY = TRUST_PROXY_RAW === 'false'
       : TRUST_PROXY_RAW
 app.set('trust proxy', TRUST_PROXY)
 
+// SSE response'ları sıkıştırma — chunk akışı bozulur, ayrıca event delivery gecikir.
+// Diğer JSON response'lar gzip ile ~70-80% küçülür.
+app.use(compression({
+  filter: (req, res) => {
+    if (req.path === '/api/notifications/stream') return false
+    if (res.getHeader('Content-Type')?.toString().includes('text/event-stream')) return false
+    return compression.filter(req, res)
+  },
+}))
+
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
+      // script-src: unsafe-inline KALDIRILDI. SW kaydı dahil tüm scriptler external.
+      scriptSrc: ["'self'"],
+      // style-src: React inline style prop'ları (4400+ kullanım) için unsafe-inline ZORUNLU.
+      // Google Fonts CSS dosyası için fonts.googleapis.com.
+      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
       imgSrc: ["'self'", "data:", "blob:"],
       connectSrc: ["'self'"],
-      fontSrc: ["'self'", "data:"],
+      fontSrc: ["'self'", "data:", "https://fonts.gstatic.com"],
+      objectSrc: ["'none'"],
+      baseUri: ["'self'"],
+      frameAncestors: ["'none'"],
     }
   },
   crossOriginEmbedderPolicy: false,
@@ -83,11 +100,13 @@ app.use(cors({
 // 5mb limit: zimmet imzası canvas base64 ve profil fotoğrafları JSON body'de taşınıyor
 app.use(express.json({ limit: '5mb' }))
 app.use(sanitizeBody)
+// Multer dosya isimleri unique (Date.now()-rand) — immutable cache güvenli.
 app.use('/uploads', (req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff')
   res.setHeader('Content-Disposition', 'attachment')
+  res.setHeader('Cache-Control', 'private, max-age=31536000, immutable')
   next()
-}, express.static(process.env.UPLOADS_DIR || 'uploads'))
+}, express.static(process.env.UPLOADS_DIR || 'uploads', { maxAge: '1y', immutable: true }))
 
 // Health check
 app.get('/api/health', (req, res) => {

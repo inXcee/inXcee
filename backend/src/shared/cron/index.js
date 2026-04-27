@@ -8,6 +8,19 @@ import { sendMorningReport } from '../../modules/email/service.js'
 
 let emailJob = null
 
+// Cron overlap koruması — önceki tick bitmediyse yeni tick'i sessizce atla.
+// SQLite tek writer, 1 dakikalık cron 60sn'den uzun sürerse busy_timeout'u tetikler.
+const running = new Set()
+function withLock(name, fn) {
+  return async () => {
+    if (running.has(name)) return
+    running.add(name)
+    try { await fn() }
+    catch (e) { console.error(`[Cron:${name}]`, e.message) }
+    finally { running.delete(name) }
+  }
+}
+
 export function startCronJobs() {
   // Her gün 05:50'de günlük temizlik görevleri oluştur
   cron.schedule('50 5 * * *', () => {
@@ -32,22 +45,18 @@ export function startCronJobs() {
     } catch (e) { console.error('[Cron] Stok cron hatası:', e) }
   })
 
-  // Her 1 dakikada makine zamanlayıcı kontrolü
-  cron.schedule('*/1 * * * *', () => {
-    try {
-      checkMachineTimers()
-    } catch (e) { console.error('[Cron] Makine timer hatası:', e.message) }
-  })
+  // Her 1 dakikada makine zamanlayıcı kontrolü (overlap-safe)
+  cron.schedule('*/1 * * * *', withLock('machine-timers', () => {
+    checkMachineTimers()
+  }))
 
-  // Her 15 dakikada SLA kontrolü
-  cron.schedule('*/15 * * * *', async () => {
-    try {
-      await checkSlaViolations()
-      await checkSlaPreWarnings()
-      await checkMachineMaintenanceAlerts()
-      checkStuckWashingItems()
-    } catch (e) { console.error('[Cron] Laundry SLA hatası:', e.message) }
-  })
+  // Her 15 dakikada SLA kontrolü (overlap-safe)
+  cron.schedule('*/15 * * * *', withLock('laundry-sla', async () => {
+    await checkSlaViolations()
+    await checkSlaPreWarnings()
+    await checkMachineMaintenanceAlerts()
+    checkStuckWashingItems()
+  }))
 
   // Her gece 02:00 — eski audit log + okunmuş bildirimler 90 gün, hata logları 30 gün
   cron.schedule('0 2 * * *', () => {

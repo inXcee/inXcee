@@ -1,6 +1,7 @@
 import { getDB } from '../../shared/db/index.js'
+import { memoize } from '../../shared/middleware/memo.js'
 
-export function getKPI() {
+function _getKPI() {
   const db = getDB()
   const active_personnel = db.prepare("SELECT COUNT(*) as c FROM personnel WHERE check_out_date IS NULL AND check_in_date IS NOT NULL").get().c
   const total_beds = db.prepare("SELECT SUM(active_beds) as s FROM rooms WHERE status='active'").get().s || 0
@@ -10,8 +11,9 @@ export function getKPI() {
   const quarantine_rooms = db.prepare("SELECT COUNT(*) as c FROM rooms WHERE status='quarantine'").get().c
   return { active_personnel, occupancy_pct, open_maintenance, quarantine_rooms, occupied, total_beds }
 }
+export const getKPI = memoize(_getKPI, 30_000)
 
-export function getHeatmap() {
+function _getHeatmap() {
   const db = getDB()
   return db.prepare(`
     SELECT r.block,
@@ -25,8 +27,9 @@ export function getHeatmap() {
     ORDER BY r.block
   `).all()
 }
+export const getHeatmap = memoize(_getHeatmap, 60_000)
 
-export function getBedOccupancy() {
+function _getBedOccupancy() {
   const db = getDB()
   const blocks = db.prepare(`
     SELECT r.block,
@@ -73,6 +76,7 @@ export function getBedOccupancy() {
 
   return { blocks: result, totals }
 }
+export const getBedOccupancy = memoize(_getBedOccupancy, 60_000)
 
 export function getProjection() {
   const db = getDB()

@@ -32,6 +32,14 @@ startCronJobs()
 const port = process.env.PORT || 3001
 const server = app.listen(port, () => console.log(`YYS Backend http://localhost:${port}`))
 
+// Reverse proxy ile uyum: Render/AWS ALB default 60sn idle, nginx default 75sn.
+// keepAliveTimeout proxy'den BÜYÜK olmalı yoksa yarış durumunda 502 gelir.
+// headersTimeout > keepAliveTimeout kuralı (Node.js best practice).
+// SSE bağlantıları için requestTimeout=0 (sınırsız) — 60sn'de bildirim akışı kopmasın.
+server.keepAliveTimeout = 65_000
+server.headersTimeout = 66_000
+server.requestTimeout = 0
+
 process.on('SIGTERM', () => {
   console.log('[Shutdown] SIGTERM alındı, bağlantılar kapatılıyor...')
   server.close(() => {

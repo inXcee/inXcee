@@ -418,6 +418,12 @@ CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(target_user_i
 CREATE INDEX IF NOT EXISTS idx_maintenance_assigned ON maintenance_requests(assigned_to, status);
 CREATE INDEX IF NOT EXISTS idx_discipline_personnel ON discipline_records(personnel_id);
 
+-- Dashboard / occupancy hot-paths (100+ user için kritik)
+CREATE INDEX IF NOT EXISTS idx_room_assignments_personnel ON room_assignments(personnel_id);
+CREATE INDEX IF NOT EXISTS idx_room_assignments_active ON room_assignments(check_out_at) WHERE check_out_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_personnel_checkin ON personnel(check_in_date);
+CREATE INDEX IF NOT EXISTS idx_cleaning_tasks_completed ON cleaning_tasks(completed_at);
+
 CREATE TABLE IF NOT EXISTS system_settings (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL,

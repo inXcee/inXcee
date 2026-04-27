@@ -21,7 +21,8 @@ api.interceptors.response.use(
 
     if (error.response?.status === 401 && !original._retry) {
       if (isRefreshing) {
-        if (refreshQueue.length >= 10) {
+        // 100+ user'da paralel istek burst'leri 10'u kolay aşar, mass logout'a yol açıyordu.
+        if (refreshQueue.length >= 50) {
           refreshQueue.forEach(p => p.reject(new Error('Refresh queue dolu')))
           refreshQueue = []
           useAuthStore.getState().logout()
