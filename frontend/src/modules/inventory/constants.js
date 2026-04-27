@@ -15,6 +15,7 @@ export const TABS = [
   { key: 'receipt', label: 'MAL GIRIS', icon: '↓' },
   { key: 'checkouts', label: 'TESLIMLER', icon: '→' },
   { key: 'suppliers', label: 'TEDARIKCI', icon: '⛓' },
+  { key: 'po', label: 'SIPARIS', icon: '📦' },
   { key: 'history', label: 'HAREKETLER', icon: '↺' },
 ]
 

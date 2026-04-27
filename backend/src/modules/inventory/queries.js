@@ -25,20 +25,44 @@ export function searchItems(query) {
     .all(`%${query}%`)
 }
 
-export function createItem({ item_name, quantity, unit, reorder_threshold, category, location, unit_price }) {
+export function createItem(d) {
   const db = getDB()
   const r = db.prepare(
-    'INSERT INTO inventory(item_name,quantity,unit,reorder_threshold,category,location,unit_price) VALUES(?,?,?,?,?,?,?)'
-  ).run(item_name, quantity || 0, unit, reorder_threshold || 0, category, location || null, unit_price || 0)
+    `INSERT INTO inventory(item_name, quantity, unit, reorder_threshold, category, location, unit_price,
+      sku, preferred_supplier_id, lead_time_days, safety_stock_days, track_lots, track_expiry, track_locations)
+     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+  ).run(
+    d.item_name, d.quantity || 0, d.unit, d.reorder_threshold || 0, d.category, d.location || null, d.unit_price || 0,
+    d.sku || null,
+    d.preferred_supplier_id || null,
+    d.lead_time_days ?? 7,
+    d.safety_stock_days ?? 3,
+    d.track_lots ? 1 : 0,
+    d.track_expiry ? 1 : 0,
+    d.track_locations ? 1 : 0,
+  )
   return r.lastInsertRowid
 }
 
-export function updateItem(id, { item_name, quantity, unit, reorder_threshold, category, location, unit_price }) {
+export function updateItem(id, d) {
   const db = getDB()
   db.prepare(`
-    UPDATE inventory SET item_name=?,quantity=?,unit=?,reorder_threshold=?,category=?,location=?,unit_price=?,last_updated=datetime('now')
+    UPDATE inventory SET item_name=?, quantity=?, unit=?, reorder_threshold=?, category=?, location=?, unit_price=?,
+      sku=?, preferred_supplier_id=?, lead_time_days=?, safety_stock_days=?,
+      track_lots=?, track_expiry=?, track_locations=?,
+      last_updated=datetime('now')
     WHERE id=?
-  `).run(item_name, quantity, unit, reorder_threshold || 0, category, location || null, unit_price || 0, id)
+  `).run(
+    d.item_name, d.quantity, d.unit, d.reorder_threshold || 0, d.category, d.location || null, d.unit_price || 0,
+    d.sku || null,
+    d.preferred_supplier_id || null,
+    d.lead_time_days ?? 7,
+    d.safety_stock_days ?? 3,
+    d.track_lots ? 1 : 0,
+    d.track_expiry ? 1 : 0,
+    d.track_locations ? 1 : 0,
+    id,
+  )
 }
 
 export function deleteItem(id) {
