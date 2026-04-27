@@ -3,8 +3,10 @@ import { requireRole } from '../../shared/auth/middleware.js'
 import { getDB } from '../../shared/db/index.js'
 import * as service from './service.js'
 import { paginate } from '../../shared/paginate.js'
+import { suppliersRouter } from './suppliers/routes.js'
 
 export const inventoryRouter = Router()
+inventoryRouter.use('/suppliers', suppliersRouter)
 const mgrAccess = requireRole('campus_manager', 'shift_supervisor', 'laundry', 'housekeeper')
 const editAccess = requireRole('campus_manager', 'shift_supervisor')
 

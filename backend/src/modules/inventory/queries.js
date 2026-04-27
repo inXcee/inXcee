@@ -271,9 +271,20 @@ export function createReceipt(supplier, invoiceNo, receiptDate, notes, items, us
   let totalValue = 0
 
   const tx = db.transaction(() => {
+    // suppliers tablosunda var mi? yoksa olustur
+    let supplierId = null
+    if (supplier) {
+      const existing = db.prepare('SELECT id FROM suppliers WHERE name = ?').get(supplier)
+      if (existing) supplierId = existing.id
+      else {
+        const insRes = db.prepare('INSERT INTO suppliers(name) VALUES(?)').run(supplier)
+        supplierId = insRes.lastInsertRowid
+      }
+    }
+
     const r = db.prepare(
-      'INSERT INTO goods_receipts(receipt_no,supplier,invoice_no,receipt_date,notes,created_by) VALUES(?,?,?,?,?,?)'
-    ).run(receiptNo, supplier, invoiceNo || null, receiptDate, notes || null, userId)
+      'INSERT INTO goods_receipts(receipt_no,supplier,supplier_id,invoice_no,receipt_date,notes,created_by) VALUES(?,?,?,?,?,?,?)'
+    ).run(receiptNo, supplier, supplierId, invoiceNo || null, receiptDate, notes || null, userId)
     const receiptId = r.lastInsertRowid
 
     for (const item of items) {
@@ -298,6 +309,13 @@ export function createReceipt(supplier, invoiceNo, receiptDate, notes, items, us
       db.prepare(
         'INSERT INTO stock_movements(item_id,type,delta,quantity_after,reason,created_by) VALUES(?,?,?,?,?,?)'
       ).run(item.item_id, 'in', qty, newQty, `Mal giris: ${receiptNo} (${supplier})`, userId)
+
+      // Tedarikci fiyat gecmisi (sadece supplier varsa)
+      if (supplierId && price > 0) {
+        db.prepare(
+          'INSERT INTO supplier_prices(supplier_id,item_id,unit_price,source,source_ref_id) VALUES(?,?,?,?,?)'
+        ).run(supplierId, item.item_id, price, 'goods_receipt', receiptId)
+      }
     }
 
     db.prepare('UPDATE goods_receipts SET total_value=? WHERE id=?').run(totalValue, receiptId)
