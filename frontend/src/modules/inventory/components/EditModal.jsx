@@ -1,10 +1,13 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import api from '../../../shared/api/client.js'
 import { useDraft } from '../../../shared/hooks/useDraft.js'
 import DraftBanner from '../../../shared/components/DraftBanner.jsx'
 import Modal from './Modal.jsx'
 import { CATEGORIES, UNITS, INIT_F } from '../constants.js'
 
 export default function EditModal({ item, onClose, onSave, isPending }) {
+  const qc = useQueryClient()
   const [f, sf] = useState(item || INIT_F)
   const u = (k, v) => sf(p => ({ ...p, [k]: v }))
   const draftKey = item?.id ? null : 'draft:inventory:new-item'
@@ -14,9 +17,48 @@ export default function EditModal({ item, onClose, onSave, isPending }) {
     sf,
     item || INIT_F,
   )
+  const fileRef = useRef(null)
+  const photoUpload = useMutation({
+    mutationFn: file => {
+      const fd = new FormData()
+      fd.append('photo', file)
+      return api.post(`/inventory/${item.id}/photo`, fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+    },
+    onSuccess: r => {
+      u('photo_url', r.data.photo_url)
+      qc.invalidateQueries({ queryKey: ['inventory'] })
+    },
+  })
+  const photoDelete = useMutation({
+    mutationFn: () => api.delete(`/inventory/${item.id}/photo`),
+    onSuccess: () => { u('photo_url', null); qc.invalidateQueries({ queryKey: ['inventory'] }) },
+  })
   return (
     <Modal onClose={onClose} title={item?.id ? 'URUN DUZENLE' : 'YENI URUN'} sub="ENVANTER KAYIT FORMU" color="var(--accent),var(--blue)">
       {!item?.id && <DraftBanner hasDraft={hasDraft} onRestore={restoreDraft} onDiscard={discardDraft} />}
+      {item?.id && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '14px', padding: '10px 12px', background: 'var(--surface2)', borderRadius: '10px' }}>
+          {f.photo_url ? (
+            <img src={f.photo_url} alt="" style={{ width: '64px', height: '64px', borderRadius: '10px', objectFit: 'cover' }} />
+          ) : (
+            <div style={{ width: '64px', height: '64px', borderRadius: '10px', background: 'var(--surface3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px', color: 'var(--text3)' }}>📷</div>
+          )}
+          <div style={{ flex: 1 }}>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text4)', letterSpacing: '1px', marginBottom: '4px' }}>FOTOGRAF</div>
+            <div style={{ display: 'flex', gap: '6px' }}>
+              <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" style={{ display: 'none' }}
+                onChange={e => { const file = e.target.files?.[0]; if (file) photoUpload.mutate(file) }} />
+              <button type="button" onClick={() => fileRef.current?.click()} className="btn btn-ghost btn-xs" disabled={photoUpload.isPending} style={{ borderRadius: '8px' }}>
+                {photoUpload.isPending ? 'YUKLENIYOR...' : (f.photo_url ? 'DEGISTIR' : 'YUKLE')}
+              </button>
+              {f.photo_url && (
+                <button type="button" onClick={() => photoDelete.mutate()} className="btn btn-ghost btn-xs" disabled={photoDelete.isPending} style={{ borderRadius: '8px', color: 'var(--red)' }}>SIL</button>
+              )}
+            </div>
+            {photoUpload.isError && <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--red)', marginTop: '4px' }}>{photoUpload.error?.response?.data?.error || 'Hata'}</div>}
+          </div>
+        </div>
+      )}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
         <div style={{ gridColumn: '1 / -1' }}>
           <label className="form-label">Urun Adi</label>

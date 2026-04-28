@@ -1,8 +1,10 @@
 import { Router } from 'express'
+import fs from 'fs'
 import { requireRole } from '../../shared/auth/middleware.js'
 import { getDB } from '../../shared/db/index.js'
 import * as service from './service.js'
 import { paginate } from '../../shared/paginate.js'
+import { upload, verifyMagicBytes } from '../../shared/uploads/middleware.js'
 import { suppliersRouter } from './suppliers/routes.js'
 import { poRouter } from './purchase-orders/routes.js'
 import { requestsRouter } from './requests/routes.js'
@@ -85,6 +87,47 @@ inventoryRouter.patch('/:id/adjust', ...editAccess, (req, res) => {
     if (result.error) return res.status(result.status).json({ error: result.error })
     res.json(result)
   } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+// ── Urun Fotograf Upload ────────────────────────────────────────────────────
+inventoryRouter.post('/:id/photo', ...editAccess, upload.single('photo'), verifyMagicBytes, (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'Dosya gerekli' })
+    const id = +req.params.id
+    const db = getDB()
+    const item = db.prepare('SELECT photo_url FROM inventory WHERE id=?').get(id)
+    if (!item) {
+      try { fs.unlinkSync(req.file.path) } catch { /* ignore */ }
+      return res.status(404).json({ error: 'Urun bulunamadi' })
+    }
+    // eski fotograf varsa sil
+    if (item.photo_url) {
+      const oldPath = item.photo_url.replace(/^\/uploads\//, (process.env.UPLOADS_DIR || 'uploads') + '/')
+      try { fs.unlinkSync(oldPath) } catch { /* ignore */ }
+    }
+    const url = `/uploads/${req.file.filename}`
+    db.prepare('UPDATE inventory SET photo_url=? WHERE id=?').run(url, id)
+    res.json({ photo_url: url })
+  } catch (e) {
+    try { if (req.file) fs.unlinkSync(req.file.path) } catch { /* ignore */ }
+    console.error('[Route] photo upload:', e)
+    res.status(500).json({ error: 'Sunucu hatasi' })
+  }
+})
+
+inventoryRouter.delete('/:id/photo', ...editAccess, (req, res) => {
+  try {
+    const id = +req.params.id
+    const db = getDB()
+    const item = db.prepare('SELECT photo_url FROM inventory WHERE id=?').get(id)
+    if (!item) return res.status(404).json({ error: 'Urun bulunamadi' })
+    if (item.photo_url) {
+      const path = item.photo_url.replace(/^\/uploads\//, (process.env.UPLOADS_DIR || 'uploads') + '/')
+      try { fs.unlinkSync(path) } catch { /* ignore */ }
+      db.prepare('UPDATE inventory SET photo_url=NULL WHERE id=?').run(id)
+    }
+    res.json({ ok: true })
+  } catch (e) { res.status(500).json({ error: 'Sunucu hatasi' }) }
 })
 
 // ── Hasarli / Kayip stok dusumu ─────────────────────────────────────────────

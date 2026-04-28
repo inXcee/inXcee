@@ -20,11 +20,18 @@ export default memo(function ItemCard({ item, onAdjust, onCheckout, onEdit, onSh
       <div style={{ padding: '16px 18px' }}>
         {/* Top: icon + name + status */}
         <div style={{ display: 'flex', gap: '10px', marginBottom: '12px' }}>
-          <div style={{
-            width: '36px', height: '36px', borderRadius: '10px', flexShrink: 0,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            background: ct?.bg, fontSize: '16px',
-          }}>{ct?.icon}</div>
+          {item.photo_url ? (
+            <img src={item.photo_url} alt={item.item_name} style={{
+              width: '36px', height: '36px', borderRadius: '10px', flexShrink: 0,
+              objectFit: 'cover', border: `1px solid ${ct?.color}`,
+            }} />
+          ) : (
+            <div style={{
+              width: '36px', height: '36px', borderRadius: '10px', flexShrink: 0,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: ct?.bg, fontSize: '16px',
+            }}>{ct?.icon}</div>
+          )}
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '6px' }}>
               <div style={{ fontWeight: 600, fontSize: '13px', color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
