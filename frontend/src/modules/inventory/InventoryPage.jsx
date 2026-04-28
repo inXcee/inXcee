@@ -10,6 +10,7 @@ import LogModal from './components/LogModal.jsx'
 import EditModal from './components/EditModal.jsx'
 import CountModal from './components/CountModal.jsx'
 import ReceiptModal from './components/ReceiptModal.jsx'
+import WriteOffModal from './components/WriteOffModal.jsx'
 import ItemsTab from './tabs/ItemsTab.jsx'
 import ReceiptsTab from './tabs/ReceiptsTab.jsx'
 import CheckoutsTab from './tabs/CheckoutsTab.jsx'
@@ -32,6 +33,7 @@ export default function InventoryPage() {
   const [checkoutItem, setCheckoutItem] = useState(null)
   const [logItem, setLogItem] = useState(null)
   const [editItem, setEditItem] = useState(null)
+  const [writeOffItem, setWriteOffItem] = useState(null)
   const [showNew, setShowNew] = useState(false)
   const [showCount, setShowCount] = useState(false)
   const [showReceipt, setShowReceipt] = useState(false)
@@ -151,6 +153,7 @@ export default function InventoryPage() {
           view={view} setView={setView}
           filtered={filtered} forecastMap={forecastMap}
           setAdjustItem={setAdjustItem} setCheckoutItem={setCheckoutItem} setEditItem={setEditItem} setLogItem={setLogItem}
+          setWriteOffItem={setWriteOffItem}
           deleteMut={deleteMut}
         />
       )}
@@ -184,6 +187,7 @@ export default function InventoryPage() {
       {showNew && <EditModal item={null} onClose={() => setShowNew(false)} onSave={d => createMut.mutate(d)} isPending={createMut.isPending} />}
       {showCount && <CountModal items={items} onClose={() => setShowCount(false)} />}
       {showReceipt && <ReceiptModal items={items} onClose={() => setShowReceipt(false)} />}
+      {writeOffItem && <WriteOffModal item={writeOffItem} onClose={() => setWriteOffItem(null)} />}
     </div>
   )
 }

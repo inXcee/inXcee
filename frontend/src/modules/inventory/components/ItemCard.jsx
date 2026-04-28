@@ -1,7 +1,7 @@
 import { memo } from 'react'
 import { fmt, money, cat } from '../constants.js'
 
-export default memo(function ItemCard({ item, onAdjust, onCheckout, onEdit, onShowLog, onDelete, forecastEntry }) {
+export default memo(function ItemCard({ item, onAdjust, onCheckout, onEdit, onShowLog, onDelete, onWriteOff, forecastEntry }) {
   const ct = cat(item.category)
   const isLow = item.reorder_threshold > 0 && item.quantity <= item.reorder_threshold
   const isOut = item.quantity === 0
@@ -85,6 +85,7 @@ export default memo(function ItemCard({ item, onAdjust, onCheckout, onEdit, onSh
           {[
             { label: '+/-', color: 'var(--green)', fn: () => onAdjust(item), flex: true },
             { label: 'TESLİM', color: 'var(--blue)', fn: () => onCheckout(item), flex: true },
+            ...(onWriteOff ? [{ label: 'HASAR', color: 'var(--amber)', fn: () => onWriteOff(item), flex: false }] : []),
             { label: 'LOG', color: 'var(--purple)', fn: () => onShowLog(item), flex: false },
             { label: 'DÜZ', color: 'var(--accent)', fn: () => onEdit(item), flex: false },
             { label: 'SİL', color: 'var(--red)', fn: () => onDelete(item), flex: false },

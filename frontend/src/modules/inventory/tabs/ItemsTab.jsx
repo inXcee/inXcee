@@ -9,7 +9,7 @@ export default function ItemsTab({
   sortBy, setSortBy,
   view, setView,
   filtered, forecastMap,
-  setAdjustItem, setCheckoutItem, setEditItem, setLogItem,
+  setAdjustItem, setCheckoutItem, setEditItem, setLogItem, setWriteOffItem,
   deleteMut,
 }) {
   return (
@@ -53,6 +53,7 @@ export default function ItemsTab({
           {filtered.map(item => (
             <ItemCard key={item.id} item={item}
               onAdjust={setAdjustItem} onCheckout={setCheckoutItem} onEdit={setEditItem} onShowLog={setLogItem}
+              onWriteOff={setWriteOffItem}
               onDelete={it => { if (window.confirm(`"${it.item_name}" silinsin mi?`)) deleteMut.mutate(it.id) }}
               forecastEntry={forecastMap[item.id]} />
           ))}

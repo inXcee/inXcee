@@ -152,6 +152,30 @@ export function getPersonnelCheckouts(personnelId) {
   return queries.getPersonnelCheckouts(personnelId)
 }
 
+// ── Hasarli / Kayip stok dusumu ──────────────────────────────────────────────
+
+export function writeOff(itemId, qty, type, reason, userId) {
+  if (!['damage', 'loss'].includes(type)) throw new Error('Gecersiz tip')
+  if (!qty || qty <= 0) throw new Error('Miktar gerekli')
+  const item = queries.getItemById(itemId)
+  if (!item) throw new Error('Urun bulunamadi')
+  if (item.quantity < qty) throw new Error(`Yetersiz stok: ${item.quantity} ${item.unit}`)
+
+  const newQty = item.quantity - qty
+  queries.adjustQuantity(itemId, newQty)
+  queries.addMovement(itemId, type, -qty, newQty, reason || (type === 'damage' ? 'Hasarli' : 'Kayip'), userId)
+  logAudit(userId, `inventory_${type}`, 'inventory', itemId,
+    `${item.item_name}: ${qty} ${item.unit} (${reason || '-'})`)
+
+  if (newQty <= item.reorder_threshold && item.reorder_threshold > 0) {
+    createNotification({
+      message: `Stok uyarisi: ${item.item_name} — ${newQty} ${item.unit} kaldi`,
+      type: 'critical', module: 'inventory', target_role: 'campus_manager',
+    })
+  }
+  return { ok: true, quantity: newQty }
+}
+
 // ── Goods Receipts (Mal Giris) ───────────────────────────────────────────────
 
 export function createReceipt(supplier, invoiceNo, receiptDate, notes, items, userId) {

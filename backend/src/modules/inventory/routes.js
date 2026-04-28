@@ -85,6 +85,14 @@ inventoryRouter.patch('/:id/adjust', ...editAccess, (req, res) => {
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
+// ── Hasarli / Kayip stok dusumu ─────────────────────────────────────────────
+inventoryRouter.post('/:id/writeoff', ...editAccess, (req, res) => {
+  try {
+    const { type, quantity, reason } = req.body
+    res.json(service.writeOff(+req.params.id, +quantity, type, reason, req.user.id))
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
 // ── Item Movements ──────────────────────────────────────────────────────────
 inventoryRouter.get('/:id/movements', ...mgrAccess, (req, res) => {
   try { res.json(service.getItemMovements(+req.params.id, +req.query.limit || 50)) }

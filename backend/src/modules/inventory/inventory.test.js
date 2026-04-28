@@ -205,6 +205,23 @@ describe('Inventory Forecast', () => {
     expect(found).toBeUndefined()
   })
 
+  it('writes off as damage with reason', async () => {
+    const inv = await request(app).get('/api/inventory').set('Authorization', `Bearer ${token}`)
+    const target = inv.body.find(i => i.quantity >= 5)
+    const before = target.quantity
+    const res = await request(app).post(`/api/inventory/${target.id}/writeoff`).set('Authorization', `Bearer ${token}`)
+      .send({ type: 'damage', quantity: 2, reason: 'Kirildi' })
+    expect(res.status).toBe(200)
+    expect(res.body.quantity).toBe(before - 2)
+  })
+
+  it('rejects writeoff with invalid type', async () => {
+    const inv = await request(app).get('/api/inventory').set('Authorization', `Bearer ${token}`)
+    const res = await request(app).post(`/api/inventory/${inv.body[0].id}/writeoff`).set('Authorization', `Bearer ${token}`)
+      .send({ type: 'invalid', quantity: 1, reason: 'x' })
+    expect(res.status).toBe(400)
+  })
+
   it('excludes items with days_left > 7', async () => {
     const db = (await import('../../shared/db/index.js')).getDB()
     const user = db.prepare("SELECT id FROM users LIMIT 1").get()
