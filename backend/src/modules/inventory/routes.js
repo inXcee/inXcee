@@ -7,12 +7,14 @@ import { suppliersRouter } from './suppliers/routes.js'
 import { poRouter } from './purchase-orders/routes.js'
 import { requestsRouter } from './requests/routes.js'
 import { lotsRouter, lotsByItemHandler } from './lots/routes.js'
+import { locationsRouter } from './locations/routes.js'
 
 export const inventoryRouter = Router()
 inventoryRouter.use('/suppliers', suppliersRouter)
 inventoryRouter.use('/po', poRouter)
 inventoryRouter.use('/requests', requestsRouter)
 inventoryRouter.use('/lots', lotsRouter)
+inventoryRouter.use('/locations', locationsRouter)
 // /items/:id/lots — okuma — mgr access
 inventoryRouter.get('/items/:id/lots', ...requireRole('campus_manager', 'shift_supervisor'), lotsByItemHandler)
 const mgrAccess = requireRole('campus_manager', 'shift_supervisor', 'laundry', 'housekeeper')
