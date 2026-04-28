@@ -55,6 +55,7 @@ export default memo(function ItemCard({ item, onAdjust, onCheckout, onEdit, onSh
                   ~{forecastEntry.days_left}g
                 </span>
               )}
+              {item.track_lots === 1 && <span title="Lot/SKT izleme acik" style={{ padding: '2px 6px', borderRadius: '6px', fontSize: '10px', background: 'rgba(155,89,182,.12)', color: 'var(--purple)', fontFamily: 'var(--mono)', flexShrink: 0 }}>⏳</span>}
               {isOut && <span style={{ padding: '2px 8px', borderRadius: '6px', fontSize: '8px', fontWeight: 700, background: 'rgba(231,76,60,.1)', color: 'var(--red)', fontFamily: 'var(--mono)', flexShrink: 0 }}>TUKENDI</span>}
               {!isOut && isLow && <span style={{ padding: '2px 8px', borderRadius: '6px', fontSize: '8px', fontWeight: 700, background: 'rgba(240,165,0,.1)', color: 'var(--amber)', fontFamily: 'var(--mono)', flexShrink: 0 }}>DUSUK</span>}
             </div>

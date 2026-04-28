@@ -148,6 +148,39 @@ export default function EditModal({ item, onClose, onSave, isPending }) {
         </div>
       </div>
 
+      {/* LOT/SKT IZLEME — gorunur switch (track_lots tek bayrak — FIFO + SKT birlikte) */}
+      <div style={{
+        marginBottom: '14px', padding: '12px 14px',
+        background: f.track_lots ? 'rgba(155,89,182,.06)' : 'var(--surface2)',
+        border: `1px solid ${f.track_lots ? 'var(--purple)' : 'var(--border)'}`,
+        borderRadius: '12px',
+        cursor: 'pointer', transition: 'all .15s',
+      }} onClick={() => u('track_lots', f.track_lots ? 0 : 1)}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div style={{
+            width: '38px', height: '22px', borderRadius: '11px', position: 'relative',
+            background: f.track_lots ? 'var(--purple)' : 'var(--surface3)', transition: 'background .2s',
+            flexShrink: 0,
+          }}>
+            <div style={{
+              width: '16px', height: '16px', borderRadius: '50%', background: '#fff',
+              position: 'absolute', top: '3px', left: f.track_lots ? '19px' : '3px',
+              transition: 'left .2s',
+            }} />
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 600, fontSize: '13px', color: f.track_lots ? 'var(--purple)' : 'var(--text)' }}>
+              ⏳ Lot / Son Kullanma Tarihi (SKT) İzleme
+            </div>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)', marginTop: '3px' }}>
+              {f.track_lots
+                ? 'Mal giriste lot no + SKT istenir, FIFO cikis, 30g kala uyari'
+                : 'Acmazsan SKT takibi yapilmaz'}
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Gelismis ayarlar (collapse) */}
       <div style={{ marginBottom: '14px' }}>
         <button type="button" onClick={() => setAdvanced(a => !a)} style={{
@@ -156,7 +189,7 @@ export default function EditModal({ item, onClose, onSave, isPending }) {
           fontFamily: 'var(--mono)', fontSize: '10px', letterSpacing: '1px',
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
         }}>
-          <span>GELISMIS AYARLAR (sku, lot, lokasyon, tedarik)</span>
+          <span>GELISMIS AYARLAR (sku, tedarik suresi, lokasyon)</span>
           <span>{advanced ? '▲' : '▼'}</span>
         </button>
         {advanced && (
@@ -180,24 +213,16 @@ export default function EditModal({ item, onClose, onSave, isPending }) {
                   style={{ borderRadius: '8px', fontSize: '11px' }} />
               </div>
             </div>
-            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-              {[
-                { k: 'track_lots', label: 'Lot izleme (FIFO)', help: 'Mal giriste lot no/SKT zorunlu' },
-                { k: 'track_expiry', label: 'Son kullanma izleme', help: 'Cron uyarisi acilir' },
-                { k: 'track_locations', label: 'Lokasyon izleme', help: 'Coklu raf takibi' },
-              ].map(t => (
-                <label key={t.k} title={t.help} style={{
-                  display: 'flex', alignItems: 'center', gap: '6px',
-                  padding: '8px 10px', border: `1px solid ${f[t.k] ? 'var(--purple)' : 'var(--border)'}`,
-                  borderRadius: '8px', background: f[t.k] ? 'rgba(155,89,182,.06)' : 'var(--surface)',
-                  fontFamily: 'var(--mono)', fontSize: '11px', cursor: 'pointer',
-                  color: f[t.k] ? 'var(--purple)' : 'var(--text3)',
-                }}>
-                  <input type="checkbox" checked={!!f[t.k]} onChange={e => u(t.k, e.target.checked ? 1 : 0)} />
-                  {t.label}
-                </label>
-              ))}
-            </div>
+            <label style={{
+              display: 'flex', alignItems: 'center', gap: '8px',
+              padding: '8px 10px', border: `1px solid ${f.track_locations ? 'var(--blue)' : 'var(--border)'}`,
+              borderRadius: '8px', background: f.track_locations ? 'rgba(52,152,219,.06)' : 'var(--surface)',
+              fontFamily: 'var(--mono)', fontSize: '11px', cursor: 'pointer',
+              color: f.track_locations ? 'var(--blue)' : 'var(--text3)',
+            }}>
+              <input type="checkbox" checked={!!f.track_locations} onChange={e => u('track_locations', e.target.checked ? 1 : 0)} />
+              Lokasyon izleme (coklu raf takibi)
+            </label>
           </div>
         )}
       </div>
