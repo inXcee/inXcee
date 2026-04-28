@@ -19,6 +19,7 @@ import SuppliersTab from './tabs/SuppliersTab.jsx'
 import PurchaseOrdersTab from './tabs/PurchaseOrdersTab.jsx'
 import RequestsTab from './tabs/RequestsTab.jsx'
 import LotsExpiryTab from './tabs/LotsExpiryTab.jsx'
+import ReportsTab from './tabs/ReportsTab.jsx'
 
 export default function InventoryPage() {
   const qc = useQueryClient()
@@ -175,6 +176,9 @@ export default function InventoryPage() {
 
       {/* TAB: LOTS / EXPIRY */}
       {activeTab === 'lots' && <LotsExpiryTab items={items} />}
+
+      {/* TAB: REPORTS */}
+      {activeTab === 'reports' && <ReportsTab />}
 
       {/* TAB: HISTORY */}
       {activeTab === 'history' && <MovementsTab />}
