@@ -6,9 +6,12 @@ import DraftBanner from '../../../shared/components/DraftBanner.jsx'
 import Modal from './Modal.jsx'
 import { CATEGORIES, UNITS, INIT_F } from '../constants.js'
 
+const QUICK_UNITS = ['adet', 'kg', 'litre', 'paket', 'kutu']
+
 export default function EditModal({ item, onClose, onSave, isPending }) {
   const qc = useQueryClient()
   const [f, sf] = useState(item || INIT_F)
+  const [advanced, setAdvanced] = useState(false)
   const u = (k, v) => sf(p => ({ ...p, [k]: v }))
   const draftKey = item?.id ? null : 'draft:inventory:new-item'
   const { hasDraft, restoreDraft, discardDraft, onSubmitSuccess } = useDraft(
@@ -22,7 +25,7 @@ export default function EditModal({ item, onClose, onSave, isPending }) {
     mutationFn: file => {
       const fd = new FormData()
       fd.append('photo', file)
-      return api.post(`/inventory/${item.id}/photo`, fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+      return api.post(`/inventory/${item.id}/photo`, fd)
     },
     onSuccess: r => {
       u('photo_url', r.data.photo_url)
@@ -33,9 +36,12 @@ export default function EditModal({ item, onClose, onSave, isPending }) {
     mutationFn: () => api.delete(`/inventory/${item.id}/photo`),
     onSuccess: () => { u('photo_url', null); qc.invalidateQueries({ queryKey: ['inventory'] }) },
   })
+
   return (
-    <Modal onClose={onClose} title={item?.id ? 'URUN DUZENLE' : 'YENI URUN'} sub="ENVANTER KAYIT FORMU" color="var(--accent),var(--blue)">
+    <Modal onClose={onClose} title={item?.id ? 'URUN DUZENLE' : 'YENI URUN'} sub="ENVANTER KAYIT FORMU" color="var(--accent),var(--blue)" wide>
       {!item?.id && <DraftBanner hasDraft={hasDraft} onRestore={restoreDraft} onDiscard={discardDraft} />}
+
+      {/* Foto + ad ust kismi */}
       {item?.id && (
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '14px', padding: '10px 12px', background: 'var(--surface2)', borderRadius: '10px' }}>
           {f.photo_url ? (
@@ -59,34 +65,148 @@ export default function EditModal({ item, onClose, onSave, isPending }) {
           </div>
         </div>
       )}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-        <div style={{ gridColumn: '1 / -1' }}>
-          <label className="form-label">Urun Adi</label>
-          <input className="form-input" value={f.item_name} onChange={e => u('item_name', e.target.value)} autoFocus style={{ borderRadius: '10px' }} />
-        </div>
-        <div><label className="form-label">Miktar</label><input className="form-input" type="number" min="0" step="any" value={f.quantity} onChange={e => u('quantity', +e.target.value)} style={{ borderRadius: '10px' }} /></div>
-        <div><label className="form-label">Birim</label><select className="form-select" value={f.unit} onChange={e => u('unit', e.target.value)} style={{ borderRadius: '10px' }}>{UNITS.map(x => <option key={x} value={x}>{x}</option>)}</select></div>
-        <div><label className="form-label">Kategori</label><select className="form-select" value={f.category} onChange={e => u('category', e.target.value)} style={{ borderRadius: '10px' }}>{CATEGORIES.map(c => <option key={c.key} value={c.key}>{c.icon} {c.label}</option>)}</select></div>
-        <div><label className="form-label">Min. Esik</label><input className="form-input" type="number" min="0" value={f.reorder_threshold} onChange={e => u('reorder_threshold', +e.target.value)} style={{ borderRadius: '10px' }} /></div>
-        <div><label className="form-label">Konum</label><input className="form-input" value={f.location || ''} onChange={e => u('location', e.target.value)} style={{ borderRadius: '10px' }} /></div>
-        <div><label className="form-label">Birim Fiyat (TL)</label><input className="form-input" type="number" min="0" step="any" value={f.unit_price || 0} onChange={e => u('unit_price', +e.target.value)} style={{ borderRadius: '10px' }} /></div>
-        <div><label className="form-label">Tedarik Suresi (gun)</label><input className="form-input" type="number" min="0" value={f.lead_time_days ?? 7} onChange={e => u('lead_time_days', +e.target.value)} style={{ borderRadius: '10px' }} /></div>
-        <div><label className="form-label">Guvenli Stok (gun)</label><input className="form-input" type="number" min="0" value={f.safety_stock_days ?? 3} onChange={e => u('safety_stock_days', +e.target.value)} style={{ borderRadius: '10px' }} /></div>
-        <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--text2)' }}>
-            <input type="checkbox" checked={!!f.track_lots} onChange={e => u('track_lots', e.target.checked ? 1 : 0)} /> Lot izleme (FIFO)
-          </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--text2)' }}>
-            <input type="checkbox" checked={!!f.track_expiry} onChange={e => u('track_expiry', e.target.checked ? 1 : 0)} /> Son kullanma izleme
-          </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--text2)' }}>
-            <input type="checkbox" checked={!!f.track_locations} onChange={e => u('track_locations', e.target.checked ? 1 : 0)} /> Lokasyon izleme
-          </label>
+
+      {/* Urun Adi */}
+      <div style={{ marginBottom: '14px' }}>
+        <label className="form-label">Urun Adi *</label>
+        <input className="form-input" value={f.item_name} onChange={e => u('item_name', e.target.value)}
+          placeholder="Ornegin: Beyaz Camasir Deterjani 3kg" autoFocus
+          style={{ fontSize: '15px', borderRadius: '10px' }} />
+      </div>
+
+      {/* Kategori — buyuk icon butonlar */}
+      <div style={{ marginBottom: '14px' }}>
+        <label className="form-label">Kategori</label>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px' }}>
+          {CATEGORIES.map(c => {
+            const active = f.category === c.key
+            return (
+              <button key={c.key} type="button" onClick={() => u('category', c.key)} style={{
+                padding: '12px 8px', border: `1px solid ${active ? c.color : 'var(--border)'}`,
+                borderRadius: '10px', cursor: 'pointer',
+                background: active ? c.bg : 'var(--surface)',
+                color: active ? c.color : 'var(--text2)',
+                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px',
+                transition: 'all .15s',
+              }}>
+                <span style={{ fontSize: '20px' }}>{c.icon}</span>
+                <span style={{ fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 700, letterSpacing: '1px' }}>{c.label}</span>
+              </button>
+            )
+          })}
         </div>
       </div>
-      <div style={{ display: 'flex', gap: '8px', marginTop: '18px', justifyContent: 'flex-end' }}>
+
+      {/* Miktar + Birim — birim chips */}
+      <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: '10px', marginBottom: '14px' }}>
+        <div>
+          <label className="form-label">Miktar</label>
+          <input className="form-input" type="number" min="0" step="any" value={f.quantity}
+            onChange={e => u('quantity', +e.target.value)}
+            style={{ fontSize: '18px', fontFamily: 'var(--mono)', textAlign: 'center', borderRadius: '10px' }} />
+        </div>
+        <div>
+          <label className="form-label">Birim</label>
+          <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+            {QUICK_UNITS.map(x => (
+              <button key={x} type="button" onClick={() => u('unit', x)} style={{
+                padding: '8px 14px', border: `1px solid ${f.unit === x ? 'var(--accent)' : 'var(--border)'}`,
+                borderRadius: '8px', cursor: 'pointer',
+                background: f.unit === x ? 'rgba(240,165,0,.1)' : 'var(--surface)',
+                color: f.unit === x ? 'var(--accent)' : 'var(--text2)',
+                fontFamily: 'var(--mono)', fontSize: '11px', fontWeight: 700,
+              }}>{x}</button>
+            ))}
+            <select className="form-select" value={QUICK_UNITS.includes(f.unit) ? '' : f.unit}
+              onChange={e => e.target.value && u('unit', e.target.value)}
+              style={{ width: 'auto', borderRadius: '8px', fontSize: '11px', padding: '8px 10px' }}>
+              <option value="">+ digerleri</option>
+              {UNITS.filter(x => !QUICK_UNITS.includes(x)).map(x => <option key={x} value={x}>{x}</option>)}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {/* Esik + Birim Fiyat + Konum */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px', marginBottom: '14px' }}>
+        <div>
+          <label className="form-label">Min. Esik</label>
+          <input className="form-input" type="number" min="0" value={f.reorder_threshold}
+            onChange={e => u('reorder_threshold', +e.target.value)} placeholder="0 = uyari yok"
+            style={{ borderRadius: '10px' }} />
+        </div>
+        <div>
+          <label className="form-label">Birim Fiyat (TL)</label>
+          <input className="form-input" type="number" min="0" step="any" value={f.unit_price || 0}
+            onChange={e => u('unit_price', +e.target.value)}
+            style={{ borderRadius: '10px' }} />
+        </div>
+        <div>
+          <label className="form-label">Konum</label>
+          <input className="form-input" value={f.location || ''} onChange={e => u('location', e.target.value)}
+            placeholder="Depo/raf" style={{ borderRadius: '10px' }} />
+        </div>
+      </div>
+
+      {/* Gelismis ayarlar (collapse) */}
+      <div style={{ marginBottom: '14px' }}>
+        <button type="button" onClick={() => setAdvanced(a => !a)} style={{
+          width: '100%', padding: '8px 12px', border: '1px solid var(--border)', borderRadius: '10px',
+          background: 'var(--surface2)', color: 'var(--text3)', cursor: 'pointer',
+          fontFamily: 'var(--mono)', fontSize: '10px', letterSpacing: '1px',
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        }}>
+          <span>GELISMIS AYARLAR (sku, lot, lokasyon, tedarik)</span>
+          <span>{advanced ? '▲' : '▼'}</span>
+        </button>
+        {advanced && (
+          <div style={{ marginTop: '10px', padding: '12px', background: 'var(--surface2)', borderRadius: '10px', border: '1px solid var(--border)' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px', marginBottom: '10px' }}>
+              <div>
+                <label className="form-label">SKU (kisa kod)</label>
+                <input className="form-input" value={f.sku || ''} onChange={e => u('sku', e.target.value)}
+                  placeholder="TXT-001" style={{ borderRadius: '8px', fontSize: '11px' }} />
+              </div>
+              <div>
+                <label className="form-label">Tedarik Suresi (g)</label>
+                <input className="form-input" type="number" min="0" value={f.lead_time_days ?? 7}
+                  onChange={e => u('lead_time_days', +e.target.value)}
+                  style={{ borderRadius: '8px', fontSize: '11px' }} />
+              </div>
+              <div>
+                <label className="form-label">Guvenli Stok (g)</label>
+                <input className="form-input" type="number" min="0" value={f.safety_stock_days ?? 3}
+                  onChange={e => u('safety_stock_days', +e.target.value)}
+                  style={{ borderRadius: '8px', fontSize: '11px' }} />
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              {[
+                { k: 'track_lots', label: 'Lot izleme (FIFO)', help: 'Mal giriste lot no/SKT zorunlu' },
+                { k: 'track_expiry', label: 'Son kullanma izleme', help: 'Cron uyarisi acilir' },
+                { k: 'track_locations', label: 'Lokasyon izleme', help: 'Coklu raf takibi' },
+              ].map(t => (
+                <label key={t.k} title={t.help} style={{
+                  display: 'flex', alignItems: 'center', gap: '6px',
+                  padding: '8px 10px', border: `1px solid ${f[t.k] ? 'var(--purple)' : 'var(--border)'}`,
+                  borderRadius: '8px', background: f[t.k] ? 'rgba(155,89,182,.06)' : 'var(--surface)',
+                  fontFamily: 'var(--mono)', fontSize: '11px', cursor: 'pointer',
+                  color: f[t.k] ? 'var(--purple)' : 'var(--text3)',
+                }}>
+                  <input type="checkbox" checked={!!f[t.k]} onChange={e => u(t.k, e.target.checked ? 1 : 0)} />
+                  {t.label}
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div style={{ display: 'flex', gap: '8px', marginTop: '4px', justifyContent: 'flex-end' }}>
         <button className="btn btn-ghost" onClick={onClose} style={{ borderRadius: '10px' }}>IPTAL</button>
-        <button className="btn btn-primary" disabled={!f.item_name || isPending} onClick={() => { if (!item?.id) onSubmitSuccess(); onSave(f) }} style={{ borderRadius: '10px' }}>
+        <button className="btn btn-primary" disabled={!f.item_name || isPending}
+          onClick={() => { if (!item?.id) onSubmitSuccess(); onSave(f) }}
+          style={{ borderRadius: '10px', padding: '10px 24px' }}>
           {isPending ? '...' : item?.id ? 'GUNCELLE' : 'KAYDET'}
         </button>
       </div>

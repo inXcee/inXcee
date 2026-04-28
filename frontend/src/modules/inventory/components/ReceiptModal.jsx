@@ -12,13 +12,13 @@ export default function ReceiptModal({ items, onClose }) {
   const [invoiceNo, setInvoiceNo] = useState('')
   const [receiptDate, setReceiptDate] = useState(new Date().toISOString().slice(0, 10))
   const [notes, setNotes] = useState('')
-  const [lines, setLines] = useState([{ item_id: '', quantity: '', unit_price: '' }])
+  const [lines, setLines] = useState([{ item_id: '', quantity: '', unit_price: '', lot_no: '', expiry_date: '' }])
   const [lineSearches, setLineSearches] = useState({})
   const [result, setResult] = useState(null)
 
   const updateLineSearch = (idx, val) => setLineSearches(p => ({ ...p, [idx]: val }))
 
-  const addLine = () => setLines(p => [...p, { item_id: '', quantity: '', unit_price: '' }])
+  const addLine = () => setLines(p => [...p, { item_id: '', quantity: '', unit_price: '', lot_no: '', expiry_date: '' }])
   const removeLine = idx => setLines(p => p.filter((_, i) => i !== idx))
   const updateLine = (idx, key, val) => setLines(p => p.map((l, i) => i === idx ? { ...l, [key]: val } : l))
 
@@ -86,6 +86,7 @@ export default function ReceiptModal({ items, onClose }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {lines.map((line, idx) => {
             const selectedItem = items.find(i => i.id === +line.item_id)
+            const showLotFields = selectedItem?.track_lots === 1
             return (
               <div key={idx} style={{
                 display: 'grid', gridTemplateColumns: '1fr 90px 90px 28px', gap: '6px', alignItems: 'end',
@@ -126,6 +127,22 @@ export default function ReceiptModal({ items, onClose }) {
                   cursor: lines.length > 1 ? 'pointer' : 'default', fontSize: '12px',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}>✕</button>
+                {showLotFields && (
+                  <div style={{ gridColumn: '1 / -1', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginTop: '6px', padding: '6px 0 0', borderTop: '1px dashed var(--border)' }}>
+                    <div>
+                      <label style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--purple)', letterSpacing: '1px', display: 'block', marginBottom: '3px' }}>⏳ LOT NO</label>
+                      <input className="form-input" placeholder="LOT-A1, parti, ureticikodu..." value={line.lot_no || ''}
+                        onChange={e => updateLine(idx, 'lot_no', e.target.value)}
+                        style={{ borderRadius: '8px', fontSize: '11px' }} />
+                    </div>
+                    <div>
+                      <label style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--purple)', letterSpacing: '1px', display: 'block', marginBottom: '3px' }}>⏳ SON KULLANMA</label>
+                      <input className="form-input" type="date" value={line.expiry_date || ''}
+                        onChange={e => updateLine(idx, 'expiry_date', e.target.value)}
+                        style={{ borderRadius: '8px', fontSize: '11px' }} />
+                    </div>
+                  </div>
+                )}
               </div>
             )
           })}
@@ -148,7 +165,13 @@ export default function ReceiptModal({ items, onClose }) {
             disabled={!supplier || validLines.length === 0 || mut.isPending}
             onClick={() => mut.mutate({
               supplier, invoice_no: invoiceNo, receipt_date: receiptDate, notes,
-              items: validLines.map(l => ({ item_id: +l.item_id, quantity: +l.quantity, unit_price: +l.unit_price || undefined }))
+              items: validLines.map(l => ({
+                item_id: +l.item_id,
+                quantity: +l.quantity,
+                unit_price: +l.unit_price || undefined,
+                lot_no: l.lot_no || undefined,
+                expiry_date: l.expiry_date || undefined,
+              }))
             })}>
             {mut.isPending ? 'KAYDEDILIYOR...' : 'MAL GIRIS KAYDET'}
           </button>

@@ -357,9 +357,26 @@ export function createReceipt(supplier, invoiceNo, receiptDate, notes, items, us
         db.prepare("UPDATE inventory SET unit_price=?, last_updated=datetime('now') WHERE id=?").run(price, item.item_id)
       }
 
+      // track_lots=1 urunlerde otomatik lot olustur
+      let lotId = null
+      if (inv.track_lots) {
+        const lotIns = db.prepare(`
+          INSERT INTO inventory_lots(item_id, lot_no, quantity, expiry_date, supplier_id, unit_cost)
+          VALUES(?,?,?,?,?,?)
+        `).run(
+          item.item_id,
+          item.lot_no || null,
+          qty,
+          item.expiry_date || null,
+          supplierId,
+          price,
+        )
+        lotId = lotIns.lastInsertRowid
+      }
+
       db.prepare(
-        'INSERT INTO stock_movements(item_id,type,delta,quantity_after,reason,created_by) VALUES(?,?,?,?,?,?)'
-      ).run(item.item_id, 'in', qty, newQty, `Mal giris: ${receiptNo} (${supplier})`, userId)
+        'INSERT INTO stock_movements(item_id,type,delta,quantity_after,reason,lot_id,created_by) VALUES(?,?,?,?,?,?,?)'
+      ).run(item.item_id, 'in', qty, newQty, `Mal giris: ${receiptNo} (${supplier})`, lotId, userId)
 
       // Tedarikci fiyat gecmisi (sadece supplier varsa)
       if (supplierId && price > 0) {

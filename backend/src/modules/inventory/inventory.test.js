@@ -215,6 +215,25 @@ describe('Inventory Forecast', () => {
     expect(res.body.quantity).toBe(before - 2)
   })
 
+  it('goods receipt creates lot for track_lots items', async () => {
+    const db = (await import('../../shared/db/index.js')).getDB()
+    const trackedItem = db.prepare("INSERT INTO inventory(item_name,quantity,unit,category,track_lots) VALUES('Lot Urun',0,'adet','general',1)").run()
+    const tid = trackedItem.lastInsertRowid
+
+    const rec = await request(app).post('/api/inventory/receipts').set('Authorization', `Bearer ${token}`)
+      .send({
+        supplier: 'Lot Tedarik', invoice_no: 'X1', receipt_date: '2026-04-28',
+        items: [{ item_id: tid, quantity: 10, unit_price: 50, lot_no: 'LOT-A1', expiry_date: '2026-12-31' }]
+      })
+    expect(rec.status).toBe(201)
+
+    const lots = db.prepare('SELECT * FROM inventory_lots WHERE item_id = ?').all(tid)
+    expect(lots.length).toBe(1)
+    expect(lots[0].lot_no).toBe('LOT-A1')
+    expect(lots[0].quantity).toBe(10)
+    expect(lots[0].expiry_date).toBe('2026-12-31')
+  })
+
   it('rejects writeoff with invalid type', async () => {
     const inv = await request(app).get('/api/inventory').set('Authorization', `Bearer ${token}`)
     const res = await request(app).post(`/api/inventory/${inv.body[0].id}/writeoff`).set('Authorization', `Bearer ${token}`)

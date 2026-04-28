@@ -103,7 +103,8 @@ app.use(sanitizeBody)
 // Multer dosya isimleri unique (Date.now()-rand) — immutable cache güvenli.
 app.use('/uploads', (req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff')
-  res.setHeader('Content-Disposition', 'attachment')
+  // inline: <img> tag'leri normal render edebilsin (magic byte ile zaten dogrulandi)
+  res.setHeader('Content-Disposition', 'inline')
   res.setHeader('Cache-Control', 'private, max-age=31536000, immutable')
   next()
 }, express.static(process.env.UPLOADS_DIR || 'uploads', { maxAge: '1y', immutable: true }))
