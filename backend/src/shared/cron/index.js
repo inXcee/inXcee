@@ -1,10 +1,14 @@
 import cron from 'node-cron'
+import fs from 'fs'
+import path from 'path'
 import { generateDailyTasks } from '../../modules/housekeeping/queries.js'
 import { createNotification } from '../notifications/service.js'
 import { getDB } from '../db/index.js'
 import { checkSlaViolations, checkMachineTimers, checkSlaPreWarnings, checkMachineMaintenanceAlerts, checkStuckWashingItems } from '../../modules/laundry/sla.js'
 import { getEmailSettings } from '../../modules/email/queries.js'
 import { sendMorningReport } from '../../modules/email/service.js'
+import { buildMonthlyReport, generateMonthlyPDF } from '../../modules/inventory/analytics/routes.js'
+import { logAudit } from '../audit.js'
 
 let emailJob = null
 
@@ -56,6 +60,26 @@ export function startCronJobs() {
     await checkSlaPreWarnings()
     await checkMachineMaintenanceAlerts()
     checkStuckWashingItems()
+  }))
+
+  // Her ayın 1'i 03:00 — geçmiş ay aylık PDF rapor (overlap-safe)
+  cron.schedule('0 3 1 * *', withLock('inventory-monthly-pdf', () => {
+    try {
+      const d = new Date()
+      d.setMonth(d.getMonth() - 1)
+      const month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+      const reportsDir = process.env.UPLOADS_DIR
+        ? path.join(process.env.UPLOADS_DIR, 'reports')
+        : 'uploads/reports'
+      if (!fs.existsSync(reportsDir)) fs.mkdirSync(reportsDir, { recursive: true })
+      const filePath = path.join(reportsDir, `envanter-${month}.pdf`)
+      const stream = fs.createWriteStream(filePath)
+      const report = buildMonthlyReport(month)
+      generateMonthlyPDF(report, stream)
+      stream.on('finish', () => {
+        try { logAudit(null, 'inventory_monthly_report', 'inventory', null, `${month} PDF: ${filePath}`) } catch { /* ignore */ }
+      })
+    } catch (e) { console.error('[Cron] aylik PDF hatasi:', e.message) }
   }))
 
   // Her gün 06:00 — son kullanma 30 gün altı lot uyarısı (campus_manager)

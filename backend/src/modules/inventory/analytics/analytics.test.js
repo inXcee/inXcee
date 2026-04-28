@@ -36,6 +36,21 @@ describe('Inventory Analytics', () => {
     expect(Array.isArray(res.body.rows)).toBe(true)
   })
 
+  it('returns monthly PDF', async () => {
+    const d = new Date()
+    d.setMonth(d.getMonth() - 1)
+    const month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    const res = await request(app).get(`/api/inventory/analytics/monthly-pdf?month=${month}`).set(auth())
+    expect(res.status).toBe(200)
+    expect(res.headers['content-type']).toMatch(/pdf/)
+    expect(res.body.length).toBeGreaterThan(500)
+  })
+
+  it('rejects monthly-pdf with invalid month', async () => {
+    const res = await request(app).get('/api/inventory/analytics/monthly-pdf?month=invalid').set(auth())
+    expect(res.status).toBe(400)
+  })
+
   it('rejects analytics for non-manager', async () => {
     const s = await request(app).post('/api/auth/login').send({ username: 'camasir', password: 'admin123' })
     const res = await request(app).get('/api/inventory/analytics/abc').set({ Authorization: `Bearer ${s.body.token}` })

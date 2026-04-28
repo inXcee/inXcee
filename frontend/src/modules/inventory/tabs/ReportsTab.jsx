@@ -141,6 +141,16 @@ function HeatmapSection({ days }) {
 
 export default function ReportsTab() {
   const [days, setDays] = useState(30)
+  const downloadMonthlyPdf = () => {
+    const d = new Date()
+    d.setMonth(d.getMonth() - 1)
+    const month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    api.get(`/inventory/analytics/monthly-pdf?month=${month}`, { responseType: 'blob' }).then(r => {
+      const url = URL.createObjectURL(r.data)
+      const a = document.createElement('a'); a.href = url; a.download = `envanter-${month}.pdf`; a.click()
+      URL.revokeObjectURL(url)
+    })
+  }
 
   return (
     <div>
@@ -151,6 +161,7 @@ export default function ReportsTab() {
             <button key={d} onClick={() => setDays(d)} className={`btn btn-xs ${days === d ? 'btn-primary' : 'btn-ghost'}`} style={{ borderRadius: '8px' }}>{d}G</button>
           ))}
         </div>
+        <button onClick={downloadMonthlyPdf} className="btn btn-ghost btn-sm" style={{ borderRadius: '10px', color: 'var(--purple)' }}>📄 GECMIS AY PDF</button>
       </div>
       <ABCSection days={days} />
       <DepartmentSection days={days} />
