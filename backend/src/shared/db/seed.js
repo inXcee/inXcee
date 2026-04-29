@@ -320,4 +320,120 @@ export function seedDev() {
       VALUES(1,'Test Personeli','Test Şirketi','Ankara','2024-01-01',0,NULL)
     `).run()
   } catch(e) { /* ignore if already exists */ }
+
+  // ── DEMO VERİ ─────────────────────────────────────────────────────────────
+  // Sadece geliştirme — test ortamında (:memory: DB) atlanır.
+  if (process.env.DB_PATH === ':memory:') return
+
+  // Yatakhane sakinleri (personnel) — sadece test kaydı varsa doldur
+  const residentCount = db.prepare('SELECT COUNT(*) as c FROM personnel WHERE id > 1').get().c
+  if (residentCount === 0) {
+    const companies = ['ABC İnşaat','Yıldız Yapı','Mavi Mühendislik','Kayra Taahhüt','Erten Demir','Birlik Beton','Anadolu Saha','Has Mekanik']
+    const jobTitles = ['Düz İşçi','Kalıpçı','Demirci','Boyacı','Sıvacı','Marangoz','Elektrikçi Yardımcısı','Tesisatçı','Kaynakçı','Vinç Operatörü']
+
+    const personnelInsert = db.prepare(`
+      INSERT INTO personnel(tc_no,full_name,company,hometown,phone_number,gender,job_title,check_in_date,discipline_points,preferred_block)
+      VALUES(?,?,?,?,?,?,?,?,?,?)
+    `)
+    const residentIds = []
+    db.transaction(() => {
+      for (let i = 0; i < 120; i++) {
+        const isMale = i < 100
+        const gender = isMale ? 'male' : 'female'
+        const firstName = isMale
+          ? maleFirstNames[(i * 13) % maleFirstNames.length]
+          : femaleFirstNames[(i * 7) % femaleFirstNames.length]
+        const lastName = lastNames[(i * 11) % lastNames.length]
+        const fullName = `${firstName} ${lastName}`
+        const tcNo = `${30000000000 + i * 53 + 12345}`
+        const phone = `05${320 + (i % 60)}${String(3000000 + i * 89).slice(0, 7)}`
+        const company = companies[i % companies.length]
+        const hometown = cities[i % cities.length]
+        const jobTitle = jobTitles[i % jobTitles.length]
+        const checkInDate = d(-(180 - (i % 175)))     // son 6 ay içinde dağılmış
+        const points = i % 17 === 0 ? 6 : (i % 11 === 0 ? 3 : 0)
+        const prefBlock = isMale ? ['M1','M2','M3','S1','A1','A2'][i % 6] : ['S2','A3'][i % 2]
+        const res = personnelInsert.run(tcNo, fullName, company, hometown, phone, gender, jobTitle, checkInDate, points, prefBlock)
+        residentIds.push({ id: Number(res.lastInsertRowid), gender, idx: i })
+      }
+    })()
+
+    // Oda atamaları: ~%80 doluluk, blokları görünür dağıt (round-robin)
+    const rooms = db.prepare("SELECT id, block, room_no, capacity FROM rooms WHERE status='active' ORDER BY block, room_no").all()
+    const occupancy = new Map(rooms.map(r => [r.id, 0]))
+    const byBlock = rooms.reduce((acc, r) => {
+      (acc[r.block] = acc[r.block] || []).push(r); return acc
+    }, {})
+    const maleBlocks   = ['M1','M2','M3','S1','S3','A1','A2','A4']
+    const femaleBlocks = ['S2','A3']
+    const raInsert = db.prepare(`
+      INSERT OR IGNORE INTO room_assignments(personnel_id, room_id, bed_no, assigned_at, assigned_by)
+      VALUES(?,?,?,?,?)
+    `)
+
+    db.transaction(() => {
+      let maleCount = 0, femaleCount = 0
+      residentIds.forEach((p) => {
+        if (p.idx % 5 === 4) return // her 5'ten 1'i atanmasın (boş yatak göstergesi)
+        const blocks = p.gender === 'female' ? femaleBlocks : maleBlocks
+        const counter = p.gender === 'female' ? femaleCount++ : maleCount++
+        // Round-robin: önce hedef blok, doluysa diğerlerine geç
+        let candidate = null
+        for (let i = 0; i < blocks.length; i++) {
+          const block = blocks[(counter + i) % blocks.length]
+          candidate = (byBlock[block] || []).find(r => occupancy.get(r.id) < r.capacity)
+          if (candidate) break
+        }
+        if (!candidate) return
+        const bedNo = occupancy.get(candidate.id) + 1
+        const assignedAt = d(-(150 - (p.idx % 145))) + 'T08:00:00'
+        try {
+          raInsert.run(p.id, candidate.id, bedNo, assignedAt, 1)
+          occupancy.set(candidate.id, bedNo)
+        } catch (e) { /* unique idx çakışması veya quarantine trigger — atla */ }
+      })
+    })()
+  }
+
+  // Bakım talepleri — örnek karışık durumlar
+  const maintCount = db.prepare('SELECT COUNT(*) as c FROM maintenance_requests').get().c
+  if (maintCount === 0) {
+    const maintInsert = db.prepare(`
+      INSERT INTO maintenance_requests(location, description, status, priority, opened_at, assigned_at, started_at, closed_at)
+      VALUES(?,?,?,?,?,?,?,?)
+    `)
+    const samples = [
+      ['M1-203', 'Banyo musluğu damlatıyor',                'open',        'medium', d(-1)+'T09:15:00',  null,                null,                null],
+      ['M2-114', 'Tavandaki LED ampul yanmış',              'open',        'low',    d(-2)+'T11:30:00',  null,                null,                null],
+      ['S1-208', 'Klozet sifonu dolmuyor',                  'assigned',    'medium', d(-3)+'T08:00:00',  d(-3)+'T10:00:00',   null,                null],
+      ['A1-119', 'Klima soğutmuyor — gaz kontrolü gerekli', 'in_progress', 'high',   d(-4)+'T14:20:00',  d(-4)+'T15:00:00',   d(-4)+'T16:30:00',   null],
+      ['M3-122', 'Pencere mandalı kırık',                   'in_progress', 'low',    d(-5)+'T10:00:00',  d(-5)+'T11:00:00',   d(-5)+'T13:45:00',   null],
+      ['S2-211', 'Lavabo gideri tıkanmış',                  'review',      'medium', d(-6)+'T07:30:00',  d(-6)+'T08:30:00',   d(-6)+'T09:15:00',   null],
+      ['M1-118', 'Kapı kilidi takılıyor',                   'done',        'medium', d(-8)+'T15:00:00',  d(-8)+'T15:30:00',   d(-7)+'T09:00:00',   d(-7)+'T11:00:00'],
+      ['A2-205', 'Priz duman çıkarıyor — ACİL',             'done',        'high',   d(-10)+'T22:15:00', d(-10)+'T22:30:00',  d(-10)+'T22:45:00',  d(-10)+'T23:30:00'],
+      ['S3-103', 'Yatak demiri sallanıyor',                 'open',        'low',    d(0)+'T08:45:00',   null,                null,                null],
+      ['M2-220', 'Elektrik kontağı atıyor',                 'assigned',    'high',   d(0)+'T11:00:00',   d(0)+'T11:30:00',    null,                null],
+    ]
+    db.transaction(() => samples.forEach(s => maintInsert.run(...s)))()
+  }
+
+  // Disiplin kayıtları
+  const discCount = db.prepare('SELECT COUNT(*) as c FROM discipline_records').get().c
+  if (discCount === 0) {
+    const ids = db.prepare('SELECT id FROM personnel WHERE id > 1 ORDER BY id LIMIT 8').all().map(r => r.id)
+    if (ids.length >= 5) {
+      const discInsert = db.prepare(`
+        INSERT INTO discipline_records(personnel_id, card_type, reason, created_by, created_at)
+        VALUES(?,?,?,?,?)
+      `)
+      db.transaction(() => {
+        discInsert.run(ids[0], 'yellow', 'Saat 23:00 sonrası yüksek sesle müzik',  1, d(-12)+'T23:30:00')
+        discInsert.run(ids[1], 'yellow', 'Ortak alanda sigara içme',               1, d(-9) +'T19:00:00')
+        discInsert.run(ids[2], 'yellow', 'Çamaşır torbası geç teslim',             1, d(-7) +'T10:00:00')
+        discInsert.run(ids[3], 'red',    'Karantina kuralı ihlali',                1, d(-5) +'T14:00:00')
+        discInsert.run(ids[0], 'yellow', 'Tekrar gece gürültü',                    1, d(-3) +'T22:00:00')
+        discInsert.run(ids[4], 'yellow', 'Oda temizliğine müsaade etmeme',         1, d(-2) +'T11:00:00')
+      })()
+    }
+  }
 }
