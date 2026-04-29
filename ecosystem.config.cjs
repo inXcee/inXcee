@@ -4,6 +4,7 @@ module.exports = {
       name: 'yys-backend',
       script: 'backend/src/server.js',
       interpreter: 'node',
+      node_args: '--env-file=.env',
       instances: 1,
       max_memory_restart: '500M',
       env_production: {
