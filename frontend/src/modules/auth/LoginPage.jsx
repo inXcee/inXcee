@@ -3,12 +3,21 @@ import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../../shared/store/authStore.js'
 import api from '../../shared/api/client.js'
 
+const DEMO_USERS = [
+  { username: 'mudur',    password: 'admin123', role: 'Kampüs Müdürü' },
+  { username: 'vardiya',  password: 'admin123', role: 'Vardiya Amiri' },
+  { username: 'teknik',   password: 'admin123', role: 'Teknik Servis' },
+  { username: 'camasir',  password: 'admin123', role: 'Çamaşırhane' },
+  { username: 'meydanci', password: 'admin123', role: 'Meydancı' },
+]
+
 export default function LoginPage() {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [slowHint, setSlowHint] = useState(false)
+  const [demoOpen, setDemoOpen] = useState(false)
   const login = useAuthStore(s => s.login)
   const navigate = useNavigate()
 
@@ -124,6 +133,66 @@ export default function LoginPage() {
             </button>
           </form>
         </div>
+
+        {import.meta.env.DEV && (
+          <div style={{ marginTop: '14px' }}>
+            <button
+              type="button"
+              onClick={() => setDemoOpen(o => !o)}
+              style={{
+                width: '100%', padding: '8px 12px',
+                background: 'transparent', border: '1px dashed var(--border)',
+                borderRadius: '8px', color: 'var(--text3)',
+                fontFamily: 'var(--mono)', fontSize: '10px', letterSpacing: '1px',
+                cursor: 'pointer', display: 'flex',
+                alignItems: 'center', justifyContent: 'space-between',
+              }}
+            >
+              <span>{demoOpen ? '▾' : '▸'} DEMO KULLANICILAR</span>
+              <span style={{ color: 'var(--text4)' }}>geliştirme</span>
+            </button>
+            {demoOpen && (
+              <div style={{
+                marginTop: '8px',
+                background: 'var(--surface)',
+                border: '1px solid var(--border)',
+                borderRadius: '8px',
+                overflow: 'hidden',
+              }}>
+                {DEMO_USERS.map((u, i) => (
+                  <button
+                    key={u.username}
+                    type="button"
+                    onClick={() => { setUsername(u.username); setPassword(u.password); setError('') }}
+                    style={{
+                      width: '100%', padding: '10px 14px',
+                      background: 'transparent', border: 'none',
+                      borderBottom: i < DEMO_USERS.length - 1 ? '1px solid var(--border)' : 'none',
+                      color: 'var(--text)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      cursor: 'pointer', fontSize: '12px', textAlign: 'left',
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(240,165,0,0.06)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                  >
+                    <span>
+                      <span style={{ fontFamily: 'var(--mono)', color: 'var(--accent)' }}>{u.username}</span>
+                      <span style={{ color: 'var(--text3)', fontSize: '10px', marginLeft: '8px' }}>{u.role}</span>
+                    </span>
+                    <span style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text4)' }}>{u.password}</span>
+                  </button>
+                ))}
+                <div style={{
+                  padding: '8px 14px', background: 'rgba(0,0,0,0.2)',
+                  fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text4)',
+                  letterSpacing: '1px', textAlign: 'center',
+                }}>
+                  TIKLAYARAK FORMU DOLDURUN · PROD'DA GÖRÜNMEZ
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         <div style={{ textAlign: 'center', marginTop: '20px', fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text4)', letterSpacing: '1px' }}>
           ŞKY v3.0 · YYS SİSTEMİ
