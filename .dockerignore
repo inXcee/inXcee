@@ -1,0 +1,43 @@
+node_modules
+**/node_modules
+.git
+.github
+.env
+.env.*
+!.env.example
+
+# Build çıktıları (imaj içinde yeniden build edilir)
+frontend/dist
+backend/dist
+
+# Geliştirme verisi
+yys.db
+yys.db-shm
+yys.db-wal
+*.db
+*.db-shm
+*.db-wal
+backups
+uploads
+backend/uploads
+frontend/uploads
+
+# Test/log
+coverage
+*.log
+npm-debug.log*
+
+# IDE
+.vscode
+.idea
+.DS_Store
+
+# Dokümantasyon (imaja gerek yok)
+specs
+docs
+*.md
+!README.md
+
+# Diğer
+.cache
+tmp
