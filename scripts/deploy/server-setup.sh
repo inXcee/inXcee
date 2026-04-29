@@ -16,8 +16,8 @@
 set -euo pipefail
 
 # ── Argüman kontrolü ────────────────────────────────────────────────
-: "${DOMAIN:?DOMAIN gerekli (örn: DOMAIN=avskamp.com)}"
-: "${EMAIL:?EMAIL gerekli (Let's Encrypt için, örn: EMAIL=you@example.com)}"
+: "${DOMAIN:?DOMAIN gerekli - ornek: DOMAIN=avskamp.com}"
+: "${EMAIL:?EMAIL gerekli - Certbot icin - ornek: EMAIL=you@example.com}"
 APP_DIR="${APP_DIR:-/opt/avskamp}"
 DATA_DIR="${DATA_DIR:-/var/data}"
 
