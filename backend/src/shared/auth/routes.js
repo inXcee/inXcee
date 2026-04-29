@@ -1,12 +1,19 @@
 import { Router } from 'express'
+import { z } from 'zod'
 import { login, loginKiosk, loginKioskById, searchKioskPersonnel, loginAvsKiosk, searchAvsWorkers, changeOwnPassword, refreshToken } from './service.js'
 import { getSetting } from '../../modules/email/queries.js'
 import { requireAuth } from './middleware.js'
+import { validate } from '../middleware/validate.js'
 
 export const authRouter = Router()
 
-authRouter.post('/login', (req, res) => {
-  const { username, password } = req.body
+const loginSchema = z.object({
+  username: z.string().min(1, 'Kullanıcı adı gerekli').max(64),
+  password: z.string().min(1, 'Şifre gerekli').max(256),
+})
+
+authRouter.post('/login', validate(loginSchema), (req, res) => {
+  const { username, password } = req.validated
   const result = login(username, password)
   if (!result) return res.status(401).json({ error: 'Kullanıcı adı veya şifre hatalı' })
   res.json(result)
