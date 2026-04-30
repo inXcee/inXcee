@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
+import { useToastStore } from '../../shared/store/toastStore.js'
+import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 
 const ROLES = [
   { value: 'campus_manager', label: 'Kampus Muduru' },
@@ -171,9 +173,11 @@ export default function UsersPage() {
     onSuccess: () => { setEditUser(null); qc.invalidateQueries({ queryKey: ['users'] }) },
   })
 
+  const addToast = useToastStore(s => s.addToast)
   const deleteMut = useMutation({
     mutationFn: id => api.delete(`/users/${id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['users'] }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); addToast('Kullanıcı silindi', 'success') },
+    onError: e => addToast(e?.response?.data?.error || 'Silme başarısız', 'error'),
   })
 
   return (
@@ -251,7 +255,7 @@ export default function UsersPage() {
                           </button>
                         )}
                         <button className="btn btn-danger btn-xs"
-                          onClick={() => { if (confirm(`${u.username} silinsin mi?`)) deleteMut.mutate(u.id) }}>
+                          onClick={async () => { if (await confirmDialog({ title: 'Kullanıcı Sil', body: `${u.username} silinsin mi?`, danger: true })) deleteMut.mutate(u.id) }}>
                           Sil
                         </button>
                       </div>

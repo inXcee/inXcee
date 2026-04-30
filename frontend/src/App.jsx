@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useAuthStore } from './shared/store/authStore.js'
 import ErrorBoundary from './shared/components/ErrorBoundary.jsx'
 import ToastContainer from './shared/components/ToastContainer.jsx'
+import ConfirmDialog from './shared/components/ConfirmDialog.jsx'
 import PwaInstallPrompt from './shared/components/PwaInstallPrompt.jsx'
 import LoginPage from './modules/auth/LoginPage.jsx'
 import api from './shared/api/client.js'
@@ -128,6 +129,7 @@ export default function App() {
   return (
     <ErrorBoundary>
       <ToastContainer />
+      <ConfirmDialog />
       <PwaInstallPrompt />
       <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}><span className="page-spinner" /></div>}>
         <SetupGate>

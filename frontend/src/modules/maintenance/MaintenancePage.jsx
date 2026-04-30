@@ -4,6 +4,7 @@ import api from '../../shared/api/client.js'
 import HelpHint from '../../shared/components/HelpHint.jsx'
 import { useDraft } from '../../shared/hooks/useDraft.js'
 import DraftBanner from '../../shared/components/DraftBanner.jsx'
+import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 
 const PRIORITIES = [
   { key: 'high', label: 'ACİL', color: 'var(--red)' },
@@ -661,7 +662,7 @@ function TechnicianManager() {
                     border: `1px solid color-mix(in srgb, ${si.color} 30%, transparent)`,
                     borderRadius: '4px', color: si.color, letterSpacing: '0.5px',
                   }}>{si.label}</span>
-                  <button className="btn btn-ghost btn-xs" onClick={() => deleteMut.mutate(t.id)} style={{ color: 'var(--red)' }}>✕</button>
+                  <button className="btn btn-ghost btn-xs" onClick={async () => { if (await confirmDialog({ title: 'Teknisyen Sil', body: `${t.full_name} silinsin mi?`, danger: true })) deleteMut.mutate(t.id) }} style={{ color: 'var(--red)' }}>✕</button>
                 </div>
               )
             })}

@@ -391,15 +391,27 @@ export default function CheckoutPage() {
                 background: 'var(--surface3)', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: '6px', cursor: 'pointer' }}>
               GERI
             </button>
-            <button className="btn btn-primary" onClick={() => setStep(3)}
-              style={{ padding: '8px 20px', fontFamily: 'var(--mono)', fontSize: '11px', letterSpacing: '1px' }}>
-              CIKISI ONAYLA
+            <button className="btn btn-primary"
+              disabled={checkoutMut.isPending}
+              onClick={() => checkoutMut.mutate({
+                personnel_id: preview.person.id,
+                zimmet_actions: zimmetActions,
+              })}
+              style={{ padding: '8px 20px', fontFamily: 'var(--mono)', fontSize: '11px', letterSpacing: '1px',
+                background: 'var(--red)', border: 'none', color: '#fff', borderRadius: '6px', cursor: 'pointer',
+                opacity: checkoutMut.isPending ? 0.6 : 1 }}>
+              {checkoutMut.isPending ? 'ISLENIYOR...' : 'CIKISI TAMAMLA'}
             </button>
           </div>
+          {checkoutMut.isError && (
+            <div style={{ fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--red)', marginTop: '12px' }}>
+              Hata: {checkoutMut.error?.response?.data?.error || checkoutMut.error?.message}
+            </div>
+          )}
         </div>
       )}
 
-      {/* ── STEP 3: TAMAMLA ─────────────────────────────────────── */}
+      {/* ── STEP 3: BAŞARI ─────────────────────────────────────── */}
       {step === 3 && (
         <div className="card" style={{ padding: '20px' }}>
           {!completed ? (

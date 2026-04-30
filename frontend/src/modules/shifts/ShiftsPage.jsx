@@ -3,6 +3,15 @@ import { createPortal } from 'react-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { useAuthStore } from '../../shared/store/authStore.js'
+import { useToastStore } from '../../shared/store/toastStore.js'
+import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
+
+// Tek noktadan toast ile hata gosterimi — onError callback'lerinde alert yerine bunu cagir.
+// Module-level fonksiyon: closure'a bagimli degil, callback'lerde stale ref riski yok.
+const toastErr = (e) => {
+  useToastStore.getState().addToast(e?.response?.data?.error || 'Hata', 'error')
+}
+const toastOk = (msg) => useToastStore.getState().addToast(msg, 'success')
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const LEAVE_TYPES = {
@@ -401,25 +410,25 @@ function StaffDetailPanel({ staffId, onClose }) {
   const assignShiftMut = useMutation({
     mutationFn: d => api.post('/shifts/schedule', { entries: [{ staff_id: staffId, dept_id: d.dept_id, shift_def_id: d.shift_def_id || null, work_date: d.work_date, status: 'scheduled' }] }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['staff-detail', staffId] }); qc.invalidateQueries({ queryKey: ['schedule'] }); setActiveForm(null); setFormData({}) },
-    onError: e => alert(e.response?.data?.error || 'Hata'),
+    onError: toastErr,
   })
 
   const addLeaveMut = useMutation({
     mutationFn: d => api.post('/shifts/leave', d),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['staff-detail', staffId] }); setActiveForm(null); setFormData({}) },
-    onError: e => alert(e.response?.data?.error || 'Hata'),
+    onError: toastErr,
   })
 
   const addOvertimeMut = useMutation({
     mutationFn: d => api.post('/shifts/overtime', d),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['staff-detail', staffId] }); setActiveForm(null); setFormData({}) },
-    onError: e => alert(e.response?.data?.error || 'Hata'),
+    onError: toastErr,
   })
 
   const updateStaffMut = useMutation({
     mutationFn: d => api.put(`/shifts/staff/${staffId}`, d),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['staff-detail', staffId] }); qc.invalidateQueries({ queryKey: ['staff-list'] }); setActiveForm(null); setFormData({}) },
-    onError: e => alert(e.response?.data?.error || 'Hata'),
+    onError: toastErr,
   })
 
   // Esc: önce formu kapat, yoksa sheet'i
@@ -1145,7 +1154,7 @@ function StaffTab({ departments, onPersonClick }) {
       setShowForm(false)
       setForm({})
     },
-    onError: e => alert(e.response?.data?.error || 'Hata'),
+    onError: toastErr,
   })
 
   const updateMut = useMutation({
@@ -1156,7 +1165,7 @@ function StaffTab({ departments, onPersonClick }) {
       setEditStaff(null)
       setForm({})
     },
-    onError: e => alert(e.response?.data?.error || 'Hata'),
+    onError: toastErr,
   })
 
   const deleteMut = useMutation({
@@ -1353,7 +1362,7 @@ function StaffTab({ departments, onPersonClick }) {
                         style={{ flex: 1, padding: '6px', borderRadius: '8px', fontSize: '11px', cursor: 'pointer', background: 'var(--surface2)', border: '1px solid var(--border)', color: 'var(--text2)' }}
                       >✏️ Düzenle</button>
                       <button
-                        onClick={e => { e.stopPropagation(); if (confirm(`${s.full_name} pasif yapılsın mı?`)) deleteMut.mutate(s.id) }}
+                        onClick={async e => { e.stopPropagation(); if (await confirmDialog({ title: 'Personeli Pasifleştir', body: `${s.full_name} pasif yapılsın mı?`, confirmLabel: 'Pasifleştir', danger: true })) deleteMut.mutate(s.id) }}
                         style={{ padding: '6px 10px', borderRadius: '8px', fontSize: '11px', cursor: 'pointer', background: 'rgba(231,76,60,.1)', border: '1px solid rgba(231,76,60,.3)', color: 'var(--red)' }}
                       >Pasif</button>
                     </div>
@@ -1799,8 +1808,7 @@ function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
       }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['schedule'] }); setCellPopover(null) },
     onError: (err) => {
-      const msg = err?.response?.data?.error || 'Vardiya atanamadı'
-      alert(msg)
+      useToastStore.getState().addToast(err?.response?.data?.error || 'Vardiya atanamadı', 'error')
     },
   })
 
@@ -2131,7 +2139,7 @@ function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
                 {[
                   { label: 'Toplu Vardiya Doldur', action: () => { setBulkFillModal(true); setToolsOpen(false) } },
                   { label: 'Tüm Personeli Doldur', action: () => { setAllFillDef(shiftDefs[0]?.id?.toString() || ''); setAllFillModal(true); setToolsOpen(false) } },
-                  { label: 'Haftayı Kopyala', action: () => { if (confirm('Bu haftayı sonraki haftaya kopyalayalım mı?')) { copyWeek.mutate(); setToolsOpen(false) } } },
+                  { label: 'Haftayı Kopyala', action: async () => { if (await confirmDialog('Bu haftayı sonraki haftaya kopyalayalım mı?')) { copyWeek.mutate(); setToolsOpen(false) } } },
                   { label: 'Excel Import', action: () => { setExcelModal(true); setExcelPreview(null); setExcelError(''); setToolsOpen(false) } },
                   { label: '+ Çizelgeye Personel Ekle', action: () => { setAddPersonModal(true); setToolsOpen(false) } },
                 ].map(({ label, action }) => (
@@ -2739,7 +2747,7 @@ function LeaveTab({ departments, onPersonClick }) {
       setNewLeave(false)
       setForm({ staff_id: '', leave_type: 'annual', start_date: '', end_date: '', reason: '' })
     },
-    onError: e => alert(e.response?.data?.error || 'Hata'),
+    onError: toastErr,
   })
 
   const countByType = Object.fromEntries(
@@ -2952,13 +2960,13 @@ function OvertimeTab({ departments, onPersonClick }) {
   const createMut = useMutation({
     mutationFn: data => api.post('/shifts/overtime', data),
     onSuccess: () => { invalidateAll(); setShowForm(false); setForm({ staff_id: '', work_date: '', hours: '', reason: '' }) },
-    onError: e => alert(e.response?.data?.error || 'Hata'),
+    onError: toastErr,
   })
 
   const updateMut = useMutation({
     mutationFn: ({ id, ...data }) => api.put(`/shifts/overtime/${id}`, data),
     onSuccess: () => { invalidateAll(); setEditRecord(null) },
-    onError: e => alert(e.response?.data?.error || 'Hata'),
+    onError: toastErr,
   })
 
   const deleteMut = useMutation({
@@ -3067,7 +3075,7 @@ function OvertimeTab({ departments, onPersonClick }) {
                             <button className="btn btn-ghost btn-sm" style={{ fontSize: '10px', padding: '3px 8px' }}
                               onClick={(e) => openEdit(e, r)}>Duzenle</button>
                             <button className="btn btn-danger btn-sm" style={{ fontSize: '10px', padding: '3px 8px' }}
-                              onClick={() => { if (confirm('Bu mesai kaydini silmek istediginizden emin misiniz?')) deleteMut.mutate(r.id) }}>
+                              onClick={async () => { if (await confirmDialog({ title: 'Mesai Kaydı Sil', body: 'Bu mesai kaydını silmek istediğinizden emin misiniz?', danger: true })) deleteMut.mutate(r.id) }}>
                               Sil
                             </button>
                           </div>
@@ -3152,7 +3160,7 @@ function OvertimeTab({ departments, onPersonClick }) {
                 {updateMut.isPending ? 'Kaydediliyor...' : 'Kaydet'}
               </button>
               <button className="btn btn-danger"
-                onClick={() => { if (confirm('Sil?')) deleteMut.mutate(editRecord.id) }}>
+                onClick={async () => { if (await confirmDialog({ title: 'Sil', body: 'Bu kayıt silinsin mi?', danger: true })) deleteMut.mutate(editRecord.id) }}>
                 Sil
               </button>
             </div>
@@ -3176,10 +3184,10 @@ function DepartmentsTab() {
 
   const { data: deptSummary = [] } = useQuery({ queryKey: ['departments-summary'], queryFn: () => api.get('/shifts/departments/summary').then(r => r.data) })
 
-  const createDept = useMutation({ mutationFn: data => api.post('/shifts/departments', data), onSuccess: () => { qc.invalidateQueries({ queryKey: ['departments'] }); qc.invalidateQueries({ queryKey: ['departments-summary'] }); setEditDept(null) }, onError: e => alert(e.response?.data?.error || 'Hata') })
-  const updateDept = useMutation({ mutationFn: ({ id, ...data }) => api.put(`/shifts/departments/${id}`, data), onSuccess: () => { qc.invalidateQueries({ queryKey: ['departments'] }); qc.invalidateQueries({ queryKey: ['departments-summary'] }); setEditDept(null) }, onError: e => alert(e.response?.data?.error || 'Hata') })
+  const createDept = useMutation({ mutationFn: data => api.post('/shifts/departments', data), onSuccess: () => { qc.invalidateQueries({ queryKey: ['departments'] }); qc.invalidateQueries({ queryKey: ['departments-summary'] }); setEditDept(null) }, onError: toastErr })
+  const updateDept = useMutation({ mutationFn: ({ id, ...data }) => api.put(`/shifts/departments/${id}`, data), onSuccess: () => { qc.invalidateQueries({ queryKey: ['departments'] }); qc.invalidateQueries({ queryKey: ['departments-summary'] }); setEditDept(null) }, onError: toastErr })
   const deleteDept = useMutation({ mutationFn: (id) => api.delete(`/shifts/departments/${id}`), onSuccess: () => { qc.invalidateQueries({ queryKey: ['departments'] }); qc.invalidateQueries({ queryKey: ['departments-summary'] }) } })
-  const assignMut = useMutation({ mutationFn: data => api.post('/shifts/departments/assign', data), onSuccess: () => { qc.invalidateQueries({ queryKey: ['departments-summary'] }); qc.invalidateQueries({ queryKey: ['staff-list'] }); setAssignModal(false); setAssignForm({ staff_id: '', dept_id: '' }) }, onError: e => alert(e.response?.data?.error || 'Hata') })
+  const assignMut = useMutation({ mutationFn: data => api.post('/shifts/departments/assign', data), onSuccess: () => { qc.invalidateQueries({ queryKey: ['departments-summary'] }); qc.invalidateQueries({ queryKey: ['staff-list'] }); setAssignModal(false); setAssignForm({ staff_id: '', dept_id: '' }) }, onError: toastErr })
 
   const COLOR_OPTIONS = ['bg-red-600', 'bg-green-600', 'bg-orange-500', 'bg-blue-600', 'bg-yellow-500', 'bg-lime-500', 'bg-pink-500', 'bg-purple-600']
   const maxCount = Math.max(...deptSummary.map(d => d.staff_count || 0), 1)
@@ -3220,7 +3228,7 @@ function DepartmentsTab() {
                     </div>
                     <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
                       <button className="btn btn-ghost btn-sm" onClick={() => { setDeptForm({ name: d.name, color_class: d.color_class || 'bg-blue-600', description: d.description || '' }); setEditDept(d) }}>Duzenle</button>
-                      <button className="btn btn-danger btn-sm" onClick={() => { if (confirm(`${d.name} bolumunu silmek istediginizden emin misiniz?`)) deleteDept.mutate(d.id) }}>Sil</button>
+                      <button className="btn btn-danger btn-sm" onClick={async () => { if (await confirmDialog({ title: 'Bölüm Sil', body: `${d.name} bölümünü silmek istediğinizden emin misiniz?`, danger: true })) deleteDept.mutate(d.id) }}>Sil</button>
                     </div>
                   </div>
                 )
@@ -3290,7 +3298,7 @@ function SwapTab() {
   const [form, setForm] = useState({ requester_id: '', target_id: '', swap_date: '', reason: '' })
 
   const { data: swaps = [] } = useQuery({ queryKey: ['swaps'], queryFn: () => api.get('/shifts/swaps').then(r => r.data) })
-  const createSwap = useMutation({ mutationFn: data => api.post('/shifts/swaps', data), onSuccess: () => { qc.invalidateQueries({ queryKey: ['swaps'] }); setShowForm(false); setForm({ requester_id: '', target_id: '', swap_date: '', reason: '' }) }, onError: e => alert(e.response?.data?.error || 'Hata') })
+  const createSwap = useMutation({ mutationFn: data => api.post('/shifts/swaps', data), onSuccess: () => { qc.invalidateQueries({ queryKey: ['swaps'] }); setShowForm(false); setForm({ requester_id: '', target_id: '', swap_date: '', reason: '' }) }, onError: toastErr })
   const approveMut = useMutation({ mutationFn: (id) => api.patch(`/shifts/swaps/${id}/approve`), onSuccess: () => qc.invalidateQueries({ queryKey: ['swaps'] }) })
   const rejectMut = useMutation({ mutationFn: (id) => api.patch(`/shifts/swaps/${id}/reject`), onSuccess: () => qc.invalidateQueries({ queryKey: ['swaps'] }) })
 
@@ -3366,10 +3374,10 @@ function SettingsTab({ departments, shiftDefs }) {
   const [defForm, setDefForm] = useState({ name: '', start_hour: '', end_hour: '', color_class: 'bg-blue-400' })
   const [rotForm, setRotForm] = useState({ dept_id: '', staff_ids: '', shift_def_ids: '', start_date: '', weeks: '4' })
 
-  const createDef = useMutation({ mutationFn: data => api.post('/shifts/definitions', data), onSuccess: () => { qc.invalidateQueries({ queryKey: ['shift-defs'] }); setDefModal(null) }, onError: e => alert(e.response?.data?.error || 'Hata') })
-  const updateDef = useMutation({ mutationFn: ({ id, ...data }) => api.put(`/shifts/definitions/${id}`, data), onSuccess: () => { qc.invalidateQueries({ queryKey: ['shift-defs'] }); setDefModal(null) }, onError: e => alert(e.response?.data?.error || 'Hata') })
+  const createDef = useMutation({ mutationFn: data => api.post('/shifts/definitions', data), onSuccess: () => { qc.invalidateQueries({ queryKey: ['shift-defs'] }); setDefModal(null) }, onError: toastErr })
+  const updateDef = useMutation({ mutationFn: ({ id, ...data }) => api.put(`/shifts/definitions/${id}`, data), onSuccess: () => { qc.invalidateQueries({ queryKey: ['shift-defs'] }); setDefModal(null) }, onError: toastErr })
   const deleteDef = useMutation({ mutationFn: (id) => api.delete(`/shifts/definitions/${id}`), onSuccess: () => qc.invalidateQueries({ queryKey: ['shift-defs'] }) })
-  const applyRotation = useMutation({ mutationFn: data => api.post('/shifts/schedule/rotation', data), onSuccess: () => { qc.invalidateQueries({ queryKey: ['schedule'] }); alert('Rotasyon basariyla uygulandi.') }, onError: e => alert(e.response?.data?.error || 'Hata') })
+  const applyRotation = useMutation({ mutationFn: data => api.post('/shifts/schedule/rotation', data), onSuccess: () => { qc.invalidateQueries({ queryKey: ['schedule'] }); toastOk('Rotasyon başarıyla uygulandı') }, onError: toastErr })
 
   const DEF_COLORS = ['bg-blue-400', 'bg-orange-400', 'bg-indigo-600']
 
@@ -3400,7 +3408,7 @@ function SettingsTab({ departments, shiftDefs }) {
                       <td>
                         <div style={{ display: 'flex', gap: '6px' }}>
                           <button className="btn btn-ghost btn-sm" onClick={() => { setDefForm({ name: s.name, start_hour: s.start_hour?.toString() || '', end_hour: s.end_hour?.toString() || '', color_class: s.color_class || 'bg-blue-400' }); setDefModal(s) }}>Duzenle</button>
-                          <button className="btn btn-danger btn-sm" onClick={() => { if (confirm(`${s.name} tanimini silmek istediginizden emin misiniz?`)) deleteDef.mutate(s.id) }}>Sil</button>
+                          <button className="btn btn-danger btn-sm" onClick={async () => { if (await confirmDialog({ title: 'Tanımı Sil', body: `${s.name} tanımını silmek istediğinizden emin misiniz?`, danger: true })) deleteDef.mutate(s.id) }}>Sil</button>
                         </div>
                       </td>
                     </tr>

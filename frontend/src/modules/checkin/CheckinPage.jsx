@@ -7,6 +7,7 @@ import { useDraft } from '../../shared/hooks/useDraft.js'
 import DraftBanner from '../../shared/components/DraftBanner.jsx'
 import ZimmetForm from './ZimmetForm.jsx'
 import CsvImport from './CsvImport.jsx'
+import { useToastStore } from '../../shared/store/toastStore.js'
 
 const ALL_BLOCKS = ['M1','M2','M3','S1','S2','S3']
 const STEPS = [
@@ -16,19 +17,28 @@ const STEPS = [
   { key: 'zimmet', label: 'ZİMMET' },
 ]
 
-function StepBar({ step }) {
+function StepBar({ step, onStepClick }) {
   return (
     <div style={{ display: 'flex', gap: '0', marginBottom: '24px', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
       {STEPS.map((s, i) => {
         const done = i < step, active = i === step
+        const clickable = done && typeof onStepClick === 'function'
         return (
           <div key={s.key} style={{ flex: '1 0 auto', display: 'flex', alignItems: 'center', minWidth: 0 }}>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{
-                display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 8px', borderRadius: '7px',
-                background: active ? 'rgba(240,165,0,.1)' : done ? 'rgba(39,201,106,.08)' : 'var(--surface2)',
-                border: `1px solid ${active ? 'rgba(240,165,0,.3)' : done ? 'rgba(39,201,106,.2)' : 'var(--border)'}`,
-              }}>
+              <div
+                onClick={clickable ? () => onStepClick(i) : undefined}
+                title={clickable ? `${s.label} adımına dön` : undefined}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 8px', borderRadius: '7px',
+                  background: active ? 'rgba(240,165,0,.1)' : done ? 'rgba(39,201,106,.08)' : 'var(--surface2)',
+                  border: `1px solid ${active ? 'rgba(240,165,0,.3)' : done ? 'rgba(39,201,106,.2)' : 'var(--border)'}`,
+                  cursor: clickable ? 'pointer' : 'default',
+                  transition: 'transform 0.15s',
+                }}
+                onMouseEnter={e => { if (clickable) e.currentTarget.style.transform = 'translateY(-1px)' }}
+                onMouseLeave={e => { if (clickable) e.currentTarget.style.transform = 'none' }}
+              >
                 <div style={{
                   width: '20px', height: '20px', borderRadius: '50%', flexShrink: 0,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -416,6 +426,7 @@ const INIT_FORM_DATA = { full_name: '', company: '', job_title: '', preferred_bl
 
 // ── Main Page ───────────────────────────────────────────────────────────────
 export default function CheckinPage() {
+  const addToast = useToastStore(s => s.addToast)
   const [step, setStep] = useState(0)
   const [searchMode, setSearchMode] = useState('name')
   const [tcNo, setTcNo] = useState('')
@@ -549,7 +560,7 @@ export default function CheckinPage() {
       qc.invalidateQueries({ queryKey: ['available-rooms'] })
       qc.invalidateQueries({ queryKey: ['checkin-stats'] })
     } catch (e) {
-      alert(e.response?.data?.error || 'Hata oluştu')
+      addToast(e.response?.data?.error || 'Hata oluştu', 'error')
     } finally {
       setQuickFillLoading(false)
     }
@@ -585,7 +596,7 @@ export default function CheckinPage() {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', alignItems: 'start' }}>
         {/* LEFT: Check-in flow */}
         <div>
-          <StepBar step={step} />
+          <StepBar step={step} onStepClick={(i) => setStep(i)} />
 
           {error && (
             <div className="alert alert-danger" style={{ marginBottom: '14px' }}>
@@ -668,7 +679,7 @@ export default function CheckinPage() {
                         className="form-input" maxLength={11} placeholder="11 haneli TC kimlik no" autoFocus /></div>
                     <button onClick={handleLookup} disabled={loading || !tcNo} className="btn btn-primary"
                       style={{ width: '100%', justifyContent: 'center', opacity: (loading || !tcNo) ? 0.6 : 1 }}>
-                      {loading ? 'SORGULANIYIR...' : '⊕ SORGULA'}</button>
+                      {loading ? 'SORGULANIYOR...' : '⊕ SORGULA'}</button>
                   </>
                 )}
 
@@ -679,7 +690,7 @@ export default function CheckinPage() {
                         className="form-input" placeholder="Pasaport numarası" autoFocus /></div>
                     <button onClick={handleLookup} disabled={loading || !passportNo} className="btn btn-primary"
                       style={{ width: '100%', justifyContent: 'center', opacity: (loading || !passportNo) ? 0.6 : 1 }}>
-                      {loading ? 'SORGULANIYIR...' : '⊕ SORGULA'}</button>
+                      {loading ? 'SORGULANIYOR...' : '⊕ SORGULA'}</button>
                   </>
                 )}
               </div>

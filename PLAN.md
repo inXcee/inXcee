@@ -80,10 +80,12 @@
 - [x] Perf index'leri: idx_personnel_fullname, idx_audit_user, idx_notif_role (3 yeni index)
 - [x] Cron PDF stream leak — stream.on('error') + try/finally ile destroy, fd leak engellendi
 
-### Faz 9 — UX Akışı
-- [ ] Y5: Checkout Step 2/3 birleştir (çifte onay kafa karıştırıyor)
-- [ ] Y6: Shifts'te `alert()` → toast (×15 yer)
-- [ ] Ortak ConfirmDialog component (26 yerde browser confirm var)
-- [ ] Filter URL state (Reports, Discipline)
-- [ ] CheckinPage StepBar tıklanabilir geri-dönüş
-- [ ] "SORGULANIYIR" typo + Türkçe karakter encoding düzeltmeleri
+### Faz 9 — UX Akışı ✅ (kısmen — filter URL state ayrı fazda)
+- [x] Y5: Checkout Step 2 → direkt mutate (çifte onay kaldırıldı), Step 3 sadece başarı ekranı
+- [x] Y6: ShiftsPage tüm alert() + confirm() çağrıları toast/confirmDialog'a geçti (~20 yer)
+- [x] Ortak ConfirmDialog component (`shared/components/ConfirmDialog.jsx`) — Promise tabanlı, App.jsx'e mount edildi
+- [x] CheckinPage StepBar — done adımlar tıklanabilir, geri dönüş için `onStepClick` prop
+- [x] "SORGULANIYIR" typo → "SORGULANIYOR"; CheckinPage alert → toast
+- [x] UsersPage delete onError eklendi + confirmDialog kullanıyor; MaintenancePage teknisyen silme confirmDialog kullanıyor
+- [ ] Filter URL state (Reports, Discipline) — ERTELENDİ (ayrı küçük faz)
+- [ ] Kalan ~20 browser confirm() çağrısı (DisciplinePage cards, vs) — kademeli olarak ConfirmDialog'a geçirilecek
