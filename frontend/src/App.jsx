@@ -28,6 +28,7 @@ const LaundryHub = lazy(() => import('./modules/laundry/LaundryHub.jsx'))
 const AuditPage = lazy(() => import('./modules/admin/AuditPage.jsx'))
 const UsersPage = lazy(() => import('./modules/admin/UsersPage.jsx'))
 const SettingsPage = lazy(() => import('./modules/admin/SettingsPage.jsx'))
+const SettingsLayout = lazy(() => import('./modules/admin/SettingsLayout.jsx'))
 const KioskPinPage = lazy(() => import('./modules/admin/KioskPinPage.jsx'))
 const AnnouncementsPage = lazy(() => import('./modules/admin/AnnouncementsPage.jsx'))
 const AvsWorkersPage = lazy(() => import('./modules/admin/AvsWorkersPage.jsx'))
@@ -158,10 +159,22 @@ export default function App() {
             <Route path="system" element={<RoleRoute roles={['campus_manager']}><SystemHealthPage /></RoleRoute>} />
             <Route path="notifications/preferences" element={<NotificationPrefsPage />} />
             <Route path="users" element={<RoleRoute roles={['campus_manager']}><UsersPage /></RoleRoute>} />
-            <Route path="settings" element={<RoleRoute roles={['campus_manager']}><SettingsPage /></RoleRoute>} />
             <Route path="kiosk-pins" element={<RoleRoute roles={['campus_manager']}><KioskPinPage /></RoleRoute>} />
             <Route path="announcements" element={<RoleRoute roles={['campus_manager']}><AnnouncementsPage /></RoleRoute>} />
             <Route path="avs-workers" element={<RoleRoute roles={['campus_manager']}><AvsWorkersPage /></RoleRoute>} />
+            <Route path="settings" element={<RoleRoute roles={['campus_manager']}><SettingsLayout /></RoleRoute>}>
+              <Route index element={<Navigate to="email" replace />} />
+              <Route path="email" element={<SettingsPage />} />
+              <Route path="users" element={<UsersPage />} />
+              <Route path="kiosk-pins" element={<KioskPinPage />} />
+              <Route path="announcements" element={<AnnouncementsPage />} />
+              <Route path="avs-workers" element={<AvsWorkersPage />} />
+              <Route path="audit" element={<AuditPage />} />
+              <Route path="error-log" element={<ErrorLogPage />} />
+              <Route path="backup" element={<BackupPage />} />
+              <Route path="kvkk-admin" element={<KvkkAdminPage />} />
+              <Route path="system" element={<SystemHealthPage />} />
+            </Route>
           </Route>
           <Route path="/mobile" element={<MobileLogin />} />
           <Route path="/mobile/housekeeper" element={<HousekeeperShell />}>

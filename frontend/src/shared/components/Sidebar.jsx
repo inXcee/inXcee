@@ -31,12 +31,12 @@ const NAV_GROUPS = [
       { to: '/discipline', icon: '\u26A0', label: 'Disiplin', roles: ['campus_manager','shift_supervisor'] },
       { to: '/shifts', icon: '\u29D7', label: 'Vardiyalar', roles: ['campus_manager','shift_supervisor'] },
       { to: '/laundry', icon: '\u2668', label: 'Camasirhane', roles: ['campus_manager','laundry'] },
+      { to: '/inventory', icon: '\u25A8', label: 'Envanter', roles: ['campus_manager','shift_supervisor','laundry','housekeeper'] },
     ]
   },
   {
     label: 'YONETIM',
     links: [
-      { to: '/inventory', icon: '\u25A8', label: 'Envanter', roles: ['campus_manager','shift_supervisor','laundry','housekeeper'] },
       { to: '/users', icon: '\u2302', label: 'Kullanicilar', roles: ['campus_manager'] },
       { to: '/kiosk-pins', icon: '\u2316', label: 'Kiosk PIN', roles: ['campus_manager'] },
       { to: '/announcements', icon: '📢', label: 'Duyurular', roles: ['campus_manager'] },
