@@ -31,22 +31,13 @@ const NAV_GROUPS = [
       { to: '/discipline', icon: '\u26A0', label: 'Disiplin', roles: ['campus_manager','shift_supervisor'] },
       { to: '/shifts', icon: '\u29D7', label: 'Vardiyalar', roles: ['campus_manager','shift_supervisor'] },
       { to: '/laundry', icon: '\u2668', label: 'Camasirhane', roles: ['campus_manager','laundry'] },
-      { to: '/inventory', icon: '\u25A8', label: 'Envanter', roles: ['campus_manager','shift_supervisor','laundry','housekeeper'] },
     ]
   },
   {
     label: 'YONETIM',
     links: [
-      { to: '/users', icon: '\u2302', label: 'Kullanicilar', roles: ['campus_manager'] },
-      { to: '/kiosk-pins', icon: '\u2316', label: 'Kiosk PIN', roles: ['campus_manager'] },
-      { to: '/announcements', icon: '📢', label: 'Duyurular', roles: ['campus_manager'] },
-      { to: '/avs-workers', icon: '👷', label: 'AVS Calisanlari', roles: ['campus_manager'] },
+      { to: '/inventory', icon: '\u25a8', label: 'Envanter', roles: ['campus_manager','shift_supervisor','laundry','housekeeper'] },
       { to: '/laundry-kiosk', icon: '🧺', label: 'Camasir Kiosk', roles: ['campus_manager'], external: true },
-      { to: '/audit', icon: '\u2637', label: 'Audit Log', roles: ['campus_manager'] },
-      { to: '/error-log', icon: '\u26a0', label: 'Hata Loglari', roles: ['campus_manager'] },
-      { to: '/backup', icon: '\u26c1', label: 'Yedekleme', roles: ['campus_manager'] },
-      { to: '/kvkk-admin', icon: '\u00a7', label: 'KVKK', roles: ['campus_manager'] },
-      { to: '/system', icon: '\u2665', label: 'Sistem Sagligi', roles: ['campus_manager'] },
       { to: '/settings', icon: '\u2393', label: 'Ayarlar', roles: ['campus_manager'] },
     ]
   },
