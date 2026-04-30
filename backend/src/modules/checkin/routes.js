@@ -67,7 +67,7 @@ checkinRouter.post('/zimmet/sign', ...allowed, (req, res) => {
   const { personnel_id, signature } = req.body
   if (!personnel_id || !signature) return res.status(400).json({ error: 'Personel ID ve imza gerekli' })
   if (!signature.startsWith('data:image/')) return res.status(400).json({ error: 'Geçersiz imza formatı' })
-  svc.signZimmetService(personnel_id, signature)
+  svc.signZimmetService(personnel_id, signature, req.user.id)
   res.json({ ok: true })
 })
 

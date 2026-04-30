@@ -147,6 +147,10 @@ export function verifyToken(token) {
   return jwt.verify(token, SECRET)
 }
 
+// Expired token'i en fazla 24 saat icinde yenilemeye izin ver. Daha eski token'lar
+// (calinmis veya unutulmus oturumlar) reddedilir — kullanici tekrar login olmali.
+const REFRESH_GRACE_MS = 24 * 60 * 60 * 1000
+
 export function refreshToken(oldToken) {
   let payload
   try {
@@ -154,6 +158,9 @@ export function refreshToken(oldToken) {
   } catch (e) {
     if (e.name === 'TokenExpiredError') {
       payload = jwt.decode(oldToken)
+      if (payload?.exp && Date.now() - payload.exp * 1000 > REFRESH_GRACE_MS) {
+        return { error: 'Token suresi cok uzun zaman once doldu, lutfen tekrar giris yapin', status: 401 }
+      }
     } else {
       return { error: 'Geçersiz token', status: 401 }
     }

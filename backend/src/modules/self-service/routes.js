@@ -208,7 +208,10 @@ selfServiceRouter.put('/laundry-kiosk/bags/:id/status', requireAvsKiosk, (req, r
   const ALLOWED = ['pending_collection', 'washing', 'ironing', 'ready', 'delivered']
   if (!ALLOWED.includes(status)) return res.status(400).json({ error: 'Geçersiz durum' })
   try {
-    updateItemStatusQuery(Number(req.params.id), status)
+    const id = Number(req.params.id)
+    updateItemStatusQuery(id, status)
+    getDB().prepare("UPDATE laundry_items SET last_modified_worker_id=?, last_modified_at=datetime('now') WHERE id=?")
+      .run(req.user.workerId || null, id)
     res.json({ ok: true })
   } catch (e) { res.status(500).json({ error: 'Sunucu hatası' }) }
 })
@@ -259,8 +262,8 @@ selfServiceRouter.put('/laundry-kiosk/bags/:id/ironing', requireAvsKiosk, (req, 
   const { needs_ironing } = req.body
   try {
     const db = getDB()
-    db.prepare("UPDATE laundry_items SET needs_ironing=?, updated_at=datetime('now') WHERE id=?")
-      .run(needs_ironing ? 1 : 0, Number(req.params.id))
+    db.prepare("UPDATE laundry_items SET needs_ironing=?, last_modified_worker_id=?, last_modified_at=datetime('now'), updated_at=datetime('now') WHERE id=?")
+      .run(needs_ironing ? 1 : 0, req.user.workerId || null, Number(req.params.id))
     res.json({ ok: true })
   } catch (e) { res.status(500).json({ error: 'Sunucu hatası' }) }
 })
@@ -271,8 +274,8 @@ selfServiceRouter.post('/laundry-kiosk/bags/:id/ironing-complete', requireAvsKio
     const item = db.prepare('SELECT id, status FROM laundry_items WHERE id=?').get(Number(req.params.id))
     if (!item) return res.status(404).json({ error: 'Torba bulunamadı' })
     if (item.status !== 'ironing') return res.status(400).json({ error: 'Torba ironing durumunda değil' })
-    db.prepare("UPDATE laundry_items SET status='ready', updated_at=datetime('now') WHERE id=?")
-      .run(item.id)
+    db.prepare("UPDATE laundry_items SET status='ready', last_modified_worker_id=?, last_modified_at=datetime('now'), updated_at=datetime('now') WHERE id=?")
+      .run(req.user.workerId || null, item.id)
     res.json({ ok: true })
   } catch (e) { res.status(500).json({ error: 'Sunucu hatası' }) }
 })
@@ -289,9 +292,10 @@ selfServiceRouter.post('/laundry-kiosk/bags/:id/deliver', requireAvsKiosk, (req,
     if (item.status !== 'ready') return res.status(400).json({ error: 'Torba ready durumunda değil' })
     db.prepare(`
       UPDATE laundry_items
-      SET status='delivered', delivered_name=?, file_count=?, occupant_signature=?, updated_at=datetime('now')
+      SET status='delivered', delivered_name=?, file_count=?, occupant_signature=?,
+          last_modified_worker_id=?, last_modified_at=datetime('now'), updated_at=datetime('now')
       WHERE id=?
-    `).run(delivered_name.trim(), fc, signature || null, item.id)
+    `).run(delivered_name.trim(), fc, signature || null, req.user.workerId || null, item.id)
     res.json({ ok: true })
   } catch (e) { res.status(500).json({ error: 'Sunucu hatası' }) }
 })

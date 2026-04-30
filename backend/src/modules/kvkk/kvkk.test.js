@@ -80,3 +80,45 @@ describe('KVKK — personnel export', () => {
     expect(res.status).toBe(403)
   })
 })
+
+describe('KVKK — anonymize (m.11)', () => {
+  let personId
+  beforeAll(() => {
+    const r = getDB().prepare(`
+      INSERT INTO personnel(tc_no, full_name, phone_number, company)
+      VALUES('98765432109', 'Anonymize Test', '5551234567', 'TestCo')
+    `).run()
+    personId = r.lastInsertRowid
+  })
+
+  it('checkout yapmamış personel anonimleştirilemez', async () => {
+    const res = await request(app).post(`/api/kvkk/personnel/${personId}/anonymize`)
+      .set('Authorization', `Bearer ${adminToken}`)
+    expect(res.status).toBe(400)
+    expect(res.body.error).toMatch(/çıkış yapmış/i)
+  })
+
+  it('checkout sonrası anonimleştirme TC/telefon/ad alanlarını siler', async () => {
+    getDB().prepare("UPDATE personnel SET check_out_date=datetime('now') WHERE id=?").run(personId)
+    const res = await request(app).post(`/api/kvkk/personnel/${personId}/anonymize`)
+      .set('Authorization', `Bearer ${adminToken}`)
+    expect(res.status).toBe(200)
+    expect(res.body.ok).toBe(true)
+    const after = getDB().prepare('SELECT full_name, tc_no, phone_number FROM personnel WHERE id=?').get(personId)
+    expect(after.tc_no).toBeNull()
+    expect(after.phone_number).toBeNull()
+    expect(after.full_name).toMatch(/^Anonim #/)
+  })
+
+  it('non-admin reddedilir', async () => {
+    const res = await request(app).post(`/api/kvkk/personnel/${personnelId}/anonymize`)
+      .set('Authorization', `Bearer ${userToken}`)
+    expect(res.status).toBe(403)
+  })
+
+  it('var olmayan personel 404 döner', async () => {
+    const res = await request(app).post('/api/kvkk/personnel/99999/anonymize')
+      .set('Authorization', `Bearer ${adminToken}`)
+    expect(res.status).toBe(404)
+  })
+})

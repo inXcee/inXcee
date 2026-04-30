@@ -63,6 +63,26 @@ describe('Error Log — POST /', () => {
     })
     expect(res.status).toBe(201)
   })
+
+  it('mesaj 500 karaktere kirpilir (Y10)', async () => {
+    const longMsg = 'a'.repeat(2000)
+    const res = await request(app).post('/api/error-log')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ source: 'frontend', message: longMsg })
+    expect(res.status).toBe(201)
+    const stored = getDB().prepare('SELECT message FROM error_log ORDER BY id DESC LIMIT 1').get()
+    expect(stored.message.length).toBeLessThanOrEqual(500)
+  })
+
+  it('stack 4000 karaktere kirpilir', async () => {
+    const longStack = 'b'.repeat(8000)
+    const res = await request(app).post('/api/error-log')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ source: 'frontend', message: 'short', stack: longStack })
+    expect(res.status).toBe(201)
+    const stored = getDB().prepare('SELECT stack FROM error_log ORDER BY id DESC LIMIT 1').get()
+    expect(stored.stack.length).toBeLessThanOrEqual(4000)
+  })
 })
 
 describe('Error Log — GET /', () => {

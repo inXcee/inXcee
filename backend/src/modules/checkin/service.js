@@ -15,12 +15,21 @@ export const getCompanySuggestionsService = q.getCompanySuggestions
 export const getJobSuggestionsService  = q.getJobSuggestions
 export const getAvailableRoomsService  = q.getAvailableRooms
 export const getOverallStatsService    = q.getOverallStats
-export const signZimmetService         = q.signZimmet
-export const zimmetService             = q.addZimmet
 export const getPersonnelZimmetService = q.getPersonnelZimmet
 export const returnZimmetService       = q.returnZimmet
 export const returnAllZimmetService    = q.returnAllZimmet
 export const getUnreturnedZimmetService = q.getUnreturnedZimmet
+
+export function zimmetService(personnelId, items, userId) {
+  q.addZimmet(personnelId, items, userId)
+  const itemCount = Array.isArray(items) ? items.length : 0
+  logAudit(userId, 'zimmet_create', 'checkin', personnelId, `${itemCount} kalem zimmet eklendi`)
+}
+
+export function signZimmetService(personnelId, signature, userId) {
+  q.signZimmet(personnelId, signature)
+  logAudit(userId, 'zimmet_sign', 'checkin', personnelId, 'zimmet imza alindi')
+}
 
 export function registerService(data, userId) {
   const existing = q.lookupPerson(data.tc_no, data.passport_no)

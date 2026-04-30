@@ -46,6 +46,39 @@ export function setKvkkPolicyService(text) {
   return { ok: true }
 }
 
+// KVKK m.11 — silme/anonimleştirme: TC, pasaport, telefon ve fotoğraf
+// kalıcı olarak NULL yapılır. Kayıt silinmez (audit/raporlama bütünlüğü için);
+// ama kişi artık tanımlanabilir değildir.
+// Yalnızca check-out yapılmış personel anonimleştirilebilir.
+export function anonymizePersonnelDataService(personnelId, userId) {
+  const db = getDB()
+  const id = parseInt(personnelId, 10)
+  if (!id) return { error: 'Geçersiz personel ID', status: 400 }
+
+  const p = db.prepare('SELECT id, full_name, check_out_date FROM personnel WHERE id=?').get(id)
+  if (!p) return { error: 'Personel bulunamadı', status: 404 }
+  if (!p.check_out_date) return { error: 'Sadece çıkış yapmış personel anonimleştirilebilir', status: 400 }
+
+  const tx = db.transaction(() => {
+    db.prepare(`
+      UPDATE personnel
+      SET full_name = 'Anonim #' || id,
+          tc_no = NULL,
+          passport_no = NULL,
+          phone_number = NULL,
+          photo_url = NULL,
+          emergency_name = NULL,
+          emergency_phone = NULL,
+          kiosk_pin = NULL
+      WHERE id = ?
+    `).run(id)
+    // Kisisel notlar tablosu varsa metni temizle
+    try { db.prepare('UPDATE personnel_notes SET note = ? WHERE personnel_id = ?').run('[anonim]', id) } catch { /* tablo/kolon yoksa atla */ }
+  })
+  tx()
+  return { ok: true, personnel_id: id, anonymized_at: new Date().toISOString(), by_user_id: userId }
+}
+
 // Bir personelin tüm kişisel verisini topla
 export function exportPersonnelDataService(personnelId) {
   const db = getDB()

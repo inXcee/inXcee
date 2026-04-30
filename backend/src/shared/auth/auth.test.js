@@ -3,8 +3,9 @@ import request from 'supertest'
 import app from '../../app.js'
 import { initDB, getDB } from '../db/index.js'
 import { seedDev } from '../db/seed.js'
-import { verifyToken, loginKioskById, loginKiosk } from './service.js'
+import { verifyToken, loginKioskById, loginKiosk, refreshToken } from './service.js'
 import bcrypt from 'bcryptjs'
+import jwt from 'jsonwebtoken'
 
 let managerToken
 
@@ -100,6 +101,30 @@ describe('token refresh', () => {
   it('token olmadan 401 döner', async () => {
     const res = await request(app).post('/api/auth/refresh')
     expect(res.status).toBe(401)
+  })
+
+  it('expired ama 24 saatten yeni token yenilenebilir', () => {
+    // 1 saat once expired olmus token
+    const u = getDB().prepare("SELECT id, role, username, full_name FROM users WHERE username='mudur'").get()
+    const recentExpired = jwt.sign(
+      { id: u.id, role: u.role, username: u.username, full_name: u.full_name },
+      process.env.JWT_SECRET,
+      { expiresIn: '-1h' }
+    )
+    const result = refreshToken(recentExpired)
+    expect(result.token).toBeTruthy()
+  })
+
+  it('24 saatten daha eski expired token reddedilir', () => {
+    const u = getDB().prepare("SELECT id, role, username, full_name FROM users WHERE username='mudur'").get()
+    const staleExpired = jwt.sign(
+      { id: u.id, role: u.role, username: u.username, full_name: u.full_name },
+      process.env.JWT_SECRET,
+      { expiresIn: '-25h' }
+    )
+    const result = refreshToken(staleExpired)
+    expect(result.status).toBe(401)
+    expect(result.error).toMatch(/tekrar giris/)
   })
 })
 

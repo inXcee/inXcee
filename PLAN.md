@@ -52,3 +52,38 @@
 - [x] Otomatik test + build + console.log kontrolü
 - [x] Pre-deploy & post-deploy smoke test scriptleri (scripts/deploy/)
 - [ ] Staging ortamı (Render/Vercel'de ayrı branch deploy gerekli)
+
+---
+
+## 2026-04-30 Audit Fazları (4 paralel ajan denetimi sonucu)
+
+### Faz 6 — Güvenlik Bariyeri ✅
+- [x] K2: Token refresh — 24 saatlik grace window, daha eski expired token'lar reddedilir
+- [x] K3: IDOR laundry torba — `last_modified_worker_id` ile accountability tracking
+- [x] K4: Auth'suz endpoint'ler — authLimiter (30/15dk per IP) yeterli; kiosk-search/avs-search/blocks pre-login kiosk UX için kasıtlı public, blok isimleri kamp ortamında hassas değil
+- [x] Y7: KVKK anonymize endpoint (`POST /api/kvkk/personnel/:id/anonymize`) — sadece check-out yapmış için, TC/pasaport/telefon/foto NULL
+- [x] Y8: Zimmet + imza audit log (zimmet_create, zimmet_sign action'lari)
+- [x] Y9: Mobile PIN — per-user lockout (5 deneme = 15dk kilit), users tablosuna pin_attempts/pin_locked_until kolonu
+- [x] Y10: Error log POST — message 500/stack 4000/url 500/ua 500/context 2000 char kırpma
+
+### Faz 7 — Veri Tutarlılığı & Race
+- [ ] K1: assignRoom transaction içine al (race condition fix)
+- [ ] Y1: TC + pasaport ikisi de boş olamaz validasyonu
+- [ ] Y2: Maintenance sayfalama `_limit/_offset` düzelt
+- [ ] Y3: Laundry advanceItem stok düşme transaction içinde
+- [ ] Y4: Batch endpoint'lere item_ids.length ≤ 100 sınırı
+- [ ] DB CHECK constraints: stock_movements.delta, inventory_lots.quantity ≥ 0
+
+### Faz 8 — Production Reliability
+- [ ] K5: SSE heartbeat 30s ekle (Nginx timeout fix)
+- [ ] Y11: Backup off-site (S3/B2 push)
+- [ ] Perf index'leri: personnel.full_name, audit_log.user_id, notifications.target_role
+- [ ] Cron PDF stream leak fix
+
+### Faz 9 — UX Akışı
+- [ ] Y5: Checkout Step 2/3 birleştir (çifte onay kafa karıştırıyor)
+- [ ] Y6: Shifts'te `alert()` → toast (×15 yer)
+- [ ] Ortak ConfirmDialog component (26 yerde browser confirm var)
+- [ ] Filter URL state (Reports, Discipline)
+- [ ] CheckinPage StepBar tıklanabilir geri-dönüş
+- [ ] "SORGULANIYIR" typo + Türkçe karakter encoding düzeltmeleri

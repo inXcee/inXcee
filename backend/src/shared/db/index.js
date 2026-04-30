@@ -869,6 +869,14 @@ export function initDB() {
   } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] stock_movements rebuild:', e.message) }
   try { db.exec('DROP TABLE IF EXISTS stock_movements_new') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] stock_movements_new cleanup:', e.message) }
 
+  // ── Faz 6: Mobile PIN per-user lockout (Y9) ──
+  try { db.exec('ALTER TABLE users ADD COLUMN pin_attempts INTEGER DEFAULT 0') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] users.pin_attempts:', e.message) }
+  try { db.exec('ALTER TABLE users ADD COLUMN pin_locked_until DATETIME') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] users.pin_locked_until:', e.message) }
+
+  // ── Faz 6: Laundry status changes — accountability (K3) ──
+  try { db.exec('ALTER TABLE laundry_items ADD COLUMN last_modified_worker_id INTEGER') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] laundry_items.last_modified_worker_id:', e.message) }
+  try { db.exec('ALTER TABLE laundry_items ADD COLUMN last_modified_at DATETIME') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] laundry_items.last_modified_at:', e.message) }
+
   return db
 }
 
