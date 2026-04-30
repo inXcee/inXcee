@@ -13,8 +13,23 @@ export function createRequest({ location, description, priority, reporterUserId,
   return r.lastInsertRowid
 }
 
-export function getRequests({ status, search, priority, reporter_user_id } = {}) {
+function buildRequestsFilter({ status, search, priority, reporter_user_id }) {
+  let where = ' WHERE 1=1'
+  const params = []
+  if (status) { where += ' AND mr.status=?'; params.push(status) }
+  if (priority) { where += ' AND mr.priority=?'; params.push(priority) }
+  if (reporter_user_id) { where += ' AND mr.reporter_user_id=?'; params.push(reporter_user_id) }
+  if (search) {
+    where += ' AND (mr.location LIKE ? OR mr.description LIKE ? OR mr.wait_reason LIKE ?)'
+    const like = `%${search}%`
+    params.push(like, like, like)
+  }
+  return { where, params }
+}
+
+export function getRequests({ status, search, priority, reporter_user_id, _limit, _offset } = {}) {
   const db = getDB()
+  const { where, params } = buildRequestsFilter({ status, search, priority, reporter_user_id })
   let q = `
     SELECT mr.*,
       ru.full_name as reporter_name,
@@ -22,19 +37,19 @@ export function getRequests({ status, search, priority, reporter_user_id } = {})
     FROM maintenance_requests mr
     LEFT JOIN users ru ON ru.id = mr.reporter_user_id
     LEFT JOIN technicians t ON t.id = mr.assigned_to
-    WHERE 1=1
-  `
-  const params = []
-  if (status) { q += ' AND mr.status=?'; params.push(status) }
-  if (priority) { q += ' AND mr.priority=?'; params.push(priority) }
-  if (reporter_user_id) { q += ' AND mr.reporter_user_id=?'; params.push(reporter_user_id) }
-  if (search) {
-    q += ' AND (mr.location LIKE ? OR mr.description LIKE ? OR mr.wait_reason LIKE ?)'
-    const like = `%${search}%`
-    params.push(like, like, like)
+  ` + where +
+    ' ORDER BY CASE mr.priority WHEN \'high\' THEN 0 WHEN \'medium\' THEN 1 ELSE 2 END, mr.opened_at DESC'
+  if (_limit != null) {
+    q += ' LIMIT ? OFFSET ?'
+    params.push(Number(_limit), Number(_offset) || 0)
   }
-  q += ' ORDER BY CASE mr.priority WHEN \'high\' THEN 0 WHEN \'medium\' THEN 1 ELSE 2 END, mr.opened_at DESC'
   return db.prepare(q).all(...params)
+}
+
+export function countRequests({ status, search, priority, reporter_user_id } = {}) {
+  const db = getDB()
+  const { where, params } = buildRequestsFilter({ status, search, priority, reporter_user_id })
+  return db.prepare('SELECT COUNT(*) as c FROM maintenance_requests mr' + where).get(...params).c
 }
 
 export function getRequestById(id) {

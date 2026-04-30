@@ -66,13 +66,13 @@
 - [x] Y9: Mobile PIN — per-user lockout (5 deneme = 15dk kilit), users tablosuna pin_attempts/pin_locked_until kolonu
 - [x] Y10: Error log POST — message 500/stack 4000/url 500/ua 500/context 2000 char kırpma
 
-### Faz 7 — Veri Tutarlılığı & Race
-- [ ] K1: assignRoom transaction içine al (race condition fix)
-- [ ] Y1: TC + pasaport ikisi de boş olamaz validasyonu
-- [ ] Y2: Maintenance sayfalama `_limit/_offset` düzelt
-- [ ] Y3: Laundry advanceItem stok düşme transaction içinde
-- [ ] Y4: Batch endpoint'lere item_ids.length ≤ 100 sınırı
-- [ ] DB CHECK constraints: stock_movements.delta, inventory_lots.quantity ≥ 0
+### Faz 7 — Veri Tutarlılığı & Race ✅
+- [x] K1: assignRoom — db.transaction().immediate() ile atomik (count check + INSERT race-safe)
+- [~] Y1: TC + pasaport validasyonu — KULLANICI ERTELEDI (yabanci isci senaryosu icin ayri ele alinacak)
+- [x] Y2: Maintenance sayfalama — _limit/_offset queries.js'de okunuyor + countRequests fonksiyonu (filtreli total)
+- [x] Y3: Laundry advanceItem — tum DB yazmalari db.transaction().immediate() icinde, side-effect'ler (notification/whatsapp) disinda
+- [x] Y4: Batch endpoint'lere item_ids ≤ 100 sınırı (batch-assign/batch-lost/batch-deliver)
+- [x] DB CHECK constraints — schema.js'de stock_movements.quantity_after >= 0, inventory_lots.quantity >= 0 (yeni DB'ler icin)
 
 ### Faz 8 — Production Reliability
 - [ ] K5: SSE heartbeat 30s ekle (Nginx timeout fix)

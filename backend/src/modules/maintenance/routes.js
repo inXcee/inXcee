@@ -37,9 +37,8 @@ maintenanceRouter.get('/requests', ...techAccess, (req, res) => {
     if (query.reporter_user_id === 'me') query.reporter_user_id = req.user.id
     if (req.query.page || req.query.limit) {
       const { page, limit, offset } = paginate(req)
-      const db = getDB()
-      const total = db.prepare('SELECT COUNT(*) as c FROM maintenance_requests').get().c
       const data = svc.getRequestsService({ ...query, _limit: limit, _offset: offset })
+      const total = svc.countRequestsService(query)
       return res.json({ data, total, page, limit })
     }
     res.json(svc.getRequestsService(query))

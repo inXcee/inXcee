@@ -14,6 +14,7 @@ export function createRequestService(data) {
 }
 
 export const getRequestsService = q.getRequests
+export const countRequestsService = q.countRequests
 export const getRequestByIdService = q.getRequestById
 
 export function updateWaitReasonService(id, waitReason) {

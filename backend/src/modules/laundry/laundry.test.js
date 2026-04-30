@@ -646,6 +646,24 @@ describe('batch-assign', () => {
     expect(result.failed).toHaveLength(1)
     expect(result.failed[0].error).toMatch(/bakımda|maintenance/i)
   })
+
+  test('Y4: 101 item_ids reddedilir (route-level batch limit)', async () => {
+    const res = await request(app)
+      .post('/api/laundry/items/batch-assign')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ item_ids: Array.from({ length: 101 }, (_, i) => i + 1), machine_id: 1 })
+    expect(res.status).toBe(400)
+    expect(res.body.error).toMatch(/100/)
+  })
+
+  test('Y4: batch-lost 200 item_ids reddedilir', async () => {
+    const res = await request(app)
+      .post('/api/laundry/items/batch-lost')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ item_ids: Array.from({ length: 200 }, (_, i) => i + 1), notes: 'test' })
+    expect(res.status).toBe(400)
+    expect(res.body.error).toMatch(/100/)
+  })
 })
 
 describe('batch-lost', () => {

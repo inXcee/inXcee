@@ -175,7 +175,7 @@ CREATE TABLE IF NOT EXISTS stock_movements (
   item_id INTEGER NOT NULL REFERENCES inventory(id) ON DELETE CASCADE,
   type TEXT NOT NULL CHECK(type IN ('in','out','count','initial')),
   delta REAL NOT NULL,
-  quantity_after REAL NOT NULL,
+  quantity_after REAL NOT NULL CHECK(quantity_after >= 0),
   reason TEXT,
   created_by INTEGER NOT NULL REFERENCES users(id),
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -430,7 +430,7 @@ CREATE TABLE IF NOT EXISTS inventory_lots (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   item_id INTEGER NOT NULL REFERENCES inventory(id) ON DELETE CASCADE,
   lot_no TEXT,
-  quantity REAL NOT NULL,
+  quantity REAL NOT NULL CHECK(quantity >= 0),
   expiry_date DATE,
   received_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   supplier_id INTEGER REFERENCES suppliers(id),

@@ -263,29 +263,36 @@ export function suggestRoom(company, hometown, shiftType) {
 
 export function assignRoom(personnelId, roomId, assignedBy) {
   const db = getDB()
-  const room = db.prepare('SELECT * FROM rooms WHERE id=?').get(roomId)
-  const count = db.prepare('SELECT COUNT(*) as c FROM room_assignments WHERE room_id=? AND check_out_at IS NULL').get(roomId)
-  if (count.c >= room.active_beds) throw new Error('Oda dolu')
+  // Tum check + INSERT atomik olmali — yoksa iki es zamanlı istek aynı yatağa atanır.
+  // better-sqlite3 transaction'ı senkron BEGIN IMMEDIATE ile DB'yi yazma kilidine alır,
+  // ikinci transaction kendi BEGIN'inde busy_timeout kadar bekler.
+  let bedNo
+  const tx = db.transaction(() => {
+    const room = db.prepare('SELECT * FROM rooms WHERE id=?').get(roomId)
+    if (!room) throw new Error('Oda bulunamadı')
+    const count = db.prepare('SELECT COUNT(*) as c FROM room_assignments WHERE room_id=? AND check_out_at IS NULL').get(roomId)
+    if (count.c >= room.active_beds) throw new Error('Oda dolu')
 
-  // Shift compatibility check
-  const personShift = db.prepare('SELECT shift_type FROM shifts WHERE personnel_id=?').get(personnelId)
-  const myShift = personShift?.shift_type || 'day'
-  if (count.c > 0) {
-    const conflict = db.prepare(`
-      SELECT COUNT(*) as c FROM room_assignments ra
-      JOIN personnel p ON p.id=ra.personnel_id
-      LEFT JOIN shifts s ON s.personnel_id=p.id
-      WHERE ra.room_id=? AND ra.check_out_at IS NULL
-        AND COALESCE(s.shift_type, 'day') != ?
-    `).get(roomId, myShift)
-    if (conflict.c > 0) throw new Error(`Bu odada ${myShift === 'day' ? 'gece' : 'gündüz'} vardiyası var — aynı odaya farklı vardiya atanamaz`)
-  }
+    const personShift = db.prepare('SELECT shift_type FROM shifts WHERE personnel_id=?').get(personnelId)
+    const myShift = personShift?.shift_type || 'day'
+    if (count.c > 0) {
+      const conflict = db.prepare(`
+        SELECT COUNT(*) as c FROM room_assignments ra
+        JOIN personnel p ON p.id=ra.personnel_id
+        LEFT JOIN shifts s ON s.personnel_id=p.id
+        WHERE ra.room_id=? AND ra.check_out_at IS NULL
+          AND COALESCE(s.shift_type, 'day') != ?
+      `).get(roomId, myShift)
+      if (conflict.c > 0) throw new Error(`Bu odada ${myShift === 'day' ? 'gece' : 'gündüz'} vardiyası var — aynı odaya farklı vardiya atanamaz`)
+    }
 
-  const bedNo = count.c + 1
-  db.prepare(`
-    INSERT INTO room_assignments(personnel_id,room_id,bed_no,assigned_by)
-    VALUES(?,?,?,?)
-  `).run(personnelId, roomId, bedNo, assignedBy)
+    bedNo = count.c + 1
+    db.prepare(`
+      INSERT INTO room_assignments(personnel_id,room_id,bed_no,assigned_by)
+      VALUES(?,?,?,?)
+    `).run(personnelId, roomId, bedNo, assignedBy)
+  })
+  tx.immediate()
   return bedNo
 }
 

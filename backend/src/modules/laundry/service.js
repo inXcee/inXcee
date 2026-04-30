@@ -45,68 +45,74 @@ export function advanceItemService(id, { machine_id, shelf_location, timer_minut
   if (!TRANSITIONS[item.status]) throw new Error(`"${item.status}" durumundan ilerlenemez`)
 
   let nextStatus = TRANSITIONS[item.status]
-  // ironing override: washing → ironing (needs_ironing=1 ise)
   if (item.status === 'washing' && item.needs_ironing) {
     nextStatus = 'ironing'
   }
   const extra = {}
 
-  if (nextStatus === 'washing') {
-    if (!machine_id) throw new Error('Makine seçilmeli')
-    extra.machine_id = machine_id
-    const now = new Date()
-    const timerEnd = (timer_minutes && timer_minutes > 0)
-      ? new Date(now.getTime() + timer_minutes * 60000).toISOString()
-      : null
-    q.updateMachineQuery(machine_id, {
-      status: 'running',
-      timer_end: timerEnd,
-      timer_started_at: timerEnd ? now.toISOString() : null,
-      increment_runs: true,
-    })
-    q.removeItemFromQueueQuery(id)
-    // Washing'e geçişte: makineye bağlı ürünlerin stoğunu otomatik düş
-    const machineSupplies = q.getMachineSuppliesQuery(machine_id)
-    for (const ms of machineSupplies) {
-      q.adjustStockQuery(ms.supply_id, -ms.per_wash_amount, {
-        reason: 'wash_auto',
-        item_id: id,
-        machine_id: machine_id,
-        created_by: userId,
+  // Pre-validation (DB yazmadan once) — washing'e gecis machine_id zorunlu
+  if (nextStatus === 'washing' && !machine_id) throw new Error('Makine seçilmeli')
+
+  // Tum DB yazmalari atomik — herhangi bir adimda hata olursa stok/durum/queue
+  // tutarli sekilde rollback edilir.
+  const db = getDB()
+  const tx = db.transaction(() => {
+    if (nextStatus === 'washing') {
+      extra.machine_id = machine_id
+      const now = new Date()
+      const timerEnd = (timer_minutes && timer_minutes > 0)
+        ? new Date(now.getTime() + timer_minutes * 60000).toISOString()
+        : null
+      q.updateMachineQuery(machine_id, {
+        status: 'running',
+        timer_end: timerEnd,
+        timer_started_at: timerEnd ? now.toISOString() : null,
+        increment_runs: true,
       })
+      q.removeItemFromQueueQuery(id)
+      const machineSupplies = q.getMachineSuppliesQuery(machine_id)
+      for (const ms of machineSupplies) {
+        q.adjustStockQuery(ms.supply_id, -ms.per_wash_amount, {
+          reason: 'wash_auto',
+          item_id: id,
+          machine_id: machine_id,
+          created_by: userId,
+        })
+      }
     }
-  }
 
-  if (nextStatus === 'ironing') {
-    // washing → ironing: makineyi serbest bırak
-    if (item.machine_id) {
-      q.updateMachineQuery(item.machine_id, { status: 'done' })
+    if (nextStatus === 'ironing') {
+      if (item.machine_id) q.updateMachineQuery(item.machine_id, { status: 'done' })
     }
-  }
 
+    if (nextStatus === 'ready') {
+      extra.shelf_location = shelf_location || null
+      if (item.machine_id && item.status === 'washing') {
+        q.updateMachineQuery(item.machine_id, { status: 'done' })
+      }
+    }
+
+    if (item.is_premium && item.status === 'washing') {
+      const garmentStatus = nextStatus === 'ironing' ? 'ironing' : 'ready'
+      q.bulkSetGarmentsStatusQuery(id, garmentStatus, userId)
+    }
+
+    q.updateItemStatusQuery(id, nextStatus, extra)
+    q.insertHistoryQuery({ item_id: id, from_status: item.status, to_status: nextStatus, action_by: userId })
+  })
+  tx.immediate()
+
+  // Side-effect'ler transaction disinda (notification + WhatsApp) — DB rollback
+  // olursa bunlar da gonderilmemeli; rollback'ta tx() throw eder ve buraya gelmezse calisir.
   if (nextStatus === 'ready') {
-    extra.shelf_location = shelf_location || null
-    if (item.machine_id && item.status === 'washing') {
-      q.updateMachineQuery(item.machine_id, { status: 'done' })
-    }
     createNotification({
       message: `${item.block || '?'} ${item.room_no || '?'} — ${item.item_count} parça rafta hazır`,
       type: 'info',
       module: 'laundry',
       target_role: 'laundry',
     })
-    // WhatsApp bildirimi — fire and forget
     notifyItemReady(id).catch(() => {})
   }
-
-  // Premium item: washing → ironing/ready ise garments'ı toplu güncelle
-  if (item.is_premium && item.status === 'washing') {
-    const garmentStatus = nextStatus === 'ironing' ? 'ironing' : 'ready'
-    q.bulkSetGarmentsStatusQuery(id, garmentStatus, userId)
-  }
-
-  q.updateItemStatusQuery(id, nextStatus, extra)
-  q.insertHistoryQuery({ item_id: id, from_status: item.status, to_status: nextStatus, action_by: userId })
   logAudit(userId, 'laundry_advance', 'laundry', id, `${item.status} → ${nextStatus}`)
 
   return q.getItemQuery(id)
