@@ -74,11 +74,11 @@
 - [x] Y4: Batch endpoint'lere item_ids ≤ 100 sınırı (batch-assign/batch-lost/batch-deliver)
 - [x] DB CHECK constraints — schema.js'de stock_movements.quantity_after >= 0, inventory_lots.quantity >= 0 (yeni DB'ler icin)
 
-### Faz 8 — Production Reliability
-- [ ] K5: SSE heartbeat 30s ekle (Nginx timeout fix)
-- [ ] Y11: Backup off-site (S3/B2 push)
-- [ ] Perf index'leri: personnel.full_name, audit_log.user_id, notifications.target_role
-- [ ] Cron PDF stream leak fix
+### Faz 8 — Production Reliability ✅
+- [x] K5: SSE heartbeat 30s — addSSEClient her bağlantıya setInterval kurar, removeSSEClient'ta clear edilir (Nginx idle timeout fix)
+- [x] Y11: Backup off-site — `OFFSITE_BACKUP_CMD` env ile rclone/aws s3/scp komutu çalıştırılır, ${FILE} placeholder yerini alır, 10dk timeout, hata local backup'i etkilemez
+- [x] Perf index'leri: idx_personnel_fullname, idx_audit_user, idx_notif_role (3 yeni index)
+- [x] Cron PDF stream leak — stream.on('error') + try/finally ile destroy, fd leak engellendi
 
 ### Faz 9 — UX Akışı
 - [ ] Y5: Checkout Step 2/3 birleştir (çifte onay kafa karıştırıyor)

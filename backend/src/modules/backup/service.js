@@ -1,5 +1,6 @@
 import fs from 'fs'
 import path from 'path'
+import { spawn } from 'child_process'
 import Database from 'better-sqlite3'
 import { fileURLToPath } from 'url'
 
@@ -47,6 +48,44 @@ export function listBackupsService() {
     .sort((a, b) => b.created_at.localeCompare(a.created_at))
 }
 
+// Off-site push: OFFSITE_BACKUP_CMD env'ini calistirir, ${FILE} placeholder yerine
+// yedek dosya yolunu koyar. Ornekler:
+//   OFFSITE_BACKUP_CMD='rclone copy ${FILE} b2:yys-backups/'
+//   OFFSITE_BACKUP_CMD='aws s3 cp ${FILE} s3://yys-backups/'
+//   OFFSITE_BACKUP_CMD='scp ${FILE} user@backup.example:/var/backups/yys/'
+// Komut tanimlanmamissa skip — local backup tek koruma. Bu disaster recovery
+// icin kritik, prod'da MUTLAKA tanimlanmalidir.
+export async function pushOffsite(filePath) {
+  const cmdTemplate = process.env.OFFSITE_BACKUP_CMD
+  if (!cmdTemplate) return { skipped: true, reason: 'OFFSITE_BACKUP_CMD tanimli degil' }
+
+  return new Promise((resolve) => {
+    const cmd = cmdTemplate.replace(/\$\{FILE\}/g, filePath)
+    // shell:true gerekli — kullanici tam komutu tanimliyor (rclone, aws, scp...)
+    const proc = spawn(cmd, { shell: true, stdio: ['ignore', 'pipe', 'pipe'] })
+    let stdout = '', stderr = ''
+    proc.stdout.on('data', d => { stdout += d.toString() })
+    proc.stderr.on('data', d => { stderr += d.toString() })
+    const timer = setTimeout(() => {
+      try { proc.kill('SIGKILL') } catch { /* ignore */ }
+    }, 10 * 60 * 1000) // 10dk hard timeout
+    proc.on('close', (code) => {
+      clearTimeout(timer)
+      if (code === 0) {
+        resolve({ ok: true, code, stdout: stdout.slice(0, 500) })
+      } else {
+        console.error('[Backup offsite] failed:', code, stderr.slice(0, 1000))
+        resolve({ ok: false, code, stderr: stderr.slice(0, 500) })
+      }
+    })
+    proc.on('error', (err) => {
+      clearTimeout(timer)
+      console.error('[Backup offsite] spawn error:', err.message)
+      resolve({ ok: false, error: err.message })
+    })
+  })
+}
+
 export async function runBackupService() {
   const dbPath = getDbPath()
   const dir = getBackupDir()
@@ -61,7 +100,15 @@ export async function runBackupService() {
     db.close()
   }
   const stat = fs.statSync(dest)
-  return { ok: true, name: path.basename(dest), size: stat.size, created_at: stat.mtime.toISOString() }
+  // Off-site push — basarisizlik local backup'i etkilemez, sadece response'da goster
+  const offsite = await pushOffsite(dest)
+  return {
+    ok: true,
+    name: path.basename(dest),
+    size: stat.size,
+    created_at: stat.mtime.toISOString(),
+    offsite,
+  }
 }
 
 export function getBackupFileService(name) {

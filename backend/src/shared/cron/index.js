@@ -64,6 +64,7 @@ export function startCronJobs() {
 
   // Her ayın 1'i 03:00 — geçmiş ay aylık PDF rapor (overlap-safe)
   cron.schedule('0 3 1 * *', withLock('inventory-monthly-pdf', () => {
+    let stream
     try {
       const d = new Date()
       d.setMonth(d.getMonth() - 1)
@@ -73,13 +74,22 @@ export function startCronJobs() {
         : 'uploads/reports'
       if (!fs.existsSync(reportsDir)) fs.mkdirSync(reportsDir, { recursive: true })
       const filePath = path.join(reportsDir, `envanter-${month}.pdf`)
-      const stream = fs.createWriteStream(filePath)
+      stream = fs.createWriteStream(filePath)
+      // Stream hatası — fd leak'i onler
+      stream.on('error', (err) => {
+        console.error('[Cron] PDF stream hatasi:', err.message)
+        try { stream.destroy() } catch { /* ignore */ }
+      })
       const report = buildMonthlyReport(month)
       generateMonthlyPDF(report, stream)
       stream.on('finish', () => {
         try { logAudit(null, 'inventory_monthly_report', 'inventory', null, `${month} PDF: ${filePath}`) } catch { /* ignore */ }
       })
-    } catch (e) { console.error('[Cron] aylik PDF hatasi:', e.message) }
+    } catch (e) {
+      console.error('[Cron] aylik PDF hatasi:', e.message)
+      // buildMonthlyReport / generateMonthlyPDF synchronous throw ettiyse stream open kalir
+      if (stream) try { stream.destroy() } catch { /* ignore */ }
+    }
   }))
 
   // Her gün 06:00 — son kullanma 30 gün altı lot uyarısı (campus_manager)

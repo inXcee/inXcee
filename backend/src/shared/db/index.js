@@ -877,6 +877,11 @@ export function initDB() {
   try { db.exec('ALTER TABLE laundry_items ADD COLUMN last_modified_worker_id INTEGER') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] laundry_items.last_modified_worker_id:', e.message) }
   try { db.exec('ALTER TABLE laundry_items ADD COLUMN last_modified_at DATETIME') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] laundry_items.last_modified_at:', e.message) }
 
+  // ── Faz 8: Performans index'leri (audit Perf #1, #6, #7) ──
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_personnel_fullname ON personnel(full_name)') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] idx_personnel_fullname:', e.message) }
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_log(user_id, created_at DESC)') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] idx_audit_user:', e.message) }
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_notif_role ON notifications(target_role, is_read, created_at)') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] idx_notif_role:', e.message) }
+
   return db
 }
 

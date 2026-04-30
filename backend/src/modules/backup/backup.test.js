@@ -122,3 +122,37 @@ describe('Backup — restore', () => {
     expect(res.status).toBe(403)
   })
 })
+
+describe('Backup — off-site (Y11)', () => {
+  it('OFFSITE_BACKUP_CMD tanimli degilse skipped doner', async () => {
+    delete process.env.OFFSITE_BACKUP_CMD
+    const res = await request(app).post('/api/backup/run')
+      .set('Authorization', `Bearer ${adminToken}`)
+    expect(res.status).toBe(201)
+    expect(res.body.offsite).toBeDefined()
+    expect(res.body.offsite.skipped).toBe(true)
+  })
+
+  it('OFFSITE_BACKUP_CMD basarili calisirsa ok=true doner', async () => {
+    // Plat-uyumsuz minimal komut: node icindeki process exit 0 cagir
+    // Cross-platform: noop komut secelim — node -e 'process.exit(0)'
+    process.env.OFFSITE_BACKUP_CMD = `node -e "process.exit(0)"`
+    const res = await request(app).post('/api/backup/run')
+      .set('Authorization', `Bearer ${adminToken}`)
+    expect(res.status).toBe(201)
+    expect(res.body.offsite.ok).toBe(true)
+    expect(res.body.offsite.code).toBe(0)
+    delete process.env.OFFSITE_BACKUP_CMD
+  })
+
+  it('OFFSITE_BACKUP_CMD hata kodu donerse offsite.ok=false ama local backup yine basarili', async () => {
+    process.env.OFFSITE_BACKUP_CMD = `node -e "process.exit(2)"`
+    const res = await request(app).post('/api/backup/run')
+      .set('Authorization', `Bearer ${adminToken}`)
+    expect(res.status).toBe(201)
+    expect(res.body.ok).toBe(true) // local hala ok
+    expect(res.body.offsite.ok).toBe(false)
+    expect(res.body.offsite.code).toBe(2)
+    delete process.env.OFFSITE_BACKUP_CMD
+  })
+})

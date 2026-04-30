@@ -3,7 +3,10 @@ import { isNotificationEnabledForUser } from '../../modules/notification-prefs/s
 
 const MAX_SSE_CLIENTS = 500
 const MAX_PER_USER = 4 // bir user max 4 sekme; fazlası eski bağlantıyı düşürür
-// Map<res, {res, userId, role}> — userId/role ile filtrelenmiş SSE broadcast için
+// Heartbeat: Nginx/proxy idle bağlantıyı 60-90s sonra koparıyor.
+// 30s'de bir comment frame (`:\n\n`) gönder — istemciye görünmez ama bağlantı canlı kalır.
+const HEARTBEAT_MS = 30_000
+// Map<res, {res, userId, role, hb}> — userId/role ile filtrelenmiş SSE broadcast için
 const sseClients = new Map()
 
 const MANAGEMENT_ROLES = new Set(['campus_manager', 'shift_supervisor'])
@@ -16,6 +19,8 @@ export function addSSEClient(res, userId, role) {
   }
   while (userConnections.length >= MAX_PER_USER) {
     const oldest = userConnections.shift()
+    const meta = sseClients.get(oldest)
+    if (meta?.hb) clearInterval(meta.hb)
     try { oldest.end() } catch { /* ignore */ }
     sseClients.delete(oldest)
   }
@@ -23,12 +28,29 @@ export function addSSEClient(res, userId, role) {
   // Global limit — en eskiyi düşür (fairness için sıralı Map iteration)
   if (sseClients.size >= MAX_SSE_CLIENTS) {
     const oldest = sseClients.keys().next().value
+    const meta = sseClients.get(oldest)
+    if (meta?.hb) clearInterval(meta.hb)
     try { oldest.end() } catch { /* bağlantı zaten kapalı */ }
     sseClients.delete(oldest)
   }
-  sseClients.set(res, { res, userId, role })
+
+  // Heartbeat — 30s'de bir comment frame; client'a görünmez ama proxy timeout'u önler
+  const hb = setInterval(() => {
+    try { res.write(':\n\n') } catch {
+      clearInterval(hb)
+      sseClients.delete(res)
+    }
+  }, HEARTBEAT_MS)
+  // Test ortamında Node event loop'u kilitlemesin
+  if (typeof hb.unref === 'function') hb.unref()
+
+  sseClients.set(res, { res, userId, role, hb })
 }
-export function removeSSEClient(res) { sseClients.delete(res) }
+export function removeSSEClient(res) {
+  const meta = sseClients.get(res)
+  if (meta?.hb) clearInterval(meta.hb)
+  sseClients.delete(res)
+}
 
 export function createNotification({ message, type = 'info', module, target_role, target_user_id, dedup_key }) {
   const db = getDB()
