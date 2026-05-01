@@ -9,11 +9,11 @@ beforeEach(() => {
 })
 
 describe('seedProdRooms', () => {
-  it('M1-M3 + S1-S3 toplam 324 oda olusturur', () => {
+  it('M1-M3 + S1-S3 + yeni 11 blok toplam 734 oda olusturur', () => {
     const stats = seedProdRooms()
-    expect(stats.inserted).toBe(324)
+    expect(stats.inserted).toBe(734)
     expect(stats.skipped).toBe(0)
-    expect(stats.total_in_db).toBe(324)
+    expect(stats.total_in_db).toBe(734)
   })
 
   it('her M blogu 60 oda (2 kat x 30), tumu kapasite 6', () => {
@@ -51,8 +51,8 @@ describe('seedProdRooms', () => {
     seedProdRooms()
     const stats = seedProdRooms()
     expect(stats.inserted).toBe(0)
-    expect(stats.skipped).toBe(324)
-    expect(stats.total_in_db).toBe(324)
+    expect(stats.skipped).toBe(734)
+    expect(stats.total_in_db).toBe(734)
   })
 
   it('butun odalar status=active baslar', () => {
@@ -89,5 +89,95 @@ describe('seedProdRooms', () => {
     const db = getDB()
     const mismatch = db.prepare("SELECT COUNT(*) as c FROM rooms WHERE active_beds != capacity").get().c
     expect(mismatch).toBe(0)
+  })
+
+  it('A1-A4 ve B bloklari her biri 40 oda (2 kat x 20), tumu kapasite 1', () => {
+    seedProdRooms()
+    const db = getDB()
+    for (const block of ['A1', 'A2', 'A3', 'A4', 'B']) {
+      const count = db.prepare('SELECT COUNT(*) as c FROM rooms WHERE block=?').get(block).c
+      expect(count).toBe(40)
+      const cap1 = db.prepare("SELECT COUNT(*) as c FROM rooms WHERE block=? AND capacity=1").get(block).c
+      expect(cap1).toBe(40)
+    }
+  })
+
+  it('E ve G her biri 60 oda (3 kat x 20), F 30 oda (3 kat x 10), kapasite 1', () => {
+    seedProdRooms()
+    const db = getDB()
+    for (const block of ['E', 'G']) {
+      const count = db.prepare('SELECT COUNT(*) as c FROM rooms WHERE block=?').get(block).c
+      expect(count).toBe(60)
+    }
+    const fCount = db.prepare("SELECT COUNT(*) as c FROM rooms WHERE block='F'").get().c
+    expect(fCount).toBe(30)
+    for (const block of ['E', 'G', 'F']) {
+      const cap1 = db.prepare("SELECT COUNT(*) as c FROM rooms WHERE block=? AND capacity=1").get(block).c
+      const total = db.prepare("SELECT COUNT(*) as c FROM rooms WHERE block=?").get(block).c
+      expect(cap1).toBe(total)
+    }
+  })
+
+  it('D 20 oda (101-120), H ve J 20 oda (1-20 duz numarali), kapasite 1', () => {
+    seedProdRooms()
+    const db = getDB()
+    for (const block of ['D', 'H', 'J']) {
+      const count = db.prepare('SELECT COUNT(*) as c FROM rooms WHERE block=?').get(block).c
+      expect(count).toBe(20)
+      const cap1 = db.prepare("SELECT COUNT(*) as c FROM rooms WHERE block=? AND capacity=1").get(block).c
+      expect(cap1).toBe(20)
+    }
+  })
+
+  it('H ve J oda numaralari 1-20 araliginda (100lu format degil)', () => {
+    seedProdRooms()
+    const db = getDB()
+    for (const block of ['H', 'J']) {
+      const range = db.prepare("SELECT MIN(CAST(room_no AS INTEGER)) as mn, MAX(CAST(room_no AS INTEGER)) as mx FROM rooms WHERE block=?").get(block)
+      expect(range.mn).toBe(1)
+      expect(range.mx).toBe(20)
+    }
+  })
+
+  it('D blok oda numaralari 101-120 araliginda', () => {
+    seedProdRooms()
+    const db = getDB()
+    const range = db.prepare("SELECT MIN(CAST(room_no AS INTEGER)) as mn, MAX(CAST(room_no AS INTEGER)) as mx FROM rooms WHERE block='D'").get()
+    expect(range.mn).toBe(101)
+    expect(range.mx).toBe(120)
+  })
+
+  it('E blok 3 kat (101-120, 201-220, 301-320), G blok ayni, F blok 3 kat 10ar oda', () => {
+    seedProdRooms()
+    const db = getDB()
+    for (const block of ['E', 'G']) {
+      for (let floor = 1; floor <= 3; floor++) {
+        const count = db.prepare("SELECT COUNT(*) as c FROM rooms WHERE block=? AND floor=?").get(block, floor).c
+        expect(count).toBe(20)
+        const range = db.prepare("SELECT MIN(CAST(room_no AS INTEGER)) as mn, MAX(CAST(room_no AS INTEGER)) as mx FROM rooms WHERE block=? AND floor=?").get(block, floor)
+        expect(range.mn).toBe(floor * 100 + 1)
+        expect(range.mx).toBe(floor * 100 + 20)
+      }
+    }
+    for (let floor = 1; floor <= 3; floor++) {
+      const count = db.prepare("SELECT COUNT(*) as c FROM rooms WHERE block='F' AND floor=?").get(floor).c
+      expect(count).toBe(10)
+      const range = db.prepare("SELECT MIN(CAST(room_no AS INTEGER)) as mn, MAX(CAST(room_no AS INTEGER)) as mx FROM rooms WHERE block='F' AND floor=?").get(floor)
+      expect(range.mn).toBe(floor * 100 + 1)
+      expect(range.mx).toBe(floor * 100 + 10)
+    }
+  })
+
+  it('yeni bloklar eklendiginde M/S bloklarinin kapasiteleri korunur', () => {
+    seedProdRooms()
+    const db = getDB()
+    const mCap = db.prepare("SELECT COUNT(*) as c FROM rooms WHERE block IN ('M1','M2','M3') AND capacity=6").get().c
+    expect(mCap).toBe(180)
+    const s1s3Cap = db.prepare("SELECT COUNT(*) as c FROM rooms WHERE block IN ('S1','S3') AND capacity=6").get().c
+    expect(s1s3Cap).toBe(96)
+    const s2f1Cap = db.prepare("SELECT COUNT(*) as c FROM rooms WHERE block='S2' AND floor=1 AND capacity=6").get().c
+    expect(s2f1Cap).toBe(24)
+    const s2f2Cap = db.prepare("SELECT COUNT(*) as c FROM rooms WHERE block='S2' AND floor=2 AND capacity=4").get().c
+    expect(s2f2Cap).toBe(24)
   })
 })
