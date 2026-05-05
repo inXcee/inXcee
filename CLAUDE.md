@@ -57,12 +57,31 @@ Test dosyaları `:memory:` kullanır (`process.env.DB_PATH = ':memory:'`).
 
 Varsayılan geliştirme kullanıcıları (seed'den): `mudur/admin123`, `vardiya/admin123`, `teknik/admin123`, `camasir/admin123`, `meydanci/admin123`
 
+## Yatakhane Yapısı (19 blok / 814 oda)
+
+3 tip blok — tek kaynak: `frontend/src/shared/blocks.js`.
+
+| Tip | Bloklar | Yapı | Kapasite | Banyo |
+|-----|---------|------|----------|-------|
+| **M** (Merkezi) | M1, M2, M3 | 30 oda/kat × 2 kat | 6 | Ortak banyo/WC |
+| **S** (Sosyal) | S1, S2, S3 | 24 oda/kat × 2 kat | 6 (S2 kat 2 = 4) | Özel banyo |
+| **Y** (Yeni) | A, A1-A4, B, C | 20 oda/kat × 2 kat | 1 placeholder | Özel banyo |
+| **Y** | D, H, J | 20 oda/kat × 1 kat (D: 101+, H/J: 1+) | 1 placeholder | Özel banyo |
+| **Y** | E, G | 20 oda/kat × 3 kat | 1 placeholder | Özel banyo |
+| **Y** | F | 10 oda/kat × 3 kat | 1 placeholder | Özel banyo |
+
+Y blokları **özel banyolu, kapasite=1 placeholder** olarak gelir; gerçek yatak sayıları DB'de oda detayından elle güncellenir.
+
+`shared/blocks.js` helper'ları: `BLOCKS`, `BLOCK_BY_NAME`, `BLOCKS_BY_TYPE`, `expectedRoomNos()`, `getCapacity()`, `getFloorLabel()`, `getBlockConfig()`.
+
 ## Kritik Kısıtlar
 
-- S2 blok odaları max 4 kişi — DB CHECK constraint
+- S2 blok odaları max 4 kişi — DB CHECK constraint (sadece S2'ye uygulanır)
 - Karantina odalarına atama — INSERT trigger ile bloke
 - Zimmet imzası — canvas base64 olarak `digital_signature` kolonuna kaydedilir
 - SSE endpoint: `GET /api/notifications/stream` — token header ile
+- `housekeeping/queries.js generateDailyTasks` tüm bloklara oda task üretir; `common_area` task **sadece M** (ortak banyo)
+- Y bloklar laundry akışında **premium** kabul edilir (özel banyo) — `STANDARD_BLOCKS` set'i M+S içerir, dışındakiler ironing/premium
 
 ## Veritabanı Değişiklik Kuralları
 
@@ -91,3 +110,5 @@ Varsayılan geliştirme kullanıcıları (seed'den): `mudur/admin123`, `vardiya/
 - **`.env` dosyalarina dokunma** — secrets elle yonetilir, AI editlememeli
 - **SQL injection yasak** — parametreli sorgular zorunlu, string concatenation ile SQL yazma
 - **Semantic commit mesajlari** — `feat:`, `fix:`, `chore:`, `refactor:`, `docs:`, `test:` prefix'leri kullan
+- **Hardcoded blok listesi yazma** — frontend'de `['M1','M2',...]` veya `block.startsWith('M')` yerine `BLOCKS_BY_TYPE`, `BLOCK_BY_NAME[block]?.type === 'M'` kullan; yeni blok eklendiğinde tek nokta güncellenir
+- **Kat numarasi `[1, 2]` hardcode etme** — `cfg.floors`'a göre dinamik üret (Y bloklarda 1, 2 ya da 3 kat olabilir)
