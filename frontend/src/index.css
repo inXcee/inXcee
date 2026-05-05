@@ -203,6 +203,7 @@ h1, h2, h3, h4 { font-family: var(--display); letter-spacing: 2px; }
 .tag-m { background: rgba(59,140,240,.15); color: var(--blue); }
 .tag-s { background: rgba(155,89,182,.15); color: var(--purple); }
 .tag-exc { background: rgba(240,165,0,.15); color: var(--accent); }
+.tag-y { background: rgba(39,201,106,.15); color: var(--green); }
 
 /* Form */
 .form-input, .form-select, .form-textarea { width: 100%; background: var(--surface2); border: 1px solid var(--border); border-radius: 7px; padding: 9px 13px; color: var(--text); font-family: var(--sans); font-size: 13px; outline: none; transition: border-color .15s, box-shadow .15s; }
