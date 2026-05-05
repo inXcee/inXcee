@@ -8,8 +8,7 @@ import DraftBanner from '../../shared/components/DraftBanner.jsx'
 import ZimmetForm from './ZimmetForm.jsx'
 import CsvImport from './CsvImport.jsx'
 import { useToastStore } from '../../shared/store/toastStore.js'
-
-const ALL_BLOCKS = ['M1','M2','M3','S1','S2','S3']
+import { BLOCKS_BY_TYPE, BLOCK_BY_NAME, getCapacity } from '../../shared/blocks.js'
 const STEPS = [
   { key: 'search', label: 'ARAMA' },
   { key: 'register', label: 'KAYIT' },
@@ -93,7 +92,10 @@ function AutoInput({ label, value, onChange, suggestions, placeholder }) {
 
 // ── Room Picker ─────────────────────────────────────────────────────────────
 function RoomPicker({ onSelect, selectedRoom, suggestedRoom, onQuickFill }) {
-  const [block, setBlock] = useState(suggestedRoom?.block || 'M1')
+  const initialBlock = suggestedRoom?.block || 'M1'
+  const initialType = BLOCK_BY_NAME[initialBlock]?.type ?? 'M'
+  const [blockType, setBlockType] = useState(initialType)
+  const [block, setBlock] = useState(initialBlock)
   const [floor, setFloor] = useState(suggestedRoom?.floor || 1)
 
   const { data: rooms = [] } = useQuery({
@@ -101,37 +103,67 @@ function RoomPicker({ onSelect, selectedRoom, suggestedRoom, onQuickFill }) {
     queryFn: () => api.get(`/checkin/available-rooms?block=${block}`).then(r => r.data),
   })
 
+  const cfg = BLOCK_BY_NAME[block]
   const floorRooms = rooms.filter(r => r.floor === floor)
-  const isM = block.startsWith('M')
+  const isM = cfg?.type === 'M'
   const isS2Floor2 = block === 'S2' && floor === 2
-  const defaultCap = isS2Floor2 ? 4 : 6
+  const isPlaceholder = cfg?.isPlaceholder
+  const defaultCap = getCapacity(block, floor)
 
   const oddRooms = floorRooms.filter(r => Number(r.room_no) % 2 !== 0)
   const evenRooms = floorRooms.filter(r => Number(r.room_no) % 2 === 0)
 
   return (
     <div>
-      {/* Block & floor selector */}
+      {/* Block type tab + block + floor selector */}
       <div style={{ display: 'flex', gap: '6px', marginBottom: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
-        {ALL_BLOCKS.map(b => (
+        <div style={{
+          display: 'flex', background: 'var(--surface2)', borderRadius: '7px',
+          padding: '2px', border: '1px solid var(--border)',
+        }}>
+          {['M', 'S', 'Y'].map(t => (
+            <button key={t}
+              onClick={() => {
+                setBlockType(t)
+                const first = BLOCKS_BY_TYPE[t][0]
+                setBlock(first)
+                setFloor(1)
+              }}
+              style={{
+                padding: '5px 12px', borderRadius: '5px', border: 'none', cursor: 'pointer',
+                fontFamily: 'var(--display)', fontSize: '11px', fontWeight: 700, letterSpacing: '1px',
+                background: blockType === t ? 'var(--accent)' : 'transparent',
+                color: blockType === t ? '#000' : 'var(--text2)',
+              }}>{t}</button>
+          ))}
+        </div>
+        {BLOCKS_BY_TYPE[blockType].map(b => (
           <button key={b} onClick={() => { setBlock(b); setFloor(1) }}
             className={`filter-chip${block === b ? ' active' : ''}`}
             style={{ fontFamily: 'var(--display)', fontSize: '12px', letterSpacing: '1px', padding: '5px 12px' }}>
             {b}
           </button>
         ))}
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: '4px' }}>
-          {[1, 2].map(f => (
-            <button key={f} onClick={() => setFloor(f)}
-              className={`filter-chip${floor === f ? ' active' : ''}`}
-              style={{ padding: '5px 10px', fontSize: '11px' }}>KAT {f}</button>
-          ))}
-        </div>
+        {(() => {
+          const floorList = Array.from({ length: cfg?.floors ?? 0 }, (_, i) => i + 1)
+          if (floorList.length <= 1) return null
+          return (
+            <div style={{ marginLeft: 'auto', display: 'flex', gap: '4px' }}>
+              {floorList.map(f => (
+                <button key={f} onClick={() => setFloor(f)}
+                  className={`filter-chip${floor === f ? ' active' : ''}`}
+                  style={{ padding: '5px 10px', fontSize: '11px' }}>KAT {f}</button>
+              ))}
+            </div>
+          )
+        })()}
       </div>
 
       {/* Block info */}
       <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text4)', letterSpacing: '1px', marginBottom: '8px' }}>
-        {block} BLOK · KAT {floor} · {isM ? 'ORTAK BANYO' : 'ÖZEL BANYO'}{isS2Floor2 ? ' · 4 KİŞİLİK' : ' · 6 KİŞİLİK'}
+        {block} BLOK · KAT {floor} · {isM ? 'ORTAK BANYO' : 'ÖZEL BANYO'}
+        {isS2Floor2 ? ' · 4 KİŞİLİK' : ` · ${defaultCap} KİŞİLİK`}
+        {isPlaceholder ? ' · ⚠ KAPASİTE PLACEHOLDER' : ''}
         {' · '}{floorRooms.filter(r => r.current_count < r.active_beds).length} BOŞ ODA
       </div>
 

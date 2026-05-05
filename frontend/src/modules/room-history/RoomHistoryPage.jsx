@@ -1,8 +1,16 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
+import { BLOCKS, BLOCK_BY_NAME } from '../../shared/blocks.js'
 
-const BLOCKS = ['M1','M2','M3','S1','S2','S3']
+const ALL_BLOCK_NAMES = BLOCKS.map(b => b.block)
+const blockColor = (block) => {
+  const t = BLOCK_BY_NAME[block]?.type
+  if (t === 'M') return 'var(--blue)'
+  if (t === 'S') return 'var(--purple)'
+  if (t === 'Y') return 'var(--green)'
+  return 'var(--text2)'
+}
 const DAYS_OPTIONS = [
   { value: 7, label: '7 GÜN' },
   { value: 14, label: '14 GÜN' },
@@ -71,7 +79,7 @@ function SummaryTable({ rooms, selectedBlock, onSelectRoom }) {
                   <td>
                     <span style={{
                       fontFamily: 'var(--mono)', fontSize: '11px', fontWeight: 600,
-                      color: room.block.startsWith('M') ? 'var(--blue)' : 'var(--purple)',
+                      color: blockColor(room.block),
                       letterSpacing: '1px',
                     }}>{room.block}</span>
                   </td>
@@ -179,12 +187,12 @@ function RoomDetail({ block, roomNo, days, onBack }) {
 
       {/* Room info panel */}
       <div className="panel fade-up-1" style={{ marginBottom: '16px' }}>
-        <div style={{ height: '2px', background: `linear-gradient(90deg, ${block.startsWith('M') ? 'var(--blue)' : 'var(--purple)'}, var(--accent))` }} />
+        <div style={{ height: '2px', background: `linear-gradient(90deg, ${blockColor(block)}, var(--accent))` }} />
         <div className="panel-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
             <div style={{
               width: '52px', height: '52px', borderRadius: '10px',
-              background: `linear-gradient(135deg, ${block.startsWith('M') ? 'var(--blue)' : 'var(--purple)'}, var(--accent))`,
+              background: `linear-gradient(135deg, ${blockColor(block)}, var(--accent))`,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               fontFamily: 'var(--display)', fontSize: '18px', color: '#000', letterSpacing: '1px',
             }}>
@@ -538,7 +546,7 @@ export default function RoomHistoryPage() {
         >
           TÜMÜ
         </button>
-        {BLOCKS.map(b => (
+        {ALL_BLOCK_NAMES.map(b => (
           <button
             key={b}
             onClick={() => setSelectedBlock(b)}

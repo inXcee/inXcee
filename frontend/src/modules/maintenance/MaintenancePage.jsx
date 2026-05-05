@@ -5,6 +5,7 @@ import HelpHint from '../../shared/components/HelpHint.jsx'
 import { useDraft } from '../../shared/hooks/useDraft.js'
 import DraftBanner from '../../shared/components/DraftBanner.jsx'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
+import { BLOCKS_BY_TYPE, BLOCK_BY_NAME, expectedRoomNos as expectedRoomNosFromConfig } from '../../shared/blocks.js'
 
 const PRIORITIES = [
   { key: 'high', label: 'ACİL', color: 'var(--red)' },
@@ -41,8 +42,7 @@ const WAIT_REASONS = [
   'Parça siparişte',
 ]
 
-const BLOCKS = ['M1', 'M2', 'M3', 'S1', 'S2', 'S3']
-const FLOORS = [1, 2]
+const BLOCK_TYPES = ['M', 'S', 'Y']
 
 function priInfo(p) { return PRIORITIES.find(x => x.key === p) || PRIORITIES[1] }
 
@@ -386,24 +386,42 @@ function PhotoCapture({ value, onChange, label = 'Fotoğraf' }) {
    Location Picker
    ═══════════════════════════════════════════════════════════════════════════ */
 function LocationPicker({ value, onChange }) {
-  const match = value.match(/^(M[1-3]|S[1-3])\s+Kat\s*(\d)\s+Oda\s*(\d+)$/i)
-  const [pickedBlock, setPickedBlock] = useState(match ? match[1] : null)
+  // Match herhangi bir blok adi (M1-M3, S1-S3, A, A1-A4, B, C, D, E, F, G, H, J)
+  const match = value.match(/^([A-Z][0-9]?)\s+Kat\s*(\d)\s+Oda\s*(\d+)$/i)
+  const initialBlock = match ? match[1].toUpperCase() : null
+  const initialType = initialBlock ? (BLOCK_BY_NAME[initialBlock]?.type ?? 'M') : 'M'
+  const [pickedType, setPickedType] = useState(initialType)
+  const [pickedBlock, setPickedBlock] = useState(initialBlock)
   const [pickedFloor, setPickedFloor] = useState(match ? +match[2] : null)
 
+  const pickType = t => { setPickedType(t); setPickedBlock(null); setPickedFloor(null); onChange('') }
   const pickBlock = b => { setPickedBlock(b); setPickedFloor(null); onChange('') }
   const pickFloor = f => { setPickedFloor(f); onChange('') }
   const pickRoom = rno => onChange(`${pickedBlock} Kat ${pickedFloor} Oda ${rno}`)
 
-  const roomCount = pickedBlock?.startsWith('M') ? 30 : 24
-  const base = pickedFloor === 2 ? 200 : 100
-  const roomNos = pickedFloor ? Array.from({ length: roomCount }, (_, i) => String(base + i + 1)) : []
+  const cfg = pickedBlock ? BLOCK_BY_NAME[pickedBlock] : null
+  const floorList = cfg ? Array.from({ length: cfg.floors }, (_, i) => i + 1) : []
+  const roomNos = pickedBlock && pickedFloor
+    ? expectedRoomNosFromConfig(pickedBlock, pickedFloor).map(n => String(n))
+    : []
   const selRoom = match ? match[3] : null
 
   return (
     <div>
       <label className="form-label">Konum</label>
+      <div style={{ display: 'flex', gap: '5px', marginBottom: '6px' }}>
+        {BLOCK_TYPES.map(t => (
+          <button key={t} type="button" onClick={() => pickType(t)} style={{
+            padding: '5px 14px', borderRadius: '5px', cursor: 'pointer',
+            border: pickedType === t ? '2px solid var(--accent)' : '1px solid var(--border)',
+            background: pickedType === t ? 'rgba(99,102,241,.12)' : 'transparent',
+            color: pickedType === t ? 'var(--accent)' : 'var(--text2)',
+            fontFamily: 'var(--display)', fontSize: '11px', fontWeight: 700, letterSpacing: '1px',
+          }}>{t} BLOK</button>
+        ))}
+      </div>
       <div style={{ display: 'flex', gap: '5px', marginBottom: '8px', flexWrap: 'wrap' }}>
-        {BLOCKS.map(b => (
+        {BLOCKS_BY_TYPE[pickedType].map(b => (
           <button key={b} type="button" onClick={() => pickBlock(b)} style={{
             padding: '8px 16px', borderRadius: '6px', cursor: 'pointer',
             border: pickedBlock === b ? '2px solid var(--accent)' : '1px solid var(--border)',
@@ -413,9 +431,9 @@ function LocationPicker({ value, onChange }) {
           }}>{b}</button>
         ))}
       </div>
-      {pickedBlock && (
+      {pickedBlock && floorList.length > 0 && (
         <div style={{ display: 'flex', gap: '5px', marginBottom: '8px' }}>
-          {FLOORS.map(f => (
+          {floorList.map(f => (
             <button key={f} type="button" onClick={() => pickFloor(f)} style={{
               padding: '7px 16px', borderRadius: '6px', cursor: 'pointer',
               border: pickedFloor === f ? '2px solid var(--accent)' : '1px solid var(--border)',
