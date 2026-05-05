@@ -17,6 +17,23 @@ describe('Housekeeping', () => {
     expect(res.status).toBe(201)
     expect(res.body.count).toBeGreaterThan(0)
   })
+  it('creates room tasks for Y bloklar (A, A1-A4, B, C, D, E, F, G, H, J)', async () => {
+    const tasksRes = await request(app).get('/api/housekeeping/tasks').set('Authorization', `Bearer ${token}`)
+    expect(tasksRes.status).toBe(200)
+    const yBlocks = ['A', 'A1', 'A2', 'A3', 'A4', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'J']
+    for (const yb of yBlocks) {
+      const ybTasks = tasksRes.body.filter(t => t.block === yb && t.task_type === 'room')
+      expect(ybTasks.length, `Y blok ${yb} için en az 1 oda task'i olmali`).toBeGreaterThan(0)
+    }
+  })
+  it('does NOT create common_area task for Y bloklar (sadece M ortak banyolu)', async () => {
+    const tasksRes = await request(app).get('/api/housekeeping/tasks').set('Authorization', `Bearer ${token}`)
+    const yBlocks = ['A', 'A1', 'A2', 'A3', 'A4', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'J']
+    for (const yb of yBlocks) {
+      const commonTasks = tasksRes.body.filter(t => t.block === yb && t.task_type === 'common_area')
+      expect(commonTasks.length, `Y blok ${yb} için common_area task olmamali`).toBe(0)
+    }
+  })
   it('completes task by QR', async () => {
     const db = (await import('../../shared/db/index.js')).getDB()
     const task = db.prepare('SELECT * FROM cleaning_tasks LIMIT 1').get()

@@ -10,20 +10,15 @@ export function generateDailyTasks(date = new Date()) {
   `)
   let count = 0
   const tx = db.transaction(() => {
-    // M blok: ortak alan (kat başına bir) + bireysel odalar
+    // M blokları için ortak alan task'i (sadece M tipi ortak banyo/WC içerir)
     const mFloors = db.prepare("SELECT DISTINCT block, floor FROM rooms WHERE block LIKE 'M%'").all()
     mFloors.forEach(({ block, floor }) => {
       insert.run(`${block} ${floor}.Kat Ortak Alan`, block, floor, 'common_area', scheduled, `${block}-${floor}-common`)
       count++
     })
-    const mRooms = db.prepare("SELECT id, block, floor, room_no FROM rooms WHERE block LIKE 'M%' AND status='active'").all()
-    mRooms.forEach(r => {
-      insert.run(`${r.block} Oda ${r.room_no}`, r.block, r.floor, 'room', scheduled, `${r.block}-${r.room_no}`)
-      count++
-    })
-    // S blok: bireysel odalar
-    const sRooms = db.prepare("SELECT id, block, floor, room_no FROM rooms WHERE block LIKE 'S%' AND status='active'").all()
-    sRooms.forEach(r => {
+    // Tüm aktif odalar için bireysel oda task'i (M, S ve Y bloklar dahil)
+    const allRooms = db.prepare("SELECT id, block, floor, room_no FROM rooms WHERE status='active'").all()
+    allRooms.forEach(r => {
       insert.run(`${r.block} Oda ${r.room_no}`, r.block, r.floor, 'room', scheduled, `${r.block}-${r.room_no}`)
       count++
     })
