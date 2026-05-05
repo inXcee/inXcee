@@ -225,7 +225,9 @@ export default function NewItemModal({ onClose }) {
   }, [form.room_id])
 
   const selectedRoom = rooms.find(r => r.id === +form.room_id)
-  const isPremium = selectedRoom && !['M','S','S1','S2'].includes(selectedRoom.block)
+  // M ve S bloklar standart akis. Y bloklar (A, A1-A4, B, C, D, E, F, G, H, J) premium (ozel banyolu).
+  const STANDARD_BLOCKS = new Set(['M1', 'M2', 'M3', 'S1', 'S2', 'S3'])
+  const isPremium = selectedRoom && !STANDARD_BLOCKS.has(selectedRoom.block)
 
   // Premium blok seçilince ütü otomatik aktif
   useEffect(() => {

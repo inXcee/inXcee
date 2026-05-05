@@ -670,15 +670,16 @@ function StatusView({ kioskApi, onDone }) {
 }
 
 // ── Teslim Et ─────────────────────────────────────────────────────────────────
+// M ve S = standart akis. Y = premium (ozel banyolu, ironing default).
 const BLOCK_GROUPS = [
   { label: 'M Blokları', keys: ['M1', 'M2', 'M3'] },
   { label: 'S Blokları', keys: ['S1', 'S2', 'S3'] },
+  { label: 'Y Blokları', keys: ['A', 'A1', 'A2', 'A3', 'A4', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'J'] },
 ]
-const SINGLE_BLOCKS = ['C']
-const PREMIUM_BLOCKS = new Set(['C'])
+const STANDARD_BLOCKS = new Set(['M1', 'M2', 'M3', 'S1', 'S2', 'S3'])
 
 function isPremiumBlock(blockKey) {
-  return blockKey === 'other' || PREMIUM_BLOCKS.has(blockKey)
+  return blockKey === 'other' || !STANDARD_BLOCKS.has(blockKey)
 }
 
 function DeliverView({ kioskApi, onDone }) {
@@ -755,17 +756,6 @@ function DeliverView({ kioskApi, onDone }) {
           </div>
         ))}
         <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-          {SINGLE_BLOCKS.map(k => (
-            <button key={k} type="button" onClick={() => setSelectedBlock(k)}
-              style={{
-                padding: '8px 16px', borderRadius: 10, border: 'none', cursor: 'pointer',
-                background: selectedBlock === k ? '#1d4ed8' : '#1e293b',
-                color: selectedBlock === k ? '#fff' : '#94a3b8',
-                fontWeight: 700, fontSize: 14,
-              }}>
-              {k}
-            </button>
-          ))}
           <button type="button" onClick={() => setSelectedBlock('other')}
             style={{
               padding: '8px 14px', borderRadius: 10, border: `1px dashed ${selectedBlock === 'other' ? '#3b82f6' : '#475569'}`,

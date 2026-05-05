@@ -300,7 +300,10 @@ selfServiceRouter.post('/laundry-kiosk/bags/:id/deliver', requireAvsKiosk, (req,
   } catch (e) { res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
-const MS_BLOCKS = new Set(['M1', 'M2', 'M3', 'S1', 'S2', 'S3'])
+// M ve S bloklar standart camasir akisi (dirty status). Y bloklar
+// (A, A1-A4, B, C, D, E, F, G, H, J) "premium" ozel banyolu kabul edilip
+// ironing akisina gider.
+const STANDARD_BLOCKS = new Set(['M1', 'M2', 'M3', 'S1', 'S2', 'S3'])
 
 selfServiceRouter.post('/laundry-kiosk/garment', requireAvsKiosk, (req, res) => {
   const { block, room_no, personnel_id, clothing_items, intake_signature } = req.body
@@ -315,13 +318,13 @@ selfServiceRouter.post('/laundry-kiosk/garment', requireAvsKiosk, (req, res) => 
       ? db.prepare('SELECT full_name FROM personnel WHERE id=?').get(Number(personnel_id))?.full_name
       : null
     const total = clothing_items.reduce((s, c) => s + (Number(c.count) || 1), 0)
-    const isMS = MS_BLOCKS.has(block.toUpperCase())
-    const itemStatus = isMS ? 'dirty' : 'ironing'
+    const isStandard = STANDARD_BLOCKS.has(block.toUpperCase())
+    const itemStatus = isStandard ? 'dirty' : 'ironing'
     const id = insertItemQuery({
       room_id: room.id,
       item_count: total,
       status: itemStatus,
-      needs_ironing: isMS ? 0 : 1,
+      needs_ironing: isStandard ? 0 : 1,
       is_premium: 1,
       garments_json: JSON.stringify(clothing_items),
       intake_name: intake_name || null,

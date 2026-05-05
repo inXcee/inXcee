@@ -145,17 +145,11 @@ export function getStats() {
   `).get()
   const avgHours = avgRow?.avg_hours ? Math.round(avgRow.avg_hours * 10) / 10 : null
 
+  // Blok adi location'in ilk kelimesidir (örn "M1 Kat 1 Oda 101" → "M1", "A Kat 2..." → "A").
+  // Tum 19 blok (M1-M3, S1-S3, A, A1-A4, B, C, D, E, F, G, H, J) icin dinamik gruplama.
   const byBlock = db.prepare(`
     SELECT
-      CASE
-        WHEN location LIKE 'M1%' THEN 'M1'
-        WHEN location LIKE 'M2%' THEN 'M2'
-        WHEN location LIKE 'M3%' THEN 'M3'
-        WHEN location LIKE 'S1%' THEN 'S1'
-        WHEN location LIKE 'S2%' THEN 'S2'
-        WHEN location LIKE 'S3%' THEN 'S3'
-        ELSE 'Diğer'
-      END as block,
+      SUBSTR(location, 1, INSTR(location || ' ', ' ') - 1) as block,
       COUNT(*) as count
     FROM maintenance_requests WHERE status != 'done'
     GROUP BY block ORDER BY count DESC
