@@ -4,16 +4,13 @@ import { useSearchParams } from 'react-router-dom'
 import HelpHint from '../../shared/components/HelpHint.jsx'
 import api from '../../shared/api/client.js'
 import { useAuthStore } from '../../shared/store/authStore.js'
-
-// ── Block definitions ─────────────────────────────────────────────────────────
-const M_BLOCKS = ['M1', 'M2', 'M3']
-const S_BLOCKS = ['S1', 'S2', 'S3']
-
-function expectedRoomNos(blockType, floor) {
-  const base = floor === 1 ? 100 : 200
-  const count = blockType === 'M' ? 30 : 24
-  return Array.from({ length: count }, (_, i) => base + i + 1)
-}
+import {
+  BLOCKS_BY_TYPE,
+  BLOCK_BY_NAME,
+  expectedRoomNos as expectedRoomNosFromConfig,
+  getCapacity as getCapacityFromConfig,
+  getFloorLabel,
+} from '../../shared/blocks.js'
 
 function roomCls(room, defaultCap = 6) {
   if (room.status === 'maintenance') return 'r-maint'
@@ -913,14 +910,15 @@ function RoomDetailPanel({ room, onClose, onRoomUpdated, swapSource, onSwapSelec
 
 // ── Corridor plan ─────────────────────────────────────────────────────────────
 function CorridorPlan({ block, floor, rooms, selectedRoom, onSelect, onDropPersonnel, dragOverRoomId, onDragOverRoom }) {
-  const isM = block.startsWith('M')
+  const cfg = BLOCK_BY_NAME[block]
+  const isM = cfg?.type === 'M'
   const isS2Floor2 = block === 'S2' && floor === 2
-  const defaultCap = isS2Floor2 ? 4 : 6
+  const defaultCap = getCapacityFromConfig(block, floor)
 
   const floorRooms = rooms.filter(r => r.floor === floor)
   const byNo = Object.fromEntries(floorRooms.map(r => [r.room_no, r]))
 
-  const allNos = expectedRoomNos(isM ? 'M' : 'S', floor)
+  const allNos = expectedRoomNosFromConfig(block, floor)
   const oddNos  = allNos.filter(n => n % 2 !== 0)   // SOL — odd
   const evenNos = allNos.filter(n => n % 2 === 0)   // SAĞ — even
 
@@ -939,6 +937,16 @@ function CorridorPlan({ block, floor, rooms, selectedRoom, onSelect, onDropPerso
           <span>⚠</span>
           <span>
             <strong>S2 KAT 2 İSTİSNA:</strong> Odalar 4 kişilik · Her odada özel banyo
+          </span>
+        </div>
+      )}
+
+      {/* Y blok placeholder warning */}
+      {cfg?.isPlaceholder && (
+        <div className="alert alert-warn" style={{ marginBottom: '12px' }}>
+          <span>⚠</span>
+          <span>
+            <strong>PLACEHOLDER:</strong> Bu bloğun kapasitesi henüz girilmedi (1 kişilik). Doğru yatak sayılarını oda detayından düzenleyin.
           </span>
         </div>
       )}
@@ -1303,7 +1311,8 @@ export default function CapacityPage() {
   const [searchParams] = useSearchParams()
   const blockParam = searchParams.get('block')
 
-  const [blockType, setBlockType] = useState(blockParam?.startsWith('M') ? 'M' : 'S')
+  const initialType = blockParam ? (BLOCK_BY_NAME[blockParam]?.type ?? 'M') : 'M'
+  const [blockType, setBlockType] = useState(initialType)
   const [selectedBlock, setSelectedBlock] = useState(blockParam || 'M1')
   const [floor, setFloor] = useState(1)
   const [selectedRoom, setSelectedRoom] = useState(null)
@@ -1330,12 +1339,13 @@ export default function CapacityPage() {
     queryFn: () => api.get('/checkin/company-suggestions').then(r => r.data),
   })
 
-  const blocks = blockType === 'M' ? M_BLOCKS : S_BLOCKS
+  const blocks = BLOCKS_BY_TYPE[blockType]
 
   function handleBlockChange(b) { setSelectedBlock(b); setFloor(1); setSelectedRoom(null) }
   function handleBlockTypeChange(t) {
     setBlockType(t)
-    setSelectedBlock(t === 'M' ? 'M1' : 'S1')
+    const firstBlock = BLOCKS_BY_TYPE[t][0]
+    setSelectedBlock(firstBlock)
     setFloor(1)
     setSelectedRoom(null)
   }
@@ -1392,6 +1402,7 @@ export default function CapacityPage() {
           <div><span style={{ color: 'var(--blue)' }}>■</span> M1/M2/M3 — 30 ODA/KAT · 6 KİŞİLİK · ORTAK WC/BANYO</div>
           <div><span style={{ color: 'var(--purple)' }}>■</span> S1/S3 — 24 ODA/KAT · 6 KİŞİLİK · ÖZEL BANYO</div>
           <div><span style={{ color: 'var(--accent)' }}>■</span> S2 — 24 ODA/KAT · KAT 2: 4 KİŞİLİK, KAT 1: 6 KİŞİLİK · ÖZEL BANYO</div>
+          <div><span style={{ color: 'var(--green)' }}>■</span> A/A1-A4/B/C/D/E/F/G/H/J — KAPASİTE PLACEHOLDER · ÖZEL BANYO</div>
         </div>
       </div>
 
@@ -1402,7 +1413,7 @@ export default function CapacityPage() {
           display: 'flex', background: 'var(--surface2)', borderRadius: '8px',
           padding: '3px', border: '1px solid var(--border)',
         }}>
-          {['M', 'S'].map(t => (
+          {['M', 'S', 'Y'].map(t => (
             <button
               key={t}
               onClick={() => handleBlockTypeChange(t)}
@@ -1433,25 +1444,28 @@ export default function CapacityPage() {
           ))}
         </div>
 
-        {/* Floor selector */}
-        <div style={{ display: 'flex', gap: '6px', marginLeft: 'auto' }}>
-          {[1, 2].map(f => {
-            const prefix = f === 1 ? '101' : '201'
-            const suffix = blockType === 'M' ? (f === 1 ? '130' : '230') : (f === 1 ? '124' : '224')
-            return (
-              <button
-                key={f}
-                onClick={() => { setFloor(f); setSelectedRoom(null) }}
-                className={`filter-chip${floor === f ? ' active' : ''}`}
-              >
-                KAT {f}
-                <span style={{ fontFamily: 'var(--mono)', fontSize: '8px', opacity: 0.6, marginLeft: '4px' }}>
-                  {prefix}–{suffix}
-                </span>
-              </button>
-            )
-          })}
-        </div>
+        {/* Floor selector — dinamik */}
+        {(() => {
+          const cfg = BLOCK_BY_NAME[selectedBlock]
+          const floorList = Array.from({ length: cfg?.floors ?? 0 }, (_, i) => i + 1)
+          if (floorList.length <= 1) return null
+          return (
+            <div style={{ display: 'flex', gap: '6px', marginLeft: 'auto' }}>
+              {floorList.map(f => (
+                <button
+                  key={f}
+                  onClick={() => { setFloor(f); setSelectedRoom(null) }}
+                  className={`filter-chip${floor === f ? ' active' : ''}`}
+                >
+                  KAT {f}
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: '8px', opacity: 0.6, marginLeft: '4px' }}>
+                    {getFloorLabel(selectedBlock, f)}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )
+        })()}
       </div>
 
       {/* Filters row */}
@@ -1487,19 +1501,20 @@ export default function CapacityPage() {
 
       {/* Plan panel */}
       <div className="panel" style={{ marginBottom: '0' }}>
-        <div style={{ height: '2px', background: blockType === 'M' ? 'linear-gradient(90deg,var(--blue),var(--purple))' : 'linear-gradient(90deg,var(--purple),var(--teal))' }} />
+        <div style={{ height: '2px', background:
+          blockType === 'M' ? 'linear-gradient(90deg,var(--blue),var(--purple))' :
+          blockType === 'S' ? 'linear-gradient(90deg,var(--purple),var(--teal))' :
+                              'linear-gradient(90deg,var(--teal),var(--green))'
+        }} />
         <div className="panel-header">
           <div>
             <div className="panel-title" style={{ fontSize: '17px' }}>{selectedBlock} BLOK — KAT {floor}</div>
             <div className="panel-subtitle">
-              KORİDOR PLANI · {floor === 1
-                ? (blockType === 'M' ? 'ODA 101–130' : 'ODA 101–124')
-                : (blockType === 'M' ? 'ODA 201–230' : 'ODA 201–224')
-              }
+              KORİDOR PLANI · ODA {getFloorLabel(selectedBlock, floor) || '—'}
             </div>
           </div>
           <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-            <span className={`tag tag-${blockType === 'M' ? 'm' : 's'}`}>{blockType}</span>
+            <span className={`tag tag-${blockType.toLowerCase()}`}>{blockType}</span>
             {selectedBlock === 'S2' && floor === 2 && <span className="tag tag-exc">4K · İSTİSNA</span>}
             {selectedRoom && (
               <span style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--accent)', letterSpacing: '1px' }}>
