@@ -8,12 +8,12 @@ import { getDB } from './index.js'
 //   S2 1.kat   → 24 oda × kapasite 6
 //   S2 2.kat   → 24 oda × kapasite 4   (DB CHECK constraint zorunluluğu)
 //   D          → 1 kat × 20 oda (101–120) × kapasite 1 (placeholder)
-//   A1-A4, B   → 2 kat × 20 oda (101–120, 201–220) × kapasite 1
+//   A, A1-A4, B, C → 2 kat × 20 oda (101–120, 201–220) × kapasite 1
 //   E, G       → 3 kat × 20 oda (101–120, 201–220, 301–320) × kapasite 1
 //   F          → 3 kat × 10 oda (101–110, 201–210, 301–310) × kapasite 1
 //   H, J       → 1 kat × 20 oda (1–20 düz numaralı) × kapasite 1
 //
-// Toplam: 324 (M+S) + 410 (yeni 11 blok) = 734 oda
+// Toplam: 324 (M+S) + 490 (yeni 13 blok) = 814 oda
 //
 // Kapasite=1 placeholder; doğru yatak sayıları sonradan UI/SQL ile düzenlenecek.
 //
@@ -54,8 +54,8 @@ export function seedProdRooms() {
       }
     }
 
-    // 2 katlı 20 odalı bloklar — A1, A2, A3, A4, B (kapasite 1 placeholder)
-    const TWO_FLOOR_BLOCKS = ['A1', 'A2', 'A3', 'A4', 'B']
+    // 2 katlı 20 odalı bloklar — A, A1, A2, A3, A4, B, C (kapasite 1 placeholder)
+    const TWO_FLOOR_BLOCKS = ['A', 'A1', 'A2', 'A3', 'A4', 'B', 'C']
     for (const block of TWO_FLOOR_BLOCKS) {
       for (let floor = 1; floor <= 2; floor++) {
         const base = floor === 1 ? 100 : 200

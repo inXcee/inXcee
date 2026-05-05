@@ -9,11 +9,11 @@ beforeEach(() => {
 })
 
 describe('seedProdRooms', () => {
-  it('M1-M3 + S1-S3 + yeni 11 blok toplam 734 oda olusturur', () => {
+  it('M1-M3 + S1-S3 + yeni 13 blok toplam 814 oda olusturur', () => {
     const stats = seedProdRooms()
-    expect(stats.inserted).toBe(734)
+    expect(stats.inserted).toBe(814)
     expect(stats.skipped).toBe(0)
-    expect(stats.total_in_db).toBe(734)
+    expect(stats.total_in_db).toBe(814)
   })
 
   it('her M blogu 60 oda (2 kat x 30), tumu kapasite 6', () => {
@@ -51,8 +51,8 @@ describe('seedProdRooms', () => {
     seedProdRooms()
     const stats = seedProdRooms()
     expect(stats.inserted).toBe(0)
-    expect(stats.skipped).toBe(734)
-    expect(stats.total_in_db).toBe(734)
+    expect(stats.skipped).toBe(814)
+    expect(stats.total_in_db).toBe(814)
   })
 
   it('butun odalar status=active baslar', () => {
@@ -91,10 +91,10 @@ describe('seedProdRooms', () => {
     expect(mismatch).toBe(0)
   })
 
-  it('A1-A4 ve B bloklari her biri 40 oda (2 kat x 20), tumu kapasite 1', () => {
+  it('A, A1-A4, B, C bloklari her biri 40 oda (2 kat x 20), tumu kapasite 1', () => {
     seedProdRooms()
     const db = getDB()
-    for (const block of ['A1', 'A2', 'A3', 'A4', 'B']) {
+    for (const block of ['A', 'A1', 'A2', 'A3', 'A4', 'B', 'C']) {
       const count = db.prepare('SELECT COUNT(*) as c FROM rooms WHERE block=?').get(block).c
       expect(count).toBe(40)
       const cap1 = db.prepare("SELECT COUNT(*) as c FROM rooms WHERE block=? AND capacity=1").get(block).c
