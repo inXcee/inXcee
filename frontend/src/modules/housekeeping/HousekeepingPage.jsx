@@ -2,9 +2,16 @@ import { useState, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import HelpHint from '../../shared/components/HelpHint.jsx'
+import {
+  BLOCKS,
+  BLOCKS_BY_TYPE,
+  BLOCK_BY_NAME,
+  expectedRoomNos as expectedRoomNosFromConfig,
+  getFloorLabel,
+} from '../../shared/blocks.js'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-const ALL_BLOCKS = ['M1','M2','M3','S1','S2','S3']
+const ALL_BLOCK_NAMES = BLOCKS.map(b => b.block)
 const TODAY      = new Date().toISOString().split('T')[0]
 
 const CHECKLIST_ITEMS = [
@@ -24,12 +31,6 @@ const SKIP_REASONS = [
   'Bakımda / onarımda',
   'Diğer',
 ]
-
-function blockRoomNos(block, floor) {
-  const base  = floor === 1 ? 100 : 200
-  const count = block.startsWith('M') ? 30 : 24
-  return Array.from({ length: count }, (_, i) => String(base + i + 1))
-}
 
 function roomNoFromQr(qr) {
   if (!qr) return null
@@ -946,7 +947,7 @@ function BlockFloorView({ block, floor, tasks, dndRooms, blockRooms, selectedRoo
   const dndMap = {}
   floorDnd.forEach(r => { dndMap[r.room_no] = r })
 
-  const allRoomNos  = blockRoomNos(block, floor)
+  const allRoomNos  = expectedRoomNosFromConfig(block, floor).map(n => String(n))
   const roomTasks   = Object.values(roomTaskMap)
   const doneTasks   = roomTasks.filter(t => t.completed_at)
   const skippedTasks = roomTasks.filter(t => t.skipped)
@@ -1092,12 +1093,14 @@ function BlockFloorView({ block, floor, tasks, dndRooms, blockRooms, selectedRoo
 // ── Page ─────────────────────────────────────────────────────────────────────
 export default function HousekeepingPage() {
   const qc = useQueryClient()
+  const [blockType, setBlockType]   = useState('M')
   const [block, setBlock]           = useState('M1')
   const [floor, setFloor]           = useState(1)
   const [selectedRoomNo, setSelected] = useState(null)
   const [uncleanedOnly, setUncleanedOnly] = useState(false)
 
-  const isM = block.startsWith('M')
+  const cfg = BLOCK_BY_NAME[block]
+  const isM = cfg?.type === 'M'
 
   const { data: tasks = [], isLoading } = useQuery({
     queryKey: ['cleaning-tasks', TODAY, uncleanedOnly],
@@ -1208,10 +1211,36 @@ export default function HousekeepingPage() {
         : <ProgressStrip tasks={tasks} onGenerate={() => generateTasks.mutate()} generating={generateTasks.isPending} />
       }
 
-      {/* Block + Floor selectors */}
+      {/* Block type switcher (M / S / Y) + Block + Floor selectors */}
       <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap' }}>
+        <div style={{
+          display: 'flex', background: 'var(--surface2)', borderRadius: '8px',
+          padding: '3px', border: '1px solid var(--border)',
+        }}>
+          {['M', 'S', 'Y'].map(t => (
+            <button
+              key={t}
+              onClick={() => {
+                setBlockType(t)
+                const firstBlock = BLOCKS_BY_TYPE[t][0]
+                setBlock(firstBlock)
+                setFloor(1)
+                setSelected(null)
+              }}
+              style={{
+                padding: '6px 18px', borderRadius: '6px', border: 'none', cursor: 'pointer',
+                fontFamily: 'var(--display)', fontSize: '13px', fontWeight: 700, letterSpacing: '2px',
+                transition: 'all 0.15s',
+                background: blockType === t ? 'var(--accent)' : 'transparent',
+                color: blockType === t ? '#000' : 'var(--text2)',
+              }}
+            >
+              {t} BLOK
+            </button>
+          ))}
+        </div>
         <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
-          {ALL_BLOCKS.map(b => {
+          {BLOCKS_BY_TYPE[blockType].map(b => {
             const bT  = tasks.filter(t => t.block === b)
             const bD  = bT.filter(t => t.completed_at).length
             const bSk = bT.filter(t => t.skipped).length
@@ -1226,12 +1255,23 @@ export default function HousekeepingPage() {
             )
           })}
         </div>
-        <div style={{ display: 'flex', gap: '5px' }}>
-          {[1,2].map(f => (
-            <button key={f} onClick={() => { setFloor(f); setSelected(null) }}
-              className={`filter-chip${floor === f ? ' active' : ''}`}>KAT {f}</button>
-          ))}
-        </div>
+        {(() => {
+          const floorList = Array.from({ length: cfg?.floors ?? 0 }, (_, i) => i + 1)
+          if (floorList.length <= 1) return null
+          return (
+            <div style={{ display: 'flex', gap: '5px' }}>
+              {floorList.map(f => (
+                <button key={f} onClick={() => { setFloor(f); setSelected(null) }}
+                  className={`filter-chip${floor === f ? ' active' : ''}`}>
+                  KAT {f}
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: '8px', opacity: 0.6, marginLeft: '4px' }}>
+                    {getFloorLabel(block, f)}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )
+        })()}
         <button
           onClick={() => setUncleanedOnly(v => !v)}
           className={`filter-chip${uncleanedOnly ? ' active' : ''}`}
@@ -1348,11 +1388,12 @@ export default function HousekeepingPage() {
                     <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
                       <select className="form-select" value={editBlock} onChange={e => setEditBlock(e.target.value)} style={{ width: '65px', fontSize: '11px' }}>
                         <option value="">—</option>
-                        {ALL_BLOCKS.map(b => <option key={b} value={b}>{b}</option>)}
+                        {ALL_BLOCK_NAMES.map(b => <option key={b} value={b}>{b}</option>)}
                       </select>
                       <select className="form-select" value={editFloor} onChange={e => setEditFloor(+e.target.value)} style={{ width: '72px', fontSize: '11px' }}>
-                        <option value={1}>Kat 1</option>
-                        <option value={2}>Kat 2</option>
+                        {Array.from({ length: BLOCK_BY_NAME[editBlock]?.floors ?? 2 }, (_, i) => i + 1).map(f => (
+                          <option key={f} value={f}>Kat {f}</option>
+                        ))}
                       </select>
                       <button className="btn btn-primary btn-xs" disabled={updateStaff.isPending}
                         onClick={() => updateStaff.mutate({ id: s.id, assigned_block: editBlock || null, assigned_floor: editBlock ? editFloor : null })}>
