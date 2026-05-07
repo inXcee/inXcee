@@ -91,18 +91,18 @@ describe('seedProdRooms', () => {
     expect(mismatch).toBe(0)
   })
 
-  it('A, A1-A4, B, C bloklari her biri 40 oda (2 kat x 20), tumu kapasite 1', () => {
+  it('A, A1-A4, B, C bloklari her biri 40 oda (2 kat x 20), tumu kapasite 6', () => {
     seedProdRooms()
     const db = getDB()
     for (const block of ['A', 'A1', 'A2', 'A3', 'A4', 'B', 'C']) {
       const count = db.prepare('SELECT COUNT(*) as c FROM rooms WHERE block=?').get(block).c
       expect(count).toBe(40)
-      const cap1 = db.prepare("SELECT COUNT(*) as c FROM rooms WHERE block=? AND capacity=1").get(block).c
-      expect(cap1).toBe(40)
+      const cap6 = db.prepare("SELECT COUNT(*) as c FROM rooms WHERE block=? AND capacity=6").get(block).c
+      expect(cap6).toBe(40)
     }
   })
 
-  it('E ve G her biri 60 oda (3 kat x 20), F 30 oda (3 kat x 10), kapasite 1', () => {
+  it('E ve G her biri 60 oda (3 kat x 20), F 30 oda (3 kat x 10), kapasite 6', () => {
     seedProdRooms()
     const db = getDB()
     for (const block of ['E', 'G']) {
@@ -112,20 +112,20 @@ describe('seedProdRooms', () => {
     const fCount = db.prepare("SELECT COUNT(*) as c FROM rooms WHERE block='F'").get().c
     expect(fCount).toBe(30)
     for (const block of ['E', 'G', 'F']) {
-      const cap1 = db.prepare("SELECT COUNT(*) as c FROM rooms WHERE block=? AND capacity=1").get(block).c
+      const cap6 = db.prepare("SELECT COUNT(*) as c FROM rooms WHERE block=? AND capacity=6").get(block).c
       const total = db.prepare("SELECT COUNT(*) as c FROM rooms WHERE block=?").get(block).c
-      expect(cap1).toBe(total)
+      expect(cap6).toBe(total)
     }
   })
 
-  it('D 20 oda (101-120), H ve J 20 oda (1-20 duz numarali), kapasite 1', () => {
+  it('D 20 oda (101-120), H ve J 20 oda (1-20 duz numarali), kapasite 6', () => {
     seedProdRooms()
     const db = getDB()
     for (const block of ['D', 'H', 'J']) {
       const count = db.prepare('SELECT COUNT(*) as c FROM rooms WHERE block=?').get(block).c
       expect(count).toBe(20)
-      const cap1 = db.prepare("SELECT COUNT(*) as c FROM rooms WHERE block=? AND capacity=1").get(block).c
-      expect(cap1).toBe(20)
+      const cap6 = db.prepare("SELECT COUNT(*) as c FROM rooms WHERE block=? AND capacity=6").get(block).c
+      expect(cap6).toBe(20)
     }
   })
 

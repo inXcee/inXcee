@@ -3,7 +3,7 @@
 // Bloklar 3 tipe ayrilir:
 //   M (Merkezi)  → ortak banyo/WC, 6 kisilik
 //   S (Sosyal)   → ozel banyo, 6 kisilik (S2 kat 2 = 4 kisilik istisna)
-//   Y (Yeni)     → ozel banyo, kapasite=1 placeholder (yatak sayilari sonradan girilecek)
+//   Y (Yeni)     → ozel banyo, default 6 kisilik (gercek yatak sayilari oda detayindan elle ayarlanir)
 //
 // CapacityPage ve HousekeepingPage bu dosyayi tek kaynak olarak import eder.
 
@@ -18,20 +18,20 @@ export const BLOCKS = [
   { block: 'S2', type: 'S', floors: 2, perFloor: 24, startNo: { 1: 101, 2: 201 }, hasPrivateBath: true,  defaultCapacity: 6, capacityException: { floor: 2, capacity: 4 } },
   { block: 'S3', type: 'S', floors: 2, perFloor: 24, startNo: { 1: 101, 2: 201 }, hasPrivateBath: true,  defaultCapacity: 6 },
 
-  // Y tipi — ozel banyo, placeholder kapasite
-  { block: 'A',  type: 'Y', floors: 2, perFloor: 20, startNo: { 1: 101, 2: 201 }, hasPrivateBath: true, defaultCapacity: 1, isPlaceholder: true },
-  { block: 'A1', type: 'Y', floors: 2, perFloor: 20, startNo: { 1: 101, 2: 201 }, hasPrivateBath: true, defaultCapacity: 1, isPlaceholder: true },
-  { block: 'A2', type: 'Y', floors: 2, perFloor: 20, startNo: { 1: 101, 2: 201 }, hasPrivateBath: true, defaultCapacity: 1, isPlaceholder: true },
-  { block: 'A3', type: 'Y', floors: 2, perFloor: 20, startNo: { 1: 101, 2: 201 }, hasPrivateBath: true, defaultCapacity: 1, isPlaceholder: true },
-  { block: 'A4', type: 'Y', floors: 2, perFloor: 20, startNo: { 1: 101, 2: 201 }, hasPrivateBath: true, defaultCapacity: 1, isPlaceholder: true },
-  { block: 'B',  type: 'Y', floors: 2, perFloor: 20, startNo: { 1: 101, 2: 201 }, hasPrivateBath: true, defaultCapacity: 1, isPlaceholder: true },
-  { block: 'C',  type: 'Y', floors: 2, perFloor: 20, startNo: { 1: 101, 2: 201 }, hasPrivateBath: true, defaultCapacity: 1, isPlaceholder: true },
-  { block: 'E',  type: 'Y', floors: 3, perFloor: 20, startNo: { 1: 101, 2: 201, 3: 301 }, hasPrivateBath: true, defaultCapacity: 1, isPlaceholder: true },
-  { block: 'G',  type: 'Y', floors: 3, perFloor: 20, startNo: { 1: 101, 2: 201, 3: 301 }, hasPrivateBath: true, defaultCapacity: 1, isPlaceholder: true },
-  { block: 'F',  type: 'Y', floors: 3, perFloor: 10, startNo: { 1: 101, 2: 201, 3: 301 }, hasPrivateBath: true, defaultCapacity: 1, isPlaceholder: true },
-  { block: 'D',  type: 'Y', floors: 1, perFloor: 20, startNo: { 1: 101 }, hasPrivateBath: true, defaultCapacity: 1, isPlaceholder: true },
-  { block: 'H',  type: 'Y', floors: 1, perFloor: 20, startNo: { 1: 1   }, hasPrivateBath: true, defaultCapacity: 1, isPlaceholder: true },
-  { block: 'J',  type: 'Y', floors: 1, perFloor: 20, startNo: { 1: 1   }, hasPrivateBath: true, defaultCapacity: 1, isPlaceholder: true },
+  // Y tipi — ozel banyo, default 6 (oda detayindan duzenlenebilir)
+  { block: 'A',  type: 'Y', floors: 2, perFloor: 20, startNo: { 1: 101, 2: 201 }, hasPrivateBath: true, defaultCapacity: 6, isPlaceholder: true },
+  { block: 'A1', type: 'Y', floors: 2, perFloor: 20, startNo: { 1: 101, 2: 201 }, hasPrivateBath: true, defaultCapacity: 6, isPlaceholder: true },
+  { block: 'A2', type: 'Y', floors: 2, perFloor: 20, startNo: { 1: 101, 2: 201 }, hasPrivateBath: true, defaultCapacity: 6, isPlaceholder: true },
+  { block: 'A3', type: 'Y', floors: 2, perFloor: 20, startNo: { 1: 101, 2: 201 }, hasPrivateBath: true, defaultCapacity: 6, isPlaceholder: true },
+  { block: 'A4', type: 'Y', floors: 2, perFloor: 20, startNo: { 1: 101, 2: 201 }, hasPrivateBath: true, defaultCapacity: 6, isPlaceholder: true },
+  { block: 'B',  type: 'Y', floors: 2, perFloor: 20, startNo: { 1: 101, 2: 201 }, hasPrivateBath: true, defaultCapacity: 6, isPlaceholder: true },
+  { block: 'C',  type: 'Y', floors: 2, perFloor: 20, startNo: { 1: 101, 2: 201 }, hasPrivateBath: true, defaultCapacity: 6, isPlaceholder: true },
+  { block: 'E',  type: 'Y', floors: 3, perFloor: 20, startNo: { 1: 101, 2: 201, 3: 301 }, hasPrivateBath: true, defaultCapacity: 6, isPlaceholder: true },
+  { block: 'G',  type: 'Y', floors: 3, perFloor: 20, startNo: { 1: 101, 2: 201, 3: 301 }, hasPrivateBath: true, defaultCapacity: 6, isPlaceholder: true },
+  { block: 'F',  type: 'Y', floors: 3, perFloor: 10, startNo: { 1: 101, 2: 201, 3: 301 }, hasPrivateBath: true, defaultCapacity: 6, isPlaceholder: true },
+  { block: 'D',  type: 'Y', floors: 1, perFloor: 20, startNo: { 1: 101 }, hasPrivateBath: true, defaultCapacity: 6, isPlaceholder: true },
+  { block: 'H',  type: 'Y', floors: 1, perFloor: 20, startNo: { 1: 1   }, hasPrivateBath: true, defaultCapacity: 6, isPlaceholder: true },
+  { block: 'J',  type: 'Y', floors: 1, perFloor: 20, startNo: { 1: 1   }, hasPrivateBath: true, defaultCapacity: 6, isPlaceholder: true },
 ]
 
 export const BLOCK_BY_NAME = Object.fromEntries(BLOCKS.map(b => [b.block, b]))
