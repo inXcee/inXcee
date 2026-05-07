@@ -69,3 +69,12 @@ export function getFloorLabel(blockName, floor) {
   if (nos.length === 0) return ''
   return `${nos[0]}–${nos[nos.length - 1]}`
 }
+
+// Blok tipine göre vurgu rengi (UI'da accent olarak kullanılır)
+export function blockColor(blockName) {
+  const t = BLOCK_BY_NAME[blockName]?.type
+  if (t === 'M') return 'var(--blue)'
+  if (t === 'S') return 'var(--purple)'
+  if (t === 'Y') return 'var(--green)'
+  return 'var(--text2)'
+}

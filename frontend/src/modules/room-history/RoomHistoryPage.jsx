@@ -1,16 +1,9 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
-import { BLOCKS, BLOCK_BY_NAME } from '../../shared/blocks.js'
+import { BLOCKS, blockColor } from '../../shared/blocks.js'
 
 const ALL_BLOCK_NAMES = BLOCKS.map(b => b.block)
-const blockColor = (block) => {
-  const t = BLOCK_BY_NAME[block]?.type
-  if (t === 'M') return 'var(--blue)'
-  if (t === 'S') return 'var(--purple)'
-  if (t === 'Y') return 'var(--green)'
-  return 'var(--text2)'
-}
 const DAYS_OPTIONS = [
   { value: 7, label: '7 GÜN' },
   { value: 14, label: '14 GÜN' },

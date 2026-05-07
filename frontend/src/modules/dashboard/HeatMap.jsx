@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom'
+import { BLOCK_BY_NAME } from '../../shared/blocks.js'
 
 function getStyle(block) {
   if (block.status === 'quarantine') return {
@@ -25,8 +26,8 @@ function getStyle(block) {
 }
 
 function blockTag(name) {
-  const isM = name.startsWith('M')
-  return <span className={`tag tag-${isM ? 'm' : 's'}`}>{isM ? 'M' : 'S'}</span>
+  const type = BLOCK_BY_NAME[name]?.type ?? 'M'
+  return <span className={`tag tag-${type.toLowerCase()}`}>{type}</span>
 }
 
 export default function HeatMap({ data = [] }) {

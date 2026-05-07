@@ -9,6 +9,7 @@ import TrendChartsSection from './TrendChartsSection.jsx'
 import { useNotifications } from '../../shared/hooks/useNotifications.js'
 import { useOccupancy } from '../../shared/hooks/useOccupancy.js'
 import { useAuthStore } from '../../shared/store/authStore.js'
+import { blockColor } from '../../shared/blocks.js'
 
 function PriorityBar({ priority }) {
   const cls = priority === 'high' ? 'pri-high' : priority === 'medium' ? 'pri-mid' : 'pri-low'
@@ -75,7 +76,7 @@ function BedOccupancyPanel({ data }) {
               }}>
                 <div style={{
                   fontFamily: 'var(--display)', fontSize: '20px', letterSpacing: '2px',
-                  color: b.block.startsWith('M') ? 'var(--blue)' : 'var(--purple)',
+                  color: blockColor(b.block),
                   width: '36px', flexShrink: 0,
                 }}>{b.block}</div>
 
