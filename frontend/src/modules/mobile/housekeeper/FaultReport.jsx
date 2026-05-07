@@ -67,7 +67,7 @@ export default function FaultReport() {
         <Field label="KONUM">
           <input value={form.location}
             onChange={e => setForm(f => ({ ...f, location: e.target.value }))}
-            placeholder="ör: M1 Blok, 3. Kat Banyo"
+            placeholder="ör: A Blok, Kat 2 — Banyo"
             style={inputStyle} />
         </Field>
 

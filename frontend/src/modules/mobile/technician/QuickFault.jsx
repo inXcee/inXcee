@@ -61,7 +61,7 @@ export default function QuickFault() {
         <Field label="KONUM">
           <input value={form.location}
             onChange={e => setForm(f => ({ ...f, location: e.target.value }))}
-            placeholder="ör: M2 Blok, Kat 2 — Tesisat"
+            placeholder="ör: E Blok, Kat 3 — Tesisat"
             style={inputStyle} />
         </Field>
 
