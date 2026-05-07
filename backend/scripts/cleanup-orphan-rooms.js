@@ -15,43 +15,19 @@
 import Database from 'better-sqlite3'
 import { copyFileSync } from 'fs'
 import { resolve } from 'path'
+import { BLOCKS, expectedRoomNos } from '../src/shared/blocks.js'
 
 const DB_PATH = process.env.DB_PATH || resolve(process.cwd(), 'yys.db')
 const APPLY = process.argv.includes('--apply')
 
-// seedProdRooms.js ile bire bir aynı beklenen oda kümesi.
-// Burayı her değiştirdiğinde seedProdRooms.js de aynı blok+kat+aralık üretmeli.
+// Beklenen oda kümesi tek kaynaktan: src/shared/blocks.js
 const EXPECTED = []
-for (const block of ['M1', 'M2', 'M3']) {
-  for (const floor of [1, 2]) {
-    const base = floor * 100
-    for (let r = 1; r <= 30; r++) EXPECTED.push({ block, floor, room_no: String(base + r) })
+for (const cfg of BLOCKS) {
+  for (let floor = 1; floor <= cfg.floors; floor++) {
+    for (const no of expectedRoomNos(cfg.block, floor)) {
+      EXPECTED.push({ block: cfg.block, floor, room_no: String(no) })
+    }
   }
-}
-for (const block of ['S1', 'S2', 'S3']) {
-  for (const floor of [1, 2]) {
-    const base = floor * 100
-    for (let r = 1; r <= 24; r++) EXPECTED.push({ block, floor, room_no: String(base + r) })
-  }
-}
-for (const block of ['A', 'A1', 'A2', 'A3', 'A4', 'B', 'C']) {
-  for (const floor of [1, 2]) {
-    const base = floor * 100
-    for (let r = 1; r <= 20; r++) EXPECTED.push({ block, floor, room_no: String(base + r) })
-  }
-}
-for (const { block, perFloor } of [{ block: 'E', perFloor: 20 }, { block: 'G', perFloor: 20 }, { block: 'F', perFloor: 10 }]) {
-  for (const floor of [1, 2, 3]) {
-    const base = floor * 100
-    for (let r = 1; r <= perFloor; r++) EXPECTED.push({ block, floor, room_no: String(base + r) })
-  }
-}
-for (const { block, floor, start, end } of [
-  { block: 'D', floor: 1, start: 101, end: 120 },
-  { block: 'H', floor: 1, start: 1, end: 20 },
-  { block: 'J', floor: 1, start: 1, end: 20 },
-]) {
-  for (let r = start; r <= end; r++) EXPECTED.push({ block, floor, room_no: String(r) })
 }
 
 const expectedKeys = new Set(EXPECTED.map(e => `${e.block}|${e.floor}|${e.room_no}`))
