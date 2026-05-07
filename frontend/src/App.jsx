@@ -43,6 +43,7 @@ const TechnicianHome = lazy(() => import('./modules/mobile/technician/Technician
 const RequestDetail = lazy(() => import('./modules/mobile/technician/RequestDetail.jsx'))
 const QuickFault = lazy(() => import('./modules/mobile/technician/QuickFault.jsx'))
 const DndRooms = lazy(() => import('./modules/mobile/housekeeper/DndRooms.jsx'))
+const MobileNotifications = lazy(() => import('./modules/mobile/shared/NotificationsPage.jsx'))
 const SetupPage = lazy(() => import('./modules/setup/SetupPage.jsx'))
 const ErrorLogPage = lazy(() => import('./modules/admin/ErrorLogPage.jsx'))
 const BackupPage = lazy(() => import('./modules/admin/BackupPage.jsx'))
@@ -66,12 +67,14 @@ const HOUSEKEEPER_TABS = [
   { to: '/mobile/housekeeper', label: 'Görevler', icon: '🧹' },
   { to: '/mobile/housekeeper/fault', label: 'Arıza', icon: '⚠️' },
   { to: '/mobile/housekeeper/dnd', label: 'DnD', icon: '🚫' },
+  { to: '/mobile/housekeeper/notifications', label: 'Bildirim', icon: '🔔' },
   { to: '/mobile/housekeeper/history', label: 'Geçmiş', icon: '📋' },
 ]
 
 const TECHNICIAN_TABS = [
   { to: '/mobile/technician', label: 'Talepler', icon: '🔧' },
-  { to: '/mobile/technician/quick-fault', label: 'Yeni Talep', icon: '➕' },
+  { to: '/mobile/technician/quick-fault', label: 'Yeni', icon: '➕' },
+  { to: '/mobile/technician/notifications', label: 'Bildirim', icon: '🔔' },
 ]
 
 function HousekeeperShell() {
@@ -184,12 +187,14 @@ export default function App() {
             <Route path="task/:id" element={<TaskDetail />} />
             <Route path="fault" element={<FaultReport />} />
             <Route path="dnd" element={<DndRooms />} />
+            <Route path="notifications" element={<MobileNotifications />} />
             <Route path="history" element={<TaskHistory />} />
           </Route>
           <Route path="/mobile/technician" element={<TechnicianShell />}>
             <Route index element={<TechnicianHome />} />
             <Route path="request/:id" element={<RequestDetail />} />
             <Route path="quick-fault" element={<QuickFault />} />
+            <Route path="notifications" element={<MobileNotifications />} />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>
