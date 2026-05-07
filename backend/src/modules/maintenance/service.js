@@ -1,6 +1,7 @@
 import * as q from './queries.js'
 import { createNotification } from '../../shared/notifications/service.js'
 import { logAudit } from '../../shared/audit.js'
+import { getDB } from '../../shared/db/index.js'
 
 export function createRequestService(data) {
   const id = q.createRequest(data)
@@ -49,11 +50,16 @@ export function reopenRequestService(id) {
 export function assignRequestService(id, technicianId, userId) {
   q.assignRequest(id, technicianId)
   const req = q.getRequestById(id)
+  // technicians.user_id varsa o kullaniciya direkt push gonder; yoksa rol bazinda
+  const tech = getDB().prepare('SELECT user_id FROM technicians WHERE id=?').get(technicianId)
   createNotification({
-    message: `Arıza #${id} (${req?.location || ''}) teknisyene atandı`,
-    type: 'info',
+    message: tech?.user_id
+      ? `Size yeni arıza atandı: ${req?.location || ''}`
+      : `Arıza #${id} (${req?.location || ''}) teknisyene atandı`,
+    type: req?.priority === 'high' ? 'critical' : 'warning',
     module: 'maintenance',
-    target_role: 'technical',
+    target_user_id: tech?.user_id || null,
+    target_role: tech?.user_id ? null : 'technical',
   })
   logAudit(userId, 'assign', 'maintenance', id, `Teknisyen ID: ${technicianId}`)
 }

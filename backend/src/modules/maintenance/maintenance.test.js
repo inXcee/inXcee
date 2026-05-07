@@ -184,4 +184,41 @@ describe('Maintenance — assigned_user_id filter (M22)', () => {
     const updated = db.prepare('SELECT user_id FROM technicians WHERE id=?').get(myTechId)
     expect(updated.user_id).toBeNull()
   })
+
+  it('assign — bagli teknisyene target_user_id ile push-friendly notification', async () => {
+    const userId = db.prepare("SELECT id FROM users WHERE username='teknik'").get().id
+    const tech = db.prepare("INSERT INTO technicians(full_name,user_id) VALUES('Push Hedef',?)").run(userId).lastInsertRowid
+    const req = db.prepare(`INSERT INTO maintenance_requests(location,description,priority)
+      VALUES('M3 305','priz arizasi','high')`).run().lastInsertRowid
+
+    const res = await request(app)
+      .patch(`/api/maintenance/requests/${req}/assign`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ technician_id: tech })
+    expect(res.status).toBe(200)
+
+    const notif = db.prepare(`SELECT * FROM notifications
+      WHERE target_user_id=? AND module='maintenance' ORDER BY id DESC LIMIT 1`).get(userId)
+    expect(notif).toBeTruthy()
+    expect(notif.target_role).toBeNull()
+    expect(notif.type).toBe('critical') // high priority
+    expect(notif.message).toMatch(/Size yeni ariza atandı|atand[ıi]/i)
+  })
+
+  it('assign — user_id bagli olmayan teknisyen icin target_role fallback', async () => {
+    const tech = db.prepare("INSERT INTO technicians(full_name) VALUES('Bagsiz Tech')").run().lastInsertRowid
+    const req = db.prepare(`INSERT INTO maintenance_requests(location,description,priority)
+      VALUES('S1 105','musluk','medium')`).run().lastInsertRowid
+
+    const res = await request(app)
+      .patch(`/api/maintenance/requests/${req}/assign`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ technician_id: tech })
+    expect(res.status).toBe(200)
+
+    const notif = db.prepare(`SELECT * FROM notifications
+      WHERE target_role='technical' AND module='maintenance' ORDER BY id DESC LIMIT 1`).get()
+    expect(notif).toBeTruthy()
+    expect(notif.target_user_id).toBeNull()
+  })
 })
