@@ -36,3 +36,34 @@ self.addEventListener('fetch', e => {
       .catch(() => caches.match(request))
   )
 })
+
+// ── Web Push (Faz 3.b / M10) ─────────────────────────────────────────────
+self.addEventListener('push', event => {
+  if (!event.data) return
+  let payload
+  try { payload = event.data.json() } catch { payload = { title: event.data.text() } }
+  const title = payload.title || 'YYS Bildirim'
+  const options = {
+    body: payload.body || '',
+    icon: '/icon-192.png',
+    badge: '/icon-192.png',
+    tag: payload.module || 'yys',
+    data: { url: payload.url || '/mobile', id: payload.id, module: payload.module },
+    requireInteraction: payload.type === 'critical',
+    vibrate: payload.type === 'critical' ? [200, 100, 200] : [80],
+  }
+  event.waitUntil(self.registration.showNotification(title, options))
+})
+
+self.addEventListener('notificationclick', event => {
+  event.notification.close()
+  const targetUrl = event.notification.data?.url || '/mobile'
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+      for (const c of list) {
+        if (c.url.includes(targetUrl) && 'focus' in c) return c.focus()
+      }
+      if (self.clients.openWindow) return self.clients.openWindow(targetUrl)
+    })
+  )
+})

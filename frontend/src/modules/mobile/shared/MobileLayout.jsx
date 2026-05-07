@@ -7,6 +7,8 @@ import { getQueue, dequeue, updateRetries, getBlob } from '../../../shared/utils
 import { useToastStore } from '../../../shared/store/toastStore.js'
 import { useMobilePrefs } from '../../../shared/store/mobilePrefsStore.js'
 import { useIdleTimeout } from '../../../shared/hooks/useIdleTimeout.js'
+import PushBanner from './PushBanner.jsx'
+import { unsubscribePush } from '../../../shared/utils/pushSubscribe.js'
 
 const MODULE_KEYS = {
   housekeeping: [['mobile-hk-tasks']],
@@ -14,7 +16,13 @@ const MODULE_KEYS = {
 }
 
 export default function MobileLayout({ tabs }) {
-  const { logout, token: mobileToken } = useMobileAuth()
+  const { logout: rawLogout, token: mobileToken } = useMobileAuth()
+  // Logout sirasinda push subscription'i da temizle (yeni cihaza login olunduktan
+  // sonra eski cihaz bildirim almasin)
+  const logout = useCallback(async () => {
+    try { await unsubscribePush() } catch {}
+    rawLogout()
+  }, [rawLogout])
   useIdleTimeout({ timeoutMs: 15 * 60 * 1000, warnBeforeMs: 2 * 60 * 1000, token: mobileToken, onLogout: logout })
   const { darkMode, toggleDarkMode } = useMobilePrefs()
   const qc = useQueryClient()
@@ -146,6 +154,7 @@ export default function MobileLayout({ tabs }) {
   return (
     <div className={darkMode ? 'mobile-dark' : ''} style={{ display:'flex', flexDirection:'column', minHeight:'100vh', background:'#f9fafb', maxWidth:'480px', margin:'0 auto' }}>
       {offlineBanner}
+      <PushBanner />
       <main style={{ flex:1, overflowY:'auto', paddingBottom:'calc(72px + env(safe-area-inset-bottom))', paddingTop: isOnline ? 0 : '36px' }}>
         <Outlet />
       </main>
