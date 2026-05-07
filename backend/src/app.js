@@ -23,6 +23,7 @@ import { usersRouter } from './modules/users/routes.js'
 import { authRouter } from './shared/auth/routes.js'
 import { notificationsRouter } from './shared/notifications/routes.js'
 import { whatsappRouter } from './shared/whatsapp/routes.js'
+import { pushRouter } from './modules/push/routes.js'
 import { emailRouter } from './modules/email/routes.js'
 import { announcementsRouter } from './modules/announcements/routes.js'
 import { avsWorkersRouter } from './modules/avs-workers/routes.js'
@@ -210,6 +211,7 @@ app.use('/api/self-service', writeLimiter, selfServiceRouter)
 app.use('/api/dashboard', readLimiter, dashboardRouter)
 app.use('/api/room-history', readLimiter, roomHistoryRouter)
 app.use('/api/notifications', notificationsLimiter, notificationsRouter)
+app.use('/api/push', writeLimiter, pushRouter)
 app.use('/api/whatsapp', writeLimiter, whatsappRouter)
 app.use('/api/shifts', writeLimiter, shiftsRouter)
 app.use('/api/checkout', writeLimiter, checkoutRouter)

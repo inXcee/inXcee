@@ -1,5 +1,6 @@
 import { getDB } from '../db/index.js'
 import { isNotificationEnabledForUser } from '../../modules/notification-prefs/service.js'
+import { sendPushToUser, sendPushToRole, isPushConfigured } from './push.js'
 
 const MAX_SSE_CLIENTS = 500
 const MAX_PER_USER = 4 // bir user max 4 sekme; fazlası eski bağlantıyı düşürür
@@ -74,6 +75,17 @@ export function createNotification({ message, type = 'info', module, target_role
     if (notif.module && !isNotificationEnabledForUser(uid, notif.module)) return
     try { client.write(`data: ${JSON.stringify(notif)}\n\n`) } catch { sseClients.delete(resKey) }
   })
+
+  // Web Push (fire-and-forget — SSE pasifken kullaniciya bildirim ulastirir)
+  if (isPushConfigured()) {
+    const payload = { title: notif.message, type: notif.type, module: notif.module, id: notif.id }
+    if (notif.target_user_id) {
+      sendPushToUser(notif.target_user_id, payload).catch(e => console.error('[Push] user:', e.message))
+    } else if (notif.target_role) {
+      sendPushToRole(notif.target_role, payload).catch(e => console.error('[Push] role:', e.message))
+    }
+  }
+
   return notif
 }
 

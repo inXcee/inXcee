@@ -886,6 +886,19 @@ export function initDB() {
   try { db.exec('ALTER TABLE technicians ADD COLUMN user_id INTEGER REFERENCES users(id)') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] technicians.user_id:', e.message) }
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_technicians_user ON technicians(user_id) WHERE user_id IS NOT NULL') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] idx_technicians_user:', e.message) }
 
+  // ── Mobile M10: Web Push subscriptions ──
+  try { db.exec(`CREATE TABLE IF NOT EXISTS push_subscriptions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    endpoint TEXT NOT NULL UNIQUE,
+    p256dh_key TEXT NOT NULL,
+    auth_key TEXT NOT NULL,
+    user_agent TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    last_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] push_subscriptions:', e.message) }
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_push_user ON push_subscriptions(user_id)') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] idx_push_user:', e.message) }
+
   return db
 }
 
