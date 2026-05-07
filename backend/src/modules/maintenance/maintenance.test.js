@@ -116,3 +116,72 @@ describe('Maintenance — pagination (Y2)', () => {
     expect(overlap.length).toBe(0)
   })
 })
+
+describe('Maintenance — assigned_user_id filter (M22)', () => {
+  let myUserId, otherUserId, myTechId, otherTechId, myReqId, otherReqId
+
+  beforeAll(async () => {
+    myUserId = db.prepare("SELECT id FROM users WHERE username='teknik'").get().id
+    otherUserId = db.prepare("SELECT id FROM users WHERE username='vardiya'").get().id
+
+    myTechId = db.prepare("INSERT INTO technicians(full_name,user_id) VALUES('Mobile Tech',?)").run(myUserId).lastInsertRowid
+    otherTechId = db.prepare("INSERT INTO technicians(full_name,user_id) VALUES('Diger Tech',?)").run(otherUserId).lastInsertRowid
+
+    myReqId = db.prepare(`INSERT INTO maintenance_requests(location,description,priority,assigned_to)
+      VALUES('M22 #1','bana atli','high',?)`).run(myTechId).lastInsertRowid
+    otherReqId = db.prepare(`INSERT INTO maintenance_requests(location,description,priority,assigned_to)
+      VALUES('M22 #2','digerine atli','medium',?)`).run(otherTechId).lastInsertRowid
+  })
+
+  it('assigned_user_id parametresi technicians.user_id ile filter eder', async () => {
+    const res = await request(app)
+      .get(`/api/maintenance/requests?assigned_user_id=${myUserId}`)
+      .set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(200)
+    const ids = res.body.map(r => r.id)
+    expect(ids).toContain(myReqId)
+    expect(ids).not.toContain(otherReqId)
+  })
+
+  it('assigned_user_id=me JWT user.id ile resolve eder', async () => {
+    const techToken = (await request(app).post('/api/auth/login').send({ username: 'teknik', password: 'admin123' })).body.token
+    const res = await request(app)
+      .get('/api/maintenance/requests?assigned_user_id=me')
+      .set('Authorization', `Bearer ${techToken}`)
+    expect(res.status).toBe(200)
+    const ids = res.body.map(r => r.id)
+    expect(ids).toContain(myReqId)
+    expect(ids).not.toContain(otherReqId)
+  })
+
+  it('user_id baglantisi yoksa bos liste doner', async () => {
+    const orphan = db.prepare("INSERT INTO users(username,password_hash,role,full_name) VALUES('m22orphan','x','technical','Orphan')").run().lastInsertRowid
+    const res = await request(app)
+      .get(`/api/maintenance/requests?assigned_user_id=${orphan}`)
+      .set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(200)
+    expect(res.body).toEqual([])
+  })
+
+  it('PUT /technicians/:id user_id guncellemeyi destekler', async () => {
+    const newUser = db.prepare("INSERT INTO users(username,password_hash,role,full_name) VALUES('m22newuser','x','technical','NU')").run().lastInsertRowid
+    const newTech = db.prepare("INSERT INTO technicians(full_name) VALUES('M22 Yeni')").run().lastInsertRowid
+    const res = await request(app)
+      .put(`/api/maintenance/technicians/${newTech}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ user_id: newUser })
+    expect(res.status).toBe(200)
+    const updated = db.prepare('SELECT user_id FROM technicians WHERE id=?').get(newTech)
+    expect(updated.user_id).toBe(newUser)
+  })
+
+  it('user_id null ile baglantiyi kaldirir', async () => {
+    const res = await request(app)
+      .put(`/api/maintenance/technicians/${myTechId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ user_id: null })
+    expect(res.status).toBe(200)
+    const updated = db.prepare('SELECT user_id FROM technicians WHERE id=?').get(myTechId)
+    expect(updated.user_id).toBeNull()
+  })
+})

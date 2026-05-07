@@ -882,6 +882,10 @@ export function initDB() {
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_log(user_id, created_at DESC)') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] idx_audit_user:', e.message) }
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_notif_role ON notifications(target_role, is_read, created_at)') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] idx_notif_role:', e.message) }
 
+  // ── Mobile M22: technician ↔ user link (assigned_to=me filter icin) ──
+  try { db.exec('ALTER TABLE technicians ADD COLUMN user_id INTEGER REFERENCES users(id)') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] technicians.user_id:', e.message) }
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_technicians_user ON technicians(user_id) WHERE user_id IS NOT NULL') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] idx_technicians_user:', e.message) }
+
   return db
 }
 

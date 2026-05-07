@@ -9,13 +9,19 @@ const PRIORITY_LABEL = { high: 'Yüksek', medium: 'Orta', low: 'Düşük' }
 
 const ACTIVE_STATUSES = new Set(['open', 'assigned', 'in_progress', 'review'])
 
+const TAB_QUERY = {
+  mine:   '/maintenance/requests?assigned_user_id=me',
+  active: '/maintenance/requests',
+  done:   '/maintenance/requests?status=done',
+}
+
 export default function TechnicianHome() {
-  const [tab, setTab] = useState('active')
+  const [tab, setTab] = useState('mine')
   const navigate = useNavigate()
 
-  const { data: allRequests = [], isLoading, refetch } = useQuery({
-    queryKey: ['mobile-tech-requests'],
-    queryFn: () => mobileApi.get('/maintenance/requests').then(r => r.data),
+  const { data: rows = [], isLoading, refetch } = useQuery({
+    queryKey: ['mobile-tech-requests', tab],
+    queryFn: () => mobileApi.get(TAB_QUERY[tab]).then(r => r.data),
     staleTime: 30_000,
     gcTime: 300_000,
     refetchInterval: 60000,
@@ -23,11 +29,8 @@ export default function TechnicianHome() {
 
   const { isPulling, handlers } = usePullToRefresh(refetch)
 
-  const active = allRequests.filter(r => ACTIVE_STATUSES.has(r.status))
-  const assigned = allRequests.filter(r => ACTIVE_STATUSES.has(r.status) && r.technician_name)
-  const done = allRequests.filter(r => r.status === 'done')
-
-  const displayed = tab === 'active' ? active : tab === 'assigned' ? assigned : done
+  const displayed = tab === 'active' ? rows.filter(r => ACTIVE_STATUSES.has(r.status)) : rows
+  const mineCount = tab === 'mine' ? rows.length : null
 
   return (
     <div style={{ padding: '16px' }} {...handlers}>
@@ -37,9 +40,9 @@ export default function TechnicianHome() {
       <h1 style={{ fontSize: '20px', fontWeight: 700, marginBottom: '16px' }}>Teknik Talepler</h1>
 
       <div style={{ display: 'flex', gap: '6px', marginBottom: '16px' }}>
-        <TabBtn label={`Tüm Aktif (${active.length})`} active={tab === 'active'} color="#3b82f6" onClick={() => setTab('active')} />
-        <TabBtn label={`Atanmış (${assigned.length})`} active={tab === 'assigned'} color="#6366f1" onClick={() => setTab('assigned')} />
-        <TabBtn label={`Bitti (${done.length})`} active={tab === 'done'} color="#10b981" onClick={() => setTab('done')} />
+        <TabBtn label={`Bana Atanmış${mineCount != null ? ` (${mineCount})` : ''}`} active={tab === 'mine'} color="#6366f1" onClick={() => setTab('mine')} />
+        <TabBtn label="Tüm Aktif" active={tab === 'active'} color="#3b82f6" onClick={() => setTab('active')} />
+        <TabBtn label="Bitti" active={tab === 'done'} color="#10b981" onClick={() => setTab('done')} />
       </div>
 
       {isLoading ? (
@@ -60,7 +63,9 @@ export default function TechnicianHome() {
         </div>
       ) : displayed.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '48px', color: '#9ca3af' }}>
-          {tab === 'done' ? 'Tamamlanan talep yok' : 'Aktif talep yok 🎉'}
+          {tab === 'done' ? 'Tamamlanan talep yok'
+            : tab === 'mine' ? 'Size atanmış talep yok 🎉 (Hesabınız teknisyene bağlı değilse yöneticiye danışın)'
+            : 'Aktif talep yok 🎉'}
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>

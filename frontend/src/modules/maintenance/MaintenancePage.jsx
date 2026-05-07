@@ -587,6 +587,11 @@ function TechnicianManager() {
     queryFn: () => api.get('/maintenance/technicians').then(r => r.data),
   })
 
+  const { data: users = [] } = useQuery({
+    queryKey: ['users-technical'],
+    queryFn: () => api.get('/users').then(r => r.data.filter(u => u.role === 'technical')),
+  })
+
   const inv = () => qc.invalidateQueries({ queryKey: ['technicians'] })
 
   const createMut = useMutation({
@@ -594,10 +599,17 @@ function TechnicianManager() {
     onSuccess: () => { inv(); setShowAdd(false); setName(''); setPhone(''); setSpecialty('genel'); setShift('1') },
   })
 
+  const updateMut = useMutation({
+    mutationFn: ({ id, data }) => api.put(`/maintenance/technicians/${id}`, data),
+    onSuccess: inv,
+  })
+
   const deleteMut = useMutation({
     mutationFn: (id) => api.delete(`/maintenance/technicians/${id}`),
     onSuccess: inv,
   })
+
+  const linkedUserIds = new Set(technicians.map(t => t.user_id).filter(Boolean))
 
   return (
     <div className="panel fade-up" style={{ marginBottom: '16px' }}>
@@ -680,6 +692,20 @@ function TechnicianManager() {
                     border: `1px solid color-mix(in srgb, ${si.color} 30%, transparent)`,
                     borderRadius: '4px', color: si.color, letterSpacing: '0.5px',
                   }}>{si.label}</span>
+                  <select
+                    className="form-select"
+                    value={t.user_id || ''}
+                    onChange={e => updateMut.mutate({ id: t.id, data: { user_id: e.target.value ? +e.target.value : null } })}
+                    title="Mobile uygulamada 'Bana atanmış' filtresi için kullanıcı bağlama"
+                    style={{ fontSize: '10px', padding: '2px 4px', maxWidth: '120px' }}
+                  >
+                    <option value="">— kullanıcı yok —</option>
+                    {users.map(u => (
+                      <option key={u.id} value={u.id} disabled={linkedUserIds.has(u.id) && u.id !== t.user_id}>
+                        {u.username}{linkedUserIds.has(u.id) && u.id !== t.user_id ? ' (bağlı)' : ''}
+                      </option>
+                    ))}
+                  </select>
                   <button className="btn btn-ghost btn-xs" onClick={async () => { if (await confirmDialog({ title: 'Teknisyen Sil', body: `${t.full_name} silinsin mi?`, danger: true })) deleteMut.mutate(t.id) }} style={{ color: 'var(--red)' }}>✕</button>
                 </div>
               )

@@ -13,12 +13,16 @@ export function createRequest({ location, description, priority, reporterUserId,
   return r.lastInsertRowid
 }
 
-function buildRequestsFilter({ status, search, priority, reporter_user_id }) {
+function buildRequestsFilter({ status, search, priority, reporter_user_id, assigned_user_id }) {
   let where = ' WHERE 1=1'
   const params = []
   if (status) { where += ' AND mr.status=?'; params.push(status) }
   if (priority) { where += ' AND mr.priority=?'; params.push(priority) }
   if (reporter_user_id) { where += ' AND mr.reporter_user_id=?'; params.push(reporter_user_id) }
+  if (assigned_user_id) {
+    where += ' AND mr.assigned_to IN (SELECT id FROM technicians WHERE user_id=?)'
+    params.push(assigned_user_id)
+  }
   if (search) {
     where += ' AND (mr.location LIKE ? OR mr.description LIKE ? OR mr.wait_reason LIKE ?)'
     const like = `%${search}%`
@@ -27,9 +31,9 @@ function buildRequestsFilter({ status, search, priority, reporter_user_id }) {
   return { where, params }
 }
 
-export function getRequests({ status, search, priority, reporter_user_id, _limit, _offset } = {}) {
+export function getRequests({ status, search, priority, reporter_user_id, assigned_user_id, _limit, _offset } = {}) {
   const db = getDB()
-  const { where, params } = buildRequestsFilter({ status, search, priority, reporter_user_id })
+  const { where, params } = buildRequestsFilter({ status, search, priority, reporter_user_id, assigned_user_id })
   let q = `
     SELECT mr.*,
       ru.full_name as reporter_name,
@@ -46,9 +50,9 @@ export function getRequests({ status, search, priority, reporter_user_id, _limit
   return db.prepare(q).all(...params)
 }
 
-export function countRequests({ status, search, priority, reporter_user_id } = {}) {
+export function countRequests({ status, search, priority, reporter_user_id, assigned_user_id } = {}) {
   const db = getDB()
-  const { where, params } = buildRequestsFilter({ status, search, priority, reporter_user_id })
+  const { where, params } = buildRequestsFilter({ status, search, priority, reporter_user_id, assigned_user_id })
   return db.prepare('SELECT COUNT(*) as c FROM maintenance_requests mr' + where).get(...params).c
 }
 
@@ -218,6 +222,7 @@ export function updateTechnician(id, data) {
   if (data.phone !== undefined)     { sets.push('phone=?');     params.push(data.phone || null) }
   if (data.specialty !== undefined) { sets.push('specialty=?'); params.push(data.specialty) }
   if (data.shift !== undefined)     { sets.push('shift=?');     params.push(data.shift) }
+  if (data.user_id !== undefined)   { sets.push('user_id=?');   params.push(data.user_id || null) }
   if (sets.length === 0) return
   params.push(id)
   db.prepare(`UPDATE technicians SET ${sets.join(',')} WHERE id=?`).run(...params)

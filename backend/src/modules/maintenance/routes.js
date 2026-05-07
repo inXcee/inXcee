@@ -35,6 +35,7 @@ maintenanceRouter.get('/requests', ...techAccess, (req, res) => {
   try {
     const query = { ...req.query }
     if (query.reporter_user_id === 'me') query.reporter_user_id = req.user.id
+    if (query.assigned_user_id === 'me') query.assigned_user_id = req.user.id
     if (req.query.page || req.query.limit) {
       const { page, limit, offset } = paginate(req)
       const data = svc.getRequestsService({ ...query, _limit: limit, _offset: offset })
