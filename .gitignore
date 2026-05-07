@@ -4,6 +4,7 @@ dist/
 *.db-journal
 *.db-shm
 *.db-wal
+*.db.bak*
 uploads/
 !backend/src/shared/uploads/middleware.js
 .superpowers/
