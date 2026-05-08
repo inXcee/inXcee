@@ -533,7 +533,7 @@ function RoomDetailPanel({ room, onClose, onRoomUpdated, swapSource, onSwapSelec
                       onDragEnd={e => { e.currentTarget.style.opacity = '1' }}>
                       <td style={{ fontWeight: 600, fontSize: '13px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                         {p.photo_url ? (
-                          <img src={p.photo_url} alt="" style={{ width: '28px', height: '28px', borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
+                          <img loading="lazy" src={p.photo_url} alt="" style={{ width: '28px', height: '28px', borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
                         ) : (
                           <div style={{
                             width: '28px', height: '28px', borderRadius: '50%', flexShrink: 0,

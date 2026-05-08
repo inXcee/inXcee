@@ -193,6 +193,7 @@ function ExpandedSection({ item, onLost, onFound }) {
                       }}
                     >
                       <img
+                        loading="lazy"
                         src={h.signature_data}
                         alt="imza"
                         style={{ width: 120, height: 36, objectFit: 'contain', display: 'block', filter: 'invert(0.85)' }}
@@ -244,6 +245,7 @@ function ExpandedSection({ item, onLost, onFound }) {
               TESLİM İMZASI
             </div>
             <img
+              loading="lazy"
               src={sigModal}
               alt="imza"
               style={{ width: 400, height: 120, objectFit: 'contain', display: 'block', filter: 'invert(0.85)', borderRadius: 6 }}
@@ -405,7 +407,7 @@ function KanbanCard({ item, machines, onDeliver, onDamage, onPersonClick, onFoun
               border: '1px solid var(--border)', height: 56, background: 'var(--surface2)',
             }}
           >
-            <img src={item.photo_url} alt="fotoğraf"
+            <img loading="lazy" src={item.photo_url} alt="fotoğraf"
               style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
           </div>
           {photoOpen && (
@@ -413,7 +415,7 @@ function KanbanCard({ item, machines, onDeliver, onDamage, onPersonClick, onFoun
               position: 'fixed', inset: 0, zIndex: 2000,
               background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}>
-              <img src={item.photo_url} alt="fotoğraf"
+              <img loading="lazy" src={item.photo_url} alt="fotoğraf"
                 style={{ maxWidth: '90vw', maxHeight: '90vh', borderRadius: 8, objectFit: 'contain' }} />
             </div>
           )}

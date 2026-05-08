@@ -104,7 +104,7 @@ function GarmentTypesAdmin() {
             opacity: type.is_active ? 1 : 0.45,
           }}>
             {type.image_url
-              ? <img src={type.image_url} alt={type.name} style={{ width: 28, height: 28, objectFit: 'contain', borderRadius: 4 }} />
+              ? <img loading="lazy" src={type.image_url} alt={type.name} style={{ width: 28, height: 28, objectFit: 'contain', borderRadius: 4 }} />
               : <span style={{ fontSize: 22 }}>{type.emoji || '•'}</span>
             }
             {editId === type.id ? (

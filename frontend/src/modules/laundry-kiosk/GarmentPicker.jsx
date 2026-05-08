@@ -149,7 +149,7 @@ export default function GarmentPicker({ garmentTypes = [], value = [], onChange 
               display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, minHeight: 72,
             }}>
             {type.image_url
-              ? <img src={type.image_url} alt={type.name} style={{ width: 32, height: 32, objectFit: 'contain', borderRadius: 4 }} />
+              ? <img loading="lazy" src={type.image_url} alt={type.name} style={{ width: 32, height: 32, objectFit: 'contain', borderRadius: 4 }} />
               : <span style={{ fontSize: 28 }}>{type.emoji || '👔'}</span>
             }
             <span style={{ fontSize: 10, color: selectedType?.id === type.id ? '#93c5fd' : '#94a3b8', textAlign: 'center', lineHeight: 1.2 }}>

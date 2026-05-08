@@ -349,7 +349,7 @@ function PhotoCapture({ value, onChange, label = 'Fotoğraf' }) {
       {label && <label className="form-label">{label}</label>}
       {preview ? (
         <div style={{ position: 'relative', display: 'inline-block' }}>
-          <img src={preview} alt="" style={{ maxWidth: '100%', maxHeight: '180px', borderRadius: '8px', border: '1px solid var(--border)', objectFit: 'cover' }} />
+          <img loading="lazy" src={preview} alt="" style={{ maxWidth: '100%', maxHeight: '180px', borderRadius: '8px', border: '1px solid var(--border)', objectFit: 'cover' }} />
           <button onClick={clear} style={{
             position: 'absolute', top: '6px', right: '6px', width: '22px', height: '22px', borderRadius: '50%',
             background: 'rgba(0,0,0,.7)', color: '#fff', border: 'none', cursor: 'pointer', fontSize: '11px',
@@ -925,13 +925,13 @@ function DetailPanel({ requestId, onClose }) {
             {request.photo_before && (
               <div style={{ flex: 1, minWidth: '140px' }}>
                 <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--red)', letterSpacing: '1.5px', marginBottom: '6px' }}>ÖNCE</div>
-                <img src={request.photo_before} alt="" style={{ width: '100%', borderRadius: '8px', border: '1px solid var(--border)' }} />
+                <img loading="lazy" src={request.photo_before} alt="" style={{ width: '100%', borderRadius: '8px', border: '1px solid var(--border)' }} />
               </div>
             )}
             {request.photo_url && (
               <div style={{ flex: 1, minWidth: '140px' }}>
                 <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--green)', letterSpacing: '1.5px', marginBottom: '6px' }}>SONRA</div>
-                <img src={request.photo_url} alt="" style={{ width: '100%', borderRadius: '8px', border: '1px solid var(--border)' }} />
+                <img loading="lazy" src={request.photo_url} alt="" style={{ width: '100%', borderRadius: '8px', border: '1px solid var(--border)' }} />
               </div>
             )}
           </div>
@@ -991,7 +991,7 @@ function DetailPanel({ requestId, onClose }) {
                   </span>
                 </div>
                 <div style={{ fontSize: '12px', color: 'var(--text2)', lineHeight: 1.5 }}>{c.comment}</div>
-                {c.photo_url && <img src={c.photo_url} alt="" style={{ marginTop: '8px', maxWidth: '200px', borderRadius: '6px', border: '1px solid var(--border)' }} />}
+                {c.photo_url && <img loading="lazy" src={c.photo_url} alt="" style={{ marginTop: '8px', maxWidth: '200px', borderRadius: '6px', border: '1px solid var(--border)' }} />}
               </div>
             ))}
           </div>

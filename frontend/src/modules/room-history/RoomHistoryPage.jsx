@@ -443,13 +443,13 @@ function FaultItem({ data }) {
               {data.photo_before && (
                 <div>
                   <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '1px', marginBottom: '6px' }}>ÖNCE</div>
-                  <img src={data.photo_before} alt="before" style={{ width: '120px', borderRadius: '6px', border: '1px solid var(--border)' }} />
+                  <img loading="lazy" src={data.photo_before} alt="before" style={{ width: '120px', borderRadius: '6px', border: '1px solid var(--border)' }} />
                 </div>
               )}
               {data.photo_url && (
                 <div>
                   <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '1px', marginBottom: '6px' }}>SONRA</div>
-                  <img src={data.photo_url} alt="after" style={{ width: '120px', borderRadius: '6px', border: '1px solid var(--border)' }} />
+                  <img loading="lazy" src={data.photo_url} alt="after" style={{ width: '120px', borderRadius: '6px', border: '1px solid var(--border)' }} />
                 </div>
               )}
             </div>

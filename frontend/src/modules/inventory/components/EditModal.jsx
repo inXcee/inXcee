@@ -45,7 +45,7 @@ export default function EditModal({ item, onClose, onSave, isPending }) {
       {item?.id && (
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '14px', padding: '10px 12px', background: 'var(--surface2)', borderRadius: '10px' }}>
           {f.photo_url ? (
-            <img src={f.photo_url} alt="" style={{ width: '64px', height: '64px', borderRadius: '10px', objectFit: 'cover' }} />
+            <img loading="lazy" src={f.photo_url} alt="" style={{ width: '64px', height: '64px', borderRadius: '10px', objectFit: 'cover' }} />
           ) : (
             <div style={{ width: '64px', height: '64px', borderRadius: '10px', background: 'var(--surface3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px', color: 'var(--text3)' }}>📷</div>
           )}

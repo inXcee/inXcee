@@ -21,7 +21,7 @@ export default memo(function ItemCard({ item, onAdjust, onCheckout, onEdit, onSh
         {/* Top: icon + name + status */}
         <div style={{ display: 'flex', gap: '10px', marginBottom: '12px' }}>
           {item.photo_url ? (
-            <img src={item.photo_url} alt={item.item_name} style={{
+            <img loading="lazy" src={item.photo_url} alt={item.item_name} style={{
               width: '36px', height: '36px', borderRadius: '10px', flexShrink: 0,
               objectFit: 'cover', border: `1px solid ${ct?.color}`,
             }} />

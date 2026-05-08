@@ -81,7 +81,7 @@ export default function DamageModal({ item, onClose }) {
             {/* Önizleme */}
             {preview ? (
               <div style={{ marginBottom: 8, position: 'relative' }}>
-                <img src={preview} alt="Önizleme"
+                <img loading="lazy" src={preview} alt="Önizleme"
                   style={{
                     width: '100%', height: 160, objectFit: 'cover',
                     borderRadius: 8, border: '1px solid var(--border)',

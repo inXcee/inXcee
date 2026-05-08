@@ -787,7 +787,7 @@ export default function CheckinPage() {
                   <label className="form-label">Profil Fotoğrafı</label>
                   {photoPreview ? (
                     <div style={{ position: 'relative', display: 'inline-block' }}>
-                      <img src={photoPreview} alt="" style={{ width: '80px', height: '80px', borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--border)' }} />
+                      <img loading="lazy" src={photoPreview} alt="" style={{ width: '80px', height: '80px', borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--border)' }} />
                       <button onClick={() => { setPhotoFile(null); setPhotoPreview(null) }} style={{
                         position: 'absolute', top: '-4px', right: '-4px', width: '20px', height: '20px', borderRadius: '50%',
                         background: 'var(--red)', color: '#fff', border: 'none', cursor: 'pointer', fontSize: '10px',

@@ -813,13 +813,13 @@ function RoomDetailPanel({ block, floor, roomNo, task, isPrivateBath, onComplete
                             {f.photo_before && (
                               <div style={{ flex: 1, minWidth: '80px' }}>
                                 <div style={{ fontFamily: 'var(--mono)', fontSize: '7px', color: 'var(--red)', letterSpacing: '1px', marginBottom: '3px' }}>ÖNCE</div>
-                                <img src={f.photo_before} alt="" style={{ width: '100%', maxHeight: '100px', objectFit: 'cover', borderRadius: '6px', border: '1px solid var(--border)' }} />
+                                <img loading="lazy" src={f.photo_before} alt="" style={{ width: '100%', maxHeight: '100px', objectFit: 'cover', borderRadius: '6px', border: '1px solid var(--border)' }} />
                               </div>
                             )}
                             {f.photo_url && (
                               <div style={{ flex: 1, minWidth: '80px' }}>
                                 <div style={{ fontFamily: 'var(--mono)', fontSize: '7px', color: 'var(--green)', letterSpacing: '1px', marginBottom: '3px' }}>SONRA</div>
-                                <img src={f.photo_url} alt="" style={{ width: '100%', maxHeight: '100px', objectFit: 'cover', borderRadius: '6px', border: '1px solid var(--border)' }} />
+                                <img loading="lazy" src={f.photo_url} alt="" style={{ width: '100%', maxHeight: '100px', objectFit: 'cover', borderRadius: '6px', border: '1px solid var(--border)' }} />
                               </div>
                             )}
                           </div>
@@ -879,7 +879,7 @@ function RoomDetailPanel({ block, floor, roomNo, task, isPrivateBath, onComplete
               {/* Camera / Photo */}
               {faultPreview ? (
                 <div style={{ position: 'relative', display: 'inline-block' }}>
-                  <img src={faultPreview} alt="" style={{ maxWidth: '100%', maxHeight: '120px', borderRadius: '6px', border: '1px solid var(--border)', objectFit: 'cover' }} />
+                  <img loading="lazy" src={faultPreview} alt="" style={{ maxWidth: '100%', maxHeight: '120px', borderRadius: '6px', border: '1px solid var(--border)', objectFit: 'cover' }} />
                   <button onClick={clearFaultPhoto} style={{
                     position: 'absolute', top: '4px', right: '4px', width: '20px', height: '20px', borderRadius: '50%',
                     background: 'rgba(0,0,0,.7)', color: '#fff', border: 'none', cursor: 'pointer', fontSize: '10px',
