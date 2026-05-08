@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import mobileApi from '../auth/mobileApi.js'
 import { enqueue } from '../../../shared/utils/offlineDB.js'
 import { parseQrLocation } from '../../../shared/utils/qrLocation.js'
+import { useSpeechRecognition } from '../../../shared/hooks/useSpeechRecognition.js'
 
 const QrScannerModal = lazy(() => import('../../../shared/components/QrScannerModal.jsx'))
 
@@ -31,6 +32,11 @@ export default function QuickFault() {
     navigator.vibrate?.([20])
     setForm(f => ({ ...f, location: parsed.label }))
   }
+
+  const speech = useSpeechRecognition({
+    onResult: (text) => setForm(f => ({ ...f, description: f.description ? `${f.description} ${text}` : text })),
+    onError: (msg) => setQrError(`Mikrofon: ${msg}`),
+  })
 
   function fillGps() {
     if (!navigator.geolocation) {
@@ -119,10 +125,25 @@ export default function QuickFault() {
         </Field>
 
         <Field label="AÇIKLAMA">
-          <textarea value={form.description}
-            onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
-            rows={4} placeholder="Arızayı detaylı açıklayın..."
-            style={{ ...inputStyle, resize: 'none' }} />
+          <div style={{ position: 'relative' }}>
+            <textarea value={form.description}
+              onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+              rows={4} placeholder="Arızayı detaylı açıklayın..."
+              style={{ ...inputStyle, resize: 'none', paddingRight: speech.supported ? '48px' : '12px' }} />
+            {speech.supported && (
+              <button type="button" onClick={() => speech.listening ? speech.stop() : speech.start()}
+                aria-label={speech.listening ? 'Dikteyi durdur' : 'Sesli not başlat'}
+                style={{ position: 'absolute', top: '8px', right: '8px', width: '36px', height: '36px',
+                  borderRadius: '50%', border: 'none',
+                  background: speech.listening ? '#ef4444' : '#f3f4f6',
+                  color: speech.listening ? '#fff' : '#6b7280',
+                  fontSize: '18px', cursor: 'pointer',
+                  animation: speech.listening ? 'yys-pulse 1.4s ease-in-out infinite' : 'none' }}>
+                🎤
+              </button>
+            )}
+          </div>
+          {speech.listening && <p style={{ fontSize: '11px', color: '#ef4444', margin: '4px 0 0' }}>● Dinliyor — konuşun</p>}
         </Field>
 
         <Field label="ÖNCELİK">
