@@ -1,8 +1,11 @@
-import { useState } from 'react'
+import { useState, lazy, Suspense } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import mobileApi from '../auth/mobileApi.js'
 import { compressImage } from '../../../shared/utils/compressImage.js'
 import { enqueue } from '../../../shared/utils/offlineDB.js'
+import { parseQrLocation } from '../../../shared/utils/qrLocation.js'
+
+const QrScannerModal = lazy(() => import('../../../shared/components/QrScannerModal.jsx'))
 
 const PRIORITIES = [
   { value: 'high', label: 'Yüksek', color: '#ef4444' },
@@ -15,6 +18,19 @@ export default function FaultReport() {
   const [photo, setPhoto] = useState(null)
   const [success, setSuccess] = useState(false)
   const [isQueued, setIsQueued] = useState(false)
+  const [showQr, setShowQr] = useState(false)
+  const [qrError, setQrError] = useState('')
+
+  function handleQrScan(text) {
+    const parsed = parseQrLocation(text)
+    if (!parsed.valid) {
+      setQrError(`Tanimlanamayan QR: ${text}`)
+      return
+    }
+    setQrError('')
+    navigator.vibrate?.([20])
+    setForm(f => ({ ...f, location: parsed.label }))
+  }
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -65,10 +81,18 @@ export default function FaultReport() {
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
         <Field label="KONUM">
-          <input value={form.location}
-            onChange={e => setForm(f => ({ ...f, location: e.target.value }))}
-            placeholder="ör: A Blok, Kat 2 — Banyo"
-            style={inputStyle} />
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <input value={form.location}
+              onChange={e => setForm(f => ({ ...f, location: e.target.value }))}
+              placeholder="ör: A Blok, Kat 2 — Banyo"
+              style={{ ...inputStyle, flex: 1 }} />
+            <button type="button" onClick={() => { setQrError(''); setShowQr(true) }}
+              aria-label="QR ile konum doldur"
+              style={{ padding: '0 14px', borderRadius: '10px', border: '1px solid #e5e7eb', background: '#f9fafb', cursor: 'pointer', fontSize: '20px', flexShrink: 0 }}>
+              📷
+            </button>
+          </div>
+          {qrError && <p style={{ fontSize: '12px', color: '#ef4444', margin: '4px 0 0' }}>{qrError}</p>}
         </Field>
 
         <Field label="AÇIKLAMA">
@@ -109,6 +133,13 @@ export default function FaultReport() {
           {mutation.isPending ? 'Gönderiliyor...' : '⚠️ Arıza Bildir'}
         </button>
       </div>
+
+      {showQr && (
+        <Suspense fallback={null}>
+          <QrScannerModal open={showQr} onScan={handleQrScan} onClose={() => setShowQr(false)}
+            title="Oda QR Kodunu Okutun" />
+        </Suspense>
+      )}
     </div>
   )
 }
