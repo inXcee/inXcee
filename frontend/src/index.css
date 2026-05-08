@@ -255,6 +255,31 @@ h1, h2, h3, h4 { font-family: var(--display); letter-spacing: 2px; }
 .empty-title { font-family: var(--display); font-size: 18px; letter-spacing: 2px; color: var(--text2); margin-bottom: 6px; }
 .empty-sub { font-family: var(--mono); font-size: 10px; color: var(--text3); }
 
+/* ── Mobile Bottom Nav (Faz 19 / M26) ───────────────────────────────────── */
+.mobile-bottom-nav { display: none; }
+
+@media (max-width: 768px) {
+  .mobile-bottom-nav {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    display: flex; justify-content: space-around;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    z-index: 60;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .mbn-item {
+    flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px;
+    padding: 8px 4px; text-decoration: none;
+    color: var(--text3); font-size: 10px; font-weight: 600;
+    transition: color 0.15s;
+  }
+  .mbn-item.active { color: var(--accent); }
+  .mbn-icon { font-size: 18px; line-height: 1; }
+  .mbn-label { letter-spacing: 0.5px; }
+
+  /* main-content padding-bottom zaten 80px - bottom nav 60px alanı kullaniyor */
+}
+
 /* ── Mobile Responsiveness ──────────────────────────────────────────────── */
 
 @media (max-width: 768px) {
