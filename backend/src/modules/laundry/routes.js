@@ -680,3 +680,64 @@ laundryRouter.post('/garment-types/reorder', ...laundryFull, (req, res) => {
     res.json({ ok: true })
   } catch(e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LAUNDRY BAGS — QR koduyla canta takibi (M21)
+// ═══════════════════════════════════════════════════════════════════════════
+
+const VALID_BAG_STATUSES = new Set(['clean','dirty','collected','washing','ready','distributed'])
+
+laundryRouter.get('/bags', ...laundryRead, (req, res) => {
+  const db = getDB()
+  const rows = db.prepare(`
+    SELECT b.*, r.block, r.room_no, r.floor
+    FROM laundry_bags b
+    LEFT JOIN rooms r ON r.id = b.room_id
+    ORDER BY b.id DESC LIMIT 200
+  `).all()
+  res.json(rows)
+})
+
+laundryRouter.get('/bags/by-qr/:code', ...laundryRead, (req, res) => {
+  const db = getDB()
+  const row = db.prepare(`
+    SELECT b.*, r.block, r.room_no, r.floor, m.name as machine_name
+    FROM laundry_bags b
+    LEFT JOIN rooms r ON r.id = b.room_id
+    LEFT JOIN machines m ON m.id = b.machine_id
+    WHERE b.qr_code = ?
+  `).get(req.params.code)
+  if (!row) return res.status(404).json({ error: 'Çanta bulunamadı' })
+  res.json(row)
+})
+
+laundryRouter.post('/bags', ...laundryFull, (req, res) => {
+  const { qr_code, room_id } = req.body || {}
+  if (!qr_code || qr_code.length < 3) return res.status(400).json({ error: 'qr_code zorunlu (>=3 char)' })
+  const db = getDB()
+  try {
+    const r = db.prepare(`
+      INSERT INTO laundry_bags(qr_code, room_id, status) VALUES(?, ?, 'clean')
+    `).run(qr_code, room_id || null)
+    res.status(201).json({ id: Number(r.lastInsertRowid) })
+  } catch (e) {
+    if (String(e.message).includes('UNIQUE')) return res.status(409).json({ error: 'Bu QR koduyla çanta zaten kayıtlı' })
+    throw e
+  }
+})
+
+laundryRouter.patch('/bags/:id/status', ...laundryFull, (req, res) => {
+  const { status, machine_id } = req.body || {}
+  if (!VALID_BAG_STATUSES.has(status)) return res.status(400).json({ error: 'Geçersiz durum' })
+  const db = getDB()
+  const sets = ['status = ?']
+  const params = [status]
+  if (status === 'collected')   { sets.push("collected_at = datetime('now')") }
+  if (status === 'washing')     { sets.push("wash_started_at = datetime('now')") }
+  if (status === 'distributed') { sets.push("distributed_at = datetime('now')") }
+  if (machine_id !== undefined) { sets.push('machine_id = ?'); params.push(machine_id || null) }
+  params.push(req.params.id)
+  const r = db.prepare(`UPDATE laundry_bags SET ${sets.join(', ')} WHERE id = ?`).run(...params)
+  if (r.changes === 0) return res.status(404).json({ error: 'Çanta bulunamadı' })
+  res.json({ ok: true })
+})
