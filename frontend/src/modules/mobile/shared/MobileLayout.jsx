@@ -156,7 +156,7 @@ export default function MobileLayout({ tabs }) {
   useMobileSSE(handleSSEEvent)
 
   const offlineBanner = !isOnline && (
-    <div style={{ position:'fixed', top:0, left:'50%', transform:'translateX(-50%)', width:'100%', maxWidth:'480px', background:'#ef4444', color:'#fff', textAlign:'center', padding:'8px', fontSize:'13px', fontWeight:600, zIndex:200 }}>
+    <div style={{ position:'fixed', top:0, left:'50%', transform:'translateX(-50%)', width:'100%', maxWidth:'480px', background:'#ef4444', color:'#fff', textAlign:'center', padding:'calc(8px + env(safe-area-inset-top)) 8px 8px', fontSize:'13px', fontWeight:600, zIndex:200 }}>
       Çevrimdışı — Bağlantı bekleniyor...
       {pendingCount > 0 && ` (${pendingCount} işlem bekliyor)`}
     </div>
@@ -166,7 +166,7 @@ export default function MobileLayout({ tabs }) {
     <div className={darkMode ? 'mobile-dark' : ''} style={{ display:'flex', flexDirection:'column', minHeight:'100vh', background:'#f9fafb', maxWidth:'480px', margin:'0 auto' }}>
       {offlineBanner}
       <PushBanner />
-      <main style={{ flex:1, overflowY:'auto', paddingBottom:'calc(72px + env(safe-area-inset-bottom))', paddingTop: isOnline ? 0 : '36px' }}>
+      <main style={{ flex:1, overflowY:'auto', paddingBottom:'calc(72px + env(safe-area-inset-bottom))', paddingTop: isOnline ? 'env(safe-area-inset-top)' : 'calc(36px + env(safe-area-inset-top))' }}>
         <Outlet />
       </main>
       <nav aria-label="Ana navigasyon" style={{ position:'fixed', bottom:0, left:'50%', transform:'translateX(-50%)', width:'100%', maxWidth:'480px', display:'flex', background:'#fff', borderTop:'1px solid #e5e7eb', zIndex:100, paddingBottom:'env(safe-area-inset-bottom)' }}>
