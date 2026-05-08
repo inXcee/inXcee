@@ -4,7 +4,7 @@ import { getDB } from '../../shared/db/index.js'
 
 const SECRET = process.env.JWT_SECRET
 
-const MOBILE_ROLES = new Set(['housekeeper', 'technical'])
+const MOBILE_ROLES = new Set(['housekeeper', 'technical', 'laundry', 'shift_supervisor', 'campus_manager'])
 const MAX_PIN_ATTEMPTS = 5
 const LOCKOUT_MS = 15 * 60 * 1000
 

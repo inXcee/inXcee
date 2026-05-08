@@ -56,7 +56,7 @@ describe('Mobile Auth — PIN login', () => {
   it('rejects wrong role', async () => {
     const res = await request(app)
       .post('/api/mobile/auth/login')
-      .send({ pin: '1234', role: 'campus_manager' })
+      .send({ pin: '1234', role: 'invalid_role' })
     expect(res.status).toBe(400)
   })
 

@@ -23,7 +23,7 @@ mobileAuthRouter.post('/refresh', (req, res) => {
   if (!h?.startsWith('Bearer ')) return res.status(401).json({ error: 'Token gerekli' })
   const result = refreshToken(h.slice(7))
   if (result.error) return res.status(result.status).json({ error: result.error })
-  if (!['housekeeper', 'technical'].includes(result.user?.role)) {
+  if (!['housekeeper', 'technical', 'laundry', 'shift_supervisor', 'campus_manager'].includes(result.user?.role)) {
     return res.status(403).json({ error: 'Yetkisiz' })
   }
   res.json(result)

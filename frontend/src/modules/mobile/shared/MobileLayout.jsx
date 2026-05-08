@@ -13,6 +13,7 @@ import { unsubscribePush } from '../../../shared/utils/pushSubscribe.js'
 const MODULE_KEYS = {
   housekeeping: [['mobile-hk-tasks']],
   maintenance: [['mobile-tech-requests']],
+  laundry: [['mobile-laundry-items'], ['mobile-laundry-machines']],
 }
 
 export default function MobileLayout({ tabs }) {

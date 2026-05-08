@@ -1,6 +1,6 @@
 import { verifyToken } from '../../shared/auth/service.js'
 
-const MOBILE_ROLES = new Set(['housekeeper', 'technical'])
+const MOBILE_ROLES = new Set(['housekeeper', 'technical', 'laundry', 'shift_supervisor', 'campus_manager'])
 
 export function requireMobile(...roles) {
   const allowed = roles.length ? new Set(roles) : MOBILE_ROLES

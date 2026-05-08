@@ -43,6 +43,9 @@ const TechnicianHome = lazy(() => import('./modules/mobile/technician/Technician
 const RequestDetail = lazy(() => import('./modules/mobile/technician/RequestDetail.jsx'))
 const QuickFault = lazy(() => import('./modules/mobile/technician/QuickFault.jsx'))
 const DndRooms = lazy(() => import('./modules/mobile/housekeeper/DndRooms.jsx'))
+const LaundryMobileHome = lazy(() => import('./modules/mobile/laundry/LaundryHome.jsx'))
+const LaundryMobileMachines = lazy(() => import('./modules/mobile/laundry/MachineList.jsx'))
+const LaundryMobileSearch = lazy(() => import('./modules/mobile/laundry/SearchPerson.jsx'))
 const MobileNotifications = lazy(() => import('./modules/mobile/shared/NotificationsPage.jsx'))
 const SetupPage = lazy(() => import('./modules/setup/SetupPage.jsx'))
 const ErrorLogPage = lazy(() => import('./modules/admin/ErrorLogPage.jsx'))
@@ -77,6 +80,13 @@ const TECHNICIAN_TABS = [
   { to: '/mobile/technician/notifications', label: 'Bildirim', icon: '🔔' },
 ]
 
+const LAUNDRY_TABS = [
+  { to: '/mobile/laundry', label: 'Kanban', icon: '🧺' },
+  { to: '/mobile/laundry/machines', label: 'Makineler', icon: '⚙️' },
+  { to: '/mobile/laundry/search', label: 'Ara', icon: '🔎' },
+  { to: '/mobile/laundry/notifications', label: 'Bildirim', icon: '🔔' },
+]
+
 function HousekeeperShell() {
   return (
     <MobileProtected role="housekeeper">
@@ -89,6 +99,14 @@ function TechnicianShell() {
   return (
     <MobileProtected role="technical">
       <MobileLayout tabs={TECHNICIAN_TABS} />
+    </MobileProtected>
+  )
+}
+
+function LaundryShell() {
+  return (
+    <MobileProtected role="laundry">
+      <MobileLayout tabs={LAUNDRY_TABS} />
     </MobileProtected>
   )
 }
@@ -194,6 +212,12 @@ export default function App() {
             <Route index element={<TechnicianHome />} />
             <Route path="request/:id" element={<RequestDetail />} />
             <Route path="quick-fault" element={<QuickFault />} />
+            <Route path="notifications" element={<MobileNotifications />} />
+          </Route>
+          <Route path="/mobile/laundry" element={<LaundryShell />}>
+            <Route index element={<LaundryMobileHome />} />
+            <Route path="machines" element={<LaundryMobileMachines />} />
+            <Route path="search" element={<LaundryMobileSearch />} />
             <Route path="notifications" element={<MobileNotifications />} />
           </Route>
           <Route path="*" element={<NotFound />} />

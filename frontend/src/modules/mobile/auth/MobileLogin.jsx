@@ -6,7 +6,18 @@ import mobileApi from './mobileApi.js'
 const ROLES = [
   { value: 'housekeeper', label: 'Temizlik' },
   { value: 'technical', label: 'Teknik' },
+  { value: 'laundry', label: 'Çamaşırhane' },
+  { value: 'shift_supervisor', label: 'Vardiya' },
+  { value: 'campus_manager', label: 'Müdür' },
 ]
+
+const ROLE_HOME = {
+  housekeeper: '/mobile/housekeeper',
+  technical: '/mobile/technician',
+  laundry: '/mobile/laundry',
+  shift_supervisor: '/mobile/supervisor',
+  campus_manager: '/mobile/manager',
+}
 
 const bioKey = role => `yys-bio-${role}`
 
@@ -36,7 +47,7 @@ export default function MobileLogin() {
       const authResp = await startAuthentication(optRes.data)
       const res = await mobileApi.post('/mobile/auth/webauthn/authenticate', { credentialId, response: authResp })
       login(res.data.token, res.data.user)
-      navigate(r === 'housekeeper' ? '/mobile/housekeeper' : '/mobile/technician', { replace: true })
+      navigate(ROLE_HOME[r] || '/mobile', { replace: true })
     } catch (e) {
       const msg = e.response?.data?.error || e.message || 'Biyometrik doğrulama başarısız'
       setError(msg)
@@ -50,7 +61,7 @@ export default function MobileLogin() {
     try {
       const res = await mobileApi.post('/mobile/auth/login', { pin, role })
       login(res.data.token, res.data.user)
-      const dest = role === 'housekeeper' ? '/mobile/housekeeper' : '/mobile/technician'
+      const dest = ROLE_HOME[role] || '/mobile'
 
       if (!hasBio(role)) {
         const { browserSupportsWebAuthn } = await webAuthnBrowser()
