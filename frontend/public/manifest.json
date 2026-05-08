@@ -20,5 +20,28 @@
       "type": "image/svg+xml",
       "purpose": "any maskable"
     }
+  ],
+  "shortcuts": [
+    {
+      "name": "Görevlerim",
+      "short_name": "Görevler",
+      "description": "Bugünkü temizlik görevleri",
+      "url": "/mobile/housekeeper",
+      "icons": [{ "src": "/icon-192.svg", "sizes": "192x192", "type": "image/svg+xml" }]
+    },
+    {
+      "name": "Teknik Talepler",
+      "short_name": "Talepler",
+      "description": "Atanmış arıza talepleri",
+      "url": "/mobile/technician",
+      "icons": [{ "src": "/icon-192.svg", "sizes": "192x192", "type": "image/svg+xml" }]
+    },
+    {
+      "name": "Arıza Bildir",
+      "short_name": "Arıza",
+      "description": "Yeni arıza bildirimi",
+      "url": "/mobile/housekeeper/fault",
+      "icons": [{ "src": "/icon-192.svg", "sizes": "192x192", "type": "image/svg+xml" }]
+    }
   ]
 }

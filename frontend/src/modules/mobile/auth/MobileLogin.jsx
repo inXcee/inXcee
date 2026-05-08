@@ -131,7 +131,7 @@ export default function MobileLogin() {
           )}
         </div>
       ))}
-      <p style={{ fontSize: '11px', color: '#d1d5db', marginTop: '40px' }}>v1.0.0</p>
+      <p style={{ fontSize: '11px', color: '#d1d5db', marginTop: '40px' }}>v{__APP_VERSION__}</p>
     </div>
   )
 
