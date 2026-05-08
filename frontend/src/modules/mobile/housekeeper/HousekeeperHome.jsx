@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import mobileApi from '../auth/mobileApi.js'
 import { useMobileAuth } from '../auth/useMobileAuth.js'
 import { usePullToRefresh } from '../../../shared/hooks/usePullToRefresh.js'
+import { useSwipe } from '../../../shared/hooks/useSwipe.js'
 import { enqueue } from '../../../shared/utils/offlineDB.js'
 
 const today = new Date().toISOString().slice(0, 10)
@@ -52,6 +53,23 @@ export default function HousekeeperHome() {
     onSettled: () => qc.invalidateQueries({ queryKey: ['mobile-hk-tasks'] }),
   })
 
+  const skipMut = useMutation({
+    mutationFn: id => mobileApi.patch(`/housekeeping/tasks/${id}/skip`, { reason: 'Hizli atlandi' }),
+    onMutate: async (taskId) => {
+      await qc.cancelQueries({ queryKey: ['mobile-hk-tasks', today] })
+      const prev = qc.getQueryData(['mobile-hk-tasks', today])
+      qc.setQueryData(['mobile-hk-tasks', today], old =>
+        (old || []).map(t => t.id === taskId ? { ...t, skipped: 1, skip_reason: 'Hizli atlandi' } : t)
+      )
+      return { prev }
+    },
+    onError: (_, taskId, ctx) => {
+      qc.setQueryData(['mobile-hk-tasks', today], ctx.prev)
+      if (!navigator.onLine) enqueue('skip_task', { taskId, reason: 'Hizli atlandi' })
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ['mobile-hk-tasks'] }),
+  })
+
   const counts = { pending: 0, done: 0, skipped: 0 }
   tasks.forEach(t => counts[taskStatus(t)]++)
   const filtered = tasks.filter(t => taskStatus(t) === filter)
@@ -76,6 +94,12 @@ export default function HousekeeperHome() {
         ))}
       </div>
 
+      {filter === 'pending' && filtered.length > 0 && (
+        <div style={{ fontSize: '11px', color: '#9ca3af', textAlign: 'center', marginBottom: '8px' }}>
+          → Sağa kaydır = tamamla &nbsp;·&nbsp; ← Sola kaydır = atla
+        </div>
+      )}
+
       {isLoading ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {[1,2,3,4].map(i => (
@@ -95,26 +119,65 @@ export default function HousekeeperHome() {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {filtered.map(t => (
-            <div key={t.id}
+            <TaskCard key={t.id} task={t}
+              swipeable={filter === 'pending'}
               onClick={() => navigate(`task/${t.id}`, { state: { task: t } })}
-              style={{ background: '#fff', borderRadius: '12px', padding: '14px', boxShadow: '0 1px 3px rgba(0,0,0,.08)', display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}>
-              <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: STATUS_COLOR[taskStatus(t)], flexShrink: 0 }} />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 600, fontSize: '14px' }}>{t.block} — {t.area}</div>
-                <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '2px' }}>{t.task_type}</div>
-              </div>
-              {filter === 'pending' && (
-                <button
-                  onClick={e => { e.stopPropagation(); navigator.vibrate?.([15, 30, 15]); completeMut.mutate(t.id) }}
-                  disabled={completeMut.isPending}
-                  style={{ padding: '8px 16px', borderRadius: '8px', background: '#10b981', color: '#fff', border: 'none', fontSize: '16px', fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>
-                  ✓
-                </button>
-              )}
-            </div>
+              onComplete={() => { navigator.vibrate?.([15, 30, 15]); completeMut.mutate(t.id) }}
+              onSkip={() => { navigator.vibrate?.([10, 30, 10]); skipMut.mutate(t.id) }}
+              busy={completeMut.isPending || skipMut.isPending}
+            />
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+function TaskCard({ task: t, swipeable, onClick, onComplete, onSkip, busy }) {
+  const { handlers, dragX, isSwiping } = useSwipe({
+    onSwipeLeft: swipeable ? onSkip : undefined,
+    onSwipeRight: swipeable ? onComplete : undefined,
+    threshold: 90,
+  })
+
+  const status = taskStatus(t)
+  const bgHint = dragX > 30 ? '#10b981' : dragX < -30 ? '#f59e0b' : 'transparent'
+  const hintLabel = dragX > 30 ? '✓ Tamamla' : dragX < -30 ? 'Atla ⏭' : ''
+
+  return (
+    <div style={{ position: 'relative', borderRadius: '12px', overflow: 'hidden', background: bgHint, transition: isSwiping ? 'none' : 'background 0.15s' }}>
+      {hintLabel && (
+        <div style={{
+          position: 'absolute', inset: 0, display: 'flex', alignItems: 'center',
+          justifyContent: dragX > 0 ? 'flex-start' : 'flex-end',
+          padding: '0 24px', color: '#fff', fontWeight: 700, fontSize: '14px', pointerEvents: 'none',
+        }}>{hintLabel}</div>
+      )}
+      <div
+        onClick={isSwiping ? undefined : onClick}
+        {...(swipeable ? handlers : {})}
+        style={{
+          background: '#fff', borderRadius: '12px', padding: '14px',
+          boxShadow: '0 1px 3px rgba(0,0,0,.08)',
+          display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer',
+          transform: `translateX(${dragX}px)`,
+          transition: isSwiping ? 'none' : 'transform 0.2s',
+          touchAction: swipeable ? 'pan-y' : 'auto',
+        }}>
+        <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: STATUS_COLOR[status], flexShrink: 0 }} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontWeight: 600, fontSize: '14px' }}>{t.block} — {t.area}</div>
+          <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '2px' }}>{t.task_type}</div>
+        </div>
+        {swipeable && (
+          <button
+            onClick={e => { e.stopPropagation(); onComplete() }}
+            disabled={busy}
+            style={{ padding: '8px 16px', borderRadius: '8px', background: '#10b981', color: '#fff', border: 'none', fontSize: '16px', fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>
+            ✓
+          </button>
+        )}
+      </div>
     </div>
   )
 }
