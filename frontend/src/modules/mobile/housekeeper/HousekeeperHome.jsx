@@ -5,6 +5,7 @@ import mobileApi from '../auth/mobileApi.js'
 import { useMobileAuth } from '../auth/useMobileAuth.js'
 import { usePullToRefresh } from '../../../shared/hooks/usePullToRefresh.js'
 import { useSwipe } from '../../../shared/hooks/useSwipe.js'
+import { useLongPress } from '../../../shared/hooks/useLongPress.js'
 import { enqueue } from '../../../shared/utils/offlineDB.js'
 
 const today = new Date().toISOString().slice(0, 10)
@@ -96,7 +97,7 @@ export default function HousekeeperHome() {
 
       {filter === 'pending' && filtered.length > 0 && (
         <div style={{ fontSize: '11px', color: '#9ca3af', textAlign: 'center', marginBottom: '8px' }}>
-          → Sağa kaydır = tamamla &nbsp;·&nbsp; ← Sola kaydır = atla
+          → Sağa = tamamla &nbsp;·&nbsp; ← Sola = atla &nbsp;·&nbsp; Uzun bas = DND
         </div>
       )}
 
@@ -122,6 +123,7 @@ export default function HousekeeperHome() {
             <TaskCard key={t.id} task={t}
               swipeable={filter === 'pending'}
               onClick={() => navigate(`task/${t.id}`, { state: { task: t } })}
+              onLongPress={() => navigate('dnd')}
               onComplete={() => { navigator.vibrate?.([15, 30, 15]); completeMut.mutate(t.id) }}
               onSkip={() => { navigator.vibrate?.([10, 30, 10]); skipMut.mutate(t.id) }}
               busy={completeMut.isPending || skipMut.isPending}
@@ -133,14 +135,26 @@ export default function HousekeeperHome() {
   )
 }
 
-function TaskCard({ task: t, swipeable, onClick, onComplete, onSkip, busy }) {
-  const { handlers, dragX, isSwiping } = useSwipe({
+function TaskCard({ task: t, swipeable, onClick, onLongPress, onComplete, onSkip, busy }) {
+  const swipe = useSwipe({
     onSwipeLeft: swipeable ? onSkip : undefined,
     onSwipeRight: swipeable ? onComplete : undefined,
     threshold: 90,
   })
+  const lp = useLongPress(onLongPress, 600)
+
+  const handlers = {
+    onTouchStart: (e) => { swipe.handlers.onTouchStart(e); lp.onTouchStart(e) },
+    onTouchMove:  (e) => { swipe.handlers.onTouchMove(e);  lp.onTouchMove(e)  },
+    onTouchEnd:   (e) => { swipe.handlers.onTouchEnd(e);   lp.onTouchEnd(e)   },
+    onTouchCancel:(e) => { swipe.handlers.onTouchCancel(e); lp.onTouchCancel(e) },
+    onMouseDown:  lp.onMouseDown,
+    onMouseUp:    lp.onMouseUp,
+    onMouseLeave: lp.onMouseLeave,
+  }
 
   const status = taskStatus(t)
+  const { dragX, isSwiping } = swipe
   const bgHint = dragX > 30 ? '#10b981' : dragX < -30 ? '#f59e0b' : 'transparent'
   const hintLabel = dragX > 30 ? '✓ Tamamla' : dragX < -30 ? 'Atla ⏭' : ''
 
@@ -154,8 +168,8 @@ function TaskCard({ task: t, swipeable, onClick, onComplete, onSkip, busy }) {
         }}>{hintLabel}</div>
       )}
       <div
-        onClick={isSwiping ? undefined : onClick}
-        {...(swipeable ? handlers : {})}
+        onClick={() => { if (isSwiping || lp.triggered()) return; onClick() }}
+        {...handlers}
         style={{
           background: '#fff', borderRadius: '12px', padding: '14px',
           boxShadow: '0 1px 3px rgba(0,0,0,.08)',
@@ -163,6 +177,7 @@ function TaskCard({ task: t, swipeable, onClick, onComplete, onSkip, busy }) {
           transform: `translateX(${dragX}px)`,
           transition: isSwiping ? 'none' : 'transform 0.2s',
           touchAction: swipeable ? 'pan-y' : 'auto',
+          userSelect: 'none',
         }}>
         <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: STATUS_COLOR[status], flexShrink: 0 }} />
         <div style={{ flex: 1, minWidth: 0 }}>

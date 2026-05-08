@@ -19,6 +19,7 @@ export default function QuickFault() {
   const [isQueued, setIsQueued] = useState(false)
   const [showQr, setShowQr] = useState(false)
   const [qrError, setQrError] = useState('')
+  const [gpsBusy, setGpsBusy] = useState(false)
 
   function handleQrScan(text) {
     const parsed = parseQrLocation(text)
@@ -29,6 +30,29 @@ export default function QuickFault() {
     setQrError('')
     navigator.vibrate?.([20])
     setForm(f => ({ ...f, location: parsed.label }))
+  }
+
+  function fillGps() {
+    if (!navigator.geolocation) {
+      setQrError('Cihaz GPS desteklemiyor')
+      return
+    }
+    setGpsBusy(true)
+    setQrError('')
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        navigator.vibrate?.([20])
+        const { latitude, longitude, accuracy } = pos.coords
+        const tag = `📍 ${latitude.toFixed(5)}, ${longitude.toFixed(5)} (±${Math.round(accuracy)}m)`
+        setForm(f => ({ ...f, location: f.location ? `${f.location} ${tag}` : tag }))
+        setGpsBusy(false)
+      },
+      err => {
+        setQrError(`Konum alinamadi: ${err.message}`)
+        setGpsBusy(false)
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    )
   }
 
   const mutation = useMutation({
@@ -84,6 +108,11 @@ export default function QuickFault() {
               aria-label="QR ile konum doldur"
               style={{ padding: '0 14px', borderRadius: '10px', border: '1px solid #e5e7eb', background: '#f9fafb', cursor: 'pointer', fontSize: '20px', flexShrink: 0 }}>
               📷
+            </button>
+            <button type="button" onClick={fillGps} disabled={gpsBusy}
+              aria-label="GPS ile konum al"
+              style={{ padding: '0 14px', borderRadius: '10px', border: '1px solid #e5e7eb', background: '#f9fafb', cursor: gpsBusy ? 'wait' : 'pointer', fontSize: '20px', flexShrink: 0, opacity: gpsBusy ? 0.5 : 1 }}>
+              {gpsBusy ? '⏳' : '📍'}
             </button>
           </div>
           {qrError && <p style={{ fontSize: '12px', color: '#ef4444', margin: '4px 0 0' }}>{qrError}</p>}

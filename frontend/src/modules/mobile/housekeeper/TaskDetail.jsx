@@ -4,6 +4,9 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import jsQR from 'jsqr'
 import mobileApi from '../auth/mobileApi.js'
 import { enqueue } from '../../../shared/utils/offlineDB.js'
+import { useElapsedTimer } from '../../../shared/hooks/useElapsedTimer.js'
+
+const TIMER_KEY = (taskId) => `yys-task-timer-${taskId}`
 
 const CHECKLISTS = {
   room: [
@@ -44,13 +47,30 @@ export default function TaskDetail() {
     initChecklist(task?.task_type, task?.checklist)
   )
   const [showQR, setShowQR] = useState(false)
+  const [timerStart, setTimerStart] = useState(() => {
+    if (!task?.id) return null
+    const stored = localStorage.getItem(TIMER_KEY(task.id))
+    return stored ? Number(stored) : null
+  })
+  const { formatted: elapsed } = useElapsedTimer(timerStart)
+
+  function startTimer() {
+    const now = Date.now()
+    setTimerStart(now)
+    localStorage.setItem(TIMER_KEY(id), String(now))
+    navigator.vibrate?.([10])
+  }
+  function clearTimerStorage() {
+    localStorage.removeItem(TIMER_KEY(id))
+  }
 
   const completeMut = useMutation({
     mutationFn: (opts = {}) => mobileApi.post(`/housekeeping/tasks/${id}/complete`, { checklist, ...opts }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['mobile-hk-tasks'] }); navigate(-1) },
+    onSuccess: () => { clearTimerStorage(); qc.invalidateQueries({ queryKey: ['mobile-hk-tasks'] }); navigate(-1) },
     onError: (_err, opts) => {
       if (!navigator.onLine) {
         enqueue('complete_task', { taskId: id, checklist, via_qr: opts?.via_qr ?? false })
+        clearTimerStorage()
         navigate(-1)
       }
     },
@@ -58,10 +78,11 @@ export default function TaskDetail() {
 
   const skipMut = useMutation({
     mutationFn: () => mobileApi.patch(`/housekeeping/tasks/${id}/skip`, { reason: skipReason }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['mobile-hk-tasks'] }); navigate(-1) },
+    onSuccess: () => { clearTimerStorage(); qc.invalidateQueries({ queryKey: ['mobile-hk-tasks'] }); navigate(-1) },
     onError: () => {
       if (!navigator.onLine) {
         enqueue('skip_task', { taskId: id, reason: skipReason })
+        clearTimerStorage()
         navigate(-1)
       }
     },
@@ -102,6 +123,28 @@ export default function TaskDetail() {
           {task.floor && <Row label="Kat" value={String(task.floor)} />}
         </div>
       </div>
+
+      {!isDone && !isSkipped && (
+        <div style={{ background: '#fff', borderRadius: '12px', padding: '12px 16px', boxShadow: '0 1px 3px rgba(0,0,0,.06)', marginBottom: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+          <div>
+            <div style={{ fontSize: '11px', fontWeight: 700, color: '#6b7280', letterSpacing: '0.5px' }}>GEÇEN SÜRE</div>
+            <div style={{ fontSize: '20px', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: timerStart ? '#3b82f6' : '#9ca3af', marginTop: '2px' }}>
+              {timerStart ? elapsed : '—'}
+            </div>
+          </div>
+          {timerStart ? (
+            <button onClick={() => { setTimerStart(null); clearTimerStorage() }}
+              style={{ padding: '8px 14px', borderRadius: '8px', background: '#f3f4f6', color: '#6b7280', border: 'none', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>
+              Sıfırla
+            </button>
+          ) : (
+            <button onClick={startTimer}
+              style={{ padding: '8px 14px', borderRadius: '8px', background: '#3b82f6', color: '#fff', border: 'none', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>
+              ▶ Başlat
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Checklist */}
       <div style={{ background: '#fff', borderRadius: '16px', padding: '16px', boxShadow: '0 1px 4px rgba(0,0,0,.06)', marginBottom: '12px' }}>
