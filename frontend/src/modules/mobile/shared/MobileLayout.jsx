@@ -31,7 +31,10 @@ export default function MobileLayout({ tabs }) {
   const [pendingCount, setPendingCount] = useState(0)
 
   useEffect(() => {
-    getQueue().then(q => setPendingCount(q.length)).catch(() => {})
+    const refresh = () => getQueue().then(q => setPendingCount(q.length)).catch(() => {})
+    refresh()
+    window.addEventListener('yys-queue-changed', refresh)
+    return () => window.removeEventListener('yys-queue-changed', refresh)
   }, [])
 
   useEffect(() => {
@@ -82,11 +85,14 @@ export default function MobileLayout({ tabs }) {
     async function drain() {
       const queue = await getQueue()
       if (queue.length === 0) return
+      const initialCount = queue.length
+      let synced = 0
       const { token } = useMobileAuth.getState()
       for (const item of queue) {
         try {
           await replayItem(item, token)
           await dequeue(item.id)
+          synced++
           if (item.type === 'complete_task' || item.type === 'skip_task') {
             qc.invalidateQueries({ queryKey: ['mobile-hk-tasks'] })
           }
@@ -102,7 +108,12 @@ export default function MobileLayout({ tabs }) {
           }
         }
       }
-      setPendingCount(0)
+      // Gercek sayiyi yeniden oku (retry'da kalan item'lar varsa 0 degil)
+      const remaining = await getQueue()
+      setPendingCount(remaining.length)
+      if (synced === initialCount) {
+        addToast(`✓ ${synced} cevrimdisi islem senkronize edildi`, 'success')
+      }
     }
 
     drain().catch(() => {})

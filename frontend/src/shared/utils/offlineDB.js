@@ -29,9 +29,15 @@ function p(req) {
   })
 }
 
+function notifyQueueChanged() {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('yys-queue-changed'))
+  }
+}
+
 export async function enqueue(type, payload, blobs = []) {
   const db = await openDB()
-  return new Promise((resolve, reject) => {
+  const id = await new Promise((resolve, reject) => {
     const stores = blobs.length > 0 ? ['offline_queue', 'offline_blobs'] : ['offline_queue']
     const tx = db.transaction(stores, 'readwrite')
     const qStore = tx.objectStore('offline_queue')
@@ -62,6 +68,8 @@ export async function enqueue(type, payload, blobs = []) {
       req.onerror = () => reject(req.error)
     })
   })
+  notifyQueueChanged()
+  return id
 }
 
 export async function dequeue(id) {
