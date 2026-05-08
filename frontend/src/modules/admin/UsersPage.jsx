@@ -105,7 +105,7 @@ function PinModal({ userId, onClose }) {
   })
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+    <div className="modal-overlay mobile-fullscreen" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
       onClick={onClose}>
       <div className="panel" style={{ width: '360px' }} onClick={e => e.stopPropagation()}>
         <div style={{ height: '2px', background: 'var(--accent)' }} />
@@ -137,7 +137,7 @@ function PasswordModal({ userId, onClose }) {
   })
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+    <div className="modal-overlay mobile-fullscreen" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
       onClick={onClose}>
       <div className="panel" style={{ width: '360px' }} onClick={e => e.stopPropagation()}>
         <div style={{ height: '2px', background: 'var(--accent)' }} />

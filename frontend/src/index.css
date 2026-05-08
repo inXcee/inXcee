@@ -320,6 +320,16 @@ h1, h2, h3, h4 { font-family: var(--display); letter-spacing: 2px; }
   .data-table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
   .data-table th, .data-table td { padding: 8px 10px; font-size: 11px; }
 
+  /* Modal full-screen (Faz 21 / M28)
+     Kullanim: overlay div'e className="modal-overlay mobile-fullscreen" */
+  .modal-overlay.mobile-fullscreen { padding: 0 !important; align-items: stretch !important; }
+  .modal-overlay.mobile-fullscreen > .panel {
+    width: 100% !important; max-width: none !important;
+    height: 100vh; max-height: 100vh;
+    border-radius: 0 !important; margin: 0 !important;
+    overflow-y: auto;
+  }
+
   /* Responsive stack — table satirlarini kart gibi goster (Faz 20 / M27)
      Kullanim: <table class="data-table responsive-stack"> + <td data-label="Ad"> */
   .data-table.responsive-stack { display: block; overflow: visible; }
