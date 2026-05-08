@@ -47,6 +47,9 @@ const LaundryMobileHome = lazy(() => import('./modules/mobile/laundry/LaundryHom
 const LaundryMobileMachines = lazy(() => import('./modules/mobile/laundry/MachineList.jsx'))
 const LaundryMobileSearch = lazy(() => import('./modules/mobile/laundry/SearchPerson.jsx'))
 const LaundryMobileBagScan = lazy(() => import('./modules/mobile/laundry/BagScan.jsx'))
+const SupervisorHome = lazy(() => import('./modules/mobile/supervisor/SupervisorHome.jsx'))
+const SupervisorAttendance = lazy(() => import('./modules/mobile/supervisor/AttendanceList.jsx'))
+const SupervisorDiscipline = lazy(() => import('./modules/mobile/supervisor/DisciplineQuick.jsx'))
 const MobileNotifications = lazy(() => import('./modules/mobile/shared/NotificationsPage.jsx'))
 const SetupPage = lazy(() => import('./modules/setup/SetupPage.jsx'))
 const ErrorLogPage = lazy(() => import('./modules/admin/ErrorLogPage.jsx'))
@@ -89,6 +92,13 @@ const LAUNDRY_TABS = [
   { to: '/mobile/laundry/notifications', label: 'Bildirim', icon: '🔔' },
 ]
 
+const SUPERVISOR_TABS = [
+  { to: '/mobile/supervisor', label: 'Anasayfa', icon: '🏠' },
+  { to: '/mobile/supervisor/attendance', label: 'Devam', icon: '📋' },
+  { to: '/mobile/supervisor/discipline', label: 'Disiplin', icon: '⚠️' },
+  { to: '/mobile/supervisor/notifications', label: 'Bildirim', icon: '🔔' },
+]
+
 function HousekeeperShell() {
   return (
     <MobileProtected role="housekeeper">
@@ -109,6 +119,14 @@ function LaundryShell() {
   return (
     <MobileProtected role="laundry">
       <MobileLayout tabs={LAUNDRY_TABS} />
+    </MobileProtected>
+  )
+}
+
+function SupervisorShell() {
+  return (
+    <MobileProtected role="shift_supervisor">
+      <MobileLayout tabs={SUPERVISOR_TABS} />
     </MobileProtected>
   )
 }
@@ -221,6 +239,12 @@ export default function App() {
             <Route path="bag" element={<LaundryMobileBagScan />} />
             <Route path="machines" element={<LaundryMobileMachines />} />
             <Route path="search" element={<LaundryMobileSearch />} />
+            <Route path="notifications" element={<MobileNotifications />} />
+          </Route>
+          <Route path="/mobile/supervisor" element={<SupervisorShell />}>
+            <Route index element={<SupervisorHome />} />
+            <Route path="attendance" element={<SupervisorAttendance />} />
+            <Route path="discipline" element={<SupervisorDiscipline />} />
             <Route path="notifications" element={<MobileNotifications />} />
           </Route>
           <Route path="*" element={<NotFound />} />
