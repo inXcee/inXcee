@@ -63,7 +63,7 @@ export default function InventoryPage() {
   const filtered = useMemo(() => {
     let list = items
     if (catFilter) list = list.filter(i => i.category === catFilter)
-    if (searchQ.trim()) { const q = searchQ.toLowerCase(); list = list.filter(i => i.item_name.toLowerCase().includes(q) || (i.location || '').toLowerCase().includes(q)) }
+    if (searchQ.trim()) { const q = searchQ.toLowerCase(); list = list.filter(i => i.item_name.toLowerCase().includes(q) || (i.location || '').toLowerCase().includes(q) || (i.sku || '').toLowerCase().includes(q)) }
     return [...list].sort((a, b) => {
       if (sortBy === 'name') return a.item_name.localeCompare(b.item_name)
       if (sortBy === 'qty-asc') return a.quantity - b.quantity

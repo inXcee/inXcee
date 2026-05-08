@@ -1,7 +1,10 @@
+import { useState, lazy, Suspense } from 'react'
 import { CATEGORIES, cat, money } from '../constants.js'
 import ItemCard from '../components/ItemCard.jsx'
 import ActiveCheckoutsPanel from '../components/ActiveCheckoutsPanel.jsx'
 import RecentMovements from '../components/RecentMovements.jsx'
+
+const QrScannerModal = lazy(() => import('../../../shared/components/QrScannerModal.jsx'))
 
 export default function ItemsTab({
   searchInput, setSearchInput, setSearchQ, searchTimer,
@@ -12,6 +15,16 @@ export default function ItemsTab({
   setAdjustItem, setCheckoutItem, setEditItem, setLogItem, setWriteOffItem,
   deleteMut,
 }) {
+  const [showQr, setShowQr] = useState(false)
+
+  function handleScan(text) {
+    const v = text.trim()
+    setSearchInput(v)
+    clearTimeout(searchTimer.current)
+    setSearchQ(v)
+    navigator.vibrate?.([20])
+  }
+
   return (
     <>
       {/* Toolbar */}
@@ -21,7 +34,13 @@ export default function ItemsTab({
       }}>
         <input className="form-input" value={searchInput}
           onChange={e => { const v = e.target.value; setSearchInput(v); clearTimeout(searchTimer.current); searchTimer.current = setTimeout(() => setSearchQ(v), 150) }}
-          placeholder="Urun veya konum ara..." style={{ flex: '1 1 180px', fontSize: '12px', borderRadius: '10px' }} />
+          placeholder="Urun, SKU veya konum ara..." style={{ flex: '1 1 180px', fontSize: '12px', borderRadius: '10px' }} />
+        <button onClick={() => setShowQr(true)} className="btn btn-ghost btn-xs"
+          aria-label="Barkod ile ara"
+          title="Barkod tara"
+          style={{ borderRadius: '8px', fontSize: '14px', padding: '5px 10px' }}>
+          📷
+        </button>
         <div style={{ display: 'flex', gap: '3px' }}>
           <button onClick={() => setCatFilter('')} className={`btn btn-xs ${!catFilter ? 'btn-primary' : 'btn-ghost'}`} style={{ borderRadius: '8px' }}>TUMU</button>
           {CATEGORIES.map(c => (
@@ -138,6 +157,13 @@ export default function ItemsTab({
       {/* Mini panels on stock tab */}
       <ActiveCheckoutsPanel />
       <RecentMovements />
+
+      {showQr && (
+        <Suspense fallback={null}>
+          <QrScannerModal open={showQr} onScan={handleScan} onClose={() => setShowQr(false)}
+            title="Ürün Barkodunu Okutun" />
+        </Suspense>
+      )}
     </>
   )
 }
