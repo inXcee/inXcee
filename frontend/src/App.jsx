@@ -50,6 +50,9 @@ const LaundryMobileBagScan = lazy(() => import('./modules/mobile/laundry/BagScan
 const SupervisorHome = lazy(() => import('./modules/mobile/supervisor/SupervisorHome.jsx'))
 const SupervisorAttendance = lazy(() => import('./modules/mobile/supervisor/AttendanceList.jsx'))
 const SupervisorDiscipline = lazy(() => import('./modules/mobile/supervisor/DisciplineQuick.jsx'))
+const ManagerHome = lazy(() => import('./modules/mobile/manager/ManagerHome.jsx'))
+const ManagerHeatmap = lazy(() => import('./modules/mobile/manager/BlockHeatmap.jsx'))
+const ManagerMaintenance = lazy(() => import('./modules/mobile/manager/ManagerMaintenance.jsx'))
 const MobileNotifications = lazy(() => import('./modules/mobile/shared/NotificationsPage.jsx'))
 const SetupPage = lazy(() => import('./modules/setup/SetupPage.jsx'))
 const ErrorLogPage = lazy(() => import('./modules/admin/ErrorLogPage.jsx'))
@@ -99,6 +102,13 @@ const SUPERVISOR_TABS = [
   { to: '/mobile/supervisor/notifications', label: 'Bildirim', icon: '🔔' },
 ]
 
+const MANAGER_TABS = [
+  { to: '/mobile/manager', label: 'KPI', icon: '📊' },
+  { to: '/mobile/manager/heatmap', label: 'Doluluk', icon: '🗺️' },
+  { to: '/mobile/manager/maintenance', label: 'Talepler', icon: '🔧' },
+  { to: '/mobile/manager/notifications', label: 'Bildirim', icon: '🔔' },
+]
+
 function HousekeeperShell() {
   return (
     <MobileProtected role="housekeeper">
@@ -127,6 +137,14 @@ function SupervisorShell() {
   return (
     <MobileProtected role="shift_supervisor">
       <MobileLayout tabs={SUPERVISOR_TABS} />
+    </MobileProtected>
+  )
+}
+
+function ManagerShell() {
+  return (
+    <MobileProtected role="campus_manager">
+      <MobileLayout tabs={MANAGER_TABS} />
     </MobileProtected>
   )
 }
@@ -245,6 +263,12 @@ export default function App() {
             <Route index element={<SupervisorHome />} />
             <Route path="attendance" element={<SupervisorAttendance />} />
             <Route path="discipline" element={<SupervisorDiscipline />} />
+            <Route path="notifications" element={<MobileNotifications />} />
+          </Route>
+          <Route path="/mobile/manager" element={<ManagerShell />}>
+            <Route index element={<ManagerHome />} />
+            <Route path="heatmap" element={<ManagerHeatmap />} />
+            <Route path="maintenance" element={<ManagerMaintenance />} />
             <Route path="notifications" element={<MobileNotifications />} />
           </Route>
           <Route path="*" element={<NotFound />} />
