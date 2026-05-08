@@ -6,6 +6,8 @@ import { useMobileAuth } from '../auth/useMobileAuth.js'
 import { usePullToRefresh } from '../../../shared/hooks/usePullToRefresh.js'
 import { useSwipe } from '../../../shared/hooks/useSwipe.js'
 import { useLongPress } from '../../../shared/hooks/useLongPress.js'
+import { useSpeechRecognition } from '../../../shared/hooks/useSpeechRecognition.js'
+import { useToastStore } from '../../../shared/store/toastStore.js'
 import { enqueue } from '../../../shared/utils/offlineDB.js'
 
 const today = new Date().toISOString().slice(0, 10)
@@ -24,6 +26,7 @@ export default function HousekeeperHome() {
   const { user } = useMobileAuth()
   const navigate = useNavigate()
   const qc = useQueryClient()
+  const { addToast } = useToastStore()
 
   const { data: tasks = [], isLoading, refetch } = useQuery({
     queryKey: ['mobile-hk-tasks', today],
@@ -75,6 +78,35 @@ export default function HousekeeperHome() {
   tasks.forEach(t => counts[taskStatus(t)]++)
   const filtered = tasks.filter(t => taskStatus(t) === filter)
 
+  // ── Voice command (M24) ────────────────────────────────────────────────────
+  const speech = useSpeechRecognition({
+    onResult: (text) => {
+      const cmd = text.toLowerCase().trim()
+      const firstPending = tasks.find(t => taskStatus(t) === 'pending')
+      // Eslesme: "tamamla", "bitti", "tamam"
+      if (/(tamamla|bitti|tamam)\b/.test(cmd)) {
+        if (firstPending) {
+          completeMut.mutate(firstPending.id)
+          addToast(`✓ "${firstPending.area}" tamamlandı`, 'success')
+        } else addToast('Bekleyen görev yok', 'info')
+        return
+      }
+      if (/(atla|gec|geç)\b/.test(cmd)) {
+        if (firstPending) {
+          skipMut.mutate(firstPending.id)
+          addToast(`⏭ "${firstPending.area}" atlandı`, 'info')
+        } else addToast('Bekleyen görev yok', 'info')
+        return
+      }
+      if (/(yeni\s*ar.za|ariza|arıza)/.test(cmd)) { navigate('fault'); return }
+      if (/(yenile|guncelle|güncelle)/.test(cmd)) { refetch(); addToast('🔄 Yenilendi', 'info'); return }
+      if (/(rahatsiz|rahatsız|dnd)/.test(cmd)) { navigate('dnd'); return }
+      if (/(bildirim|notification)/.test(cmd)) { navigate('notifications'); return }
+      addToast(`Komut tanınmadı: "${text}"`, 'error')
+    },
+    onError: (msg) => addToast(`Mikrofon: ${msg}`, 'error'),
+  })
+
   return (
     <div style={{ padding: '16px' }} {...handlers}>
       {isPulling && (
@@ -99,6 +131,21 @@ export default function HousekeeperHome() {
         <div style={{ fontSize: '11px', color: '#9ca3af', textAlign: 'center', marginBottom: '8px' }}>
           → Sağa = tamamla &nbsp;·&nbsp; ← Sola = atla &nbsp;·&nbsp; Uzun bas = DND
         </div>
+      )}
+
+      {speech.supported && (
+        <button onClick={() => speech.listening ? speech.stop() : speech.start()}
+          aria-label={speech.listening ? 'Sesli komutu durdur' : 'Sesli komut başlat'}
+          style={{
+            position: 'fixed', right: '20px', bottom: 'calc(88px + env(safe-area-inset-bottom))',
+            width: '56px', height: '56px', borderRadius: '50%', border: 'none',
+            background: speech.listening ? '#ef4444' : '#3b82f6', color: '#fff',
+            fontSize: '24px', cursor: 'pointer', zIndex: 90,
+            boxShadow: '0 4px 12px rgba(0,0,0,.2)',
+            animation: speech.listening ? 'yys-pulse 1.4s ease-in-out infinite' : 'none',
+          }}>
+          {speech.listening ? '🔴' : '🎤'}
+        </button>
       )}
 
       {isLoading ? (
