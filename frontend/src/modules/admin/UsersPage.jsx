@@ -226,7 +226,7 @@ export default function UsersPage() {
           {isLoading ? (
             <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text3)' }}>Yukleniyor...</div>
           ) : (
-            <table className="data-table">
+            <table className="data-table responsive-stack">
               <thead>
                 <tr>
                   <th>Kullanici Adi</th>
@@ -241,18 +241,18 @@ export default function UsersPage() {
               <tbody>
                 {(users || []).map(u => (
                   <tr key={u.id}>
-                    <td style={{ fontFamily: 'var(--mono)', fontWeight: 500 }}>{u.username}</td>
-                    <td>{u.full_name}</td>
-                    <td>
+                    <td data-label="Kullanici" style={{ fontFamily: 'var(--mono)', fontWeight: 500 }}>{u.username}</td>
+                    <td data-label="Ad Soyad">{u.full_name}</td>
+                    <td data-label="Rol">
                       <span className={`badge ${ROLE_COLORS[u.role] || 'badge-gray'}`} style={{ fontSize: '9px' }}>
                         {ROLES.find(r => r.value === u.role)?.label || u.role}
                       </span>
                     </td>
-                    <td style={{ fontFamily: 'var(--mono)', fontSize: '11px' }}>{u.email || '-'}</td>
-                    <td style={{ fontFamily: 'var(--mono)', fontSize: '11px' }}>{u.assigned_block || '-'}</td>
-                    <td style={{ fontFamily: 'var(--mono)', fontSize: '11px' }}>{u.assigned_floor || '-'}</td>
+                    <td data-label="E-Posta" style={{ fontFamily: 'var(--mono)', fontSize: '11px' }}>{u.email || '-'}</td>
+                    <td data-label="Blok" style={{ fontFamily: 'var(--mono)', fontSize: '11px' }}>{u.assigned_block || '-'}</td>
+                    <td data-label="Kat" style={{ fontFamily: 'var(--mono)', fontSize: '11px' }}>{u.assigned_floor || '-'}</td>
                     <td>
-                      <div style={{ display: 'flex', gap: '4px' }}>
+                      <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                         <button className="btn btn-ghost btn-xs" onClick={() => setEditUser(u)}>Duzenle</button>
                         <button className="btn btn-ghost btn-xs" onClick={() => setPwUserId(u.id)}>Sifre</button>
                         {(u.role === 'housekeeper' || u.role === 'technical') && (
