@@ -367,9 +367,13 @@ h1, h2, h3, h4 { font-family: var(--display); letter-spacing: 2px; }
   /* Filter chips — touch targets */
   .filter-chip { min-height: 38px; padding: 8px 14px; font-size: 11px; }
 
-  /* Room cells */
-  .r-cell { min-width: 42px; min-height: 42px; font-size: 9px; }
+  /* Room cells - mobile kompakt (Faz 22 / M29) */
+  .r-cell { min-width: 36px; min-height: 36px; font-size: 8px; }
   .r-cell:hover { transform: none; }
+  /* Floor label sticky - kat scroll'lansa da etiket gozuksun */
+  .floor-label { position: sticky; top: 0; background: var(--surface); z-index: 10; padding: 6px 0; }
+  /* Oda grid - mobile 100px yerine 60px min - daha cok cell sigsin */
+  .room-grid-mobile-compact { grid-template-columns: repeat(auto-fill, minmax(60px, 1fr)) !important; }
 
   /* KPI cards — full width on small screens */
   .kpi-card { min-width: 0 !important; }
