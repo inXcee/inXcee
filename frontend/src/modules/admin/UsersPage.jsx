@@ -29,6 +29,7 @@ function UserForm({ user, onSubmit, onCancel }) {
     assigned_block: user?.assigned_block || '',
     assigned_floor: user?.assigned_floor || '',
     email: user?.email || '',
+    phone: user?.phone || '',
   })
 
   return (
@@ -78,6 +79,12 @@ function UserForm({ user, onSubmit, onCancel }) {
             <input className="form-input" type="email" value={form.email}
               placeholder="kullanici@ornek.com"
               onChange={e => setForm(f => ({ ...f, email: e.target.value }))} />
+          </div>
+          <div>
+            <label className="form-label">TELEFON (WhatsApp icin)</label>
+            <input className="form-input" type="tel" value={form.phone}
+              placeholder="0532 123 45 67"
+              onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} />
           </div>
         </div>
         <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>

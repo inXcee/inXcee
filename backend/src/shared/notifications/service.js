@@ -1,6 +1,7 @@
 import { getDB } from '../db/index.js'
 import { isNotificationEnabledForUser } from '../../modules/notification-prefs/service.js'
 import { sendPushToUser, sendPushToRole, isPushConfigured } from './push.js'
+import { sendWhatsAppToUser, isWhatsAppConfigured } from './whatsapp-send.js'
 
 const MAX_SSE_CLIENTS = 500
 const MAX_PER_USER = 4 // bir user max 4 sekme; fazlası eski bağlantıyı düşürür
@@ -84,6 +85,12 @@ export function createNotification({ message, type = 'info', module, target_role
     } else if (notif.target_role) {
       sendPushToRole(notif.target_role, payload).catch(e => console.error('[Push] role:', e.message))
     }
+  }
+
+  // WhatsApp — sadece critical type + targeted user icin (fire-and-forget)
+  if (isWhatsAppConfigured() && notif.type === 'critical' && notif.target_user_id) {
+    sendWhatsAppToUser(notif.target_user_id, `[YYS] ${notif.message}`)
+      .catch(e => console.error('[WA] user:', e.message))
   }
 
   return notif

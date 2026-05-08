@@ -899,6 +899,18 @@ export function initDB() {
   )`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] push_subscriptions:', e.message) }
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_push_user ON push_subscriptions(user_id)') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] idx_push_user:', e.message) }
 
+  // ── Mobile M11: WhatsApp outbound — users.phone + outbound log ──
+  try { db.exec('ALTER TABLE users ADD COLUMN phone TEXT') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] users.phone:', e.message) }
+  try { db.exec(`CREATE TABLE IF NOT EXISTS whatsapp_outbound_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    to_phone TEXT NOT NULL,
+    message TEXT NOT NULL,
+    status TEXT NOT NULL,
+    error TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] whatsapp_outbound_log:', e.message) }
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_wa_outbound_status ON whatsapp_outbound_log(status, created_at DESC)') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] idx_wa_outbound_status:', e.message) }
+
   return db
 }
 
