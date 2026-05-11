@@ -90,8 +90,19 @@ export default function LaundryKioskPage() {
   const [nameResults, setNameResults] = useState([])
   const [selectedWorker, setSelectedWorker] = useState(null)
   const [pinInput, setPinInput] = useState('')
-  const [activeAction, setActiveAction] = useState(null)
+  const VALID_TABS = ['bag', 'garment', 'ironing', 'deliver', 'status']
+  const [activeTab, setActiveTab] = useState(() => {
+    const fromUrl = new URLSearchParams(window.location.search).get('tab')
+    return VALID_TABS.includes(fromUrl) ? fromUrl : 'bag'
+  })
   const searchTimer = useRef(null)
+
+  useEffect(() => {
+    if (!avsToken) return
+    const url = new URL(window.location.href)
+    url.searchParams.set('tab', activeTab)
+    window.history.replaceState(null, '', url)
+  }, [activeTab, avsToken])
 
   const kioskApi = {
     get: url => api.get(url, { headers: { Authorization: `Bearer ${avsToken}` } }),
@@ -204,76 +215,89 @@ export default function LaundryKioskPage() {
   }
 
   // ── Ana ekran ───────────────────────────────────────────────────────────────
+  const TABS = [
+    { key: 'bag',     icon: '🧺', label: 'Torba Al' },
+    { key: 'garment', icon: '👔', label: 'Kıyafet' },
+    { key: 'ironing', icon: '🫧', label: 'Ütü' },
+    { key: 'deliver', icon: '🚚', label: 'Teslim' },
+    { key: 'status',  icon: '📋', label: 'Durum' },
+  ]
+
   return (
-    <div style={{ minHeight: '100vh', background: '#020617', display: 'flex', flexDirection: 'column', maxWidth: 480, margin: '0 auto', padding: 16 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 0', marginBottom: 16 }}>
-        <div>
-          <div style={{ fontWeight: 600, color: '#f1f5f9', fontSize: 15 }}>{workerInfo?.full_name}</div>
-          {workerInfo?.role_label && <div style={{ fontSize: 12, color: '#64748b' }}>{workerInfo.role_label}</div>}
+    <div style={{ minHeight: '100vh', background: '#020617', display: 'flex', flexDirection: 'column' }}>
+      {/* Üst bar */}
+      <div style={{
+        height: 56, background: '#0f172a', borderBottom: '1px solid #1e293b',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '0 16px', flexShrink: 0,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <span style={{ fontSize: 20 }}>🧺</span>
+          <span style={{ fontSize: 14, fontWeight: 700, color: '#f1f5f9' }}>Çamaşırhane</span>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          {activeAction && (
-            <button onClick={() => setActiveAction(null)}
-              style={{ fontSize: 12, color: '#94a3b8', padding: '6px 12px', background: '#1e293b', border: 'none', borderRadius: 8, cursor: 'pointer' }}>
-              ← Geri
+        <div style={{ textAlign: 'right' }}>
+          <div style={{ fontSize: 13, color: '#e2e8f0', fontWeight: 600 }}>{workerInfo?.full_name}</div>
+          {workerInfo?.role_label && <div style={{ fontSize: 11, color: '#64748b' }}>{workerInfo.role_label}</div>}
+        </div>
+        <button onClick={() => { setAvsToken(null); setWorkerInfo(null); setActiveTab('bag') }}
+          style={{ fontSize: 12, color: '#94a3b8', padding: '6px 12px', background: '#1e293b', border: 'none', borderRadius: 8, cursor: 'pointer' }}>
+          Çıkış
+        </button>
+      </div>
+
+      {/* Body */}
+      <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
+        <nav className="kiosk-sidenav" style={{
+          width: 160, background: '#0b1220', borderRight: '1px solid #1e293b',
+          padding: 8, display: 'flex', flexDirection: 'column', gap: 4, flexShrink: 0,
+        }}>
+          {TABS.map(t => (
+            <button key={t.key} onClick={() => setActiveTab(t.key)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px',
+                background: activeTab === t.key ? '#1d4ed8' : 'transparent',
+                color: activeTab === t.key ? '#fff' : '#94a3b8',
+                border: 'none', borderRadius: 10, cursor: 'pointer',
+                fontSize: 14, fontWeight: 600, textAlign: 'left',
+              }}>
+              <span style={{ fontSize: 18 }}>{t.icon}</span>
+              <span>{t.label}</span>
             </button>
-          )}
-          <button onClick={() => { setAvsToken(null); setWorkerInfo(null); setActiveAction(null) }}
-            style={{ fontSize: 12, color: '#64748b', padding: '6px 12px', background: '#1e293b', border: 'none', borderRadius: 8, cursor: 'pointer' }}>
-            Çıkış
-          </button>
+          ))}
+        </nav>
+
+        <div style={{
+          flex: 1, padding: 16, overflowY: 'auto', maxWidth: 720,
+          margin: '0 auto', width: '100%',
+        }}>
+          {activeTab === 'bag'     && <BagForm     kioskApi={kioskApi} onDone={() => {}} />}
+          {activeTab === 'garment' && <GarmentForm kioskApi={kioskApi} onDone={() => {}} />}
+          {activeTab === 'ironing' && <IroningView kioskApi={kioskApi} onDone={() => {}} />}
+          {activeTab === 'deliver' && <DeliverView kioskApi={kioskApi} onDone={() => {}} />}
+          {activeTab === 'status'  && <StatusView  kioskApi={kioskApi} onDone={() => {}} />}
         </div>
       </div>
 
-      {!activeAction && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            {[
-              { key: 'bag',     icon: '🧺', label: 'Torba Bırak', bg: '#1e3a5f' },
-              { key: 'ironing', icon: '🫧', label: 'Ütü',          bg: '#4a1d96' },
-            ].map(a => (
-              <button key={a.key} onClick={() => setActiveAction(a.key)}
-                style={{
-                  background: a.bg, border: 'none', borderRadius: 16, padding: '28px 16px',
-                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10,
-                  cursor: 'pointer', transition: 'opacity 0.15s',
-                }}
-                onMouseEnter={e => e.currentTarget.style.opacity = '0.85'}
-                onMouseLeave={e => e.currentTarget.style.opacity = '1'}
-              >
-                <span style={{ fontSize: 40 }}>{a.icon}</span>
-                <span style={{ fontSize: 14, fontWeight: 600, color: '#f1f5f9' }}>{a.label}</span>
-              </button>
-            ))}
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
-            {[
-              { key: 'deliver', icon: '🚚', label: 'Teslim Et',   bg: '#451a03' },
-              { key: 'status',  icon: '📋', label: 'Durum',        bg: '#1c1917' },
-              { key: 'garment', icon: '👔', label: 'Kıyafet Gir', bg: '#3b0764' },
-            ].map(a => (
-              <button key={a.key} onClick={() => setActiveAction(a.key)}
-                style={{
-                  background: a.bg, border: 'none', borderRadius: 16, padding: '20px 6px',
-                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
-                  cursor: 'pointer', transition: 'opacity 0.15s',
-                }}
-                onMouseEnter={e => e.currentTarget.style.opacity = '0.85'}
-                onMouseLeave={e => e.currentTarget.style.opacity = '1'}
-              >
-                <span style={{ fontSize: 32 }}>{a.icon}</span>
-                <span style={{ fontSize: 12, fontWeight: 600, color: '#f1f5f9', textAlign: 'center' }}>{a.label}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {activeAction === 'bag'     && <BagForm kioskApi={kioskApi} onDone={() => setActiveAction(null)} />}
-      {activeAction === 'ironing' && <IroningView kioskApi={kioskApi} onDone={() => setActiveAction(null)} />}
-      {activeAction === 'deliver' && <DeliverView kioskApi={kioskApi} onDone={() => setActiveAction(null)} />}
-      {activeAction === 'status'  && <StatusView kioskApi={kioskApi} onDone={() => setActiveAction(null)} />}
-      {activeAction === 'garment' && <GarmentForm kioskApi={kioskApi} onDone={() => setActiveAction(null)} />}
+      {/* Bottom-nav — mobile only */}
+      <nav className="kiosk-bottomnav" style={{
+        height: 64, background: '#0b1220', borderTop: '1px solid #1e293b',
+        display: 'none',
+        alignItems: 'stretch', justifyContent: 'space-around',
+        flexShrink: 0,
+      }}>
+        {TABS.map(t => (
+          <button key={t.key} onClick={() => setActiveTab(t.key)}
+            style={{
+              flex: 1, background: 'transparent', border: 'none', cursor: 'pointer',
+              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+              gap: 2, padding: '6px 0',
+              borderTop: activeTab === t.key ? '3px solid #3b82f6' : '3px solid transparent',
+            }}>
+            <span style={{ fontSize: 22, opacity: activeTab === t.key ? 1 : 0.55 }}>{t.icon}</span>
+            <span style={{ fontSize: 10, color: activeTab === t.key ? '#93c5fd' : '#64748b', fontWeight: 600 }}>{t.label}</span>
+          </button>
+        ))}
+      </nav>
     </div>
   )
 }
@@ -357,7 +381,11 @@ function BagForm({ kioskApi, onDone }) {
           <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>Torbayı görevliye teslim edin</div>
         </div>
       )}
-      <button onClick={onDone} style={{ ...btn('#1e293b', '#60a5fa'), marginTop: 24 }}>Ana Ekrana Dön</button>
+      <button onClick={() => {
+        setSuccess(false); setBagNo(null); setBlock(''); setRoomNo(''); setPersons([]);
+        setSelectedPerson(null); setItemCount(1); setIsPremium(false); setGarments([]);
+        setNotes(''); setUrgent(false); setError('')
+      }} style={{ ...btn('#1e293b', '#60a5fa'), marginTop: 24 }}>Yeni Torba</button>
     </div>
   )
 
@@ -678,7 +706,11 @@ function DeliverView({ kioskApi, onDone }) {
     <div style={{ textAlign: 'center', padding: '48px 0' }}>
       <div style={{ fontSize: 56 }}>✅</div>
       <div style={{ color: '#4ade80', fontWeight: 600, fontSize: 18, marginTop: 12 }}>Teslim tamamlandı!</div>
-      <button onClick={onDone} style={{ ...btn('#1e293b', '#60a5fa'), marginTop: 24 }}>Ana Ekrana Dön</button>
+      <button onClick={() => {
+        setSuccess(false); setSelectedBlock(null); setOtherBlock(''); setRoomNo('');
+        setDeliveredName(''); setBags([]); setSelectedBag(null); setFileCount(1);
+        setParsedGarments([]); setTicked({}); setError('')
+      }} style={{ ...btn('#1e293b', '#60a5fa'), marginTop: 24 }}>Yeni Teslim</button>
     </div>
   )
 
@@ -853,7 +885,10 @@ function GarmentForm({ kioskApi, onDone }) {
     <div style={{ textAlign: 'center', padding: '48px 0' }}>
       <div style={{ fontSize: 56 }}>✅</div>
       <div style={{ color: '#4ade80', fontWeight: 600, fontSize: 18, marginTop: 12 }}>Kıyafetler kaydedildi!</div>
-      <button onClick={onDone} style={{ ...btn('#1e293b', '#60a5fa'), marginTop: 24 }}>Ana Ekrana Dön</button>
+      <button onClick={() => {
+        setSuccess(false); setBlock(''); setRoomNo(''); setPersons([]);
+        setSelectedPerson(null); setGarments([]); setError('')
+      }} style={{ ...btn('#1e293b', '#60a5fa'), marginTop: 24 }}>Yeni Kayıt</button>
     </div>
   )
 

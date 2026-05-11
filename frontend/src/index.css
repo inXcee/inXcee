@@ -479,3 +479,9 @@ h1, h2, h3, h4 { font-family: var(--display); letter-spacing: 2px; }
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
 }
+
+/* AVS Çamaşırhane Kiosk — responsive nav */
+@media (max-width: 640px) {
+  .kiosk-sidenav { display: none !important; }
+  .kiosk-bottomnav { display: flex !important; }
+}
