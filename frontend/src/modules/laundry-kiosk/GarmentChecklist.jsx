@@ -10,7 +10,7 @@ const VARIANT_ACCENT = {
   default: '#60a5fa',
 }
 
-export default function GarmentChecklist({ garments, ticked, onToggle, variant = 'default' }) {
+export default function GarmentChecklist({ garments, ticked, onToggle, onToggleAll, variant = 'default' }) {
   if (!garments || garments.length === 0) return null
 
   const tickedCount = Object.values(ticked).filter(Boolean).length
@@ -18,6 +18,18 @@ export default function GarmentChecklist({ garments, ticked, onToggle, variant =
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {onToggleAll && (
+        <button type="button" onClick={() => onToggleAll(!allTicked)}
+          style={{
+            alignSelf: 'flex-start',
+            padding: '6px 14px', borderRadius: 8, border: 'none', cursor: 'pointer',
+            background: allTicked ? '#1e293b' : '#15803d',
+            color: allTicked ? '#94a3b8' : '#fff',
+            fontSize: 12, fontWeight: 700, letterSpacing: 0.5,
+          }}>
+          {allTicked ? '✕ Hepsini Kaldır' : '✓ Tümünü Onayla'}
+        </button>
+      )}
       {garments.map((g, i) => {
         const colors = g.colors ?? (g.color ? [{ key: g.color, label: g.color_label || g.color }] : [])
         return (
