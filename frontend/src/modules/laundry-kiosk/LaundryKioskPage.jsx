@@ -467,7 +467,6 @@ function IroningView({ kioskApi, onDone }) {
   }
 
   const allTicked = garments.length > 0 && garments.every((_, i) => ticked[i])
-  const tickedCount = Object.values(ticked).filter(Boolean).length
 
   async function complete() {
     if (!selectedBag || !allTicked) return

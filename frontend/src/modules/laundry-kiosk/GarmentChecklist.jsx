@@ -81,7 +81,7 @@ export default function GarmentChecklist({ garments, ticked, onToggle, variant =
       <div style={{
         fontSize: 12,
         color: allTicked ? '#22c55e' : (VARIANT_ACCENT[variant] || VARIANT_ACCENT.default),
-        fontWeight: allTicked ? 700 : 500,
+        fontWeight: allTicked ? 700 : 400,
       }}>
         {allTicked ? '✓ Tümü doğrulandı' : `${tickedCount}/${garments.length} doğrulandı`}
       </div>
