@@ -8,15 +8,17 @@ const DEFAULT_GARMENT = {
   pattern_label: 'Düz',
 }
 
+const EMPTY_VALUE = { mode: 'structured', garments: [], freeText: '', itemCount: 0 }
+
 // Props:
 //   garmentTypes: [{id, name, emoji, image_url}]
 //   value: { mode: 'structured' | 'freetext', garments: [...], freeText: '', itemCount: 0 }
 //   onChange: (next) => void  // partial update
-export default function QuickGarmentInput({ garmentTypes = [], value, onChange }) {
-  const mode = value?.mode || 'structured'
-  const garments = value?.garments || []
-  const freeText = value?.freeText || ''
-  const itemCount = value?.itemCount || 0
+export default function QuickGarmentInput({ garmentTypes = [], value = EMPTY_VALUE, onChange }) {
+  const mode = value.mode || 'structured'
+  const garments = value.garments || []
+  const freeText = value.freeText || ''
+  const itemCount = value.itemCount || 0
 
   const [query, setQuery] = useState('')
   const [focusIdx, setFocusIdx] = useState(0)
