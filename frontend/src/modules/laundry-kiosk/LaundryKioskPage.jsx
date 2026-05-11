@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import GarmentPicker from './GarmentPicker.jsx'
 import { laundryApi } from '../laundry/api.js'
+import GarmentChecklist from './GarmentChecklist.jsx'
 
 // ── İmza canvas ──────────────────────────────────────────────────────────────
 function SigPad({ sigRef }) {
@@ -299,12 +300,6 @@ const input = { width: '100%', background: '#1e293b', border: '1px solid #334155
 const lbl = { display: 'block', fontSize: 11, color: '#64748b', letterSpacing: 1, marginBottom: 8, textTransform: 'uppercase' }
 const btn = (bg, color = '#fff') => ({ padding: '12px 20px', borderRadius: 12, border: 'none', background: bg, color, fontWeight: 600, fontSize: 14, cursor: 'pointer' })
 
-const IRONING_COLORS = {
-  white: '#f8fafc', black: '#0f172a', gray: '#94a3b8', navy: '#1d4ed8',
-  blue: '#3b82f6', red: '#dc2626', green: '#16a34a', yellow: '#ca8a04',
-  orange: '#ea580c', purple: '#7c3aed', pink: '#db2777', brown: '#92400e', charcoal: '#4b5563',
-}
-
 // ── Torba Al ──────────────────────────────────────────────────────────────────
 function BagForm({ kioskApi, onDone }) {
   const sigRef = useRef(null)
@@ -528,73 +523,12 @@ function IroningView({ kioskApi, onDone }) {
             <div style={{ color: '#475569', fontSize: 13 }}>Kıyafet bilgisi yok — tüm torbayı doğrulayarak devam edin</div>
           )}
 
-          {garments.length > 0 && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {garments.map((g, i) => {
-                const colors = g.colors ?? (g.color ? [{ key: g.color, label: g.color_label || g.color }] : [])
-                return (
-                  <div key={i} onClick={() => toggleTick(i)}
-                    style={{
-                      background: ticked[i] ? '#052e16' : '#1e293b', borderRadius: 10, padding: '12px 14px',
-                      cursor: 'pointer', border: `1px solid ${ticked[i] ? '#22c55e' : '#334155'}`,
-                      transition: 'all 0.15s',
-                    }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                      <div style={{
-                        width: 32, height: 32, borderRadius: '50%', flexShrink: 0,
-                        background: ticked[i] ? '#15803d' : '#0f172a',
-                        border: `2px solid ${ticked[i] ? '#22c55e' : '#475569'}`,
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        color: '#fff', fontSize: 18, fontWeight: 700,
-                        transition: 'all 0.15s',
-                      }}>
-                        {ticked[i] ? '✓' : ''}
-                      </div>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: 15, color: ticked[i] ? '#86efac' : '#e2e8f0', fontWeight: 600 }}>
-                          {g.emoji || '👔'} {g.type_name}
-                          {g.count > 1 && (
-                            <span style={{ fontSize: 12, color: '#64748b', marginLeft: 6 }}>× {g.count}</span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                    {(colors.length > 0 || (g.pattern && g.pattern !== 'solid')) && (
-                      <div style={{ display: 'flex', gap: 6, marginTop: 8, marginLeft: 44, flexWrap: 'wrap', alignItems: 'center' }}>
-                        {colors.map(c => (
-                          <span key={c.key} style={{
-                            display: 'inline-flex', alignItems: 'center', gap: 4,
-                            background: '#0f172a', borderRadius: 20, padding: '3px 8px',
-                            border: '1px solid #334155',
-                          }}>
-                            <span style={{
-                              width: 10, height: 10, borderRadius: '50%',
-                              background: IRONING_COLORS[c.key] || '#888',
-                              display: 'inline-block', flexShrink: 0,
-                              border: c.key === 'white' ? '1px solid #475569' : 'none',
-                            }} />
-                            <span style={{ color: '#94a3b8', fontSize: 10 }}>{c.label}</span>
-                          </span>
-                        ))}
-                        {g.pattern && g.pattern !== 'solid' && g.pattern_label && (
-                          <span style={{
-                            fontSize: 10, color: '#64748b',
-                            background: '#0f172a', borderRadius: 20, padding: '3px 8px',
-                            border: '1px solid #334155',
-                          }}>
-                            {g.pattern_label}
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
-              <div style={{ fontSize: 12, color: tickedCount === garments.length ? '#22c55e' : '#64748b', fontWeight: tickedCount === garments.length ? 700 : 400 }}>
-                {tickedCount === garments.length ? '✓ Tümü doğrulandı' : `${tickedCount}/${garments.length} doğrulandı`}
-              </div>
-            </div>
-          )}
+          <GarmentChecklist
+            garments={garments}
+            ticked={ticked}
+            onToggle={toggleTick}
+            variant="ironing"
+          />
 
           <button onClick={complete}
             disabled={garments.length > 0 && !allTicked}
