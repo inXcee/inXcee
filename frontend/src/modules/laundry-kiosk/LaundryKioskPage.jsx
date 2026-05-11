@@ -105,7 +105,7 @@ export default function LaundryKioskPage() {
     const fromUrl = new URLSearchParams(window.location.search).get('tab')
     return VALID_TABS.includes(fromUrl) ? fromUrl : 'entry'
   })
-  const [focusedBagId, setFocusedBagId] = useState(null)
+  const [focusedBag, setFocusedBag] = useState(null)
   const searchTimer = useRef(null)
 
   useEffect(() => {
@@ -242,7 +242,7 @@ export default function LaundryKioskPage() {
           <div style={{ fontSize: 13, color: '#e2e8f0', fontWeight: 600 }}>{workerInfo?.full_name}</div>
           {workerInfo?.role_label && <div style={{ fontSize: 11, color: '#64748b' }}>{workerInfo.role_label}</div>}
         </div>
-        <button onClick={() => { setAvsToken(null); setWorkerInfo(null); setActiveTab('entry'); setFocusedBagId(null) }}
+        <button onClick={() => { setAvsToken(null); setWorkerInfo(null); setActiveTab('entry'); setFocusedBag(null) }}
           style={{ fontSize: 12, color: '#94a3b8', padding: '6px 12px', background: '#1e293b', border: 'none', borderRadius: 8, cursor: 'pointer' }}>
           Çıkış
         </button>
@@ -274,12 +274,12 @@ export default function LaundryKioskPage() {
           margin: '0 auto', width: '100%',
         }}>
           {activeTab === 'entry'   && <EntryForm   kioskApi={kioskApi} />}
-          {activeTab === 'ironing' && <IroningView kioskApi={kioskApi} focusedBagId={focusedBagId} onConsumeFocus={() => setFocusedBagId(null)} />}
-          {activeTab === 'deliver' && <DeliverView kioskApi={kioskApi} focusedBagId={focusedBagId} onConsumeFocus={() => setFocusedBagId(null)} />}
+          {activeTab === 'ironing' && <IroningView kioskApi={kioskApi} focusedBag={focusedBag} onConsumeFocus={() => setFocusedBag(null)} />}
+          {activeTab === 'deliver' && <DeliverView kioskApi={kioskApi} focusedBag={focusedBag} onConsumeFocus={() => setFocusedBag(null)} />}
           {activeTab === 'status'  && <DashboardView kioskApi={kioskApi}
                                           onAction={(action, bag) => {
-                                            if (action === 'iron')    { setFocusedBagId(bag.id); setActiveTab('ironing') }
-                                            if (action === 'deliver') { setFocusedBagId(bag.id); setActiveTab('deliver') }
+                                            if (action === 'iron')    { setFocusedBag(bag); setActiveTab('ironing') }
+                                            if (action === 'deliver') { setFocusedBag(bag); setActiveTab('deliver') }
                                           }} />}
         </div>
       </div>
@@ -332,7 +332,7 @@ const btn = (bg, color = '#fff') => ({ padding: '12px 20px', borderRadius: 12, b
 
 
 // ── Ütü ──────────────────────────────────────────────────────────────────────
-function IroningView({ kioskApi, focusedBagId, onConsumeFocus }) {
+function IroningView({ kioskApi, focusedBag, onConsumeFocus }) {
   const [bags, setBags] = useState([])
   const [selectedBag, setSelectedBag] = useState(null)
   const [garments, setGarments] = useState([])
@@ -351,16 +351,16 @@ function IroningView({ kioskApi, focusedBagId, onConsumeFocus }) {
 
   useEffect(() => { load() }, [])
 
-  // Auto-select bag if focusedBagId provided
+  // Auto-select bag if focusedBag provided
   useEffect(() => {
-    if (focusedBagId && bags.length > 0) {
-      const bag = bags.find(b => b.id === focusedBagId)
+    if (focusedBag && bags.length > 0) {
+      const bag = bags.find(b => b.id === focusedBag.id)
       if (bag) {
         selectBag(bag)
         onConsumeFocus?.()
       }
     }
-  }, [focusedBagId, bags])  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [focusedBag, bags])  // eslint-disable-line react-hooks/exhaustive-deps
 
   function selectBag(bag) {
     setSelectedBag(bag)
@@ -473,7 +473,7 @@ function isPremiumBlock(blockKey) {
   return blockKey === 'other' || !STANDARD_BLOCKS.has(blockKey)
 }
 
-function DeliverView({ kioskApi, focusedBagId, onConsumeFocus }) {
+function DeliverView({ kioskApi, focusedBag, onConsumeFocus }) {
   const sigRef = useRef(null)
   const [selectedBlock, setSelectedBlock] = useState(null)
   const [otherBlock, setOtherBlock] = useState('')
@@ -499,16 +499,24 @@ function DeliverView({ kioskApi, focusedBagId, onConsumeFocus }) {
       .catch(() => setBags([]))
   }, [effectiveBlock, roomNo])
 
-  // Auto-select bag from dashboard navigation
+  // Pre-fill block + room from focusedBag (so bags useEffect fetches the right ones)
   useEffect(() => {
-    if (focusedBagId && bags.length > 0) {
-      const bag = bags.find(b => b.id === focusedBagId)
+    if (focusedBag) {
+      setSelectedBlock(focusedBag.block)
+      setRoomNo(String(focusedBag.room_no))
+    }
+  }, [focusedBag])
+
+  // Auto-select bag once it's loaded
+  useEffect(() => {
+    if (focusedBag && bags.length > 0) {
+      const bag = bags.find(b => b.id === focusedBag.id)
       if (bag) {
         setSelectedBag(bag)
         onConsumeFocus?.()
       }
     }
-  }, [focusedBagId, bags])  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [focusedBag, bags])  // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     setTicked({})
