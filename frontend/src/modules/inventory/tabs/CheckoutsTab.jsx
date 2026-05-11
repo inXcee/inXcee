@@ -35,23 +35,23 @@ export default function CheckoutsTab() {
             <div style={{ padding: '32px', textAlign: 'center', fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--text3)' }}>Geçmiş kayıt yok</div>
           ) : (
             <div style={{ overflowX: 'auto' }}>
-              <table className="data-table" style={{ margin: 0 }}>
+              <table className="data-table responsive-stack" style={{ margin: 0 }}>
                 <thead><tr><th>PERSONEL</th><th>MALZEME</th><th>ADET</th><th>TESLİM TARİHİ</th><th>İADE TARİHİ</th><th>VEREN</th><th>DURUM</th></tr></thead>
                 <tbody>
                   {history.map(co => (
                     <tr key={co.id} style={{ opacity: co.returned_at ? 0.7 : 1 }}>
-                      <td>
+                      <td data-label="Personel">
                         <div style={{ fontWeight: 500, fontSize: '12px' }}>{co.personnel_name}</div>
                         <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)' }}>{co.company || '-'}</div>
                       </td>
-                      <td style={{ fontSize: '12px' }}>{co.item_name}</td>
-                      <td style={{ fontFamily: 'var(--mono)', fontWeight: 700 }}>{co.quantity} <span style={{ fontSize: '9px', fontWeight: 400, color: 'var(--text3)' }}>{co.unit}</span></td>
-                      <td style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)', whiteSpace: 'nowrap' }}>{fmt(co.checked_out_at)}</td>
-                      <td style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: co.returned_at ? 'var(--green)' : 'var(--text4)', whiteSpace: 'nowrap' }}>
+                      <td data-label="Malzeme" style={{ fontSize: '12px' }}>{co.item_name}</td>
+                      <td data-label="Adet" style={{ fontFamily: 'var(--mono)', fontWeight: 700 }}>{co.quantity} <span style={{ fontSize: '9px', fontWeight: 400, color: 'var(--text3)' }}>{co.unit}</span></td>
+                      <td data-label="Teslim Tarihi" style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)', whiteSpace: 'nowrap' }}>{fmt(co.checked_out_at)}</td>
+                      <td data-label="Iade Tarihi" style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: co.returned_at ? 'var(--green)' : 'var(--text4)', whiteSpace: 'nowrap' }}>
                         {co.returned_at ? fmt(co.returned_at) : '—'}
                       </td>
-                      <td style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)' }}>{co.given_by}</td>
-                      <td>
+                      <td data-label="Veren" style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)' }}>{co.given_by}</td>
+                      <td data-label="Durum">
                         {co.returned_at
                           ? <span style={{ padding: '2px 8px', borderRadius: '6px', fontSize: '8px', fontWeight: 700, background: 'rgba(39,201,106,.08)', color: 'var(--green)', fontFamily: 'var(--mono)' }}>İADE</span>
                           : <span style={{ padding: '2px 8px', borderRadius: '6px', fontSize: '8px', fontWeight: 700, background: 'rgba(52,152,219,.08)', color: 'var(--blue)', fontFamily: 'var(--mono)' }}>AKTİF</span>

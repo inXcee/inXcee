@@ -514,7 +514,7 @@ function RoomDetailPanel({ room, onClose, onRoomUpdated, swapSource, onSwapSelec
                 <div className="empty-sub">Bu odada kayıtlı personel yok</div>
               </div>
             ) : (
-              <table className="data-table" style={{ marginBottom: '20px' }}>
+              <table className="data-table responsive-stack" style={{ marginBottom: '20px' }}>
                 <thead>
                   <tr>
                     <th>AD SOYAD</th>
@@ -531,7 +531,7 @@ function RoomDetailPanel({ room, onClose, onRoomUpdated, swapSource, onSwapSelec
                     <tr key={p.id || i} draggable style={{ cursor: 'grab' }}
                       onDragStart={e => { e.dataTransfer.setData('personnel-id', String(p.id)); e.dataTransfer.effectAllowed = 'move'; e.currentTarget.style.opacity = '0.4' }}
                       onDragEnd={e => { e.currentTarget.style.opacity = '1' }}>
-                      <td style={{ fontWeight: 600, fontSize: '13px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <td data-label="Ad Soyad" style={{ fontWeight: 600, fontSize: '13px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                         {p.photo_url ? (
                           <img loading="lazy" src={p.photo_url} alt="" style={{ width: '28px', height: '28px', borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
                         ) : (
@@ -544,19 +544,19 @@ function RoomDetailPanel({ room, onClose, onRoomUpdated, swapSource, onSwapSelec
                         )}
                         {p.full_name}
                       </td>
-                      <td style={{ fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--text2)' }}>{p.company || '—'}</td>
-                      <td style={{ fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--text2)' }}>{p.phone_number || '—'}</td>
-                      <td>
+                      <td data-label="Firma" style={{ fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--text2)' }}>{p.company || '—'}</td>
+                      <td data-label="Telefon" style={{ fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--text2)' }}>{p.phone_number || '—'}</td>
+                      <td data-label="Vardiya">
                         <span className={`badge badge-${p.shift_type === 'night' ? 'purple' : 'amber'}`} style={{ fontSize: '8px' }}>
                           {p.shift_type === 'night' ? '☾ GECE' : '☀ GÜNDÜZ'}
                         </span>
                       </td>
-                      <td><span className="badge badge-gray">YATAK {p.bed_no ?? i + 1}</span></td>
-                      <td style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)' }}>
+                      <td data-label="Yatak"><span className="badge badge-gray">YATAK {p.bed_no ?? i + 1}</span></td>
+                      <td data-label="Atanma" style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)' }}>
                         {p.assigned_at ? new Date(p.assigned_at).toLocaleDateString('tr-TR') : '—'}
                       </td>
-                      <td>
-                        <div style={{ display: 'flex', gap: '4px' }}>
+                      <td data-label="Islem">
+                        <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                           {swapSource && swapSource.id !== p.id && swapSource.roomId !== room.id ? (
                             <button
                               className="btn btn-primary btn-xs"

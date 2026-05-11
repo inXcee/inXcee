@@ -170,24 +170,24 @@ function SlaRow({ config, onSave }) {
 
   return (
     <tr>
-      <td style={{ fontWeight: 600 }}>{STAGE_LABELS[config.stage] || config.stage}</td>
-      <td>
+      <td data-label="Asama" style={{ fontWeight: 600 }}>{STAGE_LABELS[config.stage] || config.stage}</td>
+      <td data-label="Uyari">
         <input type="number" className="form-input" style={{ width: 70 }}
           value={warn} min={1} onChange={e => setWarn(e.target.value)} />
         <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', marginLeft: 4 }}>saat</span>
       </td>
-      <td>
+      <td data-label="Kritik">
         <input type="number" className="form-input" style={{ width: 70 }}
           value={crit} min={1} onChange={e => setCrit(e.target.value)} />
         <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', marginLeft: 4 }}>saat</span>
       </td>
-      <td>
+      <td data-label="WhatsApp">
         <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
           <input type="checkbox" checked={waNotify} onChange={e => setWaNotify(e.target.checked)} />
           <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>WA</span>
         </label>
       </td>
-      <td>
+      <td data-label="Islem">
         <button className="btn btn-sm" style={{ background: 'var(--accent)', color: '#000' }}
           onClick={handleSave} disabled={saving}>
           {saving ? '...' : 'Kaydet'}
@@ -398,7 +398,7 @@ export default function LaundrySettings() {
             {slaConfig.length === 0 ? (
               <div style={{ padding: '12px 14px', fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)' }}>Yükleniyor...</div>
             ) : (
-              <table className="data-table">
+              <table className="data-table responsive-stack">
                 <thead>
                   <tr><th>Aşama</th><th>Uyarı</th><th>Kritik</th><th>WhatsApp</th><th></th></tr>
                 </thead>
@@ -451,24 +451,24 @@ export default function LaundrySettings() {
 
             {/* Machine list */}
             {machines.length > 0 && (
-              <table className="data-table">
+              <table className="data-table responsive-stack">
                 <thead>
                   <tr><th>Ad</th><th>Tip</th><th>Kapasite</th><th>Durum</th><th></th></tr>
                 </thead>
                 <tbody>
                   {machines.map(m => (
                     <tr key={m.id}>
-                      <td style={{ fontWeight: 600 }}>{m.name}</td>
-                      <td style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', textTransform: 'uppercase' }}>
+                      <td data-label="Ad" style={{ fontWeight: 600 }}>{m.name}</td>
+                      <td data-label="Tip" style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', textTransform: 'uppercase' }}>
                         {m.machine_type === 'washer' ? 'Yıkama' : 'Kurutma'}
                       </td>
-                      <td>{m.capacity}</td>
-                      <td>
+                      <td data-label="Kapasite">{m.capacity}</td>
+                      <td data-label="Durum">
                         <span className={`badge ${m.status === 'running' ? 'badge-amber' : m.status === 'done' ? 'badge-green' : 'badge-gray'}`}>
                           {m.status === 'running' ? 'Çalışıyor' : m.status === 'done' ? 'Bitti' : 'Boşta'}
                         </span>
                       </td>
-                      <td>
+                      <td data-label="Islem">
                         <button className="btn btn-ghost btn-xs"
                           onClick={() => { if (confirm(`"${m.name}" silinsin mi?`)) deleteMachine.mutate(m.id) }}>
                           Sil
@@ -519,7 +519,7 @@ function BlockSettings() {
         Premium bloklar kıyafet-bazlı takip sistemini kullanır (garment kodları, brand/model/beden).
         Regular bloklar mevcut sistemde çalışır.
       </div>
-      <table className="data-table" style={{ marginBottom: 0 }}>
+      <table className="data-table responsive-stack" style={{ marginBottom: 0 }}>
         <thead>
           <tr>
             <th>Blok</th>
@@ -530,7 +530,7 @@ function BlockSettings() {
         <tbody>
           {blocks.map(b => (
             <tr key={b.block}>
-              <td>
+              <td data-label="Blok">
                 <span style={{
                   fontFamily: 'var(--mono)', fontWeight: 700,
                   color: b.is_premium ? 'var(--accent)' : 'var(--text)',
@@ -538,7 +538,7 @@ function BlockSettings() {
                   {b.block}
                 </span>
               </td>
-              <td>
+              <td data-label="Tip">
                 <span style={{
                   fontFamily: 'var(--mono)', fontSize: 9,
                   padding: '2px 8px', borderRadius: 4,
@@ -549,7 +549,7 @@ function BlockSettings() {
                   {b.is_premium ? '★ Premium' : 'Regular'}
                 </span>
               </td>
-              <td>
+              <td data-label="Islem">
                 <button
                   className="btn btn-ghost btn-xs"
                   onClick={() => update.mutate({ block: b.block, is_premium: b.is_premium ? 0 : 1 })}

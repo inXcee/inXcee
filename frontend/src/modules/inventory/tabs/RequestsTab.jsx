@@ -156,7 +156,7 @@ export default function RequestsTab({ items }) {
       ) : (
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '14px', overflow: 'hidden' }}>
           <div style={{ height: '2px', background: 'linear-gradient(90deg,var(--blue),var(--green))' }} />
-          <table className="data-table" style={{ margin: 0 }}>
+          <table className="data-table responsive-stack" style={{ margin: 0 }}>
             <thead><tr>
               <th>TALEP</th><th>TALEPCI</th>{isMgr && <th>NEDEN</th>}<th>STOK</th><th>DURUM</th><th>TARIH</th><th style={{ textAlign: 'center' }}>ISLEM</th>
             </tr></thead>
@@ -165,17 +165,17 @@ export default function RequestsTab({ items }) {
                 const st = STATUS_LABELS[r.status]
                 return (
                   <tr key={r.id}>
-                    <td style={{ fontWeight: 500, fontSize: '12px' }}>
+                    <td data-label="Talep" style={{ fontWeight: 500, fontSize: '12px' }}>
                       {r.item_name} <span style={{ fontFamily: 'var(--mono)', color: 'var(--accent)', fontWeight: 700 }}>x{r.quantity}</span>
                       <span style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', marginLeft: '4px' }}>{r.unit}</span>
                     </td>
-                    <td style={{ fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--text2)' }}>{r.requester_full_name || r.requester_name}</td>
-                    {isMgr && <td style={{ fontSize: '11px', color: 'var(--text3)' }}>{r.reason || '-'}</td>}
-                    <td style={{ fontFamily: 'var(--mono)', color: r.available_qty < r.quantity ? 'var(--red)' : 'var(--green)', fontSize: '11px' }}>{r.available_qty}</td>
-                    <td><span style={{ padding: '2px 8px', borderRadius: '6px', fontSize: '8px', fontWeight: 700, background: `color-mix(in srgb, ${st.color} 12%, transparent)`, color: st.color, fontFamily: 'var(--mono)' }}>{st.label}</span></td>
-                    <td style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)' }}>{fmt(r.created_at)}</td>
-                    <td>
-                      <div style={{ display: 'flex', gap: '3px', justifyContent: 'center' }}>
+                    <td data-label="Talepci" style={{ fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--text2)' }}>{r.requester_full_name || r.requester_name}</td>
+                    {isMgr && <td data-label="Neden" style={{ fontSize: '11px', color: 'var(--text3)' }}>{r.reason || '-'}</td>}
+                    <td data-label="Stok" style={{ fontFamily: 'var(--mono)', color: r.available_qty < r.quantity ? 'var(--red)' : 'var(--green)', fontSize: '11px' }}>{r.available_qty}</td>
+                    <td data-label="Durum"><span style={{ padding: '2px 8px', borderRadius: '6px', fontSize: '8px', fontWeight: 700, background: `color-mix(in srgb, ${st.color} 12%, transparent)`, color: st.color, fontFamily: 'var(--mono)' }}>{st.label}</span></td>
+                    <td data-label="Tarih" style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)' }}>{fmt(r.created_at)}</td>
+                    <td data-label="Islem">
+                      <div style={{ display: 'flex', gap: '3px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
                         {isMgr && r.status === 'pending' && (
                           <>
                             <button className="btn btn-ghost btn-xs" onClick={() => approveMut.mutate(r.id)} style={{ color: 'var(--green)', borderRadius: '6px' }}>ONAY</button>

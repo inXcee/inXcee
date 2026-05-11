@@ -116,18 +116,18 @@ function ReceiveModal({ poId, onClose, onDone }) {
 
   return (
     <Modal onClose={onClose} title={`TESLIM AL: ${po.po_no}`} sub={po.supplier_name} color="var(--green),var(--teal)" wide>
-      <table className="data-table" style={{ margin: 0, marginBottom: '14px' }}>
+      <table className="data-table responsive-stack" style={{ margin: 0, marginBottom: '14px' }}>
         <thead><tr><th>URUN</th><th>SIPARIS</th><th>ALINAN</th><th>KALAN</th><th>SIMDI ALINAN</th></tr></thead>
         <tbody>
           {po.items.map(it => {
             const remaining = it.qty_ordered - it.qty_received
             return (
               <tr key={it.id}>
-                <td style={{ fontWeight: 500, fontSize: '12px' }}>{it.item_name}</td>
-                <td style={{ fontFamily: 'var(--mono)' }}>{it.qty_ordered} {it.unit}</td>
-                <td style={{ fontFamily: 'var(--mono)', color: 'var(--text3)' }}>{it.qty_received}</td>
-                <td style={{ fontFamily: 'var(--mono)', color: remaining > 0 ? 'var(--amber)' : 'var(--green)', fontWeight: 700 }}>{remaining}</td>
-                <td>
+                <td data-label="Urun" style={{ fontWeight: 500, fontSize: '12px' }}>{it.item_name}</td>
+                <td data-label="Siparis" style={{ fontFamily: 'var(--mono)' }}>{it.qty_ordered} {it.unit}</td>
+                <td data-label="Alinan" style={{ fontFamily: 'var(--mono)', color: 'var(--text3)' }}>{it.qty_received}</td>
+                <td data-label="Kalan" style={{ fontFamily: 'var(--mono)', color: remaining > 0 ? 'var(--amber)' : 'var(--green)', fontWeight: 700 }}>{remaining}</td>
+                <td data-label="Simdi Alinan">
                   <input type="number" min="0" max={remaining} value={recv[it.id] ?? ''}
                     onChange={e => setRecv(p => ({ ...p, [it.id]: e.target.value }))}
                     disabled={remaining === 0}
@@ -214,22 +214,22 @@ export default function PurchaseOrdersTab({ items }) {
       ) : (
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '14px', overflow: 'hidden' }}>
           <div style={{ height: '2px', background: 'linear-gradient(90deg,var(--accent),var(--green))' }} />
-          <table className="data-table" style={{ margin: 0 }}>
+          <table className="data-table responsive-stack" style={{ margin: 0 }}>
             <thead><tr><th>NO</th><th>TEDARIKCI</th><th>KALEM</th><th>TUTAR</th><th>BEKLENEN</th><th>DURUM</th><th>OLUSTURAN</th><th style={{ textAlign: 'center' }}>ISLEM</th></tr></thead>
             <tbody>
               {pos.map(po => {
                 const st = STATUS_LABELS[po.status] || { label: po.status, color: 'var(--text3)' }
                 return (
                   <tr key={po.id}>
-                    <td style={{ fontFamily: 'var(--mono)', fontWeight: 700, color: 'var(--accent)', fontSize: '11px' }}>{po.po_no}</td>
-                    <td style={{ fontWeight: 500, fontSize: '12px' }}>{po.supplier_name}</td>
-                    <td style={{ fontFamily: 'var(--mono)', fontSize: '11px' }}>{po.item_count}</td>
-                    <td style={{ fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--accent)', fontWeight: 600 }}>{money(po.total_value)}</td>
-                    <td style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)' }}>{po.expected_date ? fmtDate(po.expected_date) : '-'}</td>
-                    <td><span style={{ padding: '2px 8px', borderRadius: '6px', fontSize: '8px', fontWeight: 700, background: `color-mix(in srgb, ${st.color} 12%, transparent)`, color: st.color, fontFamily: 'var(--mono)' }}>{st.label}</span></td>
-                    <td style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)' }}>{po.created_by_name}</td>
-                    <td>
-                      <div style={{ display: 'flex', gap: '3px', justifyContent: 'center' }}>
+                    <td data-label="No" style={{ fontFamily: 'var(--mono)', fontWeight: 700, color: 'var(--accent)', fontSize: '11px' }}>{po.po_no}</td>
+                    <td data-label="Tedarikci" style={{ fontWeight: 500, fontSize: '12px' }}>{po.supplier_name}</td>
+                    <td data-label="Kalem" style={{ fontFamily: 'var(--mono)', fontSize: '11px' }}>{po.item_count}</td>
+                    <td data-label="Tutar" style={{ fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--accent)', fontWeight: 600 }}>{money(po.total_value)}</td>
+                    <td data-label="Beklenen" style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)' }}>{po.expected_date ? fmtDate(po.expected_date) : '-'}</td>
+                    <td data-label="Durum"><span style={{ padding: '2px 8px', borderRadius: '6px', fontSize: '8px', fontWeight: 700, background: `color-mix(in srgb, ${st.color} 12%, transparent)`, color: st.color, fontFamily: 'var(--mono)' }}>{st.label}</span></td>
+                    <td data-label="Olusturan" style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)' }}>{po.created_by_name}</td>
+                    <td data-label="Islem">
+                      <div style={{ display: 'flex', gap: '3px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
                         <button className="btn btn-ghost btn-xs" onClick={() => downloadPdf(po.id)} style={{ color: 'var(--purple)', borderRadius: '6px' }}>PDF</button>
                         {po.status === 'draft' && (
                           <button className="btn btn-ghost btn-xs" onClick={() => statusMut.mutate({ id: po.id, status: 'sent' })} style={{ color: 'var(--blue)', borderRadius: '6px' }}>GONDER</button>

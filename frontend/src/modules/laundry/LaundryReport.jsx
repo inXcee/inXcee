@@ -154,15 +154,15 @@ export default function LaundryReport() {
                 <span className="panel-title">DURUM DAĞILIMI</span>
               </div>
               <div className="panel-body" style={{ padding: 0 }}>
-                <table className="data-table">
+                <table className="data-table responsive-stack">
                   <thead>
                     <tr><th>Durum</th><th>Adet</th></tr>
                   </thead>
                   <tbody>
                     {stats.by_status.map(row => (
                       <tr key={row.status}>
-                        <td style={{ textTransform: 'capitalize' }}>{row.status}</td>
-                        <td style={{ fontFamily: 'var(--display)', fontSize: 18, letterSpacing: 1 }}>{row.count}</td>
+                        <td data-label="Durum" style={{ textTransform: 'capitalize' }}>{row.status}</td>
+                        <td data-label="Adet" style={{ fontFamily: 'var(--display)', fontSize: 18, letterSpacing: 1 }}>{row.count}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -217,24 +217,24 @@ export default function LaundryReport() {
                 <span className="panel-title">MAKİNE DURUMU</span>
               </div>
               <div className="panel-body" style={{ padding: 0 }}>
-                <table className="data-table">
+                <table className="data-table responsive-stack">
                   <thead>
                     <tr><th>Makine</th><th>Tip</th><th>Durum</th><th>Aktif Yük</th><th>Toplam Çalışma</th></tr>
                   </thead>
                   <tbody>
                     {stats.machine_stats.map(m => (
                       <tr key={m.name}>
-                        <td style={{ fontFamily: 'var(--display)', letterSpacing: 1 }}>{m.name}</td>
-                        <td style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>{m.type}</td>
-                        <td>
+                        <td data-label="Makine" style={{ fontFamily: 'var(--display)', letterSpacing: 1 }}>{m.name}</td>
+                        <td data-label="Tip" style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>{m.type}</td>
+                        <td data-label="Durum">
                           <span className={`badge badge-${m.status === 'running' ? 'blue' : m.status === 'done' ? 'green' : m.status === 'maintenance' ? 'red' : 'gray'}`} style={{ fontSize: 8 }}>
                             {m.status === 'running' ? 'ÇALIŞIYOR' : m.status === 'done' ? 'BİTTİ' : m.status === 'idle' ? 'BOŞ' : m.status === 'maintenance' ? 'BAKIM' : m.status}
                           </span>
                         </td>
-                        <td style={{ fontFamily: 'var(--display)', fontSize: 16, color: m.active_loads > 0 ? 'var(--blue)' : 'var(--text3)' }}>
+                        <td data-label="Aktif Yuk" style={{ fontFamily: 'var(--display)', fontSize: 16, color: m.active_loads > 0 ? 'var(--blue)' : 'var(--text3)' }}>
                           {m.active_loads > 0 ? m.active_loads : '—'}
                         </td>
-                        <td style={{
+                        <td data-label="Toplam Calisma" style={{
                           fontFamily: 'var(--display)', fontSize: 16,
                           color: m.needs_maintenance ? 'var(--red)' : m.total_runs > 40 ? 'var(--accent)' : 'var(--text3)',
                         }}>
@@ -256,17 +256,17 @@ export default function LaundryReport() {
                 <span className="panel-subtitle">Dönem içinde en fazla kayıt oluşturulan odalar</span>
               </div>
               <div className="panel-body" style={{ padding: 0 }}>
-                <table className="data-table">
+                <table className="data-table responsive-stack">
                   <thead>
                     <tr><th>Oda</th><th>Toplam</th><th>Teslim</th><th>Kayıp</th></tr>
                   </thead>
                   <tbody>
                     {stats.by_room.map((r, i) => (
                       <tr key={i}>
-                        <td style={{ fontFamily: 'var(--display)', letterSpacing: 2 }}>{r.block} · {r.room_no}</td>
-                        <td style={{ fontFamily: 'var(--display)', fontSize: 18 }}>{r.total}</td>
-                        <td style={{ color: 'var(--green)' }}>{r.delivered}</td>
-                        <td style={{ color: r.lost > 0 ? 'var(--red)' : 'var(--text3)' }}>{r.lost || '—'}</td>
+                        <td data-label="Oda" style={{ fontFamily: 'var(--display)', letterSpacing: 2 }}>{r.block} · {r.room_no}</td>
+                        <td data-label="Toplam" style={{ fontFamily: 'var(--display)', fontSize: 18 }}>{r.total}</td>
+                        <td data-label="Teslim" style={{ color: 'var(--green)' }}>{r.delivered}</td>
+                        <td data-label="Kayip" style={{ color: r.lost > 0 ? 'var(--red)' : 'var(--text3)' }}>{r.lost || '—'}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -337,22 +337,22 @@ export default function LaundryReport() {
                     </div>
                   )}
                   {personData.items?.length > 0 && (
-                    <table className="data-table">
+                    <table className="data-table responsive-stack">
                       <thead>
                         <tr><th>ID</th><th>Oluşturulma</th><th>Parça</th><th>Durum</th><th>Süre</th></tr>
                       </thead>
                       <tbody>
                         {personData.items.slice(0, 20).map(i => (
                           <tr key={i.id}>
-                            <td style={{ fontFamily: 'var(--mono)', fontSize: 9 }}>#{i.id}</td>
-                            <td style={{ fontFamily: 'var(--mono)', fontSize: 9 }}>{new Date(i.created_at).toLocaleDateString('tr-TR')}</td>
-                            <td>{i.item_count}</td>
-                            <td>
+                            <td data-label="ID" style={{ fontFamily: 'var(--mono)', fontSize: 9 }}>#{i.id}</td>
+                            <td data-label="Olusturulma" style={{ fontFamily: 'var(--mono)', fontSize: 9 }}>{new Date(i.created_at).toLocaleDateString('tr-TR')}</td>
+                            <td data-label="Parca">{i.item_count}</td>
+                            <td data-label="Durum">
                               <span className={`badge badge-${i.status === 'delivered' ? 'green' : i.status === 'lost' ? 'red' : 'gray'}`} style={{ fontSize: 7 }}>
                                 {i.status}
                               </span>
                             </td>
-                            <td style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>{i.total_hours ? `${i.total_hours}s` : '—'}</td>
+                            <td data-label="Sure" style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>{i.total_hours ? `${i.total_hours}s` : '—'}</td>
                           </tr>
                         ))}
                       </tbody>

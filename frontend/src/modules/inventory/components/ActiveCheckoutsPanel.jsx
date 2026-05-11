@@ -34,23 +34,23 @@ export default function ActiveCheckoutsPanel({ fullView }) {
         <div style={{ padding: '32px', textAlign: 'center', fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--text3)' }}>Aktif teslim yok</div>
       ) : (
         <div style={{ overflowX: 'auto' }}>
-          <table className="data-table" style={{ margin: 0 }}>
+          <table className="data-table responsive-stack" style={{ margin: 0 }}>
             <thead><tr><th>PERSONEL</th><th>ODA</th><th>MALZEME</th><th>ADET</th><th>TARİH</th><th>VEREN</th><th>İADE</th></tr></thead>
             <tbody>
               {checkouts.map(co => {
                 const remaining = co.quantity - co.returned_qty
                 return (
                   <tr key={co.id}>
-                    <td>
+                    <td data-label="Personel">
                       <div style={{ fontWeight: 500, fontSize: '12px' }}>{co.personnel_name}</div>
                       <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)' }}>{co.company || '-'}</div>
                     </td>
-                    <td style={{ fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--accent)', fontWeight: 600 }}>{co.block ? `${co.block}-${co.room_no}` : '-'}</td>
-                    <td style={{ fontSize: '12px' }}>{co.item_name}</td>
-                    <td style={{ fontFamily: 'var(--mono)', fontWeight: 700 }}>{remaining} <span style={{ fontSize: '9px', fontWeight: 400, color: 'var(--text3)' }}>{co.unit}</span></td>
-                    <td style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)', whiteSpace: 'nowrap' }}>{fmt(co.checked_out_at)}</td>
-                    <td style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)' }}>{co.given_by}</td>
-                    <td>
+                    <td data-label="Oda" style={{ fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--accent)', fontWeight: 600 }}>{co.block ? `${co.block}-${co.room_no}` : '-'}</td>
+                    <td data-label="Malzeme" style={{ fontSize: '12px' }}>{co.item_name}</td>
+                    <td data-label="Adet" style={{ fontFamily: 'var(--mono)', fontWeight: 700 }}>{remaining} <span style={{ fontSize: '9px', fontWeight: 400, color: 'var(--text3)' }}>{co.unit}</span></td>
+                    <td data-label="Tarih" style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)', whiteSpace: 'nowrap' }}>{fmt(co.checked_out_at)}</td>
+                    <td data-label="Veren" style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)' }}>{co.given_by}</td>
+                    <td data-label="Iade">
                       {returningId === co.id ? (
                         <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
                           <input type="number" min="1" max={remaining} value={returnQty}

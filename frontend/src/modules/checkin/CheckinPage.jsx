@@ -397,16 +397,16 @@ function StatsDashboard() {
                   {personnelFetching ? (
                     <div style={{ padding: '10px 16px', fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)' }}>Yükleniyor...</div>
                   ) : (
-                    <table className="data-table" style={{ margin: 0 }}>
+                    <table className="data-table responsive-stack" style={{ margin: 0 }}>
                       <thead><tr><th>AD SOYAD</th><th>MESLEK</th><th>ODA</th><th>VARDİYA</th></tr></thead>
                       <tbody>
                         {personnel.map(p => (
                           <tr key={p.id}>
-                            <td style={{ fontWeight: 600, fontSize: '11px' }}>{p.full_name}</td>
-                            <td style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text2)' }}>{p.job_title || '—'}</td>
-                            <td>{p.block ? <span className="badge badge-gray">{p.block} {p.room_no}</span> : <span style={{ color: 'var(--text4)', fontSize: '9px' }}>—</span>}</td>
-                            <td>
-                              <div style={{ display: 'flex', gap: '3px' }}>
+                            <td data-label="Ad Soyad" style={{ fontWeight: 600, fontSize: '11px' }}>{p.full_name}</td>
+                            <td data-label="Meslek" style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text2)' }}>{p.job_title || '—'}</td>
+                            <td data-label="Oda">{p.block ? <span className="badge badge-gray">{p.block} {p.room_no}</span> : <span style={{ color: 'var(--text4)', fontSize: '9px' }}>—</span>}</td>
+                            <td data-label="Vardiya">
+                              <div style={{ display: 'flex', gap: '3px', justifyContent: 'flex-end' }}>
                                 <button onClick={() => mutShift.mutate({ personnel_id: p.id, shift_type: 'day' })}
                                   style={{ padding: '2px 6px', borderRadius: '3px', border: 'none', cursor: 'pointer', fontFamily: 'var(--mono)', fontSize: '8px', fontWeight: 700,
                                     background: (p.shift_type === 'day' || !p.shift_type) ? 'var(--accent)' : 'var(--surface3)', color: (p.shift_type === 'day' || !p.shift_type) ? '#000' : 'var(--text3)' }}>

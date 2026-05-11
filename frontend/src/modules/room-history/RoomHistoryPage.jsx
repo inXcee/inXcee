@@ -52,7 +52,7 @@ function SummaryTable({ rooms, selectedBlock, onSelectRoom }) {
 
       {/* Table */}
       <div style={{ overflowX: 'auto' }}>
-        <table className="data-table">
+        <table className="data-table responsive-stack">
           <thead>
             <tr>
               {['Blok', 'Oda', 'Durum', 'Temizlik', 'Atlanan', 'Arıza', 'Açık'].map(h => (
@@ -69,16 +69,16 @@ function SummaryTable({ rooms, selectedBlock, onSelectRoom }) {
                   onClick={() => onSelectRoom(room)}
                   style={{ cursor: 'pointer' }}
                 >
-                  <td>
+                  <td data-label="Blok">
                     <span style={{
                       fontFamily: 'var(--mono)', fontSize: '11px', fontWeight: 600,
                       color: blockColor(room.block),
                       letterSpacing: '1px',
                     }}>{room.block}</span>
                   </td>
-                  <td style={{ fontWeight: 500 }}>{room.room_no}</td>
-                  <td><StatusBadge status={room.room_status} /></td>
-                  <td>
+                  <td data-label="Oda" style={{ fontWeight: 500 }}>{room.room_no}</td>
+                  <td data-label="Durum"><StatusBadge status={room.room_status} /></td>
+                  <td data-label="Temizlik">
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <div className="prog-bar" style={{ width: '50px' }}>
                         <div
@@ -91,19 +91,19 @@ function SummaryTable({ rooms, selectedBlock, onSelectRoom }) {
                       </span>
                     </div>
                   </td>
-                  <td>
+                  <td data-label="Atlanan">
                     <span style={{
                       fontFamily: 'var(--mono)', fontSize: '11px',
                       color: room.skipped_count > 0 ? 'var(--accent)' : 'var(--text3)',
                     }}>{room.skipped_count}</span>
                   </td>
-                  <td>
+                  <td data-label="Ariza">
                     <span style={{
                       fontFamily: 'var(--mono)', fontSize: '11px',
                       color: room.fault_count > 0 ? 'var(--red)' : 'var(--text3)',
                     }}>{room.fault_count}</span>
                   </td>
-                  <td>
+                  <td data-label="Acik">
                     {room.open_faults > 0 ? (
                       <span className="badge badge-red" style={{ fontSize: '9px' }}>{room.open_faults}</span>
                     ) : (

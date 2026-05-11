@@ -152,17 +152,17 @@ export default function LotsExpiryTab({ items }) {
               Lot kaydi yok. Mal giris yaparken lot no + SKT girilirse buraya eklenir.
             </div>
           ) : (
-            <table className="data-table" style={{ margin: 0 }}>
+            <table className="data-table responsive-stack" style={{ margin: 0 }}>
               <thead><tr><th>LOT</th><th>MIKTAR</th><th>SKT</th><th>DURUM</th><th>TEDARIKCI</th><th>GIRIS</th></tr></thead>
               <tbody>
                 {itemLots.map(l => (
                   <tr key={l.id} style={{ opacity: l.status === 'depleted' ? 0.5 : 1 }}>
-                    <td style={{ fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--accent)' }}>{l.lot_no || `#${l.id}`}</td>
-                    <td style={{ fontFamily: 'var(--mono)', fontWeight: 700 }}>{l.quantity}</td>
-                    <td style={{ fontFamily: 'var(--mono)', fontSize: '10px' }}>{l.expiry_date ? fmtDate(l.expiry_date) : '-'}</td>
-                    <td><span className={`badge badge-${l.status === 'active' ? 'green' : l.status === 'depleted' ? 'red' : 'amber'}`} style={{ fontSize: '8px' }}>{l.status}</span></td>
-                    <td style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)' }}>{l.supplier_name || '-'}</td>
-                    <td style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text4)' }}>{fmt(l.received_at)}</td>
+                    <td data-label="Lot" style={{ fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--accent)' }}>{l.lot_no || `#${l.id}`}</td>
+                    <td data-label="Miktar" style={{ fontFamily: 'var(--mono)', fontWeight: 700 }}>{l.quantity}</td>
+                    <td data-label="SKT" style={{ fontFamily: 'var(--mono)', fontSize: '10px' }}>{l.expiry_date ? fmtDate(l.expiry_date) : '-'}</td>
+                    <td data-label="Durum"><span className={`badge badge-${l.status === 'active' ? 'green' : l.status === 'depleted' ? 'red' : 'amber'}`} style={{ fontSize: '8px' }}>{l.status}</span></td>
+                    <td data-label="Tedarikci" style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)' }}>{l.supplier_name || '-'}</td>
+                    <td data-label="Giris" style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text4)' }}>{fmt(l.received_at)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -181,26 +181,26 @@ export default function LotsExpiryTab({ items }) {
       ) : (
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '14px', overflow: 'hidden' }}>
           <div style={{ height: '2px', background: 'linear-gradient(90deg,var(--red),var(--amber))' }} />
-          <table className="data-table" style={{ margin: 0 }}>
+          <table className="data-table responsive-stack" style={{ margin: 0 }}>
             <thead><tr><th>URUN</th><th>LOT NO</th><th>MIKTAR</th><th>SON KULLANMA</th><th>KALAN</th><th>TEDARIKCI</th><th>GIRIS</th></tr></thead>
             <tbody>
               {expiring.map(l => {
                 const critical = l.days_left <= 7
                 return (
                   <tr key={l.id}>
-                    <td style={{ fontWeight: 500, fontSize: '12px' }}>{l.item_name}</td>
-                    <td style={{ fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--accent)' }}>{l.lot_no || '-'}</td>
-                    <td style={{ fontFamily: 'var(--mono)', fontWeight: 700 }}>{l.quantity} <span style={{ fontSize: '9px', fontWeight: 400, color: 'var(--text3)' }}>{l.unit}</span></td>
-                    <td style={{ fontFamily: 'var(--mono)', fontSize: '10px' }}>{fmtDate(l.expiry_date)}</td>
-                    <td>
+                    <td data-label="Urun" style={{ fontWeight: 500, fontSize: '12px' }}>{l.item_name}</td>
+                    <td data-label="Lot No" style={{ fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--accent)' }}>{l.lot_no || '-'}</td>
+                    <td data-label="Miktar" style={{ fontFamily: 'var(--mono)', fontWeight: 700 }}>{l.quantity} <span style={{ fontSize: '9px', fontWeight: 400, color: 'var(--text3)' }}>{l.unit}</span></td>
+                    <td data-label="Son Kullanma" style={{ fontFamily: 'var(--mono)', fontSize: '10px' }}>{fmtDate(l.expiry_date)}</td>
+                    <td data-label="Kalan">
                       <span style={{
                         padding: '2px 8px', borderRadius: '6px', fontSize: '8px', fontWeight: 700, fontFamily: 'var(--mono)',
                         background: critical ? 'rgba(231,76,60,.12)' : 'rgba(240,165,0,.12)',
                         color: critical ? 'var(--red)' : 'var(--amber)',
                       }}>{l.days_left <= 0 ? 'GECTI' : `${l.days_left}G`}</span>
                     </td>
-                    <td style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)' }}>{l.supplier_name || '-'}</td>
-                    <td style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text4)' }}>{fmt(l.received_at)}</td>
+                    <td data-label="Tedarikci" style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)' }}>{l.supplier_name || '-'}</td>
+                    <td data-label="Giris" style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text4)' }}>{fmt(l.received_at)}</td>
                   </tr>
                 )
               })}

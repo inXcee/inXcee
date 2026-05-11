@@ -101,7 +101,7 @@ export default function AvsWorkersPage() {
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: '16px', alignItems: 'start' }}>
+      <div className="layout-list-detail" style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: '16px', alignItems: 'start' }}>
         {/* Sol: liste */}
         <div className="panel fade-up-1">
           <div style={{ height: '2px', background: 'var(--accent)' }} />

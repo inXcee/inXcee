@@ -2807,7 +2807,7 @@ function LeaveTab({ departments, onPersonClick }) {
               <div className="empty-sub">Izin talebi bulunamadi</div>
             </div>
           ) : (
-            <table className="data-table">
+            <table className="data-table responsive-stack">
               <thead>
                 <tr>
                   <th>Personel</th>
@@ -2824,7 +2824,7 @@ function LeaveTab({ departments, onPersonClick }) {
                   const dc = deptColor(l.dept_color)
                   return (
                     <tr key={l.id}>
-                      <td>
+                      <td data-label="Personel">
                         <div
                           onClick={() => l.staff_id && onPersonClick && onPersonClick(l.staff_id)}
                           style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', cursor: 'pointer', borderBottom: '1px dashed var(--text3)' }}>
@@ -2837,22 +2837,22 @@ function LeaveTab({ departments, onPersonClick }) {
                           </div>
                         </div>
                       </td>
-                      <td>
+                      <td data-label="Bolum">
                         <span style={{
                           display: 'inline-block', padding: '2px 8px', borderRadius: '10px',
                           background: dc.bg, color: dc.text,
                           fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 600,
                         }}>{l.dept_name}</span>
                       </td>
-                      <td><span className={`badge ${LEAVE_TYPES[l.leave_type]?.badge || 'badge-gray'}`}>{LEAVE_TYPES[l.leave_type]?.label}</span></td>
-                      <td style={{ fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--text2)', whiteSpace: 'nowrap' }}>
+                      <td data-label="Tur"><span className={`badge ${LEAVE_TYPES[l.leave_type]?.badge || 'badge-gray'}`}>{LEAVE_TYPES[l.leave_type]?.label}</span></td>
+                      <td data-label="Tarih" style={{ fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--text2)', whiteSpace: 'nowrap' }}>
                         {formatDate(l.start_date)} &ndash; {formatDate(l.end_date)}
                       </td>
-                      <td style={{ fontFamily: 'var(--mono)' }}>{l.total_days}</td>
-                      <td><span className={`badge ${STATUS_MAP[l.status]?.badge}`}>{STATUS_MAP[l.status]?.label}</span></td>
+                      <td data-label="Gun" style={{ fontFamily: 'var(--mono)' }}>{l.total_days}</td>
+                      <td data-label="Durum"><span className={`badge ${STATUS_MAP[l.status]?.badge}`}>{STATUS_MAP[l.status]?.label}</span></td>
                       {canApprove && (
-                        <td>
-                          <div style={{ display: 'flex', gap: '6px' }}>
+                        <td data-label="Islem">
+                          <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
                             {l.status === 'pending' && (
                               <>
                                 <button className="btn btn-sm" style={{ background: 'var(--green)', color: '#000' }}
@@ -3050,14 +3050,14 @@ function OvertimeTab({ departments, onPersonClick }) {
               <div className="empty-sub">Bu ay mesai kaydi yok</div>
             </div>
           ) : (
-            <table className="data-table">
+            <table className="data-table responsive-stack">
               <thead><tr><th>Personel</th><th>Bolum</th><th>Tarih</th><th>Saat</th><th>Sebep</th>{canEdit && <th>Islem</th>}</tr></thead>
               <tbody>
                 {records.map(r => {
                   const dc = deptColor(r.dept_color)
                   return (
                     <tr key={r.id}>
-                      <td>
+                      <td data-label="Personel">
                         <div
                           onClick={() => r.staff_id && onPersonClick && onPersonClick(r.staff_id)}
                           style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', cursor: 'pointer', borderBottom: '1px dashed var(--text3)' }}>
@@ -3065,13 +3065,13 @@ function OvertimeTab({ departments, onPersonClick }) {
                           <span>{r.full_name}</span>
                         </div>
                       </td>
-                      <td><span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: '10px', background: dc.bg, color: dc.text, fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 600 }}>{r.dept_name}</span></td>
-                      <td style={{ fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--text2)' }}>{formatDate(r.work_date)}</td>
-                      <td style={{ fontFamily: 'var(--display)', fontSize: '18px', color: 'var(--purple)' }}>{r.hours}s</td>
-                      <td style={{ color: 'var(--text2)', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.reason || '\u2014'}</td>
+                      <td data-label="Bolum"><span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: '10px', background: dc.bg, color: dc.text, fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 600 }}>{r.dept_name}</span></td>
+                      <td data-label="Tarih" style={{ fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--text2)' }}>{formatDate(r.work_date)}</td>
+                      <td data-label="Saat" style={{ fontFamily: 'var(--display)', fontSize: '18px', color: 'var(--purple)' }}>{r.hours}s</td>
+                      <td data-label="Sebep" style={{ color: 'var(--text2)', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.reason || '\u2014'}</td>
                       {canEdit && (
-                        <td>
-                          <div style={{ display: 'flex', gap: '4px' }}>
+                        <td data-label="Islem">
+                          <div style={{ display: 'flex', gap: '4px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
                             <button className="btn btn-ghost btn-sm" style={{ fontSize: '10px', padding: '3px 8px' }}
                               onClick={(e) => openEdit(e, r)}>Duzenle</button>
                             <button className="btn btn-danger btn-sm" style={{ fontSize: '10px', padding: '3px 8px' }}
@@ -3314,20 +3314,20 @@ function SwapTab() {
           {swaps.length === 0 ? (
             <div className="empty-state"><div className="empty-icon">&#128260;</div><div className="empty-title">TAKAS YOK</div><div className="empty-sub">Henuz takas talebi yok</div></div>
           ) : (
-            <table className="data-table">
+            <table className="data-table responsive-stack">
               <thead><tr><th>Talep Eden</th><th>Hedef Kisi</th><th>Tarih</th><th>Sebep</th><th>Durum</th>{canApprove && <th>Islem</th>}</tr></thead>
               <tbody>
                 {swaps.map(s => (
                   <tr key={s.id}>
-                    <td style={{ fontSize: '12.5px' }}>{s.requester_name || `#${s.requester_id}`}</td>
-                    <td style={{ fontSize: '12.5px' }}>{s.target_name || `#${s.target_id}`}</td>
-                    <td style={{ fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--text2)' }}>{s.swap_date ? formatDate(s.swap_date) : '\u2014'}</td>
-                    <td style={{ color: 'var(--text2)', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.reason || '\u2014'}</td>
-                    <td><span className={`badge ${SWAP_STATUS[s.status]?.badge || 'badge-gray'}`}>{SWAP_STATUS[s.status]?.label || s.status}</span></td>
+                    <td data-label="Talep Eden" style={{ fontSize: '12.5px' }}>{s.requester_name || `#${s.requester_id}`}</td>
+                    <td data-label="Hedef Kisi" style={{ fontSize: '12.5px' }}>{s.target_name || `#${s.target_id}`}</td>
+                    <td data-label="Tarih" style={{ fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--text2)' }}>{s.swap_date ? formatDate(s.swap_date) : '\u2014'}</td>
+                    <td data-label="Sebep" style={{ color: 'var(--text2)', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.reason || '\u2014'}</td>
+                    <td data-label="Durum"><span className={`badge ${SWAP_STATUS[s.status]?.badge || 'badge-gray'}`}>{SWAP_STATUS[s.status]?.label || s.status}</span></td>
                     {canApprove && (
-                      <td>
+                      <td data-label="Islem">
                         {s.status === 'pending' && (
-                          <div style={{ display: 'flex', gap: '6px' }}>
+                          <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
                             <button className="btn btn-sm" style={{ background: 'var(--green)', color: '#000' }} onClick={() => approveMut.mutate(s.id)} disabled={approveMut.isPending}>Onayla</button>
                             <button className="btn btn-danger btn-sm" onClick={() => rejectMut.mutate(s.id)} disabled={rejectMut.isPending}>Reddet</button>
                           </div>
@@ -3394,19 +3394,19 @@ function SettingsTab({ departments, shiftDefs }) {
           {shiftDefs.length === 0 ? (
             <div className="empty-state"><div className="empty-icon">&#9881;</div><div className="empty-title">TANIM YOK</div></div>
           ) : (
-            <table className="data-table">
+            <table className="data-table responsive-stack">
               <thead><tr><th>Renk</th><th>Ad</th><th>Baslangic</th><th>Bitis</th><th>Islem</th></tr></thead>
               <tbody>
                 {shiftDefs.map(s => {
                   const sc = shiftColor(s.color_class)
                   return (
                     <tr key={s.id}>
-                      <td><span style={{ width: '16px', height: '16px', borderRadius: '4px', background: sc.text, display: 'inline-block' }} /></td>
-                      <td style={{ fontWeight: 600 }}>{s.name}</td>
-                      <td style={{ fontFamily: 'var(--mono)', color: 'var(--text2)' }}>{s.start_hour}:00</td>
-                      <td style={{ fontFamily: 'var(--mono)', color: 'var(--text2)' }}>{s.end_hour === 24 ? '00:00' : `${s.end_hour}:00`}</td>
-                      <td>
-                        <div style={{ display: 'flex', gap: '6px' }}>
+                      <td data-label="Renk"><span style={{ width: '16px', height: '16px', borderRadius: '4px', background: sc.text, display: 'inline-block' }} /></td>
+                      <td data-label="Ad" style={{ fontWeight: 600 }}>{s.name}</td>
+                      <td data-label="Baslangic" style={{ fontFamily: 'var(--mono)', color: 'var(--text2)' }}>{s.start_hour}:00</td>
+                      <td data-label="Bitis" style={{ fontFamily: 'var(--mono)', color: 'var(--text2)' }}>{s.end_hour === 24 ? '00:00' : `${s.end_hour}:00`}</td>
+                      <td data-label="Islem">
+                        <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
                           <button className="btn btn-ghost btn-sm" onClick={() => { setDefForm({ name: s.name, start_hour: s.start_hour?.toString() || '', end_hour: s.end_hour?.toString() || '', color_class: s.color_class || 'bg-blue-400' }); setDefModal(s) }}>Duzenle</button>
                           <button className="btn btn-danger btn-sm" onClick={async () => { if (await confirmDialog({ title: 'Tanımı Sil', body: `${s.name} tanımını silmek istediğinizden emin misiniz?`, danger: true })) deleteDef.mutate(s.id) }}>Sil</button>
                         </div>

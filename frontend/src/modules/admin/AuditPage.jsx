@@ -86,7 +86,7 @@ export default function AuditPage() {
           {isLoading ? (
             <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text3)' }}>Yukleniyor...</div>
           ) : (
-            <table className="data-table">
+            <table className="data-table responsive-stack">
               <thead>
                 <tr>
                   <th>Tarih</th>
@@ -99,17 +99,17 @@ export default function AuditPage() {
               <tbody>
                 {(logs || []).map(log => (
                   <tr key={log.id}>
-                    <td style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text2)', whiteSpace: 'nowrap' }}>
+                    <td data-label="Tarih" style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text2)', whiteSpace: 'nowrap' }}>
                       {log.created_at}
                     </td>
-                    <td style={{ fontWeight: 500 }}>{log.user_name || '-'}</td>
-                    <td>
+                    <td data-label="Kullanici" style={{ fontWeight: 500 }}>{log.user_name || '-'}</td>
+                    <td data-label="Modul">
                       <span className="badge badge-blue" style={{ fontSize: '9px' }}>{log.module}</span>
                     </td>
-                    <td>
+                    <td data-label="Islem">
                       <span className="badge badge-amber" style={{ fontSize: '9px' }}>{log.action}</span>
                     </td>
-                    <td style={{ fontSize: '12px', color: 'var(--text2)', maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <td data-label="Detay" style={{ fontSize: '12px', color: 'var(--text2)', maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {log.detail || '-'}
                     </td>
                   </tr>

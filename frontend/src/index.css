@@ -352,6 +352,10 @@ h1, h2, h3, h4 { font-family: var(--display); letter-spacing: 2px; }
     text-align: left; flex-shrink: 0;
   }
 
+  /* List+Detail layout (Faz 22 / M29) — sidebar listesi + detay paneli iki sutun;
+     mobilde tek sutun stack. Kullanim: <div class="layout-list-detail"> */
+  .layout-list-detail { grid-template-columns: 1fr !important; }
+
   /* Panels — tighter padding */
   .panel-header { padding: 10px 14px; flex-wrap: wrap; gap: 8px; }
   .panel-body { padding: 12px 14px; }

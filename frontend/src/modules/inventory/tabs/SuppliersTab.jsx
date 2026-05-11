@@ -84,15 +84,15 @@ function PriceHistoryModal({ supplier, onClose }) {
         <div style={{ textAlign: 'center', padding: '24px', fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--text3)' }}>Fiyat kaydi yok</div>
       ) : (
         <div style={{ maxHeight: '380px', overflow: 'auto' }}>
-          <table className="data-table" style={{ margin: 0 }}>
+          <table className="data-table responsive-stack" style={{ margin: 0 }}>
             <thead><tr><th>URUN</th><th>FIYAT</th><th>KAYNAK</th><th>TARIH</th></tr></thead>
             <tbody>
               {prices.map(p => (
                 <tr key={p.id}>
-                  <td style={{ fontWeight: 500, fontSize: '12px' }}>{p.item_name}</td>
-                  <td style={{ fontFamily: 'var(--mono)', color: 'var(--accent)', fontWeight: 700 }}>{money(p.unit_price)} <span style={{ fontSize: '9px', color: 'var(--text3)', fontWeight: 400 }}>/{p.unit}</span></td>
-                  <td style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)' }}>{p.source}</td>
-                  <td style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)' }}>{fmt(p.effective_from)}</td>
+                  <td data-label="Urun" style={{ fontWeight: 500, fontSize: '12px' }}>{p.item_name}</td>
+                  <td data-label="Fiyat" style={{ fontFamily: 'var(--mono)', color: 'var(--accent)', fontWeight: 700 }}>{money(p.unit_price)} <span style={{ fontSize: '9px', color: 'var(--text3)', fontWeight: 400 }}>/{p.unit}</span></td>
+                  <td data-label="Kaynak" style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)' }}>{p.source}</td>
+                  <td data-label="Tarih" style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)' }}>{fmt(p.effective_from)}</td>
                 </tr>
               ))}
             </tbody>
@@ -140,23 +140,23 @@ export default function SuppliersTab() {
       ) : (
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '14px', overflow: 'hidden' }}>
           <div style={{ height: '2px', background: 'linear-gradient(90deg,var(--accent),var(--blue))' }} />
-          <table className="data-table" style={{ margin: 0 }}>
+          <table className="data-table responsive-stack" style={{ margin: 0 }}>
             <thead><tr><th>AD</th><th>YETKILI</th><th>TELEFON</th><th>ODEME</th><th>SURE</th><th>DURUM</th><th style={{ textAlign: 'center' }}>ISLEM</th></tr></thead>
             <tbody>
               {suppliers.map(s => (
                 <tr key={s.id} style={{ opacity: s.is_active ? 1 : 0.55 }}>
-                  <td style={{ fontWeight: 600, fontSize: '12px' }}>{s.name}</td>
-                  <td style={{ fontSize: '11px', color: 'var(--text2)' }}>{s.contact_name || '-'}</td>
-                  <td style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)' }}>{s.phone || '-'}</td>
-                  <td style={{ fontFamily: 'var(--mono)', fontSize: '10px' }}>{PAYMENT_TERMS.find(p => p.key === s.payment_term)?.label || s.payment_term}</td>
-                  <td style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)' }}>{s.default_lead_time_days}g</td>
-                  <td>
+                  <td data-label="Ad" style={{ fontWeight: 600, fontSize: '12px' }}>{s.name}</td>
+                  <td data-label="Yetkili" style={{ fontSize: '11px', color: 'var(--text2)' }}>{s.contact_name || '-'}</td>
+                  <td data-label="Telefon" style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)' }}>{s.phone || '-'}</td>
+                  <td data-label="Odeme" style={{ fontFamily: 'var(--mono)', fontSize: '10px' }}>{PAYMENT_TERMS.find(p => p.key === s.payment_term)?.label || s.payment_term}</td>
+                  <td data-label="Sure" style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)' }}>{s.default_lead_time_days}g</td>
+                  <td data-label="Durum">
                     {s.is_active
                       ? <span className="badge badge-green" style={{ fontSize: '8px' }}>AKTIF</span>
                       : <span className="badge badge-red" style={{ fontSize: '8px' }}>PASIF</span>}
                   </td>
-                  <td>
-                    <div style={{ display: 'flex', gap: '3px', justifyContent: 'center' }}>
+                  <td data-label="Islem">
+                    <div style={{ display: 'flex', gap: '3px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
                       <button className="btn btn-ghost btn-xs" style={{ color: 'var(--purple)', borderRadius: '6px' }} onClick={() => setHistoryFor(s)}>FIYAT</button>
                       <button className="btn btn-ghost btn-xs" style={{ color: 'var(--accent)', borderRadius: '6px' }} onClick={() => setEditing(s)}>DUZ</button>
                       {s.is_active === 1 && (

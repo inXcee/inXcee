@@ -214,7 +214,7 @@ function ReportCard({ report, selectedDate }) {
         {/* Expandable table */}
         {expanded && rows.length > 0 && (
           <div style={{ marginTop: '12px', overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'var(--mono)', fontSize: '10px' }}>
+            <table className="data-table responsive-stack" style={{ margin: 0, fontFamily: 'var(--mono)', fontSize: '10px' }}>
               <thead>
                 <tr>
                   {report.tableColumns.map(col => (
@@ -232,7 +232,7 @@ function ReportCard({ report, selectedDate }) {
                 {rows.map((row, i) => (
                   <tr key={i} style={{ borderBottom: '1px solid var(--border)', opacity: 0.9 }}>
                     {report.tableRow(row).map((cell, j) => (
-                      <td key={j} style={{ padding: '6px 8px', color: 'var(--text2)' }}>
+                      <td key={j} data-label={report.tableColumns[j]} style={{ padding: '6px 8px', color: 'var(--text2)' }}>
                         {cell}
                       </td>
                     ))}

@@ -68,7 +68,7 @@ export default function KioskPinPage() {
             {results.length === 0 && !isFetching ? (
               <div style={{ color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: '12px' }}>Sonuc bulunamadi</div>
             ) : (
-              <table className="data-table">
+              <table className="data-table responsive-stack">
                 <thead>
                   <tr>
                     <th>Ad Soyad</th>
@@ -81,10 +81,10 @@ export default function KioskPinPage() {
                 <tbody>
                   {results.map(p => (
                     <tr key={p.id}>
-                      <td style={{ fontWeight: 500 }}>{p.full_name}</td>
-                      <td style={{ fontFamily: 'var(--mono)', fontSize: '11px' }}>{p.tc_no || '-'}</td>
-                      <td style={{ fontFamily: 'var(--mono)', fontSize: '11px' }}>{p.block ? `${p.block} / ${p.room_no}` : '-'}</td>
-                      <td>
+                      <td data-label="Ad Soyad" style={{ fontWeight: 500 }}>{p.full_name}</td>
+                      <td data-label="TC No" style={{ fontFamily: 'var(--mono)', fontSize: '11px' }}>{p.tc_no || '-'}</td>
+                      <td data-label="Blok / Oda" style={{ fontFamily: 'var(--mono)', fontSize: '11px' }}>{p.block ? `${p.block} / ${p.room_no}` : '-'}</td>
+                      <td data-label="PIN Durumu">
                         <span
                           style={{
                             fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 600,
@@ -97,8 +97,8 @@ export default function KioskPinPage() {
                           {p.has_kiosk_pin ? 'PIN TANIMLI' : 'PIN YOK'}
                         </span>
                       </td>
-                      <td>
-                        <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                      <td data-label="Islemler">
+                        <div style={{ display: 'flex', gap: '4px', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                           {selectedId === p.id ? (
                             <>
                               <input

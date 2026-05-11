@@ -93,7 +93,7 @@ export default function ItemsTab({
             {filtered.length === 0 ? (
               <div style={{ padding: '48px', textAlign: 'center', fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--text3)' }}>Urun bulunamadi</div>
             ) : (
-              <table className="data-table" style={{ margin: 0 }}>
+              <table className="data-table responsive-stack" style={{ margin: 0 }}>
                 <thead><tr><th>URUN</th><th>KAT.</th><th>STOK</th><th>ESIK</th><th>DURUM</th><th>KONUM</th><th>DEGER</th><th style={{ textAlign: 'center' }}>ISLEM</th></tr></thead>
                 <tbody>
                   {filtered.map(item => {
@@ -103,7 +103,7 @@ export default function ItemsTab({
                     const val = (item.quantity || 0) * (item.unit_price || 0)
                     return (
                       <tr key={item.id} style={{ background: isOut ? 'rgba(231,76,60,.02)' : isLow ? 'rgba(240,165,0,.02)' : undefined }}>
-                        <td style={{ fontWeight: 600, fontSize: '12px' }}>
+                        <td data-label="Urun" style={{ fontWeight: 600, fontSize: '12px' }}>
                           {item.item_name}
                           {forecastMap[item.id] && (
                             <span style={{
@@ -124,18 +124,18 @@ export default function ItemsTab({
                             </span>
                           )}
                         </td>
-                        <td><span style={{ padding: '3px 8px', borderRadius: '6px', fontSize: '9px', fontWeight: 600,
+                        <td data-label="Kategori"><span style={{ padding: '3px 8px', borderRadius: '6px', fontSize: '9px', fontWeight: 600,
                           background: ct?.bg, color: ct?.color, fontFamily: 'var(--mono)' }}>{ct?.icon} {ct?.label}</span></td>
-                        <td style={{ fontFamily: 'var(--mono)', fontWeight: 700, color: isOut ? 'var(--red)' : isLow ? 'var(--amber)' : 'var(--text)' }}>
+                        <td data-label="Stok" style={{ fontFamily: 'var(--mono)', fontWeight: 700, color: isOut ? 'var(--red)' : isLow ? 'var(--amber)' : 'var(--text)' }}>
                           {item.quantity} <span style={{ fontSize: '9px', color: 'var(--text3)', fontWeight: 400 }}>{item.unit}</span></td>
-                        <td style={{ fontFamily: 'var(--mono)', color: 'var(--text3)', fontSize: '11px' }}>{item.reorder_threshold > 0 ? item.reorder_threshold : '-'}</td>
-                        <td>{isOut ? <span className="badge badge-red" style={{ fontSize: '8px' }}>TUKENDI</span>
+                        <td data-label="Esik" style={{ fontFamily: 'var(--mono)', color: 'var(--text3)', fontSize: '11px' }}>{item.reorder_threshold > 0 ? item.reorder_threshold : '-'}</td>
+                        <td data-label="Durum">{isOut ? <span className="badge badge-red" style={{ fontSize: '8px' }}>TUKENDI</span>
                           : isLow ? <span className="badge badge-amber" style={{ fontSize: '8px' }}>DUSUK</span>
                           : <span className="badge badge-green" style={{ fontSize: '8px' }}>OK</span>}</td>
-                        <td style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)' }}>{item.location || '-'}</td>
-                        <td style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--accent)', fontWeight: 600 }}>{money(val)}</td>
-                        <td>
-                          <div style={{ display: 'flex', gap: '3px', justifyContent: 'center' }}>
+                        <td data-label="Konum" style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)' }}>{item.location || '-'}</td>
+                        <td data-label="Deger" style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--accent)', fontWeight: 600 }}>{money(val)}</td>
+                        <td data-label="Islem">
+                          <div style={{ display: 'flex', gap: '3px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
                             <button className="btn btn-ghost btn-xs" style={{ color: 'var(--green)', borderRadius: '6px' }} onClick={() => setAdjustItem(item)}>+/-</button>
                             <button className="btn btn-ghost btn-xs" style={{ color: 'var(--blue)', borderRadius: '6px' }} onClick={() => setCheckoutItem(item)}>TES</button>
                             <button className="btn btn-ghost btn-xs" style={{ color: 'var(--purple)', borderRadius: '6px' }} onClick={() => setLogItem(item)}>LOG</button>
