@@ -1,0 +1,161 @@
+import { useEffect, useState } from 'react'
+import { BLOCKS_BY_TYPE, BLOCK_BY_NAME, expectedRoomNos } from '../../shared/blocks.js'
+
+// Bir bloğun tüm katlarındaki oda numaralarını düzleştir
+function allRoomNos(blockName) {
+  const cfg = BLOCK_BY_NAME[blockName]
+  if (!cfg) return []
+  const out = []
+  for (let f = 1; f <= cfg.floors; f++) out.push(...expectedRoomNos(blockName, f))
+  return out
+}
+
+// Props:
+//   value: { block, room_no, person } | null
+//   onChange: ({ block, room_no, person }) => void
+//   kioskApi: { get, post, put }
+export default function RoomGridPicker({ value, onChange, kioskApi }) {
+  const block = value?.block || null
+  const room_no = value?.room_no || null
+  const person = value?.person || null
+
+  const [activeBagRooms, setActiveBagRooms] = useState(new Set())
+  const [persons, setPersons] = useState([])
+  const [loadingPersons, setLoadingPersons] = useState(false)
+
+  // Block changed → fetch active bags for that block
+  useEffect(() => {
+    if (!block) { setActiveBagRooms(new Set()); return }
+    let cancelled = false
+    kioskApi.get(`/self-service/laundry-kiosk/bags?block=${encodeURIComponent(block)}`)
+      .then(r => {
+        if (cancelled) return
+        const rooms = new Set(r.data.map(b => b.room_no))
+        setActiveBagRooms(rooms)
+      })
+      .catch(() => { if (!cancelled) setActiveBagRooms(new Set()) })
+    return () => { cancelled = true }
+  }, [block, kioskApi])
+
+  // Room changed → fetch persons
+  useEffect(() => {
+    if (!block || !room_no) { setPersons([]); return }
+    let cancelled = false
+    setLoadingPersons(true)
+    kioskApi.get(`/self-service/laundry-kiosk/room-persons?block=${encodeURIComponent(block)}&room_no=${encodeURIComponent(room_no)}`)
+      .then(r => {
+        if (cancelled) return
+        setPersons(r.data)
+        // Auto-select if exactly one person
+        if (r.data.length === 1 && !person) {
+          onChange({ block, room_no, person: r.data[0] })
+        }
+      })
+      .catch(() => { if (!cancelled) setPersons([]) })
+      .finally(() => { if (!cancelled) setLoadingPersons(false) })
+    return () => { cancelled = true }
+  }, [block, room_no])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  const blockGroups = [
+    { label: 'M', keys: BLOCKS_BY_TYPE.M },
+    { label: 'S', keys: BLOCKS_BY_TYPE.S },
+    { label: 'Y', keys: BLOCKS_BY_TYPE.Y },
+  ]
+
+  const rooms = block ? allRoomNos(block) : []
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {/* Block chips */}
+      <div>
+        <div style={{ fontSize: 11, color: '#64748b', letterSpacing: 1, marginBottom: 8 }}>BLOK</div>
+        {blockGroups.map(g => (
+          <div key={g.label} style={{ marginBottom: 6 }}>
+            <div style={{ fontSize: 9, color: '#475569', letterSpacing: 1, marginBottom: 4 }}>{g.label}</div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {g.keys.map(k => (
+                <button key={k} type="button" onClick={() => onChange({ block: k, room_no: null, person: null })}
+                  style={{
+                    padding: '6px 12px', borderRadius: 8, border: 'none', cursor: 'pointer',
+                    background: block === k ? '#1d4ed8' : '#1e293b',
+                    color: block === k ? '#fff' : '#94a3b8',
+                    fontWeight: 700, fontSize: 13,
+                  }}>
+                  {k}
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Room grid */}
+      {block && (
+        <div>
+          <div style={{ fontSize: 11, color: '#64748b', letterSpacing: 1, marginBottom: 8 }}>
+            ODA {activeBagRooms.size > 0 && (
+              <span style={{ color: '#f87171', fontSize: 10 }}>· 🔴 {activeBagRooms.size} aktif</span>
+            )}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 6 }}>
+            {rooms.map(no => {
+              const isActive = activeBagRooms.has(String(no))
+              const isSelected = room_no === String(no)
+              return (
+                <button key={no} type="button" onClick={() => onChange({ block, room_no: String(no), person: null })}
+                  style={{
+                    padding: '10px 0', borderRadius: 8, border: 'none', cursor: 'pointer',
+                    background: isSelected ? '#1d4ed8' : '#1e293b',
+                    color: isSelected ? '#fff' : '#cbd5e1',
+                    fontWeight: 600, fontSize: 13,
+                    position: 'relative',
+                  }}>
+                  {no}
+                  {isActive && !isSelected && (
+                    <span style={{
+                      position: 'absolute', top: 2, right: 4,
+                      width: 6, height: 6, borderRadius: '50%', background: '#f87171',
+                    }} />
+                  )}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Persons */}
+      {block && room_no && (
+        <div>
+          <div style={{ fontSize: 11, color: '#64748b', letterSpacing: 1, marginBottom: 8 }}>KİŞİ</div>
+          {loadingPersons && <div style={{ color: '#475569', fontSize: 12 }}>Yükleniyor…</div>}
+          {!loadingPersons && persons.length === 0 && (
+            <div style={{ color: '#475569', fontSize: 12, marginBottom: 6 }}>Bu odada kayıtlı kişi yok</div>
+          )}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <button type="button" onClick={() => onChange({ block, room_no, person: null })}
+              style={{
+                padding: '10px 14px', borderRadius: 8, border: 'none', cursor: 'pointer',
+                background: person === null ? '#334155' : '#1e293b',
+                color: person === null ? '#e2e8f0' : '#64748b',
+                fontWeight: 600, fontSize: 13, textAlign: 'left',
+              }}>
+              Kişisiz
+            </button>
+            {persons.map(p => (
+              <button key={p.id} type="button" onClick={() => onChange({ block, room_no, person: p })}
+                style={{
+                  padding: '10px 14px', borderRadius: 8, border: 'none', cursor: 'pointer',
+                  background: person?.id === p.id ? '#1d4ed8' : '#1e293b',
+                  color: person?.id === p.id ? '#fff' : '#94a3b8',
+                  fontWeight: 600, fontSize: 13, textAlign: 'left',
+                }}>
+                {p.full_name}{p.company ? ` · ${p.company}` : ''}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
