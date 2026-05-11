@@ -626,6 +626,8 @@ function DeliverView({ kioskApi, onDone }) {
   const [fileCount, setFileCount] = useState(1)
   const [success, setSuccess] = useState(false)
   const [error, setError] = useState('')
+  const [parsedGarments, setParsedGarments] = useState([])
+  const [ticked, setTicked] = useState({})
 
   const effectiveBlock = selectedBlock === 'other' ? otherBlock.trim() : selectedBlock
   const isPremium = selectedBlock ? isPremiumBlock(selectedBlock) : null
@@ -639,8 +641,24 @@ function DeliverView({ kioskApi, onDone }) {
       .catch(() => setBags([]))
   }, [effectiveBlock, roomNo])
 
+  useEffect(() => {
+    setTicked({})
+    if (!selectedBag) { setParsedGarments([]); return }
+    try {
+      const parsed = selectedBag.garments_json ? JSON.parse(selectedBag.garments_json) : []
+      setParsedGarments(parsed)
+    } catch { setParsedGarments([]) }
+  }, [selectedBag])
+
+  function toggleTick(idx) {
+    setTicked(prev => ({ ...prev, [idx]: !prev[idx] }))
+  }
+
+  const allTicked = parsedGarments.length === 0 || parsedGarments.every((_, i) => ticked[i])
+
   async function deliver() {
     setError('')
+    if (parsedGarments.length > 0 && !allTicked) return setError('Tüm parçaları doğrulayın')
     if (!effectiveBlock || !roomNo.trim()) return setError('Blok ve oda no gerekli')
     if (!deliveredName.trim()) return setError('Ad soyad gerekli')
     if (!selectedBag) return setError('Torba seçilmedi')
@@ -746,6 +764,18 @@ function DeliverView({ kioskApi, onDone }) {
         </div>
       )}
 
+      {selectedBag && parsedGarments.length > 0 && (
+        <div>
+          <label style={lbl}>PARÇALARI DOĞRULA</label>
+          <GarmentChecklist
+            garments={parsedGarments}
+            ticked={ticked}
+            onToggle={toggleTick}
+            variant="deliver"
+          />
+        </div>
+      )}
+
       <div>
         <label style={lbl}>File Adedi</label>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -769,8 +799,16 @@ function DeliverView({ kioskApi, onDone }) {
       {error && <div style={{ color: '#f87171', fontSize: 13 }}>{error}</div>}
 
       <button onClick={deliver}
-        style={{ ...btn('#b45309'), padding: 14, fontSize: 15 }}>
+        disabled={parsedGarments.length > 0 && !allTicked}
+        style={{
+          ...btn(
+            (parsedGarments.length > 0 && !allTicked) ? '#1e293b' : '#b45309',
+            (parsedGarments.length > 0 && !allTicked) ? '#475569' : '#fff'
+          ),
+          padding: 14, fontSize: 15,
+        }}>
         ✓ Teslim Et
+        {parsedGarments.length > 0 && !allTicked ? ` (${parsedGarments.length} parça)` : ''}
       </button>
     </div>
   )
