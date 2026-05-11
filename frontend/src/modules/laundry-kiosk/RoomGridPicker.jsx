@@ -30,7 +30,7 @@ export default function RoomGridPicker({ value, onChange, kioskApi }) {
     kioskApi.get(`/self-service/laundry-kiosk/bags?block=${encodeURIComponent(block)}`)
       .then(r => {
         if (cancelled) return
-        const rooms = new Set(r.data.map(b => b.room_no))
+        const rooms = new Set(r.data.map(b => String(b.room_no)))
         setActiveBagRooms(rooms)
       })
       .catch(() => { if (!cancelled) setActiveBagRooms(new Set()) })
