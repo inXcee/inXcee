@@ -1,5 +1,5 @@
-const STATIC_CACHE = 'yys-static-v1'
-const API_CACHE = 'yys-api-v1'
+const STATIC_CACHE = 'yys-static-v2'
+const API_CACHE = 'yys-api-v2'
 const PRECACHE = ['/', '/index.html']
 
 // API endpoint'leri ki cache'lenmez:

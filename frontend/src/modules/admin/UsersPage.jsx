@@ -20,6 +20,8 @@ const ROLE_COLORS = {
   housekeeper: 'badge-gray',
 }
 
+const MOBILE_ROLES = new Set(['housekeeper', 'technical', 'laundry', 'shift_supervisor', 'campus_manager'])
+
 function UserForm({ user, onSubmit, onCancel }) {
   const [form, setForm] = useState({
     username: user?.username || '',
@@ -255,7 +257,7 @@ export default function UsersPage() {
                       <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                         <button className="btn btn-ghost btn-xs" onClick={() => setEditUser(u)}>Duzenle</button>
                         <button className="btn btn-ghost btn-xs" onClick={() => setPwUserId(u.id)}>Sifre</button>
-                        {(u.role === 'housekeeper' || u.role === 'technical') && (
+                        {MOBILE_ROLES.has(u.role) && (
                           <button className="btn btn-ghost btn-xs" onClick={() => setPinUserId(u.id)}
                             style={{ borderColor: u.has_pin ? '#10b981' : '#e5e7eb', color: u.has_pin ? '#10b981' : undefined }}>
                             {u.has_pin ? '✓ PIN' : '✗ PIN'}

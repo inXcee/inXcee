@@ -26,7 +26,7 @@ export default defineConfig({
           'vendor-react': ['react', 'react-dom', 'react-router-dom'],
           'vendor-charts': ['recharts'],
           'vendor-excel': ['exceljs'],
-          'vendor-qr': ['qrcode', 'jsqr'],
+          'vendor-qr': ['qrcode'],
           'vendor-dnd': ['@dnd-kit/core', '@dnd-kit/utilities'],
           'vendor-query': ['@tanstack/react-query'],
         },

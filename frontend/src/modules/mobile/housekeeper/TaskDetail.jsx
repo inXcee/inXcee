@@ -1,10 +1,11 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, lazy, Suspense } from 'react'
 import { useParams, useLocation, useNavigate } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import jsQR from 'jsqr'
 import mobileApi from '../auth/mobileApi.js'
 import { enqueue } from '../../../shared/utils/offlineDB.js'
 import { useElapsedTimer } from '../../../shared/hooks/useElapsedTimer.js'
+
+const QrScannerModal = lazy(() => import('../../../shared/components/QrScannerModal.jsx'))
 
 const TIMER_KEY = (taskId) => `yys-task-timer-${taskId}`
 
@@ -47,6 +48,7 @@ export default function TaskDetail() {
     initChecklist(task?.task_type, task?.checklist)
   )
   const [showQR, setShowQR] = useState(false)
+  const [qrError, setQrError] = useState('')
   const [timerStart, setTimerStart] = useState(() => {
     if (!task?.id) return null
     const stored = localStorage.getItem(TIMER_KEY(task.id))
@@ -185,11 +187,24 @@ export default function TaskDetail() {
       </div>
 
       {showQR && (
-        <QRScannerModal
-          expectedQR={task.qr_location}
-          onMatch={() => { setShowQR(false); completeMut.mutate({ via_qr: true }) }}
-          onClose={() => setShowQR(false)}
-        />
+        <Suspense fallback={null}>
+          <QrScannerModal
+            open={showQR}
+            title="Oda QR Kodunu Okutun"
+            onScan={(text) => {
+              if (task.qr_location && text !== task.qr_location) {
+                setQrError(`Yanlis QR: beklenen ${task.qr_location}, okunan ${text}`)
+                return
+              }
+              setQrError('')
+              completeMut.mutate({ via_qr: true })
+            }}
+            onClose={() => setShowQR(false)}
+          />
+        </Suspense>
+      )}
+      {qrError && (
+        <p style={{ color: '#ef4444', fontSize: '13px', textAlign: 'center', marginBottom: '8px' }}>{qrError}</p>
       )}
 
       {!isDone && !isSkipped && (
@@ -255,77 +270,4 @@ function Row({ label, value }) {
 
 function btn(bg) {
   return { width: '100%', padding: '14px', borderRadius: '12px', background: bg, color: '#fff', border: 'none', fontSize: '15px', fontWeight: 600, cursor: 'pointer' }
-}
-
-function QRScannerModal({ expectedQR, onMatch, onClose }) {
-  const videoRef = useRef(null)
-  const canvasRef = useRef(null)
-  const streamRef = useRef(null)
-  const rafRef = useRef(null)
-  const onMatchRef = useRef(onMatch)
-  const onCloseRef = useRef(onClose)
-  useEffect(() => { onMatchRef.current = onMatch }, [onMatch])
-  useEffect(() => { onCloseRef.current = onClose }, [onClose])
-
-  useEffect(() => {
-    let active = true
-
-    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
-      .then(stream => {
-        if (!active) { stream.getTracks().forEach(t => t.stop()); return }
-        streamRef.current = stream
-        if (videoRef.current) videoRef.current.srcObject = stream
-      })
-      .catch(() => { if (active) onCloseRef.current() })
-
-    return () => {
-      active = false
-      cancelAnimationFrame(rafRef.current)
-      streamRef.current?.getTracks().forEach(t => t.stop())
-    }
-  }, [])
-
-  useEffect(() => {
-    const canvas = canvasRef.current
-    const video = videoRef.current
-    if (!canvas || !video) return
-
-    function tick() {
-      if (video.readyState === video.HAVE_ENOUGH_DATA) {
-        canvas.width = video.videoWidth
-        canvas.height = video.videoHeight
-        const ctx = canvas.getContext('2d')
-        ctx.drawImage(video, 0, 0)
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
-        const code = jsQR(imageData.data, imageData.width, imageData.height)
-        if (code) {
-          if (!expectedQR || code.data === expectedQR) {
-            streamRef.current?.getTracks().forEach(t => t.stop())
-            onMatchRef.current(code.data)
-            return
-          }
-        }
-      }
-      rafRef.current = requestAnimationFrame(tick)
-    }
-
-    const onPlay = () => { rafRef.current = requestAnimationFrame(tick) }
-    video.addEventListener('play', onPlay)
-    return () => video.removeEventListener('play', onPlay)
-  }, [expectedQR])
-
-  return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.85)', zIndex: 100, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '16px' }}>
-      <p style={{ color: '#fff', fontSize: '14px', textAlign: 'center', margin: 0 }}>
-        {expectedQR ? 'Oda QR kodunu okutun' : 'QR kodu okutun'}
-      </p>
-      <video ref={videoRef} autoPlay playsInline muted
-        style={{ width: '280px', height: '280px', borderRadius: '12px', objectFit: 'cover', border: '3px solid #10b981' }} />
-      <canvas ref={canvasRef} style={{ display: 'none' }} />
-      <button onClick={() => onCloseRef.current()}
-        style={{ padding: '12px 32px', borderRadius: '10px', background: '#fff', color: '#111', border: 'none', fontWeight: 700, fontSize: '14px', cursor: 'pointer' }}>
-        İptal
-      </button>
-    </div>
-  )
 }
