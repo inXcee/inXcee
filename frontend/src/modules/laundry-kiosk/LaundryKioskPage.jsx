@@ -5,6 +5,15 @@ import GarmentPicker from './GarmentPicker.jsx'
 import { laundryApi } from '../laundry/api.js'
 import GarmentChecklist from './GarmentChecklist.jsx'
 
+const TABS = [
+  { key: 'bag',     icon: '🧺', label: 'Torba Al' },
+  { key: 'garment', icon: '👔', label: 'Kıyafet' },
+  { key: 'ironing', icon: '🫧', label: 'Ütü' },
+  { key: 'deliver', icon: '🚚', label: 'Teslim' },
+  { key: 'status',  icon: '📋', label: 'Durum' },
+]
+const VALID_TABS = TABS.map(t => t.key)
+
 // ── İmza canvas ──────────────────────────────────────────────────────────────
 function SigPad({ sigRef }) {
   const canvasRef = useRef(null)
@@ -90,7 +99,6 @@ export default function LaundryKioskPage() {
   const [nameResults, setNameResults] = useState([])
   const [selectedWorker, setSelectedWorker] = useState(null)
   const [pinInput, setPinInput] = useState('')
-  const VALID_TABS = ['bag', 'garment', 'ironing', 'deliver', 'status']
   const [activeTab, setActiveTab] = useState(() => {
     const fromUrl = new URLSearchParams(window.location.search).get('tab')
     return VALID_TABS.includes(fromUrl) ? fromUrl : 'bag'
@@ -215,14 +223,6 @@ export default function LaundryKioskPage() {
   }
 
   // ── Ana ekran ───────────────────────────────────────────────────────────────
-  const TABS = [
-    { key: 'bag',     icon: '🧺', label: 'Torba Al' },
-    { key: 'garment', icon: '👔', label: 'Kıyafet' },
-    { key: 'ironing', icon: '🫧', label: 'Ütü' },
-    { key: 'deliver', icon: '🚚', label: 'Teslim' },
-    { key: 'status',  icon: '📋', label: 'Durum' },
-  ]
-
   return (
     <div style={{ minHeight: '100vh', background: '#020617', display: 'flex', flexDirection: 'column' }}>
       {/* Üst bar */}
