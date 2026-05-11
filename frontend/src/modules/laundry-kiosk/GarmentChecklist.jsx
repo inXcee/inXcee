@@ -1,4 +1,4 @@
-const IRONING_COLORS = {
+const GARMENT_COLORS = {
   white: '#f8fafc', black: '#0f172a', gray: '#94a3b8', navy: '#1d4ed8',
   blue: '#3b82f6', red: '#dc2626', green: '#16a34a', yellow: '#ca8a04',
   orange: '#ea580c', purple: '#7c3aed', pink: '#db2777', brown: '#92400e', charcoal: '#4b5563',
@@ -57,7 +57,7 @@ export default function GarmentChecklist({ garments, ticked, onToggle, variant =
                   }}>
                     <span style={{
                       width: 10, height: 10, borderRadius: '50%',
-                      background: IRONING_COLORS[c.key] || '#888',
+                      background: GARMENT_COLORS[c.key] || '#888',
                       display: 'inline-block', flexShrink: 0,
                       border: c.key === 'white' ? '1px solid #475569' : 'none',
                     }} />
