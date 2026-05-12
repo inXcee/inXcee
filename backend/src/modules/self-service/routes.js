@@ -3,7 +3,7 @@ import { requireKioskOrStaff, requireAvsKiosk } from '../../shared/auth/middlewa
 import { getDB } from '../../shared/db/index.js'
 import { createRequest } from '../maintenance/queries.js'
 import { changeKioskPin } from '../../shared/auth/service.js'
-import { insertItemQuery, updateItemStatusQuery, listMachinesQuery, addToQueueQuery, collectItemQuery, setBagNoQuery } from '../laundry/queries.js'
+import { insertItemQuery, updateItemStatusQuery, listMachinesQuery, addToQueueQuery, collectItemQuery, setBagNoQuery, getRoomLaundryHistoryQuery, getRoomLaundrySummaryQuery, getBlockRoomActiveCountsQuery } from '../laundry/queries.js'
 
 export const selfServiceRouter = Router()
 
@@ -148,6 +148,25 @@ selfServiceRouter.get('/laundry-kiosk/room-persons', requireAvsKiosk, (req, res)
   } catch (e) { res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
+selfServiceRouter.get('/laundry-kiosk/room-history', requireAvsKiosk, (req, res) => {
+  const { block, room_no } = req.query
+  if (!block || !room_no) return res.status(400).json({ error: 'block ve room_no gerekli' })
+  try {
+    const summary = getRoomLaundrySummaryQuery(block, room_no)
+    const items = getRoomLaundryHistoryQuery(block, room_no)
+    res.json({ summary, items })
+  } catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+selfServiceRouter.get('/laundry-kiosk/block-room-counts', requireAvsKiosk, (req, res) => {
+  const { block } = req.query
+  if (!block) return res.status(400).json({ error: 'block gerekli' })
+  try {
+    const rows = getBlockRoomActiveCountsQuery(block)
+    res.json(rows)
+  } catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
 selfServiceRouter.get('/laundry-kiosk/garment-types', requireAvsKiosk, (req, res) => {
   try {
     const db = getDB()
@@ -191,7 +210,7 @@ selfServiceRouter.get('/laundry-kiosk/bags', requireAvsKiosk, (req, res) => {
   try {
     const db = getDB()
     let q = `SELECT li.id, li.bag_no, li.status, li.item_count, li.urgent, li.is_premium, li.needs_ironing,
-                    li.created_at, li.intake_name, li.garments_json, r.block, r.room_no
+                    li.created_at, li.intake_name, li.notes, li.garments_json, r.block, r.room_no
              FROM laundry_items li JOIN rooms r ON r.id = li.room_id WHERE 1=1`
     const params = []
     if (block)   { q += ' AND r.block=?';   params.push(block) }

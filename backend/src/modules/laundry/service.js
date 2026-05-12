@@ -460,6 +460,32 @@ export function getPersonHistoryService(name) {
   return { name, phone, room, total_given, total_delivered, total_lost, avg_hours, items }
 }
 
+// Room overview ve detay servisleri — LaundryHub Odalar sekmesi
+export function getRoomsOverviewService() {
+  return q.getAllRoomsLaundryOverviewQuery()
+}
+
+export function getRoomLaundryDetailService(block, room_no) {
+  if (!block || !room_no) throw new Error('block ve room_no gerekli')
+  const roomRow      = q.getRoomIdByBlockAndNoQuery(block, room_no)
+  const summary      = q.getRoomLaundrySummaryQuery(block, room_no)
+  const items        = q.getRoomLaundryHistoryQuery(block, room_no)
+  const trend        = q.getRoomLaundryTrendQuery(block, room_no)
+  const by_person    = q.getRoomLaundryByPersonQuery(block, room_no)
+  const occupants    = q.getRoomOccupantsQuery(block, room_no)
+  const heatmap      = q.getRoomCalendarHeatmapQuery(block, room_no, 365)
+  const hour_day     = q.getRoomHourDayPatternQuery(block, room_no)
+  const block_avg    = q.getBlockAverageStatsQuery(block)
+  const damages      = q.getRoomDamagesQuery(block, room_no)
+  const sla_violations = q.getRoomSlaViolationsQuery(block, room_no)
+  const last_bag     = q.getLastBagForRoomQuery(block, room_no)
+  return {
+    block, room_no, room_id: roomRow?.id || null,
+    summary, items, trend, by_person, occupants,
+    heatmap, hour_day, block_avg, damages, sla_violations, last_bag,
+  }
+}
+
 export const getSettingsService  = q.getSettingsQuery
 export const updateSettingService = q.updateSettingQuery
 

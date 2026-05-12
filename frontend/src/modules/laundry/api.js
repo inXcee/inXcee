@@ -48,6 +48,8 @@ export const laundryApi = {
 
   // ── Person History ─────────────────────────────────────────────────────────
   getPersonHistory: (name) => api.get(`/laundry/person/${encodeURIComponent(name)}`).then(r => r.data),
+  getRoomsOverview: () => api.get('/laundry/rooms-overview').then(r => r.data),
+  getRoomLaundryDetail: (block, room_no) => api.get(`/laundry/rooms/${encodeURIComponent(block)}/${encodeURIComponent(room_no)}/detail`).then(r => r.data),
 
   // ── Found ─────────────────────────────────────────────────────────────────
   markFound: (id, send_whatsapp = false) => api.post(`/laundry/items/${id}/found`, { send_whatsapp }).then(r => r.data),

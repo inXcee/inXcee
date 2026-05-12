@@ -184,6 +184,18 @@ laundryRouter.get('/items/:id/verifications', ...laundryRead, (req, res) => {
   res.json(svc.getVerificationsService(+req.params.id))
 })
 
+laundryRouter.get('/rooms-overview', ...laundryRead, (req, res) => {
+  try {
+    res.json(svc.getRoomsOverviewService())
+  } catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+laundryRouter.get('/rooms/:block/:room_no/detail', ...laundryRead, (req, res) => {
+  try {
+    res.json(svc.getRoomLaundryDetailService(req.params.block, req.params.room_no))
+  } catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
 laundryRouter.get('/person/:name', ...laundryRead, (req, res) => {
   try {
     res.json(svc.getPersonHistoryService(decodeURIComponent(req.params.name)))

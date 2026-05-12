@@ -159,7 +159,7 @@ function SignatureCanvas({ onSign, onClear }) {
   )
 }
 
-export default function NewItemModal({ onClose }) {
+export default function NewItemModal({ onClose, roomPrefill = null }) {
   const qc = useQueryClient()
 
   const { data: ctSettings = {} } = useQuery({
@@ -215,6 +215,16 @@ export default function NewItemModal({ onClose }) {
   const filtered = rooms.filter(r =>
     !roomSearch || `${r.block} ${r.room_no}`.toLowerCase().includes(roomSearch.toLowerCase())
   )
+
+  // roomPrefill ile gelirse modal açıldığında o oda seçili
+  useEffect(() => {
+    if (!roomPrefill || rooms.length === 0) return
+    const match = rooms.find(r => r.block === roomPrefill.block && String(r.room_no) === String(roomPrefill.room_no))
+    if (match) {
+      setForm(f => ({ ...f, room_id: String(match.id) }))
+      setRoomSearch(`${roomPrefill.block} ${roomPrefill.room_no}`)
+    }
+  }, [roomPrefill, rooms])
 
   useEffect(() => {
     if (!form.room_id) return
@@ -905,12 +915,34 @@ export default function NewItemModal({ onClose }) {
             </div>
           )}
 
-          {/* ── Notlar ── */}
+          {/* ── Notlar (hem not olarak kaydedilir hem parça olarak eklenebilir) ── */}
           <div>
-            <label className="form-label">NOTLAR</label>
-            <input className="form-input" value={form.notes}
+            <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span>NOTLAR / YAZIYLA EKLE</span>
+              {form.notes.trim() && !isPremium && (
+                <button type="button"
+                  onClick={() => {
+                    const parsed = parseClothingText(form.notes)
+                    if (parsed.type) {
+                      setClothing(prev => {
+                        const next = [...prev, { type: parsed.type, color: parsed.color, qty: parsed.qty }]
+                        saveDraft(next)
+                        return next
+                      })
+                    }
+                  }}
+                  className="btn btn-ghost btn-xs"
+                  style={{ fontSize: 9 }}
+                  title="Nottaki ifadeyi parçaya çevirip listeye ekler — not da silinmez">
+                  + Parça olarak da ekle
+                </button>
+              )}
+            </label>
+            <textarea className="form-input" value={form.notes}
               onChange={e => set('notes', e.target.value)}
-              placeholder="Açıklama..." />
+              placeholder="Açıklama veya hızlı yaz (kelime hatası olsa da kaydedilir, sonra düzeltebilirsin)…"
+              rows={2}
+              style={{ resize: 'vertical', fontFamily: 'inherit' }} />
           </div>
 
           {/* ── Telefon ── */}

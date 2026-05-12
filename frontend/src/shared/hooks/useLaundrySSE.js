@@ -26,6 +26,9 @@ export function useLaundrySSE() {
       qc.invalidateQueries({ queryKey: ['laundry-machines'] })
     }
     qc.invalidateQueries({ queryKey: ['laundry-stats'] })
+    // Odalar v2 — overview + açık olabilecek detay panelleri canlı yenile
+    qc.invalidateQueries({ queryKey: ['laundry-rooms-overview'] })
+    qc.invalidateQueries({ queryKey: ['laundry-room-detail'] })
 
     const toastType = type === 'critical' ? 'error' : type === 'warning' ? 'warning' : 'info'
     addToast(notif.message, toastType)

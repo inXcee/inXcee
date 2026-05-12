@@ -77,12 +77,19 @@ const btnStyle = (bg, color = '#fff', disabled = false) => ({
   fontWeight: 700, fontSize: 15, cursor: disabled ? 'default' : 'pointer',
 })
 
-export default function EntryForm({ kioskApi }) {
+export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
   const sigRef = useRef(null)
   const [selection, setSelection] = useState({ block: null, room_no: null, person: null })
-  const [garmentState, setGarmentState] = useState({ mode: 'structured', garments: [], freeText: '', itemCount: 0 })
+
+  // focusedRoom ile gelirse otomatik seçili hale getir (Odalar tab'ından gelince)
+  useEffect(() => {
+    if (focusedRoom && focusedRoom.block && focusedRoom.room_no) {
+      setSelection({ block: focusedRoom.block, room_no: String(focusedRoom.room_no), person: null })
+      onConsumeFocus?.()
+    }
+  }, [focusedRoom])  // eslint-disable-line react-hooks/exhaustive-deps
+  const [garmentState, setGarmentState] = useState({ garments: [], freeText: '', itemCount: 0 })
   const [urgent, setUrgent] = useState(false)
-  const [notes, setNotes] = useState('')
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [success, setSuccess] = useState(null) // { bag_no }
@@ -95,10 +102,10 @@ export default function EntryForm({ kioskApi }) {
 
   const needsSig = selection.block ? blockNeedsSignature(selection.block) : false
 
-  // Derived: effective item_count
-  const derivedItemCount = garmentState.mode === 'structured'
-    ? garmentState.garments.reduce((acc, g) => acc + (g.count || 1), 0)
-    : garmentState.itemCount
+  // Derived: effective item_count — fotoğraflı eklendiyse onların toplamı,
+  // yoksa kullanıcının seçtiği parça sayısı.
+  const structuredCount = garmentState.garments.reduce((acc, g) => acc + (g.count || 1), 0)
+  const derivedItemCount = structuredCount > 0 ? structuredCount : garmentState.itemCount
 
   // Validation
   const canSubmit = (
@@ -109,9 +116,8 @@ export default function EntryForm({ kioskApi }) {
 
   function resetAll() {
     setSelection({ block: null, room_no: null, person: null })
-    setGarmentState({ mode: 'structured', garments: [], freeText: '', itemCount: 0 })
+    setGarmentState({ garments: [], freeText: '', itemCount: 0 })
     setUrgent(false)
-    setNotes('')
     setError('')
     setSuccess(null)
     sigRef.current?.clear()
@@ -120,7 +126,7 @@ export default function EntryForm({ kioskApi }) {
   async function submit() {
     setError('')
     if (!selection.block || !selection.room_no) return setError('Blok ve oda seçin')
-    if (derivedItemCount === 0) return setError('Kıyafet ekleyin veya parça sayısı seçin')
+    if (derivedItemCount === 0) return setError('Kıyafet ekleyin (fotoğraflı seçin veya parça sayısını işaretleyin)')
 
     let sig = null
     if (needsSig) {
@@ -128,7 +134,8 @@ export default function EntryForm({ kioskApi }) {
       sig = sigRef.current?.toDataURL()
     }
 
-    const isPremium = garmentState.mode === 'structured' && garmentState.garments.length > 0
+    const isPremium = garmentState.garments.length > 0
+    const freeText = (garmentState.freeText || '').trim()
     const payload = {
       block: selection.block,
       room_no: selection.room_no,
@@ -136,7 +143,7 @@ export default function EntryForm({ kioskApi }) {
       item_count: derivedItemCount,
       is_premium: isPremium,
       garments: isPremium ? garmentState.garments : null,
-      notes: notes || (garmentState.mode === 'freetext' ? garmentState.freeText : null),
+      notes: freeText || null,
       urgent,
       intake_signature: sig,
     }
@@ -188,14 +195,6 @@ export default function EntryForm({ kioskApi }) {
           <input type="checkbox" checked={urgent} onChange={e => setUrgent(e.target.checked)} style={{ width: 18, height: 18 }} />
           <span style={{ fontSize: 14, color: '#fbbf24', fontWeight: 600 }}>⚡ Acil</span>
         </label>
-        {garmentState.mode === 'structured' && (
-          <div>
-            <label style={lbl}>Not (opsiyonel)</label>
-            <input value={notes} onChange={e => setNotes(e.target.value)}
-              placeholder="Özel not…"
-              style={{ width: '100%', boxSizing: 'border-box', background: '#1e293b', border: '1px solid #334155', borderRadius: 10, padding: '10px 14px', color: '#f1f5f9', fontSize: 13, outline: 'none' }} />
-          </div>
-        )}
       </div>
 
       {/* 4. Signature (conditional) */}

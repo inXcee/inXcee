@@ -6,10 +6,12 @@ import { laundryApi } from '../laundry/api.js'
 import GarmentChecklist from './GarmentChecklist.jsx'
 import EntryForm from './EntryForm.jsx'
 import DashboardView from './DashboardView.jsx'
+import RoomsView from './RoomsView.jsx'
 import { blockNeedsSignature } from './constants.js'
 
 const TABS = [
   { key: 'entry',   icon: '🧺', label: 'Giriş' },
+  { key: 'rooms',   icon: '🏠', label: 'Odalar' },
   { key: 'ironing', icon: '🫧', label: 'Ütü' },
   { key: 'deliver', icon: '🚚', label: 'Teslim' },
   { key: 'status',  icon: '📋', label: 'Durum' },
@@ -106,6 +108,7 @@ export default function LaundryKioskPage() {
     return VALID_TABS.includes(fromUrl) ? fromUrl : 'entry'
   })
   const [focusedBag, setFocusedBag] = useState(null)
+  const [focusedRoom, setFocusedRoom] = useState(null) // { block, room_no } | null
   const searchTimer = useRef(null)
 
   useEffect(() => {
@@ -273,7 +276,9 @@ export default function LaundryKioskPage() {
           flex: 1, padding: 16, overflowY: 'auto', maxWidth: 720,
           margin: '0 auto', width: '100%',
         }}>
-          {activeTab === 'entry'   && <EntryForm   kioskApi={kioskApi} />}
+          {activeTab === 'entry'   && <EntryForm   kioskApi={kioskApi} focusedRoom={focusedRoom} onConsumeFocus={() => setFocusedRoom(null)} />}
+          {activeTab === 'rooms'   && <RoomsView   kioskApi={kioskApi}
+                                          onPickRoom={(room) => { setFocusedRoom(room); setActiveTab('entry') }} />}
           {activeTab === 'ironing' && <IroningView kioskApi={kioskApi} focusedBag={focusedBag} onConsumeFocus={() => setFocusedBag(null)} />}
           {activeTab === 'deliver' && <DeliverView kioskApi={kioskApi} focusedBag={focusedBag} onConsumeFocus={() => setFocusedBag(null)} />}
           {activeTab === 'status'  && <DashboardView kioskApi={kioskApi}

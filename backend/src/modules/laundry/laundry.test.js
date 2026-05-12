@@ -211,6 +211,46 @@ describe('Laundry queries', () => {
     expect(history.length).toBeGreaterThanOrEqual(2)
   })
 
+  it('getPersonHistoryQuery — oda ortağının torbası başka kişinin geçmişinde görünmez', async () => {
+    const { insertItemQuery, getPersonHistoryQuery } = await import('./queries.js')
+    const db = getDB()
+    // Aynı odaya iki kişi ata
+    const personA = db.prepare("INSERT INTO personnel(full_name) VALUES('Ali Test')").run().lastInsertRowid
+    const personB = db.prepare("INSERT INTO personnel(full_name) VALUES('Veli Test')").run().lastInsertRowid
+    db.prepare("INSERT INTO room_assignments(room_id, personnel_id, bed_no) VALUES(?, ?, 5)").run(roomId, personA)
+    db.prepare("INSERT INTO room_assignments(room_id, personnel_id, bed_no) VALUES(?, ?, 6)").run(roomId, personB)
+    // Sadece Veli için torba aç
+    insertItemQuery({ room_id: roomId, item_count: 2, intake_name: 'Veli Test', created_by: userId })
+
+    const aliHistory = getPersonHistoryQuery('Ali Test')
+    expect(aliHistory.some(it => it.intake_name === 'Veli Test')).toBe(false)
+    const veliHistory = getPersonHistoryQuery('Veli Test')
+    expect(veliHistory.some(it => it.intake_name === 'Veli Test')).toBe(true)
+  })
+
+  it('Odalar v2 — detail servisi heatmap + hour_day + block_avg + damages + sla + last_bag döner', async () => {
+    const { getRoomLaundryDetailService } = await import('./service.js')
+    const { insertItemQuery } = await import('./queries.js')
+    // Bir torba ekle ki last_bag null olmasın
+    const db = getDB()
+    const room = db.prepare("SELECT block, room_no FROM rooms WHERE id=?").get(roomId)
+    insertItemQuery({ room_id: roomId, item_count: 2, intake_name: 'Detail Test', urgent: 1, created_by: userId })
+
+    const detail = getRoomLaundryDetailService(room.block, room.room_no)
+    expect(detail).toHaveProperty('heatmap')
+    expect(detail).toHaveProperty('hour_day')
+    expect(detail).toHaveProperty('block_avg')
+    expect(detail).toHaveProperty('damages')
+    expect(detail).toHaveProperty('sla_violations')
+    expect(detail).toHaveProperty('last_bag')
+    expect(Array.isArray(detail.heatmap)).toBe(true)
+    expect(Array.isArray(detail.hour_day)).toBe(true)
+    expect(Array.isArray(detail.damages)).toBe(true)
+    expect(detail.block_avg).toBeTruthy()
+    expect(detail.last_bag?.intake_name).toBe('Detail Test')
+    expect(detail.last_bag?.urgent).toBe(1)
+  })
+
   it('markFoundQuery — lost → ready geçişi yapar', async () => {
     const { insertItemQuery, markFoundQuery, getItemQuery } = await import('./queries.js')
     const id = insertItemQuery({ room_id: roomId, item_count: 1, created_by: userId })

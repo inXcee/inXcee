@@ -113,13 +113,23 @@ export default function DashboardView({ kioskApi, onAction }) {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 8 }}>
                 {group.items.map(b => (
                   <div key={b.id} style={{ background: '#0f172a', borderRadius: 8, padding: '8px 10px', display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <div style={{ flex: 1 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 12, color: '#38bdf8', fontFamily: 'monospace' }}>{b.bag_no || `#${b.id}`}</div>
                       <div style={{ fontSize: 13, color: '#e2e8f0' }}>
                         {b.block}-{b.room_no} · {b.item_count} parça
                         {b.is_premium ? ' · 🟣' : ''}
                         {b.urgent ? ' · ⚡' : ''}
                       </div>
+                      {b.intake_name && (
+                        <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
+                          👤 {b.intake_name}
+                        </div>
+                      )}
+                      {b.notes && (
+                        <div style={{ fontSize: 11, color: '#fbbf24', marginTop: 2, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                          📝 {b.notes}
+                        </div>
+                      )}
                     </div>
                     {actionButton(b)}
                   </div>

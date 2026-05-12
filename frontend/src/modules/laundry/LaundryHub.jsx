@@ -23,6 +23,7 @@ import MachineStrip       from './components/MachineStrip.jsx'
 import SlaAlert           from './components/SlaAlert.jsx'
 import ItemCard           from './components/ItemCard.jsx'
 import NewItemModal, { CLOTHING_ICONS } from './components/NewItemModal.jsx'
+import RoomsSection from './components/RoomsSection.jsx'
 import DeliveryModal      from './components/DeliveryModal.jsx'
 import DamageModal        from './components/DamageModal.jsx'
 import AssignModal        from './components/AssignModal.jsx'
@@ -1273,6 +1274,7 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
   const [filter,         setFilter]         = useState('all')
   const [search,         setSearch]         = useState('')
   const [showNew,        setShowNew]        = useState(false)
+  const [newRoomPrefill, setNewRoomPrefill] = useState(null) // { block, room_no } | null
   const [deliverItem,    setDeliverItem]    = useState(null)
   const [damageItem,     setDamageItem]     = useState(null)
   const [showMachines,   setShowMachines]   = useState(true)
@@ -1568,6 +1570,7 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
           <div style={{ display: 'flex', gap: 4 }}>
             {[
               { key: 'hub',      label: '⊞ Kontrol' },
+              { key: 'rooms',    label: '▦ Odalar' },
               { key: 'records',  label: '≡ Kayıtlar' },
               { key: 'archive',       label: '▣ Arşiv' },
               { key: 'premium-search', label: '◎ Premium Ara' },
@@ -1956,6 +1959,7 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
 
       </>)}
 
+      {section === 'rooms'    && <RoomsSection onOpenNewRecordForRoom={(r) => { setNewRoomPrefill(r); setShowNew(true) }} />}
       {section === 'records'  && <FullRecordsView />}
       {section === 'archive'  && (
         <div style={{ position: 'relative' }}>
@@ -1971,7 +1975,7 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
 
       {/* ── MODALS ── */}
       {showScanModal && <GarmentScanModal onClose={() => setShowScanModal(false)} />}
-      {showNew      && <NewItemModal onClose={() => setShowNew(false)} />}
+      {showNew      && <NewItemModal roomPrefill={newRoomPrefill} onClose={() => { setShowNew(false); setNewRoomPrefill(null) }} />}
       {deliverItem  && <DeliveryModal item={deliverItem} onClose={() => setDeliverItem(null)} />}
       {damageItem   && <DamageModal   item={damageItem}  onClose={() => setDamageItem(null)} />}
       {showMgr      && <MachineManagerPanel machines={machines} onClose={() => setShowMgr(false)} />}

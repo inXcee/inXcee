@@ -1,231 +1,158 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef } from 'react'
 import GarmentPicker from './GarmentPicker.jsx'
 
-const DEFAULT_GARMENT = {
-  count: 1,
-  colors: [{ key: 'white', label: 'Beyaz' }],
-  pattern: 'solid',
-  pattern_label: 'Düz',
-}
+const EMPTY_VALUE = { garments: [], freeText: '', itemCount: 0 }
 
-const EMPTY_VALUE = { mode: 'structured', garments: [], freeText: '', itemCount: 0 }
-
+// Hybrid input — fotoğraflı grid + serbest yazı + hızlı-ekle aynı yerde.
+// Hepsi bir arada kaydedilir; duruma göre en pratik olanı kullanılır.
+//
 // Props:
 //   garmentTypes: [{id, name, emoji, image_url}]
-//   value: { mode: 'structured' | 'freetext', garments: [...], freeText: '', itemCount: 0 }
-//   onChange: (next) => void  // partial update
+//   value: { garments: [...], freeText: '', itemCount: 0 }
+//   onChange: (next) => void
 export default function QuickGarmentInput({ garmentTypes = [], value = EMPTY_VALUE, onChange }) {
-  const mode = value.mode || 'structured'
   const garments = value.garments || []
   const freeText = value.freeText || ''
   const itemCount = value.itemCount || 0
 
-  const [query, setQuery] = useState('')
+  const [quickText, setQuickText] = useState('')
   const [focusIdx, setFocusIdx] = useState(0)
-  const [editIdx, setEditIdx] = useState(null)
-  const inputRef = useRef(null)
+  const quickRef = useRef(null)
 
-  // Filter suggestions by query
-  const suggestions = query.trim().length > 0
-    ? garmentTypes.filter(t => t.name.toLowerCase().includes(query.toLowerCase()))
+  // Quick-add suggestions
+  const suggestions = quickText.trim().length > 0
+    ? garmentTypes.filter(t => t.name.toLowerCase().includes(quickText.toLowerCase())).slice(0, 6)
     : []
-  const exactMatch = suggestions.find(s => s.name.toLowerCase() === query.toLowerCase().trim())
 
-  useEffect(() => {
-    setFocusIdx(0)
-  }, [query])
-
-  function addGarment(type) {
+  function addStructured(type) {
     const entry = {
       type_id: type.id,
       type_name: type.name,
-      emoji: type.emoji || '👔',
-      ...DEFAULT_GARMENT,
+      emoji: type.emoji || '👕',
+      count: 1,
+      colors: [],
+      pattern: 'solid',
+      pattern_label: 'Düz',
     }
-    onChange({ ...value, mode: 'structured', garments: [...garments, entry] })
-    setQuery('')
-    inputRef.current?.focus()
+    onChange({ ...value, garments: [...garments, entry] })
+    setQuickText('')
+    setFocusIdx(0)
+    quickRef.current?.focus()
   }
 
   function addCustom() {
-    const name = query.trim()
+    const name = quickText.trim()
     if (!name) return
-    addGarment({ id: null, name, emoji: '👕' })
+    addStructured({ id: null, name, emoji: '👕' })
   }
 
-  function handleKey(e) {
+  function handleQuickKey(e) {
     if (e.key === 'Enter') {
       e.preventDefault()
-      if (suggestions.length > 0) {
-        addGarment(suggestions[focusIdx] || suggestions[0])
-      } else if (query.trim().length > 0) {
-        addCustom()
-      }
+      if (suggestions.length > 0) addStructured(suggestions[focusIdx] || suggestions[0])
+      else if (quickText.trim()) addCustom()
     } else if (e.key === 'ArrowDown') {
       e.preventDefault()
       setFocusIdx(i => Math.min(i + 1, suggestions.length - 1))
     } else if (e.key === 'ArrowUp') {
       e.preventDefault()
       setFocusIdx(i => Math.max(i - 1, 0))
-    } else if (e.key === 'Escape') {
-      setQuery('')
     }
-  }
-
-  function removeGarment(i) {
-    onChange({ ...value, garments: garments.filter((_, idx) => idx !== i) })
-    if (editIdx === i) setEditIdx(null)
-  }
-
-  function toggleMode() {
-    const targetMode = mode === 'structured' ? 'freetext' : 'structured'
-    // Confirmation if data exists
-    if (mode === 'structured' && garments.length > 0) {
-      if (!window.confirm(`Eklenmiş ${garments.length} kıyafet kaybolacak. Devam?`)) return
-    }
-    if (mode === 'freetext' && freeText.trim().length > 0) {
-      if (!window.confirm('Yazılan metin kaybolacak. Devam?')) return
-    }
-    onChange({ ...value, mode: targetMode, garments: [], freeText: '', itemCount: 0 })
-    setQuery('')
-    setEditIdx(null)
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      {/* Mode toggle */}
-      <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-        <input type="checkbox" checked={mode === 'freetext'} onChange={toggleMode} style={{ width: 16, height: 16 }} />
-        <span style={{ fontSize: 12, color: '#94a3b8' }}>Hepsini metin olarak yaz</span>
-      </label>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* Fotoğraflı seçici — büyük grid + renk + desen + adet */}
+      <GarmentPicker
+        garmentTypes={garmentTypes}
+        value={garments}
+        onChange={(next) => onChange({ ...value, garments: next })}
+      />
 
-      {mode === 'structured' && (
-        <>
-          {/* Search input */}
-          <div style={{ position: 'relative' }}>
-            <input ref={inputRef} type="text" autoFocus value={query}
-              onChange={e => setQuery(e.target.value)}
-              onKeyDown={handleKey}
-              placeholder="Kıyafet tipi yaz veya öneriden seç…"
+      {/* Yazıyla bölümü — hem hızlı ekleme hem not, aynı blokta */}
+      <div style={{ background: '#0f172a', borderRadius: 12, padding: 14, border: '1px solid #1e293b', display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ fontSize: 11, color: '#64748b', letterSpacing: 1 }}>
+          📝 YAZIYLA EKLE / NOT
+        </div>
+
+        {/* Hızlı satır: yaz + Enter → parça olarak ekle */}
+        <div style={{ position: 'relative' }}>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <input
+              ref={quickRef}
+              type="text"
+              value={quickText}
+              onChange={e => setQuickText(e.target.value)}
+              onKeyDown={handleQuickKey}
+              placeholder="Yaz + Enter → parça olarak ekle (gömlek, pantolon…)"
               style={{
-                width: '100%', boxSizing: 'border-box',
-                background: '#1e293b', border: '1px solid #334155',
-                borderRadius: 10, padding: '12px 14px',
+                flex: 1, boxSizing: 'border-box',
+                background: '#1e293b', border: `1px solid ${quickText.trim() ? '#3b82f6' : '#334155'}`,
+                borderRadius: 10, padding: '10px 12px',
                 color: '#f1f5f9', fontSize: 14, outline: 'none',
-              }} />
-
-            {/* Suggestion dropdown */}
-            {query.trim().length > 0 && (
-              <div style={{
-                marginTop: 4, background: '#0f172a', borderRadius: 10,
-                border: '1px solid #334155', maxHeight: 240, overflowY: 'auto',
+              }}
+            />
+            <button type="button" onClick={() => (suggestions[0] ? addStructured(suggestions[0]) : addCustom())}
+              disabled={!quickText.trim()}
+              style={{
+                padding: '10px 14px', borderRadius: 10, border: 'none',
+                background: quickText.trim() ? '#1d4ed8' : '#1e293b',
+                color: quickText.trim() ? '#fff' : '#475569',
+                fontWeight: 700, fontSize: 14, cursor: quickText.trim() ? 'pointer' : 'default',
               }}>
-                {suggestions.map((s, i) => (
-                  <button key={s.id} type="button" onClick={() => addGarment(s)}
-                    onMouseEnter={() => setFocusIdx(i)}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 10, width: '100%',
-                      padding: '10px 14px', background: i === focusIdx ? '#1e293b' : 'transparent',
-                      border: 'none', borderBottom: '1px solid #1e293b', color: '#e2e8f0',
-                      cursor: 'pointer', fontSize: 14, textAlign: 'left',
-                    }}>
-                    <span style={{ fontSize: 18 }}>{s.emoji || '👔'}</span>
-                    <span>{s.name}</span>
-                  </button>
-                ))}
-                {!exactMatch && query.trim().length > 0 && (
-                  <button type="button" onClick={addCustom}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 10, width: '100%',
-                      padding: '10px 14px', background: 'transparent',
-                      border: 'none', color: '#60a5fa',
-                      cursor: 'pointer', fontSize: 13, fontStyle: 'italic', textAlign: 'left',
-                    }}>
-                    <span>+</span><span>"{query.trim()}" olarak ekle</span>
-                  </button>
-                )}
-              </div>
-            )}
+              + Ekle
+            </button>
           </div>
-
-          {/* Added garments list */}
-          {garments.length > 0 && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <div style={{ fontSize: 11, color: '#64748b', letterSpacing: 1 }}>
-                EKLENEN KIYAFETLER ({garments.length})
-              </div>
-              {garments.map((g, i) => (
-                <div key={i} style={{
-                  background: '#1e293b', borderRadius: 10, padding: '10px 12px',
-                  display: 'flex', alignItems: 'center', gap: 10,
-                }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 13, color: '#e2e8f0', fontWeight: 600 }}>
-                      {g.emoji || '👔'} {g.type_name} × {g.count}
-                    </div>
-                    <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
-                      {(g.colors || []).map(c => c.label).join(', ') || '—'}
-                      {g.pattern && g.pattern !== 'solid' && g.pattern_label ? ` · ${g.pattern_label}` : ''}
-                    </div>
-                  </div>
-                  <button type="button" onClick={() => setEditIdx(editIdx === i ? null : i)}
-                    style={{ background: 'transparent', border: 'none', color: '#60a5fa', cursor: 'pointer', fontSize: 16, padding: '4px 6px' }}>
-                    ✏
-                  </button>
-                  <button type="button" onClick={() => removeGarment(i)}
-                    style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 16, padding: '4px 6px' }}>
-                    ✕
-                  </button>
-                </div>
+          {suggestions.length > 0 && (
+            <div style={{
+              position: 'absolute', left: 0, right: 0, top: '100%', marginTop: 4, zIndex: 5,
+              background: '#0b1220', border: '1px solid #334155', borderRadius: 10,
+              maxHeight: 220, overflowY: 'auto',
+            }}>
+              {suggestions.map((s, i) => (
+                <button key={s.id || s.name} type="button" onClick={() => addStructured(s)}
+                  onMouseEnter={() => setFocusIdx(i)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 10, width: '100%',
+                    padding: '10px 12px', background: i === focusIdx ? '#1e293b' : 'transparent',
+                    border: 'none', color: '#e2e8f0', cursor: 'pointer', fontSize: 13, textAlign: 'left',
+                  }}>
+                  <span style={{ fontSize: 18 }}>{s.emoji || '👕'}</span>
+                  <span>{s.name}</span>
+                </button>
               ))}
             </div>
           )}
+        </div>
 
-          {/* Inline editor */}
-          {editIdx !== null && garments[editIdx] && (
-            <div style={{ background: '#0b1220', borderRadius: 10, padding: 12, border: '1px solid #1e293b' }}>
-              <div style={{ fontSize: 11, color: '#64748b', letterSpacing: 1, marginBottom: 8 }}>DÜZENLE</div>
-              <GarmentPicker
-                garmentTypes={garmentTypes}
-                value={[garments[editIdx]]}
-                onChange={(next) => {
-                  // Replace at editIdx with updated entry (next is array of 1)
-                  if (next.length > 0) {
-                    const updated = [...garments]
-                    updated[editIdx] = next[0]
-                    onChange({ ...value, garments: updated })
-                  }
-                  setEditIdx(null)
-                }}
-              />
-            </div>
-          )}
-        </>
-      )}
+        {/* Serbest not — her zaman görünür, her zaman kaydedilir */}
+        <textarea
+          value={freeText}
+          onChange={e => onChange({ ...value, freeText: e.target.value })}
+          placeholder="Serbest yaz — kelime hatası olsa da kaydedilir, sonra düzeltebilirsin…"
+          rows={3}
+          style={{
+            width: '100%', boxSizing: 'border-box',
+            background: '#1e293b', border: '1px solid #334155',
+            borderRadius: 10, padding: '10px 12px',
+            color: '#f1f5f9', fontSize: 14, outline: 'none', resize: 'vertical',
+            fontFamily: 'inherit',
+          }}
+        />
 
-      {mode === 'freetext' && (
-        <>
-          <textarea value={freeText}
-            onChange={e => onChange({ ...value, freeText: e.target.value })}
-            placeholder="ör. 3 gömlek, 2 pantolon, 1 ceket…"
-            rows={4}
-            style={{
-              width: '100%', boxSizing: 'border-box',
-              background: '#1e293b', border: '1px solid #334155',
-              borderRadius: 10, padding: '12px 14px',
-              color: '#f1f5f9', fontSize: 14, outline: 'none', resize: 'vertical',
-              fontFamily: 'inherit',
-            }} />
-
+        {/* Parça sayısı — sadece hiç parça eklenmemişse */}
+        {garments.length === 0 && (
           <div>
-            <div style={{ fontSize: 11, color: '#64748b', letterSpacing: 1, marginBottom: 8 }}>TOPLAM PARÇA</div>
+            <div style={{ fontSize: 11, color: '#64748b', letterSpacing: 1, marginBottom: 8 }}>
+              TOPLAM PARÇA <span style={{ color: '#475569', textTransform: 'none', letterSpacing: 0 }}>(parça eklenmediyse)</span>
+            </div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {[1,2,3,4,5,6,7,8].map(n => (
+              {[1, 2, 3, 4, 5, 6, 7, 8].map(n => (
                 <button key={n} type="button" onClick={() => onChange({ ...value, itemCount: n })}
                   style={{
                     width: 44, height: 44, borderRadius: 10, border: 'none', cursor: 'pointer',
                     background: itemCount === n ? '#1d4ed8' : '#1e293b',
-                    color: itemCount === n ? '#fff' : '#64748b',
+                    color: itemCount === n ? '#fff' : '#94a3b8',
                     fontWeight: 700, fontSize: 15,
                   }}>
                   {n}
@@ -233,8 +160,8 @@ export default function QuickGarmentInput({ garmentTypes = [], value = EMPTY_VAL
               ))}
             </div>
           </div>
-        </>
-      )}
+        )}
+      </div>
     </div>
   )
 }
