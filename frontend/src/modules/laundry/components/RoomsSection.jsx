@@ -356,6 +356,96 @@ function RoomCard({ room, onClick, pinned, onPin }) {
   )
 }
 
+// Faz 3 — Y blok premium parça kartı
+const GARMENT_STATUS_LABEL = {
+  received: 'Alındı', washing: 'Yıkanıyor', ironing: 'Ütüde',
+  ready: 'Hazır', delivered: 'Teslim', lost: 'Kayıp',
+}
+const GARMENT_STATUS_COLOR = {
+  received: 'var(--accent3)', washing: 'var(--blue)', ironing: '#a78bfa',
+  ready: 'var(--green)', delivered: 'var(--teal)', lost: 'var(--red)',
+}
+
+function PremiumGarmentsCard({ items }) {
+  const totalGarments = items.reduce((s, b) => s + b.garments.length, 0)
+  return (
+    <div className="panel" style={{ padding: 12 }}>
+      <div style={{
+        fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--accent3)',
+        letterSpacing: 1.5, marginBottom: 8,
+      }}>
+        🟣 PREMIUM PARÇALAR · {items.length} torba · {totalGarments} parça
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {items.map(bag => (
+          <div key={bag.item_id} style={{
+            background: 'var(--surface2)', borderRadius: 6,
+            border: '1px solid var(--border)', padding: '8px 10px',
+            borderLeft: `3px solid ${STATUS_COLOR[bag.status] || 'var(--accent3)'}`,
+          }}>
+            <div style={{
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              marginBottom: 6,
+            }}>
+              <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--blue)', fontWeight: 700 }}>
+                {bag.bag_no || `#${bag.item_id}`}
+              </span>
+              <span style={{
+                fontFamily: 'var(--mono)', fontSize: 8, padding: '1px 6px', borderRadius: 3,
+                background: 'var(--surface)', color: STATUS_COLOR[bag.status] || 'var(--text3)',
+                fontWeight: 700, letterSpacing: 1,
+              }}>
+                {STATUS_LABEL[bag.status] || bag.status} · {bag.garments.length} parça
+              </span>
+            </div>
+            {bag.intake_name && (
+              <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', marginBottom: 6 }}>
+                👤 {bag.intake_name}
+              </div>
+            )}
+            {bag.garments.length === 0 && (
+              <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', fontStyle: 'italic' }}>
+                Henüz parça eklenmedi
+              </div>
+            )}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {bag.garments.map(g => (
+                <div key={g.id} style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  padding: '4px 8px', background: 'var(--surface)', borderRadius: 4,
+                  fontFamily: 'var(--mono)', fontSize: 10,
+                }}>
+                  <span style={{ color: 'var(--accent3)', fontWeight: 700, minWidth: 80 }}>
+                    {g.garment_code}
+                  </span>
+                  <span style={{ color: 'var(--text)' }}>{g.garment_type}</span>
+                  {g.brand && <span style={{ color: 'var(--text3)' }}>· {g.brand}{g.model ? ` ${g.model}` : ''}</span>}
+                  {g.size && <span style={{ color: 'var(--text3)' }}>· {g.size}</span>}
+                  {g.color && <span style={{ color: 'var(--text3)' }}>· {g.color}</span>}
+                  {g.pattern && <span style={{ color: 'var(--text3)' }}>· {g.pattern}</span>}
+                  <span style={{
+                    marginLeft: 'auto', fontSize: 8, padding: '1px 5px', borderRadius: 3,
+                    background: 'var(--surface2)',
+                    color: GARMENT_STATUS_COLOR[g.status] || 'var(--text3)',
+                    fontWeight: 700, letterSpacing: 0.5,
+                  }}>
+                    {GARMENT_STATUS_LABEL[g.status] || g.status}
+                  </span>
+                  {g.condition_notes && (
+                    <span title={g.condition_notes} style={{
+                      fontSize: 10, color: 'var(--red)', cursor: 'help',
+                    }}>⚠</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function TlChipGroup({ value, onChange, options }) {
   return (
     <div style={{ display: 'flex', gap: 2 }}>
@@ -417,6 +507,8 @@ function RoomDetailPanel({ block, room_no, onClose }) {
 
   const summary = data?.summary || {}
   const items = data?.items || []
+  const premiumItems = data?.premium_items || []
+  const isYBlock = BLOCK_BY_NAME[block]?.type === 'Y'
   const trend = data?.trend || []
   const byPerson = data?.by_person || []
   const heatmap = data?.heatmap || []
@@ -724,6 +816,11 @@ function RoomDetailPanel({ block, room_no, onClose }) {
 
           {/* Faz 5 — Hasar raporları */}
           <DamagesCard damages={damages} />
+
+          {/* Faz 3 — Y blok premium parça listesi */}
+          {isYBlock && premiumItems.length > 0 && (
+            <PremiumGarmentsCard items={premiumItems} />
+          )}
 
           {/* Status breakdown */}
           {byStatus.length > 0 && (

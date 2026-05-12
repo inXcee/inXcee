@@ -251,6 +251,27 @@ describe('Laundry queries', () => {
     expect(detail.last_bag?.urgent).toBe(1)
   })
 
+  it('Odalar v2 — Y blok premium oda detayında premium_items per-garment listesi döner (Faz 3)', async () => {
+    const { getRoomLaundryDetailService, createItemService, addPremiumGarmentsService } = await import('./service.js')
+    const db = getDB()
+    const room = db.prepare("SELECT id, block, room_no FROM rooms WHERE block='B' LIMIT 1").get()
+    if (!room) return
+    const item = createItemService({ room_id: room.id, item_count: 2 }, userId)
+    addPremiumGarmentsService(item.id, [
+      { garment_type: 'Gömlek', brand: 'Polo', size: 'L', color: 'Beyaz' },
+      { garment_type: 'Pantolon', size: '32' },
+    ], userId)
+
+    const detail = getRoomLaundryDetailService(room.block, room.room_no)
+    expect(detail).toHaveProperty('premium_items')
+    expect(Array.isArray(detail.premium_items)).toBe(true)
+    const found = detail.premium_items.find(p => p.item_id === item.id)
+    expect(found).toBeTruthy()
+    expect(found.garments).toHaveLength(2)
+    expect(found.garments[0].garment_code).toMatch(/^B[0-9]+-001$/)
+    expect(found.garments[0].garment_type).toBe('Gömlek')
+  })
+
   it('markFoundQuery — lost → ready geçişi yapar', async () => {
     const { insertItemQuery, markFoundQuery, getItemQuery } = await import('./queries.js')
     const id = insertItemQuery({ room_id: roomId, item_count: 1, created_by: userId })

@@ -692,6 +692,57 @@ export function getRoomLaundryHistoryQuery(block, room_no) {
   `).all(block, room_no)
 }
 
+// Faz 3 — Y blok premium oda detayı için aktif premium torbaların per-garment listesi
+export function getRoomPremiumGarmentsQuery(block, room_no) {
+  const db = getDB()
+  const rows = db.prepare(`
+    SELECT li.id AS item_id, li.bag_no, li.status AS item_status, li.created_at AS item_created_at,
+           li.intake_name,
+           pg.id AS garment_id, pg.garment_code, pg.garment_type, pg.brand, pg.model,
+           pg.size, pg.color, pg.pattern, pg.condition_notes,
+           pg.status AS garment_status, pg.delivered_to, pg.delivered_at
+    FROM laundry_items li
+    JOIN rooms r ON r.id = li.room_id
+    LEFT JOIN premium_garments pg ON pg.item_id = li.id
+    WHERE r.block = ? AND r.room_no = ?
+      AND li.is_premium = 1
+      AND li.status NOT IN ('delivered', 'lost')
+    ORDER BY li.created_at DESC, pg.garment_code ASC
+  `).all(block, room_no)
+
+  // item bazında grupla
+  const byItem = new Map()
+  for (const r of rows) {
+    if (!byItem.has(r.item_id)) {
+      byItem.set(r.item_id, {
+        item_id: r.item_id,
+        bag_no: r.bag_no,
+        status: r.item_status,
+        created_at: r.item_created_at,
+        intake_name: r.intake_name,
+        garments: [],
+      })
+    }
+    if (r.garment_id) {
+      byItem.get(r.item_id).garments.push({
+        id: r.garment_id,
+        garment_code: r.garment_code,
+        garment_type: r.garment_type,
+        brand: r.brand,
+        model: r.model,
+        size: r.size,
+        color: r.color,
+        pattern: r.pattern,
+        condition_notes: r.condition_notes,
+        status: r.garment_status,
+        delivered_to: r.delivered_to,
+        delivered_at: r.delivered_at,
+      })
+    }
+  }
+  return [...byItem.values()]
+}
+
 export function getRoomLaundrySummaryQuery(block, room_no) {
   const db = getDB()
   return db.prepare(`

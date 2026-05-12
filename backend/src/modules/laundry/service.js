@@ -479,10 +479,12 @@ export function getRoomLaundryDetailService(block, room_no) {
   const damages      = q.getRoomDamagesQuery(block, room_no)
   const sla_violations = q.getRoomSlaViolationsQuery(block, room_no)
   const last_bag     = q.getLastBagForRoomQuery(block, room_no)
+  const premium_items = q.getRoomPremiumGarmentsQuery(block, room_no)
   return {
     block, room_no, room_id: roomRow?.id || null,
     summary, items, trend, by_person, occupants,
     heatmap, hour_day, block_avg, damages, sla_violations, last_bag,
+    premium_items,
   }
 }
 
