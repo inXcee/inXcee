@@ -31,6 +31,31 @@ describe('createNotification', () => {
     expect(n.target_role).toBe('campus_manager')
     expect(n.target_user_id).toBeNull()
   })
+
+  // A→Z Faz 1
+  it('event_kind, severity, entity_*, link alanlarını yazar', () => {
+    const n = createNotification({
+      message: 'Stok düştü', event_kind: 'inventory.stock.low',
+      target_role: 'campus_manager', entity_type: 'inventory_item', entity_id: 42,
+    })
+    expect(n).not.toBeNull()
+    expect(n.event_kind).toBe('inventory.stock.low')
+    expect(n.severity).toBe('warning') // DEFAULT_SEVERITY'den
+    expect(n.module).toBe('inventory')  // moduleFromEventKind
+    expect(n.entity_id).toBe(42)
+    expect(n.link).toBe('/inventory?item=42') // LINK_TEMPLATES
+  })
+
+  it('geçersiz event_kind reddedilir', () => {
+    const n = createNotification({ message: 'X', event_kind: 'sahte.olay.olmayan' })
+    expect(n).toBeNull()
+  })
+
+  it('eski type kullanımı geriye uyumlu — severity otomatik kopyalanır', () => {
+    const n = createNotification({ message: 'Legacy', type: 'critical' })
+    expect(n.severity).toBe('critical')
+    expect(n.type).toBe('critical')
+  })
 })
 
 describe('Notification deduplication', () => {

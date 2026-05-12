@@ -632,6 +632,25 @@ export function initDB() {
     }
   } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] notifications cascade:', e.message) }
 
+  // ── A→Z Bildirim Faz 1: event_kind, severity, link, entity ─────────────────
+  for (const col of [
+    "ALTER TABLE notifications ADD COLUMN event_kind TEXT",
+    "ALTER TABLE notifications ADD COLUMN severity TEXT",
+    "ALTER TABLE notifications ADD COLUMN entity_type TEXT",
+    "ALTER TABLE notifications ADD COLUMN entity_id INTEGER",
+    "ALTER TABLE notifications ADD COLUMN link TEXT",
+  ]) {
+    try { db.exec(col) } catch (e) {
+      if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists'))
+        console.error('[Migration]', col, e.message)
+    }
+  }
+  // severity backfill — eski 'type' kolonundan kopyala
+  try { db.exec("UPDATE notifications SET severity = type WHERE severity IS NULL") } catch {}
+  try { db.exec("CREATE INDEX IF NOT EXISTS idx_notif_role_created ON notifications(target_role, created_at)") } catch {}
+  try { db.exec("CREATE INDEX IF NOT EXISTS idx_notif_module_severity ON notifications(module, severity)") } catch {}
+  try { db.exec("CREATE INDEX IF NOT EXISTS idx_notif_event_kind ON notifications(event_kind)") } catch {}
+
   // ── Faz 1 migrations ──────────────────────────────────────────────────────
   try { db.exec('ALTER TABLE personnel ADD COLUMN expected_departure TEXT') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] personnel.expected_departure:', e.message) }
   try { db.exec('ALTER TABLE maintenance_requests ADD COLUMN reporter_personnel_id INTEGER REFERENCES personnel(id)') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] maintenance_requests.reporter_personnel_id:', e.message) }

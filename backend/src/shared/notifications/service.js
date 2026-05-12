@@ -2,6 +2,7 @@ import { getDB } from '../db/index.js'
 import { isNotificationEnabledForUser } from '../../modules/notification-prefs/service.js'
 import { sendPushToUser, sendPushToRole, isPushConfigured } from './push.js'
 import { sendWhatsAppToUser, isWhatsAppConfigured } from './whatsapp-send.js'
+import { isValidEventKind, moduleFromEventKind, DEFAULT_SEVERITY, renderLinkTemplate } from './events.js'
 
 const MAX_SSE_CLIENTS = 500
 const MAX_PER_USER = 4 // bir user max 4 sekme; fazlası eski bağlantıyı düşürür
@@ -54,8 +55,25 @@ export function removeSSEClient(res) {
   sseClients.delete(res)
 }
 
-export function createNotification({ message, type = 'info', module, target_role, target_user_id, dedup_key }) {
+export function createNotification({
+  message, type, severity, module, target_role, target_user_id, dedup_key,
+  event_kind, entity_type, entity_id, link,
+}) {
   const db = getDB()
+
+  // event_kind whitelist (varsa kontrol et)
+  if (event_kind && !isValidEventKind(event_kind)) {
+    console.warn('[Notif] geçersiz event_kind reddedildi:', event_kind)
+    return null
+  }
+  // Module çıkarımı (verilmediyse event_kind'tan)
+  if (!module && event_kind) module = moduleFromEventKind(event_kind)
+  // Severity: önce explicit, sonra type (geriye uyum), sonra event_kind default, sonra 'info'
+  const effSeverity = severity || type || (event_kind && DEFAULT_SEVERITY[event_kind]) || 'info'
+  // type kolonu hâlâ CHECK constraint'li — severity ile aynı tutalım (geriye uyum)
+  const effType = effSeverity
+  // Link otomatik render
+  const effLink = link || (event_kind ? renderLinkTemplate(event_kind, { entity_id }) : null)
 
   if (dedup_key) {
     const existing = db.prepare(
@@ -65,8 +83,16 @@ export function createNotification({ message, type = 'info', module, target_role
   }
 
   const r = db.prepare(
-    'INSERT INTO notifications(message,type,module,target_role,target_user_id,dedup_key) VALUES(?,?,?,?,?,?)'
-  ).run(message, type, module || null, target_role || null, target_user_id || null, dedup_key || null)
+    `INSERT INTO notifications
+     (message, type, severity, module, target_role, target_user_id, dedup_key,
+      event_kind, entity_type, entity_id, link)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    message, effType, effSeverity, module || null,
+    target_role || null, target_user_id || null, dedup_key || null,
+    event_kind || null, entity_type || null,
+    entity_id != null ? entity_id : null, effLink || null,
+  )
 
   const notif = db.prepare('SELECT * FROM notifications WHERE id=?').get(r.lastInsertRowid)
   sseClients.forEach(({ res: client, userId: uid, role }, resKey) => {
@@ -79,7 +105,11 @@ export function createNotification({ message, type = 'info', module, target_role
 
   // Web Push (fire-and-forget — SSE pasifken kullaniciya bildirim ulastirir)
   if (isPushConfigured()) {
-    const payload = { title: notif.message, type: notif.type, module: notif.module, id: notif.id }
+    const payload = {
+      title: notif.message, type: notif.type, severity: notif.severity,
+      module: notif.module, id: notif.id,
+      event_kind: notif.event_kind, url: notif.link,
+    }
     if (notif.target_user_id) {
       sendPushToUser(notif.target_user_id, payload).catch(e => console.error('[Push] user:', e.message))
     } else if (notif.target_role) {
@@ -87,8 +117,9 @@ export function createNotification({ message, type = 'info', module, target_role
     }
   }
 
-  // WhatsApp — sadece critical type + targeted user icin (fire-and-forget)
-  if (isWhatsAppConfigured() && notif.type === 'critical' && notif.target_user_id) {
+  // WhatsApp — sadece critical severity + targeted user icin (fire-and-forget)
+  // Faz 9'da kanal tercih matrix'ine bağlanacak
+  if (isWhatsAppConfigured() && notif.severity === 'critical' && notif.target_user_id) {
     sendWhatsAppToUser(notif.target_user_id, `[YYS] ${notif.message}`)
       .catch(e => console.error('[WA] user:', e.message))
   }
