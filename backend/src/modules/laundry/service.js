@@ -1,6 +1,7 @@
 import * as q from './queries.js'
 import { getDB } from '../../shared/db/index.js'
 import { createNotification } from '../../shared/notifications/service.js'
+import { EVENT_KINDS } from '../../shared/notifications/events.js'
 import { logAudit } from '../../shared/audit.js'
 import { notifyItemReady } from './whatsapp.js'
 
@@ -510,12 +511,33 @@ export function getMessagesService(opts = {}) {
 
 export function sendMessageService({ message, message_type = 'normal' }, user) {
   if (!message?.trim()) throw new Error('Mesaj boş olamaz')
-  return q.insertMessageQuery({
+  const msg = q.insertMessageQuery({
     sender_id: user.id,
     sender_name: user.full_name || user.username,
     message: message.trim(),
     message_type,
   })
+  // A→Z: yeni mesaj bildirim akışına
+  const isUrgent = message_type === 'urgent'
+  const preview = message.trim().slice(0, 80)
+  createNotification({
+    message: `💬 ${user.full_name || user.username}: ${preview}${message.length > 80 ? '…' : ''}`,
+    event_kind: EVENT_KINDS.LAUNDRY_MESSAGE_SENT,
+    severity: isUrgent ? 'warning' : 'info',
+    target_role: 'laundry',
+    entity_type: 'laundry_message',
+    entity_id: msg?.id || null,
+  })
+  // shift_supervisor + campus_manager için ikinci kopya (target_role aynı anda iki rol olamaz)
+  createNotification({
+    message: `💬 [Çamaşır] ${user.full_name || user.username}: ${preview}${message.length > 80 ? '…' : ''}`,
+    event_kind: EVENT_KINDS.LAUNDRY_MESSAGE_SENT,
+    severity: isUrgent ? 'warning' : 'info',
+    target_role: 'campus_manager',
+    entity_type: 'laundry_message',
+    entity_id: msg?.id || null,
+  })
+  return msg
 }
 
 export function deleteMessageService(id, user) {

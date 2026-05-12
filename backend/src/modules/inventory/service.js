@@ -1,6 +1,7 @@
 import * as queries from './queries.js'
 import { logAudit } from '../../shared/audit.js'
 import { createNotification } from '../../shared/notifications/service.js'
+import { EVENT_KINDS } from '../../shared/notifications/events.js'
 
 export function listItems(category) {
   return queries.getAllItems(category)
@@ -42,12 +43,21 @@ export function adjustStock(id, delta, reason, userId) {
   logAudit(userId, delta > 0 ? 'inventory_in' : 'inventory_out', 'inventory', id,
     `${item.item_name}: ${delta > 0 ? '+' : ''}${delta} ${item.unit} (${reason || '-'})`)
 
+  // A→Z: her hareket bildirim akışına düşer (info — kullanıcı tercihi kontrol eder)
+  createNotification({
+    message: `${delta > 0 ? '➕' : '➖'} ${item.item_name}: ${delta > 0 ? '+' : ''}${delta} ${item.unit} (yeni: ${newQty})${reason ? ' — ' + reason : ''}`,
+    event_kind: delta > 0 ? EVENT_KINDS.INVENTORY_MOVEMENT_ADDED : EVENT_KINDS.INVENTORY_MOVEMENT_REMOVED,
+    target_role: 'campus_manager',
+    entity_type: 'inventory_item', entity_id: id,
+  })
+
   if (newQty <= item.reorder_threshold && item.reorder_threshold > 0) {
     createNotification({
       message: `Stok uyarisi: ${item.item_name} — ${newQty} ${item.unit} kaldi (esik: ${item.reorder_threshold})`,
-      type: 'critical',
-      module: 'inventory',
+      event_kind: newQty === 0 ? EVENT_KINDS.INVENTORY_STOCK_OUT : EVENT_KINDS.INVENTORY_STOCK_LOW,
       target_role: 'campus_manager',
+      entity_type: 'inventory_item', entity_id: id,
+      dedup_key: `stock_${newQty === 0 ? 'out' : 'low'}_${id}`,
     })
   }
 
@@ -126,9 +136,10 @@ export function checkoutToPersonnel(itemId, personnelId, qty, note, userId) {
   if (item && item.quantity <= item.reorder_threshold && item.reorder_threshold > 0) {
     createNotification({
       message: `Stok uyarisi: ${item.item_name} — ${item.quantity} ${item.unit} kaldi`,
-      type: 'critical',
-      module: 'inventory',
+      event_kind: item.quantity === 0 ? EVENT_KINDS.INVENTORY_STOCK_OUT : EVENT_KINDS.INVENTORY_STOCK_LOW,
       target_role: 'campus_manager',
+      entity_type: 'inventory_item', entity_id: itemId,
+      dedup_key: `stock_${item.quantity === 0 ? 'out' : 'low'}_${itemId}`,
     })
   }
   return result
@@ -170,7 +181,10 @@ export function writeOff(itemId, qty, type, reason, userId) {
   if (newQty <= item.reorder_threshold && item.reorder_threshold > 0) {
     createNotification({
       message: `Stok uyarisi: ${item.item_name} — ${newQty} ${item.unit} kaldi`,
-      type: 'critical', module: 'inventory', target_role: 'campus_manager',
+      event_kind: newQty === 0 ? EVENT_KINDS.INVENTORY_STOCK_OUT : EVENT_KINDS.INVENTORY_STOCK_LOW,
+      target_role: 'campus_manager',
+      entity_type: 'inventory_item', entity_id: itemId,
+      dedup_key: `stock_${newQty === 0 ? 'out' : 'low'}_${itemId}`,
     })
   }
   return { ok: true, quantity: newQty }
