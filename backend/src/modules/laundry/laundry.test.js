@@ -272,6 +272,45 @@ describe('Laundry queries', () => {
     expect(found.garments[0].garment_type).toBe('Gömlek')
   })
 
+  it('Faz 4 — WhatsApp env yokken /notify 503 döner', async () => {
+    delete process.env.WHATSAPP_TOKEN
+    delete process.env.WHATSAPP_PHONE_ID
+    const res = await request(app)
+      .post('/api/laundry/notify')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ phone: '5551112233', message: 'test' })
+    expect(res.status).toBe(503)
+  })
+
+  it('Faz 4 — /notify phone boşsa 400 döner', async () => {
+    const res = await request(app)
+      .post('/api/laundry/notify')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ phone: '', message: 'test' })
+    expect(res.status).toBe(400)
+  })
+
+  it('Faz 4 — remind-ready env yokken 503 döner', async () => {
+    delete process.env.WHATSAPP_TOKEN
+    const db = getDB()
+    const room = db.prepare("SELECT block, room_no FROM rooms LIMIT 1").get()
+    const res = await request(app)
+      .post(`/api/laundry/rooms/${room.block}/${room.room_no}/remind-ready`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ person_name: 'X' })
+    expect(res.status).toBe(503)
+  })
+
+  it('Faz 4 — remind-ready person_name boşsa 400 döner', async () => {
+    const db = getDB()
+    const room = db.prepare("SELECT block, room_no FROM rooms LIMIT 1").get()
+    const res = await request(app)
+      .post(`/api/laundry/rooms/${room.block}/${room.room_no}/remind-ready`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({})
+    expect(res.status).toBe(400)
+  })
+
   it('markFoundQuery — lost → ready geçişi yapar', async () => {
     const { insertItemQuery, markFoundQuery, getItemQuery } = await import('./queries.js')
     const id = insertItemQuery({ room_id: roomId, item_count: 1, created_by: userId })

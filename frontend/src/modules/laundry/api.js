@@ -56,6 +56,11 @@ export const laundryApi = {
 
   // ── WhatsApp ───────────────────────────────────────────────────────────
   notifyWhatsApp: (id, phone) => api.post(`/laundry/items/${id}/notify-whatsapp`, { phone }).then(r => r.data),
+  remindRoomReady: (block, room_no, person_name) =>
+    api.post(`/laundry/rooms/${encodeURIComponent(block)}/${encodeURIComponent(room_no)}/remind-ready`, { person_name }).then(r => r.data),
+  sendNotify: (phone, message) => api.post('/laundry/notify', { phone, message }).then(r => r.data),
+  notifyRoomPerson: (block, room_no, person_name, message) =>
+    api.post(`/laundry/rooms/${encodeURIComponent(block)}/${encodeURIComponent(room_no)}/notify-person`, { person_name, message }).then(r => r.data),
   getRoomOccupant: (roomId) => api.get(`/laundry/room-occupant/${roomId}`).then(r => r.data).catch(() => ({})),
 
   // ── Settings ───────────────────────────────────────────────────────────

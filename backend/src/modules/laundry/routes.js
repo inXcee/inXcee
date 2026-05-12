@@ -4,7 +4,7 @@ import { upload, verifyMagicBytes } from '../../shared/uploads/middleware.js'
 import { getDB } from '../../shared/db/index.js'
 import * as svc from './service.js'
 import { collectItemQuery, listGarmentTypesQuery, insertGarmentTypeQuery, updateGarmentTypeQuery, reorderGarmentTypesQuery } from './queries.js'
-import { notifyItemReady, sendFoundMessage } from './whatsapp.js'
+import { notifyItemReady, sendFoundMessage, notifyRoomPersonReady, sendWhatsApp } from './whatsapp.js'
 
 export const laundryRouter = Router()
 
@@ -194,6 +194,56 @@ laundryRouter.get('/rooms/:block/:room_no/detail', ...laundryRead, (req, res) =>
   try {
     res.json(svc.getRoomLaundryDetailService(req.params.block, req.params.room_no))
   } catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// Faz 4 — Oda sakinine 'hazır' hatırlatıcı (WhatsApp)
+laundryRouter.post('/rooms/:block/:room_no/remind-ready', ...laundryFull, async (req, res) => {
+  try {
+    const personName = (req.body?.person_name || '').trim()
+    if (!personName) return res.status(400).json({ error: 'person_name gerekli' })
+    const result = await notifyRoomPersonReady(req.params.block, req.params.room_no, personName)
+    if (!result.configured) return res.status(503).json({ error: 'WhatsApp yapılandırılmamış' })
+    res.json(result)
+  } catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// Faz 4 — Belirli oda sakinine özel mesaj (kayıp uyarısı vs.) — telefonu sunucu çözer
+laundryRouter.post('/rooms/:block/:room_no/notify-person', ...laundryFull, async (req, res) => {
+  try {
+    const personName = (req.body?.person_name || '').trim()
+    const message    = (req.body?.message || '').trim()
+    if (!personName) return res.status(400).json({ error: 'person_name gerekli' })
+    if (!message)    return res.status(400).json({ error: 'message gerekli' })
+    if (!process.env.WHATSAPP_TOKEN || !process.env.WHATSAPP_PHONE_ID) {
+      return res.status(503).json({ error: 'WhatsApp yapılandırılmamış' })
+    }
+    const db = getDB()
+    const person = db.prepare(`
+      SELECT p.phone_number FROM personnel p
+      JOIN room_assignments ra ON ra.personnel_id = p.id AND ra.check_out_at IS NULL
+      JOIN rooms r ON r.id = ra.room_id
+      WHERE r.block = ? AND r.room_no = ? AND p.full_name = ?
+      LIMIT 1
+    `).get(req.params.block, req.params.room_no, personName)
+    if (!person?.phone_number) return res.status(404).json({ error: 'Telefon bulunamadı' })
+    await sendWhatsApp(person.phone_number, message)
+    res.json({ sent: true })
+  } catch (e) { console.error('[Route]', e); res.status(500).json({ error: e.message || 'Sunucu hatası' }) }
+})
+
+// Faz 4 — Serbest WhatsApp mesajı (kayıp uyarısı vs.)
+laundryRouter.post('/notify', ...laundryFull, async (req, res) => {
+  try {
+    const phone = (req.body?.phone || '').trim()
+    const message = (req.body?.message || '').trim()
+    if (!phone)   return res.status(400).json({ error: 'phone gerekli' })
+    if (!message) return res.status(400).json({ error: 'message gerekli' })
+    if (!process.env.WHATSAPP_TOKEN || !process.env.WHATSAPP_PHONE_ID) {
+      return res.status(503).json({ error: 'WhatsApp yapılandırılmamış' })
+    }
+    await sendWhatsApp(phone, message)
+    res.json({ sent: true })
+  } catch (e) { console.error('[Route]', e); res.status(500).json({ error: e.message || 'Sunucu hatası' }) }
 })
 
 laundryRouter.get('/person/:name', ...laundryRead, (req, res) => {

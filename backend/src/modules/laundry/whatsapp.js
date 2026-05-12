@@ -108,6 +108,55 @@ export function shouldSendSlaNotification(db, itemId, stage) {
   return !row
 }
 
+/**
+ * Bir odadaki belirli bir sakinin 'ready' durumdaki torbaları için hatırlatıcı gönderir.
+ * Faz 4 — Odalar detay panel WhatsApp aksiyonu.
+ * Yetki çağıran tarafa ait — burada sadece DB sorgusu + gönderim.
+ */
+export async function notifyRoomPersonReady(block, room_no, personName) {
+  if (!process.env.WHATSAPP_TOKEN || !process.env.WHATSAPP_PHONE_ID) {
+    return { configured: false, sent: 0 }
+  }
+  const db = getDB()
+  const person = db.prepare(`
+    SELECT p.id, p.phone_number, p.full_name
+    FROM personnel p
+    JOIN room_assignments ra ON ra.personnel_id = p.id AND ra.check_out_at IS NULL
+    JOIN rooms r ON r.id = ra.room_id
+    WHERE r.block = ? AND r.room_no = ? AND p.full_name = ?
+    LIMIT 1
+  `).get(block, room_no, personName)
+
+  if (!person?.phone_number) return { configured: true, sent: 0, reason: 'phone_missing' }
+
+  const readyItems = db.prepare(`
+    SELECT li.id, li.bag_no, li.item_count, li.shelf_location
+    FROM laundry_items li
+    JOIN rooms r ON r.id = li.room_id
+    WHERE r.block = ? AND r.room_no = ?
+      AND li.status = 'ready'
+      AND (li.intake_name = ? OR li.intake_name IS NULL)
+    ORDER BY li.created_at ASC
+  `).all(block, room_no, personName)
+
+  if (readyItems.length === 0) return { configured: true, sent: 0, reason: 'no_ready_items' }
+
+  const firstName = person.full_name ? ' ' + person.full_name.split(' ')[0] : ''
+  const lines = readyItems.map(it => {
+    const shelf = it.shelf_location ? ` · Raf: ${it.shelf_location}` : ''
+    return `• ${it.bag_no || `#${it.id}`} — ${it.item_count} parça${shelf}`
+  }).join('\n')
+  const msg = `Merhaba${firstName}!\n\nOda ${block}-${room_no} için rafta hazır çamaşırlarınız:\n${lines}\n\nLütfen teslim alınız.`
+
+  try {
+    await sendWhatsApp(person.phone_number, msg)
+    return { configured: true, sent: readyItems.length }
+  } catch (e) {
+    console.error('[WhatsApp] notifyRoomPersonReady error:', e.message)
+    return { configured: true, sent: 0, error: e.message }
+  }
+}
+
 export async function sendFoundMessage(item) {
   if (!process.env.WHATSAPP_TOKEN || !process.env.WHATSAPP_PHONE_ID) return
 

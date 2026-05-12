@@ -356,6 +356,119 @@ function RoomCard({ room, onClick, pinned, onPin }) {
   )
 }
 
+// Faz 4 — Oda sakini satırı: geçmiş + WhatsApp hatırlat + uyarı
+function OccupantRow({ occupant, stats, block, room_no, onOpenHistory }) {
+  const [mode, setMode] = useState('idle')         // idle | reminding | warning
+  const [warnText, setWarnText] = useState(`Merhaba ${occupant.full_name?.split(' ')[0] || ''}, Oda ${block}-${room_no} için kayıp bildirilen çamaşırınız hakkında bilgi vermenizi rica ederiz.`)
+  const [busy, setBusy] = useState(false)
+  const [feedback, setFeedback] = useState(null)   // { ok, msg }
+
+  const remind = async () => {
+    if (busy) return
+    setBusy(true); setFeedback(null)
+    try {
+      const res = await laundryApi.remindRoomReady(block, room_no, occupant.full_name)
+      if (res.sent > 0) setFeedback({ ok: true, msg: `✓ ${res.sent} torba bildirildi` })
+      else if (res.reason === 'no_ready_items') setFeedback({ ok: false, msg: 'Hazır torba yok' })
+      else if (res.reason === 'phone_missing') setFeedback({ ok: false, msg: 'Telefon yok' })
+      else setFeedback({ ok: false, msg: 'Gönderilemedi' })
+    } catch (e) {
+      const m = e?.response?.data?.error
+      if (e?.response?.status === 503) setFeedback({ ok: false, msg: 'WhatsApp yapılandırılmamış' })
+      else setFeedback({ ok: false, msg: m || 'Hata' })
+    } finally {
+      setBusy(false)
+      setTimeout(() => setFeedback(null), 4000)
+    }
+  }
+
+  const sendWarning = async () => {
+    if (busy || !warnText.trim()) return
+    setBusy(true); setFeedback(null)
+    try {
+      await laundryApi.notifyRoomPerson(block, room_no, occupant.full_name, warnText.trim())
+      setFeedback({ ok: true, msg: '✓ Uyarı gönderildi' })
+      setMode('idle')
+    } catch (e) {
+      if (e?.response?.status === 503) setFeedback({ ok: false, msg: 'WhatsApp yapılandırılmamış' })
+      else if (e?.response?.status === 404) setFeedback({ ok: false, msg: 'Telefon yok' })
+      else setFeedback({ ok: false, msg: e?.response?.data?.error || 'Hata' })
+    } finally {
+      setBusy(false)
+      setTimeout(() => setFeedback(null), 4000)
+    }
+  }
+
+  return (
+    <div style={{
+      background: 'var(--surface2)', border: '1px solid var(--border)',
+      borderRadius: 6, padding: '8px 10px',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+        <button onClick={onOpenHistory} className="rooms-detail-no-print"
+          style={{
+            display: 'flex', flexDirection: 'column', alignItems: 'flex-start',
+            background: 'transparent', border: 'none', cursor: 'pointer',
+            padding: 0, textAlign: 'left', flex: 1, minWidth: 0,
+          }}>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text)' }}>
+            🛏 {occupant.bed_no} · {occupant.full_name}
+          </div>
+          {occupant.company && (
+            <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--text3)' }}>{occupant.company}</div>
+          )}
+        </button>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }} className="rooms-detail-no-print">
+          {stats && (
+            <>
+              <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--blue)' }}>{stats.total} torba</span>
+              {stats.lost > 0 && <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--red)' }}>· {stats.lost} kayıp</span>}
+            </>
+          )}
+          <button onClick={remind} disabled={busy}
+            title="Hazır çamaşır hatırlatıcısı gönder"
+            style={{
+              background: 'var(--surface)', border: '1px solid var(--border)',
+              color: 'var(--green)', cursor: busy ? 'wait' : 'pointer',
+              width: 26, height: 24, borderRadius: 4, fontSize: 11, padding: 0,
+            }}>🔔</button>
+          <button onClick={() => setMode(mode === 'warning' ? 'idle' : 'warning')}
+            title="Kayıp uyarısı / özel mesaj"
+            disabled={busy}
+            style={{
+              background: mode === 'warning' ? 'rgba(220,38,38,0.15)' : 'var(--surface)',
+              border: `1px solid ${mode === 'warning' ? 'var(--red)' : 'var(--border)'}`,
+              color: 'var(--red)', cursor: busy ? 'wait' : 'pointer',
+              width: 26, height: 24, borderRadius: 4, fontSize: 11, padding: 0,
+            }}>⚠</button>
+        </div>
+      </div>
+      {feedback && (
+        <div style={{
+          marginTop: 6, fontFamily: 'var(--mono)', fontSize: 9,
+          color: feedback.ok ? 'var(--green)' : 'var(--red)',
+        }}>{feedback.msg}</div>
+      )}
+      {mode === 'warning' && (
+        <div className="rooms-detail-no-print" style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <textarea value={warnText} onChange={e => setWarnText(e.target.value)}
+            placeholder="Mesaj…" rows={3}
+            className="form-input"
+            style={{ fontSize: 11, padding: 6, fontFamily: 'var(--mono)' }} />
+          <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+            <button onClick={() => setMode('idle')} className="btn btn-ghost btn-xs">İptal</button>
+            <button onClick={sendWarning} disabled={busy || !warnText.trim()}
+              className="btn btn-primary btn-xs"
+              style={{ background: 'var(--red)', borderColor: 'var(--red)' }}>
+              ⚠ Gönder
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // Faz 3 — Y blok premium parça kartı
 const GARMENT_STATUS_LABEL = {
   received: 'Alındı', washing: 'Yıkanıyor', ironing: 'Ütüde',
@@ -853,30 +966,9 @@ function RoomDetailPanel({ block, room_no, onClose }) {
                 {occupants.map(p => {
                   const stats = byPerson.find(bp => bp.name === p.full_name)
                   return (
-                    <button key={p.id} onClick={() => setPersonPanelName(p.full_name)}
-                      style={{
-                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                        background: 'var(--surface2)', border: '1px solid var(--border)',
-                        borderRadius: 6, padding: '8px 10px', cursor: 'pointer', textAlign: 'left',
-                      }}>
-                      <div>
-                        <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text)' }}>
-                          🛏 {p.bed_no} · {p.full_name}
-                        </div>
-                        {p.company && (
-                          <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--text3)' }}>{p.company}</div>
-                        )}
-                      </div>
-                      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                        {stats && (
-                          <>
-                            <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--blue)' }}>{stats.total} torba</span>
-                            {stats.lost > 0 && <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--red)' }}>· {stats.lost} kayıp</span>}
-                          </>
-                        )}
-                        <span style={{ color: 'var(--text3)', fontSize: 10 }}>→</span>
-                      </div>
-                    </button>
+                    <OccupantRow key={p.id} occupant={p} stats={stats}
+                      block={block} room_no={room_no}
+                      onOpenHistory={() => setPersonPanelName(p.full_name)} />
                   )
                 })}
               </div>
