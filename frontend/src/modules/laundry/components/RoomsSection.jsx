@@ -356,6 +356,28 @@ function RoomCard({ room, onClick, pinned, onPin }) {
   )
 }
 
+function TlChipGroup({ value, onChange, options }) {
+  return (
+    <div style={{ display: 'flex', gap: 2 }}>
+      {options.map(([k, label]) => {
+        const active = value === k
+        return (
+          <button key={k} onClick={() => onChange(k)} type="button"
+            style={{
+              padding: '2px 8px', borderRadius: 4, cursor: 'pointer',
+              fontFamily: 'var(--mono)', fontSize: 9, letterSpacing: 0.5, lineHeight: 1.4,
+              background: active ? 'rgba(240,165,0,0.18)' : 'transparent',
+              border: `1px solid ${active ? 'rgba(240,165,0,0.4)' : 'var(--border)'}`,
+              color: active ? 'var(--accent)' : 'var(--text3)',
+            }}>
+            {label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 function Stat({ label, value, color }) {
   return (
     <div style={{ textAlign: 'center', padding: '3px 0', background: 'var(--surface2)', borderRadius: 4 }}>
@@ -411,6 +433,12 @@ function RoomDetailPanel({ block, room_no, onClose }) {
   const [batchAction, setBatchAction] = useState(null)      // 'deliver' | 'lost'
   const [batchInput, setBatchInput] = useState('')
 
+  // Timeline filtreleri
+  const [tlStatus, setTlStatus] = useState('all')   // all | active | delivered | lost
+  const [tlType, setTlType]     = useState('all')   // all | urgent | ironing | premium
+  const [tlRange, setTlRange]   = useState('all')   // 7 | 30 | 90 | all
+  const [tlSearch, setTlSearch] = useState('')
+
   const toggleSelect = (id) => setSelectedIds(prev => {
     const next = new Set(prev)
     if (next.has(id)) next.delete(id); else next.add(id)
@@ -445,6 +473,38 @@ function RoomDetailPanel({ block, room_no, onClose }) {
     for (const it of items) map[it.status] = (map[it.status] || 0) + 1
     return Object.entries(map).sort((a, b) => b[1] - a[1])
   }, [items])
+
+  // Timeline filtreli liste
+  const filteredItems = useMemo(() => {
+    let arr = items
+    if (tlStatus === 'active')         arr = arr.filter(it => it.status !== 'delivered' && it.status !== 'lost')
+    else if (tlStatus === 'delivered') arr = arr.filter(it => it.status === 'delivered')
+    else if (tlStatus === 'lost')      arr = arr.filter(it => it.status === 'lost')
+
+    if (tlType === 'urgent')       arr = arr.filter(it => it.urgent)
+    else if (tlType === 'ironing') arr = arr.filter(it => it.needs_ironing)
+    else if (tlType === 'premium') arr = arr.filter(it => it.is_premium)
+
+    if (tlRange !== 'all') {
+      const cutoff = Date.now() - (+tlRange) * 86400000
+      arr = arr.filter(it => new Date(it.created_at).getTime() >= cutoff)
+    }
+
+    const q = tlSearch.trim().toLowerCase()
+    if (q) {
+      arr = arr.filter(it =>
+        (it.bag_no || '').toLowerCase().includes(q) ||
+        (it.intake_name || '').toLowerCase().includes(q) ||
+        (it.delivered_name || '').toLowerCase().includes(q) ||
+        (it.delivered_to || '').toLowerCase().includes(q) ||
+        (it.notes || '').toLowerCase().includes(q) ||
+        (it.garments_json || '').toLowerCase().includes(q)
+      )
+    }
+    return arr
+  }, [items, tlStatus, tlType, tlRange, tlSearch])
+
+  const tlFilterActive = tlStatus !== 'all' || tlType !== 'all' || tlRange !== 'all' || tlSearch.trim() !== ''
 
   // 14g sparkline
   const sparkPoints = useMemo(() => {
@@ -682,7 +742,7 @@ function RoomDetailPanel({ block, room_no, onClose }) {
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
               <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: 1.5 }}>
-                TÜM GEÇMİŞ ({items.length})
+                TÜM GEÇMİŞ ({tlFilterActive ? `${filteredItems.length}/${items.length}` : items.length})
               </div>
               <button onClick={() => { setBatchMode(b => !b); setSelectedIds(new Set()); setBatchAction(null) }}
                 style={{
@@ -694,6 +754,39 @@ function RoomDetailPanel({ block, room_no, onClose }) {
                 {batchMode ? '✓ TOPLU' : '☐ TOPLU SEÇ'}
               </button>
             </div>
+
+            {/* Faz 1 — Timeline filtre çubuğu */}
+            {items.length > 0 && (
+              <div style={{
+                display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center',
+                marginBottom: 8, padding: '8px 10px',
+                background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 6,
+              }}>
+                <TlChipGroup value={tlStatus} onChange={setTlStatus} options={[
+                  ['all', 'Tümü'], ['active', 'Aktif'], ['delivered', 'Teslim'], ['lost', 'Kayıp'],
+                ]} />
+                <span style={{ width: 1, height: 16, background: 'var(--border)' }} />
+                <TlChipGroup value={tlType} onChange={setTlType} options={[
+                  ['all', '·'], ['urgent', '⚡'], ['ironing', '🫧'], ['premium', '🟣'],
+                ]} />
+                <span style={{ width: 1, height: 16, background: 'var(--border)' }} />
+                <TlChipGroup value={tlRange} onChange={setTlRange} options={[
+                  ['all', 'Hepsi'], ['7', '7G'], ['30', '30G'], ['90', '90G'],
+                ]} />
+                <input value={tlSearch} onChange={e => setTlSearch(e.target.value)}
+                  placeholder="Ara…"
+                  className="form-input"
+                  style={{ flex: '1 1 100px', minWidth: 80, height: 24, padding: '2px 8px', fontSize: 10, marginLeft: 'auto' }} />
+                {tlFilterActive && (
+                  <button onClick={() => { setTlStatus('all'); setTlType('all'); setTlRange('all'); setTlSearch('') }}
+                    title="Filtreleri temizle"
+                    style={{
+                      background: 'transparent', border: '1px solid var(--border)', borderRadius: 4,
+                      color: 'var(--text3)', cursor: 'pointer', fontSize: 10, padding: '2px 6px',
+                    }}>✕</button>
+                )}
+              </div>
+            )}
 
             {/* Batch action bar */}
             {batchMode && selectedIds.size > 0 && (
@@ -750,8 +843,13 @@ function RoomDetailPanel({ block, room_no, onClose }) {
                 Bu oda için kayıt yok
               </div>
             )}
+            {!isLoading && items.length > 0 && filteredItems.length === 0 && (
+              <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', textAlign: 'center', padding: 20 }}>
+                Filtreye uyan kayıt yok
+              </div>
+            )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {items.map(it => {
+              {filteredItems.map(it => {
                 const selected = selectedIds.has(it.id)
                 const expanded = actionItem === it.id
                 const isFinal = it.status === 'delivered' || it.status === 'lost'
