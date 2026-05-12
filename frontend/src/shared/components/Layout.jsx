@@ -55,6 +55,16 @@ export default function Layout() {
         <NotificationBell />
       </div>
 
+      {/* Desktop floating notification bell — sağ üst köşe sabit */}
+      <div className="desktop-bell" style={{
+        position: 'fixed', top: 18, right: 24, zIndex: 950,
+        background: 'var(--surface)',
+        border: '1px solid var(--border)', borderRadius: 999,
+        boxShadow: '0 6px 24px rgba(0,0,0,0.4)',
+      }}>
+        <NotificationBell />
+      </div>
+
       <Sidebar mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)} />
       <main className="main-content" style={{
         flex: 1,

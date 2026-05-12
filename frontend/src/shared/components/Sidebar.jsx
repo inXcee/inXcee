@@ -49,6 +49,13 @@ const NAV_GROUPS = [
       { to: '/whatsapp', icon: '\u260E', label: 'WhatsApp', roles: ['campus_manager','shift_supervisor','technical'] },
     ]
   },
+  {
+    label: 'BILDIRIM',
+    links: [
+      { to: '/notifications', icon: '\uD83D\uDD14', label: 'Bildirim Merkezi', roles: ['campus_manager','shift_supervisor','laundry','housekeeper','technical'], notifBadge: true },
+      { to: '/notifications/preferences', icon: '\u2699', label: 'Tercihler', roles: ['campus_manager','shift_supervisor','laundry','housekeeper','technical'] },
+    ]
+  },
 ]
 
 function LiveClock() {
@@ -198,6 +205,15 @@ export default function Sidebar({ mobileOpen, onClose }) {
                                 padding: '1px 6px', borderRadius: '10px', minWidth: '18px', textAlign: 'center',
                               }}>
                                 {kpi.open_maintenance}
+                              </span>
+                            )}
+                            {link.notifBadge && unreadCount > 0 && (
+                              <span style={{
+                                fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 700,
+                                background: 'var(--red)', color: '#fff',
+                                padding: '1px 6px', borderRadius: '10px', minWidth: '18px', textAlign: 'center',
+                              }}>
+                                {unreadCount > 99 ? '99+' : unreadCount}
                               </span>
                             )}
                             {link.sublinks && (

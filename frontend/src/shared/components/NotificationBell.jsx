@@ -7,20 +7,29 @@ export default function NotificationBell() {
 
   return (
     <div style={{ position: 'relative' }}>
-      <button onClick={() => setOpen(o => !o)} style={{
-        position: 'relative', background: 'none', border: 'none', cursor: 'pointer',
-        padding: '6px 8px', fontSize: '16px', color: 'var(--text2)',
-      }}>
+      <button onClick={() => setOpen(o => !o)}
+        aria-label={`Bildirimler (${unreadCount} okunmamış)`}
+        className="notif-bell-btn"
+        style={{
+          position: 'relative', background: 'transparent', border: 'none', cursor: 'pointer',
+          width: 44, height: 44, borderRadius: '50%',
+          fontSize: 20, color: unreadCount > 0 ? 'var(--accent)' : 'var(--text2)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          transition: 'background 0.15s',
+        }}
+        onMouseEnter={e => { e.currentTarget.style.background = 'var(--surface2)' }}
+        onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}>
         🔔
         {unreadCount > 0 && (
-          <span style={{
-            position: 'absolute', top: '-2px', right: '-2px',
-            background: 'var(--red)', color: '#fff', fontSize: '9px', fontWeight: 700,
-            borderRadius: '50%', width: '18px', height: '18px',
+          <span className="notif-bell-pulse" style={{
+            position: 'absolute', top: 4, right: 4,
+            background: 'var(--red)', color: '#fff', fontSize: 10, fontWeight: 700,
+            borderRadius: 999, minWidth: 18, height: 18, padding: '0 5px',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             fontFamily: 'var(--mono)',
+            boxShadow: '0 0 0 2px var(--surface)',
           }}>
-            {unreadCount > 9 ? '9+' : unreadCount}
+            {unreadCount > 99 ? '99+' : unreadCount}
           </span>
         )}
       </button>
