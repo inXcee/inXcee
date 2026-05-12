@@ -6,6 +6,7 @@ import {
   getPreferencesV2Service, setPreferencesV2Service,
   getQuietHoursService, setQuietHoursService,
 } from './service.js'
+import { createNotification } from '../../shared/notifications/service.js'
 
 export const notificationPrefsRouter = Router()
 
@@ -50,4 +51,17 @@ notificationPrefsRouter.put('/quiet-hours', requireAuth, (req, res) => {
     setQuietHoursService(req.user.id, req.body || {})
     res.json({ ok: true })
   } catch (e) { console.error('[NotifPrefs quiet]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// Test bildirimi — sadece kendine gönderir
+notificationPrefsRouter.post('/test', requireAuth, (req, res) => {
+  try {
+    createNotification({
+      message: '🧪 Bu bir test bildirimidir — tercih ayarlarınızı doğrulamak için',
+      severity: 'info',
+      module: 'system',
+      target_user_id: req.user.id,
+    })
+    res.json({ ok: true })
+  } catch (e) { console.error('[NotifPrefs test]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
