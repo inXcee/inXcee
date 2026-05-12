@@ -22,12 +22,21 @@ function playNotificationSound() {
 function sendBrowserNotification(notif) {
   if (!('Notification' in window)) return
   if (Notification.permission === 'granted') {
-    const typeLabel = notif.type === 'critical' ? 'ACiL' : notif.type === 'warning' ? 'UYARI' : 'BiLGi'
-    new Notification(`YYS — ${typeLabel}`, {
+    const sev = notif.severity || notif.type || 'info'
+    const icon = sev === 'critical' ? '🚨' : sev === 'warning' ? '⚠' : 'ℹ'
+    const typeLabel = sev === 'critical' ? 'ACiL' : sev === 'warning' ? 'UYARI' : 'BiLGi'
+    const n = new Notification(`${icon} YYS — ${typeLabel}`, {
       body: notif.message,
       icon: '/favicon.ico',
-      tag: `yys-${notif.id}`,
+      tag: notif.event_kind || `yys-${notif.id}`,
+      requireInteraction: sev === 'critical',
     })
+    if (notif.link) {
+      n.onclick = () => {
+        window.focus()
+        window.location.href = notif.link
+      }
+    }
   } else if (Notification.permission !== 'denied') {
     Notification.requestPermission()
   }

@@ -84,27 +84,53 @@ self.addEventListener('message', e => {
   }
 })
 
-// ── Web Push (Faz 3.b / M10) ─────────────────────────────────────────────
+// ── Web Push (A→Z Bildirim Faz 8) ────────────────────────────────────────
+const SEV_ICON = { info: 'ℹ', warning: '⚠', critical: '🚨' }
+
 self.addEventListener('push', event => {
   if (!event.data) return
   let payload
   try { payload = event.data.json() } catch { payload = { title: event.data.text() } }
-  const title = payload.title || 'YYS Bildirim'
+  const severity = payload.severity || payload.type || 'info'
+  const isCritical = severity === 'critical'
+  const titlePrefix = SEV_ICON[severity] || ''
+  const title = titlePrefix ? `${titlePrefix} ${payload.title || 'YYS Bildirim'}` : (payload.title || 'YYS Bildirim')
   const options = {
     body: payload.body || '',
     icon: '/icon-192.png',
     badge: '/icon-192.png',
-    tag: payload.module || 'yys',
-    data: { url: payload.url || '/mobile', id: payload.id, module: payload.module },
-    requireInteraction: payload.type === 'critical',
-    vibrate: payload.type === 'critical' ? [200, 100, 200] : [80],
+    tag: payload.event_kind || payload.module || 'yys',
+    renotify: isCritical, // kritik bildirimde aynı tag bile yeni gösterim
+    data: {
+      url: payload.url || '/notifications',
+      id: payload.id, module: payload.module,
+      event_kind: payload.event_kind, severity,
+    },
+    requireInteraction: isCritical,
+    vibrate: isCritical ? [300, 100, 300, 100, 300] : [80],
+    actions: payload.url ? [
+      { action: 'open', title: 'Aç' },
+      { action: 'read', title: 'Okundu' },
+    ] : [
+      { action: 'read', title: 'Okundu' },
+    ],
   }
   event.waitUntil(self.registration.showNotification(title, options))
 })
 
 self.addEventListener('notificationclick', event => {
+  const action = event.action
+  const data = event.notification.data || {}
   event.notification.close()
-  const targetUrl = event.notification.data?.url || '/mobile'
+
+  if (action === 'read') {
+    // Fire-and-forget okundu işaretleme (auth cookie/token tarayıcıdadır)
+    event.waitUntil(
+      fetch(`/api/notifications/${data.id}/read`, { method: 'PATCH', credentials: 'include' }).catch(() => {})
+    )
+    return
+  }
+  const targetUrl = data.url || '/notifications'
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
       for (const c of list) {
