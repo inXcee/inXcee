@@ -463,6 +463,25 @@ h1, h2, h3, h4 { font-family: var(--display); letter-spacing: 2px; }
     left: 0;
     width: 100%;
   }
+
+  /* Çamaşırhane oda detay paneli — yazdırma */
+  .room-detail-overlay { display: none !important; }
+  .room-detail-panel,
+  .room-detail-panel * { visibility: visible !important; }
+  .room-detail-panel {
+    position: static !important;
+    width: 100% !important;
+    max-width: none !important;
+    box-shadow: none !important;
+    border: none !important;
+    overflow: visible !important;
+    color: #000 !important;
+    background: #fff !important;
+  }
+  .room-detail-panel .rooms-detail-actions,
+  .room-detail-panel .rooms-detail-no-print { display: none !important; }
+  .room-detail-panel * { color: #000 !important; background: transparent !important; }
+
   @page { margin: 15mm; }
 }
 

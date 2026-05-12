@@ -507,6 +507,54 @@ function RoomDetailPanel({ block, room_no, onClose }) {
   const tlFilterActive = tlStatus !== 'all' || tlType !== 'all' || tlRange !== 'all' || tlSearch.trim() !== ''
 
   // 14g sparkline
+  // Faz 2 — CSV export (filtre uygulanmışsa filtreliyi, değilse tümünü)
+  const exportCsv = useCallback(() => {
+    const rows = tlFilterActive ? filteredItems : items
+    if (!rows.length) return
+    const headers = [
+      'bag_no','status','intake_name','intake_at','item_count',
+      'urgent','premium','needs_ironing','file_count',
+      'delivered_to','delivered_at','total_hours','notes','garments',
+    ]
+    const escape = (v) => {
+      if (v == null) return ''
+      const s = String(v).replace(/"/g, '""')
+      return /[",\n;]/.test(s) ? `"${s}"` : s
+    }
+    const lines = [headers.join(',')]
+    for (const r of rows) {
+      lines.push([
+        r.bag_no || `#${r.id}`,
+        STATUS_LABEL[r.status] || r.status,
+        r.intake_name,
+        r.created_at,
+        r.item_count,
+        r.urgent ? '1' : '',
+        r.is_premium ? '1' : '',
+        r.needs_ironing ? '1' : '',
+        r.file_count ?? '',
+        r.delivered_to || r.delivered_name || '',
+        r.delivered_at || '',
+        r.total_hours ?? '',
+        r.notes || '',
+        r.garments_json || '',
+      ].map(escape).join(','))
+    }
+    // Excel uyumu için UTF-8 BOM
+    const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    const stamp = new Date().toISOString().slice(0, 10)
+    a.download = `oda-${block}-${room_no}-${stamp}.csv`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }, [items, filteredItems, tlFilterActive, block, room_no])
+
+  const handlePrint = useCallback(() => { window.print() }, [])
+
   const sparkPoints = useMemo(() => {
     const map = {}
     for (const t of trend) map[t.day] = t.count
@@ -522,9 +570,9 @@ function RoomDetailPanel({ block, room_no, onClose }) {
 
   return (
     <>
-      <div onClick={onClose}
+      <div onClick={onClose} className="room-detail-overlay"
         style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1100 }} />
-      <div style={{
+      <div className="room-detail-panel" style={{
         position: 'fixed', right: 0, top: 0, bottom: 0, width: 560, maxWidth: '96vw',
         background: 'var(--surface)', borderLeft: '1px solid var(--border)', zIndex: 1101,
         display: 'flex', flexDirection: 'column', boxShadow: '-12px 0 36px rgba(0,0,0,0.5)',
@@ -545,7 +593,24 @@ function RoomDetailPanel({ block, room_no, onClose }) {
                 'YENİ · PREMIUM'}
             </div>
           </div>
-          <button className="btn btn-ghost btn-xs" onClick={onClose}>✕</button>
+          <div style={{ display: 'flex', gap: 4, alignItems: 'center' }} className="rooms-detail-actions">
+            <button onClick={exportCsv} disabled={items.length === 0}
+              title="CSV indir"
+              style={{
+                background: 'var(--surface2)', border: '1px solid var(--border)',
+                color: items.length ? 'var(--text2)' : 'var(--text3)',
+                cursor: items.length ? 'pointer' : 'not-allowed',
+                width: 30, height: 30, borderRadius: 6, fontSize: 14,
+              }}>📥</button>
+            <button onClick={handlePrint}
+              title="Yazdır"
+              style={{
+                background: 'var(--surface2)', border: '1px solid var(--border)',
+                color: 'var(--text2)', cursor: 'pointer',
+                width: 30, height: 30, borderRadius: 6, fontSize: 14,
+              }}>🖨</button>
+            <button className="btn btn-ghost btn-xs" onClick={onClose}>✕</button>
+          </div>
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -562,7 +627,7 @@ function RoomDetailPanel({ block, room_no, onClose }) {
           )}
 
           {/* Quick actions */}
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div className="rooms-detail-no-print" style={{ display: 'flex', gap: 8 }}>
             {mode === 'detail' && (
               <button className="btn btn-primary" onClick={() => setMode('new')} style={{ flex: 1, letterSpacing: 1 }}>
                 + YENİ KAYIT
@@ -745,6 +810,7 @@ function RoomDetailPanel({ block, room_no, onClose }) {
                 TÜM GEÇMİŞ ({tlFilterActive ? `${filteredItems.length}/${items.length}` : items.length})
               </div>
               <button onClick={() => { setBatchMode(b => !b); setSelectedIds(new Set()); setBatchAction(null) }}
+                className="rooms-detail-no-print"
                 style={{
                   fontFamily: 'var(--mono)', fontSize: 9, padding: '3px 8px', cursor: 'pointer',
                   background: batchMode ? 'rgba(240,165,0,0.18)' : 'var(--surface2)',
@@ -757,7 +823,7 @@ function RoomDetailPanel({ block, room_no, onClose }) {
 
             {/* Faz 1 — Timeline filtre çubuğu */}
             {items.length > 0 && (
-              <div style={{
+              <div className="rooms-detail-no-print" style={{
                 display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center',
                 marginBottom: 8, padding: '8px 10px',
                 background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 6,
@@ -790,7 +856,7 @@ function RoomDetailPanel({ block, room_no, onClose }) {
 
             {/* Batch action bar */}
             {batchMode && selectedIds.size > 0 && (
-              <div className="panel" style={{
+              <div className="panel rooms-detail-no-print" style={{
                 padding: 10, marginBottom: 8, background: 'rgba(240,165,0,0.05)',
                 border: '1px solid rgba(240,165,0,0.2)',
                 display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center',
