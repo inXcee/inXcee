@@ -18,6 +18,18 @@ function timeAgo(iso) {
   return d.toLocaleDateString('tr-TR', { day: '2-digit', month: 'short', year: '2-digit' })
 }
 
+function Kpi({ label, value, color = 'var(--text)' }) {
+  return (
+    <div style={{
+      background: 'var(--surface2)', border: '1px solid var(--border)',
+      borderRadius: 8, padding: '10px 12px', textAlign: 'center',
+    }}>
+      <div style={{ fontFamily: 'var(--display)', fontSize: 24, color, lineHeight: 1 }}>{value}</div>
+      <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--text3)', letterSpacing: 1.5, marginTop: 4 }}>{label}</div>
+    </div>
+  )
+}
+
 export default function NotificationsCenterPage() {
   const qc = useQueryClient()
   const [filters, setFilters] = useState({
@@ -48,6 +60,13 @@ export default function NotificationsCenterPage() {
   const { data: modules = [] } = useQuery({
     queryKey: ['notif-modules'],
     queryFn: () => api.get('/notification-prefs/modules').then(r => r.data),
+  })
+
+  // Yönetici stats (campus_manager) — 403 dönerse sessizce yutulur
+  const { data: stats } = useQuery({
+    queryKey: ['notif-stats'],
+    queryFn: () => api.get('/notifications/stats?days=7').then(r => r.data).catch(() => null),
+    retry: false,
   })
 
   const markRead = useMutation({
@@ -85,6 +104,34 @@ export default function NotificationsCenterPage() {
             color: 'var(--text2)', textDecoration: 'none',
           }}>⚙ TERCİHLER</Link>
       </div>
+
+      {/* Stats (campus_manager) */}
+      {stats?.matrix && (
+        <div className="panel fade-up-1" style={{ marginBottom: 12 }}>
+          <div className="panel-header"><div className="panel-title">SON 7 GÜN — DAĞILIM</div></div>
+          <div className="panel-body">
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 12 }}>
+              <Kpi label="TOPLAM" value={stats.total} />
+              <Kpi label="OKUNMAMIŞ" value={stats.unread} color="var(--accent)" />
+              <Kpi label="MODÜL" value={new Set(stats.matrix.map(r => r.module)).size} />
+              <Kpi label="KRİTİK"
+                value={stats.matrix.filter(r => r.severity === 'critical').reduce((s, r) => s + r.count, 0)}
+                color="var(--red)" />
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {stats.matrix.slice(0, 24).map((r, i) => (
+                <span key={i} style={{
+                  fontFamily: 'var(--mono)', fontSize: 9, padding: '3px 8px', borderRadius: 4,
+                  background: 'var(--surface2)', border: '1px solid var(--border)',
+                  color: r.severity === 'critical' ? 'var(--red)' : r.severity === 'warning' ? 'var(--accent)' : 'var(--blue)',
+                }}>
+                  {r.module} · {r.severity} · {r.count}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Filtre çubuğu */}
       <div className="panel fade-up-1" style={{ marginBottom: 12 }}>

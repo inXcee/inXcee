@@ -4,8 +4,9 @@ import { getDB } from '../db/index.js'
 import {
   addSSEClient, removeSSEClient,
   getNotifications, getNotificationsLegacy, markRead,
-  markAllRead, deleteNotification, clearRead,
+  markAllRead, deleteNotification, clearRead, getNotificationStats,
 } from './service.js'
+import { requireRole } from '../auth/middleware.js'
 
 export const notificationsRouter = Router()
 
@@ -57,6 +58,13 @@ notificationsRouter.delete('/:id', requireAuth, (req, res) => {
 notificationsRouter.post('/clear-read', requireAuth, (req, res) => {
   const changes = clearRead(req.user.id, req.user.role)
   res.json({ ok: true, deleted: changes })
+})
+
+// A→Z Faz 10 — Stats (sadece campus_manager)
+notificationsRouter.get('/stats', ...requireRole('campus_manager'), (req, res) => {
+  try {
+    res.json(getNotificationStats({ days: req.query.days }))
+  } catch (e) { console.error('[Notif stats]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 // WhatsApp moved to /api/whatsapp

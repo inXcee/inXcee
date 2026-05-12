@@ -55,9 +55,27 @@ export function removeSSEClient(res) {
   sseClients.delete(res)
 }
 
+// In-memory time-window dedup (default 60s)
+// dedup_key + severity'e göre Map<key, expiresAt>
+const dedupWindow = new Map()
+const DEFAULT_DEDUP_WINDOW_MS = 60_000
+function isDuplicateInWindow(key, windowMs = DEFAULT_DEDUP_WINDOW_MS) {
+  if (!key) return false
+  const now = Date.now()
+  // Süresi geçenleri temizle
+  for (const [k, exp] of dedupWindow) {
+    if (exp < now) dedupWindow.delete(k)
+  }
+  const exp = dedupWindow.get(key)
+  if (exp && exp > now) return true
+  dedupWindow.set(key, now + windowMs)
+  return false
+}
+export function _resetDedupWindowForTests() { dedupWindow.clear() }
+
 export function createNotification({
   message, type, severity, module, target_role, target_user_id, dedup_key,
-  event_kind, entity_type, entity_id, link,
+  event_kind, entity_type, entity_id, link, dedup_window_ms,
 }) {
   const db = getDB()
 
@@ -76,6 +94,9 @@ export function createNotification({
   const effLink = link || (event_kind ? renderLinkTemplate(event_kind, { entity_id }) : null)
 
   if (dedup_key) {
+    // 1) Time-window dedup (60s default)
+    if (isDuplicateInWindow(dedup_key, dedup_window_ms)) return null
+    // 2) Aynı günde DB'de aynı dedup_key varsa atla
     const existing = db.prepare(
       "SELECT id FROM notifications WHERE dedup_key=? AND date(created_at)=date('now')"
     ).get(dedup_key)
@@ -221,6 +242,36 @@ export function clearRead(userId, role) {
 export function markRead(id) {
   const db = getDB()
   db.prepare('UPDATE notifications SET is_read=1 WHERE id=?').run(id)
+}
+
+// A→Z Faz 10 — Yönetici istatistikleri
+export function getNotificationStats({ days = 7 } = {}) {
+  const db = getDB()
+  const d = Math.max(1, Math.min(parseInt(days, 10) || 7, 90))
+  // Modül × severity matrix
+  const matrix = db.prepare(`
+    SELECT COALESCE(module, '(yok)') AS module,
+           COALESCE(severity, type, 'info') AS severity,
+           COUNT(*) AS count
+    FROM notifications
+    WHERE created_at >= datetime('now', ?)
+    GROUP BY module, severity
+    ORDER BY count DESC
+  `).all(`-${d} days`)
+
+  // Son 24 saatte modül başına
+  const last24h = db.prepare(`
+    SELECT COALESCE(module, '(yok)') AS module, COUNT(*) AS count
+    FROM notifications
+    WHERE created_at >= datetime('now', '-1 day')
+    GROUP BY module
+    ORDER BY count DESC
+  `).all()
+
+  const total = db.prepare(`SELECT COUNT(*) AS c FROM notifications WHERE created_at >= datetime('now', ?)`).get(`-${d} days`).c
+  const unread = db.prepare(`SELECT COUNT(*) AS c FROM notifications WHERE is_read=0`).get().c
+
+  return { days: d, total, unread, matrix, last24h }
 }
 
 export function broadcastOccupancy() {

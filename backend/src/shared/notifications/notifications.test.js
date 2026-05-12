@@ -6,6 +6,8 @@ import {
   markRead,
   addSSEClient,
   removeSSEClient,
+  getNotificationStats,
+  _resetDedupWindowForTests,
 } from './service.js'
 
 beforeAll(() => {
@@ -15,6 +17,7 @@ beforeAll(() => {
 
 beforeEach(() => {
   getDB().exec('DELETE FROM notifications')
+  _resetDedupWindowForTests()
 })
 
 describe('createNotification', () => {
@@ -74,6 +77,14 @@ describe('Notification deduplication', () => {
     createNotification({ message: 'B', type: 'info', dedup_key: 'key_b' })
     const rows = getDB().prepare('SELECT COUNT(*) as c FROM notifications').get()
     expect(rows.c).toBe(2)
+  })
+
+  // A→Z Faz 10 — time-window dedup
+  it('time-window dedup: aynı dedup_key kısa süre içinde 2. defa null döner', () => {
+    const first = createNotification({ message: 'A', dedup_key: 'tw_key' })
+    const second = createNotification({ message: 'B', dedup_key: 'tw_key' })
+    expect(first).not.toBeNull()
+    expect(second).toBeNull()
   })
 
   it('allows null dedup_key multiple times', () => {
@@ -140,6 +151,19 @@ describe('getNotifications', () => {
     const r3 = getNotifications(1, 'campus_manager', { limit: 1, page: 1 })
     expect(r3.items.length).toBe(1)
     expect(r3.total).toBeGreaterThanOrEqual(1)
+  })
+})
+
+describe('getNotificationStats', () => {
+  it('matrix + last24h + total üretir', () => {
+    createNotification({ message: 'a', module: 'laundry', severity: 'info' })
+    createNotification({ message: 'b', module: 'inventory', severity: 'warning' })
+    createNotification({ message: 'c', module: 'inventory', severity: 'warning' })
+    const stats = getNotificationStats({ days: 7 })
+    expect(stats.total).toBeGreaterThanOrEqual(3)
+    expect(stats.matrix.length).toBeGreaterThanOrEqual(2)
+    const inv = stats.matrix.find(r => r.module === 'inventory' && r.severity === 'warning')
+    expect(inv?.count).toBe(2)
   })
 })
 
