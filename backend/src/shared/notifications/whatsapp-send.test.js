@@ -103,3 +103,37 @@ afterEach(() => {
   delete process.env.WHATSAPP_PHONE_ID
   delete process.env.WHATSAPP_OUTBOUND
 })
+
+// A→Z Faz 9 — rate-limit
+describe('sendWhatsAppToUser rate-limit', () => {
+  it('dakika içinde 3+ aşımı özet mesaj olarak gönderir', async () => {
+    // Configured kıl ki gerçek fetch'i mockup yapalım
+    process.env.WHATSAPP_API_TOKEN = 'test-token'
+    process.env.WHATSAPP_PHONE_ID = '12345'
+    process.env.WHATSAPP_OUTBOUND = 'true'
+    const { sendWhatsAppToUser, _resetRateLimitForTests } = await import('./whatsapp-send.js')
+    _resetRateLimitForTests()
+
+    const db = getDB()
+    // Bir kullanici al; phone yoksa ekle
+    const u = db.prepare("SELECT id FROM users LIMIT 1").get()
+    db.prepare("UPDATE users SET phone='5320000000' WHERE id=?").run(u.id)
+
+    // fetch'i mock'la
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, text: async () => '' })
+
+    const r1 = await sendWhatsAppToUser(u.id, 'a')
+    const r2 = await sendWhatsAppToUser(u.id, 'b')
+    const r3 = await sendWhatsAppToUser(u.id, 'c')
+    const r4 = await sendWhatsAppToUser(u.id, 'd') // limit aşıldı → özet
+    const r5 = await sendWhatsAppToUser(u.id, 'e') // suskun
+
+    expect(r1.sent).toBe(1)
+    expect(r2.sent).toBe(1)
+    expect(r3.sent).toBe(1)
+    expect(r4.sent).toBe(1) // özet gönderildi
+    expect(r5.skipped).toBe('rate_limited')
+
+    fetchMock.mockRestore()
+  })
+})

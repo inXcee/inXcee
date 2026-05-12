@@ -85,9 +85,44 @@ export async function sendWhatsAppText(rawPhone, message) {
 }
 
 // User ID'den telefon bul ve gonder.
+// A→Z Faz 9: Per-user dakika içinde MAX_PER_MINUTE'tan fazlasını gönderme;
+// aşıldıysa kullanıcıya tek bir "X yeni bildirim daha var" özet mesajı düşür ve sonrakileri suskun geç.
+const MAX_PER_MINUTE = 3
+const WINDOW_MS = 60_000
+// userId -> { times: number[], summaryAt: number, suppressedCount: number }
+const rateMap = new Map()
+
+function rateCheck(userId) {
+  const now = Date.now()
+  let entry = rateMap.get(userId)
+  if (!entry) { entry = { times: [], summaryAt: 0, suppressedCount: 0 }; rateMap.set(userId, entry) }
+  entry.times = entry.times.filter(t => now - t < WINDOW_MS)
+  if (entry.times.length < MAX_PER_MINUTE) {
+    entry.times.push(now)
+    return { allowed: true, summary: false }
+  }
+  // Limit aşıldı — özet mesajı dakikada bir kez at
+  entry.suppressedCount++
+  if (now - entry.summaryAt >= WINDOW_MS) {
+    entry.summaryAt = now
+    const count = entry.suppressedCount
+    entry.suppressedCount = 0
+    return { allowed: false, summary: true, count }
+  }
+  return { allowed: false, summary: false }
+}
+
 export async function sendWhatsAppToUser(userId, message) {
   const db = getDB()
   const user = db.prepare('SELECT phone FROM users WHERE id=?').get(userId)
   if (!user?.phone) return { sent: 0, skipped: 'no_phone' }
-  return sendWhatsAppText(user.phone, message)
+  const r = rateCheck(userId)
+  if (r.allowed) return sendWhatsAppText(user.phone, message)
+  if (r.summary) {
+    return sendWhatsAppText(user.phone, `[YYS] Dakikada ${MAX_PER_MINUTE}+ bildirim alındı (${r.count} bekliyor). Lütfen panele bakın.`)
+  }
+  return { sent: 0, skipped: 'rate_limited' }
 }
+
+// Test ortami / tests icin sifirla
+export function _resetRateLimitForTests() { rateMap.clear() }
