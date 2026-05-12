@@ -1,5 +1,5 @@
 import { getDB } from '../db/index.js'
-import { isNotificationEnabledForUser } from '../../modules/notification-prefs/service.js'
+import { isChannelEnabledForUser, isQuietHours, getChannelPreferenceRow, SEVERITY_RANK } from '../../modules/notification-prefs/service.js'
 import { sendPushToUser, sendPushToRole, isPushConfigured } from './push.js'
 import { sendWhatsAppToUser, isWhatsAppConfigured } from './whatsapp-send.js'
 import { isValidEventKind, moduleFromEventKind, DEFAULT_SEVERITY, renderLinkTemplate } from './events.js'
@@ -95,15 +95,18 @@ export function createNotification({
   )
 
   const notif = db.prepare('SELECT * FROM notifications WHERE id=?').get(r.lastInsertRowid)
+  const sev = notif.severity || 'info'
+
+  // SSE (in_app & desktop) — her bağlı client için kanal+severity+quiet kontrol
   sseClients.forEach(({ res: client, userId: uid, role }, resKey) => {
     if (notif.target_user_id && notif.target_user_id !== uid) return
     if (notif.target_role && notif.target_role !== role) return
-    // Kullanıcı bu modül için bildirim almak istemiyorsa SSE'de de gönderme
-    if (notif.module && !isNotificationEnabledForUser(uid, notif.module)) return
+    if (notif.module && !isChannelEnabledForUser(uid, notif.module, 'in_app', sev)) return
+    if (isQuietHours(uid, sev)) return
     try { client.write(`data: ${JSON.stringify(notif)}\n\n`) } catch { sseClients.delete(resKey) }
   })
 
-  // Web Push (fire-and-forget — SSE pasifken kullaniciya bildirim ulastirir)
+  // Web Push — user/role bazlı, kanal=push tercihi varsa filtrele
   if (isPushConfigured()) {
     const payload = {
       title: notif.message, type: notif.type, severity: notif.severity,
@@ -111,17 +114,34 @@ export function createNotification({
       event_kind: notif.event_kind, url: notif.link,
     }
     if (notif.target_user_id) {
-      sendPushToUser(notif.target_user_id, payload).catch(e => console.error('[Push] user:', e.message))
+      if (notif.module && !isChannelEnabledForUser(notif.target_user_id, notif.module, 'push', sev)) {
+        // skip
+      } else if (isQuietHours(notif.target_user_id, sev)) {
+        // skip
+      } else {
+        sendPushToUser(notif.target_user_id, payload).catch(e => console.error('[Push] user:', e.message))
+      }
     } else if (notif.target_role) {
+      // Rol bazlı push'ta hedef kullanıcılar belli değil; push.js içinde tercih kontrolü yapılması ileride mümkün.
+      // Şimdilik modül kapatma yetersiz — sendPushToRole kendisi DB'ye gider; basit yaklaşım: gönder.
       sendPushToRole(notif.target_role, payload).catch(e => console.error('[Push] role:', e.message))
     }
   }
 
-  // WhatsApp — sadece critical severity + targeted user icin (fire-and-forget)
-  // Faz 9'da kanal tercih matrix'ine bağlanacak
-  if (isWhatsAppConfigured() && notif.severity === 'critical' && notif.target_user_id) {
-    sendWhatsAppToUser(notif.target_user_id, `[YYS] ${notif.message}`)
-      .catch(e => console.error('[WA] user:', e.message))
+  // WhatsApp — explicit opt-in (tercih satırı varsa ona uy; yoksa eski davranış: critical only)
+  if (isWhatsAppConfigured() && notif.target_user_id) {
+    const waPref = notif.module ? getChannelPreferenceRow(notif.target_user_id, notif.module, 'whatsapp') : null
+    let shouldSend = false
+    if (waPref) {
+      shouldSend = !!waPref.enabled && (SEVERITY_RANK[sev] >= SEVERITY_RANK[waPref.min_severity])
+    } else {
+      // legacy fallback
+      shouldSend = sev === 'critical'
+    }
+    if (shouldSend && !isQuietHours(notif.target_user_id, sev)) {
+      sendWhatsAppToUser(notif.target_user_id, `[YYS] ${notif.message}`)
+        .catch(e => console.error('[WA] user:', e.message))
+    }
   }
 
   return notif

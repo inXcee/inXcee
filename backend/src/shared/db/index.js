@@ -651,6 +651,26 @@ export function initDB() {
   try { db.exec("CREATE INDEX IF NOT EXISTS idx_notif_module_severity ON notifications(module, severity)") } catch {}
   try { db.exec("CREATE INDEX IF NOT EXISTS idx_notif_event_kind ON notifications(event_kind)") } catch {}
 
+  // ── A→Z Bildirim Faz 5: tercih v2 + sessiz saatler ─────────────────────────
+  try { db.exec(`CREATE TABLE IF NOT EXISTS notification_preferences_v2 (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    module TEXT NOT NULL,
+    channel TEXT NOT NULL CHECK(channel IN ('in_app','desktop','push','whatsapp')),
+    enabled INTEGER NOT NULL DEFAULT 1,
+    min_severity TEXT NOT NULL DEFAULT 'info' CHECK(min_severity IN ('info','warning','critical')),
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY(user_id, module, channel)
+  )`) } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] notif_prefs_v2:', e.message) }
+
+  try { db.exec(`CREATE TABLE IF NOT EXISTS notification_quiet_hours (
+    user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    start_minute INTEGER NOT NULL DEFAULT 0,
+    end_minute   INTEGER NOT NULL DEFAULT 0,
+    enabled INTEGER NOT NULL DEFAULT 0,
+    allow_critical INTEGER NOT NULL DEFAULT 1,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`) } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] notif_quiet:', e.message) }
+
   // ── Faz 1 migrations ──────────────────────────────────────────────────────
   try { db.exec('ALTER TABLE personnel ADD COLUMN expected_departure TEXT') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] personnel.expected_departure:', e.message) }
   try { db.exec('ALTER TABLE maintenance_requests ADD COLUMN reporter_personnel_id INTEGER REFERENCES personnel(id)') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] maintenance_requests.reporter_personnel_id:', e.message) }
