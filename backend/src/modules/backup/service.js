@@ -3,6 +3,8 @@ import path from 'path'
 import { spawn } from 'child_process'
 import Database from 'better-sqlite3'
 import { fileURLToPath } from 'url'
+import { createNotification } from '../../shared/notifications/service.js'
+import { EVENT_KINDS } from '../../shared/notifications/events.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -89,19 +91,49 @@ export async function pushOffsite(filePath) {
 export async function runBackupService() {
   const dbPath = getDbPath()
   const dir = getBackupDir()
-  if (!fs.existsSync(dbPath)) return { error: 'Veritabanı dosyası bulunamadı', status: 500 }
+  if (!fs.existsSync(dbPath)) {
+    try {
+      createNotification({
+        message: `🛑 Yedekleme başarısız: veritabanı dosyası bulunamadı`,
+        event_kind: EVENT_KINDS.SYSTEM_BACKUP_FAILED,
+        target_role: 'campus_manager',
+      })
+    } catch {}
+    return { error: 'Veritabanı dosyası bulunamadı', status: 500 }
+  }
   fs.mkdirSync(dir, { recursive: true })
 
   const dest = path.join(dir, `yys_${timestamp()}.db`)
   const db = new Database(dbPath, { readonly: true })
   try {
-    await db.backup(dest)
+    try {
+      await db.backup(dest)
+    } catch (e) {
+      try {
+        createNotification({
+          message: `🛑 Yedekleme başarısız: ${e.message || 'bilinmeyen hata'}`,
+          event_kind: EVENT_KINDS.SYSTEM_BACKUP_FAILED,
+          target_role: 'campus_manager',
+        })
+      } catch {}
+      throw e
+    }
   } finally {
     db.close()
   }
   const stat = fs.statSync(dest)
   // Off-site push — basarisizlik local backup'i etkilemez, sadece response'da goster
   const offsite = await pushOffsite(dest)
+  // A→Z: başarı bildirimi
+  try {
+    const sizeMb = (stat.size / 1024 / 1024).toFixed(1)
+    createNotification({
+      message: `✅ Yedekleme tamamlandı: ${path.basename(dest)} (${sizeMb} MB)${offsite?.ok ? ' · offsite ✓' : offsite?.skipped ? '' : ' · offsite ✕'}`,
+      event_kind: EVENT_KINDS.SYSTEM_BACKUP_SUCCESS,
+      target_role: 'campus_manager',
+      dedup_key: `backup_success_${new Date().toISOString().slice(0, 10)}`,
+    })
+  } catch {}
   return {
     ok: true,
     name: path.basename(dest),

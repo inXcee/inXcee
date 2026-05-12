@@ -2,6 +2,8 @@ import {
   insertErrorLogQuery, listErrorLogsQuery, getErrorLogQuery,
   deleteErrorLogQuery, clearErrorLogQuery, countErrorLogsQuery,
 } from './queries.js'
+import { createNotification } from '../../shared/notifications/service.js'
+import { EVENT_KINDS } from '../../shared/notifications/events.js'
 
 const VALID_SOURCES = new Set(['frontend', 'backend'])
 const VALID_SEVERITIES = new Set(['error', 'warning'])
@@ -44,6 +46,19 @@ export function reportErrorService({ source, severity, message, stack, url, user
       user_agent: truncate(user_agent, MAX_UA),
       context: contextJson,
     })
+    // A→Z: 'error' severity ile gelen hatalar bildirim akışına (warning suskun kalır)
+    if (severity === 'error' && id) {
+      try {
+        createNotification({
+          message: `🛑 ${source === 'frontend' ? 'Frontend' : 'Backend'} hata: ${truncate(message, 120)}`,
+          event_kind: EVENT_KINDS.SYSTEM_ERROR_CRITICAL,
+          target_role: 'campus_manager',
+          entity_type: 'error_log', entity_id: id,
+          // Aynı hatayı 1 günde 1 kez bildir (gun bazli dedup)
+          dedup_key: `error_${truncate(message, 60).replace(/\s+/g, '_')}`,
+        })
+      } catch (e) { console.error('[ErrorLog] notif:', e.message) }
+    }
     return { ok: true, id }
   } catch (e) {
     // Hata kaydederken hata atarsak konsola yaz, response yine ok dön (loop'a girmesin)
