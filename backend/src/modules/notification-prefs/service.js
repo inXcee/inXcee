@@ -12,6 +12,7 @@ export const NOTIFICATION_MODULES = [
   { key: 'sla',         label: 'SLA Uyarıları' },
   { key: 'announcement', label: 'Duyurular' },
   { key: 'system',      label: 'Sistem' },
+  { key: 'room_history', label: 'Oda Değişikliği' },
 ]
 
 export function getUserPreferencesService(userId) {

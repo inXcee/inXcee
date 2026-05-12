@@ -1,6 +1,8 @@
 import { Router } from 'express'
 import { requireRole } from '../../shared/auth/middleware.js'
 import { getAll, create, remove } from './queries.js'
+import { createNotification } from '../../shared/notifications/service.js'
+import { EVENT_KINDS } from '../../shared/notifications/events.js'
 
 export const announcementsRouter = Router()
 const adminOnly = requireRole('campus_manager')
@@ -16,6 +18,12 @@ announcementsRouter.post('/', ...adminOnly, (req, res) => {
   if (!body || body.trim().length < 5) return res.status(400).json({ error: 'İçerik gerekli' })
   try {
     const id = create({ title: title.trim(), body: body.trim(), expiresAt: expires_at || null, createdBy: req.user.userId })
+    // A→Z: yeni duyuru bildirim akışına (broadcast — target_role/user yok)
+    createNotification({
+      message: `📢 Yeni duyuru: ${title.trim()}`,
+      event_kind: EVENT_KINDS.ANNOUNCEMENT_PUBLISHED,
+      entity_type: 'announcement', entity_id: id,
+    })
     res.status(201).json({ id })
   } catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
