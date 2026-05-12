@@ -1,7 +1,11 @@
 import { Router } from 'express'
 import { requireAuth, requireSSEAuth } from '../auth/middleware.js'
 import { getDB } from '../db/index.js'
-import { addSSEClient, removeSSEClient, getNotifications, markRead } from './service.js'
+import {
+  addSSEClient, removeSSEClient,
+  getNotifications, getNotificationsLegacy, markRead,
+  markAllRead, deleteNotification, clearRead,
+} from './service.js'
 
 export const notificationsRouter = Router()
 
@@ -14,19 +18,45 @@ notificationsRouter.get('/stream', requireSSEAuth, (req, res) => {
   req.on('close', () => removeSSEClient(res))
 })
 
+// Eski sözleşme: parametre yoksa düz array (geriye uyumlu)
 notificationsRouter.get('/', requireAuth, (req, res) => {
-  res.json(getNotifications(req.user.id, req.user.role))
+  const { module, severity, from, to, unread_only, q, page, limit } = req.query
+  const hasFilter = module || severity || from || to || unread_only || q || page || limit
+  if (!hasFilter) {
+    return res.json(getNotificationsLegacy(req.user.id, req.user.role))
+  }
+  res.json(getNotifications(req.user.id, req.user.role, {
+    module, severity, from, to,
+    unread_only: unread_only === '1' || unread_only === 'true',
+    q, page, limit,
+  }))
 })
 
 notificationsRouter.patch('/:id/read', requireAuth, (req, res) => {
   const notif = getDB().prepare('SELECT target_user_id, target_role FROM notifications WHERE id=?').get(+req.params.id)
   if (!notif) return res.status(404).json({ error: 'Bildirim bulunamadı' })
-  // Kişisel bildirimse sadece sahibi okuyabilir
   if (notif.target_user_id && notif.target_user_id !== req.user.id) {
     return res.status(403).json({ error: 'Yetkisiz' })
   }
   markRead(+req.params.id)
   res.json({ ok: true })
+})
+
+// A→Z Faz 7
+notificationsRouter.post('/mark-all-read', requireAuth, (req, res) => {
+  const changes = markAllRead(req.user.id, req.user.role)
+  res.json({ ok: true, updated: changes })
+})
+
+notificationsRouter.delete('/:id', requireAuth, (req, res) => {
+  const r = deleteNotification(+req.params.id, req.user.id, req.user.role)
+  if (r.error) return res.status(r.status).json({ error: r.error })
+  res.json(r)
+})
+
+notificationsRouter.post('/clear-read', requireAuth, (req, res) => {
+  const changes = clearRead(req.user.id, req.user.role)
+  res.json({ ok: true, deleted: changes })
 })
 
 // WhatsApp moved to /api/whatsapp

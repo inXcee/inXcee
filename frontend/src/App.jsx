@@ -60,6 +60,7 @@ const BackupPage = lazy(() => import('./modules/admin/BackupPage.jsx'))
 const KvkkAdminPage = lazy(() => import('./modules/admin/KvkkAdminPage.jsx'))
 const SystemHealthPage = lazy(() => import('./modules/admin/SystemHealthPage.jsx'))
 const NotificationPrefsPage = lazy(() => import('./modules/notification-prefs/NotificationPrefsPage.jsx'))
+const NotificationsCenterPage = lazy(() => import('./modules/notifications/NotificationsCenterPage.jsx'))
 const KvkkPage = lazy(() => import('./modules/kvkk/KvkkPage.jsx'))
 
 function PrivateRoute({ children }) {
@@ -218,6 +219,7 @@ export default function App() {
             <Route path="backup" element={<RoleRoute roles={['campus_manager']}><BackupPage /></RoleRoute>} />
             <Route path="kvkk-admin" element={<RoleRoute roles={['campus_manager']}><KvkkAdminPage /></RoleRoute>} />
             <Route path="system" element={<RoleRoute roles={['campus_manager']}><SystemHealthPage /></RoleRoute>} />
+            <Route path="notifications" element={<NotificationsCenterPage />} />
             <Route path="notifications/preferences" element={<NotificationPrefsPage />} />
             <Route path="users" element={<RoleRoute roles={['campus_manager']}><UsersPage /></RoleRoute>} />
             <Route path="kiosk-pins" element={<RoleRoute roles={['campus_manager']}><KioskPinPage /></RoleRoute>} />

@@ -49,8 +49,10 @@ export function useNotifications() {
     if (!token) return
     initialLoadDone.current = false
     api.get('/notifications').then(r => {
-      setNotifications(r.data)
-      setUnreadCount(r.data.filter(n => !n.is_read).length)
+      // Backward compat: route returns array (legacy) or { items, total } (v2)
+      const list = Array.isArray(r.data) ? r.data : (r.data?.items || [])
+      setNotifications(list)
+      setUnreadCount(list.filter(n => !n.is_read).length)
       initialLoadDone.current = true
     }).catch(() => {})
   }, [token])

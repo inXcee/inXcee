@@ -118,13 +118,28 @@ describe('getNotifications', () => {
     createNotification({ message: 'Herkese 1', type: 'info' })
     createNotification({ message: 'Herkese 2', type: 'info' })
     const result = getNotifications(999, 'shift_supervisor')
-    expect(result.length).toBeGreaterThanOrEqual(2)
+    expect(result.items.length).toBeGreaterThanOrEqual(2)
+    expect(result.total).toBeGreaterThanOrEqual(2)
   })
 
   it('returns notifications for a specific role', () => {
     createNotification({ message: 'Müdüre', type: 'warning', target_role: 'campus_manager' })
     const result = getNotifications(1, 'campus_manager')
-    expect(result.some(n => n.target_role === 'campus_manager')).toBe(true)
+    expect(result.items.some(n => n.target_role === 'campus_manager')).toBe(true)
+  })
+
+  // A→Z Faz 7
+  it('module + severity + q filtre çalışır + paginate', () => {
+    createNotification({ message: 'Stok düştü kalem', event_kind: 'inventory.stock.low', target_role: 'campus_manager', entity_id: 1 })
+    createNotification({ message: 'Çamaşır mesaj', event_kind: 'laundry.message.sent', target_role: 'campus_manager' })
+    createNotification({ message: 'Diğer', type: 'info', target_role: 'campus_manager' })
+    const r1 = getNotifications(1, 'campus_manager', { module: 'inventory' })
+    expect(r1.items.every(n => n.module === 'inventory')).toBe(true)
+    const r2 = getNotifications(1, 'campus_manager', { q: 'mesaj' })
+    expect(r2.items.some(n => /mesaj/i.test(n.message))).toBe(true)
+    const r3 = getNotifications(1, 'campus_manager', { limit: 1, page: 1 })
+    expect(r3.items.length).toBe(1)
+    expect(r3.total).toBeGreaterThanOrEqual(1)
   })
 })
 

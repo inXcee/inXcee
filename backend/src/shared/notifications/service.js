@@ -147,15 +147,75 @@ export function createNotification({
   return notif
 }
 
-export function getNotifications(userId, role) {
+export function getNotifications(userId, role, opts = {}) {
   const db = getDB()
-  const rows = db.prepare(`
+  const {
+    module = null, severity = null, from = null, to = null,
+    unread_only = false, q = null, page = 1, limit = 50,
+  } = opts
+  const params = [userId, role]
+  let sql = `
     SELECT * FROM notifications
     WHERE (target_user_id=? OR target_role=? OR (target_user_id IS NULL AND target_role IS NULL))
-    ORDER BY created_at DESC LIMIT 50
-  `).all(userId, role)
-  // Kullanıcı tercihlerine göre devre dışı modülleri filtrele
-  return rows.filter(n => !n.module || isNotificationEnabledForUser(userId, n.module))
+  `
+  if (module)   { sql += ' AND module = ?'; params.push(module) }
+  if (severity) { sql += ' AND severity = ?'; params.push(severity) }
+  if (from)     { sql += " AND created_at >= ?"; params.push(from) }
+  if (to)       { sql += " AND created_at <= ?"; params.push(to) }
+  if (unread_only) { sql += ' AND is_read = 0' }
+  if (q) {
+    sql += ' AND (message LIKE ? OR event_kind LIKE ?)'
+    const like = `%${q}%`
+    params.push(like, like)
+  }
+  // Toplam count (paginate için)
+  const countSql = `SELECT COUNT(*) AS c FROM (${sql})`
+  const total = db.prepare(countSql).get(...params).c
+
+  const safeLimit = Math.min(Math.max(parseInt(limit, 10) || 50, 1), 200)
+  const safePage  = Math.max(parseInt(page, 10) || 1, 1)
+  const offset    = (safePage - 1) * safeLimit
+  sql += ' ORDER BY created_at DESC LIMIT ? OFFSET ?'
+  params.push(safeLimit, offset)
+  const rows = db.prepare(sql).all(...params)
+  // Kanal=in_app tercih filtresi (eşik dahil)
+  const filtered = rows.filter(n => !n.module || isChannelEnabledForUser(userId, n.module, 'in_app', n.severity || 'info'))
+  return { items: filtered, total, page: safePage, limit: safeLimit }
+}
+
+// Legacy — eski hook'lar için (sadece liste)
+export function getNotificationsLegacy(userId, role) {
+  return getNotifications(userId, role).items
+}
+
+export function markAllRead(userId, role) {
+  const db = getDB()
+  return db.prepare(`
+    UPDATE notifications SET is_read=1
+    WHERE is_read=0 AND (target_user_id=? OR target_role=? OR (target_user_id IS NULL AND target_role IS NULL))
+  `).run(userId, role).changes
+}
+
+export function deleteNotification(id, userId, role) {
+  const db = getDB()
+  const row = db.prepare('SELECT target_user_id, target_role FROM notifications WHERE id=?').get(id)
+  if (!row) return { error: 'Bildirim bulunamadı', status: 404 }
+  // Kişisel bildirimse sahibi silebilir; rol bildirimini sadece campus_manager
+  if (row.target_user_id) {
+    if (row.target_user_id !== userId) return { error: 'Yetkisiz', status: 403 }
+  } else if (role !== 'campus_manager') {
+    return { error: 'Yetkisiz', status: 403 }
+  }
+  db.prepare('DELETE FROM notifications WHERE id=?').run(id)
+  return { ok: true }
+}
+
+export function clearRead(userId, role) {
+  const db = getDB()
+  return db.prepare(`
+    DELETE FROM notifications
+    WHERE is_read=1 AND (target_user_id=? OR target_role=? OR (target_user_id IS NULL AND target_role IS NULL))
+  `).run(userId, role).changes
 }
 
 export function markRead(id) {
