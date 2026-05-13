@@ -169,6 +169,8 @@ export default function CampusMapPage() {
   const [showLabels, setShowLabels] = useState(true)
   const [mode, setMode] = useState('occupancy')
   const [showHelp, setShowHelp] = useState(false)
+  const [imgOpacity, setImgOpacity] = useState(1)
+  const [heatCloud, setHeatCloud] = useState(false)
   const [liveEvents, setLiveEvents] = useState([]) // son 5 olay
   const [pulseBlocks, setPulseBlocks] = useState({})
   // Zoom/Pan
@@ -190,8 +192,33 @@ export default function CampusMapPage() {
     queryFn: () => api.get('/capacity/rooms').then(r => r.data),
     staleTime: 30000,
     refetchInterval: 30000,
-    enabled: !!selectedBlock,  // sadece detay paneli icin
   })
+
+  // Toplu oda durumu degisikligi (campus_manager only)
+  const bulkStatusMutation = useMutation({
+    mutationFn: ({ room_ids, status }) => api.post('/capacity/bulk/room-status', { room_ids, status }).then(r => r.data),
+    onSuccess: (data, vars) => {
+      const label = vars.status === 'quarantine' ? 'karantinaya alindi' : vars.status === 'maintenance' ? 'bakima alindi' : 'aktif yapildi'
+      addToast(`${data.count} oda ${label}`, 'success')
+      queryClient.invalidateQueries({ queryKey: ['campus-map-summary'] })
+      queryClient.invalidateQueries({ queryKey: ['capacity-rooms-all'] })
+    },
+    onError: (err) => addToast(err?.response?.data?.error || 'Bulk islem hatasi', 'error'),
+  })
+
+  function bulkAction(status, blocks) {
+    const roomIds = (rooms || [])
+      .filter(r => blocks.includes(r.block))
+      .filter(r => status === 'active' ? r.status !== 'active' : r.status === 'active')
+      .map(r => r.id)
+    if (roomIds.length === 0) {
+      addToast('Bu islemde degisecek oda yok', 'warning')
+      return
+    }
+    const label = status === 'quarantine' ? 'karantinaya alinacak' : status === 'maintenance' ? 'bakima alinacak' : 'aktif yapilacak'
+    if (!confirm(`${blocks.join(', ')} bloklarinda ${roomIds.length} oda ${label}. Onaylar misin?`)) return
+    bulkStatusMutation.mutate({ room_ids: roomIds, status })
+  }
 
   const { data: pinsData } = useQuery({
     queryKey: ['campus-map-pins'],
@@ -683,6 +710,15 @@ export default function CampusMapPage() {
           <input type="checkbox" checked={showLabels} onChange={e => setShowLabels(e.target.checked)} />
           ETIKETLER
         </label>
+        <label style={lblToolbar}>
+          OPAK
+          <input type="range" min="0.3" max="1" step="0.05" value={imgOpacity}
+            onChange={e => setImgOpacity(parseFloat(e.target.value))} style={{ width: 60 }} />
+        </label>
+        <button onClick={() => setHeatCloud(h => !h)} title="Heat cloud (mod renklerine gore yumusak isi bulutlari)"
+          style={chipBtn(heatCloud)}>
+          {heatCloud ? '☀ HEAT' : '○ HEAT'}
+        </button>
         <button onClick={() => window.print()} title="Yazdir" style={btnGhost}>⎙ YAZDIR</button>
         <button onClick={() => setShowHelp(true)} title="Klavye kisayollari (?)" style={btnGhost}>?</button>
         {isManager && (
@@ -720,8 +756,25 @@ export default function CampusMapPage() {
             {Array.from(multiSelect).join(' • ')}
           </span>
           <div style={{ flex: 1 }} />
+          {isManager && (
+            <>
+              <button onClick={() => bulkAction('quarantine', Array.from(multiSelect))}
+                disabled={bulkStatusMutation.isPending} style={btnDangerSolid}>
+                ⊘ KARANTINAYA AL
+              </button>
+              <button onClick={() => bulkAction('maintenance', Array.from(multiSelect))}
+                disabled={bulkStatusMutation.isPending} style={btnWarn}>
+                ⚒ BAKIMA AL
+              </button>
+              <button onClick={() => bulkAction('active', Array.from(multiSelect))}
+                disabled={bulkStatusMutation.isPending} style={btnGreen}>
+                ✓ AKTIF YAP
+              </button>
+              <div style={{ width: 1, height: 22, background: 'var(--border)' }} />
+            </>
+          )}
           <button onClick={() => setMultiSelect(new Set())} style={btnGhost}>
-            ✕ SECIMI TEMIZLE
+            ✕ TEMIZLE
           </button>
         </div>
       )}
@@ -793,16 +846,21 @@ export default function CampusMapPage() {
             onWheel={onWheel}
           >
             <defs>
-              <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
-                <path d="M 40 0 L 0 0 0 40" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
-              </pattern>
-              <linearGradient id="schemBg" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0" stopColor="#0f172a" />
-                <stop offset="1" stopColor="#1e293b" />
-              </linearGradient>
+              <radialGradient id="heatGreen"><stop offset="0%" stopColor="#16a34a" stopOpacity="0.55"/><stop offset="100%" stopColor="#16a34a" stopOpacity="0"/></radialGradient>
+              <radialGradient id="heatYellow"><stop offset="0%" stopColor="#f59e0b" stopOpacity="0.55"/><stop offset="100%" stopColor="#f59e0b" stopOpacity="0"/></radialGradient>
+              <radialGradient id="heatRed"><stop offset="0%" stopColor="#dc2626" stopOpacity="0.6"/><stop offset="100%" stopColor="#dc2626" stopOpacity="0"/></radialGradient>
+              <radialGradient id="heatGray"><stop offset="0%" stopColor="#6b7280" stopOpacity="0.45"/><stop offset="100%" stopColor="#6b7280" stopOpacity="0"/></radialGradient>
             </defs>
-            <rect x="0" y="0" width={VIEW_W} height={VIEW_H} fill="url(#schemBg)" data-pan-bg="1" />
-            <rect x="0" y="0" width={VIEW_W} height={VIEW_H} fill="url(#grid)" data-pan-bg="1" />
+            <image href="/campus-map.png" x="0" y="0" width={VIEW_W} height={VIEW_H} opacity={imgOpacity} data-pan-bg="1" />
+            <rect x="0" y="0" width={VIEW_W} height={VIEW_H} fill="rgba(0,0,0,0.18)" data-pan-bg="1" />
+            {/* Heat cloud katmani */}
+            {heatCloud && Object.entries(pins).map(([block, p]) => {
+              const s = stats[block]
+              if (!s) return null
+              const m = computeMetric(mode, s, BLOCK_BY_NAME[block])
+              const grad = m.color === '#16a34a' ? 'heatGreen' : m.color === '#f59e0b' || m.color === '#eab308' ? 'heatYellow' : m.color === '#dc2626' ? 'heatRed' : 'heatGray'
+              return <circle key={`heat-${block}`} cx={p.x} cy={p.y} r="55" fill={`url(#${grad})`} pointerEvents="none" />
+            })}
             {/* Pan icin gorunmez tutamak — pin uzerinde olmayan tum alan */}
             <rect x={viewBox.x} y={viewBox.y} width={viewBox.w} height={viewBox.h} fill="transparent" data-pan-bg="1" />
             {/* Hafif vignette */}
@@ -1527,6 +1585,8 @@ const btnGreen = { background: '#16a34a', color: '#fff', border: 'none', borderR
 const btnGhost = { background: 'var(--surface2)', color: 'var(--text2)', border: '1px solid var(--border)', borderRadius: 6, padding: '5px 10px', cursor: 'pointer', fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: 1 }
 const btnDanger = { background: 'var(--surface2)', color: '#dc2626', border: '1px solid var(--border)', borderRadius: 6, padding: '5px 10px', cursor: 'pointer', fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: 1 }
 const btnAccent = { background: 'var(--surface2)', color: 'var(--accent)', border: '1px solid var(--border)', borderRadius: 6, padding: '5px 10px', cursor: 'pointer', fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: 1, fontWeight: 600 }
+const btnDangerSolid = { background: '#dc2626', color: '#fff', border: 'none', borderRadius: 6, padding: '6px 12px', cursor: 'pointer', fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: 1, fontWeight: 700 }
+const btnWarn = { background: '#f59e0b', color: '#000', border: 'none', borderRadius: 6, padding: '6px 12px', cursor: 'pointer', fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: 1, fontWeight: 700 }
 const zoomBtn = {
   background: 'transparent', color: 'var(--text2)', border: 'none', borderRadius: 4,
   padding: '4px 9px', cursor: 'pointer', fontFamily: 'var(--mono)',
