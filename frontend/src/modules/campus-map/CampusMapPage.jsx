@@ -168,6 +168,8 @@ export default function CampusMapPage() {
   const [showLabels, setShowLabels] = useState(true)
   const [imgOpacity, setImgOpacity] = useState(1)
   const [mode, setMode] = useState('occupancy')
+  const [schematic, setSchematic] = useState(false)
+  const [showHelp, setShowHelp] = useState(false)
   const [liveEvents, setLiveEvents] = useState([]) // son 5 olay
   const [pulseBlocks, setPulseBlocks] = useState({})
   // Zoom/Pan
@@ -260,6 +262,39 @@ export default function CampusMapPage() {
   }, [queryClient])
 
   useEventStream('/api/notifications/stream', token, handleSSE, [handleSSE])
+
+  // Klavye kisayollari
+  useEffect(() => {
+    function onKey(e) {
+      // Input/textarea'da yazarken kisayollari yakalama
+      const tag = (e.target?.tagName || '').toLowerCase()
+      if (tag === 'input' || tag === 'textarea') return
+      if (e.key === 'Escape') {
+        if (searchOpen) { setSearchOpen(false); setSearchQuery('') }
+        else if (selectedBlock) setSelectedBlock(null)
+        else if (editMode) setEditMode(false)
+        else if (showHelp) setShowHelp(false)
+        return
+      }
+      if (e.key === '?') { setShowHelp(s => !s); return }
+      if (e.key === '+' || e.key === '=') { zoomIn(); return }
+      if (e.key === '-' || e.key === '_') { zoomOut(); return }
+      if (e.key === '0') { resetView(); return }
+      if (e.key === 'f' || e.key === 'F') { fitAllPins(); return }
+      if (e.key === 's' || e.key === 'S') { setSchematic(s => !s); return }
+      const step = viewBox.w / 8
+      if (e.key === 'ArrowUp')    setViewBox(v => ({ ...v, y: Math.max(-v.h * 0.2, v.y - step * (VIEW_H/VIEW_W)) }))
+      if (e.key === 'ArrowDown')  setViewBox(v => ({ ...v, y: Math.min(VIEW_H - v.h * 0.8, v.y + step * (VIEW_H/VIEW_W)) }))
+      if (e.key === 'ArrowLeft')  setViewBox(v => ({ ...v, x: Math.max(-v.w * 0.2, v.x - step) }))
+      if (e.key === 'ArrowRight') setViewBox(v => ({ ...v, x: Math.min(VIEW_W - v.w * 0.8, v.x + step) }))
+      // 1-6: mod degistirme
+      const idx = ['1','2','3','4','5','6'].indexOf(e.key)
+      if (idx !== -1 && MODES[idx]) setMode(MODES[idx].id)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchOpen, selectedBlock, editMode, showHelp, viewBox.w])
 
   const savePinsMutation = useMutation({
     mutationFn: (newPins) => api.put('/campus-map/pins', { pins: newPins }).then(r => r.data),
@@ -390,6 +425,25 @@ export default function CampusMapPage() {
   function resetView() {
     setViewBox({ x: 0, y: 0, w: VIEW_W, h: VIEW_H })
   }
+  function fitAllPins() {
+    const visibleNames = visibleBlocks.map(b => b.block)
+    const points = visibleNames.map(n => pins[n]).filter(Boolean)
+    if (points.length === 0) { resetView(); return }
+    const xs = points.map(p => p.x), ys = points.map(p => p.y)
+    const pad = 60
+    const minX = Math.min(...xs) - pad, maxX = Math.max(...xs) + pad
+    const minY = Math.min(...ys) - pad, maxY = Math.max(...ys) + pad
+    const w = Math.max(150, maxX - minX)
+    const h = Math.max(w * (VIEW_H / VIEW_W), maxY - minY)
+    const newW = Math.max(w, h * (VIEW_W / VIEW_H))
+    const newH = newW * (VIEW_H / VIEW_W)
+    setViewBox({
+      x: (minX + maxX) / 2 - newW / 2,
+      y: (minY + maxY) / 2 - newH / 2,
+      w: newW, h: newH,
+    })
+  }
+
   function zoomToBlock(blockName) {
     const p = pins[blockName]
     if (!p) return
@@ -438,6 +492,40 @@ export default function CampusMapPage() {
 
   return (
     <div style={{ padding: 16, color: 'var(--text)' }}>
+      {showHelp && (
+        <div onClick={() => setShowHelp(false)} style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 1000,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <div onClick={e => e.stopPropagation()} style={{
+            background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10,
+            padding: 24, minWidth: 360, maxWidth: 480, color: 'var(--text)',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+              <h3 style={{ fontFamily: 'var(--display)', fontSize: 18, letterSpacing: 2, margin: 0 }}>KLAVYE KISAYOLLARI</h3>
+              <button onClick={() => setShowHelp(false)} style={{
+                background: 'transparent', border: '1px solid var(--border)', borderRadius: 6,
+                color: 'var(--text3)', padding: '4px 10px', cursor: 'pointer', fontSize: 13,
+              }}>✕</button>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '8px 16px',
+              fontFamily: 'var(--mono)', fontSize: 12 }}>
+              <kbd style={kbd}>+ / −</kbd><span>Yakinlas / uzaklas</span>
+              <kbd style={kbd}>0</kbd><span>Zoom sifirla</span>
+              <kbd style={kbd}>F</kbd><span>Tum pin'leri sigdir</span>
+              <kbd style={kbd}>S</kbd><span>Sematik / uydu</span>
+              <kbd style={kbd}>← ↑ ↓ →</kbd><span>Pan (kaydir)</span>
+              <kbd style={kbd}>1 - 6</kbd><span>Gorunum modlari</span>
+              <kbd style={kbd}>Esc</kbd><span>Kapat / iptal</span>
+              <kbd style={kbd}>?</kbd><span>Bu yardim ekrani</span>
+            </div>
+            <div style={{ marginTop: 18, paddingTop: 14, borderTop: '1px solid var(--border)',
+              fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', letterSpacing: 1 }}>
+              MOUSE: Tekerlek = zoom (mouse uzerinde) • Surukle = pan • Pin tikla = detay
+            </div>
+          </div>
+        </div>
+      )}
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 12 }}>
         <div>
@@ -576,9 +664,10 @@ export default function CampusMapPage() {
 
         {/* Zoom kontrolleri */}
         <div style={{ display: 'flex', gap: 2, background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 6, padding: 2 }}>
-          <button onClick={zoomOut} title="Uzaklas" style={zoomBtn}>−</button>
-          <button onClick={resetView} title="Sifirla" style={{ ...zoomBtn, fontSize: 10, padding: '4px 8px' }}>RST</button>
-          <button onClick={zoomIn} title="Yakinlas" style={zoomBtn}>+</button>
+          <button onClick={zoomOut} title="Uzaklas (-)" style={zoomBtn}>−</button>
+          <button onClick={resetView} title="Sifirla (0)" style={{ ...zoomBtn, fontSize: 10, padding: '4px 8px' }}>RST</button>
+          <button onClick={fitAllPins} title="Hepsini sigdir (F)" style={{ ...zoomBtn, fontSize: 10, padding: '4px 8px' }}>FIT</button>
+          <button onClick={zoomIn} title="Yakinlas (+)" style={zoomBtn}>+</button>
         </div>
         <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: 1 }}>
           {Math.round((VIEW_W / viewBox.w) * 100)}%
@@ -599,8 +688,15 @@ export default function CampusMapPage() {
         <label style={lblToolbar}>
           OPAK
           <input type="range" min="0.3" max="1" step="0.05" value={imgOpacity}
-            onChange={e => setImgOpacity(parseFloat(e.target.value))} style={{ width: 70 }} />
+            onChange={e => setImgOpacity(parseFloat(e.target.value))} style={{ width: 70 }}
+            disabled={schematic} />
         </label>
+        <button onClick={() => setSchematic(s => !s)} title="Sematik gorunum (S)"
+          style={chipBtn(schematic)}>
+          {schematic ? '◊ SEMATIK' : '⊞ UYDU'}
+        </button>
+        <button onClick={() => window.print()} title="Yazdir" style={btnGhost}>⎙ YAZDIR</button>
+        <button onClick={() => setShowHelp(true)} title="Klavye kisayollari (?)" style={btnGhost}>?</button>
         {isManager && (
           <>
             <div style={{ width: 1, height: 22, background: 'var(--border)' }} />
@@ -688,7 +784,23 @@ export default function CampusMapPage() {
             onMouseDown={onSvgMouseDown}
             onWheel={onWheel}
           >
-            <image href="/campus-map.png" x="0" y="0" width={VIEW_W} height={VIEW_H} opacity={imgOpacity} data-pan-bg="1" />
+            {schematic ? (
+              <>
+                <defs>
+                  <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+                    <path d="M 40 0 L 0 0 0 40" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
+                  </pattern>
+                  <linearGradient id="schemBg" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0" stopColor="#0f172a" />
+                    <stop offset="1" stopColor="#1e293b" />
+                  </linearGradient>
+                </defs>
+                <rect x="0" y="0" width={VIEW_W} height={VIEW_H} fill="url(#schemBg)" data-pan-bg="1" />
+                <rect x="0" y="0" width={VIEW_W} height={VIEW_H} fill="url(#grid)" data-pan-bg="1" />
+              </>
+            ) : (
+              <image href="/campus-map.png" x="0" y="0" width={VIEW_W} height={VIEW_H} opacity={imgOpacity} data-pan-bg="1" />
+            )}
             {/* Pan icin gorunmez tutamak — pin uzerinde olmayan tum alan */}
             <rect x={viewBox.x} y={viewBox.y} width={viewBox.w} height={viewBox.h} fill="transparent" data-pan-bg="1" />
             {/* Hafif vignette */}
@@ -1298,6 +1410,13 @@ const zoomBtn = {
   background: 'transparent', color: 'var(--text2)', border: 'none', borderRadius: 4,
   padding: '4px 9px', cursor: 'pointer', fontFamily: 'var(--mono)',
   fontSize: 14, fontWeight: 700, lineHeight: 1, minWidth: 26,
+}
+const kbd = {
+  background: 'var(--surface2)', border: '1px solid var(--border)',
+  borderBottomWidth: 2, borderRadius: 4,
+  padding: '3px 8px', fontFamily: 'var(--mono)', fontSize: 11,
+  color: 'var(--accent)', letterSpacing: 1, fontWeight: 600,
+  minWidth: 28, textAlign: 'center', display: 'inline-block',
 }
 const searchItemStyle = {
   display: 'flex', alignItems: 'center', gap: 8, width: '100%',
