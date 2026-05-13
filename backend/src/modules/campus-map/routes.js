@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import { requireAuth, requireRole } from '../../shared/auth/middleware.js'
 import { getDB } from '../../shared/db/index.js'
-import { getCampusSummary } from './queries.js'
+import { getCampusSummary, getCampusTimeseries } from './queries.js'
 
 export const campusMapRouter = Router()
 
@@ -13,6 +13,17 @@ campusMapRouter.get('/summary', requireAuth, (req, res) => {
     res.json({ blocks: getCampusSummary() })
   } catch (e) {
     console.error('[campus-map.summary]', e)
+    res.status(500).json({ error: 'Sunucu hatasi' })
+  }
+})
+
+// Per-blok son N gun doluluk zaman serisi (sparkline + zaman slider icin)
+campusMapRouter.get('/timeseries', requireAuth, (req, res) => {
+  try {
+    const days = Math.max(2, Math.min(30, parseInt(req.query.days) || 7))
+    res.json({ days, blocks: getCampusTimeseries(days) })
+  } catch (e) {
+    console.error('[campus-map.timeseries]', e)
     res.status(500).json({ error: 'Sunucu hatasi' })
   }
 })

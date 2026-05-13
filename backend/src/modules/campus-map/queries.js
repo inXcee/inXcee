@@ -120,3 +120,58 @@ export function getCampusSummary() {
 
   return result
 }
+
+// Per-blok son N gun doluluk zaman serisi (oda durumu degisiklikleri historik takip edilmedigi icin
+// sadece o tarihte aktif room_assignment'lara gore occupancy hesaplanir; total_beds suanki aktif yatak)
+export function getCampusTimeseries(days = 7) {
+  const db = getDB()
+  const n = Math.max(2, Math.min(30, Number(days) || 7))
+  const dateSeries = db.prepare(`
+    WITH RECURSIVE dates(d) AS (
+      SELECT date('now', '-' || (? - 1) || ' days')
+      UNION ALL SELECT date(d, '+1 day') FROM dates WHERE d < date('now')
+    )
+    SELECT d FROM dates
+  `).all(n).map(r => r.d)
+
+  // Tum bloklarin guncel total_beds'leri
+  const totals = db.prepare(`
+    SELECT block, SUM(active_beds) as total_beds, COUNT(*) as total_rooms
+    FROM rooms WHERE status='active'
+    GROUP BY block
+  `).all()
+
+  // Tum aktif assignment'lari cekip her tarih icin filtreleyelim
+  const assignments = db.prepare(`
+    SELECT r.block, ra.assigned_at, ra.check_out_at
+    FROM room_assignments ra
+    JOIN rooms r ON r.id = ra.room_id
+  `).all()
+
+  const result = {}
+  for (const t of totals) {
+    result[t.block] = {
+      total_beds: t.total_beds,
+      total_rooms: t.total_rooms,
+      points: dateSeries.map(d => ({ date: d, occupied: 0, occupancy_pct: 0 })),
+    }
+  }
+  for (const a of assignments) {
+    const rec = result[a.block]
+    if (!rec) continue
+    const start = a.assigned_at?.slice(0, 10)
+    const end = a.check_out_at?.slice(0, 10)
+    for (const pt of rec.points) {
+      if (start && start <= pt.date && (!end || end > pt.date)) {
+        pt.occupied++
+      }
+    }
+  }
+  for (const k of Object.keys(result)) {
+    const r = result[k]
+    for (const pt of r.points) {
+      pt.occupancy_pct = r.total_beds > 0 ? Math.round((pt.occupied / r.total_beds) * 100) : 0
+    }
+  }
+  return result
+}

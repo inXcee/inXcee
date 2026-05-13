@@ -171,8 +171,11 @@ export default function CampusMapPage() {
   const [showHelp, setShowHelp] = useState(false)
   const [imgOpacity, setImgOpacity] = useState(1)
   const [heatCloud, setHeatCloud] = useState(false)
-  const [pinScale, setPinScale] = useState(1) // 0.5-1.5 genel pin boyutu carpani
-  const [inspectorBlock, setInspectorBlock] = useState(null) // edit modunda pin inspector
+  const [pinScale, setPinScale] = useState(1)
+  const [inspectorBlock, setInspectorBlock] = useState(null)
+  const [contextMenu, setContextMenu] = useState(null) // { block, x, y }
+  const [quickFault, setQuickFault] = useState(null) // { block } | null
+  const [timeOffset, setTimeOffset] = useState(0) // 0 = bugun, 6 = 7 gun once vs.
   const [liveEvents, setLiveEvents] = useState([]) // son 5 olay
   const [pulseBlocks, setPulseBlocks] = useState({})
   // Zoom/Pan
@@ -227,6 +230,16 @@ export default function CampusMapPage() {
     queryFn: () => api.get('/campus-map/pins').then(r => r.data),
     staleTime: 60000,
   })
+
+  // Timeseries — son 14 gun her blok icin gunluk doluluk
+  const { data: timeseriesData } = useQuery({
+    queryKey: ['campus-map-timeseries'],
+    queryFn: () => api.get('/campus-map/timeseries?days=14').then(r => r.data),
+    staleTime: 5 * 60_000,
+    refetchInterval: 10 * 60_000,
+  })
+  const timeseries = timeseriesData?.blocks || {}
+  const tsDays = timeseriesData?.days || 14
 
   // Personel arama (debounced)
   const trimmed = searchQuery.trim()
@@ -333,7 +346,33 @@ export default function CampusMapPage() {
     onError: (err) => addToast(err?.response?.data?.error || 'Kaydedilemedi', 'error'),
   })
 
-  const stats = summary?.blocks || {}
+  const liveStats = summary?.blocks || {}
+  // Zaman slider degisikse: occupancy verilerini timeseries'ten gecmis tarihteki ile degistir
+  const stats = useMemo(() => {
+    if (timeOffset === 0) return liveStats
+    const result = {}
+    for (const [block, s] of Object.entries(liveStats)) {
+      const ts = timeseries[block]
+      if (!ts || !ts.points) { result[block] = s; continue }
+      const idx = ts.points.length - 1 - timeOffset
+      const pt = idx >= 0 ? ts.points[idx] : null
+      if (!pt) { result[block] = s; continue }
+      result[block] = { ...s,
+        occupied: pt.occupied,
+        occupancy_pct: pt.occupancy_pct,
+        // historik veriler: oda durumu/ariza yok, mevcut korunur (gri-ton uyari ile)
+      }
+    }
+    return result
+  }, [liveStats, timeseries, timeOffset])
+
+  const isHistorical = timeOffset > 0
+  const historicalDate = useMemo(() => {
+    if (!isHistorical) return null
+    const d = new Date()
+    d.setDate(d.getDate() - timeOffset)
+    return d.toLocaleDateString('tr-TR', { day: '2-digit', month: 'short', year: 'numeric', weekday: 'short' })
+  }, [timeOffset, isHistorical])
 
   const totalStats = useMemo(() => {
     let total_beds = 0, occupied = 0, empty = 0, q = 0, m = 0, f = 0,
@@ -828,8 +867,37 @@ export default function CampusMapPage() {
         </div>
       )}
 
+      {/* Zaman Slider (sadece occupancy mode'da anlamli) */}
+      <div style={{
+        background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8,
+        padding: '8px 14px', marginBottom: 10,
+        display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
+      }}>
+        <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', letterSpacing: 1.5, minWidth: 90 }}>
+          ⏱ ZAMAN
+        </span>
+        <input type="range" min="0" max={tsDays - 1} value={timeOffset}
+          onChange={e => setTimeOffset(parseInt(e.target.value))}
+          style={{ flex: 1, minWidth: 200 }}
+          disabled={mode !== 'occupancy'} />
+        <span style={{
+          fontFamily: 'var(--mono)', fontSize: 11,
+          color: isHistorical ? 'var(--accent)' : 'var(--text2)',
+          letterSpacing: 1, minWidth: 180, textAlign: 'right',
+        }}>
+          {isHistorical ? `${timeOffset} GUN ONCE • ${historicalDate}` : '◉ ŞIMDI (CANLI)'}
+        </span>
+        {isHistorical && (
+          <button onClick={() => setTimeOffset(0)} style={{
+            background: 'var(--accent)', color: '#000', border: 'none', borderRadius: 4,
+            padding: '4px 10px', cursor: 'pointer',
+            fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: 1, fontWeight: 700,
+          }}>BUGUNE DON</button>
+        )}
+      </div>
+
       {/* KPI strip — mode aware */}
-      <ModeKpis mode={mode} totalStats={totalStats} />
+      <ModeKpis mode={mode} totalStats={totalStats} isHistorical={isHistorical} />
 
       {editMode && (
         <div style={{
@@ -839,6 +907,49 @@ export default function CampusMapPage() {
         }}>
           ✎ DUZENLEME — Pini surukle (konum) • Pine tikla (renk/boyut/etiket/gizle) • KAYDET tum kullanicilara yayinlar
         </div>
+      )}
+
+      {/* Context Menu */}
+      {contextMenu && (
+        <ContextMenu
+          block={contextMenu.block}
+          x={contextMenu.x} y={contextMenu.y}
+          isManager={isManager}
+          onClose={() => setContextMenu(null)}
+          onAction={(action) => {
+            const b = contextMenu.block
+            setContextMenu(null)
+            switch (action) {
+              case 'detail':       setSelectedBlock(b); break
+              case 'fault':        setQuickFault({ block: b }); break
+              case 'cleaning':     navigate(`/housekeeping?block=${b}`); break
+              case 'checkin':      navigate(`/checkin?block=${b}`); break
+              case 'history':      navigate(`/room-history?block=${b}`); break
+              case 'quarantine':   bulkAction('quarantine', [b]); break
+              case 'maintenance':  bulkAction('maintenance', [b]); break
+              case 'active':       bulkAction('active', [b]); break
+              case 'whatsapp':     navigate(`/whatsapp?block=${b}`); break
+              case 'copy-link': {
+                const url = `${window.location.origin}/campus-map?block=${b}`
+                navigator.clipboard?.writeText(url).then(() => addToast('Link kopyalandi', 'success'))
+                break
+              }
+            }
+          }}
+        />
+      )}
+
+      {/* Quick Fault Modal */}
+      {quickFault && (
+        <QuickFaultModal
+          block={quickFault.block}
+          onClose={() => setQuickFault(null)}
+          onSuccess={() => {
+            setQuickFault(null)
+            addToast('Ariza talebi acildi', 'success')
+            queryClient.invalidateQueries({ queryKey: ['campus-map-summary'] })
+          }}
+        />
       )}
 
       {/* Pin Inspector (edit mode) */}
@@ -930,6 +1041,11 @@ export default function CampusMapPage() {
                 <g key={b.block} opacity={pinOpacity}
                   onMouseEnter={() => setHoverBlock(b.block)}
                   onMouseLeave={() => setHoverBlock(null)}
+                  onContextMenu={(e) => {
+                    if (editMode) return
+                    e.preventDefault()
+                    setContextMenu({ block: b.block, x: e.clientX, y: e.clientY })
+                  }}
                   onClick={(e) => {
                     if (editMode) {
                       // Edit modunda tikla = inspector ac
@@ -1103,6 +1219,7 @@ export default function CampusMapPage() {
           <ComparePanel
             blocks={Array.from(multiSelect)}
             stats={stats}
+            timeseries={timeseries}
             onClose={() => setMultiSelect(new Set())}
             onSelectSingle={(b) => { setSelectedBlock(b); setMultiSelect(new Set()) }}
           />
@@ -1113,8 +1230,10 @@ export default function CampusMapPage() {
             stats={sel}
             rooms={selRooms}
             mode={mode}
+            timeseries={timeseries[selectedBlock]}
             onClose={() => setSelectedBlock(null)}
             onNavigate={navigate}
+            onQuickFault={() => setQuickFault({ block: selectedBlock })}
           />
         ) : (
           <div style={{
@@ -1338,7 +1457,211 @@ function HoverCard({ block, cfg, s, pin, mode }) {
   )
 }
 
-function ModeKpis({ mode, totalStats: t }) {
+function Sparkline({ points, color, width = 300, height = 40 }) {
+  if (!points || points.length < 2) return null
+  const maxPct = Math.max(...points.map(p => p.occupancy_pct), 100)
+  const minPct = Math.min(...points.map(p => p.occupancy_pct), 0)
+  const range = Math.max(1, maxPct - minPct)
+  const pad = 4
+  const pathData = points.map((p, i) => {
+    const x = pad + (i / (points.length - 1)) * (width - pad * 2)
+    const y = height - pad - ((p.occupancy_pct - minPct) / range) * (height - pad * 2)
+    return `${i === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(1)}`
+  }).join(' ')
+  const areaData = `${pathData} L ${width - pad} ${height - pad} L ${pad} ${height - pad} Z`
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} width="100%" height={height} style={{ display: 'block' }}>
+      <path d={areaData} fill={color} opacity="0.15" />
+      <path d={pathData} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+      {points.map((p, i) => {
+        const x = pad + (i / (points.length - 1)) * (width - pad * 2)
+        const y = height - pad - ((p.occupancy_pct - minPct) / range) * (height - pad * 2)
+        return <circle key={i} cx={x} cy={y} r={i === points.length - 1 ? 3 : 1.5}
+          fill={color} stroke="var(--surface2)" strokeWidth={i === points.length - 1 ? 1.5 : 0.5}>
+          <title>{p.date}: %{p.occupancy_pct}</title>
+        </circle>
+      })}
+    </svg>
+  )
+}
+
+function ContextMenu({ block, x, y, isManager, onClose, onAction }) {
+  useEffect(() => {
+    function onClick(e) {
+      // Menu disinda click → kapat
+      if (!e.target.closest('[data-ctx-menu]')) onClose()
+    }
+    function onKey(e) { if (e.key === 'Escape') onClose() }
+    setTimeout(() => window.addEventListener('click', onClick), 0)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('click', onClick)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [onClose])
+
+  // Ekran disina tasmamasi icin
+  const menuW = 220, menuH = isManager ? 360 : 220
+  const left = Math.min(x, window.innerWidth - menuW - 8)
+  const top = Math.min(y, window.innerHeight - menuH - 8)
+
+  const items = [
+    { id: 'detail',   icon: '◉', label: 'Detay paneli ac', desc: 'Tam blok detayi' },
+    { id: 'fault',    icon: '⚠', label: 'Hizli ariza bildir', desc: 'Bu bloga yeni talep', accent: true },
+    { id: 'cleaning', icon: '◈', label: 'Temizlik gorevleri', desc: 'Housekeeping sayfasi' },
+    { id: 'checkin',  icon: '↗', label: 'Yeni check-in', desc: 'Personel yerlestir' },
+    { id: 'history',  icon: '⊙', label: 'Oda gecmisi' },
+    { id: 'whatsapp', icon: '✉', label: 'WhatsApp / Mail' },
+    'divider',
+    isManager && { id: 'quarantine',  icon: '⊘', label: 'Karantinaya al', danger: true },
+    isManager && { id: 'maintenance', icon: '⚒', label: 'Bakima al', warn: true },
+    isManager && { id: 'active',      icon: '✓', label: 'Tum odalari aktif yap' },
+    isManager && 'divider',
+    { id: 'copy-link', icon: '🔗', label: 'Linki kopyala' },
+  ].filter(Boolean)
+
+  return (
+    <div data-ctx-menu style={{
+      position: 'fixed', left, top, width: menuW, zIndex: 200,
+      background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8,
+      boxShadow: '0 8px 24px rgba(0,0,0,0.5)', overflow: 'hidden',
+    }}>
+      <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--border)',
+        background: 'var(--surface2)' }}>
+        <div style={{ fontFamily: 'var(--display)', fontSize: 14, color: 'var(--accent)', letterSpacing: 2 }}>
+          BLOK {block}
+        </div>
+        <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: 1 }}>
+          HIZLI EYLEMLER
+        </div>
+      </div>
+      {items.map((it, i) => {
+        if (it === 'divider') return <div key={i} style={{ height: 1, background: 'var(--border)' }} />
+        return (
+          <button key={it.id} onClick={() => onAction(it.id)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 10, width: '100%',
+              background: 'transparent', border: 'none', textAlign: 'left',
+              padding: '8px 12px', cursor: 'pointer',
+              color: it.danger ? '#dc2626' : it.warn ? '#f59e0b' : it.accent ? 'var(--accent)' : 'var(--text)',
+              fontFamily: 'var(--sans)', fontSize: 12,
+              transition: 'background .1s',
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = 'var(--surface2)'}
+            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+            <span style={{ fontSize: 14, width: 16, textAlign: 'center' }}>{it.icon}</span>
+            <span style={{ flex: 1 }}>{it.label}</span>
+            {it.accent && <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--accent)', letterSpacing: 1 }}>SIK</span>}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+function QuickFaultModal({ block, onClose, onSuccess }) {
+  const [roomNo, setRoomNo] = useState('')
+  const [description, setDescription] = useState('')
+  const [priority, setPriority] = useState('normal')
+  const [photo, setPhoto] = useState(null)
+  const [submitting, setSubmitting] = useState(false)
+
+  async function submit() {
+    if (!description.trim() || description.trim().length < 5) {
+      alert('Aciklama gerekli (min 5 karakter)'); return
+    }
+    setSubmitting(true)
+    try {
+      const fd = new FormData()
+      const location = roomNo ? `${block} - Oda ${roomNo.trim()}` : `${block} - Genel`
+      fd.append('location', location)
+      fd.append('description', description.trim())
+      fd.append('priority', priority)
+      if (photo) fd.append('photo_before', photo)
+      await api.post('/maintenance/requests', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+      onSuccess()
+    } catch (err) {
+      alert(err?.response?.data?.error || 'Gonderilemedi')
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div onClick={onClose} style={{
+      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1000,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+    }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10,
+        padding: 20, width: 'min(420px, 90vw)', color: 'var(--text)',
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+          <div>
+            <h3 style={{ fontFamily: 'var(--display)', fontSize: 18, letterSpacing: 2, margin: 0 }}>HIZLI ARIZA</h3>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', letterSpacing: 1, marginTop: 4 }}>
+              BLOK {block}
+            </div>
+          </div>
+          <button onClick={onClose} style={{
+            background: 'transparent', border: '1px solid var(--border)', borderRadius: 6,
+            color: 'var(--text3)', padding: '4px 10px', cursor: 'pointer', fontSize: 13,
+          }}>✕</button>
+        </div>
+
+        <label style={modalLabel}>ODA NO (OPSIYONEL)</label>
+        <input type="text" placeholder="101, 203 vb. (bos = blok geneli)"
+          value={roomNo} onChange={e => setRoomNo(e.target.value)} style={modalInput} />
+
+        <label style={modalLabel}>ACIKLAMA *</label>
+        <textarea placeholder="Ariza ne? (su sizinti, klima calismiyor, kapi kilidi vb.)"
+          value={description} onChange={e => setDescription(e.target.value)}
+          rows={4} style={{ ...modalInput, fontFamily: 'var(--sans)', resize: 'vertical' }} />
+
+        <label style={modalLabel}>ONCELIK</label>
+        <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+          {[
+            { v: 'normal', label: 'Normal', color: 'var(--text2)' },
+            { v: 'high',   label: 'Acil',   color: '#f59e0b' },
+            { v: 'urgent', label: 'Cok Acil', color: '#dc2626' },
+          ].map(p => (
+            <button key={p.v} onClick={() => setPriority(p.v)} style={{
+              flex: 1,
+              background: priority === p.v ? p.color : 'var(--surface2)',
+              color: priority === p.v ? '#000' : 'var(--text2)',
+              border: '1px solid var(--border)', borderRadius: 6,
+              padding: '6px 10px', cursor: 'pointer',
+              fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: 1, fontWeight: 600,
+            }}>{p.label}</button>
+          ))}
+        </div>
+
+        <label style={modalLabel}>FOTOGRAF (OPSIYONEL)</label>
+        <input type="file" accept="image/*"
+          onChange={e => setPhoto(e.target.files?.[0] || null)}
+          style={{ marginBottom: 14, color: 'var(--text2)', fontFamily: 'var(--mono)', fontSize: 11 }} />
+
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={onClose} disabled={submitting} style={{
+            flex: 1, background: 'var(--surface2)', color: 'var(--text2)',
+            border: '1px solid var(--border)', borderRadius: 6,
+            padding: '10px 12px', cursor: 'pointer',
+            fontFamily: 'var(--mono)', fontSize: 11, letterSpacing: 1,
+          }}>IPTAL</button>
+          <button onClick={submit} disabled={submitting} style={{
+            flex: 2, background: submitting ? 'var(--surface2)' : '#dc2626',
+            color: '#fff', border: 'none', borderRadius: 6,
+            padding: '10px 12px', cursor: submitting ? 'wait' : 'pointer',
+            fontFamily: 'var(--mono)', fontSize: 11, letterSpacing: 1, fontWeight: 700,
+          }}>
+            {submitting ? 'GONDERILIYOR...' : '⚠ ARIZA BILDIR'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ModeKpis({ mode, totalStats: t, isHistorical }) {
   const sets = {
     occupancy: [
       ['TOPLAM YATAK', t.total_beds, 'var(--text)'],
@@ -1413,7 +1736,7 @@ function ModeLegend({ mode }) {
   )
 }
 
-function ComparePanel({ blocks, stats, onClose, onSelectSingle }) {
+function ComparePanel({ blocks, stats, timeseries = {}, onClose, onSelectSingle }) {
   const items = blocks.map(b => ({ block: b, s: stats[b], cfg: BLOCK_BY_NAME[b] })).filter(x => x.s && x.cfg)
   // Aggregate
   const sum = items.reduce((a, { s }) => ({
@@ -1554,7 +1877,7 @@ function ComparePanel({ blocks, stats, onClose, onSelectSingle }) {
   )
 }
 
-function SidePanel({ block, cfg, stats: s, rooms, mode, onClose, onNavigate }) {
+function SidePanel({ block, cfg, stats: s, rooms, mode, timeseries, onClose, onNavigate, onQuickFault }) {
   if (!cfg || !s) return null
   const pct = s.occupancy_pct
   const color = pct >= 85 ? '#dc2626' : pct >= 60 ? '#f59e0b' : pct > 0 ? '#16a34a' : '#6b7280'
@@ -1593,6 +1916,28 @@ function SidePanel({ block, cfg, stats: s, rooms, mode, onClose, onNavigate }) {
           {s.occupied} / {s.total_beds} yatak
         </div>
       </div>
+
+      {/* Sparkline — son 14 gun trend */}
+      {timeseries?.points?.length >= 2 && (
+        <div style={{ marginBottom: 14, background: 'var(--surface2)', borderRadius: 6, padding: '8px 10px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
+            <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: 1 }}>
+              SON {timeseries.points.length} GUN TREND
+            </span>
+            <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>
+              {(() => {
+                const pts = timeseries.points
+                const last = pts[pts.length - 1].occupancy_pct
+                const prev = pts[Math.max(0, pts.length - 8)].occupancy_pct
+                const diff = last - prev
+                if (diff === 0) return '— sabit'
+                return diff > 0 ? `↑ +${diff}%` : `↓ ${diff}%`
+              })()}
+            </span>
+          </div>
+          <Sparkline points={timeseries.points} color={color} />
+        </div>
+      )}
 
       {/* 6'lı mini grid */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 4, marginBottom: 14 }}>
@@ -1713,9 +2058,16 @@ function SidePanel({ block, cfg, stats: s, rooms, mode, onClose, onNavigate }) {
         <button onClick={() => onNavigate(`/capacity?block=${block}`)} style={btnPrimary}>
           KAPASITE SAYFASINDA AC →
         </button>
+        <button onClick={onQuickFault} style={{
+          background: '#dc2626', color: '#fff', border: 'none', borderRadius: 6,
+          padding: '8px 12px', cursor: 'pointer', fontFamily: 'var(--mono)', fontSize: 10,
+          letterSpacing: 1, fontWeight: 700, textAlign: 'left',
+        }}>
+          ⚠ HIZLI ARIZA BILDIR
+        </button>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
           <button onClick={() => onNavigate(`/housekeeping?block=${block}`)} style={btnSecondary}>◈ TEMIZLIK</button>
-          <button onClick={() => onNavigate(`/maintenance?block=${block}`)} style={btnSecondary}>⚙ ARIZA</button>
+          <button onClick={() => onNavigate(`/maintenance?block=${block}`)} style={btnSecondary}>⚙ ARIZA LISTE</button>
           <button onClick={() => onNavigate(`/room-history?block=${block}`)} style={btnSecondary}>⊙ GECMIS</button>
           <button onClick={() => onNavigate(`/checkin?block=${block}`)} style={btnSecondary}>↗ CHECK-IN</button>
         </div>
@@ -1775,6 +2127,16 @@ const zoomBtn = {
 }
 const thStyle = { textAlign: 'left', padding: '6px 4px', color: 'var(--text3)', fontWeight: 400, letterSpacing: 1 }
 const tdStyle = { padding: '6px 4px', color: 'var(--text2)' }
+const modalLabel = {
+  display: 'block', fontFamily: 'var(--mono)', fontSize: 9,
+  color: 'var(--text3)', letterSpacing: 1, marginBottom: 4, marginTop: 8,
+}
+const modalInput = {
+  width: '100%', boxSizing: 'border-box',
+  background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 6,
+  padding: '8px 10px', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 12,
+  marginBottom: 4,
+}
 const miniLink = {
   background: 'transparent', border: 'none', color: 'var(--accent)',
   padding: 0, cursor: 'pointer',

@@ -28,6 +28,26 @@ describe('Campus Map summary', () => {
     expect(Array.isArray(m1.top_companies)).toBe(true)
   })
 
+  it('GET /timeseries returns per-block daily points', async () => {
+    const res = await request(app).get('/api/campus-map/timeseries?days=7').set('Authorization', `Bearer ${mgrToken}`)
+    expect(res.status).toBe(200)
+    expect(res.body.days).toBe(7)
+    expect(res.body.blocks).toBeTypeOf('object')
+    const m1 = res.body.blocks.M1
+    expect(m1).toBeDefined()
+    expect(Array.isArray(m1.points)).toBe(true)
+    expect(m1.points).toHaveLength(7)
+    expect(m1.points[0]).toHaveProperty('date')
+    expect(m1.points[0]).toHaveProperty('occupancy_pct')
+  })
+
+  it('GET /timeseries clamps days to 2..30', async () => {
+    const r1 = await request(app).get('/api/campus-map/timeseries?days=100').set('Authorization', `Bearer ${mgrToken}`)
+    expect(r1.body.days).toBe(30)
+    const r2 = await request(app).get('/api/campus-map/timeseries?days=0').set('Authorization', `Bearer ${mgrToken}`)
+    expect(r2.body.days).toBeGreaterThanOrEqual(2)
+  })
+
   it('GET /summary requires auth', async () => {
     const res = await request(app).get('/api/campus-map/summary')
     expect(res.status).toBe(401)
