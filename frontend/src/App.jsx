@@ -53,6 +53,7 @@ const SupervisorAttendance = lazy(() => import('./modules/mobile/supervisor/Atte
 const SupervisorDiscipline = lazy(() => import('./modules/mobile/supervisor/DisciplineQuick.jsx'))
 const ManagerHome = lazy(() => import('./modules/mobile/manager/ManagerHome.jsx'))
 const ManagerHeatmap = lazy(() => import('./modules/mobile/manager/BlockHeatmap.jsx'))
+const ManagerMap = lazy(() => import('./modules/mobile/manager/MobileCampusMap.jsx'))
 const ManagerMaintenance = lazy(() => import('./modules/mobile/manager/ManagerMaintenance.jsx'))
 const MobileNotifications = lazy(() => import('./modules/mobile/shared/NotificationsPage.jsx'))
 const SetupPage = lazy(() => import('./modules/setup/SetupPage.jsx'))
@@ -106,7 +107,8 @@ const SUPERVISOR_TABS = [
 
 const MANAGER_TABS = [
   { to: '/mobile/manager', label: 'KPI', icon: '📊' },
-  { to: '/mobile/manager/heatmap', label: 'Doluluk', icon: '🗺️' },
+  { to: '/mobile/manager/map', label: 'Harita', icon: '🗺️' },
+  { to: '/mobile/manager/heatmap', label: 'Doluluk', icon: '📊' },
   { to: '/mobile/manager/maintenance', label: 'Talepler', icon: '🔧' },
   { to: '/mobile/manager/notifications', label: 'Bildirim', icon: '🔔' },
 ]
@@ -271,6 +273,7 @@ export default function App() {
           </Route>
           <Route path="/mobile/manager" element={<ManagerShell />}>
             <Route index element={<ManagerHome />} />
+            <Route path="map" element={<ManagerMap />} />
             <Route path="heatmap" element={<ManagerHeatmap />} />
             <Route path="maintenance" element={<ManagerMaintenance />} />
             <Route path="notifications" element={<MobileNotifications />} />

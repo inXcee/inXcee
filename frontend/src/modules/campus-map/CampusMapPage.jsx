@@ -516,7 +516,7 @@ export default function CampusMapPage() {
   }, [mode, totalStats])
 
   return (
-    <div style={{ padding: 16, color: 'var(--text)' }}>
+    <div style={{ padding: 12, color: 'var(--text)', minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       {showHelp && (
         <div onClick={() => setShowHelp(false)} style={{
           position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 1000,
@@ -831,15 +831,16 @@ export default function CampusMapPage() {
       )}
 
       {/* Map + side panel */}
-      <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
+      <div style={{ display: 'flex', gap: 12, alignItems: 'stretch', flex: 1, minHeight: 500 }}>
         <div style={{
           flex: 1, background: '#0a0a0a', border: '1px solid var(--border)',
-          borderRadius: 8, overflow: 'hidden', position: 'relative', maxWidth: 760,
+          borderRadius: 8, overflow: 'hidden', position: 'relative',
         }}>
           <svg
             ref={svgRef}
             viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`}
-            style={{ width: '100%', height: 'auto', display: 'block', userSelect: 'none',
+            preserveAspectRatio="xMidYMid meet"
+            style={{ width: '100%', height: '100%', display: 'block', userSelect: 'none',
               cursor: panning ? 'grabbing' : dragging ? 'grabbing' : (editMode ? 'default' : 'grab') }}
             onMouseMove={onMouseMove}
             onMouseDown={onSvgMouseDown}
