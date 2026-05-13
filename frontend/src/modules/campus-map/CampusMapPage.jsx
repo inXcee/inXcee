@@ -37,7 +37,17 @@ const MODES = [
   { id: 'shifts',     label: 'VARDIYA',   icon: '☾', desc: 'Gece/gunduz personel dagilimi' },
   { id: 'quarantine', label: 'KARANTINA', icon: '⊘', desc: 'Karantina/bakim odalari' },
   { id: 'premium',    label: 'PREMIUM',   icon: '★', desc: 'Y bloklar (ozel banyolu)' },
+  { id: 'company',    label: 'SIRKET',    icon: '⊞', desc: 'Dominant sirket dagilimi' },
 ]
+
+// Sirket adindan deterministic renk uret (hash → hue)
+function companyColor(name) {
+  if (!name) return '#475569'
+  let hash = 0
+  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) | 0
+  const hue = Math.abs(hash) % 360
+  return `hsl(${hue}, 55%, 50%)`
+}
 
 // Mode bazli pin metrigi: { value (sayisal 0-100), color, badge (sag-ust kose), centerText }
 function computeMetric(mode, s, cfg) {
@@ -133,6 +143,18 @@ function computeMetric(mode, s, cfg) {
         subLabel: cfg.hasPrivateBath ? 'OZEL' : 'ORTAK',
       }
     }
+    case 'company': {
+      const top = s.top_companies?.[0]
+      if (!top) return { value: 0, color: '#6b7280', badge: null, centerLabel: '—', subLabel: 'bos' }
+      const color = companyColor(top.company)
+      const sharePct = s.occupied > 0 ? Math.round((top.count / s.occupied) * 100) : 0
+      return {
+        value: sharePct, color,
+        badge: s.top_companies.length > 1 ? { text: String(s.top_companies.length), color: '#475569' } : null,
+        centerLabel: top.company.slice(0, 4).toUpperCase(),
+        subLabel: `${top.count}k %${sharePct}`,
+      }
+    }
     default:
       return { value: 0, color: '#6b7280', badge: null, centerLabel: '?', subLabel: '?' }
   }
@@ -169,6 +191,7 @@ export default function CampusMapPage() {
   const [showLabels, setShowLabels] = useState(true)
   const [mode, setMode] = useState('occupancy')
   const [showHelp, setShowHelp] = useState(false)
+  const [animateIn, setAnimateIn] = useState(true)
   const [imgOpacity, setImgOpacity] = useState(1)
   const [heatCloud, setHeatCloud] = useState(false)
   const [pinScale, setPinScale] = useState(1)
@@ -262,6 +285,12 @@ export default function CampusMapPage() {
       setPins({ ...defaultPins(), ...pinsData.pins })
     }
   }, [pinsData, editMode])
+
+  // Pin entrance animation — 1.2s sonra kapat (animasyon tamamlandi)
+  useEffect(() => {
+    const t = setTimeout(() => setAnimateIn(false), 1200)
+    return () => clearTimeout(t)
+  }, [])
 
   // SSE — canli olaylar
   const handleSSE = useCallback(({ event, data }) => {
@@ -365,6 +394,83 @@ export default function CampusMapPage() {
     }
     return result
   }, [liveStats, timeseries, timeOffset])
+
+  // Akilli oneriler — summary'den hesaplanir
+  const suggestions = useMemo(() => {
+    const out = []
+    const blocks = Object.values(liveStats)
+    if (blocks.length === 0) return out
+
+    // 1) Yuksek doluluk + bos blok onerisi
+    const full = blocks.filter(b => b.total_beds > 0 && b.occupancy_pct >= 90)
+    const emptyish = blocks.filter(b => b.total_beds > 0 && b.empty_rooms >= 3)
+      .sort((a, b) => b.empty_rooms - a.empty_rooms)
+    if (full.length > 0 && emptyish.length > 0) {
+      out.push({
+        type: 'info', icon: '🛏',
+        title: `${full[0].block} %${full[0].occupancy_pct} dolu`,
+        body: `Bos yatak ${emptyish[0].block}'de ${emptyish[0].empty_rooms} odada var`,
+        actionBlock: emptyish[0].block,
+        actionLabel: 'BOS BLOK\'A GIT',
+      })
+    }
+
+    // 2) Coklu ariza alarm
+    const highFault = blocks.filter(b => b.open_faults >= 3)
+    if (highFault.length >= 2) {
+      out.push({
+        type: 'critical', icon: '⚠',
+        title: `${highFault.length} blokta yogun ariza`,
+        body: `${highFault.map(b => b.block).join(', ')} — sistem sorunu olabilir`,
+        actionBlock: highFault[0].block,
+        actionLabel: 'INCELE',
+      })
+    } else if (highFault.length === 1) {
+      out.push({
+        type: 'warning', icon: '⚠',
+        title: `${highFault[0].block}'de ${highFault[0].open_faults} acik ariza`,
+        body: 'Birikme var, oncelik degerlendir',
+        actionBlock: highFault[0].block,
+        actionLabel: 'AC',
+      })
+    }
+
+    // 3) Karantina yogunlugu
+    const totalQ = blocks.reduce((a, b) => a + b.quarantine, 0)
+    const highQ = blocks.filter(b => b.quarantine >= 2)
+    if (totalQ >= 5) {
+      out.push({
+        type: 'critical', icon: '⊘',
+        title: `Toplam ${totalQ} karantina odasi`,
+        body: highQ.length > 0 ? `Yogun: ${highQ.map(b => `${b.block}(${b.quarantine})`).join(', ')}` : 'Genel kontrol gerekli',
+        actionBlock: highQ[0]?.block,
+        actionLabel: 'YOGUN BLOK',
+      })
+    }
+
+    // 4) Temizlik dusuk performans
+    const lowClean = blocks.filter(b => b.cleaning_total >= 5 && b.cleaning_pct < 40)
+    if (lowClean.length > 0) {
+      out.push({
+        type: 'warning', icon: '◈',
+        title: `${lowClean[0].block} temizlik %${lowClean[0].cleaning_pct}`,
+        body: `${lowClean[0].cleaning_done}/${lowClean[0].cleaning_total} — personel eksik mi?`,
+        actionBlock: lowClean[0].block,
+        actionLabel: 'GOR',
+      })
+    }
+
+    // 5) Genel "her sey yolunda"
+    if (out.length === 0) {
+      out.push({
+        type: 'success', icon: '✓',
+        title: 'Her sey yolunda',
+        body: 'Hicbir kritik durum tespit edilmedi',
+      })
+    }
+
+    return out.slice(0, 3)
+  }, [liveStats])
 
   const isHistorical = timeOffset > 0
   const historicalDate = useMemo(() => {
@@ -558,6 +664,13 @@ export default function CampusMapPage() {
 
   return (
     <div style={{ padding: 12, color: 'var(--text)', minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+      <style>{`
+        @keyframes pin-pop {
+          0%   { transform: scale(0) translateY(-30px); opacity: 0; }
+          60%  { transform: scale(1.2) translateY(0); opacity: 1; }
+          100% { transform: scale(1) translateY(0); opacity: 1; }
+        }
+      `}</style>
       {showHelp && (
         <div onClick={() => setShowHelp(false)} style={{
           position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 1000,
@@ -792,6 +905,11 @@ export default function CampusMapPage() {
         )}
       </div>
 
+      {/* Akilli Oneriler */}
+      <SuggestionBanner items={suggestions} onAction={(b) => {
+        if (b) { zoomToBlock(b); setSelectedBlock(b) }
+      }} />
+
       {/* Multi-select aksiyon bar */}
       {multiSelect.size > 0 && (
         <div style={{
@@ -1012,7 +1130,7 @@ export default function CampusMapPage() {
             </radialGradient>
             <rect x="0" y="0" width={VIEW_W} height={VIEW_H} fill="url(#vignette)" pointerEvents="none" />
 
-            {visibleBlocks.map(b => {
+            {visibleBlocks.map((b, idx) => {
               const p = pins[b.block]
               if (!p) return null
               if (p.hidden && !editMode) return null
@@ -1037,8 +1155,13 @@ export default function CampusMapPage() {
               const circumference = 2 * Math.PI * ringR
               const dash = (occPct / 100) * circumference
 
+              const animDelay = animateIn ? `${idx * 40}ms` : '0ms'
               return (
                 <g key={b.block} opacity={pinOpacity}
+                  style={animateIn ? {
+                    transformOrigin: `${p.x}px ${p.y}px`,
+                    animation: `pin-pop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) ${animDelay} backwards`,
+                  } : undefined}
                   onMouseEnter={() => setHoverBlock(b.block)}
                   onMouseLeave={() => setHoverBlock(null)}
                   onContextMenu={(e) => {
@@ -1424,6 +1547,11 @@ function HoverCard({ block, cfg, s, pin, mode }) {
     premium:    [['TIP', cfg.type, '#a855f7'],
                  ['KAT', cfg.floors, '#fff'],
                  ['BANYO', cfg.hasPrivateBath ? 'OZEL' : 'ORTAK', '#06b6d4']],
+    company:    [
+      ['1.SIRKET', s.top_companies?.[0] ? `${s.top_companies[0].company} (${s.top_companies[0].count})` : '—', '#a855f7'],
+      ['2.SIRKET', s.top_companies?.[1] ? `${s.top_companies[1].company} (${s.top_companies[1].count})` : '—', '#06b6d4'],
+      ['3.SIRKET', s.top_companies?.[2] ? `${s.top_companies[2].company} (${s.top_companies[2].count})` : '—', '#f59e0b'],
+    ],
   }
   const lines = modeLines[mode] || modeLines.occupancy
 
@@ -1454,6 +1582,51 @@ function HoverCard({ block, cfg, s, pin, mode }) {
         TIKLA: DETAYLI GOR
       </text>
     </g>
+  )
+}
+
+function SuggestionBanner({ items, onAction }) {
+  const [dismissed, setDismissed] = useState(false)
+  if (dismissed || !items || items.length === 0) return null
+  const colorByType = {
+    critical: '#dc2626', warning: '#f59e0b', info: '#3b82f6', success: '#16a34a',
+  }
+  return (
+    <div style={{
+      display: 'flex', gap: 8, marginBottom: 10, overflowX: 'auto', alignItems: 'stretch',
+    }}>
+      {items.map((it, i) => (
+        <div key={i} style={{
+          flex: '1 1 0', minWidth: 240,
+          background: 'var(--surface)', borderRadius: 8,
+          borderLeft: `3px solid ${colorByType[it.type] || '#3b82f6'}`,
+          padding: '8px 12px', display: 'flex', gap: 10, alignItems: 'center',
+        }}>
+          <span style={{ fontSize: 18, color: colorByType[it.type] }}>{it.icon}</span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 700, color: 'var(--text)', letterSpacing: 0.5 }}>
+              {it.title}
+            </div>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {it.body}
+            </div>
+          </div>
+          {it.actionBlock && (
+            <button onClick={() => onAction(it.actionBlock)} style={{
+              background: 'transparent', color: colorByType[it.type] || 'var(--accent)',
+              border: `1px solid ${colorByType[it.type]}`, borderRadius: 4,
+              padding: '4px 8px', cursor: 'pointer',
+              fontFamily: 'var(--mono)', fontSize: 9, fontWeight: 700, letterSpacing: 1,
+            }}>{it.actionLabel || 'AC'}</button>
+          )}
+        </div>
+      ))}
+      <button onClick={() => setDismissed(true)} title="Kapat" style={{
+        background: 'transparent', border: '1px solid var(--border)', borderRadius: 6,
+        color: 'var(--text3)', padding: '4px 10px', cursor: 'pointer', fontSize: 13,
+        alignSelf: 'stretch',
+      }}>✕</button>
+    </div>
   )
 }
 
@@ -1698,6 +1871,11 @@ function ModeKpis({ mode, totalStats: t, isHistorical }) {
       ['S BLOK', BLOCKS.filter(b => b.type === 'S').length, '#06b6d4'],
       ['M BLOK', BLOCKS.filter(b => b.type === 'M').length, '#475569'],
     ],
+    company: [
+      ['TOPLAM PERSONEL', t.occupied, 'var(--text)'],
+      ['DOLU YATAK', t.occupied, '#16a34a'],
+      ['BOS', t.empty, 'var(--accent)'],
+    ],
   }
   const items = sets[mode] || sets.occupancy
   return (
@@ -1715,6 +1893,7 @@ function ModeLegend({ mode }) {
     shifts:     [['GUNDUZ', '#f97316'], ['KARMA', '#3b82f6'], ['GECE', '#8b5cf6'], ['BOS', '#6b7280']],
     quarantine: [['KARANTINA', '#dc2626'], ['BAKIM', '#f59e0b'], ['NORMAL', '#6b7280']],
     premium:    [['Y (PREMIUM)', '#a855f7'], ['S (SOSYAL)', '#06b6d4'], ['M (MERKEZI)', '#475569']],
+    company:    [['HER SIRKET FARKLI RENK', '#a855f7'], ['BOS', '#6b7280']],
   }
   const items = sets[mode] || sets.occupancy
   return (
