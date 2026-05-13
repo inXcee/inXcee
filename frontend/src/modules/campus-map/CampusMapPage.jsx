@@ -1,66 +1,152 @@
-import { useState, useMemo, useRef, useEffect } from 'react'
+import { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import api from '../../shared/api/client.js'
 import { useAuthStore } from '../../shared/store/authStore.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
+import { useEventStream } from '../../shared/hooks/useEventStream.js'
 import { BLOCKS, BLOCK_BY_NAME, blockColor } from '../../shared/blocks.js'
 
-// Resmin gerçek ölçüsü: 680 x 822 (portre)
+// Bildirim mesajindan blok adi cikar (orn: "M1-101 karantinaya..." → M1)
+const BLOCK_NAMES = BLOCKS.map(b => b.block).sort((a, b) => b.length - a.length) // uzun olan once
+function extractBlock(text) {
+  if (!text) return null
+  for (const block of BLOCK_NAMES) {
+    const re = new RegExp(`\\b${block}\\b`, 'i')
+    if (re.test(text)) return block
+  }
+  return null
+}
+
+function eventColor(type) {
+  switch (type) {
+    case 'critical': return '#dc2626'
+    case 'warning':  return '#f59e0b'
+    default:         return '#3b82f6'
+  }
+}
+
 const VIEW_W = 680
 const VIEW_H = 822
 
-// Pin varsayilan konumlari — resmin sag kenarinda dikey liste halinde
+// ── Görünüm modları ─────────────────────────────────────────────────────────
+const MODES = [
+  { id: 'occupancy',  label: 'DOLULUK',   icon: '◉', desc: 'Yatak dolulugu' },
+  { id: 'faults',     label: 'ARIZA',     icon: '⚠', desc: 'Acik ariza talepleri' },
+  { id: 'cleaning',   label: 'TEMIZLIK',  icon: '◈', desc: 'Bugunki temizlik gorevleri' },
+  { id: 'shifts',     label: 'VARDIYA',   icon: '☾', desc: 'Gece/gunduz personel dagilimi' },
+  { id: 'quarantine', label: 'KARANTINA', icon: '⊘', desc: 'Karantina/bakim odalari' },
+  { id: 'premium',    label: 'PREMIUM',   icon: '★', desc: 'Y bloklar (ozel banyolu)' },
+]
+
+// Mode bazli pin metrigi: { value (sayisal 0-100), color, badge (sag-ust kose), centerText }
+function computeMetric(mode, s, cfg) {
+  if (!s || !cfg) return { value: 0, color: '#6b7280', badge: null, centerLabel: '', subLabel: '...' }
+
+  switch (mode) {
+    case 'occupancy': {
+      const pct = s.occupancy_pct
+      const hasBeds = s.total_beds > 0
+      let color = '#6b7280'
+      if (hasBeds) {
+        if (pct >= 85) color = '#dc2626'
+        else if (pct >= 60) color = '#f59e0b'
+        else if (pct > 0) color = '#16a34a'
+      }
+      return {
+        value: pct, color,
+        badge: s.full_rooms > 0 ? { text: '!', color: '#dc2626' } : null,
+        centerLabel: `%${pct}`,
+        subLabel: `${s.occupied}/${s.total_beds}`,
+      }
+    }
+    case 'faults': {
+      const n = s.open_faults
+      let color = '#6b7280'
+      if (n >= 5) color = '#dc2626'
+      else if (n >= 2) color = '#f59e0b'
+      else if (n >= 1) color = '#eab308'
+      return {
+        value: Math.min(100, n * 20), color,
+        badge: n > 0 ? { text: String(n), color: '#dc2626' } : null,
+        centerLabel: n > 0 ? `${n}⚠` : '✓',
+        subLabel: n > 0 ? `${n} ariza` : 'temiz',
+      }
+    }
+    case 'cleaning': {
+      const pct = s.cleaning_pct
+      const has = s.cleaning_total > 0
+      let color = '#6b7280'
+      if (has) {
+        if (pct >= 80) color = '#16a34a'
+        else if (pct >= 40) color = '#eab308'
+        else color = '#dc2626'
+      }
+      return {
+        value: pct, color,
+        badge: s.cleaning_skipped > 0 ? { text: '✕', color: '#eab308' } : null,
+        centerLabel: has ? `%${pct}` : '—',
+        subLabel: has ? `${s.cleaning_done}/${s.cleaning_total}` : 'gorev yok',
+      }
+    }
+    case 'shifts': {
+      const total = s.day_count + s.night_count
+      const nightPct = total > 0 ? Math.round((s.night_count / total) * 100) : 0
+      // Gece vardiyasi yogunlugu = mavi-mor, gunduz = turuncu
+      let color = '#6b7280'
+      if (total > 0) {
+        if (nightPct >= 60) color = '#8b5cf6'
+        else if (nightPct >= 30) color = '#3b82f6'
+        else color = '#f97316'
+      }
+      return {
+        value: nightPct, color,
+        badge: null,
+        centerLabel: total > 0 ? `${total}` : '—',
+        subLabel: total > 0 ? `G${s.day_count}/N${s.night_count}` : 'bos',
+      }
+    }
+    case 'quarantine': {
+      const q = s.quarantine, m = s.maintenance
+      const both = q + m
+      let color = '#6b7280'
+      if (q > 0) color = '#dc2626'
+      else if (m > 0) color = '#f59e0b'
+      return {
+        value: both > 0 ? Math.min(100, both * 25) : 0, color,
+        badge: both > 0 ? { text: String(both), color: q > 0 ? '#dc2626' : '#f59e0b' } : null,
+        centerLabel: both > 0 ? `${both}⊘` : '✓',
+        subLabel: both > 0 ? `Q${q}/B${m}` : 'aktif',
+      }
+    }
+    case 'premium': {
+      const isPrem = cfg.type === 'Y'
+      const isSosyal = cfg.type === 'S'
+      let color = '#6b7280'
+      if (isPrem) color = '#a855f7'
+      else if (isSosyal) color = '#06b6d4'
+      else color = '#475569'
+      return {
+        value: isPrem ? 100 : isSosyal ? 50 : 25, color,
+        badge: isPrem ? { text: '★', color: '#a855f7' } : null,
+        centerLabel: cfg.type,
+        subLabel: cfg.hasPrivateBath ? 'OZEL' : 'ORTAK',
+      }
+    }
+    default:
+      return { value: 0, color: '#6b7280', badge: null, centerLabel: '?', subLabel: '?' }
+  }
+}
+
 function defaultPins() {
   const pins = {}
   const blocks = BLOCKS.map(b => b.block)
-  const cols = 2
-  const startX = 580
-  const startY = 40
-  const dy = 36
+  const cols = 2, startX = 580, startY = 40, dy = 36
   blocks.forEach((b, i) => {
-    const col = i % cols
-    const row = Math.floor(i / cols)
+    const col = i % cols, row = Math.floor(i / cols)
     pins[b] = { x: startX + col * 50, y: startY + row * dy }
   })
   return pins
-}
-
-function occupancyColor(pct, hasBeds) {
-  if (!hasBeds) return '#6b7280'
-  if (pct >= 85) return '#dc2626'
-  if (pct >= 60) return '#f59e0b'
-  if (pct > 0)   return '#16a34a'
-  return '#6b7280'
-}
-
-function aggregateByBlock(rooms) {
-  const map = {}
-  for (const b of BLOCKS) {
-    map[b.block] = {
-      block: b.block, type: b.type,
-      totalBeds: 0, occupied: 0, emptyRooms: 0, totalRooms: 0,
-      quarantine: 0, maintenance: 0, fault: 0,
-    }
-  }
-  for (const r of rooms || []) {
-    const m = map[r.block]
-    if (!m) continue
-    m.totalRooms++
-    if (r.status === 'quarantine') m.quarantine++
-    else if (r.status === 'maintenance') m.maintenance++
-    else {
-      m.totalBeds += r.active_beds || 0
-      m.occupied += r.occupied || 0
-      if ((r.occupied || 0) === 0) m.emptyRooms++
-    }
-    m.fault += r.open_fault_count || 0
-  }
-  for (const k of Object.keys(map)) {
-    const m = map[k]
-    m.occupancyPct = m.totalBeds > 0 ? Math.round((m.occupied / m.totalBeds) * 100) : 0
-  }
-  return map
 }
 
 export default function CampusMapPage() {
@@ -70,6 +156,7 @@ export default function CampusMapPage() {
   const queryClient = useQueryClient()
   const addToast = useToastStore(s => s.addToast)
   const svgRef = useRef(null)
+
   const [pins, setPins] = useState(defaultPins)
   const [editMode, setEditMode] = useState(false)
   const [dragging, setDragging] = useState(null)
@@ -78,15 +165,26 @@ export default function CampusMapPage() {
   const [hoverBlock, setHoverBlock] = useState(null)
   const [showLabels, setShowLabels] = useState(true)
   const [imgOpacity, setImgOpacity] = useState(1)
+  const [mode, setMode] = useState('occupancy')
+  const [liveEvents, setLiveEvents] = useState([]) // son 5 olay (en yeni basta)
+  const [pulseBlocks, setPulseBlocks] = useState({}) // { M1: { color, until } }
+  const token = useAuthStore(s => s.token)
 
-  const { data: rooms = [], isLoading } = useQuery({
+  const { data: summary, isLoading } = useQuery({
+    queryKey: ['campus-map-summary'],
+    queryFn: () => api.get('/campus-map/summary').then(r => r.data),
+    staleTime: 20000,
+    refetchInterval: 30000,
+  })
+
+  const { data: rooms = [] } = useQuery({
     queryKey: ['capacity-rooms-all'],
     queryFn: () => api.get('/capacity/rooms').then(r => r.data),
     staleTime: 30000,
     refetchInterval: 30000,
+    enabled: !!selectedBlock,  // sadece detay paneli icin
   })
 
-  // Pin konumlarini sunucudan cek (tum kullanicilar ayni haritayi gorur)
   const { data: pinsData } = useQuery({
     queryKey: ['campus-map-pins'],
     queryFn: () => api.get('/campus-map/pins').then(r => r.data),
@@ -99,29 +197,73 @@ export default function CampusMapPage() {
     }
   }, [pinsData, editMode])
 
+  // SSE — canli olaylar
+  const handleSSE = useCallback(({ event, data }) => {
+    if (event === 'occupancy') {
+      queryClient.invalidateQueries({ queryKey: ['campus-map-summary'] })
+      queryClient.invalidateQueries({ queryKey: ['capacity-rooms-all'] })
+      return
+    }
+    if (event === 'message' && data) {
+      const block = extractBlock(data.message)
+      const evtType = data.type || 'info'
+      // Olay feed'ine ekle
+      setLiveEvents(prev => [{
+        id: data.id || Date.now() + Math.random(),
+        message: data.message,
+        type: evtType,
+        module: data.module,
+        block,
+        ts: Date.now(),
+      }, ...prev].slice(0, 5))
+      // Pin pulse
+      if (block) {
+        const color = eventColor(evtType)
+        setPulseBlocks(prev => ({ ...prev, [block]: { color, until: Date.now() + 4000 } }))
+        setTimeout(() => {
+          setPulseBlocks(prev => {
+            const cur = prev[block]
+            if (!cur || cur.until > Date.now()) return prev
+            const { [block]: _, ...rest } = prev
+            return rest
+          })
+        }, 4500)
+      }
+      // Capacity/maintenance/housekeeping olaylarinda ozet'i tazele
+      if (['capacity', 'maintenance', 'housekeeping'].includes(data.module)) {
+        queryClient.invalidateQueries({ queryKey: ['campus-map-summary'] })
+      }
+    }
+  }, [queryClient])
+
+  useEventStream('/api/notifications/stream', token, handleSSE, [handleSSE])
+
   const savePinsMutation = useMutation({
     mutationFn: (newPins) => api.put('/campus-map/pins', { pins: newPins }).then(r => r.data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['campus-map-pins'] })
-      addToast('Pin konumlari kaydedildi', 'success')
+      addToast('Pin konumlari kaydedildi (tum kullanicilar)', 'success')
       setEditMode(false)
     },
-    onError: (err) => {
-      addToast(err?.response?.data?.error || 'Kaydedilemedi', 'error')
-    },
+    onError: (err) => addToast(err?.response?.data?.error || 'Kaydedilemedi', 'error'),
   })
 
-  const stats = useMemo(() => aggregateByBlock(rooms), [rooms])
+  const stats = summary?.blocks || {}
 
   const totalStats = useMemo(() => {
-    let totalBeds = 0, occupied = 0, empty = 0, q = 0, m = 0, f = 0
+    let total_beds = 0, occupied = 0, empty = 0, q = 0, m = 0, f = 0,
+        clean_total = 0, clean_done = 0, day = 0, night = 0
     for (const s of Object.values(stats)) {
-      totalBeds += s.totalBeds; occupied += s.occupied
-      empty += s.emptyRooms; q += s.quarantine; m += s.maintenance; f += s.fault
+      total_beds += s.total_beds; occupied += s.occupied
+      empty += s.empty_rooms; q += s.quarantine; m += s.maintenance; f += s.open_faults
+      clean_total += s.cleaning_total; clean_done += s.cleaning_done
+      day += s.day_count; night += s.night_count
     }
-    return { totalBeds, occupied, empty, quarantine: q, maintenance: m, fault: f }
+    return { total_beds, occupied, empty, quarantine: q, maintenance: m, fault: f,
+      clean_total, clean_done, day, night }
   }, [stats])
 
+  // ── Drag ─────────────────────────────────────────────────────────────────
   function svgPoint(evt) {
     const svg = svgRef.current
     if (!svg) return { x: 0, y: 0 }
@@ -153,17 +295,6 @@ export default function CampusMapPage() {
     }))
   }
 
-  function savePins() {
-    savePinsMutation.mutate(pins)
-  }
-
-  function resetPins() {
-    if (!confirm('Tum pin konumlarini varsayilana sifirla? (Tum kullanicilar icin)')) return
-    const def = defaultPins()
-    setPins(def)
-    savePinsMutation.mutate(def)
-  }
-
   useEffect(() => {
     if (!dragging) return
     const handleUp = () => setDragging(null)
@@ -171,9 +302,16 @@ export default function CampusMapPage() {
     return () => window.removeEventListener('mouseup', handleUp)
   }, [dragging])
 
-  const visibleBlocks = useMemo(() => {
-    return BLOCKS.filter(b => typeFilter === 'all' || b.type === typeFilter)
-  }, [typeFilter])
+  function savePins() { savePinsMutation.mutate(pins) }
+  function resetPins() {
+    if (!confirm('Tum pin konumlarini varsayilana sifirla? (Tum kullanicilar icin)')) return
+    const def = defaultPins()
+    setPins(def)
+    savePinsMutation.mutate(def)
+  }
+
+  const visibleBlocks = useMemo(() =>
+    BLOCKS.filter(b => typeFilter === 'all' || b.type === typeFilter), [typeFilter])
 
   const sel = selectedBlock ? stats[selectedBlock] : null
   const selCfg = selectedBlock ? BLOCK_BY_NAME[selectedBlock] : null
@@ -182,64 +320,149 @@ export default function CampusMapPage() {
     return (rooms || []).filter(r => r.block === selectedBlock)
   }, [selectedBlock, rooms])
 
+  const currentMode = MODES.find(m => m.id === mode)
+
+  // Top metric for current mode (header bar)
+  const topMetric = useMemo(() => {
+    switch (mode) {
+      case 'occupancy': return { label: 'KAMPUS DOLULUK', value: totalStats.total_beds > 0 ? `%${Math.round((totalStats.occupied / totalStats.total_beds) * 100)}` : '—', sub: `${totalStats.occupied}/${totalStats.total_beds}` }
+      case 'faults':    return { label: 'TOPLAM ACIK ARIZA', value: totalStats.fault, sub: `${BLOCKS.length} blok` }
+      case 'cleaning':  return { label: 'BUGUN TEMIZLIK', value: totalStats.clean_total > 0 ? `%${Math.round((totalStats.clean_done / totalStats.clean_total) * 100)}` : '—', sub: `${totalStats.clean_done}/${totalStats.clean_total}` }
+      case 'shifts':    return { label: 'GECE/GUNDUZ', value: `${totalStats.night}/${totalStats.day}`, sub: totalStats.night + totalStats.day > 0 ? `%${Math.round((totalStats.night / (totalStats.night + totalStats.day)) * 100)} gece` : '—' }
+      case 'quarantine': return { label: 'KARANTINA+BAKIM', value: totalStats.quarantine + totalStats.maintenance, sub: `Q${totalStats.quarantine} B${totalStats.maintenance}` }
+      case 'premium':   return { label: 'PREMIUM BLOK', value: BLOCKS.filter(b => b.type === 'Y').length, sub: 'ozel banyolu' }
+      default: return { label: '', value: '', sub: '' }
+    }
+  }, [mode, totalStats])
+
   return (
-    <div style={{ padding: 20, color: 'var(--text)' }}>
+    <div style={{ padding: 16, color: 'var(--text)' }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 12 }}>
         <div>
           <h2 style={{ fontFamily: 'var(--display)', fontSize: 22, letterSpacing: 3, margin: 0 }}>KAMPUS HARITASI</h2>
           <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', letterSpacing: 1, marginTop: 4 }}>
-            {isLoading ? 'YUKLENIYOR...' : `${BLOCKS.length} BLOK • ${totalStats.totalBeds} YATAK • %${totalStats.totalBeds > 0 ? Math.round((totalStats.occupied / totalStats.totalBeds) * 100) : 0} DOLULUK`}
+            {isLoading ? 'YUKLENIYOR...' : `${BLOCKS.length} BLOK • CANLI • ${new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}`}
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          {['all', 'M', 'S', 'Y'].map(t => (
-            <button key={t} onClick={() => setTypeFilter(t)} style={chipBtn(typeFilter === t)}>
-              {t === 'all' ? 'TUMU' : `${t} TIPI`}
-            </button>
-          ))}
-          <div style={{ width: 1, height: 22, background: 'var(--border)' }} />
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', cursor: 'pointer', letterSpacing: 1 }}>
-            <input type="checkbox" checked={showLabels} onChange={e => setShowLabels(e.target.checked)} />
-            ETIKETLER
-          </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', letterSpacing: 1 }}>
-            HARITA OPAK
-            <input type="range" min="0.3" max="1" step="0.05" value={imgOpacity}
-              onChange={e => setImgOpacity(parseFloat(e.target.value))}
-              style={{ width: 70 }} />
-          </label>
-          {isManager && (
-            <>
-              <div style={{ width: 1, height: 22, background: 'var(--border)' }} />
-              {editMode ? (
-                <>
-                  <button onClick={savePins} disabled={savePinsMutation.isPending} style={btnGreen}>
-                    {savePinsMutation.isPending ? '...' : '✓ KAYDET'}
-                  </button>
-                  <button onClick={() => {
-                    setPins({ ...defaultPins(), ...(pinsData?.pins || {}) })
-                    setEditMode(false)
-                  }} style={btnGhost}>IPTAL</button>
-                  <button onClick={resetPins} style={btnDanger}>SIFIRLA</button>
-                </>
-              ) : (
-                <button onClick={() => setEditMode(true)} style={btnAccent}>✎ PIN DUZENLE</button>
-              )}
-            </>
-          )}
+        <div style={{
+          background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8,
+          padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 14,
+        }}>
+          <span style={{ fontSize: 22 }}>{currentMode?.icon}</span>
+          <div>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: 1.5 }}>
+              {topMetric.label}
+            </div>
+            <div style={{ fontFamily: 'var(--display)', fontSize: 22, letterSpacing: 2, color: 'var(--accent)' }}>
+              {topMetric.value} <span style={{ fontSize: 11, color: 'var(--text3)', letterSpacing: 1 }}>{topMetric.sub}</span>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* KPI strip */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 8, marginBottom: 12 }}>
-        <Kpi label="TOPLAM YATAK" value={totalStats.totalBeds} color="var(--text)" />
-        <Kpi label="DOLU" value={totalStats.occupied} color="#16a34a" />
-        <Kpi label="BOS ODA" value={totalStats.empty} color="var(--accent)" />
-        <Kpi label="KARANTINA" value={totalStats.quarantine} color="#dc2626" />
-        <Kpi label="BAKIM" value={totalStats.maintenance} color="#f59e0b" />
-        <Kpi label="ACIK ARIZA" value={totalStats.fault} color={totalStats.fault > 0 ? '#dc2626' : 'var(--text3)'} />
+      {/* Mode switcher */}
+      <div style={{
+        display: 'flex', gap: 4, marginBottom: 10, padding: 4,
+        background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8,
+        overflowX: 'auto',
+      }}>
+        {MODES.map(m => (
+          <button key={m.id} onClick={() => setMode(m.id)} title={m.desc}
+            style={{
+              flex: '1 1 auto', minWidth: 110,
+              background: mode === m.id ? 'var(--accent)' : 'transparent',
+              color: mode === m.id ? '#000' : 'var(--text2)',
+              border: 'none', borderRadius: 6,
+              padding: '8px 10px', cursor: 'pointer',
+              fontFamily: 'var(--mono)', fontSize: 11, letterSpacing: 1.5, fontWeight: 600,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+              transition: 'all .15s',
+            }}>
+            <span style={{ fontSize: 14 }}>{m.icon}</span>
+            <span>{m.label}</span>
+          </button>
+        ))}
       </div>
+
+      {/* Toolbar */}
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
+        {['all', 'M', 'S', 'Y'].map(t => (
+          <button key={t} onClick={() => setTypeFilter(t)} style={chipBtn(typeFilter === t)}>
+            {t === 'all' ? 'TUMU' : `${t} TIPI`}
+          </button>
+        ))}
+        <div style={{ width: 1, height: 22, background: 'var(--border)' }} />
+        <label style={lblToolbar}>
+          <input type="checkbox" checked={showLabels} onChange={e => setShowLabels(e.target.checked)} />
+          ETIKETLER
+        </label>
+        <label style={lblToolbar}>
+          HARITA OPAK
+          <input type="range" min="0.3" max="1" step="0.05" value={imgOpacity}
+            onChange={e => setImgOpacity(parseFloat(e.target.value))} style={{ width: 70 }} />
+        </label>
+        {isManager && (
+          <>
+            <div style={{ width: 1, height: 22, background: 'var(--border)' }} />
+            {editMode ? (
+              <>
+                <button onClick={savePins} disabled={savePinsMutation.isPending} style={btnGreen}>
+                  {savePinsMutation.isPending ? '...' : '✓ KAYDET'}
+                </button>
+                <button onClick={() => {
+                  setPins({ ...defaultPins(), ...(pinsData?.pins || {}) })
+                  setEditMode(false)
+                }} style={btnGhost}>IPTAL</button>
+                <button onClick={resetPins} style={btnDanger}>SIFIRLA</button>
+              </>
+            ) : (
+              <button onClick={() => setEditMode(true)} style={btnAccent}>✎ PIN DUZENLE</button>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* Canli olay feed */}
+      {liveEvents.length > 0 && (
+        <div style={{
+          background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8,
+          padding: '6px 10px', marginBottom: 10,
+          display: 'flex', alignItems: 'center', gap: 12, overflow: 'hidden',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+            <span className="live-dot" style={{ width: 8, height: 8, background: '#dc2626', borderRadius: '50%', display: 'inline-block', animation: 'pulse 1.5s infinite' }} />
+            <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: 1.5 }}>CANLI</span>
+          </div>
+          <div style={{ display: 'flex', gap: 8, overflowX: 'auto', flex: 1 }}>
+            {liveEvents.map(ev => (
+              <button key={ev.id}
+                onClick={() => ev.block && setSelectedBlock(ev.block)}
+                style={{
+                  flexShrink: 0, background: 'var(--surface2)',
+                  border: `1px solid ${eventColor(ev.type)}`,
+                  borderLeftWidth: 3, borderRadius: 4,
+                  padding: '4px 8px', cursor: ev.block ? 'pointer' : 'default',
+                  fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text2)',
+                  display: 'flex', alignItems: 'center', gap: 6, maxWidth: 280,
+                }}
+                title={ev.message}>
+                {ev.block && <span style={{ color: 'var(--accent)', fontWeight: 700 }}>{ev.block}</span>}
+                <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {ev.message}
+                </span>
+              </button>
+            ))}
+          </div>
+          <button onClick={() => setLiveEvents([])} title="Temizle" style={{
+            background: 'transparent', border: 'none', color: 'var(--text3)',
+            cursor: 'pointer', fontSize: 14, padding: '2px 6px', flexShrink: 0,
+          }}>✕</button>
+        </div>
+      )}
+
+      {/* KPI strip — mode aware */}
+      <ModeKpis mode={mode} totalStats={totalStats} />
 
       {editMode && (
         <div style={{
@@ -247,7 +470,7 @@ export default function CampusMapPage() {
           borderRadius: 6, padding: '8px 12px', marginBottom: 10,
           fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text2)', letterSpacing: 1,
         }}>
-          ✎ DUZENLEME — Pinleri sahip oldugu binanin uzerine surukle. Harita opakligini azalt, etiketleri okuyarak yerlestir. Bittiginde KAYDET.
+          ✎ DUZENLEME — Pinleri ait oldugu binanin uzerine surukle. Kaydet butonu ile tum kullanicilara yayinla.
         </div>
       )}
 
@@ -255,8 +478,7 @@ export default function CampusMapPage() {
       <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
         <div style={{
           flex: 1, background: '#0a0a0a', border: '1px solid var(--border)',
-          borderRadius: 8, overflow: 'hidden', position: 'relative',
-          maxWidth: 760,
+          borderRadius: 8, overflow: 'hidden', position: 'relative', maxWidth: 760,
         }}>
           <svg
             ref={svgRef}
@@ -265,17 +487,30 @@ export default function CampusMapPage() {
             onMouseMove={onMouseMove}
           >
             <image href="/campus-map.png" x="0" y="0" width={VIEW_W} height={VIEW_H} opacity={imgOpacity} />
+            {/* Hafif vignette */}
+            <radialGradient id="vignette">
+              <stop offset="60%" stopColor="rgba(0,0,0,0)" />
+              <stop offset="100%" stopColor="rgba(0,0,0,0.4)" />
+            </radialGradient>
+            <rect x="0" y="0" width={VIEW_W} height={VIEW_H} fill="url(#vignette)" pointerEvents="none" />
 
             {visibleBlocks.map(b => {
               const p = pins[b.block]
               if (!p) return null
               const s = stats[b.block]
-              const hasBeds = (s?.totalBeds || 0) > 0
-              const color = occupancyColor(s?.occupancyPct || 0, hasBeds)
+              const cfg = b
+              const metric = computeMetric(mode, s, cfg)
               const isHover = hoverBlock === b.block
               const isSel = selectedBlock === b.block
-              const r = isSel ? 16 : (isHover ? 15 : 13)
-              const labelOffset = r + 9
+              const baseR = 17
+              const r = isSel ? baseR + 3 : (isHover ? baseR + 2 : baseR)
+
+              // Donut: dis halka = doluluk yuzdesi (her zaman), ic = aktif mod rengi
+              const occPct = s?.occupancy_pct || 0
+              const occColor = !s?.total_beds ? '#6b7280' : occPct >= 85 ? '#dc2626' : occPct >= 60 ? '#f59e0b' : occPct > 0 ? '#16a34a' : '#6b7280'
+              const ringR = r + 4
+              const circumference = 2 * Math.PI * ringR
+              const dash = (occPct / 100) * circumference
 
               return (
                 <g key={b.block}
@@ -284,141 +519,120 @@ export default function CampusMapPage() {
                   onClick={() => !editMode && setSelectedBlock(b.block)}
                   style={{ cursor: editMode ? 'grab' : 'pointer' }}
                 >
-                  {/* Outer halo on hover/select */}
+                  {/* Halo */}
                   {(isHover || isSel) && (
-                    <circle cx={p.x} cy={p.y} r={r + 6} fill={color} opacity="0.25" />
+                    <circle cx={p.x} cy={p.y} r={r + 12} fill={metric.color} opacity="0.18" />
                   )}
-                  {/* Pin shadow */}
-                  <circle cx={p.x + 1} cy={p.y + 2} r={r} fill="rgba(0,0,0,0.45)" />
-                  {/* Main pin */}
-                  <circle
-                    cx={p.x} cy={p.y} r={r}
-                    fill={color}
-                    stroke="#fff" strokeWidth="2.5"
+                  {/* Canli olay pulse */}
+                  {pulseBlocks[b.block] && (
+                    <>
+                      <circle cx={p.x} cy={p.y} r={r + 6} fill="none"
+                        stroke={pulseBlocks[b.block].color} strokeWidth="3">
+                        <animate attributeName="r" values={`${r + 6};${r + 30}`} dur="1.5s" repeatCount="indefinite" />
+                        <animate attributeName="opacity" values="0.9;0" dur="1.5s" repeatCount="indefinite" />
+                      </circle>
+                      <circle cx={p.x} cy={p.y} r={r + 6} fill="none"
+                        stroke={pulseBlocks[b.block].color} strokeWidth="2">
+                        <animate attributeName="r" values={`${r + 6};${r + 22}`} dur="1.5s" begin="0.5s" repeatCount="indefinite" />
+                        <animate attributeName="opacity" values="0.7;0" dur="1.5s" begin="0.5s" repeatCount="indefinite" />
+                      </circle>
+                    </>
+                  )}
+                  {/* Doluluk donut halkasi */}
+                  <circle cx={p.x} cy={p.y} r={ringR} fill="none"
+                    stroke="rgba(255,255,255,0.15)" strokeWidth="3" />
+                  <circle cx={p.x} cy={p.y} r={ringR} fill="none"
+                    stroke={occColor} strokeWidth="3"
+                    strokeDasharray={`${dash} ${circumference}`}
+                    strokeDashoffset={circumference / 4}
+                    transform={`rotate(-90 ${p.x} ${p.y})`}
+                    style={{ transition: 'stroke-dasharray .4s' }}
+                  />
+                  {/* Gölge */}
+                  <circle cx={p.x + 1} cy={p.y + 2} r={r} fill="rgba(0,0,0,0.5)" />
+                  {/* Ana pin — mode rengi */}
+                  <circle cx={p.x} cy={p.y} r={r}
+                    fill={metric.color} stroke="#fff" strokeWidth="2"
                     onMouseDown={(e) => onPinMouseDown(e, b.block)}
                   />
-                  {/* Block label inside pin */}
-                  <text
-                    x={p.x} y={p.y}
-                    textAnchor="middle" dominantBaseline="central"
-                    fontFamily="var(--display)"
-                    fontSize={b.block.length > 2 ? 9 : 11}
-                    fontWeight="700"
-                    fill="#fff"
-                    style={{ pointerEvents: 'none' }}
-                  >
+                  {/* Blok ismi */}
+                  <text x={p.x} y={p.y - 2} textAnchor="middle" dominantBaseline="central"
+                    fontFamily="var(--display)" fontSize={b.block.length > 2 ? 9 : 11} fontWeight="700"
+                    fill="#fff" style={{ pointerEvents: 'none' }}>
                     {b.block}
                   </text>
+                  {/* Metrik */}
+                  <text x={p.x} y={p.y + 8} textAnchor="middle" dominantBaseline="central"
+                    fontFamily="var(--mono)" fontSize="8" fontWeight="600"
+                    fill="#fff" opacity="0.95" style={{ pointerEvents: 'none' }}>
+                    {metric.centerLabel}
+                  </text>
 
-                  {/* Side label: dolu/toplam */}
-                  {showLabels && hasBeds && (
+                  {/* Yan etiket */}
+                  {showLabels && (
                     <g style={{ pointerEvents: 'none' }}>
-                      <rect
-                        x={p.x + labelOffset - 2}
-                        y={p.y - 9}
-                        width={42} height={18}
-                        rx={4}
-                        fill="rgba(0,0,0,0.85)"
-                        stroke={color}
-                        strokeWidth="1"
-                      />
-                      <text
-                        x={p.x + labelOffset + 19}
-                        y={p.y + 1}
+                      <rect x={p.x + r + 5} y={p.y - 9} width={48} height={18} rx={4}
+                        fill="rgba(0,0,0,0.85)" stroke={metric.color} strokeWidth="1" />
+                      <text x={p.x + r + 29} y={p.y + 1}
                         textAnchor="middle" dominantBaseline="central"
-                        fontFamily="var(--mono)" fontSize="10" fontWeight="600"
-                        fill="#fff"
-                      >
-                        {s.occupied}/{s.totalBeds}
+                        fontFamily="var(--mono)" fontSize="9" fontWeight="600" fill="#fff">
+                        {metric.subLabel}
                       </text>
                     </g>
                   )}
 
-                  {/* Fault badge */}
-                  {s?.fault > 0 && (
+                  {/* Badge (sag-ust) */}
+                  {metric.badge && (
                     <g style={{ pointerEvents: 'none' }}>
-                      <circle cx={p.x + r - 2} cy={p.y - r + 2} r="7" fill="#dc2626" stroke="#fff" strokeWidth="1.5" />
-                      <text x={p.x + r - 2} y={p.y - r + 2} textAnchor="middle" dominantBaseline="central"
-                        fontFamily="var(--mono)" fontSize="9" fontWeight="700" fill="#fff">{s.fault}</text>
+                      <circle cx={p.x + r - 2} cy={p.y - r + 2} r="7"
+                        fill={metric.badge.color} stroke="#fff" strokeWidth="1.5" />
+                      <text x={p.x + r - 2} y={p.y - r + 2}
+                        textAnchor="middle" dominantBaseline="central"
+                        fontFamily="var(--mono)" fontSize="9" fontWeight="700" fill="#fff">
+                        {metric.badge.text}
+                      </text>
                     </g>
                   )}
 
-                  {/* Quarantine indicator (dashed ring) */}
+                  {/* Karantina kesik halka — daima goster */}
                   {s?.quarantine > 0 && (
-                    <circle cx={p.x} cy={p.y} r={r + 3} fill="none"
+                    <circle cx={p.x} cy={p.y} r={ringR + 4} fill="none"
                       stroke="#dc2626" strokeWidth="1.5" strokeDasharray="3 3"
                       style={{ pointerEvents: 'none' }} />
+                  )}
+
+                  {/* Alt durum noktalari — 3 mini gosterge (vardiya/temizlik/ariza) */}
+                  {!editMode && s && (
+                    <g style={{ pointerEvents: 'none' }}>
+                      <StatusDot cx={p.x - 8} cy={p.y + r + 6}
+                        active={(s.day_count + s.night_count) > 0}
+                        color={s.night_count > s.day_count ? '#8b5cf6' : '#f97316'} />
+                      <StatusDot cx={p.x} cy={p.y + r + 6}
+                        active={s.cleaning_total > 0}
+                        color={s.cleaning_pct >= 80 ? '#16a34a' : s.cleaning_pct >= 40 ? '#eab308' : '#dc2626'} />
+                      <StatusDot cx={p.x + 8} cy={p.y + r + 6}
+                        active={s.open_faults > 0}
+                        color="#dc2626" />
+                    </g>
                   )}
                 </g>
               )
             })}
 
             {/* Hover detail card */}
-            {hoverBlock && !editMode && !dragging && (() => {
-              const p = pins[hoverBlock]
-              const s = stats[hoverBlock]
-              const cfg = BLOCK_BY_NAME[hoverBlock]
-              if (!p || !s || !cfg) return null
-              const w = 180, h = 110
-              let tx = p.x + 22
-              let ty = p.y - h / 2
-              if (tx + w > VIEW_W) tx = p.x - 22 - w
-              if (ty < 0) ty = 0
-              if (ty + h > VIEW_H) ty = VIEW_H - h
-              return (
-                <g style={{ pointerEvents: 'none' }}>
-                  <rect x={tx} y={ty} width={w} height={h} rx={6}
-                    fill="rgba(10,10,10,0.95)" stroke="var(--accent)" strokeWidth="1.5" />
-                  <text x={tx + 10} y={ty + 18} fontFamily="var(--display)" fontSize="14"
-                    fill="#fff" letterSpacing="1.5">BLOK {hoverBlock}</text>
-                  <text x={tx + w - 10} y={ty + 18} textAnchor="end"
-                    fontFamily="var(--mono)" fontSize="9" fill="var(--text3)" letterSpacing="1">
-                    TIP {cfg.type} • {cfg.floors}K
-                  </text>
-                  <line x1={tx + 8} x2={tx + w - 8} y1={ty + 26} y2={ty + 26} stroke="var(--border)" strokeWidth="0.5" />
-                  <text x={tx + 10} y={ty + 44} fontFamily="var(--mono)" fontSize="11" fontWeight="600" fill="#16a34a">
-                    {s.occupied}/{s.totalBeds}
-                  </text>
-                  <text x={tx + 70} y={ty + 44} fontFamily="var(--mono)" fontSize="11" fill="var(--text2)">
-                    %{s.occupancyPct} dolu
-                  </text>
-                  <text x={tx + 10} y={ty + 62} fontFamily="var(--mono)" fontSize="10" fill="var(--accent)">
-                    {s.emptyRooms} bos / {s.totalRooms} oda
-                  </text>
-                  {s.quarantine > 0 && (
-                    <text x={tx + 10} y={ty + 78} fontFamily="var(--mono)" fontSize="10" fill="#dc2626">
-                      ⊘ {s.quarantine} karantina
-                    </text>
-                  )}
-                  {s.maintenance > 0 && (
-                    <text x={tx + 10} y={ty + 78 + (s.quarantine > 0 ? 14 : 0)} fontFamily="var(--mono)" fontSize="10" fill="#f59e0b">
-                      ⚒ {s.maintenance} bakim
-                    </text>
-                  )}
-                  {s.fault > 0 && (
-                    <text x={tx + 10} y={ty + h - 8} fontFamily="var(--mono)" fontSize="10" fill="#dc2626">
-                      ⚠ {s.fault} acik ariza
-                    </text>
-                  )}
-                </g>
-              )
-            })()}
+            {hoverBlock && !editMode && !dragging && (
+              <HoverCard
+                block={hoverBlock}
+                cfg={BLOCK_BY_NAME[hoverBlock]}
+                s={stats[hoverBlock]}
+                pin={pins[hoverBlock]}
+                mode={mode}
+              />
+            )}
           </svg>
 
-          {/* Legend overlay */}
-          <div style={{
-            position: 'absolute', left: 12, bottom: 12,
-            background: 'rgba(10,10,10,0.85)', borderRadius: 6,
-            padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 4,
-            fontFamily: 'var(--mono)', fontSize: 9, color: '#fff', letterSpacing: 1,
-            border: '1px solid var(--border)',
-          }}>
-            <div style={{ color: 'var(--text3)', marginBottom: 2 }}>DOLULUK</div>
-            <LegendRow color="#16a34a" label="< %60" />
-            <LegendRow color="#f59e0b" label="%60-85" />
-            <LegendRow color="#dc2626" label="> %85" />
-            <LegendRow color="#6b7280" label="BOS" />
-          </div>
+          {/* Legend overlay (mode-aware) */}
+          <ModeLegend mode={mode} />
         </div>
 
         {/* Side panel */}
@@ -428,6 +642,7 @@ export default function CampusMapPage() {
             cfg={selCfg}
             stats={sel}
             rooms={selRooms}
+            mode={mode}
             onClose={() => setSelectedBlock(null)}
             onNavigate={navigate}
           />
@@ -440,7 +655,7 @@ export default function CampusMapPage() {
             <div style={{ fontSize: 32, marginBottom: 8, opacity: 0.4 }}>◉</div>
             BIR PIN'E TIKLA<br />
             <span style={{ fontSize: 9, color: 'var(--text4)' }}>
-              Oda detayi, doluluk ve hizli eylemler burada gosterilir
+              {currentMode?.desc}
             </span>
           </div>
         )}
@@ -449,10 +664,160 @@ export default function CampusMapPage() {
   )
 }
 
-function SidePanel({ block, cfg, stats: s, rooms, onClose, onNavigate }) {
+function StatusDot({ cx, cy, active, color }) {
+  if (!active) return <circle cx={cx} cy={cy} r="2" fill="rgba(255,255,255,0.2)" />
+  return (
+    <>
+      <circle cx={cx} cy={cy} r="3.5" fill={color} stroke="rgba(0,0,0,0.6)" strokeWidth="0.5" />
+      <circle cx={cx} cy={cy} r="6" fill={color} opacity="0.3">
+        <animate attributeName="r" values="3.5;7;3.5" dur="2s" repeatCount="indefinite" />
+        <animate attributeName="opacity" values="0.4;0;0.4" dur="2s" repeatCount="indefinite" />
+      </circle>
+    </>
+  )
+}
+
+function HoverCard({ block, cfg, s, pin, mode }) {
+  if (!pin || !s || !cfg) return null
+  const w = 210, h = 138
+  let tx = pin.x + 24, ty = pin.y - h / 2
+  if (tx + w > VIEW_W) tx = pin.x - 24 - w
+  if (ty < 0) ty = 4
+  if (ty + h > VIEW_H) ty = VIEW_H - h - 4
+
+  // Mode-spesifik 2. satir
+  const modeLines = {
+    occupancy:  [['DOLU', `${s.occupied}/${s.total_beds}`, '#16a34a'],
+                 ['BOS ODA', s.empty_rooms, '#facc15'],
+                 ['DOLULUK', `%${s.occupancy_pct}`, '#fff']],
+    faults:     [['ACIK ARIZA', s.open_faults, '#dc2626'],
+                 ['TOPLAM ODA', s.total_rooms, '#fff'],
+                 ['DOLULUK', `%${s.occupancy_pct}`, '#facc15']],
+    cleaning:   [['TAMAMLANAN', `${s.cleaning_done}/${s.cleaning_total}`, '#16a34a'],
+                 ['ATLANAN', s.cleaning_skipped, '#eab308'],
+                 ['BUGUN %', `%${s.cleaning_pct}`, '#fff']],
+    shifts:     [['GUNDUZ', s.day_count, '#f97316'],
+                 ['GECE', s.night_count, '#8b5cf6'],
+                 ['TOPLAM', s.day_count + s.night_count, '#fff']],
+    quarantine: [['KARANTINA', s.quarantine, '#dc2626'],
+                 ['BAKIM', s.maintenance, '#f59e0b'],
+                 ['AKTIF ODA', s.total_rooms - s.quarantine - s.maintenance, '#16a34a']],
+    premium:    [['TIP', cfg.type, '#a855f7'],
+                 ['KAT', cfg.floors, '#fff'],
+                 ['BANYO', cfg.hasPrivateBath ? 'OZEL' : 'ORTAK', '#06b6d4']],
+  }
+  const lines = modeLines[mode] || modeLines.occupancy
+
+  return (
+    <g style={{ pointerEvents: 'none' }}>
+      <rect x={tx} y={ty} width={w} height={h} rx={6}
+        fill="rgba(10,10,10,0.96)" stroke="var(--accent)" strokeWidth="1.5" />
+      <text x={tx + 12} y={ty + 20} fontFamily="var(--display)" fontSize="16" fontWeight="700"
+        fill="#fff" letterSpacing="2">BLOK {block}</text>
+      <text x={tx + w - 12} y={ty + 20} textAnchor="end"
+        fontFamily="var(--mono)" fontSize="9" fill="var(--text3)" letterSpacing="1">
+        TIP {cfg.type} • {cfg.floors}K
+      </text>
+      <line x1={tx + 10} x2={tx + w - 10} y1={ty + 28} y2={ty + 28} stroke="var(--border)" strokeWidth="0.5" />
+      {lines.map((ln, i) => (
+        <g key={i}>
+          <text x={tx + 12} y={ty + 48 + i * 18} fontFamily="var(--mono)" fontSize="9"
+            fill="var(--text3)" letterSpacing="1">{ln[0]}</text>
+          <text x={tx + w - 12} y={ty + 48 + i * 18} textAnchor="end"
+            fontFamily="var(--mono)" fontSize="11" fontWeight="700" fill={ln[2]}>
+            {ln[1]}
+          </text>
+        </g>
+      ))}
+      <line x1={tx + 10} x2={tx + w - 10} y1={ty + h - 24} y2={ty + h - 24} stroke="var(--border)" strokeWidth="0.5" />
+      <text x={tx + w / 2} y={ty + h - 10} textAnchor="middle"
+        fontFamily="var(--mono)" fontSize="9" fill="var(--text3)" letterSpacing="1">
+        TIKLA: DETAYLI GOR
+      </text>
+    </g>
+  )
+}
+
+function ModeKpis({ mode, totalStats: t }) {
+  const sets = {
+    occupancy: [
+      ['TOPLAM YATAK', t.total_beds, 'var(--text)'],
+      ['DOLU', t.occupied, '#16a34a'],
+      ['BOS ODA', t.empty, 'var(--accent)'],
+      ['KARANTINA', t.quarantine, '#dc2626'],
+      ['BAKIM', t.maintenance, '#f59e0b'],
+      ['ACIK ARIZA', t.fault, t.fault > 0 ? '#dc2626' : 'var(--text3)'],
+    ],
+    faults: [
+      ['ACIK ARIZA', t.fault, t.fault > 0 ? '#dc2626' : 'var(--text3)'],
+      ['KARANTINA', t.quarantine, '#dc2626'],
+      ['BAKIM ODASI', t.maintenance, '#f59e0b'],
+      ['BOS ODA', t.empty, 'var(--accent)'],
+    ],
+    cleaning: [
+      ['BUGUN TOPLAM', t.clean_total, 'var(--text)'],
+      ['TAMAMLANAN', t.clean_done, '#16a34a'],
+      ['KALAN', t.clean_total - t.clean_done, '#eab308'],
+      ['DOLU YATAK', t.occupied, 'var(--text3)'],
+    ],
+    shifts: [
+      ['GUNDUZ VARDIYA', t.day, '#f97316'],
+      ['GECE VARDIYA', t.night, '#8b5cf6'],
+      ['TOPLAM PERSONEL', t.day + t.night, 'var(--text)'],
+    ],
+    quarantine: [
+      ['KARANTINA ODASI', t.quarantine, '#dc2626'],
+      ['BAKIM ODASI', t.maintenance, '#f59e0b'],
+      ['AKTIF ARIZA', t.fault, t.fault > 0 ? '#dc2626' : 'var(--text3)'],
+    ],
+    premium: [
+      ['Y BLOK', BLOCKS.filter(b => b.type === 'Y').length, '#a855f7'],
+      ['S BLOK', BLOCKS.filter(b => b.type === 'S').length, '#06b6d4'],
+      ['M BLOK', BLOCKS.filter(b => b.type === 'M').length, '#475569'],
+    ],
+  }
+  const items = sets[mode] || sets.occupancy
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 8, marginBottom: 10 }}>
+      {items.map(([label, value, color]) => <Kpi key={label} label={label} value={value} color={color} />)}
+    </div>
+  )
+}
+
+function ModeLegend({ mode }) {
+  const sets = {
+    occupancy:  [['< %60', '#16a34a'], ['%60-85', '#f59e0b'], ['> %85', '#dc2626'], ['BOS', '#6b7280']],
+    faults:     [['0', '#6b7280'], ['1', '#eab308'], ['2-4', '#f59e0b'], ['5+', '#dc2626']],
+    cleaning:   [['> %80', '#16a34a'], ['%40-80', '#eab308'], ['< %40', '#dc2626'], ['YOK', '#6b7280']],
+    shifts:     [['GUNDUZ', '#f97316'], ['KARMA', '#3b82f6'], ['GECE', '#8b5cf6'], ['BOS', '#6b7280']],
+    quarantine: [['KARANTINA', '#dc2626'], ['BAKIM', '#f59e0b'], ['NORMAL', '#6b7280']],
+    premium:    [['Y (PREMIUM)', '#a855f7'], ['S (SOSYAL)', '#06b6d4'], ['M (MERKEZI)', '#475569']],
+  }
+  const items = sets[mode] || sets.occupancy
+  return (
+    <div style={{
+      position: 'absolute', left: 12, bottom: 12,
+      background: 'rgba(10,10,10,0.85)', borderRadius: 6,
+      padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 4,
+      fontFamily: 'var(--mono)', fontSize: 9, color: '#fff', letterSpacing: 1,
+      border: '1px solid var(--border)',
+    }}>
+      <div style={{ color: 'var(--text3)', marginBottom: 2 }}>{MODES.find(m => m.id === mode)?.label}</div>
+      {items.map(([label, color]) => (
+        <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ width: 9, height: 9, background: color, borderRadius: '50%', display: 'inline-block', border: '1px solid #fff' }} />
+          <span>{label}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function SidePanel({ block, cfg, stats: s, rooms, mode, onClose, onNavigate }) {
   if (!cfg || !s) return null
-  const pct = s.occupancyPct
+  const pct = s.occupancy_pct
   const color = pct >= 85 ? '#dc2626' : pct >= 60 ? '#f59e0b' : pct > 0 ? '#16a34a' : '#6b7280'
+
   return (
     <div style={{
       width: 340, background: 'var(--surface)', border: '1px solid var(--border)',
@@ -474,7 +839,6 @@ function SidePanel({ block, cfg, stats: s, rooms, onClose, onNavigate }) {
         }}>✕</button>
       </div>
 
-      {/* Occupancy progress bar */}
       <div style={{ marginBottom: 14 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4,
           fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: 1 }}>
@@ -485,19 +849,72 @@ function SidePanel({ block, cfg, stats: s, rooms, onClose, onNavigate }) {
           <div style={{ width: `${pct}%`, height: '100%', background: color, transition: 'width .3s' }} />
         </div>
         <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text2)', marginTop: 4, textAlign: 'center' }}>
-          {s.occupied} / {s.totalBeds} yatak
+          {s.occupied} / {s.total_beds} yatak
         </div>
       </div>
 
+      {/* 6'lı mini grid */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 4, marginBottom: 14 }}>
-        <MiniStat label="ODA" value={s.totalRooms} />
-        <MiniStat label="BOS" value={s.emptyRooms} color="var(--accent)" />
-        <MiniStat label="ARIZA" value={s.fault} color={s.fault > 0 ? '#dc2626' : 'var(--text)'} />
-        {s.quarantine > 0 && <MiniStat label="KARANTINA" value={s.quarantine} color="#dc2626" />}
-        {s.maintenance > 0 && <MiniStat label="BAKIM" value={s.maintenance} color="#f59e0b" />}
+        <MiniStat label="ODA" value={s.total_rooms} />
+        <MiniStat label="BOS" value={s.empty_rooms} color="var(--accent)" />
+        <MiniStat label="DOLU ODA" value={s.full_rooms} color={s.full_rooms > 0 ? '#dc2626' : 'var(--text)'} />
+        <MiniStat label="ARIZA" value={s.open_faults} color={s.open_faults > 0 ? '#dc2626' : 'var(--text)'} />
+        <MiniStat label="KARANTINA" value={s.quarantine} color={s.quarantine > 0 ? '#dc2626' : 'var(--text3)'} />
+        <MiniStat label="BAKIM" value={s.maintenance} color={s.maintenance > 0 ? '#f59e0b' : 'var(--text3)'} />
       </div>
 
-      {/* Floor-by-floor room grid */}
+      {/* Vardiya dağılımı */}
+      {(s.day_count + s.night_count) > 0 && (
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: 1, marginBottom: 4 }}>
+            VARDIYA DAGILIMI
+          </div>
+          <div style={{ display: 'flex', height: 8, borderRadius: 4, overflow: 'hidden' }}>
+            <div style={{ width: `${(s.day_count / (s.day_count + s.night_count)) * 100}%`, background: '#f97316' }} />
+            <div style={{ width: `${(s.night_count / (s.day_count + s.night_count)) * 100}%`, background: '#8b5cf6' }} />
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4,
+            fontFamily: 'var(--mono)', fontSize: 9 }}>
+            <span style={{ color: '#f97316' }}>☀ GUNDUZ {s.day_count}</span>
+            <span style={{ color: '#8b5cf6' }}>☾ GECE {s.night_count}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Temizlik durumu */}
+      {s.cleaning_total > 0 && (
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between',
+            fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: 1, marginBottom: 4 }}>
+            <span>BUGUN TEMIZLIK</span>
+            <span>%{s.cleaning_pct}</span>
+          </div>
+          <div style={{ height: 6, background: 'var(--surface2)', borderRadius: 3, overflow: 'hidden' }}>
+            <div style={{ width: `${s.cleaning_pct}%`, height: '100%', background: '#16a34a' }} />
+          </div>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text2)', marginTop: 3 }}>
+            {s.cleaning_done}/{s.cleaning_total} tamamlandı{s.cleaning_skipped > 0 ? ` • ${s.cleaning_skipped} atlandi` : ''}
+          </div>
+        </div>
+      )}
+
+      {/* Top şirketler */}
+      {s.top_companies?.length > 0 && (
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: 1, marginBottom: 4 }}>
+            ANA SIRKETLER
+          </div>
+          {s.top_companies.map(c => (
+            <div key={c.company} style={{ display: 'flex', justifyContent: 'space-between',
+              fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text2)', padding: '2px 0' }}>
+              <span>{c.company}</span>
+              <span style={{ color: 'var(--accent)' }}>{c.count}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Kat-kat oda grid */}
       {Array.from({ length: cfg.floors }, (_, i) => i + 1).map(floor => {
         const floorRooms = rooms.filter(r => r.floor === floor)
         if (floorRooms.length === 0) return null
@@ -539,11 +956,9 @@ function SidePanel({ block, cfg, stats: s, rooms, onClose, onNavigate }) {
                   >
                     {r.room_no}
                     {r.open_fault_count > 0 && (
-                      <div style={{
-                        position: 'absolute', top: -3, right: -3,
+                      <div style={{ position: 'absolute', top: -3, right: -3,
                         width: 10, height: 10, borderRadius: '50%',
-                        background: '#dc2626', border: '1.5px solid var(--surface)',
-                      }} />
+                        background: '#dc2626', border: '1.5px solid var(--surface)' }} />
                     )}
                   </div>
                 )
@@ -558,18 +973,10 @@ function SidePanel({ block, cfg, stats: s, rooms, onClose, onNavigate }) {
           KAPASITE SAYFASINDA AC →
         </button>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
-          <button onClick={() => onNavigate(`/housekeeping?block=${block}`)} style={btnSecondary}>
-            ◈ TEMIZLIK
-          </button>
-          <button onClick={() => onNavigate(`/maintenance?block=${block}`)} style={btnSecondary}>
-            ⚙ ARIZA
-          </button>
-          <button onClick={() => onNavigate(`/room-history?block=${block}`)} style={btnSecondary}>
-            ⊙ GECMIS
-          </button>
-          <button onClick={() => onNavigate(`/checkin?block=${block}`)} style={btnSecondary}>
-            ↗ CHECK-IN
-          </button>
+          <button onClick={() => onNavigate(`/housekeeping?block=${block}`)} style={btnSecondary}>◈ TEMIZLIK</button>
+          <button onClick={() => onNavigate(`/maintenance?block=${block}`)} style={btnSecondary}>⚙ ARIZA</button>
+          <button onClick={() => onNavigate(`/room-history?block=${block}`)} style={btnSecondary}>⊙ GECMIS</button>
+          <button onClick={() => onNavigate(`/checkin?block=${block}`)} style={btnSecondary}>↗ CHECK-IN</button>
         </div>
       </div>
     </div>
@@ -594,15 +1001,6 @@ function MiniStat({ label, value, color = 'var(--text)' }) {
   )
 }
 
-function LegendRow({ color, label }) {
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-      <span style={{ width: 9, height: 9, background: color, borderRadius: '50%', display: 'inline-block', border: '1px solid #fff' }} />
-      <span>{label}</span>
-    </div>
-  )
-}
-
 function chipBtn(active) {
   return {
     background: active ? 'var(--accent)' : 'var(--surface2)',
@@ -612,6 +1010,7 @@ function chipBtn(active) {
     fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: 1, fontWeight: 600,
   }
 }
+const lblToolbar = { display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', cursor: 'pointer', letterSpacing: 1 }
 const btnPrimary = {
   background: 'var(--accent)', color: '#000', border: 'none', borderRadius: 6,
   padding: '8px 12px', cursor: 'pointer', fontFamily: 'var(--mono)', fontSize: 10,

@@ -11,6 +11,29 @@ beforeAll(async () => {
   supToken = (await request(app).post('/api/auth/login').send({ username: 'vardiya', password: 'admin123' })).body.token
 })
 
+describe('Campus Map summary', () => {
+  it('GET /summary returns per-block aggregation', async () => {
+    const res = await request(app).get('/api/campus-map/summary').set('Authorization', `Bearer ${mgrToken}`)
+    expect(res.status).toBe(200)
+    expect(res.body.blocks).toBeTypeOf('object')
+    const m1 = res.body.blocks.M1
+    expect(m1).toBeDefined()
+    expect(m1).toHaveProperty('total_rooms')
+    expect(m1).toHaveProperty('occupied')
+    expect(m1).toHaveProperty('occupancy_pct')
+    expect(m1).toHaveProperty('open_faults')
+    expect(m1).toHaveProperty('cleaning_total')
+    expect(m1).toHaveProperty('day_count')
+    expect(m1).toHaveProperty('night_count')
+    expect(Array.isArray(m1.top_companies)).toBe(true)
+  })
+
+  it('GET /summary requires auth', async () => {
+    const res = await request(app).get('/api/campus-map/summary')
+    expect(res.status).toBe(401)
+  })
+})
+
 describe('Campus Map pins', () => {
   it('GET /pins returns empty object initially', async () => {
     const res = await request(app).get('/api/campus-map/pins').set('Authorization', `Bearer ${mgrToken}`)

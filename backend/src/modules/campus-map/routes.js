@@ -1,10 +1,21 @@
 import { Router } from 'express'
 import { requireAuth, requireRole } from '../../shared/auth/middleware.js'
 import { getDB } from '../../shared/db/index.js'
+import { getCampusSummary } from './queries.js'
 
 export const campusMapRouter = Router()
 
 const SETTING_KEY = 'campus_map_pins'
+
+// Tum bloklar icin ozet — tum gorunum modlari icin gerekli veri tek seferde
+campusMapRouter.get('/summary', requireAuth, (req, res) => {
+  try {
+    res.json({ blocks: getCampusSummary() })
+  } catch (e) {
+    console.error('[campus-map.summary]', e)
+    res.status(500).json({ error: 'Sunucu hatasi' })
+  }
+})
 
 // Tum giris yapmis kullanicilar haritayi okuyabilir
 campusMapRouter.get('/pins', requireAuth, (req, res) => {
