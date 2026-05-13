@@ -160,14 +160,21 @@ export default function CampusMapPage() {
   const [pins, setPins] = useState(defaultPins)
   const [editMode, setEditMode] = useState(false)
   const [dragging, setDragging] = useState(null)
+  const [panning, setPanning] = useState(null) // { startVx, startVy, startMx, startMy }
   const [selectedBlock, setSelectedBlock] = useState(null)
   const [typeFilter, setTypeFilter] = useState('all')
   const [hoverBlock, setHoverBlock] = useState(null)
+  const [highlightedBlock, setHighlightedBlock] = useState(null) // arama sonucu vurgu
   const [showLabels, setShowLabels] = useState(true)
   const [imgOpacity, setImgOpacity] = useState(1)
   const [mode, setMode] = useState('occupancy')
-  const [liveEvents, setLiveEvents] = useState([]) // son 5 olay (en yeni basta)
-  const [pulseBlocks, setPulseBlocks] = useState({}) // { M1: { color, until } }
+  const [liveEvents, setLiveEvents] = useState([]) // son 5 olay
+  const [pulseBlocks, setPulseBlocks] = useState({})
+  // Zoom/Pan
+  const [viewBox, setViewBox] = useState({ x: 0, y: 0, w: VIEW_W, h: VIEW_H })
+  // Arama
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchOpen, setSearchOpen] = useState(false)
   const token = useAuthStore(s => s.token)
 
   const { data: summary, isLoading } = useQuery({
@@ -190,6 +197,22 @@ export default function CampusMapPage() {
     queryFn: () => api.get('/campus-map/pins').then(r => r.data),
     staleTime: 60000,
   })
+
+  // Personel arama (debounced)
+  const trimmed = searchQuery.trim()
+  const { data: personnelResults = [] } = useQuery({
+    queryKey: ['campus-map-search', trimmed],
+    queryFn: () => api.get(`/capacity/personnel/search?q=${encodeURIComponent(trimmed)}`).then(r => r.data),
+    enabled: trimmed.length >= 2,
+    staleTime: 10000,
+  })
+
+  // Blok adi eslesmesi
+  const blockMatches = useMemo(() => {
+    if (trimmed.length < 1) return []
+    const upper = trimmed.toUpperCase()
+    return BLOCKS.filter(b => b.block.toUpperCase().includes(upper)).slice(0, 6)
+  }, [trimmed])
 
   useEffect(() => {
     if (pinsData?.pins && !editMode) {
@@ -283,24 +306,102 @@ export default function CampusMapPage() {
     setDragging({ block: blockName, offsetX: x - p.x, offsetY: y - p.y })
   }
 
+  // Pan — bos alana mouse down
+  function onSvgMouseDown(e) {
+    if (editMode || dragging) return
+    if (e.target.tagName === 'circle' || e.target.tagName === 'text' || e.target.tagName === 'rect') {
+      // Pin/tooltip uzerine tiklandi, pan baslatma (tooltip rect harici)
+      if (e.target.getAttribute('data-pan-bg') !== '1') return
+    }
+    setPanning({ startVx: viewBox.x, startVy: viewBox.y, startMx: e.clientX, startMy: e.clientY })
+  }
+
   function onMouseMove(e) {
-    if (!dragging) return
-    const { x, y } = svgPoint(e)
-    setPins(prev => ({
-      ...prev,
-      [dragging.block]: {
-        x: Math.max(15, Math.min(VIEW_W - 15, x - dragging.offsetX)),
-        y: Math.max(15, Math.min(VIEW_H - 15, y - dragging.offsetY)),
-      }
-    }))
+    if (dragging) {
+      const { x, y } = svgPoint(e)
+      setPins(prev => ({
+        ...prev,
+        [dragging.block]: {
+          x: Math.max(15, Math.min(VIEW_W - 15, x - dragging.offsetX)),
+          y: Math.max(15, Math.min(VIEW_H - 15, y - dragging.offsetY)),
+        }
+      }))
+      return
+    }
+    if (panning) {
+      const svg = svgRef.current
+      if (!svg) return
+      const rect = svg.getBoundingClientRect()
+      const scaleX = viewBox.w / rect.width
+      const scaleY = viewBox.h / rect.height
+      const dx = (e.clientX - panning.startMx) * scaleX
+      const dy = (e.clientY - panning.startMy) * scaleY
+      const newX = Math.max(-viewBox.w * 0.2, Math.min(VIEW_W - viewBox.w * 0.8, panning.startVx - dx))
+      const newY = Math.max(-viewBox.h * 0.2, Math.min(VIEW_H - viewBox.h * 0.8, panning.startVy - dy))
+      setViewBox(prev => ({ ...prev, x: newX, y: newY }))
+    }
   }
 
   useEffect(() => {
-    if (!dragging) return
-    const handleUp = () => setDragging(null)
+    if (!dragging && !panning) return
+    const handleUp = () => { setDragging(null); setPanning(null) }
     window.addEventListener('mouseup', handleUp)
     return () => window.removeEventListener('mouseup', handleUp)
-  }, [dragging])
+  }, [dragging, panning])
+
+  // Wheel zoom
+  function onWheel(e) {
+    e.preventDefault()
+    const { x: mx, y: my } = svgPoint(e)
+    const scale = e.deltaY > 0 ? 1.2 : 0.83
+    const newW = Math.max(150, Math.min(VIEW_W * 1.2, viewBox.w * scale))
+    const newH = newW * (VIEW_H / VIEW_W)
+    // Zoom around mouse position
+    const ratio = newW / viewBox.w
+    const newX = mx - (mx - viewBox.x) * ratio
+    const newY = my - (my - viewBox.y) * ratio
+    setViewBox({
+      x: Math.max(-newW * 0.2, Math.min(VIEW_W - newW * 0.8, newX)),
+      y: Math.max(-newH * 0.2, Math.min(VIEW_H - newH * 0.8, newY)),
+      w: newW, h: newH,
+    })
+  }
+
+  function zoomIn() {
+    const f = 0.7
+    const cx = viewBox.x + viewBox.w / 2
+    const cy = viewBox.y + viewBox.h / 2
+    const newW = Math.max(150, viewBox.w * f)
+    const newH = newW * (VIEW_H / VIEW_W)
+    setViewBox({ x: cx - newW / 2, y: cy - newH / 2, w: newW, h: newH })
+  }
+  function zoomOut() {
+    const f = 1.4
+    const cx = viewBox.x + viewBox.w / 2
+    const cy = viewBox.y + viewBox.h / 2
+    const newW = Math.min(VIEW_W * 1.2, viewBox.w * f)
+    const newH = newW * (VIEW_H / VIEW_W)
+    setViewBox({
+      x: Math.max(-newW * 0.2, Math.min(VIEW_W - newW * 0.8, cx - newW / 2)),
+      y: Math.max(-newH * 0.2, Math.min(VIEW_H - newH * 0.8, cy - newH / 2)),
+      w: newW, h: newH,
+    })
+  }
+  function resetView() {
+    setViewBox({ x: 0, y: 0, w: VIEW_W, h: VIEW_H })
+  }
+  function zoomToBlock(blockName) {
+    const p = pins[blockName]
+    if (!p) return
+    const w = 280, h = w * (VIEW_H / VIEW_W)
+    setViewBox({
+      x: Math.max(0, Math.min(VIEW_W - w, p.x - w / 2)),
+      y: Math.max(0, Math.min(VIEW_H - h, p.y - h / 2)),
+      w, h,
+    })
+    setHighlightedBlock(blockName)
+    setTimeout(() => setHighlightedBlock(prev => prev === blockName ? null : prev), 3000)
+  }
 
   function savePins() { savePinsMutation.mutate(pins) }
   function resetPins() {
@@ -387,6 +488,104 @@ export default function CampusMapPage() {
 
       {/* Toolbar */}
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
+        {/* Arama */}
+        <div style={{ position: 'relative', minWidth: 220 }}>
+          <input
+            type="text"
+            placeholder="◎ Blok veya personel ara..."
+            value={searchQuery}
+            onChange={e => { setSearchQuery(e.target.value); setSearchOpen(true) }}
+            onFocus={() => setSearchOpen(true)}
+            onBlur={() => setTimeout(() => setSearchOpen(false), 200)}
+            style={{
+              width: '100%', background: 'var(--surface2)', border: '1px solid var(--border)',
+              borderRadius: 6, padding: '6px 10px', color: 'var(--text)',
+              fontFamily: 'var(--mono)', fontSize: 11, letterSpacing: 0.5,
+            }}
+          />
+          {searchOpen && trimmed.length >= 1 && (blockMatches.length > 0 || personnelResults.length > 0) && (
+            <div style={{
+              position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0,
+              background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6,
+              maxHeight: 320, overflowY: 'auto', zIndex: 50,
+              boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
+            }}>
+              {blockMatches.length > 0 && (
+                <div style={{ padding: '6px 10px', fontFamily: 'var(--mono)', fontSize: 9,
+                  color: 'var(--text3)', letterSpacing: 1.5, borderBottom: '1px solid var(--border)' }}>
+                  BLOKLAR
+                </div>
+              )}
+              {blockMatches.map(b => {
+                const s = stats[b.block]
+                return (
+                  <button key={b.block}
+                    onMouseDown={() => { zoomToBlock(b.block); setSelectedBlock(b.block); setSearchQuery(''); setSearchOpen(false) }}
+                    style={searchItemStyle}>
+                    <span style={{ fontFamily: 'var(--display)', fontSize: 13, color: blockColor(b.block), letterSpacing: 1.5, minWidth: 32 }}>
+                      {b.block}
+                    </span>
+                    <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>
+                      TIP {b.type} • {b.floors}K
+                    </span>
+                    {s && (
+                      <span style={{ marginLeft: 'auto', fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text2)' }}>
+                        {s.occupied}/{s.total_beds}
+                      </span>
+                    )}
+                  </button>
+                )
+              })}
+              {personnelResults.length > 0 && (
+                <div style={{ padding: '6px 10px', fontFamily: 'var(--mono)', fontSize: 9,
+                  color: 'var(--text3)', letterSpacing: 1.5, borderTop: '1px solid var(--border)',
+                  borderBottom: '1px solid var(--border)' }}>
+                  PERSONEL ({personnelResults.length})
+                </div>
+              )}
+              {personnelResults.map(p => (
+                <button key={p.id}
+                  onMouseDown={() => {
+                    if (p.block) {
+                      zoomToBlock(p.block)
+                      setSelectedBlock(p.block)
+                    }
+                    setSearchQuery('')
+                    setSearchOpen(false)
+                  }}
+                  style={searchItemStyle}>
+                  <span style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--text)', flex: 1, textAlign: 'left' }}>
+                    {p.full_name}
+                  </span>
+                  {p.block ? (
+                    <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--accent)' }}>
+                      {p.block}-{p.room_no}
+                    </span>
+                  ) : (
+                    <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>
+                      ATANMAMIS
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div style={{ width: 1, height: 22, background: 'var(--border)' }} />
+
+        {/* Zoom kontrolleri */}
+        <div style={{ display: 'flex', gap: 2, background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 6, padding: 2 }}>
+          <button onClick={zoomOut} title="Uzaklas" style={zoomBtn}>−</button>
+          <button onClick={resetView} title="Sifirla" style={{ ...zoomBtn, fontSize: 10, padding: '4px 8px' }}>RST</button>
+          <button onClick={zoomIn} title="Yakinlas" style={zoomBtn}>+</button>
+        </div>
+        <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: 1 }}>
+          {Math.round((VIEW_W / viewBox.w) * 100)}%
+        </span>
+
+        <div style={{ width: 1, height: 22, background: 'var(--border)' }} />
+
         {['all', 'M', 'S', 'Y'].map(t => (
           <button key={t} onClick={() => setTypeFilter(t)} style={chipBtn(typeFilter === t)}>
             {t === 'all' ? 'TUMU' : `${t} TIPI`}
@@ -398,7 +597,7 @@ export default function CampusMapPage() {
           ETIKETLER
         </label>
         <label style={lblToolbar}>
-          HARITA OPAK
+          OPAK
           <input type="range" min="0.3" max="1" step="0.05" value={imgOpacity}
             onChange={e => setImgOpacity(parseFloat(e.target.value))} style={{ width: 70 }} />
         </label>
@@ -482,11 +681,16 @@ export default function CampusMapPage() {
         }}>
           <svg
             ref={svgRef}
-            viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
-            style={{ width: '100%', height: 'auto', display: 'block', userSelect: 'none', cursor: dragging ? 'grabbing' : 'default' }}
+            viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`}
+            style={{ width: '100%', height: 'auto', display: 'block', userSelect: 'none',
+              cursor: panning ? 'grabbing' : dragging ? 'grabbing' : (editMode ? 'default' : 'grab') }}
             onMouseMove={onMouseMove}
+            onMouseDown={onSvgMouseDown}
+            onWheel={onWheel}
           >
-            <image href="/campus-map.png" x="0" y="0" width={VIEW_W} height={VIEW_H} opacity={imgOpacity} />
+            <image href="/campus-map.png" x="0" y="0" width={VIEW_W} height={VIEW_H} opacity={imgOpacity} data-pan-bg="1" />
+            {/* Pan icin gorunmez tutamak — pin uzerinde olmayan tum alan */}
+            <rect x={viewBox.x} y={viewBox.y} width={viewBox.w} height={viewBox.h} fill="transparent" data-pan-bg="1" />
             {/* Hafif vignette */}
             <radialGradient id="vignette">
               <stop offset="60%" stopColor="rgba(0,0,0,0)" />
@@ -502,6 +706,7 @@ export default function CampusMapPage() {
               const metric = computeMetric(mode, s, cfg)
               const isHover = hoverBlock === b.block
               const isSel = selectedBlock === b.block
+              const isHighlighted = highlightedBlock === b.block
               const baseR = 17
               const r = isSel ? baseR + 3 : (isHover ? baseR + 2 : baseR)
 
@@ -522,6 +727,16 @@ export default function CampusMapPage() {
                   {/* Halo */}
                   {(isHover || isSel) && (
                     <circle cx={p.x} cy={p.y} r={r + 12} fill={metric.color} opacity="0.18" />
+                  )}
+                  {/* Arama vurgu — sari pulsing halka */}
+                  {isHighlighted && (
+                    <>
+                      <circle cx={p.x} cy={p.y} r={r + 18} fill="none" stroke="#facc15" strokeWidth="2.5">
+                        <animate attributeName="r" values={`${r + 6};${r + 26}`} dur="1s" repeatCount="3" />
+                        <animate attributeName="opacity" values="1;0" dur="1s" repeatCount="3" />
+                      </circle>
+                      <circle cx={p.x} cy={p.y} r={r + 8} fill="#facc15" opacity="0.25" />
+                    </>
                   )}
                   {/* Canli olay pulse */}
                   {pulseBlocks[b.block] && (
@@ -633,6 +848,15 @@ export default function CampusMapPage() {
 
           {/* Legend overlay (mode-aware) */}
           <ModeLegend mode={mode} />
+
+          {/* Mini-map (sag-ust) */}
+          <MiniMap viewBox={viewBox} pins={pins} stats={stats} mode={mode} onPanTo={(x, y) => {
+            setViewBox(prev => ({
+              ...prev,
+              x: Math.max(-prev.w * 0.2, Math.min(VIEW_W - prev.w * 0.8, x - prev.w / 2)),
+              y: Math.max(-prev.h * 0.2, Math.min(VIEW_H - prev.h * 0.8, y - prev.h / 2)),
+            }))
+          }} />
         </div>
 
         {/* Side panel */}
@@ -659,6 +883,51 @@ export default function CampusMapPage() {
             </span>
           </div>
         )}
+      </div>
+    </div>
+  )
+}
+
+function MiniMap({ viewBox, pins, stats, mode, onPanTo }) {
+  const MW = 140
+  const MH = MW * (VIEW_H / VIEW_W)
+  const ref = useRef(null)
+
+  function handleClick(e) {
+    const rect = ref.current.getBoundingClientRect()
+    const x = ((e.clientX - rect.left) / rect.width) * VIEW_W
+    const y = ((e.clientY - rect.top) / rect.height) * VIEW_H
+    onPanTo(x, y)
+  }
+
+  // Pin renkleri (mode'a göre özetlenmiş)
+  return (
+    <div style={{
+      position: 'absolute', top: 12, right: 12,
+      background: 'rgba(10,10,10,0.85)', border: '1px solid var(--border)',
+      borderRadius: 6, padding: 4, cursor: 'crosshair',
+    }} ref={ref} onClick={handleClick}>
+      <svg viewBox={`0 0 ${VIEW_W} ${VIEW_H}`} width={MW} height={MH} style={{ display: 'block' }}>
+        <image href="/campus-map.png" x="0" y="0" width={VIEW_W} height={VIEW_H} opacity="0.6" />
+        <rect x="0" y="0" width={VIEW_W} height={VIEW_H} fill="rgba(0,0,0,0.3)" />
+        {Object.entries(pins).map(([block, p]) => {
+          const s = stats[block]
+          const occ = s?.occupancy_pct || 0
+          const hasBeds = (s?.total_beds || 0) > 0
+          let color = '#6b7280'
+          if (hasBeds) {
+            if (occ >= 85) color = '#dc2626'
+            else if (occ >= 60) color = '#f59e0b'
+            else if (occ > 0) color = '#16a34a'
+          }
+          return <circle key={block} cx={p.x} cy={p.y} r="14" fill={color} stroke="#fff" strokeWidth="1.5" />
+        })}
+        {/* Viewport gostergesi */}
+        <rect x={viewBox.x} y={viewBox.y} width={viewBox.w} height={viewBox.h}
+          fill="rgba(240,165,0,0.15)" stroke="var(--accent)" strokeWidth="4" />
+      </svg>
+      <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--text3)', textAlign: 'center', letterSpacing: 1, marginTop: 2 }}>
+        MINI-MAP • TIKLA
       </div>
     </div>
   )
@@ -1025,3 +1294,14 @@ const btnGreen = { background: '#16a34a', color: '#fff', border: 'none', borderR
 const btnGhost = { background: 'var(--surface2)', color: 'var(--text2)', border: '1px solid var(--border)', borderRadius: 6, padding: '5px 10px', cursor: 'pointer', fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: 1 }
 const btnDanger = { background: 'var(--surface2)', color: '#dc2626', border: '1px solid var(--border)', borderRadius: 6, padding: '5px 10px', cursor: 'pointer', fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: 1 }
 const btnAccent = { background: 'var(--surface2)', color: 'var(--accent)', border: '1px solid var(--border)', borderRadius: 6, padding: '5px 10px', cursor: 'pointer', fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: 1, fontWeight: 600 }
+const zoomBtn = {
+  background: 'transparent', color: 'var(--text2)', border: 'none', borderRadius: 4,
+  padding: '4px 9px', cursor: 'pointer', fontFamily: 'var(--mono)',
+  fontSize: 14, fontWeight: 700, lineHeight: 1, minWidth: 26,
+}
+const searchItemStyle = {
+  display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+  background: 'transparent', border: 'none', borderBottom: '1px solid var(--border)',
+  padding: '8px 10px', cursor: 'pointer', color: 'var(--text)', textAlign: 'left',
+  transition: 'background .1s',
+}
