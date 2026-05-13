@@ -13,6 +13,7 @@ import MobileLayout from './modules/mobile/shared/MobileLayout.jsx'
 import MobileProtected from './modules/mobile/shared/MobileProtected.jsx'
 
 const DashboardPage = lazy(() => import('./modules/dashboard/DashboardPage.jsx'))
+const CampusMapPage = lazy(() => import('./modules/campus-map/CampusMapPage.jsx'))
 const CheckinPage = lazy(() => import('./modules/checkin/CheckinPage.jsx'))
 const CapacityPage = lazy(() => import('./modules/capacity/CapacityPage.jsx'))
 const HousekeepingPage = lazy(() => import('./modules/housekeeping/HousekeepingPage.jsx'))
@@ -201,6 +202,7 @@ export default function App() {
           <Route path="/laundry-kiosk" element={<LaundryKioskPage />} />
           <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
             <Route index element={<DashboardPage />} />
+            <Route path="campus-map" element={<CampusMapPage />} />
             <Route path="checkin" element={<CheckinPage />} />
             <Route path="capacity" element={<CapacityPage />} />
             <Route path="housekeeping" element={<HousekeepingPage />} />

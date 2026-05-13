@@ -35,6 +35,7 @@ import { backupRouter } from './modules/backup/routes.js'
 import { kvkkRouter } from './modules/kvkk/routes.js'
 import { systemRouter } from './modules/system/routes.js'
 import { notificationPrefsRouter } from './modules/notification-prefs/routes.js'
+import { campusMapRouter } from './modules/campus-map/routes.js'
 
 if (process.env.NODE_ENV === 'production' && !process.env.ALLOWED_ORIGIN) {
   console.error('[Startup] HATA: ALLOWED_ORIGIN env değişkeni production\'da zorunludur.')
@@ -227,6 +228,7 @@ app.use('/api/backup', writeLimiter, backupRouter)
 app.use('/api/kvkk', readLimiter, kvkkRouter)
 app.use('/api/system', readLimiter, systemRouter)
 app.use('/api/notification-prefs', writeLimiter, notificationPrefsRouter)
+app.use('/api/campus-map', writeLimiter, campusMapRouter)
 
 // ── 404 Handler ──────────────────────────────────────────────────────────────
 app.use((req, res) => {

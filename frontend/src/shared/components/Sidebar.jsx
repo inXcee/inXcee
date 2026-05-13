@@ -13,6 +13,7 @@ const NAV_GROUPS = [
     label: 'GENEL BAKIS',
     links: [
       { to: '/', icon: '\u25A3', label: 'Dashboard', roles: ['campus_manager','shift_supervisor'] },
+      { to: '/campus-map', icon: '\u29C9', label: 'Kampus Haritasi', roles: ['campus_manager','shift_supervisor'] },
     ]
   },
   {
