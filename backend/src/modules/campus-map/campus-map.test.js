@@ -83,6 +83,23 @@ describe('Campus Map pins', () => {
     expect(get.body.pins).toEqual({ VALID: { x: 50, y: 60 } })
   })
 
+  it('PUT preserves valid optional fields (size, color, label, hidden)', async () => {
+    const res = await request(app).put('/api/campus-map/pins')
+      .set('Authorization', `Bearer ${mgrToken}`)
+      .send({ pins: {
+        FULL: { x: 100, y: 200, size: 1.4, color: '#a855f7', label: 'Yeni Blok', hidden: true },
+        BAD_CLR: { x: 50, y: 50, color: 'red' }, // invalid color stripped
+        BAD_SZ:  { x: 60, y: 60, size: 9 }, // out-of-range stripped
+        LONG_L:  { x: 70, y: 70, label: 'a'.repeat(50) }, // too long stripped
+      }})
+    expect(res.status).toBe(200)
+    const get = await request(app).get('/api/campus-map/pins').set('Authorization', `Bearer ${mgrToken}`)
+    expect(get.body.pins.FULL).toEqual({ x: 100, y: 200, size: 1.4, color: '#a855f7', label: 'Yeni Blok', hidden: true })
+    expect(get.body.pins.BAD_CLR).toEqual({ x: 50, y: 50 })
+    expect(get.body.pins.BAD_SZ).toEqual({ x: 60, y: 60 })
+    expect(get.body.pins.LONG_L).toEqual({ x: 70, y: 70 })
+  })
+
   it('PUT rejects non-object body', async () => {
     const res = await request(app).put('/api/campus-map/pins')
       .set('Authorization', `Bearer ${mgrToken}`)

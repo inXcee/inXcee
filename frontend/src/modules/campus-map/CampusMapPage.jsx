@@ -171,6 +171,8 @@ export default function CampusMapPage() {
   const [showHelp, setShowHelp] = useState(false)
   const [imgOpacity, setImgOpacity] = useState(1)
   const [heatCloud, setHeatCloud] = useState(false)
+  const [pinScale, setPinScale] = useState(1) // 0.5-1.5 genel pin boyutu carpani
+  const [inspectorBlock, setInspectorBlock] = useState(null) // edit modunda pin inspector
   const [liveEvents, setLiveEvents] = useState([]) // son 5 olay
   const [pulseBlocks, setPulseBlocks] = useState({})
   // Zoom/Pan
@@ -715,6 +717,15 @@ export default function CampusMapPage() {
           <input type="range" min="0.3" max="1" step="0.05" value={imgOpacity}
             onChange={e => setImgOpacity(parseFloat(e.target.value))} style={{ width: 60 }} />
         </label>
+        <label style={lblToolbar}>
+          PIN
+          <input type="range" min="0.5" max="1.6" step="0.05" value={pinScale}
+            onChange={e => setPinScale(parseFloat(e.target.value))} style={{ width: 60 }}
+            title="Tum pin'lerin boyut carpani" />
+          <span style={{ minWidth: 28, textAlign: 'right', color: 'var(--text2)' }}>
+            {Math.round(pinScale * 100)}%
+          </span>
+        </label>
         <button onClick={() => setHeatCloud(h => !h)} title="Heat cloud (mod renklerine gore yumusak isi bulutlari)"
           style={chipBtn(heatCloud)}>
           {heatCloud ? '☀ HEAT' : '○ HEAT'}
@@ -826,8 +837,25 @@ export default function CampusMapPage() {
           borderRadius: 6, padding: '8px 12px', marginBottom: 10,
           fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text2)', letterSpacing: 1,
         }}>
-          ✎ DUZENLEME — Pinleri ait oldugu binanin uzerine surukle. Kaydet butonu ile tum kullanicilara yayinla.
+          ✎ DUZENLEME — Pini surukle (konum) • Pine tikla (renk/boyut/etiket/gizle) • KAYDET tum kullanicilara yayinlar
         </div>
+      )}
+
+      {/* Pin Inspector (edit mode) */}
+      {editMode && inspectorBlock && (
+        <PinInspector
+          block={inspectorBlock}
+          pin={pins[inspectorBlock]}
+          onChange={(updates) => setPins(prev => ({
+            ...prev,
+            [inspectorBlock]: { ...prev[inspectorBlock], ...updates },
+          }))}
+          onReset={() => setPins(prev => {
+            const cur = prev[inspectorBlock]
+            return { ...prev, [inspectorBlock]: { x: cur.x, y: cur.y } }
+          })}
+          onClose={() => setInspectorBlock(null)}
+        />
       )}
 
       {/* Map + side panel */}
@@ -876,15 +904,20 @@ export default function CampusMapPage() {
             {visibleBlocks.map(b => {
               const p = pins[b.block]
               if (!p) return null
+              if (p.hidden && !editMode) return null
               const s = stats[b.block]
               const cfg = b
               const metric = computeMetric(mode, s, cfg)
+              // Custom overrides
+              const customColor = p.color || metric.color
+              const customLabel = p.label || b.block
               const isHover = hoverBlock === b.block
               const isSel = selectedBlock === b.block
               const isMulti = multiSelect.has(b.block)
               const isHighlighted = highlightedBlock === b.block
-              const baseR = 17
+              const baseR = 17 * pinScale * (p.size || 1)
               const r = isSel ? baseR + 3 : (isHover ? baseR + 2 : baseR)
+              const pinOpacity = p.hidden ? 0.3 : 1
 
               // Donut: dis halka = doluluk yuzdesi (her zaman), ic = aktif mod rengi
               const occPct = s?.occupancy_pct || 0
@@ -894,11 +927,15 @@ export default function CampusMapPage() {
               const dash = (occPct / 100) * circumference
 
               return (
-                <g key={b.block}
+                <g key={b.block} opacity={pinOpacity}
                   onMouseEnter={() => setHoverBlock(b.block)}
                   onMouseLeave={() => setHoverBlock(null)}
                   onClick={(e) => {
-                    if (editMode) return
+                    if (editMode) {
+                      // Edit modunda tikla = inspector ac
+                      setInspectorBlock(b.block)
+                      return
+                    }
                     if (e.ctrlKey || e.metaKey || e.shiftKey) {
                       setMultiSelect(prev => {
                         const next = new Set(prev)
@@ -915,7 +952,18 @@ export default function CampusMapPage() {
                 >
                   {/* Halo */}
                   {(isHover || isSel) && (
-                    <circle cx={p.x} cy={p.y} r={r + 12} fill={metric.color} opacity="0.18" />
+                    <circle cx={p.x} cy={p.y} r={r + 12} fill={customColor} opacity="0.18" />
+                  )}
+                  {/* Hidden uyarisi (sadece edit modunda) */}
+                  {p.hidden && (
+                    <circle cx={p.x} cy={p.y} r={r + 6} fill="none"
+                      stroke="#6b7280" strokeWidth="1.5" strokeDasharray="2 2" />
+                  )}
+                  {/* Custom flag (kullanici ozellestirme yapti) */}
+                  {(p.color || p.size || p.label) && (
+                    <circle cx={p.x - r + 4} cy={p.y - r + 4} r="3.5"
+                      fill="var(--accent)" stroke="#000" strokeWidth="0.5"
+                      style={{ pointerEvents: 'none' }} />
                   )}
                   {/* Multi-select halka */}
                   {isMulti && (
@@ -965,16 +1013,16 @@ export default function CampusMapPage() {
                   />
                   {/* Gölge */}
                   <circle cx={p.x + 1} cy={p.y + 2} r={r} fill="rgba(0,0,0,0.5)" />
-                  {/* Ana pin — mode rengi */}
+                  {/* Ana pin — mode rengi veya custom */}
                   <circle cx={p.x} cy={p.y} r={r}
-                    fill={metric.color} stroke="#fff" strokeWidth="2"
+                    fill={customColor} stroke="#fff" strokeWidth="2"
                     onMouseDown={(e) => onPinMouseDown(e, b.block)}
                   />
-                  {/* Blok ismi */}
+                  {/* Blok ismi (veya custom label) */}
                   <text x={p.x} y={p.y - 2} textAnchor="middle" dominantBaseline="central"
-                    fontFamily="var(--display)" fontSize={b.block.length > 2 ? 9 : 11} fontWeight="700"
-                    fill="#fff" style={{ pointerEvents: 'none' }}>
-                    {b.block}
+                    fontFamily="var(--display)" fontSize={customLabel.length > 3 ? 8 : customLabel.length > 2 ? 9 : 11}
+                    fontWeight="700" fill="#fff" style={{ pointerEvents: 'none' }}>
+                    {customLabel.length > 6 ? customLabel.slice(0, 6) : customLabel}
                   </text>
                   {/* Metrik */}
                   <text x={p.x} y={p.y + 8} textAnchor="middle" dominantBaseline="central"
@@ -987,7 +1035,7 @@ export default function CampusMapPage() {
                   {showLabels && (
                     <g style={{ pointerEvents: 'none' }}>
                       <rect x={p.x + r + 5} y={p.y - 9} width={48} height={18} rx={4}
-                        fill="rgba(0,0,0,0.85)" stroke={metric.color} strokeWidth="1" />
+                        fill="rgba(0,0,0,0.85)" stroke={customColor} strokeWidth="1" />
                       <text x={p.x + r + 29} y={p.y + 1}
                         textAnchor="middle" dominantBaseline="central"
                         fontFamily="var(--mono)" fontSize="9" fontWeight="600" fill="#fff">
@@ -1081,6 +1129,136 @@ export default function CampusMapPage() {
             </span>
           </div>
         )}
+      </div>
+    </div>
+  )
+}
+
+const PRESET_COLORS = [
+  '#dc2626', // kirmizi
+  '#f59e0b', // turuncu
+  '#eab308', // sari
+  '#16a34a', // yesil
+  '#06b6d4', // cyan
+  '#3b82f6', // mavi
+  '#8b5cf6', // mor
+  '#a855f7', // pembe-mor
+  '#ec4899', // pembe
+  '#475569', // gri-koyu
+  '#6b7280', // gri
+  '#000000', // siyah
+]
+
+function PinInspector({ block, pin, onChange, onReset, onClose }) {
+  if (!pin) return null
+  return (
+    <div style={{
+      position: 'fixed', top: 100, right: 24, zIndex: 100,
+      background: 'var(--surface)', border: '1px solid var(--accent)', borderRadius: 10,
+      padding: 16, width: 280, color: 'var(--text)',
+      boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <div>
+          <div style={{ fontFamily: 'var(--display)', fontSize: 18, color: 'var(--accent)', letterSpacing: 2 }}>
+            {block}
+          </div>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: 1 }}>
+            PIN OZELLESTIR
+          </div>
+        </div>
+        <button onClick={onClose} style={{
+          background: 'transparent', border: '1px solid var(--border)', borderRadius: 6,
+          color: 'var(--text3)', padding: '4px 10px', cursor: 'pointer', fontSize: 13,
+        }}>✕</button>
+      </div>
+
+      {/* Renk */}
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+          <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', letterSpacing: 1 }}>
+            RENK {pin.color ? '(OZEL)' : '(MOD)'}
+          </span>
+          {pin.color && (
+            <button onClick={() => onChange({ color: undefined })} style={miniLink}>
+              VARSAYILANA DON
+            </button>
+          )}
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 4 }}>
+          {PRESET_COLORS.map(c => (
+            <button key={c} onClick={() => onChange({ color: c })} style={{
+              width: '100%', height: 28, background: c,
+              border: pin.color === c ? '2px solid #fff' : '1px solid var(--border)',
+              borderRadius: 4, cursor: 'pointer',
+              boxShadow: pin.color === c ? '0 0 0 1px var(--accent)' : 'none',
+            }} title={c} />
+          ))}
+        </div>
+        <input type="color" value={pin.color || '#888888'}
+          onChange={e => onChange({ color: e.target.value })}
+          style={{ width: '100%', height: 28, marginTop: 6, border: '1px solid var(--border)',
+            borderRadius: 4, background: 'transparent', cursor: 'pointer' }} />
+      </div>
+
+      {/* Boyut */}
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+          <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', letterSpacing: 1 }}>
+            BOYUT {pin.size ? `(${Math.round(pin.size * 100)}%)` : '(STD)'}
+          </span>
+          {pin.size && (
+            <button onClick={() => onChange({ size: undefined })} style={miniLink}>SIFIRLA</button>
+          )}
+        </div>
+        <input type="range" min="0.5" max="2.0" step="0.05" value={pin.size || 1}
+          onChange={e => onChange({ size: parseFloat(e.target.value) })}
+          style={{ width: '100%' }} />
+        <div style={{ display: 'flex', justifyContent: 'space-between',
+          fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>
+          <span>%50</span><span>%100</span><span>%200</span>
+        </div>
+      </div>
+
+      {/* Etiket */}
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+          <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', letterSpacing: 1 }}>
+            ETIKET {pin.label ? '(OZEL)' : `(${block})`}
+          </span>
+          {pin.label && (
+            <button onClick={() => onChange({ label: undefined })} style={miniLink}>SIFIRLA</button>
+          )}
+        </div>
+        <input type="text" placeholder={block} value={pin.label || ''}
+          onChange={e => onChange({ label: e.target.value })}
+          maxLength={20}
+          style={{
+            width: '100%', background: 'var(--surface2)', border: '1px solid var(--border)',
+            borderRadius: 4, padding: '6px 10px', color: 'var(--text)',
+            fontFamily: 'var(--mono)', fontSize: 12, boxSizing: 'border-box',
+          }} />
+      </div>
+
+      {/* Gizle toggle */}
+      <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14,
+        fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text2)', cursor: 'pointer' }}>
+        <input type="checkbox" checked={!!pin.hidden}
+          onChange={e => onChange({ hidden: e.target.checked || undefined })} />
+        Bu pin'i gizle (sadece edit modunda gorunur)
+      </label>
+
+      <button onClick={onReset} style={{
+        width: '100%', background: 'var(--surface2)', color: 'var(--red)',
+        border: '1px solid var(--border)', borderRadius: 6,
+        padding: '8px 12px', cursor: 'pointer',
+        fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: 1, fontWeight: 600,
+      }}>
+        ⟲ TUM OZELLESTIRMELERI KALDIR
+      </button>
+      <div style={{ marginTop: 8, fontFamily: 'var(--mono)', fontSize: 9,
+        color: 'var(--text3)', textAlign: 'center', letterSpacing: 1 }}>
+        Degisiklikler KAYDET butonuna basinca yayinlanir
       </div>
     </div>
   )
@@ -1597,6 +1775,12 @@ const zoomBtn = {
 }
 const thStyle = { textAlign: 'left', padding: '6px 4px', color: 'var(--text3)', fontWeight: 400, letterSpacing: 1 }
 const tdStyle = { padding: '6px 4px', color: 'var(--text2)' }
+const miniLink = {
+  background: 'transparent', border: 'none', color: 'var(--accent)',
+  padding: 0, cursor: 'pointer',
+  fontFamily: 'var(--mono)', fontSize: 9, letterSpacing: 1, fontWeight: 600,
+  textDecoration: 'underline',
+}
 const kbd = {
   background: 'var(--surface2)', border: '1px solid var(--border)',
   borderBottomWidth: 2, borderRadius: 4,

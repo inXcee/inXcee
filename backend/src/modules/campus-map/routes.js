@@ -42,15 +42,27 @@ campusMapRouter.put('/pins', ...requireRole('campus_manager'), (req, res) => {
     if (!pins || typeof pins !== 'object' || Array.isArray(pins)) {
       return res.status(400).json({ error: 'pins objesi gerekli' })
     }
-    // Sanitize: sadece { [block]: { x: number, y: number } } yapisi
+    // Sanitize: { [block]: { x, y, size?, color?, label?, hidden? } }
     const clean = {}
+    const COLOR_RE = /^#[0-9a-fA-F]{6}$/
     for (const [block, pos] of Object.entries(pins)) {
       if (typeof block !== 'string' || block.length > 8) continue
       if (!pos || typeof pos !== 'object') continue
       const x = Number(pos.x), y = Number(pos.y)
       if (!Number.isFinite(x) || !Number.isFinite(y)) continue
       if (x < 0 || x > 5000 || y < 0 || y > 5000) continue
-      clean[block] = { x, y }
+      const entry = { x, y }
+      if (pos.size != null) {
+        const s = Number(pos.size)
+        if (Number.isFinite(s) && s >= 0.4 && s <= 2.5) entry.size = s
+      }
+      if (typeof pos.color === 'string' && COLOR_RE.test(pos.color)) entry.color = pos.color
+      if (typeof pos.label === 'string' && pos.label.length <= 20) {
+        const trimmed = pos.label.trim()
+        if (trimmed) entry.label = trimmed
+      }
+      if (pos.hidden === true) entry.hidden = true
+      clean[block] = entry
     }
     const db = getDB()
     db.prepare(`
