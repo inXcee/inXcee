@@ -831,10 +831,12 @@ export default function CampusMapPage() {
       )}
 
       {/* Map + side panel */}
-      <div style={{ display: 'flex', gap: 12, alignItems: 'stretch', flex: 1, minHeight: 500 }}>
+      <div style={{ display: 'flex', gap: 12, alignItems: 'stretch', flex: 1, minHeight: 480,
+        maxHeight: 720, maxWidth: 1400, width: '100%', margin: '0 auto' }}>
         <div style={{
           flex: 1, background: '#0a0a0a', border: '1px solid var(--border)',
           borderRadius: 8, overflow: 'hidden', position: 'relative',
+          maxWidth: 900,
         }}>
           <svg
             ref={svgRef}
