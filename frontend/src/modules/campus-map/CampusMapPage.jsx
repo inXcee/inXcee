@@ -162,13 +162,12 @@ export default function CampusMapPage() {
   const [dragging, setDragging] = useState(null)
   const [panning, setPanning] = useState(null) // { startVx, startVy, startMx, startMy }
   const [selectedBlock, setSelectedBlock] = useState(null)
+  const [multiSelect, setMultiSelect] = useState(() => new Set())
   const [typeFilter, setTypeFilter] = useState('all')
   const [hoverBlock, setHoverBlock] = useState(null)
   const [highlightedBlock, setHighlightedBlock] = useState(null) // arama sonucu vurgu
   const [showLabels, setShowLabels] = useState(true)
-  const [imgOpacity, setImgOpacity] = useState(1)
   const [mode, setMode] = useState('occupancy')
-  const [schematic, setSchematic] = useState(false)
   const [showHelp, setShowHelp] = useState(false)
   const [liveEvents, setLiveEvents] = useState([]) // son 5 olay
   const [pulseBlocks, setPulseBlocks] = useState({})
@@ -281,7 +280,6 @@ export default function CampusMapPage() {
       if (e.key === '-' || e.key === '_') { zoomOut(); return }
       if (e.key === '0') { resetView(); return }
       if (e.key === 'f' || e.key === 'F') { fitAllPins(); return }
-      if (e.key === 's' || e.key === 'S') { setSchematic(s => !s); return }
       const step = viewBox.w / 8
       if (e.key === 'ArrowUp')    setViewBox(v => ({ ...v, y: Math.max(-v.h * 0.2, v.y - step * (VIEW_H/VIEW_W)) }))
       if (e.key === 'ArrowDown')  setViewBox(v => ({ ...v, y: Math.min(VIEW_H - v.h * 0.8, v.y + step * (VIEW_H/VIEW_W)) }))
@@ -513,15 +511,15 @@ export default function CampusMapPage() {
               <kbd style={kbd}>+ / −</kbd><span>Yakinlas / uzaklas</span>
               <kbd style={kbd}>0</kbd><span>Zoom sifirla</span>
               <kbd style={kbd}>F</kbd><span>Tum pin'leri sigdir</span>
-              <kbd style={kbd}>S</kbd><span>Sematik / uydu</span>
               <kbd style={kbd}>← ↑ ↓ →</kbd><span>Pan (kaydir)</span>
               <kbd style={kbd}>1 - 6</kbd><span>Gorunum modlari</span>
               <kbd style={kbd}>Esc</kbd><span>Kapat / iptal</span>
               <kbd style={kbd}>?</kbd><span>Bu yardim ekrani</span>
             </div>
             <div style={{ marginTop: 18, paddingTop: 14, borderTop: '1px solid var(--border)',
-              fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', letterSpacing: 1 }}>
-              MOUSE: Tekerlek = zoom (mouse uzerinde) • Surukle = pan • Pin tikla = detay
+              fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', letterSpacing: 1, lineHeight: 1.7 }}>
+              MOUSE: Tekerlek = zoom • Surukle = pan • Pin tikla = detay<br />
+              Ctrl/Shift + tikla = coklu secim (karsilastirma)
             </div>
           </div>
         </div>
@@ -685,16 +683,6 @@ export default function CampusMapPage() {
           <input type="checkbox" checked={showLabels} onChange={e => setShowLabels(e.target.checked)} />
           ETIKETLER
         </label>
-        <label style={lblToolbar}>
-          OPAK
-          <input type="range" min="0.3" max="1" step="0.05" value={imgOpacity}
-            onChange={e => setImgOpacity(parseFloat(e.target.value))} style={{ width: 70 }}
-            disabled={schematic} />
-        </label>
-        <button onClick={() => setSchematic(s => !s)} title="Sematik gorunum (S)"
-          style={chipBtn(schematic)}>
-          {schematic ? '◊ SEMATIK' : '⊞ UYDU'}
-        </button>
         <button onClick={() => window.print()} title="Yazdir" style={btnGhost}>⎙ YAZDIR</button>
         <button onClick={() => setShowHelp(true)} title="Klavye kisayollari (?)" style={btnGhost}>?</button>
         {isManager && (
@@ -717,6 +705,26 @@ export default function CampusMapPage() {
           </>
         )}
       </div>
+
+      {/* Multi-select aksiyon bar */}
+      {multiSelect.size > 0 && (
+        <div style={{
+          background: 'rgba(240,165,0,0.12)', border: '1px solid var(--accent)', borderRadius: 8,
+          padding: '10px 14px', marginBottom: 10,
+          display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+        }}>
+          <span style={{ fontFamily: 'var(--display)', fontSize: 14, color: 'var(--accent)', letterSpacing: 2 }}>
+            {multiSelect.size} BLOK SECILI
+          </span>
+          <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text2)', letterSpacing: 1 }}>
+            {Array.from(multiSelect).join(' • ')}
+          </span>
+          <div style={{ flex: 1 }} />
+          <button onClick={() => setMultiSelect(new Set())} style={btnGhost}>
+            ✕ SECIMI TEMIZLE
+          </button>
+        </div>
+      )}
 
       {/* Canli olay feed */}
       {liveEvents.length > 0 && (
@@ -784,23 +792,17 @@ export default function CampusMapPage() {
             onMouseDown={onSvgMouseDown}
             onWheel={onWheel}
           >
-            {schematic ? (
-              <>
-                <defs>
-                  <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
-                    <path d="M 40 0 L 0 0 0 40" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
-                  </pattern>
-                  <linearGradient id="schemBg" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0" stopColor="#0f172a" />
-                    <stop offset="1" stopColor="#1e293b" />
-                  </linearGradient>
-                </defs>
-                <rect x="0" y="0" width={VIEW_W} height={VIEW_H} fill="url(#schemBg)" data-pan-bg="1" />
-                <rect x="0" y="0" width={VIEW_W} height={VIEW_H} fill="url(#grid)" data-pan-bg="1" />
-              </>
-            ) : (
-              <image href="/campus-map.png" x="0" y="0" width={VIEW_W} height={VIEW_H} opacity={imgOpacity} data-pan-bg="1" />
-            )}
+            <defs>
+              <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+                <path d="M 40 0 L 0 0 0 40" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
+              </pattern>
+              <linearGradient id="schemBg" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stopColor="#0f172a" />
+                <stop offset="1" stopColor="#1e293b" />
+              </linearGradient>
+            </defs>
+            <rect x="0" y="0" width={VIEW_W} height={VIEW_H} fill="url(#schemBg)" data-pan-bg="1" />
+            <rect x="0" y="0" width={VIEW_W} height={VIEW_H} fill="url(#grid)" data-pan-bg="1" />
             {/* Pan icin gorunmez tutamak — pin uzerinde olmayan tum alan */}
             <rect x={viewBox.x} y={viewBox.y} width={viewBox.w} height={viewBox.h} fill="transparent" data-pan-bg="1" />
             {/* Hafif vignette */}
@@ -818,6 +820,7 @@ export default function CampusMapPage() {
               const metric = computeMetric(mode, s, cfg)
               const isHover = hoverBlock === b.block
               const isSel = selectedBlock === b.block
+              const isMulti = multiSelect.has(b.block)
               const isHighlighted = highlightedBlock === b.block
               const baseR = 17
               const r = isSel ? baseR + 3 : (isHover ? baseR + 2 : baseR)
@@ -833,12 +836,36 @@ export default function CampusMapPage() {
                 <g key={b.block}
                   onMouseEnter={() => setHoverBlock(b.block)}
                   onMouseLeave={() => setHoverBlock(null)}
-                  onClick={() => !editMode && setSelectedBlock(b.block)}
+                  onClick={(e) => {
+                    if (editMode) return
+                    if (e.ctrlKey || e.metaKey || e.shiftKey) {
+                      setMultiSelect(prev => {
+                        const next = new Set(prev)
+                        if (next.has(b.block)) next.delete(b.block)
+                        else next.add(b.block)
+                        return next
+                      })
+                    } else {
+                      setSelectedBlock(b.block)
+                      setMultiSelect(new Set())
+                    }
+                  }}
                   style={{ cursor: editMode ? 'grab' : 'pointer' }}
                 >
                   {/* Halo */}
                   {(isHover || isSel) && (
                     <circle cx={p.x} cy={p.y} r={r + 12} fill={metric.color} opacity="0.18" />
+                  )}
+                  {/* Multi-select halka */}
+                  {isMulti && (
+                    <>
+                      <circle cx={p.x} cy={p.y} r={r + 9} fill="none"
+                        stroke="var(--accent)" strokeWidth="2.5" strokeDasharray="4 3" />
+                      <circle cx={p.x + r - 3} cy={p.y - r + 3} r="6" fill="var(--accent)" stroke="#fff" strokeWidth="1.5" />
+                      <text x={p.x + r - 3} y={p.y - r + 3} textAnchor="middle" dominantBaseline="central"
+                        fontFamily="var(--mono)" fontSize="9" fontWeight="700" fill="#000"
+                        style={{ pointerEvents: 'none' }}>✓</text>
+                    </>
                   )}
                   {/* Arama vurgu — sari pulsing halka */}
                   {isHighlighted && (
@@ -960,19 +987,17 @@ export default function CampusMapPage() {
 
           {/* Legend overlay (mode-aware) */}
           <ModeLegend mode={mode} />
-
-          {/* Mini-map (sag-ust) */}
-          <MiniMap viewBox={viewBox} pins={pins} stats={stats} mode={mode} onPanTo={(x, y) => {
-            setViewBox(prev => ({
-              ...prev,
-              x: Math.max(-prev.w * 0.2, Math.min(VIEW_W - prev.w * 0.8, x - prev.w / 2)),
-              y: Math.max(-prev.h * 0.2, Math.min(VIEW_H - prev.h * 0.8, y - prev.h / 2)),
-            }))
-          }} />
         </div>
 
-        {/* Side panel */}
-        {selectedBlock ? (
+        {/* Side panel — multi-select varsa karsilastirma, tek secim varsa detay */}
+        {multiSelect.size >= 2 ? (
+          <ComparePanel
+            blocks={Array.from(multiSelect)}
+            stats={stats}
+            onClose={() => setMultiSelect(new Set())}
+            onSelectSingle={(b) => { setSelectedBlock(b); setMultiSelect(new Set()) }}
+          />
+        ) : selectedBlock ? (
           <SidePanel
             block={selectedBlock}
             cfg={selCfg}
@@ -995,51 +1020,6 @@ export default function CampusMapPage() {
             </span>
           </div>
         )}
-      </div>
-    </div>
-  )
-}
-
-function MiniMap({ viewBox, pins, stats, mode, onPanTo }) {
-  const MW = 140
-  const MH = MW * (VIEW_H / VIEW_W)
-  const ref = useRef(null)
-
-  function handleClick(e) {
-    const rect = ref.current.getBoundingClientRect()
-    const x = ((e.clientX - rect.left) / rect.width) * VIEW_W
-    const y = ((e.clientY - rect.top) / rect.height) * VIEW_H
-    onPanTo(x, y)
-  }
-
-  // Pin renkleri (mode'a göre özetlenmiş)
-  return (
-    <div style={{
-      position: 'absolute', top: 12, right: 12,
-      background: 'rgba(10,10,10,0.85)', border: '1px solid var(--border)',
-      borderRadius: 6, padding: 4, cursor: 'crosshair',
-    }} ref={ref} onClick={handleClick}>
-      <svg viewBox={`0 0 ${VIEW_W} ${VIEW_H}`} width={MW} height={MH} style={{ display: 'block' }}>
-        <image href="/campus-map.png" x="0" y="0" width={VIEW_W} height={VIEW_H} opacity="0.6" />
-        <rect x="0" y="0" width={VIEW_W} height={VIEW_H} fill="rgba(0,0,0,0.3)" />
-        {Object.entries(pins).map(([block, p]) => {
-          const s = stats[block]
-          const occ = s?.occupancy_pct || 0
-          const hasBeds = (s?.total_beds || 0) > 0
-          let color = '#6b7280'
-          if (hasBeds) {
-            if (occ >= 85) color = '#dc2626'
-            else if (occ >= 60) color = '#f59e0b'
-            else if (occ > 0) color = '#16a34a'
-          }
-          return <circle key={block} cx={p.x} cy={p.y} r="14" fill={color} stroke="#fff" strokeWidth="1.5" />
-        })}
-        {/* Viewport gostergesi */}
-        <rect x={viewBox.x} y={viewBox.y} width={viewBox.w} height={viewBox.h}
-          fill="rgba(240,165,0,0.15)" stroke="var(--accent)" strokeWidth="4" />
-      </svg>
-      <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--text3)', textAlign: 'center', letterSpacing: 1, marginTop: 2 }}>
-        MINI-MAP • TIKLA
       </div>
     </div>
   )
@@ -1190,6 +1170,147 @@ function ModeLegend({ mode }) {
           <span>{label}</span>
         </div>
       ))}
+    </div>
+  )
+}
+
+function ComparePanel({ blocks, stats, onClose, onSelectSingle }) {
+  const items = blocks.map(b => ({ block: b, s: stats[b], cfg: BLOCK_BY_NAME[b] })).filter(x => x.s && x.cfg)
+  // Aggregate
+  const sum = items.reduce((a, { s }) => ({
+    total_beds: a.total_beds + s.total_beds,
+    occupied: a.occupied + s.occupied,
+    empty_rooms: a.empty_rooms + s.empty_rooms,
+    quarantine: a.quarantine + s.quarantine,
+    maintenance: a.maintenance + s.maintenance,
+    open_faults: a.open_faults + s.open_faults,
+    cleaning_done: a.cleaning_done + s.cleaning_done,
+    cleaning_total: a.cleaning_total + s.cleaning_total,
+    day_count: a.day_count + s.day_count,
+    night_count: a.night_count + s.night_count,
+  }), { total_beds: 0, occupied: 0, empty_rooms: 0, quarantine: 0, maintenance: 0,
+        open_faults: 0, cleaning_done: 0, cleaning_total: 0, day_count: 0, night_count: 0 })
+
+  const avgOcc = sum.total_beds > 0 ? Math.round((sum.occupied / sum.total_beds) * 100) : 0
+
+  return (
+    <div style={{
+      width: 340, background: 'var(--surface)', border: '1px solid var(--accent)',
+      borderRadius: 8, padding: 16, position: 'sticky', top: 20,
+      maxHeight: 'calc(100vh - 40px)', overflowY: 'auto',
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <div>
+          <div style={{ fontFamily: 'var(--display)', fontSize: 18, color: 'var(--accent)', letterSpacing: 2 }}>
+            KARSILASTIRMA
+          </div>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: 1, marginTop: 2 }}>
+            {items.length} BLOK • TOPLAM
+          </div>
+        </div>
+        <button onClick={onClose} style={{
+          background: 'transparent', border: '1px solid var(--border)', borderRadius: 6,
+          color: 'var(--text3)', padding: '4px 10px', cursor: 'pointer', fontSize: 13,
+        }}>✕</button>
+      </div>
+
+      {/* Toplam ozet */}
+      <div style={{ background: 'var(--surface2)', borderRadius: 6, padding: '10px 12px', marginBottom: 12 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+          <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: 1 }}>
+            ORT. DOLULUK
+          </span>
+          <span style={{ fontFamily: 'var(--display)', fontSize: 18, color: 'var(--accent)' }}>
+            %{avgOcc}
+          </span>
+        </div>
+        <div style={{ height: 6, background: 'var(--border)', borderRadius: 3, overflow: 'hidden' }}>
+          <div style={{ width: `${avgOcc}%`, height: '100%', background: 'var(--accent)' }} />
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 4, marginTop: 10 }}>
+          <MiniStat label="YATAK" value={sum.total_beds} />
+          <MiniStat label="DOLU" value={sum.occupied} color="#16a34a" />
+          <MiniStat label="BOS ODA" value={sum.empty_rooms} color="var(--accent)" />
+          <MiniStat label="ARIZA" value={sum.open_faults} color={sum.open_faults > 0 ? '#dc2626' : 'var(--text)'} />
+          <MiniStat label="KARANTINA" value={sum.quarantine} color={sum.quarantine > 0 ? '#dc2626' : 'var(--text3)'} />
+          <MiniStat label="PERSONEL" value={sum.day_count + sum.night_count} />
+        </div>
+      </div>
+
+      {/* Tablo */}
+      <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: 1.5, marginBottom: 6 }}>
+        BLOK BAZINDA
+      </div>
+      <div style={{ overflowX: 'auto', marginBottom: 12 }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'var(--mono)', fontSize: 10 }}>
+          <thead>
+            <tr style={{ borderBottom: '1px solid var(--border)' }}>
+              <th style={thStyle}>BLOK</th>
+              <th style={thStyle}>DOLU/TOP</th>
+              <th style={thStyle}>%</th>
+              <th style={thStyle}>⚠</th>
+              <th style={thStyle}>⊘</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map(({ block, s, cfg }) => {
+              const pct = s.occupancy_pct
+              const color = pct >= 85 ? '#dc2626' : pct >= 60 ? '#f59e0b' : pct > 0 ? '#16a34a' : '#6b7280'
+              return (
+                <tr key={block} style={{ borderBottom: '1px solid var(--border)' }}>
+                  <td style={tdStyle}>
+                    <button onClick={() => onSelectSingle(block)}
+                      style={{ background: 'transparent', border: 'none', color: blockColor(block),
+                        fontFamily: 'var(--display)', fontSize: 12, fontWeight: 700, letterSpacing: 1.5,
+                        cursor: 'pointer', padding: 0 }}>
+                      {block}
+                    </button>
+                  </td>
+                  <td style={tdStyle}>{s.occupied}/{s.total_beds}</td>
+                  <td style={{ ...tdStyle, color, fontWeight: 700 }}>{pct}</td>
+                  <td style={{ ...tdStyle, color: s.open_faults > 0 ? '#dc2626' : 'var(--text3)' }}>
+                    {s.open_faults}
+                  </td>
+                  <td style={{ ...tdStyle, color: s.quarantine > 0 ? '#dc2626' : 'var(--text3)' }}>
+                    {s.quarantine}
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Mini bar chart — doluluk karsilastirmasi */}
+      <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: 1.5, marginBottom: 8 }}>
+        DOLULUK GORSEL
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 12 }}>
+        {items.map(({ block, s }) => {
+          const pct = s.occupancy_pct
+          const color = pct >= 85 ? '#dc2626' : pct >= 60 ? '#f59e0b' : pct > 0 ? '#16a34a' : '#6b7280'
+          return (
+            <div key={block} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontFamily: 'var(--display)', fontSize: 11, color: blockColor(block), minWidth: 28, letterSpacing: 1 }}>
+                {block}
+              </span>
+              <div style={{ flex: 1, height: 14, background: 'var(--surface2)', borderRadius: 3, position: 'relative', overflow: 'hidden' }}>
+                <div style={{ width: `${pct}%`, height: '100%', background: color, transition: 'width .3s' }} />
+                <span style={{
+                  position: 'absolute', right: 4, top: '50%', transform: 'translateY(-50%)',
+                  fontFamily: 'var(--mono)', fontSize: 9, color: '#fff', fontWeight: 700,
+                  textShadow: '0 1px 2px rgba(0,0,0,0.6)',
+                }}>%{pct}</span>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: 1,
+        padding: 8, background: 'var(--surface2)', borderRadius: 4, textAlign: 'center' }}>
+        Tek bloga tikla detayli ac • Ctrl+tikla secime ekle/cikar
+      </div>
     </div>
   )
 }
@@ -1411,6 +1532,8 @@ const zoomBtn = {
   padding: '4px 9px', cursor: 'pointer', fontFamily: 'var(--mono)',
   fontSize: 14, fontWeight: 700, lineHeight: 1, minWidth: 26,
 }
+const thStyle = { textAlign: 'left', padding: '6px 4px', color: 'var(--text3)', fontWeight: 400, letterSpacing: 1 }
+const tdStyle = { padding: '6px 4px', color: 'var(--text2)' }
 const kbd = {
   background: 'var(--surface2)', border: '1px solid var(--border)',
   borderBottomWidth: 2, borderRadius: 4,
