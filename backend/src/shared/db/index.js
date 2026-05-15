@@ -954,6 +954,25 @@ export function initDB() {
   try { db.exec('ALTER TABLE users ADD COLUMN totp_secret TEXT') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] totp_secret:', e.message) }
   try { db.exec('ALTER TABLE users ADD COLUMN totp_enabled INTEGER DEFAULT 0') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] totp_enabled:', e.message) }
 
+  // ── Firma / Sozlesme yonetimi ──
+  try { db.exec(`CREATE TABLE IF NOT EXISTS companies (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    contact_name TEXT,
+    contact_phone TEXT,
+    contact_email TEXT,
+    tax_no TEXT,
+    contract_start TEXT,
+    contract_end TEXT,
+    bed_quota INTEGER,
+    price_per_bed REAL,
+    notes TEXT,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`) } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] companies:', e.message) }
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_companies_active ON companies(is_active, contract_end)') } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] idx_companies:', e.message) }
+  try { db.exec('ALTER TABLE personnel ADD COLUMN company_id INTEGER REFERENCES companies(id)') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] personnel.company_id:', e.message) }
+
   return db
 }
 
