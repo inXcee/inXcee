@@ -38,14 +38,6 @@ const NAV_GROUPS = [
   {
     label: 'YONETIM',
     links: [
-      { to: '/companies', icon: '\u2302', label: 'Firmalar', roles: ['campus_manager','shift_supervisor'] },
-      { to: '/visitors', icon: '\ud83d\udc65', label: 'Ziyaretciler', roles: ['campus_manager','shift_supervisor'] },
-      { to: '/surveys', icon: '\u2605', label: 'Memnuniyet', roles: ['campus_manager','shift_supervisor'] },
-      { to: '/drills', icon: '\ud83d\udd25', label: 'Tatbikatlar', roles: ['campus_manager','shift_supervisor'] },
-      { to: '/documents', icon: '\ud83d\udcc4', label: 'Belgeler', roles: ['campus_manager','shift_supervisor'] },
-      { to: '/expenses', icon: '\u20ba', label: 'Butce', roles: ['campus_manager','shift_supervisor'] },
-      { to: '/notification-groups', icon: '\ud83d\udc65', label: 'Bildirim Gruplari', roles: ['campus_manager'] },
-      { to: '/automation', icon: '\u2699', label: 'Otomasyon', roles: ['campus_manager'] },
       { to: '/inventory', icon: '\u25a8', label: 'Envanter', roles: ['campus_manager','shift_supervisor','laundry','housekeeper'] },
       { to: '/laundry-kiosk', icon: '🧺', label: 'Camasir Kiosk', roles: ['campus_manager'], external: true },
       { to: '/settings', icon: '\u2393', label: 'Ayarlar', roles: ['campus_manager'] },

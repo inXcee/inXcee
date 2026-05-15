@@ -226,14 +226,15 @@ export default function App() {
             <Route path="shifts" element={<ShiftsPage />} />
             <Route path="checkout" element={<CheckoutPage />} />
             <Route path="bulk-actions" element={<RoleRoute roles={['campus_manager','shift_supervisor']}><BulkActionsPage /></RoleRoute>} />
-            <Route path="companies" element={<RoleRoute roles={['campus_manager','shift_supervisor']}><CompaniesPage /></RoleRoute>} />
-            <Route path="visitors" element={<RoleRoute roles={['campus_manager','shift_supervisor']}><VisitorsPage /></RoleRoute>} />
-            <Route path="surveys" element={<RoleRoute roles={['campus_manager','shift_supervisor']}><SurveysPage /></RoleRoute>} />
-            <Route path="drills" element={<RoleRoute roles={['campus_manager','shift_supervisor']}><DrillsPage /></RoleRoute>} />
-            <Route path="documents" element={<RoleRoute roles={['campus_manager','shift_supervisor']}><DocumentsPage /></RoleRoute>} />
-            <Route path="expenses" element={<RoleRoute roles={['campus_manager','shift_supervisor']}><ExpensesPage /></RoleRoute>} />
-            <Route path="notification-groups" element={<RoleRoute roles={['campus_manager']}><NotificationGroupsPage /></RoleRoute>} />
-            <Route path="automation" element={<RoleRoute roles={['campus_manager']}><AutomationPage /></RoleRoute>} />
+            {/* Eski direkt yollar Ayarlar altina yonlendirilir (klavye kisayolu / eski bookmark geri uyum) */}
+            <Route path="companies" element={<Navigate to="/settings/companies" replace />} />
+            <Route path="visitors" element={<Navigate to="/settings/visitors" replace />} />
+            <Route path="surveys" element={<Navigate to="/settings/surveys" replace />} />
+            <Route path="drills" element={<Navigate to="/settings/drills" replace />} />
+            <Route path="documents" element={<Navigate to="/settings/documents" replace />} />
+            <Route path="expenses" element={<Navigate to="/settings/expenses" replace />} />
+            <Route path="notification-groups" element={<Navigate to="/settings/notification-groups" replace />} />
+            <Route path="automation" element={<Navigate to="/settings/automation" replace />} />
             <Route path="laundry" element={<LaundryHub />} />
             <Route path="laundry/*" element={<LaundryHub />} />
             <Route path="inventory" element={<InventoryPage />} />
@@ -250,7 +251,7 @@ export default function App() {
             <Route path="announcements" element={<RoleRoute roles={['campus_manager']}><AnnouncementsPage /></RoleRoute>} />
             <Route path="avs-workers" element={<RoleRoute roles={['campus_manager']}><AvsWorkersPage /></RoleRoute>} />
             <Route path="settings" element={<RoleRoute roles={['campus_manager']}><SettingsLayout /></RoleRoute>}>
-              <Route index element={<Navigate to="email" replace />} />
+              <Route index element={<Navigate to="companies" replace />} />
               <Route path="email" element={<SettingsPage />} />
               <Route path="users" element={<UsersPage />} />
               <Route path="kiosk-pins" element={<KioskPinPage />} />
@@ -261,6 +262,15 @@ export default function App() {
               <Route path="backup" element={<BackupPage />} />
               <Route path="kvkk-admin" element={<KvkkAdminPage />} />
               <Route path="system" element={<SystemHealthPage />} />
+              {/* Yonetim modulleri sekmeler olarak */}
+              <Route path="companies" element={<CompaniesPage />} />
+              <Route path="visitors" element={<VisitorsPage />} />
+              <Route path="surveys" element={<SurveysPage />} />
+              <Route path="drills" element={<DrillsPage />} />
+              <Route path="documents" element={<DocumentsPage />} />
+              <Route path="expenses" element={<ExpensesPage />} />
+              <Route path="notification-groups" element={<NotificationGroupsPage />} />
+              <Route path="automation" element={<AutomationPage />} />
             </Route>
           </Route>
           <Route path="/mobile" element={<MobileLogin />} />

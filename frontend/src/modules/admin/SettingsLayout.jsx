@@ -1,16 +1,34 @@
 import { Outlet, NavLink } from 'react-router-dom'
 
-const TABS = [
-  { to: '/settings/email',         label: 'Genel & E-Posta',  icon: '⎓' },
-  { to: '/settings/users',         label: 'Kullanicilar',     icon: '⌂' },
-  { to: '/settings/kiosk-pins',    label: 'Kiosk PIN',        icon: '⌖' },
-  { to: '/settings/announcements', label: 'Duyurular',        icon: '📢' },
-  { to: '/settings/avs-workers',   label: 'AVS Calisanlari',  icon: '👷' },
-  { to: '/settings/audit',         label: 'Audit Log',        icon: '☷' },
-  { to: '/settings/error-log',     label: 'Hata Loglari',     icon: '⚠' },
-  { to: '/settings/backup',        label: 'Yedekleme',        icon: '⛁' },
-  { to: '/settings/kvkk-admin',    label: 'KVKK',             icon: '§' },
-  { to: '/settings/system',        label: 'Sistem Sagligi',   icon: '♥' },
+const TAB_GROUPS = [
+  {
+    label: 'YÖNETİM',
+    tabs: [
+      { to: '/settings/companies',           label: 'Firmalar',           icon: '⌂' },
+      { to: '/settings/visitors',            label: 'Ziyaretçiler',       icon: '👥' },
+      { to: '/settings/surveys',             label: 'Memnuniyet',         icon: '★' },
+      { to: '/settings/drills',              label: 'Tatbikatlar',        icon: '🔥' },
+      { to: '/settings/documents',           label: 'Belgeler',           icon: '📄' },
+      { to: '/settings/expenses',            label: 'Bütçe',              icon: '₺' },
+      { to: '/settings/notification-groups', label: 'Bildirim Grupları',  icon: '👥' },
+      { to: '/settings/automation',          label: 'Otomasyon',          icon: '⚙' },
+    ],
+  },
+  {
+    label: 'SİSTEM',
+    tabs: [
+      { to: '/settings/email',         label: 'Genel & E-Posta',  icon: '⎓' },
+      { to: '/settings/users',         label: 'Kullanicilar',     icon: '⌂' },
+      { to: '/settings/kiosk-pins',    label: 'Kiosk PIN',        icon: '⌖' },
+      { to: '/settings/announcements', label: 'Duyurular',        icon: '📢' },
+      { to: '/settings/avs-workers',   label: 'AVS Calisanlari',  icon: '👷' },
+      { to: '/settings/audit',         label: 'Audit Log',        icon: '☷' },
+      { to: '/settings/error-log',     label: 'Hata Loglari',     icon: '⚠' },
+      { to: '/settings/backup',        label: 'Yedekleme',        icon: '⛁' },
+      { to: '/settings/kvkk-admin',    label: 'KVKK',             icon: '§' },
+      { to: '/settings/system',        label: 'Sistem Sagligi',   icon: '♥' },
+    ],
+  },
 ]
 
 export default function SettingsLayout() {
@@ -22,6 +40,7 @@ export default function SettingsLayout() {
         borderRight: '1px solid var(--border)',
         background: 'var(--surface)',
         flexShrink: 0,
+        overflowY: 'auto',
       }}>
         <div style={{
           fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text4)',
@@ -29,30 +48,41 @@ export default function SettingsLayout() {
         }}>
           AYARLAR
         </div>
-        {TABS.map(t => (
-          <NavLink
-            key={t.to}
-            to={t.to}
-            style={{ textDecoration: 'none', display: 'block' }}
-          >
-            {({ isActive }) => (
-              <div
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 10,
-                  padding: '9px 12px', borderRadius: 7, marginBottom: 2,
-                  cursor: 'pointer', transition: 'all 0.15s',
-                  background: isActive ? 'rgba(240,165,0,0.1)' : 'transparent',
-                  borderLeft: isActive ? '2px solid var(--accent)' : '2px solid transparent',
-                  color: isActive ? 'var(--text)' : 'var(--text2)',
-                  fontFamily: 'var(--sans)', fontSize: 13,
-                  fontWeight: isActive ? 600 : 400,
-                }}
+        {TAB_GROUPS.map((grp, gi) => (
+          <div key={grp.label} style={{ marginBottom: 16 }}>
+            <div style={{
+              fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--accent)',
+              letterSpacing: 2, padding: '0 10px', marginBottom: 6,
+              marginTop: gi === 0 ? 0 : 4,
+            }}>
+              {grp.label}
+            </div>
+            {grp.tabs.map(t => (
+              <NavLink
+                key={t.to}
+                to={t.to}
+                style={{ textDecoration: 'none', display: 'block' }}
               >
-                <span style={{ fontSize: 14, width: 18, textAlign: 'center', flexShrink: 0 }}>{t.icon}</span>
-                <span>{t.label}</span>
-              </div>
-            )}
-          </NavLink>
+                {({ isActive }) => (
+                  <div
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 10,
+                      padding: '9px 12px', borderRadius: 7, marginBottom: 2,
+                      cursor: 'pointer', transition: 'all 0.15s',
+                      background: isActive ? 'rgba(240,165,0,0.1)' : 'transparent',
+                      borderLeft: isActive ? '2px solid var(--accent)' : '2px solid transparent',
+                      color: isActive ? 'var(--text)' : 'var(--text2)',
+                      fontFamily: 'var(--sans)', fontSize: 13,
+                      fontWeight: isActive ? 600 : 400,
+                    }}
+                  >
+                    <span style={{ fontSize: 14, width: 18, textAlign: 'center', flexShrink: 0 }}>{t.icon}</span>
+                    <span>{t.label}</span>
+                  </div>
+                )}
+              </NavLink>
+            ))}
+          </div>
         ))}
       </aside>
       <main style={{ flex: 1, overflowY: 'auto' }}>
