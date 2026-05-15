@@ -32,6 +32,8 @@ const DrillsPage = lazy(() => import('./modules/drills/DrillsPage.jsx'))
 const DisplayPage = lazy(() => import('./modules/display/DisplayPage.jsx'))
 const DocumentsPage = lazy(() => import('./modules/documents/DocumentsPage.jsx'))
 const ExpensesPage = lazy(() => import('./modules/expenses/ExpensesPage.jsx'))
+const NotificationGroupsPage = lazy(() => import('./modules/notification-groups/NotificationGroupsPage.jsx'))
+const AutomationPage = lazy(() => import('./modules/automation/AutomationPage.jsx'))
 const InventoryPage = lazy(() => import('./modules/inventory/InventoryPage.jsx'))
 const ReportsPage = lazy(() => import('./modules/reports/ReportsPage.jsx'))
 const LaundryHub = lazy(() => import('./modules/laundry/LaundryHub.jsx'))
@@ -230,6 +232,8 @@ export default function App() {
             <Route path="drills" element={<RoleRoute roles={['campus_manager','shift_supervisor']}><DrillsPage /></RoleRoute>} />
             <Route path="documents" element={<RoleRoute roles={['campus_manager','shift_supervisor']}><DocumentsPage /></RoleRoute>} />
             <Route path="expenses" element={<RoleRoute roles={['campus_manager','shift_supervisor']}><ExpensesPage /></RoleRoute>} />
+            <Route path="notification-groups" element={<RoleRoute roles={['campus_manager']}><NotificationGroupsPage /></RoleRoute>} />
+            <Route path="automation" element={<RoleRoute roles={['campus_manager']}><AutomationPage /></RoleRoute>} />
             <Route path="laundry" element={<LaundryHub />} />
             <Route path="laundry/*" element={<LaundryHub />} />
             <Route path="inventory" element={<InventoryPage />} />

@@ -1054,6 +1054,36 @@ export function initDB() {
   )`) } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] expenses:', e.message) }
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses(expense_date DESC, category)') } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] idx_expenses:', e.message) }
 
+  // ── Bildirim gruplari ──
+  try { db.exec(`CREATE TABLE IF NOT EXISTS notification_groups (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    description TEXT,
+    channels TEXT NOT NULL DEFAULT 'app',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`) } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] notification_groups:', e.message) }
+  try { db.exec(`CREATE TABLE IF NOT EXISTS notification_group_members (
+    group_id INTEGER NOT NULL REFERENCES notification_groups(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    PRIMARY KEY (group_id, user_id)
+  )`) } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] notification_group_members:', e.message) }
+
+  // ── Otomasyon kurallari (N6) ──
+  try { db.exec(`CREATE TABLE IF NOT EXISTS automation_rules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    trigger_type TEXT NOT NULL CHECK(trigger_type IN ('occupancy_high','contract_expiring','maintenance_backlog','drill_overdue','no_recent_drill')),
+    trigger_threshold REAL NOT NULL,
+    action_type TEXT NOT NULL CHECK(action_type IN ('log','notify_group')),
+    action_target INTEGER,
+    cooldown_hours INTEGER NOT NULL DEFAULT 24,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    last_triggered_at DATETIME,
+    last_status TEXT,
+    created_by INTEGER REFERENCES users(id),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`) } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] automation_rules:', e.message) }
+
   return db
 }
 

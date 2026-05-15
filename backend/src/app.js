@@ -25,6 +25,8 @@ import { drillsRouter } from './modules/drills/routes.js'
 import { displayRouter } from './modules/display/routes.js'
 import { documentsRouter } from './modules/documents/routes.js'
 import { expensesRouter } from './modules/expenses/routes.js'
+import { notifGroupsRouter } from './modules/notification-groups/routes.js'
+import { automationRouter } from './modules/automation/routes.js'
 import { reportsRouter } from './modules/reports/routes.js'
 import { inventoryRouter } from './modules/inventory/routes.js'
 import { usersRouter } from './modules/users/routes.js'
@@ -232,6 +234,8 @@ app.use('/api/drills', writeLimiter, drillsRouter)
 app.use('/api/display', readLimiter, displayRouter)
 app.use('/api/documents', writeLimiter, documentsRouter)
 app.use('/api/expenses', writeLimiter, expensesRouter)
+app.use('/api/notification-groups', writeLimiter, notifGroupsRouter)
+app.use('/api/automation', writeLimiter, automationRouter)
 app.use('/api/reports', readLimiter, reportsRouter)
 app.use('/api/inventory', writeLimiter, inventoryRouter)
 app.use('/api/users', writeLimiter, usersRouter)
