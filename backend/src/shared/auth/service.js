@@ -2,6 +2,7 @@ import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import { getDB } from '../db/index.js'
 import { validatePassword } from './password-policy.js'
+import { verifyTotp, makeTotpChallengeToken, consumeTotpChallengeToken } from './totp.js'
 
 const SECRET = process.env.JWT_SECRET
 if (!SECRET) {
@@ -14,6 +15,24 @@ export function login(username, password) {
   const user = db.prepare('SELECT * FROM users WHERE username=?').get(username)
   if (!user) return null
   if (!bcrypt.compareSync(password, user.password_hash)) return null
+  if (user.totp_enabled) {
+    return { require_2fa: true, challenge_token: makeTotpChallengeToken(user.id) }
+  }
+  const token = jwt.sign(
+    { id: user.id, role: user.role, username: user.username, full_name: user.full_name },
+    SECRET,
+    { expiresIn: '12h' }
+  )
+  return { token, user: { id: user.id, role: user.role, username: user.username, full_name: user.full_name } }
+}
+
+export function verify2faChallenge(challengeToken, code) {
+  const userId = consumeTotpChallengeToken(challengeToken)
+  if (!userId) return { error: 'Geçersiz veya süresi dolmuş istek', status: 401 }
+  const db = getDB()
+  const user = db.prepare('SELECT * FROM users WHERE id=?').get(userId)
+  if (!user || !user.totp_enabled || !user.totp_secret) return { error: '2FA aktif değil', status: 400 }
+  if (!verifyTotp(code, user.totp_secret)) return { error: 'Doğrulama kodu hatalı', status: 401 }
   const token = jwt.sign(
     { id: user.id, role: user.role, username: user.username, full_name: user.full_name },
     SECRET,

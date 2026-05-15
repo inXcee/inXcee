@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { z } from 'zod'
-import { login, loginKiosk, loginKioskById, searchKioskPersonnel, loginAvsKiosk, searchAvsWorkers, changeOwnPassword, refreshToken } from './service.js'
+import { login, loginKiosk, loginKioskById, searchKioskPersonnel, loginAvsKiosk, searchAvsWorkers, changeOwnPassword, refreshToken, verify2faChallenge } from './service.js'
+import { get2faStatus, start2faSetupWithQr, enable2fa, disable2fa } from './totp.js'
 import { getSetting } from '../../modules/email/queries.js'
 import { requireAuth } from './middleware.js'
 import { validate } from '../middleware/validate.js'
@@ -61,6 +62,46 @@ authRouter.post('/refresh', (req, res) => {
   const h = req.headers.authorization
   if (!h?.startsWith('Bearer ')) return res.status(401).json({ error: 'Token gerekli' })
   const result = refreshToken(h.slice(7))
+  if (result.error) return res.status(result.status).json({ error: result.error })
+  res.json(result)
+})
+
+// ── 2FA ──
+authRouter.post('/2fa/verify-login', (req, res) => {
+  const { challenge_token, code } = req.body
+  if (!challenge_token || !code) return res.status(400).json({ error: 'challenge_token ve code gerekli' })
+  const result = verify2faChallenge(challenge_token, code)
+  if (result.error) return res.status(result.status).json({ error: result.error })
+  res.json(result)
+})
+
+authRouter.get('/2fa/status', requireAuth, (req, res) => {
+  res.json(get2faStatus(req.user.id))
+})
+
+authRouter.post('/2fa/setup', requireAuth, async (req, res) => {
+  try {
+    const result = await start2faSetupWithQr(req.user.id)
+    if (result.error) return res.status(result.status).json({ error: result.error })
+    res.json({ secret: result.secret, qr: result.qr, uri: result.uri })
+  } catch (e) {
+    console.error('[2FA setup]', e)
+    res.status(500).json({ error: 'Sunucu hatası' })
+  }
+})
+
+authRouter.post('/2fa/enable', requireAuth, (req, res) => {
+  const { code } = req.body
+  if (!code) return res.status(400).json({ error: 'Kod gerekli' })
+  const result = enable2fa(req.user.id, code)
+  if (result.error) return res.status(result.status).json({ error: result.error })
+  res.json(result)
+})
+
+authRouter.post('/2fa/disable', requireAuth, (req, res) => {
+  const { code } = req.body
+  if (!code) return res.status(400).json({ error: 'Kod gerekli' })
+  const result = disable2fa(req.user.id, code)
   if (result.error) return res.status(result.status).json({ error: result.error })
   res.json(result)
 })

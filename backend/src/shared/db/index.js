@@ -950,6 +950,10 @@ export function initDB() {
   )`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] whatsapp_outbound_log:', e.message) }
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_wa_outbound_status ON whatsapp_outbound_log(status, created_at DESC)') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] idx_wa_outbound_status:', e.message) }
 
+  // ── 2FA TOTP ──
+  try { db.exec('ALTER TABLE users ADD COLUMN totp_secret TEXT') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] totp_secret:', e.message) }
+  try { db.exec('ALTER TABLE users ADD COLUMN totp_enabled INTEGER DEFAULT 0') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] totp_enabled:', e.message) }
+
   return db
 }
 

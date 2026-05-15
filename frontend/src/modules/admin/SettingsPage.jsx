@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
+import TwoFactorSettings from '../../shared/components/TwoFactorSettings.jsx'
 
 const DAYS = ['Paz','Pzt','Sal','Çar','Per','Cum','Cmt']
 const MINUTES = [0, 15, 30, 45]
@@ -117,6 +118,8 @@ export default function SettingsPage() {
           {toast.msg}
         </div>
       )}
+
+      <TwoFactorSettings />
 
       <form onSubmit={handleSave}>
         {/* Bölüm 1: Zamanlama */}

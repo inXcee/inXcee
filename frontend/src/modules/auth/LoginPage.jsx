@@ -18,6 +18,8 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [slowHint, setSlowHint] = useState(false)
   const [demoOpen, setDemoOpen] = useState(false)
+  const [twoFA, setTwoFA] = useState(null) // { challenge_token } | null
+  const [code, setCode] = useState('')
   const login = useAuthStore(s => s.login)
   const navigate = useNavigate()
 
@@ -27,6 +29,11 @@ export default function LoginPage() {
     const slowTimer = setTimeout(() => setSlowHint(true), 4000)
     try {
       const res = await api.post('/auth/login', { username, password })
+      if (res.data.require_2fa) {
+        setTwoFA({ challenge_token: res.data.challenge_token })
+        clearTimeout(slowTimer); setLoading(false); setSlowHint(false)
+        return
+      }
       login(res.data.token, res.data.user)
       navigate('/')
     } catch (err) {
@@ -41,6 +48,23 @@ export default function LoginPage() {
       }
     }
     finally { clearTimeout(slowTimer); setLoading(false); setSlowHint(false) }
+  }
+
+  const handle2fa = async (e) => {
+    e.preventDefault()
+    setLoading(true); setError('')
+    try {
+      const res = await api.post('/auth/2fa/verify-login', {
+        challenge_token: twoFA.challenge_token,
+        code,
+      })
+      login(res.data.token, res.data.user)
+      navigate('/')
+    } catch (err) {
+      setError(err.response?.data?.error || 'Kod doğrulanamadı')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -94,6 +118,49 @@ export default function LoginPage() {
           {/* Top accent */}
           <div style={{ height: '2px', background: 'linear-gradient(90deg, var(--accent), var(--accent3))' }} />
 
+          {twoFA ? (
+            <form onSubmit={handle2fa} style={{ padding: '28px' }}>
+              <div style={{ marginBottom: '8px', fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--accent)', letterSpacing: 2 }}>
+                İKİ FAKTÖRLÜ DOĞRULAMA
+              </div>
+              <p style={{ fontSize: '12px', color: 'var(--text2)', marginBottom: 18 }}>
+                Authenticator uygulamasındaki 6 haneli kodu girin.
+              </p>
+              <input
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]{6}"
+                maxLength={6}
+                value={code}
+                onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                className="form-input"
+                placeholder="123456"
+                autoFocus
+                style={{ textAlign: 'center', fontSize: 20, letterSpacing: 8, fontFamily: 'var(--mono)' }}
+              />
+              {error && (
+                <div className="alert alert-danger" style={{ marginTop: 14 }}>
+                  <span>⚠</span><span>{error}</span>
+                </div>
+              )}
+              <button
+                type="submit"
+                disabled={loading || code.length !== 6}
+                className="btn btn-primary"
+                style={{ width: '100%', justifyContent: 'center', padding: '11px', fontSize: '12px', marginTop: 14 }}
+              >
+                {loading ? 'DOĞRULANIYOR...' : 'DOĞRULA'}
+              </button>
+              <button
+                type="button"
+                onClick={() => { setTwoFA(null); setCode(''); setError('') }}
+                className="btn btn-ghost"
+                style={{ width: '100%', marginTop: 8 }}
+              >
+                İPTAL
+              </button>
+            </form>
+          ) : (
           <form onSubmit={handleSubmit} style={{ padding: '28px' }}>
             <div style={{ marginBottom: '14px' }}>
               <label className="form-label">Kullanıcı Adı</label>
@@ -132,6 +199,7 @@ export default function LoginPage() {
               {loading ? (slowHint ? 'SUNUCU UYANDIRILYOR...' : 'GIRIS YAPILIYOR...') : 'GIRIS YAP'}
             </button>
           </form>
+          )}
         </div>
 
         {import.meta.env.DEV && (
