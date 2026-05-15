@@ -1003,6 +1003,23 @@ export function initDB() {
   )`) } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] satisfaction_surveys:', e.message) }
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_surveys_date ON satisfaction_surveys(created_at DESC)') } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] idx_surveys:', e.message) }
 
+  // ── Tatbikat (yangin / deprem / guvenlik) ──
+  try { db.exec(`CREATE TABLE IF NOT EXISTS drills (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    drill_type TEXT NOT NULL CHECK(drill_type IN ('fire','earthquake','security','evacuation','other')),
+    drill_date TEXT NOT NULL,
+    expected_count INTEGER,
+    actual_count INTEGER,
+    duration_minutes INTEGER,
+    missing_names TEXT,
+    findings TEXT,
+    next_action TEXT,
+    next_drill_date TEXT,
+    created_by INTEGER REFERENCES users(id),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`) } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] drills:', e.message) }
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_drills_date ON drills(drill_date DESC)') } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] idx_drills:', e.message) }
+
   return db
 }
 

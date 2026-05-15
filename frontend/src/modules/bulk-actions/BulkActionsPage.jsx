@@ -4,6 +4,8 @@ import api from '../../shared/api/client.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 import { BLOCKS } from '../../shared/blocks.js'
+import EmptyState from '../../shared/components/EmptyState.jsx'
+import { useSavedFilters, SavedFiltersBar } from '../../shared/hooks/useSavedFilters.jsx'
 
 export default function BulkActionsPage() {
   const qc = useQueryClient()
@@ -13,6 +15,8 @@ export default function BulkActionsPage() {
   const [report, setReport] = useState(null)
   const [transferTarget, setTransferTarget] = useState('')
   const [showTransfer, setShowTransfer] = useState(false)
+  const sf = useSavedFilters('bulk-actions', filters, setFilters)
+  const hasActiveFilter = Object.values(filters).some(v => v)
 
   const params = useMemo(() => {
     const sp = new URLSearchParams()
@@ -118,6 +122,14 @@ export default function BulkActionsPage() {
             </div>
           </div>
 
+          <SavedFiltersBar
+            presets={sf.presets}
+            onApply={sf.apply}
+            onSave={sf.save}
+            onRemove={sf.remove}
+            hasActiveFilter={hasActiveFilter}
+          />
+
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8, fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text2)' }}>
             <span>{isFetching ? 'Yükleniyor...' : `${rows.length} kişi`}</span>
             <span>·</span>
@@ -173,7 +185,7 @@ export default function BulkActionsPage() {
               </thead>
               <tbody>
                 {rows.length === 0 && !isFetching && (
-                  <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', color: 'var(--text3)' }}>Kayıt yok</td></tr>
+                  <tr><td colSpan={7}><EmptyState icon="∅" title="Kayıt yok" hint={hasActiveFilter ? 'Filtreleri gevşetmeyi deneyin' : 'Bu blokta aktif sakin yok'} /></td></tr>
                 )}
                 {rows.map(r => {
                   const isSel = selected.has(r.id)
