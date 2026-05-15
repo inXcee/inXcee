@@ -4,6 +4,7 @@ import api from '../../shared/api/client.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 import EmptyState from '../../shared/components/EmptyState.jsx'
+import { useStickyForm, StickyDraftBanner } from '../../shared/hooks/useStickyForm.jsx'
 
 const CATEGORIES = [
   { value: 'food', label: 'Yemek', color: '#f97316' },
@@ -25,10 +26,12 @@ export default function ExpensesPage() {
   const toast = useToastStore(s => s.push)
   const [showForm, setShowForm] = useState(false)
   const [filter, setFilter] = useState({ category: '', from: '', to: '' })
-  const [form, setForm] = useState({
+  const initialForm = {
     category: 'food', description: '', amount: '', expense_date: new Date().toISOString().slice(0,10),
     invoice_no: '', company_id: '', notes: '',
-  })
+  }
+  const [form, setForm] = useState(initialForm)
+  const sticky = useStickyForm('expense', form, setForm, initialForm)
 
   const params = new URLSearchParams()
   Object.entries(filter).forEach(([k, v]) => v && params.set(k, v))
@@ -54,7 +57,8 @@ export default function ExpensesPage() {
     }),
     onSuccess: () => {
       setShowForm(false)
-      setForm({ category: 'food', description: '', amount: '', expense_date: new Date().toISOString().slice(0,10), invoice_no: '', company_id: '', notes: '' })
+      setForm(initialForm)
+      sticky.clear()
       qc.invalidateQueries({ queryKey: ['expenses'] })
       qc.invalidateQueries({ queryKey: ['expenses-summary'] })
       toast({ kind: 'success', text: 'Gider kaydedildi' })
@@ -156,6 +160,7 @@ export default function ExpensesPage() {
           <div style={{ height: 2, background: 'var(--accent)' }} />
           <div className="panel-header"><div className="panel-title">YENİ GİDER</div></div>
           <div className="panel-body">
+            <StickyDraftBanner hasDraft={sticky.hasDraft} onRestore={sticky.restore} onDiscard={sticky.discard} />
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12 }}>
               <div>
                 <label className="form-label">KATEGORİ *</label>

@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
 import { BLOCKS } from '../../shared/blocks.js'
+import { useStickyForm, StickyDraftBanner } from '../../shared/hooks/useStickyForm.jsx'
 
 function fmt(dt) {
   if (!dt) return '-'
@@ -14,7 +15,9 @@ export default function VisitorsPage() {
   const toast = useToastStore(s => s.push)
   const [tab, setTab] = useState('active')
   const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ full_name: '', tc_no: '', phone: '', purpose: '', visiting_block: '', notes: '' })
+  const initialForm = { full_name: '', tc_no: '', phone: '', purpose: '', visiting_block: '', notes: '' }
+  const [form, setForm] = useState(initialForm)
+  const sticky = useStickyForm('visitor', form, setForm, initialForm)
 
   const { data: rows = [] } = useQuery({
     queryKey: ['visitors', tab],
@@ -29,7 +32,8 @@ export default function VisitorsPage() {
     mutationFn: () => api.post('/visitors', form),
     onSuccess: () => {
       setShowForm(false)
-      setForm({ full_name: '', tc_no: '', phone: '', purpose: '', visiting_block: '', notes: '' })
+      setForm(initialForm)
+      sticky.clear()
       qc.invalidateQueries({ queryKey: ['visitors'] })
       qc.invalidateQueries({ queryKey: ['visitors-stats'] })
       toast({ kind: 'success', text: 'Ziyaretçi kaydedildi' })
@@ -71,6 +75,7 @@ export default function VisitorsPage() {
           <div style={{ height: 2, background: 'var(--accent)' }} />
           <div className="panel-header"><div className="panel-title">YENİ ZİYARETÇİ</div></div>
           <div className="panel-body">
+            <StickyDraftBanner hasDraft={sticky.hasDraft} onRestore={sticky.restore} onDiscard={sticky.discard} />
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12 }}>
               <div>
                 <label className="form-label">AD SOYAD *</label>

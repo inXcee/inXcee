@@ -4,6 +4,7 @@ import api from '../../shared/api/client.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 import EmptyState from '../../shared/components/EmptyState.jsx'
+import { useStickyForm, StickyDraftBanner } from '../../shared/hooks/useStickyForm.jsx'
 
 const TYPES = [
   { value: 'fire', label: '🔥 Yangın' },
@@ -17,11 +18,13 @@ export default function DrillsPage() {
   const qc = useQueryClient()
   const toast = useToastStore(s => s.push)
   const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({
+  const initialForm = {
     drill_type: 'fire', drill_date: new Date().toISOString().slice(0, 10),
     expected_count: '', actual_count: '', duration_minutes: '',
     missing_names: '', findings: '', next_action: '', next_drill_date: '',
-  })
+  }
+  const [form, setForm] = useState(initialForm)
+  const sticky = useStickyForm('drill', form, setForm, initialForm)
 
   const { data: rows = [] } = useQuery({
     queryKey: ['drills'],
@@ -41,6 +44,8 @@ export default function DrillsPage() {
     }),
     onSuccess: () => {
       setShowForm(false)
+      setForm(initialForm)
+      sticky.clear()
       qc.invalidateQueries({ queryKey: ['drills'] })
       qc.invalidateQueries({ queryKey: ['drills-stats'] })
       toast({ kind: 'success', text: 'Tatbikat kaydedildi' })
@@ -84,6 +89,7 @@ export default function DrillsPage() {
           <div style={{ height: 2, background: 'var(--accent)' }} />
           <div className="panel-header"><div className="panel-title">YENİ TATBİKAT</div></div>
           <div className="panel-body">
+            <StickyDraftBanner hasDraft={sticky.hasDraft} onRestore={sticky.restore} onDiscard={sticky.discard} />
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12 }}>
               <div>
                 <label className="form-label">TİP *</label>
