@@ -113,6 +113,120 @@ describe('Bulk Actions — bulk transfer', () => {
     expect(assigned.block).toBe('M1')
   })
 
+  it('vardiya filtresi ile listele', async () => {
+    const db = getDB()
+    const p = db.prepare("INSERT INTO personnel (tc_no, full_name, check_in_date) VALUES ('77777777777', 'Gece Test', date('now'))").run().lastInsertRowid
+    db.prepare("INSERT INTO shifts(personnel_id, shift_type, start_hour, end_hour) VALUES(?, 'night', 19, 7)").run(p)
+    const res = await request(app).get('/api/bulk-actions/personnel?shift_type=night').set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(200)
+    expect(res.body.some(r => r.id === p)).toBe(true)
+    expect(res.body.every(r => r.shift_type === 'night')).toBe(true)
+  })
+
+  it('zimmeti olan filtresi', async () => {
+    const res = await request(app).get('/api/bulk-actions/personnel?has_zimmet=1').set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(200)
+    expect(res.body.every(r => r.unreturned_zimmet > 0)).toBe(true)
+  })
+
+  it('stats endpoint ozet doner', async () => {
+    const res = await request(app).get('/api/bulk-actions/stats').set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(200)
+    expect(res.body).toHaveProperty('by_block')
+    expect(res.body).toHaveProperty('by_shift')
+    expect(res.body.total).toBeGreaterThan(0)
+  })
+
+  it('CSV export', async () => {
+    const res = await request(app).get('/api/bulk-actions/export').set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(200)
+    expect(res.headers['content-type']).toMatch(/csv/)
+    expect(res.text.split('\r\n')[0]).toContain('Ad Soyad')
+  })
+})
+
+describe('Bulk Actions — yeni bulk islemler', () => {
+  it('toplu vardiya degistir', async () => {
+    const db = getDB()
+    const p1 = db.prepare("INSERT INTO personnel (tc_no, full_name, check_in_date) VALUES ('88888888888', 'Vardiya Test', date('now'))").run().lastInsertRowid
+
+    const res = await request(app).post('/api/bulk-actions/set-shift')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ ids: [p1], shift_type: 'night' })
+    expect(res.status).toBe(200)
+    expect(res.body.success.length).toBe(1)
+
+    const s = db.prepare('SELECT shift_type FROM shifts WHERE personnel_id=?').get(p1)
+    expect(s.shift_type).toBe('night')
+  })
+
+  it('gecersiz shift_type reddedilir', async () => {
+    const res = await request(app).post('/api/bulk-actions/set-shift')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ ids: [1], shift_type: 'xxx' })
+    expect(res.status).toBe(400)
+  })
+
+  it('toplu kara liste + cikar', async () => {
+    const db = getDB()
+    const p = db.prepare("INSERT INTO personnel (tc_no, full_name, check_in_date) VALUES ('99999999999', 'KL Test', date('now'))").run().lastInsertRowid
+
+    const add = await request(app).post('/api/bulk-actions/blacklist')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ ids: [p], blacklisted: true, reason: 'Disiplinsizlik' })
+    expect(add.status).toBe(200)
+    expect(add.body.success.length).toBe(1)
+    const after = db.prepare('SELECT is_blacklisted FROM personnel WHERE id=?').get(p)
+    expect(after.is_blacklisted).toBe(1)
+
+    const rem = await request(app).post('/api/bulk-actions/blacklist')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ ids: [p], blacklisted: false })
+    expect(rem.status).toBe(200)
+    const after2 = db.prepare('SELECT is_blacklisted FROM personnel WHERE id=?').get(p)
+    expect(after2.is_blacklisted).toBe(0)
+  })
+
+  it('kara liste sebep yoksa reddedilir', async () => {
+    const res = await request(app).post('/api/bulk-actions/blacklist')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ ids: [1], blacklisted: true, reason: 'ab' })
+    expect(res.status).toBe(400)
+  })
+
+  it('toplu disiplin puani', async () => {
+    const db = getDB()
+    const p = db.prepare("INSERT INTO personnel (tc_no, full_name, check_in_date) VALUES ('10101010101', 'Dis Test', date('now'))").run().lastInsertRowid
+    const res = await request(app).post('/api/bulk-actions/discipline')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ ids: [p], points: 5, reason: 'Toplu test ihlali' })
+    expect(res.status).toBe(200)
+    const after = db.prepare('SELECT discipline_points FROM personnel WHERE id=?').get(p)
+    expect(after.discipline_points).toBeGreaterThanOrEqual(5)
+  })
+
+  it('disiplin puan 0 reddedilir', async () => {
+    const res = await request(app).post('/api/bulk-actions/discipline')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ ids: [1], points: 0, reason: 'test' })
+    expect(res.status).toBe(400)
+  })
+
+  it('toplu firma atama', async () => {
+    const db = getDB()
+    const c = db.prepare("INSERT INTO companies (name) VALUES ('Bulk Co')").run().lastInsertRowid
+    const p = db.prepare("INSERT INTO personnel (tc_no, full_name, check_in_date) VALUES ('11211121112', 'Firma Test', date('now'))").run().lastInsertRowid
+    const res = await request(app).post('/api/bulk-actions/set-company')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ ids: [p], company_id: c })
+    expect(res.status).toBe(200)
+    const after = db.prepare('SELECT company, company_id FROM personnel WHERE id=?').get(p)
+    expect(after.company_id).toBe(c)
+    expect(after.company).toBe('Bulk Co')
+  })
+})
+
+describe('Bulk Actions — bulk transfer mevcut akis', () => {
   it('mevcut atamayi kapatip yenisini olusturur', async () => {
     const db = getDB()
     const p = db.prepare("INSERT INTO personnel (tc_no, full_name, check_in_date) VALUES ('66666666666', 'Move Test', date('now'))").run().lastInsertRowid
