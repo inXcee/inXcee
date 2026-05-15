@@ -83,3 +83,55 @@ describe('Bulk Actions — bulk checkout', () => {
     expect(res.status).toBe(400)
   })
 })
+
+describe('Bulk Actions — bulk transfer', () => {
+  it('hedef yoksa reddedilir', async () => {
+    const res = await request(app)
+      .post('/api/bulk-actions/transfer')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ ids: [1] })
+    expect(res.status).toBe(400)
+  })
+
+  it('hedef bloga toplu yerlestirir', async () => {
+    const db = getDB()
+    const p1 = db.prepare("INSERT INTO personnel (tc_no, full_name, check_in_date) VALUES ('44444444444', 'Transfer Test 1', date('now'))").run().lastInsertRowid
+    const p2 = db.prepare("INSERT INTO personnel (tc_no, full_name, check_in_date) VALUES ('55555555555', 'Transfer Test 2', date('now'))").run().lastInsertRowid
+
+    const res = await request(app)
+      .post('/api/bulk-actions/transfer')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ ids: [p1, p2], target_block: 'M1' })
+
+    expect(res.status).toBe(200)
+    expect(res.body.success.length).toBe(2)
+
+    const assigned = db.prepare(`
+      SELECT r.block FROM room_assignments ra JOIN rooms r ON r.id=ra.room_id
+      WHERE ra.personnel_id=? AND ra.check_out_at IS NULL
+    `).get(p1)
+    expect(assigned.block).toBe('M1')
+  })
+
+  it('mevcut atamayi kapatip yenisini olusturur', async () => {
+    const db = getDB()
+    const p = db.prepare("INSERT INTO personnel (tc_no, full_name, check_in_date) VALUES ('66666666666', 'Move Test', date('now'))").run().lastInsertRowid
+    // Once M1'e ata
+    await request(app).post('/api/bulk-actions/transfer')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ ids: [p], target_block: 'M1' })
+    // Sonra M2'ye transfer
+    const res = await request(app).post('/api/bulk-actions/transfer')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ ids: [p], target_block: 'M2' })
+    expect(res.status).toBe(200)
+    expect(res.body.success.length).toBe(1)
+
+    const active = db.prepare(`
+      SELECT r.block FROM room_assignments ra JOIN rooms r ON r.id=ra.room_id
+      WHERE ra.personnel_id=? AND ra.check_out_at IS NULL
+    `).all(p)
+    expect(active.length).toBe(1)
+    expect(active[0].block).toBe('M2')
+  })
+})

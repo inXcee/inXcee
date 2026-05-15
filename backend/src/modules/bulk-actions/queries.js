@@ -25,6 +25,65 @@ export function listActivePersonnel(filters = {}) {
   `).all(...params)
 }
 
+export function bulkTransferTx(ids, { target_block, target_room_id }, assignedBy) {
+  const db = getDB()
+  const success = []
+  const skipped = []
+  const tx = db.transaction(() => {
+    // Hedef odalari belirle: belirli oda verildiyse onu kullan, yoksa blok icindeki bos yatakli odalari sirayla
+    let candidateRooms
+    if (target_room_id) {
+      const r = db.prepare('SELECT * FROM rooms WHERE id=?').get(target_room_id)
+      if (!r) throw new Error('Hedef oda bulunamadi')
+      if (r.status && r.status !== 'active') throw new Error(`Hedef oda durumu: ${r.status}`)
+      candidateRooms = [r]
+    } else if (target_block) {
+      candidateRooms = db.prepare(
+        "SELECT * FROM rooms WHERE block=? AND (status IS NULL OR status='active') ORDER BY floor, room_no"
+      ).all(target_block)
+    } else {
+      throw new Error('Hedef oda veya blok gerekli')
+    }
+
+    for (const id of ids) {
+      const person = db.prepare('SELECT id, full_name, check_out_date FROM personnel WHERE id=?').get(id)
+      if (!person) { skipped.push({ id, reason: 'bulunamadi' }); continue }
+      if (person.check_out_date) { skipped.push({ id, name: person.full_name, reason: 'cikis yapmis' }); continue }
+      const personShift = db.prepare('SELECT shift_type FROM shifts WHERE personnel_id=?').get(id)
+      const myShift = personShift?.shift_type || 'day'
+
+      let placed = false
+      for (const room of candidateRooms) {
+        const count = db.prepare('SELECT COUNT(*) AS c FROM room_assignments WHERE room_id=? AND check_out_at IS NULL').get(room.id).c
+        if (count >= room.active_beds) continue
+        if (count > 0) {
+          const conflict = db.prepare(`
+            SELECT COUNT(*) AS c FROM room_assignments ra
+            JOIN personnel p ON p.id=ra.personnel_id
+            LEFT JOIN shifts s ON s.personnel_id=p.id
+            WHERE ra.room_id=? AND ra.check_out_at IS NULL
+              AND COALESCE(s.shift_type, 'day') != ?
+          `).get(room.id, myShift).c
+          if (conflict > 0) continue
+        }
+        // Eski atamayi kapat
+        db.prepare("UPDATE room_assignments SET check_out_at=datetime('now') WHERE personnel_id=? AND check_out_at IS NULL").run(id)
+        // Yeniye yerlestir
+        db.prepare('INSERT INTO room_assignments(personnel_id,room_id,bed_no,assigned_by) VALUES(?,?,?,?)')
+          .run(id, room.id, count + 1, assignedBy)
+        success.push({ id, name: person.full_name, room: `${room.block}-${room.room_no}`, bed_no: count + 1 })
+        placed = true
+        break
+      }
+      if (!placed) {
+        skipped.push({ id, name: person.full_name, reason: 'uygun yatak yok (kapasite/vardiya)' })
+      }
+    }
+  })
+  tx.immediate()
+  return { success, skipped }
+}
+
 export function bulkCheckoutTx(ids) {
   const db = getDB()
   const success = []

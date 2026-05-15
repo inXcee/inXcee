@@ -11,6 +11,8 @@ export default function BulkActionsPage() {
   const [filters, setFilters] = useState({ block: '', floor: '', company: '', q: '' })
   const [selected, setSelected] = useState(new Set())
   const [report, setReport] = useState(null)
+  const [transferTarget, setTransferTarget] = useState('')
+  const [showTransfer, setShowTransfer] = useState(false)
 
   const params = useMemo(() => {
     const sp = new URLSearchParams()
@@ -35,6 +37,33 @@ export default function BulkActionsPage() {
   }
   function toggleAll() {
     setSelected(allSelected ? new Set() : new Set(allIds))
+  }
+
+  const transferMut = useMutation({
+    mutationFn: () => api.post('/bulk-actions/transfer', {
+      ids: [...selected],
+      target_block: transferTarget,
+    }).then(r => r.data),
+    onSuccess: (data) => {
+      setReport(data)
+      setSelected(new Set())
+      setShowTransfer(false)
+      setTransferTarget('')
+      qc.invalidateQueries({ queryKey: ['bulk-personnel'] })
+      toast({ kind: 'success', text: `${data.success.length} kişi taşındı, ${data.skipped.length} atlandı` })
+    },
+    onError: (e) => toast({ kind: 'error', text: e.response?.data?.error || 'Hata' }),
+  })
+
+  async function handleTransfer() {
+    if (selected.size === 0 || !transferTarget) return
+    const ok = await confirmDialog({
+      title: 'Toplu Transfer',
+      body: `${selected.size} kişi ${transferTarget} bloğuna taşınacak. Mevcut oda atamaları kapatılıp yeni oda verilecek. Uygun yatak bulunamayan kişiler atlanacak.`,
+      confirmLabel: 'Transfer Et',
+      danger: false,
+    })
+    if (ok) transferMut.mutate()
   }
 
   const checkoutMut = useMutation({
@@ -95,6 +124,13 @@ export default function BulkActionsPage() {
             <span style={{ color: selected.size > 0 ? 'var(--accent)' : 'var(--text3)' }}>{selected.size} seçili</span>
             <div style={{ flex: 1 }} />
             <button
+              className="btn btn-ghost"
+              disabled={selected.size === 0}
+              onClick={() => setShowTransfer(s => !s)}
+            >
+              ⇄ TRANSFER ({selected.size})
+            </button>
+            <button
               className="btn btn-primary"
               disabled={selected.size === 0 || checkoutMut.isPending}
               onClick={handleCheckout}
@@ -102,6 +138,23 @@ export default function BulkActionsPage() {
               {checkoutMut.isPending ? 'İŞLENİYOR...' : `↘ TOPLU ÇIKIŞ (${selected.size})`}
             </button>
           </div>
+
+          {showTransfer && (
+            <div style={{ padding: 12, marginBottom: 8, border: '1px solid var(--accent)', borderRadius: 6, background: 'rgba(240,165,0,.05)', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <span style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>HEDEF BLOK:</span>
+              <select className="form-select" style={{ width: 120 }} value={transferTarget} onChange={e => setTransferTarget(e.target.value)}>
+                <option value="">— seç —</option>
+                {BLOCKS.map(b => <option key={b.name} value={b.name}>{b.name}</option>)}
+              </select>
+              <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', flex: 1 }}>
+                Blok içinde boş yataklara otomatik dağıtım. Vardiya/karantina uyumsuzlukları atlanır.
+              </span>
+              <button className="btn btn-primary" disabled={!transferTarget || transferMut.isPending} onClick={handleTransfer}>
+                {transferMut.isPending ? 'TAŞINIYOR...' : 'TRANSFER ET'}
+              </button>
+              <button className="btn btn-ghost" onClick={() => { setShowTransfer(false); setTransferTarget('') }}>İPTAL</button>
+            </div>
+          )}
 
           <div style={{ border: '1px solid var(--border)', borderRadius: 6, overflow: 'auto', maxHeight: '60vh' }}>
             <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
