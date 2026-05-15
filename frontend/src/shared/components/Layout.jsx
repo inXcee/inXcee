@@ -6,6 +6,7 @@ import NotificationBell from './NotificationBell.jsx'
 import CommandPalette from './CommandPalette.jsx'
 import { useCommandPalette } from '../hooks/useCommandPalette.js'
 import { useIdleTimeout } from '../hooks/useIdleTimeout.js'
+import { GlobalShortcuts } from '../hooks/useGlobalShortcuts.jsx'
 
 const PAGE_TITLES = {
   '/': 'Dashboard',
@@ -75,6 +76,7 @@ export default function Layout() {
       }}>
         <Outlet />
       </main>
+      <GlobalShortcuts />
 
       <MobileBottomNav />
     </div>
