@@ -1020,6 +1020,40 @@ export function initDB() {
   )`) } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] drills:', e.message) }
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_drills_date ON drills(drill_date DESC)') } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] idx_drills:', e.message) }
 
+  // ── Belge yonetimi ──
+  try { db.exec(`CREATE TABLE IF NOT EXISTS documents (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    category TEXT NOT NULL CHECK(category IN ('contract','invoice','insurance','id_doc','report','other')),
+    title TEXT NOT NULL,
+    file_name TEXT NOT NULL,
+    file_path TEXT NOT NULL,
+    mime_type TEXT,
+    size_bytes INTEGER,
+    related_type TEXT CHECK(related_type IN ('company','personnel','room','none')),
+    related_id INTEGER,
+    description TEXT,
+    uploaded_by INTEGER REFERENCES users(id),
+    uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`) } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] documents:', e.message) }
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_documents_cat ON documents(category, uploaded_at DESC)') } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] idx_documents:', e.message) }
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_documents_related ON documents(related_type, related_id)') } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] idx_documents_related:', e.message) }
+
+  // ── Butce / Maliyet ──
+  try { db.exec(`CREATE TABLE IF NOT EXISTS expenses (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    category TEXT NOT NULL CHECK(category IN ('food','cleaning','laundry','maintenance','utilities','staff','other')),
+    description TEXT NOT NULL,
+    amount REAL NOT NULL,
+    expense_date TEXT NOT NULL,
+    invoice_no TEXT,
+    company_id INTEGER REFERENCES companies(id),
+    document_id INTEGER REFERENCES documents(id),
+    notes TEXT,
+    created_by INTEGER REFERENCES users(id),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`) } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] expenses:', e.message) }
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses(expense_date DESC, category)') } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] idx_expenses:', e.message) }
+
   return db
 }
 
