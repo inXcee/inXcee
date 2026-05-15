@@ -182,4 +182,41 @@ describe('Yeni raporlar', () => {
       expect(res.headers['content-type']).toMatch(/pdf/)
     }
   })
+
+  it('Genisletilmis Doluluk/Bakim/Disiplin PDF de calisir', async () => {
+    for (const p of ['/api/reports/occupancy', '/api/reports/maintenance', '/api/reports/discipline']) {
+      const res = await request(app).get(p).set('Authorization', `Bearer ${token}`)
+      expect(res.status).toBe(200)
+      expect(res.headers['content-type']).toMatch(/pdf/)
+    }
+  })
+
+  it('Personel CSV', async () => {
+    const res = await request(app).get('/api/reports/personnel').set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(200)
+    expect(res.headers['content-type']).toMatch(/csv/)
+    expect(res.text.split('\r\n')[0]).toContain('Ad Soyad')
+  })
+
+  it('Envanter CSV', async () => {
+    const res = await request(app).get('/api/reports/inventory').set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(200)
+    expect(res.headers['content-type']).toMatch(/csv/)
+  })
+
+  it('Camasirhane + Vardiya PDF', async () => {
+    for (const p of ['/api/reports/laundry', '/api/reports/shifts']) {
+      const res = await request(app).get(p).set('Authorization', `Bearer ${token}`)
+      expect(res.status).toBe(200)
+      expect(res.headers['content-type']).toMatch(/pdf/)
+    }
+  })
+
+  it('Yeni raporlarin /data endpoint\'leri JSON doner', async () => {
+    for (const p of ['/api/reports/personnel/data', '/api/reports/inventory/data', '/api/reports/laundry/data', '/api/reports/shifts/data']) {
+      const res = await request(app).get(p).set('Authorization', `Bearer ${token}`)
+      expect(res.status).toBe(200)
+      expect(res.body).toHaveProperty('total')
+    }
+  })
 })

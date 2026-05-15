@@ -201,6 +201,88 @@ const REPORTS = [
     dataKey: 'records',
   },
   {
+    id: 'personnel',
+    title: 'Personel Listesi',
+    description: 'Tüm aktif personel — CSV indir (Excel uyumlu)',
+    icon: '👤',
+    color: 'var(--text)',
+    endpoint: '/reports/personnel',
+    dataEndpoint: '/reports/personnel/data',
+    hasDate: false,
+    format: 'csv',
+    summaryKeys: [
+      { key: 'total', label: 'TOPLAM', color: 'var(--text)' },
+      { key: 'with_room', label: 'ODALI', color: 'var(--green)' },
+      { key: 'with_zimmet', label: 'ZİMMETLİ', color: 'var(--red)' },
+      { key: 'blacklisted', label: 'KARALİSTE', color: 'var(--accent)' },
+    ],
+    tableColumns: [],
+    tableRow: () => [],
+    dataKey: null,
+    noDetail: true,
+  },
+  {
+    id: 'inventory',
+    title: 'Envanter Raporu',
+    description: 'Tüm stok kalemleri — CSV (yetersiz/normal durum dahil)',
+    icon: '📦',
+    color: 'var(--blue)',
+    endpoint: '/reports/inventory',
+    dataEndpoint: '/reports/inventory/data',
+    hasDate: false,
+    format: 'csv',
+    summaryKeys: [
+      { key: 'total', label: 'KALEM', color: 'var(--text)' },
+      { key: 'below_threshold', label: 'YETERSİZ', color: 'var(--red)' },
+      { key: 'total_value', label: 'DEĞER (₺)', color: 'var(--green)' },
+      { key: 'movements_30d', label: 'HAREKET (30g)', color: 'var(--blue)' },
+    ],
+    tableColumns: [],
+    tableRow: () => [],
+    dataKey: null,
+    noDetail: true,
+  },
+  {
+    id: 'laundry',
+    title: 'Çamaşırhane Raporu',
+    description: 'Son 30 gün işlem geçmişi + makine durumu',
+    icon: '◎',
+    color: 'var(--purple)',
+    endpoint: '/reports/laundry',
+    dataEndpoint: '/reports/laundry/data',
+    hasDate: false,
+    summaryKeys: [
+      { key: 'total', label: 'İŞLEM', color: 'var(--text)' },
+      { key: 'delivered', label: 'TESLİM', color: 'var(--green)' },
+      { key: 'lost', label: 'KAYIP', color: 'var(--red)' },
+      { key: 'machine_count', label: 'MAKİNE', color: 'var(--blue)' },
+    ],
+    tableColumns: [],
+    tableRow: () => [],
+    dataKey: null,
+    noDetail: true,
+  },
+  {
+    id: 'shifts',
+    title: 'Vardiya Raporu',
+    description: 'Blok x vardiya dağılımı + gece personeli listesi',
+    icon: '⧗',
+    color: 'var(--blue)',
+    endpoint: '/reports/shifts',
+    dataEndpoint: '/reports/shifts/data',
+    hasDate: false,
+    summaryKeys: [
+      { key: 'total', label: 'AKTİF', color: 'var(--text)' },
+      { key: 'day', label: 'GÜNDÜZ', color: 'var(--accent)' },
+      { key: 'night', label: 'GECE', color: 'var(--blue)' },
+      { key: 'night_list_count', label: 'GECE PER.', color: 'var(--text2)' },
+    ],
+    tableColumns: [],
+    tableRow: () => [],
+    dataKey: null,
+    noDetail: true,
+  },
+  {
     id: 'expenses',
     title: 'Bütçe / Gider Raporu',
     description: 'Son 3 ay — kategori dağılımı, aylık trend',
@@ -259,7 +341,8 @@ function ReportCard({ report, selectedDate }) {
       const blob = await res.blob()
       const link = document.createElement('a')
       link.href = URL.createObjectURL(blob)
-      link.download = `${report.id}-rapor-${selectedDate}.pdf`
+      const ext = report.format === 'csv' ? 'csv' : 'pdf'
+      link.download = `${report.id}-rapor-${selectedDate}.${ext}`
       link.click()
       URL.revokeObjectURL(link.href)
     } catch (e) {
@@ -345,7 +428,7 @@ function ReportCard({ report, selectedDate }) {
               opacity: downloading ? 0.7 : 1, transition: 'all 0.15s',
             }}
           >
-            {downloading ? 'İNDİRİLİYOR...' : 'PDF İNDİR'}
+            {downloading ? 'İNDİRİLİYOR...' : report.format === 'csv' ? 'CSV İNDİR' : 'PDF İNDİR'}
           </button>
         </div>
 

@@ -67,3 +67,12 @@ export function getExpensesReportSvc() {
 export function getExecutiveReportSvc() {
   return queries.getExecutiveData()
 }
+
+export const getOccupancyDetailSvc = queries.getOccupancyDetail
+export const getMaintenanceDetailSvc = queries.getMaintenanceDetail
+export const getHousekeepingDetailSvc = queries.getHousekeepingDetail
+export const getDisciplineDetailSvc = queries.getDisciplineDetail
+export const getAllActivePersonnelSvc = queries.getAllActivePersonnel
+export const getInventoryDetailSvc = queries.getInventoryDetail
+export const getLaundryDetailSvc = queries.getLaundryDetail
+export const getShiftsDetailSvc = queries.getShiftsDetail
