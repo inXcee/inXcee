@@ -6,6 +6,7 @@ import api from '../../shared/api/client.js'
 import KPICard from './KPICard.jsx'
 import HeatMap from './HeatMap.jsx'
 import TrendChartsSection from './TrendChartsSection.jsx'
+import ManagementWidgets from './ManagementWidgets.jsx'
 import { useNotifications } from '../../shared/hooks/useNotifications.js'
 import { useOccupancy } from '../../shared/hooks/useOccupancy.js'
 import { useAuthStore } from '../../shared/store/authStore.js'
@@ -506,6 +507,8 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {isManager && <ManagementWidgets />}
 
       {/* Alert banners */}
       {criticalNotifs.length > 0 && (
