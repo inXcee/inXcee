@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { requireRole } from '../../shared/auth/middleware.js'
 import * as svc from './service.js'
 import * as q from './queries.js'
+import { getDB } from '../../shared/db/index.js'
 
 export const bulkActionsRouter = Router()
 const mgmt = requireRole('campus_manager', 'shift_supervisor')
@@ -35,6 +36,39 @@ bulkActionsRouter.get('/personnel', ...mgmt, (req, res) => {
 bulkActionsRouter.get('/stats', ...mgmt, (req, res) => {
   try { res.json(svc.listStatsService(readFilters(req))) }
   catch (e) { console.error('[BulkActions stats]', e); res.status(500).json({ error: 'Sunucu hatasi' }) }
+})
+
+bulkActionsRouter.get('/detail/:id', ...mgmt, (req, res) => {
+  try {
+    const db = getDB()
+    const id = +req.params.id
+    const person = db.prepare(`
+      SELECT p.*, r.block, r.floor, r.room_no, ra.bed_no,
+        COALESCE(s.shift_type, 'day') AS shift_type,
+        c.name AS company_name
+      FROM personnel p
+      LEFT JOIN room_assignments ra ON ra.personnel_id=p.id AND ra.check_out_at IS NULL
+      LEFT JOIN rooms r ON r.id=ra.room_id
+      LEFT JOIN shifts s ON s.personnel_id=p.id
+      LEFT JOIN companies c ON c.id=p.company_id
+      WHERE p.id=?
+    `).get(id)
+    if (!person) return res.status(404).json({ error: 'Bulunamadi' })
+
+    const zimmet = db.prepare(`
+      SELECT id, item_name, quantity, created_at, returned_at, return_condition
+      FROM zimmet WHERE personnel_id=? ORDER BY returned_at IS NULL DESC, created_at DESC LIMIT 50
+    `).all(id)
+    let discipline = []
+    try {
+      discipline = db.prepare(`
+        SELECT dr.*, u.full_name AS created_by_name FROM discipline_records dr
+        LEFT JOIN users u ON u.id=dr.created_by
+        WHERE dr.personnel_id=? ORDER BY dr.created_at DESC LIMIT 50
+      `).all(id)
+    } catch {}
+    res.json({ person, zimmet, discipline })
+  } catch (e) { console.error('[Detail]', e); res.status(500).json({ error: 'Sunucu hatasi' }) }
 })
 
 bulkActionsRouter.get('/export', ...mgmt, (req, res) => {
@@ -98,6 +132,14 @@ bulkActionsRouter.post('/discipline', ...mgmt, (req, res) => {
   const r = svc.bulkDisciplineService(req.body?.ids, req.body?.points, req.body?.reason, req.user.id)
   if (r.error) return res.status(r.status).json({ error: r.error })
   res.json(r)
+})
+
+bulkActionsRouter.post('/whatsapp', ...mgmt, async (req, res) => {
+  try {
+    const r = await svc.bulkWhatsAppService(req.body?.ids, req.body?.message, req.user.id)
+    if (r.error) return res.status(r.status).json({ error: r.error })
+    res.json(r)
+  } catch (e) { console.error('[Bulk WA]', e); res.status(500).json({ error: 'Sunucu hatasi' }) }
 })
 
 bulkActionsRouter.post('/set-company', ...mgmt, (req, res) => {

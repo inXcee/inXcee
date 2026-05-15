@@ -1,6 +1,7 @@
 import * as q from './queries.js'
 import { logAudit } from '../../shared/audit.js'
 import { broadcastOccupancy } from '../../shared/notifications/service.js'
+import { sendWhatsAppText } from '../../shared/notifications/whatsapp-send.js'
 
 export function listActivePersonnelService(filters) {
   return q.listActivePersonnel(filters)
@@ -80,6 +81,32 @@ export function bulkDisciplineService(ids, points, reason, userId) {
       `${result.success.length} kisi · +${p} · ${reason.slice(0, 60)}`)
   }
   return result
+}
+
+export async function bulkWhatsAppService(ids, message, userId) {
+  const v = validateIds(ids, { max: 100 })
+  if (v.error) return v
+  if (!message || message.trim().length < 3) return { error: 'Mesaj en az 3 karakter olmalı', status: 400 }
+  if (message.length > 1000) return { error: 'Mesaj en fazla 1000 karakter olabilir', status: 400 }
+  const people = q.getPhonesByIds(v.clean)
+  const success = []
+  const skipped = []
+  for (const p of people) {
+    if (!p.phone_number) {
+      skipped.push({ id: p.id, name: p.full_name, reason: 'telefon yok' })
+      continue
+    }
+    try {
+      const r = await sendWhatsAppText(p.phone_number, `[YYS] ${message.trim()}`)
+      if (r.sent) success.push({ id: p.id, name: p.full_name, phone: p.phone_number })
+      else skipped.push({ id: p.id, name: p.full_name, reason: r.skipped || r.error || 'gönderilemedi' })
+    } catch (e) {
+      skipped.push({ id: p.id, name: p.full_name, reason: e.message })
+    }
+  }
+  logAudit(userId, 'bulk_whatsapp', 'whatsapp_outbound_log', null,
+    `${success.length} gonderildi, ${skipped.length} atlandi · ${message.slice(0, 60)}`)
+  return { success, skipped }
 }
 
 export function bulkSetCompanyService(ids, companyId, userId) {

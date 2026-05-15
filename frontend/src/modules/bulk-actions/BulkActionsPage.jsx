@@ -40,8 +40,10 @@ export default function BulkActionsPage() {
   const [selected, setSelected] = useState(new Set())
   const [advanced, setAdvanced] = useState(false)
   const [report, setReport] = useState(null)
-  const [actionPanel, setActionPanel] = useState(null) // 'transfer'|'shift'|'blacklist'|'discipline'|'company'|null
+  const [actionPanel, setActionPanel] = useState(null) // 'transfer'|'shift'|'blacklist'|'discipline'|'company'|'whatsapp'|null
   const [actionForm, setActionForm] = useState({})
+  const [detailId, setDetailId] = useState(null)
+  const [viewMode, setViewMode] = useState(() => window.innerWidth < 768 ? 'cards' : 'table')
 
   const sf = useSavedFilters('bulk-actions', filters, setFilters)
   const hasActiveFilter = Object.values(filters).some(v => v !== '' && v != null)
@@ -108,6 +110,13 @@ export default function BulkActionsPage() {
   const blacklistRemMut = makeActionMut('blacklist', () => ({ ids: [...selected], blacklisted: false }), 'kişi kara listeden çıkarıldı')
   const disciplineMut = makeActionMut('discipline', () => ({ ids: [...selected], points: +actionForm.points, reason: actionForm.reason }), 'kişiye disiplin puanı eklendi')
   const companyMut = makeActionMut('set-company', () => ({ ids: [...selected], company_id: actionForm.company_id || null }), 'kişi firma güncellendi')
+  const whatsappMut = makeActionMut('whatsapp', () => ({ ids: [...selected], message: actionForm.message }), 'kişiye mesaj gönderildi')
+
+  const { data: detail } = useQuery({
+    queryKey: ['bulk-detail', detailId],
+    queryFn: () => api.get(`/bulk-actions/detail/${detailId}`).then(r => r.data),
+    enabled: !!detailId,
+  })
 
   async function handleCheckout() {
     const withZ = rows.filter(r => selected.has(r.id) && r.unreturned_zimmet > 0).length
@@ -126,9 +135,12 @@ export default function BulkActionsPage() {
       name === 'shift' ? { shift_type: 'day' } :
       name === 'blacklist' ? { mode: 'add', reason: '' } :
       name === 'discipline' ? { points: 5, reason: '' } :
-      name === 'company' ? { company_id: '' } : {}
+      name === 'company' ? { company_id: '' } :
+      name === 'whatsapp' ? { message: '' } : {}
     )
   }
+
+  const selectedWithPhone = useMemo(() => rows.filter(r => selected.has(r.id) && r.phone_number).length, [rows, selected])
 
   async function exportCsv() {
     const res = await api.get(`/bulk-actions/export?${params}`, { responseType: 'blob' })
@@ -277,9 +289,20 @@ export default function BulkActionsPage() {
           </>
         )}
         <div style={{ flex: 1 }} />
+        <div style={{ display: 'inline-flex', gap: 0, marginRight: 4 }}>
+          <button onClick={() => setViewMode('table')} style={{ ...miniBtn, borderRadius: '4px 0 0 4px',
+            background: viewMode === 'table' ? 'var(--accent)' : 'transparent',
+            color: viewMode === 'table' ? '#000' : 'var(--text3)',
+          }} title="Tablo">≡</button>
+          <button onClick={() => setViewMode('cards')} style={{ ...miniBtn, borderRadius: '0 4px 4px 0', borderLeft: 'none',
+            background: viewMode === 'cards' ? 'var(--accent)' : 'transparent',
+            color: viewMode === 'cards' ? '#000' : 'var(--text3)',
+          }} title="Kart">▦</button>
+        </div>
         <button className="btn btn-ghost btn-sm" onClick={exportCsv} title="Filtrelenmiş listeyi indir">↓ CSV</button>
         {selected.size > 0 && (
           <>
+            <button className="btn btn-ghost btn-sm" onClick={() => openAction('whatsapp')} style={{ color: '#25d366' }} title={selectedWithPhone ? `${selectedWithPhone} kişide telefon var` : 'Telefonu olan kimse yok'}>✉ WhatsApp</button>
             <button className="btn btn-ghost btn-sm" onClick={() => openAction('transfer')}>⇄ Transfer</button>
             <button className="btn btn-ghost btn-sm" onClick={() => openAction('shift')}>◐ Vardiya</button>
             <button className="btn btn-ghost btn-sm" onClick={() => openAction('company')}>⌂ Firma</button>
@@ -364,6 +387,30 @@ export default function BulkActionsPage() {
         </ActionPanel>
       )}
 
+      {actionPanel === 'whatsapp' && (
+        <ActionPanel title="TOPLU WHATSAPP MESAJI" onCancel={() => setActionPanel(null)}>
+          <label className="form-label">MESAJ (en az 3 karakter, en fazla 1000)</label>
+          <textarea
+            className="form-input"
+            rows={4}
+            value={actionForm.message || ''}
+            onChange={e => setActionForm(f => ({ ...f, message: e.target.value }))}
+            placeholder="Sayın sakinler, yarın 14:00'te yangın tatbikatı yapılacaktır..."
+          />
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--text3)' }}>
+            <span>{selectedWithPhone}/{selected.size} kişide telefon var · {selected.size - selectedWithPhone} atlanacak</span>
+            <span>{(actionForm.message || '').length}/1000</span>
+          </div>
+          <div style={hintStyle}>Mesaj başına otomatik [YYS] etiketi eklenir. WhatsApp Cloud API üzerinden tek tek gönderilir.</div>
+          <button className="btn btn-primary"
+            disabled={!actionForm.message || actionForm.message.length < 3 || whatsappMut.isPending}
+            onClick={() => whatsappMut.mutate()}
+            style={{ background: '#25d366', borderColor: '#25d366', color: '#fff' }}>
+            {whatsappMut.isPending ? 'GÖNDERİLİYOR...' : `${selectedWithPhone} KİŞİYE GÖNDER`}
+          </button>
+        </ActionPanel>
+      )}
+
       {actionPanel === 'blacklist' && (
         <ActionPanel title="TOPLU KARA LİSTE" onCancel={() => setActionPanel(null)}>
           <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
@@ -416,6 +463,59 @@ export default function BulkActionsPage() {
           ))}
         </div>
         <div className="panel-body" style={{ padding: 0 }}>
+          {viewMode === 'cards' ? (
+            <div style={{ padding: 12, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 8, maxHeight: '60vh', overflow: 'auto' }}>
+              {rows.length === 0 && !isFetching && (
+                <div style={{ gridColumn: '1/-1' }}>
+                  <EmptyState icon="∅" title="Eşleşen kayıt yok" hint={hasActiveFilter ? 'Filtreleri gevşetmeyi deneyin' : 'Aktif sakin yok'} />
+                </div>
+              )}
+              {rows.map(r => {
+                const isSel = selected.has(r.id)
+                const days = daysSince(r.check_in_date)
+                return (
+                  <div key={r.id} onClick={() => toggle(r.id)}
+                    style={{
+                      padding: 12, borderRadius: 8, cursor: 'pointer',
+                      border: '1px solid ' + (isSel ? 'var(--accent)' : 'var(--border)'),
+                      background: isSel ? 'rgba(240,165,0,.08)' : r.is_blacklisted ? 'rgba(239,68,68,.04)' : 'var(--surface)',
+                    }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
+                      <div>
+                        <strong>{r.full_name}</strong>
+                        {r.is_blacklisted && <span style={{ marginLeft: 6, color: 'var(--red, #ef4444)' }}>⊘</span>}
+                        {r.gender && <span style={{ marginLeft: 6, fontSize: 11, color: 'var(--text3)' }}>{r.gender === 'female' ? '♀' : '♂'}</span>}
+                        <div style={{ fontSize: 10, color: 'var(--text3)' }}>{r.job_title || '-'}</div>
+                      </div>
+                      <input type="checkbox" checked={isSel} onChange={() => toggle(r.id)} onClick={e => e.stopPropagation()} />
+                    </div>
+                    <div style={{ fontSize: 11, fontFamily: 'var(--mono)', display: 'grid', gridTemplateColumns: '70px 1fr', rowGap: 2, color: 'var(--text2)' }}>
+                      <span style={{ color: 'var(--text3)' }}>Oda:</span>
+                      <span>{r.block ? `${r.block}-${r.room_no}${r.bed_no ? '/' + r.bed_no : ''}` : <span style={{ color: 'var(--orange, #f97316)' }}>atanmamış</span>}</span>
+                      <span style={{ color: 'var(--text3)' }}>Firma:</span>
+                      <span>{r.company || '-'}</span>
+                      <span style={{ color: 'var(--text3)' }}>Vardiya:</span>
+                      <span style={{ color: r.shift_type === 'night' ? '#3b82f6' : '#eab308' }}>{r.shift_type === 'night' ? '☾ Gece' : '☀ Gündüz'}</span>
+                      <span style={{ color: 'var(--text3)' }}>Giriş:</span>
+                      <span>{fmtDate(r.check_in_date)}{days != null && ` (${days}g)`}</span>
+                      {(r.unreturned_zimmet > 0 || r.discipline_points > 0) && (
+                        <>
+                          <span style={{ color: 'var(--text3)' }}>Risk:</span>
+                          <span>
+                            {r.unreturned_zimmet > 0 && <span style={{ color: 'var(--red, #ef4444)', marginRight: 6 }}>Zimmet: {r.unreturned_zimmet}</span>}
+                            {r.discipline_points > 0 && <span style={{ color: r.discipline_points >= 50 ? 'var(--red)' : 'var(--orange, #f97316)' }}>Dis: {r.discipline_points}</span>}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                    <div style={{ marginTop: 6, textAlign: 'right' }}>
+                      <button onClick={e => { e.stopPropagation(); setDetailId(r.id) }} style={miniBtn}>Detay →</button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
           <div style={{ border: '1px solid var(--border)', borderRadius: 0, overflow: 'auto', maxHeight: '60vh' }}>
             <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead style={{ position: 'sticky', top: 0, background: 'var(--surface2)', zIndex: 1 }}>
@@ -432,6 +532,7 @@ export default function BulkActionsPage() {
                   <th style={{ textAlign: 'center', padding: 8 }}>Zim.</th>
                   <th style={{ textAlign: 'center', padding: 8 }}>Dis.</th>
                   <th style={{ textAlign: 'center', padding: 8 }}>⚑</th>
+                  <th style={{ width: 60, padding: 8 }}></th>
                 </tr>
               </thead>
               <tbody>
@@ -484,14 +585,20 @@ export default function BulkActionsPage() {
                       <td style={{ padding: 8, textAlign: 'center' }}>
                         {r.is_blacklisted && <span style={{ color: 'var(--red, #ef4444)', fontSize: 14 }} title={r.blacklist_reason}>⊘</span>}
                       </td>
+                      <td style={{ padding: 8 }}>
+                        <button onClick={e => { e.stopPropagation(); setDetailId(r.id) }} style={miniBtn}>↗</button>
+                      </td>
                     </tr>
                   )
                 })}
               </tbody>
             </table>
           </div>
+          )}
         </div>
       </div>
+
+      {detailId && <DetailDrawer detail={detail} onClose={() => setDetailId(null)} />}
 
       {/* Rapor */}
       {report && (
@@ -563,4 +670,124 @@ const miniBtn = {
   padding: '3px 8px', fontSize: 10, fontFamily: 'var(--mono)',
   background: 'transparent', border: '1px solid var(--border)',
   color: 'var(--text3)', borderRadius: 4, cursor: 'pointer',
+}
+
+function DetailDrawer({ detail, onClose }) {
+  return (
+    <div onClick={onClose} style={{
+      position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 9000,
+      display: 'flex', justifyContent: 'flex-end',
+    }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        width: '100%', maxWidth: 480, height: '100%', overflowY: 'auto',
+        background: 'var(--surface)', borderLeft: '1px solid var(--border)',
+        padding: 20, boxShadow: '-8px 0 32px rgba(0,0,0,.4)',
+      }}>
+        {!detail ? (
+          <div style={{ color: 'var(--text3)' }}>Yükleniyor...</div>
+        ) : (
+          <>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 16 }}>
+              <div>
+                <h3 style={{ fontSize: 18, color: 'var(--text)' }}>{detail.person.full_name}</h3>
+                <div style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--text3)' }}>
+                  ID #{detail.person.id} · {detail.person.tc_no || 'TC yok'}
+                </div>
+              </div>
+              <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--text3)', fontSize: 20, cursor: 'pointer' }}>×</button>
+            </div>
+
+            <Section title="KİŞİSEL">
+              <Row label="Cinsiyet" value={detail.person.gender === 'female' ? 'Kadın' : detail.person.gender === 'male' ? 'Erkek' : '-'} />
+              <Row label="Telefon" value={detail.person.phone_number || '-'} mono />
+              <Row label="Memleket" value={detail.person.hometown || '-'} />
+              <Row label="Meslek" value={detail.person.job_title || '-'} />
+              <Row label="Firma" value={detail.person.company_name || detail.person.company || '-'} />
+            </Section>
+
+            <Section title="KONAKLAMA">
+              <Row label="Oda" value={detail.person.block ? `${detail.person.block}-${detail.person.room_no} / Yatak ${detail.person.bed_no}` : 'Atanmamış'} />
+              <Row label="Vardiya" value={detail.person.shift_type === 'night' ? 'Gece' : 'Gündüz'} />
+              <Row label="Giriş" value={detail.person.check_in_date || '-'} mono />
+              <Row label="Çıkış" value={detail.person.check_out_date || 'Aktif'} mono />
+            </Section>
+
+            <Section title="ACİL DURUM">
+              <Row label="Kişi" value={detail.person.emergency_name || '-'} />
+              <Row label="Telefon" value={detail.person.emergency_phone || '-'} mono />
+            </Section>
+
+            <Section title={`ZİMMET (${detail.zimmet.length})`}>
+              {detail.zimmet.length === 0 ? (
+                <div style={{ color: 'var(--text3)', fontSize: 12, padding: '8px 0' }}>Zimmet kaydı yok</div>
+              ) : detail.zimmet.map(z => (
+                <div key={z.id} style={{ padding: '6px 0', borderTop: '1px solid var(--border)', fontSize: 12 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <strong>{z.item_name}</strong>
+                    <span style={{
+                      fontSize: 10, padding: '2px 6px', borderRadius: 3, fontFamily: 'var(--mono)',
+                      background: z.returned_at ? 'rgba(34,197,94,.15)' : 'rgba(239,68,68,.15)',
+                      color: z.returned_at ? 'var(--green, #22c55e)' : 'var(--red, #ef4444)',
+                    }}>
+                      {z.returned_at ? 'İADE' : 'BEKLİYOR'}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 10, color: 'var(--text3)', fontFamily: 'var(--mono)' }}>
+                    {z.created_at?.slice(0, 10)} · {z.quantity} adet
+                    {z.return_condition && z.return_condition !== 'normal' && ` · ${z.return_condition}`}
+                  </div>
+                </div>
+              ))}
+            </Section>
+
+            <Section title={`DİSİPLİN (toplam ${detail.person.discipline_points || 0} puan)`}>
+              {detail.discipline.length === 0 ? (
+                <div style={{ color: 'var(--text3)', fontSize: 12, padding: '8px 0' }}>Disiplin kaydı yok</div>
+              ) : detail.discipline.map(d => (
+                <div key={d.id} style={{ padding: '6px 0', borderTop: '1px solid var(--border)', fontSize: 12 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>{d.reason}</span>
+                    <span style={{ fontFamily: 'var(--mono)', color: 'var(--orange, #f97316)' }}>+{d.points}</span>
+                  </div>
+                  <div style={{ fontSize: 10, color: 'var(--text3)', fontFamily: 'var(--mono)' }}>
+                    {d.created_at?.slice(0, 10)} · {d.created_by_name || ''}
+                  </div>
+                </div>
+              ))}
+            </Section>
+
+            {detail.person.is_blacklisted && (
+              <div style={{ padding: 12, marginTop: 16, background: 'rgba(239,68,68,.08)', border: '1px solid var(--red, #ef4444)', borderRadius: 6 }}>
+                <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--red, #ef4444)', letterSpacing: 2, marginBottom: 4 }}>⊘ KARA LİSTEDE</div>
+                <div style={{ fontSize: 12 }}>{detail.person.blacklist_reason || 'Sebep belirtilmemiş'}</div>
+                <div style={{ fontSize: 10, color: 'var(--text3)', fontFamily: 'var(--mono)', marginTop: 4 }}>
+                  {detail.person.blacklisted_at?.slice(0, 10)}
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function Section({ title, children }) {
+  return (
+    <div style={{ marginBottom: 20 }}>
+      <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', letterSpacing: 2, marginBottom: 8, paddingBottom: 4, borderBottom: '1px solid var(--border)' }}>
+        {title}
+      </div>
+      {children}
+    </div>
+  )
+}
+
+function Row({ label, value, mono }) {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr', padding: '4px 0', fontSize: 12 }}>
+      <span style={{ color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: 11 }}>{label}</span>
+      <span style={{ fontFamily: mono ? 'var(--mono)' : 'inherit', fontSize: mono ? 11 : 12 }}>{value}</span>
+    </div>
+  )
 }

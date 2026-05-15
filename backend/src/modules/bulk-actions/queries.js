@@ -254,6 +254,15 @@ export function bulkDisciplineTx(ids, points, reason, userId) {
   return { success, skipped }
 }
 
+export function getPhonesByIds(ids) {
+  const db = getDB()
+  if (!ids.length) return []
+  const placeholders = ids.map(() => '?').join(',')
+  return db.prepare(`
+    SELECT id, full_name, phone_number FROM personnel WHERE id IN (${placeholders})
+  `).all(...ids)
+}
+
 export function bulkSetCompanyTx(ids, companyId) {
   const db = getDB()
   const success = []
