@@ -22,6 +22,7 @@ import { companiesRouter } from './modules/companies/routes.js'
 import { visitorsRouter } from './modules/visitors/routes.js'
 import { surveysRouter } from './modules/surveys/routes.js'
 import { drillsRouter } from './modules/drills/routes.js'
+import { displayRouter } from './modules/display/routes.js'
 import { reportsRouter } from './modules/reports/routes.js'
 import { inventoryRouter } from './modules/inventory/routes.js'
 import { usersRouter } from './modules/users/routes.js'
@@ -226,6 +227,7 @@ app.use('/api/companies', writeLimiter, companiesRouter)
 app.use('/api/visitors', writeLimiter, visitorsRouter)
 app.use('/api/surveys', writeLimiter, surveysRouter)
 app.use('/api/drills', writeLimiter, drillsRouter)
+app.use('/api/display', readLimiter, displayRouter)
 app.use('/api/reports', readLimiter, reportsRouter)
 app.use('/api/inventory', writeLimiter, inventoryRouter)
 app.use('/api/users', writeLimiter, usersRouter)

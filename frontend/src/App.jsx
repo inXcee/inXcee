@@ -29,6 +29,7 @@ const CompaniesPage = lazy(() => import('./modules/companies/CompaniesPage.jsx')
 const VisitorsPage = lazy(() => import('./modules/visitors/VisitorsPage.jsx'))
 const SurveysPage = lazy(() => import('./modules/surveys/SurveysPage.jsx'))
 const DrillsPage = lazy(() => import('./modules/drills/DrillsPage.jsx'))
+const DisplayPage = lazy(() => import('./modules/display/DisplayPage.jsx'))
 const InventoryPage = lazy(() => import('./modules/inventory/InventoryPage.jsx'))
 const ReportsPage = lazy(() => import('./modules/reports/ReportsPage.jsx'))
 const LaundryHub = lazy(() => import('./modules/laundry/LaundryHub.jsx'))
@@ -207,6 +208,7 @@ export default function App() {
           <Route path="/kvkk" element={<KvkkPage />} />
           <Route path="/kiosk" element={<SelfServicePage />} />
           <Route path="/laundry-kiosk" element={<LaundryKioskPage />} />
+          <Route path="/display" element={<DisplayPage />} />
           <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
             <Route index element={<DashboardPage />} />
             <Route path="campus-map" element={<CampusMapPage />} />
