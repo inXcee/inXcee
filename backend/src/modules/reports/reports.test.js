@@ -198,10 +198,19 @@ describe('Yeni raporlar', () => {
     expect(res.text.split('\r\n')[0]).toContain('Ad Soyad')
   })
 
-  it('Envanter CSV', async () => {
-    const res = await request(app).get('/api/reports/inventory').set('Authorization', `Bearer ${token}`)
-    expect(res.status).toBe(200)
-    expect(res.headers['content-type']).toMatch(/csv/)
+  it('Envanter PDF + CSV + Hareketler CSV', async () => {
+    const pdf = await request(app).get('/api/reports/inventory').set('Authorization', `Bearer ${token}`)
+    expect(pdf.status).toBe(200)
+    expect(pdf.headers['content-type']).toMatch(/pdf/)
+
+    const csv = await request(app).get('/api/reports/inventory.csv').set('Authorization', `Bearer ${token}`)
+    expect(csv.status).toBe(200)
+    expect(csv.headers['content-type']).toMatch(/csv/)
+
+    const mov = await request(app).get('/api/reports/inventory/movements.csv').set('Authorization', `Bearer ${token}`)
+    expect(mov.status).toBe(200)
+    expect(mov.headers['content-type']).toMatch(/csv/)
+    expect(mov.text.split('\r\n')[0]).toContain('Tip')
   })
 
   it('Camasirhane + Vardiya PDF', async () => {

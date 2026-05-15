@@ -72,7 +72,8 @@ reportsRouter.get('/housekeeping', ...mgrAccess, (req, res) => {
 
 reportsRouter.get('/maintenance', ...mgrAccess, (req, res) => {
   try {
-    const { all, byPriority, byTechnician, hotSpots } = service.getMaintenanceDetailSvc()
+    const d = service.getMaintenanceDetailSvc()
+    const all = d.all
     const total = all.length
     const open = all.filter(r => r.status !== 'done').length
     const closed = total - open
@@ -89,33 +90,101 @@ reportsRouter.get('/maintenance', ...mgrAccess, (req, res) => {
       { label: 'Ort. Cozum (sa)', value: avgHours },
     ])
 
-    addSectionTitle(doc, 'Oncelik Dagilimi')
+    addSectionTitle(doc, 'Acik Talep Yas Dilimleri')
     addTable(doc,
-      ['Oncelik', 'Toplam', 'Kapanan', 'Acik'],
-      byPriority.map(p => [p.priority, p.n, p.closed, p.n - p.closed]),
-      [120, 90, 90, 90]
+      ['Yas', 'Adet'],
+      [
+        ['0-1 gun', d.ageBuckets['0-1g'] || 0],
+        ['1-3 gun', d.ageBuckets['1-3g'] || 0],
+        ['3-7 gun', d.ageBuckets['3-7g'] || 0],
+        ['7-14 gun', d.ageBuckets['7-14g'] || 0],
+        ['14+ gun (KRITIK)', d.ageBuckets['14+g'] || 0],
+      ],
+      [200, 100]
+    )
+
+    addSectionTitle(doc, 'Durum Dagilimi')
+    addTable(doc,
+      ['Durum', 'Adet'],
+      d.byStatus.map(s => [
+        s.status === 'open' ? 'Acik' : s.status === 'assigned' ? 'Atanmis' :
+        s.status === 'in_progress' ? 'Devam Ediyor' : s.status === 'review' ? 'Inceleme' :
+        s.status === 'done' ? 'Tamamlandi' : s.status,
+        s.n,
+      ]),
+      [200, 100]
+    )
+
+    addSectionTitle(doc, 'Oncelik Dagilimi (cozum sureleri ile)')
+    addTable(doc,
+      ['Oncelik', 'Toplam', 'Kapanan', 'Acik', 'Ort. Saat'],
+      d.byPriority.map(p => [
+        p.priority === 'high' ? 'Yuksek' : p.priority === 'medium' ? 'Orta' : 'Dusuk',
+        p.n, p.closed, p.n - p.closed, p.avg_hours ?? '-',
+      ]),
+      [100, 80, 80, 80, 90]
     )
 
     addSectionTitle(doc, 'Teknisyen Performansi')
     addTable(doc,
-      ['Teknisyen', 'Toplam', 'Tamamlanan', 'Ort. Saat'],
-      byTechnician.map(t => [t.teknisyen, t.toplam, t.tamamlanan, t.ortalama_saat ?? '-']),
-      [180, 80, 100, 90]
+      ['Teknisyen', 'Toplam', 'Tamamlanan', 'Acik', 'SLA Ihlali', 'Ort. Saat'],
+      d.byTechnician.map(t => [
+        t.teknisyen, t.toplam, t.tamamlanan, t.acik, t.sla_ihlali, t.ortalama_saat ?? '-',
+      ]),
+      [150, 60, 80, 50, 70, 70]
     )
 
-    if (hotSpots.length > 0) {
-      addSectionTitle(doc, 'Sik Ariza Veren Konumlar')
+    if (d.byBlock.length > 0) {
+      addSectionTitle(doc, 'Blok Bazli Ariza Yogunlugu')
       addTable(doc,
-        ['Konum', 'Ariza Sayisi'],
-        hotSpots.map(h => [h.location, h.n]),
-        [350, 100]
+        ['Blok', 'Toplam', 'Kapanan', 'Acik'],
+        d.byBlock.map(b => [b.block, b.toplam, b.kapanan, b.acik]),
+        [80, 80, 100, 80]
+      )
+    }
+
+    if (d.hotSpots.length > 0) {
+      addSectionTitle(doc, 'Sik Ariza Veren Konumlar (Hot Spots)')
+      addTable(doc,
+        ['Konum', 'Sayi', 'Kapanan', 'Ort. Saat'],
+        d.hotSpots.map(h => [h.location, h.n, h.closed, h.avg_hours ?? '-']),
+        [240, 70, 70, 70]
+      )
+    }
+
+    if (d.longestOpen.length > 0) {
+      addSectionTitle(doc, 'En Uzun Suredir Acik Olan Talepler (Top 10)')
+      addTable(doc,
+        ['#', 'Konum', 'Oncelik', 'Durum', 'Yas (gun)'],
+        d.longestOpen.map(r => [
+          r.id, (r.location || '').substring(0, 30), r.priority, r.status, r.age_days,
+        ]),
+        [30, 170, 70, 90, 90]
+      )
+    }
+
+    if (d.monthlyTrend.length > 0) {
+      addSectionTitle(doc, 'Aylik Trend (son 12 ay)')
+      addTable(doc,
+        ['Ay', 'Acilan', 'Kapanan'],
+        d.monthlyTrend.map(m => [m.month, m.opened, m.closed]),
+        [120, 100, 100]
+      )
+    }
+
+    if (d.topReporters.length > 0) {
+      addSectionTitle(doc, 'En Cok Bildirim Yapanlar')
+      addTable(doc,
+        ['Kullanici', 'Bildirim'],
+        d.topReporters.map(r => [r.reporter, r.n]),
+        [300, 100]
       )
     }
 
     addSectionTitle(doc, 'Tum Kayitlar')
     addTable(doc,
       ['#', 'Konum', 'Oncelik', 'Durum', 'Teknisyen', 'Saat', 'Acilis'],
-      all.slice(0, 100).map(r => [
+      all.slice(0, 150).map(r => [
         r.id, (r.location || '').substring(0, 25), r.priority,
         r.status, r.teknisyen || '-',
         r.hours_elapsed != null ? r.hours_elapsed : '-',
@@ -518,14 +587,15 @@ reportsRouter.get('/personnel/data', ...mgrAccess, (req, res) => {
 
 // ── Yeni: Envanter CSV ──
 
-reportsRouter.get('/inventory', ...mgrAccess, (req, res) => {
+// CSV — tüm kalemler
+reportsRouter.get('/inventory.csv', ...mgrAccess, (req, res) => {
   try {
-    const { items, movements } = service.getInventoryDetailSvc()
+    const { items } = service.getInventoryDetailSvc()
     const headers = ['Stok Adi', 'Kategori', 'Lokasyon', 'Miktar', 'Birim', 'Esik', 'Durum',
       'Birim Fiyat', 'Tahmini Deger', 'Son Guncelleme']
     const csv = toCsv(headers, items.map(i => [
       i.item_name, i.category, i.location, i.quantity, i.unit, i.reorder_threshold,
-      i.below_threshold ? 'YETERSIZ' : 'NORMAL',
+      i.out_of_stock ? 'STOK YOK' : i.below_threshold ? 'YETERSIZ' : 'NORMAL',
       i.unit_price || 0, i.estimated_value || 0,
       i.last_updated ? i.last_updated.slice(0, 10) : '',
     ]))
@@ -535,16 +605,141 @@ reportsRouter.get('/inventory', ...mgrAccess, (req, res) => {
   } catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
+// CSV — son 30 gun hareketler
+reportsRouter.get('/inventory/movements.csv', ...mgrAccess, (req, res) => {
+  try {
+    const { movements } = service.getInventoryDetailSvc()
+    const headers = ['Tarih', 'Tip', 'Stok', 'Kategori', 'Birim', 'Miktar', 'Stok Sonrasi', 'Sebep', 'Kullanici']
+    const csv = toCsv(headers, movements.map(m => [
+      m.created_at ? m.created_at.slice(0, 19).replace('T', ' ') : '',
+      m.type === 'in' ? 'GIRIS' : m.type === 'out' ? 'CIKIS' : m.type === 'count' ? 'SAYIM' : m.type,
+      m.item_name, m.category, m.unit,
+      m.delta, m.quantity_after, m.reason || '',
+      m.user_name || '',
+    ]))
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8')
+    res.setHeader('Content-Disposition', `attachment; filename="envanter-hareketler-${new Date().toISOString().slice(0,10)}.csv"`)
+    res.send(csv)
+  } catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+})
+
+// PDF — zengin ozet
+reportsRouter.get('/inventory', ...mgrAccess, (req, res) => {
+  try {
+    const d = service.getInventoryDetailSvc()
+    const tl = (n) => n != null ? Math.round(n).toLocaleString('tr-TR') + ' TL' : '-'
+    const totalValue = d.items.reduce((s, i) => s + (i.estimated_value || 0), 0)
+
+    const doc = createPDF(res, 'Envanter Raporu')
+    addKpiRow(doc, [
+      { label: 'Toplam Kalem', value: d.items.length },
+      { label: 'Yetersiz', value: d.lowStock.length, color: d.lowStock.length > 0 ? '#f97316' : '#22c55e' },
+      { label: 'Stok Yok', value: d.outOfStock.length, color: d.outOfStock.length > 0 ? '#ef4444' : '#22c55e' },
+      { label: 'Toplam Deger', value: tl(totalValue), color: '#0369a1' },
+    ])
+    addKpiRow(doc, [
+      { label: 'Giris (30g)', value: d.movSummary.in, color: '#22c55e' },
+      { label: 'Cikis (30g)', value: d.movSummary.out, color: '#f97316' },
+      { label: 'Sayim Duzelt.', value: d.movSummary.count_adj },
+      { label: 'Hareket (30g)', value: d.movements.length },
+    ])
+
+    addSectionTitle(doc, 'Kategori Bazli Ozet')
+    addTable(doc,
+      ['Kategori', 'Kalem', 'Yetersiz', 'Stok Yok', 'Tahmini Deger'],
+      d.byCategory.map(c => [c.category, c.n, c.below, c.out, tl(c.value)]),
+      [120, 60, 70, 70, 130]
+    )
+
+    if (d.outOfStock.length > 0) {
+      addSectionTitle(doc, `⚠ STOK YOK (${d.outOfStock.length} kalem — ACIL SIPARIS)`)
+      addTable(doc,
+        ['Stok', 'Kategori', 'Lokasyon', 'Esik', 'Birim'],
+        d.outOfStock.map(i => [i.item_name, i.category, i.location || '-', i.reorder_threshold, i.unit]),
+        [140, 80, 90, 60, 80]
+      )
+    }
+
+    if (d.lowStock.length > 0) {
+      addSectionTitle(doc, `Yetersiz Stok (${d.lowStock.length} kalem)`)
+      addTable(doc,
+        ['Stok', 'Kategori', 'Mevcut', 'Esik', 'Eksik', 'Birim'],
+        d.lowStock.map(i => [
+          i.item_name, i.category, i.quantity, i.reorder_threshold,
+          Math.max(0, (i.reorder_threshold - i.quantity)).toFixed(1), i.unit,
+        ]),
+        [140, 75, 60, 60, 60, 60]
+      )
+    }
+
+    if (d.topValuable.length > 0) {
+      addSectionTitle(doc, 'En Degerli 15 Kalem')
+      addTable(doc,
+        ['Stok', 'Kategori', 'Miktar', 'Birim Fiyat', 'Deger'],
+        d.topValuable.map(i => [
+          i.item_name, i.category, i.quantity, tl(i.unit_price), tl(i.estimated_value),
+        ]),
+        [130, 80, 70, 90, 90]
+      )
+    }
+
+    if (d.topConsumed.length > 0) {
+      addSectionTitle(doc, 'En Cok Tuketilen 15 Kalem (son 30 gun)')
+      addTable(doc,
+        ['Stok', 'Toplam Cikis', 'Birim'],
+        d.topConsumed.map(c => [c.item, c.total_out, c.unit]),
+        [250, 120, 80]
+      )
+    }
+
+    if (d.byLocation.length > 0) {
+      addSectionTitle(doc, 'Lokasyon Bazli Dagilim')
+      addTable(doc,
+        ['Lokasyon', 'Kalem', 'Tahmini Deger'],
+        d.byLocation.map(l => [l.location, l.n, tl(l.value)]),
+        [180, 80, 130]
+      )
+    }
+
+    addSectionTitle(doc, 'Tum Kalemler')
+    addTable(doc,
+      ['Stok', 'Kategori', 'Miktar', 'Birim', 'Esik', 'Durum'],
+      d.items.slice(0, 200).map(i => [
+        i.item_name, i.category, i.quantity, i.unit, i.reorder_threshold,
+        i.out_of_stock ? 'STOK YOK' : i.below_threshold ? 'YETERSIZ' : 'NORMAL',
+      ]),
+      [140, 80, 60, 60, 60, 80]
+    )
+
+    if (d.movements.length > 0) {
+      addSectionTitle(doc, 'Son Hareketler (50 kayit)')
+      addTable(doc,
+        ['Tarih', 'Tip', 'Stok', 'Miktar', 'Sebep'],
+        d.movements.slice(0, 50).map(m => [
+          m.created_at ? m.created_at.slice(0, 16).replace('T', ' ') : '-',
+          m.type === 'in' ? 'GIRIS' : m.type === 'out' ? 'CIKIS' : 'SAYIM',
+          (m.item_name || '').substring(0, 25),
+          m.delta,
+          (m.reason || '').substring(0, 30),
+        ]),
+        [110, 50, 130, 50, 145]
+      )
+    }
+    doc.end()
+  } catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+})
+
 reportsRouter.get('/inventory/data', ...mgrAccess, (req, res) => {
   try {
-    const { items, movements } = service.getInventoryDetailSvc()
-    const totalValue = items.reduce((s, i) => s + (i.estimated_value || 0), 0)
+    const d = service.getInventoryDetailSvc()
+    const totalValue = d.items.reduce((s, i) => s + (i.estimated_value || 0), 0)
     res.json({
-      total: items.length,
-      below_threshold: items.filter(i => i.below_threshold).length,
+      total: d.items.length,
+      below_threshold: d.lowStock.length,
+      out_of_stock: d.outOfStock.length,
       total_value: Math.round(totalValue),
-      movements_30d: movements.length,
-      items,
+      movements_30d: d.movements.length,
+      categories: d.byCategory.length,
     })
   } catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
@@ -563,10 +758,24 @@ reportsRouter.get('/laundry', ...mgrAccess, (req, res) => {
       { label: 'Toplam Islem', value: d.items.length },
       { label: 'Devam Eden', value: inProgress, color: '#f97316' },
       { label: 'Hazir', value: ready, color: '#eab308' },
-      { label: 'Teslim Edilen', value: delivered, color: '#22c55e' },
+      { label: 'Teslim', value: delivered, color: '#22c55e' },
       { label: 'Kayip', value: d.lost, color: '#ef4444' },
       { label: 'Toplam Parca', value: d.total_pieces },
     ])
+
+    addSectionTitle(doc, 'Performans Metrikleri')
+    addTable(doc,
+      ['Metrik', 'Deger'],
+      [
+        ['Acil Islem Sayisi', d.urgent_count],
+        ['Acil Oranı', `%${d.urgent_pct}`],
+        ['Ortalama Teslim Suresi', `${d.avg_delivery_hours} saat`],
+        ['Toplam Makine', d.machine_count],
+        ['Calisan Makine', d.running_count],
+        ['Bos Makine', d.machine_count - d.running_count],
+      ],
+      [250, 200]
+    )
 
     addSectionTitle(doc, 'Durum Dagilimi')
     addTable(doc,
@@ -579,31 +788,78 @@ reportsRouter.get('/laundry', ...mgrAccess, (req, res) => {
       [200, 100]
     )
 
-    addSectionTitle(doc, 'Blok Bazli Dagilim')
+    if (d.premium) {
+      addSectionTitle(doc, 'Premium Parca Istatistigi')
+      addTable(doc,
+        ['Metrik', 'Adet'],
+        [
+          ['Toplam Premium', d.premium.total],
+          ['Teslim Edilen', d.premium.delivered],
+          ['Kayip', d.premium.lost],
+        ],
+        [200, 100]
+      )
+    }
+
+    addSectionTitle(doc, 'Blok Bazli Dagilim (acil ve kayip dahil)')
     addTable(doc,
-      ['Blok', 'Islem Sayisi'],
-      d.byBlock.map(b => [b.block, b.n]),
-      [200, 100]
+      ['Blok', 'Islem', 'Parca', 'Acil', 'Kayip'],
+      d.byBlock.map(b => [b.block, b.total, b.pieces, b.urgent, b.lost]),
+      [80, 80, 80, 80, 80]
     )
 
-    addSectionTitle(doc, 'Makine Durumu')
+    if (d.byMachine.length > 0) {
+      addSectionTitle(doc, 'Makine Basina Islem')
+      addTable(doc,
+        ['Makine', 'Yikama Sayisi', 'Toplam Parca'],
+        d.byMachine.map(m => [m.machine, m.runs, m.pieces]),
+        [150, 130, 130]
+      )
+    }
+
+    addSectionTitle(doc, 'Tum Makine Durumu')
     addTable(doc,
-      ['Makine', 'Tip', 'Durum', 'Kapasite (kg)'],
-      d.machines.map(m => [m.name, m.type === 'washer' ? 'Camasir' : 'Kurutucu', m.status, m.capacity_kg || '-']),
-      [120, 80, 90, 100]
+      ['Makine', 'Tip', 'Durum', 'Kapasite (kg)', 'Bakim Notu'],
+      d.machines.map(m => [
+        m.name,
+        m.type === 'washer' ? 'Camasir' : 'Kurutucu',
+        m.status === 'idle' ? 'Bos' : m.status === 'running' ? 'Calisiyor' : m.status === 'done' ? 'Bitti' : m.status === 'maintenance' ? 'Bakim' : m.status,
+        m.capacity_kg || '-',
+        (m.maintenance_notes || '').substring(0, 30),
+      ]),
+      [100, 70, 80, 90, 120]
     )
+
+    if (d.byShelf.length > 0) {
+      addSectionTitle(doc, 'Raf Bazli Dagilim (Top 20)')
+      addTable(doc,
+        ['Raf', 'Parca Sayisi'],
+        d.byShelf.map(s => [s.shelf, s.pieces]),
+        [200, 150]
+      )
+    }
+
+    if (d.dailyTrend.length > 0) {
+      addSectionTitle(doc, 'Gunluk Trend (son 30 gun)')
+      addTable(doc,
+        ['Tarih', 'Toplam', 'Teslim', 'Kayip'],
+        d.dailyTrend.map(t => [t.day, t.total, t.delivered, t.lost]),
+        [100, 80, 80, 80]
+      )
+    }
 
     addSectionTitle(doc, 'Son Islemler')
     addTable(doc,
-      ['Tarih', 'Blok-Oda', 'Durum', 'Parca', 'Acil', 'Raf'],
-      d.items.slice(0, 80).map(i => [
+      ['Tarih', 'Blok-Oda', 'Durum', 'Parca', 'Acil', 'Raf', 'Sure (sa)'],
+      d.items.slice(0, 100).map(i => [
         i.created_at?.slice(0, 10) || '-',
         i.block && i.room_no ? `${i.block}-${i.room_no}` : '-',
         i.status, i.item_count || 0,
         i.urgent ? 'EVET' : '',
         i.shelf_location || '-',
+        i.hours_total != null ? Math.round(i.hours_total) : '-',
       ]),
-      [70, 80, 80, 50, 50, 70]
+      [60, 70, 70, 50, 45, 65, 65]
     )
     doc.end()
   } catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
@@ -638,7 +894,18 @@ reportsRouter.get('/shifts', ...mgrAccess, (req, res) => {
       { label: 'Gunduz', value: day, color: '#eab308' },
       { label: 'Gece', value: night, color: '#3b82f6' },
       { label: 'Gece Orani', value: `%${toplam ? Math.round(night / toplam * 100) : 0}` },
+      { label: 'Vardiyasiz', value: d.noShiftRecord, color: d.noShiftRecord > 0 ? '#f97316' : '#64748b' },
     ])
+
+    if (d.mixedRooms.length > 0) {
+      addSectionTitle(doc, '⚠ KURAL IHLALI: Karısık Vardiyali Odalar')
+      addParagraph(doc, 'Asagidaki odalarda hem gunduz hem gece vardiyasinda personel atanmis — bu uyku duzeni icin sorundur.', { color: '#ef4444', size: 9 })
+      addTable(doc,
+        ['Blok', 'Oda', 'Gunduz', 'Gece'],
+        d.mixedRooms.map(r => [r.block, r.room_no, r.gunduz, r.gece]),
+        [80, 80, 80, 80]
+      )
+    }
 
     addSectionTitle(doc, 'Blok x Vardiya Dagilimi')
     addTable(doc,
@@ -650,22 +917,64 @@ reportsRouter.get('/shifts', ...mgrAccess, (req, res) => {
       [80, 80, 80, 80, 80]
     )
 
+    addSectionTitle(doc, 'Kat x Vardiya Detayi')
+    addTable(doc,
+      ['Blok', 'Kat', 'Gunduz', 'Gece', 'Toplam', 'Gece %'],
+      d.byFloorShift.map(f => [
+        f.block, f.floor, f.gunduz, f.gece, f.toplam,
+        `%${f.toplam ? Math.round(f.gece / f.toplam * 100) : 0}`,
+      ]),
+      [60, 50, 70, 70, 70, 70]
+    )
+
     addSectionTitle(doc, 'Firma x Vardiya')
     addTable(doc,
-      ['Firma', 'Gunduz', 'Gece', 'Toplam'],
-      d.byCompanyShift.map(c => [c.company, c.gunduz, c.gece, c.toplam]),
-      [200, 80, 80, 80]
+      ['Firma', 'Gunduz', 'Gece', 'Toplam', 'Gece %'],
+      d.byCompanyShift.map(c => [
+        c.company, c.gunduz, c.gece, c.toplam,
+        `%${c.toplam ? Math.round(c.gece / c.toplam * 100) : 0}`,
+      ]),
+      [180, 60, 60, 60, 60]
     )
+
+    if (d.byJobShift.length > 0) {
+      addSectionTitle(doc, 'Meslek x Vardiya')
+      addTable(doc,
+        ['Meslek', 'Gunduz', 'Gece', 'Toplam'],
+        d.byJobShift.map(j => [j.job_title, j.gunduz, j.gece, j.toplam]),
+        [200, 80, 80, 80]
+      )
+    }
+
+    if (d.hourPatterns.length > 0) {
+      addSectionTitle(doc, 'En Yaygin Vardiya Saatleri')
+      addTable(doc,
+        ['Vardiya', 'Baslangic', 'Bitis', 'Kisi Sayisi'],
+        d.hourPatterns.map(p => [
+          p.shift_type === 'night' ? 'Gece' : 'Gunduz',
+          `${p.start_hour}:00`, `${p.end_hour}:00`, p.n,
+        ]),
+        [100, 100, 100, 100]
+      )
+    }
 
     addSectionTitle(doc, `Gece Vardiyasindaki Personel (${d.nightShiftList.length})`)
     addTable(doc,
-      ['Ad Soyad', 'Firma', 'Meslek', 'Oda'],
+      ['Ad Soyad', 'Firma', 'Meslek', 'Oda', 'Telefon'],
       d.nightShiftList.map(p => [
         p.full_name, p.company || '-', p.job_title || '-',
         p.block ? `${p.block}-${p.room_no}${p.bed_no ? '/' + p.bed_no : ''}` : '-',
+        p.phone_number || '-',
       ]),
-      [140, 110, 110, 100]
+      [120, 100, 90, 80, 80]
     )
+
+    if (d.noShiftRecord > 0) {
+      doc.moveDown(0.5)
+      addParagraph(doc,
+        `Not: ${d.noShiftRecord} personelin shifts kaydi yok (varsayilan gunduz olarak kabul ediliyor). Vardiyalar sayfasindan duzeltebilirsiniz.`,
+        { color: '#f97316', size: 9 })
+    }
     doc.end()
   } catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })

@@ -224,18 +224,21 @@ const REPORTS = [
   {
     id: 'inventory',
     title: 'Envanter Raporu',
-    description: 'Tüm stok kalemleri — CSV (yetersiz/normal durum dahil)',
+    description: 'Zengin PDF + 2 ek CSV (kalemler / 30 gün hareketler)',
     icon: '📦',
     color: 'var(--blue)',
     endpoint: '/reports/inventory',
     dataEndpoint: '/reports/inventory/data',
     hasDate: false,
-    format: 'csv',
     summaryKeys: [
       { key: 'total', label: 'KALEM', color: 'var(--text)' },
-      { key: 'below_threshold', label: 'YETERSİZ', color: 'var(--red)' },
+      { key: 'out_of_stock', label: 'STOK YOK', color: 'var(--red)' },
+      { key: 'below_threshold', label: 'YETERSİZ', color: 'var(--accent)' },
       { key: 'total_value', label: 'DEĞER (₺)', color: 'var(--green)' },
-      { key: 'movements_30d', label: 'HAREKET (30g)', color: 'var(--blue)' },
+    ],
+    extraDownloads: [
+      { label: 'Tüm Kalemler CSV', endpoint: '/reports/inventory.csv', ext: 'csv' },
+      { label: '30g Hareketler CSV', endpoint: '/reports/inventory/movements.csv', ext: 'csv' },
     ],
     tableColumns: [],
     tableRow: () => [],
@@ -330,18 +333,15 @@ function ReportCard({ report, selectedDate }) {
     staleTime: 2 * 60 * 1000,
   })
 
-  async function downloadPDF() {
+  async function downloadFromUrl(endpoint, ext) {
     setDownloading(true)
     try {
-      const url = report.hasDate
-        ? `${API_BASE}${report.endpoint}?date=${selectedDate}`
-        : `${API_BASE}${report.endpoint}`
+      const url = report.hasDate ? `${API_BASE}${endpoint}?date=${selectedDate}` : `${API_BASE}${endpoint}`
       const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const blob = await res.blob()
       const link = document.createElement('a')
       link.href = URL.createObjectURL(blob)
-      const ext = report.format === 'csv' ? 'csv' : 'pdf'
       link.download = `${report.id}-rapor-${selectedDate}.${ext}`
       link.click()
       URL.revokeObjectURL(link.href)
@@ -350,6 +350,11 @@ function ReportCard({ report, selectedDate }) {
     } finally {
       setDownloading(false)
     }
+  }
+
+  async function downloadPDF() {
+    const ext = report.format === 'csv' ? 'csv' : 'pdf'
+    await downloadFromUrl(report.endpoint, ext)
   }
 
   const rows = reportData && report.dataKey ? (reportData[report.dataKey] || []) : []
@@ -431,6 +436,25 @@ function ReportCard({ report, selectedDate }) {
             {downloading ? 'İNDİRİLİYOR...' : report.format === 'csv' ? 'CSV İNDİR' : 'PDF İNDİR'}
           </button>
         </div>
+        {report.extraDownloads?.length > 0 && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+            {report.extraDownloads.map(ed => (
+              <button
+                key={ed.endpoint}
+                onClick={() => downloadFromUrl(ed.endpoint, ed.ext)}
+                disabled={!!downloading}
+                style={{
+                  padding: '6px 10px', background: 'transparent',
+                  border: '1px dashed var(--border)', borderRadius: 5,
+                  color: 'var(--text2)', fontFamily: 'var(--mono)', fontSize: 9,
+                  letterSpacing: 1, cursor: downloading ? 'wait' : 'pointer',
+                }}
+              >
+                ↓ {ed.label.toUpperCase()}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Expandable table */}
         {expanded && rows.length > 0 && (
