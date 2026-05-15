@@ -22,6 +22,7 @@ const NAV_GROUPS = [
       { to: '/checkin', icon: '\u2197', label: 'Check-in', roles: ['campus_manager','shift_supervisor'] },
       { to: '/capacity', icon: '\u229E', label: 'Kapasiteler', roles: ['campus_manager','shift_supervisor'] },
       { to: '/checkout', icon: '\u2199', label: 'Check-out', roles: ['campus_manager','shift_supervisor'] },
+      { to: '/bulk-actions', icon: '\u2630', label: 'Toplu Islem', roles: ['campus_manager','shift_supervisor'] },
     ]
   },
   {

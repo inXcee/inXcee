@@ -24,6 +24,7 @@ const RoomHistoryPage = lazy(() => import('./modules/room-history/RoomHistoryPag
 const WhatsAppPage = lazy(() => import('./modules/whatsapp/WhatsAppPage.jsx'))
 const ShiftsPage = lazy(() => import('./modules/shifts/ShiftsPage.jsx'))
 const CheckoutPage = lazy(() => import('./modules/checkout/CheckoutPage.jsx'))
+const BulkActionsPage = lazy(() => import('./modules/bulk-actions/BulkActionsPage.jsx'))
 const InventoryPage = lazy(() => import('./modules/inventory/InventoryPage.jsx'))
 const ReportsPage = lazy(() => import('./modules/reports/ReportsPage.jsx'))
 const LaundryHub = lazy(() => import('./modules/laundry/LaundryHub.jsx'))
@@ -214,6 +215,7 @@ export default function App() {
             <Route path="whatsapp" element={<WhatsAppPage />} />
             <Route path="shifts" element={<ShiftsPage />} />
             <Route path="checkout" element={<CheckoutPage />} />
+            <Route path="bulk-actions" element={<RoleRoute roles={['campus_manager','shift_supervisor']}><BulkActionsPage /></RoleRoute>} />
             <Route path="laundry" element={<LaundryHub />} />
             <Route path="laundry/*" element={<LaundryHub />} />
             <Route path="inventory" element={<InventoryPage />} />

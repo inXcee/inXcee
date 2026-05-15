@@ -17,6 +17,7 @@ import { dashboardRouter } from './modules/dashboard/routes.js'
 import { roomHistoryRouter } from './modules/room-history/routes.js'
 import { shiftsRouter } from './modules/shifts/routes.js'
 import { checkoutRouter } from './modules/checkout/routes.js'
+import { bulkActionsRouter } from './modules/bulk-actions/routes.js'
 import { reportsRouter } from './modules/reports/routes.js'
 import { inventoryRouter } from './modules/inventory/routes.js'
 import { usersRouter } from './modules/users/routes.js'
@@ -216,6 +217,7 @@ app.use('/api/push', writeLimiter, pushRouter)
 app.use('/api/whatsapp', writeLimiter, whatsappRouter)
 app.use('/api/shifts', writeLimiter, shiftsRouter)
 app.use('/api/checkout', writeLimiter, checkoutRouter)
+app.use('/api/bulk-actions', writeLimiter, bulkActionsRouter)
 app.use('/api/reports', readLimiter, reportsRouter)
 app.use('/api/inventory', writeLimiter, inventoryRouter)
 app.use('/api/users', writeLimiter, usersRouter)
