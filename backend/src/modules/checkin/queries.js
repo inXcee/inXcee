@@ -212,11 +212,19 @@ export function setShift(personnelId, shiftType) {
 
 export function insertPersonnel(data) {
   const db = getDB()
+  // company_id verildiyse string company alanini firma adi ile doldur (geriye uyumluluk)
+  let companyName = data.company ?? null
+  let companyId = data.company_id ?? null
+  if (companyId) {
+    const c = db.prepare('SELECT name FROM companies WHERE id=?').get(companyId)
+    if (c) companyName = c.name
+  }
   const row = {
     tc_no: data.tc_no ?? null,
     passport_no: data.passport_no ?? null,
     full_name: data.full_name,
-    company: data.company ?? null,
+    company: companyName,
+    company_id: companyId,
     hometown: data.hometown ?? null,
     phone_number: data.phone_number ?? null,
     job_title: data.job_title ?? null,
@@ -226,8 +234,8 @@ export function insertPersonnel(data) {
     created_by: data.created_by ?? null,
   }
   const r = db.prepare(`
-    INSERT INTO personnel(tc_no,passport_no,full_name,company,hometown,phone_number,job_title,preferred_block,emergency_name,emergency_phone,check_in_date,created_by)
-    VALUES(@tc_no,@passport_no,@full_name,@company,@hometown,@phone_number,@job_title,@preferred_block,@emergency_name,@emergency_phone,datetime('now'),@created_by)
+    INSERT INTO personnel(tc_no,passport_no,full_name,company,company_id,hometown,phone_number,job_title,preferred_block,emergency_name,emergency_phone,check_in_date,created_by)
+    VALUES(@tc_no,@passport_no,@full_name,@company,@company_id,@hometown,@phone_number,@job_title,@preferred_block,@emergency_name,@emergency_phone,datetime('now'),@created_by)
   `).run(row)
   return r.lastInsertRowid
 }

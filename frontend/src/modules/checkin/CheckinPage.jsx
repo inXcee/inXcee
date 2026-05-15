@@ -495,9 +495,24 @@ export default function CheckinPage() {
     queryKey: ['job-suggestions'],
     queryFn: () => api.get('/checkin/job-suggestions').then(r => r.data),
   })
+  const { data: registeredCompanies = [] } = useQuery({
+    queryKey: ['registered-companies'],
+    queryFn: () => api.get('/companies?active=1').then(r => r.data),
+  })
 
-  const companyNames = companySugg.map(c => c.company)
+  // Kayitli firmalar + hicbiri eslesmeyen serbest stringler birlestirilir.
+  const companyNames = [
+    ...registeredCompanies.map(c => c.name),
+    ...companySugg.map(c => c.company).filter(n => !registeredCompanies.some(rc => rc.name === n)),
+  ]
   const jobNames = jobSugg.map(j => j.job_title)
+
+  // Form'da company string seciliyse, kayitli firmalarda esleserse company_id'yi otomatik set et.
+  const formCompanyId = (() => {
+    if (!formData.company) return null
+    const match = registeredCompanies.find(c => c.name === formData.company)
+    return match ? match.id : null
+  })()
 
   const handleNameSearch = async (q) => {
     setNameSearch(q)
@@ -545,7 +560,7 @@ export default function CheckinPage() {
   const handleRegister = async () => {
     setLoading(true); setError('')
     try {
-      const res = await api.post('/checkin/register', { tc_no: tcNo || undefined, passport_no: passportNo || undefined, ...formData })
+      const res = await api.post('/checkin/register', { tc_no: tcNo || undefined, passport_no: passportNo || undefined, ...formData, company_id: formCompanyId || undefined })
       setPersonnelId(res.data.id)
       try { await api.post('/checkin/set-shift', { personnel_id: res.data.id, shift_type: shiftType }) } catch {}
       if (photoFile) {
@@ -742,8 +757,19 @@ export default function CheckinPage() {
                   <input value={formData.full_name} onChange={e => setFormData(p => ({ ...p, full_name: e.target.value }))}
                     className="form-input" placeholder="Ad Soyad" />
                 </div>
-                <AutoInput label="Firma" value={formData.company} onChange={v => setFormData(p => ({ ...p, company: v }))}
-                  suggestions={companyNames} placeholder="Firma adı yazın..." />
+                <div>
+                  <AutoInput label="Firma" value={formData.company} onChange={v => setFormData(p => ({ ...p, company: v }))}
+                    suggestions={companyNames} placeholder="Firma adı yazın..." />
+                  {formCompanyId ? (
+                    <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--green, #22c55e)', marginTop: 2, letterSpacing: 1 }}>
+                      ✓ Kayıtlı firma (id #{formCompanyId})
+                    </div>
+                  ) : formData.company ? (
+                    <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', marginTop: 2, letterSpacing: 1 }}>
+                      ⓘ Kayıtsız — /companies sayfasından ekleyebilirsiniz
+                    </div>
+                  ) : null}
+                </div>
                 <AutoInput label="Meslek / Ne İşçisi" value={formData.job_title} onChange={v => setFormData(p => ({ ...p, job_title: v }))}
                   suggestions={jobNames} placeholder="Kalıpçı, Elektrikçi, Boyacı..." />
                 <div>

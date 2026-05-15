@@ -19,6 +19,8 @@ import { shiftsRouter } from './modules/shifts/routes.js'
 import { checkoutRouter } from './modules/checkout/routes.js'
 import { bulkActionsRouter } from './modules/bulk-actions/routes.js'
 import { companiesRouter } from './modules/companies/routes.js'
+import { visitorsRouter } from './modules/visitors/routes.js'
+import { surveysRouter } from './modules/surveys/routes.js'
 import { reportsRouter } from './modules/reports/routes.js'
 import { inventoryRouter } from './modules/inventory/routes.js'
 import { usersRouter } from './modules/users/routes.js'
@@ -220,6 +222,8 @@ app.use('/api/shifts', writeLimiter, shiftsRouter)
 app.use('/api/checkout', writeLimiter, checkoutRouter)
 app.use('/api/bulk-actions', writeLimiter, bulkActionsRouter)
 app.use('/api/companies', writeLimiter, companiesRouter)
+app.use('/api/visitors', writeLimiter, visitorsRouter)
+app.use('/api/surveys', writeLimiter, surveysRouter)
 app.use('/api/reports', readLimiter, reportsRouter)
 app.use('/api/inventory', writeLimiter, inventoryRouter)
 app.use('/api/users', writeLimiter, usersRouter)

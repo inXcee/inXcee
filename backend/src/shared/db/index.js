@@ -973,6 +973,36 @@ export function initDB() {
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_companies_active ON companies(is_active, contract_end)') } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] idx_companies:', e.message) }
   try { db.exec('ALTER TABLE personnel ADD COLUMN company_id INTEGER REFERENCES companies(id)') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] personnel.company_id:', e.message) }
 
+  // ── Ziyaretci / Misafir takibi ──
+  try { db.exec(`CREATE TABLE IF NOT EXISTS visitors (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    full_name TEXT NOT NULL,
+    tc_no TEXT,
+    phone TEXT,
+    purpose TEXT,
+    visiting_personnel_id INTEGER REFERENCES personnel(id),
+    visiting_block TEXT,
+    check_in_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    check_out_at DATETIME,
+    notes TEXT,
+    created_by INTEGER REFERENCES users(id)
+  )`) } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] visitors:', e.message) }
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_visitors_active ON visitors(check_out_at, check_in_at DESC)') } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] idx_visitors:', e.message) }
+
+  // ── Memnuniyet anketi ──
+  try { db.exec(`CREATE TABLE IF NOT EXISTS satisfaction_surveys (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    personnel_id INTEGER REFERENCES personnel(id),
+    room_score INTEGER CHECK(room_score BETWEEN 1 AND 5),
+    cleaning_score INTEGER CHECK(cleaning_score BETWEEN 1 AND 5),
+    food_score INTEGER CHECK(food_score BETWEEN 1 AND 5),
+    laundry_score INTEGER CHECK(laundry_score BETWEEN 1 AND 5),
+    overall_score INTEGER CHECK(overall_score BETWEEN 1 AND 5),
+    comment TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`) } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] satisfaction_surveys:', e.message) }
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_surveys_date ON satisfaction_surveys(created_at DESC)') } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] idx_surveys:', e.message) }
+
   return db
 }
 

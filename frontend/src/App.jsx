@@ -26,6 +26,8 @@ const ShiftsPage = lazy(() => import('./modules/shifts/ShiftsPage.jsx'))
 const CheckoutPage = lazy(() => import('./modules/checkout/CheckoutPage.jsx'))
 const BulkActionsPage = lazy(() => import('./modules/bulk-actions/BulkActionsPage.jsx'))
 const CompaniesPage = lazy(() => import('./modules/companies/CompaniesPage.jsx'))
+const VisitorsPage = lazy(() => import('./modules/visitors/VisitorsPage.jsx'))
+const SurveysPage = lazy(() => import('./modules/surveys/SurveysPage.jsx'))
 const InventoryPage = lazy(() => import('./modules/inventory/InventoryPage.jsx'))
 const ReportsPage = lazy(() => import('./modules/reports/ReportsPage.jsx'))
 const LaundryHub = lazy(() => import('./modules/laundry/LaundryHub.jsx'))
@@ -218,6 +220,8 @@ export default function App() {
             <Route path="checkout" element={<CheckoutPage />} />
             <Route path="bulk-actions" element={<RoleRoute roles={['campus_manager','shift_supervisor']}><BulkActionsPage /></RoleRoute>} />
             <Route path="companies" element={<RoleRoute roles={['campus_manager','shift_supervisor']}><CompaniesPage /></RoleRoute>} />
+            <Route path="visitors" element={<RoleRoute roles={['campus_manager','shift_supervisor']}><VisitorsPage /></RoleRoute>} />
+            <Route path="surveys" element={<RoleRoute roles={['campus_manager','shift_supervisor']}><SurveysPage /></RoleRoute>} />
             <Route path="laundry" element={<LaundryHub />} />
             <Route path="laundry/*" element={<LaundryHub />} />
             <Route path="inventory" element={<InventoryPage />} />
