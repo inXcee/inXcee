@@ -45,3 +45,36 @@ export function addTable(doc, headers, rows, colWidths) {
     doc.moveDown(0.8)
   })
 }
+
+export function addSectionTitle(doc, title) {
+  if (doc.y > 720) { doc.addPage(); doc.y = 50 }
+  doc.moveDown(0.8)
+  doc.fontSize(13).font('Helvetica-Bold').fillColor('#1d4ed8').text(title)
+  doc.fillColor('black').font('Helvetica')
+  doc.moveTo(doc.x, doc.y + 2).lineTo(doc.x + 495, doc.y + 2).strokeColor('#e5e7eb').stroke().strokeColor('black')
+  doc.moveDown(0.6)
+}
+
+export function addKpiRow(doc, items) {
+  // items: [{ label, value, hint?, color? }]
+  const startX = doc.x
+  const startY = doc.y
+  const gap = 8
+  const w = Math.floor((495 - gap * (items.length - 1)) / items.length)
+  items.forEach((it, i) => {
+    const x = startX + i * (w + gap)
+    doc.rect(x, startY, w, 50).strokeColor('#cbd5e1').stroke().strokeColor('black')
+    doc.fontSize(7).fillColor('#64748b').text(it.label.toUpperCase(), x + 6, startY + 6, { width: w - 12 })
+    doc.fontSize(18).fillColor(it.color || '#0369a1').text(String(it.value), x + 6, startY + 18, { width: w - 12 })
+    if (it.hint) {
+      doc.fontSize(7).fillColor('#94a3b8').text(it.hint, x + 6, startY + 40, { width: w - 12 })
+    }
+  })
+  doc.fillColor('black')
+  doc.y = startY + 58
+}
+
+export function addParagraph(doc, text, opts = {}) {
+  doc.fontSize(opts.size || 10).fillColor(opts.color || 'black').text(text, { width: 495 })
+  doc.fillColor('black')
+}

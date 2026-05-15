@@ -87,6 +87,142 @@ const REPORTS = [
     ],
     dataKey: 'records',
   },
+  // ── Yeni raporlar ──
+  {
+    id: 'executive',
+    title: 'Yönetici Özet Raporu',
+    description: 'Tüm modüllerden derlenmiş tek bakış — KPI özeti',
+    icon: '◉',
+    color: 'var(--accent)',
+    endpoint: '/reports/executive',
+    dataEndpoint: '/reports/executive/data',
+    hasDate: false,
+    summaryKeys: [
+      { key: 'occupancy.rate', label: 'DOLULUK %', color: 'var(--accent)' },
+      { key: 'maintenance_open', label: 'AÇIK ARIZA', color: 'var(--red)' },
+      { key: 'active_visitors', label: 'ZİYARETÇİ', color: 'var(--blue)' },
+    ],
+    tableColumns: [],
+    tableRow: () => [],
+    dataKey: null,
+    noDetail: true,
+  },
+  {
+    id: 'companies',
+    title: 'Firma & Sözleşme Raporu',
+    description: 'Aktif firmalar, sözleşme bitişleri, yatak kotaları',
+    icon: '⌂',
+    color: 'var(--green)',
+    endpoint: '/reports/companies',
+    dataEndpoint: '/reports/companies/data',
+    hasDate: false,
+    summaryKeys: [
+      { key: 'active', label: 'AKTİF', color: 'var(--green)' },
+      { key: 'expiring_soon', label: 'YAKLAŞAN', color: 'var(--accent)' },
+      { key: 'expired', label: 'GEÇMİŞ', color: 'var(--red)' },
+    ],
+    tableColumns: ['Firma', 'Yetkili', 'Yatak', 'Aktif', 'Sözleşme Bitiş', 'Kalan'],
+    tableRow: c => [
+      c.name, c.contact_name || '-',
+      c.bed_quota ?? '-', c.active_personnel,
+      c.contract_end || '-',
+      c.days_left == null ? '-' : c.days_left < 0 ? `${Math.abs(c.days_left)}g geçti` : `${c.days_left}g`,
+    ],
+    dataKey: 'companies',
+  },
+  {
+    id: 'surveys',
+    title: 'Memnuniyet Raporu',
+    description: 'Son 30 gün — sakin geribildirim ortalamaları',
+    icon: '★',
+    color: 'var(--green)',
+    endpoint: '/reports/surveys',
+    dataEndpoint: '/reports/surveys/data',
+    hasDate: false,
+    summaryKeys: [
+      { key: 'summary.total', label: 'CEVAP', color: 'var(--text)' },
+      { key: 'summary.avg_overall', label: 'GENEL', color: 'var(--accent)' },
+      { key: 'summary.avg_cleaning', label: 'TEMİZLİK', color: 'var(--green)' },
+    ],
+    tableColumns: ['Tarih', 'Kişi', 'Genel', 'Oda', 'Temizlik', 'Yemek', 'Yorum'],
+    tableRow: r => [
+      r.created_at?.slice(0, 10) || '-',
+      r.full_name || 'anonim',
+      r.overall_score ?? '-', r.room_score ?? '-', r.cleaning_score ?? '-', r.food_score ?? '-',
+      (r.comment || '').substring(0, 30),
+    ],
+    dataKey: 'recent',
+  },
+  {
+    id: 'drills',
+    title: 'Tatbikat Raporu',
+    description: 'Son 365 gün — yangın/deprem/güvenlik tatbikatları',
+    icon: '🔥',
+    color: 'var(--red)',
+    endpoint: '/reports/drills',
+    dataEndpoint: '/reports/drills/data',
+    hasDate: false,
+    summaryKeys: [
+      { key: 'total', label: 'TATBİKAT', color: 'var(--text)' },
+      { key: 'avg_attendance_pct', label: 'KATILIM %', color: 'var(--green)' },
+    ],
+    tableColumns: ['Tarih', 'Tip', 'Beklenen', 'Fiili', 'Süre', 'Bulgular'],
+    tableRow: r => [
+      r.drill_date, r.drill_type,
+      r.expected_count ?? '-', r.actual_count ?? '-',
+      r.duration_minutes ? `${r.duration_minutes}dk` : '-',
+      (r.findings || '').substring(0, 30),
+    ],
+    dataKey: 'records',
+  },
+  {
+    id: 'visitors',
+    title: 'Ziyaretçi Raporu',
+    description: 'Son 30 gün — misafir giriş/çıkış kayıtları',
+    icon: '👥',
+    color: 'var(--blue)',
+    endpoint: '/reports/visitors',
+    dataEndpoint: '/reports/visitors/data',
+    hasDate: false,
+    summaryKeys: [
+      { key: 'total', label: 'TOPLAM', color: 'var(--text)' },
+      { key: 'active', label: 'İÇERİDE', color: 'var(--green)' },
+      { key: 'avg_minutes', label: 'ORT. (dk)', color: 'var(--blue)' },
+    ],
+    tableColumns: ['Tarih', 'Ad Soyad', 'Telefon', 'Sebep', 'Blok', 'Durum'],
+    tableRow: r => [
+      r.check_in_at?.slice(0, 16) || '-',
+      r.full_name,
+      r.phone || '-',
+      (r.purpose || '').substring(0, 20),
+      r.visiting_block || '-',
+      r.check_out_at ? 'Çıktı' : 'İçeride',
+    ],
+    dataKey: 'records',
+  },
+  {
+    id: 'expenses',
+    title: 'Bütçe / Gider Raporu',
+    description: 'Son 3 ay — kategori dağılımı, aylık trend',
+    icon: '₺',
+    color: 'var(--accent)',
+    endpoint: '/reports/expenses',
+    dataEndpoint: '/reports/expenses/data',
+    hasDate: false,
+    summaryKeys: [
+      { key: 'summary.total', label: 'BU AY (TL)', color: 'var(--accent)' },
+      { key: 'summary.active_residents', label: 'AKTİF SAKİN', color: 'var(--text)' },
+      { key: 'summary.per_resident', label: 'KİŞİ/AY (TL)', color: 'var(--green)' },
+    ],
+    tableColumns: ['Tarih', 'Kategori', 'Açıklama', 'Firma', 'Tutar'],
+    tableRow: e => [
+      e.expense_date, e.category,
+      (e.description || '').substring(0, 25),
+      e.company_name || '-',
+      e.amount != null ? `${Math.round(e.amount).toLocaleString('tr-TR')} ₺` : '-',
+    ],
+    dataKey: 'recent',
+  },
 ]
 
 function getNestedValue(obj, key) {
@@ -133,7 +269,7 @@ function ReportCard({ report, selectedDate }) {
     }
   }
 
-  const rows = reportData ? (reportData[report.dataKey] || []) : []
+  const rows = reportData && report.dataKey ? (reportData[report.dataKey] || []) : []
 
   return (
     <div className="panel" style={{ overflow: 'hidden' }}>
@@ -183,18 +319,20 @@ function ReportCard({ report, selectedDate }) {
         ) : null}
 
         {/* Action buttons */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: rows.length > 0 && expanded ? '12px' : '0' }}>
-          <button
-            onClick={() => setExpanded(v => !v)}
-            style={{
-              padding: '9px', background: 'var(--surface2)',
-              border: '1px solid var(--border)', borderRadius: '6px',
-              color: 'var(--text2)', fontFamily: 'var(--mono)', fontSize: '10px',
-              letterSpacing: '1px', cursor: 'pointer', transition: 'all 0.15s',
-            }}
-          >
-            {expanded ? '▲ GİZLE' : '▼ DETAYLAR'}
-          </button>
+        <div style={{ display: 'grid', gridTemplateColumns: report.noDetail ? '1fr' : '1fr 1fr', gap: '8px', marginBottom: rows.length > 0 && expanded ? '12px' : '0' }}>
+          {!report.noDetail && (
+            <button
+              onClick={() => setExpanded(v => !v)}
+              style={{
+                padding: '9px', background: 'var(--surface2)',
+                border: '1px solid var(--border)', borderRadius: '6px',
+                color: 'var(--text2)', fontFamily: 'var(--mono)', fontSize: '10px',
+                letterSpacing: '1px', cursor: 'pointer', transition: 'all 0.15s',
+              }}
+            >
+              {expanded ? '▲ GİZLE' : '▼ DETAYLAR'}
+            </button>
+          )}
           <button
             onClick={downloadPDF}
             disabled={!!downloading}

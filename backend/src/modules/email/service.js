@@ -3,17 +3,37 @@ import { getEmailSettings, getManagerEmails, getSetting, logEmailSend } from './
 import { getOccupancyReport, getMaintenanceReport, getHousekeepingReport } from '../reports/service.js'
 import { getDB } from '../../shared/db/index.js'
 
+function getSmtpConfig() {
+  return {
+    host: getSetting('smtp_host') || process.env.SMTP_HOST || null,
+    port: parseInt(getSetting('smtp_port') || process.env.SMTP_PORT || '587', 10),
+    user: getSetting('smtp_user') || process.env.SMTP_USER || null,
+    pass: getSetting('smtp_pass') || process.env.SMTP_PASS || null,
+    from: getSetting('smtp_from') || process.env.SMTP_FROM || null,
+  }
+}
+
 function createTransport() {
-  // DB'deki SMTP ayarları varsa öncelikli, yoksa .env fallback
-  const host = getSetting('smtp_host') || process.env.SMTP_HOST
-  const port = parseInt(getSetting('smtp_port') || process.env.SMTP_PORT || '587', 10)
-  const user = getSetting('smtp_user') || process.env.SMTP_USER
-  const pass = getSetting('smtp_pass') || process.env.SMTP_PASS
+  const cfg = getSmtpConfig()
+  if (!cfg.host) throw new Error('SMTP_HOST tanımlı değil — Ayarlar → Genel & E-Posta sayfasında SMTP host doldurun')
+  if (!cfg.user) throw new Error('SMTP kullanıcı tanımlı değil')
+  if (!cfg.pass) throw new Error('SMTP şifre tanımlı değil')
   return nodemailer.createTransport({
-    host, port,
-    secure: port === 465,
-    auth: { user, pass },
+    host: cfg.host, port: cfg.port,
+    secure: cfg.port === 465,
+    auth: { user: cfg.user, pass: cfg.pass },
   })
+}
+
+// SMTP bağlantı testi — gerçek e-posta göndermez
+export async function verifySmtp() {
+  try {
+    const t = createTransport()
+    await t.verify()
+    return { ok: true, message: 'SMTP bağlantısı başarılı' }
+  } catch (e) {
+    return { ok: false, error: e.message }
+  }
 }
 
 export function buildReportHtml(sections) {
@@ -103,34 +123,52 @@ ${has('laundry') ? `
 </body></html>`
 }
 
+// Cron tarafından çağrılır — gün/saat filtreleri uygulanır
 export async function sendMorningReport() {
   const settings = getEmailSettings()
   if (!settings.enabled) return
-
-  // Gün kontrolü — JS getDay(): 0=Pazar,1=Pzt,...,6=Cmt
   const todayDay = new Date().getDay()
   if (!settings.days.includes(todayDay)) return
+  return sendReportNow({ subject: 'YYS Sabah Raporu' })
+}
 
-  const to = getManagerEmails()
-  if (to.length === 0) return
-
-  const from = getSetting('smtp_from') || process.env.SMTP_FROM || 'YYS <noreply@yys.local>'
+// Frontend test butonu için — gün/enabled filtrelerini bypass eder.
+// Test modunda manager email yerine override email'e gönderebilir.
+export async function sendReportNow({ subject, toOverride } = {}) {
+  const settings = getEmailSettings()
+  const to = toOverride ? [toOverride] : getManagerEmails()
+  if (to.length === 0) {
+    const msg = 'Yönetici (campus_manager) kullanıcılarına e-posta tanımlı değil — Ayarlar → Kullanıcılar üzerinden e-posta adresi ekleyin'
+    logEmailSend({ recipients: '-', status: 'error', errorMsg: msg })
+    throw new Error(msg)
+  }
+  const cfg = getSmtpConfig()
+  const from = cfg.from || 'YYS <noreply@yys.local>'
   const html = buildReportHtml()
   const today = new Date().toISOString().split('T')[0]
-  const transport = createTransport()
+  const subj = `${subject || 'YYS Raporu'} — ${today}`
+
+  let transport
+  try {
+    transport = createTransport()
+  } catch (e) {
+    logEmailSend({ recipients: to.join(', '), status: 'error', errorMsg: e.message })
+    throw e
+  }
 
   try {
-    await transport.sendMail({
+    const info = await transport.sendMail({
       from,
       to: to.join(', '),
       ...(settings.cc ? { cc: settings.cc } : {}),
-      subject: `YYS Sabah Raporu — ${today}`,
+      subject: subj,
       html,
     })
     logEmailSend({ recipients: to.join(', '), status: 'success' })
+    return { ok: true, recipients: to, messageId: info.messageId }
   } catch (e) {
     logEmailSend({ recipients: to.join(', '), status: 'error', errorMsg: e.message })
     console.error('[Email] SMTP gönderim hatası:', e.message)
-    throw e
+    throw new Error(`SMTP gönderim hatası: ${e.message}`)
   }
 }

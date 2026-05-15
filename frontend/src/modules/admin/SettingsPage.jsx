@@ -60,8 +60,21 @@ export default function SettingsPage() {
   })
   const testSend = useMutation({
     mutationFn: () => api.post('/settings/email/test'),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['email-log'] }); showToast('Test e-postası gönderildi','success') },
-    onError: e => showToast(e.response?.data?.error ?? 'Gönderim hatası','error'),
+    onSuccess: (r) => {
+      qc.invalidateQueries({ queryKey: ['email-log'] })
+      const to = r?.data?.recipients?.join(', ') || ''
+      showToast(`Test e-postası gönderildi${to ? ' → ' + to : ''}`, 'success')
+    },
+    onError: e => showToast(e.response?.data?.error ?? 'Gönderim hatası', 'error'),
+  })
+
+  const verifyMut = useMutation({
+    mutationFn: () => api.post('/settings/email/verify-smtp'),
+    onSuccess: (r) => {
+      if (r.data.ok) showToast(r.data.message || 'SMTP bağlantısı başarılı', 'success')
+      else showToast(r.data.error || 'SMTP bağlantı hatası', 'error')
+    },
+    onError: e => showToast(e.response?.data?.error ?? 'Doğrulama hatası', 'error'),
   })
 
   function showToast(msg, type) { pushToast({ text: msg, kind: type === 'success' ? 'success' : type === 'error' ? 'error' : 'info' }) }
@@ -249,9 +262,15 @@ export default function SettingsPage() {
           <button type="submit" className="btn btn-primary" disabled={save.isPending}>
             {save.isPending ? 'Kaydediliyor...' : 'Kaydet'}
           </button>
-          <button type="button" className="btn btn-secondary" disabled={testSend.isPending} onClick={() => testSend.mutate()}>
-            {testSend.isPending ? 'Gönderiliyor...' : 'Test Gönder'}
+          <button type="button" className="btn btn-secondary" disabled={verifyMut.isPending} onClick={() => verifyMut.mutate()}>
+            {verifyMut.isPending ? 'Bağlantı test ediliyor...' : 'SMTP Bağlantısını Doğrula'}
           </button>
+          <button type="button" className="btn btn-secondary" disabled={testSend.isPending} onClick={() => testSend.mutate()}>
+            {testSend.isPending ? 'Gönderiliyor...' : 'Test E-Postası Gönder'}
+          </button>
+        </div>
+        <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', marginBottom: 16, letterSpacing: 1 }}>
+          ℹ SMTP doğrula = sadece bağlantı testi. Test e-postası = gerçek mail (yönetici hesaplarına).
         </div>
       </form>
 

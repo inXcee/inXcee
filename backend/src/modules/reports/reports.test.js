@@ -127,3 +127,59 @@ describe('Reports JSON endpoints', () => {
     }
   })
 })
+
+describe('Yeni raporlar', () => {
+  it('companies report', async () => {
+    const res = await request(app).get('/api/reports/companies/data').set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(200)
+    expect(res.body).toHaveProperty('companies')
+    expect(res.body).toHaveProperty('total')
+  })
+
+  it('surveys report', async () => {
+    const res = await request(app).get('/api/reports/surveys/data').set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(200)
+    expect(res.body).toHaveProperty('summary')
+    expect(res.body).toHaveProperty('recent')
+  })
+
+  it('drills report', async () => {
+    const res = await request(app).get('/api/reports/drills/data').set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(200)
+    expect(res.body).toHaveProperty('records')
+    expect(res.body).toHaveProperty('total')
+  })
+
+  it('visitors report', async () => {
+    const res = await request(app).get('/api/reports/visitors/data').set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(200)
+    expect(res.body).toHaveProperty('records')
+    expect(res.body).toHaveProperty('active')
+  })
+
+  it('expenses report', async () => {
+    const res = await request(app).get('/api/reports/expenses/data').set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(200)
+    expect(res.body).toHaveProperty('summary')
+    expect(res.body).toHaveProperty('by_category')
+    expect(res.body).toHaveProperty('monthly')
+  })
+
+  it('executive summary', async () => {
+    const res = await request(app).get('/api/reports/executive/data').set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(200)
+    expect(res.body).toHaveProperty('occupancy')
+    expect(res.body.occupancy).toHaveProperty('rate')
+    expect(res.body).toHaveProperty('maintenance_open')
+    expect(res.body).toHaveProperty('checkins_30d')
+  })
+
+  it('PDF endpoints respond with PDF content-type', async () => {
+    const pdfs = ['/api/reports/companies', '/api/reports/surveys', '/api/reports/drills', '/api/reports/visitors', '/api/reports/expenses', '/api/reports/executive']
+    for (const p of pdfs) {
+      const res = await request(app).get(p).set('Authorization', `Bearer ${token}`)
+      expect(res.status).toBe(200)
+      expect(res.headers['content-type']).toMatch(/pdf/)
+    }
+  })
+})

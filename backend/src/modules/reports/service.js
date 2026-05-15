@@ -31,3 +31,39 @@ export function getDisciplineReport() {
   const records = queries.getDisciplineRecords()
   return { records, total: records.length }
 }
+
+export function getCompaniesReportSvc() {
+  const companies = queries.getCompaniesReport()
+  const active = companies.filter(c => c.is_active)
+  const expired = companies.filter(c => c.days_left != null && c.days_left < 0 && c.is_active)
+  const expiringSoon = companies.filter(c => c.days_left != null && c.days_left >= 0 && c.days_left <= 30 && c.is_active)
+  const totalQuota = companies.reduce((s, c) => s + (c.bed_quota || 0), 0)
+  const totalRevenue = companies.reduce((s, c) => s + (c.bed_quota || 0) * (c.price_per_bed || 0), 0)
+  return { companies, total: companies.length, active: active.length, expired: expired.length, expiring_soon: expiringSoon.length, total_quota: totalQuota, total_revenue: totalRevenue }
+}
+
+export function getSurveysReportSvc() {
+  return queries.getSurveysReport(30)
+}
+
+export function getDrillsReportSvc() {
+  const records = queries.getDrillsReport()
+  const lastYear = records.length
+  const avgAttendance = records.filter(r => r.expected_count && r.actual_count).reduce((s, r, _, a) => s + (r.actual_count / r.expected_count) / a.length, 0)
+  return { records, total: lastYear, avg_attendance_pct: Math.round(avgAttendance * 100) }
+}
+
+export function getVisitorsReportSvc() {
+  const records = queries.getVisitorsReport(30)
+  const active = records.filter(r => !r.check_out_at).length
+  const avgMin = records.filter(r => r.check_out_at).reduce((s, r, _, a) => s + r.minutes / (a.length || 1), 0)
+  return { records, total: records.length, active, avg_minutes: Math.round(avgMin) }
+}
+
+export function getExpensesReportSvc() {
+  return queries.getExpensesReport(3)
+}
+
+export function getExecutiveReportSvc() {
+  return queries.getExecutiveData()
+}

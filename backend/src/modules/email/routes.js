@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import { requireRole } from '../../shared/auth/middleware.js'
 import { getEmailSettings, setEmailSettings, getEmailLog, getSetting, setSetting } from './queries.js'
-import { sendMorningReport, buildReportHtml } from './service.js'
+import { sendMorningReport, sendReportNow, buildReportHtml, verifySmtp } from './service.js'
 import { scheduleMorningReport } from '../../shared/cron/index.js'
 
 export const emailRouter = Router()
@@ -45,9 +45,19 @@ emailRouter.get('/log', ...adminOnly, (req, res) => {
 
 emailRouter.post('/test', ...adminOnly, async (req, res) => {
   try {
-    await sendMorningReport()
-    res.json({ ok: true })
+    // Test gönderimi gün/enabled filtreleri uygulamaz — istek anında ne olursa olsun gönderir.
+    // Opsiyonel `to` ile sadece istek atan kullanıcıya gönderilebilir.
+    const toOverride = req.body?.to || null
+    const result = await sendReportNow({ subject: 'YYS Test Raporu', toOverride })
+    res.json({ ok: true, ...result })
   } catch (e) { console.error('[Route]', e); res.status(500).json({ error: e.message }) }
+})
+
+emailRouter.post('/verify-smtp', ...adminOnly, async (req, res) => {
+  try {
+    const r = await verifySmtp()
+    res.json(r)
+  } catch (e) { res.status(500).json({ error: e.message }) }
 })
 
 emailRouter.get('/kiosk', ...adminOnly, (req, res) => {
