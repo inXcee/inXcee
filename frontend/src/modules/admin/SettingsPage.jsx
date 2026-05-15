@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import TwoFactorSettings from '../../shared/components/TwoFactorSettings.jsx'
+import { useToastStore } from '../../shared/store/toastStore.js'
 
 const DAYS = ['Paz','Pzt','Sal','Çar','Per','Cum','Cmt']
 const MINUTES = [0, 15, 30, 45]
@@ -25,7 +26,7 @@ function Panel({ title, children }) {
 
 export default function SettingsPage() {
   const qc = useQueryClient()
-  const [toast, setToast] = useState(null)
+  const pushToast = useToastStore(s => s.push)
   const [showSmtpPass, setShowSmtpPass] = useState(false)
   const [previewHtml, setPreviewHtml] = useState(null)
   const [previewLoading, setPreviewLoading] = useState(false)
@@ -63,7 +64,7 @@ export default function SettingsPage() {
     onError: e => showToast(e.response?.data?.error ?? 'Gönderim hatası','error'),
   })
 
-  function showToast(msg, type) { setToast({ msg, type }); setTimeout(() => setToast(null), 3500) }
+  function showToast(msg, type) { pushToast({ text: msg, kind: type === 'success' ? 'success' : type === 'error' ? 'error' : 'info' }) }
 
   function patch(obj) { setForm(f => ({ ...(f ?? data), ...obj })) }
   function patchSmtp(obj) { setForm(f => ({ ...(f ?? data), smtp: { ...(f ?? data)?.smtp, ...obj } })) }
@@ -109,15 +110,6 @@ export default function SettingsPage() {
       <p style={{ fontFamily:'var(--mono)', fontSize:'10px', color:'var(--text3)', marginBottom:'24px', letterSpacing:'2px' }}>
         E-POSTA RAPORU KONFIGURASYONU
       </p>
-
-      {toast && (
-        <div style={{ padding:'10px 16px', marginBottom:'16px', borderRadius:'6px',
-          background: toast.type==='success' ? '#dcfce7' : '#fee2e2',
-          color: toast.type==='success' ? '#166534' : '#991b1b',
-          border: `1px solid ${toast.type==='success' ? '#86efac' : '#fca5a5'}` }}>
-          {toast.msg}
-        </div>
-      )}
 
       <TwoFactorSettings />
 
