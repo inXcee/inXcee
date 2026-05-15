@@ -66,7 +66,7 @@ describe('PATCH /api/auth/password', () => {
     expect(res.status).toBe(401)
   })
 
-  it('8 karakterden kısa yeni şifreyi reddeder', async () => {
+  it('zayıf yeni şifreyi reddeder', async () => {
     const res = await request(app)
       .patch('/api/auth/password')
       .set('Authorization', `Bearer ${managerToken}`)

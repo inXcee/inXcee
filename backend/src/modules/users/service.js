@@ -2,6 +2,7 @@ import bcrypt from 'bcryptjs'
 import * as queries from './queries.js'
 import { getDB } from '../../shared/db/index.js'
 import { logAudit } from '../../shared/audit.js'
+import { validatePassword } from '../../shared/auth/password-policy.js'
 
 const VALID_ROLES = ['campus_manager', 'shift_supervisor', 'technical', 'laundry', 'housekeeper']
 
@@ -23,8 +24,9 @@ export function addUser(data, createdBy) {
   if (data.username.length < 3) {
     return { error: 'Kullanıcı adı en az 3 karakter olmalı', status: 400 }
   }
-  if (data.password.length < 8) {
-    return { error: 'Şifre en az 8 karakter olmalı', status: 400 }
+  const pwCheck = validatePassword(data.password, { username: data.username })
+  if (!pwCheck.ok) {
+    return { error: pwCheck.errors.join(' · '), status: 400 }
   }
   if (queries.usernameExists(data.username)) {
     return { error: 'Bu kullanıcı adı zaten mevcut', status: 409 }
@@ -49,11 +51,12 @@ export function editUser(id, data, updatedBy) {
 }
 
 export function changePassword(id, newPassword, changedBy) {
-  if (!newPassword || newPassword.length < 8) {
-    return { error: 'Şifre en az 8 karakter olmalı', status: 400 }
-  }
   const existing = queries.getUserById(id)
   if (!existing) return { error: 'Kullanıcı bulunamadı', status: 404 }
+  const pwCheck = validatePassword(newPassword, { username: existing.username })
+  if (!pwCheck.ok) {
+    return { error: pwCheck.errors.join(' · '), status: 400 }
+  }
 
   const password_hash = bcrypt.hashSync(newPassword, 10)
   queries.updatePassword(id, password_hash)

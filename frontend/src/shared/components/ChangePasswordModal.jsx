@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import api from '../api/client.js'
+import PasswordStrengthInput from './PasswordStrengthInput.jsx'
+import { validatePassword } from '../auth/password-policy.js'
 
 export default function ChangePasswordModal({ onClose }) {
   const [form, setForm] = useState({ currentPassword: '', newPassword: '', confirm: '' })
@@ -21,8 +23,9 @@ export default function ChangePasswordModal({ onClose }) {
     if (form.newPassword !== form.confirm) {
       return setError('Yeni şifreler eşleşmiyor')
     }
-    if (form.newPassword.length < 8) {
-      return setError('Yeni şifre en az 8 karakter olmalı')
+    const check = validatePassword(form.newPassword)
+    if (!check.ok) {
+      return setError(check.errors.join(' · '))
     }
     mut.mutate()
   }
@@ -51,9 +54,11 @@ export default function ChangePasswordModal({ onClose }) {
                 onChange={e => setForm(f => ({ ...f, currentPassword: e.target.value }))} />
             </div>
             <div style={{ marginBottom: '12px' }}>
-              <label className="form-label">YENI SIFRE (min 8 karakter)</label>
-              <input type="password" className="form-input" value={form.newPassword}
-                onChange={e => setForm(f => ({ ...f, newPassword: e.target.value }))} />
+              <label className="form-label">YENI SIFRE</label>
+              <PasswordStrengthInput
+                value={form.newPassword}
+                onChange={v => setForm(f => ({ ...f, newPassword: v }))}
+              />
             </div>
             <div style={{ marginBottom: '20px' }}>
               <label className="form-label">YENI SIFRE (tekrar)</label>

@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import api from '../../shared/api/client.js'
+import PasswordStrengthInput from '../../shared/components/PasswordStrengthInput.jsx'
+import { validatePassword } from '../../shared/auth/password-policy.js'
 
 export default function SetupPage() {
   const [username, setUsername] = useState('')
@@ -18,6 +20,11 @@ export default function SetupPage() {
     setError('')
     if (password !== password2) {
       setError('Şifreler eşleşmiyor')
+      return
+    }
+    const check = validatePassword(password, { username: username.trim() })
+    if (!check.ok) {
+      setError(check.errors.join(' · '))
       return
     }
     setLoading(true)
@@ -73,7 +80,20 @@ export default function SetupPage() {
           <Field label="Kullanıcı adı" value={username} onChange={setUsername} placeholder="ör. mudur" required />
           <Field label="Ad Soyad" value={fullName} onChange={setFullName} placeholder="Kampüs Müdürü" required />
           <Field label="E-posta (opsiyonel)" value={email} onChange={setEmail} type="email" placeholder="admin@example.com" />
-          <Field label="Şifre (min 8 karakter)" value={password} onChange={setPassword} type="password" required />
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <span style={{ fontFamily: 'var(--mono)', fontSize: 9, letterSpacing: 1, color: 'var(--text3)' }}>Şifre</span>
+            <PasswordStrengthInput
+              value={password}
+              onChange={setPassword}
+              username={username}
+              required
+              style={{
+                padding: '10px 12px', background: 'var(--bg)', border: '1px solid var(--border)',
+                borderRadius: 6, color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 12, outline: 'none',
+              }}
+              className=""
+            />
+          </label>
           <Field label="Şifre (tekrar)" value={password2} onChange={setPassword2} type="password" required />
 
           {error && (

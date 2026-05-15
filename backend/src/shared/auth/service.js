@@ -1,6 +1,7 @@
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import { getDB } from '../db/index.js'
+import { validatePassword } from './password-policy.js'
 
 const SECRET = process.env.JWT_SECRET
 if (!SECRET) {
@@ -179,12 +180,13 @@ export function refreshToken(oldToken) {
 }
 
 export function changeOwnPassword(userId, currentPassword, newPassword) {
-  if (!newPassword || newPassword.length < 8) {
-    return { error: 'Yeni şifre en az 8 karakter olmalı', status: 400 }
-  }
   const db = getDB()
   const user = db.prepare('SELECT * FROM users WHERE id=?').get(userId)
   if (!user) return { error: 'Kullanıcı bulunamadı', status: 404 }
+  const pwCheck = validatePassword(newPassword, { username: user.username })
+  if (!pwCheck.ok) {
+    return { error: pwCheck.errors.join(' · '), status: 400 }
+  }
   if (!bcrypt.compareSync(currentPassword, user.password_hash)) {
     return { error: 'Mevcut şifre hatalı', status: 401 }
   }

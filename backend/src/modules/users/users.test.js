@@ -29,7 +29,7 @@ describe('Users Module', () => {
     const res = await request(app)
       .post('/api/users')
       .set('Authorization', `Bearer ${token}`)
-      .send({ username: 'testuser', password: 'test1234', role: 'technical', full_name: 'Test Kullanici' })
+      .send({ username: 'testuser', password: 'Karanfil2026', role: 'technical', full_name: 'Test Kullanici' })
     expect(res.status).toBe(201)
     expect(res.body.id).toBeTruthy()
     newUserId = res.body.id
@@ -39,17 +39,25 @@ describe('Users Module', () => {
     const res = await request(app)
       .post('/api/users')
       .set('Authorization', `Bearer ${token}`)
-      .send({ username: 'testuser', password: 'test1234', role: 'technical', full_name: 'Duplikat' })
+      .send({ username: 'testuser', password: 'Karanfil2026', role: 'technical', full_name: 'Duplikat' })
     expect(res.status).toBe(409)
   })
 
-  it('rejects short password (7 chars)', async () => {
+  it('rejects short password', async () => {
     const res = await request(app)
       .post('/api/users')
       .set('Authorization', `Bearer ${token}`)
-      .send({ username: 'shortpw', password: 'abc1234', role: 'technical', full_name: 'Short PW' })
+      .send({ username: 'shortpw', password: 'Abc1234', role: 'technical', full_name: 'Short PW' })
     expect(res.status).toBe(400)
-    expect(res.body.error).toMatch(/8 karakter/)
+    expect(res.body.error).toMatch(/en az/i)
+  })
+
+  it('rejects password without uppercase', async () => {
+    const res = await request(app)
+      .post('/api/users')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ username: 'noupper', password: 'karanfil2026', role: 'technical', full_name: 'No Upper' })
+    expect(res.status).toBe(400)
   })
 
   it('rejects invalid role', async () => {
@@ -73,12 +81,12 @@ describe('Users Module', () => {
     const res = await request(app)
       .patch(`/api/users/${newUserId}/password`)
       .set('Authorization', `Bearer ${token}`)
-      .send({ password: 'yenisifre123' })
+      .send({ password: 'YeniSifre2026' })
     expect(res.status).toBe(200)
     expect(res.body.ok).toBe(true)
 
     // Verify new password works
-    const loginRes = await request(app).post('/api/auth/login').send({ username: 'testuser', password: 'yenisifre123' })
+    const loginRes = await request(app).post('/api/auth/login').send({ username: 'testuser', password: 'YeniSifre2026' })
     expect(loginRes.status).toBe(200)
     expect(loginRes.body.token).toBeTruthy()
   })

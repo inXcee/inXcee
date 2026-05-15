@@ -19,7 +19,7 @@ describe('Setup — needs_setup', () => {
 
   it('kullanıcı varsa needs_setup=false döner', async () => {
     await request(app).post('/api/setup/init').send({
-      username: 'admin', password: 'parola12', full_name: 'İlk Admin',
+      username: 'admin', password: 'Karanfil2026', full_name: 'İlk Admin',
     })
     const res = await request(app).get('/api/setup/status')
     expect(res.status).toBe(200)
@@ -30,23 +30,24 @@ describe('Setup — needs_setup', () => {
 describe('Setup — init', () => {
   it('geçerli payload ile admin oluşturur', async () => {
     const res = await request(app).post('/api/setup/init').send({
-      username: 'admin', password: 'parola12', full_name: 'İlk Admin', email: 'a@b.com',
+      username: 'admin', password: 'Karanfil2026', full_name: 'İlk Admin', email: 'a@b.com',
     })
     expect(res.status).toBe(201)
     expect(res.body.ok).toBe(true)
     expect(res.body.username).toBe('admin')
     // login test
-    const login = await request(app).post('/api/auth/login').send({ username: 'admin', password: 'parola12' })
+    const login = await request(app).post('/api/auth/login').send({ username: 'admin', password: 'Karanfil2026' })
+    expect(login.body.token).toBeTruthy()
     expect(login.status).toBe(200)
     expect(login.body.user.role).toBe('campus_manager')
   })
 
   it('mevcut kurulumdan sonra reddeder (409)', async () => {
     await request(app).post('/api/setup/init').send({
-      username: 'admin', password: 'parola12', full_name: 'İlk Admin',
+      username: 'admin', password: 'Karanfil2026', full_name: 'İlk Admin',
     })
     const res = await request(app).post('/api/setup/init').send({
-      username: 'second', password: 'parola12', full_name: 'İkinci',
+      username: 'second', password: 'Karanfil2026', full_name: 'İkinci',
     })
     expect(res.status).toBe(409)
   })
@@ -56,33 +57,33 @@ describe('Setup — init', () => {
       username: 'admin', password: 'kısa', full_name: 'Admin',
     })
     expect(res.status).toBe(400)
-    expect(res.body.error).toMatch(/8 karakter/)
+    expect(res.body.error).toMatch(/en az/i)
   })
 
   it('kısa kullanıcı adını reddeder', async () => {
     const res = await request(app).post('/api/setup/init').send({
-      username: 'ab', password: 'parola12', full_name: 'Admin',
+      username: 'ab', password: 'Karanfil2026', full_name: 'Admin',
     })
     expect(res.status).toBe(400)
   })
 
   it('geçersiz karakter içeren kullanıcı adını reddeder', async () => {
     const res = await request(app).post('/api/setup/init').send({
-      username: 'admin user', password: 'parola12', full_name: 'Admin',
+      username: 'admin user', password: 'Karanfil2026', full_name: 'Admin',
     })
     expect(res.status).toBe(400)
   })
 
   it('geçersiz e-posta reddeder', async () => {
     const res = await request(app).post('/api/setup/init').send({
-      username: 'admin', password: 'parola12', full_name: 'Admin', email: 'gecersiz',
+      username: 'admin', password: 'Karanfil2026', full_name: 'Admin', email: 'gecersiz',
     })
     expect(res.status).toBe(400)
   })
 
   it('Ad Soyad boş ise reddeder', async () => {
     const res = await request(app).post('/api/setup/init').send({
-      username: 'admin', password: 'parola12',
+      username: 'admin', password: 'Karanfil2026',
     })
     expect(res.status).toBe(400)
   })
