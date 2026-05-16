@@ -1,7 +1,8 @@
-import { useState, useMemo, useRef } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import HelpHint from '../../shared/components/HelpHint.jsx'
+import { useToastStore } from '../../shared/store/toastStore.js'
 import { TABS } from './constants.js'
 import { KPIRow, AlertsBar } from './components/Dashboard.jsx'
 import MoreMenu from './components/MoreMenu.jsx'
@@ -20,6 +21,8 @@ import ReportsTab from './tabs/ReportsTab.jsx'
 
 export default function InventoryPage() {
   const qc = useQueryClient()
+  const addToast = useToastStore(s => s.addToast)
+  const toastShownRef = useRef(false)
   const [activeTab, setActiveTab] = useState('stock')
   const [view, setView] = useState('grid')
   const [searchInput, setSearchInput] = useState('')
@@ -58,6 +61,37 @@ export default function InventoryPage() {
     [detailItem, items]
   )
 
+  // Acilista dusuk/tukenmis stok varsa tek seferlik toast
+  useEffect(() => {
+    if (toastShownRef.current) return
+    if (!stats || !items.length) return
+    const total = (stats.low_stock || 0) + (stats.out_of_stock || 0)
+    if (total > 0) {
+      const out = stats.out_of_stock || 0
+      const low = (stats.low_stock || 0) - out
+      const msg = [out > 0 && `${out} ürün tükendi`, low > 0 && `${low} ürün düşük stokta`].filter(Boolean).join(' · ')
+      addToast(`⚠ ${msg}`, 'warning')
+      toastShownRef.current = true
+    }
+  }, [stats, items.length, addToast])
+
+  // Sayfa-ici klavye kisayollari (form-input icinde tetiklenmez)
+  useEffect(() => {
+    const onKey = (e) => {
+      const tag = e.target.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.target.isContentEditable) return
+      if (e.ctrlKey || e.metaKey || e.altKey) return
+      if (e.key === 'n') { e.preventDefault(); setShowNew(true) }
+      else if (e.key === 's') { e.preventDefault(); setShowCount(true) }
+      else if (e.key === '/') {
+        e.preventDefault()
+        document.querySelector('input[placeholder^="Ara"]')?.focus()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
   const forecastMap = useMemo(() => {
     const m = {}
     forecast.forEach(f => { m[f.id] = f })
@@ -88,10 +122,10 @@ export default function InventoryPage() {
           <p style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)', marginTop: '5px', letterSpacing: '1.5px' }}>STOK TAKİP · MAL GİRİŞ · MALZEME TESLİM · SAYIM</p>
         </div>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          <button onClick={() => setShowNew(true)} className="btn btn-primary btn-sm" style={{ borderRadius: 10 }}>+ ÜRÜN</button>
+          <button onClick={() => setShowNew(true)} className="btn btn-primary btn-sm" title="N tuşu" style={{ borderRadius: 10 }}>+ ÜRÜN</button>
           <MoreMenu items={[
             { icon: '↓', label: 'Mal Giriş', onClick: () => setShowReceipt(true) },
-            { icon: '✓', label: 'Sayım Yap', onClick: () => setShowCount(true) },
+            { icon: '✓', label: 'Sayım Yap', onClick: () => setShowCount(true), hint: 'S' },
             { divider: true },
             { icon: '⤓', label: 'CSV İndir', onClick: () => api.get('/inventory/export/csv', { responseType: 'blob' }).then(r => { const url = URL.createObjectURL(r.data); const a = document.createElement('a'); a.href = url; a.download = 'envanter.csv'; a.click(); URL.revokeObjectURL(url) }) },
           ]} />

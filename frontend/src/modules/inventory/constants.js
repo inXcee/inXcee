@@ -7,6 +7,14 @@ export const CATEGORIES = [
 
 export const UNITS = ['adet', 'kg', 'litre', 'paket', 'kutu', 'set', 'metre', 'g', 'ml']
 
+// Yeni urunde kategori secilince varsayilan birim (kullanici degistirmediyse uygulanir)
+export const CATEGORY_DEFAULT_UNIT = {
+  laundry: 'litre',
+  maintenance: 'adet',
+  housekeeping: 'paket',
+  general: 'adet',
+}
+
 export const MOVE_LABEL = { in: 'GİRİŞ', out: 'ÇIKIŞ', count: 'SAYIM', initial: 'KAYIT' }
 export const MOVE_COLOR = { in: 'var(--green)', out: 'var(--red)', count: 'var(--blue)', initial: 'var(--text3)' }
 

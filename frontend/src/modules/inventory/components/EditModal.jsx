@@ -4,7 +4,7 @@ import api from '../../../shared/api/client.js'
 import { useDraft } from '../../../shared/hooks/useDraft.js'
 import DraftBanner from '../../../shared/components/DraftBanner.jsx'
 import Modal from './Modal.jsx'
-import { CATEGORIES, UNITS, INIT_F } from '../constants.js'
+import { CATEGORIES, UNITS, INIT_F, CATEGORY_DEFAULT_UNIT } from '../constants.js'
 
 const QUICK_UNITS = ['adet', 'kg', 'litre', 'paket', 'kutu']
 
@@ -81,7 +81,13 @@ export default function EditModal({ item, onClose, onSave, isPending }) {
           {CATEGORIES.map(c => {
             const active = f.category === c.key
             return (
-              <button key={c.key} type="button" onClick={() => u('category', c.key)} style={{
+              <button key={c.key} type="button" onClick={() => {
+                u('category', c.key)
+                // Yeni urunde + kullanici birimi degistirmediyse kategori varsayilani uygula
+                if (!item?.id && f.unit === INIT_F.unit && CATEGORY_DEFAULT_UNIT[c.key]) {
+                  u('unit', CATEGORY_DEFAULT_UNIT[c.key])
+                }
+              }} style={{
                 padding: '12px 8px', border: `1px solid ${active ? c.color : 'var(--border)'}`,
                 borderRadius: '10px', cursor: 'pointer',
                 background: active ? c.bg : 'var(--surface)',
