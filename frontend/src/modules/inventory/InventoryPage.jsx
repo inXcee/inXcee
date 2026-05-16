@@ -6,11 +6,11 @@ import { TABS } from './constants.js'
 import { KPIRow, CategoryChart, LowStockAlert } from './components/Dashboard.jsx'
 import AdjustModal from './components/AdjustModal.jsx'
 import CheckoutModal from './components/CheckoutModal.jsx'
-import LogModal from './components/LogModal.jsx'
 import EditModal from './components/EditModal.jsx'
 import CountModal from './components/CountModal.jsx'
 import ReceiptModal from './components/ReceiptModal.jsx'
 import WriteOffModal from './components/WriteOffModal.jsx'
+import ItemDetailDrawer from './components/ItemDetailDrawer.jsx'
 import ItemsTab from './tabs/ItemsTab.jsx'
 import ReceiptsTab from './tabs/ReceiptsTab.jsx'
 import CheckoutsTab from './tabs/CheckoutsTab.jsx'
@@ -32,9 +32,9 @@ export default function InventoryPage() {
   const [sortBy, setSortBy] = useState('name')
   const [adjustItem, setAdjustItem] = useState(null)
   const [checkoutItem, setCheckoutItem] = useState(null)
-  const [logItem, setLogItem] = useState(null)
   const [editItem, setEditItem] = useState(null)
   const [writeOffItem, setWriteOffItem] = useState(null)
+  const [detailItem, setDetailItem] = useState(null)
   const [showNew, setShowNew] = useState(false)
   const [showCount, setShowCount] = useState(false)
   const [showReceipt, setShowReceipt] = useState(false)
@@ -53,6 +53,12 @@ export default function InventoryPage() {
   const updateMut = useMutation({ mutationFn: ({ id, ...d }) => api.put(`/inventory/${id}`, d), onSuccess: () => { inv(); setEditItem(null) } })
   const deleteMut = useMutation({ mutationFn: id => api.delete(`/inventory/${id}`), onSuccess: inv })
   const adjustMut = useMutation({ mutationFn: ({ id, delta, reason }) => api.patch(`/inventory/${id}/adjust`, { delta, reason }), onSuccess: () => { inv(); setAdjustItem(null) } })
+
+  // Drawer'daki kart, items query'si yenilendiğinde güncel kalsın diye id'den taze item bul
+  const liveDetailItem = useMemo(
+    () => (detailItem ? items.find(i => i.id === detailItem.id) || null : null),
+    [detailItem, items]
+  )
 
   const forecastMap = useMemo(() => {
     const m = {}
@@ -153,9 +159,8 @@ export default function InventoryPage() {
           sortBy={sortBy} setSortBy={setSortBy}
           view={view} setView={setView}
           filtered={filtered} forecastMap={forecastMap}
-          setAdjustItem={setAdjustItem} setCheckoutItem={setCheckoutItem} setEditItem={setEditItem} setLogItem={setLogItem}
-          setWriteOffItem={setWriteOffItem}
-          deleteMut={deleteMut}
+          setAdjustItem={setAdjustItem} setCheckoutItem={setCheckoutItem}
+          setDetailItem={setDetailItem}
         />
       )}
 
@@ -186,12 +191,22 @@ export default function InventoryPage() {
       {/* Modals */}
       {adjustItem && <AdjustModal item={adjustItem} onClose={() => setAdjustItem(null)} onSave={d => adjustMut.mutate(d)} isPending={adjustMut.isPending} />}
       {checkoutItem && <CheckoutModal item={checkoutItem} onClose={() => setCheckoutItem(null)} />}
-      {logItem && <LogModal item={logItem} onClose={() => setLogItem(null)} />}
       {editItem && <EditModal item={editItem} onClose={() => setEditItem(null)} onSave={d => updateMut.mutate({ id: editItem.id, ...d })} isPending={updateMut.isPending} />}
       {showNew && <EditModal item={null} onClose={() => setShowNew(false)} onSave={d => createMut.mutate(d)} isPending={createMut.isPending} />}
       {showCount && <CountModal items={items} onClose={() => setShowCount(false)} />}
       {showReceipt && <ReceiptModal items={items} onClose={() => setShowReceipt(false)} />}
       {writeOffItem && <WriteOffModal item={writeOffItem} onClose={() => setWriteOffItem(null)} />}
+      {liveDetailItem && (
+        <ItemDetailDrawer
+          item={liveDetailItem}
+          onClose={() => setDetailItem(null)}
+          onEdit={() => { setEditItem(liveDetailItem); setDetailItem(null) }}
+          onAdjust={() => { setAdjustItem(liveDetailItem); setDetailItem(null) }}
+          onCheckout={() => { setCheckoutItem(liveDetailItem); setDetailItem(null) }}
+          onWriteOff={() => { setWriteOffItem(liveDetailItem); setDetailItem(null) }}
+          onDelete={() => { deleteMut.mutate(liveDetailItem.id); setDetailItem(null) }}
+        />
+      )}
     </div>
   )
 }

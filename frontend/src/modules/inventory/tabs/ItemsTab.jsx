@@ -1,6 +1,6 @@
 import { useState, lazy, Suspense } from 'react'
-import { CATEGORIES, cat, money } from '../constants.js'
-import ItemCard from '../components/ItemCard.jsx'
+import { CATEGORIES } from '../constants.js'
+import SimpleItemRow from '../components/SimpleItemRow.jsx'
 import ActiveCheckoutsPanel from '../components/ActiveCheckoutsPanel.jsx'
 import RecentMovements from '../components/RecentMovements.jsx'
 
@@ -12,8 +12,8 @@ export default function ItemsTab({
   sortBy, setSortBy,
   view, setView,
   filtered, forecastMap,
-  setAdjustItem, setCheckoutItem, setEditItem, setLogItem, setWriteOffItem,
-  deleteMut,
+  setAdjustItem, setCheckoutItem,
+  setDetailItem,
 }) {
   const [showQr, setShowQr] = useState(false)
 
@@ -66,15 +66,15 @@ export default function ItemsTab({
         </div>
       </div>
 
-      {/* Grid View */}
+      {/* Grid (cards) */}
       {view === 'grid' && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '12px' }} className="fade-up-2">
           {filtered.map(item => (
-            <ItemCard key={item.id} item={item}
-              onAdjust={setAdjustItem} onCheckout={setCheckoutItem} onEdit={setEditItem} onShowLog={setLogItem}
-              onWriteOff={setWriteOffItem}
-              onDelete={it => { if (window.confirm(`"${it.item_name}" silinsin mi?`)) deleteMut.mutate(it.id) }}
-              forecastEntry={forecastMap[item.id]} />
+            <SimpleItemRow key={item.id} item={item} view="cards"
+              forecast={forecastMap[item.id]}
+              onAdjust={(it) => setAdjustItem(it)}
+              onCheckout={(it) => setCheckoutItem(it)}
+              onDetail={() => setDetailItem(item)} />
           ))}
           {filtered.length === 0 && (
             <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '48px', fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--text3)' }}>
@@ -85,7 +85,7 @@ export default function ItemsTab({
         </div>
       )}
 
-      {/* Table View */}
+      {/* Table */}
       {view === 'table' && (
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '14px', overflow: 'hidden' }} className="fade-up-2">
           <div style={{ height: '2px', background: 'linear-gradient(90deg,var(--purple),var(--blue))' }} />
@@ -93,60 +93,26 @@ export default function ItemsTab({
             {filtered.length === 0 ? (
               <div style={{ padding: '48px', textAlign: 'center', fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--text3)' }}>Urun bulunamadi</div>
             ) : (
-              <table className="data-table responsive-stack" style={{ margin: 0 }}>
-                <thead><tr><th>URUN</th><th>KAT.</th><th>STOK</th><th>ESIK</th><th>DURUM</th><th>KONUM</th><th>DEGER</th><th style={{ textAlign: 'center' }}>ISLEM</th></tr></thead>
+              <table className="data-table" style={{ margin: 0, width: '100%' }}>
+                <thead>
+                  <tr>
+                    <th>URUN</th>
+                    <th>KAT.</th>
+                    <th>KONUM</th>
+                    <th style={{ textAlign: 'right' }}>STOK</th>
+                    <th style={{ textAlign: 'right' }}>ESIK</th>
+                    <th style={{ textAlign: 'right' }}>DEGER</th>
+                    <th style={{ textAlign: 'right' }}>ISLEM</th>
+                  </tr>
+                </thead>
                 <tbody>
-                  {filtered.map(item => {
-                    const ct = cat(item.category)
-                    const isLow = item.reorder_threshold > 0 && item.quantity <= item.reorder_threshold
-                    const isOut = item.quantity === 0
-                    const val = (item.quantity || 0) * (item.unit_price || 0)
-                    return (
-                      <tr key={item.id} style={{ background: isOut ? 'rgba(231,76,60,.02)' : isLow ? 'rgba(240,165,0,.02)' : undefined }}>
-                        <td data-label="Urun" style={{ fontWeight: 600, fontSize: '12px' }}>
-                          {item.item_name}
-                          {forecastMap[item.id] && (
-                            <span style={{
-                              marginLeft: '8px',
-                              fontFamily: 'var(--mono)',
-                              fontSize: '9px',
-                              padding: '2px 6px',
-                              borderRadius: '4px',
-                              letterSpacing: '0.5px',
-                              background: forecastMap[item.id].severity === 'critical'
-                                ? 'rgba(231,76,60,.15)' : 'rgba(240,165,0,.15)',
-                              color: forecastMap[item.id].severity === 'critical'
-                                ? 'var(--red)' : 'var(--amber)',
-                              border: `1px solid ${forecastMap[item.id].severity === 'critical'
-                                ? 'rgba(231,76,60,.3)' : 'rgba(240,165,0,.3)'}`,
-                            }}>
-                              ~{forecastMap[item.id].days_left}g
-                            </span>
-                          )}
-                        </td>
-                        <td data-label="Kategori"><span style={{ padding: '3px 8px', borderRadius: '6px', fontSize: '9px', fontWeight: 600,
-                          background: ct?.bg, color: ct?.color, fontFamily: 'var(--mono)' }}>{ct?.icon} {ct?.label}</span></td>
-                        <td data-label="Stok" style={{ fontFamily: 'var(--mono)', fontWeight: 700, color: isOut ? 'var(--red)' : isLow ? 'var(--amber)' : 'var(--text)' }}>
-                          {item.quantity} <span style={{ fontSize: '9px', color: 'var(--text3)', fontWeight: 400 }}>{item.unit}</span></td>
-                        <td data-label="Esik" style={{ fontFamily: 'var(--mono)', color: 'var(--text3)', fontSize: '11px' }}>{item.reorder_threshold > 0 ? item.reorder_threshold : '-'}</td>
-                        <td data-label="Durum">{isOut ? <span className="badge badge-red" style={{ fontSize: '8px' }}>TUKENDI</span>
-                          : isLow ? <span className="badge badge-amber" style={{ fontSize: '8px' }}>DUSUK</span>
-                          : <span className="badge badge-green" style={{ fontSize: '8px' }}>OK</span>}</td>
-                        <td data-label="Konum" style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)' }}>{item.location || '-'}</td>
-                        <td data-label="Deger" style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--accent)', fontWeight: 600 }}>{money(val)}</td>
-                        <td data-label="Islem">
-                          <div style={{ display: 'flex', gap: '3px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-                            <button className="btn btn-ghost btn-xs" style={{ color: 'var(--green)', borderRadius: '6px' }} onClick={() => setAdjustItem(item)}>+/-</button>
-                            <button className="btn btn-ghost btn-xs" style={{ color: 'var(--blue)', borderRadius: '6px' }} onClick={() => setCheckoutItem(item)}>TES</button>
-                            <button className="btn btn-ghost btn-xs" style={{ color: 'var(--purple)', borderRadius: '6px' }} onClick={() => setLogItem(item)}>LOG</button>
-                            <button className="btn btn-ghost btn-xs" style={{ color: 'var(--accent)', borderRadius: '6px' }} onClick={() => setEditItem(item)}>DUZ</button>
-                            <button className="btn btn-ghost btn-xs" style={{ color: 'var(--red)', borderRadius: '6px' }}
-                              onClick={() => { if (confirm(`${item.item_name} silinsin mi?`)) deleteMut.mutate(item.id) }}>✕</button>
-                          </div>
-                        </td>
-                      </tr>
-                    )
-                  })}
+                  {filtered.map(item => (
+                    <SimpleItemRow key={item.id} item={item} view="table"
+                      forecast={forecastMap[item.id]}
+                      onAdjust={(it) => setAdjustItem(it)}
+                      onCheckout={(it) => setCheckoutItem(it)}
+                      onDetail={() => setDetailItem(item)} />
+                  ))}
                 </tbody>
               </table>
             )}
