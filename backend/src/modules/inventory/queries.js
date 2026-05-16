@@ -88,11 +88,22 @@ export function adjustQuantity(id, newQty) {
 
 // ── Stock Movements ─────────────────────────────────────────────────────────
 
-export function addMovement(itemId, type, delta, quantityAfter, reason, userId) {
+export function addMovement(itemId, type, delta, quantityAfter, reason, userId, locationId = null) {
   const db = getDB()
+  // delta>0 => to_location, delta<0 => from_location
+  const isIn = delta > 0
   db.prepare(
-    'INSERT INTO stock_movements(item_id,type,delta,quantity_after,reason,created_by) VALUES(?,?,?,?,?,?)'
-  ).run(itemId, type, delta, quantityAfter, reason || null, userId)
+    `INSERT INTO stock_movements(item_id,type,delta,quantity_after,reason,${isIn ? 'to_location_id' : 'from_location_id'},created_by) VALUES(?,?,?,?,?,?,?)`
+  ).run(itemId, type, delta, quantityAfter, reason || null, locationId || null, userId)
+}
+
+export function adjustLocationStock(itemId, locationId, delta) {
+  const db = getDB()
+  if (delta > 0) {
+    addStockToLocation(db, itemId, locationId, delta)
+  } else {
+    removeStockFromLocation(db, itemId, locationId, Math.abs(delta))
+  }
 }
 
 export function getMovements(itemId, limit = 50) {
@@ -184,11 +195,14 @@ export function searchPersonnel(query) {
   `).all(`%${query}%`, `%${query}%`, `%${query}%`)
 }
 
-export function checkoutItem(itemId, personnelId, qty, note, userId) {
+export function checkoutItem(itemId, personnelId, qty, note, userId, fromLocationId = null) {
   const db = getDB()
   const item = db.prepare('SELECT * FROM inventory WHERE id=?').get(itemId)
   if (!item) throw new Error('Urun bulunamadi')
   if (item.quantity < qty) throw new Error(`Yetersiz stok: ${item.quantity} ${item.unit} mevcut`)
+  if (item.track_locations && !fromLocationId) {
+    throw new Error('Bu urun lokasyon takipli — kaynak lokasyon secimi gerekli')
+  }
 
   const newQty = item.quantity - qty
   const tx = db.transaction(() => {
@@ -196,6 +210,11 @@ export function checkoutItem(itemId, personnelId, qty, note, userId) {
     db.prepare(
       'INSERT INTO inventory_checkouts(item_id,personnel_id,quantity,note,created_by) VALUES(?,?,?,?,?)'
     ).run(itemId, personnelId, qty, note || null, userId)
+
+    // Lokasyon takipliyse kaynak lokasyondan dus (yetersizse hata firlatir)
+    if (item.track_locations && fromLocationId) {
+      removeStockFromLocation(db, itemId, +fromLocationId, qty)
+    }
 
     if (item.track_lots) {
       // FIFO: en eski active lot'tan tuket, her lot icin ayri stock_movements
@@ -211,20 +230,19 @@ export function checkoutItem(itemId, personnelId, qty, note, userId) {
         const newStatus = newLotQty <= 0 ? 'depleted' : 'active'
         db.prepare('UPDATE inventory_lots SET quantity = ?, status = ? WHERE id = ?').run(newLotQty, newStatus, lot.id)
         db.prepare(
-          'INSERT INTO stock_movements(item_id,type,delta,quantity_after,reason,lot_id,created_by) VALUES(?,?,?,?,?,?,?)'
-        ).run(itemId, 'out', -take, newQty, `Teslim: ${note || '-'} (lot ${lot.lot_no || lot.id})`, lot.id, userId)
+          'INSERT INTO stock_movements(item_id,type,delta,quantity_after,reason,lot_id,from_location_id,created_by) VALUES(?,?,?,?,?,?,?,?)'
+        ).run(itemId, 'out', -take, newQty, `Teslim: ${note || '-'} (lot ${lot.lot_no || lot.id})`, lot.id, fromLocationId || null, userId)
         remaining -= take
       }
       if (remaining > 0) {
-        // lot'lardan yeterince cikmadi (track_lots bayraga ragmen lot girisi yapilmamis) — fallback
         db.prepare(
-          'INSERT INTO stock_movements(item_id,type,delta,quantity_after,reason,created_by) VALUES(?,?,?,?,?,?)'
-        ).run(itemId, 'out', -remaining, newQty, `Teslim: ${note || '-'} (lotsuz)`, userId)
+          'INSERT INTO stock_movements(item_id,type,delta,quantity_after,reason,from_location_id,created_by) VALUES(?,?,?,?,?,?,?)'
+        ).run(itemId, 'out', -remaining, newQty, `Teslim: ${note || '-'} (lotsuz)`, fromLocationId || null, userId)
       }
     } else {
       db.prepare(
-        'INSERT INTO stock_movements(item_id,type,delta,quantity_after,reason,created_by) VALUES(?,?,?,?,?,?)'
-      ).run(itemId, 'out', -qty, newQty, `Teslim: ${note || '-'}`, userId)
+        'INSERT INTO stock_movements(item_id,type,delta,quantity_after,reason,from_location_id,created_by) VALUES(?,?,?,?,?,?,?)'
+      ).run(itemId, 'out', -qty, newQty, `Teslim: ${note || '-'}`, fromLocationId || null, userId)
     }
   })
   tx()
@@ -322,6 +340,41 @@ export function generateReceiptNo() {
   return `MG-${today}-${String(seq).padStart(3, '0')}`
 }
 
+// ── Per-Location Stock ──────────────────────────────────────────────────────
+
+export function getStockByLocation(itemId) {
+  const db = getDB()
+  return db.prepare(`
+    SELECT sbl.location_id, sbl.quantity, l.name, l.block, l.is_active
+    FROM inventory_stock_by_location sbl
+    JOIN inventory_locations l ON l.id = sbl.location_id
+    WHERE sbl.item_id = ?
+    ORDER BY l.block, l.name
+  `).all(itemId)
+}
+
+// In-transaction: hedef lokasyona qty ekle (yoksa olustur)
+export function addStockToLocation(db, itemId, locationId, qty) {
+  const ex = db.prepare('SELECT 1 FROM inventory_stock_by_location WHERE item_id=? AND location_id=?').get(itemId, locationId)
+  if (ex) {
+    db.prepare('UPDATE inventory_stock_by_location SET quantity = quantity + ? WHERE item_id=? AND location_id=?')
+      .run(qty, itemId, locationId)
+  } else {
+    db.prepare('INSERT INTO inventory_stock_by_location(item_id, location_id, quantity) VALUES(?,?,?)')
+      .run(itemId, locationId, qty)
+  }
+}
+
+// In-transaction: lokasyondan qty dus (yetersizse hata firlat)
+export function removeStockFromLocation(db, itemId, locationId, qty) {
+  const row = db.prepare('SELECT quantity FROM inventory_stock_by_location WHERE item_id=? AND location_id=?').get(itemId, locationId)
+  if (!row || row.quantity < qty) {
+    throw new Error('Secilen lokasyonda yetersiz stok')
+  }
+  db.prepare('UPDATE inventory_stock_by_location SET quantity = quantity - ? WHERE item_id=? AND location_id=?')
+    .run(qty, itemId, locationId)
+}
+
 export function createReceipt(supplier, invoiceNo, receiptDate, notes, items, userId) {
   const db = getDB()
   const receiptNo = generateReceiptNo()
@@ -380,9 +433,14 @@ export function createReceipt(supplier, invoiceNo, receiptDate, notes, items, us
         lotId = lotIns.lastInsertRowid
       }
 
+      // track_locations=1 + location_id verilmisse o lokasyona ekle
+      if (inv.track_locations && item.location_id) {
+        addStockToLocation(db, item.item_id, +item.location_id, qty)
+      }
+
       db.prepare(
-        'INSERT INTO stock_movements(item_id,type,delta,quantity_after,reason,lot_id,created_by) VALUES(?,?,?,?,?,?,?)'
-      ).run(item.item_id, 'in', qty, newQty, `Mal giris: ${receiptNo} (${supplier})`, lotId, userId)
+        'INSERT INTO stock_movements(item_id,type,delta,quantity_after,reason,lot_id,to_location_id,created_by) VALUES(?,?,?,?,?,?,?,?)'
+      ).run(item.item_id, 'in', qty, newQty, `Mal giris: ${receiptNo} (${supplier})`, lotId, item.location_id || null, userId)
 
       // Tedarikci fiyat gecmisi (sadece supplier varsa)
       if (supplierId && price > 0) {

@@ -31,15 +31,33 @@ export function removeItem(id) {
   queries.deleteItem(id)
 }
 
-export function adjustStock(id, delta, reason, userId) {
+export function adjustStock(id, delta, reason, userId, locationId = null) {
   const item = queries.getItemById(id)
   if (!item) return { error: 'Urun bulunamadi', status: 404 }
 
   const newQty = item.quantity + delta
   if (newQty < 0) return { error: 'Stok negatif olamaz', status: 400 }
 
+  if (item.track_locations && !locationId) {
+    return { error: 'Bu urun lokasyon takipli — lokasyon secimi gerekli', status: 400 }
+  }
+
+  // Lokasyon takipliyse once orada islem yap (yetersizse hata)
+  if (item.track_locations && locationId) {
+    const db = queries.getStockByLocation(id)
+    if (delta < 0) {
+      const row = db.find(r => r.location_id === +locationId)
+      if (!row || row.quantity < Math.abs(delta)) {
+        return { error: 'Secilen lokasyonda yetersiz stok', status: 400 }
+      }
+    }
+  }
+
   queries.adjustQuantity(id, newQty)
-  queries.addMovement(id, delta > 0 ? 'in' : 'out', delta, newQty, reason, userId)
+  if (item.track_locations && locationId) {
+    queries.adjustLocationStock(id, +locationId, delta)
+  }
+  queries.addMovement(id, delta > 0 ? 'in' : 'out', delta, newQty, reason, userId, locationId)
   logAudit(userId, delta > 0 ? 'inventory_in' : 'inventory_out', 'inventory', id,
     `${item.item_name}: ${delta > 0 ? '+' : ''}${delta} ${item.unit} (${reason || '-'})`)
 
@@ -74,6 +92,10 @@ export function getRecentMovements(limit) {
 
 export function getStats() {
   return queries.getStats()
+}
+
+export function getStockByLocation(itemId) {
+  return queries.getStockByLocation(itemId)
 }
 
 export function getForecast(userId) {
@@ -127,8 +149,8 @@ export function searchPersonnel(query) {
   return queries.searchPersonnel(query)
 }
 
-export function checkoutToPersonnel(itemId, personnelId, qty, note, userId) {
-  const result = queries.checkoutItem(itemId, personnelId, qty, note, userId)
+export function checkoutToPersonnel(itemId, personnelId, qty, note, userId, fromLocationId = null) {
+  const result = queries.checkoutItem(itemId, personnelId, qty, note, userId, fromLocationId)
   const item = queries.getItemById(itemId)
   logAudit(userId, 'inventory_checkout', 'inventory', itemId,
     `Teslim: ${item?.item_name} x${qty} (${note || '-'})`)

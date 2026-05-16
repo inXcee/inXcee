@@ -83,12 +83,18 @@ inventoryRouter.delete('/:id', ...editAccess, (req, res) => {
 // ── Stock Adjust ────────────────────────────────────────────────────────────
 inventoryRouter.patch('/:id/adjust', ...editAccess, (req, res) => {
   try {
-    const { delta, reason } = req.body
+    const { delta, reason, location_id } = req.body
     if (!delta || delta === 0) return res.status(400).json({ error: 'Miktar degisimi gerekli' })
-    const result = service.adjustStock(+req.params.id, delta, reason, req.user.id)
+    const result = service.adjustStock(+req.params.id, delta, reason, req.user.id, location_id || null)
     if (result.error) return res.status(result.status).json({ error: result.error })
     res.json(result)
   } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+// Stok dagilimi — lokasyon bazli
+inventoryRouter.get('/:id/stock-by-location', ...mgrAccess, (req, res) => {
+  try { res.json(service.getStockByLocation(+req.params.id)) }
+  catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatasi' }) }
 })
 
 // ── Urun Fotograf Upload ────────────────────────────────────────────────────
@@ -196,11 +202,11 @@ inventoryRouter.get('/checkouts/personnel/:id', ...mgrAccess, (req, res) => {
 
 inventoryRouter.post('/checkout', ...editAccess, (req, res) => {
   try {
-    const { item_id, personnel_id, quantity, note } = req.body
+    const { item_id, personnel_id, quantity, note, from_location_id } = req.body
     if (!item_id || !personnel_id || !quantity || quantity <= 0) {
       return res.status(400).json({ error: 'Urun, personel ve miktar gerekli' })
     }
-    const result = service.checkoutToPersonnel(item_id, personnel_id, quantity, note, req.user.id)
+    const result = service.checkoutToPersonnel(item_id, personnel_id, quantity, note, req.user.id, from_location_id || null)
     res.json(result)
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
