@@ -828,6 +828,25 @@ export function initDB() {
   try { db.exec('ALTER TABLE staff ADD COLUMN legacy_avs_id INTEGER') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] staff.legacy_avs_id:', e.message) }
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_staff_legacy_avs ON staff(legacy_avs_id) WHERE legacy_avs_id IS NOT NULL') } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] idx_staff_legacy_avs:', e.message) }
 
+  // Default departman seed — production'da boşsa rol mapping FK için gerekli
+  try {
+    const deptCount = db.prepare('SELECT COUNT(*) c FROM departments').get().c
+    if (deptCount === 0) {
+      const ins = db.prepare('INSERT OR IGNORE INTO departments(id,name,color_class,description) VALUES(?,?,?,?)')
+      const defaults = [
+        [1, 'Güvenlik',     'bg-red-600',    'Kampüs güvenlik personeli'],
+        [2, 'Temizlik',     'bg-green-600',  'Temizlik ve meydancı ekibi'],
+        [3, 'Mutfak',       'bg-orange-500', 'Yemekhane ve mutfak personeli'],
+        [4, 'İdari',        'bg-blue-600',   'İdari ve ofis personeli'],
+        [5, 'Teknik',       'bg-yellow-500', 'Teknik bakım ve onarım'],
+        [6, 'Bahçe',        'bg-lime-500',   'Bahçe ve çevre düzenleme'],
+        [7, 'Sağlık',       'bg-pink-500',   'Sağlık ve revir hizmetleri'],
+        [8, 'Çamaşırhane',  'bg-purple-600', 'Çamaşır yıkama ve dağıtım'],
+      ]
+      defaults.forEach(d => ins.run(...d))
+    }
+  } catch (e) { console.error('[Migration] default departments seed:', e.message) }
+
   // Bir kerelik veri taşıma: avs_workers → staff (idempotent; legacy_avs_id ile takip)
   try {
     const hasAvsTable = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='avs_workers'").get()
@@ -864,9 +883,10 @@ export function initDB() {
       const findStaffByLegacy = db.prepare('SELECT id FROM staff WHERE legacy_avs_id=?')
       const findStaffByName = db.prepare('SELECT id FROM staff WHERE LOWER(full_name)=LOWER(?) AND legacy_avs_id IS NULL LIMIT 1')
 
-      const tx = db.transaction(() => {
-        for (const w of avsRows) {
-          if (findStaffByLegacy.get(w.id)) continue // zaten migrate
+      // Transaction'sız — bir kayıt FK fail ederse digerleri etkilenmesin
+      for (const w of avsRows) {
+        try {
+          if (findStaffByLegacy.get(w.id)) continue
           const deptId = deptFromRole(w.role_label)
           const existing = findStaffByName.get(w.full_name)
           if (existing) {
@@ -874,9 +894,20 @@ export function initDB() {
           } else {
             insertStaff.run(w.full_name, w.role_label, w.role_label || null, deptId, w.kiosk_pin, w.pin_attempts || 0, w.pin_locked_until || null, w.is_active ?? 1, w.id)
           }
+        } catch (rowErr) {
+          // FK fail vs olursa dept'siz dene
+          try {
+            const existing = findStaffByName.get(w.full_name)
+            if (existing) {
+              updateStaffFromAvs.run(w.role_label, w.kiosk_pin, w.pin_attempts || 0, w.pin_locked_until || null, null, w.id, existing.id)
+            } else {
+              insertStaff.run(w.full_name, w.role_label, w.role_label || null, null, w.kiosk_pin, w.pin_attempts || 0, w.pin_locked_until || null, w.is_active ?? 1, w.id)
+            }
+          } catch (e2) {
+            console.error(`[Migration] avs_worker ${w.id} (${w.full_name}):`, e2.message)
+          }
         }
-      })
-      tx()
+      }
     }
   } catch (e) { console.error('[Migration] avs_workers → staff sync:', e.message) }
 
