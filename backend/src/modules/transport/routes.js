@@ -1,5 +1,8 @@
 import { Router } from 'express'
+import fs from 'fs'
 import { requireRole } from '../../shared/auth/middleware.js'
+import { upload, verifyMagicBytes } from '../../shared/uploads/middleware.js'
+import { getDB } from '../../shared/db/index.js'
 import * as q from './queries.js'
 import { logAudit } from '../../shared/audit.js'
 
@@ -30,6 +33,46 @@ transportRouter.put('/pickup-points/:id', ...mgr, (req, res) => {
 transportRouter.delete('/pickup-points/:id', ...mgr, (req, res) => {
   try { q.deletePickupPoint(+req.params.id); res.json({ ok: true }) }
   catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+// Durak fotoğrafı yükle
+transportRouter.post('/pickup-points/:id/photo', ...mgr, upload.single('photo'), verifyMagicBytes, (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'Dosya gerekli' })
+    const id = +req.params.id
+    const db = getDB()
+    const pp = db.prepare('SELECT photo_url FROM pickup_points WHERE id=?').get(id)
+    if (!pp) {
+      try { fs.unlinkSync(req.file.path) } catch { /* ignore */ }
+      return res.status(404).json({ error: 'Durak bulunamadı' })
+    }
+    if (pp.photo_url) {
+      const oldPath = pp.photo_url.replace(/^\/uploads\//, (process.env.UPLOADS_DIR || 'uploads') + '/')
+      try { fs.unlinkSync(oldPath) } catch { /* ignore */ }
+    }
+    const url = `/uploads/${req.file.filename}`
+    db.prepare('UPDATE pickup_points SET photo_url=? WHERE id=?').run(url, id)
+    res.json({ photo_url: url })
+  } catch (e) {
+    try { if (req.file) fs.unlinkSync(req.file.path) } catch { /* ignore */ }
+    console.error('[Route] pickup photo:', e)
+    res.status(500).json({ error: 'Sunucu hatası' })
+  }
+})
+
+transportRouter.delete('/pickup-points/:id/photo', ...mgr, (req, res) => {
+  try {
+    const id = +req.params.id
+    const db = getDB()
+    const pp = db.prepare('SELECT photo_url FROM pickup_points WHERE id=?').get(id)
+    if (!pp) return res.status(404).json({ error: 'Durak bulunamadı' })
+    if (pp.photo_url) {
+      const path = pp.photo_url.replace(/^\/uploads\//, (process.env.UPLOADS_DIR || 'uploads') + '/')
+      try { fs.unlinkSync(path) } catch { /* ignore */ }
+      db.prepare('UPDATE pickup_points SET photo_url=NULL WHERE id=?').run(id)
+    }
+    res.json({ ok: true })
+  } catch (e) { res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 transportRouter.get('/pickup-points/:id/staff', ...view, (req, res) => {

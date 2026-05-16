@@ -870,6 +870,9 @@ export function initDB() {
   try { db.exec('ALTER TABLE staff ADD COLUMN pickup_point_id INTEGER REFERENCES pickup_points(id)') } catch (e) {
     if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] staff.pickup_point_id:', e.message)
   }
+  try { db.exec('ALTER TABLE pickup_points ADD COLUMN photo_url TEXT') } catch (e) {
+    if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] pickup_points.photo_url:', e.message)
+  }
 
   // ── AVS workers <-> staff unification (single source of truth = staff) ──
   try { db.exec('ALTER TABLE staff ADD COLUMN kiosk_pin TEXT') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] staff.kiosk_pin:', e.message) }
