@@ -8,6 +8,7 @@ import { checkSlaViolations, checkMachineTimers, checkSlaPreWarnings, checkMachi
 import { getEmailSettings } from '../../modules/email/queries.js'
 import { sendMorningReport } from '../../modules/email/service.js'
 import { buildMonthlyReport, generateMonthlyPDF } from '../../modules/inventory/analytics/routes.js'
+import { expirePastLots } from '../../modules/inventory/lots/service.js'
 import { logAudit } from '../audit.js'
 
 let emailJob = null
@@ -95,6 +96,12 @@ export function startCronJobs() {
   // Her gün 06:00 — son kullanma 30 gün altı lot uyarısı (campus_manager)
   cron.schedule('0 6 * * *', withLock('lot-expiry', () => {
     try {
+      // Once SKT gecmis lotlari otomatik expired isaretle (stoktan dusulur, hareket kaydi atilir)
+      try {
+        const expired = expirePastLots()
+        if (expired > 0) console.log('[Cron] auto-expired', expired, 'lots')
+      } catch (e) { console.error('[Cron] expirePastLots:', e.message) }
+
       const db = getDB()
       const today = new Date().toISOString().split('T')[0]
       const lots = db.prepare(`

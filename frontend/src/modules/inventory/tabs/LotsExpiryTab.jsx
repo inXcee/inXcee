@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../../shared/api/client.js'
 import Modal from '../components/Modal.jsx'
+import { confirmDialog } from '../../../shared/components/ConfirmDialog.jsx'
 import { fmt, fmtDate } from '../constants.js'
 
 function NewLotModal({ items, suppliers, onClose, onCreated }) {
@@ -91,7 +92,37 @@ export default function LotsExpiryTab({ items }) {
   })
 
   const trackedItems = items.filter(i => i.track_lots === 1)
-  const inv = () => { qc.invalidateQueries({ queryKey: ['lots-expiring'] }); qc.invalidateQueries({ queryKey: ['item-lots'] }) }
+  const inv = () => {
+    qc.invalidateQueries({ queryKey: ['lots-expiring'] })
+    qc.invalidateQueries({ queryKey: ['item-lots'] })
+    qc.invalidateQueries({ queryKey: ['item-lots-drawer'] })
+    qc.invalidateQueries({ queryKey: ['inventory'] })
+    qc.invalidateQueries({ queryKey: ['inventory-stats'] })
+  }
+
+  const statusMut = useMutation({
+    mutationFn: ({ id, status }) => api.patch(`/inventory/lots/${id}/status`, { status }),
+    onSuccess: inv,
+  })
+
+  const expirePastMut = useMutation({
+    mutationFn: () => api.post('/inventory/lots/expire-past'),
+    onSuccess: inv,
+  })
+
+  async function changeStatus(lot, status) {
+    const labels = { damaged: 'hasarli', expired: 'SKT gecti', depleted: 'tukendi', active: 'aktif' }
+    const dangerous = status === 'damaged' || status === 'expired'
+    const ok = await confirmDialog({
+      title: `Lot ${labels[status]}`,
+      body: dangerous
+        ? `Lot "${lot.lot_no || `#${lot.id}`}" ${labels[status]} olarak isaretlenecek; ${lot.quantity} ${lot.unit || ''} stoktan dusulecek.`
+        : `Lot durumu "${labels[status]}" olarak guncellenecek.`,
+      danger: dangerous,
+      confirmLabel: 'Onayla',
+    })
+    if (ok) statusMut.mutate({ id: lot.id, status })
+  }
 
   return (
     <div>
@@ -102,8 +133,21 @@ export default function LotsExpiryTab({ items }) {
             <button key={d} onClick={() => setDays(d)} className={`btn btn-xs ${days === d ? 'btn-primary' : 'btn-ghost'}`} style={{ borderRadius: '8px' }}>{d}G</button>
           ))}
         </div>
-        <button onClick={() => setCreating(true)} className="btn btn-primary btn-sm" disabled={trackedItems.length === 0} style={{ borderRadius: '10px' }}>+ MANUEL LOT</button>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button onClick={() => expirePastMut.mutate()} className="btn btn-ghost btn-sm" disabled={expirePastMut.isPending}
+            title="SKT gecmis aktif lotlari otomatik expired isaretle"
+            style={{ borderRadius: 10, color: 'var(--amber)' }}>
+            {expirePastMut.isPending ? '...' : 'GECMISI EXPIRE ET'}
+          </button>
+          <button onClick={() => setCreating(true)} className="btn btn-primary btn-sm" disabled={trackedItems.length === 0} style={{ borderRadius: 10 }}>+ MANUEL LOT</button>
+        </div>
       </div>
+
+      {expirePastMut.isSuccess && (
+        <div style={{ padding: '8px 12px', background: 'rgba(39,201,106,.06)', border: '1px solid rgba(39,201,106,.2)', borderRadius: 10, marginBottom: 12, fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--green)' }}>
+          {expirePastMut.data?.data?.updated || 0} lot expired olarak isaretlendi
+        </div>
+      )}
 
       {/* Lot izlemeli urunler ozet */}
       <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '14px', overflow: 'hidden', marginBottom: '14px' }}>
@@ -153,16 +197,34 @@ export default function LotsExpiryTab({ items }) {
             </div>
           ) : (
             <table className="data-table responsive-stack" style={{ margin: 0 }}>
-              <thead><tr><th>LOT</th><th>MIKTAR</th><th>SKT</th><th>DURUM</th><th>TEDARIKCI</th><th>GIRIS</th></tr></thead>
+              <thead><tr><th>LOT</th><th>MIKTAR</th><th>SKT</th><th>DURUM</th><th>TEDARIKCI</th><th>GIRIS</th><th style={{ textAlign: 'right' }}>İŞLEM</th></tr></thead>
               <tbody>
                 {itemLots.map(l => (
-                  <tr key={l.id} style={{ opacity: l.status === 'depleted' ? 0.5 : 1 }}>
+                  <tr key={l.id} style={{ opacity: l.status === 'depleted' || l.status === 'expired' || l.status === 'damaged' ? 0.55 : 1 }}>
                     <td data-label="Lot" style={{ fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--accent)' }}>{l.lot_no || `#${l.id}`}</td>
                     <td data-label="Miktar" style={{ fontFamily: 'var(--mono)', fontWeight: 700 }}>{l.quantity}</td>
                     <td data-label="SKT" style={{ fontFamily: 'var(--mono)', fontSize: '10px' }}>{l.expiry_date ? fmtDate(l.expiry_date) : '-'}</td>
-                    <td data-label="Durum"><span className={`badge badge-${l.status === 'active' ? 'green' : l.status === 'depleted' ? 'red' : 'amber'}`} style={{ fontSize: '8px' }}>{l.status}</span></td>
+                    <td data-label="Durum">
+                      <span className={`badge badge-${l.status === 'active' ? 'green' : l.status === 'damaged' || l.status === 'expired' ? 'red' : 'amber'}`} style={{ fontSize: 8 }}>
+                        {l.status}
+                      </span>
+                    </td>
                     <td data-label="Tedarikci" style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)' }}>{l.supplier_name || '-'}</td>
                     <td data-label="Giris" style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text4)' }}>{fmt(l.received_at)}</td>
+                    <td data-label="Islem" style={{ textAlign: 'right' }}>
+                      {l.status === 'active' ? (
+                        <div style={{ display: 'inline-flex', gap: 4 }}>
+                          <button onClick={() => changeStatus({ ...l, unit: selectedItemForLots.unit }, 'damaged')}
+                            title="Hasarli" className="btn btn-ghost btn-xs"
+                            style={{ borderRadius: 6, color: 'var(--red)', fontSize: 10 }}>⚠</button>
+                          <button onClick={() => changeStatus({ ...l, unit: selectedItemForLots.unit }, 'expired')}
+                            title="SKT gecti" className="btn btn-ghost btn-xs"
+                            style={{ borderRadius: 6, color: 'var(--amber)', fontSize: 10 }}>⏳</button>
+                        </div>
+                      ) : (
+                        <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text4)' }}>—</span>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -182,10 +244,11 @@ export default function LotsExpiryTab({ items }) {
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '14px', overflow: 'hidden' }}>
           <div style={{ height: '2px', background: 'linear-gradient(90deg,var(--red),var(--amber))' }} />
           <table className="data-table responsive-stack" style={{ margin: 0 }}>
-            <thead><tr><th>URUN</th><th>LOT NO</th><th>MIKTAR</th><th>SON KULLANMA</th><th>KALAN</th><th>TEDARIKCI</th><th>GIRIS</th></tr></thead>
+            <thead><tr><th>URUN</th><th>LOT NO</th><th>MIKTAR</th><th>SON KULLANMA</th><th>KALAN</th><th>TEDARIKCI</th><th>GIRIS</th><th style={{ textAlign: 'right' }}>İŞLEM</th></tr></thead>
             <tbody>
               {expiring.map(l => {
                 const critical = l.days_left <= 7
+                const expired = l.days_left <= 0
                 return (
                   <tr key={l.id}>
                     <td data-label="Urun" style={{ fontWeight: 500, fontSize: '12px' }}>{l.item_name}</td>
@@ -197,10 +260,20 @@ export default function LotsExpiryTab({ items }) {
                         padding: '2px 8px', borderRadius: '6px', fontSize: '8px', fontWeight: 700, fontFamily: 'var(--mono)',
                         background: critical ? 'rgba(231,76,60,.12)' : 'rgba(240,165,0,.12)',
                         color: critical ? 'var(--red)' : 'var(--amber)',
-                      }}>{l.days_left <= 0 ? 'GECTI' : `${l.days_left}G`}</span>
+                      }}>{expired ? 'GECTI' : `${l.days_left}G`}</span>
                     </td>
                     <td data-label="Tedarikci" style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)' }}>{l.supplier_name || '-'}</td>
                     <td data-label="Giris" style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text4)' }}>{fmt(l.received_at)}</td>
+                    <td data-label="Islem" style={{ textAlign: 'right' }}>
+                      <div style={{ display: 'inline-flex', gap: 4 }}>
+                        <button onClick={() => changeStatus(l, 'damaged')} className="btn btn-ghost btn-xs"
+                          title="Hasarli" style={{ borderRadius: 6, color: 'var(--red)', fontSize: 10 }}>⚠</button>
+                        {expired && (
+                          <button onClick={() => changeStatus(l, 'expired')} className="btn btn-ghost btn-xs"
+                            title="SKT gecti" style={{ borderRadius: 6, color: 'var(--amber)', fontSize: 10 }}>⏳</button>
+                        )}
+                      </div>
+                    </td>
                   </tr>
                 )
               })}
