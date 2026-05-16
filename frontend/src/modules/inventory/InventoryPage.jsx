@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import HelpHint from '../../shared/components/HelpHint.jsx'
 import { TABS } from './constants.js'
-import { KPIRow, CategoryChart, LowStockAlert } from './components/Dashboard.jsx'
+import { KPIRow, AlertsBar } from './components/Dashboard.jsx'
 import AdjustModal from './components/AdjustModal.jsx'
 import CheckoutModal from './components/CheckoutModal.jsx'
 import EditModal from './components/EditModal.jsx'
@@ -94,41 +94,9 @@ export default function InventoryPage() {
         </div>
       </div>
 
-      {/* KPI + Chart */}
+      {/* KPI + Uyarilar */}
       <KPIRow stats={stats} />
-      <CategoryChart stats={stats} />
-      <LowStockAlert items={items} />
-
-      {forecast.length > 0 && (
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: '10px',
-          padding: '10px 14px', borderRadius: '10px', marginBottom: '16px',
-          background: forecast.some(i => i.severity === 'critical')
-            ? 'rgba(231,76,60,.08)' : 'rgba(240,165,0,.08)',
-          border: `1px solid ${forecast.some(i => i.severity === 'critical')
-            ? 'rgba(231,76,60,.25)' : 'rgba(240,165,0,.25)'}`,
-        }}>
-          <span style={{ fontSize: '16px' }}>⌛</span>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text4)', letterSpacing: '2px', marginBottom: '3px' }}>
-              TÜKENME YAKLAŞAN
-            </div>
-            <div style={{ fontFamily: 'var(--mono)', fontSize: '11px', color: forecast.some(i => i.severity === 'critical') ? 'var(--red)' : 'var(--amber)' }}>
-              {forecast.filter(i => i.severity === 'critical').length > 0 && (
-                <span style={{ marginRight: '10px' }}>
-                  🔴 {forecast.filter(i => i.severity === 'critical').length} ürün ≤3 gün:{' '}
-                  {forecast.filter(i => i.severity === 'critical').map(i => `${i.item_name} (~${i.days_left}g)`).join(', ')}
-                </span>
-              )}
-              {forecast.filter(i => i.severity === 'warning').length > 0 && (
-                <span>
-                  🟡 {forecast.filter(i => i.severity === 'warning').length} ürün ≤7 gün
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      <AlertsBar items={items} forecast={forecast} />
 
       {/* Tab Navigation */}
       <div style={{

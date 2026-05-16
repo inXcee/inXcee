@@ -1,101 +1,94 @@
-import { memo } from 'react'
-import { CATEGORIES, money, cat } from '../constants.js'
+import { memo, useState } from 'react'
+import { money } from '../constants.js'
 
 export const KPIRow = memo(function KPIRow({ stats }) {
   if (!stats) return null
   const kpis = [
-    { label: 'TOPLAM URUN', val: stats.total_items, color: 'var(--accent)', icon: '▦', gradient: 'linear-gradient(135deg, rgba(240,165,0,.06), rgba(240,165,0,.02))' },
-    { label: 'DUSUK STOK', val: stats.low_stock, color: stats.low_stock > 0 ? 'var(--red)' : 'var(--green)', icon: '▼', gradient: stats.low_stock > 0 ? 'linear-gradient(135deg, rgba(231,76,60,.06), rgba(231,76,60,.02))' : 'linear-gradient(135deg, rgba(39,201,106,.06), rgba(39,201,106,.02))' },
-    { label: 'TUKENMIS', val: stats.out_of_stock, color: stats.out_of_stock > 0 ? 'var(--red)' : 'var(--green)', icon: '✕', gradient: stats.out_of_stock > 0 ? 'linear-gradient(135deg, rgba(231,76,60,.06), rgba(231,76,60,.02))' : 'linear-gradient(135deg, rgba(39,201,106,.06), rgba(39,201,106,.02))' },
-    { label: 'TOPLAM DEGER', val: money(stats.total_value || 0), color: 'var(--accent)', icon: '₺', small: true, gradient: 'linear-gradient(135deg, rgba(240,165,0,.06), rgba(240,165,0,.02))' },
-    { label: 'AKTIF TESLIM', val: stats.active_checkouts || 0, color: 'var(--blue)', icon: '→', gradient: 'linear-gradient(135deg, rgba(52,152,219,.06), rgba(52,152,219,.02))' },
-    { label: 'SON 24S', val: stats.movements_24h, color: 'var(--teal)', icon: '↺', gradient: 'linear-gradient(135deg, rgba(26,188,156,.06), rgba(26,188,156,.02))' },
+    {
+      label: 'TOPLAM ÜRÜN', val: stats.total_items, sub: `${stats.active_checkouts || 0} aktif teslim`,
+      color: 'var(--accent)', tint: 'rgba(240,165,0,.06)',
+    },
+    {
+      label: 'DÜŞÜK / TÜKENMİŞ', val: (stats.low_stock || 0) + (stats.out_of_stock || 0),
+      sub: `${stats.out_of_stock || 0} tükendi · ${stats.low_stock || 0} azaldı`,
+      color: ((stats.low_stock || 0) + (stats.out_of_stock || 0)) > 0 ? 'var(--red)' : 'var(--green)',
+      tint: ((stats.low_stock || 0) + (stats.out_of_stock || 0)) > 0 ? 'rgba(231,76,60,.06)' : 'rgba(39,201,106,.06)',
+    },
+    {
+      label: 'STOK DEĞERİ', val: money(stats.total_value || 0), sub: `son 24s · ${stats.movements_24h || 0} hareket`,
+      color: 'var(--accent)', tint: 'rgba(240,165,0,.06)', small: true,
+    },
   ]
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '10px', marginBottom: '20px' }} className="fade-up">
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10, marginBottom: 16 }} className="fade-up">
       {kpis.map(k => (
         <div key={k.label} style={{
-          background: k.gradient, border: '1px solid var(--border)', borderRadius: '14px', padding: '16px 18px',
-          position: 'relative', overflow: 'hidden', transition: 'transform .15s, box-shadow .15s',
-        }}
-          onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 8px 20px rgba(0,0,0,.08)' }}
-          onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = 'none' }}>
-          <div style={{ position: 'absolute', top: '12px', right: '14px', fontSize: '20px', opacity: 0.12, color: k.color }}>{k.icon}</div>
-          <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text4)', letterSpacing: '2px', marginBottom: '8px' }}>{k.label}</div>
-          <div style={{ fontFamily: k.small ? 'var(--mono)' : 'var(--display)', fontSize: k.small ? '16px' : '26px', color: k.color, letterSpacing: '1px', lineHeight: 1 }}>{k.val}</div>
+          background: k.tint, border: '1px solid var(--border)', borderRadius: 14, padding: '14px 18px',
+        }}>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: 2, marginBottom: 6 }}>{k.label}</div>
+          <div style={{
+            fontFamily: k.small ? 'var(--mono)' : 'var(--display)',
+            fontSize: k.small ? 20 : 30, color: k.color, letterSpacing: 1, lineHeight: 1,
+          }}>{k.val}</div>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text4)', marginTop: 6 }}>{k.sub}</div>
         </div>
       ))}
     </div>
   )
 })
 
-export const CategoryChart = memo(function CategoryChart({ stats }) {
-  if (!stats?.by_category?.length) return null
-  const mx = Math.max(...stats.by_category.map(c => c.value || 0), 1)
-  return (
-    <div style={{
-      background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '14px', padding: '18px 20px', marginBottom: '20px',
-    }} className="fade-up-1">
-      <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text4)', letterSpacing: '2px', marginBottom: '14px' }}>KATEGORI BAZLI DEGER</div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-        {stats.by_category.map(c => {
-          const ct = cat(c.category)
-          const pct = mx > 0 ? ((c.value || 0) / mx) * 100 : 0
-          return (
-            <div key={c.category} style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <div style={{
-                width: '32px', height: '32px', borderRadius: '10px', flexShrink: 0,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                background: ct?.bg, fontSize: '14px',
-              }}>{ct?.icon}</div>
-              <div style={{ width: '55px', fontFamily: 'var(--mono)', fontSize: '10px', color: ct?.color, letterSpacing: '0.5px', flexShrink: 0 }}>{ct?.label}</div>
-              <div style={{ flex: 1, height: '24px', background: 'var(--surface2)', borderRadius: '8px', overflow: 'hidden', position: 'relative' }}>
-                <div style={{
-                  height: '100%', borderRadius: '8px', transition: 'width 0.8s cubic-bezier(.22,1,.36,1)', width: `${pct}%`,
-                  background: `linear-gradient(90deg, ${ct?.color}, color-mix(in srgb, ${ct?.color} 60%, transparent))`,
-                  opacity: 0.5,
-                }} />
-                <span style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text2)', fontWeight: 600 }}>
-                  {money(c.value || 0)}
-                </span>
-              </div>
-              <div style={{
-                width: '28px', height: '28px', borderRadius: '8px', background: 'var(--surface2)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--text2)', fontWeight: 700, flexShrink: 0,
-              }}>{c.count}</div>
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  )
-})
-
-export const LowStockAlert = memo(function LowStockAlert({ items }) {
+export const AlertsBar = memo(function AlertsBar({ items, forecast = [] }) {
+  const [open, setOpen] = useState(false)
   const low = items.filter(i => i.reorder_threshold > 0 && i.quantity <= i.reorder_threshold)
-  if (!low.length) return null
+  const out = items.filter(i => i.quantity <= 0)
+  const critical = forecast.filter(f => f.severity === 'critical')
+  const warning = forecast.filter(f => f.severity === 'warning')
+  const total = low.length + critical.length
+
+  if (total === 0) return null
+  const severe = out.length > 0 || critical.length > 0
+  const color = severe ? 'var(--red)' : 'var(--amber)'
+  const tint = severe ? 'rgba(231,76,60,.05)' : 'rgba(240,165,0,.05)'
+
   return (
     <div style={{
-      padding: '14px 18px', marginBottom: '16px', borderRadius: '14px',
-      background: 'linear-gradient(135deg, rgba(231,76,60,.04), rgba(231,76,60,.01))',
-      border: '1px solid rgba(231,76,60,.15)',
+      padding: '10px 14px', marginBottom: 16, borderRadius: 12,
+      background: tint, border: `1px solid ${color}33`,
     }} className="fade-up">
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
-        <div style={{ width: '24px', height: '24px', borderRadius: '8px', background: 'rgba(231,76,60,.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', color: 'var(--red)' }}>!</div>
-        <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--red)', letterSpacing: '2px', fontWeight: 700 }}>DUSUK STOK — {low.length} URUN</div>
+      <div onClick={() => setOpen(o => !o)} style={{
+        display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer',
+      }}>
+        <span style={{ fontSize: 14, color }}>⚠</span>
+        <div style={{ flex: 1, fontFamily: 'var(--mono)', fontSize: 11, color, letterSpacing: 1 }}>
+          {out.length > 0 && <span style={{ fontWeight: 700 }}>{out.length} tükendi</span>}
+          {out.length > 0 && low.length > out.length && <span> · </span>}
+          {low.length > out.length && <span>{low.length - out.length} düşük stok</span>}
+          {critical.length > 0 && <span> · {critical.length} ≤3 gün</span>}
+          {warning.length > 0 && <span style={{ color: 'var(--text3)' }}> · {warning.length} ≤7 gün</span>}
+        </div>
+        <span style={{ fontSize: 10, color: 'var(--text3)', fontFamily: 'var(--mono)' }}>{open ? '▲' : '▼'}</span>
       </div>
-      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-        {low.map(i => (
-          <span key={i.id} style={{
-            padding: '5px 10px', borderRadius: '8px', fontSize: '10px', fontWeight: 600,
-            background: 'rgba(231,76,60,.08)', color: 'var(--red)', fontFamily: 'var(--mono)',
-            border: '1px solid rgba(231,76,60,.1)',
-          }}>
-            {i.item_name}: {i.quantity} {i.unit}
-          </span>
-        ))}
-      </div>
+      {open && (
+        <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px dashed ${color}33`, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {low.map(i => (
+            <span key={`l-${i.id}`} style={{
+              padding: '4px 9px', borderRadius: 6, fontSize: 10, fontWeight: 600, fontFamily: 'var(--mono)',
+              background: i.quantity <= 0 ? 'rgba(231,76,60,.1)' : 'rgba(240,165,0,.08)',
+              color: i.quantity <= 0 ? 'var(--red)' : 'var(--amber)',
+            }}>
+              {i.item_name}: {i.quantity} {i.unit}
+            </span>
+          ))}
+          {critical.map(f => (
+            <span key={`f-${f.id}`} style={{
+              padding: '4px 9px', borderRadius: 6, fontSize: 10, fontWeight: 600, fontFamily: 'var(--mono)',
+              background: 'rgba(231,76,60,.08)', color: 'var(--red)',
+            }}>
+              ⌛ {f.item_name} ~{f.days_left}g
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   )
 })
