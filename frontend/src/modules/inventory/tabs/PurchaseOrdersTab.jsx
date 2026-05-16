@@ -12,11 +12,18 @@ const STATUS_LABELS = {
   cancelled: { label: 'IPTAL', color: 'var(--red)' },
 }
 
-function CreatePOModal({ items, suppliers, onClose, onCreated }) {
-  const [supplierId, setSupplierId] = useState('')
+function CreatePOModal({ items, suppliers, onClose, onCreated, initialSupplierId, initialItemId }) {
+  const [supplierId, setSupplierId] = useState(initialSupplierId ? String(initialSupplierId) : '')
   const [expectedDate, setExpectedDate] = useState('')
   const [notes, setNotes] = useState('')
-  const [lines, setLines] = useState([{ item_id: '', qty_ordered: '', unit_price: '' }])
+  const [lines, setLines] = useState(() => {
+    if (initialItemId) {
+      const it = items.find(i => i.id === initialItemId)
+      const suggestedQty = it ? Math.max((it.reorder_threshold || 0) * 2 - (it.quantity || 0), 1) : ''
+      return [{ item_id: String(initialItemId), qty_ordered: String(suggestedQty), unit_price: it?.unit_price ? String(it.unit_price) : '' }]
+    }
+    return [{ item_id: '', qty_ordered: '', unit_price: '' }]
+  })
   const addLine = () => setLines(p => [...p, { item_id: '', qty_ordered: '', unit_price: '' }])
   const updateLine = (idx, k, v) => setLines(p => p.map((l, i) => i === idx ? { ...l, [k]: v } : l))
   const removeLine = idx => setLines(p => p.filter((_, i) => i !== idx))
@@ -149,10 +156,10 @@ function ReceiveModal({ poId, onClose, onDone }) {
   )
 }
 
-export default function PurchaseOrdersTab({ items }) {
+export default function PurchaseOrdersTab({ items, prefill, onPrefillConsumed }) {
   const qc = useQueryClient()
   const [statusFilter, setStatusFilter] = useState('')
-  const [creating, setCreating] = useState(false)
+  const [creating, setCreating] = useState(!!prefill)
   const [receiving, setReceiving] = useState(null)
 
   const { data: pos = [] } = useQuery({
@@ -250,7 +257,12 @@ export default function PurchaseOrdersTab({ items }) {
         </div>
       )}
 
-      {creating && <CreatePOModal items={items} suppliers={suppliers} onClose={() => setCreating(false)} onCreated={inv} />}
+      {creating && <CreatePOModal
+        items={items} suppliers={suppliers}
+        initialSupplierId={prefill?.supplierId}
+        initialItemId={prefill?.itemId}
+        onClose={() => { setCreating(false); onPrefillConsumed?.() }}
+        onCreated={() => { inv(); onPrefillConsumed?.() }} />}
       {receiving && <ReceiveModal poId={receiving} onClose={() => setReceiving(null)} onDone={inv} />}
     </div>
   )

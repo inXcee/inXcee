@@ -35,6 +35,7 @@ export default function InventoryPage() {
   const [editItem, setEditItem] = useState(null)
   const [writeOffItem, setWriteOffItem] = useState(null)
   const [detailItem, setDetailItem] = useState(null)
+  const [poPrefill, setPoPrefill] = useState(null)
   const [showNew, setShowNew] = useState(false)
   const [showCount, setShowCount] = useState(false)
   const [showReceipt, setShowReceipt] = useState(false)
@@ -174,7 +175,7 @@ export default function InventoryPage() {
       {activeTab === 'suppliers' && <SuppliersTab />}
 
       {/* TAB: PURCHASE ORDERS */}
-      {activeTab === 'po' && <PurchaseOrdersTab items={items} />}
+      {activeTab === 'po' && <PurchaseOrdersTab items={items} prefill={poPrefill} onPrefillConsumed={() => setPoPrefill(null)} />}
 
       {/* TAB: REQUESTS */}
       {activeTab === 'requests' && <RequestsTab items={items} />}
@@ -206,7 +207,11 @@ export default function InventoryPage() {
           onCheckout={() => { setCheckoutItem(liveDetailItem); setDetailItem(null) }}
           onWriteOff={() => { setWriteOffItem(liveDetailItem); setDetailItem(null) }}
           onDelete={() => { deleteMut.mutate(liveDetailItem.id); setDetailItem(null) }}
-          onGoToPO={() => { setActiveTab('po'); setDetailItem(null) }}
+          onGoToPO={() => {
+            setPoPrefill({ itemId: liveDetailItem.id, supplierId: liveDetailItem.preferred_supplier_id })
+            setActiveTab('po')
+            setDetailItem(null)
+          }}
         />
       )}
     </div>
