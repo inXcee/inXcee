@@ -23,6 +23,7 @@ const SelfServicePage = lazy(() => import('./modules/self-service/SelfServicePag
 const RoomHistoryPage = lazy(() => import('./modules/room-history/RoomHistoryPage.jsx'))
 const WhatsAppPage = lazy(() => import('./modules/whatsapp/WhatsAppPage.jsx'))
 const ShiftsPage = lazy(() => import('./modules/shifts/ShiftsPage.jsx'))
+const TransportPage = lazy(() => import('./modules/transport/TransportPage.jsx'))
 const CheckoutPage = lazy(() => import('./modules/checkout/CheckoutPage.jsx'))
 const BulkActionsPage = lazy(() => import('./modules/bulk-actions/BulkActionsPage.jsx'))
 const CompaniesPage = lazy(() => import('./modules/companies/CompaniesPage.jsx'))
@@ -224,6 +225,7 @@ export default function App() {
             <Route path="room-history" element={<RoomHistoryPage />} />
             <Route path="whatsapp" element={<WhatsAppPage />} />
             <Route path="shifts" element={<ShiftsPage />} />
+            <Route path="transport" element={<TransportPage />} />
             <Route path="checkout" element={<CheckoutPage />} />
             <Route path="bulk-actions" element={<RoleRoute roles={['campus_manager','shift_supervisor']}><BulkActionsPage /></RoleRoute>} />
             {/* Eski direkt yollar Ayarlar altina yonlendirilir (klavye kisayolu / eski bookmark geri uyum) */}
