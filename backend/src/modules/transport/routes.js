@@ -104,6 +104,15 @@ transportRouter.post('/routes/:id/reorder-stops', ...mgr, (req, res) => {
 })
 
 // ── Staff pickup ──
+transportRouter.get('/staff', ...view, (req, res) => {
+  try {
+    res.json(q.listStaffWithTransport({
+      deptId: req.query.dept_id ? +req.query.dept_id : null,
+      hasPickup: req.query.has_pickup || null,
+    }))
+  } catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
 transportRouter.put('/staff/:id/pickup', ...mgr, (req, res) => {
   try {
     q.setStaffPickup(+req.params.id, req.body?.pickup_point_id ?? null)

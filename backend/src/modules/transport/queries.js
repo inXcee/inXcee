@@ -43,6 +43,33 @@ export function deletePickupPoint(id) {
   getDB().prepare('UPDATE pickup_points SET is_active = 0 WHERE id=?').run(id)
 }
 
+// Tüm personel + durak/rota bilgisi (atama yönetim sayfası için)
+export function listStaffWithTransport({ deptId, hasPickup } = {}) {
+  const db = getDB()
+  let q = `
+    SELECT s.id, s.full_name, s.phone, s.role_label, s.is_active,
+      s.pickup_point_id,
+      pp.name as pickup_name, pp.district as pickup_district,
+      d.id as department_id, d.name as dept_name, d.color_class as dept_color,
+      (
+        SELECT GROUP_CONCAT(r.name || '|' || COALESCE(r.color, ''))
+        FROM route_stops rs
+        JOIN routes r ON r.id = rs.route_id
+        WHERE rs.pickup_point_id = s.pickup_point_id AND r.is_active = 1
+      ) as route_summary
+    FROM staff s
+    LEFT JOIN pickup_points pp ON pp.id = s.pickup_point_id
+    LEFT JOIN departments d ON d.id = s.department_id
+    WHERE s.is_active = 1
+  `
+  const params = []
+  if (deptId) { q += ' AND s.department_id = ?'; params.push(deptId) }
+  if (hasPickup === 'yes') q += ' AND s.pickup_point_id IS NOT NULL'
+  else if (hasPickup === 'no') q += ' AND s.pickup_point_id IS NULL'
+  q += ' ORDER BY pp.district NULLS LAST, pp.name NULLS LAST, s.full_name'
+  return db.prepare(q).all(...params)
+}
+
 export function getStaffAtPoint(pickupPointId) {
   return getDB().prepare(`
     SELECT s.id, s.full_name, s.phone, s.role_label,
@@ -116,7 +143,7 @@ export function deleteRoute(id) {
 // ── Route Stops ──
 export function listRouteStops(routeId) {
   return getDB().prepare(`
-    SELECT rs.*, pp.name as point_name, pp.district, pp.neighborhood
+    SELECT rs.*, pp.name as point_name, pp.district, pp.neighborhood, pp.lat, pp.lng
     FROM route_stops rs
     JOIN pickup_points pp ON pp.id = rs.pickup_point_id
     WHERE rs.route_id = ?
@@ -332,6 +359,18 @@ export function getDailyOverview(workDate) {
     alerts.push({ type: 'uncovered', message: `${uncovered.length} personel servise atanmamış` })
   }
 
+  // Bugün vardiyadaki personellerin durak yoğunluğu (kimin nereden geldiği özeti)
+  const pickupDistribution = db.prepare(`
+    SELECT pp.id, pp.name, pp.district, pp.neighborhood,
+      COUNT(s.id) as staff_count
+    FROM staff s
+    JOIN shift_schedule ss ON ss.staff_id = s.id AND ss.work_date = ?
+    JOIN pickup_points pp ON pp.id = s.pickup_point_id
+    WHERE s.is_active = 1 AND ss.status IN ('scheduled','worked','overtime')
+    GROUP BY pp.id
+    ORDER BY staff_count DESC, pp.name
+  `).all(workDate)
+
   return {
     work_date: workDate,
     on_shift_count: onShiftCount,
@@ -340,6 +379,7 @@ export function getDailyOverview(workDate) {
     routes,
     uncovered,
     alerts,
+    pickup_distribution: pickupDistribution,
   }
 }
 

@@ -1,13 +1,19 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, lazy, Suspense } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
+import { REGIONS } from './zonguldakBartin.js'
+
+const MapPicker = lazy(() => import('./MapPicker.jsx'))
+
+const DISTRICTS = [...new Set(REGIONS.map(r => r.name))]
 
 const TABS = [
   { key: 'daily', label: 'BUGÜN', icon: '🚌' },
   { key: 'routes', label: 'ROTALAR', icon: '🛣' },
   { key: 'points', label: 'DURAKLAR', icon: '📍' },
+  { key: 'people', label: 'PERSONEL', icon: '👥' },
 ]
 
 const todayStr = () => new Date().toISOString().slice(0, 10)
@@ -54,6 +60,7 @@ export default function TransportPage() {
       {tab === 'daily' && <DailyTab date={date} />}
       {tab === 'routes' && <RoutesTab />}
       {tab === 'points' && <PointsTab />}
+      {tab === 'people' && <PeopleTab />}
     </div>
   )
 }
@@ -115,6 +122,29 @@ function DailyTab({ date }) {
               {a.type === 'over_capacity' ? '🔴' : a.type === 'uncovered' ? '⚠' : '🟡'} {a.message}
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Durak yoğunluğu — kim hangi duraktan geliyor özeti */}
+      {data.pickup_distribution && data.pickup_distribution.length > 0 && (
+        <div style={{ marginBottom: 16, padding: '12px 14px', borderRadius: 12, background: 'var(--surface)', border: '1px solid var(--border)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: 2 }}>📍 DURAK YOĞUNLUĞU (bugün vardiyada)</div>
+            <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)' }}>{data.pickup_distribution.length} durak aktif</span>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 6 }}>
+            {data.pickup_distribution.map(p => (
+              <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: 'var(--surface2)', borderRadius: 8 }}>
+                <span style={{ fontFamily: 'var(--mono)', fontSize: 14, fontWeight: 700, color: 'var(--accent)', minWidth: 24, textAlign: 'center' }}>
+                  {p.staff_count}
+                </span>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
+                  {p.district && <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>{p.district}</div>}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
@@ -444,6 +474,8 @@ function RouteFormModal({ initial, shiftDefs, onClose, onSaved }) {
   )
 }
 
+const RouteMap = lazy(() => import('./MapPicker.jsx').then(m => ({ default: m.RouteMap })))
+
 function StopsModal({ route, onClose }) {
   const qc = useQueryClient()
   const { data: stops = [] } = useQuery({
@@ -506,7 +538,17 @@ function StopsModal({ route, onClose }) {
           <button onClick={() => addMut.mutate()} disabled={!pickupId || addMut.isPending} className="btn btn-primary btn-sm" style={{ borderRadius: 8 }}>EKLE</button>
         </div>
       ) : (
-        <button onClick={() => setAdding(true)} className="btn btn-ghost btn-sm" style={{ borderRadius: 10, width: '100%' }}>+ DURAK EKLE</button>
+        <button onClick={() => setAdding(true)} className="btn btn-ghost btn-sm" style={{ borderRadius: 10, width: '100%', marginBottom: 12 }}>+ DURAK EKLE</button>
+      )}
+
+      {/* Harita önizleme */}
+      {stops.some(s => s.lat != null && s.lng != null) && (
+        <div>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: 1.5, marginBottom: 6 }}>🗺 HARITA ÖNİZLEME</div>
+          <Suspense fallback={<div style={{ height: 280, background: 'var(--surface2)', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: 11 }}>Yükleniyor…</div>}>
+            <RouteMap stops={stops} routeColor={route.color} />
+          </Suspense>
+        </div>
       )}
     </ModalShell>
   )
@@ -553,6 +595,12 @@ function PointsTab() {
               <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', marginBottom: 8 }}>
                 👥 {p.staff_count} personel · 🛣 {p.route_count} rota
               </div>
+              {p.lat != null && p.lng != null && (
+                <a href={`https://www.google.com/maps?q=${p.lat},${p.lng}`} target="_blank" rel="noreferrer"
+                  style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--accent)', textDecoration: 'none', marginBottom: 4, display: 'inline-block' }}>
+                  🗺 Haritada Aç ({p.lat.toFixed(4)}, {p.lng.toFixed(4)})
+                </a>
+              )}
               {p.notes && <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 8 }}>{p.notes}</div>}
               <div style={{ display: 'flex', gap: 4 }}>
                 <button onClick={() => setEditing(p)} className="btn btn-ghost btn-xs" style={{ borderRadius: 8, flex: 1 }}>DÜZENLE</button>
@@ -573,11 +621,14 @@ function PointFormModal({ initial, onClose, onSaved }) {
   const [district, setDistrict] = useState(initial?.district || '')
   const [neighborhood, setNeighborhood] = useState(initial?.neighborhood || '')
   const [notes, setNotes] = useState(initial?.notes || '')
+  const [lat, setLat] = useState(initial?.lat ?? null)
+  const [lng, setLng] = useState(initial?.lng ?? null)
   const [isActive, setIsActive] = useState(initial?.is_active ?? 1)
+  const [showMap, setShowMap] = useState(!!(initial?.lat && initial?.lng))
 
   const mut = useMutation({
     mutationFn: () => {
-      const body = { name, district, neighborhood, notes, is_active: isActive }
+      const body = { name, district, neighborhood, notes, lat, lng, is_active: isActive }
       return initial?.id ? api.put(`/transport/pickup-points/${initial.id}`, body) : api.post('/transport/pickup-points', body)
     },
     onSuccess: () => { onSaved(); onClose(); toast('Kaydedildi') },
@@ -585,7 +636,7 @@ function PointFormModal({ initial, onClose, onSaved }) {
   })
 
   return (
-    <ModalShell onClose={onClose} title={initial?.id ? 'DURAK DÜZENLE' : 'YENİ DURAK'}>
+    <ModalShell onClose={onClose} title={initial?.id ? 'DURAK DÜZENLE' : 'YENİ DURAK'} wide>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <div>
           <Label>Durak Adı *</Label>
@@ -594,7 +645,10 @@ function PointFormModal({ initial, onClose, onSaved }) {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
           <div>
             <Label>İlçe / Bölge</Label>
-            <input className="form-input" value={district} onChange={e => setDistrict(e.target.value)} placeholder="Merkez, Sahil…" style={{ borderRadius: 10 }} />
+            <input className="form-input" list="district-list" value={district} onChange={e => setDistrict(e.target.value)} placeholder="Zonguldak — Merkez…" style={{ borderRadius: 10 }} />
+            <datalist id="district-list">
+              {DISTRICTS.map(d => <option key={d} value={d} />)}
+            </datalist>
           </div>
           <div>
             <Label>Mahalle</Label>
@@ -605,6 +659,24 @@ function PointFormModal({ initial, onClose, onSaved }) {
           <Label>Notlar</Label>
           <input className="form-input" value={notes} onChange={e => setNotes(e.target.value)} placeholder="İşaret, yön tarifi, vb." style={{ borderRadius: 10 }} />
         </div>
+
+        {/* Harita */}
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+            <Label>📍 HARITADAN KONUM</Label>
+            <button type="button" onClick={() => setShowMap(s => !s)}
+              style={{ background: 'transparent', border: 'none', color: 'var(--accent)', fontSize: 10, fontFamily: 'var(--mono)', cursor: 'pointer' }}>
+              {showMap ? 'GIZLE ▲' : (lat ? `📍 ${lat.toFixed(4)}, ${lng.toFixed(4)} — DÜZENLE` : 'HARITAYI AÇ')}
+            </button>
+          </div>
+          {showMap && (
+            <Suspense fallback={<div style={{ height: 320, background: 'var(--surface2)', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: 11 }}>Harita yükleniyor…</div>}>
+              <MapPicker initialLat={lat} initialLng={lng}
+                onChange={(la, ln) => { setLat(la); setLng(ln) }} />
+            </Suspense>
+          )}
+        </div>
+
         {initial?.id && (
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text2)', cursor: 'pointer' }}>
             <input type="checkbox" checked={!!isActive} onChange={e => setIsActive(e.target.checked ? 1 : 0)} /> Aktif
@@ -613,6 +685,151 @@ function PointFormModal({ initial, onClose, onSaved }) {
       </div>
       <ModalActions onClose={onClose} onSave={() => mut.mutate()} disabled={!name || mut.isPending} loading={mut.isPending} />
     </ModalShell>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PERSONEL — durak atama yönetimi
+// ─────────────────────────────────────────────────────────────────────────────
+function PeopleTab() {
+  const qc = useQueryClient()
+  const [filter, setFilter] = useState('all') // all | yes | no
+  const [search, setSearch] = useState('')
+  const [editingId, setEditingId] = useState(null)
+  const [editValue, setEditValue] = useState('')
+
+  const hasPickupParam = filter === 'all' ? '' : `&has_pickup=${filter}`
+  const { data: staff = [] } = useQuery({
+    queryKey: ['transport-staff', filter],
+    queryFn: () => api.get(`/transport/staff?_=1${hasPickupParam}`).then(r => r.data),
+  })
+  const { data: points = [] } = useQuery({
+    queryKey: ['pickup-points-active'],
+    queryFn: () => api.get('/transport/pickup-points?active=1').then(r => r.data),
+  })
+
+  const filtered = useMemo(() => {
+    if (!search) return staff
+    const q = search.toLowerCase()
+    return staff.filter(s =>
+      s.full_name.toLowerCase().includes(q) ||
+      (s.pickup_name || '').toLowerCase().includes(q) ||
+      (s.role_label || '').toLowerCase().includes(q) ||
+      (s.dept_name || '').toLowerCase().includes(q)
+    )
+  }, [staff, search])
+
+  // Durak bazında gruplandır
+  const byPickup = useMemo(() => {
+    const groups = new Map()
+    filtered.forEach(s => {
+      const key = s.pickup_point_id ?? 0
+      const label = s.pickup_point_id ? `${s.pickup_district ? `[${s.pickup_district}] ` : ''}${s.pickup_name}` : '(Durak atanmamış)'
+      if (!groups.has(key)) groups.set(key, { key, label, items: [], district: s.pickup_district })
+      groups.get(key).items.push(s)
+    })
+    return Array.from(groups.values())
+  }, [filtered])
+
+  const pickMut = useMutation({
+    mutationFn: ({ id, pickup_point_id }) => api.put(`/transport/staff/${id}/pickup`, { pickup_point_id }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['transport-staff'] })
+      qc.invalidateQueries({ queryKey: ['transport-points'] })
+      qc.invalidateQueries({ queryKey: ['transport-daily'] })
+      setEditingId(null); toast('Durak güncellendi')
+    },
+    onError: toastErr,
+  })
+
+  const totals = useMemo(() => ({
+    total: staff.length,
+    assigned: staff.filter(s => s.pickup_point_id).length,
+    missing: staff.filter(s => !s.pickup_point_id).length,
+  }), [staff])
+
+  return (
+    <div>
+      {/* Filtre + arama */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
+        <input className="form-input" placeholder="Ara: ad, durak, rol…" value={search}
+          onChange={e => setSearch(e.target.value)}
+          style={{ flex: '1 1 240px', fontSize: 12, borderRadius: 10 }} />
+        <div style={{ display: 'flex', gap: 3 }}>
+          {[['all', `TÜMÜ ${totals.total}`], ['yes', `DURAKLI ${totals.assigned}`], ['no', `DURAKSIZ ${totals.missing}`]].map(([k, l]) => (
+            <button key={k} onClick={() => setFilter(k)} className={`btn btn-xs ${filter === k ? 'btn-primary' : 'btn-ghost'}`} style={{ borderRadius: 8 }}>
+              {l}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Durak gruplu liste */}
+      {byPickup.length === 0 ? (
+        <EmptyState icon="👥" title="KAYIT YOK" desc="Personel listesi boş veya filtre eşleşmiyor" />
+      ) : (
+        byPickup.map(grp => (
+          <div key={grp.key} style={{ marginBottom: 12, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
+            <div style={{
+              padding: '8px 14px', borderBottom: '1px solid var(--border)',
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              background: grp.key === 0 ? 'rgba(231,76,60,.05)' : 'var(--surface2)',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 14 }}>{grp.key === 0 ? '⚠' : '📍'}</span>
+                <strong style={{ fontSize: 13 }}>{grp.label}</strong>
+              </div>
+              <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)' }}>{grp.items.length} kişi</span>
+            </div>
+            <div>
+              {grp.items.map(s => (
+                <div key={s.id} style={{
+                  display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 10, alignItems: 'center',
+                  padding: '8px 14px', borderBottom: '1px solid var(--border)', fontSize: 12,
+                }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontWeight: 600 }}>{s.full_name}</div>
+                    <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', marginTop: 2 }}>
+                      {s.dept_name || '—'}
+                      {s.role_label ? ` · ${s.role_label}` : ''}
+                      {s.phone ? ` · ${s.phone}` : ''}
+                    </div>
+                  </div>
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)' }}>
+                    {s.route_summary
+                      ? s.route_summary.split(',').map((seg, i) => {
+                        const [name, color] = seg.split('|')
+                        return (
+                          <span key={i} style={{
+                            display: 'inline-block', padding: '1px 6px', borderRadius: 4, marginRight: 3,
+                            background: `${color || '#3b82f6'}22`, color: color || '#3b82f6', fontWeight: 600,
+                          }}>{name}</span>
+                        )
+                      })
+                      : <span style={{ color: 'var(--text4)' }}>—</span>}
+                  </div>
+                  {editingId === s.id ? (
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      <select className="form-select" value={editValue} onChange={e => setEditValue(e.target.value)}
+                        style={{ fontSize: 11, padding: '4px 8px', borderRadius: 6, width: 'auto', maxWidth: 180 }}>
+                        <option value="">(boş)</option>
+                        {points.map(p => <option key={p.id} value={p.id}>{p.district ? `[${p.district}] ` : ''}{p.name}</option>)}
+                      </select>
+                      <button onClick={() => pickMut.mutate({ id: s.id, pickup_point_id: editValue ? +editValue : null })}
+                        disabled={pickMut.isPending} className="btn btn-primary btn-xs" style={{ borderRadius: 6 }}>✓</button>
+                      <button onClick={() => setEditingId(null)} className="btn btn-ghost btn-xs" style={{ borderRadius: 6 }}>✕</button>
+                    </div>
+                  ) : (
+                    <button onClick={() => { setEditingId(s.id); setEditValue(s.pickup_point_id || '') }}
+                      className="btn btn-ghost btn-xs" style={{ borderRadius: 8 }}>DEĞIŞTIR</button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        ))
+      )}
+    </div>
   )
 }
 
