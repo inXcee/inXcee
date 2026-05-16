@@ -3,6 +3,7 @@ import { CATEGORIES } from '../constants.js'
 import SimpleItemRow from '../components/SimpleItemRow.jsx'
 import ActiveCheckoutsPanel from '../components/ActiveCheckoutsPanel.jsx'
 import RecentMovements from '../components/RecentMovements.jsx'
+import MoreMenu from '../components/MoreMenu.jsx'
 
 const QrScannerModal = lazy(() => import('../../../shared/components/QrScannerModal.jsx'))
 
@@ -29,41 +30,34 @@ export default function ItemsTab({
     <>
       {/* Toolbar */}
       <div style={{
-        display: 'flex', gap: '8px', marginBottom: '16px', flexWrap: 'wrap', alignItems: 'center',
-        background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '14px', padding: '12px 16px',
+        display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center',
+        background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, padding: '10px 14px',
       }}>
         <input className="form-input" value={searchInput}
           onChange={e => { const v = e.target.value; setSearchInput(v); clearTimeout(searchTimer.current); searchTimer.current = setTimeout(() => setSearchQ(v), 150) }}
-          placeholder="Urun, SKU veya konum ara..." style={{ flex: '1 1 180px', fontSize: '12px', borderRadius: '10px' }} />
-        <button onClick={() => setShowQr(true)} className="btn btn-ghost btn-xs"
-          aria-label="Barkod ile ara"
-          title="Barkod tara"
-          style={{ borderRadius: '8px', fontSize: '14px', padding: '5px 10px' }}>
-          📷
-        </button>
-        <div style={{ display: 'flex', gap: '3px' }}>
-          <button onClick={() => setCatFilter('')} className={`btn btn-xs ${!catFilter ? 'btn-primary' : 'btn-ghost'}`} style={{ borderRadius: '8px' }}>TUMU</button>
+          placeholder="Ara: ürün, SKU, konum…" style={{ flex: '1 1 180px', fontSize: 12, borderRadius: 10 }} />
+        <div style={{ display: 'flex', gap: 3 }}>
+          <button onClick={() => setCatFilter('')} className={`btn btn-xs ${!catFilter ? 'btn-primary' : 'btn-ghost'}`} style={{ borderRadius: 8 }}>TÜMÜ</button>
           {CATEGORIES.map(c => (
             <button key={c.key} onClick={() => setCatFilter(catFilter === c.key ? '' : c.key)}
               className={`btn btn-xs ${catFilter === c.key ? 'btn-primary' : 'btn-ghost'}`}
-              style={{ borderRadius: '8px', ...(catFilter === c.key ? { background: c.color, borderColor: c.color } : {}) }}>
+              title={c.label}
+              style={{ borderRadius: 8, ...(catFilter === c.key ? { background: c.color, borderColor: c.color } : {}) }}>
               {c.icon}
             </button>
           ))}
         </div>
-        <select className="form-select" value={sortBy} onChange={e => setSortBy(e.target.value)}
-          style={{ width: 'auto', fontSize: '10px', padding: '5px 8px', borderRadius: '8px' }}>
-          <option value="name">A-Z</option>
-          <option value="qty-asc">Az stok</option>
-          <option value="qty-desc">Cok stok</option>
-          <option value="value">Deger</option>
-        </select>
-        <div style={{ display: 'flex', gap: '2px', background: 'var(--surface2)', borderRadius: '8px', padding: '2px' }}>
-          <button onClick={() => setView('grid')} style={{ padding: '5px 10px', borderRadius: '6px', border: 'none', cursor: 'pointer', fontSize: '11px',
-            background: view === 'grid' ? 'var(--surface3)' : 'transparent', color: view === 'grid' ? 'var(--text)' : 'var(--text3)', fontWeight: 600, transition: 'all .15s' }}>▦</button>
-          <button onClick={() => setView('table')} style={{ padding: '5px 10px', borderRadius: '6px', border: 'none', cursor: 'pointer', fontSize: '11px',
-            background: view === 'table' ? 'var(--surface3)' : 'transparent', color: view === 'table' ? 'var(--text)' : 'var(--text3)', fontWeight: 600, transition: 'all .15s' }}>≡</button>
-        </div>
+        <MoreMenu items={[
+          { icon: '📷', label: 'Barkod tara', onClick: () => setShowQr(true) },
+          { divider: true },
+          { icon: '↕', label: 'A → Z', onClick: () => setSortBy('name'), hint: sortBy === 'name' ? '●' : '' },
+          { icon: '↑', label: 'Az stok önce', onClick: () => setSortBy('qty-asc'), hint: sortBy === 'qty-asc' ? '●' : '' },
+          { icon: '↓', label: 'Çok stok önce', onClick: () => setSortBy('qty-desc'), hint: sortBy === 'qty-desc' ? '●' : '' },
+          { icon: '₺', label: 'Değere göre', onClick: () => setSortBy('value'), hint: sortBy === 'value' ? '●' : '' },
+          { divider: true },
+          { icon: '▦', label: 'Kart görünümü', onClick: () => setView('grid'), hint: view === 'grid' ? '●' : '' },
+          { icon: '≡', label: 'Tablo görünümü', onClick: () => setView('table'), hint: view === 'table' ? '●' : '' },
+        ]} />
       </div>
 
       {/* Grid (cards) */}

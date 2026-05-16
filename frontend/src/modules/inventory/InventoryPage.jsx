@@ -4,6 +4,7 @@ import api from '../../shared/api/client.js'
 import HelpHint from '../../shared/components/HelpHint.jsx'
 import { TABS } from './constants.js'
 import { KPIRow, AlertsBar } from './components/Dashboard.jsx'
+import MoreMenu from './components/MoreMenu.jsx'
 import AdjustModal from './components/AdjustModal.jsx'
 import CheckoutModal from './components/CheckoutModal.jsx'
 import EditModal from './components/EditModal.jsx'
@@ -86,11 +87,14 @@ export default function InventoryPage() {
           </h1>
           <p style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)', marginTop: '5px', letterSpacing: '1.5px' }}>STOK TAKİP · MAL GİRİŞ · MALZEME TESLİM · SAYIM</p>
         </div>
-        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-          <button onClick={() => api.get('/inventory/export/csv', { responseType: 'blob' }).then(r => { const url = URL.createObjectURL(r.data); const a = document.createElement('a'); a.href = url; a.download = 'envanter.csv'; a.click(); URL.revokeObjectURL(url) })} className="btn btn-ghost btn-sm" style={{ borderRadius: '10px' }}>CSV</button>
-          <button onClick={() => setShowCount(true)} className="btn btn-ghost btn-sm" style={{ borderRadius: '10px' }}>SAYIM</button>
-          <button onClick={() => setShowReceipt(true)} className="btn btn-ghost btn-sm" style={{ borderRadius: '10px', color: 'var(--green)' }}>↓ MAL GIRIS</button>
-          <button onClick={() => setShowNew(true)} className="btn btn-primary btn-sm" style={{ borderRadius: '10px' }}>+ URUN</button>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <button onClick={() => setShowNew(true)} className="btn btn-primary btn-sm" style={{ borderRadius: 10 }}>+ ÜRÜN</button>
+          <MoreMenu items={[
+            { icon: '↓', label: 'Mal Giriş', onClick: () => setShowReceipt(true) },
+            { icon: '✓', label: 'Sayım Yap', onClick: () => setShowCount(true) },
+            { divider: true },
+            { icon: '⤓', label: 'CSV İndir', onClick: () => api.get('/inventory/export/csv', { responseType: 'blob' }).then(r => { const url = URL.createObjectURL(r.data); const a = document.createElement('a'); a.href = url; a.download = 'envanter.csv'; a.click(); URL.revokeObjectURL(url) }) },
+          ]} />
         </div>
       </div>
 
