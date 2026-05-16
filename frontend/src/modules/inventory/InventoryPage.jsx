@@ -199,12 +199,14 @@ export default function InventoryPage() {
       {liveDetailItem && (
         <ItemDetailDrawer
           item={liveDetailItem}
+          forecast={forecastMap[liveDetailItem.id]}
           onClose={() => setDetailItem(null)}
           onEdit={() => { setEditItem(liveDetailItem); setDetailItem(null) }}
           onAdjust={() => { setAdjustItem(liveDetailItem); setDetailItem(null) }}
           onCheckout={() => { setCheckoutItem(liveDetailItem); setDetailItem(null) }}
           onWriteOff={() => { setWriteOffItem(liveDetailItem); setDetailItem(null) }}
           onDelete={() => { deleteMut.mutate(liveDetailItem.id); setDetailItem(null) }}
+          onGoToPO={() => { setActiveTab('po'); setDetailItem(null) }}
         />
       )}
     </div>

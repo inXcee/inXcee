@@ -1,27 +1,33 @@
 import { getDB } from '../../shared/db/index.js'
 
+const ITEM_SELECT_WITH_SUPPLIER = `
+  SELECT i.*, s.name AS supplier_name
+  FROM inventory i
+  LEFT JOIN suppliers s ON s.id = i.preferred_supplier_id
+`
+
 export function getAllItems(category) {
   const db = getDB()
-  let q = 'SELECT * FROM inventory'
+  let q = ITEM_SELECT_WITH_SUPPLIER
   const params = []
-  if (category) { q += ' WHERE category=?'; params.push(category) }
-  q += ' ORDER BY category, item_name'
+  if (category) { q += ' WHERE i.category=?'; params.push(category) }
+  q += ' ORDER BY i.category, i.item_name'
   return db.prepare(q).all(...params)
 }
 
 export function getAllItemsPaginated(category, limit, offset) {
   const db = getDB()
-  let q = 'SELECT * FROM inventory'
+  let q = ITEM_SELECT_WITH_SUPPLIER
   const params = []
-  if (category) { q += ' WHERE category=?'; params.push(category) }
-  q += ' ORDER BY category, item_name LIMIT ? OFFSET ?'
+  if (category) { q += ' WHERE i.category=?'; params.push(category) }
+  q += ' ORDER BY i.category, i.item_name LIMIT ? OFFSET ?'
   params.push(limit, offset)
   return db.prepare(q).all(...params)
 }
 
 export function searchItems(query) {
   const db = getDB()
-  return db.prepare("SELECT * FROM inventory WHERE item_name LIKE ? ORDER BY category, item_name")
+  return db.prepare(`${ITEM_SELECT_WITH_SUPPLIER} WHERE i.item_name LIKE ? ORDER BY i.category, i.item_name`)
     .all(`%${query}%`)
 }
 
