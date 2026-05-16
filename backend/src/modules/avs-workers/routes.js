@@ -11,20 +11,30 @@ avsWorkersRouter.get('/', ...adminOnly, (req, res) => {
 })
 
 avsWorkersRouter.post('/', ...adminOnly, (req, res) => {
-  const { full_name, role_label } = req.body
+  const { full_name, role_label, pickup_point_id, phone } = req.body
   if (!full_name || full_name.trim().length < 2) return res.status(400).json({ error: 'Ad en az 2 karakter olmalı' })
   try {
-    const id = createWorker({ full_name: full_name.trim(), role_label: role_label?.trim() || null })
+    const id = createWorker({
+      full_name: full_name.trim(),
+      role_label: role_label?.trim() || null,
+      pickup_point_id: pickup_point_id ? +pickup_point_id : null,
+      phone: phone?.trim() || null,
+    })
     res.status(201).json(getWorker(id))
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
 avsWorkersRouter.put('/:id', ...adminOnly, (req, res) => {
-  const { full_name, role_label } = req.body
+  const { full_name, role_label, pickup_point_id, phone } = req.body
   if (!full_name || full_name.trim().length < 2) return res.status(400).json({ error: 'Ad en az 2 karakter olmalı' })
   const w = getWorker(Number(req.params.id))
   if (!w) return res.status(404).json({ error: 'Çalışan bulunamadı' })
-  updateWorker(Number(req.params.id), { full_name: full_name.trim(), role_label: role_label?.trim() || null })
+  updateWorker(Number(req.params.id), {
+    full_name: full_name.trim(),
+    role_label: role_label?.trim() || null,
+    pickup_point_id: pickup_point_id ? +pickup_point_id : null,
+    phone: phone?.trim() || null,
+  })
   res.json(getWorker(Number(req.params.id)))
 })
 

@@ -22,49 +22,50 @@ export function deptIdFromRole(label) {
 
 // Listede yalnız role_label dolu olanları AVS personeli sayıyoruz (kiosk_pin opsiyonel)
 // Boş role_label'lar saf vardiya personeli — AVS sayfasında listelenmez
+const AVS_SELECT = `
+  SELECT s.id, s.full_name, s.role_label, s.is_active, s.created_at,
+    s.phone, s.pickup_point_id,
+    s.kiosk_pin IS NOT NULL as has_pin,
+    d.id as department_id, d.name as department_name,
+    pp.name as pickup_name, pp.district as pickup_district
+  FROM staff s
+  LEFT JOIN departments d ON d.id = s.department_id
+  LEFT JOIN pickup_points pp ON pp.id = s.pickup_point_id
+`
+
 export function listWorkers() {
-  return getDB().prepare(`
-    SELECT s.id, s.full_name, s.role_label, s.is_active, s.created_at,
-      s.kiosk_pin IS NOT NULL as has_pin,
-      d.id as department_id, d.name as department_name
-    FROM staff s
-    LEFT JOIN departments d ON d.id = s.department_id
+  return getDB().prepare(`${AVS_SELECT}
     WHERE s.role_label IS NOT NULL OR s.kiosk_pin IS NOT NULL
     ORDER BY s.full_name
   `).all()
 }
 
 export function getWorker(id) {
-  return getDB().prepare(`
-    SELECT s.id, s.full_name, s.role_label, s.is_active, s.created_at,
-      s.kiosk_pin IS NOT NULL as has_pin,
-      d.id as department_id, d.name as department_name
-    FROM staff s
-    LEFT JOIN departments d ON d.id = s.department_id
-    WHERE s.id=?
-  `).get(id)
+  return getDB().prepare(`${AVS_SELECT} WHERE s.id=?`).get(id)
 }
 
-export function createWorker({ full_name, role_label }) {
+export function createWorker({ full_name, role_label, pickup_point_id, phone }) {
   const deptId = deptIdFromRole(role_label)
   const r = getDB().prepare(`
-    INSERT INTO staff(full_name, role_label, position, department_id, is_active)
-    VALUES(?,?,?,?,1)
-  `).run(full_name, role_label || null, role_label || null, deptId)
+    INSERT INTO staff(full_name, role_label, position, department_id, pickup_point_id, phone, is_active)
+    VALUES(?,?,?,?,?,?,1)
+  `).run(full_name, role_label || null, role_label || null, deptId, pickup_point_id || null, phone || null)
   return r.lastInsertRowid
 }
 
-export function updateWorker(id, { full_name, role_label }) {
+export function updateWorker(id, { full_name, role_label, pickup_point_id, phone }) {
   const db = getDB()
-  // Kullanıcı departmanı manuel atadıysa ezme — sadece role_label'dan türetilen departman boşsa güncelle
   const current = db.prepare('SELECT department_id FROM staff WHERE id=?').get(id)
   const newDept = deptIdFromRole(role_label)
   db.prepare(`
     UPDATE staff SET full_name=?, role_label=?,
       position = COALESCE(NULLIF(position, ''), ?),
-      department_id = COALESCE(department_id, ?)
+      department_id = COALESCE(department_id, ?),
+      pickup_point_id = ?,
+      phone = COALESCE(?, phone)
     WHERE id=?
-  `).run(full_name, role_label || null, role_label || null, current?.department_id ?? newDept, id)
+  `).run(full_name, role_label || null, role_label || null, current?.department_id ?? newDept,
+    pickup_point_id ?? null, phone ?? null, id)
 }
 
 export function setWorkerPin(id, pin) {

@@ -199,6 +199,12 @@ transportRouter.post('/assign', ...mgr, (req, res) => {
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
+transportRouter.get('/reports', ...view, (req, res) => {
+  try {
+    res.json(q.getReports({ startDate: req.query.start, endDate: req.query.end }))
+  } catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
 transportRouter.delete('/assign/:staff_id', ...mgr, (req, res) => {
   try {
     const date = req.query.date || new Date().toISOString().slice(0, 10)

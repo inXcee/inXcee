@@ -395,3 +395,126 @@ export function setAssignment({ staffId, routeId, stopId, workDate, userId }) {
 export function clearAssignment(staffId, workDate) {
   getDB().prepare('DELETE FROM route_assignments WHERE staff_id=? AND work_date=?').run(staffId, workDate)
 }
+
+// ── Raporlar ──
+// Bir tarihte / aralıkta servis kullanım raporları
+export function getReports({ startDate, endDate } = {}) {
+  const db = getDB()
+  const s = startDate || new Date().toISOString().slice(0, 10)
+  const e = endDate || s
+
+  // 1) Genel toplam
+  const totals = db.prepare(`
+    SELECT
+      (SELECT COUNT(*) FROM staff WHERE is_active=1) as total_staff,
+      (SELECT COUNT(*) FROM staff WHERE is_active=1 AND pickup_point_id IS NOT NULL) as staff_with_pickup,
+      (SELECT COUNT(*) FROM staff WHERE is_active=1 AND pickup_point_id IS NULL) as staff_no_pickup,
+      (SELECT COUNT(*) FROM pickup_points WHERE is_active=1) as active_points,
+      (SELECT COUNT(*) FROM routes WHERE is_active=1) as active_routes
+  `).get()
+
+  // 2) Durak başına personel sayısı (tüm aktif personel)
+  const byPickup = db.prepare(`
+    SELECT pp.id, pp.name, pp.district, pp.neighborhood,
+      COUNT(s.id) as staff_count,
+      GROUP_CONCAT(DISTINCT d.name) as departments
+    FROM pickup_points pp
+    LEFT JOIN staff s ON s.pickup_point_id = pp.id AND s.is_active = 1
+    LEFT JOIN departments d ON d.id = s.department_id
+    WHERE pp.is_active = 1
+    GROUP BY pp.id
+    ORDER BY staff_count DESC, pp.name
+  `).all()
+
+  // 3) Departman × Durak matrisi
+  const deptPickup = db.prepare(`
+    SELECT d.id as dept_id, d.name as dept_name, d.color_class,
+      pp.id as pickup_id, pp.name as pickup_name,
+      COUNT(*) as cnt
+    FROM staff s
+    JOIN departments d ON d.id = s.department_id
+    LEFT JOIN pickup_points pp ON pp.id = s.pickup_point_id
+    WHERE s.is_active = 1 AND s.pickup_point_id IS NOT NULL
+    GROUP BY d.id, pp.id
+    ORDER BY d.name, cnt DESC
+  `).all()
+
+  // 4) Vardiya × Durak (tarih aralığında çalışmış olanlar)
+  const shiftPickup = db.prepare(`
+    SELECT sd.id as shift_id, sd.name as shift_name, sd.start_hour, sd.end_hour,
+      pp.id as pickup_id, pp.name as pickup_name, pp.district,
+      COUNT(DISTINCT ss.staff_id) as cnt
+    FROM shift_schedule ss
+    JOIN staff s ON s.id = ss.staff_id
+    JOIN shift_definitions sd ON sd.id = ss.shift_def_id
+    LEFT JOIN pickup_points pp ON pp.id = s.pickup_point_id
+    WHERE ss.work_date BETWEEN ? AND ?
+      AND ss.status IN ('scheduled','worked','overtime')
+      AND s.is_active = 1
+      AND pp.id IS NOT NULL
+    GROUP BY sd.id, pp.id
+    ORDER BY sd.start_hour, cnt DESC
+  `).all(s, e)
+
+  // 5) Rota kullanım istatistiği — atama sayıları (tarih aralığı)
+  const routeUtil = db.prepare(`
+    SELECT r.id, r.name, r.capacity, r.color, r.vehicle_plate, r.driver_name,
+      sd.name as shift_name,
+      COUNT(ra.id) as total_assignments,
+      COUNT(DISTINCT ra.work_date) as days,
+      COUNT(DISTINCT ra.staff_id) as unique_staff,
+      ROUND(COUNT(ra.id) * 1.0 / NULLIF(COUNT(DISTINCT ra.work_date), 0), 1) as avg_per_day,
+      ROUND(COUNT(ra.id) * 1.0 / NULLIF(COUNT(DISTINCT ra.work_date) * r.capacity, 0) * 100, 1) as avg_fill_pct
+    FROM routes r
+    LEFT JOIN route_assignments ra ON ra.route_id = r.id AND ra.work_date BETWEEN ? AND ?
+    LEFT JOIN shift_definitions sd ON sd.id = r.shift_def_id
+    WHERE r.is_active = 1
+    GROUP BY r.id
+    ORDER BY total_assignments DESC, r.name
+  `).all(s, e)
+
+  // 6) Bölge/ilçe bazlı dağılım
+  const byDistrict = db.prepare(`
+    SELECT pp.district,
+      COUNT(s.id) as staff_count,
+      COUNT(DISTINCT pp.id) as point_count
+    FROM staff s
+    JOIN pickup_points pp ON pp.id = s.pickup_point_id
+    WHERE s.is_active = 1 AND pp.district IS NOT NULL
+    GROUP BY pp.district
+    ORDER BY staff_count DESC
+  `).all()
+
+  // 7) Atanmamış personeller (durak yok ya da pasif durakta)
+  const noPickup = db.prepare(`
+    SELECT s.id, s.full_name, s.role_label, s.phone,
+      d.name as dept_name
+    FROM staff s
+    LEFT JOIN departments d ON d.id = s.department_id
+    WHERE s.is_active = 1 AND s.pickup_point_id IS NULL
+    ORDER BY s.full_name
+  `).all()
+
+  // 8) Günlük trend (son N gün — start..end)
+  const dailyTrend = db.prepare(`
+    SELECT ra.work_date,
+      COUNT(*) as assignments,
+      COUNT(DISTINCT ra.route_id) as routes_used
+    FROM route_assignments ra
+    WHERE ra.work_date BETWEEN ? AND ?
+    GROUP BY ra.work_date
+    ORDER BY ra.work_date
+  `).all(s, e)
+
+  return {
+    range: { start: s, end: e },
+    totals,
+    by_pickup: byPickup,
+    dept_pickup: deptPickup,
+    shift_pickup: shiftPickup,
+    route_utilization: routeUtil,
+    by_district: byDistrict,
+    no_pickup_staff: noPickup,
+    daily_trend: dailyTrend,
+  }
+}
