@@ -12,14 +12,10 @@ export const MOVE_COLOR = { in: 'var(--green)', out: 'var(--red)', count: 'var(-
 
 export const TABS = [
   { key: 'stock', label: 'STOK', icon: '▦' },
-  { key: 'receipt', label: 'MAL GIRIS', icon: '↓' },
-  { key: 'checkouts', label: 'TESLIMLER', icon: '→' },
-  { key: 'suppliers', label: 'TEDARIKCI', icon: '⛓' },
-  { key: 'po', label: 'SIPARIS', icon: '📦' },
-  { key: 'requests', label: 'TALEPLER', icon: '📝' },
+  { key: 'activity', label: 'AKTIVITE', icon: '↺' },
+  { key: 'purchasing', label: 'SATIN ALMA', icon: '📦' },
   { key: 'lots', label: 'LOT/SKT', icon: '⏳' },
   { key: 'reports', label: 'RAPOR', icon: '📊' },
-  { key: 'history', label: 'HAREKETLER', icon: '↺' },
 ]
 
 export const INIT_F = { item_name: '', quantity: 0, unit: 'adet', reorder_threshold: 0, category: 'general', location: '', unit_price: 0 }

@@ -12,12 +12,8 @@ import ReceiptModal from './components/ReceiptModal.jsx'
 import WriteOffModal from './components/WriteOffModal.jsx'
 import ItemDetailDrawer from './components/ItemDetailDrawer.jsx'
 import ItemsTab from './tabs/ItemsTab.jsx'
-import ReceiptsTab from './tabs/ReceiptsTab.jsx'
-import CheckoutsTab from './tabs/CheckoutsTab.jsx'
-import MovementsTab from './tabs/MovementsTab.jsx'
-import SuppliersTab from './tabs/SuppliersTab.jsx'
-import PurchaseOrdersTab from './tabs/PurchaseOrdersTab.jsx'
-import RequestsTab from './tabs/RequestsTab.jsx'
+import ActivityTab from './tabs/ActivityTab.jsx'
+import PurchasingTab from './tabs/PurchasingTab.jsx'
 import LotsExpiryTab from './tabs/LotsExpiryTab.jsx'
 import ReportsTab from './tabs/ReportsTab.jsx'
 
@@ -165,29 +161,24 @@ export default function InventoryPage() {
         />
       )}
 
-      {/* TAB: RECEIPT */}
-      {activeTab === 'receipt' && <ReceiptsTab onNewReceipt={() => setShowReceipt(true)} />}
+      {/* TAB: AKTIVITE — teslimler + hareketler */}
+      {activeTab === 'activity' && <ActivityTab />}
 
-      {/* TAB: CHECKOUTS */}
-      {activeTab === 'checkouts' && <CheckoutsTab />}
+      {/* TAB: SATIN ALMA — siparis + talep + mal giris + tedarikci */}
+      {activeTab === 'purchasing' && (
+        <PurchasingTab
+          items={items}
+          poPrefill={poPrefill}
+          onPrefillConsumed={() => setPoPrefill(null)}
+          onNewReceipt={() => setShowReceipt(true)}
+        />
+      )}
 
-      {/* TAB: SUPPLIERS */}
-      {activeTab === 'suppliers' && <SuppliersTab />}
-
-      {/* TAB: PURCHASE ORDERS */}
-      {activeTab === 'po' && <PurchaseOrdersTab items={items} prefill={poPrefill} onPrefillConsumed={() => setPoPrefill(null)} />}
-
-      {/* TAB: REQUESTS */}
-      {activeTab === 'requests' && <RequestsTab items={items} />}
-
-      {/* TAB: LOTS / EXPIRY */}
+      {/* TAB: LOT/SKT */}
       {activeTab === 'lots' && <LotsExpiryTab items={items} />}
 
-      {/* TAB: REPORTS */}
+      {/* TAB: RAPOR */}
       {activeTab === 'reports' && <ReportsTab />}
-
-      {/* TAB: HISTORY */}
-      {activeTab === 'history' && <MovementsTab />}
 
       {/* Modals */}
       {adjustItem && <AdjustModal item={adjustItem} onClose={() => setAdjustItem(null)} onSave={d => adjustMut.mutate(d)} isPending={adjustMut.isPending} />}
@@ -209,7 +200,7 @@ export default function InventoryPage() {
           onDelete={() => { deleteMut.mutate(liveDetailItem.id); setDetailItem(null) }}
           onGoToPO={() => {
             setPoPrefill({ itemId: liveDetailItem.id, supplierId: liveDetailItem.preferred_supplier_id })
-            setActiveTab('po')
+            setActiveTab('purchasing')
             setDetailItem(null)
           }}
         />
