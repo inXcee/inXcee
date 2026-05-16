@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import fs from 'fs'
+import PDFDocument from 'pdfkit'
 import { requireRole } from '../../shared/auth/middleware.js'
 import { upload, verifyMagicBytes } from '../../shared/uploads/middleware.js'
 import { getDB } from '../../shared/db/index.js'
@@ -197,6 +198,86 @@ transportRouter.post('/assign', ...mgr, (req, res) => {
     q.setAssignment({ staffId: +staff_id, routeId: +route_id, stopId: stop_id ? +stop_id : null, workDate: work_date, userId: req.user.id })
     res.json({ ok: true })
   } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+transportRouter.get('/staff/:id/detail', ...view, (req, res) => {
+  try {
+    const d = q.getStaffTransportDetail(+req.params.id)
+    if (!d) return res.status(404).json({ error: 'Personel bulunamadı' })
+    res.json(d)
+  } catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// PDF manifesto
+transportRouter.get('/routes/:id/manifest/pdf', ...view, (req, res) => {
+  try {
+    const date = req.query.date || new Date().toISOString().slice(0, 10)
+    const m = q.getRouteManifest(+req.params.id, date)
+    if (!m) return res.status(404).json({ error: 'Rota bulunamadı' })
+
+    const doc = new PDFDocument({ size: 'A4', margin: 40 })
+    res.setHeader('Content-Type', 'application/pdf')
+    res.setHeader('Content-Disposition', `attachment; filename="manifest-${m.route.name.replace(/\s+/g, '_')}-${date}.pdf"`)
+    doc.pipe(res)
+
+    // Header
+    doc.fontSize(18).font('Helvetica-Bold').text(m.route.name, { align: 'center' })
+    doc.fontSize(11).font('Helvetica').text(`Servis Manifestosu — ${date}`, { align: 'center' })
+    doc.moveDown(0.5)
+
+    // Üst bilgi kutusu
+    const infoLine = `Arac: ${m.route.vehicle_plate || '—'}  |  Kapasite: ${m.route.capacity}  |  Yolcu: ${m.total_passengers}`
+    doc.fontSize(10).font('Helvetica-Bold').text(infoLine, { align: 'center' })
+    if (m.route.driver_name) {
+      doc.fontSize(10).font('Helvetica').text(
+        `Sofor: ${m.route.driver_name}${m.route.driver_phone ? ' — ' + m.route.driver_phone : ''}`,
+        { align: 'center' }
+      )
+    }
+    doc.moveDown(1)
+
+    // Duraklar + yolcu listesi
+    let i = 0
+    for (const stop of m.stops) {
+      i++
+      // Stop başlığı
+      doc.fontSize(12).font('Helvetica-Bold').fillColor('#1f2937')
+        .text(`${i}. ${stop.scheduled_time ? '[' + stop.scheduled_time + '] ' : ''}${stop.point_name}`)
+      if (stop.district) {
+        doc.fontSize(9).font('Helvetica').fillColor('#6b7280').text(`   ${stop.district}${stop.neighborhood ? ' / ' + stop.neighborhood : ''}`)
+      }
+      doc.fillColor('#000000')
+
+      // Yolcular
+      if (stop.passengers.length === 0) {
+        doc.fontSize(10).font('Helvetica-Oblique').fillColor('#999').text('   (bos durak)')
+        doc.fillColor('#000000')
+      } else {
+        stop.passengers.forEach((p, idx) => {
+          doc.fontSize(10).font('Helvetica').text(
+            `   ${idx + 1}. ${p.full_name}` +
+            (p.dept_name ? `  —  ${p.dept_name}` : '') +
+            (p.phone ? `  —  ${p.phone}` : '')
+          )
+        })
+      }
+      doc.moveDown(0.7)
+    }
+
+    // Hedef
+    doc.moveDown(0.3)
+    doc.fontSize(11).font('Helvetica-Bold').fillColor('#dc2626')
+      .text(`* Filyos Dogal Gaz Isleme Tesisi`, { align: 'center' })
+
+    // Footer
+    doc.fontSize(8).font('Helvetica').fillColor('#9ca3af')
+      .text(`Olusturma: ${new Date().toLocaleString('tr-TR')}`, 40, doc.page.height - 50)
+
+    doc.end()
+  } catch (e) {
+    console.error('[Route] manifest pdf:', e)
+    if (!res.headersSent) res.status(500).json({ error: 'PDF olusturulamadi' })
+  }
 })
 
 transportRouter.get('/reports', ...view, (req, res) => {

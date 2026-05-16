@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, lazy, Suspense } from 'react'
+import { useState, useMemo, useRef, useEffect, lazy, Suspense } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
@@ -24,6 +24,25 @@ const toastErr = (e) => toast(e?.response?.data?.error || 'Hata', 'error')
 export default function TransportPage() {
   const [tab, setTab] = useState('daily')
   const [date, setDate] = useState(todayStr())
+  const [searchOpen, setSearchOpen] = useState(false)
+
+  // Klavye kısayolları
+  useEffect(() => {
+    const onKey = (e) => {
+      const t = e.target.tagName
+      if (t === 'INPUT' || t === 'TEXTAREA' || t === 'SELECT' || e.target.isContentEditable) return
+      if (e.ctrlKey || e.metaKey || e.altKey) return
+      if (e.key === '/') { e.preventDefault(); setSearchOpen(true) }
+      else if (e.key === '1') setTab('daily')
+      else if (e.key === '2') setTab('routes')
+      else if (e.key === '3') setTab('points')
+      else if (e.key === '4') setTab('people')
+      else if (e.key === '5') setTab('reports')
+      else if (e.key === 'h') setDate(todayStr())
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   return (
     <div style={{ position: 'relative', zIndex: 1, maxWidth: 1200 }} className="fade-up">
@@ -63,6 +82,68 @@ export default function TransportPage() {
       {tab === 'points' && <PointsTab />}
       {tab === 'people' && <PeopleTab />}
       {tab === 'reports' && <ReportsTab />}
+
+      {searchOpen && <GlobalSearch onClose={() => setSearchOpen(false)} setTab={setTab} />}
+    </div>
+  )
+}
+
+// Global arama: / tuşu açar, durak + rota + personel ara
+function GlobalSearch({ onClose, setTab }) {
+  const [q, setQ] = useState('')
+  const { data: points = [] } = useQuery({ queryKey: ['transport-points'], queryFn: () => api.get('/transport/pickup-points').then(r => r.data) })
+  const { data: routes = [] } = useQuery({ queryKey: ['transport-routes'], queryFn: () => api.get('/transport/routes').then(r => r.data) })
+  const { data: staff = [] } = useQuery({ queryKey: ['transport-staff', 'all'], queryFn: () => api.get('/transport/staff').then(r => r.data) })
+
+  const results = useMemo(() => {
+    if (q.length < 1) return []
+    const low = q.toLowerCase()
+    const out = []
+    points.filter(p => `${p.name} ${p.district || ''} ${p.neighborhood || ''}`.toLowerCase().includes(low)).slice(0, 5)
+      .forEach(p => out.push({ type: 'point', icon: '📍', label: p.name, sub: p.district || '—', target: 'points' }))
+    routes.filter(r => `${r.name} ${r.vehicle_plate || ''} ${r.driver_name || ''}`.toLowerCase().includes(low)).slice(0, 5)
+      .forEach(r => out.push({ type: 'route', icon: '🛣', label: r.name, sub: `${r.vehicle_plate || '—'} · ${r.capacity} kişi`, target: 'routes' }))
+    staff.filter(s => `${s.full_name} ${s.role_label || ''} ${s.dept_name || ''} ${s.pickup_name || ''}`.toLowerCase().includes(low)).slice(0, 10)
+      .forEach(s => out.push({ type: 'staff', icon: '👤', label: s.full_name, sub: `${s.dept_name || '—'}${s.pickup_name ? ' · 📍 ' + s.pickup_name : ' · durak yok'}`, target: 'people' }))
+    return out
+  }, [q, points, routes, staff])
+
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 9100, display: 'flex', justifyContent: 'center', alignItems: 'flex-start', paddingTop: 80 }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: 540, maxWidth: '95vw', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, boxShadow: '0 24px 48px rgba(0,0,0,.4)', overflow: 'hidden' }}>
+        <input autoFocus value={q} onChange={e => setQ(e.target.value)}
+          placeholder="🔍 Durak, rota, personel ara…"
+          style={{ width: '100%', padding: '14px 18px', fontSize: 15, border: 'none', background: 'transparent', color: 'var(--text)', outline: 'none', borderBottom: '1px solid var(--border)' }} />
+        {q.length < 1 ? (
+          <div style={{ padding: 18, fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)' }}>
+            💡 Kısayollar: <kbd style={{ padding: '1px 5px', background: 'var(--surface2)', borderRadius: 3 }}>1-5</kbd> sekme · <kbd style={{ padding: '1px 5px', background: 'var(--surface2)', borderRadius: 3 }}>h</kbd> bugüne dön · <kbd style={{ padding: '1px 5px', background: 'var(--surface2)', borderRadius: 3 }}>Esc</kbd> kapat
+          </div>
+        ) : results.length === 0 ? (
+          <div style={{ padding: 24, textAlign: 'center', color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: 11 }}>Sonuç bulunamadı</div>
+        ) : (
+          <div style={{ maxHeight: 400, overflowY: 'auto' }}>
+            {results.map((r, i) => (
+              <div key={i} onClick={() => { setTab(r.target); onClose() }}
+                style={{ padding: '10px 18px', cursor: 'pointer', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10 }}
+                onMouseEnter={e => e.currentTarget.style.background = 'var(--surface2)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                <span style={{ fontSize: 16 }}>{r.icon}</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 600, fontSize: 13 }}>{r.label}</div>
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)' }}>{r.sub}</div>
+                </div>
+                <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text4)', textTransform: 'uppercase' }}>{r.type}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
@@ -266,6 +347,42 @@ function ManualAssignButton({ staffId, date }) {
   )
 }
 
+async function downloadPdf(routeId, date) {
+  try {
+    const res = await api.get(`/transport/routes/${routeId}/manifest/pdf?date=${date}`, { responseType: 'blob' })
+    const url = URL.createObjectURL(res.data)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `manifest-${routeId}-${date}.pdf`
+    a.click()
+    URL.revokeObjectURL(url)
+  } catch (e) { toastErr(e) }
+}
+
+function sendWhatsapp(data, date) {
+  if (!data) return
+  const lines = [
+    `🚌 *${data.route.name}* — ${date}`,
+    `🚐 Plaka: ${data.route.vehicle_plate || '—'}`,
+    `👥 Toplam: ${data.total_passengers}/${data.route.capacity} kişi`,
+    '',
+  ]
+  data.stops.forEach((s, i) => {
+    if (s.passengers.length === 0) return
+    lines.push(`*${i + 1}. ${s.scheduled_time ? `[${s.scheduled_time}] ` : ''}📍 ${s.point_name}*`)
+    s.passengers.forEach((p, idx) => {
+      lines.push(`   ${idx + 1}. ${p.full_name}${p.phone ? ` — ${p.phone}` : ''}`)
+    })
+    lines.push('')
+  })
+  lines.push('🏭 Filyos Doğal Gaz İşleme Tesisi')
+  const text = encodeURIComponent(lines.join('\n'))
+  const phone = (data.route.driver_phone || '').replace(/\D/g, '')
+  const url = phone ? `https://wa.me/${phone.startsWith('0') ? '90' + phone.slice(1) : phone}?text=${text}`
+    : `https://wa.me/?text=${text}`
+  window.open(url, '_blank')
+}
+
 function ManifestDrawer({ routeId, date, onClose }) {
   const { data, isLoading } = useQuery({
     queryKey: ['manifest', routeId, date],
@@ -300,7 +417,8 @@ function ManifestDrawer({ routeId, date, onClose }) {
                 )}
               </div>
               <div style={{ display: 'flex', gap: 6 }}>
-                <button onClick={() => window.print()} className="btn btn-ghost btn-xs" style={{ borderRadius: 8 }} title="Yazdır">🖨</button>
+                <button onClick={() => downloadPdf(routeId, date)} className="btn btn-ghost btn-xs" style={{ borderRadius: 8 }} title="PDF indir">📄 PDF</button>
+                <button onClick={() => sendWhatsapp(data, date)} className="btn btn-ghost btn-xs" style={{ borderRadius: 8, color: '#25D366' }} title="WhatsApp ile gönder">📱 WA</button>
                 <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--text3)', fontSize: 22, cursor: 'pointer' }}>×</button>
               </div>
             </div>
@@ -777,6 +895,8 @@ function PeopleTab() {
   const [search, setSearch] = useState('')
   const [editingId, setEditingId] = useState(null)
   const [editValue, setEditValue] = useState('')
+  const [detailId, setDetailId] = useState(null)
+  const [importOpen, setImportOpen] = useState(false)
 
   const hasPickupParam = filter === 'all' ? '' : `&has_pickup=${filter}`
   const { data: staff = [] } = useQuery({
@@ -842,6 +962,7 @@ function PeopleTab() {
             </button>
           ))}
         </div>
+        <button onClick={() => setImportOpen(true)} className="btn btn-ghost btn-sm" style={{ borderRadius: 10 }} title="CSV ile toplu durak eşleştir">📥 İMPORT</button>
       </div>
 
       {/* Durak gruplu liste */}
@@ -867,8 +988,8 @@ function PeopleTab() {
                   display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 10, alignItems: 'center',
                   padding: '8px 14px', borderBottom: '1px solid var(--border)', fontSize: 12,
                 }}>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontWeight: 600 }}>{s.full_name}</div>
+                  <div style={{ minWidth: 0, cursor: 'pointer' }} onClick={() => setDetailId(s.id)}>
+                    <div style={{ fontWeight: 600, color: 'var(--accent)' }}>{s.full_name}</div>
                     <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', marginTop: 2 }}>
                       {s.dept_name || '—'}
                       {s.role_label ? ` · ${s.role_label}` : ''}
@@ -909,7 +1030,263 @@ function PeopleTab() {
           </div>
         ))
       )}
+
+      {detailId && <StaffDetailDrawer staffId={detailId} onClose={() => setDetailId(null)} />}
+      {importOpen && <BulkImportModal onClose={() => setImportOpen(false)} points={points} />}
     </div>
+  )
+}
+
+// Personel servis detay drawer'ı
+function StaffDetailDrawer({ staffId, onClose }) {
+  const qc = useQueryClient()
+  const { data, isLoading } = useQuery({
+    queryKey: ['staff-transport-detail', staffId],
+    queryFn: () => api.get(`/transport/staff/${staffId}/detail`).then(r => r.data),
+  })
+  const { data: pp = [] } = useQuery({
+    queryKey: ['pickup-points-active'],
+    queryFn: () => api.get('/transport/pickup-points?active=1').then(r => r.data),
+  })
+  const [editingPickup, setEditingPickup] = useState(false)
+  const [pickup, setPickup] = useState('')
+
+  const pickMut = useMutation({
+    mutationFn: () => api.put(`/transport/staff/${staffId}/pickup`, { pickup_point_id: pickup ? +pickup : null }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['transport-staff'] })
+      qc.invalidateQueries({ queryKey: ['staff-transport-detail', staffId] })
+      qc.invalidateQueries({ queryKey: ['transport-daily'] })
+      setEditingPickup(false); toast('Durak güncellendi')
+    },
+    onError: toastErr,
+  })
+
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 9000, display: 'flex', justifyContent: 'flex-end' }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 520, height: '100%', overflowY: 'auto', background: 'var(--surface)', borderLeft: '1px solid var(--border)', padding: 20, boxShadow: '-8px 0 32px rgba(0,0,0,.4)' }}>
+        {isLoading || !data ? (
+          <div style={{ padding: 40, textAlign: 'center', color: 'var(--text3)', fontFamily: 'var(--mono)' }}>Yükleniyor…</div>
+        ) : (
+          <>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+              <div>
+                <h3 style={{ fontSize: 18, color: 'var(--text)', margin: 0 }}>{data.person.full_name}</h3>
+                <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', marginTop: 3 }}>
+                  {data.person.dept_name || '—'}{data.person.role_label ? ` · ${data.person.role_label}` : ''}
+                </div>
+                {data.person.phone && (
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--blue)', marginTop: 4 }}>
+                    📞 <a href={`tel:${data.person.phone}`} style={{ color: 'inherit', textDecoration: 'none' }}>{data.person.phone}</a>
+                    {' · '}
+                    <a href={`https://wa.me/${data.person.phone.replace(/\D/g, '').replace(/^0/, '90')}`} target="_blank" rel="noreferrer" style={{ color: '#25D366', textDecoration: 'none' }}>WhatsApp</a>
+                  </div>
+                )}
+              </div>
+              <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--text3)', fontSize: 22, cursor: 'pointer' }}>×</button>
+            </div>
+
+            <div style={{ padding: '12px 14px', background: 'var(--surface2)', borderRadius: 10, marginBottom: 12 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: 1.5 }}>📍 MEVCUT DURAK</span>
+                {!editingPickup && (
+                  <button onClick={() => { setPickup(data.person.pickup_point_id || ''); setEditingPickup(true) }}
+                    className="btn btn-ghost btn-xs" style={{ borderRadius: 6 }}>DEĞIŞTIR</button>
+                )}
+              </div>
+              {editingPickup ? (
+                <div style={{ display: 'flex', gap: 4 }}>
+                  <select className="form-select" value={pickup} onChange={e => setPickup(e.target.value)} style={{ flex: 1, fontSize: 12, borderRadius: 8 }}>
+                    <option value="">(durak yok)</option>
+                    {pp.map(p => <option key={p.id} value={p.id}>{p.district ? `[${p.district}] ` : ''}{p.name}</option>)}
+                  </select>
+                  <button onClick={() => pickMut.mutate()} disabled={pickMut.isPending} className="btn btn-primary btn-sm" style={{ borderRadius: 8 }}>✓</button>
+                  <button onClick={() => setEditingPickup(false)} className="btn btn-ghost btn-sm" style={{ borderRadius: 8 }}>✕</button>
+                </div>
+              ) : data.person.pickup_name ? (
+                <div style={{ fontSize: 14, fontWeight: 600 }}>
+                  📍 {data.person.pickup_name}
+                  {data.person.pickup_district && <span style={{ marginLeft: 8, fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--accent)' }}>{data.person.pickup_district}</span>}
+                </div>
+              ) : (
+                <div style={{ color: 'var(--red)', fontStyle: 'italic', fontSize: 12 }}>⚠ Durak atanmamış</div>
+              )}
+            </div>
+
+            {data.availableRoutes.length > 0 && (
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: 1.5, marginBottom: 6 }}>🛣 BU DURAKTAN GEÇEN ROTALAR ({data.availableRoutes.length})</div>
+                {data.availableRoutes.map(r => (
+                  <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', background: 'var(--surface2)', borderRadius: 8, marginBottom: 4, borderLeft: `3px solid ${r.color || 'var(--accent)'}` }}>
+                    <div style={{ flex: 1, fontSize: 12 }}>
+                      <strong>{r.name}</strong>
+                      <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', marginLeft: 8 }}>
+                        {r.vehicle_plate || '—'}
+                        {r.shift_name ? ` · ${r.shift_name}` : ''}
+                        {r.scheduled_time ? ` · ⏱ ${r.scheduled_time}` : ''}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div>
+              <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: 1.5, marginBottom: 6 }}>📅 SON ATAMALAR ({data.assignments.length})</div>
+              {data.assignments.length === 0 ? (
+                <div style={{ padding: 16, textAlign: 'center', color: 'var(--text4)', fontFamily: 'var(--mono)', fontSize: 11 }}>Henüz atama yok</div>
+              ) : (
+                <div style={{ maxHeight: 360, overflowY: 'auto' }}>
+                  {data.assignments.map((a, i) => (
+                    <div key={i} style={{ display: 'grid', gridTemplateColumns: '80px 1fr 60px', gap: 8, padding: '6px 10px', borderBottom: '1px solid var(--border)', fontSize: 11, alignItems: 'center' }}>
+                      <span style={{ fontFamily: 'var(--mono)', color: 'var(--text3)' }}>{a.work_date}</span>
+                      <div style={{ minWidth: 0 }}>
+                        <span style={{ fontWeight: 600, color: a.route_color || 'var(--accent)' }}>{a.route_name}</span>
+                        {a.stop_name && <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', marginLeft: 6 }}>📍 {a.stop_name}</span>}
+                      </div>
+                      <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', textAlign: 'right' }}>{a.scheduled_time || '—'}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function BulkImportModal({ onClose, points }) {
+  const qc = useQueryClient()
+  const [text, setText] = useState('')
+  const [preview, setPreview] = useState(null)
+  const [result, setResult] = useState(null)
+
+  function parse() {
+    const rows = text.trim().split('\n').filter(l => l.trim())
+    if (rows.length < 2) { setPreview({ error: 'En az 1 satır veri (+ başlık) gerekli' }); return }
+    const header = rows[0].split(/[,;\t]/).map(s => s.trim().toLowerCase())
+    const nameIdx = header.findIndex(h => /(ad|name|isim)/.test(h))
+    const pickupIdx = header.findIndex(h => /(durak|pickup|nokta)/.test(h))
+    if (nameIdx < 0) { setPreview({ error: 'Başlıkta "ad" veya "name" kolonu bulunmalı' }); return }
+    if (pickupIdx < 0) { setPreview({ error: 'Başlıkta "durak" veya "pickup" kolonu bulunmalı' }); return }
+
+    const parsed = []
+    const pointMap = new Map(points.map(p => [p.name.toLowerCase(), p]))
+    for (let i = 1; i < rows.length; i++) {
+      const cols = rows[i].split(/[,;\t]/).map(s => s.trim())
+      const name = cols[nameIdx]
+      const pickupName = cols[pickupIdx]
+      if (!name) continue
+      const matched = pointMap.get(pickupName?.toLowerCase() || '')
+      parsed.push({ name, pickupName, matched: matched || null })
+    }
+    setPreview({ rows: parsed })
+  }
+
+  const importMut = useMutation({
+    mutationFn: async () => {
+      const ok = preview.rows.filter(r => r.matched)
+      const results = { matched: 0, notFound: [] }
+      const staffList = (await api.get('/transport/staff')).data
+      const staffMap = new Map(staffList.map(s => [s.full_name.toLowerCase(), s]))
+      for (const r of ok) {
+        const staff = staffMap.get(r.name.toLowerCase())
+        if (!staff) { results.notFound.push(r.name); continue }
+        await api.put(`/transport/staff/${staff.id}/pickup`, { pickup_point_id: r.matched.id })
+        results.matched++
+      }
+      return results
+    },
+    onSuccess: (r) => {
+      qc.invalidateQueries({ queryKey: ['transport-staff'] })
+      qc.invalidateQueries({ queryKey: ['transport-daily'] })
+      setResult(r); toast(`${r.matched} kişi atandı`)
+    },
+    onError: toastErr,
+  })
+
+  const sampleCsv = 'ad,durak\nAhmet Kaya,Zonguldak — Çaycuma\nMehmet Demir,Bartın — Merkez'
+
+  return (
+    <ModalShell onClose={onClose} title="TOPLU İMPORT — PERSONEL/DURAK" wide>
+      <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', marginBottom: 8 }}>
+        CSV/TSV formatı: <strong>ad,durak</strong>. Durak adı sistemde tam eşleşmeli.
+      </div>
+
+      {!preview && !result && (
+        <>
+          <textarea value={text} onChange={e => setText(e.target.value)}
+            placeholder={sampleCsv}
+            style={{ width: '100%', height: 200, fontFamily: 'var(--mono)', fontSize: 11, padding: 10, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)' }} />
+          <div style={{ display: 'flex', gap: 6, marginTop: 8, justifyContent: 'space-between' }}>
+            <button onClick={() => setText(sampleCsv)} className="btn btn-ghost btn-sm" style={{ borderRadius: 8 }}>ÖRNEK YÜKLE</button>
+            <button onClick={parse} disabled={!text.trim()} className="btn btn-primary btn-sm" style={{ borderRadius: 8 }}>📋 ÖN İZLEME</button>
+          </div>
+        </>
+      )}
+
+      {preview?.error && (
+        <div className="alert alert-danger" style={{ marginTop: 10, borderRadius: 8 }}>
+          <span>!</span><span>{preview.error}</span>
+        </div>
+      )}
+
+      {preview?.rows && !result && (
+        <>
+          <div style={{ marginTop: 10, marginBottom: 8, fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)' }}>
+            {preview.rows.length} satır · {preview.rows.filter(r => r.matched).length} eşleşti · {preview.rows.filter(r => !r.matched).length} bulunamadı
+          </div>
+          <div style={{ maxHeight: 240, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
+            <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ background: 'var(--surface2)' }}>
+                  <th style={{ padding: 6, textAlign: 'left' }}>AD</th>
+                  <th style={{ padding: 6, textAlign: 'left' }}>DURAK (CSV)</th>
+                  <th style={{ padding: 6, textAlign: 'left' }}>EŞLEŞEN</th>
+                </tr>
+              </thead>
+              <tbody>
+                {preview.rows.map((r, i) => (
+                  <tr key={i} style={{ borderTop: '1px solid var(--border)' }}>
+                    <td style={{ padding: 6 }}>{r.name}</td>
+                    <td style={{ padding: 6, fontFamily: 'var(--mono)', fontSize: 10 }}>{r.pickupName || '—'}</td>
+                    <td style={{ padding: 6, color: r.matched ? 'var(--green)' : 'var(--red)' }}>
+                      {r.matched ? `✓ ${r.matched.name}` : '✕ bulunamadı'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
+            <button onClick={() => setPreview(null)} className="btn btn-ghost" style={{ borderRadius: 8 }}>GERİ</button>
+            <button onClick={() => importMut.mutate()} disabled={importMut.isPending || preview.rows.filter(r => r.matched).length === 0}
+              className="btn btn-primary" style={{ borderRadius: 8 }}>
+              {importMut.isPending ? '...' : `${preview.rows.filter(r => r.matched).length} ATAMA YAP`}
+            </button>
+          </div>
+        </>
+      )}
+
+      {result && (
+        <div style={{ textAlign: 'center', padding: 20 }}>
+          <div style={{ fontSize: 32, marginBottom: 8 }}>✓</div>
+          <div style={{ fontFamily: 'var(--display)', fontSize: 16, marginBottom: 4 }}>TAMAMLANDI</div>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text3)' }}>
+            {result.matched} kişiye durak atandı
+            {result.notFound.length > 0 && ` · ${result.notFound.length} kişi bulunamadı`}
+          </div>
+          {result.notFound.length > 0 && (
+            <div style={{ marginTop: 8, padding: 8, background: 'var(--surface2)', borderRadius: 6, fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--red)', maxHeight: 100, overflowY: 'auto' }}>
+              Bulunamayan: {result.notFound.join(', ')}
+            </div>
+          )}
+          <button onClick={onClose} className="btn btn-primary" style={{ marginTop: 14, borderRadius: 8 }}>KAPAT</button>
+        </div>
+      )}
+    </ModalShell>
   )
 }
 

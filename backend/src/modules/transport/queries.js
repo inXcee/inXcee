@@ -396,6 +396,46 @@ export function clearAssignment(staffId, workDate) {
   getDB().prepare('DELETE FROM route_assignments WHERE staff_id=? AND work_date=?').run(staffId, workDate)
 }
 
+// ── Personel detay (servis geçmişi) ──
+export function getStaffTransportDetail(staffId) {
+  const db = getDB()
+  const person = db.prepare(`
+    SELECT s.*, d.name as dept_name, d.color_class as dept_color,
+      pp.name as pickup_name, pp.district as pickup_district, pp.lat as pickup_lat, pp.lng as pickup_lng
+    FROM staff s
+    LEFT JOIN departments d ON d.id = s.department_id
+    LEFT JOIN pickup_points pp ON pp.id = s.pickup_point_id
+    WHERE s.id = ?
+  `).get(staffId)
+  if (!person) return null
+
+  const assignments = db.prepare(`
+    SELECT ra.work_date, ra.route_id,
+      r.name as route_name, r.color as route_color, r.vehicle_plate,
+      rs.scheduled_time, pp.name as stop_name
+    FROM route_assignments ra
+    JOIN routes r ON r.id = ra.route_id
+    LEFT JOIN route_stops rs ON rs.id = ra.stop_id
+    LEFT JOIN pickup_points pp ON pp.id = rs.pickup_point_id
+    WHERE ra.staff_id = ?
+    ORDER BY ra.work_date DESC
+    LIMIT 60
+  `).all(staffId)
+
+  // Bu kişinin durağındaki rotalar (varsa)
+  const availableRoutes = person.pickup_point_id ? db.prepare(`
+    SELECT r.id, r.name, r.color, r.vehicle_plate, r.capacity,
+      sd.name as shift_name, rs.scheduled_time
+    FROM route_stops rs
+    JOIN routes r ON r.id = rs.route_id
+    LEFT JOIN shift_definitions sd ON sd.id = r.shift_def_id
+    WHERE rs.pickup_point_id = ? AND r.is_active = 1
+    ORDER BY r.name
+  `).all(person.pickup_point_id) : []
+
+  return { person, assignments, availableRoutes }
+}
+
 // ── Raporlar ──
 // Bir tarihte / aralıkta servis kullanım raporları
 export function getReports({ startDate, endDate } = {}) {
