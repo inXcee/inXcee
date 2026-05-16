@@ -13,6 +13,7 @@ import CountModal from './components/CountModal.jsx'
 import ReceiptModal from './components/ReceiptModal.jsx'
 import WriteOffModal from './components/WriteOffModal.jsx'
 import ItemDetailDrawer from './components/ItemDetailDrawer.jsx'
+import TransferModal from './components/TransferModal.jsx'
 import ItemsTab from './tabs/ItemsTab.jsx'
 import ActivityTab from './tabs/ActivityTab.jsx'
 import PurchasingTab from './tabs/PurchasingTab.jsx'
@@ -35,6 +36,7 @@ export default function InventoryPage() {
   const [editItem, setEditItem] = useState(null)
   const [writeOffItem, setWriteOffItem] = useState(null)
   const [detailItem, setDetailItem] = useState(null)
+  const [transferItem, setTransferItem] = useState(null)
   const [poPrefill, setPoPrefill] = useState(null)
   const [showNew, setShowNew] = useState(false)
   const [showCount, setShowCount] = useState(false)
@@ -53,7 +55,7 @@ export default function InventoryPage() {
   const createMut = useMutation({ mutationFn: d => api.post('/inventory', d), onSuccess: () => { inv(); setShowNew(false) } })
   const updateMut = useMutation({ mutationFn: ({ id, ...d }) => api.put(`/inventory/${id}`, d), onSuccess: () => { inv(); setEditItem(null) } })
   const deleteMut = useMutation({ mutationFn: id => api.delete(`/inventory/${id}`), onSuccess: inv })
-  const adjustMut = useMutation({ mutationFn: ({ id, delta, reason }) => api.patch(`/inventory/${id}/adjust`, { delta, reason }), onSuccess: () => { inv(); setAdjustItem(null) } })
+  const adjustMut = useMutation({ mutationFn: ({ id, delta, reason, location_id }) => api.patch(`/inventory/${id}/adjust`, { delta, reason, location_id }), onSuccess: () => { inv(); qc.invalidateQueries({ queryKey: ['stock-by-location'] }); setAdjustItem(null) } })
 
   // Drawer'daki kart, items query'si yenilendiğinde güncel kalsın diye id'den taze item bul
   const liveDetailItem = useMemo(
@@ -194,6 +196,7 @@ export default function InventoryPage() {
       {showCount && <CountModal items={items} onClose={() => setShowCount(false)} />}
       {showReceipt && <ReceiptModal items={items} onClose={() => setShowReceipt(false)} />}
       {writeOffItem && <WriteOffModal item={writeOffItem} onClose={() => setWriteOffItem(null)} />}
+      {transferItem && <TransferModal item={transferItem} onClose={() => setTransferItem(null)} />}
       {liveDetailItem && (
         <ItemDetailDrawer
           item={liveDetailItem}
@@ -204,6 +207,7 @@ export default function InventoryPage() {
           onCheckout={() => { setCheckoutItem(liveDetailItem); setDetailItem(null) }}
           onWriteOff={() => { setWriteOffItem(liveDetailItem); setDetailItem(null) }}
           onDelete={() => { deleteMut.mutate(liveDetailItem.id); setDetailItem(null) }}
+          onTransfer={() => { setTransferItem(liveDetailItem); setDetailItem(null) }}
           onGoToPO={() => {
             setPoPrefill({ itemId: liveDetailItem.id, supplierId: liveDetailItem.preferred_supplier_id })
             setActiveTab('purchasing')

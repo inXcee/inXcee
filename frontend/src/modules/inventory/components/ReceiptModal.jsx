@@ -1,24 +1,29 @@
 import { useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import api from '../../../shared/api/client.js'
 import Modal from './Modal.jsx'
 import { money } from '../constants.js'
 
 export default function ReceiptModal({ items, onClose }) {
   const qc = useQueryClient()
-  const inv = () => { qc.invalidateQueries({ queryKey: ['inventory'] }); qc.invalidateQueries({ queryKey: ['inventory-stats'] }); qc.invalidateQueries({ queryKey: ['inv-recent-moves'] }); qc.invalidateQueries({ queryKey: ['goods-receipts'] }) }
+  const inv = () => { qc.invalidateQueries({ queryKey: ['inventory'] }); qc.invalidateQueries({ queryKey: ['inventory-stats'] }); qc.invalidateQueries({ queryKey: ['inv-recent-moves'] }); qc.invalidateQueries({ queryKey: ['goods-receipts'] }); qc.invalidateQueries({ queryKey: ['stock-by-location'] }) }
+
+  const { data: locations = [] } = useQuery({
+    queryKey: ['inv-locations', false],
+    queryFn: () => api.get('/inventory/locations?active=1').then(r => r.data),
+  })
 
   const [supplier, setSupplier] = useState('')
   const [invoiceNo, setInvoiceNo] = useState('')
   const [receiptDate, setReceiptDate] = useState(new Date().toISOString().slice(0, 10))
   const [notes, setNotes] = useState('')
-  const [lines, setLines] = useState([{ item_id: '', quantity: '', unit_price: '', lot_no: '', expiry_date: '' }])
+  const [lines, setLines] = useState([{ item_id: '', quantity: '', unit_price: '', lot_no: '', expiry_date: '', location_id: '' }])
   const [lineSearches, setLineSearches] = useState({})
   const [result, setResult] = useState(null)
 
   const updateLineSearch = (idx, val) => setLineSearches(p => ({ ...p, [idx]: val }))
 
-  const addLine = () => setLines(p => [...p, { item_id: '', quantity: '', unit_price: '', lot_no: '', expiry_date: '' }])
+  const addLine = () => setLines(p => [...p, { item_id: '', quantity: '', unit_price: '', lot_no: '', expiry_date: '', location_id: '' }])
   const removeLine = idx => setLines(p => p.filter((_, i) => i !== idx))
   const updateLine = (idx, key, val) => setLines(p => p.map((l, i) => i === idx ? { ...l, [key]: val } : l))
 
@@ -28,7 +33,12 @@ export default function ReceiptModal({ items, onClose }) {
     return sum + q * p
   }, 0)
 
-  const validLines = lines.filter(l => l.item_id && +l.quantity > 0)
+  const validLines = lines.filter(l => {
+    if (!l.item_id || +l.quantity <= 0) return false
+    const it = items.find(i => i.id === +l.item_id)
+    if (it?.track_locations && !l.location_id) return false
+    return true
+  })
 
   const mut = useMutation({
     mutationFn: d => api.post('/inventory/receipts', d),
@@ -87,6 +97,7 @@ export default function ReceiptModal({ items, onClose }) {
           {lines.map((line, idx) => {
             const selectedItem = items.find(i => i.id === +line.item_id)
             const showLotFields = selectedItem?.track_lots === 1
+            const showLocationField = selectedItem?.track_locations === 1
             return (
               <div key={idx} style={{
                 display: 'grid', gridTemplateColumns: '1fr 90px 90px 28px', gap: '6px', alignItems: 'end',
@@ -143,6 +154,17 @@ export default function ReceiptModal({ items, onClose }) {
                     </div>
                   </div>
                 )}
+                {showLocationField && (
+                  <div style={{ gridColumn: '1 / -1', marginTop: 6, padding: '6px 0 0', borderTop: '1px dashed var(--border)' }}>
+                    <label style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--blue)', letterSpacing: 1, display: 'block', marginBottom: 3 }}>📍 LOKASYON *</label>
+                    <select className="form-select" value={line.location_id || ''}
+                      onChange={e => updateLine(idx, 'location_id', e.target.value)}
+                      style={{ borderRadius: 8, fontSize: 11 }}>
+                      <option value="">Lokasyon seç...</option>
+                      {locations.map(l => <option key={l.id} value={l.id}>{l.block ? `[${l.block}] ` : ''}{l.name}</option>)}
+                    </select>
+                  </div>
+                )}
               </div>
             )
           })}
@@ -171,6 +193,7 @@ export default function ReceiptModal({ items, onClose }) {
                 unit_price: +l.unit_price || undefined,
                 lot_no: l.lot_no || undefined,
                 expiry_date: l.expiry_date || undefined,
+                location_id: l.location_id ? +l.location_id : undefined,
               }))
             })}>
             {mut.isPending ? 'KAYDEDILIYOR...' : 'MAL GIRIS KAYDET'}

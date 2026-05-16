@@ -5,12 +5,23 @@ import Modal from './Modal.jsx'
 
 export default function CheckoutModal({ item, onClose }) {
   const qc = useQueryClient()
-  const inv = () => { qc.invalidateQueries({ queryKey: ['inventory'] }); qc.invalidateQueries({ queryKey: ['inventory-stats'] }); qc.invalidateQueries({ queryKey: ['checkouts-active'] }) }
+  const inv = () => { qc.invalidateQueries({ queryKey: ['inventory'] }); qc.invalidateQueries({ queryKey: ['inventory-stats'] }); qc.invalidateQueries({ queryKey: ['checkouts-active'] }); qc.invalidateQueries({ queryKey: ['stock-by-location'] }) }
   const [step, setStep] = useState(0)
   const [personQ, setPersonQ] = useState('')
   const [person, setPerson] = useState(null)
   const [qty, setQty] = useState(1)
   const [note, setNote] = useState('')
+  const [fromLocationId, setFromLocationId] = useState('')
+
+  const { data: locationStock = [] } = useQuery({
+    queryKey: ['stock-by-location', item.id],
+    queryFn: () => api.get(`/inventory/${item.id}/stock-by-location`).then(r => r.data),
+    enabled: !!item.track_locations,
+  })
+  const fromQty = item.track_locations && fromLocationId
+    ? (locationStock.find(s => s.location_id === +fromLocationId)?.quantity || 0)
+    : item.quantity
+  const maxQty = item.track_locations ? fromQty : item.quantity
 
   const { data: results = [] } = useQuery({
     queryKey: ['inv-person-search', personQ],
@@ -86,23 +97,37 @@ export default function CheckoutModal({ item, onClose }) {
             <button className="btn btn-ghost btn-xs" onClick={() => setStep(0)} style={{ borderRadius: '8px' }}>degistir</button>
           </div>
 
+          {item.track_locations && (
+            <div style={{ marginBottom: 14, padding: '10px 12px', background: 'rgba(52,152,219,.04)', borderRadius: 10, border: '1px solid rgba(52,152,219,.25)' }}>
+              <label style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--blue)', letterSpacing: 1.5, display: 'block', marginBottom: 5 }}>📍 KAYNAK LOKASYON *</label>
+              <select className="form-select" value={fromLocationId} onChange={e => setFromLocationId(e.target.value)} style={{ borderRadius: 8, fontSize: 12 }}>
+                <option value="">Seç...</option>
+                {locationStock.filter(s => s.quantity > 0 && s.is_active).map(s => (
+                  <option key={s.location_id} value={s.location_id}>
+                    {s.block ? `[${s.block}] ` : ''}{s.name} — {s.quantity} {item.unit}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '14px', marginBottom: '16px' }}>
             <button onClick={() => setQty(Math.max(1, qty - 1))} style={{
               width: '40px', height: '40px', borderRadius: '12px', border: '1px solid var(--border)',
               background: 'var(--surface2)', color: 'var(--text)', fontSize: '18px', cursor: 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all .15s',
             }}>-</button>
-            <input className="form-input" type="number" min="1" max={item.quantity} value={qty}
-              onChange={e => setQty(Math.max(1, Math.min(item.quantity, +e.target.value)))}
+            <input className="form-input" type="number" min="1" max={maxQty} value={qty}
+              onChange={e => setQty(Math.max(1, Math.min(maxQty, +e.target.value)))}
               style={{ width: '100px', textAlign: 'center', fontFamily: 'var(--display)', fontSize: '30px', letterSpacing: '2px', borderRadius: '12px' }} />
-            <button onClick={() => setQty(Math.min(item.quantity, qty + 1))} style={{
+            <button onClick={() => setQty(Math.min(maxQty, qty + 1))} style={{
               width: '40px', height: '40px', borderRadius: '12px', border: '1px solid var(--border)',
               background: 'var(--surface2)', color: 'var(--text)', fontSize: '18px', cursor: 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all .15s',
             }}>+</button>
           </div>
           <div style={{ textAlign: 'center', fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--text3)', marginBottom: '16px', padding: '8px', background: 'var(--surface2)', borderRadius: '8px' }}>
-            Stok: {item.quantity} {item.unit} → Teslim sonrasi: <strong style={{ color: 'var(--accent)' }}>{item.quantity - qty}</strong> {item.unit}
+            {item.track_locations ? 'Lokasyon stoku' : 'Stok'}: {maxQty} {item.unit} → sonra: <strong style={{ color: 'var(--accent)' }}>{maxQty - qty}</strong> {item.unit}
           </div>
 
           <input className="form-input" value={note} onChange={e => setNote(e.target.value)} placeholder="Not (opsiyonel)..." style={{ marginBottom: '16px', borderRadius: '10px' }} />
@@ -110,7 +135,8 @@ export default function CheckoutModal({ item, onClose }) {
           {mut.isError && <div className="alert alert-danger" style={{ marginBottom: '12px', borderRadius: '10px' }}><span>!</span><span>{mut.error?.response?.data?.error || 'Hata'}</span></div>}
 
           <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center', padding: '14px', borderRadius: '10px', fontSize: '12px' }}
-            disabled={mut.isPending} onClick={() => mut.mutate({ item_id: item.id, personnel_id: person.id, quantity: qty, note })}>
+            disabled={mut.isPending || (item.track_locations && !fromLocationId)}
+            onClick={() => mut.mutate({ item_id: item.id, personnel_id: person.id, quantity: qty, note, from_location_id: fromLocationId ? +fromLocationId : undefined })}>
             {mut.isPending ? 'KAYDEDILIYOR...' : `${qty} ${item.unit} TESLIM ET`}
           </button>
         </div>

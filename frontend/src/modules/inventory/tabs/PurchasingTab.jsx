@@ -3,6 +3,7 @@ import PurchaseOrdersTab from './PurchaseOrdersTab.jsx'
 import RequestsTab from './RequestsTab.jsx'
 import ReceiptsTab from './ReceiptsTab.jsx'
 import SuppliersTab from './SuppliersTab.jsx'
+import LocationsTab from './LocationsTab.jsx'
 import { SubTabBar } from './ActivityTab.jsx'
 
 const SUB = [
@@ -10,6 +11,7 @@ const SUB = [
   { key: 'requests', label: 'TALEPLER' },
   { key: 'receipts', label: 'MAL GİRİŞ' },
   { key: 'suppliers', label: 'TEDARİKÇİ' },
+  { key: 'locations', label: 'LOKASYON' },
 ]
 
 export default function PurchasingTab({ items, poPrefill, onPrefillConsumed, onNewReceipt }) {
@@ -25,6 +27,7 @@ export default function PurchasingTab({ items, poPrefill, onPrefillConsumed, onN
       {sub === 'requests' && <RequestsTab items={items} />}
       {sub === 'receipts' && <ReceiptsTab onNewReceipt={onNewReceipt} />}
       {sub === 'suppliers' && <SuppliersTab />}
+      {sub === 'locations' && <LocationsTab />}
     </div>
   )
 }

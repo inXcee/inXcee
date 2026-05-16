@@ -5,7 +5,7 @@ import { CATEGORIES, MOVE_LABEL, MOVE_COLOR, fmt, fmtDate, money } from '../cons
 import { confirmDialog } from '../../../shared/components/ConfirmDialog.jsx'
 import MoreMenu from './MoreMenu.jsx'
 
-export default function ItemDetailDrawer({ item, forecast, onClose, onEdit, onAdjust, onCheckout, onDelete, onWriteOff, onGoToPO }) {
+export default function ItemDetailDrawer({ item, forecast, onClose, onEdit, onAdjust, onCheckout, onDelete, onWriteOff, onGoToPO, onTransfer }) {
   const c = CATEGORIES.find(x => x.key === item.category)
   const isOut = item.quantity <= 0
   const isLow = !isOut && item.quantity <= item.reorder_threshold
@@ -17,6 +17,21 @@ export default function ItemDetailDrawer({ item, forecast, onClose, onEdit, onAd
     queryFn: () => api.get(`/inventory/${item.id}/log`).then(r => r.data),
     staleTime: 30000,
   })
+
+  const { data: stockByLocation = [] } = useQuery({
+    queryKey: ['stock-by-location', item.id],
+    queryFn: () => api.get(`/inventory/${item.id}/stock-by-location`).then(r => r.data),
+    enabled: !!item.track_locations,
+    staleTime: 30000,
+  })
+
+  const { data: lots = [] } = useQuery({
+    queryKey: ['item-lots-drawer', item.id],
+    queryFn: () => api.get(`/inventory/items/${item.id}/lots`).then(r => r.data),
+    enabled: !!item.track_lots,
+    staleTime: 30000,
+  })
+  const activeLots = lots.filter(l => l.status === 'active')
 
   async function handleDelete() {
     const ok = await confirmDialog({
@@ -107,6 +122,102 @@ export default function ItemDetailDrawer({ item, forecast, onClose, onEdit, onAd
             📦 SİPARİŞ OLUŞTUR · {item.supplier_name}
           </button>
         )}
+
+        {/* Lokasyon dağılımı — track_locations ürünlerde */}
+        {item.track_locations ? (
+          <div style={{
+            padding: '10px 12px', marginBottom: 12, borderRadius: 8,
+            background: 'rgba(52,152,219,.04)', border: '1px solid rgba(52,152,219,.2)',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--blue)', letterSpacing: 1.5 }}>
+                📍 LOKASYON DAĞILIMI ({stockByLocation.length})
+              </span>
+              {onTransfer && stockByLocation.some(s => s.quantity > 0) && (
+                <button onClick={onTransfer} style={{
+                  background: 'transparent', border: '1px solid rgba(52,152,219,.3)', borderRadius: 6,
+                  padding: '3px 8px', fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--blue)',
+                  cursor: 'pointer', letterSpacing: 1,
+                }}>↔ TRANSFER</button>
+              )}
+            </div>
+            {stockByLocation.length === 0 ? (
+              <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)' }}>
+                Henüz lokasyon ataması yok — mal giriş yapınca dağılır
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {stockByLocation.map(s => (
+                  <div key={s.location_id} style={{
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8,
+                    padding: '4px 0', fontSize: 11,
+                  }}>
+                    <span style={{ color: s.is_active ? 'var(--text)' : 'var(--text3)' }}>
+                      {s.block ? <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--accent)', marginRight: 6 }}>{s.block}</span> : null}
+                      {s.name}
+                      {!s.is_active && <span style={{ fontSize: 8, color: 'var(--text4)', marginLeft: 4 }}>(pasif)</span>}
+                    </span>
+                    <span style={{ fontFamily: 'var(--mono)', fontWeight: 700, color: s.quantity > 0 ? 'var(--text)' : 'var(--text3)' }}>
+                      {s.quantity} {item.unit}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : null}
+
+        {/* Aktif Lotlar — track_lots ürünlerde */}
+        {item.track_lots ? (
+          <div style={{
+            padding: '10px 12px', marginBottom: 12, borderRadius: 8,
+            background: 'rgba(155,89,182,.04)', border: '1px solid rgba(155,89,182,.2)',
+          }}>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--purple)', letterSpacing: 1.5, marginBottom: 8 }}>
+              🏷 AKTİF LOTLAR ({activeLots.length})
+            </div>
+            {activeLots.length === 0 ? (
+              <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)' }}>
+                Aktif lot yok — mal giriş yapınca FIFO dağılır
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {activeLots.slice(0, 5).map(l => {
+                  const daysLeft = l.expiry_date ? Math.floor((new Date(l.expiry_date) - new Date()) / (1000 * 60 * 60 * 24)) : null
+                  const expCritical = daysLeft !== null && daysLeft <= 7
+                  const expWarning = daysLeft !== null && daysLeft <= 30 && daysLeft > 7
+                  return (
+                    <div key={l.id} style={{
+                      display: 'grid', gridTemplateColumns: '1fr auto auto', gap: 8,
+                      padding: '4px 0', fontSize: 11, alignItems: 'center',
+                    }}>
+                      <span style={{ fontFamily: 'var(--mono)', color: 'var(--accent)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {l.lot_no || `#${l.id}`}
+                      </span>
+                      <span style={{ fontFamily: 'var(--mono)', fontWeight: 700 }}>
+                        {l.quantity} {item.unit}
+                      </span>
+                      {l.expiry_date ? (
+                        <span style={{
+                          fontFamily: 'var(--mono)', fontSize: 9, padding: '2px 6px', borderRadius: 4,
+                          background: expCritical ? 'rgba(231,76,60,.12)' : expWarning ? 'rgba(240,165,0,.12)' : 'var(--surface2)',
+                          color: expCritical ? 'var(--red)' : expWarning ? 'var(--amber)' : 'var(--text3)',
+                        }}>
+                          {daysLeft <= 0 ? 'GEÇTİ' : `${daysLeft}g`}
+                        </span>
+                      ) : <span style={{ fontSize: 9, color: 'var(--text4)' }}>SKT yok</span>}
+                    </div>
+                  )
+                })}
+                {activeLots.length > 5 && (
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', textAlign: 'center', marginTop: 4 }}>
+                    +{activeLots.length - 5} lot daha · LOT/SKT sekmesinden gör
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        ) : null}
 
         {/* Kompakt info — 4 satır */}
         <div style={{
