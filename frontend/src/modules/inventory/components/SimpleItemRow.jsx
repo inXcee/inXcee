@@ -58,12 +58,6 @@ export default function SimpleItemRow({ item, view, forecast, onAdjust, onChecko
           )}
         </div>
 
-        {forecast && (
-          <div style={{ fontSize: 10, color: forecast.severity === 'critical' ? 'var(--red)' : 'var(--accent)', fontFamily: 'var(--mono)' }}>
-            ⌛ ~{forecast.days_left} gün
-          </div>
-        )}
-
         <div style={{ display: 'flex', gap: 6 }} onClick={e => e.stopPropagation()}>
           <button onClick={() => onAdjust(item, '+')} className="btn btn-ghost btn-sm" style={{ flex: 1, color: 'var(--green)' }}>+ Stok</button>
           <button onClick={() => onCheckout(item)} className="btn btn-ghost btn-sm" style={{ flex: 1, color: 'var(--red)' }}>− Çıkış</button>
@@ -103,7 +97,6 @@ export default function SimpleItemRow({ item, view, forecast, onAdjust, onChecko
         <div style={{ display: 'inline-flex', gap: 4 }}>
           <button onClick={() => onAdjust(item, '+')} title="Stok ekle" style={iconBtn('var(--green)')}>+</button>
           <button onClick={() => onCheckout(item)} title="Çıkış yap" style={iconBtn('var(--red)')}>−</button>
-          <button onClick={onDetail} title="Detay" style={iconBtn('var(--text3)')}>↗</button>
         </div>
       </td>
     </tr>
