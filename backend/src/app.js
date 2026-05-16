@@ -37,6 +37,7 @@ import { pushRouter } from './modules/push/routes.js'
 import { emailRouter } from './modules/email/routes.js'
 import { announcementsRouter } from './modules/announcements/routes.js'
 import { avsWorkersRouter } from './modules/avs-workers/routes.js'
+import { transportRouter } from './modules/transport/routes.js'
 import { mobileAuthRouter } from './modules/mobile-auth/routes.js'
 import { setupRouter } from './modules/setup/routes.js'
 import { errorLogRouter } from './modules/error-log/routes.js'
@@ -242,6 +243,7 @@ app.use('/api/users', writeLimiter, usersRouter)
 app.use('/api/settings/email', writeLimiter, emailRouter)
 app.use('/api/announcements', writeLimiter, announcementsRouter)
 app.use('/api/avs-workers', writeLimiter, avsWorkersRouter)
+app.use('/api/transport', writeLimiter, transportRouter)
 // Error log: POST writeLimiter (frontend hata flood'una karşı), GET/DELETE admin
 app.use('/api/error-log', writeLimiter, errorLogRouter)
 app.use('/api/backup', writeLimiter, backupRouter)

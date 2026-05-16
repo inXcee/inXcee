@@ -820,6 +820,57 @@ export function initDB() {
   try { db.exec('ALTER TABLE avs_workers ADD COLUMN pin_attempts INTEGER DEFAULT 0') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] avs_workers.pin_attempts:', e.message) }
   try { db.exec('ALTER TABLE avs_workers ADD COLUMN pin_locked_until TEXT') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] avs_workers.pin_locked_until:', e.message) }
 
+  // ── Servis / Ulaşım sistemi ───────────────────────────────────────────────
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS pickup_points (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      district TEXT,
+      neighborhood TEXT,
+      lat REAL,
+      lng REAL,
+      notes TEXT,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`)
+    db.exec(`CREATE TABLE IF NOT EXISTS routes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      vehicle_plate TEXT,
+      capacity INTEGER NOT NULL DEFAULT 16,
+      driver_name TEXT,
+      driver_phone TEXT,
+      shift_def_id INTEGER REFERENCES shift_definitions(id),
+      color TEXT DEFAULT '#3b82f6',
+      is_active INTEGER NOT NULL DEFAULT 1,
+      notes TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`)
+    db.exec(`CREATE TABLE IF NOT EXISTS route_stops (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      route_id INTEGER NOT NULL REFERENCES routes(id) ON DELETE CASCADE,
+      pickup_point_id INTEGER NOT NULL REFERENCES pickup_points(id),
+      sequence_order INTEGER NOT NULL DEFAULT 0,
+      scheduled_time TEXT,
+      UNIQUE(route_id, pickup_point_id)
+    )`)
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_route_stops_route ON route_stops(route_id, sequence_order)`)
+    db.exec(`CREATE TABLE IF NOT EXISTS route_assignments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      route_id INTEGER NOT NULL REFERENCES routes(id) ON DELETE CASCADE,
+      stop_id INTEGER REFERENCES route_stops(id) ON DELETE SET NULL,
+      staff_id INTEGER NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
+      work_date TEXT NOT NULL,
+      assigned_by INTEGER REFERENCES users(id),
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(staff_id, work_date)
+    )`)
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_route_assignments_date ON route_assignments(work_date, route_id)`)
+  } catch (e) { console.error('[Migration] transport tables:', e.message) }
+  try { db.exec('ALTER TABLE staff ADD COLUMN pickup_point_id INTEGER REFERENCES pickup_points(id)') } catch (e) {
+    if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] staff.pickup_point_id:', e.message)
+  }
+
   // ── AVS workers <-> staff unification (single source of truth = staff) ──
   try { db.exec('ALTER TABLE staff ADD COLUMN kiosk_pin TEXT') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] staff.kiosk_pin:', e.message) }
   try { db.exec('ALTER TABLE staff ADD COLUMN role_label TEXT') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] staff.role_label:', e.message) }
