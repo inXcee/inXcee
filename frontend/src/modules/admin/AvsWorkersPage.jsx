@@ -16,8 +16,8 @@ const ROLE_PRESETS = [
 export default function AvsWorkersPage() {
   const qc = useQueryClient()
   const [selected, setSelected] = useState(null)
-  const [editForm, setEditForm] = useState({ full_name: '', role_label: '' })
-  const [newForm, setNewForm] = useState({ full_name: '', role_label: '' })
+  const [editForm, setEditForm] = useState({ full_name: '', role_label: '', phone: '', pickup_point_id: '' })
+  const [newForm, setNewForm] = useState({ full_name: '', role_label: '', phone: '', pickup_point_id: '' })
   const [pinInput, setPinInput] = useState('')
   const [showPinField, setShowPinField] = useState(false)
   const [toast, setToast] = useState(null)
@@ -26,6 +26,11 @@ export default function AvsWorkersPage() {
   const { data: workers = [], isLoading } = useQuery({
     queryKey: ['avs-workers'],
     queryFn: () => api.get('/avs-workers').then(r => r.data),
+  })
+
+  const { data: pickupPoints = [] } = useQuery({
+    queryKey: ['transport-points-active'],
+    queryFn: () => api.get('/transport/pickup-points?active=1').then(r => r.data),
   })
 
   const filteredWorkers = useMemo(
@@ -46,7 +51,12 @@ export default function AvsWorkersPage() {
 
   function selectWorker(w) {
     setSelected(w)
-    setEditForm({ full_name: w.full_name, role_label: w.role_label || '' })
+    setEditForm({
+      full_name: w.full_name,
+      role_label: w.role_label || '',
+      phone: w.phone || '',
+      pickup_point_id: w.pickup_point_id || '',
+    })
     setPinInput('')
     setShowPinField(false)
   }
@@ -55,7 +65,8 @@ export default function AvsWorkersPage() {
     mutationFn: body => api.post('/avs-workers', body),
     onSuccess: data => {
       qc.invalidateQueries({ queryKey: ['avs-workers'] })
-      setNewForm({ full_name: '', role_label: '' })
+      qc.invalidateQueries({ queryKey: ['transport-staff'] })
+      setNewForm({ full_name: '', role_label: '', phone: '', pickup_point_id: '' })
       showToast('Çalışan eklendi')
       selectWorker(data.data)
     },
@@ -66,6 +77,8 @@ export default function AvsWorkersPage() {
     mutationFn: ({ id, ...body }) => api.put(`/avs-workers/${id}`, body),
     onSuccess: data => {
       qc.invalidateQueries({ queryKey: ['avs-workers'] })
+      qc.invalidateQueries({ queryKey: ['transport-staff'] })
+      qc.invalidateQueries({ queryKey: ['transport-daily'] })
       setSelected(data.data)
       showToast('Kaydedildi')
     },
@@ -204,8 +217,9 @@ export default function AvsWorkersPage() {
                     })()}
                   </div>
                 )}
-                <div style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: w.has_pin ? '#16a34a' : 'var(--text4)', marginTop: '2px' }}>
-                  {w.has_pin ? '● PIN tanımlı' : '○ PIN yok'}
+                <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', marginTop: 2, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                  <span style={{ color: w.has_pin ? '#16a34a' : 'var(--text4)' }}>{w.has_pin ? '● PIN' : '○ PIN'}</span>
+                  {w.pickup_name && <span style={{ color: 'var(--blue)' }}>📍 {w.pickup_name}</span>}
                 </div>
               </div>
             ))}
@@ -241,11 +255,34 @@ export default function AvsWorkersPage() {
                     }}>{p.label}</button>
                 ))}
               </div>
+              <input
+                className="form-input"
+                placeholder="📞 Telefon (opsiyonel)"
+                value={newForm.phone}
+                onChange={e => setNewForm(f => ({ ...f, phone: e.target.value }))}
+                style={{ marginBottom: 6, fontSize: '12px' }}
+              />
+              <select
+                className="form-select"
+                value={newForm.pickup_point_id}
+                onChange={e => setNewForm(f => ({ ...f, pickup_point_id: e.target.value }))}
+                style={{ marginBottom: 8, fontSize: 12 }}
+              >
+                <option value="">📍 Servis durağı (opsiyonel)…</option>
+                {pickupPoints.map(p => (
+                  <option key={p.id} value={p.id}>{p.district ? `[${p.district}] ` : ''}{p.name}</option>
+                ))}
+              </select>
               <button
                 className="btn btn-primary"
                 style={{ width: '100%', fontSize: '12px' }}
                 disabled={createMut.isPending || newForm.full_name.trim().length < 2}
-                onClick={() => createMut.mutate({ full_name: newForm.full_name.trim(), role_label: newForm.role_label.trim() || null })}
+                onClick={() => createMut.mutate({
+                  full_name: newForm.full_name.trim(),
+                  role_label: newForm.role_label.trim() || null,
+                  phone: newForm.phone.trim() || null,
+                  pickup_point_id: newForm.pickup_point_id ? +newForm.pickup_point_id : null,
+                })}
               >
                 {createMut.isPending ? 'Ekleniyor...' : '+ Ekle'}
               </button>
@@ -316,11 +353,42 @@ export default function AvsWorkersPage() {
               }}>
                 🔄 Bu çalışan vardiya sisteminde otomatik kayıtlı (staff #{selected.id}). Vardiya, izin, mesai işlemleri Personel/Vardiya sayfasından yapılır.
               </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, maxWidth: 480 }}>
+                <div>
+                  <label style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', letterSpacing: 1, display: 'block', marginBottom: 6 }}>📞 TELEFON</label>
+                  <input className="form-input" value={editForm.phone}
+                    onChange={e => setEditForm(f => ({ ...f, phone: e.target.value }))}
+                    placeholder="05XX XXX XX XX" />
+                </div>
+                <div>
+                  <label style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', letterSpacing: 1, display: 'block', marginBottom: 6 }}>
+                    📍 SERVİS DURAĞI
+                    {selected.pickup_name && (
+                      <span style={{ marginLeft: 8, padding: '2px 8px', background: 'rgba(52,152,219,.12)', color: 'var(--blue)', borderRadius: 4, fontSize: 9 }}>
+                        şu an: {selected.pickup_name}
+                      </span>
+                    )}
+                  </label>
+                  <select className="form-select" value={editForm.pickup_point_id}
+                    onChange={e => setEditForm(f => ({ ...f, pickup_point_id: e.target.value }))}>
+                    <option value="">(durak yok)</option>
+                    {pickupPoints.map(p => (
+                      <option key={p.id} value={p.id}>{p.district ? `[${p.district}] ` : ''}{p.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
               <div>
                 <button
                   className="btn btn-primary"
                   disabled={updateMut.isPending || editForm.full_name.trim().length < 2}
-                  onClick={() => updateMut.mutate({ id: selected.id, full_name: editForm.full_name.trim(), role_label: editForm.role_label.trim() || null })}
+                  onClick={() => updateMut.mutate({
+                    id: selected.id,
+                    full_name: editForm.full_name.trim(),
+                    role_label: editForm.role_label.trim() || null,
+                    phone: editForm.phone.trim() || null,
+                    pickup_point_id: editForm.pickup_point_id ? +editForm.pickup_point_id : null,
+                  })}
                 >
                   {updateMut.isPending ? 'Kaydediliyor...' : 'Kaydet'}
                 </button>
