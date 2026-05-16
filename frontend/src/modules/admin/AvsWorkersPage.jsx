@@ -1,6 +1,17 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
+
+const ROLE_PRESETS = [
+  { label: 'Kat Personeli', dept: 'Temizlik', color: '#16a34a' },
+  { label: 'Çamaşırhane', dept: 'Çamaşırhane', color: '#9333ea' },
+  { label: 'Teknik Servis', dept: 'Teknik', color: '#eab308' },
+  { label: 'Güvenlik', dept: 'Güvenlik', color: '#dc2626' },
+  { label: 'Mutfak', dept: 'Mutfak', color: '#f97316' },
+  { label: 'Bahçe', dept: 'Bahçe', color: '#84cc16' },
+  { label: 'İdari', dept: 'İdari', color: '#2563eb' },
+  { label: 'Sağlık', dept: 'Sağlık', color: '#ec4899' },
+]
 
 export default function AvsWorkersPage() {
   const qc = useQueryClient()
@@ -10,11 +21,23 @@ export default function AvsWorkersPage() {
   const [pinInput, setPinInput] = useState('')
   const [showPinField, setShowPinField] = useState(false)
   const [toast, setToast] = useState(null)
+  const [deptFilter, setDeptFilter] = useState('')
 
   const { data: workers = [], isLoading } = useQuery({
     queryKey: ['avs-workers'],
     queryFn: () => api.get('/avs-workers').then(r => r.data),
   })
+
+  const filteredWorkers = useMemo(
+    () => deptFilter ? workers.filter(w => w.department_name === deptFilter) : workers,
+    [workers, deptFilter],
+  )
+
+  const deptCounts = useMemo(() => {
+    const map = {}
+    workers.forEach(w => { if (w.department_name) map[w.department_name] = (map[w.department_name] || 0) + 1 })
+    return map
+  }, [workers])
 
   function showToast(msg, type = 'success') {
     setToast({ msg, type })
@@ -86,9 +109,28 @@ export default function AvsWorkersPage() {
       <div className="fade-up" style={{ marginBottom: '24px' }}>
         <h2 style={{ fontSize: '28px', letterSpacing: '4px' }}>AVS ÇALIŞANLARI</h2>
         <p style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)', letterSpacing: '1px', marginTop: '4px' }}>
-          ÇAMAŞIRHANE KIOSK PERSONEL YÖNETİMİ
+          PERSONEL YÖNETİMİ · KIOSK PIN · ROL ATAMA — VARDİYA SİSTEMİYLE OTOMATİK SENKRON
         </p>
       </div>
+
+      {/* Departman filtre chip'leri */}
+      {workers.length > 0 && (
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16 }}>
+          <button onClick={() => setDeptFilter('')} className={`btn btn-xs ${!deptFilter ? 'btn-primary' : 'btn-ghost'}`} style={{ borderRadius: 8 }}>
+            TÜMÜ ({workers.length})
+          </button>
+          {Object.entries(deptCounts).sort((a, b) => b[1] - a[1]).map(([d, n]) => {
+            const preset = ROLE_PRESETS.find(p => p.dept === d)
+            return (
+              <button key={d} onClick={() => setDeptFilter(deptFilter === d ? '' : d)}
+                className={`btn btn-xs ${deptFilter === d ? 'btn-primary' : 'btn-ghost'}`}
+                style={{ borderRadius: 8, ...(deptFilter === d && preset ? { background: preset.color, borderColor: preset.color } : {}) }}>
+                {d} · {n}
+              </button>
+            )
+          })}
+        </div>
+      )}
 
       {toast && (
         <div style={{
@@ -114,9 +156,11 @@ export default function AvsWorkersPage() {
           <div className="panel-body" style={{ padding: 0 }}>
             {isLoading ? (
               <div style={{ padding: '16px', color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: '12px' }}>Yükleniyor...</div>
-            ) : workers.length === 0 ? (
-              <div style={{ padding: '16px', color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: '12px' }}>Henüz çalışan yok</div>
-            ) : workers.map(w => (
+            ) : filteredWorkers.length === 0 ? (
+              <div style={{ padding: '16px', color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: '12px' }}>
+                {deptFilter ? `"${deptFilter}" departmanında kayıt yok` : 'Henüz çalışan yok'}
+              </div>
+            ) : filteredWorkers.map(w => (
               <div
                 key={w.id}
                 onClick={() => selectWorker(w)}
@@ -143,9 +187,21 @@ export default function AvsWorkersPage() {
                     {w.is_active ? 'AKTİF' : 'PASİF'}
                   </span>
                 </div>
-                {w.role_label && (
-                  <div style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)', marginTop: '3px' }}>
-                    {w.role_label}
+                {(w.role_label || w.department_name) && (
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 3, flexWrap: 'wrap' }}>
+                    {w.role_label && (
+                      <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)' }}>{w.role_label}</span>
+                    )}
+                    {w.department_name && (() => {
+                      const preset = ROLE_PRESETS.find(p => p.dept === w.department_name)
+                      return (
+                        <span style={{
+                          fontFamily: 'var(--mono)', fontSize: 9, padding: '1px 6px', borderRadius: 4, letterSpacing: 0.5,
+                          background: `${preset?.color || 'var(--text3)'}22`,
+                          color: preset?.color || 'var(--text3)',
+                        }}>{w.department_name}</span>
+                      )
+                    })()}
                   </div>
                 )}
                 <div style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: w.has_pin ? '#16a34a' : 'var(--text4)', marginTop: '2px' }}>
@@ -168,11 +224,23 @@ export default function AvsWorkersPage() {
               />
               <input
                 className="form-input"
-                placeholder="Rol (opsiyonel, ör: Çamaşırhane)"
+                placeholder="Rol etiketi (departman otomatik atanır)"
                 value={newForm.role_label}
                 onChange={e => setNewForm(f => ({ ...f, role_label: e.target.value }))}
-                style={{ marginBottom: '8px', fontSize: '12px' }}
+                style={{ marginBottom: 6, fontSize: '12px' }}
               />
+              <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap', marginBottom: 8 }}>
+                {ROLE_PRESETS.map(p => (
+                  <button key={p.label} type="button"
+                    onClick={() => setNewForm(f => ({ ...f, role_label: p.label }))}
+                    style={{
+                      padding: '3px 7px', border: `1px solid ${newForm.role_label === p.label ? p.color : 'var(--border)'}`,
+                      background: newForm.role_label === p.label ? `${p.color}22` : 'var(--surface2)',
+                      color: newForm.role_label === p.label ? p.color : 'var(--text3)',
+                      borderRadius: 6, fontSize: 9, fontFamily: 'var(--mono)', cursor: 'pointer', letterSpacing: 0.5,
+                    }}>{p.label}</button>
+                ))}
+              </div>
               <button
                 className="btn btn-primary"
                 style={{ width: '100%', fontSize: '12px' }}
@@ -210,15 +278,43 @@ export default function AvsWorkersPage() {
               </div>
               <div>
                 <label style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)', letterSpacing: '1px', display: 'block', marginBottom: '6px' }}>
-                  ROL ETİKETİ
+                  ROL ETİKETİ {selected.department_name && (() => {
+                    const preset = ROLE_PRESETS.find(p => p.dept === selected.department_name)
+                    return (
+                      <span style={{
+                        marginLeft: 8, padding: '2px 8px', borderRadius: 4, fontSize: 9,
+                        background: `${preset?.color || 'var(--text3)'}22`,
+                        color: preset?.color || 'var(--text3)',
+                      }}>→ {selected.department_name} departmanı</span>
+                    )
+                  })()}
                 </label>
                 <input
                   className="form-input"
-                  placeholder="ör: Çamaşırhane, Ütü"
+                  placeholder="ör: Çamaşırhane, Kat Personeli, Teknik Servis"
                   value={editForm.role_label}
                   onChange={e => setEditForm(f => ({ ...f, role_label: e.target.value }))}
-                  style={{ maxWidth: '320px' }}
+                  style={{ maxWidth: '320px', marginBottom: 6 }}
                 />
+                <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+                  {ROLE_PRESETS.map(p => (
+                    <button key={p.label} type="button"
+                      onClick={() => setEditForm(f => ({ ...f, role_label: p.label }))}
+                      style={{
+                        padding: '3px 7px', border: `1px solid ${editForm.role_label === p.label ? p.color : 'var(--border)'}`,
+                        background: editForm.role_label === p.label ? `${p.color}22` : 'var(--surface2)',
+                        color: editForm.role_label === p.label ? p.color : 'var(--text3)',
+                        borderRadius: 6, fontSize: 9, fontFamily: 'var(--mono)', cursor: 'pointer', letterSpacing: 0.5,
+                      }}>{p.label}</button>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{
+                padding: '8px 12px', borderRadius: 8, background: 'rgba(59,130,246,.06)', border: '1px solid rgba(59,130,246,.2)',
+                fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text2)', letterSpacing: 0.5,
+              }}>
+                🔄 Bu çalışan vardiya sisteminde otomatik kayıtlı (staff #{selected.id}). Vardiya, izin, mesai işlemleri Personel/Vardiya sayfasından yapılır.
               </div>
               <div>
                 <button

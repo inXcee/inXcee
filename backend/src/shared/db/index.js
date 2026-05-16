@@ -820,6 +820,66 @@ export function initDB() {
   try { db.exec('ALTER TABLE avs_workers ADD COLUMN pin_attempts INTEGER DEFAULT 0') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] avs_workers.pin_attempts:', e.message) }
   try { db.exec('ALTER TABLE avs_workers ADD COLUMN pin_locked_until TEXT') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] avs_workers.pin_locked_until:', e.message) }
 
+  // ── AVS workers <-> staff unification (single source of truth = staff) ──
+  try { db.exec('ALTER TABLE staff ADD COLUMN kiosk_pin TEXT') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] staff.kiosk_pin:', e.message) }
+  try { db.exec('ALTER TABLE staff ADD COLUMN role_label TEXT') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] staff.role_label:', e.message) }
+  try { db.exec('ALTER TABLE staff ADD COLUMN pin_attempts INTEGER DEFAULT 0') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] staff.pin_attempts:', e.message) }
+  try { db.exec('ALTER TABLE staff ADD COLUMN pin_locked_until TEXT') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] staff.pin_locked_until:', e.message) }
+  try { db.exec('ALTER TABLE staff ADD COLUMN legacy_avs_id INTEGER') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] staff.legacy_avs_id:', e.message) }
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_staff_legacy_avs ON staff(legacy_avs_id) WHERE legacy_avs_id IS NOT NULL') } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] idx_staff_legacy_avs:', e.message) }
+
+  // Bir kerelik veri taşıma: avs_workers → staff (idempotent; legacy_avs_id ile takip)
+  try {
+    const hasAvsTable = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='avs_workers'").get()
+    if (hasAvsTable) {
+      const ROLE_DEPT_MAP = [
+        { match: /kat|meydanc|temizlik/i, dept_id: 2 }, // Temizlik
+        { match: /(çama|cama)şır|laundry/i, dept_id: 8 }, // Çamaşırhane
+        { match: /teknik|bakım|bakim/i, dept_id: 5 }, // Teknik
+        { match: /güvenlik|guvenlik|security/i, dept_id: 1 }, // Güvenlik
+        { match: /mutfak|aşçı|asci/i, dept_id: 3 }, // Mutfak
+        { match: /idari|ofis|admin/i, dept_id: 4 }, // İdari
+        { match: /bahçe|bahce/i, dept_id: 6 }, // Bahçe
+        { match: /sağlık|saglik|revir/i, dept_id: 7 }, // Sağlık
+      ]
+      const deptFromRole = (label) => {
+        if (!label) return null
+        const m = ROLE_DEPT_MAP.find(r => r.match.test(label))
+        return m?.dept_id || null
+      }
+
+      const avsRows = db.prepare('SELECT * FROM avs_workers').all()
+      const insertStaff = db.prepare(`
+        INSERT INTO staff(full_name, role_label, position, department_id, kiosk_pin, pin_attempts, pin_locked_until, is_active, legacy_avs_id)
+        VALUES(?,?,?,?,?,?,?,?,?)
+      `)
+      const updateStaffFromAvs = db.prepare(`
+        UPDATE staff SET role_label=?, kiosk_pin=COALESCE(kiosk_pin, ?),
+          pin_attempts=COALESCE(pin_attempts, ?),
+          pin_locked_until=COALESCE(pin_locked_until, ?),
+          department_id=COALESCE(department_id, ?),
+          legacy_avs_id=?
+        WHERE id=?
+      `)
+      const findStaffByLegacy = db.prepare('SELECT id FROM staff WHERE legacy_avs_id=?')
+      const findStaffByName = db.prepare('SELECT id FROM staff WHERE LOWER(full_name)=LOWER(?) AND legacy_avs_id IS NULL LIMIT 1')
+
+      const tx = db.transaction(() => {
+        for (const w of avsRows) {
+          if (findStaffByLegacy.get(w.id)) continue // zaten migrate
+          const deptId = deptFromRole(w.role_label)
+          const existing = findStaffByName.get(w.full_name)
+          if (existing) {
+            updateStaffFromAvs.run(w.role_label, w.kiosk_pin, w.pin_attempts || 0, w.pin_locked_until || null, deptId, w.id, existing.id)
+          } else {
+            insertStaff.run(w.full_name, w.role_label, w.role_label || null, deptId, w.kiosk_pin, w.pin_attempts || 0, w.pin_locked_until || null, w.is_active ?? 1, w.id)
+          }
+        }
+      })
+      tx()
+    }
+  } catch (e) { console.error('[Migration] avs_workers → staff sync:', e.message) }
+
   // ── Mobile PIN auth ───────────────────────────────────────────────────────
   try { db.exec('ALTER TABLE users ADD COLUMN mobile_pin TEXT') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] mobile_pin:', e.message) }
 
