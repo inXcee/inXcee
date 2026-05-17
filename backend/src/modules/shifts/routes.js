@@ -18,6 +18,7 @@ import {
 import {
   checkConflicts, listHolidays, createHoliday, updateHoliday, deleteHoliday,
   getPayrollExport, getCombinedAbsences,
+  listDeductions, createDeduction, deleteDeduction, getPayrollDetailed,
 } from './queries.js'
 import { logAudit } from '../../shared/audit.js'
 
@@ -160,6 +161,48 @@ shiftsRouter.get('/payroll-export', ...managerOrSupervisor, (req, res) => {
     if (!/^\d{4}-\d{2}$/.test(ym)) return res.status(400).json({ error: 'month YYYY-MM formatında olmalı' })
     res.json({ month: ym, rows: getPayrollExport(ym) })
   } catch (e) { console.error('[payroll]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// ── H8 B3: Kesinti CRUD ──
+shiftsRouter.get('/deductions', ...managerOrSupervisor, (req, res) => {
+  try {
+    res.json(listDeductions({
+      period: req.query.period,
+      staffId: req.query.staff_id ? +req.query.staff_id : null,
+    }))
+  } catch (e) { console.error('[deductions/list]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+shiftsRouter.post('/deductions', ...managerOrSupervisor, (req, res) => {
+  try {
+    const { staff_id, period, kind, amount } = req.body || {}
+    if (!staff_id || !period || !kind || amount == null) {
+      return res.status(400).json({ error: 'staff_id, period, kind, amount gerekli' })
+    }
+    if (!['damage', 'discipline', 'late', 'advance', 'tax', 'other'].includes(kind)) {
+      return res.status(400).json({ error: 'Geçersiz kind' })
+    }
+    if (!/^\d{4}-\d{2}$/.test(period)) {
+      return res.status(400).json({ error: 'period YYYY-MM formatında olmalı' })
+    }
+    const id = createDeduction(req.body, req.user.id)
+    logAudit(req.user.id, 'deduction_create', 'payroll', id, `${kind} ${amount}₺ ${period}`)
+    res.status(201).json({ id })
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+shiftsRouter.delete('/deductions/:id', ...managerOrSupervisor, (req, res) => {
+  try { deleteDeduction(+req.params.id); res.json({ ok: true }) }
+  catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+// ── H8 — Detaylı bordro (B1 vardiya→gün, B2 mesai+çarpan, B3 kesinti, B5 SGK gün) ──
+shiftsRouter.get('/payroll-detailed', ...managerOrSupervisor, (req, res) => {
+  try {
+    const ym = req.query.month || new Date().toISOString().slice(0, 7)
+    if (!/^\d{4}-\d{2}$/.test(ym)) return res.status(400).json({ error: 'month YYYY-MM formatında olmalı' })
+    res.json({ month: ym, rows: getPayrollDetailed(ym) })
+  } catch (e) { console.error('[payroll-detailed]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 // ── H4 V8: Birleşik devamsızlık ──

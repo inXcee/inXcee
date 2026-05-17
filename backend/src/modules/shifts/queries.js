@@ -222,6 +222,75 @@ export function deleteHoliday(id) {
   getDB().prepare('DELETE FROM holidays WHERE id=?').run(id)
 }
 
+// H8 — Kesinti CRUD
+export function listDeductions({ period, staffId } = {}) {
+  const db = getDB()
+  let q = `
+    SELECT pd.*, s.full_name, d.name as dept_name
+    FROM payroll_deductions pd
+    JOIN staff s ON s.id = pd.staff_id
+    LEFT JOIN departments d ON d.id = s.department_id
+    WHERE 1=1
+  `
+  const params = []
+  if (period) { q += ' AND pd.period = ?'; params.push(period) }
+  if (staffId) { q += ' AND pd.staff_id = ?'; params.push(staffId) }
+  q += ' ORDER BY pd.created_at DESC LIMIT 500'
+  return db.prepare(q).all(...params)
+}
+
+export function createDeduction(data, userId) {
+  return getDB().prepare(`
+    INSERT INTO payroll_deductions(staff_id, period, kind, amount, description, created_by)
+    VALUES(?,?,?,?,?,?)
+  `).run(data.staff_id, data.period, data.kind, data.amount, data.description || null, userId || null).lastInsertRowid
+}
+
+export function deleteDeduction(id) {
+  getDB().prepare('DELETE FROM payroll_deductions WHERE id=?').run(id)
+}
+
+// H8 V7 detaylı bordro — kesinti + mesai çarpan + SGK gün
+export function getPayrollDetailed(yearMonth) {
+  const db = getDB()
+  const start = `${yearMonth}-01`
+  const endDate = new Date(start)
+  endDate.setMonth(endDate.getMonth() + 1)
+  const end = endDate.toISOString().slice(0, 10)
+
+  return db.prepare(`
+    SELECT s.id, s.full_name, s.tc_no, s.salary, s.position,
+      d.name as dept_name,
+      COALESCE((SELECT COUNT(*) FROM shift_schedule
+        WHERE staff_id = s.id AND status IN ('worked','overtime') AND work_date >= ? AND work_date < ?), 0) as worked_days,
+      COALESCE((SELECT COUNT(*) FROM shift_schedule
+        WHERE staff_id = s.id AND status = 'absent' AND work_date >= ? AND work_date < ?), 0) as absent_days,
+      COALESCE((SELECT COUNT(*) FROM shift_schedule
+        WHERE staff_id = s.id AND status = 'on_leave' AND work_date >= ? AND work_date < ?), 0) as leave_days,
+      COALESCE((SELECT SUM(hours) FROM overtime_records
+        WHERE staff_id = s.id AND work_date >= ? AND work_date < ?), 0) as overtime_hours,
+      COALESCE((SELECT COUNT(*) FROM shift_schedule ss
+        JOIN holidays h ON h.date = ss.work_date
+        WHERE ss.staff_id = s.id AND ss.status IN ('worked','overtime') AND ss.work_date >= ? AND ss.work_date < ?), 0) as holiday_days,
+      COALESCE((SELECT SUM(CASE WHEN h.multiplier IS NULL THEN 1 ELSE h.multiplier END) FROM shift_schedule ss
+        LEFT JOIN holidays h ON h.date = ss.work_date
+        WHERE ss.staff_id = s.id AND ss.status IN ('worked','overtime') AND ss.work_date >= ? AND ss.work_date < ?), 0) as weighted_days,
+      COALESCE((SELECT SUM(amount) FROM payroll_deductions
+        WHERE staff_id = s.id AND period = ?), 0) as total_deductions,
+      -- B5: SGK gün = çalıştığı + izinli (yasal düşmeyen) günler
+      (
+        COALESCE((SELECT COUNT(*) FROM shift_schedule
+          WHERE staff_id = s.id AND status IN ('worked','overtime') AND work_date >= ? AND work_date < ?), 0)
+        + COALESCE((SELECT COUNT(*) FROM shift_schedule
+          WHERE staff_id = s.id AND status = 'on_leave' AND work_date >= ? AND work_date < ?), 0)
+      ) as sgk_days
+    FROM staff s
+    LEFT JOIN departments d ON d.id = s.department_id
+    WHERE s.is_active = 1
+    ORDER BY d.name, s.full_name
+  `).all(start, end, start, end, start, end, start, end, start, end, start, end, yearMonth, start, end, start, end)
+}
+
 // H4 V7 — Bordro export (kişi başı aylık özet)
 export function getPayrollExport(yearMonth) {
   // yearMonth: 'YYYY-MM'

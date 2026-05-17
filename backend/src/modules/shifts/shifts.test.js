@@ -531,3 +531,47 @@ describe('H4 V8 — Birleşik devamsızlık', () => {
     })
   })
 })
+
+// ── H8 Bordro detaylı (B1+B2+B3+B5) ──
+describe('H8 — Kesinti CRUD', () => {
+  it('kesinti ekle/listele/sil', async () => {
+    const staff = (await request(app).get('/api/shifts/staff').set('Authorization', `Bearer ${managerToken}`)).body
+    if (!staff?.length) return
+    const add = await request(app).post('/api/shifts/deductions').set('Authorization', `Bearer ${managerToken}`)
+      .send({ staff_id: staff[0].id, period: '2026-10', kind: 'damage', amount: 150.50, description: 'Test hasar' })
+    expect(add.status).toBe(201)
+
+    const list = await request(app).get('/api/shifts/deductions?period=2026-10').set('Authorization', `Bearer ${managerToken}`)
+    expect(list.body.find(d => d.id === add.body.id)).toBeTruthy()
+
+    const del = await request(app).delete(`/api/shifts/deductions/${add.body.id}`).set('Authorization', `Bearer ${managerToken}`)
+    expect(del.status).toBe(200)
+  })
+
+  it('geçersiz kind 400', async () => {
+    const r = await request(app).post('/api/shifts/deductions').set('Authorization', `Bearer ${managerToken}`)
+      .send({ staff_id: 1, period: '2026-10', kind: 'invalid', amount: 50 })
+    expect(r.status).toBe(400)
+  })
+
+  it('eksik alan 400', async () => {
+    const r = await request(app).post('/api/shifts/deductions').set('Authorization', `Bearer ${managerToken}`)
+      .send({ staff_id: 1, kind: 'damage' })
+    expect(r.status).toBe(400)
+  })
+})
+
+describe('H8 — payroll-detailed', () => {
+  it('GET /payroll-detailed SGK + kesinti döner', async () => {
+    const month = new Date().toISOString().slice(0, 7)
+    const r = await request(app).get(`/api/shifts/payroll-detailed?month=${month}`)
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(r.status).toBe(200)
+    expect(r.body.month).toBe(month)
+    r.body.rows.forEach(row => {
+      expect(row).toHaveProperty('weighted_days')
+      expect(row).toHaveProperty('sgk_days')
+      expect(row).toHaveProperty('total_deductions')
+    })
+  })
+})

@@ -1001,6 +1001,21 @@ export function initDB() {
     db.exec(`CREATE INDEX IF NOT EXISTS idx_training_attendances_staff ON training_attendances(staff_id, cert_expires_at)`)
   } catch (e) { console.error('[Migration] training_attendances:', e.message) }
 
+  // H8 — Kesinti yönetimi (maaş kesinti)
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS payroll_deductions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      staff_id INTEGER NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
+      period TEXT NOT NULL,
+      kind TEXT NOT NULL CHECK(kind IN ('damage','discipline','late','advance','tax','other')),
+      amount REAL NOT NULL,
+      description TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      created_by INTEGER REFERENCES users(id)
+    )`)
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_payroll_deductions_period ON payroll_deductions(staff_id, period)`)
+  } catch (e) { console.error('[Migration] payroll_deductions:', e.message) }
+
   // H7 — Yemekhane (öğün takibi)
   try {
     db.exec(`CREATE TABLE IF NOT EXISTS meal_logs (
