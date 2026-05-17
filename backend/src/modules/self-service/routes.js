@@ -112,6 +112,18 @@ selfServiceRouter.get('/my-shifts', requireKioskOrStaff, (req, res) => {
   } catch (e) { console.error('[my-shifts]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
+// H5 Q6 — Kişinin kendi QR'ı (mobile kart)
+selfServiceRouter.get('/my-qr', requireKioskOrStaff, (req, res) => {
+  if (!req.user.personnelId) return res.status(403).json({ error: 'Kiosk token gerekli' })
+  try {
+    const db = getDB()
+    const p = db.prepare('SELECT tc_no, full_name FROM personnel WHERE id=?').get(req.user.personnelId)
+    if (!p?.tc_no) return res.json({ qr_token: null, message: 'TC numarası kayıtlı değil' })
+    const staff = db.prepare('SELECT qr_token FROM staff WHERE tc_no = ? AND is_active = 1').get(p.tc_no)
+    res.json({ qr_token: staff?.qr_token || null, full_name: p.full_name })
+  } catch (e) { console.error('[my-qr]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
 // H2 M3 — Bugünkü servisim
 selfServiceRouter.get('/my-transport', requireKioskOrStaff, (req, res) => {
   if (!req.user.personnelId) return res.status(403).json({ error: 'Kiosk token gerekli' })

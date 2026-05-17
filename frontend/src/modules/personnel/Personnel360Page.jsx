@@ -62,7 +62,8 @@ export default function Personnel360Page() {
             {p.passport_no && <span> · PSS: {p.passport_no}</span>}
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 6 }}>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <QrButtons staffId={id} hasToken={!!p.qr_token} onUpdate={inv} />
           {p.is_active ? (
             <button onClick={async () => {
               const reason = window.prompt('Arşivleme sebebi (opsiyonel):') ?? null
@@ -134,6 +135,34 @@ export default function Personnel360Page() {
       {tab === 'emergency' && <EmergencyTab staffId={id} contacts={data.emergency_contacts} onChange={inv} />}
       {tab === 'timeline' && <TimelineTab events={timeline} />}
     </div>
+  )
+}
+
+function QrButtons({ staffId, hasToken, onUpdate }) {
+  const genMut = useMutation({
+    mutationFn: (regenerate) => api.post(`/qr/staff/${staffId}/generate`, { regenerate: !!regenerate }),
+    onSuccess: () => { toast(hasToken ? 'QR yenilendi' : 'QR üretildi'); onUpdate() },
+    onError: toastErr,
+  })
+  async function downloadCard() {
+    try {
+      const res = await api.get(`/qr/staff/${staffId}/card/pdf`, { responseType: 'blob' })
+      const url = URL.createObjectURL(res.data)
+      const a = document.createElement('a')
+      a.href = url; a.download = `kart-${staffId}.pdf`; a.click()
+      URL.revokeObjectURL(url)
+    } catch (e) { toastErr(e) }
+  }
+  if (!hasToken) {
+    return <button onClick={() => genMut.mutate(false)} disabled={genMut.isPending} className="btn btn-primary btn-sm" style={{ borderRadius: 10 }}>📱 QR ÜRET</button>
+  }
+  return (
+    <>
+      <button onClick={downloadCard} className="btn btn-ghost btn-sm" style={{ borderRadius: 10 }}>🪪 KART PDF</button>
+      <button onClick={async () => {
+        if (await confirmDialog({ title: 'QR yenile', body: 'Mevcut QR geçersiz olur. Devam?', confirmLabel: 'Yenile' })) genMut.mutate(true)
+      }} className="btn btn-ghost btn-sm" style={{ borderRadius: 10 }} title="QR yenile">🔄</button>
+    </>
   )
 }
 

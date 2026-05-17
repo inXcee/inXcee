@@ -892,6 +892,13 @@ export function initDB() {
   try { db.exec('ALTER TABLE staff ADD COLUMN contract_end TEXT') } catch (e) {
     if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] staff.contract_end:', e.message)
   }
+  // H5 Q1 — Personel QR (UNIQUE INDEX, SQLite ALTER TABLE UNIQUE'i desteklemiyor)
+  try { db.exec('ALTER TABLE staff ADD COLUMN qr_token TEXT') } catch (e) {
+    if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] staff.qr_token:', e.message)
+  }
+  try { db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_staff_qr_token ON staff(qr_token) WHERE qr_token IS NOT NULL') } catch (e) {
+    console.error('[Migration] idx_staff_qr_token:', e.message)
+  }
   try { db.exec('ALTER TABLE staff ADD COLUMN archived_at DATETIME') } catch (e) {
     if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] staff.archived_at:', e.message)
   }

@@ -10,6 +10,7 @@ const CARD_COLOR = { yellow:'text-yellow-400 border-yellow-400', red:'text-red-4
 
 const TABS = [
   { key:'info',        label:'👤 Bilgilerim' },
+  { key:'qr',          label:'📱 Kartım' },
   { key:'shifts',      label:'⏱ Vardiyam' },
   { key:'transport',   label:'🚌 Servisim' },
   { key:'laundry',     label:'🧺 Çamaşır' },
@@ -109,6 +110,11 @@ export default function SelfServicePage() {
     queryKey: ['kiosk-transport', kioskToken],
     queryFn: () => kioskApi.get('/self-service/my-transport').then(r => r.data),
     enabled: !!kioskToken && activeTab === 'transport',
+  })
+  const { data: myQr } = useQuery({
+    queryKey: ['kiosk-qr', kioskToken],
+    queryFn: () => kioskApi.get('/self-service/my-qr').then(r => r.data),
+    enabled: !!kioskToken && activeTab === 'qr',
   })
   const { data: laundryStatus = [] } = useQuery({
     queryKey: ['kiosk-laundry', kioskToken],
@@ -393,6 +399,36 @@ export default function SelfServicePage() {
                   <div className="text-lg font-bold text-amber-400">🔧 {myProfile.maintenance_open}</div>
                 </div>
               )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Tab: Kartım / QR (H5 Q6) ── */}
+      {activeTab === 'qr' && (
+        <div className="space-y-4">
+          {!myQr ? (
+            <div className="bg-slate-900 rounded-2xl p-5 text-slate-500 text-sm">Yükleniyor…</div>
+          ) : !myQr.qr_token ? (
+            <div className="bg-slate-900 rounded-2xl p-5 text-slate-400 text-sm text-center">
+              <div className="text-4xl opacity-30 mb-3">📱</div>
+              <div>{myQr.message || 'QR kodunuz henüz üretilmemiş'}</div>
+              <div className="text-xs text-slate-500 mt-2">Yöneticinizle iletişime geçin</div>
+            </div>
+          ) : (
+            <div className="bg-slate-900 rounded-2xl p-6 text-center">
+              <h2 className="font-medium text-slate-300 mb-4">📱 Dijital Kartım</h2>
+              <div className="bg-white rounded-2xl p-6 inline-block">
+                <img
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent('AVS:' + myQr.qr_token)}&margin=10`}
+                  alt="QR" style={{ width: 240, height: 240, display: 'block' }}
+                />
+              </div>
+              <div className="text-base font-bold text-slate-100 mt-4">{myQr.full_name}</div>
+              <div className="font-mono text-xs text-slate-500 mt-2">#{myQr.qr_token.slice(0, 8).toUpperCase()}</div>
+              <div className="text-xs text-slate-400 mt-4">
+                Servise binerken bu kodu okutun · Yemekhanede/Kapıda gösterin
+              </div>
             </div>
           )}
         </div>
