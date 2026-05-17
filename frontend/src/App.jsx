@@ -27,6 +27,7 @@ const TransportPage = lazy(() => import('./modules/transport/TransportPage.jsx')
 const Personnel360Page = lazy(() => import('./modules/personnel/Personnel360Page.jsx'))
 const RiskListPage = lazy(() => import('./modules/personnel/RiskListPage.jsx'))
 const ArchivedPersonnelPage = lazy(() => import('./modules/personnel/ArchivedPage.jsx'))
+const HrPage = lazy(() => import('./modules/hr/HrPage.jsx'))
 const CheckoutPage = lazy(() => import('./modules/checkout/CheckoutPage.jsx'))
 const BulkActionsPage = lazy(() => import('./modules/bulk-actions/BulkActionsPage.jsx'))
 const CompaniesPage = lazy(() => import('./modules/companies/CompaniesPage.jsx'))
@@ -231,6 +232,7 @@ export default function App() {
             <Route path="transport" element={<TransportPage />} />
             <Route path="risk" element={<RiskListPage />} />
             <Route path="archived-personnel" element={<ArchivedPersonnelPage />} />
+            <Route path="hr" element={<HrPage />} />
             <Route path="personnel/:id" element={<Personnel360Page />} />
             <Route path="checkout" element={<CheckoutPage />} />
             <Route path="bulk-actions" element={<RoleRoute roles={['campus_manager','shift_supervisor']}><BulkActionsPage /></RoleRoute>} />

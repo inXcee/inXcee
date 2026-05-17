@@ -930,6 +930,36 @@ export function initDB() {
     db.exec(`CREATE INDEX IF NOT EXISTS idx_emergency_contacts_staff ON emergency_contacts(staff_id)`)
   } catch (e) { console.error('[Migration] emergency_contacts:', e.message) }
 
+  // H3 — HR akış: işe giriş + ayrılma checklist
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS hr_checklists (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      staff_id INTEGER NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
+      kind TEXT NOT NULL CHECK(kind IN ('onboarding','offboarding')),
+      status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','completed','cancelled')),
+      started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      completed_at DATETIME,
+      completed_by INTEGER REFERENCES users(id),
+      notes TEXT,
+      ibra_pdf_path TEXT
+    )`)
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_hr_checklists_staff ON hr_checklists(staff_id, kind)`)
+  } catch (e) { console.error('[Migration] hr_checklists:', e.message) }
+
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS hr_checklist_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      checklist_id INTEGER NOT NULL REFERENCES hr_checklists(id) ON DELETE CASCADE,
+      label TEXT NOT NULL,
+      done INTEGER NOT NULL DEFAULT 0,
+      done_at DATETIME,
+      done_by INTEGER REFERENCES users(id),
+      note TEXT,
+      sort_order INTEGER NOT NULL DEFAULT 0
+    )`)
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_hr_items_checklist ON hr_checklist_items(checklist_id, sort_order)`)
+  } catch (e) { console.error('[Migration] hr_checklist_items:', e.message) }
+
   // ── AVS workers <-> staff unification (single source of truth = staff) ──
   try { db.exec('ALTER TABLE staff ADD COLUMN kiosk_pin TEXT') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] staff.kiosk_pin:', e.message) }
   try { db.exec('ALTER TABLE staff ADD COLUMN role_label TEXT') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] staff.role_label:', e.message) }
