@@ -37,6 +37,7 @@ const NAV_GROUPS = [
       { to: '/laundry', icon: '\u2668', label: 'Camasirhane', roles: ['campus_manager','laundry'] },
       { to: '/risk', icon: '\u26A0', label: 'Risk Listesi', roles: ['campus_manager','shift_supervisor'] },
       { to: '/hr', icon: '\uD83D\uDCCB', label: 'IK Akislari', roles: ['campus_manager','shift_supervisor'] },
+      { to: '/safety', icon: '\uD83E\uDDBA', label: 'Is Guvenligi', roles: ['campus_manager','shift_supervisor','technical'] },
       { to: '/payroll', icon: '\uD83D\uDCB0', label: 'Bordro Ozet', roles: ['campus_manager','shift_supervisor'] },
       { to: '/combined-absences', icon: '\u2717', label: 'Devamsizlik', roles: ['campus_manager','shift_supervisor'] },
       { to: '/holidays', icon: '\uD83C\uDF89', label: 'Resmi Tatiller', roles: ['campus_manager','shift_supervisor'] },

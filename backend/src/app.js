@@ -50,6 +50,7 @@ import { campusMapRouter } from './modules/campus-map/routes.js'
 import { personnelRouter } from './modules/personnel/routes.js'
 import { hrRouter } from './modules/hr/routes.js'
 import { qrRouter } from './modules/qr/routes.js'
+import { safetyRouter } from './modules/safety/routes.js'
 
 if (process.env.NODE_ENV === 'production' && !process.env.ALLOWED_ORIGIN) {
   console.error('[Startup] HATA: ALLOWED_ORIGIN env değişkeni production\'da zorunludur.')
@@ -257,6 +258,7 @@ app.use('/api/campus-map', writeLimiter, campusMapRouter)
 app.use('/api/personnel', writeLimiter, personnelRouter)
 app.use('/api/hr', writeLimiter, hrRouter)
 app.use('/api/qr', writeLimiter, qrRouter)
+app.use('/api/safety', writeLimiter, safetyRouter)
 
 // ── 404 Handler ──────────────────────────────────────────────────────────────
 app.use((req, res) => {

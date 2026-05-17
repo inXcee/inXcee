@@ -967,6 +967,58 @@ export function initDB() {
     db.exec(`CREATE INDEX IF NOT EXISTS idx_hr_items_checklist ON hr_checklist_items(checklist_id, sort_order)`)
   } catch (e) { console.error('[Migration] hr_checklist_items:', e.message) }
 
+  // H6 — İş Güvenliği & Eğitim
+  // IG1 — Eğitim takvimi
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS training_sessions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT NOT NULL,
+      category TEXT NOT NULL CHECK(category IN ('safety','fire','first_aid','environment','quality','other')),
+      session_date TEXT NOT NULL,
+      duration_min INTEGER NOT NULL DEFAULT 60,
+      location TEXT,
+      instructor TEXT,
+      notes TEXT,
+      status TEXT NOT NULL DEFAULT 'scheduled' CHECK(status IN ('scheduled','completed','cancelled')),
+      created_by INTEGER REFERENCES users(id),
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`)
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_training_date ON training_sessions(session_date)`)
+  } catch (e) { console.error('[Migration] training_sessions:', e.message) }
+
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS training_attendances (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id INTEGER NOT NULL REFERENCES training_sessions(id) ON DELETE CASCADE,
+      staff_id INTEGER NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
+      attended INTEGER NOT NULL DEFAULT 0,
+      score INTEGER,
+      cert_expires_at TEXT,
+      cert_doc_path TEXT,
+      noted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(session_id, staff_id)
+    )`)
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_training_attendances_staff ON training_attendances(staff_id, cert_expires_at)`)
+  } catch (e) { console.error('[Migration] training_attendances:', e.message) }
+
+  // IG3 — KKD zimmet
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS kkd_assignments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      staff_id INTEGER NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
+      item_type TEXT NOT NULL,
+      size TEXT,
+      serial_no TEXT,
+      assigned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      assigned_by INTEGER REFERENCES users(id),
+      returned_at DATETIME,
+      returned_by INTEGER REFERENCES users(id),
+      condition_on_return TEXT,
+      notes TEXT
+    )`)
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_kkd_staff ON kkd_assignments(staff_id, returned_at)`)
+  } catch (e) { console.error('[Migration] kkd_assignments:', e.message) }
+
   // H4 V3 — Resmi tatil tablosu
   try {
     db.exec(`CREATE TABLE IF NOT EXISTS holidays (
