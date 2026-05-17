@@ -544,48 +544,137 @@ function RoutesTab() {
   const [editing, setEditing] = useState(null)
   const [creating, setCreating] = useState(false)
   const [stopsOpen, setStopsOpen] = useState(null)
+  const today = todayStr()
 
-  const { data: routes = [] } = useQuery({ queryKey: ['transport-routes'], queryFn: () => api.get('/transport/routes').then(r => r.data) })
+  const { data: routes = [] } = useQuery({
+    queryKey: ['transport-routes-rich', today],
+    queryFn: () => api.get(`/transport/routes?with_stops=1&work_date=${today}`).then(r => r.data),
+  })
   const { data: shiftDefs = [] } = useQuery({ queryKey: ['shift-defs'], queryFn: () => api.get('/shifts/shift-definitions').then(r => r.data) })
 
-  const inv = () => qc.invalidateQueries({ queryKey: ['transport-routes'] })
+  const inv = () => {
+    qc.invalidateQueries({ queryKey: ['transport-routes-rich'] })
+    qc.invalidateQueries({ queryKey: ['transport-routes'] })
+  }
 
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 14 }}>
-        <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: 2 }}>{routes.length} ROTA</div>
+        <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: 2 }}>{routes.length} ROTA · {today}</div>
         <button onClick={() => setCreating(true)} className="btn btn-primary btn-sm" style={{ borderRadius: 10 }}>+ ROTA</button>
       </div>
 
       {routes.length === 0 ? (
         <EmptyState icon="🛣" title="HENÜZ ROTA YOK" desc="İlk rotayı oluştur" />
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 10 }}>
-          {routes.map(r => (
-            <div key={r.id} style={{
-              padding: 14, borderRadius: 12, background: 'var(--surface)',
-              borderLeft: `4px solid ${r.color || 'var(--accent)'}`, border: '1px solid var(--border)',
-              opacity: r.is_active ? 1 : 0.6,
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                <strong style={{ fontSize: 14 }}>{r.name}</strong>
-                {!r.is_active && <span style={{ fontFamily: 'var(--mono)', fontSize: 9, padding: '1px 6px', borderRadius: 4, background: 'var(--surface3)', color: 'var(--text3)' }}>PASİF</span>}
-              </div>
-              <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', marginBottom: 8 }}>
-                🚌 {r.vehicle_plate || '—'} · 👥 {r.capacity} kişi · 📍 {r.stop_count} durak
-                {r.shift_name ? ` · ⏱ ${r.shift_name}` : ''}
-              </div>
-              {r.driver_name && (
-                <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', marginBottom: 8 }}>
-                  🧑‍✈️ {r.driver_name} {r.driver_phone ? `· ${r.driver_phone}` : ''}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 14 }}>
+          {routes.map(r => {
+            const pct = r.capacity > 0 ? Math.min(100, Math.round((r.today_assigned || 0) / r.capacity * 100)) : 0
+            const over = (r.today_assigned || 0) > r.capacity
+            return (
+              <div key={r.id} style={{
+                borderRadius: 14, background: 'var(--surface)',
+                border: '1px solid var(--border)', overflow: 'hidden',
+                opacity: r.is_active ? 1 : 0.55,
+                display: 'flex', flexDirection: 'column',
+              }}>
+                {/* Renk şeridi */}
+                <div style={{ height: 5, background: r.color || 'var(--accent)' }} />
+
+                {/* Üst kısım: ad + plaka + kapasite */}
+                <div style={{ padding: '14px 16px 10px', borderBottom: '1px solid var(--border)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                        🚌 {r.name}
+                        {!r.is_active && <span style={{ fontFamily: 'var(--mono)', fontSize: 8, padding: '1px 5px', borderRadius: 3, background: 'var(--surface3)', color: 'var(--text3)' }}>PASİF</span>}
+                      </div>
+                      <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
+                        {r.vehicle_plate || '— plakasız —'}
+                        {r.shift_name && <span style={{ marginLeft: 6, color: r.shift_color || 'var(--text3)' }}>· ⏱ {r.shift_name}</span>}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontFamily: 'var(--display)', fontSize: 22, lineHeight: 1, color: over ? 'var(--red)' : pct > 80 ? 'var(--amber)' : 'var(--green)' }}>
+                        {r.today_assigned || 0}<span style={{ fontSize: 14, color: 'var(--text3)' }}>/{r.capacity}</span>
+                      </div>
+                      <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--text3)', letterSpacing: 1, marginTop: 2 }}>BUGÜN</div>
+                    </div>
+                  </div>
+
+                  {/* Doluluk bar */}
+                  <div style={{ marginTop: 8, height: 5, background: 'var(--surface2)', borderRadius: 3, overflow: 'hidden' }}>
+                    <div style={{ width: `${pct}%`, height: '100%', background: over ? 'var(--red)' : pct > 80 ? 'var(--amber)' : 'var(--green)' }} />
+                  </div>
+
+                  {/* Şoför */}
+                  <div style={{ marginTop: 10, padding: '8px 10px', background: 'var(--surface2)', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 18 }}>🧑‍✈️</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      {r.driver_name ? (
+                        <>
+                          <div style={{ fontSize: 12, fontWeight: 600 }}>{r.driver_name}</div>
+                          {r.driver_phone && (
+                            <a href={`tel:${r.driver_phone}`} style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--accent)', textDecoration: 'none' }}>
+                              📞 {r.driver_phone}
+                            </a>
+                          )}
+                        </>
+                      ) : (
+                        <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text4)', fontStyle: 'italic' }}>Şoför atanmamış</div>
+                      )}
+                    </div>
+                  </div>
                 </div>
-              )}
-              <div style={{ display: 'flex', gap: 4 }}>
-                <button onClick={() => setStopsOpen(r)} className="btn btn-ghost btn-xs" style={{ borderRadius: 8, flex: 1 }}>DURAKLAR</button>
-                <button onClick={() => setEditing(r)} className="btn btn-ghost btn-xs" style={{ borderRadius: 8 }}>DÜZENLE</button>
+
+                {/* Durak listesi */}
+                <div style={{ padding: '10px 14px', flex: 1 }}>
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: 1.5, marginBottom: 6, display: 'flex', justifyContent: 'space-between' }}>
+                    <span>📍 GÜZERGAH ({r.stops?.length || 0} durak)</span>
+                    {r.today_waitlisted > 0 && <span style={{ color: 'var(--amber)' }}>⏳ {r.today_waitlisted} yedek</span>}
+                  </div>
+                  {!r.stops || r.stops.length === 0 ? (
+                    <div style={{ padding: '14px 8px', textAlign: 'center', border: '1px dashed var(--border)', borderRadius: 8 }}>
+                      <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text4)', marginBottom: 6 }}>Durak eklenmemiş</div>
+                      <button onClick={() => setStopsOpen(r)} className="btn btn-ghost btn-xs" style={{ borderRadius: 6 }}>+ İLK DURAĞI EKLE</button>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                      {r.stops.map((s, i) => (
+                        <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 6px', borderRadius: 6, fontSize: 11, background: i === 0 ? 'rgba(34,197,94,.06)' : 'transparent' }}>
+                          <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', minWidth: 16, textAlign: 'center', fontWeight: 700 }}>
+                            {i + 1}
+                          </span>
+                          {s.scheduled_time && (
+                            <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--accent)', minWidth: 38 }}>
+                              {s.scheduled_time}
+                            </span>
+                          )}
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.point_name}</div>
+                            {s.district && (
+                              <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--text4)' }}>
+                                {s.district}{s.neighborhood ? ` · ${s.neighborhood}` : ''}
+                              </div>
+                            )}
+                          </div>
+                          <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }} title="Bu durakta atanmış personel">
+                            👥 {s.staff_count}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Alt aksiyonlar */}
+                <div style={{ display: 'flex', gap: 4, padding: '8px 10px', borderTop: '1px solid var(--border)', background: 'var(--surface2)' }}>
+                  <button onClick={() => setStopsOpen(r)} className="btn btn-ghost btn-xs" style={{ borderRadius: 6, flex: 1 }}>+ DURAK EKLE/DÜZENLE</button>
+                  <button onClick={() => setEditing(r)} className="btn btn-ghost btn-xs" style={{ borderRadius: 6 }}>⚙ DÜZENLE</button>
+                </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
 
@@ -687,7 +776,11 @@ function StopsModal({ route, onClose }) {
   const [pickupId, setPickupId] = useState('')
   const [time, setTime] = useState('')
 
-  const inv = () => { qc.invalidateQueries({ queryKey: ['route-stops', route.id] }); qc.invalidateQueries({ queryKey: ['transport-routes'] }) }
+  const inv = () => {
+    qc.invalidateQueries({ queryKey: ['route-stops', route.id] })
+    qc.invalidateQueries({ queryKey: ['transport-routes'] })
+    qc.invalidateQueries({ queryKey: ['transport-routes-rich'] })
+  }
 
   const addMut = useMutation({
     mutationFn: () => api.post(`/transport/routes/${route.id}/stops`, { pickup_point_id: +pickupId, scheduled_time: time || null }),

@@ -82,10 +82,10 @@ export function getStaffAtPoint(pickupPointId) {
 }
 
 // ── Routes ──
-export function listRoutes({ activeOnly = false } = {}) {
+export function listRoutes({ activeOnly = false, withStops = false, workDate = null } = {}) {
   const db = getDB()
   const where = activeOnly ? 'WHERE r.is_active = 1' : ''
-  return db.prepare(`
+  const routes = db.prepare(`
     SELECT r.*,
       sd.name as shift_name, sd.start_hour, sd.end_hour, sd.color_class as shift_color,
       (SELECT COUNT(*) FROM route_stops WHERE route_id = r.id) as stop_count
@@ -94,6 +94,38 @@ export function listRoutes({ activeOnly = false } = {}) {
     ${where}
     ORDER BY r.name
   `).all()
+
+  if (!withStops && !workDate) return routes
+
+  if (withStops) {
+    const stopsStmt = db.prepare(`
+      SELECT rs.id, rs.route_id, rs.sequence_order, rs.scheduled_time,
+        pp.id as pickup_point_id, pp.name as point_name, pp.district, pp.neighborhood,
+        (SELECT COUNT(*) FROM staff WHERE pickup_point_id = pp.id AND is_active = 1) as staff_count
+      FROM route_stops rs
+      JOIN pickup_points pp ON pp.id = rs.pickup_point_id
+      WHERE rs.route_id = ?
+      ORDER BY rs.sequence_order, rs.id
+    `)
+    routes.forEach(r => { r.stops = stopsStmt.all(r.id) })
+  }
+
+  if (workDate) {
+    const today = db.prepare(`
+      SELECT route_id,
+        SUM(CASE WHEN is_waitlist = 0 THEN 1 ELSE 0 END) as assigned,
+        SUM(CASE WHEN is_waitlist = 1 THEN 1 ELSE 0 END) as waitlisted
+      FROM route_assignments WHERE work_date = ? GROUP BY route_id
+    `).all(workDate)
+    const map = new Map(today.map(t => [t.route_id, t]))
+    routes.forEach(r => {
+      const t = map.get(r.id)
+      r.today_assigned = t?.assigned || 0
+      r.today_waitlisted = t?.waitlisted || 0
+    })
+  }
+
+  return routes
 }
 
 export function getRoute(id) {

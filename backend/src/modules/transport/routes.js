@@ -83,7 +83,13 @@ transportRouter.get('/pickup-points/:id/staff', ...view, (req, res) => {
 
 // ── Routes ──
 transportRouter.get('/routes', ...view, (req, res) => {
-  try { res.json(q.listRoutes({ activeOnly: req.query.active === '1' })) }
+  try {
+    res.json(q.listRoutes({
+      activeOnly: req.query.active === '1',
+      withStops: req.query.with_stops === '1',
+      workDate: req.query.work_date || null,
+    }))
+  }
   catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
