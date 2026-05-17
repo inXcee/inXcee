@@ -1001,6 +1001,25 @@ export function initDB() {
     db.exec(`CREATE INDEX IF NOT EXISTS idx_training_attendances_staff ON training_attendances(staff_id, cert_expires_at)`)
   } catch (e) { console.error('[Migration] training_attendances:', e.message) }
 
+  // H7 — Yemekhane (öğün takibi)
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS meal_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      staff_id INTEGER NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
+      meal_type TEXT NOT NULL CHECK(meal_type IN ('breakfast','lunch','dinner','snack')),
+      meal_date TEXT NOT NULL,
+      logged_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      logged_by INTEGER REFERENCES users(id),
+      method TEXT DEFAULT 'manual' CHECK(method IN ('manual','qr','bulk')),
+      cost REAL,
+      UNIQUE(staff_id, meal_type, meal_date)
+    )`)
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_meal_logs_date ON meal_logs(meal_date, meal_type)`)
+  } catch (e) { console.error('[Migration] meal_logs:', e.message) }
+  try { db.exec('ALTER TABLE staff ADD COLUMN diet_flags TEXT') } catch (e) {
+    if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] staff.diet_flags:', e.message)
+  }
+
   // IG3 — KKD zimmet
   try {
     db.exec(`CREATE TABLE IF NOT EXISTS kkd_assignments (

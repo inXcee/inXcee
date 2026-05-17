@@ -1,0 +1,161 @@
+import { Router } from 'express'
+import { requireRole } from '../../shared/auth/middleware.js'
+import { logAudit } from '../../shared/audit.js'
+import { getDB } from '../../shared/db/index.js'
+
+export const mealsRouter = Router()
+const mgr = requireRole('campus_manager', 'shift_supervisor')
+const view = requireRole('campus_manager', 'shift_supervisor', 'laundry', 'housekeeper', 'technical')
+
+const VALID_MEALS = ['breakfast', 'lunch', 'dinner', 'snack']
+
+// ── YM1: Öğün okutma ──
+mealsRouter.post('/log', ...mgr, (req, res) => {
+  try {
+    const { staff_id, meal_type, meal_date, qr_token, cost, method = 'manual' } = req.body || {}
+    if (!meal_type || !VALID_MEALS.includes(meal_type)) {
+      return res.status(400).json({ error: 'Geçersiz meal_type' })
+    }
+
+    const db = getDB()
+    let sid = staff_id ? +staff_id : null
+
+    // QR ile okutma
+    if (!sid && qr_token) {
+      const cleaned = String(qr_token).replace(/^AVS:/, '').trim()
+      const s = db.prepare('SELECT id, full_name FROM staff WHERE qr_token = ? AND is_active = 1').get(cleaned)
+      if (!s) return res.status(404).json({ error: 'Geçersiz QR' })
+      sid = s.id
+    }
+    if (!sid) return res.status(400).json({ error: 'staff_id veya qr_token gerekli' })
+
+    const date = meal_date || new Date().toISOString().slice(0, 10)
+    try {
+      const id = db.prepare(`
+        INSERT INTO meal_logs(staff_id, meal_type, meal_date, logged_by, method, cost)
+        VALUES(?,?,?,?,?,?)
+      `).run(sid, meal_type, date, req.user.id, method, cost ?? null).lastInsertRowid
+      logAudit(req.user.id, 'meal_log', 'meals', id, `${meal_type} ${date}`)
+      const staff = db.prepare('SELECT full_name FROM staff WHERE id = ?').get(sid)
+      res.status(201).json({ id, staff_id: sid, staff_name: staff?.full_name, meal_type, date })
+    } catch (e) {
+      if (e.message?.includes('UNIQUE')) {
+        return res.status(409).json({ error: 'Bu öğün zaten kayıtlı', staff_id: sid, meal_type, date })
+      }
+      throw e
+    }
+  } catch (e) { console.error('[meals/log]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// Günlük dağılım
+mealsRouter.get('/daily', ...view, (req, res) => {
+  try {
+    const date = req.query.date || new Date().toISOString().slice(0, 10)
+    const db = getDB()
+    const counts = db.prepare(`
+      SELECT meal_type, COUNT(*) as count, SUM(COALESCE(cost, 0)) as total_cost
+      FROM meal_logs WHERE meal_date = ? GROUP BY meal_type
+    `).all(date)
+    const logs = db.prepare(`
+      SELECT m.id, m.meal_type, m.logged_at, m.method, m.cost,
+        s.id as staff_id, s.full_name, s.diet_flags,
+        d.name as dept_name
+      FROM meal_logs m
+      JOIN staff s ON s.id = m.staff_id
+      LEFT JOIN departments d ON d.id = s.department_id
+      WHERE m.meal_date = ?
+      ORDER BY m.logged_at DESC
+      LIMIT 500
+    `).all(date)
+    res.json({ date, counts, logs })
+  } catch (e) { console.error('[meals/daily]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+mealsRouter.delete('/log/:id', ...mgr, (req, res) => {
+  try {
+    getDB().prepare('DELETE FROM meal_logs WHERE id=?').run(+req.params.id)
+    res.json({ ok: true })
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+// ── YM3: Talep tahmini (yarın için kaç kişi yemek bekleniyor) ──
+mealsRouter.get('/forecast', ...view, (req, res) => {
+  try {
+    const targetDate = req.query.date || (() => {
+      const d = new Date(); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10)
+    })()
+    const db = getDB()
+    // O gün vardiyada olacak personel sayısı
+    const scheduled = db.prepare(`
+      SELECT COUNT(DISTINCT staff_id) as c FROM shift_schedule
+      WHERE work_date = ? AND status IN ('scheduled','worked','overtime')
+    `).get(targetDate).c
+
+    // Son 14 gündeki ortalama öğün katılımı
+    const avg = db.prepare(`
+      SELECT meal_type, AVG(daily_count) as avg_count
+      FROM (
+        SELECT meal_type, meal_date, COUNT(*) as daily_count
+        FROM meal_logs
+        WHERE meal_date BETWEEN date(?, '-14 days') AND date(?, '-1 days')
+        GROUP BY meal_type, meal_date
+      )
+      GROUP BY meal_type
+    `).all(targetDate, targetDate)
+
+    // Diyet/alerji özeti (vardiyada olacaklar arasında)
+    const diets = db.prepare(`
+      SELECT s.diet_flags, COUNT(*) as c
+      FROM shift_schedule ss
+      JOIN staff s ON s.id = ss.staff_id
+      WHERE ss.work_date = ? AND ss.status IN ('scheduled','worked','overtime')
+        AND s.diet_flags IS NOT NULL AND s.diet_flags != ''
+      GROUP BY s.diet_flags
+    `).all(targetDate)
+
+    res.json({ date: targetDate, scheduled, averages: avg, diet_summary: diets })
+  } catch (e) { console.error('[meals/forecast]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// ── YM2: Diyet flag set/unset ──
+mealsRouter.put('/staff/:id/diet', ...mgr, (req, res) => {
+  try {
+    const flags = req.body?.diet_flags || null
+    getDB().prepare('UPDATE staff SET diet_flags = ? WHERE id = ?').run(flags, +req.params.id)
+    res.json({ ok: true })
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+// ── YM4: Maliyet özeti — kişi başı + aylık ──
+mealsRouter.get('/cost-summary', ...view, (req, res) => {
+  try {
+    const ym = req.query.month || new Date().toISOString().slice(0, 7)
+    const start = `${ym}-01`
+    const endDate = new Date(start); endDate.setMonth(endDate.getMonth() + 1)
+    const end = endDate.toISOString().slice(0, 10)
+
+    const db = getDB()
+    const perStaff = db.prepare(`
+      SELECT s.id, s.full_name, d.name as dept_name,
+        COUNT(*) as meal_count,
+        SUM(CASE WHEN m.meal_type='breakfast' THEN 1 ELSE 0 END) as breakfast,
+        SUM(CASE WHEN m.meal_type='lunch' THEN 1 ELSE 0 END) as lunch,
+        SUM(CASE WHEN m.meal_type='dinner' THEN 1 ELSE 0 END) as dinner,
+        SUM(COALESCE(m.cost, 0)) as total_cost
+      FROM meal_logs m
+      JOIN staff s ON s.id = m.staff_id
+      LEFT JOIN departments d ON d.id = s.department_id
+      WHERE m.meal_date >= ? AND m.meal_date < ?
+      GROUP BY s.id
+      ORDER BY meal_count DESC
+    `).all(start, end)
+
+    const total = db.prepare(`
+      SELECT meal_type, COUNT(*) as count, SUM(COALESCE(cost, 0)) as total_cost
+      FROM meal_logs WHERE meal_date >= ? AND meal_date < ?
+      GROUP BY meal_type
+    `).all(start, end)
+
+    res.json({ month: ym, by_meal: total, by_staff: perStaff })
+  } catch (e) { console.error('[meals/cost]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
