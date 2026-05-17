@@ -550,7 +550,7 @@ function RoutesTab() {
     queryKey: ['transport-routes-rich', today],
     queryFn: () => api.get(`/transport/routes?with_stops=1&work_date=${today}`).then(r => r.data),
   })
-  const { data: shiftDefs = [] } = useQuery({ queryKey: ['shift-defs'], queryFn: () => api.get('/shifts/shift-definitions').then(r => r.data) })
+  const { data: shiftDefs = [] } = useQuery({ queryKey: ['shift-defs'], queryFn: () => api.get('/shifts/definitions').then(r => r.data) })
 
   const inv = () => {
     qc.invalidateQueries({ queryKey: ['transport-routes-rich'] })

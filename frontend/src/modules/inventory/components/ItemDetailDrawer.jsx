@@ -14,7 +14,7 @@ export default function ItemDetailDrawer({ item, forecast, onClose, onEdit, onAd
 
   const { data: log = [] } = useQuery({
     queryKey: ['inventory-log', item.id],
-    queryFn: () => api.get(`/inventory/${item.id}/log`).then(r => r.data),
+    queryFn: () => api.get(`/inventory/${item.id}/movements`).then(r => r.data),
     staleTime: 30000,
   })
 

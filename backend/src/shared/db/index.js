@@ -571,8 +571,12 @@ export function initDB() {
     if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists'))
       console.error('[Migration] dedup_key:', e.message)
   }
-  try { db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_notif_dedup ON notifications(dedup_key) WHERE dedup_key IS NOT NULL') } catch(e) {
-    if (!e.message?.includes('already exists')) console.error('[Migration] idx_notif_dedup:', e.message)
+  // İlk versiyonda global UNIQUE INDEX vardı — service.js'in "aynı gün" dedup mantığıyla
+  // çakışıyordu (geçen gün aynı key varsa bugünkü insert global UNIQUE'a takılıyordu).
+  // Önce eski global UNIQUE'i düşür, sonra (dedup_key, date(created_at)) composite UNIQUE oluştur.
+  try { db.exec('DROP INDEX IF EXISTS idx_notif_dedup') } catch (e) { console.error('[Migration] drop idx_notif_dedup:', e.message) }
+  try { db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_notif_dedup_daily ON notifications(dedup_key, date(created_at)) WHERE dedup_key IS NOT NULL`) } catch(e) {
+    if (!e.message?.includes('already exists')) console.error('[Migration] idx_notif_dedup_daily:', e.message)
   }
 
   // ── CASCADE DELETE: room_assignments + notifications ──────────────────────
@@ -625,7 +629,7 @@ export function initDB() {
         db.exec(`INSERT INTO notifications_new SELECT * FROM notifications`)
         db.exec(`DROP TABLE notifications`)
         db.exec(`ALTER TABLE notifications_new RENAME TO notifications`)
-        db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_notif_dedup ON notifications(dedup_key) WHERE dedup_key IS NOT NULL`)
+        db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_notif_dedup_daily ON notifications(dedup_key, date(created_at)) WHERE dedup_key IS NOT NULL`)
         db.exec(`CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(target_user_id, is_read, created_at)`)
       })()
       db.exec('PRAGMA foreign_keys=ON')

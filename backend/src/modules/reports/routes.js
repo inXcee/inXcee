@@ -999,36 +999,40 @@ import { getDB as _getDB } from '../../shared/db/index.js'
 reportsRouter.get('/absence-dashboard', ...mgrAccess, (req, res) => {
   try {
     const db = _getDB()
-    const days = req.query.days ? +req.query.days : 30
-    const since = `date('now', '-${days} days')`
+    // 1-365 gün arası, parametre validation
+    const days = Math.max(1, Math.min(365, +req.query.days || 30))
+    // since'i parameterized olarak SQL'e geç
+    const sinceDate = new Date()
+    sinceDate.setDate(sinceDate.getDate() - days)
+    const since = sinceDate.toISOString().slice(0, 10)
 
     const summary = db.prepare(`
       SELECT
-        COALESCE((SELECT COUNT(*) FROM shift_schedule WHERE status='absent' AND work_date >= ${since}), 0) as total_shift_absent,
-        COALESCE((SELECT COUNT(*) FROM route_assignments WHERE boarded=0 AND is_waitlist=0 AND work_date >= ${since}), 0) as total_no_show,
-        COALESCE((SELECT COUNT(*) FROM discipline_records WHERE created_at >= ${since}), 0) as total_discipline,
-        COALESCE((SELECT COUNT(DISTINCT staff_id) FROM shift_schedule WHERE status='absent' AND work_date >= ${since}), 0) as unique_absent_staff
-    `).get()
+        COALESCE((SELECT COUNT(*) FROM shift_schedule WHERE status='absent' AND work_date >= ?), 0) as total_shift_absent,
+        COALESCE((SELECT COUNT(*) FROM route_assignments WHERE boarded=0 AND is_waitlist=0 AND work_date >= ?), 0) as total_no_show,
+        COALESCE((SELECT COUNT(*) FROM discipline_records WHERE created_at >= ?), 0) as total_discipline,
+        COALESCE((SELECT COUNT(DISTINCT staff_id) FROM shift_schedule WHERE status='absent' AND work_date >= ?), 0) as unique_absent_staff
+    `).get(since, since, since, since)
 
     const trend = db.prepare(`
       SELECT work_date as date,
         SUM(CASE WHEN status='absent' THEN 1 ELSE 0 END) as shift_absent,
         SUM(CASE WHEN status='worked' OR status='overtime' THEN 1 ELSE 0 END) as worked
       FROM shift_schedule
-      WHERE work_date >= ${since}
+      WHERE work_date >= ?
       GROUP BY work_date
       ORDER BY work_date
-    `).all()
+    `).all(since)
 
     const noShowTrend = db.prepare(`
       SELECT work_date as date,
         SUM(CASE WHEN boarded=0 THEN 1 ELSE 0 END) as no_show,
         SUM(CASE WHEN boarded=1 THEN 1 ELSE 0 END) as boarded
       FROM route_assignments
-      WHERE is_waitlist=0 AND work_date >= ${since}
+      WHERE is_waitlist=0 AND work_date >= ?
       GROUP BY work_date
       ORDER BY work_date
-    `).all()
+    `).all(since)
 
     const byDept = db.prepare(`
       SELECT d.name as dept_name, d.color_class,
@@ -1036,11 +1040,11 @@ reportsRouter.get('/absence-dashboard', ...mgrAccess, (req, res) => {
         COALESCE(SUM(CASE WHEN ss.status IN ('worked','overtime') THEN 1 ELSE 0 END), 0) as worked
       FROM departments d
       LEFT JOIN staff s ON s.department_id = d.id
-      LEFT JOIN shift_schedule ss ON ss.staff_id = s.id AND ss.work_date >= ${since}
+      LEFT JOIN shift_schedule ss ON ss.staff_id = s.id AND ss.work_date >= ?
       GROUP BY d.id
       HAVING worked + shift_absent > 0
       ORDER BY shift_absent DESC
-    `).all()
+    `).all(since)
 
     res.json({ days, summary, trend, no_show_trend: noShowTrend, by_dept: byDept })
   } catch (e) { console.error('[absence-dash]', e); res.status(500).json({ error: 'Sunucu hatası' }) }

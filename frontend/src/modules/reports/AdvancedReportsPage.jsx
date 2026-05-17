@@ -45,14 +45,19 @@ export default function AdvancedReportsPage() {
 
 function AbsenceTab() {
   const [days, setDays] = useState(30)
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, error } = useQuery({
     queryKey: ['absence-dash', days],
     queryFn: () => api.get(`/reports/absence-dashboard?days=${days}`).then(r => r.data),
   })
 
-  if (isLoading || !data) return <div style={{ padding: 30, color: 'var(--text3)' }}>Yükleniyor…</div>
+  if (isLoading) return <div style={{ padding: 30, color: 'var(--text3)' }}>Yükleniyor…</div>
+  if (error) return <div style={{ padding: 30, color: 'var(--red)' }}>Yüklenemedi: {error?.response?.data?.error || error?.message || 'Sunucu hatası'}</div>
+  if (!data) return <div style={{ padding: 30, color: 'var(--text3)' }}>Veri yok</div>
 
-  const maxTrend = Math.max(...data.trend.map(t => t.shift_absent + t.worked), 1)
+  const trend = data.trend || []
+  const byDept = data.by_dept || []
+  const summary = data.summary || {}
+  const maxTrend = Math.max(...trend.map(t => (t.shift_absent || 0) + (t.worked || 0)), 1)
 
   return (
     <div>
@@ -64,15 +69,15 @@ function AbsenceTab() {
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 14 }}>
-        <KPI label="VARDİYA DEVAMSIZ" value={data.summary.total_shift_absent} color="var(--red)" />
-        <KPI label="SERVİS BİNMEDİ" value={data.summary.total_no_show} color="var(--red)" />
-        <KPI label="DİSİPLİN KAYDI" value={data.summary.total_discipline} color="var(--amber)" />
-        <KPI label="ETKİLENEN KİŞİ" value={data.summary.unique_absent_staff} color="var(--accent)" />
+        <KPI label="VARDİYA DEVAMSIZ" value={summary.total_shift_absent || 0} color="var(--red)" />
+        <KPI label="SERVİS BİNMEDİ" value={summary.total_no_show || 0} color="var(--red)" />
+        <KPI label="DİSİPLİN KAYDI" value={summary.total_discipline || 0} color="var(--amber)" />
+        <KPI label="ETKİLENEN KİŞİ" value={summary.unique_absent_staff || 0} color="var(--accent)" />
       </div>
 
       <Section title="VARDİYA TRENDİ (günlük)">
         <div style={{ display: 'flex', alignItems: 'flex-end', gap: 3, height: 140, overflowX: 'auto', padding: '0 4px' }}>
-          {data.trend.map(t => {
+          {trend.map(t => {
             const totalH = ((t.worked + t.shift_absent) / maxTrend) * 120
             const absentH = t.worked + t.shift_absent > 0 ? totalH * (t.shift_absent / (t.worked + t.shift_absent)) : 0
             return (
@@ -88,8 +93,8 @@ function AbsenceTab() {
         </div>
       </Section>
 
-      <Section title={`DEPARTMAN BAZLI (${data.by_dept.length})`}>
-        {!data.by_dept.length ? <div style={{ color: 'var(--text4)' }}>Veri yok</div> : (
+      <Section title={`DEPARTMAN BAZLI (${byDept.length})`}>
+        {!byDept.length ? <div style={{ color: 'var(--text4)' }}>Veri yok</div> : (
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
               <tr style={{ background: 'var(--surface2)' }}>
@@ -100,7 +105,7 @@ function AbsenceTab() {
               </tr>
             </thead>
             <tbody>
-              {data.by_dept.map((d, i) => {
+              {byDept.map((d, i) => {
                 const total = d.worked + d.shift_absent
                 const pct = total > 0 ? Math.round(d.shift_absent / total * 100) : 0
                 return (
