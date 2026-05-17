@@ -185,6 +185,10 @@ export function getPersonnelCheckouts(personnelId) {
   return queries.getPersonnelCheckouts(personnelId)
 }
 
+export function getCheckoutReport() {
+  return queries.getCheckoutReport()
+}
+
 // ── Hasarli / Kayip stok dusumu ──────────────────────────────────────────────
 
 export function writeOff(itemId, qty, type, reason, userId) {

@@ -328,6 +328,95 @@ export function getPersonnelCheckouts(personnelId) {
   `).all(personnelId)
 }
 
+// Teslim Raporu — personel/blok/kat bazinda aktif teslim toplamlari
+export function getCheckoutReport() {
+  const db = getDB()
+
+  const byPersonnel = db.prepare(`
+    SELECT
+      p.id AS personnel_id,
+      p.full_name AS name,
+      p.company,
+      p.job_title,
+      r.block,
+      r.room_no,
+      SUM(ic.quantity - ic.returned_qty) AS active_qty,
+      COUNT(DISTINCT ic.item_id) AS distinct_items,
+      COUNT(ic.id) AS active_checkouts,
+      MAX(ic.checked_out_at) AS last_checkout_at,
+      GROUP_CONCAT(i.item_name || ' x' || (ic.quantity - ic.returned_qty), ' · ') AS items_summary
+    FROM inventory_checkouts ic
+    JOIN inventory i ON i.id = ic.item_id
+    JOIN personnel p ON p.id = ic.personnel_id
+    LEFT JOIN room_assignments ra ON ra.personnel_id = p.id AND ra.check_out_at IS NULL
+    LEFT JOIN rooms r ON r.id = ra.room_id
+    WHERE ic.returned_at IS NULL AND (ic.quantity - ic.returned_qty) > 0
+    GROUP BY p.id
+    ORDER BY active_qty DESC
+  `).all()
+
+  const byBlock = db.prepare(`
+    SELECT
+      COALESCE(r.block, '—') AS block,
+      SUM(ic.quantity - ic.returned_qty) AS active_qty,
+      COUNT(DISTINCT p.id) AS personnel_count,
+      COUNT(DISTINCT ic.item_id) AS distinct_items
+    FROM inventory_checkouts ic
+    JOIN personnel p ON p.id = ic.personnel_id
+    LEFT JOIN room_assignments ra ON ra.personnel_id = p.id AND ra.check_out_at IS NULL
+    LEFT JOIN rooms r ON r.id = ra.room_id
+    WHERE ic.returned_at IS NULL AND (ic.quantity - ic.returned_qty) > 0
+    GROUP BY COALESCE(r.block, '—')
+    ORDER BY active_qty DESC
+  `).all()
+
+  // Kat = oda no'nun ilk hanesi (101->1, 201->2 vs). H/J/D bloklar (1+, 101+) icin ayni mantik
+  const byFloor = db.prepare(`
+    SELECT
+      r.block,
+      CASE
+        WHEN r.room_no >= 100 THEN r.room_no / 100
+        ELSE 1
+      END AS floor,
+      SUM(ic.quantity - ic.returned_qty) AS active_qty,
+      COUNT(DISTINCT p.id) AS personnel_count
+    FROM inventory_checkouts ic
+    JOIN personnel p ON p.id = ic.personnel_id
+    LEFT JOIN room_assignments ra ON ra.personnel_id = p.id AND ra.check_out_at IS NULL
+    LEFT JOIN rooms r ON r.id = ra.room_id
+    WHERE ic.returned_at IS NULL AND (ic.quantity - ic.returned_qty) > 0
+      AND r.block IS NOT NULL
+    GROUP BY r.block, floor
+    ORDER BY r.block, floor
+  `).all()
+
+  const byCompany = db.prepare(`
+    SELECT
+      COALESCE(NULLIF(p.company, ''), '—') AS company,
+      SUM(ic.quantity - ic.returned_qty) AS active_qty,
+      COUNT(DISTINCT p.id) AS personnel_count
+    FROM inventory_checkouts ic
+    JOIN personnel p ON p.id = ic.personnel_id
+    WHERE ic.returned_at IS NULL AND (ic.quantity - ic.returned_qty) > 0
+    GROUP BY COALESCE(NULLIF(p.company, ''), '—')
+    ORDER BY active_qty DESC
+  `).all()
+
+  const totals = db.prepare(`
+    SELECT
+      COALESCE(SUM(ic.quantity - ic.returned_qty), 0) AS active_qty,
+      COALESCE(SUM(ic.returned_qty), 0) AS returned_qty,
+      COALESCE(SUM(ic.quantity), 0) AS total_handed_out,
+      COUNT(DISTINCT ic.personnel_id) AS personnel_count,
+      COUNT(DISTINCT ic.item_id) AS distinct_items,
+      COUNT(ic.id) AS active_checkouts
+    FROM inventory_checkouts ic
+    WHERE ic.returned_at IS NULL AND (ic.quantity - ic.returned_qty) > 0
+  `).get()
+
+  return { byPersonnel, byBlock, byFloor, byCompany, totals }
+}
+
 // ── Goods Receipts (Mal Giris) ──────────────────────────────────────────────
 
 export function generateReceiptNo() {

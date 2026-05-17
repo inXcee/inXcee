@@ -16,7 +16,6 @@ const TAB_GROUPS = [
       { to: '/settings/discipline',         label: 'Disiplin',           icon: '⚠',  roles: MGMT },
       { to: '/settings/performance',        label: 'Performans',         icon: '⭐', roles: MGMT },
       { to: '/settings/meals',              label: 'Yemekhane',          icon: '🍽', roles: MGMT },
-      { to: '/settings/transport',          label: 'Servisler',          icon: '🚌', roles: MGMT },
       { to: '/settings/comms',              label: 'İletişim',           icon: '📨', roles: MGMT },
       { to: '/settings/payroll',            label: 'Bordro Özet',        icon: '💰', roles: MGMT },
       { to: '/settings/combined-absences',  label: 'Devamsızlık',        icon: '✗',  roles: MGMT },

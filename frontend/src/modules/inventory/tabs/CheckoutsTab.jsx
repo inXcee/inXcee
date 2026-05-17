@@ -14,7 +14,7 @@ export default function CheckoutsTab() {
   return (
     <div>
       <div style={{ display: 'flex', gap: '2px', marginBottom: '16px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '12px', padding: '3px', width: 'fit-content' }}>
-        {[['active', 'AKTİF'], ['history', 'GEÇMİŞ']].map(([key, label]) => (
+        {[['active', 'AKTİF'], ['report', 'RAPOR'], ['history', 'GEÇMİŞ']].map(([key, label]) => (
           <button key={key} onClick={() => setView(key)} style={{
             padding: '7px 20px', border: 'none', borderRadius: '9px', cursor: 'pointer',
             fontFamily: 'var(--mono)', fontSize: '10px', fontWeight: 700, letterSpacing: '1px',
@@ -24,6 +24,7 @@ export default function CheckoutsTab() {
         ))}
       </div>
       {view === 'active' && <ActiveCheckoutsPanel fullView />}
+      {view === 'report' && <CheckoutReport />}
       {view === 'history' && (
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '14px', overflow: 'hidden' }}>
           <div style={{ height: '2px', background: 'linear-gradient(90deg,var(--purple),var(--blue))' }} />
@@ -63,6 +64,218 @@ export default function CheckoutsTab() {
               </table>
             </div>
           )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function CheckoutReport() {
+  const [search, setSearch] = useState('')
+  const [groupBy, setGroupBy] = useState('personnel') // personnel | block | floor | company
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['checkouts-report'],
+    queryFn: () => api.get('/inventory/checkouts/report').then(r => r.data),
+    refetchInterval: 60000,
+  })
+
+  if (isLoading) {
+    return <div style={{ padding: 32, textAlign: 'center', fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text3)' }}>Yükleniyor…</div>
+  }
+
+  const t = data?.totals || {}
+  const byPersonnel = data?.byPersonnel || []
+  const byBlock = data?.byBlock || []
+  const byFloor = data?.byFloor || []
+  const byCompany = data?.byCompany || []
+
+  const filteredPersonnel = search
+    ? byPersonnel.filter(p =>
+        `${p.name} ${p.company || ''} ${p.block || ''} ${p.room_no || ''} ${p.job_title || ''} ${p.items_summary || ''}`
+          .toLowerCase()
+          .includes(search.toLowerCase()))
+    : byPersonnel
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* Toplam kartlar */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
+        <SummaryCard label="AKTİF TOPLAM" value={t.active_qty || 0} sub="adet" color="var(--blue)" big />
+        <SummaryCard label="PERSONEL" value={t.personnel_count || 0} sub="kişi" color="var(--accent)" />
+        <SummaryCard label="ÜRÜN ÇEŞİDİ" value={t.distinct_items || 0} sub="çeşit" />
+        <SummaryCard label="AKTİF KAYIT" value={t.active_checkouts || 0} sub="teslim" />
+        <SummaryCard label="İADE EDİLEN" value={t.returned_qty || 0} sub="adet" color="var(--green)" />
+      </div>
+
+      {/* Group selector */}
+      <div style={{ display: 'flex', gap: 4, padding: 3, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, width: 'fit-content' }}>
+        {[
+          ['personnel', '👤 Personel'],
+          ['block', '◆ Blok'],
+          ['floor', '⧉ Kat'],
+          ['company', '⌂ Firma'],
+        ].map(([key, label]) => (
+          <button key={key} onClick={() => setGroupBy(key)} style={{
+            padding: '6px 14px', border: 'none', borderRadius: 7, cursor: 'pointer',
+            fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 700, letterSpacing: 1,
+            background: groupBy === key ? 'var(--accent)' : 'transparent',
+            color: groupBy === key ? '#000' : 'var(--text3)',
+          }}>{label}</button>
+        ))}
+      </div>
+
+      {groupBy === 'personnel' && (
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, overflow: 'hidden' }}>
+          <div style={{ height: 2, background: 'linear-gradient(90deg,var(--accent),var(--blue))' }} />
+          <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <div>
+              <div style={{ fontFamily: 'var(--display)', fontSize: 13, letterSpacing: 2 }}>PERSONEL BAZINDA</div>
+              <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', marginTop: 2 }}>{filteredPersonnel.length} KİŞİ · KİM NE ALDI</div>
+            </div>
+            <div style={{ flex: 1 }} />
+            <input className="form-input" value={search} onChange={e => setSearch(e.target.value)}
+              placeholder="Personel/blok/oda/ürün ara…"
+              style={{ width: 260, fontSize: 11, borderRadius: 10, padding: '6px 10px' }} />
+          </div>
+          {filteredPersonnel.length === 0 ? (
+            <div style={{ padding: 32, textAlign: 'center', fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text3)' }}>
+              {byPersonnel.length === 0 ? 'Şu anda kimsenin üzerinde teslim alınmış malzeme yok' : 'Aranan kayıt yok'}
+            </div>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table className="data-table" style={{ margin: 0, width: '100%' }}>
+                <thead>
+                  <tr>
+                    <th style={{ textAlign: 'left' }}>PERSONEL</th>
+                    <th>BLOK / ODA</th>
+                    <th>FİRMA</th>
+                    <th style={{ textAlign: 'right' }}>TOPLAM ADET</th>
+                    <th style={{ textAlign: 'center' }}>ÇEŞİT</th>
+                    <th style={{ textAlign: 'left' }}>ÜRÜNLER</th>
+                    <th style={{ textAlign: 'right' }}>SON</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredPersonnel.map(p => (
+                    <tr key={p.personnel_id} style={{ borderTop: '1px solid var(--border)' }}>
+                      <td style={{ padding: 10 }}>
+                        <div style={{ fontWeight: 600, fontSize: 13 }}>{p.name}</div>
+                        {p.job_title && <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>{p.job_title}</div>}
+                      </td>
+                      <td style={{ padding: 10, fontFamily: 'var(--mono)', fontSize: 11 }}>
+                        {p.block ? <span style={{ color: 'var(--accent)', fontWeight: 700 }}>{p.block}-{p.room_no}</span> : <span style={{ color: 'var(--text4)' }}>—</span>}
+                      </td>
+                      <td style={{ padding: 10, fontSize: 11, color: 'var(--text2)' }}>{p.company || '—'}</td>
+                      <td style={{ padding: 10, textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 16, fontWeight: 700, color: 'var(--accent)' }}>
+                        {p.active_qty}
+                      </td>
+                      <td style={{ padding: 10, textAlign: 'center', fontFamily: 'var(--mono)', fontSize: 11 }}>{p.distinct_items}</td>
+                      <td style={{ padding: 10, fontSize: 11, color: 'var(--text2)', maxWidth: 320 }}>
+                        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={p.items_summary}>
+                          {p.items_summary || '—'}
+                        </div>
+                      </td>
+                      <td style={{ padding: 10, textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', whiteSpace: 'nowrap' }}>
+                        {fmt(p.last_checkout_at)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {groupBy === 'block' && (
+        <GroupTable
+          title="BLOK BAZINDA"
+          subtitle="HER BLOKTA NE KADAR MALZEME"
+          rows={byBlock}
+          columns={[
+            { key: 'block', label: 'BLOK', render: r => <span style={{ fontFamily: 'var(--mono)', fontWeight: 700, fontSize: 14, color: 'var(--accent)' }}>{r.block}</span> },
+            { key: 'active_qty', label: 'TOPLAM ADET', align: 'right', render: r => <span style={{ fontFamily: 'var(--mono)', fontSize: 16, fontWeight: 700, color: 'var(--accent)' }}>{r.active_qty}</span> },
+            { key: 'personnel_count', label: 'KİŞİ', align: 'center', render: r => <span style={{ fontFamily: 'var(--mono)', fontSize: 12 }}>{r.personnel_count}</span> },
+            { key: 'distinct_items', label: 'ÇEŞİT', align: 'center', render: r => <span style={{ fontFamily: 'var(--mono)', fontSize: 12 }}>{r.distinct_items}</span> },
+          ]}
+        />
+      )}
+
+      {groupBy === 'floor' && (
+        <GroupTable
+          title="KAT BAZINDA"
+          subtitle="BLOK + KAT KIRILIMI"
+          rows={byFloor}
+          columns={[
+            { key: 'block', label: 'BLOK', render: r => <span style={{ fontFamily: 'var(--mono)', fontWeight: 700, color: 'var(--accent)' }}>{r.block}</span> },
+            { key: 'floor', label: 'KAT', align: 'center', render: r => <span style={{ fontFamily: 'var(--mono)', fontSize: 13, fontWeight: 600 }}>{r.floor}. kat</span> },
+            { key: 'active_qty', label: 'TOPLAM ADET', align: 'right', render: r => <span style={{ fontFamily: 'var(--mono)', fontSize: 16, fontWeight: 700, color: 'var(--accent)' }}>{r.active_qty}</span> },
+            { key: 'personnel_count', label: 'KİŞİ', align: 'center', render: r => <span style={{ fontFamily: 'var(--mono)', fontSize: 12 }}>{r.personnel_count}</span> },
+          ]}
+        />
+      )}
+
+      {groupBy === 'company' && (
+        <GroupTable
+          title="FİRMA BAZINDA"
+          subtitle="HER FİRMANIN PERSONELİNİN TOPLAM TESLİMİ"
+          rows={byCompany}
+          columns={[
+            { key: 'company', label: 'FİRMA', render: r => <span style={{ fontSize: 13, fontWeight: 600 }}>{r.company}</span> },
+            { key: 'active_qty', label: 'TOPLAM ADET', align: 'right', render: r => <span style={{ fontFamily: 'var(--mono)', fontSize: 16, fontWeight: 700, color: 'var(--accent)' }}>{r.active_qty}</span> },
+            { key: 'personnel_count', label: 'KİŞİ', align: 'center', render: r => <span style={{ fontFamily: 'var(--mono)', fontSize: 12 }}>{r.personnel_count}</span> },
+          ]}
+        />
+      )}
+    </div>
+  )
+}
+
+function SummaryCard({ label, value, sub, color = 'var(--text)', big }) {
+  return (
+    <div style={{
+      padding: big ? '14px 16px' : '12px 14px',
+      background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12,
+      display: 'flex', flexDirection: 'column', gap: 4,
+    }}>
+      <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: 1.5 }}>{label}</div>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+        <span style={{ fontFamily: 'var(--display)', fontSize: big ? 28 : 22, color, fontWeight: 700, letterSpacing: 1 }}>{value}</span>
+        <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)' }}>{sub}</span>
+      </div>
+    </div>
+  )
+}
+
+function GroupTable({ title, subtitle, rows, columns }) {
+  return (
+    <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, overflow: 'hidden' }}>
+      <div style={{ height: 2, background: 'linear-gradient(90deg,var(--accent),var(--blue))' }} />
+      <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)' }}>
+        <div style={{ fontFamily: 'var(--display)', fontSize: 13, letterSpacing: 2 }}>{title}</div>
+        <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', marginTop: 2 }}>{rows.length} KAYIT · {subtitle}</div>
+      </div>
+      {rows.length === 0 ? (
+        <div style={{ padding: 32, textAlign: 'center', fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text3)' }}>Veri yok</div>
+      ) : (
+        <div style={{ overflowX: 'auto' }}>
+          <table className="data-table" style={{ margin: 0, width: '100%' }}>
+            <thead>
+              <tr>
+                {columns.map(c => <th key={c.key} style={{ textAlign: c.align || 'left' }}>{c.label}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => (
+                <tr key={i} style={{ borderTop: '1px solid var(--border)' }}>
+                  {columns.map(c => (
+                    <td key={c.key} style={{ padding: 10, textAlign: c.align || 'left' }}>{c.render(r)}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </div>

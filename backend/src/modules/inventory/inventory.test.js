@@ -130,12 +130,36 @@ describe('Inventory Module', () => {
     expect(res.body[0].personnel_name).toBe('Envanter Test Kisi')
   })
 
+  it('returns checkout report with personnel/block/floor breakdown', async () => {
+    const res = await request(app).get('/api/inventory/checkouts/report').set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(200)
+    expect(res.body.totals).toBeDefined()
+    expect(res.body.totals.active_qty).toBe(5)
+    expect(res.body.totals.personnel_count).toBe(1)
+    expect(Array.isArray(res.body.byPersonnel)).toBe(true)
+    expect(res.body.byPersonnel.length).toBe(1)
+    expect(res.body.byPersonnel[0].name).toBe('Envanter Test Kisi')
+    expect(res.body.byPersonnel[0].active_qty).toBe(5)
+    expect(Array.isArray(res.body.byBlock)).toBe(true)
+    expect(Array.isArray(res.body.byFloor)).toBe(true)
+    expect(Array.isArray(res.body.byCompany)).toBe(true)
+    const avs = res.body.byCompany.find(c => c.company === 'TestFirma')
+    expect(avs?.active_qty).toBe(5)
+  })
+
   it('returns item from personnel', async () => {
     const active = await request(app).get('/api/inventory/checkouts/active').set('Authorization', `Bearer ${token}`)
     const coId = active.body[0].id
     const res = await request(app).post(`/api/inventory/return/${coId}`).set('Authorization', `Bearer ${token}`)
     expect(res.status).toBe(200)
     expect(res.body.quantity).toBe(80) // 75 + 5 back
+  })
+
+  it('checkout report is empty after all returns', async () => {
+    const res = await request(app).get('/api/inventory/checkouts/report').set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(200)
+    expect(res.body.totals.active_qty).toBe(0)
+    expect(res.body.byPersonnel.length).toBe(0)
   })
 
   it('rejects checkout with insufficient stock', async () => {

@@ -199,7 +199,7 @@ export default function BulkActionsPage() {
             <FilterField label="BLOK">
               <select className="form-select" value={filters.block} onChange={e => setFilters(f => ({ ...f, block: e.target.value }))}>
                 <option value="">Hepsi</option>
-                {BLOCKS.map(b => <option key={b.name} value={b.name}>{b.name}</option>)}
+                {BLOCKS.map(b => <option key={b.block} value={b.block}>{b.block}</option>)}
               </select>
             </FilterField>
             <FilterField label="KAT">
@@ -321,7 +321,7 @@ export default function BulkActionsPage() {
           <label className="form-label">HEDEF BLOK</label>
           <select className="form-select" value={actionForm.target_block || ''} onChange={e => setActionForm(f => ({ ...f, target_block: e.target.value }))}>
             <option value="">— seç —</option>
-            {BLOCKS.map(b => <option key={b.name} value={b.name}>{b.name}</option>)}
+            {BLOCKS.map(b => <option key={b.block} value={b.block}>{b.block}</option>)}
           </select>
           <div style={hintStyle}>Blok içinde boş yataklara otomatik dağıtılır. Vardiya/kapasite uyumsuzlukları atlanır.</div>
           <button className="btn btn-primary" disabled={!actionForm.target_block || transferMut.isPending} onClick={() => transferMut.mutate()}>

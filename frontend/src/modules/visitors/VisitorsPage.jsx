@@ -97,7 +97,7 @@ export default function VisitorsPage() {
                 <label className="form-label">BLOK</label>
                 <select className="form-select" value={form.visiting_block} onChange={e => setForm(f => ({ ...f, visiting_block: e.target.value }))}>
                   <option value="">-</option>
-                  {BLOCKS.map(b => <option key={b.name} value={b.name}>{b.name}</option>)}
+                  {BLOCKS.map(b => <option key={b.block} value={b.block}>{b.block}</option>)}
                 </select>
               </div>
             </div>

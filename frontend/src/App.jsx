@@ -260,7 +260,7 @@ export default function App() {
             <Route path="discipline" element={<Navigate to="/settings/discipline" replace />} />
             <Route path="performance" element={<Navigate to="/settings/performance" replace />} />
             <Route path="meals" element={<Navigate to="/settings/meals" replace />} />
-            <Route path="transport" element={<Navigate to="/settings/transport" replace />} />
+            <Route path="transport" element={<TransportPage />} />
             <Route path="comms" element={<Navigate to="/settings/comms" replace />} />
             <Route path="payroll" element={<Navigate to="/settings/payroll" replace />} />
             <Route path="combined-absences" element={<Navigate to="/settings/combined-absences" replace />} />
@@ -310,7 +310,6 @@ export default function App() {
               <Route path="discipline" element={<DisciplinePage />} />
               <Route path="performance" element={<PerformancePage />} />
               <Route path="meals" element={<MealsPage />} />
-              <Route path="transport" element={<TransportPage />} />
               <Route path="comms" element={<CommsPage />} />
               <Route path="payroll" element={<PayrollPage />} />
               <Route path="combined-absences" element={<CombinedAbsencesPage />} />

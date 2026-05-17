@@ -200,6 +200,11 @@ inventoryRouter.get('/checkouts/personnel/:id', ...mgrAccess, (req, res) => {
   catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
+inventoryRouter.get('/checkouts/report', ...mgrAccess, (req, res) => {
+  try { res.json(service.getCheckoutReport()) }
+  catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+})
+
 inventoryRouter.post('/checkout', ...editAccess, (req, res) => {
   try {
     const { item_id, personnel_id, quantity, note, from_location_id } = req.body
