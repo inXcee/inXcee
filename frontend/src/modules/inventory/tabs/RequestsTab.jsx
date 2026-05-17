@@ -65,20 +65,20 @@ function FulfillModal({ requestId, onClose, onDone }) {
   const [personQ, setPersonQ] = useState('')
   const [person, setPerson] = useState(null)
   const { data: results = [] } = useQuery({
-    queryKey: ['fulfill-person', personQ],
-    queryFn: () => api.get(`/inventory/personnel/search?q=${personQ}`).then(r => r.data),
+    queryKey: ['fulfill-staff', personQ],
+    queryFn: () => api.get(`/inventory/staff/search?q=${personQ}`).then(r => r.data),
     enabled: personQ.length >= 2,
   })
   const mut = useMutation({
-    mutationFn: () => api.post(`/inventory/requests/${requestId}/fulfill`, { personnel_id: person.id }),
+    mutationFn: () => api.post(`/inventory/requests/${requestId}/fulfill`, { staff_id: person.id }),
     onSuccess: () => { onDone(); onClose() },
   })
   return (
-    <Modal onClose={onClose} title="TALEBI KARSILA" sub="Personel sec" color="var(--green),var(--blue)">
+    <Modal onClose={onClose} title="TALEBI KARSILA" sub="AVS personeli sec" color="var(--green),var(--blue)">
       {!person ? (
         <>
           <input className="form-input" value={personQ} onChange={e => setPersonQ(e.target.value)}
-            placeholder="Ad, firma..." autoFocus style={{ borderRadius: '10px' }} />
+            placeholder="Ad, görev, blok..." autoFocus style={{ borderRadius: '10px' }} />
           <div style={{ maxHeight: '240px', overflow: 'auto', marginTop: '10px' }}>
             {results.map(p => (
               <div key={p.id} onClick={() => setPerson(p)} style={{
@@ -86,7 +86,10 @@ function FulfillModal({ requestId, onClose, onDone }) {
                 border: '1px solid var(--border)',
               }}>
                 <div style={{ fontWeight: 600, fontSize: '13px' }}>{p.full_name}</div>
-                <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)' }}>{p.company || '-'}</div>
+                <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)' }}>
+                  {p.role_label || p.position || '—'}
+                  {p.assigned_block && ` · ${p.assigned_block}${p.assigned_floor != null ? '/' + p.assigned_floor + '.kat' : ''}`}
+                </div>
               </div>
             ))}
           </div>
@@ -95,7 +98,10 @@ function FulfillModal({ requestId, onClose, onDone }) {
         <>
           <div style={{ padding: '12px 14px', background: 'var(--surface2)', borderRadius: '10px', marginBottom: '12px' }}>
             <div style={{ fontWeight: 600 }}>{person.full_name}</div>
-            <div style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)' }}>{person.company || '-'}</div>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)' }}>
+              {person.role_label || person.position || '—'}
+              {person.assigned_block && ` · ${person.assigned_block}${person.assigned_floor != null ? '/' + person.assigned_floor + '.kat' : ''}`}
+            </div>
           </div>
           {mut.isError && <div className="alert alert-danger" style={{ marginBottom: '10px', borderRadius: '10px' }}><span>!</span><span>{mut.error?.response?.data?.error || 'Hata'}</span></div>}
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>

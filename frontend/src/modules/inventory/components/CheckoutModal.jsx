@@ -5,10 +5,10 @@ import Modal from './Modal.jsx'
 
 export default function CheckoutModal({ item, onClose }) {
   const qc = useQueryClient()
-  const inv = () => { qc.invalidateQueries({ queryKey: ['inventory'] }); qc.invalidateQueries({ queryKey: ['inventory-stats'] }); qc.invalidateQueries({ queryKey: ['checkouts-active'] }); qc.invalidateQueries({ queryKey: ['stock-by-location'] }) }
+  const inv = () => { qc.invalidateQueries({ queryKey: ['inventory'] }); qc.invalidateQueries({ queryKey: ['inventory-stats'] }); qc.invalidateQueries({ queryKey: ['checkouts-active'] }); qc.invalidateQueries({ queryKey: ['checkouts-report'] }); qc.invalidateQueries({ queryKey: ['stock-by-location'] }) }
   const [step, setStep] = useState(0)
-  const [personQ, setPersonQ] = useState('')
-  const [person, setPerson] = useState(null)
+  const [staffQ, setStaffQ] = useState('')
+  const [staff, setStaff] = useState(null)
   const [qty, setQty] = useState(1)
   const [note, setNote] = useState('')
   const [fromLocationId, setFromLocationId] = useState('')
@@ -24,9 +24,9 @@ export default function CheckoutModal({ item, onClose }) {
   const maxQty = item.track_locations ? fromQty : item.quantity
 
   const { data: results = [] } = useQuery({
-    queryKey: ['inv-person-search', personQ],
-    queryFn: () => api.get(`/inventory/personnel/search?q=${personQ}`).then(r => r.data),
-    enabled: personQ.length >= 2,
+    queryKey: ['inv-staff-search', staffQ],
+    queryFn: () => api.get(`/inventory/staff/search?q=${staffQ}`).then(r => r.data),
+    enabled: staffQ.length >= 2,
   })
 
   const mut = useMutation({
@@ -35,10 +35,10 @@ export default function CheckoutModal({ item, onClose }) {
   })
 
   return (
-    <Modal onClose={onClose} title="MALZEME TESLIM" sub={item.item_name} color="var(--blue),var(--teal)">
+    <Modal onClose={onClose} title="AVS PERSONELİNE TESLİM" sub={item.item_name} color="var(--blue),var(--teal)">
       {/* Step indicator */}
       <div style={{ display: 'flex', gap: '0', marginBottom: '20px' }}>
-        {['PERSONEL', 'MIKTAR', 'TAMAM'].map((s, i) => (
+        {['AVS PERSONELİ', 'MIKTAR', 'TAMAM'].map((s, i) => (
           <div key={s} style={{ flex: 1, display: 'flex', alignItems: 'center' }}>
             <div style={{ flex: 1, textAlign: 'center' }}>
               <div style={{
@@ -56,30 +56,40 @@ export default function CheckoutModal({ item, onClose }) {
         ))}
       </div>
 
-      {/* Step 0: Person search */}
+      {/* Step 0: AVS Staff search */}
       {step === 0 && (
         <div>
-          <label className="form-label">Personel Ara</label>
-          <input className="form-input" value={personQ} onChange={e => setPersonQ(e.target.value)}
-            placeholder="Ad, firma veya telefon..." autoFocus style={{ borderRadius: '10px' }} />
-          <div style={{ maxHeight: '240px', overflow: 'auto', marginTop: '10px' }}>
-            {results.map(p => (
-              <div key={p.id} onClick={() => { setPerson(p); setStep(1) }} style={{
+          <label className="form-label">AVS Personeli Ara</label>
+          <input className="form-input" value={staffQ} onChange={e => setStaffQ(e.target.value)}
+            placeholder="Ad, görev (kat görevlisi, çamaşırcı, teknisyen...), telefon" autoFocus style={{ borderRadius: '10px' }} />
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', marginTop: 4, letterSpacing: 1 }}>
+            👤 SADECE AKTİF AVS PERSONELİ LİSTELENİR — Sakinler bu listede yer almaz
+          </div>
+          <div style={{ maxHeight: '300px', overflow: 'auto', marginTop: '10px' }}>
+            {results.map(s => (
+              <div key={s.id} onClick={() => { setStaff(s); setStep(1) }} style={{
                 padding: '12px 14px', cursor: 'pointer', borderRadius: '10px', marginBottom: '5px',
                 border: '1px solid var(--border)', transition: 'all 0.15s',
-                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10,
               }}
                 onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.background = 'rgba(240,165,0,.03)' }}
                 onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.background = 'transparent' }}>
-                <div>
-                  <div style={{ fontWeight: 600, fontSize: '13px' }}>{p.full_name}</div>
-                  <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)' }}>{p.company || '-'} · {p.job_title || '-'}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 600, fontSize: '13px' }}>{s.full_name}</div>
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', marginTop: 2 }}>
+                    {s.role_label || s.position || '—'}
+                    {s.department_name && ` · ${s.department_name}`}
+                  </div>
                 </div>
-                {p.block && <span style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--accent)', background: 'rgba(240,165,0,.06)', padding: '3px 8px', borderRadius: '6px', fontWeight: 600 }}>{p.block}-{p.room_no}</span>}
+                {(s.assigned_block || s.assigned_floor) && (
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--accent)', background: 'rgba(240,165,0,.08)', padding: '4px 9px', borderRadius: '6px', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                    {s.assigned_block || '—'}{s.assigned_floor != null ? ` / ${s.assigned_floor}. kat` : ''}
+                  </span>
+                )}
               </div>
             ))}
-            {personQ.length >= 2 && results.length === 0 && (
-              <div style={{ textAlign: 'center', padding: '20px', fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)' }}>Sonuc bulunamadi</div>
+            {staffQ.length >= 2 && results.length === 0 && (
+              <div style={{ textAlign: 'center', padding: '20px', fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)' }}>Eşleşen AVS personeli yok</div>
             )}
           </div>
         </div>
@@ -90,9 +100,13 @@ export default function CheckoutModal({ item, onClose }) {
         <div>
           <div style={{ padding: '12px 14px', background: 'var(--surface2)', borderRadius: '10px', border: '1px solid var(--border)', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
             <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'rgba(52,152,219,.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', flexShrink: 0 }}>👤</div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 600 }}>{person?.full_name}</div>
-              <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)' }}>{person?.company || '-'} {person?.block ? `· ${person.block}-${person.room_no}` : ''}</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 600 }}>{staff?.full_name}</div>
+              <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', marginTop: 2 }}>
+                {staff?.role_label || staff?.position || '—'}
+                {staff?.department_name && ` · ${staff.department_name}`}
+                {staff?.assigned_block && ` · ${staff.assigned_block}${staff.assigned_floor != null ? '/' + staff.assigned_floor + '.kat' : ''}`}
+              </div>
             </div>
             <button className="btn btn-ghost btn-xs" onClick={() => setStep(0)} style={{ borderRadius: '8px' }}>degistir</button>
           </div>
@@ -136,7 +150,7 @@ export default function CheckoutModal({ item, onClose }) {
 
           <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center', padding: '14px', borderRadius: '10px', fontSize: '12px' }}
             disabled={mut.isPending || (item.track_locations && !fromLocationId)}
-            onClick={() => mut.mutate({ item_id: item.id, personnel_id: person.id, quantity: qty, note, from_location_id: fromLocationId ? +fromLocationId : undefined })}>
+            onClick={() => mut.mutate({ item_id: item.id, staff_id: staff.id, quantity: qty, note, from_location_id: fromLocationId ? +fromLocationId : undefined })}>
             {mut.isPending ? 'KAYDEDILIYOR...' : `${qty} ${item.unit} TESLIM ET`}
           </button>
         </div>
@@ -148,11 +162,11 @@ export default function CheckoutModal({ item, onClose }) {
           <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: 'rgba(39,201,106,.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px', fontSize: '24px', color: 'var(--green)' }}>✓</div>
           <div style={{ fontFamily: 'var(--display)', fontSize: '17px', letterSpacing: '1px', marginBottom: '8px' }}>TESLIM KAYDEDILDI</div>
           <div style={{ fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--text3)', marginBottom: '18px' }}>
-            {qty} {item.unit} {item.item_name} → {person?.full_name}
+            {qty} {item.unit} {item.item_name} → {staff?.full_name}
           </div>
           <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
             <button className="btn btn-ghost" onClick={onClose} style={{ borderRadius: '10px' }}>KAPAT</button>
-            <button className="btn btn-primary" onClick={() => { setPerson(null); setPersonQ(''); setQty(1); setNote(''); setStep(0) }} style={{ borderRadius: '10px' }}>YENI TESLIM</button>
+            <button className="btn btn-primary" onClick={() => { setStaff(null); setStaffQ(''); setQty(1); setNote(''); setStep(0) }} style={{ borderRadius: '10px' }}>YENI TESLIM</button>
           </div>
         </div>
       )}

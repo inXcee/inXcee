@@ -1311,6 +1311,42 @@ export function initDB() {
   // inventory_checkouts.request_id
   try { db.exec('ALTER TABLE inventory_checkouts ADD COLUMN request_id INTEGER REFERENCES inventory_requests(id)') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] inventory_checkouts.request_id:', e.message) }
 
+  // Inventory checkout artık AVS personeline (staff) yapılır, sakine (personnel) değil.
+  // staff_id kolonu eklenir, personnel_id eski kayıtlar için legacy kalır.
+  try { db.exec('ALTER TABLE inventory_checkouts ADD COLUMN staff_id INTEGER REFERENCES staff(id)') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] inventory_checkouts.staff_id:', e.message) }
+  // personnel_id NOT NULL kısıtını kaldır (yeni kayıtlar NULL bırakacak)
+  try {
+    const cols = db.prepare('PRAGMA table_info(inventory_checkouts)').all()
+    const personnelCol = cols.find(c => c.name === 'personnel_id')
+    if (personnelCol && personnelCol.notnull === 1) {
+      db.transaction(() => {
+        db.exec(`CREATE TABLE inventory_checkouts_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          item_id INTEGER NOT NULL REFERENCES inventory(id) ON DELETE CASCADE,
+          personnel_id INTEGER REFERENCES personnel(id),
+          staff_id INTEGER REFERENCES staff(id),
+          quantity REAL NOT NULL,
+          note TEXT,
+          checked_out_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          returned_at DATETIME,
+          returned_qty REAL DEFAULT 0,
+          created_by INTEGER NOT NULL REFERENCES users(id),
+          request_id INTEGER REFERENCES inventory_requests(id)
+        )`)
+        db.exec(`INSERT INTO inventory_checkouts_new(id,item_id,personnel_id,staff_id,quantity,note,checked_out_at,returned_at,returned_qty,created_by,request_id)
+          SELECT id,item_id,personnel_id,staff_id,quantity,note,checked_out_at,returned_at,returned_qty,created_by,request_id FROM inventory_checkouts`)
+        db.exec('DROP TABLE inventory_checkouts')
+        db.exec('ALTER TABLE inventory_checkouts_new RENAME TO inventory_checkouts')
+        db.exec('CREATE INDEX IF NOT EXISTS idx_inv_checkouts_active ON inventory_checkouts(item_id, returned_at)')
+        db.exec('CREATE INDEX IF NOT EXISTS idx_inv_checkouts_staff ON inventory_checkouts(staff_id) WHERE staff_id IS NOT NULL')
+      })()
+    }
+  } catch (e) { console.error('[Migration] inventory_checkouts personnel_id nullable:', e.message) }
+
+  // AVS personeli için blok/kat atama (kat görevlisi, blok bakım vs)
+  try { db.exec('ALTER TABLE staff ADD COLUMN assigned_block TEXT') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] staff.assigned_block:', e.message) }
+  try { db.exec('ALTER TABLE staff ADD COLUMN assigned_floor INTEGER') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] staff.assigned_floor:', e.message) }
+
   // goods_receipts.supplier_id + data migration (eski supplier string -> suppliers tablosu)
   try {
     const grCols = db.prepare('PRAGMA table_info(goods_receipts)').all().map(c => c.name)

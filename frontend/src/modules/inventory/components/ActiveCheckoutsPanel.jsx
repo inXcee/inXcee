@@ -22,7 +22,7 @@ export default function ActiveCheckoutsPanel({ fullView }) {
   })
 
   const filtered = search
-    ? checkouts.filter(c => `${c.personnel_name} ${c.item_name} ${c.company || ''} ${c.block || ''}${c.room_no || ''}`.toLowerCase().includes(search.toLowerCase()))
+    ? checkouts.filter(c => `${c.personnel_name} ${c.item_name} ${c.role_label || ''} ${c.department_name || ''} ${c.block || ''}${c.floor != null ? c.floor : ''}`.toLowerCase().includes(search.toLowerCase()))
     : checkouts
 
   if (!fullView && checkouts.length === 0) return null
@@ -32,12 +32,12 @@ export default function ActiveCheckoutsPanel({ fullView }) {
       <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <div>
           <div style={{ fontFamily: 'var(--display)', fontSize: '14px', letterSpacing: '2px' }}>AKTİF TESLİMLER</div>
-          <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', marginTop: '2px' }}>{checkouts.length} MALZEME PERSONELDE</div>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', marginTop: '2px' }}>{checkouts.length} MALZEME AVS PERSONELİNDE</div>
         </div>
         {fullView && checkouts.length > 0 && (
           <input className="form-input" value={search} onChange={e => setSearch(e.target.value)}
-            placeholder="Personel, malzeme, oda ara..."
-            style={{ width: 240, fontSize: 11, borderRadius: 10, padding: '6px 10px' }} />
+            placeholder="AVS personel, malzeme, blok, kat, görev ara..."
+            style={{ width: 280, fontSize: 11, borderRadius: 10, padding: '6px 10px' }} />
         )}
       </div>
       {filtered.length === 0 ? (
@@ -70,13 +70,15 @@ export default function ActiveCheckoutsPanel({ fullView }) {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
                     <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{co.personnel_name}</span>
-                    {co.block && (
+                    {(co.block || co.floor != null) && (
                       <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--accent)', fontWeight: 700 }}>
-                        {co.block}-{co.room_no}
+                        {co.block || '—'}{co.floor != null ? ` / ${co.floor}.kat` : ''}
                       </span>
                     )}
-                    {co.company && (
-                      <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>· {co.company}</span>
+                    {(co.role_label || co.department_name) && (
+                      <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>
+                        · {co.role_label || co.department_name}
+                      </span>
                     )}
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 2 }}>

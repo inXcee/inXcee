@@ -44,12 +44,14 @@ export function reject(id, reason, userId) {
   })
 }
 
-export function fulfill(id, personnelId, userId) {
+export function fulfill(id, staffId, userId) {
   const db = getDB()
   const req = q.getById(id)
   if (!req) throw new Error('Talep bulunamadi')
   if (req.status !== 'approved') throw new Error('Sadece onayli talep teslim edilebilir')
-  if (!personnelId) throw new Error('Personel sec')
+  if (!staffId) throw new Error('AVS personeli sec')
+  const staff = db.prepare('SELECT id FROM staff WHERE id=? AND is_active=1').get(staffId)
+  if (!staff) throw new Error('AVS personeli bulunamadi veya pasif')
 
   const inv = db.prepare('SELECT * FROM inventory WHERE id = ?').get(req.item_id)
   if (!inv) throw new Error('Urun bulunamadi')
@@ -61,9 +63,9 @@ export function fulfill(id, personnelId, userId) {
     db.prepare("UPDATE inventory SET quantity = ?, last_updated = datetime('now') WHERE id = ?").run(newQty, inv.id)
 
     const co = db.prepare(`
-      INSERT INTO inventory_checkouts(item_id, personnel_id, quantity, note, request_id, created_by)
+      INSERT INTO inventory_checkouts(item_id, staff_id, quantity, note, request_id, created_by)
       VALUES(?,?,?,?,?,?)
-    `).run(inv.id, personnelId, req.quantity, `Talep #${id}`, id, userId)
+    `).run(inv.id, staffId, req.quantity, `Talep #${id}`, id, userId)
     checkoutId = co.lastInsertRowid
 
     db.prepare(`

@@ -143,14 +143,14 @@ export function bulkStockCount(items, userId) {
   return result
 }
 
-// ── Checkout (Malzeme Teslim) ───────────────────────────────────────────────
+// ── Checkout (Malzeme Teslim — AVS personeli) ───────────────────────────────
 
-export function searchPersonnel(query) {
-  return queries.searchPersonnel(query)
+export function searchStaff(query) {
+  return queries.searchStaff(query)
 }
 
-export function checkoutToPersonnel(itemId, personnelId, qty, note, userId, fromLocationId = null) {
-  const result = queries.checkoutItem(itemId, personnelId, qty, note, userId, fromLocationId)
+export function checkoutToStaff(itemId, staffId, qty, note, userId, fromLocationId = null) {
+  const result = queries.checkoutItem(itemId, staffId, qty, note, userId, fromLocationId)
   const item = queries.getItemById(itemId)
   logAudit(userId, 'inventory_checkout', 'inventory', itemId,
     `Teslim: ${item?.item_name} x${qty} (${note || '-'})`)
@@ -181,8 +181,8 @@ export function getCheckoutHistory(limit) {
   return queries.getCheckoutHistory(limit)
 }
 
-export function getPersonnelCheckouts(personnelId) {
-  return queries.getPersonnelCheckouts(personnelId)
+export function getStaffCheckouts(staffId) {
+  return queries.getStaffCheckouts(staffId)
 }
 
 export function getCheckoutReport() {

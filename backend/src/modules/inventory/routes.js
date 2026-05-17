@@ -177,10 +177,11 @@ inventoryRouter.get('/export/csv', ...mgrAccess, (req, res) => {
 })
 
 // ── Personnel Search (for checkout) ─────────────────────────────────────────
-inventoryRouter.get('/personnel/search', ...mgrAccess, (req, res) => {
+// AVS personeli (staff) arama — malzeme teslimi için
+inventoryRouter.get('/staff/search', ...mgrAccess, (req, res) => {
   try {
     if (!req.query.q || req.query.q.length < 2) return res.json([])
-    res.json(service.searchPersonnel(req.query.q))
+    res.json(service.searchStaff(req.query.q))
   } catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
@@ -195,8 +196,8 @@ inventoryRouter.get('/checkouts/history', ...mgrAccess, (req, res) => {
   catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
-inventoryRouter.get('/checkouts/personnel/:id', ...mgrAccess, (req, res) => {
-  try { res.json(service.getPersonnelCheckouts(+req.params.id)) }
+inventoryRouter.get('/checkouts/staff/:id', ...mgrAccess, (req, res) => {
+  try { res.json(service.getStaffCheckouts(+req.params.id)) }
   catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
@@ -207,11 +208,11 @@ inventoryRouter.get('/checkouts/report', ...mgrAccess, (req, res) => {
 
 inventoryRouter.post('/checkout', ...editAccess, (req, res) => {
   try {
-    const { item_id, personnel_id, quantity, note, from_location_id } = req.body
-    if (!item_id || !personnel_id || !quantity || quantity <= 0) {
-      return res.status(400).json({ error: 'Urun, personel ve miktar gerekli' })
+    const { item_id, staff_id, quantity, note, from_location_id } = req.body
+    if (!item_id || !staff_id || !quantity || quantity <= 0) {
+      return res.status(400).json({ error: 'Urun, AVS personeli ve miktar gerekli' })
     }
-    const result = service.checkoutToPersonnel(item_id, personnel_id, quantity, note, req.user.id, from_location_id || null)
+    const result = service.checkoutToStaff(item_id, staff_id, quantity, note, req.user.id, from_location_id || null)
     res.json(result)
   } catch (e) { res.status(400).json({ error: e.message }) }
 })

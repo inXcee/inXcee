@@ -104,50 +104,68 @@ describe('Inventory Module', () => {
     expect(Array.isArray(res.body)).toBe(true)
   })
 
-  // ── Checkout tests ──────────────────────────────────────────────────────
-  it('searches personnel', async () => {
-    const res = await request(app).get('/api/inventory/personnel/search?q=test').set('Authorization', `Bearer ${token}`)
-    expect(res.status).toBe(200)
-    expect(Array.isArray(res.body)).toBe(true)
+  // ── Checkout tests — AVS personeli (staff) bazli ────────────────────────
+  let testStaffId
+  it('creates an AVS staff member for checkout tests', async () => {
+    const db = (await import('../../shared/db/index.js')).getDB()
+    const r = db.prepare(`
+      INSERT INTO staff(full_name, role_label, position, department_id, assigned_block, assigned_floor, is_active)
+      VALUES(?,?,?,?,?,?,1)
+    `).run('AVS Test Personel', 'Kat görevlisi', 'Kat görevlisi', 2, 'M1', 2)
+    testStaffId = r.lastInsertRowid
+    expect(testStaffId).toBeGreaterThan(0)
   })
 
-  it('checks out item to personnel', async () => {
-    // Register a person first
-    const reg = await request(app).post('/api/checkin/register').set('Authorization', `Bearer ${token}`)
-      .send({ full_name: 'Envanter Test Kisi', company: 'TestFirma' })
-    const personnelId = reg.body.id
+  it('searches AVS staff', async () => {
+    const res = await request(app).get('/api/inventory/staff/search?q=AVS').set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(200)
+    expect(Array.isArray(res.body)).toBe(true)
+    expect(res.body.some(s => s.full_name === 'AVS Test Personel')).toBe(true)
+    const me = res.body.find(s => s.full_name === 'AVS Test Personel')
+    expect(me.assigned_block).toBe('M1')
+    expect(me.assigned_floor).toBe(2)
+  })
 
+  it('checks out item to AVS staff', async () => {
     const res = await request(app).post('/api/inventory/checkout').set('Authorization', `Bearer ${token}`)
-      .send({ item_id: itemId, personnel_id: personnelId, quantity: 5, note: 'Test teslim' })
+      .send({ item_id: itemId, staff_id: testStaffId, quantity: 5, note: 'Test teslim' })
     expect(res.status).toBe(200)
     expect(res.body.quantity).toBe(75) // 80 (after count) - 5
   })
 
-  it('lists active checkouts', async () => {
+  it('rejects checkout without staff_id', async () => {
+    const res = await request(app).post('/api/inventory/checkout').set('Authorization', `Bearer ${token}`)
+      .send({ item_id: itemId, quantity: 1 })
+    expect(res.status).toBe(400)
+  })
+
+  it('lists active checkouts with staff info', async () => {
     const res = await request(app).get('/api/inventory/checkouts/active').set('Authorization', `Bearer ${token}`)
     expect(res.status).toBe(200)
     expect(res.body.length).toBeGreaterThan(0)
-    expect(res.body[0].personnel_name).toBe('Envanter Test Kisi')
+    const c = res.body[0]
+    expect(c.personnel_name).toBe('AVS Test Personel')
+    expect(c.block).toBe('M1')
+    expect(c.floor).toBe(2)
+    expect(c.role_label).toBe('Kat görevlisi')
   })
 
-  it('returns checkout report with personnel/block/floor breakdown', async () => {
+  it('returns checkout report with staff/block/floor/department breakdown', async () => {
     const res = await request(app).get('/api/inventory/checkouts/report').set('Authorization', `Bearer ${token}`)
     expect(res.status).toBe(200)
-    expect(res.body.totals).toBeDefined()
     expect(res.body.totals.active_qty).toBe(5)
     expect(res.body.totals.personnel_count).toBe(1)
-    expect(Array.isArray(res.body.byPersonnel)).toBe(true)
     expect(res.body.byPersonnel.length).toBe(1)
-    expect(res.body.byPersonnel[0].name).toBe('Envanter Test Kisi')
+    expect(res.body.byPersonnel[0].name).toBe('AVS Test Personel')
+    expect(res.body.byPersonnel[0].block).toBe('M1')
+    expect(res.body.byPersonnel[0].floor).toBe(2)
     expect(res.body.byPersonnel[0].active_qty).toBe(5)
-    expect(Array.isArray(res.body.byBlock)).toBe(true)
-    expect(Array.isArray(res.body.byFloor)).toBe(true)
-    expect(Array.isArray(res.body.byCompany)).toBe(true)
-    const avs = res.body.byCompany.find(c => c.company === 'TestFirma')
-    expect(avs?.active_qty).toBe(5)
+    expect(res.body.byBlock.find(b => b.block === 'M1')?.active_qty).toBe(5)
+    expect(res.body.byFloor.find(f => f.block === 'M1' && f.floor === 2)?.active_qty).toBe(5)
+    expect(Array.isArray(res.body.byDepartment)).toBe(true)
   })
 
-  it('returns item from personnel', async () => {
+  it('returns item from staff', async () => {
     const active = await request(app).get('/api/inventory/checkouts/active').set('Authorization', `Bearer ${token}`)
     const coId = active.body[0].id
     const res = await request(app).post(`/api/inventory/return/${coId}`).set('Authorization', `Bearer ${token}`)
@@ -163,12 +181,20 @@ describe('Inventory Module', () => {
   })
 
   it('rejects checkout with insufficient stock', async () => {
-    const reg = await request(app).post('/api/checkin/register').set('Authorization', `Bearer ${token}`)
-      .send({ full_name: 'Stok Test', company: 'X' })
     const res = await request(app).post('/api/inventory/checkout').set('Authorization', `Bearer ${token}`)
-      .send({ item_id: itemId, personnel_id: reg.body.id, quantity: 99999, note: 'Cok fazla' })
+      .send({ item_id: itemId, staff_id: testStaffId, quantity: 99999, note: 'Cok fazla' })
     expect(res.status).toBe(400)
     expect(res.body.error).toContain('Yetersiz')
+  })
+
+  it('rejects checkout to inactive staff', async () => {
+    const db = (await import('../../shared/db/index.js')).getDB()
+    db.prepare('UPDATE staff SET is_active=0 WHERE id=?').run(testStaffId)
+    const res = await request(app).post('/api/inventory/checkout').set('Authorization', `Bearer ${token}`)
+      .send({ item_id: itemId, staff_id: testStaffId, quantity: 1 })
+    expect(res.status).toBe(400)
+    expect(res.body.error).toContain('AVS personeli')
+    db.prepare('UPDATE staff SET is_active=1 WHERE id=?').run(testStaffId)
   })
 
   it('deletes an item', async () => {

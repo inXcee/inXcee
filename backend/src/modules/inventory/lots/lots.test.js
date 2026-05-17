@@ -4,7 +4,7 @@ import app from '../../../app.js'
 import { initDB, getDB } from '../../../shared/db/index.js'
 import { seedDev } from '../../../shared/db/seed.js'
 
-let token, itemId, personnelId
+let token, itemId, staffId
 beforeAll(async () => {
   process.env.DB_PATH = ':memory:'; initDB(); seedDev()
   const r = await request(app).post('/api/auth/login').send({ username: 'mudur', password: 'admin123' })
@@ -13,8 +13,13 @@ beforeAll(async () => {
   const create = await request(app).post('/api/inventory').set({ Authorization: `Bearer ${token}` })
     .send({ item_name: 'Lot Test Urun', quantity: 0, unit: 'adet', reorder_threshold: 5, category: 'general', track_lots: 1 })
   itemId = create.body.id
-  const pers = await request(app).get('/api/inventory/personnel/search?q=a').set({ Authorization: `Bearer ${token}` })
-  personnelId = pers.body[0]?.id || 1
+  // AVS personeli oluştur (lots checkout testi için)
+  const db = getDB()
+  const r2 = db.prepare(`
+    INSERT INTO staff(full_name, role_label, position, is_active)
+    VALUES(?,?,?,1)
+  `).run('Lots Test AVS', 'Kat görevlisi', 'Kat görevlisi')
+  staffId = r2.lastInsertRowid
 })
 
 const auth = () => ({ Authorization: `Bearer ${token}` })
@@ -39,7 +44,7 @@ describe('Inventory Lots', () => {
 
   it('FIFO consumes oldest lot first on checkout', async () => {
     const res = await request(app).post('/api/inventory/checkout').set(auth())
-      .send({ item_id: itemId, personnel_id: personnelId, quantity: 5 })
+      .send({ item_id: itemId, staff_id: staffId, quantity: 5 })
     expect(res.status).toBe(200)
 
     const lots = await request(app).get(`/api/inventory/items/${itemId}/lots`).set(auth())
@@ -53,7 +58,7 @@ describe('Inventory Lots', () => {
   it('FIFO crosses lot boundary when first depletes', async () => {
     // remaining lot A1: 5, A2: 20 → checkout 8 → A1 depleted, A2 = 17
     const res = await request(app).post('/api/inventory/checkout').set(auth())
-      .send({ item_id: itemId, personnel_id: personnelId, quantity: 8 })
+      .send({ item_id: itemId, staff_id: staffId, quantity: 8 })
     expect(res.status).toBe(200)
     const lots = await request(app).get(`/api/inventory/items/${itemId}/lots`).set(auth())
     const a1 = lots.body.find(l => l.lot_no === 'A1')

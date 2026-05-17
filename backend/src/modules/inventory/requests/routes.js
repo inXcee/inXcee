@@ -33,7 +33,7 @@ requestsRouter.patch('/:id/reject', ...mgr, (req, res) => {
 })
 
 requestsRouter.post('/:id/fulfill', ...mgr, (req, res) => {
-  try { res.json(service.fulfill(+req.params.id, +req.body.personnel_id, req.user.id)) }
+  try { res.json(service.fulfill(+req.params.id, +req.body.staff_id, req.user.id)) }
   catch (e) { res.status(400).json({ error: e.message }) }
 })
 

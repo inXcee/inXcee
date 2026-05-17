@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeAll } from 'vitest'
 import request from 'supertest'
 import app from '../../../app.js'
-import { initDB } from '../../../shared/db/index.js'
+import { initDB, getDB } from '../../../shared/db/index.js'
 import { seedDev } from '../../../shared/db/seed.js'
 
-let mgrToken, staffToken, itemId, personnelId
+let mgrToken, staffToken, itemId, avsStaffId
 beforeAll(async () => {
   process.env.DB_PATH = ':memory:'; initDB(); seedDev()
   const m = await request(app).post('/api/auth/login').send({ username: 'mudur', password: 'admin123' })
@@ -15,8 +15,12 @@ beforeAll(async () => {
   // pick item with stock
   const stocked = inv.body.find(i => i.quantity >= 5) || inv.body[0]
   itemId = stocked.id
-  const pers = await request(app).get('/api/inventory/personnel/search?q=a').set({ Authorization: `Bearer ${mgrToken}` })
-  personnelId = pers.body[0]?.id || 1
+  // AVS personeli (staff) yarat
+  const r = getDB().prepare(`
+    INSERT INTO staff(full_name, role_label, position, is_active)
+    VALUES(?,?,?,1)
+  `).run('Request Test AVS', 'Çamaşırcı', 'Çamaşırcı')
+  avsStaffId = r.lastInsertRowid
 })
 
 const a = (t) => ({ Authorization: `Bearer ${t}` })
@@ -66,7 +70,7 @@ describe('Inventory Requests', () => {
     const itemBefore = before.body.find(i => i.id === itemId).quantity
 
     const res = await request(app).post(`/api/inventory/requests/${reqId}/fulfill`).set(a(mgrToken))
-      .send({ personnel_id: personnelId })
+      .send({ staff_id: avsStaffId })
     expect(res.status).toBe(200)
     expect(res.body.checkout_id).toBeDefined()
 
@@ -77,7 +81,7 @@ describe('Inventory Requests', () => {
 
   it('rejects fulfill on already-fulfilled', async () => {
     const res = await request(app).post(`/api/inventory/requests/${reqId}/fulfill`).set(a(mgrToken))
-      .send({ personnel_id: personnelId })
+      .send({ staff_id: avsStaffId })
     expect(res.status).toBe(400)
   })
 

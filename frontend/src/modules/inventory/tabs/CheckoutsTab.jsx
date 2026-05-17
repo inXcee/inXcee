@@ -29,7 +29,7 @@ export default function CheckoutsTab() {
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '14px', overflow: 'hidden' }}>
           <div style={{ height: '2px', background: 'linear-gradient(90deg,var(--purple),var(--blue))' }} />
           <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)' }}>
-            <div style={{ fontFamily: 'var(--display)', fontSize: '14px', letterSpacing: '2px' }}>TESLİM GEÇMİŞİ</div>
+            <div style={{ fontFamily: 'var(--display)', fontSize: '14px', letterSpacing: '2px' }}>AVS PERSONELİ TESLİM GEÇMİŞİ</div>
             <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', marginTop: '2px' }}>{history.length} KAYIT (İADE EDİLENLER DAHİL)</div>
           </div>
           {history.length === 0 ? (
@@ -37,13 +37,16 @@ export default function CheckoutsTab() {
           ) : (
             <div style={{ overflowX: 'auto' }}>
               <table className="data-table responsive-stack" style={{ margin: 0 }}>
-                <thead><tr><th>PERSONEL</th><th>MALZEME</th><th>ADET</th><th>TESLİM TARİHİ</th><th>İADE TARİHİ</th><th>VEREN</th><th>DURUM</th></tr></thead>
+                <thead><tr><th>AVS PERSONEL</th><th>GÖREV / BİRİM</th><th>MALZEME</th><th>ADET</th><th>TESLİM TARİHİ</th><th>İADE TARİHİ</th><th>VEREN</th><th>DURUM</th></tr></thead>
                 <tbody>
                   {history.map(co => (
                     <tr key={co.id} style={{ opacity: co.returned_at ? 0.7 : 1 }}>
-                      <td data-label="Personel">
+                      <td data-label="AVS Personel">
                         <div style={{ fontWeight: 500, fontSize: '12px' }}>{co.personnel_name}</div>
-                        <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)' }}>{co.company || '-'}</div>
+                      </td>
+                      <td data-label="Görev / Birim" style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)' }}>
+                        {co.role_label || co.position || '—'}
+                        {co.department_name && <div style={{ fontSize: 9, color: 'var(--text4)' }}>{co.department_name}</div>}
                       </td>
                       <td data-label="Malzeme" style={{ fontSize: '12px' }}>{co.item_name}</td>
                       <td data-label="Adet" style={{ fontFamily: 'var(--mono)', fontWeight: 700 }}>{co.quantity} <span style={{ fontSize: '9px', fontWeight: 400, color: 'var(--text3)' }}>{co.unit}</span></td>
@@ -72,7 +75,7 @@ export default function CheckoutsTab() {
 
 function CheckoutReport() {
   const [search, setSearch] = useState('')
-  const [groupBy, setGroupBy] = useState('personnel') // personnel | block | floor | company
+  const [groupBy, setGroupBy] = useState('personnel') // personnel | block | floor | department
 
   const { data, isLoading } = useQuery({
     queryKey: ['checkouts-report'],
@@ -88,33 +91,38 @@ function CheckoutReport() {
   const byPersonnel = data?.byPersonnel || []
   const byBlock = data?.byBlock || []
   const byFloor = data?.byFloor || []
-  const byCompany = data?.byCompany || []
+  const byDepartment = data?.byDepartment || []
 
   const filteredPersonnel = search
     ? byPersonnel.filter(p =>
-        `${p.name} ${p.company || ''} ${p.block || ''} ${p.room_no || ''} ${p.job_title || ''} ${p.items_summary || ''}`
+        `${p.name} ${p.role_label || ''} ${p.department_name || ''} ${p.block || ''} ${p.floor || ''} ${p.position || ''} ${p.items_summary || ''}`
           .toLowerCase()
           .includes(search.toLowerCase()))
     : byPersonnel
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* Bilgilendirme */}
+      <div style={{ padding: '10px 14px', background: 'rgba(52,152,219,.05)', border: '1px solid rgba(52,152,219,.2)', borderRadius: 10, fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--blue)', letterSpacing: 0.5 }}>
+        👤 Bu rapor sadece AVS personeline yapılan teslimleri içerir — yatakhane sakinleri kapsama dahil değil
+      </div>
+
       {/* Toplam kartlar */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
         <SummaryCard label="AKTİF TOPLAM" value={t.active_qty || 0} sub="adet" color="var(--blue)" big />
-        <SummaryCard label="PERSONEL" value={t.personnel_count || 0} sub="kişi" color="var(--accent)" />
+        <SummaryCard label="AVS PERSONEL" value={t.personnel_count || 0} sub="kişi" color="var(--accent)" />
         <SummaryCard label="ÜRÜN ÇEŞİDİ" value={t.distinct_items || 0} sub="çeşit" />
         <SummaryCard label="AKTİF KAYIT" value={t.active_checkouts || 0} sub="teslim" />
         <SummaryCard label="İADE EDİLEN" value={t.returned_qty || 0} sub="adet" color="var(--green)" />
       </div>
 
       {/* Group selector */}
-      <div style={{ display: 'flex', gap: 4, padding: 3, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, width: 'fit-content' }}>
+      <div style={{ display: 'flex', gap: 4, padding: 3, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, width: 'fit-content', flexWrap: 'wrap' }}>
         {[
           ['personnel', '👤 Personel'],
           ['block', '◆ Blok'],
           ['floor', '⧉ Kat'],
-          ['company', '⌂ Firma'],
+          ['department', '⌂ Departman'],
         ].map(([key, label]) => (
           <button key={key} onClick={() => setGroupBy(key)} style={{
             padding: '6px 14px', border: 'none', borderRadius: 7, cursor: 'pointer',
@@ -130,13 +138,13 @@ function CheckoutReport() {
           <div style={{ height: 2, background: 'linear-gradient(90deg,var(--accent),var(--blue))' }} />
           <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <div>
-              <div style={{ fontFamily: 'var(--display)', fontSize: 13, letterSpacing: 2 }}>PERSONEL BAZINDA</div>
+              <div style={{ fontFamily: 'var(--display)', fontSize: 13, letterSpacing: 2 }}>AVS PERSONEL BAZINDA</div>
               <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', marginTop: 2 }}>{filteredPersonnel.length} KİŞİ · KİM NE ALDI</div>
             </div>
             <div style={{ flex: 1 }} />
             <input className="form-input" value={search} onChange={e => setSearch(e.target.value)}
-              placeholder="Personel/blok/oda/ürün ara…"
-              style={{ width: 260, fontSize: 11, borderRadius: 10, padding: '6px 10px' }} />
+              placeholder="AVS personel/görev/blok/ürün ara…"
+              style={{ width: 280, fontSize: 11, borderRadius: 10, padding: '6px 10px' }} />
           </div>
           {filteredPersonnel.length === 0 ? (
             <div style={{ padding: 32, textAlign: 'center', fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text3)' }}>
@@ -147,9 +155,9 @@ function CheckoutReport() {
               <table className="data-table" style={{ margin: 0, width: '100%' }}>
                 <thead>
                   <tr>
-                    <th style={{ textAlign: 'left' }}>PERSONEL</th>
-                    <th>BLOK / ODA</th>
-                    <th>FİRMA</th>
+                    <th style={{ textAlign: 'left' }}>AVS PERSONEL</th>
+                    <th style={{ textAlign: 'left' }}>GÖREV / BİRİM</th>
+                    <th style={{ textAlign: 'left' }}>BLOK / KAT</th>
                     <th style={{ textAlign: 'right' }}>TOPLAM ADET</th>
                     <th style={{ textAlign: 'center' }}>ÇEŞİT</th>
                     <th style={{ textAlign: 'left' }}>ÜRÜNLER</th>
@@ -158,15 +166,18 @@ function CheckoutReport() {
                 </thead>
                 <tbody>
                   {filteredPersonnel.map(p => (
-                    <tr key={p.personnel_id} style={{ borderTop: '1px solid var(--border)' }}>
+                    <tr key={p.staff_id} style={{ borderTop: '1px solid var(--border)' }}>
                       <td style={{ padding: 10 }}>
                         <div style={{ fontWeight: 600, fontSize: 13 }}>{p.name}</div>
-                        {p.job_title && <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>{p.job_title}</div>}
+                        {p.pickup_name && <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text4)' }}>🚌 {p.pickup_name}</div>}
+                      </td>
+                      <td style={{ padding: 10, fontSize: 11, color: 'var(--text2)' }}>
+                        {p.role_label || p.position || '—'}
+                        {p.department_name && <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>{p.department_name}</div>}
                       </td>
                       <td style={{ padding: 10, fontFamily: 'var(--mono)', fontSize: 11 }}>
-                        {p.block ? <span style={{ color: 'var(--accent)', fontWeight: 700 }}>{p.block}-{p.room_no}</span> : <span style={{ color: 'var(--text4)' }}>—</span>}
+                        {p.block ? <span style={{ color: 'var(--accent)', fontWeight: 700 }}>{p.block}{p.floor != null ? ` / ${p.floor}.kat` : ''}</span> : <span style={{ color: 'var(--text4)' }}>—</span>}
                       </td>
-                      <td style={{ padding: 10, fontSize: 11, color: 'var(--text2)' }}>{p.company || '—'}</td>
                       <td style={{ padding: 10, textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 16, fontWeight: 700, color: 'var(--accent)' }}>
                         {p.active_qty}
                       </td>
@@ -191,12 +202,12 @@ function CheckoutReport() {
       {groupBy === 'block' && (
         <GroupTable
           title="BLOK BAZINDA"
-          subtitle="HER BLOKTA NE KADAR MALZEME"
+          subtitle="AVS PERSONELİN ATAMA BLOĞUNA GÖRE TOPLAM TESLİM"
           rows={byBlock}
           columns={[
             { key: 'block', label: 'BLOK', render: r => <span style={{ fontFamily: 'var(--mono)', fontWeight: 700, fontSize: 14, color: 'var(--accent)' }}>{r.block}</span> },
             { key: 'active_qty', label: 'TOPLAM ADET', align: 'right', render: r => <span style={{ fontFamily: 'var(--mono)', fontSize: 16, fontWeight: 700, color: 'var(--accent)' }}>{r.active_qty}</span> },
-            { key: 'personnel_count', label: 'KİŞİ', align: 'center', render: r => <span style={{ fontFamily: 'var(--mono)', fontSize: 12 }}>{r.personnel_count}</span> },
+            { key: 'personnel_count', label: 'AVS KİŞİ', align: 'center', render: r => <span style={{ fontFamily: 'var(--mono)', fontSize: 12 }}>{r.personnel_count}</span> },
             { key: 'distinct_items', label: 'ÇEŞİT', align: 'center', render: r => <span style={{ fontFamily: 'var(--mono)', fontSize: 12 }}>{r.distinct_items}</span> },
           ]}
         />
@@ -205,26 +216,26 @@ function CheckoutReport() {
       {groupBy === 'floor' && (
         <GroupTable
           title="KAT BAZINDA"
-          subtitle="BLOK + KAT KIRILIMI"
+          subtitle="ATAMA BLOK + KAT KIRILIMI"
           rows={byFloor}
           columns={[
             { key: 'block', label: 'BLOK', render: r => <span style={{ fontFamily: 'var(--mono)', fontWeight: 700, color: 'var(--accent)' }}>{r.block}</span> },
             { key: 'floor', label: 'KAT', align: 'center', render: r => <span style={{ fontFamily: 'var(--mono)', fontSize: 13, fontWeight: 600 }}>{r.floor}. kat</span> },
             { key: 'active_qty', label: 'TOPLAM ADET', align: 'right', render: r => <span style={{ fontFamily: 'var(--mono)', fontSize: 16, fontWeight: 700, color: 'var(--accent)' }}>{r.active_qty}</span> },
-            { key: 'personnel_count', label: 'KİŞİ', align: 'center', render: r => <span style={{ fontFamily: 'var(--mono)', fontSize: 12 }}>{r.personnel_count}</span> },
+            { key: 'personnel_count', label: 'AVS KİŞİ', align: 'center', render: r => <span style={{ fontFamily: 'var(--mono)', fontSize: 12 }}>{r.personnel_count}</span> },
           ]}
         />
       )}
 
-      {groupBy === 'company' && (
+      {groupBy === 'department' && (
         <GroupTable
-          title="FİRMA BAZINDA"
-          subtitle="HER FİRMANIN PERSONELİNİN TOPLAM TESLİMİ"
-          rows={byCompany}
+          title="DEPARTMAN BAZINDA"
+          subtitle="HER DEPARTMANIN TOPLAM TESLİMİ"
+          rows={byDepartment}
           columns={[
-            { key: 'company', label: 'FİRMA', render: r => <span style={{ fontSize: 13, fontWeight: 600 }}>{r.company}</span> },
+            { key: 'department', label: 'DEPARTMAN', render: r => <span style={{ fontSize: 13, fontWeight: 600 }}>{r.department}</span> },
             { key: 'active_qty', label: 'TOPLAM ADET', align: 'right', render: r => <span style={{ fontFamily: 'var(--mono)', fontSize: 16, fontWeight: 700, color: 'var(--accent)' }}>{r.active_qty}</span> },
-            { key: 'personnel_count', label: 'KİŞİ', align: 'center', render: r => <span style={{ fontFamily: 'var(--mono)', fontSize: 12 }}>{r.personnel_count}</span> },
+            { key: 'personnel_count', label: 'AVS KİŞİ', align: 'center', render: r => <span style={{ fontFamily: 'var(--mono)', fontSize: 12 }}>{r.personnel_count}</span> },
           ]}
         />
       )}
