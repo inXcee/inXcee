@@ -89,3 +89,37 @@
 - [x] UsersPage delete onError eklendi + confirmDialog kullanıyor; MaintenancePage teknisyen silme confirmDialog kullanıyor
 - [ ] Filter URL state (Reports, Discipline) — ERTELENDİ (ayrı küçük faz)
 - [ ] Kalan ~20 browser confirm() çağrısı (DisciplinePage cards, vs) — kademeli olarak ConfirmDialog'a geçirilecek
+
+---
+
+## 2026-05-17 Transport Modülü Devam Fazları (Faz 6-9)
+
+### Faz 6 — No-show / katılım takibi ✅
+- [x] `route_assignments.boarded` + `boarded_marked_at` + `boarded_marked_by` migration
+- [x] `PATCH /transport/assignments/:id/boarded` (true/false/null cycle)
+- [x] `GET /transport/no-show` devamsızlık listesi
+- [x] ManifestDrawer'da ✓/✗/○ toggle butonu
+- [x] Manifest header'da bindi/binmedi/yedek özetleri
+
+### Faz 7 — Toplu PDF + kişi bazı kullanım raporu ✅
+- [x] `GET /transport/manifest/all/pdf?date=` — tüm aktif rotalar tek PDF
+- [x] DailyTab'da "📄 TÜMÜ PDF" butonu
+- [x] Raporlar: `per_staff_usage` tablosu (son N gün, kişi bazı atama)
+- [x] Raporlar: `no_show_top` devamsızlık Top 10
+
+### Faz 8 — Yedek/waitlist + audit log ✅
+- [x] `route_assignments.is_waitlist` migration
+- [x] `autoAssign` kapasite aşımında waitlist'e düşürür (stats.waitlisted)
+- [x] `POST /transport/assignments/:id/promote` — yedekten aktife terfi
+- [x] Manifest'te "YEDEK" bölümü + ↑ terfi butonu
+- [x] Rota kartında waitlist sayısı göstergesi
+- [x] `assign` ve `assign/:id` ve `boarded` ve `promote` endpoint'lerine `logAudit`
+
+### Faz 9 — Test coverage genişletme ✅
+- [x] Boarded cycle testi (true → false → null)
+- [x] `/no-show` endpoint testi + yetki kontrolü
+- [x] Toplu PDF endpoint testi (Content-Type kontrolü)
+- [x] Waitlist auto-assign testi (kapasite=1, 2 staff)
+- [x] Promote zaten aktif olanı reddeder testi
+- [x] Reports endpoint genişletme testi (no_show_top + per_staff_usage)
+- [x] 676/676 backend testi geçti (önceki 617'den +59 yeni test)

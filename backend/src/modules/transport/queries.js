@@ -222,17 +222,19 @@ export function autoAssign(workDate, options = {}) {
   const stats = { assigned: 0, skipped_no_pickup: 0, skipped_no_route: 0, skipped_existing: 0, errors: [] }
 
   const insert = db.prepare(`
-    INSERT INTO route_assignments(route_id, stop_id, staff_id, work_date, assigned_by)
-    VALUES(?,?,?,?,?)
+    INSERT INTO route_assignments(route_id, stop_id, staff_id, work_date, assigned_by, is_waitlist)
+    VALUES(?,?,?,?,?,?)
     ON CONFLICT(staff_id, work_date) DO UPDATE SET
-      route_id = excluded.route_id, stop_id = excluded.stop_id
+      route_id = excluded.route_id, stop_id = excluded.stop_id, is_waitlist = excluded.is_waitlist
   `)
   const remove = db.prepare('DELETE FROM route_assignments WHERE staff_id=? AND work_date=?')
 
-  const routeFillCount = new Map() // route_id -> mevcut atanmış kişi sayısı
-  db.prepare(`SELECT route_id, COUNT(*) as c FROM route_assignments WHERE work_date=? GROUP BY route_id`).all(workDate)
+  // Faz 8: kapasite limiti ile aktif/yedek ayrımı
+  const routeFillCount = new Map() // route_id -> aktif (waitlist olmayan) atanmış kişi sayısı
+  db.prepare(`SELECT route_id, COUNT(*) as c FROM route_assignments WHERE work_date=? AND is_waitlist = 0 GROUP BY route_id`).all(workDate)
     .forEach(r => routeFillCount.set(r.route_id, r.c))
 
+  stats.waitlisted = 0
   const tx = db.transaction(() => {
     for (const person of onShift) {
       if (!person.pickup_point_id) { stats.skipped_no_pickup++; continue }
@@ -242,7 +244,7 @@ export function autoAssign(workDate, options = {}) {
       const candidates = stopRouteMap.filter(s => s.pickup_point_id === person.pickup_point_id)
       if (!candidates.length) { stats.skipped_no_route++; continue }
 
-      // Vardiya uyumu öncelikli, sonra doluluk durumu
+      // Vardiya uyumu öncelikli, sonra doluluk durumu (en az dolu rota)
       candidates.sort((a, b) => {
         const aMatch = a.shift_def_id === person.shift_def_id ? 0 : 1
         const bMatch = b.shift_def_id === person.shift_def_id ? 0 : 1
@@ -251,12 +253,18 @@ export function autoAssign(workDate, options = {}) {
       })
 
       const pick = candidates[0]
+      const currentFill = routeFillCount.get(pick.route_id) || 0
+      const isWaitlist = pick.capacity > 0 && currentFill >= pick.capacity ? 1 : 0
       if (overrideExisting && existing.has(person.id)) {
         remove.run(person.id, workDate)
       }
-      insert.run(pick.route_id, pick.stop_id, person.id, workDate, null)
-      routeFillCount.set(pick.route_id, (routeFillCount.get(pick.route_id) || 0) + 1)
-      stats.assigned++
+      insert.run(pick.route_id, pick.stop_id, person.id, workDate, null, isWaitlist)
+      if (isWaitlist) {
+        stats.waitlisted++
+      } else {
+        routeFillCount.set(pick.route_id, currentFill + 1)
+        stats.assigned++
+      }
     }
   })
   tx()
@@ -278,29 +286,89 @@ export function getRouteManifest(routeId, workDate) {
   `).all(routeId)
 
   const passengers = db.prepare(`
-    SELECT ra.staff_id, ra.stop_id, s.full_name, s.phone, s.role_label,
+    SELECT ra.id as assignment_id, ra.staff_id, ra.stop_id, ra.boarded, ra.is_waitlist,
+      s.full_name, s.phone, s.role_label,
       d.name as dept_name, d.color_class as dept_color
     FROM route_assignments ra
     JOIN staff s ON s.id = ra.staff_id
     LEFT JOIN departments d ON d.id = s.department_id
     WHERE ra.route_id = ? AND ra.work_date = ?
-    ORDER BY s.full_name
+    ORDER BY ra.is_waitlist, s.full_name
   `).all(routeId, workDate)
 
   const byStop = {}
-  for (const s of stops) byStop[s.stop_id] = { ...s, passengers: [] }
-  byStop._unassigned = { stop_id: null, point_name: '(durak atanmamış)', passengers: [] }
+  for (const s of stops) byStop[s.stop_id] = { ...s, passengers: [], waitlist: [] }
+  byStop._unassigned = { stop_id: null, point_name: '(durak atanmamış)', passengers: [], waitlist: [] }
+  let boardedCount = 0
+  let noShowCount = 0
+  let waitlistCount = 0
   for (const p of passengers) {
     const key = p.stop_id || '_unassigned'
-    if (byStop[key]) byStop[key].passengers.push(p)
-    else byStop._unassigned.passengers.push(p)
+    const bucket = byStop[key] || byStop._unassigned
+    if (p.is_waitlist) { bucket.waitlist.push(p); waitlistCount++ }
+    else {
+      bucket.passengers.push(p)
+      if (p.boarded === 1) boardedCount++
+      else if (p.boarded === 0) noShowCount++
+    }
   }
 
+  const filteredStops = Object.values(byStop).filter(s => s.stop_id !== null || s.passengers.length > 0 || s.waitlist.length > 0)
   return {
     route,
-    stops: Object.values(byStop).filter(s => s.stop_id !== null || s.passengers.length > 0),
-    total_passengers: passengers.length,
+    stops: filteredStops,
+    total_passengers: passengers.filter(p => !p.is_waitlist).length,
+    boarded_count: boardedCount,
+    no_show_count: noShowCount,
+    waitlist_count: waitlistCount,
   }
+}
+
+// Faz 8: waitlist'ten aktife terfi (kapasitede yer açıldığında)
+export function promoteFromWaitlist(assignmentId) {
+  const db = getDB()
+  const row = db.prepare('SELECT route_id, is_waitlist FROM route_assignments WHERE id=?').get(assignmentId)
+  if (!row) throw new Error('Atama bulunamadı')
+  if (!row.is_waitlist) throw new Error('Zaten aktif')
+  db.prepare('UPDATE route_assignments SET is_waitlist = 0 WHERE id = ?').run(assignmentId)
+}
+
+// Faz 6: katılım işaretle
+export function setBoarded(assignmentId, boarded, userId) {
+  const db = getDB()
+  const val = boarded === null ? null : (boarded ? 1 : 0)
+  db.prepare(`
+    UPDATE route_assignments
+    SET boarded = ?, boarded_marked_at = CURRENT_TIMESTAMP, boarded_marked_by = ?
+    WHERE id = ?
+  `).run(val, userId || null, assignmentId)
+}
+
+// Faz 6: devamsızlık top N — son N gün servise atanmış ama binmemiş kişiler
+export function getNoShowReport({ startDate, endDate, limit = 20 } = {}) {
+  const db = getDB()
+  const s = startDate || new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10)
+  const e = endDate || new Date().toISOString().slice(0, 10)
+  return db.prepare(`
+    SELECT s.id, s.full_name, s.phone, s.role_label,
+      d.name as dept_name, d.color_class as dept_color,
+      pp.name as pickup_name,
+      SUM(CASE WHEN ra.boarded = 0 THEN 1 ELSE 0 END) as no_show_count,
+      SUM(CASE WHEN ra.boarded = 1 THEN 1 ELSE 0 END) as boarded_count,
+      SUM(CASE WHEN ra.boarded IS NULL THEN 1 ELSE 0 END) as unmarked_count,
+      COUNT(ra.id) as total_assignments
+    FROM route_assignments ra
+    JOIN staff s ON s.id = ra.staff_id
+    LEFT JOIN departments d ON d.id = s.department_id
+    LEFT JOIN pickup_points pp ON pp.id = s.pickup_point_id
+    WHERE ra.work_date BETWEEN ? AND ?
+      AND ra.is_waitlist = 0
+      AND s.is_active = 1
+    GROUP BY s.id
+    HAVING no_show_count > 0
+    ORDER BY no_show_count DESC, total_assignments DESC
+    LIMIT ?
+  `).all(s, e, limit)
 }
 
 // Günün tüm rotaları + her birinin yolcu sayısı
@@ -309,11 +377,19 @@ export function getDailyOverview(workDate) {
   const routes = db.prepare(`
     SELECT r.id, r.name, r.color, r.capacity, r.vehicle_plate, r.driver_name,
       sd.name as shift_name, sd.start_hour, sd.end_hour,
-      COALESCE(ra.assigned, 0) as assigned_count
+      COALESCE(ra.assigned, 0) as assigned_count,
+      COALESCE(ra.waitlisted, 0) as waitlist_count,
+      COALESCE(ra.boarded, 0) as boarded_count,
+      COALESCE(ra.no_show, 0) as no_show_count
     FROM routes r
     LEFT JOIN shift_definitions sd ON sd.id = r.shift_def_id
     LEFT JOIN (
-      SELECT route_id, COUNT(*) as assigned FROM route_assignments WHERE work_date = ? GROUP BY route_id
+      SELECT route_id,
+        SUM(CASE WHEN is_waitlist = 0 THEN 1 ELSE 0 END) as assigned,
+        SUM(CASE WHEN is_waitlist = 1 THEN 1 ELSE 0 END) as waitlisted,
+        SUM(CASE WHEN is_waitlist = 0 AND boarded = 1 THEN 1 ELSE 0 END) as boarded,
+        SUM(CASE WHEN is_waitlist = 0 AND boarded = 0 THEN 1 ELSE 0 END) as no_show
+      FROM route_assignments WHERE work_date = ? GROUP BY route_id
     ) ra ON ra.route_id = r.id
     WHERE r.is_active = 1
     ORDER BY r.name
@@ -539,11 +615,36 @@ export function getReports({ startDate, endDate } = {}) {
   const dailyTrend = db.prepare(`
     SELECT ra.work_date,
       COUNT(*) as assignments,
-      COUNT(DISTINCT ra.route_id) as routes_used
+      COUNT(DISTINCT ra.route_id) as routes_used,
+      SUM(CASE WHEN ra.boarded = 1 THEN 1 ELSE 0 END) as boarded,
+      SUM(CASE WHEN ra.boarded = 0 THEN 1 ELSE 0 END) as no_show
     FROM route_assignments ra
     WHERE ra.work_date BETWEEN ? AND ?
+      AND ra.is_waitlist = 0
     GROUP BY ra.work_date
     ORDER BY ra.work_date
+  `).all(s, e)
+
+  // 9) Faz 6 — Devamsızlık Top 10
+  const noShowTop = getNoShowReport({ startDate: s, endDate: e, limit: 10 })
+
+  // 10) Faz 7 — Kişi bazı kullanım (en çok kullanan + en az kullanan)
+  const perStaffUsage = db.prepare(`
+    SELECT s.id, s.full_name, s.role_label,
+      d.name as dept_name, d.color_class as dept_color,
+      pp.name as pickup_name,
+      COUNT(ra.id) as assignment_count,
+      COUNT(DISTINCT ra.route_id) as routes_used,
+      MAX(ra.work_date) as last_assigned
+    FROM staff s
+    LEFT JOIN departments d ON d.id = s.department_id
+    LEFT JOIN pickup_points pp ON pp.id = s.pickup_point_id
+    LEFT JOIN route_assignments ra ON ra.staff_id = s.id
+      AND ra.work_date BETWEEN ? AND ?
+      AND ra.is_waitlist = 0
+    WHERE s.is_active = 1 AND s.pickup_point_id IS NOT NULL
+    GROUP BY s.id
+    ORDER BY assignment_count DESC, s.full_name
   `).all(s, e)
 
   return {
@@ -556,5 +657,7 @@ export function getReports({ startDate, endDate } = {}) {
     by_district: byDistrict,
     no_pickup_staff: noPickup,
     daily_trend: dailyTrend,
+    no_show_top: noShowTop,
+    per_staff_usage: perStaffUsage,
   }
 }

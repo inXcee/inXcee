@@ -873,6 +873,20 @@ export function initDB() {
   try { db.exec('ALTER TABLE pickup_points ADD COLUMN photo_url TEXT') } catch (e) {
     if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] pickup_points.photo_url:', e.message)
   }
+  // Faz 6: no-show / katılım takibi
+  try { db.exec('ALTER TABLE route_assignments ADD COLUMN boarded INTEGER') } catch (e) {
+    if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] route_assignments.boarded:', e.message)
+  }
+  try { db.exec('ALTER TABLE route_assignments ADD COLUMN boarded_marked_at DATETIME') } catch (e) {
+    if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] route_assignments.boarded_marked_at:', e.message)
+  }
+  try { db.exec('ALTER TABLE route_assignments ADD COLUMN boarded_marked_by INTEGER REFERENCES users(id)') } catch (e) {
+    if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] route_assignments.boarded_marked_by:', e.message)
+  }
+  // Faz 8: yedek / waitlist
+  try { db.exec('ALTER TABLE route_assignments ADD COLUMN is_waitlist INTEGER DEFAULT 0') } catch (e) {
+    if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] route_assignments.is_waitlist:', e.message)
+  }
 
   // ── AVS workers <-> staff unification (single source of truth = staff) ──
   try { db.exec('ALTER TABLE staff ADD COLUMN kiosk_pin TEXT') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] staff.kiosk_pin:', e.message) }

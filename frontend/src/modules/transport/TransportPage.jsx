@@ -194,6 +194,9 @@ function DailyTab({ date }) {
           disabled={autoMut.isPending} className="btn btn-ghost btn-sm" style={{ borderRadius: 10 }}>
           🔄 HEPSİNİ YENİDEN HESAPLA
         </button>
+        <button onClick={() => downloadAllPdf(date)} className="btn btn-ghost btn-sm" style={{ borderRadius: 10 }} title="Tüm aktif rotaların manifestosu tek PDF">
+          📄 TÜMÜ PDF
+        </button>
       </div>
 
       {/* Uyarılar */}
@@ -265,6 +268,13 @@ function DailyTab({ date }) {
               <div style={{ height: 6, background: 'var(--surface2)', borderRadius: 3, overflow: 'hidden' }}>
                 <div style={{ width: `${Math.min(100, pct)}%`, height: '100%', background: over ? 'var(--red)' : pct > 80 ? 'var(--amber)' : 'var(--green)', transition: 'width .3s' }} />
               </div>
+              {(r.boarded_count > 0 || r.no_show_count > 0 || r.waitlist_count > 0) && (
+                <div style={{ fontFamily: 'var(--mono)', fontSize: 9, marginTop: 6, display: 'flex', gap: 8 }}>
+                  {r.boarded_count > 0 && <span style={{ color: 'var(--green)' }}>✓{r.boarded_count}</span>}
+                  {r.no_show_count > 0 && <span style={{ color: 'var(--red)' }}>✗{r.no_show_count}</span>}
+                  {r.waitlist_count > 0 && <span style={{ color: 'var(--amber)' }}>⏳{r.waitlist_count}</span>}
+                </div>
+              )}
               {r.driver_name && <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', marginTop: 6 }}>🧑‍✈️ {r.driver_name}</div>}
             </div>
           )
@@ -359,6 +369,18 @@ async function downloadPdf(routeId, date) {
   } catch (e) { toastErr(e) }
 }
 
+async function downloadAllPdf(date) {
+  try {
+    const res = await api.get(`/transport/manifest/all/pdf?date=${date}`, { responseType: 'blob' })
+    const url = URL.createObjectURL(res.data)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `manifest-all-${date}.pdf`
+    a.click()
+    URL.revokeObjectURL(url)
+  } catch (e) { toastErr(e) }
+}
+
 function sendWhatsapp(data, date) {
   if (!data) return
   const lines = [
@@ -384,10 +406,35 @@ function sendWhatsapp(data, date) {
 }
 
 function ManifestDrawer({ routeId, date, onClose }) {
+  const qc = useQueryClient()
   const { data, isLoading } = useQuery({
     queryKey: ['manifest', routeId, date],
     queryFn: () => api.get(`/transport/routes/${routeId}/manifest?date=${date}`).then(r => r.data),
   })
+
+  const boardMut = useMutation({
+    mutationFn: ({ id, boarded }) => api.patch(`/transport/assignments/${id}/boarded`, { boarded }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['manifest', routeId, date] })
+      qc.invalidateQueries({ queryKey: ['transport-daily'] })
+    },
+    onError: toastErr,
+  })
+  const promoteMut = useMutation({
+    mutationFn: (id) => api.post(`/transport/assignments/${id}/promote`),
+    onSuccess: () => {
+      toast('Yedek aktife alındı')
+      qc.invalidateQueries({ queryKey: ['manifest', routeId, date] })
+      qc.invalidateQueries({ queryKey: ['transport-daily'] })
+    },
+    onError: toastErr,
+  })
+
+  const cycleBoarded = (p) => {
+    // null → true → false → null
+    const next = p.boarded === null || p.boarded === undefined ? true : p.boarded === 1 ? false : null
+    boardMut.mutate({ id: p.assignment_id, boarded: next })
+  }
 
   return (
     <div onClick={onClose} style={{
@@ -410,6 +457,13 @@ function ManifestDrawer({ routeId, date, onClose }) {
                 <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', marginTop: 4, letterSpacing: 1 }}>
                   {data.route.vehicle_plate || '—'} · {data.total_passengers}/{data.route.capacity} kişi · {date}
                 </div>
+                {(data.boarded_count > 0 || data.no_show_count > 0 || data.waitlist_count > 0) && (
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: 10, marginTop: 4, display: 'flex', gap: 10 }}>
+                    {data.boarded_count > 0 && <span style={{ color: 'var(--green)' }}>✓ {data.boarded_count} bindi</span>}
+                    {data.no_show_count > 0 && <span style={{ color: 'var(--red)' }}>✗ {data.no_show_count} binmedi</span>}
+                    {data.waitlist_count > 0 && <span style={{ color: 'var(--amber)' }}>⏳ {data.waitlist_count} yedek</span>}
+                  </div>
+                )}
                 {data.route.driver_name && (
                   <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', marginTop: 2 }}>
                     🧑‍✈️ {data.route.driver_name} {data.route.driver_phone ? `· ${data.route.driver_phone}` : ''}
@@ -438,16 +492,39 @@ function ManifestDrawer({ routeId, date, onClose }) {
                   </span>
                 </div>
                 {s.district && <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text4)', marginBottom: 6 }}>{s.district} {s.neighborhood ? `· ${s.neighborhood}` : ''}</div>}
-                {s.passengers.length === 0 ? (
+                {s.passengers.length === 0 && (!s.waitlist || s.waitlist.length === 0) ? (
                   <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text4)' }}>Boş durak</div>
                 ) : (
                   <div>
-                    {s.passengers.map(p => (
-                      <div key={p.staff_id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, padding: '3px 0' }}>
-                        <span>{p.full_name}</span>
-                        <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>{p.dept_name || p.role_label || ''}</span>
+                    {s.passengers.map(p => {
+                      const mark = p.boarded === 1 ? '✓' : p.boarded === 0 ? '✗' : '○'
+                      const color = p.boarded === 1 ? 'var(--green)' : p.boarded === 0 ? 'var(--red)' : 'var(--text3)'
+                      return (
+                        <div key={p.assignment_id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '3px 0' }}>
+                          <button onClick={() => cycleBoarded(p)} disabled={boardMut.isPending}
+                            title="Tıklayarak işaretle: ✓ bindi / ✗ binmedi / ○ işaretsiz"
+                            style={{ width: 22, height: 22, borderRadius: 6, border: `1px solid ${color}`, background: 'transparent', color, cursor: 'pointer', fontWeight: 700 }}>
+                            {mark}
+                          </button>
+                          <span style={{ flex: 1 }}>{p.full_name}</span>
+                          <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>{p.dept_name || p.role_label || ''}</span>
+                        </div>
+                      )
+                    })}
+                    {s.waitlist && s.waitlist.length > 0 && (
+                      <div style={{ marginTop: 8, padding: '6px 8px', borderRadius: 8, background: 'rgba(240,165,0,.08)', border: '1px dashed rgba(240,165,0,.35)' }}>
+                        <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--amber)', letterSpacing: 1.5, marginBottom: 4 }}>⏳ YEDEK ({s.waitlist.length})</div>
+                        {s.waitlist.map(p => (
+                          <div key={p.assignment_id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, padding: '2px 0' }}>
+                            <button onClick={() => promoteMut.mutate(p.assignment_id)} disabled={promoteMut.isPending}
+                              title="Aktife terfi et"
+                              className="btn btn-ghost btn-xs" style={{ borderRadius: 6, fontSize: 9, padding: '1px 5px' }}>↑</button>
+                            <span style={{ flex: 1 }}>{p.full_name}</span>
+                            <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>{p.dept_name || ''}</span>
+                          </div>
+                        ))}
                       </div>
-                    ))}
+                    )}
                   </div>
                 )}
               </div>
@@ -1322,7 +1399,7 @@ function ReportsTab() {
   if (isLoading) return <div style={{ padding: 40, color: 'var(--text3)', fontFamily: 'var(--mono)' }}>Yükleniyor…</div>
   if (!data) return null
 
-  const { totals, by_pickup, dept_pickup, shift_pickup, route_utilization, by_district, no_pickup_staff, daily_trend } = data
+  const { totals, by_pickup, dept_pickup, shift_pickup, route_utilization, by_district, no_pickup_staff, daily_trend, no_show_top = [], per_staff_usage = [] } = data
   const coverage = totals.total_staff > 0 ? Math.round(totals.staff_with_pickup / totals.total_staff * 100) : 0
 
   // Departman × Durak matrisi tablosu
@@ -1504,7 +1581,89 @@ function ReportsTab() {
         )}
       </Section>
 
-      {/* 7. Durağı olmayan personel */}
+      {/* 7. Devamsızlık Top 10 (Faz 6) */}
+      {no_show_top.length > 0 && (
+        <Section title={`✗ DEVAMSIZLIK TOP 10 (${no_show_top.length})`} danger
+          right={<button onClick={() => exportCsv(no_show_top, 'devamsizlik.csv', [
+            { key: 'full_name', label: 'Ad Soyad' }, { key: 'dept_name', label: 'Departman' },
+            { key: 'pickup_name', label: 'Durak' }, { key: 'no_show_count', label: 'Binmedi' },
+            { key: 'boarded_count', label: 'Bindi' }, { key: 'total_assignments', label: 'Toplam Atama' }
+          ])} className="btn btn-ghost btn-xs" style={{ borderRadius: 8 }}>CSV</button>}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+            <thead>
+              <tr style={{ background: 'var(--surface2)' }}>
+                <th style={{ padding: 8, textAlign: 'left', fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>PERSONEL</th>
+                <th style={{ padding: 8, textAlign: 'left', fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>DEPARTMAN</th>
+                <th style={{ padding: 8, textAlign: 'left', fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>DURAK</th>
+                <th style={{ padding: 8, textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--red)' }}>BİNMEDİ</th>
+                <th style={{ padding: 8, textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--green)' }}>BİNDİ</th>
+                <th style={{ padding: 8, textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>TOPLAM</th>
+                <th style={{ padding: 8, textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>ORAN</th>
+              </tr>
+            </thead>
+            <tbody>
+              {no_show_top.map(r => {
+                const rate = r.total_assignments > 0 ? Math.round(r.no_show_count / r.total_assignments * 100) : 0
+                return (
+                  <tr key={r.id} style={{ borderTop: '1px solid var(--border)' }}>
+                    <td style={{ padding: 8, fontWeight: 600 }}>{r.full_name}</td>
+                    <td style={{ padding: 8, fontFamily: 'var(--mono)', fontSize: 10, color: r.dept_color || 'var(--text3)' }}>{r.dept_name || '—'}</td>
+                    <td style={{ padding: 8, fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)' }}>{r.pickup_name || '—'}</td>
+                    <td style={{ padding: 8, textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 700, color: 'var(--red)' }}>{r.no_show_count}</td>
+                    <td style={{ padding: 8, textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--green)' }}>{r.boarded_count}</td>
+                    <td style={{ padding: 8, textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--text3)' }}>{r.total_assignments}</td>
+                    <td style={{ padding: 8, textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 700, color: rate > 30 ? 'var(--red)' : rate > 15 ? 'var(--amber)' : 'var(--text3)' }}>%{rate}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </Section>
+      )}
+
+      {/* 8. Kişi bazı kullanım (Faz 7) */}
+      {per_staff_usage.length > 0 && (
+        <Section title={`👤 KİŞİ BAZI KULLANIM (${per_staff_usage.length})`}
+          right={<button onClick={() => exportCsv(per_staff_usage, 'kisi-bazi-kullanim.csv', [
+            { key: 'full_name', label: 'Ad Soyad' }, { key: 'dept_name', label: 'Departman' },
+            { key: 'pickup_name', label: 'Durak' }, { key: 'assignment_count', label: 'Atama' },
+            { key: 'routes_used', label: 'Rota Sayısı' }, { key: 'last_assigned', label: 'Son Atama' }
+          ])} className="btn btn-ghost btn-xs" style={{ borderRadius: 8 }}>CSV</button>}>
+          <div style={{ maxHeight: 360, overflowY: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+              <thead style={{ position: 'sticky', top: 0, background: 'var(--surface)' }}>
+                <tr style={{ background: 'var(--surface2)' }}>
+                  <th style={{ padding: 8, textAlign: 'left', fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>PERSONEL</th>
+                  <th style={{ padding: 8, textAlign: 'left', fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>DEPARTMAN</th>
+                  <th style={{ padding: 8, textAlign: 'left', fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>DURAK</th>
+                  <th style={{ padding: 8, textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>ATAMA</th>
+                  <th style={{ padding: 8, textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>ROTA</th>
+                  <th style={{ padding: 8, textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>SON</th>
+                </tr>
+              </thead>
+              <tbody>
+                {per_staff_usage.slice(0, 200).map(r => (
+                  <tr key={r.id} style={{ borderTop: '1px solid var(--border)' }}>
+                    <td style={{ padding: 8, fontWeight: 600 }}>{r.full_name}</td>
+                    <td style={{ padding: 8, fontFamily: 'var(--mono)', fontSize: 10, color: r.dept_color || 'var(--text3)' }}>{r.dept_name || '—'}</td>
+                    <td style={{ padding: 8, fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)' }}>{r.pickup_name || '—'}</td>
+                    <td style={{ padding: 8, textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 700, color: r.assignment_count > 0 ? 'var(--accent)' : 'var(--text4)' }}>{r.assignment_count}</td>
+                    <td style={{ padding: 8, textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--text3)' }}>{r.routes_used}</td>
+                    <td style={{ padding: 8, textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)' }}>{r.last_assigned || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {per_staff_usage.length > 200 && (
+              <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text4)', textAlign: 'center', padding: 8 }}>
+                +{per_staff_usage.length - 200} daha (CSV indir)
+              </div>
+            )}
+          </div>
+        </Section>
+      )}
+
+      {/* 9. Durağı olmayan personel */}
       {no_pickup_staff.length > 0 && (
         <Section title={`⚠ DURAĞI OLMAYAN PERSONEL (${no_pickup_staff.length})`} danger>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 6 }}>

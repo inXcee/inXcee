@@ -196,6 +196,7 @@ transportRouter.post('/assign', ...mgr, (req, res) => {
     const { staff_id, route_id, stop_id, work_date } = req.body
     if (!staff_id || !route_id || !work_date) return res.status(400).json({ error: 'staff_id, route_id, work_date gerekli' })
     q.setAssignment({ staffId: +staff_id, routeId: +route_id, stopId: stop_id ? +stop_id : null, workDate: work_date, userId: req.user.id })
+    logAudit(req.user.id, 'transport_assign', 'transport', +staff_id, `route ${route_id} / ${work_date}`)
     res.json({ ok: true })
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
@@ -290,6 +291,115 @@ transportRouter.delete('/assign/:staff_id', ...mgr, (req, res) => {
   try {
     const date = req.query.date || new Date().toISOString().slice(0, 10)
     q.clearAssignment(+req.params.staff_id, date)
+    logAudit(req.user.id, 'transport_assign_clear', 'transport', +req.params.staff_id, date)
+    res.json({ ok: true })
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+// Faz 6: katılım işaretle
+transportRouter.patch('/assignments/:id/boarded', ...mgr, (req, res) => {
+  try {
+    const id = +req.params.id
+    const v = req.body?.boarded
+    const boarded = v === null || v === undefined ? null : (v === true || v === 1 || v === '1' ? true : false)
+    q.setBoarded(id, boarded, req.user.id)
+    logAudit(req.user.id, 'transport_boarded', 'transport', id, boarded === null ? 'reset' : boarded ? 'boarded' : 'no_show')
+    res.json({ ok: true })
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+// Faz 6: devamsızlık raporu
+transportRouter.get('/no-show', ...view, (req, res) => {
+  try {
+    res.json(q.getNoShowReport({
+      startDate: req.query.start,
+      endDate: req.query.end,
+      limit: req.query.limit ? +req.query.limit : 20,
+    }))
+  } catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// Faz 7: tüm rotaların manifesti tek PDF
+transportRouter.get('/manifest/all/pdf', ...view, (req, res) => {
+  try {
+    const date = req.query.date || new Date().toISOString().slice(0, 10)
+    const routes = q.listRoutes({ activeOnly: true })
+    if (!routes.length) return res.status(404).json({ error: 'Aktif rota yok' })
+
+    const doc = new PDFDocument({ size: 'A4', margin: 40 })
+    res.setHeader('Content-Type', 'application/pdf')
+    res.setHeader('Content-Disposition', `attachment; filename="manifest-all-${date}.pdf"`)
+    doc.pipe(res)
+
+    doc.fontSize(20).font('Helvetica-Bold').text(`SERVİS MANIFESTOSU — ${date}`, { align: 'center' })
+    doc.fontSize(10).font('Helvetica').fillColor('#6b7280')
+      .text(`${routes.length} aktif rota`, { align: 'center' })
+    doc.fillColor('#000')
+    doc.moveDown(1)
+
+    routes.forEach((r, rIdx) => {
+      const m = q.getRouteManifest(r.id, date)
+      if (!m) return
+      if (rIdx > 0) doc.addPage()
+      doc.fontSize(16).font('Helvetica-Bold').text(m.route.name, { align: 'center' })
+      doc.fontSize(10).font('Helvetica')
+        .text(`Arac: ${m.route.vehicle_plate || '—'}  |  Kapasite: ${m.route.capacity}  |  Yolcu: ${m.total_passengers}`, { align: 'center' })
+      if (m.route.driver_name) {
+        doc.text(`Sofor: ${m.route.driver_name}${m.route.driver_phone ? ' — ' + m.route.driver_phone : ''}`, { align: 'center' })
+      }
+      doc.moveDown(0.8)
+
+      let i = 0
+      for (const stop of m.stops) {
+        i++
+        doc.fontSize(12).font('Helvetica-Bold').fillColor('#1f2937')
+          .text(`${i}. ${stop.scheduled_time ? '[' + stop.scheduled_time + '] ' : ''}${stop.point_name}`)
+        if (stop.district) {
+          doc.fontSize(9).font('Helvetica').fillColor('#6b7280')
+            .text(`   ${stop.district}${stop.neighborhood ? ' / ' + stop.neighborhood : ''}`)
+        }
+        doc.fillColor('#000')
+        if (stop.passengers.length === 0 && (!stop.waitlist || stop.waitlist.length === 0)) {
+          doc.fontSize(10).font('Helvetica-Oblique').fillColor('#999').text('   (bos durak)')
+          doc.fillColor('#000')
+        } else {
+          stop.passengers.forEach((p, idx) => {
+            doc.fontSize(10).font('Helvetica').text(
+              `   ${idx + 1}. ${p.full_name}` +
+              (p.dept_name ? `  —  ${p.dept_name}` : '') +
+              (p.phone ? `  —  ${p.phone}` : '')
+            )
+          })
+          if (stop.waitlist && stop.waitlist.length > 0) {
+            doc.fontSize(9).font('Helvetica-Bold').fillColor('#dc2626').text('   YEDEK:')
+            doc.fillColor('#000')
+            stop.waitlist.forEach((p, idx) => {
+              doc.fontSize(9).font('Helvetica').fillColor('#6b7280')
+                .text(`     ${idx + 1}. ${p.full_name}${p.phone ? ' — ' + p.phone : ''}`)
+              doc.fillColor('#000')
+            })
+          }
+        }
+        doc.moveDown(0.5)
+      }
+    })
+
+    doc.fontSize(8).font('Helvetica').fillColor('#9ca3af')
+      .text(`Olusturma: ${new Date().toLocaleString('tr-TR')}`, 40, doc.page.height - 50)
+
+    doc.end()
+  } catch (e) {
+    console.error('[Route] manifest all pdf:', e)
+    if (!res.headersSent) res.status(500).json({ error: 'PDF olusturulamadi' })
+  }
+})
+
+// Faz 8: waitlist'ten aktife terfi
+transportRouter.post('/assignments/:id/promote', ...mgr, (req, res) => {
+  try {
+    const id = +req.params.id
+    q.promoteFromWaitlist(id)
+    logAudit(req.user.id, 'transport_waitlist_promote', 'transport', id, null)
     res.json({ ok: true })
   } catch (e) { res.status(400).json({ error: e.message }) }
 })

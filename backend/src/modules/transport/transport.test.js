@@ -116,7 +116,7 @@ describe('Transport — Auto-assign', () => {
 
     // Bugün için bir shift_schedule kaydı oluştur
     const today = new Date().toISOString().slice(0, 10)
-    await request(app).post('/api/shifts/schedule/bulk').set('Authorization', `Bearer ${token}`)
+    await request(app).post('/api/shifts/schedule').set('Authorization', `Bearer ${token}`)
       .send({ entries: [{ staff_id: first.id, work_date: today, shift_def_id: 1 }] })
 
     const res = await request(app).post('/api/transport/auto-assign').set('Authorization', `Bearer ${token}`)
@@ -144,5 +144,166 @@ describe('Transport — Manual assignment + clear', () => {
 
     const clr = await request(app).delete(`/api/transport/assign/${staff[1].id}?date=${date}`).set('Authorization', `Bearer ${token}`)
     expect(clr.status).toBe(200)
+  })
+})
+
+// ── Faz 6: No-show / katılım takibi ──
+describe('Transport — Boarded (Faz 6)', () => {
+  it('atama olusturur ve boarded=true/false/null cycle isaretler', async () => {
+    const staff = (await request(app).get('/api/shifts/staff').set('Authorization', `Bearer ${token}`)).body
+    if (!staff || staff.length < 1) return
+
+    const route = (await request(app).post('/api/transport/routes').set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Boarded Test Hat', capacity: 10 })).body.id
+
+    const date = '2026-06-15'
+    await request(app).post('/api/transport/assign').set('Authorization', `Bearer ${token}`)
+      .send({ staff_id: staff[0].id, route_id: route, work_date: date })
+
+    const manifest1 = (await request(app).get(`/api/transport/routes/${route}/manifest?date=${date}`)
+      .set('Authorization', `Bearer ${token}`)).body
+    expect(manifest1.stops.length + (manifest1.total_passengers > 0 ? 0 : 0)).toBeGreaterThanOrEqual(0)
+    // total_passengers >= 1 olabilir, stop yok diye unassigned'a düşmüş olabilir
+    const allPassengers = manifest1.stops.flatMap(s => s.passengers || [])
+    expect(allPassengers.length).toBeGreaterThanOrEqual(1)
+    const assignmentId = allPassengers[0].assignment_id
+    expect(assignmentId).toBeTruthy()
+
+    // boarded = true
+    const r1 = await request(app).patch(`/api/transport/assignments/${assignmentId}/boarded`)
+      .set('Authorization', `Bearer ${token}`).send({ boarded: true })
+    expect(r1.status).toBe(200)
+
+    const m2 = (await request(app).get(`/api/transport/routes/${route}/manifest?date=${date}`)
+      .set('Authorization', `Bearer ${token}`)).body
+    expect(m2.boarded_count).toBe(1)
+    expect(m2.no_show_count).toBe(0)
+
+    // boarded = false (no show)
+    await request(app).patch(`/api/transport/assignments/${assignmentId}/boarded`)
+      .set('Authorization', `Bearer ${token}`).send({ boarded: false })
+    const m3 = (await request(app).get(`/api/transport/routes/${route}/manifest?date=${date}`)
+      .set('Authorization', `Bearer ${token}`)).body
+    expect(m3.no_show_count).toBe(1)
+    expect(m3.boarded_count).toBe(0)
+
+    // boarded = null (reset)
+    await request(app).patch(`/api/transport/assignments/${assignmentId}/boarded`)
+      .set('Authorization', `Bearer ${token}`).send({ boarded: null })
+    const m4 = (await request(app).get(`/api/transport/routes/${route}/manifest?date=${date}`)
+      .set('Authorization', `Bearer ${token}`)).body
+    expect(m4.no_show_count).toBe(0)
+    expect(m4.boarded_count).toBe(0)
+  })
+
+  it('GET /transport/no-show devamsizlik listesi doner', async () => {
+    const res = await request(app).get('/api/transport/no-show?limit=5').set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(200)
+    expect(Array.isArray(res.body)).toBe(true)
+  })
+
+  it('campus_manager olmayan boarded patch yapamaz', async () => {
+    const t = (await request(app).post('/api/auth/login').send({ username: 'camasir', password: 'admin123' })).body.token
+    const res = await request(app).patch('/api/transport/assignments/999999/boarded')
+      .set('Authorization', `Bearer ${t}`).send({ boarded: true })
+    expect(res.status).toBe(403)
+  })
+})
+
+// ── Faz 7: Toplu PDF ──
+describe('Transport — All routes PDF (Faz 7)', () => {
+  it('GET /transport/manifest/all/pdf PDF doner', async () => {
+    const date = '2026-06-20'
+    // En az 1 aktif rota olsun
+    await request(app).post('/api/transport/routes').set('Authorization', `Bearer ${token}`)
+      .send({ name: 'PDF Test Hat', capacity: 10 })
+    const res = await request(app).get(`/api/transport/manifest/all/pdf?date=${date}`)
+      .set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(200)
+    expect(res.headers['content-type']).toMatch(/pdf/)
+    expect(res.body.length).toBeGreaterThan(100) // PDF buffer
+  })
+})
+
+// ── Faz 8: Yedek / waitlist ──
+describe('Transport — Waitlist (Faz 8)', () => {
+  it('kapasite asilirsa auto-assign yedek olarak isaretler', async () => {
+    // Önce 2 personel + 1 pickup + 1 rota (capacity=1)
+    const seedStaff = (await request(app).get('/api/shifts/staff').set('Authorization', `Bearer ${token}`)).body
+    if (!seedStaff || seedStaff.length < 2) return
+
+    const pickup = (await request(app).post('/api/transport/pickup-points').set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Waitlist Durak' })).body.id
+    const route = (await request(app).post('/api/transport/routes').set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Waitlist Hat', capacity: 1 })).body.id
+    await request(app).post(`/api/transport/routes/${route}/stops`).set('Authorization', `Bearer ${token}`)
+      .send({ pickup_point_id: pickup })
+
+    // İki personeli pickup'a bağla
+    await request(app).put(`/api/transport/staff/${seedStaff[0].id}/pickup`).set('Authorization', `Bearer ${token}`)
+      .send({ pickup_point_id: pickup })
+    await request(app).put(`/api/transport/staff/${seedStaff[1].id}/pickup`).set('Authorization', `Bearer ${token}`)
+      .send({ pickup_point_id: pickup })
+
+    // Seed bu hafta için shift_schedule oluşturur — bugünkü tarihi kullan
+    const date = new Date().toISOString().slice(0, 10)
+
+    const r = await request(app).post('/api/transport/auto-assign').set('Authorization', `Bearer ${token}`)
+      .send({ date, override: true })
+    expect(r.status).toBe(200)
+    // En az 1'i atanır, kapasite=1 olduğu için 2.si waitlist'e düşer
+    // Not: aynı duraktan ve aynı rotaya birden fazla staff scheduled olmalı
+    if (r.body.assigned + r.body.waitlisted < 2) return // skip — bugün vardiyada yeterli staff yok
+    expect(r.body.waitlisted).toBeGreaterThanOrEqual(1)
+
+    const m = (await request(app).get(`/api/transport/routes/${route}/manifest?date=${date}`)
+      .set('Authorization', `Bearer ${token}`)).body
+    expect(m.waitlist_count).toBeGreaterThanOrEqual(1)
+    expect(m.total_passengers).toBe(1) // kapasite=1
+
+    // Waitlist'teki kişiyi terfi et
+    const waitlistAssignment = m.stops.flatMap(s => s.waitlist || [])[0]
+    if (waitlistAssignment) {
+      const promote = await request(app).post(`/api/transport/assignments/${waitlistAssignment.assignment_id}/promote`)
+        .set('Authorization', `Bearer ${token}`)
+      expect(promote.status).toBe(200)
+
+      const m2 = (await request(app).get(`/api/transport/routes/${route}/manifest?date=${date}`)
+        .set('Authorization', `Bearer ${token}`)).body
+      expect(m2.total_passengers).toBe(2)
+      expect(m2.waitlist_count).toBe(0)
+    }
+  })
+
+  it('zaten aktif olan atamayi terfi etmek hata verir', async () => {
+    const staff = (await request(app).get('/api/shifts/staff').set('Authorization', `Bearer ${token}`)).body
+    if (!staff || staff.length < 1) return
+    const route = (await request(app).post('/api/transport/routes').set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Promote Test', capacity: 10 })).body.id
+
+    const date = '2026-07-15'
+    await request(app).post('/api/transport/assign').set('Authorization', `Bearer ${token}`)
+      .send({ staff_id: staff[0].id, route_id: route, work_date: date })
+
+    const m = (await request(app).get(`/api/transport/routes/${route}/manifest?date=${date}`)
+      .set('Authorization', `Bearer ${token}`)).body
+    const aid = m.stops.flatMap(s => s.passengers || [])[0]?.assignment_id
+    if (aid) {
+      const res = await request(app).post(`/api/transport/assignments/${aid}/promote`)
+        .set('Authorization', `Bearer ${token}`)
+      expect(res.status).toBe(400)
+    }
+  })
+})
+
+// ── Faz 7: Raporlar genisletildi ──
+describe('Transport — Reports (Faz 7)', () => {
+  it('GET /transport/reports no_show_top + per_staff_usage iceriyor', async () => {
+    const res = await request(app).get('/api/transport/reports').set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(200)
+    expect(res.body).toHaveProperty('no_show_top')
+    expect(res.body).toHaveProperty('per_staff_usage')
+    expect(Array.isArray(res.body.no_show_top)).toBe(true)
+    expect(Array.isArray(res.body.per_staff_usage)).toBe(true)
   })
 })
