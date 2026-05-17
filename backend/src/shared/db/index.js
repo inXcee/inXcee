@@ -1001,6 +1001,26 @@ export function initDB() {
     db.exec(`CREATE INDEX IF NOT EXISTS idx_training_attendances_staff ON training_attendances(staff_id, cert_expires_at)`)
   } catch (e) { console.error('[Migration] training_attendances:', e.message) }
 
+  // H12 S2 — KVKK V2 (veri silme talebi)
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS kvkk_requests (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      kind TEXT NOT NULL CHECK(kind IN ('access','rectify','erase','restrict','portability')),
+      target_type TEXT NOT NULL CHECK(target_type IN ('staff','personnel')),
+      target_id INTEGER NOT NULL,
+      requester_name TEXT NOT NULL,
+      requester_contact TEXT,
+      details TEXT,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected','completed')),
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      decided_at DATETIME,
+      decided_by INTEGER REFERENCES users(id),
+      decision_notes TEXT,
+      executes_at DATETIME
+    )`)
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_kvkk_status ON kvkk_requests(status, created_at DESC)`)
+  } catch (e) { console.error('[Migration] kvkk_requests:', e.message) }
+
   // H10 — İletişim (SMS log, push subs, broadcast log)
   try {
     db.exec(`CREATE TABLE IF NOT EXISTS comm_log (
