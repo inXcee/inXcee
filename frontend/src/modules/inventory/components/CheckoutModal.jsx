@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../../shared/api/client.js'
 import Modal from './Modal.jsx'
@@ -7,7 +7,7 @@ export default function CheckoutModal({ item, onClose }) {
   const qc = useQueryClient()
   const inv = () => { qc.invalidateQueries({ queryKey: ['inventory'] }); qc.invalidateQueries({ queryKey: ['inventory-stats'] }); qc.invalidateQueries({ queryKey: ['checkouts-active'] }); qc.invalidateQueries({ queryKey: ['checkouts-report'] }); qc.invalidateQueries({ queryKey: ['stock-by-location'] }) }
   const [step, setStep] = useState(0)
-  const [staffQ, setStaffQ] = useState('')
+  const [filter, setFilter] = useState('')
   const [staff, setStaff] = useState(null)
   const [qty, setQty] = useState(1)
   const [note, setNote] = useState('')
@@ -23,11 +23,24 @@ export default function CheckoutModal({ item, onClose }) {
     : item.quantity
   const maxQty = item.track_locations ? fromQty : item.quantity
 
-  const { data: results = [] } = useQuery({
-    queryKey: ['inv-staff-search', staffQ],
-    queryFn: () => api.get(`/inventory/staff/search?q=${staffQ}`).then(r => r.data),
-    enabled: staffQ.length >= 2,
+  // Modal açılır açılmaz tüm aktif AVS personelini getir — arama gerektirmez
+  const { data: allStaff = [], isLoading: staffLoading } = useQuery({
+    queryKey: ['inv-staff-all'],
+    queryFn: () => api.get('/inventory/staff/search').then(r => r.data),
   })
+
+  const filtered = useMemo(() => {
+    const f = filter.trim().toLowerCase()
+    if (!f) return allStaff
+    return allStaff.filter(s =>
+      s.full_name?.toLowerCase().includes(f) ||
+      s.role_label?.toLowerCase().includes(f) ||
+      s.position?.toLowerCase().includes(f) ||
+      s.department_name?.toLowerCase().includes(f) ||
+      s.assigned_block?.toLowerCase().includes(f) ||
+      s.phone?.includes(f)
+    )
+  }, [allStaff, filter])
 
   const mut = useMutation({
     mutationFn: d => api.post('/inventory/checkout', d),
@@ -38,7 +51,7 @@ export default function CheckoutModal({ item, onClose }) {
     <Modal onClose={onClose} title="AVS PERSONELİNE TESLİM" sub={item.item_name} color="var(--blue),var(--teal)">
       {/* Step indicator */}
       <div style={{ display: 'flex', gap: '0', marginBottom: '20px' }}>
-        {['AVS PERSONELİ', 'MIKTAR', 'TAMAM'].map((s, i) => (
+        {['KİŞİ SEÇ', 'MIKTAR', 'TAMAM'].map((s, i) => (
           <div key={s} style={{ flex: 1, display: 'flex', alignItems: 'center' }}>
             <div style={{ flex: 1, textAlign: 'center' }}>
               <div style={{
@@ -56,41 +69,49 @@ export default function CheckoutModal({ item, onClose }) {
         ))}
       </div>
 
-      {/* Step 0: AVS Staff search */}
+      {/* Step 0: pick staff from list */}
       {step === 0 && (
         <div>
-          <label className="form-label">AVS Personeli Ara</label>
-          <input className="form-input" value={staffQ} onChange={e => setStaffQ(e.target.value)}
-            placeholder="Ad, görev (kat görevlisi, çamaşırcı, teknisyen...), telefon" autoFocus style={{ borderRadius: '10px' }} />
-          <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', marginTop: 4, letterSpacing: 1 }}>
-            👤 SADECE AKTİF AVS PERSONELİ LİSTELENİR — Sakinler bu listede yer almaz
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <input className="form-input" value={filter} onChange={e => setFilter(e.target.value)}
+              placeholder="🔍 Ad/görev/blok ile filtrele…" autoFocus
+              style={{ flex: 1, borderRadius: '10px', fontSize: 13 }} />
+            <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', whiteSpace: 'nowrap' }}>
+              {filtered.length}/{allStaff.length}
+            </span>
           </div>
-          <div style={{ maxHeight: '300px', overflow: 'auto', marginTop: '10px' }}>
-            {results.map(s => (
+          <div style={{ maxHeight: '360px', overflow: 'auto', borderRadius: 10, border: '1px solid var(--border)' }}>
+            {staffLoading ? (
+              <div style={{ padding: 30, textAlign: 'center', fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text3)' }}>Yükleniyor…</div>
+            ) : filtered.length === 0 ? (
+              <div style={{ padding: 30, textAlign: 'center', fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text3)' }}>
+                {allStaff.length === 0
+                  ? 'Aktif AVS personeli yok. Önce Ayarlar → AVS Çalışanları üzerinden personel ekleyin.'
+                  : 'Eşleşen personel yok'}
+              </div>
+            ) : filtered.map(s => (
               <div key={s.id} onClick={() => { setStaff(s); setStep(1) }} style={{
-                padding: '12px 14px', cursor: 'pointer', borderRadius: '10px', marginBottom: '5px',
-                border: '1px solid var(--border)', transition: 'all 0.15s',
+                padding: '10px 14px', cursor: 'pointer', borderBottom: '1px solid var(--border)',
                 display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10,
+                transition: 'background 0.15s',
               }}
-                onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.background = 'rgba(240,165,0,.03)' }}
-                onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.background = 'transparent' }}>
+                onMouseEnter={e => { e.currentTarget.style.background = 'rgba(240,165,0,.05)' }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 600, fontSize: '13px' }}>{s.full_name}</div>
-                  <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', marginTop: 2 }}>
+                  <div style={{ fontWeight: 600, fontSize: '13px', color: 'var(--text)' }}>{s.full_name}</div>
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {s.role_label || s.position || '—'}
                     {s.department_name && ` · ${s.department_name}`}
+                    {s.phone && ` · ${s.phone}`}
                   </div>
                 </div>
-                {(s.assigned_block || s.assigned_floor) && (
+                {(s.assigned_block || s.assigned_floor != null) && (
                   <span style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--accent)', background: 'rgba(240,165,0,.08)', padding: '4px 9px', borderRadius: '6px', fontWeight: 700, whiteSpace: 'nowrap' }}>
-                    {s.assigned_block || '—'}{s.assigned_floor != null ? ` / ${s.assigned_floor}. kat` : ''}
+                    {s.assigned_block || '—'}{s.assigned_floor != null ? ` / ${s.assigned_floor}.kat` : ''}
                   </span>
                 )}
               </div>
             ))}
-            {staffQ.length >= 2 && results.length === 0 && (
-              <div style={{ textAlign: 'center', padding: '20px', fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)' }}>Eşleşen AVS personeli yok</div>
-            )}
           </div>
         </div>
       )}
@@ -166,7 +187,7 @@ export default function CheckoutModal({ item, onClose }) {
           </div>
           <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
             <button className="btn btn-ghost" onClick={onClose} style={{ borderRadius: '10px' }}>KAPAT</button>
-            <button className="btn btn-primary" onClick={() => { setStaff(null); setStaffQ(''); setQty(1); setNote(''); setStep(0) }} style={{ borderRadius: '10px' }}>YENI TESLIM</button>
+            <button className="btn btn-primary" onClick={() => { setStaff(null); setFilter(''); setQty(1); setNote(''); setStep(0) }} style={{ borderRadius: '10px' }}>YENI TESLIM</button>
           </div>
         </div>
       )}

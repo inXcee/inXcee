@@ -37,7 +37,34 @@ export default function Personnel360Page() {
   })
 
   if (isLoading) return <div style={{ padding: 40, color: 'var(--text3)' }}>Yükleniyor…</div>
-  if (error || !data) return <div style={{ padding: 40, color: 'var(--red)' }}>Personel bulunamadı</div>
+  if (error || !data) {
+    const msg = error?.response?.data?.error || error?.message || 'Personel bulunamadı'
+    const code = error?.response?.status
+    return (
+      <div style={{ padding: 24, maxWidth: 640 }}>
+        <button onClick={() => nav(-1)} className="btn btn-ghost btn-sm" style={{ borderRadius: 10, marginBottom: 12 }}>← GERİ</button>
+        <div style={{ padding: 16, borderRadius: 10, background: 'rgba(239,68,68,.08)', border: '1px solid rgba(239,68,68,.3)' }}>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--red)', letterSpacing: 1.5, marginBottom: 6 }}>
+            ⚠ PERSONEL YÜKLENEMEDİ {code ? `(HTTP ${code})` : ''}
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 8 }}>{msg}</div>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)' }}>
+            ID: {id} · Endpoint: /personnel/{id}/360
+          </div>
+        </div>
+      </div>
+    )
+  }
+  if (!data.person) {
+    return (
+      <div style={{ padding: 24, maxWidth: 640 }}>
+        <button onClick={() => nav(-1)} className="btn btn-ghost btn-sm" style={{ borderRadius: 10, marginBottom: 12 }}>← GERİ</button>
+        <div style={{ padding: 16, borderRadius: 10, background: 'rgba(239,68,68,.08)', border: '1px solid rgba(239,68,68,.3)' }}>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--red)' }}>⚠ Personel kaydı eksik (ID {id})</div>
+        </div>
+      </div>
+    )
+  }
 
   const p = data.person
   const shiftCoverage = data.shift_summary?.total > 0

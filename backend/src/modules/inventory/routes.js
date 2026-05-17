@@ -177,12 +177,11 @@ inventoryRouter.get('/export/csv', ...mgrAccess, (req, res) => {
 })
 
 // ── Personnel Search (for checkout) ─────────────────────────────────────────
-// AVS personeli (staff) arama — malzeme teslimi için
+// AVS personeli (staff) arama — malzeme teslimi için.
+// q parametresi boşsa tüm aktif staff dönderir (modal açılışı için).
 inventoryRouter.get('/staff/search', ...mgrAccess, (req, res) => {
-  try {
-    if (!req.query.q || req.query.q.length < 2) return res.json([])
-    res.json(service.searchStaff(req.query.q))
-  } catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  try { res.json(service.searchStaff(req.query.q || '')) }
+  catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 // ── Checkout (Malzeme Teslim) ───────────────────────────────────────────────

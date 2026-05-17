@@ -181,11 +181,11 @@ export function bulkCount(items, userId) {
 
 // ── Personnel Checkout (Malzeme Teslim) ─────────────────────────────────────
 
-// AVS personeli (staff) araması — inventory teslimleri için
+// AVS personeli (staff) araması — inventory teslimleri için.
+// Bos query'de tüm aktif staff dönderir (modal açılışında liste için).
 export function searchStaff(query) {
   const db = getDB()
-  const q = `%${query}%`
-  return db.prepare(`
+  const SELECT = `
     SELECT s.id, s.full_name, s.position, s.role_label, s.phone,
       s.assigned_block, s.assigned_floor,
       d.name AS department_name,
@@ -193,10 +193,14 @@ export function searchStaff(query) {
     FROM staff s
     LEFT JOIN departments d ON d.id = s.department_id
     LEFT JOIN pickup_points pp ON pp.id = s.pickup_point_id
-    WHERE s.is_active = 1
-      AND (s.full_name LIKE ? OR s.role_label LIKE ? OR s.position LIKE ? OR s.phone LIKE ?)
-    ORDER BY s.full_name
-    LIMIT 30
+    WHERE s.is_active = 1`
+  if (!query || !query.trim()) {
+    return db.prepare(`${SELECT} ORDER BY s.full_name LIMIT 200`).all()
+  }
+  const q = `%${query}%`
+  return db.prepare(`${SELECT}
+    AND (s.full_name LIKE ? OR s.role_label LIKE ? OR s.position LIKE ? OR s.phone LIKE ?)
+    ORDER BY s.full_name LIMIT 100
   `).all(q, q, q, q)
 }
 

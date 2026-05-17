@@ -64,11 +64,20 @@ function NewRequestModal({ items, suppliers, onClose, onCreated }) {
 function FulfillModal({ requestId, onClose, onDone }) {
   const [personQ, setPersonQ] = useState('')
   const [person, setPerson] = useState(null)
-  const { data: results = [] } = useQuery({
-    queryKey: ['fulfill-staff', personQ],
-    queryFn: () => api.get(`/inventory/staff/search?q=${personQ}`).then(r => r.data),
-    enabled: personQ.length >= 2,
+  // Tüm aktif AVS personeli, modal açılışında — arama tetikleyici yok
+  const { data: allStaff = [] } = useQuery({
+    queryKey: ['fulfill-staff-all'],
+    queryFn: () => api.get('/inventory/staff/search').then(r => r.data),
   })
+  const results = personQ.trim()
+    ? allStaff.filter(p => {
+        const f = personQ.toLowerCase()
+        return p.full_name?.toLowerCase().includes(f) ||
+          p.role_label?.toLowerCase().includes(f) ||
+          p.position?.toLowerCase().includes(f) ||
+          p.assigned_block?.toLowerCase().includes(f)
+      })
+    : allStaff
   const mut = useMutation({
     mutationFn: () => api.post(`/inventory/requests/${requestId}/fulfill`, { staff_id: person.id }),
     onSuccess: () => { onDone(); onClose() },
@@ -78,8 +87,8 @@ function FulfillModal({ requestId, onClose, onDone }) {
       {!person ? (
         <>
           <input className="form-input" value={personQ} onChange={e => setPersonQ(e.target.value)}
-            placeholder="Ad, görev, blok..." autoFocus style={{ borderRadius: '10px' }} />
-          <div style={{ maxHeight: '240px', overflow: 'auto', marginTop: '10px' }}>
+            placeholder="🔍 Ad/görev/blok ile filtrele…" autoFocus style={{ borderRadius: '10px' }} />
+          <div style={{ maxHeight: '300px', overflow: 'auto', marginTop: '10px', border: '1px solid var(--border)', borderRadius: 10 }}>
             {results.map(p => (
               <div key={p.id} onClick={() => setPerson(p)} style={{
                 padding: '10px 12px', cursor: 'pointer', borderRadius: '10px', marginBottom: '4px',
