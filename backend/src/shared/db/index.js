@@ -960,6 +960,32 @@ export function initDB() {
     db.exec(`CREATE INDEX IF NOT EXISTS idx_hr_items_checklist ON hr_checklist_items(checklist_id, sort_order)`)
   } catch (e) { console.error('[Migration] hr_checklist_items:', e.message) }
 
+  // H4 V3 — Resmi tatil tablosu
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS holidays (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      date TEXT NOT NULL UNIQUE,
+      name TEXT NOT NULL,
+      multiplier REAL NOT NULL DEFAULT 2.0,
+      is_half_day INTEGER NOT NULL DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`)
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_holidays_date ON holidays(date)`)
+    // Seed 2026 TR resmi tatilleri
+    const seed = db.prepare(`INSERT OR IGNORE INTO holidays(date, name, multiplier, is_half_day) VALUES(?,?,?,?)`)
+    const tatiller = [
+      ['2026-01-01', 'Yılbaşı', 2.0, 0],
+      ['2026-04-23', 'Ulusal Egemenlik ve Çocuk Bayramı', 2.0, 0],
+      ['2026-05-01', 'Emek ve Dayanışma Günü', 2.0, 0],
+      ['2026-05-19', 'Atatürk\'ü Anma Gençlik ve Spor Bayramı', 2.0, 0],
+      ['2026-07-15', 'Demokrasi ve Milli Birlik Günü', 2.0, 0],
+      ['2026-08-30', 'Zafer Bayramı', 2.0, 0],
+      ['2026-10-29', 'Cumhuriyet Bayramı', 2.0, 0],
+      ['2026-10-28', 'Cumhuriyet Bayramı Arifesi', 1.5, 1],
+    ]
+    tatiller.forEach(t => seed.run(...t))
+  } catch (e) { console.error('[Migration] holidays:', e.message) }
+
   // ── AVS workers <-> staff unification (single source of truth = staff) ──
   try { db.exec('ALTER TABLE staff ADD COLUMN kiosk_pin TEXT') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] staff.kiosk_pin:', e.message) }
   try { db.exec('ALTER TABLE staff ADD COLUMN role_label TEXT') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] staff.role_label:', e.message) }

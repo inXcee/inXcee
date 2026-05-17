@@ -440,3 +440,94 @@ describe('getYtdGross', () => {
     }
   })
 })
+
+// ── H4 Vardiya derinleştirme ──
+describe('H4 V1 — Çakışma kontrol', () => {
+  it('POST /schedule/check-conflicts boş entries için no conflict', async () => {
+    const res = await request(app).post('/api/shifts/schedule/check-conflicts')
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({ entries: [] })
+    expect(res.status).toBe(200)
+    expect(res.body.has_conflicts).toBe(false)
+    expect(res.body.conflicts).toEqual([])
+  })
+
+  it('mevcut vardiya varsa shift_exists çakışması döner', async () => {
+    const staff = (await request(app).get('/api/shifts/staff').set('Authorization', `Bearer ${managerToken}`)).body
+    if (!staff?.length) return
+    const today = new Date().toISOString().slice(0, 10)
+    await request(app).post('/api/shifts/schedule').set('Authorization', `Bearer ${managerToken}`)
+      .send({ entries: [{ staff_id: staff[0].id, work_date: today, shift_def_id: 1 }] })
+    const res = await request(app).post('/api/shifts/schedule/check-conflicts')
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({ entries: [{ staff_id: staff[0].id, work_date: today, shift_def_id: 2 }] })
+    expect(res.body.has_conflicts).toBe(true)
+    expect(res.body.conflicts[0].kind).toBe('shift_exists')
+  })
+})
+
+describe('H4 V3 — Holidays', () => {
+  it('GET /holidays 2026 tatilleri seed edilmiş', async () => {
+    const res = await request(app).get('/api/shifts/holidays?year=2026').set('Authorization', `Bearer ${managerToken}`)
+    expect(res.status).toBe(200)
+    expect(res.body.length).toBeGreaterThan(0)
+    expect(res.body.find(h => h.date === '2026-01-01')).toBeTruthy()
+  })
+
+  it('CREATE/UPDATE/DELETE holiday', async () => {
+    const add = await request(app).post('/api/shifts/holidays').set('Authorization', `Bearer ${managerToken}`)
+      .send({ date: '2030-01-01', name: 'Test Tatili', multiplier: 1.5 })
+    expect(add.status).toBe(201)
+    const id = add.body.id
+
+    const upd = await request(app).put(`/api/shifts/holidays/${id}`).set('Authorization', `Bearer ${managerToken}`)
+      .send({ multiplier: 2.0 })
+    expect(upd.status).toBe(200)
+
+    const del = await request(app).delete(`/api/shifts/holidays/${id}`).set('Authorization', `Bearer ${managerToken}`)
+    expect(del.status).toBe(200)
+  })
+
+  it('eksik veri 400 döner', async () => {
+    const res = await request(app).post('/api/shifts/holidays').set('Authorization', `Bearer ${managerToken}`)
+      .send({ name: 'sadece ad' })
+    expect(res.status).toBe(400)
+  })
+})
+
+describe('H4 V7 — Bordro export', () => {
+  it('GET /payroll-export aylık personel başı veri döner', async () => {
+    const month = new Date().toISOString().slice(0, 7)
+    const res = await request(app).get(`/api/shifts/payroll-export?month=${month}`)
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(res.status).toBe(200)
+    expect(res.body).toHaveProperty('month', month)
+    expect(Array.isArray(res.body.rows)).toBe(true)
+    res.body.rows.forEach(r => {
+      expect(r).toHaveProperty('worked_days')
+      expect(r).toHaveProperty('absent_days')
+      expect(r).toHaveProperty('overtime_hours')
+      expect(r).toHaveProperty('holiday_days')
+    })
+  })
+
+  it('yanlış ay formatı 400 döner', async () => {
+    const res = await request(app).get('/api/shifts/payroll-export?month=2026')
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(res.status).toBe(400)
+  })
+})
+
+describe('H4 V8 — Birleşik devamsızlık', () => {
+  it('GET /combined-absences dönüyor', async () => {
+    const res = await request(app).get('/api/shifts/combined-absences')
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(res.status).toBe(200)
+    expect(Array.isArray(res.body)).toBe(true)
+    res.body.forEach(r => {
+      expect(r).toHaveProperty('shift_absent')
+      expect(r).toHaveProperty('transport_no_show')
+      expect(r).toHaveProperty('worked')
+    })
+  })
+})

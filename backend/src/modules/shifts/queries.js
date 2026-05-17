@@ -151,6 +151,133 @@ export function bulkAssignShifts(entries, createdBy) {
   tx()
 }
 
+// H4 V1 — Çakışma kontrolü: aynı staff'ın aynı günde mevcut vardiya/izin var mı?
+export function checkConflicts(entries) {
+  const db = getDB()
+  const conflicts = []
+  const checkExisting = db.prepare(`
+    SELECT ss.staff_id, ss.work_date, ss.status, ss.shift_def_id,
+      sd.name as existing_shift_name, s.full_name
+    FROM shift_schedule ss
+    JOIN staff s ON s.id = ss.staff_id
+    LEFT JOIN shift_definitions sd ON sd.id = ss.shift_def_id
+    WHERE ss.staff_id = ? AND ss.work_date = ?
+  `)
+  const approvedLeave = db.prepare(`
+    SELECT id, leave_type, status FROM leave_requests
+    WHERE staff_id = ? AND status = 'approved' AND ? BETWEEN start_date AND end_date
+  `)
+  for (const e of entries || []) {
+    if (!e.staff_id || !e.work_date) continue
+    const existing = checkExisting.get(e.staff_id, e.work_date)
+    if (existing) {
+      conflicts.push({
+        staff_id: e.staff_id, work_date: e.work_date,
+        kind: 'shift_exists', full_name: existing.full_name,
+        message: `${existing.full_name}: ${e.work_date} tarihinde zaten "${existing.existing_shift_name || existing.status}" var`,
+      })
+    }
+    const leave = approvedLeave.get(e.staff_id, e.work_date)
+    if (leave) {
+      conflicts.push({
+        staff_id: e.staff_id, work_date: e.work_date,
+        kind: 'on_leave', leave_type: leave.leave_type,
+        message: `${e.work_date} tarihinde onaylı ${leave.leave_type} izni var`,
+      })
+    }
+  }
+  return conflicts
+}
+
+// H4 V3 — Holidays CRUD
+export function listHolidays({ year } = {}) {
+  const db = getDB()
+  let q = 'SELECT * FROM holidays'
+  const params = []
+  if (year) { q += ' WHERE date LIKE ?'; params.push(`${year}-%`) }
+  q += ' ORDER BY date'
+  return db.prepare(q).all(...params)
+}
+
+export function createHoliday(data) {
+  return getDB().prepare(`
+    INSERT INTO holidays(date, name, multiplier, is_half_day) VALUES(?,?,?,?)
+  `).run(data.date, data.name, data.multiplier ?? 2.0, data.is_half_day ? 1 : 0).lastInsertRowid
+}
+
+export function updateHoliday(id, data) {
+  const db = getDB()
+  const fields = ['date', 'name', 'multiplier', 'is_half_day']
+  const sets = []
+  const params = []
+  fields.forEach(f => {
+    if (data[f] !== undefined) { sets.push(`${f}=?`); params.push(data[f]) }
+  })
+  if (!sets.length) return
+  params.push(id)
+  db.prepare(`UPDATE holidays SET ${sets.join(',')} WHERE id=?`).run(...params)
+}
+
+export function deleteHoliday(id) {
+  getDB().prepare('DELETE FROM holidays WHERE id=?').run(id)
+}
+
+// H4 V7 — Bordro export (kişi başı aylık özet)
+export function getPayrollExport(yearMonth) {
+  // yearMonth: 'YYYY-MM'
+  const db = getDB()
+  const start = `${yearMonth}-01`
+  const endDate = new Date(start)
+  endDate.setMonth(endDate.getMonth() + 1)
+  const end = endDate.toISOString().slice(0, 10)
+
+  const rows = db.prepare(`
+    SELECT s.id, s.full_name, s.tc_no, s.salary, s.position,
+      d.name as dept_name,
+      COALESCE((SELECT COUNT(*) FROM shift_schedule
+        WHERE staff_id = s.id AND status IN ('worked','overtime') AND work_date >= ? AND work_date < ?), 0) as worked_days,
+      COALESCE((SELECT COUNT(*) FROM shift_schedule
+        WHERE staff_id = s.id AND status = 'absent' AND work_date >= ? AND work_date < ?), 0) as absent_days,
+      COALESCE((SELECT COUNT(*) FROM shift_schedule
+        WHERE staff_id = s.id AND status = 'on_leave' AND work_date >= ? AND work_date < ?), 0) as leave_days,
+      COALESCE((SELECT SUM(hours) FROM overtime_records
+        WHERE staff_id = s.id AND work_date >= ? AND work_date < ?), 0) as overtime_hours,
+      COALESCE((SELECT COUNT(*) FROM shift_schedule ss
+        JOIN holidays h ON h.date = ss.work_date
+        WHERE ss.staff_id = s.id AND ss.status IN ('worked','overtime') AND ss.work_date >= ? AND ss.work_date < ?), 0) as holiday_days
+    FROM staff s
+    LEFT JOIN departments d ON d.id = s.department_id
+    WHERE s.is_active = 1
+    ORDER BY d.name, s.full_name
+  `).all(start, end, start, end, start, end, start, end, start, end)
+
+  return rows
+}
+
+// H4 V8 — Birleşik devamsızlık (vardiya absent + transport no-show)
+export function getCombinedAbsences({ startDate, endDate } = {}) {
+  const db = getDB()
+  const s = startDate || new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10)
+  const e = endDate || new Date().toISOString().slice(0, 10)
+
+  return db.prepare(`
+    SELECT * FROM (
+      SELECT s.id, s.full_name, s.tc_no, s.phone,
+        d.name as dept_name, d.color_class as dept_color,
+        COALESCE((SELECT COUNT(*) FROM shift_schedule
+          WHERE staff_id = s.id AND status = 'absent' AND work_date BETWEEN ? AND ?), 0) as shift_absent,
+        COALESCE((SELECT COUNT(*) FROM route_assignments
+          WHERE staff_id = s.id AND boarded = 0 AND is_waitlist = 0 AND work_date BETWEEN ? AND ?), 0) as transport_no_show,
+        COALESCE((SELECT COUNT(*) FROM shift_schedule
+          WHERE staff_id = s.id AND status IN ('worked','overtime') AND work_date BETWEEN ? AND ?), 0) as worked
+      FROM staff s
+      LEFT JOIN departments d ON d.id = s.department_id
+      WHERE s.is_active = 1
+    ) WHERE shift_absent + transport_no_show > 0
+    ORDER BY (shift_absent * 2 + transport_no_show) DESC, full_name
+  `).all(s, e, s, e, s, e)
+}
+
 export function getStaffWithShiftStatus(date, deptId) {
   const db = getDB()
   let query = `

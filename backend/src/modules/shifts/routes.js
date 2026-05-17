@@ -15,6 +15,11 @@ import {
   staffListService, staffGetService, staffCreateService, staffUpdateService, staffDeleteService,
   puantajCsvService, staffDayBreakdownService
 } from './service.js'
+import {
+  checkConflicts, listHolidays, createHoliday, updateHoliday, deleteHoliday,
+  getPayrollExport, getCombinedAbsences,
+} from './queries.js'
+import { logAudit } from '../../shared/audit.js'
 
 export const shiftsRouter = Router()
 
@@ -113,6 +118,58 @@ shiftsRouter.post('/schedule', ...managerOrSupervisor, (req, res) => {
   } catch (e) {
     res.status(400).json({ error: e.message })
   }
+})
+
+// ── H4 V1: Çakışma kontrol ──
+shiftsRouter.post('/schedule/check-conflicts', ...managerOrSupervisor, (req, res) => {
+  try {
+    const conflicts = checkConflicts(req.body?.entries || [])
+    res.json({ conflicts, has_conflicts: conflicts.length > 0 })
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+// ── H4 V3: Resmi tatil tablosu ──
+shiftsRouter.get('/holidays', ...allStaff, (req, res) => {
+  try { res.json(listHolidays({ year: req.query.year })) }
+  catch (e) { console.error('[holidays/list]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+shiftsRouter.post('/holidays', ...managerOrSupervisor, (req, res) => {
+  try {
+    if (!req.body?.date || !req.body?.name) return res.status(400).json({ error: 'date ve name gerekli' })
+    const id = createHoliday(req.body)
+    logAudit(req.user.id, 'holiday_create', 'shifts', id, `${req.body.date} ${req.body.name}`)
+    res.status(201).json({ id })
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+shiftsRouter.put('/holidays/:id', ...managerOrSupervisor, (req, res) => {
+  try { updateHoliday(+req.params.id, req.body); res.json({ ok: true }) }
+  catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+shiftsRouter.delete('/holidays/:id', ...managerOrSupervisor, (req, res) => {
+  try { deleteHoliday(+req.params.id); res.json({ ok: true }) }
+  catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+// ── H4 V7: Bordro export ──
+shiftsRouter.get('/payroll-export', ...managerOrSupervisor, (req, res) => {
+  try {
+    const ym = req.query.month || new Date().toISOString().slice(0, 7)
+    if (!/^\d{4}-\d{2}$/.test(ym)) return res.status(400).json({ error: 'month YYYY-MM formatında olmalı' })
+    res.json({ month: ym, rows: getPayrollExport(ym) })
+  } catch (e) { console.error('[payroll]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// ── H4 V8: Birleşik devamsızlık ──
+shiftsRouter.get('/combined-absences', ...managerOrSupervisor, (req, res) => {
+  try {
+    res.json(getCombinedAbsences({
+      startDate: req.query.start,
+      endDate: req.query.end,
+    }))
+  } catch (e) { console.error('[combined-absences]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 // ── Personnel status (now staff) ──
