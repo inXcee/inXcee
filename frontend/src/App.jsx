@@ -34,6 +34,7 @@ const CombinedAbsencesPage = lazy(() => import('./modules/shifts/CombinedAbsence
 const QrScannerPage = lazy(() => import('./modules/qr/QrScannerPage.jsx'))
 const SafetyPage = lazy(() => import('./modules/safety/SafetyPage.jsx'))
 const MealsPage = lazy(() => import('./modules/meals/MealsPage.jsx'))
+const PerformancePage = lazy(() => import('./modules/performance/PerformancePage.jsx'))
 const CheckoutPage = lazy(() => import('./modules/checkout/CheckoutPage.jsx'))
 const BulkActionsPage = lazy(() => import('./modules/bulk-actions/BulkActionsPage.jsx'))
 const CompaniesPage = lazy(() => import('./modules/companies/CompaniesPage.jsx'))
@@ -245,6 +246,7 @@ export default function App() {
             <Route path="qr-scan" element={<QrScannerPage />} />
             <Route path="safety" element={<SafetyPage />} />
             <Route path="meals" element={<MealsPage />} />
+            <Route path="performance" element={<PerformancePage />} />
             <Route path="personnel/:id" element={<Personnel360Page />} />
             <Route path="checkout" element={<CheckoutPage />} />
             <Route path="bulk-actions" element={<RoleRoute roles={['campus_manager','shift_supervisor']}><BulkActionsPage /></RoleRoute>} />

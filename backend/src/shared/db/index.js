@@ -1001,6 +1001,59 @@ export function initDB() {
     db.exec(`CREATE INDEX IF NOT EXISTS idx_training_attendances_staff ON training_attendances(staff_id, cert_expires_at)`)
   } catch (e) { console.error('[Migration] training_attendances:', e.message) }
 
+  // H9 — Performans
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS performance_reviews (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      staff_id INTEGER NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
+      period TEXT NOT NULL,
+      productivity INTEGER CHECK(productivity BETWEEN 1 AND 5),
+      teamwork INTEGER CHECK(teamwork BETWEEN 1 AND 5),
+      attendance INTEGER CHECK(attendance BETWEEN 1 AND 5),
+      attitude INTEGER CHECK(attitude BETWEEN 1 AND 5),
+      skills INTEGER CHECK(skills BETWEEN 1 AND 5),
+      initiative INTEGER CHECK(initiative BETWEEN 1 AND 5),
+      reliability INTEGER CHECK(reliability BETWEEN 1 AND 5),
+      communication INTEGER CHECK(communication BETWEEN 1 AND 5),
+      strengths TEXT,
+      improvement_areas TEXT,
+      manager_notes TEXT,
+      total_score REAL,
+      reviewed_by INTEGER REFERENCES users(id),
+      reviewed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(staff_id, period)
+    )`)
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_perf_reviews_staff ON performance_reviews(staff_id, period)`)
+  } catch (e) { console.error('[Migration] performance_reviews:', e.message) }
+
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS performance_goals (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      staff_id INTEGER NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
+      title TEXT NOT NULL,
+      description TEXT,
+      target_date TEXT,
+      status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','in_progress','done','cancelled')),
+      progress INTEGER NOT NULL DEFAULT 0 CHECK(progress BETWEEN 0 AND 100),
+      created_by INTEGER REFERENCES users(id),
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      closed_at DATETIME
+    )`)
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_perf_goals_staff ON performance_goals(staff_id, status)`)
+  } catch (e) { console.error('[Migration] performance_goals:', e.message) }
+
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS positive_points (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      staff_id INTEGER NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
+      reason TEXT NOT NULL,
+      points INTEGER NOT NULL DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      created_by INTEGER REFERENCES users(id)
+    )`)
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_positive_staff ON positive_points(staff_id, created_at DESC)`)
+  } catch (e) { console.error('[Migration] positive_points:', e.message) }
+
   // H8 — Kesinti yönetimi (maaş kesinti)
   try {
     db.exec(`CREATE TABLE IF NOT EXISTS payroll_deductions (

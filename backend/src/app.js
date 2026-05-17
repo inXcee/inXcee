@@ -52,6 +52,7 @@ import { hrRouter } from './modules/hr/routes.js'
 import { qrRouter } from './modules/qr/routes.js'
 import { safetyRouter } from './modules/safety/routes.js'
 import { mealsRouter } from './modules/meals/routes.js'
+import { performanceRouter } from './modules/performance/routes.js'
 
 if (process.env.NODE_ENV === 'production' && !process.env.ALLOWED_ORIGIN) {
   console.error('[Startup] HATA: ALLOWED_ORIGIN env değişkeni production\'da zorunludur.')
@@ -261,6 +262,7 @@ app.use('/api/hr', writeLimiter, hrRouter)
 app.use('/api/qr', writeLimiter, qrRouter)
 app.use('/api/safety', writeLimiter, safetyRouter)
 app.use('/api/meals', writeLimiter, mealsRouter)
+app.use('/api/performance', writeLimiter, performanceRouter)
 
 // ── 404 Handler ──────────────────────────────────────────────────────────────
 app.use((req, res) => {
