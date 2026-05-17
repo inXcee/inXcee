@@ -34,6 +34,8 @@ const NAV_GROUPS = [
       { to: '/shifts', icon: '\u29D7', label: 'Vardiyalar', roles: ['campus_manager','shift_supervisor'] },
       { to: '/transport', icon: '\uD83D\uDE8C', label: 'Servisler', roles: ['campus_manager','shift_supervisor'] },
       { to: '/laundry', icon: '\u2668', label: 'Camasirhane', roles: ['campus_manager','laundry'] },
+      { to: '/risk', icon: '\u26A0', label: 'Risk Listesi', roles: ['campus_manager','shift_supervisor'] },
+      { to: '/archived-personnel', icon: '\uD83D\uDDC4', label: 'Arsiv', roles: ['campus_manager','shift_supervisor'] },
     ]
   },
   {

@@ -888,6 +888,48 @@ export function initDB() {
     if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] route_assignments.is_waitlist:', e.message)
   }
 
+  // H1: Personnel 360° genişletmeleri
+  try { db.exec('ALTER TABLE staff ADD COLUMN contract_end TEXT') } catch (e) {
+    if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] staff.contract_end:', e.message)
+  }
+  try { db.exec('ALTER TABLE staff ADD COLUMN archived_at DATETIME') } catch (e) {
+    if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] staff.archived_at:', e.message)
+  }
+  try { db.exec('ALTER TABLE staff ADD COLUMN archive_reason TEXT') } catch (e) {
+    if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] staff.archive_reason:', e.message)
+  }
+  try { db.exec('ALTER TABLE staff ADD COLUMN photo_url TEXT') } catch (e) {
+    if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] staff.photo_url:', e.message)
+  }
+
+  // H1 P6 — Personel notları
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS staff_notes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      staff_id INTEGER NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
+      author_id INTEGER REFERENCES users(id),
+      author_name TEXT,
+      note TEXT NOT NULL,
+      pinned INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`)
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_staff_notes_staff ON staff_notes(staff_id, created_at DESC)`)
+  } catch (e) { console.error('[Migration] staff_notes:', e.message) }
+
+  // H1 P3 — Acil iletişim kişileri (çoklu)
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS emergency_contacts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      staff_id INTEGER NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      relationship TEXT,
+      phone TEXT,
+      address TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`)
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_emergency_contacts_staff ON emergency_contacts(staff_id)`)
+  } catch (e) { console.error('[Migration] emergency_contacts:', e.message) }
+
   // ── AVS workers <-> staff unification (single source of truth = staff) ──
   try { db.exec('ALTER TABLE staff ADD COLUMN kiosk_pin TEXT') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] staff.kiosk_pin:', e.message) }
   try { db.exec('ALTER TABLE staff ADD COLUMN role_label TEXT') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] staff.role_label:', e.message) }

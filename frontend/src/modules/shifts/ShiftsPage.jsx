@@ -531,6 +531,11 @@ function StaffDetailPanel({ staffId, onClose }) {
 
               {/* Right: action buttons */}
               <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+                <a href={`/personnel/${staffId}`} target="_blank" rel="noopener"
+                  className="btn btn-primary btn-xs"
+                  style={{ borderRadius: 8, fontFamily: 'var(--mono)', fontSize: 9, letterSpacing: '0.5px', textDecoration: 'none' }}>
+                  🔍 360°
+                </a>
                 {[
                   { key: 'edit',     label: '✎ Düzenle' },
                   { key: 'shift',    label: '+ Vardiya' },
