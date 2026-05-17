@@ -1,37 +1,64 @@
 import { Outlet, NavLink } from 'react-router-dom'
+import { useAuthStore } from '../../shared/store/authStore.js'
+
+const MGMT = ['campus_manager', 'shift_supervisor']
+const ADMIN = ['campus_manager']
+const TECH = ['campus_manager', 'shift_supervisor', 'technical']
 
 const TAB_GROUPS = [
   {
+    label: 'OPERASYON',
+    tabs: [
+      { to: '/settings/personnel',          label: 'Personel',           icon: '👤', roles: MGMT },
+      { to: '/settings/risk',               label: 'Risk Listesi',       icon: '⚠',  roles: MGMT },
+      { to: '/settings/hr',                 label: 'İK Akışları',        icon: '📋', roles: MGMT },
+      { to: '/settings/safety',             label: 'İş Güvenliği',       icon: '🦺', roles: TECH },
+      { to: '/settings/discipline',         label: 'Disiplin',           icon: '⚠',  roles: MGMT },
+      { to: '/settings/performance',        label: 'Performans',         icon: '⭐', roles: MGMT },
+      { to: '/settings/meals',              label: 'Yemekhane',          icon: '🍽', roles: MGMT },
+      { to: '/settings/transport',          label: 'Servisler',          icon: '🚌', roles: MGMT },
+      { to: '/settings/comms',              label: 'İletişim',           icon: '📨', roles: MGMT },
+      { to: '/settings/payroll',            label: 'Bordro Özet',        icon: '💰', roles: MGMT },
+      { to: '/settings/combined-absences',  label: 'Devamsızlık',        icon: '✗',  roles: MGMT },
+      { to: '/settings/holidays',           label: 'Resmi Tatiller',     icon: '🎉', roles: MGMT },
+      { to: '/settings/archived-personnel', label: 'Arşiv',              icon: '🗄', roles: MGMT },
+    ],
+  },
+  {
     label: 'YÖNETİM',
     tabs: [
-      { to: '/settings/companies',           label: 'Firmalar',           icon: '⌂' },
-      { to: '/settings/visitors',            label: 'Ziyaretçiler',       icon: '👥' },
-      { to: '/settings/surveys',             label: 'Memnuniyet',         icon: '★' },
-      { to: '/settings/drills',              label: 'Tatbikatlar',        icon: '🔥' },
-      { to: '/settings/documents',           label: 'Belgeler',           icon: '📄' },
-      { to: '/settings/expenses',            label: 'Bütçe',              icon: '₺' },
-      { to: '/settings/notification-groups', label: 'Bildirim Grupları',  icon: '👥' },
-      { to: '/settings/automation',          label: 'Otomasyon',          icon: '⚙' },
+      { to: '/settings/companies',           label: 'Firmalar',           icon: '⌂',  roles: ADMIN },
+      { to: '/settings/visitors',            label: 'Ziyaretçiler',       icon: '👥', roles: ADMIN },
+      { to: '/settings/surveys',             label: 'Memnuniyet',         icon: '★',  roles: ADMIN },
+      { to: '/settings/drills',              label: 'Tatbikatlar',        icon: '🔥', roles: ADMIN },
+      { to: '/settings/documents',           label: 'Belgeler',           icon: '📄', roles: ADMIN },
+      { to: '/settings/expenses',            label: 'Bütçe',              icon: '₺',  roles: ADMIN },
+      { to: '/settings/notification-groups', label: 'Bildirim Grupları',  icon: '👥', roles: ADMIN },
+      { to: '/settings/automation',          label: 'Otomasyon',          icon: '⚙',  roles: ADMIN },
     ],
   },
   {
     label: 'SİSTEM',
     tabs: [
-      { to: '/settings/email',         label: 'Genel & E-Posta',  icon: '⎓' },
-      { to: '/settings/users',         label: 'Kullanicilar',     icon: '⌂' },
-      { to: '/settings/kiosk-pins',    label: 'Kiosk PIN',        icon: '⌖' },
-      { to: '/settings/announcements', label: 'Duyurular',        icon: '📢' },
-      { to: '/settings/avs-workers',   label: 'AVS Calisanlari',  icon: '👷' },
-      { to: '/settings/audit',         label: 'Audit Log',        icon: '☷' },
-      { to: '/settings/error-log',     label: 'Hata Loglari',     icon: '⚠' },
-      { to: '/settings/backup',        label: 'Yedekleme',        icon: '⛁' },
-      { to: '/settings/kvkk-admin',    label: 'KVKK',             icon: '§' },
-      { to: '/settings/system',        label: 'Sistem Sagligi',   icon: '♥' },
+      { to: '/settings/email',         label: 'Genel & E-Posta',  icon: '⎓',  roles: ADMIN },
+      { to: '/settings/users',         label: 'Kullanicilar',     icon: '⌂',  roles: ADMIN },
+      { to: '/settings/kiosk-pins',    label: 'Kiosk PIN',        icon: '⌖',  roles: ADMIN },
+      { to: '/settings/announcements', label: 'Duyurular',        icon: '📢', roles: ADMIN },
+      { to: '/settings/avs-workers',   label: 'AVS Calisanlari',  icon: '👷', roles: ADMIN },
+      { to: '/settings/audit',         label: 'Audit Log',        icon: '☷',  roles: ADMIN },
+      { to: '/settings/error-log',     label: 'Hata Loglari',     icon: '⚠',  roles: ADMIN },
+      { to: '/settings/backup',        label: 'Yedekleme',        icon: '⛁',  roles: ADMIN },
+      { to: '/settings/kvkk-admin',    label: 'KVKK',             icon: '§',  roles: ADMIN },
+      { to: '/settings/system',        label: 'Sistem Sagligi',   icon: '♥',  roles: ADMIN },
     ],
   },
 ]
 
 export default function SettingsLayout() {
+  const role = useAuthStore(s => s.user?.role)
+  const visibleGroups = TAB_GROUPS
+    .map(g => ({ ...g, tabs: g.tabs.filter(t => !role || t.roles.includes(role)) }))
+    .filter(g => g.tabs.length > 0)
   return (
     <div style={{ display: 'flex', minHeight: 'calc(100vh - 60px)' }}>
       <aside style={{
@@ -48,7 +75,7 @@ export default function SettingsLayout() {
         }}>
           AYARLAR
         </div>
-        {TAB_GROUPS.map((grp, gi) => (
+        {visibleGroups.map((grp, gi) => (
           <div key={grp.label} style={{ marginBottom: 16 }}>
             <div style={{
               fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--accent)',

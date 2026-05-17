@@ -32,7 +32,6 @@ const HrPage = lazy(() => import('./modules/hr/HrPage.jsx'))
 const PayrollPage = lazy(() => import('./modules/shifts/PayrollPage.jsx'))
 const HolidaysPage = lazy(() => import('./modules/shifts/HolidaysPage.jsx'))
 const CombinedAbsencesPage = lazy(() => import('./modules/shifts/CombinedAbsencesPage.jsx'))
-const QrScannerPage = lazy(() => import('./modules/qr/QrScannerPage.jsx'))
 const SafetyPage = lazy(() => import('./modules/safety/SafetyPage.jsx'))
 const MealsPage = lazy(() => import('./modules/meals/MealsPage.jsx'))
 const PerformancePage = lazy(() => import('./modules/performance/PerformancePage.jsx'))
@@ -236,25 +235,11 @@ export default function App() {
             <Route path="capacity" element={<CapacityPage />} />
             <Route path="housekeeping" element={<HousekeepingPage />} />
             <Route path="maintenance" element={<MaintenancePage />} />
-            <Route path="discipline" element={<DisciplinePage />} />
             <Route path="room-history" element={<RoomHistoryPage />} />
             <Route path="whatsapp" element={<WhatsAppPage />} />
             <Route path="shifts" element={<ShiftsPage />} />
-            <Route path="transport" element={<TransportPage />} />
-            <Route path="risk" element={<RiskListPage />} />
-            <Route path="archived-personnel" element={<ArchivedPersonnelPage />} />
-            <Route path="hr" element={<HrPage />} />
-            <Route path="payroll" element={<PayrollPage />} />
-            <Route path="holidays" element={<HolidaysPage />} />
-            <Route path="combined-absences" element={<CombinedAbsencesPage />} />
-            <Route path="qr-scan" element={<QrScannerPage />} />
-            <Route path="safety" element={<SafetyPage />} />
-            <Route path="meals" element={<MealsPage />} />
-            <Route path="performance" element={<PerformancePage />} />
-            <Route path="comms" element={<CommsPage />} />
             <Route path="reports-advanced" element={<AdvancedReportsPage />} />
             <Route path="integrity" element={<IntegrityPage />} />
-            <Route path="personnel" element={<PersonnelListPage />} />
             <Route path="personnel/:id" element={<Personnel360Page />} />
             <Route path="checkout" element={<CheckoutPage />} />
             <Route path="bulk-actions" element={<RoleRoute roles={['campus_manager','shift_supervisor']}><BulkActionsPage /></RoleRoute>} />
@@ -267,6 +252,20 @@ export default function App() {
             <Route path="expenses" element={<Navigate to="/settings/expenses" replace />} />
             <Route path="notification-groups" element={<Navigate to="/settings/notification-groups" replace />} />
             <Route path="automation" element={<Navigate to="/settings/automation" replace />} />
+            {/* Operasyon modulleri Ayarlar altina tasindi — eski path'ler redirect */}
+            <Route path="personnel" element={<Navigate to="/settings/personnel" replace />} />
+            <Route path="risk" element={<Navigate to="/settings/risk" replace />} />
+            <Route path="hr" element={<Navigate to="/settings/hr" replace />} />
+            <Route path="safety" element={<Navigate to="/settings/safety" replace />} />
+            <Route path="discipline" element={<Navigate to="/settings/discipline" replace />} />
+            <Route path="performance" element={<Navigate to="/settings/performance" replace />} />
+            <Route path="meals" element={<Navigate to="/settings/meals" replace />} />
+            <Route path="transport" element={<Navigate to="/settings/transport" replace />} />
+            <Route path="comms" element={<Navigate to="/settings/comms" replace />} />
+            <Route path="payroll" element={<Navigate to="/settings/payroll" replace />} />
+            <Route path="combined-absences" element={<Navigate to="/settings/combined-absences" replace />} />
+            <Route path="holidays" element={<Navigate to="/settings/holidays" replace />} />
+            <Route path="archived-personnel" element={<Navigate to="/settings/archived-personnel" replace />} />
             <Route path="laundry" element={<LaundryHub />} />
             <Route path="laundry/*" element={<LaundryHub />} />
             <Route path="inventory" element={<InventoryPage />} />
@@ -282,18 +281,18 @@ export default function App() {
             <Route path="kiosk-pins" element={<RoleRoute roles={['campus_manager']}><KioskPinPage /></RoleRoute>} />
             <Route path="announcements" element={<RoleRoute roles={['campus_manager']}><AnnouncementsPage /></RoleRoute>} />
             <Route path="avs-workers" element={<RoleRoute roles={['campus_manager']}><AvsWorkersPage /></RoleRoute>} />
-            <Route path="settings" element={<RoleRoute roles={['campus_manager']}><SettingsLayout /></RoleRoute>}>
-              <Route index element={<Navigate to="companies" replace />} />
-              <Route path="email" element={<SettingsPage />} />
-              <Route path="users" element={<UsersPage />} />
-              <Route path="kiosk-pins" element={<KioskPinPage />} />
-              <Route path="announcements" element={<AnnouncementsPage />} />
-              <Route path="avs-workers" element={<AvsWorkersPage />} />
-              <Route path="audit" element={<AuditPage />} />
-              <Route path="error-log" element={<ErrorLogPage />} />
-              <Route path="backup" element={<BackupPage />} />
-              <Route path="kvkk-admin" element={<KvkkAdminPage />} />
-              <Route path="system" element={<SystemHealthPage />} />
+            <Route path="settings" element={<RoleRoute roles={['campus_manager','shift_supervisor']}><SettingsLayout /></RoleRoute>}>
+              <Route index element={<Navigate to="personnel" replace />} />
+              <Route path="email" element={<RoleRoute roles={['campus_manager']}><SettingsPage /></RoleRoute>} />
+              <Route path="users" element={<RoleRoute roles={['campus_manager']}><UsersPage /></RoleRoute>} />
+              <Route path="kiosk-pins" element={<RoleRoute roles={['campus_manager']}><KioskPinPage /></RoleRoute>} />
+              <Route path="announcements" element={<RoleRoute roles={['campus_manager']}><AnnouncementsPage /></RoleRoute>} />
+              <Route path="avs-workers" element={<RoleRoute roles={['campus_manager']}><AvsWorkersPage /></RoleRoute>} />
+              <Route path="audit" element={<RoleRoute roles={['campus_manager']}><AuditPage /></RoleRoute>} />
+              <Route path="error-log" element={<RoleRoute roles={['campus_manager']}><ErrorLogPage /></RoleRoute>} />
+              <Route path="backup" element={<RoleRoute roles={['campus_manager']}><BackupPage /></RoleRoute>} />
+              <Route path="kvkk-admin" element={<RoleRoute roles={['campus_manager']}><KvkkAdminPage /></RoleRoute>} />
+              <Route path="system" element={<RoleRoute roles={['campus_manager']}><SystemHealthPage /></RoleRoute>} />
               {/* Yonetim modulleri sekmeler olarak */}
               <Route path="companies" element={<CompaniesPage />} />
               <Route path="visitors" element={<VisitorsPage />} />
@@ -303,6 +302,20 @@ export default function App() {
               <Route path="expenses" element={<ExpensesPage />} />
               <Route path="notification-groups" element={<NotificationGroupsPage />} />
               <Route path="automation" element={<AutomationPage />} />
+              {/* Operasyondan tasinan modulleri */}
+              <Route path="personnel" element={<PersonnelListPage />} />
+              <Route path="risk" element={<RiskListPage />} />
+              <Route path="hr" element={<HrPage />} />
+              <Route path="safety" element={<SafetyPage />} />
+              <Route path="discipline" element={<DisciplinePage />} />
+              <Route path="performance" element={<PerformancePage />} />
+              <Route path="meals" element={<MealsPage />} />
+              <Route path="transport" element={<TransportPage />} />
+              <Route path="comms" element={<CommsPage />} />
+              <Route path="payroll" element={<PayrollPage />} />
+              <Route path="combined-absences" element={<CombinedAbsencesPage />} />
+              <Route path="holidays" element={<HolidaysPage />} />
+              <Route path="archived-personnel" element={<ArchivedPersonnelPage />} />
             </Route>
           </Route>
           <Route path="/mobile" element={<MobileLogin />} />

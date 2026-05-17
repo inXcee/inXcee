@@ -30,22 +30,8 @@ const NAV_GROUPS = [
     links: [
       { to: '/housekeeping', icon: '\u25C8', label: 'Housekeeping', roles: ['campus_manager','housekeeper'] },
       { to: '/maintenance', icon: '\u2699', label: 'Teknik Servis', roles: ['campus_manager','shift_supervisor','technical'], badge: true },
-      { to: '/discipline', icon: '\u26A0', label: 'Disiplin', roles: ['campus_manager','shift_supervisor'] },
       { to: '/shifts', icon: '\u29D7', label: 'Vardiyalar', roles: ['campus_manager','shift_supervisor'] },
-      { to: '/transport', icon: '\uD83D\uDE8C', label: 'Servisler', roles: ['campus_manager','shift_supervisor'] },
-      { to: '/qr-scan', icon: '\uD83D\uDCF1', label: 'QR Okut', roles: ['campus_manager','shift_supervisor'] },
       { to: '/laundry', icon: '\u2668', label: 'Camasirhane', roles: ['campus_manager','laundry'] },
-      { to: '/personnel', icon: '\uD83D\uDC64', label: 'Personel', roles: ['campus_manager','shift_supervisor'] },
-      { to: '/risk', icon: '\u26A0', label: 'Risk Listesi', roles: ['campus_manager','shift_supervisor'] },
-      { to: '/hr', icon: '\uD83D\uDCCB', label: 'IK Akislari', roles: ['campus_manager','shift_supervisor'] },
-      { to: '/safety', icon: '\uD83E\uDDBA', label: 'Is Guvenligi', roles: ['campus_manager','shift_supervisor','technical'] },
-      { to: '/meals', icon: '\uD83C\uDF7D', label: 'Yemekhane', roles: ['campus_manager','shift_supervisor'] },
-      { to: '/performance', icon: '\u2B50', label: 'Performans', roles: ['campus_manager','shift_supervisor'] },
-      { to: '/comms', icon: '\uD83D\uDCE8', label: 'Iletisim', roles: ['campus_manager','shift_supervisor'] },
-      { to: '/payroll', icon: '\uD83D\uDCB0', label: 'Bordro Ozet', roles: ['campus_manager','shift_supervisor'] },
-      { to: '/combined-absences', icon: '\u2717', label: 'Devamsizlik', roles: ['campus_manager','shift_supervisor'] },
-      { to: '/holidays', icon: '\uD83C\uDF89', label: 'Resmi Tatiller', roles: ['campus_manager','shift_supervisor'] },
-      { to: '/archived-personnel', icon: '\uD83D\uDDC4', label: 'Arsiv', roles: ['campus_manager','shift_supervisor'] },
     ]
   },
   {
@@ -53,7 +39,7 @@ const NAV_GROUPS = [
     links: [
       { to: '/inventory', icon: '\u25a8', label: 'Envanter', roles: ['campus_manager','shift_supervisor','laundry','housekeeper'] },
       { to: '/laundry-kiosk', icon: '🧺', label: 'Camasir Kiosk', roles: ['campus_manager'], external: true },
-      { to: '/settings', icon: '\u2393', label: 'Ayarlar', roles: ['campus_manager'] },
+      { to: '/settings', icon: '\u2393', label: 'Ayarlar', roles: ['campus_manager','shift_supervisor'] },
     ]
   },
   {
