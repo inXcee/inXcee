@@ -59,6 +59,7 @@ const NAV_GROUPS = [
     label: 'RAPORLAR',
     links: [
       { to: '/reports', icon: '\u2193', label: 'PDF Raporlar', roles: ['campus_manager','shift_supervisor'] },
+      { to: '/reports-advanced', icon: '\ud83d\udcc8', label: 'Ileri Raporlar', roles: ['campus_manager','shift_supervisor'] },
       { to: '/room-history', icon: '\u29D6', label: 'Oda Gecmisi', roles: ['campus_manager','shift_supervisor','housekeeper','technical'] },
       { to: '/whatsapp', icon: '\u260E', label: 'WhatsApp', roles: ['campus_manager','shift_supervisor','technical'] },
     ]

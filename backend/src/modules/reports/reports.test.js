@@ -229,3 +229,54 @@ describe('Yeni raporlar', () => {
     }
   })
 })
+
+// ── H11 İleri raporlar ──
+describe('H11 R1 — Absence dashboard', () => {
+  it('GET /reports/absence-dashboard döner', async () => {
+    const r = await request(app).get('/api/reports/absence-dashboard?days=30').set('Authorization', `Bearer ${token}`)
+    expect(r.status).toBe(200)
+    expect(r.body).toHaveProperty('summary')
+    expect(r.body).toHaveProperty('trend')
+    expect(r.body).toHaveProperty('no_show_trend')
+    expect(r.body).toHaveProperty('by_dept')
+  })
+})
+
+describe('H11 R2 — Cost per person', () => {
+  it('GET /reports/cost-per-person', async () => {
+    const r = await request(app).get('/api/reports/cost-per-person').set('Authorization', `Bearer ${token}`)
+    expect(r.status).toBe(200)
+    expect(r.body).toHaveProperty('rows')
+    r.body.rows.forEach(row => {
+      expect(row).toHaveProperty('meal_cost')
+      expect(row).toHaveProperty('transport_count')
+      expect(row).toHaveProperty('deductions')
+    })
+  })
+})
+
+describe('H11 R3 — Comparison', () => {
+  it('GET /reports/comparison', async () => {
+    const r = await request(app).get('/api/reports/comparison').set('Authorization', `Bearer ${token}`)
+    expect(r.status).toBe(200)
+    expect(r.body).toHaveProperty('current')
+    expect(r.body).toHaveProperty('previous')
+    expect(r.body).toHaveProperty('delta')
+    expect(r.body.delta).toHaveProperty('worked')
+  })
+})
+
+describe('H11 R4 — Staff builder', () => {
+  it('default kolonlar', async () => {
+    const r = await request(app).get('/api/reports/staff-builder').set('Authorization', `Bearer ${token}`)
+    expect(r.status).toBe(200)
+    expect(r.body).toHaveProperty('available_columns')
+    expect(r.body).toHaveProperty('rows')
+  })
+
+  it('özel kolonlar', async () => {
+    const r = await request(app).get('/api/reports/staff-builder?cols=full_name,phone,tc_no').set('Authorization', `Bearer ${token}`)
+    expect(r.status).toBe(200)
+    expect(r.body.selected).toEqual(['full_name', 'phone', 'tc_no'])
+  })
+})
