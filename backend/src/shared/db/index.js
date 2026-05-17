@@ -1001,6 +1001,38 @@ export function initDB() {
     db.exec(`CREATE INDEX IF NOT EXISTS idx_training_attendances_staff ON training_attendances(staff_id, cert_expires_at)`)
   } catch (e) { console.error('[Migration] training_attendances:', e.message) }
 
+  // H10 — İletişim (SMS log, push subs, broadcast log)
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS comm_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      channel TEXT NOT NULL CHECK(channel IN ('sms','push','email','whatsapp','toast')),
+      recipient_type TEXT NOT NULL CHECK(recipient_type IN ('staff','group','role','phone','user')),
+      recipient_id INTEGER,
+      recipient_value TEXT,
+      subject TEXT,
+      body TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','sent','failed','queued')),
+      error TEXT,
+      sent_at DATETIME,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      created_by INTEGER REFERENCES users(id)
+    )`)
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_comm_log_created ON comm_log(created_at DESC)`)
+  } catch (e) { console.error('[Migration] comm_log:', e.message) }
+
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS push_subscriptions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+      personnel_id INTEGER REFERENCES personnel(id) ON DELETE CASCADE,
+      staff_id INTEGER REFERENCES staff(id) ON DELETE CASCADE,
+      endpoint TEXT NOT NULL UNIQUE,
+      auth_key TEXT NOT NULL,
+      p256dh_key TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`)
+  } catch (e) { console.error('[Migration] push_subscriptions:', e.message) }
+
   // H9 — Performans
   try {
     db.exec(`CREATE TABLE IF NOT EXISTS performance_reviews (
