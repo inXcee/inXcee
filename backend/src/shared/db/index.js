@@ -1391,6 +1391,10 @@ export function initDB() {
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     last_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] push_subscriptions:', e.message) }
+  // H10 migration aynı tablo adıyla user_agent / last_seen_at yok şemada
+  // önce oluştuysa, eksik kolonları ekle (idempotent ALTER)
+  try { db.exec('ALTER TABLE push_subscriptions ADD COLUMN user_agent TEXT') } catch(e) { if (!e.message?.includes('duplicate column')) console.error('[Migration] push_subscriptions.user_agent:', e.message) }
+  try { db.exec("ALTER TABLE push_subscriptions ADD COLUMN last_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP") } catch(e) { if (!e.message?.includes('duplicate column')) console.error('[Migration] push_subscriptions.last_seen_at:', e.message) }
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_push_user ON push_subscriptions(user_id)') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] idx_push_user:', e.message) }
 
   // ── Mobile M11: WhatsApp outbound — users.phone + outbound log ──

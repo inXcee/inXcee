@@ -25,6 +25,7 @@ const WhatsAppPage = lazy(() => import('./modules/whatsapp/WhatsAppPage.jsx'))
 const ShiftsPage = lazy(() => import('./modules/shifts/ShiftsPage.jsx'))
 const TransportPage = lazy(() => import('./modules/transport/TransportPage.jsx'))
 const Personnel360Page = lazy(() => import('./modules/personnel/Personnel360Page.jsx'))
+const PersonnelListPage = lazy(() => import('./modules/personnel/PersonnelListPage.jsx'))
 const RiskListPage = lazy(() => import('./modules/personnel/RiskListPage.jsx'))
 const ArchivedPersonnelPage = lazy(() => import('./modules/personnel/ArchivedPage.jsx'))
 const HrPage = lazy(() => import('./modules/hr/HrPage.jsx'))
@@ -253,6 +254,7 @@ export default function App() {
             <Route path="comms" element={<CommsPage />} />
             <Route path="reports-advanced" element={<AdvancedReportsPage />} />
             <Route path="integrity" element={<IntegrityPage />} />
+            <Route path="personnel" element={<PersonnelListPage />} />
             <Route path="personnel/:id" element={<Personnel360Page />} />
             <Route path="checkout" element={<CheckoutPage />} />
             <Route path="bulk-actions" element={<RoleRoute roles={['campus_manager','shift_supervisor']}><BulkActionsPage /></RoleRoute>} />
