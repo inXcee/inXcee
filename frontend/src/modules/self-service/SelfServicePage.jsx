@@ -10,6 +10,8 @@ const CARD_COLOR = { yellow:'text-yellow-400 border-yellow-400', red:'text-red-4
 
 const TABS = [
   { key:'info',        label:'👤 Bilgilerim' },
+  { key:'shifts',      label:'⏱ Vardiyam' },
+  { key:'transport',   label:'🚌 Servisim' },
   { key:'laundry',     label:'🧺 Çamaşır' },
   { key:'maintenance', label:'🔧 Arıza' },
   { key:'announcements', label:'📢 Duyurular' },
@@ -92,6 +94,21 @@ export default function SelfServicePage() {
     queryKey: ['kiosk-info', kioskToken],
     queryFn: () => kioskApi.get('/self-service/my-info').then(r => r.data),
     enabled: !!kioskToken,
+  })
+  const { data: myProfile } = useQuery({
+    queryKey: ['kiosk-profile', kioskToken],
+    queryFn: () => kioskApi.get('/self-service/my-profile').then(r => r.data),
+    enabled: !!kioskToken && activeTab === 'info',
+  })
+  const { data: myShifts } = useQuery({
+    queryKey: ['kiosk-shifts', kioskToken],
+    queryFn: () => kioskApi.get('/self-service/my-shifts').then(r => r.data),
+    enabled: !!kioskToken && activeTab === 'shifts',
+  })
+  const { data: myTransport } = useQuery({
+    queryKey: ['kiosk-transport', kioskToken],
+    queryFn: () => kioskApi.get('/self-service/my-transport').then(r => r.data),
+    enabled: !!kioskToken && activeTab === 'transport',
   })
   const { data: laundryStatus = [] } = useQuery({
     queryKey: ['kiosk-laundry', kioskToken],
@@ -320,6 +337,189 @@ export default function SelfServicePage() {
               </div>
             )
           })()}
+
+          {/* H2 M1: Zengin profil */}
+          {myProfile?.staff && (
+            <div className="bg-slate-900 rounded-2xl p-5 space-y-3">
+              <h2 className="font-medium text-slate-300">İş Bilgileri</h2>
+              {myProfile.staff.dept_name && (
+                <div className="flex justify-between text-sm"><span className="text-slate-500">Departman</span><span className="font-medium text-slate-200">{myProfile.staff.dept_name}</span></div>
+              )}
+              {myProfile.staff.position && (
+                <div className="flex justify-between text-sm"><span className="text-slate-500">Pozisyon</span><span className="font-medium text-slate-200">{myProfile.staff.position}</span></div>
+              )}
+              {myProfile.staff.hire_date && (
+                <div className="flex justify-between text-sm"><span className="text-slate-500">İşe Giriş</span><span className="font-medium text-slate-200">{myProfile.staff.hire_date}</span></div>
+              )}
+              {myProfile.staff.contract_end && (
+                <div className="flex justify-between text-sm"><span className="text-slate-500">Sözleşme Bitiş</span><span className={`font-medium ${new Date(myProfile.staff.contract_end) < new Date(Date.now() + 30 * 86400000) ? 'text-amber-400' : 'text-slate-200'}`}>{myProfile.staff.contract_end}</span></div>
+              )}
+              {myProfile.staff.blood_type && (
+                <div className="flex justify-between text-sm"><span className="text-slate-500">Kan Grubu</span><span className="font-medium text-slate-200">{myProfile.staff.blood_type}</span></div>
+              )}
+              {myProfile.staff.pickup_name && (
+                <div className="flex justify-between text-sm"><span className="text-slate-500">Servis Durağı</span><span className="font-medium text-slate-200">{myProfile.staff.pickup_name}{myProfile.staff.pickup_district ? ` (${myProfile.staff.pickup_district})` : ''}</span></div>
+              )}
+            </div>
+          )}
+
+          {myProfile?.emergency_contacts?.length > 0 && (
+            <div className="bg-slate-900 rounded-2xl p-5 space-y-3">
+              <h2 className="font-medium text-slate-300">🆘 Acil İletişim</h2>
+              {myProfile.emergency_contacts.map((c, i) => (
+                <div key={i} className="bg-slate-800 rounded-xl p-3">
+                  <div className="text-sm text-slate-200 font-medium">{c.name}</div>
+                  {c.relationship && <div className="text-xs text-slate-500">{c.relationship}</div>}
+                  {c.phone && <a href={`tel:${c.phone}`} className="text-sm text-blue-400 mt-1 inline-block">📞 {c.phone}</a>}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {(myProfile?.discipline_total?.total > 0 || myProfile?.maintenance_open > 0) && (
+            <div className="grid grid-cols-2 gap-3">
+              {myProfile.discipline_total?.total > 0 && (
+                <div className="bg-slate-900 rounded-2xl p-4 text-center">
+                  <div className="text-xs text-slate-500 mb-1">DİSİPLİN</div>
+                  <div className="text-lg font-bold">
+                    {myProfile.discipline_total.yellow > 0 && <span className="text-amber-400">🟡 {myProfile.discipline_total.yellow}</span>}
+                    {myProfile.discipline_total.red > 0 && <span className="text-red-400 ml-2">🔴 {myProfile.discipline_total.red}</span>}
+                  </div>
+                </div>
+              )}
+              {myProfile.maintenance_open > 0 && (
+                <div className="bg-slate-900 rounded-2xl p-4 text-center">
+                  <div className="text-xs text-slate-500 mb-1">AÇIK ARIZA</div>
+                  <div className="text-lg font-bold text-amber-400">🔧 {myProfile.maintenance_open}</div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Tab: Vardiyam (H2 M2) ── */}
+      {activeTab === 'shifts' && (
+        <div className="space-y-4">
+          {!myShifts ? (
+            <div className="bg-slate-900 rounded-2xl p-5 text-slate-500 text-sm">Yükleniyor…</div>
+          ) : myShifts.message ? (
+            <div className="bg-slate-900 rounded-2xl p-5 text-slate-400 text-sm">{myShifts.message}</div>
+          ) : (
+            <>
+              <div className="bg-slate-900 rounded-2xl p-5">
+                <h2 className="font-medium text-slate-300 mb-3">Son 30 Gün Özet</h2>
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="bg-slate-800 rounded-xl p-3 text-center">
+                    <div className="text-2xl font-bold text-green-400">{myShifts.summary?.worked || 0}</div>
+                    <div className="text-xs text-slate-500 mt-1">Çalıştı</div>
+                  </div>
+                  <div className="bg-slate-800 rounded-xl p-3 text-center">
+                    <div className="text-2xl font-bold text-amber-400">{myShifts.summary?.on_leave || 0}</div>
+                    <div className="text-xs text-slate-500 mt-1">İzin</div>
+                  </div>
+                  <div className="bg-slate-800 rounded-xl p-3 text-center">
+                    <div className="text-2xl font-bold text-red-400">{myShifts.summary?.absent || 0}</div>
+                    <div className="text-xs text-slate-500 mt-1">Yok</div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-slate-900 rounded-2xl p-5">
+                <h2 className="font-medium text-slate-300 mb-3">Vardiya Programı (geçmiş 7g + sonraki 14g)</h2>
+                {(!myShifts.shifts || myShifts.shifts.length === 0) ? (
+                  <div className="text-slate-500 text-sm">Vardiya kaydı yok</div>
+                ) : (
+                  <div className="space-y-1">
+                    {myShifts.shifts.map(s => {
+                      const today = new Date().toISOString().slice(0, 10)
+                      const isToday = s.work_date === today
+                      const isFuture = s.work_date > today
+                      const statusColor = s.status === 'worked' ? 'text-green-400' : s.status === 'absent' ? 'text-red-400' : s.status === 'on_leave' ? 'text-amber-400' : 'text-slate-400'
+                      const statusLabel = s.status === 'worked' ? '✓ Çalıştı' : s.status === 'absent' ? '✗ Yok' : s.status === 'on_leave' ? '🛌 İzin' : isFuture ? '📅 Planlandı' : s.status
+                      return (
+                        <div key={s.work_date} className={`flex justify-between items-center px-3 py-2 rounded-lg ${isToday ? 'bg-blue-900 border border-blue-700' : 'bg-slate-800'}`}>
+                          <div>
+                            <div className="text-sm text-slate-200">{new Date(s.work_date).toLocaleDateString('tr-TR', { weekday: 'short', day: 'numeric', month: 'short' })}</div>
+                            {s.shift_name && <div className="text-xs text-slate-500">{s.shift_name} {s.start_hour != null && `· ${String(s.start_hour).padStart(2, '0')}:00-${String(s.end_hour).padStart(2, '0')}:00`}</div>}
+                          </div>
+                          <div className={`text-xs font-medium ${statusColor}`}>{statusLabel}</div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ── Tab: Servisim (H2 M3) ── */}
+      {activeTab === 'transport' && (
+        <div className="space-y-4">
+          {!myTransport ? (
+            <div className="bg-slate-900 rounded-2xl p-5 text-slate-500 text-sm">Yükleniyor…</div>
+          ) : myTransport.message ? (
+            <div className="bg-slate-900 rounded-2xl p-5 text-slate-400 text-sm">{myTransport.message}</div>
+          ) : !myTransport.today && !myTransport.pickup ? (
+            <div className="bg-slate-900 rounded-2xl p-5">
+              <div className="text-slate-500 text-sm text-center py-6">Bugün için servis ataması yok</div>
+            </div>
+          ) : (
+            <>
+              {myTransport.pickup && (
+                <div className="bg-slate-900 rounded-2xl p-5">
+                  <h2 className="font-medium text-slate-300 mb-3">📍 Durağım</h2>
+                  <div className="text-xl font-bold text-blue-400">{myTransport.pickup.name}</div>
+                  {myTransport.pickup.district && (
+                    <div className="text-sm text-slate-500 mt-1">{myTransport.pickup.district}{myTransport.pickup.neighborhood ? ` · ${myTransport.pickup.neighborhood}` : ''}</div>
+                  )}
+                  {myTransport.pickup.photo_url && (
+                    <img src={myTransport.pickup.photo_url} alt="Durak" className="mt-3 w-full rounded-lg" style={{ maxHeight: 200, objectFit: 'cover' }} />
+                  )}
+                </div>
+              )}
+
+              {myTransport.today ? (
+                <div className="bg-slate-900 rounded-2xl p-5" style={{ borderLeft: `4px solid ${myTransport.today.color || '#3b82f6'}` }}>
+                  <div className="flex items-center justify-between mb-3">
+                    <h2 className="font-medium text-slate-300">🚌 Bugün ({myTransport.date})</h2>
+                    {myTransport.today.boarded === 1 ? (
+                      <span className="text-xs font-bold text-green-400 bg-green-950 px-2 py-1 rounded">✓ BİNDİ</span>
+                    ) : myTransport.today.boarded === 0 ? (
+                      <span className="text-xs font-bold text-red-400 bg-red-950 px-2 py-1 rounded">✗ BİNMEDİ</span>
+                    ) : myTransport.today.is_waitlist ? (
+                      <span className="text-xs font-bold text-amber-400 bg-amber-950 px-2 py-1 rounded">⏳ YEDEK</span>
+                    ) : null}
+                  </div>
+                  <div className="text-2xl font-bold text-slate-100">{myTransport.today.route_name}</div>
+                  <div className="text-sm text-slate-400 mt-1">🚐 {myTransport.today.vehicle_plate || '— plakasız —'}</div>
+                  {myTransport.today.scheduled_time && (
+                    <div className="text-base font-medium text-blue-300 mt-2">⏰ {myTransport.today.scheduled_time}</div>
+                  )}
+                  {myTransport.today.stop_name && (
+                    <div className="text-sm text-slate-400 mt-1">📍 {myTransport.today.stop_name}</div>
+                  )}
+                  {myTransport.today.driver_name && (
+                    <div className="bg-slate-800 rounded-xl p-3 mt-3">
+                      <div className="text-xs text-slate-500 mb-1">🧑‍✈️ Şoför</div>
+                      <div className="text-sm text-slate-200">{myTransport.today.driver_name}</div>
+                      {myTransport.today.driver_phone && (
+                        <a href={`tel:${myTransport.today.driver_phone}`} className="text-sm text-blue-400 mt-1 inline-block">
+                          📞 {myTransport.today.driver_phone}
+                        </a>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="bg-slate-900 rounded-2xl p-5 text-slate-500 text-sm text-center">
+                  Bugün için servis ataman yok
+                </div>
+              )}
+            </>
+          )}
         </div>
       )}
 

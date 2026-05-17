@@ -292,3 +292,73 @@ describe('Laundry Kiosk endpoints', () => {
     expect(item.needs_ironing).toBe(1)
   })
 })
+
+// ── H2 M1/M2/M3 ──
+describe('Mobile Self-Service (H2)', () => {
+  let kioskToken
+  beforeAll(() => {
+    // personnel id=1 seed'den geliyor olabilir; varsa kullan, yoksa oluştur
+    const db = getDB()
+    const exists = db.prepare('SELECT id FROM personnel WHERE id=1').get()
+    if (!exists) {
+      db.prepare('INSERT INTO personnel(id, full_name, tc_no, company) VALUES(1, ?, ?, ?)')
+        .run('Mobile Test', '11111111111', 'Test Firma')
+    }
+    kioskToken = jwt.sign({ personnelId: 1, role: 'kiosk' }, process.env.JWT_SECRET, { expiresIn: '1h' })
+  })
+
+  it('GET /my-profile zenginlestirilmis profil doner', async () => {
+    const res = await request(app).get('/api/self-service/my-profile')
+      .set('Authorization', `Bearer ${kioskToken}`)
+    expect(res.status).toBe(200)
+    expect(res.body).toHaveProperty('person')
+    expect(res.body).toHaveProperty('emergency_contacts')
+    expect(res.body).toHaveProperty('discipline_total')
+    expect(res.body).toHaveProperty('maintenance_open')
+    expect(res.body.person.id).toBe(1)
+  })
+
+  it('GET /my-shifts staff yoksa mesaj doner', async () => {
+    const res = await request(app).get('/api/self-service/my-shifts')
+      .set('Authorization', `Bearer ${kioskToken}`)
+    expect(res.status).toBe(200)
+    expect(res.body).toHaveProperty('shifts')
+    expect(Array.isArray(res.body.shifts)).toBe(true)
+  })
+
+  it('GET /my-transport bugun yoksa null doner', async () => {
+    const res = await request(app).get('/api/self-service/my-transport')
+      .set('Authorization', `Bearer ${kioskToken}`)
+    expect(res.status).toBe(200)
+    expect(res.body).toHaveProperty('today')
+    expect(res.body).toHaveProperty('date')
+  })
+
+  it('kiosk olmayan 403', async () => {
+    const res = await request(app).get('/api/self-service/my-profile')
+      .set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(403)
+  })
+
+  it('TC olan personel için my-shifts staff bilgisini joinler', async () => {
+    const db = getDB()
+    // TC eşleşmesi olan bir personel + staff oluştur
+    const tcUnique = '12121212121'
+    db.prepare('INSERT INTO personnel(full_name, tc_no, company) VALUES(?, ?, ?)')
+      .run('TC Test', tcUnique, 'Firma X')
+    const pid = db.prepare('SELECT id FROM personnel WHERE tc_no=?').get(tcUnique).id
+
+    // Aynı TC'li staff var mı?
+    let staffId = db.prepare('SELECT id FROM staff WHERE tc_no=?').get(tcUnique)?.id
+    if (!staffId) {
+      db.prepare('INSERT INTO staff(full_name, tc_no, is_active) VALUES(?, ?, 1)').run('TC Test', tcUnique)
+      staffId = db.prepare('SELECT id FROM staff WHERE tc_no=?').get(tcUnique).id
+    }
+
+    const tcKioskToken = jwt.sign({ personnelId: pid, role: 'kiosk' }, process.env.JWT_SECRET, { expiresIn: '1h' })
+    const res = await request(app).get('/api/self-service/my-shifts')
+      .set('Authorization', `Bearer ${tcKioskToken}`)
+    expect(res.status).toBe(200)
+    expect(res.body).toHaveProperty('summary')
+  })
+})

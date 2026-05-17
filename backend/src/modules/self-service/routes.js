@@ -24,6 +24,124 @@ selfServiceRouter.get('/my-info', requireKioskOrStaff, (req, res) => {
   } catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
+// H2 M1 — Zengin profil (staff + acil iletişim + sayım)
+selfServiceRouter.get('/my-profile', requireKioskOrStaff, (req, res) => {
+  if (!req.user.personnelId) return res.status(403).json({ error: 'Kiosk token gerekli' })
+  try {
+    const db = getDB()
+    const p = db.prepare(`
+      SELECT id, full_name, tc_no, passport_no, company, hometown, check_in_date,
+        discipline_points, expected_departure, phone_number, gender, preferred_block
+      FROM personnel WHERE id=?
+    `).get(req.user.personnelId)
+    if (!p) return res.status(404).json({ error: 'Personel bulunamadı' })
+
+    // TC üzerinden staff eşleştirmesi
+    const staff = p.tc_no ? db.prepare(`
+      SELECT s.id, s.email, s.position, s.hire_date, s.contract_end, s.blood_type,
+        s.emergency_contact, s.emergency_phone, s.address, s.notes,
+        d.name as dept_name, d.color_class as dept_color,
+        pp.name as pickup_name, pp.district as pickup_district
+      FROM staff s
+      LEFT JOIN departments d ON d.id = s.department_id
+      LEFT JOIN pickup_points pp ON pp.id = s.pickup_point_id
+      WHERE s.tc_no = ? AND s.is_active = 1
+    `).get(p.tc_no) : null
+
+    const room = db.prepare(`
+      SELECT r.id as room_id, r.block, r.floor, r.room_no, ra.bed_no, ra.assigned_at
+      FROM room_assignments ra JOIN rooms r ON r.id=ra.room_id
+      WHERE ra.personnel_id=? AND ra.check_out_at IS NULL
+    `).get(req.user.personnelId)
+
+    const emergencyContacts = staff ? db.prepare(
+      'SELECT name, relationship, phone FROM emergency_contacts WHERE staff_id = ? ORDER BY id'
+    ).all(staff.id) : []
+
+    const discipline = db.prepare(`
+      SELECT SUM(CASE WHEN card_type='yellow' THEN 1 ELSE 0 END) as yellow,
+        SUM(CASE WHEN card_type='red' THEN 1 ELSE 0 END) as red,
+        COUNT(*) as total
+      FROM discipline_records WHERE personnel_id = ?
+    `).get(req.user.personnelId)
+
+    const maintenanceOpen = db.prepare(
+      `SELECT COUNT(*) as c FROM maintenance_requests WHERE reporter_personnel_id = ? AND status != 'done'`
+    ).get(req.user.personnelId).c
+
+    res.json({
+      person: p,
+      staff,
+      room,
+      emergency_contacts: emergencyContacts,
+      discipline_total: discipline,
+      maintenance_open: maintenanceOpen,
+    })
+  } catch (e) { console.error('[my-profile]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// H2 M2 — Vardiyalarım
+selfServiceRouter.get('/my-shifts', requireKioskOrStaff, (req, res) => {
+  if (!req.user.personnelId) return res.status(403).json({ error: 'Kiosk token gerekli' })
+  try {
+    const db = getDB()
+    const p = db.prepare('SELECT tc_no FROM personnel WHERE id=?').get(req.user.personnelId)
+    if (!p?.tc_no) return res.json({ shifts: [], summary: { worked: 0, absent: 0, on_leave: 0, total: 0 }, message: 'TC numarası kayıtlı değil' })
+    const staff = db.prepare('SELECT id FROM staff WHERE tc_no = ? AND is_active = 1').get(p.tc_no)
+    if (!staff) return res.json({ shifts: [], summary: { worked: 0, absent: 0, on_leave: 0, total: 0 }, message: 'Vardiya kaydınız yok' })
+
+    const shifts = db.prepare(`
+      SELECT ss.work_date, ss.status,
+        sd.name as shift_name, sd.start_hour, sd.end_hour, sd.color_class
+      FROM shift_schedule ss
+      LEFT JOIN shift_definitions sd ON sd.id = ss.shift_def_id
+      WHERE ss.staff_id = ? AND ss.work_date BETWEEN date('now','-7 days') AND date('now','+14 days')
+      ORDER BY ss.work_date
+    `).all(staff.id)
+
+    const summary = db.prepare(`
+      SELECT
+        SUM(CASE WHEN status='worked' THEN 1 ELSE 0 END) as worked,
+        SUM(CASE WHEN status='absent' THEN 1 ELSE 0 END) as absent,
+        SUM(CASE WHEN status='on_leave' THEN 1 ELSE 0 END) as on_leave,
+        COUNT(*) as total
+      FROM shift_schedule WHERE staff_id = ? AND work_date BETWEEN date('now','-30 days') AND date('now')
+    `).get(staff.id)
+
+    res.json({ shifts, summary })
+  } catch (e) { console.error('[my-shifts]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// H2 M3 — Bugünkü servisim
+selfServiceRouter.get('/my-transport', requireKioskOrStaff, (req, res) => {
+  if (!req.user.personnelId) return res.status(403).json({ error: 'Kiosk token gerekli' })
+  try {
+    const db = getDB()
+    const date = req.query.date || new Date().toISOString().slice(0, 10)
+    const p = db.prepare('SELECT tc_no FROM personnel WHERE id=?').get(req.user.personnelId)
+    if (!p?.tc_no) return res.json({ today: null, pickup: null, date, message: 'TC numarası kayıtlı değil' })
+    const staff = db.prepare('SELECT id, pickup_point_id FROM staff WHERE tc_no = ? AND is_active = 1').get(p.tc_no)
+    if (!staff) return res.json({ today: null, pickup: null, date, message: 'Personel kaydınız bulunamadı' })
+
+    const today = db.prepare(`
+      SELECT ra.id, ra.boarded, ra.is_waitlist,
+        r.name as route_name, r.vehicle_plate, r.color, r.driver_name, r.driver_phone,
+        rs.scheduled_time, pp.name as stop_name, pp.district
+      FROM route_assignments ra
+      JOIN routes r ON r.id = ra.route_id
+      LEFT JOIN route_stops rs ON rs.id = ra.stop_id
+      LEFT JOIN pickup_points pp ON pp.id = rs.pickup_point_id
+      WHERE ra.staff_id = ? AND ra.work_date = ?
+    `).get(staff.id, date) || null
+
+    const pickup = staff.pickup_point_id ? db.prepare(
+      'SELECT name, district, neighborhood, photo_url FROM pickup_points WHERE id = ?'
+    ).get(staff.pickup_point_id) : null
+
+    res.json({ today, pickup, date })
+  } catch (e) { console.error('[my-transport]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
 selfServiceRouter.get('/laundry-status', requireKioskOrStaff, (req, res) => {
   if (!req.user.personnelId) return res.status(403).json({ error: 'Kiosk token gerekli' })
   try {
