@@ -489,10 +489,10 @@ export default function DashboardPage() {
 
   return (
     <div className="fade-up" style={{ position: 'relative', zIndex: 1 }}>
-      {/* Header */}
+      {/* Header — full width */}
       <div className="page-header" style={{ marginBottom: '20px', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
         <div>
-          <h1 style={{ fontSize: '28px', letterSpacing: '4px', color: 'var(--text)' }}>
+          <h1 style={{ fontSize: '32px', letterSpacing: '6px', color: 'var(--text)' }}>
             DASHBOARD<HelpHint topic="dashboard" title="DASHBOARD" />
           </h1>
           <p style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)', marginTop: '4px', letterSpacing: '1px' }}>
@@ -510,7 +510,7 @@ export default function DashboardPage() {
 
       {isManager && <ManagementWidgets />}
 
-      {/* Alert banners */}
+      {/* Alert banners — full width */}
       {criticalNotifs.length > 0 && (
         <div style={{ marginBottom: '16px' }}>
           {criticalNotifs.map(n => (
@@ -529,131 +529,151 @@ export default function DashboardPage() {
       {highOccBlocks.length > 0 && (
         <div className="alert alert-warn" style={{ marginBottom: '16px' }}>
           <span>!</span>
-          <span>
-            <strong>{highOccBlocks.map(b => b.block).join(', ')} blok</strong> %90 üzeri dolulukta
-          </span>
+          <span><strong>{highOccBlocks.map(b => b.block).join(', ')} blok</strong> %90 üzeri dolulukta</span>
         </div>
       )}
 
-      {/* KPI Cards */}
-      {kpi && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '12px', marginBottom: '28px' }} className="fade-up-1">
-          <KPICard icon="👤" label="Aktif Personel" value={kpi.active_personnel} color="blue" />
-          <KPICard
-            icon="🛏" label="Doluluk" value={`${kpi.occupancy_pct}%`}
-            color={occupancyColor} subtitle={`${kpi.occupied}/${kpi.total_beds} yatak`}
-            barPct={kpi.occupancy_pct}
-          />
-          <KPICard
-            icon="🔧" label="Açık Arıza" value={kpi.open_maintenance}
-            color={kpi.open_maintenance > 5 ? 'red' : 'green'}
-          />
-          <KPICard
-            icon="🏠" label="Karantina" value={kpi.quarantine_rooms}
-            color={kpi.quarantine_rooms > 0 ? 'orange' : 'green'}
-          />
-        </div>
-      )}
-
-      {/* Bed Occupancy Report */}
-      <div className="sect fade-up-2">
-        <div className="sect-title">YATAK DOLULUK</div>
-        <div className="sect-line" />
-      </div>
-      <div style={{ marginBottom: '28px' }} className="fade-up-2">
-        <BedOccupancyPanel data={bedOccupancy} />
-      </div>
-
-      {/* Trend Grafikleri */}
-      <TrendChartsSection />
-
-      {/* Blok Durumu */}
-      <div className="sect fade-up-3">
-        <div className="sect-title">BLOK DURUMU</div>
-        <div className="sect-line" />
-      </div>
-      <div style={{ marginBottom: '28px' }} className="fade-up-3">
-        <HeatMap data={heatmap} />
-      </div>
-
-      {/* Aktif Arızalar */}
-      <div className="panel fade-up-4" style={{ marginBottom: '28px' }}>
-        <div className="panel-header">
-          <div>
-            <div className="panel-title">AKTİF ARIZALAR</div>
-            <div className="panel-subtitle">AÇIK TEKNİK TALEPLER</div>
+      {/* Bento grid */}
+      <div className="bento-grid fade-up-stagger">
+        {/* KPI 4'lü — span 8 */}
+        {kpi && (
+          <div className="bento-cell bento-span-8" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '12px' }}>
+            <KPICard icon="👤" label="Aktif Personel" value={kpi.active_personnel} color="blue" category="personnel" />
+            <KPICard
+              icon="🛏" label="Doluluk" value={`${kpi.occupancy_pct}%`}
+              color={occupancyColor} subtitle={`${kpi.occupied}/${kpi.total_beds} yatak`}
+              barPct={kpi.occupancy_pct} category="occupancy"
+            />
+            <KPICard
+              icon="🔧" label="Açık Arıza" value={kpi.open_maintenance}
+              color={kpi.open_maintenance > 5 ? 'red' : 'green'} category="maintenance"
+            />
+            <KPICard
+              icon="🏠" label="Karantina" value={kpi.quarantine_rooms}
+              color={kpi.quarantine_rooms > 0 ? 'orange' : 'green'} category="alert"
+            />
           </div>
-          <button className="btn btn-ghost btn-xs" onClick={() => navigate('/maintenance')}>
-            Tümü →
-          </button>
-        </div>
-        <div className="panel-body" style={{ padding: '10px 20px' }}>
-          {maintRequests.length === 0 ? (
-            <div className="empty-state" style={{ padding: '20px' }}>
-              <div className="empty-icon">✓</div>
-              <div className="empty-sub">Açık arıza yok</div>
-            </div>
-          ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(340px, 100%), 1fr))', gap: '0 24px' }}>
-              {maintRequests.slice(0, 6).map(req => (
-                <div key={req.id} className="maint-row">
-                  <PriorityBar priority={req.priority} />
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: '12.5px', color: 'var(--text)', fontWeight: 500, marginBottom: '3px' }}>
-                      {req.description?.slice(0, 50)}
-                    </div>
-                    <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '0.5px' }}>
-                      {req.location}
-                      {req.wait_reason && (
-                        <span style={{ color: 'var(--amber)', marginLeft: '6px' }}> · {req.wait_reason}</span>
-                      )}
-                    </div>
-                  </div>
-                  <span className={`badge badge-${req.priority === 'high' ? 'red' : req.priority === 'medium' ? 'amber' : 'blue'}`}>
-                    {req.priority === 'high' ? 'ACİL' : req.priority === 'medium' ? 'NORMAL' : 'DÜŞÜK'}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
+        )}
 
-      {/* Projection */}
-      {projection.length > 0 && (
-        <div className="panel fade-up-4" style={{ marginBottom: '28px' }}>
-          <div className="panel-header">
-            <div>
-              <div className="panel-title">14 GÜN PROJEKSİYON</div>
-              <div className="panel-subtitle">AYRILACAK PERSONEL</div>
-            </div>
-            <span className="badge badge-amber">TAHMİN</span>
-          </div>
-          <div className="panel-body" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(80px,1fr))', gap: '8px' }}>
-            {projection.map(p => (
-              <div key={p.block} style={{
-                background: 'var(--surface2)', borderRadius: '7px', padding: '10px 8px', textAlign: 'center',
-                border: '1px solid var(--border)',
-              }}>
-                <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', marginBottom: '4px' }}>{p.block} BLOK</div>
-                <div style={{ fontFamily: 'var(--display)', fontSize: '24px', color: 'var(--accent)', letterSpacing: '1px' }}>{p.c}</div>
-                <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text3)' }}>kişi</div>
-              </div>
-            ))}
-          </div>
+        {/* Sağ panel placeholder #1 — Sağlık Skoru (Faz 3) */}
+        <div className="bento-cell bento-span-4" style={{ minHeight: '180px' }}>
+          {/* HealthScoreWidget gelecek — Faz 3 */}
         </div>
-      )}
 
-      {/* Audit Log (#3) — only for campus_manager */}
-      {isManager && (
-        <div className="fade-up-4">
+        {/* Yatak Doluluk — span 8 */}
+        <div className="bento-cell bento-span-8">
+          <BedOccupancyPanel data={bedOccupancy} />
+        </div>
+
+        {/* Sağ panel placeholder #2 — Bugünün Nabzı (Faz 2) */}
+        <div className="bento-cell bento-span-4" style={{ minHeight: '320px' }}>
+          {/* TodaysPulse gelecek — Faz 2 */}
+        </div>
+
+        {/* Trend grafikleri — span 8 (mevcut TrendChartsSection 2x2 internal grid'i yapıyor) */}
+        <div className="bento-cell bento-span-8">
+          <TrendChartsSection />
+        </div>
+
+        {/* Sağ panel placeholder #3 — Yaklaşan Etkinlikler (Faz 2) */}
+        <div className="bento-cell bento-span-4" style={{ minHeight: '320px' }}>
+          {/* UpcomingEvents gelecek — Faz 2 */}
+        </div>
+
+        {/* Blok HeatMap — span 12 */}
+        <div className="bento-cell bento-span-12">
           <div className="sect">
-            <div className="sect-title">DENETİM KAYDI</div>
+            <div className="sect-title">BLOK DURUMU</div>
             <div className="sect-line" />
           </div>
-          <AuditLogPanel />
+          <HeatMap data={heatmap} />
         </div>
-      )}
+
+        {/* Anomali placeholder — Faz 3'te koşullu render */}
+
+        {/* Aktif Arızalar — span 7 */}
+        <div className="bento-cell bento-span-7">
+          <div className="panel">
+            <div className="panel-header">
+              <div>
+                <div className="panel-title">AKTİF ARIZALAR</div>
+                <div className="panel-subtitle">AÇIK TEKNİK TALEPLER</div>
+              </div>
+              <button className="btn btn-ghost btn-xs" onClick={() => navigate('/maintenance')}>
+                Tümü →
+              </button>
+            </div>
+            <div className="panel-body" style={{ padding: '10px 20px' }}>
+              {maintRequests.length === 0 ? (
+                <div className="empty-state" style={{ padding: '20px' }}>
+                  <div className="empty-icon">✓</div>
+                  <div className="empty-sub">Açık arıza yok</div>
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(280px, 100%), 1fr))', gap: '0 20px' }}>
+                  {maintRequests.slice(0, 6).map(req => (
+                    <div key={req.id} className="maint-row">
+                      <PriorityBar priority={req.priority} />
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: '12.5px', color: 'var(--text)', fontWeight: 500, marginBottom: '3px' }}>
+                          {req.description?.slice(0, 50)}
+                        </div>
+                        <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)' }}>
+                          {req.location}
+                          {req.wait_reason && (
+                            <span style={{ color: 'var(--amber)', marginLeft: '6px' }}> · {req.wait_reason}</span>
+                          )}
+                        </div>
+                      </div>
+                      <span className={`badge badge-${req.priority === 'high' ? 'red' : req.priority === 'medium' ? 'amber' : 'blue'}`}>
+                        {req.priority === 'high' ? 'ACİL' : req.priority === 'medium' ? 'NORMAL' : 'DÜŞÜK'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* 14 Gün Projeksiyon — span 5 */}
+        {projection.length > 0 && (
+          <div className="bento-cell bento-span-5">
+            <div className="panel">
+              <div className="panel-header">
+                <div>
+                  <div className="panel-title">14 GÜN PROJEKSİYON</div>
+                  <div className="panel-subtitle">AYRILACAK PERSONEL</div>
+                </div>
+                <span className="badge badge-amber">TAHMİN</span>
+              </div>
+              <div className="panel-body" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(80px,1fr))', gap: '8px' }}>
+                {projection.map(p => (
+                  <div key={p.block} style={{
+                    background: 'var(--surface2)', borderRadius: '7px', padding: '10px 8px', textAlign: 'center',
+                    border: '1px solid var(--border)',
+                  }}>
+                    <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', marginBottom: '4px' }}>{p.block} BLOK</div>
+                    <div style={{ fontFamily: 'var(--display)', fontSize: '24px', color: 'var(--accent)', letterSpacing: '1px' }}>{p.c}</div>
+                    <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text3)' }}>kişi</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Denetim Kaydı — sadece campus_manager — span 12 */}
+        {isManager && (
+          <div className="bento-cell bento-span-12">
+            <div className="sect">
+              <div className="sect-title">DENETİM KAYDI</div>
+              <div className="sect-line" />
+            </div>
+            <AuditLogPanel />
+          </div>
+        )}
+      </div>
     </div>
   )
 }
