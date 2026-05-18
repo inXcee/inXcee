@@ -5,31 +5,20 @@ import {
 
 const CONFIGS = {
   occupancy: {
-    label: 'DOLULUK',
-    unit: '%',
-    color: 'var(--blue)',
-    type: 'area',
-    dataKey: 'value',
+    label: 'DOLULUK', unit: '%', color: 'var(--blue)', type: 'area', dataKey: 'value',
+    cat: 'occupancy',
   },
   sla: {
-    label: 'BAKIM SLA UYUMU',
-    unit: '%',
-    color: 'var(--green)',
-    type: 'area',
-    dataKey: 'value',
+    label: 'BAKIM SLA UYUMU', unit: '%', color: 'var(--green)', type: 'area', dataKey: 'value',
+    cat: 'maintenance',
   },
   housekeeping: {
-    label: 'TEMİZLİK TAMAMLAMA',
-    unit: '%',
-    color: 'var(--teal)',
-    type: 'area',
-    dataKey: 'value',
+    label: 'TEMİZLİK TAMAMLAMA', unit: '%', color: 'var(--teal)', type: 'area', dataKey: 'value',
+    cat: 'housekeeping',
   },
   checkins: {
-    label: 'GİRİŞ / ÇIKIŞ',
-    unit: '',
-    color: null,
-    type: 'line2',
+    label: 'GİRİŞ / ÇIKIŞ', unit: '', color: null, type: 'line2',
+    cat: 'personnel',
   },
 }
 
@@ -58,9 +47,8 @@ export default function TrendCard({ metric, data }) {
     : `${lastPoint.value ?? 0}${cfg.unit}`
 
   return (
-    <div className="panel" style={{ overflow: 'hidden' }}>
-      <div style={{ height: '2px', background: cfg.color || 'linear-gradient(90deg,var(--green),var(--red))' }} />
-      <div style={{ padding: '16px 18px 8px' }}>
+    <div className={`panel card-glass cat-stripe cat-stripe-${cfg.cat}`} style={{ overflow: 'hidden' }}>
+      <div style={{ padding: '20px 18px 8px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
           <div>
             <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '2px' }}>
