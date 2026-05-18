@@ -8,6 +8,7 @@ function todayDateStr() {
 }
 
 function PulseRow({ icon, label, value, color, sub, onClick }) {
+  const iconBg = `color-mix(in srgb, ${color} 10%, transparent)`
   return (
     <div
       onClick={onClick}
@@ -24,7 +25,7 @@ function PulseRow({ icon, label, value, color, sub, onClick }) {
         width: '28px', height: '28px', borderRadius: '7px',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         fontSize: '13px',
-        background: `${color}1a`,
+        background: iconBg,
       }}>{icon}</div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '1.5px' }}>{label}</div>
