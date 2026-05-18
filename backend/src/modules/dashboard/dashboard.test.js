@@ -52,6 +52,19 @@ describe('Dashboard', () => {
     const res = await request(app).get('/api/dashboard/trends')
     expect(res.status).toBe(401)
   })
+
+  it('returns health score', async () => {
+    const res = await request(app).get('/api/dashboard/health').set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(200)
+    expect(res.body).toHaveProperty('score')
+    expect(res.body).toHaveProperty('breakdown')
+    expect(res.body).toHaveProperty('color')
+  })
+
+  it('rejects unauthenticated health request', async () => {
+    const res = await request(app).get('/api/dashboard/health')
+    expect(res.status).toBe(401)
+  })
 })
 
 describe('getTrends', () => {
