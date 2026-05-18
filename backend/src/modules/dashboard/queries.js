@@ -208,6 +208,119 @@ function _getHealthScore() {
 }
 export const getHealthScore = memoize(_getHealthScore, 60_000)
 
+// ── Anomaly Detection ───────────────────────────────────────────────────────
+
+function _getAnomalies() {
+  const db = getDB()
+  const anomalies = []
+
+  // R1: Blok arıza yoğunluğu — bir blokta bugünkü açık arıza sayısı
+  // son 7 günün ortalamasının ≥2 katı VE bugün ≥3 yeni arıza
+  const maintByBlock = db.prepare(`
+    WITH today_counts AS (
+      SELECT
+        SUBSTR(location, 1, INSTR(location || ' ', ' ') - 1) AS block,
+        COUNT(*) AS today_count
+      FROM maintenance_requests
+      WHERE DATE(opened_at) = DATE('now')
+      GROUP BY block
+    ),
+    week_avg AS (
+      SELECT
+        SUBSTR(location, 1, INSTR(location || ' ', ' ') - 1) AS block,
+        COUNT(*) * 1.0 / 7.0 AS avg_per_day
+      FROM maintenance_requests
+      WHERE DATE(opened_at) >= DATE('now', '-7 days') AND DATE(opened_at) < DATE('now')
+      GROUP BY block
+    )
+    SELECT t.block, t.today_count, COALESCE(w.avg_per_day, 0) AS avg_7d
+    FROM today_counts t
+    LEFT JOIN week_avg w ON w.block = t.block
+    WHERE t.today_count >= 3 AND t.today_count >= COALESCE(w.avg_per_day, 0) * 2
+  `).all()
+
+  for (const row of maintByBlock) {
+    if (!row.block) continue
+    anomalies.push({
+      id: `maint-density-${row.block}`,
+      severity: 'warning',
+      title: `${row.block} bloğunda arıza yoğunluğu yüksek`,
+      detail: `Son 7 gün ortalaması ${row.avg_7d.toFixed(1)}/gün, bugün ${row.today_count} yeni kayıt`,
+      action_path: `/maintenance?block=${row.block}`,
+    })
+  }
+
+  // R3: Temizlik gecikmesi — bugün 3+ saat bekleyen tamamlanmamış görev
+  const lateHk = db.prepare(`
+    SELECT COUNT(*) AS c
+    FROM cleaning_tasks
+    WHERE completed_at IS NULL
+      AND skipped = 0
+      AND scheduled_at <= datetime('now', '-3 hours')
+      AND DATE(scheduled_at) = DATE('now')
+  `).get()
+  if (lateHk.c > 0) {
+    anomalies.push({
+      id: 'hk-late',
+      severity: lateHk.c >= 10 ? 'critical' : 'warning',
+      title: 'Temizlik görevleri gecikiyor',
+      detail: `${lateHk.c} görev 3 saatten fazla bekliyor`,
+      action_path: '/housekeeping',
+    })
+  }
+
+  // R4: Uzun karantina — audit_log üzerinden son room_quarantine kaydı 48+ saat önce
+  // ve oda hâlâ karantina statüsünde
+  const longQuarantine = db.prepare(`
+    SELECT r.block, r.room_no,
+      (SELECT MAX(created_at) FROM audit_log
+        WHERE action='room_quarantine'
+          AND detail LIKE '%' || r.block || '%' || r.room_no || '%') AS last_q
+    FROM rooms r
+    WHERE r.status = 'quarantine'
+  `).all()
+  for (const r of longQuarantine) {
+    if (!r.last_q) continue
+    const hoursSince = (Date.now() - new Date(r.last_q + 'Z').getTime()) / 3600000
+    if (hoursSince >= 48) {
+      anomalies.push({
+        id: `qua-long-${r.block}-${r.room_no}`,
+        severity: 'warning',
+        title: `${r.block}-${r.room_no} karantinası uzun sürüyor`,
+        detail: `${Math.round(hoursSince)} saattir karantinada`,
+        action_path: `/capacity?block=${r.block}`,
+      })
+    }
+  }
+
+  // R2: Ani doluluk düşüşü — bugün çıkış sayısı son 7 gün ortalamasının ≥3 katı
+  // ve bugün ≥5 çıkış
+  const occRow = db.prepare(`
+    WITH today_out AS (
+      SELECT COUNT(*) AS c FROM personnel
+      WHERE DATE(check_out_date) = DATE('now')
+    ),
+    week_avg AS (
+      SELECT COUNT(*) * 1.0 / 7.0 AS avg_out FROM personnel
+      WHERE DATE(check_out_date) >= DATE('now', '-7 days') AND DATE(check_out_date) < DATE('now')
+    )
+    SELECT t.c AS today_out, COALESCE(w.avg_out, 0) AS avg_out
+    FROM today_out t, week_avg w
+  `).get()
+  if (occRow.today_out >= 5 && occRow.today_out >= occRow.avg_out * 3) {
+    anomalies.push({
+      id: 'occ-drop',
+      severity: 'warning',
+      title: 'Doluluk hızla düşüyor',
+      detail: `Bugün ${occRow.today_out} çıkış (7 gün ort. ${occRow.avg_out.toFixed(1)})`,
+      action_path: '/checkin',
+    })
+  }
+
+  return { anomalies }
+}
+export const getAnomalies = memoize(_getAnomalies, 120_000)
+
 // ── Trend queries ─────────────────────────────────────────────────────────────
 
 export function getTrends(metrics, days = 30) {

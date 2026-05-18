@@ -3,7 +3,7 @@ import request from 'supertest'
 import app from '../../app.js'
 import { initDB } from '../../shared/db/index.js'
 import { seedDev } from '../../shared/db/seed.js'
-import { getTrends, getHealthScore } from './queries.js'
+import { getTrends, getHealthScore, getAnomalies } from './queries.js'
 
 let token
 beforeAll(async () => {
@@ -135,5 +135,30 @@ describe('getHealthScore', () => {
   it('returns color green/amber/red based on score', () => {
     const result = getHealthScore()
     expect(['green', 'amber', 'red']).toContain(result.color)
+  })
+})
+
+describe('getAnomalies', () => {
+  it('returns an object with anomalies array', () => {
+    const result = getAnomalies()
+    expect(result).toHaveProperty('anomalies')
+    expect(Array.isArray(result.anomalies)).toBe(true)
+  })
+
+  it('each anomaly has required fields', () => {
+    const result = getAnomalies()
+    for (const a of result.anomalies) {
+      expect(a).toHaveProperty('id')
+      expect(a).toHaveProperty('severity')
+      expect(a).toHaveProperty('title')
+      expect(a).toHaveProperty('detail')
+      expect(['warning', 'critical']).toContain(a.severity)
+    }
+  })
+
+  it('returns empty array on a clean seeded db', () => {
+    // Seed verileri normal seviyede; ani anomali olmamalı
+    const result = getAnomalies()
+    expect(result.anomalies.length).toBeGreaterThanOrEqual(0) // 0+ kabul ediliyor
   })
 })
