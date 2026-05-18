@@ -30,6 +30,7 @@ export async function checkSlaViolations() {
       type: isCritical ? 'critical' : 'warning',
       module: 'laundry',
       target_role: isCritical ? null : 'shift_supervisor',
+      dedup_key: `sla_${v.id}_${isCritical ? 'crit' : 'warn'}`,
     })
 
     if (v.whatsapp_notify && shouldSendSlaNotification(db, v.id, v.status)) {
@@ -130,6 +131,7 @@ export function checkMachineMaintenanceAlerts() {
       type: 'warning',
       module: 'laundry',
       target_role: 'campus_manager',
+      dedup_key: `maint_alert_${m.id}`,
     })
   }
 

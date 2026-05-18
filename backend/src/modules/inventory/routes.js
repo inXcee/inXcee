@@ -84,8 +84,9 @@ inventoryRouter.delete('/:id', ...editAccess, (req, res) => {
 inventoryRouter.patch('/:id/adjust', ...editAccess, (req, res) => {
   try {
     const { delta, reason, location_id } = req.body
-    if (!delta || delta === 0) return res.status(400).json({ error: 'Miktar degisimi gerekli' })
-    const result = service.adjustStock(+req.params.id, delta, reason, req.user.id, location_id || null)
+    const d = Number(delta)
+    if (!Number.isFinite(d) || d === 0) return res.status(400).json({ error: 'Miktar degisimi gerekli' })
+    const result = service.adjustStock(+req.params.id, d, reason, req.user.id, location_id || null)
     if (result.error) return res.status(result.status).json({ error: result.error })
     res.json(result)
   } catch (e) { res.status(400).json({ error: e.message }) }

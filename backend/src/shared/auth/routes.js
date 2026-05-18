@@ -83,7 +83,9 @@ authRouter.post('/refresh', (req, res) => {
 })
 
 // ── 2FA ──
-authRouter.post('/2fa/verify-login', (req, res) => {
+// TOTP doğrulama — 6 haneli kod (1M uzayı), 5dk challenge_token penceresi içinde
+// authLimiter zaten 30/15dk veriyor; pinLimiter ile birlikte 10/15dk düşer.
+authRouter.post('/2fa/verify-login', pinLimiter, (req, res) => {
   const { challenge_token, code } = req.body
   if (!challenge_token || !code) return res.status(400).json({ error: 'challenge_token ve code gerekli' })
   const result = verify2faChallenge(challenge_token, code)

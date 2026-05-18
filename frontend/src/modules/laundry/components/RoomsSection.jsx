@@ -2,12 +2,10 @@ import { useMemo, useState, useRef, useEffect, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { laundryApi } from '../api.js'
 import { BLOCKS, BLOCK_BY_NAME } from '../../../shared/blocks.js'
+import { SIGN_BLOCKS } from '../../laundry-kiosk/constants.js'
 import PersonPanel from './PersonPanel.jsx'
 import { CLOTHING_ICONS } from './NewItemModal.jsx'
 import ColorPatternPicker, { ColorPatternDisplay, parseColors } from './ColorPatternPicker.jsx'
-
-// Imza gereken bloklar — kiosk constants ile birebir
-const SIGN_BLOCKS = new Set(['M1', 'M2', 'M3', 'S1', 'S2', 'S3', 'G', 'C'])
 const SIZES = ['XS','S','M','L','XL','XXL','3XL','4XL','36','38','40','42','44','46','48']
 
 const STATUS_LABEL = {

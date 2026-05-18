@@ -28,7 +28,7 @@ function RoomCell({ room, selected, onClick, defaultCap, onDropPersonnel, dragOv
   const cls = roomCls(room, defaultCap)
   const isDND = room.is_dnd
   const shiftIcon = room.room_shift === 'night' ? '☾' : room.room_shift === 'day' ? '☀' : ''
-  const isS = room.block && !room.block.startsWith('M')
+  const isS = room.block && BLOCK_BY_NAME[room.block]?.type !== 'M'
 
   const isDropTarget = dragOverRoomId === room.id
 

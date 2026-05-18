@@ -59,7 +59,24 @@ checkinRouter.post('/assign-room', ...allowed, (req, res) => {
 })
 
 checkinRouter.post('/zimmet', ...allowed, (req, res) => {
-  svc.zimmetService(req.body.personnel_id, req.body.items, req.user.id)
+  const personnelId = Number(req.body.personnel_id)
+  const items = req.body.items
+  if (!Number.isInteger(personnelId) || personnelId <= 0) {
+    return res.status(400).json({ error: 'Geçerli personnel_id gerekli' })
+  }
+  if (!Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ error: 'En az bir kalem gerekli' })
+  }
+  for (const it of items) {
+    if (!it || typeof it.item_name !== 'string' || it.item_name.trim() === '') {
+      return res.status(400).json({ error: 'Her kalemin item_name değeri gerekli' })
+    }
+    const q = Number(it.quantity ?? 1)
+    if (!Number.isFinite(q) || q <= 0) {
+      return res.status(400).json({ error: 'Geçersiz miktar' })
+    }
+  }
+  svc.zimmetService(personnelId, items, req.user.id)
   res.status(201).json({ ok: true })
 })
 

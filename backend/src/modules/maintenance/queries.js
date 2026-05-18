@@ -2,14 +2,18 @@ import { getDB } from '../../shared/db/index.js'
 
 // ── Maintenance Requests ─────────────────────────────────────────────────────
 
+// SLA tablosu — priority allowlist'i tek noktada tutar, template literal'da değer-bazlı
+// SQL üretmek yerine sabit lookup. Geçersiz priority gelirse medium varsayar.
+const SLA_HOURS_BY_PRIORITY = { high: 4, medium: 24, low: 72 }
+
 export function createRequest({ location, description, priority, reporterUserId, reporterPersonnelId, photoBefore, waitReason }) {
   const db = getDB()
-  // SLA: high=4h, medium=24h, low=72h
-  const slaHours = priority === 'high' ? 4 : priority === 'low' ? 72 : 24
+  const slaHours = SLA_HOURS_BY_PRIORITY[priority] ?? 24
+  const safePriority = SLA_HOURS_BY_PRIORITY[priority] ? priority : 'medium'
   const r = db.prepare(`
     INSERT INTO maintenance_requests(location,description,priority,reporter_user_id,reporter_personnel_id,photo_before,wait_reason,sla_deadline)
-    VALUES(?,?,?,?,?,?,?,datetime('now','+${slaHours} hours'))
-  `).run(location, description, priority || 'medium', reporterUserId || null, reporterPersonnelId || null, photoBefore || null, waitReason || null)
+    VALUES(?,?,?,?,?,?,?,datetime('now', ? || ' hours'))
+  `).run(location, description, safePriority, reporterUserId || null, reporterPersonnelId || null, photoBefore || null, waitReason || null, `+${slaHours}`)
   return r.lastInsertRowid
 }
 

@@ -62,7 +62,12 @@ export async function pushOffsite(filePath) {
   if (!cmdTemplate) return { skipped: true, reason: 'OFFSITE_BACKUP_CMD tanimli degil' }
 
   return new Promise((resolve) => {
-    const cmd = cmdTemplate.replace(/\$\{FILE\}/g, filePath)
+    // shell:true ve env-controlled cmdTemplate ile birleşince, filePath'i single-quote
+    // ile escape etmek shell injection riskini kapatır (BACKUP_DIR'de boşluk/$/`
+    // gibi metakarakterler içerse bile). path'imiz timestamp + sabit prefix, ama
+    // BACKUP_DIR admin-yönetimli env değişkeni olduğundan defansif davran.
+    const escapedPath = "'" + filePath.replace(/'/g, "'\\''") + "'"
+    const cmd = cmdTemplate.replace(/\$\{FILE\}/g, escapedPath)
     // shell:true gerekli — kullanici tam komutu tanimliyor (rclone, aws, scp...)
     const proc = spawn(cmd, { shell: true, stdio: ['ignore', 'pipe', 'pipe'] })
     let stdout = '', stderr = ''

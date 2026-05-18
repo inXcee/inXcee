@@ -198,14 +198,15 @@ export function setShift(personnelId, shiftType) {
   const db = getDB()
   const startHour = shiftType === 'night' ? 20 : 8
   const endHour = shiftType === 'night' ? 8 : 17
-  const existing = db.prepare('SELECT id FROM shifts WHERE personnel_id=?').get(personnelId)
-  if (existing) {
-    db.prepare('UPDATE shifts SET shift_type=?, start_hour=?, end_hour=? WHERE personnel_id=?')
-      .run(shiftType, startHour, endHour, personnelId)
-  } else {
-    db.prepare('INSERT INTO shifts(personnel_id, shift_type, start_hour, end_hour) VALUES(?,?,?,?)')
-      .run(personnelId, shiftType, startHour, endHour)
-  }
+  // UPSERT — read-then-write race condition'ı kapatır. shifts(personnel_id)
+  // UNIQUE index migration ile geldi; conflict üzerinden atomik güncelle.
+  db.prepare(`
+    INSERT INTO shifts(personnel_id, shift_type, start_hour, end_hour) VALUES(?,?,?,?)
+    ON CONFLICT(personnel_id) DO UPDATE SET
+      shift_type=excluded.shift_type,
+      start_hour=excluded.start_hour,
+      end_hour=excluded.end_hour
+  `).run(personnelId, shiftType, startHour, endHour)
 }
 
 // ── Registration & Assignment ───────────────────────────────────────────────
@@ -358,9 +359,6 @@ export function insertPlaceholderBatch(roomId, count, assignedBy) {
   const db = getDB()
   const room = db.prepare('SELECT * FROM rooms WHERE id=?').get(roomId)
   if (!room) throw new Error('Oda bulunamadı')
-  const current = db.prepare('SELECT COUNT(*) as c FROM room_assignments WHERE room_id=? AND check_out_at IS NULL').get(roomId)
-  const available = room.active_beds - current.c
-  if (count > available) throw new Error(`Sadece ${available} yatak müsait`)
   const insertPerson = db.prepare(`
     INSERT INTO personnel(full_name, is_placeholder, check_in_date)
     VALUES('Anonim', 1, datetime('now'))
@@ -369,15 +367,21 @@ export function insertPlaceholderBatch(roomId, count, assignedBy) {
     INSERT INTO room_assignments(personnel_id, room_id, bed_no, assigned_by)
     VALUES(?,?,?,?)
   `)
-  // Yarı yazma riskini önle — orphan personnel oluşmasın
-  const ids = []
-  db.transaction(() => {
+  const countQ = db.prepare('SELECT COUNT(*) as c FROM room_assignments WHERE room_id=? AND check_out_at IS NULL')
+  // Count + capacity check transaction içinde — eş zamanlı 2 batch duplicate bed_no üretmesin.
+  // immediate(): lock'u erken al, deferred mode'da çakışan write SQLITE_BUSY yerine yarış riski yaratır.
+  const tx = db.transaction(() => {
+    const current = countQ.get(roomId)
+    const available = room.active_beds - current.c
+    if (count > available) throw new Error(`Sadece ${available} yatak müsait`)
+    const ids = []
     for (let i = 0; i < count; i++) {
       const r = insertPerson.run()
       const bedNo = current.c + i + 1
       insertAssign.run(r.lastInsertRowid, roomId, bedNo, assignedBy || null)
       ids.push(r.lastInsertRowid)
     }
-  })()
-  return ids
+    return ids
+  })
+  return tx.immediate()
 }

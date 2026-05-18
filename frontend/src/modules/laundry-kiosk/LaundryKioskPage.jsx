@@ -8,6 +8,7 @@ import EntryForm from './EntryForm.jsx'
 import DashboardView from './DashboardView.jsx'
 import RoomsView from './RoomsView.jsx'
 import { blockNeedsSignature } from './constants.js'
+import { BLOCKS_BY_TYPE, BLOCK_BY_NAME } from '../../shared/blocks.js'
 
 const TABS = [
   { key: 'entry',   icon: '🧺', label: 'Giriş' },
@@ -467,15 +468,15 @@ function IroningView({ kioskApi, focusedBag, onConsumeFocus }) {
 
 // ── Teslim Et ─────────────────────────────────────────────────────────────────
 // M ve S = standart akis. Y = premium (ozel banyolu, ironing default).
+// Blok listesi tek kaynak `shared/blocks.js` — yeni blok eklenince otomatik dahil.
 const BLOCK_GROUPS = [
-  { label: 'M Blokları', keys: ['M1', 'M2', 'M3'] },
-  { label: 'S Blokları', keys: ['S1', 'S2', 'S3'] },
-  { label: 'Y Blokları', keys: ['A', 'A1', 'A2', 'A3', 'A4', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'J'] },
+  { label: 'M Blokları', keys: BLOCKS_BY_TYPE.M },
+  { label: 'S Blokları', keys: BLOCKS_BY_TYPE.S },
+  { label: 'Y Blokları', keys: BLOCKS_BY_TYPE.Y },
 ]
-const STANDARD_BLOCKS = new Set(['M1', 'M2', 'M3', 'S1', 'S2', 'S3'])
 
 function isPremiumBlock(blockKey) {
-  return blockKey === 'other' || !STANDARD_BLOCKS.has(blockKey)
+  return blockKey === 'other' || BLOCK_BY_NAME[blockKey]?.type === 'Y'
 }
 
 function DeliverView({ kioskApi, focusedBag, onConsumeFocus }) {

@@ -106,6 +106,31 @@ export function adjustLocationStock(itemId, locationId, delta) {
   }
 }
 
+// Atomik stok ayarı: ana quantity + lokasyon stoğu + movement tek transaction'da.
+// Yarı yazma riski (ana güncellenir, lokasyon fail eder) yaşandığında her ikisi
+// de geri alınır. removeStockFromLocation içinden THROW edebileceğinden burası
+// kritik — service katmanı zaten pre-check yapıyor ama race condition olabilir.
+export function adjustStockAtomic({ id, newQty, delta, reason, userId, locationId, trackLocations }) {
+  const db = getDB()
+  const isIn = delta > 0
+  const tx = db.transaction(() => {
+    db.prepare("UPDATE inventory SET quantity=?, last_updated=datetime('now') WHERE id=?").run(newQty, id)
+    if (trackLocations && locationId) {
+      if (delta > 0) addStockToLocation(db, id, locationId, delta)
+      else removeStockFromLocation(db, id, locationId, Math.abs(delta))
+    }
+    db.prepare(
+      `INSERT INTO stock_movements(item_id,type,delta,quantity_after,reason,${isIn ? 'to_location_id' : 'from_location_id'},created_by) VALUES(?,?,?,?,?,?,?)`
+    ).run(id, isIn ? 'in' : 'out', delta, newQty, reason || null, locationId || null, userId)
+  })
+  try {
+    tx.immediate()
+    return { ok: true }
+  } catch (e) {
+    return { error: e.message || 'Stok güncellenemedi', status: 400 }
+  }
+}
+
 export function getMovements(itemId, limit = 50) {
   const db = getDB()
   return db.prepare(`
@@ -591,9 +616,37 @@ export function getReceiptDetail(id) {
   return { ...receipt, items }
 }
 
-export function deleteReceipt(id) {
+export function deleteReceipt(id, userId) {
   const db = getDB()
-  db.prepare('DELETE FROM goods_receipts WHERE id=?').run(id)
+  // Receipt silinmeden önce stok hareketi geri alınmalı; aksi halde inventory.quantity
+  // ve lokasyon stoğu createReceipt'in eklediği miktar kadar fantom kalır.
+  // stock_movements.type CHECK ('in','out','count','initial') — reversal için 'out' kullan.
+  const tx = db.transaction(() => {
+    const items = db.prepare(`
+      SELECT gri.item_id, gri.quantity, sm.to_location_id, i.quantity as current_qty
+      FROM goods_receipt_items gri
+      JOIN inventory i ON i.id = gri.item_id
+      LEFT JOIN stock_movements sm ON sm.item_id = gri.item_id
+        AND sm.reason LIKE 'Mal giris: %' AND sm.delta = gri.quantity
+      WHERE gri.receipt_id = ?
+    `).all(id)
+    for (const it of items) {
+      const newQty = Math.max(0, (it.current_qty ?? 0) - it.quantity)
+      db.prepare("UPDATE inventory SET quantity=?, last_updated=datetime('now') WHERE id=?").run(newQty, it.item_id)
+      if (it.to_location_id) {
+        const row = db.prepare('SELECT quantity FROM inventory_stock_by_location WHERE item_id=? AND location_id=?').get(it.item_id, it.to_location_id)
+        if (row) {
+          const newLocQty = Math.max(0, row.quantity - it.quantity)
+          db.prepare('UPDATE inventory_stock_by_location SET quantity=? WHERE item_id=? AND location_id=?').run(newLocQty, it.item_id, it.to_location_id)
+        }
+      }
+      db.prepare(
+        'INSERT INTO stock_movements(item_id,type,delta,quantity_after,reason,from_location_id,created_by) VALUES(?,?,?,?,?,?,?)'
+      ).run(it.item_id, 'out', -it.quantity, newQty, `Mal giris iptal: receipt #${id}`, it.to_location_id || null, userId)
+    }
+    db.prepare('DELETE FROM goods_receipts WHERE id=?').run(id)
+  })
+  tx()
 }
 
 // ── Forecast (Tahmin) ───────────────────────────────────────────────────────

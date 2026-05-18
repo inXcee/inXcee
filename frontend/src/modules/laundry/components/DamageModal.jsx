@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { laundryApi } from '../api.js'
 
@@ -8,6 +8,11 @@ export default function DamageModal({ item, onClose }) {
   const [photo, setPhoto] = useState(null)
   const [preview, setPreview] = useState(null)
   const [uploading, setUploading] = useState(false)
+  // Önceki blob URL'i tutuyoruz; her foto değişiminde + unmount'ta revoke.
+  const prevUrlRef = useRef(null)
+  useEffect(() => () => {
+    if (prevUrlRef.current) URL.revokeObjectURL(prevUrlRef.current)
+  }, [])
 
   const report = useMutation({
     mutationFn: async () => {
@@ -29,10 +34,13 @@ export default function DamageModal({ item, onClose }) {
   const handlePhoto = (e) => {
     const file = e.target.files[0] || null
     setPhoto(file)
+    if (prevUrlRef.current) URL.revokeObjectURL(prevUrlRef.current)
     if (file) {
       const url = URL.createObjectURL(file)
+      prevUrlRef.current = url
       setPreview(url)
     } else {
+      prevUrlRef.current = null
       setPreview(null)
     }
   }
@@ -93,7 +101,11 @@ export default function DamageModal({ item, onClose }) {
                     position: 'absolute', top: 6, right: 6,
                     background: 'rgba(0,0,0,0.6)', border: 'none', color: '#fff',
                   }}
-                  onClick={() => { setPhoto(null); setPreview(null) }}
+                  onClick={() => {
+                    if (prevUrlRef.current) URL.revokeObjectURL(prevUrlRef.current)
+                    prevUrlRef.current = null
+                    setPhoto(null); setPreview(null)
+                  }}
                 >
                   ✕ Kaldır
                 </button>

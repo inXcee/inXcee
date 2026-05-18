@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { laundryApi } from '../api.js'
 import ColorPatternPicker from './ColorPatternPicker.jsx'
+import { BLOCK_BY_NAME } from '../../../shared/blocks.js'
 
 const DEFAULT_CLOTHING_TYPES = [
   'Pantolon','Gömlek','T-Shirt','Kazak','Sweat','Polar','Mont','Hırka',
@@ -235,9 +236,8 @@ export default function NewItemModal({ onClose, roomPrefill = null }) {
   }, [form.room_id])
 
   const selectedRoom = rooms.find(r => r.id === +form.room_id)
-  // M ve S bloklar standart akis. Y bloklar (A, A1-A4, B, C, D, E, F, G, H, J) premium (ozel banyolu).
-  const STANDARD_BLOCKS = new Set(['M1', 'M2', 'M3', 'S1', 'S2', 'S3'])
-  const isPremium = selectedRoom && !STANDARD_BLOCKS.has(selectedRoom.block)
+  // Y tipi bloklar premium (özel banyolu). M/S tipi standart akış.
+  const isPremium = selectedRoom && BLOCK_BY_NAME[selectedRoom.block]?.type === 'Y'
 
   // Premium blok seçilince ütü otomatik aktif
   useEffect(() => {

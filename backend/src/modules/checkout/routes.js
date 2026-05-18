@@ -21,6 +21,9 @@ checkoutRouter.post('/process', ...mgmt, (req, res) => {
 })
 
 checkoutRouter.get('/recent', ...mgmt, (req, res) => {
-  try { res.json(svc.getRecentCheckoutsService(+req.query.limit || 20)) }
+  try {
+    const limit = Math.min(200, Math.max(1, +req.query.limit || 20))
+    res.json(svc.getRecentCheckoutsService(limit))
+  }
   catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })

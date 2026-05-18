@@ -1,5 +1,6 @@
 import { getDB } from './index.js'
 import bcrypt from 'bcryptjs'
+import { BLOCKS, getCapacity } from '../blocks.js'
 
 export function seedDev() {
   const db = getDB()
@@ -51,53 +52,20 @@ export function seedDev() {
     VALUES(?,?,?,?,?,?)
   `)
 
-  const M_BLOCKS = ['M1', 'M2', 'M3']
-  const S_BLOCKS = ['S1', 'S2', 'S3']
-
-  M_BLOCKS.forEach(block => {
-    for (let floor = 1; floor <= 2; floor++) {
-      const base = floor === 1 ? 100 : 200
-      for (let r = 1; r <= 30; r++) {
-        const roomNo = String(base + r)  // 101–130 veya 201–230
-        roomInsert.run(block, floor, roomNo, 6, 6, 'active')
+  // Tüm bloklar tek loop — blocks.js config'i kaynak.
+  // CLAUDE.md kuralı: D 1 kat (101+), H/J 1 kat (1+), E/G 3 kat, F 3 kat × 10 oda.
+  // cfg.floors / cfg.perFloor / cfg.startNo zaten doğru değerleri tutuyor.
+  for (const cfg of BLOCKS) {
+    for (let floor = 1; floor <= cfg.floors; floor++) {
+      const start = cfg.startNo[floor]
+      if (start == null) continue
+      const cap = getCapacity(cfg.block, floor)
+      for (let i = 0; i < cfg.perFloor; i++) {
+        const roomNo = String(start + i)
+        roomInsert.run(cfg.block, floor, roomNo, cap, cap, 'active')
       }
     }
-  })
-
-  S_BLOCKS.forEach(block => {
-    for (let floor = 1; floor <= 2; floor++) {
-      // S2 sadece 2. kat 4 kişilik, geri kalan her yer 6
-      const cap = (block === 'S2' && floor === 2) ? 4 : 6
-      const base = floor === 1 ? 100 : 200
-      for (let r = 1; r <= 24; r++) {
-        const roomNo = String(base + r)  // 101–124 veya 201–224
-        roomInsert.run(block, floor, roomNo, cap, cap, 'active')
-      }
-    }
-  })
-
-  // ── A ve diğer bloklar ──────────────────────────────────────────────────────
-  // A1, A2, A3, A4: premium bloklar — 2 kat × 20 oda
-  const A_NUMBERED = ['A1', 'A2', 'A3', 'A4']
-  const A_LETTERED = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'J']
-
-  A_NUMBERED.forEach(block => {
-    for (let floor = 1; floor <= 2; floor++) {
-      const base = floor === 1 ? 100 : 200
-      for (let r = 1; r <= 20; r++) {
-        roomInsert.run(block, floor, String(base + r), 6, 6, 'active')
-      }
-    }
-  })
-
-  A_LETTERED.forEach(block => {
-    for (let floor = 1; floor <= 2; floor++) {
-      const base = floor === 1 ? 100 : 200
-      for (let r = 1; r <= 20; r++) {
-        roomInsert.run(block, floor, String(base + r), 6, 6, 'active')
-      }
-    }
-  })
+  }
 
   // ── Makineler ───────────────────────────────────────────────────────────────
   const machineInsert = db.prepare(`INSERT OR IGNORE INTO machines(id,name,status) VALUES(?,?,?)`)

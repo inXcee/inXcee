@@ -44,20 +44,23 @@ export function adjustStock(id, delta, reason, userId, locationId = null) {
 
   // Lokasyon takipliyse once orada islem yap (yetersizse hata)
   if (item.track_locations && locationId) {
-    const db = queries.getStockByLocation(id)
+    const stockRows = queries.getStockByLocation(id)
     if (delta < 0) {
-      const row = db.find(r => r.location_id === +locationId)
+      const row = stockRows.find(r => r.location_id === +locationId)
       if (!row || row.quantity < Math.abs(delta)) {
         return { error: 'Secilen lokasyonda yetersiz stok', status: 400 }
       }
     }
   }
 
-  queries.adjustQuantity(id, newQty)
-  if (item.track_locations && locationId) {
-    queries.adjustLocationStock(id, +locationId, delta)
-  }
-  queries.addMovement(id, delta > 0 ? 'in' : 'out', delta, newQty, reason, userId, locationId)
+  // 3 yazma (quantity / location_stock / movement) atomik — yarı yazma olursa
+  // ana quantity ile location_stock tutarsız kalırdı.
+  const txResult = queries.adjustStockAtomic({
+    id, newQty, delta, reason, userId,
+    locationId: item.track_locations && locationId ? +locationId : null,
+    trackLocations: !!item.track_locations,
+  })
+  if (txResult?.error) return txResult
   logAudit(userId, delta > 0 ? 'inventory_in' : 'inventory_out', 'inventory', id,
     `${item.item_name}: ${delta > 0 ? '+' : ''}${delta} ${item.unit} (${reason || '-'})`)
 
@@ -236,7 +239,7 @@ export function getReceiptDetail(id) {
 export function deleteReceipt(id, userId) {
   const receipt = queries.getReceiptDetail(id)
   if (receipt) {
-    queries.deleteReceipt(id)
+    queries.deleteReceipt(id, userId)
     logAudit(userId, 'goods_receipt_delete', 'inventory', id, `Mal giris silindi: ${receipt.receipt_no}`)
   }
 }

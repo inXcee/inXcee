@@ -59,8 +59,14 @@ maintenanceRouter.patch('/requests/:id/wait-reason', ...techAccess, (req, res) =
 })
 
 maintenanceRouter.patch('/requests/:id/priority', ...techAccess, (req, res) => {
-  try { svc.updateRequestPriorityService(+req.params.id, req.body.priority); res.json({ ok: true }) }
-  catch (e) { res.status(400).json({ error: e.message }) }
+  try {
+    const { priority } = req.body
+    if (!['high', 'medium', 'low'].includes(priority)) {
+      return res.status(400).json({ error: 'Geçersiz öncelik' })
+    }
+    svc.updateRequestPriorityService(+req.params.id, priority)
+    res.json({ ok: true })
+  } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
 maintenanceRouter.patch('/requests/:id/assign', ...techAccess, (req, res) => {

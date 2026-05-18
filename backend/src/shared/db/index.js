@@ -25,6 +25,10 @@ export function initDB() {
   db.pragma('journal_mode = WAL')
   db.pragma('busy_timeout = 5000')
   db.pragma('synchronous = NORMAL')
+  // FK kısıtları sadece connection-level pragma ile garanti uygulanır;
+  // schema içindeki PRAGMA satırı exec'te güvenilir set edilmez.
+  // Migration blokları kendi içinde geçici OFF yapıyor, sonra burası ON tutar.
+  db.pragma('foreign_keys = ON')
   db.exec(SCHEMA)
   runMigrations(db)
   // migrations — safe to run on existing DB
@@ -1590,6 +1594,37 @@ export function initDB() {
     created_by INTEGER REFERENCES users(id),
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`) } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] automation_rules:', e.message) }
+
+  // ── Composite index'ler + UNIQUE constraint'ler (Ö7 + perf) ──
+  // shifts(personnel_id) UNIQUE — setShift read-then-write race condition'ı
+  // engelle (duplicate kayıt riski). Daha önce eklenen kayıtlar varsa
+  // CREATE UNIQUE INDEX duplicate'lerde patlar; dedup yapılmadan ekleme.
+  try {
+    const dupes = db.prepare('SELECT personnel_id, COUNT(*) c FROM shifts GROUP BY personnel_id HAVING c > 1').all()
+    if (dupes.length === 0) {
+      db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_shifts_personnel_unique ON shifts(personnel_id)')
+    } else {
+      console.warn(`[Migration] shifts UNIQUE atlandı — ${dupes.length} duplicate personnel_id; önce dedupe gerek`)
+    }
+  } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] shifts unique:', e.message) }
+
+  // Sık çalışan sorgular için composite index'ler — tablolar büyüdükçe etkili.
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_ra_room_active ON room_assignments(room_id, check_out_at)') } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] idx_ra_room_active:', e.message) }
+  try { db.exec("CREATE INDEX IF NOT EXISTS idx_personnel_active_name ON personnel(check_out_date, full_name) WHERE check_out_date IS NULL") } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] idx_personnel_active_name:', e.message) }
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_shift_schedule_staff_status_date ON shift_schedule(staff_id, status, work_date)') } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] idx_shift_schedule_status:', e.message) }
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_ra_date_waitlist ON route_assignments(work_date, is_waitlist, boarded)') } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] idx_ra_date_waitlist:', e.message) }
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_cleaning_tasks_block_date ON cleaning_tasks(block, scheduled_at, completed_at)') } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] idx_cleaning_tasks_block_date:', e.message) }
+
+  // inventory.quantity için negatife düşmeyi engelleyen trigger
+  // (CHECK constraint ALTER TABLE ile eklenemez; trigger ile aynı koruma).
+  try {
+    db.exec(`CREATE TRIGGER IF NOT EXISTS trg_inventory_quantity_nonneg
+      BEFORE UPDATE OF quantity ON inventory
+      FOR EACH ROW WHEN NEW.quantity < 0
+      BEGIN
+        SELECT RAISE(ABORT, 'inventory.quantity negatif olamaz');
+      END`)
+  } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] trg_inventory_nonneg:', e.message) }
 
   return db
 }

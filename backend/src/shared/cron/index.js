@@ -13,6 +13,10 @@ import { logAudit } from '../audit.js'
 
 let emailJob = null
 
+// Tüm saat-spesifik cron'lar Türkiye saatiyle çalışsın — sunucu UTC olabilir,
+// 05:50 / 06:00 / 02:00 / 03:00 gibi saatler kullanıcı için anlamlı.
+const TZ = { timezone: 'Europe/Istanbul' }
+
 // Cron overlap koruması — önceki tick bitmediyse yeni tick'i sessizce atla.
 // SQLite tek writer, 1 dakikalık cron 60sn'den uzun sürerse busy_timeout'u tetikler.
 const running = new Set()
@@ -33,7 +37,7 @@ export function startCronJobs() {
       const count = generateDailyTasks()
       // daily task generation completed
     } catch (e) { console.error('[Cron] Temizlik görev hatası:', e) }
-  })
+  }, TZ)
 
   // Her saat stok kontrolü
   cron.schedule('0 * * * *', () => {
@@ -48,12 +52,12 @@ export function startCronJobs() {
         })
       })
     } catch (e) { console.error('[Cron] Stok cron hatası:', e) }
-  })
+  }, TZ)
 
   // Her 1 dakikada makine zamanlayıcı kontrolü (overlap-safe)
   cron.schedule('*/1 * * * *', withLock('machine-timers', () => {
     checkMachineTimers()
-  }))
+  }), TZ)
 
   // Her 15 dakikada SLA kontrolü (overlap-safe)
   cron.schedule('*/15 * * * *', withLock('laundry-sla', async () => {
@@ -61,7 +65,7 @@ export function startCronJobs() {
     await checkSlaPreWarnings()
     await checkMachineMaintenanceAlerts()
     checkStuckWashingItems()
-  }))
+  }), TZ)
 
   // Her ayın 1'i 03:00 — geçmiş ay aylık PDF rapor (overlap-safe)
   cron.schedule('0 3 1 * *', withLock('inventory-monthly-pdf', () => {
@@ -91,7 +95,7 @@ export function startCronJobs() {
       // buildMonthlyReport / generateMonthlyPDF synchronous throw ettiyse stream open kalir
       if (stream) try { stream.destroy() } catch { /* ignore */ }
     }
-  }))
+  }), TZ)
 
   // Her gün 06:00 — son kullanma 30 gün altı lot uyarısı (campus_manager)
   cron.schedule('0 6 * * *', withLock('lot-expiry', () => {
@@ -124,10 +128,10 @@ export function startCronJobs() {
         })
       })
     } catch (e) { console.error('[Cron] Lot expiry hatasi:', e.message) }
-  }))
+  }), TZ)
 
   // Her gece 02:00 — eski audit log + okunmuş bildirimler 90 gün, hata logları 30 gün
-  cron.schedule('0 2 * * *', () => {
+  cron.schedule('0 2 * * *', withLock('cleanup', () => {
     try {
       const db = getDB()
       const cutoff90 = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString()
@@ -136,7 +140,7 @@ export function startCronJobs() {
       db.prepare('DELETE FROM notifications WHERE is_read=1 AND created_at < ?').run(cutoff90)
       try { db.prepare('DELETE FROM error_log WHERE created_at < ?').run(cutoff30) } catch { /* tablo yoksa atla */ }
     } catch (e) { console.error('[Cron] Temizleme hatası:', e.message) }
-  })
+  }), TZ)
 
   // cron jobs initialized
   scheduleMorningReport()
@@ -148,5 +152,5 @@ export function scheduleMorningReport() {
   if (!enabled) return
   emailJob = cron.schedule(`${minute} ${hour} * * *`, () => {
     sendMorningReport().catch(e => console.error('[Cron] Email hatası:', e))
-  })
+  }, TZ)
 }

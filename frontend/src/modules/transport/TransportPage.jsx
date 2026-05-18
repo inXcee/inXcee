@@ -1483,10 +1483,12 @@ function ReportsTab() {
       }).join(';')))
       .join('\n')
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
-    a.href = URL.createObjectURL(blob)
+    a.href = url
     a.download = filename
     a.click()
+    URL.revokeObjectURL(url)
   }
 
   if (isLoading) return <div style={{ padding: 40, color: 'var(--text3)', fontFamily: 'var(--mono)' }}>Yükleniyor…</div>

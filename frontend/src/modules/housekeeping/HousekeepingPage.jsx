@@ -346,7 +346,7 @@ function RoomDetailPanel({ block, floor, roomNo, task, isPrivateBath, onComplete
 
   const done    = !!task?.completed_at
   const skipped = task?.skipped === 1
-  const isM     = block.startsWith('M')
+  const isM     = BLOCK_BY_NAME[block]?.type === 'M'
 
   const visibleChecklist = CHECKLIST_ITEMS.filter(i => !i.privateOnly || isPrivateBath)
   const checkedCount = [...checkedItems].filter(id => visibleChecklist.some(i => i.id === id)).length
@@ -928,7 +928,7 @@ function RoomDetailPanel({ block, floor, roomNo, task, isPrivateBath, onComplete
 
 // ── Corridor grid ─────────────────────────────────────────────────────────────
 function BlockFloorView({ block, floor, tasks, dndRooms, blockRooms, selectedRoomNo, onSelect }) {
-  const isM  = block.startsWith('M')
+  const isM  = BLOCK_BY_NAME[block]?.type === 'M'
   const isS2Floor2 = block === 'S2' && floor === 2
 
   const roomTaskMap = {}

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { laundryApi } from '../api.js'
+import { BLOCK_BY_NAME } from '../../../shared/blocks.js'
 import AssignModal from './AssignModal.jsx'
 import ShelfModal  from './ShelfModal.jsx'
 import LostModal   from './LostModal.jsx'
@@ -277,7 +278,7 @@ export default function ItemCard({ item, machines = [], onDeliver, onDamage, sel
   const [deleteStep, setDeleteStep] = useState(false)
   const [premiumDeliveryOpen, setPremiumDeliveryOpen] = useState(false)
 
-  const isPremiumItem = item.is_premium === 1 || (item.block && !item.block.startsWith('M') && !item.block.startsWith('S'))
+  const isPremiumItem = item.is_premium === 1 || (item.block && BLOCK_BY_NAME[item.block]?.type === 'Y')
 
   const deleteItem = useMutation({
     mutationFn: () => laundryApi.deleteItem(item.id),

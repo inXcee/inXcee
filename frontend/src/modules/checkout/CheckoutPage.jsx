@@ -61,7 +61,7 @@ export default function CheckoutPage() {
     onSuccess: (data) => {
       setPreview(data)
       // Initialize zimmet actions for unreturned items
-      setZimmetActions(data.unreturned.map(z => ({ zimmet_id: z.id, item_name: z.item_name, action: 'return', note: '' })))
+      setZimmetActions((data.unreturned ?? []).map(z => ({ zimmet_id: z.id, item_name: z.item_name, action: 'return', note: '' })))
       setStep(1)
     },
   })
@@ -411,47 +411,9 @@ export default function CheckoutPage() {
         </div>
       )}
 
-      {/* ── STEP 3: BAŞARI ─────────────────────────────────────── */}
-      {step === 3 && (
+      {/* ── STEP 3: BAŞARI (sadece success — completed=true ile birlikte gelinir) ── */}
+      {step === 3 && completed && (
         <div className="card" style={{ padding: '20px' }}>
-          {!completed ? (
-            <div style={{ textAlign: 'center', padding: '32px 0' }}>
-              <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text4)', letterSpacing: '2px', marginBottom: '20px' }}>
-                CIKIS ISLEMINI ONAYLAYIN
-              </div>
-              <div style={{ fontFamily: 'var(--sans)', fontSize: '15px', fontWeight: 600, color: 'var(--text)', marginBottom: '8px' }}>
-                {preview?.person.full_name}
-              </div>
-              <div style={{ fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--text3)', marginBottom: '24px' }}>
-                {preview?.person.block ? `${preview.person.block}-${preview.person.room_no}` : ''} {preview?.person.company || ''}
-              </div>
-              <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
-                <button className="btn" onClick={() => setStep(2)}
-                  style={{ padding: '10px 20px', fontFamily: 'var(--mono)', fontSize: '11px', letterSpacing: '1px',
-                    background: 'var(--surface3)', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: '6px', cursor: 'pointer' }}>
-                  GERI
-                </button>
-                <button className="btn btn-primary"
-                  disabled={checkoutMut.isPending || !preview?.person?.id}
-                  onClick={() => {
-                    if (!preview?.person?.id) return
-                    checkoutMut.mutate({
-                      personnel_id: preview.person.id,
-                      zimmet_actions: zimmetActions,
-                    })
-                  }}
-                  style={{ padding: '10px 24px', fontFamily: 'var(--mono)', fontSize: '11px', letterSpacing: '1px',
-                    background: 'var(--red)', border: 'none', color: '#fff', borderRadius: '6px', cursor: 'pointer' }}>
-                  {checkoutMut.isPending ? 'ISLENIYOR...' : 'CIKISI TAMAMLA'}
-                </button>
-              </div>
-              {checkoutMut.isError && (
-                <div style={{ fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--red)', marginTop: '12px' }}>
-                  Hata: {checkoutMut.error?.response?.data?.error || checkoutMut.error?.message}
-                </div>
-              )}
-            </div>
-          ) : (
             <div style={{ textAlign: 'center', padding: '32px 0' }}>
               <div style={{
                 width: '48px', height: '48px', borderRadius: '50%', margin: '0 auto 16px',
@@ -470,7 +432,6 @@ export default function CheckoutPage() {
                 YENI CIKIS ISLEMI
               </button>
             </div>
-          )}
         </div>
       )}
 
