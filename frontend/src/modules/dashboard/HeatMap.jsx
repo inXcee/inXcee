@@ -42,19 +42,30 @@ export default function HeatMap({ data = [] }) {
         return (
           <div
             key={block.block}
-            className="heatmap-block"
+            className="heatmap-block card-glass"
             onClick={() => navigate(`/capacity?block=${block.block}`)}
             style={{
               background: s.bg,
               border: `1px solid ${s.border}`,
-              borderRadius: '10px',
+              borderRadius: '12px',
               overflow: 'hidden',
               cursor: 'pointer',
               position: 'relative',
             }}
           >
             {/* Top accent line */}
-            <div style={{ height: '2px', background: s.grad }} />
+            <div style={{
+              height: '3px',
+              background: s.grad,
+              position: 'relative',
+            }}>
+              <div style={{
+                position: 'absolute',
+                top: 0, left: '10%', right: '10%', height: '14px',
+                background: s.grad, filter: 'blur(10px)', opacity: 0.5,
+                pointerEvents: 'none',
+              }} />
+            </div>
 
             <div style={{ padding: '14px 16px' }}>
               {/* Header row */}
