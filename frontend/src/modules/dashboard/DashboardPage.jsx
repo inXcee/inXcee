@@ -10,6 +10,7 @@ import ManagementWidgets from './ManagementWidgets.jsx'
 import TodaysPulse from './TodaysPulse.jsx'
 import UpcomingEvents from './UpcomingEvents.jsx'
 import HealthScoreWidget from './HealthScoreWidget.jsx'
+import AnomalyAlerts from './AnomalyAlerts.jsx'
 import { useNotifications } from '../../shared/hooks/useNotifications.js'
 import { useOccupancy } from '../../shared/hooks/useOccupancy.js'
 import { useAuthStore } from '../../shared/store/authStore.js'
@@ -592,7 +593,10 @@ export default function DashboardPage() {
           <HeatMap data={heatmap} />
         </div>
 
-        {/* Anomali placeholder — Faz 3'te koşullu render */}
+        {/* Anomali uyarıları — koşullu render (null döndürürse gösterilmez) */}
+        <div className="bento-cell bento-span-12">
+          <AnomalyAlerts />
+        </div>
 
         {/* Aktif Arızalar — span 7 */}
         <div className="bento-cell bento-span-7">
