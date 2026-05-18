@@ -65,6 +65,18 @@ describe('Dashboard', () => {
     const res = await request(app).get('/api/dashboard/health')
     expect(res.status).toBe(401)
   })
+
+  it('returns anomalies array', async () => {
+    const res = await request(app).get('/api/dashboard/anomalies').set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(200)
+    expect(res.body).toHaveProperty('anomalies')
+    expect(Array.isArray(res.body.anomalies)).toBe(true)
+  })
+
+  it('rejects unauthenticated anomalies request', async () => {
+    const res = await request(app).get('/api/dashboard/anomalies')
+    expect(res.status).toBe(401)
+  })
 })
 
 describe('getTrends', () => {

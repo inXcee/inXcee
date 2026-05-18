@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import { requireRole } from '../../shared/auth/middleware.js'
 import { cacheFor } from '../../shared/middleware/cache.js'
-import { getKPI, getHeatmap, getProjection, getBedOccupancy, getAuditLog, exportPersonnel, exportOccupancy, exportMaintenance, getTrends, getHealthScore } from './queries.js'
+import { getKPI, getHeatmap, getProjection, getBedOccupancy, getAuditLog, exportPersonnel, exportOccupancy, exportMaintenance, getTrends, getHealthScore, getAnomalies } from './queries.js'
 
 export const dashboardRouter = Router()
 const mgmt = requireRole('campus_manager', 'shift_supervisor')
@@ -39,6 +39,11 @@ dashboardRouter.get('/trends', ...mgmt, cacheFor(300), (req, res) => {
 
 dashboardRouter.get('/health', ...mgmt, cacheFor(60), (req, res) => {
   try { res.json(getHealthScore()) }
+  catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+})
+
+dashboardRouter.get('/anomalies', ...mgmt, cacheFor(120), (req, res) => {
+  try { res.json(getAnomalies()) }
   catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
