@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit'
 import { z } from 'zod'
 import { login, loginKiosk, loginKioskById, searchKioskPersonnel, loginAvsKiosk, searchAvsWorkers, changeOwnPassword, refreshToken, verify2faChallenge } from './service.js'
 import { get2faStatus, start2faSetupWithQr, enable2fa, disable2fa } from './totp.js'
@@ -7,6 +8,19 @@ import { requireAuth } from './middleware.js'
 import { validate } from '../middleware/validate.js'
 
 export const authRouter = Router()
+
+// Kiosk / AVS PIN endpoint'lerine özel sıkı rate limit — 4 haneli PIN brute-force riski
+// authLimiter 30/15dk şu an, kiosk-PIN için yetersiz (5dkdaki 30 attempt 4-hane uzayını
+// günlerle gezer). Buraya 10/15dk per IP daha gerçekçi.
+const pinLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: { error: 'Çok fazla PIN denemesi. 15 dakika sonra tekrar deneyin.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test',
+  keyGenerator: (req) => `ip:${ipKeyGenerator(req.ip)}`,
+})
 
 const loginSchema = z.object({
   username: z.string().min(1, 'Kullanıcı adı gerekli').max(64),
@@ -20,7 +34,7 @@ authRouter.post('/login', validate(loginSchema), (req, res) => {
   res.json(result)
 })
 
-authRouter.post('/kiosk-login', (req, res) => {
+authRouter.post('/kiosk-login', pinLimiter, (req, res) => {
   const { tc_no, pin, personnel_id } = req.body
   if (personnel_id) {
     if (!pin) return res.status(400).json({ error: 'PIN gerekli' })
@@ -50,7 +64,7 @@ authRouter.get('/avs-search', (req, res) => {
   res.json(searchAvsWorkers(q))
 })
 
-authRouter.post('/avs-login', (req, res) => {
+authRouter.post('/avs-login', pinLimiter, (req, res) => {
   const { worker_id, pin } = req.body
   if (!worker_id || !pin) return res.status(400).json({ error: 'worker_id ve pin gerekli' })
   const result = loginAvsKiosk(Number(worker_id), pin)

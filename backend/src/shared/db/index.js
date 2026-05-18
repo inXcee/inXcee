@@ -566,6 +566,14 @@ export function initDB() {
     if (!e.message?.includes('duplicate column')) console.error('[Migration] kiosk_pin:', e.message)
   }
 
+  // ── Performans index'leri (sik sorgular) ────────────────────────────────
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_zimmet_personnel ON zimmet(personnel_id, returned_at)') } catch(e) {
+    if (!e.message?.includes('already exists')) console.error('[Migration] idx_zimmet_personnel:', e.message)
+  }
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_supply_log_supply ON laundry_supply_log(supply_id, created_at DESC)') } catch(e) {
+    if (!e.message?.includes('already exists')) console.error('[Migration] idx_supply_log_supply:', e.message)
+  }
+
   // ── Bildirim deduplication ─────────────────────────────────────────────────
   try { db.exec('ALTER TABLE notifications ADD COLUMN dedup_key TEXT') } catch(e) {
     if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists'))

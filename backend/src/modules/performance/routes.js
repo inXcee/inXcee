@@ -194,7 +194,7 @@ performanceRouter.delete('/positive/:id', ...mgr, (req, res) => {
 // Liderler tablosu — toplam pozitif puana göre
 performanceRouter.get('/leaderboard', ...view, (req, res) => {
   try {
-    const days = req.query.days ? +req.query.days : 90
+    const days = Math.max(1, Math.min(365, parseInt(req.query.days, 10) || 90))
     const rows = getDB().prepare(`
       SELECT s.id, s.full_name, d.name as dept_name,
         COALESCE(SUM(pp.points), 0) as positive_points,

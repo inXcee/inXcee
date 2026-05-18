@@ -165,11 +165,22 @@ export async function restoreBackupService(uploadedPath) {
     return { error: 'Yüklenen dosya bulunamadı', status: 400 }
   }
 
-  // Geçerli SQLite mi kontrol et
+  // Geçerli SQLite mi VE YYS şemasında mı kontrol et
+  // Aksi halde kötü niyetli admin önceden bildiği password_hash içeren bir DB
+  // yükleyip privilege escalation yapabilir
   let testDb
   try {
     testDb = new Database(uploadedPath, { readonly: true })
     testDb.prepare('SELECT name FROM sqlite_master LIMIT 1').get()
+    const REQUIRED = ['users', 'rooms', 'personnel', 'staff']
+    const found = testDb.prepare(
+      `SELECT name FROM sqlite_master WHERE type='table' AND name IN (${REQUIRED.map(() => '?').join(',')})`
+    ).all(...REQUIRED).map(r => r.name)
+    const missing = REQUIRED.filter(t => !found.includes(t))
+    if (missing.length > 0) {
+      try { fs.unlinkSync(uploadedPath) } catch { /* ignore */ }
+      return { error: `Yedek YYS şeması içermiyor (eksik: ${missing.join(', ')})`, status: 400 }
+    }
   } catch (e) {
     try { fs.unlinkSync(uploadedPath) } catch { /* ignore */ }
     return { error: 'Geçersiz SQLite dosyası', status: 400 }

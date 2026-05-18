@@ -17,6 +17,7 @@ export default function ZimmetForm({ personnelId, onDone }) {
   const [signing, setSigning] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [hasSignature, setHasSignature] = useState(false)
   const canvasRef = useRef(null)
   const drawing = useRef(false)
   const lastPos = useRef(null)
@@ -46,6 +47,7 @@ export default function ZimmetForm({ personnelId, onDone }) {
     ctx.lineTo(pos.x, pos.y)
     ctx.stroke()
     lastPos.current = pos
+    if (!hasSignature) setHasSignature(true)
   }
 
   const stopDraw = () => { drawing.current = false }
@@ -53,13 +55,22 @@ export default function ZimmetForm({ personnelId, onDone }) {
   const clearCanvas = () => {
     const canvas = canvasRef.current
     canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height)
+    setHasSignature(false)
   }
 
   const handleSubmit = async () => {
+    if (!hasSignature) {
+      alert('Lütfen imza alanına imza atın.')
+      return
+    }
+    const selectedItems = items.filter(i => i.checked).map(({ item_name, quantity }) => ({ item_name, quantity }))
+    if (selectedItems.length === 0) {
+      alert('En az bir zimmet kalemi seçin.')
+      return
+    }
     setSaving(true)
     const canvas = canvasRef.current
     const signature = canvas.toDataURL()
-    const selectedItems = items.filter(i => i.checked).map(({ item_name, quantity }) => ({ item_name, quantity }))
     try {
       await api.post('/checkin/zimmet', { personnel_id: personnelId, items: selectedItems })
       await api.post('/checkin/zimmet/sign', { personnel_id: personnelId, signature })
@@ -162,9 +173,10 @@ export default function ZimmetForm({ personnelId, onDone }) {
             <button onClick={clearCanvas} className="btn btn-ghost btn-sm">⌫ TEMİZLE</button>
             <button
               onClick={handleSubmit}
-              disabled={saving}
+              disabled={saving || !hasSignature}
               className="btn btn-primary btn-sm"
-              style={{ opacity: saving ? 0.6 : 1 }}
+              title={!hasSignature ? 'Önce imza alanına imza atın' : ''}
+              style={{ opacity: (saving || !hasSignature) ? 0.5 : 1 }}
             >
               {saving ? 'KAYDEDİLİYOR...' : '✓ ZİMMETİ KAYDET'}
             </button>

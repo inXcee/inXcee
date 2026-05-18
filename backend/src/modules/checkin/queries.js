@@ -361,18 +361,23 @@ export function insertPlaceholderBatch(roomId, count, assignedBy) {
   const current = db.prepare('SELECT COUNT(*) as c FROM room_assignments WHERE room_id=? AND check_out_at IS NULL').get(roomId)
   const available = room.active_beds - current.c
   if (count > available) throw new Error(`Sadece ${available} yatak müsait`)
+  const insertPerson = db.prepare(`
+    INSERT INTO personnel(full_name, is_placeholder, check_in_date)
+    VALUES('Anonim', 1, datetime('now'))
+  `)
+  const insertAssign = db.prepare(`
+    INSERT INTO room_assignments(personnel_id, room_id, bed_no, assigned_by)
+    VALUES(?,?,?,?)
+  `)
+  // Yarı yazma riskini önle — orphan personnel oluşmasın
   const ids = []
-  for (let i = 0; i < count; i++) {
-    const r = db.prepare(`
-      INSERT INTO personnel(full_name, is_placeholder, check_in_date)
-      VALUES('Anonim', 1, datetime('now'))
-    `).run()
-    const bedNo = current.c + i + 1
-    db.prepare(`
-      INSERT INTO room_assignments(personnel_id, room_id, bed_no, assigned_by)
-      VALUES(?,?,?,?)
-    `).run(r.lastInsertRowid, roomId, bedNo, assignedBy || null)
-    ids.push(r.lastInsertRowid)
-  }
+  db.transaction(() => {
+    for (let i = 0; i < count; i++) {
+      const r = insertPerson.run()
+      const bedNo = current.c + i + 1
+      insertAssign.run(r.lastInsertRowid, roomId, bedNo, assignedBy || null)
+      ids.push(r.lastInsertRowid)
+    }
+  })()
   return ids
 }

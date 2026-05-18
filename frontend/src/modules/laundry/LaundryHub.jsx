@@ -1529,7 +1529,9 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
         qc.invalidateQueries({ queryKey: ['laundry-items'] })
         setSelectedIds(new Set())
         setBatchMode(false)
+        addToast(`${selectedIds.size} kayıt teslim edildi`, 'success')
       })
+      .catch(err => addToast(err?.response?.data?.error || 'Toplu teslim başarısız', 'error'))
   }
 
   const handleBatchLost = () => {
@@ -1539,7 +1541,9 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
         qc.invalidateQueries({ queryKey: ['laundry-items'] })
         setSelectedIds(new Set())
         setBatchMode(false)
+        addToast(`${selectedIds.size} kayıt kayıp olarak işaretlendi`, 'success')
       })
+      .catch(err => addToast(err?.response?.data?.error || 'Toplu kayıp işaretleme başarısız', 'error'))
   }
 
   const toggleGroupByRoom = () => {

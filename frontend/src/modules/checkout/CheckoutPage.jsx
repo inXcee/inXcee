@@ -432,11 +432,14 @@ export default function CheckoutPage() {
                   GERI
                 </button>
                 <button className="btn btn-primary"
-                  disabled={checkoutMut.isPending}
-                  onClick={() => checkoutMut.mutate({
-                    personnel_id: preview.person.id,
-                    zimmet_actions: zimmetActions,
-                  })}
+                  disabled={checkoutMut.isPending || !preview?.person?.id}
+                  onClick={() => {
+                    if (!preview?.person?.id) return
+                    checkoutMut.mutate({
+                      personnel_id: preview.person.id,
+                      zimmet_actions: zimmetActions,
+                    })
+                  }}
                   style={{ padding: '10px 24px', fontFamily: 'var(--mono)', fontSize: '11px', letterSpacing: '1px',
                     background: 'var(--red)', border: 'none', color: '#fff', borderRadius: '6px', cursor: 'pointer' }}>
                   {checkoutMut.isPending ? 'ISLENIYOR...' : 'CIKISI TAMAMLA'}

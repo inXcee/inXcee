@@ -139,7 +139,9 @@ function CostTab() {
     const rows = data.rows.map(r => [r.id, r.full_name, r.dept_name, r.meal_count, r.meal_cost, r.transport_count, r.kkd_count, r.deductions, r.salary || ''])
     const csv = [headers.join(';'), ...rows.map(row => row.join(';'))].join('\n')
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' })
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `maliyet-${month}.csv`; a.click()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a'); a.href = url; a.download = `maliyet-${month}.csv`; a.click()
+    URL.revokeObjectURL(url)
   }
 
   return (
@@ -216,20 +218,21 @@ function ComparisonTab() {
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10 }}>
         {METRICS.map(([k, l, c]) => {
-          const m = data.delta[k]
-          const inc = m.diff > 0
-          const isPositive = (k === 'worked' || k === 'meals' || k === 'active_staff') ? inc : !inc
-          const arrowColor = m.diff === 0 ? 'var(--text3)' : isPositive ? 'var(--green)' : 'var(--red)'
+          const m = data.delta?.[k]
+          if (!m) return null
+          const diff = m.diff || 0
+          const isPositive = (k === 'worked' || k === 'meals' || k === 'active_staff') ? diff > 0 : diff < 0
+          const arrowColor = diff === 0 ? 'var(--text3)' : isPositive ? 'var(--green)' : 'var(--red)'
           return (
             <div key={k} style={{ padding: 14, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, borderLeft: `4px solid ${c}` }}>
               <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)' }}>{l}</div>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 6 }}>
-                <span style={{ fontFamily: 'var(--display)', fontSize: 24, color: c }}>{m.current}</span>
-                <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text3)' }}>vs {m.previous}</span>
+                <span style={{ fontFamily: 'var(--display)', fontSize: 24, color: c }}>{m.current ?? 0}</span>
+                <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text3)' }}>vs {m.previous ?? 0}</span>
               </div>
               <div style={{ marginTop: 4, fontFamily: 'var(--mono)', fontSize: 11, color: arrowColor }}>
-                {m.diff > 0 && '↑'}{m.diff < 0 && '↓'}{m.diff === 0 && '='} {Math.abs(m.diff)}
-                {m.pct !== null && <span style={{ marginLeft: 6 }}>(%{m.pct > 0 ? '+' : ''}{m.pct})</span>}
+                {diff > 0 && '↑'}{diff < 0 && '↓'}{diff === 0 && '='} {Math.abs(diff)}
+                {m.pct != null && <span style={{ marginLeft: 6 }}>(%{m.pct > 0 ? '+' : ''}{m.pct})</span>}
               </div>
             </div>
           )
@@ -263,7 +266,9 @@ function BuilderTab() {
     const headers = selected.map(c => ALL_COLS[c] || c)
     const csv = [headers.join(';'), ...data.rows.map(r => selected.map(c => r[c] ?? '').join(';'))].join('\n')
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' })
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'personel-ozel.csv'; a.click()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a'); a.href = url; a.download = 'personel-ozel.csv'; a.click()
+    URL.revokeObjectURL(url)
   }
 
   return (

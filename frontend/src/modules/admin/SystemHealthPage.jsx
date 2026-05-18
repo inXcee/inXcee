@@ -21,7 +21,7 @@ function formatUptime(s) {
 }
 
 export default function SystemHealthPage() {
-  const { data, isLoading, refetch, isFetching } = useQuery({
+  const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: ['system-info'],
     queryFn: () => api.get('/system/info').then(r => r.data),
     refetchInterval: 30_000,
@@ -30,6 +30,31 @@ export default function SystemHealthPage() {
   if (isLoading) {
     return <div style={{ padding: 40, textAlign: 'center', fontFamily: 'var(--mono)', color: 'var(--text3)' }}>Yükleniyor...</div>
   }
+  if (error || !data) {
+    return (
+      <div style={{ padding: 24 }}>
+        <h2 style={{ fontSize: 22, letterSpacing: 2 }}>SİSTEM SAĞLIĞI</h2>
+        <div style={{ marginTop: 12, padding: 16, borderRadius: 10, background: 'rgba(239,68,68,.08)', border: '1px solid rgba(239,68,68,.3)' }}>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--red)', letterSpacing: 1.5 }}>
+            ⚠ SİSTEM BİLGİSİ YÜKLENEMEDİ
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 6 }}>
+            {error?.response?.data?.error || error?.message || 'Sunucu yanıt vermiyor'}
+          </div>
+          <button onClick={() => refetch()} className="btn btn-primary btn-sm" style={{ marginTop: 12, borderRadius: 8 }}>↻ TEKRAR DENE</button>
+        </div>
+      </div>
+    )
+  }
+  // Defensive — backend bazı alanları boş yollayabilir
+  const srv = data.server || {}
+  const mem = srv.memory || {}
+  const loadAvg = Array.isArray(srv.load_avg) ? srv.load_avg : []
+  const dbInfo = data.database || {}
+  const stats = data.stats || {}
+  const backups = data.backups || { count: 0, total_size: 0 }
+  const storage = data.storage || {}
+  const cron = data.cron || {}
 
   return (
     <div>
@@ -58,47 +83,47 @@ export default function SystemHealthPage() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16, marginBottom: 16 }}>
         <Card title="SUNUCU" accent="#10b981">
           <Row k="Durum" v={<Status ok />} />
-          <Row k="Uptime" v={formatUptime(data.server.uptime_sec)} />
-          <Row k="Başlangıç" v={new Date(data.server.started_at).toLocaleString('tr-TR')} small />
-          <Row k="Node" v={data.server.node_version} />
-          <Row k="Ortam" v={data.server.env} />
-          <Row k="Hostname" v={data.server.hostname} small />
-          <Row k="Heap" v={`${data.server.memory.heap_used_mb} / ${data.server.memory.heap_total_mb} MB`} />
-          <Row k="RSS" v={`${data.server.memory.rss_mb} MB`} />
-          <Row k="Load (1/5/15dk)" v={data.server.load_avg.join(' / ')} small />
+          <Row k="Uptime" v={formatUptime(srv.uptime_sec || 0)} />
+          <Row k="Başlangıç" v={srv.started_at ? new Date(srv.started_at).toLocaleString('tr-TR') : '—'} small />
+          <Row k="Node" v={srv.node_version || '—'} />
+          <Row k="Ortam" v={srv.env || '—'} />
+          <Row k="Hostname" v={srv.hostname || '—'} small />
+          <Row k="Heap" v={`${mem.heap_used_mb ?? '—'} / ${mem.heap_total_mb ?? '—'} MB`} />
+          <Row k="RSS" v={`${mem.rss_mb ?? '—'} MB`} />
+          <Row k="Load (1/5/15dk)" v={loadAvg.length ? loadAvg.join(' / ') : '—'} small />
         </Card>
 
         <Card title="VERİTABANI" accent="#6366f1">
-          <Row k="Boyut" v={formatBytes(data.database.size)} highlight />
-          <Row k="Yol" v={data.database.path} mono small />
-          <Row k="Kullanıcı" v={data.stats.users ?? '—'} />
-          <Row k="Personel" v={data.stats.personnel ?? '—'} />
-          <Row k="Oda" v={data.stats.rooms ?? '—'} />
-          <Row k="Çamaşır" v={data.stats.laundry_items ?? '—'} />
-          <Row k="Bildirim" v={data.stats.notifications ?? '—'} />
-          <Row k="Audit Log" v={data.stats.audit_log ?? '—'} />
+          <Row k="Boyut" v={formatBytes(dbInfo.size || 0)} highlight />
+          <Row k="Yol" v={dbInfo.path || '—'} mono small />
+          <Row k="Kullanıcı" v={stats.users ?? '—'} />
+          <Row k="Personel" v={stats.personnel ?? '—'} />
+          <Row k="Oda" v={stats.rooms ?? '—'} />
+          <Row k="Çamaşır" v={stats.laundry_items ?? '—'} />
+          <Row k="Bildirim" v={stats.notifications ?? '—'} />
+          <Row k="Audit Log" v={stats.audit_log ?? '—'} />
         </Card>
 
-        <Card title="YEDEKLEME" accent={data.backups.count > 0 ? '#10b981' : '#f59e0b'}>
-          <Row k="Toplam yedek" v={data.backups.count} highlight />
-          <Row k="Toplam boyut" v={formatBytes(data.backups.total_size)} />
-          {data.backups.last ? (
+        <Card title="YEDEKLEME" accent={backups.count > 0 ? '#10b981' : '#f59e0b'}>
+          <Row k="Toplam yedek" v={backups.count || 0} highlight />
+          <Row k="Toplam boyut" v={formatBytes(backups.total_size || 0)} />
+          {backups.last ? (
             <>
-              <Row k="Son yedek" v={data.backups.last.name} mono small />
-              <Row k="Son tarih" v={new Date(data.backups.last.created_at).toLocaleString('tr-TR')} small />
-              <Row k="Son boyut" v={formatBytes(data.backups.last.size)} />
+              <Row k="Son yedek" v={backups.last.name} mono small />
+              <Row k="Son tarih" v={new Date(backups.last.created_at).toLocaleString('tr-TR')} small />
+              <Row k="Son boyut" v={formatBytes(backups.last.size)} />
             </>
           ) : (
             <div style={{ padding: 8, color: 'var(--orange, #f59e0b)', fontSize: 11, fontFamily: 'var(--mono)' }}>
               ⚠ Henüz yedek yok
             </div>
           )}
-          <Row k="Klasör" v={data.backups.dir} mono small />
+          <Row k="Klasör" v={backups.dir || '—'} mono small />
         </Card>
 
-        <Card title="HATALAR" accent={data.stats.error_log_24h > 0 ? '#ef4444' : '#10b981'}>
-          <Row k="Son 24s" v={data.stats.error_log_24h ?? 0} highlight color={data.stats.error_log_24h > 0 ? '#ef4444' : 'var(--text)'} />
-          <Row k="Toplam" v={data.stats.error_log_total ?? 0} />
+        <Card title="HATALAR" accent={stats.error_log_24h > 0 ? '#ef4444' : '#10b981'}>
+          <Row k="Son 24s" v={stats.error_log_24h ?? 0} highlight color={stats.error_log_24h > 0 ? '#ef4444' : 'var(--text)'} />
+          <Row k="Toplam" v={stats.error_log_total ?? 0} />
           <a href="/error-log" style={{
             display: 'inline-block', marginTop: 12, fontSize: 10, fontFamily: 'var(--mono)',
             color: 'var(--accent)', textDecoration: 'none', letterSpacing: 1,
@@ -106,15 +131,15 @@ export default function SystemHealthPage() {
         </Card>
 
         <Card title="DEPOLAMA" accent="#6366f1">
-          <Row k="Uploads" v={formatBytes(data.storage.uploads_size)} highlight />
-          <Row k="Klasör" v={data.storage.uploads_dir} mono small />
+          <Row k="Uploads" v={formatBytes(storage.uploads_size || 0)} highlight />
+          <Row k="Klasör" v={storage.uploads_dir || '—'} mono small />
         </Card>
 
         <Card title="CRON İŞLERİ" accent="#a78bfa">
-          <Row k="Yedekleme" v={data.cron.backup} mono small />
-          <Row k="Temizlik" v={data.cron.cleanup} mono small />
-          <Row k="SLA Kontrol" v={data.cron.sla_check} mono small />
-          <Row k="Premium uyarı" v={data.cron.premium_alert} mono small />
+          <Row k="Yedekleme" v={cron.backup || '—'} mono small />
+          <Row k="Temizlik" v={cron.cleanup || '—'} mono small />
+          <Row k="SLA Kontrol" v={cron.sla_check || '—'} mono small />
+          <Row k="Premium uyarı" v={cron.premium_alert || '—'} mono small />
         </Card>
       </div>
     </div>

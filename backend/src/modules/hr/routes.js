@@ -137,6 +137,6 @@ hrRouter.get('/checklists/:id/ibra/pdf', ...view, (req, res) => {
 
 // HR3 — Sözleşme bitiyor
 hrRouter.get('/expiring-contracts', ...view, (req, res) => {
-  try { res.json(q.getExpiringContracts({ days: req.query.days ? +req.query.days : 30 })) }
+  try { res.json(q.getExpiringContracts({ days: Math.max(1, Math.min(365, parseInt(req.query.days, 10) || 30)) })) }
   catch (e) { console.error('[hr/expiring]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })

@@ -158,9 +158,11 @@ integrityRouter.post('/kvkk/:id/decide', ...mgr, (req, res) => {
     if (!['approved', 'rejected'].includes(decision)) {
       return res.status(400).json({ error: 'decision: approved|rejected' })
     }
+    // Grace period 0-365 gün arası — negatif değerle bypass'i önle
+    const days = Math.max(0, Math.min(365, parseInt(executes_in_days, 10) || 7))
     const db = getDB()
     const executesAt = decision === 'approved'
-      ? new Date(Date.now() + executes_in_days * 86400000).toISOString()
+      ? new Date(Date.now() + days * 86400000).toISOString()
       : null
     db.prepare(`
       UPDATE kvkk_requests
@@ -206,7 +208,7 @@ integrityRouter.post('/kvkk/:id/execute', ...mgr, (req, res) => {
 integrityRouter.get('/audit-summary', ...view, (req, res) => {
   try {
     const db = getDB()
-    const days = req.query.days ? +req.query.days : 30
+    const days = Math.max(1, Math.min(365, parseInt(req.query.days, 10) || 30))
 
     const byAction = db.prepare(`
       SELECT action, COUNT(*) as count

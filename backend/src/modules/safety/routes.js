@@ -117,7 +117,7 @@ safetyRouter.delete('/attendances/:id', ...mgr, (req, res) => {
 // ── IG2: Sertifika uyarıları (yakın bitiş) ──
 safetyRouter.get('/expiring-certs', ...view, (req, res) => {
   try {
-    const days = req.query.days ? +req.query.days : 30
+    const days = Math.max(1, Math.min(365, parseInt(req.query.days, 10) || 30))
     const cutoff = new Date(Date.now() + days * 86400000).toISOString().slice(0, 10)
     const rows = getDB().prepare(`
       SELECT a.id as attendance_id, a.cert_expires_at, a.score,

@@ -12,7 +12,11 @@ if (!SECRET) {
 
 export function login(username, password) {
   const db = getDB()
-  const user = db.prepare('SELECT * FROM users WHERE username=?').get(username)
+  // Sadece auth path'in ihtiyacı olan kolonları al — password_hash/totp_secret memory'de
+  // gereksiz yere dolaşmasın
+  const user = db.prepare(
+    'SELECT id, username, role, full_name, password_hash, totp_enabled FROM users WHERE username=?'
+  ).get(username)
   if (!user) return null
   if (!bcrypt.compareSync(password, user.password_hash)) return null
   if (user.totp_enabled) {
@@ -30,7 +34,9 @@ export function verify2faChallenge(challengeToken, code) {
   const userId = consumeTotpChallengeToken(challengeToken)
   if (!userId) return { error: 'Geçersiz veya süresi dolmuş istek', status: 401 }
   const db = getDB()
-  const user = db.prepare('SELECT * FROM users WHERE id=?').get(userId)
+  const user = db.prepare(
+    'SELECT id, username, role, full_name, totp_enabled, totp_secret FROM users WHERE id=?'
+  ).get(userId)
   if (!user || !user.totp_enabled || !user.totp_secret) return { error: '2FA aktif değil', status: 400 }
   if (!verifyTotp(code, user.totp_secret)) return { error: 'Doğrulama kodu hatalı', status: 401 }
   const token = jwt.sign(
