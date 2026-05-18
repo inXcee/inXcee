@@ -3,7 +3,7 @@ import request from 'supertest'
 import app from '../../app.js'
 import { initDB } from '../../shared/db/index.js'
 import { seedDev } from '../../shared/db/seed.js'
-import { getTrends } from './queries.js'
+import { getTrends, getHealthScore } from './queries.js'
 
 let token
 beforeAll(async () => {
@@ -92,5 +92,35 @@ describe('getTrends', () => {
   it('respects days=30', () => {
     const result = getTrends(['housekeeping'], 30)
     expect(result.housekeeping).toHaveLength(30)
+  })
+})
+
+describe('getHealthScore', () => {
+  it('returns score 0-100 with breakdown of 5 components', () => {
+    const result = getHealthScore()
+    expect(result).toHaveProperty('score')
+    expect(typeof result.score).toBe('number')
+    expect(result.score).toBeGreaterThanOrEqual(0)
+    expect(result.score).toBeLessThanOrEqual(100)
+    expect(Array.isArray(result.breakdown)).toBe(true)
+    expect(result.breakdown).toHaveLength(5)
+    for (const c of result.breakdown) {
+      expect(c).toHaveProperty('label')
+      expect(c).toHaveProperty('value')
+      expect(c).toHaveProperty('weight')
+      expect(c.value).toBeGreaterThanOrEqual(0)
+      expect(c.value).toBeLessThanOrEqual(100)
+    }
+  })
+
+  it('weights sum to 1.0', () => {
+    const result = getHealthScore()
+    const sum = result.breakdown.reduce((s, c) => s + c.weight, 0)
+    expect(Math.abs(sum - 1.0)).toBeLessThan(0.001)
+  })
+
+  it('returns color green/amber/red based on score', () => {
+    const result = getHealthScore()
+    expect(['green', 'amber', 'red']).toContain(result.color)
   })
 })

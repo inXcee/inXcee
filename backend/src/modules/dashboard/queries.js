@@ -146,6 +146,68 @@ export function exportMaintenance() {
   `).all()
 }
 
+// ── Health Score ────────────────────────────────────────────────────────────
+
+function _getHealthScore() {
+  const db = getDB()
+
+  // Doluluk skoru: 100 - |85 - actual%|, hedef %85
+  const totalBeds = db.prepare("SELECT COALESCE(SUM(active_beds), 0) as t FROM rooms WHERE status='active'").get().t
+  const occupied = db.prepare("SELECT COUNT(*) as c FROM room_assignments WHERE check_out_at IS NULL").get().c
+  const occPct = totalBeds > 0 ? Math.round(occupied * 100 / totalBeds) : 0
+  const occupancyScore = Math.max(0, 100 - Math.abs(85 - occPct))
+
+  // SLA skoru: son 30 gün SLA uyum yüzdesi
+  const slaRow = db.prepare(`
+    SELECT
+      COUNT(*) as total,
+      COUNT(CASE WHEN sla_deadline >= closed_at THEN 1 END) as ontime
+    FROM maintenance_requests
+    WHERE status='done' AND closed_at >= date('now', '-30 days') AND sla_deadline IS NOT NULL
+  `).get()
+  const slaScore = slaRow.total === 0 ? 100 : Math.round(slaRow.ontime * 100 / slaRow.total)
+
+  // Temizlik skoru: son 7 gün tamamlanma yüzdesi
+  const hkRow = db.prepare(`
+    SELECT
+      COUNT(*) as total,
+      COUNT(CASE WHEN completed_at IS NOT NULL THEN 1 END) as done
+    FROM cleaning_tasks
+    WHERE DATE(scheduled_at) >= date('now', '-7 days') AND DATE(scheduled_at) <= date('now')
+  `).get()
+  const housekeepingScore = hkRow.total === 0 ? 100 : Math.round(hkRow.done * 100 / hkRow.total)
+
+  // Arıza skoru: 0 açık = 100, 10+ = 0, doğrusal
+  const openMaint = db.prepare("SELECT COUNT(*) as c FROM maintenance_requests WHERE status='open'").get().c
+  const maintenanceScore = Math.max(0, 100 - openMaint * 10)
+
+  // Disiplin skoru: aktif kara liste sayısı × 5 cezalandır
+  let disciplineScore = 100
+  try {
+    const blacklistCount = db.prepare(
+      "SELECT COUNT(*) as c FROM blacklist WHERE active = 1"
+    ).get()?.c ?? 0
+    disciplineScore = Math.max(0, 100 - blacklistCount * 5)
+  } catch (e) {
+    // blacklist tablosu yoksa 100 varsay
+    disciplineScore = 100
+  }
+
+  const breakdown = [
+    { label: 'DOLULUK',  value: occupancyScore,    weight: 0.30 },
+    { label: 'SLA',      value: slaScore,          weight: 0.25 },
+    { label: 'TEMİZLİK', value: housekeepingScore, weight: 0.20 },
+    { label: 'ARIZA',    value: maintenanceScore,  weight: 0.15 },
+    { label: 'DİSİPLİN', value: disciplineScore,   weight: 0.10 },
+  ]
+
+  const score = Math.round(breakdown.reduce((s, c) => s + c.value * c.weight, 0))
+  const color = score >= 80 ? 'green' : score >= 60 ? 'amber' : 'red'
+
+  return { score, breakdown, color }
+}
+export const getHealthScore = memoize(_getHealthScore, 60_000)
+
 // ── Trend queries ─────────────────────────────────────────────────────────────
 
 export function getTrends(metrics, days = 30) {
