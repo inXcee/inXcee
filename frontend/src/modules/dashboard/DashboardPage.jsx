@@ -7,6 +7,7 @@ import KPICard from './KPICard.jsx'
 import HeatMap from './HeatMap.jsx'
 import TrendChartsSection from './TrendChartsSection.jsx'
 import ManagementWidgets from './ManagementWidgets.jsx'
+import TodaysPulse from './TodaysPulse.jsx'
 import { useNotifications } from '../../shared/hooks/useNotifications.js'
 import { useOccupancy } from '../../shared/hooks/useOccupancy.js'
 import { useAuthStore } from '../../shared/store/authStore.js'
@@ -566,8 +567,8 @@ export default function DashboardPage() {
         </div>
 
         {/* Sağ panel placeholder #2 — Bugünün Nabzı (Faz 2) */}
-        <div className="bento-cell bento-span-4" style={{ minHeight: '320px' }}>
-          {/* TodaysPulse gelecek — Faz 2 */}
+        <div className="bento-cell bento-span-4">
+          <TodaysPulse />
         </div>
 
         {/* Trend grafikleri — span 8 (mevcut TrendChartsSection 2x2 internal grid'i yapıyor) */}
