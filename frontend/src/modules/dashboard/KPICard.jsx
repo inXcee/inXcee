@@ -1,57 +1,39 @@
 const COLOR_MAP = {
-  orange: { accent: 'var(--accent)',  bg: 'rgba(240,165,0,.08)',   grad: 'linear-gradient(90deg,var(--accent),var(--accent3))' },
-  amber:  { accent: 'var(--accent)',  bg: 'rgba(240,165,0,.08)',   grad: 'linear-gradient(90deg,var(--accent),var(--accent3))' },
-  red:    { accent: 'var(--red)',     bg: 'rgba(231,76,60,.08)',   grad: 'linear-gradient(90deg,var(--red),var(--red2))' },
-  green:  { accent: 'var(--green)',   bg: 'rgba(39,201,106,.08)',  grad: 'linear-gradient(90deg,var(--green),var(--teal))' },
-  blue:   { accent: 'var(--blue)',    bg: 'rgba(59,140,240,.08)',  grad: 'linear-gradient(90deg,var(--blue),var(--purple))' },
-  purple: { accent: 'var(--purple)',  bg: 'rgba(155,89,182,.08)',  grad: 'linear-gradient(90deg,var(--purple),var(--blue))' },
+  orange: { accent: 'var(--accent)',  bg: 'rgba(240,165,0,.10)',  cat: 'personnel' },
+  amber:  { accent: 'var(--accent)',  bg: 'rgba(240,165,0,.10)',  cat: 'personnel' },
+  red:    { accent: 'var(--red)',     bg: 'rgba(231,76,60,.10)',  cat: 'maintenance' },
+  green:  { accent: 'var(--green)',   bg: 'rgba(39,201,106,.10)', cat: 'housekeeping' },
+  blue:   { accent: 'var(--blue)',    bg: 'rgba(59,140,240,.10)', cat: 'occupancy' },
+  purple: { accent: 'var(--purple)',  bg: 'rgba(155,89,182,.10)', cat: 'finance' },
+  teal:   { accent: 'var(--teal)',    bg: 'rgba(26,188,156,.10)', cat: 'health' },
 }
 
-export default function KPICard({ icon, label, value, color = 'orange', subtitle, barPct, trend }) {
+export default function KPICard({ icon, label, value, color = 'orange', subtitle, barPct, trend, category }) {
   const c = COLOR_MAP[color] || COLOR_MAP.orange
+  const catName = category || c.cat
   const progClass = color === 'red' ? 'prog-red' : color === 'green' ? 'prog-green' : color === 'blue' ? 'prog-blue' : 'prog-amber'
 
   return (
     <div
-      className="kpi-card"
-      style={{
-        background: 'var(--surface)',
-        padding: '20px',
-        borderRadius: '10px',
-        border: '1px solid var(--border)',
-        position: 'relative',
-        overflow: 'hidden',
-        transition: 'all 0.2s',
-        boxShadow: 'var(--shadow-sm)',
-      }}
+      className={`kpi-card card-glass cat-stripe cat-stripe-${catName}`}
+      style={{ padding: '22px 20px 20px', transition: 'all .2s' }}
+      aria-label={`${label} ${value}`}
     >
-      {/* Top accent border */}
       <div style={{
-        position: 'absolute', top: 0, left: 0, right: 0,
-        height: '2px',
-        background: c.grad,
-      }} />
-
-      {/* Icon */}
-      <div style={{
-        width: '32px', height: '32px',
-        borderRadius: '7px',
+        width: '34px', height: '34px',
+        borderRadius: '8px',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: '15px',
+        fontSize: '16px',
         marginBottom: '14px',
         background: c.bg,
       }}>
         {icon}
       </div>
 
-      {/* Value row */}
       <div style={{ display: 'flex', alignItems: 'flex-end', gap: '6px', marginBottom: '4px' }}>
         <div style={{
-          fontFamily: 'var(--display)',
-          fontSize: '40px',
-          lineHeight: 1,
-          color: c.accent,
-          letterSpacing: '1px',
+          fontFamily: 'var(--display)', fontSize: '44px', lineHeight: 1,
+          color: c.accent, letterSpacing: '1px',
         }}>
           {value}
         </div>
@@ -66,9 +48,8 @@ export default function KPICard({ icon, label, value, color = 'orange', subtitle
         )}
       </div>
 
-      {/* Label */}
       <div style={{
-        fontFamily: 'var(--mono)', fontSize: '9px',
+        fontFamily: 'var(--mono)', fontSize: '10px',
         color: 'var(--text3)', letterSpacing: '2px', textTransform: 'uppercase',
       }}>
         {label}
@@ -81,7 +62,7 @@ export default function KPICard({ icon, label, value, color = 'orange', subtitle
       )}
 
       {barPct !== undefined && (
-        <div className="prog-bar" style={{ marginTop: '12px' }}>
+        <div className="prog-bar" style={{ marginTop: '14px' }}>
           <div className={`prog-fill ${progClass}`} style={{ width: `${Math.min(barPct, 100)}%` }} />
         </div>
       )}
