@@ -9,6 +9,7 @@ import TrendChartsSection from './TrendChartsSection.jsx'
 import ManagementWidgets from './ManagementWidgets.jsx'
 import TodaysPulse from './TodaysPulse.jsx'
 import UpcomingEvents from './UpcomingEvents.jsx'
+import HealthScoreWidget from './HealthScoreWidget.jsx'
 import { useNotifications } from '../../shared/hooks/useNotifications.js'
 import { useOccupancy } from '../../shared/hooks/useOccupancy.js'
 import { useAuthStore } from '../../shared/store/authStore.js'
@@ -557,9 +558,9 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* Sağ panel placeholder #1 — Sağlık Skoru (Faz 3) */}
-        <div className="bento-cell bento-span-4" style={{ minHeight: '180px' }}>
-          {/* HealthScoreWidget gelecek — Faz 3 */}
+        {/* Sağ panel #1 — Sağlık Skoru (Faz 3) */}
+        <div className="bento-cell bento-span-4">
+          <HealthScoreWidget />
         </div>
 
         {/* Yatak Doluluk — span 8 */}
