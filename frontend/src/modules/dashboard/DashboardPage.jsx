@@ -8,6 +8,7 @@ import HeatMap from './HeatMap.jsx'
 import TrendChartsSection from './TrendChartsSection.jsx'
 import ManagementWidgets from './ManagementWidgets.jsx'
 import TodaysPulse from './TodaysPulse.jsx'
+import UpcomingEvents from './UpcomingEvents.jsx'
 import { useNotifications } from '../../shared/hooks/useNotifications.js'
 import { useOccupancy } from '../../shared/hooks/useOccupancy.js'
 import { useAuthStore } from '../../shared/store/authStore.js'
@@ -577,8 +578,8 @@ export default function DashboardPage() {
         </div>
 
         {/* Sağ panel placeholder #3 — Yaklaşan Etkinlikler (Faz 2) */}
-        <div className="bento-cell bento-span-4" style={{ minHeight: '320px' }}>
-          {/* UpcomingEvents gelecek — Faz 2 */}
+        <div className="bento-cell bento-span-4">
+          <UpcomingEvents />
         </div>
 
         {/* Blok HeatMap — span 12 */}
