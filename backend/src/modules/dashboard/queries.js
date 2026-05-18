@@ -281,7 +281,7 @@ function _getAnomalies() {
   `).all()
   for (const r of longQuarantine) {
     if (!r.last_q) continue
-    const hoursSince = (Date.now() - new Date(r.last_q + 'Z').getTime()) / 3600000
+    const hoursSince = (Date.now() - new Date(r.last_q.replace(' ', 'T') + 'Z').getTime()) / 3600000
     if (hoursSince >= 48) {
       anomalies.push({
         id: `qua-long-${r.block}-${r.room_no}`,
