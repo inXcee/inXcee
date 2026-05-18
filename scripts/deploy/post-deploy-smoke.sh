@@ -42,9 +42,11 @@ else
 fi
 
 # 3. Korunan route'lar token olmadan 401 dönmeli
+# Not: Sadece gerçekten GET handler'ı olan endpoint'ler test edilir.
+# /api/dashboard gibi router'larda kök GET yoktur — sadece alt-path'ler var.
 echo ""
 echo "[3/4] Korunan route'lar (token olmadan 401 bekleniyor)..."
-ROUTES=("/api/dashboard" "/api/capacity" "/api/checkin" "/api/maintenance" "/api/discipline" "/api/users")
+ROUTES=("/api/checkin/stats" "/api/maintenance/requests" "/api/users" "/api/inventory" "/api/companies")
 for route in "${ROUTES[@]}"; do
   HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$BACKEND_URL$route" 2>/dev/null || echo "000")
   if [ "$HTTP_CODE" = "401" ]; then
