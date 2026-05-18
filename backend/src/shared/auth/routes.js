@@ -48,7 +48,9 @@ authRouter.post('/kiosk-login', pinLimiter, (req, res) => {
   res.json(result)
 })
 
-authRouter.get('/kiosk-search', (req, res) => {
+// Kiosk arama — kiosk cihaza fiziksel erişim varsayımı ama anonim listeleme
+// pratik bir saldırı vektörü. pinLimiter ile birlikte 2+ karakter zorunlu.
+authRouter.get('/kiosk-search', pinLimiter, (req, res) => {
   const q = (req.query.q || '').trim()
   if (q.length < 2) return res.json([])
   res.json(searchKioskPersonnel(q))
@@ -58,7 +60,7 @@ authRouter.get('/kiosk-config', (req, res) => {
   res.json({ login_method: getSetting('kiosk_login_method') ?? 'both' })
 })
 
-authRouter.get('/avs-search', (req, res) => {
+authRouter.get('/avs-search', pinLimiter, (req, res) => {
   const q = (req.query.q || '').trim()
   if (q.length < 2) return res.json([])
   res.json(searchAvsWorkers(q))
