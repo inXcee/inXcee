@@ -122,8 +122,10 @@ Bileşen `useDateRange()` hook'unu çağırır; dışarıdan prop almaz.
 
 - Local `useState(30)` ve `DAYS_OPTIONS` chip'leri **kaldırılır** (artık global)
 - Yeni prop: `days` (parent'tan iner)
-- Header sağındaki günler toggle'ı kaldırılır; yerine `label` (parent'tan veya hook'tan) gösterilir
+- Header sağındaki günler toggle'ı kaldırılır; yerine her zaman `"SON {days} GÜN"` formatında readonly label gösterilir
 - `queryKey: ['trends', days]` — `days` prop'una bağımlı
+
+**Önemli — sliding window davranışı**: Trends grafiği daima "bugünden geriye N gün"dür. Custom aralık (örn. 1-30 Nisan) seçilse bile Trends bunu `days=30` olarak yorumlar ve "son 30 gün"ü gösterir; tarihler 1-30 Nisan **değildir**. Bu davranış kullanıcıya `"SON N GÜN"` label'ı ile iletilir. Audit ise gerçek tarih aralığını kullanır. Bu uyumsuzluk **kabul edilmiş tasarım kararıdır** (Approach A, backend dokunulmaz). Custom aralık gerçekten geçmiş pencere göstermek istenirse Approach B'ye (backend `from`/`to`) yükseltilebilir.
 
 ### `DashboardPage` değişiklikleri
 
@@ -168,8 +170,8 @@ URL güncelleme                  TrendChartsSection (days)
 - **Geçersiz `range` değeri** (örn. `?range=foo`): hook fallback 30g
 - **`range=custom` ama `from`/`to` eksik**: fallback 30g
 - **`to < from`**: fallback 30g; UI'da custom paneli açıldığında validation: from > to ise UYGULA disabled
-- **Custom aralık > 90 gün**: `days` 90'a clamp; backend zaten 90'ı geçeni de 90'a yuvarlar
-- **Custom aralık < 1 gün**: `days` 1'e clamp
+- **Custom aralık > 90 gün**: `days` 90'a clamp. Audit ise `from`/`to`'yu olduğu gibi kullanır → bu durumda Trends son 90 günü, Audit tam aralığı gösterir (uyumsuzluk). Mitigasyon: `DateRangeFilter` özel aralık panelinde UYGULA tıklamadan önce 90 gün üst sınırını uygula (UI'da "Max 90 gün" uyarısı + UYGULA disabled).
+- **Custom aralık < 1 gün** (aynı gün): `days` 1'e clamp; Audit aynı günü gösterir
 
 ## Test
 
@@ -190,7 +192,7 @@ URL güncelleme                  TrendChartsSection (days)
 - Preset chip tıklaması `setRange` çağırır
 - Özel butonu tıklayınca panel açılır
 - UYGULA butonu `setCustom` çağırır
-- Geçersiz aralıkta UYGULA disabled
+- Geçersiz aralıkta UYGULA disabled (from > to, >90 gün, eksik alan)
 
 ### Regresyon
 
