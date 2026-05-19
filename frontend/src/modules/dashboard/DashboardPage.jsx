@@ -11,6 +11,8 @@ import TodaysPulse from './TodaysPulse.jsx'
 import UpcomingEvents from './UpcomingEvents.jsx'
 import HealthScoreWidget from './HealthScoreWidget.jsx'
 import AnomalyAlerts from './AnomalyAlerts.jsx'
+import DateRangeFilter from './DateRangeFilter.jsx'
+import { useDateRange } from './useDateRange.js'
 import { useNotifications } from '../../shared/hooks/useNotifications.js'
 import { useOccupancy } from '../../shared/hooks/useOccupancy.js'
 import { useAuthStore } from '../../shared/store/authStore.js'
@@ -133,22 +135,20 @@ function BedOccupancyPanel({ data }) {
   )
 }
 
-function AuditLogPanel() {
+function AuditLogPanel({ globalFrom, globalTo }) {
   const [auditSearch, setAuditSearch] = useState('')
   const [auditModule, setAuditModule] = useState('')
-  const [auditDateFrom, setAuditDateFrom] = useState('')
-  const [auditDateTo, setAuditDateTo] = useState('')
   const [auditLimit, setAuditLimit] = useState(30)
 
   const auditParams = new URLSearchParams()
   auditParams.set('limit', auditLimit)
   if (auditSearch) auditParams.set('search', auditSearch)
   if (auditModule) auditParams.set('module', auditModule)
-  if (auditDateFrom) auditParams.set('date_from', auditDateFrom)
-  if (auditDateTo) auditParams.set('date_to', auditDateTo)
+  if (globalFrom) auditParams.set('date_from', globalFrom)
+  if (globalTo) auditParams.set('date_to', globalTo)
 
   const { data: logs = [] } = useQuery({
-    queryKey: ['audit-log', auditSearch, auditModule, auditDateFrom, auditDateTo, auditLimit],
+    queryKey: ['audit-log', auditSearch, auditModule, globalFrom, globalTo, auditLimit],
     queryFn: () => api.get(`/dashboard/audit-log?${auditParams}`).then(r => r.data),
     refetchInterval: 60000,
   })
@@ -206,14 +206,9 @@ function AuditLogPanel() {
           <option value="">Tüm Modüller</option>
           {modules.map(m => <option key={m} value={m}>{m}</option>)}
         </select>
-        <input type="date" className="form-input" value={auditDateFrom} onChange={e => setAuditDateFrom(e.target.value)}
-          style={{ fontSize: '10px', padding: '4px 6px', width: 'auto' }} />
-        <span style={{ fontSize: '10px', color: 'var(--text3)' }}>—</span>
-        <input type="date" className="form-input" value={auditDateTo} onChange={e => setAuditDateTo(e.target.value)}
-          style={{ fontSize: '10px', padding: '4px 6px', width: 'auto' }} />
-        {(auditSearch || auditModule || auditDateFrom || auditDateTo) && (
+        {(auditSearch || auditModule) && (
           <button className="btn btn-ghost btn-xs" style={{ fontSize: '9px' }}
-            onClick={() => { setAuditSearch(''); setAuditModule(''); setAuditDateFrom(''); setAuditDateTo('') }}>TEMİZLE</button>
+            onClick={() => { setAuditSearch(''); setAuditModule('') }}>TEMİZLE</button>
         )}
         <button className="btn btn-ghost btn-xs" style={{ fontSize: '9px', marginLeft: 'auto' }}
           onClick={() => setAuditLimit(l => l + 30)}>DAHA FAZLA</button>
@@ -459,6 +454,8 @@ export default function DashboardPage() {
   if (user?.role === 'technical') return <TechnicianDashboard />
   if (user?.role === 'housekeeper') return <HousekeeperDashboard />
 
+  const { days, from: globalFrom, to: globalTo, label: rangeLabel } = useDateRange()
+
   const { data: kpi } = useQuery({
     queryKey: ['dashboard-kpi'],
     queryFn: () => api.get('/dashboard/kpi').then(r => r.data),
@@ -504,6 +501,7 @@ export default function DashboardPage() {
           </p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+          <DateRangeFilter />
           {isManager && <ExportButtons />}
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <div className="live-dot" />
@@ -576,7 +574,7 @@ export default function DashboardPage() {
 
         {/* Trend grafikleri — span 8 (mevcut TrendChartsSection 2x2 internal grid'i yapıyor) */}
         <div className="bento-cell bento-span-8">
-          <TrendChartsSection />
+          <TrendChartsSection days={days} label={rangeLabel} />
         </div>
 
         {/* Sağ panel placeholder #3 — Yaklaşan Etkinlikler (Faz 2) */}
@@ -677,7 +675,7 @@ export default function DashboardPage() {
               <div className="sect-title">DENETİM KAYDI</div>
               <div className="sect-line" />
             </div>
-            <AuditLogPanel />
+            <AuditLogPanel globalFrom={globalFrom} globalTo={globalTo} />
           </div>
         )}
       </div>

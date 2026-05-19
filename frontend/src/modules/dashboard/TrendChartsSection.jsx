@@ -1,19 +1,10 @@
-import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import TrendCard from './TrendCard.jsx'
 
-const DAYS_OPTIONS = [
-  { label: '7G', value: 7 },
-  { label: '30G', value: 30 },
-  { label: '90G', value: 90 },
-]
-
 const METRICS = ['occupancy', 'sla', 'housekeeping', 'checkins']
 
-export default function TrendChartsSection() {
-  const [days, setDays] = useState(30)
-
+export default function TrendChartsSection({ days = 30, label }) {
   const { data, isLoading } = useQuery({
     queryKey: ['trends', days],
     queryFn: () => api.get(`/dashboard/trends?days=${days}`).then(r => r.data),
@@ -32,29 +23,8 @@ export default function TrendChartsSection() {
             MODÜL BAZLI PERFORMANS TRENDİ
           </div>
         </div>
-
-        {/* Days toggle */}
-        <div style={{ display: 'flex', gap: '4px', background: 'var(--surface2)', padding: '3px', borderRadius: '8px', border: '1px solid var(--border)' }}>
-          {DAYS_OPTIONS.map(opt => (
-            <button
-              key={opt.value}
-              onClick={() => setDays(opt.value)}
-              style={{
-                padding: '4px 12px',
-                borderRadius: '5px',
-                border: 'none',
-                cursor: 'pointer',
-                fontFamily: 'var(--mono)',
-                fontSize: '10px',
-                letterSpacing: '1px',
-                background: days === opt.value ? 'var(--surface4, var(--surface3))' : 'transparent',
-                color: days === opt.value ? 'var(--text)' : 'var(--text3)',
-                transition: 'all 0.15s',
-              }}
-            >
-              {opt.label}
-            </button>
-          ))}
+        <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '1.5px' }}>
+          {label || `SON ${days} GÜN`}
         </div>
       </div>
 
