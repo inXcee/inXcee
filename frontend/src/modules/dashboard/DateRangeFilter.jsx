@@ -34,15 +34,16 @@ export default function DateRangeFilter() {
   }
 
   const chipStyle = (active) => ({
-    padding: '5px 12px',
-    borderRadius: '6px',
+    padding: '6px 12px',
+    borderRadius: '8px',
     border: '1px solid var(--border)',
-    background: active ? 'var(--accent)' : 'var(--surface2)',
+    background: active ? 'var(--text)' : 'transparent',
     color: active ? 'var(--bg)' : 'var(--text2)',
-    fontFamily: 'var(--mono)',
-    fontSize: '10px',
-    letterSpacing: '1px',
+    fontFamily: 'var(--sans)',
+    fontSize: '12px',
+    fontWeight: 500,
     cursor: 'pointer',
+    transition: 'background .15s, color .15s',
   })
 
   return (
@@ -55,7 +56,7 @@ export default function DateRangeFilter() {
           style={chipStyle(!isCustom && range === p)}
           aria-label={`Son ${p} gün`}
         >
-          {p}G
+          {p} gün
         </button>
       ))}
       <button
@@ -64,7 +65,7 @@ export default function DateRangeFilter() {
         style={chipStyle(isCustom)}
         aria-label="Özel aralık"
       >
-        {isCustom ? label : 'ÖZEL ▾'}
+        {isCustom ? label : 'Özel ▾'}
       </button>
 
       {open && (
@@ -75,8 +76,8 @@ export default function DateRangeFilter() {
           boxShadow: '0 8px 24px rgba(0,0,0,.3)',
           display: 'flex', flexDirection: 'column', gap: '8px',
         }}>
-          <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '1.5px' }}>
-            ÖZEL ARALIK
+          <div style={{ fontSize: '12px', color: 'var(--text2)', fontWeight: 500 }}>
+            Özel aralık
           </div>
           <input
             type="date"
@@ -95,7 +96,7 @@ export default function DateRangeFilter() {
             style={{ fontSize: '12px' }}
           />
           {!validation.ok && (fromInput || toInput) && (
-            <div style={{ fontSize: '10px', color: 'var(--red)', fontFamily: 'var(--mono)' }}>
+            <div style={{ fontSize: '11px', color: 'var(--red)' }}>
               {validation.msg}
             </div>
           )}

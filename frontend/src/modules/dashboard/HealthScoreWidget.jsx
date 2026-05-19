@@ -1,11 +1,12 @@
 import { useQuery } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
+import DashCard from './DashCard.jsx'
 
 function Gauge({ score, color }) {
   const radius = 56
   const cx = 70, cy = 70
-  const startAngle = Math.PI            // 180° (sol)
-  const endAngle = 2 * Math.PI          // 360° (sağ)
+  const startAngle = Math.PI
+  const endAngle = 2 * Math.PI
   const progressAngle = startAngle + (endAngle - startAngle) * (score / 100)
 
   const arcPath = (start, end) => {
@@ -17,12 +18,10 @@ function Gauge({ score, color }) {
     return `M ${x1} ${y1} A ${radius} ${radius} 0 ${largeArc} 1 ${x2} ${y2}`
   }
 
-  const colorVar = color === 'green' ? 'var(--green)' : color === 'amber' ? 'var(--accent)' : 'var(--red)'
-
   return (
-    <svg viewBox="0 0 140 90" width="100%" style={{ maxHeight: '110px' }}>
-      <path d={arcPath(startAngle, endAngle)} stroke="var(--border)" strokeWidth="10" fill="none" strokeLinecap="round" />
-      <path d={arcPath(startAngle, progressAngle)} stroke={colorVar} strokeWidth="10" fill="none" strokeLinecap="round" />
+    <svg viewBox="0 0 140 90" width="100%" style={{ maxHeight: '100px' }}>
+      <path d={arcPath(startAngle, endAngle)} stroke="var(--border)" strokeWidth="8" fill="none" strokeLinecap="round" />
+      <path d={arcPath(startAngle, progressAngle)} stroke={color} strokeWidth="8" fill="none" strokeLinecap="round" />
     </svg>
   )
 }
@@ -30,17 +29,17 @@ function Gauge({ score, color }) {
 function BreakdownBar({ label, value, weight }) {
   const color = value >= 80 ? 'var(--green)' : value >= 60 ? 'var(--accent)' : 'var(--red)'
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-      <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '1.5px', minWidth: '64px' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+      <div style={{ fontSize: '11px', color: 'var(--text2)', minWidth: '70px' }}>
         {label}
       </div>
-      <div style={{ flex: 1, height: '4px', background: 'var(--border)', borderRadius: '2px', overflow: 'hidden' }}>
-        <div style={{ width: `${value}%`, height: '100%', background: color, transition: 'width .6s ease' }} />
+      <div style={{ flex: 1, height: '3px', background: 'var(--border)', borderRadius: '2px', overflow: 'hidden' }}>
+        <div style={{ width: `${value}%`, height: '100%', background: color, transition: 'width .4s ease' }} />
       </div>
-      <div style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text2)', minWidth: '28px', textAlign: 'right' }}>
+      <div style={{ fontSize: '11px', color: 'var(--text2)', minWidth: '24px', textAlign: 'right', fontWeight: 500 }}>
         {value}
       </div>
-      <div style={{ fontFamily: 'var(--mono)', fontSize: '8.5px', color: 'var(--text4)', minWidth: '28px', textAlign: 'right' }}>
+      <div style={{ fontSize: '10px', color: 'var(--text4)', minWidth: '28px', textAlign: 'right' }}>
         ×{weight.toFixed(2)}
       </div>
     </div>
@@ -56,50 +55,40 @@ export default function HealthScoreWidget() {
 
   if (isLoading || !data) {
     return (
-      <div className="panel card-glass cat-stripe cat-stripe-health" style={{ minHeight: '280px' }}>
-        <div className="panel-header">
-          <div>
-            <div className="panel-title">SAĞLIK SKORU</div>
-            <div className="panel-subtitle">SİSTEM GENEL DURUMU</div>
-          </div>
+      <DashCard title="Sağlık skoru">
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '160px', fontSize: '12px', color: 'var(--text3)' }}>
+          Yükleniyor…
         </div>
-        <div className="panel-body" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '160px' }}>
-          <div style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)' }}>Yükleniyor…</div>
-        </div>
-      </div>
+      </DashCard>
     )
   }
 
   const colorVar = data.color === 'green' ? 'var(--green)' : data.color === 'amber' ? 'var(--accent)' : 'var(--red)'
 
+  // İsimleri sentence case'e çevir (DOLULUK → Doluluk)
+  const breakdown = data.breakdown.map(b => ({
+    ...b,
+    label: b.label.charAt(0) + b.label.slice(1).toLocaleLowerCase('tr'),
+  }))
+
   return (
-    <div className="panel card-glass cat-stripe cat-stripe-health">
-      <div className="panel-header">
-        <div>
-          <div className="panel-title">SAĞLIK SKORU</div>
-          <div className="panel-subtitle">SİSTEM GENEL DURUMU</div>
-        </div>
-      </div>
-      <div className="panel-body" style={{ padding: '18px 20px' }}>
-        <div style={{ position: 'relative', textAlign: 'center', marginBottom: '12px' }}>
-          <Gauge score={data.score} color={data.color} />
-          <div style={{
-            position: 'absolute', top: '40%', left: 0, right: 0, textAlign: 'center',
-          }}>
-            <div style={{ fontFamily: 'var(--display)', fontSize: '44px', lineHeight: 1, color: colorVar, letterSpacing: '1px' }}>
-              {data.score}
-            </div>
-            <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text3)', letterSpacing: '2px', marginTop: '2px' }}>
-              / 100
-            </div>
+    <DashCard title="Sağlık skoru">
+      <div style={{ position: 'relative', textAlign: 'center', marginBottom: '8px' }}>
+        <Gauge score={data.score} color={colorVar} />
+        <div style={{ position: 'absolute', top: '38%', left: 0, right: 0, textAlign: 'center' }}>
+          <div style={{ fontFamily: 'var(--sans)', fontSize: '36px', fontWeight: 600, lineHeight: 1, color: colorVar }}>
+            {data.score}
+          </div>
+          <div style={{ fontSize: '10px', color: 'var(--text3)', marginTop: '4px' }}>
+            / 100
           </div>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '12px' }}>
-          {data.breakdown.map(c => (
-            <BreakdownBar key={c.label} {...c} />
-          ))}
-        </div>
       </div>
-    </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '14px' }}>
+        {breakdown.map(c => (
+          <BreakdownBar key={c.label} {...c} />
+        ))}
+      </div>
+    </DashCard>
   )
 }

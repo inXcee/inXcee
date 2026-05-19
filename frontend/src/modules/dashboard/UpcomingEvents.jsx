@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import api from '../../shared/api/client.js'
+import DashCard from './DashCard.jsx'
 
 function daysUntil(dateStr) {
   if (!dateStr) return null
@@ -9,40 +10,39 @@ function daysUntil(dateStr) {
   return Math.ceil((target - now) / (1000 * 60 * 60 * 24))
 }
 
-function EventRow({ date, days, title, sub, color, onClick }) {
+function EventRow({ days, title, sub, onClick, isLast }) {
   const isOverdue = days != null && days < 0
   const isUrgent = days != null && days >= 0 && days <= 2
-  const dayColor = isOverdue ? 'var(--red)' : isUrgent ? 'var(--accent)' : color
-  const dayLabel = days == null ? '—' : days < 0 ? `${Math.abs(days)} gün geçti` : days === 0 ? 'BUGÜN' : `${days} gün`
+  const sigColor = isOverdue ? 'var(--red)' : isUrgent ? 'var(--accent)' : 'var(--text2)'
+  const dayLabel = days == null ? '—' : days < 0 ? `${Math.abs(days)} gün geçti` : days === 0 ? 'Bugün' : `${days} gün`
 
   return (
     <div
       onClick={onClick}
       style={{
         display: 'flex', alignItems: 'center', gap: '12px',
-        padding: '10px 14px', borderBottom: '1px solid rgba(35,45,63,.3)',
+        padding: '12px 0',
+        borderBottom: isLast ? 'none' : '1px solid var(--border)',
         cursor: onClick ? 'pointer' : 'default',
-        transition: 'background .15s',
+        transition: 'opacity .15s',
       }}
-      onMouseEnter={e => { if (onClick) e.currentTarget.style.background = 'rgba(255,255,255,.02)' }}
-      onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
+      onMouseEnter={e => { if (onClick) e.currentTarget.style.opacity = '0.7' }}
+      onMouseLeave={e => { e.currentTarget.style.opacity = '1' }}
     >
       <div style={{
-        minWidth: '50px', padding: '6px 8px',
-        background: `color-mix(in srgb, ${dayColor} 12%, transparent)`,
-        border: `1px solid color-mix(in srgb, ${dayColor} 25%, transparent)`,
-        borderRadius: '6px', textAlign: 'center',
+        minWidth: '64px',
+        fontSize: '11px',
+        fontWeight: 600,
+        color: sigColor,
       }}>
-        <div style={{ fontFamily: 'var(--mono)', fontSize: '8.5px', color: dayColor, letterSpacing: '1px', fontWeight: 600 }}>
-          {dayLabel}
-        </div>
+        {dayLabel}
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: '12px', color: 'var(--text)', fontWeight: 500, marginBottom: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <div style={{ fontSize: '13px', color: 'var(--text)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {title}
         </div>
         {sub && (
-          <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <div style={{ fontSize: '11px', color: 'var(--text3)', marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {sub}
           </div>
         )}
@@ -78,7 +78,6 @@ export default function UpcomingEvents() {
       days: daysUntil(drillStats.upcoming),
       title: 'Sonraki tatbikat',
       sub: drillStats.upcoming,
-      color: 'var(--purple)',
       onClick: () => navigate('/settings/drills'),
     })
   }
@@ -90,7 +89,6 @@ export default function UpcomingEvents() {
         days: c.days_left,
         title: `${c.name} sözleşmesi bitiyor`,
         sub: c.contract_end || '—',
-        color: 'var(--purple)',
         onClick: () => navigate('/settings/companies'),
       })
     }
@@ -105,7 +103,6 @@ export default function UpcomingEvents() {
           days: d,
           title: `SLA: ${(r.description || '').slice(0, 40)}`,
           sub: r.location,
-          color: 'var(--red)',
           onClick: () => navigate('/maintenance'),
         })
       }
@@ -116,25 +113,14 @@ export default function UpcomingEvents() {
   const top = events.slice(0, 5)
 
   return (
-    <div className="panel card-glass cat-stripe cat-stripe-finance">
-      <div className="panel-header">
-        <div>
-          <div className="panel-title">YAKLAŞAN ETKİNLİKLER</div>
-          <div className="panel-subtitle">ÖNÜMÜZDEKİ 7 GÜN</div>
+    <DashCard title="Yaklaşan etkinlikler">
+      {top.length === 0 ? (
+        <div style={{ padding: '24px 0', textAlign: 'center', fontSize: '12px', color: 'var(--text3)' }}>
+          Önümüzdeki 7 günde etkinlik yok
         </div>
-      </div>
-      <div className="panel-body" style={{ padding: 0 }}>
-        {top.length === 0 ? (
-          <div style={{ padding: '24px 14px', textAlign: 'center' }}>
-            <div style={{ fontSize: '20px', color: 'var(--text3)', marginBottom: '6px' }}>—</div>
-            <div style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)', letterSpacing: '1px' }}>
-              YAKLAŞAN ETKİNLİK YOK
-            </div>
-          </div>
-        ) : top.map(ev => (
-          <EventRow key={ev.key} {...ev} />
-        ))}
-      </div>
-    </div>
+      ) : top.map((ev, i) => (
+        <EventRow key={ev.key} {...ev} isLast={i === top.length - 1} />
+      ))}
+    </DashCard>
   )
 }

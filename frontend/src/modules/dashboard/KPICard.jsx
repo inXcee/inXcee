@@ -1,69 +1,69 @@
-const COLOR_MAP = {
-  orange: { accent: 'var(--accent)',  bg: 'rgba(240,165,0,.10)',  cat: 'personnel' },
-  amber:  { accent: 'var(--accent)',  bg: 'rgba(240,165,0,.10)',  cat: 'personnel' },
-  red:    { accent: 'var(--red)',     bg: 'rgba(231,76,60,.10)',  cat: 'maintenance' },
-  green:  { accent: 'var(--green)',   bg: 'rgba(39,201,106,.10)', cat: 'housekeeping' },
-  blue:   { accent: 'var(--blue)',    bg: 'rgba(59,140,240,.10)', cat: 'occupancy' },
-  purple: { accent: 'var(--purple)',  bg: 'rgba(155,89,182,.10)', cat: 'finance' },
-  teal:   { accent: 'var(--teal)',    bg: 'rgba(26,188,156,.10)', cat: 'health' },
+const STATUS_COLOR = {
+  red: 'var(--red)',
+  green: 'var(--green)',
+  orange: 'var(--accent)',
+  amber: 'var(--accent)',
+  blue: 'var(--text)',
+  purple: 'var(--text)',
+  teal: 'var(--text)',
 }
 
-export default function KPICard({ icon, label, value, color = 'orange', subtitle, barPct, trend, category }) {
-  const c = COLOR_MAP[color] || COLOR_MAP.orange
-  const catName = category || c.cat
-  const progClass = color === 'red' ? 'prog-red' : color === 'green' ? 'prog-green' : color === 'blue' ? 'prog-blue' : 'prog-amber'
+export default function KPICard({ icon, label, value, color = 'blue', subtitle, barPct, trend }) {
+  // Sade dil: numara rengi yalnızca durum sinyali olduğunda renkli (red/green/amber),
+  // diğer durumlarda normal metin rengi. Icon ve gradient yok.
+  const numColor = STATUS_COLOR[color] || 'var(--text)'
 
   return (
     <div
-      className={`kpi-card card-glass cat-stripe cat-stripe-${catName}`}
-      style={{ padding: '22px 20px 20px', transition: 'all .2s' }}
+      style={{
+        background: 'var(--surface)',
+        border: '1px solid var(--border)',
+        borderRadius: '12px',
+        padding: '18px 18px 16px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '4px',
+      }}
       aria-label={`${label} ${value}`}
     >
-      <div style={{
-        width: '34px', height: '34px',
-        borderRadius: '8px',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: '16px',
-        marginBottom: '14px',
-        background: c.bg,
-      }}>
-        {icon}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        {icon && (
+          <span style={{ fontSize: '14px', opacity: 0.7, lineHeight: 1 }} aria-hidden>{icon}</span>
+        )}
+        <span style={{ fontSize: '12px', color: 'var(--text2)', fontWeight: 500 }}>{label}</span>
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'flex-end', gap: '6px', marginBottom: '4px' }}>
-        <div style={{
-          fontFamily: 'var(--display)', fontSize: '44px', lineHeight: 1,
-          color: c.accent, letterSpacing: '1px',
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', marginTop: '6px' }}>
+        <span style={{
+          fontFamily: 'var(--sans)',
+          fontSize: '32px',
+          fontWeight: 600,
+          lineHeight: 1,
+          color: numColor,
         }}>
           {value}
-        </div>
+        </span>
         {trend && (
-          <span style={{
-            fontFamily: 'var(--mono)', fontSize: '11px', fontWeight: 600,
-            color: trend === 'up' ? 'var(--green)' : 'var(--red)',
-            marginBottom: '6px',
-          }}>
-            {trend === 'up' ? '▲' : '▼'}
+          <span style={{ fontSize: '11px', fontWeight: 600, color: trend === 'up' ? 'var(--green)' : 'var(--red)' }}>
+            {trend === 'up' ? '↑' : '↓'}
           </span>
         )}
       </div>
 
-      <div style={{
-        fontFamily: 'var(--mono)', fontSize: '10px',
-        color: 'var(--text3)', letterSpacing: '2px', textTransform: 'uppercase',
-      }}>
-        {label}
-      </div>
-
       {subtitle && (
-        <div style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text2)', marginTop: '4px' }}>
+        <div style={{ fontSize: '11px', color: 'var(--text3)', marginTop: '2px' }}>
           {subtitle}
         </div>
       )}
 
       {barPct !== undefined && (
-        <div className="prog-bar" style={{ marginTop: '14px' }}>
-          <div className={`prog-fill ${progClass}`} style={{ width: `${Math.min(barPct, 100)}%` }} />
+        <div style={{ marginTop: '10px', height: '3px', background: 'var(--border)', borderRadius: '2px', overflow: 'hidden' }}>
+          <div style={{
+            width: `${Math.min(barPct, 100)}%`,
+            height: '100%',
+            background: numColor,
+            transition: 'width .4s ease',
+          }} />
         </div>
       )}
     </div>

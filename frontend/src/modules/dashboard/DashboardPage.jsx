@@ -17,6 +17,7 @@ import { useNotifications } from '../../shared/hooks/useNotifications.js'
 import { useOccupancy } from '../../shared/hooks/useOccupancy.js'
 import { useAuthStore } from '../../shared/store/authStore.js'
 import { blockColor } from '../../shared/blocks.js'
+import DashCard from './DashCard.jsx'
 
 function PriorityBar({ priority }) {
   const cls = priority === 'high' ? 'pri-high' : priority === 'medium' ? 'pri-mid' : 'pri-low'
@@ -33,105 +34,90 @@ function BedOccupancyPanel({ data }) {
     return 'var(--green)'
   }
 
+  const summary = [
+    { label: 'Toplam yatak', value: totals.total_beds },
+    { label: 'Dolu', value: totals.occupied },
+    { label: 'Boş', value: totals.empty },
+    { label: 'Toplam oda', value: totals.total_rooms },
+    { label: 'Aktif oda', value: totals.active_rooms },
+    {
+      label: totals.quarantine_rooms > 0 ? 'Bakım / karantina' : 'Bakım',
+      value: totals.maintenance_rooms + totals.quarantine_rooms,
+      color: totals.quarantine_rooms > 0 ? 'var(--red)' : undefined,
+    },
+  ]
+
   return (
-    <div className="panel">
-      <div style={{ height: '2px', background: 'linear-gradient(90deg,var(--blue),var(--teal))' }} />
-      <div className="panel-header">
-        <div>
-          <div className="panel-title">YATAK DOLULUK RAPORU</div>
-          <div className="panel-subtitle">BLOK BAZLI KAPASİTE DURUMU</div>
+    <DashCard
+      title="Yatak doluluk"
+      action={
+        <div style={{ fontSize: '20px', fontWeight: 600, color: barColor(totals.pct), lineHeight: 1 }}>
+          %{totals.pct}
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ fontFamily: 'var(--display)', fontSize: '28px', color: barColor(totals.pct), lineHeight: 1 }}>
-              %{totals.pct}
-            </div>
-            <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text3)', letterSpacing: '1px' }}>GENEL DOLULUK</div>
+      }
+    >
+      {/* Summary numbers */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: '12px', marginBottom: '20px' }}>
+        {summary.map(s => (
+          <div key={s.label}>
+            <div style={{ fontSize: '22px', fontWeight: 600, color: s.color || 'var(--text)', lineHeight: 1 }}>{s.value}</div>
+            <div style={{ fontSize: '11px', color: 'var(--text3)', marginTop: '4px' }}>{s.label}</div>
           </div>
-        </div>
+        ))}
       </div>
-      <div className="panel-body">
-        {/* Summary cards */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: '10px', marginBottom: '20px' }}>
-          {[
-            { label: 'TOPLAM YATAK', value: totals.total_beds, color: 'var(--text)' },
-            { label: 'DOLU', value: totals.occupied, color: 'var(--accent)' },
-            { label: 'BOŞ', value: totals.empty, color: 'var(--green)' },
-            { label: 'TOPLAM ODA', value: totals.total_rooms, color: 'var(--blue)' },
-            { label: 'AKTİF ODA', value: totals.active_rooms, color: 'var(--teal)' },
-            { label: 'BAKIM / KARANTİNA', value: totals.maintenance_rooms + totals.quarantine_rooms, color: totals.quarantine_rooms > 0 ? 'var(--red)' : 'var(--text3)' },
-          ].map(s => (
-            <div key={s.label} style={{
-              padding: '10px 12px', background: 'var(--surface2)',
-              border: '1px solid var(--border)', borderRadius: '8px',
+
+      {/* Per-block breakdown */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        {blocks.map(b => {
+          const color = barColor(b.pct)
+          return (
+            <div key={b.block} style={{
+              display: 'flex', alignItems: 'center', gap: '12px',
+              padding: '10px 0',
+              borderBottom: '1px solid var(--border)',
             }}>
-              <div style={{ fontFamily: 'var(--display)', fontSize: '24px', color: s.color, lineHeight: 1 }}>{s.value}</div>
-              <div style={{ fontFamily: 'var(--mono)', fontSize: '7.5px', color: 'var(--text3)', letterSpacing: '1px', marginTop: '4px' }}>{s.label}</div>
-            </div>
-          ))}
-        </div>
+              <div style={{
+                fontSize: '13px', fontWeight: 600,
+                color: blockColor(b.block),
+                width: '36px', flexShrink: 0,
+              }}>{b.block}</div>
 
-        {/* Per-block breakdown */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          {blocks.map(b => {
-            const color = barColor(b.pct)
-            return (
-              <div key={b.block} style={{
-                display: 'flex', alignItems: 'center', gap: '12px',
-                padding: '10px 14px', background: 'var(--surface2)',
-                border: '1px solid var(--border)', borderRadius: '8px',
-              }}>
-                <div style={{
-                  fontFamily: 'var(--display)', fontSize: '20px', letterSpacing: '2px',
-                  color: blockColor(b.block),
-                  width: '36px', flexShrink: 0,
-                }}>{b.block}</div>
-
-                {/* Progress bar */}
-                <div style={{ flex: 1 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                    <span style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text2)' }}>
-                      {b.occupied} / {b.total_beds} yatak dolu
-                    </span>
-                    <span style={{ fontFamily: 'var(--mono)', fontSize: '10px', color, fontWeight: 700 }}>
-                      %{b.pct}
-                    </span>
-                  </div>
-                  <div style={{ height: '6px', background: 'var(--border)', borderRadius: '3px', overflow: 'hidden' }}>
-                    <div style={{
-                      width: `${b.pct}%`, height: '100%', borderRadius: '3px',
-                      background: color, transition: 'width .6s ease',
-                    }} />
-                  </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                  <span style={{ fontSize: '12px', color: 'var(--text2)' }}>
+                    {b.occupied} / {b.total_beds}
+                  </span>
+                  <span style={{ fontSize: '12px', color, fontWeight: 600 }}>
+                    %{b.pct}
+                  </span>
                 </div>
-
-                {/* Stats */}
-                <div style={{ display: 'flex', gap: '12px', flexShrink: 0, flexWrap: 'wrap' }}>
-                  <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontFamily: 'var(--display)', fontSize: '18px', color: 'var(--green)', lineHeight: 1 }}>{b.empty}</div>
-                    <div style={{ fontFamily: 'var(--mono)', fontSize: '7px', color: 'var(--text3)', letterSpacing: '1px' }}>BOŞ</div>
-                  </div>
-                  <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontFamily: 'var(--display)', fontSize: '18px', color: 'var(--text2)', lineHeight: 1 }}>{b.total_rooms}</div>
-                    <div style={{ fontFamily: 'var(--mono)', fontSize: '7px', color: 'var(--text3)', letterSpacing: '1px' }}>ODA</div>
-                  </div>
-                  {(b.maintenance_rooms > 0 || b.quarantine_rooms > 0) && (
-                    <div style={{ textAlign: 'center' }}>
-                      <div style={{ fontFamily: 'var(--display)', fontSize: '18px', color: 'var(--red)', lineHeight: 1 }}>
-                        {b.maintenance_rooms + b.quarantine_rooms}
-                      </div>
-                      <div style={{ fontFamily: 'var(--mono)', fontSize: '7px', color: 'var(--text3)', letterSpacing: '1px' }}>
-                        {b.quarantine_rooms > 0 ? 'KARANT.' : 'BAKIM'}
-                      </div>
-                    </div>
-                  )}
+                <div style={{ height: '4px', background: 'var(--border)', borderRadius: '2px', overflow: 'hidden' }}>
+                  <div style={{
+                    width: `${b.pct}%`, height: '100%',
+                    background: color, transition: 'width .4s ease',
+                  }} />
                 </div>
               </div>
-            )
-          })}
-        </div>
+
+              <div style={{ display: 'flex', gap: '16px', flexShrink: 0, fontSize: '11px' }}>
+                <div style={{ textAlign: 'right', minWidth: '32px' }}>
+                  <div style={{ color: 'var(--text)', fontWeight: 500 }}>{b.empty}</div>
+                  <div style={{ color: 'var(--text3)', fontSize: '10px' }}>boş</div>
+                </div>
+                {(b.maintenance_rooms > 0 || b.quarantine_rooms > 0) && (
+                  <div style={{ textAlign: 'right', minWidth: '32px' }}>
+                    <div style={{ color: 'var(--red)', fontWeight: 500 }}>{b.maintenance_rooms + b.quarantine_rooms}</div>
+                    <div style={{ color: 'var(--text3)', fontSize: '10px' }}>
+                      {b.quarantine_rooms > 0 ? 'karant.' : 'bakım'}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )
+        })}
       </div>
-    </div>
+    </DashCard>
   )
 }
 
@@ -180,63 +166,54 @@ function AuditLogPanel({ globalFrom, globalTo }) {
     inventory_out: 'Stok Çıkış',
   }
 
-  const actionColor = (action) => {
-    if (action.includes('delete') || action.includes('quarantine') || action.includes('blacklist') || action === 'reject') return 'red'
-    if (action.includes('assign') || action.includes('register')) return 'blue'
-    if (action.includes('inventory')) return 'purple'
-    return 'gray'
-  }
-
   const modules = [...new Set(logs.map(l => l.module).filter(Boolean))]
 
   return (
-    <div className="panel" style={{ marginBottom: '28px' }}>
-      <div className="panel-header">
-        <div>
-          <div className="panel-title">SON İŞLEMLER</div>
-          <div className="panel-subtitle">DENETİM KAYDI · {logs.length} KAYIT</div>
-        </div>
-      </div>
+    <DashCard
+      title="Son işlemler"
+      bodyStyle={{ padding: 0 }}
+      action={<span style={{ fontSize: '11px', color: 'var(--text3)' }}>{logs.length} kayıt</span>}
+    >
       {/* Filters */}
-      <div style={{ padding: '8px 14px', borderBottom: '1px solid rgba(35,45,63,.3)', display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+      <div style={{ padding: '8px 20px 12px', borderBottom: '1px solid var(--border)', display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
         <input className="form-input" value={auditSearch} onChange={e => setAuditSearch(e.target.value)}
-          placeholder="Ara..." style={{ fontSize: '11px', width: '140px', minWidth: '80px', padding: '4px 8px', flex: '1 1 80px', maxWidth: '200px' }} />
+          placeholder="Ara…" style={{ fontSize: '12px', width: '160px', padding: '6px 10px', flex: '1 1 120px', maxWidth: '240px' }} />
         <select className="form-select" value={auditModule} onChange={e => setAuditModule(e.target.value)}
-          style={{ fontSize: '11px', padding: '4px 6px', width: 'auto' }}>
-          <option value="">Tüm Modüller</option>
+          style={{ fontSize: '12px', padding: '6px 8px', width: 'auto' }}>
+          <option value="">Tüm modüller</option>
           {modules.map(m => <option key={m} value={m}>{m}</option>)}
         </select>
         {(auditSearch || auditModule) && (
-          <button className="btn btn-ghost btn-xs" style={{ fontSize: '9px' }}
-            onClick={() => { setAuditSearch(''); setAuditModule('') }}>TEMİZLE</button>
+          <button className="btn btn-ghost btn-xs" onClick={() => { setAuditSearch(''); setAuditModule('') }}>Temizle</button>
         )}
-        <button className="btn btn-ghost btn-xs" style={{ fontSize: '9px', marginLeft: 'auto' }}
-          onClick={() => setAuditLimit(l => l + 30)}>DAHA FAZLA</button>
+        <button className="btn btn-ghost btn-xs" style={{ marginLeft: 'auto' }} onClick={() => setAuditLimit(l => l + 30)}>Daha fazla</button>
       </div>
-      <div className="panel-body" style={{ padding: '0', maxHeight: '400px', overflowY: 'auto' }}>
+      <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
         {logs.length === 0 && (
-          <div style={{ padding: '20px', textAlign: 'center', fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--text4)' }}>Kayıt bulunamadı</div>
+          <div style={{ padding: '20px', textAlign: 'center', fontSize: '12px', color: 'var(--text3)' }}>Kayıt bulunamadı</div>
         )}
         {logs.map(log => (
           <div key={log.id} style={{
-            display: 'flex', alignItems: 'center', gap: '8px',
-            padding: '8px 14px', borderBottom: '1px solid rgba(35,45,63,.3)',
-            fontSize: '12px', flexWrap: 'wrap',
+            display: 'flex', alignItems: 'center', gap: '12px',
+            padding: '10px 20px', borderBottom: '1px solid var(--border)',
+            fontSize: '12px',
           }}>
-            <span className={`badge badge-${actionColor(log.action)}`} style={{ fontSize: '8px', padding: '2px 6px', flexShrink: 0 }}>
+            <span style={{
+              fontSize: '11px', color: 'var(--text2)', minWidth: '120px',
+              fontWeight: 500,
+            }}>
               {actionLabels[log.action] || log.action}
             </span>
-            <span style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text4)', flexShrink: 0 }}>
-              {log.module || '—'}
+            <span style={{ flex: '1 1 120px', color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
+              {log.detail || '—'}
             </span>
-            <span style={{ flex: '1 1 120px', color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{log.detail || '—'}</span>
-            <span style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', flexShrink: 0 }}>
+            <span style={{ fontSize: '11px', color: 'var(--text3)', flexShrink: 0 }}>
               {log.user_name} · {new Date(log.created_at).toLocaleString('tr-TR', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })}
             </span>
           </div>
         ))}
       </div>
-    </div>
+    </DashCard>
   )
 }
 
@@ -490,23 +467,19 @@ export default function DashboardPage() {
 
   return (
     <div className="fade-up" style={{ position: 'relative', zIndex: 1 }}>
-      {/* Header — full width */}
-      <div className="page-header" style={{ marginBottom: '20px', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+      {/* Header */}
+      <div style={{ marginBottom: '24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
         <div>
-          <h1 style={{ fontSize: '32px', letterSpacing: '6px', color: 'var(--text)' }}>
-            DASHBOARD<HelpHint topic="dashboard" title="DASHBOARD" />
+          <h1 style={{ fontSize: '24px', fontWeight: 600, color: 'var(--text)', letterSpacing: 0, textTransform: 'none' }}>
+            Dashboard<HelpHint topic="dashboard" title="Dashboard" />
           </h1>
-          <p style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)', marginTop: '4px', letterSpacing: '1px' }}>
-            ŞANTİYE YATAKHANE — GENEL DURUM
+          <p style={{ fontSize: '13px', color: 'var(--text3)', marginTop: '4px' }}>
+            Şantiye yatakhane — genel durum
           </p>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
           <DateRangeFilter />
           {isManager && <ExportButtons />}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <div className="live-dot" />
-            <span style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '1px' }}>CANLI</span>
-          </div>
         </div>
       </div>
 
@@ -539,20 +512,20 @@ export default function DashboardPage() {
       <div className="bento-grid fade-up-stagger">
         {/* KPI 4'lü — span 8 */}
         {kpi && (
-          <div className="bento-cell bento-span-8" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '12px' }}>
-            <KPICard icon="👤" label="Aktif Personel" value={kpi.active_personnel} color="blue" category="personnel" />
+          <div className="bento-cell bento-span-8" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: '12px' }}>
+            <KPICard label="Aktif personel" value={kpi.active_personnel} />
             <KPICard
-              icon="🛏" label="Doluluk" value={`${kpi.occupancy_pct}%`}
+              label="Doluluk" value={`${kpi.occupancy_pct}%`}
               color={occupancyColor} subtitle={`${kpi.occupied}/${kpi.total_beds} yatak`}
-              barPct={kpi.occupancy_pct} category="occupancy"
+              barPct={kpi.occupancy_pct}
             />
             <KPICard
-              icon="🔧" label="Açık Arıza" value={kpi.open_maintenance}
-              color={kpi.open_maintenance > 5 ? 'red' : 'green'} category="maintenance"
+              label="Açık arıza" value={kpi.open_maintenance}
+              color={kpi.open_maintenance > 5 ? 'red' : 'green'}
             />
             <KPICard
-              icon="🏠" label="Karantina" value={kpi.quarantine_rooms}
-              color={kpi.quarantine_rooms > 0 ? 'orange' : 'green'} category="alert"
+              label="Karantina" value={kpi.quarantine_rooms}
+              color={kpi.quarantine_rooms > 0 ? 'orange' : 'green'}
             />
           </div>
         )}
@@ -584,97 +557,86 @@ export default function DashboardPage() {
 
         {/* Blok HeatMap — span 12 */}
         <div className="bento-cell bento-span-12">
-          <div className="sect">
-            <div className="sect-title">BLOK DURUMU</div>
-            <div className="sect-line" />
-          </div>
-          <HeatMap data={heatmap} />
+          <DashCard title="Blok durumu">
+            <HeatMap data={heatmap} />
+          </DashCard>
         </div>
 
-        {/* Anomali uyarıları — koşullu render (null döndürürse gösterilmez) */}
+        {/* Anomali uyarıları */}
         <div className="bento-cell bento-span-12">
           <AnomalyAlerts />
         </div>
 
         {/* Aktif Arızalar — span 7 */}
         <div className="bento-cell bento-span-7">
-          <div className="panel">
-            <div className="panel-header">
-              <div>
-                <div className="panel-title">AKTİF ARIZALAR</div>
-                <div className="panel-subtitle">AÇIK TEKNİK TALEPLER</div>
-              </div>
+          <DashCard
+            title="Aktif arızalar"
+            action={
               <button className="btn btn-ghost btn-xs" onClick={() => navigate('/maintenance')}>
                 Tümü →
               </button>
-            </div>
-            <div className="panel-body" style={{ padding: '10px 20px' }}>
-              {maintRequests.length === 0 ? (
-                <div className="empty-state" style={{ padding: '20px' }}>
-                  <div className="empty-icon">✓</div>
-                  <div className="empty-sub">Açık arıza yok</div>
-                </div>
-              ) : (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(280px, 100%), 1fr))', gap: '0 20px' }}>
-                  {maintRequests.slice(0, 6).map(req => (
-                    <div key={req.id} className="maint-row">
-                      <PriorityBar priority={req.priority} />
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: '12.5px', color: 'var(--text)', fontWeight: 500, marginBottom: '3px' }}>
-                          {req.description?.slice(0, 50)}
+            }
+          >
+            {maintRequests.length === 0 ? (
+              <div style={{ padding: '20px', textAlign: 'center', fontSize: '12px', color: 'var(--text3)' }}>
+                Açık arıza yok
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                {maintRequests.slice(0, 6).map((req, i, arr) => {
+                  const sigColor = req.priority === 'high' ? 'var(--red)' : req.priority === 'medium' ? 'var(--accent)' : 'var(--text3)'
+                  const sigLabel = req.priority === 'high' ? 'Acil' : req.priority === 'medium' ? 'Normal' : 'Düşük'
+                  return (
+                    <div key={req.id} style={{
+                      display: 'flex', alignItems: 'center', gap: '12px',
+                      padding: '10px 0',
+                      borderBottom: i === arr.length - 1 ? 'none' : '1px solid var(--border)',
+                    }}>
+                      <div style={{
+                        fontSize: '11px', minWidth: '54px', color: sigColor, fontWeight: 600,
+                      }}>{sigLabel}</div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: '13px', color: 'var(--text)', fontWeight: 500, marginBottom: '2px' }}>
+                          {req.description?.slice(0, 60)}
                         </div>
-                        <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)' }}>
+                        <div style={{ fontSize: '11px', color: 'var(--text3)' }}>
                           {req.location}
                           {req.wait_reason && (
-                            <span style={{ color: 'var(--amber)', marginLeft: '6px' }}> · {req.wait_reason}</span>
+                            <span style={{ color: 'var(--accent)', marginLeft: '6px' }}>· {req.wait_reason}</span>
                           )}
                         </div>
                       </div>
-                      <span className={`badge badge-${req.priority === 'high' ? 'red' : req.priority === 'medium' ? 'amber' : 'blue'}`}>
-                        {req.priority === 'high' ? 'ACİL' : req.priority === 'medium' ? 'NORMAL' : 'DÜŞÜK'}
-                      </span>
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
+                  )
+                })}
+              </div>
+            )}
+          </DashCard>
         </div>
 
         {/* 14 Gün Projeksiyon — span 5 */}
         {projection.length > 0 && (
           <div className="bento-cell bento-span-5">
-            <div className="panel">
-              <div className="panel-header">
-                <div>
-                  <div className="panel-title">14 GÜN PROJEKSİYON</div>
-                  <div className="panel-subtitle">AYRILACAK PERSONEL</div>
-                </div>
-                <span className="badge badge-amber">TAHMİN</span>
-              </div>
-              <div className="panel-body" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(80px,1fr))', gap: '8px' }}>
+            <DashCard
+              title="14 gün projeksiyon"
+              action={<span style={{ fontSize: '11px', color: 'var(--text3)' }}>Tahmin</span>}
+            >
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(80px,1fr))', gap: '10px' }}>
                 {projection.map(p => (
-                  <div key={p.block} style={{
-                    background: 'var(--surface2)', borderRadius: '7px', padding: '10px 8px', textAlign: 'center',
-                    border: '1px solid var(--border)',
-                  }}>
-                    <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', marginBottom: '4px' }}>{p.block} BLOK</div>
-                    <div style={{ fontFamily: 'var(--display)', fontSize: '24px', color: 'var(--accent)', letterSpacing: '1px' }}>{p.c}</div>
-                    <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text3)' }}>kişi</div>
+                  <div key={p.block} style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: '11px', color: 'var(--text3)', marginBottom: '4px' }}>{p.block}</div>
+                    <div style={{ fontSize: '22px', fontWeight: 600, color: 'var(--text)' }}>{p.c}</div>
+                    <div style={{ fontSize: '10px', color: 'var(--text3)' }}>kişi</div>
                   </div>
                 ))}
               </div>
-            </div>
+            </DashCard>
           </div>
         )}
 
         {/* Denetim Kaydı — sadece campus_manager — span 12 */}
         {isManager && (
           <div className="bento-cell bento-span-12">
-            <div className="sect">
-              <div className="sect-title">DENETİM KAYDI</div>
-              <div className="sect-line" />
-            </div>
             <AuditLogPanel globalFrom={globalFrom} globalTo={globalTo} />
           </div>
         )}
