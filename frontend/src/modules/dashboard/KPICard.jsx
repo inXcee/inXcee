@@ -1,3 +1,6 @@
+import { useState } from 'react'
+import { cardShadow, cardShadowHover } from './dashStyles.js'
+
 const STATUS_COLOR = {
   red: 'var(--red)',
   green: 'var(--green)',
@@ -8,61 +11,86 @@ const STATUS_COLOR = {
   teal: 'var(--text)',
 }
 
-export default function KPICard({ icon, label, value, color = 'blue', subtitle, barPct, trend }) {
-  // Sade dil: numara rengi yalnızca durum sinyali olduğunda renkli (red/green/amber),
-  // diğer durumlarda normal metin rengi. Icon ve gradient yok.
+const STATUS_DOT = {
+  red: 'var(--red)',
+  green: 'var(--green)',
+  orange: 'var(--accent)',
+  amber: 'var(--accent)',
+}
+
+export default function KPICard({ label, value, color = 'blue', subtitle, barPct, trend }) {
+  const [hover, setHover] = useState(false)
   const numColor = STATUS_COLOR[color] || 'var(--text)'
+  const dotColor = STATUS_DOT[color] // sadece status renkleri (red/green/accent) için
+  const isStatus = !!dotColor
 
   return (
     <div
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
       style={{
         background: 'var(--surface)',
         border: '1px solid var(--border)',
-        borderRadius: '12px',
-        padding: '18px 18px 16px',
+        borderColor: hover ? 'var(--border2)' : 'var(--border)',
+        borderRadius: '14px',
+        padding: '20px 20px 18px',
         display: 'flex',
         flexDirection: 'column',
-        gap: '4px',
+        gap: '10px',
+        boxShadow: hover ? cardShadowHover : cardShadow,
+        transform: hover ? 'translateY(-1px)' : 'none',
+        transition: 'transform .18s ease, box-shadow .18s ease, border-color .18s ease',
       }}
       aria-label={`${label} ${value}`}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-        {icon && (
-          <span style={{ fontSize: '14px', opacity: 0.7, lineHeight: 1 }} aria-hidden>{icon}</span>
+        {isStatus && (
+          <span style={{
+            width: '6px', height: '6px', borderRadius: '50%',
+            background: dotColor, boxShadow: `0 0 0 3px ${dotColor}1a`,
+            display: 'inline-block', flexShrink: 0,
+          }} aria-hidden />
         )}
-        <span style={{ fontSize: '12px', color: 'var(--text2)', fontWeight: 500 }}>{label}</span>
+        <span style={{ fontSize: '12px', color: 'var(--text2)', fontWeight: 500, letterSpacing: '-0.005em' }}>{label}</span>
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', marginTop: '6px' }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
         <span style={{
           fontFamily: 'var(--sans)',
-          fontSize: '32px',
-          fontWeight: 600,
+          fontSize: '38px',
+          fontWeight: 700,
           lineHeight: 1,
           color: numColor,
+          letterSpacing: '-0.03em',
+          fontVariantNumeric: 'tabular-nums',
         }}>
           {value}
         </span>
         {trend && (
-          <span style={{ fontSize: '11px', fontWeight: 600, color: trend === 'up' ? 'var(--green)' : 'var(--red)' }}>
+          <span style={{
+            fontSize: '12px', fontWeight: 700,
+            color: trend === 'up' ? 'var(--green)' : 'var(--red)',
+            letterSpacing: '-0.01em',
+          }}>
             {trend === 'up' ? '↑' : '↓'}
           </span>
         )}
       </div>
 
       {subtitle && (
-        <div style={{ fontSize: '11px', color: 'var(--text3)', marginTop: '2px' }}>
+        <div style={{ fontSize: '11px', color: 'var(--text3)' }}>
           {subtitle}
         </div>
       )}
 
       {barPct !== undefined && (
-        <div style={{ marginTop: '10px', height: '3px', background: 'var(--border)', borderRadius: '2px', overflow: 'hidden' }}>
+        <div style={{ marginTop: '4px', height: '4px', background: 'var(--surface3)', borderRadius: '2px', overflow: 'hidden' }}>
           <div style={{
             width: `${Math.min(barPct, 100)}%`,
             height: '100%',
             background: numColor,
-            transition: 'width .4s ease',
+            borderRadius: '2px',
+            transition: 'width .5s ease',
           }} />
         </div>
       )}

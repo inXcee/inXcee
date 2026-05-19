@@ -14,31 +14,39 @@ function EventRow({ days, title, sub, onClick, isLast }) {
   const isOverdue = days != null && days < 0
   const isUrgent = days != null && days >= 0 && days <= 2
   const sigColor = isOverdue ? 'var(--red)' : isUrgent ? 'var(--accent)' : 'var(--text2)'
-  const dayLabel = days == null ? '—' : days < 0 ? `${Math.abs(days)} gün geçti` : days === 0 ? 'Bugün' : `${days} gün`
+  const bgChip = isOverdue
+    ? 'color-mix(in srgb, var(--red) 12%, transparent)'
+    : isUrgent
+    ? 'color-mix(in srgb, var(--accent) 12%, transparent)'
+    : 'var(--surface2)'
+  const dayLabel = days == null ? '—' : days < 0 ? `${Math.abs(days)}g geçti` : days === 0 ? 'Bugün' : `${days} gün`
 
   return (
     <div
       onClick={onClick}
       style={{
         display: 'flex', alignItems: 'center', gap: '12px',
-        padding: '12px 0',
+        padding: '12px 6px',
+        margin: '0 -6px',
+        borderRadius: '8px',
         borderBottom: isLast ? 'none' : '1px solid var(--border)',
         cursor: onClick ? 'pointer' : 'default',
-        transition: 'opacity .15s',
+        transition: 'background .15s',
       }}
-      onMouseEnter={e => { if (onClick) e.currentTarget.style.opacity = '0.7' }}
-      onMouseLeave={e => { e.currentTarget.style.opacity = '1' }}
+      onMouseEnter={e => { if (onClick) e.currentTarget.style.background = 'var(--surface2)' }}
+      onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
     >
       <div style={{
-        minWidth: '64px',
-        fontSize: '11px',
-        fontWeight: 600,
-        color: sigColor,
+        minWidth: '68px', textAlign: 'center',
+        padding: '6px 8px', borderRadius: '8px',
+        background: bgChip,
+        fontSize: '11px', fontWeight: 700,
+        color: sigColor, letterSpacing: '-0.005em',
       }}>
         {dayLabel}
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: '13px', color: 'var(--text)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <div style={{ fontSize: '13px', color: 'var(--text)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', letterSpacing: '-0.005em' }}>
           {title}
         </div>
         {sub && (

@@ -8,25 +8,36 @@ function todayDateStr() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-function PulseRow({ label, value, sub, onClick, isLast }) {
+function PulseRow({ label, value, sub, dotColor, onClick, isLast }) {
   return (
     <div
       onClick={onClick}
       style={{
-        display: 'flex', alignItems: 'center', gap: '12px',
-        padding: '12px 0',
+        display: 'flex', alignItems: 'center', gap: '14px',
+        padding: '14px 6px',
+        margin: '0 -6px',
+        borderRadius: '8px',
         borderBottom: isLast ? 'none' : '1px solid var(--border)',
         cursor: onClick ? 'pointer' : 'default',
-        transition: 'opacity .15s',
+        transition: 'background .15s',
       }}
-      onMouseEnter={e => { if (onClick) e.currentTarget.style.opacity = '0.7' }}
-      onMouseLeave={e => { e.currentTarget.style.opacity = '1' }}
+      onMouseEnter={e => { if (onClick) e.currentTarget.style.background = 'var(--surface2)' }}
+      onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
     >
+      <span style={{
+        width: '8px', height: '8px', borderRadius: '50%',
+        background: dotColor,
+        boxShadow: `0 0 0 3px ${dotColor}1a`,
+        flexShrink: 0,
+      }} aria-hidden />
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: '13px', color: 'var(--text)', fontWeight: 500 }}>{label}</div>
-        {sub && <div style={{ fontSize: '11px', color: 'var(--text3)', marginTop: '2px' }}>{sub}</div>}
+        <div style={{ fontSize: '13px', color: 'var(--text)', fontWeight: 500, letterSpacing: '-0.005em' }}>{label}</div>
+        {sub && <div style={{ fontSize: '11px', color: 'var(--text3)', marginTop: '3px' }}>{sub}</div>}
       </div>
-      <div style={{ fontSize: '20px', fontWeight: 600, color: 'var(--text)', lineHeight: 1 }}>{value}</div>
+      <div style={{
+        fontSize: '22px', fontWeight: 700, color: 'var(--text)', lineHeight: 1,
+        letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums',
+      }}>{value}</div>
     </div>
   )
 }
@@ -64,11 +75,11 @@ export default function TodaysPulse() {
   const activeVisitors = visitors?.active ?? 0
 
   const rows = [
-    { label: 'Giriş', value: inToday, sub: 'Bugün kayıt', onClick: () => navigate('/checkin') },
-    { label: 'Çıkış', value: outToday, sub: 'Bugün kayıt', onClick: () => navigate('/checkin') },
-    { label: 'Yeni arıza', value: maintToday, sub: `${openMaint.length} açık toplam`, onClick: () => navigate('/maintenance') },
-    { label: 'Temizlik tamam', value: hkDoneToday, sub: `${hkTasks.length} toplam görev`, onClick: () => navigate('/housekeeping') },
-    { label: 'Aktif ziyaretçi', value: activeVisitors, onClick: () => navigate('/settings/visitors') },
+    { label: 'Giriş', value: inToday, sub: 'Bugün kayıt', dotColor: 'var(--green)', onClick: () => navigate('/checkin') },
+    { label: 'Çıkış', value: outToday, sub: 'Bugün kayıt', dotColor: 'var(--red)', onClick: () => navigate('/checkin') },
+    { label: 'Yeni arıza', value: maintToday, sub: `${openMaint.length} açık toplam`, dotColor: 'var(--accent)', onClick: () => navigate('/maintenance') },
+    { label: 'Temizlik tamam', value: hkDoneToday, sub: `${hkTasks.length} toplam görev`, dotColor: 'var(--teal)', onClick: () => navigate('/housekeeping') },
+    { label: 'Aktif ziyaretçi', value: activeVisitors, dotColor: 'var(--blue)', onClick: () => navigate('/settings/visitors') },
   ]
 
   return (

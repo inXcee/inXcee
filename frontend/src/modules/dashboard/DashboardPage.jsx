@@ -51,17 +51,24 @@ function BedOccupancyPanel({ data }) {
     <DashCard
       title="Yatak doluluk"
       action={
-        <div style={{ fontSize: '20px', fontWeight: 600, color: barColor(totals.pct), lineHeight: 1 }}>
+        <div style={{
+          fontSize: '22px', fontWeight: 700, color: barColor(totals.pct),
+          lineHeight: 1, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums',
+        }}>
           %{totals.pct}
         </div>
       }
     >
       {/* Summary numbers */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: '12px', marginBottom: '20px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: '16px', marginBottom: '24px' }}>
         {summary.map(s => (
           <div key={s.label}>
-            <div style={{ fontSize: '22px', fontWeight: 600, color: s.color || 'var(--text)', lineHeight: 1 }}>{s.value}</div>
-            <div style={{ fontSize: '11px', color: 'var(--text3)', marginTop: '4px' }}>{s.label}</div>
+            <div style={{
+              fontSize: '26px', fontWeight: 700, color: s.color || 'var(--text)',
+              lineHeight: 1, letterSpacing: '-0.025em',
+              fontVariantNumeric: 'tabular-nums',
+            }}>{s.value}</div>
+            <div style={{ fontSize: '11px', color: 'var(--text3)', marginTop: '6px' }}>{s.label}</div>
           </div>
         ))}
       </div>
@@ -77,24 +84,26 @@ function BedOccupancyPanel({ data }) {
               borderBottom: '1px solid var(--border)',
             }}>
               <div style={{
-                fontSize: '13px', fontWeight: 600,
+                fontSize: '13px', fontWeight: 700,
                 color: blockColor(b.block),
                 width: '36px', flexShrink: 0,
+                letterSpacing: '-0.005em',
               }}>{b.block}</div>
 
               <div style={{ flex: 1 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                  <span style={{ fontSize: '12px', color: 'var(--text2)' }}>
+                  <span style={{ fontSize: '12px', color: 'var(--text2)', fontVariantNumeric: 'tabular-nums' }}>
                     {b.occupied} / {b.total_beds}
                   </span>
-                  <span style={{ fontSize: '12px', color, fontWeight: 600 }}>
+                  <span style={{ fontSize: '12px', color, fontWeight: 700, fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.01em' }}>
                     %{b.pct}
                   </span>
                 </div>
-                <div style={{ height: '4px', background: 'var(--border)', borderRadius: '2px', overflow: 'hidden' }}>
+                <div style={{ height: '5px', background: 'var(--surface3)', borderRadius: '3px', overflow: 'hidden' }}>
                   <div style={{
                     width: `${b.pct}%`, height: '100%',
-                    background: color, transition: 'width .4s ease',
+                    background: color, borderRadius: '3px',
+                    transition: 'width .5s ease',
                   }} />
                 </div>
               </div>
@@ -468,16 +477,26 @@ export default function DashboardPage() {
   return (
     <div className="fade-up" style={{ position: 'relative', zIndex: 1 }}>
       {/* Header */}
-      <div style={{ marginBottom: '24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+      <div style={{ marginBottom: '28px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
         <div>
-          <h1 style={{ fontSize: '24px', fontWeight: 600, color: 'var(--text)', letterSpacing: 0, textTransform: 'none' }}>
+          <h1 style={{ fontSize: '28px', fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.025em', textTransform: 'none', display: 'flex', alignItems: 'center', gap: '6px' }}>
             Dashboard<HelpHint topic="dashboard" title="Dashboard" />
           </h1>
-          <p style={{ fontSize: '13px', color: 'var(--text3)', marginTop: '4px' }}>
-            Şantiye yatakhane — genel durum
+          <p style={{ fontSize: '13px', color: 'var(--text3)', marginTop: '6px', letterSpacing: '-0.005em' }}>
+            {new Date().toLocaleDateString('tr-TR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
           </p>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: '6px',
+            padding: '6px 12px', borderRadius: '20px',
+            background: 'color-mix(in srgb, var(--green) 8%, transparent)',
+            border: '1px solid color-mix(in srgb, var(--green) 25%, transparent)',
+            fontSize: '11px', color: 'var(--green)', fontWeight: 600, letterSpacing: '-0.005em',
+          }}>
+            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--green)' }} />
+            Canlı
+          </div>
           <DateRangeFilter />
           {isManager && <ExportButtons />}
         </div>
@@ -623,10 +642,17 @@ export default function DashboardPage() {
             >
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(80px,1fr))', gap: '10px' }}>
                 {projection.map(p => (
-                  <div key={p.block} style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: '11px', color: 'var(--text3)', marginBottom: '4px' }}>{p.block}</div>
-                    <div style={{ fontSize: '22px', fontWeight: 600, color: 'var(--text)' }}>{p.c}</div>
-                    <div style={{ fontSize: '10px', color: 'var(--text3)' }}>kişi</div>
+                  <div key={p.block} style={{
+                    textAlign: 'center', padding: '12px 8px',
+                    background: 'var(--surface2)', borderRadius: '10px',
+                    border: '1px solid var(--border)',
+                  }}>
+                    <div style={{ fontSize: '11px', color: 'var(--text3)', marginBottom: '6px', fontWeight: 600 }}>{p.block}</div>
+                    <div style={{
+                      fontSize: '24px', fontWeight: 700, color: 'var(--text)',
+                      letterSpacing: '-0.025em', fontVariantNumeric: 'tabular-nums', lineHeight: 1,
+                    }}>{p.c}</div>
+                    <div style={{ fontSize: '10px', color: 'var(--text3)', marginTop: '4px' }}>kişi</div>
                   </div>
                 ))}
               </div>

@@ -36,7 +36,10 @@ function BreakdownBar({ label, value, weight }) {
       <div style={{ flex: 1, height: '3px', background: 'var(--border)', borderRadius: '2px', overflow: 'hidden' }}>
         <div style={{ width: `${value}%`, height: '100%', background: color, transition: 'width .4s ease' }} />
       </div>
-      <div style={{ fontSize: '11px', color: 'var(--text2)', minWidth: '24px', textAlign: 'right', fontWeight: 500 }}>
+      <div style={{
+        fontSize: '12px', color: 'var(--text)', minWidth: '26px', textAlign: 'right',
+        fontWeight: 600, fontVariantNumeric: 'tabular-nums',
+      }}>
         {value}
       </div>
       <div style={{ fontSize: '10px', color: 'var(--text4)', minWidth: '28px', textAlign: 'right' }}>
@@ -76,7 +79,10 @@ export default function HealthScoreWidget() {
       <div style={{ position: 'relative', textAlign: 'center', marginBottom: '8px' }}>
         <Gauge score={data.score} color={colorVar} />
         <div style={{ position: 'absolute', top: '38%', left: 0, right: 0, textAlign: 'center' }}>
-          <div style={{ fontFamily: 'var(--sans)', fontSize: '36px', fontWeight: 600, lineHeight: 1, color: colorVar }}>
+          <div style={{
+            fontFamily: 'var(--sans)', fontSize: '42px', fontWeight: 700, lineHeight: 1, color: colorVar,
+            letterSpacing: '-0.03em', fontVariantNumeric: 'tabular-nums',
+          }}>
             {data.score}
           </div>
           <div style={{ fontSize: '10px', color: 'var(--text3)', marginTop: '4px' }}>

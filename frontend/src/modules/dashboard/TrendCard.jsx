@@ -40,8 +40,9 @@ export default function TrendCard({ metric, data }) {
     <div style={{
       background: 'var(--surface)',
       border: '1px solid var(--border)',
-      borderRadius: '12px',
-      padding: '16px 16px 10px',
+      borderRadius: '14px',
+      padding: '18px 18px 12px',
+      boxShadow: '0 1px 2px rgba(0,0,0,.18), 0 4px 12px rgba(0,0,0,.12)',
     }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
         <div>
@@ -49,11 +50,14 @@ export default function TrendCard({ metric, data }) {
             {cfg.label}
           </div>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', marginTop: '4px' }}>
-            <span style={{ fontSize: '22px', fontWeight: 600, color: 'var(--text)', lineHeight: 1 }}>
+            <span style={{
+              fontSize: '24px', fontWeight: 700, color: 'var(--text)', lineHeight: 1,
+              letterSpacing: '-0.025em', fontVariantNumeric: 'tabular-nums',
+            }}>
               {displayValue}
             </span>
             {trend && (
-              <span style={{ fontSize: '13px', color: trend.color, fontWeight: 600 }}>
+              <span style={{ fontSize: '13px', color: trend.color, fontWeight: 700 }}>
                 {trend.arrow}
               </span>
             )}
