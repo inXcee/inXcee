@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../../shared/api/client.js'
 import Modal from '../components/Modal.jsx'
 import { fmt, fmtDate, money } from '../constants.js'
+import { confirmDialog } from '../../../shared/components/ConfirmDialog.jsx'
 
 const PAYMENT_TERMS = [
   { key: 'cash', label: 'Pesin' },
@@ -161,7 +162,7 @@ export default function SuppliersTab() {
                       <button className="btn btn-ghost btn-xs" style={{ color: 'var(--accent)', borderRadius: '6px' }} onClick={() => setEditing(s)}>DUZ</button>
                       {s.is_active === 1 && (
                         <button className="btn btn-ghost btn-xs" style={{ color: 'var(--red)', borderRadius: '6px' }}
-                          onClick={() => { if (window.confirm(`${s.name} pasif edilsin mi?`)) deleteMut.mutate(s.id) }}>✕</button>
+                          onClick={async () => { if (await confirmDialog({ title: 'Tedarikçi Pasifle', body: `${s.name} pasif edilsin mi?`, danger: true })) deleteMut.mutate(s.id) }}>✕</button>
                       )}
                     </div>
                   </td>

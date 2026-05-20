@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import api from '../../shared/api/client.js'
+import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 
 const SEVERITY_LABEL = { info: 'Bilgi', warning: 'Uyarı', critical: 'Kritik' }
 const SEVERITY_COLOR = { info: 'var(--blue)', warning: 'var(--accent)', critical: 'var(--red)' }
@@ -182,7 +183,7 @@ export default function NotificationsCenterPage() {
             padding: '6px 12px', background: 'var(--surface)', border: '1px solid var(--border)',
             borderRadius: 4, color: 'var(--text2)', cursor: 'pointer', fontFamily: 'var(--mono)', fontSize: 10,
           }}>✓ Tümünü okundu işaretle</button>
-        <button onClick={() => { if (confirm('Okunmuş tüm bildirimleri silmek istediğinize emin misiniz?')) clearRead.mutate() }}
+        <button onClick={async () => { if (await confirmDialog({ title: 'Okunmuşları Temizle', body: 'Okunmuş tüm bildirimleri silmek istediğinize emin misiniz?', danger: true })) clearRead.mutate() }}
           style={{
             padding: '6px 12px', background: 'var(--surface)', border: '1px solid var(--border)',
             borderRadius: 4, color: 'var(--red)', cursor: 'pointer', fontFamily: 'var(--mono)', fontSize: 10,

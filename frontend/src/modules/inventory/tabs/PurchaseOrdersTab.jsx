@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../../shared/api/client.js'
 import Modal from '../components/Modal.jsx'
 import { fmt, fmtDate, money } from '../constants.js'
+import { confirmDialog } from '../../../shared/components/ConfirmDialog.jsx'
 
 const STATUS_LABELS = {
   draft: { label: 'TASLAK', color: 'var(--text3)' },
@@ -245,7 +246,7 @@ export default function PurchaseOrdersTab({ items, prefill, onPrefillConsumed })
                           <button className="btn btn-ghost btn-xs" onClick={() => setReceiving(po.id)} style={{ color: 'var(--green)', borderRadius: '6px' }}>TESLIM AL</button>
                         )}
                         {(po.status === 'draft' || po.status === 'sent') && (
-                          <button className="btn btn-ghost btn-xs" onClick={() => { if (confirm('Iptal edilsin mi?')) statusMut.mutate({ id: po.id, status: 'cancelled' }) }} style={{ color: 'var(--red)', borderRadius: '6px' }}>IPTAL</button>
+                          <button className="btn btn-ghost btn-xs" onClick={async () => { if (await confirmDialog({ title: 'Sipariş İptal', body: 'İptal edilsin mi?', danger: true })) statusMut.mutate({ id: po.id, status: 'cancelled' }) }} style={{ color: 'var(--red)', borderRadius: '6px' }}>IPTAL</button>
                         )}
                       </div>
                     </td>

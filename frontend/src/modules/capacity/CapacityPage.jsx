@@ -11,6 +11,7 @@ import {
   getCapacity as getCapacityFromConfig,
   getFloorLabel,
 } from '../../shared/blocks.js'
+import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 
 function roomCls(room, defaultCap = 6) {
   if (room.status === 'maintenance') return 'r-maint'
@@ -140,7 +141,7 @@ function ZimmetPanel({ personnelId, personnelName }) {
       </div>
       {unreturned.length > 0 && (
         <button className="btn btn-ghost btn-sm" style={{ marginBottom: '12px' }}
-          onClick={() => { if (confirm('Tüm zimmetler iade edilsin mi?')) returnAllMut.mutate('normal') }}>
+          onClick={async () => { if (await confirmDialog({ title: 'Tüm Zimmetler', body: 'Tüm zimmetler iade edilsin mi?' })) returnAllMut.mutate('normal') }}>
           Tümünü İade Et
         </button>
       )}
@@ -277,7 +278,7 @@ function UnreturnedZimmetModal({ details, personnelIds, onClose, onSuccess }) {
           {isCampusManager && (
             <button
               className="btn btn-danger btn-sm"
-              onClick={() => { if (confirm('Zimmetler iade edilmeden zorla cikis yapilacak. Emin misiniz?')) forceCheckout.mutate() }}
+              onClick={async () => { if (await confirmDialog({ title: 'Zorla Çıkış', body: 'Zimmetler iade edilmeden zorla çıkış yapılacak. Emin misiniz?', danger: true })) forceCheckout.mutate() }}
               disabled={forceCheckout.isPending}
             >
               {forceCheckout.isPending ? 'ISLENIYOR...' : 'ZORLA CIKIS'}
@@ -561,8 +562,8 @@ function RoomDetailPanel({ room, onClose, onRoomUpdated, swapSource, onSwapSelec
                             <button
                               className="btn btn-primary btn-xs"
                               style={{ fontSize: '9px', padding: '3px 8px', background: 'var(--purple)', borderColor: 'var(--purple)' }}
-                              onClick={() => {
-                                if (confirm(`${swapSource.name} (${swapSource.roomLabel}) ↔ ${p.full_name} (${room.block}-${room.room_no}) takası yapılsın mı?`))
+                              onClick={async () => {
+                                if (await confirmDialog({ title: 'Oda Takası', body: `${swapSource.name} (${swapSource.roomLabel}) ↔ ${p.full_name} (${room.block}-${room.room_no}) takası yapılsın mı?` }))
                                   mutSwap.mutate({ personAId: swapSource.id, personBId: p.id })
                               }}
                               disabled={mutSwap.isPending}
@@ -581,7 +582,7 @@ function RoomDetailPanel({ room, onClose, onRoomUpdated, swapSource, onSwapSelec
                           <button
                             className="btn btn-danger btn-xs"
                             style={{ fontSize: '9px', padding: '3px 8px' }}
-                            onClick={() => { if (confirm(`${p.full_name} odadan çıkarılsın mı?`)) mutRemove.mutate(p.id) }}
+                            onClick={async () => { if (await confirmDialog({ title: 'Odadan Çıkar', body: `${p.full_name} odadan çıkarılsın mı?`, danger: true })) mutRemove.mutate(p.id) }}
                             disabled={mutRemove.isPending}
                           >
                             ÇIKAR
@@ -599,8 +600,8 @@ function RoomDetailPanel({ room, onClose, onRoomUpdated, swapSource, onSwapSelec
               <div style={{ borderTop: '1px solid var(--border)', paddingTop: '14px', marginBottom: '14px', display: 'flex', gap: '10px', alignItems: 'center' }}>
                 <button
                   className="btn btn-danger btn-sm"
-                  onClick={() => {
-                    if (confirm(`Bu odadaki ${personnel.length} kisiyi tamamen cikis yapmak istediginize emin misiniz?`))
+                  onClick={async () => {
+                    if (await confirmDialog({ title: 'Toplu Çıkış', body: `Bu odadaki ${personnel.length} kişiyi tamamen çıkış yapmak istediğinize emin misiniz?`, danger: true }))
                       mutBulkCheckout.mutate(personnel.map(p => p.id))
                   }}
                   disabled={mutBulkCheckout.isPending}

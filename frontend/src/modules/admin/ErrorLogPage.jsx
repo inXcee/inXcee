@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import HelpHint from '../../shared/components/HelpHint.jsx'
+import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 
 export default function ErrorLogPage() {
   const qc = useQueryClient()
@@ -72,8 +73,8 @@ export default function ErrorLogPage() {
           <button
             type="button"
             disabled={total === 0 || clearAll.isPending}
-            onClick={() => {
-              if (confirm(`${total} hata kaydinin tamami silinecek. Devam edilsin mi?`)) clearAll.mutate()
+            onClick={async () => {
+              if (await confirmDialog({ title: 'Tüm Hata Kayıtlarını Sil', body: `${total} hata kaydının tamamı silinecek. Devam edilsin mi?`, danger: true })) clearAll.mutate()
             }}
             style={{
               padding: '6px 14px', background: 'rgba(239,68,68,0.1)',
@@ -123,7 +124,7 @@ export default function ErrorLogPage() {
                   <Td>
                     <button
                       type="button"
-                      onClick={(e) => { e.stopPropagation(); if (confirm('Silinsin mi?')) deleteOne.mutate(it.id) }}
+                      onClick={async (e) => { e.stopPropagation(); if (await confirmDialog({ title: 'Hata Kaydını Sil', body: 'Silinsin mi?', danger: true })) deleteOne.mutate(it.id) }}
                       style={{
                         padding: '2px 8px', background: 'transparent',
                         border: '1px solid var(--border)', borderRadius: 4,

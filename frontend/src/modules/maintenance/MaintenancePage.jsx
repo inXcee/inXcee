@@ -822,7 +822,7 @@ function DetailPanel({ requestId, onClose }) {
         </div>
         <div style={{ display: 'flex', gap: '6px' }}>
           <button className="btn btn-ghost btn-sm" style={{ color: 'var(--red)', fontSize: '9px' }}
-            onClick={() => { if (confirm('Bu arıza kaydı silinsin mi?')) deleteMut.mutate() }}>SİL</button>
+            onClick={async () => { if (await confirmDialog({ title: 'Arıza Kaydını Sil', body: 'Bu arıza kaydı silinsin mi?', danger: true })) deleteMut.mutate() }}>SİL</button>
           <button className="btn btn-ghost btn-sm" onClick={onClose}>✕</button>
         </div>
       </div>

@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import HelpHint from '../../shared/components/HelpHint.jsx'
+import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 
 function formatSize(bytes) {
   if (bytes < 1024) return `${bytes} B`
@@ -60,18 +61,18 @@ export default function BackupPage() {
     URL.revokeObjectURL(url)
   }
 
-  const handleRestore = () => {
+  const handleRestore = async () => {
     const file = fileRef.current?.files?.[0]
     if (!file) {
       setRestoreError('Dosya seçilmedi')
       return
     }
-    const ok = confirm(
-      `DİKKAT: Mevcut veritabanı tamamen değiştirilecek!\n\n` +
-      `Yeni dosya: ${file.name} (${formatSize(file.size)})\n\n` +
-      `Mevcut DB önce otomatik yedeklenecek (yys_pre-restore_*.db).\n` +
-      `Sunucu yeniden başlatılacak. Devam edilsin mi?`
-    )
+    const ok = await confirmDialog({
+      title: 'Veritabanını Geri Yükle',
+      body: `DİKKAT: Mevcut veritabanı tamamen değiştirilecek!\n\nYeni dosya: ${file.name} (${formatSize(file.size)})\n\nMevcut DB önce otomatik yedeklenecek (yys_pre-restore_*.db).\nSunucu yeniden başlatılacak. Devam edilsin mi?`,
+      confirmLabel: 'Geri Yükle',
+      danger: true,
+    })
     if (!ok) return
     restore.mutate(file)
   }
@@ -145,7 +146,7 @@ export default function BackupPage() {
                       <button type="button" onClick={() => handleDownload(b.name)}
                         style={btnStyle('#10b981')}>↓ İNDİR</button>
                       <button type="button"
-                        onClick={() => { if (confirm(`${b.name} silinsin mi?`)) deleteBackup.mutate(b.name) }}
+                        onClick={async () => { if (await confirmDialog({ title: 'Yedek Sil', body: `${b.name} silinsin mi?`, danger: true })) deleteBackup.mutate(b.name) }}
                         style={btnStyle('#ef4444')}>SİL</button>
                     </div>
                   </Td>

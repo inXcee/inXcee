@@ -140,9 +140,16 @@
 - [x] CI workflow güncellendi — `npx playwright install --with-deps chromium` + `npm run test:e2e`, fail durumunda `playwright-report/` artifact upload (7 gün)
 - [x] Lokal: 800/800 backend + 8/8 e2e geçti
 
-### Faz 11 — UX Tamamlama (kalan PLAN.md kalemleri) ⏳
-- [ ] Filter URL state (Reports + Discipline) — paylaşılabilir URL, geri tuşu dostu
-- [ ] Kalan browser `confirm()` çağrılarını `ConfirmDialog`'a geçir (DisciplinePage cards, vs.)
+### Faz 11 — UX Tamamlama (kalan PLAN.md kalemleri) ✅
+- [x] **Filter URL state** — `useUrlParamState` hook (`shared/hooks/`); ReportsPage `?date=…`, DisciplinePage `?tab=…&from=…&to=…` — paylaşılabilir URL + back-button uyumlu
+- [x] **`confirm()` → `ConfirmDialog` tam migrasyon** — 21 callsite / 14 dosya:
+  - admin: Backup (2), KioskPin, AvsWorkers, ErrorLog (2)
+  - campus-map (2 — bulkAction, resetPins)
+  - capacity (5 — returnAll, forceCheckout, swap, remove, bulkCheckout)
+  - maintenance, discipline (3 — bl remove × 2 + delete card)
+  - notifications, laundry/LaundryHub (batch lost), laundry/LaundrySettings, laundry-kiosk/DashboardView
+  - inventory: Suppliers, Requests, PurchaseOrders
+- [x] Doğrulama: build temiz, 800/800 backend + 8/8 e2e geçti
 
 ### Faz 12 — Operasyonel Güçlendirme ⏳
 - [ ] Drills modülü genişletmesi: anlık "blokta kim var" tahliye raporu (PDF + print)

@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { laundryApi } from './api.js'
 import SupplySettings from './components/SupplySettings.jsx'
+import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 
 function GarmentTypesAdmin() {
   const qc = useQueryClient()
@@ -470,7 +471,7 @@ export default function LaundrySettings() {
                       </td>
                       <td data-label="Islem">
                         <button className="btn btn-ghost btn-xs"
-                          onClick={() => { if (confirm(`"${m.name}" silinsin mi?`)) deleteMachine.mutate(m.id) }}>
+                          onClick={async () => { if (await confirmDialog({ title: 'Makine Sil', body: `"${m.name}" silinsin mi?`, danger: true })) deleteMachine.mutate(m.id) }}>
                           Sil
                         </button>
                       </td>

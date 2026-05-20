@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
+import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 
 const ROLE_PRESETS = [
   { label: 'Kat Personeli', dept: 'Temizlik', color: '#16a34a' },
@@ -451,8 +452,8 @@ export default function AvsWorkersPage() {
                   className="btn"
                   style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#dc2626' }}
                   disabled={deleteMut.isPending}
-                  onClick={() => {
-                    if (window.confirm(`"${selected.full_name}" silinsin mi?`)) deleteMut.mutate(selected.id)
+                  onClick={async () => {
+                    if (await confirmDialog({ title: 'Personel Sil', body: `"${selected.full_name}" silinsin mi?`, danger: true })) deleteMut.mutate(selected.id)
                   }}
                 >
                   {deleteMut.isPending ? 'Siliniyor...' : 'Sil'}

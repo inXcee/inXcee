@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
+import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 
 export default function KioskPinPage() {
   const [search, setSearch] = useState('')
@@ -129,7 +130,7 @@ export default function KioskPinPage() {
                                 <button
                                   className="btn btn-danger btn-xs"
                                   disabled={resetPinMut.isPending}
-                                  onClick={() => { if (confirm(`${p.full_name} icin PIN sifirlansin mi?`)) resetPinMut.mutate(p.id) }}
+                                  onClick={async () => { if (await confirmDialog({ title: 'PIN Sıfırla', body: `${p.full_name} için PIN sıfırlansın mı?`, danger: true })) resetPinMut.mutate(p.id) }}
                                 >
                                   Sifirla
                                 </button>

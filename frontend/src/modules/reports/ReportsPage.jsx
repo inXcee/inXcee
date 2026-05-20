@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useAuthStore } from '../../shared/store/authStore.js'
 import HelpHint from '../../shared/components/HelpHint.jsx'
+import { useUrlParamState } from '../../shared/hooks/useUrlParamState.js'
 import api from '../../shared/api/client.js'
 
 const API_BASE = '/api'
@@ -499,7 +500,7 @@ function ReportCard({ report, selectedDate }) {
 }
 
 export default function ReportsPage() {
-  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split('T')[0])
+  const [selectedDate, setSelectedDate] = useUrlParamState('date', () => new Date().toISOString().split('T')[0])
 
   return (
     <div>

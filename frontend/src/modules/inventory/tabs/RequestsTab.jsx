@@ -4,6 +4,7 @@ import api from '../../../shared/api/client.js'
 import Modal from '../components/Modal.jsx'
 import { fmt } from '../constants.js'
 import { useAuthStore } from '../../../shared/store/authStore.js'
+import { confirmDialog } from '../../../shared/components/ConfirmDialog.jsx'
 
 const STATUS_LABELS = {
   pending: { label: 'BEKLIYOR', color: 'var(--amber)' },
@@ -201,7 +202,7 @@ export default function RequestsTab({ items }) {
                           <button className="btn btn-ghost btn-xs" onClick={() => setFulfillFor(r.id)} style={{ color: 'var(--blue)', borderRadius: '6px' }}>KARSILA</button>
                         )}
                         {!isMgr && r.requester_name === user?.username && r.status === 'pending' && (
-                          <button className="btn btn-ghost btn-xs" onClick={() => { if (confirm('Iptal edilsin mi?')) cancelMut.mutate(r.id) }} style={{ color: 'var(--red)', borderRadius: '6px' }}>IPTAL</button>
+                          <button className="btn btn-ghost btn-xs" onClick={async () => { if (await confirmDialog({ title: 'Talebi İptal Et', body: 'İptal edilsin mi?', danger: true })) cancelMut.mutate(r.id) }} style={{ color: 'var(--red)', borderRadius: '6px' }}>IPTAL</button>
                         )}
                       </div>
                     </td>

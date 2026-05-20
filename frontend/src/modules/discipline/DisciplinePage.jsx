@@ -4,6 +4,8 @@ import api from '../../shared/api/client.js'
 import HelpHint from '../../shared/components/HelpHint.jsx'
 import { useToastStore } from '../../shared/store/toastStore.js'
 import { useDraft } from '../../shared/hooks/useDraft.js'
+import { useUrlParamState } from '../../shared/hooks/useUrlParamState.js'
+import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 import DraftBanner from '../../shared/components/DraftBanner.jsx'
 
 /* ── helpers ─────────────────────────────────────────────────────────────── */
@@ -349,7 +351,7 @@ function BlacklistPanel() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-end' }}>
               <span className="badge badge-red">{p.discipline_points} PUAN</span>
               <button
-                onClick={() => { if (confirm(`${p.full_name} kara listeden çıkarılsın mı?`)) removeMut.mutate(p.id) }}
+                onClick={async () => { if (await confirmDialog({ title: 'Kara Listeden Çıkar', body: `${p.full_name} kara listeden çıkarılsın mı?` })) removeMut.mutate(p.id) }}
                 className="btn btn-ghost btn-sm"
                 style={{ fontSize: '9px', color: 'var(--green)' }}
               >
@@ -369,7 +371,7 @@ const INIT_CARD = { card_type: 'yellow', reason: '' }
 export default function DisciplinePage() {
   const qc = useQueryClient()
   const addToast = useToastStore(s => s.addToast)
-  const [tab, setTab] = useState('search') // search | stats | blacklist
+  const [tab, setTab] = useUrlParamState('tab', 'search') // search | stats | blacklist
   const [searchTerm, setSearchTerm] = useState('')
   const [searchResults, setSearchResults] = useState([])
   const [selectedPerson, setSelectedPerson] = useState(null)
@@ -378,8 +380,8 @@ export default function DisciplinePage() {
   const [blacklistReason, setBlacklistReason] = useState('')
   const [showBlacklist, setShowBlacklist] = useState(false)
   const [searching, setSearching] = useState(false)
-  const [dateFrom, setDateFrom] = useState('')
-  const [dateTo, setDateTo] = useState('')
+  const [dateFrom, setDateFrom] = useUrlParamState('from', '')
+  const [dateTo, setDateTo] = useUrlParamState('to', '')
   const debounceRef = useRef(null)
 
   // Stats
@@ -713,7 +715,7 @@ export default function DisciplinePage() {
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', flexShrink: 0 }}>
                     {selectedPerson.is_blacklisted ? (
                       <button
-                        onClick={() => { if (confirm('Kara listeden çıkarılsın mı?')) removeBlacklist.mutate() }}
+                        onClick={async () => { if (await confirmDialog({ title: 'Kara Listeden Çıkar', body: 'Kara listeden çıkarılsın mı?' })) removeBlacklist.mutate() }}
                         className="btn btn-sm"
                         style={{ background: 'var(--green)', color: '#fff', border: 'none', fontSize: '10px' }}
                       >
@@ -888,7 +890,7 @@ export default function DisciplinePage() {
                             {r.card_type === 'yellow' ? 'SARI' : 'KIRMIZI'}
                           </span>
                           <button
-                            onClick={() => { if (confirm('Bu kart silinsin mi? Puan düşecektir.')) deleteCard.mutate(r.id) }}
+                            onClick={async () => { if (await confirmDialog({ title: 'Kart Sil', body: 'Bu kart silinsin mi? Puan düşecektir.', danger: true })) deleteCard.mutate(r.id) }}
                             style={{
                               background: 'none', border: 'none', cursor: 'pointer',
                               color: 'var(--text3)', fontSize: '12px', padding: '4px',

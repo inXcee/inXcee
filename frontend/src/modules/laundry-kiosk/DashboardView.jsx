@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { BLOCKS } from '../../shared/blocks.js'
+import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 
 const STATUS_GROUPS = [
   { key: 'pending_collection', label: '🧺 PENDING (toplanacak)', color: '#fbbf24' },
@@ -46,7 +47,11 @@ export default function DashboardView({ kioskApi, onAction }) {
   }, [filterBlock])  // eslint-disable-line react-hooks/exhaustive-deps
 
   async function collect(bag) {
-    if (!window.confirm(`${bag.bag_no || `#${bag.id}`} toplandı olarak işaretlenecek. Onayla?`)) return
+    const ok = await confirmDialog({
+      title: 'Çanta Toplandı',
+      body: `${bag.bag_no || `#${bag.id}`} toplandı olarak işaretlenecek. Onayla?`,
+    })
+    if (!ok) return
     try {
       await kioskApi.post(`/self-service/laundry-kiosk/bags/${bag.id}/collect`, {})
       load()

@@ -6,6 +6,7 @@ import { useAuthStore } from '../../shared/store/authStore.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
 import { useEventStream } from '../../shared/hooks/useEventStream.js'
 import { BLOCKS, BLOCK_BY_NAME, blockColor } from '../../shared/blocks.js'
+import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 
 // Bildirim mesajindan blok adi cikar (orn: "M1-101 karantinaya..." → M1)
 const BLOCK_NAMES = BLOCKS.map(b => b.block).sort((a, b) => b.length - a.length) // uzun olan once
@@ -218,7 +219,7 @@ export default function CampusMapPage() {
     onError: (err) => addToast(err?.response?.data?.error || 'Bulk islem hatasi', 'error'),
   })
 
-  function bulkAction(status, blocks) {
+  async function bulkAction(status, blocks) {
     const roomIds = (rooms || [])
       .filter(r => blocks.includes(r.block))
       .filter(r => status === 'active' ? r.status !== 'active' : r.status === 'active')
@@ -227,8 +228,13 @@ export default function CampusMapPage() {
       addToast('Bu islemde degisecek oda yok', 'warning')
       return
     }
-    const label = status === 'quarantine' ? 'karantinaya alinacak' : status === 'maintenance' ? 'bakima alinacak' : 'aktif yapilacak'
-    if (!confirm(`${blocks.join(', ')} bloklarinda ${roomIds.length} oda ${label}. Onaylar misin?`)) return
+    const label = status === 'quarantine' ? 'karantinaya alınacak' : status === 'maintenance' ? 'bakıma alınacak' : 'aktif yapılacak'
+    const ok = await confirmDialog({
+      title: 'Toplu Oda Durumu',
+      body: `${blocks.join(', ')} bloklarında ${roomIds.length} oda ${label}. Onaylar mısın?`,
+      danger: status !== 'active',
+    })
+    if (!ok) return
     bulkStatusMutation.mutate({ room_ids: roomIds, status })
   }
 
@@ -511,8 +517,13 @@ export default function CampusMapPage() {
   }
 
   function savePins() { savePinsMutation.mutate(pins) }
-  function resetPins() {
-    if (!confirm('Tum pin konumlarini varsayilana sifirla? (Tum kullanicilar icin)')) return
+  async function resetPins() {
+    const ok = await confirmDialog({
+      title: 'Pin Konumlarını Sıfırla',
+      body: 'Tüm pin konumlarını varsayılana sıfırla? (Tüm kullanıcılar için)',
+      danger: true,
+    })
+    if (!ok) return
     const def = defaultPins()
     setPins(def)
     savePinsMutation.mutate(def)

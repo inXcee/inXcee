@@ -5,6 +5,7 @@ import HelpHint from '../../shared/components/HelpHint.jsx'
 import LaundryReport from './LaundryReport.jsx'
 import LaundrySettings from './LaundrySettings.jsx'
 import { useLaundrySSE } from '../../shared/hooks/useLaundrySSE.js'
+import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 import {
   DndContext,
   PointerSensor,
@@ -1534,8 +1535,13 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
       .catch(err => addToast(err?.response?.data?.error || 'Toplu teslim başarısız', 'error'))
   }
 
-  const handleBatchLost = () => {
-    if (!window.confirm(`${selectedIds.size} kaydı kayıp işaretlemek istediğinize emin misiniz?`)) return
+  const handleBatchLost = async () => {
+    const ok = await confirmDialog({
+      title: 'Kayıp İşaretle',
+      body: `${selectedIds.size} kaydı kayıp işaretlemek istediğinize emin misiniz?`,
+      danger: true,
+    })
+    if (!ok) return
     laundryApi.batchLost([...selectedIds], null)
       .then(() => {
         qc.invalidateQueries({ queryKey: ['laundry-items'] })
