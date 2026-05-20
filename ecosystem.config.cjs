@@ -25,6 +25,9 @@ module.exports = {
       watch: false,
       env_production: {
         NODE_ENV: 'production',
+        DB_PATH: '/var/data/yys.db',
+        BACKUP_DIR: '/var/data/backups',
+        BACKUP_KEEP_DAYS: '30',
       },
       error_file: 'logs/backup-error.log',
       out_file: 'logs/backup-out.log',
