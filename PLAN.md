@@ -159,3 +159,15 @@
 - [x] **Notification preference UI** — `NotificationPrefsPage.jsx` zaten mevcut (modül × kanal × min_severity matrix + sessiz saat ayarları + test bildirimi); ek geliştirme gerekmedi
 
 Doğrulama: 804/804 backend (+4), build temiz, 8/8 Playwright smoke
+
+---
+
+## 2026-05-20 Yayın Cilası
+
+### Faz 13 — Production Polish ✅
+- [x] **P13.1 — `.env.example` tamamlandı:** Backend'in okuyup `.env.example`'da olmayan 8 değişken eklendi (DOCUMENTS_DIR, OFFSITE_BACKUP_CMD, SMS_PROVIDER/USER/PASS/HEADER, WEBAUTHN_RP_ID/ORIGIN, WHATSAPP_OUTBOUND/API_TOKEN). Operatör artık eksiksiz şablona sahip.
+- [x] **P13.2 — `alert()` + `prompt()` migrasyonu:** Yeni `InputDialog` componenti (text/select destekli, ESC/Enter/form submit, mobil-uyumlu); 4 `prompt()` callsite (toplu teslim, KKD iade durumu, arşiv sebebi, makine bakım notu) `inputDialog`'a, 7 `alert()` callsite mevcut toast'a geçti. Kiosk + tablet UX tutarlı.
+- [x] **P13.3 — Health endpoint zenginleştirme:** `/api/health` artık `version` (backend/package.json), `commit` (GIT_SHA / RENDER_GIT_COMMIT / VERCEL_GIT_COMMIT_SHA ilki dolan), `started_at`, `node_env` döner. Monitoring ve "hangi sürüm canlıda" sorularına net cevap. (exceljs zaten dinamik import + ayrı chunk; vite uyarısı initial bundle'a etkisiz)
+- [x] **P13.4 — `PRODUCTION-REHBERI.md` temizliği:** Stale "BLOKLAYICI" listesi (render.yaml DB_PATH, mobile rate limit, smoke admin123) güncel kod durumuna göre yeniden yazıldı. Yeni operatör checklist'i + /api/health doğrulama notları + GIT_SHA env önerisi.
+
+Doğrulama: 804/804 backend, build temiz, 8/8 e2e

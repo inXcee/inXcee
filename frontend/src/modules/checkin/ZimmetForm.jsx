@@ -2,6 +2,7 @@ import { useRef, useState, useMemo } from 'react'
 import api from '../../shared/api/client.js'
 import { useDraft } from '../../shared/hooks/useDraft.js'
 import DraftBanner from '../../shared/components/DraftBanner.jsx'
+import { useToastStore } from '../../shared/store/toastStore.js'
 
 const DEFAULT_ITEMS = [
   { item_name: 'Yatak Çarşafı', quantity: 2 },
@@ -60,12 +61,12 @@ export default function ZimmetForm({ personnelId, onDone }) {
 
   const handleSubmit = async () => {
     if (!hasSignature) {
-      alert('Lütfen imza alanına imza atın.')
+      useToastStore.getState().addToast('Lütfen imza alanına imza atın.', 'warning')
       return
     }
     const selectedItems = items.filter(i => i.checked).map(({ item_name, quantity }) => ({ item_name, quantity }))
     if (selectedItems.length === 0) {
-      alert('En az bir zimmet kalemi seçin.')
+      useToastStore.getState().addToast('En az bir zimmet kalemi seçin.', 'warning')
       return
     }
     setSaving(true)
@@ -78,7 +79,7 @@ export default function ZimmetForm({ personnelId, onDone }) {
       setSubmitted(true)
       onDone?.()
     } catch (e) {
-      alert('Zimmet kaydedilemedi: ' + (e.response?.data?.error || e.message))
+      useToastStore.getState().addToast('Zimmet kaydedilemedi: ' + (e.response?.data?.error || e.message), 'error')
     } finally { setSaving(false) }
   }
 

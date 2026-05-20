@@ -8,26 +8,37 @@
 
 ## 0. Özet — Deploy Öncesi Mutlaka Yapılacaklar
 
-Sistem şu an **kullanılabilir ama production için tamamlanmamış**. Canlıya almadan önce aşağıdakiler **mutlaka** yapılmalı:
+Kod tarafı production hazır. Aşağıdaki **operatör görevleri** her deploy'da yapılmalı:
 
-### 🔴 Deploy BLOKLAYICI (mutlaka)
+### 🔴 Operatör Kontrol Listesi (her deploy'da)
 
-- [ ] **`render.yaml`'daki `DB_PATH` düzelt** — `/tmp/yys.db` efemeraldir, Render restart'ta DB silinir. Kalıcı disk gerek.
-- [ ] **`JWT_SECRET` güçlü üret ve environment'a koy** — `.env`'deki placeholder kabul edilmez.
-- [ ] **`ALLOWED_ORIGIN`'i production domain'e ayarla** — default `localhost` değerleri kapat.
-- [ ] **Seed user'ların şifresini değiştir** — `mudur/admin123` vs. biliniyor, kimse kullanamamalı.
-- [ ] **Mobile auth brute-force limit** — `app.js:103` şu anda `writeLimiter` (60/dk) — `authLimiter` (20/15dk) olmalı.
-- [ ] **`scripts/deploy/post-deploy-smoke.sh`** hardcoded `admin123` kullanıyor — production için parametrize et.
-- [ ] **HTTPS aktif** — PWA `Add to Home Screen`, service worker, kamera erişimi HTTPS olmadan ÇALIŞMAZ.
-- [ ] **Uploads dizini persistent olmalı** — hem VPS'te hem Render'da kalıcı disk'e mount.
+- [ ] **`JWT_SECRET` güçlü üret ve environment'a koy.** Yoksa süreç başlamaz (`server.js` exit 1). Üretmek için:
+  ```bash
+  node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+  ```
+- [ ] **`ALLOWED_ORIGIN` production domain'i içersin** — production'da yoksa süreç başlamaz (`app.js` exit 1). Virgülle çoklu: `https://avskamp.com,https://www.avskamp.com`.
+- [ ] **Setup akışından geç** — `/setup` URL'sinde ilk admin'i oluştur, parolayı yöneticide sakla.
+  - Production'da `seedDev()` çalışmaz (`server.js:24`). Dev kullanıcıları (mudur/admin123 vs.) hiç oluşmaz.
+- [ ] **`WEBAUTHN_RP_ID` + `WEBAUTHN_ORIGIN` doldur** (mobile PWA biyometrik login için). Yoksa default localhost kalır.
+- [ ] **HTTPS aktif** — PWA install, service worker, kamera erişimi HTTPS olmadan ÇALIŞMAZ.
+- [ ] **Persistent disk mount** — render.yaml'da `/var/data` (yys-data volume) ile yapılmış; VPS deploy'unda `/var/data` dizinini hazırla.
+
+> 💡 **Doğrulama:** Deploy sonrası `GET /api/health` çağır — `{version, commit, started_at, db, node_env}` döner. `version` ve `commit` deploy edilmiş kodun kimlik kartıdır; UptimeRobot / Pingdom için ideal endpoint.
+
+### Otomatik smoke test
+
+```bash
+BACKEND_URL=https://yourdomain.com bash scripts/deploy/post-deploy-smoke.sh
+```
+
+Health check, 401 davranışı, CORS preflight, statik servis kontrolü yapar — seed kullanıcısı kullanmaz, production-safe.
 
 ### 🟡 ÖNERİLEN (kullanıma açmadan)
 
-- [ ] İlk gerçek admin hesabını oluştur, seed'leri sil
-- [ ] `frontend/vercel.json`'daki `inxcee-1.onrender.com` URL'sini kendi backend URL'nle değiştir
-- [ ] Yedekleme cron'u kur (günlük SQLite backup)
-- [ ] Error logging (uncaughtException + production logger)
-- [ ] Health monitoring (UptimeRobot, Pingdom vs.)
+- [ ] `frontend/vercel.json`'daki backend URL'sini kendi production backend URL'nle değiştir
+- [ ] Off-site backup'ı aç (`.env` → `OFFSITE_BACKUP_CMD=rclone copy ${FILE} mydrive:yys-backups/`)
+- [ ] Health monitoring (UptimeRobot/Pingdom — `/api/health` → bekle 200, `db: "ok"`)
+- [ ] CI'ya `GIT_SHA` env'i geç (Render/Vercel'de otomatik var: `RENDER_GIT_COMMIT`/`VERCEL_GIT_COMMIT_SHA`; backend bunu alıp /health'te yayınlar)
 
 ### 🟢 SONRA YAPILACAK (production blocker değil)
 

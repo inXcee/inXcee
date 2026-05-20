@@ -6,6 +6,7 @@ import LaundryReport from './LaundryReport.jsx'
 import LaundrySettings from './LaundrySettings.jsx'
 import { useLaundrySSE } from '../../shared/hooks/useLaundrySSE.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
+import { inputDialog } from '../../shared/components/InputDialog.jsx'
 import {
   DndContext,
   PointerSensor,
@@ -1353,7 +1354,7 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
         return newItem
       })
       .catch(err => {
-        alert(err?.response?.data?.message || 'İşlem başarısız')
+        addToast(err?.response?.data?.message || 'İşlem başarısız', 'error')
       })
   }
 
@@ -1389,7 +1390,7 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
       // İleri geçiş
       if (item.status === 'dirty') {
         const idleMachine = machines.find(m => m.status === 'idle')
-        if (!idleMachine) { alert('Boş makine yok — kart butonunu kullan'); return }
+        if (!idleMachine) { addToast('Boş makine yok — kart butonunu kullan', 'warning'); return }
         advanceWithUndo(item, { machine_id: idleMachine.id })
       } else if ((item.status === 'washing' && !item.needs_ironing) || item.status === 'ironing') {
         // Doğrulama gereken geçiş: washing→ready veya ironing→ready
@@ -1406,7 +1407,7 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
       // Geri geçiş
       laundryApi.revertItem(item.id, targetStatus)
         .then(() => qc.invalidateQueries({ queryKey: ['laundry-items'] }))
-        .catch(err => alert(err?.response?.data?.message || 'Geri alma başarısız'))
+        .catch(err => addToast(err?.response?.data?.message || 'Geri alma başarısız', 'error'))
     }
   }
 
@@ -1522,8 +1523,12 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
     })
   }
 
-  const handleBatchDeliver = () => {
-    const name = prompt('Toplu teslim — alıcı adı:')
+  const handleBatchDeliver = async () => {
+    const name = await inputDialog({
+      title: 'Toplu Teslim',
+      body: `${selectedIds.size} kaydı kime teslim ediyorsunuz?`,
+      placeholder: 'Alıcı adı',
+    })
     if (!name) return
     laundryApi.batchDeliver({ item_ids: [...selectedIds], delivered_to: name })
       .then(() => {

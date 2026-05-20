@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { laundryApi } from '../api.js'
+import { inputDialog } from '../../../shared/components/InputDialog.jsx'
 
 const overlay = { position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }
 const panel  = { background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, width: '100%', maxWidth: 460, boxShadow: '0 24px 64px rgba(0,0,0,0.5)', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }
@@ -113,11 +114,15 @@ export default function MachineManagerPanel({ machines, onClose }) {
                   </div>
                 </div>
                 <button
-                  onClick={() => {
+                  onClick={async () => {
                     if (inMaint) {
                       update.mutate({ id: m.id, fields: { status: 'idle', maintenance_notes: null } })
                     } else {
-                      const note = window.prompt('Bakım notu (opsiyonel):')
+                      const note = await inputDialog({
+                        title: 'Bakıma Al',
+                        body: `${m.name || 'Makine'} bakıma alınıyor. Not (opsiyonel).`,
+                        placeholder: 'Bakım notu…',
+                      })
                       if (note === null) return
                       update.mutate({ id: m.id, fields: { status: 'maintenance', maintenance_notes: note || null } })
                     }

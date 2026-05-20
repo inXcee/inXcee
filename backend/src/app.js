@@ -4,8 +4,21 @@ import helmet from 'helmet'
 import compression from 'compression'
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit'
 import jwt from 'jsonwebtoken'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { dirname, resolve } from 'node:path'
 import { sanitizeBody } from './shared/middleware/sanitize.js'
 import { getDB } from './shared/db/index.js'
+
+// Sürüm bilgisi — /api/health ve diagnostic için bir kez başlangıçta okunur.
+const __dirname = dirname(fileURLToPath(import.meta.url))
+let APP_VERSION = 'unknown'
+try {
+  const pkg = JSON.parse(readFileSync(resolve(__dirname, '../package.json'), 'utf-8'))
+  APP_VERSION = pkg.version || 'unknown'
+} catch { /* package.json okunamazsa default kalır */ }
+const APP_COMMIT = (process.env.GIT_SHA || process.env.RENDER_GIT_COMMIT || process.env.VERCEL_GIT_COMMIT_SHA || '').slice(0, 7) || null
+const APP_STARTED_AT = new Date().toISOString()
 import { checkinRouter } from './modules/checkin/routes.js'
 import { capacityRouter } from './modules/capacity/routes.js'
 import { laundryRouter } from './modules/laundry/routes.js'
@@ -138,6 +151,10 @@ app.get('/api/health', (req, res) => {
     status: dbStatus === 'ok' ? 'ok' : 'degraded',
     uptime: Math.floor(process.uptime()),
     db: dbStatus,
+    version: APP_VERSION,
+    commit: APP_COMMIT,
+    started_at: APP_STARTED_AT,
+    node_env: process.env.NODE_ENV || 'development',
   })
 })
 

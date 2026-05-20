@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useAuthStore } from '../../shared/store/authStore.js'
 import HelpHint from '../../shared/components/HelpHint.jsx'
 import { useUrlParamState } from '../../shared/hooks/useUrlParamState.js'
+import { useToastStore } from '../../shared/store/toastStore.js'
 import api from '../../shared/api/client.js'
 
 const API_BASE = '/api'
@@ -347,7 +348,7 @@ function ReportCard({ report, selectedDate }) {
       link.click()
       URL.revokeObjectURL(link.href)
     } catch (e) {
-      alert('Rapor indirilemedi: ' + e.message)
+      useToastStore.getState().addToast('Rapor indirilemedi: ' + e.message, 'error')
     } finally {
       setDownloading(false)
     }

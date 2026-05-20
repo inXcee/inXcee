@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import api from '../../shared/api/client.js'
+import { useToastStore } from '../../shared/store/toastStore.js'
 
 export default function BedEditor({ room, onUpdated }) {
   const [value, setValue] = useState(room.active_beds)
@@ -13,7 +14,7 @@ export default function BedEditor({ room, onUpdated }) {
       await api.patch(`/capacity/rooms/${room.id}/beds`, { active_beds: value })
       onUpdated?.()
     } catch (e) {
-      alert(e.response?.data?.error || 'Güncelleme hatası')
+      useToastStore.getState().addToast(e.response?.data?.error || 'Güncelleme hatası', 'error')
     } finally {
       setLoading(false)
     }

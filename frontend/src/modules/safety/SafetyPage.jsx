@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import api from '../../shared/api/client.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
+import { inputDialog } from '../../shared/components/InputDialog.jsx'
 
 const toast = (m, t = 'success') => useToastStore.getState().addToast(m, t)
 const toastErr = (e) => toast(e?.response?.data?.error || 'Hata', 'error')
@@ -474,7 +475,12 @@ function KkdTab() {
                   <td style={{ padding: 10 }}>
                     {!k.returned_at && (
                       <button onClick={async () => {
-                        const cond = window.prompt('İade durumu (sağlam/eskimiş/hasarlı/kayıp):', 'sağlam')
+                        const cond = await inputDialog({
+                          title: 'KKD İade',
+                          body: 'Eşyanın iade edildiği durumu seçin.',
+                          options: ['sağlam', 'eskimiş', 'hasarlı', 'kayıp'],
+                          defaultValue: 'sağlam',
+                        })
                         if (cond) returnMut.mutate({ id: k.id, condition: cond })
                       }} className="btn btn-ghost btn-xs">↩ İADE AL</button>
                     )}

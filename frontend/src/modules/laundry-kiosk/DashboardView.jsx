@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { BLOCKS } from '../../shared/blocks.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
+import { useToastStore } from '../../shared/store/toastStore.js'
 
 const STATUS_GROUPS = [
   { key: 'pending_collection', label: '🧺 PENDING (toplanacak)', color: '#fbbf24' },
@@ -56,7 +57,7 @@ export default function DashboardView({ kioskApi, onAction }) {
       await kioskApi.post(`/self-service/laundry-kiosk/bags/${bag.id}/collect`, {})
       load()
     } catch (e) {
-      window.alert(e.response?.data?.error || 'Hata')
+      useToastStore.getState().addToast(e.response?.data?.error || 'Hata', 'error')
     }
   }
 

@@ -1551,7 +1551,7 @@ function QuickFaultModal({ block, onClose, onSuccess }) {
 
   async function submit() {
     if (!description.trim() || description.trim().length < 5) {
-      alert('Aciklama gerekli (min 5 karakter)'); return
+      useToastStore.getState().addToast('Açıklama gerekli (min 5 karakter)', 'warning'); return
     }
     setSubmitting(true)
     try {
@@ -1564,7 +1564,7 @@ function QuickFaultModal({ block, onClose, onSuccess }) {
       await api.post('/maintenance/requests', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
       onSuccess()
     } catch (err) {
-      alert(err?.response?.data?.error || 'Gonderilemedi')
+      useToastStore.getState().addToast(err?.response?.data?.error || 'Gönderilemedi', 'error')
       setSubmitting(false)
     }
   }

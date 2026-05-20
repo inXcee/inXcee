@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import api from '../../shared/api/client.js'
 import BedEditor from './BedEditor.jsx'
+import { useToastStore } from '../../shared/store/toastStore.js'
 
 const STATUS_LABELS = { active: 'Aktif', quarantine: 'Karantina', maintenance: 'Bakım' }
 const STATUS_COLORS = { active: 'text-green-400', quarantine: 'text-blue-400', maintenance: 'text-yellow-400' }
@@ -33,7 +34,7 @@ export default function RoomCard({ room, onUpdated }) {
       await api.patch(`/capacity/rooms/${room.id}/status`, { status })
       onUpdated?.()
     } catch (e) {
-      alert(e.response?.data?.error || 'Durum değiştirilemedi')
+      useToastStore.getState().addToast(e.response?.data?.error || 'Durum değiştirilemedi', 'error')
     }
   }
 

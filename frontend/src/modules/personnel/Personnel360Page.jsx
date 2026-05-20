@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
+import { inputDialog } from '../../shared/components/InputDialog.jsx'
 
 const toast = (m, t = 'success') => useToastStore.getState().addToast(m, t)
 const toastErr = (e) => toast(e?.response?.data?.error || 'Hata', 'error')
@@ -93,7 +94,12 @@ export default function Personnel360Page() {
           <QrButtons staffId={id} hasToken={!!p.qr_token} onUpdate={inv} />
           {p.is_active ? (
             <button onClick={async () => {
-              const reason = window.prompt('Arşivleme sebebi (opsiyonel):') ?? null
+              const reason = await inputDialog({
+                title: 'Personel Arşivle',
+                body: `${p.full_name} arşive taşınacak. Sebep (opsiyonel).`,
+                placeholder: 'Sebep…',
+                confirmLabel: 'Devam',
+              })
               if (reason !== null && await confirmDialog({ title: 'Arşivle', body: `${p.full_name} arşive taşınacak.`, confirmLabel: 'Arşivle' })) {
                 archiveMut.mutate(reason)
               }
