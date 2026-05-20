@@ -5,6 +5,7 @@ import { useToastStore } from '../../shared/store/toastStore.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 import EmptyState from '../../shared/components/EmptyState.jsx'
 import { useStickyForm, StickyDraftBanner } from '../../shared/hooks/useStickyForm.jsx'
+import RosterPanel from './RosterPanel.jsx'
 
 const TYPES = [
   { value: 'fire', label: '🔥 Yangın' },
@@ -83,6 +84,8 @@ export default function DrillsPage() {
           <Stat label="Sıradaki" value={stats.upcoming || '—'} small color="orange" />
         </div>
       )}
+
+      <RosterPanel />
 
       {showForm && (
         <div className="panel" style={{ marginBottom: 16 }}>

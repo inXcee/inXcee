@@ -151,6 +151,11 @@
   - inventory: Suppliers, Requests, PurchaseOrders
 - [x] Doğrulama: build temiz, 800/800 backend + 8/8 e2e geçti
 
-### Faz 12 — Operasyonel Güçlendirme ⏳
-- [ ] Drills modülü genişletmesi: anlık "blokta kim var" tahliye raporu (PDF + print)
-- [ ] Notification preference UI — `notification-prefs` backend modülü için kullanıcı ayar sayfası
+### Faz 12 — Operasyonel Güçlendirme ✅
+- [x] **Drills tahliye/yoklama paneli** — anlık "blokta kim var" raporu
+  - Backend: `GET /api/drills/roster` (JSON, bloğa göre gruplu, opsiyonel `?block=` filtresi) + `GET /api/drills/roster.pdf` (PDF, audit log'a `roster_pdf` action)
+  - Frontend: `RosterPanel.jsx` — DrillsPage'in üstünde, blok seçici + yenile + yazdır + PDF indir; `breakInside: avoid` ile yazdırma sayfa kırılımı doğru çalışır
+  - +4 vitest (JSON yapısı, block filtresi, PDF content-type, auth zorunluluğu)
+- [x] **Notification preference UI** — `NotificationPrefsPage.jsx` zaten mevcut (modül × kanal × min_severity matrix + sessiz saat ayarları + test bildirimi); ek geliştirme gerekmedi
+
+Doğrulama: 804/804 backend (+4), build temiz, 8/8 Playwright smoke

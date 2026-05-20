@@ -28,6 +28,37 @@ describe('Drills', () => {
     expect(res.status).toBe(400)
   })
 
+  it('roster JSON — bloga göre grupla, toplam say', async () => {
+    const res = await request(app).get('/api/drills/roster').set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(200)
+    expect(res.body).toHaveProperty('generated_at')
+    expect(res.body).toHaveProperty('total')
+    expect(Array.isArray(res.body.blocks)).toBe(true)
+    // Toplam, bloklardaki sayıların toplamına eşit olmalı
+    const sum = res.body.blocks.reduce((s, b) => s + b.count, 0)
+    expect(sum).toBe(res.body.total)
+  })
+
+  it('roster — block filter sadece o bloğu döner', async () => {
+    const res = await request(app).get('/api/drills/roster?block=M1').set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(200)
+    expect(res.body.block_filter).toBe('M1')
+    // Dönen tüm blocks entry'leri M1 olmalı
+    for (const b of res.body.blocks) expect(b.block).toBe('M1')
+  })
+
+  it('roster.pdf — application/pdf döner', async () => {
+    const res = await request(app).get('/api/drills/roster.pdf').set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(200)
+    expect(res.headers['content-type']).toMatch(/application\/pdf/)
+    expect(res.headers['content-disposition']).toMatch(/tahliye-listesi/)
+  })
+
+  it('roster — auth zorunlu', async () => {
+    const res = await request(app).get('/api/drills/roster')
+    expect(res.status).toBe(401)
+  })
+
   it('tatbikat kayit + liste + sil', async () => {
     const create = await request(app).post('/api/drills')
       .set('Authorization', `Bearer ${token}`)
