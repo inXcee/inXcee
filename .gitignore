@@ -15,3 +15,8 @@ uploads/
 .DS_Store
 .worktrees/
 test-out.txt
+
+# Playwright E2E
+frontend/test-results/
+frontend/playwright-report/
+frontend/e2e/.tmp/

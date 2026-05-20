@@ -3,6 +3,7 @@
   "type": "module",
   "scripts": {
     "start": "node --env-file=../.env src/server.js",
+    "start:e2e": "node src/server.js",
     "dev": "node --watch --env-file=../.env src/server.js",
     "test": "vitest run",
     "test:watch": "vitest"

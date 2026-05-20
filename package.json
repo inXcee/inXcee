@@ -4,7 +4,8 @@
   "workspaces": ["backend", "frontend"],
   "scripts": {
     "dev": "concurrently \"npm run dev -w backend\" \"npm run dev -w frontend\"",
-    "test": "npm run test -w backend"
+    "test": "npm run test -w backend",
+    "test:e2e": "npm run test:e2e -w frontend"
   },
   "devDependencies": { "concurrently": "^8.2.0" }
 }

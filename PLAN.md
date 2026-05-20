@@ -123,3 +123,27 @@
 - [x] Promote zaten aktif olanı reddeder testi
 - [x] Reports endpoint genişletme testi (no_show_top + per_staff_usage)
 - [x] 676/676 backend testi geçti (önceki 617'den +59 yeni test)
+
+---
+
+## 2026-05-20 Frontend Güvenlik Ağı
+
+### Faz 10 — E2E Smoke Test Altyapısı ✅
+- [x] Playwright kurulumu (`@playwright/test`, chromium browser)
+- [x] `frontend/playwright.config.js` — webServer ile backend+frontend otomatik spawn, izole temp DB (`e2e/.tmp/yys-e2e.db`), seed her run'da temiz çalışır
+- [x] `backend/package.json` → `start:e2e` script (.env zorunluluğu yok, env Playwright tarafından geçirilir)
+- [x] `frontend/e2e/global-setup.js` — her run öncesi `.tmp/` temizliği
+- [x] 8 smoke test (auth + dashboard + public routes):
+  - login form render, başarılı login → dashboard, hatalı şifre toast
+  - dashboard header + ErrorBoundary kontrolü, sidebar → Kapasite navigation
+  - laundry-kiosk public yüklenmesi, mobile rol seçimi, anonim `/` → `/login` redirect
+- [x] CI workflow güncellendi — `npx playwright install --with-deps chromium` + `npm run test:e2e`, fail durumunda `playwright-report/` artifact upload (7 gün)
+- [x] Lokal: 800/800 backend + 8/8 e2e geçti
+
+### Faz 11 — UX Tamamlama (kalan PLAN.md kalemleri) ⏳
+- [ ] Filter URL state (Reports + Discipline) — paylaşılabilir URL, geri tuşu dostu
+- [ ] Kalan browser `confirm()` çağrılarını `ConfirmDialog`'a geçir (DisciplinePage cards, vs.)
+
+### Faz 12 — Operasyonel Güçlendirme ⏳
+- [ ] Drills modülü genişletmesi: anlık "blokta kim var" tahliye raporu (PDF + print)
+- [ ] Notification preference UI — `notification-prefs` backend modülü için kullanıcı ayar sayfası
