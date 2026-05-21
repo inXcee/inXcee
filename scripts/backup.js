@@ -68,14 +68,28 @@ async function run() {
     console.log('[Backup] B2 sync atlandı (B2_SYNC_DISABLED=1)')
     return
   }
+  // 1) DB backup dosyaları → bucket root (lifecycle 30 gün)
   try {
-    execSync(`rclone sync ${BACKUP_DIR} ${B2_REMOTE}`, {
+    execSync(`rclone sync ${BACKUP_DIR} ${B2_REMOTE} --include "yys_*.db"`, {
       stdio: 'inherit',
       timeout: 5 * 60 * 1000,
     })
-    console.log(`[Backup] B2 sync OK → ${B2_REMOTE}`)
+    console.log(`[Backup] B2 DB sync OK → ${B2_REMOTE}`)
   } catch (e) {
-    console.error(`[Backup] B2 sync BAŞARISIZ (local yedek güvende): ${e.message}`)
+    console.error(`[Backup] B2 DB sync BAŞARISIZ (local yedek güvende): ${e.message}`)
+  }
+  // 2) Uploads dizini → bucket/uploads/ (lifecycle yok, sonsuz tutulur)
+  const UPLOADS_DIR = process.env.UPLOADS_DIR || '/var/data/uploads'
+  if (fs.existsSync(UPLOADS_DIR)) {
+    try {
+      execSync(`rclone sync ${UPLOADS_DIR} ${B2_REMOTE}/uploads`, {
+        stdio: 'inherit',
+        timeout: 15 * 60 * 1000,
+      })
+      console.log(`[Backup] B2 uploads sync OK → ${B2_REMOTE}/uploads`)
+    } catch (e) {
+      console.error(`[Backup] B2 uploads sync BAŞARISIZ: ${e.message}`)
+    }
   }
 }
 
