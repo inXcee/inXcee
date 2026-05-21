@@ -1016,10 +1016,13 @@ export default function CampusMapPage() {
               const animDelay = animateIn ? `${idx * 40}ms` : '0ms'
               return (
                 <g key={b.block} opacity={pinOpacity}
-                  style={animateIn ? {
-                    transformOrigin: `${p.x}px ${p.y}px`,
-                    animation: `pin-pop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) ${animDelay} backwards`,
-                  } : undefined}
+                  style={{
+                    cursor: editMode ? 'grab' : 'pointer',
+                    ...(animateIn ? {
+                      transformOrigin: `${p.x}px ${p.y}px`,
+                      animation: `pin-pop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) ${animDelay} backwards`,
+                    } : {}),
+                  }}
                   onMouseEnter={() => setHoverBlock(b.block)}
                   onMouseLeave={() => setHoverBlock(null)}
                   onContextMenu={(e) => {
@@ -1045,7 +1048,6 @@ export default function CampusMapPage() {
                       setMultiSelect(new Set())
                     }
                   }}
-                  style={{ cursor: editMode ? 'grab' : 'pointer' }}
                 >
                   {/* Halo */}
                   {(isHover || isSel) && (

@@ -127,7 +127,7 @@ function ScanTab() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 14 }}>
         {Object.entries(MEALS).map(([k, v]) => (
           <button key={k} onClick={() => setMealType(k)} style={{
-            padding: '14px 8px', border: 'none', borderRadius: 12,
+            padding: '14px 8px', borderRadius: 12,
             background: mealType === k ? v.color : 'var(--surface)',
             color: mealType === k ? '#000' : 'var(--text3)',
             border: '1px solid var(--border)',
