@@ -214,9 +214,34 @@ function SetupGate({ children }) {
   return children
 }
 
+function StagingBanner() {
+  if (typeof window === 'undefined') return null
+  if (!window.location.hostname.startsWith('staging.')) return null
+  return (
+    <div style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      background: '#FFC107',
+      color: '#000',
+      textAlign: 'center',
+      fontWeight: 600,
+      padding: '4px 8px',
+      zIndex: 9999,
+      fontSize: '13px',
+      borderBottom: '2px solid #FF6F00',
+      letterSpacing: '0.5px',
+    }}>
+      STAGING ORTAMI — test verileri, prod'a yansımaz
+    </div>
+  )
+}
+
 export default function App() {
   return (
     <ErrorBoundary>
+      <StagingBanner />
       <ToastContainer />
       <ConfirmDialog />
       <InputDialog />

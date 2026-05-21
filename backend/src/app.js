@@ -5,6 +5,7 @@ import compression from 'compression'
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit'
 import jwt from 'jsonwebtoken'
 import { readFileSync } from 'node:fs'
+import { statfs } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 import { sanitizeBody } from './shared/middleware/sanitize.js'
@@ -143,14 +144,27 @@ app.use('/uploads', (req, res, next) => {
   next()
 }, express.static(process.env.UPLOADS_DIR || 'uploads', { maxAge: '1y', immutable: true }))
 
-// Health check
-app.get('/api/health', (req, res) => {
+// Health check — disk %95'in üstüne çıkarsa 503 döner (UptimeRobot tetiklensin diye).
+app.get('/api/health', async (req, res) => {
   let dbStatus = 'ok'
   try { getDB().prepare('SELECT 1').get() } catch { dbStatus = 'error' }
-  res.status(dbStatus === 'ok' ? 200 : 503).json({
-    status: dbStatus === 'ok' ? 'ok' : 'degraded',
+
+  let diskPercent = null
+  let diskStatus = 'ok'
+  try {
+    const stats = await statfs('/')
+    diskPercent = Math.round(((Number(stats.blocks) - Number(stats.bfree)) / Number(stats.blocks)) * 100)
+    if (diskPercent >= 95) diskStatus = 'critical'
+    else if (diskPercent >= 85) diskStatus = 'warning'
+  } catch { diskStatus = 'unknown' }
+
+  const overall = (dbStatus === 'ok' && diskStatus !== 'critical') ? 'ok' : 'degraded'
+  res.status(overall === 'ok' ? 200 : 503).json({
+    status: overall,
     uptime: Math.floor(process.uptime()),
     db: dbStatus,
+    disk_percent: diskPercent,
+    disk_status: diskStatus,
     version: APP_VERSION,
     commit: APP_COMMIT,
     started_at: APP_STARTED_AT,
