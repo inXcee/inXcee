@@ -15,6 +15,7 @@ import Database from 'better-sqlite3'
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import { execSync } from 'node:child_process'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -59,6 +60,22 @@ async function run() {
   for (const f of files) {
     fs.unlinkSync(path.join(BACKUP_DIR, f.name))
     console.log(`[Backup] Silindi (${KEEP_DAYS}g+): ${f.name}`)
+  }
+
+  // Off-site sync (Backblaze B2). Local yedek başarılı kabul edilir; B2 hatası kritik değil.
+  const B2_REMOTE = process.env.B2_REMOTE || 'b2:avskamp-yys-backups'
+  if (process.env.B2_SYNC_DISABLED === '1') {
+    console.log('[Backup] B2 sync atlandı (B2_SYNC_DISABLED=1)')
+    return
+  }
+  try {
+    execSync(`rclone sync ${BACKUP_DIR} ${B2_REMOTE}`, {
+      stdio: 'inherit',
+      timeout: 5 * 60 * 1000,
+    })
+    console.log(`[Backup] B2 sync OK → ${B2_REMOTE}`)
+  } catch (e) {
+    console.error(`[Backup] B2 sync BAŞARISIZ (local yedek güvende): ${e.message}`)
   }
 }
 
