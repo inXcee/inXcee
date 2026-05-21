@@ -8,7 +8,7 @@
 
 ## Hızlı Başlangıç (Geliştirme)
 
-Önkoşullar: **Node.js 20+** (`.nvmrc` mevcut, `nvm use`).
+Önkoşullar: **Node.js 22+** (`.nvmrc` mevcut, `nvm use`).
 
 ```bash
 git clone <repo>
@@ -164,7 +164,7 @@ npm test                          # backend testler (vitest)
 bash scripts/deploy/pre-deploy-check.sh   # test + build + console.log + .env güvenliği
 ```
 
-CI: `.github/workflows/ci.yml` — push ve PR'larda otomatik (Node 20, in-memory DB).
+CI: `.github/workflows/ci.yml` — push ve PR'larda otomatik (Node 22, in-memory DB).
 
 ---
 
