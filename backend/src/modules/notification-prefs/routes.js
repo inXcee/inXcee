@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import { requireAuth } from '../../shared/auth/middleware.js'
+import { logger } from '../../shared/logger.js'
 import {
   getUserPreferencesService, setUserPreferencesService, NOTIFICATION_MODULES,
   NOTIFICATION_CHANNELS,
@@ -20,7 +21,7 @@ notificationPrefsRouter.get('/channels', requireAuth, (req, res) => {
 
 notificationPrefsRouter.get('/', requireAuth, (req, res) => {
   try { res.json(getUserPreferencesService(req.user.id)) }
-  catch (e) { console.error('[NotifPrefs]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  catch (e) { logger.error('[NotifPrefs]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 notificationPrefsRouter.put('/', requireAuth, (req, res) => {
@@ -32,7 +33,7 @@ notificationPrefsRouter.put('/', requireAuth, (req, res) => {
 // A→Z Faz 5: v2 matrix
 notificationPrefsRouter.get('/v2', requireAuth, (req, res) => {
   try { res.json(getPreferencesV2Service(req.user.id)) }
-  catch (e) { console.error('[NotifPrefs v2]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  catch (e) { logger.error('[NotifPrefs v2]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 notificationPrefsRouter.put('/v2', requireAuth, (req, res) => {
@@ -43,14 +44,14 @@ notificationPrefsRouter.put('/v2', requireAuth, (req, res) => {
 
 notificationPrefsRouter.get('/quiet-hours', requireAuth, (req, res) => {
   try { res.json(getQuietHoursService(req.user.id)) }
-  catch (e) { console.error('[NotifPrefs quiet]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  catch (e) { logger.error('[NotifPrefs quiet]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 notificationPrefsRouter.put('/quiet-hours', requireAuth, (req, res) => {
   try {
     setQuietHoursService(req.user.id, req.body || {})
     res.json({ ok: true })
-  } catch (e) { console.error('[NotifPrefs quiet]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[NotifPrefs quiet]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 // Test bildirimi — sadece kendine gönderir
@@ -63,5 +64,5 @@ notificationPrefsRouter.post('/test', requireAuth, (req, res) => {
       target_user_id: req.user.id,
     })
     res.json({ ok: true })
-  } catch (e) { console.error('[NotifPrefs test]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[NotifPrefs test]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })

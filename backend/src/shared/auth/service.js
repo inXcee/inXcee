@@ -3,10 +3,11 @@ import jwt from 'jsonwebtoken'
 import { getDB } from '../db/index.js'
 import { validatePassword } from './password-policy.js'
 import { verifyTotp, makeTotpChallengeToken, consumeTotpChallengeToken } from './totp.js'
+import { logger } from '../logger.js'
 
 const SECRET = process.env.JWT_SECRET
 if (!SECRET) {
-  console.error('[Auth] JWT_SECRET env değişkeni tanımlı değil! Sunucu başlatılamaz.')
+  logger.error('[Auth] JWT_SECRET env değişkeni tanımlı değil! Sunucu başlatılamaz.')
   process.exit(1)
 }
 

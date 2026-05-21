@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { requireRole } from '../../shared/auth/middleware.js'
 import { logAudit } from '../../shared/audit.js'
 import { getDB } from '../../shared/db/index.js'
+import { logger } from '../../shared/logger.js'
 
 export const mealsRouter = Router()
 const mgr = requireRole('campus_manager', 'shift_supervisor')
@@ -44,7 +45,7 @@ mealsRouter.post('/log', ...mgr, (req, res) => {
       }
       throw e
     }
-  } catch (e) { console.error('[meals/log]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[meals/log]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 // Günlük dağılım
@@ -68,7 +69,7 @@ mealsRouter.get('/daily', ...view, (req, res) => {
       LIMIT 500
     `).all(date)
     res.json({ date, counts, logs })
-  } catch (e) { console.error('[meals/daily]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[meals/daily]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 mealsRouter.delete('/log/:id', ...mgr, (req, res) => {
@@ -114,7 +115,7 @@ mealsRouter.get('/forecast', ...view, (req, res) => {
     `).all(targetDate)
 
     res.json({ date: targetDate, scheduled, averages: avg, diet_summary: diets })
-  } catch (e) { console.error('[meals/forecast]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[meals/forecast]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 // ── YM2: Diyet flag set/unset ──
@@ -157,5 +158,5 @@ mealsRouter.get('/cost-summary', ...view, (req, res) => {
     `).all(start, end)
 
     res.json({ month: ym, by_meal: total, by_staff: perStaff })
-  } catch (e) { console.error('[meals/cost]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[meals/cost]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })

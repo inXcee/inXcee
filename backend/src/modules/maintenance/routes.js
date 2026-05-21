@@ -5,6 +5,7 @@ import { getDB } from '../../shared/db/index.js'
 import { logAudit } from '../../shared/audit.js'
 import * as svc from './service.js'
 import { paginate } from '../../shared/paginate.js'
+import { logger } from '../../shared/logger.js'
 
 export const maintenanceRouter = Router()
 const techAccess = requireRole('campus_manager', 'shift_supervisor', 'technical')
@@ -44,7 +45,7 @@ maintenanceRouter.get('/requests', ...techAccess, (req, res) => {
     }
     res.json(svc.getRequestsService(query))
   }
-  catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 maintenanceRouter.get('/requests/:id', ...techAccess, (req, res) => {
@@ -122,26 +123,26 @@ maintenanceRouter.delete('/requests/:id', ...requireRole('campus_manager'), (req
 
 maintenanceRouter.get('/stats', ...techAccess, (req, res) => {
   try { res.json(svc.getStatsService()) }
-  catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 // ── Location suggestions ────────────────────────────────────────────────────
 
 maintenanceRouter.get('/location-suggestions', ...techAccess, (req, res) => {
   try { res.json(svc.getLocationSuggestionsService()) }
-  catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 // ── Technicians ──────────────────────────────────────────────────────────────
 
 maintenanceRouter.get('/technicians', ...techAccess, (req, res) => {
   try { res.json(svc.getTechniciansService()) }
-  catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 maintenanceRouter.get('/technicians/available', ...techAccess, (req, res) => {
   try { res.json(svc.getAvailableTechniciansService()) }
-  catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 maintenanceRouter.post('/technicians', ...requireRole('campus_manager', 'technical'), (req, res) => {
@@ -165,7 +166,7 @@ maintenanceRouter.delete('/technicians/:id', ...requireRole('campus_manager', 't
 
 maintenanceRouter.get('/requests/:id/comments', ...techAccess, (req, res) => {
   try { res.json(svc.getCommentsService(+req.params.id)) }
-  catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 maintenanceRouter.post('/requests/:id/comments', ...techAccess, upload.single('photo'), verifyMagicBytes, (req, res) => {

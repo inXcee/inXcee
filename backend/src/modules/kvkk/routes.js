@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { requireRole } from '../../shared/auth/middleware.js'
 import { logAudit } from '../../shared/audit.js'
+import { logger } from '../../shared/logger.js'
 import {
   getKvkkPolicyService, setKvkkPolicyService, exportPersonnelDataService,
   anonymizePersonnelDataService,
@@ -12,7 +13,7 @@ const adminOnly = requireRole('campus_manager')
 // Public — login öncesi de erişilebilir (KVKK kanun gereği)
 kvkkRouter.get('/policy', (req, res) => {
   try { res.json(getKvkkPolicyService()) }
-  catch (e) { console.error('[KVKK]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  catch (e) { logger.error('[KVKK]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 kvkkRouter.put('/policy', ...adminOnly, (req, res) => {
@@ -30,7 +31,7 @@ kvkkRouter.get('/personnel/:id/export', ...adminOnly, (req, res) => {
       `attachment; filename="kvkk-export-personnel-${req.params.id}-${Date.now()}.json"`)
     res.json(result)
   } catch (e) {
-    console.error('[KVKK]', e)
+    logger.error('[KVKK]', e)
     res.status(500).json({ error: 'Sunucu hatası' })
   }
 })
@@ -45,7 +46,7 @@ kvkkRouter.post('/personnel/:id/anonymize', ...adminOnly, (req, res) => {
     logAudit(req.user.id, 'kvkk_anonymize', 'personnel', result.personnel_id, 'KVKK m.11 anonimleştirme uygulandı')
     res.json(result)
   } catch (e) {
-    console.error('[KVKK]', e)
+    logger.error('[KVKK]', e)
     res.status(500).json({ error: 'Sunucu hatası' })
   }
 })

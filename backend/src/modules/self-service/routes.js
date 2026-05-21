@@ -4,6 +4,7 @@ import { getDB } from '../../shared/db/index.js'
 import { createRequest } from '../maintenance/queries.js'
 import { changeKioskPin } from '../../shared/auth/service.js'
 import { insertItemQuery, updateItemStatusQuery, listMachinesQuery, addToQueueQuery, collectItemQuery, setBagNoQuery, getRoomLaundryHistoryQuery, getRoomLaundrySummaryQuery, getBlockRoomActiveCountsQuery } from '../laundry/queries.js'
+import { logger } from '../../shared/logger.js'
 
 export const selfServiceRouter = Router()
 
@@ -21,7 +22,7 @@ selfServiceRouter.get('/my-info', requireKioskOrStaff, (req, res) => {
       WHERE ra.personnel_id=? AND ra.check_out_at IS NULL
     `).get(req.user.personnelId)
     res.json({ ...p, room: assignment || null })
-  } catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 // H2 M1 — Zengin profil (staff + acil iletişim + sayım)
@@ -77,7 +78,7 @@ selfServiceRouter.get('/my-profile', requireKioskOrStaff, (req, res) => {
       discipline_total: discipline,
       maintenance_open: maintenanceOpen,
     })
-  } catch (e) { console.error('[my-profile]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[my-profile]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 // H2 M2 — Vardiyalarım
@@ -109,7 +110,7 @@ selfServiceRouter.get('/my-shifts', requireKioskOrStaff, (req, res) => {
     `).get(staff.id)
 
     res.json({ shifts, summary })
-  } catch (e) { console.error('[my-shifts]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[my-shifts]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 // H5 Q6 — Kişinin kendi QR'ı (mobile kart)
@@ -121,7 +122,7 @@ selfServiceRouter.get('/my-qr', requireKioskOrStaff, (req, res) => {
     if (!p?.tc_no) return res.json({ qr_token: null, message: 'TC numarası kayıtlı değil' })
     const staff = db.prepare('SELECT qr_token FROM staff WHERE tc_no = ? AND is_active = 1').get(p.tc_no)
     res.json({ qr_token: staff?.qr_token || null, full_name: p.full_name })
-  } catch (e) { console.error('[my-qr]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[my-qr]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 // H2 M3 — Bugünkü servisim
@@ -151,7 +152,7 @@ selfServiceRouter.get('/my-transport', requireKioskOrStaff, (req, res) => {
     ).get(staff.pickup_point_id) : null
 
     res.json({ today, pickup, date })
-  } catch (e) { console.error('[my-transport]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[my-transport]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 selfServiceRouter.get('/laundry-status', requireKioskOrStaff, (req, res) => {
@@ -164,7 +165,7 @@ selfServiceRouter.get('/laundry-status', requireKioskOrStaff, (req, res) => {
     if (!assignment) return res.json([])
     const bags = db.prepare('SELECT * FROM laundry_bags WHERE room_id=? ORDER BY collected_at DESC LIMIT 10').all(assignment.room_id)
     res.json(bags)
-  } catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 selfServiceRouter.post('/maintenance', requireKioskOrStaff, (req, res) => {
@@ -205,7 +206,7 @@ selfServiceRouter.get('/my-maintenance', requireKioskOrStaff, (req, res) => {
       ORDER BY opened_at DESC LIMIT 20
     `).all(req.user.personnelId)
     res.json(rows)
-  } catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 selfServiceRouter.get('/my-discipline', requireKioskOrStaff, (req, res) => {
@@ -219,7 +220,7 @@ selfServiceRouter.get('/my-discipline', requireKioskOrStaff, (req, res) => {
       ORDER BY created_at DESC
     `).all(req.user.personnelId)
     res.json(rows)
-  } catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 selfServiceRouter.get('/announcements', requireKioskOrStaff, (req, res) => {
@@ -232,7 +233,7 @@ selfServiceRouter.get('/announcements', requireKioskOrStaff, (req, res) => {
       ORDER BY created_at DESC
     `).all()
     res.json(rows)
-  } catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 selfServiceRouter.post('/feedback', requireKioskOrStaff, (req, res) => {
@@ -248,7 +249,7 @@ selfServiceRouter.post('/feedback', requireKioskOrStaff, (req, res) => {
       INSERT INTO feedback(personnel_id, type, message) VALUES(?,?,?)
     `).run(anonymous ? null : req.user.personnelId, type, message.trim())
     res.status(201).json({ id: r.lastInsertRowid })
-  } catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 // ── Laundry Kiosk (AVS çalışanları) ──────────────────────────────────────
@@ -285,7 +286,7 @@ selfServiceRouter.get('/laundry-kiosk/room-history', requireAvsKiosk, (req, res)
     const summary = getRoomLaundrySummaryQuery(block, room_no)
     const items = getRoomLaundryHistoryQuery(block, room_no)
     res.json({ summary, items })
-  } catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 selfServiceRouter.get('/laundry-kiosk/block-room-counts', requireAvsKiosk, (req, res) => {
@@ -294,7 +295,7 @@ selfServiceRouter.get('/laundry-kiosk/block-room-counts', requireAvsKiosk, (req,
   try {
     const rows = getBlockRoomActiveCountsQuery(block)
     res.json(rows)
-  } catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 selfServiceRouter.get('/laundry-kiosk/garment-types', requireAvsKiosk, (req, res) => {

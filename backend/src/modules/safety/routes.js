@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { requireRole } from '../../shared/auth/middleware.js'
 import { logAudit } from '../../shared/audit.js'
 import { getDB } from '../../shared/db/index.js'
+import { logger } from '../../shared/logger.js'
 
 export const safetyRouter = Router()
 const mgr = requireRole('campus_manager', 'shift_supervisor')
@@ -25,7 +26,7 @@ safetyRouter.get('/sessions', ...view, (req, res) => {
     if (req.query.to) { q += ' AND t.session_date <= ?'; params.push(req.query.to) }
     q += ' ORDER BY t.session_date DESC LIMIT 200'
     res.json(db.prepare(q).all(...params))
-  } catch (e) { console.error('[safety/list]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[safety/list]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 safetyRouter.get('/sessions/:id', ...view, (req, res) => {
@@ -42,7 +43,7 @@ safetyRouter.get('/sessions/:id', ...view, (req, res) => {
       ORDER BY s.full_name
     `).all(+req.params.id)
     res.json({ ...head, attendances })
-  } catch (e) { console.error('[safety/get]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[safety/get]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 safetyRouter.post('/sessions', ...mgr, (req, res) => {
@@ -135,7 +136,7 @@ safetyRouter.get('/expiring-certs', ...view, (req, res) => {
       ORDER BY a.cert_expires_at
     `).all(cutoff)
     res.json(rows)
-  } catch (e) { console.error('[safety/expiring]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[safety/expiring]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 // Personelin sertifika geçmişi
@@ -150,7 +151,7 @@ safetyRouter.get('/staff/:id/training', ...view, (req, res) => {
       ORDER BY t.session_date DESC
     `).all(+req.params.id)
     res.json(rows)
-  } catch (e) { console.error('[safety/staff-training]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[safety/staff-training]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 // ── IG3: KKD zimmet CRUD ──
@@ -170,7 +171,7 @@ safetyRouter.get('/kkd', ...view, (req, res) => {
     if (req.query.active === '0') q += ' AND k.returned_at IS NOT NULL'
     q += ' ORDER BY k.assigned_at DESC LIMIT 200'
     res.json(db.prepare(q).all(...params))
-  } catch (e) { console.error('[safety/kkd-list]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[safety/kkd-list]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 safetyRouter.post('/kkd', ...mgr, (req, res) => {

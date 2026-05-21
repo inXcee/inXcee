@@ -10,6 +10,7 @@ import { sendMorningReport } from '../../modules/email/service.js'
 import { buildMonthlyReport, generateMonthlyPDF } from '../../modules/inventory/analytics/routes.js'
 import { expirePastLots } from '../../modules/inventory/lots/service.js'
 import { logAudit } from '../audit.js'
+import { logger } from '../logger.js'
 
 let emailJob = null
 
@@ -25,7 +26,7 @@ function withLock(name, fn) {
     if (running.has(name)) return
     running.add(name)
     try { await fn() }
-    catch (e) { console.error(`[Cron:${name}]`, e.message) }
+    catch (e) { logger.error(`[Cron:${name}]`, e.message) }
     finally { running.delete(name) }
   }
 }
@@ -36,7 +37,7 @@ export function startCronJobs() {
     try {
       const count = generateDailyTasks()
       // daily task generation completed
-    } catch (e) { console.error('[Cron] Temizlik görev hatası:', e) }
+    } catch (e) { logger.error('[Cron] Temizlik görev hatası:', e) }
   }, TZ)
 
   // Her saat stok kontrolü
@@ -51,7 +52,7 @@ export function startCronJobs() {
           dedup_key: `stock_low_${item.id}_${new Date().toISOString().split('T')[0]}`,
         })
       })
-    } catch (e) { console.error('[Cron] Stok cron hatası:', e) }
+    } catch (e) { logger.error('[Cron] Stok cron hatası:', e) }
   }, TZ)
 
   // Her 1 dakikada makine zamanlayıcı kontrolü (overlap-safe)
@@ -82,7 +83,7 @@ export function startCronJobs() {
       stream = fs.createWriteStream(filePath)
       // Stream hatası — fd leak'i onler
       stream.on('error', (err) => {
-        console.error('[Cron] PDF stream hatasi:', err.message)
+        logger.error('[Cron] PDF stream hatasi:', err.message)
         try { stream.destroy() } catch { /* ignore */ }
       })
       const report = buildMonthlyReport(month)
@@ -91,7 +92,7 @@ export function startCronJobs() {
         try { logAudit(null, 'inventory_monthly_report', 'inventory', null, `${month} PDF: ${filePath}`) } catch { /* ignore */ }
       })
     } catch (e) {
-      console.error('[Cron] aylik PDF hatasi:', e.message)
+      logger.error('[Cron] aylik PDF hatasi:', e.message)
       // buildMonthlyReport / generateMonthlyPDF synchronous throw ettiyse stream open kalir
       if (stream) try { stream.destroy() } catch { /* ignore */ }
     }
@@ -103,8 +104,8 @@ export function startCronJobs() {
       // Once SKT gecmis lotlari otomatik expired isaretle (stoktan dusulur, hareket kaydi atilir)
       try {
         const expired = expirePastLots()
-        if (expired > 0) console.log('[Cron] auto-expired', expired, 'lots')
-      } catch (e) { console.error('[Cron] expirePastLots:', e.message) }
+        if (expired > 0) logger.info('[Cron] auto-expired', expired, 'lots')
+      } catch (e) { logger.error('[Cron] expirePastLots:', e.message) }
 
       const db = getDB()
       const today = new Date().toISOString().split('T')[0]
@@ -127,7 +128,7 @@ export function startCronJobs() {
           dedup_key: `expiry_${lot.id}_${today}`,
         })
       })
-    } catch (e) { console.error('[Cron] Lot expiry hatasi:', e.message) }
+    } catch (e) { logger.error('[Cron] Lot expiry hatasi:', e.message) }
   }), TZ)
 
   // Her gece 02:00 — eski audit log + okunmuş bildirimler 90 gün, hata logları 30 gün
@@ -139,7 +140,7 @@ export function startCronJobs() {
       db.prepare('DELETE FROM audit_log WHERE created_at < ?').run(cutoff90)
       db.prepare('DELETE FROM notifications WHERE is_read=1 AND created_at < ?').run(cutoff90)
       try { db.prepare('DELETE FROM error_log WHERE created_at < ?').run(cutoff30) } catch { /* tablo yoksa atla */ }
-    } catch (e) { console.error('[Cron] Temizleme hatası:', e.message) }
+    } catch (e) { logger.error('[Cron] Temizleme hatası:', e.message) }
   }), TZ)
 
   // cron jobs initialized
@@ -151,6 +152,6 @@ export function scheduleMorningReport() {
   const { enabled, hour, minute } = getEmailSettings()
   if (!enabled) return
   emailJob = cron.schedule(`${minute} ${hour} * * *`, () => {
-    sendMorningReport().catch(e => console.error('[Cron] Email hatası:', e))
+    sendMorningReport().catch(e => logger.error('[Cron] Email hatası:', e))
   }, TZ)
 }

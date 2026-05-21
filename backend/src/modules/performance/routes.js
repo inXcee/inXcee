@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { requireRole } from '../../shared/auth/middleware.js'
 import { logAudit } from '../../shared/audit.js'
 import { getDB } from '../../shared/db/index.js'
+import { logger } from '../../shared/logger.js'
 
 export const performanceRouter = Router()
 const mgr = requireRole('campus_manager', 'shift_supervisor')
@@ -34,7 +35,7 @@ performanceRouter.get('/reviews', ...view, (req, res) => {
     if (req.query.staff_id) { q += ' AND pr.staff_id = ?'; params.push(+req.query.staff_id) }
     q += ' ORDER BY pr.reviewed_at DESC LIMIT 200'
     res.json(db.prepare(q).all(...params))
-  } catch (e) { console.error('[perf/list]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[perf/list]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 performanceRouter.get('/reviews/:id', ...view, (req, res) => {
@@ -49,7 +50,7 @@ performanceRouter.get('/reviews/:id', ...view, (req, res) => {
     `).get(+req.params.id)
     if (!r) return res.status(404).json({ error: 'Bulunamadı' })
     res.json(r)
-  } catch (e) { console.error('[perf/get]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[perf/get]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 performanceRouter.post('/reviews', ...mgr, (req, res) => {
@@ -123,7 +124,7 @@ performanceRouter.get('/goals', ...view, (req, res) => {
     if (req.query.status) { q += ' AND g.status = ?'; params.push(req.query.status) }
     q += ' ORDER BY g.target_date NULLS LAST, g.created_at DESC LIMIT 200'
     res.json(db.prepare(q).all(...params))
-  } catch (e) { console.error('[perf/goals]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[perf/goals]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 performanceRouter.post('/goals', ...mgr, (req, res) => {
@@ -209,5 +210,5 @@ performanceRouter.get('/leaderboard', ...view, (req, res) => {
       LIMIT 30
     `).all(days)
     res.json(rows)
-  } catch (e) { console.error('[perf/leaderboard]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[perf/leaderboard]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })

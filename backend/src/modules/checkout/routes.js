@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { requireRole } from '../../shared/auth/middleware.js'
 import * as svc from './service.js'
+import { logger } from '../../shared/logger.js'
 
 export const checkoutRouter = Router()
 const mgmt = requireRole('campus_manager', 'shift_supervisor')
@@ -25,5 +26,5 @@ checkoutRouter.get('/recent', ...mgmt, (req, res) => {
     const limit = Math.min(200, Math.max(1, +req.query.limit || 20))
     res.json(svc.getRecentCheckoutsService(limit))
   }
-  catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })

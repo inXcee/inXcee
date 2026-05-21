@@ -3,13 +3,14 @@ import { requireRole } from '../../shared/auth/middleware.js'
 import { getAll, create, remove } from './queries.js'
 import { createNotification } from '../../shared/notifications/service.js'
 import { EVENT_KINDS } from '../../shared/notifications/events.js'
+import { logger } from '../../shared/logger.js'
 
 export const announcementsRouter = Router()
 const adminOnly = requireRole('campus_manager')
 
 announcementsRouter.get('/', ...adminOnly, (req, res) => {
   try { res.json(getAll()) }
-  catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 announcementsRouter.post('/', ...adminOnly, (req, res) => {
@@ -25,12 +26,12 @@ announcementsRouter.post('/', ...adminOnly, (req, res) => {
       entity_type: 'announcement', entity_id: id,
     })
     res.status(201).json({ id })
-  } catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 announcementsRouter.delete('/:id', ...adminOnly, (req, res) => {
   try {
     remove(parseInt(req.params.id, 10))
     res.json({ ok: true })
-  } catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })

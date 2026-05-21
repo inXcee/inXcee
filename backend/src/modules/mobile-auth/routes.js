@@ -3,6 +3,7 @@ import { loginMobile, getMobileMe } from './service.js'
 import { requireMobile } from './middleware.js'
 import { refreshToken } from '../../shared/auth/service.js'
 import { getRegistrationOptions, verifyRegistration, getAuthOptions, verifyAuthentication } from './webauthn.js'
+import { logger } from '../../shared/logger.js'
 
 export const mobileAuthRouter = Router()
 
@@ -13,7 +14,7 @@ mobileAuthRouter.post('/login', (req, res) => {
     if (result.error) return res.status(result.status).json({ error: result.error })
     res.json(result)
   } catch (e) {
-    console.error('[MobileAuth]', e)
+    logger.error('[MobileAuth]', e)
     res.status(500).json({ error: 'Sunucu hatası' })
   }
 })

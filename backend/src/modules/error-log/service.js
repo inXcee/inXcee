@@ -4,6 +4,7 @@ import {
 } from './queries.js'
 import { createNotification } from '../../shared/notifications/service.js'
 import { EVENT_KINDS } from '../../shared/notifications/events.js'
+import { logger } from '../../shared/logger.js'
 
 const VALID_SOURCES = new Set(['frontend', 'backend'])
 const VALID_SEVERITIES = new Set(['error', 'warning'])
@@ -57,12 +58,12 @@ export function reportErrorService({ source, severity, message, stack, url, user
           // Aynı hatayı 1 günde 1 kez bildir (gun bazli dedup)
           dedup_key: `error_${truncate(message, 60).replace(/\s+/g, '_')}`,
         })
-      } catch (e) { console.error('[ErrorLog] notif:', e.message) }
+      } catch (e) { logger.error('[ErrorLog] notif:', e.message) }
     }
     return { ok: true, id }
   } catch (e) {
     // Hata kaydederken hata atarsak konsola yaz, response yine ok dön (loop'a girmesin)
-    console.error('[ErrorLog] insert hatası:', e.message)
+    logger.error('[ErrorLog] insert hatası:', e.message)
     return { ok: false }
   }
 }

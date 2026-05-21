@@ -11,6 +11,7 @@ import { requestsRouter } from './requests/routes.js'
 import { lotsRouter, lotsByItemHandler } from './lots/routes.js'
 import { locationsRouter } from './locations/routes.js'
 import { analyticsRouter } from './analytics/routes.js'
+import { logger } from '../../shared/logger.js'
 
 export const inventoryRouter = Router()
 inventoryRouter.use('/suppliers', suppliersRouter)
@@ -27,18 +28,18 @@ const editAccess = requireRole('campus_manager', 'shift_supervisor')
 // ── Stats & Dashboard ───────────────────────────────────────────────────────
 inventoryRouter.get('/stats', ...mgrAccess, (req, res) => {
   try { res.json(service.getStats()) }
-  catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 inventoryRouter.get('/movements/recent', ...mgrAccess, (req, res) => {
   try { res.json(service.getRecentMovements(+req.query.limit || 30)) }
-  catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 // ── Forecast ─────────────────────────────────────────────────────────────────
 inventoryRouter.get('/forecast', ...mgrAccess, (req, res) => {
   try { res.json(service.getForecast(req.user.id)) }
-  catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 // ── CRUD ────────────────────────────────────────────────────────────────────
@@ -95,7 +96,7 @@ inventoryRouter.patch('/:id/adjust', ...editAccess, (req, res) => {
 // Stok dagilimi — lokasyon bazli
 inventoryRouter.get('/:id/stock-by-location', ...mgrAccess, (req, res) => {
   try { res.json(service.getStockByLocation(+req.params.id)) }
-  catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatasi' }) }
+  catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatasi' }) }
 })
 
 // ── Urun Fotograf Upload ────────────────────────────────────────────────────
@@ -119,7 +120,7 @@ inventoryRouter.post('/:id/photo', ...editAccess, upload.single('photo'), verify
     res.json({ photo_url: url })
   } catch (e) {
     try { if (req.file) fs.unlinkSync(req.file.path) } catch { /* ignore */ }
-    console.error('[Route] photo upload:', e)
+    logger.error('[Route] photo upload:', e)
     res.status(500).json({ error: 'Sunucu hatasi' })
   }
 })
@@ -150,7 +151,7 @@ inventoryRouter.post('/:id/writeoff', ...editAccess, (req, res) => {
 // ── Item Movements ──────────────────────────────────────────────────────────
 inventoryRouter.get('/:id/movements', ...mgrAccess, (req, res) => {
   try { res.json(service.getItemMovements(+req.params.id, +req.query.limit || 50)) }
-  catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 // ── Bulk Stock Count ────────────────────────────────────────────────────────
@@ -174,7 +175,7 @@ inventoryRouter.get('/export/csv', ...mgrAccess, (req, res) => {
     res.set('Content-Type', 'text/csv; charset=utf-8')
     res.set('Content-Disposition', `attachment; filename=envanter_${new Date().toISOString().slice(0,10)}.csv`)
     res.send('\ufeff' + header + '\n' + rows.join('\n'))
-  } catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  } catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 // ── Personnel Search (for checkout) ─────────────────────────────────────────
@@ -182,28 +183,28 @@ inventoryRouter.get('/export/csv', ...mgrAccess, (req, res) => {
 // q parametresi boşsa tüm aktif staff dönderir (modal açılışı için).
 inventoryRouter.get('/staff/search', ...mgrAccess, (req, res) => {
   try { res.json(service.searchStaff(req.query.q || '')) }
-  catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 // ── Checkout (Malzeme Teslim) ───────────────────────────────────────────────
 inventoryRouter.get('/checkouts/active', ...mgrAccess, (req, res) => {
   try { res.json(service.getActiveCheckouts()) }
-  catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 inventoryRouter.get('/checkouts/history', ...mgrAccess, (req, res) => {
   try { res.json(service.getCheckoutHistory(+req.query.limit || 50)) }
-  catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 inventoryRouter.get('/checkouts/staff/:id', ...mgrAccess, (req, res) => {
   try { res.json(service.getStaffCheckouts(+req.params.id)) }
-  catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 inventoryRouter.get('/checkouts/report', ...mgrAccess, (req, res) => {
   try { res.json(service.getCheckoutReport()) }
-  catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 inventoryRouter.post('/checkout', ...editAccess, (req, res) => {
@@ -227,7 +228,7 @@ inventoryRouter.post('/return/:id', ...editAccess, (req, res) => {
 // ── Goods Receipts (Mal Giris) ────────────────────────────────────────────────
 inventoryRouter.get('/receipts', ...mgrAccess, (req, res) => {
   try { res.json(service.getReceipts(+req.query.limit || 50)) }
-  catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 inventoryRouter.get('/receipts/:id', ...mgrAccess, (req, res) => {
@@ -235,7 +236,7 @@ inventoryRouter.get('/receipts/:id', ...mgrAccess, (req, res) => {
     const receipt = service.getReceiptDetail(+req.params.id)
     if (!receipt) return res.status(404).json({ error: 'Kayit bulunamadi' })
     res.json(receipt)
-  } catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  } catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 inventoryRouter.post('/receipts', ...editAccess, (req, res) => {

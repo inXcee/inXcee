@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import { getDB } from '../../shared/db/index.js'
+import { logger } from '../../shared/logger.js'
 
 // Public read-only TV pano endpoint'i. Auth gerekmiyor (kampus icindeki TV icin).
 // Localhost veya iç ağ icin acik — Nginx ile dis erisim kapatilmalidir.
@@ -81,7 +82,7 @@ displayRouter.get('/snapshot', (_req, res) => {
       generated_at: new Date().toISOString(),
     })
   } catch (e) {
-    console.error('[Display]', e)
+    logger.error('[Display]', e)
     res.status(500).json({ error: 'Sunucu hatasi' })
   }
 })

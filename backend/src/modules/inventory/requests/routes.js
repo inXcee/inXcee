@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { requireAuth, requireRole } from '../../../shared/auth/middleware.js'
 import * as service from './service.js'
+import { logger } from '../../../shared/logger.js'
 
 export const requestsRouter = Router()
 const mgr = requireRole('campus_manager', 'shift_supervisor')
@@ -13,7 +14,7 @@ requestsRouter.get('/', requireAuth, (req, res) => {
     if (req.query.status) opts.status = req.query.status
     if (!isMgr) opts.requesterId = req.user.id
     res.json(service.list(opts))
-  } catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatasi' }) }
+  } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatasi' }) }
 })
 
 // olustur — login olan herkes (kendi talebi)

@@ -2,6 +2,7 @@ import nodemailer from 'nodemailer'
 import { getEmailSettings, getManagerEmails, getSetting, logEmailSend } from './queries.js'
 import { getOccupancyReport, getMaintenanceReport, getHousekeepingReport } from '../reports/service.js'
 import { getDB } from '../../shared/db/index.js'
+import { logger } from '../../shared/logger.js'
 
 function getSmtpConfig() {
   return {
@@ -168,7 +169,7 @@ export async function sendReportNow({ subject, toOverride } = {}) {
     return { ok: true, recipients: to, messageId: info.messageId }
   } catch (e) {
     logEmailSend({ recipients: to.join(', '), status: 'error', errorMsg: e.message })
-    console.error('[Email] SMTP gönderim hatası:', e.message)
+    logger.error('[Email] SMTP gönderim hatası:', e.message)
     throw new Error(`SMTP gönderim hatası: ${e.message}`)
   }
 }

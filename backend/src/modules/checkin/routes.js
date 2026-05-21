@@ -5,6 +5,7 @@ import { setKioskPin } from '../../shared/auth/service.js'
 import { getDB } from '../../shared/db/index.js'
 import * as svc from './service.js'
 import { insertPlaceholderBatch } from './queries.js'
+import { logger } from '../../shared/logger.js'
 
 export const checkinRouter = Router()
 const allowed = requireRole('campus_manager', 'shift_supervisor')
@@ -191,7 +192,7 @@ checkinRouter.delete('/:id/kiosk-pin', ...requireRole('campus_manager'), (req, r
   try {
     getDB().prepare('UPDATE personnel SET kiosk_pin=NULL WHERE id=?').run(+req.params.id)
     res.json({ ok: true })
-  } catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  } catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 // ── Photo Upload ──────────────────────────────────────────────────────────────

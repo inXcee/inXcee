@@ -1,4 +1,5 @@
 import { getDB } from '../../shared/db/index.js'
+import { logger } from '../../shared/logger.js'
 
 // Trigger evaluators — her biri true/false + measured value doner.
 const TRIGGERS = {
@@ -49,7 +50,7 @@ const ACTIONS = {
     try {
       db.prepare(`INSERT INTO error_log (level, message, context, created_at) VALUES (?,?,?,datetime('now'))`)
         .run('info', msg, JSON.stringify({ rule_id: rule.id, ...evalResult }))
-    } catch { /* error_log yoksa konsola */ console.log(msg) }
+    } catch { /* error_log yoksa konsola */ logger.info(msg) }
     return 'log: ok'
   },
   notify_group(rule, evalResult) {

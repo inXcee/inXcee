@@ -2,13 +2,14 @@ import { Router } from 'express'
 import { requireRole } from '../../shared/auth/middleware.js'
 import { upload, verifyMagicBytes } from '../../shared/uploads/middleware.js'
 import * as svc from './service.js'
+import { logger } from '../../shared/logger.js'
 
 export const housekeepingRouter = Router()
 const hkAccess = requireRole('campus_manager', 'housekeeper')
 
 housekeepingRouter.get('/tasks', ...hkAccess, (req, res) => {
   try { res.json(svc.getTasksService(req.query)) }
-  catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 housekeepingRouter.post('/tasks/generate-daily', ...hkAccess, (req, res) => {
@@ -59,7 +60,7 @@ housekeepingRouter.patch('/tasks/:id/unskip', ...hkAccess, (req, res) => {
 
 housekeepingRouter.get('/room-details', ...hkAccess, (req, res) => {
   try { res.json(svc.getRoomWithFaultsService(req.query.block, req.query.room_no)) }
-  catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 housekeepingRouter.patch('/rooms/:id/no-clean', ...hkAccess, (req, res) => {
@@ -82,7 +83,7 @@ housekeepingRouter.post('/fault-report', ...hkAccess, upload.single('photo'), ve
 
 housekeepingRouter.get('/dnd-rooms', ...hkAccess, (req, res) => {
   try { res.json(svc.getDNDRoomsService()) }
-  catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 // ── Cleaning Staff ───────────────────────────────────────────────────────────
@@ -90,7 +91,7 @@ const staffAccess = requireRole('campus_manager', 'shift_supervisor', 'housekeep
 
 housekeepingRouter.get('/staff', ...staffAccess, (req, res) => {
   try { res.json(svc.getStaffService(req.query.block)) }
-  catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 housekeepingRouter.post('/staff', ...staffAccess, (req, res) => {

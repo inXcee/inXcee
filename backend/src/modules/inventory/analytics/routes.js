@@ -2,6 +2,7 @@ import { Router } from 'express'
 import PDFDocument from 'pdfkit'
 import { requireRole } from '../../../shared/auth/middleware.js'
 import { getDB } from '../../../shared/db/index.js'
+import { logger } from '../../../shared/logger.js'
 
 export const analyticsRouter = Router()
 const mgr = requireRole('campus_manager', 'shift_supervisor')
@@ -142,7 +143,7 @@ analyticsRouter.get('/abc', ...mgr, (req, res) => {
       return { ...r, abc_class: cls, percentage: Number(pct.toFixed(2)), cumulative_pct: Number(cumPct.toFixed(2)) }
     })
     res.json({ total, days, items: result })
-  } catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatasi' }) }
+  } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatasi' }) }
 })
 
 // Departman tuketimi: son N gun cikis hareketlerinin departmanlara dagilimi
@@ -166,7 +167,7 @@ analyticsRouter.get('/department-consumption', ...mgr, (req, res) => {
       ORDER BY total_value DESC
     `).all(days)
     res.json({ days, rows })
-  } catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatasi' }) }
+  } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatasi' }) }
 })
 
 // Aylik PDF rapor — query: ?month=YYYY-MM (default: gecmis ay)
@@ -184,7 +185,7 @@ analyticsRouter.get('/monthly-pdf', ...mgr, (req, res) => {
     res.setHeader('Content-Disposition', `attachment; filename="envanter-${month}.pdf"`)
     generateMonthlyPDF(report, res)
   } catch (e) {
-    console.error('[Route] monthly-pdf:', e)
+    logger.error('[Route] monthly-pdf:', e)
     if (!res.headersSent) res.status(500).json({ error: 'Sunucu hatasi' })
   }
 })
@@ -208,5 +209,5 @@ analyticsRouter.get('/heatmap', ...mgr, (req, res) => {
       ORDER BY date
     `).all(days)
     res.json({ days, rows })
-  } catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatasi' }) }
+  } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatasi' }) }
 })

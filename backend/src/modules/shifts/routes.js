@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { requireRole, requireAuth } from '../../shared/auth/middleware.js'
 import { getDB } from '../../shared/db/index.js'
 import { paginate } from '../../shared/paginate.js'
+import { logger } from '../../shared/logger.js'
 import {
   departmentsService, shiftDefinitionsService, scheduleService, bulkAssignService,
   staffStatusService, createLeaveService, approveLeaveService, leaveListService,
@@ -132,7 +133,7 @@ shiftsRouter.post('/schedule/check-conflicts', ...managerOrSupervisor, (req, res
 // ── H4 V3: Resmi tatil tablosu ──
 shiftsRouter.get('/holidays', ...allStaff, (req, res) => {
   try { res.json(listHolidays({ year: req.query.year })) }
-  catch (e) { console.error('[holidays/list]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  catch (e) { logger.error('[holidays/list]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 shiftsRouter.post('/holidays', ...managerOrSupervisor, (req, res) => {
@@ -160,7 +161,7 @@ shiftsRouter.get('/payroll-export', ...managerOrSupervisor, (req, res) => {
     const ym = req.query.month || new Date().toISOString().slice(0, 7)
     if (!/^\d{4}-\d{2}$/.test(ym)) return res.status(400).json({ error: 'month YYYY-MM formatında olmalı' })
     res.json({ month: ym, rows: getPayrollExport(ym) })
-  } catch (e) { console.error('[payroll]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[payroll]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 // ── H8 B3: Kesinti CRUD ──
@@ -170,7 +171,7 @@ shiftsRouter.get('/deductions', ...managerOrSupervisor, (req, res) => {
       period: req.query.period,
       staffId: req.query.staff_id ? +req.query.staff_id : null,
     }))
-  } catch (e) { console.error('[deductions/list]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[deductions/list]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 shiftsRouter.post('/deductions', ...managerOrSupervisor, (req, res) => {
@@ -202,7 +203,7 @@ shiftsRouter.get('/payroll-detailed', ...managerOrSupervisor, (req, res) => {
     const ym = req.query.month || new Date().toISOString().slice(0, 7)
     if (!/^\d{4}-\d{2}$/.test(ym)) return res.status(400).json({ error: 'month YYYY-MM formatında olmalı' })
     res.json({ month: ym, rows: getPayrollDetailed(ym) })
-  } catch (e) { console.error('[payroll-detailed]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[payroll-detailed]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 // ── H4 V8: Birleşik devamsızlık ──
@@ -212,7 +213,7 @@ shiftsRouter.get('/combined-absences', ...managerOrSupervisor, (req, res) => {
       startDate: req.query.start,
       endDate: req.query.end,
     }))
-  } catch (e) { console.error('[combined-absences]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[combined-absences]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 // ── Personnel status (now staff) ──

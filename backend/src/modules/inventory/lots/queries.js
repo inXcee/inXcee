@@ -1,4 +1,5 @@
 import { getDB } from '../../../shared/db/index.js'
+import { logger } from '../../../shared/logger.js'
 
 export function listLotsForItem(itemId) {
   return getDB().prepare(`
@@ -45,7 +46,7 @@ export function expirePastLots() {
     WHERE status = 'active' AND expiry_date IS NOT NULL AND expiry_date < date('now')
   `).all()
   for (const { id } of due) {
-    try { setLotStatus(id, 'expired') } catch (e) { console.error('[expirePastLots]', id, e.message) }
+    try { setLotStatus(id, 'expired') } catch (e) { logger.error('[expirePastLots]', id, e.message) }
   }
   return due.length
 }

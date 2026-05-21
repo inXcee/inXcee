@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { requireRole } from '../../shared/auth/middleware.js'
 import { logAudit } from '../../shared/audit.js'
 import * as q from './queries.js'
+import { logger } from '../../shared/logger.js'
 
 export const personnelRouter = Router()
 const mgr = requireRole('campus_manager', 'shift_supervisor')
@@ -13,12 +14,12 @@ personnelRouter.get('/:id/360', ...view, (req, res) => {
     const data = q.get360(+req.params.id)
     if (!data) return res.status(404).json({ error: 'Personel bulunamadı' })
     res.json(data)
-  } catch (e) { console.error('[personnel/360]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[personnel/360]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 personnelRouter.get('/:id/timeline', ...view, (req, res) => {
   try { res.json(q.getTimeline(+req.params.id)) }
-  catch (e) { console.error('[personnel/timeline]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  catch (e) { logger.error('[personnel/timeline]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 // ── Notlar ──
@@ -85,11 +86,11 @@ personnelRouter.post('/:id/restore', ...mgr, (req, res) => {
 
 personnelRouter.get('/archived', ...view, (req, res) => {
   try { res.json(q.listArchived({ q: req.query.q })) }
-  catch (e) { console.error('[personnel/archived]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  catch (e) { logger.error('[personnel/archived]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 // ── R5 Risk listesi ──
 personnelRouter.get('/risk', ...view, (req, res) => {
   try { res.json(q.getRiskList({ limit: req.query.limit ? +req.query.limit : 30 })) }
-  catch (e) { console.error('[personnel/risk]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  catch (e) { logger.error('[personnel/risk]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })

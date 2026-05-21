@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { requireRole } from '../../shared/auth/middleware.js'
 import { createPDF, addTable, addSectionTitle, addKpiRow, addParagraph } from '../../shared/pdf/generator.js'
 import * as service from './service.js'
+import { logger } from '../../shared/logger.js'
 
 export const reportsRouter = Router()
 const mgrAccess = requireRole('campus_manager', 'shift_supervisor')
@@ -11,22 +12,22 @@ reportsRouter.get('/housekeeping/data', ...mgrAccess, (req, res) => {
     const date = req.query.date || new Date().toISOString().split('T')[0]
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: 'Invalid date format' })
     res.json(service.getHousekeepingReport(date))
-  } catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  } catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 reportsRouter.get('/maintenance/data', ...mgrAccess, (req, res) => {
   try { res.json(service.getMaintenanceReport()) }
-  catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 reportsRouter.get('/occupancy/data', ...mgrAccess, (req, res) => {
   try { res.json(service.getOccupancyReport()) }
-  catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 reportsRouter.get('/discipline/data', ...mgrAccess, (req, res) => {
   try { res.json(service.getDisciplineReport()) }
-  catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 reportsRouter.get('/housekeeping', ...mgrAccess, (req, res) => {
@@ -67,7 +68,7 @@ reportsRouter.get('/housekeeping', ...mgrAccess, (req, res) => {
       [120, 40, 30, 70, 100, 140]
     )
     doc.end()
-  } catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  } catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 reportsRouter.get('/maintenance', ...mgrAccess, (req, res) => {
@@ -193,7 +194,7 @@ reportsRouter.get('/maintenance', ...mgrAccess, (req, res) => {
       [25, 120, 50, 70, 90, 45, 70]
     )
     doc.end()
-  } catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  } catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 reportsRouter.get('/occupancy', ...mgrAccess, (req, res) => {
@@ -274,14 +275,14 @@ reportsRouter.get('/occupancy', ...mgrAccess, (req, res) => {
       )
     }
     doc.end()
-  } catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  } catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 // ── Yeni raporlar ──
 
 reportsRouter.get('/companies/data', ...mgrAccess, (req, res) => {
   try { res.json(service.getCompaniesReportSvc()) }
-  catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 reportsRouter.get('/companies', ...mgrAccess, (req, res) => {
@@ -308,12 +309,12 @@ reportsRouter.get('/companies', ...mgrAccess, (req, res) => {
       [110, 80, 70, 50, 60, 70, 60]
     )
     doc.end()
-  } catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  } catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 reportsRouter.get('/surveys/data', ...mgrAccess, (req, res) => {
   try { res.json(service.getSurveysReportSvc()) }
-  catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 reportsRouter.get('/surveys', ...mgrAccess, (req, res) => {
@@ -339,12 +340,12 @@ reportsRouter.get('/surveys', ...mgrAccess, (req, res) => {
       [60, 90, 35, 30, 30, 30, 220]
     )
     doc.end()
-  } catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  } catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 reportsRouter.get('/drills/data', ...mgrAccess, (req, res) => {
   try { res.json(service.getDrillsReportSvc()) }
-  catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 reportsRouter.get('/drills', ...mgrAccess, (req, res) => {
@@ -368,12 +369,12 @@ reportsRouter.get('/drills', ...mgrAccess, (req, res) => {
       [60, 60, 60, 50, 50, 215]
     )
     doc.end()
-  } catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  } catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 reportsRouter.get('/visitors/data', ...mgrAccess, (req, res) => {
   try { res.json(service.getVisitorsReportSvc()) }
-  catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 reportsRouter.get('/visitors', ...mgrAccess, (req, res) => {
@@ -400,12 +401,12 @@ reportsRouter.get('/visitors', ...mgrAccess, (req, res) => {
       [80, 95, 70, 90, 40, 50, 60]
     )
     doc.end()
-  } catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  } catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 reportsRouter.get('/expenses/data', ...mgrAccess, (req, res) => {
   try { res.json(service.getExpensesReportSvc()) }
-  catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 reportsRouter.get('/expenses', ...mgrAccess, (req, res) => {
@@ -443,12 +444,12 @@ reportsRouter.get('/expenses', ...mgrAccess, (req, res) => {
       [60, 65, 130, 80, 65, 75]
     )
     doc.end()
-  } catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  } catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 reportsRouter.get('/executive/data', ...mgrAccess, (req, res) => {
   try { res.json(service.getExecutiveReportSvc()) }
-  catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 reportsRouter.get('/executive', ...mgrAccess, (req, res) => {
@@ -492,7 +493,7 @@ reportsRouter.get('/executive', ...mgrAccess, (req, res) => {
     doc.moveDown(1)
     addParagraph(doc, `Rapor zamani: ${new Date().toLocaleString('tr-TR')}`, { color: '#94a3b8', size: 8 })
     doc.end()
-  } catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  } catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 reportsRouter.get('/discipline', ...mgrAccess, (req, res) => {
@@ -535,7 +536,7 @@ reportsRouter.get('/discipline', ...mgrAccess, (req, res) => {
       [85, 65, 40, 130, 70, 60]
     )
     doc.end()
-  } catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  } catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 // ── Yeni: Personel CSV ──
@@ -569,7 +570,7 @@ reportsRouter.get('/personnel', ...mgrAccess, (req, res) => {
     res.setHeader('Content-Type', 'text/csv; charset=utf-8')
     res.setHeader('Content-Disposition', `attachment; filename="personel-listesi-${new Date().toISOString().slice(0,10)}.csv"`)
     res.send(csv)
-  } catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  } catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 reportsRouter.get('/personnel/data', ...mgrAccess, (req, res) => {
@@ -582,7 +583,7 @@ reportsRouter.get('/personnel/data', ...mgrAccess, (req, res) => {
       with_zimmet: rows.filter(r => r.active_zimmet > 0).length,
       rows,
     })
-  } catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  } catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 // ── Yeni: Envanter CSV ──
@@ -602,7 +603,7 @@ reportsRouter.get('/inventory.csv', ...mgrAccess, (req, res) => {
     res.setHeader('Content-Type', 'text/csv; charset=utf-8')
     res.setHeader('Content-Disposition', `attachment; filename="envanter-${new Date().toISOString().slice(0,10)}.csv"`)
     res.send(csv)
-  } catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  } catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 // CSV — son 30 gun hareketler
@@ -620,7 +621,7 @@ reportsRouter.get('/inventory/movements.csv', ...mgrAccess, (req, res) => {
     res.setHeader('Content-Type', 'text/csv; charset=utf-8')
     res.setHeader('Content-Disposition', `attachment; filename="envanter-hareketler-${new Date().toISOString().slice(0,10)}.csv"`)
     res.send(csv)
-  } catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  } catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 // PDF — zengin ozet
@@ -726,7 +727,7 @@ reportsRouter.get('/inventory', ...mgrAccess, (req, res) => {
       )
     }
     doc.end()
-  } catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  } catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 reportsRouter.get('/inventory/data', ...mgrAccess, (req, res) => {
@@ -741,7 +742,7 @@ reportsRouter.get('/inventory/data', ...mgrAccess, (req, res) => {
       movements_30d: d.movements.length,
       categories: d.byCategory.length,
     })
-  } catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  } catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 // ── Yeni: Camasirhane PDF ──
@@ -862,7 +863,7 @@ reportsRouter.get('/laundry', ...mgrAccess, (req, res) => {
       [60, 70, 70, 50, 45, 65, 65]
     )
     doc.end()
-  } catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  } catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 reportsRouter.get('/laundry/data', ...mgrAccess, (req, res) => {
@@ -876,7 +877,7 @@ reportsRouter.get('/laundry/data', ...mgrAccess, (req, res) => {
       machine_count: d.machine_count,
       running_count: d.running_count,
     })
-  } catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  } catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 // ── Yeni: Vardiya PDF ──
@@ -976,7 +977,7 @@ reportsRouter.get('/shifts', ...mgrAccess, (req, res) => {
         { color: '#f97316', size: 9 })
     }
     doc.end()
-  } catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  } catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 reportsRouter.get('/shifts/data', ...mgrAccess, (req, res) => {
@@ -991,7 +992,7 @@ reportsRouter.get('/shifts/data', ...mgrAccess, (req, res) => {
       blocks: d.byBlockShift.length,
       night_list_count: d.nightShiftList.length,
     })
-  } catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  } catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 // ── H11 R1: Devamsızlık dashboard (vardiya + transport + disiplin) ──
@@ -1047,7 +1048,7 @@ reportsRouter.get('/absence-dashboard', ...mgrAccess, (req, res) => {
     `).all(since)
 
     res.json({ days, summary, trend, no_show_trend: noShowTrend, by_dept: byDept })
-  } catch (e) { console.error('[absence-dash]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[absence-dash]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 // ── H11 R2: Kişi başı maliyet (oda + servis + yemek + KKD + zimmet kesinti) ──
@@ -1073,7 +1074,7 @@ reportsRouter.get('/cost-per-person', ...mgrAccess, (req, res) => {
     `).all(start, end, start, end, start, end, month, start, end)
 
     res.json({ month, rows })
-  } catch (e) { console.error('[cost-per-person]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[cost-per-person]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 // ── H11 R3: Karşılaştırma (bu ay vs geçen ay) ──
@@ -1118,7 +1119,7 @@ reportsRouter.get('/comparison', ...mgrAccess, (req, res) => {
     })
 
     res.json({ month, previous_month: prev, current, previous, delta })
-  } catch (e) { console.error('[comparison]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[comparison]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 // ── H11 R4: Özel rapor builder — basit kolon seçici ──
@@ -1158,5 +1159,5 @@ reportsRouter.get('/staff-builder', ...mgrAccess, (req, res) => {
     `).all()
 
     res.json({ available_columns: Object.keys(ALLOWED), selected: cols, rows })
-  } catch (e) { console.error('[staff-builder]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[staff-builder]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })

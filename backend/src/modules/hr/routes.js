@@ -4,6 +4,7 @@ import { requireRole } from '../../shared/auth/middleware.js'
 import { logAudit } from '../../shared/audit.js'
 import { getDB } from '../../shared/db/index.js'
 import * as q from './queries.js'
+import { logger } from '../../shared/logger.js'
 
 export const hrRouter = Router()
 const mgr = requireRole('campus_manager', 'shift_supervisor')
@@ -29,7 +30,7 @@ hrRouter.get('/checklists', ...view, (req, res) => {
       status: req.query.status,
       staffId: req.query.staff_id ? +req.query.staff_id : null,
     }))
-  } catch (e) { console.error('[hr/list]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[hr/list]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 hrRouter.get('/checklists/:id', ...view, (req, res) => {
@@ -37,7 +38,7 @@ hrRouter.get('/checklists/:id', ...view, (req, res) => {
     const cl = q.getChecklist(+req.params.id)
     if (!cl) return res.status(404).json({ error: 'Bulunamadı' })
     res.json(cl)
-  } catch (e) { console.error('[hr/get]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[hr/get]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 hrRouter.patch('/items/:id/toggle', ...mgr, (req, res) => {
@@ -130,7 +131,7 @@ hrRouter.get('/checklists/:id/ibra/pdf', ...view, (req, res) => {
 
     doc.end()
   } catch (e) {
-    console.error('[hr/pdf]', e)
+    logger.error('[hr/pdf]', e)
     if (!res.headersSent) res.status(500).json({ error: 'PDF olusturulamadi' })
   }
 })
@@ -138,5 +139,5 @@ hrRouter.get('/checklists/:id/ibra/pdf', ...view, (req, res) => {
 // HR3 — Sözleşme bitiyor
 hrRouter.get('/expiring-contracts', ...view, (req, res) => {
   try { res.json(q.getExpiringContracts({ days: Math.max(1, Math.min(365, parseInt(req.query.days, 10) || 30)) })) }
-  catch (e) { console.error('[hr/expiring]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  catch (e) { logger.error('[hr/expiring]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })

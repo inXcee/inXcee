@@ -6,6 +6,7 @@ import { upload, verifyMagicBytes } from '../../shared/uploads/middleware.js'
 import { getDB } from '../../shared/db/index.js'
 import * as q from './queries.js'
 import { logAudit } from '../../shared/audit.js'
+import { logger } from '../../shared/logger.js'
 
 export const transportRouter = Router()
 const mgr = requireRole('campus_manager', 'shift_supervisor')
@@ -14,7 +15,7 @@ const view = requireRole('campus_manager', 'shift_supervisor', 'laundry', 'house
 // ── Pickup Points ──
 transportRouter.get('/pickup-points', ...view, (req, res) => {
   try { res.json(q.listPickupPoints({ activeOnly: req.query.active === '1' })) }
-  catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 transportRouter.post('/pickup-points', ...mgr, (req, res) => {
@@ -56,7 +57,7 @@ transportRouter.post('/pickup-points/:id/photo', ...mgr, upload.single('photo'),
     res.json({ photo_url: url })
   } catch (e) {
     try { if (req.file) fs.unlinkSync(req.file.path) } catch { /* ignore */ }
-    console.error('[Route] pickup photo:', e)
+    logger.error('[Route] pickup photo:', e)
     res.status(500).json({ error: 'Sunucu hatası' })
   }
 })
@@ -78,7 +79,7 @@ transportRouter.delete('/pickup-points/:id/photo', ...mgr, (req, res) => {
 
 transportRouter.get('/pickup-points/:id/staff', ...view, (req, res) => {
   try { res.json(q.getStaffAtPoint(+req.params.id)) }
-  catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 // ── Routes ──
@@ -90,7 +91,7 @@ transportRouter.get('/routes', ...view, (req, res) => {
       workDate: req.query.work_date || null,
     }))
   }
-  catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 transportRouter.get('/routes/:id', ...view, (req, res) => {
@@ -98,7 +99,7 @@ transportRouter.get('/routes/:id', ...view, (req, res) => {
     const r = q.getRoute(+req.params.id)
     if (!r) return res.status(404).json({ error: 'Rota bulunamadı' })
     res.json(r)
-  } catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 transportRouter.post('/routes', ...mgr, (req, res) => {
@@ -123,7 +124,7 @@ transportRouter.delete('/routes/:id', ...mgr, (req, res) => {
 // ── Route Stops ──
 transportRouter.get('/routes/:id/stops', ...view, (req, res) => {
   try { res.json(q.listRouteStops(+req.params.id)) }
-  catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 transportRouter.post('/routes/:id/stops', ...mgr, (req, res) => {
@@ -160,7 +161,7 @@ transportRouter.get('/staff', ...view, (req, res) => {
       deptId: req.query.dept_id ? +req.query.dept_id : null,
       hasPickup: req.query.has_pickup || null,
     }))
-  } catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 transportRouter.put('/staff/:id/pickup', ...mgr, (req, res) => {
@@ -175,7 +176,7 @@ transportRouter.get('/daily', ...view, (req, res) => {
   try {
     const date = req.query.date || new Date().toISOString().slice(0, 10)
     res.json(q.getDailyOverview(date))
-  } catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 transportRouter.get('/routes/:id/manifest', ...view, (req, res) => {
@@ -184,7 +185,7 @@ transportRouter.get('/routes/:id/manifest', ...view, (req, res) => {
     const m = q.getRouteManifest(+req.params.id, date)
     if (!m) return res.status(404).json({ error: 'Rota bulunamadı' })
     res.json(m)
-  } catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 transportRouter.post('/auto-assign', ...mgr, (req, res) => {
@@ -212,7 +213,7 @@ transportRouter.get('/staff/:id/detail', ...view, (req, res) => {
     const d = q.getStaffTransportDetail(+req.params.id)
     if (!d) return res.status(404).json({ error: 'Personel bulunamadı' })
     res.json(d)
-  } catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 // PDF manifesto
@@ -282,7 +283,7 @@ transportRouter.get('/routes/:id/manifest/pdf', ...view, (req, res) => {
 
     doc.end()
   } catch (e) {
-    console.error('[Route] manifest pdf:', e)
+    logger.error('[Route] manifest pdf:', e)
     if (!res.headersSent) res.status(500).json({ error: 'PDF olusturulamadi' })
   }
 })
@@ -290,7 +291,7 @@ transportRouter.get('/routes/:id/manifest/pdf', ...view, (req, res) => {
 transportRouter.get('/reports', ...view, (req, res) => {
   try {
     res.json(q.getReports({ startDate: req.query.start, endDate: req.query.end }))
-  } catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 transportRouter.delete('/assign/:staff_id', ...mgr, (req, res) => {
@@ -322,7 +323,7 @@ transportRouter.get('/no-show', ...view, (req, res) => {
       endDate: req.query.end,
       limit: req.query.limit ? +req.query.limit : 20,
     }))
-  } catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 // Faz 7: tüm rotaların manifesti tek PDF
@@ -395,7 +396,7 @@ transportRouter.get('/manifest/all/pdf', ...view, (req, res) => {
 
     doc.end()
   } catch (e) {
-    console.error('[Route] manifest all pdf:', e)
+    logger.error('[Route] manifest all pdf:', e)
     if (!res.headersSent) res.status(500).json({ error: 'PDF olusturulamadi' })
   }
 })

@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 import { sanitizeBody } from './shared/middleware/sanitize.js'
 import { getDB } from './shared/db/index.js'
+import { logger } from './shared/logger.js'
 
 // Sürüm bilgisi — /api/health ve diagnostic için bir kez başlangıçta okunur.
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -71,8 +72,8 @@ import { commsRouter } from './modules/communications/routes.js'
 import { integrityRouter } from './modules/integrity/routes.js'
 
 if (process.env.NODE_ENV === 'production' && !process.env.ALLOWED_ORIGIN) {
-  console.error('[Startup] HATA: ALLOWED_ORIGIN env değişkeni production\'da zorunludur.')
-  console.error('[Startup] Render Dashboard\'a ALLOWED_ORIGIN=https://yourdomain.com ekleyin.')
+  logger.error('[Startup] HATA: ALLOWED_ORIGIN env değişkeni production\'da zorunludur.')
+  logger.error('[Startup] Render Dashboard\'a ALLOWED_ORIGIN=https://yourdomain.com ekleyin.')
   process.exit(1)
 }
 
@@ -306,7 +307,7 @@ app.use((req, res) => {
 
 // ── Global Error Handler ─────────────────────────────────────────────────────
 app.use((err, req, res, _next) => {
-  console.error('[Express]', err.stack || err.message)
+  logger.error({ err, method: req.method, url: req.originalUrl }, '[Express] request failed')
   const status = err.status || err.statusCode || 500
   // 5xx hataları DB'ye logla (4xx normal akış — istemci hatası)
   if (status >= 500 && process.env.NODE_ENV !== 'test') {

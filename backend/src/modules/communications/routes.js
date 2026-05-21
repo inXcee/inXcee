@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { requireRole } from '../../shared/auth/middleware.js'
 import { logAudit } from '../../shared/audit.js'
 import { getDB } from '../../shared/db/index.js'
+import { logger } from '../../shared/logger.js'
 
 export const commsRouter = Router()
 const mgr = requireRole('campus_manager', 'shift_supervisor')
@@ -72,7 +73,7 @@ commsRouter.post('/sms/send', ...mgr, async (req, res) => {
     })
     logAudit(req.user.id, 'sms_send', 'comms', id, `${targetPhone}: ${body.slice(0, 50)}`)
     res.json({ id, ok: result.ok, status: result.status, error: result.error })
-  } catch (e) { console.error('[sms]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[sms]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 // ── IB3: Push subscription kaydet (browser'dan gelir) ──
@@ -162,7 +163,7 @@ commsRouter.post('/broadcast', ...mgr, async (req, res) => {
 
     logAudit(req.user.id, 'broadcast', 'comms', null, `${channel} → ${target_type}:${target_id} (${stats.total} alıcı)`)
     res.json({ ok: true, stats })
-  } catch (e) { console.error('[broadcast]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[broadcast]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 // ── İletişim logu ──
@@ -178,5 +179,5 @@ commsRouter.get('/log', ...view, (req, res) => {
     if (req.query.staff_id) { q += ' AND c.recipient_id = ? AND c.recipient_type = "staff"'; params.push(+req.query.staff_id) }
     q += ' ORDER BY c.created_at DESC LIMIT 200'
     res.json(db.prepare(q).all(...params))
-  } catch (e) { console.error('[comm/log]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[comm/log]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })

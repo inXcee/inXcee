@@ -3,6 +3,7 @@ import { isChannelEnabledForUser, isQuietHours, getChannelPreferenceRow, SEVERIT
 import { sendPushToUser, sendPushToRole, isPushConfigured } from './push.js'
 import { sendWhatsAppToUser, isWhatsAppConfigured } from './whatsapp-send.js'
 import { isValidEventKind, moduleFromEventKind, DEFAULT_SEVERITY, renderLinkTemplate } from './events.js'
+import { logger } from '../logger.js'
 
 const MAX_SSE_CLIENTS = 500
 const MAX_PER_USER = 4 // bir user max 4 sekme; fazlası eski bağlantıyı düşürür
@@ -81,7 +82,7 @@ export function createNotification({
 
   // event_kind whitelist (varsa kontrol et)
   if (event_kind && !isValidEventKind(event_kind)) {
-    console.warn('[Notif] geçersiz event_kind reddedildi:', event_kind)
+    logger.warn('[Notif] geçersiz event_kind reddedildi:', event_kind)
     return null
   }
   // Module çıkarımı (verilmediyse event_kind'tan)
@@ -140,12 +141,12 @@ export function createNotification({
       } else if (isQuietHours(notif.target_user_id, sev)) {
         // skip
       } else {
-        sendPushToUser(notif.target_user_id, payload).catch(e => console.error('[Push] user:', e.message))
+        sendPushToUser(notif.target_user_id, payload).catch(e => logger.error('[Push] user:', e.message))
       }
     } else if (notif.target_role) {
       // Rol bazlı push'ta hedef kullanıcılar belli değil; push.js içinde tercih kontrolü yapılması ileride mümkün.
       // Şimdilik modül kapatma yetersiz — sendPushToRole kendisi DB'ye gider; basit yaklaşım: gönder.
-      sendPushToRole(notif.target_role, payload).catch(e => console.error('[Push] role:', e.message))
+      sendPushToRole(notif.target_role, payload).catch(e => logger.error('[Push] role:', e.message))
     }
   }
 
@@ -161,7 +162,7 @@ export function createNotification({
     }
     if (shouldSend && !isQuietHours(notif.target_user_id, sev)) {
       sendWhatsAppToUser(notif.target_user_id, `[YYS] ${notif.message}`)
-        .catch(e => console.error('[WA] user:', e.message))
+        .catch(e => logger.error('[WA] user:', e.message))
     }
   }
 

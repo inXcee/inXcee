@@ -6,6 +6,7 @@ import { get2faStatus, start2faSetupWithQr, enable2fa, disable2fa } from './totp
 import { getSetting } from '../../modules/email/queries.js'
 import { requireAuth } from './middleware.js'
 import { validate } from '../middleware/validate.js'
+import { logger } from '../logger.js'
 
 export const authRouter = Router()
 
@@ -103,7 +104,7 @@ authRouter.post('/2fa/setup', requireAuth, async (req, res) => {
     if (result.error) return res.status(result.status).json({ error: result.error })
     res.json({ secret: result.secret, qr: result.qr, uri: result.uri })
   } catch (e) {
-    console.error('[2FA setup]', e)
+    logger.error('[2FA setup]', e)
     res.status(500).json({ error: 'Sunucu hatası' })
   }
 })

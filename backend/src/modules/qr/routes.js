@@ -5,6 +5,7 @@ import QRCode from 'qrcode'
 import { requireRole } from '../../shared/auth/middleware.js'
 import { logAudit } from '../../shared/audit.js'
 import { getDB } from '../../shared/db/index.js'
+import { logger } from '../../shared/logger.js'
 
 export const qrRouter = Router()
 const mgr = requireRole('campus_manager', 'shift_supervisor')
@@ -42,7 +43,7 @@ qrRouter.post('/bulk-generate', ...mgr, (req, res) => {
     tx()
     logAudit(req.user.id, 'qr_bulk_generate', 'qr', null, `${missing.length} personel`)
     res.json({ generated: missing.length })
-  } catch (e) { console.error('[qr/bulk]', e); res.status(400).json({ error: e.message }) }
+  } catch (e) { logger.error('[qr/bulk]', e); res.status(400).json({ error: e.message }) }
 })
 
 // ── Q1: Mevcut staff'ın QR'ı (kendisi için) ──
@@ -119,7 +120,7 @@ qrRouter.get('/staff/:id/card/pdf', ...view, async (req, res) => {
 
     doc.end()
   } catch (e) {
-    console.error('[qr/card]', e)
+    logger.error('[qr/card]', e)
     if (!res.headersSent) res.status(500).json({ error: 'PDF üretilemedi' })
   }
 })
@@ -159,7 +160,7 @@ qrRouter.post('/scan/transport', ...view, (req, res) => {
       assignment_id: assignment.id, route_id: assignment.route_id,
       previous_boarded: assignment.boarded,
     })
-  } catch (e) { console.error('[qr/scan]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[qr/scan]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 // ── Mobile self-service: kişinin kendi QR'ı (Q6) ──

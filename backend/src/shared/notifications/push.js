@@ -8,6 +8,7 @@
 
 import webpush from 'web-push'
 import { getDB } from '../db/index.js'
+import { logger } from '../logger.js'
 
 const PUBLIC = process.env.VAPID_PUBLIC_KEY
 const PRIVATE = process.env.VAPID_PRIVATE_KEY
@@ -19,7 +20,7 @@ if (PUBLIC && PRIVATE) {
     webpush.setVapidDetails(SUBJECT, PUBLIC, PRIVATE)
     configured = true
   } catch (e) {
-    console.error('[Push] VAPID konfigurasyon hatasi:', e.message)
+    logger.error('[Push] VAPID konfigurasyon hatasi:', e.message)
   }
 }
 
@@ -88,7 +89,7 @@ async function sendToSubscriptions(subs, payload) {
         db.prepare('DELETE FROM push_subscriptions WHERE id=?').run(s.id)
         removed++
       } else {
-        console.error('[Push] gonderim hatasi:', e.statusCode, e.body || e.message)
+        logger.error('[Push] gonderim hatasi:', e.statusCode, e.body || e.message)
       }
     }
   }))
