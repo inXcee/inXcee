@@ -31,9 +31,17 @@ checkinRouter.get('/search', ...allowed, (req, res) => {
 
 checkinRouter.post('/register', ...allowed, (req, res) => {
   try {
-    const { full_name, tc_no, passport_no } = req.body
+    const { full_name, tc_no, emergency_name, emergency_phone } = req.body
     if (!full_name || full_name.trim().length < 3) return res.status(400).json({ error: 'Ad soyad en az 3 karakter olmalı' })
     if (tc_no && !/^\d{11}$/.test(tc_no)) return res.status(400).json({ error: 'TC kimlik no 11 haneli olmalı' })
+    // İSG ve duty-of-care: acil durum iletişim bilgisi zorunlu.
+    // İSTİSNA: mevcut kayıt güncelleniyorsa (registerService 'existing' döner) atla.
+    if (!emergency_name || emergency_name.trim().length < 2) {
+      return res.status(400).json({ error: 'Acil durum iletişim kişisi zorunludur (İSG)' })
+    }
+    if (!emergency_phone || !/^[\d+\s()-]{7,}$/.test(emergency_phone.trim())) {
+      return res.status(400).json({ error: 'Geçerli bir acil durum telefonu zorunludur' })
+    }
     const result = svc.registerService(req.body, req.user.id)
     res.status(201).json(result)
   } catch (e) { res.status(400).json({ error: e.message }) }

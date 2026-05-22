@@ -784,22 +784,25 @@ export default function CheckinPage() {
                   border: '1px solid var(--border)', background: 'var(--surface2)',
                 }}>
                   <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text4)', letterSpacing: '2px', marginBottom: '10px' }}>
-                    ACİL İLETİŞİM — İSTEĞE BAĞLI
+                    ACİL İLETİŞİM — ZORUNLU (İSG)
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                     <div>
-                      <label className="form-label">Acil Kişi Adı</label>
+                      <label className="form-label">Acil Kişi Adı *</label>
                       <input
                         className="form-input"
+                        required
                         value={formData.emergency_name || ''}
                         onChange={e => setFormData(p => ({ ...p, emergency_name: e.target.value }))}
                         placeholder="Eş, anne/baba..."
                       />
                     </div>
                     <div>
-                      <label className="form-label">Acil Kişi Telefonu</label>
+                      <label className="form-label">Acil Kişi Telefonu *</label>
                       <input
                         className="form-input"
+                        required
+                        type="tel"
                         value={formData.emergency_phone || ''}
                         onChange={e => setFormData(p => ({ ...p, emergency_phone: e.target.value }))}
                         placeholder="05xx xxx xx xx"
