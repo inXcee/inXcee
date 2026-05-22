@@ -96,6 +96,21 @@ Y blokları **özel banyolu, kapasite=1 placeholder** olarak gelir; gerçek yata
 - Tüm fazları tek oturumda bitirmeye çalışma — `/phase` komutunu kullan
 - Bug düzeltmeden sonra düzeltmeyi bağlamında doğrula: değişken scope'da mı, sayfa renderlanıyor mu, console hatası var mı
 
+## Observability
+
+- **Error tracking:** Sentry — `backend/src/shared/sentry.js`. DSN `.env`'de (`SENTRY_DSN`). Test ortamında ve DSN yoksa no-op. PII scrubbing aktif: request body/headers/IP/email Sentry'ye gitmez, sadece `user.id` + `module` tag. Manuel hata yakalamak için `captureError(err, { userId, module })`.
+- **Metrics:** `GET /api/system/metrics` — Bearer token (`METRICS_TOKEN`) ile korunur. prom-client + HTTP histogram (`http_request_duration_seconds`, `http_requests_total`) + DB query histogram (`db_query_duration_seconds`) + job queue gauge. Endpoint: `backend/src/shared/metrics.js`. `METRICS_TOKEN` boşsa endpoint 503 döner.
+- **Job queue:** `backend/src/shared/jobs/` — SQLite tabanlı (`job_queue` tablosu), tek worker loop (PM2 `instances:1`). Push notifications buradan gönderilir (`enqueue('push.send', { subscriptionId, payload })`). Yeni handler eklemek için `handlers.js`'e satır ekle:
+
+  ```js
+  export const handlers = {
+    'push.send': sendPushJob,
+    'mytype.do': async (payload) => { /* ... */ },
+  }
+  ```
+
+  Handler hata throw ederse retry (exponential backoff, default 3 attempts). `err.permanent=true` set edilirse kalıcı fail (retry yok, status `done`). `JOB_WORKER_ENABLED=false` ile worker kapanır (debug).
+
 ## Deploy
 
 - Deploy öncesi: `bash scripts/deploy/pre-deploy-check.sh`
