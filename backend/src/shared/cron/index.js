@@ -13,7 +13,6 @@ import { logAudit } from '../audit.js'
 import { logger } from '../logger.js'
 import { pruneTokenBlacklist } from '../auth/service.js'
 import { runBackupService, listBackupsService, deleteBackupService } from '../../modules/backup/service.js'
-import { createNotification } from '../notifications/service.js'
 import { captureError } from '../sentry.js'
 
 let emailJob = null
