@@ -8,6 +8,7 @@ import { initProdDB } from './shared/db/initProd.js'
 import { startCronJobs } from './shared/cron/index.js'
 import { seedDev } from './shared/db/seed.js'
 import { logger } from './shared/logger.js'
+import { startWorker, stopWorker } from './shared/jobs/index.js'
 
 // Zorunlu env kontrolü (Task 1'de eklendi)
 if (!process.env.JWT_SECRET) {
@@ -33,6 +34,7 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 startCronJobs()
+startWorker()
 
 const port = process.env.PORT || 3001
 const server = app.listen(port, () => logger.info({ port }, `YYS Backend http://localhost:${port}`))
@@ -47,6 +49,7 @@ server.requestTimeout = 0
 
 process.on('SIGTERM', () => {
   logger.info('[Shutdown] SIGTERM alındı, bağlantılar kapatılıyor...')
+  stopWorker()
   server.close(() => {
     try { getDB().close() } catch { /* ignore */ }
     logger.info('[Shutdown] Tamamlandı')
