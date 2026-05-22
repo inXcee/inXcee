@@ -10,6 +10,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@sentry/node": "^9.47.1",
     "@simplewebauthn/server": "^9.0.3",
     "bcryptjs": "^2.4.3",
     "better-sqlite3": "^12.8.0",
