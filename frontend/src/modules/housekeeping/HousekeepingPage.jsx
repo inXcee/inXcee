@@ -1154,21 +1154,48 @@ export default function HousekeepingPage() {
 
   const generateTasks = useMutation({ mutationFn: () => api.post('/housekeeping/tasks/generate-daily'), onSuccess: inv })
 
+  // Optimistic update yardımcısı: cache'deki cleaning-tasks listelerini in-place günceller,
+  // hata olursa snapshot ile geri alır. Mutation pending iken UI anında tepki verir.
+  const optimisticTaskUpdate = (updater) => ({
+    onMutate: async (vars) => {
+      await qc.cancelQueries({ queryKey: ['cleaning-tasks'] })
+      const snapshots = qc.getQueriesData({ queryKey: ['cleaning-tasks'] })
+      qc.setQueriesData({ queryKey: ['cleaning-tasks'] }, (old) => {
+        if (!Array.isArray(old)) return old
+        return old.map(t => updater(t, vars))
+      })
+      return { snapshots }
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.snapshots) for (const [key, val] of ctx.snapshots) qc.setQueryData(key, val)
+    },
+    onSettled: inv,
+  })
+
   const completeTask = useMutation({
     mutationFn: ({ id, checklist }) => api.post(`/housekeeping/tasks/${id}/complete`, { checklist }),
-    onSuccess: () => { inv(); setSelected(null) },
+    ...optimisticTaskUpdate((t, vars) =>
+      t.id === vars.id ? { ...t, completed_at: new Date().toISOString(), skipped: 0 } : t
+    ),
+    onSuccess: () => setSelected(null),
   })
 
   const uncompleteTask = useMutation({
     mutationFn: (id) => api.patch(`/housekeeping/tasks/${id}/uncomplete`),
-    onSuccess: inv,
+    ...optimisticTaskUpdate((t, id) =>
+      t.id === id ? { ...t, completed_at: null } : t
+    ),
   })
 
   const skipTask = useMutation({
     mutationFn: ({ id, reason, undo }) => undo
       ? api.patch(`/housekeeping/tasks/${id}/unskip`)
       : api.patch(`/housekeeping/tasks/${id}/skip`, { reason }),
-    onSuccess: inv,
+    ...optimisticTaskUpdate((t, vars) =>
+      t.id === vars.id
+        ? { ...t, skipped: vars.undo ? 0 : 1, skip_reason: vars.undo ? null : vars.reason }
+        : t
+    ),
   })
 
   const completeFloor = useMutation({
