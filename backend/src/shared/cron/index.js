@@ -12,6 +12,9 @@ import { expirePastLots } from '../../modules/inventory/lots/service.js'
 import { logAudit } from '../audit.js'
 import { logger } from '../logger.js'
 import { pruneTokenBlacklist } from '../auth/service.js'
+import { runBackupService, listBackupsService, deleteBackupService } from '../../modules/backup/service.js'
+import { createNotification } from '../notifications/service.js'
+import { captureError } from '../sentry.js'
 
 let emailJob = null
 
@@ -27,7 +30,22 @@ function withLock(name, fn) {
     if (running.has(name)) return
     running.add(name)
     try { await fn() }
-    catch (e) { logger.error(`[Cron:${name}]`, e.message) }
+    catch (e) {
+      logger.error(`[Cron:${name}] hata: ${e.message}`)
+      captureError(e, { module: `cron:${name}` })
+      // Kritik cron'lar için campus_manager'a bildirim
+      const criticalJobs = ['daily-tasks', 'auto-backup', 'cleanup']
+      if (criticalJobs.includes(name)) {
+        try {
+          createNotification({
+            message: `⚠️ Cron görevi "${name}" başarısız: ${e.message?.slice(0, 200)}`,
+            event_kind: 'system_alert',
+            target_role: 'campus_manager',
+            dedup_key: `cron_fail_${name}_${new Date().toISOString().slice(0, 13)}`,
+          })
+        } catch { /* notification gönderimi başarısızsa sessizce devam */ }
+      }
+    }
     finally { running.delete(name) }
   }
 }
@@ -145,6 +163,25 @@ export function startCronJobs() {
       const pruned = pruneTokenBlacklist()
       if (pruned > 0) logger.info(`[Cron] ${pruned} süresi dolmuş token blacklist kaydı temizlendi`)
     } catch (e) { logger.error('[Cron] Temizleme hatası:', e.message) }
+  }), TZ)
+
+  // Her 6 saatte bir otomatik yedekleme — 02:00, 08:00, 14:00, 20:00 (TR saati)
+  cron.schedule('0 2,8,14,20 * * *', withLock('auto-backup', async () => {
+    const result = await runBackupService()
+    if (!result.ok) {
+      logger.error('[Cron] Otomatik yedekleme başarısız:', result.error)
+      return
+    }
+    logger.info(`[Cron] Otomatik yedekleme: ${result.name} (${(result.size / 1024 / 1024).toFixed(1)} MB)`)
+    // 7 günden eski yedekleri sil (28 yedeği koruma hedefi)
+    const backups = listBackupsService().filter(b => !b.name.includes('pre-restore'))
+    const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000
+    for (const backup of backups) {
+      if (new Date(backup.created_at).getTime() < cutoff) {
+        deleteBackupService(backup.name)
+        logger.info(`[Cron] Eski yedek silindi: ${backup.name}`)
+      }
+    }
   }), TZ)
 
   // cron jobs initialized
