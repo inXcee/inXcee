@@ -1,25 +1,36 @@
 import { verifyToken } from './service.js'
 
 const STAFF_ROLES = new Set(['campus_manager', 'shift_supervisor', 'technical', 'laundry', 'housekeeper'])
+const COOKIE_NAME = 'yys_session'
+
+function extractToken(req) {
+  // 1) httpOnly cookie (staff web login)
+  const cookieToken = req.cookies?.[COOKIE_NAME]
+  if (cookieToken) return cookieToken
+  // 2) Authorization header (kiosk, mobile, API clients)
+  const h = req.headers.authorization
+  if (h?.startsWith('Bearer ')) return h.slice(7)
+  return null
+}
 
 export function requireAuth(req, res, next) {
-  const h = req.headers.authorization
-  if (!h?.startsWith('Bearer ')) return res.status(401).json({ error: 'Token gerekli' })
+  const token = extractToken(req)
+  if (!token) return res.status(401).json({ error: 'Token gerekli' })
   try {
-    req.user = verifyToken(h.slice(7))
+    req.user = verifyToken(token)
     next()
   } catch {
     res.status(401).json({ error: 'Geçersiz token' })
   }
 }
 
-// EventSource native API custom header taşıyamadığı için SSE endpoint'lerinde
-// token query string'den de kabul edilir. Header öncelikli.
+// SSE endpoint'leri — cookie + header + query string destekli.
+// fetch() API credentials:include ile cookie gönderir; EventSource için query fallback.
 export function requireSSEAuth(req, res, next) {
-  const h = req.headers.authorization
-  const headerToken = h?.startsWith('Bearer ') ? h.slice(7) : null
+  const cookieToken = req.cookies?.[COOKIE_NAME]
+  const headerToken = req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.slice(7) : null
   const queryToken = typeof req.query.token === 'string' ? req.query.token : null
-  const token = headerToken || queryToken
+  const token = cookieToken || headerToken || queryToken
   if (!token) return res.status(401).json({ error: 'Token gerekli' })
   try {
     req.user = verifyToken(token)

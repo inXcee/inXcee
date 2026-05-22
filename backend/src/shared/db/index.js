@@ -1645,6 +1645,38 @@ export function initDB() {
     db.exec('CREATE INDEX IF NOT EXISTS idx_job_queue_pickup ON job_queue(status, run_after)')
   } catch(e) { if (!e.message?.includes('already exists')) logger.error('[Migration] job_queue:', e.message) }
 
+  // token_blacklist — logout ile iptal edilen token JTI'larini tutar.
+  // Expiry geçmiş kayıtlar cron ile temizlenir.
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS token_blacklist (
+      jti TEXT PRIMARY KEY,
+      expires_at INTEGER NOT NULL
+    )`)
+    db.exec('CREATE INDEX IF NOT EXISTS idx_token_blacklist_exp ON token_blacklist(expires_at)')
+  } catch(e) { if (!e.message?.includes('already exists')) logger.error('[Migration] token_blacklist:', e.message) }
+
+  // totp_backup_codes — 2FA cihaz kaybında hesaba erişim için tek kullanımlık kodlar.
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS totp_backup_codes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      code_hash TEXT NOT NULL,
+      used_at DATETIME
+    )`)
+    db.exec('CREATE INDEX IF NOT EXISTS idx_totp_backup_user ON totp_backup_codes(user_id)')
+  } catch(e) { if (!e.message?.includes('already exists')) logger.error('[Migration] totp_backup_codes:', e.message) }
+
+  // password_reset_tokens — şifre sıfırlama için kısa ömürlü tokenlar.
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS password_reset_tokens (
+      token_hash TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      expires_at INTEGER NOT NULL,
+      used INTEGER NOT NULL DEFAULT 0
+    )`)
+    db.exec('CREATE INDEX IF NOT EXISTS idx_prt_user ON password_reset_tokens(user_id)')
+  } catch(e) { if (!e.message?.includes('already exists')) logger.error('[Migration] password_reset_tokens:', e.message) }
+
   return db
 }
 

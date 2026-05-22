@@ -3,26 +3,29 @@ import request from 'supertest'
 import app from '../../app.js'
 import { initDB, getDB } from '../db/index.js'
 import { seedDev } from '../db/seed.js'
-import { verifyToken, loginKioskById, loginKiosk, refreshToken } from './service.js'
+import { login, verifyToken, loginKioskById, loginKiosk, refreshToken } from './service.js'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 
 let managerToken
 
-beforeAll(async () => {
+beforeAll(() => {
   process.env.DB_PATH = ':memory:'
   initDB()
   seedDev()
-  const res = await request(app).post('/api/auth/login').send({ username: 'mudur', password: 'admin123' })
-  managerToken = res.body.token
+  // Cookie tabanlı login — service'ten direkt token al (supertest cookie tracking gerektirmez)
+  const result = login('mudur', 'admin123')
+  managerToken = result.token
 })
 
 describe('Auth', () => {
-  it('returns token on valid login', async () => {
+  it('cookie set eder ve user döndürür', async () => {
     const res = await request(app).post('/api/auth/login').send({ username: 'mudur', password: 'admin123' })
     expect(res.status).toBe(200)
-    expect(res.body.token).toBeTruthy()
     expect(res.body.user.role).toBe('campus_manager')
+    expect(res.headers['set-cookie']).toBeDefined() // cookie set edildi
+    // Test modunda token body'de de dönüyor (supertest cookie tracking için)
+    expect(res.body.token).toBeTruthy()
   })
   it('rejects wrong password', async () => {
     const res = await request(app).post('/api/auth/login').send({ username: 'mudur', password: 'wrong' })
@@ -83,12 +86,13 @@ describe('PATCH /api/auth/password', () => {
 })
 
 describe('token refresh', () => {
-  it('geçerli token ile yeni token alınır', async () => {
+  it('geçerli token ile refresh başarılı', async () => {
     const res = await request(app)
       .post('/api/auth/refresh')
       .set('Authorization', `Bearer ${managerToken}`)
     expect(res.status).toBe(200)
-    expect(res.body.token).toBeTruthy()
+    expect(res.body.user).toBeTruthy() // body'de user var, token cookie'de
+    expect(res.headers['set-cookie']).toBeDefined()
   })
 
   it('geçersiz token reddedilir', async () => {

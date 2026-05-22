@@ -78,7 +78,11 @@ function LiveClock() {
 export default function Sidebar({ mobileOpen, onClose }) {
   const user = useAuthStore(s => s.user)
   const location = useLocation()
-  const logout = useAuthStore(s => s.logout)
+  const logoutStore = useAuthStore(s => s.logout)
+  const logout = async () => {
+    try { await api.post('/auth/logout') } catch { /* cookie temizleme başarısız — yine de local logout */ }
+    logoutStore()
+  }
   const { unreadCount } = useNotifications()
   const { theme, toggle: toggleTheme } = useTheme()
   const addToast = useToastStore(s => s.addToast)

@@ -1,8 +1,9 @@
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
+import crypto from 'node:crypto'
 import { getDB } from '../db/index.js'
 import { validatePassword } from './password-policy.js'
-import { verifyTotp, makeTotpChallengeToken, consumeTotpChallengeToken } from './totp.js'
+import { verifyTotp, makeTotpChallengeToken, consumeTotpChallengeToken, verifyBackupCode } from './totp.js'
 import { logger } from '../logger.js'
 
 const SECRET = process.env.JWT_SECRET
@@ -11,10 +12,32 @@ if (!SECRET) {
   process.exit(1)
 }
 
+const TOKEN_TTL_MS = 12 * 60 * 60 * 1000 // 12 saat
+
+function makeToken(payload) {
+  const jti = crypto.randomUUID()
+  const token = jwt.sign({ ...payload, jti }, SECRET, { expiresIn: '12h' })
+  return { token, jti }
+}
+
+// Token jti'sini blacklist'e ekle (logout, refresh sonrası eski token)
+function blacklistJti(jti, expiresAt) {
+  if (!jti) return
+  const db = getDB()
+  try {
+    db.prepare('INSERT OR IGNORE INTO token_blacklist(jti, expires_at) VALUES(?,?)').run(jti, expiresAt)
+  } catch { /* ignore duplicate */ }
+}
+
+function isBlacklisted(jti) {
+  if (!jti) return false
+  const db = getDB()
+  const row = db.prepare('SELECT 1 FROM token_blacklist WHERE jti=? AND expires_at > ?').get(jti, Math.floor(Date.now() / 1000))
+  return !!row
+}
+
 export function login(username, password) {
   const db = getDB()
-  // Sadece auth path'in ihtiyacı olan kolonları al — password_hash/totp_secret memory'de
-  // gereksiz yere dolaşmasın
   const user = db.prepare(
     'SELECT id, username, role, full_name, password_hash, totp_enabled FROM users WHERE username=?'
   ).get(username)
@@ -23,12 +46,8 @@ export function login(username, password) {
   if (user.totp_enabled) {
     return { require_2fa: true, challenge_token: makeTotpChallengeToken(user.id) }
   }
-  const token = jwt.sign(
-    { id: user.id, role: user.role, username: user.username, full_name: user.full_name },
-    SECRET,
-    { expiresIn: '12h' }
-  )
-  return { token, user: { id: user.id, role: user.role, username: user.username, full_name: user.full_name } }
+  const { token, jti } = makeToken({ id: user.id, role: user.role, username: user.username, full_name: user.full_name })
+  return { token, jti, user: { id: user.id, role: user.role, username: user.username, full_name: user.full_name } }
 }
 
 export function verify2faChallenge(challengeToken, code) {
@@ -39,13 +58,18 @@ export function verify2faChallenge(challengeToken, code) {
     'SELECT id, username, role, full_name, totp_enabled, totp_secret FROM users WHERE id=?'
   ).get(userId)
   if (!user || !user.totp_enabled || !user.totp_secret) return { error: '2FA aktif değil', status: 400 }
-  if (!verifyTotp(code, user.totp_secret)) return { error: 'Doğrulama kodu hatalı', status: 401 }
-  const token = jwt.sign(
-    { id: user.id, role: user.role, username: user.username, full_name: user.full_name },
-    SECRET,
-    { expiresIn: '12h' }
-  )
-  return { token, user: { id: user.id, role: user.role, username: user.username, full_name: user.full_name } }
+
+  // TOTP kodu 6 haneliyse normal doğrulama, 8+ haneliyse yedek kod dene
+  const isBackupAttempt = code.replace(/[-\s]/g, '').length >= 8
+  if (isBackupAttempt) {
+    const backupResult = verifyBackupCode(userId, code)
+    if (!backupResult) return { error: 'Yedek kod geçersiz veya daha önce kullanılmış', status: 401 }
+  } else {
+    if (!verifyTotp(code, user.totp_secret)) return { error: 'Doğrulama kodu hatalı', status: 401 }
+  }
+
+  const { token, jti } = makeToken({ id: user.id, role: user.role, username: user.username, full_name: user.full_name })
+  return { token, jti, user: { id: user.id, role: user.role, username: user.username, full_name: user.full_name } }
 }
 
 export function loginKiosk(tcNo, pin) {
@@ -172,7 +196,41 @@ export function changeKioskPin(personnelId, currentPin, newPin) {
 }
 
 export function verifyToken(token) {
-  return jwt.verify(token, SECRET)
+  const payload = jwt.verify(token, SECRET)
+  if (isBlacklisted(payload.jti)) throw new Error('Token iptal edildi')
+  return payload
+}
+
+// /api/auth/me — geçerli cookie/token varsa user bilgisi döndür
+export function getMe(token) {
+  try {
+    const payload = verifyToken(token)
+    if (!payload.id) return { error: 'Kiosk token', status: 403 }
+    const db = getDB()
+    const user = db.prepare('SELECT id, role, username, full_name FROM users WHERE id=?').get(payload.id)
+    if (!user) return { error: 'Kullanıcı bulunamadı', status: 401 }
+    return { user: { id: user.id, role: user.role, username: user.username, full_name: user.full_name } }
+  } catch {
+    return { error: 'Geçersiz oturum', status: 401 }
+  }
+}
+
+// Logout — token'ı blacklist'e ekle, cookie'yi temizle (route tarafında)
+export function logoutToken(token) {
+  try {
+    const payload = jwt.decode(token)
+    if (payload?.jti && payload?.exp) {
+      blacklistJti(payload.jti, payload.exp)
+    }
+  } catch { /* token parse edilemezse sessizce geç */ }
+}
+
+// Expire olmuş blacklist kayıtlarını temizle (cron'dan çağrılır)
+export function pruneTokenBlacklist() {
+  const db = getDB()
+  const now = Math.floor(Date.now() / 1000)
+  const result = db.prepare('DELETE FROM token_blacklist WHERE expires_at <= ?').run(now)
+  return result.changes
 }
 
 // Expired token'i en fazla 24 saat icinde yenilemeye izin ver. Daha eski token'lar
@@ -183,6 +241,8 @@ export function refreshToken(oldToken) {
   let payload
   try {
     payload = jwt.verify(oldToken, SECRET)
+    // Geçerli token yenilenebilir — eski jti'yi blacklist'e ekle
+    if (payload.jti && payload.exp) blacklistJti(payload.jti, payload.exp)
   } catch (e) {
     if (e.name === 'TokenExpiredError') {
       payload = jwt.decode(oldToken)
@@ -198,12 +258,8 @@ export function refreshToken(oldToken) {
   const db = getDB()
   const user = db.prepare('SELECT id, role, username, full_name FROM users WHERE id=?').get(payload.id)
   if (!user) return { error: 'Kullanıcı bulunamadı', status: 401 }
-  const newToken = jwt.sign(
-    { id: user.id, role: user.role, username: user.username, full_name: user.full_name },
-    SECRET,
-    { expiresIn: '12h' }
-  )
-  return { token: newToken, user: { id: user.id, role: user.role, username: user.username, full_name: user.full_name } }
+  const { token: newToken, jti } = makeToken({ id: user.id, role: user.role, username: user.username, full_name: user.full_name })
+  return { token: newToken, jti, user: { id: user.id, role: user.role, username: user.username, full_name: user.full_name } }
 }
 
 export function changeOwnPassword(userId, currentPassword, newPassword) {

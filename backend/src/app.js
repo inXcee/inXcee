@@ -2,6 +2,7 @@ import express from 'express'
 import cors from 'cors'
 import helmet from 'helmet'
 import compression from 'compression'
+import cookieParser from 'cookie-parser'
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit'
 import jwt from 'jsonwebtoken'
 import { readFileSync } from 'node:fs'
@@ -141,6 +142,7 @@ app.use(cors({
 }))
 // 5mb limit: zimmet imzası canvas base64 ve profil fotoğrafları JSON body'de taşınıyor
 app.use(express.json({ limit: '5mb' }))
+app.use(cookieParser())
 app.use(sanitizeBody)
 // Multer dosya isimleri unique (Date.now()-rand) — immutable cache güvenli.
 app.use('/uploads', (req, res, next) => {

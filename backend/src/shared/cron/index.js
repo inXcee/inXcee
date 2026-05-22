@@ -11,6 +11,7 @@ import { buildMonthlyReport, generateMonthlyPDF } from '../../modules/inventory/
 import { expirePastLots } from '../../modules/inventory/lots/service.js'
 import { logAudit } from '../audit.js'
 import { logger } from '../logger.js'
+import { pruneTokenBlacklist } from '../auth/service.js'
 
 let emailJob = null
 
@@ -140,6 +141,9 @@ export function startCronJobs() {
       db.prepare('DELETE FROM audit_log WHERE created_at < ?').run(cutoff90)
       db.prepare('DELETE FROM notifications WHERE is_read=1 AND created_at < ?').run(cutoff90)
       try { db.prepare('DELETE FROM error_log WHERE created_at < ?').run(cutoff30) } catch { /* tablo yoksa atla */ }
+      // Süresi dolmuş token blacklist kayıtlarını temizle
+      const pruned = pruneTokenBlacklist()
+      if (pruned > 0) logger.info(`[Cron] ${pruned} süresi dolmuş token blacklist kaydı temizlendi`)
     } catch (e) { logger.error('[Cron] Temizleme hatası:', e.message) }
   }), TZ)
 

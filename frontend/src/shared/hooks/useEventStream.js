@@ -2,12 +2,13 @@ import { useEffect } from 'react'
 
 // EventSource native API'si Authorization header taşımadığı için fetch + ReadableStream
 // kullanıyoruz. Token URL query'de gözükmez — access log/referer/history sızıntısı yok.
+// credentials: 'include' ile httpOnly cookie de gönderilir (staff login).
 //
 // onEvent({ event: 'message' | <named>, data: parsed JSON })
 // Bağlantı koparsa 5sn sonra otomatik reconnect. Component unmount'ta kapanır.
 export function useEventStream(url, token, onEvent, deps = []) {
   useEffect(() => {
-    if (!token) return
+    // token yoksa cookie ile devam — her iki auth yöntemi desteklenir
     let active = true
     let retryTimeout = null
     let abortCtrl = null
@@ -15,8 +16,11 @@ export function useEventStream(url, token, onEvent, deps = []) {
     async function connect() {
       abortCtrl = new AbortController()
       try {
+        const headers = { Accept: 'text/event-stream' }
+        if (token) headers.Authorization = `Bearer ${token}`
         const res = await fetch(url, {
-          headers: { Authorization: `Bearer ${token}`, Accept: 'text/event-stream' },
+          headers,
+          credentials: 'include',
           signal: abortCtrl.signal,
         })
         if (!res.ok || !res.body) throw new Error(`SSE ${res.status}`)

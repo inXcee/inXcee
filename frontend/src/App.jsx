@@ -1,4 +1,4 @@
-import { Suspense, lazy } from 'react'
+import { Suspense, lazy, useEffect, useState } from 'react'
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useAuthStore } from './shared/store/authStore.js'
@@ -92,8 +92,8 @@ const NotificationsCenterPage = lazy(() => import('./modules/notifications/Notif
 const KvkkPage = lazy(() => import('./modules/kvkk/KvkkPage.jsx'))
 
 function PrivateRoute({ children }) {
-  const token = useAuthStore(s => s.token)
-  return token ? children : <Navigate to="/login" />
+  const user = useAuthStore(s => s.user)
+  return user ? children : <Navigate to="/login" />
 }
 
 function RoleRoute({ roles, children }) {
@@ -189,6 +189,28 @@ function NotFound() {
   )
 }
 
+// Sayfa yenilemede httpOnly cookie ile oturumu geri yükler.
+// Cookie geçerliyse /me → user restore, geçersizse sessizce devam (login sayfası açılır).
+function AuthRestorer({ children }) {
+  const restoreUser = useAuthStore(s => s.restoreUser)
+  const user = useAuthStore(s => s.user)
+  const [ready, setReady] = useState(!!user)
+
+  useEffect(() => {
+    if (user) { setReady(true); return }
+    api.get('/auth/me')
+      .then(r => { restoreUser(r.data.user) })
+      .catch(() => { /* cookie yok/geçersiz — login sayfası bekliyor */ })
+      .finally(() => setReady(true))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  if (!ready) {
+    return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}><span className="page-spinner" /></div>
+  }
+  return children
+}
+
 function SetupGate({ children }) {
   const location = useLocation()
   const { data, isLoading, isError } = useQuery({
@@ -247,6 +269,7 @@ export default function App() {
       <InputDialog />
       <PwaInstallPrompt />
       <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}><span className="page-spinner" /></div>}>
+        <AuthRestorer>
         <SetupGate>
         <Routes>
           <Route path="/setup" element={<SetupPage />} />
@@ -382,6 +405,7 @@ export default function App() {
           <Route path="*" element={<NotFound />} />
         </Routes>
         </SetupGate>
+        </AuthRestorer>
       </Suspense>
     </ErrorBoundary>
   )

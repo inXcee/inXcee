@@ -34,7 +34,8 @@ export default function LoginPage() {
         clearTimeout(slowTimer); setLoading(false); setSlowHint(false)
         return
       }
-      login(res.data.token, res.data.user)
+      // Cookie backend tarafından set edildi; sadece user bilgisini store'a al
+      login(null, res.data.user)
       navigate('/')
     } catch (err) {
       if (err.response?.status === 401) {
@@ -58,7 +59,7 @@ export default function LoginPage() {
         challenge_token: twoFA.challenge_token,
         code,
       })
-      login(res.data.token, res.data.user)
+      login(null, res.data.user)
       navigate('/')
     } catch (err) {
       setError(err.response?.data?.error || 'Kod doğrulanamadı')
