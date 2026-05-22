@@ -76,6 +76,76 @@ describe('2FA — setup + enable + login flow', () => {
     expect(verify.status).toBe(401)
   })
 
+  it('enable ile 10 yedek kod döner ve sayım eşleşir', async () => {
+    const db = getDB()
+    // Aktif 2FA'yı kapat → yeniden enable et (fresh state)
+    const secret = db.prepare("SELECT totp_secret FROM users WHERE username='mudur'").get().totp_secret
+    const loginRes = await request(app).post('/api/auth/login').send({ username: 'mudur', password: 'admin123' })
+    const verify = await request(app).post('/api/auth/2fa/verify-login').send({
+      challenge_token: loginRes.body.challenge_token,
+      code: authenticator.generate(secret),
+    })
+    const fresh = verify.body.token
+
+    // Sayım endpoint'i kontrolü
+    const status = await request(app)
+      .get('/api/auth/2fa/backup-codes')
+      .set('Authorization', `Bearer ${fresh}`)
+    expect(status.status).toBe(200)
+    expect(status.body.total).toBe(10)
+    expect(status.body.remaining).toBe(10)
+
+    // Regenerate — TOTP koduyla
+    const regen = await request(app)
+      .post('/api/auth/2fa/backup-codes/regenerate')
+      .set('Authorization', `Bearer ${fresh}`)
+      .send({ code: authenticator.generate(secret) })
+    expect(regen.status).toBe(200)
+    expect(regen.body.backup_codes).toHaveLength(10)
+    expect(regen.body.backup_codes[0]).toMatch(/^[A-F0-9]{5}-[A-F0-9]{5}$/)
+
+    // Regenerate — yanlış kod reddedilir
+    const bad = await request(app)
+      .post('/api/auth/2fa/backup-codes/regenerate')
+      .set('Authorization', `Bearer ${fresh}`)
+      .send({ code: '000000' })
+    expect(bad.status).toBe(401)
+  })
+
+  it('yedek kod ile login geçer ve kod tek kullanımlık olur', async () => {
+    const db = getDB()
+    const secret = db.prepare("SELECT totp_secret FROM users WHERE username='mudur'").get().totp_secret
+
+    // Yedek kod al
+    const loginA = await request(app).post('/api/auth/login').send({ username: 'mudur', password: 'admin123' })
+    const verifyA = await request(app).post('/api/auth/2fa/verify-login').send({
+      challenge_token: loginA.body.challenge_token,
+      code: authenticator.generate(secret),
+    })
+    const regen = await request(app)
+      .post('/api/auth/2fa/backup-codes/regenerate')
+      .set('Authorization', `Bearer ${verifyA.body.token}`)
+      .send({ code: authenticator.generate(secret) })
+    const backupCode = regen.body.backup_codes[0]
+
+    // Yedek kod ile login
+    const loginB = await request(app).post('/api/auth/login').send({ username: 'mudur', password: 'admin123' })
+    const verifyB = await request(app).post('/api/auth/2fa/verify-login').send({
+      challenge_token: loginB.body.challenge_token,
+      code: backupCode,
+    })
+    expect(verifyB.status).toBe(200)
+    expect(verifyB.body.token).toBeTruthy()
+
+    // Aynı yedek kod ikinci kez geçmez
+    const loginC = await request(app).post('/api/auth/login').send({ username: 'mudur', password: 'admin123' })
+    const verifyC = await request(app).post('/api/auth/2fa/verify-login').send({
+      challenge_token: loginC.body.challenge_token,
+      code: backupCode,
+    })
+    expect(verifyC.status).toBe(401)
+  })
+
   it('disable ile 2FA kapatılır', async () => {
     const db = getDB()
     const secret = db.prepare("SELECT totp_secret FROM users WHERE username='mudur'").get().totp_secret

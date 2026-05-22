@@ -4,8 +4,9 @@ import { z } from 'zod'
 import crypto from 'node:crypto'
 import bcrypt from 'bcryptjs'
 import { login, loginKiosk, loginKioskById, searchKioskPersonnel, loginAvsKiosk, searchAvsWorkers, changeOwnPassword, refreshToken, verify2faChallenge, logoutToken, getMe } from './service.js'
-import { get2faStatus, start2faSetupWithQr, enable2fa, disable2fa } from './totp.js'
+import { get2faStatus, start2faSetupWithQr, enable2fa, disable2fa, getBackupCodeStatus, regenerateBackupCodes } from './totp.js'
 import { getSetting } from '../../modules/email/queries.js'
+import { sendPasswordResetEmail } from '../../modules/email/service.js'
 import { requireAuth } from './middleware.js'
 import { validate } from '../middleware/validate.js'
 import { logger } from '../logger.js'
@@ -188,6 +189,20 @@ authRouter.post('/2fa/disable', requireAuth, (req, res) => {
   res.json(result)
 })
 
+// Yedek kod sayısı — kaldı/toplam (kod içerik dönmez)
+authRouter.get('/2fa/backup-codes', requireAuth, (req, res) => {
+  res.json(getBackupCodeStatus(req.user.id))
+})
+
+// Yedek kodları yenile — TOTP kodu zorunlu, eski kodlar geçersiz olur
+authRouter.post('/2fa/backup-codes/regenerate', requireAuth, (req, res) => {
+  const { code } = req.body
+  if (!code) return res.status(400).json({ error: 'Kod gerekli' })
+  const result = regenerateBackupCodes(req.user.id, code)
+  if (result.error) return res.status(result.status).json({ error: result.error })
+  res.json(result)
+})
+
 authRouter.patch('/password', requireAuth, (req, res) => {
   const { currentPassword, newPassword } = req.body
   if (!currentPassword || !newPassword) {
@@ -224,9 +239,15 @@ authRouter.post('/forgot-password', resetLimiter, (req, res) => {
   const expiresAt = Math.floor(Date.now() / 1000) + 15 * 60 // 15 dk
   db.prepare('DELETE FROM password_reset_tokens WHERE user_id=?').run(user.id)
   db.prepare('INSERT INTO password_reset_tokens(token_hash, user_id, expires_at) VALUES(?,?,?)').run(tokenHash, user.id, expiresAt)
-  // Email gönderimi — altyapı yoksa sadece log
   logger.info({ userId: user.id }, '[Auth] Şifre sıfırlama token üretildi')
-  // TODO: email modülü ile gönder: sendPasswordResetEmail(user.email, rawToken)
+
+  // Email gönderimi — SMTP yapılandırılmamışsa sessiz başarısızlık (enumeration koruması).
+  // APP_BASE_URL set edilmemişse origin header'dan türet; ikisi de yoksa link path-only.
+  const baseUrl = process.env.APP_BASE_URL || req.headers.origin || ''
+  const resetUrl = `${baseUrl}/reset-password/${rawToken}`
+  sendPasswordResetEmail(user.email, resetUrl, { username: user.username })
+    .catch(e => logger.warn({ err: e.message, userId: user.id }, '[Auth] Şifre sıfırlama e-postası gönderilemedi'))
+
   res.json({ ok: true, message: 'Kayıtlı e-posta adresinize sıfırlama bağlantısı gönderildi.' })
 })
 

@@ -124,6 +124,49 @@ ${has('laundry') ? `
 </body></html>`
 }
 
+// Şifre sıfırlama e-postası — 15 dakikalık tek kullanımlık bağlantı içerir.
+// SMTP ayarlı değilse sessiz fallback (forgot-password endpoint tarafından
+// timing/enumeration koruması için aynı response döner; loglarda görünür).
+export async function sendPasswordResetEmail(toEmail, resetUrl, { username } = {}) {
+  if (!toEmail) throw new Error('Alıcı e-posta gerekli')
+  const cfg = getSmtpConfig()
+  const from = cfg.from || 'YYS <noreply@yys.local>'
+  const html = `<!DOCTYPE html><html lang="tr"><head><meta charset="UTF-8"></head><body style="font-family:Arial,sans-serif;color:#1f2937;background:#fff;padding:24px">
+    <h2 style="color:#1d4ed8;margin:0 0 16px">YYS — Şifre Sıfırlama</h2>
+    <p>${username ? `Merhaba <strong>${username}</strong>,` : 'Merhaba,'}</p>
+    <p>Hesabınız için şifre sıfırlama isteği aldık. Aşağıdaki bağlantıya tıklayarak yeni şifrenizi belirleyebilirsiniz:</p>
+    <p style="margin:24px 0">
+      <a href="${resetUrl}" style="background:#1d4ed8;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;display:inline-block">Şifreyi Sıfırla</a>
+    </p>
+    <p style="font-size:13px;color:#64748b">Bağlantı çalışmazsa: <br><code style="background:#f3f4f6;padding:2px 6px;border-radius:3px">${resetUrl}</code></p>
+    <p style="font-size:13px;color:#64748b">Bu bağlantı <strong>15 dakika</strong> içinde geçerlidir ve sadece bir kez kullanılabilir.</p>
+    <hr style="margin:24px 0;border:none;border-top:1px solid #e5e7eb">
+    <p style="font-size:11px;color:#94a3b8">Bu isteği siz yapmadıysanız bu e-postayı yok sayabilirsiniz. Hesabınız güvendedir.</p>
+  </body></html>`
+
+  let transport
+  try {
+    transport = createTransport()
+  } catch (e) {
+    logEmailSend({ recipients: toEmail, status: 'error', errorMsg: e.message })
+    throw e
+  }
+  try {
+    const info = await transport.sendMail({
+      from,
+      to: toEmail,
+      subject: 'YYS — Şifre Sıfırlama Bağlantısı',
+      html,
+    })
+    logEmailSend({ recipients: toEmail, status: 'success' })
+    return { ok: true, messageId: info.messageId }
+  } catch (e) {
+    logEmailSend({ recipients: toEmail, status: 'error', errorMsg: e.message })
+    logger.error('[Email] Şifre sıfırlama gönderim hatası:', e.message)
+    throw new Error(`SMTP gönderim hatası: ${e.message}`)
+  }
+}
+
 // Cron tarafından çağrılır — gün/saat filtreleri uygulanır
 export async function sendMorningReport() {
   const settings = getEmailSettings()

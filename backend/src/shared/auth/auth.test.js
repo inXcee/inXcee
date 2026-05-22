@@ -132,6 +132,123 @@ describe('token refresh', () => {
   })
 })
 
+describe('Şifre sıfırlama (forgot/reset)', () => {
+  it('kayıtlı email olmadan da OK döner (enumeration koruması)', async () => {
+    const res = await request(app)
+      .post('/api/auth/forgot-password')
+      .send({ username: 'mudur' })
+    expect(res.status).toBe(200)
+    expect(res.body.ok).toBe(true)
+  })
+
+  it('bilinmeyen kullanıcı için de aynı OK döner', async () => {
+    const res = await request(app)
+      .post('/api/auth/forgot-password')
+      .send({ username: 'olmayan-kullanici-xyz' })
+    expect(res.status).toBe(200)
+    expect(res.body.ok).toBe(true)
+  })
+
+  it('email kayıtlıysa token üretir ve reset-password ile yeni şifre belirlenir', async () => {
+    const db = getDB()
+    db.prepare("UPDATE users SET email='test@yys.local' WHERE username='mudur'").run()
+    const res = await request(app)
+      .post('/api/auth/forgot-password')
+      .send({ username: 'mudur' })
+    expect(res.status).toBe(200)
+
+    // Token DB'de olmalı (SMTP yok ama row oluşur)
+    const tokenRow = db.prepare("SELECT token_hash, user_id FROM password_reset_tokens ORDER BY expires_at DESC LIMIT 1").get()
+    expect(tokenRow).toBeTruthy()
+
+    // Raw token DB'de hash'lenmiş — gerçek bir token üretip elle insert et
+    const crypto = await import('node:crypto')
+    const rawToken = crypto.randomBytes(32).toString('hex')
+    const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex')
+    const exp = Math.floor(Date.now() / 1000) + 900
+    db.prepare('INSERT INTO password_reset_tokens(token_hash, user_id, expires_at) VALUES(?,?,?)')
+      .run(tokenHash, tokenRow.user_id, exp)
+
+    // GET ile validate
+    const validate = await request(app).get(`/api/auth/reset-password/${rawToken}`)
+    expect(validate.status).toBe(200)
+    expect(validate.body.ok).toBe(true)
+
+    // POST ile yeni şifre belirle
+    const reset = await request(app)
+      .post(`/api/auth/reset-password/${rawToken}`)
+      .send({ newPassword: 'yepyeniSifre1' })
+    expect(reset.status).toBe(200)
+
+    // Eski şifre artık geçmez
+    const oldLogin = await request(app).post('/api/auth/login').send({ username: 'mudur', password: 'admin123' })
+    expect(oldLogin.status).toBe(401)
+
+    // Yeni şifre geçer
+    const newLogin = await request(app).post('/api/auth/login').send({ username: 'mudur', password: 'yepyeniSifre1' })
+    expect(newLogin.status).toBe(200)
+
+    // Aynı token tekrar kullanılamaz
+    const replay = await request(app)
+      .post(`/api/auth/reset-password/${rawToken}`)
+      .send({ newPassword: 'baska-bir-sifre1' })
+    expect(replay.status).toBe(400)
+
+    // Geri al — sonraki testleri kırma
+    const bcrypt2 = await import('bcryptjs')
+    db.prepare("UPDATE users SET password_hash=? WHERE username='mudur'").run(bcrypt2.default.hashSync('admin123', 10))
+  })
+
+  it('süresi dolmuş token reddedilir', async () => {
+    const db = getDB()
+    const crypto = await import('node:crypto')
+    const rawToken = crypto.randomBytes(32).toString('hex')
+    const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex')
+    const expired = Math.floor(Date.now() / 1000) - 60
+    const userId = db.prepare("SELECT id FROM users WHERE username='mudur'").get().id
+    db.prepare('INSERT INTO password_reset_tokens(token_hash, user_id, expires_at) VALUES(?,?,?)')
+      .run(tokenHash, userId, expired)
+    const res = await request(app).get(`/api/auth/reset-password/${rawToken}`)
+    expect(res.status).toBe(400)
+  })
+})
+
+describe('Health endpoint — derin kontroller', () => {
+  it('200 döner ve tüm alanlar doğru tipte', async () => {
+    const res = await request(app).get('/api/health')
+    expect(res.status).toBe(200)
+    expect(res.body.status).toBe('ok')
+    expect(res.body.db).toBe('ok')
+    expect(typeof res.body.db_latency_ms).toBe('number')
+    expect(res.body.jobs).toHaveProperty('pending')
+    expect(res.body.jobs).toHaveProperty('processing')
+    expect(res.body.jobs).toHaveProperty('failed')
+    expect(res.body.jobs_status).toBe('ok')
+    expect(typeof res.body.heap_percent).toBe('number')
+    expect(res.body.heap_status).toMatch(/^(ok|warning)$/)
+    expect(typeof res.body.uptime).toBe('number')
+  })
+})
+
+describe('Logout — token blacklist', () => {
+  it('logout sonrası token reddedilir', async () => {
+    const loginRes = await request(app).post('/api/auth/login').send({ username: 'mudur', password: 'admin123' })
+    const t = loginRes.body.token
+
+    // Önce token çalışıyor mu kontrol et
+    const me1 = await request(app).get('/api/auth/me').set('Authorization', `Bearer ${t}`)
+    expect(me1.status).toBe(200)
+
+    // Logout
+    const logout = await request(app).post('/api/auth/logout').set('Authorization', `Bearer ${t}`)
+    expect(logout.status).toBe(200)
+
+    // Aynı token artık reddedilmeli
+    const me2 = await request(app).get('/api/auth/me').set('Authorization', `Bearer ${t}`)
+    expect(me2.status).toBe(401)
+  })
+})
+
 describe('CORS', () => {
   it('localhost:5173 origin\'ine izin verir', async () => {
     const res = await request(app)

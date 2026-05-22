@@ -81,6 +81,28 @@ export function verifyBackupCode(userId, rawCode) {
   return false
 }
 
+// Kullanıcının yedek kod durumunu döndürür (sayım — kod içerik değil).
+export function getBackupCodeStatus(userId) {
+  const db = getDB()
+  const row = db.prepare(`
+    SELECT
+      COUNT(*) AS total,
+      SUM(CASE WHEN used_at IS NULL THEN 1 ELSE 0 END) AS remaining
+    FROM totp_backup_codes WHERE user_id=?
+  `).get(userId)
+  return { total: row?.total ?? 0, remaining: row?.remaining ?? 0 }
+}
+
+// Mevcut kodları sil + yeni 10 kod üret. TOTP doğrulaması ister.
+export function regenerateBackupCodes(userId, totpCode) {
+  const db = getDB()
+  const u = db.prepare('SELECT totp_enabled, totp_secret FROM users WHERE id=?').get(userId)
+  if (!u?.totp_enabled || !u.totp_secret) return { error: '2FA aktif değil', status: 400 }
+  if (!verifyTotp(totpCode, u.totp_secret)) return { error: 'Doğrulama kodu hatalı', status: 401 }
+  const codes = generateBackupCodes(userId)
+  return { ok: true, backup_codes: codes }
+}
+
 export function enable2fa(userId, code) {
   const db = getDB()
   const u = db.prepare('SELECT totp_secret, totp_enabled FROM users WHERE id=?').get(userId)
