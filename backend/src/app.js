@@ -12,6 +12,7 @@ import { sanitizeBody } from './shared/middleware/sanitize.js'
 import { getDB } from './shared/db/index.js'
 import { logger } from './shared/logger.js'
 import { setupExpressErrorHandler as setupSentryErrorHandler } from './shared/sentry.js'
+import { httpMetricsMiddleware } from './shared/metrics.js'
 
 // Sürüm bilgisi — /api/health ve diagnostic için bir kez başlangıçta okunur.
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -95,6 +96,10 @@ const TRUST_PROXY = TRUST_PROXY_RAW === 'false'
       ? +TRUST_PROXY_RAW
       : TRUST_PROXY_RAW
 app.set('trust proxy', TRUST_PROXY)
+
+// Prometheus HTTP metrics — route eslesmesinden sonra finish event ile latency olcer.
+// Compression'dan once cunku response writer'a ihtiyaci yok, sadece timing ve label.
+app.use(httpMetricsMiddleware)
 
 // SSE response'ları sıkıştırma — chunk akışı bozulur, ayrıca event delivery gecikir.
 // Diğer JSON response'lar gzip ile ~70-80% küçülür.
