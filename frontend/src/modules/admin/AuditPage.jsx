@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { useDebounce } from '../../shared/hooks/useDebounce.js'
 import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
+import { useSavedFilters, SavedFiltersBar } from '../../shared/hooks/useSavedFilters.jsx'
 
 const MODULE_OPTIONS = ['', 'checkin', 'capacity', 'housekeeping', 'maintenance', 'discipline', 'inventory', 'checkout', 'users', 'shifts']
 const ACTION_OPTIONS = ['', 'register', 'assign_room', 'checkout', 'inventory_add', 'inventory_update', 'inventory_in', 'inventory_out', 'user_create', 'user_update', 'user_delete']
@@ -11,6 +12,8 @@ export default function AuditPage() {
   const [filters, setFilters] = useState({ module: '', action: '', search: '', date_from: '', date_to: '' })
   const [limit, setLimit] = useState(50)
   const debouncedSearch = useDebounce(filters.search, 300)
+  const savedFilters = useSavedFilters('audit-log', filters, setFilters)
+  const hasActiveFilter = !!(filters.module || filters.action || filters.search || filters.date_from || filters.date_to)
 
   const params = new URLSearchParams()
   params.set('limit', limit)
@@ -33,6 +36,14 @@ export default function AuditPage() {
           SISTEM ISLEM GECMISI
         </p>
       </div>
+
+      <SavedFiltersBar
+        presets={savedFilters.presets}
+        onApply={savedFilters.apply}
+        onSave={savedFilters.save}
+        onRemove={savedFilters.remove}
+        hasActiveFilter={hasActiveFilter}
+      />
 
       {/* Filters */}
       <div className="panel fade-up-1" style={{ marginBottom: '16px' }}>
