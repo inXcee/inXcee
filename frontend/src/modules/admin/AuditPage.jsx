@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
+import { useDebounce } from '../../shared/hooks/useDebounce.js'
 
 const MODULE_OPTIONS = ['', 'checkin', 'capacity', 'housekeeping', 'maintenance', 'discipline', 'inventory', 'checkout', 'users', 'shifts']
 const ACTION_OPTIONS = ['', 'register', 'assign_room', 'checkout', 'inventory_add', 'inventory_update', 'inventory_in', 'inventory_out', 'user_create', 'user_update', 'user_delete']
@@ -8,17 +9,18 @@ const ACTION_OPTIONS = ['', 'register', 'assign_room', 'checkout', 'inventory_ad
 export default function AuditPage() {
   const [filters, setFilters] = useState({ module: '', action: '', search: '', date_from: '', date_to: '' })
   const [limit, setLimit] = useState(50)
+  const debouncedSearch = useDebounce(filters.search, 300)
 
   const params = new URLSearchParams()
   params.set('limit', limit)
   if (filters.module) params.set('module', filters.module)
   if (filters.action) params.set('action', filters.action)
-  if (filters.search) params.set('search', filters.search)
+  if (debouncedSearch) params.set('search', debouncedSearch)
   if (filters.date_from) params.set('date_from', filters.date_from)
   if (filters.date_to) params.set('date_to', filters.date_to)
 
   const { data: logs, isLoading } = useQuery({
-    queryKey: ['audit-log', filters, limit],
+    queryKey: ['audit-log', { ...filters, search: debouncedSearch }, limit],
     queryFn: () => api.get(`/dashboard/audit-log?${params}`).then(r => r.data),
   })
 

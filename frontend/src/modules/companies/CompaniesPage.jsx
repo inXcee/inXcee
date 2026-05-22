@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
+import { useDebounce } from '../../shared/hooks/useDebounce.js'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
@@ -111,10 +112,14 @@ export default function CompaniesPage() {
     queryFn: () => api.get('/companies/stats').then(r => r.data),
   })
 
-  const filtered = rows.filter(r =>
-    !search || r.name.toLowerCase().includes(search.toLowerCase()) ||
-    r.contact_name?.toLowerCase().includes(search.toLowerCase())
-  )
+  const debouncedSearch = useDebounce(search, 250)
+  const filtered = useMemo(() => {
+    const low = debouncedSearch.toLowerCase()
+    return rows.filter(r =>
+      !low || r.name.toLowerCase().includes(low) ||
+      r.contact_name?.toLowerCase().includes(low)
+    )
+  }, [rows, debouncedSearch])
 
   const saveMut = useMutation({
     mutationFn: (form) => form.id

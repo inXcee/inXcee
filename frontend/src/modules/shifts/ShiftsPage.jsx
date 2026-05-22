@@ -5,6 +5,7 @@ import api from '../../shared/api/client.js'
 import { useAuthStore } from '../../shared/store/authStore.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
+import { useDebounce } from '../../shared/hooks/useDebounce.js'
 
 // Tek noktadan toast ile hata gosterimi — onError callback'lerinde alert yerine bunu cagir.
 // Module-level fonksiyon: closure'a bagimli degil, callback'lerde stale ref riski yok.
@@ -1147,9 +1148,15 @@ function StaffTab({ departments, onPersonClick }) {
   const [editStaff, setEditStaff] = useState(null)
   const [form, setForm] = useState({})
 
+  const debouncedSearch = useDebounce(filters.search, 300)
+  const effectiveFilters = useMemo(
+    () => ({ ...filters, search: debouncedSearch }),
+    [filters.dept_id, filters.gender, filters.is_active, debouncedSearch]
+  )
+
   const { data: staffList = [], isLoading } = useQuery({
-    queryKey: ['staff-list', filters],
-    queryFn: () => api.get('/shifts/staff', { params: { ...filters, is_active: filters.is_active || undefined } }).then(r => r.data),
+    queryKey: ['staff-list', effectiveFilters],
+    queryFn: () => api.get('/shifts/staff', { params: { ...effectiveFilters, is_active: effectiveFilters.is_active || undefined } }).then(r => r.data),
   })
 
   const createMut = useMutation({
@@ -4067,6 +4074,7 @@ function PuantajTab({ departments }) {
   const [month, setMonth] = useState(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`)
   const [deptFilter, setDeptFilter] = useState('')
   const [search, setSearch] = useState('')
+  const debouncedPuantajSearch = useDebounce(search, 250)
   const [viewMode, setViewMode] = useState('list') // 'list' | 'calendar' | 'summary'
   const [showEmployer, setShowEmployer] = useState(false)
   const [selectedRow, setSelectedRow] = useState(null) // row object for bordro detail
@@ -4090,8 +4098,8 @@ function PuantajTab({ departments }) {
 
   const filtered = useMemo(() => {
     let list = rows
-    if (search) {
-      const q = search.toLowerCase()
+    if (debouncedPuantajSearch) {
+      const q = debouncedPuantajSearch.toLowerCase()
       list = list.filter(r => r.full_name?.toLowerCase().includes(q) || r.dept_name?.toLowerCase().includes(q))
     }
     return [...list].sort((a, b) => {
@@ -4100,7 +4108,7 @@ function PuantajTab({ departments }) {
       if (sortBy === 'net') return (b.net || 0) - (a.net || 0)
       return (a.full_name || '').localeCompare(b.full_name || '', 'tr')
     })
-  }, [rows, search, sortBy])
+  }, [rows, debouncedPuantajSearch, sortBy])
 
   const totals = useMemo(() => filtered.reduce((acc, r) => ({
     worked: acc.worked + (r.worked_days || 0),

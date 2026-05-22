@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import api from '../../shared/api/client.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
+import { useDebounce } from '../../shared/hooks/useDebounce.js'
 
 const toast = (m, t = 'success') => useToastStore.getState().addToast(m, t)
 const toastErr = (e) => toast(e?.response?.data?.error || 'Hata', 'error')
@@ -53,6 +54,7 @@ function ChecklistsTab({ kind, statusFilter, setStatusFilter, setOpenId }) {
   const qc = useQueryClient()
   const [staffPicker, setStaffPicker] = useState(false)
   const [search, setSearch] = useState('')
+  const debouncedSearch = useDebounce(search, 300)
 
   const { data: items = [], isLoading } = useQuery({
     queryKey: ['hr-checklists', kind, statusFilter],
@@ -71,9 +73,9 @@ function ChecklistsTab({ kind, statusFilter, setStatusFilter, setOpenId }) {
   })
 
   const { data: searchResults = [] } = useQuery({
-    queryKey: ['staff-search', search],
-    queryFn: () => api.get(`/shifts/staff/search?q=${encodeURIComponent(search)}`).then(r => r.data),
-    enabled: search.length >= 2,
+    queryKey: ['staff-search', debouncedSearch],
+    queryFn: () => api.get(`/shifts/staff/search?q=${encodeURIComponent(debouncedSearch)}`).then(r => r.data),
+    enabled: debouncedSearch.length >= 2,
   })
 
   return (

@@ -2,19 +2,21 @@ import { useState } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
+import { useDebounce } from '../../shared/hooks/useDebounce.js'
 
 export default function KioskPinPage() {
   const [search, setSearch] = useState('')
   const [selectedId, setSelectedId] = useState(null)
   const [pin, setPin] = useState('')
   const [msg, setMsg] = useState(null)
+  const debouncedSearch = useDebounce(search, 300)
 
   const { data: results = [], isFetching } = useQuery({
-    queryKey: ['personnel-search', search],
-    queryFn: () => search.length >= 2
-      ? api.get(`/checkin/search?q=${encodeURIComponent(search)}`).then(r => r.data)
+    queryKey: ['personnel-search', debouncedSearch],
+    queryFn: () => debouncedSearch.length >= 2
+      ? api.get(`/checkin/search?q=${encodeURIComponent(debouncedSearch)}`).then(r => r.data)
       : [],
-    enabled: search.length >= 2,
+    enabled: debouncedSearch.length >= 2,
   })
 
   const setPinMut = useMutation({

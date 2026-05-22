@@ -2,11 +2,13 @@ import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import api from '../../shared/api/client.js'
+import { useDebounce } from '../../shared/hooks/useDebounce.js'
 
 export default function PersonnelListPage() {
   const nav = useNavigate()
   const [q, setQ] = useState('')
   const [deptId, setDeptId] = useState('')
+  const debouncedQ = useDebounce(q, 250)
 
   const { data: staff = [], isLoading } = useQuery({
     queryKey: ['personnel-list'],
@@ -18,7 +20,7 @@ export default function PersonnelListPage() {
   })
 
   const filtered = useMemo(() => {
-    const low = q.trim().toLowerCase()
+    const low = debouncedQ.trim().toLowerCase()
     return staff.filter(s => {
       if (deptId && String(s.department_id) !== String(deptId)) return false
       if (!low) return true
@@ -31,7 +33,7 @@ export default function PersonnelListPage() {
         s.role_label?.toLowerCase().includes(low)
       )
     })
-  }, [staff, q, deptId])
+  }, [staff, debouncedQ, deptId])
 
   return (
     <div style={{ maxWidth: 1280 }} className="fade-up">
