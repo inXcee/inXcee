@@ -14,6 +14,7 @@ import { getDB } from './shared/db/index.js'
 import { logger } from './shared/logger.js'
 import { setupExpressErrorHandler as setupSentryErrorHandler } from './shared/sentry.js'
 import { httpMetricsMiddleware } from './shared/metrics.js'
+import { getStats as getJobStats } from './shared/jobs/index.js'
 
 // Sürüm bilgisi — /api/health ve diagnostic için bir kez başlangıçta okunur.
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -153,10 +154,20 @@ app.use('/uploads', (req, res, next) => {
   next()
 }, express.static(process.env.UPLOADS_DIR || 'uploads', { maxAge: '1y', immutable: true }))
 
-// Health check — disk %95'in üstüne çıkarsa 503 döner (UptimeRobot tetiklensin diye).
+// Health check — disk %95 üstü veya job queue 100+ pending'de 503 döner (UptimeRobot tetiklensin diye).
+// Heap kullanımı %90'ı geçerse warning olarak işaretlenir ama 503 vermez.
+const JOB_BACKLOG_CRITICAL = 100
+const JOB_BACKLOG_WARN = 50
+const HEAP_WARN_PERCENT = 90
+
 app.get('/api/health', async (req, res) => {
   let dbStatus = 'ok'
-  try { getDB().prepare('SELECT 1').get() } catch { dbStatus = 'error' }
+  let dbLatencyMs = null
+  try {
+    const t0 = Date.now()
+    getDB().prepare('SELECT 1').get()
+    dbLatencyMs = Date.now() - t0
+  } catch { dbStatus = 'error' }
 
   let diskPercent = null
   let diskStatus = 'ok'
@@ -167,13 +178,33 @@ app.get('/api/health', async (req, res) => {
     else if (diskPercent >= 85) diskStatus = 'warning'
   } catch { diskStatus = 'unknown' }
 
-  const overall = (dbStatus === 'ok' && diskStatus !== 'critical') ? 'ok' : 'degraded'
+  let jobs = { pending: 0, processing: 0, failed: 0 }
+  let jobsStatus = 'ok'
+  try {
+    const stats = getJobStats()
+    jobs = { pending: stats.pending, processing: stats.processing, failed: stats.failed }
+    if (jobs.pending >= JOB_BACKLOG_CRITICAL) jobsStatus = 'critical'
+    else if (jobs.pending >= JOB_BACKLOG_WARN) jobsStatus = 'warning'
+  } catch { jobsStatus = 'unknown' }
+
+  const memUsage = process.memoryUsage()
+  const heapPercent = Math.round((memUsage.heapUsed / memUsage.heapTotal) * 100)
+  const heapStatus = heapPercent >= HEAP_WARN_PERCENT ? 'warning' : 'ok'
+
+  const isCritical = dbStatus === 'error' || diskStatus === 'critical' || jobsStatus === 'critical'
+  const overall = isCritical ? 'degraded' : 'ok'
+
   res.status(overall === 'ok' ? 200 : 503).json({
     status: overall,
     uptime: Math.floor(process.uptime()),
     db: dbStatus,
+    db_latency_ms: dbLatencyMs,
     disk_percent: diskPercent,
     disk_status: diskStatus,
+    jobs,
+    jobs_status: jobsStatus,
+    heap_percent: heapPercent,
+    heap_status: heapStatus,
     version: APP_VERSION,
     commit: APP_COMMIT,
     started_at: APP_STARTED_AT,
