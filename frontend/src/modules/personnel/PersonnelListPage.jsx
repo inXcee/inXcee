@@ -5,6 +5,7 @@ import api from '../../shared/api/client.js'
 import { useDebounce } from '../../shared/hooks/useDebounce.js'
 import { exportRowsToCsv, exportRowsToXlsx } from '../../shared/utils/exportData.js'
 import { SkeletonGrid } from '../../shared/components/Skeleton.jsx'
+import { useSavedFilters, SavedFiltersBar } from '../../shared/hooks/useSavedFilters.jsx'
 
 const EXPORT_COLUMNS = [
   { key: 'full_name', label: 'Ad Soyad' },
@@ -18,9 +19,13 @@ const EXPORT_COLUMNS = [
 
 export default function PersonnelListPage() {
   const nav = useNavigate()
-  const [q, setQ] = useState('')
-  const [deptId, setDeptId] = useState('')
+  const [filters, setFilters] = useState({ q: '', deptId: '' })
+  const { q, deptId } = filters
+  const setQ = (v) => setFilters(f => ({ ...f, q: v }))
+  const setDeptId = (v) => setFilters(f => ({ ...f, deptId: v }))
   const debouncedQ = useDebounce(q, 250)
+  const savedFilters = useSavedFilters('personnel-list', filters, setFilters)
+  const hasActiveFilter = !!(q || deptId)
 
   const { data: staff = [], isLoading } = useQuery({
     queryKey: ['personnel-list'],
@@ -55,6 +60,14 @@ export default function PersonnelListPage() {
           {filtered.length} / {staff.length} KAYIT — TIKLAYINCA 360° GÖRÜNÜM
         </p>
       </div>
+
+      <SavedFiltersBar
+        presets={savedFilters.presets}
+        onApply={savedFilters.apply}
+        onSave={savedFilters.save}
+        onRemove={savedFilters.remove}
+        hasActiveFilter={hasActiveFilter}
+      />
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
         <input className="form-input" placeholder="🔍 Ad / TC / telefon / pozisyon ara…"

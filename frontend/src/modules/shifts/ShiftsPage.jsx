@@ -6,6 +6,7 @@ import { useAuthStore } from '../../shared/store/authStore.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 import { useDebounce } from '../../shared/hooks/useDebounce.js'
+import { useSavedFilters, SavedFiltersBar } from '../../shared/hooks/useSavedFilters.jsx'
 
 // Tek noktadan toast ile hata gosterimi — onError callback'lerinde alert yerine bunu cagir.
 // Module-level fonksiyon: closure'a bagimli degil, callback'lerde stale ref riski yok.
@@ -1148,6 +1149,9 @@ function StaffTab({ departments, onPersonClick }) {
   const [editStaff, setEditStaff] = useState(null)
   const [form, setForm] = useState({})
 
+  const staffSavedFilters = useSavedFilters('shifts-staff', filters, setFilters)
+  const hasActiveStaffFilter = !!(filters.dept_id || filters.gender || filters.search || filters.is_active !== '1')
+
   const debouncedSearch = useDebounce(filters.search, 300)
   const effectiveFilters = useMemo(
     () => ({ ...filters, search: debouncedSearch }),
@@ -1258,6 +1262,13 @@ function StaffTab({ departments, onPersonClick }) {
       </div>
 
       {/* Filters */}
+      <SavedFiltersBar
+        presets={staffSavedFilters.presets}
+        onApply={staffSavedFilters.apply}
+        onSave={staffSavedFilters.save}
+        onRemove={staffSavedFilters.remove}
+        hasActiveFilter={hasActiveStaffFilter}
+      />
       <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
         <input
           className="form-input"
