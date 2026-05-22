@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import api from '../../shared/api/client.js'
 import { useDebounce } from '../../shared/hooks/useDebounce.js'
 import { exportRowsToCsv, exportRowsToXlsx } from '../../shared/utils/exportData.js'
+import { SkeletonGrid } from '../../shared/components/Skeleton.jsx'
 
 const EXPORT_COLUMNS = [
   { key: 'full_name', label: 'Ad Soyad' },
@@ -77,7 +78,7 @@ export default function PersonnelListPage() {
       </div>
 
       {isLoading ? (
-        <div style={{ padding: 40, color: 'var(--text3)' }}>Yükleniyor…</div>
+        <SkeletonGrid count={12} />
       ) : !filtered.length ? (
         <div style={{ padding: 60, textAlign: 'center', background: 'var(--surface)', borderRadius: 14, border: '1px solid var(--border)' }}>
           <div style={{ fontSize: 40, opacity: 0.3, marginBottom: 10 }}>👥</div>

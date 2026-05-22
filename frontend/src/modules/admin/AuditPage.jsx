@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { useDebounce } from '../../shared/hooks/useDebounce.js'
+import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
 
 const MODULE_OPTIONS = ['', 'checkin', 'capacity', 'housekeeping', 'maintenance', 'discipline', 'inventory', 'checkout', 'users', 'shifts']
 const ACTION_OPTIONS = ['', 'register', 'assign_room', 'checkout', 'inventory_add', 'inventory_update', 'inventory_in', 'inventory_out', 'user_create', 'user_update', 'user_delete']
@@ -86,7 +87,7 @@ export default function AuditPage() {
         </div>
         <div className="panel-body" style={{ overflowX: 'auto' }}>
           {isLoading ? (
-            <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text3)' }}>Yukleniyor...</div>
+            <div style={{ padding: '16px' }}><SkeletonTable rows={10} cols={5} /></div>
           ) : (
             <table className="data-table responsive-stack">
               <thead>
