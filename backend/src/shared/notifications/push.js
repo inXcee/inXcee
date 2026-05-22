@@ -4,25 +4,19 @@
 // VAPID_SUBJECT). Anahtar yoksa push silently disabled — uygulama calisir
 // ama push gonderilmez.
 //
-// generate-vapid-keys.js ile uretilir, .env'e elle eklenir.
+// Gonderim modeli: dogrudan webpush API yerine job_queue'ya enqueue edilir.
+// Worker arka planda (shared/jobs/) bireysel subscription'lari isler — request bloke olmaz.
+// 404/410 (subscription gone) durumunda DB'den silinmesi handler'da olur.
 
-import webpush from 'web-push'
 import { getDB } from '../db/index.js'
-import { logger } from '../logger.js'
+import { enqueue } from '../jobs/index.js'
 
 const PUBLIC = process.env.VAPID_PUBLIC_KEY
 const PRIVATE = process.env.VAPID_PRIVATE_KEY
-const SUBJECT = process.env.VAPID_SUBJECT || 'mailto:berkayinxce@gmail.com'
 
-let configured = false
-if (PUBLIC && PRIVATE) {
-  try {
-    webpush.setVapidDetails(SUBJECT, PUBLIC, PRIVATE)
-    configured = true
-  } catch (e) {
-    logger.error('[Push] VAPID konfigurasyon hatasi:', e.message)
-  }
-}
+// VAPID setup'i handlers.js icinde yapilir (worker sendNotification cagirirken kullanir).
+// Burada sadece configured flag'i tutuyoruz — VAPID key yoksa enqueue da yapmayalim.
+const configured = !!(PUBLIC && PRIVATE)
 
 export function isPushConfigured() {
   return configured
@@ -51,47 +45,26 @@ export function deleteSubscription(endpoint) {
   db.prepare('DELETE FROM push_subscriptions WHERE endpoint=?').run(endpoint)
 }
 
+// API surface eskisi gibi async — geriye uyumlu. Donus deger {sent, removed}
+// shape'i korunur ama "sent" artik enqueue edilen job sayisi (asil gonderim worker'da),
+// "removed" 0 (subscription temizligi handler'da, worker calistiginda).
 export async function sendPushToUser(userId, payload) {
   if (!configured) return { sent: 0, skipped: 'not_configured' }
   const db = getDB()
-  const subs = db.prepare('SELECT id, endpoint, p256dh_key, auth_key FROM push_subscriptions WHERE user_id=?').all(userId)
-  return await sendToSubscriptions(subs, payload)
+  const subs = db.prepare('SELECT id FROM push_subscriptions WHERE user_id=?').all(userId)
+  for (const s of subs) enqueue('push.send', { subscriptionId: s.id, payload })
+  return { sent: subs.length, removed: 0 }
 }
 
 export async function sendPushToRole(role, payload) {
   if (!configured) return { sent: 0, skipped: 'not_configured' }
   const db = getDB()
   const subs = db.prepare(`
-    SELECT ps.id, ps.endpoint, ps.p256dh_key, ps.auth_key
+    SELECT ps.id
     FROM push_subscriptions ps
     JOIN users u ON u.id = ps.user_id
     WHERE u.role=?
   `).all(role)
-  return await sendToSubscriptions(subs, payload)
-}
-
-async function sendToSubscriptions(subs, payload) {
-  if (subs.length === 0) return { sent: 0 }
-  const db = getDB()
-  const json = typeof payload === 'string' ? payload : JSON.stringify(payload)
-  let sent = 0
-  let removed = 0
-  await Promise.all(subs.map(async s => {
-    try {
-      await webpush.sendNotification(
-        { endpoint: s.endpoint, keys: { p256dh: s.p256dh_key, auth: s.auth_key } },
-        json,
-      )
-      sent++
-    } catch (e) {
-      // 404 / 410 = subscription expired veya kullanici izni iptal — sil
-      if (e.statusCode === 404 || e.statusCode === 410) {
-        db.prepare('DELETE FROM push_subscriptions WHERE id=?').run(s.id)
-        removed++
-      } else {
-        logger.error('[Push] gonderim hatasi:', e.statusCode, e.body || e.message)
-      }
-    }
-  }))
-  return { sent, removed }
+  for (const s of subs) enqueue('push.send', { subscriptionId: s.id, payload })
+  return { sent: subs.length, removed: 0 }
 }
