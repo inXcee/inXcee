@@ -11,6 +11,7 @@ import { dirname, resolve } from 'node:path'
 import { sanitizeBody } from './shared/middleware/sanitize.js'
 import { getDB } from './shared/db/index.js'
 import { logger } from './shared/logger.js'
+import { setupExpressErrorHandler as setupSentryErrorHandler } from './shared/sentry.js'
 
 // Sürüm bilgisi — /api/health ve diagnostic için bir kez başlangıçta okunur.
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -304,6 +305,10 @@ app.use('/api/integrity', writeLimiter, integrityRouter)
 app.use((req, res) => {
   res.status(404).json({ error: 'Endpoint bulunamadı' })
 })
+
+// Sentry error handler — kendi error handler'imizdan ONCE, sadece 5xx'i yakalar.
+// initSentry() cagrilmadiysa no-op (sentry.js icinde initialized=false kontrolu).
+setupSentryErrorHandler(app)
 
 // ── Global Error Handler ─────────────────────────────────────────────────────
 app.use((err, req, res, _next) => {

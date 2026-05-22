@@ -1,3 +1,7 @@
+import { initSentry } from './shared/sentry.js'
+// Sentry init en basta — diger modul'lerin runtime hatalarini yakalayabilmesi icin.
+initSentry()
+
 import app from './app.js'
 import { initDB, getDB } from './shared/db/index.js'
 import { initProdDB } from './shared/db/initProd.js'
