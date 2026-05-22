@@ -1645,6 +1645,23 @@ export function initDB() {
     db.exec('CREATE INDEX IF NOT EXISTS idx_job_queue_pickup ON job_queue(status, run_after)')
   } catch(e) { if (!e.message?.includes('already exists')) logger.error('[Migration] job_queue:', e.message) }
 
+  // Cascade delete trigger'ları — SQLite ALTER TABLE FK değiştiremiyor,
+  // trigger ile personnel silinince ilgili kayıtları temizle.
+  try {
+    db.exec(`CREATE TRIGGER IF NOT EXISTS cascade_delete_shifts_on_personnel
+      AFTER DELETE ON personnel BEGIN
+        DELETE FROM shifts WHERE personnel_id = OLD.id;
+      END`)
+    db.exec(`CREATE TRIGGER IF NOT EXISTS cascade_delete_zimmet_on_personnel
+      AFTER DELETE ON personnel BEGIN
+        DELETE FROM zimmet WHERE personnel_id = OLD.id;
+      END`)
+    db.exec(`CREATE TRIGGER IF NOT EXISTS cascade_delete_room_assignments_on_personnel
+      AFTER DELETE ON personnel BEGIN
+        DELETE FROM room_assignments WHERE personnel_id = OLD.id;
+      END`)
+  } catch(e) { if (!e.message?.includes('already exists')) logger.error('[Migration] cascade triggers:', e.message) }
+
   // token_blacklist — logout ile iptal edilen token JTI'larini tutar.
   // Expiry geçmiş kayıtlar cron ile temizlenir.
   try {
