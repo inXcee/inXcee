@@ -3,6 +3,17 @@ import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import api from '../../shared/api/client.js'
 import { useDebounce } from '../../shared/hooks/useDebounce.js'
+import { exportRowsToCsv, exportRowsToXlsx } from '../../shared/utils/exportData.js'
+
+const EXPORT_COLUMNS = [
+  { key: 'full_name', label: 'Ad Soyad' },
+  { key: 'tc_no', label: 'TC No' },
+  { key: 'phone', label: 'Telefon' },
+  { key: 'position', label: 'Pozisyon' },
+  { key: 'dept_name', label: 'Departman' },
+  { key: 'role_label', label: 'Görev' },
+  { key: 'hire_date', label: 'İşe Giriş' },
+]
 
 export default function PersonnelListPage() {
   const nav = useNavigate()
@@ -53,6 +64,16 @@ export default function PersonnelListPage() {
           <option value="">Tüm departmanlar</option>
           {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
         </select>
+        <button type="button" className="btn btn-ghost btn-sm"
+          onClick={() => exportRowsToCsv(EXPORT_COLUMNS, filtered, `personel-${new Date().toISOString().slice(0, 10)}.csv`)}
+          disabled={!filtered.length}
+          title="Görünür kayıtları CSV olarak indir"
+          style={{ fontSize: 11 }}>📄 CSV</button>
+        <button type="button" className="btn btn-ghost btn-sm"
+          onClick={() => exportRowsToXlsx(EXPORT_COLUMNS, filtered, `personel-${new Date().toISOString().slice(0, 10)}.xlsx`, 'Personel')}
+          disabled={!filtered.length}
+          title="Görünür kayıtları Excel olarak indir"
+          style={{ fontSize: 11 }}>📊 Excel</button>
       </div>
 
       {isLoading ? (

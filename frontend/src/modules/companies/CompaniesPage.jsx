@@ -1,5 +1,15 @@
 import { useState, useMemo } from 'react'
 import { useDebounce } from '../../shared/hooks/useDebounce.js'
+import { exportRowsToCsv, exportRowsToXlsx } from '../../shared/utils/exportData.js'
+
+const COMPANY_EXPORT_COLS = [
+  { key: 'name', label: 'Firma' },
+  { key: 'contact_name', label: 'Yetkili' },
+  { key: 'phone', label: 'Telefon' },
+  { key: 'quota', label: 'Kota' },
+  { key: 'active_personnel', label: 'Aktif Personel' },
+  { key: 'contract_end', label: 'Sözleşme Bitiş' },
+]
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
@@ -215,6 +225,12 @@ export default function CompaniesPage() {
             value={search}
             onChange={e => setSearch(e.target.value)}
           />
+          <button type="button" className="btn btn-ghost btn-sm" disabled={!filtered.length}
+            onClick={() => exportRowsToCsv(COMPANY_EXPORT_COLS, filtered, `firmalar-${new Date().toISOString().slice(0, 10)}.csv`)}
+            style={{ fontSize: 11 }}>CSV</button>
+          <button type="button" className="btn btn-ghost btn-sm" disabled={!filtered.length}
+            onClick={() => exportRowsToXlsx(COMPANY_EXPORT_COLS, filtered, `firmalar-${new Date().toISOString().slice(0, 10)}.xlsx`, 'Firmalar')}
+            style={{ fontSize: 11 }}>Excel</button>
         </div>
         <div className="panel-body" style={{ padding: 0 }}>
           <div style={{ overflow: 'auto' }}>
