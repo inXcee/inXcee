@@ -6,6 +6,7 @@ import { useDebounce } from '../../shared/hooks/useDebounce.js'
 import { exportRowsToCsv, exportRowsToXlsx } from '../../shared/utils/exportData.js'
 import { SkeletonGrid } from '../../shared/components/Skeleton.jsx'
 import { useSavedFilters, SavedFiltersBar } from '../../shared/hooks/useSavedFilters.jsx'
+import HelpHint from '../../shared/components/HelpHint.jsx'
 
 const EXPORT_COLUMNS = [
   { key: 'full_name', label: 'Ad Soyad' },
@@ -55,7 +56,7 @@ export default function PersonnelListPage() {
   return (
     <div style={{ maxWidth: 1280 }} className="fade-up">
       <div style={{ marginBottom: 16 }}>
-        <h1 style={{ fontSize: 28, letterSpacing: 4, color: 'var(--text)', margin: 0 }}>PERSONEL</h1>
+        <h1 style={{ fontSize: 28, letterSpacing: 4, color: 'var(--text)', margin: 0 }}>PERSONEL<HelpHint topic="personnel" title="PERSONEL" /></h1>
         <p style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', marginTop: 4, letterSpacing: 1.5 }}>
           {filtered.length} / {staff.length} KAYIT — TIKLAYINCA 360° GÖRÜNÜM
         </p>

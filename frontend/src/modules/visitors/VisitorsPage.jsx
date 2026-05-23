@@ -6,6 +6,7 @@ import { BLOCKS } from '../../shared/blocks.js'
 import { useStickyForm, StickyDraftBanner } from '../../shared/hooks/useStickyForm.jsx'
 import { useUrlParamState } from '../../shared/hooks/useUrlParamState.js'
 import { exportRowsToCsv } from '../../shared/utils/exportData.js'
+import HelpHint from '../../shared/components/HelpHint.jsx'
 
 function fmt(dt) {
   if (!dt) return '-'
@@ -56,7 +57,7 @@ export default function VisitorsPage() {
     <div style={{ padding: 16 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 16 }}>
         <div>
-          <h2 style={{ fontSize: 22, letterSpacing: 4 }}>ZİYARETÇİLER</h2>
+          <h2 style={{ fontSize: 22, letterSpacing: 4 }}>ZİYARETÇİLER<HelpHint topic="visitors" title="ZİYARETÇİLER" /></h2>
           <p style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', letterSpacing: 2 }}>
             MISAFIR GIRIS-CIKIS TAKIBI
           </p>

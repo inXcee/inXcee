@@ -4,6 +4,7 @@ import api from '../../shared/api/client.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
 import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
 import { useUrlParamState } from '../../shared/hooks/useUrlParamState.js'
+import HelpHint from '../../shared/components/HelpHint.jsx'
 
 const toast = (m, t = 'success') => useToastStore.getState().addToast(m, t)
 const toastErr = (e) => toast(e?.response?.data?.error || 'Hata', 'error')
@@ -36,7 +37,7 @@ export default function MealsPage() {
   return (
     <div style={{ maxWidth: 1200 }} className="fade-up">
       <div style={{ marginBottom: 16 }}>
-        <h1 style={{ fontSize: 28, letterSpacing: 4, color: 'var(--text)', margin: 0 }}>YEMEKHANE</h1>
+        <h1 style={{ fontSize: 28, letterSpacing: 4, color: 'var(--text)', margin: 0 }}>YEMEKHANE<HelpHint topic="meals" title="YEMEKHANE" /></h1>
         <p style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', marginTop: 4, letterSpacing: 1.5 }}>
           ÖĞÜN OKUTMA · GÜNLÜK SAYIM · YARIN TAHMİNİ · KİŞİ BAŞI MALİYET
         </p>

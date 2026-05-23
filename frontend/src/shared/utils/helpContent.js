@@ -144,4 +144,10 @@ export const HELP_CONTENT = {
 • Ziyaret amacı ve ziyaret edilen blok
 • Aktif ziyaretçi listesi ve geçmiş
 • CSV export ile güvenlik raporlaması`,
+
+  personnel: `Aktif personel listesi + filtrele + export.
+• Blok, firma, departman, cinsiyet bazlı filtre
+• Kaydedilen filtreler (SavedFilters) tekrar kullanılabilir
+• CSV ve Excel export
+• Kişiye tıkla → 360° profil sayfası`,
 }
