@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import api from '../../shared/api/client.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
+import { SkeletonGrid, SkeletonTable } from '../../shared/components/Skeleton.jsx'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 
 const toast = (m, t = 'success') => useToastStore.getState().addToast(m, t)
@@ -87,7 +88,7 @@ function ReviewsTab() {
         </div>
       )}
 
-      {isLoading ? <div style={{ padding: 30, color: 'var(--text3)' }}>Yükleniyor…</div> : !data.length ? (
+      {isLoading ? <SkeletonTable rows={5} cols={4} /> : !data.length ? (
         <div style={{ padding: 50, textAlign: 'center', background: 'var(--surface)', borderRadius: 14 }}>
           <div style={{ fontSize: 36, opacity: 0.3, marginBottom: 8 }}>📋</div>
           <div style={{ fontFamily: 'var(--display)', fontSize: 14 }}>{period} İÇİN DEĞERLENDİRME YOK</div>
@@ -312,7 +313,7 @@ function GoalsTab() {
         </div>
       )}
 
-      {isLoading ? <div style={{ padding: 30, color: 'var(--text3)' }}>Yükleniyor…</div> : !data.length ? (
+      {isLoading ? <SkeletonTable rows={5} cols={4} /> : !data.length ? (
         <div style={{ padding: 50, textAlign: 'center', background: 'var(--surface)', borderRadius: 14 }}>
           <div style={{ fontSize: 36, opacity: 0.3 }}>🎯</div>
           <div style={{ fontFamily: 'var(--display)', fontSize: 14, marginTop: 8 }}>HEDEF YOK</div>
@@ -365,7 +366,7 @@ function LeadersTab() {
         ))}
       </div>
 
-      {isLoading ? <div style={{ padding: 30, color: 'var(--text3)' }}>Yükleniyor…</div> : !data.length ? (
+      {isLoading ? <SkeletonTable rows={5} cols={4} /> : !data.length ? (
         <div style={{ padding: 50, textAlign: 'center', background: 'var(--surface)', borderRadius: 14 }}>
           <div style={{ fontSize: 36, opacity: 0.3 }}>⭐</div>
           <div style={{ fontFamily: 'var(--display)', fontSize: 14, marginTop: 8 }}>HENÜZ POZİTİF PUAN YOK</div>
