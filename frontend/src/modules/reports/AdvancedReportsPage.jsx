@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
 import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
+import { useUrlParamState } from '../../shared/hooks/useUrlParamState.js'
 
 const toast = (m, t = 'success') => useToastStore.getState().addToast(m, t)
 
@@ -14,7 +15,7 @@ const TABS = [
 ]
 
 export default function AdvancedReportsPage() {
-  const [tab, setTab] = useState('absence')
+  const [tab, setTab] = useUrlParamState('tab', 'absence')
 
   return (
     <div style={{ maxWidth: 1280 }} className="fade-up">

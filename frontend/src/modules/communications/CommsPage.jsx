@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
 import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
+import { useUrlParamState } from '../../shared/hooks/useUrlParamState.js'
 
 const toast = (m, t = 'success') => useToastStore.getState().addToast(m, t)
 const toastErr = (e) => toast(e?.response?.data?.error || 'Hata', 'error')
@@ -15,7 +16,7 @@ const TABS = [
 const CHANNELS = { sms: '📱 SMS', push: '🔔 Push', toast: '💬 Toast', email: '📧 E-posta', whatsapp: '🟢 WhatsApp' }
 
 export default function CommsPage() {
-  const [tab, setTab] = useState('broadcast')
+  const [tab, setTab] = useUrlParamState('tab', 'broadcast')
 
   return (
     <div style={{ maxWidth: 1100 }} className="fade-up">

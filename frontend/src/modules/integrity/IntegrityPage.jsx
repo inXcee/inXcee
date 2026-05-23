@@ -4,6 +4,7 @@ import api from '../../shared/api/client.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
+import { useUrlParamState } from '../../shared/hooks/useUrlParamState.js'
 
 const toast = (m, t = 'success') => useToastStore.getState().addToast(m, t)
 const toastErr = (e) => toast(e?.response?.data?.error || 'Hata', 'error')
@@ -22,7 +23,7 @@ const SEV = {
 }
 
 export default function IntegrityPage() {
-  const [tab, setTab] = useState('scan')
+  const [tab, setTab] = useUrlParamState('tab', 'scan')
 
   return (
     <div style={{ maxWidth: 1200 }} className="fade-up">
