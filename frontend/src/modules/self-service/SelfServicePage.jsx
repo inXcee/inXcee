@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
+import { useTranslation } from '../../shared/i18n/index.js'
+import LanguageSwitcher from '../../shared/components/LanguageSwitcher.jsx'
 
 const STATUS_LABELS = { clean:'Temiz', dirty:'Kirli', collected:'Toplandı', washing:'Yıkanıyor', ready:'Hazır', distributed:'Teslim Edildi' }
 const STATUS_COLORS = { clean:'text-green-400', dirty:'text-red-400', collected:'text-yellow-400', washing:'text-blue-400', ready:'text-green-400', distributed:'text-slate-400' }
@@ -8,19 +10,21 @@ const MAINT_STATUS = { open:'Bekliyor', assigned:'Atandı', in_progress:'Devam E
 const MAINT_STATUS_COLOR = { open:'text-yellow-400', assigned:'text-blue-400', in_progress:'text-blue-400', review:'text-purple-400', done:'text-green-400' }
 const CARD_COLOR = { yellow:'text-yellow-400 border-yellow-400', red:'text-red-400 border-red-400' }
 
-const TABS = [
-  { key:'info',        label:'👤 Bilgilerim' },
-  { key:'qr',          label:'📱 Kartım' },
-  { key:'shifts',      label:'⏱ Vardiyam' },
-  { key:'transport',   label:'🚌 Servisim' },
-  { key:'laundry',     label:'🧺 Çamaşır' },
-  { key:'maintenance', label:'🔧 Arıza' },
-  { key:'announcements', label:'📢 Duyurular' },
-  { key:'discipline',  label:'⚠️ Disiplin' },
-  { key:'feedback',    label:'💬 Şikayet' },
+// Tab listesi — label dictionary key'i, t() ile render edilir.
+const TAB_KEYS = [
+  { key:'info',          i18n:'kiosk.tabs.info' },
+  { key:'qr',            i18n:'kiosk.tabs.qr' },
+  { key:'shifts',        i18n:'kiosk.tabs.shifts' },
+  { key:'transport',     i18n:'kiosk.tabs.transport' },
+  { key:'laundry',       i18n:'kiosk.tabs.laundry' },
+  { key:'maintenance',   i18n:'kiosk.tabs.maintenance' },
+  { key:'announcements', i18n:'kiosk.tabs.announcements' },
+  { key:'discipline',    i18n:'kiosk.tabs.discipline' },
+  { key:'feedback',      i18n:'kiosk.tabs.feedback' },
 ]
 
 export default function SelfServicePage() {
+  const { t } = useTranslation()
   const [tcNo, setTcNo]   = useState('')
   const [pin, setPin]     = useState('')
   const [kioskToken, setKioskToken] = useState(null)
@@ -173,9 +177,12 @@ export default function SelfServicePage() {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
         <div className="w-full max-w-sm">
+          <div className="flex justify-center mb-4">
+            <LanguageSwitcher />
+          </div>
           <div className="text-center mb-8">
             <div className="text-5xl mb-4">🏨</div>
-            <h1 className="text-2xl font-bold text-slate-100">Personel Self-Servis</h1>
+            <h1 className="text-2xl font-bold text-slate-100">{t('kiosk.title')}</h1>
           </div>
 
           {/* Yöntem seçici — sadece 'both' modunda */}
@@ -183,11 +190,11 @@ export default function SelfServicePage() {
             <div className="flex gap-2 mb-4">
               <button onClick={() => setLoginTab('tc')}
                 className={`flex-1 py-2 rounded-xl text-sm font-medium transition-colors ${activeLt==='tc' ? 'bg-blue-700 text-white' : 'bg-slate-800 text-slate-400'}`}>
-                TC No ile
+                {t('kiosk.login_tc')}
               </button>
               <button onClick={() => setLoginTab('name')}
                 className={`flex-1 py-2 rounded-xl text-sm font-medium transition-colors ${activeLt==='name' ? 'bg-blue-700 text-white' : 'bg-slate-800 text-slate-400'}`}>
-                İsimle Ara
+                {t('kiosk.login_name')}
               </button>
             </div>
           )}
@@ -196,13 +203,13 @@ export default function SelfServicePage() {
           {showTc && activeLt === 'tc' && (
             <form onSubmit={handleLogin} className="bg-slate-900 rounded-2xl p-6 space-y-4">
               <div>
-                <label className="block text-sm text-slate-400 mb-2">TC Kimlik No</label>
+                <label className="block text-sm text-slate-400 mb-2">{t('kiosk.tc_no')}</label>
                 <input type="text" value={tcNo} onChange={e => setTcNo(e.target.value)}
                   className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-lg text-slate-100 text-center font-mono tracking-widest focus:outline-none focus:border-blue-500"
                   maxLength={11} autoFocus />
               </div>
               <div>
-                <label className="block text-sm text-slate-400 mb-2">PIN (4 hane)</label>
+                <label className="block text-sm text-slate-400 mb-2">{t('kiosk.pin')}</label>
                 <input type="password" inputMode="numeric" maxLength={4} value={pin}
                   onChange={e => setPin(e.target.value.replace(/\D/g,'').slice(0,4))}
                   className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 text-center text-2xl tracking-widest focus:outline-none focus:border-amber-500"
@@ -211,7 +218,7 @@ export default function SelfServicePage() {
               {loginError && <div className="text-red-400 text-sm text-center">{loginError}</div>}
               <button type="submit" disabled={tcNo.length < 11 || pin.length !== 4}
                 className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 text-white rounded-xl py-3 text-base font-medium transition-colors">
-                Giriş Yap
+                {t('kiosk.login_button')}
               </button>
             </form>
           )}
@@ -220,9 +227,9 @@ export default function SelfServicePage() {
           {showName && activeLt === 'name' && (
             <form onSubmit={handleNameLogin} className="bg-slate-900 rounded-2xl p-6 space-y-4">
               <div>
-                <label className="block text-sm text-slate-400 mb-2">Ad Soyad ile Ara</label>
+                <label className="block text-sm text-slate-400 mb-2">{t('kiosk.name_search')}</label>
                 <input type="text" value={nameQuery} onChange={e => handleNameSearch(e.target.value)}
-                  placeholder="En az 2 karakter..."
+                  placeholder={t('kiosk.name_search')}
                   className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 focus:outline-none focus:border-blue-500"
                   autoFocus />
               </div>
@@ -255,7 +262,7 @@ export default function SelfServicePage() {
 
               {selectedPerson && (
                 <div>
-                  <label className="block text-sm text-slate-400 mb-2">PIN (4 hane)</label>
+                  <label className="block text-sm text-slate-400 mb-2">{t('kiosk.pin')}</label>
                   <input type="password" inputMode="numeric" maxLength={4} value={namePin}
                     onChange={e => setNamePin(e.target.value.replace(/\D/g,'').slice(0,4))}
                     className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 text-center text-2xl tracking-widest focus:outline-none focus:border-amber-500"
@@ -266,7 +273,7 @@ export default function SelfServicePage() {
               {loginError && <div className="text-red-400 text-sm text-center">{loginError}</div>}
               <button type="submit" disabled={!selectedPerson || namePin.length !== 4}
                 className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 text-white rounded-xl py-3 text-base font-medium transition-colors">
-                Giriş Yap
+                {t('kiosk.login_button')}
               </button>
             </form>
           )}
@@ -291,20 +298,24 @@ export default function SelfServicePage() {
 
       {/* Tabs */}
       <div className="flex gap-2 mb-6 overflow-x-auto pb-1">
-        {TABS.map(t => {
+        {TAB_KEYS.map(tab => {
           let badge = null
-          if (t.key === 'announcements' && unreadCount > 0) badge = unreadCount
-          if (t.key === 'maintenance' && openMaintCount > 0) badge = openMaintCount
+          if (tab.key === 'announcements' && unreadCount > 0) badge = unreadCount
+          if (tab.key === 'maintenance' && openMaintCount > 0) badge = openMaintCount
           return (
-            <button key={t.key} onClick={() => setActiveTab(t.key)}
-              className={`relative flex-shrink-0 py-2 px-3 rounded-xl text-xs font-medium transition-colors whitespace-nowrap ${activeTab === t.key ? 'bg-blue-700 text-white' : 'bg-slate-800 text-slate-400'}`}>
-              {t.label}
+            <button key={tab.key} onClick={() => setActiveTab(tab.key)}
+              className={`relative flex-shrink-0 py-2 px-3 rounded-xl text-xs font-medium transition-colors whitespace-nowrap ${activeTab === tab.key ? 'bg-blue-700 text-white' : 'bg-slate-800 text-slate-400'}`}>
+              {t(tab.i18n)}
               {badge ? (
                 <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">{badge}</span>
               ) : null}
             </button>
           )
         })}
+      </div>
+      {/* Dil seçici — login sonrası header'da compact */}
+      <div className="mb-2 flex justify-end">
+        <LanguageSwitcher compact />
       </div>
 
       {/* ── Tab: Bilgilerim ── */}
