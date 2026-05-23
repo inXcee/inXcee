@@ -322,23 +322,23 @@ export default function SelfServicePage() {
       {activeTab === 'info' && myInfo && (
         <div className="space-y-4">
           <div className="bg-slate-900 rounded-2xl p-5 space-y-3">
-            <h2 className="font-medium text-slate-300">Kişisel Bilgiler</h2>
+            <h2 className="font-medium text-slate-300">{t('kiosk.info.personal')}</h2>
             {[
-              { label:'Şirket',       value: myInfo.company },
-              { label:'Giriş Tarihi', value: myInfo.check_in_date ? new Date(myInfo.check_in_date).toLocaleDateString('tr-TR') : '-' },
-              { label:'Disiplin Puanı', value: myInfo.discipline_points ?? 0 },
+              { key: 'company',   label: t('kiosk.info.company'),       value: myInfo.company },
+              { key: 'checkin',   label: t('kiosk.info.check_in'),      value: myInfo.check_in_date ? new Date(myInfo.check_in_date).toLocaleDateString('tr-TR') : '-' },
+              { key: 'discipline',label: t('kiosk.info.discipline_pts'),value: myInfo.discipline_points ?? 0 },
             ].map(item => (
-              <div key={item.label} className="flex justify-between text-sm">
+              <div key={item.key} className="flex justify-between text-sm">
                 <span className="text-slate-500">{item.label}</span>
-                <span className={`font-medium ${item.label === 'Disiplin Puanı' && item.value >= 3 ? 'text-red-400' : 'text-slate-200'}`}>{item.value || '-'}</span>
+                <span className={`font-medium ${item.key === 'discipline' && item.value >= 3 ? 'text-red-400' : 'text-slate-200'}`}>{item.value || '-'}</span>
               </div>
             ))}
           </div>
           {myInfo.room && (
             <div className="bg-slate-900 rounded-2xl p-5">
-              <h2 className="font-medium text-slate-300 mb-3">Oda Bilgisi</h2>
+              <h2 className="font-medium text-slate-300 mb-3">{t('kiosk.info.room_info')}</h2>
               <div className="text-3xl font-bold text-blue-400">{myInfo.room.block} — {myInfo.room.room_no}</div>
-              <div className="text-sm text-slate-500 mt-1">Kat {myInfo.room.floor} · Yatak {myInfo.room.bed_no}</div>
+              <div className="text-sm text-slate-500 mt-1">{t('kiosk.info.floor')} {myInfo.room.floor} · {t('kiosk.info.bed')} {myInfo.room.bed_no}</div>
             </div>
           )}
           {myInfo.expected_departure && (() => {
@@ -346,11 +346,11 @@ export default function SelfServicePage() {
             const urgent = days !== null && days <= 7
             return (
               <div className={`rounded-2xl p-5 border ${urgent ? 'bg-red-950 border-red-800' : 'bg-slate-900 border-slate-800'}`}>
-                <h2 className="font-medium text-slate-300 mb-2">📅 Tahmini Çıkış</h2>
+                <h2 className="font-medium text-slate-300 mb-2">{t('kiosk.info.expected_dep')}</h2>
                 <div className={`text-xl font-bold ${urgent ? 'text-red-400' : 'text-green-400'}`}>
                   {new Date(myInfo.expected_departure).toLocaleDateString('tr-TR')}
                 </div>
-                {days !== null && <div className="text-sm text-slate-500 mt-1">{days > 0 ? `${days} gün kaldı` : days === 0 ? 'Bugün' : 'Geçti'}</div>}
+                {days !== null && <div className="text-sm text-slate-500 mt-1">{days > 0 ? t('kiosk.info.days_left').replace('{n}', days) : days === 0 ? t('kiosk.info.today') : t('kiosk.info.passed')}</div>}
               </div>
             )
           })()}
@@ -358,31 +358,31 @@ export default function SelfServicePage() {
           {/* H2 M1: Zengin profil */}
           {myProfile?.staff && (
             <div className="bg-slate-900 rounded-2xl p-5 space-y-3">
-              <h2 className="font-medium text-slate-300">İş Bilgileri</h2>
+              <h2 className="font-medium text-slate-300">{t('kiosk.info.work_info')}</h2>
               {myProfile.staff.dept_name && (
-                <div className="flex justify-between text-sm"><span className="text-slate-500">Departman</span><span className="font-medium text-slate-200">{myProfile.staff.dept_name}</span></div>
+                <div className="flex justify-between text-sm"><span className="text-slate-500">{t('kiosk.info.department')}</span><span className="font-medium text-slate-200">{myProfile.staff.dept_name}</span></div>
               )}
               {myProfile.staff.position && (
-                <div className="flex justify-between text-sm"><span className="text-slate-500">Pozisyon</span><span className="font-medium text-slate-200">{myProfile.staff.position}</span></div>
+                <div className="flex justify-between text-sm"><span className="text-slate-500">{t('kiosk.info.position')}</span><span className="font-medium text-slate-200">{myProfile.staff.position}</span></div>
               )}
               {myProfile.staff.hire_date && (
-                <div className="flex justify-between text-sm"><span className="text-slate-500">İşe Giriş</span><span className="font-medium text-slate-200">{myProfile.staff.hire_date}</span></div>
+                <div className="flex justify-between text-sm"><span className="text-slate-500">{t('kiosk.info.hire_date')}</span><span className="font-medium text-slate-200">{myProfile.staff.hire_date}</span></div>
               )}
               {myProfile.staff.contract_end && (
-                <div className="flex justify-between text-sm"><span className="text-slate-500">Sözleşme Bitiş</span><span className={`font-medium ${new Date(myProfile.staff.contract_end) < new Date(Date.now() + 30 * 86400000) ? 'text-amber-400' : 'text-slate-200'}`}>{myProfile.staff.contract_end}</span></div>
+                <div className="flex justify-between text-sm"><span className="text-slate-500">{t('kiosk.info.contract_end')}</span><span className={`font-medium ${new Date(myProfile.staff.contract_end) < new Date(Date.now() + 30 * 86400000) ? 'text-amber-400' : 'text-slate-200'}`}>{myProfile.staff.contract_end}</span></div>
               )}
               {myProfile.staff.blood_type && (
-                <div className="flex justify-between text-sm"><span className="text-slate-500">Kan Grubu</span><span className="font-medium text-slate-200">{myProfile.staff.blood_type}</span></div>
+                <div className="flex justify-between text-sm"><span className="text-slate-500">{t('kiosk.info.blood_type')}</span><span className="font-medium text-slate-200">{myProfile.staff.blood_type}</span></div>
               )}
               {myProfile.staff.pickup_name && (
-                <div className="flex justify-between text-sm"><span className="text-slate-500">Servis Durağı</span><span className="font-medium text-slate-200">{myProfile.staff.pickup_name}{myProfile.staff.pickup_district ? ` (${myProfile.staff.pickup_district})` : ''}</span></div>
+                <div className="flex justify-between text-sm"><span className="text-slate-500">{t('kiosk.info.pickup')}</span><span className="font-medium text-slate-200">{myProfile.staff.pickup_name}{myProfile.staff.pickup_district ? ` (${myProfile.staff.pickup_district})` : ''}</span></div>
               )}
             </div>
           )}
 
           {myProfile?.emergency_contacts?.length > 0 && (
             <div className="bg-slate-900 rounded-2xl p-5 space-y-3">
-              <h2 className="font-medium text-slate-300">🆘 Acil İletişim</h2>
+              <h2 className="font-medium text-slate-300">{t('kiosk.info.emergency')}</h2>
               {myProfile.emergency_contacts.map((c, i) => (
                 <div key={i} className="bg-slate-800 rounded-xl p-3">
                   <div className="text-sm text-slate-200 font-medium">{c.name}</div>
@@ -423,7 +423,7 @@ export default function SelfServicePage() {
           ) : !myQr.qr_token ? (
             <div className="bg-slate-900 rounded-2xl p-5 text-slate-400 text-sm text-center">
               <div className="text-4xl opacity-30 mb-3">📱</div>
-              <div>{myQr.message || 'QR kodunuz henüz üretilmemiş'}</div>
+              <div>{myQr.message || t('kiosk.info.qr_not_ready')}</div>
               <div className="text-xs text-slate-500 mt-2">Yöneticinizle iletişime geçin</div>
             </div>
           ) : (
@@ -652,7 +652,7 @@ export default function SelfServicePage() {
       {activeTab === 'announcements' && (
         <div className="space-y-3">
           {announcements.length === 0 ? (
-            <div className="bg-slate-900 rounded-2xl p-5 text-slate-500 text-sm">Aktif duyuru yok</div>
+            <div className="bg-slate-900 rounded-2xl p-5 text-slate-500 text-sm">{t('kiosk.info.no_announcements')}</div>
           ) : announcements.map(a => (
             <div key={a.id} className="bg-slate-900 rounded-2xl p-5">
               <div className="font-medium text-slate-200 mb-2">{a.title}</div>
