@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import HelpHint from '../../shared/components/HelpHint.jsx'
 import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
+import { exportRowsToCsv } from '../../shared/utils/exportData.js'
 import {
   BLOCKS,
   BLOCKS_BY_TYPE,
@@ -1231,6 +1232,18 @@ export default function HousekeepingPage() {
           </p>
         </div>
         {dndRooms.length > 0 && <span className="badge badge-amber">🚫 {dndRooms.length} DND ODA</span>}
+        {tasks.length > 0 && (
+          <button className="btn btn-ghost btn-sm" onClick={() => exportRowsToCsv([
+            { key: 'block', label: 'BLOK' },
+            { key: 'floor', label: 'KAT' },
+            { key: 'room_no', label: 'ODA' },
+            { key: 'task_type', label: 'TİP' },
+            { key: 'assigned_to_name', label: 'SORUMLU' },
+            { key: 'completed_at', label: 'TAMAMLANMA' },
+            { key: 'skipped', label: 'ATLANDI' },
+            { key: 'notes', label: 'NOTLAR' },
+          ], tasks, `temizlik_${TODAY}.csv`)}>↓ CSV</button>
+        )}
       </div>
 
       {/* Progress */}

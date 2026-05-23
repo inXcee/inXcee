@@ -5,6 +5,7 @@ import { useToastStore } from '../../shared/store/toastStore.js'
 import { BLOCKS } from '../../shared/blocks.js'
 import { useStickyForm, StickyDraftBanner } from '../../shared/hooks/useStickyForm.jsx'
 import { useUrlParamState } from '../../shared/hooks/useUrlParamState.js'
+import { exportRowsToCsv } from '../../shared/utils/exportData.js'
 
 function fmt(dt) {
   if (!dt) return '-'
@@ -121,6 +122,16 @@ export default function VisitorsPage() {
         <div className="panel-header" style={{ display: 'flex', gap: 12 }}>
           <button className={`btn ${tab === 'active' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTab('active')}>İçerde ({stats?.active || 0})</button>
           <button className={`btn ${tab === 'past' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTab('past')}>Geçmiş</button>
+          <button className="btn btn-ghost btn-sm" style={{ marginLeft: 'auto' }} onClick={() => exportRowsToCsv([
+            { key: 'full_name', label: 'AD SOYAD' },
+            { key: 'tc_no', label: 'TC NO' },
+            { key: 'phone', label: 'TELEFON' },
+            { key: 'purpose', label: 'SEBEP' },
+            { key: 'visiting_block', label: 'BLOK' },
+            { key: 'check_in_at', label: 'GİRİŞ' },
+            { key: 'check_out_at', label: 'ÇIKIŞ' },
+            { key: 'notes', label: 'NOTLAR' },
+          ], rows, `ziyaretciler_${tab}.csv`)}>↓ CSV</button>
         </div>
         <div className="panel-body" style={{ padding: 0 }}>
           <div style={{ overflow: 'auto' }}>

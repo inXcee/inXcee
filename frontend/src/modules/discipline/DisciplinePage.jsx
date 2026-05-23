@@ -7,6 +7,7 @@ import { useDraft } from '../../shared/hooks/useDraft.js'
 import { useUrlParamState } from '../../shared/hooks/useUrlParamState.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 import DraftBanner from '../../shared/components/DraftBanner.jsx'
+import { exportRowsToCsv } from '../../shared/utils/exportData.js'
 
 /* ── helpers ─────────────────────────────────────────────────────────────── */
 const fmt = d => d ? new Date(d).toLocaleDateString('tr-TR') : '—'
@@ -856,6 +857,14 @@ export default function DisciplinePage() {
                 <div className="panel-header">
                   <div className="panel-title">DİSİPLİN GEÇMİŞİ</div>
                   <span className="badge badge-gray">{records.length}</span>
+                  {records.length > 0 && (
+                    <button className="btn btn-ghost btn-sm" style={{ marginLeft: 'auto' }} onClick={() => exportRowsToCsv([
+                      { key: 'card_type', label: 'KART' },
+                      { key: 'reason', label: 'SEBEP' },
+                      { key: 'created_by_name', label: 'VEREN' },
+                      { key: 'created_at', label: 'TARİH' },
+                    ], records, `disiplin_${selectedPerson?.full_name?.replace(/\s+/g, '_') || 'kayit'}.csv`)}>↓ CSV</button>
+                  )}
                 </div>
                 {records.length === 0 ? (
                   <div className="panel-body" style={{ textAlign: 'center', color: 'var(--text3)', fontSize: '13px', padding: '24px' }}>
