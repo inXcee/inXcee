@@ -243,7 +243,7 @@ function SessionDrawer({ id, onClose, onEdit }) {
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 9000, display: 'flex', justifyContent: 'flex-end' }}>
       <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 580, height: '100%', overflowY: 'auto', background: 'var(--surface)', borderLeft: '1px solid var(--border)', padding: 20 }}>
-        {isLoading || !data ? <div style={{ padding: 40, color: 'var(--text3)' }}>Yükleniyor…</div> : (
+        {isLoading || !data ? <SkeletonTable rows={4} cols={3} /> : (
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
               <div>

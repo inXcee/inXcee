@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import HelpHint from '../../shared/components/HelpHint.jsx'
+import { SkeletonGrid } from '../../shared/components/Skeleton.jsx'
 
 function formatBytes(b) {
   if (b == null) return '—'
@@ -28,7 +29,7 @@ export default function SystemHealthPage() {
   })
 
   if (isLoading) {
-    return <div style={{ padding: 40, textAlign: 'center', fontFamily: 'var(--mono)', color: 'var(--text3)' }}>Yükleniyor...</div>
+    return <SkeletonGrid count={6} />
   }
   if (error || !data) {
     return (

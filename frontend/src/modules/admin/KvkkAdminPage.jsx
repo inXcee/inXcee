@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import HelpHint from '../../shared/components/HelpHint.jsx'
+import { SkeletonText } from '../../shared/components/Skeleton.jsx'
 
 export default function KvkkAdminPage() {
   const qc = useQueryClient()
@@ -105,7 +106,7 @@ export default function KvkkAdminPage() {
         <div className="panel-header"><div className="panel-title">AYDINLATMA METNİ</div></div>
         <div className="panel-body">
           {isLoading ? (
-            <div style={{ color: 'var(--text3)', fontFamily: 'var(--mono)' }}>Yükleniyor...</div>
+            <SkeletonText />
           ) : (
             <>
               <p style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', marginBottom: 8 }}>

@@ -5,6 +5,7 @@ import api from '../../shared/api/client.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
+import { exportRowsToCsv } from '../../shared/utils/exportData.js'
 
 const toast = (m, t = 'success') => useToastStore.getState().addToast(m, t)
 const toastErr = (e) => toast(e?.response?.data?.error || 'Hata', 'error')
@@ -34,8 +35,18 @@ export default function ArchivedPage() {
             AYRILMIŞ PERSONEL — geri alabilir veya KVKK silebilirsin
           </p>
         </div>
-        <input className="form-input" placeholder="🔍 Ad ile ara…" value={q} onChange={e => setQ(e.target.value)}
-          style={{ width: 240, fontSize: 12, borderRadius: 10 }} />
+        <div style={{ display: 'flex', gap: 8 }}>
+          <input className="form-input" placeholder="🔍 Ad ile ara…" value={q} onChange={e => setQ(e.target.value)}
+            style={{ width: 240, fontSize: 12, borderRadius: 10 }} />
+          <button onClick={() => exportRowsToCsv([
+            { key: 'full_name', label: 'AD SOYAD' },
+            { key: 'tc_no', label: 'TC NO' },
+            { key: 'company_name', label: 'FİRMA' },
+            { key: 'room_no', label: 'ODA' },
+            { key: 'check_in_date', label: 'GİRİŞ' },
+            { key: 'check_out_date', label: 'ÇIKIŞ' },
+          ], data, 'arsiv_personel.csv')} className="btn btn-ghost btn-sm" style={{ borderRadius: 10 }}>↓ CSV</button>
+        </div>
       </div>
 
       {isLoading ? (
