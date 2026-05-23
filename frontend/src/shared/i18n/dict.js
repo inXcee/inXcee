@@ -68,6 +68,7 @@ const tr = {
       success: 'Mesajınız alındı. Teşekkürler.',
     },
     language: 'Dil',
+    pin_not_set: '· PIN tanımlı değil',
     info: {
       personal: 'Kişisel Bilgiler',
       company: 'Şirket',
@@ -188,6 +189,7 @@ const en = {
       success: 'Your message has been received. Thank you.',
     },
     language: 'Language',
+    pin_not_set: '· PIN not set',
     info: {
       personal: 'Personal Information',
       company: 'Company',
@@ -308,6 +310,7 @@ const ar = {
       success: 'تم استلام رسالتك. شكرًا لك.',
     },
     language: 'اللغة',
+    pin_not_set: '· الرمز السري غير محدد',
     info: {
       personal: 'المعلومات الشخصية',
       company: 'الشركة',

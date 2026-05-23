@@ -242,7 +242,7 @@ export default function SelfServicePage() {
                       className={`w-full text-left px-4 py-3 hover:bg-slate-700 transition-colors border-b border-slate-700 last:border-0 ${!p.has_pin ? 'opacity-50 cursor-not-allowed' : ''}`}
                       disabled={!p.has_pin}>
                       <div className="text-sm text-slate-200 font-medium">{p.full_name}</div>
-                      <div className="text-xs text-slate-500">{p.company || '—'} {!p.has_pin ? '· PIN tanımlı değil' : ''}</div>
+                      <div className="text-xs text-slate-500">{p.company || '—'} {!p.has_pin ? t('kiosk.pin_not_set') : ''}</div>
                     </button>
                   ))}
                 </div>
