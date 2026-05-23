@@ -5,6 +5,8 @@ import { logger } from '../../shared/logger.js'
 import {
   getKvkkPolicyService, setKvkkPolicyService, exportPersonnelDataService,
   anonymizePersonnelDataService,
+  getKvkkRetentionPolicyService, setKvkkRetentionPolicyService,
+  enforceKvkkRetentionService,
 } from './service.js'
 
 export const kvkkRouter = Router()
@@ -32,6 +34,33 @@ kvkkRouter.get('/personnel/:id/export', ...adminOnly, (req, res) => {
     res.json(result)
   } catch (e) {
     logger.error('[KVKK]', e)
+    res.status(500).json({ error: 'Sunucu hatası' })
+  }
+})
+
+// Retention policy — kaç gün çıkış yapmış personelin verileri otomatik silinir.
+// 0 = devre dışı (manuel anonimleştirme ile sürdürülür).
+kvkkRouter.get('/retention-policy', ...adminOnly, (req, res) => {
+  res.json(getKvkkRetentionPolicyService())
+})
+
+kvkkRouter.put('/retention-policy', ...adminOnly, (req, res) => {
+  const result = setKvkkRetentionPolicyService(req.body?.days)
+  if (result.error) return res.status(result.status).json({ error: result.error })
+  logAudit(req.user.id, 'kvkk_retention_set', 'kvkk', null, `Retention süresi ${result.days} gün, enabled=${result.enabled}`)
+  res.json(result)
+})
+
+// Manuel tetikleme — admin retention enforcement'ı şimdi çalıştırabilir
+// (cron beklemeden). Test ve compliance audit için kullanışlı.
+kvkkRouter.post('/retention-enforce', ...adminOnly, (req, res) => {
+  try {
+    const result = enforceKvkkRetentionService()
+    logAudit(req.user.id, 'kvkk_retention_enforce', 'kvkk', null,
+      `Manuel tetikleme: ${result.processed}/${result.candidates ?? 0} işlendi`)
+    res.json(result)
+  } catch (e) {
+    logger.error('[KVKK retention]', e)
     res.status(500).json({ error: 'Sunucu hatası' })
   }
 })

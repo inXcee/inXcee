@@ -122,3 +122,80 @@ describe('KVKK — anonymize (m.11)', () => {
     expect(res.status).toBe(404)
   })
 })
+
+describe('KVKK — retention policy', () => {
+  it('default policy enabled=false (henüz set edilmemiş)', async () => {
+    const res = await request(app).get('/api/kvkk/retention-policy')
+      .set('Authorization', `Bearer ${adminToken}`)
+    expect(res.status).toBe(200)
+    expect(res.body.enabled).toBe(false)
+    expect(res.body.days).toBe(0)
+  })
+
+  it('admin retention süresi belirleyebilir', async () => {
+    const res = await request(app).put('/api/kvkk/retention-policy')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ days: 365 })
+    expect(res.status).toBe(200)
+    expect(res.body.days).toBe(365)
+    expect(res.body.enabled).toBe(true)
+  })
+
+  it('geçersiz retention süresi reddedilir', async () => {
+    const negative = await request(app).put('/api/kvkk/retention-policy')
+      .set('Authorization', `Bearer ${adminToken}`).send({ days: -10 })
+    expect(negative.status).toBe(400)
+    const tooLong = await request(app).put('/api/kvkk/retention-policy')
+      .set('Authorization', `Bearer ${adminToken}`).send({ days: 5000 })
+    expect(tooLong.status).toBe(400)
+  })
+
+  it('non-admin retention policy değiştiremez', async () => {
+    const res = await request(app).put('/api/kvkk/retention-policy')
+      .set('Authorization', `Bearer ${userToken}`).send({ days: 365 })
+    expect(res.status).toBe(403)
+  })
+
+  it('manuel enforce — eski checkout kayıtlarını anonimleştirir', async () => {
+    const db = getDB()
+    // 400 gün önce check-out yapmış bir kayıt oluştur
+    const oldDate = new Date(Date.now() - 400 * 86400000).toISOString()
+    const oldRes = db.prepare(`
+      INSERT INTO personnel(tc_no, full_name, phone_number, company, check_out_date)
+      VALUES('77777777771', 'Eski Personel', '5559876543', 'X', ?)
+    `).run(oldDate)
+    const oldId = oldRes.lastInsertRowid
+
+    // 10 gün önce check-out — retention (365) altında, korunmalı
+    const recent = new Date(Date.now() - 10 * 86400000).toISOString()
+    const recentRes = db.prepare(`
+      INSERT INTO personnel(tc_no, full_name, phone_number, company, check_out_date)
+      VALUES('77777777772', 'Yakın Personel', '5559876544', 'X', ?)
+    `).run(recent)
+    const recentId = recentRes.lastInsertRowid
+
+    // Policy 365 gün (yukarıda set edildi)
+    const res = await request(app).post('/api/kvkk/retention-enforce')
+      .set('Authorization', `Bearer ${adminToken}`)
+    expect(res.status).toBe(200)
+    expect(res.body.processed).toBeGreaterThanOrEqual(1)
+
+    const oldAfter = db.prepare('SELECT full_name, tc_no FROM personnel WHERE id=?').get(oldId)
+    expect(oldAfter.tc_no).toBeNull()
+    expect(oldAfter.full_name).toMatch(/^Anonim #/)
+
+    const recentAfter = db.prepare('SELECT full_name, tc_no FROM personnel WHERE id=?').get(recentId)
+    expect(recentAfter.tc_no).toBe('77777777772') // henüz anonim değil
+    expect(recentAfter.full_name).toBe('Yakın Personel')
+  })
+
+  it('policy disabled iken enforce no-op', async () => {
+    await request(app).put('/api/kvkk/retention-policy')
+      .set('Authorization', `Bearer ${adminToken}`).send({ days: 0 })
+    const res = await request(app).post('/api/kvkk/retention-enforce')
+      .set('Authorization', `Bearer ${adminToken}`)
+    expect(res.status).toBe(200)
+    expect(res.body.skipped).toBe(true)
+    expect(res.body.reason).toBe('disabled')
+  })
+})

@@ -13,6 +13,7 @@ import { logAudit } from '../audit.js'
 import { logger } from '../logger.js'
 import { pruneTokenBlacklist } from '../auth/service.js'
 import { runBackupService, listBackupsService, deleteBackupService } from '../../modules/backup/service.js'
+import { enforceKvkkRetentionService } from '../../modules/kvkk/service.js'
 import { captureError } from '../sentry.js'
 
 let emailJob = null
@@ -162,6 +163,27 @@ export function startCronJobs() {
       const pruned = pruneTokenBlacklist()
       if (pruned > 0) logger.info(`[Cron] ${pruned} süresi dolmuş token blacklist kaydı temizlendi`)
     } catch (e) { logger.error('[Cron] Temizleme hatası:', e.message) }
+  }), TZ)
+
+  // Her gece 03:30 — KVKK retention enforcement (anonimleştirme cron'u).
+  // Cleanup (02:00) ve auto-backup (02:00) sonrası çalışır, audit log temizlik
+  // ile çakışmasın diye 90 dk sonra. Policy disabled ise no-op.
+  cron.schedule('30 3 * * *', withLock('kvkk-retention', () => {
+    const result = enforceKvkkRetentionService()
+    if (result.skipped) return
+    if (result.processed > 0) {
+      logger.info(`[Cron] KVKK retention: ${result.processed}/${result.candidates} personel anonimleştirildi (${result.retention_days} gün)`)
+      createNotification({
+        message: `🔒 KVKK retention: ${result.processed} personel kişisel verisi otomatik anonimleştirildi (${result.retention_days} gün sonra).`,
+        type: 'info',
+        module: 'kvkk',
+        target_role: 'campus_manager',
+        dedup_key: `kvkk_retention_${new Date().toISOString().slice(0, 10)}`,
+      })
+    }
+    if (result.errors > 0) {
+      logger.warn(`[Cron] KVKK retention: ${result.errors} hata oluştu`)
+    }
   }), TZ)
 
   // Her 6 saatte bir otomatik yedekleme — 02:00, 08:00, 14:00, 20:00 (TR saati)
