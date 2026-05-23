@@ -13,7 +13,7 @@ import { dirname, resolve } from 'node:path'
 import { sanitizeBody } from './shared/middleware/sanitize.js'
 import { getDB } from './shared/db/index.js'
 import { logger } from './shared/logger.js'
-import { setupExpressErrorHandler as setupSentryErrorHandler } from './shared/sentry.js'
+import { setupExpressErrorHandler as setupSentryErrorHandler, isSentryActive } from './shared/sentry.js'
 import { httpMetricsMiddleware } from './shared/metrics.js'
 import { getStats as getJobStats } from './shared/jobs/index.js'
 
@@ -208,6 +208,7 @@ app.get('/api/health', async (req, res) => {
     jobs_status: jobsStatus,
     heap_percent: heapPercent,
     heap_status: heapStatus,
+    sentry_status: isSentryActive() ? 'ok' : 'disabled',
     version: APP_VERSION,
     commit: APP_COMMIT,
     started_at: APP_STARTED_AT,

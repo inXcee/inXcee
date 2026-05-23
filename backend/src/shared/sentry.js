@@ -9,6 +9,10 @@ import { logger } from './logger.js'
 
 let initialized = false
 
+export function isSentryActive() {
+  return initialized
+}
+
 export function _scrubEvent(event) {
   if (event?.request) {
     delete event.request.data
@@ -26,7 +30,8 @@ export function _scrubEvent(event) {
 export function initSentry() {
   if (process.env.NODE_ENV === 'test') return false
   if (!process.env.SENTRY_DSN) {
-    logger.info('[Sentry] SENTRY_DSN yok — error tracking devre disi')
+    // warn seviyesi: prod'da silent calismak yerine log'da goze carpsin
+    logger.warn('[Sentry] SENTRY_DSN bos — error tracking DEVRE DISI (prod 5xx hatalari yakalanmiyor)')
     return false
   }
   Sentry.init({
