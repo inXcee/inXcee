@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { laundryApi } from './api.js'
 import SupplySettings from './components/SupplySettings.jsx'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
+import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
 
 function GarmentTypesAdmin() {
   const qc = useQueryClient()
@@ -68,7 +69,7 @@ function GarmentTypesAdmin() {
     } catch(e) { setError(e?.response?.data?.error || 'Hata') } finally { setSaving(false) }
   }
 
-  if (isLoading) return <div style={{ color: 'var(--text3)', fontSize: 13 }}>Yükleniyor...</div>
+  if (isLoading) return <SkeletonTable rows={4} cols={4} />
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -397,7 +398,7 @@ export default function LaundrySettings() {
           </div>
           <div className="panel-body" style={{ padding: 0 }}>
             {slaConfig.length === 0 ? (
-              <div style={{ padding: '12px 14px', fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)' }}>Yükleniyor...</div>
+              <SkeletonTable rows={3} cols={4} />
             ) : (
               <table className="data-table responsive-stack">
                 <thead>
