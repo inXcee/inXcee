@@ -5,6 +5,7 @@ import { useToastStore } from '../../shared/store/toastStore.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 import { SkeletonTable, SkeletonBlock } from '../../shared/components/Skeleton.jsx'
 import { REGIONS } from './zonguldakBartin.js'
+import { useUrlParamState } from '../../shared/hooks/useUrlParamState.js'
 
 const MapPicker = lazy(() => import('./MapPicker.jsx'))
 
@@ -23,7 +24,7 @@ const toast = (m, t = 'success') => useToastStore.getState().addToast(m, t)
 const toastErr = (e) => toast(e?.response?.data?.error || 'Hata', 'error')
 
 export default function TransportPage() {
-  const [tab, setTab] = useState('daily')
+  const [tab, setTab] = useUrlParamState('tab', 'daily')
   const [date, setDate] = useState(todayStr())
   const [searchOpen, setSearchOpen] = useState(false)
 

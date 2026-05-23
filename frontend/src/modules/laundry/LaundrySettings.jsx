@@ -4,6 +4,7 @@ import { laundryApi } from './api.js'
 import SupplySettings from './components/SupplySettings.jsx'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
+import { useUrlParamState } from '../../shared/hooks/useUrlParamState.js'
 
 function GarmentTypesAdmin() {
   const qc = useQueryClient()
@@ -328,7 +329,7 @@ function GoalsSettings() {
 }
 
 export default function LaundrySettings() {
-  const [tab, setTab] = useState('sla')
+  const [tab, setTab] = useUrlParamState('tab', 'sla')
   const qc = useQueryClient()
   const { data: slaConfig = [] } = useQuery({
     queryKey: ['laundry-sla-config'],

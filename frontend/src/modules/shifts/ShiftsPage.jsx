@@ -8,6 +8,7 @@ import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 import { useDebounce } from '../../shared/hooks/useDebounce.js'
 import { useSavedFilters, SavedFiltersBar } from '../../shared/hooks/useSavedFilters.jsx'
 import { SkeletonTable, SkeletonGrid } from '../../shared/components/Skeleton.jsx'
+import { useUrlParamState } from '../../shared/hooks/useUrlParamState.js'
 
 // Tek noktadan toast ile hata gosterimi — onError callback'lerinde alert yerine bunu cagir.
 // Module-level fonksiyon: closure'a bagimli degil, callback'lerde stale ref riski yok.
@@ -4245,7 +4246,7 @@ const NAV_ITEMS = [
 ]
 
 export default function ShiftsPage() {
-  const [activeTab, setActiveTab] = useState('schedule')
+  const [activeTab, setActiveTab] = useUrlParamState('tab', 'schedule')
   const [selectedStaff, setSelectedStaff] = useState(null)
   const [navExpanded, setNavExpanded] = useState(false)
 

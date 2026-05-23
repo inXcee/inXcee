@@ -6,6 +6,7 @@ import { useToastStore } from '../../shared/store/toastStore.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 import { inputDialog } from '../../shared/components/InputDialog.jsx'
 import { SkeletonCard } from '../../shared/components/Skeleton.jsx'
+import { useUrlParamState } from '../../shared/hooks/useUrlParamState.js'
 
 const toast = (m, t = 'success') => useToastStore.getState().addToast(m, t)
 const toastErr = (e) => toast(e?.response?.data?.error || 'Hata', 'error')
@@ -14,7 +15,7 @@ export default function Personnel360Page() {
   const { id } = useParams()
   const nav = useNavigate()
   const qc = useQueryClient()
-  const [tab, setTab] = useState('overview')
+  const [tab, setTab] = useUrlParamState('tab', 'overview')
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['personnel-360', id],
