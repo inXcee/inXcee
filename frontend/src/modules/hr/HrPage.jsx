@@ -6,6 +6,7 @@ import { useToastStore } from '../../shared/store/toastStore.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 import { useDebounce } from '../../shared/hooks/useDebounce.js'
 import { SkeletonGrid, SkeletonCard } from '../../shared/components/Skeleton.jsx'
+import { useUrlParamState } from '../../shared/hooks/useUrlParamState.js'
 
 const toast = (m, t = 'success') => useToastStore.getState().addToast(m, t)
 const toastErr = (e) => toast(e?.response?.data?.error || 'Hata', 'error')
@@ -17,7 +18,7 @@ const TABS = [
 ]
 
 export default function HrPage() {
-  const [tab, setTab] = useState('onboarding')
+  const [tab, setTab] = useUrlParamState('tab', 'onboarding')
   const [statusFilter, setStatusFilter] = useState('open')
   const [openId, setOpenId] = useState(null)
 
