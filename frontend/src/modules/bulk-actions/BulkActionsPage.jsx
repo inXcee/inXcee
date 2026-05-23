@@ -6,6 +6,7 @@ import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 import { BLOCKS } from '../../shared/blocks.js'
 import EmptyState from '../../shared/components/EmptyState.jsx'
 import { useSavedFilters, SavedFiltersBar } from '../../shared/hooks/useSavedFilters.jsx'
+import { SkeletonCard } from '../../shared/components/Skeleton.jsx'
 
 const EMPTY_FILTERS = {
   block: '', floor: '', company: '', company_id: '', q: '',
@@ -684,7 +685,7 @@ function DetailDrawer({ detail, onClose }) {
         padding: 20, boxShadow: '-8px 0 32px rgba(0,0,0,.4)',
       }}>
         {!detail ? (
-          <div style={{ color: 'var(--text3)' }}>Yükleniyor...</div>
+          <SkeletonCard lines={5} />
         ) : (
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 16 }}>

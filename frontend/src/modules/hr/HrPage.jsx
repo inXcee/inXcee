@@ -5,7 +5,7 @@ import api from '../../shared/api/client.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 import { useDebounce } from '../../shared/hooks/useDebounce.js'
-import { SkeletonGrid } from '../../shared/components/Skeleton.jsx'
+import { SkeletonGrid, SkeletonCard } from '../../shared/components/Skeleton.jsx'
 
 const toast = (m, t = 'success') => useToastStore.getState().addToast(m, t)
 const toastErr = (e) => toast(e?.response?.data?.error || 'Hata', 'error')
@@ -205,7 +205,7 @@ function ChecklistDrawer({ id, onClose }) {
         background: 'var(--surface)', borderLeft: '1px solid var(--border)', padding: 20, boxShadow: '-8px 0 32px rgba(0,0,0,.4)',
       }}>
         {isLoading || !data ? (
-          <div style={{ padding: 40, color: 'var(--text3)' }}>Yükleniyor…</div>
+          <SkeletonCard lines={6} />
         ) : (
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>

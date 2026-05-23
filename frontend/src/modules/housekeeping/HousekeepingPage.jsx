@@ -2,6 +2,7 @@ import { useState, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import HelpHint from '../../shared/components/HelpHint.jsx'
+import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
 import {
   BLOCKS,
   BLOCKS_BY_TYPE,
@@ -713,7 +714,7 @@ function RoomDetailPanel({ block, floor, roomNo, task, isPrivateBath, onComplete
               )}
             </div>
             {detailLoading ? (
-              <div style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)' }}>Yükleniyor...</div>
+              <SkeletonTable rows={2} cols={3} />
             ) : !details?.personnel?.length ? (
               <div style={{ padding: '10px 12px', borderRadius: '7px', background: 'var(--surface2)', border: '1px solid var(--border)', fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text4)' }}>
                 Odada kimse yok
@@ -775,7 +776,7 @@ function RoomDetailPanel({ block, floor, roomNo, task, isPrivateBath, onComplete
               </div>
 
               {detailLoading ? (
-                <div style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)', marginBottom: '14px' }}>Yükleniyor...</div>
+                <SkeletonTable rows={2} cols={3} />
               ) : faults.length === 0 ? (
                 <div style={{ padding: '12px', borderRadius: '7px', textAlign: 'center', background: 'var(--surface2)', border: '1px solid var(--border)', marginBottom: '14px' }}>
                   <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)' }}>Arıza kaydı yok</div>
@@ -1234,7 +1235,7 @@ export default function HousekeepingPage() {
 
       {/* Progress */}
       {isLoading
-        ? <div style={{ fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--text3)', padding: '20px 0' }}>Yükleniyor...</div>
+        ? <SkeletonTable rows={4} cols={5} />
         : <ProgressStrip tasks={tasks} onGenerate={() => generateTasks.mutate()} generating={generateTasks.isPending} />
       }
 

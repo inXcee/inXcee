@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import api from '../../shared/api/client.js'
 import DashCard from './DashCard.jsx'
+import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
 
 function Row({ label, value, color, hint, onClick }) {
   return (
@@ -74,9 +75,7 @@ export default function ComplianceWidget() {
       }
     >
       {isLoading || !data ? (
-        <div style={{ padding: '20px', textAlign: 'center', fontSize: 12, color: 'var(--text3)' }}>
-          Yükleniyor…
-        </div>
+        <SkeletonTable rows={3} cols={2} />
       ) : allOk ? (
         <div style={{
           padding: '20px', textAlign: 'center',
