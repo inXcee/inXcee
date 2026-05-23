@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../../shared/api/client.js'
 import Modal from './Modal.jsx'
+import { SkeletonTable } from '../../../shared/components/Skeleton.jsx'
 
 export default function CheckoutModal({ item, onClose }) {
   const qc = useQueryClient()
@@ -82,7 +83,7 @@ export default function CheckoutModal({ item, onClose }) {
           </div>
           <div style={{ maxHeight: '360px', overflow: 'auto', borderRadius: 10, border: '1px solid var(--border)' }}>
             {staffLoading ? (
-              <div style={{ padding: 30, textAlign: 'center', fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text3)' }}>Yükleniyor…</div>
+              <SkeletonTable rows={4} cols={3} />
             ) : filtered.length === 0 ? (
               <div style={{ padding: 30, textAlign: 'center', fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text3)' }}>
                 {allStaff.length === 0

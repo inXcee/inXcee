@@ -44,6 +44,7 @@ import GarmentScanModal         from './components/GarmentScanModal.jsx'
 import PremiumGarmentList       from './components/PremiumGarmentList.jsx'
 import AllRecordsTab            from './components/AllRecordsTab.jsx'
 import IroningQueuePanel       from './components/IroningQueuePanel.jsx'
+import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
 
 const COLOR_MAP = {
   'Beyaz': '#f0f0f0', 'Siyah': '#222', 'Gri': '#888',
@@ -1170,7 +1171,7 @@ function FullRecordsView() {
 
       {/* Records table */}
       {isLoading ? (
-        <div style={{ padding: 20, fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)' }}>Yükleniyor...</div>
+        <SkeletonTable rows={5} cols={5} />
       ) : items.length === 0 ? (
         <div className="panel" style={{ padding: '32px', textAlign: 'center' }}>
           <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)' }}>Kayıt bulunamadı</div>

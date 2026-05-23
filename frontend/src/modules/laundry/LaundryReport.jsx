@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { laundryApi } from './api.js'
+import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
 
 function WeeklyTrendChart({ data }) {
   const maxVal = Math.max(...data.map(d => Math.max(d.received, d.delivered, 1)))
@@ -123,7 +124,7 @@ export default function LaundryReport() {
       </div>
 
       {isLoading ? (
-        <div className="empty-state"><div className="empty-sub">Yükleniyor...</div></div>
+        <SkeletonTable rows={5} cols={5} />
       ) : !stats ? null : (
         <>
           {/* SUMMARY CARDS */}
@@ -315,7 +316,7 @@ export default function LaundryReport() {
                   Ara
                 </button>
               </div>
-              {personLoading && <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)' }}>Yükleniyor...</div>}
+              {personLoading && <SkeletonTable rows={3} cols={4} />}
               {personData && (
                 <div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 12 }}>
