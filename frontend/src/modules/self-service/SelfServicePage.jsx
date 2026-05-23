@@ -293,7 +293,7 @@ export default function SelfServicePage() {
             <div className="text-xs text-slate-500">{myInfo.room.block} Blok - Oda {myInfo.room.room_no} · Yatak {myInfo.room.bed_no}</div>
           )}
         </div>
-        <button onClick={() => setKioskToken(null)} className="text-xs text-slate-500 hover:text-slate-300 px-3 py-1 bg-slate-800 rounded-lg">Çıkış</button>
+        <button onClick={() => setKioskToken(null)} className="text-xs text-slate-500 hover:text-slate-300 px-3 py-1 bg-slate-800 rounded-lg">{t('kiosk.logout')}</button>
       </div>
 
       {/* Tabs */}
@@ -591,11 +591,11 @@ export default function SelfServicePage() {
           <div className="flex gap-2">
             <button onClick={() => setMaintMode('report')}
               className={`flex-1 py-2 rounded-xl text-xs font-medium transition-colors ${maintMode === 'report' ? 'bg-blue-700 text-white' : 'bg-slate-800 text-slate-400'}`}>
-              Bildir
+              {t('kiosk.maint.report')}
             </button>
             <button onClick={() => setMaintMode('track')}
               className={`flex-1 py-2 rounded-xl text-xs font-medium transition-colors ${maintMode === 'track' ? 'bg-blue-700 text-white' : 'bg-slate-800 text-slate-400'}`}>
-              Takibim {openMaintCount > 0 ? `(${openMaintCount})` : ''}
+              {t('kiosk.maint.track')} {openMaintCount > 0 ? `(${openMaintCount})` : ''}
             </button>
           </div>
 
@@ -603,27 +603,27 @@ export default function SelfServicePage() {
             maintSuccess ? (
               <div className="text-center py-6">
                 <div className="text-4xl mb-3">✅</div>
-                <div className="text-green-400 font-medium">Arıza kaydınız iletildi</div>
-                <button onClick={() => setMaintSuccess(false)} className="mt-4 text-xs text-blue-400">Yeni Bildirim</button>
+                <div className="text-green-400 font-medium">{t('kiosk.maint.success')}</div>
+                <button onClick={() => setMaintSuccess(false)} className="mt-4 text-xs text-blue-400">{t('kiosk.maint.report')}</button>
               </div>
             ) : (
               <>
                 <div>
-                  <label className="block text-sm text-slate-400 mb-2">Konum</label>
+                  <label className="block text-sm text-slate-400 mb-2">{t('kiosk.maint.location')}</label>
                   <input value={maintForm.location} onChange={e => setMaintForm(p => ({...p, location:e.target.value}))}
-                    placeholder="Oda 101, Banyo vb."
+                    placeholder={t('kiosk.maint.location')}
                     className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-sm text-slate-100 focus:outline-none focus:border-blue-500" />
                 </div>
                 <div>
-                  <label className="block text-sm text-slate-400 mb-2">Açıklama</label>
+                  <label className="block text-sm text-slate-400 mb-2">{t('kiosk.maint.description')}</label>
                   <textarea value={maintForm.description} onChange={e => setMaintForm(p => ({...p, description:e.target.value}))}
-                    rows={4} placeholder="Arızayı açıklayın..."
+                    rows={4} placeholder={t('kiosk.maint.description')}
                     className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-sm text-slate-100 focus:outline-none focus:border-blue-500" />
                 </div>
                 <button onClick={() => submitMaint.mutate()}
                   disabled={submitMaint.isPending || !maintForm.location || !maintForm.description}
                   className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 text-white rounded-xl py-3 text-sm font-medium">
-                  {submitMaint.isPending ? 'Gönderiliyor...' : 'Gönder'}
+                  {submitMaint.isPending ? t('common.loading') : t('kiosk.maint.submit')}
                 </button>
               </>
             )
@@ -694,17 +694,21 @@ export default function SelfServicePage() {
       {/* ── Tab: Şikayet/Öneri ── */}
       {activeTab === 'feedback' && (
         <div className="bg-slate-900 rounded-2xl p-5 space-y-4">
-          <h2 className="font-medium text-slate-300">Şikayet / Öneri</h2>
+          <h2 className="font-medium text-slate-300">{t('kiosk.tabs.feedback')}</h2>
           {fbSuccess ? (
             <div className="text-center py-6">
               <div className="text-4xl mb-3">📨</div>
-              <div className="text-green-400 font-medium">Geri bildiriminiz alındı</div>
-              <button onClick={() => setFbSuccess(false)} className="mt-4 text-xs text-blue-400">Yeni Gönder</button>
+              <div className="text-green-400 font-medium">{t('kiosk.feedback.success')}</div>
+              <button onClick={() => setFbSuccess(false)} className="mt-4 text-xs text-blue-400">{t('kiosk.feedback.submit')}</button>
             </div>
           ) : (
             <>
               <div className="flex gap-2">
-                {[['suggestion','💡 Öneri'],['complaint','⚠️ Şikayet'],['other','📝 Diğer']].map(([val,lbl]) => (
+                {[
+                  ['suggestion', `💡 ${t('kiosk.feedback.suggestion')}`],
+                  ['complaint',  `⚠️ ${t('kiosk.feedback.complaint')}`],
+                  ['other',      `📝 ${t('kiosk.feedback.other')}`],
+                ].map(([val,lbl]) => (
                   <button key={val} onClick={() => setFbForm(p=>({...p,type:val}))}
                     className={`flex-1 py-2 rounded-xl text-xs font-medium transition-colors ${fbForm.type===val ? 'bg-blue-700 text-white' : 'bg-slate-800 text-slate-400'}`}>
                     {lbl}
@@ -712,7 +716,7 @@ export default function SelfServicePage() {
                 ))}
               </div>
               <div>
-                <label className="block text-sm text-slate-400 mb-2">Mesajınız</label>
+                <label className="block text-sm text-slate-400 mb-2">{t('kiosk.feedback.message')}</label>
                 <textarea value={fbForm.message} onChange={e => setFbForm(p=>({...p,message:e.target.value}))}
                   rows={5} placeholder="En az 20 karakter..."
                   className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-sm text-slate-100 focus:outline-none focus:border-blue-500" />
@@ -723,12 +727,12 @@ export default function SelfServicePage() {
               <label className="flex items-center gap-3 cursor-pointer">
                 <input type="checkbox" checked={fbForm.anonymous} onChange={e => setFbForm(p=>({...p,anonymous:e.target.checked}))}
                   className="w-4 h-4 rounded accent-blue-500" />
-                <span className="text-sm text-slate-400">Anonim gönder</span>
+                <span className="text-sm text-slate-400">{t('kiosk.feedback.anonymous')}</span>
               </label>
               <button onClick={() => submitFb.mutate()}
                 disabled={submitFb.isPending || fbForm.message.length < 20}
                 className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 text-white rounded-xl py-3 text-sm font-medium">
-                {submitFb.isPending ? 'Gönderiliyor...' : 'Gönder'}
+                {submitFb.isPending ? t('common.loading') : t('kiosk.feedback.submit')}
               </button>
             </>
           )}
