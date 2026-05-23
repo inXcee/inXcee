@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useDebounce } from '../../shared/hooks/useDebounce.js'
 import { exportRowsToCsv, exportRowsToXlsx } from '../../shared/utils/exportData.js'
+import HelpHint from '../../shared/components/HelpHint.jsx'
 
 const COMPANY_EXPORT_COLS = [
   { key: 'name', label: 'Firma' },
@@ -168,7 +169,7 @@ export default function CompaniesPage() {
     <div style={{ padding: 16 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 16 }}>
         <div>
-          <h2 style={{ fontSize: 22, letterSpacing: 4 }}>FİRMALAR / SÖZLEŞMELER</h2>
+          <h2 style={{ fontSize: 22, letterSpacing: 4 }}>FİRMALAR / SÖZLEŞMELER<HelpHint topic="companies" title="FİRMALAR" /></h2>
           <p style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', letterSpacing: 2 }}>
             FIRMA YONETIMI VE SOZLESME TAKIBI
           </p>

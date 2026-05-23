@@ -179,4 +179,20 @@ export const HELP_CONTENT = {
 • Blok filtrelemesi
 • Temizlendi/Atlandı/Arıza sayıları
 • Odaya tıkla → günlük detay takvimi`,
+
+  companies: `Firma tanımları ve personel dağılımı.
+• Aktif firma listesi + personel sayıları
+• Yeni firma ekle / düzenle / sil
+• Firma silinmeden önce personel bağlantısı kontrol edilir`,
+
+  'campus-map': `Kampüs kat planı ve blok düzeni.
+• Blok ve kat bazlı oda yerleşimi
+• Oda durumu renk kodlaması (boş/dolu/karantina)
+• SVG tabanlı interaktif harita`,
+
+  'notification-groups': `Rol/konu bazlı bildirim alıcı kümeleri.
+• Grup oluştur: isim, açıklama, kanal seçimi
+• Üye ekle/çıkar (kullanıcı listesinden seçim)
+• Kanallar: Uygulama, E-posta, WhatsApp, Push
+• Toplu bildirim ve otomasyon eylemlerinde kullanılır`,
 }

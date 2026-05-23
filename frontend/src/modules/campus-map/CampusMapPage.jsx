@@ -7,6 +7,7 @@ import { useToastStore } from '../../shared/store/toastStore.js'
 import { useEventStream } from '../../shared/hooks/useEventStream.js'
 import { BLOCKS, BLOCK_BY_NAME, blockColor } from '../../shared/blocks.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
+import HelpHint from '../../shared/components/HelpHint.jsx'
 
 // Bildirim mesajindan blok adi cikar (orn: "M1-101 karantinaya..." → M1)
 const BLOCK_NAMES = BLOCKS.map(b => b.block).sort((a, b) => b.length - a.length) // uzun olan once
@@ -600,7 +601,7 @@ export default function CampusMapPage() {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 12 }}>
         <div>
-          <h2 style={{ fontFamily: 'var(--display)', fontSize: 22, letterSpacing: 3, margin: 0 }}>KAMPUS HARITASI</h2>
+          <h2 style={{ fontFamily: 'var(--display)', fontSize: 22, letterSpacing: 3, margin: 0 }}>KAMPUS HARITASI<HelpHint topic="campus-map" title="KAMPUS HARITASI" /></h2>
           <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', letterSpacing: 1, marginTop: 4 }}>
             {isLoading ? 'YUKLENIYOR...' : `${BLOCKS.length} BLOK • CANLI • ${new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}`}
           </div>
