@@ -155,3 +155,44 @@ describe('H6 Yetki', () => {
     expect(r.status).toBe(200)
   })
 })
+
+describe('İSG uyum özeti', () => {
+  it('compliance-summary beklenen alanları döner', async () => {
+    const r = await request(app).get('/api/safety/compliance-summary')
+      .set('Authorization', `Bearer ${token}`)
+    expect(r.status).toBe(200)
+    expect(typeof r.body.expired_certs).toBe('number')
+    expect(typeof r.body.expiring_soon).toBe('number')
+    expect(typeof r.body.untrained_12m).toBe('number')
+    expect(typeof r.body.kkd_outstanding).toBe('number')
+    expect(typeof r.body.total_active).toBe('number')
+  })
+
+  it('süresi dolmuş sertifika sayıya yansır', async () => {
+    const db = getDB()
+    // Önceki testlerin etkilememesi için fresh staff kullan
+    db.prepare('INSERT INTO staff(full_name, is_active) VALUES(?,1)').run('Expired Cert Staff')
+    const expiredStaffId = db.prepare("SELECT id FROM staff WHERE full_name='Expired Cert Staff'").get().id
+
+    const sessionId = db.prepare(`
+      INSERT INTO training_sessions(title, category, session_date, status)
+      VALUES('Eski Eğitim', 'safety', '2023-01-01', 'completed')
+    `).run().lastInsertRowid
+    db.prepare(`
+      INSERT INTO training_attendances(session_id, staff_id, attended, cert_expires_at)
+      VALUES(?, ?, 1, '2024-01-01')
+    `).run(sessionId, expiredStaffId)
+
+    const r = await request(app).get('/api/safety/compliance-summary')
+      .set('Authorization', `Bearer ${token}`)
+    expect(r.status).toBe(200)
+    expect(r.body.expired_certs).toBeGreaterThanOrEqual(1)
+  })
+
+  it('yetkisiz erişim reddedilir', async () => {
+    const t = (await request(app).post('/api/auth/login').send({ username: 'camasir', password: 'admin123' })).body.token
+    const r = await request(app).get('/api/safety/compliance-summary')
+      .set('Authorization', `Bearer ${t}`)
+    expect(r.status).toBe(403)
+  })
+})

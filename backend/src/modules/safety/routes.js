@@ -207,3 +207,83 @@ safetyRouter.delete('/kkd/:id', ...mgr, (req, res) => {
   try { getDB().prepare('DELETE FROM kkd_assignments WHERE id=?').run(+req.params.id); res.json({ ok: true }) }
   catch (e) { res.status(400).json({ error: e.message }) }
 })
+
+// ── Uyumluluk özeti — dashboard widget için ──
+// Aktif personel üzerinden 3 kritik metrik: süresi dolmuş sertifika,
+// 30 gün içinde dolacak ve hiç eğitim almamış.
+safetyRouter.get('/compliance-summary', ...view, (req, res) => {
+  try {
+    const db = getDB()
+    const today = new Date().toISOString().slice(0, 10)
+    const in30 = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10)
+    const year_ago = new Date(Date.now() - 365 * 86400000).toISOString().slice(0, 10)
+
+    // Sertifikası süresi dolmuş aktif personel (en güncel cert_expires_at per staff)
+    const expired = db.prepare(`
+      SELECT COUNT(DISTINCT a.staff_id) as cnt
+      FROM training_attendances a
+      JOIN staff s ON s.id = a.staff_id
+      WHERE s.is_active = 1
+        AND a.attended = 1
+        AND a.cert_expires_at IS NOT NULL
+        AND a.cert_expires_at < ?
+        AND a.cert_expires_at = (
+          SELECT MAX(a2.cert_expires_at)
+          FROM training_attendances a2
+          WHERE a2.staff_id = a.staff_id
+            AND a2.cert_expires_at IS NOT NULL
+        )
+    `).get(today)
+
+    // 30 gün içinde süresi dolacak (bugünden itibaren, süresi dolmamış)
+    const expiring_soon = db.prepare(`
+      SELECT COUNT(DISTINCT a.staff_id) as cnt
+      FROM training_attendances a
+      JOIN staff s ON s.id = a.staff_id
+      WHERE s.is_active = 1
+        AND a.attended = 1
+        AND a.cert_expires_at IS NOT NULL
+        AND a.cert_expires_at >= ?
+        AND a.cert_expires_at <= ?
+        AND a.cert_expires_at = (
+          SELECT MAX(a2.cert_expires_at)
+          FROM training_attendances a2
+          WHERE a2.staff_id = a.staff_id
+            AND a2.cert_expires_at IS NOT NULL
+        )
+    `).get(today, in30)
+
+    // Hiç eğitim almamış veya son 1 yılda eğitim almamış aktif personel
+    const untrained = db.prepare(`
+      SELECT COUNT(*) as cnt
+      FROM staff s
+      WHERE s.is_active = 1
+        AND NOT EXISTS (
+          SELECT 1 FROM training_attendances a
+          JOIN training_sessions ts ON ts.id = a.session_id
+          WHERE a.staff_id = s.id
+            AND a.attended = 1
+            AND ts.session_date >= ?
+        )
+    `).get(year_ago)
+
+    // KKD zimmetleri teslim edilmemiş (sadece sayı — detay KKD sayfasında)
+    const kkd_outstanding = db.prepare(`
+      SELECT COUNT(*) as cnt
+      FROM kkd_assignments k
+      JOIN staff s ON s.id = k.staff_id
+      WHERE s.is_active = 1 AND k.returned_at IS NULL
+    `).get()
+
+    // Toplam aktif personel (oran hesabı için)
+    const total_active = db.prepare(`SELECT COUNT(*) as cnt FROM staff WHERE is_active = 1`).get()
+
+    res.json({
+      expired_certs: expired.cnt,
+      expiring_soon: expiring_soon.cnt,
+      untrained_12m: untrained.cnt,
+      kkd_outstanding: kkd_outstanding.cnt,
+      total_active: total_active.cnt,
+    })
+  } catch (e) { logger.error('[safety/compliance-summary]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})

@@ -10,6 +10,7 @@ import ManagementWidgets from './ManagementWidgets.jsx'
 import TodaysPulse from './TodaysPulse.jsx'
 import UpcomingEvents from './UpcomingEvents.jsx'
 import HealthScoreWidget from './HealthScoreWidget.jsx'
+import ComplianceWidget from './ComplianceWidget.jsx'
 import AnomalyAlerts from './AnomalyAlerts.jsx'
 import DateRangeFilter from './DateRangeFilter.jsx'
 import { useDateRange } from './useDateRange.js'
@@ -569,10 +570,17 @@ export default function DashboardPage() {
           <TrendChartsSection days={days} label={rangeLabel} />
         </div>
 
-        {/* Sağ panel placeholder #3 — Yaklaşan Etkinlikler (Faz 2) */}
+        {/* Sağ panel #3 — Yaklaşan Etkinlikler */}
         <div className="bento-cell bento-span-4">
           <UpcomingEvents />
         </div>
+
+        {/* İSG Uyum Durumu — sadece campus_manager/shift_supervisor — span 4 */}
+        {isManager && (
+          <div className="bento-cell bento-span-4">
+            <ComplianceWidget />
+          </div>
+        )}
 
         {/* Blok HeatMap — span 12 */}
         <div className="bento-cell bento-span-12">
