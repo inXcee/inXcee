@@ -6,6 +6,7 @@ import { useToastStore } from '../../shared/store/toastStore.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 import { inputDialog } from '../../shared/components/InputDialog.jsx'
 import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
+import { exportRowsToCsv } from '../../shared/utils/exportData.js'
 
 const toast = (m, t = 'success') => useToastStore.getState().addToast(m, t)
 const toastErr = (e) => toast(e?.response?.data?.error || 'Hata', 'error')
@@ -70,7 +71,19 @@ function SessionsTab() {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12, alignItems: 'center' }}>
         <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', letterSpacing: 1.5 }}>{sessions.length} EĞİTİM</div>
-        <button onClick={() => setCreating(true)} className="btn btn-primary btn-sm" style={{ borderRadius: 10 }}>+ EĞİTİM</button>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button onClick={() => exportRowsToCsv([
+            { key: 'id', label: 'ID' },
+            { key: 'title', label: 'BAŞLIK' },
+            { key: 'category', label: 'KATEGORİ' },
+            { key: 'session_date', label: 'TARİH' },
+            { key: 'duration_min', label: 'SÜRE (dk)' },
+            { key: 'location', label: 'KONUM' },
+            { key: 'trainer', label: 'EĞİTMEN' },
+            { key: 'status', label: 'DURUM' },
+          ], sessions, 'isg_egitimler.csv')} className="btn btn-ghost btn-sm" style={{ borderRadius: 10 }}>↓ CSV</button>
+          <button onClick={() => setCreating(true)} className="btn btn-primary btn-sm" style={{ borderRadius: 10 }}>+ EĞİTİM</button>
+        </div>
       </div>
 
       {isLoading ? <SkeletonTable rows={6} cols={5} /> : !sessions.length ? (
@@ -303,12 +316,18 @@ function ExpiringCertsTab() {
 
   return (
     <div>
-      <div style={{ marginBottom: 12, display: 'flex', gap: 8, alignItems: 'center' }}>
+      <div style={{ marginBottom: 12, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
         <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', letterSpacing: 1.5 }}>SONRAKİ</span>
         {[15, 30, 60, 90].map(d => (
           <button key={d} onClick={() => setDays(d)} className="btn btn-ghost btn-xs"
             style={{ borderRadius: 8, ...(days === d ? { background: 'var(--accent)', color: '#000' } : {}) }}>{d} GÜN</button>
         ))}
+        <button onClick={() => exportRowsToCsv([
+          { key: 'full_name', label: 'PERSONEL' },
+          { key: 'title', label: 'EĞİTİM' },
+          { key: 'dept_name', label: 'DEPARTMAN' },
+          { key: 'cert_expires_at', label: 'BİTİŞ TARİHİ' },
+        ], data, 'sertifika_uyari.csv')} className="btn btn-ghost btn-xs" style={{ marginLeft: 'auto' }}>↓ CSV</button>
       </div>
       {isLoading ? <SkeletonTable rows={5} cols={4} /> : !data.length ? (
         <div style={{ padding: 50, textAlign: 'center', background: 'var(--surface)', borderRadius: 14 }}>
@@ -391,7 +410,20 @@ function KkdTab() {
               style={{ borderRadius: 8, ...(activeFilter === v ? { background: 'var(--accent)', color: '#000' } : {}) }}>{l}</button>
           ))}
         </div>
-        <button onClick={() => setCreating(true)} className="btn btn-primary btn-sm" style={{ borderRadius: 10 }}>+ ZİMMET</button>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button onClick={() => exportRowsToCsv([
+            { key: 'id', label: 'ID' },
+            { key: 'full_name', label: 'PERSONEL' },
+            { key: 'item_type', label: 'MALZEME' },
+            { key: 'size', label: 'BEDEN' },
+            { key: 'serial_no', label: 'SERİ NO' },
+            { key: 'issued_at', label: 'DAĞITIM TARİHİ' },
+            { key: 'returned_at', label: 'İADE TARİHİ' },
+            { key: 'condition', label: 'DURUM' },
+            { key: 'notes', label: 'NOTLAR' },
+          ], data, 'kkd_zimmet.csv')} className="btn btn-ghost btn-sm" style={{ borderRadius: 10 }}>↓ CSV</button>
+          <button onClick={() => setCreating(true)} className="btn btn-primary btn-sm" style={{ borderRadius: 10 }}>+ ZİMMET</button>
+        </div>
       </div>
 
       {creating && (
