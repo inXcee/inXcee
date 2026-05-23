@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { useAuthStore } from '../../shared/store/authStore.js'
+import { SkeletonCard } from '../../shared/components/Skeleton.jsx'
 
 export default function KvkkPage() {
   const { data, isLoading } = useQuery({
@@ -27,7 +28,7 @@ export default function KvkkPage() {
         </div>
 
         {isLoading ? (
-          <div style={{ padding: 40, textAlign: 'center', color: 'var(--text3)' }}>Yükleniyor...</div>
+          <SkeletonCard lines={10} />
         ) : (
           <div className="panel">
             <div className="panel-body">

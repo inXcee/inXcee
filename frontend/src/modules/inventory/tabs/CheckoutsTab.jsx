@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import api from '../../../shared/api/client.js'
 import { fmt } from '../constants.js'
 import ActiveCheckoutsPanel from '../components/ActiveCheckoutsPanel.jsx'
+import { SkeletonTable } from '../../../shared/components/Skeleton.jsx'
 
 export default function CheckoutsTab() {
   const [view, setView] = useState('active')
@@ -84,7 +85,7 @@ function CheckoutReport() {
   })
 
   if (isLoading) {
-    return <div style={{ padding: 32, textAlign: 'center', fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text3)' }}>Yükleniyor…</div>
+    return <SkeletonTable rows={5} cols={4} />
   }
 
   const t = data?.totals || {}

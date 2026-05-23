@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
+import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
 
 const toast = (m, t = 'success') => useToastStore.getState().addToast(m, t)
 
@@ -50,7 +51,7 @@ function AbsenceTab() {
     queryFn: () => api.get(`/reports/absence-dashboard?days=${days}`).then(r => r.data),
   })
 
-  if (isLoading) return <div style={{ padding: 30, color: 'var(--text3)' }}>Yükleniyor…</div>
+  if (isLoading) return <SkeletonTable rows={5} cols={4} />
   if (error) return <div style={{ padding: 30, color: 'var(--red)' }}>Yüklenemedi: {error?.response?.data?.error || error?.message || 'Sunucu hatası'}</div>
   if (!data) return <div style={{ padding: 30, color: 'var(--text3)' }}>Veri yok</div>
 
@@ -151,7 +152,7 @@ function CostTab() {
         <button onClick={exportCsv} className="btn btn-primary btn-sm" style={{ borderRadius: 10 }}>📊 CSV</button>
       </div>
 
-      {isLoading ? <div style={{ padding: 30, color: 'var(--text3)' }}>Yükleniyor…</div> : !data?.rows?.length ? (
+      {isLoading ? <SkeletonTable rows={5} cols={4} /> : !data?.rows?.length ? (
         <div style={{ padding: 50, textAlign: 'center', background: 'var(--surface)', borderRadius: 14 }}>Veri yok</div>
       ) : (
         <div style={{ background: 'var(--surface)', borderRadius: 14, border: '1px solid var(--border)', overflow: 'hidden' }}>
@@ -197,7 +198,7 @@ function ComparisonTab() {
     queryFn: () => api.get(`/reports/comparison?month=${month}`).then(r => r.data),
   })
 
-  if (isLoading || !data) return <div style={{ padding: 30, color: 'var(--text3)' }}>Yükleniyor…</div>
+  if (isLoading || !data) return <SkeletonTable rows={5} cols={4} />
 
   const METRICS = [
     ['worked', '✅ Çalışılan Gün', 'var(--green)'],
@@ -297,7 +298,7 @@ function BuilderTab() {
         <button onClick={exportCsv} className="btn btn-primary btn-sm" style={{ borderRadius: 10 }}>📊 CSV İNDİR</button>
       </div>
 
-      {isLoading ? <div style={{ padding: 30, color: 'var(--text3)' }}>Yükleniyor…</div> : (
+      {isLoading ? <SkeletonTable rows={5} cols={4} /> : (
         <div style={{ background: 'var(--surface)', borderRadius: 14, border: '1px solid var(--border)', overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
             <thead>

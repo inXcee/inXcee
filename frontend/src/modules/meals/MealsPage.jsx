@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
+import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
 
 const toast = (m, t = 'success') => useToastStore.getState().addToast(m, t)
 const toastErr = (e) => toast(e?.response?.data?.error || 'Hata', 'error')
@@ -192,7 +193,7 @@ function DailyTab() {
           style={{ width: 'auto', fontSize: 12 }} />
       </div>
 
-      {isLoading ? <div style={{ padding: 30, color: 'var(--text3)' }}>Yükleniyor…</div> : !data ? null : (
+      {isLoading ? <SkeletonTable rows={4} cols={4} /> : !data ? null : (
         <>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 14 }}>
             {Object.entries(MEALS).map(([k, v]) => {
@@ -252,7 +253,7 @@ function ForecastTab() {
         <input type="date" className="form-input" value={date} onChange={e => setDate(e.target.value)}
           style={{ width: 'auto', fontSize: 12 }} />
       </div>
-      {isLoading ? <div style={{ padding: 30, color: 'var(--text3)' }}>Yükleniyor…</div> : !data ? null : (
+      {isLoading ? <SkeletonTable rows={4} cols={4} /> : !data ? null : (
         <>
           <div style={{ padding: 18, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, marginBottom: 14 }}>
             <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', letterSpacing: 1.5, marginBottom: 8 }}>VARDİYADA BEKLENEN</div>
@@ -305,7 +306,7 @@ function CostTab() {
       <div style={{ marginBottom: 14 }}>
         <input type="month" className="form-input" value={month} onChange={e => setMonth(e.target.value)} style={{ width: 'auto', fontSize: 12 }} />
       </div>
-      {isLoading ? <div style={{ padding: 30, color: 'var(--text3)' }}>Yükleniyor…</div> : !data ? null : (
+      {isLoading ? <SkeletonTable rows={4} cols={4} /> : !data ? null : (
         <>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, marginBottom: 14 }}>
             {data.by_meal.map(m => (

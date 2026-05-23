@@ -12,6 +12,7 @@ import {
   getFloorLabel,
 } from '../../shared/blocks.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
+import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
 
 function roomCls(room, defaultCap = 6) {
   if (room.status === 'maintenance') return 'r-maint'
@@ -129,7 +130,7 @@ function ZimmetPanel({ personnelId, personnelName }) {
     onSuccess: () => qc.invalidateQueries(['zimmet', personnelId]),
   })
 
-  if (isLoading) return <div style={{ fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--text3)' }}>Yükleniyor...</div>
+  if (isLoading) return <SkeletonTable rows={4} cols={4} />
   if (items.length === 0) return <div className="empty-sub">Zimmet kaydı yok</div>
 
   const unreturned = items.filter(z => !z.returned_at)
@@ -508,7 +509,7 @@ function RoomDetailPanel({ room, onClose, onRoomUpdated, swapSource, onSwapSelec
           <div>
             {/* Personnel list */}
             {personnelLoading ? (
-              <div style={{ fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--text3)', padding: '12px 0' }}>Yükleniyor...</div>
+              <SkeletonTable rows={3} cols={3} />
             ) : personnel.length === 0 ? (
               <div className="empty-state" style={{ padding: '20px 0' }}>
                 <div className="empty-icon" style={{ fontSize: '28px' }}>👤</div>

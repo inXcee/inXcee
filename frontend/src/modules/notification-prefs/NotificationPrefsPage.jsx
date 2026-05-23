@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import HelpHint from '../../shared/components/HelpHint.jsx'
+import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
 
 const CHANNELS = [
   { key: 'in_app',   label: 'Uygulama' },
@@ -83,7 +84,7 @@ export default function NotificationPrefsPage() {
   const allOffFor = (channel) => setMatrix(prev => prev.map(p => p.channel === channel ? { ...p, enabled: false } : p))
 
   if (isLoading || !matrix) {
-    return <div style={{ padding: 40, textAlign: 'center', fontFamily: 'var(--mono)', color: 'var(--text3)' }}>Yükleniyor...</div>
+    return <SkeletonTable rows={6} cols={4} />
   }
 
   return (

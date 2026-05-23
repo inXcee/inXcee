@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import api from '../../shared/api/client.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
+import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
 
 const toast = (m, t = 'success') => useToastStore.getState().addToast(m, t)
 const toastErr = (e) => toast(e?.response?.data?.error || 'Hata', 'error')
@@ -38,7 +39,7 @@ export default function ArchivedPage() {
       </div>
 
       {isLoading ? (
-        <div style={{ padding: 40, color: 'var(--text3)' }}>Yükleniyor…</div>
+        <SkeletonTable rows={5} cols={4} />
       ) : !data.length ? (
         <div style={{ padding: 60, textAlign: 'center', background: 'var(--surface)', borderRadius: 14, border: '1px solid var(--border)' }}>
           <div style={{ fontSize: 40, opacity: 0.3, marginBottom: 10 }}>🗄</div>

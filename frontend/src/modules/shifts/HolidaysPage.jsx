@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
+import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
 
 const toast = (m, t = 'success') => useToastStore.getState().addToast(m, t)
 const toastErr = (e) => toast(e?.response?.data?.error || 'Hata', 'error')
@@ -80,7 +81,7 @@ export default function HolidaysPage() {
       </div>
 
       {isLoading ? (
-        <div style={{ padding: 30, color: 'var(--text3)' }}>Yükleniyor…</div>
+        <SkeletonTable rows={4} cols={3} />
       ) : !data.length ? (
         <div style={{ padding: 50, textAlign: 'center', background: 'var(--surface)', borderRadius: 14, border: '1px solid var(--border)' }}>
           <div style={{ fontSize: 36, opacity: 0.3, marginBottom: 8 }}>🎉</div>

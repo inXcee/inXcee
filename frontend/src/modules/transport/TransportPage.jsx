@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
+import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
 import { REGIONS } from './zonguldakBartin.js'
 
 const MapPicker = lazy(() => import('./MapPicker.jsx'))
@@ -170,7 +171,7 @@ function DailyTab({ date }) {
     onError: toastErr,
   })
 
-  if (isLoading) return <div style={{ padding: 40, color: 'var(--text3)', fontFamily: 'var(--mono)' }}>Yükleniyor…</div>
+  if (isLoading) return <SkeletonTable rows={5} cols={5} />
   if (!data) return null
 
   const coverage = data.on_shift_count > 0 ? Math.round(data.assigned_count / data.on_shift_count * 100) : 0
@@ -446,7 +447,7 @@ function ManifestDrawer({ routeId, date, onClose }) {
         background: 'var(--surface)', borderLeft: '1px solid var(--border)', padding: 20, boxShadow: '-8px 0 32px rgba(0,0,0,.4)',
       }}>
         {isLoading || !data ? (
-          <div style={{ padding: 40, textAlign: 'center', color: 'var(--text3)', fontFamily: 'var(--mono)' }}>Yükleniyor…</div>
+          <SkeletonTable rows={4} cols={4} />
         ) : (
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
@@ -1236,7 +1237,7 @@ function StaffDetailDrawer({ staffId, onClose }) {
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 9000, display: 'flex', justifyContent: 'flex-end' }}>
       <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 520, height: '100%', overflowY: 'auto', background: 'var(--surface)', borderLeft: '1px solid var(--border)', padding: 20, boxShadow: '-8px 0 32px rgba(0,0,0,.4)' }}>
         {isLoading || !data ? (
-          <div style={{ padding: 40, textAlign: 'center', color: 'var(--text3)', fontFamily: 'var(--mono)' }}>Yükleniyor…</div>
+          <SkeletonTable rows={4} cols={4} />
         ) : (
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
@@ -1491,7 +1492,7 @@ function ReportsTab() {
     URL.revokeObjectURL(url)
   }
 
-  if (isLoading) return <div style={{ padding: 40, color: 'var(--text3)', fontFamily: 'var(--mono)' }}>Yükleniyor…</div>
+  if (isLoading) return <SkeletonTable rows={5} cols={5} />
   if (!data) return null
 
   const { totals, by_pickup, dept_pickup, shift_pickup, route_utilization, by_district, no_pickup_staff, daily_trend, no_show_top = [], per_staff_usage = [] } = data

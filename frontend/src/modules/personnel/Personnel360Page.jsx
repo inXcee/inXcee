@@ -5,6 +5,7 @@ import api from '../../shared/api/client.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 import { inputDialog } from '../../shared/components/InputDialog.jsx'
+import { SkeletonCard } from '../../shared/components/Skeleton.jsx'
 
 const toast = (m, t = 'success') => useToastStore.getState().addToast(m, t)
 const toastErr = (e) => toast(e?.response?.data?.error || 'Hata', 'error')
@@ -37,7 +38,7 @@ export default function Personnel360Page() {
     onError: toastErr,
   })
 
-  if (isLoading) return <div style={{ padding: 40, color: 'var(--text3)' }}>Yükleniyor…</div>
+  if (isLoading) return <SkeletonCard lines={8} />
   if (error || !data) {
     const msg = error?.response?.data?.error || error?.message || 'Personel bulunamadı'
     const code = error?.response?.status

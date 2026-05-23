@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import HelpHint from '../../shared/components/HelpHint.jsx'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
+import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
 
 export default function ErrorLogPage() {
   const qc = useQueryClient()
@@ -87,7 +88,7 @@ export default function ErrorLogPage() {
       </div>
 
       {isLoading ? (
-        <div style={{ padding: 40, textAlign: 'center', fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text3)' }}>Yukleniyor...</div>
+        <SkeletonTable rows={5} cols={4} />
       ) : items.length === 0 ? (
         <div className="panel" style={{ padding: 48, textAlign: 'center' }}>
           <div style={{ fontSize: 40, marginBottom: 8 }}>✓</div>
