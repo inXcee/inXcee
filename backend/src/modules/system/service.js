@@ -4,6 +4,7 @@ import os from 'os'
 import { fileURLToPath } from 'url'
 import { getDB } from '../../shared/db/index.js'
 import { listBackupsService } from '../backup/service.js'
+import { getStats as getJobStats } from '../../shared/jobs/index.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const SERVER_STARTED_AT = new Date().toISOString()
@@ -60,6 +61,10 @@ export function getSystemInfoService() {
   const backupDir = process.env.BACKUP_DIR || path.join(path.dirname(db.path), 'backups')
 
   const mem = process.memoryUsage()
+  const heapPercent = Math.round((mem.heapUsed / mem.heapTotal) * 100)
+
+  let jobStats = { pending: 0, processing: 0, failed: 0 }
+  try { jobStats = getJobStats() } catch { /* jobs not initialized in test */ }
 
   return {
     server: {
@@ -75,7 +80,9 @@ export function getSystemInfoService() {
       },
       hostname: os.hostname(),
       load_avg: os.loadavg().map(n => +n.toFixed(2)),
+      heap_percent: heapPercent,
     },
+    jobs: jobStats,
     database: db,
     stats: getDbStats(),
     backups: {

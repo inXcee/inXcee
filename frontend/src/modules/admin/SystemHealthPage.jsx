@@ -55,6 +55,7 @@ export default function SystemHealthPage() {
   const backups = data.backups || { count: 0, total_size: 0 }
   const storage = data.storage || {}
   const cron = data.cron || {}
+  const jobs = data.jobs || {}
 
   return (
     <div>
@@ -88,7 +89,7 @@ export default function SystemHealthPage() {
           <Row k="Node" v={srv.node_version || '—'} />
           <Row k="Ortam" v={srv.env || '—'} />
           <Row k="Hostname" v={srv.hostname || '—'} small />
-          <Row k="Heap" v={`${mem.heap_used_mb ?? '—'} / ${mem.heap_total_mb ?? '—'} MB`} />
+          <Row k="Heap" v={`${mem.heap_used_mb ?? '—'} / ${mem.heap_total_mb ?? '—'} MB${srv.heap_percent != null ? ` (${srv.heap_percent}%)` : ''}`} />
           <Row k="RSS" v={`${mem.rss_mb ?? '—'} MB`} />
           <Row k="Load (1/5/15dk)" v={loadAvg.length ? loadAvg.join(' / ') : '—'} small />
         </Card>
@@ -140,6 +141,25 @@ export default function SystemHealthPage() {
           <Row k="Temizlik" v={cron.cleanup || '—'} mono small />
           <Row k="SLA Kontrol" v={cron.sla_check || '—'} mono small />
           <Row k="Premium uyarı" v={cron.premium_alert || '—'} mono small />
+        </Card>
+
+        <Card
+          title="JOB QUEUE"
+          accent={jobs.failed > 0 ? '#ef4444' : jobs.pending > 50 ? '#f59e0b' : '#10b981'}
+        >
+          <Row
+            k="Bekleyen"
+            v={jobs.pending ?? '—'}
+            color={jobs.pending > 50 ? 'var(--amber)' : undefined}
+            highlight={jobs.pending > 50}
+          />
+          <Row k="İşleniyor" v={jobs.processing ?? '—'} />
+          <Row
+            k="Başarısız"
+            v={jobs.failed ?? '—'}
+            color={jobs.failed > 0 ? 'var(--red)' : undefined}
+            highlight={jobs.failed > 0}
+          />
         </Card>
       </div>
     </div>
