@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
+import HelpHint from '../../shared/components/HelpHint.jsx'
 
 function StarBar({ value, max = 5 }) {
   if (value == null) return <span style={{ color: 'var(--text3)' }}>—</span>
@@ -29,7 +30,7 @@ export default function SurveysPage() {
   return (
     <div style={{ padding: 16 }}>
       <div style={{ marginBottom: 16 }}>
-        <h2 style={{ fontSize: 22, letterSpacing: 4 }}>MEMNUNİYET ANKETİ</h2>
+        <h2 style={{ fontSize: 22, letterSpacing: 4 }}>MEMNUNİYET ANKETİ<HelpHint topic="surveys" title="MEMNUNİYET ANKETİ" /></h2>
         <p style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', letterSpacing: 2 }}>
           SON 30 GUN — SAKIN GERIBILDIRIMI
         </p>

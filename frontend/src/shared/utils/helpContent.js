@@ -150,4 +150,21 @@ export const HELP_CONTENT = {
 • Kaydedilen filtreler (SavedFilters) tekrar kullanılabilir
 • CSV ve Excel export
 • Kişiye tıkla → 360° profil sayfası`,
+
+  drills: `Tahliye tatbikatı planlama ve kayıt.
+• Tatbikat tipi, tarih, katılımcı sayısı
+• Blok bazlı yoklama listesi (PDF)
+• Geçmiş tatbikatlar ve notlar`,
+
+  automation: `Tetikleyici-koşul-eylem otomasyonu.
+• Tetikleyici: checkin, checkout, maintenance, vs.
+• Koşul: blok, alan, değer karşılaştırmaları
+• Eylem: bildirim gönder, görev oluştur
+• Aktif/pasif durum; test modu`,
+
+  surveys: `Personel memnuniyet anket sonuçları.
+• Oda, temizlik, yemek, çamaşır, genel puanlama
+• Self-service kiosk'tan anonim dolduruluyor
+• Trend grafik + firma bazlı segmentasyon
+• Ortalama puan = kalite göstergesi`,
 }

@@ -6,6 +6,7 @@ import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 import EmptyState from '../../shared/components/EmptyState.jsx'
 import { useStickyForm, StickyDraftBanner } from '../../shared/hooks/useStickyForm.jsx'
 import RosterPanel from './RosterPanel.jsx'
+import HelpHint from '../../shared/components/HelpHint.jsx'
 
 const TYPES = [
   { value: 'fire', label: '🔥 Yangın' },
@@ -68,7 +69,7 @@ export default function DrillsPage() {
     <div style={{ padding: 16 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 16 }}>
         <div>
-          <h2 style={{ fontSize: 22, letterSpacing: 4 }}>TATBİKATLAR</h2>
+          <h2 style={{ fontSize: 22, letterSpacing: 4 }}>TATBİKATLAR<HelpHint topic="drills" title="TATBİKATLAR" /></h2>
           <p style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', letterSpacing: 2 }}>
             YANGIN · DEPREM · GUVENLIK · TAHLIYE
           </p>
