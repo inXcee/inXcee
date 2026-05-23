@@ -5,6 +5,7 @@ import api from '../../shared/api/client.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 import { inputDialog } from '../../shared/components/InputDialog.jsx'
+import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
 
 const toast = (m, t = 'success') => useToastStore.getState().addToast(m, t)
 const toastErr = (e) => toast(e?.response?.data?.error || 'Hata', 'error')
@@ -72,7 +73,7 @@ function SessionsTab() {
         <button onClick={() => setCreating(true)} className="btn btn-primary btn-sm" style={{ borderRadius: 10 }}>+ EĞİTİM</button>
       </div>
 
-      {isLoading ? <div style={{ padding: 30, color: 'var(--text3)' }}>Yükleniyor…</div> : !sessions.length ? (
+      {isLoading ? <SkeletonTable rows={6} cols={5} /> : !sessions.length ? (
         <div style={{ padding: 60, textAlign: 'center', background: 'var(--surface)', borderRadius: 14, border: '1px solid var(--border)' }}>
           <div style={{ fontSize: 36, opacity: 0.3, marginBottom: 8 }}>📚</div>
           <div style={{ fontFamily: 'var(--display)', fontSize: 14, letterSpacing: 2 }}>HENÜZ EĞİTİM YOK</div>
@@ -309,7 +310,7 @@ function ExpiringCertsTab() {
             style={{ borderRadius: 8, ...(days === d ? { background: 'var(--accent)', color: '#000' } : {}) }}>{d} GÜN</button>
         ))}
       </div>
-      {isLoading ? <div style={{ padding: 30, color: 'var(--text3)' }}>Yükleniyor…</div> : !data.length ? (
+      {isLoading ? <SkeletonTable rows={5} cols={4} /> : !data.length ? (
         <div style={{ padding: 50, textAlign: 'center', background: 'var(--surface)', borderRadius: 14 }}>
           <div style={{ fontSize: 36, opacity: 0.3, marginBottom: 8 }}>✓</div>
           <div style={{ fontFamily: 'var(--display)', fontSize: 14 }}>SERTİFİKA BİTECEK PERSONEL YOK</div>
@@ -439,7 +440,7 @@ function KkdTab() {
         </div>
       )}
 
-      {isLoading ? <div style={{ padding: 30, color: 'var(--text3)' }}>Yükleniyor…</div> : !data.length ? (
+      {isLoading ? <SkeletonTable rows={5} cols={5} /> : !data.length ? (
         <div style={{ padding: 50, textAlign: 'center', background: 'var(--surface)', borderRadius: 14 }}>
           <div style={{ fontSize: 36, opacity: 0.3, marginBottom: 8 }}>🦺</div>
           <div style={{ fontFamily: 'var(--display)', fontSize: 14 }}>KKD ZİMMET YOK</div>
