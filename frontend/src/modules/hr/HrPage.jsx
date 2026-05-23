@@ -7,6 +7,7 @@ import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 import { useDebounce } from '../../shared/hooks/useDebounce.js'
 import { SkeletonGrid, SkeletonCard } from '../../shared/components/Skeleton.jsx'
 import { useUrlParamState } from '../../shared/hooks/useUrlParamState.js'
+import HelpHint from '../../shared/components/HelpHint.jsx'
 
 const toast = (m, t = 'success') => useToastStore.getState().addToast(m, t)
 const toastErr = (e) => toast(e?.response?.data?.error || 'Hata', 'error')
@@ -25,7 +26,7 @@ export default function HrPage() {
   return (
     <div style={{ maxWidth: 1280 }} className="fade-up">
       <div style={{ marginBottom: 16 }}>
-        <h1 style={{ fontSize: 28, letterSpacing: 4, color: 'var(--text)', margin: 0 }}>İK / HR AKIŞLARI</h1>
+        <h1 style={{ fontSize: 28, letterSpacing: 4, color: 'var(--text)', margin: 0 }}>İK / HR AKIŞLARI<HelpHint topic="hr" title="İK / HR AKIŞLARI" /></h1>
         <p style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', marginTop: 4, letterSpacing: 1.5 }}>
           İŞE GİRİŞ CHECKLIST · AYRILMA + İBRA PDF · SÖZLEŞME UYARILARI
         </p>

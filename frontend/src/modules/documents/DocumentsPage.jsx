@@ -4,6 +4,7 @@ import api from '../../shared/api/client.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 import EmptyState from '../../shared/components/EmptyState.jsx'
+import { exportRowsToCsv } from '../../shared/utils/exportData.js'
 
 const CATEGORIES = [
   { value: 'contract', label: 'Sözleşme' },
@@ -165,6 +166,16 @@ export default function DocumentsPage() {
             {CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
           </select>
           <input className="form-input" style={{ width: 200 }} placeholder="Ara..." value={filter.q} onChange={e => setFilter(f => ({ ...f, q: e.target.value }))} />
+          {rows.length > 0 && (
+            <button className="btn btn-ghost btn-sm" onClick={() => exportRowsToCsv([
+              { key: 'title', label: 'BAŞLIK' },
+              { key: 'category', label: 'KATEGORİ' },
+              { key: 'file_name', label: 'DOSYA ADI' },
+              { key: 'expires_at', label: 'SON GEÇERLİLİK' },
+              { key: 'uploaded_by_name', label: 'YÜKLEYEN' },
+              { key: 'created_at', label: 'YÜKLEME TARİHİ' },
+            ], rows, 'belgeler.csv')}>↓ CSV</button>
+          )}
         </div>
         <div className="panel-body" style={{ padding: 0 }}>
           {rows.length === 0 ? (

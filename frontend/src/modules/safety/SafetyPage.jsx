@@ -8,6 +8,7 @@ import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 import { inputDialog } from '../../shared/components/InputDialog.jsx'
 import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
 import { exportRowsToCsv } from '../../shared/utils/exportData.js'
+import HelpHint from '../../shared/components/HelpHint.jsx'
 
 const toast = (m, t = 'success') => useToastStore.getState().addToast(m, t)
 const toastErr = (e) => toast(e?.response?.data?.error || 'Hata', 'error')
@@ -33,7 +34,7 @@ export default function SafetyPage() {
   return (
     <div style={{ maxWidth: 1200 }} className="fade-up">
       <div style={{ marginBottom: 16 }}>
-        <h1 style={{ fontSize: 28, letterSpacing: 4, color: 'var(--text)', margin: 0 }}>İŞ GÜVENLİĞİ & EĞİTİM</h1>
+        <h1 style={{ fontSize: 28, letterSpacing: 4, color: 'var(--text)', margin: 0 }}>İŞ GÜVENLİĞİ & EĞİTİM<HelpHint topic="safety" title="İŞ GÜVENLİĞİ" /></h1>
         <p style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', marginTop: 4, letterSpacing: 1.5 }}>
           EĞİTİM TAKVİMİ · SERTİFİKA TAKİBİ · KKD ZİMMET
         </p>

@@ -6,6 +6,7 @@ import { useToastStore } from '../../shared/store/toastStore.js'
 import { SkeletonGrid, SkeletonTable } from '../../shared/components/Skeleton.jsx'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 import { useUrlParamState } from '../../shared/hooks/useUrlParamState.js'
+import HelpHint from '../../shared/components/HelpHint.jsx'
 
 const toast = (m, t = 'success') => useToastStore.getState().addToast(m, t)
 const toastErr = (e) => toast(e?.response?.data?.error || 'Hata', 'error')
@@ -28,7 +29,7 @@ export default function PerformancePage() {
   return (
     <div style={{ maxWidth: 1200 }} className="fade-up">
       <div style={{ marginBottom: 16 }}>
-        <h1 style={{ fontSize: 28, letterSpacing: 4, color: 'var(--text)', margin: 0 }}>PERFORMANS</h1>
+        <h1 style={{ fontSize: 28, letterSpacing: 4, color: 'var(--text)', margin: 0 }}>PERFORMANS<HelpHint topic="performance" title="PERFORMANS" /></h1>
         <p style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', marginTop: 4, letterSpacing: 1.5 }}>
           DEĞERLENDIRME · HEDEF TAKİBİ · POZİTİF PUAN (DİSİPLİN DENGELEYİCİ)
         </p>

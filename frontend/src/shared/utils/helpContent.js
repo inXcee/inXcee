@@ -96,4 +96,52 @@ export const HELP_CONTENT = {
 • Heap memory + uptime + node version
 • Yedek yoksa kart sarı uyarı
 • Son 24s hata sayısı`,
+
+  safety: `İş güvenliği eğitim ve KKD zimmet takibi.
+• Eğitim takvimi: tarih, kategori, katılımcı listesi
+• Sertifika takibi: bitiş tarihi yaklaşanlar uyarı
+• KKD zimmet: baret, gözlük, iş ayakkabısı dağıtım kaydı
+• Dashboard uyum widget'ı → kritik durumları gösterir`,
+
+  transport: `Personel servis rotaları + günlük atama.
+• Rota tanımı: araç, sürücü, kapasite, duraklar
+• Günlük çizelge: hangi personel hangi araçta
+• Harita önizleme (durak koordinatları girildiyse)
+• No-show takibi → disiplin sistemine bağlı`,
+
+  hr: `İşe giriş onboarding + ayrılma ibra akışları.
+• Onboarding checklist: zimmet, oryantasyon, evrak
+• Ayrılma: ibra formu PDF + dijital imza
+• Sözleşme bitiş tarihi uyarıları
+• Personel iletişim / acil kişi bilgi güncellemesi`,
+
+  performance: `Performans değerlendirme + hedef takibi.
+• 360° değerlendirme: yönetici + öz değerlendirme
+• Hedef belirleme ve ilerleme takibi
+• Pozitif puan: disiplin puanı için dengeleyici
+• Dönemsel rapor + grafik`,
+
+  meals: `Yemekhane giriş kontrolü + menü yönetimi.
+• QR/barkod ile kişi girişi
+• Günlük menü tanımlama ve kalori bilgisi
+• Katılım istatistikleri ve israf raporları
+• Kara listedeki personel girişte uyarı`,
+
+  communications: `Duyuru ve toplu mesaj sistemi.
+• Yayın (broadcast): tüm veya seçili grup
+• WhatsApp entegrasyonu (yapılandırıldıysa)
+• Bildirim grupları yönetimi
+• Geçmiş mesajlar log'u`,
+
+  integrity: `Çift kayıt ve veri tutarlılık kontrolü.
+• Aynı TC/pasaport ile birden fazla aktif kayıt
+• Oda kapasitesini aşan atamalar
+• Karantina odalarındaki aktif kişiler
+• Düzeltme aksiyonu önerileri`,
+
+  visitors: `Ziyaretçi giriş-çıkış kaydı.
+• TC kimlik doğrulama
+• Ziyaret amacı ve ziyaret edilen blok
+• Aktif ziyaretçi listesi ve geçmiş
+• CSV export ile güvenlik raporlaması`,
 }

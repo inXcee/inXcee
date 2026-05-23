@@ -5,6 +5,7 @@ import { useToastStore } from '../../shared/store/toastStore.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 import EmptyState from '../../shared/components/EmptyState.jsx'
 import { useStickyForm, StickyDraftBanner } from '../../shared/hooks/useStickyForm.jsx'
+import { exportRowsToCsv } from '../../shared/utils/exportData.js'
 
 const CATEGORIES = [
   { value: 'food', label: 'Yemek', color: '#f97316' },
@@ -217,6 +218,17 @@ export default function ExpensesPage() {
           </select>
           <input className="form-input" style={{ width: 130 }} type="date" value={filter.from} onChange={e => setFilter(f => ({ ...f, from: e.target.value }))} />
           <input className="form-input" style={{ width: 130 }} type="date" value={filter.to} onChange={e => setFilter(f => ({ ...f, to: e.target.value }))} />
+          {rows.length > 0 && (
+            <button className="btn btn-ghost btn-sm" onClick={() => exportRowsToCsv([
+              { key: 'expense_date', label: 'TARİH' },
+              { key: 'category', label: 'KATEGORİ' },
+              { key: 'description', label: 'AÇIKLAMA' },
+              { key: 'amount', label: 'TUTAR' },
+              { key: 'currency', label: 'PARA BİRİMİ' },
+              { key: 'company_name', label: 'FİRMA' },
+              { key: 'created_by_name', label: 'EKLEYEN' },
+            ], rows, 'giderler.csv')}>↓ CSV</button>
+          )}
         </div>
         <div className="panel-body" style={{ padding: 0 }}>
           {rows.length === 0 ? (

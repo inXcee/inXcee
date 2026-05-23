@@ -9,6 +9,7 @@ import { useDebounce } from '../../shared/hooks/useDebounce.js'
 import { useSavedFilters, SavedFiltersBar } from '../../shared/hooks/useSavedFilters.jsx'
 import { SkeletonTable, SkeletonGrid } from '../../shared/components/Skeleton.jsx'
 import { useUrlParamState } from '../../shared/hooks/useUrlParamState.js'
+import HelpHint from '../../shared/components/HelpHint.jsx'
 
 // Tek noktadan toast ile hata gosterimi — onError callback'lerinde alert yerine bunu cagir.
 // Module-level fonksiyon: closure'a bagimli degil, callback'lerde stale ref riski yok.
@@ -4398,7 +4399,7 @@ export default function ShiftsPage() {
           <span style={{ fontSize: '22px' }}>{activeNav?.icon}</span>
           <div>
             <div style={{ fontFamily: 'var(--display)', fontSize: '16px', letterSpacing: '3px', color: 'var(--text)' }}>
-              {activeNav?.label?.toUpperCase() || 'VARDİYA'}
+              {activeNav?.label?.toUpperCase() || 'VARDİYA'}<HelpHint topic="shifts" title="VARDİYA YÖNETİMİ" />
             </div>
             <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '1px', marginTop: '1px' }}>
               VARDİYA YÖNETİM SİSTEMİ

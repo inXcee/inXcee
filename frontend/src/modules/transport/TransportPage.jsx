@@ -6,6 +6,7 @@ import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 import { SkeletonTable, SkeletonBlock } from '../../shared/components/Skeleton.jsx'
 import { REGIONS } from './zonguldakBartin.js'
 import { useUrlParamState } from '../../shared/hooks/useUrlParamState.js'
+import HelpHint from '../../shared/components/HelpHint.jsx'
 
 const MapPicker = lazy(() => import('./MapPicker.jsx'))
 
@@ -50,7 +51,7 @@ export default function TransportPage() {
     <div style={{ position: 'relative', zIndex: 1, maxWidth: 1200 }} className="fade-up">
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 20, flexWrap: 'wrap', gap: 10 }}>
         <div>
-          <h1 style={{ fontSize: 30, letterSpacing: 5, color: 'var(--text)', margin: 0 }}>SERVİSLER</h1>
+          <h1 style={{ fontSize: 30, letterSpacing: 5, color: 'var(--text)', margin: 0 }}>SERVİSLER<HelpHint topic="transport" title="SERVİSLER" /></h1>
           <p style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', marginTop: 5, letterSpacing: 1.5 }}>
             ULAŞIM ROTALARI · DURAKLAR · GÜNLÜK ATAMA
           </p>
