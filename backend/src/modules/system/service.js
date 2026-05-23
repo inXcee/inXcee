@@ -1,6 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
+import v8 from 'v8'
 import { fileURLToPath } from 'url'
 import { getDB } from '../../shared/db/index.js'
 import { listBackupsService } from '../backup/service.js'
@@ -61,7 +62,7 @@ export function getSystemInfoService() {
   const backupDir = process.env.BACKUP_DIR || path.join(path.dirname(db.path), 'backups')
 
   const mem = process.memoryUsage()
-  const heapPercent = Math.round((mem.heapUsed / mem.heapTotal) * 100)
+  const heapPercent = Math.round((mem.heapUsed / v8.getHeapStatistics().heap_size_limit) * 100)
 
   let jobStats = { pending: 0, processing: 0, failed: 0 }
   try { jobStats = getJobStats() } catch { /* jobs not initialized in test */ }

@@ -7,6 +7,7 @@ import rateLimit, { ipKeyGenerator } from 'express-rate-limit'
 import jwt from 'jsonwebtoken'
 import { readFileSync } from 'node:fs'
 import { statfs } from 'node:fs/promises'
+import v8 from 'node:v8'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 import { sanitizeBody } from './shared/middleware/sanitize.js'
@@ -187,8 +188,10 @@ app.get('/api/health', async (req, res) => {
     else if (jobs.pending >= JOB_BACKLOG_WARN) jobsStatus = 'warning'
   } catch { jobsStatus = 'unknown' }
 
+  // V8 heap baskısı: heapUsed/heapTotal hatalı (heapTotal ihtiyaca göre adımlı büyür, normalde %90+).
+  // Doğrusu V8'in OOM limitine (heap_size_limit) oranı.
   const memUsage = process.memoryUsage()
-  const heapPercent = Math.round((memUsage.heapUsed / memUsage.heapTotal) * 100)
+  const heapPercent = Math.round((memUsage.heapUsed / v8.getHeapStatistics().heap_size_limit) * 100)
   const heapStatus = heapPercent >= HEAP_WARN_PERCENT ? 'warning' : 'ok'
 
   const isCritical = dbStatus === 'error' || diskStatus === 'critical' || jobsStatus === 'critical'
