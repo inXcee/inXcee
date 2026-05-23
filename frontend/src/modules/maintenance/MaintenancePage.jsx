@@ -7,6 +7,7 @@ import DraftBanner from '../../shared/components/DraftBanner.jsx'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 import { BLOCKS_BY_TYPE, BLOCK_BY_NAME, expectedRoomNos as expectedRoomNosFromConfig } from '../../shared/blocks.js'
 import { exportRowsToCsv } from '../../shared/utils/exportData.js'
+import { useDebounce } from '../../shared/hooks/useDebounce.js'
 
 const MAINTENANCE_EXPORT_COLS = [
   { key: 'id', label: 'ID' },
@@ -1049,6 +1050,7 @@ export default function MaintenancePage() {
   const [formPhoto, setFormPhoto] = useState(null)
   const [filter, setFilter] = useState('open')
   const [searchTerm, setSearchTerm] = useState('')
+  const debouncedSearch = useDebounce(searchTerm, 250)
   const [selectedId, setSelectedId] = useState(null)
   const [viewMode, setViewMode] = useState('list') // 'list' | 'kanban'
 
@@ -1063,18 +1065,18 @@ export default function MaintenancePage() {
     if (filter === 'overdue') url += 'status=open&'
     else if (filter === 'all' || filter === 'kanban') { /* no status filter */ }
     else url += `status=${filter}&`
-    if (searchTerm.trim()) url += `search=${encodeURIComponent(searchTerm.trim())}&`
+    if (debouncedSearch.trim()) url += `search=${encodeURIComponent(debouncedSearch.trim())}&`
     return url
   }
 
   const kanbanQuery = () => {
     let url = '/maintenance/requests?'
-    if (searchTerm.trim()) url += `search=${encodeURIComponent(searchTerm.trim())}&`
+    if (debouncedSearch.trim()) url += `search=${encodeURIComponent(debouncedSearch.trim())}&`
     return url
   }
 
   const { data: rawRequests = [], isLoading } = useQuery({
-    queryKey: ['maintenance-requests', viewMode === 'kanban' ? 'all' : filter, searchTerm],
+    queryKey: ['maintenance-requests', viewMode === 'kanban' ? 'all' : filter, debouncedSearch],
     queryFn: () => api.get(viewMode === 'kanban' ? kanbanQuery() : buildQuery()).then(r => r.data),
   })
 
