@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
+import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
 
 const toast = (m, t = 'success') => useToastStore.getState().addToast(m, t)
 const toastErr = (e) => toast(e?.response?.data?.error || 'Hata', 'error')
@@ -58,7 +59,7 @@ function ScanTab() {
     queryFn: () => api.get('/integrity/scan').then(r => r.data),
   })
 
-  if (isLoading) return <div style={{ padding: 30, color: 'var(--text3)' }}>Yükleniyor…</div>
+  if (isLoading) return <SkeletonTable rows={8} cols={4} />
   const filtered = sev ? data.issues.filter(i => i.severity === sev) : data.issues
 
   return (
@@ -181,7 +182,7 @@ function KvkkTab() {
         </div>
       )}
 
-      {isLoading ? <div style={{ padding: 30, color: 'var(--text3)' }}>Yükleniyor…</div> : !data.length ? (
+      {isLoading ? <SkeletonTable rows={5} cols={4} /> : !data.length ? (
         <div style={{ padding: 50, textAlign: 'center', background: 'var(--surface)', borderRadius: 14 }}>
           <div style={{ fontSize: 36, opacity: 0.3 }}>⚖</div>
           <div style={{ fontFamily: 'var(--display)', fontSize: 14, marginTop: 8 }}>KVKK TALEBİ YOK</div>
@@ -235,7 +236,7 @@ function AuditTab() {
     queryKey: ['audit-summary', days],
     queryFn: () => api.get(`/integrity/audit-summary?days=${days}`).then(r => r.data),
   })
-  if (isLoading || !data) return <div style={{ padding: 30, color: 'var(--text3)' }}>Yükleniyor…</div>
+  if (isLoading || !data) return <SkeletonTable rows={6} cols={3} />
 
   return (
     <div>
