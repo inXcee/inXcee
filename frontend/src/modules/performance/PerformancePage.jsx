@@ -5,6 +5,7 @@ import api from '../../shared/api/client.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
 import { SkeletonGrid, SkeletonTable } from '../../shared/components/Skeleton.jsx'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
+import { useUrlParamState } from '../../shared/hooks/useUrlParamState.js'
 
 const toast = (m, t = 'success') => useToastStore.getState().addToast(m, t)
 const toastErr = (e) => toast(e?.response?.data?.error || 'Hata', 'error')
@@ -22,7 +23,7 @@ const TABS = [
 ]
 
 export default function PerformancePage() {
-  const [tab, setTab] = useState('reviews')
+  const [tab, setTab] = useUrlParamState('tab', 'reviews')
 
   return (
     <div style={{ maxWidth: 1200 }} className="fade-up">

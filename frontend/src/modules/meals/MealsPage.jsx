@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
 import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
+import { useUrlParamState } from '../../shared/hooks/useUrlParamState.js'
 
 const toast = (m, t = 'success') => useToastStore.getState().addToast(m, t)
 const toastErr = (e) => toast(e?.response?.data?.error || 'Hata', 'error')
@@ -30,7 +31,7 @@ const TABS = [
 ]
 
 export default function MealsPage() {
-  const [tab, setTab] = useState('scan')
+  const [tab, setTab] = useUrlParamState('tab', 'scan')
 
   return (
     <div style={{ maxWidth: 1200 }} className="fade-up">
