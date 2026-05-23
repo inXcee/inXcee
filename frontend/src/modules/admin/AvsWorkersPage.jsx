@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
+import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
 
 const ROLE_PRESETS = [
   { label: 'Kat Personeli', dept: 'Temizlik', color: '#16a34a' },
@@ -169,7 +170,7 @@ export default function AvsWorkersPage() {
           </div>
           <div className="panel-body" style={{ padding: 0 }}>
             {isLoading ? (
-              <div style={{ padding: '16px', color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: '12px' }}>Yükleniyor...</div>
+              <SkeletonTable rows={6} cols={4} />
             ) : filteredWorkers.length === 0 ? (
               <div style={{ padding: '16px', color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: '12px' }}>
                 {deptFilter ? `"${deptFilter}" departmanında kayıt yok` : 'Henüz çalışan yok'}

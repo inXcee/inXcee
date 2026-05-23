@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import HelpHint from '../../shared/components/HelpHint.jsx'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
+import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
 
 function formatSize(bytes) {
   if (bytes < 1024) return `${bytes} B`
@@ -118,7 +119,7 @@ export default function BackupPage() {
       </div>
 
       {isLoading ? (
-        <div style={{ padding: 40, textAlign: 'center', fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text3)' }}>Yükleniyor...</div>
+        <SkeletonTable rows={4} cols={4} />
       ) : backups.length === 0 ? (
         <div className="panel" style={{ padding: 48, textAlign: 'center' }}>
           <div style={{ fontSize: 32, marginBottom: 8 }}>📂</div>

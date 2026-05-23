@@ -4,6 +4,7 @@ import api from '../../shared/api/client.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 import PasswordStrengthInput from '../../shared/components/PasswordStrengthInput.jsx'
+import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
 
 const ROLES = [
   { value: 'campus_manager', label: 'Kampus Muduru' },
@@ -259,7 +260,7 @@ export default function UsersPage() {
         </div>
         <div className="panel-body" style={{ overflowX: 'auto' }}>
           {isLoading ? (
-            <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text3)' }}>Yukleniyor...</div>
+            <SkeletonTable rows={5} cols={5} />
           ) : (
             <table className="data-table responsive-stack">
               <thead>
