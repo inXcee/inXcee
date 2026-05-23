@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { useDraft } from '../../shared/hooks/useDraft.js'
 import DraftBanner from '../../shared/components/DraftBanner.jsx'
+import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
 
 const INIT_FORM = { title: '', body: '', expires_at: '' }
 
@@ -41,7 +42,7 @@ export default function AnnouncementsPage() {
     create.mutate({ title: form.title.trim(), body: form.body.trim(), expires_at: form.expires_at || null })
   }
 
-  if (isLoading) return <div style={{ padding:'32px' }}>Yükleniyor...</div>
+  if (isLoading) return <SkeletonTable rows={4} cols={3} />
 
   return (
     <div style={{ padding:'24px', maxWidth:'700px' }}>
