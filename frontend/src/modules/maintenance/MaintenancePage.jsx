@@ -6,6 +6,19 @@ import { useDraft } from '../../shared/hooks/useDraft.js'
 import DraftBanner from '../../shared/components/DraftBanner.jsx'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 import { BLOCKS_BY_TYPE, BLOCK_BY_NAME, expectedRoomNos as expectedRoomNosFromConfig } from '../../shared/blocks.js'
+import { exportRowsToCsv } from '../../shared/utils/exportData.js'
+
+const MAINTENANCE_EXPORT_COLS = [
+  { key: 'id', label: 'ID' },
+  { key: 'location', label: 'Konum' },
+  { key: 'description', label: 'Açıklama' },
+  { key: 'status_label', label: 'Durum' },
+  { key: 'priority_label', label: 'Öncelik' },
+  { key: 'wait_reason', label: 'Bekleme Nedeni' },
+  { key: 'opened_at', label: 'Açılış' },
+  { key: 'closed_at', label: 'Kapanış' },
+  { key: 'reporter', label: 'Raporlayan' },
+]
 
 const PRIORITIES = [
   { key: 'high', label: 'ACİL', color: 'var(--red)' },
@@ -1101,6 +1114,20 @@ export default function MaintenancePage() {
           </p>
         </div>
         <div style={{ display: 'flex', gap: '8px' }}>
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={() => {
+              const rows = requests.map(r => ({
+                ...r,
+                status_label: r.status === 'open' ? 'Açık' : r.status === 'in_progress' ? 'Devam' : 'Tamamlandı',
+                priority_label: r.priority === 'high' ? 'Acil' : r.priority === 'medium' ? 'Normal' : 'Düşük',
+              }))
+              exportRowsToCsv(MAINTENANCE_EXPORT_COLS, rows, `arizalar-${filter}.csv`)
+            }}
+            title="Mevcut listeyi CSV olarak indir"
+          >
+            CSV
+          </button>
           <button onClick={() => setShowTechs(s => !s)} className="btn btn-ghost">
             {showTechs ? '✕ TEKNİSYENLER' : '⚙ TEKNİSYENLER'}
           </button>
