@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import HelpHint from '../../shared/components/HelpHint.jsx'
+import { exportRowsToCsv } from '../../shared/utils/exportData.js'
 
 function StarBar({ value, max = 5 }) {
   if (value == null) return <span style={{ color: 'var(--text3)' }}>—</span>
@@ -52,7 +53,21 @@ export default function SurveysPage() {
 
       <div className="panel">
         <div style={{ height: 2, background: 'var(--accent)' }} />
-        <div className="panel-header"><div className="panel-title">CEVAPLAR ({surveys.length})</div></div>
+        <div className="panel-header" style={{ display: 'flex', alignItems: 'center' }}>
+          <div className="panel-title">CEVAPLAR ({surveys.length})</div>
+          {surveys.length > 0 && (
+            <button className="btn btn-ghost btn-sm" style={{ marginLeft: 'auto' }} onClick={() => exportRowsToCsv([
+              { key: 'created_at', label: 'TARİH' },
+              { key: 'full_name', label: 'KİŞİ' },
+              { key: 'room_score', label: 'ODA' },
+              { key: 'cleaning_score', label: 'TEMİZLİK' },
+              { key: 'food_score', label: 'YEMEK' },
+              { key: 'laundry_score', label: 'ÇAMAŞIR' },
+              { key: 'overall_score', label: 'GENEL' },
+              { key: 'comment', label: 'YORUM' },
+            ], surveys, 'anket_sonuclari.csv')}>↓ CSV</button>
+          )}
+        </div>
         <div className="panel-body" style={{ padding: 0 }}>
           <div style={{ overflow: 'auto' }}>
             <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse' }}>

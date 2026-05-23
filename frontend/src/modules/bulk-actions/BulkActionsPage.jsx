@@ -7,6 +7,7 @@ import { BLOCKS } from '../../shared/blocks.js'
 import EmptyState from '../../shared/components/EmptyState.jsx'
 import { useSavedFilters, SavedFiltersBar } from '../../shared/hooks/useSavedFilters.jsx'
 import { SkeletonCard } from '../../shared/components/Skeleton.jsx'
+import HelpHint from '../../shared/components/HelpHint.jsx'
 
 const EMPTY_FILTERS = {
   block: '', floor: '', company: '', company_id: '', q: '',
@@ -157,7 +158,7 @@ export default function BulkActionsPage() {
     <div style={{ padding: 16 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 16 }}>
         <div>
-          <h2 style={{ fontSize: 22, letterSpacing: 4 }}>TOPLU İŞLEM</h2>
+          <h2 style={{ fontSize: 22, letterSpacing: 4 }}>TOPLU İŞLEM<HelpHint topic="bulk-actions" title="TOPLU İŞLEM" /></h2>
           <p style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', letterSpacing: 2 }}>
             FILTRELI ARAMA · COKLU SECIM · 7 TOPLU AKSIYON
           </p>

@@ -167,4 +167,10 @@ export const HELP_CONTENT = {
 • Self-service kiosk'tan anonim dolduruluyor
 • Trend grafik + firma bazlı segmentasyon
 • Ortalama puan = kalite göstergesi`,
+
+  'bulk-actions': `Filtrelenmiş personel listesi üzerinde toplu işlem.
+• 7 aksiyon: transfer, vardiya, firma, disiplin, WA mesajı, kara liste, çıkış
+• Seçim: tek klik / hepsini seç / range seçimi
+• Kaydedilen filtreler ile tekrar kullanılabilir
+• Onay diyaloğu ile geri alınamaz işlemler korunur`,
 }
