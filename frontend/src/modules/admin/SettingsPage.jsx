@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import TwoFactorSettings from '../../shared/components/TwoFactorSettings.jsx'
 import { useToastStore } from '../../shared/store/toastStore.js'
+import { SkeletonCard } from '../../shared/components/Skeleton.jsx'
 
 const DAYS = ['Paz','Pzt','Sal','Çar','Per','Cum','Cmt']
 const MINUTES = [0, 15, 30, 45]
@@ -115,7 +116,7 @@ export default function SettingsPage() {
     })
   }
 
-  if (isLoading || !current) return <div style={{ padding:'32px' }}>Yükleniyor...</div>
+  if (isLoading || !current) return <SkeletonCard lines={8} />
 
   return (
     <div style={{ padding:'24px', maxWidth:'600px' }}>
@@ -238,7 +239,7 @@ export default function SettingsPage() {
         {/* Bölüm 4b: Kiosk Giriş Yöntemi */}
         <Panel title="KİOSK GİRİŞ YÖNTEMİ">
           <p style={{ fontSize:'12px', color:'#64748b', marginBottom:'12px' }}>Personel kiosk ekranına nasıl giriş yapabilsin?</p>
-          {kioskLoading ? <p style={{ fontSize:'13px', color:'#94a3b8' }}>Yükleniyor...</p> : (
+          {kioskLoading ? <SkeletonCard lines={3} /> : (
             <div style={{ display:'flex', gap:'8px', flexWrap:'wrap' }}>
               {[
                 { val:'tc_no', label:'TC No + PIN' },
