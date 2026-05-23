@@ -2,6 +2,9 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { BLOCKS, blockColor } from '../../shared/blocks.js'
+import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
+import HelpHint from '../../shared/components/HelpHint.jsx'
+import { exportRowsToCsv } from '../../shared/utils/exportData.js'
 
 const ALL_BLOCK_NAMES = BLOCKS.map(b => b.block)
 const DAYS_OPTIONS = [
@@ -135,7 +138,7 @@ function RoomDetail({ block, roomNo, days, onBack }) {
     queryFn: () => api.get(`/room-history/room/${block}/${roomNo}?days=${days}`).then(r => r.data),
   })
 
-  if (isLoading) return <LoadingSpinner />
+  if (isLoading) return <SkeletonTable rows={5} cols={4} />
 
   if (error || !data) {
     return (
@@ -511,7 +514,7 @@ export default function RoomHistoryPage() {
       {/* Page header */}
       <div className="fade-up" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '24px', flexWrap: 'wrap', gap: '12px' }}>
         <div>
-          <h2 style={{ fontSize: '28px', letterSpacing: '4px' }}>ODA GEÇMİŞİ</h2>
+          <h2 style={{ fontSize: '28px', letterSpacing: '4px' }}>ODA GEÇMİŞİ<HelpHint topic="room-history" title="ODA GEÇMİŞİ" /></h2>
           <p style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)', letterSpacing: '1px', marginTop: '4px' }}>
             TEMİZLİK VE ARIZA TAKİP RAPORU
           </p>
@@ -561,11 +564,22 @@ export default function RoomHistoryPage() {
             </div>
           </div>
           {rooms && (
-            <span className="badge badge-gray">{(selectedBlock === 'ALL' ? rooms : rooms.filter(r => r.block === selectedBlock)).length} oda</span>
+            <>
+              <span className="badge badge-gray">{(selectedBlock === 'ALL' ? rooms : rooms.filter(r => r.block === selectedBlock)).length} oda</span>
+              <button className="btn btn-ghost btn-sm" onClick={() => exportRowsToCsv([
+                { key: 'block', label: 'BLOK' },
+                { key: 'room_no', label: 'ODA' },
+                { key: 'total_tasks', label: 'TOPLAM GÖREV' },
+                { key: 'cleaned_count', label: 'TEMİZLENDİ' },
+                { key: 'skipped_count', label: 'ATLANDI' },
+                { key: 'fault_count', label: 'TOPLAM ARIZA' },
+                { key: 'open_faults', label: 'AÇIK ARIZA' },
+              ], selectedBlock === 'ALL' ? (rooms || []) : (rooms || []).filter(r => r.block === selectedBlock), `oda_gecmisi_${selectedBlock}_${days}gun.csv`)}>↓ CSV</button>
+            </>
           )}
         </div>
         <div className="panel-body">
-          {isLoading ? <LoadingSpinner /> : (
+          {isLoading ? <SkeletonTable rows={8} cols={6} /> : (
             <SummaryTable
               rooms={rooms || []}
               selectedBlock={selectedBlock}

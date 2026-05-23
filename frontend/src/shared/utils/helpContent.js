@@ -173,4 +173,10 @@ export const HELP_CONTENT = {
 • Seçim: tek klik / hepsini seç / range seçimi
 • Kaydedilen filtreler ile tekrar kullanılabilir
 • Onay diyaloğu ile geri alınamaz işlemler korunur`,
+
+  'room-history': `Oda bazlı temizlik ve arıza geçmişi raporu.
+• 7/14/30 gün seçimi
+• Blok filtrelemesi
+• Temizlendi/Atlandı/Arıza sayıları
+• Odaya tıkla → günlük detay takvimi`,
 }
