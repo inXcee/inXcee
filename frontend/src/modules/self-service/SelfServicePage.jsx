@@ -455,27 +455,27 @@ export default function SelfServicePage() {
           ) : (
             <>
               <div className="bg-slate-900 rounded-2xl p-5">
-                <h2 className="font-medium text-slate-300 mb-3">Son 30 Gün Özet</h2>
+                <h2 className="font-medium text-slate-300 mb-3">{t('kiosk.shifts.summary_30')}</h2>
                 <div className="grid grid-cols-3 gap-2">
                   <div className="bg-slate-800 rounded-xl p-3 text-center">
                     <div className="text-2xl font-bold text-green-400">{myShifts.summary?.worked || 0}</div>
-                    <div className="text-xs text-slate-500 mt-1">Çalıştı</div>
+                    <div className="text-xs text-slate-500 mt-1">{t('kiosk.shifts.worked')}</div>
                   </div>
                   <div className="bg-slate-800 rounded-xl p-3 text-center">
                     <div className="text-2xl font-bold text-amber-400">{myShifts.summary?.on_leave || 0}</div>
-                    <div className="text-xs text-slate-500 mt-1">İzin</div>
+                    <div className="text-xs text-slate-500 mt-1">{t('kiosk.shifts.on_leave')}</div>
                   </div>
                   <div className="bg-slate-800 rounded-xl p-3 text-center">
                     <div className="text-2xl font-bold text-red-400">{myShifts.summary?.absent || 0}</div>
-                    <div className="text-xs text-slate-500 mt-1">Yok</div>
+                    <div className="text-xs text-slate-500 mt-1">{t('kiosk.shifts.absent')}</div>
                   </div>
                 </div>
               </div>
 
               <div className="bg-slate-900 rounded-2xl p-5">
-                <h2 className="font-medium text-slate-300 mb-3">Vardiya Programı (geçmiş 7g + sonraki 14g)</h2>
+                <h2 className="font-medium text-slate-300 mb-3">{t('kiosk.shifts.schedule')}</h2>
                 {(!myShifts.shifts || myShifts.shifts.length === 0) ? (
-                  <div className="text-slate-500 text-sm">Vardiya kaydı yok</div>
+                  <div className="text-slate-500 text-sm">{t('kiosk.shifts.no_shifts')}</div>
                 ) : (
                   <div className="space-y-1">
                     {myShifts.shifts.map(s => {
@@ -483,7 +483,7 @@ export default function SelfServicePage() {
                       const isToday = s.work_date === today
                       const isFuture = s.work_date > today
                       const statusColor = s.status === 'worked' ? 'text-green-400' : s.status === 'absent' ? 'text-red-400' : s.status === 'on_leave' ? 'text-amber-400' : 'text-slate-400'
-                      const statusLabel = s.status === 'worked' ? '✓ Çalıştı' : s.status === 'absent' ? '✗ Yok' : s.status === 'on_leave' ? '🛌 İzin' : isFuture ? '📅 Planlandı' : s.status
+                      const statusLabel = s.status === 'worked' ? t('kiosk.shifts.status_worked') : s.status === 'absent' ? t('kiosk.shifts.status_absent') : s.status === 'on_leave' ? t('kiosk.shifts.status_leave') : isFuture ? t('kiosk.shifts.status_planned') : s.status
                       return (
                         <div key={s.work_date} className={`flex justify-between items-center px-3 py-2 rounded-lg ${isToday ? 'bg-blue-900 border border-blue-700' : 'bg-slate-800'}`}>
                           <div>
@@ -511,7 +511,7 @@ export default function SelfServicePage() {
             <div className="bg-slate-900 rounded-2xl p-5 text-slate-400 text-sm">{myTransport.message}</div>
           ) : !myTransport.today && !myTransport.pickup ? (
             <div className="bg-slate-900 rounded-2xl p-5">
-              <div className="text-slate-500 text-sm text-center py-6">Bugün için servis ataması yok</div>
+              <div className="text-slate-500 text-sm text-center py-6">{t('kiosk.transport.no_today')}</div>
             </div>
           ) : (
             <>
@@ -550,7 +550,7 @@ export default function SelfServicePage() {
                   )}
                   {myTransport.today.driver_name && (
                     <div className="bg-slate-800 rounded-xl p-3 mt-3">
-                      <div className="text-xs text-slate-500 mb-1">🧑‍✈️ Şoför</div>
+                      <div className="text-xs text-slate-500 mb-1">🧑‍✈️ {t('kiosk.transport.driver')}</div>
                       <div className="text-sm text-slate-200">{myTransport.today.driver_name}</div>
                       {myTransport.today.driver_phone && (
                         <a href={`tel:${myTransport.today.driver_phone}`} className="text-sm text-blue-400 mt-1 inline-block">
@@ -573,12 +573,12 @@ export default function SelfServicePage() {
       {/* ── Tab: Çamaşır ── */}
       {activeTab === 'laundry' && (
         <div className="bg-slate-900 rounded-2xl p-5 space-y-3">
-          <h2 className="font-medium text-slate-300 mb-2">Çamaşır Torbası Durumu</h2>
+          <h2 className="font-medium text-slate-300 mb-2">{t('kiosk.laundry.bag_status')}</h2>
           {laundryStatus.length === 0 ? (
-            <div className="text-slate-500 text-sm">Çamaşır kaydı yok</div>
+            <div className="text-slate-500 text-sm">{t('kiosk.laundry.no_bags')}</div>
           ) : laundryStatus.map(bag => (
             <div key={bag.id} className="flex items-center justify-between py-2 border-b border-slate-800 last:border-0">
-              <div className="text-xs text-slate-500">{bag.collected_at ? new Date(bag.collected_at).toLocaleDateString('tr-TR') : 'Son Torba'}</div>
+              <div className="text-xs text-slate-500">{bag.collected_at ? new Date(bag.collected_at).toLocaleDateString('tr-TR') : t('kiosk.laundry.last_bag')}</div>
               <span className={`text-sm font-medium ${STATUS_COLORS[bag.status]}`}>{STATUS_LABELS[bag.status]}</span>
             </div>
           ))}
@@ -667,21 +667,21 @@ export default function SelfServicePage() {
       {activeTab === 'discipline' && (
         <div className="bg-slate-900 rounded-2xl p-5 space-y-3">
           <div className="flex justify-between items-center mb-2">
-            <h2 className="font-medium text-slate-300">Disiplin Geçmişi</h2>
+            <h2 className="font-medium text-slate-300">{t('kiosk.discipline.history')}</h2>
             <span className={`text-sm font-bold ${(myInfo?.discipline_points ?? 0) >= 3 ? 'text-red-400' : 'text-slate-400'}`}>
-              Toplam: {myInfo?.discipline_points ?? 0} puan
+              {t('kiosk.discipline.total')}: {myInfo?.discipline_points ?? 0}
             </span>
           </div>
           {discipline.length === 0 ? (
             <div className="text-center py-6">
               <div className="text-3xl mb-2">✅</div>
-              <div className="text-green-400 text-sm font-medium">Temiz sicil</div>
+              <div className="text-green-400 text-sm font-medium">{t('kiosk.discipline.clean_record')}</div>
             </div>
           ) : discipline.map(d => (
             <div key={d.id} className={`border rounded-xl p-3 ${CARD_COLOR[d.card_type] || 'border-slate-700'}`}>
               <div className="flex justify-between items-center mb-1">
                 <span className={`text-xs font-bold uppercase ${d.card_type === 'red' ? 'text-red-400' : 'text-yellow-400'}`}>
-                  {d.card_type === 'red' ? '🟥 Kırmızı Kart' : '🟨 Sarı Kart'}
+                  {d.card_type === 'red' ? t('kiosk.discipline.red_card') : t('kiosk.discipline.yellow_card')}
                 </span>
                 <span className="text-xs text-slate-500">{new Date(d.created_at).toLocaleDateString('tr-TR')}</span>
               </div>
