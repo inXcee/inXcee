@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import mobileApi from '../auth/mobileApi.js'
 import { usePullToRefresh } from '../../../shared/hooks/usePullToRefresh.js'
+import { SkeletonTable } from '../../../shared/components/Skeleton.jsx'
 
 function pctColor(pct) {
   if (pct >= 90) return '#ef4444'
@@ -25,7 +26,7 @@ export default function BlockHeatmap() {
       <h1 style={{ fontSize: '20px', fontWeight: 700, margin: '0 0 16px' }}>Blok Doluluk</h1>
 
       {isLoading ? (
-        <div style={{ color: '#9ca3af', textAlign: 'center', padding: '24px' }}>Yükleniyor...</div>
+        <SkeletonTable rows={5} cols={3} />
       ) : rows.length === 0 ? (
         <div style={{ color: '#9ca3af', textAlign: 'center', padding: '48px' }}>Veri yok</div>
       ) : (

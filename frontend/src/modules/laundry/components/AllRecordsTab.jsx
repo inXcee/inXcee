@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { laundryApi } from '../api.js'
 import { CLOTHING_ICONS } from './NewItemModal.jsx'
 import { parseColors, colorHex } from './ColorPatternPicker.jsx'
+import { SkeletonTable } from '../../../shared/components/Skeleton.jsx'
 
 const STATUS_LABELS = {
   dirty: 'Sepette', washing: 'Yıkanıyor', ironing: 'Ütüde',
@@ -34,13 +35,7 @@ function PremiumAccordion({ itemId }) {
     staleTime: 10_000,
   })
 
-  if (isLoading) {
-    return (
-      <div style={{ padding: '8px 0', fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)' }}>
-        Yükleniyor...
-      </div>
-    )
-  }
+  if (isLoading) return <SkeletonTable rows={3} cols={3} />
 
   return (
     <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -147,9 +142,7 @@ export default function AllRecordsTab() {
 
       {/* List */}
       {isLoading ? (
-        <div style={{ padding: 20, fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)' }}>
-          Yükleniyor...
-        </div>
+        <SkeletonTable rows={5} cols={4} />
       ) : items.length === 0 ? (
         <div className="panel" style={{ padding: '32px', textAlign: 'center' }}>
           <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)' }}>Kayıt bulunamadı</div>

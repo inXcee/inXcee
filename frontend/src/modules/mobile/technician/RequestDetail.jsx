@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import mobileApi from '../auth/mobileApi.js'
 import { compressImage } from '../../../shared/utils/compressImage.js'
+import { SkeletonCard } from '../../../shared/components/Skeleton.jsx'
 
 const PRIORITY_COLOR = { high: '#ef4444', medium: '#f59e0b', low: '#10b981' }
 const PRIORITY_LABEL = { high: 'Yüksek', medium: 'Orta', low: 'Düşük' }
@@ -64,7 +65,7 @@ export default function RequestDetail() {
     onSuccess: () => { setComment(''); qc.invalidateQueries({ queryKey: ['mobile-tech-request-comments', id] }) },
   })
 
-  if (isLoading) return <div style={{ textAlign: 'center', padding: '40px', color: '#9ca3af' }}>Yükleniyor...</div>
+  if (isLoading) return <SkeletonCard lines={6} />
   if (!request) return <div style={{ padding: '24px', textAlign: 'center', color: '#9ca3af' }}>Talep bulunamadı</div>
 
   const statusInfo = STATUS_MAP[request.status] || { label: request.status, color: '#9ca3af' }

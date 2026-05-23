@@ -8,6 +8,7 @@ import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 import { BLOCKS_BY_TYPE, BLOCK_BY_NAME, expectedRoomNos as expectedRoomNosFromConfig } from '../../shared/blocks.js'
 import { exportRowsToCsv } from '../../shared/utils/exportData.js'
 import { useDebounce } from '../../shared/hooks/useDebounce.js'
+import { SkeletonTable, SkeletonCard } from '../../shared/components/Skeleton.jsx'
 
 const MAINTENANCE_EXPORT_COLS = [
   { key: 'id', label: 'ID' },
@@ -792,7 +793,7 @@ function DetailPanel({ requestId, onClose }) {
     },
   })
 
-  if (!request) return <div style={{ fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--text3)', padding: '20px 0' }}>Yükleniyor...</div>
+  if (!request) return <SkeletonCard lines={6} />
 
   const pri = priInfo(request.priority)
 
@@ -1281,7 +1282,7 @@ export default function MaintenancePage() {
 
       {/* Request list */}
       {isLoading ? (
-        <div style={{ fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--text3)', padding: '20px 0' }}>Yükleniyor...</div>
+        <SkeletonTable rows={6} cols={5} />
       ) : requests.length === 0 ? (
         <div className="empty-state">
           <div className="empty-icon">⚙</div>

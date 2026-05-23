@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
-import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
+import { SkeletonTable, SkeletonBlock } from '../../shared/components/Skeleton.jsx'
 import { REGIONS } from './zonguldakBartin.js'
 
 const MapPicker = lazy(() => import('./MapPicker.jsx'))
@@ -836,7 +836,7 @@ function StopsModal({ route, onClose }) {
       {stops.some(s => s.lat != null && s.lng != null) && (
         <div>
           <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: 1.5, marginBottom: 6 }}>🗺 HARITA ÖNİZLEME</div>
-          <Suspense fallback={<div style={{ height: 280, background: 'var(--surface2)', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: 11 }}>Yükleniyor…</div>}>
+          <Suspense fallback={<SkeletonBlock height={280} />}>
             <RouteMap stops={stops} routeColor={route.color} />
           </Suspense>
         </div>

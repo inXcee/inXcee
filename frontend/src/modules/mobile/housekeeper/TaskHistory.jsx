@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import mobileApi from '../auth/mobileApi.js'
 import { useMobileAuth } from '../auth/useMobileAuth.js'
+import { SkeletonTable } from '../../../shared/components/Skeleton.jsx'
 
 const today = new Date().toISOString().slice(0, 10)
 
@@ -25,7 +26,7 @@ export default function TaskHistory() {
       <p style={{ fontSize: '12px', color: '#6b7280', margin: '0 0 20px' }}>{today} tarihli görevler</p>
 
       {isLoading ? (
-        <div style={{ textAlign: 'center', padding: '40px', color: '#9ca3af' }}>Yükleniyor...</div>
+        <SkeletonTable rows={4} cols={3} />
       ) : done.length === 0 && skipped.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '48px', color: '#9ca3af' }}>Henüz tamamlanan görev yok</div>
       ) : (

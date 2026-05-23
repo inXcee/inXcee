@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import mobileApi from '../auth/mobileApi.js'
 import { usePullToRefresh } from '../../../shared/hooks/usePullToRefresh.js'
+import { SkeletonTable } from '../../../shared/components/Skeleton.jsx'
 
 const STATUS_COLOR = {
   idle: '#10b981',
@@ -38,7 +39,7 @@ export default function MachineList() {
       <h1 style={{ fontSize: '20px', fontWeight: 700, margin: '0 0 16px' }}>Makineler</h1>
 
       {isLoading ? (
-        <div style={{ color: '#9ca3af', textAlign: 'center', padding: '24px' }}>Yükleniyor...</div>
+        <SkeletonTable rows={3} cols={3} />
       ) : machines.length === 0 ? (
         <div style={{ color: '#9ca3af', textAlign: 'center', padding: '48px' }}>Makine kaydı yok</div>
       ) : (

@@ -4,6 +4,7 @@ import api from '../../shared/api/client.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
 import { BLOCKS } from '../../shared/blocks.js'
 import { useStickyForm, StickyDraftBanner } from '../../shared/hooks/useStickyForm.jsx'
+import { useUrlParamState } from '../../shared/hooks/useUrlParamState.js'
 
 function fmt(dt) {
   if (!dt) return '-'
@@ -13,7 +14,7 @@ function fmt(dt) {
 export default function VisitorsPage() {
   const qc = useQueryClient()
   const toast = useToastStore(s => s.push)
-  const [tab, setTab] = useState('active')
+  const [tab, setTab] = useUrlParamState('tab', 'active')
   const [showForm, setShowForm] = useState(false)
   const initialForm = { full_name: '', tc_no: '', phone: '', purpose: '', visiting_block: '', notes: '' }
   const [form, setForm] = useState(initialForm)

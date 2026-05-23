@@ -9,6 +9,7 @@ import ZimmetForm from './ZimmetForm.jsx'
 import CsvImport from './CsvImport.jsx'
 import { useToastStore } from '../../shared/store/toastStore.js'
 import { BLOCKS_BY_TYPE, BLOCK_BY_NAME, getCapacity } from '../../shared/blocks.js'
+import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
 const STEPS = [
   { key: 'search', label: 'ARAMA' },
   { key: 'register', label: 'KAYIT' },
@@ -395,7 +396,7 @@ function StatsDashboard() {
               {isExp && (
                 <div style={{ background: 'var(--surface2)', borderBottom: '1px solid var(--border)' }}>
                   {personnelFetching ? (
-                    <div style={{ padding: '10px 16px', fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)' }}>Yükleniyor...</div>
+                    <SkeletonTable rows={3} cols={4} />
                   ) : (
                     <table className="data-table responsive-stack" style={{ margin: 0 }}>
                       <thead><tr><th>AD SOYAD</th><th>MESLEK</th><th>ODA</th><th>VARDİYA</th></tr></thead>

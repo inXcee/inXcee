@@ -7,6 +7,7 @@ import { useToastStore } from '../../shared/store/toastStore.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 import { useDebounce } from '../../shared/hooks/useDebounce.js'
 import { useSavedFilters, SavedFiltersBar } from '../../shared/hooks/useSavedFilters.jsx'
+import { SkeletonTable, SkeletonGrid } from '../../shared/components/Skeleton.jsx'
 
 // Tek noktadan toast ile hata gosterimi — onError callback'lerinde alert yerine bunu cagir.
 // Module-level fonksiyon: closure'a bagimli degil, callback'lerde stale ref riski yok.
@@ -495,7 +496,7 @@ function StaffDetailPanel({ staffId, onClose }) {
       {/* Header */}
       <div style={{ padding: '14px 24px 0', background: 'var(--surface)', flexShrink: 0 }}>
         {isLoading ? (
-          <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: 11 }}>Yükleniyor...</div>
+          <SkeletonTable rows={3} cols={3} />
         ) : !person ? (
           <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: 11 }}>Veri bulunamadı</div>
         ) : (
@@ -1303,7 +1304,7 @@ function StaffTab({ departments, onPersonClick }) {
 
       {/* Staff card grid */}
       {isLoading ? (
-        <div className="empty-state"><div className="empty-sub">Yükleniyor...</div></div>
+        <SkeletonGrid count={6} minWidth={260} />
       ) : staffList.length === 0 ? (
         <div className="empty-state">
           <div className="empty-icon">👥</div>
@@ -2249,7 +2250,7 @@ function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
       <>
       {/* ── Schedule grid ── */}
       {isLoading ? (
-        <div className="empty-state"><div className="empty-sub">Yükleniyor...</div></div>
+        <SkeletonTable rows={6} cols={8} />
       ) : (
         <div style={{ overflowX: 'auto', borderRadius: '12px', border: '1px solid var(--border)', boxShadow: '0 4px 24px rgba(0,0,0,.15)' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '700px' }}>
@@ -3626,7 +3627,7 @@ function PuantajCalendarView({ filtered, month, y, m, isLoading }) {
   // Sunday indices (day of week for day 1)
   const sundayDays = new Set(dayNumbers.filter(d => new Date(y, m - 1, d).getDay() === 0))
 
-  if (isLoading) return <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text3)' }}>Yükleniyor...</div>
+  if (isLoading) return <SkeletonTable rows={6} cols={32} />
 
   return (
     <div style={{ overflowX: 'auto' }}>
@@ -3687,7 +3688,7 @@ function PuantajCalendarView({ filtered, month, y, m, isLoading }) {
 function PuantajListView({ filtered, totals, isLoading, month, monthLabel, showEmployer, sortBy, setSortBy, formatMoney, onRowClick }) {
   const SORTS = [{ id: 'name', label: 'AD' }, { id: 'worked', label: 'ÇALIŞTI' }, { id: 'absent', label: 'DEVAMSIZ' }, { id: 'net', label: 'NET' }]
 
-  if (isLoading) return <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text3)' }}>Yükleniyor...</div>
+  if (isLoading) return <SkeletonTable rows={8} cols={5} />
   if (filtered.length === 0) return (
     <div className="empty-state">
       <div className="empty-icon">📋</div>
@@ -3993,7 +3994,7 @@ function BordroDetailSheet({ row, month, monthLabel, formatMoney, onClose }) {
         {tab === 'gun' && (
           <div>
             {daysLoading ? (
-              <div style={{ textAlign: 'center', color: 'var(--text3)', padding: '20px' }}>Yükleniyor...</div>
+              <SkeletonGrid count={7} minWidth={40} />
             ) : (
               <div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px', marginBottom: '8px' }}>
