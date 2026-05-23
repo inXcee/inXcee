@@ -1694,6 +1694,12 @@ export function initDB() {
     db.exec('CREATE INDEX IF NOT EXISTS idx_prt_user ON password_reset_tokens(user_id)')
   } catch(e) { if (!e.message?.includes('already exists')) logger.error('[Migration] password_reset_tokens:', e.message) }
 
+  // İSG uyum özeti sorgularında is_active filtresi sık kullanılır.
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_staff_active ON staff(is_active)') } catch(e) { if (!e.message?.includes('already exists')) logger.error('[Migration] idx_staff_active:', e.message) }
+
+  // Personnel checkout tarihi + anonimleştirme durumu (KVKK retention enforcement).
+  try { db.exec("CREATE INDEX IF NOT EXISTS idx_personnel_checkout_anon ON personnel(check_out_date, full_name) WHERE check_out_date IS NOT NULL") } catch(e) { if (!e.message?.includes('already exists')) logger.error('[Migration] idx_personnel_checkout_anon:', e.message) }
+
   return db
 }
 
