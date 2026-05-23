@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
+import { useUrlParamState } from '../../shared/hooks/useUrlParamState.js'
 import api from '../../shared/api/client.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
@@ -27,7 +28,7 @@ const CATEGORIES = {
 }
 
 export default function SafetyPage() {
-  const [tab, setTab] = useState('sessions')
+  const [tab, setTab] = useUrlParamState('tab', 'sessions')
 
   return (
     <div style={{ maxWidth: 1200 }} className="fade-up">

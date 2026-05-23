@@ -49,7 +49,8 @@ export default function ComplianceWidget() {
   const allOk = data &&
     data.expired_certs === 0 &&
     data.expiring_soon === 0 &&
-    data.untrained_12m === 0
+    data.untrained_12m === 0 &&
+    data.kkd_outstanding <= 10
 
   const certColor = !data ? 'var(--text3)'
     : data.expired_certs > 0 ? 'var(--red)'
@@ -77,11 +78,15 @@ export default function ComplianceWidget() {
       {isLoading || !data ? (
         <SkeletonTable rows={3} cols={2} />
       ) : allOk ? (
-        <div style={{
-          padding: '20px', textAlign: 'center',
-          color: 'var(--green)', fontSize: 13, fontWeight: 600,
-        }}>
-          ✓ Tüm sertifikalar güncel
+        <div style={{ padding: '16px 0', textAlign: 'center' }}>
+          <div style={{ color: 'var(--green)', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>
+            ✓ Tüm sertifikalar güncel
+          </div>
+          {data.total_active > 0 && (
+            <div style={{ fontSize: 10, color: 'var(--text4)' }}>
+              {data.total_active} aktif personel · {data.kkd_outstanding} KKD zimmet
+            </div>
+          )}
         </div>
       ) : (
         <div>
@@ -91,7 +96,7 @@ export default function ComplianceWidget() {
               value={data.expired_certs}
               color="var(--red)"
               hint="Aktif personel — yenileme gerekli"
-              onClick={() => nav('/safety?tab=certs&filter=expired')}
+              onClick={() => nav('/safety?tab=expiring')}
             />
           )}
           {data.expiring_soon > 0 && (
@@ -100,7 +105,7 @@ export default function ComplianceWidget() {
               value={data.expiring_soon}
               color="var(--accent)"
               hint="Eğitim planlanmalı"
-              onClick={() => nav('/safety?tab=certs&filter=expiring')}
+              onClick={() => nav('/safety?tab=expiring')}
             />
           )}
           <Row
@@ -108,14 +113,14 @@ export default function ComplianceWidget() {
             value={data.untrained_12m}
             color={trainColor}
             hint={data.untrained_12m === 0 ? 'Tüm personel eğitimli' : 'Aktif çalışanlar'}
-            onClick={data.untrained_12m > 0 ? () => nav('/safety?tab=untrained') : undefined}
+            onClick={data.untrained_12m > 0 ? () => nav('/safety?tab=sessions') : undefined}
           />
           <Row
             label="KKD zimmetinde"
             value={data.kkd_outstanding}
             color={kkdColor}
             hint="İade edilmemiş ekipman"
-            onClick={() => nav('/safety?tab=kkd')}
+            onClick={() => nav('/safety?tab=kkd&active=1')}
           />
           {data.total_active > 0 && (
             <div style={{ padding: '10px 0 0', fontSize: 10, color: 'var(--text4)', textAlign: 'right' }}>
