@@ -10,12 +10,12 @@ import KioskHeader from './components/KioskHeader.jsx'
 import KioskSkeleton from './components/KioskSkeleton.jsx'
 
 const TAB_KEYS = [
-  { key: 'shifts',        i18n: 'avs_kiosk.tabs.shifts' },
-  { key: 'transport',     i18n: 'avs_kiosk.tabs.transport' },
-  { key: 'tasks',         i18n: 'avs_kiosk.tabs.tasks' },
-  { key: 'announcements', i18n: 'avs_kiosk.tabs.announcements' },
-  { key: 'quick_fault',   i18n: 'avs_kiosk.tabs.quick_fault' },
-  { key: 'profile',       i18n: 'avs_kiosk.tabs.profile' },
+  { key: 'shifts',        icon: '⏱', i18n: 'avs_kiosk.nav.shifts' },
+  { key: 'transport',     icon: '🚌', i18n: 'avs_kiosk.nav.transport' },
+  { key: 'tasks',         icon: '✅', i18n: 'avs_kiosk.nav.tasks' },
+  { key: 'announcements', icon: '📢', i18n: 'avs_kiosk.nav.announcements' },
+  { key: 'quick_fault',   icon: '🔧', i18n: 'avs_kiosk.nav.quick_fault' },
+  { key: 'profile',       icon: '👤', i18n: 'avs_kiosk.nav.profile' },
 ]
 
 export default function AvsSelfServicePage() {
@@ -126,6 +126,10 @@ export default function AvsSelfServicePage() {
     submitPin.mutate()
   }
 
+  const handleLogout = () => {
+    setAvsToken(null); setSelected(null); setPin(''); setNameQuery(''); setResults([]); setActiveTab('shifts')
+  }
+
   const handleSearch = (val) => {
     setNameQuery(val); setSelected(null)
     clearTimeout(searchTimeout.current)
@@ -209,33 +213,15 @@ export default function AvsSelfServicePage() {
 
   // ─── Ana ekran ──────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-slate-950 flex flex-col max-w-lg mx-auto p-4">
-      <div className="flex items-center justify-between py-4 mb-4">
-        <div className="font-semibold text-slate-100">{selected?.full_name}</div>
-        <button onClick={() => setAvsToken(null)}
-          className="text-xs text-slate-500 hover:text-slate-300 px-3 py-1 bg-slate-800 rounded-lg">
-          {t('avs_kiosk.logout')}
-        </button>
-      </div>
-
-      <div className="flex gap-2 mb-6 overflow-x-auto pb-1">
-        {TAB_KEYS.map(tab => (
-          <button key={tab.key} onClick={() => setActiveTab(tab.key)}
-            className={`relative flex-shrink-0 py-2 px-3 rounded-xl text-xs font-medium transition-colors whitespace-nowrap ${activeTab === tab.key ? 'bg-blue-700 text-white' : 'bg-slate-800 text-slate-400'}`}>
-            {t(tab.i18n)}
-            {tab.key === 'announcements' && unreadCount > 0 ? (
-              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">{unreadCount}</span>
-            ) : null}
-          </button>
-        ))}
-      </div>
-      <div className="mb-2 flex justify-end"><LanguageSwitcher compact /></div>
+    <div className="min-h-screen bg-slate-950 flex flex-col max-w-lg mx-auto p-4 pb-24">
+      <KioskHeader userName={selected?.full_name} onLogout={handleLogout} />
+      <div className="mb-4 flex justify-end"><LanguageSwitcher compact /></div>
 
       {/* Task 12 — Vardiyam */}
       {activeTab === 'shifts' && (
         <div className="space-y-2">
           {!shiftsData ? (
-            <div className="bg-slate-900 rounded-2xl p-5 text-slate-500 text-sm">{t('avs_kiosk.loading')}</div>
+            <KioskSkeleton />
           ) : (shiftsData.shifts || []).length === 0 ? (
             <div className="bg-slate-900 rounded-2xl p-5 text-slate-400 text-sm">{t('avs_kiosk.shifts.none')}</div>
           ) : shiftsData.shifts.map(s => {
@@ -253,7 +239,7 @@ export default function AvsSelfServicePage() {
                     </div>
                   )}
                 </div>
-                <div className={`text-xs font-medium ${color}`}>{s.status}</div>
+                <div className={`text-xs font-medium px-2 py-1 rounded-lg bg-slate-800 ${color}`}>{t('avs_kiosk.shifts.status.' + s.status, s.status)}</div>
               </div>
             )
           })}
@@ -264,7 +250,7 @@ export default function AvsSelfServicePage() {
       {activeTab === 'transport' && (
         <div className="space-y-4">
           {!transportData ? (
-            <div className="bg-slate-900 rounded-2xl p-5 text-slate-500 text-sm">{t('avs_kiosk.loading')}</div>
+            <KioskSkeleton />
           ) : !transportData.pickup ? (
             <div className="bg-slate-900 rounded-2xl p-5 text-slate-400 text-sm text-center py-6">{t('avs_kiosk.transport.none')}</div>
           ) : (
@@ -288,7 +274,7 @@ export default function AvsSelfServicePage() {
       {activeTab === 'tasks' && (
         <div className="space-y-3">
           {!tasksData ? (
-            <div className="bg-slate-900 rounded-2xl p-5 text-slate-500 text-sm">{t('avs_kiosk.loading')}</div>
+            <KioskSkeleton />
           ) : tasksData.type === 'laundry' ? (
             <div className="bg-slate-900 rounded-2xl p-6 text-center">
               <div className="text-4xl mb-3">🧺</div>
@@ -433,6 +419,9 @@ export default function AvsSelfServicePage() {
           </div>
         </div>
       )}
+      <BottomNav
+        tabs={TAB_KEYS.map(tb => ({ key: tb.key, icon: tb.icon, label: t(tb.i18n), badge: tb.key === 'announcements' ? unreadCount : 0 }))}
+        active={activeTab} onChange={setActiveTab} />
     </div>
   )
 }
