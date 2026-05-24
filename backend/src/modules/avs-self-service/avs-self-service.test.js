@@ -140,6 +140,28 @@ describe('AVS Self-Service — maintenance', () => {
   })
 })
 
+describe('AVS Self-Service — my-transport schedule', () => {
+  it('bugünkü route_assignment ile servis saati + sürücü döner', async () => {
+    const db = getDB()
+    const { pickup_point_id } = db.prepare('SELECT pickup_point_id FROM staff WHERE id=?').get(workerId)
+    const route = db.prepare(`INSERT INTO routes(name, vehicle_plate, driver_name, driver_phone)
+      VALUES('Sabah-1','34 ABC 34','Veli Şoför','5551112233')`).run()
+    const stop = db.prepare(`INSERT INTO route_stops(route_id, pickup_point_id, scheduled_time)
+      VALUES(?,?,'07:30')`).run(route.lastInsertRowid, pickup_point_id)
+    db.prepare(`INSERT INTO route_assignments(route_id, stop_id, staff_id, work_date)
+      VALUES(?,?,?,date('now'))`).run(route.lastInsertRowid, stop.lastInsertRowid, workerId)
+
+    const res = await request(app).get('/api/avs-self-service/my-transport')
+      .set('Authorization', `Bearer ${avsToken}`)
+    expect(res.status).toBe(200)
+    expect(res.body.schedule).not.toBeNull()
+    expect(res.body.schedule.time).toBe('07:30')
+    expect(res.body.schedule.driver_name).toBe('Veli Şoför')
+    expect(res.body.schedule.plate).toBe('34 ABC 34')
+    expect(res.body.pickup).not.toBeNull() // geriye uyumlu
+  })
+})
+
 describe('AVS Self-Service — change-pin', () => {
   it('yanlış mevcut PIN ile 401', async () => {
     const res = await request(app).post('/api/avs-self-service/change-pin')

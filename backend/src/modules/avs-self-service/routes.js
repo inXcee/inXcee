@@ -42,7 +42,7 @@ avsSelfServiceRouter.get('/my-shifts', requireAvsKiosk, (req, res) => {
   } catch (e) { logger.error('[avs my-shifts]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
-// Servisim — atanmış durak bilgisi
+// Servisim — atanmış durak bilgisi + servis programı
 avsSelfServiceRouter.get('/my-transport', requireAvsKiosk, (req, res) => {
   try {
     const db = getDB()
@@ -51,7 +51,30 @@ avsSelfServiceRouter.get('/my-transport', requireAvsKiosk, (req, res) => {
       SELECT name, district, neighborhood, notes, lat, lng
       FROM pickup_points WHERE id = ?
     `).get(staff.pickup_point_id) : null
-    res.json({ pickup })
+
+    // Servis programı: önce bugünün ataması, yoksa durağın aktif route_stop'u
+    let schedule = db.prepare(`
+      SELECT rs.scheduled_time AS time, r.name AS route_name,
+             r.driver_name, r.driver_phone, r.vehicle_plate AS plate
+      FROM route_assignments ra
+      JOIN routes r ON r.id = ra.route_id
+      LEFT JOIN route_stops rs ON rs.id = ra.stop_id
+      WHERE ra.staff_id = ? AND ra.work_date = date('now')
+      LIMIT 1
+    `).get(req.user.workerId)
+
+    if (!schedule && staff?.pickup_point_id) {
+      schedule = db.prepare(`
+        SELECT rs.scheduled_time AS time, r.name AS route_name,
+               r.driver_name, r.driver_phone, r.vehicle_plate AS plate
+        FROM route_stops rs
+        JOIN routes r ON r.id = rs.route_id AND r.is_active = 1
+        WHERE rs.pickup_point_id = ?
+        ORDER BY rs.id LIMIT 1
+      `).get(staff.pickup_point_id)
+    }
+
+    res.json({ pickup, schedule: schedule || null })
   } catch (e) { logger.error('[avs my-transport]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
