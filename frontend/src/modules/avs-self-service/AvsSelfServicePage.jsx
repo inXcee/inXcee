@@ -4,6 +4,10 @@ import api from '../../shared/api/client.js'
 import { useTranslation } from '../../shared/i18n/index.js'
 import { useIdleTimeout } from '../../shared/hooks/useIdleTimeout.js'
 import LanguageSwitcher from '../../shared/components/LanguageSwitcher.jsx'
+import PinPad from './components/PinPad.jsx'
+import BottomNav from './components/BottomNav.jsx'
+import KioskHeader from './components/KioskHeader.jsx'
+import KioskSkeleton from './components/KioskSkeleton.jsx'
 
 const TAB_KEYS = [
   { key: 'shifts',        i18n: 'avs_kiosk.tabs.shifts' },
@@ -135,7 +139,7 @@ export default function AvsSelfServicePage() {
   }
 
   const handleLogin = async (e) => {
-    e.preventDefault(); setLoginError('')
+    e?.preventDefault(); setLoginError('')
     if (!selected) return setLoginError(t('avs_kiosk.select_required'))
     try {
       const res = await api.post('/auth/avs-login', { worker_id: selected.id, pin })
@@ -188,15 +192,11 @@ export default function AvsSelfServicePage() {
 
             {selected && (
               <div>
-                <label className="block text-sm text-slate-400 mb-2">{t('avs_kiosk.pin')}</label>
-                <input type="password" inputMode="numeric" maxLength={4} value={pin} autoFocus
-                  onChange={e => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 text-center text-2xl tracking-widest focus:outline-none focus:border-amber-500"
-                  placeholder="····" />
+                <label className="block text-sm text-slate-400 mb-3 text-center">{t('avs_kiosk.pin')}</label>
+                <PinPad value={pin} onChange={setPin} length={4}
+                  onComplete={() => handleLogin()} error={loginError} />
               </div>
             )}
-
-            {loginError && <div className="text-red-400 text-sm text-center">{loginError}</div>}
             <button type="submit" disabled={!selected || pin.length !== 4}
               className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 text-white rounded-xl py-3 text-base font-medium transition-colors">
               {t('avs_kiosk.login_button')}
