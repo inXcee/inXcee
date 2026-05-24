@@ -258,3 +258,14 @@ avsSelfServiceRouter.post('/my-leave', requireAvsKiosk, (req, res) => {
     res.status(201).json({ id })
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
+
+// Bugünün yemek menüsü — dolu öğünler
+avsSelfServiceRouter.get('/menu/today', requireAvsKiosk, (req, res) => {
+  try {
+    const rows = getDB().prepare(`
+      SELECT meal_type, items FROM meal_menu
+      WHERE meal_date = date('now') AND items IS NOT NULL AND items != ''
+    `).all()
+    res.json(rows)
+  } catch (e) { logger.error('[avs menu/today]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})

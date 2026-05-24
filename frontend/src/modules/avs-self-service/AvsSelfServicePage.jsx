@@ -18,6 +18,7 @@ const TAB_KEYS = [
   { key: 'profile',       icon: '👤', i18n: 'avs_kiosk.nav.profile' },
   { key: 'qr',            icon: '🪪', i18n: 'avs_kiosk.nav.qr' },
   { key: 'leave',         icon: '🌴', i18n: 'avs_kiosk.nav.leave' },
+  { key: 'meals',         icon: '🍽', i18n: 'avs_kiosk.nav.meals' },
 ]
 
 export default function AvsSelfServicePage() {
@@ -199,6 +200,13 @@ export default function AvsSelfServicePage() {
     mutationFn: () => avsApi.post('/avs-self-service/my-leave', leaveForm),
     onSuccess: () => { setLeaveSuccess(true); setLeaveError(''); setLeaveForm({ leave_type: 'annual', start_date: '', end_date: '', reason: '' }); queryClient.invalidateQueries({ queryKey: ['avs-leave', avsToken] }) },
     onError: (err) => setLeaveError(err.response?.data?.error || t('avs_kiosk.fault.error')),
+  })
+
+  // P5 — Yemek menüsü (bugün)
+  const { data: menuToday = [] } = useQuery({
+    queryKey: ['avs-menu-today', avsToken],
+    queryFn: () => avsApi.get('/avs-self-service/menu/today').then(r => r.data),
+    enabled: !!avsToken && activeTab === 'meals',
   })
 
   const handleSearch = (val) => {
@@ -666,6 +674,20 @@ export default function AvsSelfServicePage() {
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {activeTab === 'meals' && (
+        <div className="space-y-3">
+          <h2 className="font-medium text-slate-300">{t('avs_kiosk.meals.title')}</h2>
+          {menuToday.length === 0 ? (
+            <div className="bg-slate-900 rounded-2xl p-5 text-slate-400 text-sm">{t('avs_kiosk.meals.none')}</div>
+          ) : menuToday.map(m => (
+            <div key={m.meal_type} className="bg-slate-900 rounded-2xl p-5">
+              <div className="font-medium text-slate-200 mb-2">{t('avs_kiosk.meals.' + m.meal_type, m.meal_type)}</div>
+              <div className="text-sm text-slate-400 whitespace-pre-line">{m.items}</div>
+            </div>
+          ))}
         </div>
       )}
       <BottomNav

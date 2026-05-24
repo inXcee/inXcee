@@ -160,3 +160,26 @@ mealsRouter.get('/cost-summary', ...view, (req, res) => {
     res.json({ month: ym, by_meal: total, by_staff: perStaff })
   } catch (e) { logger.error('[meals/cost]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
+
+// ── Menü ──
+mealsRouter.get('/menu', ...view, (req, res) => {
+  try {
+    const date = req.query.date || new Date().toISOString().slice(0, 10)
+    const rows = getDB().prepare('SELECT meal_type, items FROM meal_menu WHERE meal_date=?').all(date)
+    res.json(rows)
+  } catch (e) { logger.error('[meals/menu get]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+mealsRouter.put('/menu', ...mgr, (req, res) => {
+  const { meal_date, meal_type, items } = req.body || {}
+  if (!meal_date || !VALID_MEALS.includes(meal_type))
+    return res.status(400).json({ error: 'Geçersiz tarih veya öğün' })
+  try {
+    getDB().prepare(`
+      INSERT INTO meal_menu(meal_date, meal_type, items) VALUES(?,?,?)
+      ON CONFLICT(meal_date, meal_type) DO UPDATE SET items=excluded.items, updated_at=datetime('now')
+    `).run(meal_date, meal_type, items ?? null)
+    logAudit(req.user.id, 'meal_menu_set', 'meals', null, `${meal_date} ${meal_type}`)
+    res.json({ ok: true })
+  } catch (e) { logger.error('[meals/menu put]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})

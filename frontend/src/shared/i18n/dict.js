@@ -152,7 +152,7 @@ const tr = {
     },
     nav: {
       shifts: 'Vardiya', transport: 'Servis', tasks: 'Görev',
-      announcements: 'Duyuru', quick_fault: 'Arıza', profile: 'Profil', qr: 'QR', leave: 'İzin',
+      announcements: 'Duyuru', quick_fault: 'Arıza', profile: 'Profil', qr: 'QR', leave: 'İzin', meals: 'Yemek',
     },
     pinpad: { delete: 'Sil' },
     qr: { hint: 'Yoklama/giriş için okutun', none: 'QR tanımlı değil. Yöneticine başvur.' },
@@ -166,6 +166,10 @@ const tr = {
       submit: 'Talep Oluştur', success: 'İzin talebin alındı, onay bekliyor.',
       my_requests: 'Taleplerim', none: 'Henüz izin talebin yok',
       status_pending: 'Beklemede', status_approved: 'Onaylandı', status_rejected: 'Reddedildi',
+    },
+    meals: {
+      title: 'Bugünün Menüsü', none: 'Bugün için menü girilmemiş',
+      breakfast: '🌅 Kahvaltı', lunch: '☀ Öğle', dinner: '🌙 Akşam', snack: '☕ Ara',
     },
     shifts: {
       none: 'Önümüzdeki 7 gün için vardiya kaydın yok',
@@ -353,7 +357,7 @@ const en = {
     },
     nav: {
       shifts: 'Shift', transport: 'Transport', tasks: 'Tasks',
-      announcements: 'News', quick_fault: 'Fault', profile: 'Profile', qr: 'QR', leave: 'Leave',
+      announcements: 'News', quick_fault: 'Fault', profile: 'Profile', qr: 'QR', leave: 'Leave', meals: 'Meals',
     },
     pinpad: { delete: 'Delete' },
     qr: { hint: 'Scan for attendance/entry', none: 'No QR assigned. Contact your manager.' },
@@ -367,6 +371,10 @@ const en = {
       submit: 'Submit Request', success: 'Your leave request was received, pending approval.',
       my_requests: 'My Requests', none: 'No leave requests yet',
       status_pending: 'Pending', status_approved: 'Approved', status_rejected: 'Rejected',
+    },
+    meals: {
+      title: "Today's Menu", none: 'No menu set for today',
+      breakfast: '🌅 Breakfast', lunch: '☀ Lunch', dinner: '🌙 Dinner', snack: '☕ Snack',
     },
     shifts: {
       none: 'No shifts in the next 7 days',
@@ -554,7 +562,7 @@ const ar = {
     },
     nav: {
       shifts: 'الوردية', transport: 'النقل', tasks: 'المهام',
-      announcements: 'إعلانات', quick_fault: 'عطل', profile: 'الملف', qr: 'QR', leave: 'إجازة',
+      announcements: 'إعلانات', quick_fault: 'عطل', profile: 'الملف', qr: 'QR', leave: 'إجازة', meals: 'الطعام',
     },
     pinpad: { delete: 'حذف' },
     qr: { hint: 'امسح للحضور/الدخول', none: 'لا QR مُعرّف. راجع مديرك.' },
@@ -568,6 +576,10 @@ const ar = {
       submit: 'إنشاء طلب', success: 'تم استلام طلب إجازتك، بانتظار الموافقة.',
       my_requests: 'طلباتي', none: 'لا طلبات إجازة بعد',
       status_pending: 'قيد الانتظار', status_approved: 'مقبول', status_rejected: 'مرفوض',
+    },
+    meals: {
+      title: 'قائمة اليوم', none: 'لم تُحدد قائمة لليوم',
+      breakfast: '🌅 فطور', lunch: '☀ غداء', dinner: '🌙 عشاء', snack: '☕ وجبة خفيفة',
     },
     shifts: {
       none: 'لا ورديات خلال 7 أيام القادمة',

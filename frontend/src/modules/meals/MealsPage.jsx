@@ -29,6 +29,7 @@ const TABS = [
   { key: 'daily',    label: '📊 GÜNLÜK' },
   { key: 'forecast', label: '🔮 TAHMİN' },
   { key: 'cost',     label: '💰 MALİYET' },
+  { key: 'menu',     label: '🍽 MENÜ' },
 ]
 
 export default function MealsPage() {
@@ -58,6 +59,7 @@ export default function MealsPage() {
       {tab === 'daily' && <DailyTab />}
       {tab === 'forecast' && <ForecastTab />}
       {tab === 'cost' && <CostTab />}
+      {tab === 'menu' && <MenuTab />}
     </div>
   )
 }
@@ -350,6 +352,44 @@ function CostTab() {
           </div>
         </>
       )}
+    </div>
+  )
+}
+
+function MenuTab() {
+  const qc = useQueryClient()
+  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [draft, setDraft] = useState({})
+  const { data: rows = [] } = useQuery({
+    queryKey: ['meal-menu', date],
+    queryFn: () => api.get(`/meals/menu?date=${date}`).then(r => r.data),
+  })
+  useEffect(() => {
+    const m = {}
+    for (const r of rows) m[r.meal_type] = r.items || ''
+    setDraft(m)
+  }, [rows])
+  const save = useMutation({
+    mutationFn: (meal_type) => api.put('/meals/menu', { meal_date: date, meal_type, items: draft[meal_type] || '' }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['meal-menu', date] }); toast('Menü kaydedildi') },
+    onError: toastErr,
+  })
+  return (
+    <div style={{ maxWidth: 700 }}>
+      <input type="date" value={date} onChange={e => setDate(e.target.value)}
+        style={{ marginBottom: 16, padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text)' }} />
+      {Object.entries(MEALS).map(([key, meta]) => (
+        <div key={key} style={{ marginBottom: 16 }}>
+          <div style={{ marginBottom: 6, color: 'var(--text2)', fontSize: 14 }}>{meta.label}</div>
+          <textarea value={draft[key] || ''} onChange={e => setDraft(p => ({ ...p, [key]: e.target.value }))}
+            rows={3} placeholder="Her satıra bir yemek…"
+            style={{ width: '100%', padding: 10, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text)', fontFamily: 'inherit' }} />
+          <button onClick={() => save.mutate(key)} disabled={save.isPending}
+            style={{ marginTop: 6, padding: '6px 14px', background: 'var(--accent)', color: '#000', border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 13 }}>
+            Kaydet
+          </button>
+        </div>
+      ))}
     </div>
   )
 }
