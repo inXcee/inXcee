@@ -95,3 +95,18 @@ avsSelfServiceRouter.get('/my-tasks', requireAvsKiosk, (req, res) => {
     return res.json({ type: 'none', items: [] })
   } catch (e) { logger.error('[avs my-tasks]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
+
+// Duyurular — aktif olanlar (target_role yok, herkese)
+avsSelfServiceRouter.get('/announcements', requireAvsKiosk, (req, res) => {
+  try {
+    const db = getDB()
+    const rows = db.prepare(`
+      SELECT id, title, body, created_at
+      FROM announcements
+      WHERE expires_at IS NULL OR expires_at > datetime('now')
+      ORDER BY created_at DESC
+      LIMIT 30
+    `).all()
+    res.json(rows)
+  } catch (e) { logger.error('[avs announcements]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})

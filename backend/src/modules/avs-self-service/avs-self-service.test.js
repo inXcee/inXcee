@@ -101,3 +101,13 @@ describe('AVS Self-Service — my-tasks', () => {
     expect(res.body.items.some(t => t.block === 'M1')).toBe(true)
   })
 })
+
+describe('AVS Self-Service — announcements', () => {
+  it('aktif duyuru dizisi döner', async () => {
+    const res = await request(app).get('/api/avs-self-service/announcements')
+      .set('Authorization', `Bearer ${avsToken}`)
+    expect(res.status).toBe(200)
+    expect(Array.isArray(res.body)).toBe(true)
+    expect(res.body.some(a => a.title === 'Test Duyuru')).toBe(true)
+  })
+})
