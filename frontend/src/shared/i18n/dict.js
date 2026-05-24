@@ -150,7 +150,15 @@ const tr = {
       quick_fault: '🔧 Hızlı Arıza',
       profile: '👤 Profil',
     },
-    shifts: { none: 'Önümüzdeki 7 gün için vardiya kaydın yok' },
+    nav: {
+      shifts: 'Vardiya', transport: 'Servis', tasks: 'Görev',
+      announcements: 'Duyuru', quick_fault: 'Arıza', profile: 'Profil',
+    },
+    pinpad: { delete: 'Sil' },
+    shifts: {
+      none: 'Önümüzdeki 7 gün için vardiya kaydın yok',
+      status: { scheduled: 'Planlı', worked: 'Çalıştı', absent: 'Gelmedi', on_leave: 'İzinli', overtime: 'Mesai' },
+    },
     transport: { none: 'Servis atanmamış. Yöneticine başvur.', stop: 'Durağım' },
     tasks: {
       laundry_redirect: 'Çamaşır işlemleri Çamaşır Kiosk’unda yapılır.',
@@ -326,7 +334,15 @@ const en = {
       quick_fault: '🔧 Quick Fault',
       profile: '👤 Profile',
     },
-    shifts: { none: 'No shifts in the next 7 days' },
+    nav: {
+      shifts: 'Shift', transport: 'Transport', tasks: 'Tasks',
+      announcements: 'News', quick_fault: 'Fault', profile: 'Profile',
+    },
+    pinpad: { delete: 'Delete' },
+    shifts: {
+      none: 'No shifts in the next 7 days',
+      status: { scheduled: 'Scheduled', worked: 'Worked', absent: 'Absent', on_leave: 'On leave', overtime: 'Overtime' },
+    },
     transport: { none: 'No transport assigned. Contact your manager.', stop: 'My Stop' },
     tasks: {
       laundry_redirect: 'Laundry work is handled in the Laundry Kiosk.',
@@ -502,7 +518,15 @@ const ar = {
       quick_fault: '🔧 عطل سريع',
       profile: '👤 الملف',
     },
-    shifts: { none: 'لا ورديات خلال 7 أيام القادمة' },
+    nav: {
+      shifts: 'الوردية', transport: 'النقل', tasks: 'المهام',
+      announcements: 'إعلانات', quick_fault: 'عطل', profile: 'الملف',
+    },
+    pinpad: { delete: 'حذف' },
+    shifts: {
+      none: 'لا ورديات خلال 7 أيام القادمة',
+      status: { scheduled: 'مجدول', worked: 'حضر', absent: 'غاب', on_leave: 'إجازة', overtime: 'إضافي' },
+    },
     transport: { none: 'لم يُخصص نقل. راجع مديرك.', stop: 'موقفي' },
     tasks: {
       laundry_redirect: 'تتم أعمال الغسيل في كشك الغسيل.',
