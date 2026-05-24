@@ -302,3 +302,14 @@ describe('AVS Self-Service — my-leave', () => {
     expect(res.status).toBe(400)
   })
 })
+
+describe('AVS Self-Service — menu/today', () => {
+  it('bugünün menüsü dolu öğünleri döner', async () => {
+    const db = getDB()
+    db.prepare("INSERT INTO meal_menu(meal_date, meal_type, items) VALUES(date('now'),'lunch','Çorba\nKöfte')").run()
+    const res = await request(app).get('/api/avs-self-service/menu/today')
+      .set('Authorization', `Bearer ${avsToken}`)
+    expect(res.status).toBe(200)
+    expect(res.body.some(m => m.meal_type === 'lunch' && m.items.includes('Köfte'))).toBe(true)
+  })
+})
