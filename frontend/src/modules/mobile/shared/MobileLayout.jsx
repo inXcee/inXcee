@@ -9,6 +9,7 @@ import { useMobilePrefs } from '../../../shared/store/mobilePrefsStore.js'
 import { useIdleTimeout } from '../../../shared/hooks/useIdleTimeout.js'
 import PushBanner from './PushBanner.jsx'
 import { unsubscribePush } from '../../../shared/utils/pushSubscribe.js'
+import { RouteErrorBoundary } from '../../../shared/components/ErrorBoundary.jsx'
 
 const MODULE_KEYS = {
   housekeeping: [['mobile-hk-tasks']],
@@ -168,7 +169,9 @@ export default function MobileLayout({ tabs }) {
       {offlineBanner}
       <PushBanner />
       <main style={{ flex:1, overflowY:'auto', paddingBottom:'calc(72px + env(safe-area-inset-bottom))', paddingTop: isOnline ? 'env(safe-area-inset-top)' : 'calc(36px + env(safe-area-inset-top))' }}>
-        <Outlet />
+        <RouteErrorBoundary>
+          <Outlet />
+        </RouteErrorBoundary>
       </main>
       <nav aria-label="Ana navigasyon" style={{ position:'fixed', bottom:0, left:'50%', transform:'translateX(-50%)', width:'100%', maxWidth:'480px', display:'flex', background:'#fff', borderTop:'1px solid #e5e7eb', zIndex:100, paddingBottom:'env(safe-area-inset-bottom)' }}>
         {tabs.map(t => (
