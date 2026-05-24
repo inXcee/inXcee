@@ -223,3 +223,48 @@ describe('AVS Self-Service — change-pin', () => {
     expect(relog.body.token).toBeTruthy()
   })
 })
+
+describe('AVS Self-Service — my-qr', () => {
+  it('staff qr_token döner', async () => {
+    const db = getDB()
+    db.prepare("UPDATE staff SET qr_token='QR-TEST-TOKEN' WHERE id=?").run(workerId)
+    const res = await request(app).get('/api/avs-self-service/my-qr')
+      .set('Authorization', `Bearer ${avsToken}`)
+    expect(res.status).toBe(200)
+    expect(res.body.qr_token).toBe('QR-TEST-TOKEN')
+    expect(res.body.full_name).toBeTruthy()
+  })
+})
+
+describe('AVS Self-Service — my-maintenance', () => {
+  it('kendi bildirdiği arızalar listelenir', async () => {
+    await request(app).post('/api/avs-self-service/maintenance')
+      .set('Authorization', `Bearer ${avsToken}`)
+      .field('location', 'M1 Test Konum')
+      .field('description', 'my-maintenance testi için arıza kaydı')
+    const res = await request(app).get('/api/avs-self-service/my-maintenance')
+      .set('Authorization', `Bearer ${avsToken}`)
+    expect(res.status).toBe(200)
+    expect(Array.isArray(res.body)).toBe(true)
+    expect(res.body.some(m => m.location === 'M1 Test Konum')).toBe(true)
+  })
+})
+
+describe('AVS Self-Service — feedback', () => {
+  it('geçerli geri bildirim 201 + audit_log', async () => {
+    const res = await request(app).post('/api/avs-self-service/feedback')
+      .set('Authorization', `Bearer ${avsToken}`)
+      .send({ type: 'suggestion', message: 'Servis saatleri biraz daha erken olabilir mi acaba' })
+    expect(res.status).toBe(201)
+    expect(res.body.ok).toBe(true)
+    const db = getDB()
+    const audit = db.prepare("SELECT * FROM audit_log WHERE action='kiosk_avs_feedback' AND target_id=?").get(res.body.id)
+    expect(audit).toBeTruthy()
+  })
+  it('kısa mesaj 400', async () => {
+    const res = await request(app).post('/api/avs-self-service/feedback')
+      .set('Authorization', `Bearer ${avsToken}`)
+      .send({ type: 'complaint', message: 'kısa' })
+    expect(res.status).toBe(400)
+  })
+})

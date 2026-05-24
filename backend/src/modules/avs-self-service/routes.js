@@ -190,3 +190,44 @@ avsSelfServiceRouter.post('/change-pin', requireAvsKiosk, (req, res) => {
   `).run(req.user.workerId, JSON.stringify({ workerId: req.user.workerId }))
   res.json(result)
 })
+
+// QR kart — staff.qr_token (yoklama/giriş okutması)
+avsSelfServiceRouter.get('/my-qr', requireAvsKiosk, (req, res) => {
+  try {
+    const db = getDB()
+    const s = db.prepare('SELECT qr_token, full_name FROM staff WHERE id=?').get(req.user.workerId)
+    res.json({ qr_token: s?.qr_token || null, full_name: s?.full_name || null })
+  } catch (e) { logger.error('[avs my-qr]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// Bildirdiğim arızalar — audit_log üzerinden (AVS reporter null, workerId audit'te)
+avsSelfServiceRouter.get('/my-maintenance', requireAvsKiosk, (req, res) => {
+  try {
+    const db = getDB()
+    const rows = db.prepare(`
+      SELECT m.id, m.location, m.description, m.status, m.priority, m.opened_at, m.closed_at
+      FROM maintenance_requests m
+      JOIN audit_log a ON a.target_id = m.id
+        AND a.action = 'kiosk_avs_maintenance'
+        AND json_extract(a.detail, '$.workerId') = ?
+      ORDER BY m.opened_at DESC LIMIT 20
+    `).all(req.user.workerId)
+    res.json(rows)
+  } catch (e) { logger.error('[avs my-maintenance]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// Geri bildirim — AVS çalışanı (personnel_id null, workerId audit'te)
+avsSelfServiceRouter.post('/feedback', requireAvsKiosk, (req, res) => {
+  const { type, message } = req.body
+  if (!['complaint', 'suggestion', 'other'].includes(type))
+    return res.status(400).json({ error: 'Geçersiz tip' })
+  if (!message || message.trim().length < 20)
+    return res.status(400).json({ error: 'Mesaj en az 20 karakter olmalıdır' })
+  try {
+    const db = getDB()
+    const r = db.prepare('INSERT INTO feedback(personnel_id, type, message) VALUES(NULL,?,?)').run(type, message.trim())
+    db.prepare(`INSERT INTO audit_log(user_id, action, module, target_id, detail)
+      VALUES(NULL, 'kiosk_avs_feedback', 'avs-self-service', ?, ?)`).run(r.lastInsertRowid, JSON.stringify({ workerId: req.user.workerId }))
+    res.status(201).json({ ok: true, id: r.lastInsertRowid })
+  } catch (e) { logger.error('[avs feedback]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
