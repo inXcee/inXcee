@@ -60,6 +60,7 @@ const SettingsLayout = lazy(() => import('./modules/admin/SettingsLayout.jsx'))
 const KioskPinPage = lazy(() => import('./modules/admin/KioskPinPage.jsx'))
 const AnnouncementsPage = lazy(() => import('./modules/admin/AnnouncementsPage.jsx'))
 const AvsWorkersPage = lazy(() => import('./modules/admin/AvsWorkersPage.jsx'))
+const FeedbackPage = lazy(() => import('./modules/admin/FeedbackPage.jsx'))
 const LaundryKioskPage = lazy(() => import('./modules/laundry-kiosk/LaundryKioskPage.jsx'))
 const AvsSelfServicePage = lazy(() => import('./modules/avs-self-service/AvsSelfServicePage.jsx'))
 const MobileLogin = lazy(() => import('./modules/mobile/auth/MobileLogin.jsx'))
@@ -349,6 +350,7 @@ export default function App() {
               <Route path="companies" element={<CompaniesPage />} />
               <Route path="visitors" element={<VisitorsPage />} />
               <Route path="surveys" element={<SurveysPage />} />
+              <Route path="feedback" element={<FeedbackPage />} />
               <Route path="drills" element={<DrillsPage />} />
               <Route path="documents" element={<DocumentsPage />} />
               <Route path="expenses" element={<ExpensesPage />} />
