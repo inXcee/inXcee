@@ -6,7 +6,10 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const TMP = resolve(__dirname, '.tmp')
 
 export default async function globalSetup() {
-  if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true })
+  if (existsSync(TMP)) {
+    try { rmSync(TMP, { recursive: true, force: true }) }
+    catch (e) { if (e.code !== 'EPERM' && e.code !== 'EBUSY') throw e }
+  }
   mkdirSync(TMP, { recursive: true })
   mkdirSync(resolve(TMP, 'uploads'), { recursive: true })
 }

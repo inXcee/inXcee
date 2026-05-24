@@ -1,17 +1,21 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { useTranslation } from '../../shared/i18n/index.js'
 import { useIdleTimeout } from '../../shared/hooks/useIdleTimeout.js'
 import LanguageSwitcher from '../../shared/components/LanguageSwitcher.jsx'
+import PinPad from './components/PinPad.jsx'
+import BottomNav from './components/BottomNav.jsx'
+import KioskHeader from './components/KioskHeader.jsx'
+import KioskSkeleton from './components/KioskSkeleton.jsx'
 
 const TAB_KEYS = [
-  { key: 'shifts',        i18n: 'avs_kiosk.tabs.shifts' },
-  { key: 'transport',     i18n: 'avs_kiosk.tabs.transport' },
-  { key: 'tasks',         i18n: 'avs_kiosk.tabs.tasks' },
-  { key: 'announcements', i18n: 'avs_kiosk.tabs.announcements' },
-  { key: 'quick_fault',   i18n: 'avs_kiosk.tabs.quick_fault' },
-  { key: 'profile',       i18n: 'avs_kiosk.tabs.profile' },
+  { key: 'shifts',        icon: '⏱', i18n: 'avs_kiosk.nav.shifts' },
+  { key: 'transport',     icon: '🚌', i18n: 'avs_kiosk.nav.transport' },
+  { key: 'tasks',         icon: '✅', i18n: 'avs_kiosk.nav.tasks' },
+  { key: 'announcements', icon: '📢', i18n: 'avs_kiosk.nav.announcements' },
+  { key: 'quick_fault',   icon: '🔧', i18n: 'avs_kiosk.nav.quick_fault' },
+  { key: 'profile',       icon: '👤', i18n: 'avs_kiosk.nav.profile' },
 ]
 
 export default function AvsSelfServicePage() {
@@ -41,12 +45,27 @@ export default function AvsSelfServicePage() {
   const [pinForm, setPinForm] = useState({ current_pin: '', new_pin: '', new_pin2: '' })
   const [pinMsg, setPinMsg] = useState({ type: '', text: '' })
 
+  const handleLogout = useCallback(() => {
+    setAvsToken(null)
+    setSelected(null)
+    setPin('')
+    setNameQuery('')
+    setResults([])
+    setActiveTab('shifts')
+    setLoginError('')
+    setFaultSuccess(false)
+    setFaultError('')
+    setFaultForm({ location: '', description: '', priority: 'medium' })
+    setPinMsg({ type: '', text: '' })
+    setPinForm({ current_pin: '', new_pin: '', new_pin2: '' })
+  }, [])
+
   // 5dk inaktivite → logout (son 30sn'de toast uyarısı)
   useIdleTimeout({
     timeoutMs: 5 * 60 * 1000,
     warnBeforeMs: 30 * 1000,
     token: avsToken,
-    onLogout: () => setAvsToken(null),
+    onLogout: handleLogout,
   })
 
   const avsApi = {
@@ -134,11 +153,12 @@ export default function AvsSelfServicePage() {
     }, 300)
   }
 
-  const handleLogin = async (e) => {
-    e.preventDefault(); setLoginError('')
+  const handleLogin = async (e, completedPin) => {
+    e?.preventDefault(); setLoginError('')
     if (!selected) return setLoginError(t('avs_kiosk.select_required'))
+    const pinToUse = completedPin ?? pin
     try {
-      const res = await api.post('/auth/avs-login', { worker_id: selected.id, pin })
+      const res = await api.post('/auth/avs-login', { worker_id: selected.id, pin: pinToUse })
       setAvsToken(res.data.token)
       setActiveTab('shifts')
     } catch (err) { setLoginError(err.response?.data?.error || t('avs_kiosk.login_failed')) }
@@ -188,15 +208,11 @@ export default function AvsSelfServicePage() {
 
             {selected && (
               <div>
-                <label className="block text-sm text-slate-400 mb-2">{t('avs_kiosk.pin')}</label>
-                <input type="password" inputMode="numeric" maxLength={4} value={pin} autoFocus
-                  onChange={e => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 text-center text-2xl tracking-widest focus:outline-none focus:border-amber-500"
-                  placeholder="····" />
+                <label className="block text-sm text-slate-400 mb-3 text-center">{t('avs_kiosk.pin')}</label>
+                <PinPad value={pin} onChange={setPin} length={4}
+                  onComplete={(completedPin) => handleLogin(null, completedPin)} error={loginError} />
               </div>
             )}
-
-            {loginError && <div className="text-red-400 text-sm text-center">{loginError}</div>}
             <button type="submit" disabled={!selected || pin.length !== 4}
               className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 text-white rounded-xl py-3 text-base font-medium transition-colors">
               {t('avs_kiosk.login_button')}
@@ -209,33 +225,15 @@ export default function AvsSelfServicePage() {
 
   // ─── Ana ekran ──────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-slate-950 flex flex-col max-w-lg mx-auto p-4">
-      <div className="flex items-center justify-between py-4 mb-4">
-        <div className="font-semibold text-slate-100">{selected?.full_name}</div>
-        <button onClick={() => setAvsToken(null)}
-          className="text-xs text-slate-500 hover:text-slate-300 px-3 py-1 bg-slate-800 rounded-lg">
-          {t('avs_kiosk.logout')}
-        </button>
-      </div>
-
-      <div className="flex gap-2 mb-6 overflow-x-auto pb-1">
-        {TAB_KEYS.map(tab => (
-          <button key={tab.key} onClick={() => setActiveTab(tab.key)}
-            className={`relative flex-shrink-0 py-2 px-3 rounded-xl text-xs font-medium transition-colors whitespace-nowrap ${activeTab === tab.key ? 'bg-blue-700 text-white' : 'bg-slate-800 text-slate-400'}`}>
-            {t(tab.i18n)}
-            {tab.key === 'announcements' && unreadCount > 0 ? (
-              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">{unreadCount}</span>
-            ) : null}
-          </button>
-        ))}
-      </div>
-      <div className="mb-2 flex justify-end"><LanguageSwitcher compact /></div>
+    <div className="min-h-screen bg-slate-950 flex flex-col max-w-lg mx-auto p-4 pb-24">
+      <KioskHeader userName={selected?.full_name} onLogout={handleLogout} />
+      <div className="mb-4 flex justify-end"><LanguageSwitcher compact /></div>
 
       {/* Task 12 — Vardiyam */}
       {activeTab === 'shifts' && (
         <div className="space-y-2">
           {!shiftsData ? (
-            <div className="bg-slate-900 rounded-2xl p-5 text-slate-500 text-sm">{t('avs_kiosk.loading')}</div>
+            <KioskSkeleton />
           ) : (shiftsData.shifts || []).length === 0 ? (
             <div className="bg-slate-900 rounded-2xl p-5 text-slate-400 text-sm">{t('avs_kiosk.shifts.none')}</div>
           ) : shiftsData.shifts.map(s => {
@@ -253,7 +251,7 @@ export default function AvsSelfServicePage() {
                     </div>
                   )}
                 </div>
-                <div className={`text-xs font-medium ${color}`}>{s.status}</div>
+                <div className={`text-xs font-medium px-2 py-1 rounded-lg bg-slate-800 ${color}`}>{t('avs_kiosk.shifts.status.' + s.status, s.status)}</div>
               </div>
             )
           })}
@@ -264,7 +262,7 @@ export default function AvsSelfServicePage() {
       {activeTab === 'transport' && (
         <div className="space-y-4">
           {!transportData ? (
-            <div className="bg-slate-900 rounded-2xl p-5 text-slate-500 text-sm">{t('avs_kiosk.loading')}</div>
+            <KioskSkeleton />
           ) : !transportData.pickup ? (
             <div className="bg-slate-900 rounded-2xl p-5 text-slate-400 text-sm text-center py-6">{t('avs_kiosk.transport.none')}</div>
           ) : (
@@ -288,7 +286,7 @@ export default function AvsSelfServicePage() {
       {activeTab === 'tasks' && (
         <div className="space-y-3">
           {!tasksData ? (
-            <div className="bg-slate-900 rounded-2xl p-5 text-slate-500 text-sm">{t('avs_kiosk.loading')}</div>
+            <KioskSkeleton />
           ) : tasksData.type === 'laundry' ? (
             <div className="bg-slate-900 rounded-2xl p-6 text-center">
               <div className="text-4xl mb-3">🧺</div>
@@ -433,6 +431,9 @@ export default function AvsSelfServicePage() {
           </div>
         </div>
       )}
+      <BottomNav
+        tabs={TAB_KEYS.map(tb => ({ key: tb.key, icon: tb.icon, label: t(tb.i18n), badge: tb.key === 'announcements' ? unreadCount : 0 }))}
+        active={activeTab} onChange={setActiveTab} />
     </div>
   )
 }
