@@ -131,7 +131,7 @@ avsSelfServiceRouter.post('/maintenance', requireAvsKiosk, (req, res) => {
       VALUES(NULL, 'kiosk_avs_maintenance', 'avs-self-service', ?, ?)
     `).run(id, JSON.stringify({ workerId: req.user.workerId, location: location.trim() }))
     res.status(201).json({ id })
-  } catch (e) { logger.error('[avs maintenance]', e); res.status(400).json({ error: e.message }) }
+  } catch (e) { logger.error('[avs maintenance]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 // PIN değiştir — kendi PIN'i

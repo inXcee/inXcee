@@ -92,6 +92,11 @@ describe('AVS Self-Service — auth', () => {
 })
 
 describe('AVS Self-Service — my-tasks', () => {
+  it('AVS token olmadan 401', async () => {
+    const res = await request(app).get('/api/avs-self-service/my-tasks')
+    expect(res.status).toBe(401)
+  })
+
   it('Temizlik departmanı housekeeping görev döner', async () => {
     const res = await request(app).get('/api/avs-self-service/my-tasks')
       .set('Authorization', `Bearer ${avsToken}`)
