@@ -111,3 +111,26 @@ describe('AVS Self-Service — announcements', () => {
     expect(res.body.some(a => a.title === 'Test Duyuru')).toBe(true)
   })
 })
+
+describe('AVS Self-Service — maintenance', () => {
+  it('geçerli arıza 201 ve id döner + audit_log yazar', async () => {
+    const res = await request(app).post('/api/avs-self-service/maintenance')
+      .set('Authorization', `Bearer ${avsToken}`)
+      .send({ location: 'S2 Kat 2 Banyo', description: 'Lavabo gideri tıkalı, su birikiyor' })
+    expect(res.status).toBe(201)
+    expect(res.body).toHaveProperty('id')
+    const db = getDB()
+    const audit = db.prepare(
+      "SELECT * FROM audit_log WHERE action='kiosk_avs_maintenance' AND target_id=?"
+    ).get(res.body.id)
+    expect(audit).toBeTruthy()
+  })
+
+  it('kısa açıklama 400 döner', async () => {
+    const res = await request(app).post('/api/avs-self-service/maintenance')
+      .set('Authorization', `Bearer ${avsToken}`)
+      .send({ location: 'Oda 101', description: 'kisa' })
+    expect(res.status).toBe(400)
+    expect(res.body.error).toMatch(/description/)
+  })
+})

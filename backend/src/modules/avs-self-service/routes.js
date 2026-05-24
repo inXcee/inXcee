@@ -110,3 +110,26 @@ avsSelfServiceRouter.get('/announcements', requireAvsKiosk, (req, res) => {
     res.json(rows)
   } catch (e) { logger.error('[avs announcements]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
+
+// Hızlı arıza — staff reporter olarak audit_log'a düşer
+avsSelfServiceRouter.post('/maintenance', requireAvsKiosk, (req, res) => {
+  const { location, description, priority } = req.body
+  if (!location || location.trim().length < 3)
+    return res.status(400).json({ error: 'location en az 3 karakter olmalıdır' })
+  if (!description || description.trim().length < 10)
+    return res.status(400).json({ error: 'description en az 10 karakter olmalıdır' })
+  try {
+    const id = createRequest({
+      location: location.trim(),
+      description: description.trim(),
+      priority: priority || 'medium',
+      reporterUserId: null,
+      reporterPersonnelId: null,
+    })
+    getDB().prepare(`
+      INSERT INTO audit_log(user_id, action, module, target_id, detail)
+      VALUES(NULL, 'kiosk_avs_maintenance', 'avs-self-service', ?, ?)
+    `).run(id, JSON.stringify({ workerId: req.user.workerId, location: location.trim() }))
+    res.status(201).json({ id })
+  } catch (e) { logger.error('[avs maintenance]', e); res.status(400).json({ error: e.message }) }
+})
