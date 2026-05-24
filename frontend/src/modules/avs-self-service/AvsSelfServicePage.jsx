@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { useQuery, useMutation } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { useTranslation } from '../../shared/i18n/index.js'
 import { useIdleTimeout } from '../../shared/hooks/useIdleTimeout.js'
@@ -20,6 +20,7 @@ const TAB_KEYS = [
 
 export default function AvsSelfServicePage() {
   const { t } = useTranslation()
+  const queryClient = useQueryClient()
   const [avsToken, setAvsToken] = useState(null)
   const [activeTab, setActiveTab] = useState('shifts')
 
@@ -38,6 +39,7 @@ export default function AvsSelfServicePage() {
 
   // Task 16 — Hızlı Arıza
   const [faultForm, setFaultForm] = useState({ location: '', description: '', priority: 'medium' })
+  const [faultPhoto, setFaultPhoto] = useState(null)
   const [faultSuccess, setFaultSuccess] = useState(false)
   const [faultError, setFaultError] = useState('')
 
@@ -113,10 +115,23 @@ export default function AvsSelfServicePage() {
 
   const unreadCount = announcements.filter(a => !readIds.includes(a.id)).length
 
-  // Task 16 — Hızlı Arıza mutation
+  // P2 — Görev tamamlama
+  const completeTask = useMutation({
+    mutationFn: (taskId) => avsApi.post(`/avs-self-service/tasks/${taskId}/complete`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['avs-tasks', avsToken] }),
+  })
+
+  // Task 16 — Hızlı Arıza mutation (P2: foto → FormData)
   const submitFault = useMutation({
-    mutationFn: () => avsApi.post('/avs-self-service/maintenance', faultForm),
-    onSuccess: () => { setFaultSuccess(true); setFaultError(''); setFaultForm({ location: '', description: '', priority: 'medium' }) },
+    mutationFn: () => {
+      const fd = new FormData()
+      fd.append('location', faultForm.location)
+      fd.append('description', faultForm.description)
+      fd.append('priority', faultForm.priority)
+      if (faultPhoto) fd.append('photo', faultPhoto)
+      return avsApi.post('/avs-self-service/maintenance', fd)
+    },
+    onSuccess: () => { setFaultSuccess(true); setFaultError(''); setFaultForm({ location: '', description: '', priority: 'medium' }); setFaultPhoto(null) },
     onError: (err) => setFaultError(err.response?.data?.error || t('avs_kiosk.fault.error')),
   })
 
@@ -267,15 +282,31 @@ export default function AvsSelfServicePage() {
             <div className="bg-slate-900 rounded-2xl p-5 text-slate-400 text-sm text-center py-6">{t('avs_kiosk.transport.none')}</div>
           ) : (
             <div className="bg-slate-900 rounded-2xl p-5">
-              <h2 className="font-medium text-slate-300 mb-3">📍 {t('avs_kiosk.transport.stop')}</h2>
-              <div className="text-xl font-bold text-blue-400">{transportData.pickup.name}</div>
+              {transportData.schedule?.time && (
+                <div className="text-3xl font-bold text-blue-400 mb-1">🕐 {transportData.schedule.time}</div>
+              )}
+              <h2 className="font-medium text-slate-300 mb-1">📍 {t('avs_kiosk.transport.stop')}</h2>
+              <div className="text-xl font-bold text-slate-100">{transportData.pickup.name}</div>
               {(transportData.pickup.district || transportData.pickup.neighborhood) && (
                 <div className="text-sm text-slate-500 mt-1">
                   {transportData.pickup.district}{transportData.pickup.neighborhood ? ` · ${transportData.pickup.neighborhood}` : ''}
                 </div>
               )}
+              {transportData.schedule?.driver_name && (
+                <div className="text-sm text-slate-400 mt-2">
+                  {t('avs_kiosk.transport.driver')}: {transportData.schedule.driver_name}
+                  {transportData.schedule.plate ? ` · ${transportData.schedule.plate}` : ''}
+                  {transportData.schedule.driver_phone ? <a href={`tel:${transportData.schedule.driver_phone}`} className="text-blue-400 ml-2">{transportData.schedule.driver_phone}</a> : null}
+                </div>
+              )}
               {transportData.pickup.notes && (
                 <div className="text-sm text-slate-400 mt-2 whitespace-pre-line">{transportData.pickup.notes}</div>
+              )}
+              {transportData.pickup.lat != null && transportData.pickup.lng != null && (
+                <button onClick={() => window.open(`https://www.google.com/maps?q=${transportData.pickup.lat},${transportData.pickup.lng}`, '_blank')}
+                  className="mt-4 w-full bg-slate-800 hover:bg-slate-700 text-blue-400 rounded-xl py-3 text-sm font-medium">
+                  {t('avs_kiosk.transport.open_map')}
+                </button>
               )}
             </div>
           )}
@@ -306,7 +337,14 @@ export default function AvsSelfServicePage() {
                     <div className="text-sm text-slate-200">{task.area}{task.block ? ` · ${task.block}` : ''}{task.floor != null ? ` · Kat ${task.floor}` : ''}</div>
                     <div className="text-xs text-slate-500">{task.task_type}</div>
                   </div>
-                  {task.completed_at && <span className="text-xs text-green-400">{t('avs_kiosk.tasks.done')}</span>}
+                  {task.completed_at ? (
+                    <span className="text-xs text-green-400">✓ {t('avs_kiosk.tasks.done')}</span>
+                  ) : (
+                    <button onClick={() => completeTask.mutate(task.id)} disabled={completeTask.isPending}
+                      className="text-xs bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 text-white rounded-lg px-3 py-1.5">
+                      {completeTask.isPending ? t('avs_kiosk.tasks.completing') : t('avs_kiosk.tasks.complete')}
+                    </button>
+                  )}
                 </div>
               ))}
             </>
@@ -379,6 +417,23 @@ export default function AvsSelfServicePage() {
                     </button>
                   ))}
                 </div>
+              </div>
+              <div>
+                {faultPhoto ? (
+                  <div className="flex items-center justify-between bg-slate-800 rounded-xl px-4 py-3">
+                    <div className="flex items-center gap-3">
+                      <img src={URL.createObjectURL(faultPhoto)} alt="" className="w-12 h-12 rounded-lg object-cover" />
+                      <span className="text-sm text-green-400">{t('avs_kiosk.fault.photo_added')}</span>
+                    </div>
+                    <button type="button" onClick={() => setFaultPhoto(null)} className="text-xs text-slate-400 hover:text-slate-200">{t('avs_kiosk.fault.remove_photo')}</button>
+                  </div>
+                ) : (
+                  <label className="flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 rounded-xl py-3 text-sm text-slate-300 cursor-pointer">
+                    {t('avs_kiosk.fault.add_photo')}
+                    <input type="file" accept="image/*" capture="environment" className="hidden"
+                      onChange={e => setFaultPhoto(e.target.files?.[0] || null)} />
+                  </label>
+                )}
               </div>
               {faultError && <div className="text-red-400 text-sm text-center">{faultError}</div>}
               <button onClick={() => submitFault.mutate()}

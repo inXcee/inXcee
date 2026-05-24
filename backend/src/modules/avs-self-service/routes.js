@@ -4,6 +4,7 @@ import { getDB } from '../../shared/db/index.js'
 import { createRequest } from '../maintenance/queries.js'
 import { changeStaffKioskPin } from '../../shared/auth/service.js'
 import { logger } from '../../shared/logger.js'
+import { upload, verifyMagicBytes } from '../../shared/uploads/middleware.js'
 
 export const avsSelfServiceRouter = Router()
 
@@ -42,7 +43,7 @@ avsSelfServiceRouter.get('/my-shifts', requireAvsKiosk, (req, res) => {
   } catch (e) { logger.error('[avs my-shifts]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
-// Servisim — atanmış durak bilgisi
+// Servisim — atanmış durak bilgisi + servis programı
 avsSelfServiceRouter.get('/my-transport', requireAvsKiosk, (req, res) => {
   try {
     const db = getDB()
@@ -51,7 +52,30 @@ avsSelfServiceRouter.get('/my-transport', requireAvsKiosk, (req, res) => {
       SELECT name, district, neighborhood, notes, lat, lng
       FROM pickup_points WHERE id = ?
     `).get(staff.pickup_point_id) : null
-    res.json({ pickup })
+
+    // Servis programı: önce bugünün ataması, yoksa durağın aktif route_stop'u
+    let schedule = db.prepare(`
+      SELECT rs.scheduled_time AS time, r.name AS route_name,
+             r.driver_name, r.driver_phone, r.vehicle_plate AS plate
+      FROM route_assignments ra
+      JOIN routes r ON r.id = ra.route_id
+      LEFT JOIN route_stops rs ON rs.id = ra.stop_id
+      WHERE ra.staff_id = ? AND ra.work_date = date('now')
+      LIMIT 1
+    `).get(req.user.workerId)
+
+    if (!schedule && staff?.pickup_point_id) {
+      schedule = db.prepare(`
+        SELECT rs.scheduled_time AS time, r.name AS route_name,
+               r.driver_name, r.driver_phone, r.vehicle_plate AS plate
+        FROM route_stops rs
+        JOIN routes r ON r.id = rs.route_id AND r.is_active = 1
+        WHERE rs.pickup_point_id = ?
+        ORDER BY rs.id LIMIT 1
+      `).get(staff.pickup_point_id)
+    }
+
+    res.json({ pickup, schedule: schedule || null })
   } catch (e) { logger.error('[avs my-transport]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
@@ -96,6 +120,24 @@ avsSelfServiceRouter.get('/my-tasks', requireAvsKiosk, (req, res) => {
   } catch (e) { logger.error('[avs my-tasks]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
+// Görev tamamla — sadece kendi assigned_block'undaki cleaning_task
+avsSelfServiceRouter.post('/tasks/:id/complete', requireAvsKiosk, (req, res) => {
+  try {
+    const db = getDB()
+    const task = db.prepare('SELECT id, block, completed_at FROM cleaning_tasks WHERE id=?').get(Number(req.params.id))
+    if (!task) return res.status(404).json({ error: 'Görev bulunamadı' })
+    const staff = db.prepare('SELECT assigned_block FROM staff WHERE id=?').get(req.user.workerId)
+    if (!staff?.assigned_block || staff.assigned_block !== task.block)
+      return res.status(403).json({ error: 'Bu görev sizin bloğunuza ait değil' })
+    if (task.completed_at) return res.json({ ok: true, completed_at: task.completed_at })
+    db.prepare("UPDATE cleaning_tasks SET completed_at=datetime('now') WHERE id=?").run(task.id)
+    const updated = db.prepare('SELECT completed_at FROM cleaning_tasks WHERE id=?').get(task.id)
+    db.prepare(`INSERT INTO audit_log(user_id, action, module, target_id, detail)
+      VALUES(NULL, 'kiosk_avs_task_complete', 'avs-self-service', ?, ?)`).run(task.id, JSON.stringify({ workerId: req.user.workerId }))
+    res.json({ ok: true, completed_at: updated.completed_at })
+  } catch (e) { logger.error('[avs task complete]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
 // Duyurular — aktif olanlar (target_role yok, herkese)
 avsSelfServiceRouter.get('/announcements', requireAvsKiosk, (req, res) => {
   try {
@@ -112,19 +154,21 @@ avsSelfServiceRouter.get('/announcements', requireAvsKiosk, (req, res) => {
 })
 
 // Hızlı arıza — staff reporter olarak audit_log'a düşer
-avsSelfServiceRouter.post('/maintenance', requireAvsKiosk, (req, res) => {
+avsSelfServiceRouter.post('/maintenance', requireAvsKiosk, upload.single('photo'), verifyMagicBytes, (req, res) => {
   const { location, description, priority } = req.body
   if (!location || location.trim().length < 3)
     return res.status(400).json({ error: 'location en az 3 karakter olmalıdır' })
   if (!description || description.trim().length < 10)
     return res.status(400).json({ error: 'description en az 10 karakter olmalıdır' })
   try {
+    const photoBefore = req.file ? '/uploads/' + req.file.filename : null
     const id = createRequest({
       location: location.trim(),
       description: description.trim(),
       priority: priority || 'medium',
       reporterUserId: null,
       reporterPersonnelId: null,
+      photoBefore,
     })
     getDB().prepare(`
       INSERT INTO audit_log(user_id, action, module, target_id, detail)

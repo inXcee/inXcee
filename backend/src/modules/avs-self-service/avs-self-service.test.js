@@ -121,7 +121,8 @@ describe('AVS Self-Service — maintenance', () => {
   it('geçerli arıza 201 ve id döner + audit_log yazar', async () => {
     const res = await request(app).post('/api/avs-self-service/maintenance')
       .set('Authorization', `Bearer ${avsToken}`)
-      .send({ location: 'S2 Kat 2 Banyo', description: 'Lavabo gideri tıkalı, su birikiyor' })
+      .field('location', 'S2 Kat 2 Banyo')
+      .field('description', 'Lavabo gideri tıkalı, su birikiyor')
     expect(res.status).toBe(201)
     expect(res.body).toHaveProperty('id')
     const db = getDB()
@@ -134,9 +135,71 @@ describe('AVS Self-Service — maintenance', () => {
   it('kısa açıklama 400 döner', async () => {
     const res = await request(app).post('/api/avs-self-service/maintenance')
       .set('Authorization', `Bearer ${avsToken}`)
-      .send({ location: 'Oda 101', description: 'kisa' })
+      .field('location', 'Oda 101')
+      .field('description', 'kisa')
     expect(res.status).toBe(400)
     expect(res.body.error).toMatch(/description/)
+  })
+})
+
+describe('AVS Self-Service — maintenance foto', () => {
+  it('foto olmadan da 201 (regresyon)', async () => {
+    const res = await request(app).post('/api/avs-self-service/maintenance')
+      .set('Authorization', `Bearer ${avsToken}`)
+      .field('location', 'M1 Kat 1')
+      .field('description', 'Foto olmadan arıza bildirimi testi')
+    expect(res.status).toBe(201)
+    expect(res.body).toHaveProperty('id')
+  })
+})
+
+describe('AVS Self-Service — task complete', () => {
+  it('kendi bloğundaki görevi tamamlar (200 + completed_at)', async () => {
+    const db = getDB()
+    // Global beforeAll M1'e cleaning_task ekledi; worker assigned_block='M1'
+    const task = db.prepare("SELECT id FROM cleaning_tasks WHERE block='M1' AND completed_at IS NULL LIMIT 1").get()
+    const res = await request(app).post(`/api/avs-self-service/tasks/${task.id}/complete`)
+      .set('Authorization', `Bearer ${avsToken}`)
+    expect(res.status).toBe(200)
+    expect(res.body.ok).toBe(true)
+    expect(res.body.completed_at).toBeTruthy()
+  })
+
+  it('başka bloğun görevinde 403', async () => {
+    const db = getDB()
+    const other = db.prepare(`INSERT INTO cleaning_tasks(area, block, floor, task_type, scheduled_at)
+      VALUES('Koridor','S1',1,'common_area',datetime('now'))`).run()
+    const res = await request(app).post(`/api/avs-self-service/tasks/${other.lastInsertRowid}/complete`)
+      .set('Authorization', `Bearer ${avsToken}`)
+    expect(res.status).toBe(403)
+  })
+
+  it('olmayan görevde 404', async () => {
+    const res = await request(app).post('/api/avs-self-service/tasks/999999/complete')
+      .set('Authorization', `Bearer ${avsToken}`)
+    expect(res.status).toBe(404)
+  })
+})
+
+describe('AVS Self-Service — my-transport schedule', () => {
+  it('bugünkü route_assignment ile servis saati + sürücü döner', async () => {
+    const db = getDB()
+    const { pickup_point_id } = db.prepare('SELECT pickup_point_id FROM staff WHERE id=?').get(workerId)
+    const route = db.prepare(`INSERT INTO routes(name, vehicle_plate, driver_name, driver_phone)
+      VALUES('Sabah-1','34 ABC 34','Veli Şoför','5551112233')`).run()
+    const stop = db.prepare(`INSERT INTO route_stops(route_id, pickup_point_id, scheduled_time)
+      VALUES(?,?,'07:30')`).run(route.lastInsertRowid, pickup_point_id)
+    db.prepare(`INSERT INTO route_assignments(route_id, stop_id, staff_id, work_date)
+      VALUES(?,?,?,date('now'))`).run(route.lastInsertRowid, stop.lastInsertRowid, workerId)
+
+    const res = await request(app).get('/api/avs-self-service/my-transport')
+      .set('Authorization', `Bearer ${avsToken}`)
+    expect(res.status).toBe(200)
+    expect(res.body.schedule).not.toBeNull()
+    expect(res.body.schedule.time).toBe('07:30')
+    expect(res.body.schedule.driver_name).toBe('Veli Şoför')
+    expect(res.body.schedule.plate).toBe('34 ABC 34')
+    expect(res.body.pickup).not.toBeNull() // geriye uyumlu
   })
 })
 
