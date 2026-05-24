@@ -9,9 +9,7 @@ function readLocale() {
     const stored = window.localStorage.getItem(STORAGE_KEY)
     if (stored && LOCALES[stored]) return stored
   } catch { /* localStorage devre dışı */ }
-  // Tarayıcı tercihi (örn navigator.language='en-US') — desteklenen bir kök ise kullan
-  const browser = (typeof navigator !== 'undefined' ? navigator.language : '').slice(0, 2)
-  if (LOCALES[browser]) return browser
+  // Kiosk/Türk iş gücü: tarayıcı dili yerine her zaman varsayılan (tr). Kullanıcı switcher'dan değiştirebilir.
   return DEFAULT_LOCALE
 }
 
