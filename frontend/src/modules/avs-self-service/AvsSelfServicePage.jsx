@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { useTranslation } from '../../shared/i18n/index.js'
@@ -45,12 +45,27 @@ export default function AvsSelfServicePage() {
   const [pinForm, setPinForm] = useState({ current_pin: '', new_pin: '', new_pin2: '' })
   const [pinMsg, setPinMsg] = useState({ type: '', text: '' })
 
+  const handleLogout = useCallback(() => {
+    setAvsToken(null)
+    setSelected(null)
+    setPin('')
+    setNameQuery('')
+    setResults([])
+    setActiveTab('shifts')
+    setLoginError('')
+    setFaultSuccess(false)
+    setFaultError('')
+    setFaultForm({ location: '', description: '', priority: 'medium' })
+    setPinMsg({ type: '', text: '' })
+    setPinForm({ current_pin: '', new_pin: '', new_pin2: '' })
+  }, [])
+
   // 5dk inaktivite → logout (son 30sn'de toast uyarısı)
   useIdleTimeout({
     timeoutMs: 5 * 60 * 1000,
     warnBeforeMs: 30 * 1000,
     token: avsToken,
-    onLogout: () => setAvsToken(null),
+    onLogout: handleLogout,
   })
 
   const avsApi = {
@@ -124,10 +139,6 @@ export default function AvsSelfServicePage() {
       return setPinMsg({ type: 'err', text: t('avs_kiosk.profile.pin_mismatch') })
     }
     submitPin.mutate()
-  }
-
-  const handleLogout = () => {
-    setAvsToken(null); setSelected(null); setPin(''); setNameQuery(''); setResults([]); setActiveTab('shifts')
   }
 
   const handleSearch = (val) => {
