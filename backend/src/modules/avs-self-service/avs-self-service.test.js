@@ -268,3 +268,37 @@ describe('AVS Self-Service — feedback', () => {
     expect(res.status).toBe(400)
   })
 })
+
+describe('AVS Self-Service — my-leave', () => {
+  it('GET balance + requests döner', async () => {
+    const res = await request(app).get('/api/avs-self-service/my-leave')
+      .set('Authorization', `Bearer ${avsToken}`)
+    expect(res.status).toBe(200)
+    expect(res.body.balance).toHaveProperty('annual_total')
+    expect(Array.isArray(res.body.requests)).toBe(true)
+  })
+  it('POST geçerli talep 201 + pending + staff_id=worker + total_days', async () => {
+    const res = await request(app).post('/api/avs-self-service/my-leave')
+      .set('Authorization', `Bearer ${avsToken}`)
+      .send({ leave_type: 'annual', start_date: '2026-07-01', end_date: '2026-07-05', reason: 'tatil' })
+    expect(res.status).toBe(201)
+    const row = getDB().prepare('SELECT * FROM leave_requests WHERE id=?').get(res.body.id)
+    expect(row.status).toBe('pending')
+    expect(row.staff_id).toBe(workerId)
+    expect(row.total_days).toBe(5)
+  })
+  it('POST body staff_id farklı olsa da workerId yazılır (güvenlik)', async () => {
+    const res = await request(app).post('/api/avs-self-service/my-leave')
+      .set('Authorization', `Bearer ${avsToken}`)
+      .send({ leave_type: 'sick', start_date: '2026-08-01', end_date: '2026-08-02', staff_id: 999999 })
+    expect(res.status).toBe(201)
+    const row = getDB().prepare('SELECT staff_id FROM leave_requests WHERE id=?').get(res.body.id)
+    expect(row.staff_id).toBe(workerId)
+  })
+  it('bitiş<başlangıç 400', async () => {
+    const res = await request(app).post('/api/avs-self-service/my-leave')
+      .set('Authorization', `Bearer ${avsToken}`)
+      .send({ leave_type: 'annual', start_date: '2026-07-05', end_date: '2026-07-01' })
+    expect(res.status).toBe(400)
+  })
+})
