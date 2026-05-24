@@ -159,7 +159,7 @@ const tr = {
       none: 'Önümüzdeki 7 gün için vardiya kaydın yok',
       status: { scheduled: 'Planlı', worked: 'Çalıştı', absent: 'Gelmedi', on_leave: 'İzinli', overtime: 'Mesai' },
     },
-    transport: { none: 'Servis atanmamış. Yöneticine başvur.', stop: 'Durağım' },
+    transport: { none: 'Servis atanmamış. Yöneticine başvur.', stop: 'Durağım', time: 'Servis saati', driver: 'Şoför', open_map: '🗺 Haritada aç' },
     tasks: {
       laundry_redirect: 'Çamaşır işlemleri Çamaşır Kiosk’unda yapılır.',
       go_laundry: 'Çamaşır Kiosk’una git',
@@ -167,6 +167,8 @@ const tr = {
       housekeeping_title: 'Bugünkü Temizlik Görevleri',
       maintenance_title: 'Açık Arıza Talepleri',
       done: 'Tamamlandı',
+      complete: 'Tamamla',
+      completing: 'Kaydediliyor…',
     },
     announcements: { none: 'Aktif duyuru yok' },
     fault: {
@@ -177,6 +179,9 @@ const tr = {
       submit: 'Arıza Bildir',
       success: 'Talebiniz alındı, teknik ekibe iletilecek.',
       error: 'Talep gönderilemedi, lütfen tekrar deneyin.',
+      add_photo: '📷 Fotoğraf ekle',
+      remove_photo: 'Kaldır',
+      photo_added: 'Fotoğraf eklendi',
     },
     profile: {
       info: 'Kişisel Bilgiler',
@@ -343,7 +348,7 @@ const en = {
       none: 'No shifts in the next 7 days',
       status: { scheduled: 'Scheduled', worked: 'Worked', absent: 'Absent', on_leave: 'On leave', overtime: 'Overtime' },
     },
-    transport: { none: 'No transport assigned. Contact your manager.', stop: 'My Stop' },
+    transport: { none: 'No transport assigned. Contact your manager.', stop: 'My Stop', time: 'Pickup time', driver: 'Driver', open_map: '🗺 Open in maps' },
     tasks: {
       laundry_redirect: 'Laundry work is handled in the Laundry Kiosk.',
       go_laundry: 'Go to Laundry Kiosk',
@@ -351,6 +356,8 @@ const en = {
       housekeeping_title: 'Today’s Cleaning Tasks',
       maintenance_title: 'Open Fault Requests',
       done: 'Done',
+      complete: 'Complete',
+      completing: 'Saving…',
     },
     announcements: { none: 'No active announcements' },
     fault: {
@@ -361,6 +368,9 @@ const en = {
       submit: 'Report Fault',
       success: 'Your request was received and will be sent to the technical team.',
       error: 'Could not submit the request, please try again.',
+      add_photo: '📷 Add photo',
+      remove_photo: 'Remove',
+      photo_added: 'Photo added',
     },
     profile: {
       info: 'Personal Info',
@@ -527,7 +537,7 @@ const ar = {
       none: 'لا ورديات خلال 7 أيام القادمة',
       status: { scheduled: 'مجدول', worked: 'حضر', absent: 'غاب', on_leave: 'إجازة', overtime: 'إضافي' },
     },
-    transport: { none: 'لم يُخصص نقل. راجع مديرك.', stop: 'موقفي' },
+    transport: { none: 'لم يُخصص نقل. راجع مديرك.', stop: 'موقفي', time: 'وقت النقل', driver: 'السائق', open_map: '🗺 افتح الخريطة' },
     tasks: {
       laundry_redirect: 'تتم أعمال الغسيل في كشك الغسيل.',
       go_laundry: 'اذهب إلى كشك الغسيل',
@@ -535,6 +545,8 @@ const ar = {
       housekeeping_title: 'مهام التنظيف اليوم',
       maintenance_title: 'طلبات الأعطال المفتوحة',
       done: 'منجز',
+      complete: 'إنهاء',
+      completing: 'جارٍ الحفظ…',
     },
     announcements: { none: 'لا إعلانات نشطة' },
     fault: {
@@ -545,6 +557,9 @@ const ar = {
       submit: 'إبلاغ عن عطل',
       success: 'تم استلام طلبك وسيُرسل إلى الفريق الفني.',
       error: 'تعذّر إرسال الطلب، يرجى المحاولة مرة أخرى.',
+      add_photo: '📷 أضف صورة',
+      remove_photo: 'إزالة',
+      photo_added: 'تمت إضافة الصورة',
     },
     profile: {
       info: 'المعلومات الشخصية',
