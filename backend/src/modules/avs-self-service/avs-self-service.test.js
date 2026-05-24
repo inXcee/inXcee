@@ -90,3 +90,14 @@ describe('AVS Self-Service — auth', () => {
     expect(res.body).toHaveProperty('department_name')
   })
 })
+
+describe('AVS Self-Service — my-tasks', () => {
+  it('Temizlik departmanı housekeeping görev döner', async () => {
+    const res = await request(app).get('/api/avs-self-service/my-tasks')
+      .set('Authorization', `Bearer ${avsToken}`)
+    expect(res.status).toBe(200)
+    expect(res.body.type).toBe('housekeeping')
+    expect(Array.isArray(res.body.items)).toBe(true)
+    expect(res.body.items.some(t => t.block === 'M1')).toBe(true)
+  })
+})
