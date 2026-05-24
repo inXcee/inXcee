@@ -5,6 +5,7 @@ import { createRequest } from '../maintenance/queries.js'
 import { changeStaffKioskPin } from '../../shared/auth/service.js'
 import { logger } from '../../shared/logger.js'
 import { upload, verifyMagicBytes } from '../../shared/uploads/middleware.js'
+import { createLeaveService, leaveListService, leaveBalanceService } from '../shifts/service.js'
 
 export const avsSelfServiceRouter = Router()
 
@@ -230,4 +231,30 @@ avsSelfServiceRouter.post('/feedback', requireAvsKiosk, (req, res) => {
       VALUES(NULL, 'kiosk_avs_feedback', 'avs-self-service', ?, ?)`).run(r.lastInsertRowid, JSON.stringify({ workerId: req.user.workerId }))
     res.status(201).json({ ok: true, id: r.lastInsertRowid })
   } catch (e) { logger.error('[avs feedback]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// İzin — bakiye + kendi talepleri
+avsSelfServiceRouter.get('/my-leave', requireAvsKiosk, (req, res) => {
+  try {
+    res.json({
+      balance: leaveBalanceService(req.user.workerId),
+      requests: leaveListService({ staff_id: req.user.workerId }),
+    })
+  } catch (e) { logger.error('[avs my-leave]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// İzin talebi oluştur — daima kendisi için (staff_id zorlanır)
+avsSelfServiceRouter.post('/my-leave', requireAvsKiosk, (req, res) => {
+  try {
+    const id = createLeaveService({
+      leave_type: req.body.leave_type,
+      start_date: req.body.start_date,
+      end_date: req.body.end_date,
+      reason: req.body.reason || null,
+      staff_id: req.user.workerId,
+    })
+    getDB().prepare(`INSERT INTO audit_log(user_id, action, module, target_id, detail)
+      VALUES(NULL, 'kiosk_avs_leave', 'avs-self-service', ?, ?)`).run(id, JSON.stringify({ workerId: req.user.workerId }))
+    res.status(201).json({ id })
+  } catch (e) { res.status(400).json({ error: e.message }) }
 })
