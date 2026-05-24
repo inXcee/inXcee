@@ -16,6 +16,7 @@ const TAB_KEYS = [
   { key: 'announcements', icon: '📢', i18n: 'avs_kiosk.nav.announcements' },
   { key: 'quick_fault',   icon: '🔧', i18n: 'avs_kiosk.nav.quick_fault' },
   { key: 'profile',       icon: '👤', i18n: 'avs_kiosk.nav.profile' },
+  { key: 'qr',            icon: '🪪', i18n: 'avs_kiosk.nav.qr' },
 ]
 
 export default function AvsSelfServicePage() {
@@ -131,7 +132,7 @@ export default function AvsSelfServicePage() {
       if (faultPhoto) fd.append('photo', faultPhoto)
       return avsApi.post('/avs-self-service/maintenance', fd)
     },
-    onSuccess: () => { setFaultSuccess(true); setFaultError(''); setFaultForm({ location: '', description: '', priority: 'medium' }); setFaultPhoto(null) },
+    onSuccess: () => { setFaultSuccess(true); setFaultError(''); setFaultForm({ location: '', description: '', priority: 'medium' }); setFaultPhoto(null); queryClient.invalidateQueries({ queryKey: ['avs-my-maint', avsToken] }) },
     onError: (err) => setFaultError(err.response?.data?.error || t('avs_kiosk.fault.error')),
   })
 
@@ -155,6 +156,34 @@ export default function AvsSelfServicePage() {
     }
     submitPin.mutate()
   }
+
+  // P3 — QR kart
+  const { data: qrData } = useQuery({
+    queryKey: ['avs-qr', avsToken],
+    queryFn: () => avsApi.get('/avs-self-service/my-qr').then(r => r.data),
+    enabled: !!avsToken && activeTab === 'qr',
+  })
+  const [qrImg, setQrImg] = useState(null)
+  useEffect(() => {
+    if (qrData?.qr_token) {
+      import('qrcode').then(m => m.default.toDataURL(qrData.qr_token, { width: 240, margin: 1 }).then(setQrImg).catch(() => setQrImg(null)))
+    } else { setQrImg(null) }
+  }, [qrData])
+
+  // P3 — Bildirdiğim arızalar
+  const { data: myFaults = [] } = useQuery({
+    queryKey: ['avs-my-maint', avsToken],
+    queryFn: () => avsApi.get('/avs-self-service/my-maintenance').then(r => r.data),
+    enabled: !!avsToken && activeTab === 'quick_fault',
+  })
+
+  // P3 — Geri bildirim
+  const [fbForm, setFbForm] = useState({ type: 'suggestion', message: '' })
+  const [fbSuccess, setFbSuccess] = useState(false)
+  const submitFeedback = useMutation({
+    mutationFn: () => avsApi.post('/avs-self-service/feedback', fbForm),
+    onSuccess: () => { setFbSuccess(true); setFbForm({ type: 'suggestion', message: '' }) },
+  })
 
   const handleSearch = (val) => {
     setNameQuery(val); setSelected(null)
@@ -443,6 +472,19 @@ export default function AvsSelfServicePage() {
               </button>
             </>
           )}
+          {myFaults.length > 0 && (
+            <div className="border-t border-slate-800 pt-4">
+              <h3 className="text-sm font-medium text-slate-400 mb-2">{t('avs_kiosk.my_faults.title')}</h3>
+              <div className="space-y-2">
+                {myFaults.map(m => (
+                  <div key={m.id} className="bg-slate-800 rounded-xl px-3 py-2 flex justify-between items-center">
+                    <span className="text-sm text-slate-200 truncate">{m.location}</span>
+                    <span className={`text-xs font-medium ${m.status === 'closed' ? 'text-green-400' : m.status === 'open' ? 'text-amber-400' : 'text-blue-400'}`}>{m.status}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -484,6 +526,49 @@ export default function AvsSelfServicePage() {
               {submitPin.isPending ? t('avs_kiosk.loading') : t('avs_kiosk.profile.change_pin')}
             </button>
           </div>
+
+          <div className="bg-slate-900 rounded-2xl p-5 space-y-4">
+            <h2 className="font-medium text-slate-300">{t('avs_kiosk.feedback.title')}</h2>
+            {fbSuccess ? (
+              <div className="text-center py-4">
+                <div className="text-3xl mb-2">🙏</div>
+                <div className="text-green-400 text-sm">{t('avs_kiosk.feedback.success')}</div>
+                <button onClick={() => setFbSuccess(false)} className="mt-3 text-xs text-blue-400">{t('avs_kiosk.feedback.title')}</button>
+              </div>
+            ) : (
+              <>
+                <div className="flex gap-2">
+                  {[['complaint', t('avs_kiosk.feedback.complaint')], ['suggestion', t('avs_kiosk.feedback.suggestion')], ['other', t('avs_kiosk.feedback.other')]].map(([val, lbl]) => (
+                    <button key={val} type="button" onClick={() => setFbForm(p => ({ ...p, type: val }))}
+                      className={`flex-1 py-2 rounded-xl text-xs font-medium ${fbForm.type === val ? 'bg-blue-700 text-white' : 'bg-slate-800 text-slate-400'}`}>{lbl}</button>
+                  ))}
+                </div>
+                <textarea value={fbForm.message} onChange={e => setFbForm(p => ({ ...p, message: e.target.value }))}
+                  rows={3} placeholder={t('avs_kiosk.feedback.placeholder')}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-sm text-slate-100 focus:outline-none focus:border-blue-500" />
+                <button onClick={() => submitFeedback.mutate()} disabled={submitFeedback.isPending || fbForm.message.trim().length < 20}
+                  className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 text-white rounded-xl py-3 text-sm font-medium">
+                  {submitFeedback.isPending ? t('avs_kiosk.loading') : t('avs_kiosk.feedback.submit')}
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'qr' && (
+        <div className="bg-slate-900 rounded-2xl p-6 text-center">
+          {!qrData ? (
+            <KioskSkeleton rows={1} />
+          ) : qrData.qr_token ? (
+            <>
+              {qrImg && <img src={qrImg} alt="QR" className="mx-auto w-56 h-56 bg-white p-3 rounded-2xl" />}
+              <div className="mt-4 font-semibold text-slate-200">{qrData.full_name}</div>
+              <div className="text-xs text-slate-500 mt-1">{t('avs_kiosk.qr.hint')}</div>
+            </>
+          ) : (
+            <div className="text-slate-400 text-sm py-8">{t('avs_kiosk.qr.none')}</div>
+          )}
         </div>
       )}
       <BottomNav

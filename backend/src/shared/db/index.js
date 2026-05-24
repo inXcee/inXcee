@@ -706,6 +706,7 @@ export function initDB() {
   message TEXT NOT NULL,
   created_at TEXT DEFAULT (datetime('now'))
 )`) } catch(e) { if (!e.message?.includes('already exists')) logger.error('[Migration] feedback:', e.message) }
+  try { db.exec('ALTER TABLE feedback ADD COLUMN resolved_at TEXT') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) logger.error('[Migration] feedback.resolved_at:', e.message) }
   try { db.exec(`CREATE TABLE IF NOT EXISTS email_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   sent_at TEXT DEFAULT (datetime('now')),

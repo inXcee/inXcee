@@ -29,6 +29,7 @@ const TAB_GROUPS = [
       { to: '/settings/companies',           label: 'Firmalar',           icon: '⌂',  roles: ADMIN },
       { to: '/settings/visitors',            label: 'Ziyaretçiler',       icon: '👥', roles: ADMIN },
       { to: '/settings/surveys',             label: 'Memnuniyet',         icon: '★',  roles: ADMIN },
+      { to: '/settings/feedback',            label: 'Geri Bildirim',      icon: '💬', roles: MGMT },
       { to: '/settings/drills',              label: 'Tatbikatlar',        icon: '🔥', roles: ADMIN },
       { to: '/settings/documents',           label: 'Belgeler',           icon: '📄', roles: ADMIN },
       { to: '/settings/expenses',            label: 'Bütçe',              icon: '₺',  roles: ADMIN },

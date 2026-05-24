@@ -34,6 +34,7 @@ import { maintenanceRouter } from './modules/maintenance/routes.js'
 import { disciplineRouter } from './modules/discipline/routes.js'
 import { selfServiceRouter } from './modules/self-service/routes.js'
 import { avsSelfServiceRouter } from './modules/avs-self-service/routes.js'
+import { feedbackRouter } from './modules/feedback/routes.js'
 import { dashboardRouter } from './modules/dashboard/routes.js'
 import { roomHistoryRouter } from './modules/room-history/routes.js'
 import { shiftsRouter } from './modules/shifts/routes.js'
@@ -316,6 +317,7 @@ app.use('/api/bulk-actions', writeLimiter, bulkActionsRouter)
 app.use('/api/companies', writeLimiter, companiesRouter)
 app.use('/api/visitors', writeLimiter, visitorsRouter)
 app.use('/api/surveys', writeLimiter, surveysRouter)
+app.use('/api/feedback', writeLimiter, feedbackRouter)
 app.use('/api/drills', writeLimiter, drillsRouter)
 app.use('/api/display', readLimiter, displayRouter)
 app.use('/api/documents', writeLimiter, documentsRouter)
