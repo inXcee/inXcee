@@ -168,6 +168,7 @@ const tr = {
       high: 'Yüksek', medium: 'Orta', low: 'Düşük',
       submit: 'Arıza Bildir',
       success: 'Talebiniz alındı, teknik ekibe iletilecek.',
+      error: 'Talep gönderilemedi, lütfen tekrar deneyin.',
     },
     profile: {
       info: 'Kişisel Bilgiler',
@@ -343,6 +344,7 @@ const en = {
       high: 'High', medium: 'Medium', low: 'Low',
       submit: 'Report Fault',
       success: 'Your request was received and will be sent to the technical team.',
+      error: 'Could not submit the request, please try again.',
     },
     profile: {
       info: 'Personal Info',
@@ -518,6 +520,7 @@ const ar = {
       high: 'عالية', medium: 'متوسطة', low: 'منخفضة',
       submit: 'إبلاغ عن عطل',
       success: 'تم استلام طلبك وسيُرسل إلى الفريق الفني.',
+      error: 'تعذّر إرسال الطلب، يرجى المحاولة مرة أخرى.',
     },
     profile: {
       info: 'المعلومات الشخصية',

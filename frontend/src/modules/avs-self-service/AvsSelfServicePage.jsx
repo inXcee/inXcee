@@ -35,6 +35,7 @@ export default function AvsSelfServicePage() {
   // Task 16 — Hızlı Arıza
   const [faultForm, setFaultForm] = useState({ location: '', description: '', priority: 'medium' })
   const [faultSuccess, setFaultSuccess] = useState(false)
+  const [faultError, setFaultError] = useState('')
 
   // Task 17 — Profil PIN değiştir
   const [pinForm, setPinForm] = useState({ current_pin: '', new_pin: '', new_pin2: '' })
@@ -83,18 +84,21 @@ export default function AvsSelfServicePage() {
 
   useEffect(() => {
     if (activeTab === 'announcements' && announcements.length > 0) {
-      const ids = [...new Set([...readIds, ...announcements.map(a => a.id)])]
-      setReadIds(ids)
-      localStorage.setItem('avs_kiosk_read_ann', JSON.stringify(ids))
+      setReadIds(prev => {
+        const ids = [...new Set([...prev, ...announcements.map(a => a.id)])]
+        localStorage.setItem('avs_kiosk_read_ann', JSON.stringify(ids))
+        return ids
+      })
     }
-  }, [activeTab, announcements]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeTab, announcements])
 
   const unreadCount = announcements.filter(a => !readIds.includes(a.id)).length
 
   // Task 16 — Hızlı Arıza mutation
   const submitFault = useMutation({
     mutationFn: () => avsApi.post('/avs-self-service/maintenance', faultForm),
-    onSuccess: () => { setFaultSuccess(true); setFaultForm({ location: '', description: '', priority: 'medium' }) },
+    onSuccess: () => { setFaultSuccess(true); setFaultError(''); setFaultForm({ location: '', description: '', priority: 'medium' }) },
+    onError: (err) => setFaultError(err.response?.data?.error || t('avs_kiosk.fault.error')),
   })
 
   // Task 17 — Profil: info query + PIN mutation
@@ -378,6 +382,7 @@ export default function AvsSelfServicePage() {
                   ))}
                 </div>
               </div>
+              {faultError && <div className="text-red-400 text-sm text-center">{faultError}</div>}
               <button onClick={() => submitFault.mutate()}
                 disabled={submitFault.isPending || faultForm.location.trim().length < 3 || faultForm.description.trim().length < 10}
                 className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 text-white rounded-xl py-3 text-sm font-medium">
