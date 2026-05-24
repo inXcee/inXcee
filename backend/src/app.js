@@ -33,6 +33,7 @@ import { housekeepingRouter } from './modules/housekeeping/routes.js'
 import { maintenanceRouter } from './modules/maintenance/routes.js'
 import { disciplineRouter } from './modules/discipline/routes.js'
 import { selfServiceRouter } from './modules/self-service/routes.js'
+import { avsSelfServiceRouter } from './modules/avs-self-service/routes.js'
 import { dashboardRouter } from './modules/dashboard/routes.js'
 import { roomHistoryRouter } from './modules/room-history/routes.js'
 import { shiftsRouter } from './modules/shifts/routes.js'
@@ -303,6 +304,7 @@ app.use('/api/housekeeping', writeLimiter, housekeepingRouter)
 app.use('/api/maintenance', writeLimiter, maintenanceRouter)
 app.use('/api/discipline', writeLimiter, disciplineRouter)
 app.use('/api/self-service', writeLimiter, selfServiceRouter)
+app.use('/api/avs-self-service', writeLimiter, avsSelfServiceRouter)
 app.use('/api/dashboard', readLimiter, dashboardRouter)
 app.use('/api/room-history', readLimiter, roomHistoryRouter)
 app.use('/api/notifications', notificationsLimiter, notificationsRouter)

@@ -61,6 +61,7 @@ const KioskPinPage = lazy(() => import('./modules/admin/KioskPinPage.jsx'))
 const AnnouncementsPage = lazy(() => import('./modules/admin/AnnouncementsPage.jsx'))
 const AvsWorkersPage = lazy(() => import('./modules/admin/AvsWorkersPage.jsx'))
 const LaundryKioskPage = lazy(() => import('./modules/laundry-kiosk/LaundryKioskPage.jsx'))
+const AvsSelfServicePage = lazy(() => import('./modules/avs-self-service/AvsSelfServicePage.jsx'))
 const MobileLogin = lazy(() => import('./modules/mobile/auth/MobileLogin.jsx'))
 const HousekeeperHome = lazy(() => import('./modules/mobile/housekeeper/HousekeeperHome.jsx'))
 const TaskDetail = lazy(() => import('./modules/mobile/housekeeper/TaskDetail.jsx'))
@@ -277,6 +278,7 @@ export default function App() {
           <Route path="/kvkk" element={<KvkkPage />} />
           <Route path="/kiosk" element={<SelfServicePage />} />
           <Route path="/laundry-kiosk" element={<LaundryKioskPage />} />
+          <Route path="/avs-kiosk" element={<AvsSelfServicePage />} />
           <Route path="/display" element={<DisplayPage />} />
           <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
             <Route index element={<DashboardPage />} />

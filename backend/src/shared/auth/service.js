@@ -195,6 +195,20 @@ export function changeKioskPin(personnelId, currentPin, newPin) {
   return { ok: true }
 }
 
+// AVS kiosk — staff kendi PIN'ini değiştirir (changeKioskPin'in staff tablosu versiyonu)
+export function changeStaffKioskPin(staffId, currentPin, newPin) {
+  if (!currentPin) return { error: 'Mevcut PIN gerekli', status: 400 }
+  if (!newPin || !/^\d{4}$/.test(newPin)) return { error: 'Yeni PIN 4 haneli rakam olmalıdır', status: 400 }
+  const db = getDB()
+  const s = db.prepare('SELECT id, kiosk_pin FROM staff WHERE id=?').get(staffId)
+  if (!s) return { error: 'Çalışan bulunamadı', status: 404 }
+  if (!s.kiosk_pin) return { error: 'Mevcut PIN yok. Yöneticinizden PIN alın.', status: 403 }
+  if (!bcrypt.compareSync(currentPin, s.kiosk_pin)) return { error: 'Mevcut PIN hatalı', status: 401 }
+  const hash = bcrypt.hashSync(newPin, 10)
+  db.prepare('UPDATE staff SET kiosk_pin=? WHERE id=?').run(hash, staffId)
+  return { ok: true }
+}
+
 export function verifyToken(token) {
   const payload = jwt.verify(token, SECRET)
   if (isBlacklisted(payload.jti)) throw new Error('Token iptal edildi')
