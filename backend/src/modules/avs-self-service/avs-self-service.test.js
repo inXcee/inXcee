@@ -134,3 +134,24 @@ describe('AVS Self-Service — maintenance', () => {
     expect(res.body.error).toMatch(/description/)
   })
 })
+
+describe('AVS Self-Service — change-pin', () => {
+  it('yanlış mevcut PIN ile 401', async () => {
+    const res = await request(app).post('/api/avs-self-service/change-pin')
+      .set('Authorization', `Bearer ${avsToken}`)
+      .send({ current_pin: '9999', new_pin: '1234' })
+    expect(res.status).toBe(401)
+  })
+
+  it('doğru mevcut PIN ile değişir (ve yeni PIN ile login olunur)', async () => {
+    const res = await request(app).post('/api/avs-self-service/change-pin')
+      .set('Authorization', `Bearer ${avsToken}`)
+      .send({ current_pin: '0000', new_pin: '4321' })
+    expect(res.status).toBe(200)
+    expect(res.body.ok).toBe(true)
+    const relog = await request(app).post('/api/auth/avs-login')
+      .send({ worker_id: workerId, pin: '4321' })
+    expect(relog.status).toBe(200)
+    expect(relog.body.token).toBeTruthy()
+  })
+})

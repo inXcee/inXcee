@@ -133,3 +133,16 @@ avsSelfServiceRouter.post('/maintenance', requireAvsKiosk, (req, res) => {
     res.status(201).json({ id })
   } catch (e) { logger.error('[avs maintenance]', e); res.status(400).json({ error: e.message }) }
 })
+
+// PIN değiştir — kendi PIN'i
+avsSelfServiceRouter.post('/change-pin', requireAvsKiosk, (req, res) => {
+  const { current_pin, new_pin } = req.body
+  if (!current_pin || !new_pin) return res.status(400).json({ error: 'Mevcut ve yeni PIN gerekli' })
+  const result = changeStaffKioskPin(req.user.workerId, current_pin, new_pin)
+  if (result.error) return res.status(result.status).json({ error: result.error })
+  getDB().prepare(`
+    INSERT INTO audit_log(user_id, action, module, target_id, detail)
+    VALUES(NULL, 'kiosk_avs_pin_change', 'avs-self-service', ?, ?)
+  `).run(req.user.workerId, JSON.stringify({ workerId: req.user.workerId }))
+  res.json(result)
+})
