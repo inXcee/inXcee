@@ -140,6 +140,34 @@ describe('AVS Self-Service — maintenance', () => {
   })
 })
 
+describe('AVS Self-Service — task complete', () => {
+  it('kendi bloğundaki görevi tamamlar (200 + completed_at)', async () => {
+    const db = getDB()
+    // Global beforeAll M1'e cleaning_task ekledi; worker assigned_block='M1'
+    const task = db.prepare("SELECT id FROM cleaning_tasks WHERE block='M1' AND completed_at IS NULL LIMIT 1").get()
+    const res = await request(app).post(`/api/avs-self-service/tasks/${task.id}/complete`)
+      .set('Authorization', `Bearer ${avsToken}`)
+    expect(res.status).toBe(200)
+    expect(res.body.ok).toBe(true)
+    expect(res.body.completed_at).toBeTruthy()
+  })
+
+  it('başka bloğun görevinde 403', async () => {
+    const db = getDB()
+    const other = db.prepare(`INSERT INTO cleaning_tasks(area, block, floor, task_type, scheduled_at)
+      VALUES('Koridor','S1',1,'common_area',datetime('now'))`).run()
+    const res = await request(app).post(`/api/avs-self-service/tasks/${other.lastInsertRowid}/complete`)
+      .set('Authorization', `Bearer ${avsToken}`)
+    expect(res.status).toBe(403)
+  })
+
+  it('olmayan görevde 404', async () => {
+    const res = await request(app).post('/api/avs-self-service/tasks/999999/complete')
+      .set('Authorization', `Bearer ${avsToken}`)
+    expect(res.status).toBe(404)
+  })
+})
+
 describe('AVS Self-Service — my-transport schedule', () => {
   it('bugünkü route_assignment ile servis saati + sürücü döner', async () => {
     const db = getDB()

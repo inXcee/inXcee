@@ -119,6 +119,24 @@ avsSelfServiceRouter.get('/my-tasks', requireAvsKiosk, (req, res) => {
   } catch (e) { logger.error('[avs my-tasks]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
+// Görev tamamla — sadece kendi assigned_block'undaki cleaning_task
+avsSelfServiceRouter.post('/tasks/:id/complete', requireAvsKiosk, (req, res) => {
+  try {
+    const db = getDB()
+    const task = db.prepare('SELECT id, block, completed_at FROM cleaning_tasks WHERE id=?').get(Number(req.params.id))
+    if (!task) return res.status(404).json({ error: 'Görev bulunamadı' })
+    const staff = db.prepare('SELECT assigned_block FROM staff WHERE id=?').get(req.user.workerId)
+    if (!staff?.assigned_block || staff.assigned_block !== task.block)
+      return res.status(403).json({ error: 'Bu görev sizin bloğunuza ait değil' })
+    if (task.completed_at) return res.json({ ok: true, completed_at: task.completed_at })
+    db.prepare("UPDATE cleaning_tasks SET completed_at=datetime('now') WHERE id=?").run(task.id)
+    const updated = db.prepare('SELECT completed_at FROM cleaning_tasks WHERE id=?').get(task.id)
+    db.prepare(`INSERT INTO audit_log(user_id, action, module, target_id, detail)
+      VALUES(NULL, 'kiosk_avs_task_complete', 'avs-self-service', ?, ?)`).run(task.id, JSON.stringify({ workerId: req.user.workerId }))
+    res.json({ ok: true, completed_at: updated.completed_at })
+  } catch (e) { logger.error('[avs task complete]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
 // Duyurular — aktif olanlar (target_role yok, herkese)
 avsSelfServiceRouter.get('/announcements', requireAvsKiosk, (req, res) => {
   try {
