@@ -56,6 +56,16 @@ describe('AVS Self-Service — my-shifts', () => {
   })
 })
 
+describe('AVS Self-Service — my-transport', () => {
+  it('atanmış pickup point döner', async () => {
+    const res = await request(app).get('/api/avs-self-service/my-transport')
+      .set('Authorization', `Bearer ${avsToken}`)
+    expect(res.status).toBe(200)
+    expect(res.body.pickup).not.toBeNull()
+    expect(res.body.pickup.name).toBe('Merkez Durağı')
+  })
+})
+
 describe('AVS Self-Service — auth', () => {
   it('GET /my-info AVS token olmadan 401', async () => {
     const res = await request(app).get('/api/avs-self-service/my-info')
