@@ -45,6 +45,17 @@ beforeAll(async () => {
     .send({ worker_id: workerId, pin: '0000' })).body.token
 })
 
+describe('AVS Self-Service — my-shifts', () => {
+  it('AVS token ile shifts dizisi döner ve bugünkü vardiyayı içerir', async () => {
+    const res = await request(app).get('/api/avs-self-service/my-shifts')
+      .set('Authorization', `Bearer ${avsToken}`)
+    expect(res.status).toBe(200)
+    expect(Array.isArray(res.body.shifts)).toBe(true)
+    const today = new Date().toISOString().slice(0, 10)
+    expect(res.body.shifts.some(s => s.work_date === today)).toBe(true)
+  })
+})
+
 describe('AVS Self-Service — auth', () => {
   it('GET /my-info AVS token olmadan 401', async () => {
     const res = await request(app).get('/api/avs-self-service/my-info')
