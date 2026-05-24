@@ -152,9 +152,12 @@ const tr = {
     },
     nav: {
       shifts: 'Vardiya', transport: 'Servis', tasks: 'Görev',
-      announcements: 'Duyuru', quick_fault: 'Arıza', profile: 'Profil',
+      announcements: 'Duyuru', quick_fault: 'Arıza', profile: 'Profil', qr: 'QR',
     },
     pinpad: { delete: 'Sil' },
+    qr: { hint: 'Yoklama/giriş için okutun', none: 'QR tanımlı değil. Yöneticine başvur.' },
+    my_faults: { title: 'Bildirdiklerim', none: 'Henüz arıza bildirmedin' },
+    feedback: { title: 'Geri Bildirim', complaint: 'Şikayet', suggestion: 'Öneri', other: 'Diğer', placeholder: 'Mesajın (en az 20 karakter)', submit: 'Gönder', success: 'Geri bildirimin alındı, teşekkürler.' },
     shifts: {
       none: 'Önümüzdeki 7 gün için vardiya kaydın yok',
       status: { scheduled: 'Planlı', worked: 'Çalıştı', absent: 'Gelmedi', on_leave: 'İzinli', overtime: 'Mesai' },
@@ -341,9 +344,12 @@ const en = {
     },
     nav: {
       shifts: 'Shift', transport: 'Transport', tasks: 'Tasks',
-      announcements: 'News', quick_fault: 'Fault', profile: 'Profile',
+      announcements: 'News', quick_fault: 'Fault', profile: 'Profile', qr: 'QR',
     },
     pinpad: { delete: 'Delete' },
+    qr: { hint: 'Scan for attendance/entry', none: 'No QR assigned. Contact your manager.' },
+    my_faults: { title: 'My Reports', none: 'No faults reported yet' },
+    feedback: { title: 'Feedback', complaint: 'Complaint', suggestion: 'Suggestion', other: 'Other', placeholder: 'Your message (min 20 chars)', submit: 'Send', success: 'Your feedback was received, thank you.' },
     shifts: {
       none: 'No shifts in the next 7 days',
       status: { scheduled: 'Scheduled', worked: 'Worked', absent: 'Absent', on_leave: 'On leave', overtime: 'Overtime' },
@@ -530,9 +536,12 @@ const ar = {
     },
     nav: {
       shifts: 'الوردية', transport: 'النقل', tasks: 'المهام',
-      announcements: 'إعلانات', quick_fault: 'عطل', profile: 'الملف',
+      announcements: 'إعلانات', quick_fault: 'عطل', profile: 'الملف', qr: 'QR',
     },
     pinpad: { delete: 'حذف' },
+    qr: { hint: 'امسح للحضور/الدخول', none: 'لا QR مُعرّف. راجع مديرك.' },
+    my_faults: { title: 'بلاغاتي', none: 'لا أعطال مبلّغة بعد' },
+    feedback: { title: 'ملاحظات', complaint: 'شكوى', suggestion: 'اقتراح', other: 'أخرى', placeholder: 'رسالتك (20 حرفًا على الأقل)', submit: 'إرسال', success: 'تم استلام ملاحظتك، شكرًا.' },
     shifts: {
       none: 'لا ورديات خلال 7 أيام القادمة',
       status: { scheduled: 'مجدول', worked: 'حضر', absent: 'غاب', on_leave: 'إجازة', overtime: 'إضافي' },
