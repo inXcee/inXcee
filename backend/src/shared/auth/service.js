@@ -197,6 +197,7 @@ export function changeKioskPin(personnelId, currentPin, newPin) {
 
 // AVS kiosk — staff kendi PIN'ini değiştirir (changeKioskPin'in staff tablosu versiyonu)
 export function changeStaffKioskPin(staffId, currentPin, newPin) {
+  if (!currentPin) return { error: 'Mevcut PIN gerekli', status: 400 }
   if (!newPin || !/^\d{4}$/.test(newPin)) return { error: 'Yeni PIN 4 haneli rakam olmalıdır', status: 400 }
   const db = getDB()
   const s = db.prepare('SELECT id, kiosk_pin FROM staff WHERE id=?').get(staffId)

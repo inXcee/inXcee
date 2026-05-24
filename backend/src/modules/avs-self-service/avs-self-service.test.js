@@ -46,6 +46,11 @@ beforeAll(async () => {
 })
 
 describe('AVS Self-Service — my-shifts', () => {
+  it('AVS token olmadan 401', async () => {
+    const res = await request(app).get('/api/avs-self-service/my-shifts')
+    expect(res.status).toBe(401)
+  })
+
   it('AVS token ile shifts dizisi döner ve bugünkü vardiyayı içerir', async () => {
     const res = await request(app).get('/api/avs-self-service/my-shifts')
       .set('Authorization', `Bearer ${avsToken}`)
@@ -57,6 +62,11 @@ describe('AVS Self-Service — my-shifts', () => {
 })
 
 describe('AVS Self-Service — my-transport', () => {
+  it('AVS token olmadan 401', async () => {
+    const res = await request(app).get('/api/avs-self-service/my-transport')
+    expect(res.status).toBe(401)
+  })
+
   it('atanmış pickup point döner', async () => {
     const res = await request(app).get('/api/avs-self-service/my-transport')
       .set('Authorization', `Bearer ${avsToken}`)
