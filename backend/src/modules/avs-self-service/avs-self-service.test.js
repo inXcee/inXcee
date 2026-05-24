@@ -121,7 +121,8 @@ describe('AVS Self-Service — maintenance', () => {
   it('geçerli arıza 201 ve id döner + audit_log yazar', async () => {
     const res = await request(app).post('/api/avs-self-service/maintenance')
       .set('Authorization', `Bearer ${avsToken}`)
-      .send({ location: 'S2 Kat 2 Banyo', description: 'Lavabo gideri tıkalı, su birikiyor' })
+      .field('location', 'S2 Kat 2 Banyo')
+      .field('description', 'Lavabo gideri tıkalı, su birikiyor')
     expect(res.status).toBe(201)
     expect(res.body).toHaveProperty('id')
     const db = getDB()
@@ -134,9 +135,21 @@ describe('AVS Self-Service — maintenance', () => {
   it('kısa açıklama 400 döner', async () => {
     const res = await request(app).post('/api/avs-self-service/maintenance')
       .set('Authorization', `Bearer ${avsToken}`)
-      .send({ location: 'Oda 101', description: 'kisa' })
+      .field('location', 'Oda 101')
+      .field('description', 'kisa')
     expect(res.status).toBe(400)
     expect(res.body.error).toMatch(/description/)
+  })
+})
+
+describe('AVS Self-Service — maintenance foto', () => {
+  it('foto olmadan da 201 (regresyon)', async () => {
+    const res = await request(app).post('/api/avs-self-service/maintenance')
+      .set('Authorization', `Bearer ${avsToken}`)
+      .field('location', 'M1 Kat 1')
+      .field('description', 'Foto olmadan arıza bildirimi testi')
+    expect(res.status).toBe(201)
+    expect(res.body).toHaveProperty('id')
   })
 })
 

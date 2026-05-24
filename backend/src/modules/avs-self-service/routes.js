@@ -4,6 +4,7 @@ import { getDB } from '../../shared/db/index.js'
 import { createRequest } from '../maintenance/queries.js'
 import { changeStaffKioskPin } from '../../shared/auth/service.js'
 import { logger } from '../../shared/logger.js'
+import { upload, verifyMagicBytes } from '../../shared/uploads/middleware.js'
 
 export const avsSelfServiceRouter = Router()
 
@@ -153,19 +154,21 @@ avsSelfServiceRouter.get('/announcements', requireAvsKiosk, (req, res) => {
 })
 
 // Hızlı arıza — staff reporter olarak audit_log'a düşer
-avsSelfServiceRouter.post('/maintenance', requireAvsKiosk, (req, res) => {
+avsSelfServiceRouter.post('/maintenance', requireAvsKiosk, upload.single('photo'), verifyMagicBytes, (req, res) => {
   const { location, description, priority } = req.body
   if (!location || location.trim().length < 3)
     return res.status(400).json({ error: 'location en az 3 karakter olmalıdır' })
   if (!description || description.trim().length < 10)
     return res.status(400).json({ error: 'description en az 10 karakter olmalıdır' })
   try {
+    const photoBefore = req.file ? '/uploads/' + req.file.filename : null
     const id = createRequest({
       location: location.trim(),
       description: description.trim(),
       priority: priority || 'medium',
       reporterUserId: null,
       reporterPersonnelId: null,
+      photoBefore,
     })
     getDB().prepare(`
       INSERT INTO audit_log(user_id, action, module, target_id, detail)
