@@ -111,3 +111,30 @@ describe('H7 Yetki + silme', () => {
     expect(r.status).toBe(200)
   })
 })
+
+describe('Meals — menu', () => {
+  it('PUT menu upsert + GET menu döner', async () => {
+    const put = await request(app).put('/api/meals/menu')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ meal_date: '2026-07-10', meal_type: 'lunch', items: 'Mercimek\nTavuk\nPilav' })
+    expect(put.status).toBe(200)
+    const get = await request(app).get('/api/meals/menu?date=2026-07-10')
+      .set('Authorization', `Bearer ${token}`)
+    expect(get.status).toBe(200)
+    const lunch = get.body.find(m => m.meal_type === 'lunch')
+    expect(lunch.items).toContain('Tavuk')
+  })
+  it('PUT aynı date+type günceller (upsert)', async () => {
+    await request(app).put('/api/meals/menu').set('Authorization', `Bearer ${token}`)
+      .send({ meal_date: '2026-07-11', meal_type: 'dinner', items: 'eski' })
+    await request(app).put('/api/meals/menu').set('Authorization', `Bearer ${token}`)
+      .send({ meal_date: '2026-07-11', meal_type: 'dinner', items: 'yeni' })
+    const get = await request(app).get('/api/meals/menu?date=2026-07-11').set('Authorization', `Bearer ${token}`)
+    expect(get.body.find(m => m.meal_type === 'dinner').items).toBe('yeni')
+  })
+  it('geçersiz meal_type 400', async () => {
+    const res = await request(app).put('/api/meals/menu').set('Authorization', `Bearer ${token}`)
+      .send({ meal_date: '2026-07-10', meal_type: 'brunch', items: 'x' })
+    expect(res.status).toBe(400)
+  })
+})

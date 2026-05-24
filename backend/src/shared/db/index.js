@@ -1153,6 +1153,14 @@ export function initDB() {
       UNIQUE(staff_id, meal_type, meal_date)
     )`)
     db.exec(`CREATE INDEX IF NOT EXISTS idx_meal_logs_date ON meal_logs(meal_date, meal_type)`)
+    db.exec(`CREATE TABLE IF NOT EXISTS meal_menu (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      meal_date TEXT NOT NULL,
+      meal_type TEXT NOT NULL CHECK(meal_type IN ('breakfast','lunch','dinner','snack')),
+      items TEXT,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(meal_date, meal_type)
+    )`)
   } catch (e) { logger.error('[Migration] meal_logs:', e.message) }
   try { db.exec('ALTER TABLE staff ADD COLUMN diet_flags TEXT') } catch (e) {
     if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) logger.error('[Migration] staff.diet_flags:', e.message)
