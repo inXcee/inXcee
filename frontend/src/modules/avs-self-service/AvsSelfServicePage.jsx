@@ -1,5 +1,4 @@
 import { useState, useRef } from 'react'
-import { useQuery, useMutation } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { useTranslation } from '../../shared/i18n/index.js'
 import { useIdleTimeout } from '../../shared/hooks/useIdleTimeout.js'
@@ -59,7 +58,7 @@ export default function AvsSelfServicePage() {
 
   const handleLogin = async (e) => {
     e.preventDefault(); setLoginError('')
-    if (!selected) return setLoginError(t('avs_kiosk.no_results'))
+    if (!selected) return setLoginError(t('avs_kiosk.select_required'))
     try {
       const res = await api.post('/auth/avs-login', { worker_id: selected.id, pin })
       setAvsToken(res.data.token)
