@@ -142,11 +142,12 @@ export default function AvsSelfServicePage() {
     }, 300)
   }
 
-  const handleLogin = async (e) => {
+  const handleLogin = async (e, completedPin) => {
     e?.preventDefault(); setLoginError('')
     if (!selected) return setLoginError(t('avs_kiosk.select_required'))
+    const pinToUse = completedPin ?? pin
     try {
-      const res = await api.post('/auth/avs-login', { worker_id: selected.id, pin })
+      const res = await api.post('/auth/avs-login', { worker_id: selected.id, pin: pinToUse })
       setAvsToken(res.data.token)
       setActiveTab('shifts')
     } catch (err) { setLoginError(err.response?.data?.error || t('avs_kiosk.login_failed')) }
@@ -198,7 +199,7 @@ export default function AvsSelfServicePage() {
               <div>
                 <label className="block text-sm text-slate-400 mb-3 text-center">{t('avs_kiosk.pin')}</label>
                 <PinPad value={pin} onChange={setPin} length={4}
-                  onComplete={() => handleLogin()} error={loginError} />
+                  onComplete={(completedPin) => handleLogin(null, completedPin)} error={loginError} />
               </div>
             )}
             <button type="submit" disabled={!selected || pin.length !== 4}

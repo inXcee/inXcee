@@ -8,7 +8,7 @@ export default function PinPad({ value = '', onChange, onComplete, length = 4, e
     if (k === '' || value.length >= length) return
     const next = (value + k).slice(0, length)
     onChange(next)
-    if (next.length === length && onComplete) onComplete()
+    if (next.length === length && onComplete) onComplete(next)
   }
 
   return (
