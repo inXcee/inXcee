@@ -354,6 +354,11 @@ describe('AVS Self-Service — inventory/items', () => {
 })
 
 describe('AVS Self-Service — inventory/checkout', () => {
+  it('AVS token olmadan 401', async () => {
+    const res = await request(app).post('/api/avs-self-service/inventory/checkout').send({ item_id: 1, quantity: 1 })
+    expect(res.status).toBe(401)
+  })
+
   it('geçerli checkout → stok düşer, staff_id kaydı + stock_movement out + audit', async () => {
     const db = getDB()
     const item = db.prepare(`INSERT INTO inventory(item_name,quantity,unit,category) VALUES('Eldiven',30,'kutu','housekeeping')`).run()
@@ -401,6 +406,19 @@ describe('AVS Self-Service — inventory/checkout', () => {
 })
 
 describe('AVS Self-Service — inventory item locations', () => {
+  it('AVS token olmadan 401', async () => {
+    const res = await request(app).get('/api/avs-self-service/inventory/items/1/locations')
+    expect(res.status).toBe(401)
+  })
+
+  it('kategori dışı (maintenance) ürünün lokasyonları → 403', async () => {
+    const db = getDB()
+    const item = db.prepare(`INSERT INTO inventory(item_name,quantity,unit,category) VALUES('Lokasyon Teknik',5,'adet','maintenance')`).run()
+    const res = await request(app).get(`/api/avs-self-service/inventory/items/${item.lastInsertRowid}/locations`)
+      .set('Authorization', `Bearer ${avsToken}`)
+    expect(res.status).toBe(403)
+  })
+
   it('lokasyon stoğu olan ürün için stoklu lokasyonları döner', async () => {
     const db = getDB()
     const item = db.prepare(`INSERT INTO inventory(item_name,quantity,unit,category,track_locations) VALUES('Lokasyonlu',20,'adet','housekeeping',1)`).run()
@@ -417,6 +435,11 @@ describe('AVS Self-Service — inventory item locations', () => {
 })
 
 describe('AVS Self-Service — inventory/my-checkouts', () => {
+  it('AVS token olmadan 401', async () => {
+    const res = await request(app).get('/api/avs-self-service/inventory/my-checkouts')
+    expect(res.status).toBe(401)
+  })
+
   it('worker açık zimmetlerini döner', async () => {
     const db = getDB()
     const item = db.prepare(`INSERT INTO inventory(item_name,quantity,unit,category) VALUES('Bez',40,'paket','housekeeping')`).run()

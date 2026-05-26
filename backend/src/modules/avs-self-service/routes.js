@@ -312,24 +312,46 @@ avsSelfServiceRouter.post('/inventory/checkout', requireAvsKiosk, (req, res) => 
       return res.status(403).json({ error: 'Bu ürüne erişiminiz yok' })
 
     const systemUserId = getKioskSystemUserId()
-    const result = checkoutToStaff(
-      item_id, req.user.workerId, qty, note?.trim() || null, systemUserId, from_location_id || null
-    )
+
+    // Sadece checkoutToStaff'ın domain throw'ları (yetersiz stok / lokasyon gerekli)
+    // → 400. getKioskSystemUserId / audit insert gibi altyapı hataları dıştaki
+    // catch'e (500) düşer; iç hata mesajı 400 olarak sızmaz.
+    let result
+    try {
+      result = checkoutToStaff(
+        item_id, req.user.workerId, qty, note?.trim() || null, systemUserId, from_location_id || null
+      )
+    } catch (e) {
+      return res.status(400).json({ error: e.message })
+    }
+
     db.prepare(`INSERT INTO audit_log(user_id, action, module, target_id, detail)
                 VALUES(NULL, 'kiosk_avs_inventory_checkout', 'avs-self-service', ?, ?)`)
       .run(item_id, JSON.stringify({ workerId: req.user.workerId, quantity: qty }))
     res.status(201).json(result)
   } catch (e) {
-    // checkoutToStaff throw: yetersiz stok / lokasyon gerekli
     logger.error('[avs inventory checkout]', e)
-    res.status(400).json({ error: e.message })
+    res.status(500).json({ error: 'Sunucu hatası' })
   }
 })
 
 // Lokasyon-takipli ürün için stoklu kaynak lokasyonlar
 avsSelfServiceRouter.get('/inventory/items/:id/locations', requireAvsKiosk, (req, res) => {
   try {
-    const rows = getDB().prepare(`
+    const db = getDB()
+    // /inventory/items + /checkout ile aynı departman gating'i — başka departmanın
+    // ürününün lokasyon/depo bilgisi sızmasın
+    const staff = db.prepare(`
+      SELECT d.name as dept_name FROM staff s
+      LEFT JOIN departments d ON d.id = s.department_id WHERE s.id = ?
+    `).get(req.user.workerId)
+    const category = departmentToInventoryCategory(staff?.dept_name)
+    if (!category) return res.status(403).json({ error: 'Envanter erişiminiz yok' })
+    const item = db.prepare('SELECT category FROM inventory WHERE id = ?').get(req.params.id)
+    if (!item) return res.status(404).json({ error: 'Ürün bulunamadı' })
+    if (item.category !== category && item.category !== 'general')
+      return res.status(403).json({ error: 'Bu ürüne erişiminiz yok' })
+    const rows = db.prepare(`
       SELECT isbl.location_id, il.name, il.block, isbl.quantity
       FROM inventory_stock_by_location isbl
       JOIN inventory_locations il ON il.id = isbl.location_id
