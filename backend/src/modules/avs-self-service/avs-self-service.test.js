@@ -430,3 +430,12 @@ describe('AVS Self-Service — inventory/my-checkouts', () => {
     expect(res.body.some(c => c.item_name === 'Bez' && c.quantity === 3)).toBe(true)
   })
 })
+
+describe('AVS Self-Service — my-info inventory_category', () => {
+  it('Temizlik worker my-info → inventory_category=housekeeping', async () => {
+    const res = await request(app).get('/api/avs-self-service/my-info')
+      .set('Authorization', `Bearer ${avsToken}`)
+    expect(res.status).toBe(200)
+    expect(res.body.inventory_category).toBe('housekeeping')
+  })
+})

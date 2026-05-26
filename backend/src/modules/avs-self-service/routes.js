@@ -25,7 +25,7 @@ avsSelfServiceRouter.get('/my-info', requireAvsKiosk, (req, res) => {
       WHERE s.id = ?
     `).get(req.user.workerId)
     if (!w) return res.status(404).json({ error: 'Çalışan bulunamadı' })
-    res.json(w)
+    res.json({ ...w, inventory_category: departmentToInventoryCategory(w.department_name) })
   } catch (e) { logger.error('[avs my-info]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
