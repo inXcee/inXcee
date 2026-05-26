@@ -692,7 +692,7 @@ export default function AvsSelfServicePage() {
       )}
       <BottomNav
         tabs={TAB_KEYS.map(tb => ({ key: tb.key, icon: tb.icon, label: t(tb.i18n), badge: tb.key === 'announcements' ? unreadCount : 0 }))}
-        active={activeTab} onChange={setActiveTab} />
+        active={activeTab} onChange={setActiveTab} moreLabel={t('avs_kiosk.nav.more')} />
     </div>
   )
 }
