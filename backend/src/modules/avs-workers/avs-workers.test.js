@@ -87,6 +87,18 @@ describe('AVS Auth', () => {
     expect(Array.isArray(res.body)).toBe(true)
   })
 
+  it('GET /auth/avs-search PIN tanımsız aktif worker da döner (has_pin falsy)', async () => {
+    const name = 'Pinsiz Arama Testi'
+    await request(app).post('/api/avs-workers')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ full_name: name })
+    const res = await request(app).get(`/api/auth/avs-search?q=${encodeURIComponent('Pinsiz Arama')}`)
+    expect(res.status).toBe(200)
+    const found = res.body.find(w => w.full_name === name)
+    expect(found).toBeTruthy()
+    expect(found.has_pin).toBeFalsy()
+  })
+
   it('POST /auth/avs-login PIN tanımlı değilse 403', async () => {
     const w = await request(app).post('/api/avs-workers')
       .set('Authorization', `Bearer ${token}`)
