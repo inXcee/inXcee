@@ -141,7 +141,7 @@ export function searchAvsWorkers(q) {
   return db.prepare(
     `SELECT id, full_name, role_label, kiosk_pin IS NOT NULL as has_pin
      FROM staff
-     WHERE is_active=1 AND kiosk_pin IS NOT NULL AND full_name LIKE ?
+     WHERE is_active=1 AND full_name LIKE ?
      ORDER BY full_name LIMIT 10`
   ).all(`%${q}%`)
 }
