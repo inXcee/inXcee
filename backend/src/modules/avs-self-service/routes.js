@@ -6,6 +6,8 @@ import { changeStaffKioskPin } from '../../shared/auth/service.js'
 import { logger } from '../../shared/logger.js'
 import { upload, verifyMagicBytes } from '../../shared/uploads/middleware.js'
 import { createLeaveService, leaveListService, leaveBalanceService } from '../shifts/service.js'
+import { checkoutToStaff, getStaffCheckouts } from '../inventory/service.js'
+import { departmentToInventoryCategory, getKioskSystemUserId } from './inventory-helpers.js'
 
 export const avsSelfServiceRouter = Router()
 
@@ -268,4 +270,24 @@ avsSelfServiceRouter.get('/menu/today', requireAvsKiosk, (req, res) => {
     `).all()
     res.json(rows)
   } catch (e) { logger.error('[avs menu/today]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// ── Envanter (çıkış/zimmet) ──────────────────────────────────────────────
+// Worker'ın departman kategorisindeki + general ürünler
+avsSelfServiceRouter.get('/inventory/items', requireAvsKiosk, (req, res) => {
+  try {
+    const db = getDB()
+    const staff = db.prepare(`
+      SELECT d.name as dept_name FROM staff s
+      LEFT JOIN departments d ON d.id = s.department_id WHERE s.id = ?
+    `).get(req.user.workerId)
+    const category = departmentToInventoryCategory(staff?.dept_name)
+    if (!category) return res.status(403).json({ error: 'Envanter erişiminiz yok' })
+    const items = db.prepare(`
+      SELECT id, item_name, category, quantity, unit, reorder_threshold, track_locations
+      FROM inventory WHERE category IN (?, 'general')
+      ORDER BY category, item_name
+    `).all(category)
+    res.json({ category, items })
+  } catch (e) { logger.error('[avs inventory items]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
