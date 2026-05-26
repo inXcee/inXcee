@@ -339,3 +339,10 @@ avsSelfServiceRouter.get('/inventory/items/:id/locations', requireAvsKiosk, (req
     res.json(rows)
   } catch (e) { logger.error('[avs item locations]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
+
+// Aldıklarım — açık (iade edilmemiş) zimmetler
+avsSelfServiceRouter.get('/inventory/my-checkouts', requireAvsKiosk, (req, res) => {
+  try {
+    res.json(getStaffCheckouts(req.user.workerId))
+  } catch (e) { logger.error('[avs my-checkouts]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
