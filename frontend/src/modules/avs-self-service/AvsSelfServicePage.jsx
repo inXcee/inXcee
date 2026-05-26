@@ -19,6 +19,7 @@ const TAB_KEYS = [
   { key: 'qr',            icon: '🪪', i18n: 'avs_kiosk.nav.qr' },
   { key: 'leave',         icon: '🌴', i18n: 'avs_kiosk.nav.leave' },
   { key: 'meals',         icon: '🍽', i18n: 'avs_kiosk.nav.meals' },
+  { key: 'inventory',     icon: '📦', i18n: 'avs_kiosk.nav.inventory' },
 ]
 
 export default function AvsSelfServicePage() {
@@ -50,6 +51,14 @@ export default function AvsSelfServicePage() {
   const [pinForm, setPinForm] = useState({ current_pin: '', new_pin: '', new_pin2: '' })
   const [pinMsg, setPinMsg] = useState({ type: '', text: '' })
 
+  // Envanter
+  const [invSearch, setInvSearch] = useState('')
+  const [invSelected, setInvSelected] = useState(null)
+  const [invQty, setInvQty] = useState(1)
+  const [invNote, setInvNote] = useState('')
+  const [invLocation, setInvLocation] = useState('')
+  const [invMsg, setInvMsg] = useState({ type: '', text: '' })
+
   const handleLogout = useCallback(() => {
     setAvsToken(null)
     setSelected(null)
@@ -63,6 +72,8 @@ export default function AvsSelfServicePage() {
     setFaultForm({ location: '', description: '', priority: 'medium' })
     setPinMsg({ type: '', text: '' })
     setPinForm({ current_pin: '', new_pin: '', new_pin2: '' })
+    setInvSearch(''); setInvSelected(null); setInvQty(1); setInvNote(''); setInvLocation('')
+    setInvMsg({ type: '', text: '' })
   }, [])
 
   // 5dk inaktivite → logout (son 30sn'de toast uyarısı)
@@ -143,6 +154,38 @@ export default function AvsSelfServicePage() {
     queryKey: ['avs-info', avsToken],
     queryFn: () => avsApi.get('/avs-self-service/my-info').then(r => r.data),
     enabled: !!avsToken && activeTab === 'profile',
+  })
+
+  const hasInventory = !!myInfo?.inventory_category
+  const { data: invData } = useQuery({
+    queryKey: ['avs-inventory-items', avsToken],
+    queryFn: () => avsApi.get('/avs-self-service/inventory/items').then(r => r.data),
+    enabled: !!avsToken && activeTab === 'inventory' && hasInventory,
+  })
+  const { data: myCheckouts = [] } = useQuery({
+    queryKey: ['avs-my-checkouts', avsToken],
+    queryFn: () => avsApi.get('/avs-self-service/inventory/my-checkouts').then(r => r.data),
+    enabled: !!avsToken && activeTab === 'inventory' && hasInventory,
+  })
+  const { data: invLocations = [] } = useQuery({
+    queryKey: ['avs-item-locations', invSelected?.id],
+    queryFn: () => avsApi.get(`/avs-self-service/inventory/items/${invSelected.id}/locations`).then(r => r.data),
+    enabled: !!avsToken && !!invSelected?.track_locations,
+  })
+  const submitCheckout = useMutation({
+    mutationFn: () => avsApi.post('/avs-self-service/inventory/checkout', {
+      item_id: invSelected.id,
+      quantity: invQty,
+      note: invNote || undefined,
+      from_location_id: invSelected?.track_locations ? Number(invLocation) : undefined,
+    }),
+    onSuccess: () => {
+      setInvMsg({ type: 'ok', text: t('avs_kiosk.inventory.success') })
+      setInvSelected(null); setInvQty(1); setInvNote(''); setInvLocation('')
+      queryClient.invalidateQueries({ queryKey: ['avs-inventory-items'] })
+      queryClient.invalidateQueries({ queryKey: ['avs-my-checkouts'] })
+    },
+    onError: (err) => setInvMsg({ type: 'err', text: err.response?.data?.error || t('avs_kiosk.inventory.error') }),
   })
 
   const submitPin = useMutation({
@@ -690,8 +733,115 @@ export default function AvsSelfServicePage() {
           ))}
         </div>
       )}
+      {activeTab === 'inventory' && hasInventory && (
+        <div className="space-y-4 pb-4">
+          <h2 className="font-medium text-slate-300">{t('avs_kiosk.inventory.title')}</h2>
+
+          {/* Seçili ürün formu */}
+          {invSelected ? (
+            <div className="bg-slate-900 rounded-2xl p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="font-medium text-slate-100">{invSelected.item_name}</div>
+                <button onClick={() => { setInvSelected(null); setInvLocation('') }}
+                  className="text-xs text-slate-500">{t('avs_kiosk.change')}</button>
+              </div>
+              <div className="text-xs text-slate-500">{invSelected.quantity} {invSelected.unit} {t('avs_kiosk.inventory.stock')}</div>
+
+              <div>
+                <label className="block text-sm text-slate-400 mb-1">{t('avs_kiosk.inventory.quantity')}</label>
+                <div className="flex items-center gap-3">
+                  <button type="button" onClick={() => setInvQty(q => Math.max(1, q - 1))}
+                    className="w-10 h-10 rounded-xl bg-slate-800 text-slate-200 text-xl">−</button>
+                  <span className="text-xl text-slate-100 w-10 text-center">{invQty}</span>
+                  <button type="button" onClick={() => setInvQty(q => Math.min(invSelected.quantity, q + 1))}
+                    className="w-10 h-10 rounded-xl bg-slate-800 text-slate-200 text-xl">+</button>
+                </div>
+              </div>
+
+              {invSelected.track_locations ? (
+                <div>
+                  <label className="block text-sm text-slate-400 mb-1">{t('avs_kiosk.inventory.location')}</label>
+                  <select value={invLocation} onChange={e => setInvLocation(e.target.value)}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-slate-100">
+                    <option value="">{t('avs_kiosk.inventory.choose_location')}</option>
+                    {invLocations.map(l => (
+                      <option key={l.location_id} value={l.location_id}>
+                        {l.block ? `${l.block} · ` : ''}{l.name} ({l.quantity})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : null}
+
+              <div>
+                <label className="block text-sm text-slate-400 mb-1">{t('avs_kiosk.inventory.note')}</label>
+                <input type="text" value={invNote} onChange={e => setInvNote(e.target.value)}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-slate-100" />
+              </div>
+
+              <button type="button" disabled={submitCheckout.isPending || (invSelected.track_locations && !invLocation)}
+                onClick={() => { setInvMsg({ type: '', text: '' }); submitCheckout.mutate() }}
+                className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 text-white rounded-xl py-3 font-medium">
+                {t('avs_kiosk.inventory.take')}
+              </button>
+            </div>
+          ) : (
+            <>
+              <input type="text" value={invSearch} onChange={e => setInvSearch(e.target.value)}
+                placeholder={t('avs_kiosk.inventory.search')}
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-slate-100" />
+              <div className="space-y-2">
+                {!invData ? (
+                  <div className="bg-slate-900 rounded-2xl p-5 text-slate-500 text-sm">{t('avs_kiosk.loading')}</div>
+                ) : (() => {
+                  const filtered = (invData.items || []).filter(i =>
+                    i.item_name.toLowerCase().includes(invSearch.toLowerCase()))
+                  if (filtered.length === 0)
+                    return <div className="bg-slate-900 rounded-2xl p-5 text-slate-400 text-sm">{t('avs_kiosk.inventory.none_items')}</div>
+                  return filtered.map(i => {
+                    const out = i.quantity <= 0
+                    return (
+                      <button key={i.id} type="button" disabled={out}
+                        onClick={() => { setInvSelected(i); setInvQty(1); setInvNote(''); setInvLocation(''); setInvMsg({ type: '', text: '' }) }}
+                        className={`w-full text-left bg-slate-900 rounded-xl px-4 py-3 flex justify-between items-center ${out ? 'opacity-50' : 'hover:bg-slate-800'}`}>
+                        <span className="text-sm text-slate-200">{i.item_name}</span>
+                        <span className={`text-xs ${out ? 'text-red-400' : 'text-slate-500'}`}>
+                          {out ? t('avs_kiosk.inventory.out_of_stock') : `${i.quantity} ${i.unit}`}
+                        </span>
+                      </button>
+                    )
+                  })
+                })()}
+              </div>
+            </>
+          )}
+
+          {invMsg.text && (
+            <div className={`text-sm text-center ${invMsg.type === 'ok' ? 'text-green-400' : 'text-red-400'}`}>{invMsg.text}</div>
+          )}
+
+          {/* Aldıklarım */}
+          <div>
+            <h3 className="text-sm font-medium text-slate-400 mb-2">{t('avs_kiosk.inventory.mine')}</h3>
+            {myCheckouts.length === 0 ? (
+              <div className="bg-slate-900 rounded-2xl p-4 text-slate-500 text-sm">{t('avs_kiosk.inventory.none_mine')}</div>
+            ) : (
+              <div className="space-y-2">
+                {myCheckouts.map(c => (
+                  <div key={c.id} className="bg-slate-900 rounded-xl px-4 py-2 flex justify-between text-sm">
+                    <span className="text-slate-200">{c.item_name}</span>
+                    <span className="text-slate-500">{c.quantity} {c.unit}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
       <BottomNav
-        tabs={TAB_KEYS.map(tb => ({ key: tb.key, icon: tb.icon, label: t(tb.i18n), badge: tb.key === 'announcements' ? unreadCount : 0 }))}
+        tabs={TAB_KEYS
+          .filter(tb => tb.key !== 'inventory' || hasInventory)
+          .map(tb => ({ key: tb.key, icon: tb.icon, label: t(tb.i18n), badge: tb.key === 'announcements' ? unreadCount : 0 }))}
         active={activeTab} onChange={setActiveTab} moreLabel={t('avs_kiosk.nav.more')} />
     </div>
   )
