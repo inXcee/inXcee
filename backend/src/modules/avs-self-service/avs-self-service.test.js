@@ -352,3 +352,50 @@ describe('AVS Self-Service — inventory/items', () => {
     expect(res.status).toBe(403)
   })
 })
+
+describe('AVS Self-Service — inventory/checkout', () => {
+  it('geçerli checkout → stok düşer, staff_id kaydı + stock_movement out + audit', async () => {
+    const db = getDB()
+    const item = db.prepare(`INSERT INTO inventory(item_name,quantity,unit,category) VALUES('Eldiven',30,'kutu','housekeeping')`).run()
+    const itemId = item.lastInsertRowid
+    const res = await request(app).post('/api/avs-self-service/inventory/checkout')
+      .set('Authorization', `Bearer ${avsToken}`)
+      .send({ item_id: itemId, quantity: 2, note: 'M1 kat 1' })
+    expect(res.status).toBe(201)
+    expect(res.body.quantity).toBe(28)
+    const co = db.prepare('SELECT * FROM inventory_checkouts WHERE item_id=? AND staff_id=?').get(itemId, workerId)
+    expect(co).toBeTruthy()
+    expect(co.quantity).toBe(2)
+    const mv = db.prepare("SELECT * FROM stock_movements WHERE item_id=? AND type='out'").get(itemId)
+    expect(mv).toBeTruthy()
+    const audit = db.prepare("SELECT * FROM audit_log WHERE action='kiosk_avs_inventory_checkout' AND target_id=?").get(itemId)
+    expect(audit).toBeTruthy()
+  })
+
+  it('yetersiz stok → 400', async () => {
+    const db = getDB()
+    const item = db.prepare(`INSERT INTO inventory(item_name,quantity,unit,category) VALUES('Az Stok',1,'adet','housekeeping')`).run()
+    const res = await request(app).post('/api/avs-self-service/inventory/checkout')
+      .set('Authorization', `Bearer ${avsToken}`)
+      .send({ item_id: item.lastInsertRowid, quantity: 5 })
+    expect(res.status).toBe(400)
+  })
+
+  it('kategori dışı ürün → 403', async () => {
+    const db = getDB()
+    const item = db.prepare(`INSERT INTO inventory(item_name,quantity,unit,category) VALUES('Teknik Parça',10,'adet','maintenance')`).run()
+    const res = await request(app).post('/api/avs-self-service/inventory/checkout')
+      .set('Authorization', `Bearer ${avsToken}`)
+      .send({ item_id: item.lastInsertRowid, quantity: 1 })
+    expect(res.status).toBe(403)
+  })
+
+  it('geçersiz miktar → 400', async () => {
+    const db = getDB()
+    const item = db.prepare(`INSERT INTO inventory(item_name,quantity,unit,category) VALUES('Gecerli Urun',10,'adet','housekeeping')`).run()
+    const res = await request(app).post('/api/avs-self-service/inventory/checkout')
+      .set('Authorization', `Bearer ${avsToken}`)
+      .send({ item_id: item.lastInsertRowid, quantity: 0 })
+    expect(res.status).toBe(400)
+  })
+})
