@@ -325,3 +325,17 @@ avsSelfServiceRouter.post('/inventory/checkout', requireAvsKiosk, (req, res) => 
     res.status(400).json({ error: e.message })
   }
 })
+
+// Lokasyon-takipli ürün için stoklu kaynak lokasyonlar
+avsSelfServiceRouter.get('/inventory/items/:id/locations', requireAvsKiosk, (req, res) => {
+  try {
+    const rows = getDB().prepare(`
+      SELECT isbl.location_id, il.name, il.block, isbl.quantity
+      FROM inventory_stock_by_location isbl
+      JOIN inventory_locations il ON il.id = isbl.location_id
+      WHERE isbl.item_id = ? AND isbl.quantity > 0 AND il.is_active = 1
+      ORDER BY il.block, il.name
+    `).all(req.params.id)
+    res.json(rows)
+  } catch (e) { logger.error('[avs item locations]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})

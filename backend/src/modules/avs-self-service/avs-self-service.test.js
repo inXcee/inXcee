@@ -399,3 +399,19 @@ describe('AVS Self-Service — inventory/checkout', () => {
     expect(res.status).toBe(400)
   })
 })
+
+describe('AVS Self-Service — inventory item locations', () => {
+  it('lokasyon stoğu olan ürün için stoklu lokasyonları döner', async () => {
+    const db = getDB()
+    const item = db.prepare(`INSERT INTO inventory(item_name,quantity,unit,category,track_locations) VALUES('Lokasyonlu',20,'adet','housekeeping',1)`).run()
+    const itemId = item.lastInsertRowid
+    const loc = db.prepare(`INSERT INTO inventory_locations(name, block) VALUES('Depo A','M1')`).run()
+    db.prepare(`INSERT INTO inventory_stock_by_location(item_id, location_id, quantity) VALUES(?,?,?)`)
+      .run(itemId, loc.lastInsertRowid, 20)
+    const res = await request(app).get(`/api/avs-self-service/inventory/items/${itemId}/locations`)
+      .set('Authorization', `Bearer ${avsToken}`)
+    expect(res.status).toBe(200)
+    expect(Array.isArray(res.body)).toBe(true)
+    expect(res.body.some(l => l.name === 'Depo A' && l.quantity === 20)).toBe(true)
+  })
+})
