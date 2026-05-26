@@ -341,8 +341,9 @@ describe('AVS Self-Service — inventory/items', () => {
     const w2 = (await request(app).post('/api/avs-workers')
       .set('Authorization', `Bearer ${(await request(app).post('/api/auth/login').send({ username:'mudur', password:'admin123' })).body.token}`)
       .send({ full_name: 'Guvenlik Worker' })).body
-    const guvenlikId = db.prepare("SELECT id FROM departments WHERE name='Güvenlik'").get().id
-    db.prepare('UPDATE staff SET department_id=? WHERE id=?').run(guvenlikId, w2.id)
+    const guvenlik = db.prepare("SELECT id FROM departments WHERE name='Güvenlik'").get()
+    expect(guvenlik).toBeTruthy()
+    db.prepare('UPDATE staff SET department_id=? WHERE id=?').run(guvenlik.id, w2.id)
     const adminToken = (await request(app).post('/api/auth/login').send({ username:'mudur', password:'admin123' })).body.token
     await request(app).put(`/api/avs-workers/${w2.id}/pin`).set('Authorization', `Bearer ${adminToken}`).send({ new_pin: '1111' })
     const token2 = (await request(app).post('/api/auth/avs-login').send({ worker_id: w2.id, pin: '1111' })).body.token

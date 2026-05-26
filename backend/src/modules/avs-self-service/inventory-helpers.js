@@ -15,7 +15,7 @@ export function departmentToInventoryCategory(deptName) {
 // Gerçek "kim aldı" = inventory_checkouts.staff_id; bu sadece "kaydeden".
 export function getKioskSystemUserId() {
   const db = getDB()
-  db.prepare(`INSERT OR IGNORE INTO users(username, password_hash, role, full_name)
-              VALUES('avs_kiosk_system', '!', 'housekeeper', 'AVS Kiosk Sistemi')`).run()
-  return db.prepare("SELECT id FROM users WHERE username='avs_kiosk_system'").get().id
+  db.prepare('INSERT OR IGNORE INTO users(username, password_hash, role, full_name) VALUES(?,?,?,?)')
+    .run('avs_kiosk_system', '!', 'housekeeper', 'AVS Kiosk Sistemi')
+  return db.prepare('SELECT id FROM users WHERE username=?').get('avs_kiosk_system').id
 }
