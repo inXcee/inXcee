@@ -153,6 +153,7 @@ const tr = {
     nav: {
       shifts: 'Vardiya', transport: 'Servis', tasks: 'Görev',
       announcements: 'Duyuru', quick_fault: 'Arıza', profile: 'Profil', qr: 'QR', leave: 'İzin', meals: 'Yemek',
+      more: 'Daha fazla',
     },
     pinpad: { delete: 'Sil' },
     qr: { hint: 'Yoklama/giriş için okutun', none: 'QR tanımlı değil. Yöneticine başvur.' },
@@ -358,6 +359,7 @@ const en = {
     nav: {
       shifts: 'Shift', transport: 'Transport', tasks: 'Tasks',
       announcements: 'News', quick_fault: 'Fault', profile: 'Profile', qr: 'QR', leave: 'Leave', meals: 'Meals',
+      more: 'More',
     },
     pinpad: { delete: 'Delete' },
     qr: { hint: 'Scan for attendance/entry', none: 'No QR assigned. Contact your manager.' },
@@ -563,6 +565,7 @@ const ar = {
     nav: {
       shifts: 'الوردية', transport: 'النقل', tasks: 'المهام',
       announcements: 'إعلانات', quick_fault: 'عطل', profile: 'الملف', qr: 'QR', leave: 'إجازة', meals: 'الطعام',
+      more: 'المزيد',
     },
     pinpad: { delete: 'حذف' },
     qr: { hint: 'امسح للحضور/الدخول', none: 'لا QR مُعرّف. راجع مديرك.' },
