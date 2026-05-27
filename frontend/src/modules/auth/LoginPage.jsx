@@ -11,6 +11,13 @@ const DEMO_USERS = [
   { username: 'meydanci', password: 'admin123', role: 'Meydancı' },
 ]
 
+// Login gerektirmeyen kiosk girişleri — her biri kendi PIN ekranına yönlendirir
+const KIOSKS = [
+  { path: '/avs-kiosk',     icon: '🧹', label: 'AVS Personel' },
+  { path: '/laundry-kiosk', icon: '🧺', label: 'Çamaşırhane' },
+  { path: '/kiosk',         icon: '🛏', label: 'Sakin Self-Servis' },
+]
+
 export default function LoginPage() {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -202,6 +209,44 @@ export default function LoginPage() {
           </form>
           )}
         </div>
+
+        {/* Kiosk girişleri — login gerektirmez, doğrudan PIN ekranına gider */}
+        {!twoFA && (
+          <div style={{ marginTop: '20px' }}>
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: '10px',
+              margin: '0 0 12px', fontFamily: 'var(--mono)', fontSize: '9px',
+              color: 'var(--text4)', letterSpacing: '2px',
+            }}>
+              <span style={{ flex: 1, height: '1px', background: 'var(--border)' }} />
+              VEYA KİOSK GİRİŞİ
+              <span style={{ flex: 1, height: '1px', background: 'var(--border)' }} />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {KIOSKS.map(k => (
+                <button
+                  key={k.path}
+                  type="button"
+                  onClick={() => navigate(k.path)}
+                  style={{
+                    width: '100%', padding: '12px 14px',
+                    background: 'var(--surface)', border: '1px solid var(--border)',
+                    borderRadius: '10px', color: 'var(--text)',
+                    display: 'flex', alignItems: 'center', gap: '12px',
+                    cursor: 'pointer', fontSize: '13px', textAlign: 'left',
+                    transition: 'border-color .15s, background .15s',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.background = 'rgba(240,165,0,0.06)' }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.background = 'var(--surface)' }}
+                >
+                  <span style={{ fontSize: '18px', lineHeight: 1 }}>{k.icon}</span>
+                  <span style={{ flex: 1 }}>{k.label}</span>
+                  <span style={{ color: 'var(--text4)', fontSize: '14px' }}>→</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {import.meta.env.DEV && (
           <div style={{ marginTop: '14px' }}>
