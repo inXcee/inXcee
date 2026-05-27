@@ -159,7 +159,8 @@ export default function AvsSelfServicePage() {
     enabled: !!avsToken,
   })
 
-  const hasInventory = !!myInfo?.inventory_category
+  // Envanter sekmesi tüm personele açık — herkes her ürünü görebilir (departman gating yok)
+  const hasInventory = true
   const { data: invData } = useQuery({
     queryKey: ['avs-inventory-items', avsToken],
     queryFn: () => avsApi.get('/avs-self-service/inventory/items').then(r => r.data),
