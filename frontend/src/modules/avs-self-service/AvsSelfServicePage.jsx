@@ -150,10 +150,13 @@ export default function AvsSelfServicePage() {
   })
 
   // Task 17 — Profil: info query + PIN mutation
+  // myInfo eager yüklenir (sadece profil sekmesinde değil): inventory_category
+  // alanı "Malzeme" sekmesinin nav'da görünürlüğünü (hasInventory) belirler;
+  // profil sekmesine girene kadar bekletilirse sekme hiç çıkmaz.
   const { data: myInfo } = useQuery({
     queryKey: ['avs-info', avsToken],
     queryFn: () => avsApi.get('/avs-self-service/my-info').then(r => r.data),
-    enabled: !!avsToken && activeTab === 'profile',
+    enabled: !!avsToken,
   })
 
   const hasInventory = !!myInfo?.inventory_category
