@@ -62,11 +62,11 @@ export default function MobileLogin() {
     } finally { setLoading(false) }
   }
 
-  async function handleSubmit() {
-    if (pin.length !== 4) return
+  async function handleSubmit(submitPin = pin) {
+    if (submitPin.length !== 4) return
     setLoading(true); setError('')
     try {
-      const res = await mobileApi.post('/mobile/auth/login', { pin, role })
+      const res = await mobileApi.post('/mobile/auth/login', { pin: submitPin, role })
       login(res.data.token, res.data.user)
       const dest = ROLE_HOME[role] || '/mobile'
 
@@ -105,7 +105,7 @@ export default function MobileLogin() {
       navigator.vibrate?.(8)
       const next = pin + d
       setPin(next)
-      if (next.length === 4) setTimeout(handleSubmit, 100)
+      if (next.length === 4) setTimeout(() => handleSubmit(next), 100)
     }
   }
 
