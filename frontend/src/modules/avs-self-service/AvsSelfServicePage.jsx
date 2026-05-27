@@ -7,7 +7,8 @@ import LanguageSwitcher from '../../shared/components/LanguageSwitcher.jsx'
 import PinPad from './components/PinPad.jsx'
 import BottomNav from './components/BottomNav.jsx'
 import KioskHeader from './components/KioskHeader.jsx'
-import KioskSkeleton from './components/KioskSkeleton.jsx'
+import TabState from './components/TabState.jsx'
+import { leaveDays } from './leaveDays.js'
 
 const TAB_KEYS = [
   { key: 'shifts',        icon: '⏱', i18n: 'avs_kiosk.nav.shifts' },
@@ -90,32 +91,36 @@ export default function AvsSelfServicePage() {
   }
 
   // Task 12 — Vardiyam
-  const { data: shiftsData } = useQuery({
+  const shiftsQuery = useQuery({
     queryKey: ['avs-shifts', avsToken],
     queryFn: () => avsApi.get('/avs-self-service/my-shifts').then(r => r.data),
     enabled: !!avsToken && activeTab === 'shifts',
   })
+  const shiftsData = shiftsQuery.data
 
   // Task 13 — Servisim
-  const { data: transportData } = useQuery({
+  const transportQuery = useQuery({
     queryKey: ['avs-transport', avsToken],
     queryFn: () => avsApi.get('/avs-self-service/my-transport').then(r => r.data),
     enabled: !!avsToken && activeTab === 'transport',
   })
+  const transportData = transportQuery.data
 
   // Task 14 — Görevlerim
-  const { data: tasksData } = useQuery({
+  const tasksQuery = useQuery({
     queryKey: ['avs-tasks', avsToken],
     queryFn: () => avsApi.get('/avs-self-service/my-tasks').then(r => r.data),
     enabled: !!avsToken && activeTab === 'tasks',
   })
+  const tasksData = tasksQuery.data
 
   // Task 15 — Duyurular
-  const { data: announcements = [] } = useQuery({
+  const annQuery = useQuery({
     queryKey: ['avs-ann', avsToken],
     queryFn: () => avsApi.get('/avs-self-service/announcements').then(r => r.data),
     enabled: !!avsToken && activeTab === 'announcements',
   })
+  const announcements = annQuery.data ?? []
 
   useEffect(() => {
     if (activeTab === 'announcements' && announcements.length > 0) {
@@ -161,11 +166,12 @@ export default function AvsSelfServicePage() {
 
   // Envanter sekmesi tüm personele açık — herkes her ürünü görebilir (departman gating yok)
   const hasInventory = true
-  const { data: invData } = useQuery({
+  const invQuery = useQuery({
     queryKey: ['avs-inventory-items', avsToken],
     queryFn: () => avsApi.get('/avs-self-service/inventory/items').then(r => r.data),
     enabled: !!avsToken && activeTab === 'inventory' && hasInventory,
   })
+  const invData = invQuery.data
   const { data: myCheckouts = [] } = useQuery({
     queryKey: ['avs-my-checkouts', avsToken],
     queryFn: () => avsApi.get('/avs-self-service/inventory/my-checkouts').then(r => r.data),
@@ -207,11 +213,12 @@ export default function AvsSelfServicePage() {
   }
 
   // P3 — QR kart
-  const { data: qrData } = useQuery({
+  const qrQuery = useQuery({
     queryKey: ['avs-qr', avsToken],
     queryFn: () => avsApi.get('/avs-self-service/my-qr').then(r => r.data),
     enabled: !!avsToken && activeTab === 'qr',
   })
+  const qrData = qrQuery.data
   const [qrImg, setQrImg] = useState(null)
   useEffect(() => {
     if (qrData?.qr_token) {
@@ -235,11 +242,12 @@ export default function AvsSelfServicePage() {
   })
 
   // P4 — İzin
-  const { data: leaveData } = useQuery({
+  const leaveQuery = useQuery({
     queryKey: ['avs-leave', avsToken],
     queryFn: () => avsApi.get('/avs-self-service/my-leave').then(r => r.data),
     enabled: !!avsToken && activeTab === 'leave',
   })
+  const leaveData = leaveQuery.data
   const [leaveForm, setLeaveForm] = useState({ leave_type: 'annual', start_date: '', end_date: '', reason: '' })
   const [leaveSuccess, setLeaveSuccess] = useState(false)
   const [leaveError, setLeaveError] = useState('')
@@ -250,11 +258,33 @@ export default function AvsSelfServicePage() {
   })
 
   // P5 — Yemek menüsü (bugün)
-  const { data: menuToday = [] } = useQuery({
+  const menuQuery = useQuery({
     queryKey: ['avs-menu-today', avsToken],
     queryFn: () => avsApi.get('/avs-self-service/menu/today').then(r => r.data),
     enabled: !!avsToken && activeTab === 'meals',
   })
+  const menuToday = menuQuery.data ?? []
+
+  // Aktif sekmenin query'si → header'daki ↻ yenileme butonu bunu refetch eder.
+  // Eşlemede olmayan sekmeler (profil, hızlı arıza) için tüm aktif query'ler tazelenir.
+  const TAB_QUERY = {
+    shifts: shiftsQuery, transport: transportQuery, tasks: tasksQuery,
+    announcements: annQuery, qr: qrQuery, leave: leaveQuery,
+    meals: menuQuery, inventory: invQuery,
+  }
+  const activeQuery = TAB_QUERY[activeTab]
+  const handleRefresh = () => {
+    if (activeQuery) activeQuery.refetch()
+    else queryClient.invalidateQueries()
+  }
+
+  // İzin: talep edilen gün sayısı (backend ile aynı) + yıllık bakiye aşımı guard'ı
+  const leaveReqDays = leaveDays(leaveForm.start_date, leaveForm.end_date)
+  const annualRemaining = leaveData?.balance
+    ? (leaveData.balance.annual_total - leaveData.balance.annual_used)
+    : null
+  const overAnnualBalance =
+    leaveForm.leave_type === 'annual' && annualRemaining != null && leaveReqDays > annualRemaining
 
   const handleSearch = (val) => {
     setNameQuery(val); setSelected(null)
@@ -341,17 +371,16 @@ export default function AvsSelfServicePage() {
   // ─── Ana ekran ──────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-slate-950 flex flex-col max-w-lg mx-auto p-4 pb-24">
-      <KioskHeader userName={selected?.full_name} onLogout={handleLogout} />
+      <KioskHeader userName={selected?.full_name} onLogout={handleLogout}
+        onRefresh={handleRefresh} refreshing={!!activeQuery?.isFetching} />
       <div className="mb-4 flex justify-end"><LanguageSwitcher compact /></div>
 
       {/* Task 12 — Vardiyam */}
       {activeTab === 'shifts' && (
-        <div className="space-y-2">
-          {!shiftsData ? (
-            <KioskSkeleton />
-          ) : (shiftsData.shifts || []).length === 0 ? (
-            <div className="bg-slate-900 rounded-2xl p-5 text-slate-400 text-sm">{t('avs_kiosk.shifts.none')}</div>
-          ) : shiftsData.shifts.map(s => {
+        <TabState query={shiftsQuery}
+          isEmpty={(shiftsData?.shifts || []).length === 0} emptyText={t('avs_kiosk.shifts.none')}>
+          <div className="space-y-2">
+          {(shiftsData?.shifts || []).map(s => {
             const today = new Date().toISOString().slice(0, 10)
             const isToday = s.work_date === today
             const color = s.status === 'worked' ? 'text-green-400' : s.status === 'absent' ? 'text-red-400'
@@ -370,17 +399,15 @@ export default function AvsSelfServicePage() {
               </div>
             )
           })}
-        </div>
+          </div>
+        </TabState>
       )}
 
       {/* Task 13 — Servisim */}
       {activeTab === 'transport' && (
-        <div className="space-y-4">
-          {!transportData ? (
-            <KioskSkeleton />
-          ) : !transportData.pickup ? (
-            <div className="bg-slate-900 rounded-2xl p-5 text-slate-400 text-sm text-center py-6">{t('avs_kiosk.transport.none')}</div>
-          ) : (
+        <TabState query={transportQuery}
+          isEmpty={!transportData?.pickup} emptyText={t('avs_kiosk.transport.none')}>
+          <div className="space-y-4">
             <div className="bg-slate-900 rounded-2xl p-5">
               {transportData.schedule?.time && (
                 <div className="text-3xl font-bold text-blue-400 mb-1">🕐 {transportData.schedule.time}</div>
@@ -409,16 +436,15 @@ export default function AvsSelfServicePage() {
                 </button>
               )}
             </div>
-          )}
-        </div>
+          </div>
+        </TabState>
       )}
 
       {/* Task 14 — Görevlerim */}
       {activeTab === 'tasks' && (
-        <div className="space-y-3">
-          {!tasksData ? (
-            <KioskSkeleton />
-          ) : tasksData.type === 'laundry' ? (
+        <TabState query={tasksQuery}>
+          <div className="space-y-3">
+          {tasksData?.type === 'laundry' ? (
             <div className="bg-slate-900 rounded-2xl p-6 text-center">
               <div className="text-4xl mb-3">🧺</div>
               <div className="text-slate-300 text-sm mb-4">{t('avs_kiosk.tasks.laundry_redirect')}</div>
@@ -466,22 +492,24 @@ export default function AvsSelfServicePage() {
           ) : (
             <div className="bg-slate-900 rounded-2xl p-5 text-slate-400 text-sm text-center py-6">{t('avs_kiosk.tasks.none')}</div>
           )}
-        </div>
+          </div>
+        </TabState>
       )}
 
       {/* Task 15 — Duyurular */}
       {activeTab === 'announcements' && (
-        <div className="space-y-3">
-          {announcements.length === 0 ? (
-            <div className="bg-slate-900 rounded-2xl p-5 text-slate-500 text-sm">{t('avs_kiosk.announcements.none')}</div>
-          ) : announcements.map(a => (
+        <TabState query={annQuery}
+          isEmpty={announcements.length === 0} emptyText={t('avs_kiosk.announcements.none')}>
+          <div className="space-y-3">
+          {announcements.map(a => (
             <div key={a.id} className="bg-slate-900 rounded-2xl p-5">
               <div className="font-medium text-slate-200 mb-2">{a.title}</div>
               <div className="text-sm text-slate-400 whitespace-pre-line">{a.body}</div>
               <div className="text-xs text-slate-600 mt-3">{new Date(a.created_at).toLocaleDateString('tr-TR')}</div>
             </div>
           ))}
-        </div>
+          </div>
+        </TabState>
       )}
 
       {/* Task 16 — Hızlı Arıza */}
@@ -628,19 +656,14 @@ export default function AvsSelfServicePage() {
       )}
 
       {activeTab === 'qr' && (
-        <div className="bg-slate-900 rounded-2xl p-6 text-center">
-          {!qrData ? (
-            <KioskSkeleton rows={1} />
-          ) : qrData.qr_token ? (
-            <>
-              {qrImg && <img src={qrImg} alt="QR" className="mx-auto w-56 h-56 bg-white p-3 rounded-2xl" />}
-              <div className="mt-4 font-semibold text-slate-200">{qrData.full_name}</div>
-              <div className="text-xs text-slate-500 mt-1">{t('avs_kiosk.qr.hint')}</div>
-            </>
-          ) : (
-            <div className="text-slate-400 text-sm py-8">{t('avs_kiosk.qr.none')}</div>
-          )}
-        </div>
+        <TabState query={qrQuery} skeletonRows={1}
+          isEmpty={!!qrData && !qrData.qr_token} emptyText={t('avs_kiosk.qr.none')}>
+          <div className="bg-slate-900 rounded-2xl p-6 text-center">
+            {qrImg && <img src={qrImg} alt="QR" className="mx-auto w-56 h-56 bg-white p-3 rounded-2xl" />}
+            <div className="mt-4 font-semibold text-slate-200">{qrData?.full_name}</div>
+            <div className="text-xs text-slate-500 mt-1">{t('avs_kiosk.qr.hint')}</div>
+          </div>
+        </TabState>
       )}
 
       {activeTab === 'leave' && (
@@ -688,11 +711,24 @@ export default function AvsSelfServicePage() {
                       className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-3 text-sm text-slate-100" />
                   </div>
                 </div>
+                {leaveReqDays > 0 && (
+                  <div className="flex items-center justify-between bg-slate-800 rounded-xl px-4 py-2.5 text-sm">
+                    <span className="text-slate-400">{t('avs_kiosk.leave.requested')}</span>
+                    <span className={`font-semibold ${overAnnualBalance ? 'text-red-400' : 'text-slate-100'}`}>
+                      {leaveReqDays} {t('avs_kiosk.leave.days')}
+                    </span>
+                  </div>
+                )}
                 <textarea value={leaveForm.reason} onChange={e => setLeaveForm(p => ({ ...p, reason: e.target.value }))}
                   rows={2} placeholder={t('avs_kiosk.leave.reason')}
                   className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-sm text-slate-100" />
+                {overAnnualBalance && (
+                  <div className="text-amber-400 text-sm text-center">
+                    {t('avs_kiosk.leave.over_balance')} {annualRemaining} {t('avs_kiosk.leave.days')}.
+                  </div>
+                )}
                 {leaveError && <div className="text-red-400 text-sm text-center">{leaveError}</div>}
-                <button onClick={() => submitLeave.mutate()} disabled={submitLeave.isPending || !leaveForm.start_date || !leaveForm.end_date}
+                <button onClick={() => submitLeave.mutate()} disabled={submitLeave.isPending || !leaveForm.start_date || !leaveForm.end_date || overAnnualBalance}
                   className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 text-white rounded-xl py-3 text-sm font-medium">
                   {submitLeave.isPending ? t('avs_kiosk.loading') : t('avs_kiosk.leave.submit')}
                 </button>
@@ -725,17 +761,17 @@ export default function AvsSelfServicePage() {
       )}
 
       {activeTab === 'meals' && (
-        <div className="space-y-3">
+        <TabState query={menuQuery} isEmpty={menuToday.length === 0} emptyText={t('avs_kiosk.meals.none')}>
+          <div className="space-y-3">
           <h2 className="font-medium text-slate-300">{t('avs_kiosk.meals.title')}</h2>
-          {menuToday.length === 0 ? (
-            <div className="bg-slate-900 rounded-2xl p-5 text-slate-400 text-sm">{t('avs_kiosk.meals.none')}</div>
-          ) : menuToday.map(m => (
+          {menuToday.map(m => (
             <div key={m.meal_type} className="bg-slate-900 rounded-2xl p-5">
               <div className="font-medium text-slate-200 mb-2">{t('avs_kiosk.meals.' + m.meal_type, m.meal_type)}</div>
               <div className="text-sm text-slate-400 whitespace-pre-line">{m.items}</div>
             </div>
           ))}
-        </div>
+          </div>
+        </TabState>
       )}
       {activeTab === 'inventory' && hasInventory && (
         <div className="space-y-4 pb-4">
@@ -795,13 +831,12 @@ export default function AvsSelfServicePage() {
                 placeholder={t('avs_kiosk.inventory.search')}
                 className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-slate-100" />
               <div className="space-y-2">
-                {!invData ? (
-                  <div className="bg-slate-900 rounded-2xl p-5 text-slate-500 text-sm">{t('avs_kiosk.loading')}</div>
-                ) : (() => {
-                  const filtered = (invData.items || []).filter(i =>
+                <TabState query={invQuery}
+                  isEmpty={!!invData && (invData.items || []).filter(i => i.item_name.toLowerCase().includes(invSearch.toLowerCase())).length === 0}
+                  emptyText={t('avs_kiosk.inventory.none_items')}>
+                {(() => {
+                  const filtered = (invData?.items || []).filter(i =>
                     i.item_name.toLowerCase().includes(invSearch.toLowerCase()))
-                  if (filtered.length === 0)
-                    return <div className="bg-slate-900 rounded-2xl p-5 text-slate-400 text-sm">{t('avs_kiosk.inventory.none_items')}</div>
                   return filtered.map(i => {
                     const out = i.quantity <= 0
                     return (
@@ -816,6 +851,7 @@ export default function AvsSelfServicePage() {
                     )
                   })
                 })()}
+                </TabState>
               </div>
             </>
           )}

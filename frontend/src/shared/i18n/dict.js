@@ -142,6 +142,8 @@ const tr = {
     logout: 'Çıkış',
     change: 'Değiştir',
     loading: 'Yükleniyor…',
+    load_error: 'Veriler yüklenemedi.',
+    refresh: 'Yenile',
     tabs: {
       shifts: '⏱ Vardiyam',
       transport: '🚌 Servisim',
@@ -168,6 +170,7 @@ const tr = {
       submit: 'Talep Oluştur', success: 'İzin talebin alındı, onay bekliyor.',
       my_requests: 'Taleplerim', none: 'Henüz izin talebin yok',
       status_pending: 'Beklemede', status_approved: 'Onaylandı', status_rejected: 'Reddedildi',
+      requested: 'Talep edilen', over_balance: 'Kalan yıllık izniniz',
     },
     meals: {
       title: 'Bugünün Menüsü', none: 'Bugün için menü girilmemiş',
@@ -356,6 +359,8 @@ const en = {
     logout: 'Log out',
     change: 'Change',
     loading: 'Loading…',
+    load_error: 'Could not load data.',
+    refresh: 'Refresh',
     tabs: {
       shifts: '⏱ My Shifts',
       transport: '🚌 My Transport',
@@ -382,6 +387,7 @@ const en = {
       submit: 'Submit Request', success: 'Your leave request was received, pending approval.',
       my_requests: 'My Requests', none: 'No leave requests yet',
       status_pending: 'Pending', status_approved: 'Approved', status_rejected: 'Rejected',
+      requested: 'Requested', over_balance: 'Your remaining annual leave is',
     },
     meals: {
       title: "Today's Menu", none: 'No menu set for today',
@@ -570,6 +576,8 @@ const ar = {
     logout: 'خروج',
     change: 'تغيير',
     loading: 'جارٍ التحميل…',
+    load_error: 'تعذّر تحميل البيانات.',
+    refresh: 'تحديث',
     tabs: {
       shifts: '⏱ ورديتي',
       transport: '🚌 نقلي',
@@ -596,6 +604,7 @@ const ar = {
       submit: 'إنشاء طلب', success: 'تم استلام طلب إجازتك، بانتظار الموافقة.',
       my_requests: 'طلباتي', none: 'لا طلبات إجازة بعد',
       status_pending: 'قيد الانتظار', status_approved: 'مقبول', status_rejected: 'مرفوض',
+      requested: 'المطلوب', over_balance: 'رصيد إجازتك السنوية المتبقي',
     },
     meals: {
       title: 'قائمة اليوم', none: 'لم تُحدد قائمة لليوم',
