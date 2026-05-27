@@ -20,3 +20,7 @@ test-out.txt
 frontend/test-results/
 frontend/playwright-report/
 frontend/e2e/.tmp/
+
+# Toplu import — gerçek veri/PII (şablonlar commit edilir, doldurulmuşları edilmez)
+scripts/import/roster.csv
+scripts/import/inventory.csv

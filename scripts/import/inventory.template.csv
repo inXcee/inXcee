@@ -1,0 +1,5 @@
+item_name,category,quantity,unit,reorder_threshold,unit_price,location,track_locations
+Yüzey Temizleyici,housekeeping,30,litre,5,35,Temizlik Dolabı,0
+Matkap Ucu Seti,maintenance,10,adet,3,120,Teknik Depo,0
+Çamaşır Deterjanı,laundry,50,kg,10,28,Çamaşırhane,0
+Çöp Poşeti,general,500,adet,100,2,,0
