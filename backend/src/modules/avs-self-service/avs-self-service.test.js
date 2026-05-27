@@ -517,3 +517,41 @@ describe('AVS Self-Service — notifications feed', () => {
     expect(res.body.items[0].kind).toBe('announcement') // en yeni en üstte
   })
 })
+
+describe('AVS Self-Service — web-push (opt-in)', () => {
+  const sub = { endpoint: 'https://push.example/ep-test', keys: { p256dh: 'p256', auth: 'authk' } }
+
+  it('AVS token olmadan subscribe 401', async () => {
+    const res = await request(app).post('/api/avs-self-service/push/subscribe').send(sub)
+    expect(res.status).toBe(401)
+  })
+
+  it('VAPID yapılandırılmamışsa vapid-public-key 503', async () => {
+    const res = await request(app).get('/api/avs-self-service/push/vapid-public-key')
+      .set('Authorization', `Bearer ${avsToken}`)
+    expect(res.status).toBe(503)
+  })
+
+  it('geçerli subscribe 201 → avs_push_subscriptions worker_id ile kaydeder', async () => {
+    const res = await request(app).post('/api/avs-self-service/push/subscribe')
+      .set('Authorization', `Bearer ${avsToken}`).send(sub)
+    expect(res.status).toBe(201)
+    const row = getDB().prepare('SELECT worker_id FROM avs_push_subscriptions WHERE endpoint=?').get(sub.endpoint)
+    expect(row).toBeTruthy()
+    expect(row.worker_id).toBe(workerId)
+  })
+
+  it('eksik keys 400', async () => {
+    const res = await request(app).post('/api/avs-self-service/push/subscribe')
+      .set('Authorization', `Bearer ${avsToken}`).send({ endpoint: 'https://x/y' })
+    expect(res.status).toBe(400)
+  })
+
+  it('unsubscribe → kayıt silinir', async () => {
+    const res = await request(app).post('/api/avs-self-service/push/unsubscribe')
+      .set('Authorization', `Bearer ${avsToken}`).send({ endpoint: sub.endpoint })
+    expect(res.status).toBe(200)
+    const row = getDB().prepare('SELECT id FROM avs_push_subscriptions WHERE endpoint=?').get(sub.endpoint)
+    expect(row).toBeUndefined()
+  })
+})

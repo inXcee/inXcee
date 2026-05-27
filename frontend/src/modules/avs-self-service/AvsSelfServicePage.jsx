@@ -379,7 +379,7 @@ export default function AvsSelfServicePage() {
       <KioskHeader userName={selected?.full_name} onLogout={handleLogout}
         onRefresh={handleRefresh} refreshing={!!activeQuery?.isFetching}
         onBell={openFeed} unread={unread} />
-      <NotificationFeed open={feedOpen} onClose={() => setFeedOpen(false)} items={notifications} />
+      <NotificationFeed open={feedOpen} onClose={() => setFeedOpen(false)} items={notifications} avsApi={avsApi} />
       <div className="mb-4 flex justify-end"><LanguageSwitcher compact /></div>
 
       {/* Task 12 — Vardiyam */}

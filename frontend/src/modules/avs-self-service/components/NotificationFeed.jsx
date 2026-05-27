@@ -1,5 +1,7 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from '../../../shared/i18n/index.js'
+import { getPushPermission } from '../../../shared/utils/pushSubscribe.js'
+import { subscribeAvsPush, unsubscribeAvsPush, isPushSupported, getCurrentSubscription } from '../avsPush.js'
 
 // SQLite 'YYYY-MM-DD HH:MM:SS' (UTC) → yerel tarih/saat
 function fmtTs(ts, locale) {
@@ -29,9 +31,12 @@ function itemBody(item, t) {
 }
 
 // Bildirim akışı paneli — header zilinden açılır, alt sheet olarak çıkar.
-// props: open, onClose, items, locale
-export default function NotificationFeed({ open, onClose, items }) {
+// props: open, onClose, items, avsApi (push opt-in için)
+export default function NotificationFeed({ open, onClose, items, avsApi }) {
   const { t, locale } = useTranslation()
+  // 'unknown' | 'unsupported' | 'denied' | 'off' | 'on'
+  const [pushState, setPushState] = useState('unknown')
+  const [busy, setBusy] = useState(false)
 
   useEffect(() => {
     if (!open) return
@@ -40,13 +45,36 @@ export default function NotificationFeed({ open, onClose, items }) {
     return () => window.removeEventListener('keydown', onKey)
   }, [open, onClose])
 
+  // Panel açılınca push durumunu belirle (telefonda anlamlı, terminalde sadece "kapalı")
+  useEffect(() => {
+    if (!open) return
+    if (!isPushSupported()) { setPushState('unsupported'); return }
+    if (getPushPermission() === 'denied') { setPushState('denied'); return }
+    let alive = true
+    getCurrentSubscription().then(s => { if (alive) setPushState(s ? 'on' : 'off') })
+    return () => { alive = false }
+  }, [open])
+
+  const enablePush = async () => {
+    setBusy(true)
+    const sub = await subscribeAvsPush(avsApi)
+    setBusy(false)
+    setPushState(sub ? 'on' : (getPushPermission() === 'denied' ? 'denied' : 'off'))
+  }
+  const disablePush = async () => {
+    setBusy(true)
+    await unsubscribeAvsPush(avsApi)
+    setBusy(false)
+    setPushState('off')
+  }
+
   if (!open) return null
 
   return (
     <>
       <div className="fixed inset-0 z-40 bg-black/50" onClick={onClose} aria-hidden="true" />
       <div role="dialog" aria-label={t('avs_kiosk.notifications.title')}
-        className="fixed inset-x-0 top-0 max-w-lg mx-auto z-50 bg-slate-900 border-b border-slate-800 rounded-b-2xl shadow-2xl max-h-[80vh] flex flex-col"
+        className="fixed inset-x-0 top-0 max-w-lg mx-auto z-50 bg-slate-900 border-b border-slate-800 rounded-b-2xl shadow-2xl max-h-[85vh] flex flex-col"
         style={{ paddingTop: 'env(safe-area-inset-top)' }}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800">
           <h2 className="font-semibold text-slate-100">🔔 {t('avs_kiosk.notifications.title')}</h2>
@@ -70,6 +98,28 @@ export default function NotificationFeed({ open, onClose, items }) {
             </div>
           ))}
         </div>
+
+        {/* Push opt-in — kişisel telefonda anlamlı; desteklenmiyorsa gizli */}
+        {avsApi && pushState !== 'unsupported' && pushState !== 'unknown' && (
+          <div className="border-t border-slate-800 px-5 py-4">
+            {pushState === 'on' ? (
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-green-400">🔔 {t('avs_kiosk.notifications.push_on')}</span>
+                <button type="button" onClick={disablePush} disabled={busy}
+                  className="text-xs text-slate-400 hover:text-slate-200 px-3 py-1.5 bg-slate-800 rounded-xl disabled:opacity-50">
+                  {t('avs_kiosk.notifications.push_off')}
+                </button>
+              </div>
+            ) : pushState === 'denied' ? (
+              <div className="text-xs text-slate-500 text-center">{t('avs_kiosk.notifications.push_denied')}</div>
+            ) : (
+              <button type="button" onClick={enablePush} disabled={busy}
+                className="w-full bg-slate-800 hover:bg-slate-700 text-blue-400 rounded-xl py-2.5 text-sm font-medium disabled:opacity-50">
+                {busy ? '…' : `🔔 ${t('avs_kiosk.notifications.push_enable')}`}
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </>
   )

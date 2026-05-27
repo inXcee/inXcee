@@ -148,6 +148,8 @@ const tr = {
       title: 'Bildirimler', none: 'Bildirim yok', bell: 'Bildirimler',
       leave_approved: 'İzniniz onaylandı', leave_rejected: 'İzniniz reddedildi',
       maintenance_done: 'Arıza talebiniz çözüldü', announcement: 'Yeni duyuru',
+      push_enable: 'Bu cihazda bildirim al', push_on: 'Bildirimler açık', push_off: 'Kapat',
+      push_denied: 'Bildirim izni reddedildi — tarayıcı ayarlarından açabilirsin',
     },
     tabs: {
       shifts: '⏱ Vardiyam',
@@ -370,6 +372,8 @@ const en = {
       title: 'Notifications', none: 'No notifications', bell: 'Notifications',
       leave_approved: 'Your leave was approved', leave_rejected: 'Your leave was rejected',
       maintenance_done: 'Your fault report was resolved', announcement: 'New announcement',
+      push_enable: 'Get notifications on this device', push_on: 'Notifications on', push_off: 'Turn off',
+      push_denied: 'Notification permission denied — enable it in browser settings',
     },
     tabs: {
       shifts: '⏱ My Shifts',
@@ -592,6 +596,8 @@ const ar = {
       title: 'الإشعارات', none: 'لا توجد إشعارات', bell: 'الإشعارات',
       leave_approved: 'تمت الموافقة على إجازتك', leave_rejected: 'تم رفض إجازتك',
       maintenance_done: 'تم حل بلاغ العطل الخاص بك', announcement: 'إعلان جديد',
+      push_enable: 'تلقّي الإشعارات على هذا الجهاز', push_on: 'الإشعارات مفعّلة', push_off: 'إيقاف',
+      push_denied: 'تم رفض إذن الإشعارات — يمكنك تفعيله من إعدادات المتصفح',
     },
     tabs: {
       shifts: '⏱ ورديتي',

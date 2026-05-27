@@ -8,6 +8,7 @@ import { upload, verifyMagicBytes } from '../../shared/uploads/middleware.js'
 import { createLeaveService, leaveListService, leaveBalanceService } from '../shifts/service.js'
 import { checkoutToStaff, getStaffCheckouts } from '../inventory/service.js'
 import { departmentToInventoryCategory, getKioskSystemUserId } from './inventory-helpers.js'
+import { isPushConfigured, getVapidPublicKey, saveWorkerSubscription, deleteWorkerSubscription } from '../../shared/notifications/push.js'
 
 export const avsSelfServiceRouter = Router()
 
@@ -212,6 +213,36 @@ avsSelfServiceRouter.post('/notifications/seen', requireAvsKiosk, (req, res) => 
     `).run(req.user.workerId)
     res.json({ ok: true })
   } catch (e) { logger.error('[avs notifications seen]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// ── Web-push (opt-in, sadece kişisel telefonda) ───────────────────────────
+// VAPID public key — frontend subscribe ederken kullanır. Configured değilse 503.
+avsSelfServiceRouter.get('/push/vapid-public-key', requireAvsKiosk, (req, res) => {
+  if (!isPushConfigured()) return res.status(503).json({ error: 'Push yapılandırılmamış' })
+  res.json({ key: getVapidPublicKey() })
+})
+
+avsSelfServiceRouter.post('/push/subscribe', requireAvsKiosk, (req, res) => {
+  try {
+    const { endpoint, keys } = req.body
+    if (!endpoint || !keys?.p256dh || !keys?.auth)
+      return res.status(400).json({ error: 'Geçersiz subscription' })
+    saveWorkerSubscription({
+      workerId: req.user.workerId,
+      endpoint, p256dh: keys.p256dh, auth: keys.auth,
+      userAgent: req.get('user-agent'),
+    })
+    res.status(201).json({ ok: true })
+  } catch (e) { logger.error('[avs push subscribe]', e); res.status(400).json({ error: e.message }) }
+})
+
+avsSelfServiceRouter.post('/push/unsubscribe', requireAvsKiosk, (req, res) => {
+  try {
+    const { endpoint } = req.body
+    if (!endpoint) return res.status(400).json({ error: 'endpoint gerekli' })
+    deleteWorkerSubscription(endpoint)
+    res.json({ ok: true })
+  } catch (e) { logger.error('[avs push unsubscribe]', e); res.status(400).json({ error: e.message }) }
 })
 
 // Hızlı arıza — staff reporter olarak audit_log'a düşer
