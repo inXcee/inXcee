@@ -156,6 +156,64 @@ avsSelfServiceRouter.get('/announcements', requireAvsKiosk, (req, res) => {
   } catch (e) { logger.error('[avs announcements]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
+// ── Bildirim akışı (feed) ─────────────────────────────────────────────────
+// Ayrı bildirim pipeline'ı yerine mevcut verilerden TÜRETİLİR — her zaman tutarlı.
+// Kaynaklar: ① izin kararları (onay/ret), ② bildirilen arızanın çözülmesi,
+// ③ aktif duyurular. SQLite datetime metinleri ('YYYY-MM-DD HH:MM:SS')
+// leksikografik = kronolojik sıralanır.
+function buildWorkerFeed(db, workerId, limit = 30) {
+  const leave = db.prepare(`
+    SELECT id, leave_type, status, start_date, end_date, total_days, approved_at AS ts
+    FROM leave_requests
+    WHERE staff_id = ? AND status IN ('approved','rejected') AND approved_at IS NOT NULL
+    ORDER BY approved_at DESC LIMIT ?
+  `).all(workerId, limit).map(r => ({ kind: 'leave', ...r }))
+
+  const maint = db.prepare(`
+    SELECT m.id, m.location, m.status, m.closed_at AS ts
+    FROM maintenance_requests m
+    JOIN audit_log a ON a.target_id = m.id
+      AND a.action = 'kiosk_avs_maintenance'
+      AND json_extract(a.detail, '$.workerId') = ?
+    WHERE m.status = 'done' AND m.closed_at IS NOT NULL
+    ORDER BY m.closed_at DESC LIMIT ?
+  `).all(workerId, limit).map(r => ({ kind: 'maintenance', ...r }))
+
+  const ann = db.prepare(`
+    SELECT id, title, body, created_at AS ts
+    FROM announcements
+    WHERE expires_at IS NULL OR expires_at > datetime('now')
+    ORDER BY created_at DESC LIMIT ?
+  `).all(limit).map(r => ({ kind: 'announcement', ...r }))
+
+  return [...leave, ...maint, ...ann]
+    .filter(x => x.ts)
+    .sort((a, b) => (a.ts < b.ts ? 1 : a.ts > b.ts ? -1 : 0))
+    .slice(0, limit)
+}
+
+avsSelfServiceRouter.get('/notifications', requireAvsKiosk, (req, res) => {
+  try {
+    const db = getDB()
+    const items = buildWorkerFeed(db, req.user.workerId)
+    const row = db.prepare('SELECT seen_at FROM worker_notification_seen WHERE worker_id=?').get(req.user.workerId)
+    const seenAt = row?.seen_at || null
+    const unread = seenAt ? items.filter(i => i.ts > seenAt).length : items.length
+    res.json({ items, unread, seen_at: seenAt })
+  } catch (e) { logger.error('[avs notifications]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// Feed açılınca çağrılır — okundu yüksek-su-seviyesini şimdiye çeker.
+avsSelfServiceRouter.post('/notifications/seen', requireAvsKiosk, (req, res) => {
+  try {
+    getDB().prepare(`
+      INSERT INTO worker_notification_seen(worker_id, seen_at) VALUES(?, datetime('now'))
+      ON CONFLICT(worker_id) DO UPDATE SET seen_at = datetime('now')
+    `).run(req.user.workerId)
+    res.json({ ok: true })
+  } catch (e) { logger.error('[avs notifications seen]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
 // Hızlı arıza — staff reporter olarak audit_log'a düşer
 avsSelfServiceRouter.post('/maintenance', requireAvsKiosk, upload.single('photo'), verifyMagicBytes, (req, res) => {
   const { location, description, priority } = req.body

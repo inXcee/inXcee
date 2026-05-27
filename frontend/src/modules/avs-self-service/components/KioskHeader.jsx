@@ -1,12 +1,14 @@
 import { useClock } from '../../../shared/hooks/useClock.js'
 import { useTranslation } from '../../../shared/i18n/index.js'
 
-// Üst bar: kullanıcı adı + canlı saat/tarih + yenile + çıkış.
+// Üst bar: kullanıcı adı + canlı saat/tarih + bildirim zili + yenile + çıkış.
 // props:
 //   userName, onLogout
 //   onRefresh  — aktif sekmenin verisini yeniden çeker (opsiyonel)
 //   refreshing — yenileme sürüyor mu (↻ döner)
-export default function KioskHeader({ userName, onLogout, onRefresh, refreshing }) {
+//   onBell     — bildirim panelini açar (opsiyonel)
+//   unread     — okunmamış bildirim sayısı (zilde rozet)
+export default function KioskHeader({ userName, onLogout, onRefresh, refreshing, onBell, unread = 0 }) {
   const { t } = useTranslation()
   const { time, date } = useClock()
   return (
@@ -17,6 +19,17 @@ export default function KioskHeader({ userName, onLogout, onRefresh, refreshing 
       </div>
       <div className="flex items-center gap-2">
         <div className="text-lg font-semibold text-slate-300 tabular-nums mr-1">{time}</div>
+        {onBell && (
+          <button onClick={onBell} aria-label={t('avs_kiosk.notifications.bell')} title={t('avs_kiosk.notifications.bell')}
+            className="relative text-slate-300 hover:text-white w-9 h-9 flex items-center justify-center bg-slate-800 rounded-xl">
+            <span className="text-base">🔔</span>
+            {unread > 0 && (
+              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[16px] h-4 px-1 flex items-center justify-center">
+                {unread > 9 ? '9+' : unread}
+              </span>
+            )}
+          </button>
+        )}
         {onRefresh && (
           <button onClick={onRefresh} disabled={refreshing} aria-label={t('avs_kiosk.refresh')}
             title={t('avs_kiosk.refresh')}

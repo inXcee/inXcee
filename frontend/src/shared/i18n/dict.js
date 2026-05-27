@@ -144,6 +144,11 @@ const tr = {
     loading: 'Yükleniyor…',
     load_error: 'Veriler yüklenemedi.',
     refresh: 'Yenile',
+    notifications: {
+      title: 'Bildirimler', none: 'Bildirim yok', bell: 'Bildirimler',
+      leave_approved: 'İzniniz onaylandı', leave_rejected: 'İzniniz reddedildi',
+      maintenance_done: 'Arıza talebiniz çözüldü', announcement: 'Yeni duyuru',
+    },
     tabs: {
       shifts: '⏱ Vardiyam',
       transport: '🚌 Servisim',
@@ -361,6 +366,11 @@ const en = {
     loading: 'Loading…',
     load_error: 'Could not load data.',
     refresh: 'Refresh',
+    notifications: {
+      title: 'Notifications', none: 'No notifications', bell: 'Notifications',
+      leave_approved: 'Your leave was approved', leave_rejected: 'Your leave was rejected',
+      maintenance_done: 'Your fault report was resolved', announcement: 'New announcement',
+    },
     tabs: {
       shifts: '⏱ My Shifts',
       transport: '🚌 My Transport',
@@ -578,6 +588,11 @@ const ar = {
     loading: 'جارٍ التحميل…',
     load_error: 'تعذّر تحميل البيانات.',
     refresh: 'تحديث',
+    notifications: {
+      title: 'الإشعارات', none: 'لا توجد إشعارات', bell: 'الإشعارات',
+      leave_approved: 'تمت الموافقة على إجازتك', leave_rejected: 'تم رفض إجازتك',
+      maintenance_done: 'تم حل بلاغ العطل الخاص بك', announcement: 'إعلان جديد',
+    },
     tabs: {
       shifts: '⏱ ورديتي',
       transport: '🚌 نقلي',

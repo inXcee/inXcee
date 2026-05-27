@@ -8,6 +8,7 @@ import PinPad from './components/PinPad.jsx'
 import BottomNav from './components/BottomNav.jsx'
 import KioskHeader from './components/KioskHeader.jsx'
 import TabState from './components/TabState.jsx'
+import NotificationFeed from './components/NotificationFeed.jsx'
 import { leaveDays } from './leaveDays.js'
 
 const TAB_KEYS = [
@@ -37,10 +38,8 @@ export default function AvsSelfServicePage() {
   const [loginError, setLoginError] = useState('')
   const searchTimeout = useRef(null)
 
-  // Okunmamış duyuru takibi (Task 15)
-  const [readIds, setReadIds] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('avs_kiosk_read_ann') || '[]') } catch { return [] }
-  })
+  // Bildirim akışı paneli (header zili)
+  const [feedOpen, setFeedOpen] = useState(false)
 
   // Task 16 — Hızlı Arıza
   const [faultForm, setFaultForm] = useState({ location: '', description: '', priority: 'medium' })
@@ -75,6 +74,7 @@ export default function AvsSelfServicePage() {
     setPinForm({ current_pin: '', new_pin: '', new_pin2: '' })
     setInvSearch(''); setInvSelected(null); setInvQty(1); setInvNote(''); setInvLocation('')
     setInvMsg({ type: '', text: '' })
+    setFeedOpen(false)
   }, [])
 
   // 5dk inaktivite → logout (son 30sn'de toast uyarısı)
@@ -122,17 +122,22 @@ export default function AvsSelfServicePage() {
   })
   const announcements = annQuery.data ?? []
 
-  useEffect(() => {
-    if (activeTab === 'announcements' && announcements.length > 0) {
-      setReadIds(prev => {
-        const ids = [...new Set([...prev, ...announcements.map(a => a.id)])]
-        localStorage.setItem('avs_kiosk_read_ann', JSON.stringify(ids))
-        return ids
-      })
-    }
-  }, [activeTab, announcements])
+  // Bildirim akışı — sunucudan türetilmiş feed + okunmamış sayısı.
+  // Kısa kiosk oturumu için 60sn'de bir tazelenir (rozet canlı kalsın).
+  const notifQuery = useQuery({
+    queryKey: ['avs-notifications', avsToken],
+    queryFn: () => avsApi.get('/avs-self-service/notifications').then(r => r.data),
+    enabled: !!avsToken,
+    refetchInterval: 60000,
+  })
+  const notifications = notifQuery.data?.items ?? []
+  const unread = notifQuery.data?.unread ?? 0
 
-  const unreadCount = announcements.filter(a => !readIds.includes(a.id)).length
+  const markSeen = useMutation({
+    mutationFn: () => avsApi.post('/avs-self-service/notifications/seen'),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['avs-notifications', avsToken] }),
+  })
+  const openFeed = () => { setFeedOpen(true); if (unread > 0) markSeen.mutate() }
 
   // P2 — Görev tamamlama
   const completeTask = useMutation({
@@ -372,7 +377,9 @@ export default function AvsSelfServicePage() {
   return (
     <div className="min-h-screen bg-slate-950 flex flex-col max-w-lg mx-auto p-4 pb-24">
       <KioskHeader userName={selected?.full_name} onLogout={handleLogout}
-        onRefresh={handleRefresh} refreshing={!!activeQuery?.isFetching} />
+        onRefresh={handleRefresh} refreshing={!!activeQuery?.isFetching}
+        onBell={openFeed} unread={unread} />
+      <NotificationFeed open={feedOpen} onClose={() => setFeedOpen(false)} items={notifications} />
       <div className="mb-4 flex justify-end"><LanguageSwitcher compact /></div>
 
       {/* Task 12 — Vardiyam */}
@@ -881,7 +888,7 @@ export default function AvsSelfServicePage() {
       <BottomNav
         tabs={TAB_KEYS
           .filter(tb => tb.key !== 'inventory' || hasInventory)
-          .map(tb => ({ key: tb.key, icon: tb.icon, label: t(tb.i18n), badge: tb.key === 'announcements' ? unreadCount : 0 }))}
+          .map(tb => ({ key: tb.key, icon: tb.icon, label: t(tb.i18n), badge: 0 }))}
         active={activeTab} onChange={setActiveTab} moreLabel={t('avs_kiosk.nav.more')} />
     </div>
   )

@@ -464,3 +464,56 @@ describe('AVS Self-Service — my-info inventory_category', () => {
     expect(res.body.inventory_category).toBe('housekeeping')
   })
 })
+
+describe('AVS Self-Service — notifications feed', () => {
+  it('AVS token olmadan 401', async () => {
+    const res = await request(app).get('/api/avs-self-service/notifications')
+    expect(res.status).toBe(401)
+  })
+
+  it('feed: onaylı izin + çözülen arıza + duyuru içerir; unread > 0', async () => {
+    const db = getDB()
+    // Onaylanmış izin kararı
+    db.prepare(`INSERT INTO leave_requests(staff_id, leave_type, start_date, end_date, total_days, status, approved_at)
+      VALUES(?, 'annual', '2026-09-01', '2026-09-03', 3, 'approved', datetime('now'))`).run(workerId)
+    // Worker'ın bildirdiği, çözülmüş (done) arıza
+    const m = db.prepare(`INSERT INTO maintenance_requests(location, description, status, priority, closed_at)
+      VALUES('Feed Test Konum', 'Feed testi arıza', 'done', 'medium', datetime('now'))`).run()
+    db.prepare(`INSERT INTO audit_log(user_id, action, module, target_id, detail)
+      VALUES(NULL, 'kiosk_avs_maintenance', 'avs-self-service', ?, ?)`)
+      .run(m.lastInsertRowid, JSON.stringify({ workerId }))
+
+    const res = await request(app).get('/api/avs-self-service/notifications')
+      .set('Authorization', `Bearer ${avsToken}`)
+    expect(res.status).toBe(200)
+    expect(Array.isArray(res.body.items)).toBe(true)
+    const kinds = res.body.items.map(i => i.kind)
+    expect(kinds).toContain('leave')
+    expect(kinds).toContain('maintenance')
+    expect(kinds).toContain('announcement')
+    expect(res.body.items.some(i => i.kind === 'leave' && i.status === 'approved')).toBe(true)
+    expect(res.body.items.some(i => i.kind === 'maintenance' && i.location === 'Feed Test Konum')).toBe(true)
+    expect(res.body.unread).toBeGreaterThan(0)
+    // pending izin (kullanıcının kendi oluşturduğu) feed'e girmez
+    expect(res.body.items.some(i => i.kind === 'leave' && i.status === 'pending')).toBe(false)
+  })
+
+  it('seen → unread 0; sonra gelen yeni olay tekrar unread yapar', async () => {
+    const seen = await request(app).post('/api/avs-self-service/notifications/seen')
+      .set('Authorization', `Bearer ${avsToken}`)
+    expect(seen.status).toBe(200)
+
+    let res = await request(app).get('/api/avs-self-service/notifications')
+      .set('Authorization', `Bearer ${avsToken}`)
+    expect(res.body.unread).toBe(0)
+
+    // seen'den sonraki bir duyuru (gelecek timestamp → kesinlikle seen_at'ten yeni)
+    getDB().prepare(`INSERT INTO announcements(title, body, created_at)
+      VALUES('Seen Sonrası Duyuru', 'x', datetime('now', '+1 hour'))`).run()
+
+    res = await request(app).get('/api/avs-self-service/notifications')
+      .set('Authorization', `Bearer ${avsToken}`)
+    expect(res.body.unread).toBeGreaterThanOrEqual(1)
+    expect(res.body.items[0].kind).toBe('announcement') // en yeni en üstte
+  })
+})
