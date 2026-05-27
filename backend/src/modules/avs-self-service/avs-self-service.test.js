@@ -320,7 +320,7 @@ describe('AVS Self-Service — inventory/items', () => {
     expect(res.status).toBe(401)
   })
 
-  it('Temizlik worker → housekeeping + general döner, maintenance dönmez', async () => {
+  it('worker tüm ürünleri görür (departman gating yok — her kategori dahil)', async () => {
     const db = getDB()
     db.prepare(`INSERT INTO inventory(item_name,quantity,unit,category) VALUES('Deterjan',50,'paket','housekeeping')`).run()
     db.prepare(`INSERT INTO inventory(item_name,quantity,unit,category) VALUES('Çöp Poşeti',100,'adet','general')`).run()
@@ -328,16 +328,15 @@ describe('AVS Self-Service — inventory/items', () => {
     const res = await request(app).get('/api/avs-self-service/inventory/items')
       .set('Authorization', `Bearer ${avsToken}`)
     expect(res.status).toBe(200)
-    expect(res.body.category).toBe('housekeeping')
     const names = res.body.items.map(i => i.item_name)
     expect(names).toContain('Deterjan')
     expect(names).toContain('Çöp Poşeti')
-    expect(names).not.toContain('Matkap Ucu')
+    expect(names).toContain('Matkap Ucu') // gating yok → maintenance de görünür
   })
 
-  it('Eşleşmeyen departmanlı worker → 403', async () => {
+  it('departmanı eşleşmeyen worker da tüm ürünleri görür (200)', async () => {
     const db = getDB()
-    // Yeni worker: Güvenlik departmanı
+    // Yeni worker: Güvenlik departmanı (envanter kategorisine eşleşmez ama yine de görür)
     const w2 = (await request(app).post('/api/avs-workers')
       .set('Authorization', `Bearer ${(await request(app).post('/api/auth/login').send({ username:'mudur', password:'admin123' })).body.token}`)
       .send({ full_name: 'Guvenlik Worker' })).body
@@ -349,7 +348,8 @@ describe('AVS Self-Service — inventory/items', () => {
     const token2 = (await request(app).post('/api/auth/avs-login').send({ worker_id: w2.id, pin: '1111' })).body.token
     const res = await request(app).get('/api/avs-self-service/inventory/items')
       .set('Authorization', `Bearer ${token2}`)
-    expect(res.status).toBe(403)
+    expect(res.status).toBe(200)
+    expect(Array.isArray(res.body.items)).toBe(true)
   })
 })
 
@@ -386,13 +386,14 @@ describe('AVS Self-Service — inventory/checkout', () => {
     expect(res.status).toBe(400)
   })
 
-  it('kategori dışı ürün → 403', async () => {
+  it('her kategoriden ürün alınabilir — maintenance dahil (gating yok)', async () => {
     const db = getDB()
     const item = db.prepare(`INSERT INTO inventory(item_name,quantity,unit,category) VALUES('Teknik Parça',10,'adet','maintenance')`).run()
     const res = await request(app).post('/api/avs-self-service/inventory/checkout')
       .set('Authorization', `Bearer ${avsToken}`)
       .send({ item_id: item.lastInsertRowid, quantity: 1 })
-    expect(res.status).toBe(403)
+    expect(res.status).toBe(201)
+    expect(res.body.quantity).toBe(9)
   })
 
   it('geçersiz miktar → 400', async () => {
@@ -411,12 +412,13 @@ describe('AVS Self-Service — inventory item locations', () => {
     expect(res.status).toBe(401)
   })
 
-  it('kategori dışı (maintenance) ürünün lokasyonları → 403', async () => {
+  it('her ürünün lokasyonları dönebilir — maintenance dahil (gating yok)', async () => {
     const db = getDB()
     const item = db.prepare(`INSERT INTO inventory(item_name,quantity,unit,category) VALUES('Lokasyon Teknik',5,'adet','maintenance')`).run()
     const res = await request(app).get(`/api/avs-self-service/inventory/items/${item.lastInsertRowid}/locations`)
       .set('Authorization', `Bearer ${avsToken}`)
-    expect(res.status).toBe(403)
+    expect(res.status).toBe(200)
+    expect(Array.isArray(res.body)).toBe(true)
   })
 
   it('lokasyon stoğu olan ürün için stoklu lokasyonları döner', async () => {
