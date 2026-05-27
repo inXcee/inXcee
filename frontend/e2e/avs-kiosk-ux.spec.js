@@ -30,7 +30,8 @@ test('numpad ile giris + alt nav ile sekme gezme + varsayilan TR', async ({ page
   // Giris sonrasi alt nav gorunur
   await expect(page.getByRole('tab', { name: /Vardiya/ })).toBeVisible({ timeout: 10_000 })
 
-  // Alt nav ile Profil sekmesine gec
-  await page.getByRole('tab', { name: /Profil/ }).click()
+  // Profil sekmesi nav taşmasıyla "Daha fazla" sheet'ine taşındı (10 sekme > 5 slot)
+  await page.getByRole('button', { name: /Daha fazla/ }).click()
+  await page.getByRole('menuitem', { name: /Profil/ }).click()
   await expect(page.getByText('Kişisel Bilgiler')).toBeVisible({ timeout: 10_000 })
 })
