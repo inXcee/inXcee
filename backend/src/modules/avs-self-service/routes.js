@@ -6,6 +6,8 @@ import { changeStaffKioskPin } from '../../shared/auth/service.js'
 import { logger } from '../../shared/logger.js'
 import { upload, verifyMagicBytes } from '../../shared/uploads/middleware.js'
 import { createLeaveService, leaveListService, leaveBalanceService } from '../shifts/service.js'
+import { checkoutToStaff, getStaffCheckouts } from '../inventory/service.js'
+import { departmentToInventoryCategory, getKioskSystemUserId } from './inventory-helpers.js'
 
 export const avsSelfServiceRouter = Router()
 
@@ -23,7 +25,7 @@ avsSelfServiceRouter.get('/my-info', requireAvsKiosk, (req, res) => {
       WHERE s.id = ?
     `).get(req.user.workerId)
     if (!w) return res.status(404).json({ error: 'Çalışan bulunamadı' })
-    res.json(w)
+    res.json({ ...w, inventory_category: departmentToInventoryCategory(w.department_name) })
   } catch (e) { logger.error('[avs my-info]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
@@ -268,4 +270,101 @@ avsSelfServiceRouter.get('/menu/today', requireAvsKiosk, (req, res) => {
     `).all()
     res.json(rows)
   } catch (e) { logger.error('[avs menu/today]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// ── Envanter (çıkış/zimmet) ──────────────────────────────────────────────
+// Worker'ın departman kategorisindeki + general ürünler
+avsSelfServiceRouter.get('/inventory/items', requireAvsKiosk, (req, res) => {
+  try {
+    const db = getDB()
+    const staff = db.prepare(`
+      SELECT d.name as dept_name FROM staff s
+      LEFT JOIN departments d ON d.id = s.department_id WHERE s.id = ?
+    `).get(req.user.workerId)
+    const category = departmentToInventoryCategory(staff?.dept_name)
+    if (!category) return res.status(403).json({ error: 'Envanter erişiminiz yok' })
+    const items = db.prepare(`
+      SELECT id, item_name, category, quantity, unit, reorder_threshold, track_locations
+      FROM inventory WHERE category IN (?, 'general')
+      ORDER BY category, item_name
+    `).all(category)
+    res.json({ category, items })
+  } catch (e) { logger.error('[avs inventory items]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// Ürün al (stoktan zimmet düşümü) — staff_id = workerId, created_by = sistem
+avsSelfServiceRouter.post('/inventory/checkout', requireAvsKiosk, (req, res) => {
+  const { item_id, quantity, note, from_location_id } = req.body
+  const qty = Number(quantity)
+  if (!item_id || !Number.isFinite(qty) || qty <= 0)
+    return res.status(400).json({ error: 'Geçerli ürün ve miktar gerekli' })
+  try {
+    const db = getDB()
+    const staff = db.prepare(`
+      SELECT d.name as dept_name FROM staff s
+      LEFT JOIN departments d ON d.id = s.department_id WHERE s.id = ?
+    `).get(req.user.workerId)
+    const category = departmentToInventoryCategory(staff?.dept_name)
+    if (!category) return res.status(403).json({ error: 'Envanter erişiminiz yok' })
+    const item = db.prepare('SELECT id, category FROM inventory WHERE id = ?').get(item_id)
+    if (!item) return res.status(404).json({ error: 'Ürün bulunamadı' })
+    if (item.category !== category && item.category !== 'general')
+      return res.status(403).json({ error: 'Bu ürüne erişiminiz yok' })
+
+    const systemUserId = getKioskSystemUserId()
+
+    // Sadece checkoutToStaff'ın domain throw'ları (yetersiz stok / lokasyon gerekli)
+    // → 400. getKioskSystemUserId / audit insert gibi altyapı hataları dıştaki
+    // catch'e (500) düşer; iç hata mesajı 400 olarak sızmaz.
+    let result
+    try {
+      result = checkoutToStaff(
+        item_id, req.user.workerId, qty, note?.trim() || null, systemUserId, from_location_id || null
+      )
+    } catch (e) {
+      return res.status(400).json({ error: e.message })
+    }
+
+    db.prepare(`INSERT INTO audit_log(user_id, action, module, target_id, detail)
+                VALUES(NULL, 'kiosk_avs_inventory_checkout', 'avs-self-service', ?, ?)`)
+      .run(item_id, JSON.stringify({ workerId: req.user.workerId, quantity: qty }))
+    res.status(201).json(result)
+  } catch (e) {
+    logger.error('[avs inventory checkout]', e)
+    res.status(500).json({ error: 'Sunucu hatası' })
+  }
+})
+
+// Lokasyon-takipli ürün için stoklu kaynak lokasyonlar
+avsSelfServiceRouter.get('/inventory/items/:id/locations', requireAvsKiosk, (req, res) => {
+  try {
+    const db = getDB()
+    // /inventory/items + /checkout ile aynı departman gating'i — başka departmanın
+    // ürününün lokasyon/depo bilgisi sızmasın
+    const staff = db.prepare(`
+      SELECT d.name as dept_name FROM staff s
+      LEFT JOIN departments d ON d.id = s.department_id WHERE s.id = ?
+    `).get(req.user.workerId)
+    const category = departmentToInventoryCategory(staff?.dept_name)
+    if (!category) return res.status(403).json({ error: 'Envanter erişiminiz yok' })
+    const item = db.prepare('SELECT category FROM inventory WHERE id = ?').get(req.params.id)
+    if (!item) return res.status(404).json({ error: 'Ürün bulunamadı' })
+    if (item.category !== category && item.category !== 'general')
+      return res.status(403).json({ error: 'Bu ürüne erişiminiz yok' })
+    const rows = db.prepare(`
+      SELECT isbl.location_id, il.name, il.block, isbl.quantity
+      FROM inventory_stock_by_location isbl
+      JOIN inventory_locations il ON il.id = isbl.location_id
+      WHERE isbl.item_id = ? AND isbl.quantity > 0 AND il.is_active = 1
+      ORDER BY il.block, il.name
+    `).all(req.params.id)
+    res.json(rows)
+  } catch (e) { logger.error('[avs item locations]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// Aldıklarım — açık (iade edilmemiş) zimmetler
+avsSelfServiceRouter.get('/inventory/my-checkouts', requireAvsKiosk, (req, res) => {
+  try {
+    res.json(getStaffCheckouts(req.user.workerId))
+  } catch (e) { logger.error('[avs my-checkouts]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })

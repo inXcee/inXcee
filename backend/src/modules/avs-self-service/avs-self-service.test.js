@@ -313,3 +313,152 @@ describe('AVS Self-Service — menu/today', () => {
     expect(res.body.some(m => m.meal_type === 'lunch' && m.items.includes('Köfte'))).toBe(true)
   })
 })
+
+describe('AVS Self-Service — inventory/items', () => {
+  it('AVS token olmadan 401', async () => {
+    const res = await request(app).get('/api/avs-self-service/inventory/items')
+    expect(res.status).toBe(401)
+  })
+
+  it('Temizlik worker → housekeeping + general döner, maintenance dönmez', async () => {
+    const db = getDB()
+    db.prepare(`INSERT INTO inventory(item_name,quantity,unit,category) VALUES('Deterjan',50,'paket','housekeeping')`).run()
+    db.prepare(`INSERT INTO inventory(item_name,quantity,unit,category) VALUES('Çöp Poşeti',100,'adet','general')`).run()
+    db.prepare(`INSERT INTO inventory(item_name,quantity,unit,category) VALUES('Matkap Ucu',10,'adet','maintenance')`).run()
+    const res = await request(app).get('/api/avs-self-service/inventory/items')
+      .set('Authorization', `Bearer ${avsToken}`)
+    expect(res.status).toBe(200)
+    expect(res.body.category).toBe('housekeeping')
+    const names = res.body.items.map(i => i.item_name)
+    expect(names).toContain('Deterjan')
+    expect(names).toContain('Çöp Poşeti')
+    expect(names).not.toContain('Matkap Ucu')
+  })
+
+  it('Eşleşmeyen departmanlı worker → 403', async () => {
+    const db = getDB()
+    // Yeni worker: Güvenlik departmanı
+    const w2 = (await request(app).post('/api/avs-workers')
+      .set('Authorization', `Bearer ${(await request(app).post('/api/auth/login').send({ username:'mudur', password:'admin123' })).body.token}`)
+      .send({ full_name: 'Guvenlik Worker' })).body
+    const guvenlik = db.prepare("SELECT id FROM departments WHERE name='Güvenlik'").get()
+    expect(guvenlik).toBeTruthy()
+    db.prepare('UPDATE staff SET department_id=? WHERE id=?').run(guvenlik.id, w2.id)
+    const adminToken = (await request(app).post('/api/auth/login').send({ username:'mudur', password:'admin123' })).body.token
+    await request(app).put(`/api/avs-workers/${w2.id}/pin`).set('Authorization', `Bearer ${adminToken}`).send({ new_pin: '1111' })
+    const token2 = (await request(app).post('/api/auth/avs-login').send({ worker_id: w2.id, pin: '1111' })).body.token
+    const res = await request(app).get('/api/avs-self-service/inventory/items')
+      .set('Authorization', `Bearer ${token2}`)
+    expect(res.status).toBe(403)
+  })
+})
+
+describe('AVS Self-Service — inventory/checkout', () => {
+  it('AVS token olmadan 401', async () => {
+    const res = await request(app).post('/api/avs-self-service/inventory/checkout').send({ item_id: 1, quantity: 1 })
+    expect(res.status).toBe(401)
+  })
+
+  it('geçerli checkout → stok düşer, staff_id kaydı + stock_movement out + audit', async () => {
+    const db = getDB()
+    const item = db.prepare(`INSERT INTO inventory(item_name,quantity,unit,category) VALUES('Eldiven',30,'kutu','housekeeping')`).run()
+    const itemId = item.lastInsertRowid
+    const res = await request(app).post('/api/avs-self-service/inventory/checkout')
+      .set('Authorization', `Bearer ${avsToken}`)
+      .send({ item_id: itemId, quantity: 2, note: 'M1 kat 1' })
+    expect(res.status).toBe(201)
+    expect(res.body.quantity).toBe(28)
+    const co = db.prepare('SELECT * FROM inventory_checkouts WHERE item_id=? AND staff_id=?').get(itemId, workerId)
+    expect(co).toBeTruthy()
+    expect(co.quantity).toBe(2)
+    const mv = db.prepare("SELECT * FROM stock_movements WHERE item_id=? AND type='out'").get(itemId)
+    expect(mv).toBeTruthy()
+    const audit = db.prepare("SELECT * FROM audit_log WHERE action='kiosk_avs_inventory_checkout' AND target_id=?").get(itemId)
+    expect(audit).toBeTruthy()
+  })
+
+  it('yetersiz stok → 400', async () => {
+    const db = getDB()
+    const item = db.prepare(`INSERT INTO inventory(item_name,quantity,unit,category) VALUES('Az Stok',1,'adet','housekeeping')`).run()
+    const res = await request(app).post('/api/avs-self-service/inventory/checkout')
+      .set('Authorization', `Bearer ${avsToken}`)
+      .send({ item_id: item.lastInsertRowid, quantity: 5 })
+    expect(res.status).toBe(400)
+  })
+
+  it('kategori dışı ürün → 403', async () => {
+    const db = getDB()
+    const item = db.prepare(`INSERT INTO inventory(item_name,quantity,unit,category) VALUES('Teknik Parça',10,'adet','maintenance')`).run()
+    const res = await request(app).post('/api/avs-self-service/inventory/checkout')
+      .set('Authorization', `Bearer ${avsToken}`)
+      .send({ item_id: item.lastInsertRowid, quantity: 1 })
+    expect(res.status).toBe(403)
+  })
+
+  it('geçersiz miktar → 400', async () => {
+    const db = getDB()
+    const item = db.prepare(`INSERT INTO inventory(item_name,quantity,unit,category) VALUES('Gecerli Urun',10,'adet','housekeeping')`).run()
+    const res = await request(app).post('/api/avs-self-service/inventory/checkout')
+      .set('Authorization', `Bearer ${avsToken}`)
+      .send({ item_id: item.lastInsertRowid, quantity: 0 })
+    expect(res.status).toBe(400)
+  })
+})
+
+describe('AVS Self-Service — inventory item locations', () => {
+  it('AVS token olmadan 401', async () => {
+    const res = await request(app).get('/api/avs-self-service/inventory/items/1/locations')
+    expect(res.status).toBe(401)
+  })
+
+  it('kategori dışı (maintenance) ürünün lokasyonları → 403', async () => {
+    const db = getDB()
+    const item = db.prepare(`INSERT INTO inventory(item_name,quantity,unit,category) VALUES('Lokasyon Teknik',5,'adet','maintenance')`).run()
+    const res = await request(app).get(`/api/avs-self-service/inventory/items/${item.lastInsertRowid}/locations`)
+      .set('Authorization', `Bearer ${avsToken}`)
+    expect(res.status).toBe(403)
+  })
+
+  it('lokasyon stoğu olan ürün için stoklu lokasyonları döner', async () => {
+    const db = getDB()
+    const item = db.prepare(`INSERT INTO inventory(item_name,quantity,unit,category,track_locations) VALUES('Lokasyonlu',20,'adet','housekeeping',1)`).run()
+    const itemId = item.lastInsertRowid
+    const loc = db.prepare(`INSERT INTO inventory_locations(name, block) VALUES('Depo A','M1')`).run()
+    db.prepare(`INSERT INTO inventory_stock_by_location(item_id, location_id, quantity) VALUES(?,?,?)`)
+      .run(itemId, loc.lastInsertRowid, 20)
+    const res = await request(app).get(`/api/avs-self-service/inventory/items/${itemId}/locations`)
+      .set('Authorization', `Bearer ${avsToken}`)
+    expect(res.status).toBe(200)
+    expect(Array.isArray(res.body)).toBe(true)
+    expect(res.body.some(l => l.name === 'Depo A' && l.quantity === 20)).toBe(true)
+  })
+})
+
+describe('AVS Self-Service — inventory/my-checkouts', () => {
+  it('AVS token olmadan 401', async () => {
+    const res = await request(app).get('/api/avs-self-service/inventory/my-checkouts')
+    expect(res.status).toBe(401)
+  })
+
+  it('worker açık zimmetlerini döner', async () => {
+    const db = getDB()
+    const item = db.prepare(`INSERT INTO inventory(item_name,quantity,unit,category) VALUES('Bez',40,'paket','housekeeping')`).run()
+    await request(app).post('/api/avs-self-service/inventory/checkout')
+      .set('Authorization', `Bearer ${avsToken}`)
+      .send({ item_id: item.lastInsertRowid, quantity: 3 })
+    const res = await request(app).get('/api/avs-self-service/inventory/my-checkouts')
+      .set('Authorization', `Bearer ${avsToken}`)
+    expect(res.status).toBe(200)
+    expect(Array.isArray(res.body)).toBe(true)
+    expect(res.body.some(c => c.item_name === 'Bez' && c.quantity === 3)).toBe(true)
+  })
+})
+
+describe('AVS Self-Service — my-info inventory_category', () => {
+  it('Temizlik worker my-info → inventory_category=housekeeping', async () => {
+    const res = await request(app).get('/api/avs-self-service/my-info')
+      .set('Authorization', `Bearer ${avsToken}`)
+    expect(res.status).toBe(200)
+    expect(res.body.inventory_category).toBe('housekeeping')
+  })
+})

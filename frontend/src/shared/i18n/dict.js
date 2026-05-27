@@ -154,6 +154,7 @@ const tr = {
       shifts: 'Vardiya', transport: 'Servis', tasks: 'Görev',
       announcements: 'Duyuru', quick_fault: 'Arıza', profile: 'Profil', qr: 'QR', leave: 'İzin', meals: 'Yemek',
       more: 'Daha fazla',
+      inventory: 'Malzeme',
     },
     pinpad: { delete: 'Sil' },
     qr: { hint: 'Yoklama/giriş için okutun', none: 'QR tanımlı değil. Yöneticine başvur.' },
@@ -171,6 +172,13 @@ const tr = {
     meals: {
       title: 'Bugünün Menüsü', none: 'Bugün için menü girilmemiş',
       breakfast: '🌅 Kahvaltı', lunch: '☀ Öğle', dinner: '🌙 Akşam', snack: '☕ Ara',
+    },
+    inventory: {
+      title: 'Malzeme Al', search: 'Ürün ara…', quantity: 'Miktar', note: 'Not (opsiyonel)',
+      take: 'Aldım', mine: 'Aldıklarım', out_of_stock: 'Tükendi', stock: 'stok',
+      location: 'Kaynak konum', choose_location: 'Konum seç',
+      none_items: 'Ürün bulunamadı', none_mine: 'Henüz bir şey almadın',
+      success: 'Alındı, stoktan düşüldü.', error: 'İşlem başarısız', no_access: 'Envanter erişiminiz yok',
     },
     shifts: {
       none: 'Önümüzdeki 7 gün için vardiya kaydın yok',
@@ -360,6 +368,7 @@ const en = {
       shifts: 'Shift', transport: 'Transport', tasks: 'Tasks',
       announcements: 'News', quick_fault: 'Fault', profile: 'Profile', qr: 'QR', leave: 'Leave', meals: 'Meals',
       more: 'More',
+      inventory: 'Supplies',
     },
     pinpad: { delete: 'Delete' },
     qr: { hint: 'Scan for attendance/entry', none: 'No QR assigned. Contact your manager.' },
@@ -377,6 +386,13 @@ const en = {
     meals: {
       title: "Today's Menu", none: 'No menu set for today',
       breakfast: '🌅 Breakfast', lunch: '☀ Lunch', dinner: '🌙 Dinner', snack: '☕ Snack',
+    },
+    inventory: {
+      title: 'Take Supplies', search: 'Search item…', quantity: 'Quantity', note: 'Note (optional)',
+      take: 'Take', mine: 'My items', out_of_stock: 'Out of stock', stock: 'in stock',
+      location: 'Source location', choose_location: 'Choose location',
+      none_items: 'No items found', none_mine: 'Nothing taken yet',
+      success: 'Taken, stock updated.', error: 'Operation failed', no_access: 'No inventory access',
     },
     shifts: {
       none: 'No shifts in the next 7 days',
@@ -566,6 +582,7 @@ const ar = {
       shifts: 'الوردية', transport: 'النقل', tasks: 'المهام',
       announcements: 'إعلانات', quick_fault: 'عطل', profile: 'الملف', qr: 'QR', leave: 'إجازة', meals: 'الطعام',
       more: 'المزيد',
+      inventory: 'المستلزمات',
     },
     pinpad: { delete: 'حذف' },
     qr: { hint: 'امسح للحضور/الدخول', none: 'لا QR مُعرّف. راجع مديرك.' },
@@ -583,6 +600,13 @@ const ar = {
     meals: {
       title: 'قائمة اليوم', none: 'لم تُحدد قائمة لليوم',
       breakfast: '🌅 فطور', lunch: '☀ غداء', dinner: '🌙 عشاء', snack: '☕ وجبة خفيفة',
+    },
+    inventory: {
+      title: 'أخذ المستلزمات', search: 'ابحث عن منتج…', quantity: 'الكمية', note: 'ملاحظة (اختياري)',
+      take: 'أخذت', mine: 'ما أخذته', out_of_stock: 'نفد', stock: 'متوفر',
+      location: 'الموقع المصدر', choose_location: 'اختر موقعًا',
+      none_items: 'لا توجد منتجات', none_mine: 'لم تأخذ شيئًا بعد',
+      success: 'تم الأخذ وتحديث المخزون.', error: 'فشلت العملية', no_access: 'لا صلاحية للمخزون',
     },
     shifts: {
       none: 'لا ورديات خلال 7 أيام القادمة',
