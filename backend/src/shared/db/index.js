@@ -1459,6 +1459,31 @@ export function initDB() {
   try { db.exec("ALTER TABLE push_subscriptions ADD COLUMN last_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP") } catch(e) { if (!e.message?.includes('duplicate column')) logger.error('[Migration] push_subscriptions.last_seen_at:', e.message) }
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_push_user ON push_subscriptions(user_id)') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) logger.error('[Migration] idx_push_user:', e.message) }
 
+  // ── AVS kiosk: bildirim feed "okundu" yüksek-su-seviyesi ──
+  // Personelin bildirimleri en son ne zaman gördüğünü tutar; okunmamış =
+  // ts > seen_at. Feed kaynakları (izin/arıza/duyuru) türetilmiş olduğu için
+  // ayrı bildirim satırı tutmaya gerek yok, tek timestamp yeterli.
+  try { db.exec(`CREATE TABLE IF NOT EXISTS worker_notification_seen (
+    worker_id INTEGER PRIMARY KEY REFERENCES staff(id) ON DELETE CASCADE,
+    seen_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`) } catch(e) { if (!e.message?.includes('already exists')) logger.error('[Migration] worker_notification_seen:', e.message) }
+
+  // ── AVS kiosk: worker (staff) bazlı web-push abonelikleri ──
+  // push_subscriptions users(id)'ye bağlı NOT NULL; AVS personeli users'ta yok.
+  // Ayrı tablo + ayrı job tipi (push.worker) ile prod tablosuna dokunmadan çözülür.
+  // Paylaşılan terminalde kimse abone olmaz; telefonda açan personel opt-in eder.
+  try { db.exec(`CREATE TABLE IF NOT EXISTS avs_push_subscriptions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    worker_id INTEGER NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
+    endpoint TEXT NOT NULL UNIQUE,
+    p256dh_key TEXT NOT NULL,
+    auth_key TEXT NOT NULL,
+    user_agent TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    last_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`) } catch(e) { if (!e.message?.includes('already exists')) logger.error('[Migration] avs_push_subscriptions:', e.message) }
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_avs_push_worker ON avs_push_subscriptions(worker_id)') } catch(e) { if (!e.message?.includes('already exists')) logger.error('[Migration] idx_avs_push_worker:', e.message) }
+
   // ── Mobile M11: WhatsApp outbound — users.phone + outbound log ──
   try { db.exec('ALTER TABLE users ADD COLUMN phone TEXT') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) logger.error('[Migration] users.phone:', e.message) }
   try { db.exec(`CREATE TABLE IF NOT EXISTS whatsapp_outbound_log (

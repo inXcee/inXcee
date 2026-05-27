@@ -142,6 +142,15 @@ const tr = {
     logout: 'Çıkış',
     change: 'Değiştir',
     loading: 'Yükleniyor…',
+    load_error: 'Veriler yüklenemedi.',
+    refresh: 'Yenile',
+    notifications: {
+      title: 'Bildirimler', none: 'Bildirim yok', bell: 'Bildirimler',
+      leave_approved: 'İzniniz onaylandı', leave_rejected: 'İzniniz reddedildi',
+      maintenance_done: 'Arıza talebiniz çözüldü', announcement: 'Yeni duyuru',
+      push_enable: 'Bu cihazda bildirim al', push_on: 'Bildirimler açık', push_off: 'Kapat',
+      push_denied: 'Bildirim izni reddedildi — tarayıcı ayarlarından açabilirsin',
+    },
     tabs: {
       shifts: '⏱ Vardiyam',
       transport: '🚌 Servisim',
@@ -168,6 +177,7 @@ const tr = {
       submit: 'Talep Oluştur', success: 'İzin talebin alındı, onay bekliyor.',
       my_requests: 'Taleplerim', none: 'Henüz izin talebin yok',
       status_pending: 'Beklemede', status_approved: 'Onaylandı', status_rejected: 'Reddedildi',
+      requested: 'Talep edilen', over_balance: 'Kalan yıllık izniniz',
     },
     meals: {
       title: 'Bugünün Menüsü', none: 'Bugün için menü girilmemiş',
@@ -356,6 +366,15 @@ const en = {
     logout: 'Log out',
     change: 'Change',
     loading: 'Loading…',
+    load_error: 'Could not load data.',
+    refresh: 'Refresh',
+    notifications: {
+      title: 'Notifications', none: 'No notifications', bell: 'Notifications',
+      leave_approved: 'Your leave was approved', leave_rejected: 'Your leave was rejected',
+      maintenance_done: 'Your fault report was resolved', announcement: 'New announcement',
+      push_enable: 'Get notifications on this device', push_on: 'Notifications on', push_off: 'Turn off',
+      push_denied: 'Notification permission denied — enable it in browser settings',
+    },
     tabs: {
       shifts: '⏱ My Shifts',
       transport: '🚌 My Transport',
@@ -382,6 +401,7 @@ const en = {
       submit: 'Submit Request', success: 'Your leave request was received, pending approval.',
       my_requests: 'My Requests', none: 'No leave requests yet',
       status_pending: 'Pending', status_approved: 'Approved', status_rejected: 'Rejected',
+      requested: 'Requested', over_balance: 'Your remaining annual leave is',
     },
     meals: {
       title: "Today's Menu", none: 'No menu set for today',
@@ -570,6 +590,15 @@ const ar = {
     logout: 'خروج',
     change: 'تغيير',
     loading: 'جارٍ التحميل…',
+    load_error: 'تعذّر تحميل البيانات.',
+    refresh: 'تحديث',
+    notifications: {
+      title: 'الإشعارات', none: 'لا توجد إشعارات', bell: 'الإشعارات',
+      leave_approved: 'تمت الموافقة على إجازتك', leave_rejected: 'تم رفض إجازتك',
+      maintenance_done: 'تم حل بلاغ العطل الخاص بك', announcement: 'إعلان جديد',
+      push_enable: 'تلقّي الإشعارات على هذا الجهاز', push_on: 'الإشعارات مفعّلة', push_off: 'إيقاف',
+      push_denied: 'تم رفض إذن الإشعارات — يمكنك تفعيله من إعدادات المتصفح',
+    },
     tabs: {
       shifts: '⏱ ورديتي',
       transport: '🚌 نقلي',
@@ -596,6 +625,7 @@ const ar = {
       submit: 'إنشاء طلب', success: 'تم استلام طلب إجازتك، بانتظار الموافقة.',
       my_requests: 'طلباتي', none: 'لا طلبات إجازة بعد',
       status_pending: 'قيد الانتظار', status_approved: 'مقبول', status_rejected: 'مرفوض',
+      requested: 'المطلوب', over_balance: 'رصيد إجازتك السنوية المتبقي',
     },
     meals: {
       title: 'قائمة اليوم', none: 'لم تُحدد قائمة لليوم',

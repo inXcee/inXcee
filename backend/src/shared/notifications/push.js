@@ -68,3 +68,33 @@ export async function sendPushToRole(role, payload) {
   for (const s of subs) enqueue('push.send', { subscriptionId: s.id, payload })
   return { sent: subs.length, removed: 0 }
 }
+
+// ── AVS kiosk worker (staff) abonelikleri — ayrı tablo + 'push.worker' job tipi ──
+
+export function saveWorkerSubscription({ workerId, endpoint, p256dh, auth, userAgent }) {
+  const db = getDB()
+  db.prepare(`
+    INSERT INTO avs_push_subscriptions(worker_id, endpoint, p256dh_key, auth_key, user_agent)
+    VALUES(?,?,?,?,?)
+    ON CONFLICT(endpoint) DO UPDATE SET
+      worker_id=excluded.worker_id,
+      p256dh_key=excluded.p256dh_key,
+      auth_key=excluded.auth_key,
+      user_agent=excluded.user_agent,
+      last_seen_at=datetime('now')
+  `).run(workerId, endpoint, p256dh, auth, userAgent || null)
+}
+
+export function deleteWorkerSubscription(endpoint) {
+  getDB().prepare('DELETE FROM avs_push_subscriptions WHERE endpoint=?').run(endpoint)
+}
+
+// AVS personeline push — telefonda abone olduysa. Paylaşılan terminalde abonelik
+// olmaz, dolayısıyla no-op. VAPID yoksa hiç enqueue edilmez.
+export async function sendPushToWorker(workerId, payload) {
+  if (!configured) return { sent: 0, skipped: 'not_configured' }
+  const db = getDB()
+  const subs = db.prepare('SELECT id FROM avs_push_subscriptions WHERE worker_id=?').all(workerId)
+  for (const s of subs) enqueue('push.worker', { subscriptionId: s.id, payload })
+  return { sent: subs.length, removed: 0 }
+}

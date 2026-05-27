@@ -1,7 +1,29 @@
 import * as q from './queries.js'
 import { createNotification } from '../../shared/notifications/service.js'
+import { sendPushToWorker } from '../../shared/notifications/push.js'
 import { logAudit } from '../../shared/audit.js'
 import { getDB } from '../../shared/db/index.js'
+
+// AVS kiosk'tan bildirilen bir arıza çözülünce, bildiren personele push gönder
+// (telefonda abone olduysa). Reporter linki audit_log'ta tutuluyor (workerId).
+function notifyAvsReporterResolved(id) {
+  try {
+    const db = getDB()
+    const audit = db.prepare(
+      "SELECT detail FROM audit_log WHERE action='kiosk_avs_maintenance' AND target_id=? ORDER BY id DESC LIMIT 1"
+    ).get(id)
+    if (!audit) return
+    const workerId = JSON.parse(audit.detail || '{}')?.workerId
+    if (!workerId) return
+    const req = q.getRequestById(id)
+    sendPushToWorker(workerId, {
+      title: 'Arıza talebiniz çözüldü',
+      body: req?.location || '',
+      tag: 'maintenance',
+      url: '/avs-kiosk',
+    }).catch(() => {})
+  } catch { /* push opsiyonel, ana akışı bozma */ }
+}
 
 export function createRequestService(data) {
   const id = q.createRequest(data)
@@ -35,6 +57,7 @@ export function closeRequestService(id, photoUrl) {
     module: 'maintenance',
     target_role: 'campus_manager',
   })
+  notifyAvsReporterResolved(id)
 }
 
 export function reopenRequestService(id) {
@@ -88,6 +111,7 @@ export function updateStatusService(id, newStatus, userId) {
     module: 'maintenance',
     target_role: newStatus === 'done' ? 'campus_manager' : 'technical',
   })
+  if (newStatus === 'done') notifyAvsReporterResolved(id)
   logAudit(userId, `status_${newStatus}`, 'maintenance', id, `Durum: ${labels[newStatus]}`)
 }
 
