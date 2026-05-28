@@ -187,12 +187,12 @@ export default function SelfServicePage() {
 
           {/* Yöntem seçici — sadece 'both' modunda */}
           {loginMethod === 'both' && (
-            <div className="flex gap-2 mb-4">
-              <button onClick={() => setLoginTab('tc')}
+            <div className="flex gap-2 mb-4" role="tablist" aria-label={t('kiosk.title')}>
+              <button onClick={() => setLoginTab('tc')} role="tab" aria-selected={activeLt==='tc'}
                 className={`flex-1 py-2 rounded-xl text-sm font-medium transition-colors ${activeLt==='tc' ? 'bg-blue-700 text-white' : 'bg-slate-800 text-slate-400'}`}>
                 {t('kiosk.login_tc')}
               </button>
-              <button onClick={() => setLoginTab('name')}
+              <button onClick={() => setLoginTab('name')} role="tab" aria-selected={activeLt==='name'}
                 className={`flex-1 py-2 rounded-xl text-sm font-medium transition-colors ${activeLt==='name' ? 'bg-blue-700 text-white' : 'bg-slate-800 text-slate-400'}`}>
                 {t('kiosk.login_name')}
               </button>
@@ -203,19 +203,19 @@ export default function SelfServicePage() {
           {showTc && activeLt === 'tc' && (
             <form onSubmit={handleLogin} className="bg-slate-900 rounded-2xl p-6 space-y-4">
               <div>
-                <label className="block text-sm text-slate-400 mb-2">{t('kiosk.tc_no')}</label>
-                <input type="text" value={tcNo} onChange={e => setTcNo(e.target.value)}
+                <label htmlFor="kiosk-tc" className="block text-sm text-slate-400 mb-2">{t('kiosk.tc_no')}</label>
+                <input id="kiosk-tc" type="text" value={tcNo} onChange={e => setTcNo(e.target.value)}
                   className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-lg text-slate-100 text-center font-mono tracking-widest focus:outline-none focus:border-blue-500"
-                  maxLength={11} autoFocus />
+                  maxLength={11} autoFocus inputMode="numeric" autoComplete="off" />
               </div>
               <div>
-                <label className="block text-sm text-slate-400 mb-2">{t('kiosk.pin')}</label>
-                <input type="password" inputMode="numeric" maxLength={4} value={pin}
+                <label htmlFor="kiosk-pin" className="block text-sm text-slate-400 mb-2">{t('kiosk.pin')}</label>
+                <input id="kiosk-pin" type="password" inputMode="numeric" maxLength={4} value={pin}
                   onChange={e => setPin(e.target.value.replace(/\D/g,'').slice(0,4))}
                   className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 text-center text-2xl tracking-widest focus:outline-none focus:border-amber-500"
-                  placeholder="····" required />
+                  placeholder="····" required autoComplete="off" />
               </div>
-              {loginError && <div className="text-red-400 text-sm text-center">{loginError}</div>}
+              {loginError && <div role="alert" className="text-red-400 text-sm text-center">{loginError}</div>}
               <button type="submit" disabled={tcNo.length < 11 || pin.length !== 4}
                 className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 text-white rounded-xl py-3 text-base font-medium transition-colors">
                 {t('kiosk.login_button')}
@@ -227,18 +227,18 @@ export default function SelfServicePage() {
           {showName && activeLt === 'name' && (
             <form onSubmit={handleNameLogin} className="bg-slate-900 rounded-2xl p-6 space-y-4">
               <div>
-                <label className="block text-sm text-slate-400 mb-2">{t('kiosk.name_search')}</label>
-                <input type="text" value={nameQuery} onChange={e => handleNameSearch(e.target.value)}
+                <label htmlFor="kiosk-name" className="block text-sm text-slate-400 mb-2">{t('kiosk.name_search')}</label>
+                <input id="kiosk-name" type="text" value={nameQuery} onChange={e => handleNameSearch(e.target.value)}
                   placeholder={t('kiosk.name_search')}
                   className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 focus:outline-none focus:border-blue-500"
-                  autoFocus />
+                  autoFocus role="combobox" aria-expanded={nameResults.length > 0 && !selectedPerson} aria-controls="kiosk-name-results" autoComplete="off" />
               </div>
 
               {/* Arama sonuçları */}
               {nameResults.length > 0 && !selectedPerson && (
-                <div className="bg-slate-800 rounded-xl overflow-hidden">
+                <div id="kiosk-name-results" role="listbox" aria-label={t('kiosk.name_search')} className="bg-slate-800 rounded-xl overflow-hidden">
                   {nameResults.map(p => (
-                    <button key={p.id} type="button" onClick={() => { setSelectedPerson(p); setNameResults([]) }}
+                    <button key={p.id} type="button" role="option" aria-selected={false} onClick={() => { setSelectedPerson(p); setNameResults([]) }}
                       className={`w-full text-left px-4 py-3 hover:bg-slate-700 transition-colors border-b border-slate-700 last:border-0 ${!p.has_pin ? 'opacity-50 cursor-not-allowed' : ''}`}
                       disabled={!p.has_pin}>
                       <div className="text-sm text-slate-200 font-medium">{p.full_name}</div>
@@ -262,15 +262,15 @@ export default function SelfServicePage() {
 
               {selectedPerson && (
                 <div>
-                  <label className="block text-sm text-slate-400 mb-2">{t('kiosk.pin')}</label>
-                  <input type="password" inputMode="numeric" maxLength={4} value={namePin}
+                  <label htmlFor="kiosk-name-pin" className="block text-sm text-slate-400 mb-2">{t('kiosk.pin')}</label>
+                  <input id="kiosk-name-pin" type="password" inputMode="numeric" maxLength={4} value={namePin}
                     onChange={e => setNamePin(e.target.value.replace(/\D/g,'').slice(0,4))}
                     className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 text-center text-2xl tracking-widest focus:outline-none focus:border-amber-500"
-                    placeholder="····" autoFocus />
+                    placeholder="····" autoFocus autoComplete="off" />
                 </div>
               )}
 
-              {loginError && <div className="text-red-400 text-sm text-center">{loginError}</div>}
+              {loginError && <div role="alert" className="text-red-400 text-sm text-center">{loginError}</div>}
               <button type="submit" disabled={!selectedPerson || namePin.length !== 4}
                 className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 text-white rounded-xl py-3 text-base font-medium transition-colors">
                 {t('kiosk.login_button')}
@@ -297,17 +297,20 @@ export default function SelfServicePage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-2 mb-6 overflow-x-auto pb-1">
+      <div className="flex gap-2 mb-6 overflow-x-auto pb-1" role="tablist" aria-label={t('kiosk.title')}>
         {TAB_KEYS.map(tab => {
           let badge = null
           if (tab.key === 'announcements' && unreadCount > 0) badge = unreadCount
           if (tab.key === 'maintenance' && openMaintCount > 0) badge = openMaintCount
+          const label = t(tab.i18n)
           return (
             <button key={tab.key} onClick={() => setActiveTab(tab.key)}
+              role="tab" aria-selected={activeTab === tab.key}
+              aria-label={badge ? `${label} (${badge})` : label}
               className={`relative flex-shrink-0 py-2 px-3 rounded-xl text-xs font-medium transition-colors whitespace-nowrap ${activeTab === tab.key ? 'bg-blue-700 text-white' : 'bg-slate-800 text-slate-400'}`}>
-              {t(tab.i18n)}
+              {label}
               {badge ? (
-                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">{badge}</span>
+                <span aria-hidden="true" className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">{badge}</span>
               ) : null}
             </button>
           )
