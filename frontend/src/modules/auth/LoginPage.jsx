@@ -48,6 +48,56 @@ const WMO = {
 const FILYOS_VIDEO = ''
 const STOCK_IDS = ['25163', '31746', '9294', '7271']
 
+// 6 haneli TOTP girişi — auto-advance, paste, backspace ile geri, shake hata.
+function TwoFactorInput({ value, onChange, shake, disabled }) {
+  const refs = useRef([])
+
+  const onCharChange = (i, raw) => {
+    const c = (raw || '').replace(/\D/g, '').slice(-1)
+    const arr = (value + '      ').split('').slice(0, 6)
+    arr[i] = c
+    const next = arr.join('').trimEnd().replace(/\s/g, '')
+    onChange(next)
+    if (c && i < 5) refs.current[i + 1]?.focus()
+  }
+
+  const onKeyDown = (i, e) => {
+    if (e.key === 'Backspace' && !value[i] && i > 0) { e.preventDefault(); refs.current[i - 1]?.focus() }
+    else if (e.key === 'ArrowLeft' && i > 0) refs.current[i - 1]?.focus()
+    else if (e.key === 'ArrowRight' && i < 5) refs.current[i + 1]?.focus()
+  }
+
+  const onPaste = (e) => {
+    const t = (e.clipboardData?.getData('text') || '').replace(/\D/g, '').slice(0, 6)
+    if (!t) return
+    e.preventDefault()
+    onChange(t)
+    refs.current[Math.min(t.length, 5)]?.focus()
+  }
+
+  return (
+    <div className={`tfa-boxes ${shake ? 'shake' : ''}`} onPaste={onPaste} role="group" aria-label="6 haneli doğrulama kodu">
+      {Array.from({ length: 6 }, (_, i) => (
+        <input
+          key={i}
+          ref={el => { refs.current[i] = el }}
+          className="tfa-box"
+          inputMode="numeric"
+          autoComplete="one-time-code"
+          maxLength={1}
+          value={value[i] || ''}
+          onChange={e => onCharChange(i, e.target.value)}
+          onKeyDown={e => onKeyDown(i, e)}
+          onFocus={e => e.target.select()}
+          disabled={disabled}
+          autoFocus={i === 0}
+          aria-label={`Hane ${i + 1}`}
+        />
+      ))}
+    </div>
+  )
+}
+
 export default function LoginPage() {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -61,6 +111,11 @@ export default function LoginPage() {
   const [code, setCode] = useState('')
   const [mode, setMode] = useState('standard')
   const [modal, setModal] = useState(null) // 'kvkk' | 'terms' | 'support' | 'forgot' | null
+  const [capsLock, setCapsLock] = useState(false)
+  const [failCount, setFailCount] = useState(0)
+  const [cooldownUntil, setCooldownUntil] = useState(0)
+  const [nowTs, setNowTs] = useState(Date.now())
+  const [shake, setShake] = useState(false)
   const [clock, setClock] = useState('--:--:--')
   const [stats, setStats] = useState(null)
   const [weather, setWeather] = useState(null)
@@ -71,17 +126,32 @@ export default function LoginPage() {
   const videoRef = useRef(null)
   const modulesRef = useRef(null)
 
-  // ── Login (gerçek auth) ──────────────────────────────────────
+  // ── Cooldown durumu (3 başarısız → 30sn kilit) ───────────────
+  const cooldownLeft = Math.max(0, Math.ceil((cooldownUntil - nowTs) / 1000))
+  const isLocked = cooldownLeft > 0
+
+  // ── Login (gerçek auth + timeout + cooldown + a11y) ──────────
   const handleSubmit = async (e) => {
     e.preventDefault()
+    if (isLocked) return
     setLoading(true); setError(''); setLoadingText('Kimlik doğrulanıyor')
     const slow = setTimeout(() => setLoadingText('Sunucu uyandırılıyor…'), 4000)
     try {
-      const res = await api.post('/auth/login', { username, password })
-      if (res.data.require_2fa) { setTwoFA({ challenge_token: res.data.challenge_token }); return }
+      const res = await api.post('/auth/login', { username, password }, { timeout: 8000 })
+      if (res.data.require_2fa) {
+        setTwoFA({ challenge_token: res.data.challenge_token })
+        setFailCount(0)
+        return
+      }
+      setFailCount(0)
       login(null, res.data.user); navigate('/')
     } catch (err) {
-      if (err.response?.status === 401) setError('Kullanıcı adı veya şifre hatalı')
+      if (err.response?.status === 401) {
+        setError('Kullanıcı adı veya şifre hatalı')
+        const next = failCount + 1
+        setFailCount(next)
+        if (next >= 3) setCooldownUntil(Date.now() + 30_000)
+      }
       else if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) setError('Sunucu yanıtlamıyor — birkaç saniye bekleyip tekrar deneyin')
       else if (!err.response) setError('Sunucuya ulaşılamıyor — bağlantınızı kontrol edin')
       else setError('Bir hata oluştu, tekrar deneyin')
@@ -92,11 +162,26 @@ export default function LoginPage() {
     e.preventDefault()
     setLoading(true); setError(''); setLoadingText('Kod doğrulanıyor')
     try {
-      const res = await api.post('/auth/2fa/verify-login', { challenge_token: twoFA.challenge_token, code })
+      const res = await api.post('/auth/2fa/verify-login', { challenge_token: twoFA.challenge_token, code }, { timeout: 8000 })
       login(null, res.data.user); navigate('/')
-    } catch (err) { setError(err.response?.data?.error || 'Kod doğrulanamadı') }
+    } catch (err) {
+      setError(err.response?.data?.error || 'Kod doğrulanamadı')
+      setShake(true); setTimeout(() => setShake(false), 450)
+      setCode('')
+    }
     finally { setLoading(false) }
   }
+
+  // ── Cooldown saati — sadece kilitli iken tick at ─────────────
+  useEffect(() => {
+    if (cooldownUntil <= Date.now()) return
+    const id = setInterval(() => {
+      const t = Date.now()
+      setNowTs(t)
+      if (t >= cooldownUntil) { setFailCount(0); clearInterval(id) }
+    }, 1000)
+    return () => clearInterval(id)
+  }, [cooldownUntil])
 
   // ── Canlı saat ───────────────────────────────────────────────
   useEffect(() => {
@@ -303,11 +388,10 @@ export default function LoginPage() {
                   <form className="body" onSubmit={handle2fa}>
                     <div className="head"><div className="title">İki Faktörlü Doğrulama</div><div className="sub">Authenticator uygulamasındaki <strong>6 haneli kodu</strong> girin.</div></div>
                     <div className="field">
-                      <label className="label"><span>Doğrulama Kodu</span><span className="hint">TOTP</span></label>
-                      <div className="wrap"><input className="input code" inputMode="numeric" maxLength={6} value={code} autoFocus
-                        onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="------" /></div>
+                      <label className="label" id="lp-2fa-label"><span>Doğrulama Kodu</span><span className="hint">TOTP · Google / Authy</span></label>
+                      <TwoFactorInput value={code} onChange={setCode} shake={shake} disabled={loading} />
                     </div>
-                    {error && <div className="alert">⚠️ <span>{error}</span></div>}
+                    {error && <div id="lp-2fa-err" className="alert" role="alert">⚠️ <span>{error}</span></div>}
                     <button className="btn" type="submit" disabled={loading || code.length !== 6} style={{ marginTop: 6 }}>{loading ? 'DOĞRULANIYOR…' : 'Doğrula →'}</button>
                     <button className="btn-ghost" type="button" onClick={() => { setTwoFA(null); setCode(''); setError('') }}>İptal</button>
                   </form>
@@ -318,22 +402,63 @@ export default function LoginPage() {
                       <div className="sub" dangerouslySetInnerHTML={{ __html: mSub.replace('<b>', '<strong>').replace('</b>', '</strong>') }} />
                     </div>
                     <div className="field">
-                      <label className="label"><span>Kullanıcı Adı</span><span className="hint">SİCİL / TC / E-POSTA</span></label>
-                      <div className="wrap"><span className="ico">👤</span>
-                        <input className="input" type="text" value={username} onChange={e => setUsername(e.target.value)} autoFocus autoComplete="username" placeholder="örn. selam.aydin" /></div>
+                      <label className="label" htmlFor="lp-username"><span>Kullanıcı Adı</span><span className="hint">SİCİL / TC / E-POSTA</span></label>
+                      <div className="wrap"><span className="ico" aria-hidden="true">👤</span>
+                        <input
+                          id="lp-username"
+                          className="input"
+                          type="text"
+                          value={username}
+                          onChange={e => setUsername(e.target.value)}
+                          autoFocus
+                          autoComplete="username"
+                          placeholder="örn. selam.aydin"
+                          required
+                          aria-invalid={!!error}
+                          aria-describedby={error ? 'lp-login-err' : undefined}
+                          disabled={isLocked}
+                        /></div>
                     </div>
                     <div className="field">
-                      <label className="label"><span>Şifre</span><span className="hint">CAPS-LOCK KAPALI</span></label>
-                      <div className="wrap"><span className="ico">🔒</span>
-                        <input className="input" type={showPw ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} autoComplete="current-password" placeholder="••••••••" />
-                        <button className="eye" type="button" onClick={() => setShowPw(s => !s)}>{showPw ? '🙈' : '👁️'}</button></div>
+                      <label className="label" htmlFor="lp-password">
+                        <span>Şifre</span>
+                        <span className={`hint ${capsLock ? 'warn' : ''}`} aria-live="polite">
+                          {capsLock ? '⇪ CAPS-LOCK AÇIK' : 'CAPS-LOCK KAPALI'}
+                        </span>
+                      </label>
+                      <div className="wrap"><span className="ico" aria-hidden="true">🔒</span>
+                        <input
+                          id="lp-password"
+                          className="input"
+                          type={showPw ? 'text' : 'password'}
+                          value={password}
+                          onChange={e => setPassword(e.target.value)}
+                          onKeyDown={e => setCapsLock(e.getModifierState?.('CapsLock') ?? false)}
+                          onKeyUp={e => setCapsLock(e.getModifierState?.('CapsLock') ?? false)}
+                          autoComplete="current-password"
+                          placeholder="••••••••"
+                          required
+                          aria-invalid={!!error}
+                          aria-describedby={error ? 'lp-login-err' : undefined}
+                          disabled={isLocked}
+                        />
+                        <button className="eye" type="button" onClick={() => setShowPw(s => !s)} aria-pressed={showPw} aria-label={showPw ? 'Şifreyi gizle' : 'Şifreyi göster'}>
+                          {showPw ? '🙈' : '👁️'}
+                        </button></div>
                     </div>
                     <div className="row">
                       <span className="row-pad" />
                       <button type="button" className="forgot" onClick={() => setModal('forgot')}>Şifremi unuttum</button>
                     </div>
-                    <button className="btn" type="submit" disabled={loading}>{loading ? 'GİRİŞ YAPILIYOR…' : 'Sisteme Giriş Yap →'}</button>
-                    {error && <div className="alert">⚠️ <span>{error}</span></div>}
+                    <button className="btn" type="submit" disabled={loading || isLocked}>
+                      {loading ? 'GİRİŞ YAPILIYOR…' : isLocked ? `${cooldownLeft} sn bekleyin` : 'Sisteme Giriş Yap →'}
+                    </button>
+                    {error && (
+                      <div id="lp-login-err" className="alert" role="alert">
+                        ⚠️ <span>{error}</span>
+                        {isLocked && <span className="alert-sub"> · Çok fazla başarısız deneme — {cooldownLeft} sn sonra tekrar deneyin.</span>}
+                      </div>
+                    )}
 
                     {import.meta.env.DEV && (
                       <div className="demo">

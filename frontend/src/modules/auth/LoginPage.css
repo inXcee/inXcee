@@ -422,3 +422,36 @@
   .lp-root .lp-modal-title { font-size:15px; }
   .lp-root .lp-sup-grid { grid-template-columns:1fr; }
 }
+
+/* ════════════════════════════════════════════════════════════
+   v4 — FORM FONKSIYONELLİĞİ (Faz 3)
+   Caps Lock canlı, a11y, 2FA 6-box, cooldown
+   ════════════════════════════════════════════════════════════ */
+
+/* Caps Lock açık hint — sarı uyarı tonu */
+.lp-root .hint.warn { color:var(--ember-hi); font-weight:500; letter-spacing:0; text-transform:none;
+  animation:lpHintPulse 1.2s ease-in-out infinite; }
+@keyframes lpHintPulse { 0%,100%{opacity:.85} 50%{opacity:1} }
+
+/* Locked state — disabled inputs okunaklı kalsın */
+.lp-root .input:disabled { opacity:.55; cursor:not-allowed; }
+
+/* Cooldown alt mesajı */
+.lp-root .alert-sub { display:block; margin-top:4px; font-size:11px; color:rgba(255,180,150,.85); }
+
+/* 2FA 6-box girişi */
+.lp-root .tfa-boxes { display:grid; grid-template-columns:repeat(6, 1fr); gap:8px; }
+.lp-root .tfa-boxes.shake { animation:lpShake .45s; }
+.lp-root .tfa-box { width:100%; aspect-ratio:1/1.15; padding:0; text-align:center;
+  background:rgba(2,5,12,.6); border:1px solid var(--line); border-radius:12px;
+  color:var(--white); font-family:var(--m); font-size:22px; font-weight:600;
+  letter-spacing:0; outline:none; transition:all .15s; caret-color:var(--teal-hi); }
+.lp-root .tfa-box:focus { border-color:var(--blue-hi); background:rgba(2,5,12,.85);
+  box-shadow:0 0 0 3px rgba(43,131,255,.18), 0 0 18px rgba(43,131,255,.1); }
+.lp-root .tfa-box:disabled { opacity:.6; cursor:not-allowed; }
+
+/* 2FA mobile — kutular daralır ama eşit kalır */
+@media (max-width:520px) {
+  .lp-root .tfa-boxes { gap:6px; }
+  .lp-root .tfa-box { font-size:18px; }
+}
