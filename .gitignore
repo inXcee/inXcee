@@ -20,6 +20,10 @@ test-out.txt
 frontend/test-results/
 frontend/playwright-report/
 frontend/e2e/.tmp/
+# Kazara repo köküne yazılmış Playwright artifact'ları (CWD karışırsa)
+/test-results/
+/backend/test-results/
+/e2e/
 
 # Toplu import — gerçek veri/PII (şablonlar commit edilir, doldurulmuşları edilmez)
 scripts/import/roster.csv
