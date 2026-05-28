@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuthStore } from '../../shared/store/authStore.js'
+import { postLoginRedirect, VALID_MODES } from '../../shared/auth/postLoginRedirect.js'
 import api from '../../shared/api/client.js'
 import { LoginModal } from './LoginModals.jsx'
 import './LoginPage.css'
@@ -109,7 +110,9 @@ export default function LoginPage() {
   const [modulesOpen, setModulesOpen] = useState(false)
   const [twoFA, setTwoFA] = useState(null)
   const [code, setCode] = useState('')
-  const [mode, setMode] = useState('standard')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const urlMode = searchParams.get('mode')
+  const [mode, setMode] = useState(VALID_MODES.includes(urlMode) ? urlMode : 'standard')
   const [modal, setModal] = useState(null) // 'kvkk' | 'terms' | 'support' | 'forgot' | null
   const [capsLock, setCapsLock] = useState(false)
   const [failCount, setFailCount] = useState(0)
@@ -130,6 +133,22 @@ export default function LoginPage() {
   const cooldownLeft = Math.max(0, Math.ceil((cooldownUntil - nowTs) / 1000))
   const isLocked = cooldownLeft > 0
 
+  // ── Mod-bağımlı login sonrası akış ───────────────────────────
+  const finishLogin = async (user) => {
+    const result = postLoginRedirect(user, mode)
+    if (!result.ok && result.reason === 'role_mismatch') {
+      // Yönetici sekmesinden personel hesabıyla giriş — backend zaten cookie
+      // verdi, oturumu sonlandıralım ki sayfayı yenileyince /me bu hesabı
+      // restore etmesin. Logout best-effort; başarısızsa zarar yok.
+      try { await api.post('/auth/logout') } catch { /* sessiz */ }
+      setError(`Bu sekme yönetici hesapları içindir (sizin rolünüz: ${user.role}). Lütfen "Personel" sekmesinden giriş yapın.`)
+      return
+    }
+    setFailCount(0)
+    login(null, user)
+    navigate(result.path || '/')
+  }
+
   // ── Login (gerçek auth + timeout + cooldown + a11y) ──────────
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -143,8 +162,7 @@ export default function LoginPage() {
         setFailCount(0)
         return
       }
-      setFailCount(0)
-      login(null, res.data.user); navigate('/')
+      await finishLogin(res.data.user)
     } catch (err) {
       if (err.response?.status === 401) {
         setError('Kullanıcı adı veya şifre hatalı')
@@ -163,7 +181,7 @@ export default function LoginPage() {
     setLoading(true); setError(''); setLoadingText('Kod doğrulanıyor')
     try {
       const res = await api.post('/auth/2fa/verify-login', { challenge_token: twoFA.challenge_token, code }, { timeout: 8000 })
-      login(null, res.data.user); navigate('/')
+      await finishLogin(res.data.user)
     } catch (err) {
       setError(err.response?.data?.error || 'Kod doğrulanamadı')
       setShake(true); setTimeout(() => setShake(false), 450)
@@ -375,9 +393,22 @@ export default function LoginPage() {
         <main className="main">
           <aside className="login">
             <div className="card">
-              <div className="modes">
+              <div className="modes" role="tablist" aria-label="Giriş türü">
                 {MODE_ORDER.map(([k, ic, lb]) => (
-                  <button key={k} type="button" className={`mode ${mode === k ? 'on' : ''}`} onClick={() => { setMode(k); setError('') }}>
+                  <button
+                    key={k}
+                    type="button"
+                    role="tab"
+                    aria-selected={mode === k}
+                    className={`mode ${mode === k ? 'on' : ''}`}
+                    onClick={() => {
+                      setMode(k)
+                      setError('')
+                      const next = new URLSearchParams(searchParams)
+                      if (k === 'standard') next.delete('mode'); else next.set('mode', k)
+                      setSearchParams(next, { replace: true })
+                    }}
+                  >
                     <span className="mode-ico">{ic}</span><span>{lb}</span>
                   </button>
                 ))}
