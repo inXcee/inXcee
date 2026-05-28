@@ -40,6 +40,15 @@ const jobQueueSize = new Gauge({
   registers: [register],
 })
 
+// Audit yazma hataları — normalde 0 olmalı. >0 ise audit_log INSERT'leri
+// (genelde user_id FK ihlali ya da şema kayması) sessizce düşüyor demektir.
+const auditWriteFailures = new Counter({
+  name: 'audit_write_failures_total',
+  help: 'Total audit_log write failures (should stay 0)',
+  labelNames: ['module'],
+  registers: [register],
+})
+
 // Test helper: vitest izole run icinde sayaclari sifirlar (metric tanimi degismez).
 export function _resetForTests() {
   register.resetMetrics()
@@ -72,4 +81,8 @@ export function observeDbQuery(operation, seconds) {
 
 export function setJobQueueSize(status, count) {
   jobQueueSize.set({ status }, count)
+}
+
+export function incAuditWriteFailure(module) {
+  auditWriteFailures.inc({ module: module || 'unknown' })
 }
