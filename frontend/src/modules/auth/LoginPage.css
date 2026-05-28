@@ -351,3 +351,74 @@
   .lp-root.v4 .nm { padding:6px 10px; gap:5px; }
   .lp-root.v4 .nav-meta { gap:12px; }
 }
+
+/* ════════════════════════════════════════════════════════════
+   v4 — FOOTER MODALLARI (Faz 2)
+   KVKK / Kullanım Koşulları / Destek / Şifremi Unuttum
+   ════════════════════════════════════════════════════════════ */
+
+/* Footer'da link yerine button — görsel olarak <a> gibi davransın */
+.lp-root .f-link { background:none; border:none; padding:0; color:var(--muted);
+  font-family:var(--b); font-size:11px; cursor:pointer; text-decoration:none; transition:color .2s; }
+.lp-root .f-link:hover { color:var(--blue-hi); text-decoration:underline; }
+.lp-root .row-pad { flex:1; }
+
+/* Modal backdrop + kutu */
+.lp-root .lp-modal-back { position:fixed; inset:0; z-index:200; background:rgba(2,5,12,.75);
+  backdrop-filter:blur(6px); display:flex; align-items:center; justify-content:center;
+  padding:24px; animation:lpModalBack .18s ease-out; }
+@keyframes lpModalBack { from{opacity:0} to{opacity:1} }
+.lp-root .lp-modal { background:rgba(8,16,32,.98); border:1px solid var(--line-hi);
+  border-radius:18px; max-width:640px; width:100%; max-height:calc(100vh - 48px);
+  display:flex; flex-direction:column; box-shadow:0 30px 80px rgba(0,0,0,.7);
+  outline:none; animation:lpModalIn .22s cubic-bezier(.2,.7,0,1.1); }
+@keyframes lpModalIn { from{opacity:0; transform:translateY(12px) scale(.98)} to{opacity:1; transform:translateY(0) scale(1)} }
+.lp-root .lp-modal-head { padding:18px 22px; border-bottom:1px solid var(--line);
+  display:flex; align-items:center; justify-content:space-between; gap:12px; flex-shrink:0; }
+.lp-root .lp-modal-title { font-family:var(--d); font-size:18px; font-weight:700;
+  letter-spacing:-.4px; color:var(--white); margin:0; }
+.lp-root .lp-modal-close { background:none; border:1px solid var(--line); border-radius:8px;
+  width:32px; height:32px; color:var(--muted); font-size:14px; cursor:pointer;
+  display:flex; align-items:center; justify-content:center; transition:all .2s; }
+.lp-root .lp-modal-close:hover { color:var(--white); border-color:var(--line-hi); background:rgba(255,255,255,.04); }
+.lp-root .lp-modal-body { padding:20px 22px 24px; overflow-y:auto; font-family:var(--b);
+  font-size:13.5px; line-height:1.6; color:var(--muted); }
+
+/* Modal içerik tipografisi */
+.lp-root .lp-modal-body h3 { font-family:var(--d); font-size:13px; font-weight:600;
+  letter-spacing:.08em; text-transform:uppercase; color:var(--teal-hi);
+  margin:18px 0 8px; }
+.lp-root .lp-modal-body h3:first-child { margin-top:0; }
+.lp-root .lp-modal-body p { margin:0 0 10px; }
+.lp-root .lp-modal-body ul, .lp-root .lp-modal-body ol { margin:0 0 12px 18px;
+  padding:0; color:var(--muted); }
+.lp-root .lp-modal-body li { margin-bottom:5px; }
+.lp-root .lp-modal-body strong { color:var(--white); font-weight:500; }
+.lp-root .lp-modal-body a { color:var(--blue-hi); text-decoration:none; }
+.lp-root .lp-modal-body a:hover { color:var(--teal-hi); text-decoration:underline; }
+.lp-root .lp-m-lead { font-size:14px; color:var(--white); padding-bottom:10px; border-bottom:1px solid var(--line); margin-bottom:14px; }
+.lp-root .lp-m-foot { margin-top:18px; padding-top:14px; border-top:1px solid var(--line);
+  font-size:12px; color:var(--muted-2); }
+
+/* Destek modalı — 2×2 kart grid */
+.lp-root .lp-sup-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:10px;
+  margin:6px 0 14px; }
+.lp-root .lp-sup-card { padding:12px 14px; background:rgba(2,5,12,.55);
+  border:1px solid var(--line); border-radius:12px; }
+.lp-root .lp-sup-ico { font-size:18px; margin-bottom:6px; opacity:.85; }
+.lp-root .lp-sup-key { font-family:var(--m); font-size:10px; letter-spacing:.1em;
+  text-transform:uppercase; color:var(--muted-2); margin-bottom:3px; }
+.lp-root .lp-sup-val { font-family:var(--d); font-size:14px; font-weight:600;
+  color:var(--white); letter-spacing:-.2px; }
+.lp-root .lp-sup-val a { color:var(--white); }
+.lp-root .lp-sup-val a:hover { color:var(--blue-hi); }
+.lp-root .lp-sup-note { font-size:11px; color:var(--muted); margin-top:4px; }
+
+/* Modal mobile */
+@media (max-width:520px) {
+  .lp-root .lp-modal-back { padding:10px; }
+  .lp-root .lp-modal-head { padding:14px 16px; }
+  .lp-root .lp-modal-body { padding:16px; font-size:13px; }
+  .lp-root .lp-modal-title { font-size:15px; }
+  .lp-root .lp-sup-grid { grid-template-columns:1fr; }
+}

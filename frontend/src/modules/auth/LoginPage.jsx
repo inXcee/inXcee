@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../../shared/store/authStore.js'
 import api from '../../shared/api/client.js'
+import { LoginModal } from './LoginModals.jsx'
 import './LoginPage.css'
 
 const DEMO_USERS = [
@@ -59,6 +60,7 @@ export default function LoginPage() {
   const [twoFA, setTwoFA] = useState(null)
   const [code, setCode] = useState('')
   const [mode, setMode] = useState('standard')
+  const [modal, setModal] = useState(null) // 'kvkk' | 'terms' | 'support' | 'forgot' | null
   const [clock, setClock] = useState('--:--:--')
   const [stats, setStats] = useState(null)
   const [weather, setWeather] = useState(null)
@@ -327,8 +329,8 @@ export default function LoginPage() {
                         <button className="eye" type="button" onClick={() => setShowPw(s => !s)}>{showPw ? '🙈' : '👁️'}</button></div>
                     </div>
                     <div className="row">
-                      <label className="check"><input type="checkbox" /><div className="box" /><span>Bu cihazda kalıcı oturum</span></label>
-                      <button type="button" className="forgot" onClick={() => setError('Şifre sıfırlama için sistem yöneticinize başvurun.')}>Şifremi unuttum</button>
+                      <span className="row-pad" />
+                      <button type="button" className="forgot" onClick={() => setModal('forgot')}>Şifremi unuttum</button>
                     </div>
                     <button className="btn" type="submit" disabled={loading}>{loading ? 'GİRİŞ YAPILIYOR…' : 'Sisteme Giriş Yap →'}</button>
                     {error && <div className="alert">⚠️ <span>{error}</span></div>}
@@ -394,9 +396,9 @@ export default function LoginPage() {
 
         <footer className="footer">
           <div className="f-links">
-            <a href="/kvkk">KVKK &amp; Gizlilik</a>
-            <a href="#">Kullanım Koşulları</a>
-            <a href="#">Destek</a>
+            <button type="button" className="f-link" onClick={() => setModal('kvkk')}>KVKK &amp; Gizlilik</button>
+            <button type="button" className="f-link" onClick={() => setModal('terms')}>Kullanım Koşulları</button>
+            <button type="button" className="f-link" onClick={() => setModal('support')}>Destek</button>
           </div>
           <div className="f-copy">© 2026 AVS Kamp Alanı · Filyos · Zonguldak</div>
           <div className="f-version">
@@ -405,6 +407,8 @@ export default function LoginPage() {
           </div>
         </footer>
       </div>
+
+      <LoginModal which={modal} onClose={() => setModal(null)} />
     </div>
   )
 }
