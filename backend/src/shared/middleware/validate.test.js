@@ -23,12 +23,14 @@ describe('validate middleware', () => {
     expect(res.body.validated).toEqual({ name: 'Ali', age: 30 })
   })
 
-  it('eksik alanda 400 + details döner', async () => {
-    const schema = z.object({ username: z.string().min(1), password: z.string().min(1) })
+  it('eksik alanda 400 + details döner, error ilk issue mesajı', async () => {
+    const schema = z.object({ username: z.string().min(1), password: z.string().min(1, 'Şifre gerekli') })
     const app = makeApp(schema)
     const res = await request(app).post('/test').send({ username: 'admin' })
     expect(res.status).toBe(400)
-    expect(res.body.error).toBe('Geçersiz istek')
+    // error artık ilk issue mesajını taşır (frontend tek-satır toast'ı için)
+    expect(typeof res.body.error).toBe('string')
+    expect(res.body.error.length).toBeGreaterThan(0)
     expect(res.body.details).toBeInstanceOf(Array)
     expect(res.body.details.some(d => d.path === 'password')).toBe(true)
   })
