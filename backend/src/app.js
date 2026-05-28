@@ -67,6 +67,7 @@ import { reportErrorService } from './modules/error-log/service.js'
 import { backupRouter } from './modules/backup/routes.js'
 import { kvkkRouter } from './modules/kvkk/routes.js'
 import { systemRouter } from './modules/system/routes.js'
+import { publicRouter } from './modules/public/routes.js'
 import { notificationPrefsRouter } from './modules/notification-prefs/routes.js'
 import { campusMapRouter } from './modules/campus-map/routes.js'
 import { personnelRouter } from './modules/personnel/routes.js'
@@ -297,6 +298,7 @@ const notificationsLimiter = rateLimit({
 // authLimiter brute-force korur (15dk içinde 30 deneme).
 app.use('/api/setup', authLimiter, setupRouter)
 app.use('/api/auth', authLimiter, authRouter)
+app.use('/api/public', readLimiter, publicRouter)  // login öncesi güvenli toplu sayılar (auth yok)
 app.use('/api/mobile/auth', mobileAuthLimiter, mobileAuthRouter)
 app.use('/api/checkin', writeLimiter, checkinRouter)
 app.use('/api/capacity', writeLimiter, capacityRouter)
