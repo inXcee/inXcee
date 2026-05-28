@@ -85,6 +85,8 @@ Y blokları **özel banyolu, kapasite=1 placeholder** olarak gelir; gerçek yata
 
 ## Veritabanı Değişiklik Kuralları
 
+- **Yeni şema değişiklikleri versiyonlu migration ile yazılır.** `backend/src/shared/db/migrations/NNN_ad.sql` dosyası ekle (NNN = bir sonraki sıra no). `initDB()` bunları `schema_migrations` tablosuna göre tam bir kez, sürüm sırasına göre, transaction içinde uygular (bkz. `db/runner.js`). `db/index.js` içindeki eski idempotent ALTER bloğu **baseline**'dır — oraya yeni satır ekleme, dokunma.
+- Migration'lar mümkünse `IF NOT EXISTS` ile idempotent yazılsın; veri backfill gibi tek-sefer işlemler de güvenli (runner once-only garanti eder).
 - Şema veya seed değişikliğinden sonra mutlaka doğrula: 1) Migration temiz çalışıyor, 2) Seed verisi doğru DB dosyasını hedefliyor (`yys.db`), 3) Foreign key referansları mevcut şemayla uyumlu
 - DB değişikliğinden sonra login akışını test et
 - Yanlış DB'ye yazmamak için seed sonrası `yys.db` dosya boyutunu kontrol et

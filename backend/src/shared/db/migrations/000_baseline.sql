@@ -1,0 +1,8 @@
+-- 000_baseline — BASELINE marker (no-op).
+--
+-- Bu sürümden ÖNCEKİ tüm şema, db/index.js initDB() içindeki idempotent
+-- CREATE/ALTER bloğu tarafından kuruluyor (mevcut prod/dev DB'lerde zaten var).
+-- O blok "baseline" kabul edilir ve dokunulmaz.
+--
+-- Yeni şema değişiklikleri 001'den itibaren versiyonlu dosyalara yazılır,
+-- her biri tam bir kez ve sürüm sırasına göre uygulanır (bkz. runner.js).

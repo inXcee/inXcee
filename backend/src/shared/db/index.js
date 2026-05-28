@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3'
 import { SCHEMA } from './schema.js'
 import { logger } from '../logger.js'
+import { applyMigrations } from './runner.js'
 
 let db
 
@@ -1733,6 +1734,12 @@ export function initDB() {
 
   // Personnel checkout tarihi + anonimleştirme durumu (KVKK retention enforcement).
   try { db.exec("CREATE INDEX IF NOT EXISTS idx_personnel_checkout_anon ON personnel(check_out_date, full_name) WHERE check_out_date IS NOT NULL") } catch(e) { if (!e.message?.includes('already exists')) logger.error('[Migration] idx_personnel_checkout_anon:', e.message) }
+
+  // ── Versiyonlu migration'lar ──
+  // Yukarıdaki blok baseline; bundan sonraki şema değişiklikleri migrations/
+  // dizinindeki versiyonlu .sql dosyalarından uygulanır (schema_migrations ile
+  // takip). Detay: runner.js.
+  applyMigrations(db)
 
   return db
 }
