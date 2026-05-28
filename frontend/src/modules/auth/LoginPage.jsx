@@ -23,13 +23,19 @@ const MODULES = [
   ['📅', 'Vardiya'], ['🍽️', 'Yemekhane'], ['🧺', 'Çamaşırhane'], ['🚪', 'Ziyaretçi'], ['📈', 'Raporlama'],
 ]
 
+const MODE_ORDER = [
+  ['standard', '👤', 'Personel'],
+  ['admin',    '🛡️', 'Yönetici'],
+  ['security', '🚪', 'Güvenlik'],
+  ['kiosk',    '📟', 'Kiosk'],
+]
+
 const MODE_TITLES = {
   standard: ['Personel Girişi', 'Yetkili hesabınızla oturum açın · <b>RBAC aktif</b>'],
   admin:    ['Yönetici Girişi', 'Tam yetkili sistem erişimi · <b>2FA destekli</b>'],
   security: ['Güvenlik Girişi', 'Kapı kontrol & ziyaretçi yönetimi · <b>Vardiya bazlı</b>'],
 }
 
-// Filyos koordinatları (open-meteo, anahtarsız + CORS açık)
 const LAT = 41.57, LON = 32.04
 const COMPASS = ['K', 'KD', 'D', 'GD', 'G', 'GB', 'B', 'KB']
 const WMO = {
@@ -38,7 +44,6 @@ const WMO = {
   71: 'Karlı', 73: 'Karlı', 75: 'Karlı', 80: 'Sağanak', 81: 'Sağanak', 82: 'Kuvvetli Sağanak', 95: 'Gök Gürültülü',
 }
 
-// Telifsiz okyanus videosu (Mixkit). Kendi Filyos videon: FILYOS_VIDEO='/filyos.mp4'
 const FILYOS_VIDEO = ''
 const STOCK_IDS = ['25163', '31746', '9294', '7271']
 
@@ -50,6 +55,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [loadingText, setLoadingText] = useState('Kimlik doğrulanıyor')
   const [demoOpen, setDemoOpen] = useState(false)
+  const [modulesOpen, setModulesOpen] = useState(false)
   const [twoFA, setTwoFA] = useState(null)
   const [code, setCode] = useState('')
   const [mode, setMode] = useState('standard')
@@ -61,8 +67,9 @@ export default function LoginPage() {
   const navigate = useNavigate()
   const sceneRef = useRef(null)
   const videoRef = useRef(null)
+  const modulesRef = useRef(null)
 
-  // ── Login (gerçek auth — değişmedi) ──────────────────────────
+  // ── Login (gerçek auth) ──────────────────────────────────────
   const handleSubmit = async (e) => {
     e.preventDefault()
     setLoading(true); setError(''); setLoadingText('Kimlik doğrulanıyor')
@@ -138,27 +145,9 @@ export default function LoginPage() {
     return () => { alive = false; clearInterval(id) }
   }, [])
 
-  // ── İstatistik count-up ──────────────────────────────────────
-  const [shown, setShown] = useState({ beds: 0, occ: 0, faults: 0, staff: 0 })
+  // ── Fare paralaks (azaltılmış v4) ────────────────────────────
   useEffect(() => {
-    if (!stats) return
-    const targets = { beds: stats.beds_occupied, occ: stats.occupancy_pct, faults: stats.open_faults, staff: stats.active_staff }
-    const start = performance.now(), dur = 1300
-    let raf
-    const step = (now) => {
-      const k = Math.min(1, (now - start) / dur), e = 1 - Math.pow(1 - k, 3)
-      setShown({
-        beds: Math.round(targets.beds * e), occ: Math.round(targets.occ * e),
-        faults: Math.round(targets.faults * e), staff: Math.round(targets.staff * e),
-      })
-      if (k < 1) raf = requestAnimationFrame(step)
-    }
-    raf = requestAnimationFrame(step)
-    return () => cancelAnimationFrame(raf)
-  }, [stats])
-
-  // ── Fare paralaks ────────────────────────────────────────────
-  useEffect(() => {
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return
     const layers = sceneRef.current?.querySelectorAll('[data-depth]') || []
     const onMove = (e) => {
       const x = e.clientX / window.innerWidth - 0.5, y = e.clientY / window.innerHeight - 0.5
@@ -168,19 +157,27 @@ export default function LoginPage() {
     return () => window.removeEventListener('mousemove', onMove)
   }, [])
 
+  // ── Modül popover'ı dış tıklamayla kapat ─────────────────────
+  useEffect(() => {
+    if (!modulesOpen) return
+    const onDoc = (e) => { if (!modulesRef.current?.contains(e.target)) setModulesOpen(false) }
+    const onEsc = (e) => { if (e.key === 'Escape') setModulesOpen(false) }
+    document.addEventListener('mousedown', onDoc)
+    document.addEventListener('keydown', onEsc)
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      document.removeEventListener('keydown', onEsc)
+    }
+  }, [modulesOpen])
+
   const pickDemo = useCallback((u) => { setUsername(u.username); setPassword(u.password); setError('') }, [])
 
-  // ── Güvenli ticker (hassas olay YOK — sadece sistem/sayı/hava) ──
+  // ── Ticker (hassas veri yok — sadece sistem / sayılar) ──────
   const tickerItems = []
   tickerItems.push(['t', 'Sistem', 'çevrimiçi · TLS 1.3 · RBAC'])
   if (stats) {
-    tickerItems.push(['b', 'Doluluk', `%${stats.occupancy_pct} · ${stats.beds_occupied}/${stats.beds_total} yatak`])
     tickerItems.push([stats.open_faults > 0 ? 'w' : 'g', 'Açık arıza', `${stats.open_faults} kayıt`])
-    tickerItems.push(['g', 'Aktif personel', `${stats.active_staff} · ${stats.departments} departman`])
-  }
-  if (weather) {
-    tickerItems.push(['t', 'Filyos', `${weather.temp}° · ${weather.desc} · rüzgâr ${weather.windKn}kn ${weather.windDir}`])
-    if (weather.wave != null) tickerItems.push(['b', 'Karadeniz', `dalga ${weather.wave} m`])
+    tickerItems.push(['g', 'Departman', `${stats.departments} aktif`])
   }
   tickerItems.push(['g', '10 modül', 'aktif · KampüsERP v5.0'])
   tickerItems.push(['b', 'Gece yedeği', '03:00 · /var/data/backups'])
@@ -190,8 +187,8 @@ export default function LoginPage() {
   const [mTitle, mSub] = MODE_TITLES[mode] || MODE_TITLES.standard
 
   return (
-    <div className="lp-root">
-      {/* SCENE */}
+    <div className="lp-root v4">
+      {/* SCENE — v4'te backdrop olarak dimleniyor */}
       <div className="scene" ref={sceneRef}>
         <div className="sky" />
         <video className="hero-video" ref={videoRef} muted loop playsInline preload="auto" aria-hidden="true" />
@@ -216,27 +213,6 @@ export default function LoginPage() {
       </div>
       <div className="grain" /><div className="vignette" />
 
-      {/* TR flag */}
-      <div className="flag-pole" />
-      <div className="flag-mount">
-        <svg viewBox="0 0 110 75" xmlns="http://www.w3.org/2000/svg">
-          <defs>
-            <linearGradient id="lpfg" x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0%" stopColor="#b50612" /><stop offset="35%" stopColor="#e30a17" />
-              <stop offset="75%" stopColor="#e30a17" /><stop offset="100%" stopColor="#a30510" />
-            </linearGradient>
-            <filter id="lpfw"><feTurbulence type="turbulence" baseFrequency="0.015 0.06" numOctaves="3" seed="3">
-              <animate attributeName="baseFrequency" dur="5s" values="0.015 0.045;0.035 0.085;0.015 0.045" repeatCount="indefinite" />
-            </feTurbulence><feDisplacementMap in="SourceGraphic" scale="11" /></filter>
-          </defs>
-          <g filter="url(#lpfw)">
-            <rect width="110" height="75" fill="url(#lpfg)" />
-            <circle cx="40" cy="37.5" r="14" fill="#fff" /><circle cx="44" cy="37.5" r="11.5" fill="#e30a17" />
-            <polygon points="64,37.5 67.5,32.5 73.5,32.5 68.5,29 70.5,23 64,27 57.5,23 59.5,29 54.5,32.5 60.5,32.5" fill="#fff" transform="rotate(-5 64 30)" />
-          </g>
-        </svg>
-      </div>
-
       {loading && (
         <div className="loading on">
           <div className="spin" /><div className="ld-t">{loadingText}</div><div className="ld-s">KAMPUS-DC01 · TLS 1.3 · RBAC</div>
@@ -244,7 +220,7 @@ export default function LoginPage() {
       )}
 
       <div className="app">
-        {/* NAV */}
+        {/* NAV — brand · canlı metrik şeridi · 10-modül çipi · saat */}
         <nav className="nav">
           <div className="brand">
             <div className="brand-mark">
@@ -252,46 +228,68 @@ export default function LoginPage() {
             </div>
             <div>
               <div className="brand-name">Kampüs <span>YYS</span></div>
-              <div className="brand-sub">Yurt &amp; Yaşam Alanı Yönetimi · v5.0</div>
+              <div className="brand-sub">AVS · Filyos</div>
             </div>
           </div>
+
+          <div className="nav-metrics" role="group" aria-label="Canlı kampüs özet">
+            <div className="nm" title="Doluluk oranı">
+              <span className="nm-ico" aria-hidden="true">📊</span>
+              <span className="nm-val">{stats ? `%${stats.occupancy_pct}` : '—'}</span>
+              <span className="nm-lbl">Doluluk</span>
+            </div>
+            <div className="nm" title="Dolu / toplam yatak">
+              <span className="nm-ico" aria-hidden="true">🛏️</span>
+              <span className="nm-val">{stats ? `${stats.beds_occupied}/${stats.beds_total}` : '—'}</span>
+              <span className="nm-lbl">Yatak</span>
+            </div>
+            <div className={`nm ${stats?.open_faults > 0 ? 'warn' : ''}`} title="Açık arıza sayısı">
+              <span className="nm-ico" aria-hidden="true">🔧</span>
+              <span className="nm-val">{stats?.open_faults ?? '—'}</span>
+              <span className="nm-lbl">Arıza</span>
+            </div>
+            <div className="nm" title="Aktif personel">
+              <span className="nm-ico" aria-hidden="true">👥</span>
+              <span className="nm-val">{stats?.active_staff ?? '—'}</span>
+              <span className="nm-lbl">Personel</span>
+            </div>
+
+            <div className="nm-chip-wrap" ref={modulesRef}>
+              <button
+                type="button"
+                className={`nm-chip ${modulesOpen ? 'on' : ''}`}
+                onClick={() => setModulesOpen(v => !v)}
+                aria-expanded={modulesOpen}
+                aria-haspopup="menu"
+              >
+                <span>10 modül</span>
+                <span className="nm-chev" aria-hidden="true">{modulesOpen ? '▴' : '▾'}</span>
+              </button>
+              {modulesOpen && (
+                <div className="nm-pop" role="menu">
+                  {MODULES.map(([ico, name]) => (
+                    <div className="nm-pop-item" key={name} role="menuitem">
+                      <span className="nm-pop-ico" aria-hidden="true">{ico}</span>
+                      <span>{name}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
           <div className="nav-meta">
-            <div className="meta"><div className="dot" /><span>SİSTEM ONLINE</span></div>
-            <div className="meta hide-sm">📍 AVS KAMP ALANI · FİLYOS</div>
+            <div className="meta"><div className="dot" /><span>ONLINE</span></div>
             <div className="meta">🕐 {clock}</div>
           </div>
         </nav>
 
-        {/* MAIN */}
+        {/* MAIN — sade: sadece login kartı, ortada, geniş negatif alanlı */}
         <main className="main">
-          <section className="hero">
-            <div className="badge">Filyos · Kurumsal Yönetim Platformu</div>
-            <h1>Tüm kampüs,<br /><em>gerçek zamanlı tek ekranda.</em></h1>
-            <p>
-              {stats ? `${stats.beds_total.toLocaleString('tr-TR')} yatak, ${stats.active_staff} personel, ${stats.departments} departman. ` : ''}
-              Oda ve zimmet yönetiminden vardiya planlamasına, bakım taleplerinden yemekhaneye — bütün operasyon Filyos sahilinde tek platformda, anlık kontrol altında.
-            </p>
-
-            <div className="stats">
-              <div className="stat"><div className="stat-ico">🛏️</div><div className="stat-val b">{shown.beds.toLocaleString('tr-TR')}</div><div className="stat-label">Dolu Yatak</div></div>
-              <div className="stat"><div className="stat-ico">📊</div><div className="stat-val t">%{shown.occ}</div><div className="stat-label">Doluluk</div></div>
-              <div className="stat"><div className="stat-ico">🔧</div><div className="stat-val w">{shown.faults}</div><div className="stat-label">Bekleyen Arıza</div></div>
-              <div className="stat"><div className="stat-ico">👥</div><div className="stat-val g">{shown.staff}</div><div className="stat-label">Aktif Personel</div></div>
-            </div>
-
-            <div className="mod-title">Sistem Modülleri · 10</div>
-            <div className="mods">
-              {MODULES.map(([ico, name]) => (
-                <div className="mod" key={name}><div className="mod-ico">{ico}</div><div className="mod-name">{name}</div></div>
-              ))}
-            </div>
-          </section>
-
-          {/* LOGIN CARD */}
           <aside className="login">
             <div className="card">
               <div className="modes">
-                {[['standard', '👤', 'Personel'], ['admin', '🛡️', 'Yönetici'], ['kiosk', '📟', 'Kiosk'], ['security', '🚪', 'Güvenlik']].map(([k, ic, lb]) => (
+                {MODE_ORDER.map(([k, ic, lb]) => (
                   <button key={k} type="button" className={`mode ${mode === k ? 'on' : ''}`} onClick={() => { setMode(k); setError('') }}>
                     <span className="mode-ico">{ic}</span><span>{lb}</span>
                   </button>
@@ -369,30 +367,42 @@ export default function LoginPage() {
                 </div>
               )}
             </div>
-
-            {/* Canlı Filyos verisi (gerçek) */}
-            <div className="live">
-              <div className="live-cell"><div className="li">🌊</div><div className="lv">{weather?.wave != null ? `${weather.wave} m` : '— m'}</div><div className="lk">Dalga · Karadeniz</div></div>
-              <div className="live-cell"><div className="li">💨</div><div className="lv">{weather ? `${weather.windKn} kn` : '— kn'}</div><div className="lk">Rüzgâr · {weather?.windDir || '—'}</div></div>
-              <div className="live-cell"><div className="li">🌡️</div><div className="lv">{weather ? `${weather.temp}°` : '—°'}</div><div className="lk">Filyos · {weather?.desc || '—'}</div></div>
-            </div>
           </aside>
         </main>
 
-        {/* TICKER */}
-        <div className="ticker">
-          <div className="tk-label"><span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--ok)', boxShadow: '0 0 8px currentColor' }} />Canlı Akış</div>
-          <div className="tk-content"><div className="tk-track">
-            {ticker.map(([c, s, t], i) => (
-              <span className="tk-item" key={i}><span className={`tk-dot ${c}`} /><strong>{s}</strong> {t}</span>
-            ))}
-          </div></div>
+        {/* SLIM BOTTOM STRIP — Filyos hava/deniz + canlı ticker */}
+        <div className="strip" aria-label="Filyos ortam ve sistem akışı">
+          <div className="strip-fil">
+            <span className="sf-key">🌊 Filyos</span>
+            <span className="sf-sep">·</span>
+            <span>{weather ? `${weather.temp}°` : '—°'}</span>
+            <span className="sf-sep">·</span>
+            <span>{weather?.desc || '—'}</span>
+            <span className="sf-sep">·</span>
+            <span>rüzgâr {weather ? `${weather.windKn} kn ${weather.windDir}` : '—'}</span>
+            <span className="sf-sep">·</span>
+            <span>dalga {weather?.wave != null ? `${weather.wave} m` : '—'}</span>
+          </div>
+          <div className="strip-ticker">
+            <div className="tk-track">
+              {ticker.map(([c, s, t], i) => (
+                <span className="tk-item" key={i}><span className={`tk-dot ${c}`} /><strong>{s}</strong> {t}</span>
+              ))}
+            </div>
+          </div>
         </div>
 
         <footer className="footer">
-          <div className="f-links"><a href="/kvkk">KVKK &amp; Gizlilik</a><a href="#">Kullanım Koşulları</a><a href="#">Destek</a></div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><span className="f-flag" title="Türkiye" /><span>© 2026 AVS Kamp Alanı · Filyos · Zonguldak</span></div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><span>Powered by</span><span className="f-tag">KampüsERP v5.0</span></div>
+          <div className="f-links">
+            <a href="/kvkk">KVKK &amp; Gizlilik</a>
+            <a href="#">Kullanım Koşulları</a>
+            <a href="#">Destek</a>
+          </div>
+          <div className="f-copy">© 2026 AVS Kamp Alanı · Filyos · Zonguldak</div>
+          <div className="f-version">
+            <span>Powered by</span>
+            <span className="f-tag">KampüsERP v5.0</span>
+          </div>
         </footer>
       </div>
     </div>

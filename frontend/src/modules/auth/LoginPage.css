@@ -252,3 +252,102 @@
   .lp-root .stats { grid-template-columns:repeat(2,1fr); } .lp-root .mods { grid-template-columns:repeat(4,1fr); }
   .lp-root .hero h1 { font-size:32px; } .lp-root .nav-meta { gap:12px; } .lp-root .nav-meta .meta.hide-sm { display:none; }
 }
+
+/* ════════════════════════════════════════════════════════════
+   v4 — SADELEŞTIRME (Faz 1)
+   - hero/stats/mods grid kalktı → üst ince metrik şeridi
+   - ana alanda yalnız login kartı, geniş negatif alan
+   - alt slim Filyos + ticker şeridi
+   - sahne backdrop olarak ~%55 dimleniyor
+   ════════════════════════════════════════════════════════════ */
+
+/* SCENE dimleme (v4) */
+.lp-root.v4 .scene { opacity:.55; }
+.lp-root.v4 .video-grade, .lp-root.v4 .vignette { opacity:.9; }
+.lp-root.v4 .grain { opacity:.03; }
+
+/* NAV v4 — kompakt brand + ortada metrik şeridi + sağda meta */
+.lp-root.v4 .nav { padding:12px 32px; gap:24px; align-items:center; }
+.lp-root.v4 .brand { flex-shrink:0; }
+.lp-root.v4 .brand-mark { width:38px; height:38px; border-radius:10px; }
+.lp-root.v4 .brand-mark svg { width:20px; height:20px; }
+.lp-root.v4 .brand-name { font-size:17px; }
+.lp-root.v4 .brand-sub { font-size:9px; margin-top:2px; }
+
+/* CANLI METRIK ŞERİDİ */
+.lp-root .nav-metrics { flex:1; display:flex; align-items:center; justify-content:center; gap:6px; min-width:0; font-family:var(--m); }
+.lp-root .nm { display:inline-flex; align-items:baseline; gap:7px; padding:8px 14px; border-radius:10px;
+  background:rgba(2,5,12,.45); border:1px solid var(--line); backdrop-filter:blur(10px); white-space:nowrap;
+  font-variant-numeric:tabular-nums; transition:border-color .2s, background .2s; }
+.lp-root .nm:hover { border-color:var(--line-hi); background:rgba(2,5,12,.6); }
+.lp-root .nm-ico { font-size:14px; opacity:.75; align-self:center; }
+.lp-root .nm-val { font-size:14px; font-weight:600; color:var(--white); letter-spacing:-.2px; }
+.lp-root .nm-lbl { font-size:10px; color:var(--muted); letter-spacing:.06em; text-transform:uppercase; }
+.lp-root .nm.warn .nm-val { color:var(--ember-hi); }
+.lp-root .nm.warn { border-color:rgba(255,122,47,.35); background:rgba(60,25,10,.45); }
+
+/* 10-MODÜL ÇIPI + POPOVER */
+.lp-root .nm-chip-wrap { position:relative; }
+.lp-root .nm-chip { display:inline-flex; align-items:center; gap:6px; padding:8px 12px;
+  background:rgba(21,214,198,.08); border:1px solid rgba(21,214,198,.28); border-radius:10px;
+  color:var(--teal-hi); font-family:var(--m); font-size:11px; letter-spacing:.05em; cursor:pointer; transition:all .2s; }
+.lp-root .nm-chip:hover, .lp-root .nm-chip.on { background:rgba(21,214,198,.15); border-color:rgba(21,214,198,.45); color:var(--white); }
+.lp-root .nm-chev { font-size:9px; opacity:.7; }
+.lp-root .nm-pop { position:absolute; top:calc(100% + 8px); right:0; min-width:220px; padding:6px;
+  background:rgba(4,10,22,.96); border:1px solid var(--line-hi); border-radius:12px; backdrop-filter:blur(20px);
+  box-shadow:0 18px 40px rgba(0,0,0,.55); z-index:50; animation:lpPopIn .18s ease-out; }
+@keyframes lpPopIn { from{opacity:0; transform:translateY(-4px)} to{opacity:1; transform:translateY(0)} }
+.lp-root .nm-pop-item { display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:7px;
+  font-family:var(--b); font-size:12px; color:var(--muted); cursor:default; }
+.lp-root .nm-pop-item:hover { background:rgba(21,214,198,.08); color:var(--white); }
+.lp-root .nm-pop-ico { font-size:14px; opacity:.85; }
+
+/* MAIN v4 — tek sütun, login kartı ortada, geniş negatif alan */
+.lp-root.v4 .main { display:flex; align-items:center; justify-content:center; padding:clamp(32px,6vh,80px) 24px;
+  grid-template-columns:none; gap:0; }
+.lp-root.v4 .login { width:100%; max-width:440px; margin-top:0; }
+.lp-root.v4 .card { background:rgba(6,14,30,.72); border-radius:20px;
+  box-shadow:0 0 0 1px rgba(43,131,255,.06), 0 24px 60px rgba(0,0,0,.6), 0 0 90px rgba(31,111,235,.08); }
+
+/* SLIM BOTTOM STRIP — Filyos + ticker tek satırda */
+.lp-root .strip { display:flex; align-items:center; gap:16px; margin:0 32px 12px; padding:8px 16px;
+  background:rgba(2,5,12,.65); border:1px solid var(--line); border-radius:100px; backdrop-filter:blur(14px);
+  font-family:var(--m); font-size:11px; color:var(--muted);
+  animation:lpFadeU .9s .4s cubic-bezier(.2,.7,0,1.1) both; }
+.lp-root .strip-fil { display:inline-flex; align-items:center; gap:8px; padding-right:14px;
+  border-right:1px solid var(--line); flex-shrink:0; color:var(--white); }
+.lp-root .strip-fil .sf-key { color:var(--teal-hi); font-weight:500; letter-spacing:.04em; }
+.lp-root .strip-fil .sf-sep { color:var(--muted-2); }
+.lp-root .strip-ticker { flex:1; overflow:hidden; white-space:nowrap; }
+.lp-root .strip-ticker .tk-track { display:inline-flex; gap:28px; animation:lpTk 50s linear infinite; }
+.lp-root .strip-ticker:hover .tk-track { animation-play-state:paused; }
+
+/* FOOTER v4 düzeltme */
+.lp-root.v4 .footer { padding:12px 32px; font-size:11px; }
+.lp-root.v4 .f-copy { display:flex; align-items:center; gap:10px; }
+.lp-root.v4 .f-version { display:flex; align-items:center; gap:8px; }
+.lp-root.v4 .f-links a { padding:4px 0; }
+
+/* prefers-reduced-motion — sahnenin tüm hareketini durdur */
+@media (prefers-reduced-motion: reduce) {
+  .lp-root .hero-video { display:none; }
+  .lp-root .cloud, .lp-root .flame, .lp-root .flare-smoke, .lp-root .ship, .lp-root .wave,
+  .lp-root .glitter, .lp-root .haze, .lp-root .stars, .lp-root .blink,
+  .lp-root .strip-ticker .tk-track, .lp-root .nav .dot { animation:none !important; }
+}
+
+/* RESPONSIVE v4 */
+@media (max-width:1080px) {
+  .lp-root.v4 .nav { padding:12px 18px; gap:12px; flex-wrap:wrap; }
+  .lp-root.v4 .nav-metrics { order:3; flex-basis:100%; justify-content:flex-start; overflow-x:auto; padding:4px 0; }
+  .lp-root.v4 .nav-metrics::-webkit-scrollbar { display:none; }
+  .lp-root.v4 .main { padding:24px 18px; }
+  .lp-root.v4 .strip { margin:0 18px 10px; flex-wrap:wrap; gap:10px; }
+  .lp-root.v4 .strip-fil { border-right:none; padding-right:0; }
+  .lp-root.v4 .footer { padding:12px 18px; flex-direction:column; gap:8px; text-align:center; }
+}
+@media (max-width:520px) {
+  .lp-root.v4 .nm-lbl { display:none; }
+  .lp-root.v4 .nm { padding:6px 10px; gap:5px; }
+  .lp-root.v4 .nav-meta { gap:12px; }
+}
