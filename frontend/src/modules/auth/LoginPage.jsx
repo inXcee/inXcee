@@ -170,6 +170,7 @@ export default function LoginPage() {
         setFailCount(next)
         if (next >= 3) setCooldownUntil(Date.now() + 30_000)
       }
+      else if (err.response?.status === 429) setError(err.response?.data?.error || 'Çok fazla giriş denemesi. Lütfen birkaç dakika sonra tekrar deneyin.')
       else if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) setError('Sunucu yanıtlamıyor — birkaç saniye bekleyip tekrar deneyin')
       else if (!err.response) setError('Sunucuya ulaşılamıyor — bağlantınızı kontrol edin')
       else setError('Bir hata oluştu, tekrar deneyin')
@@ -284,8 +285,8 @@ export default function LoginPage() {
     tickerItems.push([stats.open_faults > 0 ? 'w' : 'g', 'Açık arıza', `${stats.open_faults} kayıt`])
     tickerItems.push(['g', 'Departman', `${stats.departments} aktif`])
   }
-  tickerItems.push(['g', '10 modül', 'aktif · KampüsERP v5.0'])
   tickerItems.push(['b', 'Gece yedeği', '03:00 · /var/data/backups'])
+  tickerItems.push(['t', 'KampüsERP', 'v5.0 · 814 yatak · 19 blok'])
   const ticker = tickerItems.length ? [...tickerItems, ...tickerItems] : []
 
   const isForm = mode !== 'kiosk'
