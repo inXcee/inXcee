@@ -5,11 +5,10 @@ import { postLoginRedirect, VALID_MODES } from '../../shared/auth/postLoginRedir
 import api from '../../shared/api/client.js'
 import { LoginModal } from './LoginModals.jsx'
 import { LoginCard } from './components/LoginCard.jsx'
+import { HeroScene } from './components/HeroScene.jsx'
+import { useMotionPref } from './hooks/useMotionPref.js'
 import { LAT, LON, COMPASS, WMO, DEMO_USERS, KIOSKS, MODE_ORDER, MODE_TITLES, MODULES } from './loginData.js'
 import './LoginPage.css'
-
-const FILYOS_VIDEO = ''
-const STOCK_IDS = ['25163', '31746', '9294', '7271']
 
 export default function LoginPage() {
   const [username, setUsername] = useState('')
@@ -36,9 +35,8 @@ export default function LoginPage() {
 
   const login = useAuthStore(s => s.login)
   const navigate = useNavigate()
-  const sceneRef = useRef(null)
-  const videoRef = useRef(null)
   const modulesRef = useRef(null)
+  const { motion, setMotion, rain, setRain, reduced } = useMotionPref()
 
   // ── Cooldown durumu (3 başarısız → 30sn kilit) ───────────────
   const cooldownLeft = Math.max(0, Math.ceil((cooldownUntil - nowTs) / 1000))
@@ -119,20 +117,6 @@ export default function LoginPage() {
     t(); const id = setInterval(t, 1000); return () => clearInterval(id)
   }, [])
 
-  // ── Hero video (fallback: prosedürel sahne) ──────────────────
-  useEffect(() => {
-    const v = videoRef.current, scene = sceneRef.current
-    if (!v || !scene) return
-    const queue = (FILYOS_VIDEO ? [FILYOS_VIDEO] : [])
-      .concat(STOCK_IDS.map(id => `https://assets.mixkit.co/videos/${id}/${id}-720.mp4`))
-    let i = 0
-    const onData = () => { scene.classList.add('has-video'); v.play().catch(() => {}) }
-    const next = () => { if (i < queue.length) { v.src = queue[i++]; v.load() } }
-    v.addEventListener('loadeddata', onData)
-    v.addEventListener('error', next)
-    if (queue.length) next()
-    return () => { v.removeEventListener('loadeddata', onData); v.removeEventListener('error', next) }
-  }, [])
 
   // ── Gerçek toplu sayılar (auth'suz public endpoint) ──────────
   useEffect(() => {
@@ -162,17 +146,6 @@ export default function LoginPage() {
     return () => { alive = false; clearInterval(id) }
   }, [])
 
-  // ── Fare paralaks (azaltılmış v4) ────────────────────────────
-  useEffect(() => {
-    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return
-    const layers = sceneRef.current?.querySelectorAll('[data-depth]') || []
-    const onMove = (e) => {
-      const x = e.clientX / window.innerWidth - 0.5, y = e.clientY / window.innerHeight - 0.5
-      layers.forEach(l => { const d = +l.dataset.depth; l.style.transform = `translate(${-x * d}px, ${-y * d * 0.4}px)` })
-    }
-    window.addEventListener('mousemove', onMove, { passive: true })
-    return () => window.removeEventListener('mousemove', onMove)
-  }, [])
 
   // ── Modül popover'ı dış tıklamayla kapat ─────────────────────
   useEffect(() => {
@@ -212,29 +185,6 @@ export default function LoginPage() {
 
   return (
     <div className="lp-root v4">
-      {/* SCENE — v4'te backdrop olarak dimleniyor */}
-      <div className="scene" ref={sceneRef}>
-        <div className="sky" />
-        <video className="hero-video" ref={videoRef} muted loop playsInline preload="auto" aria-hidden="true" />
-        <div className="video-grade" />
-        <div className="stars" />
-        <div className="cloud cl1" /><div className="cloud cl2" />
-        <div className="haze" /><div className="horizon" />
-        <div className="harbor" data-depth="14">
-          <div className="crane k1" /><div className="crane k2" /><div className="crane k3" /><div className="crane k4" /><div className="crane k5" />
-          <div className="flare-stack" /><div className="flame" />
-          <div className="flare-smoke" /><div className="flare-smoke" style={{ animationDelay: '2s' }} />
-          <div className="ship" />
-          <div className="blink" style={{ left: '6.3%', bottom: '62%' }} />
-          <div className="blink" style={{ left: '17.5%', bottom: '82%', animationDelay: '.6s' }} />
-          <div className="blink" style={{ right: '22%', bottom: '88%', animationDelay: '1.2s' }} />
-          <div className="blink" style={{ right: '9.3%', bottom: '58%', animationDelay: '1.8s' }} />
-        </div>
-        <div className="sea" data-depth="6">
-          <div className="glitter" />
-          <div className="wave w3" /><div className="wave w4" /><div className="wave w2" /><div className="wave w1" />
-        </div>
-      </div>
       <div className="grain" /><div className="vignette" />
 
       {loading && (
@@ -308,41 +258,61 @@ export default function LoginPage() {
           </div>
         </nav>
 
-        {/* MAIN — sade: sadece login kartı, ortada, geniş negatif alanlı */}
-        <main className="main">
-          <LoginCard
-            mode={mode}
-            onModeChange={handleModeChange}
-            modeOrder={MODE_ORDER}
-            modeTitles={MODE_TITLES}
-            isForm={isForm}
-            username={username}
-            setUsername={setUsername}
-            password={password}
-            setPassword={setPassword}
-            showPw={showPw}
-            setShowPw={setShowPw}
-            capsLock={capsLock}
-            setCapsLock={setCapsLock}
-            error={error}
-            loading={loading}
-            isLocked={isLocked}
-            cooldownLeft={cooldownLeft}
-            onSubmit={handleSubmit}
-            twoFA={twoFA}
-            code={code}
-            setCode={setCode}
-            shake={shake}
-            onVerify2fa={handle2fa}
-            onCancel2fa={() => { setTwoFA(null); setCode(''); setError('') }}
-            onForgot={() => setModal('forgot')}
-            kiosks={KIOSKS}
-            onKioskNav={navigate}
-            demoUsers={DEMO_USERS}
-            onPickDemo={pickDemo}
-            isDev={import.meta.env.DEV}
-          />
-        </main>
+        {/* HERO — video + yağmur canvas + hareket HUD, login kartını ve hero-copy'yi sarar */}
+        <HeroScene
+          posterSrc="/login/D2-night-bright.png"
+          videoSrc="/login/hero-night.mp4"
+          motion={motion}
+          setMotion={setMotion}
+          rain={rain}
+          setRain={setRain}
+          reduced={reduced}
+        >
+          <div className="lp-wrap hero-grid">
+            <div className="hero-copy">
+              <span className="eyebrow"><span className="fl" />AVS Kamp Alanı · Filyos · Zonguldak</span>
+              <h1>814 yatak, 19 blok,<br /><span>tek operasyon merkezi.</span></h1>
+              <p>Konaklama, bakım, çamaşırhane ve personel operasyonunu tek panelden yönetin. 7/24 canlı.</p>
+              <div className="chips">
+                <span className="chip"><b>10</b> entegre modül</span>
+                <span className="chip"><b>RBAC</b> + 2FA</span>
+                <span className="chip"><b>Canlı</b> Filyos hava/deniz</span>
+              </div>
+            </div>
+            <LoginCard
+              mode={mode}
+              onModeChange={handleModeChange}
+              modeOrder={MODE_ORDER}
+              modeTitles={MODE_TITLES}
+              isForm={isForm}
+              username={username}
+              setUsername={setUsername}
+              password={password}
+              setPassword={setPassword}
+              showPw={showPw}
+              setShowPw={setShowPw}
+              capsLock={capsLock}
+              setCapsLock={setCapsLock}
+              error={error}
+              loading={loading}
+              isLocked={isLocked}
+              cooldownLeft={cooldownLeft}
+              onSubmit={handleSubmit}
+              twoFA={twoFA}
+              code={code}
+              setCode={setCode}
+              shake={shake}
+              onVerify2fa={handle2fa}
+              onCancel2fa={() => { setTwoFA(null); setCode(''); setError('') }}
+              onForgot={() => setModal('forgot')}
+              kiosks={KIOSKS}
+              onKioskNav={navigate}
+              demoUsers={DEMO_USERS}
+              onPickDemo={pickDemo}
+              isDev={import.meta.env.DEV}
+            />
+          </div>
+        </HeroScene>
 
         {/* SLIM BOTTOM STRIP — Filyos hava/deniz + canlı ticker */}
         <div className="strip" aria-label="Filyos ortam ve sistem akışı">
