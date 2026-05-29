@@ -5,13 +5,13 @@
 @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&family=JetBrains+Mono:wght@400;500&display=swap');
 
 .lp-root {
-  --void:#02050c; --navy-0:#04080f; --navy-1:#061021; --navy-2:#0a1a34;
-  --glass:rgba(9,20,40,.55); --glass-hi:rgba(14,30,58,.7);
-  --blue:#1f6feb; --blue-hi:#3b8bff; --teal:#15d6c6; --teal-hi:#34f0e0;
-  --ember:#ff7a2f; --ember-hi:#ffb15a; --gold:#ffce6a;
-  --white:#eaf2ff; --muted:rgba(168,192,235,.62); --muted-2:rgba(168,192,235,.38);
-  --line:rgba(60,120,215,.18); --line-hi:rgba(60,130,225,.42);
-  --danger:#ff4d6d; --ok:#1ce0a0; --tr-red:#e30a17;
+  --void:#030c16; --navy-0:#04101c; --navy-1:#071c30; --navy-2:#0a2236;
+  --glass:rgba(7,28,48,.55); --glass-hi:rgba(10,34,54,.7);
+  --blue:#0b6f86; --blue-hi:#19c6d4; --teal:#19c6d4; --teal-hi:#4fe8ee;
+  --ember:#ff9d3d; --ember-hi:#ffd08a; --gold:#ffce6a;
+  --white:#eaf6fb; --muted:rgba(141,179,198,.78); --muted-2:rgba(141,179,198,.45);
+  --line:rgba(120,200,220,.16); --line-hi:rgba(25,198,212,.42);
+  --danger:#ff4d6d; --ok:#5fe3b6; --tr-red:#e30a17;
   --d:'Sora',sans-serif; --b:'DM Sans',sans-serif; --m:'JetBrains Mono',monospace;
   position:fixed; inset:0; z-index:0; overflow-x:hidden; overflow-y:auto;
   font-family:var(--b); background:var(--void); color:var(--white);
