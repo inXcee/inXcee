@@ -4,47 +4,8 @@ import { useAuthStore } from '../../shared/store/authStore.js'
 import { postLoginRedirect, VALID_MODES } from '../../shared/auth/postLoginRedirect.js'
 import api from '../../shared/api/client.js'
 import { LoginModal } from './LoginModals.jsx'
+import { LAT, LON, COMPASS, WMO, DEMO_USERS, KIOSKS, MODE_ORDER, MODE_TITLES, MODULES } from './loginData.js'
 import './LoginPage.css'
-
-const DEMO_USERS = [
-  { username: 'mudur',    password: 'admin123', role: 'Kampüs Müdürü' },
-  { username: 'vardiya',  password: 'admin123', role: 'Vardiya Amiri' },
-  { username: 'teknik',   password: 'admin123', role: 'Teknik Servis' },
-  { username: 'camasir',  password: 'admin123', role: 'Çamaşırhane' },
-  { username: 'meydanci', password: 'admin123', role: 'Meydancı' },
-]
-
-const KIOSKS = [
-  { path: '/avs-kiosk',     icon: '🧹', label: 'AVS Personel', desc: 'İsim + PIN ile giriş' },
-  { path: '/laundry-kiosk', icon: '🧺', label: 'Çamaşırhane',  desc: 'Torba & teslim işlemleri' },
-  { path: '/kiosk',         icon: '🛏️', label: 'Sakin Self-Servis', desc: 'Oda & talep işlemleri' },
-]
-
-const MODULES = [
-  ['🛏️', 'Oda & Yatak'], ['📋', 'Check-in/out'], ['🔧', 'Arıza & Bakım'], ['📦', 'Zimmet'], ['⚖️', 'Disiplin'],
-  ['📅', 'Vardiya'], ['🍽️', 'Yemekhane'], ['🧺', 'Çamaşırhane'], ['🚪', 'Ziyaretçi'], ['📈', 'Raporlama'],
-]
-
-const MODE_ORDER = [
-  ['standard', '👤', 'Personel'],
-  ['admin',    '🛡️', 'Yönetici'],
-  ['security', '🚪', 'Güvenlik'],
-  ['kiosk',    '📟', 'Kiosk'],
-]
-
-const MODE_TITLES = {
-  standard: ['Personel Girişi', 'Yetkili hesabınızla oturum açın · <b>RBAC aktif</b>'],
-  admin:    ['Yönetici Girişi', 'Tam yetkili sistem erişimi · <b>2FA destekli</b>'],
-  security: ['Güvenlik Girişi', 'Kapı kontrol & ziyaretçi yönetimi · <b>Vardiya bazlı</b>'],
-}
-
-const LAT = 41.57, LON = 32.04
-const COMPASS = ['K', 'KD', 'D', 'GD', 'G', 'GB', 'B', 'KB']
-const WMO = {
-  0: 'Açık', 1: 'Az Bulutlu', 2: 'Parçalı Bulutlu', 3: 'Bulutlu', 45: 'Sisli', 48: 'Sisli',
-  51: 'Çiseleme', 53: 'Çiseleme', 55: 'Çiseleme', 61: 'Yağmurlu', 63: 'Yağmurlu', 65: 'Yağmurlu',
-  71: 'Karlı', 73: 'Karlı', 75: 'Karlı', 80: 'Sağanak', 81: 'Sağanak', 82: 'Kuvvetli Sağanak', 95: 'Gök Gürültülü',
-}
 
 const FILYOS_VIDEO = ''
 const STOCK_IDS = ['25163', '31746', '9294', '7271']
@@ -373,10 +334,10 @@ export default function LoginPage() {
               </button>
               {modulesOpen && (
                 <div className="nm-pop" role="menu">
-                  {MODULES.map(([ico, name]) => (
-                    <div className="nm-pop-item" key={name} role="menuitem">
-                      <span className="nm-pop-ico" aria-hidden="true">{ico}</span>
-                      <span>{name}</span>
+                  {MODULES.map((m) => (
+                    <div className="nm-pop-item" key={m.name} role="menuitem">
+                      <span className="nm-pop-ico" aria-hidden="true">{m.icon}</span>
+                      <span>{m.name}</span>
                     </div>
                   ))}
                 </div>
