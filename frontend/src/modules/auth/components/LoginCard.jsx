@@ -76,7 +76,7 @@ function DemoPanel({ demoUsers, onPickDemo }) {
 // mSub içeriği loginData.js'den gelir — sabit string, kullanıcı girdisi değil.
 // dangerouslySetInnerHTML yalnızca bu sabit içerik için kullanılır.
 function ModeSub({ html }) {
-  const safe = html.replace('<b>', '<strong>').replace('</b>', '</strong>')
+  const safe = html.replaceAll('<b>', '<strong>').replaceAll('</b>', '</strong>')
   // eslint-disable-next-line react/no-danger
   return <div className="sub" dangerouslySetInnerHTML={{ __html: safe }} />
 }

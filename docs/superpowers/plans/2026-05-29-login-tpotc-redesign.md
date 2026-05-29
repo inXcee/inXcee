@@ -82,7 +82,12 @@ vi.mock('../../shared/store/authStore.js', () => ({
 const renderPage = () => render(<MemoryRouter><LoginPage /></MemoryRouter>)
 
 describe('LoginPage — temel davranış', () => {
-  beforeEach(() => { global.fetch = vi.fn(() => Promise.resolve({ json: () => Promise.resolve({ current: {} }) })) })
+  beforeEach(() => {
+    global.fetch = vi.fn(() => Promise.resolve({ json: () => Promise.resolve({ current: {} }) }))
+    // jsdom <video> stub'ı (yoksa v.load/play "Not implemented" gürültüsü)
+    window.HTMLMediaElement.prototype.load = vi.fn()
+    window.HTMLMediaElement.prototype.play = vi.fn(() => Promise.resolve())
+  })
 
   it('4 giriş modunu gösterir', () => {
     renderPage()
