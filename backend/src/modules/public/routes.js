@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { getDB } from '../../shared/db/index.js'
-import { getKPI } from '../dashboard/queries.js'
+import { getKPI, getHeatmap } from '../dashboard/queries.js'
 import { memoize } from '../../shared/middleware/memo.js'
 import { logger } from '../../shared/logger.js'
 
@@ -21,6 +21,9 @@ publicRouter.get('/stats', (req, res) => {
   try {
     const k = getKPI()
     const e = getPublicExtra()
+    // Blok bazlı doluluk — getHeatmap reuse, sadece güvenli alanlara indir (blok adı + %).
+    // Yatak sayısı/durum gibi detay sızdırılmaz; eşleşmeyen blok frontend'de nötr render edilir.
+    const blocks = getHeatmap().map(b => ({ block: b.block, occupancy_pct: b.pct }))
     res.json({
       beds_total:    k.total_beds,
       beds_occupied: k.occupied,
@@ -28,6 +31,7 @@ publicRouter.get('/stats', (req, res) => {
       open_faults:   k.open_maintenance,
       active_staff:  e.active_staff,
       departments:   e.departments,
+      blocks,
     })
   } catch (err) {
     logger.error('[public stats]', err)
