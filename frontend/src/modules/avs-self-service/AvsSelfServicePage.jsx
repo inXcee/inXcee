@@ -10,6 +10,7 @@ import KioskHeader from './components/KioskHeader.jsx'
 import TabState from './components/TabState.jsx'
 import NotificationFeed from './components/NotificationFeed.jsx'
 import { leaveDays } from './leaveDays.js'
+import ActivityTimeline from '../activity/ActivityTimeline.jsx'
 
 const TAB_KEYS = [
   { key: 'shifts',        icon: '⏱', i18n: 'avs_kiosk.nav.shifts' },
@@ -19,6 +20,7 @@ const TAB_KEYS = [
   { key: 'quick_fault',   icon: '🔧', i18n: 'avs_kiosk.nav.quick_fault' },
   { key: 'profile',       icon: '👤', i18n: 'avs_kiosk.nav.profile' },
   { key: 'qr',            icon: '🪪', i18n: 'avs_kiosk.nav.qr' },
+  { key: 'activity',      icon: '🕐', i18n: 'avs_kiosk.nav.activity' },
   { key: 'leave',         icon: '🌴', i18n: 'avs_kiosk.nav.leave' },
   { key: 'meals',         icon: '🍽', i18n: 'avs_kiosk.nav.meals' },
   { key: 'inventory',     icon: '📦', i18n: 'avs_kiosk.nav.inventory' },
@@ -224,6 +226,14 @@ export default function AvsSelfServicePage() {
     enabled: !!avsToken && activeTab === 'qr',
   })
   const myCards = cardsQuery.data?.cards || []
+
+  // Geçmişim — birleşik hareket geçmişi (okutma/yemek/zimmet/izin/servis)
+  const activityQuery = useQuery({
+    queryKey: ['avs-activity', avsToken],
+    queryFn: () => avsApi.get('/avs-self-service/my-activity').then(r => r.data),
+    enabled: !!avsToken && activeTab === 'activity',
+  })
+
   const [cardImgs, setCardImgs] = useState({})
   useEffect(() => {
     const cards = cardsQuery.data?.cards || []
@@ -279,7 +289,7 @@ export default function AvsSelfServicePage() {
   const TAB_QUERY = {
     shifts: shiftsQuery, transport: transportQuery, tasks: tasksQuery,
     announcements: annQuery, qr: cardsQuery, leave: leaveQuery,
-    meals: menuQuery, inventory: invQuery,
+    meals: menuQuery, inventory: invQuery, activity: activityQuery,
   }
   const activeQuery = TAB_QUERY[activeTab]
   const handleRefresh = () => {
@@ -684,6 +694,16 @@ export default function AvsSelfServicePage() {
             })}
           </div>
           <div className="text-xs text-slate-500 mt-3 text-center">{t('avs_kiosk.cards.hint')}</div>
+        </TabState>
+      )}
+
+      {activeTab === 'activity' && (
+        <TabState query={activityQuery} skeletonRows={4}
+          isEmpty={!!activityQuery.data && (activityQuery.data.items?.length ?? 0) === 0}
+          emptyText={t('avs_kiosk.activity.none')}>
+          <div className="bg-slate-900 rounded-2xl overflow-hidden">
+            <ActivityTimeline items={activityQuery.data?.items} dark emptyText={t('avs_kiosk.activity.none')} />
+          </div>
         </TabState>
       )}
 

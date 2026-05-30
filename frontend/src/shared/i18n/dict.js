@@ -161,13 +161,14 @@ const tr = {
     },
     nav: {
       shifts: 'Vardiya', transport: 'Servis', tasks: 'Görev',
-      announcements: 'Duyuru', quick_fault: 'Arıza', profile: 'Profil', qr: 'Kartlarım', leave: 'İzin', meals: 'Yemek',
+      announcements: 'Duyuru', quick_fault: 'Arıza', profile: 'Profil', qr: 'Kartlarım', activity: 'Geçmişim', leave: 'İzin', meals: 'Yemek',
       more: 'Daha fazla',
       inventory: 'Malzeme',
     },
     pinpad: { delete: 'Sil' },
     qr: { hint: 'Yoklama/giriş için okutun', none: 'QR tanımlı değil. Yöneticine başvur.' },
     cards: { access: 'Giriş Kartı', meal: 'Yemek Kartı', none: 'Kart tanımlı değil', hint: 'Girişte ve yemekhanede okutun' },
+    activity: { none: 'Henüz hareket kaydın yok' },
     my_faults: { title: 'Bildirdiklerim', none: 'Henüz arıza bildirmedin' },
     feedback: { title: 'Geri Bildirim', complaint: 'Şikayet', suggestion: 'Öneri', other: 'Diğer', placeholder: 'Mesajın (en az 20 karakter)', submit: 'Gönder', success: 'Geri bildirimin alındı, teşekkürler.' },
     leave: {
@@ -386,13 +387,14 @@ const en = {
     },
     nav: {
       shifts: 'Shift', transport: 'Transport', tasks: 'Tasks',
-      announcements: 'News', quick_fault: 'Fault', profile: 'Profile', qr: 'My Cards', leave: 'Leave', meals: 'Meals',
+      announcements: 'News', quick_fault: 'Fault', profile: 'Profile', qr: 'My Cards', activity: 'History', leave: 'Leave', meals: 'Meals',
       more: 'More',
       inventory: 'Supplies',
     },
     pinpad: { delete: 'Delete' },
     qr: { hint: 'Scan for attendance/entry', none: 'No QR assigned. Contact your manager.' },
     cards: { access: 'Access Card', meal: 'Meal Card', none: 'No card assigned', hint: 'Scan at entry and cafeteria' },
+    activity: { none: 'No activity yet' },
     my_faults: { title: 'My Reports', none: 'No faults reported yet' },
     feedback: { title: 'Feedback', complaint: 'Complaint', suggestion: 'Suggestion', other: 'Other', placeholder: 'Your message (min 20 chars)', submit: 'Send', success: 'Your feedback was received, thank you.' },
     leave: {
@@ -611,13 +613,14 @@ const ar = {
     },
     nav: {
       shifts: 'الوردية', transport: 'النقل', tasks: 'المهام',
-      announcements: 'إعلانات', quick_fault: 'عطل', profile: 'الملف', qr: 'بطاقاتي', leave: 'إجازة', meals: 'الطعام',
+      announcements: 'إعلانات', quick_fault: 'عطل', profile: 'الملف', qr: 'بطاقاتي', activity: 'سجلّي', leave: 'إجازة', meals: 'الطعام',
       more: 'المزيد',
       inventory: 'المستلزمات',
     },
     pinpad: { delete: 'حذف' },
     qr: { hint: 'امسح للحضور/الدخول', none: 'لا QR مُعرّف. راجع مديرك.' },
     cards: { access: 'بطاقة الدخول', meal: 'بطاقة الطعام', none: 'لا توجد بطاقة', hint: 'امسح عند الدخول والمطعم' },
+    activity: { none: 'لا يوجد نشاط بعد' },
     my_faults: { title: 'بلاغاتي', none: 'لا أعطال مبلّغة بعد' },
     feedback: { title: 'ملاحظات', complaint: 'شكوى', suggestion: 'اقتراح', other: 'أخرى', placeholder: 'رسالتك (20 حرفًا على الأقل)', submit: 'إرسال', success: 'تم استلام ملاحظتك، شكرًا.' },
     leave: {

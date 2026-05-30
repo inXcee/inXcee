@@ -10,6 +10,7 @@ import { createLeaveService, leaveListService, leaveBalanceService } from '../sh
 import { checkoutToStaff, getStaffCheckouts } from '../inventory/service.js'
 import { departmentToInventoryCategory, getKioskSystemUserId } from './inventory-helpers.js'
 import { isPushConfigured, getVapidPublicKey, saveWorkerSubscription, deleteWorkerSubscription } from '../../shared/notifications/push.js'
+import { getStaffActivity } from '../activity/service.js'
 
 export const avsSelfServiceRouter = Router()
 
@@ -315,6 +316,17 @@ avsSelfServiceRouter.get('/my-cards', requireAvsKiosk, (req, res) => {
     `).all(wid)
     res.json({ cards })
   } catch (e) { logger.error('[avs my-cards]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// Kişinin kendi birleşik hareket geçmişi (okutma/yemek/zimmet/izin/servis)
+avsSelfServiceRouter.get('/my-activity', requireAvsKiosk, (req, res) => {
+  try {
+    const items = getStaffActivity(getDB(), req.user.workerId, {
+      types: typeof req.query.types === 'string' && req.query.types ? req.query.types.split(',') : null,
+      limit: +req.query.limit || 40,
+    })
+    res.json({ items })
+  } catch (e) { logger.error('[avs my-activity]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 // Bildirdiğim arızalar — audit_log üzerinden (AVS reporter null, workerId audit'te)

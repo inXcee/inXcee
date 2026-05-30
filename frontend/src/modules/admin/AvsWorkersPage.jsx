@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
+import ActivityTimeline, { KIND_FILTERS } from '../activity/ActivityTimeline.jsx'
 
 const ROLE_PRESETS = [
   { label: 'Kat Personeli', dept: 'Temizlik', color: '#16a34a' },
@@ -24,6 +25,7 @@ export default function AvsWorkersPage() {
   const [showPinField, setShowPinField] = useState(false)
   const [toast, setToast] = useState(null)
   const [deptFilter, setDeptFilter] = useState('')
+  const [actTypes, setActTypes] = useState([])  // hareket geçmişi tip filtresi
 
   const { data: workers = [], isLoading } = useQuery({
     queryKey: ['avs-workers'],
@@ -33,6 +35,12 @@ export default function AvsWorkersPage() {
   const { data: pickupPoints = [] } = useQuery({
     queryKey: ['transport-points-active'],
     queryFn: () => api.get('/transport/pickup-points?active=1').then(r => r.data),
+  })
+
+  const { data: activity, isLoading: actLoading } = useQuery({
+    queryKey: ['worker-activity', selected?.id, actTypes],
+    queryFn: () => api.get(`/activity/staff/${selected.id}`, { params: actTypes.length ? { types: actTypes.join(',') } : {} }).then(r => r.data),
+    enabled: !!selected?.id,
   })
 
   const filteredWorkers = useMemo(
@@ -459,6 +467,33 @@ export default function AvsWorkersPage() {
                 >
                   {deleteMut.isPending ? 'Siliniyor...' : 'Sil'}
                 </button>
+              </div>
+
+              {/* Hareket Geçmişi — birleşik timeline (Faz 3) */}
+              <div style={{ borderTop: '1px solid var(--border)', paddingTop: '16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)', letterSpacing: '1px' }}>
+                    HAREKET GEÇMİŞİ {activity?.items?.length ? `· ${activity.items.length}` : ''}
+                  </div>
+                  <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                    {KIND_FILTERS.map(f => {
+                      const on = actTypes.includes(f.key)
+                      return (
+                        <button key={f.key} type="button"
+                          onClick={() => setActTypes(ts => on ? ts.filter(x => x !== f.key) : [...ts, f.key])}
+                          style={{
+                            padding: '2px 8px', borderRadius: 6, fontFamily: 'var(--mono)', fontSize: 9, cursor: 'pointer',
+                            border: `1px solid ${on ? 'var(--accent)' : 'var(--border)'}`,
+                            background: on ? 'rgba(240,165,0,0.12)' : 'var(--surface2)',
+                            color: on ? 'var(--accent)' : 'var(--text3)',
+                          }}>{f.icon} {f.label}</button>
+                      )
+                    })}
+                  </div>
+                </div>
+                <div style={{ maxHeight: 360, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
+                  <ActivityTimeline items={activity?.items} loading={actLoading} emptyText="Bu personel için kayıtlı hareket yok" />
+                </div>
               </div>
 
               <div style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text4)', marginTop: '4px' }}>
