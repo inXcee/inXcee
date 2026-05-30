@@ -1,4 +1,6 @@
+import bcrypt from 'bcryptjs'
 import { verifyToken } from './service.js'
+import { getDB } from '../db/index.js'
 
 const STAFF_ROLES = new Set(['campus_manager', 'shift_supervisor', 'technical', 'laundry', 'housekeeper'])
 const COOKIE_NAME = 'yys_session'
@@ -70,5 +72,22 @@ export function requireKioskOrStaff(req, res, next) {
     next()
   } catch {
     res.status(401).json({ error: 'Geçersiz token' })
+  }
+}
+
+// İstasyon kimlik doğrulama (insansız cihaz): X-Station-Key header'daki raw key,
+// aktif scan_stations.api_key_hash (bcrypt) ile karşılaştırılır. JWT'den bağımsız.
+// İstasyon sayısı az olduğundan aktif istasyonlar üzerinde lineer bcrypt karşılaştırma yeterli.
+export function requireStation(req, res, next) {
+  const key = req.headers['x-station-key']
+  if (!key || typeof key !== 'string') return res.status(401).json({ error: 'İstasyon anahtarı gerekli' })
+  try {
+    const stations = getDB().prepare('SELECT * FROM scan_stations WHERE is_active = 1').all()
+    const match = stations.find(s => bcrypt.compareSync(key, s.api_key_hash))
+    if (!match) return res.status(401).json({ error: 'Geçersiz istasyon anahtarı' })
+    req.station = match
+    next()
+  } catch {
+    res.status(500).json({ error: 'İstasyon doğrulama hatası' })
   }
 }

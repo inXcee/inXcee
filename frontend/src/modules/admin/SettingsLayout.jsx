@@ -27,6 +27,7 @@ const TAB_GROUPS = [
     label: 'YÖNETİM',
     tabs: [
       { to: '/settings/cards',               label: 'Kartlar',            icon: '🪪', roles: MGMT },
+      { to: '/settings/stations',            label: 'Okutma İstasyonları', icon: '⌖', roles: ADMIN },
       { to: '/settings/companies',           label: 'Firmalar',           icon: '⌂',  roles: ADMIN },
       { to: '/settings/visitors',            label: 'Ziyaretçiler',       icon: '👥', roles: ADMIN },
       { to: '/settings/surveys',             label: 'Memnuniyet',         icon: '★',  roles: ADMIN },

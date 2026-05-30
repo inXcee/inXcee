@@ -61,6 +61,8 @@ const KioskPinPage = lazy(() => import('./modules/admin/KioskPinPage.jsx'))
 const AnnouncementsPage = lazy(() => import('./modules/admin/AnnouncementsPage.jsx'))
 const AvsWorkersPage = lazy(() => import('./modules/admin/AvsWorkersPage.jsx'))
 const CardsPage = lazy(() => import('./modules/cards/CardsPage.jsx'))
+const StationsPage = lazy(() => import('./modules/stations/StationsPage.jsx'))
+const StationPage = lazy(() => import('./modules/station/StationPage.jsx'))
 const FeedbackPage = lazy(() => import('./modules/admin/FeedbackPage.jsx'))
 const LaundryKioskPage = lazy(() => import('./modules/laundry-kiosk/LaundryKioskPage.jsx'))
 const AvsSelfServicePage = lazy(() => import('./modules/avs-self-service/AvsSelfServicePage.jsx'))
@@ -282,6 +284,7 @@ export default function App() {
           <Route path="/laundry-kiosk" element={<LaundryKioskPage />} />
           <Route path="/avs-kiosk" element={<AvsSelfServicePage />} />
           <Route path="/display" element={<DisplayPage />} />
+          <Route path="/station" element={<StationPage />} />
           <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
             <Route index element={<DashboardPage />} />
             <Route path="campus-map" element={<CampusMapPage />} />
@@ -336,6 +339,7 @@ export default function App() {
             <Route path="announcements" element={<RoleRoute roles={['campus_manager']}><AnnouncementsPage /></RoleRoute>} />
             <Route path="avs-workers" element={<RoleRoute roles={['campus_manager']}><AvsWorkersPage /></RoleRoute>} />
             <Route path="cards" element={<RoleRoute roles={['campus_manager','shift_supervisor']}><CardsPage /></RoleRoute>} />
+            <Route path="stations" element={<RoleRoute roles={['campus_manager']}><StationsPage /></RoleRoute>} />
             <Route path="settings" element={<RoleRoute roles={['campus_manager','shift_supervisor']}><SettingsLayout /></RoleRoute>}>
               <Route index element={<Navigate to="personnel" replace />} />
               <Route path="email" element={<RoleRoute roles={['campus_manager']}><SettingsPage /></RoleRoute>} />
@@ -344,6 +348,7 @@ export default function App() {
               <Route path="announcements" element={<RoleRoute roles={['campus_manager']}><AnnouncementsPage /></RoleRoute>} />
               <Route path="avs-workers" element={<RoleRoute roles={['campus_manager']}><AvsWorkersPage /></RoleRoute>} />
               <Route path="cards" element={<RoleRoute roles={['campus_manager','shift_supervisor']}><CardsPage /></RoleRoute>} />
+              <Route path="stations" element={<RoleRoute roles={['campus_manager']}><StationsPage /></RoleRoute>} />
               <Route path="audit" element={<RoleRoute roles={['campus_manager']}><AuditPage /></RoleRoute>} />
               <Route path="error-log" element={<RoleRoute roles={['campus_manager']}><ErrorLogPage /></RoleRoute>} />
               <Route path="backup" element={<RoleRoute roles={['campus_manager']}><BackupPage /></RoleRoute>} />
