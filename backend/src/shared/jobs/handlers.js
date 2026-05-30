@@ -5,6 +5,8 @@
 import webpush from 'web-push'
 import { getDB } from '../db/index.js'
 import { logger } from '../logger.js'
+import { sendEmail } from '../../modules/email/service.js'
+import { sendWhatsAppText } from '../notifications/whatsapp-send.js'
 
 const PUBLIC = process.env.VAPID_PUBLIC_KEY
 const PRIVATE = process.env.VAPID_PRIVATE_KEY
@@ -46,7 +48,29 @@ async function deliverPush(table, { subscriptionId, payload }) {
 const sendPushJob = (payload) => deliverPush('push_subscriptions', payload)
 const sendWorkerPushJob = (payload) => deliverPush('avs_push_subscriptions', payload)
 
+// E-posta kanalı (Faz 6.1). SMTP yapılandırma hatası kalıcı (retry düzeltmez);
+// ağ/geçici hata fırlatılır → retry.
+async function sendEmailJob({ to, subject, html, text }) {
+  if (!to) throw permanentError('email: alıcı (to) gerekli')
+  try {
+    return await sendEmail({ to, subject, html, text })
+  } catch (e) {
+    if (/SMTP|tanımlı değil|gerekli/i.test(e.message)) throw permanentError(`email config: ${e.message}`)
+    throw e  // transient — retry
+  }
+}
+
+// WhatsApp kanalı (Faz 6.1). Yapılandırılmamış/geçersiz numara kalıcı (retry yok).
+async function sendWhatsAppJob({ phone, message }) {
+  if (!phone || !message) throw permanentError('whatsapp: phone ve message gerekli')
+  const r = await sendWhatsAppText(phone, message)
+  if (r.skipped === 'invalid_phone') throw permanentError('whatsapp: geçersiz telefon')
+  return r  // not_configured dahil — işlendi say, retry yok
+}
+
 export const handlers = {
   'push.send': sendPushJob,
   'push.worker': sendWorkerPushJob,
+  'email.send': sendEmailJob,
+  'whatsapp.send': sendWhatsAppJob,
 }

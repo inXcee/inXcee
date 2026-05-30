@@ -26,6 +26,22 @@ function createTransport() {
   })
 }
 
+// Genel amaçlı e-posta gönderimi (job queue 'email.send' handler'ı bunu kullanır).
+// SMTP yapılandırılmamışsa createTransport throw eder (çağıran kalıcı hata sayar).
+export async function sendEmail({ to, subject, html, text }) {
+  if (!to) throw new Error('email: alıcı (to) gerekli')
+  const transport = createTransport()
+  const cfg = getSmtpConfig()
+  const info = await transport.sendMail({
+    from: cfg.from || cfg.user,
+    to,
+    subject: subject || '(konu yok)',
+    html: html || undefined,
+    text: text || undefined,
+  })
+  return { messageId: info.messageId }
+}
+
 // SMTP bağlantı testi — gerçek e-posta göndermez
 export async function verifySmtp() {
   try {
