@@ -217,19 +217,23 @@ export default function AvsSelfServicePage() {
     submitPin.mutate()
   }
 
-  // P3 — QR kart
-  const qrQuery = useQuery({
-    queryKey: ['avs-qr', avsToken],
-    queryFn: () => avsApi.get('/avs-self-service/my-qr').then(r => r.data),
+  // Kartlarım — ayrı giriş + yemek kartı (her biri kendi QR'ı)
+  const cardsQuery = useQuery({
+    queryKey: ['avs-cards', avsToken],
+    queryFn: () => avsApi.get('/avs-self-service/my-cards').then(r => r.data),
     enabled: !!avsToken && activeTab === 'qr',
   })
-  const qrData = qrQuery.data
-  const [qrImg, setQrImg] = useState(null)
+  const myCards = cardsQuery.data?.cards || []
+  const [cardImgs, setCardImgs] = useState({})
   useEffect(() => {
-    if (qrData?.qr_token) {
-      import('qrcode').then(m => m.default.toDataURL(qrData.qr_token, { width: 240, margin: 1 }).then(setQrImg).catch(() => setQrImg(null)))
-    } else { setQrImg(null) }
-  }, [qrData])
+    const cards = cardsQuery.data?.cards || []
+    if (cards.length) {
+      import('qrcode').then(m => Promise.all(
+        cards.map(c => m.default.toDataURL(c.code, { width: 240, margin: 1 })
+          .then(img => [c.card_type, img]).catch(() => [c.card_type, null]))
+      ).then(pairs => setCardImgs(Object.fromEntries(pairs))))
+    } else { setCardImgs({}) }
+  }, [cardsQuery.data])
 
   // P3 — Bildirdiğim arızalar
   const { data: myFaults = [] } = useQuery({
@@ -274,7 +278,7 @@ export default function AvsSelfServicePage() {
   // Eşlemede olmayan sekmeler (profil, hızlı arıza) için tüm aktif query'ler tazelenir.
   const TAB_QUERY = {
     shifts: shiftsQuery, transport: transportQuery, tasks: tasksQuery,
-    announcements: annQuery, qr: qrQuery, leave: leaveQuery,
+    announcements: annQuery, qr: cardsQuery, leave: leaveQuery,
     meals: menuQuery, inventory: invQuery,
   }
   const activeQuery = TAB_QUERY[activeTab]
@@ -663,13 +667,23 @@ export default function AvsSelfServicePage() {
       )}
 
       {activeTab === 'qr' && (
-        <TabState query={qrQuery} skeletonRows={1}
-          isEmpty={!!qrData && !qrData.qr_token} emptyText={t('avs_kiosk.qr.none')}>
-          <div className="bg-slate-900 rounded-2xl p-6 text-center">
-            {qrImg && <img src={qrImg} alt="QR" className="mx-auto w-56 h-56 bg-white p-3 rounded-2xl" />}
-            <div className="mt-4 font-semibold text-slate-200">{qrData?.full_name}</div>
-            <div className="text-xs text-slate-500 mt-1">{t('avs_kiosk.qr.hint')}</div>
+        <TabState query={cardsQuery} skeletonRows={2}
+          isEmpty={!!cardsQuery.data && myCards.length === 0} emptyText={t('avs_kiosk.cards.none')}>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {myCards.map(c => {
+              const isAccess = c.card_type === 'access'
+              return (
+                <div key={c.id} className={`rounded-2xl p-5 text-center border ${isAccess ? 'border-blue-500/40 bg-blue-950/30' : 'border-orange-500/40 bg-orange-950/30'}`}>
+                  <div className={`text-xs font-bold tracking-wide ${isAccess ? 'text-blue-300' : 'text-orange-300'}`}>
+                    {isAccess ? `🪪 ${t('avs_kiosk.cards.access')}` : `🍽 ${t('avs_kiosk.cards.meal')}`}
+                  </div>
+                  {cardImgs[c.card_type] && <img src={cardImgs[c.card_type]} alt={c.card_type} className="mx-auto mt-3 w-44 h-44 bg-white p-2 rounded-xl" />}
+                  <div className="text-[11px] text-slate-500 mt-2 font-mono">#{c.code.slice(-6).toUpperCase()}</div>
+                </div>
+              )
+            })}
           </div>
+          <div className="text-xs text-slate-500 mt-3 text-center">{t('avs_kiosk.cards.hint')}</div>
         </TabState>
       )}
 

@@ -35,3 +35,23 @@ test('numpad ile giris + alt nav ile sekme gezme + varsayilan TR', async ({ page
   await page.getByRole('menuitem', { name: /Profil/ }).click()
   await expect(page.getByText('Kişisel Bilgiler')).toBeVisible({ timeout: 10_000 })
 })
+
+test('Kartlarım: giriş + yemek kartı ayrı görünür (QR ile)', async ({ page }) => {
+  await page.goto('/avs-kiosk')
+  await page.getByPlaceholder('Ad/soyad ara…').fill('UX Test')
+  await page.getByRole('button', { name: new RegExp(PINNED.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) }).click()
+  for (const d of ['1', '2', '3', '4']) {
+    await page.getByRole('button', { name: new RegExp(`^${d}$`) }).click()
+  }
+  await expect(page.getByRole('tab', { name: /Vardiya/ })).toBeVisible({ timeout: 10_000 })
+
+  // "Kartlarım" nav taşmasında ("Daha fazla")
+  await page.getByRole('button', { name: /Daha fazla/ }).click()
+  await page.getByRole('menuitem', { name: /Kartlarım/ }).click()
+
+  // İki ayrı kart + her birinin QR'ı (lazy üretilir)
+  await expect(page.getByText('Giriş Kartı')).toBeVisible({ timeout: 10_000 })
+  await expect(page.getByText('Yemek Kartı')).toBeVisible()
+  await expect(page.locator('img[alt="access"]')).toBeVisible({ timeout: 10_000 })
+  await expect(page.locator('img[alt="meal"]')).toBeVisible()
+})

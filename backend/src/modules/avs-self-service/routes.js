@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import { randomBytes } from 'crypto'
 import { requireAvsKiosk } from '../../shared/auth/middleware.js'
 import { getDB } from '../../shared/db/index.js'
 import { createRequest } from '../maintenance/queries.js'
@@ -290,6 +291,30 @@ avsSelfServiceRouter.get('/my-qr', requireAvsKiosk, (req, res) => {
     const s = db.prepare('SELECT qr_token, full_name FROM staff WHERE id=?').get(req.user.workerId)
     res.json({ qr_token: s?.qr_token || null, full_name: s?.full_name || null })
   } catch (e) { logger.error('[avs my-qr]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// Kartlarım — ayrı giriş + yemek kartı (eksikse lazy üret, INSERT OR IGNORE ile race-safe)
+const CARD_PREFIX = { access: 'AVS-A:', meal: 'AVS-M:' }
+avsSelfServiceRouter.get('/my-cards', requireAvsKiosk, (req, res) => {
+  try {
+    const db = getDB()
+    const wid = req.user.workerId
+    const ensure = db.transaction(() => {
+      for (const t of ['access', 'meal']) {
+        const code = CARD_PREFIX[t] + randomBytes(10).toString('hex')
+        // partial unique index (holder×type WHERE active) sayesinde mükerrer üretmez
+        db.prepare(`INSERT OR IGNORE INTO cards(holder_type, holder_id, card_type, code, status)
+                    VALUES('staff', ?, ?, ?, 'active')`).run(wid, t, code)
+      }
+    })
+    ensure()
+    const cards = db.prepare(`
+      SELECT id, card_type, code, status FROM cards
+      WHERE holder_type='staff' AND holder_id=? AND status='active'
+      ORDER BY card_type
+    `).all(wid)
+    res.json({ cards })
+  } catch (e) { logger.error('[avs my-cards]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 // Bildirdiğim arızalar — audit_log üzerinden (AVS reporter null, workerId audit'te)

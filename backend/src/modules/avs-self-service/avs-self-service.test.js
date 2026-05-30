@@ -555,3 +555,28 @@ describe('AVS Self-Service — web-push (opt-in)', () => {
     expect(row).toBeUndefined()
   })
 })
+
+describe('AVS Self-Service — my-cards (ayrı giriş/yemek kartı)', () => {
+  it('token olmadan 401', async () => {
+    const res = await request(app).get('/api/avs-self-service/my-cards')
+    expect(res.status).toBe(401)
+  })
+
+  it('access + meal kartını döner (eksikse lazy üretir)', async () => {
+    const res = await request(app).get('/api/avs-self-service/my-cards')
+      .set('Authorization', `Bearer ${avsToken}`)
+    expect(res.status).toBe(200)
+    expect(Array.isArray(res.body.cards)).toBe(true)
+    const byType = Object.fromEntries(res.body.cards.map(c => [c.card_type, c]))
+    expect(byType.access?.code).toMatch(/^AVS-A:/)
+    expect(byType.meal?.code).toMatch(/^AVS-M:/)
+  })
+
+  it('ikinci çağrıda aynı kodları döner (yeniden üretmez)', async () => {
+    const r1 = await request(app).get('/api/avs-self-service/my-cards').set('Authorization', `Bearer ${avsToken}`)
+    const r2 = await request(app).get('/api/avs-self-service/my-cards').set('Authorization', `Bearer ${avsToken}`)
+    const code1 = r1.body.cards.find(c => c.card_type === 'access').code
+    const code2 = r2.body.cards.find(c => c.card_type === 'access').code
+    expect(code2).toBe(code1)
+  })
+})
