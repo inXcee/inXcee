@@ -76,6 +76,7 @@ import { qrRouter } from './modules/qr/routes.js'
 import { cardsRouter } from './modules/cards/routes.js'
 import { stationsRouter } from './modules/stations/routes.js'
 import { activityRouter } from './modules/activity/routes.js'
+import { accessRouter } from './modules/access/routes.js'
 import { safetyRouter } from './modules/safety/routes.js'
 import { mealsRouter } from './modules/meals/routes.js'
 import { performanceRouter } from './modules/performance/routes.js'
@@ -350,6 +351,7 @@ app.use('/api/qr', writeLimiter, qrRouter)
 app.use('/api/cards', writeLimiter, cardsRouter)
 app.use('/api/stations', writeLimiter, stationsRouter)
 app.use('/api/activity', readLimiter, activityRouter)
+app.use('/api/access', readLimiter, accessRouter)
 app.use('/api/safety', writeLimiter, safetyRouter)
 app.use('/api/meals', writeLimiter, mealsRouter)
 app.use('/api/performance', writeLimiter, performanceRouter)

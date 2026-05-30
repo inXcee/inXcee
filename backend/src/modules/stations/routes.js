@@ -7,6 +7,7 @@ import { logAudit } from '../../shared/audit.js'
 import { getDB } from '../../shared/db/index.js'
 import { logger } from '../../shared/logger.js'
 import { isEligible, logMealFromScan, mealTypeForNow, MEAL_TYPES } from '../meals/service.js'
+import { createNotification } from '../../shared/notifications/service.js'
 
 export const stationsRouter = Router()
 const mgr = requireRole('campus_manager')
@@ -172,13 +173,18 @@ stationsRouter.post('/scan', requireStation, upload.single('photo'), verifyMagic
       return res.json({ result: 'unknown_card', message: 'Tanımsız kart', station: station.name })
     }
 
-    // Sahip bilgisi (şimdilik staff) — diet_flags okutma ekranında uyarı için
-    let holder = { full_name: 'Bilinmiyor', department_name: null, photo_url: null, diet_flags: null }
+    // Sahip bilgisi — staff: diet_flags (yemek uyarısı); personnel: blacklist (güvenlik alarmı)
+    let holder = { full_name: 'Bilinmiyor', department_name: null, photo_url: null, diet_flags: null, is_blacklisted: 0 }
     if (card.holder_type === 'staff') {
-      holder = db.prepare(`
+      holder = { ...holder, ...(db.prepare(`
         SELECT s.full_name, s.photo_url, s.diet_flags, d.name AS department_name
         FROM staff s LEFT JOIN departments d ON d.id = s.department_id WHERE s.id=?
-      `).get(card.holder_id) || holder
+      `).get(card.holder_id) || {}) }
+    } else if (card.holder_type === 'personnel') {
+      holder = { ...holder, ...(db.prepare(`
+        SELECT p.full_name, p.company AS department_name, p.is_blacklisted, p.blacklist_reason
+        FROM personnel p WHERE p.id=?
+      `).get(card.holder_id) || {}) }
     }
 
     // İptal/kayıp kart
@@ -195,6 +201,20 @@ stationsRouter.post('/scan', requireStation, upload.single('photo'), verifyMagic
         reason: map.expect === 'meal' ? 'Bu kart yemek kartı değil' : 'Bu kart giriş kartı değil',
         holder,
       })
+    }
+
+    // Faz 5 — Güvenlik: kara listedeki personel okutursa alarm + kritik bildirim.
+    // (Yemekhane dışı erişim istasyonlarında; meal hakkı zaten ayrı gate'li.)
+    if (card.holder_type === 'personnel' && holder.is_blacklisted && station.station_type !== 'cafeteria') {
+      const eventId = log('alarm', 'denied', card.id, card.holder_type, card.holder_id)
+      logAudit(null, 'station_blacklist_alarm', 'stations', eventId, `${station.name}:${card.holder_id}`)
+      createNotification({
+        message: `Kara listedeki kişi okutma yaptı: ${holder.full_name} — ${station.name}`,
+        severity: 'critical', module: 'access', target_role: 'campus_manager',
+        entity_type: 'personnel', entity_id: card.holder_id,
+        dedup_key: `access_blacklist:${card.holder_id}:${station.id}`,
+      })
+      return res.json({ result: 'alarm', reason: holder.blacklist_reason || 'Kara liste', holder, station: station.name })
     }
 
     // Faz 4 — Yemekhane: öğün hakkı (entitlement) kontrolü + meal_logs entegrasyonu.

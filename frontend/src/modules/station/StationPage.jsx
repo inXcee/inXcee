@@ -15,6 +15,7 @@ const RESULT_VIEW = {
   not_eligible: { bg: '#b45309', title: 'GEÇERSİZ KART',   ok: false },
   duplicate:    { bg: '#b45309', title: 'ZATEN OKUTULDU',  ok: false },
   unknown_card: { bg: '#475569', title: 'TANIMSIZ KART',   ok: false },
+  alarm:        { bg: '#991b1b', title: '⚠ ALARM — KARA LİSTE', ok: false },
   error:        { bg: '#475569', title: 'BAĞLANTI HATASI', ok: false },
 }
 
