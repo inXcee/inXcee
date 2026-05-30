@@ -65,14 +65,15 @@ cardsRouter.post('/:holderType/:holderId/issue', ...mgr, (req, res) => {
 
     const code = genCode(cardType)
     const nfcUid = req.body?.nfc_uid || null
+    const validUntil = req.body?.valid_until || null  // Faz 5b: süreli (ziyaretçi) kart; null=süresiz
     const result = db.transaction(() => {
       if (existing) {
         db.prepare(`UPDATE cards SET status='revoked', revoked_at=datetime('now') WHERE id=?`).run(existing.id)
       }
       return db.prepare(`
-        INSERT INTO cards(holder_type, holder_id, card_type, code, nfc_uid, issued_by)
-        VALUES(?,?,?,?,?,?)
-      `).run(holderType, +holderId, cardType, code, nfcUid, req.user.id).lastInsertRowid
+        INSERT INTO cards(holder_type, holder_id, card_type, code, nfc_uid, valid_until, issued_by)
+        VALUES(?,?,?,?,?,?,?)
+      `).run(holderType, +holderId, cardType, code, nfcUid, validUntil, req.user.id).lastInsertRowid
     })()
     logAudit(req.user.id, 'card_issue', 'cards', result, `${holderType}:${holderId} ${cardType}`)
     res.status(201).json({ id: result, code, card_type: cardType, status: 'active' })

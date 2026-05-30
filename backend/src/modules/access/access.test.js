@@ -81,3 +81,20 @@ describe('access — anomaliler (çıkışsız uzun süre)', () => {
     expect(r.body.no_exit.some(x => x.holder_id === pIn)).toBe(true)
   })
 })
+
+describe('access — anti-passback (Faz 5b)', () => {
+  it('art arda iki giriş (çıkışsız) → passback anomalisi', async () => {
+    const db = getDB()
+    db.prepare('INSERT INTO personnel(full_name) VALUES(?)').run('Passback Kisi')
+    const pid = db.prepare("SELECT id FROM personnel WHERE full_name='Passback Kisi'").get().id
+    const c = await request(app).post(`/api/cards/personnel/${pid}/issue`).set(auth(token)).send({ card_type: 'access' })
+    await request(app).patch(`/api/cards/${c.body.id}/bind-nfc`).set(auth(token)).send({ nfc_uid: 'NFC-PASS' })
+    await request(app).post('/api/stations/scan').set('X-Station-Key', entryKey).send({ raw_uid: 'NFC-PASS' })
+    await request(app).post('/api/stations/scan').set('X-Station-Key', entryKey).send({ raw_uid: 'NFC-PASS' })
+    const r = await request(app).get('/api/access/anomalies').set(auth(token))
+    expect(Array.isArray(r.body.passback)).toBe(true)
+    const hit = r.body.passback.find(x => x.holder_id === pid)
+    expect(hit).toBeTruthy()
+    expect(hit.last_dir).toBe('entry')
+  })
+})

@@ -62,6 +62,7 @@ const AnnouncementsPage = lazy(() => import('./modules/admin/AnnouncementsPage.j
 const AvsWorkersPage = lazy(() => import('./modules/admin/AvsWorkersPage.jsx'))
 const CardsPage = lazy(() => import('./modules/cards/CardsPage.jsx'))
 const StationsPage = lazy(() => import('./modules/stations/StationsPage.jsx'))
+const PresencePage = lazy(() => import('./modules/access/PresencePage.jsx'))
 const StationPage = lazy(() => import('./modules/station/StationPage.jsx'))
 const FeedbackPage = lazy(() => import('./modules/admin/FeedbackPage.jsx'))
 const LaundryKioskPage = lazy(() => import('./modules/laundry-kiosk/LaundryKioskPage.jsx'))
@@ -340,6 +341,7 @@ export default function App() {
             <Route path="avs-workers" element={<RoleRoute roles={['campus_manager']}><AvsWorkersPage /></RoleRoute>} />
             <Route path="cards" element={<RoleRoute roles={['campus_manager','shift_supervisor']}><CardsPage /></RoleRoute>} />
             <Route path="stations" element={<RoleRoute roles={['campus_manager']}><StationsPage /></RoleRoute>} />
+            <Route path="presence" element={<RoleRoute roles={['campus_manager','shift_supervisor']}><PresencePage /></RoleRoute>} />
             <Route path="settings" element={<RoleRoute roles={['campus_manager','shift_supervisor']}><SettingsLayout /></RoleRoute>}>
               <Route index element={<Navigate to="personnel" replace />} />
               <Route path="email" element={<RoleRoute roles={['campus_manager']}><SettingsPage /></RoleRoute>} />

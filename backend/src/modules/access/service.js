@@ -33,6 +33,34 @@ export function getPresence(db) {
   `).all()
 }
 
+// Anti-passback: son İKİ ok'lu hareketi AYNI yön olanlar (giriş-giriş veya
+// çıkış-çıkış) — kart paylaşımı/turnike atlama şüphesi. Window function ile
+// her sahip için en yeni 2 olayı sıralayıp karşılaştırır.
+export function getPassbackAnomalies(db) {
+  return db.prepare(`
+    WITH ranked AS (
+      SELECT holder_type, holder_id, event_type, scanned_at,
+        ROW_NUMBER() OVER (
+          PARTITION BY holder_type, holder_id
+          ORDER BY scanned_at DESC, id DESC
+        ) AS rn
+      FROM access_events
+      WHERE result='ok' AND event_type IN ('entry','exit') AND holder_id IS NOT NULL
+    )
+    SELECT a.holder_type, a.holder_id, a.event_type AS last_dir, a.scanned_at AS since,
+      CASE a.holder_type
+        WHEN 'staff' THEN (SELECT full_name FROM staff WHERE id=a.holder_id)
+        WHEN 'personnel' THEN (SELECT full_name FROM personnel WHERE id=a.holder_id)
+        WHEN 'visitor' THEN (SELECT full_name FROM visitors WHERE id=a.holder_id)
+      END AS full_name
+    FROM ranked a
+    JOIN ranked b
+      ON b.holder_type=a.holder_type AND b.holder_id=a.holder_id AND b.rn=2
+    WHERE a.rn=1 AND a.event_type=b.event_type
+    ORDER BY a.scanned_at DESC
+  `).all()
+}
+
 // Çıkışsız uzun süre içeride kalanlar (son girişi N saatten eski, hâlâ içeride).
 export function getOverdueInside(db, hours = 16) {
   return db.prepare(`

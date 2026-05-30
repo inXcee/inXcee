@@ -2,7 +2,7 @@ import { Router } from 'express'
 import { requireRole } from '../../shared/auth/middleware.js'
 import { getDB } from '../../shared/db/index.js'
 import { logger } from '../../shared/logger.js'
-import { getPresence, getOverdueInside } from './service.js'
+import { getPresence, getOverdueInside, getPassbackAnomalies } from './service.js'
 
 export const accessRouter = Router()
 const view = requireRole('campus_manager', 'shift_supervisor')
@@ -18,8 +18,12 @@ accessRouter.get('/presence', ...view, (req, res) => {
 // ── Anomaliler: çıkışsız uzun süre içeride kalanlar ──
 accessRouter.get('/anomalies', ...view, (req, res) => {
   try {
+    const db = getDB()
     const hours = Math.min(Math.max(+req.query.hours || 16, 1), 168)
-    const no_exit = getOverdueInside(getDB(), hours)
-    res.json({ overdue_hours: hours, no_exit })
+    res.json({
+      overdue_hours: hours,
+      no_exit: getOverdueInside(db, hours),
+      passback: getPassbackAnomalies(db),
+    })
   } catch (e) { logger.error('[access/anomalies]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })

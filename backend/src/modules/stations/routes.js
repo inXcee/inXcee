@@ -185,12 +185,20 @@ stationsRouter.post('/scan', requireStation, upload.single('photo'), verifyMagic
         SELECT p.full_name, p.company AS department_name, p.is_blacklisted, p.blacklist_reason
         FROM personnel p WHERE p.id=?
       `).get(card.holder_id) || {}) }
+    } else if (card.holder_type === 'visitor') {
+      holder = { ...holder, ...(db.prepare('SELECT full_name FROM visitors WHERE id=?').get(card.holder_id) || {}) }
     }
 
     // İptal/kayıp kart
     if (card.status !== 'active') {
       log('denied', 'denied', card.id, card.holder_type, card.holder_id)
       return res.json({ result: 'denied', reason: card.status === 'lost' ? 'Kart kayıp bildirildi' : 'Kart iptal', holder })
+    }
+
+    // Faz 5b — süreli kart (ziyaretçi): geçerlilik bitmişse reddet
+    if (card.valid_until && new Date(card.valid_until.replace(' ', 'T')) < new Date()) {
+      log('denied', 'denied', card.id, card.holder_type, card.holder_id)
+      return res.json({ result: 'denied', reason_code: 'expired', reason: 'Kart süresi dolmuş', holder })
     }
 
     // Yanlış amaçlı kart (cafeteria'da access kartı vb.)
@@ -241,6 +249,11 @@ stationsRouter.post('/scan', requireStation, upload.single('photo'), verifyMagic
     // Başarılı okutma (giriş/çıkış/servis/genel)
     const eventId = log('ok', map.event, card.id, card.holder_type, card.holder_id)
     logAudit(null, 'station_scan', 'stations', eventId, `${station.station_type}:${card.card_type}`)
+
+    // Faz 5b — ziyaretçi çıkışta otomatik kart iptali (tek kullanımlık ziyaret)
+    if (card.holder_type === 'visitor' && map.event === 'exit') {
+      db.prepare(`UPDATE cards SET status='revoked', revoked_at=datetime('now') WHERE id=?`).run(card.id)
+    }
     res.json({
       result: 'ok',
       event_type: map.event,

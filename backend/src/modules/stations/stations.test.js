@@ -121,6 +121,44 @@ describe('stations — okutma (scan)', () => {
   })
 })
 
+describe('stations — ziyaretçi süreli kart (Faz 5b)', () => {
+  const visUid = 'NFC-VIS-001', expUid = 'NFC-VIS-EXP'
+
+  beforeAll(async () => {
+    const db = getDB()
+    db.prepare('INSERT INTO visitors(full_name) VALUES(?)').run('Ziyaretci A')
+    const visId = db.prepare("SELECT id FROM visitors WHERE full_name='Ziyaretci A'").get().id
+    const c = await request(app).post(`/api/cards/visitor/${visId}/issue`).set(auth(token)).send({ card_type: 'access', valid_until: '2999-01-01 00:00:00' })
+    await request(app).patch(`/api/cards/${c.body.id}/bind-nfc`).set(auth(token)).send({ nfc_uid: visUid })
+
+    db.prepare('INSERT INTO visitors(full_name) VALUES(?)').run('Ziyaretci B')
+    const visExp = db.prepare("SELECT id FROM visitors WHERE full_name='Ziyaretci B'").get().id
+    const c2 = await request(app).post(`/api/cards/visitor/${visExp}/issue`).set(auth(token)).send({ card_type: 'access', valid_until: '2000-01-01 00:00:00' })
+    await request(app).patch(`/api/cards/${c2.body.id}/bind-nfc`).set(auth(token)).send({ nfc_uid: expUid })
+  })
+
+  it('geçerli ziyaretçi kartı giriş → ok + ziyaretçi adı', async () => {
+    const r = await request(app).post('/api/stations/scan').set('X-Station-Key', entryKey).send({ raw_uid: visUid })
+    expect(r.body.result).toBe('ok')
+    expect(r.body.holder.full_name).toBe('Ziyaretci A')
+  })
+
+  it('çıkış okutması ziyaretçi kartını otomatik iptal eder, tekrar giriş reddedilir', async () => {
+    const exitKey = (await request(app).post('/api/stations').set(auth(token)).send({ name: 'Cikis5b', station_type: 'exit' })).body.api_key
+    const r = await request(app).post('/api/stations/scan').set('X-Station-Key', exitKey).send({ raw_uid: visUid })
+    expect(r.body.result).toBe('ok')
+    expect(getDB().prepare('SELECT status FROM cards WHERE nfc_uid=?').get(visUid).status).toBe('revoked')
+    const r2 = await request(app).post('/api/stations/scan').set('X-Station-Key', entryKey).send({ raw_uid: visUid })
+    expect(r2.body.result).toBe('denied')
+  })
+
+  it('süresi dolmuş kart → denied (expired)', async () => {
+    const r = await request(app).post('/api/stations/scan').set('X-Station-Key', entryKey).send({ raw_uid: expUid })
+    expect(r.body.result).toBe('denied')
+    expect(r.body.reason_code).toBe('expired')
+  })
+})
+
 describe('stations — yemekhane uygunluğu (Faz 4)', () => {
   const today = new Date().toISOString().slice(0, 10)
   let eligId, noShiftId, leaveId
