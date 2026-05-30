@@ -73,6 +73,7 @@ import { campusMapRouter } from './modules/campus-map/routes.js'
 import { personnelRouter } from './modules/personnel/routes.js'
 import { hrRouter } from './modules/hr/routes.js'
 import { qrRouter } from './modules/qr/routes.js'
+import { cardsRouter } from './modules/cards/routes.js'
 import { safetyRouter } from './modules/safety/routes.js'
 import { mealsRouter } from './modules/meals/routes.js'
 import { performanceRouter } from './modules/performance/routes.js'
@@ -344,6 +345,7 @@ app.use('/api/campus-map', writeLimiter, campusMapRouter)
 app.use('/api/personnel', writeLimiter, personnelRouter)
 app.use('/api/hr', writeLimiter, hrRouter)
 app.use('/api/qr', writeLimiter, qrRouter)
+app.use('/api/cards', writeLimiter, cardsRouter)
 app.use('/api/safety', writeLimiter, safetyRouter)
 app.use('/api/meals', writeLimiter, mealsRouter)
 app.use('/api/performance', writeLimiter, performanceRouter)
