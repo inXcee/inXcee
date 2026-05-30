@@ -249,7 +249,10 @@
   .lp-root .hero-video { display:none; }
   .lp-root .cloud, .lp-root .flame, .lp-root .flare-smoke, .lp-root .ship, .lp-root .wave,
   .lp-root .glitter, .lp-root .haze, .lp-root .stars, .lp-root .blink,
-  .lp-root .strip-ticker .tk-track, .lp-root .nav .dot { animation:none !important; }
+  .lp-root .nav .dot { animation:none !important; }
+  /* landing — scroll-reveal anında görünür, ticker durur */
+  .lp-root .reveal { opacity:1 !important; transform:none !important; transition:none; }
+  .lp-root .tickerbar .ticker { animation:none; }
 }
 
 /* RESPONSIVE v4 */
@@ -564,10 +567,14 @@
 }
 .lp-root .hero-copy .chip b { color: var(--teal-hi); }
 
-/* Responsive — mobilde hero-copy gizle, tek sütun */
+/* Responsive — mobilde hero-copy gizle, tek sütun + landing bölümleri sıkıştır */
 @media (max-width: 860px) {
   .lp-root .hero-grid { grid-template-columns: 1fr; }
   .lp-root .hero-copy { display: none; }
+  .lp-root .nav-sections { display: none; }
+  .lp-root .pillars, .lp-root .stats, .lp-root .env, .lp-root .secband { grid-template-columns: 1fr 1fr; }
+  .lp-root .heat { grid-template-columns: repeat(5, 1fr); }
+  .lp-root .footer .fgrid { grid-template-columns: 1fr 1fr; }
 }
 @media (max-width: 520px) {
   .lp-root .hero .hud { right: 12px; top: 12px; }
