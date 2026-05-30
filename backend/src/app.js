@@ -127,7 +127,8 @@ app.use(helmet({
       // Google Fonts CSS dosyası için fonts.googleapis.com.
       styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
       imgSrc: ["'self'", "data:", "blob:"],
-      connectSrc: ["'self'"],
+      // Login landing canlı Filyos hava/deniz verisi için open-meteo (auth'suz, public API).
+      connectSrc: ["'self'", "https://api.open-meteo.com", "https://marine-api.open-meteo.com"],
       fontSrc: ["'self'", "data:", "https://fonts.gstatic.com"],
       objectSrc: ["'none'"],
       baseUri: ["'self'"],
