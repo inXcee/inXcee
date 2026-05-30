@@ -242,23 +242,7 @@
 .lp-root.v4 .card { background:rgba(6,14,30,.72); border-radius:20px;
   box-shadow:0 0 0 1px rgba(43,131,255,.06), 0 24px 60px rgba(0,0,0,.6), 0 0 90px rgba(31,111,235,.08); }
 
-/* SLIM BOTTOM STRIP — Filyos + ticker tek satırda */
-.lp-root .strip { display:flex; align-items:center; gap:16px; margin:0 32px 12px; padding:8px 16px;
-  background:rgba(2,5,12,.65); border:1px solid var(--line); border-radius:100px; backdrop-filter:blur(14px);
-  font-family:var(--m); font-size:11px; color:var(--muted);
-  animation:lpFadeU .9s .4s cubic-bezier(.2,.7,0,1.1) both; }
-.lp-root .strip-fil { display:inline-flex; align-items:center; gap:8px; padding-right:14px;
-  border-right:1px solid var(--line); flex-shrink:0; color:var(--white); }
-.lp-root .strip-fil .sf-key { color:var(--teal-hi); font-weight:500; letter-spacing:.04em; }
-.lp-root .strip-fil .sf-sep { color:var(--muted-2); }
-.lp-root .strip-ticker { flex:1; overflow:hidden; white-space:nowrap; }
-.lp-root .strip-ticker .tk-track { display:inline-flex; gap:28px; animation:lpTk 50s linear infinite; }
-.lp-root .strip-ticker:hover .tk-track { animation-play-state:paused; }
-
-/* FOOTER v4 düzeltme */
-.lp-root.v4 .footer { padding:12px 32px; font-size:11px; }
-.lp-root.v4 .f-copy { display:flex; align-items:center; gap:10px; }
-.lp-root.v4 .f-version { display:flex; align-items:center; gap:8px; }
+/* (v4 .strip kaldırıldı — yerini FilyosEnv + LandingTicker landing bölümleri aldı) */
 
 /* prefers-reduced-motion — sahnenin tüm hareketini durdur */
 @media (prefers-reduced-motion: reduce) {
@@ -274,9 +258,6 @@
   .lp-root.v4 .nav-metrics { order:3; flex-basis:100%; justify-content:flex-start; overflow-x:auto; padding:4px 0; }
   .lp-root.v4 .nav-metrics::-webkit-scrollbar { display:none; }
   .lp-root.v4 .main { padding:24px 18px; }
-  .lp-root.v4 .strip { margin:0 18px 10px; flex-wrap:wrap; gap:10px; }
-  .lp-root.v4 .strip-fil { border-right:none; padding-right:0; }
-  .lp-root.v4 .footer { padding:12px 18px; flex-direction:column; gap:8px; text-align:center; }
 }
 @media (max-width:520px) {
   .lp-root.v4 .nm-lbl { display:none; }
@@ -593,3 +574,107 @@
   .lp-root .hero .hud .seg button { padding: 5px 9px; font-size: 11px; }
   .lp-root .hero .hud .toggle { padding: 5px 10px; font-size: 11px; }
 }
+
+/* ════════════════════════════════════════════════════════════
+   Faz 5.1 — LANDING BÖLÜMLERİ (TP-OTC mockup'tan, .lp-root scoped,
+   renkler değişkenlere bağlı). Hero/login kartı stilleri yukarıda.
+   ════════════════════════════════════════════════════════════ */
+
+/* NAV bölüm linkleri */
+.lp-root .nav-sections { display:flex; gap:24px; font-size:13px; color:var(--muted); }
+.lp-root .nav-sections a { color:var(--muted); text-decoration:none; transition:color .2s; white-space:nowrap; }
+.lp-root .nav-sections a:hover { color:var(--teal-hi); }
+
+/* MİSYON BANDI */
+.lp-root .mission { padding:54px 0; text-align:center;
+  background:radial-gradient(900px 200px at 50% 0, rgba(25,198,212,.1), transparent),
+             linear-gradient(180deg, var(--navy-0), var(--navy-1)); }
+.lp-root .mission .fire { font-size:13px; letter-spacing:3px; color:var(--ember); text-transform:uppercase; margin-bottom:14px; }
+.lp-root .mission h2 { font-size:34px; font-weight:850; letter-spacing:-.5px; }
+.lp-root .mission h2 span { background:linear-gradient(120deg, var(--ember), var(--ember-hi)); -webkit-background-clip:text; background-clip:text; color:transparent; }
+
+/* BÖLÜM ÇERÇEVESİ */
+.lp-root section.blk { padding:70px 0; border-top:1px solid var(--line); }
+.lp-root .kicker { font-size:12px; letter-spacing:3px; color:var(--teal-hi); text-transform:uppercase; margin-bottom:8px; }
+.lp-root .blk h3 { font-size:28px; font-weight:800; letter-spacing:-.4px; margin-bottom:30px; }
+.lp-root .reveal { opacity:0; transform:translateY(26px); transition:.7s cubic-bezier(.2,.7,.2,1); }
+.lp-root .reveal.in { opacity:1; transform:none; }
+
+/* HİZMET KARTLARI */
+.lp-root .pillars { display:grid; grid-template-columns:repeat(3,1fr); gap:18px; }
+.lp-root .pillar { position:relative; background:linear-gradient(180deg, var(--glass-hi), var(--glass));
+  border:1px solid var(--line); border-radius:18px; padding:26px; overflow:hidden; transition:.25s; }
+.lp-root .pillar:hover { transform:translateY(-5px); border-color:var(--teal); box-shadow:0 18px 40px rgba(0,0,0,.4); }
+.lp-root .pillar .ic { width:50px; height:50px; border-radius:13px; display:flex; align-items:center; justify-content:center;
+  font-size:24px; background:rgba(25,198,212,.14); border:1px solid var(--line); margin-bottom:16px; }
+.lp-root .pillar h4 { font-size:18px; margin-bottom:8px; }
+.lp-root .pillar p { font-size:13px; color:var(--muted); }
+.lp-root .pillar .gl { position:absolute; right:-40px; top:-40px; width:140px; height:140px; border-radius:50%;
+  background:radial-gradient(circle, rgba(25,198,212,.18), transparent 70%); }
+
+/* MODÜL CAROUSEL */
+.lp-root .track { display:flex; gap:14px; overflow-x:auto; padding:6px 2px 18px; scroll-snap-type:x mandatory; scrollbar-width:thin; }
+.lp-root .track::-webkit-scrollbar { height:6px; }
+.lp-root .track::-webkit-scrollbar-thumb { background:var(--line); border-radius:99px; }
+.lp-root .mcard { scroll-snap-align:start; flex:0 0 220px;
+  background:linear-gradient(180deg, var(--glass-hi), var(--navy-0)); border:1px solid var(--line); border-radius:16px; padding:20px; transition:.22s; }
+.lp-root .mcard:hover { transform:translateY(-5px); border-color:var(--teal); box-shadow:0 16px 36px rgba(0,0,0,.45); }
+.lp-root .mc-top { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:14px; }
+.lp-root .mcard .em { font-size:30px; }
+.lp-root .liveb { font-size:10px; font-weight:700; padding:4px 9px; border-radius:999px;
+  background:rgba(255,157,61,.16); color:var(--ember); border:1px solid rgba(255,157,61,.3); }
+.lp-root .liveb.ok { background:rgba(52,211,153,.14); color:var(--ok); border-color:rgba(52,211,153,.3); }
+.lp-root .mcard h4 { font-size:15px; margin-bottom:4px; }
+.lp-root .mcard .spec { font-size:11.5px; color:var(--muted); font-family:var(--m); }
+
+/* SAYILARLA — count-up */
+.lp-root .stats { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; }
+.lp-root .stat { background:var(--glass); border:1px solid var(--line); border-radius:16px; padding:24px; text-align:center; }
+.lp-root .stat .v { font-size:40px; font-weight:850; font-variant-numeric:tabular-nums;
+  background:linear-gradient(120deg, var(--teal-hi), var(--teal)); -webkit-background-clip:text; background-clip:text; color:transparent; }
+.lp-root .stat .l { font-size:12px; color:var(--muted); margin-top:6px; letter-spacing:.5px; }
+
+/* HEATMAP */
+.lp-root .heat { display:grid; grid-template-columns:repeat(10,1fr); gap:8px; }
+.lp-root .hb { aspect-ratio:1.5/1; border-radius:9px; display:flex; flex-direction:column; align-items:center; justify-content:center;
+  font-size:11px; font-weight:700; color:var(--white); cursor:default; border:1px solid rgba(255,255,255,.08); transition:.18s; }
+.lp-root .hb:hover { transform:scale(1.08); z-index:2; box-shadow:0 8px 20px rgba(0,0,0,.4); }
+.lp-root .hb small { font-size:9px; font-weight:500; opacity:.85; }
+
+/* FİLYOS ORTAM */
+.lp-root .env { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; }
+.lp-root .ev { display:flex; gap:14px; align-items:center; padding:22px; border-radius:16px;
+  background:linear-gradient(180deg, var(--glass), var(--navy-0)); border:1px solid var(--line); }
+.lp-root .ev .em { font-size:30px; }
+.lp-root .ev .v { font-size:24px; font-weight:800; }
+.lp-root .ev .l { font-size:11px; color:var(--muted); }
+
+/* GÜVENLİK BANDI */
+.lp-root .secband { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; }
+.lp-root .sec { display:flex; gap:11px; align-items:center; background:var(--glass); border:1px solid var(--line); border-radius:13px; padding:16px; }
+.lp-root .sec .em { font-size:22px; }
+.lp-root .sec b { font-size:13px; display:block; }
+.lp-root .sec span { font-size:11px; color:var(--muted); }
+
+/* TICKER (landing — kayan) */
+.lp-root .tickerbar { overflow:hidden; border-top:1px solid var(--line); border-bottom:1px solid var(--line); background:var(--glass); padding:11px 0; }
+.lp-root .tickerbar .ticker { display:flex; gap:40px; white-space:nowrap; animation:lpScrollX 26s linear infinite; font-size:12.5px; color:var(--muted); }
+.lp-root .tickerbar:hover .ticker { animation-play-state:paused; }
+.lp-root .tickerbar .tk-item { display:inline-flex; align-items:center; gap:10px; }
+.lp-root .tickerbar .tk-item b { color:var(--white); font-weight:600; }
+.lp-root .tickerbar .tk-item .d { color:var(--teal); }
+@keyframes lpScrollX { from { transform:translateX(0); } to { transform:translateX(-50%); } }
+
+/* FOOTER — landing grid (v4 flex footer'ı override eder) */
+.lp-root.v4 .footer { display:block; padding:50px 0 30px; background:var(--void); border-top:1px solid var(--line);
+  font-size:13px; color:var(--muted); }
+.lp-root .footer .fgrid { display:grid; grid-template-columns:2fr 1fr 1fr; gap:30px; margin-bottom:30px; }
+.lp-root .footer .fcol .brand-name { font-size:17px; margin-bottom:14px; }
+.lp-root .footer .f-about { font-size:13px; color:var(--muted); max-width:300px; }
+.lp-root .footer .fcol h5 { font-size:12px; letter-spacing:1.5px; text-transform:uppercase; color:var(--teal-hi); margin-bottom:14px; }
+.lp-root .footer .fcol .f-link { display:block; font-size:13px; color:var(--muted); margin-bottom:9px; text-align:left; }
+.lp-root .footer .fcol .f-link:hover { color:var(--white); text-decoration:none; }
+.lp-root .footer .fbottom { display:flex; justify-content:space-between; align-items:center; padding-top:22px;
+  border-top:1px solid var(--line); font-size:12px; color:var(--muted); flex-wrap:wrap; gap:10px; }
+.lp-root .footer .ftag { background:rgba(25,198,212,.14); color:var(--teal-hi); padding:4px 11px; border-radius:999px;
+  font-size:11px; border:1px solid var(--line); }
