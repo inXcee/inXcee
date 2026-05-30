@@ -15,3 +15,15 @@ if (typeof window !== 'undefined' && !window.matchMedia) {
     dispatchEvent: () => false,
   })
 }
+
+// IntersectionObserver — scroll-reveal (useReveal) kullanır, jsdom'da yok.
+// Stub gözlemlemez (element görünür olmaz) — testler reduced/mock ile kontrol eder.
+if (typeof globalThis !== 'undefined' && !globalThis.IntersectionObserver) {
+  globalThis.IntersectionObserver = class {
+    constructor() {}
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+    takeRecords() { return [] }
+  }
+}

@@ -6,6 +6,15 @@ import api from '../../shared/api/client.js'
 import { LoginModal } from './LoginModals.jsx'
 import { LoginCard } from './components/LoginCard.jsx'
 import { HeroScene } from './components/HeroScene.jsx'
+import { MissionBand } from './components/sections/MissionBand.jsx'
+import { ServicePillars } from './components/sections/ServicePillars.jsx'
+import { ModuleCarousel } from './components/sections/ModuleCarousel.jsx'
+import { StatsCounter } from './components/sections/StatsCounter.jsx'
+import { BlockHeatmap } from './components/sections/BlockHeatmap.jsx'
+import { FilyosEnv } from './components/sections/FilyosEnv.jsx'
+import { SecurityBand } from './components/sections/SecurityBand.jsx'
+import { LandingTicker } from './components/sections/LandingTicker.jsx'
+import { LandingFooter } from './components/sections/LandingFooter.jsx'
 import { useMotionPref } from './hooks/useMotionPref.js'
 import { LAT, LON, COMPASS, WMO, DEMO_USERS, KIOSKS, MODE_ORDER, MODE_TITLES, MODULES } from './loginData.js'
 import './LoginPage.css'
@@ -171,7 +180,7 @@ export default function LoginPage() {
   }
   tickerItems.push(['b', 'Gece yedeği', '03:00 · /var/data/backups'])
   tickerItems.push(['t', 'KampüsERP', 'v5.0 · 814 yatak · 19 blok'])
-  const ticker = tickerItems.length ? [...tickerItems, ...tickerItems] : []
+  // LandingTicker içeride ikiye katlar — burada ham liste yeterli.
 
   const isForm = mode !== 'kiosk'
 
@@ -252,6 +261,14 @@ export default function LoginPage() {
             </div>
           </div>
 
+          <nav className="nav-sections" aria-label="Bölümler">
+            <a href="#modules">Modüller</a>
+            <a href="#stats">Sayılarla</a>
+            <a href="#heat">Bloklar</a>
+            <a href="#env">Filyos</a>
+            <a href="#sec">Güvenlik</a>
+          </nav>
+
           <div className="nav-meta">
             <div className="meta"><div className="dot" /><span>ONLINE</span></div>
             <div className="meta">🕐 {clock}</div>
@@ -314,40 +331,16 @@ export default function LoginPage() {
           </div>
         </HeroScene>
 
-        {/* SLIM BOTTOM STRIP — Filyos hava/deniz + canlı ticker */}
-        <div className="strip" aria-label="Filyos ortam ve sistem akışı">
-          <div className="strip-fil">
-            <span className="sf-key">🌊 Filyos</span>
-            <span className="sf-sep">·</span>
-            <span>{weather ? `${weather.temp}°` : '—°'}</span>
-            <span className="sf-sep">·</span>
-            <span>{weather?.desc || '—'}</span>
-            <span className="sf-sep">·</span>
-            <span>rüzgâr {weather ? `${weather.windKn} kn ${weather.windDir}` : '—'}</span>
-            <span className="sf-sep">·</span>
-            <span>dalga {weather?.wave != null ? `${weather.wave} m` : '—'}</span>
-          </div>
-          <div className="strip-ticker">
-            <div className="tk-track">
-              {ticker.map(([c, s, t], i) => (
-                <span className="tk-item" key={i}><span className={`tk-dot ${c}`} /><strong>{s}</strong> {t}</span>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <footer className="footer">
-          <div className="f-links">
-            <button type="button" className="f-link" onClick={() => setModal('kvkk')}>KVKK &amp; Gizlilik</button>
-            <button type="button" className="f-link" onClick={() => setModal('terms')}>Kullanım Koşulları</button>
-            <button type="button" className="f-link" onClick={() => setModal('support')}>Destek</button>
-          </div>
-          <div className="f-copy">© 2026 AVS Kamp Alanı · Filyos · Zonguldak</div>
-          <div className="f-version">
-            <span>Powered by</span>
-            <span className="f-tag">KampüsERP v5.0</span>
-          </div>
-        </footer>
+        {/* LANDING BÖLÜMLERİ — hero'dan sonra kaydırmalı akış */}
+        <MissionBand />
+        <ServicePillars reduced={reduced} />
+        <ModuleCarousel stats={stats} reduced={reduced} />
+        <StatsCounter stats={stats} reduced={reduced} />
+        <BlockHeatmap blocks={stats?.blocks || []} reduced={reduced} />
+        <FilyosEnv weather={weather} reduced={reduced} />
+        <SecurityBand reduced={reduced} />
+        <LandingTicker items={tickerItems} />
+        <LandingFooter onModal={setModal} />
       </div>
 
       <LoginModal which={modal} onClose={() => setModal(null)} />
