@@ -33,4 +33,21 @@ describe('Public stats — /api/public/stats', () => {
     expect(res.body.occupancy_pct).toBeGreaterThanOrEqual(0)
     expect(res.body.occupancy_pct).toBeLessThanOrEqual(100)
   })
+
+  it('blok başına doluluk dizisi döner (sadece blok adı + %)', async () => {
+    const res = await request(app).get('/api/public/stats')
+    expect(res.status).toBe(200)
+    expect(Array.isArray(res.body.blocks)).toBe(true)
+    if (res.body.blocks.length) {
+      const b = res.body.blocks[0]
+      expect(b).toHaveProperty('block')
+      expect(b).toHaveProperty('occupancy_pct')
+      expect(typeof b.occupancy_pct).toBe('number')
+      // blok % 0–100 aralığında
+      expect(b.occupancy_pct).toBeGreaterThanOrEqual(0)
+      expect(b.occupancy_pct).toBeLessThanOrEqual(100)
+      // hassas alan (isim/oda/yatak sayısı) sızmamalı — sadece block + occupancy_pct
+      expect(Object.keys(b).sort()).toEqual(['block', 'occupancy_pct'])
+    }
+  })
 })

@@ -4,100 +4,20 @@ import { useAuthStore } from '../../shared/store/authStore.js'
 import { postLoginRedirect, VALID_MODES } from '../../shared/auth/postLoginRedirect.js'
 import api from '../../shared/api/client.js'
 import { LoginModal } from './LoginModals.jsx'
+import { LoginCard } from './components/LoginCard.jsx'
+import { HeroScene } from './components/HeroScene.jsx'
+import { MissionBand } from './components/sections/MissionBand.jsx'
+import { ServicePillars } from './components/sections/ServicePillars.jsx'
+import { ModuleCarousel } from './components/sections/ModuleCarousel.jsx'
+import { StatsCounter } from './components/sections/StatsCounter.jsx'
+import { BlockHeatmap } from './components/sections/BlockHeatmap.jsx'
+import { FilyosEnv } from './components/sections/FilyosEnv.jsx'
+import { SecurityBand } from './components/sections/SecurityBand.jsx'
+import { LandingTicker } from './components/sections/LandingTicker.jsx'
+import { LandingFooter } from './components/sections/LandingFooter.jsx'
+import { useMotionPref } from './hooks/useMotionPref.js'
+import { LAT, LON, COMPASS, WMO, DEMO_USERS, KIOSKS, MODE_ORDER, MODE_TITLES, MODULES } from './loginData.js'
 import './LoginPage.css'
-
-const DEMO_USERS = [
-  { username: 'mudur',    password: 'admin123', role: 'Kampüs Müdürü' },
-  { username: 'vardiya',  password: 'admin123', role: 'Vardiya Amiri' },
-  { username: 'teknik',   password: 'admin123', role: 'Teknik Servis' },
-  { username: 'camasir',  password: 'admin123', role: 'Çamaşırhane' },
-  { username: 'meydanci', password: 'admin123', role: 'Meydancı' },
-]
-
-const KIOSKS = [
-  { path: '/avs-kiosk',     icon: '🧹', label: 'AVS Personel', desc: 'İsim + PIN ile giriş' },
-  { path: '/laundry-kiosk', icon: '🧺', label: 'Çamaşırhane',  desc: 'Torba & teslim işlemleri' },
-  { path: '/kiosk',         icon: '🛏️', label: 'Sakin Self-Servis', desc: 'Oda & talep işlemleri' },
-]
-
-const MODULES = [
-  ['🛏️', 'Oda & Yatak'], ['📋', 'Check-in/out'], ['🔧', 'Arıza & Bakım'], ['📦', 'Zimmet'], ['⚖️', 'Disiplin'],
-  ['📅', 'Vardiya'], ['🍽️', 'Yemekhane'], ['🧺', 'Çamaşırhane'], ['🚪', 'Ziyaretçi'], ['📈', 'Raporlama'],
-]
-
-const MODE_ORDER = [
-  ['standard', '👤', 'Personel'],
-  ['admin',    '🛡️', 'Yönetici'],
-  ['security', '🚪', 'Güvenlik'],
-  ['kiosk',    '📟', 'Kiosk'],
-]
-
-const MODE_TITLES = {
-  standard: ['Personel Girişi', 'Yetkili hesabınızla oturum açın · <b>RBAC aktif</b>'],
-  admin:    ['Yönetici Girişi', 'Tam yetkili sistem erişimi · <b>2FA destekli</b>'],
-  security: ['Güvenlik Girişi', 'Kapı kontrol & ziyaretçi yönetimi · <b>Vardiya bazlı</b>'],
-}
-
-const LAT = 41.57, LON = 32.04
-const COMPASS = ['K', 'KD', 'D', 'GD', 'G', 'GB', 'B', 'KB']
-const WMO = {
-  0: 'Açık', 1: 'Az Bulutlu', 2: 'Parçalı Bulutlu', 3: 'Bulutlu', 45: 'Sisli', 48: 'Sisli',
-  51: 'Çiseleme', 53: 'Çiseleme', 55: 'Çiseleme', 61: 'Yağmurlu', 63: 'Yağmurlu', 65: 'Yağmurlu',
-  71: 'Karlı', 73: 'Karlı', 75: 'Karlı', 80: 'Sağanak', 81: 'Sağanak', 82: 'Kuvvetli Sağanak', 95: 'Gök Gürültülü',
-}
-
-const FILYOS_VIDEO = ''
-const STOCK_IDS = ['25163', '31746', '9294', '7271']
-
-// 6 haneli TOTP girişi — auto-advance, paste, backspace ile geri, shake hata.
-function TwoFactorInput({ value, onChange, shake, disabled }) {
-  const refs = useRef([])
-
-  const onCharChange = (i, raw) => {
-    const c = (raw || '').replace(/\D/g, '').slice(-1)
-    const arr = (value + '      ').split('').slice(0, 6)
-    arr[i] = c
-    const next = arr.join('').trimEnd().replace(/\s/g, '')
-    onChange(next)
-    if (c && i < 5) refs.current[i + 1]?.focus()
-  }
-
-  const onKeyDown = (i, e) => {
-    if (e.key === 'Backspace' && !value[i] && i > 0) { e.preventDefault(); refs.current[i - 1]?.focus() }
-    else if (e.key === 'ArrowLeft' && i > 0) refs.current[i - 1]?.focus()
-    else if (e.key === 'ArrowRight' && i < 5) refs.current[i + 1]?.focus()
-  }
-
-  const onPaste = (e) => {
-    const t = (e.clipboardData?.getData('text') || '').replace(/\D/g, '').slice(0, 6)
-    if (!t) return
-    e.preventDefault()
-    onChange(t)
-    refs.current[Math.min(t.length, 5)]?.focus()
-  }
-
-  return (
-    <div className={`tfa-boxes ${shake ? 'shake' : ''}`} onPaste={onPaste} role="group" aria-label="6 haneli doğrulama kodu">
-      {Array.from({ length: 6 }, (_, i) => (
-        <input
-          key={i}
-          ref={el => { refs.current[i] = el }}
-          className="tfa-box"
-          inputMode="numeric"
-          autoComplete="one-time-code"
-          maxLength={1}
-          value={value[i] || ''}
-          onChange={e => onCharChange(i, e.target.value)}
-          onKeyDown={e => onKeyDown(i, e)}
-          onFocus={e => e.target.select()}
-          disabled={disabled}
-          autoFocus={i === 0}
-          aria-label={`Hane ${i + 1}`}
-        />
-      ))}
-    </div>
-  )
-}
 
 export default function LoginPage() {
   const [username, setUsername] = useState('')
@@ -106,7 +26,6 @@ export default function LoginPage() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [loadingText, setLoadingText] = useState('Kimlik doğrulanıyor')
-  const [demoOpen, setDemoOpen] = useState(false)
   const [modulesOpen, setModulesOpen] = useState(false)
   const [twoFA, setTwoFA] = useState(null)
   const [code, setCode] = useState('')
@@ -125,9 +44,8 @@ export default function LoginPage() {
 
   const login = useAuthStore(s => s.login)
   const navigate = useNavigate()
-  const sceneRef = useRef(null)
-  const videoRef = useRef(null)
   const modulesRef = useRef(null)
+  const { motion, setMotion, rain, setRain, reduced } = useMotionPref()
 
   // ── Cooldown durumu (3 başarısız → 30sn kilit) ───────────────
   const cooldownLeft = Math.max(0, Math.ceil((cooldownUntil - nowTs) / 1000))
@@ -208,20 +126,6 @@ export default function LoginPage() {
     t(); const id = setInterval(t, 1000); return () => clearInterval(id)
   }, [])
 
-  // ── Hero video (fallback: prosedürel sahne) ──────────────────
-  useEffect(() => {
-    const v = videoRef.current, scene = sceneRef.current
-    if (!v || !scene) return
-    const queue = (FILYOS_VIDEO ? [FILYOS_VIDEO] : [])
-      .concat(STOCK_IDS.map(id => `https://assets.mixkit.co/videos/${id}/${id}-720.mp4`))
-    let i = 0
-    const onData = () => { scene.classList.add('has-video'); v.play().catch(() => {}) }
-    const next = () => { if (i < queue.length) { v.src = queue[i++]; v.load() } }
-    v.addEventListener('loadeddata', onData)
-    v.addEventListener('error', next)
-    if (queue.length) next()
-    return () => { v.removeEventListener('loadeddata', onData); v.removeEventListener('error', next) }
-  }, [])
 
   // ── Gerçek toplu sayılar (auth'suz public endpoint) ──────────
   useEffect(() => {
@@ -251,17 +155,6 @@ export default function LoginPage() {
     return () => { alive = false; clearInterval(id) }
   }, [])
 
-  // ── Fare paralaks (azaltılmış v4) ────────────────────────────
-  useEffect(() => {
-    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return
-    const layers = sceneRef.current?.querySelectorAll('[data-depth]') || []
-    const onMove = (e) => {
-      const x = e.clientX / window.innerWidth - 0.5, y = e.clientY / window.innerHeight - 0.5
-      layers.forEach(l => { const d = +l.dataset.depth; l.style.transform = `translate(${-x * d}px, ${-y * d * 0.4}px)` })
-    }
-    window.addEventListener('mousemove', onMove, { passive: true })
-    return () => window.removeEventListener('mousemove', onMove)
-  }, [])
 
   // ── Modül popover'ı dış tıklamayla kapat ─────────────────────
   useEffect(() => {
@@ -287,36 +180,20 @@ export default function LoginPage() {
   }
   tickerItems.push(['b', 'Gece yedeği', '03:00 · /var/data/backups'])
   tickerItems.push(['t', 'KampüsERP', 'v5.0 · 814 yatak · 19 blok'])
-  const ticker = tickerItems.length ? [...tickerItems, ...tickerItems] : []
+  // LandingTicker içeride ikiye katlar — burada ham liste yeterli.
 
   const isForm = mode !== 'kiosk'
-  const [mTitle, mSub] = MODE_TITLES[mode] || MODE_TITLES.standard
+
+  const handleModeChange = (k) => {
+    setMode(k)
+    setError('')
+    const next = new URLSearchParams(searchParams)
+    if (k === 'standard') next.delete('mode'); else next.set('mode', k)
+    setSearchParams(next, { replace: true })
+  }
 
   return (
     <div className="lp-root v4">
-      {/* SCENE — v4'te backdrop olarak dimleniyor */}
-      <div className="scene" ref={sceneRef}>
-        <div className="sky" />
-        <video className="hero-video" ref={videoRef} muted loop playsInline preload="auto" aria-hidden="true" />
-        <div className="video-grade" />
-        <div className="stars" />
-        <div className="cloud cl1" /><div className="cloud cl2" />
-        <div className="haze" /><div className="horizon" />
-        <div className="harbor" data-depth="14">
-          <div className="crane k1" /><div className="crane k2" /><div className="crane k3" /><div className="crane k4" /><div className="crane k5" />
-          <div className="flare-stack" /><div className="flame" />
-          <div className="flare-smoke" /><div className="flare-smoke" style={{ animationDelay: '2s' }} />
-          <div className="ship" />
-          <div className="blink" style={{ left: '6.3%', bottom: '62%' }} />
-          <div className="blink" style={{ left: '17.5%', bottom: '82%', animationDelay: '.6s' }} />
-          <div className="blink" style={{ right: '22%', bottom: '88%', animationDelay: '1.2s' }} />
-          <div className="blink" style={{ right: '9.3%', bottom: '58%', animationDelay: '1.8s' }} />
-        </div>
-        <div className="sea" data-depth="6">
-          <div className="glitter" />
-          <div className="wave w3" /><div className="wave w4" /><div className="wave w2" /><div className="wave w1" />
-        </div>
-      </div>
       <div className="grain" /><div className="vignette" />
 
       {loading && (
@@ -373,10 +250,10 @@ export default function LoginPage() {
               </button>
               {modulesOpen && (
                 <div className="nm-pop" role="menu">
-                  {MODULES.map(([ico, name]) => (
-                    <div className="nm-pop-item" key={name} role="menuitem">
-                      <span className="nm-pop-ico" aria-hidden="true">{ico}</span>
-                      <span>{name}</span>
+                  {MODULES.map((m) => (
+                    <div className="nm-pop-item" key={m.name} role="menuitem">
+                      <span className="nm-pop-ico" aria-hidden="true">{m.icon}</span>
+                      <span>{m.name}</span>
                     </div>
                   ))}
                 </div>
@@ -384,185 +261,86 @@ export default function LoginPage() {
             </div>
           </div>
 
+          <nav className="nav-sections" aria-label="Bölümler">
+            <a href="#modules">Modüller</a>
+            <a href="#stats">Sayılarla</a>
+            <a href="#heat">Bloklar</a>
+            <a href="#env">Filyos</a>
+            <a href="#sec">Güvenlik</a>
+          </nav>
+
           <div className="nav-meta">
             <div className="meta"><div className="dot" /><span>ONLINE</span></div>
             <div className="meta">🕐 {clock}</div>
           </div>
         </nav>
 
-        {/* MAIN — sade: sadece login kartı, ortada, geniş negatif alanlı */}
-        <main className="main">
-          <aside className="login">
-            <div className="card">
-              <div className="modes" role="tablist" aria-label="Giriş türü">
-                {MODE_ORDER.map(([k, ic, lb]) => (
-                  <button
-                    key={k}
-                    type="button"
-                    role="tab"
-                    aria-selected={mode === k}
-                    className={`mode ${mode === k ? 'on' : ''}`}
-                    onClick={() => {
-                      setMode(k)
-                      setError('')
-                      const next = new URLSearchParams(searchParams)
-                      if (k === 'standard') next.delete('mode'); else next.set('mode', k)
-                      setSearchParams(next, { replace: true })
-                    }}
-                  >
-                    <span className="mode-ico">{ic}</span><span>{lb}</span>
-                  </button>
-                ))}
+        {/* HERO — video + yağmur canvas + hareket HUD, login kartını ve hero-copy'yi sarar */}
+        <HeroScene
+          posterSrc="/login/D2-night-bright.png"
+          videoSrc="/login/hero-night.mp4"
+          motion={motion}
+          setMotion={setMotion}
+          rain={rain}
+          setRain={setRain}
+          reduced={reduced}
+        >
+          <div className="lp-wrap hero-grid">
+            <div className="hero-copy">
+              <span className="eyebrow"><span className="fl" />AVS Kamp Alanı · Filyos · Zonguldak</span>
+              <h1>814 yatak, 19 blok,<br /><span>tek operasyon merkezi.</span></h1>
+              <p>Konaklama, bakım, çamaşırhane ve personel operasyonunu tek panelden yönetin. 7/24 canlı.</p>
+              <div className="chips">
+                <span className="chip"><b>10</b> entegre modül</span>
+                <span className="chip"><b>RBAC</b> + 2FA</span>
+                <span className="chip"><b>Canlı</b> Filyos hava/deniz</span>
               </div>
-
-              {isForm ? (
-                twoFA ? (
-                  <form className="body" onSubmit={handle2fa}>
-                    <div className="head"><div className="title">İki Faktörlü Doğrulama</div><div className="sub">Authenticator uygulamasındaki <strong>6 haneli kodu</strong> girin.</div></div>
-                    <div className="field">
-                      <label className="label" id="lp-2fa-label"><span>Doğrulama Kodu</span><span className="hint">TOTP · Google / Authy</span></label>
-                      <TwoFactorInput value={code} onChange={setCode} shake={shake} disabled={loading} />
-                    </div>
-                    {error && <div id="lp-2fa-err" className="alert" role="alert">⚠️ <span>{error}</span></div>}
-                    <button className="btn" type="submit" disabled={loading || code.length !== 6} style={{ marginTop: 6 }}>{loading ? 'DOĞRULANIYOR…' : 'Doğrula →'}</button>
-                    <button className="btn-ghost" type="button" onClick={() => { setTwoFA(null); setCode(''); setError('') }}>İptal</button>
-                  </form>
-                ) : (
-                  <form className="body" onSubmit={handleSubmit}>
-                    <div className="head">
-                      <div className="title">{mTitle}</div>
-                      <div className="sub" dangerouslySetInnerHTML={{ __html: mSub.replace('<b>', '<strong>').replace('</b>', '</strong>') }} />
-                    </div>
-                    <div className="field">
-                      <label className="label" htmlFor="lp-username"><span>Kullanıcı Adı</span><span className="hint">SİCİL / TC / E-POSTA</span></label>
-                      <div className="wrap"><span className="ico" aria-hidden="true">👤</span>
-                        <input
-                          id="lp-username"
-                          className="input"
-                          type="text"
-                          value={username}
-                          onChange={e => setUsername(e.target.value)}
-                          autoFocus
-                          autoComplete="username"
-                          placeholder="örn. selam.aydin"
-                          required
-                          aria-invalid={!!error}
-                          aria-describedby={error ? 'lp-login-err' : undefined}
-                          disabled={isLocked}
-                        /></div>
-                    </div>
-                    <div className="field">
-                      <label className="label" htmlFor="lp-password">
-                        <span>Şifre</span>
-                        <span className={`hint ${capsLock ? 'warn' : ''}`} aria-live="polite">
-                          {capsLock ? '⇪ CAPS-LOCK AÇIK' : 'CAPS-LOCK KAPALI'}
-                        </span>
-                      </label>
-                      <div className="wrap"><span className="ico" aria-hidden="true">🔒</span>
-                        <input
-                          id="lp-password"
-                          className="input"
-                          type={showPw ? 'text' : 'password'}
-                          value={password}
-                          onChange={e => setPassword(e.target.value)}
-                          onKeyDown={e => setCapsLock(e.getModifierState?.('CapsLock') ?? false)}
-                          onKeyUp={e => setCapsLock(e.getModifierState?.('CapsLock') ?? false)}
-                          autoComplete="current-password"
-                          placeholder="••••••••"
-                          required
-                          aria-invalid={!!error}
-                          aria-describedby={error ? 'lp-login-err' : undefined}
-                          disabled={isLocked}
-                        />
-                        <button className="eye" type="button" onClick={() => setShowPw(s => !s)} aria-pressed={showPw} aria-label={showPw ? 'Şifreyi gizle' : 'Şifreyi göster'}>
-                          {showPw ? '🙈' : '👁️'}
-                        </button></div>
-                    </div>
-                    <div className="row">
-                      <span className="row-pad" />
-                      <button type="button" className="forgot" onClick={() => setModal('forgot')}>Şifremi unuttum</button>
-                    </div>
-                    <button className="btn" type="submit" disabled={loading || isLocked}>
-                      {loading ? 'GİRİŞ YAPILIYOR…' : isLocked ? `${cooldownLeft} sn bekleyin` : 'Sisteme Giriş Yap →'}
-                    </button>
-                    {error && (
-                      <div id="lp-login-err" className="alert" role="alert">
-                        ⚠️ <span>{error}</span>
-                        {isLocked && <span className="alert-sub"> · Çok fazla başarısız deneme — {cooldownLeft} sn sonra tekrar deneyin.</span>}
-                      </div>
-                    )}
-
-                    {import.meta.env.DEV && (
-                      <div className="demo">
-                        <button type="button" className="demo-toggle" onClick={() => setDemoOpen(o => !o)}>
-                          <span>{demoOpen ? '▾' : '▸'} DEMO KULLANICILAR</span><span>geliştirme</span>
-                        </button>
-                        {demoOpen && (
-                          <div className="demo-list">
-                            {DEMO_USERS.map(u => (
-                              <button key={u.username} type="button" className="demo-item" onClick={() => pickDemo(u)}>
-                                <span><span className="u">{u.username}</span> <span className="r">{u.role}</span></span>
-                                <span className="r">{u.password}</span>
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </form>
-                )
-              ) : (
-                <div className="body">
-                  <div className="kiosk-head">Login gerektirmez — doğrudan PIN/QR ekranı</div>
-                  <div className="sec-grid">
-                    {KIOSKS.map(k => (
-                      <button key={k.path} type="button" className="sec" onClick={() => navigate(k.path)}>
-                        <span style={{ fontSize: 20 }}>{k.icon}</span>
-                        <span><span style={{ display: 'block', fontWeight: 600 }}>{k.label}</span><span style={{ fontSize: 11, color: 'var(--muted)' }}>{k.desc}</span></span>
-                        <span className="arr">→</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
             </div>
-          </aside>
-        </main>
+            <LoginCard
+              mode={mode}
+              onModeChange={handleModeChange}
+              modeOrder={MODE_ORDER}
+              modeTitles={MODE_TITLES}
+              isForm={isForm}
+              username={username}
+              setUsername={setUsername}
+              password={password}
+              setPassword={setPassword}
+              showPw={showPw}
+              setShowPw={setShowPw}
+              capsLock={capsLock}
+              setCapsLock={setCapsLock}
+              error={error}
+              loading={loading}
+              isLocked={isLocked}
+              cooldownLeft={cooldownLeft}
+              onSubmit={handleSubmit}
+              twoFA={twoFA}
+              code={code}
+              setCode={setCode}
+              shake={shake}
+              onVerify2fa={handle2fa}
+              onCancel2fa={() => { setTwoFA(null); setCode(''); setError('') }}
+              onForgot={() => setModal('forgot')}
+              kiosks={KIOSKS}
+              onKioskNav={navigate}
+              demoUsers={DEMO_USERS}
+              onPickDemo={pickDemo}
+              isDev={import.meta.env.DEV}
+            />
+          </div>
+        </HeroScene>
 
-        {/* SLIM BOTTOM STRIP — Filyos hava/deniz + canlı ticker */}
-        <div className="strip" aria-label="Filyos ortam ve sistem akışı">
-          <div className="strip-fil">
-            <span className="sf-key">🌊 Filyos</span>
-            <span className="sf-sep">·</span>
-            <span>{weather ? `${weather.temp}°` : '—°'}</span>
-            <span className="sf-sep">·</span>
-            <span>{weather?.desc || '—'}</span>
-            <span className="sf-sep">·</span>
-            <span>rüzgâr {weather ? `${weather.windKn} kn ${weather.windDir}` : '—'}</span>
-            <span className="sf-sep">·</span>
-            <span>dalga {weather?.wave != null ? `${weather.wave} m` : '—'}</span>
-          </div>
-          <div className="strip-ticker">
-            <div className="tk-track">
-              {ticker.map(([c, s, t], i) => (
-                <span className="tk-item" key={i}><span className={`tk-dot ${c}`} /><strong>{s}</strong> {t}</span>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <footer className="footer">
-          <div className="f-links">
-            <button type="button" className="f-link" onClick={() => setModal('kvkk')}>KVKK &amp; Gizlilik</button>
-            <button type="button" className="f-link" onClick={() => setModal('terms')}>Kullanım Koşulları</button>
-            <button type="button" className="f-link" onClick={() => setModal('support')}>Destek</button>
-          </div>
-          <div className="f-copy">© 2026 AVS Kamp Alanı · Filyos · Zonguldak</div>
-          <div className="f-version">
-            <span>Powered by</span>
-            <span className="f-tag">KampüsERP v5.0</span>
-          </div>
-        </footer>
+        {/* LANDING BÖLÜMLERİ — hero'dan sonra kaydırmalı akış */}
+        <MissionBand />
+        <ServicePillars reduced={reduced} />
+        <ModuleCarousel stats={stats} reduced={reduced} />
+        <StatsCounter stats={stats} reduced={reduced} />
+        <BlockHeatmap blocks={stats?.blocks || []} reduced={reduced} />
+        <FilyosEnv weather={weather} reduced={reduced} />
+        <SecurityBand reduced={reduced} />
+        <LandingTicker items={tickerItems} />
+        <LandingFooter onModal={setModal} />
       </div>
 
       <LoginModal which={modal} onClose={() => setModal(null)} />

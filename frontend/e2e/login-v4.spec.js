@@ -18,7 +18,8 @@ test.describe('login v4 — modal + mod altyapısı', () => {
 
   test('Destek modalı iletişim kartları gösterir', async ({ page }) => {
     await page.goto('/login')
-    await page.getByRole('button', { name: /^Destek$/ }).click()
+    // Footer "Destek" başlığı altında "Yardım & İletişim" → support modalı (landing footer)
+    await page.getByRole('button', { name: /Yardım & İletişim/ }).click()
     await expect(page.getByText(/Acil 7\/24/)).toBeVisible()
     await expect(page.getByText(/destek@avskamp\.com/).first()).toBeVisible()
     // Backdrop tıklamasıyla kapanır
