@@ -214,6 +214,11 @@ export default function StationPage() {
           {result.result === 'ok' && result.meal_type && (
             <div style={{ fontSize: 15, opacity: 0.85, marginTop: 8 }}>{({ breakfast: 'Kahvaltı', lunch: 'Öğle', dinner: 'Akşam', snack: 'Ara öğün' })[result.meal_type]}</div>
           )}
+          {result.meal_type && result.holder?.diet_flags && (
+            <div style={{ fontSize: 16, fontWeight: 700, marginTop: 12, padding: '8px 16px', borderRadius: 10, background: 'rgba(0,0,0,0.25)', display: 'inline-block' }}>
+              ⚠ Diyet/Alerji: {result.holder.diet_flags}
+            </div>
+          )}
         </div>
       ) : (
         <div style={{ textAlign: 'center', opacity: 0.9 }}>

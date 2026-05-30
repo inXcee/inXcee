@@ -79,6 +79,47 @@ mealsRouter.delete('/log/:id', ...mgr, (req, res) => {
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
+// ── YM5 (Faz 4): Katılım / no-show raporu — vardiyalı vs gerçekten yiyen ──
+// Belirli gün+öğün için: hak sahibi (o gün vardiyada) personel ile meal_logs'u
+// karşılaştırır; okutmayan = no-show (israf/sayım metriği).
+mealsRouter.get('/attendance', ...view, (req, res) => {
+  try {
+    const date = req.query.date || new Date().toISOString().slice(0, 10)
+    const mealType = req.query.meal_type
+    if (mealType && !VALID_MEALS.includes(mealType)) {
+      return res.status(400).json({ error: 'Geçersiz meal_type' })
+    }
+    const db = getDB()
+    // O gün hak sahibi personel (vardiyada planlı/çalışmış)
+    const entitled = db.prepare(`
+      SELECT ss.staff_id, s.full_name, d.name AS dept_name
+      FROM shift_schedule ss
+      JOIN staff s ON s.id = ss.staff_id
+      LEFT JOIN departments d ON d.id = s.department_id
+      WHERE ss.work_date = ? AND ss.status IN ('scheduled','worked','overtime')
+    `).all(date)
+
+    // O gün (opsiyonel öğün filtresiyle) yemek almış staff id'leri
+    const ateRows = mealType
+      ? db.prepare('SELECT DISTINCT staff_id FROM meal_logs WHERE meal_date=? AND meal_type=?').all(date, mealType)
+      : db.prepare('SELECT DISTINCT staff_id FROM meal_logs WHERE meal_date=?').all(date)
+    const ateSet = new Set(ateRows.map(r => r.staff_id))
+
+    const noShow = entitled
+      .filter(e => !ateSet.has(e.staff_id))
+      .map(e => ({ staff_id: e.staff_id, full_name: e.full_name, dept_name: e.dept_name }))
+
+    res.json({
+      date,
+      meal_type: mealType || null,
+      scheduled: entitled.length,
+      ate: entitled.filter(e => ateSet.has(e.staff_id)).length,
+      no_show_count: noShow.length,
+      no_show: noShow,
+    })
+  } catch (e) { logger.error('[meals/attendance]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
 // ── YM3: Talep tahmini (yarın için kaç kişi yemek bekleniyor) ──
 mealsRouter.get('/forecast', ...view, (req, res) => {
   try {

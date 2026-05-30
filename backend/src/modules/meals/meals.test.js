@@ -112,6 +112,34 @@ describe('H7 Yetki + silme', () => {
   })
 })
 
+describe('Meals — devam/katılım raporu (Faz 4)', () => {
+  it('GET /attendance vardiyalı vs yiyen + no-show listesi döner', async () => {
+    const today = new Date().toISOString().slice(0, 10)
+    const db = getDB()
+    // İki vardiyalı personel: biri yedi, biri yemedi (no-show)
+    db.prepare('INSERT INTO staff(full_name,is_active) VALUES(?,1)').run('Att Yiyen')
+    db.prepare('INSERT INTO staff(full_name,is_active) VALUES(?,1)').run('Att NoShow')
+    const ate = db.prepare("SELECT id FROM staff WHERE full_name='Att Yiyen'").get().id
+    const noshow = db.prepare("SELECT id FROM staff WHERE full_name='Att NoShow'").get().id
+    const sched = db.prepare(`INSERT OR REPLACE INTO shift_schedule(staff_id,work_date,status) VALUES(?,?, 'scheduled')`)
+    sched.run(ate, today); sched.run(noshow, today)
+    db.prepare(`INSERT OR IGNORE INTO meal_logs(staff_id,meal_type,meal_date,method) VALUES(?, 'lunch', ?, 'manual')`).run(ate, today)
+
+    const r = await request(app).get(`/api/meals/attendance?date=${today}&meal_type=lunch`).set('Authorization', `Bearer ${token}`)
+    expect(r.status).toBe(200)
+    expect(r.body.scheduled).toBeGreaterThanOrEqual(2)
+    expect(r.body.ate).toBeGreaterThanOrEqual(1)
+    expect(Array.isArray(r.body.no_show)).toBe(true)
+    expect(r.body.no_show.some(x => x.staff_id === noshow)).toBe(true)
+    expect(r.body.no_show.some(x => x.staff_id === ate)).toBe(false)
+  })
+
+  it('geçersiz meal_type 400', async () => {
+    const r = await request(app).get('/api/meals/attendance?meal_type=brunch').set('Authorization', `Bearer ${token}`)
+    expect(r.status).toBe(400)
+  })
+})
+
 describe('Meals — menu', () => {
   it('PUT menu upsert + GET menu döner', async () => {
     const put = await request(app).put('/api/meals/menu')

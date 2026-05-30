@@ -6,6 +6,7 @@ import { upload, verifyMagicBytes } from '../../shared/uploads/middleware.js'
 import { logAudit } from '../../shared/audit.js'
 import { getDB } from '../../shared/db/index.js'
 import { logger } from '../../shared/logger.js'
+import { isEligible, logMealFromScan, mealTypeForNow, MEAL_TYPES } from '../meals/service.js'
 
 export const stationsRouter = Router()
 const mgr = requireRole('campus_manager')
@@ -20,6 +21,13 @@ const TYPE_MAP = {
   cafeteria: { event: 'meal',      expect: 'meal'   },
   transport: { event: 'transport', expect: 'access' },
   generic:   { event: 'generic',   expect: null     }, // her kartı kabul et
+}
+
+// Uygunluk reddi → okutma ekranında gösterilecek insan-okur mesaj
+const ELIG_MSG = {
+  duplicate: 'Bu öğün zaten alınmış',
+  on_leave: 'İzinli — yemek hakkı yok',
+  not_scheduled: 'Bugün vardiyada değil',
 }
 
 function genKey() {
@@ -164,11 +172,11 @@ stationsRouter.post('/scan', requireStation, upload.single('photo'), verifyMagic
       return res.json({ result: 'unknown_card', message: 'Tanımsız kart', station: station.name })
     }
 
-    // Sahip bilgisi (şimdilik staff)
-    let holder = { full_name: 'Bilinmiyor', department_name: null, photo_url: null }
+    // Sahip bilgisi (şimdilik staff) — diet_flags okutma ekranında uyarı için
+    let holder = { full_name: 'Bilinmiyor', department_name: null, photo_url: null, diet_flags: null }
     if (card.holder_type === 'staff') {
       holder = db.prepare(`
-        SELECT s.full_name, s.photo_url, d.name AS department_name
+        SELECT s.full_name, s.photo_url, s.diet_flags, d.name AS department_name
         FROM staff s LEFT JOIN departments d ON d.id = s.department_id WHERE s.id=?
       `).get(card.holder_id) || holder
     }
@@ -189,7 +197,28 @@ stationsRouter.post('/scan', requireStation, upload.single('photo'), verifyMagic
       })
     }
 
-    // Başarılı okutma — Faz 4: yemekhane uygunluk/sayım (meal_logs) burada genişler
+    // Faz 4 — Yemekhane: öğün hakkı (entitlement) kontrolü + meal_logs entegrasyonu.
+    // Yalnızca staff sahipli yemek kartlarına uygulanır (personnel/visitor kartları muaf).
+    if (station.station_type === 'cafeteria' && card.holder_type === 'staff') {
+      const mt = MEAL_TYPES.includes(mealType) ? mealType : mealTypeForNow()
+      const date = new Date().toISOString().slice(0, 10)
+      const elig = isEligible(db, card.holder_id, mt, date)
+      if (!elig.eligible) {
+        const result = elig.reason === 'duplicate' ? 'duplicate' : 'not_eligible'
+        const eventId = log(result, map.event, card.id, card.holder_type, card.holder_id)
+        logAudit(null, 'station_scan', 'stations', eventId, `cafeteria:${result}:${elig.reason}`)
+        return res.json({ result, reason_code: elig.reason, reason: ELIG_MSG[elig.reason], meal_type: mt, holder })
+      }
+      logMealFromScan(db, card.holder_id, mt, date)
+      const eventId = log('ok', map.event, card.id, card.holder_type, card.holder_id)
+      logAudit(null, 'station_scan', 'stations', eventId, `cafeteria:ok:${mt}`)
+      return res.json({
+        result: 'ok', event_type: map.event, meal_type: mt, holder,
+        photo_url: photoUrl, scanned_at: new Date().toISOString(),
+      })
+    }
+
+    // Başarılı okutma (giriş/çıkış/servis/genel)
     const eventId = log('ok', map.event, card.id, card.holder_type, card.holder_id)
     logAudit(null, 'station_scan', 'stations', eventId, `${station.station_type}:${card.card_type}`)
     res.json({

@@ -18,6 +18,9 @@ beforeAll(async () => {
   let s = db.prepare('SELECT id FROM staff LIMIT 1').get()
   if (!s) { db.prepare('INSERT INTO staff(full_name, is_active) VALUES(?,1)').run('İstasyon Test'); s = db.prepare('SELECT id FROM staff WHERE full_name=?').get('İstasyon Test') }
   staffId = s.id
+  // Faz 4: yemekhane uygunluğu için bu personeli bugün vardiyaya yaz (deterministik)
+  db.prepare(`INSERT OR REPLACE INTO shift_schedule(staff_id,work_date,status) VALUES(?,?, 'scheduled')`)
+    .run(staffId, new Date().toISOString().slice(0, 10))
 
   // Giriş + yemek kartı üret, NFC UID bağla
   const access = await request(app).post(`/api/cards/staff/${staffId}/issue`).set(auth(token)).send({ card_type: 'access', regenerate: true })
@@ -115,5 +118,78 @@ describe('stations — okutma (scan)', () => {
     expect(r.status).toBe(200)
     expect(r.body.length).toBeGreaterThan(0)
     expect(r.body[0]).toHaveProperty('station_name')
+  })
+})
+
+describe('stations — yemekhane uygunluğu (Faz 4)', () => {
+  const today = new Date().toISOString().slice(0, 10)
+  let eligId, noShiftId, leaveId
+  const eligUid = 'NFC-ELIG-001', noShiftUid = 'NFC-NOSHIFT-001', leaveUid = 'NFC-LEAVE-001'
+
+  beforeAll(async () => {
+    const db = getDB()
+    const mk = (name) => {
+      db.prepare('INSERT INTO staff(full_name,is_active) VALUES(?,1)').run(name)
+      return db.prepare('SELECT id FROM staff WHERE full_name=?').get(name).id
+    }
+    eligId = mk('Faz4 Uygun'); noShiftId = mk('Faz4 Vardiyasiz'); leaveId = mk('Faz4 Izinli')
+
+    const issueMeal = async (sid, uid) => {
+      const m = await request(app).post(`/api/cards/staff/${sid}/issue`).set(auth(token)).send({ card_type: 'meal', regenerate: true })
+      await request(app).patch(`/api/cards/${m.body.id}/bind-nfc`).set(auth(token)).send({ nfc_uid: uid })
+    }
+    await issueMeal(eligId, eligUid)
+    await issueMeal(noShiftId, noShiftUid)
+    await issueMeal(leaveId, leaveUid)
+
+    const sched = db.prepare(`INSERT OR REPLACE INTO shift_schedule(staff_id,work_date,status) VALUES(?,?,?)`)
+    sched.run(eligId, today, 'scheduled')       // bugün çalışıyor → hak var
+    sched.run(leaveId, today, 'on_leave')        // çizelgede izinli
+    // noShiftId: bugün hiç kayıt yok → planlı değil
+    db.prepare(`INSERT INTO leave_requests(staff_id,leave_type,start_date,end_date,total_days,status) VALUES(?,?,?,?,1,'approved')`)
+      .run(leaveId, 'annual', today, today)
+  })
+
+  it('vardiyalı personel yemek okutur → ok + meal_logs yazılır (method=qr)', async () => {
+    const r = await request(app).post('/api/stations/scan').set('X-Station-Key', cafeKey).send({ raw_uid: eligUid, meal_type: 'lunch' })
+    expect(r.body.result).toBe('ok')
+    expect(r.body.event_type).toBe('meal')
+    const ml = getDB().prepare('SELECT * FROM meal_logs WHERE staff_id=? AND meal_type=? AND meal_date=?').get(eligId, 'lunch', today)
+    expect(ml).toBeTruthy()
+    expect(ml.method).toBe('qr')
+  })
+
+  it('aynı personel aynı öğünü tekrar okutur → duplicate (ikinci kez meal_logs yazılmaz)', async () => {
+    const r = await request(app).post('/api/stations/scan').set('X-Station-Key', cafeKey).send({ raw_uid: eligUid, meal_type: 'lunch' })
+    expect(r.body.result).toBe('duplicate')
+    const cnt = getDB().prepare('SELECT COUNT(*) c FROM meal_logs WHERE staff_id=? AND meal_type=? AND meal_date=?').get(eligId, 'lunch', today).c
+    expect(cnt).toBe(1)
+  })
+
+  it('bugün vardiyada olmayan personel → not_eligible (not_scheduled)', async () => {
+    const r = await request(app).post('/api/stations/scan').set('X-Station-Key', cafeKey).send({ raw_uid: noShiftUid, meal_type: 'lunch' })
+    expect(r.body.result).toBe('not_eligible')
+    expect(r.body.reason_code).toBe('not_scheduled')
+    const ml = getDB().prepare('SELECT 1 FROM meal_logs WHERE staff_id=? AND meal_date=?').get(noShiftId, today)
+    expect(ml).toBeFalsy()
+  })
+
+  it('onaylı izinde olan personel → not_eligible (on_leave)', async () => {
+    const r = await request(app).post('/api/stations/scan').set('X-Station-Key', cafeKey).send({ raw_uid: leaveUid, meal_type: 'dinner' })
+    expect(r.body.result).toBe('not_eligible')
+    expect(r.body.reason_code).toBe('on_leave')
+  })
+
+  it('meal_type gönderilmezse saate göre türetir, yine de kaydeder', async () => {
+    // farklı personel/öğün çakışmasın diye yeni bir vardiyalı personel
+    const db = getDB()
+    db.prepare('INSERT INTO staff(full_name,is_active) VALUES(?,1)').run('Faz4 Saatlik')
+    const sid = db.prepare("SELECT id FROM staff WHERE full_name='Faz4 Saatlik'").get().id
+    const m = await request(app).post(`/api/cards/staff/${sid}/issue`).set(auth(token)).send({ card_type: 'meal', regenerate: true })
+    await request(app).patch(`/api/cards/${m.body.id}/bind-nfc`).set(auth(token)).send({ nfc_uid: 'NFC-AUTO-MEAL' })
+    db.prepare(`INSERT OR REPLACE INTO shift_schedule(staff_id,work_date,status) VALUES(?,?, 'scheduled')`).run(sid, today)
+    const r = await request(app).post('/api/stations/scan').set('X-Station-Key', cafeKey).send({ raw_uid: 'NFC-AUTO-MEAL' })
+    expect(r.body.result).toBe('ok')
+    expect(['breakfast', 'lunch', 'dinner', 'snack']).toContain(r.body.meal_type)
   })
 })
