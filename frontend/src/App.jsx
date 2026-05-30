@@ -60,6 +60,7 @@ const SettingsLayout = lazy(() => import('./modules/admin/SettingsLayout.jsx'))
 const KioskPinPage = lazy(() => import('./modules/admin/KioskPinPage.jsx'))
 const AnnouncementsPage = lazy(() => import('./modules/admin/AnnouncementsPage.jsx'))
 const AvsWorkersPage = lazy(() => import('./modules/admin/AvsWorkersPage.jsx'))
+const CardsPage = lazy(() => import('./modules/cards/CardsPage.jsx'))
 const FeedbackPage = lazy(() => import('./modules/admin/FeedbackPage.jsx'))
 const LaundryKioskPage = lazy(() => import('./modules/laundry-kiosk/LaundryKioskPage.jsx'))
 const AvsSelfServicePage = lazy(() => import('./modules/avs-self-service/AvsSelfServicePage.jsx'))
@@ -334,6 +335,7 @@ export default function App() {
             <Route path="kiosk-pins" element={<RoleRoute roles={['campus_manager']}><KioskPinPage /></RoleRoute>} />
             <Route path="announcements" element={<RoleRoute roles={['campus_manager']}><AnnouncementsPage /></RoleRoute>} />
             <Route path="avs-workers" element={<RoleRoute roles={['campus_manager']}><AvsWorkersPage /></RoleRoute>} />
+            <Route path="cards" element={<RoleRoute roles={['campus_manager','shift_supervisor']}><CardsPage /></RoleRoute>} />
             <Route path="settings" element={<RoleRoute roles={['campus_manager','shift_supervisor']}><SettingsLayout /></RoleRoute>}>
               <Route index element={<Navigate to="personnel" replace />} />
               <Route path="email" element={<RoleRoute roles={['campus_manager']}><SettingsPage /></RoleRoute>} />
@@ -341,6 +343,7 @@ export default function App() {
               <Route path="kiosk-pins" element={<RoleRoute roles={['campus_manager']}><KioskPinPage /></RoleRoute>} />
               <Route path="announcements" element={<RoleRoute roles={['campus_manager']}><AnnouncementsPage /></RoleRoute>} />
               <Route path="avs-workers" element={<RoleRoute roles={['campus_manager']}><AvsWorkersPage /></RoleRoute>} />
+              <Route path="cards" element={<RoleRoute roles={['campus_manager','shift_supervisor']}><CardsPage /></RoleRoute>} />
               <Route path="audit" element={<RoleRoute roles={['campus_manager']}><AuditPage /></RoleRoute>} />
               <Route path="error-log" element={<RoleRoute roles={['campus_manager']}><ErrorLogPage /></RoleRoute>} />
               <Route path="backup" element={<RoleRoute roles={['campus_manager']}><BackupPage /></RoleRoute>} />

@@ -39,6 +39,7 @@ export default function ManagerHome() {
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             <NavBtn label="🗺️ Blok Doluluk Haritası" onClick={() => navigate('heatmap')} />
+            <NavBtn label="🪪 Kartlar (Giriş / Yemek)" onClick={() => navigate('/cards')} />
             <NavBtn label="🔔 Tüm Bildirimler" onClick={() => navigate('notifications')} />
           </div>
         </>

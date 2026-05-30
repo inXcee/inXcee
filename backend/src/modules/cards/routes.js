@@ -172,6 +172,30 @@ cardsRouter.get('/:id/pdf', ...view, async (req, res) => {
   }
 })
 
+// ── Roster: aktif staff + her birinin aktif giriş/yemek kart durumu (admin liste) ──
+// Tek sorgu: holder başına amaç başına en fazla 1 aktif kart (idx_cards_one_active),
+// bu yüzden LEFT JOIN'ler fan-out yapmaz. Frontend bunu N+1 isteğe gerek kalmadan listeler.
+cardsRouter.get('/roster', ...view, (req, res) => {
+  try {
+    const q = String(req.query.q || '').trim()
+    const params = []
+    let where = 's.is_active = 1'
+    if (q) { where += ' AND s.full_name LIKE ?'; params.push(`%${q}%`) }
+    const rows = getDB().prepare(`
+      SELECT s.id, s.full_name, d.name AS department_name,
+        ac.id AS access_id, ac.code AS access_code, ac.nfc_uid AS access_nfc,
+        mc.id AS meal_id,   mc.code AS meal_code,   mc.nfc_uid AS meal_nfc
+      FROM staff s
+      LEFT JOIN departments d ON d.id = s.department_id
+      LEFT JOIN cards ac ON ac.holder_type='staff' AND ac.holder_id=s.id AND ac.card_type='access' AND ac.status='active'
+      LEFT JOIN cards mc ON mc.holder_type='staff' AND mc.holder_id=s.id AND mc.card_type='meal'   AND mc.status='active'
+      WHERE ${where}
+      ORDER BY s.full_name
+    `).all(...params)
+    res.json(rows)
+  } catch (e) { logger.error('[cards/roster]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
 // ── Kişinin kartlarını listele (en sona: 2-segment GET fallback) ──
 cardsRouter.get('/:holderType/:holderId', ...view, (req, res) => {
   try {

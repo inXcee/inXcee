@@ -39,6 +39,7 @@ const NAV_GROUPS = [
     label: 'YONETIM',
     links: [
       { to: '/inventory', icon: '\u25a8', label: 'Envanter', roles: ['campus_manager','shift_supervisor','laundry','housekeeper'] },
+      { to: '/cards', icon: '\ud83e\udeaa', label: 'Kartlar', roles: ['campus_manager','shift_supervisor'] },
       { to: '/kiosk', icon: '🖥️', label: 'Personel Kiosk', roles: ['campus_manager'], external: true },
       { to: '/laundry-kiosk', icon: '🧺', label: 'Camasir Kiosk', roles: ['campus_manager'], external: true },
       { to: '/avs-kiosk', icon: '👷', label: 'AVS Kiosk', roles: ['campus_manager'], external: true },

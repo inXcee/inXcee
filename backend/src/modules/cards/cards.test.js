@@ -87,6 +87,25 @@ describe('cards — kart üretimi (amaç bazında ayrı)', () => {
     expect(r2.body.generated).toBe(0)
   })
 
+  it('roster aktif staff + kart durumunu döner', async () => {
+    // staffId'ye giriş kartı ver, yemek kartını revoke et → roster access dolu, meal boş olmalı
+    await request(app).post(`/api/cards/staff/${staffId}/issue`).set(auth(token)).send({ card_type: 'access' })
+    const meal = await request(app).post(`/api/cards/staff/${staffId}/issue`).set(auth(token)).send({ card_type: 'meal', regenerate: true })
+    await request(app).patch(`/api/cards/${meal.body.id}/revoke`).set(auth(token)).send({})
+    const r = await request(app).get('/api/cards/roster').set(auth(token))
+    expect(r.status).toBe(200)
+    const row = r.body.find(x => x.id === staffId)
+    expect(row).toBeTruthy()
+    expect(row.access_code).toMatch(/^AVS-A:/)
+    expect(row.meal_id).toBeFalsy() // revoke sonrası aktif yemek kartı yok
+  })
+
+  it('roster ?q ile isme göre filtreler', async () => {
+    const r = await request(app).get('/api/cards/roster?q=__yokboyle__').set(auth(token))
+    expect(r.status).toBe(200)
+    expect(r.body).toEqual([])
+  })
+
   it('karta özel PDF döner', async () => {
     const issued = await request(app).post(`/api/cards/staff/${staffId}/issue`).set(auth(token)).send({ card_type: 'access' })
     const r = await request(app).get(`/api/cards/${issued.body.id}/pdf`).set(auth(token))
