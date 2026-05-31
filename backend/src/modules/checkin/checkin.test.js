@@ -184,4 +184,12 @@ describe('Placeholder batch', () => {
     expect(res.status).toBe(400)
     expect(res.body.error).toMatch(/1000/)
   })
+
+  it('set-shift geçersiz vardiya tipinde 400 (Zod)', async () => {
+    const res = await request(app)
+      .post('/api/checkin/set-shift')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ personnel_id: 1, shift_type: 'bogus' })
+    expect(res.status).toBe(400)
+  })
 })

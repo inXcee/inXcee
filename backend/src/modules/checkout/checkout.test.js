@@ -136,4 +136,12 @@ describe('Checkout Module', () => {
       .send({})
     expect(res.status).toBe(400)
   })
+
+  it('rejects invalid zimmet_actions action (Zod)', async () => {
+    const res = await request(app)
+      .post('/api/checkout/process')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ personnel_id: 1, zimmet_actions: [{ zimmet_id: 5, action: 'bogus' }] })
+    expect(res.status).toBe(400)
+  })
 })

@@ -7,7 +7,7 @@ import * as svc from './service.js'
 import { insertPlaceholderBatch } from './queries.js'
 import { logger } from '../../shared/logger.js'
 import { validate } from '../../shared/middleware/validate.js'
-import { registerSchema, zimmetSchema, placeholderBatchSchema } from './schemas.js'
+import { registerSchema, zimmetSchema, placeholderBatchSchema, assignRoomSchema, setShiftSchema, zimmetSignSchema, zimmetReturnSchema, zimmetReturnAllSchema } from './schemas.js'
 
 export const checkinRouter = Router()
 const allowed = requireRole('campus_manager', 'shift_supervisor')
@@ -49,10 +49,9 @@ checkinRouter.get('/available-rooms', ...allowed, (req, res) => {
   res.json(svc.getAvailableRoomsService(req.query.block || null))
 })
 
-checkinRouter.post('/assign-room', ...allowed, (req, res) => {
+checkinRouter.post('/assign-room', ...allowed, validate(assignRoomSchema), (req, res) => {
   try {
-    const { personnel_id, room_id } = req.body
-    if (!personnel_id || !room_id) return res.status(400).json({ error: 'Personel ve oda ID gerekli' })
+    const { personnel_id, room_id } = req.validated
     const bedNo = svc.assignRoomService(personnel_id, room_id, req.user.id)
     res.json({ bed_no: bedNo })
   } catch (e) { res.status(400).json({ error: e.message }) }
@@ -64,10 +63,8 @@ checkinRouter.post('/zimmet', ...allowed, validate(zimmetSchema), (req, res) => 
   res.status(201).json({ ok: true })
 })
 
-checkinRouter.post('/zimmet/sign', ...allowed, (req, res) => {
-  const { personnel_id, signature } = req.body
-  if (!personnel_id || !signature) return res.status(400).json({ error: 'Personel ID ve imza gerekli' })
-  if (!signature.startsWith('data:image/')) return res.status(400).json({ error: 'Geçersiz imza formatı' })
+checkinRouter.post('/zimmet/sign', ...allowed, validate(zimmetSignSchema), (req, res) => {
+  const { personnel_id, signature } = req.validated
   svc.signZimmetService(personnel_id, signature, req.user.id)
   res.json({ ok: true })
 })
@@ -99,9 +96,8 @@ checkinRouter.get('/job-suggestions', ...allowed, (req, res) => {
   res.json(svc.getJobSuggestionsService())
 })
 
-checkinRouter.post('/set-shift', ...allowed, (req, res) => {
-  const { personnel_id, shift_type } = req.body
-  if (!['day', 'night'].includes(shift_type)) return res.status(400).json({ error: 'Geçersiz vardiya tipi' })
+checkinRouter.post('/set-shift', ...allowed, validate(setShiftSchema), (req, res) => {
+  const { personnel_id, shift_type } = req.validated
   svc.setShiftService(personnel_id, shift_type)
   res.json({ ok: true })
 })
@@ -112,16 +108,14 @@ checkinRouter.get('/zimmet/:personnelId', ...allowed, (req, res) => {
   res.json(svc.getPersonnelZimmetService(+req.params.personnelId))
 })
 
-checkinRouter.post('/zimmet/return', ...allowed, (req, res) => {
-  const { zimmet_id, condition } = req.body
-  if (!zimmet_id) return res.status(400).json({ error: 'Zimmet ID gerekli' })
+checkinRouter.post('/zimmet/return', ...allowed, validate(zimmetReturnSchema), (req, res) => {
+  const { zimmet_id, condition } = req.validated
   svc.returnZimmetService(zimmet_id, condition)
   res.json({ ok: true })
 })
 
-checkinRouter.post('/zimmet/return-all', ...allowed, (req, res) => {
-  const { personnel_id, condition } = req.body
-  if (!personnel_id) return res.status(400).json({ error: 'Personel ID gerekli' })
+checkinRouter.post('/zimmet/return-all', ...allowed, validate(zimmetReturnAllSchema), (req, res) => {
+  const { personnel_id, condition } = req.validated
   svc.returnAllZimmetService(personnel_id, condition)
   res.json({ ok: true })
 })

@@ -28,3 +28,31 @@ export const placeholderBatchSchema = z.object({
   room_id: id,
   count: z.coerce.number().int().min(1).max(10),
 })
+
+// C1a: kalan mutation uçları (search/lookup lenient kalır — kasıtlı validate edilmedi).
+export const assignRoomSchema = z.object({
+  personnel_id: id,
+  room_id: id,
+})
+
+export const setShiftSchema = z.object({
+  personnel_id: id,
+  shift_type: z.enum(['day', 'night'], { error: 'Geçersiz vardiya tipi' }),
+})
+
+export const zimmetSignSchema = z.object({
+  personnel_id: id,
+  signature: z.string().regex(/^data:image\//, 'Geçersiz imza formatı'),
+})
+
+const condition = z.string().trim().optional().nullable()
+
+export const zimmetReturnSchema = z.object({
+  zimmet_id: id,
+  condition,
+})
+
+export const zimmetReturnAllSchema = z.object({
+  personnel_id: id,
+  condition,
+})

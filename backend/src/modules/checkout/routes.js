@@ -2,6 +2,8 @@ import { Router } from 'express'
 import { requireRole } from '../../shared/auth/middleware.js'
 import * as svc from './service.js'
 import { logger } from '../../shared/logger.js'
+import { validate } from '../../shared/middleware/validate.js'
+import { processSchema } from './schemas.js'
 
 export const checkoutRouter = Router()
 const mgmt = requireRole('campus_manager', 'shift_supervisor')
@@ -12,11 +14,10 @@ checkoutRouter.get('/preview/:personnelId', ...mgmt, (req, res) => {
   res.json(data)
 })
 
-checkoutRouter.post('/process', ...mgmt, (req, res) => {
+checkoutRouter.post('/process', ...mgmt, validate(processSchema), (req, res) => {
   try {
-    const { personnel_id, zimmet_actions } = req.body
-    if (!personnel_id) return res.status(400).json({ error: 'Personel ID gerekli' })
-    svc.processCheckoutService(personnel_id, zimmet_actions || [], req.user.id)
+    const { personnel_id, zimmet_actions } = req.validated
+    svc.processCheckoutService(personnel_id, zimmet_actions, req.user.id)
     res.json({ ok: true })
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
