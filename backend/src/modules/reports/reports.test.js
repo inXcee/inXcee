@@ -280,3 +280,22 @@ describe('H11 R4 — Staff builder', () => {
     expect(r.body.selected).toEqual(['full_name', 'phone', 'tc_no'])
   })
 })
+
+describe('Erişim hareketleri CSV export (Faz 10)', () => {
+  it('GET /api/reports/access-events.csv başlık + kayıt döner', async () => {
+    db.prepare("INSERT INTO personnel(full_name) VALUES('CSV Hareket Kisi')").run()
+    const pid = db.prepare("SELECT id FROM personnel WHERE full_name='CSV Hareket Kisi'").get().id
+    db.prepare(`INSERT INTO access_events(holder_type,holder_id,event_type,result,scanned_at)
+      VALUES('personnel',?,'entry','ok',datetime('now'))`).run(pid)
+    const res = await request(app).get('/api/reports/access-events.csv').set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(200)
+    expect(res.headers['content-type']).toContain('text/csv')
+    expect(res.text).toContain('CSV Hareket Kisi')
+    expect(res.text).toContain('Sonuç') // başlık satırı
+  })
+
+  it('yetkisiz 401', async () => {
+    const res = await request(app).get('/api/reports/access-events.csv')
+    expect(res.status).toBe(401)
+  })
+})

@@ -26,9 +26,25 @@ export default function PresencePage() {
   const noExit = anomalies?.no_exit ?? []
   const passback = anomalies?.passback ?? []
 
+  async function downloadCsv() {
+    const res = await api.get('/reports/access-events.csv', { responseType: 'blob' })
+    const url = URL.createObjectURL(res.data)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `erisim-hareketleri-${new Date().toISOString().slice(0, 10)}.csv`
+    document.body.appendChild(a); a.click(); a.remove()
+    URL.revokeObjectURL(url)
+  }
+
   return (
     <div style={{ padding: 24, maxWidth: 1100, margin: '0 auto' }}>
-      <h1 style={{ fontSize: 24, fontWeight: 800, marginBottom: 4 }}>Kampüs Mevcudiyeti</h1>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+        <h1 style={{ fontSize: 24, fontWeight: 800, marginBottom: 4 }}>Kampüs Mevcudiyeti</h1>
+        <button onClick={downloadCsv}
+          style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid #cbd5e1', background: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+          ⬇ Hareket CSV
+        </button>
+      </div>
       <p style={{ color: '#64748b', marginBottom: 20 }}>Son giriş/çıkış okutmalarından türetilir · 20 sn'de bir yenilenir</p>
 
       <div style={{ display: 'flex', gap: 16, marginBottom: 24, flexWrap: 'wrap' }}>
