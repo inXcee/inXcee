@@ -16,7 +16,8 @@ import { SecurityBand } from './components/sections/SecurityBand.jsx'
 import { LandingTicker } from './components/sections/LandingTicker.jsx'
 import { LandingFooter } from './components/sections/LandingFooter.jsx'
 import { useMotionPref } from './hooks/useMotionPref.js'
-import { LAT, LON, COMPASS, WMO, DEMO_USERS, KIOSKS, MODE_ORDER, MODE_TITLES, MODULES } from './loginData.js'
+import { useTranslation } from '../../shared/i18n/index.js'
+import { LAT, LON, DEMO_USERS, KIOSKS, MODE_ORDER, MODE_TITLES, MODULES } from './loginData.js'
 import './LoginPage.css'
 
 export default function LoginPage() {
@@ -46,6 +47,7 @@ export default function LoginPage() {
   const navigate = useNavigate()
   const modulesRef = useRef(null)
   const { motion, setMotion, rain, setRain, reduced } = useMotionPref()
+  const { t } = useTranslation()
 
   // ── Cooldown durumu (3 başarısız → 30sn kilit) ───────────────
   const cooldownLeft = Math.max(0, Math.ceil((cooldownUntil - nowTs) / 1000))
@@ -59,7 +61,7 @@ export default function LoginPage() {
       // verdi, oturumu sonlandıralım ki sayfayı yenileyince /me bu hesabı
       // restore etmesin. Logout best-effort; başarısızsa zarar yok.
       try { await api.post('/auth/logout') } catch { /* sessiz */ }
-      setError(`Bu sekme yönetici hesapları içindir (sizin rolünüz: ${user.role}). Lütfen "Personel" sekmesinden giriş yapın.`)
+      setError(`${t('login.card.role_prefix', 'Bu sekme yönetici hesapları içindir (sizin rolünüz: ')}${user.role}${t('login.card.role_suffix', '). Lütfen "Personel" sekmesinden giriş yapın.')}`)
       return
     }
     setFailCount(0)
@@ -71,8 +73,8 @@ export default function LoginPage() {
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (isLocked) return
-    setLoading(true); setError(''); setLoadingText('Kimlik doğrulanıyor')
-    const slow = setTimeout(() => setLoadingText('Sunucu uyandırılıyor…'), 4000)
+    setLoading(true); setError(''); setLoadingText(t('login.card.loading_auth', 'Kimlik doğrulanıyor'))
+    const slow = setTimeout(() => setLoadingText(t('login.card.loading_wake', 'Sunucu uyandırılıyor…')), 4000)
     try {
       const res = await api.post('/auth/login', { username, password }, { timeout: 8000 })
       if (res.data.require_2fa) {
@@ -83,21 +85,21 @@ export default function LoginPage() {
       await finishLogin(res.data.user)
     } catch (err) {
       if (err.response?.status === 401) {
-        setError('Kullanıcı adı veya şifre hatalı')
+        setError(t('login.card.err_credentials', 'Kullanıcı adı veya şifre hatalı'))
         const next = failCount + 1
         setFailCount(next)
         if (next >= 3) setCooldownUntil(Date.now() + 30_000)
       }
-      else if (err.response?.status === 429) setError(err.response?.data?.error || 'Çok fazla giriş denemesi. Lütfen birkaç dakika sonra tekrar deneyin.')
-      else if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) setError('Sunucu yanıtlamıyor — birkaç saniye bekleyip tekrar deneyin')
-      else if (!err.response) setError('Sunucuya ulaşılamıyor — bağlantınızı kontrol edin')
-      else setError('Bir hata oluştu, tekrar deneyin')
+      else if (err.response?.status === 429) setError(err.response?.data?.error || t('login.card.err_ratelimit', 'Çok fazla giriş denemesi. Lütfen birkaç dakika sonra tekrar deneyin.'))
+      else if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) setError(t('login.card.err_timeout', 'Sunucu yanıtlamıyor — birkaç saniye bekleyip tekrar deneyin'))
+      else if (!err.response) setError(t('login.card.err_network', 'Sunucuya ulaşılamıyor — bağlantınızı kontrol edin'))
+      else setError(t('login.card.err_generic', 'Bir hata oluştu, tekrar deneyin'))
     } finally { clearTimeout(slow); setLoading(false) }
   }
 
   const handle2fa = async (e) => {
     e.preventDefault()
-    setLoading(true); setError(''); setLoadingText('Kod doğrulanıyor')
+    setLoading(true); setError(''); setLoadingText(t('login.card.loading_2fa', 'Kod doğrulanıyor'))
     try {
       const res = await api.post('/auth/2fa/verify-login', { challenge_token: twoFA.challenge_token, code }, { timeout: 8000 })
       await finishLogin(res.data.user)
@@ -145,8 +147,8 @@ export default function LoginPage() {
         setWeather({
           temp: Math.round(c.temperature_2m),
           windKn: Math.round(c.wind_speed_10m),
-          windDir: COMPASS[Math.round(c.wind_direction_10m / 45) % 8],
-          desc: WMO[c.weather_code] || '—',
+          windDirIdx: Math.round(c.wind_direction_10m / 45) % 8,
+          descCode: c.weather_code,
           wave: wave != null ? (+wave).toFixed(1) : null,
         })
       } catch { /* sessiz */ }
@@ -173,13 +175,13 @@ export default function LoginPage() {
 
   // ── Ticker (hassas veri yok — sadece sistem / sayılar) ──────
   const tickerItems = []
-  tickerItems.push(['t', 'Sistem', 'çevrimiçi · TLS 1.3 · RBAC'])
+  tickerItems.push(['t', t('login.ticker.system', 'Sistem'), t('login.ticker.system_val', 'çevrimiçi · TLS 1.3 · RBAC')])
   if (stats) {
-    tickerItems.push([stats.open_faults > 0 ? 'w' : 'g', 'Açık arıza', `${stats.open_faults} kayıt`])
-    tickerItems.push(['g', 'Departman', `${stats.departments} aktif`])
+    tickerItems.push([stats.open_faults > 0 ? 'w' : 'g', t('login.ticker.faults', 'Açık arıza'), `${stats.open_faults} ${t('login.ticker.faults_unit', 'kayıt')}`])
+    tickerItems.push(['g', t('login.ticker.dept', 'Departman'), `${stats.departments} ${t('login.ticker.dept_unit', 'aktif')}`])
   }
-  tickerItems.push(['b', 'Gece yedeği', '03:00 · /var/data/backups'])
-  tickerItems.push(['t', 'KampüsERP', 'v5.0 · 814 yatak · 19 blok'])
+  tickerItems.push(['b', t('login.ticker.backup', 'Gece yedeği'), t('login.ticker.backup_val', '03:00 · /var/data/backups')])
+  tickerItems.push(['t', t('login.ticker.erp', 'KampüsERP'), t('login.ticker.erp_val', 'v5.0 · 814 yatak · 19 blok')])
   // LandingTicker içeride ikiye katlar — burada ham liste yeterli.
 
   const isForm = mode !== 'kiosk'
@@ -219,22 +221,22 @@ export default function LoginPage() {
             <div className="nm" title="Doluluk oranı">
               <span className="nm-ico" aria-hidden="true">📊</span>
               <span className="nm-val">{stats ? `%${stats.occupancy_pct}` : '—'}</span>
-              <span className="nm-lbl">Doluluk</span>
+              <span className="nm-lbl">{t('login.nav.occupancy', 'Doluluk')}</span>
             </div>
             <div className="nm" title="Dolu / toplam yatak">
               <span className="nm-ico" aria-hidden="true">🛏️</span>
               <span className="nm-val">{stats ? `${stats.beds_occupied}/${stats.beds_total}` : '—'}</span>
-              <span className="nm-lbl">Yatak</span>
+              <span className="nm-lbl">{t('login.nav.beds', 'Yatak')}</span>
             </div>
             <div className={`nm ${stats?.open_faults > 0 ? 'warn' : ''}`} title="Açık arıza sayısı">
               <span className="nm-ico" aria-hidden="true">🔧</span>
               <span className="nm-val">{stats?.open_faults ?? '—'}</span>
-              <span className="nm-lbl">Arıza</span>
+              <span className="nm-lbl">{t('login.nav.faults', 'Arıza')}</span>
             </div>
             <div className="nm" title="Aktif personel">
               <span className="nm-ico" aria-hidden="true">👥</span>
               <span className="nm-val">{stats?.active_staff ?? '—'}</span>
-              <span className="nm-lbl">Personel</span>
+              <span className="nm-lbl">{t('login.nav.staff', 'Personel')}</span>
             </div>
 
             <div className="nm-chip-wrap" ref={modulesRef}>
@@ -245,15 +247,15 @@ export default function LoginPage() {
                 aria-expanded={modulesOpen}
                 aria-haspopup="menu"
               >
-                <span>10 modül</span>
+                <span>{t('login.nav.modules', '10 modül')}</span>
                 <span className="nm-chev" aria-hidden="true">{modulesOpen ? '▴' : '▾'}</span>
               </button>
               {modulesOpen && (
                 <div className="nm-pop" role="menu">
                   {MODULES.map((m) => (
-                    <div className="nm-pop-item" key={m.name} role="menuitem">
+                    <div className="nm-pop-item" key={m.k} role="menuitem">
                       <span className="nm-pop-ico" aria-hidden="true">{m.icon}</span>
-                      <span>{m.name}</span>
+                      <span>{t(`login.modules.${m.k}.name`, m.name)}</span>
                     </div>
                   ))}
                 </div>
@@ -262,15 +264,15 @@ export default function LoginPage() {
           </div>
 
           <nav className="nav-sections" aria-label="Bölümler">
-            <a href="#modules">Modüller</a>
-            <a href="#stats">Sayılarla</a>
-            <a href="#heat">Bloklar</a>
-            <a href="#env">Filyos</a>
-            <a href="#sec">Güvenlik</a>
+            <a href="#modules">{t('login.nav.sec_modules', 'Modüller')}</a>
+            <a href="#stats">{t('login.nav.sec_stats', 'Sayılarla')}</a>
+            <a href="#heat">{t('login.nav.sec_blocks', 'Bloklar')}</a>
+            <a href="#env">{t('login.nav.sec_filyos', 'Filyos')}</a>
+            <a href="#sec">{t('login.nav.sec_security', 'Güvenlik')}</a>
           </nav>
 
           <div className="nav-meta">
-            <div className="meta"><div className="dot" /><span>ONLINE</span></div>
+            <div className="meta"><div className="dot" /><span>{t('login.nav.online', 'ONLINE')}</span></div>
             <div className="meta">🕐 {clock}</div>
           </div>
         </nav>
@@ -287,13 +289,13 @@ export default function LoginPage() {
         >
           <div className="lp-wrap hero-grid">
             <div className="hero-copy">
-              <span className="eyebrow"><span className="fl" />AVS Kamp Alanı · Filyos · Zonguldak</span>
-              <h1>814 yatak, 19 blok,<br /><span>tek operasyon merkezi.</span></h1>
-              <p>Konaklama, bakım, çamaşırhane ve personel operasyonunu tek panelden yönetin. 7/24 canlı.</p>
+              <span className="eyebrow"><span className="fl" />{t('login.hero.eyebrow', 'AVS Kamp Alanı · Filyos · Zonguldak')}</span>
+              <h1>{t('login.hero.title1', '814 yatak, 19 blok,')}<br /><span>{t('login.hero.title2', 'tek operasyon merkezi.')}</span></h1>
+              <p>{t('login.hero.sub', 'Konaklama, bakım, çamaşırhane ve personel operasyonunu tek panelden yönetin. 7/24 canlı.')}</p>
               <div className="chips">
-                <span className="chip"><b>10</b> entegre modül</span>
-                <span className="chip"><b>RBAC</b> + 2FA</span>
-                <span className="chip"><b>Canlı</b> Filyos hava/deniz</span>
+                <span className="chip">{t('login.hero.chip1', '10 entegre modül')}</span>
+                <span className="chip">{t('login.hero.chip2', 'RBAC + 2FA')}</span>
+                <span className="chip">{t('login.hero.chip3', 'Canlı Filyos hava/deniz')}</span>
               </div>
             </div>
             <LoginCard

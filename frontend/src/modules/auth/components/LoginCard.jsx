@@ -54,16 +54,17 @@ function TwoFactorInput({ value, onChange, shake, disabled }) {
 // Demo kullanıcılar paneli — yalnızca DEV ortamında render edilir
 function DemoPanel({ demoUsers, onPickDemo }) {
   const [open, setOpen] = useState(false)
+  const { t } = useTranslation()
   return (
     <div className="demo">
       <button type="button" className="demo-toggle" onClick={() => setOpen(o => !o)}>
-        <span>{open ? '▾' : '▸'} DEMO KULLANICILAR</span><span>geliştirme</span>
+        <span>{open ? '▾' : '▸'} {t('login.card.demo_toggle', 'DEMO KULLANICILAR')}</span><span>{t('login.card.demo_env', 'geliştirme')}</span>
       </button>
       {open && (
         <div className="demo-list">
           {demoUsers.map(u => (
             <button key={u.username} type="button" className="demo-item" onClick={() => onPickDemo(u)}>
-              <span><span className="u">{u.username}</span> <span className="r">{u.role}</span></span>
+              <span><span className="u">{u.username}</span> <span className="r">{t(`login.roles.${u.username}`, u.role)}</span></span>
               <span className="r">{u.password}</span>
             </button>
           ))}
@@ -88,15 +89,17 @@ export function LoginCard({
   onSubmit, twoFA, code, setCode, shake, onVerify2fa, onCancel2fa,
   onForgot, kiosks, onKioskNav, demoUsers, onPickDemo, isDev,
 }) {
-  const { locale } = useTranslation()
-  const [mTitle, mSub] = modeTitles[mode] || modeTitles.standard
+  const { t, locale } = useTranslation()
+  const [mTitleFb, mSubFb] = modeTitles[mode] || modeTitles.standard
+  const mTitle = t(`login.card.${mode}_title`, mTitleFb)
+  const mSub = t(`login.card.${mode}_sub`, mSubFb)
 
   return (
     <aside className="login">
       <div className="card">
         {/* Dil seçici */}
         <div className="ctop">
-          <div className="lang" role="group" aria-label="Dil">
+          <div className="lang" role="group" aria-label={t('login.card.lang', 'Dil')}>
             {['tr', 'en', 'ar'].map(l => (
               <button
                 key={l}
@@ -121,7 +124,7 @@ export function LoginCard({
               className={`mode ${mode === k ? 'on' : ''}`}
               onClick={() => onModeChange(k)}
             >
-              <span className="mode-ico">{ic}</span><span>{lb}</span>
+              <span className="mode-ico">{ic}</span><span>{t(`login.card.mode_${k}`, lb)}</span>
             </button>
           ))}
         </div>
@@ -130,12 +133,12 @@ export function LoginCard({
           twoFA ? (
             <form className="body" onSubmit={onVerify2fa}>
               <div className="head">
-                <div className="title">İki Faktörlü Doğrulama</div>
-                <div className="sub">Authenticator uygulamasındaki <strong>6 haneli kodu</strong> girin.</div>
+                <div className="title">{t('login.card.tfa_title', 'İki Faktörlü Doğrulama')}</div>
+                <ModeSub html={t('login.card.tfa_sub', 'Authenticator uygulamasındaki <b>6 haneli kodu</b> girin.')} />
               </div>
               <div className="field">
                 <label className="label" id="lp-2fa-label">
-                  <span>Doğrulama Kodu</span><span className="hint">TOTP · Google / Authy</span>
+                  <span>{t('login.card.tfa_label', 'Doğrulama Kodu')}</span><span className="hint">{t('login.card.tfa_hint', 'TOTP · Google / Authy')}</span>
                 </label>
                 <TwoFactorInput value={code} onChange={setCode} shake={shake} disabled={loading} />
               </div>
@@ -148,9 +151,9 @@ export function LoginCard({
                 disabled={loading || code.length !== 6}
                 style={{ marginTop: 6 }}
               >
-                {loading ? 'DOĞRULANIYOR…' : 'Doğrula →'}
+                {loading ? t('login.card.tfa_verifying', 'DOĞRULANIYOR…') : t('login.card.tfa_verify', 'Doğrula →')}
               </button>
-              <button className="btn-ghost" type="button" onClick={onCancel2fa}>İptal</button>
+              <button className="btn-ghost" type="button" onClick={onCancel2fa}>{t('login.card.cancel', 'İptal')}</button>
             </form>
           ) : (
             <form className="body" onSubmit={onSubmit}>
@@ -160,7 +163,7 @@ export function LoginCard({
               </div>
               <div className="field">
                 <label className="label" htmlFor="lp-username">
-                  <span>Kullanıcı Adı</span><span className="hint">SİCİL / TC / E-POSTA</span>
+                  <span>{t('login.card.username', 'Kullanıcı Adı')}</span><span className="hint">{t('login.card.username_hint', 'SİCİL / TC / E-POSTA')}</span>
                 </label>
                 <div className="wrap">
                   <span className="ico" aria-hidden="true">👤</span>
@@ -172,7 +175,7 @@ export function LoginCard({
                     onChange={e => setUsername(e.target.value)}
                     autoFocus
                     autoComplete="username"
-                    placeholder="örn. selam.aydin"
+                    placeholder={t('login.card.username_ph', 'örn. selam.aydin')}
                     required
                     aria-invalid={!!error}
                     aria-describedby={error ? 'lp-login-err' : undefined}
@@ -182,9 +185,9 @@ export function LoginCard({
               </div>
               <div className="field">
                 <label className="label" htmlFor="lp-password">
-                  <span>Şifre</span>
+                  <span>{t('login.card.password', 'Şifre')}</span>
                   <span className={`hint ${capsLock ? 'warn' : ''}`} aria-live="polite">
-                    {capsLock ? '⇪ CAPS-LOCK AÇIK' : 'CAPS-LOCK KAPALI'}
+                    {capsLock ? t('login.card.caps_on', '⇪ CAPS-LOCK AÇIK') : t('login.card.caps_off', 'CAPS-LOCK KAPALI')}
                   </span>
                 </label>
                 <div className="wrap">
@@ -209,7 +212,7 @@ export function LoginCard({
                     type="button"
                     onClick={() => setShowPw(s => !s)}
                     aria-pressed={showPw}
-                    aria-label={showPw ? 'Şifreyi gizle' : 'Şifreyi göster'}
+                    aria-label={showPw ? t('login.card.hide_pw', 'Şifreyi gizle') : t('login.card.show_pw', 'Şifreyi göster')}
                   >
                     {showPw ? '🙈' : '👁️'}
                   </button>
@@ -217,16 +220,16 @@ export function LoginCard({
               </div>
               <div className="row">
                 <span className="row-pad" />
-                <button type="button" className="forgot" onClick={onForgot}>Şifremi unuttum</button>
+                <button type="button" className="forgot" onClick={onForgot}>{t('login.card.forgot', 'Şifremi unuttum')}</button>
               </div>
               <button className="btn" type="submit" disabled={loading || isLocked}>
-                {loading ? 'GİRİŞ YAPILIYOR…' : isLocked ? `${cooldownLeft} sn bekleyin` : 'Sisteme Giriş Yap →'}
+                {loading ? t('login.card.submitting', 'GİRİŞ YAPILIYOR…') : isLocked ? `${cooldownLeft} ${t('login.card.wait', 'sn bekleyin')}` : t('login.card.submit', 'Sisteme Giriş Yap →')}
               </button>
               {error && (
                 <div id="lp-login-err" className="alert" role="alert">
                   ⚠️ <span>{error}</span>
                   {isLocked && (
-                    <span className="alert-sub"> · Çok fazla başarısız deneme — {cooldownLeft} sn sonra tekrar deneyin.</span>
+                    <span className="alert-sub"> · {t('login.card.cooldown_sub', 'Çok fazla başarısız deneme')} — {cooldownLeft}s</span>
                   )}
                 </div>
               )}
@@ -238,14 +241,14 @@ export function LoginCard({
           )
         ) : (
           <div className="body">
-            <div className="kiosk-head">Login gerektirmez — doğrudan PIN/QR ekranı</div>
+            <div className="kiosk-head">{t('login.card.kiosk_head', 'Login gerektirmez — doğrudan PIN/QR ekranı')}</div>
             <div className="sec-grid">
               {kiosks.map(k => (
                 <button key={k.path} type="button" className="sec" onClick={() => onKioskNav(k.path)}>
                   <span style={{ fontSize: 20 }}>{k.icon}</span>
                   <span>
-                    <span style={{ display: 'block', fontWeight: 600 }}>{k.label}</span>
-                    <span style={{ fontSize: 11, color: 'var(--muted)' }}>{k.desc}</span>
+                    <span style={{ display: 'block', fontWeight: 600 }}>{t(`login.kiosks.${k.k}_label`, k.label)}</span>
+                    <span style={{ fontSize: 11, color: 'var(--muted)' }}>{t(`login.kiosks.${k.k}_desc`, k.desc)}</span>
                   </span>
                   <span className="arr">→</span>
                 </button>

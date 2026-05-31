@@ -16,10 +16,11 @@ export const DEMO_USERS = [
   { username: 'meydanci', password: 'admin123', role: 'Meydancı' },
 ]
 
+// k → i18n anahtarı (login.kiosks.<k>_label / _desc); label/desc TR fallback olarak kalır.
 export const KIOSKS = [
-  { path: '/avs-kiosk',     icon: '🧹', label: 'AVS Personel', desc: 'İsim + PIN ile giriş' },
-  { path: '/laundry-kiosk', icon: '🧺', label: 'Çamaşırhane',  desc: 'Torba & teslim işlemleri' },
-  { path: '/kiosk',         icon: '🛏️', label: 'Sakin Self-Servis', desc: 'Oda & talep işlemleri' },
+  { path: '/avs-kiosk',     icon: '🧹', k: 'avs',      label: 'AVS Personel', desc: 'İsim + PIN ile giriş' },
+  { path: '/laundry-kiosk', icon: '🧺', k: 'laundry',  label: 'Çamaşırhane',  desc: 'Torba & teslim işlemleri' },
+  { path: '/kiosk',         icon: '🛏️', k: 'resident', label: 'Sakin Self-Servis', desc: 'Oda & talep işlemleri' },
 ]
 
 export const MODE_ORDER = [
@@ -35,28 +36,29 @@ export const MODE_TITLES = {
   security: ['Güvenlik Girişi', 'Kapı kontrol & ziyaretçi yönetimi · <b>Vardiya bazlı</b>'],
 }
 
+// k → i18n anahtarı (login.modules.<k>.name/.spec); name/spec TR fallback.
 export const MODULES = [
-  { icon: '🛏️', name: 'Oda & Yatak', spec: '814 yatak · 19 blok' },
-  { icon: '📋', name: 'Check-in/out', spec: 'giriş/çıkış akışı' },
-  { icon: '🔧', name: 'Arıza & Bakım', spec: 'SLA takipli' },
-  { icon: '📦', name: 'Zimmet', spec: 'dijital imza' },
-  { icon: '⚖️', name: 'Disiplin', spec: 'kayıt & uyarı' },
-  { icon: '📅', name: 'Vardiya', spec: 'puantaj entegre' },
-  { icon: '🍽️', name: 'Yemekhane', spec: 'menü & sayım' },
-  { icon: '🧺', name: 'Çamaşırhane', spec: 'kiosk akışı' },
-  { icon: '🚪', name: 'Ziyaretçi', spec: 'kapı kontrol' },
-  { icon: '📈', name: 'Raporlama', spec: 'günlük özet' },
+  { icon: '🛏️', k: 'room',       name: 'Oda & Yatak', spec: '814 yatak · 19 blok' },
+  { icon: '📋', k: 'checkinout', name: 'Check-in/out', spec: 'giriş/çıkış akışı' },
+  { icon: '🔧', k: 'fault',      name: 'Arıza & Bakım', spec: 'SLA takipli' },
+  { icon: '📦', k: 'custody',    name: 'Zimmet', spec: 'dijital imza' },
+  { icon: '⚖️', k: 'discipline', name: 'Disiplin', spec: 'kayıt & uyarı' },
+  { icon: '📅', k: 'shift',      name: 'Vardiya', spec: 'puantaj entegre' },
+  { icon: '🍽️', k: 'cafeteria',  name: 'Yemekhane', spec: 'menü & sayım' },
+  { icon: '🧺', k: 'laundry',    name: 'Çamaşırhane', spec: 'kiosk akışı' },
+  { icon: '🚪', k: 'visitor',    name: 'Ziyaretçi', spec: 'kapı kontrol' },
+  { icon: '📈', k: 'reporting',  name: 'Raporlama', spec: 'günlük özet' },
 ]
 
 export const PILLARS = [
-  { icon: '🛏️', title: 'Konaklama & Operasyon', desc: 'Oda/yatak atama, check-in/out, ziyaretçi ve disiplin akışları — gerçek zamanlı doluluk.' },
-  { icon: '🔧', title: 'Tesis & Bakım', desc: 'Arıza takibi, bakım planı, zimmet ve çamaşırhane lojistiği tek panelde.' },
-  { icon: '👥', title: 'Personel & İK', desc: 'Vardiya, puantaj, yemekhane ve raporlama — KVKK uyumlu, rol bazlı erişim.' },
+  { icon: '🛏️', k: 'p1', title: 'Konaklama & Operasyon', desc: 'Oda/yatak atama, check-in/out, ziyaretçi ve disiplin akışları — gerçek zamanlı doluluk.' },
+  { icon: '🔧', k: 'p2', title: 'Tesis & Bakım', desc: 'Arıza takibi, bakım planı, zimmet ve çamaşırhane lojistiği tek panelde.' },
+  { icon: '👥', k: 'p3', title: 'Personel & İK', desc: 'Vardiya, puantaj, yemekhane ve raporlama — KVKK uyumlu, rol bazlı erişim.' },
 ]
 
 export const SECURITY = [
-  { icon: '🔒', title: 'TLS 1.3', desc: 'uçtan uca şifreli' },
-  { icon: '🛡️', title: 'RBAC + 2FA', desc: 'rol bazlı + TOTP' },
-  { icon: '💾', title: 'Gece yedeği', desc: 'her gün 03:00' },
-  { icon: '⚡', title: '%99.9 uptime', desc: 'KampüsERP v5.0' },
+  { icon: '🔒', k: 'tls',    title: 'TLS 1.3', desc: 'uçtan uca şifreli' },
+  { icon: '🛡️', k: 'rbac',   title: 'RBAC + 2FA', desc: 'rol bazlı + TOTP' },
+  { icon: '💾', k: 'backup', title: 'Gece yedeği', desc: 'her gün 03:00' },
+  { icon: '⚡', k: 'uptime', title: '%99.9 uptime', desc: 'KampüsERP v5.0' },
 ]

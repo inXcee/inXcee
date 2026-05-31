@@ -1,8 +1,10 @@
 import { useEffect, useRef } from 'react'
+import { useTranslation } from '../../../shared/i18n/index.js'
 
 // Video hero + yağmur canvas + hareket HUD. Tüm tercih dışarıdan (useMotionPref) prop gelir.
 export function HeroScene({ posterSrc, videoSrc, motion, setMotion, rain, setRain, reduced, children }) {
   const videoRef = useRef(null), canvasRef = useRef(null)
+  const { t } = useTranslation()
 
   // video hız: calm→duraklat, slow→0.5x, normal→1x
   useEffect(() => {
@@ -38,11 +40,11 @@ export function HeroScene({ posterSrc, videoSrc, motion, setMotion, rain, setRai
       <div className="hud">
         <div className="seg" role="group" aria-label="Hareket">
           {[['calm', 'Sakin'], ['slow', 'Yavaş'], ['normal', 'Normal']].map(([k, lb]) => (
-            <button key={k} type="button" className={motion === k ? 'on' : ''} onClick={() => setMotion(k)}>{lb}</button>
+            <button key={k} type="button" className={motion === k ? 'on' : ''} onClick={() => setMotion(k)}>{t(`login.hud.${k}`, lb)}</button>
           ))}
         </div>
         <button type="button" className={`toggle ${rain ? '' : 'off'}`} onClick={() => setRain(!rain)} aria-pressed={rain}>
-          <span>🌧️ Yağmur</span><span className="sw" />
+          <span>{t('login.hud.rain', '🌧️ Yağmur')}</span><span className="sw" />
         </button>
       </div>
       {children}

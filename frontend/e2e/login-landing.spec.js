@@ -86,17 +86,31 @@ test.describe('login landing — sinematik redesign kabul turu', () => {
     await expect(rain).not.toHaveAttribute('aria-pressed', before ?? '')
   })
 
-  test('dil seçici TR/EN/AR + AR ile RTL', async ({ page }) => {
+  test('dil seçici TR/EN/AR + AR ile RTL + gerçek metin çevrilir', async ({ page }) => {
     await page.goto('/login')
     const lang = page.locator('.card .lang')
+    const submit = page.locator('.card .btn').first()
+    const hero = page.locator('.hero-copy h1')
+
+    // Başlangıç TR
+    await expect(submit).toHaveText(/Sisteme Giriş Yap/)
+
+    // EN → buton state + GERÇEK metin İngilizce + LTR
     await lang.getByRole('button', { name: 'EN' }).click()
     await expect(lang.getByRole('button', { name: 'EN' })).toHaveAttribute('aria-pressed', 'true')
-    // AR → html dir=rtl
+    await expect(submit).toHaveText(/Sign In/)
+    await expect(hero).toContainText('814 beds')
+    await expect(page.locator('html')).toHaveAttribute('dir', 'ltr')
+
+    // AR → html dir=rtl + metin Arapça
     await lang.getByRole('button', { name: 'AR' }).click()
     await expect(page.locator('html')).toHaveAttribute('dir', 'rtl')
-    // TR'ye dönünce LTR
+    await expect(submit).toContainText('تسجيل الدخول')
+
+    // TR'ye dönünce LTR + Türkçe geri
     await lang.getByRole('button', { name: 'TR' }).click()
     await expect(page.locator('html')).toHaveAttribute('dir', 'ltr')
+    await expect(submit).toHaveText(/Sisteme Giriş Yap/)
   })
 
   // Not: Gerçek giriş akışı (mudur → dashboard, /login = yeni landing) auth.spec.js'te
