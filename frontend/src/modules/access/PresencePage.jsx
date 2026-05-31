@@ -1,14 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
-
-const HOLDER_LABEL = { staff: 'Personel', personnel: 'İşçi', visitor: 'Ziyaretçi' }
-
-function fmt(ts) {
-  if (!ts) return '—'
-  const d = new Date(ts.replace(' ', 'T'))
-  return isNaN(d) ? ts : d.toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
-}
+import { exportRowsToXlsx } from '../../shared/utils/exportData.js'
+import { HOLDER_LABEL, fmtTs, PRESENCE_EXPORT_COLS, presenceFilename } from './presenceExport.js'
 
 export default function PresencePage() {
   const { data: presence, isLoading } = useQuery({
@@ -40,10 +34,17 @@ export default function PresencePage() {
     <div style={{ padding: 24, maxWidth: 1100, margin: '0 auto' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
         <h1 style={{ fontSize: 24, fontWeight: 800, marginBottom: 4 }}>Kampüs Mevcudiyeti</h1>
-        <button onClick={downloadCsv}
-          style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid #cbd5e1', background: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-          ⬇ Hareket CSV
-        </button>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button onClick={() => exportRowsToXlsx(PRESENCE_EXPORT_COLS, onCampus, presenceFilename('xlsx'), 'İçeridekiler')}
+            disabled={onCampus.length === 0}
+            style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid #cbd5e1', background: '#fff', fontSize: 13, fontWeight: 600, cursor: onCampus.length === 0 ? 'not-allowed' : 'pointer', opacity: onCampus.length === 0 ? 0.5 : 1 }}>
+            ⬇ İçeridekiler Excel
+          </button>
+          <button onClick={downloadCsv}
+            style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid #cbd5e1', background: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+            ⬇ Hareket CSV
+          </button>
+        </div>
       </div>
       <p style={{ color: '#64748b', marginBottom: 20 }}>Son giriş/çıkış okutmalarından türetilir · 20 sn'de bir yenilenir</p>
 
@@ -59,12 +60,12 @@ export default function PresencePage() {
           {noExit.map(a => (
             <AnomalyRow key={`ne-${a.holder_type}-${a.holder_id}`} color="#b45309"
               text={`${a.full_name || 'Bilinmiyor'} (${HOLDER_LABEL[a.holder_type] || a.holder_type}) — ${a.hours_inside} saattir çıkış yapmadı`}
-              sub={`Giriş: ${fmt(a.since)}`} />
+              sub={`Giriş: ${fmtTs(a.since)}`} />
           ))}
           {passback.map(a => (
             <AnomalyRow key={`pb-${a.holder_type}-${a.holder_id}`} color="#dc2626"
               text={`${a.full_name || 'Bilinmiyor'} (${HOLDER_LABEL[a.holder_type] || a.holder_type}) — art arda "${a.last_dir === 'entry' ? 'giriş' : 'çıkış'}" (passback)`}
-              sub={`Son: ${fmt(a.since)}`} />
+              sub={`Son: ${fmtTs(a.since)}`} />
           ))}
         </div>
       )}
@@ -84,7 +85,7 @@ export default function PresencePage() {
               <tr key={`${p.holder_type}-${p.holder_id}`} style={{ borderTop: '1px solid #e2e8f0' }}>
                 <td style={td}>{p.full_name || 'Bilinmiyor'}</td>
                 <td style={td}>{HOLDER_LABEL[p.holder_type] || p.holder_type}</td>
-                <td style={td}>{fmt(p.since)}</td>
+                <td style={td}>{fmtTs(p.since)}</td>
               </tr>
             ))}
           </tbody>
