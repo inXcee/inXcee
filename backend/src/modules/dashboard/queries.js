@@ -1,5 +1,6 @@
 import { getDB } from '../../shared/db/index.js'
 import { memoize } from '../../shared/middleware/memo.js'
+import { getOverdueInside } from '../access/service.js'
 
 function _getKPI() {
   const db = getDB()
@@ -314,6 +315,33 @@ function _getAnomalies() {
       title: 'Doluluk hızla düşüyor',
       detail: `Bugün ${occRow.today_out} çıkış (7 gün ort. ${occRow.avg_out.toFixed(1)})`,
       action_path: '/checkin',
+    })
+  }
+
+  // R5 (Faz 6.2): Bugün kara liste alarmı — istasyonda kara listeli kart okutuldu
+  const alarmRow = db.prepare(`
+    SELECT COUNT(*) AS c FROM access_events
+    WHERE result='alarm' AND DATE(scanned_at) = DATE('now')
+  `).get()
+  if (alarmRow.c > 0) {
+    anomalies.push({
+      id: 'access-blacklist-today',
+      severity: 'critical',
+      title: 'Kara listedeki kişi okutma yaptı',
+      detail: `Bugün ${alarmRow.c} alarm — istasyonda kara listeli kart okutuldu`,
+      action_path: '/presence',
+    })
+  }
+
+  // R6 (Faz 6.2): Çıkış yapmadan uzun süre içeride kalanlar (16+ saat)
+  const overdue = getOverdueInside(db, 16)
+  if (overdue.length > 0) {
+    anomalies.push({
+      id: 'access-overdue-inside',
+      severity: 'warning',
+      title: 'Çıkış yapmadan uzun süre içeride',
+      detail: `${overdue.length} kişi 16+ saattir çıkış yapmadı`,
+      action_path: '/presence',
     })
   }
 
