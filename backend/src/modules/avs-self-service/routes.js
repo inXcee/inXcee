@@ -11,8 +11,40 @@ import { checkoutToStaff, getStaffCheckouts } from '../inventory/service.js'
 import { departmentToInventoryCategory, getKioskSystemUserId } from './inventory-helpers.js'
 import { isPushConfigured, getVapidPublicKey, saveWorkerSubscription, deleteWorkerSubscription } from '../../shared/notifications/push.js'
 import { getStaffActivity } from '../activity/service.js'
+import { MEAL_TYPES } from '../meals/service.js'
 
 export const avsSelfServiceRouter = Router()
+
+// ── Ertesi-gün öğün seçimi (Faz 8b) — çalışan kendi yarınki öğününü seçer ──
+avsSelfServiceRouter.put('/my-meal-selection', requireAvsKiosk, (req, res) => {
+  try {
+    const { meal_date, meal_type } = req.body || {}
+    const attending = req.body?.attending === false ? 0 : 1
+    if (!meal_date || !MEAL_TYPES.includes(meal_type)) {
+      return res.status(400).json({ error: 'meal_date ve geçerli meal_type gerekli' })
+    }
+    getDB().prepare(`
+      INSERT INTO meal_selections(staff_id, meal_date, meal_type, attending)
+      VALUES(?,?,?,?)
+      ON CONFLICT(staff_id, meal_date, meal_type)
+      DO UPDATE SET attending=excluded.attending, updated_at=datetime('now')
+    `).run(req.user.workerId, meal_date, meal_type, attending)
+    res.json({ ok: true, meal_date, meal_type, attending })
+  } catch (e) { logger.error('[avs/my-meal-selection put]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+avsSelfServiceRouter.get('/my-meal-selection', requireAvsKiosk, (req, res) => {
+  try {
+    const date = req.query.date || (() => {
+      const d = new Date(); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10)
+    })()
+    const rows = getDB().prepare('SELECT meal_type, attending FROM meal_selections WHERE staff_id=? AND meal_date=?')
+      .all(req.user.workerId, date)
+    const selections = {}
+    for (const r of rows) selections[r.meal_type] = r.attending
+    res.json({ date, selections })
+  } catch (e) { logger.error('[avs/my-meal-selection get]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
 
 // Profil bilgisi — sadece görüntüleme
 avsSelfServiceRouter.get('/my-info', requireAvsKiosk, (req, res) => {

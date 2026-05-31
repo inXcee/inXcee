@@ -140,6 +140,34 @@ describe('Meals — devam/katılım raporu (Faz 4)', () => {
   })
 })
 
+describe('Meals — ertesi-gün öğün seçimi (Faz 8)', () => {
+  it('PUT /selection kaydeder, GET /selection-counts yansıtır', async () => {
+    const r = await request(app).put('/api/meals/selection').set('Authorization', `Bearer ${token}`)
+      .send({ staff_id: staffId, meal_date: '2026-12-01', meal_type: 'lunch', attending: true })
+    expect(r.status).toBe(200)
+    const g = await request(app).get('/api/meals/selection-counts?date=2026-12-01').set('Authorization', `Bearer ${token}`)
+    expect(g.status).toBe(200)
+    const lunch = g.body.counts.find(c => c.meal_type === 'lunch')
+    expect(lunch.count).toBeGreaterThanOrEqual(1)
+  })
+
+  it('attending=false sayıma girmez (upsert)', async () => {
+    await request(app).put('/api/meals/selection').set('Authorization', `Bearer ${token}`)
+      .send({ staff_id: staffId, meal_date: '2026-12-02', meal_type: 'dinner', attending: true })
+    await request(app).put('/api/meals/selection').set('Authorization', `Bearer ${token}`)
+      .send({ staff_id: staffId, meal_date: '2026-12-02', meal_type: 'dinner', attending: false })
+    const g = await request(app).get('/api/meals/selection-counts?date=2026-12-02').set('Authorization', `Bearer ${token}`)
+    const dinner = g.body.counts.find(c => c.meal_type === 'dinner')
+    expect(dinner).toBeUndefined()
+  })
+
+  it('geçersiz meal_type 400', async () => {
+    const r = await request(app).put('/api/meals/selection').set('Authorization', `Bearer ${token}`)
+      .send({ staff_id: staffId, meal_date: '2026-12-01', meal_type: 'brunch' })
+    expect(r.status).toBe(400)
+  })
+})
+
 describe('Meals — menu', () => {
   it('PUT menu upsert + GET menu döner', async () => {
     const put = await request(app).put('/api/meals/menu')

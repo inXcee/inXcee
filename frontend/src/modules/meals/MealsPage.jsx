@@ -250,6 +250,11 @@ function ForecastTab() {
     queryKey: ['meals-forecast', date],
     queryFn: () => api.get(`/meals/forecast?date=${date}`).then(r => r.data),
   })
+  // Faz 8 — personelin yaptığı kesin öğün seçimi (mutfak sayımı)
+  const { data: sel } = useQuery({
+    queryKey: ['meals-selection-counts', date],
+    queryFn: () => api.get(`/meals/selection-counts?date=${date}`).then(r => r.data),
+  })
 
   return (
     <div>
@@ -257,6 +262,24 @@ function ForecastTab() {
         <input type="date" className="form-input" value={date} onChange={e => setDate(e.target.value)}
           style={{ width: 'auto', fontSize: 12 }} />
       </div>
+
+      {sel?.counts?.length > 0 && (
+        <div style={{ padding: 16, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, marginBottom: 14 }}>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--green)', letterSpacing: 1.5, marginBottom: 10 }}>✅ KESİN SEÇİM (personel kiosktan onayladı)</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
+            {Object.entries(MEALS).map(([k, v]) => {
+              const c = sel.counts.find(x => x.meal_type === k)
+              return (
+                <div key={k} style={{ padding: 12, background: 'var(--surface2)', borderRadius: 10, borderLeft: `4px solid ${v.color}` }}>
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>{v.label}</div>
+                  <div style={{ fontFamily: 'var(--display)', fontSize: 24, color: v.color, marginTop: 4 }}>{c?.count || 0}</div>
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text4)', marginTop: 2 }}>kişi seçti</div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
       {isLoading ? <SkeletonTable rows={4} cols={4} /> : !data ? null : (
         <>
           <div style={{ padding: 18, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, marginBottom: 14 }}>

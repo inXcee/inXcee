@@ -580,3 +580,32 @@ describe('AVS Self-Service — my-cards (ayrı giriş/yemek kartı)', () => {
     expect(code2).toBe(code1)
   })
 })
+
+describe('AVS kiosk — ertesi-gün öğün seçimi (Faz 8b)', () => {
+  it('PUT my-meal-selection kaydeder, GET yansıtır', async () => {
+    const put = await request(app).put('/api/avs-self-service/my-meal-selection')
+      .set('Authorization', `Bearer ${avsToken}`)
+      .send({ meal_date: '2026-12-05', meal_type: 'lunch', attending: true })
+    expect(put.status).toBe(200)
+    const get = await request(app).get('/api/avs-self-service/my-meal-selection?date=2026-12-05')
+      .set('Authorization', `Bearer ${avsToken}`)
+    expect(get.status).toBe(200)
+    expect(get.body.selections.lunch).toBe(1)
+  })
+
+  it('attending=false → 0 olarak güncellenir (upsert)', async () => {
+    await request(app).put('/api/avs-self-service/my-meal-selection').set('Authorization', `Bearer ${avsToken}`)
+      .send({ meal_date: '2026-12-06', meal_type: 'dinner', attending: true })
+    await request(app).put('/api/avs-self-service/my-meal-selection').set('Authorization', `Bearer ${avsToken}`)
+      .send({ meal_date: '2026-12-06', meal_type: 'dinner', attending: false })
+    const get = await request(app).get('/api/avs-self-service/my-meal-selection?date=2026-12-06')
+      .set('Authorization', `Bearer ${avsToken}`)
+    expect(get.body.selections.dinner).toBe(0)
+  })
+
+  it('geçersiz meal_type 400', async () => {
+    const r = await request(app).put('/api/avs-self-service/my-meal-selection')
+      .set('Authorization', `Bearer ${avsToken}`).send({ meal_date: '2026-12-05', meal_type: 'brunch' })
+    expect(r.status).toBe(400)
+  })
+})

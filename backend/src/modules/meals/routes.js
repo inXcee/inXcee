@@ -79,6 +79,39 @@ mealsRouter.delete('/log/:id', ...mgr, (req, res) => {
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
+// ── YM6 (Faz 8): Ertesi-gün öğün seçimi — personel yarın için seçer ──
+mealsRouter.put('/selection', ...mgr, (req, res) => {
+  try {
+    const { staff_id, meal_date, meal_type } = req.body || {}
+    const attending = req.body?.attending === false ? 0 : 1
+    if (!staff_id || !meal_date || !VALID_MEALS.includes(meal_type)) {
+      return res.status(400).json({ error: 'staff_id, meal_date ve geçerli meal_type gerekli' })
+    }
+    getDB().prepare(`
+      INSERT INTO meal_selections(staff_id, meal_date, meal_type, attending)
+      VALUES(?,?,?,?)
+      ON CONFLICT(staff_id, meal_date, meal_type)
+      DO UPDATE SET attending=excluded.attending, updated_at=datetime('now')
+    `).run(+staff_id, meal_date, meal_type, attending)
+    res.json({ ok: true, staff_id: +staff_id, meal_date, meal_type, attending })
+  } catch (e) { logger.error('[meals/selection]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// Mutfak sayımı — bir gün için seçim yapan (attending=1) kişi sayısı (öğün bazlı)
+mealsRouter.get('/selection-counts', ...view, (req, res) => {
+  try {
+    const date = req.query.date || (() => {
+      const d = new Date(); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10)
+    })()
+    const counts = getDB().prepare(`
+      SELECT meal_type, COUNT(*) AS count
+      FROM meal_selections WHERE meal_date=? AND attending=1
+      GROUP BY meal_type
+    `).all(date)
+    res.json({ date, counts })
+  } catch (e) { logger.error('[meals/selection-counts]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
 // ── YM5 (Faz 4): Katılım / no-show raporu — vardiyalı vs gerçekten yiyen ──
 // Belirli gün+öğün için: hak sahibi (o gün vardiyada) personel ile meal_logs'u
 // karşılaştırır; okutmayan = no-show (israf/sayım metriği).
