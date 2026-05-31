@@ -21,6 +21,18 @@ import { blockColor } from '../../shared/blocks.js'
 import DashCard from './DashCard.jsx'
 import { SkeletonGrid } from '../../shared/components/Skeleton.jsx'
 import { exportRowsToXlsx } from '../../shared/utils/exportData.js'
+import { useDashboardLayout } from './useDashboardLayout.js'
+
+// D3a: gizlenebilir ikincil widget'lar (çekirdek KPI/doluluk/trend sabit kalır).
+const DASH_WIDGETS = [
+  { id: 'todaysPulse', label: 'Bugünün Nabzı' },
+  { id: 'upcoming', label: 'Yaklaşan Etkinlikler' },
+  { id: 'compliance', label: 'İSG Uyum' },
+  { id: 'anomalies', label: 'Anomali Uyarıları' },
+  { id: 'projection', label: '14 Gün Projeksiyon' },
+  { id: 'audit', label: 'Denetim Kaydı' },
+]
+const DASH_WIDGET_IDS = DASH_WIDGETS.map(w => w.id)
 
 // D2c: dashboard Excel export kolonları (CSV header/transform'larıyla aynı).
 const PERSONNEL_XLSX_COLS = [
@@ -598,6 +610,10 @@ export default function DashboardPage() {
   const occupancyColor = !kpi ? 'blue' : kpi.occupancy_pct > 95 ? 'red' : kpi.occupancy_pct > 80 ? 'orange' : 'green'
   const highOccBlocks = heatmap.filter(b => b.pct >= 90)
 
+  // D3a: widget göster/gizle (localStorage)
+  const layout = useDashboardLayout(DASH_WIDGET_IDS)
+  const [editLayout, setEditLayout] = useState(false)
+
   return (
     <div className="fade-up" style={{ position: 'relative', zIndex: 1 }}>
       {/* Header */}
@@ -623,8 +639,36 @@ export default function DashboardPage() {
           </div>
           <DateRangeFilter />
           {isManager && <ExportButtons />}
+          <button className="btn btn-ghost btn-sm" onClick={() => setEditLayout(v => !v)} aria-pressed={editLayout} title="Panelleri göster/gizle">
+            {editLayout ? '✓ Bitti' : '⚙ Paneller'}
+          </button>
         </div>
       </div>
+
+      {editLayout && (
+        <div style={{ marginBottom: '16px', padding: '14px 16px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+            <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text2)' }}>Görünür paneller</span>
+            <button className="btn btn-ghost btn-xs" onClick={layout.reset}>Varsayılana dön</button>
+          </div>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            {DASH_WIDGETS.map(w => {
+              const on = layout.isVisible(w.id)
+              return (
+                <button key={w.id} type="button" onClick={() => layout.toggle(w.id)} aria-pressed={on}
+                  style={{
+                    padding: '6px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: 600, cursor: 'pointer',
+                    border: `1px solid ${on ? 'var(--green)' : 'var(--border)'}`,
+                    background: on ? 'color-mix(in srgb, var(--green) 10%, transparent)' : 'transparent',
+                    color: on ? 'var(--green)' : 'var(--text3)',
+                  }}>
+                  {on ? '✓' : '✗'} {w.label}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {isManager && <ManagementWidgets />}
 
@@ -698,9 +742,11 @@ export default function DashboardPage() {
         </div>
 
         {/* Sağ panel placeholder #2 — Bugünün Nabzı (Faz 2) */}
-        <div className="bento-cell bento-span-4">
-          <TodaysPulse />
-        </div>
+        {layout.isVisible('todaysPulse') && (
+          <div className="bento-cell bento-span-4">
+            <TodaysPulse />
+          </div>
+        )}
 
         {/* Trend grafikleri — span 8 (mevcut TrendChartsSection 2x2 internal grid'i yapıyor) */}
         <div className="bento-cell bento-span-8">
@@ -708,12 +754,14 @@ export default function DashboardPage() {
         </div>
 
         {/* Sağ panel #3 — Yaklaşan Etkinlikler */}
-        <div className="bento-cell bento-span-4">
-          <UpcomingEvents />
-        </div>
+        {layout.isVisible('upcoming') && (
+          <div className="bento-cell bento-span-4">
+            <UpcomingEvents />
+          </div>
+        )}
 
         {/* İSG Uyum Durumu — sadece campus_manager/shift_supervisor — span 4 */}
-        {isManager && (
+        {isManager && layout.isVisible('compliance') && (
           <div className="bento-cell bento-span-4">
             <ComplianceWidget />
           </div>
@@ -727,9 +775,11 @@ export default function DashboardPage() {
         </div>
 
         {/* Anomali uyarıları */}
-        <div className="bento-cell bento-span-12">
-          <AnomalyAlerts />
-        </div>
+        {layout.isVisible('anomalies') && (
+          <div className="bento-cell bento-span-12">
+            <AnomalyAlerts />
+          </div>
+        )}
 
         {/* Aktif Arızalar — span 7 */}
         <div className="bento-cell bento-span-7">
@@ -779,7 +829,7 @@ export default function DashboardPage() {
         </div>
 
         {/* 14 Gün Projeksiyon — span 5 */}
-        {projection.length > 0 && (
+        {projection.length > 0 && layout.isVisible('projection') && (
           <div className="bento-cell bento-span-5">
             <DashCard
               title="14 gün projeksiyon"
@@ -806,7 +856,7 @@ export default function DashboardPage() {
         )}
 
         {/* Denetim Kaydı — sadece campus_manager — span 12 */}
-        {isManager && (
+        {isManager && layout.isVisible('audit') && (
           <div className="bento-cell bento-span-12">
             <AuditLogPanel globalFrom={globalFrom} globalTo={globalTo} />
           </div>
