@@ -7,7 +7,7 @@ import { evaluateRule, evaluateAllActive } from './evaluator.js'
 export const automationRouter = Router()
 const mgmt = requireRole('campus_manager')
 
-const VALID_TRIGGERS = ['occupancy_high', 'contract_expiring', 'maintenance_backlog', 'drill_overdue', 'no_recent_drill']
+const VALID_TRIGGERS = ['occupancy_high', 'contract_expiring', 'maintenance_backlog', 'drill_overdue', 'no_recent_drill', 'access_overdue_inside']
 const VALID_ACTIONS = ['log', 'notify_group']
 
 automationRouter.get('/', requireAuth, (req, res) => {
