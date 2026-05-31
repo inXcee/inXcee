@@ -277,8 +277,8 @@ export default function LoginPage() {
 
         {/* HERO — video + yağmur canvas + hareket HUD, login kartını ve hero-copy'yi sarar */}
         <HeroScene
-          posterSrc="/login/D2-night-bright.png"
-          videoSrc="/login/hero-night.mp4"
+          posterSrc="/hero/D2-night-bright.png"
+          videoSrc="/hero/hero-night.mp4"
           motion={motion}
           setMotion={setMotion}
           rain={rain}
