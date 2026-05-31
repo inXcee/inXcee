@@ -184,6 +184,8 @@ const tr = {
     meals: {
       title: 'Bugünün Menüsü', none: 'Bugün için menü girilmemiş',
       breakfast: '🌅 Kahvaltı', lunch: '☀ Öğle', dinner: '🌙 Akşam', snack: '☕ Ara',
+      tomorrow_title: 'Yarın Geleceğim', tomorrow_hint: 'Mutfak sayımı için yarınki öğünlerini işaretle',
+      attending: 'Geleceğim', not_attending: 'Gelmeyeceğim',
     },
     inventory: {
       title: 'Malzeme Al', search: 'Ürün ara…', quantity: 'Miktar', note: 'Not (opsiyonel)',
@@ -410,6 +412,8 @@ const en = {
     meals: {
       title: "Today's Menu", none: 'No menu set for today',
       breakfast: '🌅 Breakfast', lunch: '☀ Lunch', dinner: '🌙 Dinner', snack: '☕ Snack',
+      tomorrow_title: "I'll Attend Tomorrow", tomorrow_hint: 'Mark tomorrow’s meals so the kitchen can plan',
+      attending: 'Attending', not_attending: 'Not attending',
     },
     inventory: {
       title: 'Take Supplies', search: 'Search item…', quantity: 'Quantity', note: 'Note (optional)',
@@ -636,6 +640,8 @@ const ar = {
     meals: {
       title: 'قائمة اليوم', none: 'لم تُحدد قائمة لليوم',
       breakfast: '🌅 فطور', lunch: '☀ غداء', dinner: '🌙 عشاء', snack: '☕ وجبة خفيفة',
+      tomorrow_title: 'سأحضر غدًا', tomorrow_hint: 'حدّد وجبات الغد ليخطط المطبخ',
+      attending: 'سأحضر', not_attending: 'لن أحضر',
     },
     inventory: {
       title: 'أخذ المستلزمات', search: 'ابحث عن منتج…', quantity: 'الكمية', note: 'ملاحظة (اختياري)',
