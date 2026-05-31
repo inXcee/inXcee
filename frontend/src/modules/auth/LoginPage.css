@@ -95,7 +95,9 @@
 
 /* APP */
 .lp-root .app { position:relative; z-index:20; min-height:100vh; display:flex; flex-direction:column; }
-.lp-root .nav { padding:18px 44px; display:flex; align-items:center; justify-content:space-between; animation:lpDrop .8s cubic-bezier(.2,.7,0,1.1) both;
+/* z-index:40 → nav (backdrop-filter + kalıcı lpDrop transform'u stacking context
+   yaratıyor); açık pozitif z olmadan hero, nav'ın "10 modül" popover'ını örtüyordu. */
+.lp-root .nav { position:relative; z-index:40; padding:18px 44px; display:flex; align-items:center; justify-content:space-between; animation:lpDrop .8s cubic-bezier(.2,.7,0,1.1) both;
   background:linear-gradient(180deg,rgba(3,7,14,.92),rgba(3,7,14,.2)); backdrop-filter:blur(18px); border-bottom:1px solid var(--line); }
 @keyframes lpDrop { from{opacity:0;transform:translateY(-26px)} to{opacity:1;transform:translateY(0)} }
 .lp-root .brand { display:flex; align-items:center; gap:14px; }
@@ -118,6 +120,13 @@
 .lp-root .card { background:var(--glass-hi); border:1px solid var(--line); border-radius:24px; backdrop-filter:blur(30px); overflow:hidden; position:relative;
   box-shadow:0 0 0 1px rgba(43,131,255,.06),0 44px 90px rgba(0,0,0,.55),0 0 110px rgba(31,111,235,.07); }
 .lp-root .card::before { content:''; position:absolute; top:0; left:0; right:0; height:1px; background:linear-gradient(90deg,transparent,var(--blue-hi),var(--teal-hi),transparent); }
+/* Dil seçici — card üst köşesinde segment kontrol (stilsizken "TR EN AR" → "TRENAR" görünüyordu) */
+.lp-root .ctop { display:flex; justify-content:flex-end; padding:12px 14px 0; }
+.lp-root .lang { display:inline-flex; gap:2px; padding:3px; border:1px solid var(--line); border-radius:10px; background:rgba(2,5,12,.45); }
+.lp-root .lang-b { min-width:36px; padding:5px 10px; border:none; border-radius:7px; background:none; color:var(--muted-2); font-family:var(--m); font-size:11px; font-weight:600; letter-spacing:.05em; cursor:pointer; transition:color .2s, background .2s, box-shadow .2s; }
+.lp-root .lang-b:hover:not(.on) { color:var(--white); }
+.lp-root .lang-b.on { color:var(--white); background:linear-gradient(180deg,rgba(31,111,235,.28),rgba(21,214,198,.16)); box-shadow:inset 0 0 0 1px rgba(21,214,198,.4); }
+
 .lp-root .modes { display:grid; grid-template-columns:repeat(4,1fr); background:rgba(2,5,12,.55); border-bottom:1px solid var(--line); }
 .lp-root .mode { padding:15px 8px; background:none; border:none; color:var(--muted-2); cursor:pointer; font-family:var(--b); font-size:11px; font-weight:500; letter-spacing:.03em; display:flex; flex-direction:column; align-items:center; gap:6px; border-bottom:2px solid transparent; transition:color .25s; }
 .lp-root .mode-ico { font-size:17px; }
