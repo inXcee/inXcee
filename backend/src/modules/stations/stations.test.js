@@ -121,6 +121,77 @@ describe('stations — okutma (scan)', () => {
   })
 })
 
+describe('stations — turnike kapı sinyali (Faz 7a)', () => {
+  const tUid = 'NFC-TURNIKE-OK'
+  beforeAll(async () => {
+    // Taze access kartı (accessUid önceki testlerde revoke edilmiş olabilir)
+    const c = await request(app).post(`/api/cards/staff/${staffId}/issue`).set(auth(token)).send({ card_type: 'access', regenerate: true })
+    await request(app).patch(`/api/cards/${c.body.id}/bind-nfc`).set(auth(token)).send({ nfc_uid: tUid })
+  })
+
+  it('başarılı giriş → access_granted true (kapı açılır)', async () => {
+    const r = await request(app).post('/api/stations/scan').set('X-Station-Key', entryKey).send({ raw_uid: tUid })
+    expect(r.body.result).toBe('ok')
+    expect(r.body.access_granted).toBe(true)
+  })
+
+  it('tanımsız kart → access_granted false (kapı kapalı)', async () => {
+    const r = await request(app).post('/api/stations/scan').set('X-Station-Key', entryKey).send({ raw_uid: 'TURNIKE-YOK' })
+    expect(r.body.result).toBe('unknown_card')
+    expect(r.body.access_granted).toBe(false)
+  })
+
+  it('yemekhanede access kartı (not_eligible) → access_granted false', async () => {
+    const r = await request(app).post('/api/stations/scan').set('X-Station-Key', cafeKey).send({ raw_uid: tUid })
+    expect(r.body.access_granted).toBe(false)
+  })
+})
+
+describe('stations — kartsız manuel giriş (Faz 7b)', () => {
+  let pid, pBlackId
+  beforeAll(() => {
+    const db = getDB()
+    db.prepare('INSERT INTO personnel(full_name) VALUES(?)').run('Manuel Kisi')
+    pid = db.prepare("SELECT id FROM personnel WHERE full_name='Manuel Kisi'").get().id
+    db.prepare("INSERT INTO personnel(full_name,is_blacklisted,blacklist_reason) VALUES('Manuel Kara',1,'Tehdit')").run()
+    pBlackId = db.prepare("SELECT id FROM personnel WHERE full_name='Manuel Kara'").get().id
+  })
+
+  it('kartsız kişi için giriş kaydı → ok + card_id NULL access_events', async () => {
+    const r = await request(app).post('/api/stations/manual').set('X-Station-Key', entryKey)
+      .field('holder_type', 'personnel').field('holder_id', String(pid))
+    expect(r.body.result).toBe('ok')
+    expect(r.body.access_granted).toBe(true)
+    expect(r.body.manual).toBe(true)
+    const ev = getDB().prepare("SELECT * FROM access_events WHERE holder_type='personnel' AND holder_id=? ORDER BY id DESC").get(pid)
+    expect(ev.card_id).toBeNull()
+    expect(ev.event_type).toBe('entry')
+  })
+
+  it('eksik holder → 400', async () => {
+    const r = await request(app).post('/api/stations/manual').set('X-Station-Key', entryKey).field('holder_type', 'personnel')
+    expect(r.status).toBe(400)
+  })
+
+  it('bulunamayan kişi → 404', async () => {
+    const r = await request(app).post('/api/stations/manual').set('X-Station-Key', entryKey)
+      .field('holder_type', 'personnel').field('holder_id', '999999')
+    expect(r.status).toBe(404)
+  })
+
+  it('kartsız kara listeli kişi → alarm + access_granted false', async () => {
+    const r = await request(app).post('/api/stations/manual').set('X-Station-Key', entryKey)
+      .field('holder_type', 'personnel').field('holder_id', String(pBlackId))
+    expect(r.body.result).toBe('alarm')
+    expect(r.body.access_granted).toBe(false)
+  })
+
+  it('anahtarsız manuel kayıt → 401', async () => {
+    const r = await request(app).post('/api/stations/manual').field('holder_type', 'personnel').field('holder_id', String(pid))
+    expect(r.status).toBe(401)
+  })
+})
+
 describe('stations — ziyaretçi süreli kart (Faz 5b)', () => {
   const visUid = 'NFC-VIS-001', expUid = 'NFC-VIS-EXP'
 

@@ -50,6 +50,9 @@ export default function StationPage() {
   const [result, setResult] = useState(null)         // { result, holder, ... }
   const [mealType, setMealType] = useState(mealByHour())
   const [camReady, setCamReady] = useState(false)
+  const [manualOpen, setManualOpen] = useState(false)   // kartsız manuel giriş modu
+  const [manualType, setManualType] = useState('personnel')
+  const [manualId, setManualId] = useState('')
 
   const inputRef = useRef(null)
   const videoRef = useRef(null)
@@ -85,11 +88,11 @@ export default function StationPage() {
   // Hidden input'u sürekli odakta tut (HID okuyucu buraya yazar)
   const focusInput = useCallback(() => inputRef.current?.focus(), [])
   useEffect(() => {
-    if (!station) return
+    if (!station || manualOpen) return   // manuel modda input odağını çalma
     focusInput()
     const iv = setInterval(focusInput, 800)
     return () => clearInterval(iv)
-  }, [station, focusInput])
+  }, [station, focusInput, manualOpen])
 
   function captureFrame() {
     return new Promise(resolve => {
@@ -126,6 +129,33 @@ export default function StationPage() {
       clearTimeout(resultTimer.current)
       resultTimer.current = setTimeout(() => setResult(null), 4000)
       focusInput()
+    }
+  }
+
+  // Kartsız manuel giriş/çıkış (Faz 7b) — kart unutuldu/yok: kişi seç + foto
+  async function doManual() {
+    const id = manualId.trim()
+    if (!id || scanningRef.current) return
+    scanningRef.current = true
+    try {
+      const fd = new FormData()
+      fd.append('holder_type', manualType)
+      fd.append('holder_id', id)
+      if (station.capture_photo) {
+        const blob = await captureFrame()
+        if (blob) fd.append('photo', blob, 'manual.jpg')
+      }
+      const res = await fetch('/api/stations/manual', { method: 'POST', headers: { 'X-Station-Key': stationKey }, body: fd })
+      const data = res.ok ? await res.json() : { result: 'error' }
+      setResult(data)
+      beep((RESULT_VIEW[data.result] || RESULT_VIEW.error).ok)
+    } catch {
+      setResult({ result: 'error' }); beep(false)
+    } finally {
+      scanningRef.current = false
+      setManualOpen(false); setManualId('')
+      clearTimeout(resultTimer.current)
+      resultTimer.current = setTimeout(() => setResult(null), 4000)
     }
   }
 
@@ -226,6 +256,41 @@ export default function StationPage() {
           <div style={{ fontSize: 72, marginBottom: 16 }}>⌁</div>
           <div style={{ fontSize: 28, fontWeight: 700, letterSpacing: 1 }}>KARTINIZI OKUTUN</div>
           <div style={{ fontSize: 15, opacity: 0.7, marginTop: 8 }}>NFC etiketini okuyucuya yaklaştırın</div>
+        </div>
+      )}
+
+      {/* Kartsız manuel giriş butonu */}
+      {!result && !manualOpen && (
+        <button onClick={() => setManualOpen(true)}
+          style={{ position: 'absolute', bottom: 16, left: 16, padding: '10px 16px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.3)', background: 'rgba(0,0,0,0.25)', color: '#fff', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+          ⌨ Kartsız Giriş
+        </button>
+      )}
+
+      {/* Manuel giriş modalı (kart unutuldu/yok) */}
+      {manualOpen && (
+        <div style={{ position: 'absolute', inset: 0, background: 'rgba(15,23,42,0.92)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10 }}>
+          <div style={{ width: 340, background: '#1e293b', borderRadius: 16, padding: 28, textAlign: 'center' }}>
+            <h2 style={{ fontSize: 18, fontWeight: 800, marginBottom: 4 }}>Kartsız {TYPE_LABEL[station.station_type] || 'OKUTMA'}</h2>
+            <p style={{ fontSize: 13, color: '#94a3b8', marginBottom: 18 }}>Kartı olmayan kişiyi foto ile elle kaydet</p>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+              {[['personnel', 'İşçi'], ['staff', 'Personel']].map(([v, l]) => (
+                <button key={v} onClick={() => setManualType(v)}
+                  style={{ flex: 1, padding: '8px', borderRadius: 8, border: 'none', cursor: 'pointer', fontWeight: 600, background: manualType === v ? '#f0a500' : 'rgba(255,255,255,0.12)', color: manualType === v ? '#0f172a' : '#fff' }}>{l}</button>
+              ))}
+            </div>
+            <input autoFocus value={manualId} onChange={e => setManualId(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && doManual()} placeholder="Kişi ID / numara"
+              style={{ width: '100%', padding: '12px 14px', borderRadius: 8, border: '1px solid #334155', background: '#0f172a', color: '#fff', fontSize: 15, marginBottom: 14 }} />
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={() => { setManualOpen(false); setManualId('') }}
+                style={{ flex: 1, padding: '12px', borderRadius: 8, border: '1px solid #334155', background: 'transparent', color: '#cbd5e1', fontWeight: 600, cursor: 'pointer' }}>Vazgeç</button>
+              <button onClick={doManual} disabled={!manualId.trim()}
+                style={{ flex: 2, padding: '12px', borderRadius: 8, border: 'none', background: '#16a34a', color: '#fff', fontWeight: 700, cursor: 'pointer', opacity: manualId.trim() ? 1 : 0.5 }}>
+                {station.capture_photo ? '📷 Foto Çek & Kaydet' : 'Kaydet'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

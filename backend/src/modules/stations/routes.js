@@ -33,6 +33,25 @@ const ELIG_MSG = {
   not_scheduled: 'Bugün vardiyada değil',
 }
 
+// Kara liste alarmı bildirimi: in-app/push/WA (createNotification) + e-posta (job).
+// scan ve manuel giriş ortak kullanır (Faz 5/6.3).
+function notifyBlacklist(station, holder, holderId) {
+  createNotification({
+    message: `Kara listedeki kişi okutma yaptı: ${holder.full_name} — ${station.name}`,
+    severity: 'critical', module: 'access', target_role: 'campus_manager',
+    entity_type: 'personnel', entity_id: holderId,
+    dedup_key: `access_blacklist:${holderId}:${station.id}`,
+  })
+  const mgrEmails = getManagerEmails()
+  if (mgrEmails.length) {
+    enqueue('email.send', {
+      to: mgrEmails.join(','),
+      subject: `[YYS] Kara liste alarmı — ${holder.full_name}`,
+      text: `${holder.full_name} adlı kara listedeki kişi "${station.name}" istasyonunda işlem yaptı.\nSebep: ${holder.blacklist_reason || '—'}\nZaman: ${new Date().toISOString()}`,
+    })
+  }
+}
+
 function genKey() {
   return 'ST-' + randomBytes(18).toString('hex') // 36 hex char
 }
@@ -157,6 +176,16 @@ stationsRouter.post('/scan', requireStation, upload.single('photo'), verifyMagic
     const mealType = station.station_type === 'cafeteria' ? (req.body?.meal_type || null) : null
     const photoUrl = req.file ? `/uploads/${req.file.filename}` : null
 
+    // Faz 7a — Turnike kapı sinyali: her okutma yanıtına access_granted ekle
+    // (result==='ok' → kapı açılır). Fiziksel turnike denetleyicisi bu alanı
+    // okuyup rölesini sürer; reddedilen/duplicate/alarm durumunda kapı kapalı kalır.
+    const _json = res.json.bind(res)
+    res.json = (body) => _json(
+      body && typeof body === 'object' && 'result' in body
+        ? { ...body, access_granted: body.result === 'ok' }
+        : body,
+    )
+
     // Kart çözümle: önce NFC UID, yoksa kod (QR/barkod)
     let card = null
     if (rawUid) card = db.prepare('SELECT * FROM cards WHERE nfc_uid=?').get(rawUid)
@@ -218,21 +247,7 @@ stationsRouter.post('/scan', requireStation, upload.single('photo'), verifyMagic
     if (card.holder_type === 'personnel' && holder.is_blacklisted && station.station_type !== 'cafeteria') {
       const eventId = log('alarm', 'denied', card.id, card.holder_type, card.holder_id)
       logAudit(null, 'station_blacklist_alarm', 'stations', eventId, `${station.name}:${card.holder_id}`)
-      createNotification({
-        message: `Kara listedeki kişi okutma yaptı: ${holder.full_name} — ${station.name}`,
-        severity: 'critical', module: 'access', target_role: 'campus_manager',
-        entity_type: 'personnel', entity_id: card.holder_id,
-        dedup_key: `access_blacklist:${card.holder_id}:${station.id}`,
-      })
-      // Faz 6.3 — kritik alarmı e-posta kanalına da fan-out et (job queue)
-      const mgrEmails = getManagerEmails()
-      if (mgrEmails.length) {
-        enqueue('email.send', {
-          to: mgrEmails.join(','),
-          subject: `[YYS] Kara liste alarmı — ${holder.full_name}`,
-          text: `${holder.full_name} adlı kara listedeki kişi "${station.name}" istasyonunda kart okuttu.\nSebep: ${holder.blacklist_reason || '—'}\nZaman: ${new Date().toISOString()}`,
-        })
-      }
+      notifyBlacklist(station, holder, card.holder_id)
       return res.json({ result: 'alarm', reason: holder.blacklist_reason || 'Kara liste', holder, station: station.name })
     }
 
@@ -274,4 +289,56 @@ stationsRouter.post('/scan', requireStation, upload.single('photo'), verifyMagic
       scanned_at: new Date().toISOString(),
     })
   } catch (e) { logger.error('[stations/scan]', e); res.status(500).json({ error: 'Okutma hatası' }) }
+})
+
+// ── Kartsız manuel giriş/çıkış (Faz 7b) — kart unutuldu/yok: operatör kişiyi
+// seçer, opsiyonel foto ile kayıt. access_events'e card_id=NULL yazılır.
+// Kara listedeki personel için yine alarm üretir. Turnike sinyali (access_granted) döner.
+stationsRouter.post('/manual', requireStation, upload.single('photo'), verifyMagicBytes, (req, res) => {
+  try {
+    const db = getDB()
+    const station = req.station
+    const map = TYPE_MAP[station.station_type] || TYPE_MAP.generic
+    const holderType = (req.body?.holder_type || '').toString()
+    const holderId = +req.body?.holder_id
+    const photoUrl = req.file ? `/uploads/${req.file.filename}` : null
+
+    const _json = res.json.bind(res)
+    res.json = (body) => _json(
+      body && typeof body === 'object' && 'result' in body
+        ? { ...body, access_granted: body.result === 'ok' } : body,
+    )
+
+    if (!['staff', 'personnel'].includes(holderType) || !holderId) {
+      return res.status(400).json({ error: 'holder_type (staff|personnel) ve holder_id gerekli' })
+    }
+
+    let holder = { full_name: null, is_blacklisted: 0, blacklist_reason: null }
+    if (holderType === 'staff') {
+      holder = { ...holder, ...(db.prepare('SELECT full_name FROM staff WHERE id=?').get(holderId) || {}) }
+    } else {
+      holder = { ...holder, ...(db.prepare('SELECT full_name, is_blacklisted, blacklist_reason FROM personnel WHERE id=?').get(holderId) || {}) }
+    }
+    if (!holder.full_name) return res.status(404).json({ error: 'Kişi bulunamadı' })
+
+    const logManual = (result, eventType) => db.prepare(`
+      INSERT INTO access_events(card_id, holder_type, holder_id, station_id, event_type, result, photo_url)
+      VALUES(NULL,?,?,?,?,?,?)
+    `).run(holderType, holderId, station.id, eventType, result, photoUrl).lastInsertRowid
+
+    // Kara liste → alarm (yemekhane dışı)
+    if (holderType === 'personnel' && holder.is_blacklisted && station.station_type !== 'cafeteria') {
+      const eid = logManual('alarm', 'denied')
+      logAudit(null, 'station_manual_alarm', 'stations', eid, `${station.name}:${holderId}`)
+      notifyBlacklist(station, holder, holderId)
+      return res.json({ result: 'alarm', reason: holder.blacklist_reason || 'Kara liste', holder, station: station.name, manual: true })
+    }
+
+    const eid = logManual('ok', map.event)
+    logAudit(null, 'station_manual', 'stations', eid, `${station.station_type}:${holderType}:${holderId}`)
+    return res.json({
+      result: 'ok', event_type: map.event, holder, photo_url: photoUrl,
+      manual: true, scanned_at: new Date().toISOString(),
+    })
+  } catch (e) { logger.error('[stations/manual]', e); res.status(500).json({ error: 'Manuel kayıt hatası' }) }
 })
