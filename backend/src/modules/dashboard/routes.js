@@ -69,6 +69,7 @@ function toCSV(header, rows) {
 dashboardRouter.get('/export/personnel', ...requireRole('campus_manager'), (req, res) => {
   try {
     const rows = exportPersonnel()
+    if (req.query.format === 'json') return res.json(rows) // D2c: client-side Excel için ham satırlar
     const csv = toCSV(
       'Ad Soyad,TC No,Firma,Görev,Memleket,Blok,Kat,Oda,Yatak,Vardiya,Disiplin Puanı,Giriş Tarihi',
       rows.map(r => [
@@ -87,6 +88,7 @@ dashboardRouter.get('/export/personnel', ...requireRole('campus_manager'), (req,
 dashboardRouter.get('/export/occupancy', ...requireRole('campus_manager'), (req, res) => {
   try {
     const rows = exportOccupancy()
+    if (req.query.format === 'json') return res.json(rows)
     const csv = toCSV(
       'Blok,Kat,Oda No,Kapasite,Aktif Yatak,Dolu,Boş,Durum',
       rows.map(r => [
@@ -104,6 +106,7 @@ dashboardRouter.get('/export/occupancy', ...requireRole('campus_manager'), (req,
 dashboardRouter.get('/export/maintenance', ...requireRole('campus_manager'), (req, res) => {
   try {
     const rows = exportMaintenance()
+    if (req.query.format === 'json') return res.json(rows)
     const csv = toCSV(
       'Konum,Açıklama,Durum,Öncelik,Bekleme Nedeni,Açılış,Kapanış,Raporlayan',
       rows.map(r => [

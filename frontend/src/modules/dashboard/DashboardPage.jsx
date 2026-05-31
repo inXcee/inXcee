@@ -20,6 +20,30 @@ import { useAuthStore } from '../../shared/store/authStore.js'
 import { blockColor } from '../../shared/blocks.js'
 import DashCard from './DashCard.jsx'
 import { SkeletonGrid } from '../../shared/components/Skeleton.jsx'
+import { exportRowsToXlsx } from '../../shared/utils/exportData.js'
+
+// D2c: dashboard Excel export kolonları (CSV header/transform'larıyla aynı).
+const PERSONNEL_XLSX_COLS = [
+  { key: 'full_name', label: 'Ad Soyad' }, { key: 'tc_no', label: 'TC No' },
+  { key: 'company', label: 'Firma' }, { key: 'job_title', label: 'Görev' },
+  { key: 'hometown', label: 'Memleket' }, { key: 'block', label: 'Blok' },
+  { key: 'floor', label: 'Kat' }, { key: 'room_no', label: 'Oda' }, { key: 'bed_no', label: 'Yatak' },
+  { key: 'shift_type', label: 'Vardiya', format: r => r.shift_type === 'night' ? 'Gece' : 'Gündüz' },
+  { key: 'discipline_points', label: 'Disiplin Puanı' }, { key: 'check_in_date', label: 'Giriş Tarihi' },
+]
+const OCCUPANCY_XLSX_COLS = [
+  { key: 'block', label: 'Blok' }, { key: 'floor', label: 'Kat' }, { key: 'room_no', label: 'Oda No' },
+  { key: 'capacity', label: 'Kapasite' }, { key: 'active_beds', label: 'Aktif Yatak' }, { key: 'occupied', label: 'Dolu' },
+  { key: 'empty', label: 'Boş', format: r => r.active_beds - r.occupied },
+  { key: 'status', label: 'Durum', format: r => r.status === 'active' ? 'Aktif' : r.status === 'quarantine' ? 'Karantina' : 'Bakım' },
+]
+const MAINTENANCE_XLSX_COLS = [
+  { key: 'location', label: 'Konum' }, { key: 'description', label: 'Açıklama' },
+  { key: 'status', label: 'Durum', format: r => r.status === 'open' ? 'Açık' : 'Tamamlandı' },
+  { key: 'priority', label: 'Öncelik', format: r => r.priority === 'high' ? 'Acil' : r.priority === 'medium' ? 'Normal' : 'Düşük' },
+  { key: 'wait_reason', label: 'Bekleme Nedeni' }, { key: 'opened_at', label: 'Açılış' },
+  { key: 'closed_at', label: 'Kapanış' }, { key: 'reporter', label: 'Raporlayan' },
+]
 
 function PriorityBar({ priority }) {
   const cls = priority === 'high' ? 'pri-high' : priority === 'medium' ? 'pri-mid' : 'pri-low'
@@ -240,16 +264,30 @@ function ExportButtons() {
     })
   }
 
+  const downloadXlsx = async (path, cols, name, sheet) => {
+    const rows = await api.get(`${path}?format=json`).then(r => r.data)
+    await exportRowsToXlsx(cols, rows, name, sheet)
+  }
+
   return (
     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
       <button className="btn btn-ghost btn-sm" onClick={() => download('/dashboard/export/personnel', 'personel-listesi.csv')}>
         Personel CSV
       </button>
+      <button className="btn btn-ghost btn-sm" onClick={() => downloadXlsx('/dashboard/export/personnel', PERSONNEL_XLSX_COLS, 'personel-listesi.xlsx', 'Personel')}>
+        Personel Excel
+      </button>
       <button className="btn btn-ghost btn-sm" onClick={() => download('/dashboard/export/occupancy', 'oda-doluluk.csv')}>
         Doluluk CSV
       </button>
+      <button className="btn btn-ghost btn-sm" onClick={() => downloadXlsx('/dashboard/export/occupancy', OCCUPANCY_XLSX_COLS, 'oda-doluluk.xlsx', 'Doluluk')}>
+        Doluluk Excel
+      </button>
       <button className="btn btn-ghost btn-sm" onClick={() => download('/dashboard/export/maintenance', 'arizalar.csv')}>
         Arızalar CSV
+      </button>
+      <button className="btn btn-ghost btn-sm" onClick={() => downloadXlsx('/dashboard/export/maintenance', MAINTENANCE_XLSX_COLS, 'arizalar.xlsx', 'Arızalar')}>
+        Arızalar Excel
       </button>
       <span style={{ width: '1px', height: '20px', background: 'var(--border)', margin: '0 4px' }} />
       <button className="btn btn-ghost btn-sm" style={{ color: 'var(--red)' }} onClick={() => download('/reports/housekeeping', 'temizlik-raporu.pdf')}>
@@ -623,19 +661,28 @@ export default function DashboardPage() {
         )}
         {kpi && (
           <div className="bento-cell bento-span-8" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: '12px' }}>
-            <KPICard label="Aktif personel" value={kpi.active_personnel} />
+            <KPICard
+              label="Aktif personel" value={kpi.active_personnel}
+              delta={kpi.active_personnel_prev != null ? kpi.active_personnel - kpi.active_personnel_prev : undefined}
+              onClick={() => navigate('/personnel')}
+            />
             <KPICard
               label="Doluluk" value={`${kpi.occupancy_pct}%`}
               color={occupancyColor} subtitle={`${kpi.occupied}/${kpi.total_beds} yatak`}
               barPct={kpi.occupancy_pct}
+              delta={kpi.occupancy_pct_prev != null ? kpi.occupancy_pct - kpi.occupancy_pct_prev : undefined}
+              onClick={() => navigate('/capacity')}
             />
             <KPICard
               label="Açık arıza" value={kpi.open_maintenance}
               color={kpi.open_maintenance > 5 ? 'red' : 'green'}
+              delta={kpi.open_maintenance_prev != null ? kpi.open_maintenance - kpi.open_maintenance_prev : undefined}
+              onClick={() => navigate('/maintenance')}
             />
             <KPICard
               label="Karantina" value={kpi.quarantine_rooms}
               color={kpi.quarantine_rooms > 0 ? 'orange' : 'green'}
+              onClick={() => navigate('/capacity')}
             />
           </div>
         )}

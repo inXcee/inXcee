@@ -19,6 +19,11 @@ describe('Dashboard', () => {
     expect(res.body).toHaveProperty('occupancy_pct')
     expect(res.body).toHaveProperty('open_maintenance')
     expect(res.body).toHaveProperty('quarantine_rooms')
+    // D2b: dönem karşılaştırma (7 gün önce)
+    expect(res.body).toHaveProperty('compare_days', 7)
+    expect(typeof res.body.occupancy_pct_prev).toBe('number')
+    expect(typeof res.body.open_maintenance_prev).toBe('number')
+    expect(typeof res.body.active_personnel_prev).toBe('number')
   })
   it('returns heatmap data', async () => {
     const res = await request(app).get('/api/dashboard/heatmap').set('Authorization', `Bearer ${token}`)

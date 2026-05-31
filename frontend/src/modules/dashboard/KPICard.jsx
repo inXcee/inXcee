@@ -18,7 +18,7 @@ const STATUS_DOT = {
   amber: 'var(--accent)',
 }
 
-export default function KPICard({ label, value, color = 'blue', subtitle, barPct, trend }) {
+export default function KPICard({ label, value, color = 'blue', subtitle, barPct, trend, delta, onClick }) {
   const [hover, setHover] = useState(false)
   const numColor = STATUS_COLOR[color] || 'var(--text)'
   const dotColor = STATUS_DOT[color] // sadece status renkleri (red/green/accent) için
@@ -28,7 +28,12 @@ export default function KPICard({ label, value, color = 'blue', subtitle, barPct
     <div
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
+      onClick={onClick}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={onClick ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick() } } : undefined}
       style={{
+        cursor: onClick ? 'pointer' : 'default',
         background: 'var(--surface)',
         border: '1px solid var(--border)',
         borderColor: hover ? 'var(--border2)' : 'var(--border)',
@@ -73,6 +78,11 @@ export default function KPICard({ label, value, color = 'blue', subtitle, barPct
             letterSpacing: '-0.01em',
           }}>
             {trend === 'up' ? '↑' : '↓'}
+          </span>
+        )}
+        {delta != null && delta !== 0 && (
+          <span title="7 güne göre" style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text3)', letterSpacing: '-0.01em' }}>
+            {delta > 0 ? '↑' : '↓'}{Math.abs(delta)}
           </span>
         )}
       </div>

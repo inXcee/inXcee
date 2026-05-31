@@ -10,7 +10,19 @@ function _getKPI() {
   const occupancy_pct = total_beds > 0 ? Math.round((occupied / total_beds) * 100) : 0
   const open_maintenance = db.prepare("SELECT COUNT(*) as c FROM maintenance_requests WHERE status='open'").get().c
   const quarantine_rooms = db.prepare("SELECT COUNT(*) as c FROM rooms WHERE status='quarantine'").get().c
-  return { active_personnel, occupancy_pct, open_maintenance, quarantine_rooms, occupied, total_beds }
+
+  // D2b: 7 gün önceki değerler (geçmişe-dönük rekonstrüksiyon). Payda güncel yatak
+  // sayısı (getTrends ile aynı kabul — tarihsel oda değişimi izlenmiyor).
+  const D = "date('now','-7 days')"
+  const active_personnel_prev = db.prepare(`SELECT COUNT(*) c FROM personnel WHERE date(check_in_date) <= ${D} AND (check_out_date IS NULL OR date(check_out_date) > ${D})`).get().c
+  const occupied_prev = db.prepare(`SELECT COUNT(*) c FROM room_assignments WHERE date(assigned_at) <= ${D} AND (check_out_at IS NULL OR date(check_out_at) > ${D})`).get().c
+  const occupancy_pct_prev = total_beds > 0 ? Math.round((occupied_prev / total_beds) * 100) : 0
+  const open_maintenance_prev = db.prepare(`SELECT COUNT(*) c FROM maintenance_requests WHERE date(opened_at) <= ${D} AND (closed_at IS NULL OR date(closed_at) > ${D})`).get().c
+
+  return {
+    active_personnel, occupancy_pct, open_maintenance, quarantine_rooms, occupied, total_beds,
+    active_personnel_prev, occupancy_pct_prev, open_maintenance_prev, compare_days: 7,
+  }
 }
 export const getKPI = memoize(_getKPI, 30_000)
 
