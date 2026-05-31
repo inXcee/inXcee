@@ -40,6 +40,20 @@ describe('Laundry queries', () => {
     expect(dirty.every(i => i.status === 'dirty')).toBe(true)
   })
 
+  it('getLaundrySummaryQuery durum sayımlarını + aktif/acil/bugün-teslim döndürür', async () => {
+    const { insertItemQuery, getLaundrySummaryQuery } = await import('./queries.js')
+    const before = getLaundrySummaryQuery()
+    insertItemQuery({ room_id: roomId, created_by: userId, status: 'dirty' })
+    insertItemQuery({ room_id: roomId, created_by: userId, status: 'dirty' })
+    insertItemQuery({ room_id: roomId, created_by: userId, status: 'ready', urgent: 1 })
+    const s = getLaundrySummaryQuery()
+    expect(s).toMatchObject({ counts: expect.any(Object), active: expect.any(Number), urgent: expect.any(Number), delivered_today: expect.any(Number) })
+    expect(s.counts.dirty).toBe((before.counts.dirty || 0) + 2)
+    expect(s.counts.ready).toBe((before.counts.ready || 0) + 1)
+    expect(s.active).toBe(before.active + 3)
+    expect(s.urgent).toBe(before.urgent + 1)
+  })
+
   it('listItemsQuery returns premium_garment_count field', async () => {
     const { listItemsQuery, insertItemQuery, insertPremiumGarmentsQuery } = await import('./queries.js')
 

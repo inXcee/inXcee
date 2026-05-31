@@ -43,6 +43,12 @@ laundryRouter.get('/items', ...laundryRead, (req, res) => {
   } catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
+// Dashboard özeti (laundry rol dashboard'u için) — durum sayımları + aktif/acil/bugün-teslim.
+laundryRouter.get('/summary', ...laundryRead, (req, res) => {
+  try { res.json(svc.getLaundrySummaryService()) }
+  catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+})
+
 laundryRouter.get('/items/:id', ...laundryRead, (req, res) => {
   const item = svc.getItemService(+req.params.id)
   if (!item) return res.status(404).json({ error: 'Kayıt bulunamadı' })

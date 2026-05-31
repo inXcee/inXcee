@@ -5,6 +5,11 @@ import { EVENT_KINDS } from '../../shared/notifications/events.js'
 import { logAudit } from '../../shared/audit.js'
 import { notifyItemReady } from './whatsapp.js'
 
+// Dashboard özeti (laundry rolü) — saf okuma.
+export function getLaundrySummaryService() {
+  return q.getLaundrySummaryQuery()
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // STATE MACHINE
 // ═══════════════════════════════════════════════════════════════════════════

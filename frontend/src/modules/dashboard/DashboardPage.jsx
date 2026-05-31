@@ -19,6 +19,7 @@ import { useOccupancy } from '../../shared/hooks/useOccupancy.js'
 import { useAuthStore } from '../../shared/store/authStore.js'
 import { blockColor } from '../../shared/blocks.js'
 import DashCard from './DashCard.jsx'
+import { SkeletonGrid } from '../../shared/components/Skeleton.jsx'
 
 function PriorityBar({ priority }) {
   const cls = priority === 'high' ? 'pri-high' : priority === 'medium' ? 'pri-mid' : 'pri-low'
@@ -182,7 +183,7 @@ function AuditLogPanel({ globalFrom, globalTo }) {
     <DashCard
       title="Son işlemler"
       bodyStyle={{ padding: 0 }}
-      action={<span style={{ fontSize: '11px', color: 'var(--text3)' }}>{logs.length} kayıt</span>}
+      action={<span style={{ fontSize: '11px', color: 'var(--text3)' }}>{logs.length} kayıt{(globalFrom || globalTo) ? ' · seçili aralık' : ''}</span>}
     >
       {/* Filters */}
       <div style={{ padding: '8px 20px 12px', borderBottom: '1px solid var(--border)', display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
@@ -432,6 +433,89 @@ function HousekeeperDashboard() {
   )
 }
 
+function LaundryDashboard() {
+  const navigate = useNavigate()
+  const { data: summary } = useQuery({
+    queryKey: ['laundry-summary'],
+    queryFn: () => api.get('/laundry/summary').then(r => r.data).catch(() => null),
+    refetchInterval: 30000,
+  })
+  const { data: ready = [] } = useQuery({
+    queryKey: ['laundry-ready'],
+    queryFn: () => api.get('/laundry/items?status=ready').then(r => r.data).catch(() => []),
+    refetchInterval: 30000,
+  })
+  const c = summary?.counts || {}
+  const cards = [
+    { label: 'KİRLİ / BEKLEYEN', value: c.dirty || 0, color: 'var(--text3)' },
+    { label: 'YIKANIYOR', value: c.washing || 0, color: 'var(--blue)' },
+    { label: 'ÜTÜDE', value: c.ironing || 0, color: 'var(--accent)' },
+    { label: 'TESLİME HAZIR', value: c.ready || 0, color: 'var(--green)' },
+  ]
+
+  return (
+    <div className="fade-up" style={{ position: 'relative', zIndex: 1 }}>
+      <div style={{ marginBottom: '20px' }}>
+        <h1 style={{ fontSize: '28px', letterSpacing: '4px' }}>ÇAMAŞIRHANE</h1>
+        <p style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)', marginTop: '4px', letterSpacing: '1px' }}>
+          ÇAMAŞIRHANE PANELİ
+        </p>
+      </div>
+
+      <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '20px' }}>
+        {cards.map(s => (
+          <div key={s.label} style={{ flex: 1, minWidth: '120px', padding: '16px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '10px', borderTop: `3px solid ${s.color}` }}>
+            <div style={{ fontFamily: 'var(--display)', fontSize: '36px', color: s.color, lineHeight: 1 }}>{s.value}</div>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '1.5px', marginTop: '6px' }}>{s.label}</div>
+          </div>
+        ))}
+        {summary?.urgent > 0 && (
+          <div style={{ flex: 1, minWidth: '120px', padding: '16px', background: 'rgba(231,76,60,.06)', border: '1px solid rgba(231,76,60,.2)', borderRadius: '10px', borderTop: '3px solid var(--red)' }}>
+            <div style={{ fontFamily: 'var(--display)', fontSize: '36px', color: 'var(--red)', lineHeight: 1 }}>{summary.urgent}</div>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--red)', letterSpacing: '1.5px', marginTop: '6px' }}>ACİL</div>
+          </div>
+        )}
+        {summary?.delivered_today > 0 && (
+          <div style={{ flex: 1, minWidth: '120px', padding: '16px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '10px', borderTop: '3px solid var(--green)' }}>
+            <div style={{ fontFamily: 'var(--display)', fontSize: '36px', color: 'var(--green)', lineHeight: 1 }}>{summary.delivered_today}</div>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '1.5px', marginTop: '6px' }}>BUGÜN TESLİM</div>
+          </div>
+        )}
+      </div>
+
+      <button className="btn btn-primary" onClick={() => navigate('/laundry')} style={{ marginBottom: '20px' }}>
+        Çamaşırhane Sayfasına Git
+      </button>
+
+      {ready.length > 0 && (
+        <div className="panel">
+          <div className="panel-header">
+            <div>
+              <div className="panel-title">TESLİME HAZIR</div>
+              <div className="panel-subtitle">{ready.length} ÖĞE</div>
+            </div>
+          </div>
+          <div className="panel-body" style={{ padding: '0' }}>
+            {ready.slice(0, 10).map(it => (
+              <div key={it.id} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 20px', borderBottom: '1px solid rgba(35,45,63,.3)' }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: '13px', fontWeight: 500 }}>
+                    {it.room_no ? `Oda ${it.room_no}` : (it.intake_name || '—')}{it.block ? ` · ${it.block}` : ''}
+                  </div>
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)' }}>
+                    {it.item_count} parça{it.is_premium ? ' · premium' : ''}
+                  </div>
+                </div>
+                <span className={`badge badge-${it.urgent ? 'red' : 'green'}`}>{it.urgent ? 'ACİL' : 'HAZIR'}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function DashboardPage() {
   const navigate = useNavigate()
   const user = useAuthStore(s => s.user)
@@ -440,6 +524,7 @@ export default function DashboardPage() {
   // Role-based dashboards (#10)
   if (user?.role === 'technical') return <TechnicianDashboard />
   if (user?.role === 'housekeeper') return <HousekeeperDashboard />
+  if (user?.role === 'laundry') return <LaundryDashboard />
 
   const { days, from: globalFrom, to: globalTo, label: rangeLabel } = useDateRange()
 
@@ -530,7 +615,12 @@ export default function DashboardPage() {
 
       {/* Bento grid */}
       <div className="bento-grid fade-up-stagger">
-        {/* KPI 4'lü — span 8 */}
+        {/* KPI 4'lü — span 8 (D1c: yüklenirken skeleton) */}
+        {!kpi && (
+          <div className="bento-cell bento-span-8">
+            <SkeletonGrid count={4} minWidth={170} lines={2} />
+          </div>
+        )}
         {kpi && (
           <div className="bento-cell bento-span-8" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: '12px' }}>
             <KPICard label="Aktif personel" value={kpi.active_personnel} />

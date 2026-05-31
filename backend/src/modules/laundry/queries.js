@@ -13,6 +13,19 @@ export function insertItemQuery({ room_id, item_count = 1, item_details, notes, 
   return r.lastInsertRowid
 }
 
+// Dashboard özeti — laundry rolünün erişebildiği hafif sayım (durum bazlı + aktif/acil/bugün-teslim).
+export function getLaundrySummaryQuery() {
+  const db = getDB()
+  const counts = {}
+  for (const r of db.prepare(`SELECT status, COUNT(*) c FROM laundry_items GROUP BY status`).all()) {
+    counts[r.status] = r.c
+  }
+  const active = db.prepare(`SELECT COUNT(*) c FROM laundry_items WHERE status NOT IN ('delivered','lost')`).get().c
+  const urgent = db.prepare(`SELECT COUNT(*) c FROM laundry_items WHERE urgent=1 AND status NOT IN ('delivered','lost')`).get().c
+  const delivered_today = db.prepare(`SELECT COUNT(*) c FROM laundry_items WHERE status='delivered' AND date(updated_at)=date('now')`).get().c
+  return { counts, active, urgent, delivered_today }
+}
+
 export function collectItemQuery(id, avsWorkerId) {
   const db = getDB()
   db.prepare(`
