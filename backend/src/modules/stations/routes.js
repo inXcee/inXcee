@@ -8,6 +8,8 @@ import { getDB } from '../../shared/db/index.js'
 import { logger } from '../../shared/logger.js'
 import { isEligible, logMealFromScan, mealTypeForNow, MEAL_TYPES } from '../meals/service.js'
 import { createNotification } from '../../shared/notifications/service.js'
+import { enqueue } from '../../shared/jobs/index.js'
+import { getManagerEmails } from '../email/queries.js'
 
 export const stationsRouter = Router()
 const mgr = requireRole('campus_manager')
@@ -222,6 +224,15 @@ stationsRouter.post('/scan', requireStation, upload.single('photo'), verifyMagic
         entity_type: 'personnel', entity_id: card.holder_id,
         dedup_key: `access_blacklist:${card.holder_id}:${station.id}`,
       })
+      // Faz 6.3 — kritik alarmı e-posta kanalına da fan-out et (job queue)
+      const mgrEmails = getManagerEmails()
+      if (mgrEmails.length) {
+        enqueue('email.send', {
+          to: mgrEmails.join(','),
+          subject: `[YYS] Kara liste alarmı — ${holder.full_name}`,
+          text: `${holder.full_name} adlı kara listedeki kişi "${station.name}" istasyonunda kart okuttu.\nSebep: ${holder.blacklist_reason || '—'}\nZaman: ${new Date().toISOString()}`,
+        })
+      }
       return res.json({ result: 'alarm', reason: holder.blacklist_reason || 'Kara liste', holder, station: station.name })
     }
 

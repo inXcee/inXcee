@@ -71,6 +71,25 @@ describe('access — kara liste alarmı', () => {
   })
 })
 
+describe('access — kara liste alarmı e-posta kanalı (Faz 6.3)', () => {
+  it('alarm yöneticilere email.send job kuyruğuna ekler', async () => {
+    const db = getDB()
+    // En az bir campus_manager'ın e-postası olduğundan emin ol (seed zaten verir)
+    db.prepare("UPDATE users SET email='mgr@example.com' WHERE role='campus_manager' AND (email IS NULL OR email='')").run()
+    const mgrEmail = db.prepare("SELECT email FROM users WHERE role='campus_manager' AND email IS NOT NULL AND email!='' LIMIT 1").get().email
+    db.prepare('INSERT INTO personnel(full_name,is_blacklisted,blacklist_reason) VALUES(?,1,?)').run('Mail Alarm', 'Tehdit')
+    const pid = db.prepare("SELECT id FROM personnel WHERE full_name='Mail Alarm'").get().id
+    const c = await request(app).post(`/api/cards/personnel/${pid}/issue`).set(auth(token)).send({ card_type: 'access' })
+    await request(app).patch(`/api/cards/${c.body.id}/bind-nfc`).set(auth(token)).send({ nfc_uid: 'NFC-MAILALARM' })
+    await request(app).post('/api/stations/scan').set('X-Station-Key', entryKey).send({ raw_uid: 'NFC-MAILALARM' })
+    const job = db.prepare("SELECT * FROM job_queue WHERE type='email.send' ORDER BY id DESC").get()
+    expect(job).toBeTruthy()
+    const payload = JSON.parse(job.payload)
+    expect(payload.to).toContain(mgrEmail)
+    expect(payload.subject).toContain('Mail Alarm')
+  })
+})
+
 describe('access — anomaliler (çıkışsız uzun süre)', () => {
   it('GET /access/anomalies 16+ saattir içerdekini no_exit işaretler', async () => {
     const db = getDB()
