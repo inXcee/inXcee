@@ -3,6 +3,8 @@ import { requireRole } from '../../shared/auth/middleware.js'
 import { logAudit } from '../../shared/audit.js'
 import { getDB } from '../../shared/db/index.js'
 import { logger } from '../../shared/logger.js'
+import { validate } from '../../shared/middleware/validate.js'
+import { createReviewSchema, updateReviewSchema, createGoalSchema, positiveSchema } from './schemas.js'
 
 export const performanceRouter = Router()
 const mgr = requireRole('campus_manager', 'shift_supervisor')
@@ -53,12 +55,9 @@ performanceRouter.get('/reviews/:id', ...view, (req, res) => {
   } catch (e) { logger.error('[perf/get]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
-performanceRouter.post('/reviews', ...mgr, (req, res) => {
+performanceRouter.post('/reviews', ...mgr, validate(createReviewSchema), (req, res) => {
   try {
     const { staff_id, period } = req.body || {}
-    if (!staff_id || !period) return res.status(400).json({ error: 'staff_id ve period gerekli' })
-    if (!/^\d{4}(-Q[1-4])?$/.test(period)) return res.status(400).json({ error: 'period: YYYY veya YYYY-Q1 formatında' })
-
     const total = calcTotal(req.body)
     const cols = ['staff_id', 'period', ...REVIEW_FIELDS, 'strengths', 'improvement_areas', 'manager_notes', 'total_score', 'reviewed_by']
     const vals = [+staff_id, period, ...REVIEW_FIELDS.map(f => req.body[f] != null ? +req.body[f] : null),
@@ -79,7 +78,7 @@ performanceRouter.post('/reviews', ...mgr, (req, res) => {
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
-performanceRouter.put('/reviews/:id', ...mgr, (req, res) => {
+performanceRouter.put('/reviews/:id', ...mgr, validate(updateReviewSchema), (req, res) => {
   try {
     const db = getDB()
     const fields = [...REVIEW_FIELDS, 'strengths', 'improvement_areas', 'manager_notes']
@@ -127,10 +126,9 @@ performanceRouter.get('/goals', ...view, (req, res) => {
   } catch (e) { logger.error('[perf/goals]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
-performanceRouter.post('/goals', ...mgr, (req, res) => {
+performanceRouter.post('/goals', ...mgr, validate(createGoalSchema), (req, res) => {
   try {
     const { staff_id, title, description, target_date } = req.body || {}
-    if (!staff_id || !title) return res.status(400).json({ error: 'staff_id ve title gerekli' })
     const id = getDB().prepare(`
       INSERT INTO performance_goals(staff_id, title, description, target_date, created_by)
       VALUES(?,?,?,?,?)
@@ -164,10 +162,9 @@ performanceRouter.delete('/goals/:id', ...mgr, (req, res) => {
 })
 
 // ── PE3: Pozitif puan ──
-performanceRouter.post('/positive', ...mgr, (req, res) => {
+performanceRouter.post('/positive', ...mgr, validate(positiveSchema), (req, res) => {
   try {
     const { staff_id, reason, points = 1 } = req.body || {}
-    if (!staff_id || !reason) return res.status(400).json({ error: 'staff_id ve reason gerekli' })
     const id = getDB().prepare(`
       INSERT INTO positive_points(staff_id, reason, points, created_by) VALUES(?,?,?,?)
     `).run(+staff_id, reason, +points, req.user.id).lastInsertRowid

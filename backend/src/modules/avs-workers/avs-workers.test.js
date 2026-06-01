@@ -10,6 +10,14 @@ beforeAll(async () => {
   token = (await request(app).post('/api/auth/login').send({ username: 'mudur', password: 'admin123' })).body.token
 })
 
+describe('AVS Workers — Zod sweep', () => {
+  it('cok uzun calisan adi 400 doner', async () => {
+    const res = await request(app).post('/api/avs-workers')
+      .set('Authorization', `Bearer ${token}`).send({ full_name: 'A'.repeat(201) })
+    expect(res.status).toBe(400)
+  })
+})
+
 describe('AVS Workers', () => {
   it('campus_manager olmayan erişemez', async () => {
     const t = (await request(app).post('/api/auth/login').send({ username: 'vardiya', password: 'admin123' })).body.token

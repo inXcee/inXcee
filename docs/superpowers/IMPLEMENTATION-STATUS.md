@@ -1,7 +1,7 @@
 # YYS İyileştirme Programı — Uygulama Durumu
 
 **Son güncelleme:** 2026-06-01
-**Canlı commit:** `fc738ae` (avskamp.com) — batch 4 (7 modül) deploy bekliyor
+**Canlı commit:** `bfc9bfe` (avskamp.com) — batch 5 deploy bekliyor
 **Spec'ler:** `docs/superpowers/specs/2026-06-01-*.md` (9 onaylı tasarım, tüm modüller)
 
 Bu dosya, modül-modül iyileştirme programının ilerlemesini takip eder. Her şey
@@ -26,7 +26,13 @@ TDD + test + deploy ile canlıya alınıyor. "Devam" denince buradan sıradakine
 - **Operasyonel batch 1** ✓ — transport (durak/rota/durak-stop CRUD, atama, personel pickup), housekeeping (kat tamamla, atla, oda not/no-clean, arıza bildir multipart, temizlik personeli). +5 test (`3806e9a`).
 - **Batch 2 (laundry + inventory + meals)** ✓ — laundry: ham SQL uçları (garment-types CRUD, bags). inventory: item create/edit + checkout + receipts (`.passthrough()` ile alan kaybı önlendi), locations CRUD, suppliers. meals: log/selection/diet/menu (enum+sınır). +7 test (`8429fc8`). NOT: laundry item/machine/supply ve inventory lots/po/requests uçları service katmanında doğrulanıyor (zaten korunuyor).
 - **Batch 3 (safety + stations + cards)** ✓ — safety: eğitim oturumu CRUD (kategori enum), KKD zimmet/iade. stations: admin create/patch (tip enum, isim/konum sınırı) — scan/manual cihaz uçları hariç. cards: issue/bulk-issue/bind-nfc (card_type enum). +7 test (`fc738ae`).
-- **Batch 4 (companies + announcements + drills + surveys + communications + notification-groups + automation)** ✓ — companies (ad sınırı, `.passthrough()`), announcements (başlık/içerik), drills (tip enum + metin sınırları), surveys (puan 1-5 + yorum, `.refine` ile "en az bir"), communications (SMS/broadcast enum+sınır), notification-groups (ad + üye), automation (kural — PUT önceden doğrulanmıyordu, artık trigger/action enum). +8 test (toplam 1057). NOT: users/kvkk service katmanında doğrulanıyor (auth/compliance-kritik, dokunulmadı).
+- **Batch 4 (companies + announcements + drills + surveys + communications + notification-groups + automation)** ✓ — companies (ad sınırı, `.passthrough()`), announcements (başlık/içerik), drills (tip enum + metin sınırları), surveys (puan 1-5 + yorum, `.refine` ile "en az bir"), communications (SMS/broadcast enum+sınır), notification-groups (ad + üye), automation (kural — PUT önceden doğrulanmıyordu, artık trigger/action enum). +8 test (`bfc9bfe`). NOT: users/kvkk service katmanında doğrulanıyor (auth/compliance-kritik, dokunulmadı).
+- **Batch 5 (performance + avs-workers + self-service + avs-self-service)** ✓ — performance (review/goal/positive — period regex + puan 1-5 + metin sınırları, gate deseni), avs-workers (çalışan ad/tel), self-service (resident kiosk maintenance/feedback), avs-self-service (worker kiosk meal-selection/maintenance/feedback). Kiosk multipart uçlarda `validate` upload'tan sonra; 403-önce guard korundu. +5 test (toplam 1062).
+
+### Zod sweep — kapsam özeti
+**Zod ile doğrulanan modüller:** checkin, checkout, expenses, capacity, personnel, hr, discipline, visitors, maintenance, transport, housekeeping, laundry (ham SQL uçları), inventory (+locations/suppliers), meals, safety, stations, cards, companies, announcements, drills, surveys, communications, notification-groups, automation, performance, avs-workers, self-service, avs-self-service.
+**Service katmanında doğrulanan (kasıtlı dokunulmadı):** users (auth-kritik), kvkk (compliance), notification-prefs, bulk-actions, inventory lots/po/requests, laundry item/machine/supply.
+**Kapsam dışı (sistem/cihaz/salt-okuma):** stations scan/manual (cihaz-authed), push/mobile-auth/integrity/email/backup/setup/system/error-log/campus-map/qr/documents (sistem/altyapı ya da zaten enum+min doğrulamalı).
 
 ### Oturum içi diğer canlı işler (program dışı, tamamlandı)
 - axios HIGH advisory fix (`b57e459`) · CI tedarik-zinciri imza gate (`2b8869d`) · mevcudiyet Excel export (`a8ab06a`) · login düzeltmeleri: popover z-index + dil seçici + /login 403 + tam i18n TR/EN/AR (`a858b9f`/`7fc2d35`/`a7c33bb`) · demo veri temizliği

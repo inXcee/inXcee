@@ -12,17 +12,16 @@ import { departmentToInventoryCategory, getKioskSystemUserId } from './inventory
 import { isPushConfigured, getVapidPublicKey, saveWorkerSubscription, deleteWorkerSubscription } from '../../shared/notifications/push.js'
 import { getStaffActivity } from '../activity/service.js'
 import { MEAL_TYPES } from '../meals/service.js'
+import { validate } from '../../shared/middleware/validate.js'
+import { mealSelectionSchema, maintenanceSchema, feedbackSchema } from './schemas.js'
 
 export const avsSelfServiceRouter = Router()
 
 // ── Ertesi-gün öğün seçimi (Faz 8b) — çalışan kendi yarınki öğününü seçer ──
-avsSelfServiceRouter.put('/my-meal-selection', requireAvsKiosk, (req, res) => {
+avsSelfServiceRouter.put('/my-meal-selection', requireAvsKiosk, validate(mealSelectionSchema), (req, res) => {
   try {
     const { meal_date, meal_type } = req.body || {}
     const attending = req.body?.attending === false ? 0 : 1
-    if (!meal_date || !MEAL_TYPES.includes(meal_type)) {
-      return res.status(400).json({ error: 'meal_date ve geçerli meal_type gerekli' })
-    }
     getDB().prepare(`
       INSERT INTO meal_selections(staff_id, meal_date, meal_type, attending)
       VALUES(?,?,?,?)
@@ -280,12 +279,8 @@ avsSelfServiceRouter.post('/push/unsubscribe', requireAvsKiosk, (req, res) => {
 })
 
 // Hızlı arıza — staff reporter olarak audit_log'a düşer
-avsSelfServiceRouter.post('/maintenance', requireAvsKiosk, upload.single('photo'), verifyMagicBytes, (req, res) => {
+avsSelfServiceRouter.post('/maintenance', requireAvsKiosk, upload.single('photo'), verifyMagicBytes, validate(maintenanceSchema), (req, res) => {
   const { location, description, priority } = req.body
-  if (!location || location.trim().length < 3)
-    return res.status(400).json({ error: 'location en az 3 karakter olmalıdır' })
-  if (!description || description.trim().length < 10)
-    return res.status(400).json({ error: 'description en az 10 karakter olmalıdır' })
   try {
     const photoBefore = req.file ? '/uploads/' + req.file.filename : null
     const id = createRequest({
@@ -378,12 +373,8 @@ avsSelfServiceRouter.get('/my-maintenance', requireAvsKiosk, (req, res) => {
 })
 
 // Geri bildirim — AVS çalışanı (personnel_id null, workerId audit'te)
-avsSelfServiceRouter.post('/feedback', requireAvsKiosk, (req, res) => {
+avsSelfServiceRouter.post('/feedback', requireAvsKiosk, validate(feedbackSchema), (req, res) => {
   const { type, message } = req.body
-  if (!['complaint', 'suggestion', 'other'].includes(type))
-    return res.status(400).json({ error: 'Geçersiz tip' })
-  if (!message || message.trim().length < 20)
-    return res.status(400).json({ error: 'Mesaj en az 20 karakter olmalıdır' })
   try {
     const db = getDB()
     const r = db.prepare('INSERT INTO feedback(personnel_id, type, message) VALUES(NULL,?,?)').run(type, message.trim())

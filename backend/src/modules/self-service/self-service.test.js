@@ -63,6 +63,15 @@ describe('self-service maintenance validasyon', () => {
     expect(res.status).toBe(400)
     expect(res.body.error).toMatch(/description/)
   })
+
+  it('cok uzun aciklama 400 doner (Zod sweep)', async () => {
+    const kioskToken = jwt.sign({ personnelId: 1, role: 'kiosk' }, process.env.JWT_SECRET, { expiresIn: '1h' })
+    const res = await request(app)
+      .post('/api/self-service/maintenance')
+      .set('Authorization', `Bearer ${kioskToken}`)
+      .send({ location: 'Oda 101', description: 'd'.repeat(2001) })
+    expect(res.status).toBe(400)
+  })
 })
 
 // kiosk token yardımcısı

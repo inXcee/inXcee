@@ -140,6 +140,14 @@ describe('AVS Self-Service — maintenance', () => {
     expect(res.status).toBe(400)
     expect(res.body.error).toMatch(/description/)
   })
+
+  it('cok uzun aciklama 400 doner (Zod sweep)', async () => {
+    const res = await request(app).post('/api/avs-self-service/maintenance')
+      .set('Authorization', `Bearer ${avsToken}`)
+      .field('location', 'Oda 101')
+      .field('description', 'd'.repeat(2001))
+    expect(res.status).toBe(400)
+  })
 })
 
 describe('AVS Self-Service — maintenance foto', () => {

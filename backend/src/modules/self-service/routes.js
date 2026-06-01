@@ -3,6 +3,8 @@ import { requireKioskOrStaff, requireAvsKiosk } from '../../shared/auth/middlewa
 import { getDB } from '../../shared/db/index.js'
 import { createRequest } from '../maintenance/queries.js'
 import { changeKioskPin } from '../../shared/auth/service.js'
+import { validate } from '../../shared/middleware/validate.js'
+import { maintenanceSchema, feedbackSchema } from './schemas.js'
 import { insertItemQuery, updateItemStatusQuery, listMachinesQuery, addToQueueQuery, collectItemQuery, setBagNoQuery, getRoomLaundryHistoryQuery, getRoomLaundrySummaryQuery, getBlockRoomActiveCountsQuery } from '../laundry/queries.js'
 import { logger } from '../../shared/logger.js'
 
@@ -168,13 +170,11 @@ selfServiceRouter.get('/laundry-status', requireKioskOrStaff, (req, res) => {
   } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
-selfServiceRouter.post('/maintenance', requireKioskOrStaff, (req, res) => {
-  if (!req.user.personnelId) return res.status(403).json({ error: 'Kiosk token gerekli' })
+const requirePersonnel = (req, res, next) =>
+  req.user.personnelId ? next() : res.status(403).json({ error: 'Kiosk token gerekli' })
+
+selfServiceRouter.post('/maintenance', requireKioskOrStaff, requirePersonnel, validate(maintenanceSchema), (req, res) => {
   const { location, description } = req.body
-  if (!location || location.trim().length < 3)
-    return res.status(400).json({ error: 'location en az 3 karakter olmalıdır' })
-  if (!description || description.trim().length < 10)
-    return res.status(400).json({ error: 'description en az 10 karakter olmalıdır' })
   try {
     const id = createRequest({
       location: location.trim(),
@@ -236,13 +236,8 @@ selfServiceRouter.get('/announcements', requireKioskOrStaff, (req, res) => {
   } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
-selfServiceRouter.post('/feedback', requireKioskOrStaff, (req, res) => {
-  if (!req.user.personnelId) return res.status(403).json({ error: 'Kiosk token gerekli' })
+selfServiceRouter.post('/feedback', requireKioskOrStaff, requirePersonnel, validate(feedbackSchema), (req, res) => {
   const { type, message, anonymous } = req.body
-  if (!['complaint', 'suggestion', 'other'].includes(type))
-    return res.status(400).json({ error: 'Geçersiz tip (complaint, suggestion, other)' })
-  if (!message || message.trim().length < 20)
-    return res.status(400).json({ error: 'Mesaj en az 20 karakter olmalıdır' })
   try {
     const db = getDB()
     const r = db.prepare(`

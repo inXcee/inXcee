@@ -17,6 +17,20 @@ beforeAll(async () => {
   staffId = s.id
 })
 
+describe('Performance — Zod sweep', () => {
+  it('gecersiz period formati 400 doner', async () => {
+    const r = await request(app).post('/api/performance/reviews').set('Authorization', `Bearer ${token}`)
+      .send({ staff_id: staffId, period: 'haziran' })
+    expect(r.status).toBe(400)
+  })
+
+  it('5 ustu puan 400 doner', async () => {
+    const r = await request(app).post('/api/performance/reviews').set('Authorization', `Bearer ${token}`)
+      .send({ staff_id: staffId, period: '2027', productivity: 9 })
+    expect(r.status).toBe(400)
+  })
+})
+
 describe('H9 PE1 — Değerlendirme', () => {
   it('CREATE total_score otomatik hesaplar', async () => {
     const r = await request(app).post('/api/performance/reviews').set('Authorization', `Bearer ${token}`)

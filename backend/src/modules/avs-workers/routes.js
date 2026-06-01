@@ -1,5 +1,7 @@
 import { Router } from 'express'
 import { requireRole } from '../../shared/auth/middleware.js'
+import { validate } from '../../shared/middleware/validate.js'
+import { workerSchema } from './schemas.js'
 import { listWorkers, getWorker, createWorker, updateWorker, setWorkerPin, toggleWorker, deleteWorker } from './queries.js'
 
 export const avsWorkersRouter = Router()
@@ -10,9 +12,8 @@ avsWorkersRouter.get('/', ...adminOnly, (req, res) => {
   catch (e) { res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
-avsWorkersRouter.post('/', ...adminOnly, (req, res) => {
-  const { full_name, role_label, pickup_point_id, phone } = req.body
-  if (!full_name || full_name.trim().length < 2) return res.status(400).json({ error: 'Ad en az 2 karakter olmalı' })
+avsWorkersRouter.post('/', ...adminOnly, validate(workerSchema), (req, res) => {
+  const { full_name, role_label, pickup_point_id, phone } = req.validated
   try {
     const id = createWorker({
       full_name: full_name.trim(),
@@ -24,9 +25,8 @@ avsWorkersRouter.post('/', ...adminOnly, (req, res) => {
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
-avsWorkersRouter.put('/:id', ...adminOnly, (req, res) => {
-  const { full_name, role_label, pickup_point_id, phone } = req.body
-  if (!full_name || full_name.trim().length < 2) return res.status(400).json({ error: 'Ad en az 2 karakter olmalı' })
+avsWorkersRouter.put('/:id', ...adminOnly, validate(workerSchema), (req, res) => {
+  const { full_name, role_label, pickup_point_id, phone } = req.validated
   const w = getWorker(Number(req.params.id))
   if (!w) return res.status(404).json({ error: 'Çalışan bulunamadı' })
   updateWorker(Number(req.params.id), {
