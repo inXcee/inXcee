@@ -47,6 +47,22 @@ describe('Visitors', () => {
     expect(out2.status).toBe(404)
   })
 
+  it('cok uzun ziyaretci adi 400 doner (Zod sweep)', async () => {
+    const res = await request(app)
+      .post('/api/visitors')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ full_name: 'A'.repeat(201) })
+    expect(res.status).toBe(400)
+  })
+
+  it('cok uzun ziyaret amaci 400 doner (Zod sweep)', async () => {
+    const res = await request(app)
+      .post('/api/visitors')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ full_name: 'Geçerli Ad', purpose: 'p'.repeat(501) })
+    expect(res.status).toBe(400)
+  })
+
   it('stats endpoint', async () => {
     const res = await request(app)
       .get('/api/visitors/stats')

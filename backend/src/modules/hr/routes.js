@@ -3,6 +3,8 @@ import PDFDocument from 'pdfkit'
 import { requireRole } from '../../shared/auth/middleware.js'
 import { logAudit } from '../../shared/audit.js'
 import { getDB } from '../../shared/db/index.js'
+import { validate } from '../../shared/middleware/validate.js'
+import { startChecklistSchema, toggleItemSchema, addItemSchema } from './schemas.js'
 import * as q from './queries.js'
 import { logger } from '../../shared/logger.js'
 
@@ -11,13 +13,10 @@ const mgr = requireRole('campus_manager', 'shift_supervisor')
 const view = requireRole('campus_manager', 'shift_supervisor')
 
 // ── Checklist CRUD ──
-hrRouter.post('/checklists', ...mgr, (req, res) => {
+hrRouter.post('/checklists', ...mgr, validate(startChecklistSchema), (req, res) => {
   try {
-    const { staff_id, kind } = req.body || {}
-    if (!staff_id || !['onboarding', 'offboarding'].includes(kind)) {
-      return res.status(400).json({ error: 'staff_id ve kind (onboarding/offboarding) gerekli' })
-    }
-    const id = q.startChecklist(+staff_id, kind, req.user.id)
+    const { staff_id, kind } = req.validated
+    const id = q.startChecklist(staff_id, kind, req.user.id)
     logAudit(req.user.id, `hr_${kind}_start`, 'hr', id, `staff:${staff_id}`)
     res.status(201).json({ id })
   } catch (e) { res.status(400).json({ error: e.message }) }
@@ -41,17 +40,16 @@ hrRouter.get('/checklists/:id', ...view, (req, res) => {
   } catch (e) { logger.error('[hr/get]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
-hrRouter.patch('/items/:id/toggle', ...mgr, (req, res) => {
+hrRouter.patch('/items/:id/toggle', ...mgr, validate(toggleItemSchema), (req, res) => {
   try {
-    q.toggleItem(+req.params.id, !!req.body?.done, req.user.id, req.body?.note)
+    q.toggleItem(+req.params.id, req.validated.done, req.user.id, req.validated.note)
     res.json({ ok: true })
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
-hrRouter.post('/checklists/:id/items', ...mgr, (req, res) => {
+hrRouter.post('/checklists/:id/items', ...mgr, validate(addItemSchema), (req, res) => {
   try {
-    if (!req.body?.label?.trim()) return res.status(400).json({ error: 'Adım metni gerekli' })
-    const id = q.addItem(+req.params.id, req.body.label.trim().slice(0, 200))
+    const id = q.addItem(+req.params.id, req.validated.label)
     res.status(201).json({ id })
   } catch (e) { res.status(400).json({ error: e.message }) }
 })

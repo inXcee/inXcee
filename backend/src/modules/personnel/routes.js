@@ -1,6 +1,8 @@
 import { Router } from 'express'
 import { requireRole } from '../../shared/auth/middleware.js'
 import { logAudit } from '../../shared/audit.js'
+import { validate } from '../../shared/middleware/validate.js'
+import { addNoteSchema, emergencyContactSchema, emergencyContactUpdateSchema, archiveSchema } from './schemas.js'
 import * as q from './queries.js'
 import { logger } from '../../shared/logger.js'
 
@@ -23,17 +25,17 @@ personnelRouter.get('/:id/timeline', ...view, (req, res) => {
 })
 
 // ── Notlar ──
-personnelRouter.post('/:id/notes', ...mgr, (req, res) => {
+personnelRouter.post('/:id/notes', ...mgr, validate(addNoteSchema), (req, res) => {
   try {
-    if (!req.body?.note?.trim()) return res.status(400).json({ error: 'Not boş olamaz' })
+    const { note, pinned } = req.validated
     const id = q.addNote({
       staffId: +req.params.id,
       authorId: req.user.id,
       authorName: req.user.full_name || req.user.username,
-      note: req.body.note.trim().slice(0, 4000),
-      pinned: !!req.body.pinned,
+      note,
+      pinned,
     })
-    logAudit(req.user.id, 'staff_note_add', 'personnel', +req.params.id, req.body.note.slice(0, 50))
+    logAudit(req.user.id, 'staff_note_add', 'personnel', +req.params.id, note.slice(0, 50))
     res.status(201).json({ id })
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
@@ -49,16 +51,15 @@ personnelRouter.patch('/notes/:noteId/pin', ...mgr, (req, res) => {
 })
 
 // ── Acil iletişim ──
-personnelRouter.post('/:id/emergency-contacts', ...mgr, (req, res) => {
+personnelRouter.post('/:id/emergency-contacts', ...mgr, validate(emergencyContactSchema), (req, res) => {
   try {
-    if (!req.body?.name) return res.status(400).json({ error: 'İsim gerekli' })
-    const id = q.addEmergencyContact(+req.params.id, req.body)
+    const id = q.addEmergencyContact(+req.params.id, req.validated)
     res.status(201).json({ id })
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
-personnelRouter.put('/emergency-contacts/:id', ...mgr, (req, res) => {
-  try { q.updateEmergencyContact(+req.params.id, req.body); res.json({ ok: true }) }
+personnelRouter.put('/emergency-contacts/:id', ...mgr, validate(emergencyContactUpdateSchema), (req, res) => {
+  try { q.updateEmergencyContact(+req.params.id, req.validated); res.json({ ok: true }) }
   catch (e) { res.status(400).json({ error: e.message }) }
 })
 
@@ -68,10 +69,11 @@ personnelRouter.delete('/emergency-contacts/:id', ...mgr, (req, res) => {
 })
 
 // ── Arşiv ──
-personnelRouter.post('/:id/archive', ...mgr, (req, res) => {
+personnelRouter.post('/:id/archive', ...mgr, validate(archiveSchema), (req, res) => {
   try {
-    q.archiveStaff(+req.params.id, req.body?.reason)
-    logAudit(req.user.id, 'staff_archive', 'personnel', +req.params.id, req.body?.reason || '')
+    const reason = req.validated.reason
+    q.archiveStaff(+req.params.id, reason)
+    logAudit(req.user.id, 'staff_archive', 'personnel', +req.params.id, reason || '')
     res.json({ ok: true })
   } catch (e) { res.status(400).json({ error: e.message }) }
 })

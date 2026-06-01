@@ -1,6 +1,8 @@
 import { Router } from 'express'
 import { requireRole } from '../../shared/auth/middleware.js'
 import { logAudit } from '../../shared/audit.js'
+import { validate } from '../../shared/middleware/validate.js'
+import { addRecordSchema, blacklistAddSchema, blacklistRemoveSchema } from './schemas.js'
 import * as svc from './service.js'
 import { logger } from '../../shared/logger.js'
 
@@ -23,19 +25,16 @@ disciplineRouter.get('/personnel/:id', ...mgmt, (req, res) => {
 
 // ── Records ─────────────────────────────────────────────────────────────────
 
-disciplineRouter.post('/records', ...mgmt, (req, res) => {
+disciplineRouter.post('/records', ...mgmt, validate(addRecordSchema), (req, res) => {
   try {
-    const { personnel_id, card_type, reason } = req.body
-    if (!personnel_id) return res.status(400).json({ error: 'Personel ID gerekli' })
-    if (!['yellow', 'red'].includes(card_type)) return res.status(400).json({ error: 'Geçersiz kart tipi' })
-    if (!reason || reason.trim().length < 3) return res.status(400).json({ error: 'Sebep en az 3 karakter olmalı' })
+    const { personnel_id, card_type, reason } = req.validated
     const result = svc.addRecordService({
       personnelId: personnel_id,
       cardType: card_type,
-      reason: reason.trim(),
+      reason,
       createdBy: req.user.id
     })
-    logAudit(req.user.id, `discipline_${card_type}_card`, 'discipline', personnel_id, reason.trim())
+    logAudit(req.user.id, `discipline_${card_type}_card`, 'discipline', personnel_id, reason)
     res.status(201).json({ ok: true, discipline_points: result.discipline_points })
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
@@ -57,18 +56,17 @@ disciplineRouter.get('/records/:personnelId', ...mgmt, (req, res) => {
 
 // ── Blacklist ───────────────────────────────────────────────────────────────
 
-disciplineRouter.post('/blacklist', ...requireRole('campus_manager'), (req, res) => {
-  if (!req.body.personnel_id) return res.status(400).json({ error: 'Personel ID gerekli' })
-  if (!req.body.reason || req.body.reason.trim().length < 3) return res.status(400).json({ error: 'Sebep gerekli' })
-  svc.addToBlacklistService(req.body.personnel_id, req.body.reason.trim(), req.user.id)
-  logAudit(req.user.id, 'blacklist_add', 'discipline', req.body.personnel_id, req.body.reason.trim())
+disciplineRouter.post('/blacklist', ...requireRole('campus_manager'), validate(blacklistAddSchema), (req, res) => {
+  const { personnel_id, reason } = req.validated
+  svc.addToBlacklistService(personnel_id, reason, req.user.id)
+  logAudit(req.user.id, 'blacklist_add', 'discipline', personnel_id, reason)
   res.json({ ok: true })
 })
 
-disciplineRouter.post('/blacklist/remove', ...requireRole('campus_manager'), (req, res) => {
-  if (!req.body.personnel_id) return res.status(400).json({ error: 'Personel ID gerekli' })
-  svc.removeFromBlacklistService(req.body.personnel_id, req.user.id)
-  logAudit(req.user.id, 'blacklist_remove', 'discipline', req.body.personnel_id, null)
+disciplineRouter.post('/blacklist/remove', ...requireRole('campus_manager'), validate(blacklistRemoveSchema), (req, res) => {
+  const { personnel_id } = req.validated
+  svc.removeFromBlacklistService(personnel_id, req.user.id)
+  logAudit(req.user.id, 'blacklist_remove', 'discipline', personnel_id, null)
   res.json({ ok: true })
 })
 

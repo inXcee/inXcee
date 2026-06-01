@@ -20,6 +20,9 @@ TDD + test + deploy ile canlıya alınıyor. "Devam" denince buradan sıradakine
 - **C1a** ✓ — kalan mutation uçlarına Zod (checkin: assign-room/set-shift/zimmet sign+return+return-all; checkout: yeni process şeması) (`b17fae3`)
 - C1b–C3 ⏳ bekliyor (aşağıda)
 
+### Cross-cutting Zod sweep — BAŞLADI
+- **People/Compliance grubu** ✓ — personnel (not/acil iletişim/arşiv), hr (checklist/adım/toggle), discipline (kart/blacklist), visitors (giriş) yazma uçlarına Zod şema + `validate()` middleware. Sessiz `slice()` kırpma → açık 400 reddetme. Her modülde `schemas.js`. +8 test (toplam 1027 geçiyor).
+
 ### Oturum içi diğer canlı işler (program dışı, tamamlandı)
 - axios HIGH advisory fix (`b57e459`) · CI tedarik-zinciri imza gate (`2b8869d`) · mevcudiyet Excel export (`a8ab06a`) · login düzeltmeleri: popover z-index + dil seçici + /login 403 + tam i18n TR/EN/AR (`a858b9f`/`7fc2d35`/`a7c33bb`) · demo veri temizliği
 
@@ -27,9 +30,12 @@ TDD + test + deploy ile canlıya alınıyor. "Devam" denince buradan sıradakine
 
 ## ⏳ KALAN — öncelik sırasıyla
 
-### 1. Cross-cutting Zod sweep (ÖNERİLEN SONRAKİ — en büyük boşluk)
-52 modülden ~5'inde validation var. Kalan tüm yazma uçlarına Zod şeması.
+### 1. Cross-cutting Zod sweep (DEVAM EDİYOR — en büyük boşluk)
+52 modülden ~9'unda validation var (checkin/checkout/expenses/capacity + People/Compliance:
+personnel/hr/discipline/visitors). Kalan yazma uçlarına Zod şeması.
 En yüksek tutarlılık/güvenlik kazancı, mekanik, düşük risk. Modül-modül uygulanır.
+**Sıradaki aday gruplar:** Operasyonel (shifts/transport/maintenance/capacity-kalan),
+Laundry (42 uç — en büyük), Inventory (alt-router'lar), Meals, Stations/Cards, Safety.
 
 ### 2. God component decomposition (en büyük teknik borç)
 - **Shifts** `ShiftsPage.jsx` 4429 satır → sekme bileşenleri (S1) ⭐ en büyük

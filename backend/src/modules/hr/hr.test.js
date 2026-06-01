@@ -63,6 +63,17 @@ describe('HR Onboarding (H3 HR1)', () => {
   })
 })
 
+describe('HR Zod sweep', () => {
+  it('cok uzun adim metni 400 doner (sessiz kirpma degil)', async () => {
+    const cl = await request(app).post('/api/hr/checklists')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ staff_id: staffId, kind: 'onboarding' })
+    const res = await request(app).post(`/api/hr/checklists/${cl.body.id}/items`)
+      .set('Authorization', `Bearer ${token}`).send({ label: 'A'.repeat(201) })
+    expect(res.status).toBe(400)
+  })
+})
+
 describe('HR Offboarding (H3 HR2)', () => {
   it('ayrilma checklist + ibra PDF', async () => {
     const r = await request(app).post('/api/hr/checklists')

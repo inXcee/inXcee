@@ -2,6 +2,8 @@ import { Router } from 'express'
 import { requireRole, requireAuth } from '../../shared/auth/middleware.js'
 import * as q from './queries.js'
 import { logAudit } from '../../shared/audit.js'
+import { validate } from '../../shared/middleware/validate.js'
+import { createVisitorSchema } from './schemas.js'
 
 export const visitorsRouter = Router()
 const mgmt = requireRole('campus_manager', 'shift_supervisor')
@@ -14,14 +16,10 @@ visitorsRouter.get('/stats', requireAuth, (req, res) => {
   res.json(q.getVisitorStats())
 })
 
-visitorsRouter.post('/', ...mgmt, (req, res) => {
-  const { full_name } = req.body || {}
-  if (!full_name || full_name.trim().length < 2) {
-    return res.status(400).json({ error: 'Ziyaretçi adı gerekli' })
-  }
+visitorsRouter.post('/', ...mgmt, validate(createVisitorSchema), (req, res) => {
   try {
-    const id = q.createVisitor(req.body, req.user.id)
-    logAudit(req.user.id, 'visitor_checkin', 'visitors', id, full_name)
+    const id = q.createVisitor(req.validated, req.user.id)
+    logAudit(req.user.id, 'visitor_checkin', 'visitors', id, req.validated.full_name)
     res.status(201).json({ id })
   } catch (e) { res.status(500).json({ error: e.message }) }
 })
