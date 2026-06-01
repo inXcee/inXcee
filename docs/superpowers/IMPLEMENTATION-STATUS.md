@@ -1,7 +1,7 @@
 # YYS İyileştirme Programı — Uygulama Durumu
 
 **Son güncelleme:** 2026-06-01
-**Canlı commit:** `479cbbd` (avskamp.com) — maintenance Zod commit deploy bekliyor
+**Canlı commit:** `92b3970` (avskamp.com) — operasyonel batch deploy bekliyor
 **Spec'ler:** `docs/superpowers/specs/2026-06-01-*.md` (9 onaylı tasarım, tüm modüller)
 
 Bu dosya, modül-modül iyileştirme programının ilerlemesini takip eder. Her şey
@@ -22,7 +22,8 @@ TDD + test + deploy ile canlıya alınıyor. "Devam" denince buradan sıradakine
 
 ### Cross-cutting Zod sweep — BAŞLADI
 - **People/Compliance grubu** ✓ — personnel (not/acil iletişim/arşiv), hr (checklist/adım/toggle), discipline (kart/blacklist), visitors (giriş) yazma uçlarına Zod şema + `validate()` middleware. Sessiz `slice()` kırpma → açık 400 reddetme. Her modülde `schemas.js`. +8 test (`479cbbd`).
-- **Maintenance** ✓ — istek oluştur (multipart, konum/açıklama/öncelik), öncelik/durum enum, atama, bekleme nedeni, teknisyen ekle/güncelle (user_id null ile unlink), yorum (zorunlu metin). Multipart uçlarda `validate` multer'dan sonra. +3 test (toplam 1030).
+- **Maintenance** ✓ — istek oluştur (multipart, konum/açıklama/öncelik), öncelik/durum enum, atama, bekleme nedeni, teknisyen ekle/güncelle (user_id null ile unlink), yorum (zorunlu metin). Multipart uçlarda `validate` multer'dan sonra. +3 test (`92b3970`).
+- **Operasyonel batch 1** ✓ — transport (durak/rota/durak-stop CRUD, atama, personel pickup), housekeeping (kat tamamla, atla, oda not/no-clean, arıza bildir multipart, temizlik personeli). +5 test (toplam 1035).
 
 ### Oturum içi diğer canlı işler (program dışı, tamamlandı)
 - axios HIGH advisory fix (`b57e459`) · CI tedarik-zinciri imza gate (`2b8869d`) · mevcudiyet Excel export (`a8ab06a`) · login düzeltmeleri: popover z-index + dil seçici + /login 403 + tam i18n TR/EN/AR (`a858b9f`/`7fc2d35`/`a7c33bb`) · demo veri temizliği

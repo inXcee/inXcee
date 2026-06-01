@@ -7,6 +7,11 @@ import { getDB } from '../../shared/db/index.js'
 import * as q from './queries.js'
 import { logAudit } from '../../shared/audit.js'
 import { logger } from '../../shared/logger.js'
+import { validate } from '../../shared/middleware/validate.js'
+import {
+  createPickupPointSchema, pickupPointUpdateSchema, createRouteSchema, routeUpdateSchema,
+  addStopSchema, stopUpdateSchema, setPickupSchema, assignSchema,
+} from './schemas.js'
 
 export const transportRouter = Router()
 const mgr = requireRole('campus_manager', 'shift_supervisor')
@@ -18,17 +23,16 @@ transportRouter.get('/pickup-points', ...view, (req, res) => {
   catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
-transportRouter.post('/pickup-points', ...mgr, (req, res) => {
+transportRouter.post('/pickup-points', ...mgr, validate(createPickupPointSchema), (req, res) => {
   try {
-    if (!req.body?.name) return res.status(400).json({ error: 'Ad gerekli' })
-    const id = q.createPickupPoint(req.body)
-    logAudit(req.user.id, 'pickup_point_create', 'transport', id, req.body.name)
+    const id = q.createPickupPoint(req.validated)
+    logAudit(req.user.id, 'pickup_point_create', 'transport', id, req.validated.name)
     res.status(201).json({ id })
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
-transportRouter.put('/pickup-points/:id', ...mgr, (req, res) => {
-  try { q.updatePickupPoint(+req.params.id, req.body); res.json({ ok: true }) }
+transportRouter.put('/pickup-points/:id', ...mgr, validate(pickupPointUpdateSchema), (req, res) => {
+  try { q.updatePickupPoint(+req.params.id, req.validated); res.json({ ok: true }) }
   catch (e) { res.status(400).json({ error: e.message }) }
 })
 
@@ -102,17 +106,16 @@ transportRouter.get('/routes/:id', ...view, (req, res) => {
   } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
-transportRouter.post('/routes', ...mgr, (req, res) => {
+transportRouter.post('/routes', ...mgr, validate(createRouteSchema), (req, res) => {
   try {
-    if (!req.body?.name) return res.status(400).json({ error: 'Ad gerekli' })
-    const id = q.createRoute(req.body)
-    logAudit(req.user.id, 'route_create', 'transport', id, req.body.name)
+    const id = q.createRoute(req.validated)
+    logAudit(req.user.id, 'route_create', 'transport', id, req.validated.name)
     res.status(201).json({ id })
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
-transportRouter.put('/routes/:id', ...mgr, (req, res) => {
-  try { q.updateRoute(+req.params.id, req.body); res.json({ ok: true }) }
+transportRouter.put('/routes/:id', ...mgr, validate(routeUpdateSchema), (req, res) => {
+  try { q.updateRoute(+req.params.id, req.validated); res.json({ ok: true }) }
   catch (e) { res.status(400).json({ error: e.message }) }
 })
 
@@ -127,16 +130,15 @@ transportRouter.get('/routes/:id/stops', ...view, (req, res) => {
   catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
-transportRouter.post('/routes/:id/stops', ...mgr, (req, res) => {
+transportRouter.post('/routes/:id/stops', ...mgr, validate(addStopSchema), (req, res) => {
   try {
-    if (!req.body?.pickup_point_id) return res.status(400).json({ error: 'pickup_point_id gerekli' })
-    const id = q.addRouteStop(+req.params.id, req.body)
+    const id = q.addRouteStop(+req.params.id, req.validated)
     res.status(201).json({ id })
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
-transportRouter.put('/stops/:id', ...mgr, (req, res) => {
-  try { q.updateRouteStop(+req.params.id, req.body); res.json({ ok: true }) }
+transportRouter.put('/stops/:id', ...mgr, validate(stopUpdateSchema), (req, res) => {
+  try { q.updateRouteStop(+req.params.id, req.validated); res.json({ ok: true }) }
   catch (e) { res.status(400).json({ error: e.message }) }
 })
 
@@ -164,9 +166,9 @@ transportRouter.get('/staff', ...view, (req, res) => {
   } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
-transportRouter.put('/staff/:id/pickup', ...mgr, (req, res) => {
+transportRouter.put('/staff/:id/pickup', ...mgr, validate(setPickupSchema), (req, res) => {
   try {
-    q.setStaffPickup(+req.params.id, req.body?.pickup_point_id ?? null)
+    q.setStaffPickup(+req.params.id, req.validated.pickup_point_id ?? null)
     res.json({ ok: true })
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
@@ -198,12 +200,11 @@ transportRouter.post('/auto-assign', ...mgr, (req, res) => {
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
-transportRouter.post('/assign', ...mgr, (req, res) => {
+transportRouter.post('/assign', ...mgr, validate(assignSchema), (req, res) => {
   try {
-    const { staff_id, route_id, stop_id, work_date } = req.body
-    if (!staff_id || !route_id || !work_date) return res.status(400).json({ error: 'staff_id, route_id, work_date gerekli' })
-    q.setAssignment({ staffId: +staff_id, routeId: +route_id, stopId: stop_id ? +stop_id : null, workDate: work_date, userId: req.user.id })
-    logAudit(req.user.id, 'transport_assign', 'transport', +staff_id, `route ${route_id} / ${work_date}`)
+    const { staff_id, route_id, stop_id, work_date } = req.validated
+    q.setAssignment({ staffId: staff_id, routeId: route_id, stopId: stop_id ?? null, workDate: work_date, userId: req.user.id })
+    logAudit(req.user.id, 'transport_assign', 'transport', staff_id, `route ${route_id} / ${work_date}`)
     res.json({ ok: true })
   } catch (e) { res.status(400).json({ error: e.message }) }
 })

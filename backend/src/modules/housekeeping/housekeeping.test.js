@@ -11,6 +11,20 @@ beforeAll(async () => {
   token = r.body.token
 })
 
+describe('Housekeeping — Zod sweep', () => {
+  it('bos aciklamali ariza bildirimi 400 doner', async () => {
+    const res = await request(app).post('/api/housekeeping/fault-report')
+      .set('Authorization', `Bearer ${token}`).send({ location: 'M1 101', description: '' })
+    expect(res.status).toBe(400)
+  })
+
+  it('cok uzun temizlik personeli ismi 400 doner', async () => {
+    const res = await request(app).post('/api/housekeeping/staff')
+      .set('Authorization', `Bearer ${token}`).send({ full_name: 'A'.repeat(201) })
+    expect(res.status).toBe(400)
+  })
+})
+
 describe('Housekeeping', () => {
   it('creates daily tasks', async () => {
     const res = await request(app).post('/api/housekeeping/tasks/generate-daily').set('Authorization', `Bearer ${token}`)
