@@ -1,7 +1,7 @@
 # YYS İyileştirme Programı — Uygulama Durumu
 
 **Son güncelleme:** 2026-06-01
-**Canlı commit:** `bfc9bfe` (avskamp.com) — batch 5 deploy bekliyor
+**Canlı commit:** `d6a107b` (avskamp.com)
 **Spec'ler:** `docs/superpowers/specs/2026-06-01-*.md` (9 onaylı tasarım, tüm modüller)
 
 Bu dosya, modül-modül iyileştirme programının ilerlemesini takip eder. Her şey
@@ -41,12 +41,13 @@ TDD + test + deploy ile canlıya alınıyor. "Devam" denince buradan sıradakine
 
 ## ⏳ KALAN — öncelik sırasıyla
 
-### 1. Cross-cutting Zod sweep (DEVAM EDİYOR — en büyük boşluk)
-52 modülden ~9'unda validation var (checkin/checkout/expenses/capacity + People/Compliance:
-personnel/hr/discipline/visitors). Kalan yazma uçlarına Zod şeması.
-En yüksek tutarlılık/güvenlik kazancı, mekanik, düşük risk. Modül-modül uygulanır.
-**Sıradaki aday gruplar:** Operasyonel (shifts/transport/maintenance/capacity-kalan),
-Laundry (42 uç — en büyük), Inventory (alt-router'lar), Meals, Stations/Cards, Safety.
+### 1. Cross-cutting Zod sweep — ✅ TAMAM (canlıda)
+Tüm kullanıcı-girdili yazma uçları Zod + `validate()` middleware ile doğrulanıyor
+(batch 1-5, yukarıdaki "TAMAMLANAN" bölümüne bak). Service katmanında doğrulanan
+uçlar (users/kvkk/bulk-actions/notification-prefs, inventory lots/po/requests,
+laundry item/machine/supply) bilinçli dokunulmadı; sistem/cihaz uçları kapsam dışı.
+Kalan tek istisna: **shifts** modülü — çoğu ucu service'te doğrulanıyor; ham kalan
+uçlar (holidays/deductions) gerekirse ileride eklenebilir (düşük öncelik).
 
 ### 2. God component decomposition (en büyük teknik borç)
 - **Shifts** `ShiftsPage.jsx` 4429 satır → sekme bileşenleri (S1) ⭐ en büyük
