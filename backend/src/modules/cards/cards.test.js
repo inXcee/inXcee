@@ -125,3 +125,18 @@ describe('cards — yetki', () => {
     expect(r.status).toBe(200)
   })
 })
+
+describe('cards — Zod sweep', () => {
+  it('gecersiz card_type 400 doner', async () => {
+    const r = await request(app).post(`/api/cards/staff/${staffId}/issue`).set(auth(token))
+      .send({ card_type: 'vip' })
+    expect(r.status).toBe(400)
+  })
+
+  it('bos nfc_uid bind 400 doner', async () => {
+    const issued = await request(app).post(`/api/cards/staff/${staffId}/issue`).set(auth(token))
+      .send({ card_type: 'meal', regenerate: true })
+    const r = await request(app).patch(`/api/cards/${issued.body.id}/bind-nfc`).set(auth(token)).send({ nfc_uid: '' })
+    expect(r.status).toBe(400)
+  })
+})

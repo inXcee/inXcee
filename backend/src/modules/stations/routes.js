@@ -10,6 +10,8 @@ import { isEligible, logMealFromScan, mealTypeForNow, MEAL_TYPES } from '../meal
 import { createNotification } from '../../shared/notifications/service.js'
 import { enqueue } from '../../shared/jobs/index.js'
 import { getManagerEmails } from '../email/queries.js'
+import { validate } from '../../shared/middleware/validate.js'
+import { createStationSchema, updateStationSchema } from './schemas.js'
 
 export const stationsRouter = Router()
 const mgr = requireRole('campus_manager')
@@ -72,16 +74,14 @@ stationsRouter.get('/', ...view, (req, res) => {
 })
 
 // ── İstasyon oluştur — raw key SADECE BİR KEZ döner ──
-stationsRouter.post('/', ...mgr, (req, res) => {
+stationsRouter.post('/', ...mgr, validate(createStationSchema), (req, res) => {
   try {
-    const { name, station_type, location, capture_photo } = req.body || {}
-    if (!name || String(name).trim().length < 2) return res.status(400).json({ error: 'İsim gerekli' })
-    if (!STATION_TYPES.includes(station_type)) return res.status(400).json({ error: 'Geçersiz istasyon tipi' })
+    const { name, station_type, location, capture_photo } = req.validated
     const rawKey = genKey()
     const id = getDB().prepare(`
       INSERT INTO scan_stations(name, station_type, api_key_hash, location, capture_photo, created_by)
       VALUES(?,?,?,?,?,?)
-    `).run(String(name).trim(), station_type, bcrypt.hashSync(rawKey, 10),
+    `).run(name, station_type, bcrypt.hashSync(rawKey, 10),
       location?.trim() || null, capture_photo === false ? 0 : 1, req.user.id).lastInsertRowid
     logAudit(req.user.id, 'station_create', 'stations', id, station_type)
     const s = getDB().prepare('SELECT * FROM scan_stations WHERE id=?').get(id)
@@ -90,15 +90,12 @@ stationsRouter.post('/', ...mgr, (req, res) => {
 })
 
 // ── İstasyon güncelle (isim/konum/tip/foto/aktiflik) ──
-stationsRouter.patch('/:id', ...mgr, (req, res) => {
+stationsRouter.patch('/:id', ...mgr, validate(updateStationSchema), (req, res) => {
   try {
     const db = getDB()
     const s = db.prepare('SELECT * FROM scan_stations WHERE id=?').get(+req.params.id)
     if (!s) return res.status(404).json({ error: 'İstasyon bulunamadı' })
-    const { name, station_type, location, capture_photo, is_active } = req.body || {}
-    if (station_type !== undefined && !STATION_TYPES.includes(station_type)) {
-      return res.status(400).json({ error: 'Geçersiz istasyon tipi' })
-    }
+    const { name, station_type, location, capture_photo, is_active } = req.validated
     db.prepare(`
       UPDATE scan_stations
       SET name = ?, station_type = ?, location = ?, capture_photo = ?, is_active = ?

@@ -3,6 +3,8 @@ import { requireRole } from '../../shared/auth/middleware.js'
 import { logAudit } from '../../shared/audit.js'
 import { getDB } from '../../shared/db/index.js'
 import { logger } from '../../shared/logger.js'
+import { validate } from '../../shared/middleware/validate.js'
+import { createSessionSchema, updateSessionSchema, createKkdSchema, kkdReturnSchema } from './schemas.js'
 
 export const safetyRouter = Router()
 const mgr = requireRole('campus_manager', 'shift_supervisor')
@@ -46,15 +48,9 @@ safetyRouter.get('/sessions/:id', ...view, (req, res) => {
   } catch (e) { logger.error('[safety/get]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
-safetyRouter.post('/sessions', ...mgr, (req, res) => {
+safetyRouter.post('/sessions', ...mgr, validate(createSessionSchema), (req, res) => {
   try {
-    const { title, category, session_date, duration_min, location, instructor, notes } = req.body || {}
-    if (!title || !category || !session_date) {
-      return res.status(400).json({ error: 'title, category, session_date gerekli' })
-    }
-    if (!['safety', 'fire', 'first_aid', 'environment', 'quality', 'other'].includes(category)) {
-      return res.status(400).json({ error: 'Geçersiz kategori' })
-    }
+    const { title, category, session_date, duration_min, location, instructor, notes } = req.validated
     const id = getDB().prepare(`
       INSERT INTO training_sessions(title, category, session_date, duration_min, location, instructor, notes, created_by)
       VALUES(?,?,?,?,?,?,?,?)
@@ -64,14 +60,14 @@ safetyRouter.post('/sessions', ...mgr, (req, res) => {
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
-safetyRouter.put('/sessions/:id', ...mgr, (req, res) => {
+safetyRouter.put('/sessions/:id', ...mgr, validate(updateSessionSchema), (req, res) => {
   try {
     const db = getDB()
     const fields = ['title', 'category', 'session_date', 'duration_min', 'location', 'instructor', 'notes', 'status']
     const sets = []
     const params = []
     fields.forEach(f => {
-      if (req.body[f] !== undefined) { sets.push(`${f}=?`); params.push(req.body[f] === '' ? null : req.body[f]) }
+      if (req.validated[f] !== undefined) { sets.push(`${f}=?`); params.push(req.validated[f] === '' ? null : req.validated[f]) }
     })
     if (!sets.length) return res.json({ ok: true })
     params.push(+req.params.id)
@@ -174,20 +170,19 @@ safetyRouter.get('/kkd', ...view, (req, res) => {
   } catch (e) { logger.error('[safety/kkd-list]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
-safetyRouter.post('/kkd', ...mgr, (req, res) => {
+safetyRouter.post('/kkd', ...mgr, validate(createKkdSchema), (req, res) => {
   try {
-    const { staff_id, item_type, size, serial_no, notes } = req.body || {}
-    if (!staff_id || !item_type) return res.status(400).json({ error: 'staff_id ve item_type gerekli' })
+    const { staff_id, item_type, size, serial_no, notes } = req.validated
     const id = getDB().prepare(`
       INSERT INTO kkd_assignments(staff_id, item_type, size, serial_no, notes, assigned_by)
       VALUES(?,?,?,?,?,?)
-    `).run(+staff_id, item_type, size || null, serial_no || null, notes || null, req.user.id).lastInsertRowid
+    `).run(staff_id, item_type, size || null, serial_no || null, notes || null, req.user.id).lastInsertRowid
     logAudit(req.user.id, 'kkd_assign', 'safety', id, `${item_type} → staff:${staff_id}`)
     res.status(201).json({ id })
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
-safetyRouter.post('/kkd/:id/return', ...mgr, (req, res) => {
+safetyRouter.post('/kkd/:id/return', ...mgr, validate(kkdReturnSchema), (req, res) => {
   try {
     const db = getDB()
     const existing = db.prepare('SELECT returned_at FROM kkd_assignments WHERE id=?').get(+req.params.id)
@@ -197,8 +192,8 @@ safetyRouter.post('/kkd/:id/return', ...mgr, (req, res) => {
       UPDATE kkd_assignments
       SET returned_at = CURRENT_TIMESTAMP, returned_by = ?, condition_on_return = ?
       WHERE id = ?
-    `).run(req.user.id, req.body?.condition || null, +req.params.id)
-    logAudit(req.user.id, 'kkd_return', 'safety', +req.params.id, req.body?.condition || '')
+    `).run(req.user.id, req.validated.condition || null, +req.params.id)
+    logAudit(req.user.id, 'kkd_return', 'safety', +req.params.id, req.validated.condition || '')
     res.json({ ok: true })
   } catch (e) { res.status(400).json({ error: e.message }) }
 })

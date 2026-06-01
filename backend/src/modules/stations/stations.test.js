@@ -33,6 +33,20 @@ beforeAll(async () => {
   cafeKey  = (await request(app).post('/api/stations').set(auth(token)).send({ name: 'Yemekhane', station_type: 'cafeteria' })).body.api_key
 })
 
+describe('stations — Zod sweep', () => {
+  it('cok uzun istasyon adi 400 doner', async () => {
+    const r = await request(app).post('/api/stations').set(auth(token))
+      .send({ name: 'A'.repeat(121), station_type: 'entry' })
+    expect(r.status).toBe(400)
+  })
+
+  it('gecersiz istasyon tipi 400 doner', async () => {
+    const r = await request(app).post('/api/stations').set(auth(token))
+      .send({ name: 'Geçerli', station_type: 'invalid' })
+    expect(r.status).toBe(400)
+  })
+})
+
 describe('stations — CRUD & yetki', () => {
   it('create raw key bir kez döner, liste hash sızdırmaz', async () => {
     const r = await request(app).post('/api/stations').set(auth(token)).send({ name: 'Çıkış', station_type: 'exit' })

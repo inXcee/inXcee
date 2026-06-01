@@ -6,6 +6,8 @@ import { requireRole } from '../../shared/auth/middleware.js'
 import { logAudit } from '../../shared/audit.js'
 import { getDB } from '../../shared/db/index.js'
 import { logger } from '../../shared/logger.js'
+import { validate } from '../../shared/middleware/validate.js'
+import { bulkIssueSchema, issueSchema, bindNfcSchema } from './schemas.js'
 
 export const cardsRouter = Router()
 const mgr = requireRole('campus_manager', 'shift_supervisor')
@@ -31,10 +33,9 @@ function activeCard(db, holderType, holderId, cardType) {
 }
 
 // ── Toplu üret: aktif staff'ın eksik kartlarını doldur ──
-cardsRouter.post('/bulk-issue', ...mgr, (req, res) => {
+cardsRouter.post('/bulk-issue', ...mgr, validate(bulkIssueSchema), (req, res) => {
   try {
-    const cardType = req.body?.card_type
-    if (!CARD_TYPES.includes(cardType)) return res.status(400).json({ error: 'Geçersiz card_type' })
+    const cardType = req.validated.card_type
     const db = getDB()
     const missing = db.prepare(`
       SELECT id FROM staff
@@ -50,22 +51,21 @@ cardsRouter.post('/bulk-issue', ...mgr, (req, res) => {
 })
 
 // ── Kart üret (amaç bazında) ──
-cardsRouter.post('/:holderType/:holderId/issue', ...mgr, (req, res) => {
+cardsRouter.post('/:holderType/:holderId/issue', ...mgr, validate(issueSchema), (req, res) => {
   try {
     const { holderType, holderId } = req.params
-    const cardType = req.body?.card_type
+    const { card_type: cardType, regenerate, nfc_uid, valid_until } = req.validated
     if (!HOLDER_TYPES.includes(holderType)) return res.status(400).json({ error: 'Geçersiz holderType' })
-    if (!CARD_TYPES.includes(cardType)) return res.status(400).json({ error: 'Geçersiz card_type' })
 
     const db = getDB()
     const existing = activeCard(db, holderType, +holderId, cardType)
-    if (existing && !req.body?.regenerate) {
+    if (existing && !regenerate) {
       return res.json({ id: existing.id, code: existing.code, card_type: existing.card_type, status: existing.status })
     }
 
     const code = genCode(cardType)
-    const nfcUid = req.body?.nfc_uid || null
-    const validUntil = req.body?.valid_until || null  // Faz 5b: süreli (ziyaretçi) kart; null=süresiz
+    const nfcUid = nfc_uid || null
+    const validUntil = valid_until || null  // Faz 5b: süreli (ziyaretçi) kart; null=süresiz
     const result = db.transaction(() => {
       if (existing) {
         db.prepare(`UPDATE cards SET status='revoked', revoked_at=datetime('now') WHERE id=?`).run(existing.id)
@@ -105,10 +105,9 @@ cardsRouter.patch('/:id/report-lost', ...mgr, (req, res) => {
 })
 
 // ── NFC UID bağla (Faz 2 enrollment) ──
-cardsRouter.patch('/:id/bind-nfc', ...mgr, (req, res) => {
+cardsRouter.patch('/:id/bind-nfc', ...mgr, validate(bindNfcSchema), (req, res) => {
   try {
-    const uid = req.body?.nfc_uid
-    if (!uid) return res.status(400).json({ error: 'nfc_uid gerekli' })
+    const uid = req.validated.nfc_uid
     const r = getDB().prepare(`UPDATE cards SET nfc_uid=? WHERE id=?`).run(String(uid).trim(), +req.params.id)
     if (!r.changes) return res.status(404).json({ error: 'Kart bulunamadı' })
     logAudit(req.user.id, 'card_bind_nfc', 'cards', +req.params.id, '')

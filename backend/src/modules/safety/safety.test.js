@@ -17,6 +17,28 @@ beforeAll(async () => {
   staffId = s.id
 })
 
+describe('Safety — Zod sweep', () => {
+  it('cok uzun egitim basligi 400 doner', async () => {
+    const res = await request(app).post('/api/safety/sessions')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ title: 'T'.repeat(201), category: 'safety', session_date: '2026-06-10' })
+    expect(res.status).toBe(400)
+  })
+
+  it('gecersiz kategori 400 doner', async () => {
+    const res = await request(app).post('/api/safety/sessions')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ title: 'Geçerli', category: 'invalid', session_date: '2026-06-10' })
+    expect(res.status).toBe(400)
+  })
+
+  it('item_type olmadan KKD 400 doner', async () => {
+    const res = await request(app).post('/api/safety/kkd')
+      .set('Authorization', `Bearer ${token}`).send({ staff_id: staffId })
+    expect(res.status).toBe(400)
+  })
+})
+
 describe('H6 IG1 — Eğitim oturumları', () => {
   it('CREATE/LIST/GET/UPDATE/DELETE training session', async () => {
     const c = await request(app).post('/api/safety/sessions').set('Authorization', `Bearer ${token}`)
