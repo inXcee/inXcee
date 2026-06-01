@@ -4,6 +4,8 @@ import { getAll, create, remove } from './queries.js'
 import { createNotification } from '../../shared/notifications/service.js'
 import { EVENT_KINDS } from '../../shared/notifications/events.js'
 import { logger } from '../../shared/logger.js'
+import { validate } from '../../shared/middleware/validate.js'
+import { createAnnouncementSchema } from './schemas.js'
 
 export const announcementsRouter = Router()
 const adminOnly = requireRole('campus_manager')
@@ -13,12 +15,10 @@ announcementsRouter.get('/', ...adminOnly, (req, res) => {
   catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
-announcementsRouter.post('/', ...adminOnly, (req, res) => {
-  const { title, body, expires_at } = req.body
-  if (!title || title.trim().length < 2) return res.status(400).json({ error: 'Başlık gerekli' })
-  if (!body || body.trim().length < 5) return res.status(400).json({ error: 'İçerik gerekli' })
+announcementsRouter.post('/', ...adminOnly, validate(createAnnouncementSchema), (req, res) => {
+  const { title, body, expires_at } = req.validated
   try {
-    const id = create({ title: title.trim(), body: body.trim(), expiresAt: expires_at || null, createdBy: req.user.userId })
+    const id = create({ title, body, expiresAt: expires_at || null, createdBy: req.user.userId })
     // A→Z: yeni duyuru bildirim akışına (broadcast — target_role/user yok)
     createNotification({
       message: `📢 Yeni duyuru: ${title.trim()}`,

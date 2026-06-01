@@ -13,6 +13,14 @@ beforeAll(async () => {
   token = res.body.token
 })
 
+describe('Companies — Zod sweep', () => {
+  it('cok uzun firma adi 400 doner', async () => {
+    const res = await request(app).post('/api/companies')
+      .set('Authorization', `Bearer ${token}`).send({ name: 'A'.repeat(201) })
+    expect(res.status).toBe(400)
+  })
+})
+
 describe('Companies — CRUD', () => {
   let id
   it('firma olusturur', async () => {

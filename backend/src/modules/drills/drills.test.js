@@ -13,6 +13,15 @@ beforeAll(async () => {
   token = r.body.token
 })
 
+describe('Drills — Zod sweep', () => {
+  it('cok uzun bulgular metni 400 doner', async () => {
+    const res = await request(app).post('/api/drills')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ drill_type: 'fire', drill_date: '2026-06-10', findings: 'f'.repeat(4001) })
+    expect(res.status).toBe(400)
+  })
+})
+
 describe('Drills', () => {
   it('gecersiz tip reddedilir', async () => {
     const res = await request(app).post('/api/drills')

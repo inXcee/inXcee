@@ -3,6 +3,8 @@ import { requireRole } from '../../shared/auth/middleware.js'
 import { logAudit } from '../../shared/audit.js'
 import { getDB } from '../../shared/db/index.js'
 import { logger } from '../../shared/logger.js'
+import { validate } from '../../shared/middleware/validate.js'
+import { smsSendSchema, broadcastSchema } from './schemas.js'
 
 export const commsRouter = Router()
 const mgr = requireRole('campus_manager', 'shift_supervisor')
@@ -46,11 +48,9 @@ function logComm(data) {
 }
 
 // ── IB2: SMS gönder (tek personel) ──
-commsRouter.post('/sms/send', ...mgr, async (req, res) => {
+commsRouter.post('/sms/send', ...mgr, validate(smsSendSchema), async (req, res) => {
   try {
-    const { staff_id, phone, body } = req.body || {}
-    if (!body) return res.status(400).json({ error: 'body gerekli' })
-    if (!staff_id && !phone) return res.status(400).json({ error: 'staff_id veya phone gerekli' })
+    const { staff_id, phone, body } = req.validated
 
     let targetPhone = phone
     let recipientId = null
@@ -107,14 +107,9 @@ commsRouter.delete('/push/unsubscribe', ...view, (req, res) => {
 })
 
 // ── IB4: Toplu duyuru — gruba/role'a toplu gönderim ──
-commsRouter.post('/broadcast', ...mgr, async (req, res) => {
+commsRouter.post('/broadcast', ...mgr, validate(broadcastSchema), async (req, res) => {
   try {
-    const { channel, target_type, target_id, body, subject } = req.body || {}
-    if (!channel || !target_type || !body) {
-      return res.status(400).json({ error: 'channel, target_type, body gerekli' })
-    }
-    if (!['sms', 'push', 'toast'].includes(channel)) return res.status(400).json({ error: 'channel: sms|push|toast' })
-    if (!['group', 'role', 'dept', 'all'].includes(target_type)) return res.status(400).json({ error: 'target_type: group|role|dept|all' })
+    const { channel, target_type, target_id, body, subject } = req.validated
 
     const db = getDB()
     let staffList = []

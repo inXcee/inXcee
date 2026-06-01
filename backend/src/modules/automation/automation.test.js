@@ -13,6 +13,16 @@ beforeAll(async () => {
   token = r.body.token
 })
 
+describe('Automation — Zod sweep', () => {
+  it('PUT gecersiz trigger 400 doner (onceden dogrulanmiyordu)', async () => {
+    const created = await request(app).post('/api/automation').set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Zod Kural', trigger_type: 'occupancy_high', trigger_threshold: 90, action_type: 'log' })
+    const res = await request(app).put(`/api/automation/${created.body.id}`).set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Zod Kural', trigger_type: 'invalid', trigger_threshold: 90, action_type: 'log' })
+    expect(res.status).toBe(400)
+  })
+})
+
 describe('Automation Rules', () => {
   it('gecersiz trigger reddedilir', async () => {
     const res = await request(app).post('/api/automation')

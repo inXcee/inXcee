@@ -13,6 +13,14 @@ beforeAll(async () => {
   token = res.body.token
 })
 
+describe('Surveys — Zod sweep', () => {
+  it('cok uzun yorum 400 doner', async () => {
+    const res = await request(app).post('/api/surveys/submit')
+      .send({ overall_score: 4, comment: 'c'.repeat(2001) })
+    expect(res.status).toBe(400)
+  })
+})
+
 describe('Surveys', () => {
   it('skor 1-5 disinda reddedilir', async () => {
     const res = await request(app).post('/api/surveys/submit').send({ room_score: 7 })

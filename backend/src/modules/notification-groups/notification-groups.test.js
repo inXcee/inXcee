@@ -14,6 +14,14 @@ beforeAll(async () => {
   userId = getDB().prepare("SELECT id FROM users WHERE username='teknik'").get().id
 })
 
+describe('Notification Groups — Zod sweep', () => {
+  it('cok uzun grup adi 400 doner', async () => {
+    const res = await request(app).post('/api/notification-groups')
+      .set('Authorization', `Bearer ${token}`).send({ name: 'G'.repeat(121) })
+    expect(res.status).toBe(400)
+  })
+})
+
 describe('Notification Groups', () => {
   let gid
   it('grup adi olmadan reddedilir', async () => {
