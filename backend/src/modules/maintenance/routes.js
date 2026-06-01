@@ -3,6 +3,11 @@ import { requireRole } from '../../shared/auth/middleware.js'
 import { upload, verifyMagicBytes } from '../../shared/uploads/middleware.js'
 import { getDB } from '../../shared/db/index.js'
 import { logAudit } from '../../shared/audit.js'
+import { validate } from '../../shared/middleware/validate.js'
+import {
+  createRequestSchema, updatePrioritySchema, waitReasonSchema, assignSchema,
+  updateStatusSchema, createTechnicianSchema, updateTechnicianSchema, addCommentSchema,
+} from './schemas.js'
 import * as svc from './service.js'
 import { paginate } from '../../shared/paginate.js'
 import { logger } from '../../shared/logger.js'
@@ -12,22 +17,19 @@ const techAccess = requireRole('campus_manager', 'shift_supervisor', 'technical'
 
 // ── Requests ─────────────────────────────────────────────────────────────────
 
-maintenanceRouter.post('/requests', ...techAccess, upload.single('photo_before'), verifyMagicBytes, (req, res) => {
+maintenanceRouter.post('/requests', ...techAccess, upload.single('photo_before'), verifyMagicBytes, validate(createRequestSchema), (req, res) => {
   try {
-    const { location, description, priority } = req.body
-    if (!location || location.trim().length < 2) return res.status(400).json({ error: 'Konum gerekli' })
-    if (!description || description.trim().length < 5) return res.status(400).json({ error: 'Açıklama en az 5 karakter olmalı' })
-    if (priority && !['high', 'medium', 'low'].includes(priority)) return res.status(400).json({ error: 'Geçersiz öncelik' })
+    const { location, description, priority, wait_reason } = req.validated
     const photoBefore = req.file ? `/uploads/${req.file.filename}` : null
     const id = svc.createRequestService({
-      location: location.trim(),
-      description: description.trim(),
-      priority: priority || 'medium',
+      location,
+      description,
+      priority,
       reporterUserId: req.user.id,
       photoBefore,
-      waitReason: req.body.wait_reason || null,
+      waitReason: wait_reason || null,
     })
-    logAudit(req.user.id, 'maintenance_create', 'maintenance', id, `${location.trim()}: ${description.trim()}`)
+    logAudit(req.user.id, 'maintenance_create', 'maintenance', id, `${location}: ${description}`)
     res.status(201).json({ id })
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
@@ -54,27 +56,22 @@ maintenanceRouter.get('/requests/:id', ...techAccess, (req, res) => {
   res.json(r)
 })
 
-maintenanceRouter.patch('/requests/:id/wait-reason', ...techAccess, (req, res) => {
-  try { svc.updateWaitReasonService(+req.params.id, req.body.wait_reason); res.json({ ok: true }) }
+maintenanceRouter.patch('/requests/:id/wait-reason', ...techAccess, validate(waitReasonSchema), (req, res) => {
+  try { svc.updateWaitReasonService(+req.params.id, req.validated.wait_reason); res.json({ ok: true }) }
   catch (e) { res.status(400).json({ error: e.message }) }
 })
 
-maintenanceRouter.patch('/requests/:id/priority', ...techAccess, (req, res) => {
+maintenanceRouter.patch('/requests/:id/priority', ...techAccess, validate(updatePrioritySchema), (req, res) => {
   try {
-    const { priority } = req.body
-    if (!['high', 'medium', 'low'].includes(priority)) {
-      return res.status(400).json({ error: 'Geçersiz öncelik' })
-    }
-    svc.updateRequestPriorityService(+req.params.id, priority)
+    svc.updateRequestPriorityService(+req.params.id, req.validated.priority)
     res.json({ ok: true })
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
-maintenanceRouter.patch('/requests/:id/assign', ...techAccess, (req, res) => {
+maintenanceRouter.patch('/requests/:id/assign', ...techAccess, validate(assignSchema), (req, res) => {
   try {
-    const { technician_id } = req.body
-    if (!technician_id) return res.status(400).json({ error: 'Teknisyen ID gerekli' })
-    svc.assignRequestService(+req.params.id, +technician_id, req.user.id)
+    const { technician_id } = req.validated
+    svc.assignRequestService(+req.params.id, technician_id, req.user.id)
     logAudit(req.user.id, 'maintenance_assign', 'maintenance', +req.params.id, `teknisyen:${technician_id}`)
     res.json({ ok: true })
   } catch (e) { res.status(400).json({ error: e.message }) }
@@ -87,10 +84,9 @@ maintenanceRouter.patch('/requests/:id/start', ...techAccess, (req, res) => {
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
-maintenanceRouter.patch('/requests/:id/status', ...techAccess, (req, res) => {
+maintenanceRouter.patch('/requests/:id/status', ...techAccess, validate(updateStatusSchema), (req, res) => {
   try {
-    const { status } = req.body
-    if (!status) return res.status(400).json({ error: 'Durum belirtilmeli' })
+    const { status } = req.validated
     svc.updateStatusService(+req.params.id, status, req.user.id)
     logAudit(req.user.id, 'maintenance_status_change', 'maintenance', +req.params.id, status)
     res.json({ ok: true })
@@ -145,15 +141,16 @@ maintenanceRouter.get('/technicians/available', ...techAccess, (req, res) => {
   catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
-maintenanceRouter.post('/technicians', ...requireRole('campus_manager', 'technical'), (req, res) => {
+maintenanceRouter.post('/technicians', ...requireRole('campus_manager', 'technical'), validate(createTechnicianSchema), (req, res) => {
   try {
-    const id = svc.createTechnicianService(req.body.full_name, req.body.phone, req.body.specialty, req.body.shift)
+    const { full_name, phone, specialty, shift } = req.validated
+    const id = svc.createTechnicianService(full_name, phone, specialty, shift)
     res.status(201).json({ id })
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
-maintenanceRouter.put('/technicians/:id', ...requireRole('campus_manager', 'technical'), (req, res) => {
-  try { svc.updateTechnicianService(+req.params.id, req.body); res.json({ ok: true }) }
+maintenanceRouter.put('/technicians/:id', ...requireRole('campus_manager', 'technical'), validate(updateTechnicianSchema), (req, res) => {
+  try { svc.updateTechnicianService(+req.params.id, req.validated); res.json({ ok: true }) }
   catch (e) { res.status(400).json({ error: e.message }) }
 })
 
@@ -169,10 +166,10 @@ maintenanceRouter.get('/requests/:id/comments', ...techAccess, (req, res) => {
   catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
-maintenanceRouter.post('/requests/:id/comments', ...techAccess, upload.single('photo'), verifyMagicBytes, (req, res) => {
+maintenanceRouter.post('/requests/:id/comments', ...techAccess, upload.single('photo'), verifyMagicBytes, validate(addCommentSchema), (req, res) => {
   try {
     const photoUrl = req.file ? `/uploads/${req.file.filename}` : null
-    const id = svc.addCommentService(+req.params.id, req.user.id, req.body.comment, photoUrl)
+    const id = svc.addCommentService(+req.params.id, req.user.id, req.validated.comment, photoUrl)
     res.status(201).json({ id })
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
