@@ -6,6 +6,8 @@ import * as svc from './service.js'
 import { collectItemQuery, listGarmentTypesQuery, insertGarmentTypeQuery, updateGarmentTypeQuery, reorderGarmentTypesQuery } from './queries.js'
 import { notifyItemReady, sendFoundMessage, notifyRoomPersonReady, sendWhatsApp } from './whatsapp.js'
 import { logger } from '../../shared/logger.js'
+import { validate } from '../../shared/middleware/validate.js'
+import { createGarmentTypeSchema, updateGarmentTypeSchema, createBagSchema } from './schemas.js'
 
 export const laundryRouter = Router()
 
@@ -723,19 +725,16 @@ laundryRouter.get('/garment-types', ...laundryRead, (req, res) => {
   } catch(e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
-laundryRouter.post('/garment-types', ...laundryFull, (req, res) => {
+laundryRouter.post('/garment-types', ...laundryFull, validate(createGarmentTypeSchema), (req, res) => {
   try {
-    const { name, emoji, image_url, sort_order } = req.body
-    if (!name) return res.status(400).json({ error: 'İsim zorunlu' })
-    const result = insertGarmentTypeQuery({ name, emoji, image_url, sort_order })
+    const result = insertGarmentTypeQuery(req.validated)
     res.status(201).json(result)
   } catch(e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
-laundryRouter.patch('/garment-types/:id', ...laundryFull, (req, res) => {
+laundryRouter.patch('/garment-types/:id', ...laundryFull, validate(updateGarmentTypeSchema), (req, res) => {
   try {
-    const { name, emoji, image_url, sort_order, is_active } = req.body
-    const result = updateGarmentTypeQuery(+req.params.id, { name, emoji, image_url, sort_order, is_active })
+    const result = updateGarmentTypeQuery(+req.params.id, req.validated)
     if (!result) return res.status(404).json({ error: 'Bulunamadı' })
     res.json(result)
   } catch(e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
@@ -780,9 +779,8 @@ laundryRouter.get('/bags/by-qr/:code', ...laundryRead, (req, res) => {
   res.json(row)
 })
 
-laundryRouter.post('/bags', ...laundryFull, (req, res) => {
-  const { qr_code, room_id } = req.body || {}
-  if (!qr_code || qr_code.length < 3) return res.status(400).json({ error: 'qr_code zorunlu (>=3 char)' })
+laundryRouter.post('/bags', ...laundryFull, validate(createBagSchema), (req, res) => {
+  const { qr_code, room_id } = req.validated
   const db = getDB()
   try {
     const r = db.prepare(`

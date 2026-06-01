@@ -15,6 +15,20 @@ beforeAll(async () => {
   roomId = getDB().prepare('SELECT id FROM rooms LIMIT 1').get().id
 })
 
+describe('Laundry — Zod sweep', () => {
+  it('cok uzun qr_code 400 doner', async () => {
+    const r = await request(app).post('/api/laundry/bags')
+      .set('Authorization', `Bearer ${token}`).send({ qr_code: 'Q'.repeat(101) })
+    expect(r.status).toBe(400)
+  })
+
+  it('cok uzun garment-type ismi 400 doner', async () => {
+    const r = await request(app).post('/api/laundry/garment-types')
+      .set('Authorization', `Bearer ${token}`).send({ name: 'G'.repeat(101) })
+    expect(r.status).toBe(400)
+  })
+})
+
 describe('Laundry Bags - QR taramali canta yonetimi', () => {
   it('POST /laundry/bags yeni canta olusturur (qr_code unique)', async () => {
     const r = await request(app).post('/api/laundry/bags')

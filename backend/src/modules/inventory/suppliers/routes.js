@@ -1,5 +1,7 @@
 import { Router } from 'express'
 import { requireRole } from '../../../shared/auth/middleware.js'
+import { validate } from '../../../shared/middleware/validate.js'
+import { createSupplierSchema } from '../schemas.js'
 import * as service from './service.js'
 import { logger } from '../../../shared/logger.js'
 
@@ -19,13 +21,13 @@ suppliersRouter.get('/:id', ...mgr, (req, res) => {
   } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatasi' }) }
 })
 
-suppliersRouter.post('/', ...mgr, (req, res) => {
-  try { res.status(201).json({ id: service.create(req.body, req.user.id) }) }
+suppliersRouter.post('/', ...mgr, validate(createSupplierSchema), (req, res) => {
+  try { res.status(201).json({ id: service.create(req.validated, req.user.id) }) }
   catch (e) { res.status(400).json({ error: e.message }) }
 })
 
-suppliersRouter.put('/:id', ...mgr, (req, res) => {
-  try { service.update(+req.params.id, req.body, req.user.id); res.json({ ok: true }) }
+suppliersRouter.put('/:id', ...mgr, validate(createSupplierSchema), (req, res) => {
+  try { service.update(+req.params.id, req.validated, req.user.id); res.json({ ok: true }) }
   catch (e) { res.status(400).json({ error: e.message }) }
 })
 

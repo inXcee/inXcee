@@ -3,6 +3,8 @@ import { requireRole } from '../../shared/auth/middleware.js'
 import { logAudit } from '../../shared/audit.js'
 import { getDB } from '../../shared/db/index.js'
 import { logger } from '../../shared/logger.js'
+import { validate } from '../../shared/middleware/validate.js'
+import { logMealSchema, selectionSchema, dietSchema, menuSchema } from './schemas.js'
 
 export const mealsRouter = Router()
 const mgr = requireRole('campus_manager', 'shift_supervisor')
@@ -11,12 +13,9 @@ const view = requireRole('campus_manager', 'shift_supervisor', 'laundry', 'house
 const VALID_MEALS = ['breakfast', 'lunch', 'dinner', 'snack']
 
 // ── YM1: Öğün okutma ──
-mealsRouter.post('/log', ...mgr, (req, res) => {
+mealsRouter.post('/log', ...mgr, validate(logMealSchema), (req, res) => {
   try {
-    const { staff_id, meal_type, meal_date, qr_token, cost, method = 'manual' } = req.body || {}
-    if (!meal_type || !VALID_MEALS.includes(meal_type)) {
-      return res.status(400).json({ error: 'Geçersiz meal_type' })
-    }
+    const { staff_id, meal_type, meal_date, qr_token, cost, method } = req.validated
 
     const db = getDB()
     let sid = staff_id ? +staff_id : null
@@ -80,13 +79,10 @@ mealsRouter.delete('/log/:id', ...mgr, (req, res) => {
 })
 
 // ── YM6 (Faz 8): Ertesi-gün öğün seçimi — personel yarın için seçer ──
-mealsRouter.put('/selection', ...mgr, (req, res) => {
+mealsRouter.put('/selection', ...mgr, validate(selectionSchema), (req, res) => {
   try {
-    const { staff_id, meal_date, meal_type } = req.body || {}
-    const attending = req.body?.attending === false ? 0 : 1
-    if (!staff_id || !meal_date || !VALID_MEALS.includes(meal_type)) {
-      return res.status(400).json({ error: 'staff_id, meal_date ve geçerli meal_type gerekli' })
-    }
+    const { staff_id, meal_date, meal_type } = req.validated
+    const attending = req.validated.attending ? 1 : 0
     getDB().prepare(`
       INSERT INTO meal_selections(staff_id, meal_date, meal_type, attending)
       VALUES(?,?,?,?)
@@ -193,9 +189,9 @@ mealsRouter.get('/forecast', ...view, (req, res) => {
 })
 
 // ── YM2: Diyet flag set/unset ──
-mealsRouter.put('/staff/:id/diet', ...mgr, (req, res) => {
+mealsRouter.put('/staff/:id/diet', ...mgr, validate(dietSchema), (req, res) => {
   try {
-    const flags = req.body?.diet_flags || null
+    const flags = req.validated.diet_flags || null
     getDB().prepare('UPDATE staff SET diet_flags = ? WHERE id = ?').run(flags, +req.params.id)
     res.json({ ok: true })
   } catch (e) { res.status(400).json({ error: e.message }) }
@@ -244,10 +240,8 @@ mealsRouter.get('/menu', ...view, (req, res) => {
   } catch (e) { logger.error('[meals/menu get]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
-mealsRouter.put('/menu', ...mgr, (req, res) => {
-  const { meal_date, meal_type, items } = req.body || {}
-  if (!meal_date || !VALID_MEALS.includes(meal_type))
-    return res.status(400).json({ error: 'Geçersiz tarih veya öğün' })
+mealsRouter.put('/menu', ...mgr, validate(menuSchema), (req, res) => {
+  const { meal_date, meal_type, items } = req.validated
   try {
     getDB().prepare(`
       INSERT INTO meal_menu(meal_date, meal_type, items) VALUES(?,?,?)

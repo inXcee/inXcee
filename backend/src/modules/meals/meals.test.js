@@ -19,6 +19,21 @@ beforeAll(async () => {
   qrToken = g.body.qr_token
 })
 
+describe('Meals — Zod sweep', () => {
+  it('gecersiz meal_type 400 doner', async () => {
+    const res = await request(app).post('/api/meals/log')
+      .set('Authorization', `Bearer ${token}`).send({ staff_id: staffId, meal_type: 'brunch' })
+    expect(res.status).toBe(400)
+  })
+
+  it('cok uzun menu 400 doner', async () => {
+    const res = await request(app).put('/api/meals/menu')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ meal_date: '2026-06-02', meal_type: 'lunch', items: 'm'.repeat(2001) })
+    expect(res.status).toBe(400)
+  })
+})
+
 describe('H7 YM1 — Öğün okutma', () => {
   it('staff_id ile öğün kaydedilir', async () => {
     const r = await request(app).post('/api/meals/log').set('Authorization', `Bearer ${token}`)

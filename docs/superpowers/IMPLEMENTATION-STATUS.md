@@ -1,7 +1,7 @@
 # YYS İyileştirme Programı — Uygulama Durumu
 
 **Son güncelleme:** 2026-06-01
-**Canlı commit:** `92b3970` (avskamp.com) — operasyonel batch deploy bekliyor
+**Canlı commit:** `3806e9a` (avskamp.com) — laundry+inventory+meals batch deploy bekliyor
 **Spec'ler:** `docs/superpowers/specs/2026-06-01-*.md` (9 onaylı tasarım, tüm modüller)
 
 Bu dosya, modül-modül iyileştirme programının ilerlemesini takip eder. Her şey
@@ -23,7 +23,8 @@ TDD + test + deploy ile canlıya alınıyor. "Devam" denince buradan sıradakine
 ### Cross-cutting Zod sweep — BAŞLADI
 - **People/Compliance grubu** ✓ — personnel (not/acil iletişim/arşiv), hr (checklist/adım/toggle), discipline (kart/blacklist), visitors (giriş) yazma uçlarına Zod şema + `validate()` middleware. Sessiz `slice()` kırpma → açık 400 reddetme. Her modülde `schemas.js`. +8 test (`479cbbd`).
 - **Maintenance** ✓ — istek oluştur (multipart, konum/açıklama/öncelik), öncelik/durum enum, atama, bekleme nedeni, teknisyen ekle/güncelle (user_id null ile unlink), yorum (zorunlu metin). Multipart uçlarda `validate` multer'dan sonra. +3 test (`92b3970`).
-- **Operasyonel batch 1** ✓ — transport (durak/rota/durak-stop CRUD, atama, personel pickup), housekeeping (kat tamamla, atla, oda not/no-clean, arıza bildir multipart, temizlik personeli). +5 test (toplam 1035).
+- **Operasyonel batch 1** ✓ — transport (durak/rota/durak-stop CRUD, atama, personel pickup), housekeeping (kat tamamla, atla, oda not/no-clean, arıza bildir multipart, temizlik personeli). +5 test (`3806e9a`).
+- **Batch 2 (laundry + inventory + meals)** ✓ — laundry: ham SQL uçları (garment-types CRUD, bags). inventory: item create/edit + checkout + receipts (`.passthrough()` ile alan kaybı önlendi), locations CRUD, suppliers. meals: log/selection/diet/menu (enum+sınır). +7 test (toplam 1042). NOT: laundry item/machine/supply ve inventory lots/po/requests uçları service katmanında doğrulanıyor (zaten korunuyor).
 
 ### Oturum içi diğer canlı işler (program dışı, tamamlandı)
 - axios HIGH advisory fix (`b57e459`) · CI tedarik-zinciri imza gate (`2b8869d`) · mevcudiyet Excel export (`a8ab06a`) · login düzeltmeleri: popover z-index + dil seçici + /login 403 + tam i18n TR/EN/AR (`a858b9f`/`7fc2d35`/`a7c33bb`) · demo veri temizliği

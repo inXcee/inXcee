@@ -3,6 +3,8 @@ import { requireRole } from '../../../shared/auth/middleware.js'
 import { getDB } from '../../../shared/db/index.js'
 import { logAudit } from '../../../shared/audit.js'
 import { logger } from '../../../shared/logger.js'
+import { validate } from '../../../shared/middleware/validate.js'
+import { createLocationSchema, updateLocationSchema } from '../schemas.js'
 
 export const locationsRouter = Router()
 const mgr = requireRole('campus_manager', 'shift_supervisor')
@@ -14,10 +16,9 @@ locationsRouter.get('/', ...mgr, (req, res) => {
   } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatasi' }) }
 })
 
-locationsRouter.post('/', ...mgr, (req, res) => {
+locationsRouter.post('/', ...mgr, validate(createLocationSchema), (req, res) => {
   try {
-    const { name, block, notes } = req.body
-    if (!name) return res.status(400).json({ error: 'Ad gerekli' })
+    const { name, block, notes } = req.validated
     const r = getDB().prepare('INSERT INTO inventory_locations(name, block, notes) VALUES(?,?,?)')
       .run(name, block || null, notes || null)
     logAudit(req.user.id, 'location_create', 'inventory', r.lastInsertRowid, name)
@@ -25,10 +26,9 @@ locationsRouter.post('/', ...mgr, (req, res) => {
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
-locationsRouter.put('/:id', ...mgr, (req, res) => {
+locationsRouter.put('/:id', ...mgr, validate(updateLocationSchema), (req, res) => {
   try {
-    const { name, block, notes, is_active } = req.body
-    if (!name) return res.status(400).json({ error: 'Ad gerekli' })
+    const { name, block, notes, is_active } = req.validated
     getDB().prepare('UPDATE inventory_locations SET name=?, block=?, notes=?, is_active=? WHERE id=?')
       .run(name, block || null, notes || null, is_active ?? 1, +req.params.id)
     res.json({ ok: true })

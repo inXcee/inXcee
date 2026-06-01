@@ -5,6 +5,8 @@ import { getDB } from '../../shared/db/index.js'
 import * as service from './service.js'
 import { paginate } from '../../shared/paginate.js'
 import { upload, verifyMagicBytes } from '../../shared/uploads/middleware.js'
+import { validate } from '../../shared/middleware/validate.js'
+import { createItemSchema, editItemSchema, checkoutSchema, createReceiptSchema } from './schemas.js'
 import { suppliersRouter } from './suppliers/routes.js'
 import { poRouter } from './purchase-orders/routes.js'
 import { requestsRouter } from './requests/routes.js'
@@ -58,18 +60,16 @@ inventoryRouter.get('/', ...mgrAccess, (req, res) => {
   res.json(service.listItems(req.query.category))
 })
 
-inventoryRouter.post('/', ...editAccess, (req, res) => {
+inventoryRouter.post('/', ...editAccess, validate(createItemSchema), (req, res) => {
   try {
-    const { item_name, unit, category } = req.body
-    if (!item_name || !unit || !category) return res.status(400).json({ error: 'Ad, birim ve kategori gerekli' })
-    const id = service.addItem(req.body, req.user.id)
+    const id = service.addItem(req.validated, req.user.id)
     res.status(201).json({ id })
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
-inventoryRouter.put('/:id', ...editAccess, (req, res) => {
+inventoryRouter.put('/:id', ...editAccess, validate(editItemSchema), (req, res) => {
   try {
-    service.editItem(+req.params.id, req.body, req.user.id)
+    service.editItem(+req.params.id, req.validated, req.user.id)
     res.json({ ok: true })
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
@@ -207,12 +207,9 @@ inventoryRouter.get('/checkouts/report', ...mgrAccess, (req, res) => {
   catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
-inventoryRouter.post('/checkout', ...editAccess, (req, res) => {
+inventoryRouter.post('/checkout', ...editAccess, validate(checkoutSchema), (req, res) => {
   try {
-    const { item_id, staff_id, quantity, note, from_location_id } = req.body
-    if (!item_id || !staff_id || !quantity || quantity <= 0) {
-      return res.status(400).json({ error: 'Urun, AVS personeli ve miktar gerekli' })
-    }
+    const { item_id, staff_id, quantity, note, from_location_id } = req.validated
     const result = service.checkoutToStaff(item_id, staff_id, quantity, note, req.user.id, from_location_id || null)
     res.json(result)
   } catch (e) { res.status(400).json({ error: e.message }) }
@@ -239,11 +236,9 @@ inventoryRouter.get('/receipts/:id', ...mgrAccess, (req, res) => {
   } catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
-inventoryRouter.post('/receipts', ...editAccess, (req, res) => {
+inventoryRouter.post('/receipts', ...editAccess, validate(createReceiptSchema), (req, res) => {
   try {
-    const { supplier, invoice_no, receipt_date, notes, items } = req.body
-    if (!supplier) return res.status(400).json({ error: 'Tedarikci gerekli' })
-    if (!Array.isArray(items) || items.length === 0) return res.status(400).json({ error: 'En az bir kalem gerekli' })
+    const { supplier, invoice_no, receipt_date, notes, items } = req.validated
     const result = service.createReceipt(supplier, invoice_no, receipt_date || new Date().toISOString().slice(0, 10), notes, items, req.user.id)
     res.status(201).json(result)
   } catch (e) { res.status(400).json({ error: e.message }) }
