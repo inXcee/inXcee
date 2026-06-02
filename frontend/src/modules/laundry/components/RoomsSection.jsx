@@ -10,16 +10,8 @@ import {
   Stat, Sparkline, TlChipGroup, YearHeatmap, HourDayMatrix,
   BlockCompareCard, SlaCard, ItemActionMenu, DamagesCard,
 } from './roomsAnalytics.jsx'
+import { STATUS_LABEL, STATUS_COLOR, formatRelative } from './roomsShared.js'
 const SIZES = ['XS','S','M','L','XL','XXL','3XL','4XL','36','38','40','42','44','46','48']
-
-const STATUS_LABEL = {
-  dirty: 'Sepette', pending_collection: 'Bekliyor', washing: 'Yıkanıyor',
-  ironing: 'Ütüde', ready: 'Hazır', delivered: 'Teslim', lost: 'Kayıp',
-}
-const STATUS_COLOR = {
-  dirty: 'var(--accent)', pending_collection: 'var(--accent3)', washing: 'var(--blue)',
-  ironing: '#a78bfa', ready: 'var(--green)', delivered: 'var(--teal)', lost: 'var(--red)',
-}
 
 const PIN_STORAGE_KEY = 'laundry-rooms-pins-v1'
 
@@ -47,17 +39,6 @@ const FILTER_OPTIONS = [
   { key: 'lost',       label: 'Kaybı var' },
   { key: 'never',      label: 'Hiç giriş yok' },
 ]
-
-function formatRelative(iso) {
-  if (!iso) return '—'
-  const d = new Date(iso)
-  const diffH = (Date.now() - d.getTime()) / 36e5
-  if (diffH < 1) return `${Math.max(1, Math.round(diffH * 60))}dk önce`
-  if (diffH < 24) return `${Math.round(diffH)}sa önce`
-  const diffD = diffH / 24
-  if (diffD < 30) return `${Math.round(diffD)}g önce`
-  return d.toLocaleDateString('tr-TR', { day: '2-digit', month: 'short', year: '2-digit' })
-}
 
 export default function RoomsSection({ onOpenNewRecordForRoom }) {
   const [block, setBlock] = useState('all')
