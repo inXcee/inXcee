@@ -5,6 +5,8 @@ import { renderWithProviders } from '../../../test/renderWithProviders.jsx'
 vi.mock('../api.js', () => ({
   laundryApi: {
     getItems: vi.fn(() => Promise.resolve([])),
+    getRooms: vi.fn(() => Promise.resolve([])),
+    createItem: vi.fn(() => Promise.resolve({})),
     getLaundrySettings: vi.fn(() => Promise.resolve({})),
     updateLaundrySetting: vi.fn(() => Promise.resolve({})),
   },
@@ -12,6 +14,7 @@ vi.mock('../api.js', () => ({
 
 import QuickNotes from './QuickNotes.jsx'
 import DeliveredTodaySection from './DeliveredTodaySection.jsx'
+import QuickAdd from './QuickAdd.jsx'
 
 describe('laundry hub leaf components smoke', () => {
   beforeEach(() => vi.clearAllMocks())
@@ -24,5 +27,10 @@ describe('laundry hub leaf components smoke', () => {
   it('DeliveredTodaySection çökmeden render olur', () => {
     renderWithProviders(<DeliveredTodaySection />)
     expect(screen.getByText('BUGÜN TESLİM')).toBeInTheDocument()
+  })
+
+  it('QuickAdd çökmeden render olur', () => {
+    renderWithProviders(<QuickAdd onClose={() => {}} />)
+    expect(screen.getByPlaceholderText('Oda No *')).toBeInTheDocument()
   })
 })
