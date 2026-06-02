@@ -1,7 +1,7 @@
 # YYS İyileştirme Programı — Uygulama Durumu
 
 **Son güncelleme:** 2026-06-01
-**Canlı commit:** `d6a107b` (avskamp.com)
+**Canlı commit:** `315b059` (avskamp.com) — Shifts S1 + LaundryHub L1b + RoomsSection analytics deploy edildi (2 Haz 2026)
 **Spec'ler:** `docs/superpowers/specs/2026-06-01-*.md` (9 onaylı tasarım, tüm modüller)
 
 Bu dosya, modül-modül iyileştirme programının ilerlemesini takip eder. Her şey
