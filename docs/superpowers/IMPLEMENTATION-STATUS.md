@@ -50,7 +50,11 @@ Kalan tek istisna: **shifts** modülü — çoğu ucu service'te doğrulanıyor;
 uçlar (holidays/deductions) gerekirse ileride eklenebilir (düşük öncelik).
 
 ### 2. God component decomposition (en büyük teknik borç)
-- **Shifts** `ShiftsPage.jsx` 4429 satır → sekme bileşenleri (S1) ⭐ en büyük
+- **Shifts** `ShiftsPage.jsx` 4429 → **2251 satır (DEVAM EDİYOR)** — S1 sekme ayrıştırması:
+  - S1a ✓ paylaşılan primitive'ler `shifts/shared.jsx`'e (`a6a5a31`)
+  - S1b ✓ basit sekmeler `tabs/`'e: Leave/Overtime/Departments/Swap/Settings (`0c8f1f5`) + 5 smoke
+  - S1b ✓ Staff grubu: `tabs/StaffTab.jsx` (StaffTab+StaffFormSheet) + `StaffDetailPanel.jsx` (`3ec5f12`) + 2 smoke
+  - **KALAN:** Schedule grubu (DailyView/WeekFillSheet/CellAssignSheet/ScheduleTab ~1000 satır — S1c çizelge saf-mantık ayrımı), Puantaj grubu (SummaryView/CalendarView/ListView/BordroSlip/BordroDetailSheet/PuantajTab ~700 satır), sonra orkestratör hedef ~200 satır. Frontend suite 91 yeşil, build OK.
 - **Laundry** `LaundryHub` 2038 + `RoomsSection` 2026 (L1b)
 - **Transport** `TransportPage` 1872 · **Capacity** `CapacityPage` 1587 (operasyonel grup)
 - **Maintenance** `MaintenancePage` 1386 (M1b) · **CheckinPage** 1033 (C1b) · **DisciplinePage** ~926
