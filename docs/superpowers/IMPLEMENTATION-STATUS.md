@@ -57,7 +57,8 @@ uçlar (holidays/deductions) gerekirse ileride eklenebilir (düşük öncelik).
   - S1b ✓ Schedule grubu: `tabs/ScheduleTab.jsx` (DailyView/WeekFillSheet/CellAssignSheet/ScheduleTab) + **latent `SHIFT_COLORS` ReferenceError bug fix** (`c7072d6`)
   - S1b ✓ Puantaj grubu: `tabs/PuantajTab.jsx` (Summary/Calendar/List view + Bordro slip/detay) (`4fb487c`)
   - Her sekme için smoke testi (frontend suite 84→93 yeşil). Tüm yazma davranışı korundu (birebir taşıma), build OK.
-  - **KALAN (S1c, opsiyonel):** ScheduleTab hâlâ ~1300 satır tek dosya — çizelge saf-mantığını (`staffGrid`/`weekStats` grid kurma, Excel `parseCell`/isim eşleme) `shifts/logic/*`'e çıkarıp birim test; PuantajTab alt-view'ları ayrı dosyalara. Düşük öncelik (artık ShiftsPage'i kirletmiyor).
+  - S1c ✓ çizelge saf-mantığı `logic/schedule.js`'e (`buildStaffGrid`/`computeWeekStats`/`parseShiftCell`/`parseScheduleSheet`) + 15 birim test (`81f6a12`). Suite 93→108 yeşil. ScheduleTab ~1320→1198 satır.
+  - **KALAN (opsiyonel, düşük öncelik):** PuantajTab alt-view'ları ayrı dosyalara bölünebilir. Artık ShiftsPage'i kirletmiyor — **Shifts S1 TAMAM.**
 - **Laundry** `LaundryHub` 2038 + `RoomsSection` 2026 (L1b)
 - **Transport** `TransportPage` 1872 · **Capacity** `CapacityPage` 1587 (operasyonel grup)
 - **Maintenance** `MaintenancePage` 1386 (M1b) · **CheckinPage** 1033 (C1b) · **DisciplinePage** ~926
