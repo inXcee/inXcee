@@ -50,11 +50,14 @@ Kalan tek istisna: **shifts** modülü — çoğu ucu service'te doğrulanıyor;
 uçlar (holidays/deductions) gerekirse ileride eklenebilir (düşük öncelik).
 
 ### 2. God component decomposition (en büyük teknik borç)
-- **Shifts** `ShiftsPage.jsx` 4429 → **2251 satır (DEVAM EDİYOR)** — S1 sekme ayrıştırması:
+- **Shifts** `ShiftsPage.jsx` 4429 → **211 satır ✓ (S1 sekme ayrıştırması TAMAM)** — saf orkestratör:
   - S1a ✓ paylaşılan primitive'ler `shifts/shared.jsx`'e (`a6a5a31`)
-  - S1b ✓ basit sekmeler `tabs/`'e: Leave/Overtime/Departments/Swap/Settings (`0c8f1f5`) + 5 smoke
-  - S1b ✓ Staff grubu: `tabs/StaffTab.jsx` (StaffTab+StaffFormSheet) + `StaffDetailPanel.jsx` (`3ec5f12`) + 2 smoke
-  - **KALAN:** Schedule grubu (DailyView/WeekFillSheet/CellAssignSheet/ScheduleTab ~1000 satır — S1c çizelge saf-mantık ayrımı), Puantaj grubu (SummaryView/CalendarView/ListView/BordroSlip/BordroDetailSheet/PuantajTab ~700 satır), sonra orkestratör hedef ~200 satır. Frontend suite 91 yeşil, build OK.
+  - S1b ✓ basit sekmeler `tabs/`'e: Leave/Overtime/Departments/Swap/Settings (`0c8f1f5`)
+  - S1b ✓ Staff grubu: `tabs/StaffTab.jsx` (StaffTab+StaffFormSheet) + `StaffDetailPanel.jsx` (`3ec5f12`)
+  - S1b ✓ Schedule grubu: `tabs/ScheduleTab.jsx` (DailyView/WeekFillSheet/CellAssignSheet/ScheduleTab) + **latent `SHIFT_COLORS` ReferenceError bug fix** (`c7072d6`)
+  - S1b ✓ Puantaj grubu: `tabs/PuantajTab.jsx` (Summary/Calendar/List view + Bordro slip/detay) (`4fb487c`)
+  - Her sekme için smoke testi (frontend suite 84→93 yeşil). Tüm yazma davranışı korundu (birebir taşıma), build OK.
+  - **KALAN (S1c, opsiyonel):** ScheduleTab hâlâ ~1300 satır tek dosya — çizelge saf-mantığını (`staffGrid`/`weekStats` grid kurma, Excel `parseCell`/isim eşleme) `shifts/logic/*`'e çıkarıp birim test; PuantajTab alt-view'ları ayrı dosyalara. Düşük öncelik (artık ShiftsPage'i kirletmiyor).
 - **Laundry** `LaundryHub` 2038 + `RoomsSection` 2026 (L1b)
 - **Transport** `TransportPage` 1872 · **Capacity** `CapacityPage` 1587 (operasyonel grup)
 - **Maintenance** `MaintenancePage` 1386 (M1b) · **CheckinPage** 1033 (C1b) · **DisciplinePage** ~926
