@@ -78,7 +78,7 @@ uçlar (holidays/deductions) gerekirse ileride eklenebilir (düşük öncelik).
 - **Inventory:** ABC analitiği · düşük-stok uyarısı+yeniden-sipariş · barkod
 - **Capacity:** what-if senaryo · doluluk projeksiyon
 - **Personnel:** 360° zaman tüneli (activity bağla) · belge ekleri
-- **HR:** sözleşme bitiş uyarısı · belge yönetimi
+- **HR:** ✅ **Sözleşme bitiş uyarısı TAMAM** (`modules/hr/contractAlerts.js`: findExpiringContracts + checkExpiringContracts, günlük cron `hr-contract-expiry` 07:00, ≤7g critical/8-30g warning, dedup_key ile gün-içi tekil, campus_manager; takip/gösterim zaten vardı → eksik proaktif bildirim eklendi; 5 test). Yeni migration yok. — **DEPLOY EDİLMEDİ** · belge yönetimi
 - **Discipline:** eskalasyon analitiği (puan eşiği→kara liste) · trend
 - **Visitors:** ön-kayıt + QR ziyaretçi kartı · ev sahibi bildirimi
 - **Stations:** istasyon sağlık izleme · offline scan kuyruğu
