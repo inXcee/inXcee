@@ -5,6 +5,7 @@ import { useUrlParamState } from '../../shared/hooks/useUrlParamState.js'
 import HelpHint from '../../shared/components/HelpHint.jsx'
 import { todayStr } from './shared.jsx'
 import ReportsTab from './tabs/ReportsTab.jsx'
+import MapTab from './tabs/MapTab.jsx'
 import PointsTab from './tabs/PointsTab.jsx'
 import RoutesTab from './tabs/RoutesTab.jsx'
 import PeopleTab from './tabs/PeopleTab.jsx'
@@ -16,6 +17,7 @@ const TABS = [
   { key: 'points', label: 'DURAKLAR', icon: '📍' },
   { key: 'people', label: 'PERSONEL', icon: '👥' },
   { key: 'reports', label: 'RAPORLAR', icon: '📊' },
+  { key: 'map', label: 'HARİTA', icon: '🗺' },
 ]
 
 export default function TransportPage() {
@@ -79,6 +81,7 @@ export default function TransportPage() {
       {tab === 'points' && <PointsTab />}
       {tab === 'people' && <PeopleTab />}
       {tab === 'reports' && <ReportsTab />}
+      {tab === 'map' && <MapTab />}
 
       {searchOpen && <GlobalSearch onClose={() => setSearchOpen(false)} setTab={setTab} />}
     </div>
