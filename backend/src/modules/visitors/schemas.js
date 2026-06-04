@@ -10,3 +10,13 @@ export const createVisitorSchema = z.object({
   visiting_block: z.string().trim().max(50, 'Blok çok uzun').nullish(),
   notes: z.string().trim().max(2000, 'Not çok uzun').nullish(),
 })
+
+// Ön-kayıt — createVisitor alanları + planlanan ziyaret zamanı.
+export const preRegisterSchema = createVisitorSchema.extend({
+  expected_at: z.string().trim().max(40, 'Tarih çok uzun').nullish(),
+})
+
+// QR ile check-in.
+export const checkinSchema = z.object({
+  qr_token: z.string().trim().min(1, 'QR token gerekli').max(80, 'Token çok uzun'),
+})

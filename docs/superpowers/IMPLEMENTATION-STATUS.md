@@ -80,7 +80,7 @@ uçlar (holidays/deductions) gerekirse ileride eklenebilir (düşük öncelik).
 - **Personnel:** 360° zaman tüneli (activity bağla) · belge ekleri
 - **HR:** ✅ **Sözleşme bitiş uyarısı TAMAM** (`modules/hr/contractAlerts.js`: findExpiringContracts + checkExpiringContracts, günlük cron `hr-contract-expiry` 07:00, ≤7g critical/8-30g warning, dedup_key ile gün-içi tekil, campus_manager; takip/gösterim zaten vardı → eksik proaktif bildirim eklendi; 5 test). Yeni migration yok. — **DEPLOY EDİLMEDİ** · belge yönetimi
 - **Discipline:** eskalasyon analitiği (puan eşiği→kara liste) · trend
-- **Visitors:** ön-kayıt + QR ziyaretçi kartı · ev sahibi bildirimi
+- **Visitors:** ✅ **Ön-kayıt + QR + ev sahibi bildirimi TAMAM** (migration 008 visitors rebuild: status/qr_token/expected_at + check_in_at nullable; preRegisterVisitor + checkInByToken (AVS: prefix, 409 çift-giriş) + QR kart PDF; POST /preregister + /checkin + GET /:id/card/pdf; check-in'de shift_supervisor bildirimi; VisitorsPage ön-kayıt modu + Beklenen sekmesi + QR Kart/Giriş aksiyonları; 7 backend + 2 frontend test). cards/stations entegrasyonu reddedildi (YAGNI). — **DEPLOY EDİLMEDİ**
 - **Stations:** istasyon sağlık izleme · offline scan kuyruğu
 - **Cards:** kart analitiği · toplu yeniden-basım
 - **Performance:** ✅ **KPI panosu TAMAM** (`modules/performance/kpi.js`: summary/departmentComparison/goalAchievement/scoreTrend/dimensionBreakdown saf fonksiyonlar + `GET /performance/kpi` + PerformancePage 'KPI/Analiz' sekmesi; departman kıyas/hedef tamamlama-zamanında-geciken/dönem trendi/boyut kırılımı; 13+3 backend + 2 frontend test; join-çarpım hatası TDD ile yakalandı+düzeltildi). Yeni migration yok. — **DEPLOY EDİLMEDİ**
