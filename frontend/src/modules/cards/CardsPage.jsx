@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
@@ -173,10 +173,16 @@ export default function CardsPage() {
             style={{ borderRadius: 8, border: 'none', background: view === 'analytics' ? 'var(--accent)' : 'transparent', color: view === 'analytics' ? '#000' : 'var(--text3)' }}>
             📊 Analiz
           </button>
+          <button onClick={() => setView('enroll')} className="btn btn-xs"
+            style={{ borderRadius: 8, border: 'none', background: view === 'enroll' ? 'var(--accent)' : 'transparent', color: view === 'enroll' ? '#000' : 'var(--text3)' }}>
+            📲 Hızlı Kayıt
+          </button>
         </div>
       </div>
 
       {view === 'analytics' && <AnalyticsPanel data={analytics} />}
+
+      {view === 'enroll' && <EnrollPanel roster={roster} showToast={showToast} onEnrolled={invalidate} />}
 
       {/* Toplu üret + kapsama */}
       {view === 'roster' && (
@@ -534,4 +540,129 @@ function Empty() {
 
 function AnalyticsPanel({ data }) {
   return <CardAnalyticsPanelInner data={data} />
+}
+
+// ── Hızlı seri NFC kayıt modu ──
+function EnrollPanel({ roster, showToast, onEnrolled }) {
+  const [cardType, setCardType] = useState('access')
+  const [search, setSearch] = useState('')
+  const [selected, setSelected] = useState(null) // staff row
+  const [count, setCount] = useState(0)
+  const [recent, setRecent] = useState([]) // {name, type, uid}
+  const [nfcError, setNfcError] = useState(false)
+  const [listening, setListening] = useState(false)
+
+  // onreading kapanışı güncel değerleri görsün diye ref'ler
+  const selectedRef = useRef(null)
+  const cardTypeRef = useRef('access')
+  useEffect(() => { selectedRef.current = selected }, [selected])
+  useEffect(() => { cardTypeRef.current = cardType }, [cardType])
+
+  const enrollMut = useMutation({
+    mutationFn: ({ holder_id, card_type, nfc_uid }) => api.post('/cards/enroll-nfc', { holder_id, card_type, nfc_uid }),
+    onSuccess: (res, v) => {
+      const person = selectedRef.current
+      setCount(c => c + 1)
+      setRecent(r => [{ name: person?.full_name || `#${v.holder_id}`, type: v.card_type, uid: res.data.nfc_uid }, ...r].slice(0, 8))
+      setSelected(null)
+      setSearch('')
+      onEnrolled?.()
+      showToast(`${person?.full_name || ''} → ${res.data.nfc_uid} bağlandı`)
+    },
+    onError: e => showToast(e.response?.status === 409 ? 'Bu UID başka karta bağlı' : (e.response?.data?.error || 'Bağlama hatası'), 'error'),
+  })
+
+  function handleReading(uid) {
+    const person = selectedRef.current
+    if (!uid) return showToast('UID okunamadı', 'error')
+    if (!person) return showToast('Önce bir kişi seçin', 'error')
+    enrollMut.mutate({ holder_id: person.id, card_type: cardTypeRef.current, nfc_uid: uid })
+  }
+
+  useEffect(() => {
+    if (!NFC_SUPPORTED) return
+    const ac = new AbortController()
+    let cancelled = false
+    ;(async () => {
+      try {
+        const reader = new window.NDEFReader()
+        await reader.scan({ signal: ac.signal })
+        if (cancelled) return
+        setListening(true)
+        reader.onreading = (e) => handleReading(e.serialNumber)
+        reader.onreadingerror = () => showToast('NFC okuma hatası', 'error')
+      } catch {
+        if (!cancelled) setNfcError(true)
+      }
+    })()
+    return () => { cancelled = true; ac.abort() }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLocaleLowerCase('tr')
+    if (!q) return []
+    return roster.filter(s => s.full_name.toLocaleLowerCase('tr').includes(q)).slice(0, 8)
+  }, [roster, search])
+
+  return (
+    <div className="fade-up-1" style={{ maxWidth: 560 }}>
+      {!NFC_SUPPORTED ? (
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, padding: 20, fontSize: 13, color: 'var(--text2)' }}>
+          📲 Hızlı NFC kayıt yalnızca <strong>Android Chrome</strong>'da (Web NFC) çalışır. Bu cihazda desteklenmiyor — masaüstünde/iPhone'da kişi detayından elle UID girişini kullanın.
+        </div>
+      ) : (
+        <>
+          {/* Kart tipi */}
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12 }}>
+            <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)' }}>KART TİPİ</span>
+            {CARD_TYPES.map(ct => (
+              <button key={ct.type} className="btn btn-xs" onClick={() => setCardType(ct.type)}
+                style={{ borderRadius: 8, border: `1px solid ${ct.color}55`, background: cardType === ct.type ? ct.color : `${ct.color}14`, color: cardType === ct.type ? '#fff' : ct.color }}>
+                {ct.icon} {ct.short.toLocaleLowerCase('tr')}
+              </button>
+            ))}
+            <span style={{ marginLeft: 'auto', fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--green, #22c55e)' }}>✓ {count} bağlandı</span>
+          </div>
+
+          {/* NFC durumu */}
+          <div style={{ background: nfcError ? '#fee2e2' : 'var(--surface2)', borderRadius: 10, padding: '10px 14px', marginBottom: 12, fontSize: 12, fontFamily: 'var(--mono)' }}>
+            {nfcError ? '⚠ NFC başlatılamadı — izin verin ve sayfayı yenileyin'
+              : listening ? '📡 NFC dinleniyor — kişi seçip kartı telefona dokundurun'
+              : '⏳ NFC başlatılıyor…'}
+          </div>
+
+          {/* Seçili kişi */}
+          <div style={{ marginBottom: 8, fontSize: 13 }}>
+            {selected
+              ? <span>Aktif kişi: <strong>{selected.full_name}</strong> — kartı dokundurun</span>
+              : <span style={{ color: 'var(--text3)' }}>Aşağıdan bir kişi seçin</span>}
+          </div>
+
+          <input className="form-input" placeholder="🔍 İsim ara…" value={search}
+            onChange={e => setSearch(e.target.value)} style={{ fontSize: 13, marginBottom: 8 }} autoFocus />
+          {filtered.map(s => (
+            <div key={s.id} onClick={() => setSelected(s)}
+              style={{ padding: '10px 12px', cursor: 'pointer', borderRadius: 8, marginBottom: 4,
+                background: selected?.id === s.id ? 'var(--accent)' : 'var(--surface)',
+                color: selected?.id === s.id ? '#000' : 'var(--text)', border: '1px solid var(--border)' }}>
+              {s.full_name} <span style={{ fontFamily: 'var(--mono)', fontSize: 10, opacity: 0.7 }}>{s.department_name || ''}</span>
+            </div>
+          ))}
+
+          {recent.length > 0 && (
+            <div style={{ marginTop: 16 }}>
+              <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', marginBottom: 6 }}>SON BAĞLANANLAR</div>
+              {recent.map((r, i) => (
+                <div key={i} style={{ fontSize: 12, padding: '4px 0', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between' }}>
+                  <span>✓ {r.name} <span style={{ color: 'var(--text3)' }}>({r.type})</span></span>
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)' }}>{r.uid}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
 }

@@ -65,4 +65,11 @@ describe('cards/CardsPage smoke', () => {
     expect(screen.getByText('EN YOĞUN İSTASYONLAR')).toBeInTheDocument()
     expect(screen.getByText('Ana Giriş')).toBeInTheDocument()
   })
+
+  it('Hızlı Kayıt modu — Web NFC desteklenmeyen ortamda bilgi notu gösterir', async () => {
+    renderWithProviders(<CardsPage />)
+    fireEvent.click(await screen.findByText('📲 Hızlı Kayıt'))
+    expect(await screen.findByText(/yalnızca/)).toBeInTheDocument()
+    expect(screen.getByText(/Android Chrome/)).toBeInTheDocument()
+  })
 })

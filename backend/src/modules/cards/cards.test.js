@@ -218,6 +218,62 @@ describe('cards — toplu basım (batch PDF)', () => {
   })
 })
 
+describe('cards — hızlı seri NFC kayıt (enroll-nfc)', () => {
+  // İzole staff (paylaşılan staffId'ye dokunma)
+  function freshStaff(name) {
+    return getDB().prepare("INSERT INTO staff(full_name, is_active) VALUES(?, 1)").run(name).lastInsertRowid
+  }
+
+  it('kartı olmayan kişide kart üretir ve NFC bağlar', async () => {
+    const id = freshStaff('Enroll Yeni')
+    const r = await request(app).post('/api/cards/enroll-nfc').set(auth(token))
+      .send({ holder_id: id, card_type: 'access', nfc_uid: 'AA11BB22' })
+    expect(r.status).toBe(200)
+    expect(r.body.created).toBe(true)
+    expect(r.body.card_id).toBeTruthy()
+    const card = getDB().prepare('SELECT * FROM cards WHERE id=?').get(r.body.card_id)
+    expect(card.status).toBe('active')
+    expect(card.nfc_uid).toBe('AA11BB22')
+  })
+
+  it('mevcut aktif karta bağlar (created=false, aynı kart)', async () => {
+    const id = freshStaff('Enroll Mevcut')
+    const issued = await request(app).post(`/api/cards/staff/${id}/issue`).set(auth(token)).send({ card_type: 'meal' })
+    const r = await request(app).post('/api/cards/enroll-nfc').set(auth(token))
+      .send({ holder_id: id, card_type: 'meal', nfc_uid: 'CC33DD44' })
+    expect(r.status).toBe(200)
+    expect(r.body.created).toBe(false)
+    expect(r.body.card_id).toBe(issued.body.id)
+  })
+
+  it('UID normalize edilir', async () => {
+    const id = freshStaff('Enroll Normalize')
+    const r = await request(app).post('/api/cards/enroll-nfc').set(auth(token))
+      .send({ holder_id: id, card_type: 'access', nfc_uid: '0a:1b:2c' })
+    expect(r.status).toBe(200)
+    expect(getDB().prepare('SELECT nfc_uid FROM cards WHERE id=?').get(r.body.card_id).nfc_uid).toBe('0A1B2C')
+  })
+
+  it('UID başka karta bağlıysa 409', async () => {
+    const a = freshStaff('Enroll A'), b = freshStaff('Enroll B')
+    await request(app).post('/api/cards/enroll-nfc').set(auth(token)).send({ holder_id: a, card_type: 'access', nfc_uid: 'DUPUID99' })
+    const r = await request(app).post('/api/cards/enroll-nfc').set(auth(token)).send({ holder_id: b, card_type: 'access', nfc_uid: 'DUPUID99' })
+    expect(r.status).toBe(409)
+  })
+
+  it('boş nfc_uid 400', async () => {
+    const id = freshStaff('Enroll Bos')
+    const r = await request(app).post('/api/cards/enroll-nfc').set(auth(token)).send({ holder_id: id, card_type: 'access', nfc_uid: '' })
+    expect(r.status).toBe(400)
+  })
+
+  it('view rolü (camasir) enroll edemez (403)', async () => {
+    const id = freshStaff('Enroll Yetki')
+    const r = await request(app).post('/api/cards/enroll-nfc').set(auth(viewToken)).send({ holder_id: id, card_type: 'access', nfc_uid: 'EE55' })
+    expect(r.status).toBe(403)
+  })
+})
+
 describe('cards — analitik', () => {
   it('analytics endpoint blokları döner', async () => {
     const r = await request(app).get('/api/cards/analytics?days=30').set(auth(token))

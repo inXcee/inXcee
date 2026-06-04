@@ -9,7 +9,7 @@ import { logger } from '../../shared/logger.js'
 import { validate } from '../../shared/middleware/validate.js'
 import { upload, verifyMagicBytes } from '../../shared/uploads/middleware.js'
 import { normalizeNfcUid } from '../../shared/nfc.js'
-import { bulkIssueSchema, issueSchema, bindNfcSchema } from './schemas.js'
+import { bulkIssueSchema, issueSchema, bindNfcSchema, enrollNfcSchema } from './schemas.js'
 import * as analytics from './analytics.js'
 
 export const cardsRouter = Router()
@@ -84,6 +84,39 @@ cardsRouter.post('/bulk-issue', ...mgr, validate(bulkIssueSchema), (req, res) =>
     logAudit(req.user.id, 'card_bulk_issue', 'cards', null, `${cardType}: ${missing.length}`)
     res.json({ generated: missing.length })
   } catch (e) { logger.error('[cards/bulk-issue]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// ── Hızlı seri NFC kayıt: kişinin aktif kartını bul/üret + UID bağla (atomik) ──
+cardsRouter.post('/enroll-nfc', ...mgr, validate(enrollNfcSchema), (req, res) => {
+  try {
+    const { holder_type, holder_id, card_type } = req.validated
+    const uid = normalizeNfcUid(req.validated.nfc_uid)
+    if (!uid) return res.status(400).json({ error: 'Geçersiz NFC UID' })
+    const db = getDB()
+
+    const result = db.transaction(() => {
+      let card = activeCard(db, holder_type, holder_id, card_type)
+      let created = false
+      if (!card) {
+        const code = genCode(card_type)
+        const id = db.prepare(
+          `INSERT INTO cards(holder_type, holder_id, card_type, code, nfc_uid, issued_by) VALUES(?,?,?,?,?,?)`
+        ).run(holder_type, holder_id, card_type, code, uid, req.user.id).lastInsertRowid
+        created = true
+        return { card_id: id, code, created }
+      }
+      db.prepare(`UPDATE cards SET nfc_uid=? WHERE id=?`).run(uid, card.id)
+      return { card_id: card.id, code: card.code, created }
+    })()
+
+    logAudit(req.user.id, 'card_enroll_nfc', 'cards', result.card_id, `${holder_type}:${holder_id} ${card_type}`)
+    res.json({ ...result, card_type, holder_id, nfc_uid: uid })
+  } catch (e) {
+    if (e.message?.includes('UNIQUE') && e.message?.includes('nfc_uid')) {
+      return res.status(409).json({ error: 'Bu NFC etiketi başka karta bağlı' })
+    }
+    logger.error('[cards/enroll-nfc]', e); res.status(500).json({ error: 'Sunucu hatası' })
+  }
 })
 
 // ── Kart üret (amaç bazında) ──

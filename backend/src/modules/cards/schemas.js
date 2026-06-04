@@ -17,3 +17,11 @@ export const issueSchema = z.object({
 export const bindNfcSchema = z.object({
   nfc_uid: z.string().trim().min(1, 'nfc_uid gerekli').max(100, 'NFC UID çok uzun'),
 })
+
+// Hızlı seri kayıt: kişinin o tipte aktif kartını bul/üret + NFC bağla (atomik).
+export const enrollNfcSchema = z.object({
+  holder_type: z.enum(['staff', 'personnel', 'visitor']).default('staff'),
+  holder_id: z.coerce.number().int().positive('holder_id gerekli'),
+  card_type: cardTypeEnum,
+  nfc_uid: z.string().trim().min(1, 'nfc_uid gerekli').max(100, 'NFC UID çok uzun'),
+})
