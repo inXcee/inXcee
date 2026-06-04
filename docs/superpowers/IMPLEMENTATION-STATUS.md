@@ -71,7 +71,7 @@ uçlar (holidays/deductions) gerekirse ileride eklenebilir (düşük öncelik).
 
 ### 4. Modül-özel yeni değer (spec'lerde detaylı)
 - **Shifts:** Excel bordro · izin takvimi · çizelge çakışma→dashboard anomali
-- **Maintenance:** SLA eskalasyon→automation · periyodik bakım planı · kamera · teknisyen performans
+- **Maintenance:** ✅ **SLA eskalasyon TAMAM** (`modules/maintenance/sla.js`: findSlaBreaches + findSlaPreWarnings + checkMaintenanceSla, 15-dk cron `maintenance-sla` lock, dedup_key ile gün-içi tekil; breach→critical/shift_supervisor, pre-warn→warning/technical; 13 test) — **DEPLOY EDİLMEDİ** · periyodik bakım planı · kamera · teknisyen performans
 - **Laundry:** Excel rapor · makine analitiği · teslim SLA · QR torba takibi
 - **Transport:** QR servise biniş · canlı harita (leaflet) · rota optimizasyonu
 - **Meals:** mutfak ekranı (display kalıbı) · atık/no-show analitiği · maliyet raporu

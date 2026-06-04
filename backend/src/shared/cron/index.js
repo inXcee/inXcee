@@ -5,6 +5,7 @@ import { generateDailyTasks } from '../../modules/housekeeping/queries.js'
 import { createNotification } from '../notifications/service.js'
 import { getDB } from '../db/index.js'
 import { checkSlaViolations, checkMachineTimers, checkSlaPreWarnings, checkMachineMaintenanceAlerts, checkStuckWashingItems } from '../../modules/laundry/sla.js'
+import { checkMaintenanceSla } from '../../modules/maintenance/sla.js'
 import { getEmailSettings } from '../../modules/email/queries.js'
 import { sendMorningReport } from '../../modules/email/service.js'
 import { buildMonthlyReport, generateMonthlyPDF } from '../../modules/inventory/analytics/routes.js'
@@ -85,6 +86,11 @@ export function startCronJobs() {
     await checkSlaPreWarnings()
     await checkMachineMaintenanceAlerts()
     checkStuckWashingItems()
+  }), TZ)
+
+  // Her 15 dakikada maintenance SLA kontrolü (overlap-safe, laundry'den ayrı lock)
+  cron.schedule('*/15 * * * *', withLock('maintenance-sla', () => {
+    checkMaintenanceSla()
   }), TZ)
 
   // Her ayın 1'i 03:00 — geçmiş ay aylık PDF rapor (overlap-safe)
