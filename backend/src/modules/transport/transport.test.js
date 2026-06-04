@@ -327,3 +327,17 @@ describe('Transport — Reports (Faz 7)', () => {
     expect(Array.isArray(res.body.per_staff_usage)).toBe(true)
   })
 })
+
+describe('Transport — harita verisi', () => {
+  it('withStops stop\'larda lat/lng dondurur', async () => {
+    const res = await request(app).get('/api/transport/routes?active=1&with_stops=1')
+      .set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(200)
+    expect(Array.isArray(res.body)).toBe(true)
+    const withStops = res.body.find(r => r.stops && r.stops.length > 0)
+    if (withStops) {
+      expect(withStops.stops[0]).toHaveProperty('lat')
+      expect(withStops.stops[0]).toHaveProperty('lng')
+    }
+  })
+})
