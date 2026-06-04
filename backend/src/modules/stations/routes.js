@@ -10,6 +10,7 @@ import { isEligible, logMealFromScan, mealTypeForNow, MEAL_TYPES } from '../meal
 import { createNotification } from '../../shared/notifications/service.js'
 import { enqueue } from '../../shared/jobs/index.js'
 import { getManagerEmails } from '../email/queries.js'
+import { normalizeNfcUid } from '../../shared/nfc.js'
 import { validate } from '../../shared/middleware/validate.js'
 import { createStationSchema, updateStationSchema } from './schemas.js'
 
@@ -168,7 +169,7 @@ stationsRouter.post('/scan', requireStation, upload.single('photo'), verifyMagic
     const db = getDB()
     const station = req.station
     const map = TYPE_MAP[station.station_type] || TYPE_MAP.generic
-    const rawUid = (req.body?.raw_uid || '').toString().trim() || null
+    const rawUid = normalizeNfcUid(req.body?.raw_uid)
     const code = (req.body?.code || '').toString().trim() || null
     const mealType = station.station_type === 'cafeteria' ? (req.body?.meal_type || null) : null
     const photoUrl = req.file ? `/uploads/${req.file.filename}` : null

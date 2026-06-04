@@ -140,3 +140,46 @@ describe('cards — Zod sweep', () => {
     expect(r.status).toBe(400)
   })
 })
+
+const PNG_1x1 = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/0lvAAAAAElFTkSuQmCC',
+  'base64',
+)
+
+describe('cards — telefonla kayıt (NFC normalize + foto)', () => {
+  it('bind-nfc UID\'i normalize eder (büyük harf, ayraçsız)', async () => {
+    const issued = await request(app).post(`/api/cards/staff/${staffId}/issue`).set(auth(token))
+      .send({ card_type: 'access', regenerate: true })
+    const r = await request(app).patch(`/api/cards/${issued.body.id}/bind-nfc`).set(auth(token)).send({ nfc_uid: '04:1a:2b' })
+    expect(r.status).toBe(200)
+    const stored = getDB().prepare('SELECT nfc_uid FROM cards WHERE id=?').get(issued.body.id).nfc_uid
+    expect(stored).toBe('041A2B')
+  })
+
+  it('kart fotoğrafı yükler ve photo_url döner', async () => {
+    const issued = await request(app).post(`/api/cards/staff/${staffId}/issue`).set(auth(token))
+      .send({ card_type: 'meal', regenerate: true })
+    const r = await request(app).post(`/api/cards/${issued.body.id}/photo`).set(auth(token))
+      .attach('photo', PNG_1x1, 'kart.png')
+    expect(r.status).toBe(200)
+    expect(r.body.photo_url).toMatch(/^\/uploads\//)
+    const list = await request(app).get(`/api/cards/staff/${staffId}`).set(auth(token))
+    const meal = list.body.find(c => c.id === issued.body.id)
+    expect(meal.photo_url).toBe(r.body.photo_url)
+  })
+
+  it('fotoğrafsız upload 400 döner', async () => {
+    const issued = await request(app).post(`/api/cards/staff/${staffId}/issue`).set(auth(token))
+      .send({ card_type: 'access', regenerate: true })
+    const r = await request(app).post(`/api/cards/${issued.body.id}/photo`).set(auth(token))
+    expect(r.status).toBe(400)
+  })
+
+  it('view rolü (camasir) foto yükleyemez (403)', async () => {
+    const issued = await request(app).post(`/api/cards/staff/${staffId}/issue`).set(auth(token))
+      .send({ card_type: 'access', regenerate: true })
+    const r = await request(app).post(`/api/cards/${issued.body.id}/photo`).set(auth(viewToken))
+      .attach('photo', PNG_1x1, 'kart.png')
+    expect(r.status).toBe(403)
+  })
+})

@@ -103,8 +103,19 @@ describe('stations — okutma (scan)', () => {
   it('tanımsız UID → unknown_card + event loglanır', async () => {
     const r = await request(app).post('/api/stations/scan').set('X-Station-Key', entryKey).send({ raw_uid: 'YOK-123' })
     expect(r.body.result).toBe('unknown_card')
-    const ev = getDB().prepare("SELECT * FROM access_events WHERE raw_uid='YOK-123'").get()
+    // raw_uid normalize edilerek saklanır (YOK-123 → YOK123)
+    const ev = getDB().prepare("SELECT * FROM access_events WHERE raw_uid='YOK123'").get()
     expect(ev.result).toBe('unknown_card')
+  })
+
+  it('farklı formatta okutulan UID eşleşir (telefon kaydı ↔ istasyon scan normalizasyonu)', async () => {
+    // Paylaşılan staffId'ye dokunmamak için ayrı personel
+    const fid = getDB().prepare("INSERT INTO staff(full_name, is_active) VALUES('Format Test', 1)").run().lastInsertRowid
+    const c = await request(app).post(`/api/cards/staff/${fid}/issue`).set(auth(token)).send({ card_type: 'access' })
+    await request(app).patch(`/api/cards/${c.body.id}/bind-nfc`).set(auth(token)).send({ nfc_uid: '0A:1B:2C' })
+    // istasyon farklı ayraç/küçük harfle gönderse de eşleşmeli
+    const r = await request(app).post('/api/stations/scan').set('X-Station-Key', entryKey).send({ raw_uid: '0a-1b-2c' })
+    expect(r.body.result).toBe('ok')
   })
 
   it('yemekhanede access kartı → not_eligible', async () => {
@@ -232,7 +243,8 @@ describe('stations — ziyaretçi süreli kart (Faz 5b)', () => {
     const exitKey = (await request(app).post('/api/stations').set(auth(token)).send({ name: 'Cikis5b', station_type: 'exit' })).body.api_key
     const r = await request(app).post('/api/stations/scan').set('X-Station-Key', exitKey).send({ raw_uid: visUid })
     expect(r.body.result).toBe('ok')
-    expect(getDB().prepare('SELECT status FROM cards WHERE nfc_uid=?').get(visUid).status).toBe('revoked')
+    // nfc_uid normalize edilerek saklanır (NFC-VIS-001 → NFCVIS001)
+    expect(getDB().prepare('SELECT status FROM cards WHERE nfc_uid=?').get('NFCVIS001').status).toBe('revoked')
     const r2 = await request(app).post('/api/stations/scan').set('X-Station-Key', entryKey).send({ raw_uid: visUid })
     expect(r2.body.result).toBe('denied')
   })

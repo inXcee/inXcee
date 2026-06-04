@@ -7,6 +7,8 @@ import { logAudit } from '../../shared/audit.js'
 import { getDB } from '../../shared/db/index.js'
 import { logger } from '../../shared/logger.js'
 import { validate } from '../../shared/middleware/validate.js'
+import { upload, verifyMagicBytes } from '../../shared/uploads/middleware.js'
+import { normalizeNfcUid } from '../../shared/nfc.js'
 import { bulkIssueSchema, issueSchema, bindNfcSchema } from './schemas.js'
 
 export const cardsRouter = Router()
@@ -64,7 +66,7 @@ cardsRouter.post('/:holderType/:holderId/issue', ...mgr, validate(issueSchema), 
     }
 
     const code = genCode(cardType)
-    const nfcUid = nfc_uid || null
+    const nfcUid = normalizeNfcUid(nfc_uid)
     const validUntil = valid_until || null  // Faz 5b: süreli (ziyaretçi) kart; null=süresiz
     const result = db.transaction(() => {
       if (existing) {
@@ -107,8 +109,9 @@ cardsRouter.patch('/:id/report-lost', ...mgr, (req, res) => {
 // ── NFC UID bağla (Faz 2 enrollment) ──
 cardsRouter.patch('/:id/bind-nfc', ...mgr, validate(bindNfcSchema), (req, res) => {
   try {
-    const uid = req.validated.nfc_uid
-    const r = getDB().prepare(`UPDATE cards SET nfc_uid=? WHERE id=?`).run(String(uid).trim(), +req.params.id)
+    const uid = normalizeNfcUid(req.validated.nfc_uid)
+    if (!uid) return res.status(400).json({ error: 'Geçersiz NFC UID' })
+    const r = getDB().prepare(`UPDATE cards SET nfc_uid=? WHERE id=?`).run(uid, +req.params.id)
     if (!r.changes) return res.status(404).json({ error: 'Kart bulunamadı' })
     logAudit(req.user.id, 'card_bind_nfc', 'cards', +req.params.id, '')
     res.json({ ok: true })
@@ -116,6 +119,18 @@ cardsRouter.patch('/:id/bind-nfc', ...mgr, validate(bindNfcSchema), (req, res) =
     if (e.message?.includes('UNIQUE')) return res.status(409).json({ error: 'Bu NFC etiketi başka karta bağlı' })
     logger.error('[cards/bind-nfc]', e); res.status(500).json({ error: 'Sunucu hatası' })
   }
+})
+
+// ── Kart referans fotoğrafı yükle (telefonla kayıt) ──
+cardsRouter.post('/:id/photo', ...mgr, upload.single('photo'), verifyMagicBytes, (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'Fotoğraf gerekli' })
+    const photoUrl = `/uploads/${req.file.filename}`
+    const r = getDB().prepare(`UPDATE cards SET photo_url=? WHERE id=?`).run(photoUrl, +req.params.id)
+    if (!r.changes) return res.status(404).json({ error: 'Kart bulunamadı' })
+    logAudit(req.user.id, 'card_photo', 'cards', +req.params.id, '')
+    res.json({ photo_url: photoUrl })
+  } catch (e) { logger.error('[cards/photo]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 // ── Karta özel PDF (giriş = mavi, yemek = turuncu) ──
@@ -183,8 +198,8 @@ cardsRouter.get('/roster', ...view, (req, res) => {
     if (q) { where += ' AND s.full_name LIKE ?'; params.push(`%${q}%`) }
     const rows = getDB().prepare(`
       SELECT s.id, s.full_name, d.name AS department_name,
-        ac.id AS access_id, ac.code AS access_code, ac.nfc_uid AS access_nfc,
-        mc.id AS meal_id,   mc.code AS meal_code,   mc.nfc_uid AS meal_nfc
+        ac.id AS access_id, ac.code AS access_code, ac.nfc_uid AS access_nfc, ac.photo_url AS access_photo,
+        mc.id AS meal_id,   mc.code AS meal_code,   mc.nfc_uid AS meal_nfc,   mc.photo_url AS meal_photo
       FROM staff s
       LEFT JOIN departments d ON d.id = s.department_id
       LEFT JOIN cards ac ON ac.holder_type='staff' AND ac.holder_id=s.id AND ac.card_type='access' AND ac.status='active'
@@ -202,7 +217,7 @@ cardsRouter.get('/:holderType/:holderId', ...view, (req, res) => {
     const { holderType, holderId } = req.params
     if (!HOLDER_TYPES.includes(holderType)) return res.status(400).json({ error: 'Geçersiz holderType' })
     const rows = getDB().prepare(`
-      SELECT id, card_type, code, nfc_uid, status, issued_at, revoked_at
+      SELECT id, card_type, code, nfc_uid, photo_url, status, issued_at, revoked_at
       FROM cards WHERE holder_type=? AND holder_id=?
       ORDER BY card_type, issued_at DESC
     `).all(holderType, +holderId)

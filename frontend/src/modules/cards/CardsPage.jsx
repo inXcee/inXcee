@@ -15,8 +15,11 @@ function cardOf(staff, type) {
   if (!staff) return null
   const id = staff[`${type}_id`]
   if (!id) return null
-  return { id, code: staff[`${type}_code`], nfc_uid: staff[`${type}_nfc`] }
+  return { id, code: staff[`${type}_code`], nfc_uid: staff[`${type}_nfc`], photo_url: staff[`${type}_photo`] }
 }
+
+// Web NFC sadece Android Chrome'da (NDEFReader). Diğer platformlarda buton gizli.
+const NFC_SUPPORTED = typeof window !== 'undefined' && 'NDEFReader' in window
 
 export default function CardsPage() {
   const qc = useQueryClient()
@@ -82,6 +85,38 @@ export default function CardsPage() {
     onSuccess: r => { invalidate(); showToast(`${r.data.generated} eksik kart üretildi`) },
     onError: e => showToast(e.response?.data?.error ?? 'Hata', 'error'),
   })
+
+  const photoMut = useMutation({
+    mutationFn: ({ id, file }) => {
+      const fd = new FormData()
+      fd.append('photo', file)
+      return api.post(`/cards/${id}/photo`, fd)
+    },
+    onSuccess: () => { invalidate(); showToast('Kart fotoğrafı eklendi') },
+    onError: e => showToast(e.response?.data?.error ?? 'Foto yüklenemedi', 'error'),
+  })
+
+  const [nfcScanning, setNfcScanning] = useState(null) // okunan kart id'si
+
+  // Android Web NFC: kartı telefona yaklaştır, UID'i (serialNumber) oku → bağla.
+  async function scanNfc(cardId) {
+    if (!NFC_SUPPORTED) return
+    try {
+      setNfcScanning(cardId)
+      const reader = new window.NDEFReader()
+      await reader.scan()
+      reader.onreading = (e) => {
+        const uid = e.serialNumber
+        setNfcScanning(null)
+        if (uid) bindMut.mutate({ id: cardId, nfc_uid: uid })
+        else showToast('UID okunamadı — kart NFC desteklemiyor olabilir', 'error')
+      }
+      reader.onreadingerror = () => { setNfcScanning(null); showToast('NFC okuma hatası', 'error') }
+    } catch (e) {
+      setNfcScanning(null)
+      showToast(e?.name === 'NotAllowedError' ? 'NFC izni reddedildi' : 'NFC başlatılamadı', 'error')
+    }
+  }
 
   async function downloadPdf(cardId, name, short) {
     try {
@@ -301,20 +336,47 @@ export default function CardsPage() {
                           </button>
                         </div>
 
-                        {/* NFC bağlama */}
+                        {/* NFC bağlama — telefonla oku ya da elle gir */}
                         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', borderTop: '1px solid var(--border)', paddingTop: 12 }}>
+                          {NFC_SUPPORTED && (
+                            <button className="btn btn-xs btn-primary"
+                              disabled={busy || nfcScanning === card.id}
+                              onClick={() => scanNfc(card.id)}>
+                              {nfcScanning === card.id ? '📱 Kartı yaklaştır…' : '📱 NFC OKU'}
+                            </button>
+                          )}
                           <input
                             className="form-input"
-                            placeholder="NFC etiket UID (okutarak gir)"
+                            placeholder="veya NFC UID elle gir"
                             value={nfcDraft[card.id] ?? ''}
                             onChange={e => setNfcDraft(d => ({ ...d, [card.id]: e.target.value }))}
-                            style={{ flex: 1, minWidth: 180, fontSize: 12, fontFamily: 'var(--mono)' }}
+                            style={{ flex: 1, minWidth: 160, fontSize: 12, fontFamily: 'var(--mono)' }}
                           />
-                          <button className="btn btn-xs btn-primary"
+                          <button className="btn btn-xs"
+                            style={{ border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)' }}
                             disabled={busy || !(nfcDraft[card.id] || '').trim()}
                             onClick={() => bindMut.mutate({ id: card.id, nfc_uid: nfcDraft[card.id].trim() })}>
                             {card.nfc_uid ? '⌁ Değiştir' : '⌁ Bağla'}
                           </button>
+                        </div>
+
+                        {/* Kart fotoğrafı — telefonla çek / referans */}
+                        <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', borderTop: '1px solid var(--border)', paddingTop: 12 }}>
+                          {card.photo_url ? (
+                            <a href={card.photo_url} target="_blank" rel="noreferrer">
+                              <img src={card.photo_url} alt="Kart" style={{ width: 56, height: 36, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--border)' }} />
+                            </a>
+                          ) : (
+                            <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text4)' }}>foto yok</span>
+                          )}
+                          <label className="btn btn-xs" style={{ border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', cursor: 'pointer' }}>
+                            📷 {card.photo_url ? 'Foto değiştir' : 'Foto çek'}
+                            <input
+                              type="file" accept="image/*" capture="environment" hidden
+                              disabled={photoMut.isPending}
+                              onChange={e => { const f = e.target.files?.[0]; if (f) photoMut.mutate({ id: card.id, file: f }); e.target.value = '' }}
+                            />
+                          </label>
                         </div>
                       </div>
                     )}
