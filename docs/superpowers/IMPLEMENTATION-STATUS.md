@@ -83,7 +83,7 @@ uçlar (holidays/deductions) gerekirse ileride eklenebilir (düşük öncelik).
 - **Visitors:** ön-kayıt + QR ziyaretçi kartı · ev sahibi bildirimi
 - **Stations:** istasyon sağlık izleme · offline scan kuyruğu
 - **Cards:** kart analitiği · toplu yeniden-basım
-- **Performance:** tam KPI modülü (iskeletten)
+- **Performance:** ✅ **KPI panosu TAMAM** (`modules/performance/kpi.js`: summary/departmentComparison/goalAchievement/scoreTrend/dimensionBreakdown saf fonksiyonlar + `GET /performance/kpi` + PerformancePage 'KPI/Analiz' sekmesi; departman kıyas/hedef tamamlama-zamanında-geciken/dönem trendi/boyut kırılımı; 13+3 backend + 2 frontend test; join-çarpım hatası TDD ile yakalandı+düzeltildi). Yeni migration yok. — **DEPLOY EDİLMEDİ**
 - **Safety:** olay/kaza takibi · KKD takibi · drills entegrasyonu
 - **Automation:** yeni trigger'lar (sözleşme/SLA/disiplin eşiği)
 - **KVKK:** veri export/silme talebi akışı · retention otomasyonu

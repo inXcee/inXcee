@@ -5,6 +5,7 @@ import { getDB } from '../../shared/db/index.js'
 import { logger } from '../../shared/logger.js'
 import { validate } from '../../shared/middleware/validate.js'
 import { createReviewSchema, updateReviewSchema, createGoalSchema, positiveSchema } from './schemas.js'
+import { summary, departmentComparison, goalAchievement, scoreTrend, dimensionBreakdown } from './kpi.js'
 
 export const performanceRouter = Router()
 const mgr = requireRole('campus_manager', 'shift_supervisor')
@@ -19,6 +20,22 @@ function calcTotal(body) {
   })
   return count > 0 ? Math.round((sum / count) * 100) / 100 : null
 }
+
+// ── KPI / Analiz panosu ──
+performanceRouter.get('/kpi', ...view, (req, res) => {
+  try {
+    const db = getDB()
+    const period = req.query.period ? String(req.query.period) : String(new Date().getFullYear())
+    res.json({
+      period,
+      summary: summary(db, period),
+      departments: departmentComparison(db, period),
+      goals: goalAchievement(db),
+      trend: scoreTrend(db),
+      dimensions: dimensionBreakdown(db, period),
+    })
+  } catch (e) { logger.error('[perf/kpi]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
 
 // ── PE1: Değerlendirme CRUD ──
 performanceRouter.get('/reviews', ...view, (req, res) => {
