@@ -130,6 +130,21 @@ export default function CardsPage() {
     } catch { showToast('PDF üretilemedi', 'error') }
   }
 
+  async function downloadBatchPdf(cardType, label) {
+    try {
+      const res = await api.get(`/cards/batch-pdf?card_type=${cardType}`, { responseType: 'blob' })
+      const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }))
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `toplu-${cardType}.pdf`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      const msg = e.response?.status === 400 ? 'Yazdırılacak aktif kart yok' : 'Toplu PDF üretilemedi'
+      showToast(msg, 'error')
+    }
+  }
+
   const busy = issueMut.isPending || revokeMut.isPending || lostMut.isPending || bindMut.isPending
 
   return (
@@ -165,6 +180,18 @@ export default function CardsPage() {
             </button>
           )
         })}
+        {CARD_TYPES.map(ct => (
+          <button
+            key={`batch-${ct.type}`}
+            className="btn btn-xs"
+            disabled={coverage[ct.type] <= 0}
+            onClick={() => downloadBatchPdf(ct.type, ct.label)}
+            style={{ borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)' }}
+            title={`Tüm aktif ${ct.label.toLocaleLowerCase('tr')}larını tek PDF'te yazdır`}
+          >
+            ⊞ {ct.short.toLocaleLowerCase('tr')} toplu PDF ({coverage[ct.type]})
+          </button>
+        ))}
         <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', marginLeft: 'auto' }}>
           {coverage.access}/{roster.length} giriş · {coverage.meal}/{roster.length} yemek
         </span>

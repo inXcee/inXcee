@@ -183,3 +183,37 @@ describe('cards — telefonla kayıt (NFC normalize + foto)', () => {
     expect(r.status).toBe(403)
   })
 })
+
+describe('cards — toplu basım (batch PDF)', () => {
+  it('aktif kartlar için toplu PDF döner', async () => {
+    // En az 1 aktif access kart olduğundan emin ol
+    await request(app).post('/api/cards/bulk-issue').set(auth(token)).send({ card_type: 'access' })
+    const r = await request(app).get('/api/cards/batch-pdf?card_type=access').set(auth(token))
+    expect(r.status).toBe(200)
+    expect(r.headers['content-type']).toMatch(/pdf/)
+    expect(r.body.length).toBeGreaterThan(500)
+  })
+
+  it('geçersiz card_type 400 döner', async () => {
+    const r = await request(app).get('/api/cards/batch-pdf?card_type=vip').set(auth(token))
+    expect(r.status).toBe(400)
+  })
+
+  it('ids ile boş seçim 400 döner', async () => {
+    const r = await request(app).get('/api/cards/batch-pdf?card_type=access&ids=99999999').set(auth(token))
+    expect(r.status).toBe(400)
+  })
+
+  it('view rolü (camasir) toplu PDF üretemez (403)', async () => {
+    const r = await request(app).get('/api/cards/batch-pdf?card_type=access').set(auth(viewToken))
+    expect(r.status).toBe(403)
+  })
+
+  it('tek-kart PDF hâlâ çalışır (drawCard refactor regresyonu)', async () => {
+    const issued = await request(app).post(`/api/cards/staff/${staffId}/issue`).set(auth(token)).send({ card_type: 'meal', regenerate: true })
+    const r = await request(app).get(`/api/cards/${issued.body.id}/pdf`).set(auth(token))
+    expect(r.status).toBe(200)
+    expect(r.headers['content-type']).toMatch(/pdf/)
+    expect(r.body.length).toBeGreaterThan(500)
+  })
+})

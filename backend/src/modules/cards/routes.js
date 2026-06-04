@@ -34,6 +34,39 @@ function activeCard(db, holderType, holderId, cardType) {
   ).get(holderType, holderId, cardType)
 }
 
+// Kart sahibi bilgisi (şimdilik staff; personnel/visitor genişletilebilir)
+function holderInfo(db, card) {
+  const empty = { full_name: '—', tc_no: null, position: null, phone: null, blood_type: null, dept_name: null }
+  if (card.holder_type !== 'staff') return empty
+  return db.prepare(`
+    SELECT s.full_name, s.tc_no, s.position, s.phone, s.blood_type, d.name as dept_name
+    FROM staff s LEFT JOIN departments d ON d.id = s.department_id WHERE s.id=?
+  `).get(card.holder_id) || empty
+}
+
+// Bir kartı (ox,oy) origin'ine göre çizer — tek-kart ve toplu PDF ortak kullanır.
+function drawCard(doc, ox, oy, w, h, { card, holder, meta, qrDataUrl }) {
+  doc.lineWidth(1).strokeColor('#1f2937').roundedRect(ox, oy, w, h, 8).stroke()
+  doc.fillColor(meta.accent).roundedRect(ox, oy, 8, h, 4).fill()
+
+  doc.fillColor('#0f172a').font('Helvetica-Bold').fontSize(9).text(`AVS ${meta.title}`, ox + 20, oy + 10)
+  doc.fillColor('#6b7280').font('Helvetica').fontSize(7).text('avskamp.com', ox + 20, oy + 22)
+
+  doc.fillColor('#0f172a').font('Helvetica-Bold').fontSize(13).text(holder.full_name || '—', ox + 20, oy + 38, { width: 150 })
+  doc.fillColor('#374151').font('Helvetica').fontSize(8).text(holder.dept_name || '', ox + 20, oy + 58, { width: 150 })
+  if (holder.position) doc.text(holder.position, ox + 20, oy + 70, { width: 150 })
+
+  doc.fillColor('#6b7280').fontSize(7)
+  if (holder.tc_no) doc.text(`TC: ${holder.tc_no}`, ox + 20, oy + 90)
+  if (holder.phone) doc.text(`Tel: ${holder.phone}`, ox + 20, oy + 100)
+  if (holder.blood_type) doc.text(`Kan: ${holder.blood_type}`, ox + 20, oy + 110)
+
+  doc.fillColor(meta.accent).font('Helvetica-Bold').fontSize(8).text(meta.badge, ox + 20, oy + 122)
+
+  doc.image(qrDataUrl, ox + w - 90, oy + 20, { width: 80, height: 80 })
+  doc.fillColor('#94a3b8').font('Helvetica').fontSize(6).text(`#${card.code.slice(-6).toUpperCase()}`, ox + w - 90, oy + 105, { width: 80, align: 'center' })
+}
+
 // ── Toplu üret: aktif staff'ın eksik kartlarını doldur ──
 cardsRouter.post('/bulk-issue', ...mgr, validate(bulkIssueSchema), (req, res) => {
   try {
@@ -140,15 +173,7 @@ cardsRouter.get('/:id/pdf', ...view, async (req, res) => {
     const card = db.prepare('SELECT * FROM cards WHERE id=?').get(+req.params.id)
     if (!card) return res.status(404).json({ error: 'Kart bulunamadı' })
     const meta = CARD_META[card.card_type]
-
-    // Sahip bilgisi (şimdilik staff; personnel/visitor genişletilebilir)
-    let holder = { full_name: '—', tc_no: null, position: null, phone: null, blood_type: null, dept_name: null }
-    if (card.holder_type === 'staff') {
-      holder = db.prepare(`
-        SELECT s.full_name, s.tc_no, s.position, s.phone, s.blood_type, d.name as dept_name
-        FROM staff s LEFT JOIN departments d ON d.id = s.department_id WHERE s.id=?
-      `).get(card.holder_id) || holder
-    }
+    const holder = holderInfo(db, card)
 
     const qrDataUrl = await QRCode.toDataURL(card.code, { width: 300, margin: 1 })
     const cardW = 245, cardH = 154 // ~86x54mm (ID-1)
@@ -159,30 +184,61 @@ cardsRouter.get('/:id/pdf', ...view, async (req, res) => {
     res.setHeader('Content-Disposition', `attachment; filename="${card.card_type}-${safeName}.pdf"`)
     doc.pipe(res)
 
-    doc.lineWidth(1).strokeColor('#1f2937').roundedRect(20, 20, cardW, cardH, 8).stroke()
-    doc.fillColor(meta.accent).roundedRect(20, 20, 8, cardH, 4).fill()
-
-    doc.fillColor('#0f172a').font('Helvetica-Bold').fontSize(9).text(`AVS ${meta.title}`, 40, 30)
-    doc.fillColor('#6b7280').font('Helvetica').fontSize(7).text('avskamp.com', 40, 42)
-
-    doc.fillColor('#0f172a').font('Helvetica-Bold').fontSize(13).text(holder.full_name || '—', 40, 58, { width: 150 })
-    doc.fillColor('#374151').font('Helvetica').fontSize(8).text(holder.dept_name || '', 40, 78, { width: 150 })
-    if (holder.position) doc.text(holder.position, 40, 90, { width: 150 })
-
-    doc.fillColor('#6b7280').fontSize(7)
-    if (holder.tc_no) doc.text(`TC: ${holder.tc_no}`, 40, 110)
-    if (holder.phone) doc.text(`Tel: ${holder.phone}`, 40, 120)
-    if (holder.blood_type) doc.text(`Kan: ${holder.blood_type}`, 40, 130)
-
-    // Tip rozeti
-    doc.fillColor(meta.accent).font('Helvetica-Bold').fontSize(8).text(meta.badge, 40, 142)
-
-    doc.image(qrDataUrl, cardW - 70, 40, { width: 80, height: 80 })
-    doc.fillColor('#94a3b8').fontSize(6).text(`#${card.code.slice(-6).toUpperCase()}`, cardW - 70, 125, { width: 80, align: 'center' })
+    drawCard(doc, 20, 20, cardW, cardH, { card, holder, meta, qrDataUrl })
 
     doc.end()
   } catch (e) {
     logger.error('[cards/pdf]', e)
+    if (!res.headersSent) res.status(500).json({ error: 'PDF üretilemedi' })
+  }
+})
+
+// ── Toplu kart PDF (A4'te 2×4 = 8 kart/sayfa) ──
+cardsRouter.get('/batch-pdf', ...mgr, async (req, res) => {
+  try {
+    const cardType = String(req.query.card_type || '')
+    if (!CARD_TYPES.includes(cardType)) return res.status(400).json({ error: 'Geçersiz card_type' })
+    const db = getDB()
+
+    let cards
+    const idsRaw = String(req.query.ids || '').trim()
+    if (idsRaw) {
+      const ids = idsRaw.split(',').map(x => parseInt(x, 10)).filter(Boolean)
+      if (!ids.length) return res.status(400).json({ error: 'Yazdırılacak kart yok' })
+      const ph = ids.map(() => '?').join(',')
+      cards = db.prepare(`SELECT * FROM cards WHERE id IN (${ph}) AND card_type=? AND status='active'`).all(...ids, cardType)
+    } else {
+      cards = db.prepare(`SELECT * FROM cards WHERE card_type=? AND status='active' ORDER BY id`).all(cardType)
+    }
+    if (!cards.length) return res.status(400).json({ error: 'Yazdırılacak kart yok' })
+
+    const meta = CARD_META[cardType]
+    // A4 portrait, 2 sütun × 4 satır
+    const PAGE_W = 595, PAGE_H = 842, MARGIN = 24
+    const cardW = 243, cardH = 153, colGap = 20, rowGap = 18
+    const COLS = 2, ROWS = 4, PER_PAGE = COLS * ROWS
+
+    const doc = new PDFDocument({ size: [PAGE_W, PAGE_H], margin: MARGIN })
+    res.setHeader('Content-Type', 'application/pdf')
+    res.setHeader('Content-Disposition', `attachment; filename="toplu-${cardType}-${cards.length}.pdf"`)
+    doc.pipe(res)
+
+    for (let i = 0; i < cards.length; i++) {
+      const card = cards[i]
+      const slot = i % PER_PAGE
+      if (i > 0 && slot === 0) doc.addPage()
+      const col = slot % COLS
+      const row = Math.floor(slot / COLS)
+      const ox = MARGIN + col * (cardW + colGap)
+      const oy = MARGIN + row * (cardH + rowGap)
+      const holder = holderInfo(db, card)
+      const qrDataUrl = await QRCode.toDataURL(card.code, { width: 300, margin: 1 })
+      drawCard(doc, ox, oy, cardW, cardH, { card, holder, meta, qrDataUrl })
+    }
+
+    doc.end()
+  } catch (e) {
+    logger.error('[cards/batch-pdf]', e)
     if (!res.headersSent) res.status(500).json({ error: 'PDF üretilemedi' })
   }
 })

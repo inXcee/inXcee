@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { screen, fireEvent } from '@testing-library/react'
+import { screen, fireEvent, waitFor } from '@testing-library/react'
 import { renderWithProviders } from '../../test/renderWithProviders.jsx'
 
 const roster = [
@@ -30,5 +30,17 @@ describe('cards/CardsPage smoke', () => {
     fireEvent.click(await screen.findByText('Ali Veli'))
     await screen.findByText(/Foto çek/)
     expect(screen.queryByText(/NFC OKU/)).not.toBeInTheDocument()
+  })
+
+  it('toplu PDF butonu doğru endpoint\'e blob isteği yapar', async () => {
+    const api = (await import('../../shared/api/client.js')).default
+    renderWithProviders(<CardsPage />)
+    await screen.findByText('Ali Veli') // roster yüklensin → coverage>0, buton aktif olsun
+    const btn = await screen.findByText(/giriş toplu PDF/)
+    fireEvent.click(btn)
+    await waitFor(() => expect(api.get).toHaveBeenCalledWith(
+      expect.stringContaining('/cards/batch-pdf?card_type=access'),
+      expect.objectContaining({ responseType: 'blob' }),
+    ))
   })
 })
