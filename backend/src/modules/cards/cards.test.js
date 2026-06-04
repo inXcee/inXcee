@@ -217,3 +217,26 @@ describe('cards — toplu basım (batch PDF)', () => {
     expect(r.body.length).toBeGreaterThan(500)
   })
 })
+
+describe('cards — analitik', () => {
+  it('analytics endpoint blokları döner', async () => {
+    const r = await request(app).get('/api/cards/analytics?days=30').set(auth(token))
+    expect(r.status).toBe(200)
+    expect(r.body.days).toBe(30)
+    expect(Array.isArray(r.body.summary)).toBe(true)
+    expect(r.body.summary.find(s => s.card_type === 'access')).toBeTruthy()
+    expect(Array.isArray(r.body.usageByDay)).toBe(true)
+    expect(Array.isArray(r.body.usageByResult)).toBe(true)
+    expect(Array.isArray(r.body.topStations)).toBe(true)
+  })
+
+  it('view rolü (camasir) analitiği görebilir (200)', async () => {
+    const r = await request(app).get('/api/cards/analytics').set(auth(viewToken))
+    expect(r.status).toBe(200)
+  })
+
+  it('anonim erişim reddedilir (401)', async () => {
+    const r = await request(app).get('/api/cards/analytics')
+    expect(r.status).toBe(401)
+  })
+})

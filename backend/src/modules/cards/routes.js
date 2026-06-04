@@ -10,6 +10,7 @@ import { validate } from '../../shared/middleware/validate.js'
 import { upload, verifyMagicBytes } from '../../shared/uploads/middleware.js'
 import { normalizeNfcUid } from '../../shared/nfc.js'
 import { bulkIssueSchema, issueSchema, bindNfcSchema } from './schemas.js'
+import * as analytics from './analytics.js'
 
 export const cardsRouter = Router()
 const mgr = requireRole('campus_manager', 'shift_supervisor')
@@ -241,6 +242,21 @@ cardsRouter.get('/batch-pdf', ...mgr, async (req, res) => {
     logger.error('[cards/batch-pdf]', e)
     if (!res.headersSent) res.status(500).json({ error: 'PDF üretilemedi' })
   }
+})
+
+// ── Kart analitiği (kapsam/NFC ilerlemesi/kullanım) ──
+cardsRouter.get('/analytics', ...view, (req, res) => {
+  try {
+    const db = getDB()
+    const days = Math.max(1, Math.min(365, parseInt(req.query.days, 10) || 30))
+    res.json({
+      days,
+      summary: analytics.summary(db),
+      usageByDay: analytics.usageByDay(db, Math.min(days, 60)),
+      usageByResult: analytics.usageByResult(db, days),
+      topStations: analytics.topStations(db, days),
+    })
+  } catch (e) { logger.error('[cards/analytics]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 // ── Roster: aktif staff + her birinin aktif giriş/yemek kart durumu (admin liste) ──

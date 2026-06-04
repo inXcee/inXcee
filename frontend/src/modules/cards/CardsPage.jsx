@@ -28,9 +28,17 @@ export default function CardsPage() {
   const [nfcDraft, setNfcDraft] = useState({})   // { [cardId]: uid }
   const [toast, setToast] = useState(null)
 
+  const [view, setView] = useState('roster') // 'roster' | 'analytics'
+
   const { data: roster = [], isLoading } = useQuery({
     queryKey: ['cards-roster'],
     queryFn: () => api.get('/cards/roster').then(r => r.data),
+  })
+
+  const { data: analytics } = useQuery({
+    queryKey: ['cards-analytics'],
+    queryFn: () => api.get('/cards/analytics?days=30').then(r => r.data),
+    enabled: view === 'analytics',
   })
 
   // selected'ı id'den türet → mutation sonrası invalidate ile otomatik tazelenir
@@ -149,14 +157,29 @@ export default function CardsPage() {
 
   return (
     <div style={{ padding: '24px' }}>
-      <div className="fade-up" style={{ marginBottom: '20px' }}>
-        <h2 style={{ fontSize: '28px', letterSpacing: '4px' }}>KARTLAR</h2>
-        <p style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)', letterSpacing: '1px', marginTop: '4px' }}>
-          AMAÇ BAZINDA KİMLİK · GİRİŞ + YEMEK KARTI · PDF · NFC BAĞLAMA
-        </p>
+      <div className="fade-up" style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
+        <div>
+          <h2 style={{ fontSize: '28px', letterSpacing: '4px' }}>KARTLAR</h2>
+          <p style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)', letterSpacing: '1px', marginTop: '4px' }}>
+            AMAÇ BAZINDA KİMLİK · GİRİŞ + YEMEK KARTI · PDF · NFC BAĞLAMA
+          </p>
+        </div>
+        <div style={{ display: 'flex', gap: 2, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, padding: 3 }}>
+          <button onClick={() => setView('roster')} className="btn btn-xs"
+            style={{ borderRadius: 8, border: 'none', background: view === 'roster' ? 'var(--accent)' : 'transparent', color: view === 'roster' ? '#000' : 'var(--text3)' }}>
+            🪪 Kartlar
+          </button>
+          <button onClick={() => setView('analytics')} className="btn btn-xs"
+            style={{ borderRadius: 8, border: 'none', background: view === 'analytics' ? 'var(--accent)' : 'transparent', color: view === 'analytics' ? '#000' : 'var(--text3)' }}>
+            📊 Analiz
+          </button>
+        </div>
       </div>
 
+      {view === 'analytics' && <AnalyticsPanel data={analytics} />}
+
       {/* Toplu üret + kapsama */}
+      {view === 'roster' && (
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 16 }}>
         {CARD_TYPES.map(ct => {
           const missing = roster.length - coverage[ct.type]
@@ -196,6 +219,7 @@ export default function CardsPage() {
           {coverage.access}/{roster.length} giriş · {coverage.meal}/{roster.length} yemek
         </span>
       </div>
+      )}
 
       {toast && (
         <div style={{
@@ -208,6 +232,7 @@ export default function CardsPage() {
         </div>
       )}
 
+      {view === 'roster' && (
       <div className="layout-list-detail" style={{ display: 'grid', gridTemplateColumns: '300px 1fr', gap: '16px', alignItems: 'start' }}>
         {/* Sol: roster */}
         <div className="panel fade-up-1">
@@ -424,6 +449,89 @@ export default function CardsPage() {
           </div>
         )}
       </div>
+      )}
     </div>
   )
+}
+
+// ── Analiz paneli ──
+function CardAnalyticsStat({ label, value, sub, color = 'var(--text)' }) {
+  return (
+    <div style={{ flex: '1 1 130px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: '12px 14px' }}>
+      <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: 1 }}>{label}</div>
+      <div style={{ fontFamily: 'var(--display)', fontSize: 22, color, marginTop: 4 }}>{value}</div>
+      {sub != null && <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text4)', marginTop: 2 }}>{sub}</div>}
+    </div>
+  )
+}
+
+function ABar({ label, value, max, color = 'var(--accent)' }) {
+  const pct = max > 0 ? Math.min(100, (value / max) * 100) : 0
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '4px 0' }}>
+      <div style={{ width: 110, fontSize: 11, color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</div>
+      <div style={{ flex: 1, height: 8, background: 'var(--surface2)', borderRadius: 4, overflow: 'hidden' }}>
+        <div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: 4 }} />
+      </div>
+      <div style={{ width: 42, textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11 }}>{value}</div>
+    </div>
+  )
+}
+
+const RESULT_LABEL = { ok: 'Başarılı', denied: 'Reddedildi', duplicate: 'Mükerrer', not_eligible: 'Uygun değil', unknown_card: 'Bilinmeyen', alarm: 'Alarm' }
+const RESULT_COLOR = { ok: '#16a34a', denied: '#dc2626', duplicate: '#f59e0b', not_eligible: '#f59e0b', unknown_card: 'var(--text3)', alarm: '#dc2626' }
+const TYPE_LABEL = { access: 'Giriş', meal: 'Yemek' }
+
+function CardAnalyticsPanelInner({ data }) {
+  if (!data) return <div style={{ padding: 40, textAlign: 'center', color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: 12 }}>Yükleniyor…</div>
+  const { summary = [], usageByDay = [], usageByResult = [], topStations = [] } = data
+  const maxDay = Math.max(1, ...usageByDay.map(d => d.total))
+  const maxRes = Math.max(1, ...usageByResult.map(r => r.count))
+  const maxSt = Math.max(1, ...topStations.map(s => s.count))
+  const panel = { background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, padding: 16, marginBottom: 14 }
+  const title = { fontSize: 12, fontFamily: 'var(--mono)', letterSpacing: 1.5, color: 'var(--text3)', margin: '0 0 12px' }
+
+  return (
+    <div className="fade-up-1">
+      {/* Tip başına özet */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 14 }}>
+        {summary.map(s => (
+          <CardAnalyticsStat key={s.card_type}
+            label={`${TYPE_LABEL[s.card_type] || s.card_type} kartı`}
+            value={`%${s.coverage_pct}`}
+            sub={`${s.active} aktif · ${s.nfc_bound} NFC · ${s.lost + s.revoked} kayıp/iptal`}
+            color="var(--accent)" />
+        ))}
+      </div>
+
+      <div style={panel}>
+        <h3 style={title}>SON 14 GÜN OKUTMA</h3>
+        {usageByDay.length === 0 ? <Empty /> : usageByDay.map(d => (
+          <ABar key={d.day} label={d.day.slice(5)} value={d.total} max={maxDay} />
+        ))}
+      </div>
+
+      <div style={panel}>
+        <h3 style={title}>SONUÇ KIRILIMI (30 GÜN)</h3>
+        {usageByResult.length === 0 ? <Empty /> : usageByResult.map(r => (
+          <ABar key={r.result} label={RESULT_LABEL[r.result] || r.result} value={r.count} max={maxRes} color={RESULT_COLOR[r.result] || 'var(--accent)'} />
+        ))}
+      </div>
+
+      <div style={panel}>
+        <h3 style={title}>EN YOĞUN İSTASYONLAR</h3>
+        {topStations.length === 0 ? <Empty /> : topStations.map(s => (
+          <ABar key={s.station_id} label={s.name || `#${s.station_id}`} value={s.count} max={maxSt} color="#7c3aed" />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function Empty() {
+  return <div style={{ padding: 16, textAlign: 'center', color: 'var(--text4)', fontFamily: 'var(--mono)', fontSize: 11 }}>veri yok</div>
+}
+
+function AnalyticsPanel({ data }) {
+  return <CardAnalyticsPanelInner data={data} />
 }

@@ -8,8 +8,21 @@ const roster = [
     meal_id: null, meal_code: null, meal_nfc: null, meal_photo: null },
 ]
 
+const analyticsData = {
+  days: 30,
+  summary: [
+    { card_type: 'access', active: 5, lost: 1, revoked: 0, nfc_bound: 3, coverage_pct: 71 },
+    { card_type: 'meal', active: 4, lost: 0, revoked: 0, nfc_bound: 0, coverage_pct: 57 },
+  ],
+  usageByDay: [{ day: '2026-06-05', total: 12, ok: 11 }],
+  usageByResult: [{ result: 'ok', count: 40 }, { result: 'denied', count: 3 }],
+  topStations: [{ station_id: 1, name: 'Ana Giriş', count: 30 }],
+}
+
 vi.mock('../../shared/api/client.js', () => ({
-  default: { get: vi.fn(() => Promise.resolve({ data: roster })) },
+  default: {
+    get: vi.fn((url) => Promise.resolve({ data: url.includes('/cards/analytics') ? analyticsData : roster })),
+  },
 }))
 
 import CardsPage from './CardsPage.jsx'
@@ -42,5 +55,14 @@ describe('cards/CardsPage smoke', () => {
       expect.stringContaining('/cards/batch-pdf?card_type=access'),
       expect.objectContaining({ responseType: 'blob' }),
     ))
+  })
+
+  it('Analiz görünümü özet ve kullanım bloklarını gösterir', async () => {
+    renderWithProviders(<CardsPage />)
+    fireEvent.click(await screen.findByText('📊 Analiz'))
+    expect(await screen.findByText('SON 14 GÜN OKUTMA')).toBeInTheDocument()
+    expect(screen.getByText('SONUÇ KIRILIMI (30 GÜN)')).toBeInTheDocument()
+    expect(screen.getByText('EN YOĞUN İSTASYONLAR')).toBeInTheDocument()
+    expect(screen.getByText('Ana Giriş')).toBeInTheDocument()
   })
 })
