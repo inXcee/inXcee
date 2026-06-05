@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, Fragment } from 'react'
 import { createPortal } from 'react-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../../shared/api/client.js'
@@ -378,6 +378,11 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
   const [mapPickName, setMapPickName] = useState('')      // elle eşleştirme: seçili excel adı
   const [dragShiftId, setDragShiftId] = useState(null)    // drag'deki shiftDefId
   const [dragOverCell, setDragOverCell] = useState(null)  // 'staffId-date' format
+  // Izgara görünüm kontrolleri (departman bantları)
+  const [collapsedDepts, setCollapsedDepts] = useState(() => new Set())
+  const [gridSearch, setGridSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState('all') // all | leave | gaps | absent
+  const [coverageMin, setCoverageMin] = useState(1)        // gün başına min kişi eşiği
 
   const weekDays = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart])
   const weekEnd = weekDays[6]
@@ -592,6 +597,43 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
   // Stats for this week
   const weekStats = useMemo(() => computeWeekStats(staffGrid, weekDays), [staffGrid, weekDays])
 
+  // Departman bazlı istatistik (bant özeti + kapsama). Tam grid'den (filtreden bağımsız).
+  const deptStats = useMemo(() => {
+    const m = new Map()
+    staffGrid.forEach(p => {
+      const k = p.dept_name || 'Departmansız'
+      if (!m.has(k)) m.set(k, { name: k, members: 0, male: 0, female: 0, perDay: weekDays.map(() => ({ work: 0, leave: 0, empty: 0 })) })
+      const s = m.get(k); s.members++
+      if (p.gender === 'female') s.female++; else if (p.gender === 'male') s.male++
+      weekDays.forEach((d, i) => {
+        const c = p.days[d]
+        if (!c) s.perDay[i].empty++
+        else if (c.status === 'on_leave') s.perDay[i].leave++
+        else if (c.status === 'absent') s.perDay[i].empty++
+        else s.perDay[i].work++
+      })
+    })
+    return m
+  }, [staffGrid, weekDays])
+
+  // Arama + durum filtresi uygulanmış görünür liste
+  const visibleGrid = useMemo(() => {
+    const q = gridSearch.toLocaleLowerCase('tr').trim()
+    return staffGrid.filter(p => {
+      if (q && !(p.full_name || '').toLocaleLowerCase('tr').includes(q)) return false
+      if (statusFilter === 'leave' && !weekDays.some(d => p.days[d]?.status === 'on_leave')) return false
+      if (statusFilter === 'gaps' && !weekDays.some(d => !p.days[d])) return false
+      if (statusFilter === 'absent' && !weekDays.some(d => p.days[d]?.status === 'absent')) return false
+      return true
+    })
+  }, [staffGrid, gridSearch, statusFilter, weekDays])
+
+  const toggleCollapse = (name) => setCollapsedDepts(prev => {
+    const n = new Set(prev); n.has(name) ? n.delete(name) : n.add(name); return n
+  })
+  const allDeptNames = useMemo(() => [...new Set(staffGrid.map(p => p.dept_name || 'Departmansız'))], [staffGrid])
+  const allCollapsed = allDeptNames.length > 0 && allDeptNames.every(n => collapsedDepts.has(n))
+
   useEffect(() => {
     if (!toolsOpen) return
     const handler = (e) => {
@@ -785,6 +827,33 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
       {/* View: HAFTALIK */}
       {scheduleView === 'weekly' && (
       <>
+      {/* ── Izgara araç çubuğu: arama / filtre / kapsama / katla ── */}
+      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', marginBottom: '10px' }}>
+        <input
+          value={gridSearch} onChange={e => setGridSearch(e.target.value)}
+          placeholder="🔍 Personel ara…"
+          style={{ flex: '1 1 180px', minWidth: '140px', padding: '7px 12px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text)', fontSize: '12px' }}
+        />
+        <select className="form-select" value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={{ width: 'auto' }}>
+          <option value="all">Tümü</option>
+          <option value="leave">Sadece izinli olanlar</option>
+          <option value="gaps">Boş günü olanlar</option>
+          <option value="absent">Devamsızlık olanlar</option>
+        </select>
+        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text2)' }}>
+          Min kişi/gün
+          <input type="number" min="0" value={coverageMin} onChange={e => setCoverageMin(Math.max(0, +e.target.value || 0))}
+            style={{ width: '52px', padding: '6px 8px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text)', fontSize: '12px' }} />
+        </label>
+        {allDeptNames.length > 1 && (
+          <button className="filter-chip" onClick={() => setCollapsedDepts(allCollapsed ? new Set() : new Set(allDeptNames))}>
+            {allCollapsed ? '▾ Tümünü aç' : '▸ Tümünü katla'}
+          </button>
+        )}
+        {(gridSearch || statusFilter !== 'all') && (
+          <span style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)' }}>{visibleGrid.length}/{staffGrid.length}</span>
+        )}
+      </div>
       {/* ── Schedule grid ── */}
       {isLoading ? (
         <SkeletonTable rows={6} cols={8} />
@@ -840,15 +909,66 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
               </tr>
             </thead>
             <tbody>
-              {staffGrid.map((person, rowIdx) => {
-                const dc = deptColor(person.dept_color)
-                const avatarColor = person.gender === 'female' ? { bg: 'rgba(244,114,182,.2)', text: '#f472b6' } : { bg: 'rgba(59,140,240,.2)', text: 'var(--blue)' }
-                return (
-                  <tr key={person.id} style={{ borderTop: '1px solid var(--border)', background: rowIdx % 2 === 0 ? 'var(--bg)' : 'var(--surface)', borderLeft: `3px solid ${dc.bg || 'transparent'}` }}>
+              {(() => {
+                const totalCols = canEdit ? 9 : 8
+                // Görünür listeyi departman gruplarına ayır (buildStaffGrid sırası korunur).
+                const groups = []
+                let cur = null
+                visibleGrid.forEach(p => {
+                  const k = p.dept_name || 'Departmansız'
+                  if (!cur || cur.name !== k) { cur = { name: k, color: p.dept_color, people: [] }; groups.push(cur) }
+                  cur.people.push(p)
+                })
+                if (visibleGrid.length === 0) return (
+                  <tr><td colSpan={totalCols} style={{ padding: '40px', textAlign: 'center', color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: '12px' }}>Eşleşen personel yok</td></tr>
+                )
+                let rowIdx = 0
+                return groups.map(g => {
+                  const st = deptStats.get(g.name)
+                  const dc = deptColor(g.color)
+                  const collapsed = collapsedDepts.has(g.name)
+                  const bandTint = `color-mix(in srgb, ${dc.text || 'var(--text3)'} 12%, var(--surface2))`
+                  return (
+                    <Fragment key={g.name}>
+                      {/* Departman bandı: başlık + cinsiyet + gün-bazlı kapsama (eşik altı kırmızı) */}
+                      <tr onClick={() => toggleCollapse(g.name)} style={{ cursor: 'pointer' }}>
+                        <td style={{
+                          position: 'sticky', left: 0, zIndex: 6, padding: '8px 12px',
+                          background: bandTint, borderTop: '2px solid var(--border)',
+                          borderLeft: `4px solid ${dc.text || 'var(--border)'}`, borderRight: '2px solid var(--border)',
+                        }}>
+                          <span style={{ fontSize: '11px', color: dc.text || 'var(--text2)', marginRight: '6px' }}>{collapsed ? '▸' : '▾'}</span>
+                          <span style={{ fontFamily: 'var(--display)', fontSize: '12px', letterSpacing: '1.5px', color: dc.text || 'var(--text)', fontWeight: 700, textTransform: 'uppercase' }}>{g.name}</span>
+                          <span style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', marginLeft: '8px' }}>
+                            {st?.members ?? g.people.length} kişi{st && (st.male || st.female) ? ` · ♂${st.male} ♀${st.female}` : ''}
+                          </span>
+                        </td>
+                        {weekDays.map((d, i) => {
+                          const pd = st?.perDay[i] || { work: 0, leave: 0, empty: 0 }
+                          const low = pd.work < coverageMin
+                          return (
+                            <td key={d} style={{
+                              textAlign: 'center', padding: '4px',
+                              borderRight: i < 6 ? '1px solid var(--border)' : 'none', borderTop: '2px solid var(--border)',
+                              background: low ? 'rgba(231,76,60,.16)' : bandTint,
+                            }}>
+                              <span style={{ fontFamily: 'var(--mono)', fontSize: '12px', fontWeight: 700, color: low ? 'var(--red)' : 'var(--text)' }}>{pd.work}{low ? ' ⚠' : ''}</span>
+                              {pd.leave > 0 && <span style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--teal)', display: 'block' }}>{pd.leave}i</span>}
+                            </td>
+                          )
+                        })}
+                        {canEdit && <td style={{ borderTop: '2px solid var(--border)', background: bandTint }} />}
+                      </tr>
+
+                      {!collapsed && g.people.map((person) => {
+                        const r = rowIdx++
+                        const avatarColor = person.gender === 'female' ? { bg: 'rgba(244,114,182,.2)', text: '#f472b6' } : { bg: 'rgba(59,140,240,.2)', text: 'var(--blue)' }
+                        return (
+                  <tr key={person.id} style={{ borderTop: '1px solid var(--border)', background: r % 2 === 0 ? 'var(--bg)' : 'var(--surface)', borderLeft: `3px solid ${dc.bg || 'transparent'}` }}>
                     {/* Person cell */}
                     <td style={{
                       position: 'sticky', left: 0, zIndex: 5,
-                      background: rowIdx % 2 === 0 ? 'var(--bg)' : 'var(--surface)',
+                      background: r % 2 === 0 ? 'var(--bg)' : 'var(--surface)',
                       borderRight: '2px solid var(--border)',
                       padding: '8px 12px',
                     }}>
@@ -870,12 +990,12 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
                             fontSize: '13px', fontWeight: 600, color: 'var(--text)',
                             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '120px',
                           }}>{person.full_name}</div>
-                          {person.dept_name && (
+                          {person.position && (
                             <span style={{
                               fontSize: '9px', fontFamily: 'var(--mono)', letterSpacing: '.5px',
-                              padding: '1px 5px', borderRadius: '4px', marginTop: '2px', display: 'inline-block',
-                              background: dc.bg, color: dc.text,
-                            }}>{person.dept_name}</span>
+                              marginTop: '2px', display: 'block', color: 'var(--text3)',
+                              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '120px',
+                            }}>{person.position}</span>
                           )}
                         </div>
                       </div>
@@ -992,8 +1112,12 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
                       </td>
                     )}
                   </tr>
-                )
-              })}
+                        )
+                      })}
+                    </Fragment>
+                  )
+                })
+              })()}
               {staffGrid.length === 0 && (
                 <tr>
                   <td colSpan={canEdit ? 9 : 8} style={{ padding: '60px', textAlign: 'center' }}>
