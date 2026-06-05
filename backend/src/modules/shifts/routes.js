@@ -21,6 +21,9 @@ import {
   getPayrollExport, getCombinedAbsences,
   listDeductions, createDeduction, deleteDeduction, getPayrollDetailed,
 } from './queries.js'
+import { importSchedule, listImportBatches, undoImportBatch } from './import.js'
+import { importScheduleSchema } from './schemas.js'
+import { validate } from '../../shared/middleware/validate.js'
 import { logAudit } from '../../shared/audit.js'
 
 export const shiftsRouter = Router()
@@ -120,6 +123,42 @@ shiftsRouter.post('/schedule', ...managerOrSupervisor, (req, res) => {
   } catch (e) {
     res.status(400).json({ error: e.message })
   }
+})
+
+// ── Excel çizelge içe aktarımı (önizleme + uygula) ──
+// ?dryRun=1 → hiçbir şey yazmaz, sadece uzlaştırma raporu döndürür (önizleme).
+shiftsRouter.post('/import', ...managerOrSupervisor, validate(importScheduleSchema), (req, res) => {
+  try {
+    const dryRun = req.query.dryRun === '1' || req.query.dryRun === 'true'
+    const report = importSchedule(req.validated, req.user.id, {
+      dryRun, createMissing: true,
+      excludeDepts: req.validated.excludeDepts || [],
+      mappings: req.validated.mappings || {},
+    })
+    if (!dryRun) {
+      logAudit(req.user.id, 'schedule_import', 'shifts', null,
+        `${report.scheduleEntries} kayıt · ${report.staff.created.length} yeni personel · ${report.depts.created.length} yeni departman`)
+    }
+    res.json(report)
+  } catch (e) {
+    logger.error('[shifts/import]', e)
+    res.status(400).json({ error: e.message })
+  }
+})
+
+// ── İçe aktarım oturumları (geri-alma için) ──
+shiftsRouter.get('/import/batches', ...managerOrSupervisor, (req, res) => {
+  try { res.json(listImportBatches(req.query.limit ? +req.query.limit : 20)) }
+  catch (e) { logger.error('[shifts/import/batches]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+shiftsRouter.post('/import/batches/:id/undo', ...managerOrSupervisor, (req, res) => {
+  try {
+    const result = undoImportBatch(+req.params.id)
+    logAudit(req.user.id, 'schedule_import_undo', 'shifts', +req.params.id,
+      `${result.scheduleDeleted} silindi · ${result.scheduleRestored} geri yüklendi · ${result.staffDeleted} personel silindi`)
+    res.json(result)
+  } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
 // ── H4 V1: Çakışma kontrol ──

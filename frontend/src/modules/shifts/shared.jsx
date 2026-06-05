@@ -226,12 +226,21 @@ export function BottomSheet({ onClose, children }) {
 }
 
 // ─── Shared modal overlay ─────────────────────────────────────────────────────
+// createPortal ile document.body'ye render edilir: aksi halde transform'lu bir
+// ata eleman (örn. sayfa .fade-up animasyonu) `position:fixed`'i kendine göre
+// konumlandırır ve modal viewport ortası yerine sayfa içeriğine "atlar".
 export function ModalOverlay({ children, onClose, wide }) {
-  return (
+  // Arka plan scroll kilidi — modal açıkken sayfa kaymasın.
+  useEffect(() => {
+    document.body.style.overflow = 'hidden'
+    return () => { document.body.style.overflow = '' }
+  }, [])
+
+  return createPortal(
     <div
       onClick={onClose}
       style={{
-        position: 'fixed', inset: 0, zIndex: 50,
+        position: 'fixed', inset: 0, zIndex: 1060,
         background: 'rgba(0,0,0,.65)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         padding: '16px',
@@ -252,7 +261,8 @@ export function ModalOverlay({ children, onClose, wide }) {
       >
         {children}
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
 
