@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { requireRole } from '../../shared/auth/middleware.js'
 import { getEmailSettings, setEmailSettings, getEmailLog, getSetting, setSetting } from './queries.js'
 import { sendMorningReport, sendReportNow, buildReportHtml, verifySmtp } from './service.js'
+import { buildWeeklyReportHtml, sendWeeklyReportNow } from './weekly.js'
 import { scheduleMorningReport } from '../../shared/cron/index.js'
 import { logger } from '../../shared/logger.js'
 
@@ -50,6 +51,22 @@ emailRouter.post('/test', ...adminOnly, async (req, res) => {
     // Opsiyonel `to` ile sadece istek atan kullanıcıya gönderilebilir.
     const toOverride = req.body?.to || null
     const result = await sendReportNow({ subject: 'YYS Test Raporu', toOverride })
+    res.json({ ok: true, ...result })
+  } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: e.message }) }
+})
+
+// ── Haftalık özet ──
+emailRouter.get('/weekly/preview', ...adminOnly, (req, res) => {
+  try {
+    const html = buildWeeklyReportHtml()
+    res.setHeader('Content-Type', 'text/html; charset=utf-8')
+    res.send(html)
+  } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+emailRouter.post('/weekly/test', ...adminOnly, async (req, res) => {
+  try {
+    const result = await sendWeeklyReportNow({ toOverride: req.body?.to || null })
     res.json({ ok: true, ...result })
   } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: e.message }) }
 })

@@ -99,6 +99,15 @@ export function startCronJobs() {
     checkExpiringContracts()
   }), TZ)
 
+  // Pazartesi 07:00 — haftalık yönetici özet e-postası (7 günlük trend + kıyas).
+  // E-posta sistemi kapalıysa / email_weekly=0 ise sendWeeklyReport içinde atlanır.
+  cron.schedule('0 7 * * 1', withLock('weekly-summary-email', async () => {
+    try {
+      const { sendWeeklyReport } = await import('../../modules/email/weekly.js')
+      await sendWeeklyReport()
+    } catch (e) { logger.error('[Cron] Haftalık özet e-postası:', e.message) }
+  }), TZ)
+
   // Her ayın 1'i 03:00 — geçmiş ay aylık PDF rapor (overlap-safe)
   cron.schedule('0 3 1 * *', withLock('inventory-monthly-pdf', () => {
     let stream

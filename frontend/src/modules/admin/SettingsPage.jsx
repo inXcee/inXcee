@@ -101,6 +101,15 @@ export default function SettingsPage() {
     finally { setPreviewLoading(false) }
   }
 
+  async function handleWeeklyPreview() {
+    setPreviewLoading(true)
+    try {
+      const res = await api.get('/settings/email/weekly/preview', { responseType:'text' })
+      setPreviewHtml(res.data)
+    } catch(e) { showToast('Önizleme yüklenemedi','error') }
+    finally { setPreviewLoading(false) }
+  }
+
   function handleSave(e) {
     e.preventDefault()
     const days = current.days ?? [1,2,3,4,5]
@@ -277,9 +286,17 @@ export default function SettingsPage() {
 
       {/* Bölüm 5: Önizleme */}
       <Panel title="E-POSTA ÖNİZLEME">
-        <button type="button" className="btn btn-secondary" onClick={handlePreview} disabled={previewLoading}>
-          {previewLoading ? 'Yükleniyor...' : '👁️ Önizle'}
-        </button>
+        <div style={{ display:'flex', gap:'8px', flexWrap:'wrap' }}>
+          <button type="button" className="btn btn-secondary" onClick={handlePreview} disabled={previewLoading}>
+            {previewLoading ? 'Yükleniyor...' : '👁️ Günlük Raporu Önizle'}
+          </button>
+          <button type="button" className="btn btn-secondary" onClick={handleWeeklyPreview} disabled={previewLoading}>
+            📅 Haftalık Özeti Önizle
+          </button>
+        </div>
+        <p style={{ fontSize:'11px', color:'#94a3b8', marginTop:'6px' }}>
+          Haftalık özet her pazartesi 07:00'de yöneticilere gönderilir (e-posta sistemi açıkken).
+        </p>
         {previewHtml && (
           <div style={{ marginTop:'16px', border:'1px solid #e2e8f0', borderRadius:'8px', overflow:'hidden' }}>
             <iframe srcDoc={previewHtml} style={{ width:'100%', height:'500px', border:'none' }} title="E-posta önizleme" />
