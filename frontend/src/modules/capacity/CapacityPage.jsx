@@ -14,6 +14,7 @@ import {
 import CorridorPlan from './CorridorPlan.jsx'
 import RoomDetailPanel from './RoomDetailPanel.jsx'
 import UnassignedPool from './UnassignedPool.jsx'
+import ScenarioPanel from './ScenarioPanel.jsx'
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 export default function CapacityPage() {
@@ -30,6 +31,7 @@ export default function CapacityPage() {
   const [swapSource, setSwapSource] = useState(null)
   const [dragOverRoomId, setDragOverRoomId] = useState(null)
   const [dropMsg, setDropMsg] = useState(null)
+  const [scenarioOpen, setScenarioOpen] = useState(false)
   const qc = useQueryClient()
 
   const { data: rooms = [] } = useQuery({
@@ -197,6 +199,11 @@ export default function CapacityPage() {
             <option key={c.company || c} value={c.company || c}>{c.company || c}</option>
           ))}
         </select>
+        <button onClick={() => setScenarioOpen(true)} className="btn btn-ghost btn-xs"
+          title="X kişi gelirse hangi bloklara yerleşir? (atama yapmaz, plan gösterir)"
+          style={{ marginLeft: 'auto' }}>
+          🔮 SENARYO
+        </button>
         {(emptyOnly || roomCompanyFilter) && (
           <button
             className="btn btn-ghost btn-xs"
@@ -289,6 +296,8 @@ export default function CapacityPage() {
         selectedRoom={currentRoom}
         onAssigned={handleRoomUpdated}
       />
+
+      {scenarioOpen && <ScenarioPanel onClose={() => setScenarioOpen(false)} />}
     </div>
   )
 }

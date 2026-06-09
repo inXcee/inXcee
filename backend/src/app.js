@@ -24,7 +24,16 @@ try {
   const pkg = JSON.parse(readFileSync(resolve(__dirname, '../package.json'), 'utf-8'))
   APP_VERSION = pkg.version || 'unknown'
 } catch { /* package.json okunamazsa default kalır */ }
-const APP_COMMIT = (process.env.GIT_SHA || process.env.RENDER_GIT_COMMIT || process.env.VERCEL_GIT_COMMIT_SHA || '').slice(0, 7) || null
+// Commit: önce env (CI/PaaS), yoksa git checkout'tan rev-parse (prod /opt/avskamp
+// git pull ile deploy edilir → çalışır). Git yoksa null (eski davranış).
+let APP_COMMIT = (process.env.GIT_SHA || process.env.RENDER_GIT_COMMIT || process.env.VERCEL_GIT_COMMIT_SHA || '').slice(0, 7) || null
+if (!APP_COMMIT) {
+  try {
+    const { execFileSync } = await import('node:child_process')
+    APP_COMMIT = execFileSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: __dirname, stdio: ['ignore', 'pipe', 'ignore'] })
+      .toString().trim() || null
+  } catch { /* git yoksa null kalır */ }
+}
 const APP_STARTED_AT = new Date().toISOString()
 import { checkinRouter } from './modules/checkin/routes.js'
 import { capacityRouter } from './modules/capacity/routes.js'
