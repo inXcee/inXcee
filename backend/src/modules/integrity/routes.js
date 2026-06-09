@@ -127,7 +127,13 @@ integrityRouter.get('/scan', ...view, (req, res) => {
 integrityRouter.get('/kvkk', ...mgr, (req, res) => {
   try {
     const db = getDB()
-    let q = `SELECT * FROM kvkk_requests WHERE 1=1`
+    // days_left: KVKK m.13 — başvuruya 30 gün içinde yanıt zorunlu.
+    // Bekleyen taleplerde kalan gün (negatif = yasal süre AŞILDI), karara bağlananlarda null.
+    let q = `SELECT *,
+      CASE WHEN status = 'pending'
+        THEN CAST(julianday(created_at, '+30 day') - julianday('now') AS INTEGER)
+        ELSE NULL END AS days_left
+      FROM kvkk_requests WHERE 1=1`
     const params = []
     if (req.query.status) { q += ' AND status = ?'; params.push(req.query.status) }
     q += ' ORDER BY created_at DESC LIMIT 200'

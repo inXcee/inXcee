@@ -209,9 +209,19 @@ function KvkkTab() {
                     </div>
                   )}
                 </div>
-                <span style={{ fontFamily: 'var(--mono)', fontSize: 9, padding: '3px 8px', borderRadius: 4, background: 'var(--surface2)' }}>
-                  {r.status}
-                </span>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: 9, padding: '3px 8px', borderRadius: 4, background: 'var(--surface2)' }}>
+                    {r.status}
+                  </span>
+                  {/* KVKK m.13 — 30 günlük yasal yanıt süresi */}
+                  {typeof r.days_left === 'number' && (
+                    <span style={{ fontFamily: 'var(--mono)', fontSize: 9, padding: '3px 8px', borderRadius: 4,
+                      background: r.days_left < 0 ? 'rgba(239,68,68,.18)' : r.days_left <= 7 ? 'rgba(245,158,11,.15)' : 'var(--surface2)',
+                      color: r.days_left < 0 ? 'var(--red)' : r.days_left <= 7 ? 'var(--amber)' : 'var(--text3)' }}>
+                      {r.days_left < 0 ? `⚠ SÜRE AŞILDI (${-r.days_left}g)` : `yasal süre: ${r.days_left}g`}
+                    </span>
+                  )}
+                </div>
               </div>
               {r.status === 'pending' && (
                 <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>

@@ -39,6 +39,16 @@ describe('H12 S2 — KVKK V2', () => {
     expect(r.status).toBe(400)
   })
 
+  it('LIST bekleyen talepte 30 günlük yasal kalan süreyi (days_left) döndürür', async () => {
+    const c = await request(app).post('/api/integrity/kvkk').set('Authorization', `Bearer ${token}`)
+      .send({ kind: 'erase', target_type: 'personnel', target_id: 1, requester_name: 'Süre Testi' })
+    const list = await request(app).get('/api/integrity/kvkk').set('Authorization', `Bearer ${token}`)
+    const item = list.body.find(x => x.id === c.body.id)
+    expect(typeof item.days_left).toBe('number')
+    expect(item.days_left).toBeGreaterThanOrEqual(29) // yeni talep: ~30 gün
+    expect(item.days_left).toBeLessThanOrEqual(30)
+  })
+
   it('geçersiz kind 400', async () => {
     const r = await request(app).post('/api/integrity/kvkk').set('Authorization', `Bearer ${token}`)
       .send({ kind: 'invalid', target_type: 'staff', target_id: 1, requester_name: 'X' })
