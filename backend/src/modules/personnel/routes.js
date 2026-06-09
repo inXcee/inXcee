@@ -2,13 +2,37 @@ import { Router } from 'express'
 import { requireRole } from '../../shared/auth/middleware.js'
 import { logAudit } from '../../shared/audit.js'
 import { validate } from '../../shared/middleware/validate.js'
-import { addNoteSchema, emergencyContactSchema, emergencyContactUpdateSchema, archiveSchema } from './schemas.js'
+import { addNoteSchema, emergencyContactSchema, emergencyContactUpdateSchema, archiveSchema, importPersonnelSchema } from './schemas.js'
 import * as q from './queries.js'
+import { importPersonnel, listPersonnelImportBatches, undoPersonnelImport } from './import.js'
 import { logger } from '../../shared/logger.js'
 
 export const personnelRouter = Router()
 const mgr = requireRole('campus_manager', 'shift_supervisor')
 const view = requireRole('campus_manager', 'shift_supervisor', 'laundry', 'housekeeper', 'technical')
+
+// ── Excel toplu içe aktarım ──
+personnelRouter.post('/import', ...mgr, validate(importPersonnelSchema), (req, res) => {
+  try {
+    const dryRun = req.query.dryRun === '1' || req.query.dryRun === 'true'
+    const report = importPersonnel(req.validated, req.user.id, { dryRun })
+    if (!dryRun) logAudit(req.user.id, 'personnel_import', 'personnel', report.batchId, `${report.created.length} sakin içe aktarıldı`)
+    res.json(report)
+  } catch (e) { logger.error('[personnel/import]', e); res.status(400).json({ error: e.message }) }
+})
+
+personnelRouter.get('/import/batches', ...mgr, (req, res) => {
+  try { res.json(listPersonnelImportBatches()) }
+  catch (e) { logger.error('[personnel/import/batches]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+personnelRouter.post('/import/batches/:id/undo', ...mgr, (req, res) => {
+  try {
+    const result = undoPersonnelImport(+req.params.id)
+    logAudit(req.user.id, 'personnel_import_undo', 'personnel', +req.params.id, `${result.personnelDeleted} sakin geri alındı`)
+    res.json(result)
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
 
 // ── 360° ──
 personnelRouter.get('/:id/360', ...view, (req, res) => {
