@@ -10,7 +10,7 @@ import { logger } from '../../shared/logger.js'
 import { validate } from '../../shared/middleware/validate.js'
 import {
   createPickupPointSchema, pickupPointUpdateSchema, createRouteSchema, routeUpdateSchema,
-  addStopSchema, stopUpdateSchema, setPickupSchema, assignSchema,
+  addStopSchema, stopUpdateSchema, setPickupSchema, assignSchema, boardQrSchema,
 } from './schemas.js'
 
 export const transportRouter = Router()
@@ -302,6 +302,39 @@ transportRouter.delete('/assign/:staff_id', ...mgr, (req, res) => {
     logAudit(req.user.id, 'transport_assign_clear', 'transport', +req.params.staff_id, date)
     res.json({ ok: true })
   } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+// QR ile biniş — kiosk QR kartı okutulur, bugünkü atama boarded işaretlenir.
+// Manuel toggle (PATCH /assignments/:id/boarded) ile aynı setBoarded'ı kullanır;
+// fark: kişiyi listede aramak yerine staff.qr_token'dan çözer.
+transportRouter.post('/board-qr', ...mgr, validate(boardQrSchema), (req, res) => {
+  try {
+    const db = getDB()
+    const token = req.validated.qr_token.replace(/^AVS:/i, '')
+    const date = req.validated.work_date || new Date().toISOString().slice(0, 10)
+
+    const staff = db.prepare(`SELECT id, full_name FROM staff WHERE qr_token = ?`).get(token)
+    if (!staff) return res.status(404).json({ error: 'QR tanınmadı — personel bulunamadı' })
+
+    const a = db.prepare(`
+      SELECT ra.id, ra.boarded, ra.boarded_marked_at, r.name AS route_name, ps.name AS stop_name
+      FROM route_assignments ra
+      JOIN routes r ON r.id = ra.route_id
+      LEFT JOIN route_stops rs ON rs.id = ra.stop_id
+      LEFT JOIN pickup_points ps ON ps.id = rs.pickup_point_id
+      WHERE ra.staff_id = ? AND ra.work_date = ?
+    `).get(staff.id, date)
+    if (!a) return res.status(404).json({ error: `${staff.full_name}: bugün servis ataması yok`, staff_name: staff.full_name })
+
+    if (a.boarded === 1) {
+      const at = a.boarded_marked_at ? a.boarded_marked_at.slice(11, 16) : ''
+      return res.status(409).json({ error: `${staff.full_name} zaten bindi${at ? ` (${at})` : ''}`, staff_name: staff.full_name })
+    }
+
+    q.setBoarded(a.id, true, req.user.id)
+    logAudit(req.user.id, 'transport_board_qr', 'transport', a.id, `${staff.full_name} → ${a.route_name}`)
+    res.json({ ok: true, staff_name: staff.full_name, route_name: a.route_name, stop_name: a.stop_name || null })
+  } catch (e) { logger.error('[Route/board-qr]', e); res.status(400).json({ error: e.message }) }
 })
 
 // Faz 6: katılım işaretle

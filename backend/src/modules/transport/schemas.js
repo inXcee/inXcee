@@ -54,3 +54,9 @@ export const assignSchema = z.object({
   stop_id: z.coerce.number().int().positive().nullish(),
   work_date: dateStr,
 })
+
+// QR ile servise biniş — kiosk QR kartındaki 'AVS:' öneki backend'de soyulur.
+export const boardQrSchema = z.object({
+  qr_token: z.string().trim().min(1, 'qr_token gerekli').max(120, 'qr_token çok uzun'),
+  work_date: dateStr.optional(),
+})

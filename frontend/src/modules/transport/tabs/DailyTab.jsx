@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../../shared/api/client.js'
 import { confirmDialog } from '../../../shared/components/ConfirmDialog.jsx'
 import { SkeletonTable } from '../../../shared/components/Skeleton.jsx'
+import QrScannerModal from '../../../shared/components/QrScannerModal.jsx'
 import { KPI, toast, toastErr } from '../shared.jsx'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -11,6 +12,17 @@ import { KPI, toast, toastErr } from '../shared.jsx'
 export default function DailyTab({ date }) {
   const qc = useQueryClient()
   const [openRouteId, setOpenRouteId] = useState(null)
+  const [qrOpen, setQrOpen] = useState(false)
+
+  const boardQrMut = useMutation({
+    mutationFn: (qr_token) => api.post('/transport/board-qr', { qr_token, work_date: date }).then(r => r.data),
+    onSuccess: (r) => {
+      toast(`✓ ${r.staff_name} bindi — ${r.route_name}${r.stop_name ? ` (${r.stop_name})` : ''}`)
+      qc.invalidateQueries({ queryKey: ['transport-daily'] })
+      qc.invalidateQueries({ queryKey: ['manifest'] })
+    },
+    onError: toastErr,
+  })
 
   const { data, isLoading } = useQuery({
     queryKey: ['transport-daily', date],
@@ -54,7 +66,13 @@ export default function DailyTab({ date }) {
         <button onClick={() => downloadAllPdf(date)} className="btn btn-ghost btn-sm" style={{ borderRadius: 10 }} title="Tüm aktif rotaların manifestosu tek PDF">
           📄 TÜMÜ PDF
         </button>
+        <button onClick={() => setQrOpen(true)} disabled={boardQrMut.isPending} className="btn btn-ghost btn-sm" style={{ borderRadius: 10 }} title="Personel QR kartını okut — bugünkü atamayı bindi işaretler">
+          📷 QR BİNİŞ
+        </button>
       </div>
+
+      <QrScannerModal open={qrOpen} onClose={() => setQrOpen(false)}
+        onScan={(text) => boardQrMut.mutate(text)} title="Servis Binişi — QR Okutun" />
 
       {/* Uyarılar */}
       {data.alerts.length > 0 && (
