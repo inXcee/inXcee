@@ -4,11 +4,82 @@ import { logAudit } from '../../shared/audit.js'
 import { getDB } from '../../shared/db/index.js'
 import { logger } from '../../shared/logger.js'
 import { validate } from '../../shared/middleware/validate.js'
-import { createSessionSchema, updateSessionSchema, createKkdSchema, kkdReturnSchema } from './schemas.js'
+import { createSessionSchema, updateSessionSchema, createKkdSchema, kkdReturnSchema, createIncidentSchema, updateIncidentSchema } from './schemas.js'
+import { createNotification } from '../../shared/notifications/service.js'
+import { EVENT_KINDS } from '../../shared/notifications/events.js'
 
 export const safetyRouter = Router()
 const mgr = requireRole('campus_manager', 'shift_supervisor')
 const view = requireRole('campus_manager', 'shift_supervisor', 'technical')
+
+// ── İSG olay/kaza takibi ──
+const INCIDENT_TYPE_TR = { injury: 'Yaralanma', near_miss: 'Ramak kala', property_damage: 'Maddi hasar', environmental: 'Çevresel', other: 'Diğer' }
+
+safetyRouter.get('/incidents', ...view, (req, res) => {
+  try {
+    const db = getDB()
+    let q = `
+      SELECT si.*, s.full_name AS staff_name, u.username AS reported_by_name
+      FROM safety_incidents si
+      LEFT JOIN staff s ON s.id = si.staff_id
+      LEFT JOIN users u ON u.id = si.reported_by
+      WHERE 1=1`
+    const params = []
+    if (req.query.status) { q += ' AND si.status = ?'; params.push(String(req.query.status)) }
+    if (req.query.type) { q += ' AND si.incident_type = ?'; params.push(String(req.query.type)) }
+    q += ' ORDER BY si.occurred_at DESC LIMIT 200'
+    res.json(db.prepare(q).all(...params))
+  } catch (e) { logger.error('[safety/incidents]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+safetyRouter.post('/incidents', ...mgr, validate(createIncidentSchema), (req, res) => {
+  try {
+    const db = getDB()
+    const v = req.validated
+    const id = db.prepare(`
+      INSERT INTO safety_incidents(occurred_at, location, incident_type, severity, description, staff_id, actions_taken, reported_by)
+      VALUES (?,?,?,?,?,?,?,?)
+    `).run(v.occurred_at, v.location || null, v.incident_type, v.severity, v.description,
+      v.staff_id || null, v.actions_taken || null, req.user.id).lastInsertRowid
+    // Ciddi olaylar (major/critical) yönetime anında bildirilir.
+    if (v.severity === 'major' || v.severity === 'critical') {
+      try {
+        createNotification({
+          message: `🚨 İSG olayı (${INCIDENT_TYPE_TR[v.incident_type] || v.incident_type}, ${v.severity}): ${v.description.slice(0, 120)}`,
+          event_kind: EVENT_KINDS.SAFETY_INCIDENT,
+          target_role: 'campus_manager',
+          entity_type: 'safety_incident', entity_id: id,
+        })
+      } catch (e) { logger.warn('[safety/incidents] bildirim:', e.message) }
+    }
+    logAudit(req.user.id, 'safety_incident_create', 'safety', id, `${v.incident_type}/${v.severity}`)
+    res.status(201).json({ id })
+  } catch (e) { logger.error('[safety/incidents]', e); res.status(400).json({ error: e.message }) }
+})
+
+safetyRouter.patch('/incidents/:id', ...mgr, validate(updateIncidentSchema), (req, res) => {
+  try {
+    const db = getDB()
+    const r = db.prepare('SELECT * FROM safety_incidents WHERE id = ?').get(+req.params.id)
+    if (!r) return res.status(404).json({ error: 'Olay bulunamadı' })
+    const v = req.validated
+    const closing = v.status === 'closed' && r.status !== 'closed'
+    db.prepare(`
+      UPDATE safety_incidents SET
+        status = COALESCE(?, status),
+        actions_taken = COALESCE(?, actions_taken),
+        severity = COALESCE(?, severity),
+        location = COALESCE(?, location),
+        description = COALESCE(?, description),
+        closed_at = CASE WHEN ? THEN datetime('now') ELSE closed_at END,
+        closed_by = CASE WHEN ? THEN ? ELSE closed_by END
+      WHERE id = ?
+    `).run(v.status ?? null, v.actions_taken ?? null, v.severity ?? null, v.location ?? null,
+      v.description ?? null, closing ? 1 : 0, closing ? 1 : 0, req.user.id, r.id)
+    logAudit(req.user.id, 'safety_incident_update', 'safety', r.id, v.status || 'edit')
+    res.json({ ok: true })
+  } catch (e) { logger.error('[safety/incidents]', e); res.status(400).json({ error: e.message }) }
+})
 
 // ── IG1: Eğitim oturumları CRUD ──
 safetyRouter.get('/sessions', ...view, (req, res) => {

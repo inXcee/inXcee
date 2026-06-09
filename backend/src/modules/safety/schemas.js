@@ -38,3 +38,24 @@ export const createKkdSchema = z.object({
 export const kkdReturnSchema = z.object({
   condition: z.string().trim().max(500, 'Durum notu çok uzun').nullish(),
 })
+
+// İSG olay/kaza kaydı
+export const createIncidentSchema = z.object({
+  occurred_at: z.string().trim().min(1, 'Olay zamanı gerekli').max(30),
+  location: z.string().trim().max(200, 'Konum çok uzun').nullish(),
+  incident_type: z.enum(['injury', 'near_miss', 'property_damage', 'environmental', 'other'],
+    { errorMap: () => ({ message: 'Geçersiz olay tipi' }) }),
+  severity: z.enum(['minor', 'moderate', 'major', 'critical'],
+    { errorMap: () => ({ message: 'Geçersiz şiddet' }) }).default('minor'),
+  description: z.string().trim().min(1, 'Açıklama gerekli').max(4000, 'Açıklama çok uzun'),
+  staff_id: z.coerce.number().int().positive().nullish(),
+  actions_taken: z.string().trim().max(4000).nullish(),
+})
+
+export const updateIncidentSchema = z.object({
+  status: z.enum(['open', 'investigating', 'closed']).optional(),
+  actions_taken: z.string().trim().max(4000).nullish(),
+  severity: z.enum(['minor', 'moderate', 'major', 'critical']).optional(),
+  location: z.string().trim().max(200).nullish(),
+  description: z.string().trim().min(1).max(4000).optional(),
+}).refine(o => Object.keys(o).some(k => o[k] !== undefined), { message: 'Güncellenecek alan yok' })
