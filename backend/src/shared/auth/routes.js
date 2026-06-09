@@ -66,6 +66,56 @@ authRouter.post('/login', validate(loginSchema), (req, res) => {
   res.json(body)
 })
 
+// ── Desktop passkey (webauthn) — mobile-auth altyapısı reuse ──
+// Kayıt: oturum açıkken (parolayla girilmiş). Giriş: credentialId localStorage'da.
+// verifyAuthentication allowedRoles=null → tüm masaüstü rolleri girebilir.
+const webauthnMod = () => import('../../modules/mobile-auth/webauthn.js')
+
+authRouter.post('/passkey/register-options', requireAuth, async (req, res) => {
+  try {
+    const { getRegistrationOptions } = await webauthnMod()
+    const result = await getRegistrationOptions(req.user.id)
+    if (result.error) return res.status(result.status).json({ error: result.error })
+    res.json(result)
+  } catch (e) { logger.error('[passkey/register-options]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+authRouter.post('/passkey/register', requireAuth, async (req, res) => {
+  try {
+    const { verifyRegistration } = await webauthnMod()
+    const result = await verifyRegistration(req.user.id, req.body)
+    if (result.error) return res.status(result.status).json({ error: result.error })
+    res.json(result)
+  } catch (e) { logger.error('[passkey/register]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+authRouter.post('/passkey/auth-options', async (req, res) => {
+  try {
+    const { credentialId } = req.body || {}
+    if (!credentialId) return res.status(400).json({ error: 'credentialId gerekli' })
+    const { getAuthOptions } = await webauthnMod()
+    const result = await getAuthOptions(String(credentialId))
+    if (result.error) return res.status(result.status).json({ error: result.error })
+    res.json(result)
+  } catch (e) { logger.error('[passkey/auth-options]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+authRouter.post('/passkey/login', async (req, res) => {
+  try {
+    const { credentialId, response } = req.body || {}
+    if (!credentialId || !response) return res.status(400).json({ error: 'credentialId ve response gerekli' })
+    const { verifyAuthentication } = await webauthnMod()
+    const result = await verifyAuthentication(String(credentialId), response)
+    if (result.error) return res.status(result.status).json({ error: result.error })
+    // Parola login'iyle aynı oturum düzeni: httpOnly cookie + (test'te) body token.
+    setSessionCookie(res, result.token)
+    const body = process.env.NODE_ENV === 'test'
+      ? { token: result.token, user: result.user }
+      : { user: result.user }
+    res.json(body)
+  } catch (e) { logger.error('[passkey/login]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
 authRouter.post('/kiosk-login', pinLimiter, (req, res) => {
   const { tc_no, pin, personnel_id } = req.body
   if (personnel_id) {

@@ -18,6 +18,9 @@ import { LandingFooter } from './components/sections/LandingFooter.jsx'
 import { useMotionPref } from './hooks/useMotionPref.js'
 import { useTranslation } from '../../shared/i18n/index.js'
 import { LAT, LON, DEMO_USERS, KIOSKS, MODE_ORDER, MODE_TITLES, MODULES } from './loginData.js'
+
+const PASSKEY_KEY = 'yys_passkey_cred'
+const webAuthnBrowser = () => import('@simplewebauthn/browser')
 import './LoginPage.css'
 
 export default function LoginPage() {
@@ -42,6 +45,9 @@ export default function LoginPage() {
   const [clock, setClock] = useState('--:--:--')
   const [stats, setStats] = useState(null)
   const [weather, setWeather] = useState(null)
+  // Passkey (webauthn): credentialId bu cihazın localStorage'ında tutulur.
+  const [passkeyCred, setPasskeyCred] = useState(() => localStorage.getItem(PASSKEY_KEY))
+  const [passkeyOffer, setPasskeyOffer] = useState(null) // başarılı parola girişi sonrası bekleyen user
 
   const login = useAuthStore(s => s.login)
   const navigate = useNavigate()
@@ -69,6 +75,44 @@ export default function LoginPage() {
     navigate(result.path || '/')
   }
 
+  // ── Passkey: hızlı giriş (kayıtlı cihaz) ─────────────────────
+  const handlePasskeyLogin = async () => {
+    if (!passkeyCred || loading) return
+    setLoading(true); setError(''); setLoadingText(t('login.card.loading_auth', 'Kimlik doğrulanıyor'))
+    try {
+      const { startAuthentication } = await webAuthnBrowser()
+      const opt = await api.post('/auth/passkey/auth-options', { credentialId: passkeyCred })
+      const authResp = await startAuthentication(opt.data)
+      const res = await api.post('/auth/passkey/login', { credentialId: passkeyCred, response: authResp })
+      await finishLogin(res.data.user)
+    } catch (err) {
+      if (err?.name === 'NotAllowedError') { /* kullanıcı iptal etti — sessiz */ }
+      else if (err.response?.status === 404) {
+        localStorage.removeItem(PASSKEY_KEY); setPasskeyCred(null)
+        setError(t('login.card.passkey_fail', 'Passkey girişi başarısız'))
+      } else setError(err.response?.data?.error || t('login.card.passkey_fail', 'Passkey girişi başarısız'))
+    } finally { setLoading(false) }
+  }
+
+  // ── Passkey: parola girişi sonrası kayıt teklifi ─────────────
+  const handlePasskeyRegister = async (accept) => {
+    const user = passkeyOffer
+    setPasskeyOffer(null)
+    if (accept) {
+      try {
+        const { startRegistration } = await webAuthnBrowser()
+        const opt = await api.post('/auth/passkey/register-options')
+        const regResp = await startRegistration(opt.data)
+        const ver = await api.post('/auth/passkey/register', regResp)
+        localStorage.setItem(PASSKEY_KEY, ver.data.credentialId)
+        setPasskeyCred(ver.data.credentialId)
+      } catch { /* iptal/başarısız — parola girişi zaten geçerli, sessiz devam */ }
+    } else {
+      localStorage.setItem(PASSKEY_KEY + '_dismissed', '1') // bir daha sorma
+    }
+    await finishLogin(user)
+  }
+
   // ── Login (gerçek auth + timeout + cooldown + a11y) ──────────
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -81,6 +125,13 @@ export default function LoginPage() {
         setTwoFA({ challenge_token: res.data.challenge_token })
         setFailCount(0)
         return
+      }
+      // Passkey teklifi: destekleyen tarayıcıda, bu cihazda kayıt yoksa bir kez sor.
+      if (!passkeyCred && !localStorage.getItem(PASSKEY_KEY + '_dismissed')) {
+        try {
+          const { browserSupportsWebAuthn } = await webAuthnBrowser()
+          if (browserSupportsWebAuthn()) { setPasskeyOffer(res.data.user); return }
+        } catch { /* destek yoksa normal akış */ }
       }
       await finishLogin(res.data.user)
     } catch (err) {
@@ -329,7 +380,38 @@ export default function LoginPage() {
               demoUsers={DEMO_USERS}
               onPickDemo={pickDemo}
               isDev={import.meta.env.DEV}
+              hasPasskey={!!passkeyCred}
+              onPasskeyLogin={handlePasskeyLogin}
             />
+            {/* Passkey kayıt teklifi — parola girişi başarılı, yönlendirme bekliyor */}
+            {passkeyOffer && (
+              <div role="dialog" aria-modal="true" style={{
+                position: 'fixed', inset: 0, zIndex: 300,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.65)' }} />
+                <div style={{
+                  position: 'relative', width: 'min(380px, 90vw)', padding: '22px',
+                  background: 'var(--surface, #0d1117)', border: '1px solid var(--border, #233)',
+                  borderRadius: '14px', color: 'var(--text, #fff)',
+                }}>
+                  <div style={{ fontSize: '17px', fontWeight: 700, marginBottom: '8px' }}>
+                    🔑 {t('login.card.passkey_offer_title', 'Daha hızlı giriş?')}
+                  </div>
+                  <p style={{ fontSize: '13px', opacity: 0.8, marginBottom: '16px', lineHeight: 1.5 }}>
+                    {t('login.card.passkey_offer_body', 'Bu cihazda passkey (parmak izi / yüz / cihaz PIN) kurarsanız bir dahaki sefere parolasız girersiniz.')}
+                  </p>
+                  <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                    <button type="button" className="btn-ghost" onClick={() => handlePasskeyRegister(false)}>
+                      {t('login.card.passkey_later', 'Şimdi değil')}
+                    </button>
+                    <button type="button" className="btn" autoFocus onClick={() => handlePasskeyRegister(true)} style={{ width: 'auto', padding: '8px 18px' }}>
+                      {t('login.card.passkey_save', 'Kur')}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </HeroScene>
 

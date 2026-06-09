@@ -61,7 +61,8 @@ mobileAuthRouter.post('/webauthn/auth-options', async (req, res) => {
 mobileAuthRouter.post('/webauthn/authenticate', async (req, res) => {
   const { credentialId, response } = req.body
   if (!credentialId || !response) return res.status(400).json({ error: 'credentialId ve response gerekli' })
-  const result = await verifyAuthentication(credentialId, response)
+  // Mobil passkey sadece saha rolleri için (mevcut davranış korunur).
+  const result = await verifyAuthentication(credentialId, response, { allowedRoles: ['housekeeper', 'technical'] })
   if (result.error) return res.status(result.status).json({ error: result.error })
   res.json(result)
 })

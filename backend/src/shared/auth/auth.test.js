@@ -327,3 +327,35 @@ describe('PIN lockout — loginKiosk (TC no)', () => {
     expect(result.token).toBeDefined()
   })
 })
+
+describe('Desktop passkey (webauthn) uçları', () => {
+  let mgrToken
+  beforeAll(async () => {
+    mgrToken = (await request(app).post('/api/auth/login').send({ username: 'mudur', password: 'admin123' })).body.token
+  })
+
+  it('register-options auth gerektirir (401)', async () => {
+    const res = await request(app).post('/api/auth/passkey/register-options')
+    expect(res.status).toBe(401)
+  })
+
+  it('register-options challenge + rp döndürür', async () => {
+    const res = await request(app).post('/api/auth/passkey/register-options')
+      .set('Authorization', `Bearer ${mgrToken}`)
+    expect(res.status).toBe(200)
+    expect(res.body.challenge).toBeTruthy()
+    expect(res.body.rp?.id).toBeTruthy()
+  })
+
+  it('auth-options bilinmeyen credential 404', async () => {
+    const res = await request(app).post('/api/auth/passkey/auth-options')
+      .send({ credentialId: 'boyle-bir-cihaz-yok' })
+    expect(res.status).toBe(404)
+  })
+
+  it('login bilinmeyen credential 404', async () => {
+    const res = await request(app).post('/api/auth/passkey/login')
+      .send({ credentialId: 'boyle-bir-cihaz-yok', response: {} })
+    expect(res.status).toBe(404)
+  })
+})

@@ -40,6 +40,15 @@ export default defineConfig({
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
+    // Passkey kayıt teklifi (login sonrası modal) e2e akışlarını bloklamasın —
+    // gerçek kullanıcıda "Şimdi değil" ile aynı bayrak.
+    storageState: {
+      cookies: [],
+      origins: [{
+        origin: 'http://localhost:5174',
+        localStorage: [{ name: 'yys_passkey_cred_dismissed', value: '1' }],
+      }],
+    },
   },
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },

@@ -88,6 +88,7 @@ export function LoginCard({
   capsLock, setCapsLock, error, loading, isLocked, cooldownLeft,
   onSubmit, twoFA, code, setCode, shake, onVerify2fa, onCancel2fa,
   onForgot, kiosks, onKioskNav, demoUsers, onPickDemo, isDev,
+  hasPasskey, onPasskeyLogin,
 }) {
   const { t, locale } = useTranslation()
   const [mTitleFb, mSubFb] = modeTitles[mode] || modeTitles.standard
@@ -225,6 +226,12 @@ export function LoginCard({
               <button className="btn" type="submit" disabled={loading || isLocked}>
                 {loading ? t('login.card.submitting', 'GİRİŞ YAPILIYOR…') : isLocked ? `${cooldownLeft} ${t('login.card.wait', 'sn bekleyin')}` : t('login.card.submit', 'Sisteme Giriş Yap →')}
               </button>
+              {hasPasskey && (
+                <button type="button" className="btn-ghost" onClick={onPasskeyLogin} disabled={loading}
+                  style={{ width: '100%', marginTop: 8 }}>
+                  {t('login.card.passkey_quick', '🔑 Passkey ile hızlı giriş')}
+                </button>
+              )}
               {error && (
                 <div id="lp-login-err" className="alert" role="alert">
                   ⚠️ <span>{error}</span>
