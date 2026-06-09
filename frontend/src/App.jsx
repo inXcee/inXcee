@@ -46,6 +46,7 @@ const VisitorsPage = lazy(() => import('./modules/visitors/VisitorsPage.jsx'))
 const SurveysPage = lazy(() => import('./modules/surveys/SurveysPage.jsx'))
 const DrillsPage = lazy(() => import('./modules/drills/DrillsPage.jsx'))
 const DisplayPage = lazy(() => import('./modules/display/DisplayPage.jsx'))
+const KitchenDisplayPage = lazy(() => import('./modules/display/KitchenDisplayPage.jsx'))
 const DocumentsPage = lazy(() => import('./modules/documents/DocumentsPage.jsx'))
 const ExpensesPage = lazy(() => import('./modules/expenses/ExpensesPage.jsx'))
 const NotificationGroupsPage = lazy(() => import('./modules/notification-groups/NotificationGroupsPage.jsx'))
@@ -285,6 +286,7 @@ export default function App() {
           <Route path="/laundry-kiosk" element={<LaundryKioskPage />} />
           <Route path="/avs-kiosk" element={<AvsSelfServicePage />} />
           <Route path="/display" element={<DisplayPage />} />
+          <Route path="/display/kitchen" element={<KitchenDisplayPage />} />
           <Route path="/station" element={<StationPage />} />
           <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
             <Route index element={<DashboardPage />} />
