@@ -8,6 +8,7 @@ import { maintenanceSchema, feedbackSchema } from './schemas.js'
 import { insertItemQuery, listMachinesQuery, collectItemQuery, setBagNoQuery, getRoomLaundryHistoryQuery, getRoomLaundrySummaryQuery, getBlockRoomActiveCountsQuery, getSlaConfigQuery } from '../laundry/queries.js'
 import { advanceItemService, batchAssignService, lostItemService, deleteItemService, deliverItemService, maintenanceDoneService, markFoundService, getItemService, getMachineDailyRunsService, getOperatorSummaryService } from '../laundry/service.js'
 import { sendFoundMessage } from '../laundry/whatsapp.js'
+import { upload, verifyMagicBytes } from '../../shared/uploads/middleware.js'
 import { logger } from '../../shared/logger.js'
 
 export const selfServiceRouter = Router()
@@ -315,8 +316,17 @@ selfServiceRouter.get('/laundry-kiosk/garment-types', requireAvsKiosk, (req, res
   } catch (e) { res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
-selfServiceRouter.post('/laundry-kiosk/bag', requireAvsKiosk, (req, res) => {
-  const { block, room_no, personnel_id, item_count, is_premium, notes, urgent, intake_signature, clothing_items, garments } = req.body
+// Multipart destekli: foto eklenirse FormData gelir (alanlar string'leşir —
+// JSON alanları parse edilir); fotosuz JSON gövde aynen çalışır.
+selfServiceRouter.post('/laundry-kiosk/bag', requireAvsKiosk, upload.single('photo'), verifyMagicBytes, (req, res) => {
+  const { block, room_no, personnel_id, item_count, notes, intake_signature } = req.body
+  let { is_premium, urgent, clothing_items, garments } = req.body
+  // FormData'da boolean/array alanlar string gelir
+  const truthy = (v) => v === true || v === 1 || v === '1' || v === 'true'
+  is_premium = truthy(is_premium)
+  urgent = truthy(urgent)
+  try { if (typeof clothing_items === 'string') clothing_items = clothing_items ? JSON.parse(clothing_items) : null } catch { clothing_items = null }
+  try { if (typeof garments === 'string') garments = garments ? JSON.parse(garments) : null } catch { garments = null }
   if (!block || !room_no) return res.status(400).json({ error: 'block ve room_no gerekli' })
   const count = Number(item_count)
   if (!count || count < 1 || count > 8) return res.status(400).json({ error: 'Geçersiz adet (1-8)' })
@@ -338,6 +348,7 @@ selfServiceRouter.post('/laundry-kiosk/bag', requireAvsKiosk, (req, res) => {
       intake_name: intake_name || null,
       clothing_items: clothing_items ? JSON.stringify(clothing_items) : null,
       garments_json: garments && garments.length > 0 ? JSON.stringify(garments) : null,
+      photo_url: req.file ? '/uploads/' + req.file.filename : null,
       created_by: null,
     })
     const bag_no = setBagNoQuery(id)
@@ -353,7 +364,7 @@ selfServiceRouter.get('/laundry-kiosk/bags', requireAvsKiosk, (req, res) => {
   try {
     const db = getDB()
     let q = `SELECT li.id, li.bag_no, li.status, li.item_count, li.urgent, li.is_premium, li.needs_ironing,
-                    li.created_at, li.updated_at, li.intake_name, li.notes, li.garments_json, li.shelf_location,
+                    li.created_at, li.updated_at, li.intake_name, li.notes, li.garments_json, li.shelf_location, li.photo_url,
                     r.block, r.room_no,
                     li.machine_id, lm.name AS machine_name, lm.timer_end AS machine_timer_end
              FROM laundry_items li JOIN rooms r ON r.id = li.room_id
@@ -687,8 +698,8 @@ selfServiceRouter.get('/laundry-kiosk/today-summary', requireAvsKiosk, (req, res
     const db = getDB()
     const row = db.prepare(`
       SELECT
-        SUM(CASE WHEN date(li.created_at)=date('now','localtime') THEN 1 ELSE 0 END) as intake_today,
-        SUM(CASE WHEN li.status='delivered' AND date(li.updated_at)=date('now','localtime') THEN 1 ELSE 0 END) as delivered_today,
+        SUM(CASE WHEN date(li.created_at,'localtime')=date('now','localtime') THEN 1 ELSE 0 END) as intake_today,
+        SUM(CASE WHEN li.status='delivered' AND date(li.updated_at,'localtime')=date('now','localtime') THEN 1 ELSE 0 END) as delivered_today,
         SUM(CASE WHEN li.status NOT IN ('delivered','lost') THEN 1 ELSE 0 END) as active_total,
         SUM(CASE WHEN li.status='ready' THEN 1 ELSE 0 END) as ready_waiting
       FROM laundry_items li

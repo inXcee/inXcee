@@ -4,6 +4,27 @@ import { laundryApi } from '../laundry/api.js'
 import RoomGridPicker from './RoomGridPicker.jsx'
 import QuickGarmentInput from './QuickGarmentInput.jsx'
 import { blockNeedsSignature } from './constants.js'
+import { listQueued, enqueueBag, flushQueue, buildBagFormData } from './offlineQueue.js'
+
+// Kamera fotoğrafını küçült (max kenar + JPEG) — hem upload boyutu hem
+// offline kuyrukta localStorage'a sığması için
+function downscalePhoto(file, maxDim = 1280, quality = 0.75) {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    const url = URL.createObjectURL(file)
+    img.onload = () => {
+      const scale = Math.min(1, maxDim / Math.max(img.width, img.height))
+      const canvas = document.createElement('canvas')
+      canvas.width = Math.round(img.width * scale)
+      canvas.height = Math.round(img.height * scale)
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height)
+      URL.revokeObjectURL(url)
+      resolve(canvas.toDataURL('image/jpeg', quality))
+    }
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Fotoğraf okunamadı')) }
+    img.src = url
+  })
+}
 
 // ---- Signature pad (reused pattern) ----
 function SigPad({ sigRef }) {
@@ -92,8 +113,31 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
   const [urgent, setUrgent] = useState(false)
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
-  const [success, setSuccess] = useState(null) // { bag_no }
+  const [success, setSuccess] = useState(null) // { bag_no } | { queued: true }
+  const [photoDataUrl, setPhotoDataUrl] = useState(null)
+  const [queuedCount, setQueuedCount] = useState(() => listQueued().length)
+  const [flushMsg, setFlushMsg] = useState(null)
   const [lastBagGarments, setLastBagGarments] = useState(null) // { count, garments } | null
+
+  // Çevrimdışı kuyruğu boşalt — açılışta + bağlantı gelince
+  const tryFlush = useCallback(async () => {
+    if (listQueued().length === 0) return
+    const result = await flushQueue((fd) => kioskApi.post('/self-service/laundry-kiosk/bag', fd))
+    setQueuedCount(result.remaining)
+    if (result.sent > 0 || result.rejected.length > 0) {
+      setFlushMsg(
+        `✓ ${result.sent} bekleyen giriş gönderildi` +
+        (result.rejected.length > 0 ? ` · ${result.rejected.length} reddedildi (${result.rejected[0].error})` : '')
+      )
+      setTimeout(() => setFlushMsg(null), 6000)
+    }
+  }, [])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    tryFlush()
+    window.addEventListener('online', tryFlush)
+    return () => window.removeEventListener('online', tryFlush)
+  }, [tryFlush])
   const [activeByPerson, setActiveByPerson] = useState([]) // [{ name, count, statuses }]
 
   // Oda seçilince son torbanın kıyafet listesini hazırla — "↺ kopyala" için.
@@ -168,7 +212,16 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
     setUrgent(false)
     setError('')
     setSuccess(null)
+    setPhotoDataUrl(null)
     sigRef.current?.clear()
+  }
+
+  async function onPhotoPick(e) {
+    const file = e.target.files?.[0]
+    e.target.value = '' // aynı dosya tekrar seçilebilsin
+    if (!file) return
+    try { setPhotoDataUrl(await downscalePhoto(file)) }
+    catch { setError('Fotoğraf okunamadı') }
   }
 
   async function submit() {
@@ -198,10 +251,21 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
 
     setSubmitting(true)
     try {
-      const res = await kioskApi.post('/self-service/laundry-kiosk/bag', payload)
+      const res = await kioskApi.post('/self-service/laundry-kiosk/bag', buildBagFormData(payload, photoDataUrl))
       setSuccess({ bag_no: res.data.bag_no })
     } catch (e) {
-      setError(e.response?.data?.error || 'Hata oluştu')
+      if (!e.response) {
+        // Ağ yok — kuyruğa al, bağlantı gelince otomatik gönderilir
+        const n = enqueueBag({
+          payload,
+          photoDataUrl,
+          label: `${selection.block}-${selection.room_no} · ${derivedItemCount} parça`,
+        })
+        setQueuedCount(n)
+        setSuccess({ queued: true })
+      } else {
+        setError(e.response?.data?.error || 'Hata oluştu')
+      }
     } finally {
       setSubmitting(false)
     }
@@ -210,8 +274,15 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
   if (success) {
     return (
       <div style={{ ...card, textAlign: 'center' }}>
-        <div style={{ fontSize: 56 }}>✅</div>
-        <div style={{ color: '#4ade80', fontWeight: 700, fontSize: 18 }}>Torba kaydedildi!</div>
+        <div style={{ fontSize: 56 }}>{success.queued ? '📡' : '✅'}</div>
+        <div style={{ color: success.queued ? '#fbbf24' : '#4ade80', fontWeight: 700, fontSize: 18 }}>
+          {success.queued ? 'İnternet yok — giriş kuyruğa alındı' : 'Torba kaydedildi!'}
+        </div>
+        {success.queued && (
+          <div style={{ color: '#94a3b8', fontSize: 13 }}>
+            Bağlantı gelince otomatik gönderilecek ({queuedCount} bekleyen)
+          </div>
+        )}
         {success.bag_no && (
           <div style={{ background: '#1e293b', borderRadius: 12, padding: '16px 24px', display: 'inline-block', alignSelf: 'center' }}>
             <div style={{ fontSize: 11, color: '#64748b', letterSpacing: 2, marginBottom: 4 }}>TORBA NO</div>
@@ -234,6 +305,24 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
   return (
     <div style={card}>
       <h2 style={{ fontSize: 18, fontWeight: 700, color: '#cbd5e1', margin: 0 }}>🧺 Giriş</h2>
+
+      {/* Çevrimdışı kuyruk durumu */}
+      {queuedCount > 0 && (
+        <div style={{
+          background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.35)',
+          borderRadius: 10, padding: '10px 14px',
+          display: 'flex', alignItems: 'center', gap: 10,
+        }}>
+          <span style={{ flex: 1, fontSize: 13, color: '#fbbf24', fontWeight: 600 }}>
+            📡 {queuedCount} bekleyen çevrimdışı giriş
+          </span>
+          <button type="button" onClick={tryFlush}
+            style={{ padding: '8px 14px', borderRadius: 8, border: 'none', background: '#b45309', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+            ↻ Şimdi Gönder
+          </button>
+        </div>
+      )}
+      {flushMsg && <div style={{ color: '#4ade80', fontSize: 13 }}>{flushMsg}</div>}
 
       {/* 1. Room/Person */}
       <RoomGridPicker value={selection} onChange={setSelection} kioskApi={kioskApi} />
@@ -282,7 +371,30 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
         <QuickGarmentInput garmentTypes={garmentTypes} value={garmentState} onChange={setGarmentState} />
       </div>
 
-      {/* 3. Options */}
+      {/* 3. Fotoğraf — özellikle premium/pahalı parçalarda kayıp itirazına kanıt */}
+      <div>
+        <label style={lbl}>Fotoğraf (opsiyonel)</label>
+        {photoDataUrl ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <img src={photoDataUrl} alt="torba" style={{ width: 88, height: 88, objectFit: 'cover', borderRadius: 10, border: '1px solid #334155' }} />
+            <button type="button" onClick={() => setPhotoDataUrl(null)}
+              style={{ background: 'transparent', border: '1px dashed #475569', borderRadius: 8, color: '#94a3b8', fontSize: 12, padding: '8px 12px', cursor: 'pointer' }}>
+              ✕ Kaldır
+            </button>
+          </div>
+        ) : (
+          <label style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+            background: '#1e293b', border: '1px dashed #475569', borderRadius: 10,
+            padding: '12px', color: '#94a3b8', fontSize: 13, cursor: 'pointer',
+          }}>
+            📷 Fotoğraf çek / seç
+            <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={onPhotoPick} />
+          </label>
+        )}
+      </div>
+
+      {/* 4. Options */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <label style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }}>
           <input type="checkbox" checked={urgent} onChange={e => setUrgent(e.target.checked)} style={{ width: 18, height: 18 }} />

@@ -709,12 +709,20 @@ function DeliverView({ kioskApi, focusedBag, onConsumeFocus }) {
                         style={{
                           background: '#1e293b', borderRadius: 10, padding: '10px 14px', marginBottom: 6, cursor: 'pointer',
                           border: `2px solid ${selectedBag?.id === b.id ? '#3b82f6' : '#334155'}`,
+                          display: 'flex', alignItems: 'center', gap: 10,
                         }}>
-                        <div style={{ fontSize: 11, color: '#38bdf8', fontFamily: 'monospace' }}>{b.bag_no || `#${b.id}`}</div>
-                        <div style={{ color: '#e2e8f0', fontSize: 13, fontWeight: 600 }}>
-                          {b.item_count} parça
-                          {b.is_premium ? ' · 🟣 Premium' : ' · ⚪ Regular'}
-                          {b.shelf_location ? <span style={{ color: '#4ade80' }}> · 📍 {b.shelf_location}</span> : ''}
+                        {b.photo_url && (
+                          <img src={b.photo_url} alt="torba"
+                            onClick={(e) => { e.stopPropagation(); window.open(b.photo_url, '_blank') }}
+                            style={{ width: 44, height: 44, objectFit: 'cover', borderRadius: 8, border: '1px solid #475569', flexShrink: 0 }} />
+                        )}
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: 11, color: '#38bdf8', fontFamily: 'monospace' }}>{b.bag_no || `#${b.id}`}</div>
+                          <div style={{ color: '#e2e8f0', fontSize: 13, fontWeight: 600 }}>
+                            {b.item_count} parça
+                            {b.is_premium ? ' · 🟣 Premium' : ' · ⚪ Regular'}
+                            {b.shelf_location ? <span style={{ color: '#4ade80' }}> · 📍 {b.shelf_location}</span> : ''}
+                          </div>
                         </div>
                       </div>
                     ))}

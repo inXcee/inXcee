@@ -736,6 +736,31 @@ describe('Laundry Kiosk makine akışı', () => {
     expect(res.body.weekdays.reduce((s, d) => s + d.intake, 0)).toBe(totalIntake)
   })
 
+  it('bag: multipart foto ile giriş — photo_url set edilir, string alanlar parse olur', async () => {
+    // Geçerli minimal JPEG (magic bytes doğrulamasını geçer)
+    const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQH/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==', 'base64')
+    const res = await request(app)
+      .post('/api/self-service/laundry-kiosk/bag')
+      .set('Authorization', `Bearer ${avsToken}`)
+      .field('block', 'M1')
+      .field('room_no', '101')
+      .field('item_count', '2')
+      .field('urgent', 'true')
+      .field('garments', JSON.stringify([{ type_name: 'Gömlek', count: 2 }]))
+      .attach('photo', jpeg, 'torba.jpg')
+    expect(res.status).toBe(201)
+    const item = getDB().prepare('SELECT photo_url, urgent, garments_json FROM laundry_items WHERE id=?').get(res.body.id)
+    expect(item.photo_url).toMatch(/^\/uploads\//)
+    expect(item.urgent).toBe(1)
+    expect(JSON.parse(item.garments_json)).toEqual([{ type_name: 'Gömlek', count: 2 }])
+  })
+
+  it('bag: fotosuz JSON gövde eskisi gibi çalışır (photo_url null)', async () => {
+    const bagId = await createDirtyBag()
+    const item = getDB().prepare('SELECT photo_url FROM laundry_items WHERE id=?').get(bagId)
+    expect(item.photo_url).toBe(null)
+  })
+
   it('today-summary dört sayıyı döndürür', async () => {
     await createDirtyBag()
     const res = await request(app)
