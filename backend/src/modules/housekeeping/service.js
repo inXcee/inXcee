@@ -21,9 +21,9 @@ export function completeFloorTasksService(block, floor, date, userId) {
   return count
 }
 
-export function completeTaskService(taskId, userId, checklist, viaQr = false) {
-  q.completeTask(taskId, userId, checklist, viaQr)
-  logAudit(userId, 'task_complete', 'housekeeping', taskId, viaQr ? 'via_qr' : null)
+export function completeTaskService(taskId, userId, checklist, viaQr = false, photoUrl = null) {
+  q.completeTask(taskId, userId, checklist, viaQr, photoUrl)
+  logAudit(userId, 'task_complete', 'housekeeping', taskId, viaQr ? 'via_qr' : photoUrl ? 'with_photo' : null)
 }
 
 export const uncompleteTaskService = q.uncompleteTask

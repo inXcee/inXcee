@@ -5,13 +5,22 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { SKIP_REASONS } from './shared.jsx'
+import { downscalePhoto, dataUrlToBlob } from '../../shared/photo.js'
 
 export default function OrtakAlanCard({ task, block, floor, onComplete, onUncomplete, onSkip }) {
   const [showSkip, setShowSkip] = useState(false)
   const [skipReason, setSkipReason] = useState('')
   const [showHistory, setShowHistory] = useState(false)
+  const [photo, setPhoto] = useState(null) // temizlik kanıt fotoğrafı (dataURL)
   const done    = !!task?.completed_at
   const skipped = task?.skipped === 1
+
+  async function onPhotoPick(e) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    try { setPhoto(await downscalePhoto(file)) } catch { /* sessiz */ }
+  }
 
   // Geçmiş yalnız açılınca çekilir — qr_location üretim anahtarı: `${block}-${floor}-common`
   const { data: history = [] } = useQuery({
@@ -67,8 +76,20 @@ export default function OrtakAlanCard({ task, block, floor, onComplete, onUncomp
           {task && skipped && <button className="btn btn-ghost btn-xs" onClick={() => onSkip(task.id, null, true)}>↩ Geri Al</button>}
           {task && !done && !skipped && (
             <>
+              {photo ? (
+                <img src={photo} alt="kanıt-hazır" title="Kanıt fotoğrafı hazır — Tamam ile gönderilir (kaldırmak için tıkla)"
+                  onClick={() => setPhoto(null)}
+                  style={{ width: '28px', height: '28px', objectFit: 'cover', borderRadius: '5px', border: '1px solid var(--green)', cursor: 'pointer' }} />
+              ) : (
+                <label className="btn btn-ghost btn-xs" style={{ cursor: 'pointer' }} title="Temizlik kanıt fotoğrafı çek">
+                  📷
+                  <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={onPhotoPick} />
+                </label>
+              )}
               <button className="btn btn-ghost btn-xs" onClick={() => setShowSkip(!showSkip)}>⊘ Atla</button>
-              <button className="btn btn-primary btn-xs" onClick={() => onComplete(task.id, null)}>✓ Tamam</button>
+              <button className="btn btn-primary btn-xs" onClick={() => { onComplete(task.id, null, photo ? dataUrlToBlob(photo) : null); setPhoto(null) }}>
+                {photo ? '📷✓' : '✓'} Tamam
+              </button>
             </>
           )}
         </div>

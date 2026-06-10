@@ -45,14 +45,15 @@ export function getTasks({ assigned_to, date, block, uncleaned } = {}) {
   return db.prepare(q).all(...params)
 }
 
-export function completeTask(taskId, userId, checklist, viaQr = false) {
+export function completeTask(taskId, userId, checklist, viaQr = false, photoUrl = null) {
   const db = getDB()
   db.prepare(`
     UPDATE cleaning_tasks
     SET completed_at=datetime('now'), assigned_to=?, verified_by_qr=?,
-        skipped=0, skip_reason=NULL, checklist=?
+        skipped=0, skip_reason=NULL, checklist=?,
+        photo_url=COALESCE(?, photo_url)
     WHERE id=?
-  `).run(userId, viaQr ? 1 : 0, checklist ? JSON.stringify(checklist) : null, taskId)
+  `).run(userId, viaQr ? 1 : 0, checklist ? JSON.stringify(checklist) : null, photoUrl, taskId)
 }
 
 export function uncompleteTask(taskId) {

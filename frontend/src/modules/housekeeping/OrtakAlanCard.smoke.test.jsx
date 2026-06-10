@@ -9,7 +9,7 @@ describe('housekeeping/OrtakAlanCard smoke', () => {
     renderWithProviders(<OrtakAlanCard task={{ id: 7, completed_at: null, skipped: 0 }} block="M1" floor={1} onComplete={onComplete} onUncomplete={() => {}} onSkip={() => {}} />)
     expect(screen.getByText(/ORTAK ALAN/)).toBeInTheDocument()
     fireEvent.click(screen.getByText('✓ Tamam'))
-    expect(onComplete).toHaveBeenCalledWith(7, null)
+    expect(onComplete).toHaveBeenCalledWith(7, null, null)
   })
 
   it('görev yoksa "Görev yok" gösterir', () => {

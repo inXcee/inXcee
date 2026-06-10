@@ -66,7 +66,13 @@ export default function HousekeepingPage() {
   })
 
   const completeTask = useMutation({
-    mutationFn: ({ id, checklist }) => api.post(`/housekeeping/tasks/${id}/complete`, { checklist }),
+    mutationFn: ({ id, checklist, photoBlob }) => {
+      if (!photoBlob) return api.post(`/housekeeping/tasks/${id}/complete`, { checklist })
+      const fd = new FormData()
+      if (checklist) fd.append('checklist', JSON.stringify(checklist))
+      fd.append('photo', photoBlob, 'temizlik.jpg')
+      return api.post(`/housekeeping/tasks/${id}/complete`, fd)
+    },
     ...optimisticTaskUpdate((t, vars) =>
       t.id === vars.id ? { ...t, completed_at: new Date().toISOString(), skipped: 0 } : t
     ),
@@ -274,7 +280,7 @@ export default function HousekeepingPage() {
               task={commonTask}
               block={block}
               floor={floor}
-              onComplete={(id, cl) => completeTask.mutate({ id, checklist: cl })}
+              onComplete={(id, cl, photoBlob) => completeTask.mutate({ id, checklist: cl, photoBlob })}
               onUncomplete={(id) => uncompleteTask.mutate(id)}
               onSkip={(id, reason, undo) => skipTask.mutate({ id, reason, undo })}
             />
@@ -296,7 +302,7 @@ export default function HousekeepingPage() {
           key={`${block}-${floor}-${selectedRoomNo}`}
           block={block} floor={floor} roomNo={selectedRoomNo}
           task={selectedTask} isPrivateBath={!isM}
-          onComplete={(id, cl) => completeTask.mutate({ id, checklist: cl })}
+          onComplete={(id, cl, photoBlob) => completeTask.mutate({ id, checklist: cl, photoBlob })}
           onUncomplete={(id) => uncompleteTask.mutate(id)}
           onSkip={(id, reason, undo) => skipTask.mutate({ id, reason, undo })}
           onClose={() => setSelected(null)}

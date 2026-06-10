@@ -49,9 +49,18 @@ housekeepingRouter.post('/tasks/complete-floor', ...hkAccess, validate(completeF
   catch (e) { res.status(400).json({ error: e.message }) }
 })
 
-housekeepingRouter.post('/tasks/:id/complete', ...hkAccess, validate(completeTaskSchema), (req, res) => {
+// Multipart 'photo' destekli — FormData'da checklist JSON string gelir, parse edilir
+function coerceCompleteBody(req, res, next) {
+  if (typeof req.body?.checklist === 'string') {
+    try { req.body.checklist = req.body.checklist ? JSON.parse(req.body.checklist) : null } catch { req.body.checklist = null }
+  }
+  next()
+}
+
+housekeepingRouter.post('/tasks/:id/complete', ...hkAccess, upload.single('photo'), verifyMagicBytes, coerceCompleteBody, validate(completeTaskSchema), (req, res) => {
   try {
-    svc.completeTaskService(+req.params.id, req.user.id, req.validated.checklist || null, req.validated.via_qr)
+    const photoUrl = req.file ? '/uploads/' + req.file.filename : null
+    svc.completeTaskService(+req.params.id, req.user.id, req.validated.checklist || null, req.validated.via_qr, photoUrl)
     res.json({ ok: true })
   }
   catch (e) { res.status(400).json({ error: e.message }) }

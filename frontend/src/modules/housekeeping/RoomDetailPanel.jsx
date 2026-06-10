@@ -8,6 +8,7 @@ import api from '../../shared/api/client.js'
 import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
 import { BLOCK_BY_NAME } from '../../shared/blocks.js'
 import { CHECKLIST_ITEMS, SKIP_REASONS } from './shared.jsx'
+import { downscalePhoto, dataUrlToBlob } from '../../shared/photo.js'
 
 export default function RoomDetailPanel({ block, floor, roomNo, task, isPrivateBath, onComplete, onUncomplete, onSkip, onClose, onInvalidateRooms }) {
   const qc = useQueryClient()
@@ -29,6 +30,14 @@ export default function RoomDetailPanel({ block, floor, roomNo, task, isPrivateB
   const [noCleanLocal, setNoCleanLocal] = useState(null)
   const [noteText, setNoteText] = useState('')
   const [noteInited, setNoteInited] = useState(false)
+  const [cleanPhoto, setCleanPhoto] = useState(null) // temizlik kanıt fotoğrafı (dataURL)
+
+  async function onCleanPhotoPick(e) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    try { setCleanPhoto(await downscalePhoto(file)) } catch { /* sessiz */ }
+  }
 
   const done    = !!task?.completed_at
   const skipped = task?.skipped === 1
@@ -350,7 +359,7 @@ export default function RoomDetailPanel({ block, floor, roomNo, task, isPrivateB
                 <button className="btn btn-ghost btn-sm" style={{ flex: 1 }} onClick={() => onSkip(task.id, null, true)}>
                   ↩ ATLAMAYI GERİ AL
                 </button>
-                <button className="btn btn-primary btn-sm" style={{ flex: 1 }} onClick={() => onComplete(task.id, [...checkedItems])}>
+                <button className="btn btn-primary btn-sm" style={{ flex: 1 }} onClick={() => onComplete(task.id, [...checkedItems], cleanPhoto ? dataUrlToBlob(cleanPhoto) : null)}>
                   ✓ Yine de Tamamla
                 </button>
               </div>
@@ -359,12 +368,25 @@ export default function RoomDetailPanel({ block, floor, roomNo, task, isPrivateB
 
           {task && !done && !skipped && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {/* Temizlik kanıt fotoğrafı (opsiyonel) */}
+              {cleanPhoto ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '8px', padding: '8px 10px' }}>
+                  <img src={cleanPhoto} alt="temizlik kanıtı" style={{ width: '52px', height: '52px', objectFit: 'cover', borderRadius: '6px', border: '1px solid var(--border)' }} />
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--green)', flex: 1 }}>📷 Kanıt fotoğrafı hazır</span>
+                  <button className="btn btn-ghost btn-xs" onClick={() => setCleanPhoto(null)}>✕</button>
+                </div>
+              ) : (
+                <label className="btn btn-ghost btn-sm" style={{ width: '100%', cursor: 'pointer', textAlign: 'center' }}>
+                  📷 KANIT FOTOĞRAFI ÇEK / SEÇ
+                  <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={onCleanPhotoPick} />
+                </label>
+              )}
               <button
                 className="btn btn-primary btn-sm"
                 style={{ width: '100%', padding: '10px' }}
-                onClick={() => onComplete(task.id, [...checkedItems])}
+                onClick={() => onComplete(task.id, [...checkedItems], cleanPhoto ? dataUrlToBlob(cleanPhoto) : null)}
               >
-                ✓ TEMİZLİK TAMAMLANDI
+                {cleanPhoto ? '📷✓' : '✓'} TEMİZLİK TAMAMLANDI
                 {checkedCount > 0 && <span style={{ opacity: 0.75, marginLeft: '6px', fontSize: '9px' }}>({checkedCount} madde)</span>}
               </button>
               {!showSkip ? (

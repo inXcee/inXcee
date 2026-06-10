@@ -37,12 +37,22 @@ describe('AVS sekme parçaları smoke', () => {
     expect(screen.getByText(/Gündüz/)).toBeInTheDocument()
   })
 
-  it('TasksTab housekeeping görev listesi render eder', () => {
-    const data = { type: 'housekeeping', items: [{ id: 1, area: 'Oda', block: 'M1', floor: 1, task_type: 'temizlik', completed_at: null }] }
+  it('TasksTab housekeeping blok/kat/oda grid render eder', () => {
+    const data = {
+      type: 'housekeeping', assigned_block: 'M1',
+      items: [
+        { id: 1, area: 'M1 Oda 101', block: 'M1', floor: 1, task_type: 'room', qr_location: 'M1-101', completed_at: null, skipped: 0 },
+        { id: 2, area: 'M1 Oda 102', block: 'M1', floor: 1, task_type: 'room', qr_location: 'M1-102', completed_at: '2026-06-11 09:00', skipped: 0 },
+        { id: 3, area: 'M1 1.Kat Ortak Alan', block: 'M1', floor: 1, task_type: 'common_area', qr_location: 'M1-1-common', completed_at: null, skipped: 0 },
+      ],
+    }
     renderWithProviders(
       <TasksTab query={{ ...idleQuery, data }} data={data} completeTask={{ mutate: () => {}, isPending: false }} />
     )
-    expect(screen.getByText(/Oda · M1/)).toBeInTheDocument()
+    expect(screen.getByText('M1 · Kat 1')).toBeInTheDocument()
+    expect(screen.getByText('101')).toBeInTheDocument()
+    expect(screen.getByText('102 ✓')).toBeInTheDocument()
+    expect(screen.getByText(/Ortak Alan — WC/)).toBeInTheDocument()
   })
 
   it('MealsTab yarın seçimi 4 öğün butonu render eder', () => {

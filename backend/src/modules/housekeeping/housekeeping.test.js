@@ -25,6 +25,39 @@ describe('Housekeeping — Zod sweep', () => {
   })
 })
 
+describe('Housekeeping — hub complete foto kanıtı', () => {
+  it('multipart photo ile tamamlama photo_url yazar, checklist string parse edilir', async () => {
+    const { getDB } = await import('../../shared/db/index.js')
+    const db = getDB()
+    const t = db.prepare(`INSERT INTO cleaning_tasks(area, block, floor, task_type, scheduled_at, qr_location)
+      VALUES('M2 Oda 120','M2',1,'room',datetime('now','localtime'),'M2-120')`).run()
+    const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQH/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==', 'base64')
+    const res = await request(app).post(`/api/housekeeping/tasks/${t.lastInsertRowid}/complete`)
+      .set('Authorization', `Bearer ${token}`)
+      .field('checklist', JSON.stringify(['bed', 'floor']))
+      .attach('photo', jpeg, 'oda.jpg')
+    expect(res.status).toBe(200)
+    const after = db.prepare('SELECT photo_url, checklist, completed_at FROM cleaning_tasks WHERE id=?').get(t.lastInsertRowid)
+    expect(after.photo_url).toMatch(/^\/uploads\//)
+    expect(JSON.parse(after.checklist)).toEqual(['bed', 'floor'])
+    expect(after.completed_at).toBeTruthy()
+  })
+
+  it('fotosuz JSON tamamlama eskisi gibi çalışır', async () => {
+    const { getDB } = await import('../../shared/db/index.js')
+    const db = getDB()
+    const t = db.prepare(`INSERT INTO cleaning_tasks(area, block, floor, task_type, scheduled_at, qr_location)
+      VALUES('M2 Oda 121','M2',1,'room',datetime('now','localtime'),'M2-121')`).run()
+    const res = await request(app).post(`/api/housekeeping/tasks/${t.lastInsertRowid}/complete`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ checklist: ['bed'] })
+    expect(res.status).toBe(200)
+    const after = db.prepare('SELECT photo_url, completed_at FROM cleaning_tasks WHERE id=?').get(t.lastInsertRowid)
+    expect(after.photo_url).toBe(null)
+    expect(after.completed_at).toBeTruthy()
+  })
+})
+
 describe('Housekeeping — task history (foto kanıtlı)', () => {
   it('oda geçmişi qr_location ile döner: tamamlanan + atlanan + foto', async () => {
     const { getDB } = await import('../../shared/db/index.js')

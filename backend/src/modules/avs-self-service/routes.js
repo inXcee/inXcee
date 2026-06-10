@@ -131,18 +131,23 @@ avsSelfServiceRouter.get('/my-tasks', requireAvsKiosk, (req, res) => {
       // Çamaşır işleme ayrı kioskta yapılır
       return res.json({ type: 'laundry', items: [] })
     }
-    if (dept.includes('temizlik')) {
+    // Temizlik ekibi farklı isimlerle tanımlı olabilir: Temizlik / Meydancı /
+    // Housekeeping — hepsi housekeeping görev akışına gider
+    if (dept.includes('temizlik') || dept.includes('meydan') || dept.includes('housekeep')) {
       // scheduled_at TZ'siz yerel string ("YYYY-MM-DD 08:00:00") — date() ham
       // alınır; "bugün" yerel gün sınırıyla karşılaştırılır (00:00-03:00 fix)
+      // qr_location oda numarası çözümü için döner (M1-205 → 205);
+      // assigned_block yoksa TÜM bloklar gelir, kiosk blok seçtirir
       const items = db.prepare(`
-        SELECT id, area, block, floor, task_type, scheduled_at, completed_at, skipped
+        SELECT id, area, block, floor, task_type, scheduled_at, completed_at,
+               skipped, skip_reason, qr_location, photo_url
         FROM cleaning_tasks
         WHERE date(scheduled_at) = date('now', 'localtime')
           AND (? IS NULL OR block = ?)
-        ORDER BY scheduled_at
-        LIMIT 50
+        ORDER BY block, floor, task_type DESC, id
+        LIMIT 400
       `).all(staff.assigned_block || null, staff.assigned_block || null)
-      return res.json({ type: 'housekeeping', items })
+      return res.json({ type: 'housekeeping', assigned_block: staff.assigned_block || null, items })
     }
     if (dept.includes('teknik')) {
       // assigned_to → technicians(id); staff eşleşmesi yok → açık talepleri göster (bilgi amaçlı)
