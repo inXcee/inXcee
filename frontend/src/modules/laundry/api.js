@@ -42,6 +42,8 @@ export const laundryApi = {
 
   // ── Reports ────────────────────────────────────────────────────────────
   getStats: (params) => api.get('/laundry/reports/stats', { params }).then(r => r.data),
+  getBusyness: (days = 30) => api.get(`/laundry/busyness?days=${days}`).then(r => r.data),
+  getOperatorSummary: (days = 7) => api.get(`/laundry/operator-summary?days=${days}`).then(r => r.data),
   exportCsv: (params) => api.get('/laundry/reports/export', { params, responseType: 'blob' }).then(r => r.data),
   getPremiumReport: (params) => api.get('/laundry/reports/premium', { params }).then(r => r.data),
   exportPremiumCsv: (params) => api.get('/laundry/reports/export-premium', { params, responseType: 'blob' }).then(r => r.data),

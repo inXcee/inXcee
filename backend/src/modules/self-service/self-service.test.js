@@ -721,6 +721,21 @@ describe('Laundry Kiosk makine akışı', () => {
     db.prepare("UPDATE laundry_machines SET runs_since_maintenance=0 WHERE id=?").run(machineId)
   })
 
+  it('hub busyness: 24 saat + 7 gün dolu dizi döndürür, girişler sayılır', async () => {
+    await createDirtyBag()
+    const adminToken = (await request(app).post('/api/auth/login').send({ username: 'mudur', password: 'admin123' })).body.token
+    const res = await request(app)
+      .get('/api/laundry/busyness?days=30')
+      .set('Authorization', `Bearer ${adminToken}`)
+    expect(res.status).toBe(200)
+    expect(res.body.hours).toHaveLength(24)
+    expect(res.body.weekdays).toHaveLength(7)
+    const totalIntake = res.body.hours.reduce((s, h) => s + h.intake, 0)
+    expect(totalIntake).toBeGreaterThanOrEqual(1)
+    // saat ve haftagünü toplamları aynı kayıtları sayar
+    expect(res.body.weekdays.reduce((s, d) => s + d.intake, 0)).toBe(totalIntake)
+  })
+
   it('today-summary dört sayıyı döndürür', async () => {
     await createDirtyBag()
     const res = await request(app)

@@ -287,6 +287,11 @@ laundryRouter.post('/machines', ...laundryFull, (req, res) => {
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
+// Yoğunluk: giriş/teslim saat + haftagünü dağılımı (varsayılan son 30 gün)
+laundryRouter.get('/busyness', ...laundryRead, (req, res) => {
+  res.json(svc.getBusynessService(+req.query.days || 30))
+})
+
 // Operatör performans kırılımı (varsayılan son 7 gün)
 laundryRouter.get('/operator-summary', ...laundryRead, (req, res) => {
   res.json(svc.getOperatorSummaryService(+req.query.days || 7))

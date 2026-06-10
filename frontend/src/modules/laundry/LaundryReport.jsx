@@ -48,6 +48,29 @@ function WeeklyTrendChart({ data }) {
   )
 }
 
+const WEEKDAYS_TR = ['Paz', 'Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt'] // SQLite %w: 0=Pazar
+
+// Saat/haftagünü çubuk grafiği — giriş (accent) + teslim (green) yan yana
+function BusynessBars({ data, labelFor }) {
+  const maxVal = Math.max(...data.map(d => Math.max(d.intake, d.delivered)), 1)
+  const BAR_H = 64
+  return (
+    <div style={{ display: 'flex', gap: 3, alignItems: 'flex-end' }}>
+      {data.map((d, i) => (
+        <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+          <div style={{ width: '100%', display: 'flex', gap: 1, alignItems: 'flex-end', height: BAR_H }}>
+            <div style={{ flex: 1, height: Math.max(2, (d.intake / maxVal) * BAR_H), background: 'var(--accent)', borderRadius: '2px 2px 0 0', opacity: 0.85 }}
+              title={`${labelFor(d)} — Giriş: ${d.intake}`} />
+            <div style={{ flex: 1, height: Math.max(2, (d.delivered / maxVal) * BAR_H), background: 'var(--green)', borderRadius: '2px 2px 0 0', opacity: 0.85 }}
+              title={`${labelFor(d)} — Teslim: ${d.delivered}`} />
+          </div>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--text3)' }}>{labelFor(d)}</div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export default function LaundryReport() {
   const [from, setFrom] = useState(() => {
     const d = new Date(); d.setDate(d.getDate() - 30)
@@ -56,6 +79,17 @@ export default function LaundryReport() {
   const [to, setTo] = useState(() => new Date().toISOString().slice(0, 10))
   const [personSearch, setPersonSearch] = useState('')
   const [personName, setPersonName] = useState(null)
+
+  const { data: busyness } = useQuery({
+    queryKey: ['laundry-busyness'],
+    queryFn: () => laundryApi.getBusyness(30),
+    staleTime: 300_000,
+  })
+  const { data: operatorSummary = [] } = useQuery({
+    queryKey: ['laundry-operator-summary'],
+    queryFn: () => laundryApi.getOperatorSummary(7),
+    staleTime: 300_000,
+  })
   const { data: personData, isLoading: personLoading } = useQuery({
     queryKey: ['laundry-person', personName],
     queryFn: () => laundryApi.getPersonHistory(personName),
@@ -207,6 +241,63 @@ export default function LaundryReport() {
               </div>
               <div className="panel-body">
                 <WeeklyTrendChart data={stats.weekly_trend} />
+              </div>
+            </div>
+          )}
+
+          {/* YOĞUNLUK — saat + haftagünü */}
+          {busyness && (
+            <div className="panel" style={{ marginBottom: 16 }}>
+              <div className="panel-header">
+                <span className="panel-title">YOĞUNLUK — SON 30 GÜN</span>
+                <span className="panel-subtitle">Giriş/teslimlerin saat ve gün dağılımı — vardiya planlaması için</span>
+              </div>
+              <div className="panel-body" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                <div>
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: 1, marginBottom: 6 }}>SAAT DAĞILIMI (00–23)</div>
+                  <BusynessBars data={busyness.hours} labelFor={(d) => String(d.hour).padStart(2, '0')} />
+                </div>
+                <div style={{ maxWidth: 360 }}>
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: 1, marginBottom: 6 }}>HAFTAGÜNÜ DAĞILIMI</div>
+                  <BusynessBars data={busyness.weekdays} labelFor={(d) => WEEKDAYS_TR[d.dow]} />
+                </div>
+                <div style={{ display: 'flex', gap: 12, fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--text3)' }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <span style={{ width: 8, height: 8, background: 'var(--accent)', borderRadius: 1, display: 'inline-block' }} /> Giriş
+                  </span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <span style={{ width: 8, height: 8, background: 'var(--green)', borderRadius: 1, display: 'inline-block' }} /> Teslim
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* OPERATÖR PERFORMANSI */}
+          {operatorSummary.length > 0 && (
+            <div className="panel" style={{ marginBottom: 16 }}>
+              <div className="panel-header">
+                <span className="panel-title">OPERATÖR PERFORMANSI — SON 7 GÜN</span>
+              </div>
+              <div className="panel-body" style={{ padding: 0 }}>
+                <table className="data-table responsive-stack">
+                  <thead>
+                    <tr><th>Operatör</th><th>Giriş</th><th>Yıkama</th><th>Hazır</th><th>Teslim</th><th>Kayıp</th><th>Toplam</th></tr>
+                  </thead>
+                  <tbody>
+                    {operatorSummary.map(o => (
+                      <tr key={o.operator}>
+                        <td data-label="Operator" style={{ fontWeight: 600 }}>{o.operator}</td>
+                        <td data-label="Giris">{o.giris}</td>
+                        <td data-label="Yikama">{o.yikama}</td>
+                        <td data-label="Hazir">{o.hazir}</td>
+                        <td data-label="Teslim" style={{ color: 'var(--green)' }}>{o.teslim}</td>
+                        <td data-label="Kayip" style={{ color: o.kayip > 0 ? 'var(--red)' : 'var(--text3)' }}>{o.kayip}</td>
+                        <td data-label="Toplam" style={{ fontFamily: 'var(--display)', fontSize: 15, color: 'var(--accent)' }}>{o.toplam}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
           )}

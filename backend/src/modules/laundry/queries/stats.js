@@ -23,6 +23,38 @@ export function getOperatorSummaryQuery(days = 1) {
   `).all(offset)
 }
 
+// Yoğunluk analitiği — giriş/teslimlerin saat ve haftagünü dağılımı
+// (operatör/vardiya planlaması için; localtime sınırlarıyla)
+export function getBusynessQuery(days = 30) {
+  const db = getDB()
+  const offset = `-${Math.max(1, Math.min(180, days)) - 1} days`
+  const fill = (rows, size) => {
+    const out = Array.from({ length: size }, (_, i) => ({ key: i, intake: 0, delivered: 0 }))
+    for (const r of rows.intake) out[r.k].intake = r.n
+    for (const r of rows.delivered) out[r.k].delivered = r.n
+    return out
+  }
+  const series = (expr, table, col) => db.prepare(`
+    SELECT CAST(strftime('${expr}', ${col}, 'localtime') AS INTEGER) k, COUNT(*) n
+    FROM ${table}
+    WHERE date(${col}, 'localtime') >= date('now', 'localtime', ?)
+    GROUP BY k
+  `).all(offset)
+  return {
+    days: Math.max(1, Math.min(180, days)),
+    // saat 0-23
+    hours: fill({
+      intake: series('%H', 'laundry_items', 'created_at'),
+      delivered: series('%H', 'laundry_deliveries', 'delivered_at'),
+    }, 24).map(r => ({ hour: r.key, intake: r.intake, delivered: r.delivered })),
+    // haftagünü 0=Pazar..6=Cumartesi (SQLite %w)
+    weekdays: fill({
+      intake: series('%w', 'laundry_items', 'created_at'),
+      delivered: series('%w', 'laundry_deliveries', 'delivered_at'),
+    }, 7).map(r => ({ dow: r.key, intake: r.intake, delivered: r.delivered })),
+  }
+}
+
 export function getStatsQuery({ from_date, to_date } = {}) {
   const db = getDB()
 
