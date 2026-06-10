@@ -42,7 +42,7 @@ describe('PremiumSection smoke', () => {
         clothingTypes={DEFAULT_CLOTHING_TYPES}
         premiumRows={[]} removePremiumRow={() => {}}
         quickPremium="" setQuickPremium={() => {}}
-        parsedPremium={{ type:'', color:'', pattern:'', brand:'', size:'', qty:1 }}
+        parsedPremiumList={[]}
         addQuickPremiumRow={() => {}}
         gType="" setGType={() => {}}
         gForm={{ colors: [], pattern: '', brand: '', model: '', size: '', condition_notes: '' }}
@@ -63,7 +63,7 @@ describe('RegularSection smoke', () => {
         clothingTypes={DEFAULT_CLOTHING_TYPES}
         clothing={[]} totalCount={1}
         quickCloth="" setQuickCloth={() => {}}
-        parsedCloth={{ type:'', color:'', qty:1 }}
+        parsedClothList={[]}
         addQuickClothing={() => {}}
         addClothing={() => {}} removeClothing={() => {}} updateClothing={() => {}}
         itemCount={1} setItemCount={() => {}}

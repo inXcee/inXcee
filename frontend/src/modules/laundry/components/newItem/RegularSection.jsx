@@ -3,7 +3,7 @@ import { CLOTHING_ICONS, COLOR_PALETTE, PATTERN_LIST } from './constants.js'
 
 export default function RegularSection({
   clothingTypes, clothing, totalCount,
-  quickCloth, setQuickCloth, parsedCloth, addQuickClothing,
+  quickCloth, setQuickCloth, parsedClothList, addQuickClothing,
   addClothing, removeClothing, updateClothing,
   itemCount, setItemCount,
 }) {
@@ -24,45 +24,41 @@ export default function RegularSection({
             value={quickCloth}
             onChange={e => setQuickCloth(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') addQuickClothing() }}
-            placeholder="⚡ Hızlı: 3 gömlek mavi · 2 pantolon siyah · çorap beyaz..."
+            placeholder="⚡ Hızlı: 3 gömlek mavi, 2 pantolon siyah, çorap → tek Enter"
             style={{ flex: 1, fontFamily: 'var(--mono)', fontSize: 10 }}
           />
           <button
             onClick={addQuickClothing}
-            disabled={!parsedCloth.type}
+            disabled={parsedClothList.length === 0}
             style={{
-              padding: '6px 14px', borderRadius: 6, cursor: parsedCloth.type ? 'pointer' : 'not-allowed',
-              background: parsedCloth.type ? 'var(--accent)' : 'var(--surface2)',
-              border: `1px solid ${parsedCloth.type ? 'var(--accent)' : 'var(--border)'}`,
-              color: parsedCloth.type ? '#000' : 'var(--text3)',
+              padding: '6px 14px', borderRadius: 6, cursor: parsedClothList.length > 0 ? 'pointer' : 'not-allowed',
+              background: parsedClothList.length > 0 ? 'var(--accent)' : 'var(--surface2)',
+              border: `1px solid ${parsedClothList.length > 0 ? 'var(--accent)' : 'var(--border)'}`,
+              color: parsedClothList.length > 0 ? '#000' : 'var(--text3)',
               fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap',
               transition: 'all 0.15s',
             }}
-          >↵ Ekle</button>
+          >↵ Ekle{parsedClothList.length > 1 ? ` (${parsedClothList.length})` : ''}</button>
         </div>
         {quickCloth.trim() && (
           <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 5, alignItems: 'center' }}>
-            {parsedCloth.qty > 1 && (
-              <span style={{ fontFamily: 'var(--mono)', fontSize: 9, background: 'rgba(240,165,0,0.12)', border: '1px solid rgba(240,165,0,0.3)', color: 'var(--accent)', borderRadius: 4, padding: '1px 6px' }}>
-                ×{parsedCloth.qty}
-              </span>
-            )}
-            {parsedCloth.type ? (
-              <span style={{ fontFamily: 'var(--mono)', fontSize: 9, background: 'rgba(37,99,235,0.12)', border: '1px solid rgba(37,99,235,0.3)', color: '#60a5fa', borderRadius: 4, padding: '1px 6px' }}>
-                {CLOTHING_ICONS[parsedCloth.type] || ''} {parsedCloth.type}
-              </span>
-            ) : (
+            {parsedClothList.length === 0 && (
               <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--red)', opacity: 0.7 }}>tip bulunamadı</span>
             )}
-            {parsedCloth.color && (() => {
-              const cp = COLOR_PALETTE.find(c => c.name === parsedCloth.color)
+            {parsedClothList.map((p, i) => {
+              const cp = COLOR_PALETTE.find(c => c.name === p.color)
               return (
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: 'var(--mono)', fontSize: 9, background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 4, padding: '1px 6px' }}>
-                  {cp && <span style={{ width: 8, height: 8, borderRadius: '50%', background: cp.hex, border: '1px solid rgba(255,255,255,0.2)', flexShrink: 0 }} />}
-                  {parsedCloth.color}
+                <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: 'var(--mono)', fontSize: 9, background: 'rgba(37,99,235,0.12)', border: '1px solid rgba(37,99,235,0.3)', color: '#60a5fa', borderRadius: 4, padding: '1px 6px' }}>
+                  {p.qty > 1 ? `${p.qty}× ` : ''}{CLOTHING_ICONS[p.type] || ''} {p.type}
+                  {p.color && (
+                    <>
+                      {cp && <span style={{ width: 8, height: 8, borderRadius: '50%', background: cp.hex, border: '1px solid rgba(255,255,255,0.2)', flexShrink: 0 }} />}
+                      <span style={{ color: 'var(--text2)' }}>{p.color}</span>
+                    </>
+                  )}
                 </span>
               )
-            })()}
+            })}
           </div>
         )}
       </div>

@@ -4,9 +4,10 @@ import { CLOTHING_ICONS, COLOR_PALETTE, SIZES } from './constants.js'
 
 export default function PremiumSection({
   clothingTypes, premiumRows, removePremiumRow,
-  quickPremium, setQuickPremium, parsedPremium, addQuickPremiumRow,
+  quickPremium, setQuickPremium, parsedPremiumList, addQuickPremiumRow,
   gType, setGType, gForm, setGForm, gQty, setGQty, canAddPremium, addPremiumRow,
 }) {
+  const totalQuickRows = parsedPremiumList.reduce((s, p) => s + p.qty, 0)
   return (
     <div style={{
       borderRadius: 10,
@@ -85,46 +86,41 @@ export default function PremiumSection({
               value={quickPremium}
               onChange={e => setQuickPremium(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') addQuickPremiumRow() }}
-              placeholder="3 gömlek mavi çizgili L Lacoste  →  Enter ile ekle"
+              placeholder="3 gömlek mavi çizgili L Lacoste, 2 pantolon  →  tek Enter"
               style={{ flex: 1, fontFamily: 'var(--mono)', fontSize: 10 }}
               autoFocus={false}
             />
             <button
               onClick={addQuickPremiumRow}
-              disabled={!parsedPremium.type}
+              disabled={parsedPremiumList.length === 0}
               style={{
                 padding: '6px 14px', borderRadius: 6,
-                cursor: parsedPremium.type ? 'pointer' : 'not-allowed',
-                background: parsedPremium.type ? 'var(--accent)' : 'var(--surface2)',
-                border: `1px solid ${parsedPremium.type ? 'var(--accent)' : 'var(--border)'}`,
-                color: parsedPremium.type ? '#000' : 'var(--text3)',
+                cursor: parsedPremiumList.length > 0 ? 'pointer' : 'not-allowed',
+                background: parsedPremiumList.length > 0 ? 'var(--accent)' : 'var(--surface2)',
+                border: `1px solid ${parsedPremiumList.length > 0 ? 'var(--accent)' : 'var(--border)'}`,
+                color: parsedPremiumList.length > 0 ? '#000' : 'var(--text3)',
                 fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap',
                 transition: 'all 0.15s',
               }}
-            >↵ Ekle{parsedPremium.qty > 1 ? ` (×${parsedPremium.qty})` : ''}</button>
+            >↵ Ekle{totalQuickRows > 1 ? ` (×${totalQuickRows})` : ''}</button>
           </div>
           {quickPremium.trim() && (
             <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 5, alignItems: 'center' }}>
-              {parsedPremium.qty > 1 && (
-                <span style={{ fontFamily:'var(--mono)', fontSize:9, background:'rgba(240,165,0,0.12)', border:'1px solid rgba(240,165,0,0.3)', color:'var(--accent)', borderRadius:4, padding:'1px 6px' }}>×{parsedPremium.qty}</span>
+              {parsedPremiumList.length === 0 && (
+                <span style={{ fontFamily:'var(--mono)', fontSize:9, color:'var(--red)', opacity:0.7 }}>tip bulunamadı</span>
               )}
-              {parsedPremium.type
-                ? <span style={{ fontFamily:'var(--mono)', fontSize:9, background:'rgba(37,99,235,0.12)', border:'1px solid rgba(37,99,235,0.3)', color:'#60a5fa', borderRadius:4, padding:'1px 6px' }}>{CLOTHING_ICONS[parsedPremium.type]||''} {parsedPremium.type}</span>
-                : <span style={{ fontFamily:'var(--mono)', fontSize:9, color:'var(--red)', opacity:0.7 }}>tip bulunamadı</span>
-              }
-              {parsedPremium.color && (() => {
-                const cp = COLOR_PALETTE.find(c => c.name === parsedPremium.color)
-                return <span style={{ display:'inline-flex', alignItems:'center', gap:3, fontFamily:'var(--mono)', fontSize:9, background:'rgba(255,255,255,0.04)', border:'1px solid var(--border)', color:'var(--text2)', borderRadius:4, padding:'1px 6px' }}>{cp && <span style={{ width:8, height:8, borderRadius:'50%', background:cp.hex, border:'1px solid rgba(255,255,255,0.2)', flexShrink:0 }}/>}{parsedPremium.color}</span>
-              })()}
-              {parsedPremium.pattern && (
-                <span style={{ fontFamily:'var(--mono)', fontSize:9, color:'#818cf8', background:'rgba(99,102,241,0.1)', border:'1px solid rgba(99,102,241,0.2)', borderRadius:4, padding:'1px 6px' }}>{parsedPremium.pattern}</span>
-              )}
-              {parsedPremium.size && (
-                <span style={{ fontFamily:'var(--mono)', fontSize:9, color:'var(--text3)', background:'var(--surface)', border:'1px solid var(--border)', borderRadius:4, padding:'1px 6px' }}>{parsedPremium.size}</span>
-              )}
-              {parsedPremium.brand && (
-                <span style={{ fontFamily:'var(--mono)', fontSize:9, color:'var(--text3)', background:'var(--surface)', border:'1px solid var(--border)', borderRadius:4, padding:'1px 6px' }}>🏷 {parsedPremium.brand}</span>
-              )}
+              {parsedPremiumList.map((p, i) => {
+                const cp = COLOR_PALETTE.find(c => c.name === p.color)
+                return (
+                  <span key={i} style={{ display:'inline-flex', alignItems:'center', gap:3, fontFamily:'var(--mono)', fontSize:9, background:'rgba(37,99,235,0.12)', border:'1px solid rgba(37,99,235,0.3)', color:'#60a5fa', borderRadius:4, padding:'1px 6px' }}>
+                    {p.qty > 1 ? `${p.qty}× ` : ''}{CLOTHING_ICONS[p.type]||''} {p.type}
+                    {p.color && <>{cp && <span style={{ width:8, height:8, borderRadius:'50%', background:cp.hex, border:'1px solid rgba(255,255,255,0.2)', flexShrink:0 }}/>}<span style={{ color:'var(--text2)' }}>{p.color}</span></>}
+                    {p.pattern && <span style={{ color:'#818cf8' }}>{p.pattern}</span>}
+                    {p.size && <span style={{ color:'var(--text3)' }}>{p.size}</span>}
+                    {p.brand && <span style={{ color:'var(--text3)' }}>🏷 {p.brand}</span>}
+                  </span>
+                )
+              })}
             </div>
           )}
         </div>

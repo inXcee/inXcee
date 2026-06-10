@@ -31,6 +31,6 @@ describe('laundry hub leaf components smoke', () => {
 
   it('QuickAdd çökmeden render olur', () => {
     renderWithProviders(<QuickAdd onClose={() => {}} />)
-    expect(screen.getByPlaceholderText('Oda No *')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('Oda / M1 205')).toBeInTheDocument()
   })
 })

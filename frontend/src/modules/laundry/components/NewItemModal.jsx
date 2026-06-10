@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { laundryApi } from '../api.js'
 import { BLOCK_BY_NAME } from '../../../shared/blocks.js'
 import { DEFAULT_CLOTHING_TYPES } from './newItem/constants.js'
-import { parseQuickPremium, parseClothingText } from './newItem/parse.js'
+import { parseClothingText, parseClothingLine, parsePremiumLine, findRoom } from './newItem/parse.js'
 import SignatureCanvas from './newItem/SignatureCanvas.jsx'
 import PremiumSection from './newItem/PremiumSection.jsx'
 import RegularSection from './newItem/RegularSection.jsx'
@@ -108,12 +108,13 @@ export default function NewItemModal({ onClose, roomPrefill = null }) {
     try { localStorage.removeItem('laundry-draft-items') } catch {}
   }
 
-  const parsedCloth = useMemo(() => parseClothingText(quickCloth, CLOTHING_TYPES), [quickCloth, CLOTHING_TYPES])
+  // Çok-segment: "3 gömlek mavi, 2 pantolon, çorap" → tek Enter'da hepsi
+  const parsedClothList = useMemo(() => parseClothingLine(quickCloth, CLOTHING_TYPES), [quickCloth, CLOTHING_TYPES])
 
   const addQuickClothing = () => {
-    if (!parsedCloth.type) return
+    if (parsedClothList.length === 0) return
     setClothing(prev => {
-      const next = [...prev, { type: parsedCloth.type, color: parsedCloth.color, qty: parsedCloth.qty }]
+      const next = [...prev, ...parsedClothList.map(p => ({ type: p.type, color: p.color, qty: p.qty }))]
       saveDraft(next)
       return next
     })
@@ -141,7 +142,7 @@ export default function NewItemModal({ onClose, roomPrefill = null }) {
       return next
     })
 
-  const parsedPremium = useMemo(() => parseQuickPremium(quickPremium, CLOTHING_TYPES), [quickPremium, CLOTHING_TYPES])
+  const parsedPremiumList = useMemo(() => parsePremiumLine(quickPremium, CLOTHING_TYPES), [quickPremium, CLOTHING_TYPES])
 
   // Premium parça local ekleme
   const canAddPremium = !!gType
@@ -163,15 +164,18 @@ export default function NewItemModal({ onClose, roomPrefill = null }) {
   }
 
   const addQuickPremiumRow = () => {
-    if (!parsedPremium.type) return
-    const row = {
-      garment_type: parsedPremium.type,
-      color: parsedPremium.color || undefined,
-      pattern: parsedPremium.pattern || undefined,
-      brand: parsedPremium.brand || undefined,
-      size: parsedPremium.size || undefined,
-    }
-    setPremiumRows(prev => [...prev, ...Array.from({ length: parsedPremium.qty }, () => ({ ...row }))])
+    if (parsedPremiumList.length === 0) return
+    const rows = parsedPremiumList.flatMap(p => {
+      const row = {
+        garment_type: p.type,
+        color: p.color || undefined,
+        pattern: p.pattern || undefined,
+        brand: p.brand || undefined,
+        size: p.size || undefined,
+      }
+      return Array.from({ length: p.qty }, () => ({ ...row }))
+    })
+    setPremiumRows(prev => [...prev, ...rows])
     setQuickPremium('')
   }
 
@@ -277,8 +281,23 @@ export default function NewItemModal({ onClose, roomPrefill = null }) {
             <label className="form-label">ODA SEÇİMİ</label>
             <input className="form-input" value={roomSearch}
               onChange={e => setRoomSearch(e.target.value)}
-              placeholder="Blok veya oda numarası ara..."
+              onKeyDown={e => {
+                if (e.key !== 'Enter') return
+                e.preventDefault()
+                // "M1 205" tam eşleşme; yoksa filtre tek odaya inmişse onu seç
+                const exact = findRoom(roomSearch, rooms) || (filtered.length === 1 ? filtered[0] : null)
+                if (exact) { set('room_id', exact.id); setRoomSearch('') }
+              }}
+              placeholder="⚡ M1 205 yaz + Enter — veya ara..."
               style={{ marginBottom: 6 }} />
+            {roomSearch.trim() && !selectedRoom && (() => {
+              const exact = findRoom(roomSearch, rooms)
+              return exact ? (
+                <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--green)', marginBottom: 6 }}>
+                  ↵ Enter → {exact.block} - {exact.room_no}
+                </div>
+              ) : null
+            })()}
             {selectedRoom && (
               <div style={{
                 padding: '6px 10px', borderRadius: 6, marginBottom: 6,
@@ -340,7 +359,7 @@ export default function NewItemModal({ onClose, roomPrefill = null }) {
               removePremiumRow={removePremiumRow}
               quickPremium={quickPremium}
               setQuickPremium={setQuickPremium}
-              parsedPremium={parsedPremium}
+              parsedPremiumList={parsedPremiumList}
               addQuickPremiumRow={addQuickPremiumRow}
               gType={gType}
               setGType={setGType}
@@ -361,7 +380,7 @@ export default function NewItemModal({ onClose, roomPrefill = null }) {
               totalCount={totalCount}
               quickCloth={quickCloth}
               setQuickCloth={setQuickCloth}
-              parsedCloth={parsedCloth}
+              parsedClothList={parsedClothList}
               addQuickClothing={addQuickClothing}
               addClothing={addClothing}
               removeClothing={removeClothing}
