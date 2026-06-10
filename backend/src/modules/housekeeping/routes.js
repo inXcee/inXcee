@@ -22,6 +22,15 @@ housekeepingRouter.post('/tasks/generate-daily', ...hkAccess, (req, res) => {
   catch (e) { res.status(400).json({ error: e.message }) }
 })
 
+// Oda/ortak alan temizlik geçmişi (foto kanıtlı) — qr_location anahtarıyla
+housekeepingRouter.get('/task-history', ...hkAccess, (req, res) => {
+  try {
+    const { qr_location, days } = req.query
+    if (!qr_location) return res.status(400).json({ error: 'qr_location gerekli' })
+    res.json(svc.getTaskHistoryService(qr_location, days ? +days : 30))
+  } catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+})
+
 housekeepingRouter.get('/tasks/floor-preview', ...hkAccess, (req, res) => {
   try {
     const { block, floor, date } = req.query

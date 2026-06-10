@@ -159,8 +159,10 @@ avsSelfServiceRouter.get('/my-tasks', requireAvsKiosk, (req, res) => {
   } catch (e) { logger.error('[avs my-tasks]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
-// Görev tamamla — sadece kendi assigned_block'undaki cleaning_task
-avsSelfServiceRouter.post('/tasks/:id/complete', requireAvsKiosk, (req, res) => {
+// Görev tamamla — sadece kendi assigned_block'undaki cleaning_task.
+// Multipart 'photo' ile temizlik kanıt fotoğrafı eklenebilir (oda + ortak
+// alan/WC görevleri); fotosuz JSON istek de çalışmaya devam eder.
+avsSelfServiceRouter.post('/tasks/:id/complete', requireAvsKiosk, upload.single('photo'), verifyMagicBytes, (req, res) => {
   try {
     const db = getDB()
     const task = db.prepare('SELECT id, block, completed_at FROM cleaning_tasks WHERE id=?').get(Number(req.params.id))
@@ -172,11 +174,17 @@ avsSelfServiceRouter.post('/tasks/:id/complete', requireAvsKiosk, (req, res) => 
     // Parite: ana modülün completeTask'i gibi skip durumu da temizlenir —
     // yoksa atlanmış görev kiosktan tamamlanınca hem skipped=1 hem
     // completed_at dolu kalır ve raporlar çift sayar
-    db.prepare("UPDATE cleaning_tasks SET completed_at=datetime('now'), skipped=0, skip_reason=NULL WHERE id=?").run(task.id)
-    const updated = db.prepare('SELECT completed_at FROM cleaning_tasks WHERE id=?').get(task.id)
+    const photoUrl = req.file ? '/uploads/' + req.file.filename : null
+    db.prepare(`
+      UPDATE cleaning_tasks
+      SET completed_at=datetime('now'), skipped=0, skip_reason=NULL,
+          photo_url=COALESCE(?, photo_url), completed_by_worker_id=?
+      WHERE id=?
+    `).run(photoUrl, req.user.workerId || null, task.id)
+    const updated = db.prepare('SELECT completed_at, photo_url FROM cleaning_tasks WHERE id=?').get(task.id)
     db.prepare(`INSERT INTO audit_log(user_id, action, module, target_id, detail)
-      VALUES(NULL, 'kiosk_avs_task_complete', 'avs-self-service', ?, ?)`).run(task.id, JSON.stringify({ workerId: req.user.workerId }))
-    res.json({ ok: true, completed_at: updated.completed_at })
+      VALUES(NULL, 'kiosk_avs_task_complete', 'avs-self-service', ?, ?)`).run(task.id, JSON.stringify({ workerId: req.user.workerId, photo: !!photoUrl }))
+    res.json({ ok: true, completed_at: updated.completed_at, photo_url: updated.photo_url })
   } catch (e) { logger.error('[avs task complete]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 

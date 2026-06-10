@@ -42,6 +42,13 @@ export default function RoomDetailPanel({ block, floor, roomNo, task, isPrivateB
     queryFn: () => api.get(`/housekeeping/room-details?block=${block}&room_no=${roomNo}`).then(r => r.data),
     staleTime: 15000,
   })
+
+  // Temizlik geçmişi — qr_location üretim anahtarı: `${block}-${roomNo}`
+  const { data: cleanHistory = [] } = useQuery({
+    queryKey: ['hk-task-history', block, roomNo],
+    queryFn: () => api.get(`/housekeeping/task-history?qr_location=${encodeURIComponent(`${block}-${roomNo}`)}&days=14`).then(r => r.data),
+    staleTime: 30000,
+  })
   const room   = details?.room
   const faults = details?.faults || []
   const noClean = noCleanLocal !== null ? noCleanLocal : (room?.no_clean === 1)
@@ -516,6 +523,44 @@ export default function RoomDetailPanel({ block, floor, roomNo, task, isPrivateB
               )}
             </>)
           })()}
+
+          {/* Temizlik geçmişi — foto kanıtlı (son 14 gün) */}
+          {cleanHistory.length > 0 && (
+            <>
+              <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '2px', marginBottom: '10px' }}>
+                TEMİZLİK GEÇMİŞİ — 14 GÜN
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginBottom: '14px', maxHeight: '240px', overflowY: 'auto' }}>
+                {cleanHistory.map(h => {
+                  const hDone = !!h.completed_at
+                  const who = h.worker_name || h.assignee_name
+                  return (
+                    <div key={h.id} style={{
+                      display: 'flex', alignItems: 'center', gap: '8px',
+                      padding: '7px 10px', borderRadius: '6px',
+                      background: hDone ? 'rgba(39,201,106,.05)' : h.skipped ? 'rgba(240,165,0,.05)' : 'var(--surface2)',
+                      border: `1px solid ${hDone ? 'rgba(39,201,106,.2)' : h.skipped ? 'rgba(240,165,0,.2)' : 'var(--border)'}`,
+                    }}>
+                      <span style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', width: '62px', flexShrink: 0 }}>
+                        {new Date(h.scheduled_at).toLocaleDateString('tr-TR', { day: '2-digit', month: 'short', weekday: 'short' })}
+                      </span>
+                      <span style={{ fontSize: '11px', flex: 1, color: hDone ? 'var(--green)' : h.skipped ? 'var(--accent)' : 'var(--text3)' }}>
+                        {hDone
+                          ? `✓ Temizlendi${who ? ` — ${who}` : ''}${h.verified_by_qr ? ' · QR' : ''}`
+                          : h.skipped ? `⊘ Atlandı${h.skip_reason ? ` (${h.skip_reason})` : ''}` : 'Yapılmadı'}
+                      </span>
+                      {h.photo_url && (
+                        <img loading="lazy" src={h.photo_url} alt="temizlik kanıtı"
+                          onClick={() => window.open(h.photo_url, '_blank')}
+                          title="Temizlik kanıt fotoğrafı — büyütmek için tıkla"
+                          style={{ width: '34px', height: '34px', objectFit: 'cover', borderRadius: '5px', border: '1px solid var(--border)', cursor: 'pointer', flexShrink: 0 }} />
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </>
+          )}
 
           {/* Report fault */}
           <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '2px', marginBottom: '10px' }}>ARIZA BİLDİR</div>

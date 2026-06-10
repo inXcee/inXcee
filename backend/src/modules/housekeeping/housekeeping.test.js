@@ -25,6 +25,41 @@ describe('Housekeeping — Zod sweep', () => {
   })
 })
 
+describe('Housekeeping — task history (foto kanıtlı)', () => {
+  it('oda geçmişi qr_location ile döner: tamamlanan + atlanan + foto', async () => {
+    const { getDB } = await import('../../shared/db/index.js')
+    const db = getDB()
+    db.prepare(`INSERT INTO cleaning_tasks(area, block, floor, task_type, scheduled_at, qr_location, completed_at, photo_url)
+      VALUES('M2 Oda 110','M2',1,'room',datetime('now','localtime'),'M2-110',datetime('now'),'/uploads/x.jpg')`).run()
+    db.prepare(`INSERT INTO cleaning_tasks(area, block, floor, task_type, scheduled_at, qr_location, skipped, skip_reason)
+      VALUES('M2 Oda 110','M2',1,'room',datetime('now','localtime','-1 day'),'M2-110',1,'kapı kilitli')`).run()
+    const res = await request(app).get('/api/housekeeping/task-history?qr_location=M2-110&days=14')
+      .set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(200)
+    expect(res.body.length).toBeGreaterThanOrEqual(2)
+    expect(res.body[0].photo_url).toBe('/uploads/x.jpg')
+    expect(res.body.some(h => h.skipped === 1 && h.skip_reason === 'kapı kilitli')).toBe(true)
+  })
+
+  it('ortak alan (WC/banyo) geçmişi common anahtarıyla döner', async () => {
+    const { getDB } = await import('../../shared/db/index.js')
+    const db = getDB()
+    db.prepare(`INSERT INTO cleaning_tasks(area, block, floor, task_type, scheduled_at, qr_location, completed_at, photo_url)
+      VALUES('M3 1.Kat Ortak Alan','M3',1,'common_area',datetime('now','localtime'),'M3-1-common',datetime('now'),'/uploads/wc.jpg')`).run()
+    const res = await request(app).get('/api/housekeeping/task-history?qr_location=M3-1-common&days=14')
+      .set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(200)
+    expect(res.body[0].task_type).toBe('common_area')
+    expect(res.body[0].photo_url).toBe('/uploads/wc.jpg')
+  })
+
+  it('qr_location olmadan 400', async () => {
+    const res = await request(app).get('/api/housekeeping/task-history')
+      .set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(400)
+  })
+})
+
 describe('Housekeeping', () => {
   it('creates daily tasks', async () => {
     const res = await request(app).post('/api/housekeeping/tasks/generate-daily').set('Authorization', `Bearer ${token}`)

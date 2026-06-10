@@ -272,6 +272,8 @@ export default function HousekeepingPage() {
           {isM && (
             <OrtakAlanCard
               task={commonTask}
+              block={block}
+              floor={floor}
               onComplete={(id, cl) => completeTask.mutate({ id, checklist: cl })}
               onUncomplete={(id) => uncompleteTask.mutate(id)}
               onSkip={(id, reason, undo) => skipTask.mutate({ id, reason, undo })}

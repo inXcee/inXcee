@@ -174,6 +174,22 @@ describe('AVS Self-Service — task complete', () => {
     expect(res.body.completed_at).toBeTruthy()
   })
 
+  it('foto kanıtıyla tamamlama: photo_url + completed_by_worker_id yazılır', async () => {
+    const db = getDB()
+    const t = db.prepare(`INSERT INTO cleaning_tasks(area, block, floor, task_type, scheduled_at, qr_location)
+      VALUES('M1 Oda 105','M1',1,'room',datetime('now','localtime'),'M1-105')`).run()
+    const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQH/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==', 'base64')
+    const res = await request(app).post(`/api/avs-self-service/tasks/${t.lastInsertRowid}/complete`)
+      .set('Authorization', `Bearer ${avsToken}`)
+      .attach('photo', jpeg, 'temizlik.jpg')
+    expect(res.status).toBe(200)
+    expect(res.body.photo_url).toMatch(/^\/uploads\//)
+    const after = db.prepare('SELECT photo_url, completed_by_worker_id, completed_at FROM cleaning_tasks WHERE id=?').get(t.lastInsertRowid)
+    expect(after.photo_url).toMatch(/^\/uploads\//)
+    expect(after.completed_by_worker_id).toBeTruthy()
+    expect(after.completed_at).toBeTruthy()
+  })
+
   it('atlanmış görev kiosktan tamamlanınca skip durumu temizlenir (parite)', async () => {
     const db = getDB()
     const t = db.prepare(`INSERT INTO cleaning_tasks(area, block, floor, task_type, scheduled_at, skipped, skip_reason)

@@ -1,13 +1,25 @@
 // M bloklar için ortak alan (koridor · WC · banyo · merdiven) görev kartı.
 // Tamamla / geri al / atla aksiyonları orkestratörden prop olarak gelir.
+// Foto kanıt: bugünkü görevin fotoğrafı + 📜 ile 14 günlük geçmiş açılır.
 import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import api from '../../shared/api/client.js'
 import { SKIP_REASONS } from './shared.jsx'
 
-export default function OrtakAlanCard({ task, onComplete, onUncomplete, onSkip }) {
+export default function OrtakAlanCard({ task, block, floor, onComplete, onUncomplete, onSkip }) {
   const [showSkip, setShowSkip] = useState(false)
   const [skipReason, setSkipReason] = useState('')
+  const [showHistory, setShowHistory] = useState(false)
   const done    = !!task?.completed_at
   const skipped = task?.skipped === 1
+
+  // Geçmiş yalnız açılınca çekilir — qr_location üretim anahtarı: `${block}-${floor}-common`
+  const { data: history = [] } = useQuery({
+    queryKey: ['hk-common-history', block, floor],
+    queryFn: () => api.get(`/housekeeping/task-history?qr_location=${encodeURIComponent(`${block}-${floor}-common`)}&days=14`).then(r => r.data),
+    enabled: showHistory && !!block && floor != null,
+    staleTime: 30000,
+  })
 
   return (
     <div style={{
@@ -39,7 +51,17 @@ export default function OrtakAlanCard({ task, onComplete, onUncomplete, onSkip }
             {!done && !skipped && 'Kat koridoru, WC ve banyo ortak alanlarını kapsar'}
           </div>
         </div>
+        {done && task?.photo_url && (
+          <img loading="lazy" src={task.photo_url} alt="temizlik kanıtı"
+            onClick={() => window.open(task.photo_url, '_blank')}
+            title="Bugünkü temizlik kanıt fotoğrafı"
+            style={{ width: '38px', height: '38px', objectFit: 'cover', borderRadius: '7px', border: '1px solid var(--border)', cursor: 'pointer', flexShrink: 0 }} />
+        )}
         <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+          {block && floor != null && (
+            <button className="btn btn-ghost btn-xs" title="14 günlük temizlik geçmişi"
+              onClick={() => setShowHistory(s => !s)}>📜</button>
+          )}
           {!task && <span style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text4)' }}>Görev yok</span>}
           {task && done && <button className="btn btn-ghost btn-xs" onClick={() => onUncomplete(task.id)}>↩ Geri Al</button>}
           {task && skipped && <button className="btn btn-ghost btn-xs" onClick={() => onSkip(task.id, null, true)}>↩ Geri Al</button>}
@@ -62,6 +84,39 @@ export default function OrtakAlanCard({ task, onComplete, onUncomplete, onSkip }
             ⊘ Atla
           </button>
           <button className="btn btn-ghost btn-xs" onClick={() => setShowSkip(false)}>İptal</button>
+        </div>
+      )}
+
+      {/* 14 günlük geçmiş — WC/banyo temizliği foto kanıtlarıyla */}
+      {showHistory && (
+        <div style={{ padding: '10px 16px', borderTop: '1px solid var(--border)', background: 'var(--surface2)' }}>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text3)', letterSpacing: '2px', marginBottom: '7px' }}>
+            ORTAK ALAN TEMİZLİK GEÇMİŞİ — 14 GÜN
+          </div>
+          {history.length === 0 && (
+            <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text4)' }}>Kayıt yok</div>
+          )}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '180px', overflowY: 'auto' }}>
+            {history.map(h => {
+              const hDone = !!h.completed_at
+              const who = h.worker_name || h.assignee_name
+              return (
+                <div key={h.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0' }}>
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', width: '62px', flexShrink: 0 }}>
+                    {new Date(h.scheduled_at).toLocaleDateString('tr-TR', { day: '2-digit', month: 'short', weekday: 'short' })}
+                  </span>
+                  <span style={{ fontSize: '11px', flex: 1, color: hDone ? 'var(--green)' : h.skipped ? 'var(--accent)' : 'var(--text3)' }}>
+                    {hDone ? `✓ Temizlendi${who ? ` — ${who}` : ''}` : h.skipped ? `⊘ Atlandı${h.skip_reason ? ` (${h.skip_reason})` : ''}` : 'Yapılmadı'}
+                  </span>
+                  {h.photo_url && (
+                    <img loading="lazy" src={h.photo_url} alt="kanıt"
+                      onClick={() => window.open(h.photo_url, '_blank')}
+                      style={{ width: '30px', height: '30px', objectFit: 'cover', borderRadius: '5px', border: '1px solid var(--border)', cursor: 'pointer', flexShrink: 0 }} />
+                  )}
+                </div>
+              )
+            })}
+          </div>
         </div>
       )}
     </div>

@@ -153,9 +153,14 @@ export default function AvsSelfServicePage() {
   })
   const openFeed = () => { setFeedOpen(true); if (unread > 0) markSeen.mutate() }
 
-  // P2 — Görev tamamlama
+  // P2 — Görev tamamlama (opsiyonel temizlik kanıt fotoğrafıyla)
   const completeTask = useMutation({
-    mutationFn: (taskId) => avsApi.post(`/avs-self-service/tasks/${taskId}/complete`),
+    mutationFn: ({ taskId, photoBlob }) => {
+      if (!photoBlob) return avsApi.post(`/avs-self-service/tasks/${taskId}/complete`)
+      const fd = new FormData()
+      fd.append('photo', photoBlob, 'temizlik.jpg')
+      return avsApi.post(`/avs-self-service/tasks/${taskId}/complete`, fd)
+    },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['avs-tasks', avsToken] }),
   })
 

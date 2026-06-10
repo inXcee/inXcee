@@ -8,6 +8,7 @@ export const getTasksService            = q.getTasks
 export const getDNDRoomsService         = q.getDNDRooms
 
 export const getFloorTaskPreviewService = q.getFloorTaskPreview
+export const getTaskHistoryService       = q.getTaskHistory
 
 export function completeFloorTasksService(block, floor, date, userId) {
   const count = q.completeFloorTasks(block, floor, date, userId)
