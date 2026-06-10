@@ -174,8 +174,8 @@ function MachineCard({ m, onTimer, onReset, loading }) {
         </div>
       )}
 
-      {/* Footer */}
-      {(m.active_items > 0 || m.total_runs > 0) && (
+      {/* Footer — gün/hafta koşu sayıları (eski ömür-boyu "X× çalıştı" yanıltıcıydı) */}
+      {(m.active_items > 0 || m.runs_30d > 0 || m.needs_maintenance) && (
         <div style={{
           marginTop: 4, paddingTop: 6, borderTop: '1px solid var(--border)',
           fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)',
@@ -183,14 +183,14 @@ function MachineCard({ m, onTimer, onReset, loading }) {
           display: 'flex', justifyContent: 'center', gap: 8, flexWrap: 'wrap',
         }}>
           {m.active_items > 0 && <span>{m.active_items} yüklü</span>}
-          {m.total_runs > 0 && (
-            <span style={{
-              color: m.total_runs >= 50 ? 'var(--red)' : m.total_runs >= 40 ? 'var(--accent)' : 'var(--text4)',
-              fontWeight: m.total_runs >= 50 ? 700 : undefined,
-            }}>
-              {m.total_runs >= 50 ? '⚠ ' : ''}{m.total_runs}× çalıştı
+          <span title="bugün · son 7 gün · son 30 gün">
+            B:{m.runs_today ?? 0} · 7g:{m.runs_7d ?? 0} · 30g:{m.runs_30d ?? 0}
+          </span>
+          {m.needs_maintenance ? (
+            <span style={{ color: 'var(--red)', fontWeight: 700 }}>
+              ⚠ bakım ({m.runs_since_maintenance} yıkama)
             </span>
-          )}
+          ) : null}
           {m.maintenance_notes && (
             <span style={{ color: 'var(--red)', fontSize: 8, display: 'block', width: '100%', marginTop: 2 }}>
               {m.maintenance_notes}

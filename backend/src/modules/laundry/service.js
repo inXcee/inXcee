@@ -75,6 +75,7 @@ export function advanceItemService(id, { machine_id, shelf_location, timer_minut
         timer_started_at: timerEnd ? now.toISOString() : null,
         increment_runs: true,
       })
+      q.insertMachineRunQuery({ machine_id, item_id: id })
       q.removeItemFromQueueQuery(id)
       const machineSupplies = q.getMachineSuppliesQuery(machine_id)
       for (const ms of machineSupplies) {
@@ -427,6 +428,7 @@ export const getVerificationsService = q.getVerificationsForItemQuery
 
 export const listItemsService       = q.listItemsQuery
 export const getItemService         = q.getItemQuery
+export const getMachineDailyRunsService = q.getMachineDailyRunsQuery
 export const getItemHistoryService  = q.getItemHistoryQuery
 export const getDamagesService      = q.getDamagesForItemQuery
 export const listMachinesService    = q.listMachinesQuery

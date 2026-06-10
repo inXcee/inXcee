@@ -287,6 +287,11 @@ laundryRouter.post('/machines', ...laundryFull, (req, res) => {
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
+// Gün-gün koşu kırılımı (varsayılan son 14 gün, max 90)
+laundryRouter.get('/machines/:id/daily-runs', ...laundryRead, (req, res) => {
+  res.json(svc.getMachineDailyRunsService(+req.params.id, +req.query.days || 14))
+})
+
 laundryRouter.post('/machines/:id/maintenance-done', ...laundryFull, (req, res) => {
   try {
     res.json(svc.maintenanceDoneService(+req.params.id, req.user.id))

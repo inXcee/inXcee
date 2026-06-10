@@ -51,7 +51,13 @@ export function getStatsQuery({ from_date, to_date } = {}) {
     SELECT lm.name, lm.type, lm.status, lm.total_runs, lm.maintenance_notes,
       lm.runs_since_maintenance, lm.last_maintenance_at,
       (SELECT COUNT(*) FROM laundry_items WHERE machine_id = lm.id AND status = 'washing') as active_loads,
-      CASE WHEN lm.runs_since_maintenance >= 50 THEN 1 ELSE 0 END as needs_maintenance
+      CASE WHEN lm.runs_since_maintenance >= 50 THEN 1 ELSE 0 END as needs_maintenance,
+      (SELECT COUNT(*) FROM laundry_machine_runs r WHERE r.machine_id = lm.id
+         AND date(r.started_at, 'localtime') = date('now', 'localtime')) as runs_today,
+      (SELECT COUNT(*) FROM laundry_machine_runs r WHERE r.machine_id = lm.id
+         AND date(r.started_at, 'localtime') >= date('now', 'localtime', '-6 days')) as runs_7d,
+      (SELECT COUNT(*) FROM laundry_machine_runs r WHERE r.machine_id = lm.id
+         AND date(r.started_at, 'localtime') >= date('now', 'localtime', '-29 days')) as runs_30d
     FROM laundry_machines lm ORDER BY lm.type, lm.name
   `).all()
 

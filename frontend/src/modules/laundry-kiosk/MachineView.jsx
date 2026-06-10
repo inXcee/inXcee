@@ -33,6 +33,7 @@ export default function MachineView({ kioskApi, focusedBag, onConsumeFocus }) {
   const [loading, setLoading] = useState(false)
   const [msg, setMsg] = useState(null) // { type: 'ok'|'err', text }
   const [shelfMap, setShelfMap] = useState({}) // { bagId: rafMetni } — ütüsüz torbalar hazıra giderken
+  const [dailyRuns, setDailyRuns] = useState({}) // { machineId: rows|null } — açılır gün-gün kırılım
 
   async function load() {
     setLoading(true)
@@ -87,6 +88,17 @@ export default function MachineView({ kioskApi, focusedBag, onConsumeFocus }) {
       })
       load()
     } catch (e) { setMsg({ type: 'err', text: e.response?.data?.error || 'Hata' }) }
+  }
+
+  async function toggleDaily(machineId) {
+    if (dailyRuns[machineId]) {
+      setDailyRuns(prev => { const n = { ...prev }; delete n[machineId]; return n })
+      return
+    }
+    try {
+      const res = await kioskApi.get(`/self-service/laundry-kiosk/machines/${machineId}/daily-runs?days=14`)
+      setDailyRuns(prev => ({ ...prev, [machineId]: res.data }))
+    } catch { /* sessiz — satır kapalı kalır */ }
   }
 
   async function maintenanceDone(m) {
@@ -197,6 +209,54 @@ export default function MachineView({ kioskApi, focusedBag, onConsumeFocus }) {
             })}
           </div>
         </>
+      )}
+
+      {/* ── Makineler — gün/hafta/ay çalışma sayıları ── */}
+      {machines.length > 0 && (
+        <div>
+          <label style={lbl}>Makineler — Çalışma Sayıları</label>
+          {machines.map(m => (
+            <div key={m.id} style={{ background: '#1e293b', borderRadius: 10, padding: '8px 12px', marginBottom: 4 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{
+                  width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
+                  background: m.status === 'running' ? '#60a5fa' : m.status === 'maintenance' ? '#f87171' : m.status === 'done' ? '#4ade80' : '#475569',
+                }} />
+                <span style={{ flex: 1, fontSize: 13, color: '#e2e8f0', fontWeight: 600 }}>
+                  {m.name}
+                  {m.needs_maintenance ? <span style={{ color: '#fbbf24', fontSize: 10 }}> · 🔧</span> : ''}
+                </span>
+                <span style={{ fontSize: 11, color: '#94a3b8', fontFamily: 'monospace' }} title="bugün · son 7 gün · son 30 gün">
+                  Bugün <b style={{ color: m.runs_today > 0 ? '#60a5fa' : '#64748b' }}>{m.runs_today ?? 0}</b>
+                  {' · '}7g <b style={{ color: '#cbd5e1' }}>{m.runs_7d ?? 0}</b>
+                  {' · '}30g <b style={{ color: '#cbd5e1' }}>{m.runs_30d ?? 0}</b>
+                </span>
+                <button onClick={() => toggleDaily(m.id)}
+                  style={{ background: 'transparent', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: 11, padding: '2px 4px' }}>
+                  {dailyRuns[m.id] ? '▾ kapat' : '▸ günlük'}
+                </button>
+              </div>
+              {dailyRuns[m.id] && (
+                <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid #334155' }}>
+                  {dailyRuns[m.id].length === 0 && (
+                    <div style={{ fontSize: 11, color: '#475569' }}>Son 14 günde çalışma yok</div>
+                  )}
+                  {dailyRuns[m.id].map(d => (
+                    <div key={d.day} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '2px 0' }}>
+                      <span style={{ fontSize: 10, color: '#94a3b8', fontFamily: 'monospace', width: 76, flexShrink: 0 }}>
+                        {new Date(d.day).toLocaleDateString('tr-TR', { day: '2-digit', month: 'short', weekday: 'short' })}
+                      </span>
+                      <div style={{ flex: 1, height: 8, background: '#0f172a', borderRadius: 4, overflow: 'hidden' }}>
+                        <div style={{ width: `${Math.min(100, d.runs * 10)}%`, height: '100%', background: '#1d4ed8' }} />
+                      </div>
+                      <span style={{ fontSize: 11, color: '#e2e8f0', fontWeight: 700, width: 24, textAlign: 'right' }}>{d.runs}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
       )}
 
       {/* ── Makine sağlığı — bakım zamanı gelenler ── */}

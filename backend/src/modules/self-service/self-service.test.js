@@ -641,6 +641,36 @@ describe('Laundry Kiosk makine akışı', () => {
     expect(bad.status).toBe(400)
   })
 
+  it('yıkama başlatınca koşu kaydı düşer; machines listesi gün sayaçlarını döndürür', async () => {
+    const bagId = await createDirtyBag()
+    await request(app)
+      .put(`/api/self-service/laundry-kiosk/machines/${machineId}/assign`)
+      .set('Authorization', `Bearer ${avsToken}`)
+      .send({ item_id: bagId })
+    const db = getDB()
+    const run = db.prepare('SELECT COUNT(*) c FROM laundry_machine_runs WHERE machine_id=? AND item_id=?').get(machineId, bagId)
+    expect(run.c).toBe(1)
+    const res = await request(app)
+      .get('/api/self-service/laundry-kiosk/machines')
+      .set('Authorization', `Bearer ${avsToken}`)
+    const m = res.body.find(x => x.id === machineId)
+    expect(m.runs_today).toBeGreaterThanOrEqual(1)
+    expect(m.runs_7d).toBeGreaterThanOrEqual(m.runs_today)
+    expect(m.runs_30d).toBeGreaterThanOrEqual(m.runs_7d)
+  })
+
+  it('daily-runs gün-gün kırılım döndürür', async () => {
+    const res = await request(app)
+      .get(`/api/self-service/laundry-kiosk/machines/${machineId}/daily-runs?days=7`)
+      .set('Authorization', `Bearer ${avsToken}`)
+    expect(res.status).toBe(200)
+    expect(Array.isArray(res.body)).toBe(true)
+    expect(res.body.length).toBeGreaterThanOrEqual(1)
+    expect(res.body[0]).toHaveProperty('day')
+    expect(res.body[0]).toHaveProperty('runs')
+    expect(res.body[0].runs).toBeGreaterThanOrEqual(1)
+  })
+
   it('today-summary dört sayıyı döndürür', async () => {
     await createDirtyBag()
     const res = await request(app)

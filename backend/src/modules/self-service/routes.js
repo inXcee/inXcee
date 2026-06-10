@@ -6,7 +6,7 @@ import { changeKioskPin } from '../../shared/auth/service.js'
 import { validate } from '../../shared/middleware/validate.js'
 import { maintenanceSchema, feedbackSchema } from './schemas.js'
 import { insertItemQuery, listMachinesQuery, collectItemQuery, setBagNoQuery, getRoomLaundryHistoryQuery, getRoomLaundrySummaryQuery, getBlockRoomActiveCountsQuery, getSlaConfigQuery } from '../laundry/queries.js'
-import { advanceItemService, batchAssignService, lostItemService, deleteItemService, deliverItemService, maintenanceDoneService, markFoundService, getItemService } from '../laundry/service.js'
+import { advanceItemService, batchAssignService, lostItemService, deleteItemService, deliverItemService, maintenanceDoneService, markFoundService, getItemService, getMachineDailyRunsService } from '../laundry/service.js'
 import { sendFoundMessage } from '../laundry/whatsapp.js'
 import { logger } from '../../shared/logger.js'
 
@@ -604,6 +604,13 @@ selfServiceRouter.post('/laundry-kiosk/deliver-room', requireAvsKiosk, (req, res
       }
     }
     res.json({ ok: true, delivered: delivered.length, bag_nos: delivered, failed })
+  } catch (e) { res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// Makinenin gün-gün koşu kırılımı — kiosk Makineler genel bakışı için
+selfServiceRouter.get('/laundry-kiosk/machines/:id/daily-runs', requireAvsKiosk, (req, res) => {
+  try {
+    res.json(getMachineDailyRunsService(Number(req.params.id), Number(req.query.days) || 14))
   } catch (e) { res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 

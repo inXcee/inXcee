@@ -7,10 +7,33 @@ export function listMachinesQuery() {
   return db.prepare(`
     SELECT lm.*,
            (SELECT COUNT(*) FROM laundry_items WHERE machine_id = lm.id AND status = 'washing') as active_items,
-           CASE WHEN lm.runs_since_maintenance >= ${MAINTENANCE_RUN_THRESHOLD} THEN 1 ELSE 0 END as needs_maintenance
+           CASE WHEN lm.runs_since_maintenance >= ${MAINTENANCE_RUN_THRESHOLD} THEN 1 ELSE 0 END as needs_maintenance,
+           (SELECT COUNT(*) FROM laundry_machine_runs r WHERE r.machine_id = lm.id
+              AND date(r.started_at, 'localtime') = date('now', 'localtime')) as runs_today,
+           (SELECT COUNT(*) FROM laundry_machine_runs r WHERE r.machine_id = lm.id
+              AND date(r.started_at, 'localtime') >= date('now', 'localtime', '-6 days')) as runs_7d,
+           (SELECT COUNT(*) FROM laundry_machine_runs r WHERE r.machine_id = lm.id
+              AND date(r.started_at, 'localtime') >= date('now', 'localtime', '-29 days')) as runs_30d
     FROM laundry_machines lm
     ORDER BY lm.type, lm.name
   `).all()
+}
+
+// Yıkama başlangıcı koşu kaydı — gün/hafta/ay kırılımının kaynağı
+export function insertMachineRunQuery({ machine_id, item_id }) {
+  const db = getDB()
+  db.prepare('INSERT INTO laundry_machine_runs(machine_id, item_id) VALUES(?, ?)').run(machine_id, item_id ?? null)
+}
+
+// Makinenin son N günlük gün-gün koşu kırılımı (boş günler dahil edilmez)
+export function getMachineDailyRunsQuery(machineId, days = 14) {
+  const db = getDB()
+  return db.prepare(`
+    SELECT date(started_at, 'localtime') as day, COUNT(*) as runs
+    FROM laundry_machine_runs
+    WHERE machine_id = ? AND date(started_at, 'localtime') >= date('now', 'localtime', ?)
+    GROUP BY day ORDER BY day DESC
+  `).all(machineId, `-${Math.max(1, Math.min(90, days)) - 1} days`)
 }
 
 export function getMachineQuery(id) {

@@ -220,7 +220,7 @@ export default function LaundryReport() {
               <div className="panel-body" style={{ padding: 0 }}>
                 <table className="data-table responsive-stack">
                   <thead>
-                    <tr><th>Makine</th><th>Tip</th><th>Durum</th><th>Aktif Yük</th><th>Toplam Çalışma</th></tr>
+                    <tr><th>Makine</th><th>Tip</th><th>Durum</th><th>Aktif Yük</th><th>Bugün</th><th>7 Gün</th><th>30 Gün</th><th>Bakımdan Beri</th></tr>
                   </thead>
                   <tbody>
                     {stats.machine_stats.map(m => (
@@ -235,11 +235,20 @@ export default function LaundryReport() {
                         <td data-label="Aktif Yuk" style={{ fontFamily: 'var(--display)', fontSize: 16, color: m.active_loads > 0 ? 'var(--blue)' : 'var(--text3)' }}>
                           {m.active_loads > 0 ? m.active_loads : '—'}
                         </td>
-                        <td data-label="Toplam Calisma" style={{
+                        <td data-label="Bugun" style={{ fontFamily: 'var(--display)', fontSize: 16, color: m.runs_today > 0 ? 'var(--blue)' : 'var(--text3)' }}>
+                          {m.runs_today || 0}
+                        </td>
+                        <td data-label="7 Gun" style={{ fontFamily: 'var(--display)', fontSize: 16, color: 'var(--text2)' }}>
+                          {m.runs_7d || 0}
+                        </td>
+                        <td data-label="30 Gun" style={{ fontFamily: 'var(--display)', fontSize: 16, color: 'var(--text2)' }}>
+                          {m.runs_30d || 0}
+                        </td>
+                        <td data-label="Bakimdan Beri" style={{
                           fontFamily: 'var(--display)', fontSize: 16,
-                          color: m.needs_maintenance ? 'var(--red)' : m.total_runs > 40 ? 'var(--accent)' : 'var(--text3)',
+                          color: m.needs_maintenance ? 'var(--red)' : m.runs_since_maintenance > 40 ? 'var(--accent)' : 'var(--text3)',
                         }}>
-                          {m.total_runs || 0}{m.needs_maintenance ? ' ⚠' : ''}
+                          {m.runs_since_maintenance || 0}{m.needs_maintenance ? ' ⚠' : ''}
                         </td>
                       </tr>
                     ))}
