@@ -34,8 +34,9 @@ beforeAll(async () => {
               VALUES('Merkez Durağı','Çankaya','Kızılay')`).run()
   db.prepare('UPDATE staff SET pickup_point_id=? WHERE id=?').run(pp.lastInsertRowid, workerId)
   // Bugüne bir cleaning task (M1) + bir açık arıza
+  // scheduled_at üretimdeki gibi YEREL-naive yazılır (generateDailyTasks paritesi)
   db.prepare(`INSERT INTO cleaning_tasks(area, block, floor, task_type, scheduled_at)
-              VALUES('Koridor','M1',1,'common_area',datetime('now'))`).run()
+              VALUES('Koridor','M1',1,'common_area',datetime('now','localtime'))`).run()
   db.prepare(`INSERT INTO maintenance_requests(location, description, status, priority)
               VALUES('M1 Kat 1','Musluk akıtıyor','open','high')`).run()
   // Bir aktif duyuru
@@ -173,10 +174,23 @@ describe('AVS Self-Service — task complete', () => {
     expect(res.body.completed_at).toBeTruthy()
   })
 
+  it('atlanmış görev kiosktan tamamlanınca skip durumu temizlenir (parite)', async () => {
+    const db = getDB()
+    const t = db.prepare(`INSERT INTO cleaning_tasks(area, block, floor, task_type, scheduled_at, skipped, skip_reason)
+      VALUES('Skip Test','M1',1,'room',datetime('now','localtime'),1,'kapı kilitli')`).run()
+    const res = await request(app).post(`/api/avs-self-service/tasks/${t.lastInsertRowid}/complete`)
+      .set('Authorization', `Bearer ${avsToken}`)
+    expect(res.status).toBe(200)
+    const after = db.prepare('SELECT completed_at, skipped, skip_reason FROM cleaning_tasks WHERE id=?').get(t.lastInsertRowid)
+    expect(after.completed_at).toBeTruthy()
+    expect(after.skipped).toBe(0)
+    expect(after.skip_reason).toBe(null)
+  })
+
   it('başka bloğun görevinde 403', async () => {
     const db = getDB()
     const other = db.prepare(`INSERT INTO cleaning_tasks(area, block, floor, task_type, scheduled_at)
-      VALUES('Koridor','S1',1,'common_area',datetime('now'))`).run()
+      VALUES('Koridor','S1',1,'common_area',datetime('now','localtime'))`).run()
     const res = await request(app).post(`/api/avs-self-service/tasks/${other.lastInsertRowid}/complete`)
       .set('Authorization', `Bearer ${avsToken}`)
     expect(res.status).toBe(403)

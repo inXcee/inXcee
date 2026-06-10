@@ -132,10 +132,12 @@ avsSelfServiceRouter.get('/my-tasks', requireAvsKiosk, (req, res) => {
       return res.json({ type: 'laundry', items: [] })
     }
     if (dept.includes('temizlik')) {
+      // scheduled_at TZ'siz yerel string ("YYYY-MM-DD 08:00:00") — date() ham
+      // alınır; "bugün" yerel gün sınırıyla karşılaştırılır (00:00-03:00 fix)
       const items = db.prepare(`
-        SELECT id, area, block, floor, task_type, scheduled_at, completed_at
+        SELECT id, area, block, floor, task_type, scheduled_at, completed_at, skipped
         FROM cleaning_tasks
-        WHERE date(scheduled_at) = date('now')
+        WHERE date(scheduled_at) = date('now', 'localtime')
           AND (? IS NULL OR block = ?)
         ORDER BY scheduled_at
         LIMIT 50
@@ -167,7 +169,10 @@ avsSelfServiceRouter.post('/tasks/:id/complete', requireAvsKiosk, (req, res) => 
     if (!staff?.assigned_block || staff.assigned_block !== task.block)
       return res.status(403).json({ error: 'Bu görev sizin bloğunuza ait değil' })
     if (task.completed_at) return res.json({ ok: true, completed_at: task.completed_at })
-    db.prepare("UPDATE cleaning_tasks SET completed_at=datetime('now') WHERE id=?").run(task.id)
+    // Parite: ana modülün completeTask'i gibi skip durumu da temizlenir —
+    // yoksa atlanmış görev kiosktan tamamlanınca hem skipped=1 hem
+    // completed_at dolu kalır ve raporlar çift sayar
+    db.prepare("UPDATE cleaning_tasks SET completed_at=datetime('now'), skipped=0, skip_reason=NULL WHERE id=?").run(task.id)
     const updated = db.prepare('SELECT completed_at FROM cleaning_tasks WHERE id=?').get(task.id)
     db.prepare(`INSERT INTO audit_log(user_id, action, module, target_id, detail)
       VALUES(NULL, 'kiosk_avs_task_complete', 'avs-self-service', ?, ?)`).run(task.id, JSON.stringify({ workerId: req.user.workerId }))

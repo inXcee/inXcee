@@ -2,7 +2,9 @@ import { getDB } from '../../shared/db/index.js'
 
 export function generateDailyTasks(date = new Date()) {
   const db = getDB()
-  const dateStr  = date.toISOString().split('T')[0]
+  // YEREL tarih (toISOString UTC döndürür — 00:00-03:00 TR arasında üretim
+  // dünün tarihini basardı; sv-SE locale'i YYYY-MM-DD verir)
+  const dateStr  = date.toLocaleDateString('sv-SE')
   const scheduled = `${dateStr} 08:00:00`
   const insert = db.prepare(`
     INSERT OR IGNORE INTO cleaning_tasks(area, block, floor, task_type, scheduled_at, qr_location)
