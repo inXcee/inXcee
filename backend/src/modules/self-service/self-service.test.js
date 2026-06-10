@@ -205,12 +205,12 @@ describe('Laundry Kiosk endpoints', () => {
     expect(Array.isArray(res.body)).toBe(true)
   })
 
-  it('PUT /laundry-kiosk/bags/:id/status geçersiz durum reddedilir', async () => {
+  it('eski generic PUT /laundry-kiosk/bags/:id/status kaldırıldı (404)', async () => {
     const res = await request(app)
       .put('/api/self-service/laundry-kiosk/bags/1/status')
       .set('Authorization', `Bearer ${avsToken}`)
-      .send({ status: 'invalid_status' })
-    expect(res.status).toBe(400)
+      .send({ status: 'ready' })
+    expect(res.status).toBe(404)
   })
 
   it('GET /laundry-kiosk/machines AVS token ile çalışır', async () => {
@@ -502,6 +502,54 @@ describe('Laundry Kiosk makine akışı', () => {
       .set('Authorization', `Bearer ${avsToken}`)
     expect(res.status).toBe(400)
     expect(res.body.error).toMatch(/süresi doldu/)
+  })
+
+  it('deliver: laundry_deliveries kaydı + history satırı düşer (hub paritesi)', async () => {
+    const bagId = await createDirtyBag()
+    getDB().prepare("UPDATE laundry_items SET status='ready' WHERE id=?").run(bagId)
+    const res = await request(app)
+      .post(`/api/self-service/laundry-kiosk/bags/${bagId}/deliver`)
+      .set('Authorization', `Bearer ${avsToken}`)
+      .send({ delivered_name: 'Parite Test', file_count: 2 })
+    expect(res.status).toBe(200)
+    const db = getDB()
+    const item = db.prepare('SELECT status, delivered_name, file_count FROM laundry_items WHERE id=?').get(bagId)
+    expect(item).toMatchObject({ status: 'delivered', delivered_name: 'Parite Test', file_count: 2 })
+    // ana kayıt defteri: deliveries tablosu (hub KPI'ları buradan sayar)
+    const del = db.prepare('SELECT delivered_to FROM laundry_deliveries WHERE item_id=?').get(bagId)
+    expect(del?.delivered_to).toBe('Parite Test')
+    // zaman çizelgesi: history'de delivered geçişi
+    const hist = db.prepare("SELECT COUNT(*) c FROM laundry_history WHERE item_id=? AND to_status='delivered'").get(bagId)
+    expect(hist.c).toBe(1)
+  })
+
+  it('deliver-room: her torba için deliveries kaydı düşer', async () => {
+    const id1 = await createDirtyBag({ room_no: '104' })
+    const id2 = await createDirtyBag({ room_no: '104' })
+    const db = getDB()
+    db.prepare("UPDATE laundry_items SET status='ready' WHERE id IN (?,?)").run(id1, id2)
+    const res = await request(app)
+      .post('/api/self-service/laundry-kiosk/deliver-room')
+      .set('Authorization', `Bearer ${avsToken}`)
+      .send({ block: 'M1', room_no: '104', delivered_name: 'Toplu Parite' })
+    expect(res.status).toBe(200)
+    expect(res.body.delivered).toBe(2)
+    const n = db.prepare('SELECT COUNT(*) c FROM laundry_deliveries WHERE item_id IN (?,?)').get(id1, id2)
+    expect(n.c).toBe(2)
+  })
+
+  it('ironing-complete: history satırı + ready bildirimi düşer (advance üzerinden)', async () => {
+    const bagId = await createDirtyBag()
+    getDB().prepare("UPDATE laundry_items SET status='ironing' WHERE id=?").run(bagId)
+    const res = await request(app)
+      .post(`/api/self-service/laundry-kiosk/bags/${bagId}/ironing-complete`)
+      .set('Authorization', `Bearer ${avsToken}`)
+      .send({ shelf_location: 'C-2' })
+    expect(res.status).toBe(200)
+    const db = getDB()
+    expect(db.prepare('SELECT status, shelf_location FROM laundry_items WHERE id=?').get(bagId)).toMatchObject({ status: 'ready', shelf_location: 'C-2' })
+    const hist = db.prepare("SELECT COUNT(*) c FROM laundry_history WHERE item_id=? AND from_status='ironing' AND to_status='ready'").get(bagId)
+    expect(hist.c).toBe(1)
   })
 
   it('lost: torba kayıp işaretlenir, history + not düşer', async () => {

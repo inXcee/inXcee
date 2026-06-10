@@ -5,8 +5,8 @@ import { createRequest } from '../maintenance/queries.js'
 import { changeKioskPin } from '../../shared/auth/service.js'
 import { validate } from '../../shared/middleware/validate.js'
 import { maintenanceSchema, feedbackSchema } from './schemas.js'
-import { insertItemQuery, updateItemStatusQuery, listMachinesQuery, collectItemQuery, setBagNoQuery, getRoomLaundryHistoryQuery, getRoomLaundrySummaryQuery, getBlockRoomActiveCountsQuery } from '../laundry/queries.js'
-import { advanceItemService, batchAssignService, lostItemService, deleteItemService } from '../laundry/service.js'
+import { insertItemQuery, listMachinesQuery, collectItemQuery, setBagNoQuery, getRoomLaundryHistoryQuery, getRoomLaundrySummaryQuery, getBlockRoomActiveCountsQuery } from '../laundry/queries.js'
+import { advanceItemService, batchAssignService, lostItemService, deleteItemService, deliverItemService } from '../laundry/service.js'
 import { logger } from '../../shared/logger.js'
 
 export const selfServiceRouter = Router()
@@ -352,18 +352,9 @@ selfServiceRouter.get('/laundry-kiosk/bags', requireAvsKiosk, (req, res) => {
   } catch (e) { res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
-selfServiceRouter.put('/laundry-kiosk/bags/:id/status', requireAvsKiosk, (req, res) => {
-  const { status } = req.body
-  const ALLOWED = ['pending_collection', 'washing', 'ironing', 'ready', 'delivered']
-  if (!ALLOWED.includes(status)) return res.status(400).json({ error: 'Geçersiz durum' })
-  try {
-    const id = Number(req.params.id)
-    updateItemStatusQuery(id, status)
-    getDB().prepare("UPDATE laundry_items SET last_modified_worker_id=?, last_modified_at=datetime('now') WHERE id=?")
-      .run(req.user.workerId || null, id)
-    res.json({ ok: true })
-  } catch (e) { res.status(500).json({ error: 'Sunucu hatası' }) }
-})
+// NOT: eski generic PUT /bags/:id/status ucu kaldırıldı — her şeyi bypass eden
+// serbest geçişti ve hiçbir frontend tüketicisi yoktu. Tüm durum geçişleri artık
+// ana state machine üzerinden (assign/wash-complete/ironing-complete/deliver).
 
 selfServiceRouter.get('/laundry-kiosk/pending-bags', requireAvsKiosk, (req, res) => {
   try {
@@ -401,8 +392,11 @@ selfServiceRouter.post('/laundry-kiosk/deliver-resident/:id', requireKioskOrStaf
       WHERE li.id=? AND ra.personnel_id=? AND ra.check_out_at IS NULL AND li.status='ready'
     `).get(Number(req.params.id), req.user.personnelId)
     if (!item) return res.status(403).json({ error: 'Torba bulunamadı veya hazır değil' })
-    db.prepare(`UPDATE laundry_items SET status='delivered', occupant_signature=?, updated_at=datetime('now') WHERE id=?`)
-      .run(signature || null, item.id)
+    const me = db.prepare('SELECT full_name FROM personnel WHERE id=?').get(req.user.personnelId)
+    // Ana teslim servisi: laundry_deliveries + history + premium parça teslimi
+    deliverItemService(item.id, { delivered_to: me?.full_name || 'Sakin (self)', signature_data: signature || null }, null)
+    db.prepare(`UPDATE laundry_items SET delivered_name=?, occupant_signature=? WHERE id=?`)
+      .run(me?.full_name || 'Sakin (self)', signature || null, item.id)
     res.json({ ok: true })
   } catch (e) { res.status(500).json({ error: 'Sunucu hatası' }) }
 })
@@ -417,6 +411,9 @@ selfServiceRouter.put('/laundry-kiosk/bags/:id/ironing', requireAvsKiosk, (req, 
   } catch (e) { res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
+// Ütü tamam → hazıra al — ana state machine üzerinden: history + "rafta hazır"
+// bildirimi + sakine WhatsApp artık ütüden çıkan torbalarda da gider
+// (eskiden sadece yıkamadan hazıra geçenlerde gidiyordu).
 selfServiceRouter.post('/laundry-kiosk/bags/:id/ironing-complete', requireAvsKiosk, (req, res) => {
   try {
     const db = getDB()
@@ -424,10 +421,11 @@ selfServiceRouter.post('/laundry-kiosk/bags/:id/ironing-complete', requireAvsKio
     if (!item) return res.status(404).json({ error: 'Torba bulunamadı' })
     if (item.status !== 'ironing') return res.status(400).json({ error: 'Torba ironing durumunda değil' })
     const shelf = (req.body?.shelf_location || '').trim() || null
-    db.prepare("UPDATE laundry_items SET status='ready', shelf_location=?, last_modified_worker_id=?, last_modified_at=datetime('now'), updated_at=datetime('now') WHERE id=?")
-      .run(shelf, req.user.workerId || null, item.id)
+    advanceItemService(item.id, { shelf_location: shelf }, null)
+    db.prepare("UPDATE laundry_items SET last_modified_worker_id=?, last_modified_at=datetime('now') WHERE id=?")
+      .run(req.user.workerId || null, item.id)
     res.json({ ok: true })
-  } catch (e) { res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
 // Yanlış girişi telafi — sadece kirli (henüz işlenmemiş) ve 15 dk'dan yeni
@@ -459,6 +457,10 @@ selfServiceRouter.post('/laundry-kiosk/bags/:id/lost', requireAvsKiosk, (req, re
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
+// Teslim — ana modülün deliverItemService'i üzerinden: laundry_deliveries
+// kaydı + history + premium parça teslimi + audit hub ile birebir aynı.
+// Kiosk'a özgü kolonlar (delivered_name/file_count/occupant_signature/worker)
+// servis çağrısından sonra ayrıca yazılır.
 selfServiceRouter.post('/laundry-kiosk/bags/:id/deliver', requireAvsKiosk, (req, res) => {
   const { delivered_name, file_count, signature } = req.body
   if (!delivered_name || !delivered_name.trim()) return res.status(400).json({ error: 'delivered_name gerekli' })
@@ -469,14 +471,15 @@ selfServiceRouter.post('/laundry-kiosk/bags/:id/deliver', requireAvsKiosk, (req,
     const item = db.prepare('SELECT id, status FROM laundry_items WHERE id=?').get(Number(req.params.id))
     if (!item) return res.status(404).json({ error: 'Torba bulunamadı' })
     if (item.status !== 'ready') return res.status(400).json({ error: 'Torba ready durumunda değil' })
+    deliverItemService(item.id, { delivered_to: delivered_name.trim(), signature_data: signature || null }, null)
     db.prepare(`
       UPDATE laundry_items
-      SET status='delivered', delivered_name=?, file_count=?, occupant_signature=?,
-          last_modified_worker_id=?, last_modified_at=datetime('now'), updated_at=datetime('now')
+      SET delivered_name=?, file_count=?, occupant_signature=?,
+          last_modified_worker_id=?, last_modified_at=datetime('now')
       WHERE id=?
     `).run(delivered_name.trim(), fc, signature || null, req.user.workerId || null, item.id)
     res.json({ ok: true })
-  } catch (e) { res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
 // M ve S bloklar standart camasir akisi (dirty status). Y bloklar
@@ -580,17 +583,26 @@ selfServiceRouter.post('/laundry-kiosk/deliver-room', requireAvsKiosk, (req, res
       WHERE r.block=? AND r.room_no=? AND li.status='ready'
     `).all(block, room_no)
     if (bags.length === 0) return res.status(404).json({ error: 'Bu odada hazır torba yok' })
-    const stmt = db.prepare(`
+    // Her torba ana teslim servisinden geçer (deliveries+history+premium);
+    // biri hata verirse diğerleri etkilenmez (batch-assign deseni)
+    const extraStmt = db.prepare(`
       UPDATE laundry_items
-      SET status='delivered', delivered_name=?, file_count=1, occupant_signature=?,
-          last_modified_worker_id=?, last_modified_at=datetime('now'), updated_at=datetime('now')
+      SET delivered_name=?, file_count=1, occupant_signature=?,
+          last_modified_worker_id=?, last_modified_at=datetime('now')
       WHERE id=?
     `)
-    const tx = db.transaction(() => {
-      for (const b of bags) stmt.run(delivered_name.trim(), signature || null, req.user.workerId || null, b.id)
-    })
-    tx.immediate()
-    res.json({ ok: true, delivered: bags.length, bag_nos: bags.map(b => b.bag_no || `#${b.id}`) })
+    const delivered = []
+    const failed = []
+    for (const b of bags) {
+      try {
+        deliverItemService(b.id, { delivered_to: delivered_name.trim(), signature_data: signature || null }, null)
+        extraStmt.run(delivered_name.trim(), signature || null, req.user.workerId || null, b.id)
+        delivered.push(b.bag_no || `#${b.id}`)
+      } catch (e) {
+        failed.push({ id: b.id, error: e.message })
+      }
+    }
+    res.json({ ok: true, delivered: delivered.length, bag_nos: delivered, failed })
   } catch (e) { res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
