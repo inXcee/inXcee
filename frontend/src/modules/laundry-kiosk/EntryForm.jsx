@@ -114,8 +114,9 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
     derivedItemCount > 0
   )
 
-  function resetAll() {
-    setSelection({ block: null, room_no: null, person: null })
+  // keepBlock: ardışık girişte aynı bloktan devam — operatör blok seçimini tekrarlamaz
+  function resetAll(keepBlock = false) {
+    setSelection({ block: keepBlock ? selection.block : null, room_no: null, person: null })
     setGarmentState({ garments: [], freeText: '', itemCount: 0 })
     setUrgent(false)
     setError('')
@@ -171,7 +172,14 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
             <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>Torbayı görevliye teslim edin</div>
           </div>
         )}
-        <button onClick={resetAll} style={btnStyle('#1e293b', '#60a5fa')}>+ Yeni Giriş</button>
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+          {selection.block && (
+            <button onClick={() => resetAll(true)} style={btnStyle('#1d4ed8', '#fff')}>
+              + Yeni Giriş ({selection.block})
+            </button>
+          )}
+          <button onClick={() => resetAll(false)} style={btnStyle('#1e293b', '#60a5fa')}>+ Yeni Giriş</button>
+        </div>
       </div>
     )
   }

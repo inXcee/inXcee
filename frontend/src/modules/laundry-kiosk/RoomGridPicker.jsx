@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { BLOCKS_BY_TYPE, BLOCK_BY_NAME, expectedRoomNos } from '../../shared/blocks.js'
+import { parseRoomShortcut } from './quickParse.js'
 
 // Bir bloğun tüm katlarındaki oda numaralarını düzleştir
 function allRoomNos(blockName) {
@@ -22,6 +23,14 @@ export default function RoomGridPicker({ value, onChange, kioskApi }) {
   const [activeBagRooms, setActiveBagRooms] = useState(new Set())
   const [persons, setPersons] = useState([])
   const [loadingPersons, setLoadingPersons] = useState(false)
+  const [quickRoom, setQuickRoom] = useState('')
+  const quickParsed = parseRoomShortcut(quickRoom)
+
+  function applyQuickRoom() {
+    if (!quickParsed) return
+    onChange({ block: quickParsed.block, room_no: quickParsed.room_no, person: null })
+    setQuickRoom('')
+  }
 
   // Block changed → fetch active bags for that block
   useEffect(() => {
@@ -66,6 +75,41 @@ export default function RoomGridPicker({ value, onChange, kioskApi }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {/* ⚡ Hızlı oda — "M1 205" yaz + Enter, blok+oda tek adımda */}
+      <div>
+        <div style={{ fontSize: 11, color: '#64748b', letterSpacing: 1, marginBottom: 8 }}>⚡ HIZLI ODA</div>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <input
+            type="text"
+            value={quickRoom}
+            onChange={e => setQuickRoom(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); applyQuickRoom() } }}
+            placeholder="M1 205 yaz + Enter"
+            autoFocus
+            style={{
+              flex: 1, boxSizing: 'border-box',
+              background: '#1e293b',
+              border: `1px solid ${quickRoom.trim() ? (quickParsed ? '#16a34a' : '#b45309') : '#334155'}`,
+              borderRadius: 10, padding: '10px 12px',
+              color: '#f1f5f9', fontSize: 14, outline: 'none',
+            }}
+          />
+          <button type="button" onClick={applyQuickRoom} disabled={!quickParsed}
+            style={{
+              padding: '10px 14px', borderRadius: 10, border: 'none',
+              background: quickParsed ? '#16a34a' : '#1e293b',
+              color: quickParsed ? '#fff' : '#475569',
+              fontWeight: 700, fontSize: 14, cursor: quickParsed ? 'pointer' : 'default',
+              whiteSpace: 'nowrap',
+            }}>
+            {quickParsed ? `→ ${quickParsed.block}-${quickParsed.room_no}` : 'Seç'}
+          </button>
+        </div>
+        {quickRoom.trim() && !quickParsed && (
+          <div style={{ fontSize: 11, color: '#fbbf24', marginTop: 4 }}>Oda bulunamadı — blok + oda no yazın (ör. M1 205, A 12)</div>
+        )}
+      </div>
+
       {/* Block chips */}
       <div>
         <div style={{ fontSize: 11, color: '#64748b', letterSpacing: 1, marginBottom: 8 }}>BLOK</div>

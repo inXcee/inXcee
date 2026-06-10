@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-const COLORS = [
+export const COLORS = [
   { key: 'white',    label: 'Beyaz',    hex: '#f8fafc', chipBg: '#f1f5f9', chipText: '#1e293b' },
   { key: 'black',    label: 'Siyah',    hex: '#0f172a', chipBg: '#1e293b', chipText: '#e2e8f0' },
   { key: 'gray',     label: 'Gri',      hex: '#94a3b8', chipBg: '#334155', chipText: '#e2e8f0' },
@@ -16,7 +16,7 @@ const COLORS = [
   { key: 'charcoal', label: 'Füme',     hex: '#4b5563', chipBg: '#1f2937', chipText: '#d1d5db' },
 ]
 
-const PATTERNS = [
+export const PATTERNS = [
   { key: 'solid',     label: 'Düz',         css: { background: '#475569' } },
   { key: 'striped-h', label: 'Çizgili',      css: { backgroundImage: 'repeating-linear-gradient(0deg,#dc2626 0px,#dc2626 4px,#f8fafc 4px,#f8fafc 10px)' } },
   { key: 'striped-v', label: 'Dikey Çizgi',  css: { backgroundImage: 'repeating-linear-gradient(90deg,#1d4ed8 0px,#1d4ed8 4px,#f8fafc 4px,#f8fafc 10px)' } },
