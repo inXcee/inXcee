@@ -212,6 +212,25 @@ describe('AVS Self-Service — task complete', () => {
     expect(res.status).toBe(403)
   })
 
+  it('blok ataması olmayan personel her bloğun görevini tamamlayabilir', async () => {
+    const db = getDB()
+    // Atamasız ikinci worker
+    const adminToken2 = (await request(app).post('/api/auth/login').send({ username: 'mudur', password: 'admin123' })).body.token
+    const w2 = (await request(app).post('/api/avs-workers')
+      .set('Authorization', `Bearer ${adminToken2}`)
+      .send({ full_name: 'Atamasız Temizlikçi' })).body
+    await request(app).put(`/api/avs-workers/${w2.id}/pin`)
+      .set('Authorization', `Bearer ${adminToken2}`).send({ new_pin: '1111' })
+    db.prepare('UPDATE staff SET assigned_block=NULL WHERE id=?').run(w2.id)
+    const tok2 = (await request(app).post('/api/auth/avs-login').send({ worker_id: w2.id, pin: '1111' })).body.token
+
+    const t = db.prepare(`INSERT INTO cleaning_tasks(area, block, floor, task_type, scheduled_at, qr_location)
+      VALUES('S3 Oda 210','S3',2,'room',datetime('now','localtime'),'S3-210')`).run()
+    const res = await request(app).post(`/api/avs-self-service/tasks/${t.lastInsertRowid}/complete`)
+      .set('Authorization', `Bearer ${tok2}`)
+    expect(res.status).toBe(200)
+  })
+
   it('olmayan görevde 404', async () => {
     const res = await request(app).post('/api/avs-self-service/tasks/999999/complete')
       .set('Authorization', `Bearer ${avsToken}`)

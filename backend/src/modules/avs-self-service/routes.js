@@ -172,8 +172,11 @@ avsSelfServiceRouter.post('/tasks/:id/complete', requireAvsKiosk, upload.single(
     const db = getDB()
     const task = db.prepare('SELECT id, block, completed_at FROM cleaning_tasks WHERE id=?').get(Number(req.params.id))
     if (!task) return res.status(404).json({ error: 'Görev bulunamadı' })
+    // Blok ataması varsa sadece kendi bloğu; atama YOKSA kısıt uygulanmaz
+    // (sahada assigned_block çoğu zaman boş — eskiden bu guard her
+    // tamamlamayı 403'le kesiyordu ve "görevler çalışmıyor" görünüyordu)
     const staff = db.prepare('SELECT assigned_block FROM staff WHERE id=?').get(req.user.workerId)
-    if (!staff?.assigned_block || staff.assigned_block !== task.block)
+    if (staff?.assigned_block && staff.assigned_block !== task.block)
       return res.status(403).json({ error: 'Bu görev sizin bloğunuza ait değil' })
     if (task.completed_at) return res.json({ ok: true, completed_at: task.completed_at })
     // Parite: ana modülün completeTask'i gibi skip durumu da temizlenir —
