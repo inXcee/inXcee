@@ -566,6 +566,41 @@ describe('Laundry Kiosk makine akışı', () => {
     expect(hist.notes).toBe('Rafta bulunamadı')
   })
 
+  it('sla-config kioska aşama eşiklerini döndürür', async () => {
+    getDB().prepare(`
+      INSERT INTO laundry_sla_config(stage, warning_hours, critical_hours, whatsapp_notify)
+      VALUES('ready', 12, 36, 0)
+      ON CONFLICT(stage) DO UPDATE SET warning_hours=12, critical_hours=36
+    `).run()
+    const res = await request(app)
+      .get('/api/self-service/laundry-kiosk/sla-config')
+      .set('Authorization', `Bearer ${avsToken}`)
+    expect(res.status).toBe(200)
+    const ready = res.body.find(c => c.stage === 'ready')
+    expect(ready).toMatchObject({ warning_hours: 12, critical_hours: 36 })
+  })
+
+  it('deterjan eşik altına düşünce yıkama başlatma bildirimi üretir', async () => {
+    const db = getDB()
+    // makineye bağlı, stoğu zaten kritik eşiğin altında bir deterjan
+    const sid = db.prepare(`
+      INSERT INTO laundry_supplies(name, unit, current_stock, warning_threshold, critical_threshold)
+      VALUES('Test Deterjan Kritik', 'kg', 0.5, 5, 1)
+    `).run().lastInsertRowid
+    db.prepare('INSERT INTO laundry_machine_supplies(machine_id, supply_id, per_wash_amount) VALUES(?,?,0.2)')
+      .run(machineId, sid)
+    const bagId = await createDirtyBag()
+    const res = await request(app)
+      .put(`/api/self-service/laundry-kiosk/machines/${machineId}/assign`)
+      .set('Authorization', `Bearer ${avsToken}`)
+      .send({ item_id: bagId })
+    expect(res.status).toBe(200)
+    const notif = db.prepare(`SELECT message, type FROM notifications WHERE dedup_key='supply_low_${sid}_critical'`).get()
+    expect(notif).toBeTruthy()
+    expect(notif.type).toBe('critical')
+    expect(notif.message).toContain('Test Deterjan Kritik')
+  })
+
   it('today-summary dört sayıyı döndürür', async () => {
     await createDirtyBag()
     const res = await request(app)

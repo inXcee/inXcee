@@ -5,7 +5,7 @@ import { createRequest } from '../maintenance/queries.js'
 import { changeKioskPin } from '../../shared/auth/service.js'
 import { validate } from '../../shared/middleware/validate.js'
 import { maintenanceSchema, feedbackSchema } from './schemas.js'
-import { insertItemQuery, listMachinesQuery, collectItemQuery, setBagNoQuery, getRoomLaundryHistoryQuery, getRoomLaundrySummaryQuery, getBlockRoomActiveCountsQuery } from '../laundry/queries.js'
+import { insertItemQuery, listMachinesQuery, collectItemQuery, setBagNoQuery, getRoomLaundryHistoryQuery, getRoomLaundrySummaryQuery, getBlockRoomActiveCountsQuery, getSlaConfigQuery } from '../laundry/queries.js'
 import { advanceItemService, batchAssignService, lostItemService, deleteItemService, deliverItemService } from '../laundry/service.js'
 import { logger } from '../../shared/logger.js'
 
@@ -603,6 +603,16 @@ selfServiceRouter.post('/laundry-kiosk/deliver-room', requireAvsKiosk, (req, res
       }
     }
     res.json({ ok: true, delivered: delivered.length, bag_nos: delivered, failed })
+  } catch (e) { res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// SLA eşikleri — kiosk panosundaki bekleme rozetleri hub ile aynı
+// config'ten (laundry_sla_config) beslensin diye
+selfServiceRouter.get('/laundry-kiosk/sla-config', requireAvsKiosk, (req, res) => {
+  try {
+    res.json(getSlaConfigQuery().map(c => ({
+      stage: c.stage, warning_hours: c.warning_hours, critical_hours: c.critical_hours,
+    })))
   } catch (e) { res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 

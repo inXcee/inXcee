@@ -110,6 +110,22 @@ export function advanceItemService(id, { machine_id, shelf_location, timer_minut
 
   // Side-effect'ler transaction disinda (notification + WhatsApp) — DB rollback
   // olursa bunlar da gonderilmemeli; rollback'ta tx() throw eder ve buraya gelmezse calisir.
+  // Yikama baslarken otomatik deterjan dusumu olduysa esik kontrolu: stok
+  // uyari/kritik altina indiyse bildirim (dedup gun-ici tekil — spam olmaz).
+  if (nextStatus === 'washing') {
+    for (const s of q.getAlertSuppliesQuery()) {
+      createNotification({
+        message: s.alert_level === 'critical'
+          ? `🧴 KRİTİK STOK: ${s.name} ${s.current_stock}${s.unit} kaldı (eşik ${s.critical_threshold}${s.unit}) — acil sipariş gerekli`
+          : `🧴 Stok azalıyor: ${s.name} ${s.current_stock}${s.unit} (uyarı eşiği ${s.warning_threshold}${s.unit})`,
+        type: s.alert_level === 'critical' ? 'critical' : 'warning',
+        module: 'laundry',
+        target_role: s.alert_level === 'critical' ? null : 'laundry',
+        dedup_key: `supply_low_${s.id}_${s.alert_level}`,
+      })
+    }
+  }
+
   if (nextStatus === 'ready') {
     createNotification({
       message: `${item.block || '?'} ${item.room_no || '?'} — ${item.item_count} parça rafta hazır`,

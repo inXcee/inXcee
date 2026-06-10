@@ -16,9 +16,13 @@ const card = { background: '#0f172a', borderRadius: 16, padding: 16, display: 'f
 // Props:
 //   kioskApi
 //   onAction: (action, bag) => void   // action ∈ 'collect' | 'iron' | 'deliver'
+// SLA config'i yoksa hazır-bekleme için makul varsayılan (eski sabit davranış)
+const FALLBACK_SLA = { ready: { warning_hours: 24, critical_hours: 48 } }
+
 export default function DashboardView({ kioskApi, onAction }) {
   const [bags, setBags] = useState([])
   const [summary, setSummary] = useState(null) // gün özeti — vardiya devri için
+  const [slaConfig, setSlaConfig] = useState(FALLBACK_SLA) // { stage: {warning_hours, critical_hours} }
   const [loading, setLoading] = useState(false)
   const [filterBlock, setFilterBlock] = useState('all')
   const [collapsed, setCollapsed] = useState({})
@@ -30,12 +34,16 @@ export default function DashboardView({ kioskApi, onAction }) {
       const url = filterBlock === 'all'
         ? '/self-service/laundry-kiosk/bags'
         : `/self-service/laundry-kiosk/bags?block=${encodeURIComponent(filterBlock)}`
-      const [res, sum] = await Promise.all([
+      const [res, sum, sla] = await Promise.all([
         kioskApi.get(url),
         kioskApi.get('/self-service/laundry-kiosk/today-summary').catch(() => null),
+        kioskApi.get('/self-service/laundry-kiosk/sla-config').catch(() => null),
       ])
       setBags(res.data)
       if (sum) setSummary(sum.data)
+      if (sla && Array.isArray(sla.data) && sla.data.length > 0) {
+        setSlaConfig(Object.fromEntries(sla.data.map(c => [c.stage, c])))
+      }
     } catch {
       setBags([])
     } finally {
@@ -97,8 +105,27 @@ export default function DashboardView({ kioskApi, onAction }) {
 
   // created_at'ten bu yana geçen dakika — iptal butonu sadece taze girişte
   const ageMinutes = (b) => (Date.now() - new Date(b.created_at)) / 60000
-  // ready olalı geçen saat (updated_at ≈ hazıra alınma anı)
-  const readyHours = (b) => (Date.now() - new Date(b.updated_at || b.created_at)) / 3600000
+  // bu duruma gireli geçen saat (updated_at ≈ durum giriş anı — SLA sorgularıyla aynı taban)
+  const stageHours = (b) => (Date.now() - new Date(b.updated_at || b.created_at)) / 3600000
+
+  // Hub ile aynı SLA eşikleri (laundry_sla_config): uyarıda amber, kritikte kırmızı rozet
+  function slaBadge(b) {
+    const cfg = slaConfig[b.status]
+    if (!cfg || cfg.warning_hours == null) return null
+    const h = stageHours(b)
+    if (h < cfg.warning_hours) return null
+    const critical = cfg.critical_hours != null && h >= cfg.critical_hours
+    const label = h >= 48 ? `${Math.floor(h / 24)}g` : `${Math.floor(h)}s`
+    return (
+      <span style={{
+        marginLeft: 6, fontSize: 9, fontWeight: 700, letterSpacing: 0.5,
+        background: critical ? 'rgba(239,68,68,0.15)' : 'rgba(245,158,11,0.15)',
+        border: `1px solid ${critical ? 'rgba(239,68,68,0.4)' : 'rgba(245,158,11,0.4)'}`,
+        color: critical ? '#f87171' : '#fbbf24',
+        borderRadius: 4, padding: '1px 6px',
+      }}>⏰ {label} {critical ? 'KRİTİK' : 'BEKLİYOR'}</span>
+    )
+  }
 
   function actionButton(bag) {
     switch (bag.status) {
@@ -193,13 +220,7 @@ export default function DashboardView({ kioskApi, onAction }) {
                         {b.is_premium ? ' · 🟣' : ''}
                         {b.urgent ? ' · ⚡' : ''}
                         {b.status === 'ready' && b.shelf_location ? <span style={{ color: '#4ade80' }}> · 📍 {b.shelf_location}</span> : ''}
-                        {b.status === 'ready' && readyHours(b) >= 24 && (
-                          <span style={{
-                            marginLeft: 6, fontSize: 9, fontWeight: 700, letterSpacing: 0.5,
-                            background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)',
-                            color: '#f87171', borderRadius: 4, padding: '1px 6px',
-                          }}>⏰ {Math.floor(readyHours(b) / 24)}g+ BEKLİYOR</span>
-                        )}
+                        {slaBadge(b)}
                       </div>
                       {b.intake_name && (
                         <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
