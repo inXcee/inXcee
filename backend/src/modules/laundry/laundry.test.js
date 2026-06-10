@@ -700,7 +700,9 @@ describe('SLA engine', () => {
     db.prepare('DELETE FROM laundry_machines WHERE id=?').run(machineId)
   })
 
-  it('checkMachineTimers — total_runs artar', async () => {
+  it('checkMachineTimers — total_runs ARTMAZ (tek artış noktası yıkama başlangıcı)', async () => {
+    // Eski davranış (cron'da +1) çift sayım bug'ıydı: yıkama başlarken
+    // advanceItemService zaten artırıyor; süre dolunca ikinci kez artıyordu.
     const { checkMachineTimers } = await import('./sla.js')
     const db = getDB()
 
@@ -715,7 +717,8 @@ describe('SLA engine', () => {
     checkMachineTimers()
 
     const m = db.prepare('SELECT * FROM laundry_machines WHERE id=?').get(machineId)
-    expect(m.total_runs).toBe(6)
+    expect(m.total_runs).toBe(5)
+    expect(m.status).toBe('done')
 
     // Temizlik
     db.prepare('DELETE FROM laundry_machines WHERE id=?').run(machineId)

@@ -429,6 +429,7 @@ export const getVerificationsService = q.getVerificationsForItemQuery
 export const listItemsService       = q.listItemsQuery
 export const getItemService         = q.getItemQuery
 export const getMachineDailyRunsService = q.getMachineDailyRunsQuery
+export const getOperatorSummaryService  = q.getOperatorSummaryQuery
 export const getItemHistoryService  = q.getItemHistoryQuery
 export const getDamagesService      = q.getDamagesForItemQuery
 export const listMachinesService    = q.listMachinesQuery

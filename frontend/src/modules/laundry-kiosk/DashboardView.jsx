@@ -23,6 +23,7 @@ export default function DashboardView({ kioskApi, onAction }) {
   const [bags, setBags] = useState([])
   const [lostBags, setLostBags] = useState([]) // kayıplar — "bulundu" geri dönüşü için
   const [summary, setSummary] = useState(null) // gün özeti — vardiya devri için
+  const [operators, setOperators] = useState([]) // bugün kim kaç işlem yaptı
   const [slaConfig, setSlaConfig] = useState(FALLBACK_SLA) // { stage: {warning_hours, critical_hours} }
   const [loading, setLoading] = useState(false)
   const [filterBlock, setFilterBlock] = useState('all')
@@ -35,12 +36,14 @@ export default function DashboardView({ kioskApi, onAction }) {
       const url = filterBlock === 'all'
         ? '/self-service/laundry-kiosk/bags'
         : `/self-service/laundry-kiosk/bags?block=${encodeURIComponent(filterBlock)}`
-      const [res, lost, sum, sla] = await Promise.all([
+      const [res, lost, sum, sla, ops] = await Promise.all([
         kioskApi.get(url),
         kioskApi.get('/self-service/laundry-kiosk/bags?status=lost').catch(() => ({ data: [] })),
         kioskApi.get('/self-service/laundry-kiosk/today-summary').catch(() => null),
         kioskApi.get('/self-service/laundry-kiosk/sla-config').catch(() => null),
+        kioskApi.get('/self-service/laundry-kiosk/operator-summary').catch(() => null),
       ])
+      if (ops) setOperators(ops.data)
       setBags(res.data)
       setLostBags(filterBlock === 'all' ? lost.data : lost.data.filter(b => b.block === filterBlock))
       if (sum) setSummary(sum.data)
@@ -195,6 +198,29 @@ export default function DashboardView({ kioskApi, onAction }) {
             <div key={k.label} style={{ background: '#1e293b', borderRadius: 10, padding: '10px 8px', textAlign: 'center' }}>
               <div style={{ fontSize: 22, fontWeight: 800, color: k.color, lineHeight: 1 }}>{k.value}</div>
               <div style={{ fontSize: 8, color: '#64748b', letterSpacing: 1, marginTop: 5 }}>{k.label}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Bugün operatör kırılımı */}
+      {operators.length > 0 && (
+        <div style={{ background: '#1e293b', borderRadius: 10, padding: '10px 12px' }}>
+          <div style={{ fontSize: 10, color: '#64748b', letterSpacing: 1.5, marginBottom: 6 }}>
+            BUGÜN — OPERATÖR İŞLEMLERİ
+          </div>
+          {operators.map(o => (
+            <div key={o.operator} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 12, padding: '3px 0' }}>
+              <span style={{ color: '#e2e8f0', fontWeight: 600 }}>👤 {o.operator}</span>
+              <span style={{ color: '#94a3b8', fontFamily: 'monospace', fontSize: 11 }}>
+                {[
+                  o.giris > 0 ? `${o.giris} giriş` : null,
+                  o.yikama > 0 ? `${o.yikama} yıkama` : null,
+                  o.hazir > 0 ? `${o.hazir} hazır` : null,
+                  o.teslim > 0 ? `${o.teslim} teslim` : null,
+                  o.kayip > 0 ? `${o.kayip} kayıp` : null,
+                ].filter(Boolean).join(' · ')} — <b style={{ color: '#60a5fa' }}>{o.toplam}</b>
+              </span>
             </div>
           ))}
         </div>

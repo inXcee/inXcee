@@ -6,11 +6,23 @@ import { changeKioskPin } from '../../shared/auth/service.js'
 import { validate } from '../../shared/middleware/validate.js'
 import { maintenanceSchema, feedbackSchema } from './schemas.js'
 import { insertItemQuery, listMachinesQuery, collectItemQuery, setBagNoQuery, getRoomLaundryHistoryQuery, getRoomLaundrySummaryQuery, getBlockRoomActiveCountsQuery, getSlaConfigQuery } from '../laundry/queries.js'
-import { advanceItemService, batchAssignService, lostItemService, deleteItemService, deliverItemService, maintenanceDoneService, markFoundService, getItemService, getMachineDailyRunsService } from '../laundry/service.js'
+import { advanceItemService, batchAssignService, lostItemService, deleteItemService, deliverItemService, maintenanceDoneService, markFoundService, getItemService, getMachineDailyRunsService, getOperatorSummaryService } from '../laundry/service.js'
 import { sendFoundMessage } from '../laundry/whatsapp.js'
 import { logger } from '../../shared/logger.js'
 
 export const selfServiceRouter = Router()
+
+// Az önce atılan history satırına kiosk operatörünü damgala (operatör
+// performans kırılımı için). 5 sn guard'ı: history yazmayan bir aksiyonda
+// yanlışlıkla eski satırı damgalamayı önler.
+function stampHistoryWorker(db, itemId, workerId) {
+  if (!workerId) return
+  db.prepare(`
+    UPDATE laundry_history SET worker_id=?
+    WHERE id = (SELECT MAX(id) FROM laundry_history WHERE item_id=?)
+      AND created_at >= datetime('now', '-5 seconds')
+  `).run(workerId, itemId)
+}
 
 selfServiceRouter.get('/my-info', requireKioskOrStaff, (req, res) => {
   if (!req.user.personnelId) return res.status(403).json({ error: 'Kiosk token gerekli' })
@@ -329,8 +341,11 @@ selfServiceRouter.post('/laundry-kiosk/bag', requireAvsKiosk, (req, res) => {
       created_by: null,
     })
     const bag_no = setBagNoQuery(id)
+    // Giriş history'si (hub createItemService paritesi) + operatör damgası
+    db.prepare(`INSERT INTO laundry_history(item_id, from_status, to_status, worker_id, notes) VALUES(?, NULL, 'dirty', ?, ?)`)
+      .run(id, req.user.workerId || null, `${count} parça kiosk giriş`)
     res.status(201).json({ id, bag_no })
-  } catch (e) { res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[kiosk/bag]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 selfServiceRouter.get('/laundry-kiosk/bags', requireAvsKiosk, (req, res) => {
@@ -425,6 +440,7 @@ selfServiceRouter.post('/laundry-kiosk/bags/:id/ironing-complete', requireAvsKio
     advanceItemService(item.id, { shelf_location: shelf }, null)
     db.prepare("UPDATE laundry_items SET last_modified_worker_id=?, last_modified_at=datetime('now') WHERE id=?")
       .run(req.user.workerId || null, item.id)
+    stampHistoryWorker(db, item.id, req.user.workerId)
     res.json({ ok: true })
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
@@ -452,8 +468,10 @@ selfServiceRouter.post('/laundry-kiosk/bags/:id/lost', requireAvsKiosk, (req, re
   try {
     const notes = (req.body?.notes || '').trim() || 'Kiosk: teslimde bulunamadı'
     lostItemService(Number(req.params.id), { notes }, null)
-    getDB().prepare("UPDATE laundry_items SET last_modified_worker_id=?, last_modified_at=datetime('now') WHERE id=?")
+    const dbL = getDB()
+    dbL.prepare("UPDATE laundry_items SET last_modified_worker_id=?, last_modified_at=datetime('now') WHERE id=?")
       .run(req.user.workerId || null, Number(req.params.id))
+    stampHistoryWorker(dbL, Number(req.params.id), req.user.workerId)
     res.json({ ok: true })
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
@@ -479,6 +497,7 @@ selfServiceRouter.post('/laundry-kiosk/bags/:id/deliver', requireAvsKiosk, (req,
           last_modified_worker_id=?, last_modified_at=datetime('now')
       WHERE id=?
     `).run(delivered_name.trim(), fc, signature || null, req.user.workerId || null, item.id)
+    stampHistoryWorker(db, item.id, req.user.workerId)
     res.json({ ok: true })
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
@@ -514,6 +533,8 @@ selfServiceRouter.post('/laundry-kiosk/garment', requireAvsKiosk, (req, res) => 
       intake_signature: intake_signature || null,
       created_by: null,
     })
+    db.prepare(`INSERT INTO laundry_history(item_id, from_status, to_status, worker_id, notes) VALUES(?, NULL, ?, ?, ?)`)
+      .run(id, itemStatus, req.user.workerId || null, `${total} parça kiosk giriş (garment)`)
     res.status(201).json({ id })
   } catch (e) { res.status(500).json({ error: 'Sunucu hatası' }) }
 })
@@ -539,6 +560,7 @@ selfServiceRouter.put('/laundry-kiosk/machines/:id/assign', requireAvsKiosk, (re
     }, null)
     db.prepare("UPDATE laundry_items SET last_modified_worker_id=?, last_modified_at=datetime('now') WHERE id=?")
       .run(req.user.workerId || null, Number(item_id))
+    stampHistoryWorker(db, Number(item_id), req.user.workerId)
     res.json({ ok: true })
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
@@ -565,6 +587,7 @@ selfServiceRouter.post('/laundry-kiosk/machines/:id/batch-assign', requireAvsKio
     for (const id of result.success) {
       db.prepare("UPDATE laundry_items SET last_modified_worker_id=?, last_modified_at=datetime('now') WHERE id=?")
         .run(req.user.workerId || null, id)
+      stampHistoryWorker(db, id, req.user.workerId)
     }
     res.json({ success: result.success, failed: [...failed, ...result.failed] })
   } catch (e) { res.status(400).json({ error: e.message }) }
@@ -598,6 +621,7 @@ selfServiceRouter.post('/laundry-kiosk/deliver-room', requireAvsKiosk, (req, res
       try {
         deliverItemService(b.id, { delivered_to: delivered_name.trim(), signature_data: signature || null }, null)
         extraStmt.run(delivered_name.trim(), signature || null, req.user.workerId || null, b.id)
+        stampHistoryWorker(db, b.id, req.user.workerId)
         delivered.push(b.bag_no || `#${b.id}`)
       } catch (e) {
         failed.push({ id: b.id, error: e.message })
@@ -631,6 +655,7 @@ selfServiceRouter.post('/laundry-kiosk/bags/:id/found', requireAvsKiosk, async (
     markFoundService(item.id, null)
     db.prepare("UPDATE laundry_items SET last_modified_worker_id=?, last_modified_at=datetime('now') WHERE id=?")
       .run(req.user.workerId || null, item.id)
+    stampHistoryWorker(db, item.id, req.user.workerId)
     try {
       const full = getItemService(item.id)
       if (full) await sendFoundMessage(full)
@@ -646,6 +671,13 @@ selfServiceRouter.get('/laundry-kiosk/sla-config', requireAvsKiosk, (req, res) =
     res.json(getSlaConfigQuery().map(c => ({
       stage: c.stage, warning_hours: c.warning_hours, critical_hours: c.critical_hours,
     })))
+  } catch (e) { res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// Operatör kırılımı — bugün kim kaç işlem yaptı (vardiya devri/değerlendirme)
+selfServiceRouter.get('/laundry-kiosk/operator-summary', requireAvsKiosk, (req, res) => {
+  try {
+    res.json(getOperatorSummaryService(Number(req.query.days) || 1))
   } catch (e) { res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
@@ -682,6 +714,7 @@ selfServiceRouter.post('/laundry-kiosk/bags/:id/wash-complete', requireAvsKiosk,
     const updated = advanceItemService(item.id, { shelf_location: shelf }, null)
     db.prepare("UPDATE laundry_items SET last_modified_worker_id=?, last_modified_at=datetime('now') WHERE id=?")
       .run(req.user.workerId || null, item.id)
+    stampHistoryWorker(db, item.id, req.user.workerId)
     res.json({ ok: true, next_status: updated.status })
   } catch (e) { res.status(400).json({ error: e.message }) }
 })

@@ -287,6 +287,11 @@ laundryRouter.post('/machines', ...laundryFull, (req, res) => {
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
+// Operatör performans kırılımı (varsayılan son 7 gün)
+laundryRouter.get('/operator-summary', ...laundryRead, (req, res) => {
+  res.json(svc.getOperatorSummaryService(+req.query.days || 7))
+})
+
 // Gün-gün koşu kırılımı (varsayılan son 14 gün, max 90)
 laundryRouter.get('/machines/:id/daily-runs', ...laundryRead, (req, res) => {
   res.json(svc.getMachineDailyRunsService(+req.params.id, +req.query.days || 14))

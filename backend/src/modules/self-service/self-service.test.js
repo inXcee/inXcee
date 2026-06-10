@@ -671,6 +671,56 @@ describe('Laundry Kiosk makine akışı', () => {
     expect(res.body[0].runs).toBeGreaterThanOrEqual(1)
   })
 
+  it('operator-summary: kiosk işlemleri operatöre yazılır', async () => {
+    const bagId = await createDirtyBag()
+    await request(app)
+      .put(`/api/self-service/laundry-kiosk/machines/${machineId}/assign`)
+      .set('Authorization', `Bearer ${avsToken}`)
+      .send({ item_id: bagId })
+    const res = await request(app)
+      .get('/api/self-service/laundry-kiosk/operator-summary')
+      .set('Authorization', `Bearer ${avsToken}`)
+    expect(res.status).toBe(200)
+    const me = res.body.find(o => o.operator === 'Makine Test Worker')
+    expect(me).toBeTruthy()
+    expect(me.giris).toBeGreaterThanOrEqual(1)   // kiosk bag girişi history'ye düşer
+    expect(me.yikama).toBeGreaterThanOrEqual(1)  // assign damgalanır
+    expect(me.toplam).toBeGreaterThanOrEqual(2)
+  })
+
+  it('REGRESYON: timer cron total_runs artırmaz (çift sayım fix)', async () => {
+    const db = getDB()
+    const bagId = await createDirtyBag()
+    await request(app)
+      .put(`/api/self-service/laundry-kiosk/machines/${machineId}/assign`)
+      .set('Authorization', `Bearer ${avsToken}`)
+      .send({ item_id: bagId, timer_minutes: 30 })
+    const before = db.prepare('SELECT total_runs FROM laundry_machines WHERE id=?').get(machineId).total_runs
+    db.prepare("UPDATE laundry_machines SET timer_end=datetime('now','-1 minute') WHERE id=?").run(machineId)
+    const { checkMachineTimers } = await import('../laundry/sla.js')
+    checkMachineTimers()
+    const after = db.prepare('SELECT total_runs, status FROM laundry_machines WHERE id=?').get(machineId)
+    expect(after.total_runs).toBe(before) // artmamalı — artış sadece yıkama başlangıcında
+    expect(after.status).toBe('done')
+    db.prepare("UPDATE laundry_machines SET status='idle', timer_end=NULL WHERE id=?").run(machineId)
+  })
+
+  it('REGRESYON: bakım cron uyarısı bakım sonrası susar', async () => {
+    const db = getDB()
+    const { checkMachineMaintenanceAlerts } = await import('../laundry/sla.js')
+    // ömür boyu sayaç yüksek ama bakım yeni yapılmış → uyarı YOK
+    db.prepare("UPDATE laundry_machines SET total_runs=120, runs_since_maintenance=0 WHERE id=?").run(machineId)
+    const silentCount = checkMachineMaintenanceAlerts()
+    const stillAlerted = db.prepare(`SELECT COUNT(*) c FROM notifications WHERE dedup_key='maint_alert_${machineId}'`).get().c
+    expect(stillAlerted).toBe(0)
+    // son bakımdan beri eşik aşılmış → uyarı VAR
+    db.prepare("UPDATE laundry_machines SET runs_since_maintenance=55 WHERE id=?").run(machineId)
+    checkMachineMaintenanceAlerts()
+    const alerted = db.prepare(`SELECT COUNT(*) c FROM notifications WHERE dedup_key='maint_alert_${machineId}'`).get().c
+    expect(alerted).toBe(1)
+    db.prepare("UPDATE laundry_machines SET runs_since_maintenance=0 WHERE id=?").run(machineId)
+  })
+
   it('today-summary dört sayıyı döndürür', async () => {
     await createDirtyBag()
     const res = await request(app)

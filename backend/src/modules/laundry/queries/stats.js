@@ -1,4 +1,28 @@
 import { getDB } from '../../../shared/db/index.js'
+
+// Operatör performans kırılımı — kiosk işçileri (worker_id → staff) + hub
+// kullanıcıları (action_by → users) birleşik; aksiyon tipi history to_status'tan
+export function getOperatorSummaryQuery(days = 1) {
+  const db = getDB()
+  const offset = `-${Math.max(1, Math.min(90, days)) - 1} days`
+  return db.prepare(`
+    SELECT COALESCE(w.full_name, u.full_name, 'Bilinmeyen') as operator,
+      SUM(CASE WHEN lh.to_status='dirty' THEN 1 ELSE 0 END) as giris,
+      SUM(CASE WHEN lh.to_status='washing' THEN 1 ELSE 0 END) as yikama,
+      SUM(CASE WHEN lh.to_status='ready' THEN 1 ELSE 0 END) as hazir,
+      SUM(CASE WHEN lh.to_status='delivered' THEN 1 ELSE 0 END) as teslim,
+      SUM(CASE WHEN lh.to_status='lost' THEN 1 ELSE 0 END) as kayip,
+      COUNT(*) as toplam
+    FROM laundry_history lh
+    LEFT JOIN staff w ON w.id = lh.worker_id
+    LEFT JOIN users u ON u.id = lh.action_by
+    WHERE date(lh.created_at, 'localtime') >= date('now', 'localtime', ?)
+      AND (lh.worker_id IS NOT NULL OR lh.action_by IS NOT NULL)
+    GROUP BY operator
+    ORDER BY toplam DESC
+  `).all(offset)
+}
+
 export function getStatsQuery({ from_date, to_date } = {}) {
   const db = getDB()
 
