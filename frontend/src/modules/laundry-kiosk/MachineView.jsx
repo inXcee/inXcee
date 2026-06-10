@@ -89,6 +89,15 @@ export default function MachineView({ kioskApi, focusedBag, onConsumeFocus }) {
     } catch (e) { setMsg({ type: 'err', text: e.response?.data?.error || 'Hata' }) }
   }
 
+  async function maintenanceDone(m) {
+    setMsg(null)
+    try {
+      await kioskApi.post(`/self-service/laundry-kiosk/machines/${m.id}/maintenance-done`, {})
+      setMsg({ type: 'ok', text: `✓ ${m.name} bakımı kaydedildi — sayaç sıfırlandı` })
+      load()
+    } catch (e) { setMsg({ type: 'err', text: e.response?.data?.error || 'Hata' }) }
+  }
+
   async function washComplete(bag) {
     setMsg(null)
     try {
@@ -182,11 +191,38 @@ export default function MachineView({ kioskApi, focusedBag, onConsumeFocus }) {
                   {m.name} · {m.type === 'washer' ? '🫧 Çamaşır' : '💨 Kurutucu'}
                   {busy ? ` · ${m.active_items} aktif` : ' · Boş'}
                   {ts.label ? ` · ${ts.label}` : ''}
+                  {m.needs_maintenance ? <span style={{ color: '#fbbf24', fontWeight: 700 }}> · 🔧 BAKIM ZAMANI</span> : ''}
                 </button>
               )
             })}
           </div>
         </>
+      )}
+
+      {/* ── Makine sağlığı — bakım zamanı gelenler ── */}
+      {machines.some(m => m.needs_maintenance || m.status === 'maintenance') && (
+        <div>
+          <label style={lbl}>🔧 Bakım Gereken Makineler</label>
+          {machines.filter(m => m.needs_maintenance || m.status === 'maintenance').map(m => (
+            <div key={m.id} style={{
+              background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.3)',
+              borderRadius: 10, padding: '10px 14px', marginBottom: 6,
+              display: 'flex', alignItems: 'center', gap: 10,
+            }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, color: '#e2e8f0', fontWeight: 600 }}>{m.name}</div>
+                <div style={{ fontSize: 11, color: '#fbbf24', marginTop: 2 }}>
+                  {m.status === 'maintenance' ? 'Bakımda' : `Son bakımdan beri ${m.runs_since_maintenance} yıkama`}
+                  {m.last_maintenance_at ? ` · son bakım ${new Date(m.last_maintenance_at).toLocaleDateString('tr-TR')}` : ' · hiç bakım kaydı yok'}
+                </div>
+              </div>
+              <button onClick={() => maintenanceDone(m)}
+                style={{ padding: '8px 14px', borderRadius: 8, border: 'none', background: '#b45309', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                🔧 Bakım Yapıldı
+              </button>
+            </div>
+          ))}
+        </div>
       )}
 
       {/* ── Makinedekiler ── */}

@@ -6,7 +6,8 @@ import { changeKioskPin } from '../../shared/auth/service.js'
 import { validate } from '../../shared/middleware/validate.js'
 import { maintenanceSchema, feedbackSchema } from './schemas.js'
 import { insertItemQuery, listMachinesQuery, collectItemQuery, setBagNoQuery, getRoomLaundryHistoryQuery, getRoomLaundrySummaryQuery, getBlockRoomActiveCountsQuery, getSlaConfigQuery } from '../laundry/queries.js'
-import { advanceItemService, batchAssignService, lostItemService, deleteItemService, deliverItemService } from '../laundry/service.js'
+import { advanceItemService, batchAssignService, lostItemService, deleteItemService, deliverItemService, maintenanceDoneService, markFoundService, getItemService } from '../laundry/service.js'
+import { sendFoundMessage } from '../laundry/whatsapp.js'
 import { logger } from '../../shared/logger.js'
 
 export const selfServiceRouter = Router()
@@ -604,6 +605,31 @@ selfServiceRouter.post('/laundry-kiosk/deliver-room', requireAvsKiosk, (req, res
     }
     res.json({ ok: true, delivered: delivered.length, bag_nos: delivered, failed })
   } catch (e) { res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// Bakım yapıldı — sayaç sıfırlanır; bakımı fiilen yapan kiosk operatörü işaretler
+selfServiceRouter.post('/laundry-kiosk/machines/:id/maintenance-done', requireAvsKiosk, (req, res) => {
+  try {
+    res.json(maintenanceDoneService(Number(req.params.id), null))
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+// Kayıp torba bulundu — lost→ready geri döner, sakine "bulundu" WhatsApp'ı gider
+selfServiceRouter.post('/laundry-kiosk/bags/:id/found', requireAvsKiosk, async (req, res) => {
+  try {
+    const db = getDB()
+    const item = db.prepare('SELECT id, status FROM laundry_items WHERE id=?').get(Number(req.params.id))
+    if (!item) return res.status(404).json({ error: 'Torba bulunamadı' })
+    if (item.status !== 'lost') return res.status(400).json({ error: 'Torba kayıp durumunda değil' })
+    markFoundService(item.id, null)
+    db.prepare("UPDATE laundry_items SET last_modified_worker_id=?, last_modified_at=datetime('now') WHERE id=?")
+      .run(req.user.workerId || null, item.id)
+    try {
+      const full = getItemService(item.id)
+      if (full) await sendFoundMessage(full)
+    } catch {}
+    res.json({ ok: true })
+  } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
 // SLA eşikleri — kiosk panosundaki bekleme rozetleri hub ile aynı

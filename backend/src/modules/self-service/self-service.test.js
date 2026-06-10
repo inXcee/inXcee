@@ -601,6 +601,46 @@ describe('Laundry Kiosk makine akışı', () => {
     expect(notif.message).toContain('Test Deterjan Kritik')
   })
 
+  it('maintenance-done: sayaç sıfırlanır, bakımdaki makine boşa döner', async () => {
+    const db = getDB()
+    db.prepare("UPDATE laundry_machines SET runs_since_maintenance=60, status='maintenance' WHERE id=?").run(machineId)
+    const res = await request(app)
+      .post(`/api/self-service/laundry-kiosk/machines/${machineId}/maintenance-done`)
+      .set('Authorization', `Bearer ${avsToken}`)
+    expect(res.status).toBe(200)
+    const m = db.prepare('SELECT runs_since_maintenance, last_maintenance_at, status FROM laundry_machines WHERE id=?').get(machineId)
+    expect(m.runs_since_maintenance).toBe(0)
+    expect(m.last_maintenance_at).toBeTruthy()
+    expect(m.status).toBe('idle')
+  })
+
+  it('machines listesi needs_maintenance bayrağı döndürür', async () => {
+    const db = getDB()
+    db.prepare("UPDATE laundry_machines SET runs_since_maintenance=55 WHERE id=?").run(machineId)
+    const res = await request(app)
+      .get('/api/self-service/laundry-kiosk/machines')
+      .set('Authorization', `Bearer ${avsToken}`)
+    expect(res.status).toBe(200)
+    const m = res.body.find(x => x.id === machineId)
+    expect(m.needs_maintenance).toBe(1)
+    db.prepare("UPDATE laundry_machines SET runs_since_maintenance=0 WHERE id=?").run(machineId)
+  })
+
+  it('found: kayıp torba hazıra geri döner; kayıp olmayana 400', async () => {
+    const bagId = await createDirtyBag()
+    getDB().prepare("UPDATE laundry_items SET status='lost' WHERE id=?").run(bagId)
+    const res = await request(app)
+      .post(`/api/self-service/laundry-kiosk/bags/${bagId}/found`)
+      .set('Authorization', `Bearer ${avsToken}`)
+    expect(res.status).toBe(200)
+    expect(getDB().prepare('SELECT status FROM laundry_items WHERE id=?').get(bagId).status).toBe('ready')
+
+    const bad = await request(app)
+      .post(`/api/self-service/laundry-kiosk/bags/${bagId}/found`)
+      .set('Authorization', `Bearer ${avsToken}`)
+    expect(bad.status).toBe(400)
+  })
+
   it('today-summary dört sayıyı döndürür', async () => {
     await createDirtyBag()
     const res = await request(app)

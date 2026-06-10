@@ -112,7 +112,18 @@ export function advanceItemService(id, { machine_id, shelf_location, timer_minut
   // olursa bunlar da gonderilmemeli; rollback'ta tx() throw eder ve buraya gelmezse calisir.
   // Yikama baslarken otomatik deterjan dusumu olduysa esik kontrolu: stok
   // uyari/kritik altina indiyse bildirim (dedup gun-ici tekil — spam olmaz).
+  // Ayni anda makine bakim sayaci esik kontrolu.
   if (nextStatus === 'washing') {
+    const m = q.getMachineQuery(machine_id)
+    if (m && m.runs_since_maintenance >= q.MAINTENANCE_RUN_THRESHOLD) {
+      createNotification({
+        message: `🔧 ${m.name} bakım zamanı — son bakımdan beri ${m.runs_since_maintenance} yıkama (eşik ${q.MAINTENANCE_RUN_THRESHOLD})`,
+        type: 'warning',
+        module: 'laundry',
+        target_role: 'laundry',
+        dedup_key: `machine_maint_${m.id}`,
+      })
+    }
     for (const s of q.getAlertSuppliesQuery()) {
       createNotification({
         message: s.alert_level === 'critical'
@@ -213,6 +224,14 @@ export function batchDeliverService(itemIds, { delivered_to, signature_data }, u
     }
   }
   return { delivered, errors }
+}
+
+export function maintenanceDoneService(id, userId) {
+  const machine = q.getMachineQuery(id)
+  if (!machine) throw new Error('Makine bulunamadı')
+  const updated = q.machineMaintenanceDoneQuery(id)
+  logAudit(userId, 'laundry_machine_maintenance', 'laundry', id, `${machine.name} bakım yapıldı (${machine.runs_since_maintenance} yıkama sonrası)`)
+  return updated
 }
 
 export function batchAssignService(itemIds, machineId, timerMinutes, userId) {

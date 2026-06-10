@@ -21,6 +21,7 @@ const FALLBACK_SLA = { ready: { warning_hours: 24, critical_hours: 48 } }
 
 export default function DashboardView({ kioskApi, onAction }) {
   const [bags, setBags] = useState([])
+  const [lostBags, setLostBags] = useState([]) // kayıplar — "bulundu" geri dönüşü için
   const [summary, setSummary] = useState(null) // gün özeti — vardiya devri için
   const [slaConfig, setSlaConfig] = useState(FALLBACK_SLA) // { stage: {warning_hours, critical_hours} }
   const [loading, setLoading] = useState(false)
@@ -34,12 +35,14 @@ export default function DashboardView({ kioskApi, onAction }) {
       const url = filterBlock === 'all'
         ? '/self-service/laundry-kiosk/bags'
         : `/self-service/laundry-kiosk/bags?block=${encodeURIComponent(filterBlock)}`
-      const [res, sum, sla] = await Promise.all([
+      const [res, lost, sum, sla] = await Promise.all([
         kioskApi.get(url),
+        kioskApi.get('/self-service/laundry-kiosk/bags?status=lost').catch(() => ({ data: [] })),
         kioskApi.get('/self-service/laundry-kiosk/today-summary').catch(() => null),
         kioskApi.get('/self-service/laundry-kiosk/sla-config').catch(() => null),
       ])
       setBags(res.data)
+      setLostBags(filterBlock === 'all' ? lost.data : lost.data.filter(b => b.block === filterBlock))
       if (sum) setSummary(sum.data)
       if (sla && Array.isArray(sla.data) && sla.data.length > 0) {
         setSlaConfig(Object.fromEntries(sla.data.map(c => [c.stage, c])))
@@ -68,6 +71,21 @@ export default function DashboardView({ kioskApi, onAction }) {
     if (!ok) return
     try {
       await kioskApi.post(`/self-service/laundry-kiosk/bags/${bag.id}/collect`, {})
+      load()
+    } catch (e) {
+      useToastStore.getState().addToast(e.response?.data?.error || 'Hata', 'error')
+    }
+  }
+
+  // Kayıp torba bulundu — hazıra geri döner, sakine "bulundu" mesajı gider
+  async function markFound(bag) {
+    const ok = await confirmDialog({
+      title: 'Torba Bulundu',
+      body: `${bag.bag_no || `#${bag.id}`} (${bag.block}-${bag.room_no}) hazıra geri alınacak ve sahibine haber verilecek. Onayla?`,
+    })
+    if (!ok) return
+    try {
+      await kioskApi.post(`/self-service/laundry-kiosk/bags/${bag.id}/found`, {})
       load()
     } catch (e) {
       useToastStore.getState().addToast(e.response?.data?.error || 'Hata', 'error')
@@ -195,6 +213,28 @@ export default function DashboardView({ kioskApi, onAction }) {
       {bags.length === 0 && !loading && (
         <div style={{ color: '#475569', fontSize: 13, textAlign: 'center', padding: 20 }}>
           Aktif torba yok
+        </div>
+      )}
+
+      {/* Kayıplar — bulundu geri dönüşü */}
+      {lostBags.length > 0 && (
+        <div style={{ background: '#1e293b', borderRadius: 10, padding: '10px 12px', border: '1px solid rgba(239,68,68,0.25)' }}>
+          <div style={{ color: '#f87171', fontSize: 12, fontWeight: 700, letterSpacing: 1, marginBottom: 8 }}>
+            ⚠ KAYIP ({lostBags.length})
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {lostBags.map(b => (
+              <div key={b.id} style={{ background: '#0f172a', borderRadius: 8, padding: '8px 10px', display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12, color: '#f87171', fontFamily: 'monospace' }}>{b.bag_no || `#${b.id}`}</div>
+                  <div style={{ fontSize: 13, color: '#e2e8f0' }}>
+                    {b.block}-{b.room_no} · {b.item_count} parça{b.intake_name ? ` · 👤 ${b.intake_name}` : ''}
+                  </div>
+                </div>
+                <button onClick={() => markFound(b)} style={miniBtn('#15803d')}>✓ Bulundu</button>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

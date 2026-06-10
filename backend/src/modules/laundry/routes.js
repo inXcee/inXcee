@@ -287,6 +287,12 @@ laundryRouter.post('/machines', ...laundryFull, (req, res) => {
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
+laundryRouter.post('/machines/:id/maintenance-done', ...laundryFull, (req, res) => {
+  try {
+    res.json(svc.maintenanceDoneService(+req.params.id, req.user.id))
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
 laundryRouter.patch('/machines/:id', ...laundryFull, (req, res) => {
   try {
     const m = svc.updateMachineService(+req.params.id, req.body, req.user.id)

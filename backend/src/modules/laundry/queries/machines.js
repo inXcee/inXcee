@@ -1,9 +1,13 @@
 import { getDB } from '../../../shared/db/index.js'
+// 50 yıkamada bir bakım — bildirim + needs_maintenance bayrağı bu eşiği kullanır
+export const MAINTENANCE_RUN_THRESHOLD = 50
+
 export function listMachinesQuery() {
   const db = getDB()
   return db.prepare(`
     SELECT lm.*,
-           (SELECT COUNT(*) FROM laundry_items WHERE machine_id = lm.id AND status = 'washing') as active_items
+           (SELECT COUNT(*) FROM laundry_items WHERE machine_id = lm.id AND status = 'washing') as active_items,
+           CASE WHEN lm.runs_since_maintenance >= ${MAINTENANCE_RUN_THRESHOLD} THEN 1 ELSE 0 END as needs_maintenance
     FROM laundry_machines lm
     ORDER BY lm.type, lm.name
   `).all()
@@ -29,9 +33,23 @@ export function updateMachineQuery(id, fields) {
   const vals = entries.map(([, v]) => v)
   if (increment_runs) {
     sets.push('total_runs = total_runs + 1')
+    sets.push('runs_since_maintenance = runs_since_maintenance + 1')
   }
   if (!sets.length) return
   db.prepare(`UPDATE laundry_machines SET ${sets.join(', ')} WHERE id = ?`).run(...vals, id)
+}
+
+// Bakım yapıldı: sayaç sıfırlanır, bakımda olan makine boşa döner
+export function machineMaintenanceDoneQuery(id) {
+  const db = getDB()
+  db.prepare(`
+    UPDATE laundry_machines
+    SET runs_since_maintenance = 0,
+        last_maintenance_at = datetime('now'),
+        status = CASE WHEN status = 'maintenance' THEN 'idle' ELSE status END
+    WHERE id = ?
+  `).run(id)
+  return db.prepare('SELECT * FROM laundry_machines WHERE id = ?').get(id)
 }
 
 export function deleteMachineQuery(id) {
