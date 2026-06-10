@@ -396,6 +396,73 @@ describe('Laundry Kiosk makine akışı', () => {
     expect(res.status).toBe(400)
   })
 
+  it('batch-assign: 2 kirli torba tek seferde, ready olan failed listesinde', async () => {
+    // bu testte makine boş olmalı — yeni makine aç
+    const adminToken = (await request(app).post('/api/auth/login').send({ username: 'mudur', password: 'admin123' })).body.token
+    const m = (await request(app).post('/api/laundry/machines')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ name: 'Batch Test Makine', type: 'washer' })).body
+    const id1 = await createDirtyBag()
+    const id2 = await createDirtyBag()
+    const id3 = await createDirtyBag()
+    getDB().prepare("UPDATE laundry_items SET status='ready' WHERE id=?").run(id3)
+    const res = await request(app)
+      .post(`/api/self-service/laundry-kiosk/machines/${m.id}/batch-assign`)
+      .set('Authorization', `Bearer ${avsToken}`)
+      .send({ item_ids: [id1, id2, id3], timer_minutes: 30 })
+    expect(res.status).toBe(200)
+    expect(res.body.success.sort()).toEqual([id1, id2].sort())
+    expect(res.body.failed).toHaveLength(1)
+    expect(res.body.failed[0].id).toBe(id3)
+    const db = getDB()
+    expect(db.prepare('SELECT status FROM laundry_items WHERE id=?').get(id1).status).toBe('washing')
+    expect(db.prepare('SELECT status FROM laundry_items WHERE id=?').get(id2).status).toBe('washing')
+    expect(db.prepare('SELECT status, timer_end FROM laundry_machines WHERE id=?').get(m.id).timer_end).toBeTruthy()
+  })
+
+  it('deliver-room: odanın tüm hazır torbaları tek seferde teslim olur', async () => {
+    const id1 = await createDirtyBag({ room_no: '102' })
+    const id2 = await createDirtyBag({ room_no: '102' })
+    const idOther = await createDirtyBag({ room_no: '103' })
+    const db = getDB()
+    db.prepare("UPDATE laundry_items SET status='ready' WHERE id IN (?,?,?)").run(id1, id2, idOther)
+    const res = await request(app)
+      .post('/api/self-service/laundry-kiosk/deliver-room')
+      .set('Authorization', `Bearer ${avsToken}`)
+      .send({ block: 'M1', room_no: '102', delivered_name: 'Toplu Teslim Kişi' })
+    expect(res.status).toBe(200)
+    expect(res.body.delivered).toBe(2)
+    expect(db.prepare('SELECT status, delivered_name FROM laundry_items WHERE id=?').get(id1)).toMatchObject({ status: 'delivered', delivered_name: 'Toplu Teslim Kişi' })
+    expect(db.prepare('SELECT status FROM laundry_items WHERE id=?').get(id2).status).toBe('delivered')
+    // başka odanın hazır torbasına dokunulmaz
+    expect(db.prepare('SELECT status FROM laundry_items WHERE id=?').get(idOther).status).toBe('ready')
+  })
+
+  it('deliver-room: hazır torba yoksa 404, isim zorunlu 400', async () => {
+    const r404 = await request(app)
+      .post('/api/self-service/laundry-kiosk/deliver-room')
+      .set('Authorization', `Bearer ${avsToken}`)
+      .send({ block: 'M1', room_no: '199', delivered_name: 'X' })
+    expect(r404.status).toBe(404)
+    const r400 = await request(app)
+      .post('/api/self-service/laundry-kiosk/deliver-room')
+      .set('Authorization', `Bearer ${avsToken}`)
+      .send({ block: 'M1', room_no: '101' })
+    expect(r400.status).toBe(400)
+  })
+
+  it('today-summary dört sayıyı döndürür', async () => {
+    await createDirtyBag()
+    const res = await request(app)
+      .get('/api/self-service/laundry-kiosk/today-summary')
+      .set('Authorization', `Bearer ${avsToken}`)
+    expect(res.status).toBe(200)
+    expect(res.body.intake_today).toBeGreaterThan(0)
+    expect(res.body).toHaveProperty('delivered_today')
+    expect(res.body).toHaveProperty('active_total')
+    expect(res.body).toHaveProperty('ready_waiting')
+  })
+
   it('bags listesi washing torbada machine_name döndürür', async () => {
     const bagId = await createDirtyBag()
     await request(app)

@@ -564,6 +564,27 @@ function DeliverView({ kioskApi, focusedBag, onConsumeFocus }) {
     } catch (e) { setError(e.response?.data?.error || 'Hata') }
   }
 
+  // Odanın TÜM hazır torbaları — tek isim + tek imza ile hepsi kapanır
+  async function deliverAll() {
+    setError('')
+    if (!effectiveBlock || !roomNo.trim()) return setError('Blok ve oda no gerekli')
+    if (!deliveredName.trim()) return setError('Ad soyad gerekli')
+    let sig = null
+    if (blockNeedsSignature(effectiveBlock)) {
+      if (sigRef.current?.isEmpty()) return setError('İmza gerekli')
+      sig = sigRef.current?.toDataURL()
+    }
+    try {
+      await kioskApi.post('/self-service/laundry-kiosk/deliver-room', {
+        block: effectiveBlock,
+        room_no: roomNo.trim(),
+        delivered_name: deliveredName.trim(),
+        signature: sig,
+      })
+      setSuccess(true)
+    } catch (e) { setError(e.response?.data?.error || 'Hata') }
+  }
+
   if (success) return (
     <div style={{ textAlign: 'center', padding: '48px 0' }}>
       <div style={{ fontSize: 56 }}>✅</div>
@@ -711,6 +732,13 @@ function DeliverView({ kioskApi, focusedBag, onConsumeFocus }) {
         ✓ Teslim Et
         {parsedGarments.length > 0 && !allTicked ? ` (${parsedGarments.length} parça)` : ''}
       </button>
+
+      {bags.length > 1 && (
+        <button onClick={deliverAll}
+          style={{ ...btn('#7c2d12', '#fed7aa'), padding: 12, fontSize: 13 }}>
+          📦 Hepsini Teslim Et ({bags.length} torba — tek imza)
+        </button>
+      )}
     </div>
   )
 }

@@ -6,7 +6,7 @@ import { changeKioskPin } from '../../shared/auth/service.js'
 import { validate } from '../../shared/middleware/validate.js'
 import { maintenanceSchema, feedbackSchema } from './schemas.js'
 import { insertItemQuery, updateItemStatusQuery, listMachinesQuery, collectItemQuery, setBagNoQuery, getRoomLaundryHistoryQuery, getRoomLaundrySummaryQuery, getBlockRoomActiveCountsQuery } from '../laundry/queries.js'
-import { advanceItemService } from '../laundry/service.js'
+import { advanceItemService, batchAssignService } from '../laundry/service.js'
 import { logger } from '../../shared/logger.js'
 
 export const selfServiceRouter = Router()
@@ -506,6 +506,82 @@ selfServiceRouter.put('/laundry-kiosk/machines/:id/assign', requireAvsKiosk, (re
       .run(req.user.workerId || null, Number(item_id))
     res.json({ ok: true })
   } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+// Toplu makine yükleme — birden çok kirli torba tek seferde aynı makineye.
+// Kirli olmayanlar failed listesine düşer; makine meşgul/bakımda guard'ı
+// batchAssignService içinde.
+selfServiceRouter.post('/laundry-kiosk/machines/:id/batch-assign', requireAvsKiosk, (req, res) => {
+  const { item_ids, timer_minutes } = req.body
+  if (!Array.isArray(item_ids) || item_ids.length === 0) return res.status(400).json({ error: 'item_ids[] gerekli' })
+  try {
+    const db = getDB()
+    const dirtyIds = []
+    const failed = []
+    for (const id of item_ids.map(Number)) {
+      const item = db.prepare('SELECT id, status FROM laundry_items WHERE id=?').get(id)
+      if (!item) failed.push({ id, error: 'Torba bulunamadı' })
+      else if (item.status !== 'dirty') failed.push({ id, error: 'Torba kirli durumunda değil' })
+      else dirtyIds.push(id)
+    }
+    const result = dirtyIds.length
+      ? batchAssignService(dirtyIds, Number(req.params.id), timer_minutes ? Number(timer_minutes) : null, null)
+      : { success: [], failed: [] }
+    for (const id of result.success) {
+      db.prepare("UPDATE laundry_items SET last_modified_worker_id=?, last_modified_at=datetime('now') WHERE id=?")
+        .run(req.user.workerId || null, id)
+    }
+    res.json({ success: result.success, failed: [...failed, ...result.failed] })
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+// Odanın tüm hazır torbalarını tek seferde teslim — tek isim + tek imza.
+// file_count torba başına 1 yazılır (tek-torba akışındaki alan oradaki gibi kalır).
+selfServiceRouter.post('/laundry-kiosk/deliver-room', requireAvsKiosk, (req, res) => {
+  const { block, room_no, delivered_name, signature } = req.body
+  if (!block || !room_no) return res.status(400).json({ error: 'block ve room_no gerekli' })
+  if (!delivered_name || !delivered_name.trim()) return res.status(400).json({ error: 'delivered_name gerekli' })
+  try {
+    const db = getDB()
+    const bags = db.prepare(`
+      SELECT li.id, li.bag_no FROM laundry_items li
+      JOIN rooms r ON r.id = li.room_id
+      WHERE r.block=? AND r.room_no=? AND li.status='ready'
+    `).all(block, room_no)
+    if (bags.length === 0) return res.status(404).json({ error: 'Bu odada hazır torba yok' })
+    const stmt = db.prepare(`
+      UPDATE laundry_items
+      SET status='delivered', delivered_name=?, file_count=1, occupant_signature=?,
+          last_modified_worker_id=?, last_modified_at=datetime('now'), updated_at=datetime('now')
+      WHERE id=?
+    `)
+    const tx = db.transaction(() => {
+      for (const b of bags) stmt.run(delivered_name.trim(), signature || null, req.user.workerId || null, b.id)
+    })
+    tx.immediate()
+    res.json({ ok: true, delivered: bags.length, bag_nos: bags.map(b => b.bag_no || `#${b.id}`) })
+  } catch (e) { res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// Gün özeti — vardiya devri için üç sayı + aktif durum kırılımı
+selfServiceRouter.get('/laundry-kiosk/today-summary', requireAvsKiosk, (req, res) => {
+  try {
+    const db = getDB()
+    const row = db.prepare(`
+      SELECT
+        SUM(CASE WHEN date(li.created_at)=date('now','localtime') THEN 1 ELSE 0 END) as intake_today,
+        SUM(CASE WHEN li.status='delivered' AND date(li.updated_at)=date('now','localtime') THEN 1 ELSE 0 END) as delivered_today,
+        SUM(CASE WHEN li.status NOT IN ('delivered','lost') THEN 1 ELSE 0 END) as active_total,
+        SUM(CASE WHEN li.status='ready' THEN 1 ELSE 0 END) as ready_waiting
+      FROM laundry_items li
+    `).get()
+    res.json({
+      intake_today: row.intake_today || 0,
+      delivered_today: row.delivered_today || 0,
+      active_total: row.active_total || 0,
+      ready_waiting: row.ready_waiting || 0,
+    })
+  } catch (e) { res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 // Yıkama bitti — needs_ironing'e göre ütüye ya da hazıra geçer; makine 'done'

@@ -93,6 +93,37 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [success, setSuccess] = useState(null) // { bag_no }
+  const [lastBagGarments, setLastBagGarments] = useState(null) // { count, garments } | null
+
+  // Oda seçilince son torbanın kıyafet listesini hazırla — "↺ kopyala" için.
+  // Aynı kişi her hafta benzer torba verir; tek tuşla tekrar girişi hızlandırır.
+  useEffect(() => {
+    setLastBagGarments(null)
+    if (!selection.block || !selection.room_no) return
+    let cancelled = false
+    kioskApi.get(`/self-service/laundry-kiosk/room-history?block=${encodeURIComponent(selection.block)}&room_no=${encodeURIComponent(selection.room_no)}`)
+      .then(r => {
+        if (cancelled) return
+        const withGarments = (r.data.items || []).find(it => {
+          try { return JSON.parse(it.garments_json || '[]').length > 0 } catch { return false }
+        })
+        if (!withGarments) return
+        const parsed = JSON.parse(withGarments.garments_json)
+        // garments_json farklı kaynaklardan gelmiş olabilir — alanları savunmacı eşle
+        const mapped = parsed.map(g => ({
+          type_id: g.type_id ?? null,
+          type_name: g.type_name || g.garment_type || g.type || 'Parça',
+          emoji: g.emoji || '👕',
+          count: Number(g.count) || 1,
+          colors: Array.isArray(g.colors) ? g.colors : [],
+          pattern: g.pattern || 'solid',
+          pattern_label: g.pattern_label || 'Düz',
+        }))
+        setLastBagGarments({ count: mapped.reduce((s, g) => s + g.count, 0), garments: mapped })
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [selection.block, selection.room_no])  // eslint-disable-line react-hooks/exhaustive-deps
 
   const garmentTypes = useQuery({
     queryKey: ['garment-types'],
@@ -194,6 +225,17 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
       {/* 2. Garments */}
       <div>
         <label style={lbl}>Kıyafetler</label>
+        {lastBagGarments && garmentState.garments.length === 0 && (
+          <button type="button"
+            onClick={() => setGarmentState(s => ({ ...s, garments: lastBagGarments.garments }))}
+            style={{
+              width: '100%', marginBottom: 10, padding: '10px 14px', borderRadius: 10,
+              border: '1px dashed #3b82f6', background: 'rgba(29,78,216,0.08)',
+              color: '#93c5fd', fontSize: 13, fontWeight: 600, cursor: 'pointer', textAlign: 'left',
+            }}>
+            ↺ Son torbayı kopyala ({lastBagGarments.count} parça: {lastBagGarments.garments.slice(0, 4).map(g => `${g.count > 1 ? g.count + '× ' : ''}${g.type_name}`).join(', ')}{lastBagGarments.garments.length > 4 ? '…' : ''})
+          </button>
+        )}
         <QuickGarmentInput garmentTypes={garmentTypes} value={garmentState} onChange={setGarmentState} />
       </div>
 

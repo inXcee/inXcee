@@ -7,12 +7,18 @@ function makeKioskApi() {
   return {
     get: vi.fn((url) => {
       if (url.includes('/machines')) return Promise.resolve({ data: [{ id: 1, name: 'Makine 1', type: 'washer', status: 'idle', active_items: 0, timer_end: null }] })
-      if (url.includes('status=dirty')) return Promise.resolve({ data: [{ id: 10, bag_no: 'BAG-10', block: 'M1', room_no: '101', item_count: 3, urgent: 1, is_premium: 0 }] })
+      if (url.includes('status=dirty')) return Promise.resolve({ data: [
+        { id: 10, bag_no: 'BAG-10', block: 'M1', room_no: '101', item_count: 3, urgent: 1, is_premium: 0 },
+        { id: 12, bag_no: 'BAG-12', block: 'M1', room_no: '103', item_count: 1, urgent: 0, is_premium: 0 },
+      ] })
       if (url.includes('status=washing')) return Promise.resolve({ data: [{ id: 11, bag_no: 'BAG-11', block: 'S1', room_no: '202', item_count: 2, needs_ironing: 1, machine_name: 'Makine 1', machine_timer_end: null }] })
       return Promise.resolve({ data: [] })
     }),
     put: vi.fn(() => Promise.resolve({ data: { ok: true } })),
-    post: vi.fn(() => Promise.resolve({ data: { ok: true, next_status: 'ironing' } })),
+    post: vi.fn((url) => {
+      if (url.includes('batch-assign')) return Promise.resolve({ data: { success: [10, 12], failed: [] } })
+      return Promise.resolve({ data: { ok: true, next_status: 'ironing' } })
+    }),
   }
 }
 
@@ -25,18 +31,20 @@ describe('MachineView smoke', () => {
     expect(screen.getByText('✓ Yıkama Bitti')).toBeInTheDocument()
   })
 
-  it('torba seçince süre + makine seçimi açılır, assign timer_minutes gönderir', async () => {
+  it('çoklu seçim: 2 torba seç → batch-assign item_ids + timer_minutes gönderir', async () => {
     const api = makeKioskApi()
     renderWithProviders(<MachineView kioskApi={api} />)
     await waitFor(() => expect(screen.getByText(/BAG-10/)).toBeInTheDocument())
     fireEvent.click(screen.getByText(/BAG-10/))
-    expect(screen.getByText('45 dk')).toBeInTheDocument()
+    fireEvent.click(screen.getByText(/BAG-12/))
+    expect(screen.getByText(/2 seçili/)).toBeInTheDocument()
     fireEvent.click(screen.getByText('45 dk'))
     fireEvent.click(screen.getByRole('button', { name: /Makine 1 · 🫧 Çamaşır/ }))
-    await waitFor(() => expect(api.put).toHaveBeenCalledWith(
-      '/self-service/laundry-kiosk/machines/1/assign',
-      { item_id: 10, timer_minutes: 45 },
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith(
+      '/self-service/laundry-kiosk/machines/1/batch-assign',
+      { item_ids: [10, 12], timer_minutes: 45 },
     ))
+    await waitFor(() => expect(screen.getByText(/2 torba makineye yüklendi/)).toBeInTheDocument())
   })
 
   it('yıkama bitti butonu wash-complete çağırır ve ütü mesajı gösterir', async () => {
@@ -48,5 +56,19 @@ describe('MachineView smoke', () => {
       '/self-service/laundry-kiosk/bags/11/wash-complete', {},
     ))
     await waitFor(() => expect(screen.getByText(/ütüye gönderildi/)).toBeInTheDocument())
+  })
+
+  it('süresi dolan makinedeki torba SÜRE DOLDU rozetiyle vurgulanır', async () => {
+    const api = makeKioskApi()
+    api.get = vi.fn((url) => {
+      if (url.includes('/machines')) return Promise.resolve({ data: [] })
+      if (url.includes('status=dirty')) return Promise.resolve({ data: [] })
+      if (url.includes('status=washing')) return Promise.resolve({ data: [
+        { id: 20, bag_no: 'BAG-20', block: 'M2', room_no: '110', item_count: 4, machine_name: 'Makine 2', machine_timer_end: new Date(Date.now() - 60000).toISOString() },
+      ] })
+      return Promise.resolve({ data: [] })
+    })
+    renderWithProviders(<MachineView kioskApi={api} />)
+    await waitFor(() => expect(screen.getByText(/SÜRE DOLDU/)).toBeInTheDocument())
   })
 })

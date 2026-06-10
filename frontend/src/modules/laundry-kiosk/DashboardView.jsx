@@ -18,6 +18,7 @@ const card = { background: '#0f172a', borderRadius: 16, padding: 16, display: 'f
 //   onAction: (action, bag) => void   // action ∈ 'collect' | 'iron' | 'deliver'
 export default function DashboardView({ kioskApi, onAction }) {
   const [bags, setBags] = useState([])
+  const [summary, setSummary] = useState(null) // gün özeti — vardiya devri için
   const [loading, setLoading] = useState(false)
   const [filterBlock, setFilterBlock] = useState('all')
   const [collapsed, setCollapsed] = useState({})
@@ -29,8 +30,12 @@ export default function DashboardView({ kioskApi, onAction }) {
       const url = filterBlock === 'all'
         ? '/self-service/laundry-kiosk/bags'
         : `/self-service/laundry-kiosk/bags?block=${encodeURIComponent(filterBlock)}`
-      const res = await kioskApi.get(url)
+      const [res, sum] = await Promise.all([
+        kioskApi.get(url),
+        kioskApi.get('/self-service/laundry-kiosk/today-summary').catch(() => null),
+      ])
       setBags(res.data)
+      if (sum) setSummary(sum.data)
     } catch {
       setBags([])
     } finally {
@@ -105,6 +110,23 @@ export default function DashboardView({ kioskApi, onAction }) {
           {loading ? '…' : '↻ Yenile'}
         </button>
       </div>
+
+      {/* Gün özeti — vardiya devrinde tek bakış */}
+      {summary && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+          {[
+            { label: 'BUGÜN GİRİŞ',  value: summary.intake_today,    color: '#38bdf8' },
+            { label: 'BUGÜN TESLİM', value: summary.delivered_today, color: '#4ade80' },
+            { label: 'AKTİF',        value: summary.active_total,    color: '#fbbf24' },
+            { label: 'HAZIR BEKLİYOR', value: summary.ready_waiting, color: summary.ready_waiting > 0 ? '#f97316' : '#475569' },
+          ].map(k => (
+            <div key={k.label} style={{ background: '#1e293b', borderRadius: 10, padding: '10px 8px', textAlign: 'center' }}>
+              <div style={{ fontSize: 22, fontWeight: 800, color: k.color, lineHeight: 1 }}>{k.value}</div>
+              <div style={{ fontSize: 8, color: '#64748b', letterSpacing: 1, marginTop: 5 }}>{k.label}</div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Block filter */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
