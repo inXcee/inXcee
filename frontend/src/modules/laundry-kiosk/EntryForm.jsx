@@ -94,17 +94,33 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
   const [submitting, setSubmitting] = useState(false)
   const [success, setSuccess] = useState(null) // { bag_no }
   const [lastBagGarments, setLastBagGarments] = useState(null) // { count, garments } | null
+  const [activeByPerson, setActiveByPerson] = useState([]) // [{ name, count, statuses }]
 
   // Oda seçilince son torbanın kıyafet listesini hazırla — "↺ kopyala" için.
   // Aynı kişi her hafta benzer torba verir; tek tuşla tekrar girişi hızlandırır.
+  // Aynı yanıttan kişi bazlı aktif torba kırılımı da çıkar (aynı odada birden
+  // çok kişi torba verir — kimin kaç torbası içeride görünür olsun).
   useEffect(() => {
     setLastBagGarments(null)
+    setActiveByPerson([])
     if (!selection.block || !selection.room_no) return
     let cancelled = false
     kioskApi.get(`/self-service/laundry-kiosk/room-history?block=${encodeURIComponent(selection.block)}&room_no=${encodeURIComponent(selection.room_no)}`)
       .then(r => {
         if (cancelled) return
-        const withGarments = (r.data.items || []).find(it => {
+        const items = r.data.items || []
+        // Kişi kırılımı: aktif (teslim/kayıp olmayan) torbalar veren kişiye göre
+        const grouped = {}
+        for (const it of items) {
+          if (it.status === 'delivered' || it.status === 'lost') continue
+          const name = it.intake_name || 'Kişisiz'
+          if (!grouped[name]) grouped[name] = { name, count: 0, statuses: {} }
+          grouped[name].count += 1
+          grouped[name].statuses[it.status] = (grouped[name].statuses[it.status] || 0) + 1
+        }
+        setActiveByPerson(Object.values(grouped).sort((a, b) => b.count - a.count))
+
+        const withGarments = items.find(it => {
           try { return JSON.parse(it.garments_json || '[]').length > 0 } catch { return false }
         })
         if (!withGarments) return
@@ -221,6 +237,33 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
 
       {/* 1. Room/Person */}
       <RoomGridPicker value={selection} onChange={setSelection} kioskApi={kioskApi} />
+
+      {/* Kişi bazlı içeride-torba kırılımı — mükerrer girişi ve "torbam nerede"
+          karışıklığını önler */}
+      {activeByPerson.length > 0 && (
+        <div style={{
+          background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.25)',
+          borderRadius: 10, padding: '10px 14px',
+        }}>
+          <div style={{ fontSize: 10, color: '#fbbf24', letterSpacing: 1, marginBottom: 6 }}>
+            📦 BU ODADAN İÇERİDE OLAN TORBALAR
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+            {activeByPerson.map(p => (
+              <div key={p.name} style={{ fontSize: 12, color: '#e2e8f0', display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                <span style={{ fontWeight: 600, color: selection.person?.full_name === p.name ? '#fbbf24' : '#e2e8f0' }}>
+                  👤 {p.name}{selection.person?.full_name === p.name ? ' (seçili kişi!)' : ''}
+                </span>
+                <span style={{ color: '#94a3b8' }}>
+                  {p.count} torba · {Object.entries(p.statuses).map(([s, n]) =>
+                    `${n} ${s === 'dirty' ? 'kirli' : s === 'washing' ? 'makinede' : s === 'ironing' ? 'ütüde' : s === 'ready' ? 'hazır' : s}`
+                  ).join(', ')}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* 2. Garments */}
       <div>

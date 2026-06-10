@@ -66,6 +66,21 @@ export default function DashboardView({ kioskApi, onAction }) {
     }
   }
 
+  // Taze yanlış girişin telafisi — backend 15 dk + dirty guard'lı
+  async function voidBag(bag) {
+    const ok = await confirmDialog({
+      title: 'Girişi İptal Et',
+      body: `${bag.bag_no || `#${bag.id}`} (${bag.block}-${bag.room_no}) tamamen silinecek. Yanlış giriş düzeltme içindir. Onayla?`,
+    })
+    if (!ok) return
+    try {
+      await kioskApi.post(`/self-service/laundry-kiosk/bags/${bag.id}/void`, {})
+      load()
+    } catch (e) {
+      useToastStore.getState().addToast(e.response?.data?.error || 'Hata', 'error')
+    }
+  }
+
   async function washComplete(bag) {
     const ok = await confirmDialog({
       title: 'Yıkama Bitti',
@@ -80,12 +95,24 @@ export default function DashboardView({ kioskApi, onAction }) {
     }
   }
 
+  // created_at'ten bu yana geçen dakika — iptal butonu sadece taze girişte
+  const ageMinutes = (b) => (Date.now() - new Date(b.created_at)) / 60000
+  // ready olalı geçen saat (updated_at ≈ hazıra alınma anı)
+  const readyHours = (b) => (Date.now() - new Date(b.updated_at || b.created_at)) / 3600000
+
   function actionButton(bag) {
     switch (bag.status) {
       case 'pending_collection':
         return <button onClick={() => collect(bag)} style={miniBtn('#15803d')}>Topla →</button>
       case 'dirty':
-        return <button onClick={() => onAction('machine', bag)} style={miniBtn('#1d4ed8')}>Makineye →</button>
+        return (
+          <div style={{ display: 'flex', gap: 4 }}>
+            {ageMinutes(bag) <= 15 && (
+              <button onClick={() => voidBag(bag)} style={miniBtn('#7f1d1d')} title="Yanlış girişi iptal et (15 dk)">↩</button>
+            )}
+            <button onClick={() => onAction('machine', bag)} style={miniBtn('#1d4ed8')}>Makineye →</button>
+          </div>
+        )
       case 'washing':
         return <button onClick={() => washComplete(bag)} style={miniBtn('#0e7490')}>Bitti →</button>
       case 'ironing':
@@ -165,6 +192,14 @@ export default function DashboardView({ kioskApi, onAction }) {
                         {b.block}-{b.room_no} · {b.item_count} parça
                         {b.is_premium ? ' · 🟣' : ''}
                         {b.urgent ? ' · ⚡' : ''}
+                        {b.status === 'ready' && b.shelf_location ? <span style={{ color: '#4ade80' }}> · 📍 {b.shelf_location}</span> : ''}
+                        {b.status === 'ready' && readyHours(b) >= 24 && (
+                          <span style={{
+                            marginLeft: 6, fontSize: 9, fontWeight: 700, letterSpacing: 0.5,
+                            background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)',
+                            color: '#f87171', borderRadius: 4, padding: '1px 6px',
+                          }}>⏰ {Math.floor(readyHours(b) / 24)}g+ BEKLİYOR</span>
+                        )}
                       </div>
                       {b.intake_name && (
                         <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>

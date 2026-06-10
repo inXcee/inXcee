@@ -32,6 +32,7 @@ export default function MachineView({ kioskApi, focusedBag, onConsumeFocus }) {
   const [timerMinutes, setTimerMinutes] = useState(null)
   const [loading, setLoading] = useState(false)
   const [msg, setMsg] = useState(null) // { type: 'ok'|'err', text }
+  const [shelfMap, setShelfMap] = useState({}) // { bagId: rafMetni } — ütüsüz torbalar hazıra giderken
 
   async function load() {
     setLoading(true)
@@ -91,9 +92,13 @@ export default function MachineView({ kioskApi, focusedBag, onConsumeFocus }) {
   async function washComplete(bag) {
     setMsg(null)
     try {
-      const res = await kioskApi.post(`/self-service/laundry-kiosk/bags/${bag.id}/wash-complete`, {})
+      const shelf = (shelfMap[bag.id] || '').trim()
+      const res = await kioskApi.post(`/self-service/laundry-kiosk/bags/${bag.id}/wash-complete`, {
+        shelf_location: shelf || undefined,
+      })
       const next = res.data?.next_status
-      setMsg({ type: 'ok', text: next === 'ironing' ? `✓ ${bag.bag_no || `#${bag.id}`} ütüye gönderildi` : `✓ ${bag.bag_no || `#${bag.id}`} hazıra alındı` })
+      setMsg({ type: 'ok', text: next === 'ironing' ? `✓ ${bag.bag_no || `#${bag.id}`} ütüye gönderildi` : `✓ ${bag.bag_no || `#${bag.id}`} hazıra alındı${shelf ? ` (📍 ${shelf})` : ''}` })
+      setShelfMap(prev => { const n = { ...prev }; delete n[bag.id]; return n })
       load()
     } catch (e) { setMsg({ type: 'err', text: e.response?.data?.error || 'Hata' }) }
   }
@@ -207,14 +212,28 @@ export default function MachineView({ kioskApi, focusedBag, onConsumeFocus }) {
                   {b.machine_name ? `⚙ ${b.machine_name}` : '⚙ Makine'}{ts.label ? ` · ${ts.label}` : ''}
                 </div>
               </div>
-              <button onClick={() => washComplete(b)}
-                style={{
-                  padding: '8px 14px', borderRadius: 8, border: 'none',
-                  background: ts.expired ? '#b45309' : '#15803d', color: '#fff',
-                  fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap',
-                }}>
-                ✓ Yıkama Bitti
-              </button>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'stretch' }}>
+                {!b.needs_ironing && (
+                  <input
+                    value={shelfMap[b.id] || ''}
+                    onChange={e => setShelfMap(prev => ({ ...prev, [b.id]: e.target.value }))}
+                    placeholder="Raf (ops.)"
+                    style={{
+                      width: 100, boxSizing: 'border-box', background: '#0f172a',
+                      border: '1px solid #334155', borderRadius: 6, padding: '5px 8px',
+                      color: '#f1f5f9', fontSize: 11, outline: 'none',
+                    }}
+                  />
+                )}
+                <button onClick={() => washComplete(b)}
+                  style={{
+                    padding: '8px 14px', borderRadius: 8, border: 'none',
+                    background: ts.expired ? '#b45309' : '#15803d', color: '#fff',
+                    fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap',
+                  }}>
+                  ✓ Yıkama Bitti
+                </button>
+              </div>
             </div>
           )
         })}

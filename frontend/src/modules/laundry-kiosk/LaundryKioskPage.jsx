@@ -10,6 +10,7 @@ import RoomsView from './RoomsView.jsx'
 import MachineView from './MachineView.jsx'
 import { blockNeedsSignature } from './constants.js'
 import { BLOCKS_BY_TYPE, BLOCK_BY_NAME } from '../../shared/blocks.js'
+import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 
 const TABS = [
   { key: 'entry',   icon: '🧺', label: 'Giriş' },
@@ -350,6 +351,7 @@ function IroningView({ kioskApi, focusedBag, onConsumeFocus }) {
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(false)
   const [error, setError] = useState('')
+  const [shelf, setShelf] = useState('')
 
   async function load() {
     setLoading(true)
@@ -376,6 +378,7 @@ function IroningView({ kioskApi, focusedBag, onConsumeFocus }) {
     setSelectedBag(bag)
     setError('')
     setTicked({})
+    setShelf('')
     try {
       const parsed = bag.garments_json ? JSON.parse(bag.garments_json) : []
       setGarments(parsed)
@@ -392,10 +395,13 @@ function IroningView({ kioskApi, focusedBag, onConsumeFocus }) {
     if (!selectedBag || !allTicked) return
     setError('')
     try {
-      await kioskApi.post(`/self-service/laundry-kiosk/bags/${selectedBag.id}/ironing-complete`, {})
+      await kioskApi.post(`/self-service/laundry-kiosk/bags/${selectedBag.id}/ironing-complete`, {
+        shelf_location: shelf.trim() || undefined,
+      })
       setSuccess(true)
       setBags(prev => prev.filter(b => b.id !== selectedBag.id))
       setSelectedBag(null)
+      setShelf('')
       setTimeout(() => setSuccess(false), 2000)
     } catch (e) { setError(e.response?.data?.error || 'Hata') }
   }
@@ -454,13 +460,19 @@ function IroningView({ kioskApi, focusedBag, onConsumeFocus }) {
             variant="ironing"
           />
 
+          <div>
+            <label style={lbl}>Raf Konumu (opsiyonel — teslimde bulmayı kolaylaştırır)</label>
+            <input value={shelf} onChange={e => setShelf(e.target.value)}
+              placeholder="ör. A-3, sol üst…" style={input} />
+          </div>
+
           <button onClick={complete}
             disabled={garments.length > 0 && !allTicked}
             style={{
               ...btn(garments.length > 0 && !allTicked ? '#1e293b' : '#15803d', garments.length > 0 && !allTicked ? '#475569' : '#fff'),
               padding: 14, fontSize: 14,
             }}>
-            ✓ Ütü Tamamla — Hazıra Al
+            ✓ Ütü Tamamla — Hazıra Al{shelf.trim() ? ` (📍 ${shelf.trim()})` : ''}
             {garments.length > 0 && !allTicked ? ` (${garments.length}/${garments.length} gerekli)` : ''}
           </button>
         </>
@@ -564,6 +576,22 @@ function DeliverView({ kioskApi, focusedBag, onConsumeFocus }) {
     } catch (e) { setError(e.response?.data?.error || 'Hata') }
   }
 
+  // Teslimde torba fiziken bulunamadıysa — kayıp akışı (vardiya amiri bilgilenir)
+  async function markLost() {
+    if (!selectedBag) return
+    const ok = await confirmDialog({
+      title: 'Kayıp İşaretle',
+      body: `${selectedBag.bag_no || `#${selectedBag.id}`} (${selectedBag.intake_name || 'kişisiz'}) KAYIP olarak işaretlenecek ve vardiya amirine bildirilecek. Onayla?`,
+    })
+    if (!ok) return
+    setError('')
+    try {
+      await kioskApi.post(`/self-service/laundry-kiosk/bags/${selectedBag.id}/lost`, { notes: 'Kiosk: teslimde rafta bulunamadı' })
+      setSelectedBag(null)
+      setBags(prev => prev.filter(b => b.id !== selectedBag.id))
+    } catch (e) { setError(e.response?.data?.error || 'Hata') }
+  }
+
   // Odanın TÜM hazır torbaları — tek isim + tek imza ile hepsi kapanır
   async function deliverAll() {
     setError('')
@@ -662,20 +690,47 @@ function DeliverView({ kioskApi, focusedBag, onConsumeFocus }) {
           <label style={lbl}>Torba {effectiveBlock && roomNo ? `(${effectiveBlock}-${roomNo} hazır)` : ''}</label>
           {bags.length === 0
             ? <div style={{ color: '#475569', fontSize: 13 }}>Hazır torba bulunamadı</div>
-            : bags.map(b => (
-                <div key={b.id} onClick={() => setSelectedBag(b)}
-                  style={{
-                    background: '#1e293b', borderRadius: 10, padding: '10px 14px', marginBottom: 6, cursor: 'pointer',
-                    border: `2px solid ${selectedBag?.id === b.id ? '#3b82f6' : '#334155'}`,
-                  }}>
-                  <div style={{ fontSize: 11, color: '#38bdf8', fontFamily: 'monospace' }}>{b.bag_no || `#${b.id}`}</div>
-                  <div style={{ color: '#e2e8f0', fontSize: 13, fontWeight: 600 }}>
-                    {b.item_count} parça{b.intake_name ? ` · ${b.intake_name}` : ''}
-                    {b.is_premium ? ' · 🟣 Premium' : ' · ⚪ Regular'}
+            : (() => {
+                // Aynı odada birden çok kişi torba verir — kişiye göre grupla,
+                // kimin kaç torbası/filesi olduğu net görünsün
+                const byPerson = {}
+                for (const b of bags) {
+                  const k = b.intake_name || 'Kişisiz'
+                  if (!byPerson[k]) byPerson[k] = []
+                  byPerson[k].push(b)
+                }
+                return Object.entries(byPerson).map(([person, personBags]) => (
+                  <div key={person} style={{ marginBottom: 8 }}>
+                    <div style={{ fontSize: 10, color: '#94a3b8', letterSpacing: 1, marginBottom: 4 }}>
+                      👤 {person.toUpperCase()} · {personBags.length} TORBA
+                    </div>
+                    {personBags.map(b => (
+                      <div key={b.id} onClick={() => setSelectedBag(b)}
+                        style={{
+                          background: '#1e293b', borderRadius: 10, padding: '10px 14px', marginBottom: 6, cursor: 'pointer',
+                          border: `2px solid ${selectedBag?.id === b.id ? '#3b82f6' : '#334155'}`,
+                        }}>
+                        <div style={{ fontSize: 11, color: '#38bdf8', fontFamily: 'monospace' }}>{b.bag_no || `#${b.id}`}</div>
+                        <div style={{ color: '#e2e8f0', fontSize: 13, fontWeight: 600 }}>
+                          {b.item_count} parça
+                          {b.is_premium ? ' · 🟣 Premium' : ' · ⚪ Regular'}
+                          {b.shelf_location ? <span style={{ color: '#4ade80' }}> · 📍 {b.shelf_location}</span> : ''}
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                </div>
-              ))
+                ))
+              })()
           }
+          {selectedBag && (
+            <button type="button" onClick={markLost}
+              style={{
+                background: 'transparent', border: '1px dashed #7f1d1d', borderRadius: 8,
+                color: '#f87171', fontSize: 11, padding: '6px 12px', cursor: 'pointer', marginTop: 2,
+              }}>
+              ⚠ {selectedBag.bag_no || `#${selectedBag.id}`} bulunamadı — Kayıp İşaretle
+            </button>
+          )}
         </div>
       )}
 

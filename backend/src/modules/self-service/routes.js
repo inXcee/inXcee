@@ -6,7 +6,7 @@ import { changeKioskPin } from '../../shared/auth/service.js'
 import { validate } from '../../shared/middleware/validate.js'
 import { maintenanceSchema, feedbackSchema } from './schemas.js'
 import { insertItemQuery, updateItemStatusQuery, listMachinesQuery, collectItemQuery, setBagNoQuery, getRoomLaundryHistoryQuery, getRoomLaundrySummaryQuery, getBlockRoomActiveCountsQuery } from '../laundry/queries.js'
-import { advanceItemService, batchAssignService } from '../laundry/service.js'
+import { advanceItemService, batchAssignService, lostItemService, deleteItemService } from '../laundry/service.js'
 import { logger } from '../../shared/logger.js'
 
 export const selfServiceRouter = Router()
@@ -337,7 +337,8 @@ selfServiceRouter.get('/laundry-kiosk/bags', requireAvsKiosk, (req, res) => {
   try {
     const db = getDB()
     let q = `SELECT li.id, li.bag_no, li.status, li.item_count, li.urgent, li.is_premium, li.needs_ironing,
-                    li.created_at, li.intake_name, li.notes, li.garments_json, r.block, r.room_no,
+                    li.created_at, li.updated_at, li.intake_name, li.notes, li.garments_json, li.shelf_location,
+                    r.block, r.room_no,
                     li.machine_id, lm.name AS machine_name, lm.timer_end AS machine_timer_end
              FROM laundry_items li JOIN rooms r ON r.id = li.room_id
              LEFT JOIN laundry_machines lm ON lm.id = li.machine_id WHERE 1=1`
@@ -422,10 +423,40 @@ selfServiceRouter.post('/laundry-kiosk/bags/:id/ironing-complete', requireAvsKio
     const item = db.prepare('SELECT id, status FROM laundry_items WHERE id=?').get(Number(req.params.id))
     if (!item) return res.status(404).json({ error: 'Torba bulunamadı' })
     if (item.status !== 'ironing') return res.status(400).json({ error: 'Torba ironing durumunda değil' })
-    db.prepare("UPDATE laundry_items SET status='ready', last_modified_worker_id=?, last_modified_at=datetime('now'), updated_at=datetime('now') WHERE id=?")
-      .run(req.user.workerId || null, item.id)
+    const shelf = (req.body?.shelf_location || '').trim() || null
+    db.prepare("UPDATE laundry_items SET status='ready', shelf_location=?, last_modified_worker_id=?, last_modified_at=datetime('now'), updated_at=datetime('now') WHERE id=?")
+      .run(shelf, req.user.workerId || null, item.id)
     res.json({ ok: true })
   } catch (e) { res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// Yanlış girişi telafi — sadece kirli (henüz işlenmemiş) ve 15 dk'dan yeni
+// torba kiosktan iptal edilebilir; sonrası yönetici işi.
+selfServiceRouter.post('/laundry-kiosk/bags/:id/void', requireAvsKiosk, (req, res) => {
+  try {
+    const db = getDB()
+    const item = db.prepare(`
+      SELECT id, status, (julianday('now') - julianday(created_at)) * 24 * 60 AS age_min
+      FROM laundry_items WHERE id=?
+    `).get(Number(req.params.id))
+    if (!item) return res.status(404).json({ error: 'Torba bulunamadı' })
+    if (item.status !== 'dirty') return res.status(400).json({ error: 'Sadece henüz işlenmemiş (kirli) torba iptal edilebilir' })
+    if (item.age_min > 15) return res.status(400).json({ error: 'İptal süresi doldu (15 dk) — yöneticiye başvurun' })
+    deleteItemService(item.id, null)
+    res.json({ ok: true })
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+// Kayıp işaretleme — ana modülün lostItemService'i (history + vardiya amiri
+// bildirimi + makine serbest bırakma dahil)
+selfServiceRouter.post('/laundry-kiosk/bags/:id/lost', requireAvsKiosk, (req, res) => {
+  try {
+    const notes = (req.body?.notes || '').trim() || 'Kiosk: teslimde bulunamadı'
+    lostItemService(Number(req.params.id), { notes }, null)
+    getDB().prepare("UPDATE laundry_items SET last_modified_worker_id=?, last_modified_at=datetime('now') WHERE id=?")
+      .run(req.user.workerId || null, Number(req.params.id))
+    res.json({ ok: true })
+  } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
 selfServiceRouter.post('/laundry-kiosk/bags/:id/deliver', requireAvsKiosk, (req, res) => {
@@ -592,7 +623,8 @@ selfServiceRouter.post('/laundry-kiosk/bags/:id/wash-complete', requireAvsKiosk,
     const item = db.prepare('SELECT id, status FROM laundry_items WHERE id=?').get(Number(req.params.id))
     if (!item) return res.status(404).json({ error: 'Torba bulunamadı' })
     if (item.status !== 'washing') return res.status(400).json({ error: 'Torba makinede değil' })
-    const updated = advanceItemService(item.id, {}, null)
+    const shelf = (req.body?.shelf_location || '').trim() || null
+    const updated = advanceItemService(item.id, { shelf_location: shelf }, null)
     db.prepare("UPDATE laundry_items SET last_modified_worker_id=?, last_modified_at=datetime('now') WHERE id=?")
       .run(req.user.workerId || null, item.id)
     res.json({ ok: true, next_status: updated.status })

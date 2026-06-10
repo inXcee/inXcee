@@ -167,6 +167,20 @@ function RoomDetailPanel({ kioskApi, block, room_no, onClose, onPickRoom }) {
   const summary = data?.summary || {}
   const items = data?.items || []
 
+  // Kişi bazlı aktif kırılım — aynı odada birden çok kişi torba verir;
+  // "bu odada kimin kaç torbası içeride" tek bakışta görünsün
+  const activeByPerson = (() => {
+    const grouped = {}
+    for (const it of items) {
+      if (it.status === 'delivered' || it.status === 'lost') continue
+      const name = it.intake_name || 'Kişisiz'
+      if (!grouped[name]) grouped[name] = { name, count: 0, ready: 0 }
+      grouped[name].count += 1
+      if (it.status === 'ready') grouped[name].ready += 1
+    }
+    return Object.values(grouped).sort((a, b) => b.count - a.count)
+  })()
+
   return (
     <>
       {/* Backdrop */}
@@ -218,6 +232,26 @@ function RoomDetailPanel({ kioskApi, block, room_no, onClose, onPickRoom }) {
               </div>
             ))}
           </div>
+
+          {/* Kişi bazlı aktif kırılım */}
+          {activeByPerson.length > 0 && (
+            <div style={{
+              background: '#0f172a', border: '1px solid #1e293b', borderRadius: 10,
+              padding: '10px 14px', marginBottom: 14,
+            }}>
+              <div style={{ fontSize: 9, color: '#64748b', letterSpacing: 1.5, marginBottom: 6 }}>
+                İÇERİDE — KİŞİ BAZLI
+              </div>
+              {activeByPerson.map(p => (
+                <div key={p.name} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#e2e8f0', padding: '3px 0' }}>
+                  <span style={{ fontWeight: 600 }}>👤 {p.name}</span>
+                  <span style={{ color: '#94a3b8' }}>
+                    {p.count} torba{p.ready > 0 ? <span style={{ color: '#4ade80' }}> · {p.ready} hazır ✓</span> : ''}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* Aktif sayı + büyük yeni-giriş butonu */}
           <button onClick={onPickRoom}

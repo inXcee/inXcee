@@ -451,6 +451,73 @@ describe('Laundry Kiosk makine akışı', () => {
     expect(r400.status).toBe(400)
   })
 
+  it('wash-complete shelf_location yazar (ready yolunda)', async () => {
+    const bagId = await createDirtyBag()
+    await request(app)
+      .put(`/api/self-service/laundry-kiosk/machines/${machineId}/assign`)
+      .set('Authorization', `Bearer ${avsToken}`)
+      .send({ item_id: bagId })
+    const res = await request(app)
+      .post(`/api/self-service/laundry-kiosk/bags/${bagId}/wash-complete`)
+      .set('Authorization', `Bearer ${avsToken}`)
+      .send({ shelf_location: 'A-3' })
+    expect(res.status).toBe(200)
+    const item = getDB().prepare('SELECT status, shelf_location FROM laundry_items WHERE id=?').get(bagId)
+    expect(item).toMatchObject({ status: 'ready', shelf_location: 'A-3' })
+  })
+
+  it('ironing-complete shelf_location yazar', async () => {
+    const bagId = await createDirtyBag()
+    getDB().prepare("UPDATE laundry_items SET status='ironing' WHERE id=?").run(bagId)
+    const res = await request(app)
+      .post(`/api/self-service/laundry-kiosk/bags/${bagId}/ironing-complete`)
+      .set('Authorization', `Bearer ${avsToken}`)
+      .send({ shelf_location: 'B-1' })
+    expect(res.status).toBe(200)
+    const item = getDB().prepare('SELECT status, shelf_location FROM laundry_items WHERE id=?').get(bagId)
+    expect(item).toMatchObject({ status: 'ready', shelf_location: 'B-1' })
+  })
+
+  it('void: taze kirli torba silinir; işlenmişe 400', async () => {
+    const bagId = await createDirtyBag()
+    const ok = await request(app)
+      .post(`/api/self-service/laundry-kiosk/bags/${bagId}/void`)
+      .set('Authorization', `Bearer ${avsToken}`)
+    expect(ok.status).toBe(200)
+    expect(getDB().prepare('SELECT id FROM laundry_items WHERE id=?').get(bagId)).toBeUndefined()
+
+    const bagId2 = await createDirtyBag()
+    getDB().prepare("UPDATE laundry_items SET status='ready' WHERE id=?").run(bagId2)
+    const bad = await request(app)
+      .post(`/api/self-service/laundry-kiosk/bags/${bagId2}/void`)
+      .set('Authorization', `Bearer ${avsToken}`)
+    expect(bad.status).toBe(400)
+  })
+
+  it('void: 15 dk geçmiş torba 400 döner', async () => {
+    const bagId = await createDirtyBag()
+    getDB().prepare("UPDATE laundry_items SET created_at=datetime('now','-20 minutes') WHERE id=?").run(bagId)
+    const res = await request(app)
+      .post(`/api/self-service/laundry-kiosk/bags/${bagId}/void`)
+      .set('Authorization', `Bearer ${avsToken}`)
+    expect(res.status).toBe(400)
+    expect(res.body.error).toMatch(/süresi doldu/)
+  })
+
+  it('lost: torba kayıp işaretlenir, history + not düşer', async () => {
+    const bagId = await createDirtyBag()
+    getDB().prepare("UPDATE laundry_items SET status='ready' WHERE id=?").run(bagId)
+    const res = await request(app)
+      .post(`/api/self-service/laundry-kiosk/bags/${bagId}/lost`)
+      .set('Authorization', `Bearer ${avsToken}`)
+      .send({ notes: 'Rafta bulunamadı' })
+    expect(res.status).toBe(200)
+    const db = getDB()
+    expect(db.prepare('SELECT status FROM laundry_items WHERE id=?').get(bagId).status).toBe('lost')
+    const hist = db.prepare("SELECT notes FROM laundry_history WHERE item_id=? AND to_status='lost'").get(bagId)
+    expect(hist.notes).toBe('Rafta bulunamadı')
+  })
+
   it('today-summary dört sayıyı döndürür', async () => {
     await createDirtyBag()
     const res = await request(app)
