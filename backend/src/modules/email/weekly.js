@@ -24,7 +24,9 @@ export function buildWeeklyStats() {
     checkins: count(`SELECT COUNT(*) c FROM room_assignments WHERE DATE(assigned_at) BETWEEN ? AND ?`, r),
     checkouts: count(`SELECT COUNT(*) c FROM room_assignments WHERE DATE(check_out_at) BETWEEN ? AND ?`, r),
     newResidents: count(`SELECT COUNT(*) c FROM personnel WHERE DATE(created_at) BETWEEN ? AND ?`, r),
-    laundryDelivered: count(`SELECT COUNT(*) c FROM laundry_items WHERE status='delivered' AND DATE(updated_at) BETWEEN ? AND ?`, r),
+    laundryNew: count(`SELECT COUNT(*) c FROM laundry_items WHERE DATE(created_at) BETWEEN ? AND ?`, r),
+    laundryDelivered: count(`SELECT COUNT(*) c FROM laundry_deliveries WHERE DATE(delivered_at) BETWEEN ? AND ?`, r),
+    laundryLost: count(`SELECT COUNT(*) c FROM laundry_history WHERE to_status='lost' AND DATE(created_at) BETWEEN ? AND ?`, r),
     visitors: count(`SELECT COUNT(*) c FROM visitors WHERE DATE(check_in_at) BETWEEN ? AND ?`, r),
     maintenanceNew: count(`SELECT COUNT(*) c FROM maintenance_requests WHERE DATE(opened_at) BETWEEN ? AND ?`, r),
   })
@@ -37,6 +39,13 @@ export function buildWeeklyStats() {
     ...cur,
     prev,
     laundryPending: db.prepare(`SELECT COUNT(*) c FROM laundry_items WHERE status NOT IN ('delivered','lost')`).get()?.c ?? 0,
+    // Hafta içi teslimlerin ortalama süresi (giriş→teslim, saat) — deliveries
+    // tablosundan; 014 backfill sonrası kiosk teslimleri de dahil
+    laundryAvgHours: db.prepare(`
+      SELECT ROUND(AVG((julianday(ld.delivered_at) - julianday(li.created_at)) * 24), 1) h
+      FROM laundry_deliveries ld JOIN laundry_items li ON li.id = ld.item_id
+      WHERE DATE(ld.delivered_at) BETWEEN ? AND ?
+    `).get(range.start, range.end)?.h ?? null,
     occupancy: getOccupancyReport(),     // anlık doluluk (blok bazlı + totals)
     maintenance: getMaintenanceReport(), // son 7 gün open/closed/overdue (rapor zaten 7 günlük)
   }
@@ -111,7 +120,10 @@ export function buildWeeklyReportHtml() {
 
 <h2>Çamaşırhane — Hafta</h2>
 <div class="kpi-grid">
+  ${kpi(s.laundryNew, 'Yeni Torba', delta(s.laundryNew, s.prev.laundryNew))}
   ${kpi(s.laundryDelivered, 'Teslim Edilen', delta(s.laundryDelivered, s.prev.laundryDelivered))}
+  ${kpi(`<span style="color:${s.laundryLost > 0 ? '#dc2626' : '#0369a1'}">${s.laundryLost}</span>`, 'Kayıp', delta(s.laundryLost, s.prev.laundryLost))}
+  ${kpi(s.laundryAvgHours != null ? s.laundryAvgHours + ' sa' : '—', 'Ort. Teslim Süresi')}
   ${kpi(s.laundryPending, 'Şu An Bekleyen')}
 </div>
 
