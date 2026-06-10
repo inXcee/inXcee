@@ -61,10 +61,28 @@ export default function DashboardView({ kioskApi, onAction }) {
     }
   }
 
+  async function washComplete(bag) {
+    const ok = await confirmDialog({
+      title: 'Yıkama Bitti',
+      body: `${bag.bag_no || `#${bag.id}`} yıkamadan çıkarılacak${bag.needs_ironing ? ' ve ütüye gönderilecek' : ' ve hazıra alınacak'}. Onayla?`,
+    })
+    if (!ok) return
+    try {
+      await kioskApi.post(`/self-service/laundry-kiosk/bags/${bag.id}/wash-complete`, {})
+      load()
+    } catch (e) {
+      useToastStore.getState().addToast(e.response?.data?.error || 'Hata', 'error')
+    }
+  }
+
   function actionButton(bag) {
     switch (bag.status) {
       case 'pending_collection':
         return <button onClick={() => collect(bag)} style={miniBtn('#15803d')}>Topla →</button>
+      case 'dirty':
+        return <button onClick={() => onAction('machine', bag)} style={miniBtn('#1d4ed8')}>Makineye →</button>
+      case 'washing':
+        return <button onClick={() => washComplete(bag)} style={miniBtn('#0e7490')}>Bitti →</button>
       case 'ironing':
         return <button onClick={() => onAction('iron', bag)} style={miniBtn('#7c3aed')}>Tamamla →</button>
       case 'ready':

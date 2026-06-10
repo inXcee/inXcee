@@ -302,6 +302,116 @@ describe('Laundry Kiosk endpoints', () => {
   })
 })
 
+describe('Laundry Kiosk makine akışı', () => {
+  let avsToken, machineId
+
+  async function createDirtyBag(extra = {}) {
+    const res = await request(app)
+      .post('/api/self-service/laundry-kiosk/bag')
+      .set('Authorization', `Bearer ${avsToken}`)
+      .send({ block: 'M1', room_no: '101', item_count: 2, ...extra })
+    expect(res.status).toBe(201)
+    return res.body.id
+  }
+
+  beforeAll(async () => {
+    const adminToken = (await request(app).post('/api/auth/login').send({ username: 'mudur', password: 'admin123' })).body.token
+    const w = (await request(app).post('/api/avs-workers')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ full_name: 'Makine Test Worker' })).body
+    await request(app).put(`/api/avs-workers/${w.id}/pin`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ new_pin: '0000' })
+    avsToken = (await request(app).post('/api/auth/avs-login').send({ worker_id: w.id, pin: '0000' })).body.token
+    const m = await request(app).post('/api/laundry/machines')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ name: 'Kiosk Test Makine', type: 'washer', capacity_kg: 10 })
+    machineId = m.body.id
+    expect(machineId).toBeTruthy()
+  })
+
+  it('assign: dirty torba makineye yüklenir — timer kurulur, makine running olur', async () => {
+    const bagId = await createDirtyBag()
+    const res = await request(app)
+      .put(`/api/self-service/laundry-kiosk/machines/${machineId}/assign`)
+      .set('Authorization', `Bearer ${avsToken}`)
+      .send({ item_id: bagId, timer_minutes: 45 })
+    expect(res.status).toBe(200)
+    const db = getDB()
+    const item = db.prepare('SELECT status, machine_id FROM laundry_items WHERE id=?').get(bagId)
+    expect(item.status).toBe('washing')
+    expect(item.machine_id).toBe(machineId)
+    const machine = db.prepare('SELECT status, timer_end FROM laundry_machines WHERE id=?').get(machineId)
+    expect(machine.status).toBe('running')
+    expect(machine.timer_end).toBeTruthy()
+    // state machine'den geçtiği için history kaydı da düşmeli
+    const hist = db.prepare("SELECT COUNT(*) c FROM laundry_history WHERE item_id=? AND to_status='washing'").get(bagId)
+    expect(hist.c).toBe(1)
+  })
+
+  it('assign: dirty olmayan torba 400 döner', async () => {
+    const bagId = await createDirtyBag()
+    getDB().prepare("UPDATE laundry_items SET status='ready' WHERE id=?").run(bagId)
+    const res = await request(app)
+      .put(`/api/self-service/laundry-kiosk/machines/${machineId}/assign`)
+      .set('Authorization', `Bearer ${avsToken}`)
+      .send({ item_id: bagId })
+    expect(res.status).toBe(400)
+  })
+
+  it('wash-complete: needs_ironing=0 → ready', async () => {
+    const bagId = await createDirtyBag()
+    await request(app)
+      .put(`/api/self-service/laundry-kiosk/machines/${machineId}/assign`)
+      .set('Authorization', `Bearer ${avsToken}`)
+      .send({ item_id: bagId })
+    const res = await request(app)
+      .post(`/api/self-service/laundry-kiosk/bags/${bagId}/wash-complete`)
+      .set('Authorization', `Bearer ${avsToken}`)
+    expect(res.status).toBe(200)
+    expect(res.body.next_status).toBe('ready')
+    const item = getDB().prepare('SELECT status FROM laundry_items WHERE id=?').get(bagId)
+    expect(item.status).toBe('ready')
+  })
+
+  it('wash-complete: needs_ironing=1 → ironing', async () => {
+    const bagId = await createDirtyBag()
+    getDB().prepare('UPDATE laundry_items SET needs_ironing=1 WHERE id=?').run(bagId)
+    await request(app)
+      .put(`/api/self-service/laundry-kiosk/machines/${machineId}/assign`)
+      .set('Authorization', `Bearer ${avsToken}`)
+      .send({ item_id: bagId })
+    const res = await request(app)
+      .post(`/api/self-service/laundry-kiosk/bags/${bagId}/wash-complete`)
+      .set('Authorization', `Bearer ${avsToken}`)
+    expect(res.status).toBe(200)
+    expect(res.body.next_status).toBe('ironing')
+  })
+
+  it('wash-complete: makinede olmayan torba 400 döner', async () => {
+    const bagId = await createDirtyBag()
+    const res = await request(app)
+      .post(`/api/self-service/laundry-kiosk/bags/${bagId}/wash-complete`)
+      .set('Authorization', `Bearer ${avsToken}`)
+    expect(res.status).toBe(400)
+  })
+
+  it('bags listesi washing torbada machine_name döndürür', async () => {
+    const bagId = await createDirtyBag()
+    await request(app)
+      .put(`/api/self-service/laundry-kiosk/machines/${machineId}/assign`)
+      .set('Authorization', `Bearer ${avsToken}`)
+      .send({ item_id: bagId })
+    const res = await request(app)
+      .get('/api/self-service/laundry-kiosk/bags?status=washing')
+      .set('Authorization', `Bearer ${avsToken}`)
+    expect(res.status).toBe(200)
+    const bag = res.body.find(b => b.id === bagId)
+    expect(bag).toBeTruthy()
+    expect(bag.machine_name).toBe('Kiosk Test Makine')
+  })
+})
+
 // ── H2 M1/M2/M3 ──
 describe('Mobile Self-Service (H2)', () => {
   let kioskToken

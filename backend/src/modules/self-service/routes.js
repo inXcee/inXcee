@@ -5,7 +5,8 @@ import { createRequest } from '../maintenance/queries.js'
 import { changeKioskPin } from '../../shared/auth/service.js'
 import { validate } from '../../shared/middleware/validate.js'
 import { maintenanceSchema, feedbackSchema } from './schemas.js'
-import { insertItemQuery, updateItemStatusQuery, listMachinesQuery, addToQueueQuery, collectItemQuery, setBagNoQuery, getRoomLaundryHistoryQuery, getRoomLaundrySummaryQuery, getBlockRoomActiveCountsQuery } from '../laundry/queries.js'
+import { insertItemQuery, updateItemStatusQuery, listMachinesQuery, collectItemQuery, setBagNoQuery, getRoomLaundryHistoryQuery, getRoomLaundrySummaryQuery, getBlockRoomActiveCountsQuery } from '../laundry/queries.js'
+import { advanceItemService } from '../laundry/service.js'
 import { logger } from '../../shared/logger.js'
 
 export const selfServiceRouter = Router()
@@ -336,8 +337,10 @@ selfServiceRouter.get('/laundry-kiosk/bags', requireAvsKiosk, (req, res) => {
   try {
     const db = getDB()
     let q = `SELECT li.id, li.bag_no, li.status, li.item_count, li.urgent, li.is_premium, li.needs_ironing,
-                    li.created_at, li.intake_name, li.notes, li.garments_json, r.block, r.room_no
-             FROM laundry_items li JOIN rooms r ON r.id = li.room_id WHERE 1=1`
+                    li.created_at, li.intake_name, li.notes, li.garments_json, r.block, r.room_no,
+                    li.machine_id, lm.name AS machine_name, lm.timer_end AS machine_timer_end
+             FROM laundry_items li JOIN rooms r ON r.id = li.room_id
+             LEFT JOIN laundry_machines lm ON lm.id = li.machine_id WHERE 1=1`
     const params = []
     if (block)   { q += ' AND r.block=?';   params.push(block) }
     if (room_no) { q += ' AND r.room_no=?'; params.push(room_no) }
@@ -485,12 +488,37 @@ selfServiceRouter.get('/laundry-kiosk/machines', requireAvsKiosk, (req, res) => 
   catch (e) { res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
+// Makineye yükleme — ana modüldeki state machine'i kullanır (timer + deterjan
+// stok düşümü + history + queue temizliği ana akışla birebir aynı olsun diye).
 selfServiceRouter.put('/laundry-kiosk/machines/:id/assign', requireAvsKiosk, (req, res) => {
-  const { item_id } = req.body
+  const { item_id, timer_minutes } = req.body
   if (!item_id) return res.status(400).json({ error: 'item_id gerekli' })
   try {
-    addToQueueQuery({ item_id: Number(item_id), machine_id: Number(req.params.id) })
-    updateItemStatusQuery(Number(item_id), 'washing', { machine_id: Number(req.params.id) })
+    const db = getDB()
+    const item = db.prepare('SELECT id, status FROM laundry_items WHERE id=?').get(Number(item_id))
+    if (!item) return res.status(404).json({ error: 'Torba bulunamadı' })
+    if (item.status !== 'dirty') return res.status(400).json({ error: 'Torba kirli durumunda değil' })
+    advanceItemService(Number(item_id), {
+      machine_id: Number(req.params.id),
+      timer_minutes: timer_minutes ? Number(timer_minutes) : null,
+    }, null)
+    db.prepare("UPDATE laundry_items SET last_modified_worker_id=?, last_modified_at=datetime('now') WHERE id=?")
+      .run(req.user.workerId || null, Number(item_id))
     res.json({ ok: true })
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+// Yıkama bitti — needs_ironing'e göre ütüye ya da hazıra geçer; makine 'done'
+// olur, premium parçalar ve hazır bildirimi ana akıştaki gibi işler.
+selfServiceRouter.post('/laundry-kiosk/bags/:id/wash-complete', requireAvsKiosk, (req, res) => {
+  try {
+    const db = getDB()
+    const item = db.prepare('SELECT id, status FROM laundry_items WHERE id=?').get(Number(req.params.id))
+    if (!item) return res.status(404).json({ error: 'Torba bulunamadı' })
+    if (item.status !== 'washing') return res.status(400).json({ error: 'Torba makinede değil' })
+    const updated = advanceItemService(item.id, {}, null)
+    db.prepare("UPDATE laundry_items SET last_modified_worker_id=?, last_modified_at=datetime('now') WHERE id=?")
+      .run(req.user.workerId || null, item.id)
+    res.json({ ok: true, next_status: updated.status })
   } catch (e) { res.status(400).json({ error: e.message }) }
 })

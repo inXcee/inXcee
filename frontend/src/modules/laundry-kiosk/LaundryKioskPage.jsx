@@ -7,12 +7,14 @@ import GarmentChecklist from './GarmentChecklist.jsx'
 import EntryForm from './EntryForm.jsx'
 import DashboardView from './DashboardView.jsx'
 import RoomsView from './RoomsView.jsx'
+import MachineView from './MachineView.jsx'
 import { blockNeedsSignature } from './constants.js'
 import { BLOCKS_BY_TYPE, BLOCK_BY_NAME } from '../../shared/blocks.js'
 
 const TABS = [
   { key: 'entry',   icon: '🧺', label: 'Giriş' },
   { key: 'rooms',   icon: '🏠', label: 'Odalar' },
+  { key: 'machine', icon: '⚙️', label: 'Makine' },
   { key: 'ironing', icon: '🫧', label: 'Ütü' },
   { key: 'deliver', icon: '🚚', label: 'Teslim' },
   { key: 'status',  icon: '📋', label: 'Durum' },
@@ -280,10 +282,12 @@ export default function LaundryKioskPage() {
           {activeTab === 'entry'   && <EntryForm   kioskApi={kioskApi} focusedRoom={focusedRoom} onConsumeFocus={() => setFocusedRoom(null)} />}
           {activeTab === 'rooms'   && <RoomsView   kioskApi={kioskApi}
                                           onPickRoom={(room) => { setFocusedRoom(room); setActiveTab('entry') }} />}
+          {activeTab === 'machine' && <MachineView kioskApi={kioskApi} focusedBag={focusedBag} onConsumeFocus={() => setFocusedBag(null)} />}
           {activeTab === 'ironing' && <IroningView kioskApi={kioskApi} focusedBag={focusedBag} onConsumeFocus={() => setFocusedBag(null)} />}
           {activeTab === 'deliver' && <DeliverView kioskApi={kioskApi} focusedBag={focusedBag} onConsumeFocus={() => setFocusedBag(null)} />}
           {activeTab === 'status'  && <DashboardView kioskApi={kioskApi}
                                           onAction={(action, bag) => {
+                                            if (action === 'machine') { setFocusedBag(bag); setActiveTab('machine') }
                                             if (action === 'iron')    { setFocusedBag(bag); setActiveTab('ironing') }
                                             if (action === 'deliver') { setFocusedBag(bag); setActiveTab('deliver') }
                                           }} />}
@@ -707,69 +711,6 @@ function DeliverView({ kioskApi, focusedBag, onConsumeFocus }) {
         ✓ Teslim Et
         {parsedGarments.length > 0 && !allTicked ? ` (${parsedGarments.length} parça)` : ''}
       </button>
-    </div>
-  )
-}
-
-
-// ── Makineye Yükle ────────────────────────────────────────────────────────────
-function MachineView({ kioskApi, onDone }) {
-  const [machines, setMachines] = useState([])
-  const [bags, setBags] = useState([])
-  const [selectedBag, setSelectedBag] = useState(null)
-  const [success, setSuccess] = useState(false)
-  const [error, setError] = useState('')
-
-  useEffect(() => {
-    kioskApi.get('/self-service/laundry-kiosk/machines').then(r => setMachines(r.data)).catch(() => {})
-    kioskApi.get('/self-service/laundry-kiosk/bags?status=dirty').then(r => setBags(r.data)).catch(() => {})
-  }, [])
-
-  async function assign(machineId) {
-    if (!selectedBag) return setError('Önce bir torba seçin')
-    setError('')
-    try {
-      await kioskApi.put(`/self-service/laundry-kiosk/machines/${machineId}/assign`, { item_id: selectedBag.id })
-      setBags(bags => bags.filter(b => b.id !== selectedBag.id))
-      setSelectedBag(null); setSuccess(true); setTimeout(() => setSuccess(false), 2000)
-    } catch (e) { setError(e.response?.data?.error || 'Hata') }
-  }
-
-  return (
-    <div style={card}>
-      <h2 style={{ fontSize: 18, fontWeight: 600, color: '#cbd5e1', margin: 0 }}>⚙️ Makineye Yükle</h2>
-      {success && <div style={{ color: '#4ade80', fontSize: 13 }}>✓ Makineye atandı</div>}
-      {error && <div style={{ color: '#f87171', fontSize: 13 }}>{error}</div>}
-      <div>
-        <label style={lbl}>Torba Seç (Kirli)</label>
-        {bags.length === 0 && <div style={{ color: '#475569', fontSize: 13 }}>Kirli torba yok</div>}
-        {bags.map(b => (
-          <button key={b.id} type="button" onClick={() => setSelectedBag(b)}
-            style={{ ...btn(selectedBag?.id === b.id ? '#1d4ed8' : '#1e293b', selectedBag?.id === b.id ? '#fff' : '#94a3b8'), width: '100%', textAlign: 'left', marginBottom: 4 }}>
-            {b.bag_no ? `${b.bag_no} · ` : ''}{b.block} — {b.room_no} · {b.item_count} adet{b.intake_name ? ` · ${b.intake_name}` : ''}
-          </button>
-        ))}
-      </div>
-      {selectedBag && (
-        <div>
-          <label style={lbl}>Makine Seç</label>
-          {machines.map(m => {
-            let timerLabel = ''
-            if (m.timer_end) {
-              const remaining = Math.ceil((new Date(m.timer_end) - new Date()) / 60000)
-              timerLabel = remaining > 0 ? ` · ⏱ ${remaining}dk` : ' · ✓ Bitti'
-            }
-            return (
-              <button key={m.id} type="button" onClick={() => assign(m.id)}
-                style={{ ...btn('#1e293b', '#cbd5e1'), width: '100%', textAlign: 'left', marginBottom: 4 }}
-                onMouseEnter={e => e.currentTarget.style.background = '#164e63'}
-                onMouseLeave={e => e.currentTarget.style.background = '#1e293b'}>
-                {m.name} · {m.type === 'washer' ? '🫧 Çamaşır' : '💨 Kurutucu'} · {m.active_items || 0} aktif{timerLabel}
-              </button>
-            )
-          })}
-        </div>
-      )}
     </div>
   )
 }
