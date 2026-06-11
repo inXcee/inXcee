@@ -16,29 +16,33 @@ export function getRoomSummary(days = 7) {
       r.capacity,
       r.active_beds,
       COALESCE(ct_done.cnt, 0)    as cleaned_count,
+      COALESCE(ct_done.photo_cnt, 0) as photo_count,
+      ct_done.last_cleaned        as last_cleaned_at,
       COALESCE(ct_skip.cnt, 0)    as skipped_count,
       COALESCE(ct_total.cnt, 0)   as total_tasks,
       COALESCE(mr_total.cnt, 0)   as fault_count,
       COALESCE(mr_open.cnt, 0)    as open_faults
     FROM rooms r
     LEFT JOIN (
-      SELECT block, area, COUNT(*) as cnt
+      SELECT block, area, COUNT(*) as cnt,
+             SUM(CASE WHEN photo_url IS NOT NULL THEN 1 ELSE 0 END) as photo_cnt,
+             MAX(datetime(completed_at, 'localtime')) as last_cleaned
       FROM cleaning_tasks
       WHERE completed_at IS NOT NULL
-        AND DATE(scheduled_at) >= DATE('now', ?)
+        AND DATE(scheduled_at) >= DATE('now', 'localtime', ?)
       GROUP BY block, area
     ) ct_done ON ct_done.area = (r.block || ' Oda ' || r.room_no)
     LEFT JOIN (
       SELECT block, area, COUNT(*) as cnt
       FROM cleaning_tasks
       WHERE skipped = 1
-        AND DATE(scheduled_at) >= DATE('now', ?)
+        AND DATE(scheduled_at) >= DATE('now', 'localtime', ?)
       GROUP BY block, area
     ) ct_skip ON ct_skip.area = (r.block || ' Oda ' || r.room_no)
     LEFT JOIN (
       SELECT block, area, COUNT(*) as cnt
       FROM cleaning_tasks
-      WHERE DATE(scheduled_at) >= DATE('now', ?)
+      WHERE DATE(scheduled_at) >= DATE('now', 'localtime', ?)
       GROUP BY block, area
     ) ct_total ON ct_total.area = (r.block || ' Oda ' || r.room_no)
     LEFT JOIN (
@@ -70,7 +74,7 @@ export function getRoomTimeline(block, roomNo, days = 7) {
 
   const areaName = `${block} Oda ${roomNo}`
 
-  // Temizlik kayıtları
+  // Temizlik kayıtları — foto kanıtı + kiosk personeli (staff) dahil
   const cleanings = db.prepare(`
     SELECT
       ct.id,
@@ -81,11 +85,15 @@ export function getRoomTimeline(block, roomNo, days = 7) {
       ct.skipped,
       ct.skip_reason,
       ct.checklist,
-      u.full_name as completed_by
+      ct.photo_url,
+      ct.verified_by_qr,
+      u.full_name as completed_by,
+      w.full_name as worker_name
     FROM cleaning_tasks ct
     LEFT JOIN users u ON u.id = ct.assigned_to
+    LEFT JOIN staff w ON w.id = ct.completed_by_worker_id
     WHERE ct.area = ?
-      AND DATE(ct.scheduled_at) >= DATE('now', ?)
+      AND DATE(ct.scheduled_at) >= DATE('now', 'localtime', ?)
     ORDER BY ct.scheduled_at DESC
   `).all(areaName, `-${days} days`)
 

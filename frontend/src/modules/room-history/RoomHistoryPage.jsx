@@ -19,8 +19,31 @@ const PRIORITY_LABELS = { high: 'YÜKSEK', medium: 'ORTA', low: 'DÜŞÜK' }
 const PRIORITY_COLORS = { high: 'var(--red)', medium: 'var(--accent)', low: 'var(--blue)' }
 
 // ── Summary Table ──────────────────────────────────────────────────────────
+// Takip hızlı filtreleri — sorunlu odaları tek dokunuşla ayıkla
+const QUICK_FILTERS = [
+  { id: 'all',       label: 'TÜMÜ',           fn: () => true },
+  { id: 'openfault', label: '⚠ AÇIK ARIZA',   fn: r => r.open_faults > 0 },
+  { id: 'skipped',   label: '⊘ ATLANMIŞ',     fn: r => r.skipped_count > 0 },
+  { id: 'uncleaned', label: '✗ TEMİZLİK YOK', fn: r => r.cleaned_count === 0 },
+  { id: 'photo',     label: '📷 FOTO KANITLI', fn: r => r.photo_count > 0 },
+]
+
+function fmtLastCleaned(s) {
+  if (!s) return null
+  const d = new Date(s.replace(' ', 'T'))
+  if (isNaN(d)) return null
+  return {
+    text: d.toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit' }) + ' ' +
+          d.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
+    isToday: d.toDateString() === new Date().toDateString(),
+  }
+}
+
 function SummaryTable({ rooms, selectedBlock, onSelectRoom }) {
-  const filtered = selectedBlock === 'ALL' ? rooms : rooms.filter(r => r.block === selectedBlock)
+  const [quickFilter, setQuickFilter] = useState('all')
+  const blockFiltered = selectedBlock === 'ALL' ? rooms : rooms.filter(r => r.block === selectedBlock)
+  const activeFn = QUICK_FILTERS.find(f => f.id === quickFilter)?.fn || (() => true)
+  const filtered = blockFiltered.filter(activeFn)
 
   const totals = {
     total_tasks: filtered.reduce((s, r) => s + r.total_tasks, 0),
@@ -28,6 +51,7 @@ function SummaryTable({ rooms, selectedBlock, onSelectRoom }) {
     skipped: filtered.reduce((s, r) => s + r.skipped_count, 0),
     faults: filtered.reduce((s, r) => s + r.fault_count, 0),
     open_faults: filtered.reduce((s, r) => s + r.open_faults, 0),
+    photos: filtered.reduce((s, r) => s + (r.photo_count || 0), 0),
   }
 
   const kpis = [
@@ -36,12 +60,13 @@ function SummaryTable({ rooms, selectedBlock, onSelectRoom }) {
     { label: 'ATLANDI', value: totals.skipped, color: 'var(--accent)' },
     { label: 'ARIZA', value: totals.faults, color: 'var(--red)' },
     { label: 'AÇIK ARIZA', value: totals.open_faults, color: totals.open_faults > 0 ? 'var(--red)' : 'var(--text3)' },
+    { label: 'FOTO KANIT', value: totals.photos, color: totals.photos > 0 ? 'var(--blue)' : 'var(--text3)' },
   ]
 
   return (
     <>
       {/* KPI Strip */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: '10px', marginBottom: '16px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: '10px', marginBottom: '12px' }}>
         {kpis.map(k => (
           <div key={k.label} style={{
             padding: '12px 14px', background: 'var(--surface2)',
@@ -53,12 +78,28 @@ function SummaryTable({ rooms, selectedBlock, onSelectRoom }) {
         ))}
       </div>
 
+      {/* Quick filters — sayılar blok filtresine göre */}
+      <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginBottom: '14px' }}>
+        {QUICK_FILTERS.map(f => {
+          const n = f.id === 'all' ? blockFiltered.length : blockFiltered.filter(f.fn).length
+          return (
+            <button
+              key={f.id}
+              onClick={() => setQuickFilter(f.id)}
+              className={`filter-chip ${quickFilter === f.id ? 'active' : ''}`}
+            >
+              {f.label} <span style={{ opacity: 0.65 }}>({n})</span>
+            </button>
+          )
+        })}
+      </div>
+
       {/* Table */}
       <div style={{ overflowX: 'auto' }}>
         <table className="data-table responsive-stack">
           <thead>
             <tr>
-              {['Blok', 'Oda', 'Durum', 'Temizlik', 'Atlanan', 'Arıza', 'Açık'].map(h => (
+              {['Blok', 'Oda', 'Durum', 'Temizlik', 'Son Temizlik', 'Atlanan', 'Arıza', 'Açık', '📷'].map(h => (
                 <th key={h}>{h}</th>
               ))}
             </tr>
@@ -94,6 +135,17 @@ function SummaryTable({ rooms, selectedBlock, onSelectRoom }) {
                       </span>
                     </div>
                   </td>
+                  <td data-label="Son Temizlik">
+                    {(() => {
+                      const last = fmtLastCleaned(room.last_cleaned_at)
+                      if (!last) return <span style={{ fontFamily: 'var(--mono)', fontSize: '11px', color: room.total_tasks > 0 ? 'var(--red)' : 'var(--text3)' }}>—</span>
+                      return (
+                        <span style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: last.isToday ? 'var(--green)' : 'var(--text2)' }}>
+                          {last.text}
+                        </span>
+                      )
+                    })()}
+                  </td>
                   <td data-label="Atlanan">
                     <span style={{
                       fontFamily: 'var(--mono)', fontSize: '11px',
@@ -113,6 +165,12 @@ function SummaryTable({ rooms, selectedBlock, onSelectRoom }) {
                       <span style={{ fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--text3)' }}>0</span>
                     )}
                   </td>
+                  <td data-label="Foto">
+                    <span style={{
+                      fontFamily: 'var(--mono)', fontSize: '11px',
+                      color: room.photo_count > 0 ? 'var(--blue)' : 'var(--text3)',
+                    }}>{room.photo_count > 0 ? `📷 ${room.photo_count}` : '–'}</span>
+                  </td>
                 </tr>
               )
             })}
@@ -124,7 +182,11 @@ function SummaryTable({ rooms, selectedBlock, onSelectRoom }) {
         <div className="empty-state">
           <div className="empty-icon">🏠</div>
           <div className="empty-title">ODA BULUNAMADI</div>
-          <div className="empty-sub">Bu blokta kayıtlı oda yok</div>
+          <div className="empty-sub">
+            {quickFilter !== 'all' && blockFiltered.length > 0
+              ? 'Bu filtreye uyan oda yok — iyi haber 👍'
+              : 'Bu blokta kayıtlı oda yok'}
+          </div>
         </div>
       )}
     </>
@@ -301,8 +363,17 @@ function DayGroup({ day, items }) {
 }
 
 // ── Cleaning Item ──────────────────────────────────────────────────────────
+// completed_at UTC saklanır (datetime('now')) — gösterimde yerele çevrilir;
+// scheduled_at yerel-naive olduğundan olduğu gibi okunur
+function fmtUtcTime(s) {
+  if (!s) return ''
+  const d = new Date(s.replace(' ', 'T') + 'Z')
+  return isNaN(d) ? '' : d.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
+}
+
 function CleaningItem({ data }) {
-  const time = data.completed_at?.split(' ')[1]?.slice(0, 5) || data.scheduled_at?.split(' ')[1]?.slice(0, 5) || ''
+  const time = data.completed_at ? fmtUtcTime(data.completed_at) : (data.scheduled_at?.split(' ')[1]?.slice(0, 5) || '')
+  const who = data.completed_by || data.worker_name
 
   let badgeClass, statusLabel
   if (data.completed_at) {
@@ -324,8 +395,11 @@ function CleaningItem({ data }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
           <span className={`badge ${badgeClass}`} style={{ fontSize: '9px' }}>{statusLabel}</span>
           <span style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)' }}>{time}</span>
-          {data.completed_by && (
-            <span style={{ fontSize: '11px', color: 'var(--text2)' }}>{data.completed_by}</span>
+          {who && (
+            <span style={{ fontSize: '11px', color: 'var(--text2)' }}>{who}</span>
+          )}
+          {!!data.verified_by_qr && (
+            <span className="badge badge-blue" style={{ fontSize: '8px' }}>QR</span>
           )}
         </div>
         {data.skipped && data.skip_reason && (
@@ -343,6 +417,12 @@ function CleaningItem({ data }) {
           </div>
         )}
       </div>
+      {data.photo_url && (
+        <img loading="lazy" src={data.photo_url} alt="temizlik kanıtı"
+          onClick={() => window.open(data.photo_url, '_blank')}
+          title="Temizlik kanıt fotoğrafı — büyütmek için tıkla"
+          style={{ width: '44px', height: '44px', objectFit: 'cover', borderRadius: '6px', border: '1px solid var(--border)', cursor: 'pointer', flexShrink: 0, alignSelf: 'center' }} />
+      )}
     </div>
   )
 }
@@ -571,9 +651,11 @@ export default function RoomHistoryPage() {
                 { key: 'room_no', label: 'ODA' },
                 { key: 'total_tasks', label: 'TOPLAM GÖREV' },
                 { key: 'cleaned_count', label: 'TEMİZLENDİ' },
+                { key: 'last_cleaned_at', label: 'SON TEMİZLİK' },
                 { key: 'skipped_count', label: 'ATLANDI' },
                 { key: 'fault_count', label: 'TOPLAM ARIZA' },
                 { key: 'open_faults', label: 'AÇIK ARIZA' },
+                { key: 'photo_count', label: 'FOTO KANIT' },
               ], selectedBlock === 'ALL' ? (rooms || []) : (rooms || []).filter(r => r.block === selectedBlock), `oda_gecmisi_${selectedBlock}_${days}gun.csv`)}>↓ CSV</button>
             </>
           )}
