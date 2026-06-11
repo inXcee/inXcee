@@ -16,7 +16,8 @@ const RESULT_VIEW = {
   duplicate:    { bg: '#b45309', title: 'ZATEN OKUTULDU',  ok: false },
   unknown_card: { bg: '#475569', title: 'TANIMSIZ KART',   ok: false },
   alarm:        { bg: '#991b1b', title: '⚠ ALARM — KARA LİSTE', ok: false },
-  error:        { bg: '#475569', title: 'BAĞLANTI HATASI', ok: false },
+  error:        { bg: '#7c2d12', title: 'İŞLEM BAŞARISIZ', ok: false },
+  offline:      { bg: '#475569', title: 'SUNUCUYA ULAŞILAMADI', ok: false },
 }
 
 function mealByHour() {
@@ -25,6 +26,13 @@ function mealByHour() {
   if (h < 15) return 'lunch'
   if (h < 22) return 'dinner'
   return 'snack'
+}
+
+// access_events.scanned_at UTC saklanır — gösterimde yerele çevir
+function fmtEventTime(s) {
+  if (!s) return ''
+  const d = new Date(s.replace(' ', 'T') + 'Z')
+  return isNaN(d) ? '' : d.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
 }
 
 // WebAudio beep — başarı (yüksek) / hata (alçak), kütüphane gerektirmez
@@ -45,14 +53,19 @@ function beep(ok) {
 export default function StationPage() {
   const [stationKey, setStationKey] = useState(() => localStorage.getItem(KEY_STORAGE) || '')
   const [station, setStation] = useState(null)       // /me config
+  const [meRetrying, setMeRetrying] = useState(false) // ağ hatası — anahtar silinmez, denenir
   const [keyInput, setKeyInput] = useState('')
   const [keyError, setKeyError] = useState('')
   const [result, setResult] = useState(null)         // { result, holder, ... }
   const [mealType, setMealType] = useState(mealByHour())
   const [camReady, setCamReady] = useState(false)
-  const [manualOpen, setManualOpen] = useState(false)   // kartsız manuel giriş modu
-  const [manualType, setManualType] = useState('personnel')
-  const [manualId, setManualId] = useState('')
+  const [online, setOnline] = useState(navigator.onLine)
+  const [now, setNow] = useState(new Date())
+  const [recent, setRecent] = useState([])            // istasyonun son okutmaları
+  const [manualOpen, setManualOpen] = useState(false)  // kartsız manuel giriş modu
+  const [personQuery, setPersonQuery] = useState('')
+  const [personResults, setPersonResults] = useState([])
+  const [personSearching, setPersonSearching] = useState(false)
 
   const inputRef = useRef(null)
   const videoRef = useRef(null)
@@ -60,16 +73,62 @@ export default function StationPage() {
   const resultTimer = useRef(null)
   const scanningRef = useRef(false)
 
-  // Açılışta anahtarı doğrula → istasyon kimliğini al
+  // Çevrimiçi/çevrimdışı takibi — sahada en sık "bağlantı hatası" nedeni
+  useEffect(() => {
+    const on = () => setOnline(true), off = () => setOnline(false)
+    window.addEventListener('online', on); window.addEventListener('offline', off)
+    return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off) }
+  }, [])
+
+  // Canlı saat (boşta ekran)
+  useEffect(() => {
+    const iv = setInterval(() => setNow(new Date()), 1000)
+    return () => clearInterval(iv)
+  }, [])
+
+  // Açılışta anahtarı doğrula → istasyon kimliğini al.
+  // ⚠ Anahtar YALNIZCA 401/403'te silinir — ağ hatasında silmek sahada
+  // her kopuşta kurulum ekranına düşürüyordu; artık 4sn'de bir denenir.
   useEffect(() => {
     if (!stationKey) return
     let cancelled = false
-    fetch('/api/stations/me', { headers: { 'X-Station-Key': stationKey } })
-      .then(r => r.ok ? r.json() : Promise.reject(r))
-      .then(cfg => { if (!cancelled) setStation(cfg) })
-      .catch(() => { if (!cancelled) { localStorage.removeItem(KEY_STORAGE); setStationKey(''); setKeyError('Anahtar geçersiz, tekrar girin') } })
-    return () => { cancelled = true }
+    let retryTimer
+    const load = () => {
+      fetch('/api/stations/me', { headers: { 'X-Station-Key': stationKey } })
+        .then(r => {
+          if (cancelled) return
+          if (r.ok) return r.json().then(cfg => { if (!cancelled) { setStation(cfg); setMeRetrying(false) } })
+          if (r.status === 401 || r.status === 403) {
+            localStorage.removeItem(KEY_STORAGE)
+            setStation(null); setStationKey(''); setMeRetrying(false)
+            setKeyError('Anahtar geçersiz, tekrar girin')
+            return
+          }
+          throw new Error('server') // 5xx — geçici say, tekrar dene
+        })
+        .catch(() => {
+          if (!cancelled) { setMeRetrying(true); retryTimer = setTimeout(load, 4000) }
+        })
+    }
+    load()
+    return () => { cancelled = true; clearTimeout(retryTimer) }
   }, [stationKey])
+
+  // İstasyonun son okutmaları — boşta ekranda göster, her işlemden sonra tazele
+  const loadRecent = useCallback(() => {
+    if (!stationKey) return
+    fetch('/api/stations/my-events?limit=5', { headers: { 'X-Station-Key': stationKey } })
+      .then(r => r.ok ? r.json() : [])
+      .then(rows => setRecent(Array.isArray(rows) ? rows : []))
+      .catch(() => { /* liste opsiyonel */ })
+  }, [stationKey])
+
+  useEffect(() => {
+    if (!station) return
+    loadRecent()
+    const iv = setInterval(loadRecent, 60000)
+    return () => clearInterval(iv)
+  }, [station, loadRecent])
 
   // Webcam (yalnız capture_photo açıksa)
   useEffect(() => {
@@ -94,6 +153,21 @@ export default function StationPage() {
     return () => clearInterval(iv)
   }, [station, focusInput, manualOpen])
 
+  // Kişi arama (manuel giriş) — 250ms debounce
+  useEffect(() => {
+    if (!manualOpen) { setPersonResults([]); return }
+    const q = personQuery.trim()
+    if (q.length < 2) { setPersonResults([]); setPersonSearching(false); return }
+    setPersonSearching(true)
+    const t = setTimeout(() => {
+      fetch(`/api/stations/search-holders?q=${encodeURIComponent(q)}`, { headers: { 'X-Station-Key': stationKey } })
+        .then(r => r.ok ? r.json() : [])
+        .then(rows => { setPersonResults(Array.isArray(rows) ? rows : []); setPersonSearching(false) })
+        .catch(() => { setPersonResults([]); setPersonSearching(false) })
+    }, 250)
+    return () => clearTimeout(t)
+  }, [personQuery, manualOpen, stationKey])
+
   function captureFrame() {
     return new Promise(resolve => {
       const v = videoRef.current
@@ -103,6 +177,22 @@ export default function StationPage() {
       c.getContext('2d').drawImage(v, 0, 0)
       c.toBlob(b => resolve(b), 'image/jpeg', 0.7)
     })
+  }
+
+  function showResult(data) {
+    setResult(data)
+    beep((RESULT_VIEW[data.result] || RESULT_VIEW.error).ok)
+    clearTimeout(resultTimer.current)
+    resultTimer.current = setTimeout(() => setResult(null), 4000)
+  }
+
+  // Backend yanıtını çöz: ok değilse gerçek hata mesajını göster
+  // (eskiden her 4xx/5xx "BAĞLANTI HATASI"ya dönüşüyordu)
+  async function parseResponse(res) {
+    let data = null
+    try { data = await res.json() } catch { /* gövde yok */ }
+    if (res.ok && data) return data
+    return { result: 'error', reason: data?.error || `Sunucu hatası (HTTP ${res.status})` }
   }
 
   async function doScan(rawUid) {
@@ -117,45 +207,36 @@ export default function StationPage() {
         if (blob) fd.append('photo', blob, 'scan.jpg')
       }
       const res = await fetch('/api/stations/scan', { method: 'POST', headers: { 'X-Station-Key': stationKey }, body: fd })
-      const data = res.ok ? await res.json() : { result: 'error' }
-      const view = RESULT_VIEW[data.result] || RESULT_VIEW.error
-      setResult(data)
-      beep(view.ok)
+      showResult(await parseResponse(res))
     } catch {
-      setResult({ result: 'error' })
-      beep(false)
+      showResult({ result: 'offline', reason: 'İnternet bağlantısını ve ağ kablosunu kontrol edin' })
     } finally {
       scanningRef.current = false
-      clearTimeout(resultTimer.current)
-      resultTimer.current = setTimeout(() => setResult(null), 4000)
+      loadRecent()
       focusInput()
     }
   }
 
-  // Kartsız manuel giriş/çıkış (Faz 7b) — kart unutuldu/yok: kişi seç + foto
-  async function doManual() {
-    const id = manualId.trim()
-    if (!id || scanningRef.current) return
+  // Kartsız manuel giriş/çıkış — operatör isimle arayıp kişiyi seçer
+  async function doManual(person) {
+    if (!person || scanningRef.current) return
     scanningRef.current = true
     try {
       const fd = new FormData()
-      fd.append('holder_type', manualType)
-      fd.append('holder_id', id)
+      fd.append('holder_type', person.holder_type)
+      fd.append('holder_id', String(person.id))
       if (station.capture_photo) {
         const blob = await captureFrame()
         if (blob) fd.append('photo', blob, 'manual.jpg')
       }
       const res = await fetch('/api/stations/manual', { method: 'POST', headers: { 'X-Station-Key': stationKey }, body: fd })
-      const data = res.ok ? await res.json() : { result: 'error' }
-      setResult(data)
-      beep((RESULT_VIEW[data.result] || RESULT_VIEW.error).ok)
+      showResult(await parseResponse(res))
     } catch {
-      setResult({ result: 'error' }); beep(false)
+      showResult({ result: 'offline', reason: 'İnternet bağlantısını ve ağ kablosunu kontrol edin' })
     } finally {
       scanningRef.current = false
-      setManualOpen(false); setManualId('')
-      clearTimeout(resultTimer.current)
-      resultTimer.current = setTimeout(() => setResult(null), 4000)
+      setManualOpen(false); setPersonQuery(''); setPersonResults([])
+      loadRecent()
     }
   }
 
@@ -175,21 +256,32 @@ export default function StationPage() {
         <div style={{ width: 360, padding: 32, background: '#1e293b', borderRadius: 16, textAlign: 'center' }}>
           <div style={{ fontSize: 40, marginBottom: 12 }}>⌖</div>
           <h1 style={{ fontSize: 20, letterSpacing: 2, marginBottom: 6 }}>İSTASYON KURULUMU</h1>
-          <p style={{ fontSize: 13, color: '#94a3b8', marginBottom: 20 }}>Yönetici panelinden alınan istasyon anahtarını girin.</p>
-          <input
-            autoFocus
-            value={keyInput}
-            onChange={e => setKeyInput(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && keyInput.trim() && (localStorage.setItem(KEY_STORAGE, keyInput.trim()), setKeyError(''), setStationKey(keyInput.trim()))}
-            placeholder="ST-..."
-            style={{ width: '100%', padding: '12px 14px', borderRadius: 8, border: '1px solid #334155', background: '#0f172a', color: '#e2e8f0', fontFamily: 'monospace', fontSize: 14, marginBottom: 12 }}
-          />
-          {keyError && <div style={{ color: '#f87171', fontSize: 12, marginBottom: 12 }}>{keyError}</div>}
-          <button
-            onClick={() => { if (keyInput.trim()) { localStorage.setItem(KEY_STORAGE, keyInput.trim()); setKeyError(''); setStationKey(keyInput.trim()) } }}
-            style={{ width: '100%', padding: '12px', borderRadius: 8, border: 'none', background: '#f0a500', color: '#0f172a', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>
-            BAĞLAN
-          </button>
+          {stationKey && meRetrying ? (
+            <>
+              <p style={{ fontSize: 13, color: '#fbbf24', marginBottom: 8 }}>⚠ Sunucuya ulaşılamıyor — bağlantı bekleniyor…</p>
+              <p style={{ fontSize: 12, color: '#94a3b8', marginBottom: 20 }}>Anahtar kayıtlı. Ağ gelince otomatik bağlanılır, bir şey yapmanıza gerek yok.</p>
+              <div style={{ fontSize: 26, animation: 'pulse 1.2s ease infinite' }}>⌁</div>
+              <style>{`@keyframes pulse { 0%,100% { opacity: .35 } 50% { opacity: 1 } }`}</style>
+            </>
+          ) : (
+            <>
+              <p style={{ fontSize: 13, color: '#94a3b8', marginBottom: 20 }}>Yönetici panelinden alınan istasyon anahtarını girin.</p>
+              <input
+                autoFocus
+                value={keyInput}
+                onChange={e => setKeyInput(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && keyInput.trim() && (localStorage.setItem(KEY_STORAGE, keyInput.trim()), setKeyError(''), setStationKey(keyInput.trim()))}
+                placeholder="ST-..."
+                style={{ width: '100%', padding: '12px 14px', borderRadius: 8, border: '1px solid #334155', background: '#0f172a', color: '#e2e8f0', fontFamily: 'monospace', fontSize: 14, marginBottom: 12 }}
+              />
+              {keyError && <div style={{ color: '#f87171', fontSize: 12, marginBottom: 12 }}>{keyError}</div>}
+              <button
+                onClick={() => { if (keyInput.trim()) { localStorage.setItem(KEY_STORAGE, keyInput.trim()); setKeyError(''); setStationKey(keyInput.trim()) } }}
+                style={{ width: '100%', padding: '12px', borderRadius: 8, border: 'none', background: '#f0a500', color: '#0f172a', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>
+                BAĞLAN
+              </button>
+            </>
+          )}
         </div>
       </div>
     )
@@ -199,16 +291,27 @@ export default function StationPage() {
 
   // ── Kiosk ekranı ──
   return (
-    <div onClick={focusInput} style={{ position: 'fixed', inset: 0, background: view ? view.bg : '#0f172a', transition: 'background 0.25s', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#fff', fontFamily: 'system-ui, sans-serif', overflow: 'hidden' }}>
-      {/* Üst bar: istasyon kimliği */}
+    <div onClick={() => { if (result) { clearTimeout(resultTimer.current); setResult(null) } focusInput() }}
+      style={{ position: 'fixed', inset: 0, background: view ? view.bg : '#0f172a', transition: 'background 0.25s', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#fff', fontFamily: 'system-ui, sans-serif', overflow: 'hidden' }}>
+      {/* Üst bar: istasyon kimliği + saat */}
       <div style={{ position: 'absolute', top: 0, left: 0, right: 0, padding: '16px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontFamily: 'monospace', fontSize: 13, opacity: 0.85 }}>
         <span>⌖ {station.name} · {TYPE_LABEL[station.station_type] || 'OKUTMA'}</span>
-        <span>{station.capture_photo ? (camReady ? '📷 hazır' : '📷 yok') : ''}</span>
+        <span style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
+          {station.capture_photo ? <span>{camReady ? '📷 hazır' : '📷 yok'}</span> : null}
+          <span>{now.toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit' })} {now.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+        </span>
       </div>
+
+      {/* Çevrimdışı bandı */}
+      {!online && (
+        <div style={{ position: 'absolute', top: 48, left: 0, right: 0, textAlign: 'center', padding: '8px', background: '#b91c1c', fontSize: 14, fontWeight: 700, letterSpacing: 1 }}>
+          ⚠ İNTERNET YOK — okutmalar şu an kaydedilemez
+        </div>
+      )}
 
       {/* Yemekhane öğün seçimi */}
       {station.station_type === 'cafeteria' && !result && (
-        <div style={{ position: 'absolute', top: 56, display: 'flex', gap: 8 }}>
+        <div style={{ position: 'absolute', top: online ? 56 : 92, display: 'flex', gap: 8 }}>
           {[['breakfast', 'Kahvaltı'], ['lunch', 'Öğle'], ['dinner', 'Akşam'], ['snack', 'Ara']].map(([v, l]) => (
             <button key={v} onClick={() => setMealType(v)}
               style={{ padding: '6px 14px', borderRadius: 20, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600,
@@ -250,46 +353,77 @@ export default function StationPage() {
               ⚠ Diyet/Alerji: {result.holder.diet_flags}
             </div>
           )}
+          <div style={{ fontSize: 12, opacity: 0.6, marginTop: 16 }}>Ekrana dokunarak kapatabilirsiniz</div>
         </div>
       ) : (
         <div style={{ textAlign: 'center', opacity: 0.9 }}>
+          <div style={{ fontFamily: 'monospace', fontSize: 56, fontWeight: 700, letterSpacing: 3, marginBottom: 6 }}>
+            {now.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}
+          </div>
           <div style={{ fontSize: 72, marginBottom: 16 }}>⌁</div>
           <div style={{ fontSize: 28, fontWeight: 700, letterSpacing: 1 }}>KARTINIZI OKUTUN</div>
           <div style={{ fontSize: 15, opacity: 0.7, marginTop: 8 }}>NFC etiketini okuyucuya yaklaştırın</div>
+
+          {/* Son okutmalar — operatör admin paneline gitmeden görür */}
+          {recent.length > 0 && (
+            <div style={{ marginTop: 28, display: 'inline-block', textAlign: 'left', background: 'rgba(255,255,255,0.07)', borderRadius: 12, padding: '12px 18px', minWidth: 280 }}>
+              <div style={{ fontFamily: 'monospace', fontSize: 10, letterSpacing: 2, opacity: 0.6, marginBottom: 8 }}>SON OKUTMALAR</div>
+              {recent.map(ev => (
+                <div key={ev.id} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, padding: '3px 0' }}>
+                  <span style={{ fontFamily: 'monospace', opacity: 0.65 }}>{fmtEventTime(ev.scanned_at)}</span>
+                  <span style={{ flex: 1, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 180 }}>
+                    {ev.holder_name || 'Tanımsız kart'}
+                  </span>
+                  <span style={{ color: ev.result === 'ok' ? '#4ade80' : '#f87171', fontWeight: 700 }}>
+                    {ev.result === 'ok' ? '✓' : '✕'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
       {/* Kartsız manuel giriş butonu */}
       {!result && !manualOpen && (
-        <button onClick={() => setManualOpen(true)}
+        <button onClick={e => { e.stopPropagation(); setManualOpen(true) }}
           style={{ position: 'absolute', bottom: 16, left: 16, padding: '10px 16px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.3)', background: 'rgba(0,0,0,0.25)', color: '#fff', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
           ⌨ Kartsız Giriş
         </button>
       )}
 
-      {/* Manuel giriş modalı (kart unutuldu/yok) */}
+      {/* Manuel giriş modalı — isimle ara, listeden seç */}
       {manualOpen && (
-        <div style={{ position: 'absolute', inset: 0, background: 'rgba(15,23,42,0.92)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10 }}>
-          <div style={{ width: 340, background: '#1e293b', borderRadius: 16, padding: 28, textAlign: 'center' }}>
+        <div onClick={e => e.stopPropagation()} style={{ position: 'absolute', inset: 0, background: 'rgba(15,23,42,0.92)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10 }}>
+          <div style={{ width: 380, maxHeight: '80vh', overflowY: 'auto', background: '#1e293b', borderRadius: 16, padding: 28, textAlign: 'center' }}>
             <h2 style={{ fontSize: 18, fontWeight: 800, marginBottom: 4 }}>Kartsız {TYPE_LABEL[station.station_type] || 'OKUTMA'}</h2>
-            <p style={{ fontSize: 13, color: '#94a3b8', marginBottom: 18 }}>Kartı olmayan kişiyi foto ile elle kaydet</p>
-            <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
-              {[['personnel', 'İşçi'], ['staff', 'Personel']].map(([v, l]) => (
-                <button key={v} onClick={() => setManualType(v)}
-                  style={{ flex: 1, padding: '8px', borderRadius: 8, border: 'none', cursor: 'pointer', fontWeight: 600, background: manualType === v ? '#f0a500' : 'rgba(255,255,255,0.12)', color: manualType === v ? '#0f172a' : '#fff' }}>{l}</button>
+            <p style={{ fontSize: 13, color: '#94a3b8', marginBottom: 18 }}>İsim yazın, listeden kişiyi seçin{station.capture_photo ? ' — foto otomatik çekilir' : ''}</p>
+            <input autoFocus value={personQuery} onChange={e => setPersonQuery(e.target.value)}
+              placeholder="🔍 İsim ara (en az 2 harf)"
+              style={{ width: '100%', padding: '12px 14px', borderRadius: 8, border: '1px solid #334155', background: '#0f172a', color: '#fff', fontSize: 15, marginBottom: 12 }} />
+
+            {personSearching && <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 10 }}>Aranıyor…</div>}
+            {!personSearching && personQuery.trim().length >= 2 && personResults.length === 0 && (
+              <div style={{ fontSize: 13, color: '#fbbf24', marginBottom: 10 }}>Eşleşen kişi bulunamadı</div>
+            )}
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 14 }}>
+              {personResults.map(p => (
+                <button key={`${p.holder_type}-${p.id}`} onClick={() => doManual(p)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 8, border: '1px solid #334155', background: '#0f172a', color: '#fff', cursor: 'pointer', textAlign: 'left' }}>
+                  <span style={{ flex: 1, fontWeight: 600, fontSize: 14 }}>
+                    {p.full_name}
+                    {p.sub && <span style={{ display: 'block', fontSize: 11, color: '#94a3b8', fontWeight: 400 }}>{p.sub}</span>}
+                  </span>
+                  <span style={{ fontSize: 10, fontFamily: 'monospace', padding: '3px 8px', borderRadius: 6, background: p.holder_type === 'staff' ? 'rgba(240,165,0,0.25)' : 'rgba(96,165,250,0.25)', color: p.holder_type === 'staff' ? '#fbbf24' : '#93c5fd' }}>
+                    {p.holder_type === 'staff' ? 'PERSONEL' : 'İŞÇİ'}
+                  </span>
+                </button>
               ))}
             </div>
-            <input autoFocus value={manualId} onChange={e => setManualId(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && doManual()} placeholder="Kişi ID / numara"
-              style={{ width: '100%', padding: '12px 14px', borderRadius: 8, border: '1px solid #334155', background: '#0f172a', color: '#fff', fontSize: 15, marginBottom: 14 }} />
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button onClick={() => { setManualOpen(false); setManualId('') }}
-                style={{ flex: 1, padding: '12px', borderRadius: 8, border: '1px solid #334155', background: 'transparent', color: '#cbd5e1', fontWeight: 600, cursor: 'pointer' }}>Vazgeç</button>
-              <button onClick={doManual} disabled={!manualId.trim()}
-                style={{ flex: 2, padding: '12px', borderRadius: 8, border: 'none', background: '#16a34a', color: '#fff', fontWeight: 700, cursor: 'pointer', opacity: manualId.trim() ? 1 : 0.5 }}>
-                {station.capture_photo ? '📷 Foto Çek & Kaydet' : 'Kaydet'}
-              </button>
-            </div>
+
+            <button onClick={() => { setManualOpen(false); setPersonQuery(''); setPersonResults([]) }}
+              style={{ width: '100%', padding: '12px', borderRadius: 8, border: '1px solid #334155', background: 'transparent', color: '#cbd5e1', fontWeight: 600, cursor: 'pointer' }}>Vazgeç</button>
           </div>
         </div>
       )}

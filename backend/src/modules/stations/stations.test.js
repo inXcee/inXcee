@@ -328,3 +328,55 @@ describe('stations — yemekhane uygunluğu (Faz 4)', () => {
     expect(['breakfast', 'lunch', 'dinner', 'snack']).toContain(r.body.meal_type)
   })
 })
+
+describe('stations — kiosk pratiklik (search-holders + my-events)', () => {
+  it('search-holders anahtarsız 401', async () => {
+    const r = await request(app).get('/api/stations/search-holders?q=test')
+    expect(r.status).toBe(401)
+  })
+
+  it('search-holders 2 karakter altında boş dizi döner', async () => {
+    const r = await request(app).get('/api/stations/search-holders?q=a').set('X-Station-Key', entryKey)
+    expect(r.status).toBe(200)
+    expect(r.body).toEqual([])
+  })
+
+  it('search-holders isimle aktif staff + kamptaki personnel bulur', async () => {
+    const db = getDB()
+    db.prepare("INSERT INTO staff(full_name, is_active) VALUES('Arama Personeli', 1)").run()
+    db.prepare("INSERT INTO staff(full_name, is_active) VALUES('Arama Pasif', 0)").run()
+    db.prepare("INSERT INTO personnel(full_name, company) VALUES('Arama İşçisi', 'Firma A')").run()
+    const r = await request(app).get('/api/stations/search-holders?q=Arama').set('X-Station-Key', entryKey)
+    expect(r.status).toBe(200)
+    const names = r.body.map(p => p.full_name)
+    expect(names).toContain('Arama Personeli')
+    expect(names).toContain('Arama İşçisi')
+    expect(names).not.toContain('Arama Pasif') // pasif staff listelenmez
+    const staffRow = r.body.find(p => p.full_name === 'Arama Personeli')
+    expect(staffRow.holder_type).toBe('staff')
+  })
+
+  it('my-events yalnız kendi istasyonunun okutmalarını döner', async () => {
+    // Paylaşılan kart durumuna bağımlı olmamak için taze staff + access kartı
+    const db = getDB()
+    const sid = db.prepare("INSERT INTO staff(full_name, is_active) VALUES('MyEvents Test', 1)").run().lastInsertRowid
+    const c = await request(app).post(`/api/cards/staff/${sid}/issue`).set(auth(token)).send({ card_type: 'access' })
+    await request(app).patch(`/api/cards/${c.body.id}/bind-nfc`).set(auth(token)).send({ nfc_uid: 'NFC-MYEVENTS' })
+    // cafe istasyonunun mevcut event sayısı — entry okutması bunu DEĞİŞTİRMEMELİ
+    const cafeBefore = (await request(app).get('/api/stations/my-events?limit=20').set('X-Station-Key', cafeKey)).body.length
+    const scan = await request(app).post('/api/stations/scan').set('X-Station-Key', entryKey).send({ raw_uid: 'NFC-MYEVENTS' })
+    expect(scan.body.result).toBe('ok')
+    const entry = await request(app).get('/api/stations/my-events?limit=5').set('X-Station-Key', entryKey)
+    expect(entry.status).toBe(200)
+    expect(entry.body.length).toBeGreaterThan(0)
+    expect(entry.body[0].holder_name).toBe('MyEvents Test') // isim join'lenir
+    expect(entry.body[0].result).toBe('ok')
+    const cafeAfter = (await request(app).get('/api/stations/my-events?limit=20').set('X-Station-Key', cafeKey)).body.length
+    expect(cafeAfter).toBe(cafeBefore)
+  })
+
+  it('my-events anahtarsız 401', async () => {
+    const r = await request(app).get('/api/stations/my-events')
+    expect(r.status).toBe(401)
+  })
+})

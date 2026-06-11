@@ -163,6 +163,49 @@ stationsRouter.get('/me', requireStation, (req, res) => {
   res.json(publicStation(req.station))
 })
 
+// ── Kişi arama (kartsız manuel giriş) — isimle, istasyon anahtarıyla.
+// ID girmek pratik değildi: operatör artık isim yazıp listeden seçer.
+stationsRouter.get('/search-holders', requireStation, (req, res) => {
+  try {
+    const q = (req.query.q || '').toString().trim()
+    if (q.length < 2) return res.json([])
+    const like = `%${q}%`
+    const db = getDB()
+    const staff = db.prepare(`
+      SELECT s.id, 'staff' AS holder_type, s.full_name, d.name AS sub
+      FROM staff s LEFT JOIN departments d ON d.id = s.department_id
+      WHERE s.full_name LIKE ? COLLATE NOCASE AND s.is_active = 1
+      ORDER BY s.full_name LIMIT 8
+    `).all(like)
+    const personnel = db.prepare(`
+      SELECT p.id, 'personnel' AS holder_type, p.full_name, p.company AS sub
+      FROM personnel p
+      WHERE p.full_name LIKE ? COLLATE NOCASE AND p.check_out_date IS NULL
+      ORDER BY p.full_name LIMIT 8
+    `).all(like)
+    res.json([...staff, ...personnel].slice(0, 12))
+  } catch (e) { logger.error('[stations/search-holders]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// ── İstasyonun KENDİ son okutmaları (boşta ekranda canlı liste) ──
+stationsRouter.get('/my-events', requireStation, (req, res) => {
+  try {
+    const limit = Math.min(+req.query.limit || 5, 20)
+    const rows = getDB().prepare(`
+      SELECT e.id, e.event_type, e.meal_type, e.result, e.scanned_at,
+        COALESCE(s.full_name, p.full_name, v.full_name) AS holder_name
+      FROM access_events e
+      LEFT JOIN staff s ON e.holder_type='staff' AND s.id = e.holder_id
+      LEFT JOIN personnel p ON e.holder_type='personnel' AND p.id = e.holder_id
+      LEFT JOIN visitors v ON e.holder_type='visitor' AND v.id = e.holder_id
+      WHERE e.station_id = ?
+      ORDER BY e.scanned_at DESC, e.id DESC
+      LIMIT ?
+    `).all(req.station.id, limit)
+    res.json(rows)
+  } catch (e) { logger.error('[stations/my-events]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
 // ── Kart okut (insansız istasyon) — UID/kod eşle, hareket + opsiyonel foto kaydet ──
 stationsRouter.post('/scan', requireStation, upload.single('photo'), verifyMagicBytes, (req, res) => {
   try {
