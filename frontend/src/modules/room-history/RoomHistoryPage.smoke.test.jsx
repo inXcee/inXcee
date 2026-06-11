@@ -19,9 +19,25 @@ const summaryRows = [
   },
 ]
 
+const detailData = {
+  room: { id: 1, block: 'M1', room_no: '101', floor: 1, status: 'active', capacity: 6, active_beds: 6 },
+  occupants: [{ full_name: 'Ali Veli', company: 'X İnşaat', bed_no: 1 }],
+  pastOccupants: [{ full_name: 'Eski Sakin', company: 'Y Ltd', bed_no: 2, assigned_at: '2026-06-01', check_out_at: '2026-06-09 10:00:00' }],
+  cleanings: [{
+    id: 9, type: 'cleaning', area: 'M1 Oda 101',
+    scheduled_at: '2026-06-11 06:00:00', completed_at: '2026-06-11 06:30:00',
+    skipped: 0, skip_reason: null, checklist: null,
+    photo_url: '/uploads/kanit.jpg', verified_by_qr: 0,
+    completed_by: null, worker_name: 'Temizlik Personeli',
+  }],
+  faults: [],
+}
+
 vi.mock('../../shared/api/client.js', () => ({
   default: {
-    get: vi.fn(() => Promise.resolve({ data: summaryRows })),
+    get: vi.fn((url) => Promise.resolve({
+      data: url.includes('/room-history/room/') ? detailData : summaryRows,
+    })),
   },
 }))
 
@@ -38,7 +54,7 @@ describe('room-history/RoomHistoryPage smoke', () => {
     expect(screen.getByText(/✗ TEMİZLİK YOK/)).toBeInTheDocument()
     // Foto kanıt kolonu — 101'de 3 foto
     expect(screen.getByText('📷 3')).toBeInTheDocument()
-    // Son temizlik kolonu başlığı
+    // Son temizlik kolonu başlığı (sıralanabilir)
     expect(screen.getByText('Son Temizlik')).toBeInTheDocument()
   })
 
@@ -49,5 +65,37 @@ describe('room-history/RoomHistoryPage smoke', () => {
     // 101 temiz (fotolu) — filtrelenince kaybolur; temizlenmemiş 102 kalır
     expect(screen.queryByText('📷 3')).not.toBeInTheDocument()
     expect(screen.getByText('102')).toBeInTheDocument()
+  })
+
+  it('oda arama kutusu "m1 101" eşleşmeyen odayı gizler', async () => {
+    renderWithProviders(<RoomHistoryPage />)
+    await screen.findByText(/✗ TEMİZLİK YOK/)
+    fireEvent.change(screen.getByLabelText('Oda ara'), { target: { value: 'm1 101' } })
+    expect(screen.getByText('101')).toBeInTheDocument()
+    expect(screen.queryByText('102')).not.toBeInTheDocument()
+  })
+
+  it('oda detayı: günlük şerit + foto galerisi + ayrılan sakinler + kiosk personeli', async () => {
+    renderWithProviders(<RoomHistoryPage />)
+    const row = (await screen.findByText('📷 3')).closest('tr')
+    fireEvent.click(row)
+    expect(await screen.findByText(/GÜNLÜK TEMİZLİK — SON/)).toBeInTheDocument()
+    expect(screen.getByText('FOTO KANITLARI')).toBeInTheDocument()
+    expect(screen.getByText(/AYRILANLAR — SON/)).toBeInTheDocument()
+    expect(screen.getByText('Eski Sakin')).toBeInTheDocument()
+    // Kiosk personeli (worker_name) timeline'da görünür
+    expect(screen.getByText('Temizlik Personeli')).toBeInTheDocument()
+  })
+
+  it('galerideki fotoğraf tıklanınca lightbox açılır', async () => {
+    renderWithProviders(<RoomHistoryPage />)
+    const row = (await screen.findByText('📷 3')).closest('tr')
+    fireEvent.click(row)
+    await screen.findByText('FOTO KANITLARI')
+    fireEvent.click(screen.getAllByAltText(/🧹/)[0])
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    // Lightbox tıklayınca kapanır
+    fireEvent.click(screen.getByRole('dialog'))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 })
