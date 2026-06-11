@@ -19,7 +19,11 @@ const RESULT_META = {
   not_eligible: { label: 'UYGUN DEĞİL', color: '#b45309' },
   duplicate:    { label: 'TEKRAR',      color: '#b45309' },
   unknown_card: { label: 'TANIMSIZ',    color: '#6b7280' },
+  alarm:        { label: '⚠ ALARM',     color: '#991b1b' },
 }
+
+// scanned_at UTC — yerel saat gösterimi
+const fmtScanTime = s => s ? new Date(s.replace(' ', 'T') + 'Z').toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : null
 
 export default function StationsPage() {
   const qc = useQueryClient()
@@ -27,16 +31,29 @@ export default function StationsPage() {
   const [form, setForm] = useState({ name: '', station_type: 'entry', location: '', capture_photo: true })
   const [revealKey, setRevealKey] = useState(null)  // { name, api_key }
   const [toast, setToast] = useState(null)
+  const [evStation, setEvStation] = useState(0)     // hareket filtresi: 0 = tüm istasyonlar
+  const [evOnlyFail, setEvOnlyFail] = useState(false)
+  const [lightbox, setLightbox] = useState(null)    // okutma fotoğrafı büyütme
 
   const { data: stations = [], isLoading } = useQuery({
     queryKey: ['stations'],
     queryFn: () => api.get('/stations').then(r => r.data),
   })
   const { data: events = [] } = useQuery({
-    queryKey: ['station-events'],
-    queryFn: () => api.get('/stations/recent-events?limit=40').then(r => r.data),
+    queryKey: ['station-events', evStation, evOnlyFail],
+    queryFn: () => api.get(`/stations/recent-events?limit=60${evStation ? `&station_id=${evStation}` : ''}${evOnlyFail ? '&only_fail=1' : ''}`).then(r => r.data),
     refetchInterval: 15000,
   })
+  const { data: stats } = useQuery({
+    queryKey: ['station-stats-today'],
+    queryFn: () => api.get('/stations/stats-today').then(r => r.data),
+    refetchInterval: 30000,
+  })
+  const todayByStation = useMemo(() => {
+    const m = {}
+    for (const s of stats?.stations || []) m[s.id] = s
+    return m
+  }, [stats])
 
   const selected = useMemo(() => stations.find(s => s.id === selectedId) || null, [stations, selectedId])
 
@@ -123,6 +140,30 @@ export default function StationsPage() {
         }}>{toast.msg}</div>
       )}
 
+      {/* BUGÜN KPI şeridi — tüm istasyonlar toplamı */}
+      {stats && (
+        <div className="fade-up-1" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: '10px', marginBottom: '16px' }}>
+          {(() => {
+            const t = stats.totals || {}
+            const total = Object.values(t).reduce((a, b) => a + b, 0)
+            const kpis = [
+              { label: 'BUGÜN TOPLAM', value: total, color: 'var(--text)' },
+              { label: 'GEÇİŞ OK', value: t.ok || 0, color: '#16a34a' },
+              { label: 'REDDEDİLEN', value: (t.denied || 0) + (t.not_eligible || 0), color: '#dc2626' },
+              { label: 'TEKRAR', value: t.duplicate || 0, color: '#b45309' },
+              { label: 'TANIMSIZ KART', value: t.unknown_card || 0, color: '#6b7280' },
+              { label: '⚠ ALARM', value: t.alarm || 0, color: t.alarm > 0 ? '#991b1b' : 'var(--text3)' },
+            ]
+            return kpis.map(k => (
+              <div key={k.label} style={{ padding: '12px 14px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '8px' }}>
+                <div style={{ fontFamily: 'var(--display)', fontSize: '26px', color: k.color, lineHeight: 1 }}>{k.value}</div>
+                <div style={{ fontFamily: 'var(--mono)', fontSize: '7.5px', color: 'var(--text3)', letterSpacing: '1.5px', marginTop: '4px' }}>{k.label}</div>
+              </div>
+            ))
+          })()}
+        </div>
+      )}
+
       <div className="layout-list-detail" style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: '16px', alignItems: 'start' }}>
         {/* Sol: istasyon listesi + yeni */}
         <div className="panel fade-up-1">
@@ -154,6 +195,18 @@ export default function StationsPage() {
                     {s.capture_photo ? <span>📷 foto</span> : <span style={{ color: 'var(--text4)' }}>foto yok</span>}
                     {s.location && <span>📍 {s.location}</span>}
                   </div>
+                  {(() => {
+                    const st = todayByStation[s.id]
+                    if (!st) return null
+                    return (
+                      <div style={{ fontFamily: 'var(--mono)', fontSize: 10, marginTop: 4, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                        <span style={{ color: st.total > 0 ? 'var(--text2)' : 'var(--text4)' }}>bugün {st.total}</span>
+                        {st.ok_count > 0 && <span style={{ color: '#16a34a' }}>✓{st.ok_count}</span>}
+                        {st.fail_count > 0 && <span style={{ color: '#dc2626' }}>✕{st.fail_count}</span>}
+                        {st.last_scan_at && <span style={{ color: 'var(--text4)' }}>son {fmtScanTime(st.last_scan_at)}</span>}
+                      </div>
+                    )
+                  })()}
                 </div>
               )
             })}
@@ -238,22 +291,38 @@ export default function StationsPage() {
             </div>
           )}
 
-          {/* Son hareketler */}
+          {/* Son hareketler — istasyon + sorunlu filtresi */}
           <div className="panel fade-up-3">
             <div style={{ height: '2px', background: 'var(--accent3)' }} />
-            <div className="panel-header">
+            <div className="panel-header" style={{ flexWrap: 'wrap', gap: 8 }}>
               <div className="panel-title">SON HAREKETLER</div>
-              <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)' }}>canlı · 15sn</span>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                <select className="form-select" value={evStation} onChange={e => setEvStation(+e.target.value)}
+                  style={{ fontSize: 11, padding: '4px 8px', width: 'auto' }}>
+                  <option value={0}>Tüm istasyonlar</option>
+                  {stations.map(s => <option key={s.id} value={s.id}>{typeMeta(s.station_type).icon} {s.name}</option>)}
+                </select>
+                <button onClick={() => setEvOnlyFail(v => !v)}
+                  className={`filter-chip ${evOnlyFail ? 'active' : ''}`}
+                  style={{ fontSize: 10 }}>
+                  ⚠ Sadece sorunlu
+                </button>
+                <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)' }}>canlı · 15sn</span>
+              </div>
             </div>
-            <div className="panel-body" style={{ padding: 0, maxHeight: 360, overflowY: 'auto' }}>
+            <div className="panel-body" style={{ padding: 0, maxHeight: 420, overflowY: 'auto' }}>
               {events.length === 0 ? (
-                <div style={{ padding: 16, color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: 12 }}>Henüz okutma yok</div>
+                <div style={{ padding: 16, color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: 12 }}>
+                  {evOnlyFail ? 'Sorunlu okutma yok — iyi haber 👍' : 'Henüz okutma yok'}
+                </div>
               ) : events.map(ev => {
                 const rm = RESULT_META[ev.result] || RESULT_META.unknown_card
                 return (
                   <div key={ev.id} style={{ padding: '10px 16px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10 }}>
                     {ev.photo_url
-                      ? <img src={ev.photo_url} alt="" style={{ width: 32, height: 32, borderRadius: 6, objectFit: 'cover', flexShrink: 0 }} />
+                      ? <img src={ev.photo_url} alt="okutma fotoğrafı" title="Büyütmek için tıkla"
+                          onClick={() => setLightbox(ev.photo_url)}
+                          style={{ width: 32, height: 32, borderRadius: 6, objectFit: 'cover', flexShrink: 0, cursor: 'pointer' }} />
                       : <span style={{ width: 32, height: 32, borderRadius: 6, background: 'var(--surface2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, flexShrink: 0 }}>{typeMeta(ev.station_type).icon}</span>}
                     <div style={{ minWidth: 0, flex: 1 }}>
                       <div style={{ fontFamily: 'var(--sans)', fontSize: 13, color: 'var(--text)' }}>
@@ -274,6 +343,14 @@ export default function StationsPage() {
           </div>
         </div>
       </div>
+
+      {/* Okutma fotoğrafı lightbox */}
+      {lightbox && (
+        <div onClick={() => setLightbox(null)} role="dialog" aria-label="Fotoğraf önizleme — kapatmak için tıkla"
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.88)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'zoom-out', padding: 24 }}>
+          <img src={lightbox} alt="okutma fotoğrafı" style={{ maxWidth: '100%', maxHeight: '100%', borderRadius: 8 }} />
+        </div>
+      )}
     </div>
   )
 }

@@ -66,6 +66,10 @@ export default function StationPage() {
   const [personQuery, setPersonQuery] = useState('')
   const [personResults, setPersonResults] = useState([])
   const [personSearching, setPersonSearching] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false) // ⚙ istasyon değiştir/kes
+  const [newKeyInput, setNewKeyInput] = useState('')
+  const [newKeyError, setNewKeyError] = useState('')
+  const [switching, setSwitching] = useState(false)
 
   const inputRef = useRef(null)
   const videoRef = useRef(null)
@@ -249,6 +253,35 @@ export default function StationPage() {
     }
   }
 
+  // İstasyon değiştir: yeni anahtarı ÖNCE doğrula, geçerliyse uygula —
+  // geçersiz anahtarla mevcut istasyonu düşürmeyiz
+  async function switchStation() {
+    const key = newKeyInput.trim()
+    if (!key || switching) return
+    setSwitching(true); setNewKeyError('')
+    try {
+      const res = await fetch('/api/stations/me', { headers: { 'X-Station-Key': key } })
+      if (!res.ok) {
+        setNewKeyError(res.status === 401 ? 'Anahtar geçersiz' : `Sunucu hatası (${res.status})`)
+        return
+      }
+      const cfg = await res.json()
+      localStorage.setItem(KEY_STORAGE, key)
+      setStationKey(key); setStation(cfg)
+      setSettingsOpen(false); setNewKeyInput(''); setRecent([])
+    } catch {
+      setNewKeyError('Sunucuya ulaşılamadı — bağlantıyı kontrol edin')
+    } finally {
+      setSwitching(false)
+    }
+  }
+
+  function disconnectStation() {
+    localStorage.removeItem(KEY_STORAGE)
+    setStation(null); setStationKey(''); setSettingsOpen(false)
+    setKeyError(''); setKeyInput(''); setRecent([])
+  }
+
   // ── Kurulum: anahtar girişi ──
   if (!station) {
     return (
@@ -299,6 +332,11 @@ export default function StationPage() {
         <span style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
           {station.capture_photo ? <span>{camReady ? '📷 hazır' : '📷 yok'}</span> : null}
           <span>{now.toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit' })} {now.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+          <button onClick={e => { e.stopPropagation(); setSettingsOpen(true) }}
+            aria-label="İstasyon ayarları"
+            style={{ background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.25)', borderRadius: 8, color: '#fff', padding: '4px 10px', cursor: 'pointer', fontSize: 14 }}>
+            ⚙
+          </button>
         </span>
       </div>
 
@@ -424,6 +462,38 @@ export default function StationPage() {
 
             <button onClick={() => { setManualOpen(false); setPersonQuery(''); setPersonResults([]) }}
               style={{ width: '100%', padding: '12px', borderRadius: 8, border: '1px solid #334155', background: 'transparent', color: '#cbd5e1', fontWeight: 600, cursor: 'pointer' }}>Vazgeç</button>
+          </div>
+        </div>
+      )}
+
+      {/* ⚙ İstasyon ayarları — değiştir / bağlantıyı kes */}
+      {settingsOpen && (
+        <div onClick={e => e.stopPropagation()} style={{ position: 'absolute', inset: 0, background: 'rgba(15,23,42,0.92)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 20 }}>
+          <div style={{ width: 380, background: '#1e293b', borderRadius: 16, padding: 28, textAlign: 'center' }}>
+            <h2 style={{ fontSize: 18, fontWeight: 800, marginBottom: 4 }}>⚙ İstasyon Ayarları</h2>
+            <p style={{ fontSize: 13, color: '#94a3b8', marginBottom: 16 }}>
+              Bağlı: <strong style={{ color: '#e2e8f0' }}>{station.name}</strong> · {TYPE_LABEL[station.station_type] || 'OKUTMA'}
+            </p>
+
+            <div style={{ textAlign: 'left', fontFamily: 'monospace', fontSize: 10, letterSpacing: 1.5, color: '#94a3b8', marginBottom: 8 }}>İSTASYON DEĞİŞTİR</div>
+            <input value={newKeyInput} onChange={e => { setNewKeyInput(e.target.value); setNewKeyError('') }}
+              onKeyDown={e => e.key === 'Enter' && switchStation()}
+              placeholder="Yeni istasyon anahtarı (ST-...)"
+              style={{ width: '100%', padding: '12px 14px', borderRadius: 8, border: '1px solid #334155', background: '#0f172a', color: '#fff', fontFamily: 'monospace', fontSize: 13, marginBottom: 8 }} />
+            {newKeyError && <div style={{ color: '#f87171', fontSize: 12, marginBottom: 8 }}>{newKeyError}</div>}
+            <button onClick={switchStation} disabled={!newKeyInput.trim() || switching}
+              style={{ width: '100%', padding: '12px', borderRadius: 8, border: 'none', background: '#f0a500', color: '#0f172a', fontWeight: 700, fontSize: 14, cursor: 'pointer', opacity: newKeyInput.trim() && !switching ? 1 : 0.5, marginBottom: 16 }}>
+              {switching ? 'Doğrulanıyor…' : '↔ Bu İstasyona Geç'}
+            </button>
+
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={() => { setSettingsOpen(false); setNewKeyInput(''); setNewKeyError('') }}
+                style={{ flex: 2, padding: '12px', borderRadius: 8, border: '1px solid #334155', background: 'transparent', color: '#cbd5e1', fontWeight: 600, cursor: 'pointer' }}>Kapat</button>
+              <button onClick={disconnectStation}
+                style={{ flex: 1, padding: '12px', borderRadius: 8, border: '1px solid #ef444455', background: 'rgba(239,68,68,0.12)', color: '#f87171', fontWeight: 600, cursor: 'pointer' }}>
+                Bağlantıyı Kes
+              </button>
+            </div>
           </div>
         </div>
       )}

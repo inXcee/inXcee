@@ -57,4 +57,17 @@ describe('station/StationPage smoke', () => {
     expect(await screen.findByText('Ayşe Test')).toBeInTheDocument()
     expect(screen.getByText('PERSONEL')).toBeInTheDocument()
   })
+
+  it('⚙ ayarlar: istasyon değiştir + bağlantıyı kes akışı', async () => {
+    mockFetch()
+    render(<StationPage />)
+    fireEvent.click(await screen.findByLabelText('İstasyon ayarları'))
+    expect(screen.getByText('⚙ İstasyon Ayarları')).toBeInTheDocument()
+    // Yeni anahtar girilmeden geç butonu pasif
+    expect(screen.getByText('↔ Bu İstasyona Geç')).toBeDisabled()
+    // Bağlantıyı kes → anahtar silinir, kurulum ekranına döner
+    fireEvent.click(screen.getByText('Bağlantıyı Kes'))
+    expect(localStorage.getItem('yys_station_key')).toBe(null)
+    expect(await screen.findByText('İSTASYON KURULUMU')).toBeInTheDocument()
+  })
 })

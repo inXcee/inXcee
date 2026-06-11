@@ -140,22 +140,58 @@ stationsRouter.delete('/:id', ...mgr, (req, res) => {
 })
 
 // ── Son hareketler (admin izleme + Faz 3 zemini) ──
+// Filtreler: ?station_id=N · ?result=ok|denied|... · ?only_fail=1 (ok dışı)
 stationsRouter.get('/recent-events', ...view, (req, res) => {
   try {
     const limit = Math.min(+req.query.limit || 50, 200)
+    const conds = [], params = []
+    if (+req.query.station_id) { conds.push('e.station_id = ?'); params.push(+req.query.station_id) }
+    if (req.query.result) { conds.push('e.result = ?'); params.push(String(req.query.result)) }
+    if (req.query.only_fail === '1') conds.push("e.result != 'ok'")
+    const where = conds.length ? `WHERE ${conds.join(' AND ')}` : ''
     const rows = getDB().prepare(`
       SELECT e.id, e.event_type, e.meal_type, e.result, e.photo_url, e.raw_uid, e.scanned_at,
         e.holder_type, e.holder_id,
         st.name AS station_name, st.station_type,
-        CASE WHEN e.holder_type='staff' THEN s.full_name ELSE NULL END AS holder_name
+        COALESCE(s.full_name, p.full_name, v.full_name) AS holder_name
       FROM access_events e
       LEFT JOIN scan_stations st ON st.id = e.station_id
       LEFT JOIN staff s ON e.holder_type='staff' AND s.id = e.holder_id
+      LEFT JOIN personnel p ON e.holder_type='personnel' AND p.id = e.holder_id
+      LEFT JOIN visitors v ON e.holder_type='visitor' AND v.id = e.holder_id
+      ${where}
       ORDER BY e.scanned_at DESC, e.id DESC
       LIMIT ?
-    `).all(limit)
+    `).all(...params, limit)
     res.json(rows)
   } catch (e) { logger.error('[stations/recent]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// ── Bugünkü özet — istasyon başına sayılar + genel sonuç kırılımı ──
+// (scanned_at UTC saklanır; gün sınırı 'localtime' ile TR'ye çevrilir)
+stationsRouter.get('/stats-today', ...view, (req, res) => {
+  try {
+    const db = getDB()
+    const stations = db.prepare(`
+      SELECT st.id, st.name, st.station_type, st.is_active,
+        COUNT(e.id) AS total,
+        SUM(CASE WHEN e.result='ok' THEN 1 ELSE 0 END) AS ok_count,
+        SUM(CASE WHEN e.result NOT IN ('ok') THEN 1 ELSE 0 END) AS fail_count,
+        MAX(e.scanned_at) AS last_scan_at
+      FROM scan_stations st
+      LEFT JOIN access_events e
+        ON e.station_id = st.id AND date(e.scanned_at, 'localtime') = date('now', 'localtime')
+      GROUP BY st.id
+      ORDER BY st.is_active DESC, st.name
+    `).all()
+    const totals = db.prepare(`
+      SELECT result, COUNT(*) AS cnt
+      FROM access_events
+      WHERE date(scanned_at, 'localtime') = date('now', 'localtime')
+      GROUP BY result
+    `).all().reduce((acc, r) => ({ ...acc, [r.result]: r.cnt }), {})
+    res.json({ stations, totals })
+  } catch (e) { logger.error('[stations/stats-today]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 // ── İstasyon kendi kimliğini sorar (kiosk açılışta tip/foto ayarını öğrenir) ──

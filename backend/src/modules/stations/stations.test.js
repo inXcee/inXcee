@@ -380,3 +380,36 @@ describe('stations — kiosk pratiklik (search-holders + my-events)', () => {
     expect(r.status).toBe(401)
   })
 })
+
+describe('stations — stats-today + hareket filtreleri', () => {
+  it('stats-today istasyon başına bugünkü sayıları döner', async () => {
+    const r = await request(app).get('/api/stations/stats-today').set(auth(token))
+    expect(r.status).toBe(200)
+    expect(Array.isArray(r.body.stations)).toBe(true)
+    expect(r.body.totals).toBeTypeOf('object')
+    const anaGiris = r.body.stations.find(s => s.name === 'Ana Giriş')
+    expect(anaGiris).toBeTruthy()
+    expect(anaGiris.total).toBeGreaterThan(0) // önceki testler okutma yaptı
+    expect(anaGiris.ok_count + anaGiris.fail_count).toBe(anaGiris.total)
+  })
+
+  it('stats-today yetkisiz 401', async () => {
+    const r = await request(app).get('/api/stations/stats-today')
+    expect(r.status).toBe(401)
+  })
+
+  it('recent-events station_id filtresi yalnız o istasyonu döner', async () => {
+    const db = getDB()
+    const anaGirisId = db.prepare("SELECT id FROM scan_stations WHERE name='Ana Giriş'").get().id
+    const r = await request(app).get(`/api/stations/recent-events?station_id=${anaGirisId}&limit=50`).set(auth(token))
+    expect(r.status).toBe(200)
+    expect(r.body.length).toBeGreaterThan(0)
+    expect(r.body.every(e => e.station_name === 'Ana Giriş')).toBe(true)
+  })
+
+  it('recent-events only_fail=1 ok olmayanları döner', async () => {
+    const r = await request(app).get('/api/stations/recent-events?only_fail=1&limit=50').set(auth(token))
+    expect(r.status).toBe(200)
+    expect(r.body.every(e => e.result !== 'ok')).toBe(true)
+  })
+})
