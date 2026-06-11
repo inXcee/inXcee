@@ -1,4 +1,5 @@
-import { useState, lazy, Suspense } from 'react'
+import { useState, Suspense } from 'react'
+import { lazyWithRetry as lazy } from '../../../shared/lazyWithRetry.js'
 import { CATEGORIES } from '../constants.js'
 import SimpleItemRow from '../components/SimpleItemRow.jsx'
 import ActiveCheckoutsPanel from '../components/ActiveCheckoutsPanel.jsx'

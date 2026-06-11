@@ -1,4 +1,5 @@
-import { useState, useMemo, lazy, Suspense } from 'react'
+import { useState, useMemo, Suspense } from 'react'
+import { lazyWithRetry as lazy } from '../../../shared/lazyWithRetry.js'
 import { useQuery } from '@tanstack/react-query'
 import api from '../../../shared/api/client.js'
 import { pointsWithoutCoords } from '../logic/routeMap.js'
