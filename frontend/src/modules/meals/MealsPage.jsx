@@ -9,6 +9,11 @@ import HelpHint from '../../shared/components/HelpHint.jsx'
 const toast = (m, t = 'success') => useToastStore.getState().addToast(m, t)
 const toastErr = (e) => toast(e?.response?.data?.error || 'Hata', 'error')
 
+// Yerel gün (toISOString UTC basar — 00:00-03:00 TR arası dünü gösterirdi)
+const localDate = (d = new Date()) => d.toLocaleDateString('sv-SE')
+// meal_logs.logged_at UTC saklanır (CURRENT_TIMESTAMP) — gösterimde yerele çevir
+const fmtUtcTime = (ts) => ts ? new Date(ts.replace(' ', 'T') + 'Z').toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : ''
+
 const MEALS = {
   breakfast: { label: '🌅 Kahvaltı', color: 'var(--amber)' },
   lunch:     { label: '☀ Öğle',     color: 'var(--accent)' },
@@ -184,7 +189,7 @@ function ScanTab() {
 }
 
 function DailyTab() {
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10))
+  const [date, setDate] = useState(localDate())
   const { data, isLoading } = useQuery({
     queryKey: ['meals-daily', date],
     queryFn: () => api.get(`/meals/daily?date=${date}`).then(r => r.data),
@@ -230,7 +235,7 @@ function DailyTab() {
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                       <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: MEALS[l.meal_type]?.color }}>{MEALS[l.meal_type]?.label}</span>
                       <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text4)' }}>{l.method}</span>
-                      <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>{new Date(l.logged_at).toLocaleTimeString('tr-TR')}</span>
+                      <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>{fmtUtcTime(l.logged_at)}</span>
                     </div>
                   </div>
                 ))}
@@ -244,7 +249,7 @@ function DailyTab() {
 }
 
 function ForecastTab() {
-  const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10)
+  const tomorrow = localDate(new Date(Date.now() + 86400000))
   const [date, setDate] = useState(tomorrow)
   const { data, isLoading } = useQuery({
     queryKey: ['meals-forecast', date],
@@ -321,7 +326,7 @@ function ForecastTab() {
 }
 
 function CostTab() {
-  const thisMonth = new Date().toISOString().slice(0, 7)
+  const thisMonth = localDate().slice(0, 7)
   const [month, setMonth] = useState(thisMonth)
   const { data, isLoading } = useQuery({
     queryKey: ['meals-cost', month],
@@ -381,7 +386,7 @@ function CostTab() {
 
 function MenuTab() {
   const qc = useQueryClient()
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [date, setDate] = useState(() => localDate())
   const [draft, setDraft] = useState({})
   const { data: rows = [] } = useQuery({
     queryKey: ['meal-menu', date],

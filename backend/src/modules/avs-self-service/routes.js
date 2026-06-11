@@ -11,7 +11,7 @@ import { checkoutToStaff, getStaffCheckouts } from '../inventory/service.js'
 import { departmentToInventoryCategory, getKioskSystemUserId } from './inventory-helpers.js'
 import { isPushConfigured, getVapidPublicKey, saveWorkerSubscription, deleteWorkerSubscription } from '../../shared/notifications/push.js'
 import { getStaffActivity } from '../activity/service.js'
-import { MEAL_TYPES } from '../meals/service.js'
+import { MEAL_TYPES, localDay } from '../meals/service.js'
 import { validate } from '../../shared/middleware/validate.js'
 import { mealSelectionSchema, maintenanceSchema, feedbackSchema } from './schemas.js'
 
@@ -34,9 +34,7 @@ avsSelfServiceRouter.put('/my-meal-selection', requireAvsKiosk, validate(mealSel
 
 avsSelfServiceRouter.get('/my-meal-selection', requireAvsKiosk, (req, res) => {
   try {
-    const date = req.query.date || (() => {
-      const d = new Date(); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10)
-    })()
+    const date = req.query.date || localDay(getDB(), 1)
     const rows = getDB().prepare('SELECT meal_type, attending FROM meal_selections WHERE staff_id=? AND meal_date=?')
       .all(req.user.workerId, date)
     const selections = {}
@@ -436,7 +434,7 @@ avsSelfServiceRouter.get('/menu/today', requireAvsKiosk, (req, res) => {
   try {
     const rows = getDB().prepare(`
       SELECT meal_type, items FROM meal_menu
-      WHERE meal_date = date('now') AND items IS NOT NULL AND items != ''
+      WHERE meal_date = date('now', 'localtime') AND items IS NOT NULL AND items != ''
     `).all()
     res.json(rows)
   } catch (e) { logger.error('[avs menu/today]', e); res.status(500).json({ error: 'Sunucu hatası' }) }

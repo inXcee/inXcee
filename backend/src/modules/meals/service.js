@@ -6,6 +6,22 @@
 
 export const MEAL_TYPES = ['breakfast', 'lunch', 'dinner', 'snack']
 
+// Öğün GÜNÜ tek doğruluk kaynağı: SQLite 'localtime' dönüşümü. JS tarafında
+// toISOString (UTC) kullanılmaz — istatistik sorguları gün sınırını SQLite
+// localtime ile kestiği için gün hesabı da aynı motordan çıkmalı.
+// utcTs verilirse ('YYYY-MM-DD HH:MM:SS' UTC — access_events.scanned_at formatı)
+// o anın yerel günü, verilmezse bugünün yerel günü döner.
+export function mealDayFor(db, utcTs = null) {
+  return utcTs
+    ? db.prepare("SELECT date(?, 'localtime') AS d").get(utcTs).d
+    : db.prepare("SELECT date('now', 'localtime') AS d").get().d
+}
+
+// Bugünden offset günlük yerel tarih (yarın = +1) — selection/forecast varsayılanları.
+export function localDay(db, offsetDays = 0) {
+  return db.prepare("SELECT date('now', 'localtime', ?) AS d").get(`${offsetDays} days`).d
+}
+
 // İstasyon meal_type göndermezse okutma saatine göre öğünü türet.
 // (Yemekhane istasyonu genelde tek öğün servis eder ama esneklik için fallback.)
 export function mealTypeForNow(now = new Date()) {

@@ -65,10 +65,9 @@ analyticsReportsRouter.get('/absence-dashboard', ...mgrAccess, (req, res) => {
 analyticsReportsRouter.get('/cost-per-person', ...mgrAccess, (req, res) => {
   try {
     const db = getDB()
-    const month = req.query.month || new Date().toISOString().slice(0, 7)
+    const month = req.query.month || db.prepare("SELECT strftime('%Y-%m','now','localtime') m").get().m
     const start = `${month}-01`
-    const endDate = new Date(start); endDate.setMonth(endDate.getMonth() + 1)
-    const end = endDate.toISOString().slice(0, 10)
+    const end = db.prepare("SELECT date(?, '+1 month') AS d").get(start).d
 
     const rows = db.prepare(`
       SELECT s.id, s.full_name, s.salary, d.name as dept_name,
@@ -91,16 +90,12 @@ analyticsReportsRouter.get('/cost-per-person', ...mgrAccess, (req, res) => {
 analyticsReportsRouter.get('/comparison', ...mgrAccess, (req, res) => {
   try {
     const db = getDB()
-    const month = req.query.month || new Date().toISOString().slice(0, 7)
+    const month = req.query.month || db.prepare("SELECT strftime('%Y-%m','now','localtime') m").get().m
     function range(ym) {
       const start = `${ym}-01`
-      const e = new Date(start); e.setMonth(e.getMonth() + 1)
-      return [start, e.toISOString().slice(0, 10)]
+      return [start, db.prepare("SELECT date(?, '+1 month') AS d").get(start).d]
     }
-    const prev = (() => {
-      const d = new Date(`${month}-01`); d.setMonth(d.getMonth() - 1)
-      return d.toISOString().slice(0, 7)
-    })()
+    const prev = db.prepare("SELECT strftime('%Y-%m', ?, '-1 month') m").get(`${month}-01`).m
     const [s0, e0] = range(month)
     const [s1, e1] = range(prev)
 

@@ -3,6 +3,7 @@ import request from 'supertest'
 import app from '../../app.js'
 import { initDB, getDB } from '../../shared/db/index.js'
 import { seedDev } from '../../shared/db/seed.js'
+import { mealTypeForNow, mealDayFor, localDay } from './service.js'
 
 let token, staffId, qrToken
 beforeAll(async () => {
@@ -180,6 +181,37 @@ describe('Meals — ertesi-gün öğün seçimi (Faz 8)', () => {
     const r = await request(app).put('/api/meals/selection').set('Authorization', `Bearer ${token}`)
       .send({ staff_id: staffId, meal_date: '2026-12-01', meal_type: 'brunch' })
     expect(r.status).toBe(400)
+  })
+})
+
+describe('Meals — gün sınırı LOCALTIME (TZ paritesi)', () => {
+  // Varsayılan tarihler SQLite date('now','localtime') ile aynı olmalı —
+  // toISOString (UTC) kullanılsaydı 00:00-03:00 TR arası dün/yanlış gün dönerdi.
+  it('GET /daily varsayılan tarih = yerel bugün', async () => {
+    const r = await request(app).get('/api/meals/daily').set('Authorization', `Bearer ${token}`)
+    expect(r.status).toBe(200)
+    expect(r.body.date).toBe(getDB().prepare("SELECT date('now','localtime') d").get().d)
+  })
+
+  it('GET /selection-counts varsayılan tarih = yerel yarın', async () => {
+    const r = await request(app).get('/api/meals/selection-counts').set('Authorization', `Bearer ${token}`)
+    expect(r.status).toBe(200)
+    expect(r.body.date).toBe(getDB().prepare("SELECT date('now','localtime','+1 days') d").get().d)
+  })
+
+  it('mealDayFor utcTs verilince o anın yerel gününü döner', () => {
+    const db = getDB()
+    expect(mealDayFor(db, '2026-06-11 22:30:00')).toBe(
+      db.prepare("SELECT date('2026-06-11 22:30:00','localtime') d").get().d)
+    expect(mealDayFor(db)).toBe(localDay(db, 0))
+  })
+
+  it('mealTypeForNow verilen anın YEREL saatine göre öğün türetir', () => {
+    // Yerel saat kurucusu — TZ ne olursa olsun deterministik
+    expect(mealTypeForNow(new Date(2026, 5, 11, 8, 0))).toBe('breakfast')
+    expect(mealTypeForNow(new Date(2026, 5, 11, 12, 0))).toBe('lunch')
+    expect(mealTypeForNow(new Date(2026, 5, 11, 18, 0))).toBe('dinner')
+    expect(mealTypeForNow(new Date(2026, 5, 11, 23, 0))).toBe('snack')
   })
 })
 

@@ -302,7 +302,8 @@ export default function AvsSelfServicePage() {
   const menuToday = menuQuery.data ?? []
 
   // Faz 8 — yarınki öğün seçimi (mutfak sayımı)
-  const tomorrowDate = new Date(Date.now() + 86400000).toISOString().slice(0, 10)
+  // sv-SE = yerel YYYY-MM-DD (toISOString UTC basar — gece 00-03 TR'de yanlış gün)
+  const tomorrowDate = new Date(Date.now() + 86400000).toLocaleDateString('sv-SE')
   const mealSelQuery = useQuery({
     queryKey: ['avs-meal-selection', avsToken, tomorrowDate],
     queryFn: () => avsApi.get(`/avs-self-service/my-meal-selection?date=${tomorrowDate}`).then(r => r.data),

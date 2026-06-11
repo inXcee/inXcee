@@ -5,6 +5,7 @@ import { getDB } from '../../shared/db/index.js'
 import { logger } from '../../shared/logger.js'
 import { validate } from '../../shared/middleware/validate.js'
 import { logMealSchema, selectionSchema, dietSchema, menuSchema } from './schemas.js'
+import { mealDayFor, localDay } from './service.js'
 
 export const mealsRouter = Router()
 const mgr = requireRole('campus_manager', 'shift_supervisor')
@@ -29,7 +30,7 @@ mealsRouter.post('/log', ...mgr, validate(logMealSchema), (req, res) => {
     }
     if (!sid) return res.status(400).json({ error: 'staff_id veya qr_token gerekli' })
 
-    const date = meal_date || new Date().toISOString().slice(0, 10)
+    const date = meal_date || mealDayFor(db)
     try {
       const id = db.prepare(`
         INSERT INTO meal_logs(staff_id, meal_type, meal_date, logged_by, method, cost)
@@ -50,8 +51,8 @@ mealsRouter.post('/log', ...mgr, validate(logMealSchema), (req, res) => {
 // Günlük dağılım
 mealsRouter.get('/daily', ...view, (req, res) => {
   try {
-    const date = req.query.date || new Date().toISOString().slice(0, 10)
     const db = getDB()
+    const date = req.query.date || mealDayFor(db)
     const counts = db.prepare(`
       SELECT meal_type, COUNT(*) as count, SUM(COALESCE(cost, 0)) as total_cost
       FROM meal_logs WHERE meal_date = ? GROUP BY meal_type
@@ -96,9 +97,7 @@ mealsRouter.put('/selection', ...mgr, validate(selectionSchema), (req, res) => {
 // Mutfak sayımı — bir gün için seçim yapan (attending=1) kişi sayısı (öğün bazlı)
 mealsRouter.get('/selection-counts', ...view, (req, res) => {
   try {
-    const date = req.query.date || (() => {
-      const d = new Date(); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10)
-    })()
+    const date = req.query.date || localDay(getDB(), 1)
     const counts = getDB().prepare(`
       SELECT meal_type, COUNT(*) AS count
       FROM meal_selections WHERE meal_date=? AND attending=1
@@ -113,7 +112,7 @@ mealsRouter.get('/selection-counts', ...view, (req, res) => {
 // karşılaştırır; okutmayan = no-show (israf/sayım metriği).
 mealsRouter.get('/attendance', ...view, (req, res) => {
   try {
-    const date = req.query.date || new Date().toISOString().slice(0, 10)
+    const date = req.query.date || mealDayFor(getDB())
     const mealType = req.query.meal_type
     if (mealType && !VALID_MEALS.includes(mealType)) {
       return res.status(400).json({ error: 'Geçersiz meal_type' })
@@ -152,10 +151,8 @@ mealsRouter.get('/attendance', ...view, (req, res) => {
 // ── YM3: Talep tahmini (yarın için kaç kişi yemek bekleniyor) ──
 mealsRouter.get('/forecast', ...view, (req, res) => {
   try {
-    const targetDate = req.query.date || (() => {
-      const d = new Date(); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10)
-    })()
     const db = getDB()
+    const targetDate = req.query.date || localDay(db, 1)
     // O gün vardiyada olacak personel sayısı
     const scheduled = db.prepare(`
       SELECT COUNT(DISTINCT staff_id) as c FROM shift_schedule
@@ -200,12 +197,10 @@ mealsRouter.put('/staff/:id/diet', ...mgr, validate(dietSchema), (req, res) => {
 // ── YM4: Maliyet özeti — kişi başı + aylık ──
 mealsRouter.get('/cost-summary', ...view, (req, res) => {
   try {
-    const ym = req.query.month || new Date().toISOString().slice(0, 7)
-    const start = `${ym}-01`
-    const endDate = new Date(start); endDate.setMonth(endDate.getMonth() + 1)
-    const end = endDate.toISOString().slice(0, 10)
-
     const db = getDB()
+    const ym = req.query.month || mealDayFor(db).slice(0, 7)
+    const start = `${ym}-01`
+    const end = db.prepare("SELECT date(?, '+1 month') AS d").get(start).d
     const perStaff = db.prepare(`
       SELECT s.id, s.full_name, d.name as dept_name,
         COUNT(*) as meal_count,
@@ -234,7 +229,7 @@ mealsRouter.get('/cost-summary', ...view, (req, res) => {
 // ── Menü ──
 mealsRouter.get('/menu', ...view, (req, res) => {
   try {
-    const date = req.query.date || new Date().toISOString().slice(0, 10)
+    const date = req.query.date || mealDayFor(getDB())
     const rows = getDB().prepare('SELECT meal_type, items FROM meal_menu WHERE meal_date=?').all(date)
     res.json(rows)
   } catch (e) { logger.error('[meals/menu get]', e); res.status(500).json({ error: 'Sunucu hatası' }) }

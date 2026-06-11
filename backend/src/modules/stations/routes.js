@@ -6,7 +6,7 @@ import { upload, verifyMagicBytes } from '../../shared/uploads/middleware.js'
 import { logAudit } from '../../shared/audit.js'
 import { getDB } from '../../shared/db/index.js'
 import { logger } from '../../shared/logger.js'
-import { isEligible, logMealFromScan, mealTypeForNow, MEAL_TYPES } from '../meals/service.js'
+import { isEligible, logMealFromScan, mealTypeForNow, mealDayFor, MEAL_TYPES } from '../meals/service.js'
 import { createNotification } from '../../shared/notifications/service.js'
 import { enqueue } from '../../shared/jobs/index.js'
 import { getManagerEmails } from '../email/queries.js'
@@ -364,9 +364,11 @@ stationsRouter.post('/scan', requireStation, upload.single('photo'), verifyMagic
     // Faz 4 — Yemekhane: öğün hakkı (entitlement) kontrolü + meal_logs entegrasyonu.
     // Yalnızca staff sahipli yemek kartlarına uygulanır (personnel/visitor kartları muaf).
     if (station.station_type === 'cafeteria' && card.holder_type === 'staff') {
-      const mt = MEAL_TYPES.includes(mealType) ? mealType : mealTypeForNow()
-      // Kuyruktan gelen okutmada öğün günü orijinal zamana göre hesaplanır
-      const date = (scannedAt || new Date().toISOString()).slice(0, 10)
+      // Kuyruktan gelen okutmada öğün tipi/günü ORİJİNAL zamana göre; gün sınırı
+      // localtime (UTC slice değil — gece 00-03 TR'de dünün gününe yazardı)
+      const scanTime = scannedAt ? new Date(scannedAt.replace(' ', 'T') + 'Z') : new Date()
+      const mt = MEAL_TYPES.includes(mealType) ? mealType : mealTypeForNow(scanTime)
+      const date = mealDayFor(db, scannedAt)
       const elig = isEligible(db, card.holder_id, mt, date)
       if (!elig.eligible) {
         const result = elig.reason === 'duplicate' ? 'duplicate' : 'not_eligible'

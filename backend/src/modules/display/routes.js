@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { getDB } from '../../shared/db/index.js'
 import { logger } from '../../shared/logger.js'
+import { localDay } from '../meals/service.js'
 
 // Public read-only TV pano endpoint'i. Auth gerekmiyor (kampus icindeki TV icin).
 // Localhost veya iç ağ icin acik — Nginx ile dis erisim kapatilmalidir.
@@ -94,9 +95,8 @@ displayRouter.get('/kitchen', (_req, res) => {
   const db = getDB()
   try {
     const MEALS = ['breakfast', 'lunch', 'dinner', 'snack']
-    const today = new Date().toISOString().slice(0, 10)
-    const tmr = new Date(); tmr.setDate(tmr.getDate() + 1)
-    const tomorrow = tmr.toISOString().slice(0, 10)
+    const today = localDay(db)
+    const tomorrow = localDay(db, 1)
 
     const expectedStmt = db.prepare(`
       SELECT meal_type, COUNT(*) AS c FROM meal_selections

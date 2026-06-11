@@ -19,8 +19,9 @@ beforeAll(async () => {
   if (!s) { db.prepare('INSERT INTO staff(full_name, is_active) VALUES(?,1)').run('İstasyon Test'); s = db.prepare('SELECT id FROM staff WHERE full_name=?').get('İstasyon Test') }
   staffId = s.id
   // Faz 4: yemekhane uygunluğu için bu personeli bugün vardiyaya yaz (deterministik)
+  // Gün sınırı LOCALTIME (scan handler mealDayFor kullanır) — UTC slice değil
   db.prepare(`INSERT OR REPLACE INTO shift_schedule(staff_id,work_date,status) VALUES(?,?, 'scheduled')`)
-    .run(staffId, new Date().toISOString().slice(0, 10))
+    .run(staffId, db.prepare("SELECT date('now','localtime') d").get().d)
 
   // Giriş + yemek kartı üret, NFC UID bağla
   const access = await request(app).post(`/api/cards/staff/${staffId}/issue`).set(auth(token)).send({ card_type: 'access', regenerate: true })
@@ -433,6 +434,29 @@ describe('stations — çevrimdışı kuyruk (scanned_at) + busyness', () => {
     const ev = getDB().prepare("SELECT scanned_at FROM access_events WHERE raw_uid='KUYRUKFUTURE'").get()
     const stored = new Date(ev.scanned_at.replace(' ', 'T') + 'Z')
     expect(stored.getTime()).toBeLessThanOrEqual(Date.now() + 2000) // gelecek değil
+  })
+
+  it('kuyruklanan yemekhane okutması öğün gününü ORİJİNAL zamanın YEREL gününe yazar', async () => {
+    const db = getDB()
+    // Ayrı personel + yemek kartı (paylaşılan staffId'nin bugünkü öğünlerine dokunmamak için)
+    const qid = db.prepare("INSERT INTO staff(full_name, is_active) VALUES('Kuyruk Öğün', 1)").run().lastInsertRowid
+    const c = await request(app).post(`/api/cards/staff/${qid}/issue`).set(auth(token)).send({ card_type: 'meal' })
+    await request(app).patch(`/api/cards/${c.body.id}/bind-nfc`).set(auth(token)).send({ nfc_uid: 'NFC-QMEAL-1' })
+
+    // Dün öğlene denk gelen orijinal zaman (48 saat guard'ı içinde)
+    const past = new Date(Date.now() - 26 * 3600 * 1000)
+    const utcTs = past.toISOString().slice(0, 19).replace('T', ' ')
+    // Beklenen öğün günü = o anın SQLite LOCALTIME günü (UTC slice DEĞİL)
+    const expectedDay = db.prepare("SELECT date(?, 'localtime') d").get(utcTs).d
+    db.prepare(`INSERT OR REPLACE INTO shift_schedule(staff_id,work_date,status) VALUES(?,?, 'scheduled')`)
+      .run(qid, expectedDay)
+
+    const r = await request(app).post('/api/stations/scan').set('X-Station-Key', cafeKey)
+      .send({ raw_uid: 'NFC-QMEAL-1', scanned_at: past.toISOString(), meal_type: 'lunch' })
+    expect(r.body.result).toBe('ok')
+    const log = db.prepare("SELECT meal_date, meal_type FROM meal_logs WHERE staff_id=?").get(qid)
+    expect(log.meal_type).toBe('lunch')
+    expect(log.meal_date).toBe(expectedDay)
   })
 
   it('busyness 24 saatlik dizi döner, toplamlar tutarlı', async () => {
