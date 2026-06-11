@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
+import { enqueueScan, queueLength, flushQueue } from './scanQueue.js'
 
 // Sabit NFC okutma istasyonu — public route (/station), JWT yok.
 // Kimlik: localStorage'daki istasyon anahtarı, her istekte X-Station-Key header'ı.
@@ -18,6 +19,7 @@ const RESULT_VIEW = {
   alarm:        { bg: '#991b1b', title: '⚠ ALARM — KARA LİSTE', ok: false },
   error:        { bg: '#7c2d12', title: 'İŞLEM BAŞARISIZ', ok: false },
   offline:      { bg: '#475569', title: 'SUNUCUYA ULAŞILAMADI', ok: false },
+  queued:       { bg: '#b45309', title: '⏳ SIRAYA ALINDI', ok: true },
 }
 
 function mealByHour() {
@@ -70,6 +72,7 @@ export default function StationPage() {
   const [newKeyInput, setNewKeyInput] = useState('')
   const [newKeyError, setNewKeyError] = useState('')
   const [switching, setSwitching] = useState(false)
+  const [queued, setQueued] = useState(() => queueLength()) // çevrimdışı kuyruk sayacı
 
   const inputRef = useRef(null)
   const videoRef = useRef(null)
@@ -133,6 +136,22 @@ export default function StationPage() {
     const iv = setInterval(loadRecent, 60000)
     return () => clearInterval(iv)
   }, [station, loadRecent])
+
+  // Çevrimdışı kuyruğu boşalt: açılışta, online olunca ve 45sn'de bir dene
+  const tryFlush = useCallback(async () => {
+    if (!stationKey || queueLength() === 0 || !navigator.onLine) return
+    const r = await flushQueue(stationKey)
+    setQueued(r.remaining)
+    if (r.sent > 0) loadRecent()
+  }, [stationKey, loadRecent])
+
+  useEffect(() => {
+    if (!station) return
+    tryFlush()
+    const iv = setInterval(tryFlush, 45000)
+    window.addEventListener('online', tryFlush)
+    return () => { clearInterval(iv); window.removeEventListener('online', tryFlush) }
+  }, [station, tryFlush])
 
   // Webcam (yalnız capture_photo açıksa)
   useEffect(() => {
@@ -213,7 +232,10 @@ export default function StationPage() {
       const res = await fetch('/api/stations/scan', { method: 'POST', headers: { 'X-Station-Key': stationKey }, body: fd })
       showResult(await parseResponse(res))
     } catch {
-      showResult({ result: 'offline', reason: 'İnternet bağlantısını ve ağ kablosunu kontrol edin' })
+      // Ağ yok → okutma KAYBOLMAZ: kuyruğa al, bağlantı gelince orijinal zamanıyla gönderilir
+      const n = enqueueScan({ raw_uid: rawUid, meal_type: station.station_type === 'cafeteria' ? mealType : null })
+      setQueued(n)
+      showResult({ result: 'queued', reason: `Ağ yok — kayıt sıraya alındı (${n} bekliyor), bağlantı gelince otomatik gönderilir` })
     } finally {
       scanningRef.current = false
       loadRecent()
@@ -340,16 +362,20 @@ export default function StationPage() {
         </span>
       </div>
 
-      {/* Çevrimdışı bandı */}
-      {!online && (
+      {/* Çevrimdışı / kuyruk bandı */}
+      {!online ? (
         <div style={{ position: 'absolute', top: 48, left: 0, right: 0, textAlign: 'center', padding: '8px', background: '#b91c1c', fontSize: 14, fontWeight: 700, letterSpacing: 1 }}>
-          ⚠ İNTERNET YOK — okutmalar şu an kaydedilemez
+          ⚠ İNTERNET YOK — okutmalar sıraya alınır, bağlantı gelince gönderilir{queued > 0 ? ` (${queued} bekliyor)` : ''}
         </div>
-      )}
+      ) : queued > 0 ? (
+        <div style={{ position: 'absolute', top: 48, left: 0, right: 0, textAlign: 'center', padding: '8px', background: '#b45309', fontSize: 13, fontWeight: 700, letterSpacing: 1 }}>
+          ⏳ {queued} okutma sırada — gönderiliyor…
+        </div>
+      ) : null}
 
       {/* Yemekhane öğün seçimi */}
       {station.station_type === 'cafeteria' && !result && (
-        <div style={{ position: 'absolute', top: online ? 56 : 92, display: 'flex', gap: 8 }}>
+        <div style={{ position: 'absolute', top: (!online || queued > 0) ? 92 : 56, display: 'flex', gap: 8 }}>
           {[['breakfast', 'Kahvaltı'], ['lunch', 'Öğle'], ['dinner', 'Akşam'], ['snack', 'Ara']].map(([v, l]) => (
             <button key={v} onClick={() => setMealType(v)}
               style={{ padding: '6px 14px', borderRadius: 20, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600,

@@ -413,3 +413,39 @@ describe('stations — stats-today + hareket filtreleri', () => {
     expect(r.body.every(e => e.result !== 'ok')).toBe(true)
   })
 })
+
+describe('stations — çevrimdışı kuyruk (scanned_at) + busyness', () => {
+  it('scan geçerli scanned_at ile orijinal zamana yazılır', async () => {
+    const past = new Date(Date.now() - 2 * 3600 * 1000) // 2 saat önce
+    const r = await request(app).post('/api/stations/scan').set('X-Station-Key', entryKey)
+      .send({ raw_uid: 'KUYRUK-1', scanned_at: past.toISOString() })
+    expect(r.status).toBe(200) // unknown_card olabilir ama event yazılır
+    const ev = getDB().prepare("SELECT scanned_at FROM access_events WHERE raw_uid='KUYRUK1'").get()
+    expect(ev).toBeTruthy()
+    const stored = new Date(ev.scanned_at.replace(' ', 'T') + 'Z')
+    expect(Math.abs(stored.getTime() - past.getTime())).toBeLessThan(2000)
+  })
+
+  it('gelecek tarihli ve 48 saatten eski scanned_at YOK sayılır (şimdi yazılır)', async () => {
+    const future = new Date(Date.now() + 3600 * 1000)
+    await request(app).post('/api/stations/scan').set('X-Station-Key', entryKey)
+      .send({ raw_uid: 'KUYRUK-FUTURE', scanned_at: future.toISOString() })
+    const ev = getDB().prepare("SELECT scanned_at FROM access_events WHERE raw_uid='KUYRUKFUTURE'").get()
+    const stored = new Date(ev.scanned_at.replace(' ', 'T') + 'Z')
+    expect(stored.getTime()).toBeLessThanOrEqual(Date.now() + 2000) // gelecek değil
+  })
+
+  it('busyness 24 saatlik dizi döner, toplamlar tutarlı', async () => {
+    const r = await request(app).get('/api/stations/busyness?days=2').set(auth(token))
+    expect(r.status).toBe(200)
+    expect(r.body.length).toBe(24)
+    expect(r.body.every(h => typeof h.ok === 'number' && typeof h.fail === 'number')).toBe(true)
+    const total = r.body.reduce((s, h) => s + h.ok + h.fail, 0)
+    expect(total).toBeGreaterThan(0) // önceki testler okutma üretti
+  })
+
+  it('busyness yetkisiz 401', async () => {
+    const r = await request(app).get('/api/stations/busyness')
+    expect(r.status).toBe(401)
+  })
+})

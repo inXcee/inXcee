@@ -49,6 +49,12 @@ export default function StationsPage() {
     queryFn: () => api.get('/stations/stats-today').then(r => r.data),
     refetchInterval: 30000,
   })
+  const [busyDays, setBusyDays] = useState(1)
+  const { data: busyness = [] } = useQuery({
+    queryKey: ['station-busyness', busyDays, evStation],
+    queryFn: () => api.get(`/stations/busyness?days=${busyDays}${evStation ? `&station_id=${evStation}` : ''}`).then(r => r.data),
+    refetchInterval: 60000,
+  })
   const todayByStation = useMemo(() => {
     const m = {}
     for (const s of stats?.stations || []) m[s.id] = s
@@ -290,6 +296,47 @@ export default function StationsPage() {
               <span style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--text4)' }}>Detay için bir istasyon seçin veya yeni oluşturun</span>
             </div>
           )}
+
+          {/* Saatlik yoğunluk — hangi saatte ne kadar geçiş */}
+          <div className="panel fade-up-3">
+            <div style={{ height: '2px', background: 'var(--accent)' }} />
+            <div className="panel-header" style={{ flexWrap: 'wrap', gap: 8 }}>
+              <div className="panel-title">SAATLİK YOĞUNLUK</div>
+              <div style={{ display: 'flex', gap: 4 }}>
+                {[[1, 'BUGÜN'], [7, '7 GÜN'], [30, '30 GÜN']].map(([d, l]) => (
+                  <button key={d} onClick={() => setBusyDays(d)} className={`filter-chip ${busyDays === d ? 'active' : ''}`} style={{ fontSize: 10 }}>{l}</button>
+                ))}
+              </div>
+            </div>
+            <div className="panel-body">
+              {(() => {
+                const max = Math.max(1, ...busyness.map(h => h.ok + h.fail))
+                return (
+                  <div style={{ display: 'flex', alignItems: 'flex-end', gap: 3, height: 90 }}>
+                    {busyness.map(h => {
+                      const total = h.ok + h.fail
+                      return (
+                        <div key={h.hour} title={`${String(h.hour).padStart(2, '0')}:00 — ${h.ok} ok / ${h.fail} sorunlu`}
+                          style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', height: '100%', cursor: 'default' }}>
+                          {h.fail > 0 && <div style={{ height: `${(h.fail / max) * 76}px`, background: '#dc2626', borderRadius: '2px 2px 0 0', minHeight: 2 }} />}
+                          {h.ok > 0 && <div style={{ height: `${(h.ok / max) * 76}px`, background: '#16a34a', borderRadius: h.fail > 0 ? 0 : '2px 2px 0 0', minHeight: 2 }} />}
+                          {total === 0 && <div style={{ height: 2, background: 'var(--border)' }} />}
+                          <div style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--text4)', textAlign: 'center', marginTop: 3 }}>
+                            {h.hour % 3 === 0 ? String(h.hour).padStart(2, '0') : ''}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )
+              })()}
+              <div style={{ display: 'flex', gap: 14, marginTop: 6, fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>
+                <span><span style={{ display: 'inline-block', width: 9, height: 9, background: '#16a34a', borderRadius: 2, marginRight: 4 }} />Geçiş OK</span>
+                <span><span style={{ display: 'inline-block', width: 9, height: 9, background: '#dc2626', borderRadius: 2, marginRight: 4 }} />Sorunlu</span>
+                {evStation > 0 && <span style={{ color: 'var(--accent)' }}>filtre: {stations.find(s => s.id === evStation)?.name}</span>}
+              </div>
+            </div>
+          </div>
 
           {/* Son hareketler — istasyon + sorunlu filtresi */}
           <div className="panel fade-up-3">

@@ -194,6 +194,27 @@ stationsRouter.get('/stats-today', ...view, (req, res) => {
   } catch (e) { logger.error('[stations/stats-today]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
+// ── Saatlik yoğunluk — son N günün 24 saatlik ok/fail dağılımı (takip grafiği) ──
+stationsRouter.get('/busyness', ...view, (req, res) => {
+  try {
+    const days = Math.min(Math.max(+req.query.days || 1, 1), 30)
+    const conds = ["date(scanned_at, 'localtime') >= date('now', 'localtime', ?)"]
+    const params = [`-${days - 1} days`]
+    if (+req.query.station_id) { conds.push('station_id = ?'); params.push(+req.query.station_id) }
+    const rows = getDB().prepare(`
+      SELECT CAST(strftime('%H', scanned_at, 'localtime') AS INTEGER) AS hour,
+        SUM(CASE WHEN result='ok' THEN 1 ELSE 0 END) AS ok,
+        SUM(CASE WHEN result!='ok' THEN 1 ELSE 0 END) AS fail
+      FROM access_events
+      WHERE ${conds.join(' AND ')}
+      GROUP BY hour
+    `).all(...params)
+    const hours = Array.from({ length: 24 }, (_, h) => ({ hour: h, ok: 0, fail: 0 }))
+    for (const r of rows) hours[r.hour] = { hour: r.hour, ok: r.ok, fail: r.fail }
+    res.json(hours)
+  } catch (e) { logger.error('[stations/busyness]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
 // ── İstasyon kendi kimliğini sorar (kiosk açılışta tip/foto ayarını öğrenir) ──
 stationsRouter.get('/me', requireStation, (req, res) => {
   res.json(publicStation(req.station))
@@ -253,6 +274,18 @@ stationsRouter.post('/scan', requireStation, upload.single('photo'), verifyMagic
     const mealType = station.station_type === 'cafeteria' ? (req.body?.meal_type || null) : null
     const photoUrl = req.file ? `/uploads/${req.file.filename}` : null
 
+    // Çevrimdışı kuyruktan gelen okutmalar orijinal zamanıyla yazılır.
+    // Guard: gelecek tarih ve 48 saatten eski kabul edilmez (saat oynaması/abuse)
+    let scannedAt = null
+    const rawTs = (req.body?.scanned_at || '').toString().trim()
+    if (rawTs) {
+      const d = new Date(rawTs)
+      const age = Date.now() - d.getTime()
+      if (!isNaN(d.getTime()) && age > 0 && age < 48 * 3600 * 1000) {
+        scannedAt = d.toISOString().slice(0, 19).replace('T', ' ') // UTC, DB formatı
+      }
+    }
+
     // Faz 7a — Turnike kapı sinyali: her okutma yanıtına access_granted ekle
     // (result==='ok' → kapı açılır). Fiziksel turnike denetleyicisi bu alanı
     // okuyup rölesini sürer; reddedilen/duplicate/alarm durumunda kapı kapalı kalır.
@@ -270,9 +303,9 @@ stationsRouter.post('/scan', requireStation, upload.single('photo'), verifyMagic
 
     function log(result, eventType, cardId, holderType, holderId) {
       return db.prepare(`
-        INSERT INTO access_events(card_id, holder_type, holder_id, station_id, event_type, meal_type, result, photo_url, raw_uid)
-        VALUES(?,?,?,?,?,?,?,?,?)
-      `).run(cardId ?? null, holderType ?? null, holderId ?? null, station.id, eventType, mealType, result, photoUrl, rawUid).lastInsertRowid
+        INSERT INTO access_events(card_id, holder_type, holder_id, station_id, event_type, meal_type, result, photo_url, raw_uid, scanned_at)
+        VALUES(?,?,?,?,?,?,?,?,?, COALESCE(?, datetime('now')))
+      `).run(cardId ?? null, holderType ?? null, holderId ?? null, station.id, eventType, mealType, result, photoUrl, rawUid, scannedAt).lastInsertRowid
     }
 
     // Eşleşmeyen kart
@@ -332,7 +365,8 @@ stationsRouter.post('/scan', requireStation, upload.single('photo'), verifyMagic
     // Yalnızca staff sahipli yemek kartlarına uygulanır (personnel/visitor kartları muaf).
     if (station.station_type === 'cafeteria' && card.holder_type === 'staff') {
       const mt = MEAL_TYPES.includes(mealType) ? mealType : mealTypeForNow()
-      const date = new Date().toISOString().slice(0, 10)
+      // Kuyruktan gelen okutmada öğün günü orijinal zamana göre hesaplanır
+      const date = (scannedAt || new Date().toISOString()).slice(0, 10)
       const elig = isEligible(db, card.holder_id, mt, date)
       if (!elig.eligible) {
         const result = elig.reason === 'duplicate' ? 'duplicate' : 'not_eligible'
