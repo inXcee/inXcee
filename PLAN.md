@@ -213,8 +213,10 @@ Doğrulama: 804/804 backend, build temiz, 8/8 e2e
 - [x] QrScannerPage: 🚌 Servis / ⏱ Mesai mod düğmesi + giriş/çıkış geçmiş etiketleri
 - [x] `qr_clock_in` / `qr_clock_out` audit log + 5 test — 833/833
 
-### Faz 20 — T1: LaundryHub.jsx split (refactor)
-- [ ] 85KB monolith'i alt component'lere böl — davranış birebir korunur
+### Faz 20 — T1: LaundryHub.jsx split (refactor) ✅
+- [x] 2038 satırlık monolith 8 dosyaya bölündü: `hubShared.js` (sabitler + waLink), `ExpandedSection`, `KanbanCard` (+Draggable), `KanbanCol`, `DeliveredTodaySection`, `QuickNotes`, `QuickAdd`, `FullRecordsView` — LaundryHub ~700 satır orkestrasyona indi
+- [x] Bonus: kanban blok filtresindeki hardcoded `A/B/S2` listesi `shared/blocks.js` BLOCKS'tan beslenir oldu (CLAUDE.md kuralı)
+- [x] Doğrulama: build temiz + 8/8 Playwright smoke
 
 ### Faz 21 — Cila
 - [ ] `jsqr` bağımlılığını kaldır
