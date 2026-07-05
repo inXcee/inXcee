@@ -43,6 +43,73 @@ describe('Self-Service', () => {
   })
 })
 
+describe('P2 — İzin talebi (kiosk self-service)', () => {
+  let kioskToken
+
+  beforeAll(() => {
+    const db = getDB()
+    db.prepare("INSERT INTO staff(full_name, tc_no, is_active) VALUES('Izin Test Staff', '11122233344', 1)").run()
+    db.prepare("INSERT INTO personnel(full_name, tc_no) VALUES('Izin Test Personel', '11122233344')").run()
+    const pid = db.prepare("SELECT id FROM personnel WHERE tc_no='11122233344'").get().id
+    kioskToken = jwt.sign({ personnelId: pid, role: 'kiosk' }, process.env.JWT_SECRET, { expiresIn: '1h' })
+  })
+
+  it('GET /my-leaves bakiye + boş liste döner', async () => {
+    const res = await request(app).get('/api/self-service/my-leaves')
+      .set('Authorization', `Bearer ${kioskToken}`)
+    expect(res.status).toBe(200)
+    expect(Array.isArray(res.body.leaves)).toBe(true)
+    expect(res.body.balance).toBeTruthy()
+    expect(res.body.balance.annual_total).toBeGreaterThan(0)
+  })
+
+  it('POST /leave-request talep oluşturur, listede görünür, yönetime bildirim düşer', async () => {
+    const res = await request(app).post('/api/self-service/leave-request')
+      .set('Authorization', `Bearer ${kioskToken}`)
+      .send({ leave_type: 'annual', start_date: '2026-08-10', end_date: '2026-08-14', reason: 'Yıllık izin' })
+    expect(res.status).toBe(201)
+    expect(res.body.id).toBeTruthy()
+
+    const list = await request(app).get('/api/self-service/my-leaves')
+      .set('Authorization', `Bearer ${kioskToken}`)
+    const created = list.body.leaves.find(l => l.id === res.body.id)
+    expect(created).toBeTruthy()
+    expect(created.status).toBe('pending')
+    expect(created.total_days).toBe(5)
+
+    const notif = getDB().prepare(
+      "SELECT COUNT(*) c FROM notifications WHERE message LIKE 'İzin talebi: Izin Test Staff%'"
+    ).get().c
+    expect(notif).toBeGreaterThanOrEqual(1)
+  })
+
+  it('çakışan tarih aralığı 400', async () => {
+    const res = await request(app).post('/api/self-service/leave-request')
+      .set('Authorization', `Bearer ${kioskToken}`)
+      .send({ leave_type: 'annual', start_date: '2026-08-12', end_date: '2026-08-16' })
+    expect(res.status).toBe(400)
+    expect(res.body.error).toMatch(/zaten var/)
+  })
+
+  it('geçersiz izin tipi 400', async () => {
+    const res = await request(app).post('/api/self-service/leave-request')
+      .set('Authorization', `Bearer ${kioskToken}`)
+      .send({ leave_type: 'tatil', start_date: '2026-09-01', end_date: '2026-09-02' })
+    expect(res.status).toBe(400)
+  })
+
+  it('staff eşleşmesi olmayan personel 404', async () => {
+    const db = getDB()
+    db.prepare("INSERT INTO personnel(full_name, tc_no) VALUES('Staffsiz Personel', '99988877766')").run()
+    const pid = db.prepare("SELECT id FROM personnel WHERE tc_no='99988877766'").get().id
+    const t = jwt.sign({ personnelId: pid, role: 'kiosk' }, process.env.JWT_SECRET, { expiresIn: '1h' })
+    const res = await request(app).post('/api/self-service/leave-request')
+      .set('Authorization', `Bearer ${t}`)
+      .send({ leave_type: 'annual', start_date: '2026-09-01', end_date: '2026-09-02' })
+    expect(res.status).toBe(404)
+  })
+})
+
 describe('self-service maintenance validasyon', () => {
   it('kısa location reddedilir', async () => {
     const kioskToken = jwt.sign({ personnelId: 1, role: 'kiosk' }, process.env.JWT_SECRET, { expiresIn: '1h' })

@@ -3,6 +3,9 @@ import { requireKioskOrStaff, requireAvsKiosk } from '../../shared/auth/middlewa
 import { getDB } from '../../shared/db/index.js'
 import { createRequest } from '../maintenance/queries.js'
 import { changeKioskPin } from '../../shared/auth/service.js'
+import { createLeaveService } from '../shifts/service.js'
+import { getLeaveBalance } from '../shifts/queries.js'
+import { createNotification } from '../../shared/notifications/service.js'
 import { insertItemQuery, updateItemStatusQuery, listMachinesQuery, addToQueueQuery, collectItemQuery, setBagNoQuery, getRoomLaundryHistoryQuery, getRoomLaundrySummaryQuery, getBlockRoomActiveCountsQuery } from '../laundry/queries.js'
 
 export const selfServiceRouter = Router()
@@ -110,6 +113,62 @@ selfServiceRouter.get('/my-shifts', requireKioskOrStaff, (req, res) => {
 
     res.json({ shifts, summary })
   } catch (e) { console.error('[my-shifts]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// P2 — İzin talepleri (kiosk self-service): personel TC → staff eşleşmesi üzerinden
+function staffFromPersonnel(db, personnelId) {
+  const p = db.prepare('SELECT tc_no FROM personnel WHERE id=?').get(personnelId)
+  if (!p?.tc_no) return null
+  return db.prepare('SELECT id, full_name FROM staff WHERE tc_no = ? AND is_active = 1').get(p.tc_no) || null
+}
+
+selfServiceRouter.get('/my-leaves', requireKioskOrStaff, (req, res) => {
+  if (!req.user.personnelId) return res.status(403).json({ error: 'Kiosk token gerekli' })
+  try {
+    const db = getDB()
+    const staff = staffFromPersonnel(db, req.user.personnelId)
+    if (!staff) return res.json({ leaves: [], balance: null, message: 'Personel (staff) kaydınız bulunamadı' })
+
+    const leaves = db.prepare(`
+      SELECT id, leave_type, start_date, end_date, total_days, reason, status, created_at
+      FROM leave_requests WHERE staff_id = ?
+      ORDER BY created_at DESC LIMIT 20
+    `).all(staff.id)
+    const balance = getLeaveBalance(staff.id, new Date().getFullYear())
+    res.json({ leaves, balance })
+  } catch (e) { console.error('[my-leaves]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+const LEAVE_TYPES = ['annual', 'sick', 'emergency', 'maternity', 'paternity', 'marriage', 'bereavement']
+
+selfServiceRouter.post('/leave-request', requireKioskOrStaff, (req, res) => {
+  if (!req.user.personnelId) return res.status(403).json({ error: 'Kiosk token gerekli' })
+  const { leave_type, start_date, end_date, reason } = req.body || {}
+  if (!LEAVE_TYPES.includes(leave_type)) return res.status(400).json({ error: 'Geçersiz izin tipi' })
+  if (!start_date || !end_date) return res.status(400).json({ error: 'start_date ve end_date gerekli' })
+  try {
+    const db = getDB()
+    const staff = staffFromPersonnel(db, req.user.personnelId)
+    if (!staff) return res.status(404).json({ error: 'Personel (staff) kaydınız bulunamadı — yönetime başvurun' })
+
+    // Aynı aralıkla çakışan bekleyen/onaylı talep varsa engelle
+    const overlap = db.prepare(`
+      SELECT id FROM leave_requests
+      WHERE staff_id = ? AND status IN ('pending','approved')
+        AND start_date <= ? AND end_date >= ?
+    `).get(staff.id, end_date, start_date)
+    if (overlap) return res.status(400).json({ error: 'Bu tarih aralığında bekleyen/onaylı bir talebiniz zaten var' })
+
+    const id = createLeaveService({
+      staff_id: staff.id, leave_type, start_date, end_date, reason: reason || null,
+    })
+    createNotification({
+      message: `İzin talebi: ${staff.full_name} — ${leave_type} ${start_date} → ${end_date}`,
+      type: 'info', module: 'shifts', target_role: 'campus_manager',
+      dedup_key: `leave_req_${id}`,
+    })
+    res.status(201).json({ id })
+  } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
 // H5 Q6 — Kişinin kendi QR'ı (mobile kart)

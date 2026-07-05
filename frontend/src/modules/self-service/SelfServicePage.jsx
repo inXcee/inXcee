@@ -12,6 +12,7 @@ const TABS = [
   { key:'info',        label:'👤 Bilgilerim' },
   { key:'qr',          label:'📱 Kartım' },
   { key:'shifts',      label:'⏱ Vardiyam' },
+  { key:'leave',       label:'🌴 İzin' },
   { key:'transport',   label:'🚌 Servisim' },
   { key:'laundry',     label:'🧺 Çamaşır' },
   { key:'maintenance', label:'🔧 Arıza' },
@@ -43,6 +44,10 @@ export default function SelfServicePage() {
   // Şikayet formu
   const [fbForm, setFbForm] = useState({ type:'suggestion', message:'', anonymous:false })
   const [fbSuccess, setFbSuccess] = useState(false)
+
+  // İzin talebi formu (P2)
+  const [leaveForm, setLeaveForm] = useState({ leave_type:'annual', start_date:'', end_date:'', reason:'' })
+  const [leaveMsg, setLeaveMsg] = useState(null) // { ok, text }
 
   // Okunmamış duyuru takibi
   const [readIds, setReadIds] = useState(() => {
@@ -110,6 +115,20 @@ export default function SelfServicePage() {
     queryKey: ['kiosk-transport', kioskToken],
     queryFn: () => kioskApi.get('/self-service/my-transport').then(r => r.data),
     enabled: !!kioskToken && activeTab === 'transport',
+  })
+  const { data: myLeaves, refetch: refetchLeaves } = useQuery({
+    queryKey: ['kiosk-leaves', kioskToken],
+    queryFn: () => kioskApi.get('/self-service/my-leaves').then(r => r.data),
+    enabled: !!kioskToken && activeTab === 'leave',
+  })
+  const leaveMut = useMutation({
+    mutationFn: () => kioskApi.post('/self-service/leave-request', leaveForm),
+    onSuccess: () => {
+      setLeaveMsg({ ok: true, text: 'İzin talebiniz alındı — onay bekliyor' })
+      setLeaveForm({ leave_type:'annual', start_date:'', end_date:'', reason:'' })
+      refetchLeaves()
+    },
+    onError: (e) => setLeaveMsg({ ok: false, text: e?.response?.data?.error || 'Talep gönderilemedi' }),
   })
   const { data: myQr } = useQuery({
     queryKey: ['kiosk-qr', kioskToken],
@@ -480,6 +499,108 @@ export default function SelfServicePage() {
                             {s.shift_name && <div className="text-xs text-slate-500">{s.shift_name} {s.start_hour != null && `· ${String(s.start_hour).padStart(2, '0')}:00-${String(s.end_hour).padStart(2, '0')}:00`}</div>}
                           </div>
                           <div className={`text-xs font-medium ${statusColor}`}>{statusLabel}</div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ── Tab: İzin (P2) ── */}
+      {activeTab === 'leave' && (
+        <div className="space-y-4">
+          {!myLeaves ? (
+            <div className="bg-slate-900 rounded-2xl p-5 text-slate-500 text-sm">Yükleniyor…</div>
+          ) : myLeaves.message ? (
+            <div className="bg-slate-900 rounded-2xl p-5 text-slate-400 text-sm">{myLeaves.message}</div>
+          ) : (
+            <>
+              {myLeaves.balance && (
+                <div className="bg-slate-900 rounded-2xl p-5">
+                  <h2 className="font-medium text-slate-300 mb-3">🌴 {myLeaves.balance.year} İzin Bakiyesi</h2>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="bg-slate-800 rounded-xl p-3 text-center">
+                      <div className="text-2xl font-bold text-blue-400">{myLeaves.balance.annual_total}</div>
+                      <div className="text-xs text-slate-500 mt-1">Yıllık Hak</div>
+                    </div>
+                    <div className="bg-slate-800 rounded-xl p-3 text-center">
+                      <div className="text-2xl font-bold text-amber-400">{myLeaves.balance.annual_used}</div>
+                      <div className="text-xs text-slate-500 mt-1">Kullanılan</div>
+                    </div>
+                    <div className="bg-slate-800 rounded-xl p-3 text-center">
+                      <div className="text-2xl font-bold text-green-400">{myLeaves.balance.annual_total - myLeaves.balance.annual_used}</div>
+                      <div className="text-xs text-slate-500 mt-1">Kalan</div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="bg-slate-900 rounded-2xl p-5">
+                <h2 className="font-medium text-slate-300 mb-3">Yeni İzin Talebi</h2>
+                <div className="space-y-3">
+                  <select value={leaveForm.leave_type}
+                    onChange={e => setLeaveForm(f => ({ ...f, leave_type: e.target.value }))}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-slate-200 text-sm">
+                    <option value="annual">Yıllık izin</option>
+                    <option value="sick">Hastalık</option>
+                    <option value="emergency">Acil durum</option>
+                    <option value="marriage">Evlilik</option>
+                    <option value="maternity">Doğum</option>
+                    <option value="paternity">Babalık</option>
+                    <option value="bereavement">Vefat</option>
+                  </select>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <div className="text-xs text-slate-500 mb-1">Başlangıç</div>
+                      <input type="date" value={leaveForm.start_date}
+                        onChange={e => setLeaveForm(f => ({ ...f, start_date: e.target.value }))}
+                        className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-3 text-slate-200 text-sm" />
+                    </div>
+                    <div>
+                      <div className="text-xs text-slate-500 mb-1">Bitiş</div>
+                      <input type="date" value={leaveForm.end_date}
+                        onChange={e => setLeaveForm(f => ({ ...f, end_date: e.target.value }))}
+                        className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-3 text-slate-200 text-sm" />
+                    </div>
+                  </div>
+                  <textarea value={leaveForm.reason} rows={2} placeholder="Açıklama (isteğe bağlı)"
+                    onChange={e => setLeaveForm(f => ({ ...f, reason: e.target.value }))}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-slate-200 text-sm" />
+                  {leaveMsg && (
+                    <div className={`text-sm rounded-xl px-4 py-3 ${leaveMsg.ok ? 'bg-green-900/40 text-green-400' : 'bg-red-900/40 text-red-400'}`}>
+                      {leaveMsg.text}
+                    </div>
+                  )}
+                  <button
+                    onClick={() => { setLeaveMsg(null); leaveMut.mutate() }}
+                    disabled={!leaveForm.start_date || !leaveForm.end_date || leaveMut.isPending}
+                    className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white rounded-xl py-3 font-medium text-sm">
+                    {leaveMut.isPending ? 'Gönderiliyor…' : 'Talep Gönder'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="bg-slate-900 rounded-2xl p-5">
+                <h2 className="font-medium text-slate-300 mb-3">Taleplerim</h2>
+                {(!myLeaves.leaves || myLeaves.leaves.length === 0) ? (
+                  <div className="text-slate-500 text-sm">Henüz izin talebiniz yok</div>
+                ) : (
+                  <div className="space-y-1">
+                    {myLeaves.leaves.map(l => {
+                      const TYPE_TR = { annual:'Yıllık', sick:'Hastalık', emergency:'Acil', maternity:'Doğum', paternity:'Babalık', marriage:'Evlilik', bereavement:'Vefat' }
+                      const stColor = l.status === 'approved' ? 'text-green-400' : l.status === 'rejected' ? 'text-red-400' : 'text-amber-400'
+                      const stLabel = l.status === 'approved' ? '✓ Onaylandı' : l.status === 'rejected' ? '✗ Reddedildi' : '⏳ Bekliyor'
+                      return (
+                        <div key={l.id} className="flex justify-between items-center px-3 py-2 rounded-lg bg-slate-800">
+                          <div>
+                            <div className="text-sm text-slate-200">{TYPE_TR[l.leave_type] || l.leave_type} · {l.total_days} gün</div>
+                            <div className="text-xs text-slate-500">{l.start_date} → {l.end_date}</div>
+                          </div>
+                          <div className={`text-xs font-medium ${stColor}`}>{stLabel}</div>
                         </div>
                       )
                     })}

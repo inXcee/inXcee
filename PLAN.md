@@ -221,3 +221,28 @@ Doğrulama: 804/804 backend, build temiz, 8/8 e2e
 ### Faz 21 — Cila ✅ (önceki oturumlarda zaten yapılmış — doğrulandı)
 - [x] `jsqr` bağımlılığı yok (frontend package.json + kök package-lock temiz)
 - [x] `responsive-stack` zaten 16 dosyada uygulanmış — bekleyen listedeki 8 sayfanın tamamı dahil (Shifts, Capacity, LaundrySettings, LaundryReport, RoomHistory, CheckinPage, KioskPinPage, AuditPage)
+
+---
+
+## 2026-07-05 Backlog Sprint 2 ("devam")
+
+### Faz 22 — P1+P2: Mobile self-service ✅
+- [x] P1 vardiyam: kiosk'ta `/my-shifts` + Vardiyam sekmesi zaten mevcuttu (H2 M2) — doğrulandı
+- [x] P2 backend: `GET /self-service/my-leaves` (talepler + yıllık bakiye) + `POST /self-service/leave-request` (tip validasyonu, çakışan aralık koruması, yönetime bildirim)
+- [x] P2 frontend: SelfServicePage'e 🌴 İzin sekmesi — bakiye kartları + yeni talep formu + talep geçmişi (durum etiketli)
+- [x] +5 test — 838/838
+
+### Faz 23 — N1: Disiplin otomasyon kuralları
+- [ ] "30 günde 3 sarı → 1 kırmızı" otomatik kural (günlük cron)
+- [ ] "90 gün temiz → 1 sarı af" kuralı
+- [ ] Otomatik kayıtlarda kaynak işareti + audit log + bildirim
+
+### Faz 24 — E1: İzin bakiye takibi
+- [ ] İzin onayında `leave_balance` otomatik güncelleme (annual/sick/emergency)
+- [ ] Reddedilen/iptal edilen onaylı izinde bakiye iadesi
+- [ ] ShiftsPage izin panelinde bakiye gösterimi
+
+### Faz 25 — T2: Hafif migration framework
+- [ ] `schema_migrations` tablosu + sıralı versiyonlu runner (better-sqlite3)
+- [ ] Yeni migration'lar için tek giriş noktası; başarısızlıkta sessiz skip yerine loglu hata
+- [ ] verify.js entegrasyonu (uygulanan sürüm health'te görünsün)
