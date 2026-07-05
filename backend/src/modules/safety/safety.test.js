@@ -112,6 +112,53 @@ describe('H6 IG2 — Sertifika uyarı', () => {
   })
 })
 
+describe('I1 — Sertifika vade cron', () => {
+  it('eşik günlerinde bildirim üretir, tekrar çağrıda dedup eder', async () => {
+    const { checkCertExpiries } = await import('./service.js')
+    const db = getDB()
+
+    const c = await request(app).post('/api/safety/sessions').set('Authorization', `Bearer ${token}`)
+      .send({ title: 'Cron Cert', category: 'safety', session_date: '2026-01-10' })
+    const sid = c.body.id
+
+    // Bugünden tam 30 gün sonra bitecek sertifika (eşik listesinde)
+    const today = new Date().toISOString().slice(0, 10)
+    const at30 = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10)
+    await request(app).post(`/api/safety/sessions/${sid}/attendances`).set('Authorization', `Bearer ${token}`)
+      .send({ staff_id: staffId, attended: true, cert_expires_at: at30 })
+
+    const before = db.prepare("SELECT COUNT(*) c FROM notifications WHERE module='safety' AND message LIKE 'Sertifika vadesine%'").get().c
+    const created = checkCertExpiries(today)
+    expect(created).toBeGreaterThanOrEqual(1)
+    const after = db.prepare("SELECT COUNT(*) c FROM notifications WHERE module='safety' AND message LIKE 'Sertifika vadesine%'").get().c
+    expect(after).toBe(before + created)
+
+    // Aynı gün ikinci çalıştırma — dedup, yeni bildirim yok
+    const second = checkCertExpiries(today)
+    expect(second).toBe(0)
+  })
+
+  it('eşik dışı gün sayısında bildirim üretmez', async () => {
+    const { checkCertExpiries } = await import('./service.js')
+    const db = getDB()
+
+    const c = await request(app).post('/api/safety/sessions').set('Authorization', `Bearer ${token}`)
+      .send({ title: 'Cron Cert 2', category: 'safety', session_date: '2026-01-11' })
+    const sid = c.body.id
+
+    // 23 gün sonra — eşik değil (60/30/14/7/1/0)
+    const at23 = new Date(Date.now() + 23 * 86400000).toISOString().slice(0, 10)
+    const s2 = db.prepare('INSERT INTO staff(full_name, is_active) VALUES(?,1)').run('Cert Esik Disi').lastInsertRowid
+    await request(app).post(`/api/safety/sessions/${sid}/attendances`).set('Authorization', `Bearer ${token}`)
+      .send({ staff_id: s2, attended: true, cert_expires_at: at23 })
+
+    const today = new Date().toISOString().slice(0, 10)
+    checkCertExpiries(today)
+    const found = db.prepare("SELECT COUNT(*) c FROM notifications WHERE message LIKE '%Cert Esik Disi%'").get().c
+    expect(found).toBe(0)
+  })
+})
+
 describe('H6 IG3 — KKD zimmet', () => {
   it('CREATE/LIST/RETURN/DELETE kkd assignment', async () => {
     const c = await request(app).post('/api/safety/kkd').set('Authorization', `Bearer ${token}`)

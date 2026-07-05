@@ -9,6 +9,7 @@ import { getEmailSettings } from '../../modules/email/queries.js'
 import { sendMorningReport } from '../../modules/email/service.js'
 import { buildMonthlyReport, generateMonthlyPDF } from '../../modules/inventory/analytics/routes.js'
 import { expirePastLots } from '../../modules/inventory/lots/service.js'
+import { checkCertExpiries } from '../../modules/safety/service.js'
 import { logAudit } from '../audit.js'
 
 let emailJob = null
@@ -128,6 +129,14 @@ export function startCronJobs() {
         })
       })
     } catch (e) { console.error('[Cron] Lot expiry hatasi:', e.message) }
+  }), TZ)
+
+  // Her gün 06:10 — sertifika vade uyarısı (60/30/14/7/1/0 gün eşikleri)
+  cron.schedule('10 6 * * *', withLock('cert-expiry', () => {
+    try {
+      const count = checkCertExpiries()
+      if (count > 0) console.log('[Cron] cert-expiry:', count, 'bildirim')
+    } catch (e) { console.error('[Cron] Sertifika vade hatasi:', e.message) }
   }), TZ)
 
   // Her gece 02:00 — eski audit log + okunmuş bildirimler 90 gün, hata logları 30 gün

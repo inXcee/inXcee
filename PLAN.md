@@ -189,9 +189,10 @@ Doğrulama: 804/804 backend, build temiz, 8/8 e2e
 - [x] PayrollPage'e "🏦 BANKA CSV" butonu + `bank_transfer_csv` audit log
 - [x] +3 test — 812/812
 
-### Faz 16 — I1: Sertifika vade cron uyarısı
-- [ ] Vadesi ≤60 gün kalan eğitim/sertifikalar için günlük cron taraması
-- [ ] Bildirim üretimi (mevcut notifications altyapısı) + tekrar bildirim engelleme
+### Faz 16 — I1: Sertifika vade cron uyarısı ✅
+- [x] `safety/service.js checkCertExpiries()` — 60/30/14/7/1/0 gün eşiklerinde bildirim (≤7 gün critical)
+- [x] Günlük cron 06:10 Europe/Istanbul (overlap-safe withLock) + dedup_key ile restart koruması
+- [x] +2 test (eşik tetikleme + dedup, eşik dışı sessiz) — 814/814
 
 ### Faz 17 — K1: İş kazası kayıt modülü
 - [ ] `work_accidents` tablosu + CRUD endpoint'leri (SİF alanları, tanıklar, foto)
