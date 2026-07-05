@@ -5,6 +5,7 @@ import QRCode from 'qrcode'
 import { requireRole } from '../../shared/auth/middleware.js'
 import { logAudit } from '../../shared/audit.js'
 import { getDB } from '../../shared/db/index.js'
+import { createAttendanceLog, updateCheckout } from '../shifts/queries.js'
 
 export const qrRouter = Router()
 const mgr = requireRole('campus_manager', 'shift_supervisor')
@@ -160,6 +161,56 @@ qrRouter.post('/scan/transport', ...view, (req, res) => {
       previous_boarded: assignment.boarded,
     })
   } catch (e) { console.error('[qr/scan]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// ── D1: QR clock-in/out — gerçek mesai giriş/çıkış damgası ──
+// Aynı QR: bugün açık kaydı yoksa GİRİŞ, açık kayıt varsa ÇIKIŞ (actual_hours hesaplanır).
+// Çift okutma koruması: girişten sonraki 2 dk içinde tekrar okutma çıkış sayılmaz.
+qrRouter.post('/scan/clock', ...view, (req, res) => {
+  try {
+    const { qr_token } = req.body || {}
+    if (!qr_token) return res.status(400).json({ error: 'qr_token gerekli' })
+    const cleaned = qr_token.replace(/^AVS:/, '').trim()
+
+    const db = getDB()
+    const staff = db.prepare('SELECT id, full_name FROM staff WHERE qr_token = ? AND is_active = 1').get(cleaned)
+    if (!staff) return res.status(404).json({ error: 'Geçersiz QR kod' })
+
+    const open = db.prepare(`
+      SELECT id, check_in_at,
+        (julianday('now') - julianday(check_in_at)) * 1440 as age_min
+      FROM attendance_logs
+      WHERE staff_id = ? AND check_out_at IS NULL AND date(check_in_at) = date('now')
+      ORDER BY id DESC LIMIT 1
+    `).get(staff.id)
+
+    if (open) {
+      if (open.age_min < 2) {
+        return res.status(409).json({
+          error: `${staff.full_name}: az önce giriş okutuldu — çıkış için en az 2 dk bekleyin`,
+          staff_id: staff.id, staff_name: staff.full_name,
+        })
+      }
+      updateCheckout(open.id)
+      const done = db.prepare('SELECT actual_hours FROM attendance_logs WHERE id = ?').get(open.id)
+      logAudit(req.user.id, 'qr_clock_out', 'qr', staff.id, `log:${open.id} ${done.actual_hours}sa`)
+      return res.json({
+        ok: true, action: 'out',
+        staff_id: staff.id, staff_name: staff.full_name,
+        log_id: open.id, actual_hours: done.actual_hours,
+      })
+    }
+
+    const sched = db.prepare(`
+      SELECT id FROM shift_schedule WHERE staff_id = ? AND work_date = date('now')
+    `).get(staff.id)
+    const logId = createAttendanceLog({ staff_id: staff.id, shift_schedule_id: sched?.id || null })
+    logAudit(req.user.id, 'qr_clock_in', 'qr', staff.id, `log:${logId}${sched ? ' shift:' + sched.id : ''}`)
+    res.json({
+      ok: true, action: 'in',
+      staff_id: staff.id, staff_name: staff.full_name, log_id: logId,
+    })
+  } catch (e) { console.error('[qr/clock]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 // ── Mobile self-service: kişinin kendi QR'ı (Q6) ──

@@ -10,20 +10,26 @@ export default function QrScannerPage() {
   const [manual, setManual] = useState('')
   const [history, setHistory] = useState([])
   const [cameraEnabled, setCameraEnabled] = useState(false)
+  const [mode, setMode] = useState('transport') // 'transport' | 'clock'
   const videoRef = useRef(null)
   const qc = useQueryClient()
 
   const scanMut = useMutation({
-    mutationFn: (qr_token) => api.post('/qr/scan/transport', { qr_token }),
+    mutationFn: (qr_token) => api.post(mode === 'clock' ? '/qr/scan/clock' : '/qr/scan/transport', { qr_token }),
     onSuccess: (r, qr_token) => {
-      toast(`✓ ${r.data.staff_name} bindi`)
-      setHistory(h => [{ ts: new Date(), ok: true, name: r.data.staff_name, ...r.data }, ...h.slice(0, 19)])
+      const d = r.data
+      const msg = mode === 'clock'
+        ? (d.action === 'in' ? `✓ ${d.staff_name} — MESAİ GİRİŞ` : `✓ ${d.staff_name} — ÇIKIŞ (${d.actual_hours} saat)`)
+        : `✓ ${d.staff_name} bindi`
+      toast(msg)
+      setHistory(h => [{ ts: new Date(), ok: true, name: d.staff_name, mode, ...d }, ...h.slice(0, 19)])
       setManual('')
-      qc.invalidateQueries({ queryKey: ['transport-daily'] })
+      if (mode === 'transport') qc.invalidateQueries({ queryKey: ['transport-daily'] })
+      else qc.invalidateQueries({ queryKey: ['attendance'] })
     },
     onError: (e, qr_token) => {
       toastErr(e)
-      setHistory(h => [{ ts: new Date(), ok: false, error: e?.response?.data?.error || 'Hata', qr_token }, ...h.slice(0, 19)])
+      setHistory(h => [{ ts: new Date(), ok: false, error: e?.response?.data?.error || 'Hata', qr_token, mode }, ...h.slice(0, 19)])
     },
   })
 
@@ -86,8 +92,19 @@ export default function QrScannerPage() {
       <div style={{ marginBottom: 20 }}>
         <h1 style={{ fontSize: 28, letterSpacing: 4, color: 'var(--text)', margin: 0 }}>QR OKUTMA</h1>
         <p style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', marginTop: 4, letterSpacing: 1.5 }}>
-          SERVİS BİNİŞ TAKİBİ — PERSONEL KARTINI OKUT
+          {mode === 'clock' ? 'MESAİ GİRİŞ/ÇIKIŞ — PERSONEL KARTINI OKUT' : 'SERVİS BİNİŞ TAKİBİ — PERSONEL KARTINI OKUT'}
         </p>
+      </div>
+
+      <div style={{ display: 'flex', gap: 2, marginBottom: 14, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: 3 }}>
+        {[['transport', '🚌 SERVİS BİNİŞ'], ['clock', '⏱ MESAİ GİRİŞ/ÇIKIŞ']].map(([k, label]) => (
+          <button key={k} onClick={() => setMode(k)} style={{
+            flex: 1, padding: '10px 14px', border: 'none', borderRadius: 9,
+            background: mode === k ? 'var(--accent)' : 'transparent',
+            color: mode === k ? '#000' : 'var(--text3)',
+            fontSize: 11, fontWeight: 700, fontFamily: 'var(--mono)', letterSpacing: 1.5, cursor: 'pointer',
+          }}>{label}</button>
+        ))}
       </div>
 
       <div style={{ marginBottom: 14, padding: 16, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14 }}>
@@ -128,7 +145,16 @@ export default function QrScannerPage() {
               }}>
                 <span style={{ fontSize: 18 }}>{h.ok ? '✓' : '✗'}</span>
                 <div style={{ flex: 1, fontSize: 13 }}>
-                  {h.ok ? <strong>{h.name}</strong> : <span style={{ color: 'var(--red)' }}>{h.error}</span>}
+                  {h.ok ? (
+                    <strong>
+                      {h.name}
+                      {h.mode === 'clock' && (
+                        <span style={{ marginLeft: 6, fontFamily: 'var(--mono)', fontSize: 10, color: h.action === 'in' ? 'var(--green)' : 'var(--accent)' }}>
+                          {h.action === 'in' ? '→ GİRİŞ' : `← ÇIKIŞ ${h.actual_hours}sa`}
+                        </span>
+                      )}
+                    </strong>
+                  ) : <span style={{ color: 'var(--red)' }}>{h.error}</span>}
                   {h.qr_token && <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text4)' }}>{h.qr_token.slice(0, 24)}...</div>}
                 </div>
                 <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>{h.ts.toLocaleTimeString('tr-TR')}</span>
@@ -139,7 +165,10 @@ export default function QrScannerPage() {
       )}
 
       <div style={{ marginTop: 14, padding: '10px 14px', background: 'rgba(59,130,246,.06)', borderRadius: 10, fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)' }}>
-        💡 Personelin kartını/telefonunu kameraya tut. Tarayıcı QR'ı tanıyınca otomatik okutur. Bugünkü servis ataması varsa "bindi" olarak işaretlenir.
+        💡 Personelin kartını/telefonunu kameraya tut. Tarayıcı QR'ı tanıyınca otomatik okutur.
+        {mode === 'clock'
+          ? ' Mesai modu: ilk okutma GİRİŞ, ikinci okutma ÇIKIŞ (çalışılan saat otomatik hesaplanır, 2 dk çift okutma koruması var).'
+          : ' Bugünkü servis ataması varsa "bindi" olarak işaretlenir.'}
       </div>
     </div>
   )

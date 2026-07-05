@@ -516,7 +516,9 @@ export function updateCheckout(logId) {
   const db = getDB()
   const log = db.prepare('SELECT * FROM attendance_logs WHERE id=?').get(logId)
   if (!log) throw new Error('Kayıt bulunamadı')
-  const checkIn = new Date(log.check_in_at)
+  // SQLite datetime('now') UTC yazar — 'Z' eklenmeden parse edilirse yerel saat
+  // sanılır ve UTC+3'te süre 3 saat şişer
+  const checkIn = new Date(log.check_in_at.replace(' ', 'T') + 'Z')
   const now = new Date()
   const actualHours = Math.round((now - checkIn) / 3600000 * 10) / 10
   db.prepare(`

@@ -116,6 +116,64 @@ describe('H5 Q4 — Servis biniş scan', () => {
   })
 })
 
+describe('D1 — QR clock-in/out', () => {
+  let clockToken
+
+  beforeAll(async () => {
+    const g = await request(app).post(`/api/qr/staff/${staffId}/generate`)
+      .set('Authorization', `Bearer ${token}`).send({ regenerate: true })
+    clockToken = g.body.qr_token
+  })
+
+  it('ilk okutma GİRİŞ kaydı açar', async () => {
+    const res = await request(app).post('/api/qr/scan/clock').set('Authorization', `Bearer ${token}`)
+      .send({ qr_token: clockToken })
+    expect(res.status).toBe(200)
+    expect(res.body.action).toBe('in')
+    expect(res.body.log_id).toBeTruthy()
+
+    const db = getDB()
+    const log = db.prepare('SELECT * FROM attendance_logs WHERE id=?').get(res.body.log_id)
+    expect(log.check_in_at).toBeTruthy()
+    expect(log.check_out_at).toBeNull()
+  })
+
+  it('2 dk içinde ikinci okutma 409 (çift okutma koruması)', async () => {
+    const res = await request(app).post('/api/qr/scan/clock').set('Authorization', `Bearer ${token}`)
+      .send({ qr_token: clockToken })
+    expect(res.status).toBe(409)
+  })
+
+  it('2 dk sonrası okutma ÇIKIŞ yapar ve saat hesaplar', async () => {
+    const db = getDB()
+    // Giriş zamanını 3 saat geriye çek — çıkış senaryosu
+    db.prepare(`
+      UPDATE attendance_logs SET check_in_at = datetime('now', '-3 hours')
+      WHERE staff_id = ? AND check_out_at IS NULL
+    `).run(staffId)
+
+    const res = await request(app).post('/api/qr/scan/clock').set('Authorization', `Bearer ${token}`)
+      .send({ qr_token: `AVS:${clockToken}` })
+    expect(res.status).toBe(200)
+    expect(res.body.action).toBe('out')
+    expect(res.body.actual_hours).toBeGreaterThanOrEqual(2.9)
+    expect(res.body.actual_hours).toBeLessThanOrEqual(3.1)
+  })
+
+  it('çıkıştan sonra tekrar okutma yeni GİRİŞ açar', async () => {
+    const res = await request(app).post('/api/qr/scan/clock').set('Authorization', `Bearer ${token}`)
+      .send({ qr_token: clockToken })
+    expect(res.status).toBe(200)
+    expect(res.body.action).toBe('in')
+  })
+
+  it('geçersiz token 404', async () => {
+    const res = await request(app).post('/api/qr/scan/clock').set('Authorization', `Bearer ${token}`)
+      .send({ qr_token: 'boyletokenyok' })
+    expect(res.status).toBe(404)
+  })
+})
+
 describe('H5 Q6 — Kişinin kendi QR (self-service)', () => {
   it('kiosk token ile /my-qr çalışır', async () => {
     const jwt = await import('jsonwebtoken')

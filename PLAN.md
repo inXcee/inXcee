@@ -207,9 +207,11 @@ Doğrulama: 804/804 backend, build temiz, 8/8 e2e
 - [x] SystemHealthPage'e ŞEMA BÜTÜNLÜĞÜ kartı — eksik nesne listesi kırmızı uyarı
 - [x] +3 test — 828/828
 
-### Faz 19 — D1: QR clock-in/out
-- [ ] Staff qr_token ile giriş/çıkış damgası endpoint'i
-- [ ] attendance_logs entegrasyonu + mobil/kiosk okuma ekranı
+### Faz 19 — D1: QR clock-in/out ✅
+- [x] `POST /api/qr/scan/clock` — aynı QR ile giriş/çıkış: açık kayıt yoksa GİRİŞ (bugünkü shift_schedule otomatik bağlanır), varsa ÇIKIŞ + actual_hours; 2 dk çift okutma koruması (409)
+- [x] **Bug fix:** `updateCheckout` UTC timestamp'i yerel saat gibi parse ediyordu — UTC+3'te tüm mesai süreleri 3 saat şişkindi
+- [x] QrScannerPage: 🚌 Servis / ⏱ Mesai mod düğmesi + giriş/çıkış geçmiş etiketleri
+- [x] `qr_clock_in` / `qr_clock_out` audit log + 5 test — 833/833
 
 ### Faz 20 — T1: LaundryHub.jsx split (refactor)
 - [ ] 85KB monolith'i alt component'lere böl — davranış birebir korunur
