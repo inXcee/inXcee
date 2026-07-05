@@ -237,10 +237,13 @@ Doğrulama: 804/804 backend, build temiz, 8/8 e2e
 - [x] Günlük cron 06:20 (overlap-safe) + `discipline_auto_red` / `discipline_amnesty` audit + bildirimler
 - [x] +3 test (idempotency dahil) — 841/841
 
-### Faz 24 — E1: İzin bakiye takibi
-- [ ] İzin onayında `leave_balance` otomatik güncelleme (annual/sick/emergency)
-- [ ] Reddedilen/iptal edilen onaylı izinde bakiye iadesi
-- [ ] ShiftsPage izin panelinde bakiye gösterimi
+### Faz 24 — E1: İzin bakiye takibi ✅
+- [x] Onayda `leave_balance` otomatik sayaç (annual/sick/emergency → *_used, transaction içinde, çift onay çift saymaz)
+- [x] Yıllık izinde bakiye yetersizse onay 400 ("kalan X gün, talep Y gün")
+- [x] Onaylı izin reddedilince/iptal edilince bakiye iadesi + shift_schedule geri alma
+- [x] ShiftsPage: izin formu + izin geçmişi sekmesinde bakiye şeridi (hak/kullanılan/kalan); onay/iptal mutasyonlarına onError toast
+- [x] Bonus fix: `createLeaveService` reason alanı opsiyonel gönderilince named-param hatası veriyordu
+- [x] +5 test — 846/846
 
 ### Faz 25 — T2: Hafif migration framework
 - [ ] `schema_migrations` tablosu + sıralı versiyonlu runner (better-sqlite3)

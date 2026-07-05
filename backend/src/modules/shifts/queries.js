@@ -392,21 +392,52 @@ export function createLeaveRequest(data) {
   return r.lastInsertRowid
 }
 
+// E1 — leave_balance sayaç kolonu eşlemesi (diğer izin tipleri sayaçsız)
+const BALANCE_COLUMN = { annual: 'annual_used', sick: 'sick_used', emergency: 'emergency_used' }
+
+function adjustLeaveBalance(db, req, delta) {
+  const col = BALANCE_COLUMN[req.leave_type]
+  if (!col) return
+  const year = Number(req.start_date.slice(0, 4))
+  db.prepare('INSERT OR IGNORE INTO leave_balance(staff_id, year) VALUES(?,?)').run(req.staff_id, year)
+  db.prepare(`UPDATE leave_balance SET ${col} = MAX(0, ${col} + ?) WHERE staff_id=? AND year=?`)
+    .run(delta * req.total_days, req.staff_id, year)
+}
+
 export function approveLeaveRequest(id, approvedBy, status) {
   const db = getDB()
-  db.prepare(`
-    UPDATE leave_requests SET status=?, approved_by=?, approved_at=datetime('now') WHERE id=?
-  `).run(status, approvedBy, id)
+  const req = db.prepare('SELECT * FROM leave_requests WHERE id=?').get(id)
+  if (!req) throw new Error('İzin talebi bulunamadı')
+  const wasApproved = req.status === 'approved'
 
-  if (status === 'approved') {
-    const req = db.prepare('SELECT * FROM leave_requests WHERE id=?').get(id)
-    if (req) {
+  // E1 — yıllık izinde bakiye kontrolü (pending → approved geçişinde)
+  if (status === 'approved' && !wasApproved && req.leave_type === 'annual') {
+    const year = Number(req.start_date.slice(0, 4))
+    const bal = getLeaveBalance(req.staff_id, year)
+    if (bal.annual_used + req.total_days > bal.annual_total) {
+      throw new Error(`Yıllık izin bakiyesi yetersiz (kalan: ${bal.annual_total - bal.annual_used} gün, talep: ${req.total_days} gün)`)
+    }
+  }
+
+  const tx = db.transaction(() => {
+    db.prepare(`
+      UPDATE leave_requests SET status=?, approved_by=?, approved_at=datetime('now') WHERE id=?
+    `).run(status, approvedBy, id)
+
+    if (status === 'approved' && !wasApproved) {
       db.prepare(`
         UPDATE shift_schedule SET status='on_leave'
         WHERE staff_id=? AND work_date BETWEEN ? AND ?
       `).run(req.staff_id, req.start_date, req.end_date)
+      adjustLeaveBalance(db, req, +1)
+    } else if (status === 'rejected' && wasApproved) {
+      // Onaylıyken reddedilirse bakiye iadesi + program geri alınır
+      db.prepare(`UPDATE shift_schedule SET status='scheduled' WHERE staff_id=? AND work_date BETWEEN ? AND ? AND status='on_leave'`)
+        .run(req.staff_id, req.start_date, req.end_date)
+      adjustLeaveBalance(db, req, -1)
     }
-  }
+  })
+  tx()
 }
 
 export function getLeaveRequests(filters) {
@@ -667,8 +698,13 @@ export function cancelLeaveRequest(id) {
   const db = getDB()
   const req = db.prepare('SELECT * FROM leave_requests WHERE id=?').get(id)
   if (!req) throw new Error('İzin talebi bulunamadı')
-  db.prepare("UPDATE leave_requests SET status='rejected' WHERE id=?").run(id)
-  db.prepare(`UPDATE shift_schedule SET status='scheduled' WHERE staff_id=? AND work_date BETWEEN ? AND ? AND status='on_leave'`).run(req.staff_id, req.start_date, req.end_date)
+  const tx = db.transaction(() => {
+    db.prepare("UPDATE leave_requests SET status='rejected' WHERE id=?").run(id)
+    db.prepare(`UPDATE shift_schedule SET status='scheduled' WHERE staff_id=? AND work_date BETWEEN ? AND ? AND status='on_leave'`).run(req.staff_id, req.start_date, req.end_date)
+    // E1 — onaylı izin iptalinde bakiye iadesi
+    if (req.status === 'approved') adjustLeaveBalance(db, req, -1)
+  })
+  tx()
 }
 
 // ── Shift swap requests ──

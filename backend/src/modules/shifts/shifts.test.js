@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from 'vitest'
 import request from 'supertest'
 import app from '../../app.js'
-import { initDB } from '../../shared/db/index.js'
+import { initDB, getDB } from '../../shared/db/index.js'
 import { seedDev } from '../../shared/db/seed.js'
 import { calcTax, workDaysInMonth } from './service.js'
 
@@ -573,6 +573,76 @@ describe('H8 — payroll-detailed', () => {
       expect(row).toHaveProperty('sgk_days')
       expect(row).toHaveProperty('total_deductions')
     })
+  })
+})
+
+describe('E1 — İzin bakiye takibi', () => {
+  let staffId
+  const db = () => getDB()
+
+  beforeAll(() => {
+    staffId = db().prepare("INSERT INTO staff(full_name, is_active) VALUES('Bakiye Test', 1)").run().lastInsertRowid
+  })
+
+  async function createLeave(start, end, type = 'annual') {
+    const r = await request(app).post('/api/shifts/leave').set('Authorization', `Bearer ${managerToken}`)
+      .send({ staff_id: staffId, leave_type: type, start_date: start, end_date: end })
+    expect(r.status).toBe(201)
+    return r.body.id
+  }
+
+  it('onayda annual_used artar, iptalde iade edilir', async () => {
+    const id = await createLeave('2026-10-05', '2026-10-09') // 5 gün
+    const ap = await request(app).patch(`/api/shifts/leave/${id}`).set('Authorization', `Bearer ${managerToken}`)
+      .send({ status: 'approved' })
+    expect(ap.status).toBe(200)
+
+    let bal = db().prepare('SELECT * FROM leave_balance WHERE staff_id=? AND year=2026').get(staffId)
+    expect(bal.annual_used).toBe(5)
+
+    // İptal (delete) → iade
+    const del = await request(app).delete(`/api/shifts/leave/${id}`).set('Authorization', `Bearer ${managerToken}`)
+    expect(del.status).toBe(200)
+    bal = db().prepare('SELECT * FROM leave_balance WHERE staff_id=? AND year=2026').get(staffId)
+    expect(bal.annual_used).toBe(0)
+  })
+
+  it('tekrar onay çift saymaz', async () => {
+    const id = await createLeave('2026-11-02', '2026-11-04') // 3 gün
+    await request(app).patch(`/api/shifts/leave/${id}`).set('Authorization', `Bearer ${managerToken}`).send({ status: 'approved' })
+    await request(app).patch(`/api/shifts/leave/${id}`).set('Authorization', `Bearer ${managerToken}`).send({ status: 'approved' })
+    const bal = db().prepare('SELECT * FROM leave_balance WHERE staff_id=? AND year=2026').get(staffId)
+    expect(bal.annual_used).toBe(3)
+  })
+
+  it('bakiye yetersizse onay 400 döner', async () => {
+    // Kalan: 15 - 3 = 12 gün; 20 günlük talep onaylanamaz
+    const id = await createLeave('2026-12-01', '2026-12-20') // 20 gün
+    const ap = await request(app).patch(`/api/shifts/leave/${id}`).set('Authorization', `Bearer ${managerToken}`)
+      .send({ status: 'approved' })
+    expect(ap.status).toBe(400)
+    expect(ap.body.error).toMatch(/bakiye/i)
+    const bal = db().prepare('SELECT * FROM leave_balance WHERE staff_id=? AND year=2026').get(staffId)
+    expect(bal.annual_used).toBe(3)
+  })
+
+  it('onaylı izin reddedilince bakiye iadesi yapılır', async () => {
+    const id = await createLeave('2026-09-07', '2026-09-08') // 2 gün
+    await request(app).patch(`/api/shifts/leave/${id}`).set('Authorization', `Bearer ${managerToken}`).send({ status: 'approved' })
+    let bal = db().prepare('SELECT * FROM leave_balance WHERE staff_id=? AND year=2026').get(staffId)
+    expect(bal.annual_used).toBe(5) // 3 + 2
+
+    await request(app).patch(`/api/shifts/leave/${id}`).set('Authorization', `Bearer ${managerToken}`).send({ status: 'rejected' })
+    bal = db().prepare('SELECT * FROM leave_balance WHERE staff_id=? AND year=2026').get(staffId)
+    expect(bal.annual_used).toBe(3)
+  })
+
+  it('sick izni sick_used sayacına işler', async () => {
+    const id = await createLeave('2026-07-20', '2026-07-21', 'sick') // 2 gün
+    await request(app).patch(`/api/shifts/leave/${id}`).set('Authorization', `Bearer ${managerToken}`).send({ status: 'approved' })
+    const bal = db().prepare('SELECT * FROM leave_balance WHERE staff_id=? AND year=2026').get(staffId)
+    expect(bal.sick_used).toBe(2)
+    expect(bal.annual_used).toBe(3) // değişmedi
   })
 })
 

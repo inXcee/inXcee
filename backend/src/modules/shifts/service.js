@@ -149,7 +149,8 @@ export function createLeaveService(data) {
   const end = new Date(data.end_date)
   if (end < start) throw new Error('Bitiş tarihi başlangıçtan önce olamaz')
   const totalDays = Math.round((end - start) / 86400000) + 1
-  return createLeaveRequest({ ...data, total_days: totalDays })
+  // reason opsiyonel — named parameter eksikse better-sqlite3 hata verir
+  return createLeaveRequest({ ...data, reason: data.reason ?? null, total_days: totalDays })
 }
 
 export function approveLeaveService(id, userId, status) {

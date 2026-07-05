@@ -415,8 +415,19 @@ function StaffDetailPanel({ staffId, onClose }) {
 
   const addLeaveMut = useMutation({
     mutationFn: d => api.post('/shifts/leave', d),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['staff-detail', staffId] }); setActiveForm(null); setFormData({}) },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['staff-detail', staffId] })
+      qc.invalidateQueries({ queryKey: ['leave-balance', staffId] })
+      setActiveForm(null); setFormData({})
+    },
     onError: toastErr,
+  })
+
+  // E1 — izin bakiyesi (yıllık hak / kullanılan / kalan)
+  const { data: leaveBalance } = useQuery({
+    queryKey: ['leave-balance', staffId],
+    queryFn: () => api.get(`/shifts/leave/balance/${staffId}`).then(r => r.data),
+    enabled: !!staffId && (activeForm === 'leave' || detailTab === 'leave'),
   })
 
   const addOvertimeMut = useMutation({
@@ -698,6 +709,20 @@ function StaffDetailPanel({ staffId, onClose }) {
                 {/* İzin formu */}
                 {activeForm === 'leave' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    {leaveBalance && (
+                      <div style={{
+                        display: 'flex', gap: 12, padding: '8px 12px', borderRadius: 8,
+                        background: 'var(--surface2)', border: '1px solid var(--border)',
+                        fontFamily: 'var(--mono)', fontSize: 10,
+                      }}>
+                        <span style={{ color: 'var(--text3)' }}>🌴 {leaveBalance.year} yıllık:</span>
+                        <span style={{ color: 'var(--blue)' }}>{leaveBalance.annual_total}g hak</span>
+                        <span style={{ color: 'var(--amber)' }}>{leaveBalance.annual_used}g kullanıldı</span>
+                        <span style={{ color: (leaveBalance.annual_total - leaveBalance.annual_used) > 0 ? 'var(--green)' : 'var(--red)', fontWeight: 700 }}>
+                          {leaveBalance.annual_total - leaveBalance.annual_used}g kaldı
+                        </span>
+                      </div>
+                    )}
                     <div>
                       <label style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: '1px', display: 'block', marginBottom: 4 }}>İZİN TİPİ</label>
                       <select className="form-input" value={formData.leave_type || ''} onChange={e => setFormData(p => ({ ...p, leave_type: e.target.value }))} style={{ width: '100%', borderRadius: 8 }}>
@@ -883,6 +908,20 @@ function StaffDetailPanel({ staffId, onClose }) {
             {/* İZİN */}
             {!activeForm && detailTab === 'leave' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {leaveBalance && (
+                  <div style={{
+                    display: 'flex', gap: 12, padding: '8px 12px', borderRadius: 8,
+                    background: 'var(--surface2)', border: '1px solid var(--border)',
+                    fontFamily: 'var(--mono)', fontSize: 10,
+                  }}>
+                    <span style={{ color: 'var(--text3)' }}>🌴 {leaveBalance.year} yıllık:</span>
+                    <span style={{ color: 'var(--blue)' }}>{leaveBalance.annual_total}g hak</span>
+                    <span style={{ color: 'var(--amber)' }}>{leaveBalance.annual_used}g kullanıldı</span>
+                    <span style={{ color: (leaveBalance.annual_total - leaveBalance.annual_used) > 0 ? 'var(--green)' : 'var(--red)', fontWeight: 700 }}>
+                      {leaveBalance.annual_total - leaveBalance.annual_used}g kaldı
+                    </span>
+                  </div>
+                )}
                 {leaveHistory.length === 0 ? (
                   <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text3)', fontSize: 11 }}>İzin kaydı yok</div>
                 ) : leaveHistory.map((l, i) => {
@@ -2744,12 +2783,20 @@ function LeaveTab({ departments, onPersonClick }) {
 
   const approveMut = useMutation({
     mutationFn: ({ id, status }) => api.patch(`/shifts/leave/${id}`, { status }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['leaves'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['leaves'] })
+      qc.invalidateQueries({ queryKey: ['leave-balance'] })
+    },
+    onError: toastErr,
   })
 
   const cancelMut = useMutation({
     mutationFn: (id) => api.delete(`/shifts/leave/${id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['leaves'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['leaves'] })
+      qc.invalidateQueries({ queryKey: ['leave-balance'] })
+    },
+    onError: toastErr,
   })
 
   const createMut = useMutation({
