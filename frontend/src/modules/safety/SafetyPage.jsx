@@ -5,6 +5,7 @@ import api from '../../shared/api/client.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 import { inputDialog } from '../../shared/components/InputDialog.jsx'
+import AccidentsTab from './AccidentsTab.jsx'
 
 const toast = (m, t = 'success') => useToastStore.getState().addToast(m, t)
 const toastErr = (e) => toast(e?.response?.data?.error || 'Hata', 'error')
@@ -13,6 +14,7 @@ const TABS = [
   { key: 'sessions', label: '📚 EĞİTİMLER' },
   { key: 'expiring', label: '⏰ SERTİFİKA UYARI' },
   { key: 'kkd', label: '🦺 KKD ZİMMET' },
+  { key: 'accidents', label: '🚨 İŞ KAZALARI' },
 ]
 
 const CATEGORIES = {
@@ -50,6 +52,7 @@ export default function SafetyPage() {
       {tab === 'sessions' && <SessionsTab />}
       {tab === 'expiring' && <ExpiringCertsTab />}
       {tab === 'kkd' && <KkdTab />}
+      {tab === 'accidents' && <AccidentsTab />}
     </div>
   )
 }

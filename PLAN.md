@@ -194,9 +194,12 @@ Doğrulama: 804/804 backend, build temiz, 8/8 e2e
 - [x] Günlük cron 06:10 Europe/Istanbul (overlap-safe withLock) + dedup_key ile restart koruması
 - [x] +2 test (eşik tetikleme + dedup, eşik dışı sessiz) — 814/814
 
-### Faz 17 — K1: İş kazası kayıt modülü
-- [ ] `work_accidents` tablosu + CRUD endpoint'leri (SİF alanları, tanıklar, foto)
-- [ ] Kaza raporu PDF + frontend sayfası + safety entegrasyonu
+### Faz 17 — K1: İş kazası kayıt modülü ✅
+- [x] `work_accidents` + `work_accident_witnesses` + `work_accident_photos` tabloları (migration)
+- [x] Safety altında CRUD + tanık + foto upload (multer + magic bytes) + severity/status validasyonu
+- [x] "İş Kazası Tespit Tutanağı" PDF (kazazede, kaza bilgileri, tanık ifadeleri, imza alanları, 6331 notu)
+- [x] SafetyPage'e 🚨 İŞ KAZALARI sekmesi — liste + filtre + oluşturma + detay drawer (durum, SGK toggle, tanık, foto, PDF)
+- [x] +11 test — 825/825
 
 ### Faz 18 — Migration verify (health endpoint)
 - [ ] `/api/health`'e beklenen index/trigger varlık kontrolü

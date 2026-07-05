@@ -112,6 +112,97 @@ describe('H6 IG2 — Sertifika uyarı', () => {
   })
 })
 
+describe('K1 — İş kazası modülü', () => {
+  let accidentId
+
+  it('POST /accidents zorunlu alan eksik 400', async () => {
+    const r = await request(app).post('/api/safety/accidents').set('Authorization', `Bearer ${token}`)
+      .send({ staff_id: staffId })
+    expect(r.status).toBe(400)
+  })
+
+  it('POST /accidents kaza kaydı oluşturur', async () => {
+    const r = await request(app).post('/api/safety/accidents').set('Authorization', `Bearer ${token}`)
+      .send({
+        staff_id: staffId, accident_date: '2026-07-01', accident_time: '14:30',
+        location: 'M1 blok merdiven', description: 'Merdivenden düşme sonucu ayak bileği burkulması',
+        injury_type: 'Burkulma', body_part: 'Ayak bileği', severity: 'medical', lost_days: 3,
+      })
+    expect(r.status).toBe(201)
+    accidentId = r.body.id
+  })
+
+  it('geçersiz severity 400', async () => {
+    const r = await request(app).post('/api/safety/accidents').set('Authorization', `Bearer ${token}`)
+      .send({ staff_id: staffId, accident_date: '2026-07-01', description: 'x', severity: 'catastrophic' })
+    expect(r.status).toBe(400)
+  })
+
+  it('GET /accidents listede görünür (filtreli)', async () => {
+    const r = await request(app).get('/api/safety/accidents?severity=medical').set('Authorization', `Bearer ${token}`)
+    expect(r.status).toBe(200)
+    expect(r.body.find(a => a.id === accidentId)).toBeTruthy()
+  })
+
+  it('tanık ekle + detayda görünür + sil', async () => {
+    const w = await request(app).post(`/api/safety/accidents/${accidentId}/witnesses`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ full_name: 'Görgü Tanığı', statement: 'Merdiven ıslaktı' })
+    expect(w.status).toBe(201)
+
+    const det = await request(app).get(`/api/safety/accidents/${accidentId}`).set('Authorization', `Bearer ${token}`)
+    expect(det.status).toBe(200)
+    expect(det.body.witnesses.length).toBe(1)
+    expect(det.body.witnesses[0].full_name).toBe('Görgü Tanığı')
+    expect(Array.isArray(det.body.photos)).toBe(true)
+
+    const del = await request(app).delete(`/api/safety/accidents/witnesses/${w.body.id}`)
+      .set('Authorization', `Bearer ${token}`)
+    expect(del.status).toBe(200)
+  })
+
+  it('PUT /accidents durum + SGK güncelleme', async () => {
+    const r = await request(app).put(`/api/safety/accidents/${accidentId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ status: 'investigating', sgk_reported: 1, sgk_report_date: '2026-07-02', actions_taken: 'Merdivene kaymaz bant' })
+    expect(r.status).toBe(200)
+    const det = await request(app).get(`/api/safety/accidents/${accidentId}`).set('Authorization', `Bearer ${token}`)
+    expect(det.body.status).toBe('investigating')
+    expect(det.body.sgk_reported).toBe(1)
+  })
+
+  it('geçersiz status 400', async () => {
+    const r = await request(app).put(`/api/safety/accidents/${accidentId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ status: 'archived' })
+    expect(r.status).toBe(400)
+  })
+
+  it('GET /accidents/:id/pdf PDF döner', async () => {
+    const r = await request(app).get(`/api/safety/accidents/${accidentId}/pdf`).set('Authorization', `Bearer ${token}`)
+    expect(r.status).toBe(200)
+    expect(r.headers['content-type']).toContain('application/pdf')
+  })
+
+  it('foto endpoint dosyasız 400', async () => {
+    const r = await request(app).post(`/api/safety/accidents/${accidentId}/photos`)
+      .set('Authorization', `Bearer ${token}`)
+    expect(r.status).toBe(400)
+  })
+
+  it('olmayan kaza 404', async () => {
+    const r = await request(app).get('/api/safety/accidents/999999').set('Authorization', `Bearer ${token}`)
+    expect(r.status).toBe(404)
+  })
+
+  it('DELETE /accidents kaydı siler', async () => {
+    const r = await request(app).delete(`/api/safety/accidents/${accidentId}`).set('Authorization', `Bearer ${token}`)
+    expect(r.status).toBe(200)
+    const det = await request(app).get(`/api/safety/accidents/${accidentId}`).set('Authorization', `Bearer ${token}`)
+    expect(det.status).toBe(404)
+  })
+})
+
 describe('I1 — Sertifika vade cron', () => {
   it('eşik günlerinde bildirim üretir, tekrar çağrıda dedup eder', async () => {
     const { checkCertExpiries } = await import('./service.js')

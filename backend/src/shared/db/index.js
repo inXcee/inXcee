@@ -1017,6 +1017,44 @@ export function initDB() {
     db.exec(`CREATE INDEX IF NOT EXISTS idx_training_attendances_staff ON training_attendances(staff_id, cert_expires_at)`)
   } catch (e) { console.error('[Migration] training_attendances:', e.message) }
 
+  // K1 — İş kazası kayıt modülü (SİF formu alanları)
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS work_accidents (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      staff_id INTEGER NOT NULL REFERENCES staff(id),
+      accident_date TEXT NOT NULL,
+      accident_time TEXT,
+      location TEXT,
+      description TEXT NOT NULL,
+      injury_type TEXT,
+      body_part TEXT,
+      severity TEXT NOT NULL DEFAULT 'first_aid'
+        CHECK(severity IN ('none','first_aid','medical','lost_time','fatal')),
+      lost_days INTEGER NOT NULL DEFAULT 0,
+      sgk_reported INTEGER NOT NULL DEFAULT 0,
+      sgk_report_date TEXT,
+      actions_taken TEXT,
+      status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','investigating','closed')),
+      reported_by INTEGER REFERENCES users(id),
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`)
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_work_accidents_date ON work_accidents(accident_date)`)
+    db.exec(`CREATE TABLE IF NOT EXISTS work_accident_witnesses (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      accident_id INTEGER NOT NULL REFERENCES work_accidents(id) ON DELETE CASCADE,
+      staff_id INTEGER REFERENCES staff(id),
+      full_name TEXT NOT NULL,
+      statement TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`)
+    db.exec(`CREATE TABLE IF NOT EXISTS work_accident_photos (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      accident_id INTEGER NOT NULL REFERENCES work_accidents(id) ON DELETE CASCADE,
+      url TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`)
+  } catch (e) { console.error('[Migration] work_accidents:', e.message) }
+
   // H12 S2 — KVKK V2 (veri silme talebi)
   try {
     db.exec(`CREATE TABLE IF NOT EXISTS kvkk_requests (
