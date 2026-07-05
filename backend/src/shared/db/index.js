@@ -1208,6 +1208,9 @@ export function initDB() {
   try { db.exec('ALTER TABLE staff ADD COLUMN legacy_avs_id INTEGER') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] staff.legacy_avs_id:', e.message) }
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_staff_legacy_avs ON staff(legacy_avs_id) WHERE legacy_avs_id IS NOT NULL') } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] idx_staff_legacy_avs:', e.message) }
 
+  // L2 — banka transfer dosyası için IBAN
+  try { db.exec('ALTER TABLE staff ADD COLUMN iban TEXT') } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) console.error('[Migration] staff.iban:', e.message) }
+
   // Default departman seed — production'da boşsa rol mapping FK için gerekli
   try {
     const deptCount = db.prepare('SELECT COUNT(*) c FROM departments').get().c

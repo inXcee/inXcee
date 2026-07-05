@@ -62,6 +62,21 @@ export default function PayrollPage() {
     onError: toastErr,
   })
 
+  async function downloadBankCsv() {
+    try {
+      const res = await api.get('/shifts/bank-transfer', { params: { month }, responseType: 'blob' })
+      const url = URL.createObjectURL(res.data)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `banka-transfer-${month}.csv`
+      a.click()
+      URL.revokeObjectURL(url)
+      toast('Banka transfer dosyası indirildi')
+    } catch {
+      toast('Banka dosyası indirilemedi', 'error')
+    }
+  }
+
   async function downloadPayslip(r) {
     try {
       const res = await api.get(`/shifts/payslip/${r.id}/pdf`, { params: { month }, responseType: 'blob' })
@@ -117,6 +132,7 @@ export default function PayrollPage() {
           <button onClick={() => setShowDeductions(d => !d)} className="btn btn-ghost btn-sm" style={{ borderRadius: 10 }}>
             {showDeductions ? '↩ BORDRO' : '💵 KESİNTİLER'}
           </button>
+          <button onClick={downloadBankCsv} className="btn btn-ghost btn-sm" style={{ borderRadius: 10 }}>🏦 BANKA CSV</button>
           <button onClick={exportCsv} className="btn btn-primary btn-sm" style={{ borderRadius: 10 }}>📊 CSV İNDİR</button>
         </div>
       </div>

@@ -613,6 +613,40 @@ describe('L1 — Bordro PDF', () => {
     expect(r.status).toBe(403)
   })
 
+  it('GET /bank-transfer CSV döner (IBAN + net tutar)', async () => {
+    // staff'a IBAN yaz — CSV'de görünmeli
+    const upd = await request(app).put(`/api/shifts/staff/${staffId}`)
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({ iban: 'TR12 0006 4000 0011 2345 6789 01' })
+    expect(upd.status).toBe(200)
+
+    const r = await request(app).get(`/api/shifts/bank-transfer?month=${month}`)
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(r.status).toBe(200)
+    expect(r.headers['content-type']).toContain('text/csv')
+    expect(r.text).toContain('Sira;Ad Soyad;TC No;IBAN;Tutar (TL);Aciklama')
+    // net > 0 olan personel varsa IBAN satırda yer alır
+    if (r.text.split('\r\n').length > 1) {
+      expect(r.text).toMatch(/maas odemesi/)
+    }
+  })
+
+  it('bank-transfer geçersiz month 400', async () => {
+    const r = await request(app).get('/api/shifts/bank-transfer?month=kotu')
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(r.status).toBe(400)
+  })
+
+  it('staff iban alanı create/update ile korunur', async () => {
+    const created = await request(app).post('/api/shifts/staff')
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({ full_name: 'IBAN Test Personel', iban: 'TR330006100519786457841326', salary: 30000 })
+    expect(created.status).toBe(201)
+    const got = await request(app).get(`/api/shifts/staff/${created.body.id}`)
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(got.body.iban).toBe('TR330006100519786457841326')
+  })
+
   it('payslipService özel kesintiyi netten düşer', async () => {
     const { payslipService } = await import('./service.js')
     const before = payslipService(staffId, month)

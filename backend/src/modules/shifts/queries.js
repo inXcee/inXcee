@@ -44,9 +44,9 @@ export function createStaff(data) {
   const db = getDB()
   const r = db.prepare(`
     INSERT INTO staff(tc_no,full_name,phone,email,position,department_id,hire_date,birth_date,
-      address,emergency_contact,emergency_phone,blood_type,gender,salary,notes,is_active,role_label,pickup_point_id)
+      address,emergency_contact,emergency_phone,blood_type,gender,salary,iban,notes,is_active,role_label,pickup_point_id)
     VALUES(@tc_no,@full_name,@phone,@email,@position,@department_id,@hire_date,@birth_date,
-      @address,@emergency_contact,@emergency_phone,@blood_type,@gender,@salary,@notes,@is_active,@role_label,@pickup_point_id)
+      @address,@emergency_contact,@emergency_phone,@blood_type,@gender,@salary,@iban,@notes,@is_active,@role_label,@pickup_point_id)
   `).run({
     tc_no: data.tc_no || null,
     full_name: data.full_name,
@@ -62,6 +62,7 @@ export function createStaff(data) {
     blood_type: data.blood_type || null,
     gender: data.gender || null,
     salary: data.salary || null,
+    iban: data.iban || null,
     notes: data.notes || null,
     is_active: data.is_active !== undefined ? data.is_active : 1,
     role_label: data.role_label || null,
@@ -73,7 +74,7 @@ export function createStaff(data) {
 export function updateStaff(id, data) {
   const db = getDB()
   const fields = ['tc_no','full_name','phone','email','position','department_id','hire_date','birth_date',
-    'address','emergency_contact','emergency_phone','blood_type','gender','salary','notes','is_active','role_label','pickup_point_id']
+    'address','emergency_contact','emergency_phone','blood_type','gender','salary','iban','notes','is_active','role_label','pickup_point_id']
   const sets = []
   const params = []
   fields.forEach(f => {

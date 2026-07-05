@@ -183,10 +183,11 @@ Doğrulama: 804/804 backend, build temiz, 8/8 e2e
 - [x] `payslip_pdf` audit log
 - [x] +5 test (PDF content-type, 400/404/403, kesinti düşümü) — 809/809
 
-### Faz 15 — L2: Banka transfer dosyası export (CSV)
-- [ ] `staff.iban` kolonu (migration) + staff formunda IBAN alanı
-- [ ] `GET /api/shifts/bank-transfer?month=` — dönem net maaş + IBAN CSV
-- [ ] PayrollPage'e "🏦 BANKA CSV" butonu
+### Faz 15 — L2: Banka transfer dosyası export (CSV) ✅
+- [x] `staff.iban` kolonu (migration + schema + CRUD) + her iki staff formunda IBAN alanı
+- [x] `GET /api/shifts/bank-transfer?month=` — dönem net maaş (yasal+özel kesinti düşülmüş) + IBAN, noktalı virgüllü CSV, eksik IBAN "IBAN EKSIK" olarak görünür
+- [x] PayrollPage'e "🏦 BANKA CSV" butonu + `bank_transfer_csv` audit log
+- [x] +3 test — 812/812
 
 ### Faz 16 — I1: Sertifika vade cron uyarısı
 - [ ] Vadesi ≤60 gün kalan eğitim/sertifikalar için günlük cron taraması

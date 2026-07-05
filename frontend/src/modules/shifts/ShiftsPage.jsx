@@ -477,7 +477,7 @@ function StaffDetailPanel({ staffId, onClose }) {
         address: person.address || '', emergency_contact: person.emergency_contact || '',
         emergency_phone: person.emergency_phone || '', blood_type: person.blood_type || '',
         gender: person.gender || 'male', salary: person.salary?.toString() || '',
-        notes: person.notes || '',
+        iban: person.iban || '', notes: person.notes || '',
       })
     } else {
       setFormData({})
@@ -631,6 +631,7 @@ function StaffDetailPanel({ staffId, onClose }) {
                       { key: 'hire_date', label: 'İşe Giriş', type: 'date' },
                       { key: 'birth_date', label: 'Doğum Tarihi', type: 'date' },
                       { key: 'salary', label: 'Maaş (₺)', type: 'number' },
+                      { key: 'iban', label: 'IBAN', type: 'text' },
                       { key: 'emergency_contact', label: 'Acil Kişi', type: 'text' },
                       { key: 'emergency_phone', label: 'Acil Tel', type: 'text' },
                     ].map(f => (
@@ -1111,6 +1112,12 @@ function StaffFormSheet({ editStaff, form, setForm, handleSubmit, createMut, upd
                 onChange={e => setForm(p => ({ ...p, salary: e.target.value }))} />
             </div>
             <div>
+              <label className="form-label">IBAN</label>
+              <input type="text" className="form-input" placeholder="TR__ ____ ____ ____ ____ ____ __"
+                value={form.iban || ''}
+                onChange={e => setForm(p => ({ ...p, iban: e.target.value.toUpperCase().replace(/[^A-Z0-9 ]/g, '') }))} />
+            </div>
+            <div>
               <label className="form-label">Notlar</label>
               <textarea className="form-textarea" value={form.notes || ''} rows={3}
                 onChange={e => setForm(p => ({ ...p, notes: e.target.value }))}
@@ -1182,7 +1189,7 @@ function StaffTab({ departments, onPersonClick }) {
     setForm({
       full_name: '', tc_no: '', phone: '', email: '', position: '', department_id: '',
       hire_date: '', birth_date: '', address: '', emergency_contact: '', emergency_phone: '',
-      blood_type: '', gender: 'male', salary: '', notes: '', is_active: 1,
+      blood_type: '', gender: 'male', salary: '', iban: '', notes: '', is_active: 1,
     })
     setEditStaff(null)
     setShowForm(true)
@@ -1195,7 +1202,7 @@ function StaffTab({ departments, onPersonClick }) {
       hire_date: s.hire_date || '', birth_date: s.birth_date || '', address: s.address || '',
       emergency_contact: s.emergency_contact || '', emergency_phone: s.emergency_phone || '',
       blood_type: s.blood_type || '', gender: s.gender || 'male', salary: s.salary?.toString() || '',
-      notes: s.notes || '', is_active: s.is_active,
+      iban: s.iban || '', notes: s.notes || '', is_active: s.is_active,
     })
     setEditStaff(s)
     setShowForm(true)

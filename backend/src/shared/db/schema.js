@@ -289,6 +289,7 @@ CREATE TABLE IF NOT EXISTS staff (
   blood_type TEXT CHECK(blood_type IN ('A+','A-','B+','B-','AB+','AB-','0+','0-')),
   gender TEXT CHECK(gender IN ('male','female')),
   salary REAL,
+  iban TEXT,
   notes TEXT,
   is_active INTEGER DEFAULT 1,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP

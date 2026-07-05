@@ -331,6 +331,40 @@ export function puantajCsvService(month, deptId) {
   return lines.join('\r\n')
 }
 
+// L2 — Banka toplu ödeme dosyası (CSV, noktalı virgül ayraçlı, BOM'lu).
+// Dönem net maaşı (yasal + özel kesintiler düşülmüş) + IBAN. Net ≤ 0 satırlar atlanır;
+// IBAN'ı boş personel dosyada "IBAN EKSIK" ile görünür kalır ki muhasebe fark etsin.
+export function bankTransferCsvService(month) {
+  const rows = puantajService(month)
+  const db = getDB()
+  const dedRows = db.prepare(
+    'SELECT staff_id, COALESCE(SUM(amount),0) as total FROM payroll_deductions WHERE period = ? GROUP BY staff_id'
+  ).all(month)
+  const dedMap = Object.fromEntries(dedRows.map(d => [d.staff_id, d.total]))
+  const ibanMap = Object.fromEntries(db.prepare('SELECT id, iban FROM staff').all().map(s => [s.id, s.iban]))
+
+  const escape = (v) => {
+    const s = v == null ? '' : String(v)
+    return s.includes(';') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s
+  }
+  const lines = ['﻿' + ['Sira', 'Ad Soyad', 'TC No', 'IBAN', 'Tutar (TL)', 'Aciklama'].join(';')]
+  let sira = 0
+  rows.forEach(r => {
+    const netPayable = round2(r.net - (dedMap[r.id] || 0))
+    if (netPayable <= 0) return
+    sira += 1
+    lines.push([
+      sira,
+      escape(r.full_name),
+      escape(r.tc_no || ''),
+      escape(ibanMap[r.id] || 'IBAN EKSIK'),
+      netPayable.toFixed(2).replace('.', ','),
+      escape(`${month} maas odemesi`),
+    ].join(';'))
+  })
+  return lines.join('\r\n')
+}
+
 // L1 — Kişi bazlı bordro verisi (PDF için): puantaj satırı + dönem özel kesintileri.
 // Yasal kesintiler (SGK/işsizlik/GV/damga) puantajService'te hesaplanır; burada
 // payroll_deductions kayıtları (avans, hasar, disiplin…) net'ten ayrıca düşülür.

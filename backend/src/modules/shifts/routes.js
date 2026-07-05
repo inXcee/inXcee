@@ -13,7 +13,7 @@ import {
   copyWeekService, rotationService, searchStaffService, deleteScheduleService,
   staffDetailService,
   staffListService, staffGetService, staffCreateService, staffUpdateService, staffDeleteService,
-  puantajCsvService, staffDayBreakdownService, payslipService
+  puantajCsvService, staffDayBreakdownService, payslipService, bankTransferCsvService
 } from './service.js'
 import PDFDocument from 'pdfkit'
 import {
@@ -204,6 +204,22 @@ shiftsRouter.get('/payroll-detailed', ...managerOrSupervisor, (req, res) => {
     if (!/^\d{4}-\d{2}$/.test(ym)) return res.status(400).json({ error: 'month YYYY-MM formatında olmalı' })
     res.json({ month: ym, rows: getPayrollDetailed(ym) })
   } catch (e) { console.error('[payroll-detailed]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// ── L2: Banka toplu ödeme dosyası (CSV) ──
+shiftsRouter.get('/bank-transfer', ...managerOrSupervisor, (req, res) => {
+  try {
+    const ym = req.query.month || new Date().toISOString().slice(0, 7)
+    if (!/^\d{4}-\d{2}$/.test(ym)) return res.status(400).json({ error: 'month YYYY-MM formatında olmalı' })
+    const csv = bankTransferCsvService(ym)
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8')
+    res.setHeader('Content-Disposition', `attachment; filename="banka-transfer-${ym}.csv"`)
+    logAudit(req.user.id, 'bank_transfer_csv', 'payroll', null, ym)
+    res.send(csv)
+  } catch (e) {
+    console.error('[bank-transfer]', e)
+    res.status(e.statusCode || 500).json({ error: e.message || 'Sunucu hatası' })
+  }
 })
 
 // ── L1: Kişi bazlı maaş bordrosu PDF (TR standart format) ──
