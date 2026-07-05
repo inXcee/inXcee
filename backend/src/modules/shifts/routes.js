@@ -13,8 +13,9 @@ import {
   copyWeekService, rotationService, searchStaffService, deleteScheduleService,
   staffDetailService,
   staffListService, staffGetService, staffCreateService, staffUpdateService, staffDeleteService,
-  puantajCsvService, staffDayBreakdownService
+  puantajCsvService, staffDayBreakdownService, payslipService
 } from './service.js'
+import PDFDocument from 'pdfkit'
 import {
   checkConflicts, listHolidays, createHoliday, updateHoliday, deleteHoliday,
   getPayrollExport, getCombinedAbsences,
@@ -203,6 +204,135 @@ shiftsRouter.get('/payroll-detailed', ...managerOrSupervisor, (req, res) => {
     if (!/^\d{4}-\d{2}$/.test(ym)) return res.status(400).json({ error: 'month YYYY-MM formatında olmalı' })
     res.json({ month: ym, rows: getPayrollDetailed(ym) })
   } catch (e) { console.error('[payroll-detailed]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// ── L1: Kişi bazlı maaş bordrosu PDF (TR standart format) ──
+const DEDUCTION_KIND_TR = {
+  damage: 'Hasar kesintisi', discipline: 'Disiplin kesintisi', late: 'Gec gelme kesintisi',
+  advance: 'Avans mahsubu', tax: 'Vergi kesintisi', other: 'Diger kesinti',
+}
+
+shiftsRouter.get('/payslip/:staffId/pdf', ...managerOrSupervisor, (req, res) => {
+  try {
+    const ym = req.query.month || new Date().toISOString().slice(0, 7)
+    const p = payslipService(req.params.staffId, ym)
+    const fmt = (n) => (n ?? 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+    const doc = new PDFDocument({ size: 'A4', margin: 50 })
+    res.setHeader('Content-Type', 'application/pdf')
+    const safeName = (p.full_name || 'personel')
+      .normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .replace(/[^a-zA-Z0-9-]/g, '_').slice(0, 50)
+    res.setHeader('Content-Disposition', `attachment; filename="bordro-${ym}-${safeName}.pdf"`)
+    doc.pipe(res)
+
+    // Başlık
+    doc.fontSize(16).font('Helvetica-Bold').text('MAAS BORDROSU', { align: 'center' })
+    doc.fontSize(10).font('Helvetica').fillColor('#6b7280')
+      .text(`Donem: ${ym}  |  Belge No: BRD-${ym}-${p.id}`, { align: 'center' })
+    doc.fillColor('#000').moveDown(1.2)
+
+    // Personel bilgileri
+    doc.fontSize(11).font('Helvetica-Bold').text('Personel Bilgileri')
+    doc.moveTo(50, doc.y + 2).lineTo(545, doc.y + 2).strokeColor('#e5e7eb').stroke().strokeColor('#000')
+    doc.font('Helvetica').fontSize(9).moveDown(0.4)
+    const infoY = doc.y
+    doc.text(`Ad Soyad: ${p.full_name}`, 50, infoY)
+    doc.text(`T.C. Kimlik No: ${p.tc_no || '—'}`, 300, infoY)
+    doc.text(`Departman: ${p.dept_name || '—'}`, 50, infoY + 14)
+    doc.text(`Pozisyon: ${p.position || '—'}`, 300, infoY + 14)
+    doc.text(`Aylik Brut Ucret: ${fmt(p.salary)} TL`, 50, infoY + 28)
+    doc.text(`Gunluk Ucret: ${fmt(p.daily_rate)} TL`, 300, infoY + 28)
+    doc.y = infoY + 46
+
+    // Çalışma özeti
+    doc.fontSize(11).font('Helvetica-Bold').text('Calisma Ozeti', 50)
+    doc.moveTo(50, doc.y + 2).lineTo(545, doc.y + 2).strokeColor('#e5e7eb').stroke().strokeColor('#000')
+    doc.font('Helvetica').fontSize(9).moveDown(0.4)
+    const sumY = doc.y
+    doc.text(`Calisilan Gun: ${p.worked_days}`, 50, sumY)
+    doc.text(`Ucretli Izin: ${(p.annual_leave_days || 0) + (p.emergency_leave_days || 0)} gun`, 175, sumY)
+    doc.text(`Devamsiz: ${p.absent_days} gun`, 320, sumY)
+    doc.text(`Fazla Mesai: ${p.overtime_hours} saat`, 430, sumY)
+    doc.y = sumY + 22
+
+    // Kazançlar / kesintiler tablosu
+    const line = (label, value, opts = {}) => {
+      if (doc.y > 720) { doc.addPage(); doc.y = 50 }
+      const y = doc.y
+      doc.font(opts.bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(9)
+        .fillColor(opts.color || '#000')
+        .text(label, 60, y, { width: 330 })
+        .text(`${fmt(value)} TL`, 390, y, { width: 145, align: 'right' })
+      doc.fillColor('#000')
+      doc.y = y + 15
+    }
+
+    doc.fontSize(11).font('Helvetica-Bold').text('Kazanclar', 50)
+    doc.moveTo(50, doc.y + 2).lineTo(545, doc.y + 2).strokeColor('#e5e7eb').stroke().strokeColor('#000')
+    doc.moveDown(0.4)
+    line('Normal Calisma Ucreti', p.base_pay)
+    if (p.leave_pay > 0) line('Ucretli Izin Karsiligi', p.leave_pay)
+    if (p.overtime_pay > 0) line('Fazla Mesai Ucreti (x1.5)', p.overtime_pay)
+    line('BRUT TOPLAM', p.gross, { bold: true })
+    doc.moveDown(0.5)
+
+    doc.fontSize(11).font('Helvetica-Bold').text('Yasal Kesintiler', 50)
+    doc.moveTo(50, doc.y + 2).lineTo(545, doc.y + 2).strokeColor('#e5e7eb').stroke().strokeColor('#000')
+    doc.moveDown(0.4)
+    line('SGK Isci Payi (%14)', p.ssi_worker, { color: '#b91c1c' })
+    line('Issizlik Sigortasi Isci Payi (%1)', p.unemployment_worker, { color: '#b91c1c' })
+    line('Gelir Vergisi (kumulatif dilim)', p.income_tax, { color: '#b91c1c' })
+    line('Damga Vergisi (binde 7,59)', p.stamp_tax, { color: '#b91c1c' })
+    line('Yasal Kesinti Toplami', p.total_deductions, { bold: true, color: '#b91c1c' })
+    doc.moveDown(0.5)
+
+    if (p.deduction_items.length) {
+      doc.fontSize(11).font('Helvetica-Bold').text('Ozel Kesintiler', 50)
+      doc.moveTo(50, doc.y + 2).lineTo(545, doc.y + 2).strokeColor('#e5e7eb').stroke().strokeColor('#000')
+      doc.moveDown(0.4)
+      p.deduction_items.forEach(d => {
+        const label = DEDUCTION_KIND_TR[d.kind] || d.kind
+        line(`${label}${d.description ? ' — ' + d.description : ''}`, d.amount, { color: '#b91c1c' })
+      })
+      line('Ozel Kesinti Toplami', p.other_deductions, { bold: true, color: '#b91c1c' })
+      doc.moveDown(0.5)
+    }
+
+    // Net ödenen
+    if (doc.y > 660) { doc.addPage(); doc.y = 50 }
+    const netY = doc.y + 6
+    doc.rect(50, netY, 495, 32).fillAndStroke('#f0fdf4', '#16a34a')
+    doc.fillColor('#166534').fontSize(12).font('Helvetica-Bold')
+      .text('NET ODENEN', 60, netY + 10)
+      .text(`${fmt(p.net_payable)} TL`, 380, netY + 10, { width: 155, align: 'right' })
+    doc.fillColor('#000').font('Helvetica')
+    doc.y = netY + 44
+
+    // İşveren maliyeti + kümülatif bilgi
+    doc.fontSize(8).fillColor('#6b7280')
+      .text(`Isveren Maliyeti: SGK Isveren ${fmt(p.ssi_employer)} TL + Issizlik Isveren ${fmt(p.unemployment_employer)} TL = Toplam ${fmt(p.employer_total_cost)} TL`, 50)
+      .text(`Yilbasi Kumulatif Brut: ${fmt(p.ytd_gross)} TL  |  Kumulatif Gelir Vergisi: ${fmt(p.ytd_tax)} TL`)
+    doc.fillColor('#000')
+    doc.moveDown(2)
+
+    // İmza alanları
+    const sigY = doc.y
+    doc.fontSize(9).text('Isveren / Yetkili Imza', 60, sigY, { width: 200 })
+    doc.text('Personel Imza', 320, sigY, { width: 200 })
+    doc.moveTo(60, sigY + 45).lineTo(250, sigY + 45).stroke()
+    doc.moveTo(320, sigY + 45).lineTo(510, sigY + 45).stroke()
+
+    doc.fontSize(7).fillColor('#9ca3af')
+      .text(`Bu bordro bilgilendirme amaclidir. Yatakhane Yonetim Sistemi  |  Olusturma: ${new Date().toLocaleString('tr-TR')}`,
+        50, doc.page.height - 50, { align: 'center' })
+
+    doc.end()
+    logAudit(req.user.id, 'payslip_pdf', 'payroll', p.id, `${ym} ${p.full_name}`)
+  } catch (e) {
+    console.error('[payslip/pdf]', e)
+    if (!res.headersSent) res.status(e.statusCode || 500).json({ error: e.message || 'PDF olusturulamadi' })
+  }
 })
 
 // ── H4 V8: Birleşik devamsızlık ──

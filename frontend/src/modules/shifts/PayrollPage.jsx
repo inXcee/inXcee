@@ -62,6 +62,21 @@ export default function PayrollPage() {
     onError: toastErr,
   })
 
+  async function downloadPayslip(r) {
+    try {
+      const res = await api.get(`/shifts/payslip/${r.id}/pdf`, { params: { month }, responseType: 'blob' })
+      const url = URL.createObjectURL(res.data)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `bordro-${month}-${r.full_name.replace(/\s+/g, '_')}.pdf`
+      a.click()
+      URL.revokeObjectURL(url)
+      toast('Bordro PDF indirildi')
+    } catch {
+      toast('Bordro PDF indirilemedi', 'error')
+    }
+  }
+
   function exportCsv() {
     if (!data?.rows?.length) { toast('Veri yok', 'error'); return }
     const headers = [
@@ -188,6 +203,7 @@ export default function PayrollPage() {
                 <th style={{ padding: 8, textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--blue)' }}>SGK</th>
                 <th style={{ padding: 8, textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--red)' }}>KSN</th>
                 <th style={{ padding: 8, textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>MAAŞ</th>
+                <th style={{ padding: 8, textAlign: 'center', fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>PDF</th>
               </tr>
             </thead>
             <tbody>
@@ -206,6 +222,10 @@ export default function PayrollPage() {
                   <td style={{ padding: 8, textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--blue)' }}>{r.sgk_days}</td>
                   <td style={{ padding: 8, textAlign: 'right', fontFamily: 'var(--mono)', color: r.total_deductions > 0 ? 'var(--red)' : 'var(--text4)' }}>{r.total_deductions > 0 ? '-' + r.total_deductions.toFixed(0) : '—'}</td>
                   <td style={{ padding: 8, textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--text3)' }}>{r.salary ? `${r.salary} ₺` : '—'}</td>
+                  <td style={{ padding: 8, textAlign: 'center' }}>
+                    <button onClick={() => downloadPayslip(r)} className="btn btn-ghost btn-xs"
+                      title="Bordro PDF indir" style={{ fontSize: 13 }}>🧾</button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -219,7 +239,7 @@ export default function PayrollPage() {
                 <td style={{ padding: 8, textAlign: 'right', fontFamily: 'var(--mono)' }}>{data.rows.reduce((s, r) => s + r.holiday_days, 0)}</td>
                 <td style={{ padding: 8, textAlign: 'right', fontFamily: 'var(--mono)' }}>{data.rows.reduce((s, r) => s + r.sgk_days, 0)}</td>
                 <td style={{ padding: 8, textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--red)' }}>-{data.rows.reduce((s, r) => s + (r.total_deductions || 0), 0).toFixed(0)}</td>
-                <td />
+                <td colSpan={2} />
               </tr>
             </tfoot>
           </table>

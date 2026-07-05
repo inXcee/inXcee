@@ -171,3 +171,42 @@ Doğrulama: 804/804 backend (+4), build temiz, 8/8 Playwright smoke
 - [x] **P13.4 — `PRODUCTION-REHBERI.md` temizliği:** Stale "BLOKLAYICI" listesi (render.yaml DB_PATH, mobile rate limit, smoke admin123) güncel kod durumuna göre yeniden yazıldı. Yeni operatör checklist'i + /api/health doğrulama notları + GIT_SHA env önerisi.
 
 Doğrulama: 804/804 backend, build temiz, 8/8 e2e
+
+---
+
+## 2026-07-05 Backlog Sprint (AVS A-Z + teknik borç — "hepsini sırayla")
+
+### Faz 14 — L1: Maaş bordrosu PDF (TR standart format) ✅
+- [x] `payslipService(staffId, month)` — puantajService satırı + `payroll_deductions` özel kesintileri + `net_payable`
+- [x] `GET /api/shifts/payslip/:staffId/pdf?month=` — TR standart bordro PDF (kazançlar, yasal kesintiler %14/%1/GV kümülatif/damga, özel kesintiler, net ödenen, işveren maliyeti, YTD, imza alanları)
+- [x] PayrollPage: kişi başı 🧾 PDF indirme butonu
+- [x] `payslip_pdf` audit log
+- [x] +5 test (PDF content-type, 400/404/403, kesinti düşümü) — 809/809
+
+### Faz 15 — L2: Banka transfer dosyası export (CSV)
+- [ ] `staff.iban` kolonu (migration) + staff formunda IBAN alanı
+- [ ] `GET /api/shifts/bank-transfer?month=` — dönem net maaş + IBAN CSV
+- [ ] PayrollPage'e "🏦 BANKA CSV" butonu
+
+### Faz 16 — I1: Sertifika vade cron uyarısı
+- [ ] Vadesi ≤60 gün kalan eğitim/sertifikalar için günlük cron taraması
+- [ ] Bildirim üretimi (mevcut notifications altyapısı) + tekrar bildirim engelleme
+
+### Faz 17 — K1: İş kazası kayıt modülü
+- [ ] `work_accidents` tablosu + CRUD endpoint'leri (SİF alanları, tanıklar, foto)
+- [ ] Kaza raporu PDF + frontend sayfası + safety entegrasyonu
+
+### Faz 18 — Migration verify (health endpoint)
+- [ ] `/api/health`'e beklenen index/trigger varlık kontrolü
+- [ ] Eksikte `degraded` durumu + admin panel uyarısı
+
+### Faz 19 — D1: QR clock-in/out
+- [ ] Staff qr_token ile giriş/çıkış damgası endpoint'i
+- [ ] attendance_logs entegrasyonu + mobil/kiosk okuma ekranı
+
+### Faz 20 — T1: LaundryHub.jsx split (refactor)
+- [ ] 85KB monolith'i alt component'lere böl — davranış birebir korunur
+
+### Faz 21 — Cila
+- [ ] `jsqr` bağımlılığını kaldır
+- [ ] Responsive class'ları kalan raw `data-table` sayfalarına yay

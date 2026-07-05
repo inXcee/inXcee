@@ -575,3 +575,57 @@ describe('H8 — payroll-detailed', () => {
     })
   })
 })
+
+describe('L1 — Bordro PDF', () => {
+  const month = new Date().toISOString().slice(0, 7)
+  let staffId
+
+  beforeAll(async () => {
+    const staff = (await request(app).get('/api/shifts/staff').set('Authorization', `Bearer ${managerToken}`)).body
+    staffId = staff[0].id
+  })
+
+  it('GET /payslip/:id/pdf PDF döner', async () => {
+    const r = await request(app).get(`/api/shifts/payslip/${staffId}/pdf?month=${month}`)
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(r.status).toBe(200)
+    expect(r.headers['content-type']).toContain('application/pdf')
+    expect(r.headers['content-disposition']).toContain(`bordro-${month}`)
+  })
+
+  it('geçersiz month 400', async () => {
+    const r = await request(app).get(`/api/shifts/payslip/${staffId}/pdf?month=2026-13-01`)
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(r.status).toBe(400)
+  })
+
+  it('olmayan personel 404', async () => {
+    const r = await request(app).get(`/api/shifts/payslip/999999/pdf?month=${month}`)
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(r.status).toBe(404)
+  })
+
+  it('yetkisiz rol 403', async () => {
+    const laundryToken = (await request(app).post('/api/auth/login')
+      .send({ username: 'camasir', password: 'admin123' })).body.token
+    const r = await request(app).get(`/api/shifts/payslip/${staffId}/pdf?month=${month}`)
+      .set('Authorization', `Bearer ${laundryToken}`)
+    expect(r.status).toBe(403)
+  })
+
+  it('payslipService özel kesintiyi netten düşer', async () => {
+    const { payslipService } = await import('./service.js')
+    const before = payslipService(staffId, month)
+
+    const add = await request(app).post('/api/shifts/deductions').set('Authorization', `Bearer ${managerToken}`)
+      .send({ staff_id: staffId, period: month, kind: 'advance', amount: 100, description: 'Bordro test avans' })
+    expect(add.status).toBe(201)
+
+    const after = payslipService(staffId, month)
+    expect(after.other_deductions).toBe(before.other_deductions + 100)
+    expect(after.net_payable).toBeCloseTo(before.net_payable - 100, 2)
+    expect(after.deduction_items.some(d => d.id === add.body.id)).toBe(true)
+
+    await request(app).delete(`/api/shifts/deductions/${add.body.id}`).set('Authorization', `Bearer ${managerToken}`)
+  })
+})

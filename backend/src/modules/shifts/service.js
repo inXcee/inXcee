@@ -10,7 +10,7 @@ import {
   copyWeekSchedule, applyRotationTemplate, searchStaff, deleteScheduleEntry,
   getStaffDetail,
   getStaffList, getStaffById, createStaff, updateStaff, deleteStaff,
-  getStaffDayBreakdown
+  getStaffDayBreakdown, listDeductions
 } from './queries.js'
 import { getDB } from '../../shared/db/index.js'
 
@@ -329,6 +329,28 @@ export function puantajCsvService(month, deptId) {
   ]
 
   return lines.join('\r\n')
+}
+
+// L1 — Kişi bazlı bordro verisi (PDF için): puantaj satırı + dönem özel kesintileri.
+// Yasal kesintiler (SGK/işsizlik/GV/damga) puantajService'te hesaplanır; burada
+// payroll_deductions kayıtları (avans, hasar, disiplin…) net'ten ayrıca düşülür.
+export function payslipService(staffId, month) {
+  const id = Number(staffId)
+  if (!id || isNaN(id)) {
+    throw Object.assign(new Error('staffId sayısal olmalıdır'), { statusCode: 400 })
+  }
+  const row = puantajService(month).find(r => r.id === id)
+  if (!row) {
+    throw Object.assign(new Error('Personel bulunamadı'), { statusCode: 404 })
+  }
+  const deductionItems = listDeductions({ period: month, staffId: id })
+  const otherDeductions = round2(deductionItems.reduce((s, d) => s + (d.amount || 0), 0))
+  return {
+    ...row,
+    deduction_items: deductionItems,
+    other_deductions: otherDeductions,
+    net_payable: round2(row.net - otherDeductions),
+  }
 }
 
 export function staffDayBreakdownService(staffId, month) {
