@@ -10,6 +10,7 @@ import { dirname, resolve } from 'node:path'
 import { sanitizeBody } from './shared/middleware/sanitize.js'
 import { getDB } from './shared/db/index.js'
 import { verifySchemaObjects } from './shared/db/verify.js'
+import { getMigrationStatus } from './shared/db/migrations.js'
 
 // Sürüm bilgisi — /api/health ve diagnostic için bir kez başlangıçta okunur.
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -150,16 +151,19 @@ app.get('/api/health', (req, res) => {
   try { getDB().prepare('SELECT 1').get() } catch { dbStatus = 'error' }
   // Migration verify — kritik index/trigger eksikse degraded (sessiz migration skip tespiti)
   let schema = { ok: true, missing: [] }
+  let migrations = { applied: 0, total: 0, errors: [] }
   if (dbStatus === 'ok') {
     try { schema = verifySchemaObjects() } catch { schema = { ok: false, missing: ['verify:failed'] } }
+    try { migrations = getMigrationStatus(getDB()) } catch { /* migration tablosu yoksa default kalır */ }
   }
-  const healthy = dbStatus === 'ok' && schema.ok
+  const healthy = dbStatus === 'ok' && schema.ok && migrations.errors.length === 0
   res.status(dbStatus === 'ok' ? 200 : 503).json({
     status: healthy ? 'ok' : 'degraded',
     uptime: Math.floor(process.uptime()),
     db: dbStatus,
     schema: schema.ok ? 'ok' : 'degraded',
     schema_missing: schema.missing,
+    migrations,
     version: APP_VERSION,
     commit: APP_COMMIT,
     started_at: APP_STARTED_AT,

@@ -245,7 +245,10 @@ Doğrulama: 804/804 backend, build temiz, 8/8 e2e
 - [x] Bonus fix: `createLeaveService` reason alanı opsiyonel gönderilince named-param hatası veriyordu
 - [x] +5 test — 846/846
 
-### Faz 25 — T2: Hafif migration framework
-- [ ] `schema_migrations` tablosu + sıralı versiyonlu runner (better-sqlite3)
-- [ ] Yeni migration'lar için tek giriş noktası; başarısızlıkta sessiz skip yerine loglu hata
-- [ ] verify.js entegrasyonu (uygulanan sürüm health'te görünsün)
+### Faz 25 — T2: Hafif migration framework ✅
+- [x] `shared/db/migrations.js` — `schema_migrations` tablosu + sıralı `MIGRATIONS` dizisi; her kayıt transaction içinde tek kez uygulanır
+- [x] Başarısızlıkta sessiz skip YOK: yüksek sesle log + kaydedilmez (sonraki boot yeniden dener) + transaction rollback (yarım iş kalmaz)
+- [x] `/api/health` `migrations` alanı (applied/total/errors) — hata varsa `status: degraded`
+- [x] İlk 2 versiyonlu migration: `idx_leave_requests_status`, `idx_attendance_open` (D1 açık kayıt taraması)
+- [x] Yeni şema değişiklikleri artık MIGRATIONS dizisine eklenir (legacy try/catch bloklarına değil)
+- [x] +6 test — 852/852 + 8/8 e2e (gerçek boot doğrulaması)

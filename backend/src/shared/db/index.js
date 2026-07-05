@@ -1,5 +1,6 @@
 import Database from 'better-sqlite3'
 import { SCHEMA } from './schema.js'
+import { runVersionedMigrations } from './migrations.js'
 
 let db
 
@@ -1666,6 +1667,10 @@ export function initDB() {
         SELECT RAISE(ABORT, 'inventory.quantity negatif olamaz');
       END`)
   } catch(e) { if (!e.message?.includes('already exists')) console.error('[Migration] trg_inventory_nonneg:', e.message) }
+
+  // T2 — versiyonlu migration runner (yeni şema değişiklikleri buradan;
+  // yukarıdaki legacy try/catch bloklarına ekleme yapma)
+  runVersionedMigrations(db)
 
   return db
 }
