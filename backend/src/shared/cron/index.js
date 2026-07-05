@@ -10,6 +10,7 @@ import { sendMorningReport } from '../../modules/email/service.js'
 import { buildMonthlyReport, generateMonthlyPDF } from '../../modules/inventory/analytics/routes.js'
 import { expirePastLots } from '../../modules/inventory/lots/service.js'
 import { checkCertExpiries } from '../../modules/safety/service.js'
+import { runDisciplineAutomation } from '../../modules/discipline/automation.js'
 import { logAudit } from '../audit.js'
 
 let emailJob = null
@@ -137,6 +138,14 @@ export function startCronJobs() {
       const count = checkCertExpiries()
       if (count > 0) console.log('[Cron] cert-expiry:', count, 'bildirim')
     } catch (e) { console.error('[Cron] Sertifika vade hatasi:', e.message) }
+  }), TZ)
+
+  // Her gün 06:20 — disiplin otomasyonu (30g 3 sarı → kırmızı, 90g temiz → af)
+  cron.schedule('20 6 * * *', withLock('discipline-automation', () => {
+    try {
+      const r = runDisciplineAutomation()
+      if (r.auto_red > 0 || r.amnesty > 0) console.log('[Cron] discipline-automation:', r)
+    } catch (e) { console.error('[Cron] Disiplin otomasyon hatasi:', e.message) }
   }), TZ)
 
   // Her gece 02:00 — eski audit log + okunmuş bildirimler 90 gün, hata logları 30 gün

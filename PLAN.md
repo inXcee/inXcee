@@ -232,10 +232,10 @@ Doğrulama: 804/804 backend, build temiz, 8/8 e2e
 - [x] P2 frontend: SelfServicePage'e 🌴 İzin sekmesi — bakiye kartları + yeni talep formu + talep geçmişi (durum etiketli)
 - [x] +5 test — 838/838
 
-### Faz 23 — N1: Disiplin otomasyon kuralları
-- [ ] "30 günde 3 sarı → 1 kırmızı" otomatik kural (günlük cron)
-- [ ] "90 gün temiz → 1 sarı af" kuralı
-- [ ] Otomatik kayıtlarda kaynak işareti + audit log + bildirim
+### Faz 23 — N1: Disiplin otomasyon kuralları ✅
+- [x] `discipline/automation.js runDisciplineAutomation()` — Kural A: son 30 günde 3+ sarı → otomatik kırmızı (30 günde tek tetik); Kural B: 90 gün temiz + puan>0 → 1 puan af (audit guard ile 90 günde tek sefer)
+- [x] Günlük cron 06:20 (overlap-safe) + `discipline_auto_red` / `discipline_amnesty` audit + bildirimler
+- [x] +3 test (idempotency dahil) — 841/841
 
 ### Faz 24 — E1: İzin bakiye takibi
 - [ ] İzin onayında `leave_balance` otomatik güncelleme (annual/sick/emergency)
