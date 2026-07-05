@@ -490,8 +490,8 @@ export default function SelfServicePage() {
                       const today = new Date().toISOString().slice(0, 10)
                       const isToday = s.work_date === today
                       const isFuture = s.work_date > today
-                      const statusColor = s.status === 'worked' ? 'text-green-400' : s.status === 'absent' ? 'text-red-400' : s.status === 'on_leave' ? 'text-amber-400' : 'text-slate-400'
-                      const statusLabel = s.status === 'worked' ? '✓ Çalıştı' : s.status === 'absent' ? '✗ Yok' : s.status === 'on_leave' ? '🛌 İzin' : isFuture ? '📅 Planlandı' : s.status
+                      const statusColor = s.status === 'worked' ? 'text-green-400' : s.status === 'absent' ? 'text-red-400' : s.status === 'on_leave' ? 'text-amber-400' : s.status === 'off' ? 'text-purple-400' : 'text-slate-400'
+                      const statusLabel = s.status === 'worked' ? '✓ Çalıştı' : s.status === 'absent' ? '✗ Yok' : s.status === 'on_leave' ? '🛌 İzin' : s.status === 'off' ? '🌙 Haftalık izin' : isFuture ? '📅 Planlandı' : s.status
                       return (
                         <div key={s.work_date} className={`flex justify-between items-center px-3 py-2 rounded-lg ${isToday ? 'bg-blue-900 border border-blue-700' : 'bg-slate-800'}`}>
                           <div>

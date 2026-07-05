@@ -278,18 +278,20 @@ export function getPayrollDetailed(yearMonth) {
         WHERE ss.staff_id = s.id AND ss.status IN ('worked','overtime') AND ss.work_date >= ? AND ss.work_date < ?), 0) as weighted_days,
       COALESCE((SELECT SUM(amount) FROM payroll_deductions
         WHERE staff_id = s.id AND period = ?), 0) as total_deductions,
-      -- B5: SGK gün = çalıştığı + izinli (yasal düşmeyen) günler
+      COALESCE((SELECT COUNT(*) FROM shift_schedule
+        WHERE staff_id = s.id AND status = 'off' AND work_date >= ? AND work_date < ?), 0) as off_days,
+      -- B5: SGK gün = çalıştığı + izinli + hafta tatili (yasal düşmeyen) günler
       (
         COALESCE((SELECT COUNT(*) FROM shift_schedule
           WHERE staff_id = s.id AND status IN ('worked','overtime') AND work_date >= ? AND work_date < ?), 0)
         + COALESCE((SELECT COUNT(*) FROM shift_schedule
-          WHERE staff_id = s.id AND status = 'on_leave' AND work_date >= ? AND work_date < ?), 0)
+          WHERE staff_id = s.id AND status IN ('on_leave','off') AND work_date >= ? AND work_date < ?), 0)
       ) as sgk_days
     FROM staff s
     LEFT JOIN departments d ON d.id = s.department_id
     WHERE s.is_active = 1
     ORDER BY d.name, s.full_name
-  `).all(start, end, start, end, start, end, start, end, start, end, start, end, yearMonth, start, end, start, end)
+  `).all(start, end, start, end, start, end, start, end, start, end, start, end, yearMonth, start, end, start, end, start, end)
 }
 
 // H4 V7 — Bordro export (kişi başı aylık özet)
@@ -884,6 +886,7 @@ export function getStaffDetail(staffId) {
   const totalOvertime = db.prepare('SELECT COALESCE(SUM(hours),0) as total FROM overtime_records WHERE staff_id=?').get(staffId).total
   const totalLeave = db.prepare("SELECT COUNT(*) as count FROM leave_requests WHERE staff_id=? AND status='approved'").get(staffId).count
   const absentCount = db.prepare("SELECT COUNT(*) as count FROM shift_schedule WHERE staff_id=? AND status='absent'").get(staffId).count
+  const offCount = db.prepare("SELECT COUNT(*) as count FROM shift_schedule WHERE staff_id=? AND status='off'").get(staffId).count
 
   return {
     person,
@@ -891,7 +894,7 @@ export function getStaffDetail(staffId) {
     leaveHistory,
     overtimeRecords,
     attendanceLogs,
-    stats: { totalShifts, workedShifts, totalOvertime, totalLeave, absentCount }
+    stats: { totalShifts, workedShifts, totalOvertime, totalLeave, absentCount, offCount }
   }
 }
 
@@ -930,6 +933,7 @@ export function getPuantaj(monthStart, monthEnd, deptId) {
       COALESCE(sch.scheduled_days, 0) as scheduled_days,
       COALESCE(sch.leave_days, 0) as leave_days,
       COALESCE(sch.absent_days, 0) as absent_days,
+      COALESCE(sch.off_days, 0) as off_days,
       COALESCE(sch.total_days, 0) as total_days,
       COALESCE(ot.overtime_hours, 0) as overtime_hours,
       COALESCE(ot.overtime_count, 0) as overtime_count,
@@ -945,6 +949,7 @@ export function getPuantaj(monthStart, monthEnd, deptId) {
         COUNT(CASE WHEN status='scheduled' THEN 1 END) as scheduled_days,
         COUNT(CASE WHEN status='on_leave' THEN 1 END) as leave_days,
         COUNT(CASE WHEN status='absent' THEN 1 END) as absent_days,
+        COUNT(CASE WHEN status='off' THEN 1 END) as off_days,
         COUNT(*) as total_days
       FROM shift_schedule
       WHERE work_date BETWEEN ? AND ?

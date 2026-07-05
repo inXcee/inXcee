@@ -245,6 +245,15 @@ Doğrulama: 804/804 backend, build temiz, 8/8 e2e
 - [x] Bonus fix: `createLeaveService` reason alanı opsiyonel gönderilince named-param hatası veriyordu
 - [x] +5 test — 846/846
 
+### Faz 26 — Vardiya sistemi: Haftalık izin (OFF) + renkli Excel export ✅
+- [x] **Migration 003** (T2 runner): `shift_schedule` CHECK'e `off` durumu (tablo rebuild + index'ler); eski "haftalık izin" kayıtları (on_leave + vardiyasız + kapsayan izin talebi yok) otomatik `off`'a çevrildi
+- [x] **Bordro/puantaj:** `off_days` sayacı, hafta tatili ücreti (İş Kanunu m.46 — günlük × off) brüte dahil, YTD ve SGK günü hesabına işlendi; bordro PDF'te "Hafta Tatili Ucreti" satırı; puantaj CSV'ye "Hafta Tatili" kolonu
+- [x] **Çizelge UI:** OFF hücresi ayrı renk (mor 🌙 OFF + "haftalık izin" alt yazısı); hücre atama panelinde OFF/İZİN ayrı butonlar; hafta doldur / toplu doldur / tüm personel doldur artık OFF üretir; Excel import "o/off/tatil" → off, "izin" → on_leave
+- [x] **Kişi detayı:** OFF istatistik kartı, vardiya listesinde "Haftalık izin" durumu + OFF filtresi, puantaj takvim sembolü (O) + lejant, bordro detayında Hafta Tatili satırı
+- [x] **Excel export (YENİ):** Araçlar → "⬇ Excel İndir (renkli)" — haftalık çizelge: vardiya adı + saat aralığı hücrede, vardiya bazlı dolgu renkleri, OFF mor / İZİN teal / YOK kırmızı, frozen başlık, lejant, `vardiya-{hafta}.xlsx`
+- [x] **Kiosk:** Vardiyam sekmesinde 🌙 Haftalık izin etiketi + 30 gün özetinde off sayacı
+- [x] +4 test — 856/856 + 8/8 e2e
+
 ### Faz 25 — T2: Hafif migration framework ✅
 - [x] `shared/db/migrations.js` — `schema_migrations` tablosu + sıralı `MIGRATIONS` dizisi; her kayıt transaction içinde tek kez uygulanır
 - [x] Başarısızlıkta sessiz skip YOK: yüksek sesle log + kaydedilmez (sonraki boot yeniden dener) + transaction rollback (yarım iş kalmaz)

@@ -302,7 +302,7 @@ CREATE TABLE IF NOT EXISTS shift_schedule (
   shift_def_id INTEGER REFERENCES shift_definitions(id),
   work_date TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'scheduled'
-    CHECK(status IN ('scheduled','worked','absent','on_leave','overtime')),
+    CHECK(status IN ('scheduled','worked','absent','on_leave','overtime','off')),
   created_by INTEGER REFERENCES users(id),
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   UNIQUE(staff_id, work_date)

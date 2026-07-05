@@ -107,6 +107,7 @@ selfServiceRouter.get('/my-shifts', requireKioskOrStaff, (req, res) => {
         SUM(CASE WHEN status='worked' THEN 1 ELSE 0 END) as worked,
         SUM(CASE WHEN status='absent' THEN 1 ELSE 0 END) as absent,
         SUM(CASE WHEN status='on_leave' THEN 1 ELSE 0 END) as on_leave,
+        SUM(CASE WHEN status='off' THEN 1 ELSE 0 END) as off,
         COUNT(*) as total
       FROM shift_schedule WHERE staff_id = ? AND work_date BETWEEN date('now','-30 days') AND date('now')
     `).get(staff.id)

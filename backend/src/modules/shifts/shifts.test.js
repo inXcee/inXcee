@@ -3,7 +3,7 @@ import request from 'supertest'
 import app from '../../app.js'
 import { initDB, getDB } from '../../shared/db/index.js'
 import { seedDev } from '../../shared/db/seed.js'
-import { calcTax, workDaysInMonth } from './service.js'
+import { calcTax, workDaysInMonth, puantajService } from './service.js'
 
 let managerToken, shiftToken
 beforeAll(async () => {
@@ -573,6 +573,54 @@ describe('H8 — payroll-detailed', () => {
       expect(row).toHaveProperty('sgk_days')
       expect(row).toHaveProperty('total_deductions')
     })
+  })
+})
+
+describe('Faz 26 — Haftalık izin (OFF) durumu', () => {
+  let staffId
+
+  beforeAll(() => {
+    staffId = getDB().prepare("INSERT INTO staff(full_name, is_active, salary) VALUES('Off Test Personel', 1, 30000)")
+      .run().lastInsertRowid
+  })
+
+  it("shift_schedule CHECK constraint 'off' durumunu kabul eder", async () => {
+    const r = await request(app).post('/api/shifts/schedule').set('Authorization', `Bearer ${managerToken}`)
+      .send({ entries: [{ staff_id: staffId, dept_id: null, shift_def_id: null, work_date: '2026-07-12', status: 'off' }] })
+    expect(r.status).toBe(200)
+    const row = getDB().prepare("SELECT status FROM shift_schedule WHERE staff_id=? AND work_date='2026-07-12'").get(staffId)
+    expect(row.status).toBe('off')
+  })
+
+  it('puantajda off_days sayılır ve hafta tatili ücreti brüte eklenir', async () => {
+    const db = getDB()
+    // 2026-07: 5 çalışılan gün ekle (off zaten 07-12'de)
+    const days = ['2026-07-06', '2026-07-07', '2026-07-08', '2026-07-09', '2026-07-10']
+    days.forEach(d => db.prepare(`
+      INSERT INTO shift_schedule(staff_id, work_date, status) VALUES(?,?,'worked')
+      ON CONFLICT(staff_id, work_date) DO UPDATE SET status='worked'
+    `).run(staffId, d))
+
+    const row = puantajService('2026-07').find(r => r.id === staffId)
+    expect(row.off_days).toBe(1)
+    expect(row.weekly_off_pay).toBe(1000) // 30000/30 × 1
+    expect(row.gross).toBe(row.base_pay + row.weekly_off_pay) // 5×1000 + 1×1000
+  })
+
+  it('payroll-detailed off_days döner ve sgk_days off içerir', async () => {
+    const r = await request(app).get('/api/shifts/payroll-detailed?month=2026-07')
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(r.status).toBe(200)
+    const row = r.body.rows.find(x => x.id === staffId)
+    expect(row.off_days).toBe(1)
+    expect(row.sgk_days).toBe(6) // 5 worked + 1 off
+  })
+
+  it('bordro PDF hafta tatili ile üretilir', async () => {
+    const r = await request(app).get(`/api/shifts/payslip/${staffId}/pdf?month=2026-07`)
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(r.status).toBe(200)
+    expect(r.headers['content-type']).toContain('application/pdf')
   })
 })
 

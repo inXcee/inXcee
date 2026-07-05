@@ -475,6 +475,7 @@ function StaffDetailPanel({ staffId, onClose }) {
     { label: 'ÇALIŞTI', value: stats.workedShifts,         color: 'var(--green)', showBar: true },
     { label: 'MESAİ',   value: `${stats.totalOvertime}s`,  color: 'var(--accent)' },
     { label: 'İZİN',    value: `${stats.totalLeave}g`,     color: 'var(--purple)' },
+    { label: 'OFF',     value: `${stats.offCount ?? 0}g`,  color: 'var(--teal)' },
     { label: 'YOK',     value: stats.absentCount,          color: 'var(--red)' },
   ]
 
@@ -782,7 +783,7 @@ function StaffDetailPanel({ staffId, onClose }) {
                   color: 'var(--blue)',
                   icon: '📅',
                   label: s.shift_name ? `${s.shift_name} · ${s.start_hour}:00–${s.end_hour === 24 ? '00' : s.end_hour}:00` : 'Vardiya',
-                  sub: s.status === 'worked' ? 'Çalıştı' : s.status === 'absent' ? 'Gelmedi' : s.status === 'on_leave' ? 'İzinli' : 'Planlandı',
+                  sub: s.status === 'worked' ? 'Çalıştı' : s.status === 'absent' ? 'Gelmedi' : s.status === 'on_leave' ? 'İzinli' : s.status === 'off' ? 'Haftalık izin' : 'Planlandı',
                 })),
                 ...leaveHistory.map(l => ({
                   date: l.start_date,
@@ -861,12 +862,12 @@ function StaffDetailPanel({ staffId, onClose }) {
             {!activeForm && detailTab === 'shifts' && (() => {
               const filtered = shiftFilter ? shiftHistory.filter(s => s.status === shiftFilter) : shiftHistory
               const visible = filtered.slice(0, shiftPage)
-              const STATUS_C = { worked: 'var(--green)', scheduled: 'var(--blue)', on_leave: 'var(--purple)', absent: 'var(--red)', overtime: 'var(--accent)' }
-              const STATUS_L = { worked: 'Çalıştı', scheduled: 'Planlandı', on_leave: 'İzinli', absent: 'Gelmedi', overtime: 'Mesai' }
+              const STATUS_C = { worked: 'var(--green)', scheduled: 'var(--blue)', on_leave: 'var(--purple)', off: 'var(--teal)', absent: 'var(--red)', overtime: 'var(--accent)' }
+              const STATUS_L = { worked: 'Çalıştı', scheduled: 'Planlandı', on_leave: 'İzinli', off: 'Haftalık izin', absent: 'Gelmedi', overtime: 'Mesai' }
               return (
                 <div>
                   <div style={{ display: 'flex', gap: 4, marginBottom: 12, flexWrap: 'wrap' }}>
-                    {[['', 'TÜM'], ['worked','ÇALIŞTI'], ['scheduled','PLANLI'], ['on_leave','İZİNLİ'], ['absent','YOK']].map(([k, l]) => (
+                    {[['', 'TÜM'], ['worked','ÇALIŞTI'], ['scheduled','PLANLI'], ['on_leave','İZİNLİ'], ['off','OFF'], ['absent','YOK']].map(([k, l]) => (
                       <button key={k} onClick={() => { setShiftFilter(k); setShiftPage(30) }}
                         className={`btn btn-xs ${shiftFilter === k ? 'btn-primary' : 'btn-ghost'}`}
                         style={{ borderRadius: 8, fontFamily: 'var(--mono)', fontSize: 9 }}>{l}</button>
@@ -1462,7 +1463,7 @@ function DailyView({ departments, date, onDateChange }) {
       const g = map.get(deptName)
       if (row.leave_status === 'approved') {
         g.leave.push(row)
-      } else if (row.shift_status === 'on_leave') {
+      } else if (row.shift_status === 'on_leave' || row.shift_status === 'off') {
         g.leave.push(row)
       } else if (row.shift_status === 'scheduled' || row.shift_status === 'overtime') {
         const shiftKey = row.shift_name || 'Bilinmiyor'
@@ -1657,7 +1658,7 @@ function WeekFillSheet({ weekFillPopover, setWeekFillPopover, shiftDefs, weekFil
           </div>
         </div>
         <div style={{ marginBottom: '16px' }}>
-          <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '1px', marginBottom: '8px' }}>İZİN GÜNÜ</div>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '1px', marginBottom: '8px' }}>OFF GÜNÜ (HAFTALIK İZİN)</div>
           <div style={{ display: 'flex', gap: '4px' }}>
             {DAY_LABELS.map((lbl, i) => (
               <button key={i} onClick={() => setWeekFillOffDay(i)}
@@ -1682,7 +1683,7 @@ function WeekFillSheet({ weekFillPopover, setWeekFillPopover, shiftDefs, weekFil
               { onError: () => setError('Hafta doldurulamadı. Tekrar deneyin.') }
             )
           }}>
-          {fillWeek.isPending ? 'Dolduruluyor...' : '6 Gün Doldur + 1 İzin'}
+          {fillWeek.isPending ? 'Dolduruluyor...' : '6 Gün Doldur + 1 OFF'}
         </button>
         {error && <div style={{ color: 'var(--red)', fontFamily: 'var(--mono)', fontSize: '10px', marginTop: '8px' }}>{error}</div>}
       </div>
@@ -1737,6 +1738,18 @@ function CellAssignSheet({ cellPopover, setCellPopover, shiftDefs, assignCell, d
           )
         })}
         <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+          <button
+            onClick={() => { setError(null); assignCell.mutate({ staffId: cellPopover.staffId, deptId: cellPopover.deptId, shiftDefId: null, date: cellPopover.date, status: 'off' }, { onError: () => setError('İşlem başarısız. Tekrar deneyin.') }) }}
+            disabled={assignCell.isPending}
+            style={{
+              flex: 1, padding: '10px', borderRadius: '8px', cursor: 'pointer',
+              border: `2px solid ${cellPopover.existing?.status === 'off' ? 'var(--purple)' : 'var(--border)'}`,
+              background: cellPopover.existing?.status === 'off' ? 'rgba(167,139,250,.12)' : 'var(--surface2)',
+              color: cellPopover.existing?.status === 'off' ? 'var(--purple)' : 'var(--text2)',
+              fontFamily: 'var(--mono)', fontSize: '11px', fontWeight: 600,
+            }}>
+            🌙 OFF {cellPopover.existing?.status === 'off' && '✓'}
+          </button>
           <button
             onClick={() => { setError(null); assignCell.mutate({ staffId: cellPopover.staffId, deptId: cellPopover.deptId, shiftDefId: null, date: cellPopover.date, status: 'on_leave' }, { onError: () => setError('İşlem başarısız. Tekrar deneyin.') }) }}
             disabled={assignCell.isPending}
@@ -1884,7 +1897,7 @@ function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
             dept_id: s.department_id || null,
             work_date: d,
             shift_def_id: i === 6 ? null : parseInt(shiftDefId),
-            status: i === 6 ? 'on_leave' : 'scheduled',
+            status: i === 6 ? 'off' : 'scheduled',
           })
         })
       })
@@ -1959,7 +1972,8 @@ function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
         if (!val && val !== 0) return null
         const v = String(val).toLowerCase().trim()
         if (!v || v === '-' || v === '') return null
-        if (v === 'i' || v === 'İ' || v === 'izin' || v === 'tatil' || v === 'off') return { shiftDefId: null, status: 'on_leave' }
+        if (v === 'o' || v === 'off' || v === 'tatil' || v === 'haftalık' || v === 'haftalik') return { shiftDefId: null, status: 'off' }
+        if (v === 'i' || v === 'İ' || v === 'izin') return { shiftDefId: null, status: 'on_leave' }
         if (v === '1' || v.startsWith('g') && !v.startsWith('ge')) return { shiftDefId: shiftDefs[0]?.id || null, status: 'scheduled' }
         if (v === '2' || v.startsWith('a')) return { shiftDefId: shiftDefs[1]?.id || null, status: 'scheduled' }
         if (v === '3' || v.startsWith('ge')) return { shiftDefId: shiftDefs[2]?.id || null, status: 'scheduled' }
@@ -2013,13 +2027,13 @@ function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
     }
   }
 
-  // Fill one person's week (with off-day as on_leave)
+  // Fill one person's week (off günü = haftalık izin, 'off' status)
   const fillWeek = useMutation({
     mutationFn: ({ staffId, deptId, shiftDefId, offDayIdx }) => {
       const entries = weekDays.map((d, i) => ({
         staff_id: staffId, dept_id: deptId, work_date: d,
         shift_def_id: i === offDayIdx ? null : shiftDefId,
-        status: i === offDayIdx ? 'on_leave' : 'scheduled',
+        status: i === offDayIdx ? 'off' : 'scheduled',
       }))
       return api.post('/shifts/schedule', { entries })
     },
@@ -2036,7 +2050,7 @@ function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
           entries.push({
             staff_id: s.id, dept_id: parseInt(deptId), work_date: d,
             shift_def_id: i === 6 ? null : parseInt(shiftDefId), // Sunday off
-            status: i === 6 ? 'on_leave' : 'scheduled',
+            status: i === 6 ? 'off' : 'scheduled',
           })
         })
       })
@@ -2044,6 +2058,104 @@ function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['schedule'] }); setBulkFillModal(false) }
   })
+
+  // ── Haftalık çizelgeyi renkli Excel olarak indir ──
+  const TAILWIND_HEX = {
+    'bg-blue-500': '3B82F6', 'bg-blue-600': '2563EB', 'bg-green-500': '22C55E', 'bg-green-600': '16A34A',
+    'bg-red-500': 'EF4444', 'bg-red-600': 'DC2626', 'bg-amber-500': 'F59E0B', 'bg-yellow-500': 'EAB308',
+    'bg-orange-500': 'F97316', 'bg-purple-500': 'A855F7', 'bg-purple-600': '9333EA', 'bg-pink-500': 'EC4899',
+    'bg-teal-500': '14B8A6', 'bg-cyan-500': '06B6D4', 'bg-indigo-500': '6366F1', 'bg-lime-500': '84CC16',
+  }
+  const STATUS_FILL = { off: '8B5CF6', on_leave: '14B8A6', absent: 'DC2626' }
+
+  const exportExcel = async () => {
+    const ExcelJS = (await import('exceljs')).default
+    const wb = new ExcelJS.Workbook()
+    const ws = wb.addWorksheet('Vardiya', { views: [{ state: 'frozen', xSplit: 2, ySplit: 2 }] })
+
+    const fmtHours = (c) => c?.shift_start != null
+      ? `${String(c.shift_start).padStart(2, '0')}:00–${c.shift_end === 24 ? '00:00' : String(c.shift_end).padStart(2, '0') + ':00'}`
+      : ''
+    const border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } }
+
+    // Başlık
+    ws.mergeCells(1, 1, 1, 2 + weekDays.length)
+    const title = ws.getCell(1, 1)
+    title.value = `VARDİYA ÇİZELGESİ  ·  ${formatDate(weekStart)} – ${formatDate(weekEnd)}`
+    title.font = { bold: true, size: 14 }
+    title.alignment = { horizontal: 'center', vertical: 'middle' }
+    ws.getRow(1).height = 26
+
+    // Header
+    const header = ws.getRow(2)
+    header.values = ['PERSONEL', 'DEPARTMAN', ...weekDays.map((d, i) => `${DAY_LABELS[i]}\n${formatDate(d)}`)]
+    header.eachCell(c => {
+      c.font = { bold: true, size: 10, color: { argb: 'FFFFFFFF' } }
+      c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF334155' } }
+      c.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }
+      c.border = border
+    })
+    header.height = 30
+
+    // Satırlar
+    staffGrid.forEach(p => {
+      const row = ws.addRow([
+        p.full_name,
+        p.dept_name || '—',
+        ...weekDays.map(d => {
+          const c = p.days[d]
+          if (!c) return '—'
+          if (c.status === 'off') return 'OFF\nhaftalık izin'
+          if (c.status === 'on_leave') return 'İZİN'
+          if (c.status === 'absent') return 'YOK'
+          return c.shift_name ? `${c.shift_name}\n${fmtHours(c)}` : '—'
+        }),
+      ])
+      row.height = 30
+      row.eachCell((cell, colNo) => {
+        cell.border = border
+        cell.alignment = { horizontal: colNo <= 2 ? 'left' : 'center', vertical: 'middle', wrapText: true }
+        cell.font = { size: 9 }
+        if (colNo <= 2) return
+        const c = p.days[weekDays[colNo - 3]]
+        if (!c) return
+        const hex = STATUS_FILL[c.status] || (c.shift_color && TAILWIND_HEX[c.shift_color])
+        if (hex) {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF' + hex } }
+          cell.font = { size: 9, bold: true, color: { argb: 'FFFFFFFF' } }
+        }
+      })
+    })
+
+    // Lejant
+    ws.addRow([])
+    const legendTitle = ws.addRow(['LEJANT'])
+    legendTitle.getCell(1).font = { bold: true, size: 10 }
+    shiftDefs.forEach(s => {
+      const r = ws.addRow([`${s.name}  (${s.start_hour}:00–${s.end_hour === 24 ? '00:00' : s.end_hour + ':00'})`])
+      const hex = TAILWIND_HEX[s.color_class] || '64748B'
+      r.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF' + hex } }
+      r.getCell(1).font = { size: 9, bold: true, color: { argb: 'FFFFFFFF' } }
+    })
+    ;[['OFF — haftalık izin', STATUS_FILL.off], ['İZİN — onaylı izin', STATUS_FILL.on_leave], ['YOK — devamsız', STATUS_FILL.absent]].forEach(([label, hex]) => {
+      const r = ws.addRow([label])
+      r.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF' + hex } }
+      r.getCell(1).font = { size: 9, bold: true, color: { argb: 'FFFFFFFF' } }
+    })
+
+    // Kolon genişlikleri
+    ws.getColumn(1).width = 24
+    ws.getColumn(2).width = 14
+    for (let i = 0; i < weekDays.length; i++) ws.getColumn(3 + i).width = 15
+
+    const buf = await wb.xlsx.writeBuffer()
+    const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = `vardiya-${weekStart}.xlsx`
+    a.click()
+    URL.revokeObjectURL(a.href)
+  }
 
   const openCellPopover = (e, person, date) => {
     if (!canEdit) return
@@ -2062,24 +2174,27 @@ function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
 
   // Stats for this week
   const weekStats = useMemo(() => {
-    let working = 0, onLeave = 0, empty = 0
+    let working = 0, onLeave = 0, off = 0, empty = 0
     // Per-day breakdown
     const perDay = weekDays.map(d => {
       const dayWorking = []
       const dayLeave = []
+      const dayOff = []
       const dayEmpty = []
       staffGrid.forEach(p => {
         const cell = p.days[d]
         if (!cell) dayEmpty.push(p)
         else if (cell.status === 'on_leave') dayLeave.push(p)
+        else if (cell.status === 'off') dayOff.push(p)
         else dayWorking.push(p)
       })
       working += dayWorking.length
       onLeave += dayLeave.length
+      off += dayOff.length
       empty += dayEmpty.length
-      return { date: d, working: dayWorking, leave: dayLeave, empty: dayEmpty }
+      return { date: d, working: dayWorking, leave: dayLeave, off: dayOff, empty: dayEmpty }
     })
-    return { working, onLeave, empty, total: staffGrid.length, perDay }
+    return { working, onLeave, off, empty, total: staffGrid.length, perDay }
   }, [staffGrid, weekDays])
 
   useEffect(() => {
@@ -2192,6 +2307,7 @@ function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
                   { label: 'Tüm Personeli Doldur', action: () => { setAllFillDef(shiftDefs[0]?.id?.toString() || ''); setAllFillModal(true); setToolsOpen(false) } },
                   { label: 'Haftayı Kopyala', action: async () => { if (await confirmDialog('Bu haftayı sonraki haftaya kopyalayalım mı?')) { copyWeek.mutate(); setToolsOpen(false) } } },
                   { label: 'Excel Import', action: () => { setExcelModal(true); setExcelPreview(null); setExcelError(''); setToolsOpen(false) } },
+                  { label: '⬇ Excel İndir (renkli)', action: () => { exportExcel(); setToolsOpen(false) } },
                   { label: '+ Çizelgeye Personel Ekle', action: () => { setAddPersonModal(true); setToolsOpen(false) } },
                 ].map(({ label, action }) => (
                   <button key={label} onClick={action} style={{
@@ -2378,12 +2494,15 @@ function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
                       const sun = isSunday(d)
                       const isToday = d === todayStr()
                       const isLeave = cell?.status === 'on_leave'
+                      const isOff = cell?.status === 'off'
                       const isAbsent = cell?.status === 'absent'
 
                       let pillBg = 'transparent', pillColor = 'var(--text3)', pillLabel = null, pillSub = null
 
                       if (cell) {
-                        if (isLeave) {
+                        if (isOff) {
+                          pillBg = 'rgba(167,139,250,.15)'; pillColor = 'var(--purple)'; pillLabel = '🌙 OFF'; pillSub = 'haftalık izin'
+                        } else if (isLeave) {
                           pillBg = 'rgba(26,188,156,.15)'; pillColor = 'var(--teal)'; pillLabel = '🏖 İZİN'
                         } else if (isAbsent) {
                           pillBg = 'rgba(231,76,60,.12)'; pillColor = 'var(--red)'; pillLabel = '✗ YOK'
@@ -2703,6 +2822,7 @@ function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
                           const e = days[i]
                           if (!e) return <td key={i} style={{ padding: '5px 10px', textAlign: 'center', color: 'var(--text3)' }}>—</td>
                           if (e.status === 'on_leave') return <td key={i} style={{ padding: '5px 10px', textAlign: 'center', color: '#f59e0b', fontWeight: 600 }}>İ</td>
+                          if (e.status === 'off') return <td key={i} style={{ padding: '5px 10px', textAlign: 'center', color: '#a78bfa', fontWeight: 600 }}>OFF</td>
                           const def = shiftDefs.find(d => d.id === e.shift_def_id)
                           const sc = SHIFT_COLORS[def?.color_class] || SHIFT_COLORS.blue
                           return <td key={i} style={{ padding: '5px 10px', textAlign: 'center', color: sc.text, fontWeight: 600 }}>{def?.name || e.shift_def_id}</td>
@@ -3651,13 +3771,14 @@ function PuantajCalendarView({ filtered, month, y, m, isLoading }) {
     worked: { bg: 'var(--green)', text: '#fff' },
     absent: { bg: 'transparent', text: 'var(--red)' },
     on_leave: { bg: 'rgba(167,139,250,.2)', text: 'var(--purple)' },
+    off: { bg: 'rgba(26,188,156,.2)', text: 'var(--teal)' },
     overtime: { bg: 'rgba(240,165,0,.2)', text: 'var(--accent)' },
     scheduled: { bg: 'var(--surface3)', text: 'var(--text3)' },
     sunday: { bg: 'transparent', text: 'var(--border)' },
     no_record: { bg: 'transparent', text: 'transparent' },
   }
 
-  const STATUS_SYMBOL = { worked: '▓', absent: '✗', on_leave: 'İ', overtime: 'M', scheduled: '·', sunday: '', no_record: '' }
+  const STATUS_SYMBOL = { worked: '▓', absent: '✗', on_leave: 'İ', off: 'O', overtime: 'M', scheduled: '·', sunday: '', no_record: '' }
 
   // Sunday indices (day of week for day 1)
   const sundayDays = new Set(dayNumbers.filter(d => new Date(y, m - 1, d).getDay() === 0))
@@ -3852,6 +3973,9 @@ function BordroSlip({ row, month, monthLabel }) {
       <div className="bordro-section-title">ÜCRET BİLEŞENLERİ</div>
       <div className="bordro-line"><span>Temel Ücret ({row.worked_days || 0} × {fmt(row.daily_rate)})</span><span>{fmt(row.base_pay)}</span></div>
       <div className="bordro-line"><span>Ücretli İzin ({(row.annual_leave_days || 0) + (row.emergency_leave_days || 0)} × {fmt(row.daily_rate)})</span><span>{fmt(row.leave_pay)}</span></div>
+      {(row.weekly_off_pay || 0) > 0 && (
+        <div className="bordro-line"><span>Hafta Tatili ({row.off_days || 0} × {fmt(row.daily_rate)})</span><span>{fmt(row.weekly_off_pay)}</span></div>
+      )}
       <div className="bordro-line"><span>Fazla Mesai ({row.overtime_hours || 0}s × 1.5)</span><span>{fmt(row.overtime_pay)}</span></div>
       <div className="bordro-line bordro-total"><span>BRÜT TOPLAM</span><span>{fmt(row.gross)}</span></div>
       <div className="bordro-divider" />
@@ -3956,6 +4080,7 @@ function BordroDetailSheet({ row, month, monthLabel, formatMoney, onClose }) {
               {[
                 ['Temel Ücret', formatMoney(row.base_pay)],
                 ['Ücretli İzin', formatMoney(row.leave_pay)],
+                ['Hafta Tatili', formatMoney(row.weekly_off_pay || 0)],
                 ['Fazla Mesai', formatMoney(row.overtime_pay)],
               ].map(([label, val]) => (
                 <div key={label} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: '1px solid var(--border)', fontSize: '12px' }}>
@@ -4052,7 +4177,7 @@ function BordroDetailSheet({ row, month, monthLabel, formatMoney, onClose }) {
                   })}
                 </div>
                 <div style={{ marginTop: '10px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                  {[['worked','Çalıştı','var(--green)'],['absent','Devamsız','var(--red)'],['on_leave','İzin','var(--purple)'],['overtime','Mesai','var(--accent)']].map(([s,label,color]) => (
+                  {[['worked','Çalıştı','var(--green)'],['absent','Devamsız','var(--red)'],['on_leave','İzin','var(--purple)'],['off','Haftalık izin','var(--teal)'],['overtime','Mesai','var(--accent)']].map(([s,label,color]) => (
                     <span key={s} style={{ fontSize: '9px', display: 'flex', alignItems: 'center', gap: '3px', color: 'var(--text3)' }}>
                       <span style={{ width: '8px', height: '8px', borderRadius: '2px', background: color, display: 'inline-block' }} />
                       {label}

@@ -288,6 +288,7 @@ shiftsRouter.get('/payslip/:staffId/pdf', ...managerOrSupervisor, (req, res) => 
     doc.moveTo(50, doc.y + 2).lineTo(545, doc.y + 2).strokeColor('#e5e7eb').stroke().strokeColor('#000')
     doc.moveDown(0.4)
     line('Normal Calisma Ucreti', p.base_pay)
+    if (p.weekly_off_pay > 0) line('Hafta Tatili Ucreti', p.weekly_off_pay)
     if (p.leave_pay > 0) line('Ucretli Izin Karsiligi', p.leave_pay)
     if (p.overtime_pay > 0) line('Fazla Mesai Ucreti (x1.5)', p.overtime_pay)
     line('BRUT TOPLAM', p.gross, { bold: true })

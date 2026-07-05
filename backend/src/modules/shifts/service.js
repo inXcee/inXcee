@@ -41,9 +41,10 @@ function getYtdGross(db, staffId, year, month) {
 
   const dailyRate = salary / 30
 
-  // Worked days (worked + overtime statuses only — on_leave excluded here)
+  // Worked days (worked + overtime) + haftalık izin (off — hafta tatili ücretlidir)
   const sch = db.prepare(`
-    SELECT COALESCE(COUNT(CASE WHEN status IN ('worked','overtime') THEN 1 END), 0) as worked_days
+    SELECT COALESCE(COUNT(CASE WHEN status IN ('worked','overtime') THEN 1 END), 0) as worked_days,
+      COALESCE(COUNT(CASE WHEN status = 'off' THEN 1 END), 0) as off_days
     FROM shift_schedule
     WHERE staff_id = ? AND work_date >= ? AND work_date < ?
   `).get(staffId, janStart, monthStart)
@@ -63,7 +64,7 @@ function getYtdGross(db, staffId, year, month) {
   `).get(staffId, janStart, monthStart)
 
   return (
-    dailyRate * ((sch?.worked_days || 0) + (lv?.paid_leave_days || 0)) +
+    dailyRate * ((sch?.worked_days || 0) + (sch?.off_days || 0) + (lv?.paid_leave_days || 0)) +
     (dailyRate / 8) * 1.5 * (ot?.hours || 0)
   )
 }
@@ -292,7 +293,7 @@ export function puantajCsvService(month, deptId) {
 
   const headers = [
     'TC No', 'Ad Soyad', 'Departman',
-    'İş Günü', 'Çalıştı', 'İzin(Yıllık)', 'İzin(Acil)', 'İzin(Hastalık)', 'İzin(Diğer)',
+    'İş Günü', 'Çalıştı', 'Hafta Tatili', 'İzin(Yıllık)', 'İzin(Acil)', 'İzin(Hastalık)', 'İzin(Diğer)',
     'Devamsız', 'Mesai(s)',
     'Brüt', 'SGK İşçi', 'İşsizlik İşçi', 'Gelir Vergisi', 'Damga Vergisi', 'Net',
     'İşveren SGK', 'İşveren İşsizlik', 'Toplam Maliyet',
@@ -311,6 +312,7 @@ export function puantajCsvService(month, deptId) {
       r.dept_name || '—',
       r.work_days_in_month,
       r.worked_days,
+      r.off_days,
       r.annual_leave_days,
       r.emergency_leave_days,
       r.sick_leave_days,
@@ -447,7 +449,9 @@ export function puantajService(month, deptId) {
     const basePay = round2(dailyRate * (row.worked_days || 0))
     const overtimePay = round2((dailyRate / 8) * 1.5 * (row.overtime_hours || 0))
     const leavePay = round2(dailyRate * ((row.annual_leave_days || 0) + (row.emergency_leave_days || 0)))
-    const gross = round2(basePay + overtimePay + leavePay)
+    // Hafta tatili (off) ücretlidir — İş Kanunu m.46
+    const weeklyOffPay = round2(dailyRate * (row.off_days || 0))
+    const gross = round2(basePay + overtimePay + leavePay + weeklyOffPay)
 
     const ytdGrossPrev = getYtdGross(db, row.id, year, mon)
     const ytdGross = round2(ytdGrossPrev + gross)
@@ -471,6 +475,7 @@ export function puantajService(month, deptId) {
       base_pay: basePay,
       overtime_pay: overtimePay,
       leave_pay: leavePay,
+      weekly_off_pay: weeklyOffPay,
       gross,
       ssi_worker: ssiWorker,
       unemployment_worker: unemploymentWorker,
