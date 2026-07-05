@@ -201,9 +201,11 @@ Doğrulama: 804/804 backend, build temiz, 8/8 e2e
 - [x] SafetyPage'e 🚨 İŞ KAZALARI sekmesi — liste + filtre + oluşturma + detay drawer (durum, SGK toggle, tanık, foto, PDF)
 - [x] +11 test — 825/825
 
-### Faz 18 — Migration verify (health endpoint)
-- [ ] `/api/health`'e beklenen index/trigger varlık kontrolü
-- [ ] Eksikte `degraded` durumu + admin panel uyarısı
+### Faz 18 — Migration verify (health endpoint) ✅
+- [x] `shared/db/verify.js` — kritik trigger (karantina, stok nonneg) + 6 index sqlite_master kontrolü
+- [x] `/api/health`: `schema` + `schema_missing` alanları; eksikte `status: degraded` (HTTP 200 — monitor flap etmez)
+- [x] SystemHealthPage'e ŞEMA BÜTÜNLÜĞÜ kartı — eksik nesne listesi kırmızı uyarı
+- [x] +3 test — 828/828
 
 ### Faz 19 — D1: QR clock-in/out
 - [ ] Staff qr_token ile giriş/çıkış damgası endpoint'i

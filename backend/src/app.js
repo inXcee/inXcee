@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 import { sanitizeBody } from './shared/middleware/sanitize.js'
 import { getDB } from './shared/db/index.js'
+import { verifySchemaObjects } from './shared/db/verify.js'
 
 // Sürüm bilgisi — /api/health ve diagnostic için bir kez başlangıçta okunur.
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -147,10 +148,18 @@ app.use('/uploads', (req, res, next) => {
 app.get('/api/health', (req, res) => {
   let dbStatus = 'ok'
   try { getDB().prepare('SELECT 1').get() } catch { dbStatus = 'error' }
+  // Migration verify — kritik index/trigger eksikse degraded (sessiz migration skip tespiti)
+  let schema = { ok: true, missing: [] }
+  if (dbStatus === 'ok') {
+    try { schema = verifySchemaObjects() } catch { schema = { ok: false, missing: ['verify:failed'] } }
+  }
+  const healthy = dbStatus === 'ok' && schema.ok
   res.status(dbStatus === 'ok' ? 200 : 503).json({
-    status: dbStatus === 'ok' ? 'ok' : 'degraded',
+    status: healthy ? 'ok' : 'degraded',
     uptime: Math.floor(process.uptime()),
     db: dbStatus,
+    schema: schema.ok ? 'ok' : 'degraded',
+    schema_missing: schema.missing,
     version: APP_VERSION,
     commit: APP_COMMIT,
     started_at: APP_STARTED_AT,

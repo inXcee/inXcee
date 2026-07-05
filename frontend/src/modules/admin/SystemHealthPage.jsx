@@ -26,6 +26,11 @@ export default function SystemHealthPage() {
     queryFn: () => api.get('/system/info').then(r => r.data),
     refetchInterval: 30_000,
   })
+  const { data: health } = useQuery({
+    queryKey: ['api-health'],
+    queryFn: () => api.get('/health').then(r => r.data),
+    refetchInterval: 30_000,
+  })
 
   if (isLoading) {
     return <div style={{ padding: 40, textAlign: 'center', fontFamily: 'var(--mono)', color: 'var(--text3)' }}>Yükleniyor...</div>
@@ -133,6 +138,22 @@ export default function SystemHealthPage() {
         <Card title="DEPOLAMA" accent="#6366f1">
           <Row k="Uploads" v={formatBytes(storage.uploads_size || 0)} highlight />
           <Row k="Klasör" v={storage.uploads_dir || '—'} mono small />
+        </Card>
+
+        <Card title="ŞEMA BÜTÜNLÜĞÜ" accent={health?.schema === 'ok' ? '#10b981' : '#ef4444'}>
+          <Row k="Migration durumu" v={<Status ok={health?.schema === 'ok'} />} />
+          <Row k="Sürüm" v={health?.version || '—'} mono small />
+          <Row k="Commit" v={health?.commit || '—'} mono small />
+          {health?.schema !== 'ok' && (health?.schema_missing || []).length > 0 && (
+            <div style={{ marginTop: 8, padding: 8, borderRadius: 8, background: 'rgba(239,68,68,.08)', border: '1px solid rgba(239,68,68,.3)' }}>
+              <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: '#ef4444', letterSpacing: 1, marginBottom: 4 }}>
+                ⚠ EKSİK ŞEMA NESNELERİ — MIGRATION SESSİZ SKIP OLMUŞ OLABİLİR
+              </div>
+              {health.schema_missing.map(m => (
+                <div key={m} style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text2)' }}>{m}</div>
+              ))}
+            </div>
+          )}
         </Card>
 
         <Card title="CRON İŞLERİ" accent="#a78bfa">
