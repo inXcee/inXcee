@@ -218,6 +218,6 @@ Doğrulama: 804/804 backend, build temiz, 8/8 e2e
 - [x] Bonus: kanban blok filtresindeki hardcoded `A/B/S2` listesi `shared/blocks.js` BLOCKS'tan beslenir oldu (CLAUDE.md kuralı)
 - [x] Doğrulama: build temiz + 8/8 Playwright smoke
 
-### Faz 21 — Cila
-- [ ] `jsqr` bağımlılığını kaldır
-- [ ] Responsive class'ları kalan raw `data-table` sayfalarına yay
+### Faz 21 — Cila ✅ (önceki oturumlarda zaten yapılmış — doğrulandı)
+- [x] `jsqr` bağımlılığı yok (frontend package.json + kök package-lock temiz)
+- [x] `responsive-stack` zaten 16 dosyada uygulanmış — bekleyen listedeki 8 sayfanın tamamı dahil (Shifts, Capacity, LaundrySettings, LaundryReport, RoomHistory, CheckinPage, KioskPinPage, AuditPage)
