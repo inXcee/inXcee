@@ -4,6 +4,7 @@ import api from '../../shared/api/client.js'
 import HelpHint from '../../shared/components/HelpHint.jsx'
 import { useToastStore } from '../../shared/store/toastStore.js'
 import { TABS } from './constants.js'
+import { useUrlParamState } from '../../shared/hooks/useUrlParamState.js'
 import { KPIRow, AlertsBar } from './components/Dashboard.jsx'
 import MoreMenu from './components/MoreMenu.jsx'
 import AdjustModal from './components/AdjustModal.jsx'
@@ -24,7 +25,7 @@ export default function InventoryPage() {
   const qc = useQueryClient()
   const addToast = useToastStore(s => s.addToast)
   const toastShownRef = useRef(false)
-  const [activeTab, setActiveTab] = useState('stock')
+  const [activeTab, setActiveTab] = useUrlParamState('tab', 'stock')
   const [view, setView] = useState('grid')
   const [searchInput, setSearchInput] = useState('')
   const [searchQ, setSearchQ] = useState('')

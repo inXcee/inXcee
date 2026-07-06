@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import api from '../../shared/api/client.js'
+import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
 
 export default function CombinedAbsencesPage() {
   const nav = useNavigate()
@@ -32,7 +33,7 @@ export default function CombinedAbsencesPage() {
       </div>
 
       {isLoading ? (
-        <div style={{ padding: 40, color: 'var(--text3)' }}>Yükleniyor…</div>
+        <SkeletonTable rows={5} cols={4} />
       ) : !data.length ? (
         <div style={{ padding: 60, textAlign: 'center', background: 'var(--surface)', borderRadius: 14, border: '1px solid var(--border)' }}>
           <div style={{ fontSize: 40, opacity: 0.3, marginBottom: 10 }}>✓</div>

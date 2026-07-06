@@ -4,6 +4,7 @@ import api from '../../shared/api/client.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 import EmptyState from '../../shared/components/EmptyState.jsx'
+import HelpHint from '../../shared/components/HelpHint.jsx'
 
 const TRIGGERS = [
   { value: 'occupancy_high', label: 'Doluluk yüksek', unit: '%', hint: 'Toplam yatak doluluk yüzdesi eşiği geçerse' },
@@ -78,7 +79,7 @@ export default function AutomationPage() {
     <div style={{ padding: 16 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 16 }}>
         <div>
-          <h2 style={{ fontSize: 22, letterSpacing: 4 }}>OTOMASYON KURALLARI</h2>
+          <h2 style={{ fontSize: 22, letterSpacing: 4 }}>OTOMASYON KURALLARI<HelpHint topic="automation" title="OTOMASYON" /></h2>
           <p style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', letterSpacing: 2 }}>
             EŞİK TETİKLİ OTOMATİK AKSIYONLAR (NO-CODE)
           </p>

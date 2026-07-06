@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { requireAuth, requireRole } from '../../shared/auth/middleware.js'
 import { getDB } from '../../shared/db/index.js'
 import { getCampusSummary, getCampusTimeseries } from './queries.js'
+import { logger } from '../../shared/logger.js'
 
 export const campusMapRouter = Router()
 
@@ -12,7 +13,7 @@ campusMapRouter.get('/summary', requireAuth, (req, res) => {
   try {
     res.json({ blocks: getCampusSummary() })
   } catch (e) {
-    console.error('[campus-map.summary]', e)
+    logger.error('[campus-map.summary]', e)
     res.status(500).json({ error: 'Sunucu hatasi' })
   }
 })
@@ -23,7 +24,7 @@ campusMapRouter.get('/timeseries', requireAuth, (req, res) => {
     const days = Math.max(2, Math.min(30, parseInt(req.query.days) || 7))
     res.json({ days, blocks: getCampusTimeseries(days) })
   } catch (e) {
-    console.error('[campus-map.timeseries]', e)
+    logger.error('[campus-map.timeseries]', e)
     res.status(500).json({ error: 'Sunucu hatasi' })
   }
 })
@@ -41,7 +42,7 @@ campusMapRouter.get('/pins', requireAuth, (req, res) => {
       res.json({ pins: {} })
     }
   } catch (e) {
-    console.error('[campus-map.get]', e)
+    logger.error('[campus-map.get]', e)
     res.status(500).json({ error: 'Sunucu hatasi' })
   }
 })
@@ -83,7 +84,7 @@ campusMapRouter.put('/pins', ...requireRole('campus_manager'), (req, res) => {
     `).run(SETTING_KEY, JSON.stringify(clean))
     res.json({ ok: true, count: Object.keys(clean).length })
   } catch (e) {
-    console.error('[campus-map.put]', e)
+    logger.error('[campus-map.put]', e)
     res.status(500).json({ error: 'Sunucu hatasi' })
   }
 })

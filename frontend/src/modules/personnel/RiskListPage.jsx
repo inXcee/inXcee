@@ -1,6 +1,19 @@
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import api from '../../shared/api/client.js'
+import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
+import { exportRowsToCsv } from '../../shared/utils/exportData.js'
+
+const RISK_COLS = [
+  { key: 'risk_score', label: 'SKOR' },
+  { key: 'full_name', label: 'PERSONEL' },
+  { key: 'dept_name', label: 'DEPARTMAN' },
+  { key: 'company_name', label: 'FİRMA' },
+  { key: 'shift_absent', label: 'VARDİYA DEVAMSIZLIK' },
+  { key: 'transport_no_show', label: 'SERVİS NO-SHOW' },
+  { key: 'discipline_score', label: 'DİSİPLİN' },
+  { key: 'contract_end', label: 'SÖZLEŞME BİTİŞ' },
+]
 
 export default function RiskListPage() {
   const nav = useNavigate()
@@ -11,15 +24,19 @@ export default function RiskListPage() {
 
   return (
     <div style={{ maxWidth: 1280 }} className="fade-up">
-      <div style={{ marginBottom: 20 }}>
-        <h1 style={{ fontSize: 28, letterSpacing: 4, color: 'var(--text)', margin: 0 }}>RİSK LİSTESİ</h1>
-        <p style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', marginTop: 4, letterSpacing: 1.5 }}>
-          VARDİYA DEVAMSIZLIK · SERVİS NO-SHOW · DİSİPLİN · SÖZLEŞME BİTİYOR (skor toplam)
-        </p>
+      <div style={{ marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div>
+          <h1 style={{ fontSize: 28, letterSpacing: 4, color: 'var(--text)', margin: 0 }}>RİSK LİSTESİ</h1>
+          <p style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', marginTop: 4, letterSpacing: 1.5 }}>
+            VARDİYA DEVAMSIZLIK · SERVİS NO-SHOW · DİSİPLİN · SÖZLEŞME BİTİYOR (skor toplam)
+          </p>
+        </div>
+        <button onClick={() => exportRowsToCsv(RISK_COLS, data, 'risk_listesi.csv')}
+          className="btn btn-ghost btn-sm" style={{ borderRadius: 10, marginTop: 4 }}>↓ CSV</button>
       </div>
 
       {isLoading ? (
-        <div style={{ padding: 40, color: 'var(--text3)' }}>Yükleniyor…</div>
+        <SkeletonTable rows={5} cols={4} />
       ) : !data.length ? (
         <div style={{ padding: 60, textAlign: 'center', background: 'var(--surface)', borderRadius: 14, border: '1px solid var(--border)' }}>
           <div style={{ fontSize: 40, opacity: 0.3, marginBottom: 10 }}>✓</div>

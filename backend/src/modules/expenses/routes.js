@@ -2,11 +2,11 @@ import { Router } from 'express'
 import { requireRole, requireAuth } from '../../shared/auth/middleware.js'
 import { getDB } from '../../shared/db/index.js'
 import { logAudit } from '../../shared/audit.js'
+import { validate } from '../../shared/middleware/validate.js'
+import { createExpenseSchema } from './schemas.js'
 
 export const expensesRouter = Router()
 const mgmt = requireRole('campus_manager', 'shift_supervisor')
-
-const VALID_CATEGORIES = ['food', 'cleaning', 'laundry', 'maintenance', 'utilities', 'staff', 'other']
 
 expensesRouter.get('/', requireAuth, (req, res) => {
   const db = getDB()
@@ -64,20 +64,16 @@ expensesRouter.get('/summary', requireAuth, (req, res) => {
   })
 })
 
-expensesRouter.post('/', ...mgmt, (req, res) => {
-  const b = req.body || {}
-  if (!VALID_CATEGORIES.includes(b.category)) return res.status(400).json({ error: 'Geçersiz kategori' })
-  if (!b.description || b.description.trim().length < 2) return res.status(400).json({ error: 'Açıklama gerekli' })
-  if (b.amount == null || isNaN(+b.amount) || +b.amount < 0) return res.status(400).json({ error: 'Geçersiz tutar' })
-  if (!b.expense_date) return res.status(400).json({ error: 'Tarih gerekli' })
+expensesRouter.post('/', ...mgmt, validate(createExpenseSchema), (req, res) => {
+  const b = req.validated  // zod ile doğrulanmış + coerce edilmiş
   const db = getDB()
   const r = db.prepare(`
     INSERT INTO expenses (category, description, amount, expense_date, invoice_no, company_id, document_id, notes, created_by)
     VALUES (?,?,?,?,?,?,?,?,?)
   `).run(
-    b.category, b.description.trim(), +b.amount, b.expense_date,
-    b.invoice_no || null, b.company_id || null, b.document_id || null,
-    b.notes || null, req.user.id
+    b.category, b.description, b.amount, b.expense_date,
+    b.invoice_no ?? null, b.company_id ?? null, b.document_id ?? null,
+    b.notes ?? null, req.user.id
   )
   logAudit(req.user.id, 'expense_create', 'expenses', r.lastInsertRowid, `${b.category} ${b.amount}`)
   res.status(201).json({ id: r.lastInsertRowid })

@@ -101,6 +101,7 @@ export function listRoutes({ activeOnly = false, withStops = false, workDate = n
     const stopsStmt = db.prepare(`
       SELECT rs.id, rs.route_id, rs.sequence_order, rs.scheduled_time,
         pp.id as pickup_point_id, pp.name as point_name, pp.district, pp.neighborhood,
+        pp.lat, pp.lng,
         (SELECT COUNT(*) FROM staff WHERE pickup_point_id = pp.id AND is_active = 1) as staff_count
       FROM route_stops rs
       JOIN pickup_points pp ON pp.id = rs.pickup_point_id

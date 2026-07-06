@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import DashCard from './DashCard.jsx'
+import { SkeletonBlock } from '../../shared/components/Skeleton.jsx'
 
 function Gauge({ score, color }) {
   const radius = 56
@@ -59,9 +60,7 @@ export default function HealthScoreWidget() {
   if (isLoading || !data) {
     return (
       <DashCard title="Sağlık skoru">
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '160px', fontSize: '12px', color: 'var(--text3)' }}>
-          Yükleniyor…
-        </div>
+        <SkeletonBlock height={160} />
       </DashCard>
     )
   }

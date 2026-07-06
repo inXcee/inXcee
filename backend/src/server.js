@@ -1,21 +1,27 @@
+import { initSentry } from './shared/sentry.js'
+// Sentry init en basta — diger modul'lerin runtime hatalarini yakalayabilmesi icin.
+initSentry()
+
 import app from './app.js'
 import { initDB, getDB } from './shared/db/index.js'
 import { initProdDB } from './shared/db/initProd.js'
 import { startCronJobs } from './shared/cron/index.js'
 import { seedDev } from './shared/db/seed.js'
+import { logger } from './shared/logger.js'
+import { startWorker, stopWorker } from './shared/jobs/index.js'
 
 // Zorunlu env kontrolü (Task 1'de eklendi)
 if (!process.env.JWT_SECRET) {
-  console.error('[Startup] HATA: JWT_SECRET env değişkeni tanımlı değil.')
-  console.error('[Startup] .env dosyanıza JWT_SECRET=guclu-rastgele-deger ekleyin.')
+  logger.error('[Startup] HATA: JWT_SECRET env değişkeni tanımlı değil.')
+  logger.error('[Startup] .env dosyanıza JWT_SECRET=guclu-rastgele-deger ekleyin.')
   process.exit(1)
 }
 
 process.on('unhandledRejection', (reason) => {
-  console.error('[UnhandledRejection]', reason)
+  logger.error({ reason }, '[UnhandledRejection]')
 })
 process.on('uncaughtException', (err) => {
-  console.error('[UncaughtException]', err)
+  logger.fatal(err, '[UncaughtException]')
   process.exit(1)
 })
 
@@ -28,9 +34,10 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 startCronJobs()
+startWorker()
 
 const port = process.env.PORT || 3001
-const server = app.listen(port, () => console.log(`YYS Backend http://localhost:${port}`))
+const server = app.listen(port, () => logger.info({ port }, `YYS Backend http://localhost:${port}`))
 
 // Reverse proxy ile uyum: Render/AWS ALB default 60sn idle, nginx default 75sn.
 // keepAliveTimeout proxy'den BÜYÜK olmalı yoksa yarış durumunda 502 gelir.
@@ -41,10 +48,11 @@ server.headersTimeout = 66_000
 server.requestTimeout = 0
 
 process.on('SIGTERM', () => {
-  console.log('[Shutdown] SIGTERM alındı, bağlantılar kapatılıyor...')
+  logger.info('[Shutdown] SIGTERM alındı, bağlantılar kapatılıyor...')
+  stopWorker()
   server.close(() => {
     try { getDB().close() } catch { /* ignore */ }
-    console.log('[Shutdown] Tamamlandı')
+    logger.info('[Shutdown] Tamamlandı')
     process.exit(0)
   })
   setTimeout(() => process.exit(1), 10000)

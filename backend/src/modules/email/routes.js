@@ -2,14 +2,16 @@ import { Router } from 'express'
 import { requireRole } from '../../shared/auth/middleware.js'
 import { getEmailSettings, setEmailSettings, getEmailLog, getSetting, setSetting } from './queries.js'
 import { sendMorningReport, sendReportNow, buildReportHtml, verifySmtp } from './service.js'
+import { buildWeeklyReportHtml, sendWeeklyReportNow } from './weekly.js'
 import { scheduleMorningReport } from '../../shared/cron/index.js'
+import { logger } from '../../shared/logger.js'
 
 export const emailRouter = Router()
 const adminOnly = requireRole('campus_manager')
 
 emailRouter.get('/', ...adminOnly, (req, res) => {
   try { res.json(getEmailSettings()) }
-  catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 emailRouter.put('/', ...adminOnly, (req, res) => {
@@ -27,7 +29,7 @@ emailRouter.put('/', ...adminOnly, (req, res) => {
     setEmailSettings({ enabled: !!enabled, hour, minute, cc: cc ?? '', days, sections, smtp })
     scheduleMorningReport()
     res.json({ ok: true })
-  } catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 emailRouter.get('/preview', ...adminOnly, (req, res) => {
@@ -35,12 +37,12 @@ emailRouter.get('/preview', ...adminOnly, (req, res) => {
     const html = buildReportHtml()
     res.setHeader('Content-Type', 'text/html; charset=utf-8')
     res.send(html)
-  } catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 emailRouter.get('/log', ...adminOnly, (req, res) => {
   try { res.json(getEmailLog()) }
-  catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 emailRouter.post('/test', ...adminOnly, async (req, res) => {
@@ -50,7 +52,23 @@ emailRouter.post('/test', ...adminOnly, async (req, res) => {
     const toOverride = req.body?.to || null
     const result = await sendReportNow({ subject: 'YYS Test Raporu', toOverride })
     res.json({ ok: true, ...result })
-  } catch (e) { console.error('[Route]', e); res.status(500).json({ error: e.message }) }
+  } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: e.message }) }
+})
+
+// ── Haftalık özet ──
+emailRouter.get('/weekly/preview', ...adminOnly, (req, res) => {
+  try {
+    const html = buildWeeklyReportHtml()
+    res.setHeader('Content-Type', 'text/html; charset=utf-8')
+    res.send(html)
+  } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+emailRouter.post('/weekly/test', ...adminOnly, async (req, res) => {
+  try {
+    const result = await sendWeeklyReportNow({ toOverride: req.body?.to || null })
+    res.json({ ok: true, ...result })
+  } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: e.message }) }
 })
 
 emailRouter.post('/verify-smtp', ...adminOnly, async (req, res) => {

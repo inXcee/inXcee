@@ -4,6 +4,9 @@ import api from '../../shared/api/client.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
 import { BLOCKS } from '../../shared/blocks.js'
 import { useStickyForm, StickyDraftBanner } from '../../shared/hooks/useStickyForm.jsx'
+import { useUrlParamState } from '../../shared/hooks/useUrlParamState.js'
+import { exportRowsToCsv } from '../../shared/utils/exportData.js'
+import HelpHint from '../../shared/components/HelpHint.jsx'
 
 function fmt(dt) {
   if (!dt) return '-'
@@ -13,15 +16,16 @@ function fmt(dt) {
 export default function VisitorsPage() {
   const qc = useQueryClient()
   const toast = useToastStore(s => s.push)
-  const [tab, setTab] = useState('active')
+  const [tab, setTab] = useUrlParamState('tab', 'active')
   const [showForm, setShowForm] = useState(false)
-  const initialForm = { full_name: '', tc_no: '', phone: '', purpose: '', visiting_block: '', notes: '' }
+  const [preMode, setPreMode] = useState(false) // true = ön-kayıt, false = anında giriş
+  const initialForm = { full_name: '', tc_no: '', phone: '', purpose: '', visiting_block: '', notes: '', expected_at: '' }
   const [form, setForm] = useState(initialForm)
   const sticky = useStickyForm('visitor', form, setForm, initialForm)
 
   const { data: rows = [] } = useQuery({
     queryKey: ['visitors', tab],
-    queryFn: () => api.get(`/visitors?active=${tab === 'active' ? '1' : '0'}`).then(r => r.data),
+    queryFn: () => api.get(`/visitors?status=${tab}`).then(r => r.data),
   })
   const { data: stats } = useQuery({
     queryKey: ['visitors-stats'],
@@ -50,21 +54,63 @@ export default function VisitorsPage() {
     },
   })
 
+  const preRegMut = useMutation({
+    mutationFn: () => api.post('/visitors/preregister', form),
+    onSuccess: () => {
+      setShowForm(false)
+      setForm(initialForm)
+      sticky.clear()
+      qc.invalidateQueries({ queryKey: ['visitors'] })
+      qc.invalidateQueries({ queryKey: ['visitors-stats'] })
+      toast({ kind: 'success', text: 'Ön-kayıt oluşturuldu — QR kartı indirilebilir' })
+      setTab('upcoming')
+    },
+    onError: (e) => toast({ kind: 'error', text: e.response?.data?.error || 'Hata' }),
+  })
+
+  const checkinMut = useMutation({
+    mutationFn: (qr_token) => api.post('/visitors/checkin', { qr_token }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['visitors'] })
+      qc.invalidateQueries({ queryKey: ['visitors-stats'] })
+      toast({ kind: 'success', text: 'Giriş yapıldı' })
+    },
+    onError: (e) => toast({ kind: 'error', text: e.response?.data?.error || 'Hata' }),
+  })
+
+  async function downloadCard(v) {
+    try {
+      const res = await api.get(`/visitors/${v.id}/card/pdf`, { responseType: 'blob' })
+      const url = URL.createObjectURL(res.data)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `ziyaretci-${(v.full_name || 'kart').replace(/[^a-zA-Z0-9]/g, '_')}.pdf`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (e) { toast({ kind: 'error', text: e.response?.data?.error || 'QR kartı indirilemedi' }) }
+  }
+
+  function openForm(pre) { setPreMode(pre); setShowForm(true) }
+
   return (
     <div style={{ padding: 16 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 16 }}>
         <div>
-          <h2 style={{ fontSize: 22, letterSpacing: 4 }}>ZİYARETÇİLER</h2>
+          <h2 style={{ fontSize: 22, letterSpacing: 4 }}>ZİYARETÇİLER<HelpHint topic="visitors" title="ZİYARETÇİLER" /></h2>
           <p style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', letterSpacing: 2 }}>
             MISAFIR GIRIS-CIKIS TAKIBI
           </p>
         </div>
-        <button className="btn btn-primary" onClick={() => setShowForm(s => !s)}>+ ZİYARETÇİ KAYDI</button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn btn-ghost" onClick={() => openForm(true)}>+ ÖN-KAYIT</button>
+          <button className="btn btn-primary" onClick={() => openForm(false)}>+ ZİYARETÇİ KAYDI</button>
+        </div>
       </div>
 
       {stats && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, marginBottom: 16 }}>
           <Stat label="Şu anda içerde" value={stats.active || 0} color="green" />
+          <Stat label="Beklenen" value={stats.upcoming || 0} />
           <Stat label="Bugün gelen" value={stats.today || 0} />
           <Stat label="Toplam kayıt" value={stats.total || 0} />
         </div>
@@ -73,7 +119,7 @@ export default function VisitorsPage() {
       {showForm && (
         <div className="panel" style={{ marginBottom: 16 }}>
           <div style={{ height: 2, background: 'var(--accent)' }} />
-          <div className="panel-header"><div className="panel-title">YENİ ZİYARETÇİ</div></div>
+          <div className="panel-header"><div className="panel-title">{preMode ? 'ZİYARETÇİ ÖN-KAYDI' : 'YENİ ZİYARETÇİ'}</div></div>
           <div className="panel-body">
             <StickyDraftBanner hasDraft={sticky.hasDraft} onRestore={sticky.restore} onDiscard={sticky.discard} />
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12 }}>
@@ -101,14 +147,26 @@ export default function VisitorsPage() {
                 </select>
               </div>
             </div>
+            {preMode && (
+              <div style={{ marginTop: 12 }}>
+                <label className="form-label">BEKLENEN ZİYARET ZAMANI</label>
+                <input className="form-input" type="datetime-local" value={form.expected_at} onChange={e => setForm(f => ({ ...f, expected_at: e.target.value }))} />
+              </div>
+            )}
             <div style={{ marginTop: 12 }}>
               <label className="form-label">NOT</label>
               <textarea className="form-input" rows={2} value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
             </div>
             <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-              <button className="btn btn-primary" disabled={!form.full_name || createMut.isPending} onClick={() => createMut.mutate()}>
-                {createMut.isPending ? 'KAYDEDİLİYOR...' : 'GİRİŞ YAP'}
-              </button>
+              {preMode ? (
+                <button className="btn btn-primary" disabled={!form.full_name || preRegMut.isPending} onClick={() => preRegMut.mutate()}>
+                  {preRegMut.isPending ? 'KAYDEDİLİYOR...' : 'ÖN-KAYIT OLUŞTUR'}
+                </button>
+              ) : (
+                <button className="btn btn-primary" disabled={!form.full_name || createMut.isPending} onClick={() => createMut.mutate()}>
+                  {createMut.isPending ? 'KAYDEDİLİYOR...' : 'GİRİŞ YAP'}
+                </button>
+              )}
               <button className="btn btn-ghost" onClick={() => setShowForm(false)}>İPTAL</button>
             </div>
           </div>
@@ -118,8 +176,19 @@ export default function VisitorsPage() {
       <div className="panel">
         <div style={{ height: 2, background: 'var(--accent)' }} />
         <div className="panel-header" style={{ display: 'flex', gap: 12 }}>
+          <button className={`btn ${tab === 'upcoming' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTab('upcoming')}>Beklenen ({stats?.upcoming || 0})</button>
           <button className={`btn ${tab === 'active' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTab('active')}>İçerde ({stats?.active || 0})</button>
           <button className={`btn ${tab === 'past' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTab('past')}>Geçmiş</button>
+          <button className="btn btn-ghost btn-sm" style={{ marginLeft: 'auto' }} onClick={() => exportRowsToCsv([
+            { key: 'full_name', label: 'AD SOYAD' },
+            { key: 'tc_no', label: 'TC NO' },
+            { key: 'phone', label: 'TELEFON' },
+            { key: 'purpose', label: 'SEBEP' },
+            { key: 'visiting_block', label: 'BLOK' },
+            { key: 'check_in_at', label: 'GİRİŞ' },
+            { key: 'check_out_at', label: 'ÇIKIŞ' },
+            { key: 'notes', label: 'NOTLAR' },
+          ], rows, `ziyaretciler_${tab}.csv`)}>↓ CSV</button>
         </div>
         <div className="panel-body" style={{ padding: 0 }}>
           <div style={{ overflow: 'auto' }}>
@@ -149,8 +218,14 @@ export default function VisitorsPage() {
                     <td style={{ padding: 8 }}>{v.visiting_block || '-'}</td>
                     <td style={{ padding: 8, fontFamily: 'var(--mono)', fontSize: 11 }}>{fmt(v.check_in_at)}</td>
                     <td style={{ padding: 8, fontFamily: 'var(--mono)', fontSize: 11 }}>{v.check_out_at ? fmt(v.check_out_at) : '—'}</td>
-                    <td style={{ padding: 8 }}>
-                      {!v.check_out_at && (
+                    <td style={{ padding: 8, display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                      {v.status === 'pre_registered' && (
+                        <>
+                          <button className="btn btn-ghost btn-sm" onClick={() => downloadCard(v)}>QR Kart</button>
+                          <button className="btn btn-primary btn-sm" disabled={checkinMut.isPending} onClick={() => checkinMut.mutate(v.qr_token)}>Giriş Yap</button>
+                        </>
+                      )}
+                      {v.status === 'checked_in' && !v.check_out_at && (
                         <button className="btn btn-ghost btn-sm" onClick={() => outMut.mutate(v.id)}>Çıkış</button>
                       )}
                     </td>

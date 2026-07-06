@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { useAuthStore } from '../../shared/store/authStore.js'
 import { BLOCKS } from '../../shared/blocks.js'
+import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
 
 // Tahliye / yoklama paneli — bu an blokta kim var? Drill ve gerçek tahliye için.
 export default function RosterPanel() {
@@ -69,7 +70,7 @@ export default function RosterPanel() {
         </div>
 
         {isLoading ? (
-          <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)' }}>Yükleniyor...</div>
+          <SkeletonTable rows={4} cols={3} />
         ) : !data?.blocks?.length ? (
           <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text3)', padding: 16, textAlign: 'center' }}>
             Bu filtreye uyan aktif sakin yok.

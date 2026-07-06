@@ -13,7 +13,12 @@ const BACKEND_DIR = resolve(__dirname, '../backend')
 // runtime'da birleştirilir.
 const SIGNING_KEY_NAME = 'JWT' + '_SECRET'
 const E2E_ENV = {
-  NODE_ENV: 'development',
+  // 'test' — mevcut rate-limit skip guard'larını (authLimiter/pinLimiter vb.)
+  // aktive eder. e2e suite'i tek IP'den (127.0.0.1) çok sayıda login + kiosk
+  // arama yapıyor; 15dk'lık IP pencereleri run boyunca birikip 429'a takılıyordu
+  // ('development'ta limiter aktif kalıyordu). seedDev yine çalışır (server.js
+  // sadece 'production'ı ayırır), DB_PATH korunur.
+  NODE_ENV: 'test',
   PORT: '3001',
   DB_PATH: E2E_DB,
   UPLOADS_DIR: E2E_UPLOADS,
@@ -35,6 +40,15 @@ export default defineConfig({
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
+    // Passkey kayıt teklifi (login sonrası modal) e2e akışlarını bloklamasın —
+    // gerçek kullanıcıda "Şimdi değil" ile aynı bayrak.
+    storageState: {
+      cookies: [],
+      origins: [{
+        origin: 'http://localhost:5174',
+        localStorage: [{ name: 'yys_passkey_cred_dismissed', value: '1' }],
+      }],
+    },
   },
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },

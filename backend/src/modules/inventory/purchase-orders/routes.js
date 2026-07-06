@@ -2,13 +2,14 @@ import { Router } from 'express'
 import PDFDocument from 'pdfkit'
 import { requireRole } from '../../../shared/auth/middleware.js'
 import * as service from './service.js'
+import { logger } from '../../../shared/logger.js'
 
 export const poRouter = Router()
 const mgr = requireRole('campus_manager', 'shift_supervisor')
 
 poRouter.get('/', ...mgr, (req, res) => {
   try { res.json(service.list(req.query.status || null)) }
-  catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatasi' }) }
+  catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatasi' }) }
 })
 
 poRouter.get('/:id', ...mgr, (req, res) => {
@@ -16,7 +17,7 @@ poRouter.get('/:id', ...mgr, (req, res) => {
     const po = service.get(+req.params.id)
     if (!po) return res.status(404).json({ error: 'Bulunamadi' })
     res.json(po)
-  } catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatasi' }) }
+  } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatasi' }) }
 })
 
 poRouter.post('/', ...mgr, (req, res) => {
@@ -92,7 +93,7 @@ poRouter.get('/:id/pdf', ...mgr, (req, res) => {
 
     doc.end()
   } catch (e) {
-    console.error('[Route] PO PDF:', e)
+    logger.error('[Route] PO PDF:', e)
     if (!res.headersSent) res.status(500).json({ error: 'Sunucu hatasi' })
   }
 })

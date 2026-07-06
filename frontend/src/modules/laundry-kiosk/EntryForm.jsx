@@ -4,6 +4,8 @@ import { laundryApi } from '../laundry/api.js'
 import RoomGridPicker from './RoomGridPicker.jsx'
 import QuickGarmentInput from './QuickGarmentInput.jsx'
 import { blockNeedsSignature } from './constants.js'
+import { listQueued, enqueueBag, flushQueue, buildBagFormData } from './offlineQueue.js'
+import { downscalePhoto } from '../../shared/photo.js'
 
 // ---- Signature pad (reused pattern) ----
 function SigPad({ sigRef }) {
@@ -92,7 +94,77 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
   const [urgent, setUrgent] = useState(false)
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
-  const [success, setSuccess] = useState(null) // { bag_no }
+  const [success, setSuccess] = useState(null) // { bag_no } | { queued: true }
+  const [photoDataUrl, setPhotoDataUrl] = useState(null)
+  const [queuedCount, setQueuedCount] = useState(() => listQueued().length)
+  const [flushMsg, setFlushMsg] = useState(null)
+  const [lastBagGarments, setLastBagGarments] = useState(null) // { count, garments } | null
+
+  // Çevrimdışı kuyruğu boşalt — açılışta + bağlantı gelince
+  const tryFlush = useCallback(async () => {
+    if (listQueued().length === 0) return
+    const result = await flushQueue((fd) => kioskApi.post('/self-service/laundry-kiosk/bag', fd))
+    setQueuedCount(result.remaining)
+    if (result.sent > 0 || result.rejected.length > 0) {
+      setFlushMsg(
+        `✓ ${result.sent} bekleyen giriş gönderildi` +
+        (result.rejected.length > 0 ? ` · ${result.rejected.length} reddedildi (${result.rejected[0].error})` : '')
+      )
+      setTimeout(() => setFlushMsg(null), 6000)
+    }
+  }, [])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    tryFlush()
+    window.addEventListener('online', tryFlush)
+    return () => window.removeEventListener('online', tryFlush)
+  }, [tryFlush])
+  const [activeByPerson, setActiveByPerson] = useState([]) // [{ name, count, statuses }]
+
+  // Oda seçilince son torbanın kıyafet listesini hazırla — "↺ kopyala" için.
+  // Aynı kişi her hafta benzer torba verir; tek tuşla tekrar girişi hızlandırır.
+  // Aynı yanıttan kişi bazlı aktif torba kırılımı da çıkar (aynı odada birden
+  // çok kişi torba verir — kimin kaç torbası içeride görünür olsun).
+  useEffect(() => {
+    setLastBagGarments(null)
+    setActiveByPerson([])
+    if (!selection.block || !selection.room_no) return
+    let cancelled = false
+    kioskApi.get(`/self-service/laundry-kiosk/room-history?block=${encodeURIComponent(selection.block)}&room_no=${encodeURIComponent(selection.room_no)}`)
+      .then(r => {
+        if (cancelled) return
+        const items = r.data.items || []
+        // Kişi kırılımı: aktif (teslim/kayıp olmayan) torbalar veren kişiye göre
+        const grouped = {}
+        for (const it of items) {
+          if (it.status === 'delivered' || it.status === 'lost') continue
+          const name = it.intake_name || 'Kişisiz'
+          if (!grouped[name]) grouped[name] = { name, count: 0, statuses: {} }
+          grouped[name].count += 1
+          grouped[name].statuses[it.status] = (grouped[name].statuses[it.status] || 0) + 1
+        }
+        setActiveByPerson(Object.values(grouped).sort((a, b) => b.count - a.count))
+
+        const withGarments = items.find(it => {
+          try { return JSON.parse(it.garments_json || '[]').length > 0 } catch { return false }
+        })
+        if (!withGarments) return
+        const parsed = JSON.parse(withGarments.garments_json)
+        // garments_json farklı kaynaklardan gelmiş olabilir — alanları savunmacı eşle
+        const mapped = parsed.map(g => ({
+          type_id: g.type_id ?? null,
+          type_name: g.type_name || g.garment_type || g.type || 'Parça',
+          emoji: g.emoji || '👕',
+          count: Number(g.count) || 1,
+          colors: Array.isArray(g.colors) ? g.colors : [],
+          pattern: g.pattern || 'solid',
+          pattern_label: g.pattern_label || 'Düz',
+        }))
+        setLastBagGarments({ count: mapped.reduce((s, g) => s + g.count, 0), garments: mapped })
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [selection.block, selection.room_no])  // eslint-disable-line react-hooks/exhaustive-deps
 
   const garmentTypes = useQuery({
     queryKey: ['garment-types'],
@@ -114,13 +186,23 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
     derivedItemCount > 0
   )
 
-  function resetAll() {
-    setSelection({ block: null, room_no: null, person: null })
+  // keepBlock: ardışık girişte aynı bloktan devam — operatör blok seçimini tekrarlamaz
+  function resetAll(keepBlock = false) {
+    setSelection({ block: keepBlock ? selection.block : null, room_no: null, person: null })
     setGarmentState({ garments: [], freeText: '', itemCount: 0 })
     setUrgent(false)
     setError('')
     setSuccess(null)
+    setPhotoDataUrl(null)
     sigRef.current?.clear()
+  }
+
+  async function onPhotoPick(e) {
+    const file = e.target.files?.[0]
+    e.target.value = '' // aynı dosya tekrar seçilebilsin
+    if (!file) return
+    try { setPhotoDataUrl(await downscalePhoto(file)) }
+    catch { setError('Fotoğraf okunamadı') }
   }
 
   async function submit() {
@@ -150,10 +232,21 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
 
     setSubmitting(true)
     try {
-      const res = await kioskApi.post('/self-service/laundry-kiosk/bag', payload)
+      const res = await kioskApi.post('/self-service/laundry-kiosk/bag', buildBagFormData(payload, photoDataUrl))
       setSuccess({ bag_no: res.data.bag_no })
     } catch (e) {
-      setError(e.response?.data?.error || 'Hata oluştu')
+      if (!e.response) {
+        // Ağ yok — kuyruğa al, bağlantı gelince otomatik gönderilir
+        const n = enqueueBag({
+          payload,
+          photoDataUrl,
+          label: `${selection.block}-${selection.room_no} · ${derivedItemCount} parça`,
+        })
+        setQueuedCount(n)
+        setSuccess({ queued: true })
+      } else {
+        setError(e.response?.data?.error || 'Hata oluştu')
+      }
     } finally {
       setSubmitting(false)
     }
@@ -162,8 +255,15 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
   if (success) {
     return (
       <div style={{ ...card, textAlign: 'center' }}>
-        <div style={{ fontSize: 56 }}>✅</div>
-        <div style={{ color: '#4ade80', fontWeight: 700, fontSize: 18 }}>Torba kaydedildi!</div>
+        <div style={{ fontSize: 56 }}>{success.queued ? '📡' : '✅'}</div>
+        <div style={{ color: success.queued ? '#fbbf24' : '#4ade80', fontWeight: 700, fontSize: 18 }}>
+          {success.queued ? 'İnternet yok — giriş kuyruğa alındı' : 'Torba kaydedildi!'}
+        </div>
+        {success.queued && (
+          <div style={{ color: '#94a3b8', fontSize: 13 }}>
+            Bağlantı gelince otomatik gönderilecek ({queuedCount} bekleyen)
+          </div>
+        )}
         {success.bag_no && (
           <div style={{ background: '#1e293b', borderRadius: 12, padding: '16px 24px', display: 'inline-block', alignSelf: 'center' }}>
             <div style={{ fontSize: 11, color: '#64748b', letterSpacing: 2, marginBottom: 4 }}>TORBA NO</div>
@@ -171,7 +271,14 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
             <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>Torbayı görevliye teslim edin</div>
           </div>
         )}
-        <button onClick={resetAll} style={btnStyle('#1e293b', '#60a5fa')}>+ Yeni Giriş</button>
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+          {selection.block && (
+            <button onClick={() => resetAll(true)} style={btnStyle('#1d4ed8', '#fff')}>
+              + Yeni Giriş ({selection.block})
+            </button>
+          )}
+          <button onClick={() => resetAll(false)} style={btnStyle('#1e293b', '#60a5fa')}>+ Yeni Giriş</button>
+        </div>
       </div>
     )
   }
@@ -180,16 +287,95 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
     <div style={card}>
       <h2 style={{ fontSize: 18, fontWeight: 700, color: '#cbd5e1', margin: 0 }}>🧺 Giriş</h2>
 
+      {/* Çevrimdışı kuyruk durumu */}
+      {queuedCount > 0 && (
+        <div style={{
+          background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.35)',
+          borderRadius: 10, padding: '10px 14px',
+          display: 'flex', alignItems: 'center', gap: 10,
+        }}>
+          <span style={{ flex: 1, fontSize: 13, color: '#fbbf24', fontWeight: 600 }}>
+            📡 {queuedCount} bekleyen çevrimdışı giriş
+          </span>
+          <button type="button" onClick={tryFlush}
+            style={{ padding: '8px 14px', borderRadius: 8, border: 'none', background: '#b45309', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+            ↻ Şimdi Gönder
+          </button>
+        </div>
+      )}
+      {flushMsg && <div style={{ color: '#4ade80', fontSize: 13 }}>{flushMsg}</div>}
+
       {/* 1. Room/Person */}
       <RoomGridPicker value={selection} onChange={setSelection} kioskApi={kioskApi} />
+
+      {/* Kişi bazlı içeride-torba kırılımı — mükerrer girişi ve "torbam nerede"
+          karışıklığını önler */}
+      {activeByPerson.length > 0 && (
+        <div style={{
+          background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.25)',
+          borderRadius: 10, padding: '10px 14px',
+        }}>
+          <div style={{ fontSize: 10, color: '#fbbf24', letterSpacing: 1, marginBottom: 6 }}>
+            📦 BU ODADAN İÇERİDE OLAN TORBALAR
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+            {activeByPerson.map(p => (
+              <div key={p.name} style={{ fontSize: 12, color: '#e2e8f0', display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                <span style={{ fontWeight: 600, color: selection.person?.full_name === p.name ? '#fbbf24' : '#e2e8f0' }}>
+                  👤 {p.name}{selection.person?.full_name === p.name ? ' (seçili kişi!)' : ''}
+                </span>
+                <span style={{ color: '#94a3b8' }}>
+                  {p.count} torba · {Object.entries(p.statuses).map(([s, n]) =>
+                    `${n} ${s === 'dirty' ? 'kirli' : s === 'washing' ? 'makinede' : s === 'ironing' ? 'ütüde' : s === 'ready' ? 'hazır' : s}`
+                  ).join(', ')}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* 2. Garments */}
       <div>
         <label style={lbl}>Kıyafetler</label>
+        {lastBagGarments && garmentState.garments.length === 0 && (
+          <button type="button"
+            onClick={() => setGarmentState(s => ({ ...s, garments: lastBagGarments.garments }))}
+            style={{
+              width: '100%', marginBottom: 10, padding: '10px 14px', borderRadius: 10,
+              border: '1px dashed #3b82f6', background: 'rgba(29,78,216,0.08)',
+              color: '#93c5fd', fontSize: 13, fontWeight: 600, cursor: 'pointer', textAlign: 'left',
+            }}>
+            ↺ Son torbayı kopyala ({lastBagGarments.count} parça: {lastBagGarments.garments.slice(0, 4).map(g => `${g.count > 1 ? g.count + '× ' : ''}${g.type_name}`).join(', ')}{lastBagGarments.garments.length > 4 ? '…' : ''})
+          </button>
+        )}
         <QuickGarmentInput garmentTypes={garmentTypes} value={garmentState} onChange={setGarmentState} />
       </div>
 
-      {/* 3. Options */}
+      {/* 3. Fotoğraf — özellikle premium/pahalı parçalarda kayıp itirazına kanıt */}
+      <div>
+        <label style={lbl}>Fotoğraf (opsiyonel)</label>
+        {photoDataUrl ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <img src={photoDataUrl} alt="torba" style={{ width: 88, height: 88, objectFit: 'cover', borderRadius: 10, border: '1px solid #334155' }} />
+            <button type="button" onClick={() => setPhotoDataUrl(null)}
+              style={{ background: 'transparent', border: '1px dashed #475569', borderRadius: 8, color: '#94a3b8', fontSize: 12, padding: '8px 12px', cursor: 'pointer' }}>
+              ✕ Kaldır
+            </button>
+          </div>
+        ) : (
+          <label style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+            background: '#1e293b', border: '1px dashed #475569', borderRadius: 10,
+            padding: '12px', color: '#94a3b8', fontSize: 13, cursor: 'pointer',
+          }}>
+            📷 Fotoğraf çek / seç
+            <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={onPhotoPick} />
+          </label>
+        )}
+      </div>
+
+      {/* 4. Options */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <label style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }}>
           <input type="checkbox" checked={urgent} onChange={e => setUrgent(e.target.checked)} style={{ width: 18, height: 18 }} />

@@ -4,6 +4,7 @@ import api from '../../shared/api/client.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 import PasswordStrengthInput from '../../shared/components/PasswordStrengthInput.jsx'
+import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
 
 const ROLES = [
   { value: 'campus_manager', label: 'Kampus Muduru' },
@@ -134,26 +135,55 @@ function PinModal({ userId, onClose }) {
   )
 }
 
+function generateStrongPassword() {
+  const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ'
+  const lower = 'abcdefghijkmnpqrstuvwxyz'
+  const digits = '23456789'
+  const symbols = '!@#$%&*'
+  const all = upper + lower + digits + symbols
+  const pick = (set) => set[Math.floor(Math.random() * set.length)]
+  let pw = pick(upper) + pick(lower) + pick(digits) + pick(symbols)
+  for (let i = 0; i < 8; i++) pw += pick(all)
+  return pw.split('').sort(() => Math.random() - 0.5).join('')
+}
+
 function PasswordModal({ userId, onClose }) {
   const [pw, setPw] = useState('')
+  const [generated, setGenerated] = useState(false)
   const qc = useQueryClient()
   const mutation = useMutation({
     mutationFn: () => api.patch(`/users/${userId}/password`, { password: pw }),
     onSuccess: () => { onClose(); qc.invalidateQueries({ queryKey: ['users'] }) },
   })
 
+  const handleGenerate = () => {
+    setPw(generateStrongPassword())
+    setGenerated(true)
+  }
+
   return (
     <div className="modal-overlay mobile-fullscreen" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
       onClick={onClose}>
-      <div className="panel" style={{ width: '360px' }} onClick={e => e.stopPropagation()}>
+      <div className="panel" style={{ width: '400px' }} onClick={e => e.stopPropagation()}>
         <div style={{ height: '2px', background: 'var(--accent)' }} />
         <div className="panel-header"><div className="panel-title">SIFRE DEGISTIR</div></div>
         <div className="panel-body">
           <label className="form-label">YENI SIFRE</label>
-          <PasswordStrengthInput value={pw} onChange={setPw} autoFocus />
+          <PasswordStrengthInput value={pw} onChange={(v) => { setPw(v); setGenerated(false) }} autoFocus />
+          <button type="button" className="btn btn-ghost btn-xs" onClick={handleGenerate} style={{ marginTop: '6px' }}>
+            RASTGELE URET
+          </button>
+          {generated && pw && (
+            <div className="alert" style={{ marginTop: '8px', background: 'var(--accent)', color: '#000', fontFamily: 'var(--mono)', fontSize: '13px', letterSpacing: '1px', wordBreak: 'break-all' }}>
+              {pw}
+              <div style={{ fontSize: '10px', marginTop: '4px', opacity: 0.7 }}>
+                BU SIFREYI KOPYALAYIP KULLANICIYA GUVENLI KANALLA ILET. KAYDETTIKTEN SONRA TEKRAR GOSTERILMEZ.
+              </div>
+            </div>
+          )}
           {mutation.error && <div className="alert alert-danger" style={{ marginTop: '8px' }}>{mutation.error.response?.data?.error || 'Hata'}</div>}
           <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
-            <button className="btn btn-primary" onClick={() => mutation.mutate()} disabled={mutation.isPending}>
+            <button className="btn btn-primary" onClick={() => mutation.mutate()} disabled={mutation.isPending || !pw}>
               {mutation.isPending ? 'KAYDEDILIYOR...' : 'DEGISTIR'}
             </button>
             <button className="btn btn-ghost" onClick={onClose}>IPTAL</button>
@@ -230,7 +260,7 @@ export default function UsersPage() {
         </div>
         <div className="panel-body" style={{ overflowX: 'auto' }}>
           {isLoading ? (
-            <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text3)' }}>Yukleniyor...</div>
+            <SkeletonTable rows={5} cols={5} />
           ) : (
             <table className="data-table responsive-stack">
               <thead>

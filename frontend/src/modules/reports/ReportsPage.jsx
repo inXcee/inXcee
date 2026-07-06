@@ -5,6 +5,7 @@ import HelpHint from '../../shared/components/HelpHint.jsx'
 import { useUrlParamState } from '../../shared/hooks/useUrlParamState.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
 import api from '../../shared/api/client.js'
+import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
 
 const API_BASE = '/api'
 
@@ -386,9 +387,7 @@ function ReportCard({ report, selectedDate }) {
 
         {/* Summary numbers */}
         {isLoading ? (
-          <div style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)', marginBottom: '12px' }}>
-            Yükleniyor...
-          </div>
+          <SkeletonTable rows={3} cols={4} />
         ) : reportData ? (
           <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' }}>
             {report.summaryKeys.map(sk => (

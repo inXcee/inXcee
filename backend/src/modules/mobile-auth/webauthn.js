@@ -7,9 +7,12 @@ import {
 import jwt from 'jsonwebtoken'
 import { getDB } from '../../shared/db/index.js'
 
-const RP_NAME = 'YYS Mobil'
-const rpID = () => process.env.WEBAUTHN_RP_ID || 'localhost'
-const origin = () => process.env.WEBAUTHN_ORIGIN || 'http://localhost:5173'
+const RP_NAME = 'YYS'
+// Prod'da .env'e gerek kalmasın diye NODE_ENV'e göre makul varsayılanlar;
+// env her zaman üstün gelir (staging gibi farklı origin'ler için).
+const isProd = () => process.env.NODE_ENV === 'production'
+const rpID = () => process.env.WEBAUTHN_RP_ID || (isProd() ? 'avskamp.com' : 'localhost')
+const origin = () => process.env.WEBAUTHN_ORIGIN || (isProd() ? 'https://avskamp.com' : 'http://localhost:5173')
 
 function toB64(buf) { return Buffer.from(buf).toString('base64url') }
 function fromB64(str) { return Buffer.from(str, 'base64url') }
@@ -82,7 +85,9 @@ export async function getAuthOptions(credentialId) {
   return options
 }
 
-export async function verifyAuthentication(credentialId, response) {
+// allowedRoles: null = tüm roller (desktop login); mobil route kendi
+// kısıtlı listesini geçirir (housekeeper/technical) — davranış korunur.
+export async function verifyAuthentication(credentialId, response, { allowedRoles = null } = {}) {
   const db = getDB()
   const user = db.prepare('SELECT * FROM users WHERE webauthn_credential_id=?').get(credentialId)
   if (!user) return { error: 'Kayıtlı cihaz bulunamadı', status: 404 }
@@ -107,7 +112,7 @@ export async function verifyAuthentication(credentialId, response) {
 
   if (!verification.verified) return { error: 'Biyometrik doğrulama başarısız', status: 401 }
 
-  if (!['housekeeper', 'technical'].includes(user.role)) {
+  if (allowedRoles && !allowedRoles.includes(user.role)) {
     return { error: 'Yetkisiz', status: 403 }
   }
 

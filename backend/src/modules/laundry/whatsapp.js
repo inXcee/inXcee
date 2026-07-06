@@ -1,4 +1,5 @@
 import { getDB } from '../../shared/db/index.js'
+import { logger } from '../../shared/logger.js'
 
 /**
  * Ham WhatsApp mesajı gönderir.
@@ -57,7 +58,7 @@ export async function notifyItemReady(itemId) {
 
     await sendWhatsApp(item.phone_number, msg)
   } catch (e) {
-    console.error('[WhatsApp] Hata:', e.message)
+    logger.error('[WhatsApp] Hata:', e.message)
   }
 }
 
@@ -93,7 +94,7 @@ export async function sendSlaAlert(itemId, hours, db) {
     db.prepare(`INSERT OR IGNORE INTO laundry_sla_notifications(item_id, stage, phone)
       VALUES (?, ?, ?)`).run(itemId, item.status, item.phone_number)
   } catch (e) {
-    console.error('[WhatsApp] SLA alert error:', e.message)
+    logger.error('[WhatsApp] SLA alert error:', e.message)
   }
 }
 
@@ -152,7 +153,7 @@ export async function notifyRoomPersonReady(block, room_no, personName) {
     await sendWhatsApp(person.phone_number, msg)
     return { configured: true, sent: readyItems.length }
   } catch (e) {
-    console.error('[WhatsApp] notifyRoomPersonReady error:', e.message)
+    logger.error('[WhatsApp] notifyRoomPersonReady error:', e.message)
     return { configured: true, sent: 0, error: e.message }
   }
 }
@@ -177,8 +178,8 @@ export async function sendFoundMessage(item) {
         body: JSON.stringify({ messaging_product: 'whatsapp', to: phone, type: 'text', text: { body: msg } }),
       }
     )
-    if (!res.ok) console.error('[WhatsApp] Found msg error:', await res.text())
+    if (!res.ok) logger.error('[WhatsApp] Found msg error:', await res.text())
   } catch (e) {
-    console.error('[WhatsApp] sendFoundMessage error:', e.message)
+    logger.error('[WhatsApp] sendFoundMessage error:', e.message)
   }
 }

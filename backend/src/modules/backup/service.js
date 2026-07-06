@@ -5,6 +5,7 @@ import Database from 'better-sqlite3'
 import { fileURLToPath } from 'url'
 import { createNotification } from '../../shared/notifications/service.js'
 import { EVENT_KINDS } from '../../shared/notifications/events.js'
+import { logger } from '../../shared/logger.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -81,13 +82,13 @@ export async function pushOffsite(filePath) {
       if (code === 0) {
         resolve({ ok: true, code, stdout: stdout.slice(0, 500) })
       } else {
-        console.error('[Backup offsite] failed:', code, stderr.slice(0, 1000))
+        logger.error('[Backup offsite] failed:', code, stderr.slice(0, 1000))
         resolve({ ok: false, code, stderr: stderr.slice(0, 500) })
       }
     })
     proc.on('error', (err) => {
       clearTimeout(timer)
-      console.error('[Backup offsite] spawn error:', err.message)
+      logger.error('[Backup offsite] spawn error:', err.message)
       resolve({ ok: false, error: err.message })
     })
   })

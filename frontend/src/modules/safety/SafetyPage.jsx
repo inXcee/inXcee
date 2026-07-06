@@ -1,11 +1,16 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
+import { useUrlParamState } from '../../shared/hooks/useUrlParamState.js'
 import api from '../../shared/api/client.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 import { inputDialog } from '../../shared/components/InputDialog.jsx'
 import AccidentsTab from './AccidentsTab.jsx'
+import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
+import { exportRowsToCsv } from '../../shared/utils/exportData.js'
+import HelpHint from '../../shared/components/HelpHint.jsx'
+import IncidentsTab from './IncidentsTab.jsx'
 
 const toast = (m, t = 'success') => useToastStore.getState().addToast(m, t)
 const toastErr = (e) => toast(e?.response?.data?.error || 'Hata', 'error')
@@ -14,7 +19,8 @@ const TABS = [
   { key: 'sessions', label: '📚 EĞİTİMLER' },
   { key: 'expiring', label: '⏰ SERTİFİKA UYARI' },
   { key: 'kkd', label: '🦺 KKD ZİMMET' },
-  { key: 'accidents', label: '🚨 İŞ KAZALARI' },
+  { key: 'incidents', label: '🚨 OLAYLAR' },
+  { key: 'accidents', label: '📋 İŞ KAZALARI' },
 ]
 
 const CATEGORIES = {
@@ -27,12 +33,12 @@ const CATEGORIES = {
 }
 
 export default function SafetyPage() {
-  const [tab, setTab] = useState('sessions')
+  const [tab, setTab] = useUrlParamState('tab', 'sessions')
 
   return (
     <div style={{ maxWidth: 1200 }} className="fade-up">
       <div style={{ marginBottom: 16 }}>
-        <h1 style={{ fontSize: 28, letterSpacing: 4, color: 'var(--text)', margin: 0 }}>İŞ GÜVENLİĞİ & EĞİTİM</h1>
+        <h1 style={{ fontSize: 28, letterSpacing: 4, color: 'var(--text)', margin: 0 }}>İŞ GÜVENLİĞİ & EĞİTİM<HelpHint topic="safety" title="İŞ GÜVENLİĞİ" /></h1>
         <p style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', marginTop: 4, letterSpacing: 1.5 }}>
           EĞİTİM TAKVİMİ · SERTİFİKA TAKİBİ · KKD ZİMMET
         </p>
@@ -52,6 +58,7 @@ export default function SafetyPage() {
       {tab === 'sessions' && <SessionsTab />}
       {tab === 'expiring' && <ExpiringCertsTab />}
       {tab === 'kkd' && <KkdTab />}
+      {tab === 'incidents' && <IncidentsTab />}
       {tab === 'accidents' && <AccidentsTab />}
     </div>
   )
@@ -72,10 +79,22 @@ function SessionsTab() {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12, alignItems: 'center' }}>
         <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', letterSpacing: 1.5 }}>{sessions.length} EĞİTİM</div>
-        <button onClick={() => setCreating(true)} className="btn btn-primary btn-sm" style={{ borderRadius: 10 }}>+ EĞİTİM</button>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button onClick={() => exportRowsToCsv([
+            { key: 'id', label: 'ID' },
+            { key: 'title', label: 'BAŞLIK' },
+            { key: 'category', label: 'KATEGORİ' },
+            { key: 'session_date', label: 'TARİH' },
+            { key: 'duration_min', label: 'SÜRE (dk)' },
+            { key: 'location', label: 'KONUM' },
+            { key: 'trainer', label: 'EĞİTMEN' },
+            { key: 'status', label: 'DURUM' },
+          ], sessions, 'isg_egitimler.csv')} className="btn btn-ghost btn-sm" style={{ borderRadius: 10 }}>↓ CSV</button>
+          <button onClick={() => setCreating(true)} className="btn btn-primary btn-sm" style={{ borderRadius: 10 }}>+ EĞİTİM</button>
+        </div>
       </div>
 
-      {isLoading ? <div style={{ padding: 30, color: 'var(--text3)' }}>Yükleniyor…</div> : !sessions.length ? (
+      {isLoading ? <SkeletonTable rows={6} cols={5} /> : !sessions.length ? (
         <div style={{ padding: 60, textAlign: 'center', background: 'var(--surface)', borderRadius: 14, border: '1px solid var(--border)' }}>
           <div style={{ fontSize: 36, opacity: 0.3, marginBottom: 8 }}>📚</div>
           <div style={{ fontFamily: 'var(--display)', fontSize: 14, letterSpacing: 2 }}>HENÜZ EĞİTİM YOK</div>
@@ -232,7 +251,7 @@ function SessionDrawer({ id, onClose, onEdit }) {
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 9000, display: 'flex', justifyContent: 'flex-end' }}>
       <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 580, height: '100%', overflowY: 'auto', background: 'var(--surface)', borderLeft: '1px solid var(--border)', padding: 20 }}>
-        {isLoading || !data ? <div style={{ padding: 40, color: 'var(--text3)' }}>Yükleniyor…</div> : (
+        {isLoading || !data ? <SkeletonTable rows={4} cols={3} /> : (
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
               <div>
@@ -305,14 +324,20 @@ function ExpiringCertsTab() {
 
   return (
     <div>
-      <div style={{ marginBottom: 12, display: 'flex', gap: 8, alignItems: 'center' }}>
+      <div style={{ marginBottom: 12, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
         <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', letterSpacing: 1.5 }}>SONRAKİ</span>
         {[15, 30, 60, 90].map(d => (
           <button key={d} onClick={() => setDays(d)} className="btn btn-ghost btn-xs"
             style={{ borderRadius: 8, ...(days === d ? { background: 'var(--accent)', color: '#000' } : {}) }}>{d} GÜN</button>
         ))}
+        <button onClick={() => exportRowsToCsv([
+          { key: 'full_name', label: 'PERSONEL' },
+          { key: 'title', label: 'EĞİTİM' },
+          { key: 'dept_name', label: 'DEPARTMAN' },
+          { key: 'cert_expires_at', label: 'BİTİŞ TARİHİ' },
+        ], data, 'sertifika_uyari.csv')} className="btn btn-ghost btn-xs" style={{ marginLeft: 'auto' }}>↓ CSV</button>
       </div>
-      {isLoading ? <div style={{ padding: 30, color: 'var(--text3)' }}>Yükleniyor…</div> : !data.length ? (
+      {isLoading ? <SkeletonTable rows={5} cols={4} /> : !data.length ? (
         <div style={{ padding: 50, textAlign: 'center', background: 'var(--surface)', borderRadius: 14 }}>
           <div style={{ fontSize: 36, opacity: 0.3, marginBottom: 8 }}>✓</div>
           <div style={{ fontFamily: 'var(--display)', fontSize: 14 }}>SERTİFİKA BİTECEK PERSONEL YOK</div>
@@ -393,7 +418,20 @@ function KkdTab() {
               style={{ borderRadius: 8, ...(activeFilter === v ? { background: 'var(--accent)', color: '#000' } : {}) }}>{l}</button>
           ))}
         </div>
-        <button onClick={() => setCreating(true)} className="btn btn-primary btn-sm" style={{ borderRadius: 10 }}>+ ZİMMET</button>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button onClick={() => exportRowsToCsv([
+            { key: 'id', label: 'ID' },
+            { key: 'full_name', label: 'PERSONEL' },
+            { key: 'item_type', label: 'MALZEME' },
+            { key: 'size', label: 'BEDEN' },
+            { key: 'serial_no', label: 'SERİ NO' },
+            { key: 'issued_at', label: 'DAĞITIM TARİHİ' },
+            { key: 'returned_at', label: 'İADE TARİHİ' },
+            { key: 'condition', label: 'DURUM' },
+            { key: 'notes', label: 'NOTLAR' },
+          ], data, 'kkd_zimmet.csv')} className="btn btn-ghost btn-sm" style={{ borderRadius: 10 }}>↓ CSV</button>
+          <button onClick={() => setCreating(true)} className="btn btn-primary btn-sm" style={{ borderRadius: 10 }}>+ ZİMMET</button>
+        </div>
       </div>
 
       {creating && (
@@ -442,7 +480,7 @@ function KkdTab() {
         </div>
       )}
 
-      {isLoading ? <div style={{ padding: 30, color: 'var(--text3)' }}>Yükleniyor…</div> : !data.length ? (
+      {isLoading ? <SkeletonTable rows={5} cols={5} /> : !data.length ? (
         <div style={{ padding: 50, textAlign: 'center', background: 'var(--surface)', borderRadius: 14 }}>
           <div style={{ fontSize: 36, opacity: 0.3, marginBottom: 8 }}>🦺</div>
           <div style={{ fontFamily: 'var(--display)', fontSize: 14 }}>KKD ZİMMET YOK</div>

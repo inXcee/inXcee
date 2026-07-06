@@ -65,6 +65,34 @@ describe('Maintenance — assign endpoint', () => {
   })
 })
 
+describe('Maintenance — Zod sweep', () => {
+  it('cok uzun aciklama 400 doner', async () => {
+    const res = await request(app)
+      .post('/api/maintenance/requests')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ location: 'B Blok 101', description: 'x'.repeat(2001) })
+    expect(res.status).toBe(400)
+  })
+
+  it('bos yorum 400 doner', async () => {
+    const reqId = db.prepare(`INSERT INTO maintenance_requests(location,description,priority,status)
+      VALUES('Zod 1','yorum testi','low','open')`).run().lastInsertRowid
+    const res = await request(app)
+      .post(`/api/maintenance/requests/${reqId}/comments`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ comment: '   ' })
+    expect(res.status).toBe(400)
+  })
+
+  it('cok uzun teknisyen ismi 400 doner', async () => {
+    const res = await request(app)
+      .post('/api/maintenance/technicians')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ full_name: 'A'.repeat(201) })
+    expect(res.status).toBe(400)
+  })
+})
+
 describe('Maintenance — pagination (Y2)', () => {
   beforeAll(() => {
     // 25 ekstra arıza yarat — 5 yuksek, 20 dusuk

@@ -57,8 +57,8 @@ describe('blocks config', () => {
     expect(getCapacity('S2', 1)).toBe(6)
   })
 
-  it('getCapacity A kat 1 → 1 (placeholder)', () => {
-    expect(getCapacity('A', 1)).toBe(1)
+  it('getCapacity A kat 1 → 6 (Y blok varsayilan placeholder; bkz 595f890)', () => {
+    expect(getCapacity('A', 1)).toBe(6)
   })
 
   it('getCapacity M1 → 6', () => {

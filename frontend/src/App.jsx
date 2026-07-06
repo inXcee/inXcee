@@ -1,7 +1,8 @@
-import { Suspense, lazy } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useAuthStore } from './shared/store/authStore.js'
+import { lazyWithRetry as lazy } from './shared/lazyWithRetry.js'
 import ErrorBoundary from './shared/components/ErrorBoundary.jsx'
 import ToastContainer from './shared/components/ToastContainer.jsx'
 import ConfirmDialog from './shared/components/ConfirmDialog.jsx'
@@ -46,6 +47,7 @@ const VisitorsPage = lazy(() => import('./modules/visitors/VisitorsPage.jsx'))
 const SurveysPage = lazy(() => import('./modules/surveys/SurveysPage.jsx'))
 const DrillsPage = lazy(() => import('./modules/drills/DrillsPage.jsx'))
 const DisplayPage = lazy(() => import('./modules/display/DisplayPage.jsx'))
+const KitchenDisplayPage = lazy(() => import('./modules/display/KitchenDisplayPage.jsx'))
 const DocumentsPage = lazy(() => import('./modules/documents/DocumentsPage.jsx'))
 const ExpensesPage = lazy(() => import('./modules/expenses/ExpensesPage.jsx'))
 const NotificationGroupsPage = lazy(() => import('./modules/notification-groups/NotificationGroupsPage.jsx'))
@@ -60,7 +62,13 @@ const SettingsLayout = lazy(() => import('./modules/admin/SettingsLayout.jsx'))
 const KioskPinPage = lazy(() => import('./modules/admin/KioskPinPage.jsx'))
 const AnnouncementsPage = lazy(() => import('./modules/admin/AnnouncementsPage.jsx'))
 const AvsWorkersPage = lazy(() => import('./modules/admin/AvsWorkersPage.jsx'))
+const CardsPage = lazy(() => import('./modules/cards/CardsPage.jsx'))
+const StationsPage = lazy(() => import('./modules/stations/StationsPage.jsx'))
+const PresencePage = lazy(() => import('./modules/access/PresencePage.jsx'))
+const StationPage = lazy(() => import('./modules/station/StationPage.jsx'))
+const FeedbackPage = lazy(() => import('./modules/admin/FeedbackPage.jsx'))
 const LaundryKioskPage = lazy(() => import('./modules/laundry-kiosk/LaundryKioskPage.jsx'))
+const AvsSelfServicePage = lazy(() => import('./modules/avs-self-service/AvsSelfServicePage.jsx'))
 const MobileLogin = lazy(() => import('./modules/mobile/auth/MobileLogin.jsx'))
 const HousekeeperHome = lazy(() => import('./modules/mobile/housekeeper/HousekeeperHome.jsx'))
 const TaskDetail = lazy(() => import('./modules/mobile/housekeeper/TaskDetail.jsx'))
@@ -92,8 +100,8 @@ const NotificationsCenterPage = lazy(() => import('./modules/notifications/Notif
 const KvkkPage = lazy(() => import('./modules/kvkk/KvkkPage.jsx'))
 
 function PrivateRoute({ children }) {
-  const token = useAuthStore(s => s.token)
-  return token ? children : <Navigate to="/login" />
+  const user = useAuthStore(s => s.user)
+  return user ? children : <Navigate to="/login" />
 }
 
 function RoleRoute({ roles, children }) {
@@ -189,6 +197,28 @@ function NotFound() {
   )
 }
 
+// Sayfa yenilemede httpOnly cookie ile oturumu geri yükler.
+// Cookie geçerliyse /me → user restore, geçersizse sessizce devam (login sayfası açılır).
+function AuthRestorer({ children }) {
+  const restoreUser = useAuthStore(s => s.restoreUser)
+  const user = useAuthStore(s => s.user)
+  const [ready, setReady] = useState(!!user)
+
+  useEffect(() => {
+    if (user) { setReady(true); return }
+    api.get('/auth/me')
+      .then(r => { restoreUser(r.data.user) })
+      .catch(() => { /* cookie yok/geçersiz — login sayfası bekliyor */ })
+      .finally(() => setReady(true))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  if (!ready) {
+    return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}><span className="page-spinner" /></div>
+  }
+  return children
+}
+
 function SetupGate({ children }) {
   const location = useLocation()
   const { data, isLoading, isError } = useQuery({
@@ -214,14 +244,40 @@ function SetupGate({ children }) {
   return children
 }
 
+function StagingBanner() {
+  if (typeof window === 'undefined') return null
+  if (!window.location.hostname.startsWith('staging.')) return null
+  return (
+    <div style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      background: '#FFC107',
+      color: '#000',
+      textAlign: 'center',
+      fontWeight: 600,
+      padding: '4px 8px',
+      zIndex: 9999,
+      fontSize: '13px',
+      borderBottom: '2px solid #FF6F00',
+      letterSpacing: '0.5px',
+    }}>
+      STAGING ORTAMI — test verileri, prod'a yansımaz
+    </div>
+  )
+}
+
 export default function App() {
   return (
     <ErrorBoundary>
+      <StagingBanner />
       <ToastContainer />
       <ConfirmDialog />
       <InputDialog />
       <PwaInstallPrompt />
       <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}><span className="page-spinner" /></div>}>
+        <AuthRestorer>
         <SetupGate>
         <Routes>
           <Route path="/setup" element={<SetupPage />} />
@@ -229,7 +285,10 @@ export default function App() {
           <Route path="/kvkk" element={<KvkkPage />} />
           <Route path="/kiosk" element={<SelfServicePage />} />
           <Route path="/laundry-kiosk" element={<LaundryKioskPage />} />
+          <Route path="/avs-kiosk" element={<AvsSelfServicePage />} />
           <Route path="/display" element={<DisplayPage />} />
+          <Route path="/display/kitchen" element={<KitchenDisplayPage />} />
+          <Route path="/station" element={<StationPage />} />
           <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
             <Route index element={<DashboardPage />} />
             <Route path="campus-map" element={<CampusMapPage />} />
@@ -283,6 +342,9 @@ export default function App() {
             <Route path="kiosk-pins" element={<RoleRoute roles={['campus_manager']}><KioskPinPage /></RoleRoute>} />
             <Route path="announcements" element={<RoleRoute roles={['campus_manager']}><AnnouncementsPage /></RoleRoute>} />
             <Route path="avs-workers" element={<RoleRoute roles={['campus_manager']}><AvsWorkersPage /></RoleRoute>} />
+            <Route path="cards" element={<RoleRoute roles={['campus_manager','shift_supervisor']}><CardsPage /></RoleRoute>} />
+            <Route path="stations" element={<RoleRoute roles={['campus_manager']}><StationsPage /></RoleRoute>} />
+            <Route path="presence" element={<RoleRoute roles={['campus_manager','shift_supervisor']}><PresencePage /></RoleRoute>} />
             <Route path="settings" element={<RoleRoute roles={['campus_manager','shift_supervisor']}><SettingsLayout /></RoleRoute>}>
               <Route index element={<Navigate to="personnel" replace />} />
               <Route path="email" element={<RoleRoute roles={['campus_manager']}><SettingsPage /></RoleRoute>} />
@@ -290,6 +352,8 @@ export default function App() {
               <Route path="kiosk-pins" element={<RoleRoute roles={['campus_manager']}><KioskPinPage /></RoleRoute>} />
               <Route path="announcements" element={<RoleRoute roles={['campus_manager']}><AnnouncementsPage /></RoleRoute>} />
               <Route path="avs-workers" element={<RoleRoute roles={['campus_manager']}><AvsWorkersPage /></RoleRoute>} />
+              <Route path="cards" element={<RoleRoute roles={['campus_manager','shift_supervisor']}><CardsPage /></RoleRoute>} />
+              <Route path="stations" element={<RoleRoute roles={['campus_manager']}><StationsPage /></RoleRoute>} />
               <Route path="audit" element={<RoleRoute roles={['campus_manager']}><AuditPage /></RoleRoute>} />
               <Route path="error-log" element={<RoleRoute roles={['campus_manager']}><ErrorLogPage /></RoleRoute>} />
               <Route path="backup" element={<RoleRoute roles={['campus_manager']}><BackupPage /></RoleRoute>} />
@@ -299,6 +363,7 @@ export default function App() {
               <Route path="companies" element={<CompaniesPage />} />
               <Route path="visitors" element={<VisitorsPage />} />
               <Route path="surveys" element={<SurveysPage />} />
+              <Route path="feedback" element={<FeedbackPage />} />
               <Route path="drills" element={<DrillsPage />} />
               <Route path="documents" element={<DocumentsPage />} />
               <Route path="expenses" element={<ExpensesPage />} />
@@ -357,6 +422,7 @@ export default function App() {
           <Route path="*" element={<NotFound />} />
         </Routes>
         </SetupGate>
+        </AuthRestorer>
       </Suspense>
     </ErrorBoundary>
   )

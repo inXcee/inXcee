@@ -10,6 +10,7 @@ import ManagementWidgets from './ManagementWidgets.jsx'
 import TodaysPulse from './TodaysPulse.jsx'
 import UpcomingEvents from './UpcomingEvents.jsx'
 import HealthScoreWidget from './HealthScoreWidget.jsx'
+import ComplianceWidget from './ComplianceWidget.jsx'
 import AnomalyAlerts from './AnomalyAlerts.jsx'
 import DateRangeFilter from './DateRangeFilter.jsx'
 import { useDateRange } from './useDateRange.js'
@@ -18,6 +19,43 @@ import { useOccupancy } from '../../shared/hooks/useOccupancy.js'
 import { useAuthStore } from '../../shared/store/authStore.js'
 import { blockColor } from '../../shared/blocks.js'
 import DashCard from './DashCard.jsx'
+import { SkeletonGrid } from '../../shared/components/Skeleton.jsx'
+import { exportRowsToXlsx } from '../../shared/utils/exportData.js'
+import { useDashboardLayout } from './useDashboardLayout.js'
+
+// D3a: gizlenebilir ikincil widget'lar (çekirdek KPI/doluluk/trend sabit kalır).
+const DASH_WIDGETS = [
+  { id: 'todaysPulse', label: 'Bugünün Nabzı' },
+  { id: 'upcoming', label: 'Yaklaşan Etkinlikler' },
+  { id: 'compliance', label: 'İSG Uyum' },
+  { id: 'anomalies', label: 'Anomali Uyarıları' },
+  { id: 'projection', label: '14 Gün Projeksiyon' },
+  { id: 'audit', label: 'Denetim Kaydı' },
+]
+const DASH_WIDGET_IDS = DASH_WIDGETS.map(w => w.id)
+
+// D2c: dashboard Excel export kolonları (CSV header/transform'larıyla aynı).
+const PERSONNEL_XLSX_COLS = [
+  { key: 'full_name', label: 'Ad Soyad' }, { key: 'tc_no', label: 'TC No' },
+  { key: 'company', label: 'Firma' }, { key: 'job_title', label: 'Görev' },
+  { key: 'hometown', label: 'Memleket' }, { key: 'block', label: 'Blok' },
+  { key: 'floor', label: 'Kat' }, { key: 'room_no', label: 'Oda' }, { key: 'bed_no', label: 'Yatak' },
+  { key: 'shift_type', label: 'Vardiya', format: r => r.shift_type === 'night' ? 'Gece' : 'Gündüz' },
+  { key: 'discipline_points', label: 'Disiplin Puanı' }, { key: 'check_in_date', label: 'Giriş Tarihi' },
+]
+const OCCUPANCY_XLSX_COLS = [
+  { key: 'block', label: 'Blok' }, { key: 'floor', label: 'Kat' }, { key: 'room_no', label: 'Oda No' },
+  { key: 'capacity', label: 'Kapasite' }, { key: 'active_beds', label: 'Aktif Yatak' }, { key: 'occupied', label: 'Dolu' },
+  { key: 'empty', label: 'Boş', format: r => r.active_beds - r.occupied },
+  { key: 'status', label: 'Durum', format: r => r.status === 'active' ? 'Aktif' : r.status === 'quarantine' ? 'Karantina' : 'Bakım' },
+]
+const MAINTENANCE_XLSX_COLS = [
+  { key: 'location', label: 'Konum' }, { key: 'description', label: 'Açıklama' },
+  { key: 'status', label: 'Durum', format: r => r.status === 'open' ? 'Açık' : 'Tamamlandı' },
+  { key: 'priority', label: 'Öncelik', format: r => r.priority === 'high' ? 'Acil' : r.priority === 'medium' ? 'Normal' : 'Düşük' },
+  { key: 'wait_reason', label: 'Bekleme Nedeni' }, { key: 'opened_at', label: 'Açılış' },
+  { key: 'closed_at', label: 'Kapanış' }, { key: 'reporter', label: 'Raporlayan' },
+]
 
 function PriorityBar({ priority }) {
   const cls = priority === 'high' ? 'pri-high' : priority === 'medium' ? 'pri-mid' : 'pri-low'
@@ -181,7 +219,7 @@ function AuditLogPanel({ globalFrom, globalTo }) {
     <DashCard
       title="Son işlemler"
       bodyStyle={{ padding: 0 }}
-      action={<span style={{ fontSize: '11px', color: 'var(--text3)' }}>{logs.length} kayıt</span>}
+      action={<span style={{ fontSize: '11px', color: 'var(--text3)' }}>{logs.length} kayıt{(globalFrom || globalTo) ? ' · seçili aralık' : ''}</span>}
     >
       {/* Filters */}
       <div style={{ padding: '8px 20px 12px', borderBottom: '1px solid var(--border)', display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
@@ -238,16 +276,30 @@ function ExportButtons() {
     })
   }
 
+  const downloadXlsx = async (path, cols, name, sheet) => {
+    const rows = await api.get(`${path}?format=json`).then(r => r.data)
+    await exportRowsToXlsx(cols, rows, name, sheet)
+  }
+
   return (
     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
       <button className="btn btn-ghost btn-sm" onClick={() => download('/dashboard/export/personnel', 'personel-listesi.csv')}>
         Personel CSV
       </button>
+      <button className="btn btn-ghost btn-sm" onClick={() => downloadXlsx('/dashboard/export/personnel', PERSONNEL_XLSX_COLS, 'personel-listesi.xlsx', 'Personel')}>
+        Personel Excel
+      </button>
       <button className="btn btn-ghost btn-sm" onClick={() => download('/dashboard/export/occupancy', 'oda-doluluk.csv')}>
         Doluluk CSV
       </button>
+      <button className="btn btn-ghost btn-sm" onClick={() => downloadXlsx('/dashboard/export/occupancy', OCCUPANCY_XLSX_COLS, 'oda-doluluk.xlsx', 'Doluluk')}>
+        Doluluk Excel
+      </button>
       <button className="btn btn-ghost btn-sm" onClick={() => download('/dashboard/export/maintenance', 'arizalar.csv')}>
         Arızalar CSV
+      </button>
+      <button className="btn btn-ghost btn-sm" onClick={() => downloadXlsx('/dashboard/export/maintenance', MAINTENANCE_XLSX_COLS, 'arizalar.xlsx', 'Arızalar')}>
+        Arızalar Excel
       </button>
       <span style={{ width: '1px', height: '20px', background: 'var(--border)', margin: '0 4px' }} />
       <button className="btn btn-ghost btn-sm" style={{ color: 'var(--red)' }} onClick={() => download('/reports/housekeeping', 'temizlik-raporu.pdf')}>
@@ -431,6 +483,89 @@ function HousekeeperDashboard() {
   )
 }
 
+function LaundryDashboard() {
+  const navigate = useNavigate()
+  const { data: summary } = useQuery({
+    queryKey: ['laundry-summary'],
+    queryFn: () => api.get('/laundry/summary').then(r => r.data).catch(() => null),
+    refetchInterval: 30000,
+  })
+  const { data: ready = [] } = useQuery({
+    queryKey: ['laundry-ready'],
+    queryFn: () => api.get('/laundry/items?status=ready').then(r => r.data).catch(() => []),
+    refetchInterval: 30000,
+  })
+  const c = summary?.counts || {}
+  const cards = [
+    { label: 'KİRLİ / BEKLEYEN', value: c.dirty || 0, color: 'var(--text3)' },
+    { label: 'YIKANIYOR', value: c.washing || 0, color: 'var(--blue)' },
+    { label: 'ÜTÜDE', value: c.ironing || 0, color: 'var(--accent)' },
+    { label: 'TESLİME HAZIR', value: c.ready || 0, color: 'var(--green)' },
+  ]
+
+  return (
+    <div className="fade-up" style={{ position: 'relative', zIndex: 1 }}>
+      <div style={{ marginBottom: '20px' }}>
+        <h1 style={{ fontSize: '28px', letterSpacing: '4px' }}>ÇAMAŞIRHANE</h1>
+        <p style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)', marginTop: '4px', letterSpacing: '1px' }}>
+          ÇAMAŞIRHANE PANELİ
+        </p>
+      </div>
+
+      <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '20px' }}>
+        {cards.map(s => (
+          <div key={s.label} style={{ flex: 1, minWidth: '120px', padding: '16px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '10px', borderTop: `3px solid ${s.color}` }}>
+            <div style={{ fontFamily: 'var(--display)', fontSize: '36px', color: s.color, lineHeight: 1 }}>{s.value}</div>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '1.5px', marginTop: '6px' }}>{s.label}</div>
+          </div>
+        ))}
+        {summary?.urgent > 0 && (
+          <div style={{ flex: 1, minWidth: '120px', padding: '16px', background: 'rgba(231,76,60,.06)', border: '1px solid rgba(231,76,60,.2)', borderRadius: '10px', borderTop: '3px solid var(--red)' }}>
+            <div style={{ fontFamily: 'var(--display)', fontSize: '36px', color: 'var(--red)', lineHeight: 1 }}>{summary.urgent}</div>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--red)', letterSpacing: '1.5px', marginTop: '6px' }}>ACİL</div>
+          </div>
+        )}
+        {summary?.delivered_today > 0 && (
+          <div style={{ flex: 1, minWidth: '120px', padding: '16px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '10px', borderTop: '3px solid var(--green)' }}>
+            <div style={{ fontFamily: 'var(--display)', fontSize: '36px', color: 'var(--green)', lineHeight: 1 }}>{summary.delivered_today}</div>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '1.5px', marginTop: '6px' }}>BUGÜN TESLİM</div>
+          </div>
+        )}
+      </div>
+
+      <button className="btn btn-primary" onClick={() => navigate('/laundry')} style={{ marginBottom: '20px' }}>
+        Çamaşırhane Sayfasına Git
+      </button>
+
+      {ready.length > 0 && (
+        <div className="panel">
+          <div className="panel-header">
+            <div>
+              <div className="panel-title">TESLİME HAZIR</div>
+              <div className="panel-subtitle">{ready.length} ÖĞE</div>
+            </div>
+          </div>
+          <div className="panel-body" style={{ padding: '0' }}>
+            {ready.slice(0, 10).map(it => (
+              <div key={it.id} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 20px', borderBottom: '1px solid rgba(35,45,63,.3)' }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: '13px', fontWeight: 500 }}>
+                    {it.room_no ? `Oda ${it.room_no}` : (it.intake_name || '—')}{it.block ? ` · ${it.block}` : ''}
+                  </div>
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)' }}>
+                    {it.item_count} parça{it.is_premium ? ' · premium' : ''}
+                  </div>
+                </div>
+                <span className={`badge badge-${it.urgent ? 'red' : 'green'}`}>{it.urgent ? 'ACİL' : 'HAZIR'}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function DashboardPage() {
   const navigate = useNavigate()
   const user = useAuthStore(s => s.user)
@@ -439,6 +574,7 @@ export default function DashboardPage() {
   // Role-based dashboards (#10)
   if (user?.role === 'technical') return <TechnicianDashboard />
   if (user?.role === 'housekeeper') return <HousekeeperDashboard />
+  if (user?.role === 'laundry') return <LaundryDashboard />
 
   const { days, from: globalFrom, to: globalTo, label: rangeLabel } = useDateRange()
 
@@ -474,6 +610,10 @@ export default function DashboardPage() {
   const occupancyColor = !kpi ? 'blue' : kpi.occupancy_pct > 95 ? 'red' : kpi.occupancy_pct > 80 ? 'orange' : 'green'
   const highOccBlocks = heatmap.filter(b => b.pct >= 90)
 
+  // D3a: widget göster/gizle (localStorage)
+  const layout = useDashboardLayout(DASH_WIDGET_IDS)
+  const [editLayout, setEditLayout] = useState(false)
+
   return (
     <div className="fade-up" style={{ position: 'relative', zIndex: 1 }}>
       {/* Header */}
@@ -499,8 +639,36 @@ export default function DashboardPage() {
           </div>
           <DateRangeFilter />
           {isManager && <ExportButtons />}
+          <button className="btn btn-ghost btn-sm" onClick={() => setEditLayout(v => !v)} aria-pressed={editLayout} title="Panelleri göster/gizle">
+            {editLayout ? '✓ Bitti' : '⚙ Paneller'}
+          </button>
         </div>
       </div>
+
+      {editLayout && (
+        <div style={{ marginBottom: '16px', padding: '14px 16px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+            <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text2)' }}>Görünür paneller</span>
+            <button className="btn btn-ghost btn-xs" onClick={layout.reset}>Varsayılana dön</button>
+          </div>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            {DASH_WIDGETS.map(w => {
+              const on = layout.isVisible(w.id)
+              return (
+                <button key={w.id} type="button" onClick={() => layout.toggle(w.id)} aria-pressed={on}
+                  style={{
+                    padding: '6px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: 600, cursor: 'pointer',
+                    border: `1px solid ${on ? 'var(--green)' : 'var(--border)'}`,
+                    background: on ? 'color-mix(in srgb, var(--green) 10%, transparent)' : 'transparent',
+                    color: on ? 'var(--green)' : 'var(--text3)',
+                  }}>
+                  {on ? '✓' : '✗'} {w.label}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {isManager && <ManagementWidgets />}
 
@@ -529,22 +697,36 @@ export default function DashboardPage() {
 
       {/* Bento grid */}
       <div className="bento-grid fade-up-stagger">
-        {/* KPI 4'lü — span 8 */}
+        {/* KPI 4'lü — span 8 (D1c: yüklenirken skeleton) */}
+        {!kpi && (
+          <div className="bento-cell bento-span-8">
+            <SkeletonGrid count={4} minWidth={170} lines={2} />
+          </div>
+        )}
         {kpi && (
           <div className="bento-cell bento-span-8" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: '12px' }}>
-            <KPICard label="Aktif personel" value={kpi.active_personnel} />
+            <KPICard
+              label="Aktif personel" value={kpi.active_personnel}
+              delta={kpi.active_personnel_prev != null ? kpi.active_personnel - kpi.active_personnel_prev : undefined}
+              onClick={() => navigate('/personnel')}
+            />
             <KPICard
               label="Doluluk" value={`${kpi.occupancy_pct}%`}
               color={occupancyColor} subtitle={`${kpi.occupied}/${kpi.total_beds} yatak`}
               barPct={kpi.occupancy_pct}
+              delta={kpi.occupancy_pct_prev != null ? kpi.occupancy_pct - kpi.occupancy_pct_prev : undefined}
+              onClick={() => navigate('/capacity')}
             />
             <KPICard
               label="Açık arıza" value={kpi.open_maintenance}
               color={kpi.open_maintenance > 5 ? 'red' : 'green'}
+              delta={kpi.open_maintenance_prev != null ? kpi.open_maintenance - kpi.open_maintenance_prev : undefined}
+              onClick={() => navigate('/maintenance')}
             />
             <KPICard
               label="Karantina" value={kpi.quarantine_rooms}
               color={kpi.quarantine_rooms > 0 ? 'orange' : 'green'}
+              onClick={() => navigate('/capacity')}
             />
           </div>
         )}
@@ -560,19 +742,30 @@ export default function DashboardPage() {
         </div>
 
         {/* Sağ panel placeholder #2 — Bugünün Nabzı (Faz 2) */}
-        <div className="bento-cell bento-span-4">
-          <TodaysPulse />
-        </div>
+        {layout.isVisible('todaysPulse') && (
+          <div className="bento-cell bento-span-4">
+            <TodaysPulse />
+          </div>
+        )}
 
         {/* Trend grafikleri — span 8 (mevcut TrendChartsSection 2x2 internal grid'i yapıyor) */}
         <div className="bento-cell bento-span-8">
           <TrendChartsSection days={days} label={rangeLabel} />
         </div>
 
-        {/* Sağ panel placeholder #3 — Yaklaşan Etkinlikler (Faz 2) */}
-        <div className="bento-cell bento-span-4">
-          <UpcomingEvents />
-        </div>
+        {/* Sağ panel #3 — Yaklaşan Etkinlikler */}
+        {layout.isVisible('upcoming') && (
+          <div className="bento-cell bento-span-4">
+            <UpcomingEvents />
+          </div>
+        )}
+
+        {/* İSG Uyum Durumu — sadece campus_manager/shift_supervisor — span 4 */}
+        {isManager && layout.isVisible('compliance') && (
+          <div className="bento-cell bento-span-4">
+            <ComplianceWidget />
+          </div>
+        )}
 
         {/* Blok HeatMap — span 12 */}
         <div className="bento-cell bento-span-12">
@@ -582,9 +775,11 @@ export default function DashboardPage() {
         </div>
 
         {/* Anomali uyarıları */}
-        <div className="bento-cell bento-span-12">
-          <AnomalyAlerts />
-        </div>
+        {layout.isVisible('anomalies') && (
+          <div className="bento-cell bento-span-12">
+            <AnomalyAlerts />
+          </div>
+        )}
 
         {/* Aktif Arızalar — span 7 */}
         <div className="bento-cell bento-span-7">
@@ -634,7 +829,7 @@ export default function DashboardPage() {
         </div>
 
         {/* 14 Gün Projeksiyon — span 5 */}
-        {projection.length > 0 && (
+        {projection.length > 0 && layout.isVisible('projection') && (
           <div className="bento-cell bento-span-5">
             <DashCard
               title="14 gün projeksiyon"
@@ -661,7 +856,7 @@ export default function DashboardPage() {
         )}
 
         {/* Denetim Kaydı — sadece campus_manager — span 12 */}
-        {isManager && (
+        {isManager && layout.isVisible('audit') && (
           <div className="bento-cell bento-span-12">
             <AuditLogPanel globalFrom={globalFrom} globalTo={globalTo} />
           </div>

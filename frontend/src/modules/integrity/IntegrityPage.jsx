@@ -3,6 +3,9 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
+import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
+import { useUrlParamState } from '../../shared/hooks/useUrlParamState.js'
+import HelpHint from '../../shared/components/HelpHint.jsx'
 
 const toast = (m, t = 'success') => useToastStore.getState().addToast(m, t)
 const toastErr = (e) => toast(e?.response?.data?.error || 'Hata', 'error')
@@ -21,12 +24,12 @@ const SEV = {
 }
 
 export default function IntegrityPage() {
-  const [tab, setTab] = useState('scan')
+  const [tab, setTab] = useUrlParamState('tab', 'scan')
 
   return (
     <div style={{ maxWidth: 1200 }} className="fade-up">
       <div style={{ marginBottom: 16 }}>
-        <h1 style={{ fontSize: 28, letterSpacing: 4, color: 'var(--text)', margin: 0 }}>SİSTEM SAĞLAMLIĞI</h1>
+        <h1 style={{ fontSize: 28, letterSpacing: 4, color: 'var(--text)', margin: 0 }}>SİSTEM SAĞLAMLIĞI<HelpHint topic="integrity" title="SİSTEM SAĞLAMLIĞI" /></h1>
         <p style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', marginTop: 4, letterSpacing: 1.5 }}>
           TUTARSIZLIK TARAMASI · KVKK · AUDIT · YEDEK
         </p>
@@ -58,7 +61,7 @@ function ScanTab() {
     queryFn: () => api.get('/integrity/scan').then(r => r.data),
   })
 
-  if (isLoading) return <div style={{ padding: 30, color: 'var(--text3)' }}>Yükleniyor…</div>
+  if (isLoading) return <SkeletonTable rows={8} cols={4} />
   const filtered = sev ? data.issues.filter(i => i.severity === sev) : data.issues
 
   return (
@@ -181,7 +184,7 @@ function KvkkTab() {
         </div>
       )}
 
-      {isLoading ? <div style={{ padding: 30, color: 'var(--text3)' }}>Yükleniyor…</div> : !data.length ? (
+      {isLoading ? <SkeletonTable rows={5} cols={4} /> : !data.length ? (
         <div style={{ padding: 50, textAlign: 'center', background: 'var(--surface)', borderRadius: 14 }}>
           <div style={{ fontSize: 36, opacity: 0.3 }}>⚖</div>
           <div style={{ fontFamily: 'var(--display)', fontSize: 14, marginTop: 8 }}>KVKK TALEBİ YOK</div>
@@ -206,9 +209,19 @@ function KvkkTab() {
                     </div>
                   )}
                 </div>
-                <span style={{ fontFamily: 'var(--mono)', fontSize: 9, padding: '3px 8px', borderRadius: 4, background: 'var(--surface2)' }}>
-                  {r.status}
-                </span>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: 9, padding: '3px 8px', borderRadius: 4, background: 'var(--surface2)' }}>
+                    {r.status}
+                  </span>
+                  {/* KVKK m.13 — 30 günlük yasal yanıt süresi */}
+                  {typeof r.days_left === 'number' && (
+                    <span style={{ fontFamily: 'var(--mono)', fontSize: 9, padding: '3px 8px', borderRadius: 4,
+                      background: r.days_left < 0 ? 'rgba(239,68,68,.18)' : r.days_left <= 7 ? 'rgba(245,158,11,.15)' : 'var(--surface2)',
+                      color: r.days_left < 0 ? 'var(--red)' : r.days_left <= 7 ? 'var(--amber)' : 'var(--text3)' }}>
+                      {r.days_left < 0 ? `⚠ SÜRE AŞILDI (${-r.days_left}g)` : `yasal süre: ${r.days_left}g`}
+                    </span>
+                  )}
+                </div>
               </div>
               {r.status === 'pending' && (
                 <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
@@ -235,7 +248,7 @@ function AuditTab() {
     queryKey: ['audit-summary', days],
     queryFn: () => api.get(`/integrity/audit-summary?days=${days}`).then(r => r.data),
   })
-  if (isLoading || !data) return <div style={{ padding: 30, color: 'var(--text3)' }}>Yükleniyor…</div>
+  if (isLoading || !data) return <SkeletonTable rows={6} cols={3} />
 
   return (
     <div>

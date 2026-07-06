@@ -85,6 +85,8 @@ Y blokları **özel banyolu, kapasite=1 placeholder** olarak gelir; gerçek yata
 
 ## Veritabanı Değişiklik Kuralları
 
+- **Yeni şema değişiklikleri versiyonlu migration ile yazılır.** `backend/src/shared/db/migrations/NNN_ad.sql` dosyası ekle (NNN = bir sonraki sıra no). `initDB()` bunları `schema_migrations` tablosuna göre tam bir kez, sürüm sırasına göre, transaction içinde uygular (bkz. `db/runner.js`). `db/index.js` içindeki eski idempotent ALTER bloğu **baseline**'dır — oraya yeni satır ekleme, dokunma.
+- Migration'lar mümkünse `IF NOT EXISTS` ile idempotent yazılsın; veri backfill gibi tek-sefer işlemler de güvenli (runner once-only garanti eder).
 - Şema veya seed değişikliğinden sonra mutlaka doğrula: 1) Migration temiz çalışıyor, 2) Seed verisi doğru DB dosyasını hedefliyor (`yys.db`), 3) Foreign key referansları mevcut şemayla uyumlu
 - DB değişikliğinden sonra login akışını test et
 - Yanlış DB'ye yazmamak için seed sonrası `yys.db` dosya boyutunu kontrol et
@@ -95,6 +97,21 @@ Y blokları **özel banyolu, kapasite=1 placeholder** olarak gelir; gerçek yata
 - Fazlar arası test çalıştır — bir sonraki faza testler geçmeden geçme
 - Tüm fazları tek oturumda bitirmeye çalışma — `/phase` komutunu kullan
 - Bug düzeltmeden sonra düzeltmeyi bağlamında doğrula: değişken scope'da mı, sayfa renderlanıyor mu, console hatası var mı
+
+## Observability
+
+- **Error tracking:** Sentry — `backend/src/shared/sentry.js`. DSN `.env`'de (`SENTRY_DSN`). Test ortamında ve DSN yoksa no-op. PII scrubbing aktif: request body/headers/IP/email Sentry'ye gitmez, sadece `user.id` + `module` tag. Manuel hata yakalamak için `captureError(err, { userId, module })`.
+- **Metrics:** `GET /api/system/metrics` — Bearer token (`METRICS_TOKEN`) ile korunur. prom-client + HTTP histogram (`http_request_duration_seconds`, `http_requests_total`) + DB query histogram (`db_query_duration_seconds`) + job queue gauge. Endpoint: `backend/src/shared/metrics.js`. `METRICS_TOKEN` boşsa endpoint 503 döner.
+- **Job queue:** `backend/src/shared/jobs/` — SQLite tabanlı (`job_queue` tablosu), tek worker loop (PM2 `instances:1`). Push notifications buradan gönderilir (`enqueue('push.send', { subscriptionId, payload })`). Yeni handler eklemek için `handlers.js`'e satır ekle:
+
+  ```js
+  export const handlers = {
+    'push.send': sendPushJob,
+    'mytype.do': async (payload) => { /* ... */ },
+  }
+  ```
+
+  Handler hata throw ederse retry (exponential backoff, default 3 attempts). `err.permanent=true` set edilirse kalıcı fail (retry yok, status `done`). `JOB_WORKER_ENABLED=false` ile worker kapanır (debug).
 
 ## Deploy
 

@@ -1,5 +1,7 @@
 import { Router } from 'express'
 import { requireRole, requireAuth } from '../../shared/auth/middleware.js'
+import { validate } from '../../shared/middleware/validate.js'
+import { companySchema } from './schemas.js'
 import * as svc from './service.js'
 
 export const companiesRouter = Router()
@@ -24,14 +26,14 @@ companiesRouter.get('/:id', requireAuth, (req, res) => {
   res.json(c)
 })
 
-companiesRouter.post('/', ...mgmt, (req, res) => {
-  const r = svc.createService(req.body, req.user.id)
+companiesRouter.post('/', ...mgmt, validate(companySchema), (req, res) => {
+  const r = svc.createService(req.validated, req.user.id)
   if (r.error) return res.status(r.status).json({ error: r.error })
   res.status(201).json(r)
 })
 
-companiesRouter.put('/:id', ...mgmt, (req, res) => {
-  const r = svc.updateService(+req.params.id, req.body, req.user.id)
+companiesRouter.put('/:id', ...mgmt, validate(companySchema), (req, res) => {
+  const r = svc.updateService(+req.params.id, req.validated, req.user.id)
   if (r.error) return res.status(r.status).json({ error: r.error })
   res.json(r)
 })

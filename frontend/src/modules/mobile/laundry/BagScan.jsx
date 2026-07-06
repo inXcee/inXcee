@@ -1,4 +1,5 @@
-import { useState, lazy, Suspense } from 'react'
+import { useState, Suspense } from 'react'
+import { lazyWithRetry as lazy } from '../../../shared/lazyWithRetry.js'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import mobileApi from '../auth/mobileApi.js'
 import { useToastStore } from '../../../shared/store/toastStore.js'

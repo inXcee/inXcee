@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import api from '../../shared/api/client.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
+import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
 
 const SEVERITY_LABEL = { info: 'Bilgi', warning: 'Uyarı', critical: 'Kritik' }
 const SEVERITY_COLOR = { info: 'var(--blue)', warning: 'var(--accent)', critical: 'var(--red)' }
@@ -193,7 +194,7 @@ export default function NotificationsCenterPage() {
       {/* Liste */}
       <div className="panel fade-up-2">
         <div className="panel-body" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {isLoading && <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text3)', padding: 20, textAlign: 'center' }}>Yükleniyor…</div>}
+          {isLoading && <SkeletonTable rows={5} cols={4} />}
           {!isLoading && items.length === 0 && (
             <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text3)', padding: 20, textAlign: 'center' }}>
               Bildirim yok

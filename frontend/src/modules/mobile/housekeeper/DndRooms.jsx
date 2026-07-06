@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import mobileApi from '../auth/mobileApi.js'
+import { SkeletonTable } from '../../../shared/components/Skeleton.jsx'
 
 export default function DndRooms() {
   const { data: rooms = [], isLoading } = useQuery({
@@ -14,7 +15,7 @@ export default function DndRooms() {
       <p style={{ fontSize: '12px', color: '#6b7280', margin: '0 0 20px' }}>Temizlik istememeyen odalar</p>
 
       {isLoading ? (
-        <div style={{ textAlign: 'center', padding: '40px', color: '#9ca3af' }}>Yükleniyor...</div>
+        <SkeletonTable rows={3} cols={2} />
       ) : rooms.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '48px 24px', color: '#9ca3af' }}>
           Aktif DnD odası yok

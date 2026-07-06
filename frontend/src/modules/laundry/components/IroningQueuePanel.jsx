@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { laundryApi } from '../api.js'
+import { SkeletonTable } from '../../../shared/components/Skeleton.jsx'
 
 function formatHours(h) {
   if (h === null || h === undefined) return '—'
@@ -42,13 +43,7 @@ export default function IroningQueuePanel() {
     },
   })
 
-  if (isLoading) {
-    return (
-      <div style={{ padding: 20, fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)' }}>
-        Yükleniyor...
-      </div>
-    )
-  }
+  if (isLoading) return <SkeletonTable rows={4} cols={3} />
 
   if (items.length === 0) {
     return (

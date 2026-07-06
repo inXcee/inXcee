@@ -2,6 +2,9 @@ import { Router } from 'express'
 import { requireRole } from '../../shared/auth/middleware.js'
 import { logAudit } from '../../shared/audit.js'
 import { getDB } from '../../shared/db/index.js'
+import { logger } from '../../shared/logger.js'
+import { validate } from '../../shared/middleware/validate.js'
+import { smsSendSchema, broadcastSchema } from './schemas.js'
 
 export const commsRouter = Router()
 const mgr = requireRole('campus_manager', 'shift_supervisor')
@@ -45,11 +48,9 @@ function logComm(data) {
 }
 
 // ── IB2: SMS gönder (tek personel) ──
-commsRouter.post('/sms/send', ...mgr, async (req, res) => {
+commsRouter.post('/sms/send', ...mgr, validate(smsSendSchema), async (req, res) => {
   try {
-    const { staff_id, phone, body } = req.body || {}
-    if (!body) return res.status(400).json({ error: 'body gerekli' })
-    if (!staff_id && !phone) return res.status(400).json({ error: 'staff_id veya phone gerekli' })
+    const { staff_id, phone, body } = req.validated
 
     let targetPhone = phone
     let recipientId = null
@@ -72,7 +73,7 @@ commsRouter.post('/sms/send', ...mgr, async (req, res) => {
     })
     logAudit(req.user.id, 'sms_send', 'comms', id, `${targetPhone}: ${body.slice(0, 50)}`)
     res.json({ id, ok: result.ok, status: result.status, error: result.error })
-  } catch (e) { console.error('[sms]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[sms]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 // ── IB3: Push subscription kaydet (browser'dan gelir) ──
@@ -106,14 +107,9 @@ commsRouter.delete('/push/unsubscribe', ...view, (req, res) => {
 })
 
 // ── IB4: Toplu duyuru — gruba/role'a toplu gönderim ──
-commsRouter.post('/broadcast', ...mgr, async (req, res) => {
+commsRouter.post('/broadcast', ...mgr, validate(broadcastSchema), async (req, res) => {
   try {
-    const { channel, target_type, target_id, body, subject } = req.body || {}
-    if (!channel || !target_type || !body) {
-      return res.status(400).json({ error: 'channel, target_type, body gerekli' })
-    }
-    if (!['sms', 'push', 'toast'].includes(channel)) return res.status(400).json({ error: 'channel: sms|push|toast' })
-    if (!['group', 'role', 'dept', 'all'].includes(target_type)) return res.status(400).json({ error: 'target_type: group|role|dept|all' })
+    const { channel, target_type, target_id, body, subject } = req.validated
 
     const db = getDB()
     let staffList = []
@@ -162,7 +158,7 @@ commsRouter.post('/broadcast', ...mgr, async (req, res) => {
 
     logAudit(req.user.id, 'broadcast', 'comms', null, `${channel} → ${target_type}:${target_id} (${stats.total} alıcı)`)
     res.json({ ok: true, stats })
-  } catch (e) { console.error('[broadcast]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[broadcast]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 // ── İletişim logu ──
@@ -178,5 +174,5 @@ commsRouter.get('/log', ...view, (req, res) => {
     if (req.query.staff_id) { q += ' AND c.recipient_id = ? AND c.recipient_type = "staff"'; params.push(+req.query.staff_id) }
     q += ' ORDER BY c.created_at DESC LIMIT 200'
     res.json(db.prepare(q).all(...params))
-  } catch (e) { console.error('[comm/log]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[comm/log]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })

@@ -2,6 +2,8 @@ import { Router } from 'express'
 import { requireRole, requireAuth } from '../../shared/auth/middleware.js'
 import { getDB } from '../../shared/db/index.js'
 import { logAudit } from '../../shared/audit.js'
+import { validate } from '../../shared/middleware/validate.js'
+import { groupSchema, memberSchema } from './schemas.js'
 
 export const notifGroupsRouter = Router()
 const mgmt = requireRole('campus_manager')
@@ -40,14 +42,13 @@ notifGroupsRouter.get('/:id', requireAuth, (req, res) => {
   res.json({ ...g, channels: g.channels.split(','), members })
 })
 
-notifGroupsRouter.post('/', ...mgmt, (req, res) => {
-  const { name, description } = req.body || {}
-  if (!name || name.trim().length < 2) return res.status(400).json({ error: 'Grup adi gerekli' })
+notifGroupsRouter.post('/', ...mgmt, validate(groupSchema), (req, res) => {
+  const { name, description } = req.validated
   const channels = normalizeChannels(req.body.channels)
   try {
     const db = getDB()
     const r = db.prepare('INSERT INTO notification_groups (name, description, channels) VALUES (?,?,?)')
-      .run(name.trim(), description || null, channels)
+      .run(name, description || null, channels)
     logAudit(req.user.id, 'notif_group_create', 'notification_groups', r.lastInsertRowid, name)
     res.status(201).json({ id: r.lastInsertRowid })
   } catch (e) {
@@ -56,14 +57,13 @@ notifGroupsRouter.post('/', ...mgmt, (req, res) => {
   }
 })
 
-notifGroupsRouter.put('/:id', ...mgmt, (req, res) => {
-  const { name, description } = req.body || {}
-  if (!name || name.trim().length < 2) return res.status(400).json({ error: 'Grup adi gerekli' })
+notifGroupsRouter.put('/:id', ...mgmt, validate(groupSchema), (req, res) => {
+  const { name, description } = req.validated
   const channels = normalizeChannels(req.body.channels)
   const db = getDB()
   try {
     db.prepare('UPDATE notification_groups SET name=?, description=?, channels=? WHERE id=?')
-      .run(name.trim(), description || null, channels, +req.params.id)
+      .run(name, description || null, channels, +req.params.id)
     res.json({ ok: true })
   } catch (e) {
     if (e.message?.includes('UNIQUE')) return res.status(409).json({ error: 'Bu isimde grup zaten var' })
@@ -79,13 +79,12 @@ notifGroupsRouter.delete('/:id', ...mgmt, (req, res) => {
   res.json({ ok: true })
 })
 
-notifGroupsRouter.post('/:id/members', ...mgmt, (req, res) => {
-  const { user_id } = req.body || {}
-  if (!user_id) return res.status(400).json({ error: 'user_id gerekli' })
+notifGroupsRouter.post('/:id/members', ...mgmt, validate(memberSchema), (req, res) => {
+  const { user_id } = req.validated
   const db = getDB()
   try {
     db.prepare('INSERT OR IGNORE INTO notification_group_members (group_id, user_id) VALUES (?,?)')
-      .run(+req.params.id, +user_id)
+      .run(+req.params.id, user_id)
     res.status(201).json({ ok: true })
   } catch (e) { res.status(500).json({ error: e.message }) }
 })

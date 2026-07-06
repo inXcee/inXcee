@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>YYS Login — TP-OTC stili (mockup)</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --bg:#04101c;          /* derin lacivert taban */
+    --bg2:#071c30;         /* panel lacivert */
+    --ink:#eaf6fb;         /* metin */
+    --muted:#8db3c6;       /* soluk metin */
+    --cy:#19c6d4;          /* cyan accent (TP-OTC) */
+    --cy2:#4fe8ee;         /* açık cyan */
+    --amber:#ff9d3d;       /* "sönmeyen ateş" sıcak vurgu */
+    --line:rgba(120,200,220,.16);
+    --glass:rgba(7,28,48,.55);
+    --mono:ui-monospace,Menlo,Consolas,monospace;
+  }
+  html{scroll-behavior:smooth}
+  body{background:var(--bg);color:var(--ink);font-family:system-ui,"Segoe UI",Roboto,sans-serif;line-height:1.55;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1220px;margin:0 auto;padding:0 24px}
+  a{color:inherit;text-decoration:none}
+  /* ───────── NAV ───────── */
+  nav{position:sticky;top:0;z-index:40;display:flex;align-items:center;justify-content:space-between;
+      padding:14px 24px;background:rgba(4,16,28,.72);backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}
+  .brand{display:flex;align-items:center;gap:11px;font-weight:800;letter-spacing:.3px}
+  .brand .mk{width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,var(--cy),#0b6f86);
+      display:flex;align-items:center;justify-content:center;box-shadow:0 6px 18px rgba(25,198,212,.35)}
+  .brand small{display:block;font-weight:500;font-size:10px;color:var(--muted);letter-spacing:1.5px;text-transform:uppercase}
+  .navlinks{display:flex;gap:26px;font-size:13px;color:var(--muted)}
+  .navlinks a:hover{color:var(--cy2)}
+  .navmeta{display:flex;align-items:center;gap:16px}
+  .clock{font-family:var(--mono);font-size:13px;color:var(--muted)}
+  .online{display:flex;align-items:center;gap:7px;font-size:11px;letter-spacing:1px;color:#7fe9c4}
+  .pulse{width:8px;height:8px;border-radius:50%;background:#34d399;animation:pp 2s infinite}
+  @keyframes pp{0%{box-shadow:0 0 0 0 rgba(52,211,153,.5)}70%{box-shadow:0 0 0 9px rgba(52,211,153,0)}100%{box-shadow:0 0 0 0 rgba(52,211,153,0)}}
+  /* ───────── HERO ───────── */
+  .hero{position:relative;min-height:calc(100vh - 63px);overflow:hidden;display:flex;align-items:center;background:#04101c}
+  .hero video.bg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.92}
+  .hero::after{content:'';position:absolute;inset:0;
+      background:linear-gradient(90deg,rgba(4,16,28,.82),rgba(4,16,28,.35) 55%,rgba(4,16,28,.1) 80%)}
+  #rain{position:absolute;inset:0;z-index:2;pointer-events:none}
+  .hero .wrap{position:relative;z-index:3;display:grid;grid-template-columns:1.05fr .95fr;gap:40px;align-items:center;width:100%}
+  .eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:11px;letter-spacing:2px;text-transform:uppercase;
+      color:var(--cy2);border:1px solid var(--line);padding:6px 13px;border-radius:999px;margin-bottom:18px}
+  .eyebrow .fl{width:7px;height:7px;border-radius:50%;background:var(--amber);box-shadow:0 0 10px var(--amber);animation:flick 1.6s infinite}
+  @keyframes flick{0%,100%{opacity:1}45%{opacity:.5}}
+  .hero-copy h1{font-size:46px;line-height:1.08;font-weight:850;letter-spacing:-.8px;margin-bottom:16px;text-shadow:0 3px 24px rgba(0,0,0,.55)}
+  .hero-copy h1 span{background:linear-gradient(120deg,var(--cy2),var(--cy));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .hero-copy p{color:#cfe6f0;max-width:460px;margin-bottom:22px;font-size:15px;text-shadow:0 1px 10px rgba(0,0,0,.6)}
+  .chips{display:flex;gap:9px;flex-wrap:wrap}
+  .chip{font-size:11.5px;padding:7px 13px;border-radius:999px;background:rgba(7,28,48,.5);border:1px solid var(--line);color:#bfe0ec}
+  .chip b{color:var(--cy2)}
+  /* login kart */
+  .card{background:var(--glass);backdrop-filter:blur(16px) saturate(140%);border:1px solid var(--line);
+      border-radius:20px;padding:26px;box-shadow:0 24px 60px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.06)}
+  .ctop{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+  .lang{display:flex;gap:3px;background:rgba(255,255,255,.05);border-radius:9px;padding:3px}
+  .lang b{font-size:11px;padding:4px 9px;border-radius:7px;color:var(--muted);cursor:pointer;transition:.15s}
+  .lang b.on{background:var(--cy);color:#04101c}
+  .lastlogin{font-size:10.5px;color:var(--muted)}
+  .modes{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:18px;background:rgba(255,255,255,.04);padding:5px;border-radius:13px}
+  .mode{text-align:center;padding:9px 4px;border-radius:9px;font-size:11px;color:var(--muted);cursor:pointer;border:1px solid transparent;transition:.18s}
+  .mode:hover{color:var(--ink)}
+  .mode.on{background:linear-gradient(135deg,var(--cy),#0b6f86);color:#fff;box-shadow:0 5px 16px rgba(25,198,212,.4)}
+  .mode .i{display:block;font-size:16px;margin-bottom:3px}
+  .ttl{font-size:19px;font-weight:750}
+  .sub{font-size:12px;color:var(--muted);margin-bottom:16px}.sub b{color:var(--cy2)}
+  .lab{display:flex;justify-content:space-between;font-size:10px;letter-spacing:.7px;color:var(--muted);margin-bottom:6px;text-transform:uppercase}
+  .inp{position:relative;margin-bottom:13px}
+  .inp .ico{position:absolute;left:13px;top:50%;transform:translateY(-50%);opacity:.6}
+  .inp input{width:100%;height:46px;border-radius:12px;background:rgba(255,255,255,.06);border:1px solid var(--line);
+      padding:0 44px 0 40px;color:var(--ink);font-size:14px;outline:none;transition:.18s}
+  .inp input:focus{border-color:var(--cy);box-shadow:0 0 0 4px rgba(25,198,212,.16);background:rgba(255,255,255,.09)}
+  .inp .eye{position:absolute;right:11px;top:50%;transform:translateY(-50%);cursor:pointer;opacity:.6;background:none;border:none;color:inherit;font-size:15px}
+  .row{display:flex;justify-content:space-between;align-items:center;margin:2px 0 15px;font-size:12px}
+  .remember{display:flex;align-items:center;gap:8px;color:var(--muted);cursor:pointer}
+  .sw{width:35px;height:20px;border-radius:999px;background:rgba(255,255,255,.15);position:relative;transition:.2s;flex:none}
+  .sw::after{content:'';position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:.2s}
+  .remember.on .sw{background:var(--cy)}.remember.on .sw::after{left:17px}
+  .forgot{color:var(--cy2);cursor:pointer}
+  .btn{width:100%;height:48px;border:none;border-radius:13px;color:#04101c;font-weight:800;font-size:14px;cursor:pointer;
+      background:linear-gradient(135deg,var(--cy2),var(--cy));box-shadow:0 10px 26px rgba(25,198,212,.4);transition:.18s}
+  .btn:hover{transform:translateY(-1px);box-shadow:0 14px 32px rgba(25,198,212,.5)}
+  .btn2{width:100%;height:44px;margin-top:10px;border-radius:12px;cursor:pointer;font-size:13px;font-weight:650;color:var(--ink);
+      background:rgba(255,255,255,.05);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;gap:9px}
+  .btn2:hover{background:rgba(25,198,212,.12);border-color:var(--cy)}
+  .alt{display:flex;align-items:center;gap:11px;margin:15px 0 13px;color:var(--muted);font-size:11px}
+  .alt::before,.alt::after{content:'';flex:1;height:1px;background:var(--line)}
+  /* HUD */
+  .hud{position:absolute;z-index:5;right:22px;top:22px;display:flex;flex-direction:column;gap:9px;align-items:flex-end}
+  .toggle,.seg{background:rgba(4,16,28,.6);border:1px solid var(--line);border-radius:999px;font-size:12px}
+  .toggle{display:flex;align-items:center;gap:9px;padding:7px 13px;cursor:pointer;user-select:none}
+  .toggle .sw{background:var(--cy)}.toggle .sw::after{left:17px}
+  .toggle.off .sw{background:rgba(255,255,255,.2)}.toggle.off .sw::after{left:2px}
+  .seg{display:flex;overflow:hidden}.seg b{padding:7px 12px;cursor:pointer;font-weight:650;color:var(--muted)}
+  .seg b.on{background:linear-gradient(135deg,var(--cy),#0b6f86);color:#fff}
+  .scrolldown{position:absolute;bottom:18px;left:50%;transform:translateX(-50%);z-index:5;color:var(--muted);font-size:24px;animation:bob 1.8s infinite}
+  @keyframes bob{0%,100%{transform:translateX(-50%) translateY(0)}50%{transform:translateX(-50%) translateY(8px)}}
+  /* ───────── MİSYON BANDI ───────── */
+  .mission{padding:54px 0;text-align:center;background:
+      radial-gradient(900px 200px at 50% 0,rgba(25,198,212,.1),transparent),linear-gradient(180deg,#04101c,#061826)}
+  .mission .fire{font-size:13px;letter-spacing:3px;color:var(--amber);text-transform:uppercase;margin-bottom:14px}
+  .mission h2{font-size:34px;font-weight:850;letter-spacing:-.5px}
+  .mission h2 span{background:linear-gradient(120deg,var(--amber),#ffd08a);-webkit-background-clip:text;background-clip:text;color:transparent}
+  /* ───────── BÖLÜMLER ───────── */
+  section.blk{padding:70px 0;border-top:1px solid var(--line)}
+  .kicker{font-size:12px;letter-spacing:3px;color:var(--cy2);text-transform:uppercase;margin-bottom:8px}
+  .blk h3{font-size:28px;font-weight:800;letter-spacing:-.4px;margin-bottom:30px}
+  .reveal{opacity:0;transform:translateY(26px);transition:.7s cubic-bezier(.2,.7,.2,1)}
+  .reveal.in{opacity:1;transform:none}
+  /* hizmet kartları */
+  .pillars{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+  .pillar{position:relative;background:linear-gradient(180deg,rgba(7,28,48,.7),rgba(4,16,28,.7));border:1px solid var(--line);
+      border-radius:18px;padding:26px;overflow:hidden;transition:.25s}
+  .pillar:hover{transform:translateY(-5px);border-color:var(--cy);box-shadow:0 18px 40px rgba(0,0,0,.4)}
+  .pillar .ic{width:50px;height:50px;border-radius:13px;display:flex;align-items:center;justify-content:center;font-size:24px;
+      background:rgba(25,198,212,.14);border:1px solid var(--line);margin-bottom:16px}
+  .pillar h4{font-size:18px;margin-bottom:8px}
+  .pillar p{font-size:13px;color:var(--muted)}
+  .pillar .gl{position:absolute;right:-40px;top:-40px;width:140px;height:140px;border-radius:50%;
+      background:radial-gradient(circle,rgba(25,198,212,.18),transparent 70%)}
+  /* modül carousel */
+  .modwrap{position:relative}
+  .track{display:flex;gap:14px;overflow-x:auto;padding:6px 2px 18px;scroll-snap-type:x mandatory;scrollbar-width:thin}
+  .track::-webkit-scrollbar{height:6px}.track::-webkit-scrollbar-thumb{background:var(--line);border-radius:99px}
+  .mcard{scroll-snap-align:start;flex:0 0 220px;background:linear-gradient(180deg,rgba(7,28,48,.8),rgba(4,16,28,.85));
+      border:1px solid var(--line);border-radius:16px;padding:20px;transition:.22s}
+  .mcard:hover{transform:translateY(-5px);border-color:var(--cy);box-shadow:0 16px 36px rgba(0,0,0,.45)}
+  .mcard .top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px}
+  .mcard .em{font-size:30px}
+  .liveb{font-size:10px;font-weight:700;padding:4px 9px;border-radius:999px;background:rgba(255,157,61,.16);color:var(--amber);border:1px solid rgba(255,157,61,.3)}
+  .liveb.ok{background:rgba(52,211,153,.14);color:#5fe3b6;border-color:rgba(52,211,153,.3)}
+  .mcard h4{font-size:15px;margin-bottom:4px}
+  .mcard .spec{font-size:11.5px;color:var(--muted);font-family:var(--mono)}
+  /* stats */
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+  .stat{background:rgba(7,28,48,.5);border:1px solid var(--line);border-radius:16px;padding:24px;text-align:center}
+  .stat .v{font-size:40px;font-weight:850;background:linear-gradient(120deg,var(--cy2),var(--cy));-webkit-background-clip:text;background-clip:text;color:transparent;font-variant-numeric:tabular-nums}
+  .stat .l{font-size:12px;color:var(--muted);margin-top:6px;letter-spacing:.5px}
+  /* heatmap */
+  .heat{display:grid;grid-template-columns:repeat(10,1fr);gap:8px}
+  .hb{aspect-ratio:1.5/1;border-radius:9px;display:flex;flex-direction:column;align-items:center;justify-content:center;
+      font-size:11px;font-weight:700;cursor:default;border:1px solid rgba(255,255,255,.08);transition:.18s}
+  .hb:hover{transform:scale(1.08);z-index:2;box-shadow:0 8px 20px rgba(0,0,0,.4)}
+  .hb small{font-size:9px;font-weight:500;opacity:.85}
+  /* env */
+  .env{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+  .ev{background:linear-gradient(180deg,rgba(7,28,48,.6),rgba(4,16,28,.6));border:1px solid var(--line);border-radius:16px;padding:22px;display:flex;gap:14px;align-items:center}
+  .ev .em{font-size:30px}.ev .v{font-size:24px;font-weight:800}.ev .l{font-size:11px;color:var(--muted)}
+  /* security band */
+  .secband{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+  .sec{display:flex;gap:11px;align-items:center;background:rgba(7,28,48,.4);border:1px solid var(--line);border-radius:13px;padding:16px}
+  .sec .em{font-size:22px}.sec b{font-size:13px;display:block}.sec span{font-size:11px;color:var(--muted)}
+  /* ticker */
+  .tickerbar{overflow:hidden;border-top:1px solid var(--line);border-bottom:1px solid var(--line);background:rgba(7,28,48,.4);padding:11px 0}
+  .ticker{display:flex;gap:40px;white-space:nowrap;animation:scrollx 26s linear infinite;font-size:12.5px;color:var(--muted)}
+  .ticker b{color:var(--ink)} .ticker .d{color:var(--cy)}
+  @keyframes scrollx{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+  /* footer */
+  footer{padding:50px 0 30px;background:#030c16;border-top:1px solid var(--line)}
+  .fgrid{display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:30px;margin-bottom:30px}
+  .fcol h5{font-size:12px;letter-spacing:1.5px;text-transform:uppercase;color:var(--cy2);margin-bottom:14px}
+  .fcol a{display:block;font-size:13px;color:var(--muted);margin-bottom:9px}.fcol a:hover{color:var(--ink)}
+  .fbottom{display:flex;justify-content:space-between;align-items:center;padding-top:22px;border-top:1px solid var(--line);font-size:12px;color:var(--muted);flex-wrap:wrap;gap:10px}
+  .ftag{background:rgba(25,198,212,.14);color:var(--cy2);padding:4px 11px;border-radius:999px;font-size:11px;border:1px solid var(--line)}
+  @media(max-width:860px){
+    .hero .wrap{grid-template-columns:1fr}.hero-copy{display:none}
+    .pillars,.stats,.env,.secband{grid-template-columns:1fr 1fr}
+    .heat{grid-template-columns:repeat(5,1fr)}.fgrid{grid-template-columns:1fr 1fr}
+    .navlinks{display:none}.hero-copy h1{font-size:34px}
+  }
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div class="brand">
+    <div class="mk">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M3 20h18M5 20V9l7-5 7 5v11M9 20v-6h6v6" stroke="#fff" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/></svg>
+    </div>
+    <div>Kampüs YYS<small>AVS · Filyos Operasyon</small></div>
+  </div>
+  <div class="navlinks">
+    <a href="#modules">Modüller</a><a href="#stats">Sayılarla</a><a href="#heat">Bloklar</a><a href="#env">Filyos</a><a href="#sec">Güvenlik</a>
+  </div>
+  <div class="navmeta">
+    <span class="clock" id="clock">--:--:--</span>
+    <span class="online"><span class="pulse"></span>ONLINE</span>
+  </div>
+</nav>
+
+<!-- HERO -->
+<header class="hero">
+  <video class="bg" autoplay muted loop playsinline poster="D2-night-bright.png">
+    <source src="hero-night.mp4" type="video/mp4">
+  </video>
+  <canvas id="rain"></canvas>
+  <div class="hud">
+    <div class="seg" id="motion"><b>Sakin</b><b class="on">Yavaş</b><b>Normal</b></div>
+    <div class="toggle" id="raintoggle"><span>🌧️ Yağmur</span><span class="sw"></span></div>
+  </div>
+
+  <div class="wrap">
+    <div class="hero-copy">
+      <span class="eyebrow"><span class="fl"></span>AVS Kamp Alanı · Filyos · Zonguldak</span>
+      <h1>814 yatak, 19 blok,<br><span>tek operasyon merkezi.</span></h1>
+      <p>Konaklama, bakım, çamaşırhane ve personel operasyonunu tek panelden yönetin. Açık denizin sönmeyen ateşiyle aynı disiplinde — 7/24 canlı.</p>
+      <div class="chips">
+        <span class="chip"><b>10</b> entegre modül</span>
+        <span class="chip"><b>RBAC</b> + 2FA</span>
+        <span class="chip"><b>Canlı</b> Filyos hava/deniz</span>
+      </div>
+    </div>
+
+    <!-- LOGIN KART -->
+    <div class="card">
+      <div class="ctop">
+        <div class="lang"><b class="on">TR</b><b>EN</b><b>AR</b></div>
+        <div class="lastlogin">Son giriş: dün 18:42</div>
+      </div>
+      <div class="modes">
+        <div class="mode on"><span class="i">👤</span>Personel</div>
+        <div class="mode"><span class="i">🛡️</span>Yönetici</div>
+        <div class="mode"><span class="i">🚪</span>Güvenlik</div>
+        <div class="mode"><span class="i">📟</span>Kiosk</div>
+      </div>
+      <div class="ttl">Personel Girişi</div>
+      <div class="sub">Yetkili hesabınızla oturum açın · <b>RBAC aktif</b></div>
+      <div class="lab"><span>Kullanıcı Adı</span><span>SİCİL / TC / E-POSTA</span></div>
+      <div class="inp"><span class="ico">👤</span><input placeholder="örn. selam.aydin"></div>
+      <div class="lab"><span>Şifre</span><span>CAPS-LOCK KAPALI</span></div>
+      <div class="inp"><span class="ico">🔒</span><input type="password" placeholder="••••••••"><button class="eye">👁️</button></div>
+      <div class="row">
+        <span class="remember on"><span class="sw"></span>Beni hatırla</span>
+        <span class="forgot">Şifremi unuttum</span>
+      </div>
+      <button class="btn">Sisteme Giriş Yap →</button>
+      <div class="alt">veya</div>
+      <button class="btn2">🔑 Passkey / Biyometrik ile giriş</button>
+    </div>
+  </div>
+  <div class="scrolldown">⌄</div>
+</header>
+
+<!-- MİSYON -->
+<div class="mission">
+  <div class="fire">🔥 Misyon</div>
+  <h2>Kampüsün <span>kesintisiz nefesi</span> biziz.</h2>
+</div>
+
+<!-- HİZMET KARTLARI -->
+<section class="blk reveal">
+  <div class="wrap">
+    <div class="kicker">Operasyon alanları</div>
+    <h3>Üç ana eksende tam kontrol</h3>
+    <div class="pillars">
+      <div class="pillar"><div class="gl"></div><div class="ic">🛏️</div><h4>Konaklama & Operasyon</h4><p>Oda/yatak atama, check-in/out, ziyaretçi ve disiplin akışları — gerçek zamanlı doluluk.</p></div>
+      <div class="pillar"><div class="gl"></div><div class="ic">🔧</div><h4>Tesis & Bakım</h4><p>Arıza takibi, bakım planı, zimmet ve çamaşırhane lojistiği tek panelde.</p></div>
+      <div class="pillar"><div class="gl"></div><div class="ic">👥</div><h4>Personel & İK</h4><p>Vardiya, puantaj, yemekhane ve raporlama — KVKK uyumlu, rol bazlı erişim.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- MODÜL CAROUSEL -->
+<section class="blk reveal" id="modules">
+  <div class="wrap">
+    <div class="kicker">Filo</div>
+    <h3>10 entegre modül — canlı durum</h3>
+    <div class="modwrap"><div class="track">
+      <div class="mcard"><div class="top"><span class="em">🛏️</span><span class="liveb ok">%87 dolu</span></div><h4>Oda & Yatak</h4><div class="spec">814 yatak · 19 blok</div></div>
+      <div class="mcard"><div class="top"><span class="em">📋</span><span class="liveb ok">bugün 8</span></div><h4>Check-in/out</h4><div class="spec">giriş/çıkış akışı</div></div>
+      <div class="mcard"><div class="top"><span class="em">🔧</span><span class="liveb">3 açık</span></div><h4>Arıza & Bakım</h4><div class="spec">SLA takipli</div></div>
+      <div class="mcard"><div class="top"><span class="em">📦</span><span class="liveb ok">imzalı</span></div><h4>Zimmet</h4><div class="spec">dijital imza</div></div>
+      <div class="mcard"><div class="top"><span class="em">⚖️</span><span class="liveb ok">0 aktif</span></div><h4>Disiplin</h4><div class="spec">kayıt & uyarı</div></div>
+      <div class="mcard"><div class="top"><span class="em">📅</span><span class="liveb ok">3 vardiya</span></div><h4>Vardiya</h4><div class="spec">puantaj entegre</div></div>
+      <div class="mcard"><div class="top"><span class="em">🍽️</span><span class="liveb ok">açık</span></div><h4>Yemekhane</h4><div class="spec">menü & sayım</div></div>
+      <div class="mcard"><div class="top"><span class="em">🧺</span><span class="liveb">12 torba</span></div><h4>Çamaşırhane</h4><div class="spec">kiosk akışı</div></div>
+      <div class="mcard"><div class="top"><span class="em">🚪</span><span class="liveb ok">2 içeride</span></div><h4>Ziyaretçi</h4><div class="spec">kapı kontrol</div></div>
+      <div class="mcard"><div class="top"><span class="em">📈</span><span class="liveb ok">e-posta</span></div><h4>Raporlama</h4><div class="spec">günlük özet</div></div>
+    </div></div>
+  </div>
+</section>
+
+<!-- SAYILARLA -->
+<section class="blk reveal" id="stats">
+  <div class="wrap">
+    <div class="kicker">Sayılarla AVS</div>
+    <h3>Kampüs bir bakışta</h3>
+    <div class="stats">
+      <div class="stat"><div class="v" data-to="87" data-suffix="%">0</div><div class="l">Doluluk oranı</div></div>
+      <div class="stat"><div class="v" data-to="708">0</div><div class="l">Dolu yatak / 814</div></div>
+      <div class="stat"><div class="v" data-to="19">0</div><div class="l">Aktif blok</div></div>
+      <div class="stat"><div class="v" data-to="142">0</div><div class="l">Aktif personel</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- HEATMAP -->
+<section class="blk reveal" id="heat">
+  <div class="wrap">
+    <div class="kicker">Yeni</div>
+    <h3>19 blok doluluk haritası</h3>
+    <div class="heat" id="heatgrid"></div>
+  </div>
+</section>
+
+<!-- FİLYOS ORTAM -->
+<section class="blk reveal" id="env">
+  <div class="wrap">
+    <div class="kicker">Canlı · open-meteo</div>
+    <h3>Filyos anlık ortam</h3>
+    <div class="env">
+      <div class="ev"><span class="em">🌡️</span><div><div class="v">14°</div><div class="l">Sıcaklık · Parçalı bulutlu</div></div></div>
+      <div class="ev"><span class="em">💨</span><div><div class="v">12 kn</div><div class="l">Rüzgâr · KB</div></div></div>
+      <div class="ev"><span class="em">🌊</span><div><div class="v">0.8 m</div><div class="l">Dalga yüksekliği</div></div></div>
+      <div class="ev"><span class="em">🌅</span><div><div class="v">06:42</div><div class="l">Gün doğumu</div></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- GÜVENLİK BANDI -->
+<section class="blk reveal" id="sec">
+  <div class="wrap">
+    <div class="kicker">Sistem & Güvenlik</div>
+    <h3>Kurumsal güvence</h3>
+    <div class="secband">
+      <div class="sec"><span class="em">🔒</span><div><b>TLS 1.3</b><span>uçtan uca şifreli</span></div></div>
+      <div class="sec"><span class="em">🛡️</span><div><b>RBAC + 2FA</b><span>rol bazlı + TOTP</span></div></div>
+      <div class="sec"><span class="em">💾</span><div><b>Gece yedeği</b><span>her gün 03:00</span></div></div>
+      <div class="sec"><span class="em">⚡</span><div><b>%99.9 uptime</b><span>KampüsERP v5.0</span></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- TICKER -->
+<div class="tickerbar"><div class="ticker" id="tk"></div></div>
+
+<!-- FOOTER -->
+<footer>
+  <div class="wrap">
+    <div class="fgrid">
+      <div class="fcol">
+        <div class="brand" style="margin-bottom:14px"><div class="mk"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M3 20h18M5 20V9l7-5 7 5v11M9 20v-6h6v6" stroke="#fff" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/></svg></div><div>Kampüs YYS<small>AVS · Filyos Operasyon</small></div></div>
+        <p style="font-size:13px;color:var(--muted);max-width:300px">Şantiye yatakhane yönetim sistemi. 8 modül, 19 blok, 814 yatak — tek panelden 7/24.</p>
+      </div>
+      <div class="fcol"><h5>Sistem</h5><a href="#">Modüller</a><a href="#">Sayılarla</a><a href="#">Bloklar</a><a href="#">Güvenlik</a></div>
+      <div class="fcol"><h5>Yasal</h5><a href="#">KVKK & Gizlilik</a><a href="#">Kullanım Koşulları</a><a href="#">Çerez Politikası</a></div>
+      <div class="fcol"><h5>Destek</h5><a href="#">Yardım Merkezi</a><a href="#">İletişim</a><a href="#">Sistem Durumu</a></div>
+    </div>
+    <div class="fbottom">
+      <span>© 2026 AVS Kamp Alanı · Filyos · Zonguldak</span>
+      <span class="ftag">Powered by KampüsERP v5.0</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+  // saat
+  setInterval(()=>{document.getElementById('clock').textContent=new Date().toTimeString().slice(0,8)},1000);
+
+  // scroll reveal
+  const io=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting)e.target.classList.add('in')}),{threshold:.15});
+  document.querySelectorAll('.reveal').forEach(el=>io.observe(el));
+
+  // count-up
+  const cio=new IntersectionObserver(es=>es.forEach(e=>{
+    if(!e.isIntersecting)return; cio.unobserve(e.target);
+    const to=+e.target.dataset.to, sfx=e.target.dataset.suffix||''; let v=0;
+    const step=()=>{v+=to/45; if(v>=to){e.target.textContent=to+sfx;return} e.target.textContent=Math.floor(v)+sfx; requestAnimationFrame(step)}; step();
+  }),{threshold:.5});
+  document.querySelectorAll('.stat .v').forEach(el=>cio.observe(el));
+
+  // heatmap (19 blok)
+  const blocks=['M1','M2','M3','S1','S2','S3','A','A1','B','C','D','E','F','G','H','J','A2','A3','A4'];
+  const grid=document.getElementById('heatgrid');
+  blocks.forEach(b=>{
+    const pct=40+Math.floor(Math.random()*58);
+    const c=pct<60?'#1fa971':pct<80?'#d6a020':'#d6453f';
+    const el=document.createElement('div');el.className='hb';
+    el.style.background=`linear-gradient(180deg,${c}22,${c}44)`;el.style.borderColor=c+'66';el.style.color='#eaf6fb';
+    el.innerHTML=`${b}<small>%${pct}</small>`;el.title=`${b} bloğu · %${pct} dolu`;grid.appendChild(el);
+  });
+
+  // ticker
+  const items=['<b>Sistem</b> çevrimiçi · TLS 1.3 · RBAC','<b>Açık arıza</b> 3 kayıt','<b>Departman</b> 6 aktif','<b>Gece yedeği</b> 03:00','<b>KampüsERP</b> v5.0 · 814 yatak · 19 blok'];
+  const tk=document.getElementById('tk');
+  const html=items.map(i=>`<span>${i}</span>`).join('<span class="d">●</span>');
+  tk.innerHTML=html+'<span class="d">●</span>'+html;
+
+  // HUD demo toggles
+  document.getElementById('raintoggle').onclick=function(){this.classList.toggle('off')};
+  document.querySelectorAll('#motion b').forEach(b=>b.onclick=function(){document.querySelectorAll('#motion b').forEach(x=>x.classList.remove('on'));this.classList.add('on')});
+  document.querySelectorAll('.mode').forEach(m=>m.onclick=function(){document.querySelectorAll('.mode').forEach(x=>x.classList.remove('on'));this.classList.add('on')});
+
+  // hafif yağmur canvas
+  const cv=document.getElementById('rain'),ctx=cv.getContext('2d');
+  function size(){cv.width=cv.offsetWidth;cv.height=cv.offsetHeight}size();addEventListener('resize',size);
+  const drops=Array.from({length:90},()=>({x:Math.random()*cv.width,y:Math.random()*cv.height,l:8+Math.random()*12,s:3+Math.random()*4}));
+  (function rain(){ctx.clearRect(0,0,cv.width,cv.height);ctx.strokeStyle='rgba(150,210,230,.25)';ctx.lineWidth=1;
+    drops.forEach(d=>{ctx.beginPath();ctx.moveTo(d.x,d.y);ctx.lineTo(d.x-1,d.y+d.l);ctx.stroke();d.y+=d.s*2;d.x-=.4;if(d.y>cv.height){d.y=-10;d.x=Math.random()*cv.width}});
+    requestAnimationFrame(rain)})();
+</script>
+</body>
+</html>

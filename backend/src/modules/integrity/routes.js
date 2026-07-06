@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { requireRole } from '../../shared/auth/middleware.js'
 import { logAudit } from '../../shared/audit.js'
 import { getDB } from '../../shared/db/index.js'
+import { logger } from '../../shared/logger.js'
 
 export const integrityRouter = Router()
 const mgr = requireRole('campus_manager')
@@ -119,19 +120,25 @@ integrityRouter.get('/scan', ...view, (req, res) => {
       info: issues.filter(i => i.severity === 'info').length,
     }
     res.json({ scanned_at: new Date().toISOString(), counts, issues })
-  } catch (e) { console.error('[integrity/scan]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[integrity/scan]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 // ── S2: KVKK V2 — veri silme talepleri ──
 integrityRouter.get('/kvkk', ...mgr, (req, res) => {
   try {
     const db = getDB()
-    let q = `SELECT * FROM kvkk_requests WHERE 1=1`
+    // days_left: KVKK m.13 — başvuruya 30 gün içinde yanıt zorunlu.
+    // Bekleyen taleplerde kalan gün (negatif = yasal süre AŞILDI), karara bağlananlarda null.
+    let q = `SELECT *,
+      CASE WHEN status = 'pending'
+        THEN CAST(julianday(created_at, '+30 day') - julianday('now') AS INTEGER)
+        ELSE NULL END AS days_left
+      FROM kvkk_requests WHERE 1=1`
     const params = []
     if (req.query.status) { q += ' AND status = ?'; params.push(req.query.status) }
     q += ' ORDER BY created_at DESC LIMIT 200'
     res.json(db.prepare(q).all(...params))
-  } catch (e) { console.error('[kvkk/list]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[kvkk/list]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 integrityRouter.post('/kvkk', ...mgr, (req, res) => {
@@ -238,7 +245,7 @@ integrityRouter.get('/audit-summary', ...view, (req, res) => {
     `).all(days)
 
     res.json({ days, by_action: byAction, by_user: byUser, daily_trend: dailyTrend })
-  } catch (e) { console.error('[audit-summary]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[audit-summary]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 // ── S4: Backup restore test ──
@@ -255,5 +262,5 @@ integrityRouter.get('/backup-status', ...view, (req, res) => {
       SELECT * FROM backup_log ORDER BY created_at DESC LIMIT 10
     `).all()
     res.json({ backups: recent })
-  } catch (e) { console.error('[backup-status]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[backup-status]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })

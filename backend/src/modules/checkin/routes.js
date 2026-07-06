@@ -5,6 +5,9 @@ import { setKioskPin } from '../../shared/auth/service.js'
 import { getDB } from '../../shared/db/index.js'
 import * as svc from './service.js'
 import { insertPlaceholderBatch } from './queries.js'
+import { logger } from '../../shared/logger.js'
+import { validate } from '../../shared/middleware/validate.js'
+import { registerSchema, zimmetSchema, placeholderBatchSchema, assignRoomSchema, setShiftSchema, zimmetSignSchema, zimmetReturnSchema, zimmetReturnAllSchema } from './schemas.js'
 
 export const checkinRouter = Router()
 const allowed = requireRole('campus_manager', 'shift_supervisor')
@@ -28,12 +31,9 @@ checkinRouter.get('/search', ...allowed, (req, res) => {
   res.json(svc.searchResidentsService(q.trim()))
 })
 
-checkinRouter.post('/register', ...allowed, (req, res) => {
+checkinRouter.post('/register', ...allowed, validate(registerSchema), (req, res) => {
   try {
-    const { full_name, tc_no, passport_no } = req.body
-    if (!full_name || full_name.trim().length < 3) return res.status(400).json({ error: 'Ad soyad en az 3 karakter olmalı' })
-    if (tc_no && !/^\d{11}$/.test(tc_no)) return res.status(400).json({ error: 'TC kimlik no 11 haneli olmalı' })
-    const result = svc.registerService(req.body, req.user.id)
+    const result = svc.registerService(req.validated, req.user.id)
     res.status(201).json(result)
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
@@ -49,41 +49,22 @@ checkinRouter.get('/available-rooms', ...allowed, (req, res) => {
   res.json(svc.getAvailableRoomsService(req.query.block || null))
 })
 
-checkinRouter.post('/assign-room', ...allowed, (req, res) => {
+checkinRouter.post('/assign-room', ...allowed, validate(assignRoomSchema), (req, res) => {
   try {
-    const { personnel_id, room_id } = req.body
-    if (!personnel_id || !room_id) return res.status(400).json({ error: 'Personel ve oda ID gerekli' })
+    const { personnel_id, room_id } = req.validated
     const bedNo = svc.assignRoomService(personnel_id, room_id, req.user.id)
     res.json({ bed_no: bedNo })
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
-checkinRouter.post('/zimmet', ...allowed, (req, res) => {
-  const personnelId = Number(req.body.personnel_id)
-  const items = req.body.items
-  if (!Number.isInteger(personnelId) || personnelId <= 0) {
-    return res.status(400).json({ error: 'Geçerli personnel_id gerekli' })
-  }
-  if (!Array.isArray(items) || items.length === 0) {
-    return res.status(400).json({ error: 'En az bir kalem gerekli' })
-  }
-  for (const it of items) {
-    if (!it || typeof it.item_name !== 'string' || it.item_name.trim() === '') {
-      return res.status(400).json({ error: 'Her kalemin item_name değeri gerekli' })
-    }
-    const q = Number(it.quantity ?? 1)
-    if (!Number.isFinite(q) || q <= 0) {
-      return res.status(400).json({ error: 'Geçersiz miktar' })
-    }
-  }
-  svc.zimmetService(personnelId, items, req.user.id)
+checkinRouter.post('/zimmet', ...allowed, validate(zimmetSchema), (req, res) => {
+  const { personnel_id, items } = req.validated
+  svc.zimmetService(personnel_id, items, req.user.id)
   res.status(201).json({ ok: true })
 })
 
-checkinRouter.post('/zimmet/sign', ...allowed, (req, res) => {
-  const { personnel_id, signature } = req.body
-  if (!personnel_id || !signature) return res.status(400).json({ error: 'Personel ID ve imza gerekli' })
-  if (!signature.startsWith('data:image/')) return res.status(400).json({ error: 'Geçersiz imza formatı' })
+checkinRouter.post('/zimmet/sign', ...allowed, validate(zimmetSignSchema), (req, res) => {
+  const { personnel_id, signature } = req.validated
   svc.signZimmetService(personnel_id, signature, req.user.id)
   res.json({ ok: true })
 })
@@ -115,9 +96,8 @@ checkinRouter.get('/job-suggestions', ...allowed, (req, res) => {
   res.json(svc.getJobSuggestionsService())
 })
 
-checkinRouter.post('/set-shift', ...allowed, (req, res) => {
-  const { personnel_id, shift_type } = req.body
-  if (!['day', 'night'].includes(shift_type)) return res.status(400).json({ error: 'Geçersiz vardiya tipi' })
+checkinRouter.post('/set-shift', ...allowed, validate(setShiftSchema), (req, res) => {
+  const { personnel_id, shift_type } = req.validated
   svc.setShiftService(personnel_id, shift_type)
   res.json({ ok: true })
 })
@@ -128,16 +108,14 @@ checkinRouter.get('/zimmet/:personnelId', ...allowed, (req, res) => {
   res.json(svc.getPersonnelZimmetService(+req.params.personnelId))
 })
 
-checkinRouter.post('/zimmet/return', ...allowed, (req, res) => {
-  const { zimmet_id, condition } = req.body
-  if (!zimmet_id) return res.status(400).json({ error: 'Zimmet ID gerekli' })
+checkinRouter.post('/zimmet/return', ...allowed, validate(zimmetReturnSchema), (req, res) => {
+  const { zimmet_id, condition } = req.validated
   svc.returnZimmetService(zimmet_id, condition)
   res.json({ ok: true })
 })
 
-checkinRouter.post('/zimmet/return-all', ...allowed, (req, res) => {
-  const { personnel_id, condition } = req.body
-  if (!personnel_id) return res.status(400).json({ error: 'Personel ID gerekli' })
+checkinRouter.post('/zimmet/return-all', ...allowed, validate(zimmetReturnAllSchema), (req, res) => {
+  const { personnel_id, condition } = req.validated
   svc.returnAllZimmetService(personnel_id, condition)
   res.json({ ok: true })
 })
@@ -191,7 +169,7 @@ checkinRouter.delete('/:id/kiosk-pin', ...requireRole('campus_manager'), (req, r
   try {
     getDB().prepare('UPDATE personnel SET kiosk_pin=NULL WHERE id=?').run(+req.params.id)
     res.json({ ok: true })
-  } catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  } catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 // ── Photo Upload ──────────────────────────────────────────────────────────────
@@ -205,12 +183,10 @@ checkinRouter.post('/photo/:personnelId', ...allowed, upload.single('photo'), ve
 })
 
 // ── Placeholder Batch ─────────────────────────────────────────────────────────
-checkinRouter.post('/placeholder-batch', ...allowed, (req, res) => {
-  const { room_id, count } = req.body
-  if (!room_id || !count || count < 1 || count > 10)
-    return res.status(400).json({ error: 'room_id ve count (1-10) gerekli' })
+checkinRouter.post('/placeholder-batch', ...allowed, validate(placeholderBatchSchema), (req, res) => {
+  const { room_id, count } = req.validated
   try {
-    const ids = insertPlaceholderBatch(Number(room_id), Number(count), req.user.id)
+    const ids = insertPlaceholderBatch(room_id, count, req.user.id)
     res.status(201).json({ ids })
   } catch (e) { res.status(400).json({ error: e.message }) }
 })

@@ -2,6 +2,10 @@ import { Router } from 'express'
 import { requireRole } from '../../shared/auth/middleware.js'
 import { logAudit } from '../../shared/audit.js'
 import { getDB } from '../../shared/db/index.js'
+import { logger } from '../../shared/logger.js'
+import { validate } from '../../shared/middleware/validate.js'
+import { logMealSchema, selectionSchema, dietSchema, menuSchema } from './schemas.js'
+import { mealDayFor, localDay } from './service.js'
 
 export const mealsRouter = Router()
 const mgr = requireRole('campus_manager', 'shift_supervisor')
@@ -10,12 +14,9 @@ const view = requireRole('campus_manager', 'shift_supervisor', 'laundry', 'house
 const VALID_MEALS = ['breakfast', 'lunch', 'dinner', 'snack']
 
 // ── YM1: Öğün okutma ──
-mealsRouter.post('/log', ...mgr, (req, res) => {
+mealsRouter.post('/log', ...mgr, validate(logMealSchema), (req, res) => {
   try {
-    const { staff_id, meal_type, meal_date, qr_token, cost, method = 'manual' } = req.body || {}
-    if (!meal_type || !VALID_MEALS.includes(meal_type)) {
-      return res.status(400).json({ error: 'Geçersiz meal_type' })
-    }
+    const { staff_id, meal_type, meal_date, qr_token, cost, method } = req.validated
 
     const db = getDB()
     let sid = staff_id ? +staff_id : null
@@ -29,7 +30,7 @@ mealsRouter.post('/log', ...mgr, (req, res) => {
     }
     if (!sid) return res.status(400).json({ error: 'staff_id veya qr_token gerekli' })
 
-    const date = meal_date || new Date().toISOString().slice(0, 10)
+    const date = meal_date || mealDayFor(db)
     try {
       const id = db.prepare(`
         INSERT INTO meal_logs(staff_id, meal_type, meal_date, logged_by, method, cost)
@@ -44,14 +45,14 @@ mealsRouter.post('/log', ...mgr, (req, res) => {
       }
       throw e
     }
-  } catch (e) { console.error('[meals/log]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[meals/log]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 // Günlük dağılım
 mealsRouter.get('/daily', ...view, (req, res) => {
   try {
-    const date = req.query.date || new Date().toISOString().slice(0, 10)
     const db = getDB()
+    const date = req.query.date || mealDayFor(db)
     const counts = db.prepare(`
       SELECT meal_type, COUNT(*) as count, SUM(COALESCE(cost, 0)) as total_cost
       FROM meal_logs WHERE meal_date = ? GROUP BY meal_type
@@ -68,7 +69,7 @@ mealsRouter.get('/daily', ...view, (req, res) => {
       LIMIT 500
     `).all(date)
     res.json({ date, counts, logs })
-  } catch (e) { console.error('[meals/daily]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[meals/daily]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 mealsRouter.delete('/log/:id', ...mgr, (req, res) => {
@@ -78,13 +79,80 @@ mealsRouter.delete('/log/:id', ...mgr, (req, res) => {
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
+// ── YM6 (Faz 8): Ertesi-gün öğün seçimi — personel yarın için seçer ──
+mealsRouter.put('/selection', ...mgr, validate(selectionSchema), (req, res) => {
+  try {
+    const { staff_id, meal_date, meal_type } = req.validated
+    const attending = req.validated.attending ? 1 : 0
+    getDB().prepare(`
+      INSERT INTO meal_selections(staff_id, meal_date, meal_type, attending)
+      VALUES(?,?,?,?)
+      ON CONFLICT(staff_id, meal_date, meal_type)
+      DO UPDATE SET attending=excluded.attending, updated_at=datetime('now')
+    `).run(+staff_id, meal_date, meal_type, attending)
+    res.json({ ok: true, staff_id: +staff_id, meal_date, meal_type, attending })
+  } catch (e) { logger.error('[meals/selection]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// Mutfak sayımı — bir gün için seçim yapan (attending=1) kişi sayısı (öğün bazlı)
+mealsRouter.get('/selection-counts', ...view, (req, res) => {
+  try {
+    const date = req.query.date || localDay(getDB(), 1)
+    const counts = getDB().prepare(`
+      SELECT meal_type, COUNT(*) AS count
+      FROM meal_selections WHERE meal_date=? AND attending=1
+      GROUP BY meal_type
+    `).all(date)
+    res.json({ date, counts })
+  } catch (e) { logger.error('[meals/selection-counts]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// ── YM5 (Faz 4): Katılım / no-show raporu — vardiyalı vs gerçekten yiyen ──
+// Belirli gün+öğün için: hak sahibi (o gün vardiyada) personel ile meal_logs'u
+// karşılaştırır; okutmayan = no-show (israf/sayım metriği).
+mealsRouter.get('/attendance', ...view, (req, res) => {
+  try {
+    const date = req.query.date || mealDayFor(getDB())
+    const mealType = req.query.meal_type
+    if (mealType && !VALID_MEALS.includes(mealType)) {
+      return res.status(400).json({ error: 'Geçersiz meal_type' })
+    }
+    const db = getDB()
+    // O gün hak sahibi personel (vardiyada planlı/çalışmış)
+    const entitled = db.prepare(`
+      SELECT ss.staff_id, s.full_name, d.name AS dept_name
+      FROM shift_schedule ss
+      JOIN staff s ON s.id = ss.staff_id
+      LEFT JOIN departments d ON d.id = s.department_id
+      WHERE ss.work_date = ? AND ss.status IN ('scheduled','worked','overtime')
+    `).all(date)
+
+    // O gün (opsiyonel öğün filtresiyle) yemek almış staff id'leri
+    const ateRows = mealType
+      ? db.prepare('SELECT DISTINCT staff_id FROM meal_logs WHERE meal_date=? AND meal_type=?').all(date, mealType)
+      : db.prepare('SELECT DISTINCT staff_id FROM meal_logs WHERE meal_date=?').all(date)
+    const ateSet = new Set(ateRows.map(r => r.staff_id))
+
+    const noShow = entitled
+      .filter(e => !ateSet.has(e.staff_id))
+      .map(e => ({ staff_id: e.staff_id, full_name: e.full_name, dept_name: e.dept_name }))
+
+    res.json({
+      date,
+      meal_type: mealType || null,
+      scheduled: entitled.length,
+      ate: entitled.filter(e => ateSet.has(e.staff_id)).length,
+      no_show_count: noShow.length,
+      no_show: noShow,
+    })
+  } catch (e) { logger.error('[meals/attendance]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
 // ── YM3: Talep tahmini (yarın için kaç kişi yemek bekleniyor) ──
 mealsRouter.get('/forecast', ...view, (req, res) => {
   try {
-    const targetDate = req.query.date || (() => {
-      const d = new Date(); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10)
-    })()
     const db = getDB()
+    const targetDate = req.query.date || localDay(db, 1)
     // O gün vardiyada olacak personel sayısı
     const scheduled = db.prepare(`
       SELECT COUNT(DISTINCT staff_id) as c FROM shift_schedule
@@ -114,13 +182,13 @@ mealsRouter.get('/forecast', ...view, (req, res) => {
     `).all(targetDate)
 
     res.json({ date: targetDate, scheduled, averages: avg, diet_summary: diets })
-  } catch (e) { console.error('[meals/forecast]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[meals/forecast]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 // ── YM2: Diyet flag set/unset ──
-mealsRouter.put('/staff/:id/diet', ...mgr, (req, res) => {
+mealsRouter.put('/staff/:id/diet', ...mgr, validate(dietSchema), (req, res) => {
   try {
-    const flags = req.body?.diet_flags || null
+    const flags = req.validated.diet_flags || null
     getDB().prepare('UPDATE staff SET diet_flags = ? WHERE id = ?').run(flags, +req.params.id)
     res.json({ ok: true })
   } catch (e) { res.status(400).json({ error: e.message }) }
@@ -129,12 +197,10 @@ mealsRouter.put('/staff/:id/diet', ...mgr, (req, res) => {
 // ── YM4: Maliyet özeti — kişi başı + aylık ──
 mealsRouter.get('/cost-summary', ...view, (req, res) => {
   try {
-    const ym = req.query.month || new Date().toISOString().slice(0, 7)
-    const start = `${ym}-01`
-    const endDate = new Date(start); endDate.setMonth(endDate.getMonth() + 1)
-    const end = endDate.toISOString().slice(0, 10)
-
     const db = getDB()
+    const ym = req.query.month || mealDayFor(db).slice(0, 7)
+    const start = `${ym}-01`
+    const end = db.prepare("SELECT date(?, '+1 month') AS d").get(start).d
     const perStaff = db.prepare(`
       SELECT s.id, s.full_name, d.name as dept_name,
         COUNT(*) as meal_count,
@@ -157,5 +223,26 @@ mealsRouter.get('/cost-summary', ...view, (req, res) => {
     `).all(start, end)
 
     res.json({ month: ym, by_meal: total, by_staff: perStaff })
-  } catch (e) { console.error('[meals/cost]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[meals/cost]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// ── Menü ──
+mealsRouter.get('/menu', ...view, (req, res) => {
+  try {
+    const date = req.query.date || mealDayFor(getDB())
+    const rows = getDB().prepare('SELECT meal_type, items FROM meal_menu WHERE meal_date=?').all(date)
+    res.json(rows)
+  } catch (e) { logger.error('[meals/menu get]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+mealsRouter.put('/menu', ...mgr, validate(menuSchema), (req, res) => {
+  const { meal_date, meal_type, items } = req.validated
+  try {
+    getDB().prepare(`
+      INSERT INTO meal_menu(meal_date, meal_type, items) VALUES(?,?,?)
+      ON CONFLICT(meal_date, meal_type) DO UPDATE SET items=excluded.items, updated_at=datetime('now')
+    `).run(meal_date, meal_type, items ?? null)
+    logAudit(req.user.id, 'meal_menu_set', 'meals', null, `${meal_date} ${meal_type}`)
+    res.json({ ok: true })
+  } catch (e) { logger.error('[meals/menu put]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })

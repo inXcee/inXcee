@@ -1,4 +1,5 @@
 import { verifyToken } from '../../shared/auth/service.js'
+import { logger } from '../../shared/logger.js'
 
 const MOBILE_ROLES = new Set(['housekeeper', 'technical', 'laundry', 'shift_supervisor', 'campus_manager'])
 
@@ -12,7 +13,7 @@ export function requireMobile(...roles) {
       if (!allowed.has(req.user.role)) return res.status(403).json({ error: 'Yetkisiz' })
       next()
     } catch (e) {
-      console.warn('[MobileAuth] Token verification failed:', e.message)
+      logger.warn('[MobileAuth] Token verification failed:', e.message)
       res.status(401).json({ error: 'Geçersiz token' })
     }
   }

@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { requireRole } from '../../shared/auth/middleware.js'
 import * as svc from './service.js'
+import { logger } from '../../shared/logger.js'
 
 export const roomHistoryRouter = Router()
 const access = requireRole('campus_manager', 'shift_supervisor', 'housekeeper', 'technical')
@@ -10,7 +11,7 @@ roomHistoryRouter.get('/summary', ...access, (req, res) => {
     const days = Math.min(Math.max(parseInt(req.query.days) || 7, 1), 90)
     res.json(svc.getRoomSummaryService(days))
   } catch (err) {
-    console.error('Room history summary error:', err.message)
+    logger.error('Room history summary error:', err.message)
     res.status(500).json({ error: 'Özet verileri alınamadı' })
   }
 })
@@ -22,7 +23,7 @@ roomHistoryRouter.get('/room/:block/:roomNo', ...access, (req, res) => {
     if (!result.room) return res.status(404).json({ error: 'Oda bulunamadı' })
     res.json(result)
   } catch (err) {
-    console.error('Room timeline error:', err.message)
+    logger.error('Room timeline error:', err.message)
     res.status(500).json({ error: 'Oda geçmişi alınamadı' })
   }
 })

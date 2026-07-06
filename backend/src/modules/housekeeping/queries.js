@@ -2,7 +2,9 @@ import { getDB } from '../../shared/db/index.js'
 
 export function generateDailyTasks(date = new Date()) {
   const db = getDB()
-  const dateStr  = date.toISOString().split('T')[0]
+  // YEREL tarih (toISOString UTC döndürür — 00:00-03:00 TR arasında üretim
+  // dünün tarihini basardı; sv-SE locale'i YYYY-MM-DD verir)
+  const dateStr  = date.toLocaleDateString('sv-SE')
   const scheduled = `${dateStr} 08:00:00`
   const insert = db.prepare(`
     INSERT OR IGNORE INTO cleaning_tasks(area, block, floor, task_type, scheduled_at, qr_location)
@@ -29,7 +31,11 @@ export function generateDailyTasks(date = new Date()) {
 
 export function getTasks({ assigned_to, date, block, uncleaned } = {}) {
   const db = getDB()
-  let q = `SELECT ct.*, u.full_name as assignee_name FROM cleaning_tasks ct LEFT JOIN users u ON u.id=ct.assigned_to WHERE 1=1`
+  let q = `SELECT ct.*, u.full_name as assignee_name, w.full_name as worker_name
+           FROM cleaning_tasks ct
+           LEFT JOIN users u ON u.id=ct.assigned_to
+           LEFT JOIN staff w ON w.id=ct.completed_by_worker_id
+           WHERE 1=1`
   const params = []
   if (assigned_to) { q += ' AND ct.assigned_to=?'; params.push(assigned_to) }
   if (date)        { q += ' AND DATE(ct.scheduled_at)=?'; params.push(date) }
@@ -39,14 +45,15 @@ export function getTasks({ assigned_to, date, block, uncleaned } = {}) {
   return db.prepare(q).all(...params)
 }
 
-export function completeTask(taskId, userId, checklist, viaQr = false) {
+export function completeTask(taskId, userId, checklist, viaQr = false, photoUrl = null) {
   const db = getDB()
   db.prepare(`
     UPDATE cleaning_tasks
     SET completed_at=datetime('now'), assigned_to=?, verified_by_qr=?,
-        skipped=0, skip_reason=NULL, checklist=?
+        skipped=0, skip_reason=NULL, checklist=?,
+        photo_url=COALESCE(?, photo_url)
     WHERE id=?
-  `).run(userId, viaQr ? 1 : 0, checklist ? JSON.stringify(checklist) : null, taskId)
+  `).run(userId, viaQr ? 1 : 0, checklist ? JSON.stringify(checklist) : null, photoUrl, taskId)
 }
 
 export function uncompleteTask(taskId) {
@@ -90,6 +97,24 @@ export function completeFloorTasks(block, floor, date, userId) {
     WHERE block=? AND floor=? AND DATE(scheduled_at)=? AND completed_at IS NULL AND skipped=0
   `).run(userId, block, floor, date)
   return r.changes
+}
+
+// Oda/ortak alan temizlik geçmişi — qr_location üretimle aynı anahtar:
+// oda `M1-205`, ortak alan `M1-1-common` (generateDailyTasks)
+export function getTaskHistory(qrLocation, days = 30) {
+  const db = getDB()
+  const offset = `-${Math.max(1, Math.min(180, days)) - 1} days`
+  return db.prepare(`
+    SELECT ct.id, ct.area, ct.task_type, ct.scheduled_at, ct.completed_at,
+           ct.skipped, ct.skip_reason, ct.photo_url, ct.verified_by_qr,
+           u.full_name as assignee_name, w.full_name as worker_name
+    FROM cleaning_tasks ct
+    LEFT JOIN users u ON u.id=ct.assigned_to
+    LEFT JOIN staff w ON w.id=ct.completed_by_worker_id
+    WHERE ct.qr_location = ?
+      AND date(ct.scheduled_at) >= date('now', 'localtime', ?)
+    ORDER BY ct.scheduled_at DESC
+  `).all(qrLocation, offset)
 }
 
 export function getDNDRooms() {

@@ -4,6 +4,9 @@ import app from '../../app.js'
 import { initDB, getDB } from '../../shared/db/index.js'
 import { seedDev } from '../../shared/db/seed.js'
 import { calcTax, workDaysInMonth, puantajService } from './service.js'
+import { guessGender } from './nameGender.js'
+import { analyzeAnomalies } from './analyze.js'
+import { groupConsecutive } from './import.js'
 
 let managerToken, shiftToken
 beforeAll(async () => {
@@ -59,6 +62,246 @@ describe('Shifts', () => {
       .send({ name: 'Test Vardiya', start_hour: '08:00', end_hour: '16:00', color_class: 'bg-green-500' })
     expect(res.status).toBe(201)
     expect(res.body.id).toBeTruthy()
+  })
+})
+
+describe('Excel çizelge içe aktarımı (/import)', () => {
+  const payload = {
+    weekDates: ['2026-07-06', '2026-07-07', '2026-07-08', '2026-07-09', '2026-07-10', '2026-07-11', '2026-07-12'],
+    rows: [
+      {
+        name: 'MELİKE EXCELTEST', deptName: 'KAT HİZMETLERİ EXCELTEST',
+        cells: [
+          { date: '2026-07-06', startHour: 8, endHour: 17, status: 'scheduled', raw: '08:00 17:00' },
+          { date: '2026-07-12', startHour: null, endHour: null, status: 'on_leave', raw: 'OFF' },
+        ],
+      },
+      {
+        name: 'ONUR EXCELTEST', deptName: 'TEKNİK EXCELTEST',
+        cells: [
+          { date: '2026-07-06', startHour: 6, endHour: 15, status: 'scheduled', raw: '06:00-15:00' }, // yeni vardiya tanımı (Sabah)
+        ],
+      },
+    ],
+    unrecognized: [{ name: 'ONUR EXCELTEST', date: '2026-07-07', raw: '??' }],
+  }
+
+  it('dryRun=1 önizleme döndürür, hiçbir şey yazmaz', async () => {
+    const res = await request(app)
+      .post('/api/shifts/import?dryRun=1')
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send(payload)
+    expect(res.status).toBe(200)
+    expect(res.body.depts.created).toContain('KAT HİZMETLERİ EXCELTEST')
+    expect(res.body.staff.created.length).toBe(2)
+    // 6-15 vardiya tanımı seed'de yok → oluşturulacaklar listesinde
+    expect(res.body.shiftDefs.created.some(s => s.key === '6-15')).toBe(true)
+    // personel henüz yok → tüm hücreler yeni
+    expect(res.body.scheduleNew).toBe(3)
+    expect(res.body.scheduleUpdated).toBe(0)
+    // cinsiyet çıkarımı: MELİKE→female, ONUR→male (ikisi de tahmin edildi)
+    expect(res.body.staff.genderGuessed).toBe(2)
+    expect(res.body.staff.genderUnknown.length).toBe(0)
+    // anomali raporu mevcut
+    expect(Array.isArray(res.body.anomalies.warnings)).toBe(true)
+    // dryRun yazmadı: personel hâlâ yok
+    const check = await request(app).get('/api/shifts/staff/search?q=EXCELTEST').set('Authorization', `Bearer ${managerToken}`)
+    expect(check.body.length).toBe(0)
+  })
+
+  it('analyzeAnomalies: dinlenmesiz hafta + ardışık gün + ardışık gece', () => {
+    const week = ['2026-07-06','2026-07-07','2026-07-08','2026-07-09','2026-07-10','2026-07-11','2026-07-12']
+    const day = d => ({ date: d, startHour: 8, endHour: 17, status: 'scheduled' })
+    const night = d => ({ date: d, startHour: 0, endHour: 8, status: 'scheduled' })
+    const rows = [
+      { name: 'YORGUN KİŞİ', deptName: 'X', cells: week.map(day) }, // 7/7 çalışma
+      { name: 'GECECİ', deptName: 'X', cells: [night('2026-07-06'), night('2026-07-07'), { date:'2026-07-08', startHour:null, endHour:null, status:'on_leave' }] },
+    ]
+    const { warnings, counts } = analyzeAnomalies(rows, week)
+    expect(counts.no_weekly_off).toBe(1)          // 7/7 çalışma, dinlenme yok
+    expect(counts.consecutive_night).toBe(1)      // 2 ≥ 2
+    expect(counts.consecutive_work).toBeUndefined() // bilinçli kaldırıldı (6 gün normal)
+    expect(warnings.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('guessGender: bilinen isimleri tahmin eder, bilinmeyene null', () => {
+    expect(guessGender('MELİKE AKÇA')).toBe('female')
+    expect(guessGender('ONUR TOPLUCUK')).toBe('male')
+    expect(guessGender('ZZZQ WXYZ')).toBeNull()
+  })
+
+  it('gerçek import eksik personel/departman/vardiyayı oluşturur ve çizelgeye işler', async () => {
+    const res = await request(app)
+      .post('/api/shifts/import')
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send(payload)
+    expect(res.status).toBe(200)
+    expect(res.body.scheduleEntries).toBe(3)
+    expect(res.body.staff.created.length).toBe(2)
+
+    // Personel gerçekten oluştu
+    const check = await request(app).get('/api/shifts/staff/search?q=EXCELTEST').set('Authorization', `Bearer ${managerToken}`)
+    expect(check.body.length).toBe(2)
+
+    // Çizelge gerçekten dolu (dosyanın kendi tarihleriyle)
+    const sched = await request(app).get('/api/shifts/schedule?week=2026-07-06').set('Authorization', `Bearer ${managerToken}`)
+    const melike = sched.body.find(r => r.full_name === 'MELİKE EXCELTEST' && r.work_date === '2026-07-06')
+    expect(melike).toBeTruthy()
+    expect(melike.start_hour).toBe(8)
+    const off = sched.body.find(r => r.full_name === 'MELİKE EXCELTEST' && r.work_date === '2026-07-12')
+    expect(off.status).toBe('on_leave')
+  })
+
+  it('ikinci import idempotent — aynı kişiyi tekrar oluşturmaz, çizelgeyi günceller', async () => {
+    const res = await request(app)
+      .post('/api/shifts/import')
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send(payload)
+    expect(res.status).toBe(200)
+    expect(res.body.staff.created.length).toBe(0)
+    expect(res.body.staff.matched).toBe(2)
+    // 2. kez: tüm kayıtlar mevcut → hepsi "güncellenecek"
+    expect(res.body.scheduleUpdated).toBe(3)
+    expect(res.body.scheduleNew).toBe(0)
+  })
+
+  it('aksan/yazım farkı mükerrer personel oluşturmaz (fold-eşleşme)', async () => {
+    // "MELİKE EXCELTEST" zaten var; "MELIKE EXCELTEST" (noktasız I) aynı kişi sayılmalı.
+    const fuzzy = {
+      weekDates: ['2026-07-13'],
+      rows: [{ name: 'MELIKE EXCELTEST', deptName: 'KAT HİZMETLERİ EXCELTEST',
+        cells: [{ date: '2026-07-13', startHour: 8, endHour: 17, status: 'scheduled', raw: '08:00-17:00' }] }],
+      unrecognized: [],
+    }
+    const res = await request(app)
+      .post('/api/shifts/import?dryRun=1')
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send(fuzzy)
+    expect(res.status).toBe(200)
+    expect(res.body.staff.created.length).toBe(0)          // yeni oluşturulmaz
+    expect(res.body.staff.matched).toBe(1)
+    expect(res.body.staff.fuzzyMatched[0]).toMatchObject({ excelName: 'MELIKE EXCELTEST', matchedTo: 'MELİKE EXCELTEST' })
+    expect(res.body.deptSummary.length).toBe(1)
+  })
+
+  it('groupConsecutive: ardışık günleri tek koşuda toplar', () => {
+    const runs = groupConsecutive(['2026-07-20', '2026-07-21', '2026-07-23'])
+    expect(runs).toEqual([
+      { start: '2026-07-20', end: '2026-07-21', days: 2 },
+      { start: '2026-07-23', end: '2026-07-23', days: 1 },
+    ])
+  })
+
+  it('izinleri leave_requests\'e çevirir + bakiye düşer', async () => {
+    const lp = {
+      weekDates: ['2026-08-17','2026-08-18','2026-08-19','2026-08-20','2026-08-21'],
+      rows: [{ name: 'İZİNLİ EXCELKİŞİ', deptName: 'KAT HİZMETLERİ EXCELTEST', cells: [
+        { date: '2026-08-17', startHour: null, endHour: null, status: 'on_leave', leaveType: 'annual', raw: 'YILLIK İZİN' },
+        { date: '2026-08-18', startHour: null, endHour: null, status: 'on_leave', leaveType: 'annual', raw: 'YILLIK İZİN' },
+        { date: '2026-08-20', startHour: null, endHour: null, status: 'on_leave', leaveType: 'sick', raw: 'RAPORLU' },
+        { date: '2026-08-21', startHour: null, endHour: null, status: 'on_leave', leaveType: 'weekly_off', raw: 'OFF' }, // leave_request üretmez
+      ] }],
+      unrecognized: [],
+    }
+    const res = await request(app).post('/api/shifts/import').set('Authorization', `Bearer ${managerToken}`).send(lp)
+    expect(res.status).toBe(200)
+    expect(res.body.leaves.created).toBe(2)        // yıllık(2gün koşu) + rapor(1gün) = 2 talep
+    expect(res.body.leaves.annualDays).toBe(2)
+    expect(res.body.leaves.sickDays).toBe(1)
+
+    const sid = (await request(app).get(`/api/shifts/staff/search?q=${encodeURIComponent('İZİNLİ EXCELKİŞİ')}`).set('Authorization', `Bearer ${managerToken}`)).body[0].id
+    const leaves = (await request(app).get(`/api/shifts/leave?staff_id=${sid}`).set('Authorization', `Bearer ${managerToken}`)).body
+    expect(leaves.filter(l => l.status === 'approved').length).toBe(2)
+    const bal = (await request(app).get(`/api/shifts/leave/balance/${sid}`).set('Authorization', `Bearer ${managerToken}`)).body
+    expect(bal.annual_used).toBe(2)
+    expect(bal.sick_used).toBe(1)
+
+    // idempotent: tekrar import izinleri çoğaltmaz, bakiye sabit
+    await request(app).post('/api/shifts/import').set('Authorization', `Bearer ${managerToken}`).send(lp)
+    const bal2 = (await request(app).get(`/api/shifts/leave/balance/${sid}`).set('Authorization', `Bearer ${managerToken}`)).body
+    expect(bal2.annual_used).toBe(2)
+  })
+
+  it('import bir oturum kaydeder ve geri-alma her şeyi eski haline döndürür', async () => {
+    const up = {
+      weekDates: ['2026-09-07','2026-09-08','2026-09-09'],
+      rows: [{ name: 'UNDO EXCELKİŞİ', deptName: 'UNDO EXCELDEPT', cells: [
+        { date: '2026-09-07', startHour: 8, endHour: 17, status: 'scheduled', raw: '08:00-17:00' },
+        { date: '2026-09-08', startHour: null, endHour: null, status: 'on_leave', leaveType: 'annual', raw: 'YILLIK İZİN' },
+        { date: '2026-09-09', startHour: null, endHour: null, status: 'on_leave', leaveType: 'annual', raw: 'YILLIK İZİN' },
+      ] }],
+      unrecognized: [],
+    }
+    const imp = await request(app).post('/api/shifts/import').set('Authorization', `Bearer ${managerToken}`).send(up)
+    expect(imp.status).toBe(200)
+    const batchId = imp.body.batchId
+    expect(batchId).toBeTruthy()
+
+    // personel + departman gerçekten oluştu
+    const sid = (await request(app).get(`/api/shifts/staff/search?q=${encodeURIComponent('UNDO EXCELKİŞİ')}`).set('Authorization', `Bearer ${managerToken}`)).body[0].id
+    expect(sid).toBeTruthy()
+    let depts = (await request(app).get('/api/shifts/departments').set('Authorization', `Bearer ${managerToken}`)).body
+    expect(depts.some(d => d.name === 'UNDO EXCELDEPT')).toBe(true)
+
+    // oturum listede, henüz geri alınmamış
+    const batches = (await request(app).get('/api/shifts/import/batches').set('Authorization', `Bearer ${managerToken}`)).body
+    const b = batches.find(x => x.id === batchId)
+    expect(b).toBeTruthy()
+    expect(b.undone_at).toBeFalsy()
+
+    // GERİ AL
+    const undo = await request(app).post(`/api/shifts/import/batches/${batchId}/undo`).set('Authorization', `Bearer ${managerToken}`)
+    expect(undo.status).toBe(200)
+    expect(undo.body.staffDeleted).toBe(1)
+    expect(undo.body.scheduleDeleted).toBe(3)
+    expect(undo.body.leavesDeleted).toBe(1)
+
+    // personel + departman silindi
+    const sAfter = (await request(app).get(`/api/shifts/staff/search?q=${encodeURIComponent('UNDO EXCELKİŞİ')}`).set('Authorization', `Bearer ${managerToken}`)).body
+    expect(sAfter.length).toBe(0)
+    depts = (await request(app).get('/api/shifts/departments').set('Authorization', `Bearer ${managerToken}`)).body
+    expect(depts.some(d => d.name === 'UNDO EXCELDEPT')).toBe(false)
+
+    // ikinci kez geri al → hata
+    const undo2 = await request(app).post(`/api/shifts/import/batches/${batchId}/undo`).set('Authorization', `Bearer ${managerToken}`)
+    expect(undo2.status).toBe(400)
+  })
+
+  it('excludeDepts: seçilmeyen departman içe aktarılmaz', async () => {
+    const p = {
+      weekDates: ['2026-10-05'],
+      rows: [
+        { name: 'KEEP EXCELKİŞİ', deptName: 'KEEP EXCELDEPT', cells: [{ date: '2026-10-05', startHour: 8, endHour: 17, status: 'scheduled', raw: '08:00-17:00' }] },
+        { name: 'SKIP EXCELKİŞİ', deptName: 'SKIP EXCELDEPT', cells: [{ date: '2026-10-05', startHour: 8, endHour: 17, status: 'scheduled', raw: '08:00-17:00' }] },
+      ],
+      unrecognized: [], excludeDepts: ['SKIP EXCELDEPT'],
+    }
+    const res = await request(app).post('/api/shifts/import?dryRun=1').set('Authorization', `Bearer ${managerToken}`).send(p)
+    expect(res.status).toBe(200)
+    expect(res.body.staff.created.map(s => s.name)).toEqual(['KEEP EXCELKİŞİ'])
+    expect(res.body.deptSummary.map(d => d.name)).toEqual(['KEEP EXCELDEPT'])
+  })
+
+  it('mappings: excel adı elle mevcut personele bağlanır (yeni oluşturmaz)', async () => {
+    // Mevcut bir seed personeli al
+    const existing = (await request(app).get('/api/shifts/staff?is_active=1').set('Authorization', `Bearer ${managerToken}`)).body[0]
+    const p = {
+      weekDates: ['2026-10-12'],
+      rows: [{ name: 'TAMAMEN FARKLI YAZIM', deptName: 'KEEP EXCELDEPT', cells: [{ date: '2026-10-12', startHour: 8, endHour: 17, status: 'scheduled', raw: '08:00-17:00' }] }],
+      unrecognized: [], mappings: { 'TAMAMEN FARKLI YAZIM': existing.id },
+    }
+    const res = await request(app).post('/api/shifts/import?dryRun=1').set('Authorization', `Bearer ${managerToken}`).send(p)
+    expect(res.status).toBe(200)
+    expect(res.body.staff.created.length).toBe(0)
+    expect(res.body.staff.matched).toBe(1)
+  })
+
+  it('boş rows reddedilir (400)', async () => {
+    const res = await request(app)
+      .post('/api/shifts/import')
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({ weekDates: [], rows: [], unrecognized: [] })
+    expect(res.status).toBe(400)
   })
 })
 

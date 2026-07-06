@@ -1,0 +1,25 @@
+name: Uptime
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check avskamp.com health
+        # 2 deneme arasinda 30sn bekler; tek gecici aksaklikta alarm uretmez.
+        # Workflow fail olunca GitHub repo sahibine e-posta bildirimi gonderir.
+        run: |
+          check() {
+            body=$(curl -sS -m 20 https://avskamp.com/api/health) || return 1
+            echo "$body"
+            echo "$body" | grep -q '"status":"ok"' || return 1
+            echo "$body" | grep -q '"db":"ok"' || return 1
+          }
+          if check; then exit 0; fi
+          echo "İlk deneme başarısız, 30sn sonra tekrar..."
+          sleep 30
+          check

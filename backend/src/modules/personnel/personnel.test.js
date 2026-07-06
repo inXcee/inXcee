@@ -162,6 +162,39 @@ describe('Risk listesi (H1 R5)', () => {
   })
 })
 
+describe('Zod validation (cross-cutting sweep)', () => {
+  it('4000 karakterden uzun not 400 doner (sessiz kirpma degil)', async () => {
+    const res = await request(app).post(`/api/personnel/${staffId}/notes`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ note: 'x'.repeat(4001) })
+    expect(res.status).toBe(400)
+  })
+
+  it('cok uzun acil iletisim ismi 400 doner', async () => {
+    const res = await request(app).post(`/api/personnel/${staffId}/emergency-contacts`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ name: 'A'.repeat(201) })
+    expect(res.status).toBe(400)
+  })
+
+  it('cok uzun telefon 400 doner', async () => {
+    const res = await request(app).post(`/api/personnel/${staffId}/emergency-contacts`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Anne', phone: '0'.repeat(41) })
+    expect(res.status).toBe(400)
+  })
+
+  it('cok uzun arsiv gerekcesi 400 doner', async () => {
+    const db = getDB()
+    db.prepare('INSERT INTO staff(full_name, tc_no, is_active) VALUES(?,?,1)').run('Uzun Arşiv', '88888888888')
+    const targetId = db.prepare('SELECT id FROM staff WHERE tc_no=?').get('88888888888').id
+    const res = await request(app).post(`/api/personnel/${targetId}/archive`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ reason: 'r'.repeat(501) })
+    expect(res.status).toBe(400)
+  })
+})
+
 describe('Yetki kontrolü', () => {
   it('campus_manager olmayan not ekleyemez', async () => {
     const t = (await request(app).post('/api/auth/login').send({ username: 'camasir', password: 'admin123' })).body.token

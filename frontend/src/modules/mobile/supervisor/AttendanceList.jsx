@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import mobileApi from '../auth/mobileApi.js'
 import { usePullToRefresh } from '../../../shared/hooks/usePullToRefresh.js'
+import { SkeletonTable } from '../../../shared/components/Skeleton.jsx'
 
 const today = new Date().toISOString().slice(0, 10)
 
@@ -55,7 +56,7 @@ export default function AttendanceList() {
       </div>
 
       {isLoading ? (
-        <div style={{ color: '#9ca3af', textAlign: 'center', padding: '24px' }}>Yükleniyor...</div>
+        <SkeletonTable rows={6} cols={3} />
       ) : filtered.length === 0 ? (
         <div style={{ color: '#9ca3af', textAlign: 'center', padding: '48px' }}>Kayıt yok</div>
       ) : (

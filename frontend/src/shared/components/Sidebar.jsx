@@ -39,7 +39,12 @@ const NAV_GROUPS = [
     label: 'YONETIM',
     links: [
       { to: '/inventory', icon: '\u25a8', label: 'Envanter', roles: ['campus_manager','shift_supervisor','laundry','housekeeper'] },
+      { to: '/cards', icon: '\ud83e\udeaa', label: 'Kartlar', roles: ['campus_manager','shift_supervisor'] },
+      { to: '/presence', icon: '\ud83d\udccd', label: 'Mevcudiyet', roles: ['campus_manager','shift_supervisor'] },
+      { to: '/kiosk', icon: '🖥️', label: 'Personel Kiosk', roles: ['campus_manager'], external: true },
       { to: '/laundry-kiosk', icon: '🧺', label: 'Camasir Kiosk', roles: ['campus_manager'], external: true },
+      { to: '/avs-kiosk', icon: '👷', label: 'AVS Kiosk', roles: ['campus_manager'], external: true },
+      { to: '/station', icon: '⌖', label: 'Okutma İstasyonu', roles: ['campus_manager'], external: true },
       { to: '/settings', icon: '\u2393', label: 'Ayarlar', roles: ['campus_manager','shift_supervisor'] },
     ]
   },
@@ -78,7 +83,11 @@ function LiveClock() {
 export default function Sidebar({ mobileOpen, onClose }) {
   const user = useAuthStore(s => s.user)
   const location = useLocation()
-  const logout = useAuthStore(s => s.logout)
+  const logoutStore = useAuthStore(s => s.logout)
+  const logout = async () => {
+    try { await api.post('/auth/logout') } catch { /* cookie temizleme başarısız — yine de local logout */ }
+    logoutStore()
+  }
   const { unreadCount } = useNotifications()
   const { theme, toggle: toggleTheme } = useTheme()
   const addToast = useToastStore(s => s.addToast)

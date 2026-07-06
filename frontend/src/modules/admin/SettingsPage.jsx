@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import TwoFactorSettings from '../../shared/components/TwoFactorSettings.jsx'
 import { useToastStore } from '../../shared/store/toastStore.js'
+import { SkeletonCard } from '../../shared/components/Skeleton.jsx'
 
 const DAYS = ['Paz','Pzt','Sal','Çar','Per','Cum','Cmt']
 const MINUTES = [0, 15, 30, 45]
@@ -100,6 +101,15 @@ export default function SettingsPage() {
     finally { setPreviewLoading(false) }
   }
 
+  async function handleWeeklyPreview() {
+    setPreviewLoading(true)
+    try {
+      const res = await api.get('/settings/email/weekly/preview', { responseType:'text' })
+      setPreviewHtml(res.data)
+    } catch(e) { showToast('Önizleme yüklenemedi','error') }
+    finally { setPreviewLoading(false) }
+  }
+
   function handleSave(e) {
     e.preventDefault()
     const days = current.days ?? [1,2,3,4,5]
@@ -115,7 +125,7 @@ export default function SettingsPage() {
     })
   }
 
-  if (isLoading || !current) return <div style={{ padding:'32px' }}>Yükleniyor...</div>
+  if (isLoading || !current) return <SkeletonCard lines={8} />
 
   return (
     <div style={{ padding:'24px', maxWidth:'600px' }}>
@@ -238,7 +248,7 @@ export default function SettingsPage() {
         {/* Bölüm 4b: Kiosk Giriş Yöntemi */}
         <Panel title="KİOSK GİRİŞ YÖNTEMİ">
           <p style={{ fontSize:'12px', color:'#64748b', marginBottom:'12px' }}>Personel kiosk ekranına nasıl giriş yapabilsin?</p>
-          {kioskLoading ? <p style={{ fontSize:'13px', color:'#94a3b8' }}>Yükleniyor...</p> : (
+          {kioskLoading ? <SkeletonCard lines={3} /> : (
             <div style={{ display:'flex', gap:'8px', flexWrap:'wrap' }}>
               {[
                 { val:'tc_no', label:'TC No + PIN' },
@@ -276,9 +286,17 @@ export default function SettingsPage() {
 
       {/* Bölüm 5: Önizleme */}
       <Panel title="E-POSTA ÖNİZLEME">
-        <button type="button" className="btn btn-secondary" onClick={handlePreview} disabled={previewLoading}>
-          {previewLoading ? 'Yükleniyor...' : '👁️ Önizle'}
-        </button>
+        <div style={{ display:'flex', gap:'8px', flexWrap:'wrap' }}>
+          <button type="button" className="btn btn-secondary" onClick={handlePreview} disabled={previewLoading}>
+            {previewLoading ? 'Yükleniyor...' : '👁️ Günlük Raporu Önizle'}
+          </button>
+          <button type="button" className="btn btn-secondary" onClick={handleWeeklyPreview} disabled={previewLoading}>
+            📅 Haftalık Özeti Önizle
+          </button>
+        </div>
+        <p style={{ fontSize:'11px', color:'#94a3b8', marginTop:'6px' }}>
+          Haftalık özet her pazartesi 07:00'de yöneticilere gönderilir (e-posta sistemi açıkken).
+        </p>
         {previewHtml && (
           <div style={{ marginTop:'16px', border:'1px solid #e2e8f0', borderRadius:'8px', overflow:'hidden' }}>
             <iframe srcDoc={previewHtml} style={{ width:'100%', height:'500px', border:'none' }} title="E-posta önizleme" />

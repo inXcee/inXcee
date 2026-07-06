@@ -3,6 +3,7 @@ import { loginMobile, getMobileMe } from './service.js'
 import { requireMobile } from './middleware.js'
 import { refreshToken } from '../../shared/auth/service.js'
 import { getRegistrationOptions, verifyRegistration, getAuthOptions, verifyAuthentication } from './webauthn.js'
+import { logger } from '../../shared/logger.js'
 
 export const mobileAuthRouter = Router()
 
@@ -13,7 +14,7 @@ mobileAuthRouter.post('/login', (req, res) => {
     if (result.error) return res.status(result.status).json({ error: result.error })
     res.json(result)
   } catch (e) {
-    console.error('[MobileAuth]', e)
+    logger.error('[MobileAuth]', e)
     res.status(500).json({ error: 'Sunucu hatası' })
   }
 })
@@ -60,7 +61,8 @@ mobileAuthRouter.post('/webauthn/auth-options', async (req, res) => {
 mobileAuthRouter.post('/webauthn/authenticate', async (req, res) => {
   const { credentialId, response } = req.body
   if (!credentialId || !response) return res.status(400).json({ error: 'credentialId ve response gerekli' })
-  const result = await verifyAuthentication(credentialId, response)
+  // Mobil passkey sadece saha rolleri için (mevcut davranış korunur).
+  const result = await verifyAuthentication(credentialId, response, { allowedRoles: ['housekeeper', 'technical'] })
   if (result.error) return res.status(result.status).json({ error: result.error })
   res.json(result)
 })

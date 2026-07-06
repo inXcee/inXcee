@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
+import HelpHint from '../../shared/components/HelpHint.jsx'
 
 const STEPS = [
   { key: 'search', label: 'ARAMA' },
@@ -119,7 +120,7 @@ export default function CheckoutPage() {
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px' }}>
         <span style={{ fontSize: '20px' }}>{'\u2199'}</span>
         <div>
-          <h1 style={{ fontFamily: 'var(--display)', fontSize: '22px', letterSpacing: '3px', margin: 0, color: 'var(--text)' }}>CHECK-OUT</h1>
+          <h1 style={{ fontFamily: 'var(--display)', fontSize: '22px', letterSpacing: '3px', margin: 0, color: 'var(--text)' }}>CHECK-OUT<HelpHint topic="checkout" title="CHECK-OUT" /></h1>
           <p style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)', letterSpacing: '1px', margin: 0 }}>
             PERSONEL CIKIS ISLEMI
           </p>

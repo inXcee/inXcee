@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { requireRole } from '../../../shared/auth/middleware.js'
 import * as service from './service.js'
+import { logger } from '../../../shared/logger.js'
 
 export const lotsRouter = Router()
 const mgr = requireRole('campus_manager', 'shift_supervisor')
@@ -8,7 +9,7 @@ const mgr = requireRole('campus_manager', 'shift_supervisor')
 // Lot listesi: /api/inventory/items/:id/lots — ana inventory routes'tan mount edilir
 export const lotsByItemHandler = (req, res) => {
   try { res.json(service.list(+req.params.id)) }
-  catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatasi' }) }
+  catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatasi' }) }
 }
 
 lotsRouter.post('/', ...mgr, (req, res) => {
@@ -18,7 +19,7 @@ lotsRouter.post('/', ...mgr, (req, res) => {
 
 lotsRouter.get('/expiring', ...mgr, (req, res) => {
   try { res.json(service.expiring(+req.query.days || 30)) }
-  catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatasi' }) }
+  catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatasi' }) }
 })
 
 lotsRouter.patch('/:id/status', ...mgr, (req, res) => {

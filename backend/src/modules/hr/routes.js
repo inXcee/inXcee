@@ -3,20 +3,20 @@ import PDFDocument from 'pdfkit'
 import { requireRole } from '../../shared/auth/middleware.js'
 import { logAudit } from '../../shared/audit.js'
 import { getDB } from '../../shared/db/index.js'
+import { validate } from '../../shared/middleware/validate.js'
+import { startChecklistSchema, toggleItemSchema, addItemSchema } from './schemas.js'
 import * as q from './queries.js'
+import { logger } from '../../shared/logger.js'
 
 export const hrRouter = Router()
 const mgr = requireRole('campus_manager', 'shift_supervisor')
 const view = requireRole('campus_manager', 'shift_supervisor')
 
 // ── Checklist CRUD ──
-hrRouter.post('/checklists', ...mgr, (req, res) => {
+hrRouter.post('/checklists', ...mgr, validate(startChecklistSchema), (req, res) => {
   try {
-    const { staff_id, kind } = req.body || {}
-    if (!staff_id || !['onboarding', 'offboarding'].includes(kind)) {
-      return res.status(400).json({ error: 'staff_id ve kind (onboarding/offboarding) gerekli' })
-    }
-    const id = q.startChecklist(+staff_id, kind, req.user.id)
+    const { staff_id, kind } = req.validated
+    const id = q.startChecklist(staff_id, kind, req.user.id)
     logAudit(req.user.id, `hr_${kind}_start`, 'hr', id, `staff:${staff_id}`)
     res.status(201).json({ id })
   } catch (e) { res.status(400).json({ error: e.message }) }
@@ -29,7 +29,7 @@ hrRouter.get('/checklists', ...view, (req, res) => {
       status: req.query.status,
       staffId: req.query.staff_id ? +req.query.staff_id : null,
     }))
-  } catch (e) { console.error('[hr/list]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[hr/list]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 hrRouter.get('/checklists/:id', ...view, (req, res) => {
@@ -37,20 +37,19 @@ hrRouter.get('/checklists/:id', ...view, (req, res) => {
     const cl = q.getChecklist(+req.params.id)
     if (!cl) return res.status(404).json({ error: 'Bulunamadı' })
     res.json(cl)
-  } catch (e) { console.error('[hr/get]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[hr/get]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
-hrRouter.patch('/items/:id/toggle', ...mgr, (req, res) => {
+hrRouter.patch('/items/:id/toggle', ...mgr, validate(toggleItemSchema), (req, res) => {
   try {
-    q.toggleItem(+req.params.id, !!req.body?.done, req.user.id, req.body?.note)
+    q.toggleItem(+req.params.id, req.validated.done, req.user.id, req.validated.note)
     res.json({ ok: true })
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
-hrRouter.post('/checklists/:id/items', ...mgr, (req, res) => {
+hrRouter.post('/checklists/:id/items', ...mgr, validate(addItemSchema), (req, res) => {
   try {
-    if (!req.body?.label?.trim()) return res.status(400).json({ error: 'Adım metni gerekli' })
-    const id = q.addItem(+req.params.id, req.body.label.trim().slice(0, 200))
+    const id = q.addItem(+req.params.id, req.validated.label)
     res.status(201).json({ id })
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
@@ -130,7 +129,7 @@ hrRouter.get('/checklists/:id/ibra/pdf', ...view, (req, res) => {
 
     doc.end()
   } catch (e) {
-    console.error('[hr/pdf]', e)
+    logger.error('[hr/pdf]', e)
     if (!res.headersSent) res.status(500).json({ error: 'PDF olusturulamadi' })
   }
 })
@@ -138,5 +137,5 @@ hrRouter.get('/checklists/:id/ibra/pdf', ...view, (req, res) => {
 // HR3 — Sözleşme bitiyor
 hrRouter.get('/expiring-contracts', ...view, (req, res) => {
   try { res.json(q.getExpiringContracts({ days: Math.max(1, Math.min(365, parseInt(req.query.days, 10) || 30)) })) }
-  catch (e) { console.error('[hr/expiring]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  catch (e) { logger.error('[hr/expiring]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })

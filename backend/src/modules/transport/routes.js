@@ -6,6 +6,12 @@ import { upload, verifyMagicBytes } from '../../shared/uploads/middleware.js'
 import { getDB } from '../../shared/db/index.js'
 import * as q from './queries.js'
 import { logAudit } from '../../shared/audit.js'
+import { logger } from '../../shared/logger.js'
+import { validate } from '../../shared/middleware/validate.js'
+import {
+  createPickupPointSchema, pickupPointUpdateSchema, createRouteSchema, routeUpdateSchema,
+  addStopSchema, stopUpdateSchema, setPickupSchema, assignSchema, boardQrSchema,
+} from './schemas.js'
 
 export const transportRouter = Router()
 const mgr = requireRole('campus_manager', 'shift_supervisor')
@@ -14,20 +20,19 @@ const view = requireRole('campus_manager', 'shift_supervisor', 'laundry', 'house
 // ── Pickup Points ──
 transportRouter.get('/pickup-points', ...view, (req, res) => {
   try { res.json(q.listPickupPoints({ activeOnly: req.query.active === '1' })) }
-  catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
-transportRouter.post('/pickup-points', ...mgr, (req, res) => {
+transportRouter.post('/pickup-points', ...mgr, validate(createPickupPointSchema), (req, res) => {
   try {
-    if (!req.body?.name) return res.status(400).json({ error: 'Ad gerekli' })
-    const id = q.createPickupPoint(req.body)
-    logAudit(req.user.id, 'pickup_point_create', 'transport', id, req.body.name)
+    const id = q.createPickupPoint(req.validated)
+    logAudit(req.user.id, 'pickup_point_create', 'transport', id, req.validated.name)
     res.status(201).json({ id })
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
-transportRouter.put('/pickup-points/:id', ...mgr, (req, res) => {
-  try { q.updatePickupPoint(+req.params.id, req.body); res.json({ ok: true }) }
+transportRouter.put('/pickup-points/:id', ...mgr, validate(pickupPointUpdateSchema), (req, res) => {
+  try { q.updatePickupPoint(+req.params.id, req.validated); res.json({ ok: true }) }
   catch (e) { res.status(400).json({ error: e.message }) }
 })
 
@@ -56,7 +61,7 @@ transportRouter.post('/pickup-points/:id/photo', ...mgr, upload.single('photo'),
     res.json({ photo_url: url })
   } catch (e) {
     try { if (req.file) fs.unlinkSync(req.file.path) } catch { /* ignore */ }
-    console.error('[Route] pickup photo:', e)
+    logger.error('[Route] pickup photo:', e)
     res.status(500).json({ error: 'Sunucu hatası' })
   }
 })
@@ -78,7 +83,7 @@ transportRouter.delete('/pickup-points/:id/photo', ...mgr, (req, res) => {
 
 transportRouter.get('/pickup-points/:id/staff', ...view, (req, res) => {
   try { res.json(q.getStaffAtPoint(+req.params.id)) }
-  catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 // ── Routes ──
@@ -90,7 +95,7 @@ transportRouter.get('/routes', ...view, (req, res) => {
       workDate: req.query.work_date || null,
     }))
   }
-  catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 transportRouter.get('/routes/:id', ...view, (req, res) => {
@@ -98,20 +103,19 @@ transportRouter.get('/routes/:id', ...view, (req, res) => {
     const r = q.getRoute(+req.params.id)
     if (!r) return res.status(404).json({ error: 'Rota bulunamadı' })
     res.json(r)
-  } catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
-transportRouter.post('/routes', ...mgr, (req, res) => {
+transportRouter.post('/routes', ...mgr, validate(createRouteSchema), (req, res) => {
   try {
-    if (!req.body?.name) return res.status(400).json({ error: 'Ad gerekli' })
-    const id = q.createRoute(req.body)
-    logAudit(req.user.id, 'route_create', 'transport', id, req.body.name)
+    const id = q.createRoute(req.validated)
+    logAudit(req.user.id, 'route_create', 'transport', id, req.validated.name)
     res.status(201).json({ id })
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
-transportRouter.put('/routes/:id', ...mgr, (req, res) => {
-  try { q.updateRoute(+req.params.id, req.body); res.json({ ok: true }) }
+transportRouter.put('/routes/:id', ...mgr, validate(routeUpdateSchema), (req, res) => {
+  try { q.updateRoute(+req.params.id, req.validated); res.json({ ok: true }) }
   catch (e) { res.status(400).json({ error: e.message }) }
 })
 
@@ -123,19 +127,18 @@ transportRouter.delete('/routes/:id', ...mgr, (req, res) => {
 // ── Route Stops ──
 transportRouter.get('/routes/:id/stops', ...view, (req, res) => {
   try { res.json(q.listRouteStops(+req.params.id)) }
-  catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
-transportRouter.post('/routes/:id/stops', ...mgr, (req, res) => {
+transportRouter.post('/routes/:id/stops', ...mgr, validate(addStopSchema), (req, res) => {
   try {
-    if (!req.body?.pickup_point_id) return res.status(400).json({ error: 'pickup_point_id gerekli' })
-    const id = q.addRouteStop(+req.params.id, req.body)
+    const id = q.addRouteStop(+req.params.id, req.validated)
     res.status(201).json({ id })
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
-transportRouter.put('/stops/:id', ...mgr, (req, res) => {
-  try { q.updateRouteStop(+req.params.id, req.body); res.json({ ok: true }) }
+transportRouter.put('/stops/:id', ...mgr, validate(stopUpdateSchema), (req, res) => {
+  try { q.updateRouteStop(+req.params.id, req.validated); res.json({ ok: true }) }
   catch (e) { res.status(400).json({ error: e.message }) }
 })
 
@@ -160,12 +163,12 @@ transportRouter.get('/staff', ...view, (req, res) => {
       deptId: req.query.dept_id ? +req.query.dept_id : null,
       hasPickup: req.query.has_pickup || null,
     }))
-  } catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
-transportRouter.put('/staff/:id/pickup', ...mgr, (req, res) => {
+transportRouter.put('/staff/:id/pickup', ...mgr, validate(setPickupSchema), (req, res) => {
   try {
-    q.setStaffPickup(+req.params.id, req.body?.pickup_point_id ?? null)
+    q.setStaffPickup(+req.params.id, req.validated.pickup_point_id ?? null)
     res.json({ ok: true })
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
@@ -175,7 +178,7 @@ transportRouter.get('/daily', ...view, (req, res) => {
   try {
     const date = req.query.date || new Date().toISOString().slice(0, 10)
     res.json(q.getDailyOverview(date))
-  } catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 transportRouter.get('/routes/:id/manifest', ...view, (req, res) => {
@@ -184,7 +187,7 @@ transportRouter.get('/routes/:id/manifest', ...view, (req, res) => {
     const m = q.getRouteManifest(+req.params.id, date)
     if (!m) return res.status(404).json({ error: 'Rota bulunamadı' })
     res.json(m)
-  } catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 transportRouter.post('/auto-assign', ...mgr, (req, res) => {
@@ -197,12 +200,11 @@ transportRouter.post('/auto-assign', ...mgr, (req, res) => {
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
-transportRouter.post('/assign', ...mgr, (req, res) => {
+transportRouter.post('/assign', ...mgr, validate(assignSchema), (req, res) => {
   try {
-    const { staff_id, route_id, stop_id, work_date } = req.body
-    if (!staff_id || !route_id || !work_date) return res.status(400).json({ error: 'staff_id, route_id, work_date gerekli' })
-    q.setAssignment({ staffId: +staff_id, routeId: +route_id, stopId: stop_id ? +stop_id : null, workDate: work_date, userId: req.user.id })
-    logAudit(req.user.id, 'transport_assign', 'transport', +staff_id, `route ${route_id} / ${work_date}`)
+    const { staff_id, route_id, stop_id, work_date } = req.validated
+    q.setAssignment({ staffId: staff_id, routeId: route_id, stopId: stop_id ?? null, workDate: work_date, userId: req.user.id })
+    logAudit(req.user.id, 'transport_assign', 'transport', staff_id, `route ${route_id} / ${work_date}`)
     res.json({ ok: true })
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
@@ -212,7 +214,7 @@ transportRouter.get('/staff/:id/detail', ...view, (req, res) => {
     const d = q.getStaffTransportDetail(+req.params.id)
     if (!d) return res.status(404).json({ error: 'Personel bulunamadı' })
     res.json(d)
-  } catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 // PDF manifesto
@@ -282,7 +284,7 @@ transportRouter.get('/routes/:id/manifest/pdf', ...view, (req, res) => {
 
     doc.end()
   } catch (e) {
-    console.error('[Route] manifest pdf:', e)
+    logger.error('[Route] manifest pdf:', e)
     if (!res.headersSent) res.status(500).json({ error: 'PDF olusturulamadi' })
   }
 })
@@ -290,7 +292,7 @@ transportRouter.get('/routes/:id/manifest/pdf', ...view, (req, res) => {
 transportRouter.get('/reports', ...view, (req, res) => {
   try {
     res.json(q.getReports({ startDate: req.query.start, endDate: req.query.end }))
-  } catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 transportRouter.delete('/assign/:staff_id', ...mgr, (req, res) => {
@@ -300,6 +302,39 @@ transportRouter.delete('/assign/:staff_id', ...mgr, (req, res) => {
     logAudit(req.user.id, 'transport_assign_clear', 'transport', +req.params.staff_id, date)
     res.json({ ok: true })
   } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+// QR ile biniş — kiosk QR kartı okutulur, bugünkü atama boarded işaretlenir.
+// Manuel toggle (PATCH /assignments/:id/boarded) ile aynı setBoarded'ı kullanır;
+// fark: kişiyi listede aramak yerine staff.qr_token'dan çözer.
+transportRouter.post('/board-qr', ...mgr, validate(boardQrSchema), (req, res) => {
+  try {
+    const db = getDB()
+    const token = req.validated.qr_token.replace(/^AVS:/i, '')
+    const date = req.validated.work_date || new Date().toISOString().slice(0, 10)
+
+    const staff = db.prepare(`SELECT id, full_name FROM staff WHERE qr_token = ?`).get(token)
+    if (!staff) return res.status(404).json({ error: 'QR tanınmadı — personel bulunamadı' })
+
+    const a = db.prepare(`
+      SELECT ra.id, ra.boarded, ra.boarded_marked_at, r.name AS route_name, ps.name AS stop_name
+      FROM route_assignments ra
+      JOIN routes r ON r.id = ra.route_id
+      LEFT JOIN route_stops rs ON rs.id = ra.stop_id
+      LEFT JOIN pickup_points ps ON ps.id = rs.pickup_point_id
+      WHERE ra.staff_id = ? AND ra.work_date = ?
+    `).get(staff.id, date)
+    if (!a) return res.status(404).json({ error: `${staff.full_name}: bugün servis ataması yok`, staff_name: staff.full_name })
+
+    if (a.boarded === 1) {
+      const at = a.boarded_marked_at ? a.boarded_marked_at.slice(11, 16) : ''
+      return res.status(409).json({ error: `${staff.full_name} zaten bindi${at ? ` (${at})` : ''}`, staff_name: staff.full_name })
+    }
+
+    q.setBoarded(a.id, true, req.user.id)
+    logAudit(req.user.id, 'transport_board_qr', 'transport', a.id, `${staff.full_name} → ${a.route_name}`)
+    res.json({ ok: true, staff_name: staff.full_name, route_name: a.route_name, stop_name: a.stop_name || null })
+  } catch (e) { logger.error('[Route/board-qr]', e); res.status(400).json({ error: e.message }) }
 })
 
 // Faz 6: katılım işaretle
@@ -322,7 +357,7 @@ transportRouter.get('/no-show', ...view, (req, res) => {
       endDate: req.query.end,
       limit: req.query.limit ? +req.query.limit : 20,
     }))
-  } catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 // Faz 7: tüm rotaların manifesti tek PDF
@@ -395,7 +430,7 @@ transportRouter.get('/manifest/all/pdf', ...view, (req, res) => {
 
     doc.end()
   } catch (e) {
-    console.error('[Route] manifest all pdf:', e)
+    logger.error('[Route] manifest all pdf:', e)
     if (!res.headersSent) res.status(500).json({ error: 'PDF olusturulamadi' })
   }
 })

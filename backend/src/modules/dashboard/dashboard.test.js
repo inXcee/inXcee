@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from 'vitest'
 import request from 'supertest'
 import app from '../../app.js'
-import { initDB } from '../../shared/db/index.js'
+import { initDB, getDB } from '../../shared/db/index.js'
 import { seedDev } from '../../shared/db/seed.js'
 import { getTrends, getHealthScore, getAnomalies } from './queries.js'
 
@@ -19,6 +19,11 @@ describe('Dashboard', () => {
     expect(res.body).toHaveProperty('occupancy_pct')
     expect(res.body).toHaveProperty('open_maintenance')
     expect(res.body).toHaveProperty('quarantine_rooms')
+    // D2b: dönem karşılaştırma (7 gün önce)
+    expect(res.body).toHaveProperty('compare_days', 7)
+    expect(typeof res.body.occupancy_pct_prev).toBe('number')
+    expect(typeof res.body.open_maintenance_prev).toBe('number')
+    expect(typeof res.body.active_personnel_prev).toBe('number')
   })
   it('returns heatmap data', async () => {
     const res = await request(app).get('/api/dashboard/heatmap').set('Authorization', `Bearer ${token}`)
@@ -172,5 +177,29 @@ describe('getAnomalies', () => {
     // Seed verileri normal seviyede; ani anomali olmamalı
     const result = getAnomalies()
     expect(result.anomalies.length).toBeGreaterThanOrEqual(0) // 0+ kabul ediliyor
+  })
+})
+
+describe('getAnomalies — erişim/güvenlik (Faz 6.2)', () => {
+  it('bugün kara liste alarmı → critical anomali', () => {
+    const db = getDB()
+    db.prepare('INSERT INTO personnel(full_name,is_blacklisted) VALUES(?,1)').run('Anomali Kara')
+    const pid = db.prepare("SELECT id FROM personnel WHERE full_name='Anomali Kara'").get().id
+    db.prepare(`INSERT INTO access_events(holder_type,holder_id,event_type,result,scanned_at)
+      VALUES('personnel',?,'denied','alarm',datetime('now'))`).run(pid)
+    const hit = getAnomalies().anomalies.find(x => x.id === 'access-blacklist-today')
+    expect(hit).toBeTruthy()
+    expect(hit.severity).toBe('critical')
+  })
+
+  it('16+ saattir çıkışsız içeride → warning anomali', () => {
+    const db = getDB()
+    db.prepare('INSERT INTO personnel(full_name) VALUES(?)').run('Anomali Icerde')
+    const pid = db.prepare("SELECT id FROM personnel WHERE full_name='Anomali Icerde'").get().id
+    db.prepare(`INSERT INTO access_events(holder_type,holder_id,event_type,result,scanned_at)
+      VALUES('personnel',?,'entry','ok',datetime('now','-20 hours'))`).run(pid)
+    const hit = getAnomalies().anomalies.find(x => x.id === 'access-overdue-inside')
+    expect(hit).toBeTruthy()
+    expect(hit.severity).toBe('warning')
   })
 })

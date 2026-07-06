@@ -96,4 +96,103 @@ export const HELP_CONTENT = {
 • Heap memory + uptime + node version
 • Yedek yoksa kart sarı uyarı
 • Son 24s hata sayısı`,
+
+  safety: `İş güvenliği eğitim ve KKD zimmet takibi.
+• Eğitim takvimi: tarih, kategori, katılımcı listesi
+• Sertifika takibi: bitiş tarihi yaklaşanlar uyarı
+• KKD zimmet: baret, gözlük, iş ayakkabısı dağıtım kaydı
+• Dashboard uyum widget'ı → kritik durumları gösterir`,
+
+  transport: `Personel servis rotaları + günlük atama.
+• Rota tanımı: araç, sürücü, kapasite, duraklar
+• Günlük çizelge: hangi personel hangi araçta
+• Harita önizleme (durak koordinatları girildiyse)
+• No-show takibi → disiplin sistemine bağlı`,
+
+  hr: `İşe giriş onboarding + ayrılma ibra akışları.
+• Onboarding checklist: zimmet, oryantasyon, evrak
+• Ayrılma: ibra formu PDF + dijital imza
+• Sözleşme bitiş tarihi uyarıları
+• Personel iletişim / acil kişi bilgi güncellemesi`,
+
+  performance: `Performans değerlendirme + hedef takibi.
+• 360° değerlendirme: yönetici + öz değerlendirme
+• Hedef belirleme ve ilerleme takibi
+• Pozitif puan: disiplin puanı için dengeleyici
+• Dönemsel rapor + grafik`,
+
+  meals: `Yemekhane giriş kontrolü + menü yönetimi.
+• QR/barkod ile kişi girişi
+• Günlük menü tanımlama ve kalori bilgisi
+• Katılım istatistikleri ve israf raporları
+• Kara listedeki personel girişte uyarı`,
+
+  communications: `Duyuru ve toplu mesaj sistemi.
+• Yayın (broadcast): tüm veya seçili grup
+• WhatsApp entegrasyonu (yapılandırıldıysa)
+• Bildirim grupları yönetimi
+• Geçmiş mesajlar log'u`,
+
+  integrity: `Çift kayıt ve veri tutarlılık kontrolü.
+• Aynı TC/pasaport ile birden fazla aktif kayıt
+• Oda kapasitesini aşan atamalar
+• Karantina odalarındaki aktif kişiler
+• Düzeltme aksiyonu önerileri`,
+
+  visitors: `Ziyaretçi giriş-çıkış kaydı.
+• TC kimlik doğrulama
+• Ziyaret amacı ve ziyaret edilen blok
+• Aktif ziyaretçi listesi ve geçmiş
+• CSV export ile güvenlik raporlaması`,
+
+  personnel: `Aktif personel listesi + filtrele + export.
+• Blok, firma, departman, cinsiyet bazlı filtre
+• Kaydedilen filtreler (SavedFilters) tekrar kullanılabilir
+• CSV ve Excel export
+• Kişiye tıkla → 360° profil sayfası`,
+
+  drills: `Tahliye tatbikatı planlama ve kayıt.
+• Tatbikat tipi, tarih, katılımcı sayısı
+• Blok bazlı yoklama listesi (PDF)
+• Geçmiş tatbikatlar ve notlar`,
+
+  automation: `Tetikleyici-koşul-eylem otomasyonu.
+• Tetikleyici: checkin, checkout, maintenance, vs.
+• Koşul: blok, alan, değer karşılaştırmaları
+• Eylem: bildirim gönder, görev oluştur
+• Aktif/pasif durum; test modu`,
+
+  surveys: `Personel memnuniyet anket sonuçları.
+• Oda, temizlik, yemek, çamaşır, genel puanlama
+• Self-service kiosk'tan anonim dolduruluyor
+• Trend grafik + firma bazlı segmentasyon
+• Ortalama puan = kalite göstergesi`,
+
+  'bulk-actions': `Filtrelenmiş personel listesi üzerinde toplu işlem.
+• 7 aksiyon: transfer, vardiya, firma, disiplin, WA mesajı, kara liste, çıkış
+• Seçim: tek klik / hepsini seç / range seçimi
+• Kaydedilen filtreler ile tekrar kullanılabilir
+• Onay diyaloğu ile geri alınamaz işlemler korunur`,
+
+  'room-history': `Oda bazlı temizlik ve arıza geçmişi raporu.
+• 7/14/30 gün seçimi
+• Blok filtrelemesi
+• Temizlendi/Atlandı/Arıza sayıları
+• Odaya tıkla → günlük detay takvimi`,
+
+  companies: `Firma tanımları ve personel dağılımı.
+• Aktif firma listesi + personel sayıları
+• Yeni firma ekle / düzenle / sil
+• Firma silinmeden önce personel bağlantısı kontrol edilir`,
+
+  'campus-map': `Kampüs kat planı ve blok düzeni.
+• Blok ve kat bazlı oda yerleşimi
+• Oda durumu renk kodlaması (boş/dolu/karantina)
+• SVG tabanlı interaktif harita`,
+
+  'notification-groups': `Rol/konu bazlı bildirim alıcı kümeleri.
+• Grup oluştur: isim, açıklama, kanal seçimi
+• Üye ekle/çıkar (kullanıcı listesinden seçim)
+• Kanallar: Uygulama, E-posta, WhatsApp, Push
+• Toplu bildirim ve otomasyon eylemlerinde kullanılır`,
 }

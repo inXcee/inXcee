@@ -19,6 +19,13 @@ const ROLE_HOME = {
   campus_manager: '/mobile/manager',
 }
 
+// Login gerektirmeyen kiosk girişleri — her biri kendi PIN ekranına yönlendirir
+const KIOSKS = [
+  { path: '/avs-kiosk',     icon: '🧹', label: 'AVS Personel' },
+  { path: '/laundry-kiosk', icon: '🧺', label: 'Çamaşırhane' },
+  { path: '/kiosk',         icon: '🛏', label: 'Sakin Self-Servis' },
+]
+
 const bioKey = role => `yys-bio-${role}`
 
 async function webAuthnBrowser() {
@@ -55,11 +62,11 @@ export default function MobileLogin() {
     } finally { setLoading(false) }
   }
 
-  async function handleSubmit() {
-    if (pin.length !== 4) return
+  async function handleSubmit(submitPin = pin) {
+    if (submitPin.length !== 4) return
     setLoading(true); setError('')
     try {
-      const res = await mobileApi.post('/mobile/auth/login', { pin, role })
+      const res = await mobileApi.post('/mobile/auth/login', { pin: submitPin, role })
       login(res.data.token, res.data.user)
       const dest = ROLE_HOME[role] || '/mobile'
 
@@ -98,7 +105,7 @@ export default function MobileLogin() {
       navigator.vibrate?.(8)
       const next = pin + d
       setPin(next)
-      if (next.length === 4) setTimeout(handleSubmit, 100)
+      if (next.length === 4) setTimeout(() => handleSubmit(next), 100)
     }
   }
 
@@ -142,6 +149,24 @@ export default function MobileLogin() {
           )}
         </div>
       ))}
+
+      {/* Kiosk girişleri — login gerektirmez, doğrudan PIN ekranına gider */}
+      <div style={{ width: '100%', maxWidth: '280px', marginTop: '8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', margin: '4px 0 12px', fontSize: '11px', color: '#9ca3af', letterSpacing: '1px' }}>
+          <span style={{ flex: 1, height: '1px', background: '#e5e7eb' }} />
+          VEYA KİOSK
+          <span style={{ flex: 1, height: '1px', background: '#e5e7eb' }} />
+        </div>
+        {KIOSKS.map(k => (
+          <button key={k.path} onClick={() => navigate(k.path)}
+            style={{ width: '100%', padding: '14px', fontSize: '15px', fontWeight: 600, background: '#fff', color: '#374151', border: '1px solid #e5e7eb', borderRadius: '12px', marginBottom: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', textAlign: 'left' }}>
+            <span style={{ fontSize: '18px' }}>{k.icon}</span>
+            <span style={{ flex: 1 }}>{k.label}</span>
+            <span style={{ color: '#9ca3af' }}>→</span>
+          </button>
+        ))}
+      </div>
+
       <p style={{ fontSize: '11px', color: '#d1d5db', marginTop: '40px' }}>v{__APP_VERSION__}</p>
     </div>
   )

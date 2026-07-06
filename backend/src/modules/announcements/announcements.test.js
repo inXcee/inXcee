@@ -16,6 +16,15 @@ beforeAll(async () => {
   otherToken = r2.body.token
 })
 
+describe('Announcements — Zod sweep', () => {
+  it('cok uzun baslik 400 doner', async () => {
+    const res = await request(app).post('/api/announcements')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ title: 'T'.repeat(201), body: 'Geçerli içerik metni' })
+    expect(res.status).toBe(400)
+  })
+})
+
 describe('Announcements', () => {
   let createdId
 

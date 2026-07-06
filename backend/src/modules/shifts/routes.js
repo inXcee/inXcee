@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { requireRole, requireAuth } from '../../shared/auth/middleware.js'
 import { getDB } from '../../shared/db/index.js'
 import { paginate } from '../../shared/paginate.js'
+import { logger } from '../../shared/logger.js'
 import {
   departmentsService, shiftDefinitionsService, scheduleService, bulkAssignService,
   staffStatusService, createLeaveService, approveLeaveService, leaveListService,
@@ -21,6 +22,9 @@ import {
   getPayrollExport, getCombinedAbsences,
   listDeductions, createDeduction, deleteDeduction, getPayrollDetailed,
 } from './queries.js'
+import { importSchedule, listImportBatches, undoImportBatch } from './import.js'
+import { importScheduleSchema } from './schemas.js'
+import { validate } from '../../shared/middleware/validate.js'
 import { logAudit } from '../../shared/audit.js'
 
 export const shiftsRouter = Router()
@@ -122,6 +126,42 @@ shiftsRouter.post('/schedule', ...managerOrSupervisor, (req, res) => {
   }
 })
 
+// ── Excel çizelge içe aktarımı (önizleme + uygula) ──
+// ?dryRun=1 → hiçbir şey yazmaz, sadece uzlaştırma raporu döndürür (önizleme).
+shiftsRouter.post('/import', ...managerOrSupervisor, validate(importScheduleSchema), (req, res) => {
+  try {
+    const dryRun = req.query.dryRun === '1' || req.query.dryRun === 'true'
+    const report = importSchedule(req.validated, req.user.id, {
+      dryRun, createMissing: true,
+      excludeDepts: req.validated.excludeDepts || [],
+      mappings: req.validated.mappings || {},
+    })
+    if (!dryRun) {
+      logAudit(req.user.id, 'schedule_import', 'shifts', null,
+        `${report.scheduleEntries} kayıt · ${report.staff.created.length} yeni personel · ${report.depts.created.length} yeni departman`)
+    }
+    res.json(report)
+  } catch (e) {
+    logger.error('[shifts/import]', e)
+    res.status(400).json({ error: e.message })
+  }
+})
+
+// ── İçe aktarım oturumları (geri-alma için) ──
+shiftsRouter.get('/import/batches', ...managerOrSupervisor, (req, res) => {
+  try { res.json(listImportBatches(req.query.limit ? +req.query.limit : 20)) }
+  catch (e) { logger.error('[shifts/import/batches]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+shiftsRouter.post('/import/batches/:id/undo', ...managerOrSupervisor, (req, res) => {
+  try {
+    const result = undoImportBatch(+req.params.id)
+    logAudit(req.user.id, 'schedule_import_undo', 'shifts', +req.params.id,
+      `${result.scheduleDeleted} silindi · ${result.scheduleRestored} geri yüklendi · ${result.staffDeleted} personel silindi`)
+    res.json(result)
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
 // ── H4 V1: Çakışma kontrol ──
 shiftsRouter.post('/schedule/check-conflicts', ...managerOrSupervisor, (req, res) => {
   try {
@@ -133,7 +173,7 @@ shiftsRouter.post('/schedule/check-conflicts', ...managerOrSupervisor, (req, res
 // ── H4 V3: Resmi tatil tablosu ──
 shiftsRouter.get('/holidays', ...allStaff, (req, res) => {
   try { res.json(listHolidays({ year: req.query.year })) }
-  catch (e) { console.error('[holidays/list]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  catch (e) { logger.error('[holidays/list]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 shiftsRouter.post('/holidays', ...managerOrSupervisor, (req, res) => {
@@ -161,7 +201,7 @@ shiftsRouter.get('/payroll-export', ...managerOrSupervisor, (req, res) => {
     const ym = req.query.month || new Date().toISOString().slice(0, 7)
     if (!/^\d{4}-\d{2}$/.test(ym)) return res.status(400).json({ error: 'month YYYY-MM formatında olmalı' })
     res.json({ month: ym, rows: getPayrollExport(ym) })
-  } catch (e) { console.error('[payroll]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[payroll]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 // ── H8 B3: Kesinti CRUD ──
@@ -171,7 +211,7 @@ shiftsRouter.get('/deductions', ...managerOrSupervisor, (req, res) => {
       period: req.query.period,
       staffId: req.query.staff_id ? +req.query.staff_id : null,
     }))
-  } catch (e) { console.error('[deductions/list]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[deductions/list]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 shiftsRouter.post('/deductions', ...managerOrSupervisor, (req, res) => {
@@ -203,7 +243,7 @@ shiftsRouter.get('/payroll-detailed', ...managerOrSupervisor, (req, res) => {
     const ym = req.query.month || new Date().toISOString().slice(0, 7)
     if (!/^\d{4}-\d{2}$/.test(ym)) return res.status(400).json({ error: 'month YYYY-MM formatında olmalı' })
     res.json({ month: ym, rows: getPayrollDetailed(ym) })
-  } catch (e) { console.error('[payroll-detailed]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[payroll-detailed]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 // ── L2: Banka toplu ödeme dosyası (CSV) ──
@@ -359,7 +399,7 @@ shiftsRouter.get('/combined-absences', ...managerOrSupervisor, (req, res) => {
       startDate: req.query.start,
       endDate: req.query.end,
     }))
-  } catch (e) { console.error('[combined-absences]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[combined-absences]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 // ── Personnel status (now staff) ──

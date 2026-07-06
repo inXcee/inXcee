@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { requireRole } from '../auth/middleware.js'
 import * as wp from './service.js'
+import { logger } from '../logger.js'
 
 export const whatsappRouter = Router()
 const access = requireRole('campus_manager', 'shift_supervisor', 'technical')
@@ -13,7 +14,7 @@ whatsappRouter.post('/messages', ...access, (req, res) => {
     const results = wp.submitMessages(text, sender, groupName)
     res.json({ ok: true, messages: results, count: results.length, faults: results.filter(r => r.isFault).length })
   } catch (e) {
-    console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" })
+    logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" })
   }
 })
 

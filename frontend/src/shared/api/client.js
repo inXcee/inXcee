@@ -2,9 +2,11 @@ import axios from 'axios'
 import { useAuthStore } from '../store/authStore.js'
 import { useToastStore } from '../store/toastStore.js'
 
-const api = axios.create({ baseURL: '/api', timeout: 45000 })
+const api = axios.create({ baseURL: '/api', timeout: 45000, withCredentials: true })
 
 api.interceptors.request.use(cfg => {
+  // Staff oturumları httpOnly cookie ile taşınır (withCredentials: true).
+  // Kiosk/mobile token'ları hala header'da — token varsa ekle.
   const token = useAuthStore.getState().token
   if (token && !cfg.headers.Authorization) cfg.headers.Authorization = `Bearer ${token}`
   return cfg
@@ -40,16 +42,18 @@ api.interceptors.response.use(
       isRefreshing = true
 
       try {
+        // Cookie tabanlı session: refresh isteği credentials:include ile gönderilir,
+        // backend yeni cookie set eder. Kiosk/mobile için mevcut token header'da.
         const token = useAuthStore.getState().token
-        if (!token) throw new Error('no token')
         const res = await axios.post('/api/auth/refresh', null, {
-          headers: { Authorization: `Bearer ${token}` }
+          withCredentials: true,
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
         })
-        const newToken = res.data.token
-        useAuthStore.setState(s => ({ ...s, token: newToken, user: res.data.user ?? s.user }))
+        const newToken = res.data.token // kiosk/mobile için; staff'ta null
+        useAuthStore.setState(s => ({ ...s, token: newToken ?? s.token, user: res.data.user ?? s.user }))
         refreshQueue.forEach(p => p.resolve(newToken))
         refreshQueue = []
-        original.headers.Authorization = `Bearer ${newToken}`
+        if (newToken) original.headers.Authorization = `Bearer ${newToken}`
         return api(original)
       } catch {
         refreshQueue.forEach(p => p.reject(error))

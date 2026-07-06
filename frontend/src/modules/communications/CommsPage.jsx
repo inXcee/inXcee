@@ -2,6 +2,9 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
+import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
+import { useUrlParamState } from '../../shared/hooks/useUrlParamState.js'
+import HelpHint from '../../shared/components/HelpHint.jsx'
 
 const toast = (m, t = 'success') => useToastStore.getState().addToast(m, t)
 const toastErr = (e) => toast(e?.response?.data?.error || 'Hata', 'error')
@@ -14,12 +17,12 @@ const TABS = [
 const CHANNELS = { sms: '📱 SMS', push: '🔔 Push', toast: '💬 Toast', email: '📧 E-posta', whatsapp: '🟢 WhatsApp' }
 
 export default function CommsPage() {
-  const [tab, setTab] = useState('broadcast')
+  const [tab, setTab] = useUrlParamState('tab', 'broadcast')
 
   return (
     <div style={{ maxWidth: 1100 }} className="fade-up">
       <div style={{ marginBottom: 16 }}>
-        <h1 style={{ fontSize: 28, letterSpacing: 4, color: 'var(--text)', margin: 0 }}>İLETİŞİM</h1>
+        <h1 style={{ fontSize: 28, letterSpacing: 4, color: 'var(--text)', margin: 0 }}>İLETİŞİM<HelpHint topic="communications" title="İLETİŞİM" /></h1>
         <p style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', marginTop: 4, letterSpacing: 1.5 }}>
           TOPLU SMS / PUSH GÖNDERİM · İLETİŞİM LOGU
         </p>
@@ -184,7 +187,7 @@ function LogTab() {
         </select>
       </div>
 
-      {isLoading ? <div style={{ padding: 30, color: 'var(--text3)' }}>Yükleniyor…</div> : !data.length ? (
+      {isLoading ? <SkeletonTable rows={4} cols={3} /> : !data.length ? (
         <div style={{ padding: 50, textAlign: 'center', background: 'var(--surface)', borderRadius: 14 }}>
           <div style={{ fontSize: 36, opacity: 0.3 }}>📜</div>
           <div style={{ fontFamily: 'var(--display)', fontSize: 14, marginTop: 8 }}>HENÜZ İLETİŞİM YOK</div>

@@ -1,273 +1,433 @@
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuthStore } from '../../shared/store/authStore.js'
+import { postLoginRedirect, VALID_MODES } from '../../shared/auth/postLoginRedirect.js'
 import api from '../../shared/api/client.js'
+import { LoginModal } from './LoginModals.jsx'
+import { LoginCard } from './components/LoginCard.jsx'
+import { HeroScene } from './components/HeroScene.jsx'
+import { MissionBand } from './components/sections/MissionBand.jsx'
+import { ServicePillars } from './components/sections/ServicePillars.jsx'
+import { ModuleCarousel } from './components/sections/ModuleCarousel.jsx'
+import { StatsCounter } from './components/sections/StatsCounter.jsx'
+import { BlockHeatmap } from './components/sections/BlockHeatmap.jsx'
+import { FilyosEnv } from './components/sections/FilyosEnv.jsx'
+import { SecurityBand } from './components/sections/SecurityBand.jsx'
+import { LandingTicker } from './components/sections/LandingTicker.jsx'
+import { LandingFooter } from './components/sections/LandingFooter.jsx'
+import { useMotionPref } from './hooks/useMotionPref.js'
+import { useTranslation } from '../../shared/i18n/index.js'
+import { LAT, LON, DEMO_USERS, KIOSKS, MODE_ORDER, MODE_TITLES, MODULES } from './loginData.js'
 
-const DEMO_USERS = [
-  { username: 'mudur',    password: 'admin123', role: 'Kampüs Müdürü' },
-  { username: 'vardiya',  password: 'admin123', role: 'Vardiya Amiri' },
-  { username: 'teknik',   password: 'admin123', role: 'Teknik Servis' },
-  { username: 'camasir',  password: 'admin123', role: 'Çamaşırhane' },
-  { username: 'meydanci', password: 'admin123', role: 'Meydancı' },
-]
+const PASSKEY_KEY = 'yys_passkey_cred'
+const webAuthnBrowser = () => import('@simplewebauthn/browser')
+import './LoginPage.css'
 
 export default function LoginPage() {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [showPw, setShowPw] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
-  const [slowHint, setSlowHint] = useState(false)
-  const [demoOpen, setDemoOpen] = useState(false)
-  const [twoFA, setTwoFA] = useState(null) // { challenge_token } | null
+  const [loadingText, setLoadingText] = useState('Kimlik doğrulanıyor')
+  const [modulesOpen, setModulesOpen] = useState(false)
+  const [twoFA, setTwoFA] = useState(null)
   const [code, setCode] = useState('')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const urlMode = searchParams.get('mode')
+  const [mode, setMode] = useState(VALID_MODES.includes(urlMode) ? urlMode : 'standard')
+  const [modal, setModal] = useState(null) // 'kvkk' | 'terms' | 'support' | 'forgot' | null
+  const [capsLock, setCapsLock] = useState(false)
+  const [failCount, setFailCount] = useState(0)
+  const [cooldownUntil, setCooldownUntil] = useState(0)
+  const [nowTs, setNowTs] = useState(Date.now())
+  const [shake, setShake] = useState(false)
+  const [clock, setClock] = useState('--:--:--')
+  const [stats, setStats] = useState(null)
+  const [weather, setWeather] = useState(null)
+  // Passkey (webauthn): credentialId bu cihazın localStorage'ında tutulur.
+  const [passkeyCred, setPasskeyCred] = useState(() => localStorage.getItem(PASSKEY_KEY))
+  const [passkeyOffer, setPasskeyOffer] = useState(null) // başarılı parola girişi sonrası bekleyen user
+
   const login = useAuthStore(s => s.login)
   const navigate = useNavigate()
+  const modulesRef = useRef(null)
+  const { motion, setMotion, rain, setRain, reduced } = useMotionPref()
+  const { t } = useTranslation()
 
+  // ── Cooldown durumu (3 başarısız → 30sn kilit) ───────────────
+  const cooldownLeft = Math.max(0, Math.ceil((cooldownUntil - nowTs) / 1000))
+  const isLocked = cooldownLeft > 0
+
+  // ── Mod-bağımlı login sonrası akış ───────────────────────────
+  const finishLogin = async (user) => {
+    const result = postLoginRedirect(user, mode)
+    if (!result.ok && result.reason === 'role_mismatch') {
+      // Yönetici sekmesinden personel hesabıyla giriş — backend zaten cookie
+      // verdi, oturumu sonlandıralım ki sayfayı yenileyince /me bu hesabı
+      // restore etmesin. Logout best-effort; başarısızsa zarar yok.
+      try { await api.post('/auth/logout') } catch { /* sessiz */ }
+      setError(`${t('login.card.role_prefix', 'Bu sekme yönetici hesapları içindir (sizin rolünüz: ')}${user.role}${t('login.card.role_suffix', '). Lütfen "Personel" sekmesinden giriş yapın.')}`)
+      return
+    }
+    setFailCount(0)
+    login(null, user)
+    navigate(result.path || '/')
+  }
+
+  // ── Passkey: hızlı giriş (kayıtlı cihaz) ─────────────────────
+  const handlePasskeyLogin = async () => {
+    if (!passkeyCred || loading) return
+    setLoading(true); setError(''); setLoadingText(t('login.card.loading_auth', 'Kimlik doğrulanıyor'))
+    try {
+      const { startAuthentication } = await webAuthnBrowser()
+      const opt = await api.post('/auth/passkey/auth-options', { credentialId: passkeyCred })
+      const authResp = await startAuthentication(opt.data)
+      const res = await api.post('/auth/passkey/login', { credentialId: passkeyCred, response: authResp })
+      await finishLogin(res.data.user)
+    } catch (err) {
+      if (err?.name === 'NotAllowedError') { /* kullanıcı iptal etti — sessiz */ }
+      else if (err.response?.status === 404) {
+        localStorage.removeItem(PASSKEY_KEY); setPasskeyCred(null)
+        setError(t('login.card.passkey_fail', 'Passkey girişi başarısız'))
+      } else setError(err.response?.data?.error || t('login.card.passkey_fail', 'Passkey girişi başarısız'))
+    } finally { setLoading(false) }
+  }
+
+  // ── Passkey: parola girişi sonrası kayıt teklifi ─────────────
+  const handlePasskeyRegister = async (accept) => {
+    const user = passkeyOffer
+    setPasskeyOffer(null)
+    if (accept) {
+      try {
+        const { startRegistration } = await webAuthnBrowser()
+        const opt = await api.post('/auth/passkey/register-options')
+        const regResp = await startRegistration(opt.data)
+        const ver = await api.post('/auth/passkey/register', regResp)
+        localStorage.setItem(PASSKEY_KEY, ver.data.credentialId)
+        setPasskeyCred(ver.data.credentialId)
+      } catch { /* iptal/başarısız — parola girişi zaten geçerli, sessiz devam */ }
+    } else {
+      localStorage.setItem(PASSKEY_KEY + '_dismissed', '1') // bir daha sorma
+    }
+    await finishLogin(user)
+  }
+
+  // ── Login (gerçek auth + timeout + cooldown + a11y) ──────────
   const handleSubmit = async (e) => {
     e.preventDefault()
-    setLoading(true); setError(''); setSlowHint(false)
-    const slowTimer = setTimeout(() => setSlowHint(true), 4000)
+    if (isLocked) return
+    setLoading(true); setError(''); setLoadingText(t('login.card.loading_auth', 'Kimlik doğrulanıyor'))
+    const slow = setTimeout(() => setLoadingText(t('login.card.loading_wake', 'Sunucu uyandırılıyor…')), 4000)
     try {
-      const res = await api.post('/auth/login', { username, password })
+      const res = await api.post('/auth/login', { username, password }, { timeout: 8000 })
       if (res.data.require_2fa) {
         setTwoFA({ challenge_token: res.data.challenge_token })
-        clearTimeout(slowTimer); setLoading(false); setSlowHint(false)
+        setFailCount(0)
         return
       }
-      login(res.data.token, res.data.user)
-      navigate('/')
+      // Passkey teklifi: destekleyen tarayıcıda, bu cihazda kayıt yoksa bir kez sor.
+      if (!passkeyCred && !localStorage.getItem(PASSKEY_KEY + '_dismissed')) {
+        try {
+          const { browserSupportsWebAuthn } = await webAuthnBrowser()
+          if (browserSupportsWebAuthn()) { setPasskeyOffer(res.data.user); return }
+        } catch { /* destek yoksa normal akış */ }
+      }
+      await finishLogin(res.data.user)
     } catch (err) {
       if (err.response?.status === 401) {
-        setError('Kullanici adi veya sifre hatali')
-      } else if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
-        setError('Sunucu yanitlamiyor — birkaç saniye bekleyip tekrar deneyin')
-      } else if (!err.response) {
-        setError('Sunucuya ulasilamiyor — internet baglantinizi kontrol edin')
-      } else {
-        setError('Bir hata olustu, tekrar deneyin')
+        setError(t('login.card.err_credentials', 'Kullanıcı adı veya şifre hatalı'))
+        const next = failCount + 1
+        setFailCount(next)
+        if (next >= 3) setCooldownUntil(Date.now() + 30_000)
       }
-    }
-    finally { clearTimeout(slowTimer); setLoading(false); setSlowHint(false) }
+      else if (err.response?.status === 429) setError(err.response?.data?.error || t('login.card.err_ratelimit', 'Çok fazla giriş denemesi. Lütfen birkaç dakika sonra tekrar deneyin.'))
+      else if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) setError(t('login.card.err_timeout', 'Sunucu yanıtlamıyor — birkaç saniye bekleyip tekrar deneyin'))
+      else if (!err.response) setError(t('login.card.err_network', 'Sunucuya ulaşılamıyor — bağlantınızı kontrol edin'))
+      else setError(t('login.card.err_generic', 'Bir hata oluştu, tekrar deneyin'))
+    } finally { clearTimeout(slow); setLoading(false) }
   }
 
   const handle2fa = async (e) => {
     e.preventDefault()
-    setLoading(true); setError('')
+    setLoading(true); setError(''); setLoadingText(t('login.card.loading_2fa', 'Kod doğrulanıyor'))
     try {
-      const res = await api.post('/auth/2fa/verify-login', {
-        challenge_token: twoFA.challenge_token,
-        code,
-      })
-      login(res.data.token, res.data.user)
-      navigate('/')
+      const res = await api.post('/auth/2fa/verify-login', { challenge_token: twoFA.challenge_token, code }, { timeout: 8000 })
+      await finishLogin(res.data.user)
     } catch (err) {
       setError(err.response?.data?.error || 'Kod doğrulanamadı')
-    } finally {
-      setLoading(false)
+      setShake(true); setTimeout(() => setShake(false), 450)
+      setCode('')
     }
+    finally { setLoading(false) }
+  }
+
+  // ── Cooldown saati — sadece kilitli iken tick at ─────────────
+  useEffect(() => {
+    if (cooldownUntil <= Date.now()) return
+    const id = setInterval(() => {
+      const t = Date.now()
+      setNowTs(t)
+      if (t >= cooldownUntil) { setFailCount(0); clearInterval(id) }
+    }, 1000)
+    return () => clearInterval(id)
+  }, [cooldownUntil])
+
+  // ── Canlı saat ───────────────────────────────────────────────
+  useEffect(() => {
+    const t = () => setClock(new Date().toTimeString().slice(0, 8))
+    t(); const id = setInterval(t, 1000); return () => clearInterval(id)
+  }, [])
+
+
+  // ── Gerçek toplu sayılar (auth'suz public endpoint) ──────────
+  useEffect(() => {
+    api.get('/public/stats').then(r => setStats(r.data)).catch(() => {})
+  }, [])
+
+  // ── Gerçek Filyos hava + deniz (open-meteo) ──────────────────
+  useEffect(() => {
+    let alive = true
+    async function load() {
+      try {
+        const w = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}&current=temperature_2m,wind_speed_10m,wind_direction_10m,weather_code&wind_speed_unit=kn`).then(r => r.json())
+        let wave = null
+        try { const m = await fetch(`https://marine-api.open-meteo.com/v1/marine?latitude=${LAT}&longitude=${LON}&current=wave_height`).then(r => r.json()); wave = m?.current?.wave_height } catch { /* deniz verisi boş olabilir */ }
+        if (!alive) return
+        const c = w.current
+        setWeather({
+          temp: Math.round(c.temperature_2m),
+          windKn: Math.round(c.wind_speed_10m),
+          windDirIdx: Math.round(c.wind_direction_10m / 45) % 8,
+          descCode: c.weather_code,
+          wave: wave != null ? (+wave).toFixed(1) : null,
+        })
+      } catch { /* sessiz */ }
+    }
+    load(); const id = setInterval(load, 5 * 60 * 1000)
+    return () => { alive = false; clearInterval(id) }
+  }, [])
+
+
+  // ── Modül popover'ı dış tıklamayla kapat ─────────────────────
+  useEffect(() => {
+    if (!modulesOpen) return
+    const onDoc = (e) => { if (!modulesRef.current?.contains(e.target)) setModulesOpen(false) }
+    const onEsc = (e) => { if (e.key === 'Escape') setModulesOpen(false) }
+    document.addEventListener('mousedown', onDoc)
+    document.addEventListener('keydown', onEsc)
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      document.removeEventListener('keydown', onEsc)
+    }
+  }, [modulesOpen])
+
+  const pickDemo = useCallback((u) => { setUsername(u.username); setPassword(u.password); setError('') }, [])
+
+  // ── Ticker (hassas veri yok — sadece sistem / sayılar) ──────
+  const tickerItems = []
+  tickerItems.push(['t', t('login.ticker.system', 'Sistem'), t('login.ticker.system_val', 'çevrimiçi · TLS 1.3 · RBAC')])
+  if (stats) {
+    tickerItems.push([stats.open_faults > 0 ? 'w' : 'g', t('login.ticker.faults', 'Açık arıza'), `${stats.open_faults} ${t('login.ticker.faults_unit', 'kayıt')}`])
+    tickerItems.push(['g', t('login.ticker.dept', 'Departman'), `${stats.departments} ${t('login.ticker.dept_unit', 'aktif')}`])
+  }
+  tickerItems.push(['b', t('login.ticker.backup', 'Gece yedeği'), t('login.ticker.backup_val', '03:00 · /var/data/backups')])
+  tickerItems.push(['t', t('login.ticker.erp', 'KampüsERP'), t('login.ticker.erp_val', 'v5.0 · 814 yatak · 19 blok')])
+  // LandingTicker içeride ikiye katlar — burada ham liste yeterli.
+
+  const isForm = mode !== 'kiosk'
+
+  const handleModeChange = (k) => {
+    setMode(k)
+    setError('')
+    const next = new URLSearchParams(searchParams)
+    if (k === 'standard') next.delete('mode'); else next.set('mode', k)
+    setSearchParams(next, { replace: true })
   }
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      background: 'var(--bg)',
-      padding: '16px',
-      position: 'relative',
-    }}>
-      {/* Grid overlay already via body::before */}
-      {/* Glow */}
-      <div style={{
-        position: 'fixed', top: '20%', left: '50%', transform: 'translateX(-50%)',
-        width: '400px', height: '400px', borderRadius: '50%',
-        background: 'radial-gradient(circle, rgba(240,165,0,0.06) 0%, transparent 70%)',
-        pointerEvents: 'none',
-      }} />
+    <div className="lp-root v4">
+      <div className="grain" /><div className="vignette" />
 
-      <div style={{ width: '100%', maxWidth: '360px', position: 'relative', zIndex: 1 }} className="fade-up">
-        {/* Logo */}
-        <div style={{ textAlign: 'center', marginBottom: '36px' }}>
-          <div style={{
-            width: '60px', height: '60px',
-            background: 'linear-gradient(135deg, var(--accent), var(--accent3))',
-            borderRadius: '12px',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontFamily: 'var(--display)', fontSize: '20px', color: '#000',
-            letterSpacing: '1px',
-            margin: '0 auto 16px',
-            boxShadow: '0 8px 32px rgba(240,165,0,0.3)',
-          }}>
-            ŞKY
-          </div>
-          <h1 style={{ fontSize: '28px', letterSpacing: '6px', color: 'var(--text)' }}>YYS</h1>
-          <p style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', marginTop: '6px', letterSpacing: '3px' }}>
-            ŞANTİYE YÖNETİM SİSTEMİ
-          </p>
+      {loading && (
+        <div className="loading on">
+          <div className="spin" /><div className="ld-t">{loadingText}</div><div className="ld-s">KAMPUS-DC01 · TLS 1.3 · RBAC</div>
         </div>
+      )}
 
-        {/* Form card */}
-        <div style={{
-          background: 'var(--surface)',
-          borderRadius: '12px',
-          border: '1px solid var(--border)',
-          overflow: 'hidden',
-          boxShadow: 'var(--shadow)',
-        }}>
-          {/* Top accent */}
-          <div style={{ height: '2px', background: 'linear-gradient(90deg, var(--accent), var(--accent3))' }} />
+      <div className="app">
+        {/* NAV — brand · canlı metrik şeridi · 10-modül çipi · saat */}
+        <nav className="nav">
+          <div className="brand">
+            <div className="brand-mark">
+              <svg viewBox="0 0 24 24" fill="none"><path d="M3 20h18M5 20V9l7-5 7 5v11M9 20v-6h6v6" stroke="#fff" strokeWidth="1.8" strokeLinejoin="round" strokeLinecap="round" /></svg>
+            </div>
+            <div>
+              <div className="brand-name">Kampüs <span>YYS</span></div>
+              <div className="brand-sub">AVS · Filyos</div>
+            </div>
+          </div>
 
-          {twoFA ? (
-            <form onSubmit={handle2fa} style={{ padding: '28px' }}>
-              <div style={{ marginBottom: '8px', fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--accent)', letterSpacing: 2 }}>
-                İKİ FAKTÖRLÜ DOĞRULAMA
-              </div>
-              <p style={{ fontSize: '12px', color: 'var(--text2)', marginBottom: 18 }}>
-                Authenticator uygulamasındaki 6 haneli kodu girin.
-              </p>
-              <input
-                type="text"
-                inputMode="numeric"
-                pattern="[0-9]{6}"
-                maxLength={6}
-                value={code}
-                onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                className="form-input"
-                placeholder="123456"
-                autoFocus
-                style={{ textAlign: 'center', fontSize: 20, letterSpacing: 8, fontFamily: 'var(--mono)' }}
-              />
-              {error && (
-                <div className="alert alert-danger" style={{ marginTop: 14 }}>
-                  <span>⚠</span><span>{error}</span>
-                </div>
-              )}
-              <button
-                type="submit"
-                disabled={loading || code.length !== 6}
-                className="btn btn-primary"
-                style={{ width: '100%', justifyContent: 'center', padding: '11px', fontSize: '12px', marginTop: 14 }}
-              >
-                {loading ? 'DOĞRULANIYOR...' : 'DOĞRULA'}
-              </button>
+          <div className="nav-metrics" role="group" aria-label="Canlı kampüs özet">
+            <div className="nm" title="Doluluk oranı">
+              <span className="nm-ico" aria-hidden="true">📊</span>
+              <span className="nm-val">{stats ? `%${stats.occupancy_pct}` : '—'}</span>
+              <span className="nm-lbl">{t('login.nav.occupancy', 'Doluluk')}</span>
+            </div>
+            <div className="nm" title="Dolu / toplam yatak">
+              <span className="nm-ico" aria-hidden="true">🛏️</span>
+              <span className="nm-val">{stats ? `${stats.beds_occupied}/${stats.beds_total}` : '—'}</span>
+              <span className="nm-lbl">{t('login.nav.beds', 'Yatak')}</span>
+            </div>
+            <div className={`nm ${stats?.open_faults > 0 ? 'warn' : ''}`} title="Açık arıza sayısı">
+              <span className="nm-ico" aria-hidden="true">🔧</span>
+              <span className="nm-val">{stats?.open_faults ?? '—'}</span>
+              <span className="nm-lbl">{t('login.nav.faults', 'Arıza')}</span>
+            </div>
+            <div className="nm" title="Aktif personel">
+              <span className="nm-ico" aria-hidden="true">👥</span>
+              <span className="nm-val">{stats?.active_staff ?? '—'}</span>
+              <span className="nm-lbl">{t('login.nav.staff', 'Personel')}</span>
+            </div>
+
+            <div className="nm-chip-wrap" ref={modulesRef}>
               <button
                 type="button"
-                onClick={() => { setTwoFA(null); setCode(''); setError('') }}
-                className="btn btn-ghost"
-                style={{ width: '100%', marginTop: 8 }}
+                className={`nm-chip ${modulesOpen ? 'on' : ''}`}
+                onClick={() => setModulesOpen(v => !v)}
+                aria-expanded={modulesOpen}
+                aria-haspopup="menu"
               >
-                İPTAL
+                <span>{t('login.nav.modules', '10 modül')}</span>
+                <span className="nm-chev" aria-hidden="true">{modulesOpen ? '▴' : '▾'}</span>
               </button>
-            </form>
-          ) : (
-          <form onSubmit={handleSubmit} style={{ padding: '28px' }}>
-            <div style={{ marginBottom: '14px' }}>
-              <label className="form-label">Kullanıcı Adı</label>
-              <input
-                type="text"
-                value={username}
-                onChange={e => setUsername(e.target.value)}
-                autoFocus
-                className="form-input"
-                placeholder="kullanici_adi"
-              />
+              {modulesOpen && (
+                <div className="nm-pop" role="menu">
+                  {MODULES.map((m) => (
+                    <div className="nm-pop-item" key={m.k} role="menuitem">
+                      <span className="nm-pop-ico" aria-hidden="true">{m.icon}</span>
+                      <span>{t(`login.modules.${m.k}.name`, m.name)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-            <div style={{ marginBottom: '20px' }}>
-              <label className="form-label">Şifre</label>
-              <input
-                type="password"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                className="form-input"
-                placeholder="••••••••"
-              />
-            </div>
+          </div>
 
-            {error && (
-              <div className="alert alert-danger" style={{ marginBottom: '16px' }}>
-                <span>⚠</span><span>{error}</span>
+          <nav className="nav-sections" aria-label="Bölümler">
+            <a href="#modules">{t('login.nav.sec_modules', 'Modüller')}</a>
+            <a href="#stats">{t('login.nav.sec_stats', 'Sayılarla')}</a>
+            <a href="#heat">{t('login.nav.sec_blocks', 'Bloklar')}</a>
+            <a href="#env">{t('login.nav.sec_filyos', 'Filyos')}</a>
+            <a href="#sec">{t('login.nav.sec_security', 'Güvenlik')}</a>
+          </nav>
+
+          <div className="nav-meta">
+            <div className="meta"><div className="dot" /><span>{t('login.nav.online', 'ONLINE')}</span></div>
+            <div className="meta">🕐 {clock}</div>
+          </div>
+        </nav>
+
+        {/* HERO — video + yağmur canvas + hareket HUD, login kartını ve hero-copy'yi sarar */}
+        <HeroScene
+          posterSrc="/hero/D2-night-bright.png"
+          videoSrc="/hero/hero-night.mp4"
+          motion={motion}
+          setMotion={setMotion}
+          rain={rain}
+          setRain={setRain}
+          reduced={reduced}
+        >
+          <div className="lp-wrap hero-grid">
+            <div className="hero-copy">
+              <span className="eyebrow"><span className="fl" />{t('login.hero.eyebrow', 'AVS Kamp Alanı · Filyos · Zonguldak')}</span>
+              <h1>{t('login.hero.title1', '814 yatak, 19 blok,')}<br /><span>{t('login.hero.title2', 'tek operasyon merkezi.')}</span></h1>
+              <p>{t('login.hero.sub', 'Konaklama, bakım, çamaşırhane ve personel operasyonunu tek panelden yönetin. 7/24 canlı.')}</p>
+              <div className="chips">
+                <span className="chip">{t('login.hero.chip1', '10 entegre modül')}</span>
+                <span className="chip">{t('login.hero.chip2', 'RBAC + 2FA')}</span>
+                <span className="chip">{t('login.hero.chip3', 'Canlı Filyos hava/deniz')}</span>
               </div>
-            )}
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="btn btn-primary"
-              style={{ width: '100%', justifyContent: 'center', padding: '11px', fontSize: '12px', opacity: loading ? 0.6 : 1 }}
-            >
-              {loading ? (slowHint ? 'SUNUCU UYANDIRILYOR...' : 'GIRIS YAPILIYOR...') : 'GIRIS YAP'}
-            </button>
-          </form>
-          )}
-        </div>
-
-        {import.meta.env.DEV && (
-          <div style={{ marginTop: '14px' }}>
-            <button
-              type="button"
-              onClick={() => setDemoOpen(o => !o)}
-              style={{
-                width: '100%', padding: '8px 12px',
-                background: 'transparent', border: '1px dashed var(--border)',
-                borderRadius: '8px', color: 'var(--text3)',
-                fontFamily: 'var(--mono)', fontSize: '10px', letterSpacing: '1px',
-                cursor: 'pointer', display: 'flex',
-                alignItems: 'center', justifyContent: 'space-between',
-              }}
-            >
-              <span>{demoOpen ? '▾' : '▸'} DEMO KULLANICILAR</span>
-              <span style={{ color: 'var(--text4)' }}>geliştirme</span>
-            </button>
-            {demoOpen && (
-              <div style={{
-                marginTop: '8px',
-                background: 'var(--surface)',
-                border: '1px solid var(--border)',
-                borderRadius: '8px',
-                overflow: 'hidden',
+            </div>
+            <LoginCard
+              mode={mode}
+              onModeChange={handleModeChange}
+              modeOrder={MODE_ORDER}
+              modeTitles={MODE_TITLES}
+              isForm={isForm}
+              username={username}
+              setUsername={setUsername}
+              password={password}
+              setPassword={setPassword}
+              showPw={showPw}
+              setShowPw={setShowPw}
+              capsLock={capsLock}
+              setCapsLock={setCapsLock}
+              error={error}
+              loading={loading}
+              isLocked={isLocked}
+              cooldownLeft={cooldownLeft}
+              onSubmit={handleSubmit}
+              twoFA={twoFA}
+              code={code}
+              setCode={setCode}
+              shake={shake}
+              onVerify2fa={handle2fa}
+              onCancel2fa={() => { setTwoFA(null); setCode(''); setError('') }}
+              onForgot={() => setModal('forgot')}
+              kiosks={KIOSKS}
+              onKioskNav={navigate}
+              demoUsers={DEMO_USERS}
+              onPickDemo={pickDemo}
+              isDev={import.meta.env.DEV}
+              hasPasskey={!!passkeyCred}
+              onPasskeyLogin={handlePasskeyLogin}
+            />
+            {/* Passkey kayıt teklifi — parola girişi başarılı, yönlendirme bekliyor */}
+            {passkeyOffer && (
+              <div role="dialog" aria-modal="true" style={{
+                position: 'fixed', inset: 0, zIndex: 300,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}>
-                {DEMO_USERS.map((u, i) => (
-                  <button
-                    key={u.username}
-                    type="button"
-                    onClick={() => { setUsername(u.username); setPassword(u.password); setError('') }}
-                    style={{
-                      width: '100%', padding: '10px 14px',
-                      background: 'transparent', border: 'none',
-                      borderBottom: i < DEMO_USERS.length - 1 ? '1px solid var(--border)' : 'none',
-                      color: 'var(--text)',
-                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                      cursor: 'pointer', fontSize: '12px', textAlign: 'left',
-                    }}
-                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(240,165,0,0.06)'}
-                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                  >
-                    <span>
-                      <span style={{ fontFamily: 'var(--mono)', color: 'var(--accent)' }}>{u.username}</span>
-                      <span style={{ color: 'var(--text3)', fontSize: '10px', marginLeft: '8px' }}>{u.role}</span>
-                    </span>
-                    <span style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text4)' }}>{u.password}</span>
-                  </button>
-                ))}
+                <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.65)' }} />
                 <div style={{
-                  padding: '8px 14px', background: 'rgba(0,0,0,0.2)',
-                  fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text4)',
-                  letterSpacing: '1px', textAlign: 'center',
+                  position: 'relative', width: 'min(380px, 90vw)', padding: '22px',
+                  background: 'var(--surface, #0d1117)', border: '1px solid var(--border, #233)',
+                  borderRadius: '14px', color: 'var(--text, #fff)',
                 }}>
-                  TIKLAYARAK FORMU DOLDURUN · PROD'DA GÖRÜNMEZ
+                  <div style={{ fontSize: '17px', fontWeight: 700, marginBottom: '8px' }}>
+                    🔑 {t('login.card.passkey_offer_title', 'Daha hızlı giriş?')}
+                  </div>
+                  <p style={{ fontSize: '13px', opacity: 0.8, marginBottom: '16px', lineHeight: 1.5 }}>
+                    {t('login.card.passkey_offer_body', 'Bu cihazda passkey (parmak izi / yüz / cihaz PIN) kurarsanız bir dahaki sefere parolasız girersiniz.')}
+                  </p>
+                  <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                    <button type="button" className="btn-ghost" onClick={() => handlePasskeyRegister(false)}>
+                      {t('login.card.passkey_later', 'Şimdi değil')}
+                    </button>
+                    <button type="button" className="btn" autoFocus onClick={() => handlePasskeyRegister(true)} style={{ width: 'auto', padding: '8px 18px' }}>
+                      {t('login.card.passkey_save', 'Kur')}
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
           </div>
-        )}
+        </HeroScene>
 
-        <div style={{ textAlign: 'center', marginTop: '20px', fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text4)', letterSpacing: '1px' }}>
-          ŞKY v3.0 · YYS SİSTEMİ
-          <span style={{ margin: '0 8px', color: 'var(--text4)' }}>·</span>
-          <a href="/kvkk" style={{ color: 'var(--text3)', textDecoration: 'none' }}>KVKK</a>
-        </div>
+        {/* LANDING BÖLÜMLERİ — hero'dan sonra kaydırmalı akış */}
+        <MissionBand />
+        <ServicePillars reduced={reduced} />
+        <ModuleCarousel stats={stats} reduced={reduced} />
+        <StatsCounter stats={stats} reduced={reduced} />
+        <BlockHeatmap blocks={stats?.blocks || []} reduced={reduced} />
+        <FilyosEnv weather={weather} reduced={reduced} />
+        <SecurityBand reduced={reduced} />
+        <LandingTicker items={tickerItems} />
+        <LandingFooter onModal={setModal} />
       </div>
+
+      <LoginModal which={modal} onClose={() => setModal(null)} />
     </div>
   )
 }

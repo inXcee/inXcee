@@ -1,5 +1,6 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useMemo } from 'react'
 import GarmentPicker from './GarmentPicker.jsx'
+import { parseGarmentLine } from './quickParse.js'
 
 const EMPTY_VALUE = { garments: [], freeText: '', itemCount: 0 }
 
@@ -19,10 +20,26 @@ export default function QuickGarmentInput({ garmentTypes = [], value = EMPTY_VAL
   const [focusIdx, setFocusIdx] = useState(0)
   const quickRef = useRef(null)
 
-  // Quick-add suggestions
-  const suggestions = quickText.trim().length > 0
+  // Çok-segmentli akıllı ayrıştırma: "3 gömlek mavi, 2 pantolon, çorap"
+  const parsed = useMemo(() => parseGarmentLine(quickText, garmentTypes), [quickText, garmentTypes])
+  // Zengin giriş mi? (adet/renk/desen/çoklu segment varsa parser devreye girer;
+  // tek çıplak kelimede eski öneri-dropdown davranışı korunur)
+  const isRich = parsed.length > 1 || (parsed.length === 1 && (
+    parsed[0].count > 1 || parsed[0].colors.length > 0 || parsed[0].pattern !== 'solid'
+  ))
+
+  // Quick-add suggestions (parser devrede değilken)
+  const suggestions = !isRich && quickText.trim().length > 0
     ? garmentTypes.filter(t => t.name.toLowerCase().includes(quickText.toLowerCase())).slice(0, 6)
     : []
+
+  function addParsed() {
+    if (parsed.length === 0) return
+    onChange({ ...value, garments: [...garments, ...parsed] })
+    setQuickText('')
+    setFocusIdx(0)
+    quickRef.current?.focus()
+  }
 
   function addStructured(type) {
     const entry = {
@@ -49,7 +66,9 @@ export default function QuickGarmentInput({ garmentTypes = [], value = EMPTY_VAL
   function handleQuickKey(e) {
     if (e.key === 'Enter') {
       e.preventDefault()
-      if (suggestions.length > 0) addStructured(suggestions[focusIdx] || suggestions[0])
+      if (isRich) addParsed()
+      else if (suggestions.length > 0) addStructured(suggestions[focusIdx] || suggestions[0])
+      else if (parsed.length > 0) addParsed()
       else if (quickText.trim()) addCustom()
     } else if (e.key === 'ArrowDown') {
       e.preventDefault()
@@ -84,7 +103,7 @@ export default function QuickGarmentInput({ garmentTypes = [], value = EMPTY_VAL
               value={quickText}
               onChange={e => setQuickText(e.target.value)}
               onKeyDown={handleQuickKey}
-              placeholder="Yaz + Enter → parça olarak ekle (gömlek, pantolon…)"
+              placeholder="⚡ 3 gömlek mavi, 2 pantolon, çorap → Enter ile hepsi"
               style={{
                 flex: 1, boxSizing: 'border-box',
                 background: '#1e293b', border: `1px solid ${quickText.trim() ? '#3b82f6' : '#334155'}`,
@@ -92,7 +111,13 @@ export default function QuickGarmentInput({ garmentTypes = [], value = EMPTY_VAL
                 color: '#f1f5f9', fontSize: 14, outline: 'none',
               }}
             />
-            <button type="button" onClick={() => (suggestions[0] ? addStructured(suggestions[0]) : addCustom())}
+            <button type="button"
+              onClick={() => {
+                if (isRich) addParsed()
+                else if (suggestions[0]) addStructured(suggestions[0])
+                else if (parsed.length > 0) addParsed()
+                else addCustom()
+              }}
               disabled={!quickText.trim()}
               style={{
                 padding: '10px 14px', borderRadius: 10, border: 'none',
@@ -100,9 +125,28 @@ export default function QuickGarmentInput({ garmentTypes = [], value = EMPTY_VAL
                 color: quickText.trim() ? '#fff' : '#475569',
                 fontWeight: 700, fontSize: 14, cursor: quickText.trim() ? 'pointer' : 'default',
               }}>
-              + Ekle
+              + Ekle{isRich && parsed.length > 1 ? ` (${parsed.length})` : ''}
             </button>
           </div>
+
+          {/* Canlı önizleme — ne ekleneceğini Enter'dan önce gösterir */}
+          {isRich && (
+            <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 6, alignItems: 'center' }}>
+              {parsed.map((g, i) => (
+                <span key={i} style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 4,
+                  background: g.type_id ? 'rgba(29,78,216,0.18)' : 'rgba(148,163,184,0.12)',
+                  border: `1px solid ${g.type_id ? '#1d4ed8' : '#475569'}`,
+                  borderRadius: 14, padding: '3px 9px', fontSize: 11,
+                  color: g.type_id ? '#93c5fd' : '#cbd5e1',
+                }}>
+                  {g.count > 1 ? `${g.count}× ` : ''}{g.emoji} {g.type_name}
+                  {g.colors.map(c => c.label).join('/') ? ` · ${g.colors.map(c => c.label).join('/')}` : ''}
+                  {g.pattern !== 'solid' ? ` · ${g.pattern_label}` : ''}
+                </span>
+              ))}
+            </div>
+          )}
           {suggestions.length > 0 && (
             <div style={{
               position: 'absolute', left: 0, right: 0, top: '100%', marginTop: 4, zIndex: 5,

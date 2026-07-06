@@ -1,5 +1,6 @@
 import { getDB } from '../../shared/db/index.js'
 import { memoize } from '../../shared/middleware/memo.js'
+import { getOverdueInside } from '../access/service.js'
 
 function _getKPI() {
   const db = getDB()
@@ -9,7 +10,19 @@ function _getKPI() {
   const occupancy_pct = total_beds > 0 ? Math.round((occupied / total_beds) * 100) : 0
   const open_maintenance = db.prepare("SELECT COUNT(*) as c FROM maintenance_requests WHERE status='open'").get().c
   const quarantine_rooms = db.prepare("SELECT COUNT(*) as c FROM rooms WHERE status='quarantine'").get().c
-  return { active_personnel, occupancy_pct, open_maintenance, quarantine_rooms, occupied, total_beds }
+
+  // D2b: 7 gün önceki değerler (geçmişe-dönük rekonstrüksiyon). Payda güncel yatak
+  // sayısı (getTrends ile aynı kabul — tarihsel oda değişimi izlenmiyor).
+  const D = "date('now','-7 days')"
+  const active_personnel_prev = db.prepare(`SELECT COUNT(*) c FROM personnel WHERE date(check_in_date) <= ${D} AND (check_out_date IS NULL OR date(check_out_date) > ${D})`).get().c
+  const occupied_prev = db.prepare(`SELECT COUNT(*) c FROM room_assignments WHERE date(assigned_at) <= ${D} AND (check_out_at IS NULL OR date(check_out_at) > ${D})`).get().c
+  const occupancy_pct_prev = total_beds > 0 ? Math.round((occupied_prev / total_beds) * 100) : 0
+  const open_maintenance_prev = db.prepare(`SELECT COUNT(*) c FROM maintenance_requests WHERE date(opened_at) <= ${D} AND (closed_at IS NULL OR date(closed_at) > ${D})`).get().c
+
+  return {
+    active_personnel, occupancy_pct, open_maintenance, quarantine_rooms, occupied, total_beds,
+    active_personnel_prev, occupancy_pct_prev, open_maintenance_prev, compare_days: 7,
+  }
 }
 export const getKPI = memoize(_getKPI, 30_000)
 
@@ -314,6 +327,33 @@ function _getAnomalies() {
       title: 'Doluluk hızla düşüyor',
       detail: `Bugün ${occRow.today_out} çıkış (7 gün ort. ${occRow.avg_out.toFixed(1)})`,
       action_path: '/checkin',
+    })
+  }
+
+  // R5 (Faz 6.2): Bugün kara liste alarmı — istasyonda kara listeli kart okutuldu
+  const alarmRow = db.prepare(`
+    SELECT COUNT(*) AS c FROM access_events
+    WHERE result='alarm' AND DATE(scanned_at) = DATE('now')
+  `).get()
+  if (alarmRow.c > 0) {
+    anomalies.push({
+      id: 'access-blacklist-today',
+      severity: 'critical',
+      title: 'Kara listedeki kişi okutma yaptı',
+      detail: `Bugün ${alarmRow.c} alarm — istasyonda kara listeli kart okutuldu`,
+      action_path: '/presence',
+    })
+  }
+
+  // R6 (Faz 6.2): Çıkış yapmadan uzun süre içeride kalanlar (16+ saat)
+  const overdue = getOverdueInside(db, 16)
+  if (overdue.length > 0) {
+    anomalies.push({
+      id: 'access-overdue-inside',
+      severity: 'warning',
+      title: 'Çıkış yapmadan uzun süre içeride',
+      detail: `${overdue.length} kişi 16+ saattir çıkış yapmadı`,
+      action_path: '/presence',
     })
   }
 

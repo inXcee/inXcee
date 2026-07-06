@@ -3,11 +3,11 @@ import PDFDocument from 'pdfkit'
 import { requireRole, requireAuth } from '../../shared/auth/middleware.js'
 import { getDB } from '../../shared/db/index.js'
 import { logAudit } from '../../shared/audit.js'
+import { validate } from '../../shared/middleware/validate.js'
+import { createDrillSchema } from './schemas.js'
 
 export const drillsRouter = Router()
 const mgmt = requireRole('campus_manager', 'shift_supervisor')
-
-const VALID_TYPES = ['fire', 'earthquake', 'security', 'evacuation', 'other']
 
 // Anlık blokta-kim-var listesi — tahliye/yoklama için.
 // Tek kişi-tek satır, blok → kat → oda → yatak sırasıyla.
@@ -50,11 +50,8 @@ drillsRouter.get('/stats', requireAuth, (req, res) => {
   res.json(stats)
 })
 
-drillsRouter.post('/', ...mgmt, (req, res) => {
-  const b = req.body || {}
-  if (!VALID_TYPES.includes(b.drill_type)) return res.status(400).json({ error: 'Geçersiz tatbikat tipi' })
-  if (!b.drill_date) return res.status(400).json({ error: 'Tarih gerekli' })
-  if (b.actual_count != null && b.actual_count < 0) return res.status(400).json({ error: 'Geçersiz katılım sayısı' })
+drillsRouter.post('/', ...mgmt, validate(createDrillSchema), (req, res) => {
+  const b = req.validated
   const db = getDB()
   const r = db.prepare(`
     INSERT INTO drills (drill_type, drill_date, expected_count, actual_count, duration_minutes,

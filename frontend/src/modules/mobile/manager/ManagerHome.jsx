@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import mobileApi from '../auth/mobileApi.js'
 import { usePullToRefresh } from '../../../shared/hooks/usePullToRefresh.js'
+import { SkeletonGrid } from '../../../shared/components/Skeleton.jsx'
 
 export default function ManagerHome() {
   const navigate = useNavigate()
@@ -23,7 +24,7 @@ export default function ManagerHome() {
       <p style={{ fontSize: '12px', color: '#6b7280', margin: '0 0 16px' }}>{new Date().toLocaleDateString('tr-TR', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
 
       {isLoading ? (
-        <div style={{ color: '#9ca3af', textAlign: 'center', padding: '24px' }}>Yükleniyor...</div>
+        <SkeletonGrid count={4} minWidth={120} />
       ) : (
         <>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px', marginBottom: '16px' }}>
@@ -38,6 +39,7 @@ export default function ManagerHome() {
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             <NavBtn label="🗺️ Blok Doluluk Haritası" onClick={() => navigate('heatmap')} />
+            <NavBtn label="🪪 Kartlar (Giriş / Yemek)" onClick={() => navigate('/cards')} />
             <NavBtn label="🔔 Tüm Bildirimler" onClick={() => navigate('notifications')} />
           </div>
         </>

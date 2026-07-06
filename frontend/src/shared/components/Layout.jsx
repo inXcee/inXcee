@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import Sidebar from './Sidebar.jsx'
+import { RouteErrorBoundary } from './ErrorBoundary.jsx'
 import MobileBottomNav from './MobileBottomNav.jsx'
 import NotificationBell from './NotificationBell.jsx'
 import CommandPalette from './CommandPalette.jsx'
@@ -74,7 +75,9 @@ export default function Layout() {
         minHeight: '100vh',
         overflowY: 'auto',
       }}>
-        <Outlet />
+        <RouteErrorBoundary>
+          <Outlet />
+        </RouteErrorBoundary>
       </main>
       <GlobalShortcuts />
 

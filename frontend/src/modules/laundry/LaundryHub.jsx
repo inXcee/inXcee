@@ -1,5 +1,5 @@
-import { useState, useMemo, useEffect } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useState, useMemo, useEffect, useRef } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { laundryApi } from './api.js'
 import HelpHint from '../../shared/components/HelpHint.jsx'
 import LaundryReport from './LaundryReport.jsx'
@@ -7,7 +7,6 @@ import LaundrySettings from './LaundrySettings.jsx'
 import { useLaundrySSE } from '../../shared/hooks/useLaundrySSE.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 import { inputDialog } from '../../shared/components/InputDialog.jsx'
-import { BLOCKS } from '../../shared/blocks.js'
 import {
   DndContext,
   PointerSensor,
@@ -23,7 +22,7 @@ import SupplyWidget       from './components/SupplyWidget.jsx'
 import MachineStrip       from './components/MachineStrip.jsx'
 import SlaAlert           from './components/SlaAlert.jsx'
 import ItemCard           from './components/ItemCard.jsx'
-import NewItemModal       from './components/NewItemModal.jsx'
+import NewItemModal from './components/NewItemModal.jsx'
 import RoomsSection from './components/RoomsSection.jsx'
 import DeliveryModal      from './components/DeliveryModal.jsx'
 import DamageModal        from './components/DamageModal.jsx'
@@ -37,13 +36,22 @@ import ArchiveDetailPanel       from './components/ArchiveDetailPanel.jsx'
 import LaundryChat              from './components/LaundryChat.jsx'
 import PremiumSearchPanel       from './components/PremiumSearchPanel.jsx'
 import GarmentScanModal         from './components/GarmentScanModal.jsx'
-import KanbanCard               from './components/KanbanCard.jsx'
-import KanbanCol                from './components/KanbanCol.jsx'
-import DeliveredTodaySection    from './components/DeliveredTodaySection.jsx'
-import QuickNotes               from './components/QuickNotes.jsx'
-import QuickAdd                 from './components/QuickAdd.jsx'
-import FullRecordsView          from './components/FullRecordsView.jsx'
-import { FILTERS }              from './components/hubShared.js'
+import QuickNotes              from './components/QuickNotes.jsx'
+import DeliveredTodaySection   from './components/DeliveredTodaySection.jsx'
+import QuickAdd                from './components/QuickAdd.jsx'
+import FullRecordsView         from './components/FullRecordsView.jsx'
+import { KanbanCard, KanbanCol } from './components/KanbanBoard.jsx'
+
+// ── Filter config ──────────────────────────────────────────────
+const FILTERS = [
+  { key: 'all',     label: 'Tümü',    dot: null },
+  { key: 'dirty',   label: 'Sepet',   dot: 'var(--accent)' },
+  { key: 'washing', label: 'Yıkama',  dot: 'var(--blue)' },
+  { key: 'ready',   label: 'Hazır',   dot: 'var(--green)' },
+  { key: 'urgent',  label: 'Acil',    dot: 'var(--red)' },
+  { key: 'sla',     label: 'SLA',     dot: 'var(--red)' },
+  { key: 'lost',    label: 'Kayıp',   dot: 'var(--text3)' },
+]
 
 // ── LaundryHub ─────────────────────────────────────────────────
 export default function LaundryHub({ defaultView = 'kanban' }) {
@@ -75,7 +83,7 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
   const [overCol,        setOverCol]        = useState(null)
   const [showQuickAdd,   setShowQuickAdd]   = useState(false)
   const [showScanModal,  setShowScanModal]  = useState(false)
-  const [filterBlock,    setFilterBlock]    = useState('all')  // 'all' | blok adı
+  const [filterBlock,    setFilterBlock]    = useState('all')  // 'all' | 'A' | 'B' | 'S2'
   const [filterUrgent,   setFilterUrgent]   = useState(false)
   const [undoPanelOpen,  setUndoPanelOpen]  = useState(false)
 
@@ -350,6 +358,8 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
     return val >= goal ? 'var(--green)' : 'var(--blue)'
   }, [stats?.washed_today?.count, laundrySettings.daily_goal])
 
+  const today = new Date().toLocaleDateString('tr-TR', { day: '2-digit', month: 'long', year: 'numeric' })
+
   return (
     <div style={{ maxWidth: view === 'kanban' ? 1600 : 1000, position: 'relative', zIndex: 1 }} className="fade-up">
 
@@ -519,7 +529,7 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
         />
 
         {view === 'kanban' && (<>
-          {/* Blok filtresi — tek kaynak: shared/blocks.js */}
+          {/* Blok filtresi */}
           <select
             value={filterBlock}
             onChange={e => setFilterBlock(e.target.value)}
@@ -527,9 +537,9 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
             style={{ width: 110, padding: '6px 8px', fontSize: 11, cursor: 'pointer' }}
           >
             <option value="all">Tüm Bloklar</option>
-            {BLOCKS.map(b => (
-              <option key={b.block} value={b.block}>{b.block}</option>
-            ))}
+            <option value="A">A Blok</option>
+            <option value="B">B Blok</option>
+            <option value="S2">S2</option>
           </select>
 
           {/* Acil toggle */}

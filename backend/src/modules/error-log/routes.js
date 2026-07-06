@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { requireRole } from '../../shared/auth/middleware.js'
 import jwt from 'jsonwebtoken'
+import { logger } from '../../shared/logger.js'
 import {
   reportErrorService, listErrorsService, getErrorService,
   deleteErrorService, clearErrorsService,
@@ -41,7 +42,7 @@ errorLogRouter.get('/', ...adminOnly, (req, res) => {
       offset: offset ? parseInt(offset, 10) || 0 : 0,
     }))
   } catch (e) {
-    console.error('[ErrorLog]', e)
+    logger.error('[ErrorLog]', e)
     res.status(500).json({ error: 'Sunucu hatası' })
   }
 })

@@ -2,15 +2,21 @@ import express from 'express'
 import cors from 'cors'
 import helmet from 'helmet'
 import compression from 'compression'
+import cookieParser from 'cookie-parser'
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit'
 import jwt from 'jsonwebtoken'
 import { readFileSync } from 'node:fs'
+import { statfs } from 'node:fs/promises'
+import v8 from 'node:v8'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 import { sanitizeBody } from './shared/middleware/sanitize.js'
 import { getDB } from './shared/db/index.js'
 import { verifySchemaObjects } from './shared/db/verify.js'
-import { getMigrationStatus } from './shared/db/migrations.js'
+import { logger } from './shared/logger.js'
+import { setupExpressErrorHandler as setupSentryErrorHandler, isSentryActive } from './shared/sentry.js'
+import { httpMetricsMiddleware } from './shared/metrics.js'
+import { getStats as getJobStats } from './shared/jobs/index.js'
 
 // Sürüm bilgisi — /api/health ve diagnostic için bir kez başlangıçta okunur.
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -19,7 +25,16 @@ try {
   const pkg = JSON.parse(readFileSync(resolve(__dirname, '../package.json'), 'utf-8'))
   APP_VERSION = pkg.version || 'unknown'
 } catch { /* package.json okunamazsa default kalır */ }
-const APP_COMMIT = (process.env.GIT_SHA || process.env.RENDER_GIT_COMMIT || process.env.VERCEL_GIT_COMMIT_SHA || '').slice(0, 7) || null
+// Commit: önce env (CI/PaaS), yoksa git checkout'tan rev-parse (prod /opt/avskamp
+// git pull ile deploy edilir → çalışır). Git yoksa null (eski davranış).
+let APP_COMMIT = (process.env.GIT_SHA || process.env.RENDER_GIT_COMMIT || process.env.VERCEL_GIT_COMMIT_SHA || '').slice(0, 7) || null
+if (!APP_COMMIT) {
+  try {
+    const { execFileSync } = await import('node:child_process')
+    APP_COMMIT = execFileSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: __dirname, stdio: ['ignore', 'pipe', 'ignore'] })
+      .toString().trim() || null
+  } catch { /* git yoksa null kalır */ }
+}
 const APP_STARTED_AT = new Date().toISOString()
 import { checkinRouter } from './modules/checkin/routes.js'
 import { capacityRouter } from './modules/capacity/routes.js'
@@ -28,6 +43,8 @@ import { housekeepingRouter } from './modules/housekeeping/routes.js'
 import { maintenanceRouter } from './modules/maintenance/routes.js'
 import { disciplineRouter } from './modules/discipline/routes.js'
 import { selfServiceRouter } from './modules/self-service/routes.js'
+import { avsSelfServiceRouter } from './modules/avs-self-service/routes.js'
+import { feedbackRouter } from './modules/feedback/routes.js'
 import { dashboardRouter } from './modules/dashboard/routes.js'
 import { roomHistoryRouter } from './modules/room-history/routes.js'
 import { shiftsRouter } from './modules/shifts/routes.js'
@@ -60,11 +77,16 @@ import { reportErrorService } from './modules/error-log/service.js'
 import { backupRouter } from './modules/backup/routes.js'
 import { kvkkRouter } from './modules/kvkk/routes.js'
 import { systemRouter } from './modules/system/routes.js'
+import { publicRouter } from './modules/public/routes.js'
 import { notificationPrefsRouter } from './modules/notification-prefs/routes.js'
 import { campusMapRouter } from './modules/campus-map/routes.js'
 import { personnelRouter } from './modules/personnel/routes.js'
 import { hrRouter } from './modules/hr/routes.js'
 import { qrRouter } from './modules/qr/routes.js'
+import { cardsRouter } from './modules/cards/routes.js'
+import { stationsRouter } from './modules/stations/routes.js'
+import { activityRouter } from './modules/activity/routes.js'
+import { accessRouter } from './modules/access/routes.js'
 import { safetyRouter } from './modules/safety/routes.js'
 import { mealsRouter } from './modules/meals/routes.js'
 import { performanceRouter } from './modules/performance/routes.js'
@@ -72,8 +94,8 @@ import { commsRouter } from './modules/communications/routes.js'
 import { integrityRouter } from './modules/integrity/routes.js'
 
 if (process.env.NODE_ENV === 'production' && !process.env.ALLOWED_ORIGIN) {
-  console.error('[Startup] HATA: ALLOWED_ORIGIN env değişkeni production\'da zorunludur.')
-  console.error('[Startup] Render Dashboard\'a ALLOWED_ORIGIN=https://yourdomain.com ekleyin.')
+  logger.error('[Startup] HATA: ALLOWED_ORIGIN env değişkeni production\'da zorunludur.')
+  logger.error('[Startup] Render Dashboard\'a ALLOWED_ORIGIN=https://yourdomain.com ekleyin.')
   process.exit(1)
 }
 
@@ -95,6 +117,10 @@ const TRUST_PROXY = TRUST_PROXY_RAW === 'false'
       : TRUST_PROXY_RAW
 app.set('trust proxy', TRUST_PROXY)
 
+// Prometheus HTTP metrics — route eslesmesinden sonra finish event ile latency olcer.
+// Compression'dan once cunku response writer'a ihtiyaci yok, sadece timing ve label.
+app.use(httpMetricsMiddleware)
+
 // SSE response'ları sıkıştırma — chunk akışı bozulur, ayrıca event delivery gecikir.
 // Diğer JSON response'lar gzip ile ~70-80% küçülür.
 app.use(compression({
@@ -115,7 +141,8 @@ app.use(helmet({
       // Google Fonts CSS dosyası için fonts.googleapis.com.
       styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
       imgSrc: ["'self'", "data:", "blob:"],
-      connectSrc: ["'self'"],
+      // Login landing canlı Filyos hava/deniz verisi için open-meteo (auth'suz, public API).
+      connectSrc: ["'self'", "https://api.open-meteo.com", "https://marine-api.open-meteo.com"],
       fontSrc: ["'self'", "data:", "https://fonts.gstatic.com"],
       objectSrc: ["'none'"],
       baseUri: ["'self'"],
@@ -135,6 +162,7 @@ app.use(cors({
 }))
 // 5mb limit: zimmet imzası canvas base64 ve profil fotoğrafları JSON body'de taşınıyor
 app.use(express.json({ limit: '5mb' }))
+app.use(cookieParser())
 app.use(sanitizeBody)
 // Multer dosya isimleri unique (Date.now()-rand) — immutable cache güvenli.
 app.use('/uploads', (req, res, next) => {
@@ -145,22 +173,73 @@ app.use('/uploads', (req, res, next) => {
   next()
 }, express.static(process.env.UPLOADS_DIR || 'uploads', { maxAge: '1y', immutable: true }))
 
-// Health check
-app.get('/api/health', (req, res) => {
+// Health check — disk %95 üstü veya job queue 100+ pending'de 503 döner (UptimeRobot tetiklensin diye).
+// Heap kullanımı %90'ı geçerse warning olarak işaretlenir ama 503 vermez.
+const JOB_BACKLOG_CRITICAL = 100
+const JOB_BACKLOG_WARN = 50
+const HEAP_WARN_PERCENT = 90
+
+app.get('/api/health', async (req, res) => {
   let dbStatus = 'ok'
-  try { getDB().prepare('SELECT 1').get() } catch { dbStatus = 'error' }
+  let dbLatencyMs = null
+  try {
+    const t0 = Date.now()
+    getDB().prepare('SELECT 1').get()
+    dbLatencyMs = Date.now() - t0
+  } catch { dbStatus = 'error' }
+
+  let diskPercent = null
+  let diskStatus = 'ok'
+  try {
+    const stats = await statfs('/')
+    diskPercent = Math.round(((Number(stats.blocks) - Number(stats.bfree)) / Number(stats.blocks)) * 100)
+    if (diskPercent >= 95) diskStatus = 'critical'
+    else if (diskPercent >= 85) diskStatus = 'warning'
+  } catch { diskStatus = 'unknown' }
+
+  let jobs = { pending: 0, processing: 0, failed: 0 }
+  let jobsStatus = 'ok'
+  try {
+    const stats = getJobStats()
+    jobs = { pending: stats.pending, processing: stats.processing, failed: stats.failed }
+    if (jobs.pending >= JOB_BACKLOG_CRITICAL) jobsStatus = 'critical'
+    else if (jobs.pending >= JOB_BACKLOG_WARN) jobsStatus = 'warning'
+  } catch { jobsStatus = 'unknown' }
+
+  // V8 heap baskısı: heapUsed/heapTotal hatalı (heapTotal ihtiyaca göre adımlı büyür, normalde %90+).
+  // Doğrusu V8'in OOM limitine (heap_size_limit) oranı.
+  const memUsage = process.memoryUsage()
+  const heapPercent = Math.round((memUsage.heapUsed / v8.getHeapStatistics().heap_size_limit) * 100)
+  const heapStatus = heapPercent >= HEAP_WARN_PERCENT ? 'warning' : 'ok'
+
   // Migration verify — kritik index/trigger eksikse degraded (sessiz migration skip tespiti)
   let schema = { ok: true, missing: [] }
-  let migrations = { applied: 0, total: 0, errors: [] }
+  let migrations = { applied: 0, latest: null }
   if (dbStatus === 'ok') {
     try { schema = verifySchemaObjects() } catch { schema = { ok: false, missing: ['verify:failed'] } }
-    try { migrations = getMigrationStatus(getDB()) } catch { /* migration tablosu yoksa default kalır */ }
+    try {
+      const m = getDB().prepare('SELECT COUNT(*) c, MAX(version) v FROM schema_migrations').get()
+      migrations = { applied: m.c, latest: m.v }
+    } catch { /* migration tablosu yoksa default kalır */ }
   }
-  const healthy = dbStatus === 'ok' && schema.ok && migrations.errors.length === 0
-  res.status(dbStatus === 'ok' ? 200 : 503).json({
-    status: healthy ? 'ok' : 'degraded',
+
+  const isCritical = dbStatus === 'error' || diskStatus === 'critical' || jobsStatus === 'critical'
+  const overall = isCritical ? 'degraded'
+    : !schema.ok ? 'degraded'
+    : 'ok'
+
+  res.status(isCritical ? 503 : 200).json({
+    status: overall,
     uptime: Math.floor(process.uptime()),
     db: dbStatus,
+    db_latency_ms: dbLatencyMs,
+    disk_percent: diskPercent,
+    disk_status: diskStatus,
+    jobs,
+    jobs_status: jobsStatus,
+    heap_percent: heapPercent,
+    heap_status: heapStatus,
+    sentry_status: isSentryActive() ? 'ok' : 'disabled',
     schema: schema.ok ? 'ok' : 'degraded',
     schema_missing: schema.missing,
     migrations,
@@ -250,6 +329,7 @@ const notificationsLimiter = rateLimit({
 // authLimiter brute-force korur (15dk içinde 30 deneme).
 app.use('/api/setup', authLimiter, setupRouter)
 app.use('/api/auth', authLimiter, authRouter)
+app.use('/api/public', readLimiter, publicRouter)  // login öncesi güvenli toplu sayılar (auth yok)
 app.use('/api/mobile/auth', mobileAuthLimiter, mobileAuthRouter)
 app.use('/api/checkin', writeLimiter, checkinRouter)
 app.use('/api/capacity', writeLimiter, capacityRouter)
@@ -258,6 +338,7 @@ app.use('/api/housekeeping', writeLimiter, housekeepingRouter)
 app.use('/api/maintenance', writeLimiter, maintenanceRouter)
 app.use('/api/discipline', writeLimiter, disciplineRouter)
 app.use('/api/self-service', writeLimiter, selfServiceRouter)
+app.use('/api/avs-self-service', writeLimiter, avsSelfServiceRouter)
 app.use('/api/dashboard', readLimiter, dashboardRouter)
 app.use('/api/room-history', readLimiter, roomHistoryRouter)
 app.use('/api/notifications', notificationsLimiter, notificationsRouter)
@@ -269,6 +350,7 @@ app.use('/api/bulk-actions', writeLimiter, bulkActionsRouter)
 app.use('/api/companies', writeLimiter, companiesRouter)
 app.use('/api/visitors', writeLimiter, visitorsRouter)
 app.use('/api/surveys', writeLimiter, surveysRouter)
+app.use('/api/feedback', writeLimiter, feedbackRouter)
 app.use('/api/drills', writeLimiter, drillsRouter)
 app.use('/api/display', readLimiter, displayRouter)
 app.use('/api/documents', writeLimiter, documentsRouter)
@@ -292,6 +374,10 @@ app.use('/api/campus-map', writeLimiter, campusMapRouter)
 app.use('/api/personnel', writeLimiter, personnelRouter)
 app.use('/api/hr', writeLimiter, hrRouter)
 app.use('/api/qr', writeLimiter, qrRouter)
+app.use('/api/cards', writeLimiter, cardsRouter)
+app.use('/api/stations', writeLimiter, stationsRouter)
+app.use('/api/activity', readLimiter, activityRouter)
+app.use('/api/access', readLimiter, accessRouter)
 app.use('/api/safety', writeLimiter, safetyRouter)
 app.use('/api/meals', writeLimiter, mealsRouter)
 app.use('/api/performance', writeLimiter, performanceRouter)
@@ -303,9 +389,13 @@ app.use((req, res) => {
   res.status(404).json({ error: 'Endpoint bulunamadı' })
 })
 
+// Sentry error handler — kendi error handler'imizdan ONCE, sadece 5xx'i yakalar.
+// initSentry() cagrilmadiysa no-op (sentry.js icinde initialized=false kontrolu).
+setupSentryErrorHandler(app)
+
 // ── Global Error Handler ─────────────────────────────────────────────────────
 app.use((err, req, res, _next) => {
-  console.error('[Express]', err.stack || err.message)
+  logger.error({ err, method: req.method, url: req.originalUrl }, '[Express] request failed')
   const status = err.status || err.statusCode || 500
   // 5xx hataları DB'ye logla (4xx normal akış — istemci hatası)
   if (status >= 500 && process.env.NODE_ENV !== 'test') {

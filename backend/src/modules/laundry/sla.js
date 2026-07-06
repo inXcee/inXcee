@@ -103,7 +103,10 @@ export function checkMachineTimers() {
   `).all()
 
   for (const m of done) {
-    db.prepare("UPDATE laundry_machines SET status = 'done', total_runs = total_runs + 1 WHERE id = ?").run(m.id)
+    // NOT: total_runs burada ARTIRILMAZ — tek artış noktası yıkama başlangıcı
+    // (advanceItemService increment_runs). Eskiden burada ikinci kez artıyordu
+    // ve süreli yıkamalar çift sayılıyordu.
+    db.prepare("UPDATE laundry_machines SET status = 'done' WHERE id = ?").run(m.id)
     const roomInfo = m.rooms ? ` — ${m.rooms}` : ''
     createNotification({
       message: `${m.name} tamamlandı${roomInfo}`,
@@ -120,14 +123,16 @@ const MAINTENANCE_THRESHOLD = 50
 
 export function checkMachineMaintenanceAlerts() {
   const db = getDB()
+  // runs_since_maintenance kullanılır (ömür boyu total_runs DEĞİL) — yoksa
+  // bir kez 50'yi geçen makine bakım yapılsa bile sonsuza dek uyarı üretirdi.
   const machines = db.prepare(`
     SELECT * FROM laundry_machines
-    WHERE total_runs >= ? AND status != 'maintenance'
+    WHERE runs_since_maintenance >= ? AND status != 'maintenance'
   `).all(MAINTENANCE_THRESHOLD)
 
   for (const m of machines) {
     createNotification({
-      message: `${m.name} bakım gerekiyor — ${m.total_runs} çalışma tamamlandı`,
+      message: `${m.name} bakım gerekiyor — son bakımdan beri ${m.runs_since_maintenance} yıkama`,
       type: 'warning',
       module: 'laundry',
       target_role: 'campus_manager',

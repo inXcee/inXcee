@@ -5,6 +5,8 @@ import { generateDailyTasks } from '../../modules/housekeeping/queries.js'
 import { createNotification } from '../notifications/service.js'
 import { getDB } from '../db/index.js'
 import { checkSlaViolations, checkMachineTimers, checkSlaPreWarnings, checkMachineMaintenanceAlerts, checkStuckWashingItems } from '../../modules/laundry/sla.js'
+import { checkMaintenanceSla } from '../../modules/maintenance/sla.js'
+import { checkExpiringContracts } from '../../modules/hr/contractAlerts.js'
 import { getEmailSettings } from '../../modules/email/queries.js'
 import { sendMorningReport } from '../../modules/email/service.js'
 import { buildMonthlyReport, generateMonthlyPDF } from '../../modules/inventory/analytics/routes.js'
@@ -12,6 +14,11 @@ import { expirePastLots } from '../../modules/inventory/lots/service.js'
 import { checkCertExpiries } from '../../modules/safety/service.js'
 import { runDisciplineAutomation } from '../../modules/discipline/automation.js'
 import { logAudit } from '../audit.js'
+import { logger } from '../logger.js'
+import { pruneTokenBlacklist } from '../auth/service.js'
+import { runBackupService, listBackupsService, deleteBackupService } from '../../modules/backup/service.js'
+import { enforceKvkkRetentionService } from '../../modules/kvkk/service.js'
+import { captureError } from '../sentry.js'
 
 let emailJob = null
 
@@ -27,7 +34,22 @@ function withLock(name, fn) {
     if (running.has(name)) return
     running.add(name)
     try { await fn() }
-    catch (e) { console.error(`[Cron:${name}]`, e.message) }
+    catch (e) {
+      logger.error(`[Cron:${name}] hata: ${e.message}`)
+      captureError(e, { module: `cron:${name}` })
+      // Kritik cron'lar için campus_manager'a bildirim
+      const criticalJobs = ['daily-tasks', 'auto-backup', 'cleanup']
+      if (criticalJobs.includes(name)) {
+        try {
+          createNotification({
+            message: `⚠️ Cron görevi "${name}" başarısız: ${e.message?.slice(0, 200)}`,
+            event_kind: 'system_alert',
+            target_role: 'campus_manager',
+            dedup_key: `cron_fail_${name}_${new Date().toISOString().slice(0, 13)}`,
+          })
+        } catch { /* notification gönderimi başarısızsa sessizce devam */ }
+      }
+    }
     finally { running.delete(name) }
   }
 }
@@ -38,7 +60,7 @@ export function startCronJobs() {
     try {
       const count = generateDailyTasks()
       // daily task generation completed
-    } catch (e) { console.error('[Cron] Temizlik görev hatası:', e) }
+    } catch (e) { logger.error('[Cron] Temizlik görev hatası:', e) }
   }, TZ)
 
   // Her saat stok kontrolü
@@ -53,7 +75,7 @@ export function startCronJobs() {
           dedup_key: `stock_low_${item.id}_${new Date().toISOString().split('T')[0]}`,
         })
       })
-    } catch (e) { console.error('[Cron] Stok cron hatası:', e) }
+    } catch (e) { logger.error('[Cron] Stok cron hatası:', e) }
   }, TZ)
 
   // Her 1 dakikada makine zamanlayıcı kontrolü (overlap-safe)
@@ -67,6 +89,25 @@ export function startCronJobs() {
     await checkSlaPreWarnings()
     await checkMachineMaintenanceAlerts()
     checkStuckWashingItems()
+  }), TZ)
+
+  // Her 15 dakikada maintenance SLA kontrolü (overlap-safe, laundry'den ayrı lock)
+  cron.schedule('*/15 * * * *', withLock('maintenance-sla', () => {
+    checkMaintenanceSla()
+  }), TZ)
+
+  // Her gün 07:00 — yaklaşan/geçmiş personel sözleşmeleri için bildirim (günlük yeterli)
+  cron.schedule('0 7 * * *', withLock('hr-contract-expiry', () => {
+    checkExpiringContracts()
+  }), TZ)
+
+  // Pazartesi 07:00 — haftalık yönetici özet e-postası (7 günlük trend + kıyas).
+  // E-posta sistemi kapalıysa / email_weekly=0 ise sendWeeklyReport içinde atlanır.
+  cron.schedule('0 7 * * 1', withLock('weekly-summary-email', async () => {
+    try {
+      const { sendWeeklyReport } = await import('../../modules/email/weekly.js')
+      await sendWeeklyReport()
+    } catch (e) { logger.error('[Cron] Haftalık özet e-postası:', e.message) }
   }), TZ)
 
   // Her ayın 1'i 03:00 — geçmiş ay aylık PDF rapor (overlap-safe)
@@ -84,7 +125,7 @@ export function startCronJobs() {
       stream = fs.createWriteStream(filePath)
       // Stream hatası — fd leak'i onler
       stream.on('error', (err) => {
-        console.error('[Cron] PDF stream hatasi:', err.message)
+        logger.error('[Cron] PDF stream hatasi:', err.message)
         try { stream.destroy() } catch { /* ignore */ }
       })
       const report = buildMonthlyReport(month)
@@ -93,7 +134,7 @@ export function startCronJobs() {
         try { logAudit(null, 'inventory_monthly_report', 'inventory', null, `${month} PDF: ${filePath}`) } catch { /* ignore */ }
       })
     } catch (e) {
-      console.error('[Cron] aylik PDF hatasi:', e.message)
+      logger.error('[Cron] aylik PDF hatasi:', e.message)
       // buildMonthlyReport / generateMonthlyPDF synchronous throw ettiyse stream open kalir
       if (stream) try { stream.destroy() } catch { /* ignore */ }
     }
@@ -105,8 +146,8 @@ export function startCronJobs() {
       // Once SKT gecmis lotlari otomatik expired isaretle (stoktan dusulur, hareket kaydi atilir)
       try {
         const expired = expirePastLots()
-        if (expired > 0) console.log('[Cron] auto-expired', expired, 'lots')
-      } catch (e) { console.error('[Cron] expirePastLots:', e.message) }
+        if (expired > 0) logger.info('[Cron] auto-expired', expired, 'lots')
+      } catch (e) { logger.error('[Cron] expirePastLots:', e.message) }
 
       const db = getDB()
       const today = new Date().toISOString().split('T')[0]
@@ -129,7 +170,7 @@ export function startCronJobs() {
           dedup_key: `expiry_${lot.id}_${today}`,
         })
       })
-    } catch (e) { console.error('[Cron] Lot expiry hatasi:', e.message) }
+    } catch (e) { logger.error('[Cron] Lot expiry hatasi:', e.message) }
   }), TZ)
 
   // Her gün 06:10 — sertifika vade uyarısı (60/30/14/7/1/0 gün eşikleri)
@@ -157,7 +198,50 @@ export function startCronJobs() {
       db.prepare('DELETE FROM audit_log WHERE created_at < ?').run(cutoff90)
       db.prepare('DELETE FROM notifications WHERE is_read=1 AND created_at < ?').run(cutoff90)
       try { db.prepare('DELETE FROM error_log WHERE created_at < ?').run(cutoff30) } catch { /* tablo yoksa atla */ }
-    } catch (e) { console.error('[Cron] Temizleme hatası:', e.message) }
+      // Süresi dolmuş token blacklist kayıtlarını temizle
+      const pruned = pruneTokenBlacklist()
+      if (pruned > 0) logger.info(`[Cron] ${pruned} süresi dolmuş token blacklist kaydı temizlendi`)
+    } catch (e) { logger.error('[Cron] Temizleme hatası:', e.message) }
+  }), TZ)
+
+  // Her gece 03:30 — KVKK retention enforcement (anonimleştirme cron'u).
+  // Cleanup (02:00) ve auto-backup (02:00) sonrası çalışır, audit log temizlik
+  // ile çakışmasın diye 90 dk sonra. Policy disabled ise no-op.
+  cron.schedule('30 3 * * *', withLock('kvkk-retention', () => {
+    const result = enforceKvkkRetentionService()
+    if (result.skipped) return
+    if (result.processed > 0) {
+      logger.info(`[Cron] KVKK retention: ${result.processed}/${result.candidates} personel anonimleştirildi (${result.retention_days} gün)`)
+      createNotification({
+        message: `🔒 KVKK retention: ${result.processed} personel kişisel verisi otomatik anonimleştirildi (${result.retention_days} gün sonra).`,
+        type: 'info',
+        module: 'kvkk',
+        target_role: 'campus_manager',
+        dedup_key: `kvkk_retention_${new Date().toISOString().slice(0, 10)}`,
+      })
+    }
+    if (result.errors > 0) {
+      logger.warn(`[Cron] KVKK retention: ${result.errors} hata oluştu`)
+    }
+  }), TZ)
+
+  // Her 6 saatte bir otomatik yedekleme — 02:00, 08:00, 14:00, 20:00 (TR saati)
+  cron.schedule('0 2,8,14,20 * * *', withLock('auto-backup', async () => {
+    const result = await runBackupService()
+    if (!result.ok) {
+      logger.error('[Cron] Otomatik yedekleme başarısız:', result.error)
+      return
+    }
+    logger.info(`[Cron] Otomatik yedekleme: ${result.name} (${(result.size / 1024 / 1024).toFixed(1)} MB)`)
+    // 7 günden eski yedekleri sil (28 yedeği koruma hedefi)
+    const backups = listBackupsService().filter(b => !b.name.includes('pre-restore'))
+    const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000
+    for (const backup of backups) {
+      if (new Date(backup.created_at).getTime() < cutoff) {
+        deleteBackupService(backup.name)
+        logger.info(`[Cron] Eski yedek silindi: ${backup.name}`)
+      }
+    }
   }), TZ)
 
   // cron jobs initialized
@@ -169,6 +253,6 @@ export function scheduleMorningReport() {
   const { enabled, hour, minute } = getEmailSettings()
   if (!enabled) return
   emailJob = cron.schedule(`${minute} ${hour} * * *`, () => {
-    sendMorningReport().catch(e => console.error('[Cron] Email hatası:', e))
+    sendMorningReport().catch(e => logger.error('[Cron] Email hatası:', e))
   }, TZ)
 }

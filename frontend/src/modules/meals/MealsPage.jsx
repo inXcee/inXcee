@@ -2,9 +2,17 @@ import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
+import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
+import { useUrlParamState } from '../../shared/hooks/useUrlParamState.js'
+import HelpHint from '../../shared/components/HelpHint.jsx'
 
 const toast = (m, t = 'success') => useToastStore.getState().addToast(m, t)
 const toastErr = (e) => toast(e?.response?.data?.error || 'Hata', 'error')
+
+// Yerel gün (toISOString UTC basar — 00:00-03:00 TR arası dünü gösterirdi)
+const localDate = (d = new Date()) => d.toLocaleDateString('sv-SE')
+// meal_logs.logged_at UTC saklanır (CURRENT_TIMESTAMP) — gösterimde yerele çevir
+const fmtUtcTime = (ts) => ts ? new Date(ts.replace(' ', 'T') + 'Z').toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : ''
 
 const MEALS = {
   breakfast: { label: '🌅 Kahvaltı', color: 'var(--amber)' },
@@ -26,15 +34,16 @@ const TABS = [
   { key: 'daily',    label: '📊 GÜNLÜK' },
   { key: 'forecast', label: '🔮 TAHMİN' },
   { key: 'cost',     label: '💰 MALİYET' },
+  { key: 'menu',     label: '🍽 MENÜ' },
 ]
 
 export default function MealsPage() {
-  const [tab, setTab] = useState('scan')
+  const [tab, setTab] = useUrlParamState('tab', 'scan')
 
   return (
     <div style={{ maxWidth: 1200 }} className="fade-up">
       <div style={{ marginBottom: 16 }}>
-        <h1 style={{ fontSize: 28, letterSpacing: 4, color: 'var(--text)', margin: 0 }}>YEMEKHANE</h1>
+        <h1 style={{ fontSize: 28, letterSpacing: 4, color: 'var(--text)', margin: 0 }}>YEMEKHANE<HelpHint topic="meals" title="YEMEKHANE" /></h1>
         <p style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', marginTop: 4, letterSpacing: 1.5 }}>
           ÖĞÜN OKUTMA · GÜNLÜK SAYIM · YARIN TAHMİNİ · KİŞİ BAŞI MALİYET
         </p>
@@ -55,6 +64,7 @@ export default function MealsPage() {
       {tab === 'daily' && <DailyTab />}
       {tab === 'forecast' && <ForecastTab />}
       {tab === 'cost' && <CostTab />}
+      {tab === 'menu' && <MenuTab />}
     </div>
   )
 }
@@ -127,7 +137,7 @@ function ScanTab() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 14 }}>
         {Object.entries(MEALS).map(([k, v]) => (
           <button key={k} onClick={() => setMealType(k)} style={{
-            padding: '14px 8px', border: 'none', borderRadius: 12,
+            padding: '14px 8px', borderRadius: 12,
             background: mealType === k ? v.color : 'var(--surface)',
             color: mealType === k ? '#000' : 'var(--text3)',
             border: '1px solid var(--border)',
@@ -179,7 +189,7 @@ function ScanTab() {
 }
 
 function DailyTab() {
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10))
+  const [date, setDate] = useState(localDate())
   const { data, isLoading } = useQuery({
     queryKey: ['meals-daily', date],
     queryFn: () => api.get(`/meals/daily?date=${date}`).then(r => r.data),
@@ -192,7 +202,7 @@ function DailyTab() {
           style={{ width: 'auto', fontSize: 12 }} />
       </div>
 
-      {isLoading ? <div style={{ padding: 30, color: 'var(--text3)' }}>Yükleniyor…</div> : !data ? null : (
+      {isLoading ? <SkeletonTable rows={4} cols={4} /> : !data ? null : (
         <>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 14 }}>
             {Object.entries(MEALS).map(([k, v]) => {
@@ -225,7 +235,7 @@ function DailyTab() {
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                       <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: MEALS[l.meal_type]?.color }}>{MEALS[l.meal_type]?.label}</span>
                       <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text4)' }}>{l.method}</span>
-                      <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>{new Date(l.logged_at).toLocaleTimeString('tr-TR')}</span>
+                      <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>{fmtUtcTime(l.logged_at)}</span>
                     </div>
                   </div>
                 ))}
@@ -239,11 +249,16 @@ function DailyTab() {
 }
 
 function ForecastTab() {
-  const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10)
+  const tomorrow = localDate(new Date(Date.now() + 86400000))
   const [date, setDate] = useState(tomorrow)
   const { data, isLoading } = useQuery({
     queryKey: ['meals-forecast', date],
     queryFn: () => api.get(`/meals/forecast?date=${date}`).then(r => r.data),
+  })
+  // Faz 8 — personelin yaptığı kesin öğün seçimi (mutfak sayımı)
+  const { data: sel } = useQuery({
+    queryKey: ['meals-selection-counts', date],
+    queryFn: () => api.get(`/meals/selection-counts?date=${date}`).then(r => r.data),
   })
 
   return (
@@ -252,7 +267,25 @@ function ForecastTab() {
         <input type="date" className="form-input" value={date} onChange={e => setDate(e.target.value)}
           style={{ width: 'auto', fontSize: 12 }} />
       </div>
-      {isLoading ? <div style={{ padding: 30, color: 'var(--text3)' }}>Yükleniyor…</div> : !data ? null : (
+
+      {sel?.counts?.length > 0 && (
+        <div style={{ padding: 16, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, marginBottom: 14 }}>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--green)', letterSpacing: 1.5, marginBottom: 10 }}>✅ KESİN SEÇİM (personel kiosktan onayladı)</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
+            {Object.entries(MEALS).map(([k, v]) => {
+              const c = sel.counts.find(x => x.meal_type === k)
+              return (
+                <div key={k} style={{ padding: 12, background: 'var(--surface2)', borderRadius: 10, borderLeft: `4px solid ${v.color}` }}>
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>{v.label}</div>
+                  <div style={{ fontFamily: 'var(--display)', fontSize: 24, color: v.color, marginTop: 4 }}>{c?.count || 0}</div>
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text4)', marginTop: 2 }}>kişi seçti</div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+      {isLoading ? <SkeletonTable rows={4} cols={4} /> : !data ? null : (
         <>
           <div style={{ padding: 18, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, marginBottom: 14 }}>
             <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', letterSpacing: 1.5, marginBottom: 8 }}>VARDİYADA BEKLENEN</div>
@@ -293,7 +326,7 @@ function ForecastTab() {
 }
 
 function CostTab() {
-  const thisMonth = new Date().toISOString().slice(0, 7)
+  const thisMonth = localDate().slice(0, 7)
   const [month, setMonth] = useState(thisMonth)
   const { data, isLoading } = useQuery({
     queryKey: ['meals-cost', month],
@@ -305,7 +338,7 @@ function CostTab() {
       <div style={{ marginBottom: 14 }}>
         <input type="month" className="form-input" value={month} onChange={e => setMonth(e.target.value)} style={{ width: 'auto', fontSize: 12 }} />
       </div>
-      {isLoading ? <div style={{ padding: 30, color: 'var(--text3)' }}>Yükleniyor…</div> : !data ? null : (
+      {isLoading ? <SkeletonTable rows={4} cols={4} /> : !data ? null : (
         <>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, marginBottom: 14 }}>
             {data.by_meal.map(m => (
@@ -347,6 +380,44 @@ function CostTab() {
           </div>
         </>
       )}
+    </div>
+  )
+}
+
+function MenuTab() {
+  const qc = useQueryClient()
+  const [date, setDate] = useState(() => localDate())
+  const [draft, setDraft] = useState({})
+  const { data: rows = [] } = useQuery({
+    queryKey: ['meal-menu', date],
+    queryFn: () => api.get(`/meals/menu?date=${date}`).then(r => r.data),
+  })
+  useEffect(() => {
+    const m = {}
+    for (const r of rows) m[r.meal_type] = r.items || ''
+    setDraft(m)
+  }, [rows])
+  const save = useMutation({
+    mutationFn: (meal_type) => api.put('/meals/menu', { meal_date: date, meal_type, items: draft[meal_type] || '' }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['meal-menu', date] }); toast('Menü kaydedildi') },
+    onError: toastErr,
+  })
+  return (
+    <div style={{ maxWidth: 700 }}>
+      <input type="date" value={date} onChange={e => setDate(e.target.value)}
+        style={{ marginBottom: 16, padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text)' }} />
+      {Object.entries(MEALS).map(([key, meta]) => (
+        <div key={key} style={{ marginBottom: 16 }}>
+          <div style={{ marginBottom: 6, color: 'var(--text2)', fontSize: 14 }}>{meta.label}</div>
+          <textarea value={draft[key] || ''} onChange={e => setDraft(p => ({ ...p, [key]: e.target.value }))}
+            rows={3} placeholder="Her satıra bir yemek…"
+            style={{ width: '100%', padding: 10, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text)', fontFamily: 'inherit' }} />
+          <button onClick={() => save.mutate(key)} disabled={save.isPending}
+            style={{ marginTop: 6, padding: '6px 14px', background: 'var(--accent)', color: '#000', border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 13 }}>
+            Kaydet
+          </button>
+        </div>
+      ))}
     </div>
   )
 }

@@ -2,11 +2,31 @@ import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import api from '../../shared/api/client.js'
+import { useDebounce } from '../../shared/hooks/useDebounce.js'
+import { exportRowsToCsv, exportRowsToXlsx } from '../../shared/utils/exportData.js'
+import { SkeletonGrid } from '../../shared/components/Skeleton.jsx'
+import { useSavedFilters, SavedFiltersBar } from '../../shared/hooks/useSavedFilters.jsx'
+import HelpHint from '../../shared/components/HelpHint.jsx'
+
+const EXPORT_COLUMNS = [
+  { key: 'full_name', label: 'Ad Soyad' },
+  { key: 'tc_no', label: 'TC No' },
+  { key: 'phone', label: 'Telefon' },
+  { key: 'position', label: 'Pozisyon' },
+  { key: 'dept_name', label: 'Departman' },
+  { key: 'role_label', label: 'Görev' },
+  { key: 'hire_date', label: 'İşe Giriş' },
+]
 
 export default function PersonnelListPage() {
   const nav = useNavigate()
-  const [q, setQ] = useState('')
-  const [deptId, setDeptId] = useState('')
+  const [filters, setFilters] = useState({ q: '', deptId: '' })
+  const { q, deptId } = filters
+  const setQ = (v) => setFilters(f => ({ ...f, q: v }))
+  const setDeptId = (v) => setFilters(f => ({ ...f, deptId: v }))
+  const debouncedQ = useDebounce(q, 250)
+  const savedFilters = useSavedFilters('personnel-list', filters, setFilters)
+  const hasActiveFilter = !!(q || deptId)
 
   const { data: staff = [], isLoading } = useQuery({
     queryKey: ['personnel-list'],
@@ -18,7 +38,7 @@ export default function PersonnelListPage() {
   })
 
   const filtered = useMemo(() => {
-    const low = q.trim().toLowerCase()
+    const low = debouncedQ.trim().toLowerCase()
     return staff.filter(s => {
       if (deptId && String(s.department_id) !== String(deptId)) return false
       if (!low) return true
@@ -31,16 +51,24 @@ export default function PersonnelListPage() {
         s.role_label?.toLowerCase().includes(low)
       )
     })
-  }, [staff, q, deptId])
+  }, [staff, debouncedQ, deptId])
 
   return (
     <div style={{ maxWidth: 1280 }} className="fade-up">
       <div style={{ marginBottom: 16 }}>
-        <h1 style={{ fontSize: 28, letterSpacing: 4, color: 'var(--text)', margin: 0 }}>PERSONEL</h1>
+        <h1 style={{ fontSize: 28, letterSpacing: 4, color: 'var(--text)', margin: 0 }}>PERSONEL<HelpHint topic="personnel" title="PERSONEL" /></h1>
         <p style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', marginTop: 4, letterSpacing: 1.5 }}>
           {filtered.length} / {staff.length} KAYIT — TIKLAYINCA 360° GÖRÜNÜM
         </p>
       </div>
+
+      <SavedFiltersBar
+        presets={savedFilters.presets}
+        onApply={savedFilters.apply}
+        onSave={savedFilters.save}
+        onRemove={savedFilters.remove}
+        hasActiveFilter={hasActiveFilter}
+      />
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
         <input className="form-input" placeholder="🔍 Ad / TC / telefon / pozisyon ara…"
@@ -51,10 +79,20 @@ export default function PersonnelListPage() {
           <option value="">Tüm departmanlar</option>
           {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
         </select>
+        <button type="button" className="btn btn-ghost btn-sm"
+          onClick={() => exportRowsToCsv(EXPORT_COLUMNS, filtered, `personel-${new Date().toISOString().slice(0, 10)}.csv`)}
+          disabled={!filtered.length}
+          title="Görünür kayıtları CSV olarak indir"
+          style={{ fontSize: 11 }}>📄 CSV</button>
+        <button type="button" className="btn btn-ghost btn-sm"
+          onClick={() => exportRowsToXlsx(EXPORT_COLUMNS, filtered, `personel-${new Date().toISOString().slice(0, 10)}.xlsx`, 'Personel')}
+          disabled={!filtered.length}
+          title="Görünür kayıtları Excel olarak indir"
+          style={{ fontSize: 11 }}>📊 Excel</button>
       </div>
 
       {isLoading ? (
-        <div style={{ padding: 40, color: 'var(--text3)' }}>Yükleniyor…</div>
+        <SkeletonGrid count={12} />
       ) : !filtered.length ? (
         <div style={{ padding: 60, textAlign: 'center', background: 'var(--surface)', borderRadius: 14, border: '1px solid var(--border)' }}>
           <div style={{ fontSize: 40, opacity: 0.3, marginBottom: 10 }}>👥</div>

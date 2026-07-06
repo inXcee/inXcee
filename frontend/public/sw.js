@@ -39,6 +39,12 @@ self.addEventListener('fetch', e => {
   if (request.method !== 'GET') return
 
   const url = new URL(request.url)
+
+  // Cross-origin (Google Fonts, harita tile, CDN) SW'ye takılmasın: SW içinden
+  // yapılan fetch SW'nin kendi CSP'sine (connect-src 'self') tabidir — sayfa
+  // CSP'si o origin'e izin verse bile SW üzerinden geçen istek bloklanır.
+  if (url.origin !== self.location.origin) return
+
   const isApi = url.pathname.startsWith('/api/')
   const isExcludedApi = NO_CACHE_API.some(p => url.pathname.startsWith(p))
 

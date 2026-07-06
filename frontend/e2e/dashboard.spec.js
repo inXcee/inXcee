@@ -2,9 +2,9 @@ import { test, expect } from '@playwright/test'
 
 async function loginAsMudur(page) {
   await page.goto('/login')
-  await page.getByPlaceholder('kullanici_adi').fill('mudur')
+  await page.getByPlaceholder('örn. selam.aydin').fill('mudur')
   await page.getByPlaceholder('••••••••').fill('admin123')
-  await page.getByRole('button', { name: /GIRIS YAP/ }).click()
+  await page.getByRole('button', { name: /Giriş Yap/ }).click()
   await expect(page).toHaveURL('http://localhost:5174/', { timeout: 10_000 })
 }
 

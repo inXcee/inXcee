@@ -30,6 +30,14 @@ describe('Discipline', () => {
     expect(notif).toBeTruthy()
   })
 
+  it('cok uzun sebep 400 doner (Zod sweep)', async () => {
+    const res = await request(app)
+      .post('/api/discipline/records')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ personnel_id: personnelId, card_type: 'yellow', reason: 'x'.repeat(1001) })
+    expect(res.status).toBe(400)
+  })
+
   it('filters stats by date range', async () => {
     const today = new Date().toISOString().split('T')[0]
     const res = await request(app)

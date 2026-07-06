@@ -1,6 +1,6 @@
 # ─── Stage 1: bağımlılıklar ─────────────────────────────────
 # better-sqlite3 native derleme için build-base gerekli
-FROM node:20-alpine AS deps
+FROM node:22-alpine AS deps
 WORKDIR /app
 
 # Native modül derleme araçları
@@ -15,7 +15,7 @@ RUN npm ci --workspace=backend --omit=dev
 
 
 # ─── Stage 2: çalışma imajı ─────────────────────────────────
-FROM node:20-alpine AS runtime
+FROM node:22-alpine AS runtime
 WORKDIR /app
 
 # curl: HEALTHCHECK için; tini: PID 1 sinyal işleme

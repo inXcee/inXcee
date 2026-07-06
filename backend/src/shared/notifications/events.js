@@ -39,6 +39,9 @@ export const EVENT_KINDS = Object.freeze({
   MAINTENANCE_RESOLVED:   'maintenance.request.resolved',
   MAINTENANCE_OVERDUE:    'maintenance.request.overdue',
 
+  // SAFETY (İSG)
+  SAFETY_INCIDENT:        'safety.incident',
+
   // CHECKIN / CHECKOUT
   CHECKIN_DONE:           'checkin.checkin',
   CHECKOUT_DONE:          'checkin.checkout',
@@ -116,6 +119,8 @@ export const DEFAULT_SEVERITY = {
   [EVENT_KINDS.MAINTENANCE_ASSIGNED]:   'info',
   [EVENT_KINDS.MAINTENANCE_RESOLVED]:   'info',
   [EVENT_KINDS.MAINTENANCE_OVERDUE]:    'warning',
+
+  [EVENT_KINDS.SAFETY_INCIDENT]:        'critical',
 
   [EVENT_KINDS.CHECKIN_DONE]:           'info',
   [EVENT_KINDS.CHECKOUT_DONE]:          'info',

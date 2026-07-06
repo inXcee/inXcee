@@ -11,6 +11,27 @@ beforeAll(async () => {
   token = res.body.token
 })
 
+describe('Inventory — Zod sweep', () => {
+  it('cok uzun urun adi 400 doner', async () => {
+    const res = await request(app).post('/api/inventory')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ item_name: 'X'.repeat(201), unit: 'adet', category: 'temizlik' })
+    expect(res.status).toBe(400)
+  })
+
+  it('cok uzun lokasyon adi 400 doner', async () => {
+    const res = await request(app).post('/api/inventory/locations')
+      .set('Authorization', `Bearer ${token}`).send({ name: 'L'.repeat(121) })
+    expect(res.status).toBe(400)
+  })
+
+  it('cok uzun tedarikci adi 400 doner', async () => {
+    const res = await request(app).post('/api/inventory/suppliers')
+      .set('Authorization', `Bearer ${token}`).send({ name: 'S'.repeat(201) })
+    expect(res.status).toBe(400)
+  })
+})
+
 describe('Inventory Module', () => {
   let itemId
 

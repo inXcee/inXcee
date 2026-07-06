@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import mobileApi from '../auth/mobileApi.js'
 import { useToastStore } from '../../../shared/store/toastStore.js'
 import { usePullToRefresh } from '../../../shared/hooks/usePullToRefresh.js'
+import { SkeletonTable } from '../../../shared/components/Skeleton.jsx'
 
 const PRIORITY_COLOR = { high: '#ef4444', medium: '#f59e0b', low: '#10b981' }
 const PRIORITY_LABEL = { high: 'Yüksek', medium: 'Orta', low: 'Düşük' }
@@ -35,7 +36,7 @@ export default function ManagerMaintenance() {
       <p style={{ fontSize: '12px', color: '#6b7280', margin: '0 0 16px' }}>Onay/öncelik aksiyonu</p>
 
       {isLoading ? (
-        <div style={{ color: '#9ca3af', textAlign: 'center', padding: '24px' }}>Yükleniyor...</div>
+        <SkeletonTable rows={4} cols={3} />
       ) : rows.length === 0 ? (
         <div style={{ color: '#9ca3af', textAlign: 'center', padding: '48px' }}>🎉 Açık talep yok</div>
       ) : (

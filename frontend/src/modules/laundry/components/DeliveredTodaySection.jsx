@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { laundryApi } from '../api.js'
 
-// ── DeliveredTodaySection ──────────────────────────────────────
 export default function DeliveredTodaySection() {
   const [open, setOpen] = useState(false)
   const today = new Date().toISOString().slice(0, 10)

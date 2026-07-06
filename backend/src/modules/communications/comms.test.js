@@ -17,6 +17,22 @@ beforeAll(async () => {
   staffId = s.id
 })
 
+describe('Comms — Zod sweep', () => {
+  it('cok uzun SMS metni 400 doner', async () => {
+    const res = await request(app).post('/api/comms/sms/send')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ phone: '05551112233', body: 'm'.repeat(1001) })
+    expect(res.status).toBe(400)
+  })
+
+  it('gecersiz broadcast channel 400 doner', async () => {
+    const res = await request(app).post('/api/comms/broadcast')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ channel: 'email', target_type: 'all', body: 'merhaba' })
+    expect(res.status).toBe(400)
+  })
+})
+
 describe('H10 IB2 — SMS gönder', () => {
   it('SMS_PROVIDER yokken queued loglar', async () => {
     delete process.env.SMS_PROVIDER

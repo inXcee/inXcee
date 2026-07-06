@@ -1,6 +1,8 @@
 import { authenticator } from 'otplib'
 import QRCode from 'qrcode'
 import jwt from 'jsonwebtoken'
+import crypto from 'node:crypto'
+import bcrypt from 'bcryptjs'
 import { getDB } from '../db/index.js'
 
 const SECRET = process.env.JWT_SECRET
@@ -46,6 +48,61 @@ export async function start2faSetupWithQr(userId) {
   return res
 }
 
+// Tek kullanımlık 10 adet yedek kodu oluştur, hash'lenmiş olarak kaydet, plain kodları döndür.
+export function generateBackupCodes(userId) {
+  const db = getDB()
+  const codes = Array.from({ length: 10 }, () => {
+    const raw = crypto.randomBytes(5).toString('hex').toUpperCase() // 10 hex char
+    const formatted = `${raw.slice(0, 5)}-${raw.slice(5)}` // XXXXX-XXXXX formatı
+    return formatted
+  })
+  const deleteStmt = db.prepare('DELETE FROM totp_backup_codes WHERE user_id=?')
+  const insertStmt = db.prepare('INSERT INTO totp_backup_codes(user_id, code_hash) VALUES(?,?)')
+  db.transaction(() => {
+    deleteStmt.run(userId)
+    for (const code of codes) {
+      insertStmt.run(userId, bcrypt.hashSync(code.replace('-', ''), 10))
+    }
+  })()
+  return codes
+}
+
+// Yedek kodu doğrula ve kullanıldı olarak işaretle (tek kullanımlık)
+export function verifyBackupCode(userId, rawCode) {
+  const db = getDB()
+  const normalized = rawCode.replace(/[-\s]/g, '').toUpperCase()
+  const rows = db.prepare('SELECT id, code_hash FROM totp_backup_codes WHERE user_id=? AND used_at IS NULL').all(userId)
+  for (const row of rows) {
+    if (bcrypt.compareSync(normalized, row.code_hash)) {
+      db.prepare('UPDATE totp_backup_codes SET used_at=CURRENT_TIMESTAMP WHERE id=?').run(row.id)
+      return true
+    }
+  }
+  return false
+}
+
+// Kullanıcının yedek kod durumunu döndürür (sayım — kod içerik değil).
+export function getBackupCodeStatus(userId) {
+  const db = getDB()
+  const row = db.prepare(`
+    SELECT
+      COUNT(*) AS total,
+      SUM(CASE WHEN used_at IS NULL THEN 1 ELSE 0 END) AS remaining
+    FROM totp_backup_codes WHERE user_id=?
+  `).get(userId)
+  return { total: row?.total ?? 0, remaining: row?.remaining ?? 0 }
+}
+
+// Mevcut kodları sil + yeni 10 kod üret. TOTP doğrulaması ister.
+export function regenerateBackupCodes(userId, totpCode) {
+  const db = getDB()
+  const u = db.prepare('SELECT totp_enabled, totp_secret FROM users WHERE id=?').get(userId)
+  if (!u?.totp_enabled || !u.totp_secret) return { error: '2FA aktif değil', status: 400 }
+  if (!verifyTotp(totpCode, u.totp_secret)) return { error: 'Doğrulama kodu hatalı', status: 401 }
+  const codes = generateBackupCodes(userId)
+  return { ok: true, backup_codes: codes }
+}
+
 export function enable2fa(userId, code) {
   const db = getDB()
   const u = db.prepare('SELECT totp_secret, totp_enabled FROM users WHERE id=?').get(userId)
@@ -53,7 +110,8 @@ export function enable2fa(userId, code) {
   if (u.totp_enabled) return { error: '2FA zaten aktif', status: 400 }
   if (!verifyTotp(code, u.totp_secret)) return { error: 'Kod hatalı', status: 401 }
   db.prepare('UPDATE users SET totp_enabled=1 WHERE id=?').run(userId)
-  return { ok: true }
+  const backupCodes = generateBackupCodes(userId)
+  return { ok: true, backup_codes: backupCodes }
 }
 
 export function disable2fa(userId, code) {

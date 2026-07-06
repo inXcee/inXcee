@@ -12,6 +12,26 @@ beforeAll(async () => {
 
 const auth = { Authorization: `Bearer ${''}` } // placeholder, gerçek headers her testte token okur
 
+describe('Transport — Zod sweep', () => {
+  it('cok uzun durak adi 400 doner', async () => {
+    const res = await request(app).post('/api/transport/pickup-points')
+      .set('Authorization', `Bearer ${token}`).send({ name: 'A'.repeat(201) })
+    expect(res.status).toBe(400)
+  })
+
+  it('cok uzun rota adi 400 doner', async () => {
+    const res = await request(app).post('/api/transport/routes')
+      .set('Authorization', `Bearer ${token}`).send({ name: 'R'.repeat(201) })
+    expect(res.status).toBe(400)
+  })
+
+  it('atama eksik work_date ile 400 doner', async () => {
+    const res = await request(app).post('/api/transport/assign')
+      .set('Authorization', `Bearer ${token}`).send({ staff_id: 1, route_id: 1 })
+    expect(res.status).toBe(400)
+  })
+})
+
 describe('Transport — Pickup Points', () => {
   it('campus_manager olmayan kullanıcı CRUD yapamaz', async () => {
     const t = (await request(app).post('/api/auth/login').send({ username: 'camasir', password: 'admin123' })).body.token
@@ -305,5 +325,19 @@ describe('Transport — Reports (Faz 7)', () => {
     expect(res.body).toHaveProperty('per_staff_usage')
     expect(Array.isArray(res.body.no_show_top)).toBe(true)
     expect(Array.isArray(res.body.per_staff_usage)).toBe(true)
+  })
+})
+
+describe('Transport — harita verisi', () => {
+  it('withStops stop\'larda lat/lng dondurur', async () => {
+    const res = await request(app).get('/api/transport/routes?active=1&with_stops=1')
+      .set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(200)
+    expect(Array.isArray(res.body)).toBe(true)
+    const withStops = res.body.find(r => r.stops && r.stops.length > 0)
+    if (withStops) {
+      expect(withStops.stops[0]).toHaveProperty('lat')
+      expect(withStops.stops[0]).toHaveProperty('lng')
+    }
   })
 })

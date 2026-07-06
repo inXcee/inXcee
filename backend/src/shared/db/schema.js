@@ -243,7 +243,7 @@ CREATE TABLE IF NOT EXISTS whatsapp_messages (
   is_fault INTEGER NOT NULL DEFAULT 0,
   fault_id INTEGER,
   parsed_location TEXT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TRIGGER IF NOT EXISTS block_quarantine_assignment
@@ -529,6 +529,14 @@ CREATE INDEX IF NOT EXISTS idx_room_assignments_personnel ON room_assignments(pe
 CREATE INDEX IF NOT EXISTS idx_room_assignments_active ON room_assignments(check_out_at) WHERE check_out_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_personnel_checkin ON personnel(check_in_date);
 CREATE INDEX IF NOT EXISTS idx_cleaning_tasks_completed ON cleaning_tasks(completed_at);
+
+-- Eksik FK ve filtre index'leri
+CREATE INDEX IF NOT EXISTS idx_personnel_dept ON personnel(department_id);
+CREATE INDEX IF NOT EXISTS idx_rooms_block_status_floor ON rooms(block, status, floor);
+CREATE INDEX IF NOT EXISTS idx_maintenance_opened ON maintenance_requests(opened_at DESC);
+CREATE INDEX IF NOT EXISTS idx_inventory_category ON inventory(category);
+CREATE INDEX IF NOT EXISTS idx_audit_user_date ON audit_log(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_module_date ON audit_log(module, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS system_settings (
   key   TEXT PRIMARY KEY,

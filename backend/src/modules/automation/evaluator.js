@@ -1,4 +1,6 @@
 import { getDB } from '../../shared/db/index.js'
+import { logger } from '../../shared/logger.js'
+import { getOverdueInside } from '../access/service.js'
 
 // Trigger evaluators — her biri true/false + measured value doner.
 const TRIGGERS = {
@@ -40,6 +42,12 @@ const TRIGGERS = {
     // alias of drill_overdue
     return TRIGGERS.drill_overdue(maxDaysAgo)
   },
+  access_overdue_inside(maxHours) {
+    // Çıkış yapmadan maxHours'tan uzun süre içeride kalan kişi sayısı (Faz 9 güvenlik)
+    const db = getDB()
+    const rows = getOverdueInside(db, maxHours)
+    return { firing: rows.length > 0, value: rows.length, unit: ' kişi' }
+  },
 }
 
 const ACTIONS = {
@@ -49,7 +57,7 @@ const ACTIONS = {
     try {
       db.prepare(`INSERT INTO error_log (level, message, context, created_at) VALUES (?,?,?,datetime('now'))`)
         .run('info', msg, JSON.stringify({ rule_id: rule.id, ...evalResult }))
-    } catch { /* error_log yoksa konsola */ console.log(msg) }
+    } catch { /* error_log yoksa konsola */ logger.info(msg) }
     return 'log: ok'
   },
   notify_group(rule, evalResult) {

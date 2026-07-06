@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import TrendCard from './TrendCard.jsx'
+import { SkeletonGrid } from '../../shared/components/Skeleton.jsx'
 
 const METRICS = ['occupancy', 'sla', 'housekeeping', 'checkins']
 
@@ -23,9 +24,7 @@ export default function TrendChartsSection({ days = 30, label }) {
       </div>
 
       {isLoading ? (
-        <div style={{ textAlign: 'center', padding: '40px', fontSize: '12px', color: 'var(--text3)' }}>
-          Yükleniyor…
-        </div>
+        <SkeletonGrid count={4} minWidth={320} />
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '12px' }}>
           {METRICS.map(metric => (

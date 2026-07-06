@@ -3,7 +3,10 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import api from '../../shared/api/client.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
+import { SkeletonGrid, SkeletonTable } from '../../shared/components/Skeleton.jsx'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
+import { useUrlParamState } from '../../shared/hooks/useUrlParamState.js'
+import HelpHint from '../../shared/components/HelpHint.jsx'
 
 const toast = (m, t = 'success') => useToastStore.getState().addToast(m, t)
 const toastErr = (e) => toast(e?.response?.data?.error || 'Hata', 'error')
@@ -18,15 +21,16 @@ const TABS = [
   { key: 'reviews', label: '📋 DEĞERLENDİRME' },
   { key: 'goals',   label: '🎯 HEDEFLER' },
   { key: 'leaders', label: '⭐ LİDERLER' },
+  { key: 'kpi',     label: '📊 KPI / ANALİZ' },
 ]
 
 export default function PerformancePage() {
-  const [tab, setTab] = useState('reviews')
+  const [tab, setTab] = useUrlParamState('tab', 'reviews')
 
   return (
     <div style={{ maxWidth: 1200 }} className="fade-up">
       <div style={{ marginBottom: 16 }}>
-        <h1 style={{ fontSize: 28, letterSpacing: 4, color: 'var(--text)', margin: 0 }}>PERFORMANS</h1>
+        <h1 style={{ fontSize: 28, letterSpacing: 4, color: 'var(--text)', margin: 0 }}>PERFORMANS<HelpHint topic="performance" title="PERFORMANS" /></h1>
         <p style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', marginTop: 4, letterSpacing: 1.5 }}>
           DEĞERLENDIRME · HEDEF TAKİBİ · POZİTİF PUAN (DİSİPLİN DENGELEYİCİ)
         </p>
@@ -46,6 +50,7 @@ export default function PerformancePage() {
       {tab === 'reviews' && <ReviewsTab />}
       {tab === 'goals' && <GoalsTab />}
       {tab === 'leaders' && <LeadersTab />}
+      {tab === 'kpi' && <KpiTab />}
     </div>
   )
 }
@@ -87,7 +92,7 @@ function ReviewsTab() {
         </div>
       )}
 
-      {isLoading ? <div style={{ padding: 30, color: 'var(--text3)' }}>Yükleniyor…</div> : !data.length ? (
+      {isLoading ? <SkeletonTable rows={5} cols={4} /> : !data.length ? (
         <div style={{ padding: 50, textAlign: 'center', background: 'var(--surface)', borderRadius: 14 }}>
           <div style={{ fontSize: 36, opacity: 0.3, marginBottom: 8 }}>📋</div>
           <div style={{ fontFamily: 'var(--display)', fontSize: 14 }}>{period} İÇİN DEĞERLENDİRME YOK</div>
@@ -312,7 +317,7 @@ function GoalsTab() {
         </div>
       )}
 
-      {isLoading ? <div style={{ padding: 30, color: 'var(--text3)' }}>Yükleniyor…</div> : !data.length ? (
+      {isLoading ? <SkeletonTable rows={5} cols={4} /> : !data.length ? (
         <div style={{ padding: 50, textAlign: 'center', background: 'var(--surface)', borderRadius: 14 }}>
           <div style={{ fontSize: 36, opacity: 0.3 }}>🎯</div>
           <div style={{ fontFamily: 'var(--display)', fontSize: 14, marginTop: 8 }}>HEDEF YOK</div>
@@ -365,7 +370,7 @@ function LeadersTab() {
         ))}
       </div>
 
-      {isLoading ? <div style={{ padding: 30, color: 'var(--text3)' }}>Yükleniyor…</div> : !data.length ? (
+      {isLoading ? <SkeletonTable rows={5} cols={4} /> : !data.length ? (
         <div style={{ padding: 50, textAlign: 'center', background: 'var(--surface)', borderRadius: 14 }}>
           <div style={{ fontSize: 36, opacity: 0.3 }}>⭐</div>
           <div style={{ fontFamily: 'var(--display)', fontSize: 14, marginTop: 8 }}>HENÜZ POZİTİF PUAN YOK</div>
@@ -398,6 +403,110 @@ function LeadersTab() {
           </table>
         </div>
       )}
+    </div>
+  )
+}
+
+// ── KPI / Analiz panosu ──
+function StatCard({ label, value, suffix = '', color = 'var(--text)' }) {
+  return (
+    <div style={{ flex: '1 1 120px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: '12px 14px' }}>
+      <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: 1.2 }}>{label}</div>
+      <div style={{ fontFamily: 'var(--display)', fontSize: 24, color, marginTop: 4 }}>{value}{suffix}</div>
+    </div>
+  )
+}
+
+// 0..max skalalı yatay bar satırı
+function BarRow({ label, value, max, suffix = '', barColor = 'var(--accent)' }) {
+  const pct = max > 0 && value != null ? Math.min(100, (value / max) * 100) : 0
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '5px 0' }}>
+      <div style={{ width: 130, fontSize: 11, color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</div>
+      <div style={{ flex: 1, height: 8, background: 'var(--surface2)', borderRadius: 4, overflow: 'hidden' }}>
+        <div style={{ width: `${pct}%`, height: '100%', background: barColor, borderRadius: 4 }} />
+      </div>
+      <div style={{ width: 48, textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text)' }}>
+        {value != null ? value : '—'}{suffix}
+      </div>
+    </div>
+  )
+}
+
+function Panel({ title, children }) {
+  return (
+    <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, padding: 16, marginBottom: 14 }}>
+      <h2 style={{ fontSize: 12, fontFamily: 'var(--mono)', letterSpacing: 1.5, color: 'var(--text3)', margin: '0 0 12px' }}>{title}</h2>
+      {children}
+    </div>
+  )
+}
+
+function KpiEmpty() {
+  return <div style={{ padding: 24, textAlign: 'center', color: 'var(--text3)', fontSize: 12 }}>Veri yok</div>
+}
+
+function KpiTab() {
+  const thisYear = new Date().getFullYear()
+  const [period, setPeriod] = useState(String(thisYear))
+  const { data, isLoading } = useQuery({
+    queryKey: ['perf-kpi', period],
+    queryFn: () => api.get(`/performance/kpi?period=${period}`).then(r => r.data),
+  })
+
+  if (isLoading || !data) return <SkeletonGrid count={4} />
+
+  const { summary: s, departments, goals, trend, dimensions } = data
+  const maxDept = Math.max(5, ...departments.map(d => d.avg_score || 0))
+  const maxTrend = Math.max(5, ...trend.map(t => t.avg_score || 0))
+
+  return (
+    <div>
+      <div style={{ marginBottom: 12, display: 'flex', gap: 8, alignItems: 'center' }}>
+        <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)' }}>DÖNEM</span>
+        {[thisYear, thisYear - 1, thisYear - 2].map(y => (
+          <button key={y} onClick={() => setPeriod(String(y))} className="btn btn-ghost btn-xs"
+            style={{ borderRadius: 8, ...(period === String(y) ? { background: 'var(--accent)', color: '#000' } : {}) }}>{y}</button>
+        ))}
+      </div>
+
+      {/* Özet kartlar */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 14 }}>
+        <StatCard label="DEĞERLENDİRME" value={s.reviewCount} />
+        <StatCard label="ORT. PUAN" value={s.avgScore != null ? s.avgScore : '—'} color="var(--accent)" />
+        <StatCard label="AKTİF HEDEF" value={s.activeGoals} />
+        <StatCard label="HEDEF TAMAMLAMA" value={s.goalCompletionRate} suffix="%" color="var(--green)" />
+        <StatCard label="POZİTİF PUAN" value={s.positivePoints} color="var(--green)" />
+      </div>
+
+      <Panel title="DEPARTMAN KIYAS — ORT. PUAN">
+        {departments.length === 0 ? <KpiEmpty /> : departments.map(d => (
+          <BarRow key={d.dept_id ?? d.dept_name} label={d.dept_name} value={d.avg_score} max={maxDept} />
+        ))}
+      </Panel>
+
+      <Panel title="HEDEF TAMAMLAMA">
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+          <StatCard label="ZAMANINDA" value={goals.onTime} color="var(--green)" />
+          <StatCard label="GECİKMİŞ" value={goals.overdue} color="var(--red, #e66)" />
+          <StatCard label="DEVAM EDEN" value={goals.open + goals.in_progress} />
+          <StatCard label="TAMAMLANAN" value={goals.done} color="var(--green)" />
+          <StatCard label="İPTAL" value={goals.cancelled} color="var(--text3)" />
+          <StatCard label="TAMAMLAMA" value={goals.completionRate} suffix="%" color="var(--accent)" />
+        </div>
+      </Panel>
+
+      <Panel title="DÖNEMSEL PUAN TRENDİ">
+        {trend.length === 0 ? <KpiEmpty /> : trend.map(t => (
+          <BarRow key={t.period} label={`${t.period} (${t.review_count})`} value={t.avg_score} max={maxTrend} barColor="var(--amber)" />
+        ))}
+      </Panel>
+
+      <Panel title="BOYUT KIRILIMI (1-5)">
+        {REVIEW_FIELDS.map(([key, label]) => (
+          <BarRow key={key} label={label} value={dimensions[key]} max={5} barColor="var(--accent)" />
+        ))}
+      </Panel>
     </div>
   )
 }

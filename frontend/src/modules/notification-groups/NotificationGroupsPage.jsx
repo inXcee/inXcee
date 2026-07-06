@@ -4,6 +4,7 @@ import api from '../../shared/api/client.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 import EmptyState from '../../shared/components/EmptyState.jsx'
+import HelpHint from '../../shared/components/HelpHint.jsx'
 
 const CHANNELS = [
   { value: 'app', label: 'Uygulama' },
@@ -74,7 +75,7 @@ export default function NotificationGroupsPage() {
     <div style={{ padding: 16 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 16 }}>
         <div>
-          <h2 style={{ fontSize: 22, letterSpacing: 4 }}>BİLDİRİM GRUPLARI</h2>
+          <h2 style={{ fontSize: 22, letterSpacing: 4 }}>BİLDİRİM GRUPLARI<HelpHint topic="notification-groups" title="BİLDİRİM GRUPLARI" /></h2>
           <p style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', letterSpacing: 2 }}>
             ROL/KONU BAZLI BILDIRIM ALICI KUMELERI
           </p>

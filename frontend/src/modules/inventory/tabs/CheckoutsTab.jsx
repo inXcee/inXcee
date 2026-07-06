@@ -3,6 +3,8 @@ import { useQuery } from '@tanstack/react-query'
 import api from '../../../shared/api/client.js'
 import { fmt } from '../constants.js'
 import ActiveCheckoutsPanel from '../components/ActiveCheckoutsPanel.jsx'
+import { SkeletonTable } from '../../../shared/components/Skeleton.jsx'
+import { exportRowsToCsv } from '../../../shared/utils/exportData.js'
 
 export default function CheckoutsTab() {
   const [view, setView] = useState('active')
@@ -28,9 +30,23 @@ export default function CheckoutsTab() {
       {view === 'history' && (
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '14px', overflow: 'hidden' }}>
           <div style={{ height: '2px', background: 'linear-gradient(90deg,var(--purple),var(--blue))' }} />
-          <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)' }}>
-            <div style={{ fontFamily: 'var(--display)', fontSize: '14px', letterSpacing: '2px' }}>AVS PERSONELİ TESLİM GEÇMİŞİ</div>
-            <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', marginTop: '2px' }}>{history.length} KAYIT (İADE EDİLENLER DAHİL)</div>
+          <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <div style={{ fontFamily: 'var(--display)', fontSize: '14px', letterSpacing: '2px' }}>AVS PERSONELİ TESLİM GEÇMİŞİ</div>
+              <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', marginTop: '2px' }}>{history.length} KAYIT (İADE EDİLENLER DAHİL)</div>
+            </div>
+            {history.length > 0 && (
+              <button className="btn btn-ghost btn-sm" onClick={() => exportRowsToCsv([
+                { key: 'personnel_name', label: 'AVS PERSONEL' },
+                { key: 'position', label: 'GÖREV' },
+                { key: 'department_name', label: 'BİRİM' },
+                { key: 'item_name', label: 'MALZEME' },
+                { key: 'quantity', label: 'ADET' },
+                { key: 'checked_out_at', label: 'TESLİM TARİHİ' },
+                { key: 'returned_at', label: 'İADE TARİHİ' },
+                { key: 'checked_out_by_name', label: 'VEREN' },
+              ], history, 'zimmet_gecmisi.csv')}>↓ CSV</button>
+            )}
           </div>
           {history.length === 0 ? (
             <div style={{ padding: '32px', textAlign: 'center', fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--text3)' }}>Geçmiş kayıt yok</div>
@@ -84,7 +100,7 @@ function CheckoutReport() {
   })
 
   if (isLoading) {
-    return <div style={{ padding: 32, textAlign: 'center', fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text3)' }}>Yükleniyor…</div>
+    return <SkeletonTable rows={5} cols={4} />
   }
 
   const t = data?.totals || {}

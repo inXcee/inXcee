@@ -17,6 +17,28 @@ beforeAll(async () => {
   staffId = s.id
 })
 
+describe('Safety — Zod sweep', () => {
+  it('cok uzun egitim basligi 400 doner', async () => {
+    const res = await request(app).post('/api/safety/sessions')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ title: 'T'.repeat(201), category: 'safety', session_date: '2026-06-10' })
+    expect(res.status).toBe(400)
+  })
+
+  it('gecersiz kategori 400 doner', async () => {
+    const res = await request(app).post('/api/safety/sessions')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ title: 'Geçerli', category: 'invalid', session_date: '2026-06-10' })
+    expect(res.status).toBe(400)
+  })
+
+  it('item_type olmadan KKD 400 doner', async () => {
+    const res = await request(app).post('/api/safety/kkd')
+      .set('Authorization', `Bearer ${token}`).send({ staff_id: staffId })
+    expect(res.status).toBe(400)
+  })
+})
+
 describe('H6 IG1 — Eğitim oturumları', () => {
   it('CREATE/LIST/GET/UPDATE/DELETE training session', async () => {
     const c = await request(app).post('/api/safety/sessions').set('Authorization', `Bearer ${token}`)
@@ -291,5 +313,46 @@ describe('H6 Yetki', () => {
     const t = (await request(app).post('/api/auth/login').send({ username: 'teknik', password: 'admin123' })).body.token
     const r = await request(app).get('/api/safety/sessions').set('Authorization', `Bearer ${t}`)
     expect(r.status).toBe(200)
+  })
+})
+
+describe('İSG uyum özeti', () => {
+  it('compliance-summary beklenen alanları döner', async () => {
+    const r = await request(app).get('/api/safety/compliance-summary')
+      .set('Authorization', `Bearer ${token}`)
+    expect(r.status).toBe(200)
+    expect(typeof r.body.expired_certs).toBe('number')
+    expect(typeof r.body.expiring_soon).toBe('number')
+    expect(typeof r.body.untrained_12m).toBe('number')
+    expect(typeof r.body.kkd_outstanding).toBe('number')
+    expect(typeof r.body.total_active).toBe('number')
+  })
+
+  it('süresi dolmuş sertifika sayıya yansır', async () => {
+    const db = getDB()
+    // Önceki testlerin etkilememesi için fresh staff kullan
+    db.prepare('INSERT INTO staff(full_name, is_active) VALUES(?,1)').run('Expired Cert Staff')
+    const expiredStaffId = db.prepare("SELECT id FROM staff WHERE full_name='Expired Cert Staff'").get().id
+
+    const sessionId = db.prepare(`
+      INSERT INTO training_sessions(title, category, session_date, status)
+      VALUES('Eski Eğitim', 'safety', '2023-01-01', 'completed')
+    `).run().lastInsertRowid
+    db.prepare(`
+      INSERT INTO training_attendances(session_id, staff_id, attended, cert_expires_at)
+      VALUES(?, ?, 1, '2024-01-01')
+    `).run(sessionId, expiredStaffId)
+
+    const r = await request(app).get('/api/safety/compliance-summary')
+      .set('Authorization', `Bearer ${token}`)
+    expect(r.status).toBe(200)
+    expect(r.body.expired_certs).toBeGreaterThanOrEqual(1)
+  })
+
+  it('yetkisiz erişim reddedilir', async () => {
+    const t = (await request(app).post('/api/auth/login').send({ username: 'camasir', password: 'admin123' })).body.token
+    const r = await request(app).get('/api/safety/compliance-summary')
+      .set('Authorization', `Bearer ${t}`)
+    expect(r.status).toBe(403)
   })
 })

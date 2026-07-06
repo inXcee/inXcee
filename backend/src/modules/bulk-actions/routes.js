@@ -3,6 +3,7 @@ import { requireRole } from '../../shared/auth/middleware.js'
 import * as svc from './service.js'
 import * as q from './queries.js'
 import { getDB } from '../../shared/db/index.js'
+import { logger } from '../../shared/logger.js'
 
 export const bulkActionsRouter = Router()
 const mgmt = requireRole('campus_manager', 'shift_supervisor')
@@ -30,12 +31,12 @@ function readFilters(req) {
 
 bulkActionsRouter.get('/personnel', ...mgmt, (req, res) => {
   try { res.json(svc.listActivePersonnelService(readFilters(req))) }
-  catch (e) { console.error('[BulkActions]', e); res.status(500).json({ error: 'Sunucu hatasi' }) }
+  catch (e) { logger.error('[BulkActions]', e); res.status(500).json({ error: 'Sunucu hatasi' }) }
 })
 
 bulkActionsRouter.get('/stats', ...mgmt, (req, res) => {
   try { res.json(svc.listStatsService(readFilters(req))) }
-  catch (e) { console.error('[BulkActions stats]', e); res.status(500).json({ error: 'Sunucu hatasi' }) }
+  catch (e) { logger.error('[BulkActions stats]', e); res.status(500).json({ error: 'Sunucu hatasi' }) }
 })
 
 bulkActionsRouter.get('/detail/:id', ...mgmt, (req, res) => {
@@ -68,7 +69,7 @@ bulkActionsRouter.get('/detail/:id', ...mgmt, (req, res) => {
       `).all(id)
     } catch {}
     res.json({ person, zimmet, discipline })
-  } catch (e) { console.error('[Detail]', e); res.status(500).json({ error: 'Sunucu hatasi' }) }
+  } catch (e) { logger.error('[Detail]', e); res.status(500).json({ error: 'Sunucu hatasi' }) }
 })
 
 bulkActionsRouter.get('/export', ...mgmt, (req, res) => {
@@ -97,7 +98,7 @@ bulkActionsRouter.get('/export', ...mgmt, (req, res) => {
     res.setHeader('Content-Type', 'text/csv; charset=utf-8')
     res.setHeader('Content-Disposition', `attachment; filename="sakinler-${new Date().toISOString().slice(0,10)}.csv"`)
     res.send(csv)
-  } catch (e) { console.error('[BulkActions export]', e); res.status(500).json({ error: 'Sunucu hatasi' }) }
+  } catch (e) { logger.error('[BulkActions export]', e); res.status(500).json({ error: 'Sunucu hatasi' }) }
 })
 
 bulkActionsRouter.post('/checkout', ...mgmt, (req, res) => {
@@ -139,7 +140,7 @@ bulkActionsRouter.post('/whatsapp', ...mgmt, async (req, res) => {
     const r = await svc.bulkWhatsAppService(req.body?.ids, req.body?.message, req.user.id)
     if (r.error) return res.status(r.status).json({ error: r.error })
     res.json(r)
-  } catch (e) { console.error('[Bulk WA]', e); res.status(500).json({ error: 'Sunucu hatasi' }) }
+  } catch (e) { logger.error('[Bulk WA]', e); res.status(500).json({ error: 'Sunucu hatasi' }) }
 })
 
 bulkActionsRouter.post('/set-company', ...mgmt, (req, res) => {

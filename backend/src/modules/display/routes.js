@@ -1,5 +1,7 @@
 import { Router } from 'express'
 import { getDB } from '../../shared/db/index.js'
+import { logger } from '../../shared/logger.js'
+import { localDay } from '../meals/service.js'
 
 // Public read-only TV pano endpoint'i. Auth gerekmiyor (kampus icindeki TV icin).
 // Localhost veya iç ağ icin acik — Nginx ile dis erisim kapatilmalidir.
@@ -81,7 +83,64 @@ displayRouter.get('/snapshot', (_req, res) => {
       generated_at: new Date().toISOString(),
     })
   } catch (e) {
-    console.error('[Display]', e)
+    logger.error('[Display]', e)
+    res.status(500).json({ error: 'Sunucu hatasi' })
+  }
+})
+
+// Mutfak ekranı — TV pano kalıbı (public, salt-okunur, isim yok sadece sayım).
+// Öğün bazlı: beklenen (meal_selections attending=1) / servis edilen (meal_logs)
+// / günün menüsü (meal_menu). Diyet kırılımı bugünün beklenenleri arasından.
+displayRouter.get('/kitchen', (_req, res) => {
+  const db = getDB()
+  try {
+    const MEALS = ['breakfast', 'lunch', 'dinner', 'snack']
+    const today = localDay(db)
+    const tomorrow = localDay(db, 1)
+
+    const expectedStmt = db.prepare(`
+      SELECT meal_type, COUNT(*) AS c FROM meal_selections
+      WHERE meal_date = ? AND attending = 1 GROUP BY meal_type`)
+    const servedStmt = db.prepare(`
+      SELECT meal_type, COUNT(*) AS c FROM meal_logs
+      WHERE meal_date = ? GROUP BY meal_type`)
+    const menuStmt = db.prepare(`
+      SELECT meal_type, items FROM meal_menu WHERE meal_date = ?`)
+
+    const toMap = rows => Object.fromEntries(rows.map(r => [r.meal_type, r.c ?? r.items]))
+    const expected = toMap(expectedStmt.all(today))
+    const served = toMap(servedStmt.all(today))
+    const menu = toMap(menuStmt.all(today))
+    const tomorrowExpected = toMap(expectedStmt.all(tomorrow))
+
+    const meals = {}
+    for (const m of MEALS) {
+      meals[m] = {
+        expected: expected[m] || 0,
+        served: served[m] || 0,
+        remaining: Math.max(0, (expected[m] || 0) - (served[m] || 0)),
+        menu: menu[m] || null,
+      }
+    }
+
+    // Diyet kırılımı — bugün katılacağını söyleyenler arasından (mutfak özel hazırlık sayısı)
+    const diet = db.prepare(`
+      SELECT s.diet_flags AS flag, COUNT(DISTINCT s.id) AS count
+      FROM meal_selections ms JOIN staff s ON s.id = ms.staff_id
+      WHERE ms.meal_date = ? AND ms.attending = 1
+        AND s.diet_flags IS NOT NULL AND s.diet_flags != ''
+      GROUP BY s.diet_flags ORDER BY count DESC
+    `).all(today)
+
+    res.json({
+      date: today,
+      meals,
+      diet,
+      tomorrow: Object.fromEntries(MEALS.map(m => [m, tomorrowExpected[m] || 0])),
+      generated_at: new Date().toISOString(),
+    })
+  } catch (e) {
+    logger.error('[Display/kitchen]', e)
     res.status(500).json({ error: 'Sunucu hatasi' })
   }
 })

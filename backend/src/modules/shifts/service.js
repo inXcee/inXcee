@@ -13,6 +13,7 @@ import {
   getStaffDayBreakdown, listDeductions
 } from './queries.js'
 import { getDB } from '../../shared/db/index.js'
+import { sendPushToWorker } from '../../shared/notifications/push.js'
 
 // ── Tax helpers (2024 brackets — update annually per GIB tebliği) ──
 // TODO: Her yıl GİB tebliğine göre güncelle
@@ -157,6 +158,18 @@ export function createLeaveService(data) {
 export function approveLeaveService(id, userId, status) {
   if (!['approved', 'rejected'].includes(status)) throw new Error('Geçersiz durum')
   approveLeaveRequest(id, userId, status)
+  // AVS kioska push (personel telefonda abone olduysa) — opsiyonel, ana akışı bozma
+  try {
+    const r = getDB().prepare('SELECT staff_id FROM leave_requests WHERE id=?').get(id)
+    if (r?.staff_id) {
+      sendPushToWorker(r.staff_id, {
+        title: status === 'approved' ? 'İzniniz onaylandı' : 'İzniniz reddedildi',
+        body: status === 'approved' ? 'İzin talebiniz onaylandı.' : 'İzin talebiniz reddedildi.',
+        tag: 'leave',
+        url: '/avs-kiosk',
+      }).catch(() => {})
+    }
+  } catch { /* push opsiyonel */ }
 }
 
 export function leaveListService(filters) {

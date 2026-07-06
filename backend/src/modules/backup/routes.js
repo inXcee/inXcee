@@ -3,6 +3,7 @@ import multer from 'multer'
 import fs from 'fs'
 import path from 'path'
 import { requireRole } from '../../shared/auth/middleware.js'
+import { logger } from '../../shared/logger.js'
 import {
   listBackupsService, runBackupService, getBackupFileService,
   deleteBackupService, restoreBackupService,
@@ -31,7 +32,7 @@ const restoreUpload = multer({
 
 backupRouter.get('/list', ...adminOnly, (req, res) => {
   try { res.json(listBackupsService()) }
-  catch (e) { console.error('[Backup]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  catch (e) { logger.error('[Backup]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 backupRouter.post('/run', ...adminOnly, async (req, res) => {
@@ -40,7 +41,7 @@ backupRouter.post('/run', ...adminOnly, async (req, res) => {
     if (result.error) return res.status(result.status).json({ error: result.error })
     res.status(201).json(result)
   } catch (e) {
-    console.error('[Backup]', e)
+    logger.error('[Backup]', e)
     res.status(500).json({ error: 'Yedekleme başarısız: ' + e.message })
   }
 })
@@ -68,7 +69,7 @@ backupRouter.post('/restore', ...adminOnly, restoreUpload.single('backup'), asyn
       setTimeout(() => process.exit(0), 1000)
     }
   } catch (e) {
-    console.error('[Backup/restore]', e)
+    logger.error('[Backup/restore]', e)
     res.status(500).json({ error: 'Geri yükleme başarısız: ' + e.message })
   }
 })

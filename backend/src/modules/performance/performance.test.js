@@ -17,6 +17,20 @@ beforeAll(async () => {
   staffId = s.id
 })
 
+describe('Performance — Zod sweep', () => {
+  it('gecersiz period formati 400 doner', async () => {
+    const r = await request(app).post('/api/performance/reviews').set('Authorization', `Bearer ${token}`)
+      .send({ staff_id: staffId, period: 'haziran' })
+    expect(r.status).toBe(400)
+  })
+
+  it('5 ustu puan 400 doner', async () => {
+    const r = await request(app).post('/api/performance/reviews').set('Authorization', `Bearer ${token}`)
+      .send({ staff_id: staffId, period: '2027', productivity: 9 })
+    expect(r.status).toBe(400)
+  })
+})
+
 describe('H9 PE1 — Değerlendirme', () => {
   it('CREATE total_score otomatik hesaplar', async () => {
     const r = await request(app).post('/api/performance/reviews').set('Authorization', `Bearer ${token}`)
@@ -101,6 +115,31 @@ describe('H9 Yetki', () => {
     const t = (await request(app).post('/api/auth/login').send({ username: 'camasir', password: 'admin123' })).body.token
     const r = await request(app).post('/api/performance/reviews').set('Authorization', `Bearer ${t}`)
       .send({ staff_id: staffId, period: '2027' })
+    expect(r.status).toBe(403)
+  })
+})
+
+describe('KPI panosu — GET /performance/kpi', () => {
+  it('returns aggregated KPI blocks for a manager', async () => {
+    const r = await request(app).get('/api/performance/kpi?period=2026').set('Authorization', `Bearer ${token}`)
+    expect(r.status).toBe(200)
+    expect(r.body.period).toBe('2026')
+    expect(r.body.summary).toBeTruthy()
+    expect(Array.isArray(r.body.departments)).toBe(true)
+    expect(r.body.goals).toHaveProperty('completionRate')
+    expect(Array.isArray(r.body.trend)).toBe(true)
+    expect(r.body.dimensions).toHaveProperty('productivity')
+  })
+
+  it('defaults period to the current year when omitted', async () => {
+    const r = await request(app).get('/api/performance/kpi').set('Authorization', `Bearer ${token}`)
+    expect(r.status).toBe(200)
+    expect(r.body.period).toBe(String(new Date().getFullYear()))
+  })
+
+  it('rejects non-manager roles', async () => {
+    const t = (await request(app).post('/api/auth/login').send({ username: 'camasir', password: 'admin123' })).body.token
+    const r = await request(app).get('/api/performance/kpi').set('Authorization', `Bearer ${t}`)
     expect(r.status).toBe(403)
   })
 })

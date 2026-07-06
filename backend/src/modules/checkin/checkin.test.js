@@ -28,9 +28,28 @@ describe('Check-in', () => {
     const res = await request(app)
       .post('/api/checkin/register')
       .set('Authorization', `Bearer ${token}`)
-      .send({ tc_no: '22222222222', full_name: 'Mehmet Demir', company: 'ABC Ltd', hometown: 'Konya' })
+      .send({
+        tc_no: '22222222222', full_name: 'Mehmet Demir', company: 'ABC Ltd', hometown: 'Konya',
+        emergency_name: 'Ayşe Demir', emergency_phone: '05551234567',
+      })
     expect(res.status).toBe(201)
     expect(res.body.id).toBeTruthy()
+  })
+
+  it('acil iletişim eksikse 400 döner (İSG zorunluluğu)', async () => {
+    const noContact = await request(app)
+      .post('/api/checkin/register')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ tc_no: '99988877766', full_name: 'Test İSG', company: 'X' })
+    expect(noContact.status).toBe(400)
+    expect(noContact.body.error).toMatch(/[Aa]cil/)
+
+    const noPhone = await request(app)
+      .post('/api/checkin/register')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ tc_no: '99988877755', full_name: 'Test İSG 2', company: 'X', emergency_name: 'Anne' })
+    expect(noPhone.status).toBe(400)
+    expect(noPhone.body.error).toMatch(/[Tt]elefon/)
   })
   it('suggests room for group with same company', async () => {
     const res = await request(app)
@@ -48,7 +67,10 @@ describe('Check-in', () => {
     const regRes = await request(app)
       .post('/api/checkin/register')
       .set('Authorization', `Bearer ${token}`)
-      .send({ tc_no: '33333333333', full_name: 'Zimmet Test Kisi', company: 'Test Ltd' })
+      .send({
+        tc_no: '33333333333', full_name: 'Zimmet Test Kisi', company: 'Test Ltd',
+        emergency_name: 'Aile', emergency_phone: '05551234567',
+      })
     expect(regRes.status).toBe(201)
     const personnelId = regRes.body.id
 
@@ -161,5 +183,13 @@ describe('Placeholder batch', () => {
       .send({ rows })
     expect(res.status).toBe(400)
     expect(res.body.error).toMatch(/1000/)
+  })
+
+  it('set-shift geçersiz vardiya tipinde 400 (Zod)', async () => {
+    const res = await request(app)
+      .post('/api/checkin/set-shift')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ personnel_id: 1, shift_type: 'bogus' })
+    expect(res.status).toBe(400)
   })
 })

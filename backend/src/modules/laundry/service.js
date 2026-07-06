@@ -5,6 +5,11 @@ import { EVENT_KINDS } from '../../shared/notifications/events.js'
 import { logAudit } from '../../shared/audit.js'
 import { notifyItemReady } from './whatsapp.js'
 
+// Dashboard özeti (laundry rolü) — saf okuma.
+export function getLaundrySummaryService() {
+  return q.getLaundrySummaryQuery()
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // STATE MACHINE
 // ═══════════════════════════════════════════════════════════════════════════
@@ -70,6 +75,7 @@ export function advanceItemService(id, { machine_id, shelf_location, timer_minut
         timer_started_at: timerEnd ? now.toISOString() : null,
         increment_runs: true,
       })
+      q.insertMachineRunQuery({ machine_id, item_id: id })
       q.removeItemFromQueueQuery(id)
       const machineSupplies = q.getMachineSuppliesQuery(machine_id)
       for (const ms of machineSupplies) {
@@ -105,6 +111,33 @@ export function advanceItemService(id, { machine_id, shelf_location, timer_minut
 
   // Side-effect'ler transaction disinda (notification + WhatsApp) — DB rollback
   // olursa bunlar da gonderilmemeli; rollback'ta tx() throw eder ve buraya gelmezse calisir.
+  // Yikama baslarken otomatik deterjan dusumu olduysa esik kontrolu: stok
+  // uyari/kritik altina indiyse bildirim (dedup gun-ici tekil — spam olmaz).
+  // Ayni anda makine bakim sayaci esik kontrolu.
+  if (nextStatus === 'washing') {
+    const m = q.getMachineQuery(machine_id)
+    if (m && m.runs_since_maintenance >= q.MAINTENANCE_RUN_THRESHOLD) {
+      createNotification({
+        message: `🔧 ${m.name} bakım zamanı — son bakımdan beri ${m.runs_since_maintenance} yıkama (eşik ${q.MAINTENANCE_RUN_THRESHOLD})`,
+        type: 'warning',
+        module: 'laundry',
+        target_role: 'laundry',
+        dedup_key: `machine_maint_${m.id}`,
+      })
+    }
+    for (const s of q.getAlertSuppliesQuery()) {
+      createNotification({
+        message: s.alert_level === 'critical'
+          ? `🧴 KRİTİK STOK: ${s.name} ${s.current_stock}${s.unit} kaldı (eşik ${s.critical_threshold}${s.unit}) — acil sipariş gerekli`
+          : `🧴 Stok azalıyor: ${s.name} ${s.current_stock}${s.unit} (uyarı eşiği ${s.warning_threshold}${s.unit})`,
+        type: s.alert_level === 'critical' ? 'critical' : 'warning',
+        module: 'laundry',
+        target_role: s.alert_level === 'critical' ? null : 'laundry',
+        dedup_key: `supply_low_${s.id}_${s.alert_level}`,
+      })
+    }
+  }
+
   if (nextStatus === 'ready') {
     createNotification({
       message: `${item.block || '?'} ${item.room_no || '?'} — ${item.item_count} parça rafta hazır`,
@@ -192,6 +225,14 @@ export function batchDeliverService(itemIds, { delivered_to, signature_data }, u
     }
   }
   return { delivered, errors }
+}
+
+export function maintenanceDoneService(id, userId) {
+  const machine = q.getMachineQuery(id)
+  if (!machine) throw new Error('Makine bulunamadı')
+  const updated = q.machineMaintenanceDoneQuery(id)
+  logAudit(userId, 'laundry_machine_maintenance', 'laundry', id, `${machine.name} bakım yapıldı (${machine.runs_since_maintenance} yıkama sonrası)`)
+  return updated
 }
 
 export function batchAssignService(itemIds, machineId, timerMinutes, userId) {
@@ -387,6 +428,9 @@ export const getVerificationsService = q.getVerificationsForItemQuery
 
 export const listItemsService       = q.listItemsQuery
 export const getItemService         = q.getItemQuery
+export const getMachineDailyRunsService = q.getMachineDailyRunsQuery
+export const getOperatorSummaryService  = q.getOperatorSummaryQuery
+export const getBusynessService         = q.getBusynessQuery
 export const getItemHistoryService  = q.getItemHistoryQuery
 export const getDamagesService      = q.getDamagesForItemQuery
 export const listMachinesService    = q.listMachinesQuery

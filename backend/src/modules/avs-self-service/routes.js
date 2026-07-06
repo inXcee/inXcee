@@ -1,0 +1,514 @@
+import { Router } from 'express'
+import { randomBytes } from 'crypto'
+import { requireAvsKiosk } from '../../shared/auth/middleware.js'
+import { getDB } from '../../shared/db/index.js'
+import { createRequest } from '../maintenance/queries.js'
+import { changeStaffKioskPin } from '../../shared/auth/service.js'
+import { logger } from '../../shared/logger.js'
+import { upload, verifyMagicBytes } from '../../shared/uploads/middleware.js'
+import { createLeaveService, leaveListService, leaveBalanceService } from '../shifts/service.js'
+import { checkoutToStaff, getStaffCheckouts } from '../inventory/service.js'
+import { departmentToInventoryCategory, getKioskSystemUserId } from './inventory-helpers.js'
+import { isPushConfigured, getVapidPublicKey, saveWorkerSubscription, deleteWorkerSubscription } from '../../shared/notifications/push.js'
+import { getStaffActivity } from '../activity/service.js'
+import { MEAL_TYPES, localDay } from '../meals/service.js'
+import { validate } from '../../shared/middleware/validate.js'
+import { mealSelectionSchema, maintenanceSchema, feedbackSchema } from './schemas.js'
+
+export const avsSelfServiceRouter = Router()
+
+// ── Ertesi-gün öğün seçimi (Faz 8b) — çalışan kendi yarınki öğününü seçer ──
+avsSelfServiceRouter.put('/my-meal-selection', requireAvsKiosk, validate(mealSelectionSchema), (req, res) => {
+  try {
+    const { meal_date, meal_type } = req.body || {}
+    const attending = req.body?.attending === false ? 0 : 1
+    getDB().prepare(`
+      INSERT INTO meal_selections(staff_id, meal_date, meal_type, attending)
+      VALUES(?,?,?,?)
+      ON CONFLICT(staff_id, meal_date, meal_type)
+      DO UPDATE SET attending=excluded.attending, updated_at=datetime('now')
+    `).run(req.user.workerId, meal_date, meal_type, attending)
+    res.json({ ok: true, meal_date, meal_type, attending })
+  } catch (e) { logger.error('[avs/my-meal-selection put]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+avsSelfServiceRouter.get('/my-meal-selection', requireAvsKiosk, (req, res) => {
+  try {
+    const date = req.query.date || localDay(getDB(), 1)
+    const rows = getDB().prepare('SELECT meal_type, attending FROM meal_selections WHERE staff_id=? AND meal_date=?')
+      .all(req.user.workerId, date)
+    const selections = {}
+    for (const r of rows) selections[r.meal_type] = r.attending
+    res.json({ date, selections })
+  } catch (e) { logger.error('[avs/my-meal-selection get]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// Profil bilgisi — sadece görüntüleme
+avsSelfServiceRouter.get('/my-info', requireAvsKiosk, (req, res) => {
+  try {
+    const db = getDB()
+    const w = db.prepare(`
+      SELECT s.full_name, s.role_label, s.phone,
+        d.name as department_name,
+        pp.name as pickup_name
+      FROM staff s
+      LEFT JOIN departments d ON d.id = s.department_id
+      LEFT JOIN pickup_points pp ON pp.id = s.pickup_point_id
+      WHERE s.id = ?
+    `).get(req.user.workerId)
+    if (!w) return res.status(404).json({ error: 'Çalışan bulunamadı' })
+    res.json({ ...w, inventory_category: departmentToInventoryCategory(w.department_name) })
+  } catch (e) { logger.error('[avs my-info]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// Vardiyam — bugünden itibaren 7 gün
+avsSelfServiceRouter.get('/my-shifts', requireAvsKiosk, (req, res) => {
+  try {
+    const db = getDB()
+    const shifts = db.prepare(`
+      SELECT ss.work_date, ss.status,
+        sd.name as shift_name, sd.start_hour, sd.end_hour, sd.color_class
+      FROM shift_schedule ss
+      LEFT JOIN shift_definitions sd ON sd.id = ss.shift_def_id
+      WHERE ss.staff_id = ?
+        AND ss.work_date BETWEEN date('now') AND date('now','+7 days')
+      ORDER BY ss.work_date
+    `).all(req.user.workerId)
+    res.json({ shifts })
+  } catch (e) { logger.error('[avs my-shifts]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// Servisim — atanmış durak bilgisi + servis programı
+avsSelfServiceRouter.get('/my-transport', requireAvsKiosk, (req, res) => {
+  try {
+    const db = getDB()
+    const staff = db.prepare('SELECT pickup_point_id FROM staff WHERE id=?').get(req.user.workerId)
+    const pickup = staff?.pickup_point_id ? db.prepare(`
+      SELECT name, district, neighborhood, notes, lat, lng
+      FROM pickup_points WHERE id = ?
+    `).get(staff.pickup_point_id) : null
+
+    // Servis programı: önce bugünün ataması, yoksa durağın aktif route_stop'u
+    let schedule = db.prepare(`
+      SELECT rs.scheduled_time AS time, r.name AS route_name,
+             r.driver_name, r.driver_phone, r.vehicle_plate AS plate
+      FROM route_assignments ra
+      JOIN routes r ON r.id = ra.route_id
+      LEFT JOIN route_stops rs ON rs.id = ra.stop_id
+      WHERE ra.staff_id = ? AND ra.work_date = date('now')
+      LIMIT 1
+    `).get(req.user.workerId)
+
+    if (!schedule && staff?.pickup_point_id) {
+      schedule = db.prepare(`
+        SELECT rs.scheduled_time AS time, r.name AS route_name,
+               r.driver_name, r.driver_phone, r.vehicle_plate AS plate
+        FROM route_stops rs
+        JOIN routes r ON r.id = rs.route_id AND r.is_active = 1
+        WHERE rs.pickup_point_id = ?
+        ORDER BY rs.id LIMIT 1
+      `).get(staff.pickup_point_id)
+    }
+
+    res.json({ pickup, schedule: schedule || null })
+  } catch (e) { logger.error('[avs my-transport]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// Görevlerim — departmana göre dispatch
+avsSelfServiceRouter.get('/my-tasks', requireAvsKiosk, (req, res) => {
+  try {
+    const db = getDB()
+    const staff = db.prepare(`
+      SELECT s.assigned_block, d.name as dept_name
+      FROM staff s LEFT JOIN departments d ON d.id = s.department_id
+      WHERE s.id = ?
+    `).get(req.user.workerId)
+    const dept = (staff?.dept_name || '').toLowerCase()
+
+    if (dept.includes('çama') || dept.includes('cama')) {
+      // Çamaşır işleme ayrı kioskta yapılır
+      return res.json({ type: 'laundry', items: [] })
+    }
+    // Temizlik ekibi farklı isimlerle tanımlı olabilir: Temizlik / Meydancı /
+    // Housekeeping — hepsi housekeeping görev akışına gider
+    if (dept.includes('temizlik') || dept.includes('meydan') || dept.includes('housekeep')) {
+      // scheduled_at TZ'siz yerel string ("YYYY-MM-DD 08:00:00") — date() ham
+      // alınır; "bugün" yerel gün sınırıyla karşılaştırılır (00:00-03:00 fix)
+      // qr_location oda numarası çözümü için döner (M1-205 → 205);
+      // assigned_block yoksa TÜM bloklar gelir, kiosk blok seçtirir
+      const items = db.prepare(`
+        SELECT id, area, block, floor, task_type, scheduled_at, completed_at,
+               skipped, skip_reason, qr_location, photo_url
+        FROM cleaning_tasks
+        WHERE date(scheduled_at) = date('now', 'localtime')
+          AND (? IS NULL OR block = ?)
+        ORDER BY block, floor, task_type DESC, id
+        LIMIT 400
+      `).all(staff.assigned_block || null, staff.assigned_block || null)
+      return res.json({ type: 'housekeeping', assigned_block: staff.assigned_block || null, items })
+    }
+    if (dept.includes('teknik')) {
+      // assigned_to → technicians(id); staff eşleşmesi yok → açık talepleri göster (bilgi amaçlı)
+      const items = db.prepare(`
+        SELECT id, location, description, status, priority, opened_at
+        FROM maintenance_requests
+        WHERE status IN ('open','assigned','in_progress')
+        ORDER BY CASE priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END, opened_at
+        LIMIT 30
+      `).all()
+      return res.json({ type: 'maintenance', items })
+    }
+    return res.json({ type: 'none', items: [] })
+  } catch (e) { logger.error('[avs my-tasks]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// Görev tamamla — sadece kendi assigned_block'undaki cleaning_task.
+// Multipart 'photo' ile temizlik kanıt fotoğrafı eklenebilir (oda + ortak
+// alan/WC görevleri); fotosuz JSON istek de çalışmaya devam eder.
+avsSelfServiceRouter.post('/tasks/:id/complete', requireAvsKiosk, upload.single('photo'), verifyMagicBytes, (req, res) => {
+  try {
+    const db = getDB()
+    const task = db.prepare('SELECT id, block, completed_at FROM cleaning_tasks WHERE id=?').get(Number(req.params.id))
+    if (!task) return res.status(404).json({ error: 'Görev bulunamadı' })
+    // Blok ataması varsa sadece kendi bloğu; atama YOKSA kısıt uygulanmaz
+    // (sahada assigned_block çoğu zaman boş — eskiden bu guard her
+    // tamamlamayı 403'le kesiyordu ve "görevler çalışmıyor" görünüyordu)
+    const staff = db.prepare('SELECT assigned_block FROM staff WHERE id=?').get(req.user.workerId)
+    if (staff?.assigned_block && staff.assigned_block !== task.block)
+      return res.status(403).json({ error: 'Bu görev sizin bloğunuza ait değil' })
+    if (task.completed_at) return res.json({ ok: true, completed_at: task.completed_at })
+    // Parite: ana modülün completeTask'i gibi skip durumu da temizlenir —
+    // yoksa atlanmış görev kiosktan tamamlanınca hem skipped=1 hem
+    // completed_at dolu kalır ve raporlar çift sayar
+    const photoUrl = req.file ? '/uploads/' + req.file.filename : null
+    db.prepare(`
+      UPDATE cleaning_tasks
+      SET completed_at=datetime('now'), skipped=0, skip_reason=NULL,
+          photo_url=COALESCE(?, photo_url), completed_by_worker_id=?
+      WHERE id=?
+    `).run(photoUrl, req.user.workerId || null, task.id)
+    const updated = db.prepare('SELECT completed_at, photo_url FROM cleaning_tasks WHERE id=?').get(task.id)
+    db.prepare(`INSERT INTO audit_log(user_id, action, module, target_id, detail)
+      VALUES(NULL, 'kiosk_avs_task_complete', 'avs-self-service', ?, ?)`).run(task.id, JSON.stringify({ workerId: req.user.workerId, photo: !!photoUrl }))
+    res.json({ ok: true, completed_at: updated.completed_at, photo_url: updated.photo_url })
+  } catch (e) { logger.error('[avs task complete]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// Duyurular — aktif olanlar (target_role yok, herkese)
+avsSelfServiceRouter.get('/announcements', requireAvsKiosk, (req, res) => {
+  try {
+    const db = getDB()
+    const rows = db.prepare(`
+      SELECT id, title, body, created_at
+      FROM announcements
+      WHERE expires_at IS NULL OR expires_at > datetime('now')
+      ORDER BY created_at DESC
+      LIMIT 30
+    `).all()
+    res.json(rows)
+  } catch (e) { logger.error('[avs announcements]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// ── Bildirim akışı (feed) ─────────────────────────────────────────────────
+// Ayrı bildirim pipeline'ı yerine mevcut verilerden TÜRETİLİR — her zaman tutarlı.
+// Kaynaklar: ① izin kararları (onay/ret), ② bildirilen arızanın çözülmesi,
+// ③ aktif duyurular. SQLite datetime metinleri ('YYYY-MM-DD HH:MM:SS')
+// leksikografik = kronolojik sıralanır.
+function buildWorkerFeed(db, workerId, limit = 30) {
+  const leave = db.prepare(`
+    SELECT id, leave_type, status, start_date, end_date, total_days, approved_at AS ts
+    FROM leave_requests
+    WHERE staff_id = ? AND status IN ('approved','rejected') AND approved_at IS NOT NULL
+    ORDER BY approved_at DESC LIMIT ?
+  `).all(workerId, limit).map(r => ({ kind: 'leave', ...r }))
+
+  const maint = db.prepare(`
+    SELECT m.id, m.location, m.status, m.closed_at AS ts
+    FROM maintenance_requests m
+    JOIN audit_log a ON a.target_id = m.id
+      AND a.action = 'kiosk_avs_maintenance'
+      AND json_extract(a.detail, '$.workerId') = ?
+    WHERE m.status = 'done' AND m.closed_at IS NOT NULL
+    ORDER BY m.closed_at DESC LIMIT ?
+  `).all(workerId, limit).map(r => ({ kind: 'maintenance', ...r }))
+
+  const ann = db.prepare(`
+    SELECT id, title, body, created_at AS ts
+    FROM announcements
+    WHERE expires_at IS NULL OR expires_at > datetime('now')
+    ORDER BY created_at DESC LIMIT ?
+  `).all(limit).map(r => ({ kind: 'announcement', ...r }))
+
+  return [...leave, ...maint, ...ann]
+    .filter(x => x.ts)
+    .sort((a, b) => (a.ts < b.ts ? 1 : a.ts > b.ts ? -1 : 0))
+    .slice(0, limit)
+}
+
+avsSelfServiceRouter.get('/notifications', requireAvsKiosk, (req, res) => {
+  try {
+    const db = getDB()
+    const items = buildWorkerFeed(db, req.user.workerId)
+    const row = db.prepare('SELECT seen_at FROM worker_notification_seen WHERE worker_id=?').get(req.user.workerId)
+    const seenAt = row?.seen_at || null
+    const unread = seenAt ? items.filter(i => i.ts > seenAt).length : items.length
+    res.json({ items, unread, seen_at: seenAt })
+  } catch (e) { logger.error('[avs notifications]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// Feed açılınca çağrılır — okundu yüksek-su-seviyesini şimdiye çeker.
+avsSelfServiceRouter.post('/notifications/seen', requireAvsKiosk, (req, res) => {
+  try {
+    getDB().prepare(`
+      INSERT INTO worker_notification_seen(worker_id, seen_at) VALUES(?, datetime('now'))
+      ON CONFLICT(worker_id) DO UPDATE SET seen_at = datetime('now')
+    `).run(req.user.workerId)
+    res.json({ ok: true })
+  } catch (e) { logger.error('[avs notifications seen]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// ── Web-push (opt-in, sadece kişisel telefonda) ───────────────────────────
+// VAPID public key — frontend subscribe ederken kullanır. Configured değilse 503.
+avsSelfServiceRouter.get('/push/vapid-public-key', requireAvsKiosk, (req, res) => {
+  if (!isPushConfigured()) return res.status(503).json({ error: 'Push yapılandırılmamış' })
+  res.json({ key: getVapidPublicKey() })
+})
+
+avsSelfServiceRouter.post('/push/subscribe', requireAvsKiosk, (req, res) => {
+  try {
+    const { endpoint, keys } = req.body
+    if (!endpoint || !keys?.p256dh || !keys?.auth)
+      return res.status(400).json({ error: 'Geçersiz subscription' })
+    saveWorkerSubscription({
+      workerId: req.user.workerId,
+      endpoint, p256dh: keys.p256dh, auth: keys.auth,
+      userAgent: req.get('user-agent'),
+    })
+    res.status(201).json({ ok: true })
+  } catch (e) { logger.error('[avs push subscribe]', e); res.status(400).json({ error: e.message }) }
+})
+
+avsSelfServiceRouter.post('/push/unsubscribe', requireAvsKiosk, (req, res) => {
+  try {
+    const { endpoint } = req.body
+    if (!endpoint) return res.status(400).json({ error: 'endpoint gerekli' })
+    deleteWorkerSubscription(endpoint)
+    res.json({ ok: true })
+  } catch (e) { logger.error('[avs push unsubscribe]', e); res.status(400).json({ error: e.message }) }
+})
+
+// Hızlı arıza — staff reporter olarak audit_log'a düşer
+avsSelfServiceRouter.post('/maintenance', requireAvsKiosk, upload.single('photo'), verifyMagicBytes, validate(maintenanceSchema), (req, res) => {
+  const { location, description, priority } = req.body
+  try {
+    const photoBefore = req.file ? '/uploads/' + req.file.filename : null
+    const id = createRequest({
+      location: location.trim(),
+      description: description.trim(),
+      priority: priority || 'medium',
+      reporterUserId: null,
+      reporterPersonnelId: null,
+      photoBefore,
+    })
+    getDB().prepare(`
+      INSERT INTO audit_log(user_id, action, module, target_id, detail)
+      VALUES(NULL, 'kiosk_avs_maintenance', 'avs-self-service', ?, ?)
+    `).run(id, JSON.stringify({ workerId: req.user.workerId, location: location.trim() }))
+    res.status(201).json({ id })
+  } catch (e) { logger.error('[avs maintenance]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// PIN değiştir — kendi PIN'i
+avsSelfServiceRouter.post('/change-pin', requireAvsKiosk, (req, res) => {
+  const { current_pin, new_pin } = req.body
+  if (!current_pin || !new_pin) return res.status(400).json({ error: 'Mevcut ve yeni PIN gerekli' })
+  const result = changeStaffKioskPin(req.user.workerId, current_pin, new_pin)
+  if (result.error) return res.status(result.status).json({ error: result.error })
+  getDB().prepare(`
+    INSERT INTO audit_log(user_id, action, module, target_id, detail)
+    VALUES(NULL, 'kiosk_avs_pin_change', 'avs-self-service', ?, ?)
+  `).run(req.user.workerId, JSON.stringify({ workerId: req.user.workerId }))
+  res.json(result)
+})
+
+// QR kart — staff.qr_token (yoklama/giriş okutması)
+avsSelfServiceRouter.get('/my-qr', requireAvsKiosk, (req, res) => {
+  try {
+    const db = getDB()
+    const s = db.prepare('SELECT qr_token, full_name FROM staff WHERE id=?').get(req.user.workerId)
+    res.json({ qr_token: s?.qr_token || null, full_name: s?.full_name || null })
+  } catch (e) { logger.error('[avs my-qr]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// Kartlarım — ayrı giriş + yemek kartı (eksikse lazy üret, INSERT OR IGNORE ile race-safe)
+const CARD_PREFIX = { access: 'AVS-A:', meal: 'AVS-M:' }
+avsSelfServiceRouter.get('/my-cards', requireAvsKiosk, (req, res) => {
+  try {
+    const db = getDB()
+    const wid = req.user.workerId
+    const ensure = db.transaction(() => {
+      for (const t of ['access', 'meal']) {
+        const code = CARD_PREFIX[t] + randomBytes(10).toString('hex')
+        // partial unique index (holder×type WHERE active) sayesinde mükerrer üretmez
+        db.prepare(`INSERT OR IGNORE INTO cards(holder_type, holder_id, card_type, code, status)
+                    VALUES('staff', ?, ?, ?, 'active')`).run(wid, t, code)
+      }
+    })
+    ensure()
+    const cards = db.prepare(`
+      SELECT id, card_type, code, status FROM cards
+      WHERE holder_type='staff' AND holder_id=? AND status='active'
+      ORDER BY card_type
+    `).all(wid)
+    res.json({ cards })
+  } catch (e) { logger.error('[avs my-cards]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// Kişinin kendi birleşik hareket geçmişi (okutma/yemek/zimmet/izin/servis)
+avsSelfServiceRouter.get('/my-activity', requireAvsKiosk, (req, res) => {
+  try {
+    const items = getStaffActivity(getDB(), req.user.workerId, {
+      types: typeof req.query.types === 'string' && req.query.types ? req.query.types.split(',') : null,
+      limit: +req.query.limit || 40,
+    })
+    res.json({ items })
+  } catch (e) { logger.error('[avs my-activity]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// Bildirdiğim arızalar — audit_log üzerinden (AVS reporter null, workerId audit'te)
+avsSelfServiceRouter.get('/my-maintenance', requireAvsKiosk, (req, res) => {
+  try {
+    const db = getDB()
+    const rows = db.prepare(`
+      SELECT m.id, m.location, m.description, m.status, m.priority, m.opened_at, m.closed_at
+      FROM maintenance_requests m
+      JOIN audit_log a ON a.target_id = m.id
+        AND a.action = 'kiosk_avs_maintenance'
+        AND json_extract(a.detail, '$.workerId') = ?
+      ORDER BY m.opened_at DESC LIMIT 20
+    `).all(req.user.workerId)
+    res.json(rows)
+  } catch (e) { logger.error('[avs my-maintenance]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// Geri bildirim — AVS çalışanı (personnel_id null, workerId audit'te)
+avsSelfServiceRouter.post('/feedback', requireAvsKiosk, validate(feedbackSchema), (req, res) => {
+  const { type, message } = req.body
+  try {
+    const db = getDB()
+    const r = db.prepare('INSERT INTO feedback(personnel_id, type, message) VALUES(NULL,?,?)').run(type, message.trim())
+    db.prepare(`INSERT INTO audit_log(user_id, action, module, target_id, detail)
+      VALUES(NULL, 'kiosk_avs_feedback', 'avs-self-service', ?, ?)`).run(r.lastInsertRowid, JSON.stringify({ workerId: req.user.workerId }))
+    res.status(201).json({ ok: true, id: r.lastInsertRowid })
+  } catch (e) { logger.error('[avs feedback]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// İzin — bakiye + kendi talepleri
+avsSelfServiceRouter.get('/my-leave', requireAvsKiosk, (req, res) => {
+  try {
+    res.json({
+      balance: leaveBalanceService(req.user.workerId),
+      requests: leaveListService({ staff_id: req.user.workerId }),
+    })
+  } catch (e) { logger.error('[avs my-leave]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// İzin talebi oluştur — daima kendisi için (staff_id zorlanır)
+avsSelfServiceRouter.post('/my-leave', requireAvsKiosk, (req, res) => {
+  try {
+    const id = createLeaveService({
+      leave_type: req.body.leave_type,
+      start_date: req.body.start_date,
+      end_date: req.body.end_date,
+      reason: req.body.reason || null,
+      staff_id: req.user.workerId,
+    })
+    getDB().prepare(`INSERT INTO audit_log(user_id, action, module, target_id, detail)
+      VALUES(NULL, 'kiosk_avs_leave', 'avs-self-service', ?, ?)`).run(id, JSON.stringify({ workerId: req.user.workerId }))
+    res.status(201).json({ id })
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+// Bugünün yemek menüsü — dolu öğünler
+avsSelfServiceRouter.get('/menu/today', requireAvsKiosk, (req, res) => {
+  try {
+    const rows = getDB().prepare(`
+      SELECT meal_type, items FROM meal_menu
+      WHERE meal_date = date('now', 'localtime') AND items IS NOT NULL AND items != ''
+    `).all()
+    res.json(rows)
+  } catch (e) { logger.error('[avs menu/today]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// ── Envanter (çıkış/zimmet) ──────────────────────────────────────────────
+// Tüm AVS personeli tüm ürünleri görür (departman gating kaldırıldı)
+avsSelfServiceRouter.get('/inventory/items', requireAvsKiosk, (req, res) => {
+  try {
+    const items = getDB().prepare(`
+      SELECT id, item_name, category, quantity, unit, reorder_threshold, track_locations
+      FROM inventory ORDER BY category, item_name
+    `).all()
+    res.json({ items })
+  } catch (e) { logger.error('[avs inventory items]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// Ürün al (stoktan zimmet düşümü) — staff_id = workerId, created_by = sistem
+avsSelfServiceRouter.post('/inventory/checkout', requireAvsKiosk, (req, res) => {
+  const { item_id, quantity, note, from_location_id } = req.body
+  const qty = Number(quantity)
+  if (!item_id || !Number.isFinite(qty) || qty <= 0)
+    return res.status(400).json({ error: 'Geçerli ürün ve miktar gerekli' })
+  try {
+    const db = getDB()
+    // Departman gating yok — her personel her ürünü alabilir
+    const item = db.prepare('SELECT id FROM inventory WHERE id = ?').get(item_id)
+    if (!item) return res.status(404).json({ error: 'Ürün bulunamadı' })
+
+    const systemUserId = getKioskSystemUserId()
+
+    // Sadece checkoutToStaff'ın domain throw'ları (yetersiz stok / lokasyon gerekli)
+    // → 400. getKioskSystemUserId / audit insert gibi altyapı hataları dıştaki
+    // catch'e (500) düşer; iç hata mesajı 400 olarak sızmaz.
+    let result
+    try {
+      result = checkoutToStaff(
+        item_id, req.user.workerId, qty, note?.trim() || null, systemUserId, from_location_id || null
+      )
+    } catch (e) {
+      return res.status(400).json({ error: e.message })
+    }
+
+    db.prepare(`INSERT INTO audit_log(user_id, action, module, target_id, detail)
+                VALUES(NULL, 'kiosk_avs_inventory_checkout', 'avs-self-service', ?, ?)`)
+      .run(item_id, JSON.stringify({ workerId: req.user.workerId, quantity: qty }))
+    res.status(201).json(result)
+  } catch (e) {
+    logger.error('[avs inventory checkout]', e)
+    res.status(500).json({ error: 'Sunucu hatası' })
+  }
+})
+
+// Lokasyon-takipli ürün için stoklu kaynak lokasyonlar
+avsSelfServiceRouter.get('/inventory/items/:id/locations', requireAvsKiosk, (req, res) => {
+  try {
+    const db = getDB()
+    // Departman gating yok — her personel her ürünün lokasyonunu görebilir
+    const item = db.prepare('SELECT id FROM inventory WHERE id = ?').get(req.params.id)
+    if (!item) return res.status(404).json({ error: 'Ürün bulunamadı' })
+    const rows = db.prepare(`
+      SELECT isbl.location_id, il.name, il.block, isbl.quantity
+      FROM inventory_stock_by_location isbl
+      JOIN inventory_locations il ON il.id = isbl.location_id
+      WHERE isbl.item_id = ? AND isbl.quantity > 0 AND il.is_active = 1
+      ORDER BY il.block, il.name
+    `).all(req.params.id)
+    res.json(rows)
+  } catch (e) { logger.error('[avs item locations]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// Aldıklarım — açık (iade edilmemiş) zimmetler
+avsSelfServiceRouter.get('/inventory/my-checkouts', requireAvsKiosk, (req, res) => {
+  try {
+    res.json(getStaffCheckouts(req.user.workerId))
+  } catch (e) { logger.error('[avs my-checkouts]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})

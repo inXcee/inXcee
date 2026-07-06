@@ -5,6 +5,9 @@ import { getDB } from '../../shared/db/index.js'
 import * as svc from './service.js'
 import { collectItemQuery, listGarmentTypesQuery, insertGarmentTypeQuery, updateGarmentTypeQuery, reorderGarmentTypesQuery } from './queries.js'
 import { notifyItemReady, sendFoundMessage, notifyRoomPersonReady, sendWhatsApp } from './whatsapp.js'
+import { logger } from '../../shared/logger.js'
+import { validate } from '../../shared/middleware/validate.js'
+import { createGarmentTypeSchema, updateGarmentTypeSchema, createBagSchema } from './schemas.js'
 
 export const laundryRouter = Router()
 
@@ -27,7 +30,7 @@ laundryRouter.get('/items/archive', ...laundryRead, (req, res) => {
       page: page ? +page : 1,
       limit: limit ? Math.min(+limit, 100) : 50,
     }))
-  } catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  } catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 laundryRouter.get('/items', ...laundryRead, (req, res) => {
@@ -39,7 +42,13 @@ laundryRouter.get('/items', ...laundryRead, (req, res) => {
       sla_only: sla_only === '1',
       search: search || undefined,
     }))
-  } catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  } catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+})
+
+// Dashboard özeti (laundry rol dashboard'u için) — durum sayımları + aktif/acil/bugün-teslim.
+laundryRouter.get('/summary', ...laundryRead, (req, res) => {
+  try { res.json(svc.getLaundrySummaryService()) }
+  catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 laundryRouter.get('/items/:id', ...laundryRead, (req, res) => {
@@ -187,13 +196,13 @@ laundryRouter.get('/items/:id/verifications', ...laundryRead, (req, res) => {
 laundryRouter.get('/rooms-overview', ...laundryRead, (req, res) => {
   try {
     res.json(svc.getRoomsOverviewService())
-  } catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 laundryRouter.get('/rooms/:block/:room_no/detail', ...laundryRead, (req, res) => {
   try {
     res.json(svc.getRoomLaundryDetailService(req.params.block, req.params.room_no))
-  } catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 // Faz 4 — Oda sakinine 'hazır' hatırlatıcı (WhatsApp)
@@ -204,7 +213,7 @@ laundryRouter.post('/rooms/:block/:room_no/remind-ready', ...laundryFull, async 
     const result = await notifyRoomPersonReady(req.params.block, req.params.room_no, personName)
     if (!result.configured) return res.status(503).json({ error: 'WhatsApp yapılandırılmamış' })
     res.json(result)
-  } catch (e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 // Faz 4 — Belirli oda sakinine özel mesaj (kayıp uyarısı vs.) — telefonu sunucu çözer
@@ -228,7 +237,7 @@ laundryRouter.post('/rooms/:block/:room_no/notify-person', ...laundryFull, async
     if (!person?.phone_number) return res.status(404).json({ error: 'Telefon bulunamadı' })
     await sendWhatsApp(person.phone_number, message)
     res.json({ sent: true })
-  } catch (e) { console.error('[Route]', e); res.status(500).json({ error: e.message || 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: e.message || 'Sunucu hatası' }) }
 })
 
 // Faz 4 — Serbest WhatsApp mesajı (kayıp uyarısı vs.)
@@ -243,7 +252,7 @@ laundryRouter.post('/notify', ...laundryFull, async (req, res) => {
     }
     await sendWhatsApp(phone, message)
     res.json({ sent: true })
-  } catch (e) { console.error('[Route]', e); res.status(500).json({ error: e.message || 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: e.message || 'Sunucu hatası' }) }
 })
 
 laundryRouter.get('/person/:name', ...laundryRead, (req, res) => {
@@ -275,6 +284,27 @@ laundryRouter.post('/machines', ...laundryFull, (req, res) => {
   try {
     const m = svc.createMachineService(req.body, req.user.id)
     res.status(201).json(m)
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+// Yoğunluk: giriş/teslim saat + haftagünü dağılımı (varsayılan son 30 gün)
+laundryRouter.get('/busyness', ...laundryRead, (req, res) => {
+  res.json(svc.getBusynessService(+req.query.days || 30))
+})
+
+// Operatör performans kırılımı (varsayılan son 7 gün)
+laundryRouter.get('/operator-summary', ...laundryRead, (req, res) => {
+  res.json(svc.getOperatorSummaryService(+req.query.days || 7))
+})
+
+// Gün-gün koşu kırılımı (varsayılan son 14 gün, max 90)
+laundryRouter.get('/machines/:id/daily-runs', ...laundryRead, (req, res) => {
+  res.json(svc.getMachineDailyRunsService(+req.params.id, +req.query.days || 14))
+})
+
+laundryRouter.post('/machines/:id/maintenance-done', ...laundryFull, (req, res) => {
+  try {
+    res.json(svc.maintenanceDoneService(+req.params.id, req.user.id))
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
@@ -356,7 +386,7 @@ laundryRouter.get('/reports/premium', ...laundryRead, (req, res) => {
   try {
     const { from, to } = req.query
     res.json(svc.getPremiumReportService({ from_date: from, to_date: to }))
-  } catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  } catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 laundryRouter.get('/reports/export-premium', ...laundryRead, (req, res) => {
@@ -373,7 +403,7 @@ laundryRouter.get('/reports/export-premium', ...laundryRead, (req, res) => {
     res.setHeader('Content-Type', 'text/csv; charset=utf-8')
     res.setHeader('Content-Disposition', `attachment; filename="premium-garments-${new Date().toISOString().slice(0,10)}.csv"`)
     res.send('\uFEFF' + csv)
-  } catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  } catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 laundryRouter.get('/reports/export', ...laundryRead, (req, res) => {
@@ -403,7 +433,7 @@ laundryRouter.get('/reports/export', ...laundryRead, (req, res) => {
     res.setHeader('Content-Type', 'text/csv; charset=utf-8')
     res.setHeader('Content-Disposition', `attachment; filename="camasir-${new Date().toISOString().slice(0,10)}.csv"`)
     res.send('\uFEFF' + csv)
-  } catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  } catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 // Oda sakininin telefon bilgisi
@@ -418,7 +448,7 @@ laundryRouter.get('/room-occupant/:room_id', ...laundryFull, (req, res) => {
       LIMIT 1
     `).get(+req.params.room_id)
     res.json(row || {})
-  } catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  } catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 // Manuel WhatsApp bildirimi
@@ -431,7 +461,7 @@ laundryRouter.post('/items/:id/notify-whatsapp', ...laundryFull, async (req, res
     if (!phone) return res.status(400).json({ error: 'Telefon numarası bulunamadı' })
     await notifyItemReady(+req.params.id)
     res.json({ ok: true, phone })
-  } catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  } catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -452,12 +482,12 @@ laundryRouter.get('/rooms', ...laundryRead, (req, res) => {
       ORDER BY block ASC, room_no ASC
     `).all()
     res.json(rooms)
-  } catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  } catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 laundryRouter.get('/block-config', ...laundryRead, (req, res) => {
   try { res.json(svc.getBlockConfigService()) }
-  catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 laundryRouter.put('/block-config/:block', ...slaWrite, (req, res) => {
@@ -506,7 +536,7 @@ laundryRouter.get('/messages', ...laundryRead, (req, res) => {
       before_id: before_id ? +before_id : undefined,
       limit: limit ? +limit : 50,
     }))
-  } catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  } catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 laundryRouter.post('/messages', ...laundryFull, (req, res) => {
@@ -542,7 +572,7 @@ laundryRouter.get('/garments/by-code/:code', ...laundryRead, (req, res) => {
 
 laundryRouter.get('/items/:id/garments', ...laundryRead, (req, res) => {
   try { res.json(svc.getPremiumGarmentsService(+req.params.id)) }
-  catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 laundryRouter.post('/items/:id/garments', ...laundryFull, (req, res) => {
@@ -604,14 +634,14 @@ laundryRouter.get('/garments/search', ...laundryRead, (req, res) => {
       page: page ? +page : 1,
       limit: limit ? Math.min(+limit, 100) : 50,
     }))
-  } catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  } catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 laundryRouter.get('/rooms/:room_id/garment-history', ...laundryRead, (req, res) => {
   try {
     const { from, to } = req.query
     res.json(svc.getRoomGarmentHistoryService(+req.params.room_id, { from_date: from, to_date: to }))
-  } catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  } catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 // rooms-scan must be before /rooms/:room_id
@@ -640,13 +670,13 @@ laundryRouter.post('/garments/scan-action', ...laundryFull, (req, res) => {
 laundryRouter.get('/supplies/alerts', ...laundryRead, (req, res) => {
   try {
     res.json(svc.getAlertSuppliesService())
-  } catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  } catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 laundryRouter.get('/supplies', ...laundryRead, (req, res) => {
   try {
     res.json(svc.listSuppliesService(req.query.include_inactive === '1'))
-  } catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  } catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 laundryRouter.post('/supplies', ...slaWrite, (req, res) => {
@@ -682,7 +712,7 @@ laundryRouter.post('/supplies/:id/set-stock', ...slaWrite, (req, res) => {
 laundryRouter.get('/supplies/:id/log', ...laundryRead, (req, res) => {
   try {
     res.json(svc.getSupplyLogService(+req.params.id))
-  } catch (e) { console.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  } catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
 laundryRouter.put('/machines/:machine_id/supplies/:supply_id', ...slaWrite, (req, res) => {
@@ -707,31 +737,28 @@ laundryRouter.delete('/machines/:machine_id/supplies/:supply_id', ...slaWrite, (
 laundryRouter.get('/garment-types/all', ...laundryFull, (req, res) => {
   try {
     res.json(listGarmentTypesQuery(true))
-  } catch(e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch(e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 laundryRouter.get('/garment-types', ...laundryRead, (req, res) => {
   try {
     res.json(listGarmentTypesQuery(false))
-  } catch(e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch(e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
-laundryRouter.post('/garment-types', ...laundryFull, (req, res) => {
+laundryRouter.post('/garment-types', ...laundryFull, validate(createGarmentTypeSchema), (req, res) => {
   try {
-    const { name, emoji, image_url, sort_order } = req.body
-    if (!name) return res.status(400).json({ error: 'İsim zorunlu' })
-    const result = insertGarmentTypeQuery({ name, emoji, image_url, sort_order })
+    const result = insertGarmentTypeQuery(req.validated)
     res.status(201).json(result)
-  } catch(e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch(e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
-laundryRouter.patch('/garment-types/:id', ...laundryFull, (req, res) => {
+laundryRouter.patch('/garment-types/:id', ...laundryFull, validate(updateGarmentTypeSchema), (req, res) => {
   try {
-    const { name, emoji, image_url, sort_order, is_active } = req.body
-    const result = updateGarmentTypeQuery(+req.params.id, { name, emoji, image_url, sort_order, is_active })
+    const result = updateGarmentTypeQuery(+req.params.id, req.validated)
     if (!result) return res.status(404).json({ error: 'Bulunamadı' })
     res.json(result)
-  } catch(e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch(e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 laundryRouter.post('/garment-types/reorder', ...laundryFull, (req, res) => {
@@ -740,7 +767,7 @@ laundryRouter.post('/garment-types/reorder', ...laundryFull, (req, res) => {
     if (!Array.isArray(items)) return res.status(400).json({ error: 'items array gerekli' })
     reorderGarmentTypesQuery(items)
     res.json({ ok: true })
-  } catch(e) { console.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch(e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -773,9 +800,8 @@ laundryRouter.get('/bags/by-qr/:code', ...laundryRead, (req, res) => {
   res.json(row)
 })
 
-laundryRouter.post('/bags', ...laundryFull, (req, res) => {
-  const { qr_code, room_id } = req.body || {}
-  if (!qr_code || qr_code.length < 3) return res.status(400).json({ error: 'qr_code zorunlu (>=3 char)' })
+laundryRouter.post('/bags', ...laundryFull, validate(createBagSchema), (req, res) => {
+  const { qr_code, room_id } = req.validated
   const db = getDB()
   try {
     const r = db.prepare(`

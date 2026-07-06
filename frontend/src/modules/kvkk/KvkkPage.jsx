@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { useAuthStore } from '../../shared/store/authStore.js'
+import { SkeletonCard } from '../../shared/components/Skeleton.jsx'
+import HelpHint from '../../shared/components/HelpHint.jsx'
 
 export default function KvkkPage() {
   const { data, isLoading } = useQuery({
@@ -19,7 +21,7 @@ export default function KvkkPage() {
     }}>
       <div style={{ maxWidth: 760, margin: '0 auto' }}>
         <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h1 style={{ fontFamily: 'var(--display)', fontSize: 22, letterSpacing: 4 }}>KVKK AYDINLATMA METNİ</h1>
+          <h1 style={{ fontFamily: 'var(--display)', fontSize: 22, letterSpacing: 4 }}>KVKK AYDINLATMA METNİ<HelpHint topic="kvkk" title="KVKK" /></h1>
           <Link to={token ? '/' : '/login'} style={{
             fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--accent)',
             letterSpacing: 1, textDecoration: 'none',
@@ -27,7 +29,7 @@ export default function KvkkPage() {
         </div>
 
         {isLoading ? (
-          <div style={{ padding: 40, textAlign: 'center', color: 'var(--text3)' }}>Yükleniyor...</div>
+          <SkeletonCard lines={10} />
         ) : (
           <div className="panel">
             <div className="panel-body">

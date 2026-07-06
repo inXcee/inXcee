@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { requireAuth, requireSSEAuth } from '../auth/middleware.js'
 import { getDB } from '../db/index.js'
+import { logger } from '../logger.js'
 import {
   addSSEClient, removeSSEClient,
   getNotifications, getNotificationsLegacy, markRead,
@@ -64,7 +65,7 @@ notificationsRouter.post('/clear-read', requireAuth, (req, res) => {
 notificationsRouter.get('/stats', ...requireRole('campus_manager'), (req, res) => {
   try {
     res.json(getNotificationStats({ days: req.query.days }))
-  } catch (e) { console.error('[Notif stats]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[Notif stats]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 // WhatsApp moved to /api/whatsapp

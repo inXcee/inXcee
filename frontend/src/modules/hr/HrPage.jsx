@@ -4,6 +4,10 @@ import { useNavigate } from 'react-router-dom'
 import api from '../../shared/api/client.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
+import { useDebounce } from '../../shared/hooks/useDebounce.js'
+import { SkeletonGrid, SkeletonCard } from '../../shared/components/Skeleton.jsx'
+import { useUrlParamState } from '../../shared/hooks/useUrlParamState.js'
+import HelpHint from '../../shared/components/HelpHint.jsx'
 
 const toast = (m, t = 'success') => useToastStore.getState().addToast(m, t)
 const toastErr = (e) => toast(e?.response?.data?.error || 'Hata', 'error')
@@ -15,14 +19,14 @@ const TABS = [
 ]
 
 export default function HrPage() {
-  const [tab, setTab] = useState('onboarding')
+  const [tab, setTab] = useUrlParamState('tab', 'onboarding')
   const [statusFilter, setStatusFilter] = useState('open')
   const [openId, setOpenId] = useState(null)
 
   return (
     <div style={{ maxWidth: 1280 }} className="fade-up">
       <div style={{ marginBottom: 16 }}>
-        <h1 style={{ fontSize: 28, letterSpacing: 4, color: 'var(--text)', margin: 0 }}>İK / HR AKIŞLARI</h1>
+        <h1 style={{ fontSize: 28, letterSpacing: 4, color: 'var(--text)', margin: 0 }}>İK / HR AKIŞLARI<HelpHint topic="hr" title="İK / HR AKIŞLARI" /></h1>
         <p style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', marginTop: 4, letterSpacing: 1.5 }}>
           İŞE GİRİŞ CHECKLIST · AYRILMA + İBRA PDF · SÖZLEŞME UYARILARI
         </p>
@@ -53,6 +57,7 @@ function ChecklistsTab({ kind, statusFilter, setStatusFilter, setOpenId }) {
   const qc = useQueryClient()
   const [staffPicker, setStaffPicker] = useState(false)
   const [search, setSearch] = useState('')
+  const debouncedSearch = useDebounce(search, 300)
 
   const { data: items = [], isLoading } = useQuery({
     queryKey: ['hr-checklists', kind, statusFilter],
@@ -71,9 +76,9 @@ function ChecklistsTab({ kind, statusFilter, setStatusFilter, setOpenId }) {
   })
 
   const { data: searchResults = [] } = useQuery({
-    queryKey: ['staff-search', search],
-    queryFn: () => api.get(`/shifts/staff/search?q=${encodeURIComponent(search)}`).then(r => r.data),
-    enabled: search.length >= 2,
+    queryKey: ['staff-search', debouncedSearch],
+    queryFn: () => api.get(`/shifts/staff/search?q=${encodeURIComponent(debouncedSearch)}`).then(r => r.data),
+    enabled: debouncedSearch.length >= 2,
   })
 
   return (
@@ -111,7 +116,7 @@ function ChecklistsTab({ kind, statusFilter, setStatusFilter, setOpenId }) {
       )}
 
       {isLoading ? (
-        <div style={{ padding: 30, color: 'var(--text3)' }}>Yükleniyor…</div>
+        <SkeletonGrid count={6} />
       ) : !items.length ? (
         <div style={{ padding: 50, textAlign: 'center', background: 'var(--surface)', borderRadius: 14, border: '1px solid var(--border)' }}>
           <div style={{ fontSize: 36, opacity: 0.3, marginBottom: 8 }}>{kind === 'onboarding' ? '➕' : '➖'}</div>
@@ -202,7 +207,7 @@ function ChecklistDrawer({ id, onClose }) {
         background: 'var(--surface)', borderLeft: '1px solid var(--border)', padding: 20, boxShadow: '-8px 0 32px rgba(0,0,0,.4)',
       }}>
         {isLoading || !data ? (
-          <div style={{ padding: 40, color: 'var(--text3)' }}>Yükleniyor…</div>
+          <SkeletonCard lines={6} />
         ) : (
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
@@ -295,7 +300,7 @@ function ExpiringTab() {
         ))}
       </div>
       {isLoading ? (
-        <div style={{ padding: 30, color: 'var(--text3)' }}>Yükleniyor…</div>
+        <SkeletonGrid count={4} />
       ) : !data.length ? (
         <div style={{ padding: 50, textAlign: 'center', background: 'var(--surface)', borderRadius: 14, border: '1px solid var(--border)' }}>
           <div style={{ fontSize: 36, opacity: 0.3, marginBottom: 8 }}>✓</div>

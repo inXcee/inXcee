@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { laundryApi } from '../api.js'
 import { CLOTHING_ICONS } from './NewItemModal.jsx'
+import { SkeletonTable } from '../../../shared/components/Skeleton.jsx'
 import AllRecordsTab from './AllRecordsTab.jsx'
 import IroningQueuePanel from './IroningQueuePanel.jsx'
 
@@ -113,7 +114,7 @@ export default function FullRecordsView() {
 
       {/* Records table */}
       {isLoading ? (
-        <div style={{ padding: 20, fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)' }}>Yükleniyor...</div>
+        <SkeletonTable rows={5} cols={5} />
       ) : items.length === 0 ? (
         <div className="panel" style={{ padding: '32px', textAlign: 'center' }}>
           <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)' }}>Kayıt bulunamadı</div>

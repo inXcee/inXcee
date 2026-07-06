@@ -3,12 +3,11 @@ import { requireRole, requireAuth } from '../../shared/auth/middleware.js'
 import { getDB } from '../../shared/db/index.js'
 import { logAudit } from '../../shared/audit.js'
 import { evaluateRule, evaluateAllActive } from './evaluator.js'
+import { validate } from '../../shared/middleware/validate.js'
+import { ruleSchema } from './schemas.js'
 
 export const automationRouter = Router()
 const mgmt = requireRole('campus_manager')
-
-const VALID_TRIGGERS = ['occupancy_high', 'contract_expiring', 'maintenance_backlog', 'drill_overdue', 'no_recent_drill']
-const VALID_ACTIONS = ['log', 'notify_group']
 
 automationRouter.get('/', requireAuth, (req, res) => {
   const db = getDB()
@@ -21,18 +20,14 @@ automationRouter.get('/', requireAuth, (req, res) => {
   res.json(rows)
 })
 
-automationRouter.post('/', ...mgmt, (req, res) => {
-  const b = req.body || {}
-  if (!b.name || b.name.trim().length < 2) return res.status(400).json({ error: 'Kural adi gerekli' })
-  if (!VALID_TRIGGERS.includes(b.trigger_type)) return res.status(400).json({ error: 'Gecersiz trigger' })
-  if (!VALID_ACTIONS.includes(b.action_type)) return res.status(400).json({ error: 'Gecersiz action' })
-  if (b.trigger_threshold == null || isNaN(+b.trigger_threshold)) return res.status(400).json({ error: 'Esik degeri gerekli' })
+automationRouter.post('/', ...mgmt, validate(ruleSchema), (req, res) => {
+  const b = req.validated
   const db = getDB()
   const r = db.prepare(`
     INSERT INTO automation_rules (name, trigger_type, trigger_threshold, action_type, action_target, cooldown_hours, is_active, created_by)
     VALUES (?,?,?,?,?,?,?,?)
   `).run(
-    b.name.trim(), b.trigger_type, +b.trigger_threshold,
+    b.name, b.trigger_type, b.trigger_threshold,
     b.action_type, b.action_target || null,
     b.cooldown_hours ?? 24, b.is_active === false ? 0 : 1,
     req.user.id
@@ -41,8 +36,8 @@ automationRouter.post('/', ...mgmt, (req, res) => {
   res.status(201).json({ id: r.lastInsertRowid })
 })
 
-automationRouter.put('/:id', ...mgmt, (req, res) => {
-  const b = req.body || {}
+automationRouter.put('/:id', ...mgmt, validate(ruleSchema), (req, res) => {
+  const b = req.validated
   const db = getDB()
   db.prepare(`
     UPDATE automation_rules
@@ -50,7 +45,7 @@ automationRouter.put('/:id', ...mgmt, (req, res) => {
         cooldown_hours=?, is_active=?
     WHERE id=?
   `).run(
-    b.name, b.trigger_type, +b.trigger_threshold, b.action_type,
+    b.name, b.trigger_type, b.trigger_threshold, b.action_type,
     b.action_target || null, b.cooldown_hours ?? 24,
     b.is_active === false ? 0 : 1, +req.params.id
   )

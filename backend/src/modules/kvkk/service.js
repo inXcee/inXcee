@@ -1,5 +1,6 @@
 import { getDB } from '../../shared/db/index.js'
 import { getSetting, setSetting } from '../email/queries.js'
+import { logger } from '../../shared/logger.js'
 
 const DEFAULT_POLICY = `KİŞİSEL VERİLERİN İŞLENMESİ AYDINLATMA METNİ
 
@@ -77,6 +78,54 @@ export function anonymizePersonnelDataService(personnelId, userId) {
   })
   tx()
   return { ok: true, personnel_id: id, anonymized_at: new Date().toISOString(), by_user_id: userId }
+}
+
+// Retention policy: kaç gün çıkış yapmış personelin kişisel verisi
+// otomatik anonimleştirilsin. 0 = devre dışı, default 365 gün.
+// Setting key: kvkk_retention_days
+export function getKvkkRetentionPolicyService() {
+  const raw = getSetting('kvkk_retention_days')
+  const days = parseInt(raw ?? '0', 10)
+  return { enabled: days > 0, days: Number.isFinite(days) ? days : 0 }
+}
+
+export function setKvkkRetentionPolicyService(days) {
+  const n = parseInt(days, 10)
+  if (!Number.isFinite(n) || n < 0 || n > 3650) {
+    return { error: 'Retention süresi 0 (devre dışı) ile 3650 gün arası olmalı', status: 400 }
+  }
+  setSetting('kvkk_retention_days', String(n))
+  return { ok: true, days: n, enabled: n > 0 }
+}
+
+// Cron tarafından çağrılır: retention süresi geçmiş, henüz anonimleştirilmemiş
+// (full_name 'Anonim #' ile başlamayan) personel kayıtlarını anonimleştirir.
+// Returns { processed, errors } — sayım ile çağıran cron bildirim yapabilir.
+export function enforceKvkkRetentionService() {
+  const policy = getKvkkRetentionPolicyService()
+  if (!policy.enabled) return { processed: 0, skipped: true, reason: 'disabled' }
+
+  const db = getDB()
+  const cutoff = new Date(Date.now() - policy.days * 86400000).toISOString()
+  // Adaylar: çıkış yapmış + cutoff'tan eski + henüz anonimleştirilmemiş
+  const candidates = db.prepare(`
+    SELECT id FROM personnel
+    WHERE check_out_date IS NOT NULL
+      AND check_out_date < ?
+      AND (full_name IS NULL OR full_name NOT LIKE 'Anonim #%')
+  `).all(cutoff)
+
+  let processed = 0, errors = 0
+  for (const { id } of candidates) {
+    try {
+      anonymizePersonnelDataService(id, null)
+      processed++
+    } catch (e) {
+      errors++
+      logger.error({ err: e.message, personnelId: id }, '[KVKK retention] anonimleştirme hatası')
+    }
+  }
+  return { processed, errors, candidates: candidates.length, retention_days: policy.days }
 }
 
 // Bir personelin tüm kişisel verisini topla

@@ -1,4 +1,16 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
+import { useDebounce } from '../../shared/hooks/useDebounce.js'
+import { exportRowsToCsv, exportRowsToXlsx } from '../../shared/utils/exportData.js'
+import HelpHint from '../../shared/components/HelpHint.jsx'
+
+const COMPANY_EXPORT_COLS = [
+  { key: 'name', label: 'Firma' },
+  { key: 'contact_name', label: 'Yetkili' },
+  { key: 'phone', label: 'Telefon' },
+  { key: 'quota', label: 'Kota' },
+  { key: 'active_personnel', label: 'Aktif Personel' },
+  { key: 'contract_end', label: 'Sözleşme Bitiş' },
+]
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
@@ -111,10 +123,14 @@ export default function CompaniesPage() {
     queryFn: () => api.get('/companies/stats').then(r => r.data),
   })
 
-  const filtered = rows.filter(r =>
-    !search || r.name.toLowerCase().includes(search.toLowerCase()) ||
-    r.contact_name?.toLowerCase().includes(search.toLowerCase())
-  )
+  const debouncedSearch = useDebounce(search, 250)
+  const filtered = useMemo(() => {
+    const low = debouncedSearch.toLowerCase()
+    return rows.filter(r =>
+      !low || r.name.toLowerCase().includes(low) ||
+      r.contact_name?.toLowerCase().includes(low)
+    )
+  }, [rows, debouncedSearch])
 
   const saveMut = useMutation({
     mutationFn: (form) => form.id
@@ -153,7 +169,7 @@ export default function CompaniesPage() {
     <div style={{ padding: 16 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 16 }}>
         <div>
-          <h2 style={{ fontSize: 22, letterSpacing: 4 }}>FİRMALAR / SÖZLEŞMELER</h2>
+          <h2 style={{ fontSize: 22, letterSpacing: 4 }}>FİRMALAR / SÖZLEŞMELER<HelpHint topic="companies" title="FİRMALAR" /></h2>
           <p style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', letterSpacing: 2 }}>
             FIRMA YONETIMI VE SOZLESME TAKIBI
           </p>
@@ -210,6 +226,12 @@ export default function CompaniesPage() {
             value={search}
             onChange={e => setSearch(e.target.value)}
           />
+          <button type="button" className="btn btn-ghost btn-sm" disabled={!filtered.length}
+            onClick={() => exportRowsToCsv(COMPANY_EXPORT_COLS, filtered, `firmalar-${new Date().toISOString().slice(0, 10)}.csv`)}
+            style={{ fontSize: 11 }}>CSV</button>
+          <button type="button" className="btn btn-ghost btn-sm" disabled={!filtered.length}
+            onClick={() => exportRowsToXlsx(COMPANY_EXPORT_COLS, filtered, `firmalar-${new Date().toISOString().slice(0, 10)}.xlsx`, 'Firmalar')}
+            style={{ fontSize: 11 }}>Excel</button>
         </div>
         <div className="panel-body" style={{ padding: 0 }}>
           <div style={{ overflow: 'auto' }}>

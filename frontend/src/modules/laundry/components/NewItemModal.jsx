@@ -1,164 +1,16 @@
+// Orkestratör — state + mutation burada; görsel parçalar newItem/ altında.
+// CLOTHING_ICONS re-export'u korunur (AllRecordsTab/FullRecordsView/KanbanBoard/QuickAdd/roomsNewRecord buradan import eder).
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { laundryApi } from '../api.js'
-import ColorPatternPicker from './ColorPatternPicker.jsx'
 import { BLOCK_BY_NAME } from '../../../shared/blocks.js'
+import { DEFAULT_CLOTHING_TYPES } from './newItem/constants.js'
+import { parseClothingText, parseClothingLine, parsePremiumLine, findRoom } from './newItem/parse.js'
+import SignatureCanvas from './newItem/SignatureCanvas.jsx'
+import PremiumSection from './newItem/PremiumSection.jsx'
+import RegularSection from './newItem/RegularSection.jsx'
 
-const DEFAULT_CLOTHING_TYPES = [
-  'Pantolon','Gömlek','T-Shirt','Kazak','Sweat','Polar','Mont','Hırka',
-  'Body','İçlik','Alt Eşofman','Üst Eşofman','Boxer','Külot','Çorap',
-  'Havlu Tkm','El Havlusu','Ayak Havlusu','Büyük Havlu','Ceket',
-  'Yastık K.','İş Mont','İş Pantalonu','Şort','Atlet','Diğer',
-]
-
-export const CLOTHING_ICONS = {
-  'Pantolon':      '👖',
-  'Gömlek':        '👔',
-  'T-Shirt':       '👕',
-  'Kazak':         '🧥',
-  'Sweat':         '👕',
-  'Polar':         '🧥',
-  'Mont':          '🧥',
-  'Hırka':         '🧶',
-  'Body':          '🩲',
-  'İçlik':         '🩳',
-  'Alt Eşofman':   '🩲',
-  'Üst Eşofman':   '👕',
-  'Boxer':         '🩲',
-  'Külot':         '🩲',
-  'Çorap':         '🧦',
-  'Havlu Tkm':     '🏖️',
-  'El Havlusu':    '🧻',
-  'Ayak Havlusu':  '🧻',
-  'Büyük Havlu':   '🛁',
-  'Ceket':         '🥼',
-  'Yastık K.':     '🛏️',
-  'İş Mont':       '🦺',
-  'İş Pantalonu':  '👖',
-  'Şort':          '🩳',
-  'Atlet':         '👕',
-  'Diğer':         '📦',
-}
-
-const SIZES = ['XS','S','M','L','XL','XXL','3XL','4XL','36','38','40','42','44','46','48']
-
-const COLOR_PALETTE = [
-  { name: 'Beyaz',    hex: '#f0f0f0' },
-  { name: 'Siyah',    hex: '#222222' },
-  { name: 'Gri',      hex: '#888888' },
-  { name: 'Füme',     hex: '#4a4a4a' },
-  { name: 'Lacivert', hex: '#1a2e5e' },
-  { name: 'Mavi',     hex: '#2563eb' },
-  { name: 'Açık Mavi',hex: '#7ec8e3' },
-  { name: 'Kırmızı',  hex: '#dc2626' },
-  { name: 'Yeşil',    hex: '#16a34a' },
-  { name: 'Sarı',     hex: '#eab308' },
-  { name: 'Turuncu',  hex: '#ea580c' },
-  { name: 'Kahve',    hex: '#92400e' },
-  { name: 'Bej',      hex: '#d4b896' },
-  { name: 'Mor',      hex: '#7c3aed' },
-  { name: 'Pembe',    hex: '#ec4899' },
-]
-
-const PATTERN_LIST = [
-  { name: 'Çizgili', bg: 'repeating-linear-gradient(90deg,#f0f0f0 0 4px,#1a2e5e 4px 8px)' },
-  { name: 'Benekli', bg: 'radial-gradient(circle,#1a2e5e 2px,transparent 2px) 0 0/8px 8px,#f0f0f0' },
-  { name: 'Kareli',  bg: 'repeating-conic-gradient(#888 0% 25%,#f0f0f0 0% 50%) 0 0/8px 8px' },
-  { name: 'Renkli',  bg: 'repeating-linear-gradient(90deg,#e74c3c 0 6px,#f0a500 6px 12px,#2563eb 12px 18px,#16a34a 18px 24px)' },
-]
-
-// ── Fuzzy matching (Türkçe normalize) ──────────────────────────
-const TR_MAP = { ğ:'g',Ğ:'g',ş:'s',Ş:'s',ı:'i',İ:'i',ö:'o',Ö:'o',ü:'u',Ü:'u',ç:'c',Ç:'c' }
-function normTR(s) {
-  return s.toLowerCase().replace(/[ğĞşŞıİöÖüÜçÇ]/g, c => TR_MAP[c] || c).replace(/[^a-z0-9]/g, '')
-}
-function fuzzyFind(word, candidates) {
-  const n = normTR(word)
-  if (n.length < 2) return null
-  return candidates.find(c => normTR(c) === n)
-    || candidates.find(c => normTR(c).startsWith(n))
-    || candidates.find(c => n.length >= 3 && n.startsWith(normTR(c).slice(0, Math.max(3, Math.floor(normTR(c).length * 0.65)))))
-    || null
-}
-function parseQuickPremium(text, clothingTypes) {
-  if (!text.trim()) return { type:'', color:'', pattern:'', brand:'', size:'', qty:1 }
-  const words = text.trim().split(/\s+/)
-  let type='', color='', pattern='', brand='', size='', qty=1
-  const colorNames = COLOR_PALETTE.map(c => c.name)
-  const patternNames = PATTERN_LIST.map(p => p.name)
-  const remaining = []
-  for (const w of words) {
-    if (!type) { const t = fuzzyFind(w, clothingTypes); if (t) { type = t; continue } }
-    if (!color) { const c = fuzzyFind(w, colorNames); if (c) { color = c; continue } }
-    if (!pattern) { const p = fuzzyFind(w, patternNames); if (p) { pattern = p; continue } }
-    if (!size) { const sz = SIZES.find(s => s.toLowerCase() === w.toLowerCase()); if (sz) { size = sz; continue } }
-    if (qty === 1 && /^\d+$/.test(w)) { qty = Math.min(99, Math.max(1, +w)); continue }
-    remaining.push(w)
-  }
-  brand = remaining.join(' ')
-  return { type, color, pattern, brand, size, qty }
-}
-// ───────────────────────────────────────────────────────────────
-
-function SignatureCanvas({ onSign, onClear }) {
-  const canvasRef = useRef(null)
-  const drawing = useRef(false)
-  const [hasSig, setHasSig] = useState(false)
-
-  const getPos = useCallback((e) => {
-    const rect = canvasRef.current.getBoundingClientRect()
-    const touch = e.touches ? e.touches[0] : e
-    const scaleX = canvasRef.current.width / rect.width
-    const scaleY = canvasRef.current.height / rect.height
-    return { x: (touch.clientX - rect.left) * scaleX, y: (touch.clientY - rect.top) * scaleY }
-  }, [])
-
-  const startDraw = useCallback((e) => {
-    e.preventDefault(); drawing.current = true
-    const ctx = canvasRef.current.getContext('2d')
-    const pos = getPos(e)
-    ctx.beginPath(); ctx.moveTo(pos.x, pos.y)
-  }, [getPos])
-
-  const draw = useCallback((e) => {
-    if (!drawing.current) return
-    e.preventDefault()
-    const ctx = canvasRef.current.getContext('2d')
-    const pos = getPos(e)
-    ctx.lineTo(pos.x, pos.y)
-    ctx.strokeStyle = '#dde4f0'; ctx.lineWidth = 2; ctx.lineCap = 'round'; ctx.stroke()
-    setHasSig(true)
-    onSign(canvasRef.current.toDataURL())
-  }, [getPos, onSign])
-
-  const stopDraw = useCallback(() => { drawing.current = false }, [])
-
-  const clear = () => {
-    canvasRef.current.getContext('2d').clearRect(0, 0, canvasRef.current.width, canvasRef.current.height)
-    setHasSig(false); onClear()
-  }
-
-  return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-        <label className="form-label" style={{ margin: 0 }}>
-          {hasSig ? '✓ İmza alındı' : 'Buraya imza atın'}
-        </label>
-        {hasSig && <button className="btn btn-ghost btn-xs" onClick={clear}>Temizle</button>}
-      </div>
-      <canvas ref={canvasRef} width={380} height={120}
-        style={{
-          background: 'var(--surface2)',
-          border: `1px solid ${hasSig ? 'rgba(240,165,0,0.4)' : 'var(--border)'}`,
-          borderRadius: 8, display: 'block', cursor: 'crosshair', touchAction: 'none', width: '100%',
-          transition: 'border-color 0.2s',
-        }}
-        onMouseDown={startDraw} onMouseMove={draw} onMouseUp={stopDraw} onMouseLeave={stopDraw}
-        onTouchStart={startDraw} onTouchMove={draw} onTouchEnd={stopDraw}
-      />
-    </div>
-  )
-}
+export { CLOTHING_ICONS } from './newItem/constants.js'
 
 export default function NewItemModal({ onClose, roomPrefill = null }) {
   const qc = useQueryClient()
@@ -256,42 +108,13 @@ export default function NewItemModal({ onClose, roomPrefill = null }) {
     try { localStorage.removeItem('laundry-draft-items') } catch {}
   }
 
-  const parseClothingText = (text) => {
-    const lower = text.toLowerCase()
-    let rem = lower
-    // Qty: sayı bul, metinden çıkar
-    let qty = 1
-    const numMatch = rem.match(/(?:^|\s)(\d+)(?:\s|$)/)
-    if (numMatch) {
-      qty = Math.max(1, Math.min(99, +numMatch[1]))
-      rem = rem.replace(numMatch[1], ' ').trim()
-    }
-    // Tip: en uzun eşleşme önce
-    const typesSorted = [...CLOTHING_TYPES].sort((a, b) => b.length - a.length)
-    let type = ''
-    for (const t of typesSorted) {
-      if (rem.includes(t.toLowerCase())) { type = t; rem = rem.replace(t.toLowerCase(), ' ').trim(); break }
-    }
-    // Renk: en uzun isim önce (Açık Mavi, Mavi gibi çakışmalar için)
-    const colorsSorted = [...COLOR_PALETTE].sort((a, b) => b.name.length - a.name.length)
-    let color = ''
-    for (const cp of colorsSorted) {
-      if (rem.includes(cp.name.toLowerCase())) { color = cp.name; break }
-    }
-    if (!color) {
-      for (const p of PATTERN_LIST) {
-        if (rem.includes(p.name.toLowerCase())) { color = p.name; break }
-      }
-    }
-    return { type, color, qty }
-  }
-
-  const parsedCloth = useMemo(() => parseClothingText(quickCloth), [quickCloth, CLOTHING_TYPES])
+  // Çok-segment: "3 gömlek mavi, 2 pantolon, çorap" → tek Enter'da hepsi
+  const parsedClothList = useMemo(() => parseClothingLine(quickCloth, CLOTHING_TYPES), [quickCloth, CLOTHING_TYPES])
 
   const addQuickClothing = () => {
-    if (!parsedCloth.type) return
+    if (parsedClothList.length === 0) return
     setClothing(prev => {
-      const next = [...prev, { type: parsedCloth.type, color: parsedCloth.color, qty: parsedCloth.qty }]
+      const next = [...prev, ...parsedClothList.map(p => ({ type: p.type, color: p.color, qty: p.qty }))]
       saveDraft(next)
       return next
     })
@@ -319,7 +142,7 @@ export default function NewItemModal({ onClose, roomPrefill = null }) {
       return next
     })
 
-  const parsedPremium = useMemo(() => parseQuickPremium(quickPremium, CLOTHING_TYPES), [quickPremium, CLOTHING_TYPES])
+  const parsedPremiumList = useMemo(() => parsePremiumLine(quickPremium, CLOTHING_TYPES), [quickPremium, CLOTHING_TYPES])
 
   // Premium parça local ekleme
   const canAddPremium = !!gType
@@ -341,15 +164,18 @@ export default function NewItemModal({ onClose, roomPrefill = null }) {
   }
 
   const addQuickPremiumRow = () => {
-    if (!parsedPremium.type) return
-    const row = {
-      garment_type: parsedPremium.type,
-      color: parsedPremium.color || undefined,
-      pattern: parsedPremium.pattern || undefined,
-      brand: parsedPremium.brand || undefined,
-      size: parsedPremium.size || undefined,
-    }
-    setPremiumRows(prev => [...prev, ...Array.from({ length: parsedPremium.qty }, () => ({ ...row }))])
+    if (parsedPremiumList.length === 0) return
+    const rows = parsedPremiumList.flatMap(p => {
+      const row = {
+        garment_type: p.type,
+        color: p.color || undefined,
+        pattern: p.pattern || undefined,
+        brand: p.brand || undefined,
+        size: p.size || undefined,
+      }
+      return Array.from({ length: p.qty }, () => ({ ...row }))
+    })
+    setPremiumRows(prev => [...prev, ...rows])
     setQuickPremium('')
   }
 
@@ -455,8 +281,23 @@ export default function NewItemModal({ onClose, roomPrefill = null }) {
             <label className="form-label">ODA SEÇİMİ</label>
             <input className="form-input" value={roomSearch}
               onChange={e => setRoomSearch(e.target.value)}
-              placeholder="Blok veya oda numarası ara..."
+              onKeyDown={e => {
+                if (e.key !== 'Enter') return
+                e.preventDefault()
+                // "M1 205" tam eşleşme; yoksa filtre tek odaya inmişse onu seç
+                const exact = findRoom(roomSearch, rooms) || (filtered.length === 1 ? filtered[0] : null)
+                if (exact) { set('room_id', exact.id); setRoomSearch('') }
+              }}
+              placeholder="⚡ M1 205 yaz + Enter — veya ara..."
               style={{ marginBottom: 6 }} />
+            {roomSearch.trim() && !selectedRoom && (() => {
+              const exact = findRoom(roomSearch, rooms)
+              return exact ? (
+                <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--green)', marginBottom: 6 }}>
+                  ↵ Enter → {exact.block} - {exact.room_no}
+                </div>
+              ) : null
+            })()}
             {selectedRoom && (
               <div style={{
                 padding: '6px 10px', borderRadius: 6, marginBottom: 6,
@@ -512,407 +353,41 @@ export default function NewItemModal({ onClose, roomPrefill = null }) {
 
           {/* ── Premium Parça Girişi (sadece premium blok seçiliyse) ── */}
           {isPremium && (
-            <div style={{
-              borderRadius: 10,
-              border: '1px solid rgba(240,165,0,0.2)',
-              background: 'rgba(240,165,0,0.03)',
-              overflow: 'hidden',
-            }}>
-              {/* Başlık */}
-              <div style={{
-                padding: '8px 14px',
-                background: 'rgba(240,165,0,0.08)',
-                borderBottom: '1px solid rgba(240,165,0,0.15)',
-                fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--accent)', fontWeight: 700,
-                display: 'flex', alignItems: 'center', gap: 8,
-              }}>
-                ★ PREMIUM PARÇALAR
-                {premiumRows.length > 0 && (
-                  <span style={{
-                    background: 'var(--accent)', color: '#000',
-                    borderRadius: 10, padding: '1px 8px', fontSize: 9, fontWeight: 700,
-                  }}>{premiumRows.length}</span>
-                )}
-              </div>
-
-              <div style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-
-                {/* Eklenen parçalar listesi */}
-                {premiumRows.length > 0 && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginBottom: 4 }}>
-                    {premiumRows.map((g, i) => (
-                      <div key={i} style={{
-                        display: 'flex', alignItems: 'center', gap: 6,
-                        padding: '5px 8px', borderRadius: 6,
-                        background: 'var(--surface2)', border: '1px solid var(--border)',
-                      }}>
-                        <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', minWidth: 18 }}>#{i + 1}</span>
-                        <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text)', flex: 1 }}>
-                          {CLOTHING_ICONS[g.garment_type] || ''} {g.garment_type}
-                        </span>
-                        {g.color && g.color.split(', ').filter(Boolean).map(c => (
-                          <span key={c} style={{
-                            width: 12, height: 12, borderRadius: '50%', flexShrink: 0,
-                            background: COLOR_PALETTE.find(cp => cp.name === c)?.hex || '#888',
-                            border: '1px solid rgba(255,255,255,0.15)',
-                          }} title={c} />
-                        ))}
-                        {g.color && <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>{g.color}</span>}
-                        {g.pattern && (
-                          <span style={{
-                            fontFamily: 'var(--mono)', fontSize: 9, color: '#818cf8',
-                            background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.2)',
-                            borderRadius: 3, padding: '1px 5px',
-                          }}>{g.pattern}</span>
-                        )}
-                        {g.brand && <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>{g.brand}</span>}
-                        {g.size && (
-                          <span style={{
-                            fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)',
-                            background: 'var(--surface)', border: '1px solid var(--border)',
-                            borderRadius: 3, padding: '1px 5px',
-                          }}>{g.size}</span>
-                        )}
-                        <button onClick={() => removePremiumRow(i)}
-                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', fontSize: 12, padding: '0 2px', flexShrink: 0 }}>✕</button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* ⚡ Premium hızlı giriş */}
-                <div style={{ marginBottom: 4 }}>
-                  <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--accent)', letterSpacing: 1, marginBottom: 5 }}>⚡ HIZLI GİRİŞ</div>
-                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                    <input
-                      className="form-input"
-                      value={quickPremium}
-                      onChange={e => setQuickPremium(e.target.value)}
-                      onKeyDown={e => { if (e.key === 'Enter') addQuickPremiumRow() }}
-                      placeholder="3 gömlek mavi çizgili L Lacoste  →  Enter ile ekle"
-                      style={{ flex: 1, fontFamily: 'var(--mono)', fontSize: 10 }}
-                      autoFocus={false}
-                    />
-                    <button
-                      onClick={addQuickPremiumRow}
-                      disabled={!parsedPremium.type}
-                      style={{
-                        padding: '6px 14px', borderRadius: 6,
-                        cursor: parsedPremium.type ? 'pointer' : 'not-allowed',
-                        background: parsedPremium.type ? 'var(--accent)' : 'var(--surface2)',
-                        border: `1px solid ${parsedPremium.type ? 'var(--accent)' : 'var(--border)'}`,
-                        color: parsedPremium.type ? '#000' : 'var(--text3)',
-                        fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap',
-                        transition: 'all 0.15s',
-                      }}
-                    >↵ Ekle{parsedPremium.qty > 1 ? ` (×${parsedPremium.qty})` : ''}</button>
-                  </div>
-                  {quickPremium.trim() && (
-                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 5, alignItems: 'center' }}>
-                      {parsedPremium.qty > 1 && (
-                        <span style={{ fontFamily:'var(--mono)', fontSize:9, background:'rgba(240,165,0,0.12)', border:'1px solid rgba(240,165,0,0.3)', color:'var(--accent)', borderRadius:4, padding:'1px 6px' }}>×{parsedPremium.qty}</span>
-                      )}
-                      {parsedPremium.type
-                        ? <span style={{ fontFamily:'var(--mono)', fontSize:9, background:'rgba(37,99,235,0.12)', border:'1px solid rgba(37,99,235,0.3)', color:'#60a5fa', borderRadius:4, padding:'1px 6px' }}>{CLOTHING_ICONS[parsedPremium.type]||''} {parsedPremium.type}</span>
-                        : <span style={{ fontFamily:'var(--mono)', fontSize:9, color:'var(--red)', opacity:0.7 }}>tip bulunamadı</span>
-                      }
-                      {parsedPremium.color && (() => {
-                        const cp = COLOR_PALETTE.find(c => c.name === parsedPremium.color)
-                        return <span style={{ display:'inline-flex', alignItems:'center', gap:3, fontFamily:'var(--mono)', fontSize:9, background:'rgba(255,255,255,0.04)', border:'1px solid var(--border)', color:'var(--text2)', borderRadius:4, padding:'1px 6px' }}>{cp && <span style={{ width:8, height:8, borderRadius:'50%', background:cp.hex, border:'1px solid rgba(255,255,255,0.2)', flexShrink:0 }}/>}{parsedPremium.color}</span>
-                      })()}
-                      {parsedPremium.pattern && (
-                        <span style={{ fontFamily:'var(--mono)', fontSize:9, color:'#818cf8', background:'rgba(99,102,241,0.1)', border:'1px solid rgba(99,102,241,0.2)', borderRadius:4, padding:'1px 6px' }}>{parsedPremium.pattern}</span>
-                      )}
-                      {parsedPremium.size && (
-                        <span style={{ fontFamily:'var(--mono)', fontSize:9, color:'var(--text3)', background:'var(--surface)', border:'1px solid var(--border)', borderRadius:4, padding:'1px 6px' }}>{parsedPremium.size}</span>
-                      )}
-                      {parsedPremium.brand && (
-                        <span style={{ fontFamily:'var(--mono)', fontSize:9, color:'var(--text3)', background:'var(--surface)', border:'1px solid var(--border)', borderRadius:4, padding:'1px 6px' }}>🏷 {parsedPremium.brand}</span>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {/* Tip seçimi */}
-                <div>
-                  <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--text3)', letterSpacing: 1, marginBottom: 5 }}>TİP SEÇ</div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-                    {CLOTHING_TYPES.map(type => (
-                      <button
-                        key={type}
-                        onClick={() => {
-                          setGType(t => t === type ? '' : type)
-                          setGForm(f => ({ ...f, colors: [], pattern: '' }))
-                        }}
-                        style={{
-                          padding: '4px 10px', borderRadius: 16, cursor: 'pointer',
-                          background: gType === type ? 'rgba(240,165,0,0.15)' : 'var(--surface)',
-                          border: `1px solid ${gType === type ? 'rgba(240,165,0,0.4)' : 'var(--border)'}`,
-                          color: gType === type ? 'var(--accent)' : 'var(--text2)',
-                          fontFamily: 'var(--mono)', fontSize: 9, transition: 'all 0.12s',
-                        }}
-                      >
-                        {gType === type && '★ '}{CLOTHING_ICONS[type] || ''} {type}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Detay formu — sadece tip seçiliyse */}
-                {gType && (
-                  <div style={{
-                    padding: '10px 12px', borderRadius: 7,
-                    background: 'var(--surface2)', border: '1px solid rgba(240,165,0,0.12)',
-                  }}>
-                    <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--accent)', fontWeight: 700, marginBottom: 8 }}>
-                      {CLOTHING_ICONS[gType] || ''} {gType}
-                      <span style={{ fontWeight: 400, color: 'var(--text3)', fontSize: 9, marginLeft: 6 }}>#{premiumRows.length + 1}</span>
-                    </div>
-
-                    {/* Renk & Desen */}
-                    <div style={{ marginBottom: 8 }}>
-                      <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--text3)', letterSpacing: 1, marginBottom: 4 }}>
-                        RENK & DESEN
-                      </div>
-                      <ColorPatternPicker
-                        colors={gForm.colors}
-                        pattern={gForm.pattern}
-                        onChange={({ colors, pattern }) => setGForm(f => ({ ...f, colors, pattern }))}
-                      />
-                    </div>
-
-                    {/* Marka / Model / Beden */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 80px', gap: 6, marginBottom: 6 }}>
-                      <div>
-                        <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--text3)', marginBottom: 3 }}>MARKA</div>
-                        <input className="form-input" value={gForm.brand}
-                          onChange={e => setGForm(f => ({ ...f, brand: e.target.value }))}
-                          placeholder="Opsiyonel" style={{ fontSize: 10 }} />
-                      </div>
-                      <div>
-                        <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--text3)', marginBottom: 3 }}>MODEL</div>
-                        <input className="form-input" value={gForm.model}
-                          onChange={e => setGForm(f => ({ ...f, model: e.target.value }))}
-                          placeholder="Opsiyonel" style={{ fontSize: 10 }} />
-                      </div>
-                      <div>
-                        <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--text3)', marginBottom: 3 }}>BEDEN</div>
-                        <select value={gForm.size} onChange={e => setGForm(f => ({ ...f, size: e.target.value }))}
-                          style={{
-                            width: '100%', fontFamily: 'var(--mono)', fontSize: 10,
-                            background: 'var(--surface)', border: '1px solid var(--border)',
-                            borderRadius: 4, padding: '5px 4px', color: 'var(--text)',
-                          }}>
-                          <option value="">-</option>
-                          {SIZES.map(s => <option key={s} value={s}>{s}</option>)}
-                        </select>
-                      </div>
-                    </div>
-
-                    {/* Not + Adet + Ekle */}
-                    <div style={{ display: 'flex', gap: 6, alignItems: 'flex-end' }}>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--text3)', marginBottom: 3 }}>NOT</div>
-                        <input className="form-input" value={gForm.condition_notes}
-                          onChange={e => setGForm(f => ({ ...f, condition_notes: e.target.value }))}
-                          onKeyDown={e => { if (e.key === 'Enter' && canAddPremium) addPremiumRow() }}
-                          placeholder="Opsiyonel" style={{ fontSize: 10 }} />
-                      </div>
-                      {/* Adet stepper */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-                        <button onClick={() => setGQty(q => Math.max(1, q - 1))}
-                          style={{ width: 22, height: 22, borderRadius: 4, background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text2)', cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>−</button>
-                        <span style={{ fontFamily: 'var(--display)', fontSize: 15, color: 'var(--accent)', minWidth: 20, textAlign: 'center' }}>{gQty}</span>
-                        <button onClick={() => setGQty(q => Math.min(99, q + 1))}
-                          style={{ width: 22, height: 22, borderRadius: 4, background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text2)', cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
-                      </div>
-                      <button
-                        onClick={addPremiumRow}
-                        disabled={!canAddPremium}
-                        style={{
-                          padding: '7px 14px', borderRadius: 6, cursor: canAddPremium ? 'pointer' : 'not-allowed',
-                          background: canAddPremium ? 'var(--accent)' : 'var(--surface)',
-                          border: `1px solid ${canAddPremium ? 'var(--accent)' : 'var(--border)'}`,
-                          color: canAddPremium ? '#000' : 'var(--text3)',
-                          fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap',
-                          transition: 'all 0.15s',
-                        }}
-                      >
-                        + Ekle{gQty > 1 ? ` (×${gQty})` : ''}
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {premiumRows.length === 0 && !gType && !quickPremium && (
-                  <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', textAlign: 'center', padding: '4px 0' }}>
-                    ⚡ Hızlı giriş veya tip seç → detay gir → Ekle
-                  </div>
-                )}
-              </div>
-            </div>
+            <PremiumSection
+              clothingTypes={CLOTHING_TYPES}
+              premiumRows={premiumRows}
+              removePremiumRow={removePremiumRow}
+              quickPremium={quickPremium}
+              setQuickPremium={setQuickPremium}
+              parsedPremiumList={parsedPremiumList}
+              addQuickPremiumRow={addQuickPremiumRow}
+              gType={gType}
+              setGType={setGType}
+              gForm={gForm}
+              setGForm={setGForm}
+              gQty={gQty}
+              setGQty={setGQty}
+              canAddPremium={canAddPremium}
+              addPremiumRow={addPremiumRow}
+            />
           )}
 
           {/* ── Kıyafet Girişi (regular) ── */}
           {!isPremium && (
-            <div>
-              <label className="form-label">
-                KIYAFETler
-                {clothing.length > 0 && (
-                  <span style={{ marginLeft: 8, color: 'var(--accent)', fontWeight: 700 }}>{totalCount} parça</span>
-                )}
-              </label>
-
-              {/* ⚡ Hızlı metin girişi */}
-              <div style={{ marginBottom: 10 }}>
-                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                  <input
-                    className="form-input"
-                    value={quickCloth}
-                    onChange={e => setQuickCloth(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter') addQuickClothing() }}
-                    placeholder="⚡ Hızlı: 3 gömlek mavi · 2 pantolon siyah · çorap beyaz..."
-                    style={{ flex: 1, fontFamily: 'var(--mono)', fontSize: 10 }}
-                  />
-                  <button
-                    onClick={addQuickClothing}
-                    disabled={!parsedCloth.type}
-                    style={{
-                      padding: '6px 14px', borderRadius: 6, cursor: parsedCloth.type ? 'pointer' : 'not-allowed',
-                      background: parsedCloth.type ? 'var(--accent)' : 'var(--surface2)',
-                      border: `1px solid ${parsedCloth.type ? 'var(--accent)' : 'var(--border)'}`,
-                      color: parsedCloth.type ? '#000' : 'var(--text3)',
-                      fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap',
-                      transition: 'all 0.15s',
-                    }}
-                  >↵ Ekle</button>
-                </div>
-                {quickCloth.trim() && (
-                  <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 5, alignItems: 'center' }}>
-                    {parsedCloth.qty > 1 && (
-                      <span style={{ fontFamily: 'var(--mono)', fontSize: 9, background: 'rgba(240,165,0,0.12)', border: '1px solid rgba(240,165,0,0.3)', color: 'var(--accent)', borderRadius: 4, padding: '1px 6px' }}>
-                        ×{parsedCloth.qty}
-                      </span>
-                    )}
-                    {parsedCloth.type ? (
-                      <span style={{ fontFamily: 'var(--mono)', fontSize: 9, background: 'rgba(37,99,235,0.12)', border: '1px solid rgba(37,99,235,0.3)', color: '#60a5fa', borderRadius: 4, padding: '1px 6px' }}>
-                        {CLOTHING_ICONS[parsedCloth.type] || ''} {parsedCloth.type}
-                      </span>
-                    ) : (
-                      <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--red)', opacity: 0.7 }}>tip bulunamadı</span>
-                    )}
-                    {parsedCloth.color && (() => {
-                      const cp = COLOR_PALETTE.find(c => c.name === parsedCloth.color)
-                      return (
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: 'var(--mono)', fontSize: 9, background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 4, padding: '1px 6px' }}>
-                          {cp && <span style={{ width: 8, height: 8, borderRadius: '50%', background: cp.hex, border: '1px solid rgba(255,255,255,0.2)', flexShrink: 0 }} />}
-                          {parsedCloth.color}
-                        </span>
-                      )
-                    })()}
-                  </div>
-                )}
-              </div>
-
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
-                {CLOTHING_TYPES.map(type => {
-                  const active = clothing.some(c => c.type === type)
-                  return (
-                    <button key={type} onClick={() => addClothing(type)} style={{
-                      padding: '5px 12px', borderRadius: 20, cursor: 'pointer',
-                      background: active ? 'rgba(240,165,0,0.15)' : 'var(--surface2)',
-                      border: `1px solid ${active ? 'rgba(240,165,0,0.4)' : 'var(--border)'}`,
-                      color: active ? 'var(--accent)' : 'var(--text2)',
-                      fontFamily: 'var(--mono)', fontSize: 10, transition: 'all 0.15s',
-                    }}>
-                      {active && '✓ '}{CLOTHING_ICONS[type] || ''} {type}
-                    </button>
-                  )
-                })}
-              </div>
-              {clothing.length > 0 && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {clothing.map((c, idx) => (
-                    <div key={idx} style={{
-                      display: 'flex', alignItems: 'center', gap: 8,
-                      padding: '6px 10px', background: 'var(--surface2)',
-                      border: '1px solid var(--border)', borderRadius: 7,
-                    }}>
-                      <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text)', flex: '0 0 90px' }}>
-                        {CLOTHING_ICONS[c.type] || ''} {c.type}
-                      </span>
-                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
-                          {COLOR_PALETTE.map(col => (
-                            <button
-                              key={col.name}
-                              title={col.name}
-                              onClick={() => updateClothing(idx, 'color', c.color === col.name ? '' : col.name)}
-                              style={{
-                                width: 18, height: 18, borderRadius: '50%', border: `2px solid ${c.color === col.name ? 'var(--accent)' : 'transparent'}`,
-                                background: col.hex, cursor: 'pointer', padding: 0, flexShrink: 0,
-                                boxShadow: c.color === col.name ? '0 0 0 1px var(--accent)' : 'none',
-                                transition: 'border 0.1s',
-                              }}
-                            />
-                          ))}
-                          <input
-                            className="form-input"
-                            value={COLOR_PALETTE.some(cp => cp.name === c.color) || PATTERN_LIST.some(p => p.name === c.color) ? '' : c.color}
-                            onChange={e => updateClothing(idx, 'color', e.target.value)}
-                            placeholder="Diğer..."
-                            style={{ width: 60, padding: '3px 6px', fontSize: 9, flexShrink: 0 }}
-                          />
-                          {c.color && (
-                            <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', flexShrink: 0 }}>{c.color}</span>
-                          )}
-                        </div>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
-                          <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--text3)', flexShrink: 0 }}>DESEN:</span>
-                          {PATTERN_LIST.map(pat => (
-                            <button
-                              key={pat.name}
-                              title={pat.name}
-                              onClick={() => updateClothing(idx, 'color', c.color === pat.name ? '' : pat.name)}
-                              style={{
-                                width: 24, height: 24, borderRadius: 4,
-                                border: `2px solid ${c.color === pat.name ? 'var(--accent)' : 'transparent'}`,
-                                background: pat.bg, cursor: 'pointer', padding: 0, flexShrink: 0,
-                                boxShadow: c.color === pat.name ? '0 0 0 1px var(--accent)' : 'none',
-                                transition: 'border 0.1s', outline: 'none',
-                              }}
-                            />
-                          ))}
-                        </div>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <button onClick={() => updateClothing(idx, 'qty', c.qty - 1)}
-                          style={{ width: 24, height: 24, borderRadius: 4, background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text2)', cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>−</button>
-                        <span style={{ fontFamily: 'var(--display)', fontSize: 18, color: 'var(--accent)', minWidth: 20, textAlign: 'center', lineHeight: 1 }}>{c.qty}</span>
-                        <button onClick={() => updateClothing(idx, 'qty', c.qty + 1)}
-                          style={{ width: 24, height: 24, borderRadius: 4, background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text2)', cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
-                      </div>
-                      <button onClick={() => removeClothing(idx)}
-                        style={{ color: 'var(--text3)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, padding: '0 4px' }}>✕</button>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {clothing.length === 0 && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: 'var(--surface2)', borderRadius: 6, border: '1px dashed var(--border)' }}>
-                  <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', flex: 1 }}>
-                    Kıyafet seçilmedi — toplam adet:
-                  </span>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <button onClick={() => setItemCount(c => Math.max(1, c - 1))}
-                      style={{ width: 24, height: 24, borderRadius: 4, background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text2)', cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>−</button>
-                    <span style={{ fontFamily: 'var(--display)', fontSize: 18, color: 'var(--accent)', minWidth: 24, textAlign: 'center', lineHeight: 1 }}>{itemCount}</span>
-                    <button onClick={() => setItemCount(c => Math.min(99, c + 1))}
-                      style={{ width: 24, height: 24, borderRadius: 4, background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text2)', cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
-                  </div>
-                </div>
-              )}
-            </div>
+            <RegularSection
+              clothingTypes={CLOTHING_TYPES}
+              clothing={clothing}
+              totalCount={totalCount}
+              quickCloth={quickCloth}
+              setQuickCloth={setQuickCloth}
+              parsedClothList={parsedClothList}
+              addQuickClothing={addQuickClothing}
+              addClothing={addClothing}
+              removeClothing={removeClothing}
+              updateClothing={updateClothing}
+              itemCount={itemCount}
+              setItemCount={setItemCount}
+            />
           )}
 
           {/* ── Notlar (hem not olarak kaydedilir hem parça olarak eklenebilir) ── */}
@@ -922,7 +397,7 @@ export default function NewItemModal({ onClose, roomPrefill = null }) {
               {form.notes.trim() && !isPremium && (
                 <button type="button"
                   onClick={() => {
-                    const parsed = parseClothingText(form.notes)
+                    const parsed = parseClothingText(form.notes, CLOTHING_TYPES)
                     if (parsed.type) {
                       setClothing(prev => {
                         const next = [...prev, { type: parsed.type, color: parsed.color, qty: parsed.qty }]

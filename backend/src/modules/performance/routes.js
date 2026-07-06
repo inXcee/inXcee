@@ -2,6 +2,10 @@ import { Router } from 'express'
 import { requireRole } from '../../shared/auth/middleware.js'
 import { logAudit } from '../../shared/audit.js'
 import { getDB } from '../../shared/db/index.js'
+import { logger } from '../../shared/logger.js'
+import { validate } from '../../shared/middleware/validate.js'
+import { createReviewSchema, updateReviewSchema, createGoalSchema, positiveSchema } from './schemas.js'
+import { summary, departmentComparison, goalAchievement, scoreTrend, dimensionBreakdown } from './kpi.js'
 
 export const performanceRouter = Router()
 const mgr = requireRole('campus_manager', 'shift_supervisor')
@@ -16,6 +20,22 @@ function calcTotal(body) {
   })
   return count > 0 ? Math.round((sum / count) * 100) / 100 : null
 }
+
+// ── KPI / Analiz panosu ──
+performanceRouter.get('/kpi', ...view, (req, res) => {
+  try {
+    const db = getDB()
+    const period = req.query.period ? String(req.query.period) : String(new Date().getFullYear())
+    res.json({
+      period,
+      summary: summary(db, period),
+      departments: departmentComparison(db, period),
+      goals: goalAchievement(db),
+      trend: scoreTrend(db),
+      dimensions: dimensionBreakdown(db, period),
+    })
+  } catch (e) { logger.error('[perf/kpi]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
 
 // ── PE1: Değerlendirme CRUD ──
 performanceRouter.get('/reviews', ...view, (req, res) => {
@@ -34,7 +54,7 @@ performanceRouter.get('/reviews', ...view, (req, res) => {
     if (req.query.staff_id) { q += ' AND pr.staff_id = ?'; params.push(+req.query.staff_id) }
     q += ' ORDER BY pr.reviewed_at DESC LIMIT 200'
     res.json(db.prepare(q).all(...params))
-  } catch (e) { console.error('[perf/list]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[perf/list]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 performanceRouter.get('/reviews/:id', ...view, (req, res) => {
@@ -49,15 +69,12 @@ performanceRouter.get('/reviews/:id', ...view, (req, res) => {
     `).get(+req.params.id)
     if (!r) return res.status(404).json({ error: 'Bulunamadı' })
     res.json(r)
-  } catch (e) { console.error('[perf/get]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[perf/get]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
-performanceRouter.post('/reviews', ...mgr, (req, res) => {
+performanceRouter.post('/reviews', ...mgr, validate(createReviewSchema), (req, res) => {
   try {
     const { staff_id, period } = req.body || {}
-    if (!staff_id || !period) return res.status(400).json({ error: 'staff_id ve period gerekli' })
-    if (!/^\d{4}(-Q[1-4])?$/.test(period)) return res.status(400).json({ error: 'period: YYYY veya YYYY-Q1 formatında' })
-
     const total = calcTotal(req.body)
     const cols = ['staff_id', 'period', ...REVIEW_FIELDS, 'strengths', 'improvement_areas', 'manager_notes', 'total_score', 'reviewed_by']
     const vals = [+staff_id, period, ...REVIEW_FIELDS.map(f => req.body[f] != null ? +req.body[f] : null),
@@ -78,7 +95,7 @@ performanceRouter.post('/reviews', ...mgr, (req, res) => {
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
-performanceRouter.put('/reviews/:id', ...mgr, (req, res) => {
+performanceRouter.put('/reviews/:id', ...mgr, validate(updateReviewSchema), (req, res) => {
   try {
     const db = getDB()
     const fields = [...REVIEW_FIELDS, 'strengths', 'improvement_areas', 'manager_notes']
@@ -123,13 +140,12 @@ performanceRouter.get('/goals', ...view, (req, res) => {
     if (req.query.status) { q += ' AND g.status = ?'; params.push(req.query.status) }
     q += ' ORDER BY g.target_date NULLS LAST, g.created_at DESC LIMIT 200'
     res.json(db.prepare(q).all(...params))
-  } catch (e) { console.error('[perf/goals]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[perf/goals]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
-performanceRouter.post('/goals', ...mgr, (req, res) => {
+performanceRouter.post('/goals', ...mgr, validate(createGoalSchema), (req, res) => {
   try {
     const { staff_id, title, description, target_date } = req.body || {}
-    if (!staff_id || !title) return res.status(400).json({ error: 'staff_id ve title gerekli' })
     const id = getDB().prepare(`
       INSERT INTO performance_goals(staff_id, title, description, target_date, created_by)
       VALUES(?,?,?,?,?)
@@ -163,10 +179,9 @@ performanceRouter.delete('/goals/:id', ...mgr, (req, res) => {
 })
 
 // ── PE3: Pozitif puan ──
-performanceRouter.post('/positive', ...mgr, (req, res) => {
+performanceRouter.post('/positive', ...mgr, validate(positiveSchema), (req, res) => {
   try {
     const { staff_id, reason, points = 1 } = req.body || {}
-    if (!staff_id || !reason) return res.status(400).json({ error: 'staff_id ve reason gerekli' })
     const id = getDB().prepare(`
       INSERT INTO positive_points(staff_id, reason, points, created_by) VALUES(?,?,?,?)
     `).run(+staff_id, reason, +points, req.user.id).lastInsertRowid
@@ -209,5 +224,5 @@ performanceRouter.get('/leaderboard', ...view, (req, res) => {
       LIMIT 30
     `).all(days)
     res.json(rows)
-  } catch (e) { console.error('[perf/leaderboard]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+  } catch (e) { logger.error('[perf/leaderboard]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })

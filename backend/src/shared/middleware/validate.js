@@ -24,8 +24,11 @@ export function validate(schema, source = 'body') {
         path: i.path.join('.') || '(root)',
         message: i.message,
       }))
+      // Üst düzey error = ilk issue mesajı: frontend tek-satır toast'ı
+      // (api/client.js → data.error) anlamlı bir mesaj göstersin. details
+      // çok-alanlı formlar için tam liste kalır.
       return res.status(400).json({
-        error: 'Geçersiz istek',
+        error: issues[0]?.message || 'Geçersiz istek',
         details: issues,
       })
     }

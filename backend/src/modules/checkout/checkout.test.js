@@ -19,7 +19,10 @@ describe('Checkout Module', () => {
     const regRes = await request(app)
       .post('/api/checkin/register')
       .set('Authorization', `Bearer ${token}`)
-      .send({ tc_no: '55555555555', full_name: 'Checkout Test Kisi', company: 'Test Ltd' })
+      .send({
+        tc_no: '55555555555', full_name: 'Checkout Test Kisi', company: 'Test Ltd',
+        emergency_name: 'Aile', emergency_phone: '05551234567',
+      })
     expect(regRes.status).toBe(201)
     personnelId = regRes.body.id
 
@@ -131,6 +134,14 @@ describe('Checkout Module', () => {
       .post('/api/checkout/process')
       .set('Authorization', `Bearer ${token}`)
       .send({})
+    expect(res.status).toBe(400)
+  })
+
+  it('rejects invalid zimmet_actions action (Zod)', async () => {
+    const res = await request(app)
+      .post('/api/checkout/process')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ personnel_id: 1, zimmet_actions: [{ zimmet_id: 5, action: 'bogus' }] })
     expect(res.status).toBe(400)
   })
 })

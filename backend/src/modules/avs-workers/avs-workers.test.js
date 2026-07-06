@@ -10,6 +10,14 @@ beforeAll(async () => {
   token = (await request(app).post('/api/auth/login').send({ username: 'mudur', password: 'admin123' })).body.token
 })
 
+describe('AVS Workers — Zod sweep', () => {
+  it('cok uzun calisan adi 400 doner', async () => {
+    const res = await request(app).post('/api/avs-workers')
+      .set('Authorization', `Bearer ${token}`).send({ full_name: 'A'.repeat(201) })
+    expect(res.status).toBe(400)
+  })
+})
+
 describe('AVS Workers', () => {
   it('campus_manager olmayan erişemez', async () => {
     const t = (await request(app).post('/api/auth/login').send({ username: 'vardiya', password: 'admin123' })).body.token
@@ -85,6 +93,18 @@ describe('AVS Auth', () => {
     const res = await request(app).get('/api/auth/avs-search?q=a')
     expect(res.status).toBe(200)
     expect(Array.isArray(res.body)).toBe(true)
+  })
+
+  it('GET /auth/avs-search PIN tanımsız aktif worker da döner (has_pin falsy)', async () => {
+    const name = 'Pinsiz Arama Testi'
+    await request(app).post('/api/avs-workers')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ full_name: name })
+    const res = await request(app).get(`/api/auth/avs-search?q=${encodeURIComponent('Pinsiz Arama')}`)
+    expect(res.status).toBe(200)
+    const found = res.body.find(w => w.full_name === name)
+    expect(found).toBeTruthy()
+    expect(found.has_pin).toBeFalsy()
   })
 
   it('POST /auth/avs-login PIN tanımlı değilse 403', async () => {
