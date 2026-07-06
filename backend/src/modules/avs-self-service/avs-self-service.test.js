@@ -29,7 +29,7 @@ beforeAll(async () => {
     .run(temizlikId, 'M1', workerId)
   const shiftDef = db.prepare('SELECT id FROM shift_definitions LIMIT 1').get()
   db.prepare(`INSERT OR IGNORE INTO shift_schedule(staff_id, shift_def_id, work_date, status)
-              VALUES(?,?,date('now'),'scheduled')`).run(workerId, shiftDef?.id ?? null)
+              VALUES(?,?,date('now','localtime'),'scheduled')`).run(workerId, shiftDef?.id ?? null)
   const pp = db.prepare(`INSERT INTO pickup_points(name, district, neighborhood)
               VALUES('Merkez Durağı','Çankaya','Kızılay')`).run()
   db.prepare('UPDATE staff SET pickup_point_id=? WHERE id=?').run(pp.lastInsertRowid, workerId)
@@ -57,7 +57,7 @@ describe('AVS Self-Service — my-shifts', () => {
       .set('Authorization', `Bearer ${avsToken}`)
     expect(res.status).toBe(200)
     expect(Array.isArray(res.body.shifts)).toBe(true)
-    const today = new Date().toISOString().slice(0, 10)
+    const today = new Date().toLocaleDateString('sv-SE') // yerel gün (UTC slice gece yarısı sonrası dünü verir)
     expect(res.body.shifts.some(s => s.work_date === today)).toBe(true)
   })
 })
@@ -363,7 +363,7 @@ describe('AVS Self-Service — my-leave', () => {
 describe('AVS Self-Service — menu/today', () => {
   it('bugünün menüsü dolu öğünleri döner', async () => {
     const db = getDB()
-    db.prepare("INSERT INTO meal_menu(meal_date, meal_type, items) VALUES(date('now'),'lunch','Çorba\nKöfte')").run()
+    db.prepare("INSERT INTO meal_menu(meal_date, meal_type, items) VALUES(date('now','localtime'),'lunch','Çorba\nKöfte')").run()
     const res = await request(app).get('/api/avs-self-service/menu/today')
       .set('Authorization', `Bearer ${avsToken}`)
     expect(res.status).toBe(200)

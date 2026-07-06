@@ -258,7 +258,7 @@ describe('stations — ziyaretçi süreli kart (Faz 5b)', () => {
 })
 
 describe('stations — yemekhane uygunluğu (Faz 4)', () => {
-  const today = new Date().toISOString().slice(0, 10)
+  const today = new Date().toLocaleDateString('sv-SE') // yerel gün — mealDayFor localtime kullanır
   let eligId, noShiftId, leaveId
   const eligUid = 'NFC-ELIG-001', noShiftUid = 'NFC-NOSHIFT-001', leaveUid = 'NFC-LEAVE-001'
 

@@ -71,7 +71,7 @@ avsSelfServiceRouter.get('/my-shifts', requireAvsKiosk, (req, res) => {
       FROM shift_schedule ss
       LEFT JOIN shift_definitions sd ON sd.id = ss.shift_def_id
       WHERE ss.staff_id = ?
-        AND ss.work_date BETWEEN date('now') AND date('now','+7 days')
+        AND ss.work_date BETWEEN date('now','localtime') AND date('now','localtime','+7 days')
       ORDER BY ss.work_date
     `).all(req.user.workerId)
     res.json({ shifts })
@@ -95,7 +95,7 @@ avsSelfServiceRouter.get('/my-transport', requireAvsKiosk, (req, res) => {
       FROM route_assignments ra
       JOIN routes r ON r.id = ra.route_id
       LEFT JOIN route_stops rs ON rs.id = ra.stop_id
-      WHERE ra.staff_id = ? AND ra.work_date = date('now')
+      WHERE ra.staff_id = ? AND ra.work_date = date('now','localtime')
       LIMIT 1
     `).get(req.user.workerId)
 

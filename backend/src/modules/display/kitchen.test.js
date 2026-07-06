@@ -20,8 +20,9 @@ beforeAll(() => {
   db.prepare(`INSERT INTO meal_menu(meal_date, meal_type, items) VALUES (?, 'lunch', 'Mercimek çorbası, Tavuk sote, Pilav')`).run(isoToday())
 })
 
-function isoToday() { return new Date().toISOString().slice(0, 10) }
-function isoTomorrow() { const d = new Date(); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10) }
+// YEREL gün — toISOString (UTC) gece 00-03 TR'de dünü verir, endpoint localtime kullanır
+function isoToday() { return new Date().toLocaleDateString('sv-SE') }
+function isoTomorrow() { const d = new Date(); d.setDate(d.getDate() + 1); return d.toLocaleDateString('sv-SE') }
 
 describe('GET /api/display/kitchen', () => {
   it('auth gerektirmez, öğün bazlı beklenen/servis/menu döndürür', async () => {
