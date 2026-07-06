@@ -261,3 +261,37 @@ Doğrulama: 804/804 backend, build temiz, 8/8 e2e
 - [x] İlk 2 versiyonlu migration: `idx_leave_requests_status`, `idx_attendance_open` (D1 açık kayıt taraması)
 - [x] Yeni şema değişiklikleri artık MIGRATIONS dizisine eklenir (legacy try/catch bloklarına değil)
 - [x] +6 test — 852/852 + 8/8 e2e (gerçek boot doğrulaması)
+
+---
+
+## 2026-07-06 Vardiya/Puantaj "Excel gibi" Sprint (spec: docs/superpowers/specs/2026-07-06-puantaj-excel-grid-design.md)
+
+### Faz 0 — Mevcut değişiklikler commit ✅
+- [x] shift_schedule.leave_type (migration 019) + puantaj/days endpoint + takvim boyama modu (5397fb4)
+
+### Faz 27 — Excel-grid deneyimi
+- [ ] Klavye navigasyonu (ok tuşları + aktif hücre çerçevesi)
+- [ ] Kod tuşlarıyla işaretleme (N/H/R/Ü/Y/P/Delete)
+- [ ] Shift+tık / Shift+ok dikdörtgen aralık seçimi + toplu uygulama
+- [ ] Ctrl+Z undo (son 50 işlem)
+- [ ] Sticky başlık satırı + personel kolonu
+- [ ] Gün bazlı alt toplam satırı
+- [ ] logic/puantajGrid.js birim testleri + smoke test
+
+### Faz 28 — Gerçek bordro girdileri
+- [ ] Tatil kolonları vurgusu (holidays tablosu) + tooltip
+- [ ] Tatil çalışması sayacı (satır toplamı)
+- [ ] Hücre içi FM saati girişi (çift tık → overtime_records)
+- [ ] absent_reason (migration 020) + neden girişi
+- [ ] Satır sonu ek toplamlar (tatil günü + FM)
+
+### Faz 29 — Resmi puantaj cetveli Excel export
+- [ ] ExcelJS aylık föy: kod matrisi + toplam kolonları + lejant + imza blokları
+- [ ] PuantajTab "📄 PUANTAJ FÖYÜ" butonu
+
+### Faz 30 — Rotasyon şablonları
+- [ ] rotation_templates (migration 021) + CRUD
+- [ ] SettingsTab şablon yönetimi
+- [ ] ScheduleTab "şablonu uygula" + önizleme
+- [ ] Kural uyarıları (art arda gün limiti, min 11 saat dinlenme)
+- [ ] preview/apply endpoint testleri
