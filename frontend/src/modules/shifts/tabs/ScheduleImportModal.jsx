@@ -7,7 +7,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../../shared/api/client.js'
 import { useToastStore } from '../../../shared/store/toastStore.js'
 import { confirmDialog } from '../../../shared/components/ConfirmDialog.jsx'
-import { shiftColor, ModalOverlay, StaffSearch } from '../shared.jsx'
+import { shiftColor, ModalOverlay, StaffSearch, formatShiftHours, leaveCellMeta, leaveTypeLabel } from '../shared.jsx'
 import { parseScheduleSheet } from '../logic/schedule.js'
 import { parseCampScheduleGrid } from '../logic/excelImport.js'
 
@@ -437,10 +437,18 @@ export default function ScheduleImportModal({ onClose, allStaff, shiftDefs, week
                         {[0,1,2,3,4,5,6].map(i => {
                           const e = days[i]
                           if (!e) return <td key={i} style={{ padding: '5px 10px', textAlign: 'center', color: 'var(--text3)' }}>—</td>
-                          if (e.status === 'on_leave') return <td key={i} style={{ padding: '5px 10px', textAlign: 'center', color: '#f59e0b', fontWeight: 600 }}>İ</td>
+                          if (e.status === 'off') return <td key={i} style={{ padding: '5px 10px', textAlign: 'center', color: 'var(--purple)', fontWeight: 600 }}>OFF</td>
+                          if (e.status === 'on_leave') {
+                            const leaveType = e.leave_type ?? e.leaveType
+                            const lc = leaveCellMeta(leaveType)
+                            return <td key={i} style={{ padding: '5px 10px', textAlign: 'center', color: lc.text, fontWeight: 600 }}>{leaveTypeLabel(leaveType)}</td>
+                          }
                           const def = shiftDefs.find(d => d.id === e.shift_def_id)
                           const sc = shiftColor(def?.color_class)
-                          return <td key={i} style={{ padding: '5px 10px', textAlign: 'center', color: sc.text, fontWeight: 600 }}>{def?.name || e.shift_def_id}</td>
+                          return <td key={i} style={{ padding: '5px 10px', textAlign: 'center', color: sc.text, fontWeight: 600 }}>
+                            <div>{def?.name || e.shift_def_id}</div>
+                            {def && <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', opacity: .75 }}>{formatShiftHours(def.start_hour, def.end_hour)}</div>}
+                          </td>
                         })}
                       </tr>
                     ))}

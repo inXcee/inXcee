@@ -7,7 +7,7 @@ const importCell = z.object({
   date: isoDate,
   startHour: z.number().int().min(0).max(24).nullable(),
   endHour: z.number().int().min(0).max(24).nullable(),
-  status: z.enum(['scheduled', 'worked', 'absent', 'on_leave', 'overtime']),
+  status: z.enum(['scheduled', 'worked', 'absent', 'on_leave', 'overtime', 'off']),
   leaveType: z.enum(['weekly_off', 'sick', 'annual', 'unpaid']).optional(),
   raw: z.string().optional(),
 })

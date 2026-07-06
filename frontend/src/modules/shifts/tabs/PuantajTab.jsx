@@ -1,11 +1,54 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import api from '../../../shared/api/client.js'
+import { useAuthStore } from '../../../shared/store/authStore.js'
 import { useDebounce } from '../../../shared/hooks/useDebounce.js'
 import { SkeletonTable, SkeletonGrid } from '../../../shared/components/Skeleton.jsx'
-import { BottomSheet } from '../shared.jsx'
+import { BottomSheet, formatShiftHours, leaveTypeLabel } from '../shared.jsx'
 
 const COMPANY_NAME = import.meta.env.VITE_COMPANY_NAME || 'YYS Kampüs'
+
+const PUANTAJ_ACTIONS = [
+  { id: 'worked', status: 'worked', code: 'N', label: 'Normal çalıştı', hint: 'Çalışan', bg: 'rgba(34,197,94,.18)', text: '#22c55e', border: 'rgba(34,197,94,.45)' },
+  { id: 'off', status: 'off', code: 'h', label: 'Haftalık izin', hint: 'Hafta tatili', bg: 'rgba(20,184,166,.18)', text: '#14b8a6', border: 'rgba(20,184,166,.45)' },
+  { id: 'sick', status: 'on_leave', leave_type: 'sick', code: 'r', label: 'Raporlu', hint: 'Rapor', bg: 'rgba(249,115,22,.18)', text: '#f97316', border: 'rgba(249,115,22,.45)' },
+  { id: 'unpaid', status: 'on_leave', leave_type: 'unpaid', code: 'üi', label: 'Ücretsiz izin', hint: 'Ücretsiz', bg: 'rgba(100,116,139,.22)', text: '#94a3b8', border: 'rgba(148,163,184,.5)' },
+  { id: 'annual', status: 'on_leave', leave_type: 'annual', code: 'yi', label: 'Yıllık izin', hint: 'Yıllık', bg: 'rgba(59,130,246,.18)', text: '#60a5fa', border: 'rgba(96,165,250,.45)' },
+  { id: 'absent', status: 'absent', code: 'Y', label: 'Gelmedi', hint: 'Yok', bg: 'rgba(239,68,68,.16)', text: '#ef4444', border: 'rgba(239,68,68,.45)' },
+  { id: 'scheduled', status: 'scheduled', code: 'P', label: 'Planlı', hint: 'Plan', bg: 'rgba(148,163,184,.14)', text: 'var(--text3)', border: 'rgba(148,163,184,.32)' },
+  { id: 'clear', status: 'clear', code: 'sil', label: 'Kaydı sil', hint: 'Temizle', bg: 'var(--surface2)', text: 'var(--text3)', border: 'var(--border)' },
+]
+
+const ACTION_BY_ID = Object.fromEntries(PUANTAJ_ACTIONS.map(a => [a.id, a]))
+const MONTH_SHORT = ['OCA', 'SUB', 'MAR', 'NIS', 'MAY', 'HAZ', 'TEM', 'AGU', 'EYL', 'EKI', 'KAS', 'ARA']
+
+function dayStatusMeta(entry, isSunday) {
+  const status = entry?.status || (isSunday ? 'sunday' : 'no_record')
+  if (status === 'on_leave') {
+    if (entry?.leave_type === 'sick') return ACTION_BY_ID.sick
+    if (entry?.leave_type === 'unpaid') return ACTION_BY_ID.unpaid
+    if (entry?.leave_type === 'annual') return ACTION_BY_ID.annual
+    return { id: 'leave', code: 'i', label: leaveTypeLabel(entry?.leave_type), hint: 'İzin', bg: 'rgba(167,139,250,.18)', text: 'var(--purple)', border: 'rgba(167,139,250,.45)' }
+  }
+  if (status === 'worked' || status === 'overtime') return ACTION_BY_ID.worked
+  if (status === 'off') return ACTION_BY_ID.off
+  if (status === 'absent') return ACTION_BY_ID.absent
+  if (status === 'scheduled') return ACTION_BY_ID.scheduled
+  if (status === 'sunday') return { id: 'sunday', code: '', label: 'Pazar', hint: 'Kayıt yok', bg: 'rgba(240,165,0,.05)', text: 'var(--accent)', border: 'rgba(240,165,0,.16)' }
+  return { id: 'no_record', code: '', label: 'Kayıt yok', hint: 'Boş', bg: 'transparent', text: 'transparent', border: 'var(--border)' }
+}
+
+function summarizeCalendarDays(days) {
+  return days.reduce((acc, d) => {
+    if (d.status === 'worked' || d.status === 'overtime') acc.worked++
+    else if (d.status === 'off') acc.off++
+    else if (d.status === 'absent') acc.absent++
+    else if (d.status === 'on_leave' && d.leave_type === 'sick') acc.sick++
+    else if (d.status === 'on_leave' && d.leave_type === 'unpaid') acc.unpaid++
+    else if (d.status === 'on_leave') acc.leave++
+    return acc
+  }, { worked: 0, off: 0, sick: 0, unpaid: 0, absent: 0, leave: 0 })
+}
 
 function PuantajSummaryView({ filtered, formatMoney }) {
   const byDept = useMemo(() => {
@@ -74,58 +117,275 @@ function PuantajSummaryView({ filtered, formatMoney }) {
   )
 }
 
-function PuantajCalendarView({ filtered, month, y, m, isLoading }) {
+function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, canEdit, selectedAction, setSelectedAction, onApplyStatus, updatingKeys, onPersonClick }) {
   const [dayData, setDayData] = useState({}) // staffId → days array
+
+  const [entryMode, setEntryMode] = useState('cell')
+  const paintingRef = useRef(false)
+  const paintedKeysRef = useRef(new Set())
 
   const daysInMonth = new Date(y, m, 0).getDate()
   const dayNumbers = Array.from({ length: daysInMonth }, (_, i) => i + 1)
 
-  const loadedIds = useRef(new Set())
+  const { data: monthDayData, isFetching: daysFetching } = useQuery({
+    queryKey: ['puantaj-days-month', month, deptFilter],
+    queryFn: () => {
+      const params = { month }
+      if (deptFilter) params.dept_id = deptFilter
+      return api.get('/shifts/puantaj/days', { params }).then(res => res.data.days || {})
+    },
+    enabled: !isLoading,
+  })
 
-  // When calendar view loads, lazy-fetch day breakdowns for all staff
   useEffect(() => {
-    filtered.forEach(r => {
-      if (loadedIds.current.has(r.id)) return
-      loadedIds.current.add(r.id)
-      api.get(`/shifts/puantaj/${r.id}/days`, { params: { month } })
-        .then(res => setDayData(prev => ({ ...prev, [r.id]: res.data })))
-        .catch(() => { loadedIds.current.delete(r.id) }) // allow retry on error
-    })
-  }, [filtered, month])
+    setDayData({})
+  }, [month, deptFilter])
 
-  const STATUS_COLORS = {
-    worked: { bg: 'var(--green)', text: '#fff' },
-    absent: { bg: 'transparent', text: 'var(--red)' },
-    on_leave: { bg: 'rgba(167,139,250,.2)', text: 'var(--purple)' },
-    off: { bg: 'rgba(26,188,156,.2)', text: 'var(--teal)' },
-    overtime: { bg: 'rgba(240,165,0,.2)', text: 'var(--accent)' },
-    scheduled: { bg: 'var(--surface3)', text: 'var(--text3)' },
-    sunday: { bg: 'transparent', text: 'var(--border)' },
-    no_record: { bg: 'transparent', text: 'transparent' },
-  }
+  useEffect(() => {
+    if (monthDayData) setDayData(monthDayData)
+  }, [monthDayData])
 
-  const STATUS_SYMBOL = { worked: '▓', absent: '✗', on_leave: 'İ', off: 'O', overtime: 'M', scheduled: '·', sunday: '', no_record: '' }
+  useEffect(() => {
+    const stopPainting = () => { paintingRef.current = false }
+    window.addEventListener('mouseup', stopPainting)
+    return () => window.removeEventListener('mouseup', stopPainting)
+  }, [])
 
   // Sunday indices (day of week for day 1)
   const sundayDays = new Set(dayNumbers.filter(d => new Date(y, m - 1, d).getDay() === 0))
+  const loadedDayRows = filtered.flatMap(row => dayData[row.id] || [])
+  const monthTotals = summarizeCalendarDays(loadedDayRows)
 
-  if (isLoading) return <SkeletonTable rows={6} cols={32} />
+  const emptyMonthDays = () => dayNumbers.map(d => {
+    const date = `${month}-${String(d).padStart(2, '0')}`
+    const dow = new Date(y, m - 1, d).getDay()
+    return { date, day_of_week: dow, status: dow === 0 ? 'sunday' : 'no_record' }
+  })
+
+  const replaceLocalDays = (changes) => {
+    setDayData(prev => {
+      const next = { ...prev }
+      changes.forEach(change => {
+        const staffId = change.staff.id
+        next[staffId] = (next[staffId] || emptyMonthDays())
+          .map(d => d.date === change.date ? change.nextEntry : d)
+      })
+      return next
+    })
+  }
+
+  const buildLocalEntry = (date, action, entry) => {
+    const dow = new Date(date).getDay()
+    if (action.status === 'clear') return { date, day_of_week: dow, status: dow === 0 ? 'sunday' : 'no_record' }
+    const next = { date, day_of_week: dow, status: action.status }
+    if (action.leave_type) next.leave_type = action.leave_type
+    if (['worked', 'scheduled', 'overtime'].includes(action.status)) {
+      if (entry?.shift_def_id) next.shift_def_id = entry.shift_def_id
+      if (entry?.shift_name) next.shift_name = entry.shift_name
+      if (entry?.start_hour != null) next.start_hour = entry.start_hour
+      if (entry?.end_hour != null) next.end_hour = entry.end_hour
+    }
+    return next
+  }
+
+  const buildChange = (row, day, entry) => {
+    const date = `${month}-${String(day).padStart(2, '0')}`
+    const nextEntry = buildLocalEntry(date, selectedAction, entry)
+    return { staff: row, date, entry, action: selectedAction, nextEntry }
+  }
+
+  const applyChanges = (changes) => {
+    if (!canEdit || !selectedAction || changes.length === 0) return
+    onApplyStatus({
+      changes,
+      action: selectedAction,
+      onLocalUpdate: () => replaceLocalDays(changes),
+    })
+  }
+
+  const entryFor = (row, day) => {
+    const dayStr = String(day).padStart(2, '0')
+    return (dayData[row.id] || []).find(d => d.date.endsWith(`-${dayStr}`))
+  }
+
+  const applyCell = (row, day, entry) => {
+    applyChanges([buildChange(row, day, entry)])
+  }
+
+  const applyRow = (row) => {
+    const days = selectedAction.status === 'clear' ? dayNumbers : dayNumbers.filter(d => !sundayDays.has(d))
+    applyChanges(days.map(day => buildChange(row, day, entryFor(row, day))))
+  }
+
+  const applyColumn = (day) => {
+    applyChanges(filtered.map(row => buildChange(row, day, entryFor(row, day))))
+  }
+
+  const paintCell = (row, day, entry) => {
+    const date = `${month}-${String(day).padStart(2, '0')}`
+    const key = `${row.id}-${date}`
+    if (paintedKeysRef.current.has(key)) return
+    paintedKeysRef.current.add(key)
+    applyCell(row, day, entry)
+  }
+
+  const beginPaint = (row, day, entry, event) => {
+    if (entryMode !== 'paint') return
+    event.preventDefault()
+    paintingRef.current = true
+    paintedKeysRef.current = new Set()
+    paintCell(row, day, entry)
+  }
+
+  const enterPaint = (row, day, entry) => {
+    if (entryMode !== 'paint' || !paintingRef.current) return
+    paintCell(row, day, entry)
+  }
+
+  if (isLoading || (daysFetching && Object.keys(dayData).length === 0)) return <SkeletonTable rows={6} cols={32} />
 
   return (
-    <div style={{ overflowX: 'auto' }}>
-      <table style={{ borderCollapse: 'collapse', fontSize: '10px', width: 'max-content' }}>
+    <div>
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))',
+        gap: '8px',
+        marginBottom: '10px',
+      }}>
+        {[
+          ['N', 'Normal', monthTotals.worked, ACTION_BY_ID.worked],
+          ['h', 'Haftalık', monthTotals.off, ACTION_BY_ID.off],
+          ['r', 'Raporlu', monthTotals.sick, ACTION_BY_ID.sick],
+          ['üi', 'Ücretsiz', monthTotals.unpaid, ACTION_BY_ID.unpaid],
+          ['Y', 'Gelmedi', monthTotals.absent, ACTION_BY_ID.absent],
+        ].map(([code, label, value, meta]) => (
+          <div key={code} style={{
+            border: `1px solid ${meta.border}`,
+            background: meta.bg,
+            borderRadius: '8px',
+            padding: '8px 10px',
+            minHeight: '54px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '8px',
+          }}>
+            <div>
+              <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '0.5px' }}>{label}</div>
+              <div style={{ fontFamily: 'var(--display)', fontSize: '18px', color: meta.text, lineHeight: 1 }}>{value}</div>
+            </div>
+            <span style={{ fontFamily: 'var(--mono)', fontSize: code.length > 1 ? '12px' : '16px', fontWeight: 800, color: meta.text }}>{code}</span>
+          </div>
+        ))}
+      </div>
+
+      <div style={{
+        display: 'flex',
+        gap: '6px',
+        flexWrap: 'wrap',
+        alignItems: 'center',
+        marginBottom: '10px',
+        padding: '8px',
+        border: '1px solid var(--border)',
+        borderRadius: '8px',
+        background: 'var(--surface)',
+      }}>
+        <span style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '1px', marginRight: '2px' }}>KOD</span>
+        {PUANTAJ_ACTIONS.map(action => {
+          const active = selectedAction.id === action.id
+          return (
+            <button
+              key={action.id}
+              type="button"
+              onClick={() => setSelectedAction(action)}
+              title={action.label}
+              disabled={!canEdit}
+              style={{
+                minWidth: action.code.length > 1 ? '46px' : '36px',
+                height: '32px',
+                borderRadius: '7px',
+                border: `2px solid ${active ? action.text : action.border}`,
+                background: active ? action.bg : 'var(--surface2)',
+                color: active ? action.text : 'var(--text2)',
+                cursor: canEdit ? 'pointer' : 'not-allowed',
+                fontFamily: 'var(--mono)',
+                fontSize: action.code.length > 1 ? '10px' : '12px',
+                fontWeight: 800,
+              }}
+            >
+              {action.code}
+            </button>
+          )
+        })}
+        <div style={{ display: 'flex', gap: '2px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '7px', padding: '2px', marginLeft: '8px' }}>
+          {[
+            ['cell', 'Hucre'],
+            ['paint', 'Boya'],
+          ].map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              disabled={!canEdit}
+              onClick={() => setEntryMode(id)}
+              title={id === 'paint' ? 'Basili tutup hucrelerin uzerinden gecerek giris yap' : 'Tek hucreye tiklayarak giris yap'}
+              style={{
+                border: 'none',
+                borderRadius: '5px',
+                background: entryMode === id ? 'var(--accent)' : 'transparent',
+                color: entryMode === id ? '#000' : 'var(--text3)',
+                cursor: canEdit ? 'pointer' : 'not-allowed',
+                fontFamily: 'var(--mono)',
+                fontSize: '9px',
+                padding: '5px 8px',
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <span style={{ marginLeft: 'auto', fontFamily: 'var(--mono)', fontSize: '9px', color: canEdit ? 'var(--text3)' : 'var(--red)' }}>
+          {canEdit ? selectedAction.label : 'Sadece yetkili kullanıcı giriş yapabilir'}
+        </span>
+      </div>
+
+      <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: '10px', background: 'var(--surface)' }}>
+      <table style={{ borderCollapse: 'separate', borderSpacing: 0, fontSize: '10px', width: 'max-content', minWidth: '100%' }}>
         <thead>
           <tr>
-            <th style={{ position: 'sticky', left: 0, background: 'var(--surface)', zIndex: 2, minWidth: '140px', padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid var(--border)' }}>
+            <th style={{ position: 'sticky', left: 0, background: 'var(--surface)', zIndex: 4, minWidth: '230px', padding: '8px 10px', textAlign: 'left', borderBottom: '1px solid var(--border)', borderRight: '1px solid var(--border)' }}>
               PERSONEL
             </th>
             {dayNumbers.map(d => (
               <th key={d} style={{
-                width: '24px', textAlign: 'center', padding: '4px 0',
+                width: '42px', textAlign: 'center', padding: '5px 0',
                 borderBottom: '1px solid var(--border)',
+                borderRight: '1px solid var(--border)',
+                background: sundayDays.has(d) ? 'rgba(240,165,0,.06)' : 'var(--surface)',
                 color: sundayDays.has(d) ? 'var(--accent)' : 'var(--text3)',
                 fontFamily: 'var(--mono)', fontSize: '9px',
-              }}>{d}</th>
+              }}>
+                <button
+                  type="button"
+                  disabled={!canEdit}
+                  onClick={() => applyColumn(d)}
+                  title="Bu gunu tum listeye secili kodla doldur"
+                  style={{
+                    width: '30px',
+                    height: '22px',
+                    border: '1px solid transparent',
+                    borderRadius: '6px',
+                    background: canEdit ? 'var(--surface2)' : 'transparent',
+                    color: sundayDays.has(d) ? 'var(--accent)' : 'var(--text2)',
+                    cursor: canEdit ? 'pointer' : 'default',
+                    fontFamily: 'var(--mono)',
+                    fontSize: '11px',
+                    fontWeight: 800,
+                  }}
+                >
+                  {d}
+                </button>
+                <div style={{ fontSize: '7px', opacity: .75 }}>{new Date(y, m - 1, d).toLocaleDateString('tr-TR', { weekday: 'short' }).slice(0, 3)}</div>
+              </th>
             ))}
           </tr>
         </thead>
@@ -134,27 +394,134 @@ function PuantajCalendarView({ filtered, month, y, m, isLoading }) {
             const days = dayData[r.id] || []
             const dayMap = {}
             days.forEach(d => { dayMap[d.date.split('-')[2]] = d })
+            const rowStats = summarizeCalendarDays(days)
 
             return (
               <tr key={r.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                <td style={{ position: 'sticky', left: 0, background: 'var(--surface)', padding: '4px 8px', fontWeight: '500', zIndex: 1 }}>
-                  <div>{r.full_name}</div>
-                  <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text3)' }}>{r.dept_name}</div>
+                <td style={{ position: 'sticky', left: 0, background: 'var(--surface)', padding: '7px 10px', fontWeight: '500', zIndex: 3, borderRight: '1px solid var(--border)', borderBottom: '1px solid var(--border)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={{
+                      width: '30px',
+                      height: '30px',
+                      borderRadius: '8px',
+                      background: 'var(--surface2)',
+                      border: '1px solid var(--border)',
+                      color: 'var(--text2)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontFamily: 'var(--display)',
+                      fontSize: '12px',
+                      flexShrink: 0,
+                    }}>{r.full_name?.charAt(0)?.toUpperCase() || '?'}</div>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <button
+                        type="button"
+                        onClick={() => onPersonClick?.(r)}
+                        title="Personel detayini ac"
+                        style={{
+                          display: 'block',
+                          width: '100%',
+                          maxWidth: '155px',
+                          border: 'none',
+                          background: 'transparent',
+                          color: 'var(--text)',
+                          cursor: 'pointer',
+                          fontSize: '12px',
+                          fontWeight: 700,
+                          textAlign: 'left',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          padding: 0,
+                        }}
+                      >
+                        {r.full_name}
+                      </button>
+                      <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '155px' }}>{r.dept_name || 'Departmansız'}</div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={!canEdit}
+                    onClick={() => applyRow(r)}
+                    title="Bu personelin ayini secili kodla doldur"
+                    style={{
+                      width: '100%',
+                      marginTop: '6px',
+                      borderRadius: '6px',
+                      border: '1px solid var(--border)',
+                      background: 'var(--surface2)',
+                      color: canEdit ? 'var(--accent)' : 'var(--text3)',
+                      cursor: canEdit ? 'pointer' : 'not-allowed',
+                      fontFamily: 'var(--mono)',
+                      fontSize: '8px',
+                      fontWeight: 800,
+                      padding: '3px 6px',
+                    }}
+                  >
+                    Ayi secili kodla doldur
+                  </button>
+                  <div style={{ display: 'flex', gap: '3px', marginTop: '5px', flexWrap: 'wrap' }}>
+                    {[
+                      ['N', rowStats.worked, ACTION_BY_ID.worked],
+                      ['h', rowStats.off, ACTION_BY_ID.off],
+                      ['r', rowStats.sick, ACTION_BY_ID.sick],
+                      ['üi', rowStats.unpaid, ACTION_BY_ID.unpaid],
+                      ['Y', rowStats.absent, ACTION_BY_ID.absent],
+                    ].filter(([, value]) => value > 0).map(([code, value, meta]) => (
+                      <span key={code} style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: meta.text, background: meta.bg, border: `1px solid ${meta.border}`, borderRadius: '4px', padding: '1px 4px' }}>{code}:{value}</span>
+                    ))}
+                  </div>
                 </td>
                 {dayNumbers.map(d => {
                   const dayStr = String(d).padStart(2, '0')
                   const entry = dayMap[dayStr]
+                  const date = `${month}-${dayStr}`
                   const status = entry?.status || (sundayDays.has(d) ? 'sunday' : 'no_record')
-                  const c = STATUS_COLORS[status] || STATUS_COLORS.no_record
-                  const sym = STATUS_SYMBOL[status] || ''
+                  const meta = dayStatusMeta(entry, sundayDays.has(d))
+                  const busy = updatingKeys?.has(`${r.id}-${date}`)
+                  const hours = entry?.start_hour != null ? formatShiftHours(entry.start_hour, entry.end_hour) : ''
+                  const title = `${r.full_name} · ${date} · ${meta.label}${hours ? ` · ${hours}` : ''}`
                   return (
-                    <td key={d} title={entry?.shift_name || entry?.leave_type || status}
+                    <td key={d}
                       style={{
-                        width: '24px', textAlign: 'center', padding: '2px 0',
-                        background: c.bg, color: c.text,
-                        fontSize: status === 'worked' ? '11px' : '12px',
+                        width: '42px', textAlign: 'center', padding: '3px',
+                        background: sundayDays.has(d) ? 'rgba(240,165,0,.035)' : 'transparent',
+                        borderRight: '1px solid var(--border)',
+                        borderBottom: '1px solid var(--border)',
                       }}>
-                      {sym}
+                      <button
+                        type="button"
+                        title={title}
+                        disabled={!canEdit || busy}
+                        onMouseDown={e => beginPaint(r, d, entry, e)}
+                        onMouseEnter={e => {
+                          enterPaint(r, d, entry)
+                          if (canEdit) e.currentTarget.style.filter = 'brightness(1.12)'
+                        }}
+                        onClick={() => { if (entryMode !== 'paint') applyCell(r, d, entry) }}
+                        style={{
+                          width: '34px',
+                          height: '30px',
+                          borderRadius: '7px',
+                          border: status === 'no_record' || status === 'sunday' ? `1px dashed ${meta.border}` : `1px solid ${meta.border}`,
+                          background: meta.bg,
+                          color: meta.text,
+                          cursor: canEdit ? 'pointer' : 'default',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontFamily: 'var(--mono)',
+                          fontSize: meta.code?.length > 1 ? '9px' : '12px',
+                          fontWeight: 800,
+                          opacity: busy ? .55 : 1,
+                          transition: 'transform .08s, filter .12s',
+                        }}
+                        onMouseLeave={e => { e.currentTarget.style.filter = 'none' }}
+                      >
+                        {busy ? '...' : meta.code}
+                      </button>
                     </td>
                   )
                 })}
@@ -163,6 +530,7 @@ function PuantajCalendarView({ filtered, month, y, m, isLoading }) {
           })}
         </tbody>
       </table>
+      </div>
     </div>
   )
 }
@@ -568,6 +936,9 @@ function BordroDetailSheet({ row, month, monthLabel, formatMoney, onClose }) {
 }
 
 export default function PuantajTab({ departments }) {
+  const qc = useQueryClient()
+  const user = useAuthStore(s => s.user)
+  const canEdit = ['campus_manager', 'shift_supervisor'].includes(user?.role)
   const today = new Date()
   const [month, setMonth] = useState(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`)
   const [deptFilter, setDeptFilter] = useState('')
@@ -577,6 +948,7 @@ export default function PuantajTab({ departments }) {
   const [showEmployer, setShowEmployer] = useState(false)
   const [selectedRow, setSelectedRow] = useState(null) // row object for bordro detail
   const [sortBy, setSortBy] = useState('name')
+  const [selectedAction, setSelectedAction] = useState(ACTION_BY_ID.worked)
 
   const { data: rows = [], isLoading } = useQuery({
     queryKey: ['puantaj', month, deptFilter],
@@ -586,6 +958,35 @@ export default function PuantajTab({ departments }) {
       return api.get('/shifts/puantaj', { params }).then(r => r.data)
     },
   })
+
+  const updatePuantajDay = useMutation({
+    mutationFn: ({ changes, action }) => {
+      if (action.status === 'clear') {
+        return Promise.all(changes.map(change => api.delete(`/shifts/schedule/${change.staff.id}/${change.date}`)))
+      }
+      return api.post('/shifts/schedule', {
+        entries: changes.map(change => ({
+          staff_id: change.staff.id,
+          dept_id: change.staff.department_id || null,
+          shift_def_id: ['worked', 'scheduled', 'overtime'].includes(action.status) ? (change.entry?.shift_def_id || null) : null,
+          work_date: change.date,
+          status: action.status,
+          leave_type: action.leave_type || null,
+        }))
+      })
+    },
+    onSuccess: (_, variables) => {
+      variables.onLocalUpdate?.()
+      qc.invalidateQueries({ queryKey: ['puantaj'] })
+      qc.invalidateQueries({ queryKey: ['puantaj-days-month'] })
+    },
+  })
+
+  const updatingKeys = useMemo(() => (
+    updatePuantajDay.isPending
+      ? new Set((updatePuantajDay.variables?.changes || []).map(change => `${change.staff.id}-${change.date}`))
+      : new Set()
+  ), [updatePuantajDay.isPending, updatePuantajDay.variables])
 
   const [y, m] = month.split('-').map(Number)
 
@@ -620,6 +1021,9 @@ export default function PuantajTab({ departments }) {
   [filtered])
 
   const monthLabel = new Date(y, m - 1, 1).toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' }).toUpperCase()
+  const setMonthInYear = (targetMonth, targetYear = y) => {
+    setMonth(`${targetYear}-${String(targetMonth).padStart(2, '0')}`)
+  }
 
   const prevMonth = () => {
     const d = new Date(y, m - 2, 1)
@@ -689,6 +1093,47 @@ export default function PuantajTab({ departments }) {
         </div>
       </div>
 
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '6px',
+        overflowX: 'auto',
+        marginBottom: '12px',
+        padding: '6px',
+        border: '1px solid var(--border)',
+        borderRadius: '8px',
+        background: 'var(--surface)',
+      }}>
+        <button className="btn btn-ghost btn-sm" onClick={() => setMonthInYear(m, y - 1)} style={{ minWidth: '34px' }}>{'<'}</button>
+        <span style={{ minWidth: '54px', textAlign: 'center', fontFamily: 'var(--display)', fontSize: '13px', color: 'var(--text)' }}>{y}</span>
+        <button className="btn btn-ghost btn-sm" onClick={() => setMonthInYear(m, y + 1)} style={{ minWidth: '34px' }}>{'>'}</button>
+        {MONTH_SHORT.map((label, index) => {
+          const targetMonth = index + 1
+          const active = targetMonth === m
+          return (
+            <button
+              key={label}
+              type="button"
+              onClick={() => setMonthInYear(targetMonth)}
+              style={{
+                minWidth: '46px',
+                height: '30px',
+                borderRadius: '7px',
+                border: active ? '1px solid var(--accent)' : '1px solid var(--border)',
+                background: active ? 'var(--accent)' : 'var(--surface2)',
+                color: active ? '#000' : 'var(--text3)',
+                cursor: 'pointer',
+                fontFamily: 'var(--mono)',
+                fontSize: '9px',
+                fontWeight: 800,
+              }}
+            >
+              {label}
+            </button>
+          )
+        })}
+      </div>
+
       {/* Mode content */}
       {viewMode === 'list' && (
         <PuantajListView
@@ -699,7 +1144,20 @@ export default function PuantajTab({ departments }) {
         />
       )}
       {viewMode === 'calendar' && (
-        <PuantajCalendarView filtered={filtered} month={month} y={y} m={m} isLoading={isLoading} />
+        <PuantajCalendarView
+          filtered={filtered}
+          month={month}
+          deptFilter={deptFilter}
+          y={y}
+          m={m}
+          isLoading={isLoading}
+          canEdit={canEdit}
+          selectedAction={selectedAction}
+          setSelectedAction={setSelectedAction}
+          onApplyStatus={updatePuantajDay.mutate}
+          updatingKeys={updatingKeys}
+          onPersonClick={setSelectedRow}
+        />
       )}
       {viewMode === 'summary' && (
         <PuantajSummaryView filtered={filtered} formatMoney={formatMoney} />

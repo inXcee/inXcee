@@ -4,7 +4,7 @@ import api from '../../shared/api/client.js'
 import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
 import {
   toastErr, BLOOD_TYPES, LEAVE_TYPES, STATUS_MAP,
-  calcAge, shiftColor, deptColor, BottomSheet,
+  calcAge, shiftColor, deptColor, BottomSheet, formatShiftHours, leaveTypeLabel,
 } from './shared.jsx'
 
 // ─── Staff Detail Panel (Bottom Sheet) ────────────────────────────────────────
@@ -316,7 +316,7 @@ export default function StaffDetailPanel({ staffId, onClose }) {
                       <label style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: '1px', display: 'block', marginBottom: 4 }}>VARDİYA</label>
                       <select className="form-input" value={formData.shift_def_id || ''} onChange={e => setFormData(p => ({ ...p, shift_def_id: e.target.value }))} style={{ width: '100%', borderRadius: 8 }}>
                         <option value="">Vardiyasız (İzin/Yok)</option>
-                        {shiftDefs.map(d => <option key={d.id} value={d.id}>{d.name} ({d.start_hour}:00–{d.end_hour === 24 ? '00' : d.end_hour}:00)</option>)}
+                        {shiftDefs.map(d => <option key={d.id} value={d.id}>{d.name} ({formatShiftHours(d.start_hour, d.end_hour)})</option>)}
                       </select>
                     </div>
                     <div>
@@ -405,17 +405,23 @@ export default function StaffDetailPanel({ staffId, onClose }) {
                 ...shiftHistory.map(s => ({
                   date: s.work_date,
                   type: 'shift',
-                  color: 'var(--blue)',
-                  icon: '📅',
-                  label: s.shift_name ? `${s.shift_name} · ${s.start_hour}:00–${s.end_hour === 24 ? '00' : s.end_hour}:00` : 'Vardiya',
-                  sub: s.status === 'worked' ? 'Çalıştı' : s.status === 'absent' ? 'Gelmedi' : s.status === 'on_leave' ? 'İzinli' : s.status === 'off' ? 'Haftalık izin' : 'Planlandı',
+                  color: s.status === 'off' ? 'var(--purple)' : s.status === 'on_leave' ? 'var(--teal)' : 'var(--blue)',
+                  icon: s.status === 'off' ? '🌙' : s.status === 'on_leave' ? '🏖️' : '📅',
+                  label: s.shift_name
+                    ? `${s.shift_name} · ${formatShiftHours(s.start_hour, s.end_hour)}`
+                    : s.status === 'off' ? 'Haftalık izin (OFF)'
+                    : s.status === 'on_leave' ? `İzin · ${leaveTypeLabel(s.leave_type)}`
+                    : 'Vardiya',
+                  sub: s.status === 'worked' ? 'Çalıştı' : s.status === 'absent' ? 'Gelmedi'
+                    : s.status === 'on_leave' ? `İzinli · ${leaveTypeLabel(s.leave_type)}`
+                    : s.status === 'off' ? 'Haftalık izin' : 'Planlandı',
                 })),
                 ...leaveHistory.map(l => ({
                   date: l.start_date,
                   type: 'leave',
                   color: 'var(--purple)',
                   icon: '🏖️',
-                  label: `${LEAVE_TYPES[l.leave_type]?.label || l.leave_type} · ${l.total_days} gün`,
+                  label: `${leaveTypeLabel(l.leave_type)} · ${l.total_days} gün`,
                   sub: STATUS_MAP[l.status]?.label || l.status,
                 })),
                 ...overtimeRecords.map(o => ({
@@ -513,7 +519,17 @@ export default function StaffDetailPanel({ staffId, onClose }) {
                               <span style={{ padding: '2px 8px', borderRadius: 8, background: sc.bg, color: sc.text, fontSize: 9, fontWeight: 600 }}>{s.shift_name}</span>
                             )}
                             {s.start_hour != null && (
-                              <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>{s.start_hour}:00–{s.end_hour === 24 ? '00' : s.end_hour}:00</span>
+                              <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>{formatShiftHours(s.start_hour, s.end_hour)}</span>
+                            )}
+                            {s.status === 'on_leave' && (
+                              <span style={{ padding: '2px 8px', borderRadius: 8, background: 'rgba(26,188,156,.15)', color: 'var(--teal)', fontSize: 9, fontWeight: 600 }}>
+                                🏖 {leaveTypeLabel(s.leave_type)}
+                              </span>
+                            )}
+                            {s.status === 'off' && (
+                              <span style={{ padding: '2px 8px', borderRadius: 8, background: 'rgba(167,139,250,.15)', color: 'var(--purple)', fontSize: 9, fontWeight: 600 }}>
+                                🌙 Haftalık izin
+                              </span>
                             )}
                             <span style={{ marginLeft: 'auto', fontSize: 9, fontWeight: 600, color: STATUS_C[s.status] || 'var(--text3)' }}>{STATUS_L[s.status] || s.status}</span>
                           </div>
@@ -557,7 +573,7 @@ export default function StaffDetailPanel({ staffId, onClose }) {
                       <div style={{ width: 4, background: bandColor, flexShrink: 0 }} />
                       <div style={{ padding: '10px 14px', flex: 1 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                          <span className={`badge ${LEAVE_TYPES[l.leave_type]?.badge || 'badge-gray'}`} style={{ fontSize: 8 }}>{LEAVE_TYPES[l.leave_type]?.label || l.leave_type}</span>
+                          <span className={`badge ${LEAVE_TYPES[l.leave_type]?.badge || 'badge-gray'}`} style={{ fontSize: 8 }}>{leaveTypeLabel(l.leave_type)}</span>
                           <span className={`badge ${STATUS_MAP[l.status]?.badge || 'badge-gray'}`} style={{ fontSize: 8 }}>{STATUS_MAP[l.status]?.label || l.status}</span>
                         </div>
                         <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text2)' }}>

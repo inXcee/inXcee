@@ -12,7 +12,7 @@
 
 // ── Tek hücreyi sınıflandır ──
 // Dönüş: { kind:'blank' } | { kind:'shift', startHour, endHour, status:'scheduled' }
-//        | { kind:'leave', status:'on_leave', leaveType } | { kind:'unknown' }
+//        | { kind:'leave', status:'on_leave'|'off', leaveType } | { kind:'unknown' }
 // leaveType: 'weekly_off' (OFF) | 'sick' (RAPORLU) | 'annual' (YILLIK İZİN) | 'unpaid' (Ü.İ)
 export function classifyCell(raw) {
   if (raw == null) return { kind: 'blank' }
@@ -22,8 +22,8 @@ export function classifyCell(raw) {
   const upper = s.toLocaleUpperCase('tr')
   const noDots = upper.replace(/[.\s]/g, '')
 
-  // İzin / tatil / rapor türleri → on_leave; tipini de ayır.
-  if (upper === 'OFF') return { kind: 'leave', status: 'on_leave', leaveType: 'weekly_off' }
+  // İzin / tatil / rapor türleri. OFF haftalık izin statüsüdür; leave_request üretmez.
+  if (upper === 'OFF') return { kind: 'leave', status: 'off', leaveType: 'weekly_off' }
   if (upper.includes('RAPOR')) return { kind: 'leave', status: 'on_leave', leaveType: 'sick' }
   if (upper.includes('ÜCRETSİZ') || upper.includes('UCRETSIZ') || noDots === 'Üİ' || noDots === 'UI')
     return { kind: 'leave', status: 'on_leave', leaveType: 'unpaid' }

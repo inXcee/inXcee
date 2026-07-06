@@ -303,6 +303,8 @@ CREATE TABLE IF NOT EXISTS shift_schedule (
   work_date TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'scheduled'
     CHECK(status IN ('scheduled','worked','absent','on_leave','overtime','off')),
+  leave_type TEXT
+    CHECK(leave_type IS NULL OR leave_type IN ('annual','sick','emergency','maternity','paternity','marriage','bereavement','unpaid')),
   created_by INTEGER REFERENCES users(id),
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   UNIQUE(staff_id, work_date)
@@ -312,7 +314,7 @@ CREATE TABLE IF NOT EXISTS leave_requests (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   staff_id INTEGER NOT NULL REFERENCES staff(id),
   leave_type TEXT NOT NULL
-    CHECK(leave_type IN ('annual','sick','emergency','maternity','paternity','marriage','bereavement')),
+    CHECK(leave_type IN ('annual','sick','emergency','maternity','paternity','marriage','bereavement','unpaid')),
   start_date TEXT NOT NULL,
   end_date TEXT NOT NULL,
   total_days INTEGER NOT NULL,

@@ -31,8 +31,8 @@ describe('classifyCell — hücre sınıflandırma', () => {
     expect(classifyCell('KAMP 06:00-15:00')).toMatchObject({ startHour: 6, endHour: 15 })
   })
 
-  it('OFF / RAPORLU / İZİN türleri → leave (on_leave) + doğru tip', () => {
-    expect(classifyCell('OFF')).toMatchObject({ kind: 'leave', status: 'on_leave', leaveType: 'weekly_off' })
+  it('OFF / RAPORLU / İZİN türleri → doğru izin statüsü + tip', () => {
+    expect(classifyCell('OFF')).toMatchObject({ kind: 'leave', status: 'off', leaveType: 'weekly_off' })
     expect(classifyCell('RAPORLU')).toMatchObject({ leaveType: 'sick' })
     expect(classifyCell('YILLIK İZİN')).toMatchObject({ leaveType: 'annual' })
     expect(classifyCell('Ü.İ')).toMatchObject({ leaveType: 'unpaid' })
@@ -88,7 +88,7 @@ describe('parseCampScheduleGrid — tam çizelge', () => {
     const mon = melike.cells.find(c => c.date === '2026-05-18')
     expect(mon).toMatchObject({ startHour: 8, endHour: 17, status: 'scheduled' })
     const sun = melike.cells.find(c => c.date === '2026-05-24')
-    expect(sun.status).toBe('on_leave')
+    expect(sun.status).toBe('off')
     const esin = r.rows.find(x => x.name === 'ESİN KIYAK')
     expect(esin.cells.find(c => c.date === '2026-05-20').status).toBe('on_leave') // RAPORLU
   })

@@ -61,13 +61,14 @@ export function computeWeekStats(staffGrid, weekDays) {
 }
 
 // Excel hücre değerini { shiftDefId, status } yapısına çevir (yoksa null).
-// Kodlama: i/İ/izin/tatil/off → izin; 1/G* → 1.vardiya; 2/A* → 2.vardiya;
+// Kodlama: i/İ/izin/tatil → izin; off → haftalık izin; 1/G* → 1.vardiya; 2/A* → 2.vardiya;
 // 3/Ge* → 3.vardiya; sayısal 1..N → N.vardiya. shiftDefs sırası belirleyici.
 export function parseShiftCell(val, shiftDefs) {
   if (!val && val !== 0) return null
   const v = String(val).toLowerCase().trim()
   if (!v || v === '-' || v === '') return null
-  if (v === 'i' || v === 'İ' || v === 'izin' || v === 'tatil' || v === 'off') return { shiftDefId: null, status: 'on_leave' }
+  if (v === 'i' || v === 'İ' || v === 'izin' || v === 'tatil') return { shiftDefId: null, status: 'on_leave' }
+  if (v === 'off') return { shiftDefId: null, status: 'off' }
   if (v === '1' || v.startsWith('g') && !v.startsWith('ge')) return { shiftDefId: shiftDefs[0]?.id || null, status: 'scheduled' }
   if (v === '2' || v.startsWith('a')) return { shiftDefId: shiftDefs[1]?.id || null, status: 'scheduled' }
   if (v === '3' || v.startsWith('ge')) return { shiftDefId: shiftDefs[2]?.id || null, status: 'scheduled' }

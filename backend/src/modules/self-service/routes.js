@@ -113,7 +113,13 @@ selfServiceRouter.get('/my-shifts', requireKioskOrStaff, (req, res) => {
 
     const shifts = db.prepare(`
       SELECT ss.work_date, ss.status,
-        sd.name as shift_name, sd.start_hour, sd.end_hour, sd.color_class
+        sd.name as shift_name, sd.start_hour, sd.end_hour, sd.color_class,
+        CASE WHEN ss.status = 'on_leave' THEN COALESCE(ss.leave_type, (
+          SELECT lr.leave_type FROM leave_requests lr
+          WHERE lr.staff_id = ss.staff_id AND lr.status = 'approved'
+            AND lr.start_date <= ss.work_date AND lr.end_date >= ss.work_date
+          ORDER BY lr.id DESC LIMIT 1
+        )) END as leave_type
       FROM shift_schedule ss
       LEFT JOIN shift_definitions sd ON sd.id = ss.shift_def_id
       WHERE ss.staff_id = ? AND ss.work_date BETWEEN date('now','-7 days') AND date('now','+14 days')

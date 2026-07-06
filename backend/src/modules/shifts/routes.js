@@ -14,7 +14,7 @@ import {
   copyWeekService, rotationService, searchStaffService, deleteScheduleService,
   staffDetailService,
   staffListService, staffGetService, staffCreateService, staffUpdateService, staffDeleteService,
-  puantajCsvService, staffDayBreakdownService, payslipService, bankTransferCsvService
+  puantajCsvService, puantajDaysService, staffDayBreakdownService, payslipService, bankTransferCsvService
 } from './service.js'
 import PDFDocument from 'pdfkit'
 import {
@@ -517,6 +517,16 @@ shiftsRouter.get('/puantaj/export/csv', ...allStaff, (req, res) => {
 })
 
 // ── Puantaj day breakdown (after CSV route to avoid staffId='export') ──
+shiftsRouter.get('/puantaj/days', ...allStaff, (req, res) => {
+  try {
+    const { month, dept_id } = req.query
+    if (!month) return res.status(400).json({ error: 'month parametresi YYYY-MM formatÄ±nda gereklidir' })
+    res.json(puantajDaysService(month, dept_id || null))
+  } catch (e) {
+    res.status(e.statusCode || 400).json({ error: e.message })
+  }
+})
+
 shiftsRouter.get('/puantaj/:staffId/days', ...allStaff, (req, res) => {
   try {
     res.json(staffDayBreakdownService(req.params.staffId, req.query.month))

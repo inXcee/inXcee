@@ -13,13 +13,65 @@ export const toastOk = (msg) => useToastStore.getState().addToast(msg, 'success'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 export const LEAVE_TYPES = {
-  annual:      { label: 'Yillik',     badge: 'badge-blue' },
-  sick:        { label: 'Hastalik',   badge: 'badge-red' },
-  emergency:   { label: 'Acil',       badge: 'badge-amber' },
-  maternity:   { label: 'Dogum',      badge: 'badge-red' },
-  paternity:   { label: 'Babalik',    badge: 'badge-blue' },
+  annual:      { label: 'Yıllık izin', badge: 'badge-blue' },
+  sick:        { label: 'Raporlu',      badge: 'badge-red' },
+  emergency:   { label: 'Acil izin',    badge: 'badge-amber' },
+  maternity:   { label: 'Doğum izni',   badge: 'badge-red' },
+  paternity:   { label: 'Babalık izni', badge: 'badge-blue' },
   marriage:    { label: 'Evlilik',    badge: 'badge-amber' },
-  bereavement: { label: 'Olum',       badge: 'badge-gray' },
+  bereavement: { label: 'Vefat izni',  badge: 'badge-gray' },
+  unpaid:      { label: 'Ücretsiz izin', badge: 'badge-gray' },
+}
+
+// İzin türünün çizelge hücresi/Excel görünümü — tür belli değilse generic İZİN.
+// hex: Excel dolgu rengi (ARGB'siz 6 hane).
+export const LEAVE_CELL = {
+  annual:      { short: 'YILLIK',  emoji: '🏖', bg: 'rgba(26,188,156,.15)',  text: 'var(--teal)',   hex: '14B8A6' },
+  sick:        { short: 'RAPORLU', emoji: '🤒', bg: 'rgba(249,115,22,.15)',  text: '#f97316',       hex: 'F97316' },
+  emergency:   { short: 'ACİL',    emoji: '🚨', bg: 'rgba(240,165,0,.15)',   text: 'var(--accent)', hex: 'F59E0B' },
+  maternity:   { short: 'DOĞUM',   emoji: '🤱', bg: 'rgba(236,72,153,.15)',  text: '#ec4899',       hex: 'EC4899' },
+  paternity:   { short: 'BABALIK', emoji: '👶', bg: 'rgba(59,130,246,.15)',  text: 'var(--blue)',   hex: '3B82F6' },
+  marriage:    { short: 'EVLİLİK', emoji: '💍', bg: 'rgba(168,85,247,.15)',  text: '#a855f7',       hex: 'A855F7' },
+  bereavement: { short: 'VEFAT',   emoji: '🖤', bg: 'rgba(100,116,139,.2)',  text: 'var(--text2)',  hex: '64748B' },
+  unpaid:      { short: 'ÜCRETSİZ', emoji: '⏸', bg: 'rgba(100,116,139,.2)',  text: '#94a3b8',       hex: '64748B' },
+}
+export const LEAVE_CELL_DEFAULT = { short: 'İZİN', emoji: '🏖', bg: 'rgba(26,188,156,.15)', text: 'var(--teal)', hex: '14B8A6' }
+
+export function leaveTypeLabel(type) {
+  return LEAVE_TYPES[type]?.label || 'İzin'
+}
+
+export function leaveCellMeta(type) {
+  return LEAVE_CELL[type] || LEAVE_CELL_DEFAULT
+}
+
+function normalizeHour(value) {
+  if (value == null || value === '') return null
+  if (typeof value === 'string' && value.includes(':')) {
+    const [hour] = value.split(':')
+    const parsed = Number(hour)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+export function formatShiftHours(startHour, endHour) {
+  const start = formatShiftHour(startHour)
+  const end = formatShiftHour(endHour)
+  if (!start || !end) return ''
+  return `${start}–${end}`
+}
+
+export function formatShiftHour(hour) {
+  const normalized = normalizeHour(hour)
+  if (normalized == null) return ''
+  return `${String(normalized === 24 ? 0 : normalized).padStart(2, '0')}:00`
+}
+
+export function shiftHoursFrom(row) {
+  if (!row) return ''
+  return formatShiftHours(row.shift_start ?? row.start_hour, row.shift_end ?? row.end_hour)
 }
 
 export const STATUS_MAP = {

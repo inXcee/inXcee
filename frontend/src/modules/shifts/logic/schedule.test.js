@@ -77,7 +77,10 @@ describe('parseShiftCell', () => {
   it('izin kodlarını on_leave döner', () => {
     expect(parseShiftCell('izin', SHIFT_DEFS)).toEqual({ shiftDefId: null, status: 'on_leave' })
     expect(parseShiftCell('i', SHIFT_DEFS)).toEqual({ shiftDefId: null, status: 'on_leave' })
-    expect(parseShiftCell('off', SHIFT_DEFS)).toEqual({ shiftDefId: null, status: 'on_leave' })
+  })
+
+  it('off kodunu haftalık izin döner', () => {
+    expect(parseShiftCell('off', SHIFT_DEFS)).toEqual({ shiftDefId: null, status: 'off' })
   })
 
   it('1/G → 1.vardiya, 2/A → 2.vardiya, 3/Ge → 3.vardiya', () => {

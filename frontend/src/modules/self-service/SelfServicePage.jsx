@@ -504,8 +504,9 @@ export default function SelfServicePage() {
                       const today = new Date().toISOString().slice(0, 10)
                       const isToday = s.work_date === today
                       const isFuture = s.work_date > today
+                      const LEAVE_TYPE_TR = { annual: 'Yıllık', sick: 'Raporlu', emergency: 'Acil', maternity: 'Doğum', paternity: 'Babalık', marriage: 'Evlilik', bereavement: 'Vefat' }
                       const statusColor = s.status === 'worked' ? 'text-green-400' : s.status === 'absent' ? 'text-red-400' : s.status === 'on_leave' ? 'text-amber-400' : s.status === 'off' ? 'text-purple-400' : 'text-slate-400'
-                      const statusLabel = s.status === 'worked' ? t('kiosk.shifts.status_worked') : s.status === 'absent' ? t('kiosk.shifts.status_absent') : s.status === 'on_leave' ? t('kiosk.shifts.status_leave') : s.status === 'off' ? t('kiosk.shifts.status_off') : isFuture ? t('kiosk.shifts.status_planned') : s.status
+                      const statusLabel = s.status === 'worked' ? t('kiosk.shifts.status_worked') : s.status === 'absent' ? t('kiosk.shifts.status_absent') : s.status === 'on_leave' ? `${t('kiosk.shifts.status_leave')}${LEAVE_TYPE_TR[s.leave_type] ? ` · ${LEAVE_TYPE_TR[s.leave_type]}` : ''}` : s.status === 'off' ? t('kiosk.shifts.status_off') : isFuture ? t('kiosk.shifts.status_planned') : s.status
                       return (
                         <div key={s.work_date} className={`flex justify-between items-center px-3 py-2 rounded-lg ${isToday ? 'bg-blue-900 border border-blue-700' : 'bg-slate-800'}`}>
                           <div>

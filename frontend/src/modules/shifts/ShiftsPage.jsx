@@ -22,6 +22,7 @@ const NAV_ITEMS = [
   { id: 'leave',       icon: '🏖️', label: 'İzinler' },
   { id: 'overtime',    icon: '⏰', label: 'Mesai' },
   { id: 'puantaj',     icon: '📊', label: 'Puantaj' },
+  { id: 'swap',        icon: '🔁', label: 'Takas' },
   { id: 'departments', icon: '🏢', label: 'Bölümler' },
   { id: 'settings',    icon: '⚙️', label: 'Ayarlar' },
 ]

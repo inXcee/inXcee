@@ -73,7 +73,7 @@ describe('Excel çizelge içe aktarımı (/import)', () => {
         name: 'MELİKE EXCELTEST', deptName: 'KAT HİZMETLERİ EXCELTEST',
         cells: [
           { date: '2026-07-06', startHour: 8, endHour: 17, status: 'scheduled', raw: '08:00 17:00' },
-          { date: '2026-07-12', startHour: null, endHour: null, status: 'on_leave', raw: 'OFF' },
+          { date: '2026-07-12', startHour: null, endHour: null, status: 'off', leaveType: 'weekly_off', raw: 'OFF' },
         ],
       },
       {
@@ -149,7 +149,7 @@ describe('Excel çizelge içe aktarımı (/import)', () => {
     expect(melike).toBeTruthy()
     expect(melike.start_hour).toBe(8)
     const off = sched.body.find(r => r.full_name === 'MELİKE EXCELTEST' && r.work_date === '2026-07-12')
-    expect(off.status).toBe('on_leave')
+    expect(off.status).toBe('off')
   })
 
   it('ikinci import idempotent — aynı kişiyi tekrar oluşturmaz, çizelgeyi günceller', async () => {
@@ -199,7 +199,7 @@ describe('Excel çizelge içe aktarımı (/import)', () => {
         { date: '2026-08-17', startHour: null, endHour: null, status: 'on_leave', leaveType: 'annual', raw: 'YILLIK İZİN' },
         { date: '2026-08-18', startHour: null, endHour: null, status: 'on_leave', leaveType: 'annual', raw: 'YILLIK İZİN' },
         { date: '2026-08-20', startHour: null, endHour: null, status: 'on_leave', leaveType: 'sick', raw: 'RAPORLU' },
-        { date: '2026-08-21', startHour: null, endHour: null, status: 'on_leave', leaveType: 'weekly_off', raw: 'OFF' }, // leave_request üretmez
+        { date: '2026-08-21', startHour: null, endHour: null, status: 'off', leaveType: 'weekly_off', raw: 'OFF' }, // leave_request üretmez
       ] }],
       unrecognized: [],
     }
@@ -480,24 +480,24 @@ describe('calcTax — Turkish progressive income tax', () => {
     expect(calcTax(0)).toBe(0)
   })
 
-  it('taxes 110,000 TL entirely at 15%', () => {
-    expect(calcTax(110_000)).toBe(16_500)
+  it('taxes 190,000 TL entirely at 15%', () => {
+    expect(calcTax(190_000)).toBe(28_500)
   })
 
-  it('taxes 230,000 TL in two brackets', () => {
-    // 110,000 × 0.15 = 16,500; 120,000 × 0.20 = 24,000; total = 40,500
-    expect(calcTax(230_000)).toBe(40_500)
+  it('taxes 400,000 TL in two brackets', () => {
+    // 190,000 × 0.15 = 28,500; 210,000 × 0.20 = 42,000; total = 70,500
+    expect(calcTax(400_000)).toBe(70_500)
   })
 
-  it('calculates marginal tax for 150,000 TL', () => {
-    // 110,000 × 0.15 = 16,500; 40,000 × 0.20 = 8,000; total = 24,500
-    expect(calcTax(150_000)).toBe(24_500)
+  it('calculates marginal tax for 250,000 TL', () => {
+    // 190,000 × 0.15 = 28,500; 60,000 × 0.20 = 12,000; total = 40,500
+    expect(calcTax(250_000)).toBe(40_500)
   })
 
   it('handles amounts above top bracket', () => {
-    // 110k×0.15 + 120k×0.20 + 640k×0.27 + 2,130k×0.35 + 500k×0.40
-    // = 16,500 + 24,000 + 172,800 + 745,500 + 200,000 = 1,158,800
-    expect(calcTax(3_500_000)).toBe(1_158_800)
+    // 190k×0.15 + 210k×0.20 + 1,100k×0.27 + 3,800k×0.35 + 700k×0.40
+    // = 28,500 + 42,000 + 297,000 + 1,330,000 + 280,000 = 1,977,500
+    expect(calcTax(6_000_000)).toBe(1_977_500)
   })
 })
 
@@ -605,6 +605,23 @@ describe('GET /shifts/puantaj/export/csv', () => {
   })
 })
 
+describe('GET /shifts/puantaj/days', () => {
+  it('returns monthly day maps for visible staff in one response', async () => {
+    const res = await request(app)
+      .get('/api/shifts/puantaj/days?month=2026-03')
+      .set('Authorization', `Bearer ${shiftToken}`)
+
+    expect(res.status).toBe(200)
+    expect(res.body.month).toBe('2026-03')
+    expect(res.body.days).toBeTruthy()
+    const firstDays = Object.values(res.body.days)[0]
+    expect(Array.isArray(firstDays)).toBe(true)
+    expect(firstDays).toHaveLength(31)
+    expect(firstDays[0]).toHaveProperty('date')
+    expect(firstDays[0]).toHaveProperty('status')
+  })
+})
+
 describe('GET /shifts/puantaj/:staffId/days', () => {
   let existingStaffId
 
@@ -648,7 +665,7 @@ describe('GET /shifts/puantaj/:staffId/days', () => {
       expect(entry).toHaveProperty('date')
       expect(entry).toHaveProperty('day_of_week')
       expect(entry).toHaveProperty('status')
-      expect(['worked','absent','on_leave','overtime','scheduled','sunday','no_record']).toContain(entry.status)
+      expect(['worked','absent','on_leave','off','overtime','scheduled','sunday','no_record']).toContain(entry.status)
     })
   })
 
@@ -661,6 +678,33 @@ describe('GET /shifts/puantaj/:staffId/days', () => {
     const march1 = res.body.find(e => e.date === '2026-03-01')
     expect(march1).toBeDefined()
     expect(march1.status).toBe('sunday')
+  })
+
+  it('manuel puantaj izin türünü ve pazar haftalık iznini gün dökümünde gösterir', async () => {
+    if (!existingStaffId) return
+    const write = await request(app)
+      .post('/api/shifts/schedule')
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({ entries: [
+        { staff_id: existingStaffId, dept_id: null, shift_def_id: null, work_date: '2026-03-02', status: 'on_leave', leave_type: 'unpaid' },
+        { staff_id: existingStaffId, dept_id: null, shift_def_id: null, work_date: '2026-03-08', status: 'off' },
+      ] })
+    expect(write.status).toBe(200)
+
+    const days = await request(app)
+      .get(`/api/shifts/puantaj/${existingStaffId}/days?month=2026-03`)
+      .set('Authorization', `Bearer ${shiftToken}`)
+    expect(days.status).toBe(200)
+    expect(days.body.find(e => e.date === '2026-03-02')).toMatchObject({ status: 'on_leave', leave_type: 'unpaid' })
+    expect(days.body.find(e => e.date === '2026-03-08')).toMatchObject({ status: 'off' })
+
+    const puantaj = await request(app)
+      .get('/api/shifts/puantaj?month=2026-03')
+      .set('Authorization', `Bearer ${shiftToken}`)
+    expect(puantaj.status).toBe(200)
+    const row = puantaj.body.find(r => r.id === existingStaffId)
+    expect(row.other_leave_days).toBeGreaterThanOrEqual(1)
+    expect(row.off_days).toBeGreaterThanOrEqual(1)
   })
 })
 
@@ -819,6 +863,57 @@ describe('H8 — payroll-detailed', () => {
   })
 })
 
+describe('Faz 27 — Çizelgede saat aliası + izin türü', () => {
+  let staffId, defId
+
+  beforeAll(() => {
+    const db = getDB()
+    staffId = db.prepare("INSERT INTO staff(full_name, is_active) VALUES('Faz27 Test', 1)").run().lastInsertRowid
+    defId = db.prepare("INSERT INTO shift_definitions(name, start_hour, end_hour, color_class) VALUES('Sabah27', 8, 16, 'shift-blue')").run().lastInsertRowid
+  })
+
+  it('GET /schedule shift_start/shift_end aliaslarını ve izin türünü döner', async () => {
+    await request(app).post('/api/shifts/schedule').set('Authorization', `Bearer ${managerToken}`)
+      .send({ entries: [
+        { staff_id: staffId, dept_id: null, shift_def_id: defId, work_date: '2026-08-03', status: 'scheduled' },
+        { staff_id: staffId, dept_id: null, shift_def_id: null, work_date: '2026-08-04', status: 'on_leave' },
+      ] })
+    // 08-04'ü kapsayan onaylı RAPOR izni
+    const lr = await request(app).post('/api/shifts/leave').set('Authorization', `Bearer ${managerToken}`)
+      .send({ staff_id: staffId, leave_type: 'sick', start_date: '2026-08-04', end_date: '2026-08-04' })
+    expect(lr.status).toBe(201)
+    await request(app).patch(`/api/shifts/leave/${lr.body.id}`).set('Authorization', `Bearer ${managerToken}`)
+      .send({ status: 'approved' })
+
+    const r = await request(app).get('/api/shifts/schedule?week=2026-08-03&week_end=2026-08-09')
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(r.status).toBe(200)
+    const rows = r.body.filter(x => x.staff_id === staffId)
+
+    const shiftRow = rows.find(x => x.work_date === '2026-08-03')
+    expect(shiftRow.shift_start).toBe(shiftRow.start_hour) // alias sözleşmesi
+    expect(shiftRow.shift_end).toBe(shiftRow.end_hour)
+    expect(shiftRow.shift_start).not.toBeNull()
+
+    const leaveRow = rows.find(x => x.work_date === '2026-08-04')
+    expect(leaveRow.status).toBe('on_leave')
+    expect(leaveRow.leave_type).toBe('sick')
+  })
+
+  it('staff-detail vardiya geçmişi OFF/izin satırlarını ve izin türünü içerir', async () => {
+    const db = getDB()
+    db.prepare("INSERT INTO shift_schedule(staff_id, work_date, status) VALUES(?, '2026-08-05', 'off')").run(staffId)
+
+    const r = await request(app).get(`/api/shifts/staff/${staffId}/detail`)
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(r.status).toBe(200)
+    const hist = r.body.shiftHistory
+    expect(hist.find(h => h.work_date === '2026-08-05' && h.status === 'off')).toBeTruthy()
+    const leaveRow = hist.find(h => h.work_date === '2026-08-04')
+    expect(leaveRow.leave_type).toBe('sick')
+  })
+})
+
 describe('Faz 26 — Haftalık izin (OFF) durumu', () => {
   let staffId
 
@@ -896,6 +991,35 @@ describe('E1 — İzin bakiye takibi', () => {
     expect(del.status).toBe(200)
     bal = db().prepare('SELECT * FROM leave_balance WHERE staff_id=? AND year=2026').get(staffId)
     expect(bal.annual_used).toBe(0)
+  })
+
+  it('onay boş çizelge günlerine on_leave satırı açar ve iptal temizler', async () => {
+    const id = await createLeave('2026-08-24', '2026-08-25', 'emergency')
+    const ap = await request(app).patch(`/api/shifts/leave/${id}`).set('Authorization', `Bearer ${managerToken}`)
+      .send({ status: 'approved' })
+    expect(ap.status).toBe(200)
+
+    const createdRows = db().prepare(`
+      SELECT work_date, status, shift_def_id
+      FROM shift_schedule
+      WHERE staff_id=? AND work_date BETWEEN '2026-08-24' AND '2026-08-25'
+      ORDER BY work_date
+    `).all(staffId)
+    expect(createdRows).toHaveLength(2)
+    expect(createdRows.every(r => r.status === 'on_leave' && r.shift_def_id == null)).toBe(true)
+
+    const sched = await request(app).get('/api/shifts/schedule?week=2026-08-24&week_end=2026-08-30')
+      .set('Authorization', `Bearer ${managerToken}`)
+    const leaveRows = sched.body.filter(r => r.staff_id === staffId)
+    expect(leaveRows.map(r => r.leave_type)).toEqual(['emergency', 'emergency'])
+
+    const del = await request(app).delete(`/api/shifts/leave/${id}`).set('Authorization', `Bearer ${managerToken}`)
+    expect(del.status).toBe(200)
+    const remaining = db().prepare(`
+      SELECT id FROM shift_schedule
+      WHERE staff_id=? AND work_date BETWEEN '2026-08-24' AND '2026-08-25'
+    `).all(staffId)
+    expect(remaining).toHaveLength(0)
   })
 
   it('tekrar onay çift saymaz', async () => {

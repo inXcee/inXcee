@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { screen } from '@testing-library/react'
+import { fireEvent, screen } from '@testing-library/react'
 import { renderWithProviders } from '../../../test/renderWithProviders.jsx'
 
 vi.mock('../../../shared/api/client.js', () => ({
@@ -17,6 +17,8 @@ import OvertimeTab from './OvertimeTab.jsx'
 import DepartmentsTab from './DepartmentsTab.jsx'
 import SwapTab from './SwapTab.jsx'
 import SettingsTab from './SettingsTab.jsx'
+import PuantajTab from './PuantajTab.jsx'
+import api from '../../../shared/api/client.js'
 
 describe('shifts tabs smoke', () => {
   beforeEach(() => vi.clearAllMocks())
@@ -44,5 +46,31 @@ describe('shifts tabs smoke', () => {
   it('SettingsTab çökmeden render olur', () => {
     renderWithProviders(<SettingsTab departments={[]} shiftDefs={[]} />)
     expect(screen.getAllByText('VARDIYA TANIMLARI').length).toBeGreaterThan(0)
+  })
+
+  it('PuantajTab aylık takvim kod paletini gösterir', async () => {
+    api.get.mockImplementation((url) => {
+      if (url === '/shifts/puantaj') {
+        return Promise.resolve({ data: [{ id: 1, full_name: 'Ali Test', department_id: 1, dept_name: 'Temizlik', worked_days: 1, off_days: 1, sick_leave_days: 1, other_leave_days: 1 }] })
+      }
+      if (url === '/shifts/puantaj/days') {
+        return Promise.resolve({ data: { month: '2026-07', days: { 1: [
+          { date: '2026-07-01', day_of_week: 3, status: 'worked' },
+          { date: '2026-07-02', day_of_week: 4, status: 'off' },
+          { date: '2026-07-03', day_of_week: 5, status: 'on_leave', leave_type: 'sick' },
+          { date: '2026-07-04', day_of_week: 6, status: 'on_leave', leave_type: 'unpaid' },
+        ] } } })
+      }
+      return Promise.resolve({ data: [] })
+    })
+    renderWithProviders(<PuantajTab departments={[]} />)
+    fireEvent.click(screen.getByText(/TAKVİM/))
+    expect(await screen.findByText('Ali Test')).toBeInTheDocument()
+    expect(screen.getAllByText('N').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('h').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('r').length).toBeGreaterThan(0)
+    expect(screen.getByText('Hucre')).toBeInTheDocument()
+    expect(screen.getByText('Boya')).toBeInTheDocument()
+    expect(screen.getAllByText('üi').length).toBeGreaterThan(0)
   })
 })

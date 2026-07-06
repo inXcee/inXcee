@@ -81,6 +81,10 @@ export function buildLeaveRuns(rows) {
   return out
 }
 
+function normalizeScheduleStatus(cell) {
+  return cell?.leaveType === 'weekly_off' ? 'off' : (cell?.status || 'scheduled')
+}
+
 // Kanonik payload'ı uzlaştır + (dryRun değilse) DB'ye yaz. Tek transaction.
 // Dönüş: rapor (eşleşen/oluşturulan sayıları + isim listeleri + uyarılar).
 export function importSchedule(payload, userId, { dryRun = false, createMissing = true, excludeDepts = [], mappings = {} } = {}) {
@@ -250,17 +254,18 @@ export function importSchedule(payload, userId, { dryRun = false, createMissing 
   const insertShift = db.prepare('INSERT INTO shift_definitions(name, start_hour, end_hour, color_class) VALUES(?,?,?,?)')
   const insertStaff = db.prepare('INSERT INTO staff(full_name, department_id, gender, is_active) VALUES(?,?,?,1)')
   const upsert = db.prepare(`
-    INSERT INTO shift_schedule(staff_id, dept_id, shift_def_id, work_date, status, created_by)
-    VALUES(@staff_id, @dept_id, @shift_def_id, @work_date, @status, @created_by)
+    INSERT INTO shift_schedule(staff_id, dept_id, shift_def_id, work_date, status, leave_type, created_by)
+    VALUES(@staff_id, @dept_id, @shift_def_id, @work_date, @status, @leave_type, @created_by)
     ON CONFLICT(staff_id, work_date) DO UPDATE SET
       shift_def_id = excluded.shift_def_id,
       dept_id = excluded.dept_id,
-      status = excluded.status
+      status = excluded.status,
+      leave_type = excluded.leave_type
   `)
 
   // Geri alma (undo) için snapshot: oturumun yarattığı + üzerine yazdığı her şey.
   const undo = { createdStaffIds: [], createdDeptIds: [], createdShiftDefIds: [], createdLeaves: [], schedulePrev: [], scheduleInserted: [] }
-  const getPrevStmt = db.prepare('SELECT dept_id, shift_def_id, status FROM shift_schedule WHERE staff_id = ? AND work_date = ?')
+  const getPrevStmt = db.prepare('SELECT dept_id, shift_def_id, status, leave_type FROM shift_schedule WHERE staff_id = ? AND work_date = ?')
   const insBatch = db.prepare(`INSERT INTO schedule_import_batches(created_by, label, summary, undo_data) VALUES(?,?,?,?)`)
 
   const tx = db.transaction(() => {
@@ -308,12 +313,14 @@ export function importSchedule(payload, userId, { dryRun = false, createMissing 
         const prev = getPrevStmt.get(staff.id, c.date)
         if (prev) { up++; undo.schedulePrev.push({ staff_id: staff.id, work_date: c.date, ...prev }) }
         else { nu++; undo.scheduleInserted.push({ staff_id: staff.id, work_date: c.date }) }
+        const status = normalizeScheduleStatus(c)
         upsert.run({
           staff_id: staff.id,
           dept_id: deptId,
           shift_def_id: shiftDefId,
           work_date: c.date,
-          status: c.status || 'scheduled',
+          status,
+          leave_type: status === 'on_leave' ? (c.leaveType || null) : null,
           created_by: userId || null,
         })
         count++
@@ -384,7 +391,7 @@ export function undoImportBatch(batchId) {
   if (!undo) throw new Error('Geri alma verisi okunamadı')
 
   const delSched = db.prepare('DELETE FROM shift_schedule WHERE staff_id = ? AND work_date = ?')
-  const restoreSched = db.prepare(`UPDATE shift_schedule SET dept_id = ?, shift_def_id = ?, status = ? WHERE staff_id = ? AND work_date = ?`)
+  const restoreSched = db.prepare(`UPDATE shift_schedule SET dept_id = ?, shift_def_id = ?, status = ?, leave_type = ? WHERE staff_id = ? AND work_date = ?`)
   const delLeave = db.prepare('DELETE FROM leave_requests WHERE id = ?')
   const unbumpAnnual = db.prepare('UPDATE leave_balance SET annual_used = MAX(0, annual_used - ?) WHERE staff_id = ? AND year = ?')
   const unbumpSick = db.prepare('UPDATE leave_balance SET sick_used = MAX(0, sick_used - ?) WHERE staff_id = ? AND year = ?')
@@ -410,7 +417,7 @@ export function undoImportBatch(batchId) {
     // 2) Yeni eklenen çizelge satırlarını sil
     for (const s of undo.scheduleInserted || []) { delSched.run(s.staff_id, s.work_date); result.scheduleDeleted++ }
     // 3) Üzerine yazılanları eski değerlerine döndür
-    for (const p of undo.schedulePrev || []) { restoreSched.run(p.dept_id, p.shift_def_id, p.status, p.staff_id, p.work_date); result.scheduleRestored++ }
+    for (const p of undo.schedulePrev || []) { restoreSched.run(p.dept_id, p.shift_def_id, p.status, p.leave_type || null, p.staff_id, p.work_date); result.scheduleRestored++ }
     // 4) Oluşturulan personeli (ve onlara ait tüm izleri) sil
     for (const sid of undo.createdStaffIds || []) {
       delSchedByStaff.run(sid); delLeaveByStaff.run(sid); delBalByStaff.run(sid); delStaff.run(sid)

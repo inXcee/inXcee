@@ -4,7 +4,7 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import api from '../../../shared/api/client.js'
-import { addDays, todayStr, shiftColor, BottomSheet } from '../shared.jsx'
+import { addDays, todayStr, shiftColor, BottomSheet, formatShiftHours, leaveTypeLabel } from '../shared.jsx'
 
 // ─── Daily View ───────────────────────────────────────────────────────────────
 export function DailyView({ departments, date, onDateChange }) {
@@ -122,7 +122,7 @@ export function DailyView({ departments, date, onDateChange }) {
                         }}>{sh.name}</span>
                         {sh.start != null && (
                           <span style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)' }}>
-                            {sh.start}:00–{sh.end === 24 ? '00' : sh.end}:00
+                            {formatShiftHours(sh.start, sh.end)}
                           </span>
                         )}
                         <span style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text2)', fontWeight: 600, marginLeft: 'auto' }}>
@@ -137,14 +137,17 @@ export function DailyView({ departments, date, onDateChange }) {
                 })}
 
                 {g.leave.length > 0 && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                     <span style={{
                       padding: '2px 8px', borderRadius: '4px',
                       background: 'rgba(26,188,156,.12)', color: 'var(--teal)',
                       fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 700,
                     }}>İZİNDE</span>
                     <span style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)' }}>
-                      {g.leave.map(s => s.full_name).join(' · ')}
+                      {g.leave.map(s => {
+                        const tag = s.shift_status === 'off' ? 'OFF' : leaveTypeLabel(s.leave_type)
+                        return `${s.full_name}${tag ? ` (${tag})` : ''}`
+                      }).join(' · ')}
                     </span>
                   </div>
                 )}
@@ -212,7 +215,7 @@ export function WeekFillSheet({ weekFillPopover, setWeekFillPopover, shiftDefs, 
                   }}>
                   <span style={{ fontWeight: 600 }}>{s.name}</span>
                   <span style={{ fontFamily: 'var(--mono)', fontSize: '10px', marginLeft: '8px', opacity: .7 }}>
-                    {s.start_hour}:00–{s.end_hour === 24 ? '00:00' : `${s.end_hour}:00`}
+                    {formatShiftHours(s.start_hour, s.end_hour)}
                   </span>
                   {active && <span style={{ float: 'right', fontSize: '10px' }}>✓</span>}
                 </button>
@@ -294,7 +297,7 @@ export function CellAssignSheet({ cellPopover, setCellPopover, shiftDefs, assign
               }}>
               <span style={{ fontWeight: 600 }}>{s.name}</span>
               <span style={{ fontFamily: 'var(--mono)', fontSize: '10px', marginLeft: '8px', opacity: .6 }}>
-                {s.start_hour}:00–{s.end_hour === 24 ? '00' : s.end_hour}:00
+                {formatShiftHours(s.start_hour, s.end_hour)}
               </span>
               {isActive && <span style={{ float: 'right', fontSize: '10px' }}>✓ Aktif</span>}
             </button>
@@ -323,7 +326,7 @@ export function CellAssignSheet({ cellPopover, setCellPopover, shiftDefs, assign
               color: cellPopover.existing?.status === 'on_leave' ? 'var(--teal)' : 'var(--text2)',
               fontFamily: 'var(--mono)', fontSize: '11px', fontWeight: 600,
             }}>
-            İZİN {cellPopover.existing?.status === 'on_leave' && '✓'}
+            {cellPopover.existing?.status === 'on_leave' ? leaveTypeLabel(cellPopover.existing?.leave_type) : 'İZİN'} {cellPopover.existing?.status === 'on_leave' && '✓'}
           </button>
           {cellPopover.existing && (
             <button

@@ -10,18 +10,17 @@ import {
   copyWeekSchedule, applyRotationTemplate, searchStaff, deleteScheduleEntry,
   getStaffDetail,
   getStaffList, getStaffById, createStaff, updateStaff, deleteStaff,
-  getStaffDayBreakdown, listDeductions
+  getStaffDayBreakdown, getPuantajDayRows, listDeductions
 } from './queries.js'
 import { getDB } from '../../shared/db/index.js'
 import { sendPushToWorker } from '../../shared/notifications/push.js'
 
-// ── Tax helpers (2024 brackets — update annually per GIB tebliği) ──
-// TODO: Her yıl GİB tebliğine göre güncelle
+// ── Tax helpers (2026 ücret gelirleri tarifesi — GİB) ──
 const TAX_BRACKETS = [
-  { limit: 110_000,   rate: 0.15 },
-  { limit: 230_000,   rate: 0.20 },
-  { limit: 870_000,   rate: 0.27 },
-  { limit: 3_000_000, rate: 0.35 },
+  { limit: 190_000,   rate: 0.15 },
+  { limit: 400_000,   rate: 0.20 },
+  { limit: 1_500_000, rate: 0.27 },
+  { limit: 5_300_000, rate: 0.35 },
   { limit: Infinity,  rate: 0.40 },
 ]
 
@@ -403,7 +402,75 @@ export function payslipService(staffId, month) {
   }
 }
 
+function parsePuantajMonth(month) {
+  if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+    throw Object.assign(new Error('month parametresi YYYY-MM formatÄ±nda gereklidir'), { statusCode: 400 })
+  }
+  const [year, mon] = month.split('-').map(Number)
+  const monthStart = `${year}-${String(mon).padStart(2, '0')}-01`
+  const lastDay = new Date(year, mon, 0).getDate()
+  const monthEnd = `${year}-${String(mon).padStart(2, '0')}-${lastDay}`
+  return { year, mon, monthStart, monthEnd, lastDay }
+}
+
+function dayEntryFromRow(row, date, dow) {
+  const entry = { date, day_of_week: dow, status: row.status }
+  if (row.schedule_id) entry.schedule_id = row.schedule_id
+  if (row.dept_id != null) entry.dept_id = row.dept_id
+  if (row.shift_def_id) entry.shift_def_id = row.shift_def_id
+  if (row.shift_name) {
+    entry.shift_name = row.shift_name
+    entry.start_hour = row.start_hour
+    entry.end_hour = row.end_hour
+  }
+  if (row.leave_type) entry.leave_type = row.leave_type
+  if (row.overtime_hours) entry.overtime_hours = row.overtime_hours
+  return entry
+}
+
+function buildMonthDays(rows, year, mon, lastDay) {
+  const dbMap = {}
+  rows.forEach(r => { dbMap[r.date] = r })
+  const result = []
+  for (let d = 1; d <= lastDay; d++) {
+    const date = `${year}-${String(mon).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+    const dow = new Date(year, mon - 1, d).getDay()
+    const row = dbMap[date]
+    if (row) {
+      result.push(dayEntryFromRow(row, date, dow))
+    } else {
+      result.push({ date, day_of_week: dow, status: dow === 0 ? 'sunday' : 'no_record' })
+    }
+  }
+  return result
+}
+
+export function puantajDaysService(month, deptId) {
+  const { year, mon, monthStart, monthEnd, lastDay } = parsePuantajMonth(month)
+  const staffRows = getPuantaj(monthStart, monthEnd, deptId)
+  const dayRows = getPuantajDayRows(monthStart, monthEnd, deptId)
+  const rowsByStaff = {}
+  dayRows.forEach(row => {
+    if (!rowsByStaff[row.staff_id]) rowsByStaff[row.staff_id] = []
+    rowsByStaff[row.staff_id].push(row)
+  })
+  const days = {}
+  staffRows.forEach(staff => {
+    days[staff.id] = buildMonthDays(rowsByStaff[staff.id] || [], year, mon, lastDay)
+  })
+  return { month, days }
+}
+
 export function staffDayBreakdownService(staffId, month) {
+  if (!staffId || isNaN(Number(staffId))) {
+    throw Object.assign(new Error('staffId sayÄ±sal olmalÄ±dÄ±r'), { statusCode: 400 })
+  }
+  const { year, mon, monthStart, monthEnd, lastDay } = parsePuantajMonth(month)
+  const dbRows = getStaffDayBreakdown(Number(staffId), monthStart, monthEnd)
+  return buildMonthDays(dbRows, year, mon, lastDay)
+}
+
+function staffDayBreakdownServiceLegacy(staffId, month) {
   if (!month || !/^\d{4}-\d{2}$/.test(month)) {
     throw Object.assign(new Error('month parametresi YYYY-MM formatında gereklidir'), { statusCode: 400 })
   }
@@ -425,16 +492,19 @@ export function staffDayBreakdownService(staffId, month) {
   for (let d = 1; d <= lastDay; d++) {
     const date = `${year}-${String(mon).padStart(2, '0')}-${String(d).padStart(2, '0')}`
     const dow = new Date(year, mon - 1, d).getDay() // 0=Sunday
-    if (dow === 0) {
+    const row = dbMap[date]
+    if (!row && dow === 0) {
       result.push({ date, day_of_week: 0, status: 'sunday' })
       continue
     }
-    const row = dbMap[date]
     if (!row) {
       result.push({ date, day_of_week: dow, status: 'no_record' })
       continue
     }
     const entry = { date, day_of_week: dow, status: row.status }
+    if (row.schedule_id) entry.schedule_id = row.schedule_id
+    if (row.dept_id) entry.dept_id = row.dept_id
+    if (row.shift_def_id) entry.shift_def_id = row.shift_def_id
     if (row.shift_name) { entry.shift_name = row.shift_name; entry.start_hour = row.start_hour; entry.end_hour = row.end_hour }
     if (row.leave_type) entry.leave_type = row.leave_type
     if (row.overtime_hours) entry.overtime_hours = row.overtime_hours

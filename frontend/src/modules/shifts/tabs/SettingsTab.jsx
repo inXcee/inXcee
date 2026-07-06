@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../../shared/api/client.js'
 import { confirmDialog } from '../../../shared/components/ConfirmDialog.jsx'
-import { toastErr, toastOk, shiftColor, ModalOverlay } from '../shared.jsx'
+import { toastErr, toastOk, shiftColor, ModalOverlay, formatShiftHour } from '../shared.jsx'
 
 export default function SettingsTab({ departments, shiftDefs }) {
   const qc = useQueryClient()
@@ -39,8 +39,8 @@ export default function SettingsTab({ departments, shiftDefs }) {
                     <tr key={s.id}>
                       <td data-label="Renk"><span style={{ width: '16px', height: '16px', borderRadius: '4px', background: sc.text, display: 'inline-block' }} /></td>
                       <td data-label="Ad" style={{ fontWeight: 600 }}>{s.name}</td>
-                      <td data-label="Baslangic" style={{ fontFamily: 'var(--mono)', color: 'var(--text2)' }}>{s.start_hour}:00</td>
-                      <td data-label="Bitis" style={{ fontFamily: 'var(--mono)', color: 'var(--text2)' }}>{s.end_hour === 24 ? '00:00' : `${s.end_hour}:00`}</td>
+                      <td data-label="Baslangic" style={{ fontFamily: 'var(--mono)', color: 'var(--text2)' }}>{formatShiftHour(s.start_hour)}</td>
+                      <td data-label="Bitis" style={{ fontFamily: 'var(--mono)', color: 'var(--text2)' }}>{formatShiftHour(s.end_hour)}</td>
                       <td data-label="Islem">
                         <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
                           <button className="btn btn-ghost btn-sm" onClick={() => { setDefForm({ name: s.name, start_hour: s.start_hour?.toString() || '', end_hour: s.end_hour?.toString() || '', color_class: s.color_class || 'bg-blue-400' }); setDefModal(s) }}>Duzenle</button>

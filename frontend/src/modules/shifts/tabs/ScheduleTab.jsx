@@ -9,6 +9,7 @@ import { SkeletonTable } from '../../../shared/components/Skeleton.jsx'
 import {
   getWeekStart, addDays, formatDate, shortDay, todayStr,
   shiftColor, deptColor, ModalOverlay, StaffSearch,
+  LEAVE_CELL, formatShiftHours, shiftHoursFrom, leaveCellMeta, leaveTypeLabel,
 } from '../shared.jsx'
 import { buildStaffGrid, computeWeekStats } from '../logic/schedule.js'
 import { DailyView, WeekFillSheet, CellAssignSheet } from './scheduleSheets.jsx'
@@ -157,9 +158,6 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
     const wb = new ExcelJS.Workbook()
     const ws = wb.addWorksheet('Vardiya', { views: [{ state: 'frozen', xSplit: 2, ySplit: 2 }] })
 
-    const fmtHours = (c) => c?.shift_start != null
-      ? `${String(c.shift_start).padStart(2, '0')}:00–${c.shift_end === 24 ? '00:00' : String(c.shift_end).padStart(2, '0') + ':00'}`
-      : ''
     const border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } }
 
     ws.mergeCells(1, 1, 1, 2 + weekDays.length)
@@ -187,9 +185,12 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
           const c = p.days[d]
           if (!c) return '—'
           if (c.status === 'off') return 'OFF\nhaftalık izin'
-          if (c.status === 'on_leave') return 'İZİN'
+          if (c.status === 'on_leave') {
+            const lc = leaveCellMeta(c.leave_type)
+            return `${lc.short}\n${leaveTypeLabel(c.leave_type)}`
+          }
           if (c.status === 'absent') return 'YOK'
-          return c.shift_name ? `${c.shift_name}\n${fmtHours(c)}` : '—'
+          return c.shift_name ? `${c.shift_name}\n${shiftHoursFrom(c)}` : '—'
         }),
       ])
       row.height = 30
@@ -200,7 +201,9 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
         if (colNo <= 2) return
         const c = p.days[weekDays[colNo - 3]]
         if (!c) return
-        const hex = STATUS_FILL[c.status] || (c.shift_color && TAILWIND_HEX[c.shift_color])
+        const hex = c.status === 'on_leave'
+          ? leaveCellMeta(c.leave_type).hex
+          : STATUS_FILL[c.status] || (c.shift_color && TAILWIND_HEX[c.shift_color])
         if (hex) {
           cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF' + hex } }
           cell.font = { size: 9, bold: true, color: { argb: 'FFFFFFFF' } }
@@ -212,12 +215,16 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
     const legendTitle = ws.addRow(['LEJANT'])
     legendTitle.getCell(1).font = { bold: true, size: 10 }
     shiftDefs.forEach(s => {
-      const r = ws.addRow([`${s.name}  (${s.start_hour}:00–${s.end_hour === 24 ? '00:00' : s.end_hour + ':00'})`])
+      const r = ws.addRow([`${s.name}  (${formatShiftHours(s.start_hour, s.end_hour)})`])
       const hex = TAILWIND_HEX[s.color_class] || '64748B'
       r.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF' + hex } }
       r.getCell(1).font = { size: 9, bold: true, color: { argb: 'FFFFFFFF' } }
     })
-    ;[['OFF — haftalık izin', STATUS_FILL.off], ['İZİN — onaylı izin', STATUS_FILL.on_leave], ['YOK — devamsız', STATUS_FILL.absent]].forEach(([label, hex]) => {
+    ;[
+      ['OFF — haftalık izin', STATUS_FILL.off],
+      ...Object.entries(LEAVE_CELL).map(([type, lc]) => [`${lc.short} — ${leaveTypeLabel(type)}`, lc.hex]),
+      ['YOK — devamsız', STATUS_FILL.absent],
+    ].forEach(([label, hex]) => {
       const r = ws.addRow([label])
       r.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF' + hex } }
       r.getCell(1).font = { size: 9, bold: true, color: { argb: 'FFFFFFFF' } }
@@ -452,7 +459,7 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
                   border: `1px solid ${sc.text}33`,
                 }}
               >
-                {s.name} {s.start_hour}–{s.end_hour === 24 ? '00' : s.end_hour}
+                {s.name} {formatShiftHours(s.start_hour, s.end_hour)}
               </div>
             )
           })}
@@ -675,13 +682,14 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
                         if (isOff) {
                           pillBg = 'rgba(167,139,250,.15)'; pillColor = 'var(--purple)'; pillLabel = '🌙 OFF'; pillSub = 'haftalık izin'
                         } else if (isLeave) {
-                          pillBg = 'rgba(26,188,156,.15)'; pillColor = 'var(--teal)'; pillLabel = '🏖 İZİN'
+                          const lc = leaveCellMeta(cell.leave_type)
+                          pillBg = lc.bg; pillColor = lc.text; pillLabel = `${lc.emoji} ${lc.short}`; pillSub = leaveTypeLabel(cell.leave_type)
                         } else if (isAbsent) {
                           pillBg = 'rgba(231,76,60,.12)'; pillColor = 'var(--red)'; pillLabel = '✗ YOK'
                         } else if (sc) {
                           pillBg = sc.bg; pillColor = sc.text
                           pillLabel = cell.shift_name
-                          pillSub = `${cell.shift_start || ''}–${cell.shift_end === 24 ? '00' : cell.shift_end || ''}${cell.shift_start ? ':00' : ''}`
+                          pillSub = shiftHoursFrom(cell) || null
                         }
                       }
 
@@ -720,7 +728,7 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
                             onClick={e => openCellPopover(e, person, d)}
                             disabled={!canEdit}
                             style={{
-                              width: '100%', minHeight: pillLabel ? '58px' : '54px', padding: '6px 4px',
+                              width: '100%', minHeight: pillLabel ? '62px' : '54px', padding: '6px 4px',
                               borderRadius: '8px', border: pillLabel ? 'none' : `1px dashed ${canEdit ? 'var(--border)' : 'transparent'}`,
                               cursor: canEdit ? 'pointer' : 'default',
                               background: pillBg,
@@ -740,11 +748,11 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
                           >
                             {pillLabel ? (
                               <>
-                                <span style={{ fontFamily: 'var(--mono)', fontSize: '10px', letterSpacing: '0.5px', color: pillColor, fontWeight: 700 }}>
+                                <span style={{ fontFamily: 'var(--mono)', fontSize: '10px', letterSpacing: '0.5px', color: pillColor, fontWeight: 700, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.2 }}>
                                   {pillLabel}
                                 </span>
                                 {pillSub && (
-                                  <span style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: pillColor, opacity: .7 }}>
+                                  <span style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: pillColor, opacity: .78, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.2 }}>
                                     {pillSub}
                                   </span>
                                 )}
@@ -859,7 +867,7 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
                       }}>
                       <span style={{ fontWeight: 600 }}>{s.name}</span>
                       <span style={{ fontFamily: 'var(--mono)', fontSize: '10px', marginLeft: '8px', opacity: .7 }}>
-                        {s.start_hour}:00&ndash;{s.end_hour === 24 ? '00:00' : `${s.end_hour}:00`}
+                        {formatShiftHours(s.start_hour, s.end_hour)}
                       </span>
                     </button>
                   )
@@ -904,7 +912,7 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
                     }}>
                     <span style={{ fontWeight: 600 }}>{s.name}</span>
                     <span style={{ fontFamily: 'var(--mono)', fontSize: '10px', marginLeft: '8px', opacity: .7 }}>
-                      {s.start_hour}:00&ndash;{s.end_hour === 24 ? '00:00' : `${s.end_hour}:00`}
+                      {formatShiftHours(s.start_hour, s.end_hour)}
                     </span>
                   </button>
                 )

@@ -115,7 +115,14 @@ export function getSchedule(weekStart, weekEnd, deptId) {
       s.id as staff_id, s.full_name, s.gender, s.position,
       COALESCE(ss.dept_id, s.department_id) as dept_id,
       d.name as dept_name, d.color_class as dept_color,
-      sd.id as shift_def_id, sd.name as shift_name, sd.start_hour, sd.end_hour, sd.color_class as shift_color
+      sd.id as shift_def_id, sd.name as shift_name, sd.start_hour, sd.end_hour, sd.color_class as shift_color,
+      sd.start_hour as shift_start, sd.end_hour as shift_end,
+      CASE WHEN ss.status = 'on_leave' THEN COALESCE(ss.leave_type, (
+        SELECT lr.leave_type FROM leave_requests lr
+        WHERE lr.staff_id = ss.staff_id AND lr.status = 'approved'
+          AND lr.start_date <= ss.work_date AND lr.end_date >= ss.work_date
+        ORDER BY lr.id DESC LIMIT 1
+      )) END as leave_type
     FROM shift_schedule ss
     JOIN staff s ON s.id = ss.staff_id
     LEFT JOIN departments d ON d.id = COALESCE(ss.dept_id, s.department_id)
@@ -134,20 +141,25 @@ export function getSchedule(weekStart, weekEnd, deptId) {
 export function bulkAssignShifts(entries, createdBy) {
   const db = getDB()
   const upsert = db.prepare(`
-    INSERT INTO shift_schedule(staff_id, dept_id, shift_def_id, work_date, status, created_by)
-    VALUES(@staff_id, @dept_id, @shift_def_id, @work_date, @status, @created_by)
+    INSERT INTO shift_schedule(staff_id, dept_id, shift_def_id, work_date, status, leave_type, created_by)
+    VALUES(@staff_id, @dept_id, @shift_def_id, @work_date, @status, @leave_type, @created_by)
     ON CONFLICT(staff_id, work_date) DO UPDATE SET
       shift_def_id = excluded.shift_def_id,
       dept_id = excluded.dept_id,
-      status = excluded.status
+      status = excluded.status,
+      leave_type = excluded.leave_type
   `)
   const tx = db.transaction(() => {
-    entries.forEach(e => upsert.run({
-      ...e,
-      status: e.status || 'scheduled',
-      shift_def_id: e.shift_def_id || null,
-      created_by: createdBy,
-    }))
+    entries.forEach(e => {
+      const status = e.status || 'scheduled'
+      upsert.run({
+        ...e,
+        status,
+        shift_def_id: e.shift_def_id || null,
+        leave_type: status === 'on_leave' ? (e.leave_type || e.leaveType || null) : null,
+        created_by: createdBy,
+      })
+    })
   })
   tx()
 }
@@ -406,6 +418,33 @@ function adjustLeaveBalance(db, req, delta) {
     .run(delta * req.total_days, req.staff_id, year)
 }
 
+function markLeaveOnSchedule(db, req, approvedBy) {
+  const staff = db.prepare('SELECT department_id FROM staff WHERE id=?').get(req.staff_id)
+  const upsertLeave = db.prepare(`
+    INSERT INTO shift_schedule(staff_id, dept_id, shift_def_id, work_date, status, leave_type, created_by)
+    VALUES(?, ?, NULL, ?, 'on_leave', ?, ?)
+    ON CONFLICT(staff_id, work_date) DO UPDATE SET status='on_leave', leave_type=excluded.leave_type
+  `)
+  for (let date = req.start_date; date <= req.end_date; date = addDaysStr(date, 1)) {
+    upsertLeave.run(req.staff_id, staff?.department_id || null, date, req.leave_type || null, approvedBy || null)
+  }
+}
+
+function clearLeaveFromSchedule(db, req) {
+  const restorePlanned = db.prepare(`
+    UPDATE shift_schedule SET status='scheduled', leave_type=NULL
+    WHERE staff_id=? AND work_date=? AND status='on_leave' AND shift_def_id IS NOT NULL
+  `)
+  const deleteLeaveOnly = db.prepare(`
+    DELETE FROM shift_schedule
+    WHERE staff_id=? AND work_date=? AND status='on_leave' AND shift_def_id IS NULL
+  `)
+  for (let date = req.start_date; date <= req.end_date; date = addDaysStr(date, 1)) {
+    restorePlanned.run(req.staff_id, date)
+    deleteLeaveOnly.run(req.staff_id, date)
+  }
+}
+
 export function approveLeaveRequest(id, approvedBy, status) {
   const db = getDB()
   const req = db.prepare('SELECT * FROM leave_requests WHERE id=?').get(id)
@@ -427,15 +466,11 @@ export function approveLeaveRequest(id, approvedBy, status) {
     `).run(status, approvedBy, id)
 
     if (status === 'approved' && !wasApproved) {
-      db.prepare(`
-        UPDATE shift_schedule SET status='on_leave'
-        WHERE staff_id=? AND work_date BETWEEN ? AND ?
-      `).run(req.staff_id, req.start_date, req.end_date)
+      markLeaveOnSchedule(db, req, approvedBy)
       adjustLeaveBalance(db, req, +1)
     } else if (status === 'rejected' && wasApproved) {
       // Onaylıyken reddedilirse bakiye iadesi + program geri alınır
-      db.prepare(`UPDATE shift_schedule SET status='scheduled' WHERE staff_id=? AND work_date BETWEEN ? AND ? AND status='on_leave'`)
-        .run(req.staff_id, req.start_date, req.end_date)
+      clearLeaveFromSchedule(db, req)
       adjustLeaveBalance(db, req, -1)
     }
   })
@@ -702,7 +737,7 @@ export function cancelLeaveRequest(id) {
   if (!req) throw new Error('İzin talebi bulunamadı')
   const tx = db.transaction(() => {
     db.prepare("UPDATE leave_requests SET status='rejected' WHERE id=?").run(id)
-    db.prepare(`UPDATE shift_schedule SET status='scheduled' WHERE staff_id=? AND work_date BETWEEN ? AND ? AND status='on_leave'`).run(req.staff_id, req.start_date, req.end_date)
+    clearLeaveFromSchedule(db, req)
     // E1 — onaylı izin iptalinde bakiye iadesi
     if (req.status === 'approved') adjustLeaveBalance(db, req, -1)
   })
@@ -845,13 +880,20 @@ export function getStaffDetail(staffId) {
   `).get(staffId)
   if (!person) throw new Error('Personel bulunamadi')
 
+  // LEFT JOIN: OFF / izin günlerinde shift_def_id NULL — bu satırlar da listelensin
   const shiftHistory = db.prepare(`
     SELECT ss.work_date, ss.status,
       sd.name as shift_name, sd.start_hour, sd.end_hour, sd.color_class as shift_color,
-      d.name as dept_name, d.color_class as dept_color
+      d.name as dept_name, d.color_class as dept_color,
+      CASE WHEN ss.status = 'on_leave' THEN COALESCE(ss.leave_type, (
+        SELECT lr.leave_type FROM leave_requests lr
+        WHERE lr.staff_id = ss.staff_id AND lr.status = 'approved'
+          AND lr.start_date <= ss.work_date AND lr.end_date >= ss.work_date
+        ORDER BY lr.id DESC LIMIT 1
+      )) END as leave_type
     FROM shift_schedule ss
-    JOIN shift_definitions sd ON sd.id = ss.shift_def_id
-    JOIN departments d ON d.id = ss.dept_id
+    LEFT JOIN shift_definitions sd ON sd.id = ss.shift_def_id
+    LEFT JOIN departments d ON d.id = ss.dept_id
     WHERE ss.staff_id = ?
     ORDER BY ss.work_date DESC
     LIMIT 100
@@ -904,11 +946,14 @@ export function getStaffDayBreakdown(staffId, monthStart, monthEnd) {
   return db.prepare(`
     SELECT
       ss.work_date as date,
+      ss.id as schedule_id,
+      ss.dept_id,
+      ss.shift_def_id,
       ss.status,
       sd.name as shift_name,
       sd.start_hour,
       sd.end_hour,
-      lr.leave_type,
+      CASE WHEN ss.status = 'on_leave' THEN COALESCE(ss.leave_type, lr.leave_type) END as leave_type,
       ot.hours as overtime_hours
     FROM shift_schedule ss
     LEFT JOIN shift_definitions sd ON sd.id = ss.shift_def_id
@@ -923,6 +968,40 @@ export function getStaffDayBreakdown(staffId, monthStart, monthEnd) {
 }
 
 // ── Puantaj (Timesheet) ──
+export function getPuantajDayRows(monthStart, monthEnd, deptId) {
+  const db = getDB()
+  let query = `
+    SELECT
+      ss.staff_id,
+      ss.work_date as date,
+      ss.id as schedule_id,
+      ss.dept_id,
+      ss.shift_def_id,
+      ss.status,
+      sd.name as shift_name,
+      sd.start_hour,
+      sd.end_hour,
+      CASE WHEN ss.status = 'on_leave' THEN COALESCE(ss.leave_type, lr.leave_type) END as leave_type,
+      ot.hours as overtime_hours
+    FROM shift_schedule ss
+    JOIN staff s ON s.id = ss.staff_id
+    LEFT JOIN shift_definitions sd ON sd.id = ss.shift_def_id
+    LEFT JOIN leave_requests lr ON lr.staff_id = ss.staff_id
+      AND lr.status = 'approved'
+      AND ss.work_date BETWEEN lr.start_date AND lr.end_date
+    LEFT JOIN overtime_records ot ON ot.staff_id = ss.staff_id
+      AND ot.work_date = ss.work_date
+    WHERE s.is_active = 1 AND ss.work_date BETWEEN ? AND ?
+  `
+  const params = [monthStart, monthEnd]
+  if (deptId) {
+    query += ' AND s.department_id = ?'
+    params.push(deptId)
+  }
+  query += ' ORDER BY ss.staff_id, ss.work_date'
+  return db.prepare(query).all(...params)
+}
+
 export function getPuantaj(monthStart, monthEnd, deptId) {
   const db = getDB()
   let query = `
@@ -937,23 +1016,30 @@ export function getPuantaj(monthStart, monthEnd, deptId) {
       COALESCE(sch.total_days, 0) as total_days,
       COALESCE(ot.overtime_hours, 0) as overtime_hours,
       COALESCE(ot.overtime_count, 0) as overtime_count,
-      COALESCE(lv.annual_days, 0) as annual_leave_days,
-      COALESCE(lv.sick_days, 0) as sick_leave_days,
-      COALESCE(lv.emergency_days, 0) as emergency_leave_days,
-      COALESCE(lv.other_days, 0) as other_leave_days
+      COALESCE(sch.annual_leave_days, 0) as annual_leave_days,
+      COALESCE(sch.sick_leave_days, 0) as sick_leave_days,
+      COALESCE(sch.emergency_leave_days, 0) as emergency_leave_days,
+      COALESCE(sch.other_leave_days, 0) as other_leave_days
     FROM staff s
     LEFT JOIN departments d ON d.id = s.department_id
     LEFT JOIN (
-      SELECT staff_id,
-        COUNT(CASE WHEN status IN ('worked','overtime') THEN 1 END) as worked_days,
-        COUNT(CASE WHEN status='scheduled' THEN 1 END) as scheduled_days,
-        COUNT(CASE WHEN status='on_leave' THEN 1 END) as leave_days,
-        COUNT(CASE WHEN status='absent' THEN 1 END) as absent_days,
-        COUNT(CASE WHEN status='off' THEN 1 END) as off_days,
-        COUNT(*) as total_days
-      FROM shift_schedule
-      WHERE work_date BETWEEN ? AND ?
-      GROUP BY staff_id
+      SELECT ss.staff_id,
+        COUNT(CASE WHEN ss.status IN ('worked','overtime') THEN 1 END) as worked_days,
+        COUNT(CASE WHEN ss.status='scheduled' THEN 1 END) as scheduled_days,
+        COUNT(CASE WHEN ss.status='on_leave' THEN 1 END) as leave_days,
+        COUNT(CASE WHEN ss.status='absent' THEN 1 END) as absent_days,
+        COUNT(CASE WHEN ss.status='off' THEN 1 END) as off_days,
+        COUNT(*) as total_days,
+        COUNT(CASE WHEN ss.status='on_leave' AND COALESCE(ss.leave_type, lr.leave_type)='annual' THEN 1 END) as annual_leave_days,
+        COUNT(CASE WHEN ss.status='on_leave' AND COALESCE(ss.leave_type, lr.leave_type)='sick' THEN 1 END) as sick_leave_days,
+        COUNT(CASE WHEN ss.status='on_leave' AND COALESCE(ss.leave_type, lr.leave_type)='emergency' THEN 1 END) as emergency_leave_days,
+        COUNT(CASE WHEN ss.status='on_leave' AND (COALESCE(ss.leave_type, lr.leave_type) IS NULL OR COALESCE(ss.leave_type, lr.leave_type) NOT IN ('annual','sick','emergency')) THEN 1 END) as other_leave_days
+      FROM shift_schedule ss
+      LEFT JOIN leave_requests lr ON lr.staff_id = ss.staff_id
+        AND lr.status = 'approved'
+        AND ss.work_date BETWEEN lr.start_date AND lr.end_date
+      WHERE ss.work_date BETWEEN ? AND ?
+      GROUP BY ss.staff_id
     ) sch ON sch.staff_id = s.id
     LEFT JOIN (
       SELECT staff_id,
@@ -963,19 +1049,9 @@ export function getPuantaj(monthStart, monthEnd, deptId) {
       WHERE work_date BETWEEN ? AND ?
       GROUP BY staff_id
     ) ot ON ot.staff_id = s.id
-    LEFT JOIN (
-      SELECT staff_id,
-        COALESCE(SUM(CASE WHEN leave_type='annual' THEN total_days ELSE 0 END), 0) as annual_days,
-        COALESCE(SUM(CASE WHEN leave_type='sick' THEN total_days ELSE 0 END), 0) as sick_days,
-        COALESCE(SUM(CASE WHEN leave_type='emergency' THEN total_days ELSE 0 END), 0) as emergency_days,
-        COALESCE(SUM(CASE WHEN leave_type NOT IN ('annual','sick','emergency') THEN total_days ELSE 0 END), 0) as other_days
-      FROM leave_requests
-      WHERE status = 'approved' AND start_date <= ? AND end_date >= ?
-      GROUP BY staff_id
-    ) lv ON lv.staff_id = s.id
     WHERE s.is_active = 1
   `
-  const params = [monthStart, monthEnd, monthStart, monthEnd, monthEnd, monthStart]
+  const params = [monthStart, monthEnd, monthStart, monthEnd]
   if (deptId) { query += ' AND s.department_id = ?'; params.push(deptId) }
   query += ' ORDER BY d.name, s.full_name'
   return db.prepare(query).all(...params)
