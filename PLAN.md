@@ -269,14 +269,14 @@ Doğrulama: 804/804 backend, build temiz, 8/8 e2e
 ### Faz 0 — Mevcut değişiklikler commit ✅
 - [x] shift_schedule.leave_type (migration 019) + puantaj/days endpoint + takvim boyama modu (5397fb4)
 
-### Faz 27 — Excel-grid deneyimi
-- [ ] Klavye navigasyonu (ok tuşları + aktif hücre çerçevesi)
-- [ ] Kod tuşlarıyla işaretleme (N/H/R/Ü/Y/P/Delete)
-- [ ] Shift+tık / Shift+ok dikdörtgen aralık seçimi + toplu uygulama
-- [ ] Ctrl+Z undo (son 50 işlem)
-- [ ] Sticky başlık satırı + personel kolonu
-- [ ] Gün bazlı alt toplam satırı
-- [ ] logic/puantajGrid.js birim testleri + smoke test
+### Faz 27 — Excel-grid deneyimi ✅
+- [x] Klavye navigasyonu (ok tuşları + aktif hücre çerçevesi)
+- [x] Kod tuşlarıyla işaretleme (N/H/R/Ü/İ/Y/P/Delete — TR toLocaleLowerCase)
+- [x] Shift+tık / Shift+ok dikdörtgen aralık seçimi + toplu uygulama
+- [x] Ctrl+Z undo (son 50 işlem, restore mutation ile per-hücre geri yazım)
+- [x] Sticky başlık satırı + personel kolonu + sticky alt toplam (maxHeight 68vh)
+- [x] Gün bazlı alt toplam satırı (çalışan/izin/devamsız)
+- [x] logic/puantajGrid.js — 12 birim test + mevcut smoke testler (57/57)
 
 ### Faz 28 — Gerçek bordro girdileri
 - [ ] Tatil kolonları vurgusu (holidays tablosu) + tooltip

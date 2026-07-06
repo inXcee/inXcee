@@ -5,6 +5,7 @@ import { useAuthStore } from '../../../shared/store/authStore.js'
 import { useDebounce } from '../../../shared/hooks/useDebounce.js'
 import { SkeletonTable, SkeletonGrid } from '../../../shared/components/Skeleton.jsx'
 import { BottomSheet, formatShiftHours, leaveTypeLabel } from '../shared.jsx'
+import { actionIdForKey, normalizeRect, cellsInRect, isInRect, moveCell, pushUndo, summarizeColumn } from '../logic/puantajGrid.js'
 
 const COMPANY_NAME = import.meta.env.VITE_COMPANY_NAME || 'YYS Kampüs'
 
@@ -124,6 +125,12 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
   const paintingRef = useRef(false)
   const paintedKeysRef = useRef(new Set())
 
+  // Excel-grid etkileşimi: aktif hücre + Shift seçim çapası + undo yığını
+  const [activeCell, setActiveCell] = useState(null) // { row: filtered index, day: 1..31 }
+  const [anchor, setAnchor] = useState(null)
+  const [undoCount, setUndoCount] = useState(0)
+  const undoStackRef = useRef([])
+
   const daysInMonth = new Date(y, m, 0).getDate()
   const dayNumbers = Array.from({ length: daysInMonth }, (_, i) => i + 1)
 
@@ -188,18 +195,24 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
     return next
   }
 
-  const buildChange = (row, day, entry) => {
+  const buildChange = (row, day, entry, action = selectedAction) => {
     const date = `${month}-${String(day).padStart(2, '0')}`
-    const nextEntry = buildLocalEntry(date, selectedAction, entry)
-    return { staff: row, date, entry, action: selectedAction, nextEntry }
+    const nextEntry = buildLocalEntry(date, action, entry)
+    return { staff: row, date, entry, action, nextEntry }
   }
 
-  const applyChanges = (changes) => {
-    if (!canEdit || !selectedAction || changes.length === 0) return
+  const applyChanges = (changes, action = selectedAction) => {
+    if (!canEdit || !action || changes.length === 0) return
     onApplyStatus({
       changes,
-      action: selectedAction,
-      onLocalUpdate: () => replaceLocalDays(changes),
+      action,
+      onLocalUpdate: () => {
+        replaceLocalDays(changes)
+        if (action.status !== 'restore') {
+          undoStackRef.current = pushUndo(undoStackRef.current, changes)
+          setUndoCount(undoStackRef.current.length)
+        }
+      },
     })
   }
 
@@ -219,6 +232,83 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
 
   const applyColumn = (day) => {
     applyChanges(filtered.map(row => buildChange(row, day, entryFor(row, day))))
+  }
+
+  // Seçili dikdörtgene (yoksa aktif hücreye) kodu uygula
+  const selectionRect = anchor && activeCell ? normalizeRect(anchor, activeCell) : null
+
+  const applyActionToSelection = (action) => {
+    if (!canEdit || !action) return
+    const cells = selectionRect ? cellsInRect(selectionRect) : (activeCell ? [activeCell] : [])
+    const changes = cells
+      .filter(c => filtered[c.row])
+      .map(c => buildChange(filtered[c.row], c.day, entryFor(filtered[c.row], c.day), action))
+    applyChanges(changes, action)
+  }
+
+  const undoLast = () => {
+    const batch = undoStackRef.current[undoStackRef.current.length - 1]
+    if (!batch) return
+    undoStackRef.current = undoStackRef.current.slice(0, -1)
+    setUndoCount(undoStackRef.current.length)
+    const emptyEntryFor = (date) => {
+      const dow = new Date(date).getDay()
+      return { date, day_of_week: dow, status: dow === 0 ? 'sunday' : 'no_record' }
+    }
+    // Ters uygulama: batch'in "önceki" durumları hedef olur
+    const changes = batch.map(c => ({
+      staff: c.staff,
+      date: c.date,
+      entry: c.nextEntry,
+      nextEntry: c.entry || emptyEntryFor(c.date),
+    }))
+    applyChanges(changes, { id: 'restore', status: 'restore', label: 'Geri al' })
+  }
+
+  const handleGridKeyDown = (e) => {
+    if (!canEdit || filtered.length === 0) return
+    if ((e.ctrlKey || e.metaKey) && e.key.toLocaleLowerCase('tr') === 'z') {
+      e.preventDefault()
+      undoLast()
+      return
+    }
+    if (e.ctrlKey || e.metaKey || e.altKey) return
+    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+      e.preventDefault()
+      const base = activeCell || { row: 0, day: 1 }
+      if (e.shiftKey) { if (!anchor) setAnchor(base) } else setAnchor(null)
+      setActiveCell(moveCell(base, e.key, filtered.length - 1, daysInMonth))
+      return
+    }
+    if (e.key === 'Escape') { setAnchor(null); return }
+    if (e.key === 'Delete' || e.key === 'Backspace') {
+      e.preventDefault()
+      applyActionToSelection(ACTION_BY_ID.clear)
+      return
+    }
+    const actionId = actionIdForKey(e.key)
+    if (actionId && ACTION_BY_ID[actionId]) {
+      e.preventDefault()
+      applyActionToSelection(ACTION_BY_ID[actionId])
+    }
+  }
+
+  const clickCell = (row, day, entry, rowIdx, event) => {
+    if (entryMode === 'paint') return
+    if (event.shiftKey && activeCell) {
+      // Excel gibi: Shift+tık — aktif hücreden tıklanana dikdörtgen, seçili kodla doldur
+      const rect = normalizeRect(activeCell, { row: rowIdx, day })
+      const changes = cellsInRect(rect)
+        .filter(c => filtered[c.row])
+        .map(c => buildChange(filtered[c.row], c.day, entryFor(filtered[c.row], c.day)))
+      applyChanges(changes)
+      setAnchor(activeCell)
+      setActiveCell({ row: rowIdx, day })
+      return
+    }
+    setAnchor(null)
+    setActiveCell({ row: rowIdx, day })
+    applyCell(row, day, entry)
   }
 
   const paintCell = (row, day, entry) => {
@@ -343,24 +433,56 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
             </button>
           ))}
         </div>
+        <button
+          type="button"
+          disabled={!canEdit || undoCount === 0}
+          onClick={undoLast}
+          title="Son işlemi geri al (Ctrl+Z)"
+          style={{
+            height: '32px',
+            padding: '0 10px',
+            borderRadius: '7px',
+            border: '1px solid var(--border)',
+            background: 'var(--surface2)',
+            color: undoCount > 0 ? 'var(--accent)' : 'var(--text3)',
+            cursor: canEdit && undoCount > 0 ? 'pointer' : 'not-allowed',
+            fontFamily: 'var(--mono)',
+            fontSize: '10px',
+            fontWeight: 800,
+            marginLeft: '8px',
+          }}
+        >
+          ↩ {undoCount > 0 ? `(${undoCount})` : ''}
+        </button>
         <span style={{ marginLeft: 'auto', fontFamily: 'var(--mono)', fontSize: '9px', color: canEdit ? 'var(--text3)' : 'var(--red)' }}>
           {canEdit ? selectedAction.label : 'Sadece yetkili kullanıcı giriş yapabilir'}
         </span>
       </div>
 
-      <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: '10px', background: 'var(--surface)' }}>
+      {canEdit && (
+        <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text3)', marginBottom: '8px', letterSpacing: '0.4px' }}>
+          ⌨ Ok tuşları: gezin · Shift+ok / Shift+tık: aralık seç · N=çalıştı H=hafta izni R=rapor Ü=ücretsiz İ=yıllık Y=gelmedi P=planlı · Del: sil · Ctrl+Z: geri al
+        </div>
+      )}
+
+      <div
+        tabIndex={0}
+        onKeyDown={handleGridKeyDown}
+        style={{ overflow: 'auto', maxHeight: '68vh', border: '1px solid var(--border)', borderRadius: '10px', background: 'var(--surface)', outline: 'none' }}
+      >
       <table style={{ borderCollapse: 'separate', borderSpacing: 0, fontSize: '10px', width: 'max-content', minWidth: '100%' }}>
         <thead>
           <tr>
-            <th style={{ position: 'sticky', left: 0, background: 'var(--surface)', zIndex: 4, minWidth: '230px', padding: '8px 10px', textAlign: 'left', borderBottom: '1px solid var(--border)', borderRight: '1px solid var(--border)' }}>
+            <th style={{ position: 'sticky', left: 0, top: 0, background: 'var(--surface)', zIndex: 6, minWidth: '230px', padding: '8px 10px', textAlign: 'left', borderBottom: '1px solid var(--border)', borderRight: '1px solid var(--border)' }}>
               PERSONEL
             </th>
             {dayNumbers.map(d => (
               <th key={d} style={{
+                position: 'sticky', top: 0, zIndex: 5,
                 width: '42px', textAlign: 'center', padding: '5px 0',
                 borderBottom: '1px solid var(--border)',
                 borderRight: '1px solid var(--border)',
-                background: sundayDays.has(d) ? 'rgba(240,165,0,.06)' : 'var(--surface)',
+                background: sundayDays.has(d) ? 'linear-gradient(rgba(240,165,0,.06), rgba(240,165,0,.06)) var(--surface)' : 'var(--surface)',
                 color: sundayDays.has(d) ? 'var(--accent)' : 'var(--text3)',
                 fontFamily: 'var(--mono)', fontSize: '9px',
               }}>
@@ -390,7 +512,7 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
           </tr>
         </thead>
         <tbody>
-          {filtered.map(r => {
+          {filtered.map((r, rowIdx) => {
             const days = dayData[r.id] || []
             const dayMap = {}
             days.forEach(d => { dayMap[d.date.split('-')[2]] = d })
@@ -483,11 +605,13 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
                   const busy = updatingKeys?.has(`${r.id}-${date}`)
                   const hours = entry?.start_hour != null ? formatShiftHours(entry.start_hour, entry.end_hour) : ''
                   const title = `${r.full_name} · ${date} · ${meta.label}${hours ? ` · ${hours}` : ''}`
+                  const isActive = activeCell?.row === rowIdx && activeCell?.day === d
+                  const inSelection = isInRect(selectionRect, rowIdx, d)
                   return (
                     <td key={d}
                       style={{
                         width: '42px', textAlign: 'center', padding: '3px',
-                        background: sundayDays.has(d) ? 'rgba(240,165,0,.035)' : 'transparent',
+                        background: inSelection ? 'rgba(240,165,0,.12)' : sundayDays.has(d) ? 'rgba(240,165,0,.035)' : 'transparent',
                         borderRight: '1px solid var(--border)',
                         borderBottom: '1px solid var(--border)',
                       }}>
@@ -500,12 +624,13 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
                           enterPaint(r, d, entry)
                           if (canEdit) e.currentTarget.style.filter = 'brightness(1.12)'
                         }}
-                        onClick={() => { if (entryMode !== 'paint') applyCell(r, d, entry) }}
+                        onClick={e => clickCell(r, d, entry, rowIdx, e)}
                         style={{
                           width: '34px',
                           height: '30px',
                           borderRadius: '7px',
                           border: status === 'no_record' || status === 'sunday' ? `1px dashed ${meta.border}` : `1px solid ${meta.border}`,
+                          boxShadow: isActive ? '0 0 0 2px var(--accent)' : 'none',
                           background: meta.bg,
                           color: meta.text,
                           cursor: canEdit ? 'pointer' : 'default',
@@ -529,6 +654,37 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
             )
           })}
         </tbody>
+        <tfoot>
+          <tr>
+            <td style={{ position: 'sticky', left: 0, bottom: 0, background: 'var(--surface2)', zIndex: 6, padding: '6px 10px', borderTop: '2px solid var(--border)', borderRight: '1px solid var(--border)', fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text3)', letterSpacing: '1px' }}>
+              GÜN TOPLAMI
+              <div style={{ display: 'flex', gap: '6px', marginTop: '3px' }}>
+                <span style={{ color: ACTION_BY_ID.worked.text }}>■ çalışan</span>
+                <span style={{ color: 'var(--purple)' }}>■ izin</span>
+                <span style={{ color: ACTION_BY_ID.absent.text }}>■ yok</span>
+              </div>
+            </td>
+            {dayNumbers.map(d => {
+              const dayStr = String(d).padStart(2, '0')
+              const col = summarizeColumn(filtered.map(r => (dayData[r.id] || []).find(x => x.date.endsWith(`-${dayStr}`))))
+              const leaveTotal = col.leave + col.off
+              return (
+                <td key={d} style={{
+                  position: 'sticky', bottom: 0, zIndex: 5,
+                  textAlign: 'center', padding: '4px 0',
+                  borderTop: '2px solid var(--border)',
+                  borderRight: '1px solid var(--border)',
+                  background: 'var(--surface2)',
+                  fontFamily: 'var(--mono)', fontSize: '9px', lineHeight: 1.35,
+                }}>
+                  <div style={{ color: col.worked > 0 ? ACTION_BY_ID.worked.text : 'var(--text3)', fontWeight: 800 }}>{col.worked || '·'}</div>
+                  <div style={{ color: leaveTotal > 0 ? 'var(--purple)' : 'var(--text3)', fontSize: '8px' }}>{leaveTotal || '·'}</div>
+                  <div style={{ color: col.absent > 0 ? ACTION_BY_ID.absent.text : 'var(--text3)', fontSize: '8px' }}>{col.absent || '·'}</div>
+                </td>
+              )
+            })}
+          </tr>
+        </tfoot>
       </table>
       </div>
     </div>
@@ -963,6 +1119,25 @@ export default function PuantajTab({ departments }) {
     mutationFn: ({ changes, action }) => {
       if (action.status === 'clear') {
         return Promise.all(changes.map(change => api.delete(`/shifts/schedule/${change.staff.id}/${change.date}`)))
+      }
+      if (action.status === 'restore') {
+        // Undo: her hücre kendi önceki durumuna döner — boşa dönenler silinir, kalanlar upsert edilir
+        const isEmpty = change => !change.nextEntry?.status || ['no_record', 'sunday'].includes(change.nextEntry.status)
+        const deletions = changes.filter(isEmpty)
+        const upserts = changes.filter(change => !isEmpty(change))
+        return Promise.all([
+          ...deletions.map(change => api.delete(`/shifts/schedule/${change.staff.id}/${change.date}`)),
+          ...(upserts.length ? [api.post('/shifts/schedule', {
+            entries: upserts.map(change => ({
+              staff_id: change.staff.id,
+              dept_id: change.staff.department_id || null,
+              shift_def_id: change.nextEntry.shift_def_id || null,
+              work_date: change.date,
+              status: change.nextEntry.status,
+              leave_type: change.nextEntry.leave_type || null,
+            }))
+          })] : []),
+        ])
       }
       return api.post('/shifts/schedule', {
         entries: changes.map(change => ({
