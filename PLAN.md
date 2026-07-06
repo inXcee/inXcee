@@ -286,9 +286,10 @@ Doğrulama: 804/804 backend, build temiz, 8/8 e2e
 - [x] Satır rozetleri: T (tatil çalışması) + FM toplam saati; hücrede +n FM rozeti
 - [x] +4 backend test (97/97 shifts, 1300/1300 tüm suite), 57/57 frontend
 
-### Faz 29 — Resmi puantaj cetveli Excel export
-- [ ] ExcelJS aylık föy: kod matrisi + toplam kolonları + lejant + imza blokları
-- [ ] PuantajTab "📄 PUANTAJ FÖYÜ" butonu
+### Faz 29 — Resmi puantaj cetveli Excel export ✅
+- [x] logic/puantajFoyu.js — kod eşleme + satır/toplam üretimi (4 birim test)
+- [x] ExcelJS aylık föy: personel × 1-31 renkli kod matrisi, tatil/Pazar başlık vurgusu (tatil adı not olarak), 9 toplam kolonu (N/h/yi/r/üi/i/Y/FM/RT), kod lejantı, Düzenleyen/Kontrol Eden/Onaylayan imza blokları, frozen 3×3
+- [x] PuantajTab "📄 PUANTAJ FÖYÜ" butonu — puantaj-foyu-{ay}.xlsx (61/61 test + build temiz)
 
 ### Faz 30 — Rotasyon şablonları
 - [ ] rotation_templates (migration 021) + CRUD

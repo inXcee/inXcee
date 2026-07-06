@@ -6,6 +6,7 @@ import { useDebounce } from '../../../shared/hooks/useDebounce.js'
 import { SkeletonTable, SkeletonGrid } from '../../../shared/components/Skeleton.jsx'
 import { BottomSheet, formatShiftHours, leaveTypeLabel } from '../shared.jsx'
 import { actionIdForKey, normalizeRect, cellsInRect, isInRect, moveCell, pushUndo, summarizeColumn } from '../logic/puantajGrid.js'
+import { buildFoyuRow, FOYU_LEGEND, FOYU_TOTAL_COLUMNS } from '../logic/puantajFoyu.js'
 
 const COMPANY_NAME = import.meta.env.VITE_COMPANY_NAME || 'YYS Kampüs'
 
@@ -1382,6 +1383,137 @@ export default function PuantajTab({ departments }) {
     }
   }
 
+  // Faz 29 — Resmi puantaj cetveli: imzalık aylık föy (renkli kod matrisi + toplamlar + lejant + imza blokları)
+  const [foyuExporting, setFoyuExporting] = useState(false)
+  const downloadFoyu = async () => {
+    if (foyuExporting) return
+    setFoyuExporting(true)
+    try {
+      const params = { month }
+      if (deptFilter) params.dept_id = deptFilter
+      const [daysRes, holidaysRes, ExcelJS] = await Promise.all([
+        api.get('/shifts/puantaj/days', { params }).then(res => res.data.days || {}),
+        api.get('/shifts/holidays', { params: { year: y } }).then(res => res.data),
+        import('exceljs').then(mod => mod.default),
+      ])
+      const daysInMonth = new Date(y, m, 0).getDate()
+      const holidaySet = new Set(holidaysRes.filter(h => h.date?.startsWith(month)).map(h => h.date))
+      const holidayNames = Object.fromEntries(holidaysRes.filter(h => h.date?.startsWith(month)).map(h => [h.date, h.name]))
+      const deptName = deptFilter ? (departments.find(d => String(d.id) === String(deptFilter))?.name || '—') : 'Tüm Departmanlar'
+      const rows = filtered.map(r => buildFoyuRow(r, daysRes[r.id] || [], holidaySet))
+
+      const wb = new ExcelJS.Workbook()
+      const ws = wb.addWorksheet('Puantaj', { views: [{ state: 'frozen', xSplit: 3, ySplit: 3 }] })
+      const border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } }
+      const totalColStart = 4 + daysInMonth
+
+      ws.mergeCells(1, 1, 1, totalColStart + FOYU_TOTAL_COLUMNS.length - 1)
+      const title = ws.getCell(1, 1)
+      title.value = `${COMPANY_NAME} — AYLIK PUANTAJ CETVELİ`
+      title.font = { bold: true, size: 14 }
+      title.alignment = { horizontal: 'center', vertical: 'middle' }
+      ws.getRow(1).height = 24
+
+      ws.mergeCells(2, 1, 2, totalColStart + FOYU_TOTAL_COLUMNS.length - 1)
+      const sub = ws.getCell(2, 1)
+      sub.value = `Dönem: ${monthLabel}   ·   Departman: ${deptName}   ·   ${rows.length} personel`
+      sub.font = { size: 10, color: { argb: 'FF64748B' } }
+      sub.alignment = { horizontal: 'center', vertical: 'middle' }
+
+      const header = ws.getRow(3)
+      header.values = [
+        'NO', 'ADI SOYADI', 'DEPARTMAN',
+        ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
+        ...FOYU_TOTAL_COLUMNS.map(c => c.label),
+      ]
+      header.eachCell((c, colNo) => {
+        c.font = { bold: true, size: 9, color: { argb: 'FFFFFFFF' } }
+        c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF334155' } }
+        c.alignment = { horizontal: 'center', vertical: 'middle' }
+        c.border = border
+        const dayNo = colNo - 3
+        if (dayNo >= 1 && dayNo <= daysInMonth) {
+          const date = `${month}-${String(dayNo).padStart(2, '0')}`
+          if (holidaySet.has(date)) {
+            c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDC2626' } }
+            c.note = holidayNames[date]
+          } else if (new Date(y, m - 1, dayNo).getDay() === 0) {
+            c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFB45309' } }
+          }
+        }
+      })
+      header.height = 18
+
+      rows.forEach((row, idx) => {
+        const r = ws.addRow([
+          idx + 1, row.name, row.dept,
+          ...row.cells.map(cell => cell.code),
+          ...FOYU_TOTAL_COLUMNS.map(col => row.totals[col.key] || ''),
+        ])
+        r.height = 16
+        r.eachCell((cell, colNo) => {
+          cell.border = border
+          cell.font = { size: 8 }
+          cell.alignment = { horizontal: colNo === 2 || colNo === 3 ? 'left' : 'center', vertical: 'middle' }
+          const dayNo = colNo - 3
+          if (dayNo >= 1 && dayNo <= daysInMonth) {
+            const c = row.cells[dayNo - 1]
+            if (c?.hex) {
+              cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF' + c.hex } }
+              cell.font = { size: 8, bold: true, color: { argb: 'FFFFFFFF' } }
+            } else if (new Date(y, m - 1, dayNo).getDay() === 0) {
+              cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFDF3E0' } }
+            }
+          } else if (colNo >= totalColStart) {
+            cell.font = { size: 8, bold: true }
+          }
+        })
+      })
+
+      ws.addRow([])
+      const legendTitle = ws.addRow(['KOD AÇIKLAMALARI'])
+      legendTitle.getCell(1).font = { bold: true, size: 9 }
+      FOYU_LEGEND.forEach(([code, label]) => {
+        const r = ws.addRow([code, label])
+        r.getCell(1).alignment = { horizontal: 'center' }
+        r.getCell(1).font = { bold: true, size: 8 }
+        r.getCell(2).font = { size: 8 }
+      })
+
+      ws.addRow([])
+      ws.addRow([])
+      const signRowIdx = ws.rowCount + 1
+      const third = Math.floor((3 + daysInMonth + FOYU_TOTAL_COLUMNS.length) / 3)
+      ;['DÜZENLEYEN', 'KONTROL EDEN', 'ONAYLAYAN'].forEach((label, i) => {
+        const c1 = 1 + i * third
+        ws.mergeCells(signRowIdx, c1, signRowIdx, c1 + third - 1)
+        const cell = ws.getCell(signRowIdx, c1)
+        cell.value = `${label}\n\nAd Soyad:\n\nİmza:`
+        cell.font = { size: 9, bold: true }
+        cell.alignment = { horizontal: 'left', vertical: 'top', wrapText: true }
+      })
+      ws.getRow(signRowIdx).height = 70
+
+      ws.getColumn(1).width = 4
+      ws.getColumn(2).width = 24
+      ws.getColumn(3).width = 15
+      for (let i = 0; i < daysInMonth; i++) ws.getColumn(4 + i).width = 3.6
+      FOYU_TOTAL_COLUMNS.forEach((col, i) => { ws.getColumn(totalColStart + i).width = col.key === 'fmHours' ? 7 : 4.5 })
+
+      const buf = await wb.xlsx.writeBuffer()
+      const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(blob)
+      a.download = `puantaj-foyu-${month}.xlsx`
+      a.click()
+      URL.revokeObjectURL(a.href)
+    } catch (e) {
+      // export hatası — sessiz geç (console.log yasak); buton tekrar denenebilir
+    } finally {
+      setFoyuExporting(false)
+    }
+  }
+
   return (
     <div className="fade-up">
       {/* Top bar */}
@@ -1421,6 +1553,9 @@ export default function PuantajTab({ departments }) {
           </button>
           <button className="btn btn-ghost btn-sm" onClick={downloadCsv} style={{ fontSize: '10px' }}>
             ⬇ CSV İndir
+          </button>
+          <button className="btn btn-ghost btn-sm" onClick={downloadFoyu} disabled={foyuExporting} style={{ fontSize: '10px' }}>
+            📄 {foyuExporting ? 'HAZIRLANIYOR...' : 'PUANTAJ FÖYÜ'}
           </button>
         </div>
       </div>
