@@ -278,12 +278,13 @@ Doğrulama: 804/804 backend, build temiz, 8/8 e2e
 - [x] Gün bazlı alt toplam satırı (çalışan/izin/devamsız)
 - [x] logic/puantajGrid.js — 12 birim test + mevcut smoke testler (57/57)
 
-### Faz 28 — Gerçek bordro girdileri
-- [ ] Tatil kolonları vurgusu (holidays tablosu) + tooltip
-- [ ] Tatil çalışması sayacı (satır toplamı)
-- [ ] Hücre içi FM saati girişi (çift tık → overtime_records)
-- [ ] absent_reason (migration 020) + neden girişi
-- [ ] Satır sonu ek toplamlar (tatil günü + FM)
+### Faz 28 — Gerçek bordro girdileri ✅
+- [x] Tatil kolonları vurgusu (holidays tablosu) + RT etiketi + tooltip
+- [x] Tatil çalışması sayacı (satır rozetlerinde T:n)
+- [x] Hücre FM girişi — sağ tık editör (çift tık, tek tık damgalamayla çakıştığı için sağ tık) → POST /overtime/day upsert (0=sil, statüye dokunmaz)
+- [x] absent_reason (migration 020, sadece migration — schema.js'e bilerek eklenmedi) + sağ tık neden girişi + hücre kırmızı nokta
+- [x] Satır rozetleri: T (tatil çalışması) + FM toplam saati; hücrede +n FM rozeti
+- [x] +4 backend test (97/97 shifts, 1300/1300 tüm suite), 57/57 frontend
 
 ### Faz 29 — Resmi puantaj cetveli Excel export
 - [ ] ExcelJS aylık föy: kod matrisi + toplam kolonları + lejant + imza blokları

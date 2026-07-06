@@ -130,8 +130,24 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
   const [anchor, setAnchor] = useState(null)
   const [undoCount, setUndoCount] = useState(0)
   const undoStackRef = useRef([])
+  const [cellEditor, setCellEditor] = useState(null) // sağ tık → { staff, date, entry }
 
   const daysInMonth = new Date(y, m, 0).getDate()
+
+  // Resmi tatiller — kolon vurgusu + tatil çalışması sayacı
+  const { data: holidayRows = [] } = useQuery({
+    queryKey: ['holidays', y],
+    queryFn: () => api.get('/shifts/holidays', { params: { year: y } }).then(res => res.data),
+  })
+  const holidayMap = useMemo(() => {
+    const map = new Map()
+    holidayRows.forEach(h => { if (h.date?.startsWith(month)) map.set(h.date, h) })
+    return map
+  }, [holidayRows, month])
+  const holidayDays = useMemo(
+    () => new Set([...holidayMap.keys()].map(d => parseInt(d.split('-')[2], 10))),
+    [holidayMap]
+  )
   const dayNumbers = Array.from({ length: daysInMonth }, (_, i) => i + 1)
 
   const { data: monthDayData, isFetching: daysFetching } = useQuery({
@@ -320,7 +336,7 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
   }
 
   const beginPaint = (row, day, entry, event) => {
-    if (entryMode !== 'paint') return
+    if (entryMode !== 'paint' || event.button !== 0) return
     event.preventDefault()
     paintingRef.current = true
     paintedKeysRef.current = new Set()
@@ -461,7 +477,7 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
 
       {canEdit && (
         <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text3)', marginBottom: '8px', letterSpacing: '0.4px' }}>
-          ⌨ Ok tuşları: gezin · Shift+ok / Shift+tık: aralık seç · N=çalıştı H=hafta izni R=rapor Ü=ücretsiz İ=yıllık Y=gelmedi P=planlı · Del: sil · Ctrl+Z: geri al
+          ⌨ Ok tuşları: gezin · Shift+ok / Shift+tık: aralık seç · N=çalıştı H=hafta izni R=rapor Ü=ücretsiz İ=yıllık Y=gelmedi P=planlı · Del: sil · Ctrl+Z: geri al · Sağ tık: FM saati / devamsızlık nedeni · <span style={{ color: 'var(--red)' }}>RT=resmi tatil</span>
         </div>
       )}
 
@@ -476,28 +492,34 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
             <th style={{ position: 'sticky', left: 0, top: 0, background: 'var(--surface)', zIndex: 6, minWidth: '230px', padding: '8px 10px', textAlign: 'left', borderBottom: '1px solid var(--border)', borderRight: '1px solid var(--border)' }}>
               PERSONEL
             </th>
-            {dayNumbers.map(d => (
-              <th key={d} style={{
+            {dayNumbers.map(d => {
+              const isHoliday = holidayDays.has(d)
+              const holidayName = isHoliday ? holidayMap.get(`${month}-${String(d).padStart(2, '0')}`)?.name : null
+              const headColor = isHoliday ? 'var(--red)' : sundayDays.has(d) ? 'var(--accent)' : 'var(--text3)'
+              return (
+              <th key={d} title={holidayName || undefined} style={{
                 position: 'sticky', top: 0, zIndex: 5,
                 width: '42px', textAlign: 'center', padding: '5px 0',
                 borderBottom: '1px solid var(--border)',
                 borderRight: '1px solid var(--border)',
-                background: sundayDays.has(d) ? 'linear-gradient(rgba(240,165,0,.06), rgba(240,165,0,.06)) var(--surface)' : 'var(--surface)',
-                color: sundayDays.has(d) ? 'var(--accent)' : 'var(--text3)',
+                background: isHoliday
+                  ? 'linear-gradient(rgba(239,68,68,.08), rgba(239,68,68,.08)) var(--surface)'
+                  : sundayDays.has(d) ? 'linear-gradient(rgba(240,165,0,.06), rgba(240,165,0,.06)) var(--surface)' : 'var(--surface)',
+                color: headColor,
                 fontFamily: 'var(--mono)', fontSize: '9px',
               }}>
                 <button
                   type="button"
                   disabled={!canEdit}
                   onClick={() => applyColumn(d)}
-                  title="Bu gunu tum listeye secili kodla doldur"
+                  title={holidayName ? `${holidayName} — bu günü tüm listeye seçili kodla doldur` : 'Bu gunu tum listeye secili kodla doldur'}
                   style={{
                     width: '30px',
                     height: '22px',
                     border: '1px solid transparent',
                     borderRadius: '6px',
                     background: canEdit ? 'var(--surface2)' : 'transparent',
-                    color: sundayDays.has(d) ? 'var(--accent)' : 'var(--text2)',
+                    color: isHoliday ? 'var(--red)' : sundayDays.has(d) ? 'var(--accent)' : 'var(--text2)',
                     cursor: canEdit ? 'pointer' : 'default',
                     fontFamily: 'var(--mono)',
                     fontSize: '11px',
@@ -506,9 +528,9 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
                 >
                   {d}
                 </button>
-                <div style={{ fontSize: '7px', opacity: .75 }}>{new Date(y, m - 1, d).toLocaleDateString('tr-TR', { weekday: 'short' }).slice(0, 3)}</div>
+                <div style={{ fontSize: '7px', opacity: .75 }}>{isHoliday ? 'RT' : new Date(y, m - 1, d).toLocaleDateString('tr-TR', { weekday: 'short' }).slice(0, 3)}</div>
               </th>
-            ))}
+            )})}
           </tr>
         </thead>
         <tbody>
@@ -517,6 +539,8 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
             const dayMap = {}
             days.forEach(d => { dayMap[d.date.split('-')[2]] = d })
             const rowStats = summarizeCalendarDays(days)
+            const rowFmHours = days.reduce((s, dd) => s + (dd.overtime_hours || 0), 0)
+            const rowHolidayWorked = days.filter(dd => holidayMap.has(dd.date) && ['worked', 'overtime'].includes(dd.status)).length
 
             return (
               <tr key={r.id} style={{ borderBottom: '1px solid var(--border)' }}>
@@ -591,7 +615,9 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
                       ['r', rowStats.sick, ACTION_BY_ID.sick],
                       ['üi', rowStats.unpaid, ACTION_BY_ID.unpaid],
                       ['Y', rowStats.absent, ACTION_BY_ID.absent],
-                    ].filter(([, value]) => value > 0).map(([code, value, meta]) => (
+                      ['T', rowHolidayWorked, { text: 'var(--red)', bg: 'rgba(239,68,68,.12)', border: 'rgba(239,68,68,.4)' }],
+                      ['FM', rowFmHours ? `${rowFmHours}s` : 0, { text: 'var(--accent)', bg: 'rgba(240,165,0,.12)', border: 'rgba(240,165,0,.4)' }],
+                    ].filter(([, value]) => value && value !== 0).map(([code, value, meta]) => (
                       <span key={code} style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: meta.text, background: meta.bg, border: `1px solid ${meta.border}`, borderRadius: '4px', padding: '1px 4px' }}>{code}:{value}</span>
                     ))}
                   </div>
@@ -604,14 +630,22 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
                   const meta = dayStatusMeta(entry, sundayDays.has(d))
                   const busy = updatingKeys?.has(`${r.id}-${date}`)
                   const hours = entry?.start_hour != null ? formatShiftHours(entry.start_hour, entry.end_hour) : ''
-                  const title = `${r.full_name} · ${date} · ${meta.label}${hours ? ` · ${hours}` : ''}`
+                  const holidayName = holidayMap.get(date)?.name
+                  const title = `${r.full_name} · ${date} · ${meta.label}`
+                    + (hours ? ` · ${hours}` : '')
+                    + (holidayName ? ` · 🎌 ${holidayName}` : '')
+                    + (entry?.overtime_hours ? ` · FM ${entry.overtime_hours}s` : '')
+                    + (entry?.absent_reason ? ` · Neden: ${entry.absent_reason}` : '')
+                    + (canEdit ? ' · sağ tık: FM/neden' : '')
                   const isActive = activeCell?.row === rowIdx && activeCell?.day === d
                   const inSelection = isInRect(selectionRect, rowIdx, d)
                   return (
                     <td key={d}
                       style={{
                         width: '42px', textAlign: 'center', padding: '3px',
-                        background: inSelection ? 'rgba(240,165,0,.12)' : sundayDays.has(d) ? 'rgba(240,165,0,.035)' : 'transparent',
+                        background: inSelection ? 'rgba(240,165,0,.12)'
+                          : holidayDays.has(d) ? 'rgba(239,68,68,.05)'
+                          : sundayDays.has(d) ? 'rgba(240,165,0,.035)' : 'transparent',
                         borderRight: '1px solid var(--border)',
                         borderBottom: '1px solid var(--border)',
                       }}>
@@ -619,6 +653,10 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
                         type="button"
                         title={title}
                         disabled={!canEdit || busy}
+                        onContextMenu={e => {
+                          e.preventDefault()
+                          if (canEdit) setCellEditor({ staff: r, date, entry })
+                        }}
                         onMouseDown={e => beginPaint(r, d, entry, e)}
                         onMouseEnter={e => {
                           enterPaint(r, d, entry)
@@ -631,6 +669,7 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
                           borderRadius: '7px',
                           border: status === 'no_record' || status === 'sunday' ? `1px dashed ${meta.border}` : `1px solid ${meta.border}`,
                           boxShadow: isActive ? '0 0 0 2px var(--accent)' : 'none',
+                          position: 'relative',
                           background: meta.bg,
                           color: meta.text,
                           cursor: canEdit ? 'pointer' : 'default',
@@ -646,6 +685,14 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
                         onMouseLeave={e => { e.currentTarget.style.filter = 'none' }}
                       >
                         {busy ? '...' : meta.code}
+                        {!busy && entry?.overtime_hours ? (
+                          <span style={{ position: 'absolute', top: '0px', right: '1px', fontSize: '6px', lineHeight: 1, color: 'var(--accent)', fontWeight: 800 }}>
+                            +{entry.overtime_hours}
+                          </span>
+                        ) : null}
+                        {!busy && entry?.absent_reason ? (
+                          <span style={{ position: 'absolute', bottom: '0px', right: '2px', fontSize: '7px', lineHeight: 1, color: 'var(--red)' }}>•</span>
+                        ) : null}
                       </button>
                     </td>
                   )
@@ -687,7 +734,117 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
         </tfoot>
       </table>
       </div>
+
+      {cellEditor && (
+        <PuantajCellEditor
+          editor={cellEditor}
+          holidayName={holidayMap.get(cellEditor.date)?.name}
+          onClose={() => setCellEditor(null)}
+        />
+      )}
     </div>
+  )
+}
+
+// Sağ tık hücre editörü — FM saati (overtime_records upsert) + devamsızlık nedeni
+function PuantajCellEditor({ editor, holidayName, onClose }) {
+  const qc = useQueryClient()
+  const { staff, date, entry } = editor
+  const [fmHours, setFmHours] = useState(entry?.overtime_hours ?? '')
+  const [reason, setReason] = useState(entry?.absent_reason || '')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const isAbsent = entry?.status === 'absent'
+  const statusMeta = dayStatusMeta(entry, new Date(date).getDay() === 0)
+
+  const save = async () => {
+    const hours = fmHours === '' ? 0 : Number(fmHours)
+    if (!Number.isFinite(hours) || hours < 0 || hours > 12) {
+      setError('Mesai saati 0-12 arasında olmalı')
+      return
+    }
+    setSaving(true)
+    setError('')
+    try {
+      if ((entry?.overtime_hours || 0) !== hours) {
+        await api.post('/shifts/overtime/day', { staff_id: staff.id, work_date: date, hours })
+      }
+      if (isAbsent && (entry?.absent_reason || '') !== reason.trim()) {
+        await api.post('/shifts/schedule', {
+          entries: [{
+            staff_id: staff.id,
+            dept_id: staff.department_id || null,
+            shift_def_id: null,
+            work_date: date,
+            status: 'absent',
+            absent_reason: reason.trim() || null,
+          }]
+        })
+      }
+      qc.invalidateQueries({ queryKey: ['puantaj'] })
+      qc.invalidateQueries({ queryKey: ['puantaj-days-month'] })
+      onClose()
+    } catch (e) {
+      setSaving(false)
+      setError(e?.response?.data?.error || 'Kaydedilemedi')
+    }
+  }
+
+  return (
+    <BottomSheet onClose={onClose}>
+      <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <div>
+            <div style={{ fontFamily: 'var(--display)', fontSize: '15px', letterSpacing: '0.5px' }}>{staff.full_name}</div>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', marginTop: '2px' }}>
+              {date} · {statusMeta.label}{holidayName ? ` · 🎌 ${holidayName}` : ''}
+            </div>
+          </div>
+          <button onClick={onClose} className="btn btn-ghost btn-sm">✕</button>
+        </div>
+
+        <div>
+          <label style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '1px', display: 'block', marginBottom: '4px' }}>
+            FAZLA MESAİ (saat, 0 = sil)
+          </label>
+          <input
+            className="form-input"
+            type="number"
+            min="0"
+            max="12"
+            step="0.5"
+            value={fmHours}
+            onChange={e => setFmHours(e.target.value)}
+            style={{ width: '120px', fontSize: '12px' }}
+          />
+        </div>
+
+        {isAbsent && (
+          <div>
+            <label style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '1px', display: 'block', marginBottom: '4px' }}>
+              DEVAMSIZLIK NEDENİ (opsiyonel)
+            </label>
+            <input
+              className="form-input"
+              value={reason}
+              onChange={e => setReason(e.target.value)}
+              maxLength={200}
+              placeholder="Örn. mazeretsiz, geç bildirim..."
+              style={{ width: '100%', fontSize: '12px' }}
+            />
+          </div>
+        )}
+
+        {error && <div style={{ color: 'var(--red)', fontSize: '11px' }}>{error}</div>}
+
+        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+          <button className="btn btn-ghost btn-sm" onClick={onClose} disabled={saving}>Vazgeç</button>
+          <button className="btn btn-primary btn-sm" onClick={save} disabled={saving}>
+            {saving ? 'Kaydediliyor...' : 'Kaydet'}
+          </button>
+        </div>
+      </div>
+    </BottomSheet>
   )
 }
 

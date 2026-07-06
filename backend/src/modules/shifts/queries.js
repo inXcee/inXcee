@@ -141,13 +141,14 @@ export function getSchedule(weekStart, weekEnd, deptId) {
 export function bulkAssignShifts(entries, createdBy) {
   const db = getDB()
   const upsert = db.prepare(`
-    INSERT INTO shift_schedule(staff_id, dept_id, shift_def_id, work_date, status, leave_type, created_by)
-    VALUES(@staff_id, @dept_id, @shift_def_id, @work_date, @status, @leave_type, @created_by)
+    INSERT INTO shift_schedule(staff_id, dept_id, shift_def_id, work_date, status, leave_type, absent_reason, created_by)
+    VALUES(@staff_id, @dept_id, @shift_def_id, @work_date, @status, @leave_type, @absent_reason, @created_by)
     ON CONFLICT(staff_id, work_date) DO UPDATE SET
       shift_def_id = excluded.shift_def_id,
       dept_id = excluded.dept_id,
       status = excluded.status,
-      leave_type = excluded.leave_type
+      leave_type = excluded.leave_type,
+      absent_reason = excluded.absent_reason
   `)
   const tx = db.transaction(() => {
     entries.forEach(e => {
@@ -155,8 +156,10 @@ export function bulkAssignShifts(entries, createdBy) {
       upsert.run({
         ...e,
         status,
+        dept_id: e.dept_id ?? null,
         shift_def_id: e.shift_def_id || null,
         leave_type: status === 'on_leave' ? (e.leave_type || e.leaveType || null) : null,
+        absent_reason: status === 'absent' ? (e.absent_reason || null) : null,
         created_by: createdBy,
       })
     })
@@ -520,6 +523,22 @@ export function createOvertime(data) {
     `).run(data.staff_id, data.work_date)
   }
   return r.lastInsertRowid
+}
+
+// Faz 28 — Puantaj hücresinden gün bazlı FM: tek kayıt upsert, 0 saat = sil.
+// createOvertime'dan farkı: statüye dokunmaz (hücre kodu N kalır) ve günü tek kayda indirger.
+export function upsertOvertimeDay(staffId, workDate, hours, userId) {
+  const db = getDB()
+  const tx = db.transaction(() => {
+    db.prepare('DELETE FROM overtime_records WHERE staff_id=? AND work_date=?').run(staffId, workDate)
+    if (hours > 0) {
+      db.prepare(`
+        INSERT INTO overtime_records(staff_id, work_date, hours, reason, approved_by)
+        VALUES(?, ?, ?, 'Puantaj girişi', ?)
+      `).run(staffId, workDate, hours, userId || null)
+    }
+  })
+  tx()
 }
 
 export function getOvertimeRecords(filters) {
@@ -982,6 +1001,7 @@ export function getPuantajDayRows(monthStart, monthEnd, deptId) {
       sd.start_hour,
       sd.end_hour,
       CASE WHEN ss.status = 'on_leave' THEN COALESCE(ss.leave_type, lr.leave_type) END as leave_type,
+      ss.absent_reason,
       ot.hours as overtime_hours
     FROM shift_schedule ss
     JOIN staff s ON s.id = ss.staff_id

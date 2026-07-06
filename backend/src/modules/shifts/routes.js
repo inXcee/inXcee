@@ -6,7 +6,7 @@ import { logger } from '../../shared/logger.js'
 import {
   departmentsService, shiftDefinitionsService, scheduleService, bulkAssignService,
   staffStatusService, createLeaveService, approveLeaveService, leaveListService,
-  leaveBalanceService, createOvertimeService, updateOvertimeService, deleteOvertimeService, overtimeListService, overtimeSummaryService, puantajService,
+  leaveBalanceService, createOvertimeService, updateOvertimeService, deleteOvertimeService, overtimeListService, overtimeSummaryService, overtimeDayService, puantajService,
   checkInService, checkOutService, attendanceListService, statisticsService, departmentSummaryService,
   createDepartmentService, updateDepartmentService, deleteDepartmentService, assignDeptService,
   createShiftDefService, updateShiftDefService, deleteShiftDefService,
@@ -449,6 +449,17 @@ shiftsRouter.post('/overtime', ...managerOrSupervisor, (req, res) => {
   try {
     const id = createOvertimeService(req.body, req.user.id)
     res.status(201).json({ id })
+  } catch (e) {
+    res.status(400).json({ error: e.message })
+  }
+})
+
+// Faz 28 — puantaj hücresinden gün bazlı FM upsert (0 saat kaydı siler)
+shiftsRouter.post('/overtime/day', ...managerOrSupervisor, (req, res) => {
+  try {
+    overtimeDayService(req.body, req.user.id)
+    logAudit(req.user.id, 'overtime_day_set', 'shifts', req.body.staff_id, `${req.body.work_date} ${req.body.hours}s`)
+    res.json({ ok: true })
   } catch (e) {
     res.status(400).json({ error: e.message })
   }

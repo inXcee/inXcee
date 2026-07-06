@@ -1148,3 +1148,75 @@ describe('L1 — Bordro PDF', () => {
     await request(app).delete(`/api/shifts/deductions/${add.body.id}`).set('Authorization', `Bearer ${managerToken}`)
   })
 })
+
+describe('Faz 28 — Puantaj bordro girdileri (absent_reason + FM upsert)', () => {
+  let staffId
+
+  beforeAll(() => {
+    staffId = getDB().prepare("INSERT INTO staff(full_name, is_active, salary) VALUES('Faz28 Test Personel', 1, 30000)")
+      .run().lastInsertRowid
+  })
+
+  it('absent + absent_reason kaydedilir ve puantaj/days ile döner', async () => {
+    const r = await request(app).post('/api/shifts/schedule').set('Authorization', `Bearer ${managerToken}`)
+      .send({ entries: [{ staff_id: staffId, work_date: '2026-09-15', status: 'absent', absent_reason: 'Mazeretsiz devamsızlık' }] })
+    expect(r.status).toBe(200)
+
+    const days = await request(app).get('/api/shifts/puantaj/days?month=2026-09')
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(days.status).toBe(200)
+    const entry = (days.body.days[staffId] || []).find(d => d.date === '2026-09-15')
+    expect(entry.status).toBe('absent')
+    expect(entry.absent_reason).toBe('Mazeretsiz devamsızlık')
+  })
+
+  it('absent dışı statüye geçince absent_reason temizlenir', async () => {
+    const r = await request(app).post('/api/shifts/schedule').set('Authorization', `Bearer ${managerToken}`)
+      .send({ entries: [{ staff_id: staffId, work_date: '2026-09-15', status: 'worked' }] })
+    expect(r.status).toBe(200)
+    const row = getDB().prepare("SELECT status, absent_reason FROM shift_schedule WHERE staff_id=? AND work_date='2026-09-15'").get(staffId)
+    expect(row.status).toBe('worked')
+    expect(row.absent_reason).toBe(null)
+  })
+
+  it('POST /overtime/day upsert: oluştur → güncelle → 0 ile sil', async () => {
+    // FM görünürlüğü için gün kaydı gerekli (puantaj/days shift_schedule üzerinden döner)
+    await request(app).post('/api/shifts/schedule').set('Authorization', `Bearer ${managerToken}`)
+      .send({ entries: [{ staff_id: staffId, work_date: '2026-09-16', status: 'worked' }] })
+
+    const create = await request(app).post('/api/shifts/overtime/day').set('Authorization', `Bearer ${managerToken}`)
+      .send({ staff_id: staffId, work_date: '2026-09-16', hours: 3 })
+    expect(create.status).toBe(200)
+    let rows = getDB().prepare("SELECT hours FROM overtime_records WHERE staff_id=? AND work_date='2026-09-16'").all(staffId)
+    expect(rows).toHaveLength(1)
+    expect(rows[0].hours).toBe(3)
+
+    const update = await request(app).post('/api/shifts/overtime/day').set('Authorization', `Bearer ${managerToken}`)
+      .send({ staff_id: staffId, work_date: '2026-09-16', hours: 5 })
+    expect(update.status).toBe(200)
+    rows = getDB().prepare("SELECT hours FROM overtime_records WHERE staff_id=? AND work_date='2026-09-16'").all(staffId)
+    expect(rows).toHaveLength(1)
+    expect(rows[0].hours).toBe(5)
+
+    const days = await request(app).get('/api/shifts/puantaj/days?month=2026-09')
+      .set('Authorization', `Bearer ${managerToken}`)
+    const entry = (days.body.days[staffId] || []).find(d => d.date === '2026-09-16')
+    expect(entry.overtime_hours).toBe(5)
+
+    const remove = await request(app).post('/api/shifts/overtime/day').set('Authorization', `Bearer ${managerToken}`)
+      .send({ staff_id: staffId, work_date: '2026-09-16', hours: 0 })
+    expect(remove.status).toBe(200)
+    rows = getDB().prepare("SELECT hours FROM overtime_records WHERE staff_id=? AND work_date='2026-09-16'").all(staffId)
+    expect(rows).toHaveLength(0)
+  })
+
+  it('overtime/day 12 saat üstünü ve eksik alanları reddeder', async () => {
+    const tooMuch = await request(app).post('/api/shifts/overtime/day').set('Authorization', `Bearer ${managerToken}`)
+      .send({ staff_id: staffId, work_date: '2026-09-16', hours: 13 })
+    expect(tooMuch.status).toBe(400)
+
+    const missing = await request(app).post('/api/shifts/overtime/day').set('Authorization', `Bearer ${managerToken}`)
+      .send({ staff_id: staffId, hours: 2 })
+    expect(missing.status).toBe(400)
+  })
+})

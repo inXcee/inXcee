@@ -1,7 +1,7 @@
 import {
   getDepartments, getShiftDefinitions, getSchedule, bulkAssignShifts,
   getStaffWithShiftStatus, createLeaveRequest, approveLeaveRequest,
-  getLeaveRequests, getLeaveBalance, createOvertime, updateOvertime, deleteOvertime, getOvertimeRecords,
+  getLeaveRequests, getLeaveBalance, createOvertime, updateOvertime, deleteOvertime, getOvertimeRecords, upsertOvertimeDay,
   getOvertimeSummary, createAttendanceLog, updateCheckout, getAttendanceLogs, getPuantaj,
   getShiftStatistics, getDepartmentSummary,
   createDepartment, updateDepartment, deleteDepartment, assignStaffDepartment,
@@ -189,6 +189,15 @@ export function createOvertimeService(data, userId) {
 
 export function overtimeListService(filters) {
   return getOvertimeRecords(filters)
+}
+
+// Faz 28 — puantaj hücresinden gün bazlı FM girişi (0 = kaydı sil)
+export function overtimeDayService(data, userId) {
+  if (!data?.staff_id || !data?.work_date) throw new Error('staff_id ve work_date gerekli')
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(data.work_date)) throw new Error('work_date YYYY-MM-DD formatında olmalı')
+  const hours = Number(data.hours)
+  if (!Number.isFinite(hours) || hours < 0 || hours > 12) throw new Error('Mesai saati 0-12 arasında olmalı')
+  upsertOvertimeDay(data.staff_id, data.work_date, hours, userId)
 }
 
 export function updateOvertimeService(id, data) {
@@ -425,6 +434,7 @@ function dayEntryFromRow(row, date, dow) {
   }
   if (row.leave_type) entry.leave_type = row.leave_type
   if (row.overtime_hours) entry.overtime_hours = row.overtime_hours
+  if (row.absent_reason) entry.absent_reason = row.absent_reason
   return entry
 }
 
