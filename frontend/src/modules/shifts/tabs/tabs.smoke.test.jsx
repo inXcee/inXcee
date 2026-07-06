@@ -48,6 +48,13 @@ describe('shifts tabs smoke', () => {
     expect(screen.getAllByText('VARDIYA TANIMLARI').length).toBeGreaterThan(0)
   })
 
+  it('SettingsTab rotasyon şablon paneli render olur', () => {
+    renderWithProviders(<SettingsTab departments={[]} shiftDefs={[]} />)
+    expect(screen.getByText('ROTASYON UYGULA')).toBeInTheDocument()
+    expect(screen.getByText('ŞABLONLAR')).toBeInTheDocument()
+    expect(screen.getByText(/Önizle/)).toBeInTheDocument()
+  })
+
   it('PuantajTab aylık takvim kod paletini gösterir', async () => {
     api.get.mockImplementation((url) => {
       if (url === '/shifts/puantaj') {

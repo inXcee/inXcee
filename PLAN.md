@@ -291,9 +291,11 @@ Doğrulama: 804/804 backend, build temiz, 8/8 e2e
 - [x] ExcelJS aylık föy: personel × 1-31 renkli kod matrisi, tatil/Pazar başlık vurgusu (tatil adı not olarak), 9 toplam kolonu (N/h/yi/r/üi/i/Y/FM/RT), kod lejantı, Düzenleyen/Kontrol Eden/Onaylayan imza blokları, frozen 3×3
 - [x] PuantajTab "📄 PUANTAJ FÖYÜ" butonu — puantaj-foyu-{ay}.xlsx (61/61 test + build temiz)
 
-### Faz 30 — Rotasyon şablonları
-- [ ] rotation_templates (migration 021) + CRUD
-- [ ] SettingsTab şablon yönetimi
-- [ ] ScheduleTab "şablonu uygula" + önizleme
-- [ ] Kural uyarıları (art arda gün limiti, min 11 saat dinlenme)
-- [ ] preview/apply endpoint testleri
+### Faz 30 — Rotasyon şablonları ✅
+- [x] rotation_templates (migration 021) + CRUD endpoint'leri (GET/POST/DELETE /rotation-templates)
+- [x] Desen: gün dizisi ({shift_def_id} veya null=OFF), 1-31 gün, stagger (kaydırmalı başlangıç)
+- [x] SettingsTab → RotationPanel: şablon oluşturucu (chip'li desen builder) + departman filtreli personel checkbox seçimi
+- [x] Önizle → uygula akışı: per-personel iş/off sayıları + uyarı listesi; uyarı varsa confirmDialog
+- [x] Kural uyarıları: kesintisiz çalışma > 6 gün, iki vardiya arası dinlenme < 11 saat (gece vardiyası hesabı dahil)
+- [x] +6 backend test (103/103 shifts, 1306/1306 tüm suite), 62/62 frontend, build temiz
+- [x] Bonus fix (1311c10): gece yarısı UTC/yerel gün kayması — avs my-shifts/my-transport localtime; stations/kitchen/avs testleri yerel gün

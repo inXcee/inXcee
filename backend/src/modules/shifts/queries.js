@@ -857,6 +857,24 @@ export function copyWeekSchedule(sourceWeekStart, targetWeekStart, createdBy) {
   return rows.length
 }
 
+// ── Rotation templates (Faz 30 — isimli şablonlar) ──
+export function listRotationTemplates() {
+  return getDB().prepare('SELECT * FROM rotation_templates ORDER BY id DESC').all()
+}
+
+export function getRotationTemplate(id) {
+  return getDB().prepare('SELECT * FROM rotation_templates WHERE id=?').get(id)
+}
+
+export function createRotationTemplate(name, patternJson, createdBy) {
+  return getDB().prepare('INSERT INTO rotation_templates(name, pattern_json, created_by) VALUES(?,?,?)')
+    .run(name, patternJson, createdBy || null).lastInsertRowid
+}
+
+export function deleteRotationTemplate(id) {
+  getDB().prepare('DELETE FROM rotation_templates WHERE id=?').run(id)
+}
+
 // ── Rotation templates ──
 export function applyRotationTemplate(staffIds, deptId, shiftDefIds, startDate, weeks, createdBy) {
   const db = getDB()

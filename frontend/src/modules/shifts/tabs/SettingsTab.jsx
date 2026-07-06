@@ -2,18 +2,17 @@ import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../../shared/api/client.js'
 import { confirmDialog } from '../../../shared/components/ConfirmDialog.jsx'
-import { toastErr, toastOk, shiftColor, ModalOverlay, formatShiftHour } from '../shared.jsx'
+import { toastErr, shiftColor, ModalOverlay, formatShiftHour } from '../shared.jsx'
+import RotationPanel from './RotationPanel.jsx'
 
 export default function SettingsTab({ departments, shiftDefs }) {
   const qc = useQueryClient()
   const [defModal, setDefModal] = useState(null)
   const [defForm, setDefForm] = useState({ name: '', start_hour: '', end_hour: '', color_class: 'bg-blue-400' })
-  const [rotForm, setRotForm] = useState({ dept_id: '', staff_ids: '', shift_def_ids: '', start_date: '', weeks: '4' })
 
   const createDef = useMutation({ mutationFn: data => api.post('/shifts/definitions', data), onSuccess: () => { qc.invalidateQueries({ queryKey: ['shift-defs'] }); setDefModal(null) }, onError: toastErr })
   const updateDef = useMutation({ mutationFn: ({ id, ...data }) => api.put(`/shifts/definitions/${id}`, data), onSuccess: () => { qc.invalidateQueries({ queryKey: ['shift-defs'] }); setDefModal(null) }, onError: toastErr })
   const deleteDef = useMutation({ mutationFn: (id) => api.delete(`/shifts/definitions/${id}`), onSuccess: () => qc.invalidateQueries({ queryKey: ['shift-defs'] }) })
-  const applyRotation = useMutation({ mutationFn: data => api.post('/shifts/schedule/rotation', data), onSuccess: () => { qc.invalidateQueries({ queryKey: ['schedule'] }); toastOk('Rotasyon başarıyla uygulandı') }, onError: toastErr })
 
   const DEF_COLORS = ['bg-blue-400', 'bg-orange-400', 'bg-indigo-600']
 
@@ -56,50 +55,7 @@ export default function SettingsTab({ departments, shiftDefs }) {
         </div>
       </div>
 
-      <div className="sect"><div className="sect-title">ROTASYON SABLONU</div><div className="sect-line" /></div>
-
-      <div className="panel">
-        <div className="panel-header"><div><div className="panel-title">ROTASYON UYGULA</div><div className="panel-subtitle">OTOMATIK VARDIYA CIZELGESI</div></div></div>
-        <div className="panel-body">
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
-            <div><label className="form-label">Bolum</label>
-              <select className="form-select" value={rotForm.dept_id} onChange={e => setRotForm(p => ({ ...p, dept_id: e.target.value }))}>
-                <option value="">Bolum secin...</option>
-                {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-              </select>
-            </div>
-            <div><label className="form-label">Baslangic Tarihi</label><input type="date" className="form-input" value={rotForm.start_date} onChange={e => setRotForm(p => ({ ...p, start_date: e.target.value }))} /></div>
-            <div><label className="form-label">Personel ID'leri (virgul ile)</label><input className="form-input" value={rotForm.staff_ids} placeholder="1,2,3,4..." onChange={e => setRotForm(p => ({ ...p, staff_ids: e.target.value }))} /></div>
-            <div><label className="form-label">Vardiya Tanimlari (virgul ile ID)</label><input className="form-input" value={rotForm.shift_def_ids} placeholder="1,2,3..." onChange={e => setRotForm(p => ({ ...p, shift_def_ids: e.target.value }))} /></div>
-            <div><label className="form-label">Hafta Sayisi</label><input type="number" min="1" max="52" className="form-input" value={rotForm.weeks} onChange={e => setRotForm(p => ({ ...p, weeks: e.target.value }))} /></div>
-          </div>
-
-          {shiftDefs.length > 0 && (
-            <div style={{ marginTop: '14px', padding: '10px 12px', background: 'var(--surface2)', borderRadius: '7px', border: '1px solid var(--border)' }}>
-              <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '1px', marginBottom: '6px' }}>MEVCUT VARDIYA TANIMLARI</div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                {shiftDefs.map(s => {
-                  const sc = shiftColor(s.color_class)
-                  return (<span key={s.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '3px 9px', borderRadius: '20px', background: sc.bg, color: sc.text, fontFamily: 'var(--mono)', fontSize: '10px', fontWeight: 600 }}>ID:{s.id} &mdash; {s.name}</span>)
-                })}
-              </div>
-            </div>
-          )}
-
-          <div style={{ marginTop: '16px' }}>
-            <button className="btn btn-primary"
-              disabled={!rotForm.dept_id || !rotForm.start_date || !rotForm.staff_ids || !rotForm.shift_def_ids || applyRotation.isPending}
-              style={{ opacity: (!rotForm.dept_id || !rotForm.start_date || !rotForm.staff_ids || !rotForm.shift_def_ids) ? 0.5 : 1 }}
-              onClick={() => applyRotation.mutate({
-                dept_id: parseInt(rotForm.dept_id), start_date: rotForm.start_date, weeks: parseInt(rotForm.weeks) || 4,
-                staff_ids: rotForm.staff_ids.split(',').map(s => parseInt(s.trim())).filter(Boolean),
-                shift_def_ids: rotForm.shift_def_ids.split(',').map(s => parseInt(s.trim())).filter(Boolean),
-              })}>
-              {applyRotation.isPending ? 'Uygulaniyor...' : 'Rotasyonu Uygula'}
-            </button>
-          </div>
-        </div>
-      </div>
+      <RotationPanel departments={departments} shiftDefs={shiftDefs} />
 
       {defModal !== null && (
         <ModalOverlay onClose={() => setDefModal(null)}>

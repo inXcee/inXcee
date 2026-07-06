@@ -1220,3 +1220,109 @@ describe('Faz 28 — Puantaj bordro girdileri (absent_reason + FM upsert)', () =
     expect(missing.status).toBe(400)
   })
 })
+
+describe('Faz 30 — Rotasyon şablonları', () => {
+  let staffA, staffB, morningId, eveningId, templateId
+
+  beforeAll(async () => {
+    const db = getDB()
+    staffA = db.prepare("INSERT INTO staff(full_name, is_active) VALUES('Rotasyon A', 1)").run().lastInsertRowid
+    staffB = db.prepare("INSERT INTO staff(full_name, is_active) VALUES('Rotasyon B', 1)").run().lastInsertRowid
+    // Sabah 08-16, Akşam 16-24 → akşam→sabah geçişinde dinlenme 8 saat (< 11) uyarı üretir
+    const mk = async (name, start, end) => {
+      const r = await request(app).post('/api/shifts/definitions')
+        .set('Authorization', `Bearer ${managerToken}`)
+        .send({ name, start_hour: start, end_hour: end, color_class: 'bg-blue-400' })
+      expect(r.status).toBe(201)
+      return r.body.id
+    }
+    morningId = await mk('Rot Sabah', 8, 16)
+    eveningId = await mk('Rot Akşam', 16, 24)
+  })
+
+  it('şablon oluşturulur ve listelenir', async () => {
+    const r = await request(app).post('/api/shifts/rotation-templates')
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({ name: '2 sabah + 2 akşam + 2 off', pattern: [
+        { shift_def_id: morningId }, { shift_def_id: morningId },
+        { shift_def_id: eveningId }, { shift_def_id: eveningId },
+        { shift_def_id: null }, { shift_def_id: null },
+      ] })
+    expect(r.status).toBe(201)
+    templateId = r.body.id
+
+    const list = await request(app).get('/api/shifts/rotation-templates')
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(list.status).toBe(200)
+    const tpl = list.body.find(t => t.id === templateId)
+    expect(tpl.name).toContain('2 sabah')
+    expect(tpl.pattern).toHaveLength(6)
+    expect(tpl.pattern[4].shift_def_id).toBe(null)
+  })
+
+  it('geçersiz şablon 400 (boş desen / isim yok)', async () => {
+    const noName = await request(app).post('/api/shifts/rotation-templates')
+      .set('Authorization', `Bearer ${managerToken}`).send({ pattern: [{ shift_def_id: null }] })
+    expect(noName.status).toBe(400)
+    const noPattern = await request(app).post('/api/shifts/rotation-templates')
+      .set('Authorization', `Bearer ${managerToken}`).send({ name: 'x', pattern: [] })
+    expect(noPattern.status).toBe(400)
+  })
+
+  it('önizleme: akşam→sabah geçişi dinlenme uyarısı, kesintisiz gün uyarısı', async () => {
+    // Desen: akşam, sabah → dinlenme 8s < 11s uyarısı; 14 gün hiç OFF yok → kesintisiz uyarı
+    const r = await request(app).post('/api/shifts/rotation-templates/preview')
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({
+        pattern: [{ shift_def_id: eveningId }, { shift_def_id: morningId }],
+        staff_ids: [staffA], start_date: '2026-10-05', weeks: 2,
+      })
+    expect(r.status).toBe(200)
+    expect(r.body.total_entries).toBe(14)
+    const types = r.body.warnings.map(w => w.type)
+    expect(types).toContain('rest')
+    expect(types).toContain('consecutive')
+  })
+
+  it('OFF içeren desende kesintisiz uyarısı çıkmaz', async () => {
+    const r = await request(app).post('/api/shifts/rotation-templates/preview')
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({ template_id: templateId, staff_ids: [staffA, staffB], start_date: '2026-10-05', weeks: 1 })
+    expect(r.status).toBe(200)
+    expect(r.body.warnings.filter(w => w.type === 'consecutive')).toHaveLength(0)
+  })
+
+  it('uygula: scheduled + off satırları yazılır, stagger personel başlangıcını kaydırır', async () => {
+    const r = await request(app).post('/api/shifts/rotation-templates/apply')
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({ template_id: templateId, staff_ids: [staffA, staffB], start_date: '2026-10-05', weeks: 1, stagger: true })
+    expect(r.status).toBe(200)
+    expect(r.body.count).toBe(14) // 2 personel × 7 gün (1 hafta)
+
+    const db = getDB()
+    const rowsA = db.prepare(`
+      SELECT work_date, status, shift_def_id FROM shift_schedule
+      WHERE staff_id=? AND work_date BETWEEN '2026-10-05' AND '2026-10-10' ORDER BY work_date
+    `).all(staffA)
+    expect(rowsA).toHaveLength(6)
+    expect(rowsA[0].shift_def_id).toBe(morningId) // stagger 0 → desen başı
+    expect(rowsA[4].status).toBe('off')
+    expect(rowsA[4].shift_def_id).toBe(null)
+
+    const rowsB = db.prepare(`
+      SELECT work_date, status, shift_def_id FROM shift_schedule
+      WHERE staff_id=? AND work_date BETWEEN '2026-10-05' AND '2026-10-10' ORDER BY work_date
+    `).all(staffB)
+    expect(rowsB[0].shift_def_id).toBe(morningId) // stagger 1 → desen 2. elemanı (yine sabah)
+    expect(rowsB[3].status).toBe('off') // kayma: off günleri 1 gün öne gelir
+  })
+
+  it('şablon silinir', async () => {
+    const del = await request(app).delete(`/api/shifts/rotation-templates/${templateId}`)
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(del.status).toBe(200)
+    const list = await request(app).get('/api/shifts/rotation-templates')
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(list.body.find(t => t.id === templateId)).toBeFalsy()
+  })
+})

@@ -12,6 +12,8 @@ import {
   createShiftDefService, updateShiftDefService, deleteShiftDefService,
   cancelLeaveService, createSwapService, swapListService, approveSwapService, rejectSwapService,
   copyWeekService, rotationService, searchStaffService, deleteScheduleService,
+  rotationTemplatesService, createRotationTemplateService, deleteRotationTemplateService,
+  rotationPreviewService, rotationApplyService,
   staffDetailService,
   staffListService, staffGetService, staffCreateService, staffUpdateService, staffDeleteService,
   puantajCsvService, puantajDaysService, staffDayBreakdownService, payslipService, bankTransferCsvService
@@ -650,6 +652,41 @@ shiftsRouter.post('/schedule/rotation', ...managerOrSupervisor, (req, res) => {
   try {
     const count = rotationService(req.body, req.user.id)
     res.json({ ok: true, assigned: count })
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+// ── Faz 30: İsimli rotasyon şablonları ──
+shiftsRouter.get('/rotation-templates', ...managerOrSupervisor, (req, res) => {
+  try { res.json(rotationTemplatesService()) }
+  catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+shiftsRouter.post('/rotation-templates', ...managerOrSupervisor, (req, res) => {
+  try {
+    const id = createRotationTemplateService(req.body, req.user.id)
+    logAudit(req.user.id, 'rotation_template_create', 'shifts', id, req.body.name)
+    res.status(201).json({ id })
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+shiftsRouter.delete('/rotation-templates/:id', ...managerOrSupervisor, (req, res) => {
+  try {
+    deleteRotationTemplateService(+req.params.id)
+    logAudit(req.user.id, 'rotation_template_delete', 'shifts', +req.params.id, '')
+    res.json({ ok: true })
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+shiftsRouter.post('/rotation-templates/preview', ...managerOrSupervisor, (req, res) => {
+  try { res.json(rotationPreviewService(req.body)) }
+  catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+shiftsRouter.post('/rotation-templates/apply', ...managerOrSupervisor, (req, res) => {
+  try {
+    const result = rotationApplyService(req.body, req.user.id)
+    logAudit(req.user.id, 'rotation_apply', 'shifts', null, `${req.body.start_date} · ${result.count} giriş`)
+    res.json(result)
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
 

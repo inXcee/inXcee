@@ -8,6 +8,7 @@ import {
   createShiftDefinition, updateShiftDefinition, deleteShiftDefinition,
   cancelLeaveRequest, createSwapRequest, getSwapRequests, approveSwapRequest, rejectSwapRequest,
   copyWeekSchedule, applyRotationTemplate, searchStaff, deleteScheduleEntry,
+  listRotationTemplates, getRotationTemplate, createRotationTemplate, deleteRotationTemplate,
   getStaffDetail,
   getStaffList, getStaffById, createStaff, updateStaff, deleteStaff,
   getStaffDayBreakdown, getPuantajDayRows, listDeductions
@@ -296,6 +297,182 @@ export function rotationService(data, userId) {
   if (!data.staff_ids?.length || !data.shift_def_ids?.length || !data.start_date || !data.weeks)
     throw new Error('Zorunlu alanlar eksik')
   return applyRotationTemplate(data.staff_ids, data.dept_id, data.shift_def_ids, data.start_date, data.weeks, userId)
+}
+
+// ── Faz 30: İsimli rotasyon şablonları + kural uyarıları ──
+
+function addDaysIso(dateStr, n) {
+  const d = new Date(dateStr)
+  d.setDate(d.getDate() + n)
+  return d.toISOString().split('T')[0]
+}
+
+// Desenden gün girişleri üretir. stagger=true → her personel desene bir sonraki
+// pozisyondan başlar (vardiyalar gün bazında dönüşümlü kapanır).
+export function buildRotationEntries(pattern, staffIds, startDate, days, stagger = false) {
+  const entries = []
+  staffIds.forEach((sid, idx) => {
+    const offset = stagger ? idx % pattern.length : 0
+    for (let d = 0; d < days; d++) {
+      const item = pattern[(d + offset) % pattern.length]
+      entries.push({
+        staff_id: sid,
+        work_date: addDaysIso(startDate, d),
+        shift_def_id: item.shift_def_id || null,
+        status: item.shift_def_id ? 'scheduled' : 'off',
+      })
+    }
+  })
+  return entries
+}
+
+// İş kuralı uyarıları: art arda çalışma limiti (İK m.63 pratik: 6 gün) ve
+// iki vardiya arası minimum dinlenme (11 saat).
+export function rotationWarnings(entries, shiftDefsById, staffNames = {}, { maxConsecutive = 6, minRestHours = 11 } = {}) {
+  const warnings = []
+  const byStaff = {}
+  entries.forEach(e => { (byStaff[e.staff_id] = byStaff[e.staff_id] || []).push(e) })
+
+  const isNextDay = (a, b) => addDaysIso(a, 1) === b
+
+  Object.entries(byStaff).forEach(([sid, list]) => {
+    const name = staffNames[sid] || `#${sid}`
+    const sorted = [...list].sort((a, b) => a.work_date.localeCompare(b.work_date))
+
+    let streak = 0
+    let streakStart = null
+    let prev = null
+    const closeStreak = (endDate) => {
+      if (streak > maxConsecutive) {
+        warnings.push({
+          type: 'consecutive', staff_id: Number(sid), date: streakStart,
+          message: `${name}: ${streakStart} – ${endDate} arası ${streak} gün kesintisiz çalışma (limit ${maxConsecutive})`,
+        })
+      }
+      streak = 0
+      streakStart = null
+    }
+
+    sorted.forEach(e => {
+      const working = e.status === 'scheduled'
+      const adjacent = prev && isNextDay(prev.work_date, e.work_date)
+
+      if (working) {
+        if (streak > 0 && adjacent && prev.status === 'scheduled') streak++
+        else { closeStreak(prev?.work_date); streak = 1; streakStart = e.work_date }
+      } else if (streak > 0) {
+        closeStreak(prev?.work_date)
+      }
+
+      if (adjacent && prev.status === 'scheduled' && working && prev.shift_def_id && e.shift_def_id) {
+        const prevDef = shiftDefsById[prev.shift_def_id]
+        const nextDef = shiftDefsById[e.shift_def_id]
+        if (prevDef?.end_hour != null && nextDef?.start_hour != null) {
+          const prevEndAbs = prevDef.end_hour > prevDef.start_hour ? prevDef.end_hour : prevDef.end_hour + 24
+          const rest = (24 + nextDef.start_hour) - prevEndAbs
+          if (rest < minRestHours) {
+            warnings.push({
+              type: 'rest', staff_id: Number(sid), date: e.work_date,
+              message: `${name}: ${e.work_date} — ${prevDef.name} sonrası ${nextDef.name} arasında ${rest} saat dinlenme (min ${minRestHours})`,
+            })
+          }
+        }
+      }
+      prev = e
+    })
+    closeStreak(prev?.work_date)
+  })
+  return warnings
+}
+
+export function rotationTemplatesService() {
+  return listRotationTemplates().map(t => ({
+    id: t.id, name: t.name, created_at: t.created_at,
+    pattern: JSON.parse(t.pattern_json),
+  }))
+}
+
+function validateRotationPattern(pattern) {
+  if (!Array.isArray(pattern) || pattern.length === 0 || pattern.length > 31)
+    throw new Error('Desen 1-31 gün arasında olmalı')
+  const db = getDB()
+  const validIds = new Set(db.prepare('SELECT id FROM shift_definitions').all().map(r => r.id))
+  pattern.forEach(item => {
+    if (item.shift_def_id != null && !validIds.has(item.shift_def_id))
+      throw new Error(`Geçersiz vardiya tanımı: ${item.shift_def_id}`)
+  })
+}
+
+export function createRotationTemplateService(data, userId) {
+  if (!data?.name?.trim()) throw new Error('Şablon adı gerekli')
+  validateRotationPattern(data.pattern)
+  return createRotationTemplate(data.name.trim(), JSON.stringify(data.pattern), userId)
+}
+
+export function deleteRotationTemplateService(id) {
+  deleteRotationTemplate(id)
+}
+
+function resolveRotationInput(body) {
+  let pattern = body.pattern
+  if (body.template_id) {
+    const tpl = getRotationTemplate(body.template_id)
+    if (!tpl) throw new Error('Şablon bulunamadı')
+    pattern = JSON.parse(tpl.pattern_json)
+  }
+  validateRotationPattern(pattern)
+  const staffIds = (body.staff_ids || []).map(Number).filter(Boolean)
+  if (staffIds.length === 0) throw new Error('Personel seçilmedi')
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(body.start_date || '')) throw new Error('start_date YYYY-MM-DD formatında olmalı')
+  const weeks = Math.min(Math.max(parseInt(body.weeks) || 1, 1), 8)
+  return { pattern, staffIds, startDate: body.start_date, days: weeks * 7, stagger: !!body.stagger }
+}
+
+function rotationContext(staffIds) {
+  const db = getDB()
+  const ph = staffIds.map(() => '?').join(',')
+  const staffRows = db.prepare(`SELECT id, full_name, department_id FROM staff WHERE id IN (${ph})`).all(...staffIds)
+  const shiftDefs = db.prepare('SELECT id, name, start_hour, end_hour FROM shift_definitions').all()
+  return {
+    staffNames: Object.fromEntries(staffRows.map(s => [s.id, s.full_name])),
+    deptByStaff: Object.fromEntries(staffRows.map(s => [s.id, s.department_id])),
+    shiftDefsById: Object.fromEntries(shiftDefs.map(s => [s.id, s])),
+  }
+}
+
+export function rotationPreviewService(body) {
+  const { pattern, staffIds, startDate, days, stagger } = resolveRotationInput(body)
+  const entries = buildRotationEntries(pattern, staffIds, startDate, days, stagger)
+  const { staffNames, shiftDefsById } = rotationContext(staffIds)
+  const warnings = rotationWarnings(entries, shiftDefsById, staffNames)
+  const perStaff = staffIds.map(sid => {
+    const list = entries.filter(e => e.staff_id === sid)
+    return {
+      staff_id: sid,
+      name: staffNames[sid] || `#${sid}`,
+      scheduled: list.filter(e => e.status === 'scheduled').length,
+      off: list.filter(e => e.status === 'off').length,
+    }
+  })
+  return {
+    total_entries: entries.length,
+    days,
+    end_date: addDaysIso(startDate, days - 1),
+    per_staff: perStaff,
+    warnings,
+  }
+}
+
+export function rotationApplyService(body, userId) {
+  const { pattern, staffIds, startDate, days, stagger } = resolveRotationInput(body)
+  const entries = buildRotationEntries(pattern, staffIds, startDate, days, stagger)
+  const { staffNames, deptByStaff, shiftDefsById } = rotationContext(staffIds)
+  const warnings = rotationWarnings(entries, shiftDefsById, staffNames)
+  bulkAssignShifts(entries.map(e => ({
+    ...e,
+    dept_id: deptByStaff[e.staff_id] || null,
+  })), userId)
+  return { count: entries.length, warnings }
 }
 
 export function deleteScheduleService(staffId, workDate) {
