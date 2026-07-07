@@ -48,6 +48,7 @@ import { feedbackRouter } from './modules/feedback/routes.js'
 import { dashboardRouter } from './modules/dashboard/routes.js'
 import { roomHistoryRouter } from './modules/room-history/routes.js'
 import { shiftsRouter } from './modules/shifts/routes.js'
+import { waterRouter } from './modules/water/routes.js'
 import { checkoutRouter } from './modules/checkout/routes.js'
 import { bulkActionsRouter } from './modules/bulk-actions/routes.js'
 import { companiesRouter } from './modules/companies/routes.js'
@@ -345,6 +346,7 @@ app.use('/api/notifications', notificationsLimiter, notificationsRouter)
 app.use('/api/push', writeLimiter, pushRouter)
 app.use('/api/whatsapp', writeLimiter, whatsappRouter)
 app.use('/api/shifts', writeLimiter, shiftsRouter)
+app.use('/api/water', writeLimiter, waterRouter)
 app.use('/api/checkout', writeLimiter, checkoutRouter)
 app.use('/api/bulk-actions', writeLimiter, bulkActionsRouter)
 app.use('/api/companies', writeLimiter, companiesRouter)

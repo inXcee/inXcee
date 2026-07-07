@@ -34,6 +34,7 @@ const HrPage = lazy(() => import('./modules/hr/HrPage.jsx'))
 const PayrollPage = lazy(() => import('./modules/shifts/PayrollPage.jsx'))
 const HolidaysPage = lazy(() => import('./modules/shifts/HolidaysPage.jsx'))
 const MailComposePage = lazy(() => import('./modules/mail-compose/MailComposePage.jsx'))
+const WaterPage = lazy(() => import('./modules/water/WaterPage.jsx'))
 const CombinedAbsencesPage = lazy(() => import('./modules/shifts/CombinedAbsencesPage.jsx'))
 const SafetyPage = lazy(() => import('./modules/safety/SafetyPage.jsx'))
 const MealsPage = lazy(() => import('./modules/meals/MealsPage.jsx'))
@@ -300,6 +301,7 @@ export default function App() {
             <Route path="room-history" element={<RoomHistoryPage />} />
             <Route path="whatsapp" element={<WhatsAppPage />} />
             <Route path="shifts" element={<ShiftsPage />} />
+            <Route path="water" element={<WaterPage />} />
             <Route path="reports-advanced" element={<AdvancedReportsPage />} />
             <Route path="integrity" element={<IntegrityPage />} />
             <Route path="personnel/:id" element={<Personnel360Page />} />

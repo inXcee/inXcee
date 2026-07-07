@@ -322,3 +322,10 @@ Doğrulama: 804/804 backend, build temiz, 8/8 e2e
 - [x] Endpoint'ler: /settings/email/attachments (GET/POST/PUT/DELETE + /:id/download), hepsi campus_manager
 - [x] MailComposePage: ek arşivi paneli — checkbox ile seç-ekle, ＋ yükle, ⟳ yeni sürüm (üstüne yaz), ✕ sil
 - [x] +8 backend test (34/34 email, 1331/1331 tüm suite), +1 frontend smoke, build temiz
+
+### Faz 34 — Su takip modülü ✅
+- [x] Şema (migration 025): water_products (units_per_case/cases_per_pallet), water_zones, water_movements (in/out, qty_base=adet) + 4 varsayılan ürün seed
+- [x] Otomatik çevrim: toBase (palet/koli/adet→adet) + humanize (adet→palet/koli/birim kırılımı)
+- [x] Backend water/ modülü: ürün+bölge CRUD (hareketi varsa 409), giriş(irsaliye)/dağıtım, silme, movements listesi, summary (stok bakiyesi + bölge×ürün + günlük seri + toplamlar)
+- [x] WaterPage (sidebar Operasyon → 💧 Su Takip): Özet (KPI + recharts günlük grafik + stok tablosu + bölge kartları + tarih filtresi), Giriş, Dağıtım, Bölgeler, Ürünler sekmeleri
+- [x] +14 backend test (1345/1345 tüm suite), +2 frontend smoke, build temiz
