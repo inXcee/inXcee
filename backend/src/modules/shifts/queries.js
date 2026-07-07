@@ -857,6 +857,37 @@ export function copyWeekSchedule(sourceWeekStart, targetWeekStart, createdBy) {
   return rows.length
 }
 
+// ── Period locks (Faz 31 — ay kapatma) ──
+export function listPeriodLocks() {
+  return getDB().prepare(`
+    SELECT pl.period, pl.locked_at, pl.note, u.username as locked_by_name
+    FROM period_locks pl
+    LEFT JOIN users u ON u.id = pl.locked_by
+    ORDER BY pl.period DESC
+  `).all()
+}
+
+export function isPeriodLocked(period) {
+  return !!getDB().prepare('SELECT 1 FROM period_locks WHERE period=?').get(period)
+}
+
+export function lockedPeriodsFor(periods) {
+  if (!periods.length) return []
+  const ph = periods.map(() => '?').join(',')
+  return getDB().prepare(`SELECT period FROM period_locks WHERE period IN (${ph})`).all(...periods).map(r => r.period)
+}
+
+export function lockPeriod(period, userId, note) {
+  getDB().prepare(`
+    INSERT INTO period_locks(period, locked_by, note) VALUES(?,?,?)
+    ON CONFLICT(period) DO UPDATE SET locked_by=excluded.locked_by, locked_at=CURRENT_TIMESTAMP, note=excluded.note
+  `).run(period, userId || null, note || null)
+}
+
+export function unlockPeriod(period) {
+  getDB().prepare('DELETE FROM period_locks WHERE period=?').run(period)
+}
+
 // ── Rotation templates (Faz 30 — isimli şablonlar) ──
 export function listRotationTemplates() {
   return getDB().prepare('SELECT * FROM rotation_templates ORDER BY id DESC').all()

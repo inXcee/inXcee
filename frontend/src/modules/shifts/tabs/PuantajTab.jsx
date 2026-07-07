@@ -4,7 +4,8 @@ import api from '../../../shared/api/client.js'
 import { useAuthStore } from '../../../shared/store/authStore.js'
 import { useDebounce } from '../../../shared/hooks/useDebounce.js'
 import { SkeletonTable, SkeletonGrid } from '../../../shared/components/Skeleton.jsx'
-import { BottomSheet, formatShiftHours, leaveTypeLabel } from '../shared.jsx'
+import { BottomSheet, formatShiftHours, leaveTypeLabel, toastErr } from '../shared.jsx'
+import { confirmDialog } from '../../../shared/components/ConfirmDialog.jsx'
 import { actionIdForKey, normalizeRect, cellsInRect, isInRect, moveCell, pushUndo, summarizeColumn } from '../logic/puantajGrid.js'
 import { buildFoyuRow, FOYU_LEGEND, FOYU_TOTAL_COLUMNS } from '../logic/puantajFoyu.js'
 
@@ -1252,7 +1253,8 @@ function BordroDetailSheet({ row, month, monthLabel, formatMoney, onClose }) {
 export default function PuantajTab({ departments }) {
   const qc = useQueryClient()
   const user = useAuthStore(s => s.user)
-  const canEdit = ['campus_manager', 'shift_supervisor'].includes(user?.role)
+  const roleCanEdit = ['campus_manager', 'shift_supervisor'].includes(user?.role)
+  const isManager = user?.role === 'campus_manager'
   const today = new Date()
   const [month, setMonth] = useState(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`)
   const [deptFilter, setDeptFilter] = useState('')
@@ -1263,6 +1265,23 @@ export default function PuantajTab({ departments }) {
   const [selectedRow, setSelectedRow] = useState(null) // row object for bordro detail
   const [sortBy, setSortBy] = useState('name')
   const [selectedAction, setSelectedAction] = useState(ACTION_BY_ID.worked)
+
+  // Faz 31 — dönem kilidi: kilitli ay salt-okunur
+  const { data: periodLocks = [] } = useQuery({
+    queryKey: ['period-locks'],
+    queryFn: () => api.get('/shifts/period-locks').then(r => r.data),
+    enabled: roleCanEdit,
+  })
+  const monthLock = periodLocks.find(l => l.period === month)
+  const isLocked = !!monthLock
+  const canEdit = roleCanEdit && !isLocked
+
+  const toggleLock = useMutation({
+    mutationFn: ({ lock, note }) => lock
+      ? api.post('/shifts/period-locks', { period: month, note })
+      : api.delete(`/shifts/period-locks/${month}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['period-locks'] }),
+  })
 
   const { data: rows = [], isLoading } = useQuery({
     queryKey: ['puantaj', month, deptFilter],
@@ -1311,6 +1330,11 @@ export default function PuantajTab({ departments }) {
     onSuccess: (_, variables) => {
       variables.onLocalUpdate?.()
       qc.invalidateQueries({ queryKey: ['puantaj'] })
+      qc.invalidateQueries({ queryKey: ['puantaj-days-month'] })
+    },
+    onError: (err) => {
+      // Dönem kilidi (423) veya diğer hatalar — sunucu reddetti, yerel değişiklik uygulanmaz
+      toastErr(err)
       qc.invalidateQueries({ queryKey: ['puantaj-days-month'] })
     },
   })
@@ -1557,8 +1581,41 @@ export default function PuantajTab({ departments }) {
           <button className="btn btn-ghost btn-sm" onClick={downloadFoyu} disabled={foyuExporting} style={{ fontSize: '10px' }}>
             📄 {foyuExporting ? 'HAZIRLANIYOR...' : 'PUANTAJ FÖYÜ'}
           </button>
+          {isManager && (
+            <button
+              className="btn btn-ghost btn-sm"
+              disabled={toggleLock.isPending}
+              style={{ fontSize: '10px', color: isLocked ? 'var(--green)' : 'var(--red)' }}
+              onClick={async () => {
+                if (isLocked) {
+                  if (await confirmDialog({ title: 'Dönem Kilidini Aç', body: `${monthLabel} tekrar düzenlenebilir olacak. Emin misiniz?`, danger: true })) {
+                    toggleLock.mutate({ lock: false })
+                  }
+                } else if (await confirmDialog({ title: 'Dönemi Kilitle', body: `${monthLabel} puantajı kilitlenecek — kimse (siz dahil) değiştiremeyecek. Bordro kesildiyse kilitleyin.` })) {
+                  toggleLock.mutate({ lock: true, note: `${monthLabel} kapatıldı` })
+                }
+              }}>
+              {isLocked ? '🔓 KİLİDİ AÇ' : '🔒 AYI KİLİTLE'}
+            </button>
+          )}
         </div>
       </div>
+
+      {isLocked && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap',
+          marginBottom: '12px', padding: '8px 12px',
+          background: 'rgba(240,165,0,.08)', border: '1px solid rgba(240,165,0,.35)', borderRadius: '8px',
+        }}>
+          <span style={{ fontSize: '13px' }}>🔒</span>
+          <span style={{ fontSize: '11px', color: 'var(--text2)' }}>
+            <strong>{monthLabel} dönemi kilitli</strong> — puantaj salt-okunur.
+            {monthLock?.note ? ` (${monthLock.note})` : ''}
+            {monthLock?.locked_by_name ? ` · ${monthLock.locked_by_name}` : ''}
+          </span>
+          {!isManager && <span style={{ fontSize: '10px', color: 'var(--text3)', marginLeft: 'auto' }}>Açmak için müdür yetkisi gerekir</span>}
+        </div>
+      )}
 
       <div style={{
         display: 'flex',

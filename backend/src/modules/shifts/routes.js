@@ -14,6 +14,7 @@ import {
   copyWeekService, rotationService, searchStaffService, deleteScheduleService,
   rotationTemplatesService, createRotationTemplateService, deleteRotationTemplateService,
   rotationPreviewService, rotationApplyService,
+  periodLocksService, lockPeriodService, unlockPeriodService,
   staffDetailService,
   staffListService, staffGetService, staffCreateService, staffUpdateService, staffDeleteService,
   puantajCsvService, puantajDaysService, staffDayBreakdownService, payslipService, bankTransferCsvService
@@ -32,6 +33,7 @@ import { logAudit } from '../../shared/audit.js'
 export const shiftsRouter = Router()
 
 const managerOrSupervisor = requireRole('campus_manager', 'shift_supervisor')
+const managerOnly = requireRole('campus_manager')
 const allStaff = [requireAuth]
 
 // ── Staff CRUD — Personel bilgileri (maaş, TC, adres) sadece yönetim rollerine ──
@@ -124,7 +126,7 @@ shiftsRouter.post('/schedule', ...managerOrSupervisor, (req, res) => {
     bulkAssignService(req.body.entries, req.user.id)
     res.json({ ok: true })
   } catch (e) {
-    res.status(400).json({ error: e.message })
+    res.status(e.statusCode || 400).json({ error: e.message })
   }
 })
 
@@ -463,7 +465,7 @@ shiftsRouter.post('/overtime/day', ...managerOrSupervisor, (req, res) => {
     logAudit(req.user.id, 'overtime_day_set', 'shifts', req.body.staff_id, `${req.body.work_date} ${req.body.hours}s`)
     res.json({ ok: true })
   } catch (e) {
-    res.status(400).json({ error: e.message })
+    res.status(e.statusCode || 400).json({ error: e.message })
   }
 })
 
@@ -687,7 +689,29 @@ shiftsRouter.post('/rotation-templates/apply', ...managerOrSupervisor, (req, res
     const result = rotationApplyService(req.body, req.user.id)
     logAudit(req.user.id, 'rotation_apply', 'shifts', null, `${req.body.start_date} · ${result.count} giriş`)
     res.json(result)
-  } catch (e) { res.status(400).json({ error: e.message }) }
+  } catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
+})
+
+// ── Faz 31: Dönem kilidi (ay kapatma) — kilitle/aç sadece müdür ──
+shiftsRouter.get('/period-locks', ...managerOrSupervisor, (req, res) => {
+  try { res.json(periodLocksService()) }
+  catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+shiftsRouter.post('/period-locks', ...managerOnly, (req, res) => {
+  try {
+    lockPeriodService(req.body.period, req.user.id, req.body.note)
+    logAudit(req.user.id, 'period_lock', 'shifts', null, req.body.period)
+    res.status(201).json({ ok: true })
+  } catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
+})
+
+shiftsRouter.delete('/period-locks/:period', ...managerOnly, (req, res) => {
+  try {
+    unlockPeriodService(req.params.period)
+    logAudit(req.user.id, 'period_unlock', 'shifts', null, req.params.period)
+    res.json({ ok: true })
+  } catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
 })
 
 // ── Delete schedule entry ──
@@ -695,5 +719,5 @@ shiftsRouter.delete('/schedule/:staffId/:date', ...managerOrSupervisor, (req, re
   try {
     deleteScheduleService(req.params.staffId, req.params.date)
     res.json({ ok: true })
-  } catch (e) { res.status(400).json({ error: e.message }) }
+  } catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
 })

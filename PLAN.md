@@ -299,3 +299,10 @@ Doğrulama: 804/804 backend, build temiz, 8/8 e2e
 - [x] Kural uyarıları: kesintisiz çalışma > 6 gün, iki vardiya arası dinlenme < 11 saat (gece vardiyası hesabı dahil)
 - [x] +6 backend test (103/103 shifts, 1306/1306 tüm suite), 62/62 frontend, build temiz
 - [x] Bonus fix (1311c10): gece yarısı UTC/yerel gün kayması — avs my-shifts/my-transport localtime; stations/kitchen/avs testleri yerel gün
+
+### Faz 31 — Dönem kilidi (ay kapatma) ✅
+- [x] period_locks (migration 022) + CRUD: GET /period-locks (yönetim), POST/DELETE (sadece müdür — managerOnly)
+- [x] assertPeriodsUnlocked guard: kilitli aya düşen puantaj/FM/silme/rotasyon yazımı 423 (Locked) döner
+- [x] Route catch'leri e.statusCode onurlandırır (423 geçer, yoksa 400)
+- [x] PuantajTab: müdür için 🔒 AYI KİLİTLE / 🔓 KİLİDİ AÇ butonu (confirmDialog), kilitli ay banner'ı + salt-okunur (canEdit=false), mutation onError toast
+- [x] +8 backend test (111/111 shifts, 1314/1314 tüm suite), 62/62 frontend, build temiz

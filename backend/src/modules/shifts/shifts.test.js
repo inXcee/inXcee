@@ -1326,3 +1326,78 @@ describe('Faz 30 — Rotasyon şablonları', () => {
     expect(list.body.find(t => t.id === templateId)).toBeFalsy()
   })
 })
+
+describe('Faz 31 — Dönem kilidi (ay kapatma)', () => {
+  let staffId
+
+  beforeAll(() => {
+    staffId = getDB().prepare("INSERT INTO staff(full_name, is_active, salary) VALUES('Kilit Test Personel', 1, 30000)")
+      .run().lastInsertRowid
+  })
+
+  it('müdür dönemi kilitler, liste kilidi gösterir', async () => {
+    const r = await request(app).post('/api/shifts/period-locks').set('Authorization', `Bearer ${managerToken}`)
+      .send({ period: '2026-11', note: 'Kasım bordrosu kesildi' })
+    expect(r.status).toBe(201)
+
+    const list = await request(app).get('/api/shifts/period-locks').set('Authorization', `Bearer ${managerToken}`)
+    expect(list.status).toBe(200)
+    const lock = list.body.find(l => l.period === '2026-11')
+    expect(lock).toBeTruthy()
+    expect(lock.note).toBe('Kasım bordrosu kesildi')
+  })
+
+  it('süpervizör kilitleyemez (403), sadece müdür', async () => {
+    const r = await request(app).post('/api/shifts/period-locks').set('Authorization', `Bearer ${shiftToken}`)
+      .send({ period: '2026-12' })
+    expect(r.status).toBe(403)
+  })
+
+  it('geçersiz period 400', async () => {
+    const r = await request(app).post('/api/shifts/period-locks').set('Authorization', `Bearer ${managerToken}`)
+      .send({ period: 'kasim' })
+    expect(r.status).toBe(400)
+  })
+
+  it('kilitli aya puantaj yazımı 423 döner', async () => {
+    const r = await request(app).post('/api/shifts/schedule').set('Authorization', `Bearer ${managerToken}`)
+      .send({ entries: [{ staff_id: staffId, work_date: '2026-11-10', status: 'worked' }] })
+    expect(r.status).toBe(423)
+    expect(r.body.error).toMatch(/kilit/i)
+    const row = getDB().prepare("SELECT id FROM shift_schedule WHERE staff_id=? AND work_date='2026-11-10'").get(staffId)
+    expect(row).toBeFalsy()
+  })
+
+  it('kilitli aya FM ve silme de engellenir (423)', async () => {
+    const ot = await request(app).post('/api/shifts/overtime/day').set('Authorization', `Bearer ${managerToken}`)
+      .send({ staff_id: staffId, work_date: '2026-11-12', hours: 3 })
+    expect(ot.status).toBe(423)
+
+    const del = await request(app).delete(`/api/shifts/schedule/${staffId}/2026-11-12`).set('Authorization', `Bearer ${managerToken}`)
+    expect(del.status).toBe(423)
+  })
+
+  it('kilitli olmayan aya yazım normal çalışır', async () => {
+    const r = await request(app).post('/api/shifts/schedule').set('Authorization', `Bearer ${managerToken}`)
+      .send({ entries: [{ staff_id: staffId, work_date: '2026-10-20', status: 'worked' }] })
+    expect(r.status).toBe(200)
+  })
+
+  it('kilit açılınca yazım tekrar mümkün', async () => {
+    const unlock = await request(app).delete('/api/shifts/period-locks/2026-11').set('Authorization', `Bearer ${managerToken}`)
+    expect(unlock.status).toBe(200)
+
+    const r = await request(app).post('/api/shifts/schedule').set('Authorization', `Bearer ${managerToken}`)
+      .send({ entries: [{ staff_id: staffId, work_date: '2026-11-10', status: 'worked' }] })
+    expect(r.status).toBe(200)
+  })
+
+  it('süpervizör kilit açamaz (403)', async () => {
+    await request(app).post('/api/shifts/period-locks').set('Authorization', `Bearer ${managerToken}`)
+      .send({ period: '2026-11' })
+    const r = await request(app).delete('/api/shifts/period-locks/2026-11').set('Authorization', `Bearer ${shiftToken}`)
+    expect(r.status).toBe(403)
+    // temizle
+    await request(app).delete('/api/shifts/period-locks/2026-11').set('Authorization', `Bearer ${managerToken}`)
+  })
+})

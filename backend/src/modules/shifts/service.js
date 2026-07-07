@@ -9,6 +9,7 @@ import {
   cancelLeaveRequest, createSwapRequest, getSwapRequests, approveSwapRequest, rejectSwapRequest,
   copyWeekSchedule, applyRotationTemplate, searchStaff, deleteScheduleEntry,
   listRotationTemplates, getRotationTemplate, createRotationTemplate, deleteRotationTemplate,
+  listPeriodLocks, lockedPeriodsFor, lockPeriod, unlockPeriod,
   getStaffDetail,
   getStaffList, getStaffById, createStaff, updateStaff, deleteStaff,
   getStaffDayBreakdown, getPuantajDayRows, listDeductions
@@ -106,8 +107,36 @@ export function scheduleService(weekStart, weekEnd, deptId) {
   return getSchedule(weekStart, weekEnd, deptId)
 }
 
+// ── Faz 31: Dönem kilidi guard ──
+// Verilen tarihlerin ait olduğu aylardan biri kilitliyse 423 (Locked) fırlatır.
+export function assertPeriodsUnlocked(dates) {
+  const periods = [...new Set(dates.filter(Boolean).map(d => String(d).slice(0, 7)))]
+  const locked = lockedPeriodsFor(periods)
+  if (locked.length) {
+    throw Object.assign(
+      new Error(`${locked.join(', ')} dönemi kilitli — puantaj değiştirilemez. Önce müdür kilidi açmalı.`),
+      { statusCode: 423 }
+    )
+  }
+}
+
+export function periodLocksService() {
+  return listPeriodLocks()
+}
+
+export function lockPeriodService(period, userId, note) {
+  if (!/^\d{4}-\d{2}$/.test(period || '')) throw new Error('period YYYY-MM formatında olmalı')
+  lockPeriod(period, userId, note)
+}
+
+export function unlockPeriodService(period) {
+  if (!/^\d{4}-\d{2}$/.test(period || '')) throw new Error('period YYYY-MM formatında olmalı')
+  unlockPeriod(period)
+}
+
 export function bulkAssignService(entries, createdBy) {
   if (!entries?.length) throw new Error('Atama listesi boş')
+  assertPeriodsUnlocked(entries.map(e => e.work_date))
   bulkAssignShifts(entries, createdBy)
 }
 
@@ -198,6 +227,7 @@ export function overtimeDayService(data, userId) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(data.work_date)) throw new Error('work_date YYYY-MM-DD formatında olmalı')
   const hours = Number(data.hours)
   if (!Number.isFinite(hours) || hours < 0 || hours > 12) throw new Error('Mesai saati 0-12 arasında olmalı')
+  assertPeriodsUnlocked([data.work_date])
   upsertOvertimeDay(data.staff_id, data.work_date, hours, userId)
 }
 
@@ -468,6 +498,7 @@ export function rotationApplyService(body, userId) {
   const entries = buildRotationEntries(pattern, staffIds, startDate, days, stagger)
   const { staffNames, deptByStaff, shiftDefsById } = rotationContext(staffIds)
   const warnings = rotationWarnings(entries, shiftDefsById, staffNames)
+  assertPeriodsUnlocked(entries.map(e => e.work_date))
   bulkAssignShifts(entries.map(e => ({
     ...e,
     dept_id: deptByStaff[e.staff_id] || null,
@@ -476,6 +507,7 @@ export function rotationApplyService(body, userId) {
 }
 
 export function deleteScheduleService(staffId, workDate) {
+  assertPeriodsUnlocked([workDate])
   deleteScheduleEntry(staffId, workDate)
 }
 
