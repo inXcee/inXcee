@@ -1,7 +1,9 @@
 import nodemailer from 'nodemailer'
 import { getEmailSettings, getManagerEmails, getSetting, logEmailSend } from './queries.js'
 import { BUILTIN_TEMPLATES, TEMPLATE_CATEGORIES } from './templates.js'
-import { listCustomTemplates } from './queries.js'
+import { listCustomTemplates, getAttachmentsByIds } from './queries.js'
+import { documentPath } from '../../shared/uploads/document-middleware.js'
+import fs from 'fs'
 import { getOccupancyReport, getMaintenanceReport, getHousekeepingReport } from '../reports/service.js'
 import { getDB } from '../../shared/db/index.js'
 import { logger } from '../../shared/logger.js'
@@ -74,11 +76,26 @@ function textToHtml(text) {
 
 // Serbest e-posta gönderimi — şablon doldurulup gönderilir. SMTP kuruluysa yollar,
 // değilse anlamlı hata (statusCode 502) döner ki frontend "kopyala" fallback sunabilsin.
-export async function composeAndSend({ to, cc, subject, body }) {
+export async function composeAndSend({ to, cc, subject, body, attachmentIds }) {
   const recipients = parseRecipients(to)
   if (!subject?.trim()) throw Object.assign(new Error('Konu boş olamaz'), { statusCode: 400 })
   if (!body?.trim()) throw Object.assign(new Error('Mesaj boş olamaz'), { statusCode: 400 })
   const ccList = cc ? parseRecipients(cc) : []
+
+  // Ek dosyaları çöz (arşiv kütüphanesinden) — eksik dosya varsa 400
+  const attachments = []
+  const ids = Array.isArray(attachmentIds) ? attachmentIds.map(Number).filter(Boolean) : []
+  if (ids.length) {
+    const rows = getAttachmentsByIds(ids)
+    if (rows.length !== ids.length) {
+      throw Object.assign(new Error('Seçili eklerden biri bulunamadı'), { statusCode: 400 })
+    }
+    for (const r of rows) {
+      const p = documentPath(r.stored_name)
+      if (!fs.existsSync(p)) throw Object.assign(new Error(`Ek dosya diskte yok: ${r.name}`), { statusCode: 400 })
+      attachments.push({ filename: r.original_name, path: p })
+    }
+  }
 
   let transport
   try {
@@ -96,6 +113,7 @@ export async function composeAndSend({ to, cc, subject, body }) {
       subject: subject.trim(),
       text: body,
       html: textToHtml(body),
+      ...(attachments.length ? { attachments } : {}),
     })
     logEmailSend({ recipients: recipients.join(', '), status: 'success' })
     return { ok: true, messageId: info.messageId, recipients }

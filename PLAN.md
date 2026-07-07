@@ -315,3 +315,10 @@ Doğrulama: 804/804 backend, build temiz, 8/8 e2e
 - [x] Endpoint'ler: GET/POST/PUT/DELETE /settings/email/templates, GET /contacts, POST /compose (hepsi campus_manager)
 - [x] MailComposePage (Ayarlar → ✉ Mail Gönder): kategori+şablon seçimi, canlı boşluk doldurma+önizleme, gönder/kopyala/şablon kaydet; 502'de kopyala-fallback
 - [x] +9 backend test (26/26 email, 1323/1323 tüm suite), +1 frontend smoke, build temiz
+
+### Faz 33 — Ek dosya arşivi (ortak kütüphane) ✅
+- [x] email_attachments (migration 024) — yükle/listele/güncelle(yeni sürüm)/sil/indir; documentUpload middleware yeniden kullanıldı (PDF/resim/Office, 20MB)
+- [x] compose'a attachmentIds — nodemailer attachments; eksik/geçersiz ek 400 (SMTP denenmeden)
+- [x] Endpoint'ler: /settings/email/attachments (GET/POST/PUT/DELETE + /:id/download), hepsi campus_manager
+- [x] MailComposePage: ek arşivi paneli — checkbox ile seç-ekle, ＋ yükle, ⟳ yeni sürüm (üstüne yaz), ✕ sil
+- [x] +8 backend test (34/34 email, 1331/1331 tüm suite), +1 frontend smoke, build temiz

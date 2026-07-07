@@ -6,6 +6,11 @@ import { fileTypeFromBuffer } from 'file-type'
 const docDir = process.env.DOCUMENTS_DIR || path.join(process.env.UPLOADS_DIR || 'uploads', 'documents')
 if (!fs.existsSync(docDir)) fs.mkdirSync(docDir, { recursive: true })
 
+// Saklanan bir dosyanın diskteki tam yolu (e-posta ekleri, indirme vb. için)
+export function documentPath(storedName) {
+  return path.join(docDir, storedName)
+}
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, docDir),
   filename: (req, file, cb) => {

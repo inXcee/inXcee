@@ -257,4 +257,83 @@ describe('Faz 32 — Compose gönderim', () => {
     const res = await request(app).post('/api/settings/email/compose').send({ to: 'a@b.com', subject: 'x', body: 'y' })
     expect(res.status).toBe(401)
   })
+
+  it('geçersiz ek id ile 400 (SMTP denenmeden)', async () => {
+    const res = await request(app).post('/api/settings/email/compose')
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({ to: 'a@b.com', subject: 'Konu', body: 'İçerik', attachmentIds: [999999] })
+    expect(res.status).toBe(400)
+    expect(res.body.error).toMatch(/ek/i)
+  })
+})
+
+describe('Faz 33 — Ek dosya arşivi', () => {
+  const PDF = Buffer.from('%PDF-1.4 test dosyasi')
+  let attId
+
+  it('dosya yükle → listede görünür', async () => {
+    const res = await request(app).post('/api/settings/email/attachments')
+      .set('Authorization', `Bearer ${managerToken}`)
+      .field('name', 'Sipariş Formu')
+      .field('category', 'formlar')
+      .attach('file', PDF, { filename: 'siparis.pdf', contentType: 'application/pdf' })
+    expect(res.status).toBe(201)
+    attId = res.body.id
+
+    const list = await request(app).get('/api/settings/email/attachments')
+      .set('Authorization', `Bearer ${managerToken}`)
+    const mine = list.body.find(a => a.id === attId)
+    expect(mine).toBeTruthy()
+    expect(mine.name).toBe('Sipariş Formu')
+    expect(mine.category).toBe('formlar')
+    expect(mine.original_name).toBe('siparis.pdf')
+  })
+
+  it('adsız yükleme 400', async () => {
+    const res = await request(app).post('/api/settings/email/attachments')
+      .set('Authorization', `Bearer ${managerToken}`)
+      .attach('file', PDF, { filename: 'x.pdf', contentType: 'application/pdf' })
+    expect(res.status).toBe(400)
+  })
+
+  it('indir → dosya döner', async () => {
+    const res = await request(app).get(`/api/settings/email/attachments/${attId}/download`)
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(res.status).toBe(200)
+  })
+
+  it('yeni sürüm yükle (ad korunur, dosya değişir)', async () => {
+    const res = await request(app).put(`/api/settings/email/attachments/${attId}`)
+      .set('Authorization', `Bearer ${managerToken}`)
+      .field('name', 'Sipariş Formu v2')
+      .field('category', 'formlar')
+      .attach('file', Buffer.from('%PDF-1.4 yeni surum'), { filename: 'siparis-v2.pdf', contentType: 'application/pdf' })
+    expect(res.status).toBe(200)
+    const list = await request(app).get('/api/settings/email/attachments')
+      .set('Authorization', `Bearer ${managerToken}`)
+    const mine = list.body.find(a => a.id === attId)
+    expect(mine.name).toBe('Sipariş Formu v2')
+    expect(mine.original_name).toBe('siparis-v2.pdf')
+  })
+
+  it('sadece ad/kategori güncelle (dosyasız)', async () => {
+    const res = await request(app).put(`/api/settings/email/attachments/${attId}`)
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({ name: 'Yeni Ad', category: 'resmi' })
+    expect(res.status).toBe(200)
+  })
+
+  it('sil → sonra 404', async () => {
+    const del = await request(app).delete(`/api/settings/email/attachments/${attId}`)
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(del.status).toBe(200)
+    const again = await request(app).delete(`/api/settings/email/attachments/${attId}`)
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(again.status).toBe(404)
+  })
+
+  it('token olmadan liste 401', async () => {
+    const res = await request(app).get('/api/settings/email/attachments')
+    expect(res.status).toBe(401)
+  })
 })

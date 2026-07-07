@@ -93,6 +93,48 @@ export function deleteCustomTemplate(id) {
   return getDB().prepare('DELETE FROM email_templates WHERE id=?').run(id).changes > 0
 }
 
+// ── Faz 33: Ek dosya arşivi ──
+export function listAttachments() {
+  return getDB().prepare(`
+    SELECT id, name, category, original_name, mime, size, updated_at FROM email_attachments ORDER BY category, name
+  `).all()
+}
+
+export function getAttachment(id) {
+  return getDB().prepare('SELECT * FROM email_attachments WHERE id=?').get(id)
+}
+
+export function getAttachmentsByIds(ids) {
+  if (!ids.length) return []
+  const ph = ids.map(() => '?').join(',')
+  return getDB().prepare(`SELECT * FROM email_attachments WHERE id IN (${ph})`).all(...ids)
+}
+
+export function createAttachment({ name, category, storedName, originalName, mime, size }, userId) {
+  return getDB().prepare(`
+    INSERT INTO email_attachments(name, category, stored_name, original_name, mime, size, created_by)
+    VALUES(?,?,?,?,?,?,?)
+  `).run(name, category || 'genel', storedName, originalName, mime || null, size || 0, userId || null).lastInsertRowid
+}
+
+export function updateAttachmentMeta(id, { name, category }) {
+  return getDB().prepare(`
+    UPDATE email_attachments SET name=?, category=?, updated_at=CURRENT_TIMESTAMP WHERE id=?
+  `).run(name, category || 'genel', id).changes > 0
+}
+
+export function replaceAttachmentFile(id, { storedName, originalName, mime, size }) {
+  return getDB().prepare(`
+    UPDATE email_attachments SET stored_name=?, original_name=?, mime=?, size=?, updated_at=CURRENT_TIMESTAMP WHERE id=?
+  `).run(storedName, originalName, mime || null, size || 0, id).changes > 0
+}
+
+export function deleteAttachment(id) {
+  const row = getAttachment(id)
+  if (row) getDB().prepare('DELETE FROM email_attachments WHERE id=?').run(id)
+  return row
+}
+
 // Bilinen kişiler — hızlı alıcı otomatik tamamlama (yöneticiler + firma yetkilileri)
 export function getKnownContacts() {
   const db = getDB()

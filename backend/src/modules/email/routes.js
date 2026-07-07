@@ -1,10 +1,13 @@
 import { Router } from 'express'
 import { requireRole } from '../../shared/auth/middleware.js'
 import { getEmailSettings, setEmailSettings, getEmailLog, getSetting, setSetting,
-  createCustomTemplate, updateCustomTemplate, deleteCustomTemplate, getKnownContacts } from './queries.js'
+  createCustomTemplate, updateCustomTemplate, deleteCustomTemplate, getKnownContacts,
+  listAttachments, getAttachment, createAttachment, updateAttachmentMeta, replaceAttachmentFile, deleteAttachment } from './queries.js'
 import { sendMorningReport, sendReportNow, buildReportHtml, verifySmtp,
   listAllTemplates, composeAndSend } from './service.js'
+import { documentUpload, verifyDocumentBytes, documentPath } from '../../shared/uploads/document-middleware.js'
 import { logAudit } from '../../shared/audit.js'
+import fs from 'fs'
 import { buildWeeklyReportHtml, sendWeeklyReportNow } from './weekly.js'
 import { scheduleMorningReport } from '../../shared/cron/index.js'
 import { logger } from '../../shared/logger.js'
@@ -137,6 +140,76 @@ emailRouter.delete('/templates/:id', ...adminOnly, (req, res) => {
     const ok = deleteCustomTemplate(+req.params.id)
     if (!ok) return res.status(404).json({ error: 'Şablon bulunamadı' })
     res.json({ ok: true })
+  } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// ── Faz 33: Ek dosya arşivi (ortak kütüphane) ──
+emailRouter.get('/attachments', ...adminOnly, (req, res) => {
+  try { res.json(listAttachments()) }
+  catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+emailRouter.post('/attachments', ...adminOnly, documentUpload.single('file'), verifyDocumentBytes, (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'Dosya gerekli' })
+    if (!req.body.name?.trim()) {
+      try { fs.unlinkSync(req.file.path) } catch { /* yoksa geç */ }
+      return res.status(400).json({ error: 'Dosya adı gerekli' })
+    }
+    const id = createAttachment({
+      name: req.body.name.trim(),
+      category: req.body.category || 'genel',
+      storedName: req.file.filename,
+      originalName: req.file.originalname,
+      mime: req.file.mimetype,
+      size: req.file.size,
+    }, req.user.id)
+    logAudit(req.user.id, 'email_attachment_upload', 'email', id, req.body.name)
+    res.status(201).json({ id })
+  } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// Meta güncelle (ad/kategori) veya yeni sürüm yükle (dosya varsa değiştirir)
+emailRouter.put('/attachments/:id', ...adminOnly, documentUpload.single('file'), verifyDocumentBytes, (req, res) => {
+  try {
+    const existing = getAttachment(+req.params.id)
+    if (!existing) {
+      if (req.file) { try { fs.unlinkSync(req.file.path) } catch { /* geç */ } }
+      return res.status(404).json({ error: 'Ek bulunamadı' })
+    }
+    if (!req.body.name?.trim()) {
+      if (req.file) { try { fs.unlinkSync(req.file.path) } catch { /* geç */ } }
+      return res.status(400).json({ error: 'Dosya adı gerekli' })
+    }
+    updateAttachmentMeta(existing.id, { name: req.body.name.trim(), category: req.body.category || existing.category })
+    if (req.file) {
+      replaceAttachmentFile(existing.id, {
+        storedName: req.file.filename, originalName: req.file.originalname,
+        mime: req.file.mimetype, size: req.file.size,
+      })
+      // eski dosyayı diskten sil
+      try { fs.unlinkSync(documentPath(existing.stored_name)) } catch { /* zaten yoksa geç */ }
+    }
+    res.json({ ok: true })
+  } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+emailRouter.delete('/attachments/:id', ...adminOnly, (req, res) => {
+  try {
+    const row = deleteAttachment(+req.params.id)
+    if (!row) return res.status(404).json({ error: 'Ek bulunamadı' })
+    try { fs.unlinkSync(documentPath(row.stored_name)) } catch { /* zaten yoksa geç */ }
+    res.json({ ok: true })
+  } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+emailRouter.get('/attachments/:id/download', ...adminOnly, (req, res) => {
+  try {
+    const row = getAttachment(+req.params.id)
+    if (!row) return res.status(404).json({ error: 'Ek bulunamadı' })
+    const p = documentPath(row.stored_name)
+    if (!fs.existsSync(p)) return res.status(404).json({ error: 'Dosya diskte yok' })
+    res.download(p, row.original_name)
   } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 

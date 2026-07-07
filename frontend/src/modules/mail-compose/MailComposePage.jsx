@@ -30,6 +30,8 @@ export default function MailComposePage() {
   const [to, setTo] = useState('')
   const [cc, setCc] = useState('')
   const [sending, setSending] = useState(false)
+  const [selectedAtt, setSelectedAtt] = useState([]) // seçili ek id'leri
+  const [uploading, setUploading] = useState(false)
 
   const { data: tplData } = useQuery({
     queryKey: ['email-templates'],
@@ -38,6 +40,10 @@ export default function MailComposePage() {
   const { data: contacts = [] } = useQuery({
     queryKey: ['email-contacts'],
     queryFn: () => api.get('/settings/email/contacts').then(r => r.data),
+  })
+  const { data: attachments = [] } = useQuery({
+    queryKey: ['email-attachments'],
+    queryFn: () => api.get('/settings/email/attachments').then(r => r.data),
   })
 
   const categories = tplData?.categories || []
@@ -67,6 +73,37 @@ export default function MailComposePage() {
     onError: (e) => toastErr(e?.response?.data?.error || 'Silinemedi'),
   })
 
+  const deleteAttachment = useMutation({
+    mutationFn: (id) => api.delete(`/settings/email/attachments/${id}`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['email-attachments'] }); toastOk('Dosya silindi') },
+    onError: (e) => toastErr(e?.response?.data?.error || 'Silinemedi'),
+  })
+
+  const uploadAttachment = async (file, existingId = null) => {
+    const name = existingId
+      ? (attachments.find(a => a.id === existingId)?.name || file.name)
+      : (window.prompt('Dosya için kısa ad:', file.name) || '').trim()
+    if (!existingId && !name) return
+    const fd = new FormData()
+    fd.append('file', file)
+    fd.append('name', name)
+    fd.append('category', existingId ? (attachments.find(a => a.id === existingId)?.category || 'genel') : 'genel')
+    setUploading(true)
+    try {
+      if (existingId) await api.put(`/settings/email/attachments/${existingId}`, fd)
+      else await api.post('/settings/email/attachments', fd)
+      qc.invalidateQueries({ queryKey: ['email-attachments'] })
+      toastOk(existingId ? 'Dosya güncellendi (yeni sürüm)' : 'Dosya arşive eklendi')
+    } catch (e) {
+      toastErr(e?.response?.data?.error || 'Yüklenemedi')
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  const toggleAtt = (id) => setSelectedAtt(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
+  const fmtSize = (b) => b > 1048576 ? `${(b / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`
+
   const copyToClipboard = async () => {
     try {
       await navigator.clipboard.writeText(`Konu: ${finalSubject}\n\n${finalBody}`)
@@ -80,7 +117,7 @@ export default function MailComposePage() {
     if (!finalBody.trim()) return toastErr('Mesaj boş')
     setSending(true)
     try {
-      await api.post('/settings/email/compose', { to, cc, subject: finalSubject, body: finalBody })
+      await api.post('/settings/email/compose', { to, cc, subject: finalSubject, body: finalBody, attachmentIds: selectedAtt })
       toastOk('E-posta gönderildi')
     } catch (e) {
       const status = e?.response?.status
@@ -210,6 +247,53 @@ export default function MailComposePage() {
                 </div>
               </details>
             )}
+
+            {/* Ek dosya arşivi */}
+            <div style={{ padding: '10px 12px', background: 'var(--surface2)', borderRadius: '8px', border: '1px solid var(--border)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', flexWrap: 'wrap', gap: '6px' }}>
+                <span style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '1px' }}>
+                  EKLER {selectedAtt.length > 0 && `· ${selectedAtt.length} seçili`}
+                </span>
+                <label className="btn btn-ghost btn-sm" style={{ fontSize: '10px', cursor: 'pointer', margin: 0 }}>
+                  {uploading ? 'Yükleniyor...' : '＋ Arşive Dosya Yükle'}
+                  <input type="file" hidden disabled={uploading}
+                    onChange={e => { const f = e.target.files?.[0]; if (f) uploadAttachment(f); e.target.value = '' }} />
+                </label>
+              </div>
+              {attachments.length === 0 ? (
+                <div style={{ fontSize: '11px', color: 'var(--text3)' }}>
+                  Arşivde dosya yok. Sık gönderdiğin dosyaları yükle; bir daha aramadan buradan eklersin, güncelleyince üstüne yeni sürüm koyarsın.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '180px', overflowY: 'auto' }}>
+                  {attachments.map(a => (
+                    <div key={a.id} style={{
+                      display: 'flex', alignItems: 'center', gap: '8px', padding: '5px 8px', borderRadius: '6px',
+                      background: selectedAtt.includes(a.id) ? 'rgba(240,165,0,.12)' : 'var(--surface)',
+                      border: '1px solid var(--border)',
+                    }}>
+                      <input type="checkbox" checked={selectedAtt.includes(a.id)} onChange={() => toggleAtt(a.id)} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: '12px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.name}</div>
+                        <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text3)' }}>
+                          {a.category} · {a.original_name} · {fmtSize(a.size)}
+                        </div>
+                      </div>
+                      <label title="Yeni sürüm yükle (üstüne yaz)" className="btn btn-ghost btn-sm" style={{ fontSize: '9px', cursor: 'pointer', margin: 0, padding: '2px 6px' }}>
+                        ⟳
+                        <input type="file" hidden onChange={e => { const f = e.target.files?.[0]; if (f) uploadAttachment(f, a.id); e.target.value = '' }} />
+                      </label>
+                      <button title="Sil" onClick={async () => {
+                        if (await confirmDialog({ title: 'Dosyayı Sil', body: `"${a.name}" arşivden silinsin mi?`, danger: true })) {
+                          deleteAttachment.mutate(a.id)
+                          setSelectedAtt(prev => prev.filter(x => x !== a.id))
+                        }
+                      }} style={{ border: 'none', background: 'transparent', color: 'var(--text3)', cursor: 'pointer', fontSize: '12px' }}>✕</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
 
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
               <button className="btn btn-ghost btn-sm" onClick={saveAsTemplate}>💾 Şablon Olarak Kaydet</button>

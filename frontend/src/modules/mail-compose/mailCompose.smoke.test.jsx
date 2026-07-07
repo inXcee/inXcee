@@ -18,6 +18,7 @@ vi.mock('../../shared/api/client.js', () => ({
         } })
       }
       if (url === '/settings/email/contacts') return Promise.resolve({ data: [{ email: 'mudur@yys.local', label: 'mudur (yönetim)' }] })
+      if (url === '/settings/email/attachments') return Promise.resolve({ data: [{ id: 1, name: 'Sipariş Formu', category: 'formlar', original_name: 'siparis.pdf', size: 2048 }] })
       return Promise.resolve({ data: [] })
     }),
     post: vi.fn(() => Promise.resolve({ data: { ok: true } })),
@@ -39,5 +40,11 @@ describe('MailComposePage smoke', () => {
     expect(await screen.findByText('BOŞLUKLARI DOLDUR')).toBeInTheDocument()
     expect(screen.getByText('ay')).toBeInTheDocument()
     expect(screen.getByText('yetkili')).toBeInTheDocument()
+  })
+
+  it('ek dosya arşivini gösterir', async () => {
+    renderWithProviders(<MailComposePage />)
+    expect(await screen.findByText('Sipariş Formu')).toBeInTheDocument()
+    expect(screen.getByText(/Arşive Dosya Yükle/)).toBeInTheDocument()
   })
 })
