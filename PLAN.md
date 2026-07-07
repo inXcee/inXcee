@@ -306,3 +306,12 @@ Doğrulama: 804/804 backend, build temiz, 8/8 e2e
 - [x] Route catch'leri e.statusCode onurlandırır (423 geçer, yoksa 400)
 - [x] PuantajTab: müdür için 🔒 AYI KİLİTLE / 🔓 KİLİDİ AÇ butonu (confirmDialog), kilitli ay banner'ı + salt-okunur (canEdit=false), mutation onError toast
 - [x] +8 backend test (111/111 shifts, 1314/1314 tüm suite), 62/62 frontend, build temiz
+
+### Faz 32 — E-posta şablonları + sistemden gönderme ✅
+- [x] templates.js: 10 hazır Türkçe şablon (4 kategori: rapor/tedarik/personel/resmi) + {{degisken}} yer tutucu + extractVariables
+- [x] email_templates (migration 023) — özel şablon CRUD (kullanıcı kendi şablonunu kaydeder)
+- [x] composeAndSend: alıcı doğrulama (regex), düz metin→güvenli HTML, mevcut SMTP ile gönderim; SMTP yoksa 502 (anlamlı hata)
+- [x] getKnownContacts: yönetici + firma e-postaları — alıcı otomatik tamamlama (datalist)
+- [x] Endpoint'ler: GET/POST/PUT/DELETE /settings/email/templates, GET /contacts, POST /compose (hepsi campus_manager)
+- [x] MailComposePage (Ayarlar → ✉ Mail Gönder): kategori+şablon seçimi, canlı boşluk doldurma+önizleme, gönder/kopyala/şablon kaydet; 502'de kopyala-fallback
+- [x] +9 backend test (26/26 email, 1323/1323 tüm suite), +1 frontend smoke, build temiz

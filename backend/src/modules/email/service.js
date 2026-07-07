@@ -1,5 +1,7 @@
 import nodemailer from 'nodemailer'
 import { getEmailSettings, getManagerEmails, getSetting, logEmailSend } from './queries.js'
+import { BUILTIN_TEMPLATES, TEMPLATE_CATEGORIES } from './templates.js'
+import { listCustomTemplates } from './queries.js'
 import { getOccupancyReport, getMaintenanceReport, getHousekeepingReport } from '../reports/service.js'
 import { getDB } from '../../shared/db/index.js'
 import { logger } from '../../shared/logger.js'
@@ -40,6 +42,68 @@ export async function sendEmail({ to, subject, html, text }) {
     text: text || undefined,
   })
   return { messageId: info.messageId }
+}
+
+// ── Faz 32: Şablonlar + serbest e-posta gönderimi ──
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+// Dahili + özel şablonları kategori etiketleriyle birlikte döner
+export function listAllTemplates() {
+  const custom = listCustomTemplates().map(t => ({ ...t, id: `custom:${t.id}`, builtin: false }))
+  const builtin = BUILTIN_TEMPLATES.map(t => ({ ...t, builtin: true }))
+  return { categories: TEMPLATE_CATEGORIES, templates: [...builtin, ...custom] }
+}
+
+// Alıcı listesini doğrular ("a@x.com, b@y.com" veya dizi kabul eder)
+export function parseRecipients(input) {
+  const list = Array.isArray(input)
+    ? input
+    : String(input || '').split(/[,;]/).map(s => s.trim()).filter(Boolean)
+  if (list.length === 0) throw Object.assign(new Error('En az bir alıcı gerekli'), { statusCode: 400 })
+  const bad = list.filter(e => !EMAIL_RE.test(e))
+  if (bad.length) throw Object.assign(new Error(`Geçersiz e-posta adresi: ${bad.join(', ')}`), { statusCode: 400 })
+  return list
+}
+
+// Düz metni basit güvenli HTML'e çevirir (satır sonları korunur, HTML enjeksiyonu engellenir)
+function textToHtml(text) {
+  const esc = String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  return `<div style="font-family:Arial,sans-serif;font-size:14px;color:#1f2937;white-space:pre-wrap;line-height:1.5">${esc}</div>`
+}
+
+// Serbest e-posta gönderimi — şablon doldurulup gönderilir. SMTP kuruluysa yollar,
+// değilse anlamlı hata (statusCode 502) döner ki frontend "kopyala" fallback sunabilsin.
+export async function composeAndSend({ to, cc, subject, body }) {
+  const recipients = parseRecipients(to)
+  if (!subject?.trim()) throw Object.assign(new Error('Konu boş olamaz'), { statusCode: 400 })
+  if (!body?.trim()) throw Object.assign(new Error('Mesaj boş olamaz'), { statusCode: 400 })
+  const ccList = cc ? parseRecipients(cc) : []
+
+  let transport
+  try {
+    transport = createTransport()
+  } catch (e) {
+    logEmailSend({ recipients: recipients.join(', '), status: 'error', errorMsg: e.message })
+    throw Object.assign(new Error(e.message), { statusCode: 502 })
+  }
+  const cfg = getSmtpConfig()
+  try {
+    const info = await transport.sendMail({
+      from: cfg.from || cfg.user,
+      to: recipients.join(', '),
+      ...(ccList.length ? { cc: ccList.join(', ') } : {}),
+      subject: subject.trim(),
+      text: body,
+      html: textToHtml(body),
+    })
+    logEmailSend({ recipients: recipients.join(', '), status: 'success' })
+    return { ok: true, messageId: info.messageId, recipients }
+  } catch (e) {
+    logEmailSend({ recipients: recipients.join(', '), status: 'error', errorMsg: e.message })
+    logger.error('[Email] compose gönderim hatası:', e.message)
+    throw Object.assign(new Error(`SMTP gönderim hatası: ${e.message}`), { statusCode: 502 })
+  }
 }
 
 // SMTP bağlantı testi — gerçek e-posta göndermez

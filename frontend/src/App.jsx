@@ -33,6 +33,7 @@ const ArchivedPersonnelPage = lazy(() => import('./modules/personnel/ArchivedPag
 const HrPage = lazy(() => import('./modules/hr/HrPage.jsx'))
 const PayrollPage = lazy(() => import('./modules/shifts/PayrollPage.jsx'))
 const HolidaysPage = lazy(() => import('./modules/shifts/HolidaysPage.jsx'))
+const MailComposePage = lazy(() => import('./modules/mail-compose/MailComposePage.jsx'))
 const CombinedAbsencesPage = lazy(() => import('./modules/shifts/CombinedAbsencesPage.jsx'))
 const SafetyPage = lazy(() => import('./modules/safety/SafetyPage.jsx'))
 const MealsPage = lazy(() => import('./modules/meals/MealsPage.jsx'))
@@ -348,6 +349,7 @@ export default function App() {
             <Route path="settings" element={<RoleRoute roles={['campus_manager','shift_supervisor']}><SettingsLayout /></RoleRoute>}>
               <Route index element={<Navigate to="personnel" replace />} />
               <Route path="email" element={<RoleRoute roles={['campus_manager']}><SettingsPage /></RoleRoute>} />
+              <Route path="mail-compose" element={<RoleRoute roles={['campus_manager']}><MailComposePage /></RoleRoute>} />
               <Route path="users" element={<RoleRoute roles={['campus_manager']}><UsersPage /></RoleRoute>} />
               <Route path="kiosk-pins" element={<RoleRoute roles={['campus_manager']}><KioskPinPage /></RoleRoute>} />
               <Route path="announcements" element={<RoleRoute roles={['campus_manager']}><AnnouncementsPage /></RoleRoute>} />

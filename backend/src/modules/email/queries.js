@@ -70,3 +70,42 @@ export function getEmailLog(limit = 30) {
     SELECT id, sent_at, recipients, status, error_msg FROM email_log ORDER BY sent_at DESC LIMIT ?
   `).all(limit)
 }
+
+// ── Faz 32: Özel e-posta şablonları (kullanıcı tanımlı) ──
+export function listCustomTemplates() {
+  return getDB().prepare('SELECT id, category, name, subject, body FROM email_templates ORDER BY id DESC').all()
+}
+
+export function createCustomTemplate({ category, name, subject, body }, userId) {
+  return getDB().prepare(`
+    INSERT INTO email_templates(category, name, subject, body, created_by) VALUES(?,?,?,?,?)
+  `).run(category, name, subject || '', body || '', userId || null).lastInsertRowid
+}
+
+export function updateCustomTemplate(id, { category, name, subject, body }) {
+  const r = getDB().prepare(`
+    UPDATE email_templates SET category=?, name=?, subject=?, body=? WHERE id=?
+  `).run(category, name, subject || '', body || '', id)
+  return r.changes > 0
+}
+
+export function deleteCustomTemplate(id) {
+  return getDB().prepare('DELETE FROM email_templates WHERE id=?').run(id).changes > 0
+}
+
+// Bilinen kişiler — hızlı alıcı otomatik tamamlama (yöneticiler + firma yetkilileri)
+export function getKnownContacts() {
+  const db = getDB()
+  const contacts = new Map()
+  const add = (email, label) => {
+    if (!email || !email.includes('@')) return
+    if (!contacts.has(email)) contacts.set(email, { email, label: label || email })
+  }
+  db.prepare("SELECT email, username FROM users WHERE email IS NOT NULL AND email != ''")
+    .all().forEach(r => add(r.email, `${r.username} (yönetim)`))
+  try {
+    db.prepare("SELECT name, contact_email FROM companies WHERE contact_email IS NOT NULL AND contact_email != ''")
+      .all().forEach(r => add(r.contact_email, r.name))
+  } catch { /* companies tablosu/kolonu yoksa atla */ }
+  return [...contacts.values()]
+}

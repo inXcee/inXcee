@@ -43,6 +43,7 @@ const TAB_GROUPS = [
     label: 'SİSTEM',
     tabs: [
       { to: '/settings/email',         label: 'Genel & E-Posta',  icon: '⎓',  roles: ADMIN },
+      { to: '/settings/mail-compose',  label: 'Mail Gönder',      icon: '✉',  roles: ADMIN },
       { to: '/settings/users',         label: 'Kullanicilar',     icon: '⌂',  roles: ADMIN },
       { to: '/settings/kiosk-pins',    label: 'Kiosk PIN',        icon: '⌖',  roles: ADMIN },
       { to: '/settings/announcements', label: 'Duyurular',        icon: '📢', roles: ADMIN },

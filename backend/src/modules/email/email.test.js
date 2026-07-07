@@ -169,3 +169,92 @@ describe('GET /api/settings/email/log', () => {
     expect(Array.isArray(res.body)).toBe(true)
   })
 })
+
+describe('Faz 32 — E-posta şablonları', () => {
+  it('extractVariables {{...}} yer tutucularını çıkarır', async () => {
+    const { extractVariables } = await import('./templates.js')
+    expect(extractVariables('Sayın {{yetkili}}, {{ay}} raporu. {{yetkili}} tekrar.')).toEqual(['yetkili', 'ay'])
+    expect(extractVariables('düz metin')).toEqual([])
+  })
+
+  it('GET /templates dahili şablonları 4 kategoriyle döner', async () => {
+    const res = await request(app).get('/api/settings/email/templates')
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(res.status).toBe(200)
+    expect(res.body.categories.map(c => c.id).sort()).toEqual(['personel', 'rapor', 'resmi', 'tedarik'])
+    const builtin = res.body.templates.filter(t => t.builtin)
+    expect(builtin.length).toBeGreaterThanOrEqual(10)
+    expect(builtin.every(t => t.id.startsWith('builtin:'))).toBe(true)
+  })
+
+  it('özel şablon oluştur → listede görünür → güncelle → sil', async () => {
+    const create = await request(app).post('/api/settings/email/templates')
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({ category: 'personel', name: 'Test Şablonum', subject: 'Selam', body: 'Merhaba {{isim}}' })
+    expect(create.status).toBe(201)
+    const id = create.body.id
+
+    const list = await request(app).get('/api/settings/email/templates')
+      .set('Authorization', `Bearer ${managerToken}`)
+    const mine = list.body.templates.find(t => t.id === `custom:${id}`)
+    expect(mine).toBeTruthy()
+    expect(mine.builtin).toBe(false)
+
+    const upd = await request(app).put(`/api/settings/email/templates/${id}`)
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({ category: 'rapor', name: 'Güncellendi', subject: 'x', body: 'y' })
+    expect(upd.status).toBe(200)
+
+    const del = await request(app).delete(`/api/settings/email/templates/${id}`)
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(del.status).toBe(200)
+
+    const del2 = await request(app).delete(`/api/settings/email/templates/${id}`)
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(del2.status).toBe(404)
+  })
+
+  it('isimsiz şablon 400', async () => {
+    const res = await request(app).post('/api/settings/email/templates')
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({ category: 'personel', body: 'x' })
+    expect(res.status).toBe(400)
+  })
+
+  it('GET /contacts yönetici e-postalarını içerir', async () => {
+    const res = await request(app).get('/api/settings/email/contacts')
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(res.status).toBe(200)
+    expect(res.body.some(c => c.email === 'mudur@yys.local')).toBe(true)
+  })
+})
+
+describe('Faz 32 — Compose gönderim', () => {
+  it('geçersiz alıcı 400', async () => {
+    const res = await request(app).post('/api/settings/email/compose')
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({ to: 'gecersiz-adres', subject: 'x', body: 'y' })
+    expect(res.status).toBe(400)
+    expect(res.body.error).toMatch(/e-posta/i)
+  })
+
+  it('boş konu 400', async () => {
+    const res = await request(app).post('/api/settings/email/compose')
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({ to: 'a@b.com', subject: '  ', body: 'y' })
+    expect(res.status).toBe(400)
+  })
+
+  it('SMTP kurulu değilse 502 (anlamlı hata)', async () => {
+    const res = await request(app).post('/api/settings/email/compose')
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({ to: 'a@b.com', subject: 'Konu', body: 'İçerik' })
+    expect(res.status).toBe(502)
+    expect(res.body.error).toMatch(/SMTP/i)
+  })
+
+  it('token olmadan 401', async () => {
+    const res = await request(app).post('/api/settings/email/compose').send({ to: 'a@b.com', subject: 'x', body: 'y' })
+    expect(res.status).toBe(401)
+  })
+})
