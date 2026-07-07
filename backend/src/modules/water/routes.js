@@ -6,7 +6,7 @@ import {
   productsService, createProductService, updateProductService, deleteProductService,
   zonesService, createZoneService, updateZoneService, deleteZoneService,
   createIntakeService, createDistributionService, deleteMovementService, movementsService,
-  summaryService,
+  summaryService, batchIntakeService, batchDistributeService, parseDistributionText,
 } from './service.js'
 
 export const waterRouter = Router()
@@ -65,12 +65,35 @@ waterRouter.post('/intake', ...mgr, (req, res) => {
   } catch (e) { fail(res, e) }
 })
 
+// Toplu giriş (tek irsaliye, çok ürün)
+waterRouter.post('/intake/batch', ...mgr, (req, res) => {
+  try {
+    const ids = batchIntakeService(req.body, req.user.id)
+    logAudit(req.user.id, 'water_intake_batch', 'water', null, `irsaliye:${req.body.waybill_no || '-'} ${ids.length} satır`)
+    res.status(201).json({ ids, count: ids.length })
+  } catch (e) { fail(res, e) }
+})
+
 // Dağıtım (bölgeye bırakma)
 waterRouter.post('/distribute', ...mgr, (req, res) => {
   try {
     const id = createDistributionService(req.body, req.user.id)
     logAudit(req.user.id, 'water_distribute', 'water', id, `zone:${req.body.zone_id} ${req.body.input_qty} ${req.body.input_unit}`)
     res.status(201).json({ id })
+  } catch (e) { fail(res, e) }
+})
+
+// Metinden dağıtım — önizleme (kaydetmez)
+waterRouter.post('/distribute/parse', ...mgr, (req, res) => {
+  try { res.json(parseDistributionText(req.body?.text || '')) } catch (e) { logger.error('[water]', e); fail(res, e) }
+})
+
+// Toplu dağıtım (yapılandırılmış satırlar)
+waterRouter.post('/distribute/batch', ...mgr, (req, res) => {
+  try {
+    const ids = batchDistributeService(req.body, req.user.id)
+    logAudit(req.user.id, 'water_distribute_batch', 'water', null, `${ids.length} satır`)
+    res.status(201).json({ ids, count: ids.length })
   } catch (e) { fail(res, e) }
 })
 
@@ -81,7 +104,7 @@ waterRouter.delete('/movements/:id', ...mgr, (req, res) => {
 // ── Özet / dashboard ──
 waterRouter.get('/summary', ...mgr, (req, res) => {
   try {
-    const { from, to, product_id } = req.query
-    res.json(summaryService({ from, to, product_id: product_id ? +product_id : undefined }))
+    const { from, to, product_id, group } = req.query
+    res.json(summaryService({ from, to, group: group === 'month' ? 'month' : 'day', product_id: product_id ? +product_id : undefined }))
   } catch (e) { logger.error('[water]', e); fail(res, e) }
 })

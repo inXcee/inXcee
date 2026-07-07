@@ -6,12 +6,12 @@ vi.mock('../../shared/api/client.js', () => ({
   default: {
     get: vi.fn((url) => {
       if (url === '/water/summary') return Promise.resolve({ data: {
-        stock: [{ product_id: 1, name: '0.5 L Şişe Su', unit_label: 'şişe', total_in: 1680, total_out: 60, balance: 1620, balance_human: '1 palet 65 koli' }],
+        stock: [{ product_id: 1, name: '0.5 L Şişe Su', unit_label: 'şişe', total_in: 1680, total_out: 60, balance: 1620, balance_human: '1 palet 65 koli', min_level: 0, low: false, min_human: null }],
         zones: [{ zone_id: 1, zone_name: 'A Blok', product_id: 1, product_name: '0.5 L Şişe Su', total_out: 60, out_human: '5 koli' }],
         daily: [{ move_date: '2026-07-01', in_base: 1680, out_base: 0 }, { move_date: '2026-07-02', in_base: 0, out_base: 60 }],
-        totals: { total_in: 1680, total_out: 60, balance: 1620 },
+        totals: { period_in: 1680, period_out: 60, balance: 1620, low_count: 0 }, group: 'day',
       } })
-      if (url === '/water/products') return Promise.resolve({ data: [{ id: 1, name: '0.5 L Şişe Su', unit_label: 'şişe', units_per_case: 12, cases_per_pallet: 70, is_active: 1 }] })
+      if (url === '/water/products') return Promise.resolve({ data: [{ id: 1, name: '0.5 L Şişe Su', unit_label: 'şişe', units_per_case: 12, cases_per_pallet: 70, is_active: 1, min_level: 0 }] })
       if (url === '/water/zones') return Promise.resolve({ data: [{ id: 1, name: 'A Blok', code: 'A' }] })
       if (url === '/water/movements') return Promise.resolve({ data: [] })
       return Promise.resolve({ data: [] })
@@ -29,16 +29,22 @@ describe('WaterPage smoke', () => {
 
   it('özet sekmesi stok ve KPI gösterir', async () => {
     renderWithProviders(<WaterPage />)
-    expect(await screen.findByText('Toplam Giriş')).toBeInTheDocument()
+    expect(await screen.findByText('Dönem Giriş')).toBeInTheDocument()
     expect((await screen.findAllByText('0.5 L Şişe Su')).length).toBeGreaterThan(0)
     expect(screen.getByText('1 palet 65 koli')).toBeInTheDocument()
     expect(screen.getByText('📍 A Blok')).toBeInTheDocument()
   })
 
-  it('sekmeler arası geçiş çalışır (Giriş formu)', async () => {
+  it('giriş sekmesi toplu irsaliye modunu gösterir', async () => {
     renderWithProviders(<WaterPage />)
     fireEvent.click(screen.getByText('📥 Giriş (İrsaliye)'))
-    expect(await screen.findByText('YENİ GİRİŞ')).toBeInTheDocument()
-    expect(screen.getByText('İrsaliye No')).toBeInTheDocument()
+    expect(await screen.findByText('TOPLU GİRİŞ (TEK İRSALİYE)')).toBeInTheDocument()
+  })
+
+  it('dağıtım sekmesi metinden mod + çözümle', async () => {
+    renderWithProviders(<WaterPage />)
+    fireEvent.click(screen.getByText('🚚 Dağıtım'))
+    expect(await screen.findByText('METİNDEN DAĞITIM')).toBeInTheDocument()
+    expect(screen.getByText(/Çözümle/)).toBeInTheDocument()
   })
 })

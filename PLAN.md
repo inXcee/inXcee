@@ -329,3 +329,10 @@ Doğrulama: 804/804 backend, build temiz, 8/8 e2e
 - [x] Backend water/ modülü: ürün+bölge CRUD (hareketi varsa 409), giriş(irsaliye)/dağıtım, silme, movements listesi, summary (stok bakiyesi + bölge×ürün + günlük seri + toplamlar)
 - [x] WaterPage (sidebar Operasyon → 💧 Su Takip): Özet (KPI + recharts günlük grafik + stok tablosu + bölge kartları + tarih filtresi), Giriş, Dağıtım, Bölgeler, Ürünler sekmeleri
 - [x] +14 backend test (1345/1345 tüm suite), +2 frontend smoke, build temiz
+
+### Faz 35-38 — Su takip geliştirmeleri ✅ (tek sprint)
+- [x] **Faz 35 Toplu irsaliye:** POST /water/intake/batch (transaction) + Giriş sekmesinde çok satırlı irsaliye modu (tek tarih/irsaliye, N ürün)
+- [x] **Faz 36 Metinden dağıtım:** /water/distribute/parse (fuzzy bölge+ürün+miktar+birim ayrıştırma, TR normalize) + /water/distribute/batch; Dağıtım sekmesinde yapıştır→çözümle→önizle/düzelt→kaydet
+- [x] **Faz 37 Düşük stok:** water_products.min_level (migration 026) + summary low flag/low_count + panoda kırmızı uyarı + satır vurgusu + dağıtımda eşik altına düşünce campus_manager bildirimi (dedup); Ürünler create+edit + min eşik (birim çevrimli)
+- [x] **Faz 38 Gün/ay + Excel:** summary group=day|month (monthlySeries) + dönem KPI (period_in/out) + kalan stok tüm-zaman; Özet'te gün/ay toggle + Excel export (Stok/Bölge/Hareketler sayfaları)
+- [x] +7 backend test (21/21 water, 1352/1352 tüm suite), +1 frontend smoke (3/3), build temiz

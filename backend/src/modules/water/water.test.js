@@ -124,3 +124,87 @@ describe('Su takip — API', () => {
     expect(r.status).toBe(401)
   })
 })
+
+describe('Su takip — toplu giriş + metinden dağıtım + düşük stok + ay serisi', () => {
+  let zoneA, zoneB, p05, p033, pDam
+
+  beforeAll(async () => {
+    const prods = (await request(app).get('/api/water/products').set('Authorization', `Bearer ${managerToken}`)).body
+    p05 = prods.find(p => p.name.includes('0.5')).id
+    p033 = prods.find(p => p.name.includes('0.33')).id
+    pDam = prods.find(p => p.name.includes('Damacana')).id
+    zoneA = (await request(app).post('/api/water/zones').set('Authorization', `Bearer ${managerToken}`).send({ name: 'B Blok Yemekhane' })).body.id
+    zoneB = (await request(app).post('/api/water/zones').set('Authorization', `Bearer ${managerToken}`).send({ name: 'C Blok Şantiye' })).body.id
+  })
+
+  it('toplu irsaliye — 3 ürün tek çağrı', async () => {
+    const r = await request(app).post('/api/water/intake/batch').set('Authorization', `Bearer ${managerToken}`)
+      .send({ move_date: '2026-08-01', waybill_no: 'IRS-BATCH', lines: [
+        { product_id: p05, input_qty: 3, input_unit: 'palet' },
+        { product_id: p033, input_qty: 2, input_unit: 'palet' },
+        { product_id: pDam, input_qty: 40, input_unit: 'adet' },
+      ] })
+    expect(r.status).toBe(201)
+    expect(r.body.count).toBe(3)
+    const rows = getDB().prepare("SELECT COUNT(*) c FROM water_movements WHERE waybill_no='IRS-BATCH'").get()
+    expect(rows.c).toBe(3)
+  })
+
+  it('metinden dağıtım — çözümle bölge+ürün+miktar eşler', async () => {
+    const text = 'B Blok Yemekhane 5 koli 0.5, 10 damacana\nC Blok Şantiye 2 palet 0.33'
+    const r = await request(app).post('/api/water/distribute/parse').set('Authorization', `Bearer ${managerToken}`).send({ text })
+    expect(r.status).toBe(200)
+    const items = r.body.items
+    expect(items.length).toBe(3)
+    const yem05 = items.find(i => i.zone_id === zoneA && i.product_id === p05)
+    expect(yem05).toBeTruthy()
+    expect(yem05.input_qty).toBe(5); expect(yem05.input_unit).toBe('koli'); expect(yem05.ok).toBe(true)
+    const yemDam = items.find(i => i.zone_id === zoneA && i.product_id === pDam)
+    expect(yemDam.input_qty).toBe(10)
+    const sant = items.find(i => i.zone_id === zoneB && i.product_id === p033)
+    expect(sant.input_qty).toBe(2); expect(sant.input_unit).toBe('palet')
+  })
+
+  it('metinden dağıtım — eşleşmeyen bölge issue döner', async () => {
+    const r = await request(app).post('/api/water/distribute/parse').set('Authorization', `Bearer ${managerToken}`)
+      .send({ text: 'Bilinmeyen Yer 3 koli 0.5' })
+    expect(r.body.items[0].ok).toBe(false)
+    expect(r.body.items[0].issues).toContain('bölge')
+  })
+
+  it('toplu dağıtım kaydı — bölgeye yazılır', async () => {
+    const r = await request(app).post('/api/water/distribute/batch').set('Authorization', `Bearer ${managerToken}`)
+      .send({ move_date: '2026-08-02', lines: [
+        { zone_id: zoneA, product_id: p05, input_qty: 5, input_unit: 'koli' },
+        { zone_id: zoneB, product_id: p033, input_qty: 2, input_unit: 'palet' },
+      ] })
+    expect(r.status).toBe(201)
+    expect(r.body.count).toBe(2)
+  })
+
+  it('düşük stok — min eşik altına düşünce summary low=true', async () => {
+    // pDam stok: giriş 40 adet. min_level 100 yap → low
+    await request(app).put(`/api/water/products/${pDam}`).set('Authorization', `Bearer ${managerToken}`)
+      .send({ name: '19 L Damacana', unit_label: 'damacana', units_per_case: 1, cases_per_pallet: 1, min_level: 100 })
+    const r = await request(app).get('/api/water/summary').set('Authorization', `Bearer ${managerToken}`)
+    const dam = r.body.stock.find(s => s.product_id === pDam)
+    expect(dam.min_level).toBe(100)
+    expect(dam.low).toBe(true)
+    expect(r.body.totals.low_count).toBeGreaterThanOrEqual(1)
+  })
+
+  it('ay bazlı seri döner (group=month)', async () => {
+    const r = await request(app).get('/api/water/summary?group=month&from=2026-07-01&to=2026-08-31')
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(r.status).toBe(200)
+    expect(r.body.group).toBe('month')
+    expect(r.body.daily.every(d => /^\d{4}-\d{2}$/.test(d.move_date))).toBe(true)
+  })
+
+  it('dönem KPI — period_in/period_out aralığa göre', async () => {
+    const r = await request(app).get('/api/water/summary?from=2026-08-01&to=2026-08-31')
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(r.body.totals.period_in).toBeGreaterThan(0)
+    expect(r.body.totals.period_out).toBeGreaterThan(0)
+  })
+})

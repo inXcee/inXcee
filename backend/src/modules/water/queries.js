@@ -8,15 +8,22 @@ export function listProducts({ includeInactive = false } = {}) {
 export function getProduct(id) {
   return getDB().prepare('SELECT * FROM water_products WHERE id=?').get(id)
 }
-export function createProduct({ name, unit_label, units_per_case, cases_per_pallet }) {
+export function createProduct({ name, unit_label, units_per_case, cases_per_pallet, min_level }) {
   return getDB().prepare(`
-    INSERT INTO water_products(name, unit_label, units_per_case, cases_per_pallet) VALUES(?,?,?,?)
-  `).run(name, unit_label || 'adet', units_per_case || 1, cases_per_pallet || 1).lastInsertRowid
+    INSERT INTO water_products(name, unit_label, units_per_case, cases_per_pallet, min_level) VALUES(?,?,?,?,?)
+  `).run(name, unit_label || 'adet', units_per_case || 1, cases_per_pallet || 1, min_level || 0).lastInsertRowid
 }
-export function updateProduct(id, { name, unit_label, units_per_case, cases_per_pallet, is_active }) {
+export function updateProduct(id, { name, unit_label, units_per_case, cases_per_pallet, is_active, min_level }) {
   return getDB().prepare(`
-    UPDATE water_products SET name=?, unit_label=?, units_per_case=?, cases_per_pallet=?, is_active=? WHERE id=?
-  `).run(name, unit_label || 'adet', units_per_case || 1, cases_per_pallet || 1, is_active ? 1 : 0, id).changes > 0
+    UPDATE water_products SET name=?, unit_label=?, units_per_case=?, cases_per_pallet=?, is_active=?, min_level=? WHERE id=?
+  `).run(name, unit_label || 'adet', units_per_case || 1, cases_per_pallet || 1, is_active ? 1 : 0, min_level || 0, id).changes > 0
+}
+export function getProductBalance(productId) {
+  const r = getDB().prepare(`
+    SELECT COALESCE(SUM(CASE WHEN type='in' THEN qty_base ELSE -qty_base END), 0) AS bal
+    FROM water_movements WHERE product_id=?
+  `).get(productId)
+  return r.bal
 }
 export function productMovementCount(id) {
   return getDB().prepare('SELECT COUNT(*) c FROM water_movements WHERE product_id=?').get(id).c
@@ -58,6 +65,21 @@ export function createMovement(m) {
 export function getMovement(id) {
   return getDB().prepare('SELECT * FROM water_movements WHERE id=?').get(id)
 }
+
+// Birden çok hareketi tek transaction'da ekler (toplu irsaliye / toplu dağıtım)
+export function createMovementsBatch(movements) {
+  const db = getDB()
+  const stmt = db.prepare(`
+    INSERT INTO water_movements(type, product_id, zone_id, move_date, qty_base, input_qty, input_unit, waybill_no, note, created_by)
+    VALUES(@type, @product_id, @zone_id, @move_date, @qty_base, @input_qty, @input_unit, @waybill_no, @note, @created_by)
+  `)
+  const tx = db.transaction((rows) => {
+    const ids = []
+    for (const r of rows) ids.push(stmt.run(r).lastInsertRowid)
+    return ids
+  })
+  return tx(movements)
+}
 export function deleteMovement(id) {
   return getDB().prepare('DELETE FROM water_movements WHERE id=?').run(id).changes > 0
 }
@@ -83,22 +105,33 @@ export function listMovements({ type, product_id, zone_id, from, to, limit = 200
 }
 
 // ── Özet sorguları (qty_base = adet cinsinden) ──
-export function stockByProduct({ from, to } = {}) {
-  const cond = []
-  const params = []
-  if (from) { cond.push('mv.move_date>=?'); params.push(from) }
-  if (to) { cond.push('mv.move_date<=?'); params.push(to) }
-  const where = cond.length ? 'AND ' + cond.join(' AND ') : ''
+// Kalan stok TÜM ZAMANLAR üzerinden (gerçek anlık stok). Dönem giriş/çıkış ayrı hesaplanır.
+export function stockByProduct() {
   return getDB().prepare(`
-    SELECT p.id, p.name, p.unit_label, p.units_per_case, p.cases_per_pallet,
+    SELECT p.id, p.name, p.unit_label, p.units_per_case, p.cases_per_pallet, p.min_level,
       COALESCE(SUM(CASE WHEN mv.type='in'  THEN mv.qty_base END), 0) AS total_in,
       COALESCE(SUM(CASE WHEN mv.type='out' THEN mv.qty_base END), 0) AS total_out
     FROM water_products p
-    LEFT JOIN water_movements mv ON mv.product_id = p.id ${where}
+    LEFT JOIN water_movements mv ON mv.product_id = p.id
     WHERE p.is_active = 1
     GROUP BY p.id
     ORDER BY p.name
-  `).all(...params)
+  `).all()
+}
+
+// Seçili aralıktaki giriş/çıkış (dönem KPI'ları için)
+export function periodFlow({ from, to } = {}) {
+  const cond = []
+  const params = []
+  if (from) { cond.push('move_date>=?'); params.push(from) }
+  if (to) { cond.push('move_date<=?'); params.push(to) }
+  const where = cond.length ? 'WHERE ' + cond.join(' AND ') : ''
+  const r = getDB().prepare(`
+    SELECT COALESCE(SUM(CASE WHEN type='in' THEN qty_base END),0) AS period_in,
+           COALESCE(SUM(CASE WHEN type='out' THEN qty_base END),0) AS period_out
+    FROM water_movements ${where}
+  `).get(...params)
+  return r
 }
 
 export function zoneTotals({ from, to, product_id } = {}) {
@@ -134,6 +167,25 @@ export function dailySeries({ from, to, product_id } = {}) {
     FROM water_movements
     ${where}
     GROUP BY move_date
+    ORDER BY move_date
+  `).all(...params)
+}
+
+// Ay bazlı seri (move_date YYYY-MM-DD → YYYY-MM gruplanır)
+export function monthlySeries({ from, to, product_id } = {}) {
+  const cond = []
+  const params = []
+  if (from) { cond.push('move_date>=?'); params.push(from) }
+  if (to) { cond.push('move_date<=?'); params.push(to) }
+  if (product_id) { cond.push('product_id=?'); params.push(product_id) }
+  const where = cond.length ? 'WHERE ' + cond.join(' AND ') : ''
+  return getDB().prepare(`
+    SELECT substr(move_date,1,7) AS move_date,
+      COALESCE(SUM(CASE WHEN type='in'  THEN qty_base END), 0) AS in_base,
+      COALESCE(SUM(CASE WHEN type='out' THEN qty_base END), 0) AS out_base
+    FROM water_movements
+    ${where}
+    GROUP BY substr(move_date,1,7)
     ORDER BY move_date
   `).all(...params)
 }
