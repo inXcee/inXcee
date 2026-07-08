@@ -2,69 +2,77 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { fireEvent, screen } from '@testing-library/react'
 import { renderWithProviders } from '../../test/renderWithProviders.jsx'
 
+const PRODUCTS = [
+  { id: 1, name: 'Damacana', unit_label: 'damacana', units_per_case: 1, cases_per_pallet: 1, is_active: 1, min_level: 0, brand_id: 1, brand_name: 'MİLA SU', is_returnable: 1 },
+  { id: 2, name: '0.5 L', unit_label: 'şişe', units_per_case: 12, cases_per_pallet: 70, is_active: 1, min_level: 0, brand_id: 1, brand_name: 'MİLA SU', is_returnable: 0 },
+]
+
 vi.mock('../../shared/api/client.js', () => ({
   default: {
     get: vi.fn((url, config = {}) => {
+      const p = config.params || {}
       if (url === '/water/summary') return Promise.resolve({ data: {
-        stock: [{ product_id: 1, name: '0.5 L Şişe Su', unit_label: 'şişe', total_in: 1680, total_out: 60, balance: 1620, balance_human: '1 palet 65 koli', min_level: 0, low: false, min_human: null }],
-        zones: [{ zone_id: 1, zone_name: 'A Blok', product_id: 1, product_name: '0.5 L Şişe Su', total_out: 60, out_human: '5 koli' }],
-        daily: [{ move_date: '2026-07-01', in_base: 1680, out_base: 0 }, { move_date: '2026-07-02', in_base: 0, out_base: 60 }],
-        totals: { period_in: 1680, period_out: 60, balance: 1620, low_count: 0 }, group: 'day',
+        stock: [{ product_id: 2, name: '0.5 L', unit_label: 'şişe', total_in: 1680, total_out: 60, balance: 1620, balance_human: '1 palet 65 koli', min_level: 0, low: false }],
+        zones: [], daily: [],
+        totals: { period_in: 1680, period_out: 91, balance: 1620, low_count: 0, period_return: 10, outstanding: 90 },
+        deposit: [{ product_id: 1, name: 'Damacana', brand_name: 'MİLA SU', unit_label: 'damacana', total_in: 100, total_return: 10, period_return: 10, outstanding: 90 }],
+        group: 'day',
       } })
-      if (url === '/water/products') return Promise.resolve({ data: [{ id: 1, name: '0.5 L Şişe Su', unit_label: 'şişe', units_per_case: 12, cases_per_pallet: 70, is_active: 1, min_level: 0 }] })
-      if (url === '/water/zones') return Promise.resolve({ data: [{ id: 1, name: 'A Blok', code: 'A' }] })
-      if (url === '/water/movements' && config.params?.zone_id) return Promise.resolve({ data: [
-        { id: 10, type: 'out', move_date: '2026-07-02', zone_id: 1, zone_name: 'A Blok', product_id: 1, product_name: '0.5 L Şişe Su', input_qty: 5, input_unit: 'koli', qty_base: 60, qty_human: '5 koli', note: 'Sabah vardiyası' },
+      if (url === '/water/pivot') return Promise.resolve({ data: {
+        from: p.from, to: p.to,
+        brands: [{ brand_id: 1, brand_name: 'MİLA SU', product_ids: [1, 2] }],
+        columns: [
+          { product_id: 1, name: 'Damacana', unit_label: 'damacana', brand_id: 1, brand_name: 'MİLA SU', units_per_case: 1, cases_per_pallet: 1 },
+          { product_id: 2, name: '0.5 L', unit_label: 'şişe', brand_id: 1, brand_name: 'MİLA SU', units_per_case: 12, cases_per_pallet: 70 },
+        ],
+        rows: [{ zone_id: 1, zone_name: 'OTC Kamp Alanı', cells: { 1: { base: 91, human: '91 damacana' } }, total_base: 91 }],
+        colTotals: { 1: { base: 91, human: '91 damacana' }, 2: { base: 0, human: '0 şişe' } },
+        grandTotal: 91,
+      } })
+      if (url === '/water/movements' && p.type === 'in') return Promise.resolve({ data: [
+        { id: 5, product_id: 1, product_name: 'Damacana', brand_name: 'MİLA SU', unit_label: 'damacana', units_per_case: 1, cases_per_pallet: 1, qty_base: 290 },
       ] })
       if (url === '/water/movements') return Promise.resolve({ data: [] })
+      if (url === '/water/products') return Promise.resolve({ data: PRODUCTS })
+      if (url === '/water/zones') return Promise.resolve({ data: [{ id: 1, name: 'OTC Kamp Alanı', code: 'OTC' }] })
+      if (url === '/water/returns') return Promise.resolve({ data: [] })
+      if (url === '/water/brands') return Promise.resolve({ data: [{ id: 1, name: 'MİLA SU' }] })
       return Promise.resolve({ data: [] })
     }),
-    post: vi.fn((url) => {
-      if (url === '/water/distribute/batch') return Promise.resolve({ data: { ids: [1], count: 1 } })
-      return Promise.resolve({ data: { id: 1 } })
-    }),
+    post: vi.fn(() => Promise.resolve({ data: { ids: [1], count: 1 } })),
     delete: vi.fn(() => Promise.resolve({ data: {} })),
   },
 }))
 
-// recharts ResponsiveContainer jsdom'da 0 boyut uyarısı verir; testte sorun değil
 import WaterPage from './WaterPage.jsx'
 
-describe('WaterPage smoke', () => {
+describe('WaterPage tek-ekran pano smoke', () => {
   beforeEach(() => vi.clearAllMocks())
 
-  it('özet sekmesi stok ve KPI gösterir', async () => {
+  it('pano: KPI + INDEX matris + firma satırı gösterir', async () => {
     renderWithProviders(<WaterPage />)
-    expect(await screen.findByText('Dönem Giriş')).toBeInTheDocument()
-    expect((await screen.findAllByText('0.5 L Şişe Su')).length).toBeGreaterThan(0)
-    expect(screen.getByText('1 palet 65 koli')).toBeInTheDocument()
-    expect(screen.getByText('📍 A Blok')).toBeInTheDocument()
+    expect(await screen.findByText('INDEX — FİRMA DAĞITIM MATRİSİ')).toBeInTheDocument()
+    expect(screen.getByText('Ay Dağıtım')).toBeInTheDocument()
+    expect((await screen.findAllByText('OTC Kamp Alanı')).length).toBeGreaterThan(0)
+    expect(screen.getByTestId('water-board')).toBeInTheDocument()
+    // firma toplamı (91) matriste
+    expect((await screen.findAllByText('91')).length).toBeGreaterThan(0)
   })
 
-  it('giriş sekmesi toplu irsaliye modunu gösterir', async () => {
+  it('gelen tır ve boş iade panelleri render olur', async () => {
     renderWithProviders(<WaterPage />)
-    fireEvent.click(screen.getByText('📥 Giriş (İrsaliye)'))
-    expect(await screen.findByText('TOPLU GİRİŞ (TEK İRSALİYE)')).toBeInTheDocument()
+    expect(await screen.findByText(/GELEN TIR/)).toBeInTheDocument()
+    expect(screen.getByText('BOŞ İADE — DEPOZİTO')).toBeInTheDocument()
+    // depozito kartı (dolaşımda 90)
+    expect((await screen.findAllByText('90')).length).toBeGreaterThan(0)
   })
 
-  it('dağıtım sekmesi günlük defteri varsayılan gösterir ve çizelge/metin moda geçer', async () => {
+  it('Ayarlar modalı firmaları açar, Metinden modalı açılır', async () => {
     renderWithProviders(<WaterPage />)
-    fireEvent.click(screen.getByText('🚚 Dağıtım'))
-    expect(await screen.findByText('GÜNLÜK DAĞITIM DEFTERİ')).toBeInTheDocument()
-    expect(await screen.findByTestId('water-daily-ledger')).toBeInTheDocument()
-    expect(await screen.findByText('SEÇİLİ GÜN')).toBeInTheDocument()
-    expect(await screen.findByText('ARALIK ÜRÜN ÖZETİ')).toBeInTheDocument()
-    fireEvent.click(await screen.findByText('2026-07-02'))
-    expect((await screen.findAllByText('Sabah vardiyası')).length).toBeGreaterThan(0)
-    fireEvent.click(screen.getByText('Hızlı Çizelge'))
-    expect(await screen.findByText('HIZLI DAĞITIM ÇİZELGESİ')).toBeInTheDocument()
-    expect(await screen.findByTestId('water-distribution-grid')).toBeInTheDocument()
-    expect(await screen.findByTestId('water-zone-detail')).toBeInTheDocument()
-    expect(await screen.findByText('BÖLGE DETAYI')).toBeInTheDocument()
-    expect((await screen.findAllByText('2026-07-02')).length).toBeGreaterThan(0)
-    expect(screen.getByText('Sabah vardiyası')).toBeInTheDocument()
+    fireEvent.click(await screen.findByText('⚙ Ayarlar'))
+    expect(await screen.findByText('📍 Firmalar')).toBeInTheDocument()
+    fireEvent.click(screen.getByText('✕ Kapat'))
     fireEvent.click(screen.getByText('📝 Metinden'))
     expect(await screen.findByText('METİNDEN DAĞITIM')).toBeInTheDocument()
-    expect(screen.getByText(/Çözümle/)).toBeInTheDocument()
   })
 })
