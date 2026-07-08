@@ -3,8 +3,8 @@ import { fireEvent, screen } from '@testing-library/react'
 import { renderWithProviders } from '../../test/renderWithProviders.jsx'
 
 const PRODUCTS = [
-  { id: 1, name: 'Damacana', unit_label: 'damacana', units_per_case: 1, cases_per_pallet: 1, is_active: 1, min_level: 0, brand_id: 1, brand_name: 'MİLA SU', is_returnable: 1 },
-  { id: 2, name: '0.5 L', unit_label: 'şişe', units_per_case: 12, cases_per_pallet: 70, is_active: 1, min_level: 0, brand_id: 1, brand_name: 'MİLA SU', is_returnable: 0 },
+  { id: 1, name: 'Damacana', unit_label: 'damacana', units_per_case: 1, cases_per_pallet: 36, is_active: 1, min_level: 0, brand_id: 1, brand_name: 'MİLA SU', is_returnable: 1 },
+  { id: 2, name: '0.5 L', unit_label: 'koli', units_per_case: 1, cases_per_pallet: 140, is_active: 1, min_level: 0, brand_id: 1, brand_name: 'MİLA SU', is_returnable: 0 },
 ]
 
 vi.mock('../../shared/api/client.js', () => ({
@@ -12,9 +12,9 @@ vi.mock('../../shared/api/client.js', () => ({
     get: vi.fn((url, config = {}) => {
       const p = config.params || {}
       if (url === '/water/summary') return Promise.resolve({ data: {
-        stock: [{ product_id: 2, name: '0.5 L', unit_label: 'şişe', total_in: 1680, total_out: 60, balance: 1620, balance_human: '1 palet 65 koli', min_level: 0, low: false }],
+        stock: [{ product_id: 2, name: '0.5 L', unit_label: 'koli', total_in: 280, total_out: 5, balance: 275, balance_human: '1 palet 135 koli', min_level: 0, low: false }],
         zones: [], daily: [],
-        totals: { period_in: 1680, period_out: 91, balance: 1620, low_count: 0, period_return: 10, outstanding: 90 },
+        totals: { period_in: 280, period_out: 91, balance: 275, low_count: 0, period_return: 10, outstanding: 90 },
         deposit: [{ product_id: 1, name: 'Damacana', brand_name: 'MİLA SU', unit_label: 'damacana', total_in: 100, total_return: 10, period_return: 10, outstanding: 90 }],
         group: 'day',
       } })
@@ -22,15 +22,15 @@ vi.mock('../../shared/api/client.js', () => ({
         from: p.from, to: p.to,
         brands: [{ brand_id: 1, brand_name: 'MİLA SU', product_ids: [1, 2] }],
         columns: [
-          { product_id: 1, name: 'Damacana', unit_label: 'damacana', brand_id: 1, brand_name: 'MİLA SU', units_per_case: 1, cases_per_pallet: 1 },
-          { product_id: 2, name: '0.5 L', unit_label: 'şişe', brand_id: 1, brand_name: 'MİLA SU', units_per_case: 12, cases_per_pallet: 70 },
+          { product_id: 1, name: 'Damacana', unit_label: 'damacana', brand_id: 1, brand_name: 'MİLA SU', units_per_case: 1, cases_per_pallet: 36 },
+          { product_id: 2, name: '0.5 L', unit_label: 'koli', brand_id: 1, brand_name: 'MİLA SU', units_per_case: 1, cases_per_pallet: 140 },
         ],
         rows: [{ zone_id: 1, zone_name: 'OTC Kamp Alanı', cells: { 1: { base: 91, human: '91 damacana' } }, total_base: 91 }],
-        colTotals: { 1: { base: 91, human: '91 damacana' }, 2: { base: 0, human: '0 şişe' } },
+        colTotals: { 1: { base: 91, human: '2 palet 19 damacana' }, 2: { base: 0, human: '0 koli' } },
         grandTotal: 91,
       } })
       if (url === '/water/movements' && p.type === 'in') return Promise.resolve({ data: [
-        { id: 5, product_id: 1, product_name: 'Damacana', brand_name: 'MİLA SU', unit_label: 'damacana', units_per_case: 1, cases_per_pallet: 1, qty_base: 290 },
+        { id: 5, product_id: 1, product_name: 'Damacana', brand_name: 'MİLA SU', unit_label: 'damacana', units_per_case: 1, cases_per_pallet: 36, qty_base: 290 },
       ] })
       if (url === '/water/movements') return Promise.resolve({ data: [] })
       if (url === '/water/products') return Promise.resolve({ data: PRODUCTS })

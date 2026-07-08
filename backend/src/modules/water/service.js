@@ -1,21 +1,55 @@
 import * as q from './queries.js'
 import { createNotification } from '../../shared/notifications/service.js'
 
-// ── Çevrim mantığı: palet/koli/adet ↔ adet (base) ──
+// ── Çevrim mantığı: ürünün doğal takip birimi + palet/koli/paket kırılımı ──
+// qty_base Excel'deki ham takip sayısıdır. Bu sayı damacanada adet, bardakta koli,
+// 5 L/cam suda paket, tahta palette palet olabilir. "adet" ham sayı girişi olarak
+// her üründe kabul edilir; açılır listeler ürüne uygun birimleri gösterir.
+const INPUT_UNITS = ['adet', 'koli', 'paket', 'palet']
+const BASE_UNITS = new Set(INPUT_UNITS)
+
+function normUnit(unit) {
+  return (unit || 'adet').toString().toLocaleLowerCase('tr').trim()
+}
+
+function baseInputUnit(product) {
+  const unit = normUnit(product?.unit_label)
+  return BASE_UNITS.has(unit) ? unit : 'adet'
+}
+
 export function unitMultiplier(product, unit) {
-  const upc = product.units_per_case || 1
-  const cpp = product.cases_per_pallet || 1
-  if (unit === 'adet') return 1
-  if (unit === 'koli') return upc
-  if (unit === 'palet') return upc * cpp
+  const input = normUnit(unit)
+  const baseUnit = baseInputUnit(product)
+  const upc = Math.max(1, parseInt(product?.units_per_case) || 1)
+  const cpp = Math.max(1, parseInt(product?.cases_per_pallet) || 1)
+  if (input === 'adet') return 1
+  if (input === 'koli') {
+    if (baseUnit === 'koli') return 1
+    if (baseUnit === 'paket' || baseUnit === 'palet') throw Object.assign(new Error('Geçersiz birim'), { statusCode: 400 })
+    return upc
+  }
+  if (input === 'paket') {
+    if (baseUnit === 'paket') return 1
+    throw Object.assign(new Error('Geçersiz birim'), { statusCode: 400 })
+  }
+  if (input === 'palet') {
+    if (baseUnit === 'palet') return 1
+    if (baseUnit === 'koli' || baseUnit === 'paket') return cpp
+    return upc * cpp
+  }
   throw Object.assign(new Error('Geçersiz birim'), { statusCode: 400 })
 }
 
 export function availableUnits(product) {
   const units = ['adet']
-  if ((product?.units_per_case || 1) > 1) units.push('koli')
-  if ((product?.units_per_case || 1) > 1 && (product?.cases_per_pallet || 1) > 1) units.push('palet')
-  return units
+  const baseUnit = baseInputUnit(product)
+  const upc = Math.max(1, parseInt(product?.units_per_case) || 1)
+  const cpp = Math.max(1, parseInt(product?.cases_per_pallet) || 1)
+  if (baseUnit === 'koli' || (baseUnit === 'adet' && upc > 1)) units.push('koli')
+  if (baseUnit === 'paket') units.push('paket')
+  if (baseUnit === 'palet') units.push('palet')
+  if (baseUnit !== 'palet' && cpp > 1) units.push('palet')
+  return [...new Set(units)]
 }
 
 function assertAvailableUnit(product, unit) {
@@ -28,19 +62,20 @@ export function toBase(product, qty, unit) {
   return Math.round(qty * unitMultiplier(product, unit))
 }
 
-// base adedi palet/koli/adet kırılımına çevirir (insan-okur özet)
+// base miktarı palet/koli/paket/adet kırılımına çevirir (insan-okur özet)
 export function humanize(product, base) {
-  const upc = product.units_per_case || 1
-  const cpp = product.cases_per_pallet || 1
-  const perPallet = upc * cpp
-  const unit = product.unit_label || 'adet'
+  const upc = Math.max(1, parseInt(product?.units_per_case) || 1)
+  const cpp = Math.max(1, parseInt(product?.cases_per_pallet) || 1)
+  const baseUnit = baseInputUnit(product)
+  const perPallet = baseUnit === 'palet' ? 1 : (baseUnit === 'koli' || baseUnit === 'paket') ? cpp : upc * cpp
+  const unit = product?.unit_label || 'adet'
   let rem = Math.max(0, Math.round(base))
   const parts = []
   if (perPallet > 1) {
     const palet = Math.floor(rem / perPallet); rem %= perPallet
     if (palet) parts.push(`${palet} palet`)
   }
-  if (upc > 1) {
+  if (baseUnit === 'adet' && upc > 1) {
     const koli = Math.floor(rem / upc); rem %= upc
     if (koli) parts.push(`${koli} koli`)
   }
@@ -153,7 +188,7 @@ function validateMovement(data, requireZone) {
   if (!product) throw Object.assign(new Error('Ürün bulunamadı'), { statusCode: 400 })
   const qty = Number(data.input_qty)
   if (!Number.isFinite(qty) || qty <= 0) throw Object.assign(new Error('Miktar 0’dan büyük olmalı'), { statusCode: 400 })
-  if (!['adet', 'koli', 'palet'].includes(data.input_unit)) throw Object.assign(new Error('Geçersiz birim'), { statusCode: 400 })
+  if (!INPUT_UNITS.includes(data.input_unit)) throw Object.assign(new Error('Geçersiz birim'), { statusCode: 400 })
   assertAvailableUnit(product, data.input_unit)
   if (!/^\d{4}-\d{2}-\d{2}$/.test(data.move_date || '')) throw Object.assign(new Error('Tarih YYYY-MM-DD olmalı'), { statusCode: 400 })
   if (requireZone) {
@@ -282,7 +317,7 @@ export function batchDistributeService(data, userId) {
 const GENERIC_PRODUCT_WORDS = new Set(['l', 'lt', 'ml', 'su', 'sise', 'şişe', 'water'])
 // Miktar birimleri ürün ismine/etiketine ANAHTAR olamaz: metinde "2 palet 0.33"
 // yazınca "palet" kelimesi "Tahta Palet" ürününü yanlış eşleştirir. Stop-word olarak dışla.
-const UNIT_WORDS = new Set(['palet', 'koli', 'adet', 'kutu'])
+const UNIT_WORDS = new Set(['palet', 'koli', 'paket', 'adet', 'kutu'])
 
 function normTr(s) { return (s || '').toString().toLocaleLowerCase('tr').replace(/İ/g, 'i').replace(/,/g, '.').trim() }
 
@@ -323,7 +358,7 @@ function matchZone(line, zones) {
 
 function parseSegmentQty(segment) {
   const s = normTr(segment)
-  let m = s.match(/(\d+(?:\.\d+)?)\s*(koli|palet)/)
+  let m = s.match(/(\d+(?:\.\d+)?)\s*(koli|paket|palet)/)
   if (m) return { qty: parseFloat(m[1]), unit: m[2] }
   m = s.match(/(\d+)\s*(adet|sise|şişe|damacana|bardak|kutu)/)
   if (m) return { qty: parseFloat(m[1]), unit: 'adet' }
@@ -376,7 +411,7 @@ function validateReturnLine(line, moveDate) {
   if (!product.is_returnable) throw Object.assign(new Error(`${product.name} iade edilebilir ürün değil`), { statusCode: 400 })
   const qty = Number(line.input_qty)
   if (!Number.isFinite(qty) || qty <= 0) throw Object.assign(new Error('Miktar 0’dan büyük olmalı'), { statusCode: 400 })
-  if (!['adet', 'koli', 'palet'].includes(line.input_unit)) throw Object.assign(new Error('Geçersiz birim'), { statusCode: 400 })
+  if (!INPUT_UNITS.includes(line.input_unit)) throw Object.assign(new Error('Geçersiz birim'), { statusCode: 400 })
   assertAvailableUnit(product, line.input_unit)
   if (!/^\d{4}-\d{2}-\d{2}$/.test(moveDate || '')) throw Object.assign(new Error('Tarih YYYY-MM-DD olmalı'), { statusCode: 400 })
   return { product, qty }

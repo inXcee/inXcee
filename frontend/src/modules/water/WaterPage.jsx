@@ -8,10 +8,29 @@ const toastOk = (m) => useToastStore.getState().addToast(m, 'success')
 const toastErr = (m) => useToastStore.getState().addToast(m, 'error')
 const errMsg = (e, f) => e?.response?.data?.error || f
 
-const UNITS = [['adet', 'Adet'], ['koli', 'Koli'], ['palet', 'Palet']]
+const UNITS = [['adet', 'Adet'], ['koli', 'Koli'], ['paket', 'Paket'], ['palet', 'Palet']]
+const BASE_UNITS = new Set(['adet', 'koli', 'paket', 'palet'])
 const todayStr = () => new Date().toLocaleDateString('sv-SE')
 const nf = (n) => new Intl.NumberFormat('tr-TR').format(n || 0)
-const multiplier = (p, unit) => unit === 'palet' ? (p.units_per_case * p.cases_per_pallet) : unit === 'koli' ? p.units_per_case : 1
+const normUnit = (u) => String(u || 'adet').toLocaleLowerCase('tr').trim()
+const baseUnitForProduct = (p) => {
+  const unit = normUnit(p?.unit_label)
+  return BASE_UNITS.has(unit) ? unit : 'adet'
+}
+const multiplier = (p, unit) => {
+  const baseUnit = baseUnitForProduct(p)
+  const perCase = Math.max(1, Number(p?.units_per_case || 1))
+  const perPallet = Math.max(1, Number(p?.cases_per_pallet || 1))
+  if (unit === 'adet') return 1
+  if (unit === 'koli') return baseUnit === 'koli' ? 1 : perCase
+  if (unit === 'paket') return baseUnit === 'paket' ? 1 : 1
+  if (unit === 'palet') {
+    if (baseUnit === 'palet') return 1
+    if (baseUnit === 'koli' || baseUnit === 'paket') return perPallet
+    return perCase * perPallet
+  }
+  return 1
+}
 const humanQty = (p, base) => {
   const label = p?.unit_label || 'adet'
   let rest = Math.max(0, Math.round(base || 0))
@@ -19,22 +38,36 @@ const humanQty = (p, base) => {
   const parts = []
   const perCase = Math.max(1, Number(p?.units_per_case || 1))
   const casesPerPallet = Math.max(1, Number(p?.cases_per_pallet || 1))
-  const perPallet = perCase * casesPerPallet
-  if (perCase > 1 && casesPerPallet > 1 && rest >= perPallet) {
+  const baseUnit = baseUnitForProduct(p)
+  const perPallet = baseUnit === 'palet' ? 1 : (baseUnit === 'koli' || baseUnit === 'paket') ? casesPerPallet : perCase * casesPerPallet
+  if (perPallet > 1 && rest >= perPallet) {
     const palet = Math.floor(rest / perPallet); parts.push(`${palet} palet`); rest -= palet * perPallet
   }
-  if (perCase > 1 && rest >= perCase) {
+  if (baseUnit === 'adet' && perCase > 1 && rest >= perCase) {
     const koli = Math.floor(rest / perCase); parts.push(`${koli} koli`); rest -= koli * perCase
   }
   if (rest > 0) parts.push(`${rest} ${label}`)
   return parts.join(' ')
 }
-const defaultUnitForProduct = (p) => (p?.units_per_case || 1) > 1 ? 'koli' : 'adet'
+const defaultUnitForProduct = (p) => {
+  const baseUnit = baseUnitForProduct(p)
+  if (baseUnit === 'koli' || baseUnit === 'paket') return baseUnit
+  if ((p?.units_per_case || 1) > 1) return 'koli'
+  return 'adet'
+}
 const availableUnitsForProduct = (p) => {
-  const units = ['adet']
-  if ((p?.units_per_case || 1) > 1) units.push('koli')
-  if ((p?.units_per_case || 1) > 1 && (p?.cases_per_pallet || 1) > 1) units.push('palet')
-  return units
+  const baseUnit = baseUnitForProduct(p)
+  const upc = Math.max(1, Number(p?.units_per_case || 1))
+  const cpp = Math.max(1, Number(p?.cases_per_pallet || 1))
+  const units = []
+  if (baseUnit === 'koli') units.push('koli')
+  else if (baseUnit === 'paket') units.push('paket')
+  else if (baseUnit === 'palet') units.push('palet')
+  else units.push('adet')
+  if (baseUnit === 'koli' || (baseUnit === 'adet' && upc > 1)) units.push('koli')
+  if (baseUnit === 'paket') units.push('paket')
+  if (baseUnit !== 'palet' && cpp > 1) units.push('palet')
+  return [...new Set(units)]
 }
 const unitOptionsForProduct = (p) => UNITS.filter(([unit]) => availableUnitsForProduct(p).includes(unit))
 const coerceUnitForProduct = (unit, p) => {
@@ -217,7 +250,8 @@ function WaterBoard({ from, to, label, lowItems }) {
   const save = () => {
     const lines = Object.entries(draft.byCell).map(([k, q]) => {
       const [zone_id, product_id] = k.split(':')
-      return { zone_id: +zone_id, product_id: +product_id, input_qty: q, input_unit: 'adet' }
+      const product = columnsById.get(+product_id)
+      return { zone_id: +zone_id, product_id: +product_id, input_qty: q, input_unit: defaultUnitForProduct(product) }
     })
     if (lines.length === 0) return toastErr('Önce hücrelere miktar girin')
     saveBatch.mutate(lines)
@@ -695,7 +729,7 @@ function ZonesTab() {
 // ─────────────────────────── ÜRÜNLER + MARKA ───────────────────────────
 function ProductsTab() {
   const qc = useQueryClient()
-  const blank = { id: null, name: '', unit_label: 'şişe', units_per_case: '12', cases_per_pallet: '70', min_qty: '', min_unit: 'koli', brand_id: '', is_returnable: false }
+  const blank = { id: null, name: '', unit_label: 'adet', units_per_case: '1', cases_per_pallet: '1', min_qty: '', min_unit: 'adet', brand_id: '', is_returnable: false }
   const [form, setForm] = useState(blank)
   const { data: products = [] } = useQuery({ queryKey: ['water-products-all'], queryFn: () => api.get('/water/products', { params: { all: 1 } }).then(r => r.data) })
   const { data: brands = [] } = useQuery({ queryKey: ['water-brands'], queryFn: () => api.get('/water/brands').then(r => r.data) })
@@ -703,8 +737,9 @@ function ProductsTab() {
   const invalidate = () => { qc.invalidateQueries({ queryKey: ['water-products-all'] }); qc.invalidateQueries({ queryKey: ['water-products'] }); qc.invalidateQueries({ queryKey: ['water-summary'] }); qc.invalidateQueries({ queryKey: ['water-pivot'] }); qc.invalidateQueries({ queryKey: ['water-deposit'] }) }
   const payload = () => {
     const upc = +form.units_per_case || 1, cpp = +form.cases_per_pallet || 1
-    const minUnit = coerceUnitForProduct(form.min_unit, { units_per_case: upc, cases_per_pallet: cpp })
-    const mult = minUnit === 'palet' ? upc * cpp : minUnit === 'koli' ? upc : 1
+    const productShape = { unit_label: form.unit_label, units_per_case: upc, cases_per_pallet: cpp }
+    const minUnit = coerceUnitForProduct(form.min_unit, productShape)
+    const mult = multiplier(productShape, minUnit)
     return { name: form.name.trim(), unit_label: form.unit_label, units_per_case: upc, cases_per_pallet: cpp, min_level: Math.round((+form.min_qty || 0) * mult), brand_id: form.brand_id || null, is_returnable: form.is_returnable }
   }
   const create = useMutation({ mutationFn: () => api.post('/water/products', payload()), onSuccess: () => { invalidate(); setForm(blank); toastOk('Ürün eklendi') }, onError: (e) => toastErr(errMsg(e, 'Eklenemedi')) })
@@ -712,32 +747,47 @@ function ProductsTab() {
   const del = useMutation({ mutationFn: (id) => api.delete(`/water/products/${id}`), onSuccess: () => { invalidate(); toastOk('Silindi') }, onError: (e) => toastErr(errMsg(e, 'Silinemedi')) })
 
   const editProduct = (p) => setForm({ id: p.id, name: p.name, unit_label: p.unit_label, units_per_case: String(p.units_per_case), cases_per_pallet: String(p.cases_per_pallet), min_qty: p.min_level ? String(p.min_level) : '', min_unit: 'adet', brand_id: p.brand_id ? String(p.brand_id) : '', is_returnable: !!p.is_returnable })
-  const packageMode = (+form.units_per_case || 1) <= 1 ? 'single' : (+form.cases_per_pallet || 1) <= 1 ? 'case' : 'pallet'
-  const formPackage = { units_per_case: +form.units_per_case || 1, cases_per_pallet: +form.cases_per_pallet || 1 }
+  const formPackage = { unit_label: form.unit_label, units_per_case: +form.units_per_case || 1, cases_per_pallet: +form.cases_per_pallet || 1 }
+  const packageMode = baseUnitForProduct(formPackage) === 'paket' ? 'packPallet'
+    : baseUnitForProduct(formPackage) === 'koli' ? 'casePallet'
+      : (+form.cases_per_pallet || 1) > 1 ? 'piecePallet' : 'single'
   const formUnitOptions = unitOptionsForProduct(formPackage)
   const updatePackageNumber = (field, value) => setForm(f => {
     const next = { ...f, [field]: value }
-    const nextPackage = { units_per_case: +next.units_per_case || 1, cases_per_pallet: +next.cases_per_pallet || 1 }
+    const nextPackage = { unit_label: next.unit_label, units_per_case: +next.units_per_case || 1, cases_per_pallet: +next.cases_per_pallet || 1 }
     return { ...next, min_unit: coerceUnitForProduct(next.min_unit, nextPackage) }
   })
   const setPackageMode = (mode) => {
-    if (mode === 'single') setForm(f => ({ ...f, units_per_case: '1', cases_per_pallet: '1', min_unit: 'adet' }))
-    else if (mode === 'case') setForm(f => ({ ...f, units_per_case: f.units_per_case === '1' ? '12' : f.units_per_case, cases_per_pallet: '1', min_unit: f.min_unit === 'palet' ? 'koli' : f.min_unit }))
-    else setForm(f => ({ ...f, units_per_case: f.units_per_case === '1' ? '12' : f.units_per_case, cases_per_pallet: f.cases_per_pallet === '1' ? '70' : f.cases_per_pallet }))
+    if (mode === 'single') setForm(f => ({ ...f, unit_label: 'adet', units_per_case: '1', cases_per_pallet: '1', min_unit: 'adet' }))
+    else if (mode === 'piecePallet') setForm(f => ({ ...f, units_per_case: '1', cases_per_pallet: f.cases_per_pallet === '1' ? '36' : f.cases_per_pallet, min_unit: 'adet' }))
+    else if (mode === 'casePallet') setForm(f => ({ ...f, unit_label: 'koli', units_per_case: '1', cases_per_pallet: f.cases_per_pallet === '1' ? '140' : f.cases_per_pallet, min_unit: 'koli' }))
+    else setForm(f => ({ ...f, unit_label: 'paket', units_per_case: '1', cases_per_pallet: f.cases_per_pallet === '1' ? '80' : f.cases_per_pallet, min_unit: 'paket' }))
+  }
+  const paletText = (p) => {
+    const mult = multiplier(p, 'palet')
+    if (mult <= 1 && baseUnitForProduct(p) !== 'palet') return '—'
+    return `${nf(mult)} ${p.unit_label || 'adet'}`
+  }
+  const koliText = (p) => {
+    if (baseUnitForProduct(p) === 'koli') return `1 ${p.unit_label || 'koli'}`
+    return p.units_per_case > 1 ? `${nf(p.units_per_case)} ${p.unit_label}` : '—'
   }
 
   return (
     <div>
       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: '6px' }}>
         <div style={{ flex: 1, minWidth: '150px' }}><label className="form-label">{form.id ? 'Ürün düzenle' : 'Ürün adı'}</label><input className="form-input" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Ör. 0.5 L Şişe Su" /></div>
-        <div style={{ width: '80px' }}><label className="form-label">Birim</label><input className="form-input" value={form.unit_label} onChange={e => setForm(f => ({ ...f, unit_label: e.target.value }))} /></div>
+        <div style={{ width: '80px' }}><label className="form-label">Baz birim</label><input className="form-input" value={form.unit_label} onChange={e => setForm(f => {
+          const next = { ...f, unit_label: e.target.value }
+          return { ...next, min_unit: coerceUnitForProduct(next.min_unit, { unit_label: next.unit_label, units_per_case: +next.units_per_case || 1, cases_per_pallet: +next.cases_per_pallet || 1 }) }
+        })} /></div>
         <div style={{ minWidth: '200px' }}><label className="form-label">Paket tipi</label><div style={{ display: 'flex', gap: '2px', background: 'var(--surface2)', borderRadius: '7px', padding: '2px', border: '1px solid var(--border)' }}>
-          {[['single', 'Tekil'], ['case', 'Koli'], ['pallet', 'Koli+Palet']].map(([id, label]) => (
+          {[['single', 'Tekil'], ['piecePallet', 'Adet+Palet'], ['casePallet', 'Koli+Palet'], ['packPallet', 'Paket+Palet']].map(([id, label]) => (
             <button key={id} type="button" onClick={() => setPackageMode(id)} style={{ border: 'none', borderRadius: '5px', padding: '6px 9px', fontSize: '10px', cursor: 'pointer', background: packageMode === id ? 'var(--accent)' : 'transparent', color: packageMode === id ? '#000' : 'var(--text3)' }}>{label}</button>
           ))}
         </div></div>
-        <div style={{ width: '78px' }}><label className="form-label">Koli/adet</label><input type="number" min="1" className="form-input" value={form.units_per_case} onChange={e => updatePackageNumber('units_per_case', e.target.value)} /></div>
-        <div style={{ width: '78px' }}><label className="form-label">Palet/koli</label><input type="number" min="1" className="form-input" value={form.cases_per_pallet} onChange={e => updatePackageNumber('cases_per_pallet', e.target.value)} /></div>
+        <div style={{ width: '78px' }}><label className="form-label">Koli içi</label><input type="number" min="1" className="form-input" value={form.units_per_case} onChange={e => updatePackageNumber('units_per_case', e.target.value)} /></div>
+        <div style={{ width: '86px' }}><label className="form-label">Palet çarp.</label><input type="number" min="1" className="form-input" value={form.cases_per_pallet} onChange={e => updatePackageNumber('cases_per_pallet', e.target.value)} /></div>
         <div style={{ width: '76px' }}><label className="form-label">Min. stok</label><input type="number" min="0" className="form-input" value={form.min_qty} onChange={e => setForm(f => ({ ...f, min_qty: e.target.value }))} /></div>
         <div style={{ width: '76px' }}><label className="form-label">Min. birim</label><select className="form-select" value={coerceUnitForProduct(form.min_unit, formPackage)} onChange={e => setForm(f => ({ ...f, min_unit: e.target.value }))}>{formUnitOptions.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
         <div style={{ minWidth: '130px' }}><label className="form-label">Marka</label><select className="form-select" value={form.brand_id} onChange={e => setForm(f => ({ ...f, brand_id: e.target.value }))}>
@@ -749,7 +799,7 @@ function ProductsTab() {
         {form.id && <button className="btn btn-ghost btn-sm" onClick={() => setForm(blank)}>+ Yeni</button>}
         <button className="btn btn-primary" disabled={!form.name.trim() || create.isPending || update.isPending} onClick={() => form.id ? update.mutate() : create.mutate()}>{form.id ? 'Güncelle' : 'Ekle'}</button>
       </div>
-      <div style={{ fontSize: '10px', color: 'var(--text3)', marginBottom: '12px' }}>Tekil = sadece adet; Koli = adet+koli; Koli+Palet = adet+koli+palet. “İade edilebilir” = damacana/tahta palet gibi boş dönüşü takip edilen kaplar.</div>
+      <div style={{ fontSize: '10px', color: 'var(--text3)', marginBottom: '12px' }}>Baz birim Excel hücresindeki ham sayıdır; ör. damacana adet, 0.33/0.5 koli, 5 L/cam paket. Palet çarpanı bu ham sayıya çevrilir. “İade edilebilir” = boş dönüşü takip edilen kaplar.</div>
 
       <div style={{ maxHeight: '40vh', overflowY: 'auto' }}>
         <table className="data-table" style={{ fontSize: '12px' }}>
@@ -760,8 +810,8 @@ function ProductsTab() {
                 <td style={{ fontWeight: 600 }}>{p.name} {p.is_returnable ? <span title="İade edilebilir" style={{ fontSize: '10px', color: 'var(--teal)' }}>♻️</span> : null}</td>
                 <td style={{ color: 'var(--text3)' }}>{p.brand_name || '—'}</td>
                 <td style={{ color: 'var(--text3)' }}>{unitOptionsForProduct(p).map(([, label]) => label).join(' / ')}</td>
-                <td style={{ textAlign: 'right', fontFamily: 'var(--mono)' }}>{p.units_per_case > 1 ? `${p.units_per_case} ${p.unit_label}` : '—'}</td>
-                <td style={{ textAlign: 'right', fontFamily: 'var(--mono)' }}>{p.units_per_case > 1 && p.cases_per_pallet > 1 ? `${p.units_per_case * p.cases_per_pallet} ${p.unit_label}` : '—'}</td>
+                <td style={{ textAlign: 'right', fontFamily: 'var(--mono)' }}>{koliText(p)}</td>
+                <td style={{ textAlign: 'right', fontFamily: 'var(--mono)' }}>{paletText(p)}</td>
                 <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', color: p.min_level ? 'var(--text)' : 'var(--text3)' }}>{p.min_level ? `${nf(p.min_level)}` : '—'}</td>
                 <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                   <button onClick={() => editProduct(p)} className="btn btn-ghost btn-sm">Düzenle</button>

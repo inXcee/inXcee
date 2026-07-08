@@ -38,6 +38,15 @@ describe('Su takip — çevrim mantığı', () => {
     expect(availableUnits({ units_per_case: 1, cases_per_pallet: 1 })).toEqual(['adet'])
     expect(availableUnits({ units_per_case: 24, cases_per_pallet: 1 })).toEqual(['adet', 'koli'])
     expect(availableUnits({ units_per_case: 12, cases_per_pallet: 70 })).toEqual(['adet', 'koli', 'palet'])
+    expect(availableUnits({ unit_label: 'koli', units_per_case: 1, cases_per_pallet: 180 })).toEqual(['adet', 'koli', 'palet'])
+    expect(availableUnits({ unit_label: 'paket', units_per_case: 1, cases_per_pallet: 80 })).toEqual(['adet', 'paket', 'palet'])
+  })
+
+  it('fotoğraftaki palet kurallarını doğal takip birimine çevirir', () => {
+    expect(toBase({ unit_label: 'damacana', units_per_case: 1, cases_per_pallet: 36 }, 3, 'palet')).toBe(108)
+    expect(toBase({ unit_label: 'koli', units_per_case: 1, cases_per_pallet: 180 }, 10, 'palet')).toBe(1800)
+    expect(toBase({ unit_label: 'paket', units_per_case: 1, cases_per_pallet: 80 }, 2, 'palet')).toBe(160)
+    expect(humanize({ unit_label: 'koli', units_per_case: 1, cases_per_pallet: 180 }, 1810)).toBe('10 palet 10 koli')
   })
 })
 
@@ -49,6 +58,14 @@ describe('Su takip — API', () => {
     expect(r.status).toBe(200)
     expect(r.body.length).toBeGreaterThanOrEqual(4)
     productId = r.body.find(p => p.name.includes('0.5')).id
+    const p05 = r.body.find(p => p.name.includes('0.5'))
+    const dam = r.body.find(p => p.name === '19 L Damacana')
+    const p5l = r.body.find(p => p.name === '5 L Su')
+    expect(p05.unit_label).toBe('koli')
+    expect(p05.cases_per_pallet).toBe(140)
+    expect(dam.cases_per_pallet).toBe(36)
+    expect(p5l.unit_label).toBe('paket')
+    expect(p5l.cases_per_pallet).toBe(80)
   })
 
   it('bölge oluşturulur ve listelenir', async () => {
@@ -60,26 +77,26 @@ describe('Su takip — API', () => {
     expect(list.body.some(z => z.id === zoneId)).toBe(true)
   })
 
-  it('giriş (irsaliye) — 2 palet 0.5L = 1680 şişe base', async () => {
+  it('giriş (irsaliye) — 2 palet 0.5L = 280 koli base', async () => {
     const r = await request(app).post('/api/water/intake').set('Authorization', `Bearer ${managerToken}`)
       .send({ product_id: productId, input_qty: 2, input_unit: 'palet', move_date: '2026-07-01', waybill_no: 'IRS-001' })
     expect(r.status).toBe(201)
     const row = getDB().prepare('SELECT * FROM water_movements WHERE id=?').get(r.body.id)
     expect(row.type).toBe('in')
-    expect(row.qty_base).toBe(1680)
+    expect(row.qty_base).toBe(280)
     expect(row.waybill_no).toBe('IRS-001')
   })
 
-  it('dağıtım — bölgeye 5 koli bırak = 60 şişe base', async () => {
+  it('dağıtım — bölgeye 5 koli bırak = 5 koli base', async () => {
     const r = await request(app).post('/api/water/distribute').set('Authorization', `Bearer ${managerToken}`)
       .send({ product_id: productId, zone_id: zoneId, input_qty: 5, input_unit: 'koli', move_date: '2026-07-02' })
     expect(r.status).toBe(201)
     const row = getDB().prepare('SELECT * FROM water_movements WHERE id=?').get(r.body.id)
     expect(row.type).toBe('out')
-    expect(row.qty_base).toBe(60)
+    expect(row.qty_base).toBe(5)
     expect(row.zone_id).toBe(zoneId)
     const alloc = getDB().prepare('SELECT * FROM water_movement_allocations WHERE out_movement_id=?').get(r.body.id)
-    expect(alloc.qty_base).toBe(60)
+    expect(alloc.qty_base).toBe(5)
   })
 
   it('dağıtımda bölge zorunlu (400)', async () => {
@@ -101,13 +118,13 @@ describe('Su takip — API', () => {
     const r = await request(app).get('/api/water/summary?from=2026-07-01&to=2026-07-31').set('Authorization', `Bearer ${managerToken}`)
     expect(r.status).toBe(200)
     const p = r.body.stock.find(s => s.product_id === productId)
-    expect(p.total_in).toBe(1680)
-    expect(p.total_out).toBe(60)
-    expect(p.balance).toBe(1620)
-    expect(p.balance_human).toBe('1 palet 65 koli') // 1620 = 1×840 + 65×12 + 0
-    expect(r.body.zones.some(z => z.zone_id === zoneId && z.total_out === 60)).toBe(true)
+    expect(p.total_in).toBe(280)
+    expect(p.total_out).toBe(5)
+    expect(p.balance).toBe(275)
+    expect(p.balance_human).toBe('1 palet 135 koli')
+    expect(r.body.zones.some(z => z.zone_id === zoneId && z.total_out === 5)).toBe(true)
     expect(r.body.daily.length).toBeGreaterThanOrEqual(2)
-    expect(r.body.totals.balance).toBe(1620)
+    expect(r.body.totals.balance).toBe(275)
   })
 
   it('movements listesi qty_human içerir', async () => {
@@ -122,8 +139,18 @@ describe('Su takip — API', () => {
     const r = await request(app).get('/api/water/movements?type=in').set('Authorization', `Bearer ${managerToken}`)
     expect(r.status).toBe(200)
     const intake = r.body.find(m => m.waybill_no === 'IRS-001')
-    expect(intake.remaining_base).toBe(1620)
-    expect(intake.remaining_human).toBe('1 palet 65 koli')
+    expect(intake.remaining_base).toBe(275)
+    expect(intake.remaining_human).toBe('1 palet 135 koli')
+  })
+
+  it('damacana paleti — 3 palet = 108 adet olarak kaydedilir', async () => {
+    const prods = (await request(app).get('/api/water/products').set('Authorization', `Bearer ${managerToken}`)).body
+    const dam = prods.find(p => p.name === '19 L Damacana')
+    const r = await request(app).post('/api/water/intake').set('Authorization', `Bearer ${managerToken}`)
+      .send({ product_id: dam.id, input_qty: 3, input_unit: 'palet', move_date: '2026-07-04', waybill_no: 'IRS-DAM' })
+    expect(r.status).toBe(201)
+    const row = getDB().prepare('SELECT * FROM water_movements WHERE id=?').get(r.body.id)
+    expect(row.qty_base).toBe(108)
   })
 
   it('hareketi olan bölge silinemez (409)', async () => {
@@ -244,12 +271,12 @@ describe('Su takip — toplu giriş + metinden dağıtım + düşük stok + ay s
   })
 
   it('düşük stok — min eşik altına düşünce summary low=true', async () => {
-    // pDam stok: giriş 40 adet. min_level 100 yap → low
+    // pDam stokunda daha once paletli giris de var; eşiği yukarı çekince low olur.
     await request(app).put(`/api/water/products/${pDam}`).set('Authorization', `Bearer ${managerToken}`)
-      .send({ name: '19 L Damacana', unit_label: 'damacana', units_per_case: 1, cases_per_pallet: 1, min_level: 100 })
+      .send({ name: '19 L Damacana', unit_label: 'damacana', units_per_case: 1, cases_per_pallet: 36, min_level: 200 })
     const r = await request(app).get('/api/water/summary').set('Authorization', `Bearer ${managerToken}`)
     const dam = r.body.stock.find(s => s.product_id === pDam)
-    expect(dam.min_level).toBe(100)
+    expect(dam.min_level).toBe(200)
     expect(dam.low).toBe(true)
     expect(r.body.totals.low_count).toBeGreaterThanOrEqual(1)
   })
