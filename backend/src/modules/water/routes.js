@@ -4,9 +4,11 @@ import { logAudit } from '../../shared/audit.js'
 import { logger } from '../../shared/logger.js'
 import {
   productsService, createProductService, updateProductService, deleteProductService,
+  brandsService, createBrandService, updateBrandService, deleteBrandService,
   zonesService, createZoneService, updateZoneService, deleteZoneService,
-  createIntakeService, createDistributionService, deleteMovementService, movementsService,
-  summaryService, batchIntakeService, batchDistributeService, parseDistributionText,
+  createIntakeService, createDistributionService, deleteMovementService, updateDistributionService, movementsService,
+  createReturnService, batchReturnService, deleteReturnService, returnsService, depositService,
+  summaryService, pivotService, batchIntakeService, batchDistributeService, parseDistributionText,
 } from './service.js'
 
 export const waterRouter = Router()
@@ -27,6 +29,21 @@ waterRouter.put('/products/:id', ...mgr, (req, res) => {
 })
 waterRouter.delete('/products/:id', ...mgr, (req, res) => {
   try { deleteProductService(+req.params.id); res.json({ ok: true }) } catch (e) { fail(res, e) }
+})
+
+// ── Markalar ──
+waterRouter.get('/brands', ...mgr, (req, res) => {
+  try { res.json(brandsService({ includeInactive: req.query.all === '1' })) } catch (e) { logger.error('[water]', e); fail(res, e) }
+})
+waterRouter.post('/brands', ...mgr, (req, res) => {
+  try { const id = createBrandService(req.body); logAudit(req.user.id, 'water_brand_create', 'water', id, req.body.name); res.status(201).json({ id }) }
+  catch (e) { fail(res, e) }
+})
+waterRouter.put('/brands/:id', ...mgr, (req, res) => {
+  try { updateBrandService(+req.params.id, req.body); res.json({ ok: true }) } catch (e) { fail(res, e) }
+})
+waterRouter.delete('/brands/:id', ...mgr, (req, res) => {
+  try { deleteBrandService(+req.params.id); res.json({ ok: true }) } catch (e) { fail(res, e) }
 })
 
 // ── Bölgeler ──
@@ -97,8 +114,49 @@ waterRouter.post('/distribute/batch', ...mgr, (req, res) => {
   } catch (e) { fail(res, e) }
 })
 
+waterRouter.put('/movements/:id', ...mgr, (req, res) => {
+  try {
+    updateDistributionService(+req.params.id, req.body, req.user.id)
+    logAudit(req.user.id, 'water_movement_update', 'water', +req.params.id, `${req.body.input_qty} ${req.body.input_unit}`)
+    res.json({ ok: true })
+  } catch (e) { fail(res, e) }
+})
+
 waterRouter.delete('/movements/:id', ...mgr, (req, res) => {
   try { deleteMovementService(+req.params.id); res.json({ ok: true }) } catch (e) { fail(res, e) }
+})
+
+// ── Boş kap / palet iadeleri (depozito) ──
+waterRouter.get('/returns', ...mgr, (req, res) => {
+  try {
+    const { product_id, from, to } = req.query
+    res.json(returnsService({ from, to, product_id: product_id ? +product_id : undefined }))
+  } catch (e) { logger.error('[water]', e); fail(res, e) }
+})
+waterRouter.get('/deposit', ...mgr, (req, res) => {
+  try { const { from, to } = req.query; res.json(depositService({ from, to })) } catch (e) { logger.error('[water]', e); fail(res, e) }
+})
+waterRouter.post('/returns', ...mgr, (req, res) => {
+  try {
+    const id = createReturnService(req.body, req.user.id)
+    logAudit(req.user.id, 'water_return', 'water', id, `${req.body.input_qty} ${req.body.input_unit}`)
+    res.status(201).json({ id })
+  } catch (e) { fail(res, e) }
+})
+waterRouter.post('/returns/batch', ...mgr, (req, res) => {
+  try {
+    const ids = batchReturnService(req.body, req.user.id)
+    logAudit(req.user.id, 'water_return_batch', 'water', null, `${ids.length} satır`)
+    res.status(201).json({ ids, count: ids.length })
+  } catch (e) { fail(res, e) }
+})
+waterRouter.delete('/returns/:id', ...mgr, (req, res) => {
+  try { deleteReturnService(+req.params.id); res.json({ ok: true }) } catch (e) { fail(res, e) }
+})
+
+// ── INDEX pivot (firma × marka/ürün matrisi) ──
+waterRouter.get('/pivot', ...mgr, (req, res) => {
+  try { const { from, to } = req.query; res.json(pivotService({ from, to })) } catch (e) { logger.error('[water]', e); fail(res, e) }
 })
 
 // ── Özet / dashboard ──

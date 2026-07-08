@@ -4,7 +4,7 @@ import { renderWithProviders } from '../../test/renderWithProviders.jsx'
 
 vi.mock('../../shared/api/client.js', () => ({
   default: {
-    get: vi.fn((url) => {
+    get: vi.fn((url, config = {}) => {
       if (url === '/water/summary') return Promise.resolve({ data: {
         stock: [{ product_id: 1, name: '0.5 L Şişe Su', unit_label: 'şişe', total_in: 1680, total_out: 60, balance: 1620, balance_human: '1 palet 65 koli', min_level: 0, low: false, min_human: null }],
         zones: [{ zone_id: 1, zone_name: 'A Blok', product_id: 1, product_name: '0.5 L Şişe Su', total_out: 60, out_human: '5 koli' }],
@@ -13,10 +13,16 @@ vi.mock('../../shared/api/client.js', () => ({
       } })
       if (url === '/water/products') return Promise.resolve({ data: [{ id: 1, name: '0.5 L Şişe Su', unit_label: 'şişe', units_per_case: 12, cases_per_pallet: 70, is_active: 1, min_level: 0 }] })
       if (url === '/water/zones') return Promise.resolve({ data: [{ id: 1, name: 'A Blok', code: 'A' }] })
+      if (url === '/water/movements' && config.params?.zone_id) return Promise.resolve({ data: [
+        { id: 10, type: 'out', move_date: '2026-07-02', zone_id: 1, zone_name: 'A Blok', product_id: 1, product_name: '0.5 L Şişe Su', input_qty: 5, input_unit: 'koli', qty_base: 60, qty_human: '5 koli', note: 'Sabah vardiyası' },
+      ] })
       if (url === '/water/movements') return Promise.resolve({ data: [] })
       return Promise.resolve({ data: [] })
     }),
-    post: vi.fn(() => Promise.resolve({ data: { id: 1 } })),
+    post: vi.fn((url) => {
+      if (url === '/water/distribute/batch') return Promise.resolve({ data: { ids: [1], count: 1 } })
+      return Promise.resolve({ data: { id: 1 } })
+    }),
     delete: vi.fn(() => Promise.resolve({ data: {} })),
   },
 }))
@@ -41,9 +47,23 @@ describe('WaterPage smoke', () => {
     expect(await screen.findByText('TOPLU GİRİŞ (TEK İRSALİYE)')).toBeInTheDocument()
   })
 
-  it('dağıtım sekmesi metinden mod + çözümle', async () => {
+  it('dağıtım sekmesi günlük defteri varsayılan gösterir ve çizelge/metin moda geçer', async () => {
     renderWithProviders(<WaterPage />)
     fireEvent.click(screen.getByText('🚚 Dağıtım'))
+    expect(await screen.findByText('GÜNLÜK DAĞITIM DEFTERİ')).toBeInTheDocument()
+    expect(await screen.findByTestId('water-daily-ledger')).toBeInTheDocument()
+    expect(await screen.findByText('SEÇİLİ GÜN')).toBeInTheDocument()
+    expect(await screen.findByText('ARALIK ÜRÜN ÖZETİ')).toBeInTheDocument()
+    fireEvent.click(await screen.findByText('2026-07-02'))
+    expect((await screen.findAllByText('Sabah vardiyası')).length).toBeGreaterThan(0)
+    fireEvent.click(screen.getByText('Hızlı Çizelge'))
+    expect(await screen.findByText('HIZLI DAĞITIM ÇİZELGESİ')).toBeInTheDocument()
+    expect(await screen.findByTestId('water-distribution-grid')).toBeInTheDocument()
+    expect(await screen.findByTestId('water-zone-detail')).toBeInTheDocument()
+    expect(await screen.findByText('BÖLGE DETAYI')).toBeInTheDocument()
+    expect((await screen.findAllByText('2026-07-02')).length).toBeGreaterThan(0)
+    expect(screen.getByText('Sabah vardiyası')).toBeInTheDocument()
+    fireEvent.click(screen.getByText('📝 Metinden'))
     expect(await screen.findByText('METİNDEN DAĞITIM')).toBeInTheDocument()
     expect(screen.getByText(/Çözümle/)).toBeInTheDocument()
   })

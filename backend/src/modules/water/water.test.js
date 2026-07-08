@@ -3,7 +3,7 @@ import request from 'supertest'
 import app from '../../app.js'
 import { initDB, getDB } from '../../shared/db/index.js'
 import { seedDev } from '../../shared/db/seed.js'
-import { toBase, humanize } from './service.js'
+import { toBase, humanize, availableUnits } from './service.js'
 
 let managerToken, laundryToken
 beforeAll(async () => {
@@ -32,6 +32,12 @@ describe('Su takip — çevrim mantığı', () => {
     const dam = { units_per_case: 1, cases_per_pallet: 1, unit_label: 'damacana' }
     expect(humanize(dam, 7)).toBe('7 damacana')
     expect(toBase(dam, 7, 'adet')).toBe(7)
+  })
+
+  it('ürüne göre geçerli birimler hesaplanır', () => {
+    expect(availableUnits({ units_per_case: 1, cases_per_pallet: 1 })).toEqual(['adet'])
+    expect(availableUnits({ units_per_case: 24, cases_per_pallet: 1 })).toEqual(['adet', 'koli'])
+    expect(availableUnits({ units_per_case: 12, cases_per_pallet: 70 })).toEqual(['adet', 'koli', 'palet'])
   })
 })
 
@@ -72,6 +78,8 @@ describe('Su takip — API', () => {
     expect(row.type).toBe('out')
     expect(row.qty_base).toBe(60)
     expect(row.zone_id).toBe(zoneId)
+    const alloc = getDB().prepare('SELECT * FROM water_movement_allocations WHERE out_movement_id=?').get(r.body.id)
+    expect(alloc.qty_base).toBe(60)
   })
 
   it('dağıtımda bölge zorunlu (400)', async () => {
@@ -107,6 +115,15 @@ describe('Su takip — API', () => {
     expect(r.status).toBe(200)
     expect(r.body[0].qty_human).toBe('5 koli')
     expect(r.body[0].zone_name).toBe('A Blok Yemekhane')
+    expect(r.body[0].source_waybills).toContain('IRS-001')
+  })
+
+  it('giriş hareketinde irsaliye kalan stok döner', async () => {
+    const r = await request(app).get('/api/water/movements?type=in').set('Authorization', `Bearer ${managerToken}`)
+    expect(r.status).toBe(200)
+    const intake = r.body.find(m => m.waybill_no === 'IRS-001')
+    expect(intake.remaining_base).toBe(1620)
+    expect(intake.remaining_human).toBe('1 palet 65 koli')
   })
 
   it('hareketi olan bölge silinemez (409)', async () => {
@@ -150,6 +167,13 @@ describe('Su takip — toplu giriş + metinden dağıtım + düşük stok + ay s
     expect(rows.c).toBe(3)
   })
 
+  it('çevrimsiz üründe koli/palet birimi reddedilir', async () => {
+    const r = await request(app).post('/api/water/intake').set('Authorization', `Bearer ${managerToken}`)
+      .send({ product_id: pDam, input_qty: 1, input_unit: 'koli', move_date: '2026-08-01' })
+    expect(r.status).toBe(400)
+    expect(r.body.error).toMatch(/koli/)
+  })
+
   it('metinden dağıtım — çözümle bölge+ürün+miktar eşler', async () => {
     const text = 'B Blok Yemekhane 5 koli 0.5, 10 damacana\nC Blok Şantiye 2 palet 0.33'
     const r = await request(app).post('/api/water/distribute/parse').set('Authorization', `Bearer ${managerToken}`).send({ text })
@@ -180,6 +204,43 @@ describe('Su takip — toplu giriş + metinden dağıtım + düşük stok + ay s
       ] })
     expect(r.status).toBe(201)
     expect(r.body.count).toBe(2)
+    const allocs = getDB().prepare(`SELECT COUNT(*) c FROM water_movement_allocations WHERE out_movement_id IN (${r.body.ids.map(() => '?').join(',')})`).get(...r.body.ids)
+    expect(allocs.c).toBeGreaterThanOrEqual(2)
+  })
+
+  it('toplu dağıtım satır bazlı tarih kabul eder', async () => {
+    const r = await request(app).post('/api/water/distribute/batch').set('Authorization', `Bearer ${managerToken}`)
+      .send({ note: 'günlük çizelge', lines: [
+        { move_date: '2026-08-04', zone_id: zoneA, product_id: pDam, input_qty: 1, input_unit: 'adet' },
+        { move_date: '2026-08-05', zone_id: zoneA, product_id: pDam, input_qty: 2, input_unit: 'adet' },
+      ] })
+    expect(r.status).toBe(201)
+    expect(r.body.count).toBe(2)
+    const dates = getDB().prepare(`SELECT move_date FROM water_movements WHERE id IN (${r.body.ids.map(() => '?').join(',')}) ORDER BY move_date`).all(...r.body.ids).map(x => x.move_date)
+    expect(dates).toEqual(['2026-08-04', '2026-08-05'])
+  })
+
+  it('dağıtım kaydı düzenlenir ve irsaliye eşleşmesi yenilenir', async () => {
+    const created = await request(app).post('/api/water/distribute').set('Authorization', `Bearer ${managerToken}`)
+      .send({ product_id: pDam, zone_id: zoneA, input_qty: 3, input_unit: 'adet', move_date: '2026-08-06', note: 'ilk kayıt' })
+    expect(created.status).toBe(201)
+    const updated = await request(app).put(`/api/water/movements/${created.body.id}`).set('Authorization', `Bearer ${managerToken}`)
+      .send({ product_id: pDam, zone_id: zoneB, input_qty: 4, input_unit: 'adet', move_date: '2026-08-07', note: 'düzeltildi' })
+    expect(updated.status).toBe(200)
+    const row = getDB().prepare('SELECT * FROM water_movements WHERE id=?').get(created.body.id)
+    expect(row.zone_id).toBe(zoneB)
+    expect(row.move_date).toBe('2026-08-07')
+    expect(row.qty_base).toBe(4)
+    expect(row.note).toBe('düzeltildi')
+    const alloc = getDB().prepare('SELECT COALESCE(SUM(qty_base),0) total FROM water_movement_allocations WHERE out_movement_id=?').get(created.body.id)
+    expect(alloc.total).toBe(4)
+  })
+
+  it('stoktan fazla dağıtım irsaliye eşleşmesi olmadığı için reddedilir', async () => {
+    const r = await request(app).post('/api/water/distribute').set('Authorization', `Bearer ${managerToken}`)
+      .send({ product_id: pDam, zone_id: zoneA, input_qty: 999, input_unit: 'adet', move_date: '2026-08-03' })
+    expect(r.status).toBe(409)
+    expect(r.body.error).toMatch(/stok yetersiz/)
   })
 
   it('düşük stok — min eşik altına düşünce summary low=true', async () => {
@@ -206,5 +267,120 @@ describe('Su takip — toplu giriş + metinden dağıtım + düşük stok + ay s
       .set('Authorization', `Bearer ${managerToken}`)
     expect(r.body.totals.period_in).toBeGreaterThan(0)
     expect(r.body.totals.period_out).toBeGreaterThan(0)
+  })
+})
+
+describe('Su takip — marka + boş kap iadesi + INDEX pivot', () => {
+  let returnableId, nonReturnableId, tempBrandId
+
+  it('markalar seed edildi ve listelenir', async () => {
+    const r = await request(app).get('/api/water/brands').set('Authorization', `Bearer ${managerToken}`)
+    expect(r.status).toBe(200)
+    expect(r.body.length).toBeGreaterThanOrEqual(3)
+    expect(r.body.some(b => b.name === 'MİLA SU')).toBe(true)
+    expect(r.body.some(b => b.name === 'AVRİL')).toBe(true)
+  })
+
+  it('firmalar (bölgeler) seed edildi', async () => {
+    const r = await request(app).get('/api/water/zones').set('Authorization', `Bearer ${managerToken}`)
+    expect(r.body.some(z => z.name === 'OTC KAMP ALANI')).toBe(true)
+    expect(r.body.some(z => z.name === 'FPU KAMP ALANI')).toBe(true)
+  })
+
+  it('ürünler marka bilgisi ve iade edilebilirlik içerir', async () => {
+    const r = await request(app).get('/api/water/products').set('Authorization', `Bearer ${managerToken}`)
+    const dam = r.body.find(p => p.name === '19 L Damacana')
+    expect(dam).toBeTruthy()
+    expect(dam.brand_name).toBe('MİLA SU')
+    expect(dam.is_returnable).toBe(1)
+    returnableId = dam.id
+    const p05 = r.body.find(p => p.name.includes('0.5'))
+    nonReturnableId = p05.id
+    expect(p05.is_returnable).toBe(0)
+  })
+
+  it('marka oluşturma + aynı isim 409', async () => {
+    const r = await request(app).post('/api/water/brands').set('Authorization', `Bearer ${managerToken}`).send({ name: 'TEST MARKA' })
+    expect(r.status).toBe(201)
+    tempBrandId = r.body.id
+    const dup = await request(app).post('/api/water/brands').set('Authorization', `Bearer ${managerToken}`).send({ name: 'TEST MARKA' })
+    expect(dup.status).toBe(409)
+  })
+
+  it('boş marka silinir, ürünlü marka silinemez (409)', async () => {
+    const del = await request(app).delete(`/api/water/brands/${tempBrandId}`).set('Authorization', `Bearer ${managerToken}`)
+    expect(del.status).toBe(200)
+    const brands = (await request(app).get('/api/water/brands').set('Authorization', `Bearer ${managerToken}`)).body
+    const mila = brands.find(b => b.name === 'MİLA SU')
+    const del2 = await request(app).delete(`/api/water/brands/${mila.id}`).set('Authorization', `Bearer ${managerToken}`)
+    expect(del2.status).toBe(409)
+  })
+
+  it('boş kap iadesi — iade edilebilir üründe kaydedilir', async () => {
+    const r = await request(app).post('/api/water/returns').set('Authorization', `Bearer ${managerToken}`)
+      .send({ product_id: returnableId, input_qty: 10, input_unit: 'adet', move_date: '2026-09-01', note: 'boş damacana' })
+    expect(r.status).toBe(201)
+    const row = getDB().prepare('SELECT * FROM water_returns WHERE id=?').get(r.body.id)
+    expect(row.qty_base).toBe(10)
+  })
+
+  it('iade edilemez üründe iade reddedilir (400)', async () => {
+    const r = await request(app).post('/api/water/returns').set('Authorization', `Bearer ${managerToken}`)
+      .send({ product_id: nonReturnableId, input_qty: 5, input_unit: 'adet', move_date: '2026-09-01' })
+    expect(r.status).toBe(400)
+    expect(r.body.error).toMatch(/iade edilebilir/)
+  })
+
+  it('toplu iade — çok satır tek çağrı', async () => {
+    const r = await request(app).post('/api/water/returns/batch').set('Authorization', `Bearer ${managerToken}`)
+      .send({ move_date: '2026-09-02', lines: [
+        { product_id: returnableId, input_qty: 4, input_unit: 'adet' },
+        { product_id: returnableId, input_qty: 6, input_unit: 'adet' },
+      ] })
+    expect(r.status).toBe(201)
+    expect(r.body.count).toBe(2)
+  })
+
+  it('depozito bakiyesi — dolaşımdaki = giriş − iade', async () => {
+    const r = await request(app).get('/api/water/deposit').set('Authorization', `Bearer ${managerToken}`)
+    expect(r.status).toBe(200)
+    const dam = r.body.find(d => d.product_id === returnableId)
+    expect(dam).toBeTruthy()
+    expect(dam.total_return).toBe(20) // 10 + 4 + 6
+    expect(dam.outstanding).toBe(dam.total_in - dam.total_return)
+  })
+
+  it('iade listesi qty_human ve marka içerir', async () => {
+    const r = await request(app).get('/api/water/returns').set('Authorization', `Bearer ${managerToken}`)
+    expect(r.body.length).toBeGreaterThanOrEqual(3)
+    expect(r.body[0].qty_human).toBeTruthy()
+    expect(r.body[0]).toHaveProperty('brand_name')
+  })
+
+  it('INDEX pivot — matris yapısı ve tutarlı toplamlar döner', async () => {
+    const r = await request(app).get('/api/water/pivot?from=2026-07-01&to=2026-08-31').set('Authorization', `Bearer ${managerToken}`)
+    expect(r.status).toBe(200)
+    expect(Array.isArray(r.body.columns)).toBe(true)
+    expect(Array.isArray(r.body.rows)).toBe(true)
+    expect(r.body.brands.some(b => b.brand_name === 'MİLA SU')).toBe(true)
+    const colSum = Object.values(r.body.colTotals).reduce((s, c) => s + c.base, 0)
+    expect(r.body.grandTotal).toBe(colSum)
+    const anyRow = r.body.rows.find(row => row.total_base > 0)
+    expect(anyRow).toBeTruthy()
+    const cellSum = Object.values(anyRow.cells).reduce((s, c) => s + c.base, 0)
+    expect(anyRow.total_base).toBe(cellSum)
+  })
+
+  it('summary depozito bölümü döner', async () => {
+    const r = await request(app).get('/api/water/summary?from=2026-09-01&to=2026-09-30').set('Authorization', `Bearer ${managerToken}`)
+    expect(Array.isArray(r.body.deposit)).toBe(true)
+    expect(r.body.totals).toHaveProperty('outstanding')
+    expect(r.body.totals.period_return).toBe(20) // eylül iadeleri
+  })
+
+  it('iade kaydı silinir', async () => {
+    const list = (await request(app).get('/api/water/returns').set('Authorization', `Bearer ${managerToken}`)).body
+    const del = await request(app).delete(`/api/water/returns/${list[0].id}`).set('Authorization', `Bearer ${managerToken}`)
+    expect(del.status).toBe(200)
   })
 })
