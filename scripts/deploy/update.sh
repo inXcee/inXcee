@@ -59,11 +59,24 @@ ok "Backend yeniden yüklendi"
 sleep 3
 
 step "6/6 Post-deploy smoke test"
-if [[ -x scripts/deploy/post-deploy-smoke.sh ]]; then
+if [[ -f scripts/deploy/post-deploy-smoke.sh ]]; then
+  # bash ile çağrılıyor; executable bit şart değil (post-deploy-smoke.sh cold-start retry içerir)
   BACKEND_URL="https://$DOMAIN" bash scripts/deploy/post-deploy-smoke.sh
 else
-  curl -fsS "https://$DOMAIN/api/health" | grep -q '"ok":true'
-  ok "Health check geçti"
+  # Yedek: smoke script yoksa health'i cold-start için tekrar dene
+  for attempt in 1 2 3; do
+    if curl -fsS "https://$DOMAIN/api/health" | grep -q '"status":"ok"'; then
+      ok "Health check geçti"
+      break
+    fi
+    if [[ "$attempt" -lt 3 ]]; then
+      echo "  Cold start bekleniyor (${attempt}/3)... 30sn"
+      sleep 30
+    else
+      echo "  Health check başarısız — durduruldu"
+      exit 1
+    fi
+  done
 fi
 
 cat <<EOF
