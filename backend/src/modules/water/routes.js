@@ -10,7 +10,7 @@ import {
   createReturnService, batchReturnService, deleteReturnService, returnsService, depositService,
   summaryService, pivotService, batchIntakeService, batchDistributeService, parseDistributionText,
   alertsService, reconciliationService, saveStockCountService, monthlyCloseService, monthlyUnlockService,
-  monthLockWarning,
+  monthLockWarning, pendingDistributionsService,
 } from './service.js'
 
 export const waterRouter = Router()
@@ -167,6 +167,11 @@ waterRouter.get('/pivot', ...mgr, (req, res) => {
 // ── Operasyon Uyarı Merkezi ("Bugün Yapılacaklar") ──
 waterRouter.get('/alerts', ...mgr, (req, res) => {
   try { res.json(alertsService({ today: req.query.today })) } catch (e) { logger.error('[water]', e); fail(res, e) }
+})
+
+// ── İrsaliye Bekleyenler ──
+waterRouter.get('/pending', ...mgr, (req, res) => {
+  try { res.json(pendingDistributionsService({ today: req.query.today })) } catch (e) { logger.error('[water]', e); fail(res, e) }
 })
 
 // ── Ay Sonu Kapanış / Uyuşturma ──

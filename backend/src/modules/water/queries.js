@@ -324,6 +324,28 @@ export function productFlow({ from, to } = {}) {
   `).all(...params)
 }
 
+// İrsaliye bekleyen (eşleşmemiş) tüm dağıtımlar — detaylı liste (W3)
+export function pendingDistributions() {
+  return getDB().prepare(`
+    SELECT mv.id, mv.move_date, mv.qty_base, mv.note,
+           p.name AS product_name, p.unit_label, p.units_per_case, p.cases_per_pallet,
+           p.brand_id, b.name AS brand_name, z.name AS zone_name,
+           COALESCE((SELECT SUM(wa.qty_base) FROM water_movement_allocations wa WHERE wa.out_movement_id=mv.id),0) AS allocated_base,
+           mv.qty_base - COALESCE((SELECT SUM(wa.qty_base) FROM water_movement_allocations wa WHERE wa.out_movement_id=mv.id),0) AS unallocated_base,
+           (SELECT GROUP_CONCAT(COALESCE(src.waybill_no,'GİRİŞ #'||src.id)||': '||wa.qty_base, ', ')
+            FROM water_movement_allocations wa JOIN water_movements src ON src.id=wa.in_movement_id
+            WHERE wa.out_movement_id=mv.id) AS source_waybills
+    FROM water_movements mv
+    JOIN water_products p ON p.id = mv.product_id
+    LEFT JOIN water_brands b ON b.id = p.brand_id
+    LEFT JOIN water_zones z ON z.id = mv.zone_id
+    WHERE mv.type='out'
+    GROUP BY mv.id
+    HAVING unallocated_base > 0
+    ORDER BY mv.move_date ASC, mv.id ASC
+  `).all()
+}
+
 // Verilen günde hiç dağıtım (out) kaydı girilmemiş aktif bölgeler (Uyarı Merkezi)
 export function zonesWithoutMovementOn(day) {
   return getDB().prepare(`

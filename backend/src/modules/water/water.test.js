@@ -614,3 +614,50 @@ describe('Su takip — Ay Sonu Kapanış / Uyuşturma (W2)', () => {
     expect(r.status).toBe(404)
   })
 })
+
+describe('Su takip — İrsaliye Bekleyenler (W3)', () => {
+  const TODAY = '2026-10-10'
+  let pPend, zone
+  const auth = (r) => r.set('Authorization', `Bearer ${managerToken}`)
+
+  beforeAll(async () => {
+    pPend = (await auth(request(app).post('/api/water/products'))
+      .send({ name: 'BEKLEYEN Test 1L', unit_label: 'adet', units_per_case: 1, cases_per_pallet: 1 })).body.id
+    zone = (await auth(request(app).post('/api/water/zones')).send({ name: 'BEKLEYEN Bölge' })).body.id
+    // 5 gün önce girişsiz dağıtım (20) → bekleyen + gecikmiş
+    await auth(request(app).post('/api/water/distribute')).send({ product_id: pPend, zone_id: zone, input_qty: 20, input_unit: 'adet', move_date: '2026-10-05' })
+  })
+
+  it('bekleyen dağıtımı listeler — bekleyen miktar + gün + severity', async () => {
+    const r = await auth(request(app).get(`/api/water/pending?today=${TODAY}`))
+    expect(r.status).toBe(200)
+    const row = r.body.rows.find(x => x.product_name === 'BEKLEYEN Test 1L')
+    expect(row).toBeTruthy()
+    expect(row.unallocated_base).toBe(20)
+    expect(row.allocated_base).toBe(0)
+    expect(row.waiting_days).toBe(5) // 10-05 → 10-10
+    expect(row.severity).toBe('overdue') // 3+ gün
+    expect(row.zone_name).toBe('BEKLEYEN Bölge')
+    expect(r.body.totals.count).toBeGreaterThanOrEqual(1)
+  })
+
+  it('yeni irsaliye girilince bekleyen otomatik kapanır (kısmi eşleşme → bekleyen azalır)', async () => {
+    // 15 adet giriş → 20'nin 15'i eşleşir, 5 bekler
+    await auth(request(app).post('/api/water/intake')).send({ product_id: pPend, input_qty: 15, input_unit: 'adet', move_date: '2026-10-08', waybill_no: 'BEK-IRS-1' })
+    const r = await auth(request(app).get(`/api/water/pending?today=${TODAY}`))
+    const row = r.body.rows.find(x => x.product_name === 'BEKLEYEN Test 1L')
+    expect(row.unallocated_base).toBe(5)
+    expect(row.allocated_base).toBe(15)
+    expect(row.source_waybills).toMatch(/BEK-IRS-1/)
+
+    // kalan 5'i de kapat → listeden çıkar
+    await auth(request(app).post('/api/water/intake')).send({ product_id: pPend, input_qty: 5, input_unit: 'adet', move_date: '2026-10-09', waybill_no: 'BEK-IRS-2' })
+    const r2 = await auth(request(app).get(`/api/water/pending?today=${TODAY}`))
+    expect(r2.body.rows.some(x => x.product_name === 'BEKLEYEN Test 1L')).toBe(false)
+  })
+
+  it('yetkisiz rol erişemez (403)', async () => {
+    const r = await request(app).get('/api/water/pending').set('Authorization', `Bearer ${laundryToken}`)
+    expect(r.status).toBe(403)
+  })
+})

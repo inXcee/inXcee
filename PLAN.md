@@ -358,10 +358,12 @@ Amaç: su takibini kayıt tablosundan → günlük dağıtım + irsaliye + eksi 
 - [x] `MonthClosurePanel` (WaterPage): açılır tablo — devreden/gelen/dağıtılan/iade/sistem + inline sayım input + fark + sebep select + durum rozeti; müdüre 🔒 kilitle / 🔓 aç (confirmDialog); KİLİTLİ banner
 - [x] +8 backend test (57/57 water, 1388/1388 tüm suite) + 1 frontend smoke (7/7), build temiz
 
-### Faz W3 — İrsaliye Bekleyenler Ekranı
-- [ ] Eksi/bekleyen dağıtımlar ayrı liste (tarih, bölge, ürün, dağıtılan, eşleşen, bekleyen, kaç gündür); 3+ gün kırmızı
-- [ ] Yeni irsaliye girilince otomatik kapanan kayıtlar (mevcut reconcile) — bekleyen listesi yeşile döner
-- [ ] Frontend görünüm + test
+### Faz W3 — İrsaliye Bekleyenler Ekranı ✅
+- [x] `GET /api/water/pending?today=` — eşleşmemiş dağıtımlar: tarih, bölge, ürün, dağıtılan, eşleşen (kısmi irsaliye), bekleyen, kaç gün, kaynak irsaliye; severity overdue (3+ gün) / waiting; totals (count/overdue)
+- [x] `pendingDistributions()` sorgu (allocation GROUP_CONCAT ile kaynak irsaliye); `daysBetween` W1'den paylaşıldı
+- [x] Yeni irsaliye girilince mevcut `reconcileUnallocatedOut` FIFO otomatik kapatır — liste refetch'te güncellenir (kısmi eşleşme → bekleyen azalır → 0'da listeden çıkar)
+- [x] `PendingWaybillPanel` (WaterBoard altında): açılır tablo, 3+ gün kırmızı vurgu, bekleyen yoksa panel gizli; 60sn refetch
+- [x] +3 backend test (60/60 water, 1391/1391 tüm suite) + 1 frontend smoke (8/8), build temiz
 
 ### Faz W4 — Dağıtım Yeri Detay Kartı (güçlendirme)
 - [ ] ZoneHistoryModal: son 7 gün / bu ay / tüm geçmiş sekmeleri, en çok verilen ürünler, günlük ortalama, son dağıtım, ay/önceki ay karşılaştırma

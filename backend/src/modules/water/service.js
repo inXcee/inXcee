@@ -625,6 +625,30 @@ export function alertsService({ today } = {}) {
   return { date: day, month, summary, pending_waybill, negative_stock, over_distributed, low_stock, idle_zones }
 }
 
+// ── İrsaliye Bekleyenler (eşleşmemiş dağıtımlar) ──
+export function pendingDistributionsService({ today } = {}) {
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(today || '') ? today : new Date().toLocaleDateString('sv-SE')
+  const rows = q.pendingDistributions().map(r => {
+    const waiting_days = daysBetween(r.move_date, day)
+    return {
+      movement_id: r.id, move_date: r.move_date,
+      zone_name: r.zone_name || '—', product_name: r.product_name, brand_name: r.brand_name || null,
+      qty_base: r.qty_base, allocated_base: r.allocated_base, unallocated_base: r.unallocated_base,
+      waiting_days, source_waybills: r.source_waybills || null, note: r.note || null,
+      qty_human: humanize(r, r.qty_base),
+      allocated_human: humanize(r, r.allocated_base),
+      unallocated_human: humanize(r, r.unallocated_base),
+      severity: waiting_days >= 3 ? 'overdue' : 'waiting',
+    }
+  })
+  const totals = {
+    count: rows.length,
+    overdue: rows.filter(x => x.severity === 'overdue').length,
+    unallocated_base: rows.reduce((s, x) => s + x.unallocated_base, 0),
+  }
+  return { date: day, rows, totals }
+}
+
 // ── Ay Sonu Kapanış / Uyuşturma ──
 export const COUNT_REASONS = [
   { key: 'eksik_irsaliye', label: 'Eksik irsaliye' },

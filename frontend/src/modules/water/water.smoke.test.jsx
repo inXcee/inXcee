@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { fireEvent, screen } from '@testing-library/react'
+import { fireEvent, screen, within } from '@testing-library/react'
 import { renderWithProviders } from '../../test/renderWithProviders.jsx'
 
 const PRODUCTS = [
@@ -62,6 +62,13 @@ vi.mock('../../shared/api/client.js', () => ({
       if (url === '/water/zones') return Promise.resolve({ data: [{ id: 1, name: 'OTC Kamp Alanı', code: 'OTC' }] })
       if (url === '/water/returns') return Promise.resolve({ data: [] })
       if (url === '/water/brands') return Promise.resolve({ data: [{ id: 1, name: 'MİLA SU' }] })
+      if (url === '/water/pending') return Promise.resolve({ data: {
+        date: '2026-07-09',
+        rows: [{ movement_id: 9, move_date: '2026-07-03', zone_name: 'OTC Kamp Alanı', product_name: 'Damacana', brand_name: 'MİLA SU',
+          qty_base: 20, allocated_base: 5, unallocated_base: 15, waiting_days: 6, source_waybills: 'IRS-1: 5',
+          qty_human: '20 damacana', allocated_human: '5 damacana', unallocated_human: '15 damacana', severity: 'overdue' }],
+        totals: { count: 1, overdue: 1, unallocated_base: 15 },
+      } })
       if (url === '/water/reconciliation') return Promise.resolve({ data: {
         month: '2026-07', locked: false, closure: null,
         reasons: [{ key: 'fire_kirik', label: 'Fire / kırık' }, { key: 'sayim_farki', label: 'Sayım farkı' }],
@@ -134,11 +141,21 @@ describe('WaterPage tek-ekran pano smoke', () => {
 
   it('ay kapanışı paneli açılınca uyuşturma satırı + sistem kalanı gösterir', async () => {
     renderWithProviders(<WaterPage />)
-    expect(await screen.findByText(/AY KAPANIŞI/)).toBeInTheDocument()
-    // panel varsayılan kapalı — aç
-    fireEvent.click(await screen.findByText('▼ Aç'))
-    expect(await screen.findByText('120')).toBeInTheDocument() // sistem kalanı = 100 + 50 - 30
-    expect(screen.getByLabelText('Damacana sayım')).toBeInTheDocument()
+    const title = await screen.findByText(/AY KAPANIŞI/)
+    const panel = title.closest('.panel')
+    fireEvent.click(within(panel).getByText('▼ Aç')) // panel varsayılan kapalı
+    expect(await within(panel).findByText('120')).toBeInTheDocument() // sistem kalanı = 100 + 50 - 30
+    expect(within(panel).getByLabelText('Damacana sayım')).toBeInTheDocument()
+  })
+
+  it('irsaliye bekleyenler paneli bekleyen dağıtımı ve gecikmeyi listeler', async () => {
+    renderWithProviders(<WaterPage />)
+    const title = await screen.findByText(/İRSALİYE BEKLEYEN DAĞITIMLAR/)
+    const panel = title.closest('.panel')
+    fireEvent.click(within(panel).getByText('▼ Aç'))
+    expect(await within(panel).findByText('OTC Kamp Alanı')).toBeInTheDocument()
+    expect(within(panel).getByText('6g')).toBeInTheDocument() // 6 gündür bekliyor
+    expect(within(panel).getByText('IRS-1: 5')).toBeInTheDocument() // kısmi eşleşen irsaliye
   })
 
   it('Ayarlar modalı dağıtım yerlerini açar, Metinden modalı açılır', async () => {

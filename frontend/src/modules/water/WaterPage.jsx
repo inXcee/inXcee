@@ -227,6 +227,8 @@ export default function WaterPage() {
 
       <WaterBoard from={from} to={to} label={label} lowItems={(summary?.stock || []).filter(s => s.low)} />
 
+      <PendingWaybillPanel />
+
       <MonthClosurePanel month={`${ym.y}-${String(ym.m).padStart(2, '0')}`} label={label} />
 
       <MonthlyReportPanel summary={summary} from={from} to={to} label={label} />
@@ -1506,6 +1508,61 @@ function DailyDistributionModal({ day, from, to, onDayChange, onClose }) {
         )}
       </div>
     </Modal>
+  )
+}
+
+// ─────────────────────────── İrsaliye Bekleyenler (eşleşmemiş dağıtımlar) ───────────────────────────
+function PendingWaybillPanel() {
+  const [open, setOpen] = useState(false)
+  const today = todayStr()
+  const { data } = useQuery({
+    queryKey: ['water-pending', today],
+    queryFn: () => api.get('/water/pending', { params: { today } }).then(r => r.data),
+    refetchInterval: 60000,
+  })
+  const rows = data?.rows || []
+  const t = data?.totals || { count: 0, overdue: 0 }
+  if (t.count === 0) return null // hiç bekleyen yoksa gizle (AlertBand zaten "güncel" der)
+
+  return (
+    <div className="panel" style={{ marginTop: '16px', borderTop: `3px solid ${t.overdue ? 'var(--red)' : 'var(--accent)'}` }}>
+      <div className="panel-header" style={{ alignItems: 'center' }}>
+        <div>
+          <div className="panel-title">🧾 İRSALİYE BEKLEYEN DAĞITIMLAR ({t.count})</div>
+          <div className="panel-subtitle">
+            {t.overdue > 0 ? <span style={{ color: 'var(--red)', fontWeight: 600 }}>{t.overdue} tanesi 3+ gündür bekliyor</span> : 'hepsi taze'} · yeni irsaliye girince otomatik kapanır
+          </div>
+        </div>
+        <button className="btn btn-ghost btn-sm" style={{ marginLeft: 'auto' }} onClick={() => setOpen(o => !o)}>{open ? '▲ Gizle' : '▼ Aç'}</button>
+      </div>
+      {open && (
+        <div style={{ overflowX: 'auto' }}>
+          <table className="data-table" style={{ fontSize: '11px', minWidth: '820px' }}>
+            <thead>
+              <tr>
+                {['Tarih', 'Bölge', 'Ürün', 'Dağıtılan', 'Eşleşen', 'Bekleyen', 'Gün', 'İrsaliye'].map(h => (
+                  <th key={h} style={{ textAlign: ['Tarih', 'Bölge', 'Ürün'].includes(h) ? 'left' : 'right', whiteSpace: 'nowrap' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(r => (
+                <tr key={r.movement_id}>
+                  <td style={{ fontFamily: 'var(--mono)' }}>{r.move_date}</td>
+                  <td>{r.zone_name}</td>
+                  <td style={{ fontWeight: 600 }}>{r.product_name}</td>
+                  <td style={{ textAlign: 'right', fontFamily: 'var(--mono)' }} title={r.qty_human}>{nf(r.qty_base)}</td>
+                  <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--green)' }} title={r.allocated_human}>{r.allocated_base ? nf(r.allocated_base) : '·'}</td>
+                  <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--red)', fontWeight: 600 }} title={r.unallocated_human}>{nf(r.unallocated_base)}</td>
+                  <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: r.severity === 'overdue' ? 700 : 400, color: r.severity === 'overdue' ? 'var(--red)' : 'var(--text2)' }}>{r.waiting_days}g</td>
+                  <td style={{ fontSize: '10px', color: 'var(--text3)' }}>{r.source_waybills || '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
   )
 }
 
