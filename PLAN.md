@@ -336,3 +336,49 @@ Doğrulama: 804/804 backend, build temiz, 8/8 e2e
 - [x] **Faz 37 Düşük stok:** water_products.min_level (migration 026) + summary low flag/low_count + panoda kırmızı uyarı + satır vurgusu + dağıtımda eşik altına düşünce campus_manager bildirimi (dedup); Ürünler create+edit + min eşik (birim çevrimli)
 - [x] **Faz 38 Gün/ay + Excel:** summary group=day|month (monthlySeries) + dönem KPI (period_in/out) + kalan stok tüm-zaman; Özet'te gün/ay toggle + Excel export (Stok/Bölge/Hareketler sayfaları)
 - [x] +7 backend test (21/21 water, 1352/1352 tüm suite), +1 frontend smoke (3/3), build temiz
+
+---
+
+## 2026-07-09 Su Takip A-Z Operasyon Sprint (kullanıcı 10 maddelik plan — "sırasıyla")
+
+Amaç: su takibini kayıt tablosundan → günlük dağıtım + irsaliye + eksi stok + ay kapanışı + saha kontrolü tek ekrandan yönetilebilir hale getirmek. Sıra: önce Uyarı Merkezi + Ay Kapanışı + İrsaliye Bekleyenler, sonra 4-10.
+
+### Faz W1 — Operasyon Uyarı Merkezi ("Bugün Yapılacaklar") ✅
+- [x] `GET /api/water/alerts?today=YYYY-MM-DD` — 5 kategori: irsaliye bekleyen dağıtım, eksi stok, ay dağıtım>gelen, düşük stok, bugün kayıtsız bölgeler (istemci yerel günü gönderir, TZ-güvenli)
+- [x] `zonesWithoutMovementOn(day)` yeni sorgu; diğer 4 kategori mevcut sorgulardan (openDistributionNeeds/stockByProduct/productFlow) — yeni tablo/migration gerekmedi
+- [x] WaterPage üstünde `AlertBand` — 5 kart (sayı+renk+ikon), karta tıklayınca detay listesi genişler (ürün/bölge + insan-okur miktar); bekleyen iş yoksa yeşil "her şey güncel" şeridi; 60sn'de bir refetch
+- [x] +7 backend test (49/49 water, 1380/1380 tüm suite) + 1 frontend smoke (6/6), build temiz
+- [ ] Not: kart→çapraz-görünüm atlaması (eksi stok kartı → ay uyuşturmada o ürün seçili) W2/W3 görünümleri gelince bağlanacak — şimdilik kartlar detayı inline listeliyor
+
+### Faz W2 — Ay Sonu Kapanış / Uyuşturma Ekranı
+- [ ] `water_monthly_closures` tablosu (ay, kapanış tarihi, kapatan, kilit, not) + `water_stock_counts` (ay, ürün, sistem kalan, sayım kalan, fark, sebep, not)
+- [ ] `GET /api/water/reconciliation?month=` (ay başı devreden/gelen/dağıtılan/iade/sistem kalan) + sayım kalan manuel giriş + fark/açıklama zorunlu
+- [ ] `POST /api/water/monthly-close` / `.../unlock` — kilitli ayda kayıt → uyarı (ilk sürüm uyarı, engelleme W-sonra)
+- [ ] Ay Kapanışı görünümü + backend test
+
+### Faz W3 — İrsaliye Bekleyenler Ekranı
+- [ ] Eksi/bekleyen dağıtımlar ayrı liste (tarih, bölge, ürün, dağıtılan, eşleşen, bekleyen, kaç gündür); 3+ gün kırmızı
+- [ ] Yeni irsaliye girilince otomatik kapanan kayıtlar (mevcut reconcile) — bekleyen listesi yeşile döner
+- [ ] Frontend görünüm + test
+
+### Faz W4 — Dağıtım Yeri Detay Kartı (güçlendirme)
+- [ ] ZoneHistoryModal: son 7 gün / bu ay / tüm geçmiş sekmeleri, en çok verilen ürünler, günlük ortalama, son dağıtım, ay/önceki ay karşılaştırma
+- [ ] Bölge bazlı "beklenen tüketim" alanı + sapma uyarısı
+
+### Faz W5 — Hızlı Günlük Giriş Şablonları
+- [ ] `water_templates` (ad, satırlar: ürün+bölge+varsayılan birim); şablon seçince tabloya satırlar dolar, sadece miktar değişir
+
+### Faz W6 — İrsaliye Girişini Çok-Satırlı Pratikleştirme
+- [ ] Gelen tır paneli Excel-benzeri çok satırlı (irsaliye no/tarih/marka üstte tek kez, altında ürün satırları); kayıtta bekleyen eksi dağıtımlar otomatik kapanır + sonuç özeti
+
+### Faz W7 — Stok Düzeltme / Sayım Fişi (adjustment)
+- [ ] `water_movements.type` genişlet: in/out/adjustment; `POST /api/water/adjustments` (ürün, miktar, yön, tarih, sebep, not); raporda ayrı Düzeltme kolonu; audit log
+
+### Faz W8 — Ürün / Marka Yönetimini Güçlendirme
+- [ ] Ürün ayarları net alanlar (takip birimi, palet/koli içeriği, min/kritik stok, iade, aktif/pasif); marka renkleri kullanıcı seçer; pasif ürün eski raporda görünür, yeni girişte gizli
+
+### Faz W9 — Excel / PDF Rapor Paketi
+- [ ] Excel sayfaları netleştir (Yönetici Özeti/Ay Uyuşturma/Günlük Akış/Bölge/Ürün/İrsaliye Bekleyen/Eksi Stok/Sayım-Düzeltme); ay kapanışında kısa PDF özet
+
+### Faz W10 — Rol ve Onay Akışı
+- [ ] Normal kullanıcı günlük dağıtım; yönetici ay kapanışı/düzeltme/ürün ayarı; eksi stok "kontrol bekliyor" → toplu onay

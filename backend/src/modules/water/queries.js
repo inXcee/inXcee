@@ -324,6 +324,19 @@ export function productFlow({ from, to } = {}) {
   `).all(...params)
 }
 
+// Verilen günde hiç dağıtım (out) kaydı girilmemiş aktif bölgeler (Uyarı Merkezi)
+export function zonesWithoutMovementOn(day) {
+  return getDB().prepare(`
+    SELECT z.id, z.name FROM water_zones z
+    WHERE z.is_active = 1
+      AND NOT EXISTS (
+        SELECT 1 FROM water_movements mv
+        WHERE mv.zone_id = z.id AND mv.type='out' AND mv.move_date = ?
+      )
+    ORDER BY z.name
+  `).all(day)
+}
+
 export function zoneTotals({ from, to, product_id } = {}) {
   const cond = ["mv.type='out'"]
   const params = []

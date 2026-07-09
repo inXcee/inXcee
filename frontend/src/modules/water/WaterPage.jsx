@@ -194,6 +194,8 @@ export default function WaterPage() {
     <div className="fade-up">
       <div className="sect"><div className="sect-title">SU TAKİP</div><div className="sect-line" /></div>
 
+      <AlertBand />
+
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', marginBottom: '16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '9px', padding: '3px 4px' }}>
           <button className="btn btn-ghost btn-sm" onClick={() => shiftMonth(-1)} style={{ padding: '4px 8px' }}>‹</button>
@@ -233,6 +235,86 @@ export default function WaterPage() {
 
       {modal === 'settings' && <SettingsModal onClose={() => setModal(null)} />}
       {modal === 'text' && <TextModal onClose={() => setModal(null)} />}
+    </div>
+  )
+}
+
+// ─────────────────────────── Operasyon Uyarı Merkezi ("Bugün Yapılacaklar") ───────────────────────────
+function AlertBand() {
+  const [open, setOpen] = useState(null) // hangi kategori açık
+  const today = todayStr()
+  const { data } = useQuery({
+    queryKey: ['water-alerts', today],
+    queryFn: () => api.get('/water/alerts', { params: { today } }).then(r => r.data),
+    refetchInterval: 60000,
+  })
+
+  const s = data?.summary
+  if (!data) return null
+  if (!s || s.total === 0) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px',
+        background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '10px', padding: '10px 14px' }}>
+        <span style={{ color: 'var(--green)', fontSize: '15px' }}>✓</span>
+        <span style={{ fontSize: '13px', color: 'var(--text2)' }}>Bugün için bekleyen operasyon işi yok — her şey güncel.</span>
+      </div>
+    )
+  }
+
+  const CARDS = [
+    { key: 'pending', icon: '🧾', label: 'İrsaliye Bekleyen', count: s.pending, color: 'var(--accent)', items: data.pending_waybill,
+      render: (it) => `${it.product_name} — ${it.unallocated_human} (${it.count} kayıt, ${it.waiting_days} gün)` },
+    { key: 'negative', icon: '⚠️', label: 'Eksi Stok', count: s.negative, color: 'var(--red)', items: data.negative_stock,
+      render: (it) => `${it.product_name} — ${it.balance_human}` },
+    { key: 'over', icon: '📉', label: 'Ay Dağıtım > Gelen', count: s.over, color: 'var(--red)', items: data.over_distributed,
+      render: (it) => `${it.product_name} — dağıtılan ${it.period_out_human}, gelen ${it.period_in_human} (fazla ${it.diff_human})` },
+    { key: 'low', icon: '🔽', label: 'Düşük Stok', count: s.low, color: 'var(--amber, #d97706)', items: data.low_stock,
+      render: (it) => `${it.product_name} — kalan ${it.balance_human} (eşik ${it.min_human})` },
+    { key: 'idle', icon: '🕳', label: 'Bugün Kayıtsız Bölge', count: s.idle_zones, color: 'var(--text3)', items: data.idle_zones,
+      render: (it) => it.zone_name },
+  ].filter(c => c.count > 0)
+
+  const active = CARDS.find(c => c.key === open)
+
+  return (
+    <div style={{ marginBottom: '16px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+        <span style={{ fontFamily: 'var(--mono)', fontSize: '10px', letterSpacing: '1px', color: 'var(--text3)' }}>BUGÜN YAPILACAKLAR</span>
+        <span style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)' }}>· {data.date}</span>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '10px' }}>
+        {CARDS.map(c => {
+          const isOpen = open === c.key
+          return (
+            <button key={c.key} onClick={() => setOpen(isOpen ? null : c.key)}
+              style={{ textAlign: 'left', cursor: 'pointer', background: isOpen ? 'var(--surface2)' : 'var(--surface)',
+                border: `1px solid ${isOpen ? c.color : 'var(--border)'}`, borderLeft: `3px solid ${c.color}`,
+                borderRadius: '10px', padding: '10px 12px', transition: 'border-color .15s' }}
+              title="Detayı aç/kapat">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ fontSize: '14px' }}>{c.icon}</span>
+                <span style={{ fontFamily: 'var(--display)', fontSize: '22px', color: c.color }}>{c.count}</span>
+              </div>
+              <div style={{ fontSize: '11px', color: 'var(--text2)', marginTop: '2px' }}>{c.label}</div>
+            </button>
+          )
+        })}
+      </div>
+      {active && (
+        <div style={{ marginTop: '10px', background: 'var(--surface)', border: `1px solid var(--border)`,
+          borderLeft: `3px solid ${active.color}`, borderRadius: '10px', padding: '10px 14px' }}>
+          <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text2)', marginBottom: '6px' }}>
+            {active.icon} {active.label} ({active.count})
+          </div>
+          <ul style={{ margin: 0, paddingLeft: '18px', display: 'flex', flexDirection: 'column', gap: '3px' }}>
+            {active.items.map((it, i) => (
+              <li key={it.product_id ?? it.zone_id ?? i} style={{ fontSize: '12px', color: 'var(--text)', fontFamily: 'var(--mono)' }}>
+                {active.render(it)}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   )
 }

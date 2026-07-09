@@ -543,6 +543,88 @@ export function pivotService({ from, to } = {}) {
   return { from: from || null, to: to || null, brands: brandOrder, columns, rows, colTotals, grandTotal }
 }
 
+// ── Operasyon Uyarı Merkezi ("Bugün Yapılacaklar") ──
+// İki YYYY-MM-DD arasındaki tam gün farkı (UTC — DST kaymasını önler)
+function daysBetween(fromIso, toIso) {
+  const a = new Date(`${fromIso}T00:00:00Z`).getTime()
+  const b = new Date(`${toIso}T00:00:00Z`).getTime()
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return 0
+  return Math.max(0, Math.round((b - a) / 86400000))
+}
+
+// today: istemci yerel gününü gönderir (sunucu TZ'ine güvenme — geçmişte UTC/yerel
+// gün kayması bug'ları yaşandı). Geçersizse sunucu yerel gününe düşer.
+export function alertsService({ today } = {}) {
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(today || '') ? today : new Date().toLocaleDateString('sv-SE')
+  const month = day.slice(0, 7)
+  const monthStart = `${month}-01`
+
+  const pmap = new Map(q.listProducts().map(p => [p.id, p]))
+
+  // 1. İrsaliye bekleyen dağıtımlar (eşleşmemiş çıkış) — ürün bazında grupla
+  const needMap = new Map()
+  for (const need of q.openDistributionNeeds(null)) {
+    const g = needMap.get(need.product_id) || { count: 0, unallocated_base: 0, oldest_date: need.move_date }
+    g.count += 1
+    g.unallocated_base += need.unallocated_base
+    if (need.move_date < g.oldest_date) g.oldest_date = need.move_date
+    needMap.set(need.product_id, g)
+  }
+  const pending_waybill = [...needMap.entries()].map(([pid, g]) => {
+    const p = pmap.get(pid) || {}
+    return {
+      product_id: pid, product_name: p.name || `#${pid}`,
+      count: g.count, unallocated_base: g.unallocated_base,
+      unallocated_human: humanize(p, g.unallocated_base),
+      oldest_date: g.oldest_date, waiting_days: daysBetween(g.oldest_date, day),
+    }
+  }).sort((a, b) => b.waiting_days - a.waiting_days)
+
+  // 2 & 4. Eksi stok / düşük stok (tüm-zaman bakiye)
+  const negative_stock = []
+  const low_stock = []
+  for (const p of q.stockByProduct()) {
+    const balance = p.total_in - p.total_out
+    if (balance < 0) {
+      negative_stock.push({
+        product_id: p.id, product_name: p.name, balance,
+        balance_human: humanize(p, balance), deficit_human: humanize(p, -balance),
+      })
+    } else if (p.min_level > 0 && balance < p.min_level) {
+      low_stock.push({
+        product_id: p.id, product_name: p.name, balance, min_level: p.min_level,
+        balance_human: humanize(p, balance), min_human: humanize(p, p.min_level),
+      })
+    }
+  }
+
+  // 3. Bu ay dağıtım > gelen
+  const over_distributed = q.productFlow({ from: monthStart, to: day })
+    .filter(p => p.period_out > p.period_in)
+    .map(p => {
+      const diff = p.period_out - p.period_in
+      return {
+        product_id: p.id, product_name: p.name,
+        period_in: p.period_in, period_out: p.period_out, diff,
+        period_in_human: humanize(p, p.period_in), period_out_human: humanize(p, p.period_out),
+        diff_human: humanize(p, diff),
+      }
+    })
+
+  // 5. Bugün hiç dağıtım kaydı girilmeyen aktif bölgeler
+  const idle_zones = q.zonesWithoutMovementOn(day).map(z => ({ zone_id: z.id, zone_name: z.name }))
+
+  const summary = {
+    pending: pending_waybill.length,
+    negative: negative_stock.length,
+    over: over_distributed.length,
+    low: low_stock.length,
+    idle_zones: idle_zones.length,
+  }
+  summary.total = summary.pending + summary.negative + summary.over + summary.low + summary.idle_zones
+  return { date: day, month, summary, pending_waybill, negative_stock, over_distributed, low_stock, idle_zones }
+}
+
 // ── Özet / dashboard ──
 export function summaryService({ from, to, product_id, group = 'day' } = {}) {
   const periodByProduct = new Map(q.productFlow({ from, to }).map(p => [p.id, p]))

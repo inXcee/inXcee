@@ -434,3 +434,83 @@ describe('Su takip — marka + boş kap iadesi + INDEX pivot', () => {
     expect(del.status).toBe(200)
   })
 })
+
+describe('Su takip — Operasyon Uyarı Merkezi (W1)', () => {
+  const DAY = '2026-07-09'
+  let pNeg, pLow, zActive, zIdle
+
+  const auth = (r) => r.set('Authorization', `Bearer ${managerToken}`)
+
+  beforeAll(async () => {
+    // Eksi/bekleyen ürün: hiç giriş yok, sadece dağıtım → negatif + irsaliye bekleyen + ay dağıtım>gelen
+    pNeg = (await auth(request(app).post('/api/water/products'))
+      .send({ name: 'UYARI Eksi 0.6', unit_label: 'adet', units_per_case: 1, cases_per_pallet: 1 })).body.id
+    // Düşük stok ürün: küçük giriş + yüksek eşik (balance >= 0 ama eşiğin altında)
+    pLow = (await auth(request(app).post('/api/water/products'))
+      .send({ name: 'UYARI Düşük 0.7', unit_label: 'adet', units_per_case: 1, cases_per_pallet: 1, min_level: 100 })).body.id
+    zActive = (await auth(request(app).post('/api/water/zones')).send({ name: 'UYARI Aktif Bölge' })).body.id
+    zIdle = (await auth(request(app).post('/api/water/zones')).send({ name: 'UYARI Boş Bölge' })).body.id
+
+    // pNeg: bugün 7 adet dağıt (girişsiz → eksi + bekleyen)
+    await auth(request(app).post('/api/water/distribute'))
+      .send({ product_id: pNeg, zone_id: zActive, input_qty: 7, input_unit: 'adet', move_date: DAY })
+    // pLow: bugün 5 adet giriş (balance 5 < 100 eşik → düşük)
+    await auth(request(app).post('/api/water/intake'))
+      .send({ product_id: pLow, input_qty: 5, input_unit: 'adet', move_date: DAY, waybill_no: 'UYARI-IN' })
+  })
+
+  it('irsaliye bekleyen dağıtım kartı — girişsiz ürünü bekleyen listesine koyar', async () => {
+    const r = await auth(request(app).get(`/api/water/alerts?today=${DAY}`))
+    expect(r.status).toBe(200)
+    const item = r.body.pending_waybill.find(p => p.product_id === pNeg)
+    expect(item).toBeTruthy()
+    expect(item.unallocated_base).toBe(7)
+    expect(item.waiting_days).toBe(0)
+    expect(item.unallocated_human).toBe('7 adet')
+    expect(r.body.summary.pending).toBeGreaterThanOrEqual(1)
+  })
+
+  it('eksi stok kartı — negatif bakiyeli ürünü listeler', async () => {
+    const r = await auth(request(app).get(`/api/water/alerts?today=${DAY}`))
+    const neg = r.body.negative_stock.find(p => p.product_id === pNeg)
+    expect(neg).toBeTruthy()
+    expect(neg.balance).toBe(-7)
+    expect(neg.deficit_human).toBe('7 adet')
+  })
+
+  it('ay dağıtım>gelen kartı — bu ay fazla dağıtılan ürünü yakalar', async () => {
+    const r = await auth(request(app).get(`/api/water/alerts?today=${DAY}`))
+    const over = r.body.over_distributed.find(p => p.product_id === pNeg)
+    expect(over).toBeTruthy()
+    expect(over.period_out).toBe(7)
+    expect(over.period_in).toBe(0)
+    expect(over.diff).toBe(7)
+  })
+
+  it('düşük stok kartı — eşik altındaki (ama pozitif) ürünü listeler', async () => {
+    const r = await auth(request(app).get(`/api/water/alerts?today=${DAY}`))
+    const low = r.body.low_stock.find(p => p.product_id === pLow)
+    expect(low).toBeTruthy()
+    expect(low.balance).toBe(5)
+    expect(low.min_level).toBe(100)
+    // pozitif bakiye eksi listesinde OLMAMALI
+    expect(r.body.negative_stock.some(p => p.product_id === pLow)).toBe(false)
+  })
+
+  it('bugün kayıtsız bölgeler kartı — boş bölge var, bugün dağıtım yapılan bölge yok', async () => {
+    const r = await auth(request(app).get(`/api/water/alerts?today=${DAY}`))
+    expect(r.body.idle_zones.some(z => z.zone_id === zIdle)).toBe(true)
+    expect(r.body.idle_zones.some(z => z.zone_id === zActive)).toBe(false)
+  })
+
+  it('bekleme günü — geçmiş tarihli bekleyen dağıtım için doğru gün sayısı', async () => {
+    const r = await auth(request(app).get('/api/water/alerts?today=2026-07-12'))
+    const item = r.body.pending_waybill.find(p => p.product_id === pNeg)
+    expect(item.waiting_days).toBe(3) // 07-09 → 07-12
+  })
+
+  it('yetkisiz rol erişemez (403)', async () => {
+    const r = await request(app).get(`/api/water/alerts?today=${DAY}`).set('Authorization', `Bearer ${laundryToken}`)
+    expect(r.status).toBe(403)
+  })
+})

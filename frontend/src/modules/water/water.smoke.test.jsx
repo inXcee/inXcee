@@ -62,6 +62,15 @@ vi.mock('../../shared/api/client.js', () => ({
       if (url === '/water/zones') return Promise.resolve({ data: [{ id: 1, name: 'OTC Kamp Alanı', code: 'OTC' }] })
       if (url === '/water/returns') return Promise.resolve({ data: [] })
       if (url === '/water/brands') return Promise.resolve({ data: [{ id: 1, name: 'MİLA SU' }] })
+      if (url === '/water/alerts') return Promise.resolve({ data: {
+        date: '2026-07-09', month: '2026-07',
+        summary: { pending: 1, negative: 1, over: 0, low: 0, idle_zones: 1, total: 3 },
+        pending_waybill: [{ product_id: 1, product_name: 'Damacana', count: 2, unallocated_base: 5, unallocated_human: '5 damacana', oldest_date: '2026-07-05', waiting_days: 4 }],
+        negative_stock: [{ product_id: 2, product_name: '0.5 L', balance: -10, balance_human: '-10 koli', deficit_human: '10 koli' }],
+        over_distributed: [],
+        low_stock: [],
+        idle_zones: [{ zone_id: 2, zone_name: 'Boş Bölge' }],
+      } })
       return Promise.resolve({ data: [] })
     }),
     post: vi.fn(() => Promise.resolve({ data: { ids: [1], count: 1 } })),
@@ -101,6 +110,16 @@ describe('WaterPage tek-ekran pano smoke', () => {
     expect(screen.getByText('BOŞ İADE — DEPOZİTO')).toBeInTheDocument()
     // depozito kartı (dolaşımda 90)
     expect((await screen.findAllByText('90')).length).toBeGreaterThan(0)
+  })
+
+  it('uyarı merkezi bandı kartları gösterir ve tıklanınca detay açılır', async () => {
+    renderWithProviders(<WaterPage />)
+    expect(await screen.findByText('BUGÜN YAPILACAKLAR')).toBeInTheDocument()
+    // benzersiz kart etiketi (KPI şeridiyle çakışmaz)
+    const pendingCard = await screen.findByText('İrsaliye Bekleyen')
+    fireEvent.click(pendingCard)
+    // detay listesinde bekleyen dağıtım satırı görünür
+    expect(await screen.findByText(/Damacana — 5 damacana \(2 kayıt, 4 gün\)/)).toBeInTheDocument()
   })
 
   it('Ayarlar modalı dağıtım yerlerini açar, Metinden modalı açılır', async () => {

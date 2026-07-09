@@ -9,6 +9,7 @@ import {
   createIntakeService, createDistributionService, deleteMovementService, updateDistributionService, movementsService,
   createReturnService, batchReturnService, deleteReturnService, returnsService, depositService,
   summaryService, pivotService, batchIntakeService, batchDistributeService, parseDistributionText,
+  alertsService,
 } from './service.js'
 
 export const waterRouter = Router()
@@ -159,6 +160,11 @@ waterRouter.delete('/returns/:id', ...mgr, (req, res) => {
 // ── INDEX pivot (firma × marka/ürün matrisi) ──
 waterRouter.get('/pivot', ...mgr, (req, res) => {
   try { const { from, to } = req.query; res.json(pivotService({ from, to })) } catch (e) { logger.error('[water]', e); fail(res, e) }
+})
+
+// ── Operasyon Uyarı Merkezi ("Bugün Yapılacaklar") ──
+waterRouter.get('/alerts', ...mgr, (req, res) => {
+  try { res.json(alertsService({ today: req.query.today })) } catch (e) { logger.error('[water]', e); fail(res, e) }
 })
 
 // ── Özet / dashboard ──
