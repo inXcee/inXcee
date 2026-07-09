@@ -514,3 +514,103 @@ describe('Su takip — Operasyon Uyarı Merkezi (W1)', () => {
     expect(r.status).toBe(403)
   })
 })
+
+describe('Su takip — Ay Sonu Kapanış / Uyuşturma (W2)', () => {
+  const MONTH = '2026-06'
+  let pRec, zone, supervisorToken
+  const auth = (r) => r.set('Authorization', `Bearer ${managerToken}`)
+
+  beforeAll(async () => {
+    supervisorToken = (await request(app).post('/api/auth/login').send({ username: 'vardiya', password: 'admin123' })).body.token
+    pRec = (await auth(request(app).post('/api/water/products'))
+      .send({ name: 'KAPANIS Test 1L', unit_label: 'adet', units_per_case: 1, cases_per_pallet: 1 })).body.id
+    zone = (await auth(request(app).post('/api/water/zones')).send({ name: 'KAPANIS Bölge' })).body.id
+    // Ay öncesi devreden: 100 (Mayıs)
+    await auth(request(app).post('/api/water/intake')).send({ product_id: pRec, input_qty: 100, input_unit: 'adet', move_date: '2026-05-15', waybill_no: 'KAP-OPEN' })
+    // Ay içi gelen: 50 (Haziran)
+    await auth(request(app).post('/api/water/intake')).send({ product_id: pRec, input_qty: 50, input_unit: 'adet', move_date: '2026-06-10', waybill_no: 'KAP-IN' })
+    // Ay içi dağıtılan: 30 (Haziran)
+    await auth(request(app).post('/api/water/distribute')).send({ product_id: pRec, zone_id: zone, input_qty: 30, input_unit: 'adet', move_date: '2026-06-20' })
+  })
+
+  it('uyuşturma — devreden/gelen/dağıtılan/sistem kalan doğru hesaplanır', async () => {
+    const r = await auth(request(app).get(`/api/water/reconciliation?month=${MONTH}`))
+    expect(r.status).toBe(200)
+    expect(r.body.locked).toBe(false)
+    const row = r.body.rows.find(x => x.product_id === pRec)
+    expect(row.opening_base).toBe(100)
+    expect(row.month_in).toBe(50)
+    expect(row.month_out).toBe(30)
+    expect(row.system_base).toBe(120) // 100 + 50 - 30
+    expect(row.status).toBe('pending') // henüz sayım yok
+    expect(Array.isArray(r.body.reasons)).toBe(true)
+  })
+
+  it('geçersiz ay formatı 400', async () => {
+    const r = await auth(request(app).get('/api/water/reconciliation?month=2026'))
+    expect(r.status).toBe(400)
+  })
+
+  it('sayım = sistem → fark 0, sebep gerekmez', async () => {
+    const r = await auth(request(app).post('/api/water/stock-count'))
+      .send({ month: MONTH, product_id: pRec, counted_qty: 120, counted_unit: 'adet' })
+    expect(r.status).toBe(200)
+    expect(r.body.diff_base).toBe(0)
+    expect(r.body.status).toBe('even')
+  })
+
+  it('fark varsa sebep zorunlu (400), sebeple kaydedilir', async () => {
+    const bad = await auth(request(app).post('/api/water/stock-count'))
+      .send({ month: MONTH, product_id: pRec, counted_qty: 115, counted_unit: 'adet' })
+    expect(bad.status).toBe(400)
+    expect(bad.body.error).toMatch(/sebep|açıklama/i)
+
+    const ok = await auth(request(app).post('/api/water/stock-count'))
+      .send({ month: MONTH, product_id: pRec, counted_qty: 115, counted_unit: 'adet', reason: 'fire_kirik', note: '5 kırık' })
+    expect(ok.status).toBe(200)
+    expect(ok.body.diff_base).toBe(-5)
+    expect(ok.body.status).toBe('short')
+
+    // uyuşturmada sayım + fark + durum yansır
+    const rec = await auth(request(app).get(`/api/water/reconciliation?month=${MONTH}`))
+    const row = rec.body.rows.find(x => x.product_id === pRec)
+    expect(row.counted_base).toBe(115)
+    expect(row.diff_base).toBe(-5)
+    expect(row.reason).toBe('fire_kirik')
+    expect(row.status).toBe('short')
+    expect(row.diff_human).toBe('-5 adet')
+  })
+
+  it('ay kapanışı kilitler; kilitli aya kayıt uyarı döndürür (engellemez)', async () => {
+    const close = await auth(request(app).post('/api/water/monthly-close')).send({ month: MONTH, note: 'Haziran kapandı' })
+    expect(close.status).toBe(201)
+    expect(close.body.is_locked).toBe(1)
+
+    const rec = await auth(request(app).get(`/api/water/reconciliation?month=${MONTH}`))
+    expect(rec.body.locked).toBe(true)
+
+    // kilitli aya yeni giriş — kaydedilir ama uyarı gelir
+    const intake = await auth(request(app).post('/api/water/intake'))
+      .send({ product_id: pRec, input_qty: 5, input_unit: 'adet', move_date: '2026-06-25', waybill_no: 'KAP-LATE' })
+    expect(intake.status).toBe(201)
+    expect(intake.body.warning).toMatch(/Kapanmış aya kayıt/)
+  })
+
+  it('kapanış/kilit sadece kampüs müdürüne açık (403 vardiya)', async () => {
+    const r = await request(app).post('/api/water/monthly-close').set('Authorization', `Bearer ${supervisorToken}`).send({ month: '2026-05' })
+    expect(r.status).toBe(403)
+  })
+
+  it('kilidi açma — kayıt sonrası uyarı kalkar', async () => {
+    const unlock = await auth(request(app).post(`/api/water/monthly-close/${MONTH}/unlock`))
+    expect(unlock.status).toBe(200)
+    const intake = await auth(request(app).post('/api/water/intake'))
+      .send({ product_id: pRec, input_qty: 1, input_unit: 'adet', move_date: '2026-06-26' })
+    expect(intake.body.warning).toBeNull()
+  })
+
+  it('olmayan ay kilidi açılamaz (404)', async () => {
+    const r = await auth(request(app).post('/api/water/monthly-close/2099-01/unlock'))
+    expect(r.status).toBe(404)
+  })
+})

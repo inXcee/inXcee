@@ -625,6 +625,102 @@ export function alertsService({ today } = {}) {
   return { date: day, month, summary, pending_waybill, negative_stock, over_distributed, low_stock, idle_zones }
 }
 
+// ── Ay Sonu Kapanış / Uyuşturma ──
+export const COUNT_REASONS = [
+  { key: 'eksik_irsaliye', label: 'Eksik irsaliye' },
+  { key: 'fazla_dagitim', label: 'Fazla dağıtım' },
+  { key: 'sayim_farki', label: 'Sayım farkı' },
+  { key: 'fire_kirik', label: 'Fire / kırık' },
+  { key: 'yanlis_urun', label: 'Yanlış ürün' },
+  { key: 'devir_duzeltme', label: 'Devir düzeltme' },
+]
+const REASON_KEYS = new Set(COUNT_REASONS.map(r => r.key))
+const isMonth = (m) => /^\d{4}-\d{2}$/.test(m || '')
+
+// Kilitli aya kayıt uyarısı (ilk sürüm: engelleme yok, sadece uyarı — bkz PLAN varsayımları)
+export function monthLockWarning(moveDate) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(moveDate || '')) return null
+  const closure = q.getClosure(moveDate.slice(0, 7))
+  return closure?.is_locked ? `Kapanmış aya kayıt (${moveDate.slice(0, 7)})` : null
+}
+
+export function reconciliationService({ month } = {}) {
+  if (!isMonth(month)) throw Object.assign(new Error('Ay YYYY-MM formatında olmalı'), { statusCode: 400 })
+  const closure = q.getClosure(month)
+  const rows = q.reconciliationRows(month).map(r => {
+    const system_base = r.opening_base + r.month_in - r.month_out
+    const counted = r.counted_base
+    const diff = counted == null ? null : counted - system_base
+    const status = counted == null ? 'pending' : diff === 0 ? 'even' : diff > 0 ? 'over' : 'short'
+    return {
+      product_id: r.product_id, product_name: r.product_name, unit_label: r.unit_label,
+      brand_id: r.brand_id || null, brand_name: r.brand_name || null,
+      opening_base: r.opening_base, month_in: r.month_in, month_out: r.month_out,
+      month_return: r.month_return, system_base, counted_base: counted, diff_base: diff,
+      reason: r.count_reason || null, count_note: r.count_note || null, status,
+      opening_human: humanize(r, r.opening_base),
+      month_in_human: humanize(r, r.month_in),
+      month_out_human: humanize(r, r.month_out),
+      month_return_human: humanize(r, r.month_return),
+      system_human: humanize(r, system_base),
+      counted_human: counted == null ? null : humanize(r, counted),
+      diff_human: diff == null ? null : humanize(r, diff),
+    }
+  })
+  const totals = {
+    products: rows.length,
+    counted: rows.filter(r => r.counted_base != null).length,
+    pending: rows.filter(r => r.status === 'pending').length,
+    mismatch: rows.filter(r => r.status === 'over' || r.status === 'short').length,
+    system_base: rows.reduce((s, r) => s + r.system_base, 0),
+  }
+  return {
+    month, locked: !!closure?.is_locked, closure: closure || null,
+    reasons: COUNT_REASONS, rows, totals,
+  }
+}
+
+// Sistem kalanını (ay öncesi devreden + ay net) ürün bazında döndürür — sayım/kapanış için
+function systemBaseFor(month, productId) {
+  const row = q.reconciliationRows(month).find(r => r.product_id === productId)
+  return row ? row.opening_base + row.month_in - row.month_out : 0
+}
+
+export function saveStockCountService(data, userId) {
+  if (!isMonth(data?.month)) throw Object.assign(new Error('Ay YYYY-MM formatında olmalı'), { statusCode: 400 })
+  const product = q.getProduct(data.product_id)
+  if (!product) throw Object.assign(new Error('Ürün bulunamadı'), { statusCode: 400 })
+  const counted = Number(data.counted_qty)
+  if (!Number.isFinite(counted) || counted < 0) throw Object.assign(new Error('Sayım miktarı 0 veya daha büyük olmalı'), { statusCode: 400 })
+  const unit = data.counted_unit || 'adet'
+  if (!INPUT_UNITS.includes(unit)) throw Object.assign(new Error('Geçersiz birim'), { statusCode: 400 })
+  assertAvailableUnit(product, unit)
+  const system_base = systemBaseFor(data.month, product.id)
+  const counted_base = toBase(product, counted, unit)
+  const diff_base = counted_base - system_base
+  if (diff_base !== 0 && !REASON_KEYS.has(data.reason))
+    throw Object.assign(new Error('Fark var — açıklama (sebep) zorunlu'), { statusCode: 400 })
+  q.upsertStockCount({
+    month: data.month, product_id: product.id, system_base, counted_base, diff_base,
+    reason: diff_base !== 0 ? data.reason : null, note: data.note?.trim() || null, created_by: userId || null,
+  })
+  return { system_base, counted_base, diff_base, status: diff_base === 0 ? 'even' : diff_base > 0 ? 'over' : 'short' }
+}
+
+export function monthlyCloseService(data, userId) {
+  if (!isMonth(data?.month)) throw Object.assign(new Error('Ay YYYY-MM formatında olmalı'), { statusCode: 400 })
+  const rows = q.reconciliationRows(data.month).map(r => ({ product_id: r.product_id, system_base: r.opening_base + r.month_in - r.month_out }))
+  q.snapshotClosure(data.month, rows)
+  q.upsertClosure({ month: data.month, note: data.note?.trim() || null, closed_by: userId || null, is_locked: 1 })
+  return q.getClosure(data.month)
+}
+
+export function monthlyUnlockService(month) {
+  if (!isMonth(month)) throw Object.assign(new Error('Ay YYYY-MM formatında olmalı'), { statusCode: 400 })
+  if (!q.getClosure(month)) throw Object.assign(new Error('Bu ay için kapanış kaydı yok'), { statusCode: 404 })
+  q.setClosureLock(month, 0)
+}
+
 // ── Özet / dashboard ──
 export function summaryService({ from, to, product_id, group = 'day' } = {}) {
   const periodByProduct = new Map(q.productFlow({ from, to }).map(p => [p.id, p]))

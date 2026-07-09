@@ -62,6 +62,16 @@ vi.mock('../../shared/api/client.js', () => ({
       if (url === '/water/zones') return Promise.resolve({ data: [{ id: 1, name: 'OTC Kamp Alanı', code: 'OTC' }] })
       if (url === '/water/returns') return Promise.resolve({ data: [] })
       if (url === '/water/brands') return Promise.resolve({ data: [{ id: 1, name: 'MİLA SU' }] })
+      if (url === '/water/reconciliation') return Promise.resolve({ data: {
+        month: '2026-07', locked: false, closure: null,
+        reasons: [{ key: 'fire_kirik', label: 'Fire / kırık' }, { key: 'sayim_farki', label: 'Sayım farkı' }],
+        rows: [{ product_id: 1, product_name: 'Damacana', brand_name: 'MİLA SU', unit_label: 'damacana',
+          opening_base: 100, month_in: 50, month_out: 30, month_return: 0, system_base: 120,
+          counted_base: null, diff_base: null, reason: null, status: 'pending',
+          opening_human: '100 damacana', month_in_human: '50 damacana', month_out_human: '30 damacana',
+          month_return_human: '0 damacana', system_human: '120 damacana', counted_human: null, diff_human: null }],
+        totals: { products: 1, counted: 0, pending: 1, mismatch: 0, system_base: 120 },
+      } })
       if (url === '/water/alerts') return Promise.resolve({ data: {
         date: '2026-07-09', month: '2026-07',
         summary: { pending: 1, negative: 1, over: 0, low: 0, idle_zones: 1, total: 3 },
@@ -120,6 +130,15 @@ describe('WaterPage tek-ekran pano smoke', () => {
     fireEvent.click(pendingCard)
     // detay listesinde bekleyen dağıtım satırı görünür
     expect(await screen.findByText(/Damacana — 5 damacana \(2 kayıt, 4 gün\)/)).toBeInTheDocument()
+  })
+
+  it('ay kapanışı paneli açılınca uyuşturma satırı + sistem kalanı gösterir', async () => {
+    renderWithProviders(<WaterPage />)
+    expect(await screen.findByText(/AY KAPANIŞI/)).toBeInTheDocument()
+    // panel varsayılan kapalı — aç
+    fireEvent.click(await screen.findByText('▼ Aç'))
+    expect(await screen.findByText('120')).toBeInTheDocument() // sistem kalanı = 100 + 50 - 30
+    expect(screen.getByLabelText('Damacana sayım')).toBeInTheDocument()
   })
 
   it('Ayarlar modalı dağıtım yerlerini açar, Metinden modalı açılır', async () => {

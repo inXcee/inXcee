@@ -9,11 +9,13 @@ import {
   createIntakeService, createDistributionService, deleteMovementService, updateDistributionService, movementsService,
   createReturnService, batchReturnService, deleteReturnService, returnsService, depositService,
   summaryService, pivotService, batchIntakeService, batchDistributeService, parseDistributionText,
-  alertsService,
+  alertsService, reconciliationService, saveStockCountService, monthlyCloseService, monthlyUnlockService,
+  monthLockWarning,
 } from './service.js'
 
 export const waterRouter = Router()
 const mgr = requireRole('campus_manager', 'shift_supervisor')
+const managerOnly = requireRole('campus_manager')
 
 const fail = (res, e) => res.status(e.statusCode || 500).json({ error: e.message || 'Sunucu hatası' })
 
@@ -81,7 +83,7 @@ waterRouter.post('/intake', ...mgr, (req, res) => {
   try {
     const id = createIntakeService(req.body, req.user.id)
     logAudit(req.user.id, 'water_intake', 'water', id, `${req.body.input_qty} ${req.body.input_unit}`)
-    res.status(201).json({ id })
+    res.status(201).json({ id, warning: monthLockWarning(req.body.move_date) })
   } catch (e) { fail(res, e) }
 })
 
@@ -99,7 +101,7 @@ waterRouter.post('/distribute', ...mgr, (req, res) => {
   try {
     const id = createDistributionService(req.body, req.user.id)
     logAudit(req.user.id, 'water_distribute', 'water', id, `zone:${req.body.zone_id} ${req.body.input_qty} ${req.body.input_unit}`)
-    res.status(201).json({ id })
+    res.status(201).json({ id, warning: monthLockWarning(req.body.move_date) })
   } catch (e) { fail(res, e) }
 })
 
@@ -165,6 +167,33 @@ waterRouter.get('/pivot', ...mgr, (req, res) => {
 // ── Operasyon Uyarı Merkezi ("Bugün Yapılacaklar") ──
 waterRouter.get('/alerts', ...mgr, (req, res) => {
   try { res.json(alertsService({ today: req.query.today })) } catch (e) { logger.error('[water]', e); fail(res, e) }
+})
+
+// ── Ay Sonu Kapanış / Uyuşturma ──
+waterRouter.get('/reconciliation', ...mgr, (req, res) => {
+  try { res.json(reconciliationService({ month: req.query.month })) } catch (e) { logger.error('[water]', e); fail(res, e) }
+})
+waterRouter.post('/stock-count', ...mgr, (req, res) => {
+  try {
+    const r = saveStockCountService(req.body, req.user.id)
+    logAudit(req.user.id, 'water_stock_count', 'water', req.body.product_id, `${req.body.month} fark:${r.diff_base}`)
+    res.json(r)
+  } catch (e) { fail(res, e) }
+})
+// Ay kapanışı/kilit — sadece kampüs müdürü
+waterRouter.post('/monthly-close', ...managerOnly, (req, res) => {
+  try {
+    const c = monthlyCloseService(req.body, req.user.id)
+    logAudit(req.user.id, 'water_month_close', 'water', null, req.body.month)
+    res.status(201).json(c)
+  } catch (e) { fail(res, e) }
+})
+waterRouter.post('/monthly-close/:month/unlock', ...managerOnly, (req, res) => {
+  try {
+    monthlyUnlockService(req.params.month)
+    logAudit(req.user.id, 'water_month_unlock', 'water', null, req.params.month)
+    res.json({ ok: true })
+  } catch (e) { fail(res, e) }
 })
 
 // ── Özet / dashboard ──

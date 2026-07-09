@@ -435,6 +435,71 @@ export function depositBalances({ from, to } = {}) {
   `).all(...params)
 }
 
+// ── Ay kapanışı / uyuşturma ──
+export function getClosure(month) {
+  return getDB().prepare(`
+    SELECT c.*, u.full_name AS closed_by_name, u.username AS closed_by_username
+    FROM water_monthly_closures c LEFT JOIN users u ON u.id = c.closed_by
+    WHERE c.month=?
+  `).get(month)
+}
+export function upsertClosure({ month, note, closed_by, is_locked = 1 }) {
+  return getDB().prepare(`
+    INSERT INTO water_monthly_closures(month, is_locked, note, closed_by)
+    VALUES(@month, @is_locked, @note, @closed_by)
+    ON CONFLICT(month) DO UPDATE SET
+      is_locked=excluded.is_locked, note=excluded.note, closed_by=excluded.closed_by, closed_at=CURRENT_TIMESTAMP
+  `).run({ month, is_locked: is_locked ? 1 : 0, note: note || null, closed_by: closed_by || null })
+}
+export function setClosureLock(month, isLocked) {
+  return getDB().prepare('UPDATE water_monthly_closures SET is_locked=? WHERE month=?').run(isLocked ? 1 : 0, month).changes > 0
+}
+
+// Ürün bazında: ay başı devreden (ay öncesi net) + ay gelen/dağıtılan + ay iadesi + varsa sayım fişi
+export function reconciliationRows(month) {
+  const monthStart = `${month}-01`
+  return getDB().prepare(`
+    SELECT p.id AS product_id, p.name AS product_name, p.unit_label, p.units_per_case, p.cases_per_pallet,
+      p.brand_id, b.name AS brand_name,
+      COALESCE((SELECT SUM(CASE WHEN m.type='in' THEN m.qty_base ELSE -m.qty_base END)
+                FROM water_movements m WHERE m.product_id=p.id AND m.move_date < ?), 0) AS opening_base,
+      COALESCE((SELECT SUM(m.qty_base) FROM water_movements m
+                WHERE m.product_id=p.id AND m.type='in' AND substr(m.move_date,1,7)=?), 0) AS month_in,
+      COALESCE((SELECT SUM(m.qty_base) FROM water_movements m
+                WHERE m.product_id=p.id AND m.type='out' AND substr(m.move_date,1,7)=?), 0) AS month_out,
+      COALESCE((SELECT SUM(r.qty_base) FROM water_returns r
+                WHERE r.product_id=p.id AND substr(r.move_date,1,7)=?), 0) AS month_return,
+      sc.counted_base, sc.reason AS count_reason, sc.note AS count_note
+    FROM water_products p
+    LEFT JOIN water_brands b ON b.id = p.brand_id
+    LEFT JOIN water_stock_counts sc ON sc.product_id = p.id AND sc.month = ?
+    WHERE p.is_active = 1
+    ORDER BY COALESCE(b.sort_order, 999), p.sort_order, p.name
+  `).all(monthStart, month, month, month, month)
+}
+
+export function upsertStockCount(row) {
+  return getDB().prepare(`
+    INSERT INTO water_stock_counts(month, product_id, system_base, counted_base, diff_base, reason, note, created_by)
+    VALUES(@month, @product_id, @system_base, @counted_base, @diff_base, @reason, @note, @created_by)
+    ON CONFLICT(month, product_id) DO UPDATE SET
+      system_base=excluded.system_base, counted_base=excluded.counted_base, diff_base=excluded.diff_base,
+      reason=excluded.reason, note=excluded.note, created_by=excluded.created_by, updated_at=CURRENT_TIMESTAMP
+  `).run(row)
+}
+
+// Kapanış snapshot'ı: her ürün için sistem kalanını yazar (mevcut sayımı silmez)
+export function snapshotClosure(month, rows) {
+  const db = getDB()
+  const stmt = db.prepare(`
+    INSERT INTO water_stock_counts(month, product_id, system_base)
+    VALUES(?,?,?)
+    ON CONFLICT(month, product_id) DO UPDATE SET system_base=excluded.system_base, updated_at=CURRENT_TIMESTAMP
+  `)
+  const tx = db.transaction((list) => { for (const r of list) stmt.run(month, r.product_id, r.system_base) })
+  return tx(rows)
+}
+
 // Ay bazlı seri (move_date YYYY-MM-DD → YYYY-MM gruplanır)
 export function monthlySeries({ from, to, product_id } = {}) {
   const cond = []

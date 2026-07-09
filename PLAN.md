@@ -350,11 +350,13 @@ Amaç: su takibini kayıt tablosundan → günlük dağıtım + irsaliye + eksi 
 - [x] +7 backend test (49/49 water, 1380/1380 tüm suite) + 1 frontend smoke (6/6), build temiz
 - [ ] Not: kart→çapraz-görünüm atlaması (eksi stok kartı → ay uyuşturmada o ürün seçili) W2/W3 görünümleri gelince bağlanacak — şimdilik kartlar detayı inline listeliyor
 
-### Faz W2 — Ay Sonu Kapanış / Uyuşturma Ekranı
-- [ ] `water_monthly_closures` tablosu (ay, kapanış tarihi, kapatan, kilit, not) + `water_stock_counts` (ay, ürün, sistem kalan, sayım kalan, fark, sebep, not)
-- [ ] `GET /api/water/reconciliation?month=` (ay başı devreden/gelen/dağıtılan/iade/sistem kalan) + sayım kalan manuel giriş + fark/açıklama zorunlu
-- [ ] `POST /api/water/monthly-close` / `.../unlock` — kilitli ayda kayıt → uyarı (ilk sürüm uyarı, engelleme W-sonra)
-- [ ] Ay Kapanışı görünümü + backend test
+### Faz W2 — Ay Sonu Kapanış / Uyuşturma Ekranı ✅
+- [x] Migration 030: `water_monthly_closures` (ay, kilit, not, kapatan) + `water_stock_counts` (ay×ürün tekil: system_base, counted_base, diff_base, reason, note)
+- [x] `GET /api/water/reconciliation?month=` — ürün bazlı ay başı devreden/gelen/dağıtılan/boş iade/sistem kalan + sayım + fark + durum (pending/even/over/short) + insan-okur; totals (ürün/sayıldı/bekleyen/farklı)
+- [x] `POST /api/water/stock-count` — sayım upsert, fark≠0 ise sebep zorunlu (6 sebep: eksik_irsaliye/fazla_dagitim/sayim_farki/fire_kirik/yanlis_urun/devir_duzeltme), sistem kalanı okuma anında hesaplanır (bayat fark yok)
+- [x] `POST /api/water/monthly-close` (+ snapshot) / `.../:month/unlock` — **sadece kampüs müdürü**; kilitli aya intake/distribute → 201 + `warning` alanı (engelleme yok, PLAN varsayımı)
+- [x] `MonthClosurePanel` (WaterPage): açılır tablo — devreden/gelen/dağıtılan/iade/sistem + inline sayım input + fark + sebep select + durum rozeti; müdüre 🔒 kilitle / 🔓 aç (confirmDialog); KİLİTLİ banner
+- [x] +8 backend test (57/57 water, 1388/1388 tüm suite) + 1 frontend smoke (7/7), build temiz
 
 ### Faz W3 — İrsaliye Bekleyenler Ekranı
 - [ ] Eksi/bekleyen dağıtımlar ayrı liste (tarih, bölge, ürün, dağıtılan, eşleşen, bekleyen, kaç gündür); 3+ gün kırmızı

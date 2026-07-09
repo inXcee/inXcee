@@ -2,6 +2,7 @@ import { useState, useMemo, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
+import { useAuthStore } from '../../shared/store/authStore.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 
 const toastOk = (m) => useToastStore.getState().addToast(m, 'success')
@@ -225,6 +226,8 @@ export default function WaterPage() {
       </div>
 
       <WaterBoard from={from} to={to} label={label} lowItems={(summary?.stock || []).filter(s => s.low)} />
+
+      <MonthClosurePanel month={`${ym.y}-${String(ym.m).padStart(2, '0')}`} label={label} />
 
       <MonthlyReportPanel summary={summary} from={from} to={to} label={label} />
 
@@ -1503,6 +1506,153 @@ function DailyDistributionModal({ day, from, to, onDayChange, onClose }) {
         )}
       </div>
     </Modal>
+  )
+}
+
+// ─────────────────────────── Ay Sonu Kapanış / Uyuşturma ───────────────────────────
+const STATUS_META = {
+  pending: { label: 'Sayım yok', color: 'var(--text3)' },
+  even: { label: 'Tuttu', color: 'var(--green)' },
+  over: { label: 'Fazla', color: 'var(--teal)' },
+  short: { label: 'Eksik', color: 'var(--red)' },
+}
+function MonthClosurePanel({ month, label }) {
+  const qc = useQueryClient()
+  const user = useAuthStore(s => s.user)
+  const isManager = user?.role === 'campus_manager'
+  const [open, setOpen] = useState(false)
+  const [drafts, setDrafts] = useState({}) // product_id -> { counted, reason, note }
+
+  const { data } = useQuery({
+    queryKey: ['water-reconciliation', month],
+    queryFn: () => api.get('/water/reconciliation', { params: { month } }).then(r => r.data),
+    enabled: open,
+  })
+  const rows = data?.rows || []
+  const reasons = data?.reasons || []
+  const locked = !!data?.locked
+  const t = data?.totals
+
+  const saveCount = useMutation({
+    mutationFn: (body) => api.post('/water/stock-count', body),
+    onSuccess: (_r, body) => {
+      qc.invalidateQueries({ queryKey: ['water-reconciliation', month] })
+      qc.invalidateQueries({ queryKey: ['water-alerts'] })
+      setDrafts(prev => { const n = { ...prev }; delete n[body.product_id]; return n })
+      toastOk('Sayım kaydedildi')
+    },
+    onError: (e) => toastErr(errMsg(e, 'Kaydedilemedi')),
+  })
+  const closeMonth = useMutation({
+    mutationFn: () => api.post('/water/monthly-close', { month }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['water-reconciliation', month] }); toastOk(`${label} kapatıldı 🔒`) },
+    onError: (e) => toastErr(errMsg(e, 'Kapatılamadı')),
+  })
+  const unlockMonth = useMutation({
+    mutationFn: () => api.post(`/water/monthly-close/${month}/unlock`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['water-reconciliation', month] }); toastOk(`${label} kilidi açıldı 🔓`) },
+    onError: (e) => toastErr(errMsg(e, 'Açılamadı')),
+  })
+
+  const setDraft = (pid, patch) => setDrafts(prev => ({ ...prev, [pid]: { ...prev[pid], ...patch } }))
+
+  const commit = (row) => {
+    const d = drafts[row.product_id] || {}
+    if (d.counted == null || String(d.counted).trim() === '') return
+    const counted = Number(String(d.counted).replace(',', '.'))
+    if (!Number.isFinite(counted) || counted < 0) return toastErr('Geçersiz sayım miktarı')
+    const diff = counted - row.system_base
+    const reason = d.reason ?? row.reason
+    if (diff !== 0 && !reason) return toastErr(`${row.product_name}: fark var — sebep seçin`)
+    saveCount.mutate({ month, product_id: row.product_id, counted_qty: counted, counted_unit: 'adet', reason: diff !== 0 ? reason : undefined, note: d.note })
+  }
+
+  const askClose = async () => {
+    if (await confirmDialog({ title: `${label} kapatılsın mı?`, message: 'Ay kilitlenir; kilitli aya girilen kayıtlar uyarı verir. Kilidi sonra açabilirsiniz.', confirmText: 'Ayı Kilitle' })) closeMonth.mutate()
+  }
+
+  return (
+    <div className="panel" style={{ marginTop: '16px', borderTop: `3px solid ${locked ? 'var(--red)' : 'var(--amber, #d97706)'}` }}>
+      <div className="panel-header" style={{ alignItems: 'center', gap: '10px' }}>
+        <div>
+          <div className="panel-title">AY KAPANIŞI — {label} {locked && <span style={{ color: 'var(--red)', fontSize: '12px' }}>🔒 KİLİTLİ</span>}</div>
+          <div className="panel-subtitle">Sistem kalanı vs fiziksel sayım — fark + açıklama + kilit</div>
+        </div>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px' }}>
+          <button className="btn btn-ghost btn-sm" onClick={() => setOpen(o => !o)}>{open ? '▲ Gizle' : '▼ Aç'}</button>
+          {open && isManager && (locked
+            ? <button className="btn btn-ghost btn-sm" onClick={() => unlockMonth.mutate()}>🔓 Kilidi Aç</button>
+            : <button className="btn btn-primary btn-sm" onClick={askClose}>🔒 Ayı Kilitle</button>)}
+        </div>
+      </div>
+
+      {open && (
+        <>
+          {t && (
+            <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap', margin: '4px 0 12px', fontSize: '11px', color: 'var(--text2)' }}>
+              <span>{t.products} ürün</span>
+              <span>· {t.counted} sayıldı</span>
+              <span style={{ color: t.pending ? 'var(--amber, #d97706)' : 'var(--text3)' }}>· {t.pending} bekliyor</span>
+              <span style={{ color: t.mismatch ? 'var(--red)' : 'var(--green)' }}>· {t.mismatch} farklı</span>
+            </div>
+          )}
+          <div style={{ overflowX: 'auto' }}>
+            <table className="data-table" style={{ fontSize: '11px', minWidth: '900px' }}>
+              <thead>
+                <tr>
+                  {['Marka', 'Ürün', 'Devreden', 'Gelen', 'Dağıtılan', 'Boş İade', 'Sistem', 'Sayım', 'Fark', 'Sebep', 'Durum'].map(h => (
+                    <th key={h} style={{ textAlign: h === 'Marka' || h === 'Ürün' ? 'left' : 'right', whiteSpace: 'nowrap' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map(row => {
+                  const d = drafts[row.product_id] || {}
+                  const draftCounted = d.counted != null && String(d.counted).trim() !== '' ? Number(String(d.counted).replace(',', '.')) : null
+                  const effCounted = draftCounted != null ? draftCounted : row.counted_base
+                  const diff = effCounted == null || !Number.isFinite(effCounted) ? row.diff_base : effCounted - row.system_base
+                  const hasDiff = diff != null && diff !== 0
+                  const meta = STATUS_META[diff == null ? 'pending' : diff === 0 ? 'even' : diff > 0 ? 'over' : 'short']
+                  return (
+                    <tr key={row.product_id}>
+                      <td style={{ color: 'var(--text3)' }}>{row.brand_name || '—'}</td>
+                      <td style={{ fontWeight: 600 }}>{row.product_name}</td>
+                      <td style={{ textAlign: 'right', fontFamily: 'var(--mono)' }} title={row.opening_human}>{nf(row.opening_base)}</td>
+                      <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--green)' }} title={row.month_in_human}>{nf(row.month_in)}</td>
+                      <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--accent)' }} title={row.month_out_human}>{nf(row.month_out)}</td>
+                      <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--text3)' }} title={row.month_return_human}>{row.month_return ? nf(row.month_return) : '·'}</td>
+                      <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 600 }} title={row.system_human}>{nf(row.system_base)}</td>
+                      <td style={{ textAlign: 'right' }}>
+                        <input aria-label={`${row.product_name} sayım`} inputMode="decimal"
+                          defaultValue={row.counted_base ?? ''}
+                          onChange={e => setDraft(row.product_id, { counted: e.target.value })}
+                          onKeyDown={e => { if (e.key === 'Enter') commit(row) }}
+                          onBlur={() => commit(row)}
+                          style={{ width: '68px', textAlign: 'right', fontFamily: 'var(--mono)', padding: '2px 4px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '5px', color: 'var(--text)' }} />
+                      </td>
+                      <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', color: hasDiff ? 'var(--red)' : 'var(--text3)' }}>{diff == null ? '·' : nf(diff)}</td>
+                      <td style={{ textAlign: 'right' }}>
+                        {hasDiff ? (
+                          <select aria-label={`${row.product_name} sebep`} value={d.reason ?? row.reason ?? ''}
+                            onChange={e => setDraft(row.product_id, { reason: e.target.value })}
+                            style={{ fontSize: '10px', padding: '2px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '5px', color: 'var(--text)', maxWidth: '110px' }}>
+                            <option value="">— seç —</option>
+                            {reasons.map(r => <option key={r.key} value={r.key}>{r.label}</option>)}
+                          </select>
+                        ) : <span style={{ color: 'var(--text3)' }}>—</span>}
+                      </td>
+                      <td style={{ textAlign: 'right' }}>
+                        <span style={{ fontSize: '10px', fontWeight: 600, color: meta.color }}>{meta.label}</span>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </div>
   )
 }
 
