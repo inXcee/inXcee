@@ -167,14 +167,15 @@ export function deleteProductService(id) {
 
 // ── Bölge servisleri ──
 export function zonesService(opts) { return q.listZones(opts) }
+const expectedMonthly = (data) => Math.max(0, parseInt(data.expected_monthly) || 0)
 export function createZoneService(data) {
   if (!data?.name?.trim()) throw Object.assign(new Error('Bölge adı gerekli'), { statusCode: 400 })
-  return q.createZone({ name: data.name.trim(), code: data.code?.trim() || null, note: data.note?.trim() || null })
+  return q.createZone({ name: data.name.trim(), code: data.code?.trim() || null, note: data.note?.trim() || null, expected_monthly: expectedMonthly(data) })
 }
 export function updateZoneService(id, data) {
   if (!q.getZone(id)) throw Object.assign(new Error('Bölge bulunamadı'), { statusCode: 404 })
   if (!data?.name?.trim()) throw Object.assign(new Error('Bölge adı gerekli'), { statusCode: 400 })
-  q.updateZone(id, { name: data.name.trim(), code: data.code?.trim() || null, note: data.note?.trim() || null, is_active: data.is_active !== false })
+  q.updateZone(id, { name: data.name.trim(), code: data.code?.trim() || null, note: data.note?.trim() || null, is_active: data.is_active !== false, expected_monthly: expectedMonthly(data) })
 }
 export function deleteZoneService(id) {
   if (!q.getZone(id)) throw Object.assign(new Error('Bölge bulunamadı'), { statusCode: 404 })
@@ -516,7 +517,7 @@ export function pivotService({ from, to } = {}) {
       const base = cell.get(`${z.id}:${p.id}`) || 0
       if (base) { cells[p.id] = { base, human: humanize(p, base) }; rowTotal += base }
     }
-    return { zone_id: z.id, zone_name: z.name, cells, total_base: rowTotal }
+    return { zone_id: z.id, zone_name: z.name, expected_monthly: z.expected_monthly || 0, cells, total_base: rowTotal }
   })
 
   const colTotals = {}

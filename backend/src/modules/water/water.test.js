@@ -661,3 +661,27 @@ describe('Su takip — İrsaliye Bekleyenler (W3)', () => {
     expect(r.status).toBe(403)
   })
 })
+
+describe('Su takip — Dağıtım yeri beklenen tüketim (W4)', () => {
+  const auth = (r) => r.set('Authorization', `Bearer ${managerToken}`)
+
+  it('bölge beklenen aylık tüketim ile oluşturulur, güncellenir ve pivotta döner', async () => {
+    const z = await auth(request(app).post('/api/water/zones')).send({ name: 'BEKLENEN Bölge', expected_monthly: 500 })
+    expect(z.status).toBe(201)
+    const zone = (await auth(request(app).get('/api/water/zones'))).body.find(x => x.id === z.body.id)
+    expect(zone.expected_monthly).toBe(500)
+
+    await auth(request(app).put(`/api/water/zones/${z.body.id}`)).send({ name: 'BEKLENEN Bölge', expected_monthly: 800 })
+    const zone2 = (await auth(request(app).get('/api/water/zones'))).body.find(x => x.id === z.body.id)
+    expect(zone2.expected_monthly).toBe(800)
+
+    const piv = await auth(request(app).get('/api/water/pivot?from=2026-07-01&to=2026-07-31'))
+    expect(piv.body.rows.find(r => r.zone_id === z.body.id).expected_monthly).toBe(800)
+  })
+
+  it('expected_monthly gönderilmezse 0 varsayılır', async () => {
+    const z = await auth(request(app).post('/api/water/zones')).send({ name: 'BEKLENENSIZ Bölge' })
+    const zone = (await auth(request(app).get('/api/water/zones'))).body.find(x => x.id === z.body.id)
+    expect(zone.expected_monthly).toBe(0)
+  })
+})

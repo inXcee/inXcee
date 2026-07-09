@@ -78,13 +78,13 @@ export function listZones({ includeInactive = false } = {}) {
 export function getZone(id) {
   return getDB().prepare('SELECT * FROM water_zones WHERE id=?').get(id)
 }
-export function createZone({ name, code, note }) {
-  return getDB().prepare('INSERT INTO water_zones(name, code, note) VALUES(?,?,?)')
-    .run(name, code || null, note || null).lastInsertRowid
+export function createZone({ name, code, note, expected_monthly }) {
+  return getDB().prepare('INSERT INTO water_zones(name, code, note, expected_monthly) VALUES(?,?,?,?)')
+    .run(name, code || null, note || null, expected_monthly || 0).lastInsertRowid
 }
-export function updateZone(id, { name, code, note, is_active }) {
-  return getDB().prepare('UPDATE water_zones SET name=?, code=?, note=?, is_active=? WHERE id=?')
-    .run(name, code || null, note || null, is_active ? 1 : 0, id).changes > 0
+export function updateZone(id, { name, code, note, is_active, expected_monthly }) {
+  return getDB().prepare('UPDATE water_zones SET name=?, code=?, note=?, is_active=?, expected_monthly=? WHERE id=?')
+    .run(name, code || null, note || null, is_active ? 1 : 0, expected_monthly || 0, id).changes > 0
 }
 export function zoneMovementCount(id) {
   return getDB().prepare('SELECT COUNT(*) c FROM water_movements WHERE zone_id=?').get(id).c

@@ -365,9 +365,12 @@ Amaç: su takibini kayıt tablosundan → günlük dağıtım + irsaliye + eksi 
 - [x] `PendingWaybillPanel` (WaterBoard altında): açılır tablo, 3+ gün kırmızı vurgu, bekleyen yoksa panel gizli; 60sn refetch
 - [x] +3 backend test (60/60 water, 1391/1391 tüm suite) + 1 frontend smoke (8/8), build temiz
 
-### Faz W4 — Dağıtım Yeri Detay Kartı (güçlendirme)
-- [ ] ZoneHistoryModal: son 7 gün / bu ay / tüm geçmiş sekmeleri, en çok verilen ürünler, günlük ortalama, son dağıtım, ay/önceki ay karşılaştırma
-- [ ] Bölge bazlı "beklenen tüketim" alanı + sapma uyarısı
+### Faz W4 — Dağıtım Yeri Detay Kartı (güçlendirme) ✅
+- [x] Migration 031: `water_zones.expected_monthly` (beklenen aylık tüketim, adet)
+- [x] Backend: zone create/update `expected_monthly` alanını kabul eder; pivot rows'a eklendi
+- [x] ZoneHistoryModal: **Son 7 gün** sekmesi eklendi (ay/tüm ile); tüm geçmiş tek çekilip client'ta türetilir; günlük ortalama + son dağıtım tarihi KPI; en çok verilen ürünler (mevcut); **bu ay ↔ önceki ay** karşılaştırması (%delta); **beklenen tüketim** vs gerçekleşen + %25 üstü sapmada ⚠ uyarı
+- [x] ZonesTab: form + satır içi düzenlenebilir "Beklenen/ay" alanı (mevcut bölgeler için de)
+- [x] +2 backend test (62/62 water, 1393/1393 tüm suite) + frontend smoke güncellendi (8/8), build temiz
 
 ### Faz W5 — Hızlı Günlük Giriş Şablonları
 - [ ] `water_templates` (ad, satırlar: ürün+bölge+varsayılan birim); şablon seçince tabloya satırlar dolar, sadece miktar değişir

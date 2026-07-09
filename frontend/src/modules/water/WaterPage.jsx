@@ -1021,15 +1021,37 @@ function WaterBoard({ from, to, label, lowItems }) {
 
 function ZoneHistoryModal({ zone, from, to, label, onClose }) {
   const [range, setRange] = useState('month')
-  const params = useMemo(() => ({
-    type: 'out',
-    zone_id: zone.zone_id,
-    ...(range === 'month' ? { from, to } : {}),
-  }), [zone.zone_id, range, from, to])
-  const { data: rows = [], isLoading } = useQuery({
-    queryKey: ['water-zone-history', zone.zone_id, range, from, to],
-    queryFn: () => api.get('/water/movements', { params }).then(r => r.data),
+  // Tüm geçmişi tek çek; 7-gün / ay / tüm görünümleri + ay karşılaştırmasını client'ta türet
+  const { data: allRows = [], isLoading } = useQuery({
+    queryKey: ['water-zone-history', zone.zone_id],
+    queryFn: () => api.get('/water/movements', { params: { type: 'out', zone_id: zone.zone_id, limit: 1000 } }).then(r => r.data),
   })
+
+  const today = todayStr()
+  const weekStart = shiftIsoDay(today, -6) // son 7 gün (bugün dahil)
+  const month = from.slice(0, 7)
+  const prevMonth = shiftIsoDay(from, -1).slice(0, 7)
+
+  const rows = useMemo(() => {
+    if (range === 'week') return allRows.filter(r => r.move_date >= weekStart && r.move_date <= today)
+    if (range === 'month') return allRows.filter(r => r.move_date >= from && r.move_date <= to)
+    return allRows
+  }, [allRows, range, from, to, weekStart, today])
+
+  // Ay karşılaştırması + beklenen tüketim sapması (tüm geçmişten)
+  const compare = useMemo(() => {
+    let thisM = 0, prevM = 0
+    allRows.forEach(r => {
+      const m = (r.move_date || '').slice(0, 7)
+      if (m === month) thisM += r.qty_base || 0
+      else if (m === prevMonth) prevM += r.qty_base || 0
+    })
+    const expected = zone.expected_monthly || 0
+    const momDelta = prevM > 0 ? Math.round(((thisM - prevM) / prevM) * 100) : null
+    const expDelta = expected > 0 ? Math.round(((thisM - expected) / expected) * 100) : null
+    const overExpected = expected > 0 && Math.abs(thisM - expected) / expected > 0.25
+    return { thisM, prevM, expected, momDelta, expDelta, overExpected }
+  }, [allRows, month, prevMonth, zone.expected_monthly])
 
   const stats = useMemo(() => {
     const byDay = new Map()
@@ -1052,10 +1074,15 @@ function ZoneHistoryModal({ zone, from, to, label, onClose }) {
     })
     const days = [...byDay.values()].sort((a, b) => b.date.localeCompare(a.date))
     const products = [...byProduct.values()].sort((a, b) => b.total - a.total)
-    return { total, days, products, activeDays: days.length, recordCount: rows.length }
+    const activeDays = days.length
+    return {
+      total, days, products, activeDays, recordCount: rows.length,
+      dailyAvg: activeDays ? Math.round(total / activeDays) : 0,
+      lastDate: days[0]?.date || null,
+    }
   }, [rows])
 
-  const rangeLabel = range === 'month' ? label : 'Tüm geçmiş'
+  const rangeLabel = range === 'week' ? 'Son 7 gün' : range === 'month' ? label : 'Tüm geçmiş'
 
   return (
     <Modal title={`${zone.zone_name} — DAĞITIM GEÇMİŞİ`} onClose={onClose} width="1040px">
@@ -1063,6 +1090,7 @@ function ZoneHistoryModal({ zone, from, to, label, onClose }) {
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
           <div style={{ display: 'flex', gap: '2px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '8px', padding: '2px' }}>
             {[
+              ['week', 'Son 7 gün'],
               ['month', `Seçili ay: ${label}`],
               ['all', 'Tüm geçmiş'],
             ].map(([id, text]) => (
@@ -1088,18 +1116,49 @@ function ZoneHistoryModal({ zone, from, to, label, onClose }) {
           <div style={{ color: 'var(--text3)', fontSize: '11px' }}>Görüntülenen dönem: {rangeLabel}</div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '10px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(128px, 1fr))', gap: '10px' }}>
           {[
             ['Toplam dağıtım', nf(stats.total), 'var(--accent)'],
-            ['Dağıtım günü', nf(stats.activeDays), 'var(--teal)'],
-            ['Kayıt', nf(stats.recordCount), 'var(--text)'],
+            ['Günlük ortalama', nf(stats.dailyAvg), 'var(--teal)'],
+            ['Dağıtım günü', nf(stats.activeDays), 'var(--text)'],
+            ['Son dağıtım', stats.lastDate || '—', 'var(--text2)'],
             ['Ürün çeşidi', nf(stats.products.length), 'var(--green)'],
           ].map(([name, value, color]) => (
             <div key={name} style={{ background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '8px', padding: '10px 12px' }}>
               <div style={{ fontSize: '9px', color: 'var(--text3)', letterSpacing: '.5px' }}>{name}</div>
-              <div style={{ fontFamily: 'var(--display)', fontSize: '22px', color }}>{value}</div>
+              <div style={{ fontFamily: name === 'Son dağıtım' ? 'var(--mono)' : 'var(--display)', fontSize: name === 'Son dağıtım' ? '15px' : '22px', color, marginTop: name === 'Son dağıtım' ? '4px' : 0 }}>{value}</div>
             </div>
           ))}
+        </div>
+
+        {/* Ay karşılaştırması + beklenen tüketim sapması */}
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          <div style={{ flex: '1 1 220px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '8px', padding: '10px 12px' }}>
+            <div style={{ fontSize: '9px', color: 'var(--text3)', letterSpacing: '.5px' }}>BU AY / ÖNCEKİ AY</div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', marginTop: '3px' }}>
+              <span style={{ fontFamily: 'var(--display)', fontSize: '20px' }}>{nf(compare.thisM)}</span>
+              <span style={{ color: 'var(--text3)', fontSize: '12px' }}>← {nf(compare.prevM)}</span>
+              {compare.momDelta != null && (
+                <span style={{ fontSize: '12px', fontWeight: 700, color: compare.momDelta > 0 ? 'var(--accent)' : compare.momDelta < 0 ? 'var(--green)' : 'var(--text3)' }}>
+                  {compare.momDelta > 0 ? '▲' : compare.momDelta < 0 ? '▼' : ''}%{Math.abs(compare.momDelta)}
+                </span>
+              )}
+            </div>
+          </div>
+          <div style={{ flex: '1 1 220px', background: compare.overExpected ? 'color-mix(in srgb, var(--red) 10%, var(--surface2))' : 'var(--surface2)', border: `1px solid ${compare.overExpected ? 'var(--red)' : 'var(--border)'}`, borderRadius: '8px', padding: '10px 12px' }}>
+            <div style={{ fontSize: '9px', color: 'var(--text3)', letterSpacing: '.5px' }}>BEKLENEN AYLIK TÜKETİM</div>
+            {compare.expected > 0 ? (
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', marginTop: '3px' }}>
+                <span style={{ fontFamily: 'var(--display)', fontSize: '20px' }}>{nf(compare.expected)}</span>
+                <span style={{ fontSize: '12px', fontWeight: 700, color: compare.overExpected ? 'var(--red)' : 'var(--green)' }}>
+                  {compare.expDelta > 0 ? '▲' : compare.expDelta < 0 ? '▼' : ''}%{Math.abs(compare.expDelta)}
+                </span>
+                {compare.overExpected && <span style={{ fontSize: '11px', color: 'var(--red)', fontWeight: 600 }}>⚠ sapma</span>}
+              </div>
+            ) : (
+              <div style={{ fontSize: '11px', color: 'var(--text3)', marginTop: '5px' }}>Tanımsız — ⚙ Ayarlar’dan bölgeye ekleyin</div>
+            )}
+          </div>
         </div>
 
         {isLoading ? (
@@ -2242,31 +2301,45 @@ function TextDistribute({ products, zones, onSaved }) {
 // ─────────────────────────── DAĞITIM YERLERİ (bölge yönetimi) ───────────────────────────
 function ZonesTab() {
   const qc = useQueryClient()
-  const [form, setForm] = useState({ name: '', code: '', note: '' })
+  const [form, setForm] = useState({ name: '', code: '', note: '', expected_monthly: '' })
   const { data: zones = [] } = useQuery({ queryKey: ['water-zones'], queryFn: () => api.get('/water/zones').then(r => r.data) })
-  const create = useMutation({ mutationFn: (p) => api.post('/water/zones', p), onSuccess: () => { qc.invalidateQueries({ queryKey: ['water-zones'] }); qc.invalidateQueries({ queryKey: ['water-pivot'] }); setForm({ name: '', code: '', note: '' }); toastOk('Dağıtım yeri eklendi') }, onError: (e) => toastErr(errMsg(e, 'Eklenemedi')) })
-  const del = useMutation({ mutationFn: (id) => api.delete(`/water/zones/${id}`), onSuccess: () => { qc.invalidateQueries({ queryKey: ['water-zones'] }); qc.invalidateQueries({ queryKey: ['water-pivot'] }); toastOk('Silindi') }, onError: (e) => toastErr(errMsg(e, 'Silinemedi')) })
+  const invalidate = () => { qc.invalidateQueries({ queryKey: ['water-zones'] }); qc.invalidateQueries({ queryKey: ['water-pivot'] }) }
+  const create = useMutation({ mutationFn: (p) => api.post('/water/zones', p), onSuccess: () => { invalidate(); setForm({ name: '', code: '', note: '', expected_monthly: '' }); toastOk('Dağıtım yeri eklendi') }, onError: (e) => toastErr(errMsg(e, 'Eklenemedi')) })
+  const update = useMutation({ mutationFn: ({ id, ...p }) => api.put(`/water/zones/${id}`, p), onSuccess: () => { invalidate(); toastOk('Güncellendi') }, onError: (e) => toastErr(errMsg(e, 'Güncellenemedi')) })
+  const del = useMutation({ mutationFn: (id) => api.delete(`/water/zones/${id}`), onSuccess: () => { invalidate(); toastOk('Silindi') }, onError: (e) => toastErr(errMsg(e, 'Silinemedi')) })
+  const saveExpected = (z, value) => {
+    const expected = Math.max(0, parseInt(value) || 0)
+    if (expected === (z.expected_monthly || 0)) return
+    update.mutate({ id: z.id, name: z.name, code: z.code, note: z.note, is_active: z.is_active !== 0, expected_monthly: expected })
+  }
   return (
     <div>
       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: '14px' }}>
-        <div style={{ flex: 1, minWidth: '160px' }}><label className="form-label">Dağıtım yeri adı</label><input className="form-input" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Ör. OTC Kamp Alanı" /></div>
-        <div style={{ width: '110px' }}><label className="form-label">Kod</label><input className="form-input" value={form.code} onChange={e => setForm(f => ({ ...f, code: e.target.value }))} /></div>
-        <div style={{ flex: 1, minWidth: '140px' }}><label className="form-label">Not</label><input className="form-input" value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} /></div>
+        <div style={{ flex: 1, minWidth: '150px' }}><label className="form-label">Dağıtım yeri adı</label><input className="form-input" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Ör. OTC Kamp Alanı" /></div>
+        <div style={{ width: '90px' }}><label className="form-label">Kod</label><input className="form-input" value={form.code} onChange={e => setForm(f => ({ ...f, code: e.target.value }))} /></div>
+        <div style={{ width: '120px' }}><label className="form-label">Beklenen/ay</label><input type="number" min="0" className="form-input" value={form.expected_monthly} onChange={e => setForm(f => ({ ...f, expected_monthly: e.target.value }))} placeholder="adet" /></div>
+        <div style={{ flex: 1, minWidth: '120px' }}><label className="form-label">Not</label><input className="form-input" value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} /></div>
         <button className="btn btn-primary" disabled={!form.name.trim() || create.isPending} onClick={() => create.mutate({ ...form, name: form.name.trim() })}>Ekle</button>
       </div>
       <div style={{ maxHeight: '46vh', overflowY: 'auto' }}>
         <table className="data-table" style={{ fontSize: '12px' }}>
-          <thead><tr><th>Ad</th><th>Kod</th><th>Not</th><th></th></tr></thead>
+          <thead><tr><th>Ad</th><th>Kod</th><th style={{ textAlign: 'right' }}>Beklenen/ay</th><th>Not</th><th></th></tr></thead>
           <tbody>
             {zones.map(z => (
               <tr key={z.id}>
                 <td style={{ fontWeight: 600 }}>{z.name}</td>
                 <td style={{ fontFamily: 'var(--mono)', color: 'var(--text3)' }}>{z.code || '—'}</td>
+                <td style={{ textAlign: 'right' }}>
+                  <input type="number" min="0" aria-label={`${z.name} beklenen aylık`} defaultValue={z.expected_monthly || ''}
+                    onBlur={e => saveExpected(z, e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
+                    style={{ width: '72px', textAlign: 'right', fontFamily: 'var(--mono)', padding: '3px 5px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '5px', color: 'var(--text)' }} placeholder="—" />
+                </td>
                 <td style={{ color: 'var(--text3)' }}>{z.note || '—'}</td>
                 <td style={{ textAlign: 'right' }}><button onClick={async () => { if (await confirmDialog({ title: 'Dağıtım Yerini Sil', body: `"${z.name}" silinsin mi?`, danger: true })) del.mutate(z.id) }} className="btn btn-danger btn-sm">Sil</button></td>
               </tr>
             ))}
-            {zones.length === 0 && <tr><td colSpan={4} style={{ textAlign: 'center', color: 'var(--text3)', padding: '16px' }}>Dağıtım yeri yok</td></tr>}
+            {zones.length === 0 && <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--text3)', padding: '16px' }}>Dağıtım yeri yok</td></tr>}
           </tbody>
         </table>
       </div>

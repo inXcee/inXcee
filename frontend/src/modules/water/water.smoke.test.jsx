@@ -118,7 +118,10 @@ describe('WaterPage tek-ekran pano smoke', () => {
     const zoneButtons = await screen.findAllByText('OTC Kamp Alanı')
     fireEvent.click(zoneButtons[0])
     expect(await screen.findByText(/DAĞITIM GEÇMİŞİ/)).toBeInTheDocument()
-    expect(screen.getByText('Tüm geçmiş')).toBeInTheDocument()
+    expect(screen.getByText('Son 7 gün')).toBeInTheDocument() // W4 yeni sekme
+    expect(screen.getByText('Günlük ortalama')).toBeInTheDocument() // W4 yeni istatistik
+    expect(screen.getByText('BEKLENEN AYLIK TÜKETİM')).toBeInTheDocument() // W4 karşılaştırma
+    expect(screen.getAllByText('Tüm geçmiş').length).toBeGreaterThan(0)
   })
 
   it('gelen tır ve boş iade panelleri render olur', async () => {
