@@ -64,11 +64,13 @@ waterRouter.delete('/zones/:id', ...mgr, (req, res) => {
 // ── Hareketler ──
 waterRouter.get('/movements', ...mgr, (req, res) => {
   try {
-    const { type, product_id, zone_id, from, to } = req.query
+    const { type, product_id, zone_id, from, to, limit } = req.query
+    const parsedLimit = limit ? Math.min(1000, Math.max(1, parseInt(limit, 10) || 200)) : undefined
     res.json(movementsService({
       type, from, to,
       product_id: product_id ? +product_id : undefined,
       zone_id: zone_id ? +zone_id : undefined,
+      limit: parsedLimit,
     }))
   } catch (e) { logger.error('[water]', e); fail(res, e) }
 })

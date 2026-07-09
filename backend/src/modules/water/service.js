@@ -69,7 +69,8 @@ export function humanize(product, base) {
   const baseUnit = baseInputUnit(product)
   const perPallet = baseUnit === 'palet' ? 1 : (baseUnit === 'koli' || baseUnit === 'paket') ? cpp : upc * cpp
   const unit = product?.unit_label || 'adet'
-  let rem = Math.max(0, Math.round(base))
+  const sign = Number(base) < 0 ? '-' : ''
+  let rem = Math.abs(Math.round(base || 0))
   const parts = []
   if (perPallet > 1) {
     const palet = Math.floor(rem / perPallet); rem %= perPallet
@@ -80,7 +81,7 @@ export function humanize(product, base) {
     if (koli) parts.push(`${koli} koli`)
   }
   if (rem || parts.length === 0) parts.push(`${rem} ${unit}`)
-  return parts.join(' ')
+  return sign ? `-${parts.join(' ')}` : parts.join(' ')
 }
 
 // ── Marka servisleri ──
@@ -215,22 +216,41 @@ function buildAllocationPlans(rows, { releaseOutMovementId } = {}) {
       lot.remaining_base -= take
       need -= take
     }
-    if (need > 0) {
-      const product = q.getProduct(row.product_id)
-      throw Object.assign(new Error(`${product?.name || 'Ürün'} için irsaliye stok yetersiz`), { statusCode: 409 })
-    }
     plans.push({ movement: row, allocations })
   }
   return plans
 }
 
+function reconcileUnallocatedOut(productIds) {
+  const ids = [...new Set((Array.isArray(productIds) ? productIds : [productIds]).filter(Boolean).map(Number))]
+  const allocationRows = []
+  for (const productId of ids) {
+    const lots = q.openIntakeLots(productId).map(lot => ({ ...lot }))
+    const needs = q.openDistributionNeeds(productId).map(row => ({ ...row }))
+    for (const need of needs) {
+      let remaining = need.unallocated_base || 0
+      for (const lot of lots) {
+        if (remaining <= 0) break
+        if (lot.remaining_base <= 0) continue
+        const take = Math.min(remaining, lot.remaining_base)
+        allocationRows.push({ out_movement_id: need.id, in_movement_id: lot.id, qty_base: take })
+        lot.remaining_base -= take
+        remaining -= take
+      }
+    }
+  }
+  return q.addMovementAllocations(allocationRows)
+}
+
 export function createIntakeService(data, userId) {
   const { product, qty } = validateMovement(data, false)
-  return q.createMovement({
+  const id = q.createMovement({
     type: 'in', product_id: product.id, zone_id: null, move_date: data.move_date,
     qty_base: toBase(product, qty, data.input_unit), input_qty: qty, input_unit: data.input_unit,
     waybill_no: data.waybill_no?.trim() || null, note: data.note?.trim() || null, created_by: userId || null,
   })
+  reconcileUnallocatedOut(product.id)
+  return id
 }
 
 export function createDistributionService(data, userId) {
@@ -278,7 +298,9 @@ export function batchIntakeService(data, userId) {
       waybill_no: data.waybill_no?.trim() || null, note: data.note?.trim() || null, created_by: userId || null,
     }
   })
-  return q.createMovementsBatch(rows)
+  const ids = q.createMovementsBatch(rows)
+  reconcileUnallocatedOut(rows.map(r => r.product_id))
+  return ids
 }
 
 export function movementsService(filters) {
@@ -288,6 +310,10 @@ export function movementsService(filters) {
     allocation_human: m.allocated_base ? humanize(m, m.allocated_base) : null,
     intake_allocated_human: m.intake_allocated_base ? humanize(m, m.intake_allocated_base) : null,
     remaining_human: m.remaining_base != null ? humanize(m, m.remaining_base) : null,
+    unallocated_human: m.unallocated_base ? humanize(m, m.unallocated_base) : null,
+    allocation_status: m.type === 'out'
+      ? (m.unallocated_base > 0 ? 'pending' : 'matched')
+      : (m.remaining_base > 0 ? 'open' : 'closed'),
   }))
 }
 
@@ -519,16 +545,30 @@ export function pivotService({ from, to } = {}) {
 
 // ── Özet / dashboard ──
 export function summaryService({ from, to, product_id, group = 'day' } = {}) {
+  const periodByProduct = new Map(q.productFlow({ from, to }).map(p => [p.id, p]))
   const stock = q.stockByProduct().map(p => {
+    const period = periodByProduct.get(p.id) || {}
     const balance = p.total_in - p.total_out
-    const low = p.min_level > 0 && balance < p.min_level
+    const periodIn = period.period_in || 0
+    const periodOut = period.period_out || 0
+    const periodNet = periodIn - periodOut
+    const deficit = Math.max(0, -balance)
+    const low = balance < 0 || (p.min_level > 0 && balance < p.min_level)
+    const periodStatus = periodNet < 0 ? 'period_deficit' : periodNet > 0 ? 'period_surplus' : 'period_even'
     return {
       product_id: p.id, name: p.name, unit_label: p.unit_label,
-      total_in: p.total_in, total_out: p.total_out, balance,
-      min_level: p.min_level, low,
+      brand_id: p.brand_id || null, brand_name: p.brand_name || null,
+      units_per_case: p.units_per_case, cases_per_pallet: p.cases_per_pallet,
+      total_in: p.total_in, total_out: p.total_out, balance, deficit,
+      period_in: periodIn, period_out: periodOut, period_net: periodNet, period_status: periodStatus,
+      min_level: p.min_level, low, negative: balance < 0,
       in_human: humanize(p, p.total_in),
       out_human: humanize(p, p.total_out),
       balance_human: humanize(p, balance),
+      deficit_human: deficit ? humanize(p, deficit) : null,
+      period_in_human: humanize(p, periodIn),
+      period_out_human: humanize(p, periodOut),
+      period_net_human: humanize(p, periodNet),
       min_human: p.min_level > 0 ? humanize(p, p.min_level) : null,
     }
   })
@@ -545,7 +585,11 @@ export function summaryService({ from, to, product_id, group = 'day' } = {}) {
   const totals = {
     period_in: flow.period_in,
     period_out: flow.period_out,
+    period_net: flow.period_in - flow.period_out,
     balance: stock.reduce((s, p) => s + p.balance, 0),
+    deficit_total: stock.reduce((s, p) => s + p.deficit, 0),
+    deficit_count: stock.filter(p => p.negative).length,
+    period_deficit_count: stock.filter(p => p.period_net < 0).length,
     low_count: stock.filter(p => p.low).length,
     period_return: deposit.reduce((s, d) => s + d.period_return, 0),
     outstanding: deposit.reduce((s, d) => s + d.outstanding, 0),

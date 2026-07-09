@@ -141,6 +141,26 @@ export function createMovementsBatchWithAllocations(plans) {
   })
   return tx(plans)
 }
+
+export function addMovementAllocations(rows) {
+  if (!rows?.length) return 0
+  const db = getDB()
+  const stmt = db.prepare(`
+    INSERT INTO water_movement_allocations(out_movement_id, in_movement_id, qty_base)
+    VALUES(@out_movement_id, @in_movement_id, @qty_base)
+    ON CONFLICT(out_movement_id, in_movement_id)
+    DO UPDATE SET qty_base = water_movement_allocations.qty_base + excluded.qty_base
+  `)
+  const tx = db.transaction((list) => {
+    let count = 0
+    for (const r of list) {
+      stmt.run(r)
+      count += 1
+    }
+    return count
+  })
+  return tx(rows)
+}
 export function deleteMovement(id) {
   return getDB().prepare('DELETE FROM water_movements WHERE id=?').run(id).changes > 0
 }
@@ -186,10 +206,28 @@ export function openIntakeLots(productId, { releaseOutMovementId } = {}) {
   `).all(...params)
 }
 
+export function openDistributionNeeds(productId) {
+  const params = []
+  let where = "mv.type='out'"
+  if (productId) { where += ' AND mv.product_id=?'; params.push(productId) }
+  return getDB().prepare(`
+    SELECT mv.id, mv.product_id, mv.move_date, mv.qty_base,
+           COALESCE(SUM(wa.qty_base), 0) AS allocated_base,
+           mv.qty_base - COALESCE(SUM(wa.qty_base), 0) AS unallocated_base
+    FROM water_movements mv
+    LEFT JOIN water_movement_allocations wa ON wa.out_movement_id = mv.id
+    WHERE ${where}
+    GROUP BY mv.id
+    HAVING unallocated_base > 0
+    ORDER BY mv.move_date ASC, mv.id ASC
+  `).all(...params)
+}
+
 export function listMovements({ type, product_id, zone_id, from, to, limit = 200 } = {}) {
   let q = `
     SELECT mv.*, p.name AS product_name, p.unit_label, p.units_per_case, p.cases_per_pallet,
-           z.name AS zone_name,
+           p.brand_id, b.name AS brand_name, z.name AS zone_name,
+           u.full_name AS created_by_name, u.username AS created_by_username,
            (
              SELECT GROUP_CONCAT(COALESCE(src.waybill_no, 'GİRİŞ #' || src.id) || ': ' || wa.qty_base, ', ')
              FROM water_movement_allocations wa
@@ -206,14 +244,21 @@ export function listMovements({ type, product_id, zone_id, from, to, limit = 200
              FROM water_movement_allocations wa
              WHERE wa.in_movement_id = mv.id
            ) AS intake_allocated_base,
-           CASE WHEN mv.type='in' THEN mv.qty_base - (
-             SELECT COALESCE(SUM(wa.qty_base), 0)
-             FROM water_movement_allocations wa
-             WHERE wa.in_movement_id = mv.id
-           ) ELSE NULL END AS remaining_base
+            CASE WHEN mv.type='in' THEN mv.qty_base - (
+              SELECT COALESCE(SUM(wa.qty_base), 0)
+              FROM water_movement_allocations wa
+              WHERE wa.in_movement_id = mv.id
+            ) ELSE NULL END AS remaining_base,
+            CASE WHEN mv.type='out' THEN mv.qty_base - (
+              SELECT COALESCE(SUM(wa.qty_base), 0)
+              FROM water_movement_allocations wa
+              WHERE wa.out_movement_id = mv.id
+            ) ELSE NULL END AS unallocated_base
     FROM water_movements mv
     JOIN water_products p ON p.id = mv.product_id
+    LEFT JOIN water_brands b ON b.id = p.brand_id
     LEFT JOIN water_zones z ON z.id = mv.zone_id
+    LEFT JOIN users u ON u.id = mv.created_by
     WHERE 1=1
   `
   const params = []
@@ -232,13 +277,15 @@ export function listMovements({ type, product_id, zone_id, from, to, limit = 200
 export function stockByProduct() {
   return getDB().prepare(`
     SELECT p.id, p.name, p.unit_label, p.units_per_case, p.cases_per_pallet, p.min_level,
+      p.brand_id, b.name AS brand_name,
       COALESCE(SUM(CASE WHEN mv.type='in'  THEN mv.qty_base END), 0) AS total_in,
       COALESCE(SUM(CASE WHEN mv.type='out' THEN mv.qty_base END), 0) AS total_out
     FROM water_products p
+    LEFT JOIN water_brands b ON b.id = p.brand_id
     LEFT JOIN water_movements mv ON mv.product_id = p.id
     WHERE p.is_active = 1
     GROUP BY p.id
-    ORDER BY p.name
+    ORDER BY COALESCE(b.sort_order, 999), p.sort_order, p.name
   `).all()
 }
 
@@ -255,6 +302,26 @@ export function periodFlow({ from, to } = {}) {
     FROM water_movements ${where}
   `).get(...params)
   return r
+}
+
+export function productFlow({ from, to } = {}) {
+  const join = []
+  const params = []
+  if (from) { join.push('mv.move_date>=?'); params.push(from) }
+  if (to) { join.push('mv.move_date<=?'); params.push(to) }
+  const dateClause = join.length ? `AND ${join.join(' AND ')}` : ''
+  return getDB().prepare(`
+    SELECT p.id, p.name, p.unit_label, p.units_per_case, p.cases_per_pallet, p.min_level,
+      p.brand_id, b.name AS brand_name,
+      COALESCE(SUM(CASE WHEN mv.type='in' THEN mv.qty_base END), 0) AS period_in,
+      COALESCE(SUM(CASE WHEN mv.type='out' THEN mv.qty_base END), 0) AS period_out
+    FROM water_products p
+    LEFT JOIN water_brands b ON b.id = p.brand_id
+    LEFT JOIN water_movements mv ON mv.product_id = p.id ${dateClause}
+    WHERE p.is_active = 1
+    GROUP BY p.id
+    ORDER BY COALESCE(b.sort_order, 999), p.sort_order, p.name
+  `).all(...params)
 }
 
 export function zoneTotals({ from, to, product_id } = {}) {

@@ -26,6 +26,7 @@ describe('Su takip — çevrim mantığı', () => {
     expect(humanize(product, 869)).toBe('1 palet 2 koli 5 şişe')
     expect(humanize(product, 24)).toBe('2 koli')
     expect(humanize(product, 0)).toBe('0 şişe')
+    expect(humanize(product, -24)).toBe('-2 koli')
   })
 
   it('damacana (çevrimsiz) sade sayı verir', () => {
@@ -122,6 +123,7 @@ describe('Su takip — API', () => {
     expect(p.total_out).toBe(5)
     expect(p.balance).toBe(275)
     expect(p.balance_human).toBe('1 palet 135 koli')
+    expect(p.brand_name).toBeTruthy()
     expect(r.body.zones.some(z => z.zone_id === zoneId && z.total_out === 5)).toBe(true)
     expect(r.body.daily.length).toBeGreaterThanOrEqual(2)
     expect(r.body.totals.balance).toBe(275)
@@ -133,6 +135,9 @@ describe('Su takip — API', () => {
     expect(r.body[0].qty_human).toBe('5 koli')
     expect(r.body[0].zone_name).toBe('A Blok Yemekhane')
     expect(r.body[0].source_waybills).toContain('IRS-001')
+    expect(r.body[0].created_by_username).toBe('mudur')
+    const limited = await request(app).get('/api/water/movements?type=out&limit=1').set('Authorization', `Bearer ${managerToken}`)
+    expect(limited.body).toHaveLength(1)
   })
 
   it('giriş hareketinde irsaliye kalan stok döner', async () => {
@@ -263,11 +268,23 @@ describe('Su takip — toplu giriş + metinden dağıtım + düşük stok + ay s
     expect(alloc.total).toBe(4)
   })
 
-  it('stoktan fazla dağıtım irsaliye eşleşmesi olmadığı için reddedilir', async () => {
+  it('stoktan fazla dağıtım reddedilmez, eksi/bekleyen olarak kaydedilir ve sonra irsaliye ile kapanır', async () => {
     const r = await request(app).post('/api/water/distribute').set('Authorization', `Bearer ${managerToken}`)
       .send({ product_id: pDam, zone_id: zoneA, input_qty: 999, input_unit: 'adet', move_date: '2026-08-03' })
-    expect(r.status).toBe(409)
-    expect(r.body.error).toMatch(/stok yetersiz/)
+    expect(r.status).toBe(201)
+    const before = await request(app).get(`/api/water/movements?type=out&product_id=${pDam}&limit=1000`).set('Authorization', `Bearer ${managerToken}`)
+    const pending = before.body.find(x => x.id === r.body.id)
+    expect(pending.unallocated_base).toBeGreaterThan(0)
+    expect(pending.allocation_status).toBe('pending')
+
+    const inr = await request(app).post('/api/water/intake').set('Authorization', `Bearer ${managerToken}`)
+      .send({ product_id: pDam, input_qty: pending.unallocated_base, input_unit: 'adet', move_date: '2026-08-08', waybill_no: 'IRS-EKSI-KAPAT' })
+    expect(inr.status).toBe(201)
+    const after = await request(app).get(`/api/water/movements?type=out&product_id=${pDam}&limit=1000`).set('Authorization', `Bearer ${managerToken}`)
+    const matched = after.body.find(x => x.id === r.body.id)
+    expect(matched.unallocated_base).toBe(0)
+    expect(matched.allocation_status).toBe('matched')
+    expect(matched.source_waybills).toMatch(/IRS-EKSI-KAPAT/)
   })
 
   it('düşük stok — min eşik altına düşünce summary low=true', async () => {
@@ -294,6 +311,12 @@ describe('Su takip — toplu giriş + metinden dağıtım + düşük stok + ay s
       .set('Authorization', `Bearer ${managerToken}`)
     expect(r.body.totals.period_in).toBeGreaterThan(0)
     expect(r.body.totals.period_out).toBeGreaterThan(0)
+    expect(r.body.totals).toHaveProperty('period_net')
+    expect(r.body.totals).toHaveProperty('deficit_total')
+    const dam = r.body.stock.find(s => s.product_id === pDam)
+    expect(dam).toHaveProperty('period_in')
+    expect(dam).toHaveProperty('period_out')
+    expect(dam).toHaveProperty('period_net_human')
   })
 })
 
