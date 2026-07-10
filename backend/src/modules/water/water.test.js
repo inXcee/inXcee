@@ -734,3 +734,33 @@ describe('Su takip — Hızlı Giriş Şablonları (W5)', () => {
     expect(r.status).toBe(403)
   })
 })
+
+describe('Su takip — Çok-satırlı irsaliye + bekleyen kapanışı (W6)', () => {
+  let pA, pB, zone
+  const auth = (r) => r.set('Authorization', `Bearer ${managerToken}`)
+
+  beforeAll(async () => {
+    pA = (await auth(request(app).post('/api/water/products')).send({ name: 'W6 Ürün A', unit_label: 'adet', units_per_case: 1, cases_per_pallet: 1 })).body.id
+    pB = (await auth(request(app).post('/api/water/products')).send({ name: 'W6 Ürün B', unit_label: 'adet', units_per_case: 1, cases_per_pallet: 1 })).body.id
+    zone = (await auth(request(app).post('/api/water/zones')).send({ name: 'W6 Bölge' })).body.id
+    // pA için bekleyen dağıtım (girişsiz)
+    await auth(request(app).post('/api/water/distribute')).send({ product_id: pA, zone_id: zone, input_qty: 10, input_unit: 'adet', move_date: '2026-11-01' })
+  })
+
+  it('toplu irsaliye 2 ürün kaydeder ve bekleyeni eşleştirir (matched döner)', async () => {
+    const r = await auth(request(app).post('/api/water/intake/batch')).send({
+      move_date: '2026-11-03', waybill_no: 'W6-IRS',
+      lines: [
+        { product_id: pA, input_qty: 10, input_unit: 'adet' },
+        { product_id: pB, input_qty: 5, input_unit: 'adet' },
+      ],
+    })
+    expect(r.status).toBe(201)
+    expect(r.body.count).toBe(2)
+    expect(r.body.matched).toBeGreaterThanOrEqual(1) // pA bekleyeni eşleşti
+
+    // pA artık bekleyenler listesinde değil
+    const pending = await auth(request(app).get('/api/water/pending?today=2026-11-05'))
+    expect(pending.body.rows.some(x => x.product_name === 'W6 Ürün A')).toBe(false)
+  })
+})

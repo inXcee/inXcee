@@ -91,9 +91,9 @@ waterRouter.post('/intake', ...mgr, (req, res) => {
 // Toplu giriş (tek irsaliye, çok ürün)
 waterRouter.post('/intake/batch', ...mgr, (req, res) => {
   try {
-    const ids = batchIntakeService(req.body, req.user.id)
+    const { ids, matched } = batchIntakeService(req.body, req.user.id)
     logAudit(req.user.id, 'water_intake_batch', 'water', null, `irsaliye:${req.body.waybill_no || '-'} ${ids.length} satır`)
-    res.status(201).json({ ids, count: ids.length })
+    res.status(201).json({ ids, count: ids.length, matched, warning: monthLockWarning(req.body.move_date) })
   } catch (e) { fail(res, e) }
 })
 

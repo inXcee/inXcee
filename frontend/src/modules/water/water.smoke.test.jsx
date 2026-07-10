@@ -130,6 +130,8 @@ describe('WaterPage tek-ekran pano smoke', () => {
   it('gelen tır ve boş iade panelleri render olur', async () => {
     renderWithProviders(<WaterPage />)
     expect(await screen.findByText(/GELEN TIR/)).toBeInTheDocument()
+    expect(screen.getByText('+ Ürün satırı')).toBeInTheDocument() // W6 çok-satırlı form
+    expect(screen.getByText(/İrsaliyeyi Kaydet/)).toBeInTheDocument()
     expect(screen.getByText('BOŞ İADE — DEPOZİTO')).toBeInTheDocument()
     // depozito kartı (dolaşımda 90)
     expect((await screen.findAllByText('90')).length).toBeGreaterThan(0)

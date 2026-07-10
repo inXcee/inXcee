@@ -296,12 +296,12 @@ export function batchIntakeService(data, userId) {
     return {
       type: 'in', product_id: product.id, zone_id: null, move_date: data.move_date,
       qty_base: toBase(product, qty, l.input_unit), input_qty: qty, input_unit: l.input_unit,
-      waybill_no: data.waybill_no?.trim() || null, note: data.note?.trim() || null, created_by: userId || null,
+      waybill_no: data.waybill_no?.trim() || null, note: (l.note || data.note)?.trim() || null, created_by: userId || null,
     }
   })
   const ids = q.createMovementsBatch(rows)
-  reconcileUnallocatedOut(rows.map(r => r.product_id))
-  return ids
+  const matched = reconcileUnallocatedOut(rows.map(r => r.product_id))
+  return { ids, matched }
 }
 
 export function movementsService(filters) {

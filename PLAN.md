@@ -379,8 +379,11 @@ Amaç: su takibini kayıt tablosundan → günlük dağıtım + irsaliye + eksi 
 - [x] SettingsModal'a 🗂 Şablonlar sekmesi (TemplatesTab) — oluştur (ad + dinamik satırlar) / listele / sil
 - [x] +4 backend test (66/66 water, 1397/1397 tüm suite) + 1 frontend smoke (9/9), build temiz
 
-### Faz W6 — İrsaliye Girişini Çok-Satırlı Pratikleştirme
-- [ ] Gelen tır paneli Excel-benzeri çok satırlı (irsaliye no/tarih/marka üstte tek kez, altında ürün satırları); kayıtta bekleyen eksi dağıtımlar otomatik kapanır + sonuç özeti
+### Faz W6 — İrsaliye Girişini Çok-Satırlı Pratikleştirme ✅
+- [x] GelenTirPanel çok-satırlı: irsaliye no + tarih üstte tek kez; altında N ürün satırı (ürün/miktar/birim/hesaplanan-canlı/not); + Ürün satırı / ✕ sil
+- [x] `POST /intake/batch` ile tek kayıt (mevcut transaction) — satır bazlı not desteği eklendi; kayıtta mevcut FIFO reconcile bekleyenleri kapatır
+- [x] Sonuç özeti: "N ürün kaydedildi · M bekleyen dağıtım eşleşti" (batch yanıtına `matched` eklendi) + pending/alerts query invalidate
+- [x] +1 backend test (67/67 water, 1398/1398 tüm suite), frontend smoke güncellendi (9/9), build temiz
 
 ### Faz W7 — Stok Düzeltme / Sayım Fişi (adjustment)
 - [ ] `water_movements.type` genişlet: in/out/adjustment; `POST /api/water/adjustments` (ürün, miktar, yön, tarih, sebep, not); raporda ayrı Düzeltme kolonu; audit log

@@ -2017,53 +2017,76 @@ function GelenTirPanel({ from, to, label, stockItems = [] }) {
     return [...m.values()].sort((a, b) => b.base - a.base)
   }, [intakes])
 
-  const [form, setForm] = useState({ product_id: '', input_qty: '', input_unit: 'palet', move_date: todayStr(), waybill_no: '' })
-  const selected = products.find(p => String(p.id) === String(form.product_id))
-  const intakeCalc = smartQty(form.input_qty, selected, form.input_unit)
+  // Çok-satırlı irsaliye: üstte irsaliye no + tarih tek kez, altında N ürün satırı
+  const [waybill, setWaybill] = useState('')
+  const [date, setDate] = useState(todayStr())
+  const blankRow = { product_id: '', input_qty: '', input_unit: 'palet', note: '' }
+  const [rows, setRows] = useState([{ ...blankRow }])
 
-  const save = useMutation({
-    mutationFn: (payload) => api.post('/water/intake', payload),
-    onSuccess: () => {
+  const saveBatch = useMutation({
+    mutationFn: (payload) => api.post('/water/intake/batch', payload),
+    onSuccess: (r) => {
       qc.invalidateQueries({ queryKey: ['water-intake'] }); qc.invalidateQueries({ queryKey: ['water-summary'] })
-      toastOk('Gelen tır kaydedildi'); setForm(f => ({ ...f, input_qty: '' }))
+      qc.invalidateQueries({ queryKey: ['water-pending'] }); qc.invalidateQueries({ queryKey: ['water-alerts'] })
+      const m = r.data.matched ? ` · ${r.data.matched} bekleyen dağıtım eşleşti ✓` : ''
+      toastOk(`${r.data.count} ürün kaydedildi${m}`)
+      setRows([{ ...blankRow }]); setWaybill('')
     },
     onError: (e) => toastErr(errMsg(e, 'Kaydedilemedi')),
   })
+  const updRow = (i, patch) => setRows(rs => rs.map((r, idx) => idx === i ? { ...r, ...patch } : r))
+  const addRow = () => setRows(rs => [...rs, { ...blankRow }])
+  const rmRow = (i) => setRows(rs => rs.length > 1 ? rs.filter((_, idx) => idx !== i) : rs)
+  const rowCalc = (r) => smartQty(r.input_qty, products.find(p => String(p.id) === String(r.product_id)), r.input_unit)
+  const validRows = rows.filter(r => r.product_id && rowCalc(r).valid)
   const submit = () => {
-    if (!form.product_id) return toastErr('Ürün seçin')
-    if (!intakeCalc.valid) return toastErr('Miktar girin')
-    save.mutate({
-      product_id: +form.product_id,
-      input_qty: intakeCalc.input_qty,
-      input_unit: intakeCalc.input_unit,
-      move_date: form.move_date,
-      waybill_no: form.waybill_no.trim() || undefined,
+    if (validRows.length === 0) return toastErr('En az bir geçerli ürün satırı girin')
+    saveBatch.mutate({
+      move_date: date, waybill_no: waybill.trim() || undefined,
+      lines: validRows.map(r => { const c = rowCalc(r); return { product_id: +r.product_id, input_qty: c.input_qty, input_unit: c.input_unit, note: r.note?.trim() || undefined } }),
     })
   }
 
   return (
     <div className="panel" style={{ borderTop: '3px solid var(--green)' }}>
-      <div className="panel-header"><div><div className="panel-title">GELEN TIR / İRSALİYE — {label}</div><div className="panel-subtitle">Giriş kaydı, otomatik palet çarpanı ve anlık stok</div></div></div>
+      <div className="panel-header"><div><div className="panel-title">GELEN TIR / İRSALİYE — {label}</div><div className="panel-subtitle">Çok satırlı irsaliye — tek no/tarih, N ürün; kayıtta bekleyen dağıtımlar otomatik kapanır</div></div></div>
       <div className="panel-body" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.05fr) minmax(260px, .95fr)', gap: '14px' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1.4fr .8fr .8fr .8fr auto', gap: '6px', alignItems: 'end' }}>
-            <select className="form-select" value={form.product_id} onChange={e => {
-              const p = products.find(x => String(x.id) === e.target.value)
-              const preferred = availableUnitsForProduct(p).includes('palet') ? 'palet' : defaultUnitForProduct(p)
-              setForm(f => ({ ...f, product_id: e.target.value, input_unit: preferred }))
-            }}>
-              <option value="">Ürün…</option>
-              {products.map(p => <option key={p.id} value={p.id}>{p.brand_name ? `${p.brand_name} · ` : ''}{p.name}</option>)}
-            </select>
-            <input type="text" inputMode="decimal" className="form-input" placeholder="Miktar / 3p" value={form.input_qty} onChange={e => setForm(f => ({ ...f, input_qty: e.target.value }))} />
-            <select className="form-select" value={coerceUnitForProduct(form.input_unit, selected)} onChange={e => setForm(f => ({ ...f, input_unit: e.target.value }))}>
-              {unitOptionsForProduct(selected).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-            </select>
-            <input className="form-input" placeholder="İrsaliye no" value={form.waybill_no} onChange={e => setForm(f => ({ ...f, waybill_no: e.target.value }))} />
-            <button className="btn btn-primary btn-sm" onClick={submit} disabled={save.isPending}>Ekle</button>
+          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'end' }}>
+            <div style={{ flex: 1, minWidth: '140px' }}><label className="form-label">İrsaliye no</label><input className="form-input" placeholder="Ör. IRS-2026-045" value={waybill} onChange={e => setWaybill(e.target.value)} /></div>
+            <div style={{ width: '150px' }}><label className="form-label">Tarih</label><input type="date" className="form-input" value={date} onChange={e => setDate(e.target.value)} /></div>
           </div>
-          <div style={{ minHeight: '24px', fontSize: '11px', color: intakeCalc.valid ? 'var(--green)' : 'var(--text3)', border: '1px dashed var(--border)', borderRadius: '8px', padding: '6px 8px', background: 'var(--surface2)' }}>
-            {intakeCalc.valid ? calcText(selected, intakeCalc) : 'Ürün + miktar girince palet/koli karşılığı burada görünür.'}
+          <div style={{ border: '1px solid var(--border)', borderRadius: '8px', overflow: 'hidden' }}>
+            <table className="data-table" style={{ fontSize: '11px', width: '100%' }}>
+              <thead><tr><th>Ürün</th><th style={{ width: '78px' }}>Miktar</th><th style={{ width: '82px' }}>Birim</th><th style={{ width: '110px' }}>Hesaplanan</th><th>Not</th><th style={{ width: '30px' }}></th></tr></thead>
+              <tbody>
+                {rows.map((r, i) => {
+                  const p = products.find(x => String(x.id) === String(r.product_id))
+                  const calc = rowCalc(r)
+                  return (
+                    <tr key={i}>
+                      <td><select className="form-select" style={{ fontSize: '11px', minWidth: '150px' }} value={r.product_id} onChange={e => {
+                        const np = products.find(x => String(x.id) === e.target.value)
+                        const preferred = availableUnitsForProduct(np).includes('palet') ? 'palet' : defaultUnitForProduct(np)
+                        updRow(i, { product_id: e.target.value, input_unit: preferred })
+                      }}>
+                        <option value="">Ürün…</option>
+                        {products.map(pp => <option key={pp.id} value={pp.id}>{pp.brand_name ? `${pp.brand_name} · ` : ''}{pp.name}</option>)}
+                      </select></td>
+                      <td><input type="text" inputMode="decimal" className="form-input" style={{ fontSize: '11px' }} placeholder="3 / 3p" value={r.input_qty} onChange={e => updRow(i, { input_qty: e.target.value })} /></td>
+                      <td><select className="form-select" style={{ fontSize: '11px' }} value={coerceUnitForProduct(r.input_unit, p)} onChange={e => updRow(i, { input_unit: e.target.value })}>{unitOptionsForProduct(p).map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></td>
+                      <td style={{ fontFamily: 'var(--mono)', color: calc.valid ? 'var(--green)' : 'var(--text3)' }}>{calc.valid ? nf(calc.base) : '·'}</td>
+                      <td><input className="form-input" style={{ fontSize: '11px' }} placeholder="opsiyonel" value={r.note} onChange={e => updRow(i, { note: e.target.value })} /></td>
+                      <td style={{ textAlign: 'center' }}>{rows.length > 1 && <button type="button" onClick={() => rmRow(i)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--red)' }}>✕</button>}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={addRow}>+ Ürün satırı</button>
+            <button className="btn btn-primary btn-sm" onClick={submit} disabled={saveBatch.isPending || validRows.length === 0} style={{ marginLeft: 'auto' }}>{saveBatch.isPending ? 'Kaydediliyor…' : `İrsaliyeyi Kaydet (${validRows.length} ürün)`}</button>
           </div>
           <div style={{ border: '1px solid var(--border)', borderRadius: '8px', overflow: 'auto', maxHeight: '280px' }}>
             <table className="data-table" style={{ fontSize: '11px' }}>
