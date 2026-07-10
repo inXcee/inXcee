@@ -324,6 +324,43 @@ export function productFlow({ from, to } = {}) {
   `).all(...params)
 }
 
+// ── Hızlı giriş şablonları (W5) ──
+export function getTemplateByName(name) {
+  return getDB().prepare('SELECT * FROM water_templates WHERE name=?').get(name)
+}
+export function listTemplates() {
+  const templates = getDB().prepare('SELECT * FROM water_templates ORDER BY name').all()
+  const lines = getDB().prepare(`
+    SELECT l.*, z.name AS zone_name, p.name AS product_name, p.unit_label
+    FROM water_template_lines l
+    JOIN water_zones z ON z.id = l.zone_id
+    JOIN water_products p ON p.id = l.product_id
+    ORDER BY l.id
+  `).all()
+  const byTpl = new Map()
+  for (const l of lines) { if (!byTpl.has(l.template_id)) byTpl.set(l.template_id, []); byTpl.get(l.template_id).push(l) }
+  return templates.map(t => ({ ...t, lines: byTpl.get(t.id) || [] }))
+}
+export function createTemplate({ name, created_by, lines }) {
+  const db = getDB()
+  const insTpl = db.prepare('INSERT INTO water_templates(name, created_by) VALUES(?,?)')
+  const insLine = db.prepare('INSERT INTO water_template_lines(template_id, zone_id, product_id, default_qty, default_unit) VALUES(?,?,?,?,?)')
+  const tx = db.transaction(() => {
+    const id = insTpl.run(name, created_by || null).lastInsertRowid
+    for (const l of lines) insLine.run(id, l.zone_id, l.product_id, l.default_qty ?? null, l.default_unit || 'adet')
+    return id
+  })
+  return tx()
+}
+export function deleteTemplate(id) {
+  const db = getDB()
+  const tx = db.transaction(() => {
+    db.prepare('DELETE FROM water_template_lines WHERE template_id=?').run(id)
+    return db.prepare('DELETE FROM water_templates WHERE id=?').run(id).changes > 0
+  })
+  return tx()
+}
+
 // İrsaliye bekleyen (eşleşmemiş) tüm dağıtımlar — detaylı liste (W3)
 export function pendingDistributions() {
   return getDB().prepare(`

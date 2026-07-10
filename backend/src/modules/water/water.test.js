@@ -685,3 +685,52 @@ describe('Su takip — Dağıtım yeri beklenen tüketim (W4)', () => {
     expect(zone.expected_monthly).toBe(0)
   })
 })
+
+describe('Su takip — Hızlı Giriş Şablonları (W5)', () => {
+  let pId, zId
+  const auth = (r) => r.set('Authorization', `Bearer ${managerToken}`)
+
+  beforeAll(async () => {
+    pId = (await auth(request(app).post('/api/water/products')).send({ name: 'SABLON Su 1L', unit_label: 'adet', units_per_case: 1, cases_per_pallet: 1 })).body.id
+    zId = (await auth(request(app).post('/api/water/zones')).send({ name: 'SABLON Bölge' })).body.id
+  })
+
+  it('şablon oluşturulur ve satırlarıyla listelenir', async () => {
+    const r = await auth(request(app).post('/api/water/templates')).send({
+      name: 'FPU Yemekhane Rutin',
+      lines: [{ zone_id: zId, product_id: pId, default_qty: 5, default_unit: 'adet' }],
+    })
+    expect(r.status).toBe(201)
+    const list = (await auth(request(app).get('/api/water/templates'))).body
+    const tpl = list.find(t => t.name === 'FPU Yemekhane Rutin')
+    expect(tpl).toBeTruthy()
+    expect(tpl.lines).toHaveLength(1)
+    expect(tpl.lines[0].zone_name).toBe('SABLON Bölge')
+    expect(tpl.lines[0].product_name).toBe('SABLON Su 1L')
+    expect(tpl.lines[0].default_qty).toBe(5)
+  })
+
+  it('aynı isim 409, satırsız 400, geçersiz ürün 400', async () => {
+    const dup = await auth(request(app).post('/api/water/templates')).send({ name: 'FPU Yemekhane Rutin', lines: [{ zone_id: zId, product_id: pId }] })
+    expect(dup.status).toBe(409)
+    const empty = await auth(request(app).post('/api/water/templates')).send({ name: 'Boş Şablon', lines: [] })
+    expect(empty.status).toBe(400)
+    const badP = await auth(request(app).post('/api/water/templates')).send({ name: 'Kötü Şablon', lines: [{ zone_id: zId, product_id: 999999 }] })
+    expect(badP.status).toBe(400)
+  })
+
+  it('şablon silinir (satırları da gider)', async () => {
+    const created = await auth(request(app).post('/api/water/templates')).send({ name: 'Silinecek Şablon', lines: [{ zone_id: zId, product_id: pId, default_qty: 2, default_unit: 'adet' }] })
+    const del = await auth(request(app).delete(`/api/water/templates/${created.body.id}`))
+    expect(del.status).toBe(200)
+    const list = (await auth(request(app).get('/api/water/templates'))).body
+    expect(list.some(t => t.id === created.body.id)).toBe(false)
+    const lines = getDB().prepare('SELECT COUNT(*) c FROM water_template_lines WHERE template_id=?').get(created.body.id)
+    expect(lines.c).toBe(0)
+  })
+
+  it('yetkisiz rol erişemez (403)', async () => {
+    const r = await request(app).get('/api/water/templates').set('Authorization', `Bearer ${laundryToken}`)
+    expect(r.status).toBe(403)
+  })
+})

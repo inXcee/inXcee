@@ -11,6 +11,7 @@ import {
   summaryService, pivotService, batchIntakeService, batchDistributeService, parseDistributionText,
   alertsService, reconciliationService, saveStockCountService, monthlyCloseService, monthlyUnlockService,
   monthLockWarning, pendingDistributionsService,
+  templatesService, createTemplateService, deleteTemplateService,
 } from './service.js'
 
 export const waterRouter = Router()
@@ -167,6 +168,21 @@ waterRouter.get('/pivot', ...mgr, (req, res) => {
 // ── Operasyon Uyarı Merkezi ("Bugün Yapılacaklar") ──
 waterRouter.get('/alerts', ...mgr, (req, res) => {
   try { res.json(alertsService({ today: req.query.today })) } catch (e) { logger.error('[water]', e); fail(res, e) }
+})
+
+// ── Hızlı giriş şablonları ──
+waterRouter.get('/templates', ...mgr, (req, res) => {
+  try { res.json(templatesService()) } catch (e) { logger.error('[water]', e); fail(res, e) }
+})
+waterRouter.post('/templates', ...mgr, (req, res) => {
+  try {
+    const id = createTemplateService(req.body, req.user.id)
+    logAudit(req.user.id, 'water_template_create', 'water', id, req.body.name)
+    res.status(201).json({ id })
+  } catch (e) { fail(res, e) }
+})
+waterRouter.delete('/templates/:id', ...mgr, (req, res) => {
+  try { deleteTemplateService(+req.params.id); res.json({ ok: true }) } catch (e) { fail(res, e) }
 })
 
 // ── İrsaliye Bekleyenler ──

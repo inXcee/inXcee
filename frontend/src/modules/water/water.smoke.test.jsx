@@ -62,6 +62,9 @@ vi.mock('../../shared/api/client.js', () => ({
       if (url === '/water/zones') return Promise.resolve({ data: [{ id: 1, name: 'OTC Kamp Alanı', code: 'OTC' }] })
       if (url === '/water/returns') return Promise.resolve({ data: [] })
       if (url === '/water/brands') return Promise.resolve({ data: [{ id: 1, name: 'MİLA SU' }] })
+      if (url === '/water/templates') return Promise.resolve({ data: [
+        { id: 1, name: 'FPU Rutin', lines: [{ id: 1, template_id: 1, zone_id: 1, product_id: 1, default_qty: 5, default_unit: 'adet', zone_name: 'OTC Kamp Alanı', product_name: 'Damacana', unit_label: 'damacana' }] },
+      ] })
       if (url === '/water/pending') return Promise.resolve({ data: {
         date: '2026-07-09',
         rows: [{ movement_id: 9, move_date: '2026-07-03', zone_name: 'OTC Kamp Alanı', product_name: 'Damacana', brand_name: 'MİLA SU',
@@ -159,6 +162,15 @@ describe('WaterPage tek-ekran pano smoke', () => {
     expect(await within(panel).findByText('OTC Kamp Alanı')).toBeInTheDocument()
     expect(within(panel).getByText('6g')).toBeInTheDocument() // 6 gündür bekliyor
     expect(within(panel).getByText('IRS-1: 5')).toBeInTheDocument() // kısmi eşleşen irsaliye
+  })
+
+  it('şablon seçici board’da görünür ve Ayarlar şablon sekmesi listeler', async () => {
+    renderWithProviders(<WaterPage />)
+    expect(await screen.findByLabelText('Şablon uygula')).toBeInTheDocument() // board header select
+    fireEvent.click(await screen.findByText('⚙ Ayarlar'))
+    fireEvent.click(await screen.findByText('🗂 Şablonlar'))
+    // şablon kartındaki benzersiz satır çipi (board option'ıyla çakışmaz)
+    expect(await screen.findByText(/OTC Kamp Alanı · Damacana · 5 adet/)).toBeInTheDocument()
   })
 
   it('Ayarlar modalı dağıtım yerlerini açar, Metinden modalı açılır', async () => {

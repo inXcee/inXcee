@@ -626,6 +626,34 @@ export function alertsService({ today } = {}) {
   return { date: day, month, summary, pending_waybill, negative_stock, over_distributed, low_stock, idle_zones }
 }
 
+// ── Hızlı giriş şablonları (W5) ──
+export function templatesService() { return q.listTemplates() }
+
+export function createTemplateService(data, userId) {
+  const name = data?.name?.trim()
+  if (!name) throw Object.assign(new Error('Şablon adı gerekli'), { statusCode: 400 })
+  if (q.getTemplateByName(name)) throw Object.assign(new Error('Bu şablon zaten var'), { statusCode: 409 })
+  const rawLines = Array.isArray(data.lines) ? data.lines : []
+  const lines = []
+  for (const l of rawLines) {
+    const product = q.getProduct(l.product_id)
+    if (!product) throw Object.assign(new Error('Ürün bulunamadı'), { statusCode: 400 })
+    if (!q.getZone(l.zone_id)) throw Object.assign(new Error('Bölge bulunamadı'), { statusCode: 400 })
+    const unit = l.default_unit || 'adet'
+    if (!INPUT_UNITS.includes(unit)) throw Object.assign(new Error('Geçersiz birim'), { statusCode: 400 })
+    assertAvailableUnit(product, unit)
+    const qty = l.default_qty == null || l.default_qty === '' ? null : Number(l.default_qty)
+    if (qty != null && (!Number.isFinite(qty) || qty < 0)) throw Object.assign(new Error('Varsayılan miktar geçersiz'), { statusCode: 400 })
+    lines.push({ zone_id: l.zone_id, product_id: product.id, default_qty: qty, default_unit: unit })
+  }
+  if (lines.length === 0) throw Object.assign(new Error('En az bir satır gerekli'), { statusCode: 400 })
+  return q.createTemplate({ name, created_by: userId || null, lines })
+}
+
+export function deleteTemplateService(id) {
+  if (!q.deleteTemplate(id)) throw Object.assign(new Error('Şablon bulunamadı'), { statusCode: 404 })
+}
+
 // ── İrsaliye Bekleyenler (eşleşmemiş dağıtımlar) ──
 export function pendingDistributionsService({ today } = {}) {
   const day = /^\d{4}-\d{2}-\d{2}$/.test(today || '') ? today : new Date().toLocaleDateString('sv-SE')

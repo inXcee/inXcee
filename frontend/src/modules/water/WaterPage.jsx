@@ -350,6 +350,11 @@ function WaterBoard({ from, to, label, lowItems }) {
     queryFn: () => api.get('/water/movements', { params: { type: 'out', from: day, to: day } }).then(r => r.data),
   })
 
+  const { data: templates = [] } = useQuery({
+    queryKey: ['water-templates'],
+    queryFn: () => api.get('/water/templates').then(r => r.data),
+  })
+
   const columnsById = useMemo(() => new Map((pivot?.columns || []).map(c => [c.product_id, c])), [pivot])
   const brandColor = useMemo(() => {
     const map = new Map()
@@ -498,6 +503,24 @@ function WaterBoard({ from, to, label, lowItems }) {
     const next = {}
     orderedCols.forEach(c => { next[c.product_id] = coerceUnitForProduct(unit, c) })
     setProductUnits(next)
+  }
+
+  // Şablon uygula: hücreleri varsayılan miktarla doldur + ürün birimini şablona ayarla
+  const applyTemplate = (tplId) => {
+    const tpl = templates.find(t => t.id === +tplId)
+    if (!tpl) return
+    setProductUnits(prev => {
+      const next = { ...prev }
+      tpl.lines.forEach(l => { next[l.product_id] = coerceUnitForProduct(l.default_unit, columnsById.get(l.product_id) || {}) })
+      return next
+    })
+    setCells(prev => {
+      const next = { ...prev }
+      tpl.lines.forEach(l => { if (l.default_qty != null) next[cellKey(l.zone_id, l.product_id)] = String(l.default_qty) })
+      return next
+    })
+    const filled = tpl.lines.filter(l => l.default_qty != null).length
+    toastOk(`"${tpl.name}" uygulandı — ${filled}/${tpl.lines.length} hücre dolduruldu`)
   }
 
   const exportExcelLegacy = async () => {
@@ -781,6 +804,12 @@ function WaterBoard({ from, to, label, lowItems }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
           <span style={{ fontSize: '11px', color: 'var(--text3)' }}>Gün girişi:</span>
           <input type="date" className="form-input" min={from} max={to} value={day} onChange={e => setDay(e.target.value)} style={{ width: 'auto', fontSize: '12px' }} />
+          {templates.length > 0 && (
+            <select className="form-select" aria-label="Şablon uygula" value="" onChange={e => { if (e.target.value) applyTemplate(e.target.value) }} style={{ width: 'auto', fontSize: '12px' }}>
+              <option value="">🗂 Şablon…</option>
+              {templates.map(t => <option key={t.id} value={t.id}>{t.name} ({t.lines.length})</option>)}
+            </select>
+          )}
           <span style={{ width: '1px', height: '22px', background: 'var(--border)' }} />
           <span style={{ fontSize: '11px', color: 'var(--text3)' }}>Hücre birimi:</span>
           <button className="btn btn-ghost btn-sm" onClick={() => setAllInputUnits('default')}>Baz</button>
@@ -2190,11 +2219,11 @@ function SettingsModal({ onClose }) {
   return (
     <Modal title="AYARLAR" onClose={onClose} width="900px">
       <div style={{ display: 'flex', gap: '2px', marginBottom: '14px', background: 'var(--surface2)', borderRadius: '8px', padding: '2px', border: '1px solid var(--border)', width: 'fit-content' }}>
-        {[['firmalar', '📍 Dağıtım Yerleri'], ['urunler', '💧 Ürünler & Marka']].map(([id, l]) => (
+        {[['firmalar', '📍 Dağıtım Yerleri'], ['urunler', '💧 Ürünler & Marka'], ['sablonlar', '🗂 Şablonlar']].map(([id, l]) => (
           <button key={id} onClick={() => setTab(id)} style={{ border: 'none', borderRadius: '6px', padding: '6px 12px', fontSize: '11px', cursor: 'pointer', background: tab === id ? 'var(--accent)' : 'transparent', color: tab === id ? '#000' : 'var(--text3)' }}>{l}</button>
         ))}
       </div>
-      {tab === 'firmalar' ? <ZonesTab /> : <ProductsTab />}
+      {tab === 'firmalar' ? <ZonesTab /> : tab === 'urunler' ? <ProductsTab /> : <TemplatesTab />}
     </Modal>
   )
 }
@@ -2342,6 +2371,87 @@ function ZonesTab() {
             {zones.length === 0 && <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--text3)', padding: '16px' }}>Dağıtım yeri yok</td></tr>}
           </tbody>
         </table>
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────── HIZLI GİRİŞ ŞABLONLARI ───────────────────────────
+function TemplatesTab() {
+  const qc = useQueryClient()
+  const { data: templates = [] } = useQuery({ queryKey: ['water-templates'], queryFn: () => api.get('/water/templates').then(r => r.data) })
+  const { data: products = [] } = useQuery({ queryKey: ['water-products'], queryFn: () => api.get('/water/products').then(r => r.data) })
+  const { data: zones = [] } = useQuery({ queryKey: ['water-zones'], queryFn: () => api.get('/water/zones').then(r => r.data) })
+  const productsById = useMemo(() => new Map(products.map(p => [p.id, p])), [products])
+  const [name, setName] = useState('')
+  const [lines, setLines] = useState([])
+
+  const invalidate = () => qc.invalidateQueries({ queryKey: ['water-templates'] })
+  const create = useMutation({
+    mutationFn: () => api.post('/water/templates', {
+      name: name.trim(),
+      lines: lines.filter(l => l.zone_id && l.product_id).map(l => ({ zone_id: +l.zone_id, product_id: +l.product_id, default_qty: l.default_qty === '' ? null : +l.default_qty, default_unit: l.default_unit })),
+    }),
+    onSuccess: () => { invalidate(); setName(''); setLines([]); toastOk('Şablon kaydedildi') },
+    onError: (e) => toastErr(errMsg(e, 'Kaydedilemedi')),
+  })
+  const del = useMutation({ mutationFn: (id) => api.delete(`/water/templates/${id}`), onSuccess: () => { invalidate(); toastOk('Silindi') }, onError: (e) => toastErr(errMsg(e, 'Silinemedi')) })
+
+  const addLine = () => setLines(ls => [...ls, { zone_id: '', product_id: '', default_qty: '', default_unit: 'adet' }])
+  const updLine = (i, patch) => setLines(ls => ls.map((l, idx) => idx === i ? { ...l, ...patch } : l))
+  const rmLine = (i) => setLines(ls => ls.filter((_, idx) => idx !== i))
+  const validLines = lines.filter(l => l.zone_id && l.product_id).length
+
+  return (
+    <div>
+      <div style={{ border: '1px solid var(--border)', borderRadius: '8px', padding: '12px', marginBottom: '14px', background: 'var(--surface2)' }}>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', marginBottom: '10px' }}>
+          <div style={{ flex: 1 }}><label className="form-label">Şablon adı</label><input className="form-input" value={name} onChange={e => setName(e.target.value)} placeholder="Ör. FPU Yemekhane Rutin" /></div>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={addLine}>+ Satır</button>
+        </div>
+        {lines.map((l, i) => {
+          const prod = productsById.get(+l.product_id)
+          const unitOpts = prod ? unitOptionsForProduct(prod) : [['adet', 'Adet']]
+          return (
+            <div key={i} style={{ display: 'flex', gap: '6px', marginBottom: '6px', alignItems: 'center' }}>
+              <select className="form-select" style={{ flex: 1, fontSize: '11px' }} value={l.zone_id} onChange={e => updLine(i, { zone_id: e.target.value })}>
+                <option value="">Dağıtım yeri…</option>
+                {zones.map(z => <option key={z.id} value={z.id}>{z.name}</option>)}
+              </select>
+              <select className="form-select" style={{ flex: 1, fontSize: '11px' }} value={l.product_id} onChange={e => updLine(i, { product_id: e.target.value, default_unit: 'adet' })}>
+                <option value="">Ürün…</option>
+                {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+              <input type="number" min="0" className="form-input" style={{ width: '72px', fontSize: '11px' }} value={l.default_qty} onChange={e => updLine(i, { default_qty: e.target.value })} placeholder="miktar" />
+              <select className="form-select" style={{ width: '90px', fontSize: '11px' }} value={l.default_unit} onChange={e => updLine(i, { default_unit: e.target.value })}>
+                {unitOpts.map(([v, lab]) => <option key={v} value={v}>{lab}</option>)}
+              </select>
+              <button type="button" className="btn btn-danger btn-sm" onClick={() => rmLine(i)}>✕</button>
+            </div>
+          )
+        })}
+        {lines.length === 0 && <div style={{ fontSize: '11px', color: 'var(--text3)', padding: '6px 0' }}>Satır ekleyin (dağıtım yeri + ürün + varsayılan miktar/birim).</div>}
+        <button className="btn btn-primary btn-sm" style={{ marginTop: '8px' }} disabled={!name.trim() || validLines === 0 || create.isPending} onClick={() => create.mutate()}>{create.isPending ? 'Kaydediliyor…' : `Şablonu Kaydet (${validLines} satır)`}</button>
+      </div>
+
+      <div style={{ maxHeight: '38vh', overflowY: 'auto' }}>
+        {templates.map(t => (
+          <div key={t.id} style={{ border: '1px solid var(--border)', borderRadius: '8px', padding: '10px 12px', marginBottom: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontWeight: 700 }}>🗂 {t.name}</span>
+              <span style={{ fontSize: '11px', color: 'var(--text3)' }}>{t.lines.length} satır</span>
+              <button className="btn btn-danger btn-sm" style={{ marginLeft: 'auto' }} onClick={async () => { if (await confirmDialog({ title: 'Şablonu Sil', body: `"${t.name}" silinsin mi?`, danger: true })) del.mutate(t.id) }}>Sil</button>
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px', marginTop: '6px' }}>
+              {t.lines.map(l => (
+                <span key={l.id} style={{ fontSize: '10px', border: '1px solid var(--border)', background: 'var(--surface2)', borderRadius: '999px', padding: '2px 8px' }}>
+                  {l.zone_name} · {l.product_name}{l.default_qty != null ? ` · ${nf(l.default_qty)} ${l.default_unit}` : ''}
+                </span>
+              ))}
+            </div>
+          </div>
+        ))}
+        {templates.length === 0 && <div style={{ textAlign: 'center', color: 'var(--text3)', padding: '16px', fontSize: '12px' }}>Henüz şablon yok</div>}
       </div>
     </div>
   )

@@ -372,8 +372,12 @@ Amaç: su takibini kayıt tablosundan → günlük dağıtım + irsaliye + eksi 
 - [x] ZonesTab: form + satır içi düzenlenebilir "Beklenen/ay" alanı (mevcut bölgeler için de)
 - [x] +2 backend test (62/62 water, 1393/1393 tüm suite) + frontend smoke güncellendi (8/8), build temiz
 
-### Faz W5 — Hızlı Günlük Giriş Şablonları
-- [ ] `water_templates` (ad, satırlar: ürün+bölge+varsayılan birim); şablon seçince tabloya satırlar dolar, sadece miktar değişir
+### Faz W5 — Hızlı Günlük Giriş Şablonları ✅
+- [x] Migration 032: `water_templates` (ad) + `water_template_lines` (bölge×ürün×varsayılan miktar/birim, ON DELETE CASCADE)
+- [x] Backend: `GET/POST/DELETE /templates` — satır doğrulama (ürün/bölge/birim), aynı isim 409, satırsız 400
+- [x] WaterBoard header'da 🗂 Şablon seçici — seçince matris hücreleri varsayılan miktarla dolar + ürün birimi şablona ayarlanır (mevcut batch-save akışına entegre)
+- [x] SettingsModal'a 🗂 Şablonlar sekmesi (TemplatesTab) — oluştur (ad + dinamik satırlar) / listele / sil
+- [x] +4 backend test (66/66 water, 1397/1397 tüm suite) + 1 frontend smoke (9/9), build temiz
 
 ### Faz W6 — İrsaliye Girişini Çok-Satırlı Pratikleştirme
 - [ ] Gelen tır paneli Excel-benzeri çok satırlı (irsaliye no/tarih/marka üstte tek kez, altında ürün satırları); kayıtta bekleyen eksi dağıtımlar otomatik kapanır + sonuç özeti
