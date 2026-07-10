@@ -189,6 +189,15 @@ describe('WaterPage tek-ekran pano smoke', () => {
     useAuthStore.setState({ user: null })
   })
 
+  it('ürün ayarlarında kritik stok alanı ve marka renk seçici var', async () => {
+    renderWithProviders(<WaterPage />)
+    fireEvent.click(await screen.findByText('⚙ Ayarlar'))
+    fireEvent.click(await screen.findByText('💧 Ürünler & Marka'))
+    expect(await screen.findByText('MARKALAR (TEDARİKÇİ)')).toBeInTheDocument()
+    expect(await screen.findByLabelText('MİLA SU rengi')).toBeInTheDocument() // W8 marka renk seçici
+    expect(screen.getAllByText('Kritik').length).toBeGreaterThan(0) // W8 kritik stok
+  })
+
   it('Ayarlar modalı dağıtım yerlerini açar, Metinden modalı açılır', async () => {
     renderWithProviders(<WaterPage />)
     fireEvent.click(await screen.findByText('⚙ Ayarlar'))

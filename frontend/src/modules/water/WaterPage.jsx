@@ -361,7 +361,7 @@ function WaterBoard({ from, to, label, lowItems }) {
   const columnsById = useMemo(() => new Map((pivot?.columns || []).map(c => [c.product_id, c])), [pivot])
   const brandColor = useMemo(() => {
     const map = new Map()
-    ;(pivot?.brands || []).forEach((b, i) => map.set(brandKey(b.brand_id), BRAND_TINT[i % BRAND_TINT.length]))
+    ;(pivot?.brands || []).forEach((b, i) => map.set(brandKey(b.brand_id), b.color ? { bg: `${b.color}18`, fg: b.color } : BRAND_TINT[i % BRAND_TINT.length]))
     return map
   }, [pivot])
   const orderedCols = useMemo(
@@ -2570,7 +2570,7 @@ function TemplatesTab() {
 // ─────────────────────────── ÜRÜNLER + MARKA ───────────────────────────
 function ProductsTab() {
   const qc = useQueryClient()
-  const blank = { id: null, name: '', unit_label: 'adet', units_per_case: '1', cases_per_pallet: '1', min_qty: '', min_unit: 'adet', brand_id: '', is_returnable: false }
+  const blank = { id: null, name: '', unit_label: 'adet', units_per_case: '1', cases_per_pallet: '1', min_qty: '', crit_qty: '', min_unit: 'adet', brand_id: '', is_returnable: false, is_active: true }
   const [form, setForm] = useState(blank)
   const { data: products = [] } = useQuery({ queryKey: ['water-products-all'], queryFn: () => api.get('/water/products', { params: { all: 1 } }).then(r => r.data) })
   const { data: brands = [] } = useQuery({ queryKey: ['water-brands'], queryFn: () => api.get('/water/brands').then(r => r.data) })
@@ -2581,13 +2581,15 @@ function ProductsTab() {
     const productShape = { unit_label: form.unit_label, units_per_case: upc, cases_per_pallet: cpp }
     const minUnit = coerceUnitForProduct(form.min_unit, productShape)
     const mult = multiplier(productShape, minUnit)
-    return { name: form.name.trim(), unit_label: form.unit_label, units_per_case: upc, cases_per_pallet: cpp, min_level: Math.round((+form.min_qty || 0) * mult), brand_id: form.brand_id || null, is_returnable: form.is_returnable }
+    return { name: form.name.trim(), unit_label: form.unit_label, units_per_case: upc, cases_per_pallet: cpp, min_level: Math.round((+form.min_qty || 0) * mult), critical_level: Math.round((+form.crit_qty || 0) * mult), brand_id: form.brand_id || null, is_returnable: form.is_returnable, is_active: form.is_active }
   }
   const create = useMutation({ mutationFn: () => api.post('/water/products', payload()), onSuccess: () => { invalidate(); setForm(blank); toastOk('Ürün eklendi') }, onError: (e) => toastErr(errMsg(e, 'Eklenemedi')) })
   const update = useMutation({ mutationFn: () => api.put(`/water/products/${form.id}`, payload()), onSuccess: () => { invalidate(); setForm(blank); toastOk('Ürün güncellendi') }, onError: (e) => toastErr(errMsg(e, 'Güncellenemedi')) })
   const del = useMutation({ mutationFn: (id) => api.delete(`/water/products/${id}`), onSuccess: () => { invalidate(); toastOk('Silindi') }, onError: (e) => toastErr(errMsg(e, 'Silinemedi')) })
+  const patch = useMutation({ mutationFn: (p) => api.put(`/water/products/${p.id}`, p), onSuccess: () => { invalidate(); toastOk('Güncellendi') }, onError: (e) => toastErr(errMsg(e, 'Güncellenemedi')) })
 
-  const editProduct = (p) => setForm({ id: p.id, name: p.name, unit_label: p.unit_label, units_per_case: String(p.units_per_case), cases_per_pallet: String(p.cases_per_pallet), min_qty: p.min_level ? String(p.min_level) : '', min_unit: 'adet', brand_id: p.brand_id ? String(p.brand_id) : '', is_returnable: !!p.is_returnable })
+  const editProduct = (p) => setForm({ id: p.id, name: p.name, unit_label: p.unit_label, units_per_case: String(p.units_per_case), cases_per_pallet: String(p.cases_per_pallet), min_qty: p.min_level ? String(p.min_level) : '', crit_qty: p.critical_level ? String(p.critical_level) : '', min_unit: 'adet', brand_id: p.brand_id ? String(p.brand_id) : '', is_returnable: !!p.is_returnable, is_active: p.is_active !== 0 })
+  const toggleActive = (p) => patch.mutate({ id: p.id, name: p.name, unit_label: p.unit_label, units_per_case: p.units_per_case, cases_per_pallet: p.cases_per_pallet, min_level: p.min_level, critical_level: p.critical_level, brand_id: p.brand_id, is_returnable: p.is_returnable, is_active: p.is_active === 0 })
   const formPackage = { unit_label: form.unit_label, units_per_case: +form.units_per_case || 1, cases_per_pallet: +form.cases_per_pallet || 1 }
   const packageMode = baseUnitForProduct(formPackage) === 'paket' ? 'packPallet'
     : baseUnitForProduct(formPackage) === 'koli' ? 'casePallet'
@@ -2629,14 +2631,20 @@ function ProductsTab() {
         </div></div>
         <div style={{ width: '78px' }}><label className="form-label">Koli içi</label><input type="number" min="1" className="form-input" value={form.units_per_case} onChange={e => updatePackageNumber('units_per_case', e.target.value)} /></div>
         <div style={{ width: '86px' }}><label className="form-label">Palet çarp.</label><input type="number" min="1" className="form-input" value={form.cases_per_pallet} onChange={e => updatePackageNumber('cases_per_pallet', e.target.value)} /></div>
-        <div style={{ width: '76px' }}><label className="form-label">Min. stok</label><input type="number" min="0" className="form-input" value={form.min_qty} onChange={e => setForm(f => ({ ...f, min_qty: e.target.value }))} /></div>
-        <div style={{ width: '76px' }}><label className="form-label">Min. birim</label><select className="form-select" value={coerceUnitForProduct(form.min_unit, formPackage)} onChange={e => setForm(f => ({ ...f, min_unit: e.target.value }))}>{formUnitOptions.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
+        <div style={{ width: '72px' }}><label className="form-label">Min. stok</label><input type="number" min="0" className="form-input" value={form.min_qty} onChange={e => setForm(f => ({ ...f, min_qty: e.target.value }))} /></div>
+        <div style={{ width: '72px' }}><label className="form-label" title="Min’den düşük acil eşik">Kritik</label><input type="number" min="0" className="form-input" value={form.crit_qty} onChange={e => setForm(f => ({ ...f, crit_qty: e.target.value }))} /></div>
+        <div style={{ width: '72px' }}><label className="form-label">Min. birim</label><select className="form-select" value={coerceUnitForProduct(form.min_unit, formPackage)} onChange={e => setForm(f => ({ ...f, min_unit: e.target.value }))}>{formUnitOptions.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
         <div style={{ minWidth: '130px' }}><label className="form-label">Marka</label><select className="form-select" value={form.brand_id} onChange={e => setForm(f => ({ ...f, brand_id: e.target.value }))}>
           <option value="">Markasız</option>{brands.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
         </select></div>
         <label style={{ display: 'flex', gap: '5px', alignItems: 'center', fontSize: '11px', color: 'var(--text2)', cursor: 'pointer', paddingBottom: '9px' }} title="Boş kap iade takibi (depozito)">
           <input type="checkbox" checked={form.is_returnable} onChange={e => setForm(f => ({ ...f, is_returnable: e.target.checked }))} /> İade edilebilir
         </label>
+        {form.id && (
+          <label style={{ display: 'flex', gap: '5px', alignItems: 'center', fontSize: '11px', color: 'var(--text2)', cursor: 'pointer', paddingBottom: '9px' }} title="Pasif ürün yeni girişte görünmez, eski raporlarda kalır">
+            <input type="checkbox" checked={form.is_active} onChange={e => setForm(f => ({ ...f, is_active: e.target.checked }))} /> Aktif
+          </label>
+        )}
         {form.id && <button className="btn btn-ghost btn-sm" onClick={() => setForm(blank)}>+ Yeni</button>}
         <button className="btn btn-primary" disabled={!form.name.trim() || create.isPending || update.isPending} onClick={() => form.id ? update.mutate() : create.mutate()}>{form.id ? 'Güncelle' : 'Ekle'}</button>
       </div>
@@ -2644,18 +2652,20 @@ function ProductsTab() {
 
       <div style={{ maxHeight: '40vh', overflowY: 'auto' }}>
         <table className="data-table" style={{ fontSize: '12px' }}>
-          <thead><tr><th>Ad</th><th>Marka</th><th>Birimler</th><th style={{ textAlign: 'right' }}>1 Koli</th><th style={{ textAlign: 'right' }}>1 Palet</th><th style={{ textAlign: 'right' }}>Min.</th><th></th></tr></thead>
+          <thead><tr><th>Ad</th><th>Marka</th><th>Birimler</th><th style={{ textAlign: 'right' }}>1 Koli</th><th style={{ textAlign: 'right' }}>1 Palet</th><th style={{ textAlign: 'right' }}>Min.</th><th style={{ textAlign: 'right' }}>Kritik</th><th></th></tr></thead>
           <tbody>
             {products.map(p => (
               <tr key={p.id} style={{ opacity: p.is_active ? 1 : 0.5 }}>
-                <td style={{ fontWeight: 600 }}>{p.name} {p.is_returnable ? <span title="İade edilebilir" style={{ fontSize: '10px', color: 'var(--teal)' }}>♻️</span> : null}</td>
+                <td style={{ fontWeight: 600 }}>{p.name} {p.is_returnable ? <span title="İade edilebilir" style={{ fontSize: '10px', color: 'var(--teal)' }}>♻️</span> : null}{p.is_active ? null : <span style={{ fontSize: '9px', color: 'var(--text3)', marginLeft: '4px' }}>(pasif)</span>}</td>
                 <td style={{ color: 'var(--text3)' }}>{p.brand_name || '—'}</td>
                 <td style={{ color: 'var(--text3)' }}>{unitOptionsForProduct(p).map(([, label]) => label).join(' / ')}</td>
                 <td style={{ textAlign: 'right', fontFamily: 'var(--mono)' }}>{koliText(p)}</td>
                 <td style={{ textAlign: 'right', fontFamily: 'var(--mono)' }}>{paletText(p)}</td>
                 <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', color: p.min_level ? 'var(--text)' : 'var(--text3)' }}>{p.min_level ? `${nf(p.min_level)}` : '—'}</td>
+                <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', color: p.critical_level ? 'var(--red)' : 'var(--text3)' }}>{p.critical_level ? `${nf(p.critical_level)}` : '—'}</td>
                 <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                   <button onClick={() => editProduct(p)} className="btn btn-ghost btn-sm">Düzenle</button>
+                  <button onClick={() => toggleActive(p)} className="btn btn-ghost btn-sm" title={p.is_active ? 'Pasife al' : 'Aktifleştir'}>{p.is_active ? 'Pasife al' : 'Aktif et'}</button>
                   <button onClick={async () => { if (await confirmDialog({ title: 'Ürünü Sil', body: `"${p.name}" silinsin mi? (hareketi varsa silinemez)`, danger: true })) del.mutate(p.id) }} className="btn btn-danger btn-sm">Sil</button>
                 </td>
               </tr>
@@ -2671,18 +2681,22 @@ function ProductsTab() {
 
 function BrandManager({ brands, onChange }) {
   const [name, setName] = useState('')
-  const create = useMutation({ mutationFn: (n) => api.post('/water/brands', { name: n }), onSuccess: () => { onChange(); setName(''); toastOk('Marka eklendi') }, onError: (e) => toastErr(errMsg(e, 'Eklenemedi')) })
+  const [color, setColor] = useState('#3b82f6')
+  const create = useMutation({ mutationFn: () => api.post('/water/brands', { name: name.trim(), color }), onSuccess: () => { onChange(); setName(''); toastOk('Marka eklendi') }, onError: (e) => toastErr(errMsg(e, 'Eklenemedi')) })
+  const update = useMutation({ mutationFn: (b) => api.put(`/water/brands/${b.id}`, b), onSuccess: () => { onChange(); toastOk('Marka güncellendi') }, onError: (e) => toastErr(errMsg(e, 'Güncellenemedi')) })
   const del = useMutation({ mutationFn: (id) => api.delete(`/water/brands/${id}`), onSuccess: () => { onChange(); toastOk('Silindi') }, onError: (e) => toastErr(errMsg(e, 'Silinemedi')) })
   return (
     <div style={{ marginTop: '16px', borderTop: '1px solid var(--border)', paddingTop: '14px' }}>
       <div className="panel-title" style={{ marginBottom: '10px' }}>MARKALAR (TEDARİKÇİ)</div>
       <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: '10px' }}>
-        <div style={{ flex: 1, minWidth: '160px' }}><label className="form-label">Yeni marka</label><input className="form-input" value={name} onChange={e => setName(e.target.value)} placeholder="Ör. MİLA SU" onKeyDown={e => { if (e.key === 'Enter' && name.trim()) create.mutate(name.trim()) }} /></div>
-        <button className="btn btn-primary" disabled={!name.trim() || create.isPending} onClick={() => create.mutate(name.trim())}>Ekle</button>
+        <div style={{ flex: 1, minWidth: '160px' }}><label className="form-label">Yeni marka</label><input className="form-input" value={name} onChange={e => setName(e.target.value)} placeholder="Ör. MİLA SU" onKeyDown={e => { if (e.key === 'Enter' && name.trim()) create.mutate() }} /></div>
+        <div><label className="form-label">Renk</label><input type="color" value={color} onChange={e => setColor(e.target.value)} style={{ width: '44px', height: '34px', border: '1px solid var(--border)', borderRadius: '7px', background: 'var(--surface2)', cursor: 'pointer' }} /></div>
+        <button className="btn btn-primary" disabled={!name.trim() || create.isPending} onClick={() => create.mutate()}>Ekle</button>
       </div>
       <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
         {brands.map(b => (
-          <span key={b.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '999px', padding: '4px 10px', fontSize: '11px' }}>
+          <span key={b.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: b.color ? `${b.color}18` : 'var(--surface2)', border: `1px solid ${b.color || 'var(--border)'}`, borderRadius: '999px', padding: '4px 10px', fontSize: '11px' }}>
+            <input type="color" aria-label={`${b.name} rengi`} value={b.color || '#64748b'} onChange={e => update.mutate({ id: b.id, name: b.name, sort_order: b.sort_order, is_active: b.is_active !== 0, color: e.target.value })} style={{ width: '16px', height: '16px', padding: 0, border: 'none', background: 'none', cursor: 'pointer' }} title="Rengi değiştir" />
             {b.name}
             <button onClick={async () => { if (await confirmDialog({ title: 'Markayı Sil', body: `"${b.name}" silinsin mi? (bağlı ürün varsa silinemez)`, danger: true })) del.mutate(b.id) }} style={{ border: 'none', background: 'transparent', color: 'var(--text3)', cursor: 'pointer', fontSize: '12px', lineHeight: 1 }}>✕</button>
           </span>

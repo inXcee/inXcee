@@ -392,8 +392,12 @@ Amaç: su takibini kayıt tablosundan → günlük dağıtım + irsaliye + eksi 
 - [x] Frontend: 🛠 Düzeltme modalı (müdür) — ürün/yön±/miktar/birim/tarih/sebep/not + canlı stok etkisi + liste/sil; MonthClosurePanel'e ayrı "Düzeltme" kolonu (imzalı)
 - [x] +5 backend test (72/72 water, 1403/1403 tüm suite) + 1 frontend smoke (10/10), build temiz
 
-### Faz W8 — Ürün / Marka Yönetimini Güçlendirme
-- [ ] Ürün ayarları net alanlar (takip birimi, palet/koli içeriği, min/kritik stok, iade, aktif/pasif); marka renkleri kullanıcı seçer; pasif ürün eski raporda görünür, yeni girişte gizli
+### Faz W8 — Ürün / Marka Yönetimini Güçlendirme ✅
+- [x] Migration 034: `water_products.critical_level` (min'den düşük acil eşik) + `water_brands.color` (hex, kullanıcı seçimli)
+- [x] Backend: productFields critical_level; brand create/update color (hex validasyon, geçersiz→null); summary `critical` flag + `critical_count`; pivot brand gruplarına renk
+- [x] ProductsTab: Kritik stok alanı + Aktif/Pasif toggle (form + tabloda "Pasife al/Aktif et" butonu + kolon); pasif ürün yeni girişte gizli (aktif liste), eski raporda görünür (all=1)
+- [x] BrandManager: renk seçici (yeni marka + mevcut markaların satır-içi renk düzenleme); matris tint marka rengini kullanır (yoksa palet fallback)
+- [x] +3 backend test (75/75 water, 1406/1406 tüm suite) + 1 frontend smoke (11/11), build temiz
 
 ### Faz W9 — Excel / PDF Rapor Paketi
 - [ ] Excel sayfaları netleştir (Yönetici Özeti/Ay Uyuşturma/Günlük Akış/Bölge/Ürün/İrsaliye Bekleyen/Eksi Stok/Sayım-Düzeltme); ay kapanışında kısa PDF özet

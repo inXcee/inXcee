@@ -818,3 +818,32 @@ describe('Su takip — Stok Düzeltme / Sayım Fişi (W7)', () => {
     expect(r.status).toBe(403)
   })
 })
+
+describe('Su takip — Ürün/Marka güçlendirme (W8)', () => {
+  const auth = (r) => r.set('Authorization', `Bearer ${managerToken}`)
+
+  it('ürün kritik stok eşiği ile oluşur; eşik altında summary critical=true', async () => {
+    const pid = (await auth(request(app).post('/api/water/products')).send({ name: 'W8 Kritik 1L', unit_label: 'adet', units_per_case: 1, cases_per_pallet: 1, min_level: 50, critical_level: 10 })).body.id
+    const zid = (await auth(request(app).post('/api/water/zones')).send({ name: 'W8 Bölge' })).body.id
+    await auth(request(app).post('/api/water/distribute')).send({ product_id: pid, zone_id: zid, input_qty: 5, input_unit: 'adet', move_date: '2027-01-05' })
+    const s = await auth(request(app).get('/api/water/summary'))
+    const row = s.body.stock.find(x => x.product_id === pid)
+    expect(row.critical_level).toBe(10)
+    expect(row.critical).toBe(true) // balance -5 < 0
+    expect(s.body.totals).toHaveProperty('critical_count')
+  })
+
+  it('marka rengi kaydedilir; geçersiz renk null olur', async () => {
+    const bid = (await auth(request(app).post('/api/water/brands')).send({ name: 'W8 Renkli Marka', color: '#ff8800' })).body.id
+    expect((await auth(request(app).get('/api/water/brands'))).body.find(x => x.id === bid).color).toBe('#ff8800')
+    await auth(request(app).put(`/api/water/brands/${bid}`)).send({ name: 'W8 Renkli Marka', color: 'notacolor' })
+    expect((await auth(request(app).get('/api/water/brands'))).body.find(x => x.id === bid).color).toBeNull()
+  })
+
+  it('ürün pasife alınır — aktif listede gizli, all listede görünür', async () => {
+    const pid = (await auth(request(app).post('/api/water/products')).send({ name: 'W8 Pasif Ürün', unit_label: 'adet', units_per_case: 1, cases_per_pallet: 1 })).body.id
+    await auth(request(app).put(`/api/water/products/${pid}`)).send({ name: 'W8 Pasif Ürün', unit_label: 'adet', units_per_case: 1, cases_per_pallet: 1, is_active: false })
+    expect((await auth(request(app).get('/api/water/products'))).body.some(x => x.id === pid)).toBe(false)
+    expect((await auth(request(app).get('/api/water/products?all=1'))).body.some(x => x.id === pid)).toBe(true)
+  })
+})

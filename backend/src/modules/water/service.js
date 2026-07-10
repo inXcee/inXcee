@@ -86,17 +86,20 @@ export function humanize(product, base) {
 
 // ── Marka servisleri ──
 export function brandsService(opts) { return q.listBrands(opts) }
+const normColor = (c) => (typeof c === 'string' && /^#[0-9a-fA-F]{6}$/.test(c.trim())) ? c.trim() : null
 export function createBrandService(data) {
   if (!data?.name?.trim()) throw Object.assign(new Error('Marka adı gerekli'), { statusCode: 400 })
   if (q.getBrandByName(data.name.trim())) throw Object.assign(new Error('Bu marka zaten var'), { statusCode: 409 })
-  return q.createBrand({ name: data.name.trim(), sort_order: parseInt(data.sort_order) || 0 })
+  return q.createBrand({ name: data.name.trim(), sort_order: parseInt(data.sort_order) || 0, color: normColor(data.color) })
 }
 export function updateBrandService(id, data) {
-  if (!q.getBrand(id)) throw Object.assign(new Error('Marka bulunamadı'), { statusCode: 404 })
+  const existing = q.getBrand(id)
+  if (!existing) throw Object.assign(new Error('Marka bulunamadı'), { statusCode: 404 })
   if (!data?.name?.trim()) throw Object.assign(new Error('Marka adı gerekli'), { statusCode: 400 })
   const clash = q.getBrandByName(data.name.trim())
   if (clash && clash.id !== id) throw Object.assign(new Error('Bu marka zaten var'), { statusCode: 409 })
-  q.updateBrand(id, { name: data.name.trim(), sort_order: parseInt(data.sort_order) || 0, is_active: data.is_active !== false })
+  const color = Object.prototype.hasOwnProperty.call(data, 'color') ? normColor(data.color) : existing.color
+  q.updateBrand(id, { name: data.name.trim(), sort_order: parseInt(data.sort_order) || 0, is_active: data.is_active !== false, color })
 }
 export function deleteBrandService(id) {
   if (!q.getBrand(id)) throw Object.assign(new Error('Marka bulunamadı'), { statusCode: 404 })
@@ -128,6 +131,7 @@ function productFields(data, existing = null) {
     name: data.name.trim(), unit_label: data.unit_label || 'adet',
     units_per_case: upc, cases_per_pallet: cpp,
     min_level: Math.max(0, parseInt(data.min_level) || 0),
+    critical_level: Math.max(0, parseInt(data.critical_level) || 0),
     brand_id, is_returnable, sort_order,
   }
 }
@@ -530,13 +534,14 @@ export function pivotService({ from, to } = {}) {
   }
 
   // Marka grupları (sütun başlığı için, sıralı) — sadece ürünü olan gruplar
+  const brandColorById = new Map(q.listBrands({ includeInactive: true }).map(b => [b.id, b.color || null]))
   const brandOrder = []
   const seen = new Set()
   for (const c of columns) {
     const key = c.brand_id == null ? 'null' : String(c.brand_id)
     if (!seen.has(key)) {
       seen.add(key)
-      brandOrder.push({ brand_id: c.brand_id, brand_name: c.brand_name, product_ids: [] })
+      brandOrder.push({ brand_id: c.brand_id, brand_name: c.brand_name, color: brandColorById.get(c.brand_id) || null, product_ids: [] })
     }
     brandOrder.find(b => (b.brand_id == null ? 'null' : String(b.brand_id)) === key).product_ids.push(c.product_id)
   }
@@ -824,6 +829,7 @@ export function summaryService({ from, to, product_id, group = 'day' } = {}) {
     const periodNet = periodIn - periodOut
     const deficit = Math.max(0, -balance)
     const low = balance < 0 || (p.min_level > 0 && balance < p.min_level)
+    const critical = balance < 0 || (p.critical_level > 0 && balance < p.critical_level)
     const periodStatus = periodNet < 0 ? 'period_deficit' : periodNet > 0 ? 'period_surplus' : 'period_even'
     return {
       product_id: p.id, name: p.name, unit_label: p.unit_label,
@@ -832,7 +838,7 @@ export function summaryService({ from, to, product_id, group = 'day' } = {}) {
       total_in: p.total_in, total_out: p.total_out, adjust_net: adjustNet, balance, deficit,
       adjust_human: adjustNet ? humanize(p, adjustNet) : null,
       period_in: periodIn, period_out: periodOut, period_net: periodNet, period_status: periodStatus,
-      min_level: p.min_level, low, negative: balance < 0,
+      min_level: p.min_level, critical_level: p.critical_level || 0, low, critical, negative: balance < 0,
       in_human: humanize(p, p.total_in),
       out_human: humanize(p, p.total_out),
       balance_human: humanize(p, balance),
@@ -862,6 +868,7 @@ export function summaryService({ from, to, product_id, group = 'day' } = {}) {
     deficit_count: stock.filter(p => p.negative).length,
     period_deficit_count: stock.filter(p => p.period_net < 0).length,
     low_count: stock.filter(p => p.low).length,
+    critical_count: stock.filter(p => p.critical).length,
     period_return: deposit.reduce((s, d) => s + d.period_return, 0),
     outstanding: deposit.reduce((s, d) => s + d.outstanding, 0),
   }

@@ -19,13 +19,13 @@ export function getBrand(id) {
 export function getBrandByName(name) {
   return getDB().prepare('SELECT * FROM water_brands WHERE name=?').get(name)
 }
-export function createBrand({ name, sort_order }) {
-  return getDB().prepare('INSERT INTO water_brands(name, sort_order) VALUES(?,?)')
-    .run(name, sort_order || 0).lastInsertRowid
+export function createBrand({ name, sort_order, color }) {
+  return getDB().prepare('INSERT INTO water_brands(name, sort_order, color) VALUES(?,?,?)')
+    .run(name, sort_order || 0, color || null).lastInsertRowid
 }
-export function updateBrand(id, { name, sort_order, is_active }) {
-  return getDB().prepare('UPDATE water_brands SET name=?, sort_order=?, is_active=? WHERE id=?')
-    .run(name, sort_order || 0, is_active ? 1 : 0, id).changes > 0
+export function updateBrand(id, { name, sort_order, is_active, color }) {
+  return getDB().prepare('UPDATE water_brands SET name=?, sort_order=?, is_active=?, color=? WHERE id=?')
+    .run(name, sort_order || 0, is_active ? 1 : 0, color || null, id).changes > 0
 }
 export function brandProductCount(id) {
   return getDB().prepare('SELECT COUNT(*) c FROM water_products WHERE brand_id=?').get(id).c
@@ -42,18 +42,18 @@ export function listProducts({ includeInactive = false } = {}) {
 export function getProduct(id) {
   return getDB().prepare(`${PRODUCT_SELECT} WHERE p.id=?`).get(id)
 }
-export function createProduct({ name, unit_label, units_per_case, cases_per_pallet, min_level, brand_id, is_returnable, sort_order }) {
+export function createProduct({ name, unit_label, units_per_case, cases_per_pallet, min_level, critical_level, brand_id, is_returnable, sort_order }) {
   return getDB().prepare(`
-    INSERT INTO water_products(name, unit_label, units_per_case, cases_per_pallet, min_level, brand_id, is_returnable, sort_order)
-    VALUES(?,?,?,?,?,?,?,?)
-  `).run(name, unit_label || 'adet', units_per_case || 1, cases_per_pallet || 1, min_level || 0,
+    INSERT INTO water_products(name, unit_label, units_per_case, cases_per_pallet, min_level, critical_level, brand_id, is_returnable, sort_order)
+    VALUES(?,?,?,?,?,?,?,?,?)
+  `).run(name, unit_label || 'adet', units_per_case || 1, cases_per_pallet || 1, min_level || 0, critical_level || 0,
     brand_id || null, is_returnable ? 1 : 0, sort_order || 0).lastInsertRowid
 }
-export function updateProduct(id, { name, unit_label, units_per_case, cases_per_pallet, is_active, min_level, brand_id, is_returnable, sort_order }) {
+export function updateProduct(id, { name, unit_label, units_per_case, cases_per_pallet, is_active, min_level, critical_level, brand_id, is_returnable, sort_order }) {
   return getDB().prepare(`
-    UPDATE water_products SET name=?, unit_label=?, units_per_case=?, cases_per_pallet=?, is_active=?, min_level=?,
+    UPDATE water_products SET name=?, unit_label=?, units_per_case=?, cases_per_pallet=?, is_active=?, min_level=?, critical_level=?,
       brand_id=?, is_returnable=?, sort_order=? WHERE id=?
-  `).run(name, unit_label || 'adet', units_per_case || 1, cases_per_pallet || 1, is_active ? 1 : 0, min_level || 0,
+  `).run(name, unit_label || 'adet', units_per_case || 1, cases_per_pallet || 1, is_active ? 1 : 0, min_level || 0, critical_level || 0,
     brand_id || null, is_returnable ? 1 : 0, sort_order || 0, id).changes > 0
 }
 export function getProductBalance(productId) {
@@ -280,7 +280,7 @@ export function listMovements({ type, product_id, zone_id, from, to, limit = 200
 // Kalan stok TÜM ZAMANLAR üzerinden (gerçek anlık stok). Dönem giriş/çıkış ayrı hesaplanır.
 export function stockByProduct() {
   return getDB().prepare(`
-    SELECT p.id, p.name, p.unit_label, p.units_per_case, p.cases_per_pallet, p.min_level,
+    SELECT p.id, p.name, p.unit_label, p.units_per_case, p.cases_per_pallet, p.min_level, p.critical_level,
       p.brand_id, b.name AS brand_name,
       COALESCE(SUM(CASE WHEN mv.type='in'  THEN mv.qty_base END), 0) AS total_in,
       COALESCE(SUM(CASE WHEN mv.type='out' THEN mv.qty_base END), 0) AS total_out,
