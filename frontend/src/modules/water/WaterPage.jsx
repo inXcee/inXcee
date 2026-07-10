@@ -176,8 +176,9 @@ const BRAND_TINT = [
 // ─────────────────────────── ANA SAYFA (tek ekran pano) ───────────────────────────
 export default function WaterPage() {
   const now = new Date()
+  const isManager = useAuthStore(s => s.user?.role === 'campus_manager')
   const [ym, setYm] = useState({ y: now.getFullYear(), m: now.getMonth() + 1 })
-  const [modal, setModal] = useState(null) // 'settings' | 'text' | null
+  const [modal, setModal] = useState(null) // 'settings' | 'text' | 'adjust' | null
   const { from, to, label } = monthBounds(ym.y, ym.m)
 
   const { data: summary } = useQuery({
@@ -205,6 +206,7 @@ export default function WaterPage() {
         </div>
         <div style={{ display: 'flex', gap: '8px' }}>
           <button className="btn btn-ghost btn-sm" onClick={() => setModal('text')}>📝 Metinden</button>
+          {isManager && <button className="btn btn-ghost btn-sm" onClick={() => setModal('adjust')}>🛠 Düzeltme</button>}
           <button className="btn btn-ghost btn-sm" onClick={() => setModal('settings')}>⚙ Ayarlar</button>
         </div>
       </div>
@@ -240,6 +242,7 @@ export default function WaterPage() {
 
       {modal === 'settings' && <SettingsModal onClose={() => setModal(null)} />}
       {modal === 'text' && <TextModal onClose={() => setModal(null)} />}
+      {modal === 'adjust' && <AdjustModal onClose={() => setModal(null)} />}
     </div>
   )
 }
@@ -1745,7 +1748,7 @@ function MonthClosurePanel({ month, label }) {
             <table className="data-table" style={{ fontSize: '11px', minWidth: '900px' }}>
               <thead>
                 <tr>
-                  {['Marka', 'Ürün', 'Devreden', 'Gelen', 'Dağıtılan', 'Boş İade', 'Sistem', 'Sayım', 'Fark', 'Sebep', 'Durum'].map(h => (
+                  {['Marka', 'Ürün', 'Devreden', 'Gelen', 'Dağıtılan', 'Düzeltme', 'Boş İade', 'Sistem', 'Sayım', 'Fark', 'Sebep', 'Durum'].map(h => (
                     <th key={h} style={{ textAlign: h === 'Marka' || h === 'Ürün' ? 'left' : 'right', whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
@@ -1765,6 +1768,7 @@ function MonthClosurePanel({ month, label }) {
                       <td style={{ textAlign: 'right', fontFamily: 'var(--mono)' }} title={row.opening_human}>{nf(row.opening_base)}</td>
                       <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--green)' }} title={row.month_in_human}>{nf(row.month_in)}</td>
                       <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--accent)' }} title={row.month_out_human}>{nf(row.month_out)}</td>
+                      <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', color: row.month_adjust ? (row.month_adjust > 0 ? 'var(--green)' : 'var(--red)') : 'var(--text3)' }} title={row.month_adjust_human || ''}>{row.month_adjust ? (row.month_adjust > 0 ? '+' : '') + nf(row.month_adjust) : '·'}</td>
                       <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--text3)' }} title={row.month_return_human}>{row.month_return ? nf(row.month_return) : '·'}</td>
                       <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 600 }} title={row.system_human}>{nf(row.system_base)}</td>
                       <td style={{ textAlign: 'right' }}>
@@ -2247,6 +2251,89 @@ function SettingsModal({ onClose }) {
         ))}
       </div>
       {tab === 'firmalar' ? <ZonesTab /> : tab === 'urunler' ? <ProductsTab /> : <TemplatesTab />}
+    </Modal>
+  )
+}
+
+function AdjustModal({ onClose }) {
+  const qc = useQueryClient()
+  const { data: products = [] } = useQuery({ queryKey: ['water-products'], queryFn: () => api.get('/water/products').then(r => r.data) })
+  const { data: adjData } = useQuery({ queryKey: ['water-adjustments'], queryFn: () => api.get('/water/adjustments').then(r => r.data) })
+  const rows = adjData?.rows || []
+  const reasons = adjData?.reasons || []
+  const [form, setForm] = useState({ product_id: '', direction: 'in', input_qty: '', input_unit: 'adet', move_date: todayStr(), reason: '', note: '' })
+  const selected = products.find(p => String(p.id) === String(form.product_id))
+  const calc = smartQty(form.input_qty, selected, form.input_unit)
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ['water-adjustments'] }); qc.invalidateQueries({ queryKey: ['water-summary'] })
+    qc.invalidateQueries({ queryKey: ['water-reconciliation'] }); qc.invalidateQueries({ queryKey: ['water-alerts'] }); qc.invalidateQueries({ queryKey: ['water-pivot'] })
+  }
+  const create = useMutation({
+    mutationFn: () => api.post('/water/adjustments', { product_id: +form.product_id, direction: form.direction, input_qty: calc.input_qty, input_unit: calc.input_unit, move_date: form.move_date, reason: form.reason, note: form.note?.trim() || undefined }),
+    onSuccess: () => { invalidate(); setForm(f => ({ ...f, input_qty: '', note: '' })); toastOk('Düzeltme kaydedildi') },
+    onError: (e) => toastErr(errMsg(e, 'Kaydedilemedi')),
+  })
+  const del = useMutation({ mutationFn: (id) => api.delete(`/water/adjustments/${id}`), onSuccess: () => { invalidate(); toastOk('Silindi') }, onError: (e) => toastErr(errMsg(e, 'Silinemedi')) })
+  const submit = () => {
+    if (!form.product_id) return toastErr('Ürün seçin')
+    if (!calc.valid) return toastErr('Miktar girin')
+    if (!form.reason) return toastErr('Sebep seçin')
+    create.mutate()
+  }
+  const reasonLabel = (k) => reasons.find(r => r.key === k)?.label || k
+
+  return (
+    <Modal title="STOK DÜZELTME / SAYIM FİŞİ" onClose={onClose} width="760px">
+      <div style={{ fontSize: '11px', color: 'var(--text3)', marginBottom: '10px' }}>Kontrollü stok düzeltmesi — normal dağıtımdan ayrı tutulur, ay uyuşturmasında “Düzeltme” kolonunda görünür.</div>
+      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'end', marginBottom: '12px' }}>
+        <div style={{ flex: 1, minWidth: '150px' }}><label className="form-label">Ürün</label>
+          <select className="form-select" value={form.product_id} onChange={e => { const p = products.find(x => String(x.id) === e.target.value); setForm(f => ({ ...f, product_id: e.target.value, input_unit: defaultUnitForProduct(p) })) }}>
+            <option value="">Ürün…</option>
+            {products.map(p => <option key={p.id} value={p.id}>{p.brand_name ? `${p.brand_name} · ` : ''}{p.name}</option>)}
+          </select>
+        </div>
+        <div><label className="form-label">Yön</label>
+          <div style={{ display: 'flex', gap: '2px', background: 'var(--surface2)', borderRadius: '7px', padding: '2px', border: '1px solid var(--border)' }}>
+            {[['in', '+ Artı'], ['out', '− Eksi']].map(([v, l]) => (
+              <button key={v} type="button" onClick={() => setForm(f => ({ ...f, direction: v }))} style={{ border: 'none', borderRadius: '5px', padding: '6px 10px', fontSize: '11px', cursor: 'pointer', background: form.direction === v ? (v === 'in' ? 'var(--green)' : 'var(--red)') : 'transparent', color: form.direction === v ? '#000' : 'var(--text3)', fontWeight: 700 }}>{l}</button>
+            ))}
+          </div>
+        </div>
+        <div style={{ width: '78px' }}><label className="form-label">Miktar</label><input type="text" inputMode="decimal" className="form-input" value={form.input_qty} onChange={e => setForm(f => ({ ...f, input_qty: e.target.value }))} /></div>
+        <div style={{ width: '84px' }}><label className="form-label">Birim</label><select className="form-select" value={coerceUnitForProduct(form.input_unit, selected)} onChange={e => setForm(f => ({ ...f, input_unit: e.target.value }))}>{unitOptionsForProduct(selected).map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
+        <div style={{ width: '140px' }}><label className="form-label">Tarih</label><input type="date" className="form-input" value={form.move_date} onChange={e => setForm(f => ({ ...f, move_date: e.target.value }))} /></div>
+      </div>
+      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'end', marginBottom: '6px' }}>
+        <div style={{ width: '180px' }}><label className="form-label">Sebep</label>
+          <select className="form-select" value={form.reason} onChange={e => setForm(f => ({ ...f, reason: e.target.value }))}>
+            <option value="">— seç —</option>
+            {reasons.map(r => <option key={r.key} value={r.key}>{r.label}</option>)}
+          </select>
+        </div>
+        <div style={{ flex: 1, minWidth: '150px' }}><label className="form-label">Not</label><input className="form-input" value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} placeholder="opsiyonel" /></div>
+        <button className="btn btn-primary" disabled={create.isPending} onClick={submit}>Kaydet</button>
+      </div>
+      <div style={{ minHeight: '20px', fontSize: '11px', color: calc.valid ? (form.direction === 'in' ? 'var(--green)' : 'var(--red)') : 'var(--text3)', marginBottom: '10px' }}>
+        {calc.valid ? `Stok etkisi: ${form.direction === 'in' ? '+' : '−'}${nf(calc.base)} ${selected?.unit_label || 'adet'}` : 'Ürün + miktar girince stok etkisi burada görünür.'}
+      </div>
+      <div style={{ maxHeight: '38vh', overflowY: 'auto', border: '1px solid var(--border)', borderRadius: '8px' }}>
+        <table className="data-table" style={{ fontSize: '11px' }}>
+          <thead><tr><th>Tarih</th><th>Ürün</th><th style={{ textAlign: 'right' }}>Etki</th><th>Sebep</th><th>Not</th><th></th></tr></thead>
+          <tbody>
+            {rows.map(a => (
+              <tr key={a.id}>
+                <td style={{ fontFamily: 'var(--mono)' }}>{a.move_date}</td>
+                <td>{a.brand_name ? `${a.brand_name} · ` : ''}{a.product_name}</td>
+                <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 600, color: a.direction === 'in' ? 'var(--green)' : 'var(--red)' }}>{a.signed_human}</td>
+                <td style={{ color: 'var(--text2)' }}>{reasonLabel(a.reason)}</td>
+                <td style={{ color: 'var(--text3)' }}>{a.note || '—'}</td>
+                <td style={{ textAlign: 'right' }}><button className="btn btn-danger btn-sm" onClick={async () => { if (await confirmDialog({ title: 'Düzeltmeyi Sil', body: 'Bu düzeltme silinsin mi? Stok bakiyesi geri döner.', danger: true })) del.mutate(a.id) }}>Sil</button></td>
+              </tr>
+            ))}
+            {rows.length === 0 && <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--text3)', padding: '14px' }}>Henüz düzeltme kaydı yok</td></tr>}
+          </tbody>
+        </table>
+      </div>
     </Modal>
   )
 }

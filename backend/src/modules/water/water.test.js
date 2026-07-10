@@ -764,3 +764,57 @@ describe('Su takip — Çok-satırlı irsaliye + bekleyen kapanışı (W6)', () 
     expect(pending.body.rows.some(x => x.product_name === 'W6 Ürün A')).toBe(false)
   })
 })
+
+describe('Su takip — Stok Düzeltme / Sayım Fişi (W7)', () => {
+  const MONTH = '2026-12'
+  let pAdj, supervisorToken
+  const auth = (r) => r.set('Authorization', `Bearer ${managerToken}`)
+  const balanceOf = async (id) => (await auth(request(app).get('/api/water/summary'))).body.stock.find(s => s.product_id === id)?.balance
+
+  beforeAll(async () => {
+    supervisorToken = (await request(app).post('/api/auth/login').send({ username: 'vardiya', password: 'admin123' })).body.token
+    pAdj = (await auth(request(app).post('/api/water/products')).send({ name: 'DUZELTME 1L', unit_label: 'adet', units_per_case: 1, cases_per_pallet: 1 })).body.id
+  })
+
+  it('düzeltme (artı) stok bakiyesini artırır, sebep zorunlu', async () => {
+    expect(await balanceOf(pAdj)).toBe(0)
+    const noReason = await auth(request(app).post('/api/water/adjustments')).send({ product_id: pAdj, direction: 'in', input_qty: 10, input_unit: 'adet', move_date: '2026-12-05' })
+    expect(noReason.status).toBe(400)
+    const add = await auth(request(app).post('/api/water/adjustments')).send({ product_id: pAdj, direction: 'in', input_qty: 10, input_unit: 'adet', move_date: '2026-12-05', reason: 'devir_duzeltme', note: 'açılış sayımı' })
+    expect(add.status).toBe(201)
+    expect(await balanceOf(pAdj)).toBe(10)
+  })
+
+  it('düzeltme (eksi) stok bakiyesini azaltır', async () => {
+    await auth(request(app).post('/api/water/adjustments')).send({ product_id: pAdj, direction: 'out', input_qty: 3, input_unit: 'adet', move_date: '2026-12-06', reason: 'fire_kirik' })
+    expect(await balanceOf(pAdj)).toBe(7) // 10 − 3
+  })
+
+  it('liste sebep + işaretli miktar döner; uyuşturmada month_adjust yansır', async () => {
+    const list = await auth(request(app).get(`/api/water/adjustments?product_id=${pAdj}`))
+    expect(list.status).toBe(200)
+    expect(Array.isArray(list.body.reasons)).toBe(true)
+    expect(list.body.rows).toHaveLength(2)
+    expect(list.body.rows.some(a => a.signed_base === 10)).toBe(true)
+    expect(list.body.rows.some(a => a.signed_base === -3)).toBe(true)
+
+    const rec = await auth(request(app).get(`/api/water/reconciliation?month=${MONTH}`))
+    const row = rec.body.rows.find(x => x.product_id === pAdj)
+    expect(row.month_adjust).toBe(7) // +10 −3
+    expect(row.system_base).toBe(7) // devreden 0 + gelen 0 − dağıtılan 0 + düzeltme 7
+  })
+
+  it('düzeltme silinince bakiye geri döner', async () => {
+    const list = (await auth(request(app).get(`/api/water/adjustments?product_id=${pAdj}`))).body.rows
+    const plus = list.find(a => a.direction === 'in')
+    const del = await auth(request(app).delete(`/api/water/adjustments/${plus.id}`))
+    expect(del.status).toBe(200)
+    expect(await balanceOf(pAdj)).toBe(-3) // +10 kalktı → 0 − 3
+  })
+
+  it('düzeltme yazımı sadece kampüs müdürüne açık (403 vardiya)', async () => {
+    const r = await request(app).post('/api/water/adjustments').set('Authorization', `Bearer ${supervisorToken}`)
+      .send({ product_id: pAdj, direction: 'in', input_qty: 1, input_unit: 'adet', move_date: '2026-12-07', reason: 'sayim_farki' })
+    expect(r.status).toBe(403)
+  })
+})

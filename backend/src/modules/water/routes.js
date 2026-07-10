@@ -12,6 +12,7 @@ import {
   alertsService, reconciliationService, saveStockCountService, monthlyCloseService, monthlyUnlockService,
   monthLockWarning, pendingDistributionsService,
   templatesService, createTemplateService, deleteTemplateService,
+  adjustmentsService, createAdjustmentService, deleteAdjustmentService, COUNT_REASONS,
 } from './service.js'
 
 export const waterRouter = Router()
@@ -168,6 +169,29 @@ waterRouter.get('/pivot', ...mgr, (req, res) => {
 // ── Operasyon Uyarı Merkezi ("Bugün Yapılacaklar") ──
 waterRouter.get('/alerts', ...mgr, (req, res) => {
   try { res.json(alertsService({ today: req.query.today })) } catch (e) { logger.error('[water]', e); fail(res, e) }
+})
+
+// ── Stok düzeltme / sayım fişi ──
+waterRouter.get('/adjustments', ...mgr, (req, res) => {
+  try {
+    const { product_id, from, to } = req.query
+    res.json({ rows: adjustmentsService({ from, to, product_id: product_id ? +product_id : undefined }), reasons: COUNT_REASONS })
+  } catch (e) { logger.error('[water]', e); fail(res, e) }
+})
+// Düzeltme yazımı — sadece kampüs müdürü (kontrollü stok düzeltme)
+waterRouter.post('/adjustments', ...managerOnly, (req, res) => {
+  try {
+    const id = createAdjustmentService(req.body, req.user.id)
+    logAudit(req.user.id, 'water_adjustment', 'water', id, `${req.body.direction} ${req.body.input_qty} ${req.body.input_unit} (${req.body.reason})`)
+    res.status(201).json({ id })
+  } catch (e) { fail(res, e) }
+})
+waterRouter.delete('/adjustments/:id', ...managerOnly, (req, res) => {
+  try {
+    deleteAdjustmentService(+req.params.id)
+    logAudit(req.user.id, 'water_adjustment_delete', 'water', +req.params.id, null)
+    res.json({ ok: true })
+  } catch (e) { fail(res, e) }
 })
 
 // ── Hızlı giriş şablonları ──

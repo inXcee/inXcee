@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { fireEvent, screen, within } from '@testing-library/react'
 import { renderWithProviders } from '../../test/renderWithProviders.jsx'
+import { useAuthStore } from '../../shared/store/authStore.js'
 
 const PRODUCTS = [
   { id: 1, name: 'Damacana', unit_label: 'damacana', units_per_case: 1, cases_per_pallet: 36, is_active: 1, min_level: 0, brand_id: 1, brand_name: 'MİLA SU', is_returnable: 1 },
@@ -62,6 +63,10 @@ vi.mock('../../shared/api/client.js', () => ({
       if (url === '/water/zones') return Promise.resolve({ data: [{ id: 1, name: 'OTC Kamp Alanı', code: 'OTC' }] })
       if (url === '/water/returns') return Promise.resolve({ data: [] })
       if (url === '/water/brands') return Promise.resolve({ data: [{ id: 1, name: 'MİLA SU' }] })
+      if (url === '/water/adjustments') return Promise.resolve({ data: {
+        rows: [{ id: 1, product_id: 1, product_name: 'Damacana', brand_name: 'MİLA SU', unit_label: 'damacana', move_date: '2026-07-05', direction: 'out', qty_base: 3, input_qty: 3, input_unit: 'adet', reason: 'fire_kirik', note: 'kırık', signed_base: -3, signed_human: '−3 damacana', qty_human: '3 damacana' }],
+        reasons: [{ key: 'fire_kirik', label: 'Fire / kırık' }, { key: 'sayim_farki', label: 'Sayım farkı' }],
+      } })
       if (url === '/water/templates') return Promise.resolve({ data: [
         { id: 1, name: 'FPU Rutin', lines: [{ id: 1, template_id: 1, zone_id: 1, product_id: 1, default_qty: 5, default_unit: 'adet', zone_name: 'OTC Kamp Alanı', product_name: 'Damacana', unit_label: 'damacana' }] },
       ] })
@@ -76,10 +81,10 @@ vi.mock('../../shared/api/client.js', () => ({
         month: '2026-07', locked: false, closure: null,
         reasons: [{ key: 'fire_kirik', label: 'Fire / kırık' }, { key: 'sayim_farki', label: 'Sayım farkı' }],
         rows: [{ product_id: 1, product_name: 'Damacana', brand_name: 'MİLA SU', unit_label: 'damacana',
-          opening_base: 100, month_in: 50, month_out: 30, month_return: 0, system_base: 120,
+          opening_base: 100, month_in: 50, month_out: 30, month_adjust: 0, month_return: 0, system_base: 120,
           counted_base: null, diff_base: null, reason: null, status: 'pending',
           opening_human: '100 damacana', month_in_human: '50 damacana', month_out_human: '30 damacana',
-          month_return_human: '0 damacana', system_human: '120 damacana', counted_human: null, diff_human: null }],
+          month_adjust_human: null, month_return_human: '0 damacana', system_human: '120 damacana', counted_human: null, diff_human: null }],
         totals: { products: 1, counted: 0, pending: 1, mismatch: 0, system_base: 120 },
       } })
       if (url === '/water/alerts') return Promise.resolve({ data: {
@@ -173,6 +178,15 @@ describe('WaterPage tek-ekran pano smoke', () => {
     fireEvent.click(await screen.findByText('🗂 Şablonlar'))
     // şablon kartındaki benzersiz satır çipi (board option'ıyla çakışmaz)
     expect(await screen.findByText(/OTC Kamp Alanı · Damacana · 5 adet/)).toBeInTheDocument()
+  })
+
+  it('müdür 🛠 Düzeltme modalını açar ve düzeltme listesini gösterir', async () => {
+    useAuthStore.setState({ user: { role: 'campus_manager', username: 'mudur' } })
+    renderWithProviders(<WaterPage />)
+    fireEvent.click(await screen.findByText('🛠 Düzeltme'))
+    expect(await screen.findByText('STOK DÜZELTME / SAYIM FİŞİ')).toBeInTheDocument()
+    expect(await screen.findByText('−3 damacana')).toBeInTheDocument() // işaretli etki
+    useAuthStore.setState({ user: null })
   })
 
   it('Ayarlar modalı dağıtım yerlerini açar, Metinden modalı açılır', async () => {

@@ -57,11 +57,15 @@ export function updateProduct(id, { name, unit_label, units_per_case, cases_per_
     brand_id || null, is_returnable ? 1 : 0, sort_order || 0, id).changes > 0
 }
 export function getProductBalance(productId) {
-  const r = getDB().prepare(`
+  const mv = getDB().prepare(`
     SELECT COALESCE(SUM(CASE WHEN type='in' THEN qty_base ELSE -qty_base END), 0) AS bal
     FROM water_movements WHERE product_id=?
   `).get(productId)
-  return r.bal
+  const adj = getDB().prepare(`
+    SELECT COALESCE(SUM(CASE WHEN direction='in' THEN qty_base ELSE -qty_base END), 0) AS net
+    FROM water_adjustments WHERE product_id=?
+  `).get(productId)
+  return mv.bal + adj.net
 }
 export function productMovementCount(id) {
   return getDB().prepare('SELECT COUNT(*) c FROM water_movements WHERE product_id=?').get(id).c
@@ -279,7 +283,9 @@ export function stockByProduct() {
     SELECT p.id, p.name, p.unit_label, p.units_per_case, p.cases_per_pallet, p.min_level,
       p.brand_id, b.name AS brand_name,
       COALESCE(SUM(CASE WHEN mv.type='in'  THEN mv.qty_base END), 0) AS total_in,
-      COALESCE(SUM(CASE WHEN mv.type='out' THEN mv.qty_base END), 0) AS total_out
+      COALESCE(SUM(CASE WHEN mv.type='out' THEN mv.qty_base END), 0) AS total_out,
+      COALESCE((SELECT SUM(CASE WHEN a.direction='in' THEN a.qty_base ELSE -a.qty_base END)
+                FROM water_adjustments a WHERE a.product_id = p.id), 0) AS adjust_net
     FROM water_products p
     LEFT JOIN water_brands b ON b.id = p.brand_id
     LEFT JOIN water_movements mv ON mv.product_id = p.id
@@ -322,6 +328,39 @@ export function productFlow({ from, to } = {}) {
     GROUP BY p.id
     ORDER BY COALESCE(b.sort_order, 999), p.sort_order, p.name
   `).all(...params)
+}
+
+// ── Stok düzeltme / sayım fişi (W7) ──
+// İşaretli net etki: in = +qty_base, out = −qty_base
+export function createAdjustment(a) {
+  return getDB().prepare(`
+    INSERT INTO water_adjustments(product_id, move_date, direction, qty_base, input_qty, input_unit, reason, note, created_by)
+    VALUES(@product_id, @move_date, @direction, @qty_base, @input_qty, @input_unit, @reason, @note, @created_by)
+  `).run(a).lastInsertRowid
+}
+export function getAdjustment(id) {
+  return getDB().prepare('SELECT * FROM water_adjustments WHERE id=?').get(id)
+}
+export function deleteAdjustment(id) {
+  return getDB().prepare('DELETE FROM water_adjustments WHERE id=?').run(id).changes > 0
+}
+export function listAdjustments({ product_id, from, to, limit = 200 } = {}) {
+  let sql = `
+    SELECT a.*, p.name AS product_name, p.unit_label, p.units_per_case, p.cases_per_pallet,
+           p.brand_id, b.name AS brand_name, u.full_name AS created_by_name
+    FROM water_adjustments a
+    JOIN water_products p ON p.id = a.product_id
+    LEFT JOIN water_brands b ON b.id = p.brand_id
+    LEFT JOIN users u ON u.id = a.created_by
+    WHERE 1=1
+  `
+  const params = []
+  if (product_id) { sql += ' AND a.product_id=?'; params.push(product_id) }
+  if (from) { sql += ' AND a.move_date>=?'; params.push(from) }
+  if (to) { sql += ' AND a.move_date<=?'; params.push(to) }
+  sql += ' ORDER BY a.move_date DESC, a.id DESC LIMIT ?'
+  params.push(limit)
+  return getDB().prepare(sql).all(...params)
 }
 
 // ── Hızlı giriş şablonları (W5) ──
@@ -521,11 +560,15 @@ export function reconciliationRows(month) {
     SELECT p.id AS product_id, p.name AS product_name, p.unit_label, p.units_per_case, p.cases_per_pallet,
       p.brand_id, b.name AS brand_name,
       COALESCE((SELECT SUM(CASE WHEN m.type='in' THEN m.qty_base ELSE -m.qty_base END)
-                FROM water_movements m WHERE m.product_id=p.id AND m.move_date < ?), 0) AS opening_base,
+                FROM water_movements m WHERE m.product_id=p.id AND m.move_date < ?), 0)
+      + COALESCE((SELECT SUM(CASE WHEN a.direction='in' THEN a.qty_base ELSE -a.qty_base END)
+                FROM water_adjustments a WHERE a.product_id=p.id AND a.move_date < ?), 0) AS opening_base,
       COALESCE((SELECT SUM(m.qty_base) FROM water_movements m
                 WHERE m.product_id=p.id AND m.type='in' AND substr(m.move_date,1,7)=?), 0) AS month_in,
       COALESCE((SELECT SUM(m.qty_base) FROM water_movements m
                 WHERE m.product_id=p.id AND m.type='out' AND substr(m.move_date,1,7)=?), 0) AS month_out,
+      COALESCE((SELECT SUM(CASE WHEN a.direction='in' THEN a.qty_base ELSE -a.qty_base END)
+                FROM water_adjustments a WHERE a.product_id=p.id AND substr(a.move_date,1,7)=?), 0) AS month_adjust,
       COALESCE((SELECT SUM(r.qty_base) FROM water_returns r
                 WHERE r.product_id=p.id AND substr(r.move_date,1,7)=?), 0) AS month_return,
       sc.counted_base, sc.reason AS count_reason, sc.note AS count_note
@@ -534,7 +577,7 @@ export function reconciliationRows(month) {
     LEFT JOIN water_stock_counts sc ON sc.product_id = p.id AND sc.month = ?
     WHERE p.is_active = 1
     ORDER BY COALESCE(b.sort_order, 999), p.sort_order, p.name
-  `).all(monthStart, month, month, month, month)
+  `).all(monthStart, monthStart, month, month, month, month, month)
 }
 
 export function upsertStockCount(row) {

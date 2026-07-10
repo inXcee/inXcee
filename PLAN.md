@@ -385,8 +385,12 @@ Amaç: su takibini kayıt tablosundan → günlük dağıtım + irsaliye + eksi 
 - [x] Sonuç özeti: "N ürün kaydedildi · M bekleyen dağıtım eşleşti" (batch yanıtına `matched` eklendi) + pending/alerts query invalidate
 - [x] +1 backend test (67/67 water, 1398/1398 tüm suite), frontend smoke güncellendi (9/9), build temiz
 
-### Faz W7 — Stok Düzeltme / Sayım Fişi (adjustment)
-- [ ] `water_movements.type` genişlet: in/out/adjustment; `POST /api/water/adjustments` (ürün, miktar, yön, tarih, sebep, not); raporda ayrı Düzeltme kolonu; audit log
+### Faz W7 — Stok Düzeltme / Sayım Fişi (adjustment) ✅
+- [x] **CHECK rebuild YAPILMADI** (güvenli yol) — migration 033: ayrı `water_adjustments` tablosu (direction in/out, qty_base, sebep, not); `water_movements`'a sıfır dokunuş, allocations FK riski yok
+- [x] Düzeltmeler stok bakiyesine katılır (in=+, out=−): `stockByProduct.adjust_net`, `getProductBalance`, summary balance, `reconciliationRows` (opening + month_adjust)
+- [x] `GET /adjustments` (rows + sebep listesi), `POST/DELETE /adjustments` — **sadece kampüs müdürü**; sebep zorunlu; audit log
+- [x] Frontend: 🛠 Düzeltme modalı (müdür) — ürün/yön±/miktar/birim/tarih/sebep/not + canlı stok etkisi + liste/sil; MonthClosurePanel'e ayrı "Düzeltme" kolonu (imzalı)
+- [x] +5 backend test (72/72 water, 1403/1403 tüm suite) + 1 frontend smoke (10/10), build temiz
 
 ### Faz W8 — Ürün / Marka Yönetimini Güçlendirme
 - [ ] Ürün ayarları net alanlar (takip birimi, palet/koli içeriği, min/kritik stok, iade, aktif/pasif); marka renkleri kullanıcı seçer; pasif ürün eski raporda görünür, yeni girişte gizli

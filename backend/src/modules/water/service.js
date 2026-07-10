@@ -626,6 +626,41 @@ export function alertsService({ today } = {}) {
   return { date: day, month, summary, pending_waybill, negative_stock, over_distributed, low_stock, idle_zones }
 }
 
+// ── Stok düzeltme / sayım fişi (W7) ──
+export function adjustmentsService(filters) {
+  return q.listAdjustments(filters).map(a => ({
+    ...a,
+    qty_human: humanize(a, a.qty_base),
+    signed_base: a.direction === 'in' ? a.qty_base : -a.qty_base,
+    signed_human: `${a.direction === 'in' ? '+' : '−'}${humanize(a, a.qty_base)}`,
+  }))
+}
+
+export function createAdjustmentService(data, userId) {
+  const product = q.getProduct(data.product_id)
+  if (!product) throw Object.assign(new Error('Ürün bulunamadı'), { statusCode: 400 })
+  if (!['in', 'out'].includes(data.direction)) throw Object.assign(new Error('Yön "in" (artı) veya "out" (eksi) olmalı'), { statusCode: 400 })
+  const qty = Number(data.input_qty)
+  if (!Number.isFinite(qty) || qty <= 0) throw Object.assign(new Error('Miktar 0’dan büyük olmalı'), { statusCode: 400 })
+  const unit = data.input_unit || 'adet'
+  if (!INPUT_UNITS.includes(unit)) throw Object.assign(new Error('Geçersiz birim'), { statusCode: 400 })
+  assertAvailableUnit(product, unit)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(data.move_date || '')) throw Object.assign(new Error('Tarih YYYY-MM-DD olmalı'), { statusCode: 400 })
+  if (!REASON_KEYS.has(data.reason)) throw Object.assign(new Error('Sebep seçilmeli'), { statusCode: 400 })
+  const id = q.createAdjustment({
+    product_id: product.id, move_date: data.move_date, direction: data.direction,
+    qty_base: toBase(product, qty, unit), input_qty: qty, input_unit: unit,
+    reason: data.reason, note: data.note?.trim() || null, created_by: userId || null,
+  })
+  checkLowStock([product.id])
+  return id
+}
+
+export function deleteAdjustmentService(id) {
+  if (!q.getAdjustment(id)) throw Object.assign(new Error('Düzeltme bulunamadı'), { statusCode: 404 })
+  q.deleteAdjustment(id)
+}
+
 // ── Hızlı giriş şablonları (W5) ──
 export function templatesService() { return q.listTemplates() }
 
@@ -701,7 +736,8 @@ export function reconciliationService({ month } = {}) {
   if (!isMonth(month)) throw Object.assign(new Error('Ay YYYY-MM formatında olmalı'), { statusCode: 400 })
   const closure = q.getClosure(month)
   const rows = q.reconciliationRows(month).map(r => {
-    const system_base = r.opening_base + r.month_in - r.month_out
+    const monthAdjust = r.month_adjust || 0
+    const system_base = r.opening_base + r.month_in - r.month_out + monthAdjust
     const counted = r.counted_base
     const diff = counted == null ? null : counted - system_base
     const status = counted == null ? 'pending' : diff === 0 ? 'even' : diff > 0 ? 'over' : 'short'
@@ -709,11 +745,13 @@ export function reconciliationService({ month } = {}) {
       product_id: r.product_id, product_name: r.product_name, unit_label: r.unit_label,
       brand_id: r.brand_id || null, brand_name: r.brand_name || null,
       opening_base: r.opening_base, month_in: r.month_in, month_out: r.month_out,
-      month_return: r.month_return, system_base, counted_base: counted, diff_base: diff,
+      month_adjust: monthAdjust, month_return: r.month_return,
+      system_base, counted_base: counted, diff_base: diff,
       reason: r.count_reason || null, count_note: r.count_note || null, status,
       opening_human: humanize(r, r.opening_base),
       month_in_human: humanize(r, r.month_in),
       month_out_human: humanize(r, r.month_out),
+      month_adjust_human: monthAdjust ? humanize(r, monthAdjust) : null,
       month_return_human: humanize(r, r.month_return),
       system_human: humanize(r, system_base),
       counted_human: counted == null ? null : humanize(r, counted),
@@ -736,7 +774,7 @@ export function reconciliationService({ month } = {}) {
 // Sistem kalanını (ay öncesi devreden + ay net) ürün bazında döndürür — sayım/kapanış için
 function systemBaseFor(month, productId) {
   const row = q.reconciliationRows(month).find(r => r.product_id === productId)
-  return row ? row.opening_base + row.month_in - row.month_out : 0
+  return row ? row.opening_base + row.month_in - row.month_out + (row.month_adjust || 0) : 0
 }
 
 export function saveStockCountService(data, userId) {
@@ -762,7 +800,7 @@ export function saveStockCountService(data, userId) {
 
 export function monthlyCloseService(data, userId) {
   if (!isMonth(data?.month)) throw Object.assign(new Error('Ay YYYY-MM formatında olmalı'), { statusCode: 400 })
-  const rows = q.reconciliationRows(data.month).map(r => ({ product_id: r.product_id, system_base: r.opening_base + r.month_in - r.month_out }))
+  const rows = q.reconciliationRows(data.month).map(r => ({ product_id: r.product_id, system_base: r.opening_base + r.month_in - r.month_out + (r.month_adjust || 0) }))
   q.snapshotClosure(data.month, rows)
   q.upsertClosure({ month: data.month, note: data.note?.trim() || null, closed_by: userId || null, is_locked: 1 })
   return q.getClosure(data.month)
@@ -779,7 +817,8 @@ export function summaryService({ from, to, product_id, group = 'day' } = {}) {
   const periodByProduct = new Map(q.productFlow({ from, to }).map(p => [p.id, p]))
   const stock = q.stockByProduct().map(p => {
     const period = periodByProduct.get(p.id) || {}
-    const balance = p.total_in - p.total_out
+    const adjustNet = p.adjust_net || 0
+    const balance = p.total_in - p.total_out + adjustNet
     const periodIn = period.period_in || 0
     const periodOut = period.period_out || 0
     const periodNet = periodIn - periodOut
@@ -790,7 +829,8 @@ export function summaryService({ from, to, product_id, group = 'day' } = {}) {
       product_id: p.id, name: p.name, unit_label: p.unit_label,
       brand_id: p.brand_id || null, brand_name: p.brand_name || null,
       units_per_case: p.units_per_case, cases_per_pallet: p.cases_per_pallet,
-      total_in: p.total_in, total_out: p.total_out, balance, deficit,
+      total_in: p.total_in, total_out: p.total_out, adjust_net: adjustNet, balance, deficit,
+      adjust_human: adjustNet ? humanize(p, adjustNet) : null,
       period_in: periodIn, period_out: periodOut, period_net: periodNet, period_status: periodStatus,
       min_level: p.min_level, low, negative: balance < 0,
       in_human: humanize(p, p.total_in),
