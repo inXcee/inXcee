@@ -266,6 +266,7 @@ export function createDistributionService(data, userId) {
     waybill_no: null, note: data.note?.trim() || null, created_by: userId || null,
   }
   const [id] = q.createMovementsBatchWithAllocations(buildAllocationPlans([row]))
+  q.flagReviewForUnallocated([id]) // stok karşılığı yoksa "kontrol bekliyor"
   checkLowStock([product.id])
   return id
 }
@@ -339,6 +340,7 @@ export function batchDistributeService(data, userId) {
     }
   })
   const ids = q.createMovementsBatchWithAllocations(buildAllocationPlans(rows))
+  q.flagReviewForUnallocated(ids) // stok karşılığı olmayan satırlar "kontrol bekliyor"
   checkLowStock(rows.map(r => r.product_id))
   return ids
 }
@@ -716,6 +718,21 @@ export function pendingDistributionsService({ today } = {}) {
     unallocated_base: rows.reduce((s, x) => s + x.unallocated_base, 0),
   }
   return { date: day, rows, totals }
+}
+
+// ── Onay akışı (W10) ──
+export function reviewQueueService() {
+  const rows = q.reviewQueue().map(r => ({
+    movement_id: r.id, move_date: r.move_date, zone_name: r.zone_name || '—',
+    product_name: r.product_name, brand_name: r.brand_name || null, created_by_name: r.created_by_name || null,
+    qty_base: r.qty_base, unallocated_base: r.unallocated_base,
+    qty_human: humanize(r, r.qty_base), unallocated_human: humanize(r, r.unallocated_base),
+  }))
+  return { rows, count: rows.length }
+}
+export function approveReviewsService(ids) {
+  const list = Array.isArray(ids) ? ids.map(Number).filter(Boolean) : null
+  return q.approveReviews(list)
 }
 
 // ── Ay Sonu Kapanış / Uyuşturma ──

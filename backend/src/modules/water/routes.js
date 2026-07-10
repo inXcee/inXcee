@@ -14,6 +14,7 @@ import {
   monthLockWarning, pendingDistributionsService,
   templatesService, createTemplateService, deleteTemplateService,
   adjustmentsService, createAdjustmentService, deleteAdjustmentService, COUNT_REASONS,
+  reviewQueueService, approveReviewsService,
 } from './service.js'
 
 export const waterRouter = Router()
@@ -208,6 +209,18 @@ waterRouter.post('/templates', ...mgr, (req, res) => {
 })
 waterRouter.delete('/templates/:id', ...mgr, (req, res) => {
   try { deleteTemplateService(+req.params.id); res.json({ ok: true }) } catch (e) { fail(res, e) }
+})
+
+// ── Onay akışı (kontrol bekleyen eksi stok dağıtımları) ──
+waterRouter.get('/review', ...mgr, (req, res) => {
+  try { res.json(reviewQueueService()) } catch (e) { logger.error('[water]', e); fail(res, e) }
+})
+waterRouter.post('/review/approve', ...managerOnly, (req, res) => {
+  try {
+    const approved = approveReviewsService(req.body?.ids)
+    logAudit(req.user.id, 'water_review_approve', 'water', null, `${approved} kayıt onaylandı`)
+    res.json({ approved })
+  } catch (e) { fail(res, e) }
 })
 
 // ── İrsaliye Bekleyenler ──

@@ -400,6 +400,39 @@ export function deleteTemplate(id) {
   return tx()
 }
 
+// ── Onay akışı (W10) ──
+// Verilen dağıtım id'lerinden stok karşılığı olmayanları (eşleşmemiş) kontrol bekliyor işaretle
+export function flagReviewForUnallocated(ids) {
+  if (!ids?.length) return 0
+  const ph = ids.map(() => '?').join(',')
+  return getDB().prepare(`
+    UPDATE water_movements SET needs_review=1
+    WHERE id IN (${ph}) AND type='out'
+      AND qty_base > (SELECT COALESCE(SUM(qty_base),0) FROM water_movement_allocations WHERE out_movement_id=water_movements.id)
+  `).run(...ids).changes
+}
+export function reviewQueue() {
+  return getDB().prepare(`
+    SELECT mv.id, mv.move_date, mv.qty_base, p.name AS product_name, p.unit_label, p.units_per_case, p.cases_per_pallet,
+           p.brand_id, b.name AS brand_name, z.name AS zone_name, u.full_name AS created_by_name,
+           mv.qty_base - COALESCE((SELECT SUM(wa.qty_base) FROM water_movement_allocations wa WHERE wa.out_movement_id=mv.id),0) AS unallocated_base
+    FROM water_movements mv
+    JOIN water_products p ON p.id = mv.product_id
+    LEFT JOIN water_brands b ON b.id = p.brand_id
+    LEFT JOIN water_zones z ON z.id = mv.zone_id
+    LEFT JOIN users u ON u.id = mv.created_by
+    WHERE mv.type='out' AND mv.needs_review=1
+    ORDER BY mv.move_date ASC, mv.id ASC
+  `).all()
+}
+export function approveReviews(ids) {
+  if (Array.isArray(ids) && ids.length) {
+    const ph = ids.map(() => '?').join(',')
+    return getDB().prepare(`UPDATE water_movements SET needs_review=0 WHERE id IN (${ph}) AND needs_review=1`).run(...ids).changes
+  }
+  return getDB().prepare("UPDATE water_movements SET needs_review=0 WHERE type='out' AND needs_review=1").run().changes
+}
+
 // İrsaliye bekleyen (eşleşmemiş) tüm dağıtımlar — detaylı liste (W3)
 export function pendingDistributions() {
   return getDB().prepare(`

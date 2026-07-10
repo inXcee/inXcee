@@ -863,3 +863,44 @@ describe('Su takip — Ay kapanışı PDF özeti (W9)', () => {
     expect(r.status).toBe(403)
   })
 })
+
+describe('Su takip — Onay akışı (W10)', () => {
+  let pRev, zRev, supervisorToken
+  const auth = (r) => r.set('Authorization', `Bearer ${managerToken}`)
+
+  beforeAll(async () => {
+    supervisorToken = (await request(app).post('/api/auth/login').send({ username: 'vardiya', password: 'admin123' })).body.token
+    pRev = (await auth(request(app).post('/api/water/products')).send({ name: 'ONAY 1L', unit_label: 'adet', units_per_case: 1, cases_per_pallet: 1 })).body.id
+    zRev = (await auth(request(app).post('/api/water/zones')).send({ name: 'ONAY Bölge' })).body.id
+  })
+
+  it('stok karşılığı olmayan dağıtım "kontrol bekliyor" listesine düşer', async () => {
+    await auth(request(app).post('/api/water/distribute')).send({ product_id: pRev, zone_id: zRev, input_qty: 8, input_unit: 'adet', move_date: '2027-02-01' })
+    const r = await auth(request(app).get('/api/water/review'))
+    expect(r.status).toBe(200)
+    const item = r.body.rows.find(x => x.product_name === 'ONAY 1L')
+    expect(item).toBeTruthy()
+    expect(item.unallocated_base).toBe(8)
+  })
+
+  it('stok karşılığı olan dağıtım kontrol beklemez', async () => {
+    const p2 = (await auth(request(app).post('/api/water/products')).send({ name: 'ONAY Stoklu 1L', unit_label: 'adet', units_per_case: 1, cases_per_pallet: 1 })).body.id
+    await auth(request(app).post('/api/water/intake')).send({ product_id: p2, input_qty: 50, input_unit: 'adet', move_date: '2027-02-02', waybill_no: 'ONAY-IN2' })
+    await auth(request(app).post('/api/water/distribute')).send({ product_id: p2, zone_id: zRev, input_qty: 10, input_unit: 'adet', move_date: '2027-02-03' })
+    const r = await auth(request(app).get('/api/water/review'))
+    expect(r.body.rows.some(x => x.product_name === 'ONAY Stoklu 1L')).toBe(false)
+  })
+
+  it('vardiya onaylayamaz (403); müdür toplu onaylar → kuyruk temizlenir', async () => {
+    const forbidden = await request(app).post('/api/water/review/approve').set('Authorization', `Bearer ${supervisorToken}`).send({})
+    expect(forbidden.status).toBe(403)
+    // vardiya kuyruğu görebilir (mgr)
+    expect((await request(app).get('/api/water/review').set('Authorization', `Bearer ${supervisorToken}`)).status).toBe(200)
+
+    expect((await auth(request(app).get('/api/water/review'))).body.count).toBeGreaterThanOrEqual(1)
+    const ok = await auth(request(app).post('/api/water/review/approve')).send({}) // ids yok → hepsini onayla
+    expect(ok.status).toBe(200)
+    expect(ok.body.approved).toBeGreaterThanOrEqual(1)
+    expect((await auth(request(app).get('/api/water/review'))).body.count).toBe(0)
+  })
+})

@@ -404,5 +404,14 @@ Amaç: su takibini kayıt tablosundan → günlük dağıtım + irsaliye + eksi 
 - [x] Ay kapanışı kısa PDF özeti: `GET /reconciliation/:month/pdf` (pdfkit) — gelen/dağıtılan/kalan/eksi/sayım-farklı + en çok dağıtılan yerler + eksi stok listesi; MonthClosurePanel'de "📄 PDF Özet" butonu (blob indirme)
 - [x] +2 backend test (77/77 water, 1408/1408 tüm suite) + frontend smoke (11/11), build temiz
 
-### Faz W10 — Rol ve Onay Akışı
-- [ ] Normal kullanıcı günlük dağıtım; yönetici ay kapanışı/düzeltme/ürün ayarı; eksi stok "kontrol bekliyor" → toplu onay
+### Faz W10 — Rol ve Onay Akışı ✅
+- [x] Migration 035: `water_movements.needs_review` (güvenli ADD COLUMN + index)
+- [x] Stok karşılığı olmadan girilen dağıtım → `needs_review=1` (create + batch); `GET /review` kuyruğu (mgr görebilir), `POST /review/approve` toplu/tekil onay (**sadece müdür**), audit log
+- [x] Rol dağılımı netleşti: günlük dağıtım/giriş → mgr (müdür+vardiya); **müdür-only**: ay kapanışı/kilit, stok düzeltme, toplu onay
+- [x] Frontend: `ReviewPanel` — müdüre kırmızı "N eksi stok dağıtımı kontrol bekliyor" bandı + ✓ Toplu Onayla + satır bazlı onay + açılır liste
+- [x] +3 backend test (80/80 water, 1411/1411 tüm suite) + 1 frontend smoke (12/12), build temiz
+
+---
+
+## Su Takip A-Z SPRINT ÖZETİ (W1-W10 tamamlandı, 2026-07-10)
+10 faz · 6 migration (030-035) · backend 80/80 water testi (1411/1411 tüm suite) · frontend smoke 12/12. Tümü avskamp.com'a deploy edildi. `water_movements.type` CHECK'ine hiç dokunulmadı (düzeltme ayrı tabloda) — hareket geçmişi + FIFO korundu.

@@ -63,6 +63,10 @@ vi.mock('../../shared/api/client.js', () => ({
       if (url === '/water/zones') return Promise.resolve({ data: [{ id: 1, name: 'OTC Kamp Alanı', code: 'OTC' }] })
       if (url === '/water/returns') return Promise.resolve({ data: [] })
       if (url === '/water/brands') return Promise.resolve({ data: [{ id: 1, name: 'MİLA SU' }] })
+      if (url === '/water/review') return Promise.resolve({ data: {
+        rows: [{ movement_id: 5, move_date: '2026-07-04', zone_name: 'OTC Kamp Alanı', product_name: 'Damacana', brand_name: 'MİLA SU', created_by_name: 'Müdür', qty_base: 8, unallocated_base: 8, qty_human: '8 damacana', unallocated_human: '8 damacana' }],
+        count: 1,
+      } })
       if (url === '/water/adjustments') return Promise.resolve({ data: {
         rows: [{ id: 1, product_id: 1, product_name: 'Damacana', brand_name: 'MİLA SU', unit_label: 'damacana', move_date: '2026-07-05', direction: 'out', qty_base: 3, input_qty: 3, input_unit: 'adet', reason: 'fire_kirik', note: 'kırık', signed_base: -3, signed_human: '−3 damacana', qty_human: '3 damacana' }],
         reasons: [{ key: 'fire_kirik', label: 'Fire / kırık' }, { key: 'sayim_farki', label: 'Sayım farkı' }],
@@ -179,6 +183,14 @@ describe('WaterPage tek-ekran pano smoke', () => {
     fireEvent.click(await screen.findByText('🗂 Şablonlar'))
     // şablon kartındaki benzersiz satır çipi (board option'ıyla çakışmaz)
     expect(await screen.findByText(/OTC Kamp Alanı · Damacana · 5 adet/)).toBeInTheDocument()
+  })
+
+  it('müdür kontrol bekleyen bandını ve toplu onay butonunu görür', async () => {
+    useAuthStore.setState({ user: { role: 'campus_manager', username: 'mudur' } })
+    renderWithProviders(<WaterPage />)
+    expect(await screen.findByText(/kontrol bekliyor/)).toBeInTheDocument()
+    expect(screen.getByText('✓ Toplu Onayla')).toBeInTheDocument()
+    useAuthStore.setState({ user: null })
   })
 
   it('müdür 🛠 Düzeltme modalını açar ve düzeltme listesini gösterir', async () => {

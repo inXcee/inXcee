@@ -198,6 +198,8 @@ export default function WaterPage() {
 
       <AlertBand />
 
+      <ReviewPanel />
+
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', marginBottom: '16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '9px', padding: '3px 4px' }}>
           <button className="btn btn-ghost btn-sm" onClick={() => shiftMonth(-1)} style={{ padding: '4px 8px' }}>‹</button>
@@ -1633,6 +1635,59 @@ function DailyDistributionModal({ day, from, to, onDayChange, onClose }) {
         )}
       </div>
     </Modal>
+  )
+}
+
+// ─────────────────────────── Onay Akışı (kontrol bekleyen eksi stok) ───────────────────────────
+function ReviewPanel() {
+  const qc = useQueryClient()
+  const isManager = useAuthStore(s => s.user?.role === 'campus_manager')
+  const [open, setOpen] = useState(false)
+  const { data } = useQuery({
+    queryKey: ['water-review'],
+    queryFn: () => api.get('/water/review').then(r => r.data),
+    refetchInterval: 60000,
+  })
+  const rows = data?.rows || []
+  const approve = useMutation({
+    mutationFn: (ids) => api.post('/water/review/approve', ids ? { ids } : {}),
+    onSuccess: (r) => { qc.invalidateQueries({ queryKey: ['water-review'] }); qc.invalidateQueries({ queryKey: ['water-alerts'] }); toastOk(`${r.data.approved} kayıt onaylandı ✓`) },
+    onError: (e) => toastErr(errMsg(e, 'Onaylanamadı')),
+  })
+  if (!data || rows.length === 0) return null
+
+  return (
+    <div style={{ marginBottom: '16px', background: 'color-mix(in srgb, var(--red) 8%, var(--surface))', border: '1px solid var(--red)', borderLeft: '3px solid var(--red)', borderRadius: '10px', padding: '10px 14px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+        <span style={{ fontSize: '15px' }}>🔎</span>
+        <span style={{ fontSize: '13px', color: 'var(--text)', fontWeight: 600 }}>{rows.length} eksi stok dağıtımı kontrol bekliyor</span>
+        <span style={{ fontSize: '11px', color: 'var(--text3)' }}>stok karşılığı olmadan girildi</span>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px' }}>
+          <button className="btn btn-ghost btn-sm" onClick={() => setOpen(o => !o)}>{open ? '▲ Gizle' : '▼ Listele'}</button>
+          {isManager && <button className="btn btn-primary btn-sm" disabled={approve.isPending} onClick={async () => { if (await confirmDialog({ title: 'Toplu Onay', message: `${rows.length} dağıtım kaydı onaylansın mı?`, confirmText: 'Hepsini Onayla' })) approve.mutate(null) }}>✓ Toplu Onayla</button>}
+        </div>
+      </div>
+      {open && (
+        <div style={{ marginTop: '8px', overflowX: 'auto' }}>
+          <table className="data-table" style={{ fontSize: '11px', minWidth: '640px' }}>
+            <thead><tr>{['Tarih', 'Bölge', 'Ürün', 'Miktar', 'Karşılıksız', 'Giren', isManager ? '' : null].filter(h => h !== null).map((h, i) => <th key={i} style={{ textAlign: ['Tarih', 'Bölge', 'Ürün', 'Giren'].includes(h) ? 'left' : 'right', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
+            <tbody>
+              {rows.map(r => (
+                <tr key={r.movement_id}>
+                  <td style={{ fontFamily: 'var(--mono)' }}>{r.move_date}</td>
+                  <td>{r.zone_name}</td>
+                  <td style={{ fontWeight: 600 }}>{r.product_name}</td>
+                  <td style={{ textAlign: 'right', fontFamily: 'var(--mono)' }} title={r.qty_human}>{nf(r.qty_base)}</td>
+                  <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--red)', fontWeight: 600 }} title={r.unallocated_human}>{nf(r.unallocated_base)}</td>
+                  <td style={{ color: 'var(--text3)' }}>{r.created_by_name || '—'}</td>
+                  {isManager && <td style={{ textAlign: 'right' }}><button className="btn btn-ghost btn-sm" disabled={approve.isPending} onClick={() => approve.mutate([r.movement_id])}>Onayla</button></td>}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
   )
 }
 
