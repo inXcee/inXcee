@@ -11,7 +11,7 @@ import {
   shiftColor, deptColor, ModalOverlay, StaffSearch,
   LEAVE_CELL, formatShiftHours, shiftHoursFrom, leaveCellMeta, leaveTypeLabel,
 } from '../shared.jsx'
-import { buildStaffGrid, computeWeekStats } from '../logic/schedule.js'
+import { buildStaffGrid, computeWeekStats, parseQuickScheduleCode, cellToScheduleCode, buildScheduleWarnings } from '../logic/schedule.js'
 import { DailyView, WeekFillSheet, CellAssignSheet } from './scheduleSheets.jsx'
 import ScheduleImportModal from './ScheduleImportModal.jsx'
 
@@ -48,6 +48,13 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
   // Izgara görünüm kontrolleri (departman bantları)
   const [collapsedDepts, setCollapsedDepts] = useState(() => new Set())
   const [gridSearch, setGridSearch] = useState('')
+  const [selectionMode, setSelectionMode] = useState(false)
+  const [selectedCells, setSelectedCells] = useState(() => new Set())
+  const [selectionAnchor, setSelectionAnchor] = useState(null)
+  const [quickCode, setQuickCode] = useState('')
+  const [cellClipboard, setCellClipboard] = useState('')
+  const [dayDetail, setDayDetail] = useState(null)
+  const [recentActions, setRecentActions] = useState([])
   const [statusFilter, setStatusFilter] = useState('all') // all | leave | gaps | absent
   const [coverageMin, setCoverageMin] = useState(1)        // gün başına min kişi eşiği
 
@@ -84,6 +91,30 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
   const deleteShift = useMutation({
     mutationFn: ({ staffId, date }) => api.delete(`/shifts/schedule/${staffId}/${date}`),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['schedule'] }); setCellPopover(null) }
+  })
+
+  const quickApply = useMutation({
+    mutationFn: async ({ action, entries = [], deletions = [] }) => {
+      if (action === 'delete') {
+        await Promise.all(deletions.map(d => api.delete(`/shifts/schedule/${d.staffId}/${d.date}`)))
+        return { count: deletions.length }
+      }
+      await api.post('/shifts/schedule', { entries })
+      return { count: entries.length }
+    },
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ['schedule'] })
+      setQuickCode('')
+      const count = vars.action === 'delete' ? vars.deletions.length : vars.entries.length
+      setRecentActions(prev => [
+        { id: Date.now(), label: vars.action === 'delete' ? 'Hücre silindi' : 'Hızlı kod uygulandı', count },
+        ...prev,
+      ].slice(0, 5))
+      useToastStore.getState().addToast(`${count} hücre güncellendi`, 'success')
+    },
+    onError: (err) => {
+      useToastStore.getState().addToast(err?.response?.data?.error || 'Hızlı işlem başarısız', 'error')
+    },
   })
 
   const copyWeek = useMutation({
@@ -298,6 +329,177 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
   const allDeptNames = useMemo(() => [...new Set(staffGrid.map(p => p.dept_name || 'Departmansız'))], [staffGrid])
   const allCollapsed = allDeptNames.length > 0 && allDeptNames.every(n => collapsedDepts.has(n))
 
+  const cellKey = (staffId, date) => `${staffId}|${date}`
+  const selectedCellItems = useMemo(() => {
+    const people = new Map(staffGrid.map(p => [String(p.id), p]))
+    return [...selectedCells].map(key => {
+      const [staffId, date] = key.split('|')
+      const person = people.get(staffId)
+      if (!person) return null
+      return { key, person, date, cell: person.days?.[date] }
+    }).filter(Boolean)
+  }, [selectedCells, staffGrid])
+
+  const scheduleWarnings = useMemo(
+    () => buildScheduleWarnings(staffGrid, weekDays, { coverageMin }),
+    [staffGrid, weekDays, coverageMin]
+  )
+  const warningSummary = useMemo(() => ({
+    high: scheduleWarnings.filter(w => w.severity === 'high').length,
+    medium: scheduleWarnings.filter(w => w.severity !== 'high').length,
+    total: scheduleWarnings.length,
+  }), [scheduleWarnings])
+
+  const dayDetailData = useMemo(() => {
+    if (!dayDetail) return null
+    const rows = staffGrid.map(person => ({ person, cell: person.days?.[dayDetail] }))
+    return {
+      date: dayDetail,
+      working: rows.filter(r => ['scheduled', 'worked', 'overtime'].includes(r.cell?.status)),
+      leave: rows.filter(r => r.cell?.status === 'on_leave' || r.cell?.status === 'off'),
+      absent: rows.filter(r => r.cell?.status === 'absent'),
+      empty: rows.filter(r => !r.cell),
+    }
+  }, [dayDetail, staffGrid])
+
+  useEffect(() => {
+    setSelectedCells(new Set())
+    setSelectionAnchor(null)
+  }, [weekStart, deptFilter, scheduleView])
+
+  const toggleCellSelection = (person, date, event) => {
+    const key = cellKey(person.id, date)
+    if (event?.shiftKey && selectionAnchor) {
+      const staffIds = visibleGrid.map(p => p.id)
+      const aRow = staffIds.indexOf(selectionAnchor.staffId)
+      const bRow = staffIds.indexOf(person.id)
+      const aCol = weekDays.indexOf(selectionAnchor.date)
+      const bCol = weekDays.indexOf(date)
+      if (aRow >= 0 && bRow >= 0 && aCol >= 0 && bCol >= 0) {
+        const next = new Set(selectedCells)
+        const [r1, r2] = [Math.min(aRow, bRow), Math.max(aRow, bRow)]
+        const [c1, c2] = [Math.min(aCol, bCol), Math.max(aCol, bCol)]
+        for (let r = r1; r <= r2; r += 1) {
+          for (let c = c1; c <= c2; c += 1) next.add(cellKey(staffIds[r], weekDays[c]))
+        }
+        setSelectedCells(next)
+        return
+      }
+    }
+    setSelectedCells(prev => {
+      const next = new Set(event?.ctrlKey || event?.metaKey || prev.has(key) ? prev : [])
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+    setSelectionAnchor({ staffId: person.id, date })
+  }
+
+  const selectedOrToast = () => {
+    if (selectedCellItems.length > 0) return selectedCellItems
+    useToastStore.getState().addToast('Önce seçim modunda hücre seçin', 'error')
+    return []
+  }
+
+  const applyQuickCode = (code = quickCode) => {
+    const targets = selectedOrToast()
+    if (!targets.length) return
+    const parsed = parseQuickScheduleCode(code, shiftDefs)
+    if (parsed.action === 'noop') return
+    if (parsed.action === 'invalid') {
+      useToastStore.getState().addToast(parsed.message || 'Kod anlaşılmadı', 'error')
+      return
+    }
+    if (parsed.action === 'delete') {
+      quickApply.mutate({ action: 'delete', deletions: targets.map(t => ({ staffId: t.person.id, date: t.date })) })
+      return
+    }
+    quickApply.mutate({
+      action: 'assign',
+      entries: targets.map(t => ({
+        staff_id: t.person.id,
+        dept_id: t.person.dept_id,
+        shift_def_id: parsed.shiftDefId,
+        work_date: t.date,
+        status: parsed.status,
+      })),
+    })
+  }
+
+  const buildSelectionText = () => {
+    if (!selectedCellItems.length) return ''
+    const rowOrder = visibleGrid.map(p => p.id)
+    const items = [...selectedCellItems].sort((a, b) => {
+      const ar = rowOrder.indexOf(a.person.id)
+      const br = rowOrder.indexOf(b.person.id)
+      if (ar !== br) return ar - br
+      return weekDays.indexOf(a.date) - weekDays.indexOf(b.date)
+    })
+    const rowsByStaff = new Map()
+    items.forEach(item => {
+      if (!rowsByStaff.has(item.person.id)) rowsByStaff.set(item.person.id, new Map())
+      rowsByStaff.get(item.person.id).set(item.date, cellToScheduleCode(item.cell, shiftDefs))
+    })
+    return [...rowsByStaff.entries()].map(([, byDate]) => {
+      const cols = [...byDate.keys()].sort((a, b) => weekDays.indexOf(a) - weekDays.indexOf(b))
+      return cols.map(d => byDate.get(d)).join('\t')
+    }).join('\n')
+  }
+
+  const copySelectedCells = async () => {
+    const text = buildSelectionText()
+    if (!text) {
+      selectedOrToast()
+      return
+    }
+    setCellClipboard(text)
+    try { await navigator.clipboard?.writeText?.(text) } catch { /* local clipboard fallback */ }
+    useToastStore.getState().addToast(`${selectedCellItems.length} hücre kopyalandı`, 'success')
+  }
+
+  const pasteIntoSelection = async () => {
+    const targets = selectedOrToast()
+    if (!targets.length) return
+    let text = cellClipboard
+    try {
+      const browserText = await navigator.clipboard?.readText?.()
+      if (browserText) text = browserText
+    } catch { /* local clipboard fallback */ }
+    if (!text) {
+      useToastStore.getState().addToast('Yapıştırılacak veri yok', 'error')
+      return
+    }
+
+    const anchor = targets[0]
+    const rowStart = visibleGrid.findIndex(p => p.id === anchor.person.id)
+    const colStart = weekDays.indexOf(anchor.date)
+    const rows = text.split(/\r?\n/).filter(Boolean).map(r => r.split('\t'))
+    const entries = []
+    const deletions = []
+    rows.forEach((cols, ri) => {
+      const person = visibleGrid[rowStart + ri]
+      if (!person) return
+      cols.forEach((code, ci) => {
+        const date = weekDays[colStart + ci]
+        if (!date) return
+        const parsed = parseQuickScheduleCode(code, shiftDefs)
+        if (parsed.action === 'delete') deletions.push({ staffId: person.id, date })
+        if (parsed.action === 'assign') {
+          entries.push({
+            staff_id: person.id,
+            dept_id: person.dept_id,
+            shift_def_id: parsed.shiftDefId,
+            work_date: date,
+            status: parsed.status,
+          })
+        }
+      })
+    })
+    if (entries.length) quickApply.mutate({ action: 'assign', entries })
+    if (deletions.length) quickApply.mutate({ action: 'delete', deletions })
+    if (!entries.length && !deletions.length) useToastStore.getState().addToast('Yapıştırılan kodlar anlaşılmadı', 'error')
+  }
+
   useEffect(() => {
     if (!toolsOpen) return
     const handler = (e) => {
@@ -429,6 +631,83 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
         )}
       </div>
 
+      {scheduleView === 'weekly' && canEdit && (
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+          gap: '10px',
+          marginBottom: '10px',
+        }}>
+          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '10px', padding: '10px' }}>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+              <button className={`filter-chip${selectionMode ? ' active' : ''}`} onClick={() => setSelectionMode(v => !v)}>Seçim</button>
+              <span style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: selectedCellItems.length ? 'var(--accent)' : 'var(--text3)' }}>
+                {selectedCellItems.length} hücre
+              </span>
+              <input
+                value={quickCode}
+                onChange={e => setQuickCode(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') applyQuickCode() }}
+                placeholder="1 / 2 / G / OFF / I / YOK / sil"
+                style={{
+                  flex: '1 1 170px',
+                  minWidth: '160px',
+                  padding: '7px 10px',
+                  background: 'var(--surface2)',
+                  border: '1px solid var(--border)',
+                  borderRadius: '8px',
+                  color: 'var(--text)',
+                  fontFamily: 'var(--mono)',
+                  fontSize: '11px',
+                }}
+              />
+              <button className="btn btn-primary btn-sm" disabled={quickApply.isPending} onClick={() => applyQuickCode()}>Uygula</button>
+              <button className="btn btn-ghost btn-sm" onClick={copySelectedCells}>Kopyala</button>
+              <button className="btn btn-ghost btn-sm" disabled={quickApply.isPending} onClick={pasteIntoSelection}>Yapıştır</button>
+              <button className="btn btn-ghost btn-sm" onClick={() => { setSelectedCells(new Set()); setSelectionAnchor(null) }}>Temizle</button>
+            </div>
+          </div>
+
+          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '10px', padding: '10px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '8px' }}>
+              <span style={{ fontFamily: 'var(--display)', fontSize: '12px', letterSpacing: '1px', color: 'var(--text)' }}>CANLI KONTROL</span>
+              <span style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: warningSummary.high ? 'var(--red)' : 'var(--green)' }}>{warningSummary.high} kritik</span>
+              <span style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--accent)' }}>{warningSummary.medium} uyarı</span>
+              {recentActions.length > 0 && (
+                <span style={{ marginLeft: 'auto', fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)' }}>
+                  Son: {recentActions[0].label} ({recentActions[0].count})
+                </span>
+              )}
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '6px', maxHeight: '82px', overflowY: 'auto' }}>
+              {scheduleWarnings.slice(0, 6).map((w, idx) => (
+                <button
+                  key={`${w.type}-${w.staffId || w.dept || idx}-${w.date || idx}`}
+                  onClick={() => w.date && setDayDetail(w.date)}
+                  style={{
+                    textAlign: 'left',
+                    padding: '7px 8px',
+                    borderRadius: '8px',
+                    border: `1px solid ${w.severity === 'high' ? 'rgba(231,76,60,.35)' : 'rgba(240,165,0,.35)'}`,
+                    background: w.severity === 'high' ? 'rgba(231,76,60,.10)' : 'rgba(240,165,0,.10)',
+                    color: 'var(--text2)',
+                    cursor: w.date ? 'pointer' : 'default',
+                  }}
+                >
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: '10px', fontWeight: 700, color: w.severity === 'high' ? 'var(--red)' : 'var(--accent)' }}>{w.title}</div>
+                  <div style={{ fontSize: '11px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{w.message}</div>
+                </button>
+              ))}
+              {scheduleWarnings.length === 0 && (
+                <div style={{ gridColumn: '1 / -1', fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--green)', padding: '8px' }}>
+                  Çizelge kontrolleri temiz
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Shift palette (D&D) ── */}
       {scheduleView === 'weekly' && canEdit && !('ontouchstart' in window) && (
         <div style={{
@@ -542,11 +821,12 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
                   const sun = isSunday(d)
                   const isToday = d === todayStr()
                   return (
-                    <th key={d} style={{
+                    <th key={d} onClick={() => setDayDetail(d)} style={{
                       padding: '10px 8px', textAlign: 'center', minWidth: '110px',
                       borderRight: i < 6 ? '1px solid var(--border)' : 'none',
                       background: isToday ? 'rgba(59,140,240,.1)' : sun ? 'rgba(240,165,0,.07)' : undefined,
                       borderBottom: isToday ? '2px solid var(--blue)' : sun ? '2px solid var(--accent)' : '2px solid var(--border)',
+                      cursor: 'pointer',
                     }}>
                       <div style={{
                         fontFamily: 'var(--display)', fontSize: '13px', letterSpacing: '1px',
@@ -677,6 +957,7 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
                       const isAbsent = cell?.status === 'absent'
 
                       let pillBg = 'transparent', pillColor = 'var(--text3)', pillLabel = null, pillSub = null
+                      const selected = selectedCells.has(cellKey(person.id, d))
 
                       if (cell) {
                         if (isOff) {
@@ -718,18 +999,26 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
                           style={{
                             padding: '6px 4px', textAlign: 'center',
                             borderRight: i < 6 ? '1px solid var(--border)' : 'none',
-                            background: dragOverCell === `${person.id}-${d}`
+                            background: selected
+                              ? 'rgba(240,165,0,.18)'
+                              : dragOverCell === `${person.id}-${d}`
                               ? 'rgba(240,165,0,.15)'
                               : isToday ? 'rgba(59,140,240,.04)' : sun ? 'rgba(240,165,0,.03)' : 'transparent',
                             transition: 'background .1s',
-                            outline: dragOverCell === `${person.id}-${d}` ? '2px dashed rgba(240,165,0,.6)' : 'none',
+                            outline: selected ? '2px solid rgba(240,165,0,.75)' : dragOverCell === `${person.id}-${d}` ? '2px dashed rgba(240,165,0,.6)' : 'none',
                           }}>
                           <button
-                            onClick={e => openCellPopover(e, person, d)}
+                            onClick={e => {
+                              if (selectionMode) {
+                                toggleCellSelection(person, d, e)
+                                return
+                              }
+                              openCellPopover(e, person, d)
+                            }}
                             disabled={!canEdit}
                             style={{
                               width: '100%', minHeight: pillLabel ? '62px' : '54px', padding: '6px 4px',
-                              borderRadius: '8px', border: pillLabel ? 'none' : `1px dashed ${canEdit ? 'var(--border)' : 'transparent'}`,
+                              borderRadius: '8px', border: selected ? '1px solid rgba(240,165,0,.95)' : pillLabel ? 'none' : `1px dashed ${canEdit ? 'var(--border)' : 'transparent'}`,
                               cursor: canEdit ? 'pointer' : 'default',
                               background: pillBg,
                               display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '2px',
@@ -833,6 +1122,68 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
           formatDate={formatDate}
           shiftColor={shiftColor}
         />
+      )}
+
+      {dayDetailData && (
+        <ModalOverlay onClose={() => setDayDetail(null)}>
+          <h3 style={{ fontFamily: 'var(--display)', fontSize: '18px', letterSpacing: '2px', marginBottom: '6px' }}>
+            GUN DETAYI
+          </h3>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--text3)', marginBottom: '14px' }}>
+            {formatDate(dayDetailData.date)} {shortDay(dayDetailData.date)}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '8px', marginBottom: '14px' }}>
+            {[
+              ['Calisan', dayDetailData.working.length, 'var(--green)'],
+              ['Izin/OFF', dayDetailData.leave.length, 'var(--teal)'],
+              ['Devamsiz', dayDetailData.absent.length, 'var(--red)'],
+              ['Bos', dayDetailData.empty.length, 'var(--text3)'],
+            ].map(([label, count, color]) => (
+              <div key={label} style={{ background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '8px', padding: '10px', textAlign: 'center' }}>
+                <div style={{ fontFamily: 'var(--display)', fontSize: '22px', color }}>{count}</div>
+                <div style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)' }}>{label}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '10px', maxHeight: '420px', overflowY: 'auto' }}>
+            {[
+              ['Calisan', dayDetailData.working, 'var(--green)'],
+              ['Izin / OFF', dayDetailData.leave, 'var(--teal)'],
+              ['Devamsiz', dayDetailData.absent, 'var(--red)'],
+              ['Bos', dayDetailData.empty, 'var(--text3)'],
+            ].map(([title, rows, color]) => (
+              <div key={title} style={{ border: '1px solid var(--border)', borderRadius: '8px', overflow: 'hidden' }}>
+                <div style={{ padding: '8px 10px', background: 'var(--surface2)', fontFamily: 'var(--mono)', fontSize: '10px', color, fontWeight: 700 }}>
+                  {title} · {rows.length}
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  {rows.slice(0, 30).map(({ person, cell }) => (
+                    <button
+                      key={`${title}-${person.id}`}
+                      onClick={() => onPersonClick?.(person.id)}
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        gap: '8px',
+                        padding: '8px 10px',
+                        border: 'none',
+                        borderBottom: '1px solid var(--border)',
+                        background: 'var(--surface)',
+                        color: 'var(--text2)',
+                        textAlign: 'left',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{person.full_name}</span>
+                      <span style={{ fontFamily: 'var(--mono)', fontSize: '10px', color }}>{cell ? cellToScheduleCode(cell, shiftDefs) || cell.shift_name || cell.status : '-'}</span>
+                    </button>
+                  ))}
+                  {rows.length === 0 && <div style={{ padding: '10px', color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: '10px' }}>Kayit yok</div>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </ModalOverlay>
       )}
 
       {/* Bulk fill modal — entire dept */}

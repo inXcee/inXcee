@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest'
-import { buildStaffGrid, computeWeekStats, parseShiftCell, parseScheduleSheet } from './schedule.js'
+import {
+  buildStaffGrid,
+  computeWeekStats,
+  parseShiftCell,
+  parseQuickScheduleCode,
+  cellToScheduleCode,
+  buildScheduleWarnings,
+  parseScheduleSheet,
+} from './schedule.js'
 
 const SHIFT_DEFS = [
   { id: 10, name: 'Gündüz', color_class: 'bg-blue-400' },
@@ -97,6 +105,55 @@ describe('parseShiftCell', () => {
 
   it('aralık dışı sayı null döner', () => {
     expect(parseShiftCell('9', SHIFT_DEFS)).toBeNull()
+  })
+})
+
+describe('parseQuickScheduleCode', () => {
+  it('hizli vardiya kodlarini assign aksiyonuna cevirir', () => {
+    expect(parseQuickScheduleCode('1', SHIFT_DEFS)).toEqual({ action: 'assign', shiftDefId: 10, status: 'scheduled' })
+    expect(parseQuickScheduleCode('G', SHIFT_DEFS)).toEqual({ action: 'assign', shiftDefId: 10, status: 'scheduled' })
+    expect(parseQuickScheduleCode('off', SHIFT_DEFS)).toEqual({ action: 'assign', shiftDefId: null, status: 'off' })
+    expect(parseQuickScheduleCode('yok', SHIFT_DEFS)).toEqual({ action: 'assign', shiftDefId: null, status: 'absent' })
+  })
+
+  it('silme ve gecersiz kodlari ayirir', () => {
+    expect(parseQuickScheduleCode('sil', SHIFT_DEFS)).toEqual({ action: 'delete' })
+    expect(parseQuickScheduleCode('', SHIFT_DEFS)).toEqual({ action: 'noop' })
+    expect(parseQuickScheduleCode('bilinmez', SHIFT_DEFS).action).toBe('invalid')
+  })
+})
+
+describe('cellToScheduleCode', () => {
+  it('hucreleri kopyalanabilir kisa koda cevirir', () => {
+    expect(cellToScheduleCode({ status: 'scheduled', shift_def_id: 20 }, SHIFT_DEFS)).toBe('2')
+    expect(cellToScheduleCode({ status: 'off' }, SHIFT_DEFS)).toBe('OFF')
+    expect(cellToScheduleCode({ status: 'on_leave' }, SHIFT_DEFS)).toBe('I')
+    expect(cellToScheduleCode({ status: 'absent' }, SHIFT_DEFS)).toBe('YOK')
+  })
+})
+
+describe('buildScheduleWarnings', () => {
+  it('eksik kapsama, haftalik izin yok ve dinlenme uyarilarini uretir', () => {
+    const grid = [
+      {
+        id: 1,
+        full_name: 'Ali',
+        dept_name: 'Güvenlik',
+        days: {
+          '2026-06-01': { status: 'scheduled', start_hour: '20:00', end_hour: '08:00' },
+          '2026-06-02': { status: 'scheduled', start_hour: '08:00', end_hour: '17:00' },
+          '2026-06-03': { status: 'scheduled', start_hour: '08:00', end_hour: '17:00' },
+          '2026-06-04': { status: 'scheduled', start_hour: '08:00', end_hour: '17:00' },
+          '2026-06-05': { status: 'scheduled', start_hour: '08:00', end_hour: '17:00' },
+          '2026-06-06': { status: 'scheduled', start_hour: '08:00', end_hour: '17:00' },
+          '2026-06-07': { status: 'scheduled', start_hour: '08:00', end_hour: '17:00' },
+        },
+      },
+    ]
+    const warnings = buildScheduleWarnings(grid, WEEK, { coverageMin: 2 })
+    expect(warnings.some(w => w.type === 'coverage')).toBe(true)
+    expect(warnings.some(w => w.type === 'weekly_off')).toBe(true)
+    expect(warnings.some(w => w.type === 'rest')).toBe(true)
   })
 })
 
