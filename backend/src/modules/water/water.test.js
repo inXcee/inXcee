@@ -847,3 +847,19 @@ describe('Su takip — Ürün/Marka güçlendirme (W8)', () => {
     expect((await auth(request(app).get('/api/water/products?all=1'))).body.some(x => x.id === pid)).toBe(true)
   })
 })
+
+describe('Su takip — Ay kapanışı PDF özeti (W9)', () => {
+  const auth = (r) => r.set('Authorization', `Bearer ${managerToken}`)
+  it('PDF döner (application/pdf); geçersiz ay 400', async () => {
+    const bad = await auth(request(app).get('/api/water/reconciliation/2026/pdf'))
+    expect(bad.status).toBe(400)
+    const r = await auth(request(app).get('/api/water/reconciliation/2026-06/pdf').buffer())
+    expect(r.status).toBe(200)
+    expect(r.headers['content-type']).toMatch(/pdf/)
+    expect(r.body.length || r.text?.length || 0).toBeGreaterThan(100) // PDF gövdesi
+  })
+  it('yetkisiz rol PDF alamaz (403)', async () => {
+    const r = await request(app).get('/api/water/reconciliation/2026-06/pdf').set('Authorization', `Bearer ${laundryToken}`)
+    expect(r.status).toBe(403)
+  })
+})

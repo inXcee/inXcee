@@ -159,6 +159,7 @@ describe('WaterPage tek-ekran pano smoke', () => {
     fireEvent.click(within(panel).getByText('▼ Aç')) // panel varsayılan kapalı
     expect(await within(panel).findByText('120')).toBeInTheDocument() // sistem kalanı = 100 + 50 - 30
     expect(within(panel).getByLabelText('Damacana sayım')).toBeInTheDocument()
+    expect(within(panel).getByText('📄 PDF Özet')).toBeInTheDocument() // W9 PDF butonu
   })
 
   it('irsaliye bekleyenler paneli bekleyen dağıtımı ve gecikmeyi listeler', async () => {

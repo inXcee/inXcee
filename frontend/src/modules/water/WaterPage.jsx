@@ -580,16 +580,20 @@ function WaterBoard({ from, to, label, lowItems }) {
     setExporting(true)
     try {
       const ExcelJS = (await import('exceljs')).default
-      const [summaryRes, outRes, inRes, returnsRes] = await Promise.all([
+      const [summaryRes, outRes, inRes, returnsRes, pendingRes, adjRes] = await Promise.all([
         api.get('/water/summary', { params: { from, to } }),
         api.get('/water/movements', { params: { type: 'out', from, to, limit: 1000 } }),
         api.get('/water/movements', { params: { type: 'in', from, to, limit: 1000 } }),
         api.get('/water/returns', { params: { from, to } }),
+        api.get('/water/pending'),
+        api.get('/water/adjustments', { params: { from, to } }),
       ])
       const summary = summaryRes.data || {}
       const outRows = outRes.data || []
       const inRows = inRes.data || []
       const returnRows = returnsRes.data || []
+      const pendingRows = pendingRes.data?.rows || []
+      const adjRows = adjRes.data?.rows || []
       const cols = orderedCols
       const totals = summary.totals || {}
       const stock = summary.stock || []
@@ -777,6 +781,36 @@ function WaterBoard({ from, to, label, lowItems }) {
       returnRows.forEach(r => wsReturns.addRow([r.move_date, clean(r.brand_name), clean(r.product_name), Number(r.input_qty || 0), clean(r.input_unit), Number(r.qty_base || 0), clean(r.created_by_name || r.created_by_username), clean(r.note)]))
       table(wsReturns, 2, Math.max(2, 2 + returnRows.length), 8, [4, 6])
       wsReturns.columns = [{ width: 14 }, { width: 16 }, { width: 22 }, { width: 14 }, { width: 10 }, { width: 14 }, { width: 18 }, { width: 24 }]
+
+      // İrsaliye Bekleyenler (W9)
+      const wsPending = wb.addWorksheet('İrsaliye Bekleyen')
+      title(wsPending, 'İRSALİYE BEKLEYEN DAĞITIMLAR', 7)
+      wsPending.addRow(['Tarih', 'Dağıtım Yeri', 'Ürün', 'Dağıtılan', 'Eşleşen', 'Bekleyen', 'Gün'])
+      pendingRows.forEach(p => wsPending.addRow([p.move_date, clean(p.zone_name), clean(p.product_name), Number(p.qty_base || 0), Number(p.allocated_base || 0), Number(p.unallocated_base || 0), Number(p.waiting_days || 0)]))
+      if (!pendingRows.length) wsPending.addRow(['', 'Bekleyen dağıtım yok'])
+      table(wsPending, 2, Math.max(2, 2 + pendingRows.length), 7, [4, 5, 6, 7])
+      for (let r = 3; r <= 2 + pendingRows.length; r++) if (Number(wsPending.getCell(r, 7).value) >= 3) wsPending.getRow(r).eachCell(c => { c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fills.red } } })
+      wsPending.columns = [{ width: 14 }, { width: 26 }, { width: 22 }, { width: 12 }, { width: 12 }, { width: 12 }, { width: 8 }]
+
+      // Eksi Stoklar (W9)
+      const negStock = stock.filter(s => s.negative || s.balance < 0)
+      const wsNeg = wb.addWorksheet('Eksi Stoklar')
+      title(wsNeg, `EKSİ STOKTAKİ ÜRÜNLER - ${label}`, 5)
+      wsNeg.addRow(['Marka', 'Ürün', 'Baz Birim', 'Bakiye', 'Eksik (okunur)'])
+      negStock.forEach(s => wsNeg.addRow([clean(s.brand_name), clean(s.name), clean(s.unit_label), Number(s.balance || 0), clean(s.deficit_human || humanQty(s, Math.abs(s.balance)))]))
+      if (!negStock.length) wsNeg.addRow(['', 'Eksi stok yok 🎉'])
+      table(wsNeg, 2, Math.max(2, 2 + negStock.length), 5, [4])
+      for (let r = 3; r <= 2 + negStock.length; r++) wsNeg.getRow(r).eachCell(c => { c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fills.red } } })
+      wsNeg.columns = [{ width: 16 }, { width: 24 }, { width: 12 }, { width: 12 }, { width: 20 }]
+
+      // Sayım / Düzeltme Fişleri (W9)
+      const wsAdj = wb.addWorksheet('Düzeltme Fişleri')
+      title(wsAdj, `STOK DÜZELTME / SAYIM FİŞLERİ - ${label}`, 6)
+      wsAdj.addRow(['Tarih', 'Ürün', 'Yön', 'Etki (baz)', 'Sebep', 'Not'])
+      adjRows.forEach(a => wsAdj.addRow([a.move_date, clean(a.product_name), a.direction === 'in' ? 'Artı (+)' : 'Eksi (−)', Number(a.signed_base || 0), clean(a.reason), clean(a.note)]))
+      if (!adjRows.length) wsAdj.addRow(['', 'Düzeltme kaydı yok'])
+      table(wsAdj, 2, Math.max(2, 2 + adjRows.length), 6, [4])
+      wsAdj.columns = [{ width: 14 }, { width: 24 }, { width: 12 }, { width: 12 }, { width: 18 }, { width: 24 }]
 
       wb.eachSheet(sheet => {
         sheet.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 }
@@ -1718,6 +1752,14 @@ function MonthClosurePanel({ month, label }) {
   const askClose = async () => {
     if (await confirmDialog({ title: `${label} kapatılsın mı?`, message: 'Ay kilitlenir; kilitli aya girilen kayıtlar uyarı verir. Kilidi sonra açabilirsiniz.', confirmText: 'Ayı Kilitle' })) closeMonth.mutate()
   }
+  const downloadPdf = async () => {
+    try {
+      const r = await api.get(`/water/reconciliation/${month}/pdf`, { responseType: 'blob' })
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(r.data)
+      a.download = `su-ay-kapanis-${month}.pdf`; a.click(); URL.revokeObjectURL(a.href)
+    } catch { toastErr('PDF oluşturulamadı') }
+  }
 
   return (
     <div className="panel" style={{ marginTop: '16px', borderTop: `3px solid ${locked ? 'var(--red)' : 'var(--amber, #d97706)'}` }}>
@@ -1728,6 +1770,7 @@ function MonthClosurePanel({ month, label }) {
         </div>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px' }}>
           <button className="btn btn-ghost btn-sm" onClick={() => setOpen(o => !o)}>{open ? '▲ Gizle' : '▼ Aç'}</button>
+          {open && <button className="btn btn-ghost btn-sm" onClick={downloadPdf}>📄 PDF Özet</button>}
           {open && isManager && (locked
             ? <button className="btn btn-ghost btn-sm" onClick={() => unlockMonth.mutate()}>🔓 Kilidi Aç</button>
             : <button className="btn btn-primary btn-sm" onClick={askClose}>🔒 Ayı Kilitle</button>)}

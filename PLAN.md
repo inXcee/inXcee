@@ -399,8 +399,10 @@ Amaç: su takibini kayıt tablosundan → günlük dağıtım + irsaliye + eksi 
 - [x] BrandManager: renk seçici (yeni marka + mevcut markaların satır-içi renk düzenleme); matris tint marka rengini kullanır (yoksa palet fallback)
 - [x] +3 backend test (75/75 water, 1406/1406 tüm suite) + 1 frontend smoke (11/11), build temiz
 
-### Faz W9 — Excel / PDF Rapor Paketi
-- [ ] Excel sayfaları netleştir (Yönetici Özeti/Ay Uyuşturma/Günlük Akış/Bölge/Ürün/İrsaliye Bekleyen/Eksi Stok/Sayım-Düzeltme); ay kapanışında kısa PDF özet
+### Faz W9 — Excel / PDF Rapor Paketi ✅
+- [x] Excel'e 3 yeni sayfa: **İrsaliye Bekleyen** (3+ gün kırmızı), **Eksi Stoklar** (kırmızı), **Sayım/Düzeltme Fişleri** (imzalı etki) — mevcut Aylık Özet/Ay Uyuşturma/INDEX/Günlük/Dağıtım/İrsaliye Stok/Bölge/Kurallar/Boş İade ile 13 sayfa
+- [x] Ay kapanışı kısa PDF özeti: `GET /reconciliation/:month/pdf` (pdfkit) — gelen/dağıtılan/kalan/eksi/sayım-farklı + en çok dağıtılan yerler + eksi stok listesi; MonthClosurePanel'de "📄 PDF Özet" butonu (blob indirme)
+- [x] +2 backend test (77/77 water, 1408/1408 tüm suite) + frontend smoke (11/11), build temiz
 
 ### Faz W10 — Rol ve Onay Akışı
 - [ ] Normal kullanıcı günlük dağıtım; yönetici ay kapanışı/düzeltme/ürün ayarı; eksi stok "kontrol bekliyor" → toplu onay
