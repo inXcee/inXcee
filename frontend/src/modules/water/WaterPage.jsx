@@ -231,7 +231,11 @@ export default function WaterPage() {
 
       <WaterBoard from={from} to={to} label={label} lowItems={(summary?.stock || []).filter(s => s.low)} />
 
+      <ForecastPanel />
+
       <PendingWaybillPanel />
+
+      <TruckArrivalPanel from={from} to={to} label={label} />
 
       <MonthClosurePanel month={`${ym.y}-${String(ym.m).padStart(2, '0')}`} label={label} />
 
@@ -1691,6 +1695,69 @@ function ReviewPanel() {
   )
 }
 
+// ─────────────────────────── Tüketim Öngörüsü & Sipariş Önerisi (V1) ───────────────────────────
+function ForecastPanel() {
+  const [open, setOpen] = useState(false)
+  const today = todayStr()
+  const { data } = useQuery({
+    queryKey: ['water-forecast', today],
+    queryFn: () => api.get('/water/forecast', { params: { today } }).then(r => r.data),
+  })
+  const rows = data?.rows || []
+  const orders = data?.order_suggestions || []
+  const t = data?.totals || { order_count: 0, soon_count: 0 }
+  const withData = useMemo(() => [...rows].filter(r => r.days_of_cover != null).sort((a, b) => a.days_of_cover - b.days_of_cover), [rows])
+  if (!data || (withData.length === 0 && orders.length === 0)) return null
+
+  const coverColor = (d) => d == null ? 'var(--text3)' : d <= 7 ? 'var(--red)' : d <= 14 ? 'var(--amber, #d97706)' : 'var(--green)'
+  return (
+    <div className="panel" style={{ marginTop: '16px', borderTop: `3px solid ${t.order_count ? 'var(--red)' : 'var(--teal)'}` }}>
+      <div className="panel-header" style={{ alignItems: 'center' }}>
+        <div>
+          <div className="panel-title">📉 SİPARİŞ ÖNERİLERİ & GÜN-YETER</div>
+          <div className="panel-subtitle">
+            {t.order_count > 0 ? <span style={{ color: 'var(--red)', fontWeight: 600 }}>{t.order_count} ürün sipariş bekliyor</span> : 'sipariş gerekmiyor'} · {t.soon_count} ürün 7 günden az · son 30 gün tüketimine göre
+          </div>
+        </div>
+        <button className="btn btn-ghost btn-sm" style={{ marginLeft: 'auto' }} onClick={() => setOpen(o => !o)}>{open ? '▲ Gizle' : '▼ Aç'}</button>
+      </div>
+      {open && (
+        <>
+          {orders.length > 0 && (
+            <div style={{ padding: '0 0 10px' }}>
+              <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--red)', marginBottom: '6px' }}>ÖNERİLEN SİPARİŞLER</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                {orders.map(o => (
+                  <span key={o.product_id} style={{ fontSize: '11px', border: '1px solid var(--red)', background: 'color-mix(in srgb, var(--red) 8%, transparent)', borderRadius: '8px', padding: '4px 9px' }}>
+                    {o.brand_name ? `${o.brand_name} · ` : ''}<b>{o.product_name}</b> → {o.suggested_human} <span style={{ color: 'var(--text3)' }}>({o.days_of_cover}g yeter)</span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          <div style={{ overflowX: 'auto' }}>
+            <table className="data-table" style={{ fontSize: '11px', minWidth: '640px' }}>
+              <thead><tr>{['Ürün', 'Bakiye', 'Günlük ort.', 'Gün yeter', 'Tahmini bitiş', 'Öneri'].map((h, i) => <th key={i} style={{ textAlign: h === 'Ürün' ? 'left' : 'right', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
+              <tbody>
+                {withData.map(r => (
+                  <tr key={r.product_id}>
+                    <td style={{ fontWeight: 600 }}>{r.product_name}{r.confidence === 'low' && <span style={{ fontSize: '9px', color: 'var(--text3)', marginLeft: '4px' }}>(az veri)</span>}</td>
+                    <td style={{ textAlign: 'right', fontFamily: 'var(--mono)' }} title={r.balance_human}>{nf(r.balance)}</td>
+                    <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--text3)' }}>{r.avg_daily}</td>
+                    <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 700, color: coverColor(r.days_of_cover) }}>{r.days_of_cover}g</td>
+                    <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--text3)' }}>{r.stockout_date || '—'}</td>
+                    <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', color: r.needs_order ? 'var(--red)' : 'var(--text3)' }}>{r.needs_order ? r.suggested_human : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 // ─────────────────────────── İrsaliye Bekleyenler (eşleşmemiş dağıtımlar) ───────────────────────────
 function PendingWaybillPanel() {
   const [open, setOpen] = useState(false)
@@ -1747,6 +1814,223 @@ function PendingWaybillPanel() {
 }
 
 // ─────────────────────────── Ay Sonu Kapanış / Uyuşturma ───────────────────────────
+function TruckArrivalPanel({ from, to, label }) {
+  const qc = useQueryClient()
+  const isManager = useAuthStore(s => s.user?.role === 'campus_manager')
+  const fileRef = useRef(null)
+  const [open, setOpen] = useState(true)
+  const [photoForm, setPhotoForm] = useState({ truck_arrival_id: '', waybill_no: '', move_date: todayStr(), note: '' })
+  const [form, setForm] = useState({
+    arrival_date: todayStr(), arrival_start_time: '08:00', arrival_end_time: '17:00',
+    mail_deadline_date: todayStr(), mail_deadline_time: '17:00',
+    reminder_start_time: '08:00', reminder_end_time: '17:00', reminder_interval_minutes: 60,
+    supplier_name: '', brand_id: '', driver_name: '', driver_tc: '', driver_phone: '',
+    plate: '', trailer_plate: '', center_email: '', note: '',
+  })
+
+  const { data: trucks = [] } = useQuery({
+    queryKey: ['water-truck-arrivals', from, to],
+    queryFn: () => api.get('/water/truck-arrivals', { params: { from, to, limit: 300 } }).then(r => r.data),
+    refetchInterval: 60000,
+  })
+  const { data: photos = [] } = useQuery({
+    queryKey: ['water-waybill-photos', from, to],
+    queryFn: () => api.get('/water/waybill-photos', { params: { from, to, limit: 120 } }).then(r => r.data),
+  })
+  const { data: brands = [] } = useQuery({
+    queryKey: ['water-brands'],
+    queryFn: () => api.get('/water/brands').then(r => r.data),
+  })
+
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ['water-truck-arrivals'] })
+    qc.invalidateQueries({ queryKey: ['water-waybill-photos'] })
+    qc.invalidateQueries({ queryKey: ['water-alerts'] })
+  }
+  const create = useMutation({
+    mutationFn: () => api.post('/water/truck-arrivals', { ...form, brand_id: form.brand_id || null }),
+    onSuccess: () => {
+      invalidate()
+      setForm(f => ({ ...f, driver_name: '', driver_tc: '', driver_phone: '', plate: '', trailer_plate: '', note: '' }))
+      toastOk('Tır ön bildirimi kaydedildi')
+    },
+    onError: e => toastErr(errMsg(e, 'Tır kaydı oluşturulamadı')),
+  })
+  const updateTruck = useMutation({
+    mutationFn: ({ id, body }) => api.put(`/water/truck-arrivals/${id}`, body),
+    onSuccess: () => { invalidate(); toastOk('Tır kaydı güncellendi') },
+    onError: e => toastErr(errMsg(e, 'Güncellenemedi')),
+  })
+  const sendMail = useMutation({
+    mutationFn: id => api.post(`/water/truck-arrivals/${id}/send-mail`),
+    onSuccess: () => { invalidate(); toastOk('Ana merkeze mail gönderildi') },
+    onError: e => toastErr(errMsg(e, 'Mail gönderilemedi')),
+  })
+  const markMail = useMutation({
+    mutationFn: id => api.post(`/water/truck-arrivals/${id}/mark-mail-sent`),
+    onSuccess: () => { invalidate(); toastOk('Mail atıldı olarak işaretlendi') },
+    onError: e => toastErr(errMsg(e, 'İşaretlenemedi')),
+  })
+  const markChecked = useMutation({
+    mutationFn: id => api.post(`/water/truck-arrivals/${id}/check`),
+    onSuccess: () => { invalidate(); toastOk('Kontrol saati işlendi') },
+    onError: e => toastErr(errMsg(e, 'Kontrol işlenemedi')),
+  })
+  const delTruck = useMutation({
+    mutationFn: id => api.delete(`/water/truck-arrivals/${id}`),
+    onSuccess: () => { invalidate(); toastOk('Tır kaydı silindi') },
+    onError: e => toastErr(errMsg(e, 'Silinemedi')),
+  })
+  const uploadPhoto = useMutation({
+    mutationFn: file => {
+      const fd = new FormData()
+      fd.append('photo', file)
+      if (photoForm.truck_arrival_id) fd.append('truck_arrival_id', photoForm.truck_arrival_id)
+      if (photoForm.waybill_no.trim()) fd.append('waybill_no', photoForm.waybill_no.trim())
+      fd.append('move_date', photoForm.move_date || todayStr())
+      if (photoForm.note.trim()) fd.append('note', photoForm.note.trim())
+      return api.post('/water/waybill-photos', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+    },
+    onSuccess: () => { invalidate(); setPhotoForm(f => ({ ...f, waybill_no: '', note: '' })); toastOk('İrsaliye fotoğrafı yüklendi') },
+    onError: e => toastErr(errMsg(e, 'Fotoğraf yüklenemedi')),
+  })
+  const delPhoto = useMutation({
+    mutationFn: id => api.delete(`/water/waybill-photos/${id}`),
+    onSuccess: () => { invalidate(); toastOk('Fotoğraf silindi') },
+    onError: e => toastErr(errMsg(e, 'Fotoğraf silinemedi')),
+  })
+
+  const truckPayload = (t, patch = {}) => ({
+    arrival_date: t.arrival_date, arrival_start_time: t.arrival_start_time, arrival_end_time: t.arrival_end_time,
+    mail_deadline_date: t.mail_deadline_date, mail_deadline_time: t.mail_deadline_time,
+    reminder_start_time: t.reminder_start_time, reminder_end_time: t.reminder_end_time,
+    reminder_interval_minutes: t.reminder_interval_minutes,
+    supplier_name: t.supplier_name || '', brand_id: t.brand_id || null,
+    driver_name: t.driver_name || '', driver_tc: t.driver_tc || '', driver_phone: t.driver_phone || '',
+    plate: t.plate, trailer_plate: t.trailer_plate || '', center_email: t.center_email || '',
+    note: t.note || '', status: t.status, ...patch,
+  })
+  const dueMail = trucks.filter(t => t.mail_required).length
+  const dueToday = trucks.filter(t => t.arrival_date === todayStr() && !['arrived', 'cancelled'].includes(t.status)).length
+  const danger = trucks.some(t => t.deadline_passed || (t.missing_mail_fields || []).length)
+
+  return (
+    <div className="panel" style={{ marginTop: '16px', borderTop: `3px solid ${danger ? 'var(--red)' : 'var(--teal)'}` }}>
+      <div className="panel-header" style={{ alignItems: 'center', gap: '10px' }}>
+        <div>
+          <div className="panel-title">TIR / İRSALİYE TAKİBİ — {label}</div>
+          <div className="panel-subtitle">{trucks.length} tır kaydı · {dueMail} mail bekliyor · {photos.length} irsaliye fotoğrafı</div>
+        </div>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px', alignItems: 'center' }}>
+          {dueToday > 0 && <span className="badge badge-orange">{dueToday} bugün</span>}
+          <button className="btn btn-ghost btn-sm" onClick={() => setOpen(o => !o)}>{open ? '▲ Gizle' : '▼ Aç'}</button>
+        </div>
+      </div>
+      {open && (
+        <div className="panel-body" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(118px, 1fr))', gap: '8px', alignItems: 'end' }}>
+            <label className="form-label">Geliş tarihi<input type="date" className="form-input" value={form.arrival_date} onChange={e => setForm(f => ({ ...f, arrival_date: e.target.value, mail_deadline_date: f.mail_deadline_date || e.target.value }))} /></label>
+            <label className="form-label">Başlangıç<input type="time" className="form-input" value={form.arrival_start_time} onChange={e => setForm(f => ({ ...f, arrival_start_time: e.target.value }))} /></label>
+            <label className="form-label">Bitiş<input type="time" className="form-input" value={form.arrival_end_time} onChange={e => setForm(f => ({ ...f, arrival_end_time: e.target.value }))} /></label>
+            <label className="form-label">Mail son tarih<input type="date" className="form-input" value={form.mail_deadline_date} onChange={e => setForm(f => ({ ...f, mail_deadline_date: e.target.value }))} /></label>
+            <label className="form-label">Mail son saat<input type="time" className="form-input" value={form.mail_deadline_time} onChange={e => setForm(f => ({ ...f, mail_deadline_time: e.target.value }))} /></label>
+            <label className="form-label">Kontrol başla<input type="time" className="form-input" value={form.reminder_start_time} onChange={e => setForm(f => ({ ...f, reminder_start_time: e.target.value }))} /></label>
+            <label className="form-label">Kontrol bitiş<input type="time" className="form-input" value={form.reminder_end_time} onChange={e => setForm(f => ({ ...f, reminder_end_time: e.target.value }))} /></label>
+            <label className="form-label">Saat aralığı<input type="number" min="15" step="15" className="form-input" value={form.reminder_interval_minutes} onChange={e => setForm(f => ({ ...f, reminder_interval_minutes: e.target.value }))} /></label>
+            <label className="form-label">Marka<select className="form-select" value={form.brand_id} onChange={e => setForm(f => ({ ...f, brand_id: e.target.value }))}><option value="">Seçin</option>{brands.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}</select></label>
+            <label className="form-label">Tedarikçi<input className="form-input" value={form.supplier_name} onChange={e => setForm(f => ({ ...f, supplier_name: e.target.value }))} /></label>
+            <label className="form-label">Tırcı adı<input className="form-input" value={form.driver_name} onChange={e => setForm(f => ({ ...f, driver_name: e.target.value }))} /></label>
+            <label className="form-label">Arşiv TC<input className="form-input" value={form.driver_tc} onChange={e => setForm(f => ({ ...f, driver_tc: e.target.value }))} /></label>
+            <label className="form-label">Telefon<input className="form-input" value={form.driver_phone} onChange={e => setForm(f => ({ ...f, driver_phone: e.target.value }))} /></label>
+            <label className="form-label">Plaka<input className="form-input" value={form.plate} onChange={e => setForm(f => ({ ...f, plate: e.target.value.toUpperCase() }))} /></label>
+            <label className="form-label">Dorse<input className="form-input" value={form.trailer_plate} onChange={e => setForm(f => ({ ...f, trailer_plate: e.target.value.toUpperCase() }))} /></label>
+            <label className="form-label">Ana merkez mail<input type="email" className="form-input" value={form.center_email} onChange={e => setForm(f => ({ ...f, center_email: e.target.value }))} /></label>
+            <label className="form-label" style={{ gridColumn: 'span 2' }}>Not<input className="form-input" value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} /></label>
+            <button className="btn btn-primary" disabled={!form.arrival_date || !form.plate.trim() || create.isPending} onClick={() => create.mutate()}>{create.isPending ? 'Kaydediliyor…' : 'Tır Kaydı Ekle'}</button>
+          </div>
+
+          <div style={{ overflowX: 'auto' }}>
+            <table className="data-table" style={{ fontSize: '11px', minWidth: '1120px' }}>
+              <thead><tr>{['Geliş', 'Saat', 'Mail deadline', 'Durum', 'Marka/Tedarikçi', 'Tırcı', 'TC', 'Plaka', 'Dorse', 'Tel', 'Eksik', 'Foto', 'İşlem'].map(h => <th key={h} style={{ textAlign: h === 'İşlem' ? 'right' : 'left', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
+              <tbody>
+                {trucks.map(t => {
+                  const missing = t.missing_mail_fields || []
+                  return (
+                    <tr key={t.id} style={{ background: t.deadline_passed ? 'color-mix(in srgb, var(--red) 7%, transparent)' : undefined }}>
+                      <td style={{ fontFamily: 'var(--mono)' }}>{t.arrival_date}</td>
+                      <td style={{ fontFamily: 'var(--mono)' }}>{t.arrival_window}</td>
+                      <td style={{ fontFamily: 'var(--mono)', color: t.deadline_passed ? 'var(--red)' : 'var(--text2)' }}>{t.mail_deadline_label}</td>
+                      <td><span className={`badge ${t.status === 'arrived' ? 'badge-green' : t.status === 'cancelled' ? 'badge-gray' : t.mail_sent_at ? 'badge-blue' : 'badge-orange'}`}>{t.status_label}</span></td>
+                      <td>{t.brand_name || t.supplier_name || '—'}</td>
+                      <td>{t.driver_name || '—'}</td>
+                      <td style={{ fontFamily: 'var(--mono)' }}>{t.driver_tc || '—'}</td>
+                      <td style={{ fontFamily: 'var(--mono)', fontWeight: 700 }}>{t.plate}</td>
+                      <td style={{ fontFamily: 'var(--mono)' }}>{t.trailer_plate || '—'}</td>
+                      <td style={{ fontFamily: 'var(--mono)' }}>{t.driver_phone || '—'}</td>
+                      <td style={{ color: missing.length ? 'var(--red)' : 'var(--green)' }}>{missing.length ? missing.join(', ') : 'Tamam'}</td>
+                      <td style={{ fontFamily: 'var(--mono)' }}>{nf(t.photo_count || 0)}</td>
+                      <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                        <button className="btn btn-ghost btn-sm" onClick={() => { setPhotoForm(f => ({ ...f, truck_arrival_id: String(t.id), move_date: t.arrival_date })); fileRef.current?.click() }}>Foto</button>
+                        {isManager && <button className="btn btn-ghost btn-sm" disabled={!t.mail_ready || sendMail.isPending} onClick={() => sendMail.mutate(t.id)}>Mail</button>}
+                        {!t.mail_sent_at && <button className="btn btn-ghost btn-sm" onClick={() => markMail.mutate(t.id)}>Mail atıldı</button>}
+                        <button className="btn btn-ghost btn-sm" onClick={() => markChecked.mutate(t.id)}>Kontrol</button>
+                        {t.status !== 'arrived' && <button className="btn btn-ghost btn-sm" onClick={() => updateTruck.mutate({ id: t.id, body: truckPayload(t, { status: 'arrived' }) })}>Geldi</button>}
+                        {t.status !== 'cancelled' && <button className="btn btn-ghost btn-sm" onClick={() => updateTruck.mutate({ id: t.id, body: truckPayload(t, { status: 'cancelled' }) })}>İptal</button>}
+                        {isManager && <button className="btn btn-danger btn-sm" onClick={async () => { if (await confirmDialog({ title: 'Tır Kaydı Sil', body: `${t.plate} kaydı silinsin mi?`, danger: true })) delTruck.mutate(t.id) }}>Sil</button>}
+                      </td>
+                    </tr>
+                  )
+                })}
+                {trucks.length === 0 && <tr><td colSpan={13} style={{ textAlign: 'center', color: 'var(--text3)', padding: '14px' }}>Bu ay tır ön bildirimi yok</td></tr>}
+              </tbody>
+            </table>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(280px, .8fr)', gap: '12px' }}>
+            <div>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'end', marginBottom: '8px' }}>
+                <label className="form-label" style={{ minWidth: '180px' }}>Tır bağlantısı<select className="form-select" value={photoForm.truck_arrival_id} onChange={e => { const t = trucks.find(x => String(x.id) === e.target.value); setPhotoForm(f => ({ ...f, truck_arrival_id: e.target.value, move_date: t?.arrival_date || f.move_date })) }}><option value="">Serbest</option>{trucks.map(t => <option key={t.id} value={t.id}>{t.arrival_date} · {t.plate}</option>)}</select></label>
+                <label className="form-label" style={{ width: '130px' }}>Tarih<input type="date" className="form-input" value={photoForm.move_date} onChange={e => setPhotoForm(f => ({ ...f, move_date: e.target.value }))} /></label>
+                <label className="form-label" style={{ width: '140px' }}>İrsaliye no<input className="form-input" value={photoForm.waybill_no} onChange={e => setPhotoForm(f => ({ ...f, waybill_no: e.target.value }))} /></label>
+                <label className="form-label" style={{ flex: 1, minWidth: '160px' }}>Not<input className="form-input" value={photoForm.note} onChange={e => setPhotoForm(f => ({ ...f, note: e.target.value }))} /></label>
+                <button className="btn btn-primary btn-sm" onClick={() => fileRef.current?.click()} disabled={uploadPhoto.isPending}>{uploadPhoto.isPending ? 'Yükleniyor…' : 'Foto Yükle'}</button>
+                <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp,image/*" style={{ display: 'none' }} onChange={e => { const file = e.target.files?.[0]; if (file) uploadPhoto.mutate(file); e.target.value = '' }} />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(116px, 1fr))', gap: '8px' }}>
+                {photos.slice(0, 12).map(p => (
+                  <button key={p.id} type="button" onClick={() => window.open(p.photo_url, '_blank')} style={{ border: '1px solid var(--border)', background: 'var(--surface2)', borderRadius: '8px', padding: '5px', cursor: 'pointer', textAlign: 'left' }}>
+                    <img src={p.photo_url} alt="irsaliye" style={{ width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', borderRadius: '6px', display: 'block' }} />
+                    <div style={{ fontSize: '10px', color: 'var(--text2)', marginTop: '4px', fontFamily: 'var(--mono)' }}>{p.move_date}</div>
+                    <div style={{ fontSize: '10px', color: 'var(--text3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.waybill_no || p.plate || 'irsaliye'}</div>
+                  </button>
+                ))}
+                {photos.length === 0 && <div style={{ color: 'var(--text3)', fontSize: '12px', padding: '12px' }}>Fotoğraf yok</div>}
+              </div>
+            </div>
+            <div style={{ overflowX: 'auto' }}>
+              <table className="data-table" style={{ fontSize: '11px', minWidth: '430px' }}>
+                <thead><tr><th>Tarih</th><th>İrsaliye</th><th>Plaka</th><th>Yükleyen</th><th></th></tr></thead>
+                <tbody>
+                  {photos.slice(0, 10).map(p => (
+                    <tr key={p.id}>
+                      <td style={{ fontFamily: 'var(--mono)' }}>{p.move_date}</td>
+                      <td>{p.waybill_no || '—'}</td>
+                      <td style={{ fontFamily: 'var(--mono)' }}>{p.plate || '—'}</td>
+                      <td>{p.uploaded_by_name || '—'}</td>
+                      <td style={{ textAlign: 'right' }}><button className="btn btn-danger btn-sm" onClick={async () => { if (await confirmDialog({ title: 'İrsaliye Fotoğrafı Sil', body: 'Fotoğraf silinsin mi?', danger: true })) delPhoto.mutate(p.id) }}>Sil</button></td>
+                    </tr>
+                  ))}
+                  {photos.length === 0 && <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--text3)', padding: '10px' }}>Kayıt yok</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 const STATUS_META = {
   pending: { label: 'Sayım yok', color: 'var(--text3)' },
   even: { label: 'Tuttu', color: 'var(--green)' },

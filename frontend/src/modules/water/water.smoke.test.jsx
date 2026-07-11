@@ -63,6 +63,15 @@ vi.mock('../../shared/api/client.js', () => ({
       if (url === '/water/zones') return Promise.resolve({ data: [{ id: 1, name: 'OTC Kamp Alanı', code: 'OTC' }] })
       if (url === '/water/returns') return Promise.resolve({ data: [] })
       if (url === '/water/brands') return Promise.resolve({ data: [{ id: 1, name: 'MİLA SU' }] })
+      if (url === '/water/forecast') return Promise.resolve({ data: {
+        date: '2026-07-09', window: 30, target_days: 30,
+        rows: [
+          { product_id: 1, product_name: 'Damacana', brand_name: 'MİLA SU', unit_label: 'damacana', balance: 10, balance_human: '10 damacana', avg_daily: 3, avg_daily_human: '3 damacana', days_of_cover: 3, stockout_date: '2026-07-12', needs_order: true, suggested_base: 80, suggested_human: '80 damacana', confidence: 'ok' },
+          { product_id: 2, product_name: '0.5 L', brand_name: 'MİLA SU', unit_label: 'koli', balance: 970, balance_human: '970 koli', avg_daily: 1, avg_daily_human: '1 koli', days_of_cover: 970, stockout_date: '2029-01-01', needs_order: false, suggested_base: 0, suggested_human: null, confidence: 'ok' },
+        ],
+        order_suggestions: [{ product_id: 1, product_name: 'Damacana', brand_name: 'MİLA SU', suggested_human: '80 damacana', days_of_cover: 3 }],
+        totals: { products: 2, order_count: 1, soon_count: 1 },
+      } })
       if (url === '/water/review') return Promise.resolve({ data: {
         rows: [{ movement_id: 5, move_date: '2026-07-04', zone_name: 'OTC Kamp Alanı', product_name: 'Damacana', brand_name: 'MİLA SU', created_by_name: 'Müdür', qty_base: 8, unallocated_base: 8, qty_human: '8 damacana', unallocated_human: '8 damacana' }],
         count: 1,
@@ -100,9 +109,44 @@ vi.mock('../../shared/api/client.js', () => ({
         low_stock: [],
         idle_zones: [{ zone_id: 2, zone_name: 'Boş Bölge' }],
       } })
+      if (url === '/water/truck-arrivals') return Promise.resolve({ data: [
+        {
+          id: 1,
+          arrival_date: '2026-07-10',
+          arrival_start_time: '08:00',
+          arrival_end_time: '12:00',
+          arrival_window: '08:00-12:00',
+          mail_deadline_date: '2026-07-10',
+          mail_deadline_time: '17:00',
+          mail_deadline_label: '2026-07-10 17:00',
+          reminder_start_time: '08:00',
+          reminder_end_time: '17:00',
+          reminder_interval_minutes: 60,
+          supplier_name: 'MILA SU',
+          brand_id: 1,
+          brand_name: 'MILA SU',
+          driver_name: 'Ahmet Yilmaz',
+          driver_tc: '12345678901',
+          driver_phone: '0555 111 22 33',
+          plate: '34 ABC 123',
+          trailer_plate: '34 DRS 456',
+          center_email: 'merkez@example.com',
+          status: 'planned',
+          status_label: 'Planlandi',
+          missing_mail_fields: [],
+          mail_ready: true,
+          mail_required: true,
+          deadline_passed: false,
+          photo_count: 1,
+        },
+      ] })
+      if (url === '/water/waybill-photos') return Promise.resolve({ data: [
+        { id: 1, truck_arrival_id: 1, waybill_no: 'IRS-2026-1', move_date: '2026-07-10', photo_url: '/uploads/irsaliye.jpg', plate: '34 ABC 123', uploaded_by_name: 'Mudur' },
+      ] })
       return Promise.resolve({ data: [] })
     }),
     post: vi.fn(() => Promise.resolve({ data: { ids: [1], count: 1 } })),
+    put: vi.fn(() => Promise.resolve({ data: {} })),
     delete: vi.fn(() => Promise.resolve({ data: {} })),
   },
 }))
@@ -111,6 +155,15 @@ import WaterPage from './WaterPage.jsx'
 
 describe('WaterPage tek-ekran pano smoke', () => {
   beforeEach(() => vi.clearAllMocks())
+
+  it('tir on bildirim ve irsaliye foto arsivi paneli render olur', async () => {
+    renderWithProviders(<WaterPage />)
+    expect(await screen.findByText(/TIR \/.*TAK/)).toBeInTheDocument()
+    expect((await screen.findAllByText('34 ABC 123')).length).toBeGreaterThan(0)
+    expect((await screen.findAllByText('IRS-2026-1')).length).toBeGreaterThan(0)
+    expect(screen.getByText(/mail bekliyor/)).toBeInTheDocument()
+    expect(screen.getByText(/Foto Y/)).toBeInTheDocument()
+  })
 
   it('pano: KPI + INDEX matris + dağıtım yeri satırı gösterir', async () => {
     renderWithProviders(<WaterPage />)
@@ -164,6 +217,16 @@ describe('WaterPage tek-ekran pano smoke', () => {
     expect(await within(panel).findByText('120')).toBeInTheDocument() // sistem kalanı = 100 + 50 - 30
     expect(within(panel).getByLabelText('Damacana sayım')).toBeInTheDocument()
     expect(within(panel).getByText('📄 PDF Özet')).toBeInTheDocument() // W9 PDF butonu
+  })
+
+  it('öngörü paneli sipariş önerisi ve gün-yeter gösterir', async () => {
+    renderWithProviders(<WaterPage />)
+    const title = await screen.findByText(/SİPARİŞ ÖNERİLERİ/)
+    const panel = title.closest('.panel')
+    fireEvent.click(within(panel).getByText('▼ Aç'))
+    expect(await within(panel).findByText('ÖNERİLEN SİPARİŞLER')).toBeInTheDocument()
+    expect(within(panel).getAllByText(/80 damacana/).length).toBeGreaterThan(0) // önerilen sipariş miktarı
+    expect(within(panel).getByText('3g')).toBeInTheDocument() // gün yeter (tablo)
   })
 
   it('irsaliye bekleyenler paneli bekleyen dağıtımı ve gecikmeyi listeler', async () => {

@@ -1,8 +1,11 @@
 import { Router } from 'express'
 import PDFDocument from 'pdfkit'
+import fs from 'node:fs'
+import path from 'node:path'
 import { requireRole } from '../../shared/auth/middleware.js'
 import { logAudit } from '../../shared/audit.js'
 import { logger } from '../../shared/logger.js'
+import { upload, verifyMagicBytes } from '../../shared/uploads/middleware.js'
 import {
   productsService, createProductService, updateProductService, deleteProductService,
   brandsService, createBrandService, updateBrandService, deleteBrandService,
@@ -10,11 +13,14 @@ import {
   createIntakeService, createDistributionService, deleteMovementService, updateDistributionService, movementsService,
   createReturnService, batchReturnService, deleteReturnService, returnsService, depositService,
   summaryService, pivotService, batchIntakeService, batchDistributeService, parseDistributionText,
-  alertsService, reconciliationService, saveStockCountService, monthlyCloseService, monthlyUnlockService,
+  alertsService, forecastService, reconciliationService, saveStockCountService, monthlyCloseService, monthlyUnlockService,
   monthLockWarning, pendingDistributionsService,
   templatesService, createTemplateService, deleteTemplateService,
   adjustmentsService, createAdjustmentService, deleteAdjustmentService, COUNT_REASONS,
   reviewQueueService, approveReviewsService,
+  truckArrivalsService, createTruckArrivalService, updateTruckArrivalService, deleteTruckArrivalService,
+  sendTruckArrivalMailService, markTruckMailSentService, markTruckCheckedService, checkTruckArrivalAlerts,
+  waybillPhotosService, createWaybillPhotoService, deleteWaybillPhotoService,
 } from './service.js'
 
 export const waterRouter = Router()
@@ -171,6 +177,98 @@ waterRouter.get('/pivot', ...mgr, (req, res) => {
 // ── Operasyon Uyarı Merkezi ("Bugün Yapılacaklar") ──
 waterRouter.get('/alerts', ...mgr, (req, res) => {
   try { res.json(alertsService({ today: req.query.today })) } catch (e) { logger.error('[water]', e); fail(res, e) }
+})
+
+// ── Tüketim öngörüsü & sipariş önerisi ──
+waterRouter.get('/forecast', ...mgr, (req, res) => {
+  try { res.json(forecastService({ today: req.query.today, window: req.query.window, targetDays: req.query.target_days })) }
+  catch (e) { logger.error('[water]', e); fail(res, e) }
+})
+
+// ── Tır ön bildirimleri / 17:00 mail kontrolü ──
+waterRouter.get('/truck-arrivals', ...mgr, (req, res) => {
+  try {
+    const { from, to, status, limit } = req.query
+    res.json(truckArrivalsService({ from, to, status, limit }))
+  } catch (e) { logger.error('[water]', e); fail(res, e) }
+})
+waterRouter.post('/truck-arrivals', ...mgr, (req, res) => {
+  try {
+    const id = createTruckArrivalService(req.body, req.user.id)
+    logAudit(req.user.id, 'water_truck_create', 'water', id, req.body.plate || '')
+    res.status(201).json({ id })
+  } catch (e) { fail(res, e) }
+})
+waterRouter.put('/truck-arrivals/:id', ...mgr, (req, res) => {
+  try {
+    updateTruckArrivalService(+req.params.id, req.body, req.user.id)
+    logAudit(req.user.id, 'water_truck_update', 'water', +req.params.id, req.body.plate || '')
+    res.json({ ok: true })
+  } catch (e) { fail(res, e) }
+})
+waterRouter.delete('/truck-arrivals/:id', ...managerOnly, (req, res) => {
+  try {
+    deleteTruckArrivalService(+req.params.id)
+    logAudit(req.user.id, 'water_truck_delete', 'water', +req.params.id, '')
+    res.json({ ok: true })
+  } catch (e) { fail(res, e) }
+})
+waterRouter.post('/truck-arrivals/:id/send-mail', ...managerOnly, async (req, res) => {
+  try {
+    const result = await sendTruckArrivalMailService(+req.params.id, req.user.id)
+    logAudit(req.user.id, 'water_truck_mail_send', 'water', +req.params.id, result.messageId || '')
+    res.json(result)
+  } catch (e) { fail(res, e) }
+})
+waterRouter.post('/truck-arrivals/:id/mark-mail-sent', ...mgr, (req, res) => {
+  try {
+    const truck = markTruckMailSentService(+req.params.id, req.user.id)
+    logAudit(req.user.id, 'water_truck_mail_mark', 'water', +req.params.id, '')
+    res.json(truck)
+  } catch (e) { fail(res, e) }
+})
+waterRouter.post('/truck-arrivals/:id/check', ...mgr, (req, res) => {
+  try {
+    const truck = markTruckCheckedService(+req.params.id, req.user.id)
+    logAudit(req.user.id, 'water_truck_check', 'water', +req.params.id, '')
+    res.json(truck)
+  } catch (e) { fail(res, e) }
+})
+waterRouter.post('/truck-arrivals/check-alerts', ...managerOnly, (req, res) => {
+  try { res.json(checkTruckArrivalAlerts()) } catch (e) { logger.error('[water]', e); fail(res, e) }
+})
+
+// ── İrsaliye fotoğraf arşivi ──
+waterRouter.get('/waybill-photos', ...mgr, (req, res) => {
+  try {
+    const { truck_arrival_id, movement_id, waybill_no, from, to, limit } = req.query
+    res.json(waybillPhotosService({
+      truck_arrival_id: truck_arrival_id ? +truck_arrival_id : undefined,
+      movement_id: movement_id ? +movement_id : undefined,
+      waybill_no, from, to, limit,
+    }))
+  } catch (e) { logger.error('[water]', e); fail(res, e) }
+})
+waterRouter.post('/waybill-photos', ...mgr, upload.single('photo'), verifyMagicBytes, (req, res) => {
+  try {
+    const id = createWaybillPhotoService(req.body, req.file, req.user.id)
+    logAudit(req.user.id, 'water_waybill_photo_upload', 'water', id, req.body.waybill_no || '')
+    res.status(201).json({ id })
+  } catch (e) {
+    if (req.file?.path) { try { fs.unlinkSync(req.file.path) } catch { /* ignore */ } }
+    fail(res, e)
+  }
+})
+waterRouter.delete('/waybill-photos/:id', ...mgr, (req, res) => {
+  try {
+    const row = deleteWaybillPhotoService(+req.params.id)
+    if (row.photo_url?.startsWith('/uploads/')) {
+      const file = path.join(process.env.UPLOADS_DIR || 'uploads', path.basename(row.photo_url))
+      try { fs.unlinkSync(file) } catch { /* ignore */ }
+    }
+    logAudit(req.user.id, 'water_waybill_photo_delete', 'water', +req.params.id, '')
+    res.json({ ok: true })
+  } catch (e) { fail(res, e) }
 })
 
 // ── Stok düzeltme / sayım fişi ──

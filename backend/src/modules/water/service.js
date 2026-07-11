@@ -1,5 +1,6 @@
 import * as q from './queries.js'
 import { createNotification } from '../../shared/notifications/service.js'
+import { composeAndSend } from '../email/service.js'
 
 // ── Çevrim mantığı: ürünün doğal takip birimi + palet/koli/paket kırılımı ──
 // qty_base Excel'deki ham takip sayısıdır. Bu sayı damacanada adet, bardakta koli,
@@ -244,7 +245,9 @@ function reconcileUnallocatedOut(productIds) {
       }
     }
   }
-  return q.addMovementAllocations(allocationRows)
+  const matched = q.addMovementAllocations(allocationRows)
+  q.clearResolvedReviews(ids)
+  return matched
 }
 
 export function createIntakeService(data, userId) {
@@ -288,6 +291,8 @@ export function updateDistributionService(id, data, userId) {
   }
   const [plan] = buildAllocationPlans([row], { releaseOutMovementId: id })
   if (!q.updateMovementWithAllocations(id, plan)) throw Object.assign(new Error('Hareket güncellenemedi'), { statusCode: 500 })
+  q.flagReviewForUnallocated([id])
+  q.clearResolvedReviews([existing.product_id, product.id])
   checkLowStock([existing.product_id, product.id])
 }
 
@@ -592,7 +597,7 @@ export function alertsService({ today } = {}) {
   const negative_stock = []
   const low_stock = []
   for (const p of q.stockByProduct()) {
-    const balance = p.total_in - p.total_out
+    const balance = p.total_in - p.total_out + (p.adjust_net || 0)
     if (balance < 0) {
       negative_stock.push({
         product_id: p.id, product_name: p.name, balance,
@@ -735,6 +740,277 @@ export function approveReviewsService(ids) {
   return q.approveReviews(list)
 }
 
+// ── Tır ön bildirimleri + irsaliye fotoğraf arşivi ──
+const TRUCK_STATUS = new Set(['planned', 'mail_sent', 'confirmed', 'arrived', 'cancelled'])
+const STATUS_LABEL = {
+  planned: 'Planlandı',
+  mail_sent: 'Mail atıldı',
+  confirmed: 'Gelecek onaylandı',
+  arrived: 'Geldi',
+  cancelled: 'İptal',
+}
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const isDate = (v) => /^\d{4}-\d{2}-\d{2}$/.test(v || '')
+const isTime = (v) => /^\d{2}:\d{2}$/.test(v || '')
+const minutesOf = (v) => {
+  if (!isTime(v)) return null
+  const [h, m] = v.split(':').map(Number)
+  return h * 60 + m
+}
+const clean = (v) => {
+  const s = String(v ?? '').trim()
+  return s || null
+}
+
+function validateTimeRange(start, end, label) {
+  if (!isTime(start) || !isTime(end)) throw Object.assign(new Error(`${label} saatleri HH:MM olmalı`), { statusCode: 400 })
+  if (minutesOf(start) > minutesOf(end)) throw Object.assign(new Error(`${label} başlangıcı bitişten sonra olamaz`), { statusCode: 400 })
+}
+
+function normalizeTruckPayload(data, userId, existing = null) {
+  if (!isDate(data?.arrival_date)) throw Object.assign(new Error('Geliş tarihi YYYY-MM-DD olmalı'), { statusCode: 400 })
+  const arrival_start_time = data.arrival_start_time || existing?.arrival_start_time || '08:00'
+  const arrival_end_time = data.arrival_end_time || existing?.arrival_end_time || '17:00'
+  const mail_deadline_date = data.mail_deadline_date || existing?.mail_deadline_date || data.arrival_date
+  const mail_deadline_time = data.mail_deadline_time || existing?.mail_deadline_time || '17:00'
+  const reminder_start_time = data.reminder_start_time || existing?.reminder_start_time || '08:00'
+  const reminder_end_time = data.reminder_end_time || existing?.reminder_end_time || '17:00'
+  if (!isDate(mail_deadline_date)) throw Object.assign(new Error('Mail son tarihi YYYY-MM-DD olmalı'), { statusCode: 400 })
+  validateTimeRange(arrival_start_time, arrival_end_time, 'Geliş aralığı')
+  validateTimeRange(reminder_start_time, reminder_end_time, 'Kontrol aralığı')
+  if (!isTime(mail_deadline_time)) throw Object.assign(new Error('Mail son saati HH:MM olmalı'), { statusCode: 400 })
+  const reminder_interval_minutes = Math.max(15, Math.min(240, parseInt(data.reminder_interval_minutes) || existing?.reminder_interval_minutes || 60))
+  const plate = clean(data.plate)
+  if (!plate) throw Object.assign(new Error('Plaka gerekli'), { statusCode: 400 })
+  let brand_id = existing?.brand_id || null
+  if (Object.prototype.hasOwnProperty.call(data, 'brand_id')) {
+    brand_id = data.brand_id ? parseInt(data.brand_id) : null
+    if (brand_id && !q.getBrand(brand_id)) throw Object.assign(new Error('Marka bulunamadı'), { statusCode: 400 })
+  }
+  const center_email = clean(data.center_email)
+  if (center_email && !EMAIL_RE.test(center_email)) throw Object.assign(new Error('Ana merkez e-postası geçersiz'), { statusCode: 400 })
+  const status = data.status || existing?.status || 'planned'
+  if (!TRUCK_STATUS.has(status)) throw Object.assign(new Error('Geçersiz tır durumu'), { statusCode: 400 })
+  return {
+    arrival_date: data.arrival_date,
+    arrival_start_time, arrival_end_time,
+    mail_deadline_date, mail_deadline_time,
+    reminder_start_time, reminder_end_time, reminder_interval_minutes,
+    supplier_name: clean(data.supplier_name),
+    brand_id,
+    driver_name: clean(data.driver_name),
+    driver_tc: clean(data.driver_tc),
+    driver_phone: clean(data.driver_phone),
+    plate: plate.toUpperCase(),
+    trailer_plate: clean(data.trailer_plate)?.toUpperCase() || null,
+    center_email,
+    status,
+    note: clean(data.note),
+    created_by: existing?.created_by || userId || null,
+    updated_by: userId || null,
+  }
+}
+
+function missingMailFields(row) {
+  const fields = [
+    ['center_email', 'Ana merkez e-postası'],
+    ['driver_name', 'Tırcı adı'],
+    ['driver_tc', 'Arşiv TC'],
+    ['driver_phone', 'Telefon'],
+    ['plate', 'Plaka'],
+    ['trailer_plate', 'Dorse'],
+    ['arrival_date', 'Geliş tarihi'],
+  ]
+  return fields.filter(([key]) => !row[key]).map(([, label]) => label)
+}
+
+function decorateTruck(row, now = new Date()) {
+  const today = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Istanbul' }).format(now)
+  const missing = missingMailFields(row)
+  const deadlinePassed = row.mail_deadline_date < today
+    || (row.mail_deadline_date === today && minutesOf(new Intl.DateTimeFormat('tr-TR', { timeZone: 'Europe/Istanbul', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(now)) > minutesOf(row.mail_deadline_time))
+  return {
+    ...row,
+    status_label: STATUS_LABEL[row.status] || row.status,
+    arrival_window: `${row.arrival_start_time}-${row.arrival_end_time}`,
+    mail_deadline_label: `${row.mail_deadline_date} ${row.mail_deadline_time}`,
+    missing_mail_fields: missing,
+    mail_ready: missing.length === 0,
+    mail_required: !row.mail_sent_at && !['arrived', 'cancelled'].includes(row.status),
+    deadline_passed: !row.mail_sent_at && deadlinePassed,
+  }
+}
+
+export function truckArrivalsService(filters = {}) {
+  const limit = filters.limit ? Math.min(1000, Math.max(1, parseInt(filters.limit) || 200)) : 200
+  return q.listTruckArrivals({ ...filters, limit }).map(r => decorateTruck(r))
+}
+
+export function createTruckArrivalService(data, userId) {
+  return q.createTruckArrival(normalizeTruckPayload(data, userId))
+}
+
+export function updateTruckArrivalService(id, data, userId) {
+  const existing = q.getTruckArrival(id)
+  if (!existing) throw Object.assign(new Error('Tır kaydı bulunamadı'), { statusCode: 404 })
+  if (!q.updateTruckArrival(id, normalizeTruckPayload(data, userId, existing)))
+    throw Object.assign(new Error('Tır kaydı güncellenemedi'), { statusCode: 500 })
+}
+
+function truckMailBody(row) {
+  return [
+    'Merhaba,',
+    '',
+    'Su sevkiyatı için tır giriş ön bildirimi aşağıdadır.',
+    '',
+    `Geliş tarihi: ${row.arrival_date}`,
+    `Geliş saat aralığı: ${row.arrival_start_time}-${row.arrival_end_time}`,
+    `Tedarikçi/marka: ${row.supplier_name || row.brand_name || '-'}`,
+    `Tırcı adı: ${row.driver_name || '-'}`,
+    `Arşiv TC: ${row.driver_tc || '-'}`,
+    `Telefon: ${row.driver_phone || '-'}`,
+    `Plaka: ${row.plate}`,
+    `Dorse: ${row.trailer_plate || '-'}`,
+    row.note ? `Not: ${row.note}` : null,
+    '',
+    'Bilgilerinize.',
+  ].filter(Boolean).join('\n')
+}
+
+export async function sendTruckArrivalMailService(id, userId) {
+  const row = q.getTruckArrival(id)
+  if (!row) throw Object.assign(new Error('Tır kaydı bulunamadı'), { statusCode: 404 })
+  const missing = missingMailFields(row)
+  if (missing.length) throw Object.assign(new Error(`Mail için eksik bilgi: ${missing.join(', ')}`), { statusCode: 400 })
+  const subject = `Su tır giriş bildirimi - ${row.arrival_date} - ${row.plate}`
+  const result = await composeAndSend({ to: row.center_email, subject, body: truckMailBody(row) })
+  q.setTruckMailSent(id, userId)
+  return { ...result, truck: decorateTruck(q.getTruckArrival(id)) }
+}
+
+export function markTruckMailSentService(id, userId) {
+  if (!q.getTruckArrival(id)) throw Object.assign(new Error('Tır kaydı bulunamadı'), { statusCode: 404 })
+  q.setTruckMailSent(id, userId)
+  return decorateTruck(q.getTruckArrival(id))
+}
+
+export function markTruckCheckedService(id, userId) {
+  if (!q.getTruckArrival(id)) throw Object.assign(new Error('Tır kaydı bulunamadı'), { statusCode: 404 })
+  q.setTruckChecked(id, userId)
+  return decorateTruck(q.getTruckArrival(id))
+}
+
+export function deleteTruckArrivalService(id) {
+  if (!q.deleteTruckArrival(id)) throw Object.assign(new Error('Tır kaydı bulunamadı'), { statusCode: 404 })
+}
+
+function trClock(now = new Date()) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('tr-TR', {
+    timeZone: 'Europe/Istanbul', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(now).filter(p => p.type !== 'literal').map(p => [p.type, p.value]))
+  return {
+    date: `${parts.year}-${parts.month}-${parts.day}`,
+    time: `${parts.hour}:${parts.minute}`,
+    hour: parts.hour,
+  }
+}
+
+export function checkTruckArrivalAlerts({ now = new Date() } = {}) {
+  const clock = trClock(now)
+  const current = minutesOf(clock.time)
+  const rows = q.listTruckArrivals({ limit: 1000 })
+    .filter(r => !['arrived', 'cancelled'].includes(r.status))
+    .filter(r => r.arrival_date === clock.date || r.mail_deadline_date === clock.date)
+  let created = 0
+  for (const r of rows) {
+    const base = `${r.plate}${r.trailer_plate ? ` / ${r.trailer_plate}` : ''}`
+    if (!r.mail_sent_at && r.mail_deadline_date === clock.date) {
+      const deadline = minutesOf(r.mail_deadline_time)
+      const inReminderRange = current >= minutesOf(r.reminder_start_time) && current <= minutesOf(r.reminder_end_time)
+      const interval = Math.max(15, parseInt(r.reminder_interval_minutes, 10) || 60)
+      const onReminderTick = inReminderRange && ((current - minutesOf(r.reminder_start_time)) % interval === 0)
+      if (onReminderTick && current <= deadline) {
+        const n = createNotification({
+          message: `Su tırı mail kontrolü: ${base} için ana merkeze ${r.mail_deadline_time}'ye kadar mail atılmalı.`,
+          severity: 'warning', module: 'water', target_role: 'campus_manager',
+          dedup_key: `water_truck_mail_${r.id}_${clock.date}_${clock.hour}`,
+          link: '/water',
+        })
+        if (n) created += 1
+      } else if (current > deadline) {
+        const n = createNotification({
+          message: `Su tırı mail süresi geçti: ${base} için ${r.mail_deadline_time} deadline aşıldı, mail atıldı mı kontrol edin.`,
+          severity: 'critical', module: 'water', target_role: 'campus_manager',
+          dedup_key: `water_truck_deadline_${r.id}_${clock.date}_${clock.hour}`,
+          link: '/water',
+        })
+        if (n) created += 1
+      }
+    }
+    if (r.arrival_date === clock.date) {
+      const start = minutesOf(r.arrival_start_time)
+      const end = minutesOf(r.arrival_end_time)
+      const inWindow = current >= start && current <= end
+      const late = current > end
+      const interval = Math.max(15, parseInt(r.reminder_interval_minutes, 10) || 60)
+      const inReminderRange = current >= minutesOf(r.reminder_start_time) && current <= minutesOf(r.reminder_end_time)
+      const onReminderTick = inReminderRange && ((current - minutesOf(r.reminder_start_time)) % interval === 0)
+      if ((inWindow || late) && onReminderTick) {
+        const n = createNotification({
+          message: inWindow
+            ? `Su tırı geliş kontrolü: ${base} bugün ${r.arrival_start_time}-${r.arrival_end_time} aralığında bekleniyor. Tır gelecek mi teyit edin.`
+            : `Su tırı gecikme kontrolü: ${base} için geliş aralığı geçti (${r.arrival_end_time}). Geldi mi kontrol edin.`,
+          severity: late ? 'critical' : 'info', module: 'water', target_role: 'campus_manager',
+          dedup_key: `water_truck_arrival_${r.id}_${clock.date}_${clock.hour}`,
+          link: '/water',
+        })
+        if (n) created += 1
+      }
+    }
+  }
+  return { checked: rows.length, created, date: clock.date, time: clock.time }
+}
+
+export function waybillPhotosService(filters = {}) {
+  const limit = filters.limit ? Math.min(1000, Math.max(1, parseInt(filters.limit) || 200)) : 200
+  return q.listWaybillPhotos({ ...filters, limit }).map(r => ({
+    ...r,
+    qty_human: r.product_id ? humanize(r, r.qty_base) : null,
+  }))
+}
+
+export function createWaybillPhotoService(data, file, userId) {
+  if (!file) throw Object.assign(new Error('İrsaliye fotoğrafı gerekli'), { statusCode: 400 })
+  const truckId = data.truck_arrival_id ? parseInt(data.truck_arrival_id) : null
+  const movementId = data.movement_id ? parseInt(data.movement_id) : null
+  const truck = truckId ? q.getTruckArrival(truckId) : null
+  if (truckId && !truck) throw Object.assign(new Error('Tır kaydı bulunamadı'), { statusCode: 400 })
+  const movement = movementId ? q.getMovement(movementId) : null
+  if (movementId && !movement) throw Object.assign(new Error('İrsaliye hareketi bulunamadı'), { statusCode: 400 })
+  if (movement && movement.type !== 'in') throw Object.assign(new Error('Fotoğraf sadece giriş/irsaliye kaydına bağlanabilir'), { statusCode: 400 })
+  const moveDate = data.move_date || movement?.move_date || truck?.arrival_date
+  if (!isDate(moveDate)) throw Object.assign(new Error('Fotoğraf tarihi YYYY-MM-DD olmalı'), { statusCode: 400 })
+  return q.createWaybillPhoto({
+    truck_arrival_id: truckId,
+    movement_id: movementId,
+    waybill_no: clean(data.waybill_no) || movement?.waybill_no || null,
+    move_date: moveDate,
+    photo_url: `/uploads/${file.filename}`,
+    original_name: file.originalname || null,
+    mime: file.mimetype || null,
+    size: file.size || null,
+    note: clean(data.note),
+    uploaded_by: userId || null,
+  })
+}
+
+export function deleteWaybillPhotoService(id) {
+  const row = q.deleteWaybillPhoto(id)
+  if (!row) throw Object.assign(new Error('Fotoğraf bulunamadı'), { statusCode: 404 })
+  return row
+}
+
 // ── Ay Sonu Kapanış / Uyuşturma ──
 export const COUNT_REASONS = [
   { key: 'eksik_irsaliye', label: 'Eksik irsaliye' },
@@ -832,6 +1108,54 @@ export function monthlyUnlockService(month) {
   if (!isMonth(month)) throw Object.assign(new Error('Ay YYYY-MM formatında olmalı'), { statusCode: 400 })
   if (!q.getClosure(month)) throw Object.assign(new Error('Bu ay için kapanış kaydı yok'), { statusCode: 404 })
   q.setClosureLock(month, 0)
+}
+
+// ── Tüketim öngörüsü & sipariş önerisi (V1) ──
+const FORECAST_LEAD_DAYS = 7   // tedarik süresi varsayılanı
+const FORECAST_SAFETY_DAYS = 3 // emniyet payı
+function addDays(iso, n) {
+  const d = new Date(`${iso}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + n)
+  return d.toISOString().slice(0, 10)
+}
+
+// today: istemci yerel günü; window: ortalama penceresi (gün); targetDays: hedef kapsama
+export function forecastService({ today, window = 30, targetDays = 30 } = {}) {
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(today || '') ? today : new Date().toLocaleDateString('sv-SE')
+  const win = Math.max(1, parseInt(window) || 30)
+  const target = Math.max(1, parseInt(targetDays) || 30)
+  const rates = new Map(q.consumptionRates({ window: win, asOf: day }).map(r => [r.product_id, r]))
+  const reorderDays = FORECAST_LEAD_DAYS + FORECAST_SAFETY_DAYS
+
+  const rows = q.stockByProduct().map(p => {
+    const balance = p.total_in - p.total_out + (p.adjust_net || 0)
+    const r = rates.get(p.id) || {}
+    const outSum = r.out_sum || 0
+    const avgDaily = outSum / win
+    const hasData = outSum > 0 && (r.active_days || 0) >= 2
+    const daysOfCover = avgDaily > 0 ? Math.floor(Math.max(0, balance) / avgDaily) : null
+    const targetStock = Math.ceil(avgDaily * target)
+    const belowReorder = daysOfCover != null && daysOfCover <= reorderDays
+    const suggestedBase = (hasData && belowReorder) ? Math.max(0, targetStock - balance) : 0
+    return {
+      product_id: p.id, product_name: p.name, unit_label: p.unit_label,
+      brand_id: p.brand_id || null, brand_name: p.brand_name || null,
+      balance, balance_human: humanize(p, balance),
+      avg_daily: Math.round(avgDaily * 100) / 100, avg_daily_human: humanize(p, Math.round(avgDaily)),
+      days_of_cover: daysOfCover,
+      stockout_date: daysOfCover != null ? addDays(day, daysOfCover) : null,
+      needs_order: suggestedBase > 0,
+      suggested_base: suggestedBase, suggested_human: suggestedBase ? humanize(p, suggestedBase) : null,
+      confidence: hasData ? 'ok' : 'low',
+    }
+  })
+  const orderSuggestions = rows.filter(r => r.needs_order).sort((a, b) => (a.days_of_cover ?? 1e9) - (b.days_of_cover ?? 1e9))
+  const totals = {
+    products: rows.length,
+    order_count: orderSuggestions.length,
+    soon_count: rows.filter(r => r.days_of_cover != null && r.days_of_cover <= 7).length,
+  }
+  return { date: day, window: win, target_days: target, rows, order_suggestions: orderSuggestions, totals }
 }
 
 // ── Özet / dashboard ──

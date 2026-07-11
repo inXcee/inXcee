@@ -433,6 +433,21 @@ export function approveReviews(ids) {
   return getDB().prepare("UPDATE water_movements SET needs_review=0 WHERE type='out' AND needs_review=1").run().changes
 }
 
+export function clearResolvedReviews(productIds = null) {
+  const ids = productIds == null ? [] : [...new Set((Array.isArray(productIds) ? productIds : [productIds]).map(Number).filter(Boolean))]
+  const productClause = ids.length ? `AND product_id IN (${ids.map(() => '?').join(',')})` : ''
+  return getDB().prepare(`
+    UPDATE water_movements
+    SET needs_review=0
+    WHERE type='out' AND needs_review=1 ${productClause}
+      AND qty_base <= (
+        SELECT COALESCE(SUM(qty_base),0)
+        FROM water_movement_allocations
+        WHERE out_movement_id=water_movements.id
+      )
+  `).run(...ids).changes
+}
+
 // İrsaliye bekleyen (eşleşmemiş) tüm dağıtımlar — detaylı liste (W3)
 export function pendingDistributions() {
   return getDB().prepare(`
@@ -503,6 +518,21 @@ export function dailySeries({ from, to, product_id } = {}) {
     GROUP BY move_date
     ORDER BY move_date
   `).all(...params)
+}
+
+// ── Tüketim hızı / öngörü (V1) ──
+// Son `window` gün içindeki dağıtım (out) toplamı + kayıtlı gün sayısı — ürün bazında.
+// asOf: bugünün YYYY-MM-DD'si (istemci yerel günü); pencere (asOf-window, asOf] aralığı.
+export function consumptionRates({ window = 30, asOf } = {}) {
+  return getDB().prepare(`
+    SELECT product_id,
+      COALESCE(SUM(qty_base), 0) AS out_sum,
+      COUNT(DISTINCT move_date) AS active_days,
+      MIN(move_date) AS first_date, MAX(move_date) AS last_date
+    FROM water_movements
+    WHERE type='out' AND move_date > date(?, '-' || ? || ' days') AND move_date <= ?
+    GROUP BY product_id
+  `).all(asOf, window, asOf)
 }
 
 // ── Boş kap / palet iadeleri (depozito defteri) ──
@@ -652,4 +682,133 @@ export function monthlySeries({ from, to, product_id } = {}) {
     GROUP BY substr(move_date,1,7)
     ORDER BY move_date
   `).all(...params)
+}
+
+// ── Tır ön bildirimleri + irsaliye foto arşivi ──
+export function listTruckArrivals({ from, to, status, limit = 200 } = {}) {
+  let sql = `
+    SELECT t.*, b.name AS brand_name, u.full_name AS created_by_name,
+      (SELECT COUNT(*) FROM water_waybill_photos p WHERE p.truck_arrival_id=t.id) AS photo_count
+    FROM water_truck_arrivals t
+    LEFT JOIN water_brands b ON b.id=t.brand_id
+    LEFT JOIN users u ON u.id=t.created_by
+    WHERE 1=1
+  `
+  const params = []
+  if (from) { sql += ' AND t.arrival_date>=?'; params.push(from) }
+  if (to) { sql += ' AND t.arrival_date<=?'; params.push(to) }
+  if (status) { sql += ' AND t.status=?'; params.push(status) }
+  sql += ' ORDER BY t.arrival_date DESC, t.arrival_start_time DESC, t.id DESC LIMIT ?'
+  params.push(limit)
+  return getDB().prepare(sql).all(...params)
+}
+
+export function getTruckArrival(id) {
+  return getDB().prepare(`
+    SELECT t.*, b.name AS brand_name,
+      (SELECT COUNT(*) FROM water_waybill_photos p WHERE p.truck_arrival_id=t.id) AS photo_count
+    FROM water_truck_arrivals t
+    LEFT JOIN water_brands b ON b.id=t.brand_id
+    WHERE t.id=?
+  `).get(id)
+}
+
+export function createTruckArrival(row) {
+  return getDB().prepare(`
+    INSERT INTO water_truck_arrivals(
+      arrival_date, arrival_start_time, arrival_end_time, mail_deadline_date, mail_deadline_time,
+      reminder_start_time, reminder_end_time, reminder_interval_minutes,
+      supplier_name, brand_id, driver_name, driver_tc, driver_phone, plate, trailer_plate,
+      center_email, status, note, created_by, updated_by
+    ) VALUES(
+      @arrival_date, @arrival_start_time, @arrival_end_time, @mail_deadline_date, @mail_deadline_time,
+      @reminder_start_time, @reminder_end_time, @reminder_interval_minutes,
+      @supplier_name, @brand_id, @driver_name, @driver_tc, @driver_phone, @plate, @trailer_plate,
+      @center_email, @status, @note, @created_by, @updated_by
+    )
+  `).run(row).lastInsertRowid
+}
+
+export function updateTruckArrival(id, row) {
+  return getDB().prepare(`
+    UPDATE water_truck_arrivals SET
+      arrival_date=@arrival_date, arrival_start_time=@arrival_start_time, arrival_end_time=@arrival_end_time,
+      mail_deadline_date=@mail_deadline_date, mail_deadline_time=@mail_deadline_time,
+      reminder_start_time=@reminder_start_time, reminder_end_time=@reminder_end_time,
+      reminder_interval_minutes=@reminder_interval_minutes,
+      supplier_name=@supplier_name, brand_id=@brand_id, driver_name=@driver_name, driver_tc=@driver_tc,
+      driver_phone=@driver_phone, plate=@plate, trailer_plate=@trailer_plate, center_email=@center_email,
+      status=@status, note=@note, updated_by=@updated_by, updated_at=CURRENT_TIMESTAMP
+    WHERE id=@id
+  `).run({ ...row, id }).changes > 0
+}
+
+export function setTruckMailSent(id, userId) {
+  return getDB().prepare(`
+    UPDATE water_truck_arrivals
+    SET mail_sent_at=CURRENT_TIMESTAMP,
+        status=CASE WHEN status='planned' THEN 'mail_sent' ELSE status END,
+        updated_by=?, updated_at=CURRENT_TIMESTAMP
+    WHERE id=?
+  `).run(userId || null, id).changes > 0
+}
+
+export function setTruckChecked(id, userId) {
+  return getDB().prepare(`
+    UPDATE water_truck_arrivals
+    SET last_checked_at=CURRENT_TIMESTAMP, updated_by=?, updated_at=CURRENT_TIMESTAMP
+    WHERE id=?
+  `).run(userId || null, id).changes > 0
+}
+
+export function deleteTruckArrival(id) {
+  return getDB().prepare('DELETE FROM water_truck_arrivals WHERE id=?').run(id).changes > 0
+}
+
+export function listWaybillPhotos({ truck_arrival_id, movement_id, waybill_no, from, to, limit = 200 } = {}) {
+  let sql = `
+    SELECT ph.*, t.plate, t.trailer_plate, t.driver_name, t.arrival_date,
+      mv.product_id, mv.qty_base, mv.input_qty, mv.input_unit,
+      p.name AS product_name, p.unit_label, p.units_per_case, p.cases_per_pallet,
+      b.name AS brand_name, u.full_name AS uploaded_by_name
+    FROM water_waybill_photos ph
+    LEFT JOIN water_truck_arrivals t ON t.id=ph.truck_arrival_id
+    LEFT JOIN water_movements mv ON mv.id=ph.movement_id
+    LEFT JOIN water_products p ON p.id=mv.product_id
+    LEFT JOIN water_brands b ON b.id=p.brand_id
+    LEFT JOIN users u ON u.id=ph.uploaded_by
+    WHERE 1=1
+  `
+  const params = []
+  if (truck_arrival_id) { sql += ' AND ph.truck_arrival_id=?'; params.push(truck_arrival_id) }
+  if (movement_id) { sql += ' AND ph.movement_id=?'; params.push(movement_id) }
+  if (waybill_no) { sql += ' AND ph.waybill_no LIKE ?'; params.push(`%${waybill_no}%`) }
+  if (from) { sql += ' AND ph.move_date>=?'; params.push(from) }
+  if (to) { sql += ' AND ph.move_date<=?'; params.push(to) }
+  sql += ' ORDER BY ph.move_date DESC, ph.id DESC LIMIT ?'
+  params.push(limit)
+  return getDB().prepare(sql).all(...params)
+}
+
+export function getWaybillPhoto(id) {
+  return getDB().prepare('SELECT * FROM water_waybill_photos WHERE id=?').get(id)
+}
+
+export function createWaybillPhoto(row) {
+  return getDB().prepare(`
+    INSERT INTO water_waybill_photos(
+      truck_arrival_id, movement_id, waybill_no, move_date, photo_url,
+      original_name, mime, size, note, uploaded_by
+    ) VALUES(
+      @truck_arrival_id, @movement_id, @waybill_no, @move_date, @photo_url,
+      @original_name, @mime, @size, @note, @uploaded_by
+    )
+  `).run(row).lastInsertRowid
+}
+
+export function deleteWaybillPhoto(id) {
+  const row = getWaybillPhoto(id)
+  if (!row) return null
+  getDB().prepare('DELETE FROM water_waybill_photos WHERE id=?').run(id)
+  return row
 }

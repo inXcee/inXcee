@@ -415,3 +415,19 @@ Amaç: su takibini kayıt tablosundan → günlük dağıtım + irsaliye + eksi 
 
 ## Su Takip A-Z SPRINT ÖZETİ (W1-W10 tamamlandı, 2026-07-10)
 10 faz · 6 migration (030-035) · backend 80/80 water testi (1411/1411 tüm suite) · frontend smoke 12/12. Tümü avskamp.com'a deploy edildi. `water_movements.type` CHECK'ine hiç dokunulmadı (düzeltme ayrı tabloda) — hareket geçmişi + FIFO korundu.
+
+---
+
+## 2026-07-11 Su Takip Öngörü & Otomasyon (Faz V1-V5, plan: ~/.claude/plans/)
+Modülü reaktiften → öngörülü+proaktif yapma. Öncelik: öngörü/sipariş + proaktif otomasyon. Kapsam dışı (kullanıcı): SKT, mobil/QR, firma-faturalama.
+
+### Faz V1 — Tüketim hızı, "kaç gün yeter" & sipariş önerisi ✅
+- [x] `consumptionRates({window,asOf})` sorgu — son N gün (varsayılan 30) dağıtım toplamı + aktif gün
+- [x] `forecastService()` — ürün bazında avg_daily, days_of_cover, tahmini bitiş, hedef kapsama (30g) için önerilen sipariş; lead+safety (7+3g) altında reorder; yetersiz veri → confidence:low; `GET /forecast` (mgr)
+- [x] `ForecastPanel` — "📉 Sipariş Önerileri & Gün-Yeter" açılır panel: önerilen sipariş çipleri + tablo (bakiye/günlük ort./gün-yeter renkli/tahmini bitiş/öneri)
+- [x] +8 backend test (88/88 water, 1419/1419 tüm suite) + 2 frontend smoke (14/14), build temiz. (Global lead-time sabit; per-ürün lead_time_days ileride opsiyonel migration.)
+
+### Faz V2 — Trend & analiz görünümü ⏳
+### Faz V3 — Günlük operasyon özeti (bildirim + e-posta) ⏳
+### Faz V4 — Otomatik aylık kapanış PDF + e-posta ⏳
+### Faz V5 — Eskalasyon & zengin kanallar (push/WhatsApp) ⏳

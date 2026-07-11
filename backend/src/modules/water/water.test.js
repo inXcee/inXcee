@@ -3,7 +3,7 @@ import request from 'supertest'
 import app from '../../app.js'
 import { initDB, getDB } from '../../shared/db/index.js'
 import { seedDev } from '../../shared/db/seed.js'
-import { toBase, humanize, availableUnits } from './service.js'
+import { toBase, humanize, availableUnits, checkTruckArrivalAlerts } from './service.js'
 
 let managerToken, laundryToken
 beforeAll(async () => {
@@ -902,5 +902,180 @@ describe('Su takip — Onay akışı (W10)', () => {
     expect(ok.status).toBe(200)
     expect(ok.body.approved).toBeGreaterThanOrEqual(1)
     expect((await auth(request(app).get('/api/water/review'))).body.count).toBe(0)
+  })
+})
+
+describe('Su takip — Tüketim öngörüsü & sipariş önerisi (V1)', () => {
+  const TODAY = '2027-03-31'
+  let pOrder, pStock, zone
+  const auth = (r) => r.set('Authorization', `Bearer ${managerToken}`)
+
+  beforeAll(async () => {
+    pOrder = (await auth(request(app).post('/api/water/products')).send({ name: 'FC Order 1L', unit_label: 'adet', units_per_case: 1, cases_per_pallet: 1 })).body.id
+    pStock = (await auth(request(app).post('/api/water/products')).send({ name: 'FC Stock 1L', unit_label: 'adet', units_per_case: 1, cases_per_pallet: 1 })).body.id
+    zone = (await auth(request(app).post('/api/water/zones')).send({ name: 'FC Bölge' })).body.id
+    // pOrder: 100 giriş + 90 dağıtım (9 gün × 10) → balance 10, avg 3/gün (90/30), gün-yeter 3
+    await auth(request(app).post('/api/water/intake')).send({ product_id: pOrder, input_qty: 100, input_unit: 'adet', move_date: '2027-03-20', waybill_no: 'FC-1' })
+    const lines = []
+    for (let d = 22; d <= 30; d++) lines.push({ move_date: `2027-03-${d}`, zone_id: zone, product_id: pOrder, input_qty: 10, input_unit: 'adet' })
+    await auth(request(app).post('/api/water/distribute/batch')).send({ lines })
+    // pStock: 1000 giriş + 30 dağıtım → bol stok (~970 gün yeter)
+    await auth(request(app).post('/api/water/intake')).send({ product_id: pStock, input_qty: 1000, input_unit: 'adet', move_date: '2027-03-01', waybill_no: 'FC-2' })
+    await auth(request(app).post('/api/water/distribute')).send({ product_id: pStock, zone_id: zone, input_qty: 30, input_unit: 'adet', move_date: '2027-03-15' })
+  })
+
+  it('düşük stoklu ürün için gün-yeter + sipariş önerisi hesaplar', async () => {
+    const r = await auth(request(app).get(`/api/water/forecast?today=${TODAY}`))
+    expect(r.status).toBe(200)
+    const row = r.body.rows.find(x => x.product_id === pOrder)
+    expect(row.balance).toBe(10)
+    expect(row.avg_daily).toBe(3) // 90/30
+    expect(row.days_of_cover).toBe(3) // floor(10/3)
+    expect(row.needs_order).toBe(true)
+    expect(row.suggested_base).toBe(80) // ceil(3×30) − 10
+    expect(row.confidence).toBe('ok')
+    expect(r.body.order_suggestions.some(x => x.product_id === pOrder)).toBe(true)
+    expect(r.body.totals.order_count).toBeGreaterThanOrEqual(1)
+  })
+
+  it('bol stoklu ürün sipariş önermez', async () => {
+    const r = await auth(request(app).get(`/api/water/forecast?today=${TODAY}`))
+    const row = r.body.rows.find(x => x.product_id === pStock)
+    expect(row.days_of_cover).toBeGreaterThan(100)
+    expect(row.needs_order).toBe(false)
+  })
+
+  it('yetersiz veri (yeni ürün) düşük güven + null gün-yeter döner', async () => {
+    const pNew = (await auth(request(app).post('/api/water/products')).send({ name: 'FC New 1L', unit_label: 'adet', units_per_case: 1, cases_per_pallet: 1 })).body.id
+    const r = await auth(request(app).get(`/api/water/forecast?today=${TODAY}`))
+    const row = r.body.rows.find(x => x.product_id === pNew)
+    expect(row.confidence).toBe('low')
+    expect(row.days_of_cover).toBeNull()
+    expect(row.needs_order).toBe(false)
+  })
+
+  it('yetkisiz rol erişemez (403)', async () => {
+    const r = await request(app).get('/api/water/forecast').set('Authorization', `Bearer ${laundryToken}`)
+    expect(r.status).toBe(403)
+  })
+})
+
+describe('Su takip - Tir on bildirimleri ve irsaliye foto arsivi (W11)', () => {
+  const auth = (r) => r.set('Authorization', `Bearer ${managerToken}`)
+  const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQH/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==', 'base64')
+
+  it('tir on bildirimi olusturulur, listede mail hazir durumu ve saat araligi doner', async () => {
+    const brandId = (await auth(request(app).post('/api/water/brands')).send({ name: 'W11 Mila' })).body.id
+    const created = await auth(request(app).post('/api/water/truck-arrivals')).send({
+      arrival_date: '2027-03-10',
+      arrival_start_time: '09:00',
+      arrival_end_time: '11:00',
+      mail_deadline_date: '2027-03-10',
+      mail_deadline_time: '17:00',
+      reminder_start_time: '08:00',
+      reminder_end_time: '17:00',
+      reminder_interval_minutes: 60,
+      supplier_name: 'Mila Su',
+      brand_id: brandId,
+      driver_name: 'Ahmet Yilmaz',
+      driver_tc: '12345678901',
+      driver_phone: '05551112233',
+      plate: '34 abc 123',
+      trailer_plate: '34 drs 456',
+      center_email: 'merkez@example.com',
+      note: 'Ana kapidan giris',
+    })
+    expect(created.status).toBe(201)
+
+    const list = await auth(request(app).get('/api/water/truck-arrivals?from=2027-03-10&to=2027-03-10'))
+    expect(list.status).toBe(200)
+    const row = list.body.find(x => x.id === created.body.id)
+    expect(row).toBeTruthy()
+    expect(row.plate).toBe('34 ABC 123')
+    expect(row.arrival_window).toBe('09:00-11:00')
+    expect(row.mail_deadline_label).toBe('2027-03-10 17:00')
+    expect(row.mail_ready).toBe(true)
+    expect(row.missing_mail_fields).toEqual([])
+  })
+
+  it('mail bilgisi eksik tirda otomatik mail reddedilir; manuel isaretleme durumu mail_sent yapar', async () => {
+    const created = await auth(request(app).post('/api/water/truck-arrivals')).send({
+      arrival_date: '2027-03-11',
+      plate: '35 test 111',
+    })
+    expect(created.status).toBe(201)
+
+    const blocked = await auth(request(app).post(`/api/water/truck-arrivals/${created.body.id}/send-mail`))
+    expect(blocked.status).toBe(400)
+    expect(blocked.body.error).toMatch(/Mail/)
+
+    const marked = await auth(request(app).post(`/api/water/truck-arrivals/${created.body.id}/mark-mail-sent`))
+    expect(marked.status).toBe(200)
+    expect(marked.body.status).toBe('mail_sent')
+    expect(marked.body.mail_sent_at).toBeTruthy()
+  })
+
+  it('irsaliye fotografi tir kaydina baglanir, arsivde listelenir ve silinir', async () => {
+    const truck = await auth(request(app).post('/api/water/truck-arrivals')).send({
+      arrival_date: '2027-03-12',
+      arrival_start_time: '08:00',
+      arrival_end_time: '12:00',
+      plate: '06 irs 012',
+      driver_name: 'Mehmet Kaya',
+      driver_tc: '10987654321',
+      driver_phone: '05554443322',
+      trailer_plate: '06 dor 012',
+      center_email: 'merkez@example.com',
+    })
+    expect(truck.status).toBe(201)
+
+    const uploaded = await auth(request(app).post('/api/water/waybill-photos'))
+      .field('truck_arrival_id', String(truck.body.id))
+      .field('waybill_no', 'W11-IRS-001')
+      .field('move_date', '2027-03-12')
+      .field('note', 'Teslim irsaliyesi')
+      .attach('photo', jpeg, 'irsaliye.jpg')
+    expect(uploaded.status).toBe(201)
+
+    const photos = await auth(request(app).get(`/api/water/waybill-photos?truck_arrival_id=${truck.body.id}`))
+    expect(photos.status).toBe(200)
+    const photo = photos.body.find(x => x.id === uploaded.body.id)
+    expect(photo).toBeTruthy()
+    expect(photo.photo_url).toMatch(/^\/uploads\//)
+    expect(photo.plate).toBe('06 IRS 012')
+    expect(photo.waybill_no).toBe('W11-IRS-001')
+
+    const del = await auth(request(app).delete(`/api/water/waybill-photos/${uploaded.body.id}`))
+    expect(del.status).toBe(200)
+    const after = await auth(request(app).get(`/api/water/waybill-photos?truck_arrival_id=${truck.body.id}`))
+    expect(after.body.some(x => x.id === uploaded.body.id)).toBe(false)
+  })
+
+  it('saatlik kontrol mail deadline ve gelis araligi icin bildirim uretir', async () => {
+    const truck = await auth(request(app).post('/api/water/truck-arrivals')).send({
+      arrival_date: '2027-03-15',
+      arrival_start_time: '10:00',
+      arrival_end_time: '12:00',
+      mail_deadline_date: '2027-03-15',
+      mail_deadline_time: '17:00',
+      reminder_start_time: '08:00',
+      reminder_end_time: '17:00',
+      plate: '16 uyari 001',
+      driver_name: 'Ali Saat',
+      driver_tc: '11122233344',
+      driver_phone: '05550000000',
+      trailer_plate: '16 dor 001',
+      center_email: 'merkez@example.com',
+    })
+    expect(truck.status).toBe(201)
+
+    const result = checkTruckArrivalAlerts({ now: new Date('2027-03-15T11:00:00+03:00') })
+    expect(result.checked).toBeGreaterThanOrEqual(1)
+    expect(result.created).toBeGreaterThanOrEqual(2)
+
+    const mailNotif = getDB().prepare('SELECT * FROM notifications WHERE dedup_key=?').get(`water_truck_mail_${truck.body.id}_2027-03-15_11`)
+    const arrivalNotif = getDB().prepare('SELECT * FROM notifications WHERE dedup_key=?').get(`water_truck_arrival_${truck.body.id}_2027-03-15_11`)
+    expect(mailNotif?.module).toBe('water')
+    expect(arrivalNotif?.module).toBe('water')
   })
 })
