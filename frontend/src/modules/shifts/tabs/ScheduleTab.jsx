@@ -1143,18 +1143,29 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
                       {!collapsed && g.people.map((person) => {
                         const r = rowIdx++
                         const avatarColor = person.gender === 'female' ? { bg: 'rgba(244,114,182,.2)', text: '#f472b6' } : { bg: 'rgba(59,140,240,.2)', text: 'var(--blue)' }
+                        const personWeek = weekDays.reduce((acc, date) => {
+                          const cell = person.days?.[date]
+                          if (!cell) acc.empty += 1
+                          else if (cell.status === 'on_leave' || cell.status === 'off') acc.leave += 1
+                          else if (cell.status === 'absent') acc.absent += 1
+                          else acc.work += 1
+                          return acc
+                        }, { work: 0, leave: 0, absent: 0, empty: 0 })
                         return (
                   <tr key={person.id} style={{ borderTop: '1px solid var(--border)', background: r % 2 === 0 ? 'var(--bg)' : 'var(--surface)', borderLeft: `3px solid ${dc.bg || 'transparent'}` }}>
                     {/* Person cell */}
-                    <td style={{
+                    <td
+                      onClick={() => onPersonClick?.(person.id)}
+                      title="Personel detayini ac"
+                      style={{
                       position: 'sticky', left: 0, zIndex: 5,
                       background: r % 2 === 0 ? 'var(--bg)' : 'var(--surface)',
                       borderRight: '2px solid var(--border)',
                       padding: '8px 12px',
+                      cursor: 'pointer',
                     }}>
                       <div
-                        onClick={() => onPersonClick?.(person.id)}
-                        style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}
+                        style={{ display: 'flex', alignItems: 'center', gap: '10px' }}
                       >
                         {/* Avatar */}
                         <div style={{
@@ -1177,7 +1188,25 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
                               overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '120px',
                             }}>{person.position}</span>
                           )}
+                          <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginTop: '5px' }}>
+                            <span style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--green)', background: 'rgba(34,197,94,.10)', border: '1px solid rgba(34,197,94,.25)', borderRadius: '6px', padding: '1px 5px' }}>C {personWeek.work}</span>
+                            <span style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--teal)', background: 'rgba(20,184,166,.10)', border: '1px solid rgba(20,184,166,.25)', borderRadius: '6px', padding: '1px 5px' }}>I {personWeek.leave}</span>
+                            <span style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: personWeek.empty || personWeek.absent ? 'var(--red)' : 'var(--text3)', background: personWeek.empty || personWeek.absent ? 'rgba(231,76,60,.10)' : 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '6px', padding: '1px 5px' }}>B {personWeek.empty + personWeek.absent}</span>
+                          </div>
                         </div>
+                        <span style={{
+                          marginLeft: 'auto',
+                          flexShrink: 0,
+                          fontFamily: 'var(--mono)',
+                          fontSize: '8px',
+                          color: 'var(--accent)',
+                          border: '1px solid rgba(240,165,0,.35)',
+                          borderRadius: '999px',
+                          padding: '2px 6px',
+                          background: 'rgba(240,165,0,.10)',
+                        }}>
+                          Detay
+                        </span>
                       </div>
                     </td>
 

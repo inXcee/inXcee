@@ -106,6 +106,14 @@ export default function StaffDetailPanel({ staffId, onClose }) {
     { label: 'OFF',     value: `${stats.offCount ?? 0}g`,  color: 'var(--teal)' },
     { label: 'YOK',     value: stats.absentCount,          color: 'var(--red)' },
   ]
+  const QUICK_INFO_ITEMS = person ? [
+    ['Tel', person.phone],
+    ['E-posta', person.email],
+    ['Ise giris', person.hire_date ? new Date(person.hire_date).toLocaleDateString('tr-TR') : null],
+    ['Acil kisi', person.emergency_contact],
+    ['Acil tel', person.emergency_phone],
+    ['Adres', person.address],
+  ] : []
 
   const openForm = (key) => {
     if (key === 'edit' && person) {
@@ -192,7 +200,7 @@ export default function StaffDetailPanel({ staffId, onClose }) {
             </div>
 
             {/* Stat grid */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 6, marginTop: 14 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(72px, 1fr))', gap: 6, marginTop: 14 }}>
               {STAT_ITEMS.map(s => (
                 <div key={s.label} style={{
                   background: 'var(--surface2)', border: '1px solid var(--border)',
@@ -205,6 +213,33 @@ export default function StaffDetailPanel({ staffId, onClose }) {
                       <div style={{ height: '100%', borderRadius: 2, background: 'var(--green)', width: `${attendRate}%`, transition: 'width .4s ease' }} />
                     </div>
                   )}
+                </div>
+              ))}
+            </div>
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+              gap: 6,
+              marginTop: 10,
+            }}>
+              {QUICK_INFO_ITEMS.map(([label, value]) => (
+                <div key={label} style={{
+                  background: 'var(--surface2)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 8,
+                  padding: '7px 9px',
+                  minWidth: 0,
+                }}>
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--text3)', letterSpacing: '1px', marginBottom: 2 }}>{label}</div>
+                  <div style={{
+                    fontSize: 11,
+                    color: value ? 'var(--text)' : 'var(--text4)',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}>
+                    {value || '-'}
+                  </div>
                 </div>
               ))}
             </div>
