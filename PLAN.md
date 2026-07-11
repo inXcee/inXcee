@@ -433,6 +433,17 @@ Modülü reaktiften → öngörülü+proaktif yapma. Öncelik: öngörü/sipari�
 - [x] +1 backend test (89/89 water, 1420/1420 tüm suite): actionable+notified+dedup doğrulandı
 - [ ] Not: özet e-posta (SMTP açıksa) V3.1'e ertelendi — çekirdek proaktif teslim (in-app + push bildirimi) hazır
 
-### Faz V2 — Trend & analiz görünümü ⏳
-### Faz V4 — Otomatik aylık kapanış PDF + e-posta ⏳
-### Faz V5 — Eskalasyon & zengin kanallar (push/WhatsApp) ⏳
+### Faz V4 — Otomatik aylık kapanış PDF ✅
+- [x] `buildReconciliationPDF(month, doc)` servise çıkarıldı (route + cron ortak kullanır); `/reconciliation/:month/pdf` route sadeleşti
+- [x] Cron `15 3 1 * *` (`withLock('water-monthly-pdf')`) — ayın 1'i geçen ayın PDF'ini `uploads/reports/su-kapanis-{ay}.pdf`'e yazar + müdüre bildirim (envanter aylık-PDF deseni)
+- [x] +2 backend test (91/91 water): buildReconciliationPDF geçerli PDF (%PDF magic) + geçersiz ay throw
+
+### Faz V5 — Eskalasyon & zengin kanallar ✅
+- [x] `waterEscalations({now})` — 3+ gün bekleyen irsaliye (overdue) + kritik stok (critical_level altı) → **critical** `createNotification` (push'a fan-out), per-öğe günlük dedup
+- [x] Günlük digest cron'una bağlandı (06:15, digest + eskalasyon birlikte)
+- [x] +1 backend test (92/92 water, 1423/1423 tüm suite): overdue+kritik critical bildirim + dedup
+
+### Faz V2 — Trend & analiz görünümü ⏳ (sıradaki)
+
+### 🔧 Ara-düzeltme: eksik migration 036 (fix `1b9e697`)
+W11 tır/foto KODU commit'liydi ama `036_water_truck_waybill_archive.sql` untracked kalmış → prod'da truck tabloları YOK (API 500, cron hata), pre-deploy W11 testleri sunucuda 500 → deploy bloke. Migration commit'lendi (idempotent), deploy açıldı + prod'daki kırık tır özelliği düzeldi.

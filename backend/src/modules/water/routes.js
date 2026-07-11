@@ -13,7 +13,7 @@ import {
   createIntakeService, createDistributionService, deleteMovementService, updateDistributionService, movementsService,
   createReturnService, batchReturnService, deleteReturnService, returnsService, depositService,
   summaryService, pivotService, batchIntakeService, batchDistributeService, parseDistributionText,
-  alertsService, forecastService, reconciliationService, saveStockCountService, monthlyCloseService, monthlyUnlockService,
+  alertsService, forecastService, reconciliationService, buildReconciliationPDF, saveStockCountService, monthlyCloseService, monthlyUnlockService,
   monthLockWarning, pendingDistributionsService,
   templatesService, createTemplateService, deleteTemplateService,
   adjustmentsService, createAdjustmentService, deleteAdjustmentService, COUNT_REASONS,
@@ -336,43 +336,11 @@ waterRouter.get('/reconciliation/:month/pdf', ...mgr, (req, res) => {
   try {
     const month = req.params.month
     if (!/^\d{4}-\d{2}$/.test(month)) return res.status(400).json({ error: 'Ay YYYY-MM formatında olmalı' })
-    const [y, m] = month.split('-').map(Number)
-    const from = `${month}-01`
-    const to = `${month}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`
-    const summary = summaryService({ from, to })
-    const rec = reconciliationService({ month })
-    const t = summary.totals || {}
-    const zoneAgg = new Map()
-    for (const z of summary.zones || []) zoneAgg.set(z.zone_id, { name: z.zone_name, total: (zoneAgg.get(z.zone_id)?.total || 0) + (z.total_out || 0) })
-    const topZones = [...zoneAgg.values()].sort((a, b) => b.total - a.total).slice(0, 8)
-    const negatives = (summary.stock || []).filter(s => s.negative)
-
     const doc = new PDFDocument({ size: 'A4', margin: 40 })
     res.setHeader('Content-Type', 'application/pdf')
     res.setHeader('Content-Disposition', `attachment; filename="su-ay-kapanis-${month}.pdf"`)
     doc.pipe(res)
-    doc.fontSize(18).font('Helvetica-Bold').fillColor('#0f172a').text(`SU TAKIP AY KAPANISI - ${month}`, { align: 'center' })
-    doc.moveDown(0.3)
-    doc.fontSize(9).font('Helvetica').fillColor('#6b7280')
-      .text(`Olusturma: ${new Date().toLocaleString('tr-TR')}${rec.locked ? '  -  AY KILITLI' : ''}`, { align: 'center' })
-    doc.moveDown(1)
-    const line = (label, val) => { doc.fontSize(11).font('Helvetica-Bold').fillColor('#374151').text(label, { continued: true }).font('Helvetica').fillColor('#0f172a').text(`  ${val}`) }
-    doc.fontSize(13).font('Helvetica-Bold').fillColor('#0f172a').text('OZET'); doc.moveDown(0.3)
-    line('Ay gelen (tir):', String(t.period_in || 0))
-    line('Ay dagitilan:', String(t.period_out || 0))
-    line('Kalan stok (anlik):', String(t.balance || 0))
-    line('Eksi stoktaki urun sayisi:', String(t.deficit_count || 0))
-    line('Sayim farkli urun sayisi:', String(rec.totals?.mismatch || 0))
-    doc.moveDown(0.8)
-    doc.fontSize(13).font('Helvetica-Bold').fillColor('#0f172a').text('EN COK DAGITILAN YERLER'); doc.moveDown(0.3)
-    if (topZones.length === 0) doc.fontSize(10).font('Helvetica').fillColor('#9ca3af').text('Kayit yok.')
-    else topZones.forEach((z, i) => doc.fontSize(10).font('Helvetica').fillColor('#374151').text(`${i + 1}. ${z.name}  -  ${z.total}`))
-    if (negatives.length) {
-      doc.moveDown(0.8)
-      doc.fontSize(13).font('Helvetica-Bold').fillColor('#dc2626').text('EKSI STOKLAR'); doc.moveDown(0.3)
-      negatives.forEach(s => doc.fontSize(10).font('Helvetica').fillColor('#374151').text(`- ${s.name}: ${s.balance}`))
-    }
-    doc.end()
+    buildReconciliationPDF(month, doc)
     logAudit(req.user.id, 'water_close_pdf', 'water', null, month)
   } catch (e) { logger.error('[water]', e); if (!res.headersSent) fail(res, e) }
 })

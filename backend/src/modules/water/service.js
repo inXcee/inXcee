@@ -944,6 +944,30 @@ export function waterDailyDigest({ now = new Date() } = {}) {
   return { date: today, actionable, notified, parts, summary: s, order_count: f.order_count, soon_count: f.soon_count }
 }
 
+// ── Eskalasyon (V5) — 3+ gün bekleyen irsaliye + kritik stok → critical bildirim (push'a fan-out) ──
+export function waterEscalations({ now = new Date() } = {}) {
+  const clock = trClock(now)
+  const today = clock.date
+  let created = 0
+  for (const p of pendingDistributionsService({ today }).rows.filter(r => r.severity === 'overdue')) {
+    const n = createNotification({
+      message: `Su: ${p.product_name} → ${p.zone_name} dağıtımı ${p.waiting_days} gündür irsaliye bekliyor (bekleyen ${p.unallocated_human}).`,
+      severity: 'critical', module: 'water', target_role: 'campus_manager',
+      dedup_key: `water_esc_pending_${p.movement_id}_${today}`, link: '/water',
+    })
+    if (n) created += 1
+  }
+  for (const s of (summaryService({}).stock || []).filter(x => x.critical)) {
+    const n = createNotification({
+      message: `Su: ${s.name} KRİTİK stok — kalan ${s.balance_human}${s.min_human ? ` (eşik ${s.min_human})` : ''}.`,
+      severity: 'critical', module: 'water', target_role: 'campus_manager',
+      dedup_key: `water_esc_critical_${s.product_id}_${today}`, link: '/water',
+    })
+    if (n) created += 1
+  }
+  return { date: today, created }
+}
+
 export function checkTruckArrivalAlerts({ now = new Date() } = {}) {
   const clock = trClock(now)
   const current = minutesOf(clock.time)
@@ -1136,6 +1160,46 @@ export function monthlyUnlockService(month) {
   if (!isMonth(month)) throw Object.assign(new Error('Ay YYYY-MM formatında olmalı'), { statusCode: 400 })
   if (!q.getClosure(month)) throw Object.assign(new Error('Bu ay için kapanış kaydı yok'), { statusCode: 404 })
   q.setClosureLock(month, 0)
+}
+
+// Ay kapanışı kısa PDF içeriğini verilen pdfkit doc'una yazar + doc.end().
+// Route res'e pipe eder, cron dosya stream'ine pipe eder (V4). pdfkit'i çağıran import eder.
+export function buildReconciliationPDF(month, doc) {
+  if (!/^\d{4}-\d{2}$/.test(month || '')) throw Object.assign(new Error('Ay YYYY-MM formatında olmalı'), { statusCode: 400 })
+  const [y, m] = month.split('-').map(Number)
+  const from = `${month}-01`
+  const to = `${month}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`
+  const summary = summaryService({ from, to })
+  const rec = reconciliationService({ month })
+  const t = summary.totals || {}
+  const zoneAgg = new Map()
+  for (const z of summary.zones || []) zoneAgg.set(z.zone_id, { name: z.zone_name, total: (zoneAgg.get(z.zone_id)?.total || 0) + (z.total_out || 0) })
+  const topZones = [...zoneAgg.values()].sort((a, b) => b.total - a.total).slice(0, 8)
+  const negatives = (summary.stock || []).filter(s => s.negative)
+
+  doc.fontSize(18).font('Helvetica-Bold').fillColor('#0f172a').text(`SU TAKIP AY KAPANISI - ${month}`, { align: 'center' })
+  doc.moveDown(0.3)
+  doc.fontSize(9).font('Helvetica').fillColor('#6b7280')
+    .text(`Olusturma: ${new Date().toLocaleString('tr-TR')}${rec.locked ? '  -  AY KILITLI' : ''}`, { align: 'center' })
+  doc.moveDown(1)
+  const line = (label, val) => { doc.fontSize(11).font('Helvetica-Bold').fillColor('#374151').text(label, { continued: true }).font('Helvetica').fillColor('#0f172a').text(`  ${val}`) }
+  doc.fontSize(13).font('Helvetica-Bold').fillColor('#0f172a').text('OZET'); doc.moveDown(0.3)
+  line('Ay gelen (tir):', String(t.period_in || 0))
+  line('Ay dagitilan:', String(t.period_out || 0))
+  line('Kalan stok (anlik):', String(t.balance || 0))
+  line('Eksi stoktaki urun sayisi:', String(t.deficit_count || 0))
+  line('Sayim farkli urun sayisi:', String(rec.totals?.mismatch || 0))
+  doc.moveDown(0.8)
+  doc.fontSize(13).font('Helvetica-Bold').fillColor('#0f172a').text('EN COK DAGITILAN YERLER'); doc.moveDown(0.3)
+  if (topZones.length === 0) doc.fontSize(10).font('Helvetica').fillColor('#9ca3af').text('Kayit yok.')
+  else topZones.forEach((z, i) => doc.fontSize(10).font('Helvetica').fillColor('#374151').text(`${i + 1}. ${z.name}  -  ${z.total}`))
+  if (negatives.length) {
+    doc.moveDown(0.8)
+    doc.fontSize(13).font('Helvetica-Bold').fillColor('#dc2626').text('EKSI STOKLAR'); doc.moveDown(0.3)
+    negatives.forEach(s => doc.fontSize(10).font('Helvetica').fillColor('#374151').text(`- ${s.name}: ${s.balance}`))
+  }
+  doc.end()
+  return { month, from, to }
 }
 
 // ── Tüketim öngörüsü & sipariş önerisi (V1) ──

@@ -3,7 +3,8 @@ import request from 'supertest'
 import app from '../../app.js'
 import { initDB, getDB } from '../../shared/db/index.js'
 import { seedDev } from '../../shared/db/seed.js'
-import { toBase, humanize, availableUnits, checkTruckArrivalAlerts, waterDailyDigest } from './service.js'
+import PDFDocument from 'pdfkit'
+import { toBase, humanize, availableUnits, checkTruckArrivalAlerts, waterDailyDigest, buildReconciliationPDF, waterEscalations } from './service.js'
 
 let managerToken, laundryToken
 beforeAll(async () => {
@@ -957,6 +958,45 @@ describe('Su takip — Tüketim öngörüsü & sipariş önerisi (V1)', () => {
   it('yetkisiz rol erişemez (403)', async () => {
     const r = await request(app).get('/api/water/forecast').set('Authorization', `Bearer ${laundryToken}`)
     expect(r.status).toBe(403)
+  })
+})
+
+describe('Su takip — Eskalasyon (V5)', () => {
+  const NOW = new Date('2027-04-10T11:00:00+03:00')
+  const auth = (r) => r.set('Authorization', `Bearer ${managerToken}`)
+
+  beforeAll(async () => {
+    const pEsc = (await auth(request(app).post('/api/water/products')).send({ name: 'ESC 1L', unit_label: 'adet', units_per_case: 1, cases_per_pallet: 1, critical_level: 50 })).body.id
+    const zEsc = (await auth(request(app).post('/api/water/zones')).send({ name: 'ESC Bölge' })).body.id
+    // 9 gün önce girişsiz dağıtım → overdue bekleyen + eksi (kritik stok)
+    await auth(request(app).post('/api/water/distribute')).send({ product_id: pEsc, zone_id: zEsc, input_qty: 20, input_unit: 'adet', move_date: '2027-04-01' })
+  })
+
+  it('overdue bekleyen + kritik stok için critical bildirim üretir; günlük dedup', () => {
+    const r = waterEscalations({ now: NOW })
+    expect(r.created).toBeGreaterThanOrEqual(1)
+    const esc = getDB().prepare("SELECT COUNT(*) c FROM notifications WHERE dedup_key LIKE 'water_esc_%'").get()
+    expect(esc.c).toBeGreaterThanOrEqual(1)
+    // aynı gün ikinci çağrı → hepsi dedup, yeni bildirim yok
+    const r2 = waterEscalations({ now: NOW })
+    expect(r2.created).toBe(0)
+  })
+})
+
+describe('Su takip — Ay kapanışı PDF servisi (V4)', () => {
+  it('buildReconciliationPDF pdfkit doc\'una geçerli PDF yazar (cron yolu)', async () => {
+    const doc = new PDFDocument({ size: 'A4', margin: 40 })
+    const chunks = []
+    doc.on('data', c => chunks.push(c))
+    const done = new Promise(res => doc.on('end', res))
+    buildReconciliationPDF('2026-06', doc) // doc.end() içeride
+    await done
+    const buf = Buffer.concat(chunks)
+    expect(buf.length).toBeGreaterThan(100)
+    expect(buf.slice(0, 4).toString()).toBe('%PDF')
+  })
+  it('geçersiz ay 400 fırlatır', () => {
+    expect(() => buildReconciliationPDF('2026', {})).toThrow(/YYYY-MM/)
   })
 })
 

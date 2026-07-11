@@ -18,7 +18,8 @@ import { logger } from '../logger.js'
 import { pruneTokenBlacklist } from '../auth/service.js'
 import { runBackupService, listBackupsService, deleteBackupService } from '../../modules/backup/service.js'
 import { enforceKvkkRetentionService } from '../../modules/kvkk/service.js'
-import { checkTruckArrivalAlerts, waterDailyDigest } from '../../modules/water/service.js'
+import PDFDocument from 'pdfkit'
+import { checkTruckArrivalAlerts, waterDailyDigest, buildReconciliationPDF, waterEscalations } from '../../modules/water/service.js'
 import { captureError } from '../sentry.js'
 
 let emailJob = null
@@ -93,7 +94,35 @@ export function startCronJobs() {
     try {
       const r = waterDailyDigest()
       if (r.notified) logger.info(`[Cron] water-daily-digest: ${r.parts.join(', ')}`)
+      const esc = waterEscalations() // 3+ gün bekleyen + kritik stok → critical push
+      if (esc.created > 0) logger.info(`[Cron] water escalations: ${esc.created} critical`)
     } catch (e) { logger.error('[Cron] su günlük özet hatası:', e.message) }
+  }), TZ)
+
+  // Her ayın 1'i 03:15 — geçen ayın su kapanış PDF özeti (uploads/reports) + müdüre bildirim
+  cron.schedule('15 3 1 * *', withLock('water-monthly-pdf', () => {
+    let stream
+    try {
+      const d = new Date(); d.setMonth(d.getMonth() - 1)
+      const month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+      const reportsDir = process.env.UPLOADS_DIR ? path.join(process.env.UPLOADS_DIR, 'reports') : 'uploads/reports'
+      if (!fs.existsSync(reportsDir)) fs.mkdirSync(reportsDir, { recursive: true })
+      const filePath = path.join(reportsDir, `su-kapanis-${month}.pdf`)
+      stream = fs.createWriteStream(filePath)
+      stream.on('error', (err) => { logger.error('[Cron] su PDF stream hatasi:', err.message); try { stream.destroy() } catch { /* ignore */ } })
+      const doc = new PDFDocument({ size: 'A4', margin: 40 })
+      doc.pipe(stream)
+      buildReconciliationPDF(month, doc) // doc.end() iceride cagriliyor
+      stream.on('finish', () => {
+        try {
+          logAudit(null, 'water_monthly_pdf', 'water', null, `${month} PDF: ${filePath}`)
+          createNotification({ message: `Su takip ${month} ay kapanış PDF özeti hazır.`, module: 'water', target_role: 'campus_manager', dedup_key: `water_monthly_pdf_${month}`, link: '/water' })
+        } catch { /* ignore */ }
+      })
+    } catch (e) {
+      logger.error('[Cron] su aylık PDF hatası:', e.message)
+      if (stream) try { stream.destroy() } catch { /* ignore */ }
+    }
   }), TZ)
 
   // Her 15 dakikada SLA kontrolü (overlap-safe)
