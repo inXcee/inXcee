@@ -71,9 +71,9 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
   const DAY_LABELS = ['Pzt', 'Sal', 'Car', 'Per', 'Cum', 'Cmt', 'Paz']
 
   const { data: rows = [], isLoading } = useQuery({
-    queryKey: ['schedule', weekStart, deptFilter],
+    queryKey: ['schedule', weekStart],
     queryFn: () => api.get('/shifts/schedule', {
-      params: { week: weekStart, week_end: weekEnd, dept_id: deptFilter || undefined }
+      params: { week: weekStart, week_end: weekEnd }
     }).then(r => r.data),
   })
 
@@ -83,7 +83,7 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
   })
 
   // Build stable weekly grid: merge schedule data with all staff in dept
-  const staffGrid = useMemo(() => buildStaffGrid(rows, allStaff, deptFilter), [rows, allStaff, deptFilter])
+  const staffGrid = useMemo(() => buildStaffGrid(rows, allStaff, ''), [rows, allStaff])
 
   const assignCell = useMutation({
     mutationFn: ({ staffId, deptId, shiftDefId, date, status }) =>
@@ -258,16 +258,38 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
   }, [staffGrid, weekDays])
 
   // Arama + durum filtresi uygulanmış görünür liste
+  const selectedDepartment = useMemo(
+    () => departments.find(d => String(d.id) === String(deptFilter)) || null,
+    [departments, deptFilter]
+  )
+
+  const deptCards = useMemo(() => departments.map(d => {
+    const st = deptStats.get(d.name)
+    const perDay = st?.perDay || weekDays.map(() => ({ work: 0, leave: 0, empty: 0 }))
+    return {
+      id: String(d.id),
+      name: d.name,
+      color: d.color_class,
+      members: st?.members ?? allStaff.filter(s => String(s.department_id) === String(d.id)).length,
+      work: perDay.reduce((sum, day) => sum + day.work, 0),
+      leave: perDay.reduce((sum, day) => sum + day.leave, 0),
+      empty: perDay.reduce((sum, day) => sum + day.empty, 0),
+      lowDays: perDay.filter(day => day.work < coverageMin).length,
+    }
+  }).sort((a, b) => a.name.localeCompare(b.name, 'tr')), [departments, deptStats, weekDays, coverageMin, allStaff])
+
   const visibleGrid = useMemo(() => {
     const q = gridSearch.toLocaleLowerCase('tr').trim()
     return staffGrid.filter(p => {
-      if (q && !(p.full_name || '').toLocaleLowerCase('tr').includes(q)) return false
+      if (deptFilter && String(p.dept_id) !== String(deptFilter)) return false
+      const haystack = [p.full_name, p.dept_name, p.position].filter(Boolean).join(' ').toLocaleLowerCase('tr')
+      if (q && !haystack.includes(q)) return false
       if (statusFilter === 'leave' && !weekDays.some(d => p.days[d]?.status === 'on_leave' || p.days[d]?.status === 'off')) return false
       if (statusFilter === 'gaps' && !weekDays.some(d => !p.days[d])) return false
       if (statusFilter === 'absent' && !weekDays.some(d => p.days[d]?.status === 'absent')) return false
       return true
     })
-  }, [staffGrid, gridSearch, statusFilter, weekDays])
+  }, [staffGrid, deptFilter, gridSearch, statusFilter, weekDays])
 
   const toggleCollapse = (name) => setCollapsedDepts(prev => {
     const n = new Set(prev); n.has(name) ? n.delete(name) : n.add(name); return n
@@ -744,6 +766,95 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
         )}
       </div>
 
+      {scheduleView === 'weekly' && (
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))',
+          gap: '8px',
+          marginBottom: '10px',
+        }}>
+          <div
+            onClick={() => { setDeptFilter(''); setCollapsedDepts(new Set()) }}
+            style={{
+              padding: '10px',
+              borderRadius: '10px',
+              border: `1px solid ${deptFilter ? 'var(--border)' : 'rgba(59,140,240,.6)'}`,
+              background: deptFilter ? 'var(--surface)' : 'rgba(59,140,240,.12)',
+              cursor: 'pointer',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'center' }}>
+              <span style={{ fontFamily: 'var(--display)', fontSize: '12px', letterSpacing: '1.2px', color: deptFilter ? 'var(--text2)' : 'var(--blue)', fontWeight: 700 }}>TUM BOLUMLER</span>
+              <span style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)' }}>{staffGrid.length} kisi</span>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px', marginTop: '8px' }}>
+              <span style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--green)' }}>C {weekStats.working}</span>
+              <span style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--teal)' }}>I {weekStats.onLeave}</span>
+              <span style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: weekStats.empty ? 'var(--red)' : 'var(--text3)' }}>B {weekStats.empty}</span>
+            </div>
+          </div>
+          {deptCards.map(card => {
+            const active = deptFilter === card.id
+            const dc = deptColor(card.color)
+            return (
+              <div
+                key={card.id}
+                onClick={() => { setDeptFilter(active ? '' : card.id); setCollapsedDepts(new Set()) }}
+                style={{
+                  padding: '10px',
+                  borderRadius: '10px',
+                  border: `1px solid ${active ? dc.text || 'var(--blue)' : 'var(--border)'}`,
+                  background: active ? `color-mix(in srgb, ${dc.text || 'var(--blue)'} 14%, var(--surface))` : 'var(--surface)',
+                  cursor: 'pointer',
+                  boxShadow: active ? '0 0 0 1px rgba(255,255,255,.04) inset' : 'none',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'center' }}>
+                  <span style={{ fontFamily: 'var(--display)', fontSize: '12px', letterSpacing: '1.2px', color: active ? dc.text || 'var(--blue)' : 'var(--text)', fontWeight: 700, textTransform: 'uppercase', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{card.name}</span>
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)', flexShrink: 0 }}>{card.members} kisi</span>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px', marginTop: '8px' }}>
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--green)' }}>C {card.work}</span>
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--teal)' }}>I {card.leave}</span>
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: card.empty ? 'var(--red)' : 'var(--text3)' }}>B {card.empty}</span>
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: card.lowDays ? 'var(--accent)' : 'var(--green)' }}>{card.lowDays} dusuk</span>
+                </div>
+                {canEdit && active && (
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    onClick={e => { e.stopPropagation(); setBulkDept(card.id); setBulkFillModal(true) }}
+                    style={{ width: '100%', marginTop: '8px' }}
+                  >
+                    Bu bolumu doldur
+                  </button>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {scheduleView === 'weekly' && selectedDepartment && (
+        <div style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          gap: '8px',
+          marginBottom: '10px',
+          padding: '8px 10px',
+          borderRadius: '10px',
+          background: 'var(--surface)',
+          border: '1px solid var(--border)',
+          color: 'var(--text2)',
+          fontSize: '12px',
+        }}>
+          <strong style={{ color: 'var(--text)' }}>{selectedDepartment.name}</strong>
+          <span style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)' }}>
+            Altta sadece bu bolumun personeli listeleniyor; ust kartlardan bolum degistirebilirsin.
+          </span>
+        </div>
+      )}
+
       {scheduleView === 'weekly' && canEdit && (
         <div style={{
           display: 'grid',
@@ -939,6 +1050,7 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
                 {weekDays.map((d, i) => {
                   const sun = isSunday(d)
                   const isToday = d === todayStr()
+                  const dayStats = weekStats.perDay[i] || { working: [], leave: [], empty: [] }
                   return (
                     <th key={d} onClick={() => setDayDetail(d)} style={{
                       padding: '10px 8px', textAlign: 'center', minWidth: '110px',
@@ -965,6 +1077,9 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
                             {weekStats.perDay[i].leave.length}İ
                           </span>
                         )}
+                      </div>
+                      <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', marginTop: '2px', color: dayStats.empty.length ? 'var(--red)' : 'var(--text3)', fontWeight: 700 }}>
+                        Bos {dayStats.empty.length}
                       </div>
                     </th>
                   )
@@ -1018,6 +1133,7 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
                             }}>
                               <span style={{ fontFamily: 'var(--mono)', fontSize: '12px', fontWeight: 700, color: low ? 'var(--red)' : 'var(--text)' }}>{pd.work}{low ? ' ⚠' : ''}</span>
                               {pd.leave > 0 && <span style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--teal)', display: 'block' }}>{pd.leave}i</span>}
+                              {pd.empty > 0 && <span style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--red)', display: 'block' }}>{pd.empty} bos</span>}
                             </td>
                           )
                         })}
