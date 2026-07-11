@@ -18,6 +18,7 @@ import { logger } from '../logger.js'
 import { pruneTokenBlacklist } from '../auth/service.js'
 import { runBackupService, listBackupsService, deleteBackupService } from '../../modules/backup/service.js'
 import { enforceKvkkRetentionService } from '../../modules/kvkk/service.js'
+import { checkTruckArrivalAlerts, waterDailyDigest } from '../../modules/water/service.js'
 import { captureError } from '../sentry.js'
 
 let emailJob = null
@@ -79,8 +80,20 @@ export function startCronJobs() {
   }, TZ)
 
   // Her 1 dakikada makine zamanlayıcı kontrolü (overlap-safe)
+  cron.schedule('0 * * * *', withLock('water-truck-alerts', () => {
+    checkTruckArrivalAlerts()
+  }), TZ)
+
   cron.schedule('*/1 * * * *', withLock('machine-timers', () => {
     checkMachineTimers()
+  }), TZ)
+
+  // Her gün 06:15 — su takip günlük operasyon özeti (müdüre tek bildirim, push'a fan-out)
+  cron.schedule('15 6 * * *', withLock('water-daily-digest', () => {
+    try {
+      const r = waterDailyDigest()
+      if (r.notified) logger.info(`[Cron] water-daily-digest: ${r.parts.join(', ')}`)
+    } catch (e) { logger.error('[Cron] su günlük özet hatası:', e.message) }
   }), TZ)
 
   // Her 15 dakikada SLA kontrolü (overlap-safe)

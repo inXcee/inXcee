@@ -916,6 +916,34 @@ function trClock(now = new Date()) {
   }
 }
 
+// ── Günlük operasyon özeti (V3) — cron 06:15, müdüre tek bildirim (push'a fan-out) ──
+export function waterDailyDigest({ now = new Date() } = {}) {
+  const clock = trClock(now)
+  const today = clock.date
+  const s = alertsService({ today }).summary
+  const f = forecastService({ today }).totals
+  const parts = []
+  if (s.pending) parts.push(`${s.pending} irsaliye bekleyen`)
+  if (s.negative) parts.push(`${s.negative} eksi stok`)
+  if (s.low) parts.push(`${s.low} düşük stok`)
+  if (f.order_count) parts.push(`${f.order_count} sipariş önerisi`)
+  if (f.soon_count) parts.push(`${f.soon_count} ürün 7 günden az`)
+  if (s.idle_zones) parts.push(`${s.idle_zones} bölge bugün kayıtsız`)
+  const actionable = parts.length > 0
+  let notified = false
+  if (actionable) {
+    const n = createNotification({
+      message: `Su takip günlük özet (${today}): ${parts.join(', ')}.`,
+      severity: (s.negative || f.order_count) ? 'warning' : 'info',
+      module: 'water', target_role: 'campus_manager',
+      dedup_key: `water_digest_${today}`,
+      link: '/water',
+    })
+    notified = !!n
+  }
+  return { date: today, actionable, notified, parts, summary: s, order_count: f.order_count, soon_count: f.soon_count }
+}
+
 export function checkTruckArrivalAlerts({ now = new Date() } = {}) {
   const clock = trClock(now)
   const current = minutesOf(clock.time)

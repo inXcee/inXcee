@@ -427,7 +427,12 @@ Modülü reaktiften → öngörülü+proaktif yapma. Öncelik: öngörü/sipari�
 - [x] `ForecastPanel` — "📉 Sipariş Önerileri & Gün-Yeter" açılır panel: önerilen sipariş çipleri + tablo (bakiye/günlük ort./gün-yeter renkli/tahmini bitiş/öneri)
 - [x] +8 backend test (88/88 water, 1419/1419 tüm suite) + 2 frontend smoke (14/14), build temiz. (Global lead-time sabit; per-ürün lead_time_days ileride opsiyonel migration.)
 
+### Faz V3 — Günlük operasyon özeti (bildirim) ✅
+- [x] `waterDailyDigest({now})` — `alertsService` + `forecastService` birleşir; bekleyen/eksi/düşük/sipariş-önerisi/7-günden-az/kayıtsız-bölge özeti; müdüre tek `createNotification` (push'a fan-out) + günlük `dedup_key` (water_digest_{gün})
+- [x] Cron `15 6 * * *` (`withLock('water-daily-digest')`) — TR 06:15 günlük tetik
+- [x] +1 backend test (89/89 water, 1420/1420 tüm suite): actionable+notified+dedup doğrulandı
+- [ ] Not: özet e-posta (SMTP açıksa) V3.1'e ertelendi — çekirdek proaktif teslim (in-app + push bildirimi) hazır
+
 ### Faz V2 — Trend & analiz görünümü ⏳
-### Faz V3 — Günlük operasyon özeti (bildirim + e-posta) ⏳
 ### Faz V4 — Otomatik aylık kapanış PDF + e-posta ⏳
 ### Faz V5 — Eskalasyon & zengin kanallar (push/WhatsApp) ⏳

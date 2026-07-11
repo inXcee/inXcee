@@ -3,7 +3,7 @@ import request from 'supertest'
 import app from '../../app.js'
 import { initDB, getDB } from '../../shared/db/index.js'
 import { seedDev } from '../../shared/db/seed.js'
-import { toBase, humanize, availableUnits, checkTruckArrivalAlerts } from './service.js'
+import { toBase, humanize, availableUnits, checkTruckArrivalAlerts, waterDailyDigest } from './service.js'
 
 let managerToken, laundryToken
 beforeAll(async () => {
@@ -957,6 +957,24 @@ describe('Su takip — Tüketim öngörüsü & sipariş önerisi (V1)', () => {
   it('yetkisiz rol erişemez (403)', async () => {
     const r = await request(app).get('/api/water/forecast').set('Authorization', `Bearer ${laundryToken}`)
     expect(r.status).toBe(403)
+  })
+})
+
+describe('Su takip — Günlük operasyon özeti (V3)', () => {
+  it('digest actionable öğeleri toplar, müdüre bildirim üretir ve günlük dedup uygular', () => {
+    const r = waterDailyDigest()
+    expect(r.actionable).toBe(true) // önceki testlerden eksi/bekleyen kayıtlar mevcut
+    expect(r.notified).toBe(true)
+    expect(Array.isArray(r.parts) && r.parts.length).toBeTruthy()
+
+    const notif = getDB().prepare('SELECT * FROM notifications WHERE dedup_key=?').get(`water_digest_${r.date}`)
+    expect(notif).toBeTruthy()
+    expect(notif.message).toMatch(/günlük özet/)
+    expect(notif.target_role).toBe('campus_manager')
+
+    // aynı gün ikinci çağrı → dedup, yeni bildirim yok
+    const r2 = waterDailyDigest()
+    expect(r2.notified).toBe(false)
   })
 })
 
