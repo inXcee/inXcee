@@ -9,7 +9,7 @@ import { SkeletonTable } from '../../../shared/components/Skeleton.jsx'
 import {
   getWeekStart, addDays, formatDate, shortDay, todayStr,
   shiftColor, deptColor, ModalOverlay, StaffSearch,
-  LEAVE_CELL, formatShiftHours, shiftHoursFrom, leaveCellMeta, leaveTypeLabel,
+  formatShiftHours, shiftHoursFrom, leaveCellMeta, leaveTypeLabel,
 } from '../shared.jsx'
 import { buildStaffGrid, computeWeekStats, parseQuickScheduleCode, cellToScheduleCode, buildScheduleWarnings } from '../logic/schedule.js'
 import { DailyView, WeekFillSheet, CellAssignSheet } from './scheduleSheets.jsx'
@@ -204,103 +204,20 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['schedule'] }); setBulkFillModal(false) }
   })
 
-  // ── Haftalık çizelgeyi renkli Excel olarak indir ──
-  const TAILWIND_HEX = {
-    'bg-blue-500': '3B82F6', 'bg-blue-600': '2563EB', 'bg-green-500': '22C55E', 'bg-green-600': '16A34A',
-    'bg-red-500': 'EF4444', 'bg-red-600': 'DC2626', 'bg-amber-500': 'F59E0B', 'bg-yellow-500': 'EAB308',
-    'bg-orange-500': 'F97316', 'bg-purple-500': 'A855F7', 'bg-purple-600': '9333EA', 'bg-pink-500': 'EC4899',
-    'bg-teal-500': '14B8A6', 'bg-cyan-500': '06B6D4', 'bg-indigo-500': '6366F1', 'bg-lime-500': '84CC16',
-  }
-  const STATUS_FILL = { off: '8B5CF6', on_leave: '14B8A6', absent: 'DC2626' }
-
   const exportExcel = async () => {
-    const ExcelJS = (await import('exceljs')).default
-    const wb = new ExcelJS.Workbook()
-    const ws = wb.addWorksheet('Vardiya', { views: [{ state: 'frozen', xSplit: 2, ySplit: 2 }] })
-
-    const border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } }
-
-    ws.mergeCells(1, 1, 1, 2 + weekDays.length)
-    const title = ws.getCell(1, 1)
-    title.value = `VARDİYA ÇİZELGESİ  ·  ${formatDate(weekStart)} – ${formatDate(weekEnd)}`
-    title.font = { bold: true, size: 14 }
-    title.alignment = { horizontal: 'center', vertical: 'middle' }
-    ws.getRow(1).height = 26
-
-    const header = ws.getRow(2)
-    header.values = ['PERSONEL', 'DEPARTMAN', ...weekDays.map((d, i) => `${DAY_LABELS[i]}\n${formatDate(d)}`)]
-    header.eachCell(c => {
-      c.font = { bold: true, size: 10, color: { argb: 'FFFFFFFF' } }
-      c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF334155' } }
-      c.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }
-      c.border = border
+    const { exportScheduleExcel } = await import('../logic/scheduleExcelExport.js')
+    await exportScheduleExcel({
+      weekStart,
+      weekEnd,
+      weekDays,
+      staffGrid,
+      visibleGrid,
+      gridSearch,
+      statusFilter,
+      deptFilter,
+      coverageMin,
+      shiftDefs,
     })
-    header.height = 30
-
-    staffGrid.forEach(p => {
-      const row = ws.addRow([
-        p.full_name,
-        p.dept_name || '—',
-        ...weekDays.map(d => {
-          const c = p.days[d]
-          if (!c) return '—'
-          if (c.status === 'off') return 'OFF\nhaftalık izin'
-          if (c.status === 'on_leave') {
-            const lc = leaveCellMeta(c.leave_type)
-            return `${lc.short}\n${leaveTypeLabel(c.leave_type)}`
-          }
-          if (c.status === 'absent') return 'YOK'
-          return c.shift_name ? `${c.shift_name}\n${shiftHoursFrom(c)}` : '—'
-        }),
-      ])
-      row.height = 30
-      row.eachCell((cell, colNo) => {
-        cell.border = border
-        cell.alignment = { horizontal: colNo <= 2 ? 'left' : 'center', vertical: 'middle', wrapText: true }
-        cell.font = { size: 9 }
-        if (colNo <= 2) return
-        const c = p.days[weekDays[colNo - 3]]
-        if (!c) return
-        const hex = c.status === 'on_leave'
-          ? leaveCellMeta(c.leave_type).hex
-          : STATUS_FILL[c.status] || (c.shift_color && TAILWIND_HEX[c.shift_color])
-        if (hex) {
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF' + hex } }
-          cell.font = { size: 9, bold: true, color: { argb: 'FFFFFFFF' } }
-        }
-      })
-    })
-
-    ws.addRow([])
-    const legendTitle = ws.addRow(['LEJANT'])
-    legendTitle.getCell(1).font = { bold: true, size: 10 }
-    shiftDefs.forEach(s => {
-      const r = ws.addRow([`${s.name}  (${formatShiftHours(s.start_hour, s.end_hour)})`])
-      const hex = TAILWIND_HEX[s.color_class] || '64748B'
-      r.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF' + hex } }
-      r.getCell(1).font = { size: 9, bold: true, color: { argb: 'FFFFFFFF' } }
-    })
-    ;[
-      ['OFF — haftalık izin', STATUS_FILL.off],
-      ...Object.entries(LEAVE_CELL).map(([type, lc]) => [`${lc.short} — ${leaveTypeLabel(type)}`, lc.hex]),
-      ['YOK — devamsız', STATUS_FILL.absent],
-    ].forEach(([label, hex]) => {
-      const r = ws.addRow([label])
-      r.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF' + hex } }
-      r.getCell(1).font = { size: 9, bold: true, color: { argb: 'FFFFFFFF' } }
-    })
-
-    ws.getColumn(1).width = 24
-    ws.getColumn(2).width = 14
-    for (let i = 0; i < weekDays.length; i++) ws.getColumn(3 + i).width = 15
-
-    const buf = await wb.xlsx.writeBuffer()
-    const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
-    const a = document.createElement('a')
-    a.href = URL.createObjectURL(blob)
-    a.download = `vardiya-${weekStart}.xlsx`
-    a.click()
-    URL.revokeObjectURL(a.href)
   }
 
   const openCellPopover = (e, person, date) => {
