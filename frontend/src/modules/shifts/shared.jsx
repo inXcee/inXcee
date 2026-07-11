@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { useQuery } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
+import { classHex, hexToRgba } from './logic/shiftColors.js'
 
 // Tek noktadan toast ile hata gosterimi — onError callback'lerinde alert yerine bunu cagir.
 // Module-level fonksiyon: closure'a bagimli degil, callback'lerde stale ref riski yok.
@@ -122,27 +123,16 @@ export function calcAge(birthDate) {
 }
 
 // ─── Color helpers ────────────────────────────────────────────────────────────
+// Tek renk kaynağı (logic/shiftColors.js) — ekran ile Excel aynı hex'i kullanır,
+// bilinmeyen color_class sessizce griye düşmez (deterministik hash renk atanır).
 export function shiftColor(colorClass) {
-  const map = {
-    'bg-blue-400':   { bg: 'rgba(59,140,240,.15)', text: 'var(--blue)' },
-    'bg-orange-400': { bg: 'rgba(240,165,0,.15)',   text: 'var(--accent)' },
-    'bg-indigo-600': { bg: 'rgba(155,89,182,.15)',  text: 'var(--purple)' },
-  }
-  return map[colorClass] || { bg: 'var(--surface3)', text: 'var(--text2)' }
+  const hex = classHex(colorClass)
+  return { bg: hexToRgba(hex, 0.15), text: `#${hex}` }
 }
 
 export function deptColor(colorClass) {
-  const map = {
-    'bg-red-600':    { bg: 'rgba(231,76,60,.12)',   text: 'var(--red)' },
-    'bg-green-600':  { bg: 'rgba(39,201,106,.12)',  text: 'var(--green)' },
-    'bg-orange-500': { bg: 'rgba(240,165,0,.12)',   text: 'var(--accent)' },
-    'bg-blue-600':   { bg: 'rgba(59,140,240,.12)',  text: 'var(--blue)' },
-    'bg-yellow-500': { bg: 'rgba(245,200,66,.12)',  text: 'var(--accent3)' },
-    'bg-lime-500':   { bg: 'rgba(39,201,106,.12)',  text: 'var(--green)' },
-    'bg-pink-500':   { bg: 'rgba(244,114,182,.12)', text: '#f472b6' },
-    'bg-purple-600': { bg: 'rgba(155,89,182,.12)',  text: 'var(--purple)' },
-  }
-  return map[colorClass] || { bg: 'var(--surface3)', text: 'var(--text2)' }
+  const hex = classHex(colorClass)
+  return { bg: hexToRgba(hex, 0.12), text: `#${hex}` }
 }
 
 // ─── Side Panel (fixed right drawer — positioned near click, stays while scrolling) ──

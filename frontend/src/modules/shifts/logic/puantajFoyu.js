@@ -1,16 +1,17 @@
 // Resmi puantaj cetveli (föy) — satır/kod üretimi.
 // ExcelJS'ten bağımsız saf mantık; export tarafı PuantajTab'dan bunu kullanır.
+import { codeHex } from './shiftColors.js'
 
-// Klasik TR puantaj kodlaması — grid'deki PUANTAJ_ACTIONS ile aynı dil
+// Klasik TR puantaj kodlaması — renkler tek kaynaktan (shiftColors.codeHex)
 const CODE_META = {
-  worked: { code: 'N', hex: '22C55E' },
-  off: { code: 'h', hex: '14B8A6' },
-  sick: { code: 'r', hex: 'F97316' },
-  unpaid: { code: 'üi', hex: '64748B' },
-  annual: { code: 'yi', hex: '3B82F6' },
-  leave: { code: 'i', hex: 'A78BFA' },
-  absent: { code: 'Y', hex: 'EF4444' },
-  scheduled: { code: 'P', hex: '94A3B8' },
+  worked: { code: 'N', hex: codeHex('N') },
+  off: { code: 'h', hex: codeHex('h') },
+  sick: { code: 'r', hex: codeHex('r') },
+  unpaid: { code: 'üi', hex: codeHex('üi') },
+  annual: { code: 'yi', hex: codeHex('yi') },
+  leave: { code: 'i', hex: codeHex('i') },
+  absent: { code: 'Y', hex: codeHex('Y') },
+  scheduled: { code: 'P', hex: codeHex('P') },
   empty: { code: '', hex: null },
 }
 

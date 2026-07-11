@@ -11,76 +11,15 @@ import {
   leaveTypeLabel,
   shiftHoursFrom,
 } from '../shared.jsx'
+import { shiftHex } from './shiftColors.js'
+import {
+  COLORS, border, argb, fill, colLetter, quoteSheet, sheetRange,
+  setupTitle, setupSheet, styleHeaderRow, styleAllUsedCells, addMetric, saveWorkbook,
+} from './excelKit.js'
 
 const DAY_LABELS = ['Pzt', 'Sal', 'Car', 'Per', 'Cum', 'Cmt', 'Paz']
 
-const TAILWIND_HEX = {
-  'bg-blue-400': '60A5FA',
-  'bg-blue-500': '3B82F6',
-  'bg-blue-600': '2563EB',
-  'bg-green-400': '4ADE80',
-  'bg-green-500': '22C55E',
-  'bg-green-600': '16A34A',
-  'bg-red-500': 'EF4444',
-  'bg-red-600': 'DC2626',
-  'bg-amber-500': 'F59E0B',
-  'bg-yellow-500': 'EAB308',
-  'bg-orange-400': 'FB923C',
-  'bg-orange-500': 'F97316',
-  'bg-purple-500': 'A855F7',
-  'bg-purple-600': '9333EA',
-  'bg-pink-500': 'EC4899',
-  'bg-teal-500': '14B8A6',
-  'bg-cyan-500': '06B6D4',
-  'bg-indigo-500': '6366F1',
-  'bg-indigo-600': '4F46E5',
-  'bg-lime-500': '84CC16',
-}
-
 const STATUS_FILL = { off: '8B5CF6', on_leave: '14B8A6', absent: 'DC2626', empty: 'F1F5F9' }
-
-const COLORS = {
-  ink: '0F172A',
-  header: '334155',
-  surface: 'F8FAFC',
-  muted: 'E2E8F0',
-  blue: '3B82F6',
-  green: '22C55E',
-  amber: 'F59E0B',
-  red: 'EF4444',
-  purple: '8B5CF6',
-  teal: '14B8A6',
-  gray: '94A3B8',
-}
-
-const border = {
-  top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
-  bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
-  left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
-  right: { style: 'thin', color: { argb: 'FFE2E8F0' } },
-}
-
-const argb = hex => `FF${String(hex || COLORS.gray).replace('#', '').toUpperCase()}`
-const fill = hex => ({ type: 'pattern', pattern: 'solid', fgColor: { argb: argb(hex) } })
-
-function colLetter(col) {
-  let value = ''
-  let n = col
-  while (n > 0) {
-    const m = (n - 1) % 26
-    value = String.fromCharCode(65 + m) + value
-    n = Math.floor((n - 1) / 26)
-  }
-  return value
-}
-
-function quoteSheet(sheetName) {
-  return `'${String(sheetName).replaceAll("'", "''")}'`
-}
-
-function sheetRange(sheetName, range) {
-  return `${quoteSheet(sheetName)}!${range}`
-}
 
 function quickWorkFormula(range) {
   return `COUNTIFS(${range},"<>",${range},"<>OFF",${range},"<>I",${range},"<>YOK",${range},"<>sil")`
@@ -114,7 +53,7 @@ function cellHex(cell) {
   if (!cell) return STATUS_FILL.empty
   if (cell.status === 'on_leave') return leaveCellMeta(cell.leave_type).hex
   if (STATUS_FILL[cell.status]) return STATUS_FILL[cell.status]
-  return (cell.shift_color && TAILWIND_HEX[cell.shift_color]) || COLORS.gray
+  return shiftHex(cell.shift_color)
 }
 
 function statusLabel(cell) {
@@ -155,35 +94,6 @@ function riskFor(counts) {
   return 'OK'
 }
 
-function setupTitle(ws, titleText, subtitle, lastCol) {
-  ws.mergeCells(1, 1, 1, lastCol)
-  ws.mergeCells(2, 1, 2, lastCol)
-  ws.getCell(1, 1).value = titleText
-  ws.getCell(1, 1).font = { bold: true, size: 16, color: { argb: 'FFFFFFFF' } }
-  ws.getCell(1, 1).fill = fill(COLORS.ink)
-  ws.getCell(1, 1).alignment = { horizontal: 'center', vertical: 'middle' }
-  ws.getCell(2, 1).value = subtitle
-  ws.getCell(2, 1).font = { size: 10, color: { argb: 'FFCBD5E1' } }
-  ws.getCell(2, 1).fill = fill(COLORS.ink)
-  ws.getCell(2, 1).alignment = { horizontal: 'center', vertical: 'middle' }
-  ws.getRow(1).height = 26
-  ws.getRow(2).height = 20
-}
-
-function setupSheet(ws, tabHex = COLORS.blue) {
-  ws.properties.defaultRowHeight = 20
-  ws.properties.tabColor = { argb: argb(tabHex) }
-  ws.pageSetup = {
-    paperSize: 9,
-    orientation: 'landscape',
-    fitToPage: true,
-    fitToWidth: 1,
-    fitToHeight: 0,
-    horizontalCentered: true,
-  }
-  ws.pageMargins = { left: 0.25, right: 0.25, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 }
-}
-
 function addNav(ws, sheetNames, rowNo = 3) {
   ws.getCell(rowNo, 1).value = 'Sayfa'
   ws.getCell(rowNo, 1).font = { bold: true, size: 9, color: { argb: argb(COLORS.gray) } }
@@ -193,15 +103,6 @@ function addNav(ws, sheetNames, rowNo = 3) {
     cell.font = { bold: true, underline: true, size: 9, color: { argb: argb(COLORS.blue) } }
     cell.alignment = { horizontal: 'center', vertical: 'middle' }
     cell.fill = fill(COLORS.surface)
-    cell.border = border
-  })
-}
-
-function styleHeaderRow(row) {
-  row.eachCell(cell => {
-    cell.font = { bold: true, size: 10, color: { argb: 'FFFFFFFF' } }
-    cell.fill = fill(COLORS.header)
-    cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }
     cell.border = border
   })
 }
@@ -240,30 +141,6 @@ function applyQuickCodeConditionalFormatting(ws, rangeRef, firstCellRef, codeRow
   ws.addConditionalFormatting({ ref: rangeRef, rules })
 }
 
-function styleAllUsedCells(ws) {
-  ws.eachRow(row => {
-    row.eachCell({ includeEmpty: false }, cell => {
-      cell.border = cell.border || border
-      cell.alignment = cell.alignment || { vertical: 'middle', wrapText: true }
-    })
-  })
-}
-
-function addMetric(ws, startCol, label, value, hex) {
-  ws.mergeCells(4, startCol, 4, startCol + 1)
-  ws.mergeCells(5, startCol, 5, startCol + 1)
-  ws.getCell(4, startCol).value = label
-  ws.getCell(5, startCol).value = value
-  ws.getCell(4, startCol).font = { bold: true, size: 9, color: { argb: 'FF475569' } }
-  ws.getCell(5, startCol).font = { bold: true, size: 18, color: { argb: argb(hex) } }
-  ;[4, 5].forEach(rowNo => {
-    const cell = ws.getCell(rowNo, startCol)
-    cell.fill = fill(COLORS.surface)
-    cell.alignment = { horizontal: 'center', vertical: 'middle' }
-    cell.border = border
-  })
-}
-
 function quickCodeRows(shiftDefs) {
   return [
     ...shiftDefs.map((shift, idx) => ({
@@ -271,7 +148,7 @@ function quickCodeRows(shiftDefs) {
       code: String(idx + 1),
       label: shift.name,
       hours: formatShiftHours(shift.start_hour, shift.end_hour),
-      hex: TAILWIND_HEX[shift.color_class] || COLORS.gray,
+      hex: shiftHex(shift.color_class),
       note: 'Vardiya kodu',
     })),
     { kind: 'status', code: 'OFF', label: 'Haftalik izin', hours: '', hex: STATUS_FILL.off, note: 'Dinlenme/haftalik izin' },
@@ -351,15 +228,6 @@ function buildAreaSummary(rows, weekDays) {
     })
   })
   return [...map.values()].sort((a, b) => a.name.localeCompare(b.name, 'tr'))
-}
-
-function saveWorkbook(buffer, filename) {
-  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
-  const a = document.createElement('a')
-  a.href = URL.createObjectURL(blob)
-  a.download = filename
-  a.click()
-  URL.revokeObjectURL(a.href)
 }
 
 async function exportScheduleExcelLegacy({

@@ -448,6 +448,20 @@ Modülü reaktiften → öngörülü+proaktif yapma. Öncelik: öngörü/sipari�
 - [x] `TrendPanel` — açılır "📈 Trend & Analiz": aylık akış inline-bar (gelen yeşil/dağıtım accent) + bölge sıralama barları + ürün tablosu; 3/6/12 ay seçici (recharts'sız, sayfa stiliyle)
 - [x] +2 backend test (94/94 water, 1425/1425 tüm suite) + 1 frontend smoke (15/15), build temiz
 
+## 2026-07-11 Vardiya Çizelge & Excel Geliştirme (Faz X1-X5, plan: ~/.claude/plans/)
+Excel-öncelikli: renk tutarlılığı + yazdırma/düzen + bölüm sayfaları + özet sayfası; çizelge: kadro hedefi/kapsama + çakışma kontrolü.
+
+### Faz X1 — Tek renk kaynağı + paylaşılan Excel kit ✅
+- [x] `logic/shiftColors.js` — `classHex/shiftHex/deptHex/leaveHex/codeHex/hexToRgba`; tam Tailwind→hex + bilinmeyen sınıf için deterministik hash (sessiz gri YOK). Ekran (shared.jsx) = Excel aynı hex.
+- [x] `logic/excelKit.js` — `scheduleExcelExport`'tan çıkarılan primitifler (COLORS/border/argb/fill/colLetter/quoteSheet/sheetRange/setupTitle/setupSheet/styleHeaderRow/styleAllUsedCells/addMetric/saveWorkbook); çizelge + föyü ortak
+- [x] `scheduleExcelExport.js` excelKit+shiftHex import (TAILWIND_HEX + yerel dupe'lar kaldırıldı); `shared.jsx` shiftColor/deptColor unified; `puantajFoyu.js` CODE_META → codeHex
+- [x] +1 test dosyası (shiftColors) — vardiya frontend 73/73, build temiz
+
+### Faz X2 — Puantaj föyü Excel (yazdırma + bölüm + özet) ⏳
+### Faz X3 — Çizelge Excel + ölü kod temizliği ⏳
+### Faz X4 — Vardiya bazlı kadro hedefi + kapsama panosu ⏳
+### Faz X5 — Yazımda çakışma/izin kontrolü + şema hijyeni ⏳
+
 ## Su Takip V-SERİSİ ÖZETİ (V1-V5 tamamlandı, 2026-07-11)
 5 faz · reaktif → öngörülü+proaktif. Migration eklenmedi (mevcut sorgular yeniden kullanıldı). +eksik migration 036 fix (prod tır özelliği düzeldi). backend 94/94 water (1425/1425), frontend smoke 15/15. Öngörü (forecast/reorder) + proaktif (günlük digest, aylık PDF cron, eskalasyon) canlıda.
 
