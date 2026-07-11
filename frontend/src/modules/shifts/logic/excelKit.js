@@ -110,11 +110,19 @@ export function addMetric(ws, startCol, label, value, hex) {
 }
 
 // workbook buffer → tarayıcıdan indir
-export function saveWorkbook(buffer, filename) {
-  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
-  const a = document.createElement('a')
-  a.href = URL.createObjectURL(blob)
-  a.download = filename
-  a.click()
-  URL.revokeObjectURL(a.href)
+export function saveWorkbook(buffer, filename, options = {}) {
+  let url = ''
+  try {
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+    const a = document.createElement('a')
+    url = URL.createObjectURL(blob)
+    a.href = url
+    a.download = filename
+    a.click()
+  } catch (error) {
+    options.onError?.(error)
+    throw error
+  } finally {
+    if (url) URL.revokeObjectURL(url)
+  }
 }

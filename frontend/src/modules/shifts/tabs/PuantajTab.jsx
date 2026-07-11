@@ -4,10 +4,11 @@ import api from '../../../shared/api/client.js'
 import { useAuthStore } from '../../../shared/store/authStore.js'
 import { useDebounce } from '../../../shared/hooks/useDebounce.js'
 import { SkeletonTable, SkeletonGrid } from '../../../shared/components/Skeleton.jsx'
-import { BottomSheet, formatShiftHours, leaveTypeLabel, toastErr } from '../shared.jsx'
+import { BottomSheet, formatShiftHours, leaveTypeLabel, toastErr, toastOk } from '../shared.jsx'
 import { confirmDialog } from '../../../shared/components/ConfirmDialog.jsx'
 import { actionIdForKey, normalizeRect, cellsInRect, isInRect, moveCell, pushUndo, summarizeColumn } from '../logic/puantajGrid.js'
 import { buildFoyuRow, FOYU_LEGEND, FOYU_TOTAL_COLUMNS } from '../logic/puantajFoyu.js'
+import { COLORS, border, fill, saveWorkbook, setupSheet, styleHeaderRow } from '../logic/excelKit.js'
 
 const COMPANY_NAME = import.meta.env.VITE_COMPANY_NAME || 'YYS Kampüs'
 
@@ -1428,8 +1429,8 @@ export default function PuantajTab({ departments }) {
 
       const wb = new ExcelJS.Workbook()
       const ws = wb.addWorksheet('Puantaj', { views: [{ state: 'frozen', xSplit: 3, ySplit: 3 }] })
-      const border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } }
       const totalColStart = 4 + daysInMonth
+      setupSheet(ws, COLORS.purple)
 
       ws.mergeCells(1, 1, 1, totalColStart + FOYU_TOTAL_COLUMNS.length - 1)
       const title = ws.getCell(1, 1)
@@ -1450,19 +1451,20 @@ export default function PuantajTab({ departments }) {
         ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
         ...FOYU_TOTAL_COLUMNS.map(c => c.label),
       ]
+      styleHeaderRow(header)
       header.eachCell((c, colNo) => {
         c.font = { bold: true, size: 9, color: { argb: 'FFFFFFFF' } }
-        c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF334155' } }
+        c.fill = fill(COLORS.header)
         c.alignment = { horizontal: 'center', vertical: 'middle' }
         c.border = border
         const dayNo = colNo - 3
         if (dayNo >= 1 && dayNo <= daysInMonth) {
           const date = `${month}-${String(dayNo).padStart(2, '0')}`
           if (holidaySet.has(date)) {
-            c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDC2626' } }
+            c.fill = fill(COLORS.red)
             c.note = holidayNames[date]
           } else if (new Date(y, m - 1, dayNo).getDay() === 0) {
-            c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFB45309' } }
+            c.fill = fill(COLORS.amber)
           }
         }
       })
@@ -1483,10 +1485,10 @@ export default function PuantajTab({ departments }) {
           if (dayNo >= 1 && dayNo <= daysInMonth) {
             const c = row.cells[dayNo - 1]
             if (c?.hex) {
-              cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF' + c.hex } }
+              cell.fill = fill(c.hex)
               cell.font = { size: 8, bold: true, color: { argb: 'FFFFFFFF' } }
             } else if (new Date(y, m - 1, dayNo).getDay() === 0) {
-              cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFDF3E0' } }
+              cell.fill = fill('FDF3E0')
             }
           } else if (colNo >= totalColStart) {
             cell.font = { size: 8, bold: true }
@@ -1525,14 +1527,14 @@ export default function PuantajTab({ departments }) {
       FOYU_TOTAL_COLUMNS.forEach((col, i) => { ws.getColumn(totalColStart + i).width = col.key === 'fmHours' ? 7 : 4.5 })
 
       const buf = await wb.xlsx.writeBuffer()
-      const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
-      const a = document.createElement('a')
-      a.href = URL.createObjectURL(blob)
-      a.download = `puantaj-foyu-${month}.xlsx`
-      a.click()
-      URL.revokeObjectURL(a.href)
+      saveWorkbook(buf, `puantaj-foyu-${month}.xlsx`, {
+        onError: (error) => {
+          error.response = { data: { error: 'Puantaj föyü indirilemedi' } }
+        },
+      })
+      toastOk('Puantaj föyü hazırlandı')
     } catch (e) {
-      // export hatası — sessiz geç (console.log yasak); buton tekrar denenebilir
+      toastErr(e)
     } finally {
       setFoyuExporting(false)
     }
