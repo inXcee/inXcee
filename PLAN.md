@@ -443,7 +443,13 @@ Modülü reaktiften → öngörülü+proaktif yapma. Öncelik: öngörü/sipari�
 - [x] Günlük digest cron'una bağlandı (06:15, digest + eskalasyon birlikte)
 - [x] +1 backend test (92/92 water, 1423/1423 tüm suite): overdue+kritik critical bildirim + dedup
 
-### Faz V2 — Trend & analiz görünümü ⏳ (sıradaki)
+### Faz V2 — Trend & analiz görünümü ✅
+- [x] `trendsService({months,today})` — son N ay aylık gelen/dağıtım serisi (`monthlySeries`) + en çok tüketen bölge (`zoneTotals` toplu) + en çok dağıtılan ürün (`productFlow`); `GET /trends?months=&today=` (mgr)
+- [x] `TrendPanel` — açılır "📈 Trend & Analiz": aylık akış inline-bar (gelen yeşil/dağıtım accent) + bölge sıralama barları + ürün tablosu; 3/6/12 ay seçici (recharts'sız, sayfa stiliyle)
+- [x] +2 backend test (94/94 water, 1425/1425 tüm suite) + 1 frontend smoke (15/15), build temiz
+
+## Su Takip V-SERİSİ ÖZETİ (V1-V5 tamamlandı, 2026-07-11)
+5 faz · reaktif → öngörülü+proaktif. Migration eklenmedi (mevcut sorgular yeniden kullanıldı). +eksik migration 036 fix (prod tır özelliği düzeldi). backend 94/94 water (1425/1425), frontend smoke 15/15. Öngörü (forecast/reorder) + proaktif (günlük digest, aylık PDF cron, eskalasyon) canlıda.
 
 ### 🔧 Ara-düzeltme: eksik migration 036 (fix `1b9e697`)
 W11 tır/foto KODU commit'liydi ama `036_water_truck_waybill_archive.sql` untracked kalmış → prod'da truck tabloları YOK (API 500, cron hata), pre-deploy W11 testleri sunucuda 500 → deploy bloke. Migration commit'lendi (idempotent), deploy açıldı + prod'daki kırık tır özelliği düzeldi.

@@ -961,6 +961,36 @@ describe('Su takip — Tüketim öngörüsü & sipariş önerisi (V1)', () => {
   })
 })
 
+describe('Su takip — Trend & analiz (V2)', () => {
+  const auth = (r) => r.set('Authorization', `Bearer ${managerToken}`)
+  let pTr, zTr
+
+  beforeAll(async () => {
+    pTr = (await auth(request(app).post('/api/water/products')).send({ name: 'TREND 1L', unit_label: 'adet', units_per_case: 1, cases_per_pallet: 1 })).body.id
+    zTr = (await auth(request(app).post('/api/water/zones')).send({ name: 'TREND Bölge' })).body.id
+    await auth(request(app).post('/api/water/intake')).send({ product_id: pTr, input_qty: 500, input_unit: 'adet', move_date: '2027-05-01', waybill_no: 'TR-1' })
+    await auth(request(app).post('/api/water/distribute/batch')).send({ lines: [
+      { move_date: '2027-05-10', zone_id: zTr, product_id: pTr, input_qty: 100, input_unit: 'adet' },
+      { move_date: '2027-06-10', zone_id: zTr, product_id: pTr, input_qty: 150, input_unit: 'adet' },
+    ] })
+  })
+
+  it('son N ay aylık akış + bölge/ürün sıralaması döner', async () => {
+    const r = await auth(request(app).get('/api/water/trends?today=2027-06-30&months=3'))
+    expect(r.status).toBe(200)
+    expect(r.body.months).toBe(3)
+    expect(r.body.monthly.some(x => x.month === '2027-05')).toBe(true)
+    expect(r.body.monthly.some(x => x.month === '2027-06')).toBe(true)
+    expect(r.body.zones.find(z => z.zone_id === zTr)?.total).toBe(250) // 100 + 150
+    expect(r.body.products.find(p => p.product_id === pTr)?.out).toBe(250)
+  })
+
+  it('yetkisiz rol erişemez (403)', async () => {
+    const r = await request(app).get('/api/water/trends').set('Authorization', `Bearer ${laundryToken}`)
+    expect(r.status).toBe(403)
+  })
+})
+
 describe('Su takip — Eskalasyon (V5)', () => {
   const NOW = new Date('2027-04-10T11:00:00+03:00')
   const auth = (r) => r.set('Authorization', `Bearer ${managerToken}`)

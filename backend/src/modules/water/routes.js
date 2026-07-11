@@ -13,7 +13,7 @@ import {
   createIntakeService, createDistributionService, deleteMovementService, updateDistributionService, movementsService,
   createReturnService, batchReturnService, deleteReturnService, returnsService, depositService,
   summaryService, pivotService, batchIntakeService, batchDistributeService, parseDistributionText,
-  alertsService, forecastService, reconciliationService, buildReconciliationPDF, saveStockCountService, monthlyCloseService, monthlyUnlockService,
+  alertsService, forecastService, trendsService, reconciliationService, buildReconciliationPDF, saveStockCountService, monthlyCloseService, monthlyUnlockService,
   monthLockWarning, pendingDistributionsService,
   templatesService, createTemplateService, deleteTemplateService,
   adjustmentsService, createAdjustmentService, deleteAdjustmentService, COUNT_REASONS,
@@ -182,6 +182,12 @@ waterRouter.get('/alerts', ...mgr, (req, res) => {
 // ── Tüketim öngörüsü & sipariş önerisi ──
 waterRouter.get('/forecast', ...mgr, (req, res) => {
   try { res.json(forecastService({ today: req.query.today, window: req.query.window, targetDays: req.query.target_days })) }
+  catch (e) { logger.error('[water]', e); fail(res, e) }
+})
+
+// ── Trend & analiz (son N ay) ──
+waterRouter.get('/trends', ...mgr, (req, res) => {
+  try { res.json(trendsService({ today: req.query.today, months: req.query.months })) }
   catch (e) { logger.error('[water]', e); fail(res, e) }
 })
 

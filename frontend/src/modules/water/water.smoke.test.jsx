@@ -63,6 +63,12 @@ vi.mock('../../shared/api/client.js', () => ({
       if (url === '/water/zones') return Promise.resolve({ data: [{ id: 1, name: 'OTC Kamp Alanı', code: 'OTC' }] })
       if (url === '/water/returns') return Promise.resolve({ data: [] })
       if (url === '/water/brands') return Promise.resolve({ data: [{ id: 1, name: 'MİLA SU' }] })
+      if (url === '/water/trends') return Promise.resolve({ data: {
+        from: '2026-02-01', to: '2026-07-09', months: 6,
+        monthly: [{ month: '2026-06', in_base: 280, out_base: 91 }, { month: '2026-07', in_base: 0, out_base: 30 }],
+        zones: [{ zone_id: 1, zone_name: 'OTC Kamp Alanı', total: 121 }],
+        products: [{ product_id: 1, name: 'Damacana', brand_name: 'MİLA SU', out: 121, out_human: '121 damacana' }],
+      } })
       if (url === '/water/forecast') return Promise.resolve({ data: {
         date: '2026-07-09', window: 30, target_days: 30,
         rows: [
@@ -217,6 +223,16 @@ describe('WaterPage tek-ekran pano smoke', () => {
     expect(await within(panel).findByText('120')).toBeInTheDocument() // sistem kalanı = 100 + 50 - 30
     expect(within(panel).getByLabelText('Damacana sayım')).toBeInTheDocument()
     expect(within(panel).getByText('📄 PDF Özet')).toBeInTheDocument() // W9 PDF butonu
+  })
+
+  it('trend paneli açılınca aylık akış + bölge/ürün analizini gösterir', async () => {
+    renderWithProviders(<WaterPage />)
+    const title = await screen.findByText('📈 TREND & ANALİZ')
+    const panel = title.closest('.panel')
+    fireEvent.click(within(panel).getByText('▼ Aç'))
+    expect(await within(panel).findByText('EN ÇOK TÜKETEN BÖLGELER')).toBeInTheDocument()
+    expect(within(panel).getByText('2026-06')).toBeInTheDocument()
+    expect(within(panel).getByText('121 damacana')).toBeInTheDocument()
   })
 
   it('öngörü paneli sipariş önerisi ve gün-yeter gösterir', async () => {

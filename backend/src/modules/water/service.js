@@ -1250,6 +1250,28 @@ export function forecastService({ today, window = 30, targetDays = 30 } = {}) {
   return { date: day, window: win, target_days: target, rows, order_suggestions: orderSuggestions, totals }
 }
 
+// ── Trend & analiz (V2) ── son N ay: aylık akış + bölge/ürün sıralaması
+export function trendsService({ months = 6, today } = {}) {
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(today || '') ? today : new Date().toLocaleDateString('sv-SE')
+  const n = Math.max(1, Math.min(24, parseInt(months) || 6))
+  const [y, m] = day.slice(0, 7).split('-').map(Number)
+  const startIdx = y * 12 + (m - 1) - (n - 1)
+  const from = `${Math.floor(startIdx / 12)}-${String((startIdx % 12) + 1).padStart(2, '0')}-01`
+  const to = day
+  const monthly = q.monthlySeries({ from, to }).map(r => ({ month: r.move_date, in_base: r.in_base, out_base: r.out_base }))
+  const zoneAgg = new Map()
+  for (const z of q.zoneTotals({ from, to })) {
+    const cur = zoneAgg.get(z.id) || { zone_id: z.id, zone_name: z.name, total: 0 }
+    cur.total += z.total_out || 0
+    zoneAgg.set(z.id, cur)
+  }
+  const zones = [...zoneAgg.values()].sort((a, b) => b.total - a.total).slice(0, 10)
+  const products = q.productFlow({ from, to })
+    .map(p => ({ product_id: p.id, name: p.name, brand_name: p.brand_name || null, out: p.period_out, out_human: humanize(p, p.period_out) }))
+    .filter(p => p.out > 0).sort((a, b) => b.out - a.out).slice(0, 10)
+  return { from, to, months: n, monthly, zones, products }
+}
+
 // ── Özet / dashboard ──
 export function summaryService({ from, to, product_id, group = 'day' } = {}) {
   const periodByProduct = new Map(q.productFlow({ from, to }).map(p => [p.id, p]))

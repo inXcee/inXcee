@@ -241,6 +241,8 @@ export default function WaterPage() {
 
       <MonthlyReportPanel summary={summary} from={from} to={to} label={label} />
 
+      <TrendPanel />
+
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '16px', marginTop: '16px' }}>
         <GelenTirPanel from={from} to={to} label={label} stockItems={summary?.stock || []} />
         <BosIadePanel from={from} to={to} deposit={summary?.deposit || []} />
@@ -2182,6 +2184,81 @@ function MonthClosurePanel({ month, label }) {
             </table>
           </div>
         </>
+      )}
+    </div>
+  )
+}
+
+// ─────────────────────────── Trend & Analiz (V2) ───────────────────────────
+function TrendPanel() {
+  const [open, setOpen] = useState(false)
+  const [months, setMonths] = useState(6)
+  const today = todayStr()
+  const { data } = useQuery({
+    queryKey: ['water-trends', today, months],
+    queryFn: () => api.get('/water/trends', { params: { today, months } }).then(r => r.data),
+    enabled: open,
+  })
+  const monthly = data?.monthly || []
+  const zones = data?.zones || []
+  const products = data?.products || []
+  const maxFlow = Math.max(1, ...monthly.map(m => Math.max(m.in_base, m.out_base)))
+  const maxZone = Math.max(1, ...zones.map(z => z.total))
+
+  return (
+    <div className="panel" style={{ marginTop: '16px', borderTop: '3px solid var(--teal)' }}>
+      <div className="panel-header" style={{ alignItems: 'center' }}>
+        <div>
+          <div className="panel-title">📈 TREND & ANALİZ</div>
+          <div className="panel-subtitle">aylık gelen/dağıtım + en çok tüketen bölge/ürün</div>
+        </div>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px', alignItems: 'center' }}>
+          {open && (
+            <select className="form-select" aria-label="Dönem" value={months} onChange={e => setMonths(+e.target.value)} style={{ fontSize: '12px', width: 'auto' }}>
+              {[3, 6, 12].map(m => <option key={m} value={m}>Son {m} ay</option>)}
+            </select>
+          )}
+          <button className="btn btn-ghost btn-sm" onClick={() => setOpen(o => !o)}>{open ? '▲ Gizle' : '▼ Aç'}</button>
+        </div>
+      </div>
+      {open && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '18px', paddingTop: '4px' }}>
+          <div>
+            <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text2)', marginBottom: '8px' }}>AYLIK GELEN / DAĞITIM</div>
+            {monthly.map(m => (
+              <div key={m.month} style={{ marginBottom: '8px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: 'var(--text3)' }}><span style={{ fontFamily: 'var(--mono)' }}>{m.month}</span><span>↓{nf(m.in_base)} · ↑{nf(m.out_base)}</span></div>
+                <div style={{ height: '9px', marginTop: '2px' }}><div style={{ width: `${(m.in_base / maxFlow) * 100}%`, height: '100%', background: 'var(--green)', borderRadius: '2px' }} /></div>
+                <div style={{ height: '9px', marginTop: '2px' }}><div style={{ width: `${(m.out_base / maxFlow) * 100}%`, height: '100%', background: 'var(--accent)', borderRadius: '2px' }} /></div>
+              </div>
+            ))}
+            {monthly.length === 0 && <div style={{ fontSize: '11px', color: 'var(--text3)' }}>Veri yok</div>}
+          </div>
+          <div>
+            <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text2)', marginBottom: '8px' }}>EN ÇOK TÜKETEN BÖLGELER</div>
+            {zones.map(z => (
+              <div key={z.zone_id} style={{ marginBottom: '7px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}><span style={{ fontWeight: 600 }}>{z.zone_name}</span><span style={{ fontFamily: 'var(--mono)', color: 'var(--text3)' }}>{nf(z.total)}</span></div>
+                <div style={{ height: '8px', background: 'var(--surface2)', borderRadius: '3px', marginTop: '2px' }}><div style={{ width: `${(z.total / maxZone) * 100}%`, height: '100%', background: 'var(--teal)', borderRadius: '3px' }} /></div>
+              </div>
+            ))}
+            {zones.length === 0 && <div style={{ fontSize: '11px', color: 'var(--text3)' }}>Veri yok</div>}
+          </div>
+          <div>
+            <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text2)', marginBottom: '8px' }}>EN ÇOK DAĞITILAN ÜRÜNLER</div>
+            <table className="data-table" style={{ fontSize: '11px' }}>
+              <tbody>
+                {products.map(p => (
+                  <tr key={p.product_id}>
+                    <td>{p.brand_name ? `${p.brand_name} · ` : ''}{p.name}</td>
+                    <td style={{ textAlign: 'right', fontFamily: 'var(--mono)' }}>{p.out_human || nf(p.out)}</td>
+                  </tr>
+                ))}
+                {products.length === 0 && <tr><td style={{ color: 'var(--text3)' }}>Veri yok</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </div>
       )}
     </div>
   )
