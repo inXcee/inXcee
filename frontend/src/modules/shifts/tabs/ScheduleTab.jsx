@@ -55,6 +55,11 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
   const [cellClipboard, setCellClipboard] = useState('')
   const [dayDetail, setDayDetail] = useState(null)
   const [recentActions, setRecentActions] = useState([])
+  const [activeCell, setActiveCell] = useState(null)
+  const [editingCell, setEditingCell] = useState(null)
+  const [editDraft, setEditDraft] = useState('')
+  const [dragSelect, setDragSelect] = useState(null)
+  const [actionHistory, setActionHistory] = useState([])
   const [statusFilter, setStatusFilter] = useState('all') // all | leave | gaps | absent
   const [coverageMin, setCoverageMin] = useState(1)        // gün başına min kişi eşiği
 
@@ -106,6 +111,7 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
       qc.invalidateQueries({ queryKey: ['schedule'] })
       setQuickCode('')
       const count = vars.action === 'delete' ? vars.deletions.length : vars.entries.length
+      if (vars.undo) setActionHistory(prev => [{ ...vars.undo, id: Date.now(), count }, ...prev].slice(0, 8))
       setRecentActions(prev => [
         { id: Date.now(), label: vars.action === 'delete' ? 'Hücre silindi' : 'Hızlı kod uygulandı', count },
         ...prev,
@@ -114,6 +120,26 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
     },
     onError: (err) => {
       useToastStore.getState().addToast(err?.response?.data?.error || 'Hızlı işlem başarısız', 'error')
+    },
+  })
+
+  const undoQuickApply = useMutation({
+    mutationFn: async (undo) => {
+      if (undo.deleteCells?.length) {
+        await Promise.all(undo.deleteCells.map(d => api.delete(`/shifts/schedule/${d.staffId}/${d.date}`)))
+      }
+      if (undo.restoreEntries?.length) {
+        await api.post('/shifts/schedule', { entries: undo.restoreEntries })
+      }
+      return undo
+    },
+    onSuccess: (undo) => {
+      qc.invalidateQueries({ queryKey: ['schedule'] })
+      setActionHistory(prev => prev.filter(a => a.id !== undo.id))
+      useToastStore.getState().addToast(`${undo.count || 0} hücre geri alındı`, 'success')
+    },
+    onError: (err) => {
+      useToastStore.getState().addToast(err?.response?.data?.error || 'Geri alma başarısız', 'error')
     },
   })
 
@@ -365,7 +391,133 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
   useEffect(() => {
     setSelectedCells(new Set())
     setSelectionAnchor(null)
+    setActiveCell(null)
+    setEditingCell(null)
+    setDragSelect(null)
   }, [weekStart, deptFilter, scheduleView])
+
+  const activeCellKey = activeCell ? cellKey(activeCell.staffId, activeCell.date) : ''
+  const editingCellKey = editingCell ? cellKey(editingCell.staffId, editingCell.date) : ''
+
+  const scheduleEntryFromCell = (target) => target.cell ? {
+    staff_id: target.person.id,
+    dept_id: target.person.dept_id,
+    shift_def_id: target.cell.shift_def_id || null,
+    work_date: target.date,
+    status: target.cell.status || 'scheduled',
+    leave_type: target.cell.leave_type || null,
+    absent_reason: target.cell.absent_reason || null,
+  } : null
+
+  const undoForTargets = (label, targets, mode) => ({
+    label,
+    restoreEntries: targets.map(scheduleEntryFromCell).filter(Boolean),
+    deleteCells: mode === 'assign'
+      ? targets.filter(t => !t.cell).map(t => ({ staffId: t.person.id, date: t.date }))
+      : [],
+  })
+
+  const moveActiveCell = (staffId, date, rowDelta, colDelta) => {
+    const rowIdx = visibleGrid.findIndex(p => p.id === staffId)
+    const colIdx = weekDays.indexOf(date)
+    if (rowIdx < 0 || colIdx < 0) return
+    const nextRow = Math.max(0, Math.min(visibleGrid.length - 1, rowIdx + rowDelta))
+    const nextCol = Math.max(0, Math.min(weekDays.length - 1, colIdx + colDelta))
+    const person = visibleGrid[nextRow]
+    if (!person) return
+    const next = { staffId: person.id, date: weekDays[nextCol] }
+    setActiveCell(next)
+    setSelectedCells(new Set([cellKey(next.staffId, next.date)]))
+    setSelectionAnchor(next)
+  }
+
+  const startInlineEdit = (person, date, initial = null) => {
+    const next = { staffId: person.id, date }
+    setActiveCell(next)
+    setSelectedCells(new Set([cellKey(person.id, date)]))
+    setSelectionAnchor(next)
+    setEditingCell(next)
+    setEditDraft(initial ?? cellToScheduleCode(person.days?.[date], shiftDefs))
+  }
+
+  const commitInlineEdit = (person, date, value, nextMove = null) => {
+    const target = { person, date, cell: person.days?.[date] }
+    const parsed = parseQuickScheduleCode(value, shiftDefs)
+    if (parsed.action === 'noop') {
+      setEditingCell(null)
+      if (nextMove) moveActiveCell(person.id, date, nextMove.row, nextMove.col)
+      return
+    }
+    if (parsed.action === 'invalid') {
+      useToastStore.getState().addToast(parsed.message || 'Kod anlaşılmadı', 'error')
+      return
+    }
+    if (parsed.action === 'delete') {
+      quickApply.mutate({
+        action: 'delete',
+        deletions: [{ staffId: person.id, date }],
+        undo: undoForTargets('Hücre silme', [target], 'delete'),
+      })
+    } else {
+      quickApply.mutate({
+        action: 'assign',
+        entries: [{
+          staff_id: person.id,
+          dept_id: person.dept_id,
+          shift_def_id: parsed.shiftDefId,
+          work_date: date,
+          status: parsed.status,
+        }],
+        undo: undoForTargets('Hücre düzenleme', [target], 'assign'),
+      })
+    }
+    setEditingCell(null)
+    if (nextMove) moveActiveCell(person.id, date, nextMove.row, nextMove.col)
+  }
+
+  const handleCellKeyDown = (event, person, date) => {
+    if (!canEdit || editingCellKey) return
+    if (event.key === 'Enter') {
+      event.preventDefault()
+      startInlineEdit(person, date)
+      return
+    }
+    if (event.key === 'Tab') {
+      event.preventDefault()
+      moveActiveCell(person.id, date, 0, event.shiftKey ? -1 : 1)
+      return
+    }
+    if (event.key === 'ArrowRight') { event.preventDefault(); moveActiveCell(person.id, date, 0, 1); return }
+    if (event.key === 'ArrowLeft') { event.preventDefault(); moveActiveCell(person.id, date, 0, -1); return }
+    if (event.key === 'ArrowDown') { event.preventDefault(); moveActiveCell(person.id, date, 1, 0); return }
+    if (event.key === 'ArrowUp') { event.preventDefault(); moveActiveCell(person.id, date, -1, 0); return }
+    if (event.key === 'Delete' || event.key === 'Backspace') {
+      event.preventDefault()
+      commitInlineEdit(person, date, 'sil')
+      return
+    }
+    if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      event.preventDefault()
+      startInlineEdit(person, date, event.key)
+    }
+  }
+
+  const selectRectTo = (person, date, replace = true) => {
+    const anchor = dragSelect?.anchor || selectionAnchor || { staffId: person.id, date }
+    const staffIds = visibleGrid.map(p => p.id)
+    const aRow = staffIds.indexOf(anchor.staffId)
+    const bRow = staffIds.indexOf(person.id)
+    const aCol = weekDays.indexOf(anchor.date)
+    const bCol = weekDays.indexOf(date)
+    if (aRow < 0 || bRow < 0 || aCol < 0 || bCol < 0) return
+    const next = replace ? new Set() : new Set(selectedCells)
+    const [r1, r2] = [Math.min(aRow, bRow), Math.max(aRow, bRow)]
+    const [c1, c2] = [Math.min(aCol, bCol), Math.max(aCol, bCol)]
+    for (let r = r1; r <= r2; r += 1) {
+      for (let c = c1; c <= c2; c += 1) next.add(cellKey(staffIds[r], weekDays[c]))
+    }
+    setSelectedCells(next)
+  }
 
   const toggleCellSelection = (person, date, event) => {
     const key = cellKey(person.id, date)
@@ -411,7 +563,11 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
       return
     }
     if (parsed.action === 'delete') {
-      quickApply.mutate({ action: 'delete', deletions: targets.map(t => ({ staffId: t.person.id, date: t.date })) })
+      quickApply.mutate({
+        action: 'delete',
+        deletions: targets.map(t => ({ staffId: t.person.id, date: t.date })),
+        undo: undoForTargets('Toplu silme', targets, 'delete'),
+      })
       return
     }
     quickApply.mutate({
@@ -423,6 +579,7 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
         work_date: t.date,
         status: parsed.status,
       })),
+      undo: undoForTargets('Toplu kod', targets, 'assign'),
     })
   }
 
@@ -476,6 +633,8 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
     const rows = text.split(/\r?\n/).filter(Boolean).map(r => r.split('\t'))
     const entries = []
     const deletions = []
+    const assignUndoTargets = []
+    const deleteUndoTargets = []
     rows.forEach((cols, ri) => {
       const person = visibleGrid[rowStart + ri]
       if (!person) return
@@ -483,7 +642,11 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
         const date = weekDays[colStart + ci]
         if (!date) return
         const parsed = parseQuickScheduleCode(code, shiftDefs)
-        if (parsed.action === 'delete') deletions.push({ staffId: person.id, date })
+        const target = { person, date, cell: person.days?.[date] }
+        if (parsed.action === 'delete') {
+          deletions.push({ staffId: person.id, date })
+          deleteUndoTargets.push(target)
+        }
         if (parsed.action === 'assign') {
           entries.push({
             staff_id: person.id,
@@ -492,11 +655,12 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
             work_date: date,
             status: parsed.status,
           })
+          assignUndoTargets.push(target)
         }
       })
     })
-    if (entries.length) quickApply.mutate({ action: 'assign', entries })
-    if (deletions.length) quickApply.mutate({ action: 'delete', deletions })
+    if (entries.length) quickApply.mutate({ action: 'assign', entries, undo: undoForTargets('Excel yapıştır', assignUndoTargets, 'assign') })
+    if (deletions.length) quickApply.mutate({ action: 'delete', deletions, undo: undoForTargets('Excel yapıştır silme', deleteUndoTargets, 'delete') })
     if (!entries.length && !deletions.length) useToastStore.getState().addToast('Yapıştırılan kodlar anlaşılmadı', 'error')
   }
 
@@ -510,6 +674,19 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
     const t = setTimeout(() => document.addEventListener('mousedown', handler), 0)
     return () => { clearTimeout(t); document.removeEventListener('mousedown', handler) }
   }, [toolsOpen])
+
+  useEffect(() => {
+    if (!dragSelect) return
+    const stop = () => setDragSelect(null)
+    document.addEventListener('mouseup', stop)
+    return () => document.removeEventListener('mouseup', stop)
+  }, [dragSelect])
+
+  useEffect(() => {
+    if (!activeCell || editingCell) return
+    const selector = `[data-schedule-cell="${cellKey(activeCell.staffId, activeCell.date)}"]`
+    document.querySelector(selector)?.focus?.()
+  }, [activeCell, editingCell])
 
   return (
     <div className="fade-up">
@@ -606,14 +783,28 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
                 }}
               >
                 {[
+                  { group: 'TOPLU ISLEM' },
                   { label: 'Toplu Vardiya Doldur', action: () => { setBulkFillModal(true); setToolsOpen(false) } },
                   { label: 'Tüm Personeli Doldur', action: () => { setAllFillDef(shiftDefs[0]?.id?.toString() || ''); setAllFillModal(true); setToolsOpen(false) } },
                   { label: 'Haftayı Kopyala', action: async () => { if (await confirmDialog('Bu haftayı sonraki haftaya kopyalayalım mı?')) { copyWeek.mutate(); setToolsOpen(false) } } },
+                  { group: 'EXCEL' },
                   { label: 'Excel Import', action: () => { setExcelModal(true); setToolsOpen(false) } },
                   { label: '⬇ Excel İndir (renkli)', action: () => { exportExcel(); setToolsOpen(false) } },
                   { label: '+ Çizelgeye Personel Ekle', action: () => { setAddPersonModal(true); setToolsOpen(false) } },
-                ].map(({ label, action }) => (
-                  <button key={label} onClick={action} style={{
+                  { group: 'SABLON / KONTROL' },
+                  { label: 'Secim Modunu Ac', action: () => { setSelectionMode(true); setToolsOpen(false) } },
+                ].map((item) => item.group ? (
+                  <div key={item.group} style={{
+                    padding: '8px 16px 5px',
+                    background: 'var(--surface2)',
+                    borderBottom: '1px solid var(--border)',
+                    fontFamily: 'var(--mono)',
+                    fontSize: '9px',
+                    letterSpacing: '1px',
+                    color: 'var(--text3)',
+                  }}>{item.group}</div>
+                ) : (
+                  <button key={item.label} onClick={item.action} style={{
                     display: 'block', width: '100%', textAlign: 'left',
                     padding: '10px 16px', background: 'none', border: 'none',
                     borderBottom: '1px solid var(--border)',
@@ -622,7 +813,7 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
                   }}
                   onMouseEnter={e => e.currentTarget.style.background = 'var(--surface2)'}
                   onMouseLeave={e => e.currentTarget.style.background = 'none'}
-                  >{label}</button>
+                  >{item.label}</button>
                 ))}
               </div>,
               document.body
@@ -665,6 +856,12 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
               <button className="btn btn-ghost btn-sm" onClick={copySelectedCells}>Kopyala</button>
               <button className="btn btn-ghost btn-sm" disabled={quickApply.isPending} onClick={pasteIntoSelection}>Yapıştır</button>
               <button className="btn btn-ghost btn-sm" onClick={() => { setSelectedCells(new Set()); setSelectionAnchor(null) }}>Temizle</button>
+              <button className="btn btn-ghost btn-sm" disabled={!actionHistory.length || undoQuickApply.isPending} onClick={() => actionHistory[0] && undoQuickApply.mutate(actionHistory[0])}>Geri al</button>
+              {activeCell && (
+                <span style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)' }}>
+                  Aktif: {activeCell.date}
+                </span>
+              )}
             </div>
           </div>
 
@@ -957,7 +1154,10 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
                       const isAbsent = cell?.status === 'absent'
 
                       let pillBg = 'transparent', pillColor = 'var(--text3)', pillLabel = null, pillSub = null
-                      const selected = selectedCells.has(cellKey(person.id, d))
+                      const key = cellKey(person.id, d)
+                      const selected = selectedCells.has(key)
+                      const active = activeCellKey === key
+                      const editing = editingCellKey === key
 
                       if (cell) {
                         if (isOff) {
@@ -976,6 +1176,22 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
 
                       return (
                         <td key={d}
+                          onMouseDown={e => {
+                            if (!selectionMode || e.button !== 0) return
+                            e.preventDefault()
+                            if (e.shiftKey || e.ctrlKey || e.metaKey) {
+                              toggleCellSelection(person, d, e)
+                              return
+                            }
+                            const next = { staffId: person.id, date: d }
+                            setActiveCell(next)
+                            setSelectionAnchor(next)
+                            setSelectedCells(new Set([key]))
+                            setDragSelect({ anchor: next })
+                          }}
+                          onMouseEnter={() => {
+                            if (selectionMode && dragSelect) selectRectTo(person, d, true)
+                          }}
                           onDragOver={e => {
                             if (!canEdit || !dragShiftId || 'ontouchstart' in window) return
                             if (assignCell.isPending) return
@@ -999,22 +1215,29 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
                           style={{
                             padding: '6px 4px', textAlign: 'center',
                             borderRight: i < 6 ? '1px solid var(--border)' : 'none',
-                            background: selected
+                            background: active
+                              ? 'rgba(59,140,240,.14)'
+                              : selected
                               ? 'rgba(240,165,0,.18)'
                               : dragOverCell === `${person.id}-${d}`
                               ? 'rgba(240,165,0,.15)'
                               : isToday ? 'rgba(59,140,240,.04)' : sun ? 'rgba(240,165,0,.03)' : 'transparent',
                             transition: 'background .1s',
-                            outline: selected ? '2px solid rgba(240,165,0,.75)' : dragOverCell === `${person.id}-${d}` ? '2px dashed rgba(240,165,0,.6)' : 'none',
+                            outline: editing ? '2px solid var(--green)' : active ? '2px solid var(--blue)' : selected ? '2px solid rgba(240,165,0,.75)' : dragOverCell === `${person.id}-${d}` ? '2px dashed rgba(240,165,0,.6)' : 'none',
                           }}>
                           <button
+                            data-schedule-cell={key}
                             onClick={e => {
                               if (selectionMode) {
-                                toggleCellSelection(person, d, e)
                                 return
                               }
-                              openCellPopover(e, person, d)
+                              const next = { staffId: person.id, date: d }
+                              setActiveCell(next)
+                              setSelectedCells(new Set([key]))
+                              setSelectionAnchor(next)
                             }}
+                            onDoubleClick={e => openCellPopover(e, person, d)}
+                            onKeyDown={e => handleCellKeyDown(e, person, d)}
                             disabled={!canEdit}
                             style={{
                               width: '100%', minHeight: pillLabel ? '62px' : '54px', padding: '6px 4px',
@@ -1035,7 +1258,41 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
                               if (!pillLabel) e.currentTarget.style.borderStyle = 'dashed'
                             }}
                           >
-                            {pillLabel ? (
+                            {editing ? (
+                              <input
+                                autoFocus
+                                value={editDraft}
+                                onChange={e => setEditDraft(e.target.value)}
+                                onClick={e => e.stopPropagation()}
+                                onKeyDown={e => {
+                                  e.stopPropagation()
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault()
+                                    commitInlineEdit(person, d, editDraft, { row: 1, col: 0 })
+                                  } else if (e.key === 'Tab') {
+                                    e.preventDefault()
+                                    commitInlineEdit(person, d, editDraft, { row: 0, col: e.shiftKey ? -1 : 1 })
+                                  } else if (e.key === 'Escape') {
+                                    e.preventDefault()
+                                    setEditingCell(null)
+                                  }
+                                }}
+                                style={{
+                                  width: 'calc(100% - 8px)',
+                                  maxWidth: '78px',
+                                  textAlign: 'center',
+                                  padding: '5px 6px',
+                                  borderRadius: '6px',
+                                  border: '1px solid var(--green)',
+                                  background: 'var(--bg)',
+                                  color: 'var(--text)',
+                                  fontFamily: 'var(--mono)',
+                                  fontSize: '11px',
+                                  fontWeight: 700,
+                                  outline: 'none',
+                                }}
+                              />
+                            ) : pillLabel ? (
                               <>
                                 <span style={{ fontFamily: 'var(--mono)', fontSize: '10px', letterSpacing: '0.5px', color: pillColor, fontWeight: 700, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.2 }}>
                                   {pillLabel}
