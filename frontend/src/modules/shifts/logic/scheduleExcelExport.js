@@ -74,6 +74,34 @@ function colLetter(col) {
   return value
 }
 
+function quoteSheet(sheetName) {
+  return `'${String(sheetName).replaceAll("'", "''")}'`
+}
+
+function sheetRange(sheetName, range) {
+  return `${quoteSheet(sheetName)}!${range}`
+}
+
+function quickWorkFormula(range) {
+  return `COUNTIFS(${range},"<>",${range},"<>OFF",${range},"<>I",${range},"<>YOK",${range},"<>sil")`
+}
+
+function quickRestFormula(range) {
+  return `COUNTIF(${range},"OFF")+COUNTIF(${range},"I")`
+}
+
+function quickAbsentFormula(range) {
+  return `COUNTIF(${range},"YOK")`
+}
+
+function quickEmptyFormula(range) {
+  return `COUNTBLANK(${range})+COUNTIF(${range},"sil")`
+}
+
+function riskFormulaForRow(rowNo, workCol, restCol, absentCol, emptyCol) {
+  return `IF(${emptyCol}${rowNo}>0,"Bos var",IF(${absentCol}${rowNo}>0,"YOK var",IF(AND(${workCol}${rowNo}>0,${restCol}${rowNo}=0),"OFF eksik","OK")))`
+}
+
 function isWorking(cell) {
   return ['scheduled', 'worked', 'overtime'].includes(cell?.status)
 }
@@ -142,6 +170,33 @@ function setupTitle(ws, titleText, subtitle, lastCol) {
   ws.getRow(2).height = 20
 }
 
+function setupSheet(ws, tabHex = COLORS.blue) {
+  ws.properties.defaultRowHeight = 20
+  ws.properties.tabColor = { argb: argb(tabHex) }
+  ws.pageSetup = {
+    paperSize: 9,
+    orientation: 'landscape',
+    fitToPage: true,
+    fitToWidth: 1,
+    fitToHeight: 0,
+    horizontalCentered: true,
+  }
+  ws.pageMargins = { left: 0.25, right: 0.25, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 }
+}
+
+function addNav(ws, sheetNames, rowNo = 3) {
+  ws.getCell(rowNo, 1).value = 'Sayfa'
+  ws.getCell(rowNo, 1).font = { bold: true, size: 9, color: { argb: argb(COLORS.gray) } }
+  sheetNames.forEach((name, idx) => {
+    const cell = ws.getCell(rowNo, idx + 2)
+    cell.value = { text: name, hyperlink: `#${quoteSheet(name)}!A1` }
+    cell.font = { bold: true, underline: true, size: 9, color: { argb: argb(COLORS.blue) } }
+    cell.alignment = { horizontal: 'center', vertical: 'middle' }
+    cell.fill = fill(COLORS.surface)
+    cell.border = border
+  })
+}
+
 function styleHeaderRow(row) {
   row.eachCell(cell => {
     cell.font = { bold: true, size: 10, color: { argb: 'FFFFFFFF' } }
@@ -149,6 +204,40 @@ function styleHeaderRow(row) {
     cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }
     cell.border = border
   })
+}
+
+function applyQuickCodeValidation(ws, rowStart, rowEnd, colStart, colEnd, formulaRange) {
+  for (let rowNo = rowStart; rowNo <= rowEnd; rowNo += 1) {
+    for (let colNo = colStart; colNo <= colEnd; colNo += 1) {
+      ws.getCell(rowNo, colNo).dataValidation = {
+        type: 'list',
+        allowBlank: true,
+        formulae: [formulaRange],
+        showErrorMessage: true,
+        errorStyle: 'warning',
+        errorTitle: 'Gecersiz vardiya kodu',
+        error: 'Kodlar Ayarlar veya Kodlar ve Sablon sayfasindaki listeden secilmeli.',
+      }
+    }
+  }
+}
+
+function applyQuickCodeConditionalFormatting(ws, rangeRef, firstCellRef, codeRows) {
+  const rules = [
+    { type: 'expression', formulae: [`${firstCellRef}=""`], style: { fill: fill(STATUS_FILL.empty), font: { color: { argb: 'FF64748B' } } } },
+    { type: 'expression', formulae: [`${firstCellRef}="OFF"`], style: { fill: fill(STATUS_FILL.off), font: { color: { argb: 'FFFFFFFF' }, bold: true } } },
+    { type: 'expression', formulae: [`${firstCellRef}="I"`], style: { fill: fill(STATUS_FILL.on_leave), font: { color: { argb: 'FFFFFFFF' }, bold: true } } },
+    { type: 'expression', formulae: [`${firstCellRef}="YOK"`], style: { fill: fill(STATUS_FILL.absent), font: { color: { argb: 'FFFFFFFF' }, bold: true } } },
+    { type: 'expression', formulae: [`${firstCellRef}="sil"`], style: { fill: fill(COLORS.muted), font: { color: { argb: argb(COLORS.gray) }, italic: true } } },
+  ]
+  codeRows.filter(item => item.kind === 'shift').forEach(item => {
+    rules.push({
+      type: 'expression',
+      formulae: [`${firstCellRef}="${item.code}"`],
+      style: { fill: fill(item.hex), font: { color: { argb: 'FFFFFFFF' }, bold: true } },
+    })
+  })
+  ws.addConditionalFormatting({ ref: rangeRef, rules })
 }
 
 function styleAllUsedCells(ws) {
@@ -173,6 +262,23 @@ function addMetric(ws, startCol, label, value, hex) {
     cell.alignment = { horizontal: 'center', vertical: 'middle' }
     cell.border = border
   })
+}
+
+function quickCodeRows(shiftDefs) {
+  return [
+    ...shiftDefs.map((shift, idx) => ({
+      kind: 'shift',
+      code: String(idx + 1),
+      label: shift.name,
+      hours: formatShiftHours(shift.start_hour, shift.end_hour),
+      hex: TAILWIND_HEX[shift.color_class] || COLORS.gray,
+      note: 'Vardiya kodu',
+    })),
+    { kind: 'status', code: 'OFF', label: 'Haftalik izin', hours: '', hex: STATUS_FILL.off, note: 'Dinlenme/haftalik izin' },
+    { kind: 'status', code: 'I', label: 'Izin', hours: '', hex: STATUS_FILL.on_leave, note: 'Onayli izin gunu' },
+    { kind: 'status', code: 'YOK', label: 'Devamsizlik', hours: '', hex: STATUS_FILL.absent, note: 'Gelmedi olarak isaretler' },
+    { kind: 'status', code: 'sil', label: 'Hucreyi temizle', hours: '', hex: COLORS.muted, note: 'Excel icinde temizleme isareti' },
+  ]
 }
 
 function buildDeptSummary(rows, weekDays) {
@@ -229,6 +335,7 @@ export async function exportScheduleExcel({
   wb.created = new Date()
   wb.modified = new Date()
   wb.properties.date1904 = false
+  wb.calcProperties.fullCalcOnLoad = true
 
   const exportRows = visibleGrid.length || gridSearch || statusFilter !== 'all' ? visibleGrid : staffGrid
   const exportStats = computeWeekStats(exportRows, weekDays)
@@ -236,14 +343,42 @@ export async function exportScheduleExcel({
   const closingCheck = buildPayrollClosingCheck(exportRows, weekDays, { coverageMin })
   const deptSummary = buildDeptSummary(exportRows, weekDays)
   const generatedAt = new Date()
+  const codes = quickCodeRows(shiftDefs)
+  const sheetNames = {
+    dash: 'Kontrol Paneli',
+    entry: 'Excel Giris',
+    weekly: 'Haftalik Cizelge',
+    operation: 'Gunluk Operasyon',
+    daily: 'Gunluk Detay',
+    dept: 'Bolum Ozeti',
+    person: 'Personel Ozeti',
+    settings: 'Ayarlar',
+    legend: 'Kodlar ve Sablon',
+    raw: 'Ham Veri',
+  }
+  const navSheets = [sheetNames.entry, sheetNames.operation, sheetNames.weekly, sheetNames.dept, sheetNames.person, sheetNames.settings, sheetNames.raw]
+  const entryStartRow = 8
+  const entryEndRow = Math.max(entryStartRow, entryStartRow + exportRows.length - 1)
+  const entryDayStartCol = 5
+  const entryDayEndCol = 11
+  const entryDayStart = colLetter(entryDayStartCol)
+  const entryDayEnd = colLetter(entryDayEndCol)
+  const entryDayRange = sheetRange(sheetNames.entry, `$${entryDayStart}$${entryStartRow}:$${entryDayEnd}$${entryEndRow}`)
+  const entryPersonRange = sheetRange(sheetNames.entry, `$B$${entryStartRow}:$B$${entryEndRow}`)
+  const entryRiskRange = sheetRange(sheetNames.entry, `$P$${entryStartRow}:$P$${entryEndRow}`)
+  const codeListStart = 5
+  const codeListEnd = codeListStart + codes.length - 1
+  const codeValidationRange = sheetRange(sheetNames.settings, `$F$${codeListStart}:$F$${codeListEnd}`)
 
-  const dash = wb.addWorksheet('Kontrol Paneli', { views: [{ state: 'frozen', ySplit: 8 }] })
+  const dash = wb.addWorksheet(sheetNames.dash, { views: [{ state: 'frozen', ySplit: 8 }] })
+  setupSheet(dash, COLORS.ink)
   setupTitle(dash, 'VARDIYA EXCEL KONTROL PANELI', `${formatDate(weekStart)} - ${formatDate(weekEnd)} | ${generatedAt.toLocaleString('tr-TR')}`, 12)
-  addMetric(dash, 1, 'Personel', exportRows.length, COLORS.blue)
-  addMetric(dash, 3, 'Calisma', exportStats.working, COLORS.green)
-  addMetric(dash, 5, 'Izin/OFF', exportStats.onLeave, COLORS.teal)
-  addMetric(dash, 7, 'Bos', exportStats.empty, exportStats.empty ? COLORS.red : COLORS.green)
-  addMetric(dash, 9, 'Kritik', exportWarnings.filter(w => w.severity === 'high').length, COLORS.red)
+  addNav(dash, navSheets)
+  addMetric(dash, 1, 'Personel', { formula: `COUNTA(${entryPersonRange})`, result: exportRows.length }, COLORS.blue)
+  addMetric(dash, 3, 'Calisma', { formula: quickWorkFormula(entryDayRange), result: exportStats.working }, COLORS.green)
+  addMetric(dash, 5, 'Izin/OFF', { formula: quickRestFormula(entryDayRange), result: exportStats.onLeave }, COLORS.teal)
+  addMetric(dash, 7, 'Bos', { formula: quickEmptyFormula(entryDayRange), result: exportStats.empty }, exportStats.empty ? COLORS.red : COLORS.green)
+  addMetric(dash, 9, 'Riskli Satir', { formula: `COUNTIF(${entryRiskRange},"<>OK")`, result: exportRows.filter(person => riskFor(personCounts(person, weekDays)) !== 'OK').length }, COLORS.red)
   addMetric(dash, 11, 'Uyari', exportWarnings.length, exportWarnings.length ? COLORS.amber : COLORS.green)
   dash.getRow(7).values = ['Seviye', 'Tip', 'Tarih', 'Personel/Bolum', 'Mesaj']
   styleHeaderRow(dash.getRow(7))
@@ -271,14 +406,90 @@ export async function exportScheduleExcel({
   ]
   styleAllUsedCells(dash)
 
-  const ws = wb.addWorksheet('Haftalik Cizelge', { views: [{ state: 'frozen', xSplit: 4, ySplit: 7 }] })
+  const entry = wb.addWorksheet(sheetNames.entry, { views: [{ state: 'frozen', xSplit: 4, ySplit: 7 }] })
+  setupSheet(entry, COLORS.blue)
+  setupTitle(entry, 'EXCEL GIRIS TABLOSU', 'Hucrelere kisa kod yaz: 1, 2, OFF, I, YOK. Formuller ve renkler otomatik takip eder.', 16)
+  addNav(entry, [sheetNames.dash, sheetNames.operation, sheetNames.weekly, sheetNames.settings, sheetNames.legend])
+  addMetric(entry, 1, 'Calisma', { formula: quickWorkFormula(entryDayRange), result: exportStats.working }, COLORS.green)
+  addMetric(entry, 3, 'Izin/OFF', { formula: quickRestFormula(entryDayRange), result: exportStats.onLeave }, COLORS.teal)
+  addMetric(entry, 5, 'YOK', { formula: quickAbsentFormula(entryDayRange), result: exportRows.reduce((sum, person) => sum + personCounts(person, weekDays).absent, 0) }, COLORS.red)
+  addMetric(entry, 7, 'Bos', { formula: quickEmptyFormula(entryDayRange), result: exportStats.empty }, exportStats.empty ? COLORS.red : COLORS.green)
+  addMetric(entry, 9, 'Riskli', { formula: `COUNTIF(${entryRiskRange},"<>OK")`, result: exportRows.filter(person => riskFor(personCounts(person, weekDays)) !== 'OK').length }, COLORS.amber)
+  addMetric(entry, 11, 'Kod Listesi', 'Ayarlar', COLORS.purple)
+  entry.getCell(6, 1).value = 'Kullanim: Gun hucrelerine kod yaz veya acilir listeden sec. Ozet kolonlari formullu; Excel icinde degisiklik yaptiginda yenilenir.'
+  entry.getCell(6, 1).font = { italic: true, size: 10, color: { argb: argb(COLORS.gray) } }
+  entry.mergeCells(6, 1, 6, 16)
+  entry.getRow(7).values = [
+    'Sira', 'Personel', 'Bolum', 'Pozisyon',
+    ...weekDays.map((date, idx) => `${DAY_LABELS[idx]}\n${formatDate(date)}`),
+    'Calisma', 'OFF/Izin', 'YOK', 'Bos', 'Risk',
+  ]
+  styleHeaderRow(entry.getRow(7))
+  exportRows.forEach((person, idx) => {
+    const counts = personCounts(person, weekDays)
+    const risk = riskFor(counts)
+    const row = entry.addRow([
+      idx + 1,
+      person.full_name,
+      person.dept_name || '-',
+      person.position || '-',
+      ...weekDays.map(date => cellToScheduleCode(person.days?.[date], shiftDefs)),
+      null, null, null, null, null,
+    ])
+    const rowNo = row.number
+    const rowDayRange = `${entryDayStart}${rowNo}:${entryDayEnd}${rowNo}`
+    row.getCell(12).value = { formula: quickWorkFormula(rowDayRange), result: counts.work }
+    row.getCell(13).value = { formula: quickRestFormula(rowDayRange), result: counts.rest }
+    row.getCell(14).value = { formula: quickAbsentFormula(rowDayRange), result: counts.absent }
+    row.getCell(15).value = { formula: quickEmptyFormula(rowDayRange), result: counts.empty }
+    row.getCell(16).value = { formula: riskFormulaForRow(rowNo, 'L', 'M', 'N', 'O'), result: risk }
+    row.eachCell({ includeEmpty: true }, (cell, colNo) => {
+      cell.border = border
+      cell.alignment = { horizontal: colNo <= 4 ? 'left' : 'center', vertical: 'middle', wrapText: true }
+      cell.font = { size: 9 }
+      if (colNo >= entryDayStartCol && colNo <= entryDayEndCol) {
+        const dayCell = person.days?.[weekDays[colNo - entryDayStartCol]]
+        cell.numFmt = '@'
+        cell.fill = fill(cellHex(dayCell))
+        cell.font = { size: 9, bold: !!dayCell, color: { argb: dayCell ? 'FFFFFFFF' : 'FF64748B' } }
+      }
+      if (colNo === 16) {
+        cell.fill = fill(risk === 'OK' ? COLORS.green : risk === 'Bos var' ? COLORS.red : COLORS.amber)
+        cell.font = { size: 9, bold: true, color: { argb: 'FFFFFFFF' } }
+      }
+    })
+    row.height = 26
+  })
+  if (exportRows.length) {
+    applyQuickCodeValidation(entry, entryStartRow, entryEndRow, entryDayStartCol, entryDayEndCol, codeValidationRange)
+    applyQuickCodeConditionalFormatting(entry, `${entryDayStart}${entryStartRow}:${entryDayEnd}${entryEndRow}`, `${entryDayStart}${entryStartRow}`, codes)
+    entry.addConditionalFormatting({
+      ref: `P${entryStartRow}:P${entryEndRow}`,
+      rules: [
+        { type: 'expression', formulae: [`P${entryStartRow}="OK"`], style: { fill: fill(COLORS.green), font: { color: { argb: 'FFFFFFFF' }, bold: true } } },
+        { type: 'expression', formulae: [`P${entryStartRow}="Bos var"`], style: { fill: fill(COLORS.red), font: { color: { argb: 'FFFFFFFF' }, bold: true } } },
+        { type: 'expression', formulae: [`AND(P${entryStartRow}<>"OK",P${entryStartRow}<>"Bos var")`], style: { fill: fill(COLORS.amber), font: { color: { argb: 'FFFFFFFF' }, bold: true } } },
+      ],
+    })
+  }
+  entry.autoFilter = { from: { row: 7, column: 1 }, to: { row: 7, column: 16 } }
+  entry.columns = [
+    { width: 7 }, { width: 26 }, { width: 18 }, { width: 18 },
+    ...weekDays.map(() => ({ width: 13 })),
+    { width: 10 }, { width: 10 }, { width: 8 }, { width: 8 }, { width: 12 },
+  ]
+  styleAllUsedCells(entry)
+
+  const ws = wb.addWorksheet(sheetNames.weekly, { views: [{ state: 'frozen', xSplit: 4, ySplit: 7 }] })
+  setupSheet(ws, COLORS.purple)
   const weekLastCol = 16
   setupTitle(ws, 'HAFTALIK VARDIYA CIZELGESI', `${formatDate(weekStart)} - ${formatDate(weekEnd)} | Filtre: ${deptFilter ? 'Bolum secili' : 'Tum bolumler'} | ${exportRows.length} personel`, weekLastCol)
-  addMetric(ws, 1, 'Calisma', exportStats.working, COLORS.green)
-  addMetric(ws, 3, 'Izin/OFF', exportStats.onLeave, COLORS.teal)
-  addMetric(ws, 5, 'Bos', exportStats.empty, exportStats.empty ? COLORS.red : COLORS.green)
+  addNav(ws, [sheetNames.dash, sheetNames.entry, sheetNames.operation, sheetNames.settings, sheetNames.raw])
+  addMetric(ws, 1, 'Calisma', { formula: quickWorkFormula(entryDayRange), result: exportStats.working }, COLORS.green)
+  addMetric(ws, 3, 'Izin/OFF', { formula: quickRestFormula(entryDayRange), result: exportStats.onLeave }, COLORS.teal)
+  addMetric(ws, 5, 'Bos', { formula: quickEmptyFormula(entryDayRange), result: exportStats.empty }, exportStats.empty ? COLORS.red : COLORS.green)
   addMetric(ws, 7, 'Uyari', exportWarnings.length, exportWarnings.length ? COLORS.amber : COLORS.green)
-  addMetric(ws, 9, 'Min Kisi', coverageMin, COLORS.blue)
+  addMetric(ws, 9, 'Min Kisi', { formula: `${sheetRange(sheetNames.settings, '$B$6')}`, result: coverageMin }, COLORS.blue)
   addMetric(ws, 11, 'Dosya', 'Ultra', COLORS.purple)
   const headerRowNo = 7
   ws.getRow(headerRowNo).values = [
@@ -332,7 +543,102 @@ export async function exportScheduleExcel({
   ]
   styleAllUsedCells(ws)
 
-  const daily = wb.addWorksheet('Gunluk Detay', { views: [{ state: 'frozen', ySplit: 3 }] })
+  const operation = wb.addWorksheet(sheetNames.operation, { views: [{ state: 'frozen', xSplit: 2, ySplit: 7 }] })
+  setupSheet(operation, COLORS.green)
+  setupTitle(operation, 'GUNLUK OPERASYON TAKIBI', 'Gun gun calisan, izinli, devamsiz, bos ve bolum kapsama kontrolu.', 14)
+  addNav(operation, [sheetNames.dash, sheetNames.entry, sheetNames.daily, sheetNames.dept, sheetNames.settings])
+  addMetric(operation, 1, 'Min Kisi', { formula: `${sheetRange(sheetNames.settings, '$B$6')}`, result: coverageMin }, COLORS.blue)
+  addMetric(operation, 3, 'Bos', { formula: quickEmptyFormula(entryDayRange), result: exportStats.empty }, exportStats.empty ? COLORS.red : COLORS.green)
+  addMetric(operation, 5, 'YOK', { formula: quickAbsentFormula(entryDayRange), result: exportRows.reduce((sum, person) => sum + personCounts(person, weekDays).absent, 0) }, COLORS.red)
+  addMetric(operation, 7, 'Riskli Satir', { formula: `COUNTIF(${entryRiskRange},"<>OK")`, result: exportRows.filter(person => riskFor(personCounts(person, weekDays)) !== 'OK').length }, COLORS.amber)
+  operation.getRow(7).values = ['Tarih', 'Gun', 'Calisma', 'OFF/Izin', 'YOK', 'Bos', 'Durum']
+  styleHeaderRow(operation.getRow(7))
+  weekDays.forEach((date, idx) => {
+    const entryCol = colLetter(entryDayStartCol + idx)
+    const dayRange = sheetRange(sheetNames.entry, `$${entryCol}$${entryStartRow}:$${entryCol}$${entryEndRow}`)
+    const workCount = exportRows.filter(person => isWorking(person.days?.[date])).length
+    const restCount = exportRows.filter(person => isRest(person.days?.[date])).length
+    const absentCount = exportRows.filter(person => person.days?.[date]?.status === 'absent').length
+    const emptyCount = exportRows.filter(person => !person.days?.[date]).length
+    const row = operation.addRow([
+      new Date(`${date}T00:00:00`),
+      DAY_LABELS[idx],
+      { formula: quickWorkFormula(dayRange), result: workCount },
+      { formula: quickRestFormula(dayRange), result: restCount },
+      { formula: quickAbsentFormula(dayRange), result: absentCount },
+      { formula: quickEmptyFormula(dayRange), result: emptyCount },
+      null,
+    ])
+    const rowNo = row.number
+    row.getCell(7).value = { formula: `IF(F${rowNo}>0,"Bos var",IF(C${rowNo}<${sheetRange(sheetNames.settings, '$B$6')},"Eksik kisi","OK"))`, result: emptyCount > 0 ? 'Bos var' : workCount < coverageMin ? 'Eksik kisi' : 'OK' }
+    row.getCell(1).numFmt = 'yyyy-mm-dd'
+    row.eachCell((cell, colNo) => {
+      cell.border = border
+      cell.alignment = { horizontal: colNo <= 2 ? 'left' : 'center', vertical: 'middle' }
+      cell.font = { size: 10 }
+      if (colNo === 7) {
+        const status = cell.result || cell.value?.result
+        cell.fill = fill(status === 'OK' ? COLORS.green : status === 'Bos var' ? COLORS.red : COLORS.amber)
+        cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 10 }
+      }
+    })
+  })
+  const matrixStart = operation.lastRow.number + 3
+  operation.getCell(matrixStart, 1).value = 'BOLUM x GUN KAPSAMA'
+  operation.getCell(matrixStart, 1).font = { bold: true, size: 12, color: { argb: argb(COLORS.ink) } }
+  operation.getRow(matrixStart + 1).values = ['Bolum', 'Personel', ...weekDays.map((date, idx) => `${DAY_LABELS[idx]}\n${formatDate(date)}`), 'Toplam', 'En Dusuk', 'Durum']
+  styleHeaderRow(operation.getRow(matrixStart + 1))
+  deptSummary.forEach(dept => {
+    const row = operation.addRow([dept.name, dept.members, ...weekDays.map(() => null), null, null, null])
+    const rowNo = row.number
+    weekDays.forEach((date, idx) => {
+      const entryCol = colLetter(entryDayStartCol + idx)
+      const deptRange = sheetRange(sheetNames.entry, `$C$${entryStartRow}:$C$${entryEndRow}`)
+      const dayRange = sheetRange(sheetNames.entry, `$${entryCol}$${entryStartRow}:$${entryCol}$${entryEndRow}`)
+      row.getCell(3 + idx).value = {
+        formula: `COUNTIFS(${deptRange},$A${rowNo},${dayRange},"<>",${dayRange},"<>OFF",${dayRange},"<>I",${dayRange},"<>YOK",${dayRange},"<>sil")`,
+        result: dept.perDay[idx].work,
+      }
+    })
+    const firstDay = colLetter(3)
+    const lastDay = colLetter(3 + weekDays.length - 1)
+    row.getCell(10).value = { formula: `SUM(${firstDay}${rowNo}:${lastDay}${rowNo})`, result: dept.perDay.reduce((sum, day) => sum + day.work, 0) }
+    row.getCell(11).value = { formula: `MIN(${firstDay}${rowNo}:${lastDay}${rowNo})`, result: Math.min(...dept.perDay.map(day => day.work)) }
+    row.getCell(12).value = { formula: `IF(K${rowNo}<${sheetRange(sheetNames.settings, '$B$6')},"Eksik","OK")`, result: Math.min(...dept.perDay.map(day => day.work)) < coverageMin ? 'Eksik' : 'OK' }
+    row.eachCell((cell, colNo) => {
+      cell.border = border
+      cell.alignment = { horizontal: colNo === 1 ? 'left' : 'center', vertical: 'middle', wrapText: true }
+      cell.font = { size: 9 }
+      if (colNo >= 3 && colNo <= 9 && Number(cell.value?.result ?? cell.value ?? 0) < coverageMin) {
+        cell.fill = fill(COLORS.red)
+        cell.font = { size: 9, bold: true, color: { argb: 'FFFFFFFF' } }
+      }
+      if (colNo === 12) {
+        const status = cell.value?.result || cell.value
+        cell.fill = fill(status === 'OK' ? COLORS.green : COLORS.red)
+        cell.font = { size: 9, bold: true, color: { argb: 'FFFFFFFF' } }
+      }
+    })
+  })
+  if (deptSummary.length) {
+    const firstMatrixRow = matrixStart + 2
+    const lastMatrixRow = firstMatrixRow + deptSummary.length - 1
+    operation.addConditionalFormatting({
+      ref: `C${firstMatrixRow}:I${lastMatrixRow}`,
+      rules: [
+        { type: 'expression', formulae: [`C${firstMatrixRow}<${sheetRange(sheetNames.settings, '$B$6')}`], style: { fill: fill(COLORS.red), font: { color: { argb: 'FFFFFFFF' }, bold: true } } },
+      ],
+    })
+  }
+  operation.autoFilter = { from: { row: 7, column: 1 }, to: { row: 7, column: 7 } }
+  operation.columns = [
+    { width: 13 }, { width: 8 }, { width: 10 }, { width: 10 }, { width: 8 }, { width: 8 }, { width: 12 },
+    { width: 4 }, { width: 4 }, { width: 10 }, { width: 10 }, { width: 12 }, { width: 12 }, { width: 12 },
+  ]
+  styleAllUsedCells(operation)
+
+  const daily = wb.addWorksheet(sheetNames.daily, { views: [{ state: 'frozen', ySplit: 3 }] })
+  setupSheet(daily, COLORS.teal)
   setupTitle(daily, 'GUNLUK DETAY LISTESI', 'Her personel-gun tek satir. Filtreleyip raporlanabilir.', 12)
   daily.getRow(3).values = ['Tarih', 'Gun', 'Personel', 'Bolum', 'Pozisyon', 'Kod', 'Durum', 'Vardiya', 'Saat', 'Baslangic', 'Bitis', 'Not']
   styleHeaderRow(daily.getRow(3))
@@ -372,7 +678,8 @@ export async function exportScheduleExcel({
   ]
   styleAllUsedCells(daily)
 
-  const deptWs = wb.addWorksheet('Bolum Ozeti', { views: [{ state: 'frozen', xSplit: 4, ySplit: 4 }] })
+  const deptWs = wb.addWorksheet(sheetNames.dept, { views: [{ state: 'frozen', xSplit: 4, ySplit: 4 }] })
+  setupSheet(deptWs, COLORS.amber)
   const deptLastCol = 4 + weekDays.length * 3 + 3
   setupTitle(deptWs, 'BOLUM BAZLI KAPSAMA OZETI', `Min kisi/gun: ${coverageMin}`, deptLastCol)
   deptWs.getRow(3).values = ['Bolum', 'Personel', 'Erkek', 'Kadin', ...weekDays.flatMap((date, idx) => [`${DAY_LABELS[idx]} ${formatDate(date)}`, '', '']), 'Toplam Calisma', 'Toplam Izin', 'Toplam Bos/YOK']
@@ -406,14 +713,25 @@ export async function exportScheduleExcel({
   ]
   styleAllUsedCells(deptWs)
 
-  const personWs = wb.addWorksheet('Personel Ozeti', { views: [{ state: 'frozen', ySplit: 3 }] })
+  const personWs = wb.addWorksheet(sheetNames.person, { views: [{ state: 'frozen', ySplit: 3 }] })
+  setupSheet(personWs, COLORS.teal)
   setupTitle(personWs, 'PERSONEL PUANTAJ ONCESI OZET', 'Satir bazli haftalik calisma, izin, bos ve risk ozeti.', 10)
   personWs.getRow(3).values = ['Personel', 'Bolum', 'Pozisyon', 'Calisma', 'OFF', 'Izin', 'YOK', 'Bos', 'Toplam', 'Risk']
   styleHeaderRow(personWs.getRow(3))
-  exportRows.forEach(person => {
+  exportRows.forEach((person, idx) => {
     const counts = personCounts(person, weekDays)
     const risk = riskFor(counts)
-    const row = personWs.addRow([person.full_name, person.dept_name || '-', person.position || '-', counts.work, counts.off, counts.leave, counts.absent, counts.empty, weekDays.length, risk])
+    const sourceRow = entryStartRow + idx
+    const sourceRange = sheetRange(sheetNames.entry, `$${entryDayStart}$${sourceRow}:$${entryDayEnd}$${sourceRow}`)
+    const row = personWs.addRow([person.full_name, person.dept_name || '-', person.position || '-', null, null, null, null, null, null, null])
+    const rowNo = row.number
+    row.getCell(4).value = { formula: quickWorkFormula(sourceRange), result: counts.work }
+    row.getCell(5).value = { formula: `COUNTIF(${sourceRange},"OFF")`, result: counts.off }
+    row.getCell(6).value = { formula: `COUNTIF(${sourceRange},"I")`, result: counts.leave }
+    row.getCell(7).value = { formula: quickAbsentFormula(sourceRange), result: counts.absent }
+    row.getCell(8).value = { formula: quickEmptyFormula(sourceRange), result: counts.empty }
+    row.getCell(9).value = { formula: `SUM(D${rowNo}:H${rowNo})`, result: weekDays.length }
+    row.getCell(10).value = { formula: `IF(H${rowNo}>0,"Bos var",IF(G${rowNo}>0,"YOK var",IF(AND(D${rowNo}>0,(E${rowNo}+F${rowNo})=0),"OFF eksik","OK")))`, result: risk }
     row.eachCell((cell, colNo) => {
       cell.border = border
       cell.alignment = { horizontal: colNo <= 3 ? 'left' : 'center', vertical: 'middle' }
@@ -424,28 +742,84 @@ export async function exportScheduleExcel({
       }
     })
   })
+  if (exportRows.length) {
+    personWs.addConditionalFormatting({
+      ref: `J4:J${3 + exportRows.length}`,
+      rules: [
+        { type: 'expression', formulae: ['J4="OK"'], style: { fill: fill(COLORS.green), font: { color: { argb: 'FFFFFFFF' }, bold: true } } },
+        { type: 'expression', formulae: ['J4="Bos var"'], style: { fill: fill(COLORS.red), font: { color: { argb: 'FFFFFFFF' }, bold: true } } },
+        { type: 'expression', formulae: ['AND(J4<>"OK",J4<>"Bos var")'], style: { fill: fill(COLORS.amber), font: { color: { argb: 'FFFFFFFF' }, bold: true } } },
+      ],
+    })
+  }
   personWs.autoFilter = { from: { row: 3, column: 1 }, to: { row: 3, column: 10 } }
   personWs.columns = [{ width: 28 }, { width: 18 }, { width: 18 }, { width: 10 }, { width: 8 }, { width: 8 }, { width: 8 }, { width: 8 }, { width: 8 }, { width: 12 }]
   styleAllUsedCells(personWs)
 
-  const legend = wb.addWorksheet('Kodlar ve Sablon', { views: [{ state: 'frozen', ySplit: 3 }] })
+  const settings = wb.addWorksheet(sheetNames.settings, { views: [{ state: 'frozen', ySplit: 4 }] })
+  setupSheet(settings, COLORS.purple)
+  setupTitle(settings, 'AYARLAR VE RENK PALETI', 'Esik degerleri, kisa kodlar ve renk referanslari. Formuller min kisi degerini bu sayfadan okur.', 11)
+  addNav(settings, [sheetNames.dash, sheetNames.entry, sheetNames.operation, sheetNames.legend])
+  settings.getRow(4).values = ['Ayar', 'Deger', 'Aciklama', '', 'Liste', 'Kod', 'Anlam', 'Saat', 'Renk HEX', 'Renk', 'Not']
+  styleHeaderRow(settings.getRow(4))
+  settings.getCell(5, 1).value = 'Hafta Baslangic'
+  settings.getCell(5, 2).value = new Date(`${weekStart}T00:00:00`)
+  settings.getCell(5, 2).numFmt = 'yyyy-mm-dd'
+  settings.getCell(5, 3).value = 'Raporun basladigi tarih'
+  settings.getCell(6, 1).value = 'Min Kisi/Gun'
+  settings.getCell(6, 2).value = coverageMin
+  settings.getCell(6, 3).value = 'Gunluk operasyon ve bolum kapsama kontrol esigi'
+  settings.getCell(7, 1).value = 'Max Ardisik Calisma'
+  settings.getCell(7, 2).value = 6
+  settings.getCell(7, 3).value = 'Kontrol amacli referans deger'
+  settings.getCell(8, 1).value = 'Hafta Bitis'
+  settings.getCell(8, 2).value = new Date(`${weekEnd}T00:00:00`)
+  settings.getCell(8, 2).numFmt = 'yyyy-mm-dd'
+  settings.getCell(8, 3).value = 'Raporun bittigi tarih'
+  settings.getCell(9, 1).value = 'Dosya Modu'
+  settings.getCell(9, 2).value = 'Operasyon'
+  settings.getCell(9, 3).value = 'Excel Giris sayfasi duzenlenebilir; diger sayfalar takip ve rapor icindir'
+  codes.forEach((item, idx) => {
+    const rowNo = codeListStart + idx
+    const row = settings.getRow(rowNo)
+    row.getCell(5).value = item.kind === 'shift' ? 'Vardiya' : 'Durum'
+    row.getCell(6).value = item.code
+    row.getCell(7).value = item.label
+    row.getCell(8).value = item.hours
+    row.getCell(9).value = item.hex
+    row.getCell(10).value = ''
+    row.getCell(10).fill = fill(item.hex)
+    row.getCell(11).value = item.note
+    row.eachCell(cell => {
+      cell.border = border
+      cell.alignment = { vertical: 'middle', wrapText: true }
+      cell.font = { size: 9 }
+    })
+    row.getCell(6).font = { bold: true, size: 10, color: { argb: argb(COLORS.ink) } }
+  })
+  const settingsNoteRow = Math.max(11, codeListEnd + 3)
+  settings.getCell(settingsNoteRow, 1).value = 'RENK AYARI'
+  settings.getCell(settingsNoteRow, 1).font = { bold: true, size: 12, color: { argb: argb(COLORS.ink) } }
+  settings.getCell(settingsNoteRow + 1, 1).value = 'Vardiya renkleri uygulamadaki vardiya renklerinden gelir. Excel icinde renkleri degistirmek istersen Excel Giris sayfasindaki kosullu bicimlendirme kurallarini veya bu palet hucrelerini duzenleyebilirsin.'
+  settings.mergeCells(settingsNoteRow + 1, 1, settingsNoteRow + 1, 11)
+  settings.getCell(settingsNoteRow + 1, 1).alignment = { wrapText: true, vertical: 'middle' }
+  settings.columns = [
+    { width: 22 }, { width: 16 }, { width: 42 }, { width: 4 }, { width: 12 }, { width: 10 },
+    { width: 24 }, { width: 14 }, { width: 12 }, { width: 10 }, { width: 34 },
+  ]
+  styleAllUsedCells(settings)
+
+  const legend = wb.addWorksheet(sheetNames.legend, { views: [{ state: 'frozen', ySplit: 4 }] })
+  setupSheet(legend, COLORS.gray)
   setupTitle(legend, 'KODLAR, RENKLER VE KOPYALA-YAPISTIR SABLONU', 'Bu sayfadaki kod tablosu uygulamadaki hizli giris ile uyumludur.', 10)
+  addNav(legend, [sheetNames.dash, sheetNames.entry, sheetNames.settings, sheetNames.raw])
   legend.getRow(4).values = ['Kod', 'Anlam', 'Saat', 'Not']
   styleHeaderRow(legend.getRow(4))
-  shiftDefs.forEach((shift, idx) => {
-    const row = legend.addRow([String(idx + 1), shift.name, formatShiftHours(shift.start_hour, shift.end_hour), 'Hizli hucre giris kodu'])
-    row.getCell(1).fill = fill(TAILWIND_HEX[shift.color_class] || COLORS.gray)
+  codes.forEach(item => {
+    const row = legend.addRow([item.code, item.label, item.hours, item.note])
+    row.getCell(1).fill = fill(item.hex)
     row.getCell(1).font = { bold: true, color: { argb: 'FFFFFFFF' } }
     row.eachCell(cell => { cell.border = border; cell.alignment = { vertical: 'middle' }; cell.font = cell.font || { size: 10 } })
-  })
-  ;[
-    ['OFF', 'Haftalik izin', '', 'Dinlenme/haftalik izin'],
-    ['I', 'Izin', '', 'Onayli izin gunu'],
-    ['YOK', 'Devamsizlik', '', 'Gelmedi olarak isaretler'],
-    ['sil', 'Hucreyi temizle', '', 'Secili hucreleri siler'],
-  ].forEach(([code, meaning, hour, note]) => {
-    const row = legend.addRow([code, meaning, hour, note])
-    row.eachCell(cell => { cell.border = border; cell.alignment = { vertical: 'middle' }; cell.font = { size: 10 } })
   })
   const tplStart = legend.lastRow.number + 3
   legend.getCell(tplStart, 1).value = 'KOPYALA-YAPISTIR SABLONU'
@@ -467,10 +841,17 @@ export async function exportScheduleExcel({
       }
     })
   })
+  if (exportRows.length) {
+    const tplDataStart = tplStart + 2
+    const tplDataEnd = tplDataStart + exportRows.length - 1
+    applyQuickCodeValidation(legend, tplDataStart, tplDataEnd, 3, 2 + weekDays.length, codeValidationRange)
+    applyQuickCodeConditionalFormatting(legend, `C${tplDataStart}:I${tplDataEnd}`, `C${tplDataStart}`, codes)
+  }
   legend.columns = [{ width: 18 }, { width: 24 }, { width: 18 }, { width: 32 }, ...weekDays.map(() => ({ width: 13 }))]
   styleAllUsedCells(legend)
 
-  const raw = wb.addWorksheet('Ham Veri', { views: [{ state: 'frozen', ySplit: 3 }] })
+  const raw = wb.addWorksheet(sheetNames.raw, { views: [{ state: 'frozen', ySplit: 3 }] })
+  setupSheet(raw, COLORS.gray)
   setupTitle(raw, 'HAM VERI', 'Analiz, pivot ve denetim icin tekil kayitlar.', 13)
   raw.getRow(3).values = ['staff_id', 'personel', 'dept_id', 'bolum', 'tarih', 'gun', 'status', 'kod', 'shift_def_id', 'vardiya', 'baslangic', 'bitis', 'not']
   styleHeaderRow(raw.getRow(3))
