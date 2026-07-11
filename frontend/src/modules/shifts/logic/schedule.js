@@ -157,6 +157,10 @@ function isWorkingCell(cell) {
   return ['scheduled', 'worked', 'overtime'].includes(cell?.status)
 }
 
+function isRestCell(cell) {
+  return cell?.status === 'off' || cell?.status === 'on_leave'
+}
+
 function isNightCell(cell) {
   if (!isWorkingCell(cell)) return false
   const start = parseHour(cell.start_hour ?? cell.shift_start)
@@ -275,6 +279,218 @@ export function buildScheduleWarnings(staffGrid, weekDays, options = {}) {
   })
 
   return warnings
+}
+
+export function daysInMonth(month) {
+  if (!/^\d{4}-\d{2}$/.test(month || '')) return []
+  const [year, monthNo] = month.split('-').map(Number)
+  const total = new Date(Date.UTC(year, monthNo, 0)).getUTCDate()
+  return Array.from({ length: total }, (_, idx) => `${month}-${String(idx + 1).padStart(2, '0')}`)
+}
+
+function addDaysIsoLocal(dateStr, offset) {
+  const [year, month, day] = String(dateStr).split('-').map(Number)
+  const date = new Date(Date.UTC(year, month - 1, day + offset))
+  return date.toISOString().slice(0, 10)
+}
+
+function dateRange(startDate, endDate) {
+  const days = []
+  if (!startDate || !endDate) return days
+  for (let d = startDate; d <= endDate; d = addDaysIsoLocal(d, 1)) days.push(d)
+  return days
+}
+
+export function buildStaffRecentSummary(shiftHistory = [], overtimeRecords = [], options = {}) {
+  const sourceDates = [
+    ...shiftHistory.map(s => s.work_date),
+    ...overtimeRecords.map(o => o.work_date),
+  ].filter(Boolean)
+  const referenceDate = options.referenceDate || sourceDates.sort().at(-1) || new Date().toISOString().slice(0, 10)
+  const days = Number.isFinite(options.days) ? options.days : 30
+  const startDate = addDaysIsoLocal(referenceDate, -(days - 1))
+  const range = dateRange(startDate, referenceDate)
+  const shiftsByDate = new Map(shiftHistory.map(s => [s.work_date, s]))
+  const overtimeByDate = new Map()
+  overtimeRecords.forEach(o => {
+    if (!o.work_date) return
+    overtimeByDate.set(o.work_date, (overtimeByDate.get(o.work_date) || 0) + Number(o.hours || 0))
+  })
+
+  const timeline = range.map(date => {
+    const cell = shiftsByDate.get(date)
+    const overtimeHours = overtimeByDate.get(date) || 0
+    let kind = 'empty'
+    if (cell?.status === 'absent') kind = 'absent'
+    else if (cell?.status === 'off') kind = 'off'
+    else if (cell?.status === 'on_leave') kind = 'leave'
+    else if (isWorkingCell(cell)) kind = 'work'
+    return { date, kind, cell, overtimeHours }
+  })
+
+  let maxConsecutive = 0
+  let current = 0
+  timeline.forEach(day => {
+    if (day.kind === 'work') {
+      current += 1
+      maxConsecutive = Math.max(maxConsecutive, current)
+    } else {
+      current = 0
+    }
+  })
+
+  let currentConsecutive = 0
+  for (let i = timeline.length - 1; i >= 0; i -= 1) {
+    if (timeline[i].kind !== 'work') break
+    currentConsecutive += 1
+  }
+
+  return {
+    startDate,
+    endDate: referenceDate,
+    timeline,
+    workDays: timeline.filter(d => d.kind === 'work').length,
+    offDays: timeline.filter(d => d.kind === 'off').length,
+    leaveDays: timeline.filter(d => d.kind === 'leave').length,
+    absentDays: timeline.filter(d => d.kind === 'absent').length,
+    emptyDays: timeline.filter(d => d.kind === 'empty').length,
+    overtimeHours: [...overtimeByDate.entries()]
+      .filter(([date]) => date >= startDate && date <= referenceDate)
+      .reduce((sum, [, hours]) => sum + hours, 0),
+    maxConsecutive,
+    currentConsecutive,
+  }
+}
+
+function rangesOverlap(aStart, aEnd, bStart, bEnd) {
+  return aStart <= bEnd && bStart <= aEnd
+}
+
+export function buildPayrollClosingCheck(staffGrid, periodDays, options = {}) {
+  const coverageMin = Number.isFinite(options.coverageMin) ? options.coverageMin : 1
+  const overtimeRecords = options.overtimeRecords || []
+  const pendingLeaves = options.pendingLeaves || []
+  const periodStart = periodDays[0]
+  const periodEnd = periodDays.at(-1)
+
+  const emptyByStaff = []
+  const offMissingByStaff = []
+  const absentItems = []
+  staffGrid.forEach(person => {
+    const emptyDates = periodDays.filter(date => !person.days?.[date])
+    if (emptyDates.length) emptyByStaff.push({ staffId: person.id, name: person.full_name, count: emptyDates.length, dates: emptyDates })
+
+    const missingWeeks = []
+    for (let idx = 0; idx < periodDays.length; idx += 7) {
+      const week = periodDays.slice(idx, idx + 7)
+      const hasWork = week.some(date => isWorkingCell(person.days?.[date]))
+      const hasRest = week.some(date => isRestCell(person.days?.[date]))
+      if (hasWork && !hasRest) missingWeeks.push({ start: week[0], end: week.at(-1) })
+    }
+    if (missingWeeks.length) offMissingByStaff.push({ staffId: person.id, name: person.full_name, count: missingWeeks.length, weeks: missingWeeks })
+
+    periodDays.forEach(date => {
+      const cell = person.days?.[date]
+      if (cell?.status === 'absent') absentItems.push({ staffId: person.id, name: person.full_name, date })
+    })
+  })
+
+  const coverageLow = []
+  const depts = new Map()
+  staffGrid.forEach(person => {
+    const dept = person.dept_name || 'Departmansiz'
+    if (!depts.has(dept)) depts.set(dept, new Map())
+    periodDays.forEach(date => {
+      const cell = person.days?.[date]
+      if (isWorkingCell(cell)) depts.get(dept).set(date, (depts.get(dept).get(date) || 0) + 1)
+    })
+  })
+  depts.forEach((counts, dept) => {
+    periodDays.forEach(date => {
+      const count = counts.get(date) || 0
+      if (count < coverageMin) coverageLow.push({ dept, date, count, required: coverageMin })
+    })
+  })
+
+  const pendingInPeriod = pendingLeaves.filter(leave => {
+    if (!periodStart || !periodEnd || leave.status !== 'pending') return false
+    return rangesOverlap(leave.start_date, leave.end_date, periodStart, periodEnd)
+  })
+
+  const overtimeInPeriod = overtimeRecords.filter(o => {
+    if (!periodStart || !periodEnd) return false
+    return o.work_date >= periodStart && o.work_date <= periodEnd
+  })
+  const overtimeHours = overtimeInPeriod.reduce((sum, o) => sum + Number(o.hours || 0), 0)
+
+  const issues = []
+  if (emptyByStaff.length) issues.push({
+    type: 'empty',
+    severity: 'high',
+    title: 'Bos gun var',
+    count: emptyByStaff.reduce((sum, item) => sum + item.count, 0),
+    message: `${emptyByStaff.length} personelde bos gun var.`,
+    items: emptyByStaff,
+  })
+  if (coverageLow.length) issues.push({
+    type: 'coverage',
+    severity: 'high',
+    title: 'Eksik kisi',
+    count: coverageLow.length,
+    message: `${coverageLow.length} gun/bolum min kisi esiginin altinda.`,
+    items: coverageLow,
+  })
+  if (pendingInPeriod.length) issues.push({
+    type: 'pending_leave',
+    severity: 'high',
+    title: 'Onaysiz izin',
+    count: pendingInPeriod.length,
+    message: `${pendingInPeriod.length} izin talebi henuz onaylanmamis.`,
+    items: pendingInPeriod,
+  })
+  if (offMissingByStaff.length) issues.push({
+    type: 'off_missing',
+    severity: 'medium',
+    title: 'OFF eksik',
+    count: offMissingByStaff.reduce((sum, item) => sum + item.count, 0),
+    message: `${offMissingByStaff.length} personelde haftalik OFF/izin eksigi var.`,
+    items: offMissingByStaff,
+  })
+  if (absentItems.length) issues.push({
+    type: 'absent',
+    severity: 'medium',
+    title: 'Devamsizlik var',
+    count: absentItems.length,
+    message: `${absentItems.length} devamsizlik kaydi puantaja yansiyacak.`,
+    items: absentItems,
+  })
+  issues.push({
+    type: 'overtime',
+    severity: 'info',
+    title: overtimeInPeriod.length ? 'Mesai kontrolu' : 'Mesai yok',
+    count: overtimeInPeriod.length,
+    message: overtimeInPeriod.length
+      ? `${overtimeInPeriod.length} mesai kaydi, toplam ${overtimeHours} saat.`
+      : 'Bu donemde mesai kaydi bulunmuyor.',
+    items: overtimeInPeriod,
+  })
+
+  return {
+    ok: issues.every(issue => issue.severity === 'info'),
+    totals: {
+      staff: staffGrid.length,
+      days: periodDays.length,
+      cells: staffGrid.length * periodDays.length,
+      empty: emptyByStaff.reduce((sum, item) => sum + item.count, 0),
+      offMissing: offMissingByStaff.reduce((sum, item) => sum + item.count, 0),
+      absent: absentItems.length,
+      pendingLeave: pendingInPeriod.length,
+      coverageLow: coverageLow.length,
+      overtimeRecords: overtimeInPeriod.length,
+      overtimeHours,
+    },
+    issues,
+  }
 }
 
 // Gün adı → günIdx (0=Pzt .. 6=Paz) için başlık eşleme anahtarları.

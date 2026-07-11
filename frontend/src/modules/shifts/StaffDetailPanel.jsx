@@ -6,6 +6,7 @@ import {
   toastErr, BLOOD_TYPES, LEAVE_TYPES, STATUS_MAP,
   calcAge, shiftColor, deptColor, BottomSheet, formatShiftHours, leaveTypeLabel,
 } from './shared.jsx'
+import { buildStaffRecentSummary } from './logic/schedule.js'
 
 // ─── Staff Detail Panel (Bottom Sheet) ────────────────────────────────────────
 export default function StaffDetailPanel({ staffId, onClose }) {
@@ -91,6 +92,7 @@ export default function StaffDetailPanel({ staffId, onClose }) {
   const shiftHistory = data?.shiftHistory || []
   const leaveHistory = data?.leaveHistory || []
   const overtimeRecords = data?.overtimeRecords || []
+  const recentSummary = buildStaffRecentSummary(shiftHistory, overtimeRecords, { days: 30 })
 
   const dept = deptColor(person?.dept_color)
   const deptBg = person ? dept.bg : 'var(--border)'
@@ -434,10 +436,48 @@ export default function StaffDetailPanel({ staffId, onClose }) {
                 })),
               ].sort((a, b) => (b.date || '').localeCompare(a.date || '')).slice(0, 20)
 
+              const summaryCards = [
+                ['Calisma', recentSummary.workDays, 'var(--green)'],
+                ['OFF', recentSummary.offDays, 'var(--teal)'],
+                ['Izin', recentSummary.leaveDays, 'var(--purple)'],
+                ['YOK', recentSummary.absentDays, 'var(--red)'],
+                ['Mesai', `${recentSummary.overtimeHours}s`, 'var(--accent)'],
+                ['Ardisik', recentSummary.currentConsecutive, 'var(--blue)'],
+              ]
+              const dayColor = { work: 'var(--green)', off: 'var(--teal)', leave: 'var(--purple)', absent: 'var(--red)', empty: 'var(--border)' }
+
               return events.length === 0 ? (
                 <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: 11 }}>Kayıt yok</div>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ border: '1px solid var(--border)', borderRadius: 10, background: 'var(--surface2)', padding: 12, marginBottom: 4 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center', marginBottom: 10, flexWrap: 'wrap' }}>
+                      <div>
+                        <div style={{ fontFamily: 'var(--display)', fontSize: 13, letterSpacing: '1.5px', color: 'var(--text)' }}>SON 30 GUN</div>
+                        <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', marginTop: 2 }}>
+                          {recentSummary.startDate} - {recentSummary.endDate} · max ardisik {recentSummary.maxConsecutive}
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, minmax(0, 1fr))', gap: 6, marginBottom: 10 }}>
+                      {summaryCards.map(([label, value, color]) => (
+                        <div key={label} style={{ border: '1px solid var(--border)', borderRadius: 8, background: 'var(--surface)', padding: '8px 4px', textAlign: 'center' }}>
+                          <div style={{ fontFamily: 'var(--display)', fontSize: 18, lineHeight: 1, color }}>{value}</div>
+                          <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--text3)', marginTop: 4 }}>{label}</div>
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: `repeat(${recentSummary.timeline.length || 1}, minmax(4px, 1fr))`, gap: 2 }}>
+                      {recentSummary.timeline.map(day => (
+                        <span key={day.date} title={`${day.date} ${day.kind}`} style={{
+                          height: 16,
+                          borderRadius: 4,
+                          background: dayColor[day.kind],
+                          opacity: day.kind === 'empty' ? .35 : .9,
+                        }} />
+                      ))}
+                    </div>
+                  </div>
                   {events.map((e, i) => (
                     <div key={`${e.type}-${e.date}-${e.label}`} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 8, background: i % 2 === 0 ? 'var(--surface2)' : 'transparent' }}>
                       <div style={{ width: 4, height: 32, borderRadius: 2, background: e.color, flexShrink: 0 }} />

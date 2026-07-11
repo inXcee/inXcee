@@ -14,6 +14,7 @@ import {
 import { buildStaffGrid, computeWeekStats, parseQuickScheduleCode, cellToScheduleCode, buildScheduleWarnings } from '../logic/schedule.js'
 import { DailyView, WeekFillSheet, CellAssignSheet } from './scheduleSheets.jsx'
 import ScheduleImportModal from './ScheduleImportModal.jsx'
+import { PayrollClosingModal, ScheduleTemplateModal } from './ScheduleControlModals.jsx'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  TAB 1 — Cizelge (Schedule) — HAFTA DOLDUR + PAZAR IZIN + PUANTAJ
@@ -54,6 +55,8 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
   const [quickCode, setQuickCode] = useState('')
   const [cellClipboard, setCellClipboard] = useState('')
   const [dayDetail, setDayDetail] = useState(null)
+  const [templateModal, setTemplateModal] = useState(false)
+  const [closingModal, setClosingModal] = useState(false)
   const [recentActions, setRecentActions] = useState([])
   const [activeCell, setActiveCell] = useState(null)
   const [editingCell, setEditingCell] = useState(null)
@@ -792,6 +795,8 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
                   { label: '⬇ Excel İndir (renkli)', action: () => { exportExcel(); setToolsOpen(false) } },
                   { label: '+ Çizelgeye Personel Ekle', action: () => { setAddPersonModal(true); setToolsOpen(false) } },
                   { group: 'SABLON / KONTROL' },
+                  { label: 'Sablon Uygula', action: () => { setTemplateModal(true); setToolsOpen(false) } },
+                  { label: 'Puantaj Kapanis Kontrolu', action: () => { setClosingModal(true); setToolsOpen(false) } },
                   { label: 'Secim Modunu Ac', action: () => { setSelectionMode(true); setToolsOpen(false) } },
                 ].map((item) => item.group ? (
                   <div key={item.group} style={{
@@ -1540,6 +1545,27 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
 
       {/* Excel import modal */}
       {excelModal && <ScheduleImportModal onClose={() => setExcelModal(false)} allStaff={allStaff} shiftDefs={shiftDefs} weekDays={weekDays} />}
+
+      {templateModal && (
+        <ScheduleTemplateModal
+          onClose={() => setTemplateModal(false)}
+          departments={departments}
+          shiftDefs={shiftDefs}
+          allStaff={allStaff}
+          weekStart={weekStart}
+          deptFilter={deptFilter}
+        />
+      )}
+
+      {closingModal && (
+        <PayrollClosingModal
+          onClose={() => setClosingModal(false)}
+          allStaff={allStaff}
+          deptFilter={deptFilter}
+          coverageMin={coverageMin}
+          defaultMonth={weekStart.slice(0, 7)}
+        />
+      )}
 
       {/* Add person to schedule */}
       {addPersonModal && (

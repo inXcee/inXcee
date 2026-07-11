@@ -6,6 +6,9 @@ import {
   parseQuickScheduleCode,
   cellToScheduleCode,
   buildScheduleWarnings,
+  buildStaffRecentSummary,
+  buildPayrollClosingCheck,
+  daysInMonth,
   parseScheduleSheet,
 } from './schedule.js'
 
@@ -154,6 +157,76 @@ describe('buildScheduleWarnings', () => {
     expect(warnings.some(w => w.type === 'coverage')).toBe(true)
     expect(warnings.some(w => w.type === 'weekly_off')).toBe(true)
     expect(warnings.some(w => w.type === 'rest')).toBe(true)
+  })
+})
+
+describe('buildStaffRecentSummary', () => {
+  it('son donem vardiya, izin, mesai ve ardisik calismayi ozetler', () => {
+    const summary = buildStaffRecentSummary([
+      { work_date: '2026-06-27', status: 'scheduled' },
+      { work_date: '2026-06-28', status: 'worked' },
+      { work_date: '2026-06-29', status: 'off' },
+      { work_date: '2026-06-30', status: 'on_leave' },
+      { work_date: '2026-07-01', status: 'absent' },
+      { work_date: '2026-07-02', status: 'scheduled' },
+      { work_date: '2026-07-03', status: 'scheduled' },
+    ], [
+      { work_date: '2026-07-02', hours: 2 },
+      { work_date: '2026-07-03', hours: 1.5 },
+    ], { referenceDate: '2026-07-03', days: 7 })
+
+    expect(summary.workDays).toBe(4)
+    expect(summary.offDays).toBe(1)
+    expect(summary.leaveDays).toBe(1)
+    expect(summary.absentDays).toBe(1)
+    expect(summary.overtimeHours).toBe(3.5)
+    expect(summary.maxConsecutive).toBe(2)
+    expect(summary.currentConsecutive).toBe(2)
+  })
+})
+
+describe('buildPayrollClosingCheck', () => {
+  it('ay gunlerini ve kapanis risklerini hesaplar', () => {
+    expect(daysInMonth('2026-02')).toHaveLength(28)
+    const days = ['2026-07-01', '2026-07-02', '2026-07-03', '2026-07-04', '2026-07-05', '2026-07-06', '2026-07-07']
+    const grid = [
+      {
+        id: 1,
+        full_name: 'Ali',
+        dept_name: 'A',
+        days: {
+          '2026-07-01': { status: 'scheduled' },
+          '2026-07-02': { status: 'scheduled' },
+          '2026-07-03': { status: 'scheduled' },
+          '2026-07-04': { status: 'scheduled' },
+          '2026-07-05': { status: 'scheduled' },
+          '2026-07-06': { status: 'scheduled' },
+          '2026-07-07': { status: 'absent' },
+        },
+      },
+      {
+        id: 2,
+        full_name: 'Veli',
+        dept_name: 'A',
+        days: {
+          '2026-07-01': { status: 'off' },
+          '2026-07-02': { status: 'scheduled' },
+        },
+      },
+    ]
+    const check = buildPayrollClosingCheck(grid, days, {
+      coverageMin: 2,
+      overtimeRecords: [{ staff_id: 1, work_date: '2026-07-02', hours: 2 }],
+      pendingLeaves: [{ staff_id: 2, status: 'pending', start_date: '2026-07-04', end_date: '2026-07-05' }],
+    })
+
+    expect(check.ok).toBe(false)
+    expect(check.totals.empty).toBe(5)
+    expect(check.totals.offMissing).toBe(1)
+    expect(check.totals.absent).toBe(1)
+    expect(check.totals.pendingLeave).toBe(1)
+    expect(check.totals.overtimeHours).toBe(2)
+    expect(check.issues.map(i => i.type)).toEqual(expect.arrayContaining(['empty', 'coverage', 'pending_leave', 'off_missing', 'absent', 'overtime']))
   })
 })
 
