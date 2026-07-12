@@ -90,10 +90,12 @@ function PuantajApprovalView({
   busy,
   onSubmitPeriod,
   onDayStatus,
+  onBulkDayStatus,
   onPeriodAction,
 }) {
   const period = approval?.period_approval || { status: 'draft' }
   const [periodNote, setPeriodNote] = useState(period.note || '')
+  const [statusFilter, setStatusFilter] = useState('all')
 
   useEffect(() => {
     setPeriodNote(period.note || '')
@@ -101,10 +103,24 @@ function PuantajApprovalView({
 
   const dailyRows = approval?.daily_approvals || []
   const dailyAuditByDate = useMemo(() => new Map((audit.dailyRows || []).map(row => [row.date, row])), [audit.dailyRows])
+  const enrichedDailyRows = useMemo(() => dailyRows.map(row => {
+    const dayAudit = dailyAuditByDate.get(row.work_date) || {}
+    const hasProblem = (dayAudit.scheduled || 0) + (dayAudit.empty || 0) + (dayAudit.absentWithoutReason || 0) > 0
+    return { ...row, dayAudit, hasProblem }
+  }), [dailyRows, dailyAuditByDate])
   const counts = useMemo(() => dailyRows.reduce((acc, row) => {
     acc[row.status] = (acc[row.status] || 0) + 1
     return acc
   }, { missing: 0, pending: 0, approved: 0, returned: 0 }), [dailyRows])
+  const readyToSendRows = useMemo(() => enrichedDailyRows.filter(row => !row.hasProblem && ['missing', 'returned'].includes(row.status)), [enrichedDailyRows])
+  const readyToApproveRows = useMemo(() => enrichedDailyRows.filter(row => !row.hasProblem && row.status === 'pending'), [enrichedDailyRows])
+  const problemRows = useMemo(() => enrichedDailyRows.filter(row => row.hasProblem), [enrichedDailyRows])
+  const filteredDailyRows = useMemo(() => enrichedDailyRows.filter(row => {
+    if (statusFilter === 'all') return true
+    if (statusFilter === 'problem') return row.hasProblem
+    if (statusFilter === 'ready') return !row.hasProblem && ['missing', 'returned', 'pending'].includes(row.status)
+    return row.status === statusFilter
+  }), [enrichedDailyRows, statusFilter])
   const meta = approvalStatusMeta(period.status)
   const closeProblems = audit.totals.scheduled + audit.totals.empty + audit.totals.absentWithoutReason + audit.missingOffStaff
 
@@ -115,6 +131,16 @@ function PuantajApprovalView({
       if (note == null) return
     }
     onDayStatus(row, status, note)
+  }
+
+  const askBulkStatus = async (rows, status, label) => {
+    if (!rows.length) return
+    const ok = await confirmDialog({
+      title: label,
+      body: `${rows.length} gun icin onay durumu "${approvalStatusMeta(status).label}" yapilacak.`,
+    })
+    if (!ok) return
+    onBulkDayStatus(rows, status, '')
   }
 
   if (loading) {
@@ -183,9 +209,78 @@ function PuantajApprovalView({
         </div>
       </div>
 
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
+        flexWrap: 'wrap',
+        border: '1px solid var(--border)',
+        borderRadius: '10px',
+        background: 'var(--surface)',
+        padding: '10px',
+      }}>
+        <div style={{ fontFamily: 'var(--display)', fontSize: '12px', letterSpacing: '1px', marginRight: '4px' }}>HIZLI GUN ISLEMLERI</div>
+        <button
+          className="btn btn-ghost btn-sm"
+          disabled={!canEdit || busy || isLocked || readyToSendRows.length === 0}
+          onClick={() => askBulkStatus(readyToSendRows, 'pending', 'Sorunsuz Gunleri Kontrole Gonder')}
+          style={{ fontSize: '10px' }}
+        >
+          Sorunsuzlari Gonder ({readyToSendRows.length})
+        </button>
+        <button
+          className="btn btn-ghost btn-sm"
+          disabled={!isManager || busy || isLocked || readyToApproveRows.length === 0}
+          onClick={() => askBulkStatus(readyToApproveRows, 'approved', 'Bekleyen Sorunsuz Gunleri Onayla')}
+          style={{ fontSize: '10px', color: 'var(--green)' }}
+        >
+          Bekleyenleri Onayla ({readyToApproveRows.length})
+        </button>
+        <button
+          className="btn btn-ghost btn-sm"
+          onClick={() => setStatusFilter('problem')}
+          style={{ fontSize: '10px', color: problemRows.length ? 'var(--red)' : 'var(--text3)' }}
+        >
+          Sorunlu Gunler ({problemRows.length})
+        </button>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: '2px', background: 'var(--surface2)', borderRadius: '8px', padding: '2px', border: '1px solid var(--border)', overflowX: 'auto' }}>
+          {[
+            ['all', 'Tum'],
+            ['ready', 'Hazir'],
+            ['problem', 'Kontrol'],
+            ['missing', 'Eksik'],
+            ['pending', 'Bekleyen'],
+            ['approved', 'Onayli'],
+            ['returned', 'Geri'],
+          ].map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setStatusFilter(id)}
+              style={{
+                border: 'none',
+                borderRadius: '6px',
+                background: statusFilter === id ? 'var(--accent)' : 'transparent',
+                color: statusFilter === id ? '#000' : 'var(--text3)',
+                cursor: 'pointer',
+                fontFamily: 'var(--mono)',
+                fontSize: '9px',
+                padding: '5px 8px',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(260px, 330px)', gap: '12px' }}>
         <div style={{ border: '1px solid var(--border)', borderRadius: '10px', background: 'var(--surface)', overflow: 'hidden' }}>
-          <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', fontFamily: 'var(--display)', fontSize: '12px', letterSpacing: '1px' }}>GUN GUN ONAY</div>
+          <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', fontFamily: 'var(--display)', fontSize: '12px', letterSpacing: '1px' }}>
+            GUN GUN ONAY
+            <span style={{ marginLeft: '8px', fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)' }}>{filteredDailyRows.length}/{dailyRows.length}</span>
+          </div>
           <div style={{ overflow: 'auto', maxHeight: '54vh' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px' }}>
               <thead>
@@ -200,10 +295,9 @@ function PuantajApprovalView({
                 </tr>
               </thead>
               <tbody>
-                {dailyRows.map(row => {
-                  const dayAudit = dailyAuditByDate.get(row.work_date) || {}
+                {filteredDailyRows.map(row => {
+                  const dayAudit = row.dayAudit || {}
                   const dayMeta = approvalStatusMeta(row.status)
-                  const hasProblem = (dayAudit.scheduled || 0) + (dayAudit.empty || 0) + (dayAudit.absentWithoutReason || 0) > 0
                   return (
                     <tr key={row.work_date} style={{ borderTop: '1px solid var(--border)', background: row.is_weekend ? 'rgba(240,165,0,.035)' : 'transparent' }}>
                       <td style={{ padding: '7px 8px', whiteSpace: 'nowrap' }}>
@@ -225,7 +319,7 @@ function PuantajApprovalView({
                           fontSize: '9px',
                           fontWeight: 800,
                         }}>{dayMeta.label}</span>
-                        {hasProblem && <span style={{ marginLeft: '6px', color: 'var(--red)', fontFamily: 'var(--mono)', fontSize: '8px' }}>kontrol</span>}
+                        {row.hasProblem && <span style={{ marginLeft: '6px', color: 'var(--red)', fontFamily: 'var(--mono)', fontSize: '8px' }}>kontrol</span>}
                       </td>
                       <td style={{ padding: '7px 8px', textAlign: 'right', whiteSpace: 'nowrap' }}>
                         <button className="btn btn-ghost btn-sm" disabled={!canEdit || busy || isLocked} onClick={() => askDayStatus(row, 'pending')} style={{ fontSize: '9px', padding: '3px 6px' }}>Gonder</button>
@@ -235,6 +329,13 @@ function PuantajApprovalView({
                     </tr>
                   )
                 })}
+                {filteredDailyRows.length === 0 && (
+                  <tr>
+                    <td colSpan={7} style={{ padding: '18px', textAlign: 'center', color: 'var(--text3)', borderTop: '1px solid var(--border)' }}>
+                      Bu filtrede gun yok.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
@@ -1945,16 +2046,20 @@ export default function PuantajTab({ departments }) {
   })
 
   const dayApprovalMutation = useMutation({
-    mutationFn: ({ row, status, note }) => api.patch('/shifts/puantaj/approval/day', {
-      period: month,
-      work_date: row.work_date,
-      dept_id: deptFilter || null,
-      status,
-      note: note || null,
-    }),
-    onSuccess: () => {
+    mutationFn: ({ row, rows: targetRows, status, note }) => {
+      const targets = targetRows?.length ? targetRows : [row]
+      return Promise.all(targets.map(target => api.patch('/shifts/puantaj/approval/day', {
+        period: month,
+        work_date: target.work_date,
+        dept_id: deptFilter || null,
+        status,
+        note: note || null,
+      })))
+    },
+    onSuccess: (_, variables) => {
       refreshApproval()
-      toastOk('Gun onay durumu guncellendi')
+      const count = variables.rows?.length || 1
+      toastOk(count > 1 ? `${count} gun onay durumu guncellendi` : 'Gun onay durumu guncellendi')
     },
     onError: toastErr,
   })
@@ -2305,6 +2410,7 @@ export default function PuantajTab({ departments }) {
           busy={submitApproval.isPending || dayApprovalMutation.isPending || periodApprovalMutation.isPending}
           onSubmitPeriod={(note) => submitApproval.mutate(note)}
           onDayStatus={(row, status, note) => dayApprovalMutation.mutate({ row, status, note })}
+          onBulkDayStatus={(rows, status, note) => dayApprovalMutation.mutate({ rows, status, note })}
           onPeriodAction={(action, note) => periodApprovalMutation.mutate({ action, note })}
         />
       )}
