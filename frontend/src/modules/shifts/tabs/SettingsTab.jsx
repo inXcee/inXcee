@@ -24,15 +24,20 @@ export default function SettingsTab({ departments, shiftDefs }) {
     queryFn: () => api.get('/shifts/roles').then(r => r.data),
   })
 
-  const createDef = useMutation({ mutationFn: data => api.post('/shifts/definitions', data), onSuccess: () => { qc.invalidateQueries({ queryKey: ['shift-defs'] }); setDefModal(null) }, onError: toastErr })
-  const updateDef = useMutation({ mutationFn: ({ id, ...data }) => api.put(`/shifts/definitions/${id}`, data), onSuccess: () => { qc.invalidateQueries({ queryKey: ['shift-defs'] }); setDefModal(null) }, onError: toastErr })
-  const deleteDef = useMutation({ mutationFn: (id) => api.delete(`/shifts/definitions/${id}`), onSuccess: () => qc.invalidateQueries({ queryKey: ['shift-defs'] }) })
-  const createLoc = useMutation({ mutationFn: data => api.post('/shifts/work-locations', data), onSuccess: () => { qc.invalidateQueries({ queryKey: ['shift-work-locations'] }); setLocModal(null) }, onError: toastErr })
-  const updateLoc = useMutation({ mutationFn: ({ id, ...data }) => api.put(`/shifts/work-locations/${id}`, data), onSuccess: () => { qc.invalidateQueries({ queryKey: ['shift-work-locations'] }); setLocModal(null) }, onError: toastErr })
-  const deleteLoc = useMutation({ mutationFn: id => api.delete(`/shifts/work-locations/${id}`), onSuccess: () => qc.invalidateQueries({ queryKey: ['shift-work-locations'] }), onError: toastErr })
-  const createRole = useMutation({ mutationFn: data => api.post('/shifts/roles', data), onSuccess: () => { qc.invalidateQueries({ queryKey: ['shift-roles'] }); qc.invalidateQueries({ queryKey: ['staff-list'] }); setRoleModal(null) }, onError: toastErr })
-  const updateRole = useMutation({ mutationFn: ({ id, ...data }) => api.put(`/shifts/roles/${id}`, data), onSuccess: () => { qc.invalidateQueries({ queryKey: ['shift-roles'] }); qc.invalidateQueries({ queryKey: ['staff-list'] }); setRoleModal(null) }, onError: toastErr })
-  const deleteRole = useMutation({ mutationFn: id => api.delete(`/shifts/roles/${id}`), onSuccess: () => { qc.invalidateQueries({ queryKey: ['shift-roles'] }); qc.invalidateQueries({ queryKey: ['staff-list'] }) }, onError: toastErr })
+  // Ayarlar'daki her değişiklik açık çizelgeyi/kırılımı/coverage'ı da tazelesin — "düzenleyince planda güncellensin"
+  const refreshPlan = () => {
+    const keys = ['shift-defs', 'shift-work-locations', 'shift-roles', 'staff-list', 'staff-list-active', 'schedule', 'shift-coverage', 'shift-breakdown']
+    keys.forEach(k => qc.invalidateQueries({ queryKey: [k] }))
+  }
+  const createDef = useMutation({ mutationFn: data => api.post('/shifts/definitions', data), onSuccess: () => { refreshPlan(); setDefModal(null) }, onError: toastErr })
+  const updateDef = useMutation({ mutationFn: ({ id, ...data }) => api.put(`/shifts/definitions/${id}`, data), onSuccess: () => { refreshPlan(); setDefModal(null) }, onError: toastErr })
+  const deleteDef = useMutation({ mutationFn: (id) => api.delete(`/shifts/definitions/${id}`), onSuccess: refreshPlan })
+  const createLoc = useMutation({ mutationFn: data => api.post('/shifts/work-locations', data), onSuccess: () => { refreshPlan(); setLocModal(null) }, onError: toastErr })
+  const updateLoc = useMutation({ mutationFn: ({ id, ...data }) => api.put(`/shifts/work-locations/${id}`, data), onSuccess: () => { refreshPlan(); setLocModal(null) }, onError: toastErr })
+  const deleteLoc = useMutation({ mutationFn: id => api.delete(`/shifts/work-locations/${id}`), onSuccess: refreshPlan, onError: toastErr })
+  const createRole = useMutation({ mutationFn: data => api.post('/shifts/roles', data), onSuccess: () => { refreshPlan(); setRoleModal(null) }, onError: toastErr })
+  const updateRole = useMutation({ mutationFn: ({ id, ...data }) => api.put(`/shifts/roles/${id}`, data), onSuccess: () => { refreshPlan(); setRoleModal(null) }, onError: toastErr })
+  const deleteRole = useMutation({ mutationFn: id => api.delete(`/shifts/roles/${id}`), onSuccess: refreshPlan, onError: toastErr })
 
   const DEF_COLORS = ['bg-blue-400', 'bg-orange-400', 'bg-indigo-600', 'bg-emerald-500', 'bg-pink-500', 'bg-slate-500']
 

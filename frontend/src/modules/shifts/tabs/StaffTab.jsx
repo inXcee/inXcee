@@ -210,10 +210,16 @@ export default function StaffTab({ departments, onPersonClick }) {
     queryFn: () => api.get('/shifts/roles').then(r => r.data),
   })
 
+  // Personel (dept/rol/aktiflik) değişikliği açık çizelgeyi/kırılımı da tazelesin — çizelge 'staff-list-active' kullanır
+  const refreshPlan = () => {
+    const keys = ['staff-list', 'staff-list-active', 'staff-detail', 'schedule', 'departments-summary', 'shift-breakdown', 'shift-coverage']
+    keys.forEach(k => qc.invalidateQueries({ queryKey: [k] }))
+  }
+
   const createMut = useMutation({
     mutationFn: data => api.post('/shifts/staff', data),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['staff-list'] })
+      refreshPlan()
       setShowForm(false)
       setForm({})
     },
@@ -223,8 +229,7 @@ export default function StaffTab({ departments, onPersonClick }) {
   const updateMut = useMutation({
     mutationFn: ({ id, ...data }) => api.put(`/shifts/staff/${id}`, data),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['staff-list'] })
-      qc.invalidateQueries({ queryKey: ['staff-detail'] })
+      refreshPlan()
       setEditStaff(null)
       setForm({})
     },
@@ -233,7 +238,7 @@ export default function StaffTab({ departments, onPersonClick }) {
 
   const deleteMut = useMutation({
     mutationFn: id => api.delete(`/shifts/staff/${id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['staff-list'] }),
+    onSuccess: refreshPlan,
   })
 
   const openNew = () => {

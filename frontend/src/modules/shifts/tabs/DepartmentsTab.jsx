@@ -14,10 +14,15 @@ export default function DepartmentsTab() {
 
   const { data: deptSummary = [] } = useQuery({ queryKey: ['departments-summary'], queryFn: () => api.get('/shifts/departments/summary').then(r => r.data) })
 
-  const createDept = useMutation({ mutationFn: data => api.post('/shifts/departments', data), onSuccess: () => { qc.invalidateQueries({ queryKey: ['departments'] }); qc.invalidateQueries({ queryKey: ['departments-summary'] }); setEditDept(null) }, onError: toastErr })
-  const updateDept = useMutation({ mutationFn: ({ id, ...data }) => api.put(`/shifts/departments/${id}`, data), onSuccess: () => { qc.invalidateQueries({ queryKey: ['departments'] }); qc.invalidateQueries({ queryKey: ['departments-summary'] }); setEditDept(null) }, onError: toastErr })
-  const deleteDept = useMutation({ mutationFn: (id) => api.delete(`/shifts/departments/${id}`), onSuccess: () => { qc.invalidateQueries({ queryKey: ['departments'] }); qc.invalidateQueries({ queryKey: ['departments-summary'] }) } })
-  const assignMut = useMutation({ mutationFn: data => api.post('/shifts/departments/assign', data), onSuccess: () => { qc.invalidateQueries({ queryKey: ['departments-summary'] }); qc.invalidateQueries({ queryKey: ['staff-list'] }); setAssignModal(false); setAssignForm({ staff_id: '', dept_id: '' }) }, onError: toastErr })
+  // Departman düzenleme/atama açık çizelgeyi (band adı/renk, kişi grubu) da tazelesin
+  const refreshPlan = () => {
+    const keys = ['departments', 'departments-summary', 'staff-list', 'staff-list-active', 'schedule', 'shift-breakdown', 'shift-coverage']
+    keys.forEach(k => qc.invalidateQueries({ queryKey: [k] }))
+  }
+  const createDept = useMutation({ mutationFn: data => api.post('/shifts/departments', data), onSuccess: () => { refreshPlan(); setEditDept(null) }, onError: toastErr })
+  const updateDept = useMutation({ mutationFn: ({ id, ...data }) => api.put(`/shifts/departments/${id}`, data), onSuccess: () => { refreshPlan(); setEditDept(null) }, onError: toastErr })
+  const deleteDept = useMutation({ mutationFn: (id) => api.delete(`/shifts/departments/${id}`), onSuccess: refreshPlan })
+  const assignMut = useMutation({ mutationFn: data => api.post('/shifts/departments/assign', data), onSuccess: () => { refreshPlan(); setAssignModal(false); setAssignForm({ staff_id: '', dept_id: '' }) }, onError: toastErr })
 
   const COLOR_OPTIONS = ['bg-red-600', 'bg-green-600', 'bg-orange-500', 'bg-blue-600', 'bg-yellow-500', 'bg-lime-500', 'bg-pink-500', 'bg-purple-600']
   const maxCount = Math.max(...deptSummary.map(d => d.staff_count || 0), 1)
