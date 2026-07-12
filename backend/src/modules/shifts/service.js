@@ -114,6 +114,7 @@ export function createWorkLocationService(data) {
   return createWorkLocation({
     name: data.name.trim(),
     dept_id: data.dept_id || null,
+    site: data.site?.trim() || null,
     color_class: data.color_class || 'blue',
     sort_order: data.sort_order ?? 0,
     is_active: data.is_active,

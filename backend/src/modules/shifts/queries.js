@@ -24,11 +24,12 @@ export function getWorkLocations({ includeInactive = false } = {}) {
 
 export function createWorkLocation(data) {
   return getDB().prepare(`
-    INSERT INTO work_locations(name, dept_id, color_class, sort_order, is_active)
-    VALUES(@name, @dept_id, @color_class, @sort_order, @is_active)
+    INSERT INTO work_locations(name, dept_id, site, color_class, sort_order, is_active)
+    VALUES(@name, @dept_id, @site, @color_class, @sort_order, @is_active)
   `).run({
     name: data.name,
     dept_id: data.dept_id || null,
+    site: data.site?.trim() || null,
     color_class: data.color_class || 'bg-blue-400',
     sort_order: Number.isFinite(+data.sort_order) ? +data.sort_order : 0,
     is_active: data.is_active === undefined ? 1 : (data.is_active ? 1 : 0),
@@ -37,7 +38,7 @@ export function createWorkLocation(data) {
 
 export function updateWorkLocation(id, data) {
   const db = getDB()
-  const fields = ['name', 'dept_id', 'color_class', 'sort_order', 'is_active']
+  const fields = ['name', 'dept_id', 'site', 'color_class', 'sort_order', 'is_active']
   const sets = []
   const params = []
   fields.forEach(f => {

@@ -119,8 +119,10 @@ describe('Shifts', () => {
     const shiftDef = db.prepare('SELECT id FROM shift_definitions LIMIT 1').get()
 
     const loc = await request(app).post('/api/shifts/work-locations').set('Authorization', `Bearer ${managerToken}`)
-      .send({ name: 'X6 OTC Lokal', dept_id: dept.id, sort_order: 1, color_class: 'teal' })
+      .send({ name: 'X6 OTC Lokal', dept_id: dept.id, site: 'OTC', sort_order: 1, color_class: 'teal' })
     expect(loc.status).toBe(201)
+    const locList = await request(app).get('/api/shifts/work-locations').set('Authorization', `Bearer ${managerToken}`)
+    expect(locList.body.find(l => l.id === loc.body.id)?.site).toBe('OTC')
 
     const role = await request(app).post('/api/shifts/roles').set('Authorization', `Bearer ${managerToken}`)
       .send({ name: 'X6 Ikramci', sort_order: 1 })

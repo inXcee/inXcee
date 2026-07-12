@@ -10,7 +10,7 @@ export default function SettingsTab({ departments, shiftDefs }) {
   const [defModal, setDefModal] = useState(null)
   const [defForm, setDefForm] = useState({ name: '', start_hour: '', end_hour: '', color_class: 'bg-blue-400' })
   const [locModal, setLocModal] = useState(null)
-  const [locForm, setLocForm] = useState({ name: '', dept_id: '', color_class: 'bg-blue-400', sort_order: '' })
+  const [locForm, setLocForm] = useState({ name: '', dept_id: '', site: '', color_class: 'bg-blue-400', sort_order: '' })
   const [roleModal, setRoleModal] = useState(null)
   const [roleForm, setRoleForm] = useState({ name: '', sort_order: '' })
 
@@ -83,11 +83,11 @@ export default function SettingsTab({ departments, shiftDefs }) {
       <div className="panel" style={{ marginBottom: '28px' }}>
         <div className="panel-header">
           <div><div className="panel-title">CALISMA NOKTALARI</div><div className="panel-subtitle">{workLocations.length} NOKTA</div></div>
-          <button className="btn btn-primary btn-sm" onClick={() => { setLocForm({ name: '', dept_id: '', color_class: 'bg-blue-400', sort_order: '' }); setLocModal({}) }}>+ Yeni Nokta</button>
+          <button className="btn btn-primary btn-sm" onClick={() => { setLocForm({ name: '', dept_id: '', site: '', color_class: 'bg-blue-400', sort_order: '' }); setLocModal({}) }}>+ Yeni Nokta</button>
         </div>
         <div className="panel-body" style={{ padding: 0 }}>
           <table className="data-table responsive-stack">
-            <thead><tr><th>Renk</th><th>Nokta</th><th>Bolum</th><th>Sira</th><th>Islem</th></tr></thead>
+            <thead><tr><th>Renk</th><th>Nokta</th><th>Site</th><th>Bolum</th><th>Sira</th><th>Islem</th></tr></thead>
             <tbody>
               {workLocations.map(loc => {
                 const sc = shiftColor(loc.color_class)
@@ -95,18 +95,19 @@ export default function SettingsTab({ departments, shiftDefs }) {
                   <tr key={loc.id}>
                     <td data-label="Renk"><span style={{ width: '16px', height: '16px', borderRadius: '4px', background: sc.text, display: 'inline-block' }} /></td>
                     <td data-label="Nokta" style={{ fontWeight: 600 }}>{loc.name}</td>
+                    <td data-label="Site">{loc.site ? <span className="badge badge-blue" style={{ fontSize: '10px' }}>{loc.site}</span> : '-'}</td>
                     <td data-label="Bolum">{loc.dept_name || '-'}</td>
                     <td data-label="Sira" style={{ fontFamily: 'var(--mono)' }}>{loc.sort_order ?? 0}</td>
                     <td data-label="Islem">
                       <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-                        <button className="btn btn-ghost btn-sm" onClick={() => { setLocForm({ name: loc.name, dept_id: loc.dept_id?.toString() || '', color_class: loc.color_class || 'bg-blue-400', sort_order: loc.sort_order?.toString() || '' }); setLocModal(loc) }}>Duzenle</button>
+                        <button className="btn btn-ghost btn-sm" onClick={() => { setLocForm({ name: loc.name, dept_id: loc.dept_id?.toString() || '', site: loc.site || '', color_class: loc.color_class || 'bg-blue-400', sort_order: loc.sort_order?.toString() || '' }); setLocModal(loc) }}>Duzenle</button>
                         <button className="btn btn-danger btn-sm" onClick={async () => { if (await confirmDialog({ title: 'Noktayi Pasiflestir', body: `${loc.name} pasif yapilsin mi?`, danger: true })) deleteLoc.mutate(loc.id) }}>Pasif</button>
                       </div>
                     </td>
                   </tr>
                 )
               })}
-              {workLocations.length === 0 && <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--text3)', padding: '20px' }}>Nokta yok</td></tr>}
+              {workLocations.length === 0 && <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--text3)', padding: '20px' }}>Nokta yok</td></tr>}
             </tbody>
           </table>
         </div>
@@ -182,6 +183,13 @@ export default function SettingsTab({ departments, shiftDefs }) {
                 {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
               </select>
             </div>
+            <div><label className="form-label">Site (OTC / LOKAL / KAMP)</label>
+              <input className="form-input" list="wl-site-list" placeholder="OTC / LOKAL / KAMP" value={locForm.site} onChange={e => setLocForm(p => ({ ...p, site: e.target.value }))} />
+              <datalist id="wl-site-list">
+                <option value="OTC" /><option value="LOKAL" /><option value="KAMP" />
+                {[...new Set(workLocations.map(l => l.site).filter(Boolean))].map(s => <option key={s} value={s} />)}
+              </datalist>
+            </div>
             <div><label className="form-label">Sira</label><input type="number" className="form-input" value={locForm.sort_order} onChange={e => setLocForm(p => ({ ...p, sort_order: e.target.value }))} /></div>
             <div><label className="form-label">Renk</label>
               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
@@ -193,7 +201,7 @@ export default function SettingsTab({ departments, shiftDefs }) {
             <button className="btn btn-primary" style={{ flex: 1, opacity: !locForm.name ? 0.5 : 1 }}
               disabled={!locForm.name}
               onClick={() => {
-                const payload = { name: locForm.name, dept_id: locForm.dept_id ? parseInt(locForm.dept_id) : null, color_class: locForm.color_class, sort_order: parseInt(locForm.sort_order) || 0 }
+                const payload = { name: locForm.name, dept_id: locForm.dept_id ? parseInt(locForm.dept_id) : null, site: locForm.site?.trim() || null, color_class: locForm.color_class, sort_order: parseInt(locForm.sort_order) || 0 }
                 if (locModal.id) updateLoc.mutate({ id: locModal.id, ...payload }); else createLoc.mutate(payload)
               }}>
               {locModal.id ? 'Guncelle' : 'Olustur'}
