@@ -9,6 +9,7 @@ import { confirmDialog } from '../../../shared/components/ConfirmDialog.jsx'
 import { actionIdForKey, normalizeRect, cellsInRect, isInRect, moveCell, pushUndo, summarizeColumn } from '../logic/puantajGrid.js'
 import { saveWorkbook } from '../logic/excelKit.js'
 import { buildPuantajFoyuWorkbook } from '../logic/puantajFoyuExcel.js'
+import { buildPuantajControl } from '../logic/puantajControl.js'
 
 const COMPANY_NAME = import.meta.env.VITE_COMPANY_NAME || 'YYS Kampüs'
 
@@ -121,6 +122,100 @@ function PuantajSummaryView({ filtered, formatMoney }) {
   )
 }
 
+function PuantajClosurePanel({ audit, canEdit, isLocked, monthLabel, onOpenCalendar, onSyncScheduled, syncing }) {
+  const blockingCount = audit.staffIssues.filter(issue => issue.scheduled > 0 || issue.empty > 0 || issue.off === 0).length
+  const topIssues = audit.staffIssues.slice(0, 5)
+  const cards = [
+    ['Kapanış', audit.readyToClose ? 'Hazır' : 'Kontrol', audit.readyToClose ? 'var(--green)' : 'var(--accent)'],
+    ['Tamamlanma', `%${audit.completionRate}`, audit.completionRate >= 95 ? 'var(--green)' : audit.completionRate >= 80 ? 'var(--accent)' : 'var(--red)'],
+    ['Planlı Kalan', audit.totals.scheduled, audit.totals.scheduled > 0 ? 'var(--accent)' : 'var(--green)'],
+    ['Boş Gün', audit.totals.empty, audit.totals.empty > 0 ? 'var(--red)' : 'var(--green)'],
+    ['OFF Eksik', audit.missingOffStaff, audit.missingOffStaff > 0 ? 'var(--red)' : 'var(--green)'],
+    ['Devamsız', audit.totals.absent, audit.totals.absent > 0 ? 'var(--red)' : 'var(--text2)'],
+  ]
+
+  return (
+    <div style={{
+      display: 'grid',
+      gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+      gap: '10px',
+      marginBottom: '12px',
+    }}>
+      <div style={{ border: '1px solid var(--border)', borderRadius: '10px', background: 'var(--surface)', padding: '12px' }}>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+          <div>
+            <div style={{ fontFamily: 'var(--display)', fontSize: '13px', letterSpacing: '1px' }}>PUANTAJ KAPANIŞ KONTROLÜ</div>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', marginTop: '2px' }}>
+              {monthLabel} · {audit.staffCount} personel · {blockingCount} kontrol gerektiren kişi
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            <button className="btn btn-ghost btn-sm" onClick={onOpenCalendar} style={{ fontSize: '10px' }}>Takvim</button>
+            <button
+              className="btn btn-primary btn-sm"
+              disabled={!canEdit || isLocked || syncing || audit.scheduledCells.length === 0}
+              onClick={onSyncScheduled}
+              style={{ fontSize: '10px' }}
+              title="Vardiya çizelgesinden kalan P planlı günleri N çalıştı olarak puantaja işler"
+            >
+              {syncing ? 'İşleniyor...' : `P → N (${audit.scheduledCells.length})`}
+            </button>
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(105px, 1fr))', gap: '8px' }}>
+          {cards.map(([label, value, color]) => (
+            <div key={label} style={{
+              border: '1px solid var(--border)',
+              borderRadius: '8px',
+              background: 'var(--surface2)',
+              padding: '9px 10px',
+              minHeight: '58px',
+            }}>
+              <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text3)', letterSpacing: '.8px' }}>{label}</div>
+              <div style={{ fontFamily: 'var(--display)', fontSize: '18px', color, marginTop: '4px', lineHeight: 1 }}>{value}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ border: '1px solid var(--border)', borderRadius: '10px', background: 'var(--surface)', padding: '12px', minHeight: '130px' }}>
+        <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '1px', marginBottom: '8px' }}>ÖNE ÇIKAN KONTROLLER</div>
+        {topIssues.length === 0 ? (
+          <div style={{ color: 'var(--green)', fontFamily: 'var(--display)', fontSize: '14px' }}>Kapanış için kritik eksik görünmüyor.</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            {topIssues.map(issue => (
+              <button
+                key={issue.staff.id}
+                type="button"
+                onClick={onOpenCalendar}
+                style={{
+                  textAlign: 'left',
+                  border: '1px solid var(--border)',
+                  borderRadius: '7px',
+                  background: 'var(--surface2)',
+                  color: 'var(--text)',
+                  cursor: 'pointer',
+                  padding: '7px 8px',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', fontSize: '11px', fontWeight: 700 }}>
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{issue.staff.full_name}</span>
+                  <span style={{ color: 'var(--accent)', fontFamily: 'var(--mono)' }}>{issue.issueCount}</span>
+                </div>
+                <div style={{ fontSize: '9px', color: 'var(--text3)', marginTop: '2px', lineHeight: 1.35 }}>
+                  {issue.issueLabels.join(' · ')}
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, canEdit, selectedAction, setSelectedAction, onApplyStatus, updatingKeys, onPersonClick }) {
   const [dayData, setDayData] = useState({}) // staffId → days array
 
@@ -210,6 +305,9 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
       if (entry?.shift_name) next.shift_name = entry.shift_name
       if (entry?.start_hour != null) next.start_hour = entry.start_hour
       if (entry?.end_hour != null) next.end_hour = entry.end_hour
+      if (entry?.work_location_id) next.work_location_id = entry.work_location_id
+      if (entry?.work_location_name) next.work_location_name = entry.work_location_name
+      if (entry?.work_location_color) next.work_location_color = entry.work_location_color
     }
     return next
   }
@@ -636,6 +734,7 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
                   const holidayName = holidayMap.get(date)?.name
                   const title = `${r.full_name} · ${date} · ${meta.label}`
                     + (hours ? ` · ${hours}` : '')
+                    + (entry?.work_location_name ? ` · ${entry.work_location_name}` : '')
                     + (holidayName ? ` · 🎌 ${holidayName}` : '')
                     + (entry?.overtime_hours ? ` · FM ${entry.overtime_hours}s` : '')
                     + (entry?.absent_reason ? ` · Neden: ${entry.absent_reason}` : '')
@@ -1266,6 +1365,7 @@ export default function PuantajTab({ departments }) {
   const [selectedRow, setSelectedRow] = useState(null) // row object for bordro detail
   const [sortBy, setSortBy] = useState('name')
   const [selectedAction, setSelectedAction] = useState(ACTION_BY_ID.worked)
+  const [y, m] = month.split('-').map(Number)
 
   // Faz 31 — dönem kilidi: kilitli ay salt-okunur
   const { data: periodLocks = [] } = useQuery({
@@ -1293,6 +1393,21 @@ export default function PuantajTab({ departments }) {
     },
   })
 
+  const { data: auditDayPayload = { days: {} } } = useQuery({
+    queryKey: ['puantaj-days-month', month, deptFilter],
+    queryFn: () => {
+      const params = { month }
+      if (deptFilter) params.dept_id = deptFilter
+      return api.get('/shifts/puantaj/days', { params }).then(res => res.data)
+    },
+    enabled: !isLoading,
+  })
+
+  const { data: holidayRows = [] } = useQuery({
+    queryKey: ['holidays', y],
+    queryFn: () => api.get('/shifts/holidays', { params: { year: y } }).then(res => res.data),
+  })
+
   const updatePuantajDay = useMutation({
     mutationFn: ({ changes, action }) => {
       if (action.status === 'clear') {
@@ -1310,6 +1425,7 @@ export default function PuantajTab({ departments }) {
               staff_id: change.staff.id,
               dept_id: change.staff.department_id || null,
               shift_def_id: change.nextEntry.shift_def_id || null,
+              work_location_id: ['worked', 'scheduled', 'overtime'].includes(change.nextEntry.status) ? (change.nextEntry.work_location_id || null) : null,
               work_date: change.date,
               status: change.nextEntry.status,
               leave_type: change.nextEntry.leave_type || null,
@@ -1322,6 +1438,7 @@ export default function PuantajTab({ departments }) {
           staff_id: change.staff.id,
           dept_id: change.staff.department_id || null,
           shift_def_id: ['worked', 'scheduled', 'overtime'].includes(action.status) ? (change.entry?.shift_def_id || null) : null,
+          work_location_id: ['worked', 'scheduled', 'overtime'].includes(action.status) ? (change.entry?.work_location_id || change.nextEntry?.work_location_id || null) : null,
           work_date: change.date,
           status: action.status,
           leave_type: action.leave_type || null,
@@ -1345,8 +1462,6 @@ export default function PuantajTab({ departments }) {
       ? new Set((updatePuantajDay.variables?.changes || []).map(change => `${change.staff.id}-${change.date}`))
       : new Set()
   ), [updatePuantajDay.isPending, updatePuantajDay.variables])
-
-  const [y, m] = month.split('-').map(Number)
 
   const formatMoney = (val) => {
     if (val == null || val === 0) return '—'
@@ -1378,7 +1493,35 @@ export default function PuantajTab({ departments }) {
   }), { worked: 0, leave: 0, absent: 0, overtime_hours: 0, gross: 0, net: 0, employer_total_cost: 0 }),
   [filtered])
 
+  const puantajAudit = useMemo(() => buildPuantajControl({
+    staffRows: filtered,
+    daysByStaff: auditDayPayload.days || {},
+    holidays: holidayRows,
+    month,
+  }), [filtered, auditDayPayload, holidayRows, month])
+
   const monthLabel = new Date(y, m - 1, 1).toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' }).toUpperCase()
+
+  const syncScheduledToWorked = async () => {
+    if (!canEdit || puantajAudit.scheduledCells.length === 0) return
+    const ok = await confirmDialog({
+      title: 'Planlı Günleri Puantaja Aktar',
+      body: `${monthLabel} içinde ${puantajAudit.scheduledCells.length} planlı gün "N - çalıştı" yapılacak. Vardiya saati ve çalışma noktası korunur.`,
+    })
+    if (!ok) return
+    const changes = puantajAudit.scheduledCells.map(({ staff, entry }) => ({
+      staff,
+      date: entry.date,
+      entry,
+      action: ACTION_BY_ID.worked,
+      nextEntry: { ...entry, status: 'worked' },
+    }))
+    updatePuantajDay.mutate(
+      { changes, action: ACTION_BY_ID.worked },
+      { onSuccess: () => toastOk(`${changes.length} planlı gün puantaja aktarıldı`) }
+    )
+  }
+
   const setMonthInYear = (targetMonth, targetYear = y) => {
     setMonth(`${targetYear}-${String(targetMonth).padStart(2, '0')}`)
   }
@@ -1565,6 +1708,16 @@ export default function PuantajTab({ departments }) {
           )
         })}
       </div>
+
+      <PuantajClosurePanel
+        audit={puantajAudit}
+        canEdit={canEdit}
+        isLocked={isLocked}
+        monthLabel={monthLabel}
+        onOpenCalendar={() => setViewMode('calendar')}
+        onSyncScheduled={syncScheduledToWorked}
+        syncing={updatePuantajDay.isPending}
+      />
 
       {/* Mode content */}
       {viewMode === 'list' && (

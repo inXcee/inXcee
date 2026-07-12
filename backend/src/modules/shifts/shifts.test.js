@@ -147,6 +147,18 @@ describe('Shifts', () => {
     expect(row.role_id).toBe(role.body.id)
     expect(row.role_name).toBe('X6 Ikramci')
 
+    const puantaj = await request(app).get('/api/shifts/puantaj?month=2027-01')
+      .set('Authorization', `Bearer ${managerToken}`)
+    const puantajRow = puantaj.body.find(r => r.id === staff.id)
+    expect(puantajRow.role_name).toBe('X6 Ikramci')
+
+    const puantajDays = await request(app).get('/api/shifts/puantaj/days?month=2027-01')
+      .set('Authorization', `Bearer ${managerToken}`)
+    const day = puantajDays.body.days[staff.id].find(d => d.date === '2027-01-05')
+    expect(day.work_location_id).toBe(loc.body.id)
+    expect(day.work_location_name).toBe('X6 OTC Lokal')
+    expect(day.role_name).toBe('X6 Ikramci')
+
     const breakdown = await request(app).get('/api/shifts/breakdown?from=2027-01-05&to=2027-01-05')
       .set('Authorization', `Bearer ${managerToken}`)
     expect(breakdown.status).toBe(200)

@@ -13,16 +13,17 @@ function formulaResult(cell) {
 }
 
 const sampleStaff = [
-  { id: 1, full_name: 'Ali Yilmaz', dept_name: 'Teknik', department_id: 10 },
-  { id: 2, full_name: 'Ayse Kaya', dept_name: 'Teknik', department_id: 10 },
-  { id: 3, full_name: 'Mehmet Demir', dept_name: 'Guvenlik', department_id: 20 },
+  { id: 1, full_name: 'Ali Yilmaz', dept_name: 'Teknik', department_id: 10, role_name: 'Usta' },
+  { id: 2, full_name: 'Ayse Kaya', dept_name: 'Teknik', department_id: 10, role_name: 'Ikramci' },
+  { id: 3, full_name: 'Mehmet Demir', dept_name: 'Guvenlik', department_id: 20, role_name: 'Gorevli' },
 ]
 
 const sampleDays = {
   1: [
-    { date: '2026-07-01', status: 'worked' },
+    { date: '2026-07-01', status: 'worked', shift_name: 'Sabah', start_hour: 6, end_hour: 15, work_location_name: 'OTC Lokal' },
     { date: '2026-07-02', status: 'off' },
     { date: '2026-07-03', status: 'on_leave', leave_type: 'annual' },
+    { date: '2026-07-04', status: 'scheduled', shift_name: 'Akşam', start_hour: 15, end_hour: 23, work_location_name: 'Yemekhane' },
   ],
   2: [
     { date: '2026-07-01', status: 'worked', overtime_hours: 2 },
@@ -56,7 +57,7 @@ describe('puantajFoyuExcel - X2 workbook builder', () => {
     expect(result.sheetNames.main).toBe('Puantaj')
     expect(result.sheetNames.summary).toBe('Özet')
     expect(result.sheetNames.departments).toHaveLength(2)
-    expect(names).toEqual(['Puantaj', 'Guvenlik', 'Teknik', 'Özet'])
+    expect(names).toEqual(['Puantaj', 'Guvenlik', 'Teknik', 'Özet', 'Günlük Kontrol', 'Kapanış Kontrol', 'Vardiya Detay'])
   })
 
   it('summarizes department totals correctly', () => {
@@ -91,6 +92,19 @@ describe('puantajFoyuExcel - X2 workbook builder', () => {
     expect(formulaResult(ws.getCell(`C${totalRowNo}`))).toBe(4)
     expect(formulaResult(ws.getCell(`J${totalRowNo}`))).toBe(3)
     expect(String(ws.getCell(`C${totalRowNo}`).value.formula)).toContain('SUM(C8:C9)')
+  })
+
+  it('adds daily control formulas and shift detail sheets', () => {
+    const result = buildSampleWorkbook()
+    const daily = result.workbook.getWorksheet('Günlük Kontrol')
+    const closing = result.workbook.getWorksheet('Kapanış Kontrol')
+    const detail = result.workbook.getWorksheet('Vardiya Detay')
+
+    expect(daily.getCell('A7').value).toBe('TARİH')
+    expect(formulaResult(daily.getCell('C8'))).toBe(2)
+    expect(String(daily.getCell('C8').value.formula)).toContain('COUNTIF')
+    expect(closing.getCell('J8').value).toContain('planlı')
+    expect(detail.getCell('H8').value).toBe('OTC Lokal')
   })
 
   it('uses safe three-part signature merges across the full printable width', () => {

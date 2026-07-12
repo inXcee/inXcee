@@ -17,6 +17,19 @@ const SIGNATURE_LABELS = ['DÜZENLEYEN', 'KONTROL EDEN', 'ONAYLAYAN']
 const FIRST_DATA_ROW = 4
 const SUMMARY_HEADER_ROW = 7
 const SUMMARY_FIRST_ROW = 8
+const CONTROL_HEADER_ROW = 7
+const CONTROL_FIRST_ROW = 8
+
+const STATUS_LABELS = {
+  worked: 'Çalıştı',
+  overtime: 'Çalıştı + FM',
+  scheduled: 'Planlı',
+  off: 'Hafta tatili',
+  on_leave: 'İzin',
+  absent: 'Devamsız',
+  sunday: 'Pazar',
+  no_record: 'Boş',
+}
 
 function cleanSheetName(value) {
   const cleaned = String(value || 'Sayfa')
@@ -45,6 +58,77 @@ function dateForDay(month, dayNo) {
 
 function deptNameForRow(row) {
   return row.dept || row.dept_name || 'Departmansız'
+}
+
+function formatHour(value) {
+  if (value == null || value === '') return ''
+  const n = Number(value)
+  if (!Number.isFinite(n)) return ''
+  const hour = Math.floor(n) % 24
+  const minute = Math.round((n - Math.floor(n)) * 60)
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
+}
+
+function formatShiftCell(cell) {
+  if (!cell?.shiftName && cell?.startHour == null) return ''
+  const hours = cell.startHour != null ? `${formatHour(cell.startHour)}-${formatHour(cell.endHour)}` : ''
+  return [cell.shiftName, hours].filter(Boolean).join(' ')
+}
+
+function dayCellRange(mainInfo, dayNo) {
+  const col = 3 + dayNo
+  return `${quoteSheet(mainInfo.sheetName)}!$${colLetter(col)}$${mainInfo.firstDataRow}:$${colLetter(col)}$${mainInfo.lastDataRow}`
+}
+
+function formulaResult(formula, result) {
+  return { formula, result }
+}
+
+function countCodes(cells, codes) {
+  return cells.filter(cell => codes.includes(cell?.code || '')).length
+}
+
+function closingIssueText(row, daysInMonth) {
+  const cells = Array.from({ length: daysInMonth }, (_, i) => row.cells[i] || {})
+  const scheduled = countCodes(cells, ['P'])
+  const empty = cells.filter(cell => !(cell.code || '') && cell.status !== 'sunday').length
+  const off = countCodes(cells, ['h'])
+  const absent = countCodes(cells, ['Y'])
+  const parts = []
+  if (scheduled > 0) parts.push(`${scheduled} planlı`)
+  if (empty > 0) parts.push(`${empty} boş`)
+  if (off === 0) parts.push('OFF yok')
+  if (absent > 0) parts.push(`${absent} devamsız`)
+  return {
+    scheduled,
+    empty,
+    off,
+    absent,
+    fmHours: row.totals?.fmHours || 0,
+    status: parts.length ? 'Kontrol' : 'Hazır',
+    issue: parts.join(' · ') || 'Kapanışa hazır',
+  }
+}
+
+function detailRows(rows, daysInMonth) {
+  return rows.flatMap(row => (
+    Array.from({ length: daysInMonth }, (_, i) => {
+      const cell = row.cells[i]
+      if (!cell || (!cell.code && !cell.workLocationName && !cell.shiftName && !cell.overtimeHours && !cell.absentReason)) return null
+      return {
+        date: cell.date,
+        name: row.name,
+        dept: row.dept,
+        role: row.role || cell.roleName || '',
+        code: cell.code || '',
+        status: STATUS_LABELS[cell.status] || cell.status || '',
+        shift: formatShiftCell(cell),
+        location: cell.workLocationName || '',
+        overtimeHours: cell.overtimeHours || '',
+        absentReason: cell.absentReason || '',
+      }
+    }).filter(Boolean)
+  ))
 }
 
 export function buildFoyuRows(staffRows, daysByStaff, holidaySet) {
@@ -133,6 +217,15 @@ function addDataRows(ws, rows, context) {
         } else if (new Date(y, m - 1, dayNo).getDay() === 0) {
           cell.fill = fill('FDF3E0')
         }
+        const noteParts = [
+          dayCell?.date,
+          dayCell?.status ? (STATUS_LABELS[dayCell.status] || dayCell.status) : '',
+          formatShiftCell(dayCell),
+          dayCell?.workLocationName ? `Nokta: ${dayCell.workLocationName}` : '',
+          dayCell?.overtimeHours ? `FM: ${dayCell.overtimeHours}s` : '',
+          dayCell?.absentReason ? `Neden: ${dayCell.absentReason}` : '',
+        ].filter(Boolean)
+        if (noteParts.length > 1) cell.note = noteParts.join('\n')
       } else if (colNo >= totalColStart) {
         cell.font = { size: 8, bold: true }
         cell.numFmt = FOYU_TOTAL_COLUMNS[colNo - totalColStart]?.key === 'fmHours' ? '#,##0.0' : '#,##0'
@@ -314,6 +407,178 @@ function addSummarySheet(workbook, sheetName, rows, summaryRows, context, mainIn
   return { ws, sheetName, firstRow: SUMMARY_FIRST_ROW, lastRow: summaryLastRow }
 }
 
+function addDailyControlSheet(workbook, sheetName, rows, context, mainInfo) {
+  const ws = workbook.addWorksheet(sheetName, {
+    views: [{ state: 'frozen', ySplit: CONTROL_HEADER_ROW, showGridLines: false }],
+  })
+  setupSheet(ws, COLORS.blue)
+  setupTitle(ws, `${context.companyName} - GÜNLÜK KAPANIŞ`, `Dönem: ${context.monthLabel}   ·   Gün bazında plan/puantaj kontrolü`, 9)
+
+  const plannedTotal = rows.reduce((sum, row) => sum + countCodes(row.cells, ['P']), 0)
+  const emptyTotal = rows.reduce((sum, row) => sum + closingIssueText(row, context.daysInMonth).empty, 0)
+  const absentTotal = rows.reduce((sum, row) => sum + countCodes(row.cells, ['Y']), 0)
+  addMetric(ws, 1, 'PLANLI KALAN', plannedTotal, plannedTotal ? COLORS.amber : COLORS.green)
+  addMetric(ws, 3, 'BOŞ GÜN', emptyTotal, emptyTotal ? COLORS.red : COLORS.green)
+  addMetric(ws, 5, 'DEVAMSIZ', absentTotal, absentTotal ? COLORS.red : COLORS.gray)
+  addMetric(ws, 7, 'PERSONEL', rows.length, COLORS.blue)
+
+  const header = ws.getRow(CONTROL_HEADER_ROW)
+  header.values = ['TARİH', 'GÜN', 'N', 'P', 'h', 'İZİN', 'Y', 'BOŞ', 'DURUM']
+  styleHeaderRow(header)
+
+  for (let day = 1; day <= context.daysInMonth; day += 1) {
+    const rowNo = CONTROL_FIRST_ROW + day - 1
+    const date = `${context.month}-${String(day).padStart(2, '0')}`
+    const weekday = new Date(context.y, context.m - 1, day).toLocaleDateString('tr-TR', { weekday: 'short' })
+    const range = dayCellRange(mainInfo, day)
+    const sourceCells = rows.map(row => row.cells[day - 1] || {})
+    const worked = countCodes(sourceCells, ['N'])
+    const planned = countCodes(sourceCells, ['P'])
+    const off = countCodes(sourceCells, ['h'])
+    const leave = countCodes(sourceCells, ['yi', 'r', 'üi', 'i'])
+    const absent = countCodes(sourceCells, ['Y'])
+    const empty = sourceCells.filter(cell => !(cell.code || '') && cell.status !== 'sunday').length
+    const row = ws.getRow(rowNo)
+    row.getCell(1).value = date
+    row.getCell(2).value = weekday
+    row.getCell(3).value = formulaResult(`COUNTIF(${range},"N")`, worked)
+    row.getCell(4).value = formulaResult(`COUNTIF(${range},"P")`, planned)
+    row.getCell(5).value = formulaResult(`COUNTIF(${range},"h")`, off)
+    row.getCell(6).value = formulaResult(`COUNTIF(${range},"yi")+COUNTIF(${range},"r")+COUNTIF(${range},"üi")+COUNTIF(${range},"i")`, leave)
+    row.getCell(7).value = formulaResult(`COUNTIF(${range},"Y")`, absent)
+    row.getCell(8).value = empty
+    row.getCell(9).value = planned + empty > 0 ? 'Kontrol' : 'Hazır'
+  }
+
+  for (let rowNo = CONTROL_FIRST_ROW; rowNo < CONTROL_FIRST_ROW + context.daysInMonth; rowNo += 1) {
+    const row = ws.getRow(rowNo)
+    row.eachCell({ includeEmpty: true }, (cell, colNo) => {
+      if (colNo > 9) return
+      cell.border = border
+      cell.font = { size: 9, bold: colNo === 9 }
+      cell.alignment = { horizontal: colNo <= 2 ? 'left' : 'center', vertical: 'middle' }
+      if (cell.value === 'Kontrol') {
+        cell.fill = fill('FEF3C7')
+        cell.font = { size: 9, bold: true, color: { argb: argb(COLORS.amber) } }
+      }
+      if (cell.value === 'Hazır') {
+        cell.fill = fill('DCFCE7')
+        cell.font = { size: 9, bold: true, color: { argb: argb(COLORS.green) } }
+      }
+    })
+  }
+
+  ;[12, 8, 7, 7, 7, 8, 7, 8, 11].forEach((width, idx) => { ws.getColumn(idx + 1).width = width })
+  const lastRow = CONTROL_FIRST_ROW + Math.max(context.daysInMonth, 1) - 1
+  ws.autoFilter = { from: { row: CONTROL_HEADER_ROW, column: 1 }, to: { row: lastRow, column: 9 } }
+  ws.pageSetup.printTitlesRow = '1:7'
+  ws.pageSetup.printArea = `A1:I${lastRow}`
+  return { ws, sheetName, firstRow: CONTROL_FIRST_ROW, lastRow }
+}
+
+function addClosingControlSheet(workbook, sheetName, rows, context) {
+  const ws = workbook.addWorksheet(sheetName, {
+    views: [{ state: 'frozen', ySplit: CONTROL_HEADER_ROW, showGridLines: false }],
+  })
+  setupSheet(ws, COLORS.amber)
+  setupTitle(ws, `${context.companyName} - KAPANIŞ KONTROL`, `Dönem: ${context.monthLabel}   ·   Personel bazında puantaj riski`, 10)
+
+  const issueRows = rows.map(row => ({ row, ...closingIssueText(row, context.daysInMonth) }))
+  const blocking = issueRows.filter(item => item.status !== 'Hazır').length
+  addMetric(ws, 1, 'HAZIR PERSONEL', rows.length - blocking, COLORS.green)
+  addMetric(ws, 3, 'KONTROL', blocking, blocking ? COLORS.amber : COLORS.green)
+  addMetric(ws, 5, 'PLANLI', issueRows.reduce((sum, item) => sum + item.scheduled, 0), COLORS.amber)
+  addMetric(ws, 7, 'BOŞ', issueRows.reduce((sum, item) => sum + item.empty, 0), COLORS.red)
+
+  const header = ws.getRow(CONTROL_HEADER_ROW)
+  header.values = ['NO', 'PERSONEL', 'DEPARTMAN', 'ROL', 'P', 'BOŞ', 'h', 'Y', 'FM', 'DURUM / NOT']
+  styleHeaderRow(header)
+
+  issueRows.forEach((item, idx) => {
+    const rowNo = CONTROL_FIRST_ROW + idx
+    const excelRow = ws.getRow(rowNo)
+    excelRow.values = [
+      idx + 1,
+      item.row.name,
+      item.row.dept,
+      item.row.role || item.row.position || '',
+      item.scheduled,
+      item.empty,
+      item.off,
+      item.absent,
+      item.fmHours,
+      item.issue,
+    ]
+    excelRow.eachCell({ includeEmpty: true }, (cell, colNo) => {
+      if (colNo > 10) return
+      cell.border = border
+      cell.font = { size: 9, bold: colNo === 10 }
+      cell.alignment = { horizontal: [2, 3, 4, 10].includes(colNo) ? 'left' : 'center', vertical: 'middle', wrapText: true }
+      if (item.status === 'Kontrol') {
+        cell.fill = colNo === 10 ? fill('FEF3C7') : cell.fill
+        if (colNo === 10) cell.font = { size: 9, bold: true, color: { argb: argb(COLORS.amber) } }
+      }
+    })
+  })
+
+  ;[5, 24, 18, 14, 7, 7, 7, 7, 8, 34].forEach((width, idx) => { ws.getColumn(idx + 1).width = width })
+  const lastRow = CONTROL_FIRST_ROW + Math.max(issueRows.length, 1) - 1
+  ws.autoFilter = { from: { row: CONTROL_HEADER_ROW, column: 1 }, to: { row: lastRow, column: 10 } }
+  ws.pageSetup.printTitlesRow = '1:7'
+  ws.pageSetup.printArea = `A1:J${lastRow}`
+  return { ws, sheetName, firstRow: CONTROL_FIRST_ROW, lastRow }
+}
+
+function addDetailSheet(workbook, sheetName, rows, context) {
+  const dataRows = detailRows(rows, context.daysInMonth)
+  const ws = workbook.addWorksheet(sheetName, {
+    views: [{ state: 'frozen', ySplit: CONTROL_HEADER_ROW, showGridLines: false }],
+  })
+  setupSheet(ws, COLORS.teal)
+  setupTitle(ws, `${context.companyName} - VARDİYA DETAY`, `Dönem: ${context.monthLabel}   ·   Puantaj hücrelerinin vardiya ve nokta dökümü`, 10)
+  addMetric(ws, 1, 'DETAY SATIRI', dataRows.length, COLORS.teal)
+  addMetric(ws, 3, 'NOKTALI KAYIT', dataRows.filter(row => row.location).length, COLORS.blue)
+  addMetric(ws, 5, 'FM SATIRI', dataRows.filter(row => row.overtimeHours).length, COLORS.amber)
+  addMetric(ws, 7, 'DEVAMSIZ NOT', dataRows.filter(row => row.absentReason).length, COLORS.red)
+
+  const header = ws.getRow(CONTROL_HEADER_ROW)
+  header.values = ['TARİH', 'PERSONEL', 'DEPARTMAN', 'ROL', 'KOD', 'DURUM', 'VARDİYA / SAAT', 'ÇALIŞMA NOKTASI', 'FM', 'NOT']
+  styleHeaderRow(header)
+
+  dataRows.forEach((item, idx) => {
+    const row = ws.getRow(CONTROL_FIRST_ROW + idx)
+    row.values = [
+      item.date,
+      item.name,
+      item.dept,
+      item.role,
+      item.code,
+      item.status,
+      item.shift,
+      item.location,
+      item.overtimeHours,
+      item.absentReason,
+    ]
+    row.eachCell({ includeEmpty: true }, (cell, colNo) => {
+      if (colNo > 10) return
+      cell.border = border
+      cell.font = { size: 8, bold: colNo === 5 }
+      cell.alignment = { horizontal: [1, 5, 9].includes(colNo) ? 'center' : 'left', vertical: 'middle', wrapText: true }
+      if (colNo === 5 && item.code) {
+        cell.fill = fill(codeHex(item.code))
+        cell.font = { size: 8, bold: true, color: { argb: 'FFFFFFFF' } }
+      }
+    })
+  })
+
+  ;[12, 24, 18, 14, 6, 12, 18, 22, 7, 28].forEach((width, idx) => { ws.getColumn(idx + 1).width = width })
+  const lastRow = CONTROL_FIRST_ROW + Math.max(dataRows.length, 1) - 1
+  ws.autoFilter = { from: { row: CONTROL_HEADER_ROW, column: 1 }, to: { row: lastRow, column: 10 } }
+  ws.pageSetup.printTitlesRow = '1:7'
+  ws.pageSetup.printArea = `A1:J${lastRow}`
+  return { ws, sheetName, firstRow: CONTROL_FIRST_ROW, lastRow }
+}
+
 export function buildPuantajFoyuWorkbook(ExcelJS, options) {
   const [y, m] = options.month.split('-').map(Number)
   const daysInMonth = options.daysInMonth || new Date(y, m, 0).getDate()
@@ -351,6 +616,12 @@ export function buildPuantajFoyuWorkbook(ExcelJS, options) {
   })
   const summaryName = uniqueSheetName('Özet', usedNames)
   const summaryInfo = addSummarySheet(workbook, summaryName, rows, summaryRows, context, mainInfo)
+  const dailyName = uniqueSheetName('Günlük Kontrol', usedNames)
+  const dailyInfo = addDailyControlSheet(workbook, dailyName, rows, context, mainInfo)
+  const closingName = uniqueSheetName('Kapanış Kontrol', usedNames)
+  const closingInfo = addClosingControlSheet(workbook, closingName, rows, context)
+  const detailName = uniqueSheetName('Vardiya Detay', usedNames)
+  const detailInfo = addDetailSheet(workbook, detailName, rows, context)
 
   return {
     workbook,
@@ -360,11 +631,17 @@ export function buildPuantajFoyuWorkbook(ExcelJS, options) {
       main: mainName,
       departments: departmentInfos.map(info => info.sheetName),
       summary: summaryName,
+      daily: dailyName,
+      closing: closingName,
+      detail: detailName,
     },
     sheetInfo: {
       main: mainInfo,
       departments: departmentInfos,
       summary: summaryInfo,
+      daily: dailyInfo,
+      closing: closingInfo,
+      detail: detailInfo,
     },
   }
 }

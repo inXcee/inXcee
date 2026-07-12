@@ -701,6 +701,11 @@ function dayEntryFromRow(row, date, dow) {
     entry.start_hour = row.start_hour
     entry.end_hour = row.end_hour
   }
+  if (row.work_location_id) entry.work_location_id = row.work_location_id
+  if (row.work_location_name) entry.work_location_name = row.work_location_name
+  if (row.work_location_color) entry.work_location_color = row.work_location_color
+  if (row.role_id) entry.role_id = row.role_id
+  if (row.role_name) entry.role_name = row.role_name
   if (row.leave_type) entry.leave_type = row.leave_type
   if (row.overtime_hours) entry.overtime_hours = row.overtime_hours
   if (row.absent_reason) entry.absent_reason = row.absent_reason

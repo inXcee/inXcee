@@ -75,12 +75,29 @@ export function buildFoyuRow(staff, days, holidaySet) {
       }
       totals.fmHours += d.overtime_hours || 0
     }
-    return { code: meta.code, hex: meta.hex }
+    return {
+      code: meta.code,
+      hex: meta.hex,
+      date: d?.date || '',
+      status: d?.status || 'no_record',
+      shiftName: d?.shift_name || '',
+      startHour: d?.start_hour,
+      endHour: d?.end_hour,
+      workLocationName: d?.work_location_name || '',
+      workLocationColor: d?.work_location_color || '',
+      roleName: d?.role_name || staff.role_name || '',
+      leaveType: d?.leave_type || '',
+      overtimeHours: d?.overtime_hours || 0,
+      absentReason: d?.absent_reason || '',
+    }
   })
   return {
     staffId: staff.id,
     name: staff.full_name,
     dept: staff.dept_name || '—',
+    role: staff.role_name || '',
+    position: staff.position || '',
+    tcNo: staff.tc_no || '',
     cells,
     totals,
   }

@@ -1220,10 +1220,15 @@ export function getStaffDayBreakdown(staffId, monthStart, monthEnd) {
       sd.name as shift_name,
       sd.start_hour,
       sd.end_hour,
+      ss.work_location_id,
+      wl.name as work_location_name,
+      wl.color_class as work_location_color,
       CASE WHEN ss.status = 'on_leave' THEN COALESCE(ss.leave_type, lr.leave_type) END as leave_type,
+      ss.absent_reason,
       ot.hours as overtime_hours
     FROM shift_schedule ss
     LEFT JOIN shift_definitions sd ON sd.id = ss.shift_def_id
+    LEFT JOIN work_locations wl ON wl.id = ss.work_location_id
     LEFT JOIN leave_requests lr ON lr.staff_id = ss.staff_id
       AND lr.status = 'approved'
       AND ss.work_date BETWEEN lr.start_date AND lr.end_date
@@ -1248,12 +1253,19 @@ export function getPuantajDayRows(monthStart, monthEnd, deptId) {
       sd.name as shift_name,
       sd.start_hour,
       sd.end_hour,
+      ss.work_location_id,
+      wl.name as work_location_name,
+      wl.color_class as work_location_color,
+      s.role_id,
+      sr.name as role_name,
       CASE WHEN ss.status = 'on_leave' THEN COALESCE(ss.leave_type, lr.leave_type) END as leave_type,
       ss.absent_reason,
       ot.hours as overtime_hours
     FROM shift_schedule ss
     JOIN staff s ON s.id = ss.staff_id
     LEFT JOIN shift_definitions sd ON sd.id = ss.shift_def_id
+    LEFT JOIN work_locations wl ON wl.id = ss.work_location_id
+    LEFT JOIN staff_roles sr ON sr.id = s.role_id
     LEFT JOIN leave_requests lr ON lr.staff_id = ss.staff_id
       AND lr.status = 'approved'
       AND ss.work_date BETWEEN lr.start_date AND lr.end_date
@@ -1274,8 +1286,9 @@ export function getPuantaj(monthStart, monthEnd, deptId) {
   const db = getDB()
   let query = `
     SELECT
-      s.id, s.full_name, s.position, s.salary, s.gender, s.tc_no, s.department_id,
+      s.id, s.full_name, s.position, s.salary, s.gender, s.tc_no, s.department_id, s.role_id,
       d.name as dept_name, d.color_class as dept_color,
+      sr.name as role_name,
       COALESCE(sch.worked_days, 0) as worked_days,
       COALESCE(sch.scheduled_days, 0) as scheduled_days,
       COALESCE(sch.leave_days, 0) as leave_days,
@@ -1290,6 +1303,7 @@ export function getPuantaj(monthStart, monthEnd, deptId) {
       COALESCE(sch.other_leave_days, 0) as other_leave_days
     FROM staff s
     LEFT JOIN departments d ON d.id = s.department_id
+    LEFT JOIN staff_roles sr ON sr.id = s.role_id
     LEFT JOIN (
       SELECT ss.staff_id,
         COUNT(CASE WHEN ss.status IN ('worked','overtime') THEN 1 END) as worked_days,
