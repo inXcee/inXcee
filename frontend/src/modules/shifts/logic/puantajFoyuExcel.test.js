@@ -103,7 +103,7 @@ describe('puantajFoyuExcel - X2 workbook builder', () => {
     expect(daily.getCell('A7').value).toBe('TARİH')
     expect(formulaResult(daily.getCell('C8'))).toBe(2)
     expect(String(daily.getCell('C8').value.formula)).toContain('COUNTIF')
-    expect(closing.getCell('J8').value).toContain('planlı')
+    expect(closing.getCell('K8').value).toContain('planlı')
     expect(detail.getCell('H8').value).toBe('OTC Lokal')
   })
 

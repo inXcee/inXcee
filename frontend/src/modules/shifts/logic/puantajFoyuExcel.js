@@ -94,16 +94,19 @@ function closingIssueText(row, daysInMonth) {
   const empty = cells.filter(cell => !(cell.code || '') && cell.status !== 'sunday').length
   const off = countCodes(cells, ['h'])
   const absent = countCodes(cells, ['Y'])
+  const absentWithoutReason = cells.filter(cell => (cell.code || '') === 'Y' && !String(cell.absentReason || '').trim()).length
   const parts = []
   if (scheduled > 0) parts.push(`${scheduled} planlı`)
   if (empty > 0) parts.push(`${empty} boş`)
   if (off === 0) parts.push('OFF yok')
+  if (absentWithoutReason > 0) parts.push(`${absentWithoutReason} devamsız nedeni eksik`)
   if (absent > 0) parts.push(`${absent} devamsız`)
   return {
     scheduled,
     empty,
     off,
     absent,
+    absentWithoutReason,
     fmHours: row.totals?.fmHours || 0,
     status: parts.length ? 'Kontrol' : 'Hazır',
     issue: parts.join(' · ') || 'Kapanışa hazır',
@@ -481,7 +484,7 @@ function addClosingControlSheet(workbook, sheetName, rows, context) {
     views: [{ state: 'frozen', ySplit: CONTROL_HEADER_ROW, showGridLines: false }],
   })
   setupSheet(ws, COLORS.amber)
-  setupTitle(ws, `${context.companyName} - KAPANIŞ KONTROL`, `Dönem: ${context.monthLabel}   ·   Personel bazında puantaj riski`, 10)
+  setupTitle(ws, `${context.companyName} - KAPANIŞ KONTROL`, `Dönem: ${context.monthLabel}   ·   Personel bazında puantaj riski`, 11)
 
   const issueRows = rows.map(row => ({ row, ...closingIssueText(row, context.daysInMonth) }))
   const blocking = issueRows.filter(item => item.status !== 'Hazır').length
@@ -491,7 +494,7 @@ function addClosingControlSheet(workbook, sheetName, rows, context) {
   addMetric(ws, 7, 'BOŞ', issueRows.reduce((sum, item) => sum + item.empty, 0), COLORS.red)
 
   const header = ws.getRow(CONTROL_HEADER_ROW)
-  header.values = ['NO', 'PERSONEL', 'DEPARTMAN', 'ROL', 'P', 'BOŞ', 'h', 'Y', 'FM', 'DURUM / NOT']
+  header.values = ['NO', 'PERSONEL', 'DEPARTMAN', 'ROL', 'P', 'BOŞ', 'h', 'Y', 'Y NOTSUZ', 'FM', 'DURUM / NOT']
   styleHeaderRow(header)
 
   issueRows.forEach((item, idx) => {
@@ -506,26 +509,27 @@ function addClosingControlSheet(workbook, sheetName, rows, context) {
       item.empty,
       item.off,
       item.absent,
+      item.absentWithoutReason,
       item.fmHours,
       item.issue,
     ]
     excelRow.eachCell({ includeEmpty: true }, (cell, colNo) => {
-      if (colNo > 10) return
+      if (colNo > 11) return
       cell.border = border
-      cell.font = { size: 9, bold: colNo === 10 }
-      cell.alignment = { horizontal: [2, 3, 4, 10].includes(colNo) ? 'left' : 'center', vertical: 'middle', wrapText: true }
+      cell.font = { size: 9, bold: colNo === 11 }
+      cell.alignment = { horizontal: [2, 3, 4, 11].includes(colNo) ? 'left' : 'center', vertical: 'middle', wrapText: true }
       if (item.status === 'Kontrol') {
-        cell.fill = colNo === 10 ? fill('FEF3C7') : cell.fill
-        if (colNo === 10) cell.font = { size: 9, bold: true, color: { argb: argb(COLORS.amber) } }
+        cell.fill = colNo === 11 ? fill('FEF3C7') : cell.fill
+        if (colNo === 11) cell.font = { size: 9, bold: true, color: { argb: argb(COLORS.amber) } }
       }
     })
   })
 
-  ;[5, 24, 18, 14, 7, 7, 7, 7, 8, 34].forEach((width, idx) => { ws.getColumn(idx + 1).width = width })
+  ;[5, 24, 18, 14, 7, 7, 7, 7, 9, 8, 34].forEach((width, idx) => { ws.getColumn(idx + 1).width = width })
   const lastRow = CONTROL_FIRST_ROW + Math.max(issueRows.length, 1) - 1
-  ws.autoFilter = { from: { row: CONTROL_HEADER_ROW, column: 1 }, to: { row: lastRow, column: 10 } }
+  ws.autoFilter = { from: { row: CONTROL_HEADER_ROW, column: 1 }, to: { row: lastRow, column: 11 } }
   ws.pageSetup.printTitlesRow = '1:7'
-  ws.pageSetup.printArea = `A1:J${lastRow}`
+  ws.pageSetup.printArea = `A1:K${lastRow}`
   return { ws, sheetName, firstRow: CONTROL_FIRST_ROW, lastRow }
 }
 

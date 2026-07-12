@@ -26,6 +26,7 @@ const PUANTAJ_ACTIONS = [
 
 const ACTION_BY_ID = Object.fromEntries(PUANTAJ_ACTIONS.map(a => [a.id, a]))
 const MONTH_SHORT = ['OCA', 'SUB', 'MAR', 'NIS', 'MAY', 'HAZ', 'TEM', 'AGU', 'EYL', 'EKI', 'KAS', 'ARA']
+const DAY_SHORT = ['Paz', 'Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt']
 
 function dayStatusMeta(entry, isSunday) {
   const status = entry?.status || (isSunday ? 'sunday' : 'no_record')
@@ -122,8 +123,8 @@ function PuantajSummaryView({ filtered, formatMoney }) {
   )
 }
 
-function PuantajClosurePanel({ audit, canEdit, isLocked, monthLabel, onOpenCalendar, onSyncScheduled, syncing }) {
-  const blockingCount = audit.staffIssues.filter(issue => issue.scheduled > 0 || issue.empty > 0 || issue.off === 0).length
+function PuantajClosurePanel({ audit, canEdit, isLocked, monthLabel, onOpenCalendar, onOpenControl, onSyncScheduled, syncing }) {
+  const blockingCount = audit.staffIssues.filter(issue => issue.scheduled > 0 || issue.empty > 0 || issue.off === 0 || issue.absentWithoutReason > 0).length
   const topIssues = audit.staffIssues.slice(0, 5)
   const cards = [
     ['Kapanış', audit.readyToClose ? 'Hazır' : 'Kontrol', audit.readyToClose ? 'var(--green)' : 'var(--accent)'],
@@ -131,6 +132,7 @@ function PuantajClosurePanel({ audit, canEdit, isLocked, monthLabel, onOpenCalen
     ['Planlı Kalan', audit.totals.scheduled, audit.totals.scheduled > 0 ? 'var(--accent)' : 'var(--green)'],
     ['Boş Gün', audit.totals.empty, audit.totals.empty > 0 ? 'var(--red)' : 'var(--green)'],
     ['OFF Eksik', audit.missingOffStaff, audit.missingOffStaff > 0 ? 'var(--red)' : 'var(--green)'],
+    ['Nedensiz Y', audit.totals.absentWithoutReason, audit.totals.absentWithoutReason > 0 ? 'var(--red)' : 'var(--green)'],
     ['Devamsız', audit.totals.absent, audit.totals.absent > 0 ? 'var(--red)' : 'var(--text2)'],
   ]
 
@@ -150,6 +152,7 @@ function PuantajClosurePanel({ audit, canEdit, isLocked, monthLabel, onOpenCalen
             </div>
           </div>
           <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            <button className="btn btn-ghost btn-sm" onClick={onOpenControl} style={{ fontSize: '10px' }}>Kontrol</button>
             <button className="btn btn-ghost btn-sm" onClick={onOpenCalendar} style={{ fontSize: '10px' }}>Takvim</button>
             <button
               className="btn btn-primary btn-sm"
@@ -189,7 +192,7 @@ function PuantajClosurePanel({ audit, canEdit, isLocked, monthLabel, onOpenCalen
               <button
                 key={issue.staff.id}
                 type="button"
-                onClick={onOpenCalendar}
+                onClick={onOpenControl}
                 style={{
                   textAlign: 'left',
                   border: '1px solid var(--border)',
@@ -211,6 +214,247 @@ function PuantajClosurePanel({ audit, canEdit, isLocked, monthLabel, onOpenCalen
             ))}
           </div>
         )}
+      </div>
+    </div>
+  )
+}
+
+function PuantajControlView({ audit, monthLabel, canEdit, isLocked, onOpenCalendar, onSyncScheduled, syncing, onPersonClick }) {
+  const [issueFilter, setIssueFilter] = useState('blocking')
+  const issueRows = useMemo(() => {
+    const rows = audit.staffIssues || []
+    if (issueFilter === 'planned') return rows.filter(row => row.scheduled > 0)
+    if (issueFilter === 'empty') return rows.filter(row => row.empty > 0)
+    if (issueFilter === 'off') return rows.filter(row => row.off === 0)
+    if (issueFilter === 'reason') return rows.filter(row => row.absentWithoutReason > 0)
+    if (issueFilter === 'absent') return rows.filter(row => row.absent > 0)
+    return rows.filter(row => row.scheduled > 0 || row.empty > 0 || row.off === 0 || row.absentWithoutReason > 0)
+  }, [audit.staffIssues, issueFilter])
+
+  const deptRows = useMemo(() => {
+    const map = new Map()
+    ;(audit.staffIssues || []).forEach(issue => {
+      const name = issue.staff.dept_name || 'Departmansız'
+      if (!map.has(name)) map.set(name, { name, people: 0, scheduled: 0, empty: 0, missingOff: 0, reason: 0, absent: 0 })
+      const row = map.get(name)
+      row.people += 1
+      row.scheduled += issue.scheduled || 0
+      row.empty += issue.empty || 0
+      row.missingOff += issue.off === 0 ? 1 : 0
+      row.reason += issue.absentWithoutReason || 0
+      row.absent += issue.absent || 0
+    })
+    return [...map.values()].sort((a, b) => (
+      (b.scheduled + b.empty + b.reason + b.missingOff) - (a.scheduled + a.empty + a.reason + a.missingOff)
+      || a.name.localeCompare(b.name, 'tr')
+    ))
+  }, [audit.staffIssues])
+
+  const workflow = [
+    {
+      label: 'Planlı günleri kapat',
+      value: `${audit.totals.scheduled} P`,
+      ok: audit.totals.scheduled === 0,
+      action: onSyncScheduled,
+      disabled: !canEdit || isLocked || syncing || audit.totals.scheduled === 0,
+      actionLabel: syncing ? 'İşleniyor' : 'P → N',
+    },
+    {
+      label: 'Boş günleri temizle',
+      value: `${audit.totals.empty} boş`,
+      ok: audit.totals.empty === 0,
+      action: onOpenCalendar,
+      actionLabel: 'Takvim',
+    },
+    {
+      label: 'Haftalık izin kontrolü',
+      value: `${audit.missingOffStaff} kişi`,
+      ok: audit.missingOffStaff === 0,
+      action: onOpenCalendar,
+      actionLabel: 'Takvim',
+    },
+    {
+      label: 'Devamsızlık nedeni',
+      value: `${audit.totals.absentWithoutReason} eksik`,
+      ok: audit.totals.absentWithoutReason === 0,
+      action: onOpenCalendar,
+      actionLabel: 'Takvim',
+    },
+  ]
+
+  const filterButtons = [
+    ['blocking', 'Kapanış'],
+    ['planned', 'Planlı'],
+    ['empty', 'Boş'],
+    ['off', 'OFF'],
+    ['reason', 'Y Nedeni'],
+    ['absent', 'Devamsız'],
+  ]
+
+  return (
+    <div style={{ display: 'grid', gap: '12px' }}>
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))',
+        gap: '10px',
+      }}>
+        {workflow.map(step => (
+          <div key={step.label} style={{
+            border: `1px solid ${step.ok ? 'rgba(34,197,94,.35)' : 'rgba(240,165,0,.45)'}`,
+            borderRadius: '10px',
+            background: step.ok ? 'rgba(34,197,94,.08)' : 'rgba(240,165,0,.08)',
+            padding: '12px',
+            minHeight: '92px',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'flex-start' }}>
+              <div>
+                <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '.8px' }}>{step.ok ? 'TAMAM' : 'KONTROL'}</div>
+                <div style={{ fontFamily: 'var(--display)', fontSize: '14px', marginTop: '4px' }}>{step.label}</div>
+              </div>
+              <div style={{ fontFamily: 'var(--display)', fontSize: '17px', color: step.ok ? 'var(--green)' : 'var(--accent)', whiteSpace: 'nowrap' }}>{step.value}</div>
+            </div>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              disabled={step.disabled}
+              onClick={step.action}
+              style={{ marginTop: '10px', width: '100%', fontSize: '10px' }}
+            >
+              {step.actionLabel}
+            </button>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '12px' }}>
+        <div className="panel">
+          <div className="panel-header">
+            <div>
+              <div className="panel-title">GÜNLÜK KONTROL</div>
+              <div className="panel-subtitle">{monthLabel} · gün gün kapanış durumu</div>
+            </div>
+            <button className="btn btn-ghost btn-sm" onClick={onOpenCalendar} style={{ fontSize: '10px' }}>Takvim</button>
+          </div>
+          <div className="panel-body" style={{ padding: 0, maxHeight: '360px', overflow: 'auto' }}>
+            <table className="data-table" style={{ fontSize: '10px' }}>
+              <thead>
+                <tr>
+                  <th>TARİH</th>
+                  <th style={{ textAlign: 'center' }}>N</th>
+                  <th style={{ textAlign: 'center' }}>İZİN</th>
+                  <th style={{ textAlign: 'center' }}>P</th>
+                  <th style={{ textAlign: 'center' }}>BOŞ</th>
+                  <th style={{ textAlign: 'center' }}>Y</th>
+                  <th style={{ textAlign: 'center' }}>DURUM</th>
+                </tr>
+              </thead>
+              <tbody>
+                {audit.dailyRows.map(day => {
+                  const unresolved = (day.scheduled || 0) + (day.empty || 0)
+                  const statusColor = unresolved > 0 ? 'var(--accent)' : day.absentWithoutReason > 0 ? 'var(--red)' : 'var(--green)'
+                  return (
+                    <tr key={day.date}>
+                      <td>
+                        <div style={{ fontWeight: 700 }}>{day.date.slice(8, 10)} · {DAY_SHORT[day.weekday]}</div>
+                        {day.isHoliday && <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--red)' }}>RT</div>}
+                      </td>
+                      <td style={{ textAlign: 'center', color: 'var(--green)', fontFamily: 'var(--mono)' }}>{day.worked || '—'}</td>
+                      <td style={{ textAlign: 'center', color: 'var(--purple)', fontFamily: 'var(--mono)' }}>{(day.off + day.leave) || '—'}</td>
+                      <td style={{ textAlign: 'center', color: day.scheduled ? 'var(--accent)' : 'var(--text3)', fontFamily: 'var(--mono)' }}>{day.scheduled || '—'}</td>
+                      <td style={{ textAlign: 'center', color: day.empty ? 'var(--red)' : 'var(--text3)', fontFamily: 'var(--mono)' }}>{day.empty || '—'}</td>
+                      <td style={{ textAlign: 'center', color: day.absent ? 'var(--red)' : 'var(--text3)', fontFamily: 'var(--mono)' }}>{day.absent || '—'}</td>
+                      <td style={{ textAlign: 'center', color: statusColor, fontFamily: 'var(--mono)', fontWeight: 800 }}>
+                        {unresolved > 0 ? 'Kontrol' : day.absentWithoutReason > 0 ? 'Y nedeni' : 'Hazır'}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="panel">
+          <div className="panel-header">
+            <div>
+              <div className="panel-title">DEPARTMAN RİSKİ</div>
+              <div className="panel-subtitle">Sorun yoğunluğu yüksek bölümler</div>
+            </div>
+          </div>
+          <div className="panel-body" style={{ display: 'grid', gap: '8px' }}>
+            {deptRows.length === 0 ? (
+              <div style={{ color: 'var(--green)', fontFamily: 'var(--display)', fontSize: '14px' }}>Departman bazında açık kontrol yok.</div>
+            ) : deptRows.slice(0, 8).map(row => (
+              <div key={row.name} style={{ border: '1px solid var(--border)', borderRadius: '8px', padding: '9px 10px', background: 'var(--surface2)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', fontWeight: 700, fontSize: '12px' }}>
+                  <span>{row.name}</span>
+                  <span style={{ fontFamily: 'var(--mono)', color: 'var(--accent)' }}>{row.people} kişi</span>
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px', marginTop: '6px' }}>
+                  {[
+                    ['P', row.scheduled, 'var(--accent)'],
+                    ['Boş', row.empty, 'var(--red)'],
+                    ['OFF', row.missingOff, 'var(--red)'],
+                    ['Y Not', row.reason, 'var(--red)'],
+                    ['Y', row.absent, 'var(--text3)'],
+                  ].filter(([, value]) => value > 0).map(([label, value, color]) => (
+                    <span key={label} style={{ fontFamily: 'var(--mono)', fontSize: '9px', color, border: '1px solid var(--border)', borderRadius: '5px', padding: '2px 5px' }}>
+                      {label}:{value}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="panel">
+        <div className="panel-header">
+          <div>
+            <div className="panel-title">PERSONEL KAPANIŞ LİSTESİ</div>
+            <div className="panel-subtitle">{issueRows.length} kayıt · filtreli kontrol listesi</div>
+          </div>
+          <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            {filterButtons.map(([id, label]) => (
+              <button key={id} className={`filter-chip ${issueFilter === id ? 'active' : ''}`} onClick={() => setIssueFilter(id)} style={{ fontSize: '9px', padding: '3px 8px' }}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="panel-body" style={{ padding: 0, overflowX: 'auto' }}>
+          <table className="data-table" style={{ fontSize: '11px' }}>
+            <thead>
+              <tr>
+                <th>PERSONEL</th>
+                <th>DEPARTMAN</th>
+                <th style={{ textAlign: 'center' }}>P</th>
+                <th style={{ textAlign: 'center' }}>BOŞ</th>
+                <th style={{ textAlign: 'center' }}>h</th>
+                <th style={{ textAlign: 'center' }}>Y</th>
+                <th style={{ textAlign: 'center' }}>Y NOT</th>
+                <th>NOT</th>
+              </tr>
+            </thead>
+            <tbody>
+              {issueRows.length === 0 ? (
+                <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--green)', padding: '20px' }}>Bu filtrede kontrol gerektiren kayıt yok.</td></tr>
+              ) : issueRows.map(issue => (
+                <tr key={issue.staff.id} onClick={() => onPersonClick?.(issue.staff)} style={{ cursor: 'pointer' }}>
+                  <td style={{ fontWeight: 700 }}>{issue.staff.full_name}</td>
+                  <td>{issue.staff.dept_name || '—'}</td>
+                  <td style={{ textAlign: 'center', color: issue.scheduled ? 'var(--accent)' : 'var(--text3)', fontFamily: 'var(--mono)' }}>{issue.scheduled || '—'}</td>
+                  <td style={{ textAlign: 'center', color: issue.empty ? 'var(--red)' : 'var(--text3)', fontFamily: 'var(--mono)' }}>{issue.empty || '—'}</td>
+                  <td style={{ textAlign: 'center', color: issue.off === 0 ? 'var(--red)' : 'var(--green)', fontFamily: 'var(--mono)' }}>{issue.off || '—'}</td>
+                  <td style={{ textAlign: 'center', color: issue.absent ? 'var(--red)' : 'var(--text3)', fontFamily: 'var(--mono)' }}>{issue.absent || '—'}</td>
+                  <td style={{ textAlign: 'center', color: issue.absentWithoutReason ? 'var(--red)' : 'var(--green)', fontFamily: 'var(--mono)' }}>{issue.absentWithoutReason || '—'}</td>
+                  <td style={{ color: 'var(--text2)' }}>{issue.issueLabels.join(' · ')}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   )
@@ -1360,7 +1604,7 @@ export default function PuantajTab({ departments }) {
   const [deptFilter, setDeptFilter] = useState('')
   const [search, setSearch] = useState('')
   const debouncedPuantajSearch = useDebounce(search, 250)
-  const [viewMode, setViewMode] = useState('list') // 'list' | 'calendar' | 'summary'
+  const [viewMode, setViewMode] = useState('list') // 'list' | 'calendar' | 'summary' | 'control'
   const [showEmployer, setShowEmployer] = useState(false)
   const [selectedRow, setSelectedRow] = useState(null) // row object for bordro detail
   const [sortBy, setSortBy] = useState('name')
@@ -1608,7 +1852,7 @@ export default function PuantajTab({ departments }) {
 
         {/* View mode */}
         <div style={{ display: 'flex', gap: '2px', background: 'var(--surface2)', borderRadius: '8px', padding: '2px', border: '1px solid var(--border)' }}>
-          {[['list','📋 LİSTE'],['calendar','📅 TAKVİM'],['summary','🏢 ÖZET']].map(([id, label]) => (
+          {[['list','📋 LİSTE'],['calendar','📅 TAKVİM'],['summary','🏢 ÖZET'],['control','🔎 KONTROL']].map(([id, label]) => (
             <button key={id} onClick={() => setViewMode(id)}
               style={{
                 padding: '4px 10px', borderRadius: '6px', fontSize: '10px', fontFamily: 'var(--mono)',
@@ -1715,6 +1959,7 @@ export default function PuantajTab({ departments }) {
         isLocked={isLocked}
         monthLabel={monthLabel}
         onOpenCalendar={() => setViewMode('calendar')}
+        onOpenControl={() => setViewMode('control')}
         onSyncScheduled={syncScheduledToWorked}
         syncing={updatePuantajDay.isPending}
       />
@@ -1746,6 +1991,18 @@ export default function PuantajTab({ departments }) {
       )}
       {viewMode === 'summary' && (
         <PuantajSummaryView filtered={filtered} formatMoney={formatMoney} />
+      )}
+      {viewMode === 'control' && (
+        <PuantajControlView
+          audit={puantajAudit}
+          monthLabel={monthLabel}
+          canEdit={canEdit}
+          isLocked={isLocked}
+          onOpenCalendar={() => setViewMode('calendar')}
+          onSyncScheduled={syncScheduledToWorked}
+          syncing={updatePuantajDay.isPending}
+          onPersonClick={setSelectedRow}
+        />
       )}
 
       {/* Bordro detail bottom sheet */}

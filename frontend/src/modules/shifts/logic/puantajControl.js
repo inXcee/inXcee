@@ -15,6 +15,7 @@ function emptyCounts() {
     off: 0,
     leave: 0,
     absent: 0,
+    absentWithoutReason: 0,
     empty: 0,
     overtimeHours: 0,
     holidayWorked: 0,
@@ -29,17 +30,21 @@ function countEntry(acc, entry, { isSunday = false, isHoliday = false } = {}) {
   } else if (status === 'scheduled') acc.scheduled += 1
   else if (status === 'off') acc.off += 1
   else if (status === 'on_leave') acc.leave += 1
-  else if (status === 'absent') acc.absent += 1
+  else if (status === 'absent') {
+    acc.absent += 1
+    if (!String(entry?.absent_reason || '').trim()) acc.absentWithoutReason += 1
+  }
   else if (!isSunday) acc.empty += 1
   acc.overtimeHours += Number(entry?.overtime_hours || 0)
   return acc
 }
 
-function labelIssues({ scheduled, empty, off, absent }) {
+function labelIssues({ scheduled, empty, off, absent, absentWithoutReason }) {
   const labels = []
   if (scheduled > 0) labels.push(`${scheduled} planlı gün kapanmamış`)
   if (empty > 0) labels.push(`${empty} boş gün`)
   if (off === 0) labels.push('haftalık izin yok')
+  if (absentWithoutReason > 0) labels.push(`${absentWithoutReason} devamsız nedeni eksik`)
   if (absent > 0) labels.push(`${absent} devamsız`)
   return labels
 }
@@ -84,7 +89,7 @@ export function buildPuantajControl({ staffRows = [], daysByStaff = {}, holidays
       ...counts,
       issueCount: issueLabels.length,
       issueLabels,
-      ready: issueLabels.filter(label => !label.includes('devamsız')).length === 0,
+      ready: counts.scheduled === 0 && counts.empty === 0 && counts.off > 0 && counts.absentWithoutReason === 0,
     }
     byStaffId[staff.id] = issue
     if (issue.issueCount > 0) staffIssues.push(issue)
@@ -96,7 +101,10 @@ export function buildPuantajControl({ staffRows = [], daysByStaff = {}, holidays
     ? Math.max(0, Math.round(((expectedCells - unresolvedCells) / expectedCells) * 100))
     : 100
   const missingOffStaff = staffIssues.filter(issue => issue.off === 0).length
-  const readyStaff = staffRows.length - staffIssues.filter(issue => issue.scheduled > 0 || issue.empty > 0 || issue.off === 0).length
+  const missingAbsenceReasonStaff = staffIssues.filter(issue => issue.absentWithoutReason > 0).length
+  const readyStaff = staffRows.length - staffIssues.filter(issue => (
+    issue.scheduled > 0 || issue.empty > 0 || issue.off === 0 || issue.absentWithoutReason > 0
+  )).length
 
   return {
     month,
@@ -111,11 +119,12 @@ export function buildPuantajControl({ staffRows = [], daysByStaff = {}, holidays
     byStaffId,
     scheduledCells,
     missingOffStaff,
+    missingAbsenceReasonStaff,
     readyStaff,
     expectedCells,
     unresolvedCells,
     completionRate,
-    readyToClose: unresolvedCells === 0 && missingOffStaff === 0,
+    readyToClose: unresolvedCells === 0 && missingOffStaff === 0 && totals.absentWithoutReason === 0,
     finalStatusCount: staffRows.reduce((sum, staff) => (
       sum + (daysByStaff?.[staff.id] || []).filter(day => FINAL_STATUSES.has(day.status)).length
     ), 0),
