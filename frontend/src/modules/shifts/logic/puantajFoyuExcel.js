@@ -31,6 +31,26 @@ const STATUS_LABELS = {
   no_record: 'Boş',
 }
 
+const APPROVAL_LABELS = {
+  draft: 'Taslak',
+  submitted: 'Kontrolde',
+  approved: 'Onaylandi',
+  returned: 'Geri dondu',
+  locked: 'Kilitli',
+  missing: 'Eksik',
+  pending: 'Bekliyor',
+}
+
+const APPROVAL_COLORS = {
+  draft: COLORS.gray,
+  submitted: COLORS.amber,
+  approved: COLORS.green,
+  returned: COLORS.red,
+  locked: COLORS.teal,
+  missing: COLORS.gray,
+  pending: COLORS.amber,
+}
+
 function cleanSheetName(value) {
   const cleaned = String(value || 'Sayfa')
     .replace(/[\\/*?:[\]]/g, ' ')
@@ -82,6 +102,68 @@ function dayCellRange(mainInfo, dayNo) {
 
 function formulaResult(formula, result) {
   return { formula, result }
+}
+
+function approvalLabel(status) {
+  return APPROVAL_LABELS[status] || status || 'Eksik'
+}
+
+function approvalColor(status) {
+  return APPROVAL_COLORS[status] || COLORS.gray
+}
+
+function approvalTime(value) {
+  if (!value) return ''
+  return new Date(value).toLocaleString('tr-TR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function normalizeApproval(approval, month, y, m, daysInMonth) {
+  const periodApproval = approval?.period_approval || {
+    period: month,
+    status: 'draft',
+    note: '',
+  }
+  const dailyByDate = new Map((approval?.daily_approvals || []).map(row => [row.work_date, row]))
+  const dailyApprovals = Array.from({ length: daysInMonth }, (_, index) => {
+    const day = index + 1
+    const workDate = `${month}-${String(day).padStart(2, '0')}`
+    const weekday = new Date(y, m - 1, day).getDay()
+    return {
+      period: month,
+      work_date: workDate,
+      day,
+      weekday,
+      is_weekend: weekday === 0 || weekday === 6,
+      status: 'missing',
+      note: '',
+      ...(dailyByDate.get(workDate) || {}),
+    }
+  })
+  return {
+    period_approval: periodApproval,
+    daily_approvals: dailyApprovals,
+    events: Array.isArray(approval?.events) ? approval.events : [],
+  }
+}
+
+function summarizeApproval(approval) {
+  const counts = approval.daily_approvals.reduce((acc, row) => {
+    const status = row.status || 'missing'
+    acc[status] = (acc[status] || 0) + 1
+    return acc
+  }, { missing: 0, pending: 0, approved: 0, returned: 0 })
+  return {
+    ...counts,
+    totalDays: approval.daily_approvals.length,
+    periodStatus: approval.period_approval?.status || 'draft',
+    periodStatusLabel: approvalLabel(approval.period_approval?.status || 'draft'),
+  }
 }
 
 function countCodes(cells, codes) {
@@ -352,6 +434,11 @@ function addSummarySheet(workbook, sheetName, rows, summaryRows, context, mainIn
   addMetric(ws, 5, 'İZİN / RAPOR', totalLeave, COLORS.amber)
   addMetric(ws, 7, 'FAZLA MESAİ', totalFm, COLORS.purple)
 
+  if (context.approvalStats) {
+    addMetric(ws, 9, 'ONAYLI GUN', `${context.approvalStats.approved || 0}/${context.approvalStats.totalDays || 0}`, COLORS.green)
+    addMetric(ws, 11, 'ONAY DURUMU', context.approvalStats.periodStatusLabel, approvalColor(context.approvalStats.periodStatus))
+  }
+
   const header = ws.getRow(SUMMARY_HEADER_ROW)
   header.values = ['DEPARTMAN', 'PERSONEL', ...FOYU_TOTAL_COLUMNS.map(c => c.label)]
   styleHeaderRow(header)
@@ -583,6 +670,153 @@ function addDetailSheet(workbook, sheetName, rows, context) {
   return { ws, sheetName, firstRow: CONTROL_FIRST_ROW, lastRow }
 }
 
+function addApprovalSheet(workbook, sheetName, rows, context, mainInfo) {
+  const approval = context.approval
+  const stats = context.approvalStats
+  const period = approval.period_approval || {}
+  const ws = workbook.addWorksheet(sheetName, {
+    views: [{ state: 'frozen', ySplit: CONTROL_HEADER_ROW, showGridLines: false }],
+  })
+  setupSheet(ws, COLORS.purple)
+  setupTitle(ws, `${context.companyName} - PUANTAJ ONAY TAKIBI`, `Donem: ${context.monthLabel}   -   Aylik onay, gunluk kontrol ve islem gecmisi`, 12)
+
+  addMetric(ws, 1, 'AY DURUMU', stats.periodStatusLabel, approvalColor(stats.periodStatus))
+  addMetric(ws, 3, 'ONAYLI GUN', `${stats.approved || 0}/${stats.totalDays || 0}`, COLORS.green)
+  addMetric(ws, 5, 'BEKLEYEN', stats.pending || 0, (stats.pending || 0) ? COLORS.amber : COLORS.gray)
+  addMetric(ws, 7, 'GERI DONEN', stats.returned || 0, (stats.returned || 0) ? COLORS.red : COLORS.gray)
+  addMetric(ws, 9, 'EKSIK', stats.missing || 0, (stats.missing || 0) ? COLORS.amber : COLORS.green)
+  addMetric(ws, 11, 'PERSONEL', rows.length, COLORS.blue)
+
+  const periodHeader = ws.getRow(CONTROL_HEADER_ROW)
+  periodHeader.values = ['AY DURUMU', 'NOT', 'GONDEREN', 'GONDERIM', 'ONAYLAYAN', 'ONAY', 'GERI GONDEREN', 'GERI DONUS', 'KILITLEYEN', 'KILIT', 'DEPARTMAN', 'KAPSAM']
+  styleHeaderRow(periodHeader)
+  const periodRow = ws.getRow(CONTROL_FIRST_ROW)
+  periodRow.values = [
+    approvalLabel(period.status || 'draft'),
+    period.note || '',
+    period.submitted_by_name || '',
+    approvalTime(period.submitted_at),
+    period.approved_by_name || '',
+    approvalTime(period.approved_at),
+    period.returned_by_name || '',
+    approvalTime(period.returned_at),
+    period.locked_by_name || '',
+    approvalTime(period.locked_at),
+    period.dept_name || '',
+    period.dept_scope || 'all',
+  ]
+  periodRow.eachCell({ includeEmpty: true }, (cell, colNo) => {
+    if (colNo > 12) return
+    cell.border = border
+    cell.font = { size: 9, bold: colNo === 1 }
+    cell.alignment = { horizontal: [2, 3, 5, 7, 9, 11, 12].includes(colNo) ? 'left' : 'center', vertical: 'middle', wrapText: true }
+    if (colNo === 1) {
+      cell.fill = fill(approvalColor(period.status || 'draft'))
+      cell.font = { size: 9, bold: true, color: { argb: 'FFFFFFFF' } }
+    }
+  })
+
+  const dailyHeaderRow = CONTROL_FIRST_ROW + 3
+  const dailyFirstRow = dailyHeaderRow + 1
+  const dailyHeader = ws.getRow(dailyHeaderRow)
+  dailyHeader.values = ['TARIH', 'GUN', 'ONAY', 'GONDEREN', 'ONAYLAYAN', 'NOT', 'N', 'P', 'BOS', 'Y NOTSUZ', 'PUANTAJ', 'AKSIYON']
+  styleHeaderRow(dailyHeader)
+
+  approval.daily_approvals.forEach((item, idx) => {
+    const rowNo = dailyFirstRow + idx
+    const day = Number(String(item.work_date).slice(8, 10))
+    const sourceCells = rows.map(row => row.cells[day - 1] || {})
+    const range = dayCellRange(mainInfo, day)
+    const worked = countCodes(sourceCells, ['N'])
+    const planned = countCodes(sourceCells, ['P'])
+    const empty = sourceCells.filter(cell => !(cell.code || '') && cell.status !== 'sunday').length
+    const absentWithoutReason = sourceCells.filter(cell => (cell.code || '') === 'Y' && !String(cell.absentReason || '').trim()).length
+    const puantajStatus = planned + empty + absentWithoutReason > 0 ? 'Kontrol' : 'Hazir'
+    const action = item.status === 'approved'
+      ? 'Tamam'
+      : item.status === 'returned'
+        ? 'Duzeltme bekliyor'
+        : item.status === 'pending'
+          ? 'Mudur onayi bekliyor'
+          : 'Kontrole gonder'
+    const row = ws.getRow(rowNo)
+    row.values = [
+      item.work_date,
+      new Date(context.y, context.m - 1, day).toLocaleDateString('tr-TR', { weekday: 'short' }),
+      approvalLabel(item.status || 'missing'),
+      item.submitted_by_name || '',
+      item.approved_by_name || '',
+      item.note || '',
+      formulaResult(`COUNTIF(${range},"N")`, worked),
+      formulaResult(`COUNTIF(${range},"P")`, planned),
+      empty,
+      absentWithoutReason,
+      puantajStatus,
+      action,
+    ]
+    row.eachCell({ includeEmpty: true }, (cell, colNo) => {
+      if (colNo > 12) return
+      cell.border = border
+      cell.font = { size: 8, bold: [3, 11, 12].includes(colNo) }
+      cell.alignment = { horizontal: [1, 2, 3, 7, 8, 9, 10, 11].includes(colNo) ? 'center' : 'left', vertical: 'middle', wrapText: true }
+      if (colNo === 3) {
+        cell.fill = fill(approvalColor(item.status || 'missing'))
+        cell.font = { size: 8, bold: true, color: { argb: 'FFFFFFFF' } }
+      }
+      if (colNo === 11 && puantajStatus === 'Kontrol') {
+        cell.fill = fill('FEF3C7')
+        cell.font = { size: 8, bold: true, color: { argb: argb(COLORS.amber) } }
+      }
+      if (colNo === 11 && puantajStatus === 'Hazir') {
+        cell.fill = fill('DCFCE7')
+        cell.font = { size: 8, bold: true, color: { argb: argb(COLORS.green) } }
+      }
+    })
+  })
+
+  const eventsTitleRow = dailyFirstRow + context.daysInMonth + 2
+  ws.mergeCells(eventsTitleRow, 1, eventsTitleRow, 12)
+  const eventsTitle = ws.getCell(eventsTitleRow, 1)
+  eventsTitle.value = 'ISLEM GECMISI'
+  styleTitleCell(eventsTitle, COLORS.header)
+
+  const eventsHeaderRow = eventsTitleRow + 1
+  const eventsHeader = ws.getRow(eventsHeaderRow)
+  eventsHeader.values = ['ZAMAN', 'KAPSAM', 'TARIH / DONEM', 'ISLEM', 'DURUM', 'KULLANICI', 'NOT']
+  styleHeaderRow(eventsHeader)
+
+  approval.events.forEach((event, idx) => {
+    const row = ws.getRow(eventsHeaderRow + 1 + idx)
+    row.values = [
+      approvalTime(event.created_at),
+      event.scope || '',
+      event.work_date || event.period || '',
+      event.action || '',
+      approvalLabel(event.status || ''),
+      event.user_name || '',
+      event.note || '',
+    ]
+    row.eachCell({ includeEmpty: true }, (cell, colNo) => {
+      if (colNo > 7) return
+      cell.border = border
+      cell.font = { size: 8, bold: colNo === 5 }
+      cell.alignment = { horizontal: [1, 2, 3, 4, 5].includes(colNo) ? 'center' : 'left', vertical: 'middle', wrapText: true }
+      if (colNo === 5 && event.status) {
+        cell.fill = fill(approvalColor(event.status))
+        cell.font = { size: 8, bold: true, color: { argb: 'FFFFFFFF' } }
+      }
+    })
+  })
+
+  ;[13, 8, 12, 18, 18, 28, 7, 7, 7, 9, 11, 20].forEach((width, idx) => { ws.getColumn(idx + 1).width = width })
+  const dailyLastRow = dailyFirstRow + Math.max(context.daysInMonth, 1) - 1
+  const lastRow = eventsHeaderRow + Math.max(approval.events.length, 1)
+  ws.autoFilter = { from: { row: dailyHeaderRow, column: 1 }, to: { row: dailyLastRow, column: 12 } }
+  ws.pageSetup.printTitlesRow = '1:7'
+  ws.pageSetup.printArea = `A1:L${lastRow}`
+  return { ws, sheetName, firstRow: dailyFirstRow, lastRow, eventsHeaderRow }
+}
+
 export function buildPuantajFoyuWorkbook(ExcelJS, options) {
   const [y, m] = options.month.split('-').map(Number)
   const daysInMonth = options.daysInMonth || new Date(y, m, 0).getDate()
@@ -594,6 +828,8 @@ export function buildPuantajFoyuWorkbook(ExcelJS, options) {
   const summaryRows = summarizeFoyuRows(rows)
   const deptName = options.deptName || 'Tüm Departmanlar'
   const companyName = options.companyName || 'YYS Kampüs'
+  const approval = normalizeApproval(options.approval, options.month, y, m, daysInMonth)
+  const approvalStats = summarizeApproval(approval)
   const usedNames = new Set()
 
   const workbook = new ExcelJS.Workbook()
@@ -610,6 +846,8 @@ export function buildPuantajFoyuWorkbook(ExcelJS, options) {
     holidaySet,
     holidayNames,
     companyName,
+    approval,
+    approvalStats,
   }
 
   const mainName = uniqueSheetName('Puantaj', usedNames)
@@ -624,6 +862,8 @@ export function buildPuantajFoyuWorkbook(ExcelJS, options) {
   const dailyInfo = addDailyControlSheet(workbook, dailyName, rows, context, mainInfo)
   const closingName = uniqueSheetName('Kapanış Kontrol', usedNames)
   const closingInfo = addClosingControlSheet(workbook, closingName, rows, context)
+  const approvalName = uniqueSheetName('Onay Takibi', usedNames)
+  const approvalInfo = addApprovalSheet(workbook, approvalName, rows, context, mainInfo)
   const detailName = uniqueSheetName('Vardiya Detay', usedNames)
   const detailInfo = addDetailSheet(workbook, detailName, rows, context)
 
@@ -637,6 +877,7 @@ export function buildPuantajFoyuWorkbook(ExcelJS, options) {
       summary: summaryName,
       daily: dailyName,
       closing: closingName,
+      approval: approvalName,
       detail: detailName,
     },
     sheetInfo: {
@@ -645,6 +886,7 @@ export function buildPuantajFoyuWorkbook(ExcelJS, options) {
       summary: summaryInfo,
       daily: dailyInfo,
       closing: closingInfo,
+      approval: approvalInfo,
       detail: detailInfo,
     },
   }

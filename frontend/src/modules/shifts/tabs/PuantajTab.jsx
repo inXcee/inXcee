@@ -2075,9 +2075,13 @@ export default function PuantajTab({ departments }) {
     try {
       const params = { month }
       if (deptFilter) params.dept_id = deptFilter
-      const [daysRes, holidaysRes, ExcelJS] = await Promise.all([
+      const approvalRequest = roleCanEdit
+        ? api.get('/shifts/puantaj/approval', { params }).then(res => res.data).catch(() => approvalPayload)
+        : Promise.resolve(null)
+      const [daysRes, holidaysRes, approvalRes, ExcelJS] = await Promise.all([
         api.get('/shifts/puantaj/days', { params }).then(res => res.data.days || {}),
         api.get('/shifts/holidays', { params: { year: y } }).then(res => res.data),
+        approvalRequest,
         import('exceljs').then(mod => mod.default),
       ])
       const deptName = deptFilter ? (departments.find(d => String(d.id) === String(deptFilter))?.name || '—') : 'Tüm Departmanlar'
@@ -2089,6 +2093,7 @@ export default function PuantajTab({ departments }) {
         monthLabel,
         deptName,
         companyName: COMPANY_NAME,
+        approval: approvalRes,
       })
 
       const buf = await workbook.xlsx.writeBuffer()
