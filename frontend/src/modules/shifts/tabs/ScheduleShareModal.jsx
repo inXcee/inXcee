@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useToastStore } from '../../../shared/store/toastStore.js'
 import { ModalOverlay } from '../shared.jsx'
 import {
@@ -7,6 +7,31 @@ import {
   downloadScheduleShareImage,
   openSchedulePrintWindow,
 } from '../logic/scheduleShareExport.js'
+
+const SHARE_OPTIONS_KEY = 'shift_schedule_share_options_v2'
+const SHARE_PRESETS = [
+  {
+    label: 'Personel',
+    options: { colorMode: 'shift', density: 'compact', includeSummary: false, includeRole: true, includeLocation: true, includeLegend: true, includeSignatures: false, pageBreakByDept: false },
+  },
+  {
+    label: 'Yönetici',
+    options: { colorMode: 'status', density: 'normal', includeSummary: true, includeRole: true, includeLocation: true, includeStaffTotals: true, includeLegend: true, includeSignatures: true, pageBreakByDept: false },
+  },
+  {
+    label: 'Departman',
+    options: { colorMode: 'department', density: 'normal', includeSummary: true, includeRole: true, includeLocation: true, includeStaffTotals: true, includeLegend: true, includeSignatures: true, pageBreakByDept: true },
+  },
+]
+
+function loadSavedOptions() {
+  if (typeof window === 'undefined') return {}
+  try {
+    return JSON.parse(window.localStorage.getItem(SHARE_OPTIONS_KEY) || '{}') || {}
+  } catch {
+    return {}
+  }
+}
 
 export default function ScheduleShareModal({
   onClose,
@@ -20,10 +45,11 @@ export default function ScheduleShareModal({
   deptFilter,
   shiftDefs,
 }) {
-  const [options, setOptions] = useState({
+  const [options, setOptions] = useState(() => ({
     ...DEFAULT_SCHEDULE_SHARE_OPTIONS,
     title: 'Haftalık Vardiya Çizelgesi',
-  })
+    ...loadSavedOptions(),
+  }))
   const [busy, setBusy] = useState('')
   const toast = useToastStore(s => s.addToast)
 
@@ -42,7 +68,17 @@ export default function ScheduleShareModal({
 
   const previewHtml = useMemo(() => buildScheduleShareHtml(payload), [payload])
 
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(SHARE_OPTIONS_KEY, JSON.stringify(options))
+    } catch {
+      // localStorage kapalıysa çıktı yine çalışır; sadece ayarlar hatırlanmaz.
+    }
+  }, [options])
+
   const patch = (key, value) => setOptions(prev => ({ ...prev, [key]: value }))
+  const applyPreset = preset => setOptions(prev => ({ ...prev, ...preset.options }))
+  const resetOptions = () => setOptions({ ...DEFAULT_SCHEDULE_SHARE_OPTIONS, title: 'Haftalık Vardiya Çizelgesi' })
   const toggle = key => patch(key, !options[key])
 
   const runPrint = () => {
@@ -108,6 +144,14 @@ export default function ScheduleShareModal({
               </select>
             </label>
 
+            <label className="form-label">
+              Kağıt
+              <select className="form-select" value={options.pageSize} onChange={e => patch('pageSize', e.target.value)}>
+                <option value="A4">A4 yatay</option>
+                <option value="A3">A3 yatay geniş</option>
+              </select>
+            </label>
+
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
               <label className="form-label">
                 Başlık rengi
@@ -119,12 +163,35 @@ export default function ScheduleShareModal({
               </label>
             </div>
 
+            <div>
+              <div className="form-label">Hazır şablon</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
+                {SHARE_PRESETS.map(preset => (
+                  <button key={preset.label} className="btn btn-ghost btn-sm" onClick={() => applyPreset(preset)}>{preset.label}</button>
+                ))}
+              </div>
+              <button className="btn btn-ghost btn-sm" style={{ width: '100%', marginTop: 6 }} onClick={resetOptions}>Ayarları Sıfırla</button>
+            </div>
+
+            <label className="form-label">
+              Hazırlayan
+              <input className="form-input" value={options.preparedBy || ''} onChange={e => patch('preparedBy', e.target.value)} placeholder="Örn. Vardiya Amirliği" />
+            </label>
+
+            <label className="form-label">
+              Çıktı notu
+              <textarea className="form-input" value={options.note || ''} onChange={e => patch('note', e.target.value)} placeholder="Personele gönderilecek açıklama..." style={{ minHeight: 70, resize: 'vertical' }} />
+            </label>
+
             {[
               ['onlyVisible', 'Sadece görünen filtreli liste'],
+              ['pageBreakByDept', 'Her departman ayrı sayfadan başlasın'],
               ['includeSummary', 'Üst özet kartları'],
               ['includeRole', 'Personel rolü'],
               ['includeLocation', 'Çalışma noktası'],
+              ['includeStaffTotals', 'Personel haftalık toplamları'],
               ['includeLegend', 'Renk açıklaması'],
+              ['includeSignatures', 'İmza / kontrol alanı'],
             ].map(([key, label]) => (
               <label key={key} style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text2)', fontSize: 12 }}>
                 <input type="checkbox" checked={!!options[key]} onChange={() => toggle(key)} />

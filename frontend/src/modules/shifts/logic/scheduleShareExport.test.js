@@ -98,6 +98,25 @@ describe('scheduleShareExport', () => {
     expect(html).not.toContain('OTC Yemekhane')
   })
 
+  it('renders department page splits, notes and signature blocks', () => {
+    const html = buildScheduleShareHtml(payload({
+      options: {
+        title: 'Imzali Departman Ciktisi',
+        pageBreakByDept: true,
+        pageSize: 'A3',
+        preparedBy: 'Vardiya Amirligi',
+        note: 'Bu cizelge personele duyurulacak.',
+        includeSignatures: true,
+      },
+    }))
+
+    expect(html).toContain('@page { size: A3 landscape')
+    expect(html).toContain('dept-block split')
+    expect(html).toContain('Hazirlayan: Vardiya Amirligi')
+    expect(html).toContain('Bu cizelge personele duyurulacak.')
+    expect(html).toContain('Kontrol Eden')
+  })
+
   it('creates stable filenames for downloaded images', () => {
     expect(scheduleShareFilename('2026-07-06', 'png')).toBe('vardiya-cizelgesi-2026-07-06.png')
   })

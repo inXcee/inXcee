@@ -22,10 +22,16 @@ export const DEFAULT_SCHEDULE_SHARE_OPTIONS = {
   includeSummary: true,
   includeRole: true,
   includeLocation: true,
+  includeStaffTotals: true,
   includeLegend: true,
+  includeSignatures: true,
   onlyVisible: true,
+  pageBreakByDept: false,
+  pageSize: 'A4',
   accentColor: '#2563EB',
   weekendColor: '#F59E0B',
+  note: '',
+  preparedBy: '',
 }
 
 const DAY_LABELS = ['Pzt', 'Sal', 'Car', 'Per', 'Cum', 'Cmt', 'Paz']
@@ -112,6 +118,17 @@ function personCounts(person, weekDays) {
   }, { work: 0, rest: 0, absent: 0, empty: 0 })
 }
 
+function dayCountsForPeople(people, date) {
+  return people.reduce((acc, person) => {
+    const cell = person.days?.[date]
+    if (!cell) acc.empty += 1
+    else if (cell.status === 'absent') acc.absent += 1
+    else if (cell.status === 'off' || cell.status === 'on_leave') acc.rest += 1
+    else if (isWorking(cell)) acc.work += 1
+    return acc
+  }, { work: 0, rest: 0, absent: 0, empty: 0 })
+}
+
 function buildLegend(shiftDefs = []) {
   return [
     ...shiftDefs.map((shift, idx) => ({
@@ -185,16 +202,18 @@ export function buildScheduleShareModel({
 function buildStyles(opts) {
   const accent = cleanHex(opts.accentColor, '2563EB')
   const weekend = cleanHex(opts.weekendColor, 'F59E0B')
+  const pageSize = opts.pageSize === 'A3' ? 'A3' : 'A4'
   const density = {
     compact: { page: 1120, name: 148, cellPad: 4, font: 9, sub: 7, head: 8, row: 38 },
     normal: { page: 1320, name: 182, cellPad: 6, font: 10, sub: 8, head: 9, row: 48 },
     wide: { page: 1540, name: 220, cellPad: 8, font: 11, sub: 9, head: 10, row: 58 },
   }[opts.density] || { page: 1320, name: 182, cellPad: 6, font: 10, sub: 8, head: 9, row: 48 }
+  const pageWidth = pageSize === 'A3' ? density.page + 420 : density.page
 
   return `
     * { box-sizing: border-box; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
     body { margin: 0; background: #f8fafc; color: #0f172a; font-family: Arial, Helvetica, sans-serif; }
-    .sheet { width: ${density.page}px; margin: 0 auto; padding: 22px; background: #ffffff; }
+    .sheet { width: ${pageWidth}px; margin: 0 auto; padding: 22px; background: #ffffff; }
     .top { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; border-bottom: 4px solid #${accent}; padding-bottom: 12px; }
     .title { font-size: 24px; font-weight: 900; letter-spacing: .3px; margin: 0 0 6px; }
     .subline { color: #475569; font-size: 11px; font-weight: 700; }
@@ -221,8 +240,16 @@ function buildStyles(opts) {
     .legend { display: flex; gap: 7px; flex-wrap: wrap; margin-top: 12px; }
     .legend-item { display: flex; align-items: center; gap: 5px; border: 1px solid #cbd5e1; border-radius: 999px; padding: 4px 8px; font-size: 9px; font-weight: 800; background: #fff; }
     .swatch { width: 13px; height: 13px; border-radius: 4px; display: inline-block; }
+    .note { margin: 12px 0 0; border: 1px solid #cbd5e1; border-left: 5px solid #${accent}; border-radius: 8px; padding: 9px 11px; background: #f8fafc; font-size: 10px; color: #334155; line-height: 1.45; white-space: pre-wrap; }
+    .signatures { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 16px; }
+    .signature { border: 1px solid #cbd5e1; border-radius: 8px; min-height: 66px; padding: 8px 10px; background: #fff; }
+    .signature b { display: block; font-size: 10px; color: #0f172a; }
+    .signature span { display: block; margin-top: 28px; border-top: 1px dashed #94a3b8; padding-top: 5px; color: #64748b; font-size: 8px; }
+    .dept-block + .dept-block { margin-top: 14px; }
+    .dept-block.split { page-break-before: always; break-before: page; }
+    .dept-block.split:first-of-type { page-break-before: auto; break-before: auto; }
     .footer { margin-top: 12px; color: #64748b; font-size: 9px; display: flex; justify-content: space-between; gap: 12px; }
-    @page { size: A4 landscape; margin: 8mm; }
+    @page { size: ${pageSize} landscape; margin: 8mm; }
     @media print {
       body { background: #fff; }
       .sheet { width: auto; padding: 0; }
@@ -249,6 +276,7 @@ function renderScheduleBody(model) {
       </div>
       <div class="stamp">
         <b>Personel paylasim ciktisi</b><br />
+        ${opts.preparedBy ? `Hazirlayan: ${escapeHtml(opts.preparedBy)}<br />` : ''}
         ${escapeHtml(generated)}
       </div>
     </div>
@@ -264,22 +292,22 @@ function renderScheduleBody(model) {
     </div>
   ` : ''
 
-  const tableHead = `
-    <thead>
-      <tr>
-        <th class="person-head">Personel</th>
-        ${weekDays.map((date, idx) => `
-          <th class="${idx >= 5 ? 'weekend' : ''}">
-            ${DAY_LABELS[idx] || ''}
-            <span class="day-date">${escapeHtml(formatDate(date))}</span>
-            <div class="count">${perDay[idx]?.work || 0} calisan / ${perDay[idx]?.rest || 0} izin</div>
-          </th>
-        `).join('')}
-      </tr>
-    </thead>
-  `
+  const tableHeadFor = (dayStats = perDay) => `
+      <thead>
+        <tr>
+          <th class="person-head">Personel</th>
+          ${weekDays.map((date, idx) => `
+            <th class="${idx >= 5 ? 'weekend' : ''}">
+              ${DAY_LABELS[idx] || ''}
+              <span class="day-date">${escapeHtml(formatDate(date))}</span>
+              <div class="count">${dayStats[idx]?.work || 0} calisan / ${dayStats[idx]?.rest || 0} izin</div>
+            </th>
+          `).join('')}
+        </tr>
+      </thead>
+    `
 
-  const bodyRows = groups.map(group => {
+  const renderGroupRows = (group) => {
     const deptColor = cleanHex(deptHex(group.color), '64748B')
     const deptRow = `
       <tr class="dept-row">
@@ -298,7 +326,7 @@ function renderScheduleBody(model) {
             <div class="p-meta">${escapeHtml([
               opts.includeRole ? (person.role_name || 'Rolsuz') : '',
               person.position || '',
-              `C:${counts.work} I:${counts.rest} B:${counts.empty + counts.absent}`,
+              opts.includeStaffTotals ? `C:${counts.work} I:${counts.rest} B:${counts.empty + counts.absent}` : '',
             ].filter(Boolean).join(' / '))}</div>
           </td>
           ${weekDays.map(date => {
@@ -319,7 +347,22 @@ function renderScheduleBody(model) {
       `
     }).join('')
     return deptRow + peopleRows
-  }).join('')
+  }
+
+  const bodyRows = groups.map(renderGroupRows).join('')
+  const emptyTableHtml = `<table>${tableHeadFor(perDay)}<tbody><tr><td colspan="${weekDays.length + 1}" style="padding:24px;text-align:center;color:#64748b;">Kayit yok</td></tr></tbody></table>`
+  const tableHtml = groups.length === 0
+    ? emptyTableHtml
+    : opts.pageBreakByDept
+    ? groups.map((group, idx) => {
+      const deptStats = weekDays.map(date => dayCountsForPeople(group.people, date))
+      return `
+        <div class="dept-block ${idx > 0 ? 'split' : ''}">
+          <table>${tableHeadFor(deptStats)}<tbody>${renderGroupRows(group)}</tbody></table>
+        </div>
+      `
+    }).join('')
+    : `<table>${tableHeadFor(perDay)}<tbody>${bodyRows}</tbody></table>`
 
   const legendHtml = opts.includeLegend ? `
     <div class="legend">
@@ -334,13 +377,23 @@ function renderScheduleBody(model) {
       }).join('')}
     </div>
   ` : ''
+  const noteHtml = opts.note?.trim() ? `<div class="note"><b>Not:</b> ${escapeHtml(opts.note.trim())}</div>` : ''
+  const signaturesHtml = opts.includeSignatures ? `
+    <div class="signatures">
+      <div class="signature"><b>Hazırlayan</b><span>${escapeHtml(opts.preparedBy || 'Ad / İmza')}</span></div>
+      <div class="signature"><b>Kontrol Eden</b><span>Ad / İmza</span></div>
+      <div class="signature"><b>Onay</b><span>Ad / İmza</span></div>
+    </div>
+  ` : ''
 
   return `
     <div class="sheet">
       ${header}
       ${metrics}
-      <table>${tableHead}<tbody>${bodyRows || `<tr><td colspan="${weekDays.length + 1}" style="padding:24px;text-align:center;color:#64748b;">Kayit yok</td></tr>`}</tbody></table>
+      ${tableHtml}
+      ${noteHtml}
       ${legendHtml}
+      ${signaturesHtml}
       <div class="footer">
         <span>PDF icin tarayici yazdir ekraninda "PDF olarak kaydet" secilebilir.</span>
         <span>${escapeHtml(formatDate(weekStart))} - ${escapeHtml(formatDate(weekEnd))}</span>
