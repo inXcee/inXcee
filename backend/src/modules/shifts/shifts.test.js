@@ -152,6 +152,7 @@ describe('Shifts', () => {
     expect(breakdown.status).toBe(200)
     expect(breakdown.body.location_counts.some(x => x.work_location_id === loc.body.id && x.assigned >= 1)).toBe(true)
     expect(breakdown.body.role_counts.some(x => x.role_id === role.body.id && x.assigned >= 1)).toBe(true)
+    expect(breakdown.body.site_counts.some(x => x.site === 'OTC' && x.assigned >= 1)).toBe(true)
   })
 })
 

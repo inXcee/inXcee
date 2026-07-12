@@ -900,7 +900,15 @@ export function getScheduleBreakdown(from, to) {
     GROUP BY ss.work_date, s.role_id
     ORDER BY ss.work_date, sr.sort_order, sr.name
   `).all(from, to)
-  return { from, to, work_locations: workLocations, roles, location_counts: locationCounts, role_counts: roleCounts }
+  const siteCounts = db.prepare(`
+    SELECT ss.work_date, COALESCE(wl.site, 'Sitesiz') AS site, COUNT(*) AS assigned
+    FROM shift_schedule ss
+    LEFT JOIN work_locations wl ON wl.id = ss.work_location_id
+    WHERE ss.work_date BETWEEN ? AND ? AND ss.status IN ('scheduled','worked','overtime')
+    GROUP BY ss.work_date, COALESCE(wl.site, 'Sitesiz')
+    ORDER BY ss.work_date, site
+  `).all(from, to)
+  return { from, to, work_locations: workLocations, roles, location_counts: locationCounts, role_counts: roleCounts, site_counts: siteCounts }
 }
 
 export function deleteShiftDefinition(id) {

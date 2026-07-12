@@ -41,6 +41,15 @@ export default function CoverageBoard({ from, to, weekDays = [] }) {
     })
     return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name, 'tr'))
   }, [breakdown])
+  const siteRows = useMemo(() => {
+    const byName = new Map()
+    ;(breakdown?.site_counts || []).forEach(item => {
+      const name = item.site || 'Sitesiz'
+      if (!byName.has(name)) byName.set(name, { name, perDay: {} })
+      byName.get(name).perDay[item.work_date] = item.assigned || 0
+    })
+    return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name, 'tr'))
+  }, [breakdown])
   const shortfalls = useMemo(() => {
     let n = 0
     shifts.forEach(s => weekDays.forEach(d => { if ((countMap[`${d}:${s.id}`] || 0) < s.min_staff) n += 1 }))
@@ -102,6 +111,7 @@ export default function CoverageBoard({ from, to, weekDays = [] }) {
       )}
       {open && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginTop: '14px' }}>
+          <BreakdownTable title="SITE KIRILIMI (OTC / LOKAL / KAMP)" label="Site" rows={siteRows} weekDays={weekDays} />
           <BreakdownTable title="CALISMA NOKTASI KIRILIMI" label="Nokta" rows={locationRows} weekDays={weekDays} />
           <BreakdownTable title="ROL KIRILIMI" label="Rol" rows={roleRows} weekDays={weekDays} />
         </div>
