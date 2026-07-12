@@ -911,6 +911,38 @@ export function getScheduleBreakdown(from, to) {
   return { from, to, work_locations: workLocations, roles, location_counts: locationCounts, role_counts: roleCounts, site_counts: siteCounts }
 }
 
+// Bir kırılım hücresine (dimension × değer × gün) atanan kişileri getir — tıkla-panel için.
+// dimension: 'site' | 'location' | 'role'
+export function getBreakdownAssignees({ date, dimension, value }) {
+  const db = getDB()
+  const groupExpr = {
+    site: "COALESCE(wl.site, 'Sitesiz')",
+    location: "COALESCE(wl.name, 'Noktasiz')",
+    role: "COALESCE(sr.name, 'Rolsuz')",
+  }[dimension]
+  if (!groupExpr) return []
+  return db.prepare(`
+    SELECT ss.staff_id, s.full_name, s.position,
+      COALESCE(d.name, '—') AS dept_name,
+      COALESCE(sr.name, '') AS role_name,
+      COALESCE(sd.name, '') AS shift_name,
+      sd.start_hour, sd.end_hour,
+      COALESCE(wl.name, '') AS work_location_name,
+      COALESCE(wl.color_class, '') AS work_location_color,
+      COALESCE(wl.site, '') AS site,
+      ss.status
+    FROM shift_schedule ss
+    JOIN staff s ON s.id = ss.staff_id
+    LEFT JOIN departments d ON d.id = COALESCE(ss.dept_id, s.department_id)
+    LEFT JOIN staff_roles sr ON sr.id = s.role_id
+    LEFT JOIN shift_definitions sd ON sd.id = ss.shift_def_id
+    LEFT JOIN work_locations wl ON wl.id = ss.work_location_id
+    WHERE ss.work_date = ? AND ss.status IN ('scheduled','worked','overtime')
+      AND ${groupExpr} = ?
+    ORDER BY s.full_name COLLATE NOCASE
+  `).all(date, value)
+}
+
 export function deleteShiftDefinition(id) {
   getDB().prepare('DELETE FROM shift_definitions WHERE id=?').run(id)
 }

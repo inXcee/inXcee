@@ -165,6 +165,24 @@ describe('Shifts', () => {
     expect(breakdown.body.location_counts.some(x => x.work_location_id === loc.body.id && x.assigned >= 1)).toBe(true)
     expect(breakdown.body.role_counts.some(x => x.role_id === role.body.id && x.assigned >= 1)).toBe(true)
     expect(breakdown.body.site_counts.some(x => x.site === 'OTC' && x.assigned >= 1)).toBe(true)
+
+    // Tıkla-panel: her kırılım hücresi için atanan kişiler getirilir
+    const siteAssignees = await request(app).get('/api/shifts/breakdown/assignees?date=2027-01-05&dimension=site&value=OTC')
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(siteAssignees.status).toBe(200)
+    expect(siteAssignees.body.assignees.some(a => a.staff_id === staff.id)).toBe(true)
+
+    const locAssignees = await request(app).get(`/api/shifts/breakdown/assignees?date=2027-01-05&dimension=location&value=${encodeURIComponent('X6 OTC Lokal')}`)
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(locAssignees.body.assignees.some(a => a.staff_id === staff.id && a.role_name === 'X6 Ikramci')).toBe(true)
+
+    const roleAssignees = await request(app).get(`/api/shifts/breakdown/assignees?date=2027-01-05&dimension=role&value=${encodeURIComponent('X6 Ikramci')}`)
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(roleAssignees.body.assignees.some(a => a.staff_id === staff.id)).toBe(true)
+
+    const badDim = await request(app).get('/api/shifts/breakdown/assignees?date=2027-01-05&dimension=bogus&value=x')
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(badDim.status).toBe(400)
   })
 })
 

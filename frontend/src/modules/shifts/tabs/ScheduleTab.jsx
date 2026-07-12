@@ -865,7 +865,7 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
         )}
       </div>
 
-      {scheduleView === 'weekly' && <CoverageBoard from={weekStart} to={weekEnd} weekDays={weekDays} />}
+      {scheduleView === 'weekly' && <CoverageBoard from={weekStart} to={weekEnd} weekDays={weekDays} onPersonClick={onPersonClick} />}
 
       {scheduleView === 'weekly' && (
         <div style={{

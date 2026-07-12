@@ -1,7 +1,7 @@
 import {
   getDepartments, getShiftDefinitions, getSchedule, bulkAssignShifts, assignmentWarnings,
   getWorkLocations, createWorkLocation, updateWorkLocation, deleteWorkLocation,
-  getStaffRoles, createStaffRole, updateStaffRole, deleteStaffRole, getScheduleBreakdown,
+  getStaffRoles, createStaffRole, updateStaffRole, deleteStaffRole, getScheduleBreakdown, getBreakdownAssignees,
   getStaffWithShiftStatus, createLeaveRequest, approveLeaveRequest,
   getLeaveRequests, getLeaveBalance, createOvertime, updateOvertime, deleteOvertime, getOvertimeRecords, upsertOvertimeDay,
   getOvertimeSummary, createAttendanceLog, updateCheckout, getAttendanceLogs, getPuantaj,
@@ -157,6 +157,14 @@ export function scheduleService(weekStart, weekEnd, deptId) {
 export function scheduleBreakdownService({ from, to } = {}) {
   if (!from || !to) throw Object.assign(new Error('from ve to gerekli'), { statusCode: 400 })
   return getScheduleBreakdown(from, to)
+}
+
+export function breakdownAssigneesService({ date, dimension, value } = {}) {
+  if (!date || !dimension) throw Object.assign(new Error('date ve dimension gerekli'), { statusCode: 400 })
+  if (!['site', 'location', 'role'].includes(dimension)) {
+    throw Object.assign(new Error('gecersiz dimension'), { statusCode: 400 })
+  }
+  return { date, dimension, value: value ?? '', assignees: getBreakdownAssignees({ date, dimension, value: value ?? '' }) }
 }
 
 // ── Faz 31: Dönem kilidi guard ──

@@ -6,7 +6,7 @@ import { logger } from '../../shared/logger.js'
 import {
   departmentsService, shiftDefinitionsService, scheduleService, bulkAssignService,
   workLocationsService, createWorkLocationService, updateWorkLocationService, deleteWorkLocationService,
-  staffRolesService, createStaffRoleService, updateStaffRoleService, deleteStaffRoleService, scheduleBreakdownService,
+  staffRolesService, createStaffRoleService, updateStaffRoleService, deleteStaffRoleService, scheduleBreakdownService, breakdownAssigneesService,
   staffStatusService, createLeaveService, approveLeaveService, leaveListService,
   leaveBalanceService, createOvertimeService, updateOvertimeService, deleteOvertimeService, overtimeListService, overtimeSummaryService, overtimeDayService, puantajService,
   checkInService, checkOutService, attendanceListService, statisticsService, coverageService, departmentSummaryService,
@@ -192,6 +192,11 @@ shiftsRouter.post('/schedule', ...managerOrSupervisor, (req, res) => {
 
 shiftsRouter.get('/breakdown', ...allStaff, (req, res) => {
   try { res.json(scheduleBreakdownService({ from: req.query.from, to: req.query.to })) }
+  catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
+})
+
+shiftsRouter.get('/breakdown/assignees', ...allStaff, (req, res) => {
+  try { res.json(breakdownAssigneesService({ date: req.query.date, dimension: req.query.dimension, value: req.query.value })) }
   catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
 })
 

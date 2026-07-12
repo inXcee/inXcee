@@ -1,12 +1,14 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import api from '../../../shared/api/client.js'
-import { shiftColor, formatShiftHours, shortDay } from '../shared.jsx'
+import { shiftColor, formatShiftHours, shortDay, SidePanel } from '../shared.jsx'
 
 // Kadro kapsama panosu (X4): hedefi olan vardiyalar için hafta × gün gerçekleşen vs hedef.
 // Gerçekleşen < hedef → kırmızı.
-export default function CoverageBoard({ from, to, weekDays = [] }) {
+// Kırılım hücrelerine tıklayınca o gün+değer için atanan kişiler panelde açılır (tıklanabilir).
+export default function CoverageBoard({ from, to, weekDays = [], onPersonClick }) {
   const [open, setOpen] = useState(false)
+  const [picked, setPicked] = useState(null) // { date, dimension, value, label, anchorRect }
   const { data } = useQuery({
     queryKey: ['shift-coverage', from, to],
     queryFn: () => api.get('/shifts/coverage', { params: { from, to } }).then(r => r.data),
@@ -55,6 +57,11 @@ export default function CoverageBoard({ from, to, weekDays = [] }) {
     shifts.forEach(s => weekDays.forEach(d => { if ((countMap[`${d}:${s.id}`] || 0) < s.min_staff) n += 1 }))
     return n
   }, [shifts, weekDays, countMap])
+
+  const openCell = (dimension, value, date, e) => {
+    const rect = e.currentTarget.getBoundingClientRect()
+    setPicked({ dimension, value, date, label: value, anchorRect: { top: rect.top } })
+  }
 
   if (!from) return null
 
@@ -111,16 +118,23 @@ export default function CoverageBoard({ from, to, weekDays = [] }) {
       )}
       {open && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginTop: '14px' }}>
-          <BreakdownTable title="SITE KIRILIMI (OTC / LOKAL / KAMP)" label="Site" rows={siteRows} weekDays={weekDays} />
-          <BreakdownTable title="CALISMA NOKTASI KIRILIMI" label="Nokta" rows={locationRows} weekDays={weekDays} />
-          <BreakdownTable title="ROL KIRILIMI" label="Rol" rows={roleRows} weekDays={weekDays} />
+          <BreakdownTable title="SITE KIRILIMI (OTC / LOKAL / KAMP)" label="Site" dimension="site" rows={siteRows} weekDays={weekDays} onCell={openCell} />
+          <BreakdownTable title="CALISMA NOKTASI KIRILIMI" label="Nokta" dimension="location" rows={locationRows} weekDays={weekDays} onCell={openCell} />
+          <BreakdownTable title="ROL KIRILIMI" label="Rol" dimension="role" rows={roleRows} weekDays={weekDays} onCell={openCell} />
         </div>
+      )}
+      {picked && (
+        <AssigneePanel
+          picked={picked}
+          onClose={() => setPicked(null)}
+          onPersonClick={(id) => { setPicked(null); onPersonClick?.(id) }}
+        />
       )}
     </div>
   )
 }
 
-function BreakdownTable({ title, label, rows, weekDays }) {
+function BreakdownTable({ title, label, dimension, rows, weekDays, onCell }) {
   if (!rows.length) return null
   return (
     <div style={{ overflowX: 'auto' }}>
@@ -139,11 +153,24 @@ function BreakdownTable({ title, label, rows, weekDays }) {
             return (
               <tr key={row.name}>
                 <td style={{ fontWeight: 600 }}>{row.name}</td>
-                {weekDays.map(date => (
-                  <td key={date} style={{ textAlign: 'center', fontFamily: 'var(--mono)', color: row.perDay[date] ? 'var(--text)' : 'var(--text3)' }}>
-                    {row.perDay[date] || 0}
-                  </td>
-                ))}
+                {weekDays.map(date => {
+                  const v = row.perDay[date] || 0
+                  return (
+                    <td
+                      key={date}
+                      onClick={v ? (e) => onCell(dimension, row.name, date, e) : undefined}
+                      title={v ? `${row.name} · ${shortDay(date)} — ${v} kişi (tıkla)` : undefined}
+                      style={{
+                        textAlign: 'center', fontFamily: 'var(--mono)',
+                        color: v ? 'var(--text)' : 'var(--text3)',
+                        cursor: v ? 'pointer' : 'default',
+                        textDecoration: v ? 'underline dotted var(--border)' : undefined,
+                      }}
+                    >
+                      {v}
+                    </td>
+                  )
+                })}
                 <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 700 }}>{total}</td>
               </tr>
             )
@@ -151,5 +178,55 @@ function BreakdownTable({ title, label, rows, weekDays }) {
         </tbody>
       </table>
     </div>
+  )
+}
+
+function AssigneePanel({ picked, onClose, onPersonClick }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['breakdown-assignees', picked.date, picked.dimension, picked.value],
+    queryFn: () => api.get('/shifts/breakdown/assignees', {
+      params: { date: picked.date, dimension: picked.dimension, value: picked.value },
+    }).then(r => r.data),
+  })
+  const people = data?.assignees || []
+  const dimLabel = { site: 'Site', location: 'Nokta', role: 'Rol' }[picked.dimension] || ''
+  return (
+    <SidePanel
+      title={picked.label}
+      subtitle={`${dimLabel} · ${picked.date} · ${people.length} kişi`}
+      icon="👥"
+      onClose={onClose}
+      anchorRect={picked.anchorRect}
+      width={360}
+    >
+      {isLoading && <div style={{ fontSize: '11px', color: 'var(--text3)' }}>Yükleniyor…</div>}
+      {!isLoading && people.length === 0 && <div style={{ fontSize: '11px', color: 'var(--text3)' }}>Kayıt yok.</div>}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        {people.map(p => {
+          const sc = shiftColor(p.work_location_color)
+          return (
+            <button
+              key={p.staff_id}
+              onClick={() => onPersonClick(p.staff_id)}
+              style={{
+                textAlign: 'left', background: 'var(--surface2)', border: '1px solid var(--border)',
+                borderRadius: '8px', padding: '8px 10px', cursor: 'pointer', width: '100%',
+                display: 'flex', flexDirection: 'column', gap: '2px',
+              }}
+            >
+              <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text)' }}>{p.full_name}</div>
+              <div style={{ fontSize: '10px', color: 'var(--text3)', fontFamily: 'var(--mono)', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                <span>{p.dept_name}</span>
+                {p.role_name && <span>· {p.role_name}</span>}
+                {p.shift_name && <span>· {formatShiftHours(p.start_hour, p.end_hour)}</span>}
+                {p.work_location_name && (
+                  <span style={{ color: sc.text }}>· {p.work_location_name}</span>
+                )}
+              </div>
+            </button>
+          )
+        })}
+      </div>
+    </SidePanel>
   )
 }
