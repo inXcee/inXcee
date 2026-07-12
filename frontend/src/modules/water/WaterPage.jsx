@@ -1824,10 +1824,42 @@ const truckBadgeBySeverity = (severity) => ({
   muted: 'badge-gray',
 }[severity] || 'badge-gray')
 
+const timeToMinutes = (time) => {
+  const [h, m] = String(time || '').split(':').map(Number)
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return null
+  return h * 60 + m
+}
+const minutesToTime = (minutes) => {
+  const h = Math.floor(minutes / 60)
+  const m = minutes % 60
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+}
+const truckCheckSlots = (truck) => {
+  const start = timeToMinutes(truck?.reminder_start_time || '08:00')
+  const end = timeToMinutes(truck?.reminder_end_time || '17:00')
+  const step = Math.max(15, Number(truck?.reminder_interval_minutes || 60))
+  if (start == null || end == null || end < start) return []
+  const slots = []
+  for (let t = start; t <= end && slots.length < 16; t += step) slots.push(minutesToTime(t))
+  return slots
+}
+const truckPriorityScore = (truck, today) => {
+  let score = 0
+  if (truck.deadline_passed || truck.mail_phase === 'overdue') score += 60
+  if (truck.arrival_phase === 'late') score += 50
+  if (truck.mail_required) score += 24
+  if ((truck.missing_mail_fields || []).length) score += 18
+  if (truck.arrival_date === today) score += 14
+  if (!truck.photo_count && truck.status !== 'cancelled') score += 6
+  return score
+}
+
 const truckFilterDefs = [
   { key: 'action', label: 'Aksiyon' },
   { key: 'mail', label: 'Mail bekleyen' },
+  { key: 'ready', label: 'Mail hazır' },
   { key: 'missing', label: 'Eksik bilgi' },
+  { key: 'photo', label: 'Fotosuz' },
   { key: 'today', label: 'Bugün gelecek' },
   { key: 'late', label: 'Geciken' },
   { key: 'all', label: 'Tümü' },
@@ -1897,6 +1929,16 @@ function TruckArrivalPanel({ from, to, label }) {
     onSuccess: () => { invalidate(); toastOk('Kontrol saati işlendi') },
     onError: e => toastErr(errMsg(e, 'Kontrol işlenemedi')),
   })
+  const runAlertCheck = useMutation({
+    mutationFn: () => api.post('/water/truck-arrivals/check-alerts'),
+    onSuccess: r => {
+      invalidate()
+      const checked = r.data?.checked ?? 0
+      const created = r.data?.created ?? r.data?.count ?? 0
+      toastOk(`${nf(checked)} tır tarandı, ${nf(created)} uyarı oluşturuldu`)
+    },
+    onError: e => toastErr(errMsg(e, 'Toplu kontrol çalıştırılamadı')),
+  })
   const delTruck = useMutation({
     mutationFn: id => api.delete(`/water/truck-arrivals/${id}`),
     onSuccess: () => { invalidate(); toastOk('Tır kaydı silindi') },
@@ -1951,7 +1993,9 @@ function TruckArrivalPanel({ from, to, label }) {
     const filters = {
       action: isAction,
       mail: (t) => t.mail_required,
+      ready: (t) => t.mail_required && t.mail_ready,
       missing: (t) => (t.missing_mail_fields || []).length > 0,
+      photo: (t) => !t.photo_count && t.status !== 'cancelled',
       today: (t) => t.arrival_date === today,
       late: (t) => t.deadline_passed || t.mail_phase === 'overdue' || t.arrival_phase === 'late',
       all: () => true,
@@ -1967,6 +2011,39 @@ function TruckArrivalPanel({ from, to, label }) {
   const actionTruckCount = trucks.filter(t => (
     t.mail_required || t.deadline_passed || t.arrival_phase === 'late' || t.arrival_date === today || (t.missing_mail_fields || []).length || !t.photo_count
   )).length
+  const missingFieldSummary = useMemo(() => {
+    const map = new Map()
+    trucks.forEach(t => {
+      ;(t.mail_checklist || []).forEach(item => {
+        if (item.ok) return
+        const row = map.get(item.key) || { key: item.key, label: item.label, count: 0, plates: [] }
+        row.count += 1
+        if (row.plates.length < 4) row.plates.push(t.plate)
+        map.set(item.key, row)
+      })
+      ;(t.missing_mail_fields || []).forEach(label => {
+        const key = String(label || 'missing')
+        if ([...map.values()].some(row => row.plates.includes(t.plate) && row.label === label)) return
+        const row = map.get(key) || { key, label, count: 0, plates: [] }
+        row.count += 1
+        if (row.plates.length < 4) row.plates.push(t.plate)
+        map.set(key, row)
+      })
+    })
+    return [...map.values()].sort((a, b) => b.count - a.count)
+  }, [trucks])
+  const checkPlanRows = useMemo(() => (
+    [...filteredTrucks]
+      .filter(t => !['arrived', 'cancelled'].includes(t.status))
+      .sort((a, b) => truckPriorityScore(b, today) - truckPriorityScore(a, today))
+      .slice(0, 6)
+  ), [filteredTrucks, today])
+  const photoBacklogRows = useMemo(() => (
+    trucks
+      .filter(t => !t.photo_count && t.status !== 'cancelled')
+      .sort((a, b) => truckPriorityScore(b, today) - truckPriorityScore(a, today))
+      .slice(0, 6)
+  ), [trucks, today])
 
   const copyTruckMail = async (t) => {
     if (!t) return
@@ -2017,6 +2094,88 @@ function TruckArrivalPanel({ from, to, label }) {
               </div>
             ))}
           </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '10px' }}>
+            <section style={{ border: '1px solid color-mix(in srgb, var(--blue) 28%, var(--border))', borderRadius: '8px', background: 'color-mix(in srgb, var(--blue) 5%, var(--surface))', padding: '10px', minHeight: '172px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'center', marginBottom: '8px' }}>
+                <div>
+                  <strong style={{ fontSize: '12px' }}>Saatlik kontrol planı</strong>
+                  <div style={{ color: 'var(--text3)', fontSize: '10px' }}>Geciken, bugüne düşen ve mail bekleyen tırlar önce görünür</div>
+                </div>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  disabled={!isManager || runAlertCheck.isPending}
+                  title={isManager ? 'Aktif tırları tarar ve uyarı üretir' : 'Sadece müdür çalıştırabilir'}
+                  onClick={() => runAlertCheck.mutate()}
+                >
+                  {runAlertCheck.isPending ? 'Taranıyor...' : 'Toplu kontrol çalıştır'}
+                </button>
+              </div>
+              <div style={{ display: 'grid', gap: '7px' }}>
+                {checkPlanRows.map(t => {
+                  const slots = truckCheckSlots(t)
+                  const urgent = truckPriorityScore(t, today) >= 50
+                  return (
+                    <div key={t.id} style={{ border: `1px solid ${urgent ? 'color-mix(in srgb, var(--red) 36%, var(--border))' : 'var(--border)'}`, borderRadius: '7px', background: urgent ? 'color-mix(in srgb, var(--red) 5%, var(--surface))' : 'var(--surface)', padding: '7px' }}>
+                      <div style={{ display: 'flex', gap: '6px', justifyContent: 'space-between', alignItems: 'start' }}>
+                        <button type="button" onClick={() => setSelectedTruckId(t.id)} style={{ textAlign: 'left', padding: 0, fontFamily: 'var(--mono)', fontWeight: 900, border: 0, background: 'transparent', color: 'var(--text)', cursor: 'pointer' }}>{t.plate}</button>
+                        <span className={`badge ${urgent ? 'badge-red' : truckBadgeBySeverity(t.mail_severity)}`}>{t.next_check_time || t.mail_phase_label || 'Planlı'}</span>
+                      </div>
+                      <div style={{ color: 'var(--text3)', fontSize: '10px', marginTop: '3px' }}>{t.arrival_date} · {t.arrival_window || '-'} · {t.check_plan_label || 'kontrol aralığı yok'}</div>
+                      <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginTop: '6px' }}>
+                        {slots.slice(0, 7).map(slot => <span key={slot} className={`badge ${slot === t.next_check_time ? 'badge-blue' : 'badge-gray'}`}>{slot}</span>)}
+                        {slots.length > 7 && <span className="badge badge-gray">+{slots.length - 7}</span>}
+                      </div>
+                    </div>
+                  )
+                })}
+                {checkPlanRows.length === 0 && <div style={{ color: 'var(--text3)', fontSize: '12px', padding: '18px 4px' }}>Kontrol bekleyen aktif tır yok</div>}
+              </div>
+            </section>
+
+            <section style={{ border: '1px solid color-mix(in srgb, var(--red) 24%, var(--border))', borderRadius: '8px', background: 'color-mix(in srgb, var(--red) 4%, var(--surface))', padding: '10px', minHeight: '172px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'center', marginBottom: '8px' }}>
+                <div>
+                  <strong style={{ fontSize: '12px' }}>Eksik bilgi listesi</strong>
+                  <div style={{ color: 'var(--text3)', fontSize: '10px' }}>Mail atılmadan önce tamamlanması gereken alanlar</div>
+                </div>
+                <button className="btn btn-ghost btn-sm" onClick={() => setTruckFilter('missing')}>Filtrele</button>
+              </div>
+              <div style={{ display: 'grid', gap: '6px' }}>
+                {missingFieldSummary.slice(0, 6).map(item => (
+                  <button key={item.key} type="button" onClick={() => setTruckFilter('missing')} style={{ border: '1px solid var(--border)', background: 'var(--surface)', borderRadius: '7px', padding: '7px', textAlign: 'left', cursor: 'pointer' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                      <strong style={{ fontSize: '11px' }}>{item.label}</strong>
+                      <span className="badge badge-red">{nf(item.count)}</span>
+                    </div>
+                    <div style={{ color: 'var(--text3)', fontSize: '10px', marginTop: '3px', fontFamily: 'var(--mono)' }}>{item.plates.join(', ')}</div>
+                  </button>
+                ))}
+                {missingFieldSummary.length === 0 && <div style={{ color: 'var(--green)', fontSize: '12px', padding: '18px 4px' }}>Mail bilgileri tamam görünüyor</div>}
+              </div>
+            </section>
+
+            <section style={{ border: '1px solid color-mix(in srgb, var(--teal) 28%, var(--border))', borderRadius: '8px', background: 'color-mix(in srgb, var(--teal) 5%, var(--surface))', padding: '10px', minHeight: '172px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'center', marginBottom: '8px' }}>
+                <div>
+                  <strong style={{ fontSize: '12px' }}>Foto bekleyen irsaliye</strong>
+                  <div style={{ color: 'var(--text3)', fontSize: '10px' }}>Gelen fotoğraf bağlanınca arşiv ve tır kaydı birlikte takip edilir</div>
+                </div>
+                <button className="btn btn-ghost btn-sm" onClick={() => setTruckFilter('photo')}>Fotosuz</button>
+              </div>
+              <div style={{ display: 'grid', gap: '6px' }}>
+                {photoBacklogRows.map(t => (
+                  <div key={t.id} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '8px', alignItems: 'center', border: '1px solid var(--border)', background: 'var(--surface)', borderRadius: '7px', padding: '7px' }}>
+                    <button type="button" onClick={() => setSelectedTruckId(t.id)} style={{ textAlign: 'left', padding: 0, border: 0, background: 'transparent', color: 'var(--text)', cursor: 'pointer' }}>
+                      <strong style={{ fontFamily: 'var(--mono)' }}>{t.plate}</strong>
+                      <div style={{ color: 'var(--text3)', fontSize: '10px' }}>{t.arrival_date} · {t.brand_name || t.supplier_name || 'tedarikçi yok'}</div>
+                    </button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => { setPhotoForm(f => ({ ...f, truck_arrival_id: String(t.id), move_date: t.arrival_date })); fileRef.current?.click() }}>Foto</button>
+                  </div>
+                ))}
+                {photoBacklogRows.length === 0 && <div style={{ color: 'var(--green)', fontSize: '12px', padding: '18px 4px' }}>Fotoğraf bekleyen aktif kayıt yok</div>}
+              </div>
+            </section>
+          </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(118px, 1fr))', gap: '8px', alignItems: 'end', border: '1px solid var(--border)', background: 'var(--surface2)', borderRadius: '8px', padding: '10px' }}>
             <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: '8px', paddingBottom: '2px' }}>
               <span className="badge badge-blue">1</span>
@@ -2055,7 +2214,9 @@ function TruckArrivalPanel({ from, to, label }) {
                   const counts = {
                     action: actionTruckCount,
                     mail: truckStats.mail,
+                    ready: truckStats.ready,
                     missing: truckStats.missing,
+                    photo: truckStats.noPhoto,
                     today: truckStats.today,
                     late: truckStats.overdue,
                     all: truckStats.total,
