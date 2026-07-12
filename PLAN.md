@@ -457,9 +457,18 @@ Excel-öncelikli: renk tutarlılığı + yazdırma/düzen + bölüm sayfaları +
 - [x] `scheduleExcelExport.js` excelKit+shiftHex import (TAILWIND_HEX + yerel dupe'lar kaldırıldı); `shared.jsx` shiftColor/deptColor unified; `puantajFoyu.js` CODE_META → codeHex
 - [x] +1 test dosyası (shiftColors) — vardiya frontend 73/73, build temiz
 
-### Faz X2 — Puantaj föyü Excel (yazdırma + bölüm + özet) ⏳
-### Faz X3 — Çizelge Excel + ölü kod temizliği ⏳
-### Faz X4 — Vardiya bazlı kadro hedefi + kapsama panosu ⏳
+### Faz X2 — Puantaj föyü Excel (yazdırma + bölüm + özet) ✅
+- [x] `logic/puantajFoyuExcel.js` (`buildPuantajFoyuWorkbook`) — föyü PuantajTab'dan çıkarıldı; `setupSheet` ile yazdırma (landscape/fitToPage/printTitles/printArea/footer)
+- [x] İmza bloğu hizası düzeltildi (`signatureRanges` — lastCol'u 3'e güvenli böler, eski `third` matematiği yok)
+- [x] **Bölüm bazlı ayrı sayfa** — birleşik "Puantaj" + her departman ayrı yazdırılabilir sayfa (`addFoyuSheet` per dept) + **"Özet"** sayfası (bölüm toplamları SUMIF/COUNTIF + metrik kartlar + genel toplam)
+- [x] Unified `codeHex` + excelKit; +test (`puantajFoyuExcel.test.js` +142)
+
+### Faz X3 — Çizelge Excel + ölü kod temizliği ✅
+- [x] `scheduleExcelExport.js` yeniden yapılandırıldı (−531 satır net — ölü `exportScheduleExcelLegacy` temizliği dahil); excelKit+shiftHex üzerine oturtuldu
+- [x] +test (`scheduleExcelExport.test.js` +122); excelKit `saveWorkbook` hata-yakalama + test (`excelKit.test.js` +92)
+- [x] Vardiya frontend 89/89, build temiz
+
+### Faz X4 — Vardiya bazlı kadro hedefi + kapsama panosu ⏳ (sıradaki)
 ### Faz X5 — Yazımda çakışma/izin kontrolü + şema hijyeni ⏳
 
 ## Su Takip V-SERİSİ ÖZETİ (V1-V5 tamamlandı, 2026-07-11)
