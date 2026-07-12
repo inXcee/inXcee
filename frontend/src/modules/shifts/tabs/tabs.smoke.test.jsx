@@ -73,7 +73,8 @@ describe('shifts tabs smoke', () => {
     renderWithProviders(<PuantajTab departments={[]} />)
     fireEvent.click(screen.getByText(/TAKVİM/))
     expect(await screen.findByText('Ali Test')).toBeInTheDocument()
-    expect(screen.getAllByText('N').length).toBeGreaterThan(0)
+    // Gün hücreleri ayrı bir async query'den (puantaj-days-month) gelir — bekle
+    expect((await screen.findAllByText('N')).length).toBeGreaterThan(0)
     expect(screen.getAllByText('h').length).toBeGreaterThan(0)
     expect(screen.getAllByText('r').length).toBeGreaterThan(0)
     expect(screen.getByText('Hucre')).toBeInTheDocument()
