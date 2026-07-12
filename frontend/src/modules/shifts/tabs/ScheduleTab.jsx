@@ -16,6 +16,7 @@ import { DailyView, WeekFillSheet, CellAssignSheet } from './scheduleSheets.jsx'
 import ScheduleImportModal from './ScheduleImportModal.jsx'
 import CoverageBoard from './CoverageBoard.jsx'
 import { PayrollClosingModal, ScheduleTemplateModal } from './ScheduleControlModals.jsx'
+import ScheduleShareModal from './ScheduleShareModal.jsx'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  TAB 1 — Cizelge (Schedule) — HAFTA DOLDUR + PAZAR IZIN + PUANTAJ
@@ -58,6 +59,7 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
   const [dayDetail, setDayDetail] = useState(null)
   const [templateModal, setTemplateModal] = useState(false)
   const [closingModal, setClosingModal] = useState(false)
+  const [shareModal, setShareModal] = useState(false)
   const [recentActions, setRecentActions] = useState([])
   const [activeCell, setActiveCell] = useState(null)
   const [editingCell, setEditingCell] = useState(null)
@@ -827,6 +829,9 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
                   { label: 'Excel Import', action: () => { setExcelModal(true); setToolsOpen(false) } },
                   { label: '⬇ Excel İndir (renkli)', action: () => { exportExcel(); setToolsOpen(false) } },
                   { label: '+ Çizelgeye Personel Ekle', action: () => { setAddPersonModal(true); setToolsOpen(false) } },
+                  { group: 'PDF / GÖRSEL' },
+                  { label: 'PDF / Yazdır (renkli)', action: () => { setShareModal(true); setToolsOpen(false) } },
+                  { label: 'PNG Ekran Görseli', action: () => { setShareModal(true); setToolsOpen(false) } },
                   { group: 'SABLON / KONTROL' },
                   { label: 'Sablon Uygula', action: () => { setTemplateModal(true); setToolsOpen(false) } },
                   { label: 'Puantaj Kapanis Kontrolu', action: () => { setClosingModal(true); setToolsOpen(false) } },
@@ -1732,6 +1737,21 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
 
       {/* Excel import modal */}
       {excelModal && <ScheduleImportModal onClose={() => setExcelModal(false)} allStaff={allStaff} shiftDefs={shiftDefs} weekDays={weekDays} />}
+
+      {shareModal && (
+        <ScheduleShareModal
+          onClose={() => setShareModal(false)}
+          weekStart={weekStart}
+          weekEnd={weekEnd}
+          weekDays={weekDays}
+          staffGrid={staffGrid}
+          visibleGrid={visibleGrid}
+          gridSearch={gridSearch}
+          statusFilter={statusFilter}
+          deptFilter={deptFilter}
+          shiftDefs={shiftDefs}
+        />
+      )}
 
       {templateModal && (
         <ScheduleTemplateModal

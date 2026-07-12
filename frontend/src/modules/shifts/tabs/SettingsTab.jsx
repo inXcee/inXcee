@@ -39,7 +39,13 @@ export default function SettingsTab({ departments, shiftDefs }) {
   const updateRole = useMutation({ mutationFn: ({ id, ...data }) => api.put(`/shifts/roles/${id}`, data), onSuccess: () => { refreshPlan(); setRoleModal(null) }, onError: toastErr })
   const deleteRole = useMutation({ mutationFn: id => api.delete(`/shifts/roles/${id}`), onSuccess: refreshPlan, onError: toastErr })
 
-  const DEF_COLORS = ['bg-blue-400', 'bg-orange-400', 'bg-indigo-600', 'bg-emerald-500', 'bg-pink-500', 'bg-slate-500']
+  const DEF_COLORS = [
+    'bg-blue-400', 'bg-blue-600', 'bg-indigo-600', 'bg-violet-500',
+    'bg-emerald-500', 'bg-green-500', 'bg-lime-500', 'bg-teal-500',
+    'bg-cyan-500', 'bg-orange-400', 'bg-orange-500', 'bg-amber-500',
+    'bg-yellow-500', 'bg-red-500', 'bg-rose-500', 'bg-pink-500',
+    'bg-fuchsia-500', 'bg-slate-500',
+  ]
 
   return (
     <div className="fade-up">
