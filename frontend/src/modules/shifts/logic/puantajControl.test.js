@@ -33,5 +33,10 @@ describe('buildPuantajControl', () => {
     expect(control.missingAbsenceReasonStaff).toBe(1)
     expect(control.readyToClose).toBe(false)
     expect(control.staffIssues[0].issueLabels.join(' | ')).toContain('boş gün')
+    expect(control.dailyIssuesByDate['2026-07-01'].map(issue => issue.type)).toContain('scheduled')
+    expect(control.dailyIssuesByDate['2026-07-02'].map(issue => issue.type)).toContain('absence_reason')
+    expect(control.dailyIssuesByDate['2026-07-03']).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'empty', staff: expect.objectContaining({ id: 2 }) }),
+    ]))
   })
 })

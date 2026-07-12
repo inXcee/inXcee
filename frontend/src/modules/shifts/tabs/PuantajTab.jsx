@@ -92,10 +92,12 @@ function PuantajApprovalView({
   onDayStatus,
   onBulkDayStatus,
   onPeriodAction,
+  onPersonClick,
 }) {
   const period = approval?.period_approval || { status: 'draft' }
   const [periodNote, setPeriodNote] = useState(period.note || '')
   const [statusFilter, setStatusFilter] = useState('all')
+  const [selectedDay, setSelectedDay] = useState('')
 
   useEffect(() => {
     setPeriodNote(period.note || '')
@@ -103,11 +105,13 @@ function PuantajApprovalView({
 
   const dailyRows = approval?.daily_approvals || []
   const dailyAuditByDate = useMemo(() => new Map((audit.dailyRows || []).map(row => [row.date, row])), [audit.dailyRows])
+  const dailyIssuesByDate = audit.dailyIssuesByDate || {}
   const enrichedDailyRows = useMemo(() => dailyRows.map(row => {
     const dayAudit = dailyAuditByDate.get(row.work_date) || {}
     const hasProblem = (dayAudit.scheduled || 0) + (dayAudit.empty || 0) + (dayAudit.absentWithoutReason || 0) > 0
-    return { ...row, dayAudit, hasProblem }
-  }), [dailyRows, dailyAuditByDate])
+    const dayIssues = dailyIssuesByDate[row.work_date] || []
+    return { ...row, dayAudit, dayIssues, hasProblem }
+  }), [dailyRows, dailyAuditByDate, dailyIssuesByDate])
   const counts = useMemo(() => dailyRows.reduce((acc, row) => {
     acc[row.status] = (acc[row.status] || 0) + 1
     return acc
@@ -142,6 +146,21 @@ function PuantajApprovalView({
     .sort((a, b) => b.score - a.score)
     .slice(0, 5), [problemRows])
   const topStaffIssues = useMemo(() => (audit.staffIssues || []).slice(0, 5), [audit.staffIssues])
+  const selectedDayRow = useMemo(() => (
+    enrichedDailyRows.find(row => row.work_date === selectedDay) || problemRows[0] || enrichedDailyRows[0] || null
+  ), [enrichedDailyRows, problemRows, selectedDay])
+  const selectedDayIssues = selectedDayRow?.dayIssues || []
+  const selectedDayStatus = approvalStatusMeta(selectedDayRow?.status || 'missing')
+
+  useEffect(() => {
+    if (!dailyRows.length) {
+      if (selectedDay) setSelectedDay('')
+      return
+    }
+    if (!dailyRows.some(row => row.work_date === selectedDay)) {
+      setSelectedDay(problemRows[0]?.work_date || dailyRows[0]?.work_date || '')
+    }
+  }, [dailyRows, problemRows, selectedDay])
 
   const askDayStatus = (row, status) => {
     let note = row.note || ''
@@ -302,7 +321,10 @@ function PuantajApprovalView({
                 <button
                   key={row.work_date}
                   type="button"
-                  onClick={() => setStatusFilter('problem')}
+                  onClick={() => {
+                    setStatusFilter('problem')
+                    setSelectedDay(row.work_date)
+                  }}
                   style={{
                     textAlign: 'left',
                     border: '1px solid var(--border)',
@@ -438,7 +460,17 @@ function PuantajApprovalView({
                   const dayAudit = row.dayAudit || {}
                   const dayMeta = approvalStatusMeta(row.status)
                   return (
-                    <tr key={row.work_date} style={{ borderTop: '1px solid var(--border)', background: row.is_weekend ? 'rgba(240,165,0,.035)' : 'transparent' }}>
+                    <tr
+                      key={row.work_date}
+                      onClick={() => setSelectedDay(row.work_date)}
+                      style={{
+                        borderTop: '1px solid var(--border)',
+                        background: selectedDayRow?.work_date === row.work_date
+                          ? 'rgba(240,165,0,.10)'
+                          : row.is_weekend ? 'rgba(240,165,0,.035)' : 'transparent',
+                        cursor: 'pointer',
+                      }}
+                    >
                       <td style={{ padding: '7px 8px', whiteSpace: 'nowrap' }}>
                         <div style={{ fontWeight: 700 }}>{row.work_date}</div>
                         <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: row.is_weekend ? 'var(--accent)' : 'var(--text3)' }}>{DAY_SHORT[row.weekday]}</div>
@@ -480,28 +512,107 @@ function PuantajApprovalView({
           </div>
         </div>
 
-        <div style={{ border: '1px solid var(--border)', borderRadius: '10px', background: 'var(--surface)', padding: '12px', minHeight: '220px' }}>
-          <div style={{ fontFamily: 'var(--display)', fontSize: '12px', letterSpacing: '1px', marginBottom: '10px' }}>ISLEM GECMISI</div>
-          {(approval?.events || []).length === 0 ? (
-            <div style={{ fontSize: '11px', color: 'var(--text3)' }}>Bu ay icin onay hareketi yok.</div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '7px', maxHeight: '54vh', overflow: 'auto' }}>
-              {approval.events.map(event => {
-                const eventMeta = approvalStatusMeta(event.status)
-                return (
-                  <div key={event.id} style={{ border: '1px solid var(--border)', borderRadius: '8px', background: 'var(--surface2)', padding: '8px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
-                      <span style={{ color: eventMeta.color, fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 800 }}>{event.action}</span>
-                      <span style={{ color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: '8px' }}>{approvalTime(event.created_at)}</span>
-                    </div>
-                    <div style={{ fontSize: '10px', marginTop: '3px' }}>{event.user_name || '-'}</div>
-                    <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text3)', marginTop: '2px' }}>{event.work_date || event.period}</div>
-                    {event.note && <div style={{ fontSize: '10px', color: 'var(--text2)', marginTop: '5px', lineHeight: 1.35 }}>{event.note}</div>}
-                  </div>
-                )
-              })}
+        <div style={{ display: 'grid', gap: '12px', alignContent: 'start' }}>
+          <div style={{ border: '1px solid var(--border)', borderRadius: '10px', background: 'var(--surface)', padding: '12px', minHeight: '190px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'flex-start', marginBottom: '10px' }}>
+              <div>
+                <div style={{ fontFamily: 'var(--display)', fontSize: '12px', letterSpacing: '1px' }}>GUN DETAYI</div>
+                <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', marginTop: '2px' }}>
+                  {selectedDayRow ? `${selectedDayRow.work_date} - ${DAY_SHORT[selectedDayRow.weekday]}` : 'Gun secin'}
+                </div>
+              </div>
+              <span style={{
+                border: `1px solid ${selectedDayStatus.border}`,
+                background: selectedDayStatus.bg,
+                color: selectedDayStatus.color,
+                borderRadius: '7px',
+                padding: '5px 8px',
+                fontFamily: 'var(--mono)',
+                fontSize: '8px',
+                fontWeight: 800,
+              }}>{selectedDayStatus.label}</span>
             </div>
-          )}
+
+            {selectedDayRow ? (
+              <>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px', marginBottom: '10px' }}>
+                  {[
+                    ['N', selectedDayRow.dayAudit?.worked || 0, 'var(--green)'],
+                    ['P', selectedDayRow.dayAudit?.scheduled || 0, 'var(--accent)'],
+                    ['Bos', selectedDayRow.dayAudit?.empty || 0, 'var(--red)'],
+                    ['Y?', selectedDayRow.dayAudit?.absentWithoutReason || 0, 'var(--red)'],
+                  ].map(([label, value, color]) => (
+                    <div key={label} style={{ border: '1px solid var(--border)', borderRadius: '7px', background: 'var(--surface2)', padding: '7px 6px', textAlign: 'center' }}>
+                      <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text3)' }}>{label}</div>
+                      <div style={{ fontFamily: 'var(--display)', fontSize: '15px', color, marginTop: '2px' }}>{value}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {selectedDayIssues.length === 0 ? (
+                  <div style={{ color: 'var(--green)', fontFamily: 'var(--display)', fontSize: '13px' }}>Bu gun kapanisa hazir.</div>
+                ) : (
+                  <div style={{ display: 'grid', gap: '7px', maxHeight: '240px', overflow: 'auto' }}>
+                    {selectedDayIssues.map((issue, idx) => (
+                      <button
+                        key={`${issue.type}-${issue.staff.id}-${idx}`}
+                        type="button"
+                        onClick={() => onPersonClick?.(issue.staff)}
+                        style={{
+                          textAlign: 'left',
+                          border: `1px solid ${issue.severity === 'critical' ? 'rgba(239,68,68,.28)' : 'rgba(240,165,0,.35)'}`,
+                          borderRadius: '8px',
+                          background: issue.severity === 'critical' ? 'rgba(239,68,68,.055)' : 'rgba(240,165,0,.075)',
+                          color: 'var(--text)',
+                          cursor: onPersonClick ? 'pointer' : 'default',
+                          padding: '8px',
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'center' }}>
+                          <span style={{ fontSize: '10px', fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{issue.staff.full_name}</span>
+                          <span style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: issue.severity === 'critical' ? 'var(--red)' : 'var(--accent)', fontWeight: 800 }}>
+                            {issue.type === 'scheduled' ? 'P' : issue.type === 'empty' ? 'BOS' : 'Y?'}
+                          </span>
+                        </div>
+                        <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text3)', marginTop: '3px' }}>
+                          {issue.staff.dept_name || '-'}{issue.work_location_name ? ` - ${issue.work_location_name}` : ''}
+                        </div>
+                        <div style={{ fontSize: '9px', color: 'var(--text2)', marginTop: '4px', lineHeight: 1.35 }}>
+                          {issue.label} - {issue.hint}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </>
+            ) : (
+              <div style={{ fontSize: '11px', color: 'var(--text3)' }}>Gun listesi yukleniyor.</div>
+            )}
+          </div>
+
+          <div style={{ border: '1px solid var(--border)', borderRadius: '10px', background: 'var(--surface)', padding: '12px', minHeight: '220px' }}>
+            <div style={{ fontFamily: 'var(--display)', fontSize: '12px', letterSpacing: '1px', marginBottom: '10px' }}>ISLEM GECMISI</div>
+            {(approval?.events || []).length === 0 ? (
+              <div style={{ fontSize: '11px', color: 'var(--text3)' }}>Bu ay icin onay hareketi yok.</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '7px', maxHeight: '34vh', overflow: 'auto' }}>
+                {approval.events.map(event => {
+                  const eventMeta = approvalStatusMeta(event.status)
+                  return (
+                    <div key={event.id} style={{ border: '1px solid var(--border)', borderRadius: '8px', background: 'var(--surface2)', padding: '8px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                        <span style={{ color: eventMeta.color, fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 800 }}>{event.action}</span>
+                        <span style={{ color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: '8px' }}>{approvalTime(event.created_at)}</span>
+                      </div>
+                      <div style={{ fontSize: '10px', marginTop: '3px' }}>{event.user_name || '-'}</div>
+                      <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text3)', marginTop: '2px' }}>{event.work_date || event.period}</div>
+                      {event.note && <div style={{ fontSize: '10px', color: 'var(--text2)', marginTop: '5px', lineHeight: 1.35 }}>{event.note}</div>}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -2551,6 +2662,7 @@ export default function PuantajTab({ departments }) {
           onDayStatus={(row, status, note) => dayApprovalMutation.mutate({ row, status, note })}
           onBulkDayStatus={(rows, status, note) => dayApprovalMutation.mutate({ rows, status, note })}
           onPeriodAction={(action, note) => periodApprovalMutation.mutate({ action, note })}
+          onPersonClick={setSelectedRow}
         />
       )}
 

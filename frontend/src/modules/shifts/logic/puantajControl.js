@@ -49,6 +49,49 @@ function labelIssues({ scheduled, empty, off, absent, absentWithoutReason }) {
   return labels
 }
 
+function dailyEntryIssues(staff, entry, dayRow) {
+  const issues = []
+  const status = entry?.status || (dayRow.weekday === 0 ? 'sunday' : 'no_record')
+
+  if (status === 'scheduled') {
+    issues.push({
+      type: 'scheduled',
+      severity: 'warning',
+      label: 'Planli gun kapanmamis',
+      hint: 'P gunu N, izin, OFF veya Y olarak kapatilmali',
+    })
+  } else if (status === 'no_record') {
+    issues.push({
+      type: 'empty',
+      severity: 'critical',
+      label: 'Bos gun',
+      hint: 'Bu personele gunluk puantaj kodu girilmeli',
+    })
+  } else if (status === 'absent' && !String(entry?.absent_reason || '').trim()) {
+    issues.push({
+      type: 'absence_reason',
+      severity: 'critical',
+      label: 'Devamsizlik nedeni eksik',
+      hint: 'Y kaydina neden notu girilmeli',
+    })
+  }
+
+  return issues.map(issue => ({
+    ...issue,
+    date: dayRow.date,
+    staff: {
+      id: staff.id,
+      full_name: staff.full_name,
+      dept_name: staff.dept_name || staff.dept || '',
+      role_name: staff.role_name || staff.role || staff.position || '',
+    },
+    status,
+    shift_name: entry?.shift_name || '',
+    work_location_name: entry?.work_location_name || '',
+    absent_reason: entry?.absent_reason || '',
+  }))
+}
+
 export function buildPuantajControl({ staffRows = [], daysByStaff = {}, holidays = [], month } = {}) {
   const { year, mon, daysInMonth } = parseMonth(month)
   const holidaySet = new Set((holidays || []).map(h => h.date).filter(Boolean))
@@ -68,6 +111,8 @@ export function buildPuantajControl({ staffRows = [], daysByStaff = {}, holidays
   const staffIssues = []
   const scheduledCells = []
   const byStaffId = {}
+  const dailyIssuesByDate = {}
+  const dailyIssues = []
 
   staffRows.forEach(staff => {
     const counts = emptyCounts()
@@ -80,6 +125,12 @@ export function buildPuantajControl({ staffRows = [], daysByStaff = {}, holidays
       countEntry(counts, entry, { isSunday, isHoliday: dayRow.isHoliday })
       countEntry(dayRow, entry, { isSunday, isHoliday: dayRow.isHoliday })
       if (entry?.status === 'scheduled') scheduledCells.push({ staff, entry })
+      const issues = dailyEntryIssues(staff, entry, dayRow)
+      if (issues.length > 0) {
+        if (!dailyIssuesByDate[dayRow.date]) dailyIssuesByDate[dayRow.date] = []
+        dailyIssuesByDate[dayRow.date].push(...issues)
+        dailyIssues.push(...issues)
+      }
     })
 
     Object.keys(totals).forEach(key => { totals[key] += counts[key] || 0 })
@@ -118,6 +169,8 @@ export function buildPuantajControl({ staffRows = [], daysByStaff = {}, holidays
     )),
     byStaffId,
     scheduledCells,
+    dailyIssues,
+    dailyIssuesByDate,
     missingOffStaff,
     missingAbsenceReasonStaff,
     readyStaff,
