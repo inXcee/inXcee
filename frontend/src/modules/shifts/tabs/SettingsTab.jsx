@@ -42,7 +42,7 @@ export default function SettingsTab({ departments, shiftDefs }) {
                       <td data-label="Bitis" style={{ fontFamily: 'var(--mono)', color: 'var(--text2)' }}>{formatShiftHour(s.end_hour)}</td>
                       <td data-label="Islem">
                         <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-                          <button className="btn btn-ghost btn-sm" onClick={() => { setDefForm({ name: s.name, start_hour: s.start_hour?.toString() || '', end_hour: s.end_hour?.toString() || '', color_class: s.color_class || 'bg-blue-400' }); setDefModal(s) }}>Duzenle</button>
+                          <button className="btn btn-ghost btn-sm" onClick={() => { setDefForm({ name: s.name, start_hour: s.start_hour?.toString() || '', end_hour: s.end_hour?.toString() || '', color_class: s.color_class || 'bg-blue-400', min_staff: s.min_staff?.toString() || '' }); setDefModal(s) }}>Duzenle</button>
                           <button className="btn btn-danger btn-sm" onClick={async () => { if (await confirmDialog({ title: 'Tanımı Sil', body: `${s.name} tanımını silmek istediğinizden emin misiniz?`, danger: true })) deleteDef.mutate(s.id) }}>Sil</button>
                         </div>
                       </td>
@@ -62,9 +62,10 @@ export default function SettingsTab({ departments, shiftDefs }) {
           <h3 style={{ fontFamily: 'var(--display)', fontSize: '18px', letterSpacing: '2px', marginBottom: '16px' }}>{defModal.id ? 'VARDIYA TANIMINI DUZENLE' : 'YENI VARDIYA TANIMI'}</h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
             <div><label className="form-label">Vardiya Adi</label><input className="form-input" value={defForm.name} onChange={e => setDefForm(p => ({ ...p, name: e.target.value }))} /></div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
               <div><label className="form-label">Baslangic Saati</label><input type="number" min="0" max="23" className="form-input" value={defForm.start_hour} onChange={e => setDefForm(p => ({ ...p, start_hour: e.target.value }))} /></div>
               <div><label className="form-label">Bitis Saati</label><input type="number" min="0" max="24" className="form-input" value={defForm.end_hour} onChange={e => setDefForm(p => ({ ...p, end_hour: e.target.value }))} /></div>
+              <div><label className="form-label" title="Bu vardiya icin gunluk hedef kisi (0=hedefsiz)">Kadro Hedefi</label><input type="number" min="0" className="form-input" value={defForm.min_staff ?? ''} onChange={e => setDefForm(p => ({ ...p, min_staff: e.target.value }))} placeholder="0" /></div>
             </div>
             <div><label className="form-label">Renk</label>
               <div style={{ display: 'flex', gap: '8px' }}>
@@ -76,7 +77,7 @@ export default function SettingsTab({ departments, shiftDefs }) {
             <button className="btn btn-primary" style={{ flex: 1, opacity: (!defForm.name || !defForm.start_hour || !defForm.end_hour) ? 0.5 : 1 }}
               disabled={!defForm.name || !defForm.start_hour || !defForm.end_hour}
               onClick={() => {
-                const payload = { name: defForm.name, start_hour: parseInt(defForm.start_hour), end_hour: parseInt(defForm.end_hour), color_class: defForm.color_class }
+                const payload = { name: defForm.name, start_hour: parseInt(defForm.start_hour), end_hour: parseInt(defForm.end_hour), color_class: defForm.color_class, min_staff: parseInt(defForm.min_staff) || 0 }
                 if (defModal.id) updateDef.mutate({ id: defModal.id, ...payload }); else createDef.mutate(payload)
               }}>
               {defModal.id ? 'Guncelle' : 'Olustur'}

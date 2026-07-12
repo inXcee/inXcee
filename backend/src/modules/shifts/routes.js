@@ -7,7 +7,7 @@ import {
   departmentsService, shiftDefinitionsService, scheduleService, bulkAssignService,
   staffStatusService, createLeaveService, approveLeaveService, leaveListService,
   leaveBalanceService, createOvertimeService, updateOvertimeService, deleteOvertimeService, overtimeListService, overtimeSummaryService, overtimeDayService, puantajService,
-  checkInService, checkOutService, attendanceListService, statisticsService, departmentSummaryService,
+  checkInService, checkOutService, attendanceListService, statisticsService, coverageService, departmentSummaryService,
   createDepartmentService, updateDepartmentService, deleteDepartmentService, assignDeptService,
   createShiftDefService, updateShiftDefService, deleteShiftDefService,
   cancelLeaveService, createSwapService, swapListService, approveSwapService, rejectSwapService,
@@ -554,6 +554,12 @@ shiftsRouter.get('/puantaj/:staffId/days', ...allStaff, (req, res) => {
 shiftsRouter.get('/statistics', ...allStaff, (req, res) => {
   const date = req.query.date || new Date().toISOString().split('T')[0]
   res.json(statisticsService(date))
+})
+
+// Kapsama panosu (X4): vardiya×gün gerçekleşen vs hedef (min_staff)
+shiftsRouter.get('/coverage', ...allStaff, (req, res) => {
+  try { res.json(coverageService({ from: req.query.from, to: req.query.to })) }
+  catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
 })
 
 // ── Department CRUD ──

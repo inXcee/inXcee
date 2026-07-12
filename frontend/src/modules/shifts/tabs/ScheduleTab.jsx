@@ -14,6 +14,7 @@ import {
 import { buildStaffGrid, computeWeekStats, parseQuickScheduleCode, cellToScheduleCode, buildScheduleWarnings } from '../logic/schedule.js'
 import { DailyView, WeekFillSheet, CellAssignSheet } from './scheduleSheets.jsx'
 import ScheduleImportModal from './ScheduleImportModal.jsx'
+import CoverageBoard from './CoverageBoard.jsx'
 import { PayrollClosingModal, ScheduleTemplateModal } from './ScheduleControlModals.jsx'
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -765,6 +766,8 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
           </div>
         )}
       </div>
+
+      {scheduleView === 'weekly' && <CoverageBoard from={weekStart} to={weekEnd} weekDays={weekDays} />}
 
       {scheduleView === 'weekly' && (
         <div style={{

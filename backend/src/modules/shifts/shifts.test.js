@@ -63,6 +63,27 @@ describe('Shifts', () => {
     expect(res.status).toBe(201)
     expect(res.body.id).toBeTruthy()
   })
+
+  it('vardiya tanımı min_staff (kadro hedefi) ile oluşur ve güncellenir (X4)', async () => {
+    const created = await request(app).post('/api/shifts/definitions').set('Authorization', `Bearer ${managerToken}`)
+      .send({ name: 'X4 Kapsama Vardiya', start_hour: 8, end_hour: 16, color_class: 'bg-blue-500', min_staff: 3 })
+    expect(created.status).toBe(201)
+    const def = (await request(app).get('/api/shifts/definitions').set('Authorization', `Bearer ${managerToken}`)).body.find(d => d.id === created.body.id)
+    expect(def.min_staff).toBe(3)
+    await request(app).put(`/api/shifts/definitions/${created.body.id}`).set('Authorization', `Bearer ${managerToken}`).send({ min_staff: 5 })
+    const def2 = (await request(app).get('/api/shifts/definitions').set('Authorization', `Bearer ${managerToken}`)).body.find(d => d.id === created.body.id)
+    expect(def2.min_staff).toBe(5)
+  })
+
+  it('GET /coverage vardiya listesi (min_staff dahil) + gün×vardiya sayımları döner (X4)', async () => {
+    const res = await request(app).get('/api/shifts/coverage?from=2026-07-06&to=2026-07-12').set('Authorization', `Bearer ${managerToken}`)
+    expect(res.status).toBe(200)
+    expect(Array.isArray(res.body.shifts)).toBe(true)
+    expect(Array.isArray(res.body.counts)).toBe(true)
+    expect(res.body.shifts[0]).toHaveProperty('min_staff')
+    const bad = await request(app).get('/api/shifts/coverage').set('Authorization', `Bearer ${managerToken}`)
+    expect(bad.status).toBe(400)
+  })
 })
 
 describe('Excel çizelge içe aktarımı (/import)', () => {

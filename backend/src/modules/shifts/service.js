@@ -5,7 +5,7 @@ import {
   getOvertimeSummary, createAttendanceLog, updateCheckout, getAttendanceLogs, getPuantaj,
   getShiftStatistics, getDepartmentSummary,
   createDepartment, updateDepartment, deleteDepartment, assignStaffDepartment,
-  createShiftDefinition, updateShiftDefinition, deleteShiftDefinition,
+  createShiftDefinition, updateShiftDefinition, deleteShiftDefinition, getShiftCoverage,
   cancelLeaveRequest, createSwapRequest, getSwapRequests, approveSwapRequest, rejectSwapRequest,
   copyWeekSchedule, applyRotationTemplate, searchStaff, deleteScheduleEntry,
   listRotationTemplates, getRotationTemplate, createRotationTemplate, deleteRotationTemplate,
@@ -285,7 +285,13 @@ export function assignDeptService(staffId, deptId) {
 export function createShiftDefService(data) {
   if (!data.name || data.start_hour === undefined || data.end_hour === undefined || !data.color_class)
     throw new Error('Tüm alanlar gerekli')
-  return createShiftDefinition(data.name, data.start_hour, data.end_hour, data.color_class)
+  return createShiftDefinition(data.name, data.start_hour, data.end_hour, data.color_class, data.min_staff)
+}
+
+// Kapsama panosu (X4): tarih aralığında vardiya×gün gerçekleşen vs hedef
+export function coverageService({ from, to } = {}) {
+  if (!from || !to) throw Object.assign(new Error('from ve to gerekli'), { statusCode: 400 })
+  return getShiftCoverage(from, to)
 }
 
 export function updateShiftDefService(id, data) {

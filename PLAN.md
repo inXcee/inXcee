@@ -468,8 +468,13 @@ Excel-öncelikli: renk tutarlılığı + yazdırma/düzen + bölüm sayfaları +
 - [x] +test (`scheduleExcelExport.test.js` +122); excelKit `saveWorkbook` hata-yakalama + test (`excelKit.test.js` +92)
 - [x] Vardiya frontend 89/89, build temiz
 
-### Faz X4 — Vardiya bazlı kadro hedefi + kapsama panosu ⏳ (sıradaki)
-### Faz X5 — Yazımda çakışma/izin kontrolü + şema hijyeni ⏳
+### Faz X4 — Vardiya bazlı kadro hedefi + kapsama panosu ✅
+- [x] Migration 037: `shift_definitions.min_staff` (vardiya başına günlük hedef kişi, 0=hedefsiz)
+- [x] Backend: tanım create/update `min_staff`; `getShiftStatistics.byShift`'e min_staff; `getShiftCoverage(from,to)` (tüm vardiyalar + gün×vardiya sayım) + `GET /shifts/coverage?from=&to=`
+- [x] SettingsTab vardiya formuna "Kadro Hedefi" alanı; `CoverageBoard.jsx` — haftalık gün×vardiya gerçekleşen vs hedef, eksik kadro kırmızı; ScheduleTab haftalık görünümde açılır panel
+- [x] +2 backend test (shifts 113/113, 1427/1427 tüm suite), frontend shifts 89/89, build temiz
+
+### Faz X5 — Yazımda çakışma/izin kontrolü + şema hijyeni ⏳ (sıradaki)
 
 ## Su Takip V-SERİSİ ÖZETİ (V1-V5 tamamlandı, 2026-07-11)
 5 faz · reaktif → öngörülü+proaktif. Migration eklenmedi (mevcut sorgular yeniden kullanıldı). +eksik migration 036 fix (prod tır özelliği düzeldi). backend 94/94 water (1425/1425), frontend smoke 15/15. Öngörü (forecast/reorder) + proaktif (günlük digest, aylık PDF cron, eskalasyon) canlıda.

@@ -638,7 +638,7 @@ export function getShiftStatistics(date) {
 
   const byShift = db.prepare(`
     SELECT sd.id as shift_def_id, sd.name as shift_name, sd.color_class,
-      sd.start_hour, sd.end_hour,
+      sd.start_hour, sd.end_hour, sd.min_staff,
       COUNT(ss.id) as total,
       SUM(CASE WHEN s.gender='male' THEN 1 ELSE 0 END) as male_count,
       SUM(CASE WHEN s.gender='female' THEN 1 ELSE 0 END) as female_count
@@ -728,8 +728,9 @@ export function assignStaffDepartment(staffId, deptId) {
 }
 
 // ── Shift Definition CRUD ──
-export function createShiftDefinition(name, startHour, endHour, colorClass) {
-  return getDB().prepare('INSERT INTO shift_definitions(name, start_hour, end_hour, color_class) VALUES(?,?,?,?)').run(name, startHour, endHour, colorClass).lastInsertRowid
+export function createShiftDefinition(name, startHour, endHour, colorClass, minStaff = 0) {
+  return getDB().prepare('INSERT INTO shift_definitions(name, start_hour, end_hour, color_class, min_staff) VALUES(?,?,?,?,?)')
+    .run(name, startHour, endHour, colorClass, Math.max(0, parseInt(minStaff) || 0)).lastInsertRowid
 }
 
 export function updateShiftDefinition(id, data) {
@@ -740,9 +741,27 @@ export function updateShiftDefinition(id, data) {
   if (data.start_hour !== undefined) { sets.push('start_hour=?'); params.push(data.start_hour) }
   if (data.end_hour !== undefined) { sets.push('end_hour=?'); params.push(data.end_hour) }
   if (data.color_class !== undefined) { sets.push('color_class=?'); params.push(data.color_class) }
+  if (data.min_staff !== undefined) { sets.push('min_staff=?'); params.push(Math.max(0, parseInt(data.min_staff) || 0)) }
   if (sets.length === 0) return
   params.push(id)
   db.prepare(`UPDATE shift_definitions SET ${sets.join(',')} WHERE id=?`).run(...params)
+}
+
+// Kapsama panosu: tarih aralığında vardiya×gün gerçekleşen atama vs hedef (min_staff).
+// Tüm vardiyalar döner (atamasız olanlar da) → eksik kadro görünür.
+export function getShiftCoverage(from, to) {
+  const db = getDB()
+  const shifts = db.prepare(`
+    SELECT id, name, color_class, start_hour, end_hour, min_staff
+    FROM shift_definitions ORDER BY start_hour, id
+  `).all()
+  const counts = db.prepare(`
+    SELECT ss.work_date, ss.shift_def_id, COUNT(*) AS assigned
+    FROM shift_schedule ss
+    WHERE ss.work_date BETWEEN ? AND ? AND ss.status IN ('scheduled','worked','overtime') AND ss.shift_def_id IS NOT NULL
+    GROUP BY ss.work_date, ss.shift_def_id
+  `).all(from, to)
+  return { shifts, counts }
 }
 
 export function deleteShiftDefinition(id) {
