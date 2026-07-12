@@ -15,6 +15,75 @@ beforeAll(async () => {
   shiftToken = (await request(app).post('/api/auth/login').send({ username: 'vardiya', password: 'admin123' })).body.token
 })
 
+describe('Puantaj onay akisi', () => {
+  let staffId
+
+  beforeAll(() => {
+    staffId = getDB().prepare("INSERT INTO staff(full_name, is_active, salary) VALUES('Onay Test Personel', 1, 30000)")
+      .run().lastInsertRowid
+  })
+
+  it('onay ekrani ayin tum gunlerini taslak olarak dondurur', async () => {
+    const res = await request(app)
+      .get('/api/shifts/puantaj/approval?month=2027-04')
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(res.status).toBe(200)
+    expect(res.body.period_approval.status).toBe('draft')
+    expect(res.body.daily_approvals).toHaveLength(30)
+    expect(res.body.daily_approvals[0].work_date).toBe('2027-04-01')
+  })
+
+  it('supervizor puantaji kontrole gonderir ve olay gecmisi olusur', async () => {
+    const submit = await request(app)
+      .post('/api/shifts/puantaj/approval/submit')
+      .set('Authorization', `Bearer ${shiftToken}`)
+      .send({ period: '2027-04', note: 'Nisan kontrol' })
+    expect(submit.status).toBe(200)
+    expect(submit.body.status).toBe('submitted')
+
+    const res = await request(app)
+      .get('/api/shifts/puantaj/approval?month=2027-04')
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(res.body.period_approval.status).toBe('submitted')
+    expect(res.body.events.some(e => e.action === 'submit')).toBe(true)
+  })
+
+  it('gun onayini sadece mudur verebilir', async () => {
+    const supervisor = await request(app)
+      .patch('/api/shifts/puantaj/approval/day')
+      .set('Authorization', `Bearer ${shiftToken}`)
+      .send({ period: '2027-04', work_date: '2027-04-05', status: 'approved' })
+    expect(supervisor.status).toBe(403)
+
+    const manager = await request(app)
+      .patch('/api/shifts/puantaj/approval/day')
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({ period: '2027-04', work_date: '2027-04-05', status: 'approved', note: 'Gun tamam' })
+    expect(manager.status).toBe(200)
+    expect(manager.body.status).toBe('approved')
+  })
+
+  it('mudur puantaji onaylayip kilitleyince aya yazim 423 doner', async () => {
+    const lock = await request(app)
+      .patch('/api/shifts/puantaj/approval/period')
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({ period: '2027-04', action: 'lock', note: 'Nisan kapandi' })
+    expect(lock.status).toBe(200)
+    expect(lock.body.status).toBe('locked')
+
+    const write = await request(app)
+      .post('/api/shifts/schedule')
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({ entries: [{ staff_id: staffId, work_date: '2027-04-10', status: 'worked' }] })
+    expect(write.status).toBe(423)
+
+    await request(app)
+      .patch('/api/shifts/puantaj/approval/period')
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({ period: '2027-04', action: 'reopen' })
+  })
+})
+
 describe('Shifts', () => {
   it('GET /departments returns array', async () => {
     const res = await request(app).get('/api/shifts/departments').set('Authorization', `Bearer ${shiftToken}`)

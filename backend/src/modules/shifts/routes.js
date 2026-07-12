@@ -17,6 +17,8 @@ import {
   rotationTemplatesService, createRotationTemplateService, deleteRotationTemplateService,
   rotationPreviewService, rotationApplyService,
   periodLocksService, lockPeriodService, unlockPeriodService,
+  puantajApprovalService, submitPuantajPeriodService,
+  updatePuantajDayApprovalService, updatePuantajPeriodApprovalService,
   staffDetailService,
   staffListService, staffGetService, staffCreateService, staffUpdateService, staffDeleteService,
   puantajCsvService, puantajDaysService, staffDayBreakdownService, payslipService, bankTransferCsvService
@@ -602,6 +604,48 @@ shiftsRouter.get('/puantaj/export/csv', ...allStaff, (req, res) => {
 })
 
 // ── Puantaj day breakdown (after CSV route to avoid staffId='export') ──
+// Puantaj approval workflow (must be before /:staffId routes)
+shiftsRouter.get('/puantaj/approval', ...managerOrSupervisor, (req, res) => {
+  try {
+    const { month, dept_id } = req.query
+    if (!month) return res.status(400).json({ error: 'month parametresi YYYY-MM formatinda gereklidir' })
+    res.json(puantajApprovalService({ month, deptId: dept_id || null }))
+  } catch (e) {
+    res.status(e.statusCode || 400).json({ error: e.message })
+  }
+})
+
+shiftsRouter.post('/puantaj/approval/submit', ...managerOrSupervisor, (req, res) => {
+  try {
+    const row = submitPuantajPeriodService(req.body, req.user)
+    logAudit(req.user.id, 'puantaj_submit', 'shifts', null, req.body?.period)
+    res.json(row)
+  } catch (e) {
+    res.status(e.statusCode || 400).json({ error: e.message })
+  }
+})
+
+shiftsRouter.patch('/puantaj/approval/day', ...managerOrSupervisor, (req, res) => {
+  try {
+    const row = updatePuantajDayApprovalService(req.body, req.user)
+    logAudit(req.user.id, 'puantaj_day_approval', 'shifts', null, `${req.body?.work_date || ''}:${req.body?.status || ''}`)
+    res.json(row)
+  } catch (e) {
+    res.status(e.statusCode || 400).json({ error: e.message })
+  }
+})
+
+shiftsRouter.patch('/puantaj/approval/period', ...managerOnly, (req, res) => {
+  try {
+    const row = updatePuantajPeriodApprovalService(req.body, req.user)
+    logAudit(req.user.id, 'puantaj_period_approval', 'shifts', null, `${req.body?.period || ''}:${req.body?.action || ''}`)
+    res.json(row)
+  } catch (e) {
+    res.status(e.statusCode || 400).json({ error: e.message })
+  }
+})
+
+// Puantaj day breakdown (after approval routes to avoid staffId collisions)
 shiftsRouter.get('/puantaj/days', ...allStaff, (req, res) => {
   try {
     const { month, dept_id } = req.query

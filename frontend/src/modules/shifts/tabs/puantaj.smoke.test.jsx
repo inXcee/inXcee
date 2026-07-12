@@ -15,6 +15,7 @@ describe('PuantajTab smoke', () => {
 
   it('çökmeden render olur ve görünüm kontrollerini gösterir', () => {
     renderWithProviders(<PuantajTab departments={[]} />)
+    expect(screen.getByText('ONAY')).toBeInTheDocument()
     expect(screen.getByText(/CSV İndir/)).toBeInTheDocument()
     expect(screen.getByText('📋 LİSTE')).toBeInTheDocument()
     expect(screen.getByText('🔎 KONTROL')).toBeInTheDocument()

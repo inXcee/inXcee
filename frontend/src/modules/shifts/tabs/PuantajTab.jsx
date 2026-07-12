@@ -56,6 +56,218 @@ function summarizeCalendarDays(days) {
   }, { worked: 0, off: 0, sick: 0, unpaid: 0, absent: 0, leave: 0 })
 }
 
+function approvalStatusMeta(status) {
+  const map = {
+    draft: { label: 'Taslak', color: 'var(--text3)', bg: 'var(--surface2)', border: 'var(--border)' },
+    submitted: { label: 'Kontrolde', color: 'var(--accent)', bg: 'rgba(240,165,0,.10)', border: 'rgba(240,165,0,.35)' },
+    approved: { label: 'Onaylandi', color: 'var(--green)', bg: 'rgba(34,197,94,.10)', border: 'rgba(34,197,94,.35)' },
+    returned: { label: 'Geri dondu', color: 'var(--red)', bg: 'rgba(239,68,68,.10)', border: 'rgba(239,68,68,.35)' },
+    locked: { label: 'Kilitli', color: 'var(--teal)', bg: 'rgba(20,184,166,.10)', border: 'rgba(20,184,166,.35)' },
+    missing: { label: 'Eksik', color: 'var(--text3)', bg: 'transparent', border: 'var(--border)' },
+    pending: { label: 'Bekliyor', color: 'var(--accent)', bg: 'rgba(240,165,0,.10)', border: 'rgba(240,165,0,.35)' },
+  }
+  return map[status] || map.missing
+}
+
+function approvalTime(value) {
+  if (!value) return '-'
+  return new Date(value).toLocaleString('tr-TR', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function PuantajApprovalView({
+  approval,
+  audit,
+  canEdit,
+  isManager,
+  isLocked,
+  monthLabel,
+  loading,
+  busy,
+  onSubmitPeriod,
+  onDayStatus,
+  onPeriodAction,
+}) {
+  const period = approval?.period_approval || { status: 'draft' }
+  const [periodNote, setPeriodNote] = useState(period.note || '')
+
+  useEffect(() => {
+    setPeriodNote(period.note || '')
+  }, [period.note])
+
+  const dailyRows = approval?.daily_approvals || []
+  const dailyAuditByDate = useMemo(() => new Map((audit.dailyRows || []).map(row => [row.date, row])), [audit.dailyRows])
+  const counts = useMemo(() => dailyRows.reduce((acc, row) => {
+    acc[row.status] = (acc[row.status] || 0) + 1
+    return acc
+  }, { missing: 0, pending: 0, approved: 0, returned: 0 }), [dailyRows])
+  const meta = approvalStatusMeta(period.status)
+  const closeProblems = audit.totals.scheduled + audit.totals.empty + audit.totals.absentWithoutReason + audit.missingOffStaff
+
+  const askDayStatus = (row, status) => {
+    let note = row.note || ''
+    if (status === 'returned') {
+      note = window.prompt('Geri gonderme notu', row.note || '') ?? null
+      if (note == null) return
+    }
+    onDayStatus(row, status, note)
+  }
+
+  if (loading) {
+    return <div style={{ border: '1px solid var(--border)', borderRadius: '10px', background: 'var(--surface)', padding: '16px', color: 'var(--text3)' }}>Onay verileri yukleniyor...</div>
+  }
+
+  return (
+    <div style={{ display: 'grid', gap: '12px' }}>
+      <div style={{ border: '1px solid var(--border)', borderRadius: '10px', background: 'var(--surface)', padding: '14px' }}>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap' }}>
+          <div>
+            <div style={{ fontFamily: 'var(--display)', fontSize: '14px', letterSpacing: '1px' }}>PUANTAJ ONAY MASASI</div>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', marginTop: '3px' }}>
+              {monthLabel} - {audit.staffCount} personel - %{audit.completionRate} tamamlanma
+            </div>
+          </div>
+          <span style={{
+            border: `1px solid ${meta.border}`,
+            background: meta.bg,
+            color: meta.color,
+            borderRadius: '8px',
+            padding: '7px 10px',
+            fontFamily: 'var(--mono)',
+            fontSize: '10px',
+            fontWeight: 800,
+          }}>{meta.label}</span>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(135px, 1fr))', gap: '8px', marginTop: '12px' }}>
+          {[
+            ['Hazir kisi', `${audit.readyStaff}/${audit.staffCount}`, audit.readyStaff === audit.staffCount ? 'var(--green)' : 'var(--accent)'],
+            ['Kritik eksik', closeProblems, closeProblems > 0 ? 'var(--red)' : 'var(--green)'],
+            ['Gonderilen gun', counts.pending || 0, 'var(--accent)'],
+            ['Onayli gun', counts.approved || 0, 'var(--green)'],
+            ['Geri donen', counts.returned || 0, counts.returned > 0 ? 'var(--red)' : 'var(--text3)'],
+          ].map(([label, value, color]) => (
+            <div key={label} style={{ border: '1px solid var(--border)', borderRadius: '8px', background: 'var(--surface2)', padding: '10px' }}>
+              <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text3)' }}>{label}</div>
+              <div style={{ fontFamily: 'var(--display)', fontSize: '18px', color, marginTop: '4px' }}>{value}</div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 1fr) auto', gap: '8px', alignItems: 'center', marginTop: '12px' }}>
+          <input
+            className="form-input"
+            value={periodNote}
+            onChange={e => setPeriodNote(e.target.value)}
+            placeholder="Onay/kapanis notu"
+            disabled={!canEdit || busy}
+            style={{ fontSize: '11px', padding: '8px 10px' }}
+          />
+          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            <button className="btn btn-ghost btn-sm" disabled={!canEdit || busy || isLocked} onClick={() => onSubmitPeriod(periodNote)} style={{ fontSize: '10px' }}>Kontrole Gonder</button>
+            <button className="btn btn-ghost btn-sm" disabled={!isManager || busy || isLocked} onClick={() => onPeriodAction('approve', periodNote)} style={{ fontSize: '10px', color: 'var(--green)' }}>Onayla</button>
+            <button className="btn btn-ghost btn-sm" disabled={!isManager || busy || isLocked} onClick={() => onPeriodAction('return', periodNote)} style={{ fontSize: '10px', color: 'var(--red)' }}>Geri Gonder</button>
+            <button className="btn btn-primary btn-sm" disabled={!isManager || busy || isLocked} onClick={() => onPeriodAction('lock', periodNote)} style={{ fontSize: '10px' }}>Onayla ve Kilitle</button>
+            {isLocked && <button className="btn btn-ghost btn-sm" disabled={!isManager || busy} onClick={() => onPeriodAction('reopen', periodNote)} style={{ fontSize: '10px' }}>Taslak Ac</button>}
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginTop: '10px', fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)' }}>
+          <span>Gonderen: {period.submitted_by_name || '-'} / {approvalTime(period.submitted_at)}</span>
+          <span>Onaylayan: {period.approved_by_name || '-'} / {approvalTime(period.approved_at)}</span>
+          <span>Kilitleyen: {period.locked_by_name || '-'} / {approvalTime(period.locked_at)}</span>
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(260px, 330px)', gap: '12px' }}>
+        <div style={{ border: '1px solid var(--border)', borderRadius: '10px', background: 'var(--surface)', overflow: 'hidden' }}>
+          <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', fontFamily: 'var(--display)', fontSize: '12px', letterSpacing: '1px' }}>GUN GUN ONAY</div>
+          <div style={{ overflow: 'auto', maxHeight: '54vh' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px' }}>
+              <thead>
+                <tr style={{ background: 'var(--surface2)', color: 'var(--text3)', fontFamily: 'var(--mono)' }}>
+                  <th style={{ padding: '8px', textAlign: 'left', position: 'sticky', top: 0, background: 'var(--surface2)' }}>Gun</th>
+                  <th style={{ padding: '8px', textAlign: 'right', position: 'sticky', top: 0, background: 'var(--surface2)' }}>N</th>
+                  <th style={{ padding: '8px', textAlign: 'right', position: 'sticky', top: 0, background: 'var(--surface2)' }}>P</th>
+                  <th style={{ padding: '8px', textAlign: 'right', position: 'sticky', top: 0, background: 'var(--surface2)' }}>Bos</th>
+                  <th style={{ padding: '8px', textAlign: 'right', position: 'sticky', top: 0, background: 'var(--surface2)' }}>Y?</th>
+                  <th style={{ padding: '8px', textAlign: 'left', position: 'sticky', top: 0, background: 'var(--surface2)' }}>Durum</th>
+                  <th style={{ padding: '8px', textAlign: 'right', position: 'sticky', top: 0, background: 'var(--surface2)' }}>Islem</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dailyRows.map(row => {
+                  const dayAudit = dailyAuditByDate.get(row.work_date) || {}
+                  const dayMeta = approvalStatusMeta(row.status)
+                  const hasProblem = (dayAudit.scheduled || 0) + (dayAudit.empty || 0) + (dayAudit.absentWithoutReason || 0) > 0
+                  return (
+                    <tr key={row.work_date} style={{ borderTop: '1px solid var(--border)', background: row.is_weekend ? 'rgba(240,165,0,.035)' : 'transparent' }}>
+                      <td style={{ padding: '7px 8px', whiteSpace: 'nowrap' }}>
+                        <div style={{ fontWeight: 700 }}>{row.work_date}</div>
+                        <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: row.is_weekend ? 'var(--accent)' : 'var(--text3)' }}>{DAY_SHORT[row.weekday]}</div>
+                      </td>
+                      <td style={{ padding: '7px 8px', textAlign: 'right', color: 'var(--green)', fontFamily: 'var(--mono)' }}>{dayAudit.worked || 0}</td>
+                      <td style={{ padding: '7px 8px', textAlign: 'right', color: (dayAudit.scheduled || 0) > 0 ? 'var(--accent)' : 'var(--text3)', fontFamily: 'var(--mono)' }}>{dayAudit.scheduled || 0}</td>
+                      <td style={{ padding: '7px 8px', textAlign: 'right', color: (dayAudit.empty || 0) > 0 ? 'var(--red)' : 'var(--text3)', fontFamily: 'var(--mono)' }}>{dayAudit.empty || 0}</td>
+                      <td style={{ padding: '7px 8px', textAlign: 'right', color: (dayAudit.absentWithoutReason || 0) > 0 ? 'var(--red)' : 'var(--text3)', fontFamily: 'var(--mono)' }}>{dayAudit.absentWithoutReason || 0}</td>
+                      <td style={{ padding: '7px 8px' }}>
+                        <span title={row.note || undefined} style={{
+                          border: `1px solid ${dayMeta.border}`,
+                          background: dayMeta.bg,
+                          color: dayMeta.color,
+                          borderRadius: '6px',
+                          padding: '3px 6px',
+                          fontFamily: 'var(--mono)',
+                          fontSize: '9px',
+                          fontWeight: 800,
+                        }}>{dayMeta.label}</span>
+                        {hasProblem && <span style={{ marginLeft: '6px', color: 'var(--red)', fontFamily: 'var(--mono)', fontSize: '8px' }}>kontrol</span>}
+                      </td>
+                      <td style={{ padding: '7px 8px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                        <button className="btn btn-ghost btn-sm" disabled={!canEdit || busy || isLocked} onClick={() => askDayStatus(row, 'pending')} style={{ fontSize: '9px', padding: '3px 6px' }}>Gonder</button>
+                        {isManager && <button className="btn btn-ghost btn-sm" disabled={busy || isLocked} onClick={() => askDayStatus(row, 'approved')} style={{ fontSize: '9px', padding: '3px 6px', color: 'var(--green)' }}>Onay</button>}
+                        {isManager && <button className="btn btn-ghost btn-sm" disabled={busy || isLocked} onClick={() => askDayStatus(row, 'returned')} style={{ fontSize: '9px', padding: '3px 6px', color: 'var(--red)' }}>Geri</button>}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div style={{ border: '1px solid var(--border)', borderRadius: '10px', background: 'var(--surface)', padding: '12px', minHeight: '220px' }}>
+          <div style={{ fontFamily: 'var(--display)', fontSize: '12px', letterSpacing: '1px', marginBottom: '10px' }}>ISLEM GECMISI</div>
+          {(approval?.events || []).length === 0 ? (
+            <div style={{ fontSize: '11px', color: 'var(--text3)' }}>Bu ay icin onay hareketi yok.</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '7px', maxHeight: '54vh', overflow: 'auto' }}>
+              {approval.events.map(event => {
+                const eventMeta = approvalStatusMeta(event.status)
+                return (
+                  <div key={event.id} style={{ border: '1px solid var(--border)', borderRadius: '8px', background: 'var(--surface2)', padding: '8px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                      <span style={{ color: eventMeta.color, fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 800 }}>{event.action}</span>
+                      <span style={{ color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: '8px' }}>{approvalTime(event.created_at)}</span>
+                    </div>
+                    <div style={{ fontSize: '10px', marginTop: '3px' }}>{event.user_name || '-'}</div>
+                    <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text3)', marginTop: '2px' }}>{event.work_date || event.period}</div>
+                    {event.note && <div style={{ fontSize: '10px', color: 'var(--text2)', marginTop: '5px', lineHeight: 1.35 }}>{event.note}</div>}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function PuantajSummaryView({ filtered, formatMoney }) {
   const byDept = useMemo(() => {
     const map = {}
@@ -1604,7 +1816,7 @@ export default function PuantajTab({ departments }) {
   const [deptFilter, setDeptFilter] = useState('')
   const [search, setSearch] = useState('')
   const debouncedPuantajSearch = useDebounce(search, 250)
-  const [viewMode, setViewMode] = useState('list') // 'list' | 'calendar' | 'summary' | 'control'
+  const [viewMode, setViewMode] = useState('list') // 'list' | 'calendar' | 'summary' | 'control' | 'approval'
   const [showEmployer, setShowEmployer] = useState(false)
   const [selectedRow, setSelectedRow] = useState(null) // row object for bordro detail
   const [sortBy, setSortBy] = useState('name')
@@ -1625,7 +1837,10 @@ export default function PuantajTab({ departments }) {
     mutationFn: ({ lock, note }) => lock
       ? api.post('/shifts/period-locks', { period: month, note })
       : api.delete(`/shifts/period-locks/${month}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['period-locks'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['period-locks'] })
+      qc.invalidateQueries({ queryKey: ['puantaj-approval'] })
+    },
   })
 
   const { data: rows = [], isLoading } = useQuery({
@@ -1651,6 +1866,21 @@ export default function PuantajTab({ departments }) {
     queryKey: ['holidays', y],
     queryFn: () => api.get('/shifts/holidays', { params: { year: y } }).then(res => res.data),
   })
+
+  const { data: approvalPayload = null, isFetching: approvalFetching } = useQuery({
+    queryKey: ['puantaj-approval', month, deptFilter],
+    queryFn: () => {
+      const params = { month }
+      if (deptFilter) params.dept_id = deptFilter
+      return api.get('/shifts/puantaj/approval', { params }).then(res => res.data)
+    },
+    enabled: roleCanEdit,
+  })
+
+  const refreshApproval = () => {
+    qc.invalidateQueries({ queryKey: ['puantaj-approval'] })
+    qc.invalidateQueries({ queryKey: ['period-locks'] })
+  }
 
   const updatePuantajDay = useMutation({
     mutationFn: ({ changes, action }) => {
@@ -1699,6 +1929,48 @@ export default function PuantajTab({ departments }) {
       toastErr(err)
       qc.invalidateQueries({ queryKey: ['puantaj-days-month'] })
     },
+  })
+
+  const submitApproval = useMutation({
+    mutationFn: (note) => api.post('/shifts/puantaj/approval/submit', {
+      period: month,
+      dept_id: deptFilter || null,
+      note: note || null,
+    }),
+    onSuccess: () => {
+      refreshApproval()
+      toastOk('Puantaj kontrole gonderildi')
+    },
+    onError: toastErr,
+  })
+
+  const dayApprovalMutation = useMutation({
+    mutationFn: ({ row, status, note }) => api.patch('/shifts/puantaj/approval/day', {
+      period: month,
+      work_date: row.work_date,
+      dept_id: deptFilter || null,
+      status,
+      note: note || null,
+    }),
+    onSuccess: () => {
+      refreshApproval()
+      toastOk('Gun onay durumu guncellendi')
+    },
+    onError: toastErr,
+  })
+
+  const periodApprovalMutation = useMutation({
+    mutationFn: ({ action, note }) => api.patch('/shifts/puantaj/approval/period', {
+      period: month,
+      dept_id: deptFilter || null,
+      action,
+      note: note || null,
+    }),
+    onSuccess: (_, variables) => {
+      refreshApproval()
+      toastOk(variables.action === 'lock' ? 'Puantaj onaylandi ve kilitlendi' : 'Puantaj onay durumu guncellendi')
+    },
+    onError: toastErr,
   })
 
   const updatingKeys = useMemo(() => (
@@ -1863,6 +2135,18 @@ export default function PuantajTab({ departments }) {
               {label}
             </button>
           ))}
+          <button
+            key="approval"
+            onClick={() => setViewMode('approval')}
+            style={{
+              padding: '4px 10px', borderRadius: '6px', fontSize: '10px', fontFamily: 'var(--mono)',
+              letterSpacing: '0.5px', border: 'none', cursor: 'pointer',
+              background: viewMode === 'approval' ? 'var(--accent)' : 'transparent',
+              color: viewMode === 'approval' ? '#000' : 'var(--text3)',
+            }}
+          >
+            ONAY
+          </button>
         </div>
 
         <div style={{ marginLeft: 'auto', display: 'flex', gap: '6px' }}>
@@ -2002,6 +2286,21 @@ export default function PuantajTab({ departments }) {
           onSyncScheduled={syncScheduledToWorked}
           syncing={updatePuantajDay.isPending}
           onPersonClick={setSelectedRow}
+        />
+      )}
+      {viewMode === 'approval' && (
+        <PuantajApprovalView
+          approval={approvalPayload}
+          audit={puantajAudit}
+          canEdit={canEdit}
+          isManager={isManager}
+          isLocked={isLocked}
+          monthLabel={monthLabel}
+          loading={approvalFetching}
+          busy={submitApproval.isPending || dayApprovalMutation.isPending || periodApprovalMutation.isPending}
+          onSubmitPeriod={(note) => submitApproval.mutate(note)}
+          onDayStatus={(row, status, note) => dayApprovalMutation.mutate({ row, status, note })}
+          onPeriodAction={(action, note) => periodApprovalMutation.mutate({ action, note })}
         />
       )}
 

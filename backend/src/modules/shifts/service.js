@@ -12,6 +12,9 @@ import {
   copyWeekSchedule, applyRotationTemplate, searchStaff, deleteScheduleEntry,
   listRotationTemplates, getRotationTemplate, createRotationTemplate, deleteRotationTemplate,
   listPeriodLocks, lockedPeriodsFor, lockPeriod, unlockPeriod,
+  getPuantajPeriodApproval, upsertPuantajPeriodApproval,
+  listPuantajDailyApprovals, upsertPuantajDailyApproval,
+  insertPuantajApprovalEvent, listPuantajApprovalEvents,
   getStaffDetail,
   getStaffList, getStaffById, createStaff, updateStaff, deleteStaff,
   getStaffDayBreakdown, getPuantajDayRows, listDeductions
@@ -192,6 +195,173 @@ export function lockPeriodService(period, userId, note) {
 export function unlockPeriodService(period) {
   if (!/^\d{4}-\d{2}$/.test(period || '')) throw new Error('period YYYY-MM formatında olmalı')
   unlockPeriod(period)
+}
+
+function puantajApprovalScope(deptId) {
+  if (deptId == null || deptId === '') return { deptId: null, deptScope: 'all' }
+  const parsed = Number(deptId)
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw Object.assign(new Error('dept_id sayisal olmalidir'), { statusCode: 400 })
+  }
+  return { deptId: parsed, deptScope: `dept:${parsed}` }
+}
+
+function validatePuantajPeriod(period) {
+  parsePuantajMonth(period)
+  return period
+}
+
+function validatePuantajWorkDate(period, workDate) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(workDate || '') || !String(workDate).startsWith(`${period}-`)) {
+    throw Object.assign(new Error('work_date secilen ay icinde YYYY-MM-DD formatinda olmalidir'), { statusCode: 400 })
+  }
+  const day = Number(String(workDate).slice(8, 10))
+  const { lastDay } = parsePuantajMonth(period)
+  if (!Number.isInteger(day) || day < 1 || day > lastDay) {
+    throw Object.assign(new Error('work_date secilen ay icinde olmalidir'), { statusCode: 400 })
+  }
+  return workDate
+}
+
+function requirePuantajManager(user) {
+  if (user?.role !== 'campus_manager') {
+    throw Object.assign(new Error('Bu islem icin mudur yetkisi gerekir'), { statusCode: 403 })
+  }
+}
+
+function buildPuantajApprovalDays(period, existingRows) {
+  const { year, mon, lastDay } = parsePuantajMonth(period)
+  const byDate = new Map(existingRows.map(row => [row.work_date, row]))
+  return Array.from({ length: lastDay }, (_, index) => {
+    const day = index + 1
+    const workDate = `${period}-${String(day).padStart(2, '0')}`
+    const weekday = new Date(year, mon - 1, day).getDay()
+    const row = byDate.get(workDate) || {
+      period,
+      work_date: workDate,
+      day,
+      weekday,
+      is_weekend: weekday === 0 || weekday === 6,
+      status: 'missing',
+      note: null,
+    }
+    return { ...row, day, weekday, is_weekend: weekday === 0 || weekday === 6 }
+  })
+}
+
+export function puantajApprovalService({ month, deptId } = {}) {
+  const period = validatePuantajPeriod(month)
+  const scope = puantajApprovalScope(deptId)
+  const dailyRows = listPuantajDailyApprovals(period, scope.deptScope)
+  return {
+    period,
+    dept_id: scope.deptId,
+    dept_scope: scope.deptScope,
+    period_approval: getPuantajPeriodApproval(period, scope.deptScope) || {
+      period,
+      dept_scope: scope.deptScope,
+      dept_id: scope.deptId,
+      status: 'draft',
+      note: null,
+    },
+    daily_approvals: buildPuantajApprovalDays(period, dailyRows),
+    events: listPuantajApprovalEvents(period, scope.deptScope, 80),
+  }
+}
+
+export function submitPuantajPeriodService({ period, dept_id, note } = {}, user = {}) {
+  const cleanPeriod = validatePuantajPeriod(period)
+  const scope = puantajApprovalScope(dept_id)
+  const row = upsertPuantajPeriodApproval({
+    period: cleanPeriod,
+    deptScope: scope.deptScope,
+    deptId: scope.deptId,
+    status: 'submitted',
+    note,
+    userId: user.id,
+    action: 'submit',
+  })
+  insertPuantajApprovalEvent({
+    scope: 'period',
+    period: cleanPeriod,
+    deptScope: scope.deptScope,
+    deptId: scope.deptId,
+    action: 'submit',
+    status: 'submitted',
+    note,
+    userId: user.id,
+  })
+  return row
+}
+
+export function updatePuantajDayApprovalService({ period, work_date, dept_id, status, note } = {}, user = {}) {
+  const cleanPeriod = validatePuantajPeriod(period)
+  const cleanDate = validatePuantajWorkDate(cleanPeriod, work_date)
+  const allowed = new Set(['pending', 'approved', 'returned'])
+  if (!allowed.has(status)) {
+    throw Object.assign(new Error('status pending, approved veya returned olmalidir'), { statusCode: 400 })
+  }
+  if (['approved', 'returned'].includes(status)) requirePuantajManager(user)
+  const scope = puantajApprovalScope(dept_id)
+  const row = upsertPuantajDailyApproval({
+    period: cleanPeriod,
+    workDate: cleanDate,
+    deptScope: scope.deptScope,
+    deptId: scope.deptId,
+    status,
+    note,
+    userId: user.id,
+  })
+  insertPuantajApprovalEvent({
+    scope: 'day',
+    period: cleanPeriod,
+    workDate: cleanDate,
+    deptScope: scope.deptScope,
+    deptId: scope.deptId,
+    action: status,
+    status,
+    note,
+    userId: user.id,
+  })
+  return row
+}
+
+export function updatePuantajPeriodApprovalService({ period, dept_id, action, note } = {}, user = {}) {
+  requirePuantajManager(user)
+  const cleanPeriod = validatePuantajPeriod(period)
+  const scope = puantajApprovalScope(dept_id)
+  const actionMap = {
+    approve: 'approved',
+    return: 'returned',
+    lock: 'locked',
+    reopen: 'draft',
+  }
+  const status = actionMap[action]
+  if (!status) throw Object.assign(new Error('action approve, return, lock veya reopen olmalidir'), { statusCode: 400 })
+
+  if (action === 'lock') lockPeriod(cleanPeriod, user.id, note || 'Puantaj onaylanip kilitlendi')
+  if (action === 'reopen') unlockPeriod(cleanPeriod)
+
+  const row = upsertPuantajPeriodApproval({
+    period: cleanPeriod,
+    deptScope: scope.deptScope,
+    deptId: scope.deptId,
+    status,
+    note,
+    userId: user.id,
+    action,
+  })
+  insertPuantajApprovalEvent({
+    scope: 'period',
+    period: cleanPeriod,
+    deptScope: scope.deptScope,
+    deptId: scope.deptId,
+    action,
+    status,
+    note,
+    userId: user.id,
+  })
+  return row
 }
 
 export function bulkAssignService(entries, createdBy) {

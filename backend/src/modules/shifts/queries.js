@@ -1115,6 +1115,135 @@ export function unlockPeriod(period) {
   getDB().prepare('DELETE FROM period_locks WHERE period=?').run(period)
 }
 
+// Puantaj approvals: period + daily workflow state.
+export function getPuantajPeriodApproval(period, deptScope) {
+  return getDB().prepare(`
+    SELECT p.*,
+      submitter.full_name as submitted_by_name,
+      approver.full_name as approved_by_name,
+      returner.full_name as returned_by_name,
+      locker.full_name as locked_by_name,
+      d.name as dept_name
+    FROM puantaj_period_approvals p
+    LEFT JOIN users submitter ON submitter.id = p.submitted_by
+    LEFT JOIN users approver ON approver.id = p.approved_by
+    LEFT JOIN users returner ON returner.id = p.returned_by
+    LEFT JOIN users locker ON locker.id = p.locked_by
+    LEFT JOIN departments d ON d.id = p.dept_id
+    WHERE p.period = ? AND p.dept_scope = ?
+  `).get(period, deptScope)
+}
+
+export function upsertPuantajPeriodApproval({ period, deptScope, deptId, status, note, userId, action }) {
+  const db = getDB()
+  db.prepare(`
+    INSERT INTO puantaj_period_approvals(period, dept_scope, dept_id, status, note)
+    VALUES(?, ?, ?, 'draft', NULL)
+    ON CONFLICT(period, dept_scope) DO NOTHING
+  `).run(period, deptScope, deptId || null)
+
+  const fields = ['status = ?', 'note = ?', 'updated_at = CURRENT_TIMESTAMP']
+  const params = [status, note || null]
+  if (action === 'submit') {
+    fields.push('submitted_by = ?', 'submitted_at = CURRENT_TIMESTAMP')
+    params.push(userId || null)
+  } else if (action === 'approve') {
+    fields.push('approved_by = ?', 'approved_at = CURRENT_TIMESTAMP')
+    params.push(userId || null)
+  } else if (action === 'return') {
+    fields.push('returned_by = ?', 'returned_at = CURRENT_TIMESTAMP')
+    params.push(userId || null)
+  } else if (action === 'lock') {
+    fields.push('locked_by = ?', 'locked_at = CURRENT_TIMESTAMP')
+    params.push(userId || null)
+  }
+  params.push(period, deptScope)
+  db.prepare(`
+    UPDATE puantaj_period_approvals
+    SET ${fields.join(', ')}
+    WHERE period = ? AND dept_scope = ?
+  `).run(...params)
+  return getPuantajPeriodApproval(period, deptScope)
+}
+
+export function listPuantajDailyApprovals(period, deptScope) {
+  return getDB().prepare(`
+    SELECT p.*,
+      submitter.full_name as submitted_by_name,
+      approver.full_name as approved_by_name,
+      returner.full_name as returned_by_name,
+      d.name as dept_name
+    FROM puantaj_daily_approvals p
+    LEFT JOIN users submitter ON submitter.id = p.submitted_by
+    LEFT JOIN users approver ON approver.id = p.approved_by
+    LEFT JOIN users returner ON returner.id = p.returned_by
+    LEFT JOIN departments d ON d.id = p.dept_id
+    WHERE p.period = ? AND p.dept_scope = ?
+    ORDER BY p.work_date ASC
+  `).all(period, deptScope)
+}
+
+export function upsertPuantajDailyApproval({ period, workDate, deptScope, deptId, status, note, userId }) {
+  const db = getDB()
+  db.prepare(`
+    INSERT INTO puantaj_daily_approvals(period, work_date, dept_scope, dept_id, status, note)
+    VALUES(?, ?, ?, ?, 'missing', NULL)
+    ON CONFLICT(work_date, dept_scope) DO NOTHING
+  `).run(period, workDate, deptScope, deptId || null)
+
+  const fields = ['status = ?', 'note = ?', 'updated_at = CURRENT_TIMESTAMP']
+  const params = [status, note || null]
+  if (status === 'pending') {
+    fields.push('submitted_by = ?', 'submitted_at = CURRENT_TIMESTAMP')
+    params.push(userId || null)
+  } else if (status === 'approved') {
+    fields.push('approved_by = ?', 'approved_at = CURRENT_TIMESTAMP')
+    params.push(userId || null)
+  } else if (status === 'returned') {
+    fields.push('returned_by = ?', 'returned_at = CURRENT_TIMESTAMP')
+    params.push(userId || null)
+  }
+  params.push(workDate, deptScope)
+  db.prepare(`
+    UPDATE puantaj_daily_approvals
+    SET ${fields.join(', ')}
+    WHERE work_date = ? AND dept_scope = ?
+  `).run(...params)
+
+  return db.prepare(`
+    SELECT p.*,
+      submitter.full_name as submitted_by_name,
+      approver.full_name as approved_by_name,
+      returner.full_name as returned_by_name,
+      d.name as dept_name
+    FROM puantaj_daily_approvals p
+    LEFT JOIN users submitter ON submitter.id = p.submitted_by
+    LEFT JOIN users approver ON approver.id = p.approved_by
+    LEFT JOIN users returner ON returner.id = p.returned_by
+    LEFT JOIN departments d ON d.id = p.dept_id
+    WHERE p.work_date = ? AND p.dept_scope = ?
+  `).get(workDate, deptScope)
+}
+
+export function insertPuantajApprovalEvent({ scope, period, workDate, deptScope, deptId, action, status, note, userId }) {
+  return getDB().prepare(`
+    INSERT INTO puantaj_approval_events(scope, period, work_date, dept_scope, dept_id, action, status, note, user_id)
+    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(scope, period, workDate || null, deptScope, deptId || null, action, status || null, note || null, userId || null).lastInsertRowid
+}
+
+export function listPuantajApprovalEvents(period, deptScope, limit = 50) {
+  return getDB().prepare(`
+    SELECT e.*, u.full_name as user_name, d.name as dept_name
+    FROM puantaj_approval_events e
+    LEFT JOIN users u ON u.id = e.user_id
+    LEFT JOIN departments d ON d.id = e.dept_id
+    WHERE e.period = ? AND e.dept_scope = ?
+    ORDER BY e.created_at DESC, e.id DESC
+    LIMIT ?
+  `).all(period, deptScope, limit)
+}
+
 // ── Rotation templates (Faz 30 — isimli şablonlar) ──
 export function listRotationTemplates() {
   return getDB().prepare('SELECT * FROM rotation_templates ORDER BY id DESC').all()
