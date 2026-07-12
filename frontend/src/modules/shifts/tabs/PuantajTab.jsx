@@ -93,6 +93,7 @@ function PuantajApprovalView({
   onBulkDayStatus,
   onPeriodAction,
   onPersonClick,
+  lockScopeBlocked = false,
 }) {
   const period = approval?.period_approval || { status: 'draft' }
   const [periodNote, setPeriodNote] = useState(period.note || '')
@@ -128,6 +129,7 @@ function PuantajApprovalView({
   const meta = approvalStatusMeta(period.status)
   const closeProblems = audit.totals.scheduled + audit.totals.empty + audit.totals.absentWithoutReason + audit.missingOffStaff
   const lockChecks = useMemo(() => ([
+    { id: 'scope', label: 'Tum kapsam secili', ok: !lockScopeBlocked, value: lockScopeBlocked ? 'Departman filtresi aktif' : 'Tum personel' },
     { id: 'sent', label: 'Ay kontrole gonderildi', ok: ['submitted', 'approved', 'locked'].includes(period.status), value: approvalStatusMeta(period.status).label },
     { id: 'planned', label: 'Planli gun kalmadi', ok: audit.totals.scheduled === 0, value: audit.totals.scheduled },
     { id: 'empty', label: 'Bos gun kalmadi', ok: audit.totals.empty === 0, value: audit.totals.empty },
@@ -136,7 +138,7 @@ function PuantajApprovalView({
     { id: 'approved', label: 'Tum gunler onayli', ok: dailyRows.length > 0 && (counts.approved || 0) === dailyRows.length, value: `${counts.approved || 0}/${dailyRows.length}` },
     { id: 'returned', label: 'Geri donen gun yok', ok: (counts.returned || 0) === 0, value: counts.returned || 0 },
     { id: 'pending', label: 'Bekleyen/eksik gun yok', ok: (counts.pending || 0) === 0 && (counts.missing || 0) === 0, value: (counts.pending || 0) + (counts.missing || 0) },
-  ]), [period.status, audit, counts, dailyRows.length])
+  ]), [lockScopeBlocked, period.status, audit, counts, dailyRows.length])
   const lockReady = lockChecks.every(check => check.ok)
   const topProblemDays = useMemo(() => problemRows
     .map(row => ({
@@ -239,7 +241,7 @@ function PuantajApprovalView({
               className="btn btn-primary btn-sm"
               disabled={!isManager || busy || isLocked || !lockReady}
               onClick={() => onPeriodAction('lock', periodNote)}
-              title={lockReady ? 'Ay kilitlenmeye hazir' : 'Kilit icin kapanis kontrol listesini tamamlayin'}
+              title={lockScopeBlocked ? 'Ay kilidi icin departman filtresini kaldirin' : lockReady ? 'Ay kilitlenmeye hazir' : 'Kilit icin kapanis kontrol listesini tamamlayin'}
               style={{ fontSize: '10px' }}
             >
               Onayla ve Kilitle
@@ -2663,6 +2665,7 @@ export default function PuantajTab({ departments }) {
           onBulkDayStatus={(rows, status, note) => dayApprovalMutation.mutate({ rows, status, note })}
           onPeriodAction={(action, note) => periodApprovalMutation.mutate({ action, note })}
           onPersonClick={setSelectedRow}
+          lockScopeBlocked={!!deptFilter}
         />
       )}
 

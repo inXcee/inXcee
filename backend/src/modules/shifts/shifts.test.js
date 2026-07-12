@@ -17,11 +17,42 @@ beforeAll(async () => {
 
 describe('Puantaj onay akisi', () => {
   let staffId
+  let lockDeptId
+  let lockStaffId
 
   beforeAll(() => {
     staffId = getDB().prepare("INSERT INTO staff(full_name, is_active, salary) VALUES('Onay Test Personel', 1, 30000)")
       .run().lastInsertRowid
+    lockDeptId = getDB().prepare("INSERT INTO departments(name, color_class) VALUES('Puantaj Kilit Test','test')")
+      .run().lastInsertRowid
+    lockStaffId = getDB().prepare("INSERT INTO staff(full_name, department_id, is_active, salary) VALUES('Kilit Test Personel', ?, 1, 30000)")
+      .run(lockDeptId).lastInsertRowid
   })
+
+  async function approveWholeMonth(period) {
+    const [year, mon] = period.split('-').map(Number)
+    const lastDay = new Date(year, mon, 0).getDate()
+    const activeStaff = getDB().prepare('SELECT id, department_id FROM staff WHERE is_active = 1').all()
+    for (let day = 1; day <= lastDay; day += 1) {
+      const workDate = `${period}-${String(day).padStart(2, '0')}`
+      const isSunday = new Date(year, mon - 1, day).getDay() === 0
+      if (!isSunday) {
+        const scheduleStatus = day === 1 ? 'off' : 'worked'
+        const insert = getDB().prepare(`
+          INSERT INTO shift_schedule(staff_id, dept_id, work_date, status)
+          VALUES(?, ?, ?, ?)
+        `)
+        activeStaff.forEach(staff => {
+          insert.run(staff.id, staff.department_id || null, workDate, scheduleStatus)
+        })
+      }
+      const dayApproval = await request(app)
+        .patch('/api/shifts/puantaj/approval/day')
+        .set('Authorization', `Bearer ${managerToken}`)
+        .send({ period, work_date: workDate, status: 'approved' })
+      expect(dayApproval.status).toBe(200)
+    }
+  }
 
   it('onay ekrani ayin tum gunlerini taslak olarak dondurur', async () => {
     const res = await request(app)
@@ -63,24 +94,49 @@ describe('Puantaj onay akisi', () => {
     expect(manager.body.status).toBe('approved')
   })
 
-  it('mudur puantaji onaylayip kilitleyince aya yazim 423 doner', async () => {
+  it('eksik kapanis varken mudur puantaji kilitleyemez', async () => {
     const lock = await request(app)
       .patch('/api/shifts/puantaj/approval/period')
       .set('Authorization', `Bearer ${managerToken}`)
       .send({ period: '2027-04', action: 'lock', note: 'Nisan kapandi' })
+    expect(lock.status).toBe(409)
+    expect(lock.body.error).toContain('Puantaj kilitlenemez')
+  })
+
+  it('departman filtresi ile global ay kilidi atilamaz', async () => {
+    const lock = await request(app)
+      .patch('/api/shifts/puantaj/approval/period')
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({ period: '2027-04', dept_id: lockDeptId, action: 'lock' })
+    expect(lock.status).toBe(400)
+    expect(lock.body.error).toContain('departman filtresini kaldirin')
+  })
+
+  it('mudur puantaji tum kontroller tamamlaninca kilitler ve aya yazim 423 doner', async () => {
+    await request(app)
+      .post('/api/shifts/puantaj/approval/submit')
+      .set('Authorization', `Bearer ${shiftToken}`)
+      .send({ period: '2027-05', note: 'Mayis kontrol' })
+
+    await approveWholeMonth('2027-05')
+
+    const lock = await request(app)
+      .patch('/api/shifts/puantaj/approval/period')
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({ period: '2027-05', action: 'lock', note: 'Mayis kapandi' })
     expect(lock.status).toBe(200)
     expect(lock.body.status).toBe('locked')
 
     const write = await request(app)
       .post('/api/shifts/schedule')
       .set('Authorization', `Bearer ${managerToken}`)
-      .send({ entries: [{ staff_id: staffId, work_date: '2027-04-10', status: 'worked' }] })
+      .send({ entries: [{ staff_id: lockStaffId, work_date: '2027-05-10', status: 'worked' }] })
     expect(write.status).toBe(423)
 
     await request(app)
       .patch('/api/shifts/puantaj/approval/period')
       .set('Authorization', `Bearer ${managerToken}`)
-      .send({ period: '2027-04', action: 'reopen' })
+      .send({ period: '2027-05', action: 'reopen' })
   })
 })
 

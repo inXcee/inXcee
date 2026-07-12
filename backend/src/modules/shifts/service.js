@@ -249,6 +249,75 @@ function buildPuantajApprovalDays(period, existingRows) {
   })
 }
 
+function buildPuantajLockAudit(period, deptId, deptScope) {
+  const { year, mon, monthStart, monthEnd, lastDay } = parsePuantajMonth(period)
+  const staffRows = getPuantaj(monthStart, monthEnd, deptId)
+  const dayRows = getPuantajDayRows(monthStart, monthEnd, deptId)
+  const daysByStaff = new Map()
+  dayRows.forEach(row => {
+    if (!daysByStaff.has(row.staff_id)) daysByStaff.set(row.staff_id, new Map())
+    daysByStaff.get(row.staff_id).set(row.date, row)
+  })
+
+  const totals = { scheduled: 0, empty: 0, absentWithoutReason: 0, missingOffStaff: 0 }
+  staffRows.forEach(staff => {
+    let off = 0
+    const staffDays = daysByStaff.get(staff.id) || new Map()
+    for (let day = 1; day <= lastDay; day += 1) {
+      const date = `${period}-${String(day).padStart(2, '0')}`
+      const weekday = new Date(year, mon - 1, day).getDay()
+      const entry = staffDays.get(date)
+      if (!entry) {
+        if (weekday !== 0) totals.empty += 1
+        continue
+      }
+      if (entry.status === 'scheduled') totals.scheduled += 1
+      if (entry.status === 'off') off += 1
+      if (entry.status === 'absent' && !String(entry.absent_reason || '').trim()) totals.absentWithoutReason += 1
+    }
+    if (off === 0) totals.missingOffStaff += 1
+  })
+
+  const periodApproval = getPuantajPeriodApproval(period, deptScope)
+  const dailyApprovals = buildPuantajApprovalDays(period, listPuantajDailyApprovals(period, deptScope))
+  const approvedDays = dailyApprovals.filter(row => row.status === 'approved').length
+  const returnedDays = dailyApprovals.filter(row => row.status === 'returned').length
+  const pendingDays = dailyApprovals.filter(row => row.status === 'pending').length
+  const missingDays = dailyApprovals.length - approvedDays - returnedDays - pendingDays
+
+  return {
+    staffCount: staffRows.length,
+    totalDays: lastDay,
+    periodStatus: periodApproval?.status || 'draft',
+    approvedDays,
+    returnedDays,
+    pendingDays,
+    missingDays,
+    totals,
+  }
+}
+
+function assertPuantajReadyToLock(period, scope) {
+  const audit = buildPuantajLockAudit(period, scope.deptId, scope.deptScope)
+  const problems = []
+  if (!['submitted', 'approved', 'locked'].includes(audit.periodStatus)) problems.push('ay kontrole gonderilmemis')
+  if (audit.approvedDays !== audit.totalDays) problems.push(`${audit.totalDays - audit.approvedDays} gun onaysiz`)
+  if (audit.returnedDays > 0) problems.push(`${audit.returnedDays} gun geri donmus`)
+  if (audit.pendingDays > 0) problems.push(`${audit.pendingDays} gun beklemede`)
+  if (audit.missingDays > 0) problems.push(`${audit.missingDays} gun eksik`)
+  if (audit.totals.scheduled > 0) problems.push(`${audit.totals.scheduled} planli gun kapanmamis`)
+  if (audit.totals.empty > 0) problems.push(`${audit.totals.empty} bos gun var`)
+  if (audit.totals.absentWithoutReason > 0) problems.push(`${audit.totals.absentWithoutReason} devamsizlik nedeni eksik`)
+  if (audit.totals.missingOffStaff > 0) problems.push(`${audit.totals.missingOffStaff} personelde OFF yok`)
+  if (problems.length > 0) {
+    throw Object.assign(
+      new Error(`Puantaj kilitlenemez: ${problems.join(', ')}`),
+      { statusCode: 409, details: audit }
+    )
+  }
+  return audit
+}
+
 export function puantajApprovalService({ month, deptId } = {}) {
   const period = validatePuantajPeriod(month)
   const scope = puantajApprovalScope(deptId)
@@ -338,8 +407,14 @@ export function updatePuantajPeriodApprovalService({ period, dept_id, action, no
   }
   const status = actionMap[action]
   if (!status) throw Object.assign(new Error('action approve, return, lock veya reopen olmalidir'), { statusCode: 400 })
+  if (['lock', 'reopen'].includes(action) && scope.deptId != null) {
+    throw Object.assign(new Error('Ay kilidi tum kapsam icin yapilir; departman filtresini kaldirin'), { statusCode: 400 })
+  }
 
-  if (action === 'lock') lockPeriod(cleanPeriod, user.id, note || 'Puantaj onaylanip kilitlendi')
+  if (action === 'lock') {
+    assertPuantajReadyToLock(cleanPeriod, scope)
+    lockPeriod(cleanPeriod, user.id, note || 'Puantaj onaylanip kilitlendi')
+  }
   if (action === 'reopen') unlockPeriod(cleanPeriod)
 
   const row = upsertPuantajPeriodApproval({
