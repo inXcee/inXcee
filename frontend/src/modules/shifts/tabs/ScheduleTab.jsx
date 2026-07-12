@@ -86,12 +86,18 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
   // Build stable weekly grid: merge schedule data with all staff in dept
   const staffGrid = useMemo(() => buildStaffGrid(rows, allStaff, ''), [rows, allStaff])
 
+  // X5 — onaylı izin ezme gibi yazım uyarılarını toast ile göster (yanıttaki warnings)
+  const showAssignWarnings = (res) => {
+    const w = res?.data?.warnings || []
+    if (w.length) useToastStore.getState().addToast(`⚠ ${w[0].message}${w.length > 1 ? ` (+${w.length - 1} uyarı)` : ''}`, 'error')
+  }
+
   const assignCell = useMutation({
     mutationFn: ({ staffId, deptId, shiftDefId, date, status }) =>
       api.post('/shifts/schedule', {
         entries: [{ staff_id: staffId, dept_id: deptId, shift_def_id: shiftDefId || null, work_date: date, status: status || 'scheduled' }]
       }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['schedule'] }); setCellPopover(null) },
+    onSuccess: (res) => { qc.invalidateQueries({ queryKey: ['schedule'] }); setCellPopover(null); showAssignWarnings(res) },
     onError: (err) => {
       useToastStore.getState().addToast(err?.response?.data?.error || 'Vardiya atanamadı', 'error')
     },
@@ -108,12 +114,13 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
         await Promise.all(deletions.map(d => api.delete(`/shifts/schedule/${d.staffId}/${d.date}`)))
         return { count: deletions.length }
       }
-      await api.post('/shifts/schedule', { entries })
-      return { count: entries.length }
+      const res = await api.post('/shifts/schedule', { entries })
+      return { count: entries.length, warnings: res?.data?.warnings || [] }
     },
-    onSuccess: (_data, vars) => {
+    onSuccess: (data, vars) => {
       qc.invalidateQueries({ queryKey: ['schedule'] })
       setQuickCode('')
+      showAssignWarnings({ data: { warnings: data?.warnings } })
       const count = vars.action === 'delete' ? vars.deletions.length : vars.entries.length
       if (vars.undo) setActionHistory(prev => [{ ...vars.undo, id: Date.now(), count }, ...prev].slice(0, 8))
       setRecentActions(prev => [

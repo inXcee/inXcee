@@ -123,8 +123,8 @@ shiftsRouter.get('/schedule', ...allStaff, (req, res) => {
 
 shiftsRouter.post('/schedule', ...managerOrSupervisor, (req, res) => {
   try {
-    bulkAssignService(req.body.entries, req.user.id)
-    res.json({ ok: true })
+    const result = bulkAssignService(req.body.entries, req.user.id)
+    res.json({ ok: true, warnings: result?.warnings || [] })
   } catch (e) {
     res.status(e.statusCode || 400).json({ error: e.message })
   }

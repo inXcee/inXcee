@@ -1,5 +1,5 @@
 import {
-  getDepartments, getShiftDefinitions, getSchedule, bulkAssignShifts,
+  getDepartments, getShiftDefinitions, getSchedule, bulkAssignShifts, assignmentWarnings,
   getStaffWithShiftStatus, createLeaveRequest, approveLeaveRequest,
   getLeaveRequests, getLeaveBalance, createOvertime, updateOvertime, deleteOvertime, getOvertimeRecords, upsertOvertimeDay,
   getOvertimeSummary, createAttendanceLog, updateCheckout, getAttendanceLogs, getPuantaj,
@@ -137,7 +137,9 @@ export function unlockPeriodService(period) {
 export function bulkAssignService(entries, createdBy) {
   if (!entries?.length) throw new Error('Atama listesi boş')
   assertPeriodsUnlocked(entries.map(e => e.work_date))
+  const warnings = assignmentWarnings(entries) // onaylı izin ezme uyarısı (bloklamaz)
   bulkAssignShifts(entries, createdBy)
+  return { ok: true, warnings }
 }
 
 export function staffStatusService(date, deptId) {

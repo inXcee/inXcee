@@ -783,6 +783,29 @@ export function cancelLeaveRequest(id) {
 }
 
 // ── Shift swap requests ──
+// X5 — Yazım uyarıları: çalışma vardiyası ONAYLI izin gününe atanıyorsa uyar (bloklamaz).
+export function assignmentWarnings(entries) {
+  const db = getDB()
+  const approvedLeave = db.prepare(`
+    SELECT lr.leave_type, s.full_name FROM leave_requests lr
+    JOIN staff s ON s.id = lr.staff_id
+    WHERE lr.staff_id = ? AND lr.status='approved' AND ? BETWEEN lr.start_date AND lr.end_date
+  `)
+  const warnings = []
+  for (const e of entries || []) {
+    if (!e.staff_id || !e.work_date) continue
+    const status = e.status || 'scheduled'
+    if (['scheduled', 'worked', 'overtime'].includes(status)) {
+      const leave = approvedLeave.get(e.staff_id, e.work_date)
+      if (leave) warnings.push({
+        staff_id: e.staff_id, work_date: e.work_date, kind: 'leave_overwrite',
+        message: `${leave.full_name}: ${e.work_date} onaylı izinli — üzerine vardiya atandı`,
+      })
+    }
+  }
+  return warnings
+}
+
 export function ensureSwapTable() {
   getDB().exec(`CREATE TABLE IF NOT EXISTS shift_swap_requests (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

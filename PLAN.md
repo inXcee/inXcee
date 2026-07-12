@@ -474,7 +474,15 @@ Excel-öncelikli: renk tutarlılığı + yazdırma/düzen + bölüm sayfaları +
 - [x] SettingsTab vardiya formuna "Kadro Hedefi" alanı; `CoverageBoard.jsx` — haftalık gün×vardiya gerçekleşen vs hedef, eksik kadro kırmızı; ScheduleTab haftalık görünümde açılır panel
 - [x] +2 backend test (shifts 113/113, 1427/1427 tüm suite), frontend shifts 89/89, build temiz
 
-### Faz X5 — Yazımda çakışma/izin kontrolü + şema hijyeni ⏳ (sıradaki)
+### Faz X5 — Yazımda çakışma/izin kontrolü + şema hijyeni ✅
+- [x] `assignmentWarnings(entries)` — çalışma vardiyası ONAYLI izin gününe atanıyorsa uyarı (bloklamaz); `bulkAssignService` → `{ ok, warnings }`; `POST /schedule` warnings döner
+- [x] Frontend: ScheduleTab yazım mutation'ları (assignCell + quickApply) yanıttaki warnings'i toast ile gösterir (onaylı izin ezme uyarısı)
+- [x] Migration 038: `shift_swap_requests` versiyonlu şemaya alındı (ad-hoc `ensureSwapTable` drift'i giderildi)
+- [x] +3 backend test (shifts 116/116, 1430/1430 tüm suite), frontend shifts 89/89, build temiz
+- [ ] Not: rest<11h/ardışık>6 kontrolü rotasyon önizlemesinde zaten mevcut; grid yazımına genişletme ayrı iş
+
+## Vardiya X-SERİSİ ÖZETİ (X1-X5 tamamlandı, 2026-07-12)
+5 faz · 2 migration (037-038) · Excel renk tutarlılığı + paylaşılan kit, föyü bölüm/özet sayfaları + yazdırma, çizelge Excel + ölü kod temizliği, kadro hedefi/kapsama panosu, onaylı-izin ezme uyarısı. backend shifts 116/116 (1430/1430), frontend shifts 89/89. Excel çıktıları artık ekranla aynı renk + yazdırılabilir + bölüm bazlı.
 
 ## Su Takip V-SERİSİ ÖZETİ (V1-V5 tamamlandı, 2026-07-11)
 5 faz · reaktif → öngörülü+proaktif. Migration eklenmedi (mevcut sorgular yeniden kullanıldı). +eksik migration 036 fix (prod tır özelliği düzeldi). backend 94/94 water (1425/1425), frontend smoke 15/15. Öngörü (forecast/reorder) + proaktif (günlük digest, aylık PDF cron, eskalasyon) canlıda.
