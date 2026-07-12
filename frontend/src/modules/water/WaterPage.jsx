@@ -1816,11 +1816,30 @@ function PendingWaybillPanel() {
 }
 
 // ─────────────────────────── Ay Sonu Kapanış / Uyuşturma ───────────────────────────
+const truckBadgeBySeverity = (severity) => ({
+  success: 'badge-green',
+  critical: 'badge-red',
+  warning: 'badge-amber',
+  attention: 'badge-blue',
+  muted: 'badge-gray',
+}[severity] || 'badge-gray')
+
+const truckFilterDefs = [
+  { key: 'action', label: 'Aksiyon' },
+  { key: 'mail', label: 'Mail bekleyen' },
+  { key: 'missing', label: 'Eksik bilgi' },
+  { key: 'today', label: 'Bugün gelecek' },
+  { key: 'late', label: 'Geciken' },
+  { key: 'all', label: 'Tümü' },
+]
+
 function TruckArrivalPanel({ from, to, label }) {
   const qc = useQueryClient()
   const isManager = useAuthStore(s => s.user?.role === 'campus_manager')
   const fileRef = useRef(null)
   const [open, setOpen] = useState(true)
+  const [truckFilter, setTruckFilter] = useState('action')
+  const [selectedTruckId, setSelectedTruckId] = useState(null)
   const [photoForm, setPhotoForm] = useState({ truck_arrival_id: '', waybill_no: '', move_date: todayStr(), note: '' })
   const [form, setForm] = useState({
     arrival_date: todayStr(), arrival_start_time: '08:00', arrival_end_time: '17:00',
@@ -1912,25 +1931,98 @@ function TruckArrivalPanel({ from, to, label }) {
     plate: t.plate, trailer_plate: t.trailer_plate || '', center_email: t.center_email || '',
     note: t.note || '', status: t.status, ...patch,
   })
-  const dueMail = trucks.filter(t => t.mail_required).length
-  const dueToday = trucks.filter(t => t.arrival_date === todayStr() && !['arrived', 'cancelled'].includes(t.status)).length
-  const danger = trucks.some(t => t.deadline_passed || (t.missing_mail_fields || []).length)
+  const today = todayStr()
+  const truckStats = useMemo(() => {
+    const active = trucks.filter(t => !['arrived', 'cancelled'].includes(t.status))
+    return {
+      total: trucks.length,
+      active: active.length,
+      mail: trucks.filter(t => t.mail_required).length,
+      missing: trucks.filter(t => (t.missing_mail_fields || []).length > 0 && t.mail_required).length,
+      overdue: trucks.filter(t => t.deadline_passed || t.mail_phase === 'overdue' || t.arrival_phase === 'late').length,
+      today: trucks.filter(t => t.arrival_date === today && !['arrived', 'cancelled'].includes(t.status)).length,
+      ready: trucks.filter(t => t.mail_required && t.mail_ready).length,
+      noPhoto: trucks.filter(t => !t.photo_count && t.status !== 'cancelled').length,
+      photos: photos.length,
+    }
+  }, [trucks, photos.length, today])
+  const filteredTrucks = useMemo(() => {
+    const isAction = (t) => t.mail_required || t.deadline_passed || t.arrival_phase === 'late' || t.arrival_date === today || (t.missing_mail_fields || []).length || !t.photo_count
+    const filters = {
+      action: isAction,
+      mail: (t) => t.mail_required,
+      missing: (t) => (t.missing_mail_fields || []).length > 0,
+      today: (t) => t.arrival_date === today,
+      late: (t) => t.deadline_passed || t.mail_phase === 'overdue' || t.arrival_phase === 'late',
+      all: () => true,
+    }
+    return trucks.filter(filters[truckFilter] || filters.action)
+  }, [trucks, truckFilter, today])
+  const selectedTruck = filteredTrucks.find(t => t.id === selectedTruckId)
+    || trucks.find(t => t.id === selectedTruckId)
+    || filteredTrucks[0]
+    || trucks[0]
+    || null
+  const danger = truckStats.overdue > 0 || truckStats.missing > 0
+  const actionTruckCount = trucks.filter(t => (
+    t.mail_required || t.deadline_passed || t.arrival_phase === 'late' || t.arrival_date === today || (t.missing_mail_fields || []).length || !t.photo_count
+  )).length
+
+  const copyTruckMail = async (t) => {
+    if (!t) return
+    const preview = t.mail_preview || { to: t.center_email, subject: t.mail_subject, body: t.mail_body }
+    const text = [
+      `Alıcı: ${preview.to || '-'}`,
+      `Konu: ${preview.subject || '-'}`,
+      '',
+      preview.body || '',
+    ].join('\n')
+    try {
+      await navigator.clipboard?.writeText(text)
+      toastOk('Mail taslağı panoya kopyalandı')
+    } catch {
+      toastErr('Mail taslağı kopyalanamadı')
+    }
+  }
 
   return (
     <div className="panel" style={{ marginTop: '16px', borderTop: `3px solid ${danger ? 'var(--red)' : 'var(--teal)'}` }}>
       <div className="panel-header" style={{ alignItems: 'center', gap: '10px' }}>
         <div>
           <div className="panel-title">TIR / İRSALİYE TAKİBİ — {label}</div>
-          <div className="panel-subtitle">{trucks.length} tır kaydı · {dueMail} mail bekliyor · {photos.length} irsaliye fotoğrafı</div>
+          <div className="panel-subtitle">{truckStats.total} tır kaydı · {truckStats.mail} mail bekliyor · {truckStats.photos} irsaliye fotoğrafı</div>
         </div>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px', alignItems: 'center' }}>
-          {dueToday > 0 && <span className="badge badge-orange">{dueToday} bugün</span>}
+          {truckStats.today > 0 && <span className="badge badge-amber">{truckStats.today} bugün</span>}
+          {truckStats.overdue > 0 && <span className="badge badge-red">{truckStats.overdue} kritik</span>}
           <button className="btn btn-ghost btn-sm" onClick={() => setOpen(o => !o)}>{open ? '▲ Gizle' : '▼ Aç'}</button>
         </div>
       </div>
       {open && (
         <div className="panel-body" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(118px, 1fr))', gap: '8px', alignItems: 'end' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(138px, 1fr))', gap: '8px' }}>
+            {[
+              ['Mail bekleyen', truckStats.mail, 'var(--accent)', `${truckStats.ready} hazır`],
+              ['Eksik bilgi', truckStats.missing, 'var(--red)', 'mail öncesi tamamla'],
+              ['Deadline / gecikme', truckStats.overdue, 'var(--red)', 'hemen kontrol'],
+              ['Bugün gelecek', truckStats.today, 'var(--blue)', 'geliş teyidi'],
+              ['Fotoğrafsız', truckStats.noPhoto, 'var(--teal)', 'irsaliye arşivi'],
+            ].map(([title, value, color, sub]) => (
+              <div key={title} style={{ border: `1px solid color-mix(in srgb, ${color} 34%, var(--border))`, borderLeft: `4px solid ${color}`, borderRadius: '8px', background: `color-mix(in srgb, ${color} 7%, var(--surface))`, padding: '9px 10px' }}>
+                <div style={{ fontSize: '10px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 0 }}>{title}</div>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: '7px', marginTop: '4px' }}>
+                  <strong style={{ fontFamily: 'var(--mono)', fontSize: '20px', color }}>{nf(value)}</strong>
+                  <span style={{ fontSize: '11px', color: 'var(--text2)' }}>{sub}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(118px, 1fr))', gap: '8px', alignItems: 'end', border: '1px solid var(--border)', background: 'var(--surface2)', borderRadius: '8px', padding: '10px' }}>
+            <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: '8px', paddingBottom: '2px' }}>
+              <span className="badge badge-blue">1</span>
+              <strong style={{ fontSize: '12px' }}>Geliş, mail deadline ve kontrol aralığı</strong>
+              <span style={{ color: 'var(--text3)', fontSize: '11px' }}>17:00 son saat ve seçilen aralıklar uyarılara bağlanır</span>
+            </div>
             <label className="form-label">Geliş tarihi<input type="date" className="form-input" value={form.arrival_date} onChange={e => setForm(f => ({ ...f, arrival_date: e.target.value, mail_deadline_date: f.mail_deadline_date || e.target.value }))} /></label>
             <label className="form-label">Başlangıç<input type="time" className="form-input" value={form.arrival_start_time} onChange={e => setForm(f => ({ ...f, arrival_start_time: e.target.value }))} /></label>
             <label className="form-label">Bitiş<input type="time" className="form-input" value={form.arrival_end_time} onChange={e => setForm(f => ({ ...f, arrival_end_time: e.target.value }))} /></label>
@@ -1941,8 +2033,13 @@ function TruckArrivalPanel({ from, to, label }) {
             <label className="form-label">Saat aralığı<input type="number" min="15" step="15" className="form-input" value={form.reminder_interval_minutes} onChange={e => setForm(f => ({ ...f, reminder_interval_minutes: e.target.value }))} /></label>
             <label className="form-label">Marka<select className="form-select" value={form.brand_id} onChange={e => setForm(f => ({ ...f, brand_id: e.target.value }))}><option value="">Seçin</option>{brands.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}</select></label>
             <label className="form-label">Tedarikçi<input className="form-input" value={form.supplier_name} onChange={e => setForm(f => ({ ...f, supplier_name: e.target.value }))} /></label>
+            <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: '8px', paddingTop: '8px', borderTop: '1px solid var(--border)' }}>
+              <span className="badge badge-amber">2</span>
+              <strong style={{ fontSize: '12px' }}>Tırcı, araç ve ana merkez bilgileri</strong>
+              <span style={{ color: 'var(--text3)', fontSize: '11px' }}>eksik alanlar mail gönderimini bilinçli olarak durdurur</span>
+            </div>
             <label className="form-label">Tırcı adı<input className="form-input" value={form.driver_name} onChange={e => setForm(f => ({ ...f, driver_name: e.target.value }))} /></label>
-            <label className="form-label">Arşiv TC<input className="form-input" value={form.driver_tc} onChange={e => setForm(f => ({ ...f, driver_tc: e.target.value }))} /></label>
+            <label className="form-label">Sicil / Arşiv TC<input className="form-input" value={form.driver_tc} onChange={e => setForm(f => ({ ...f, driver_tc: e.target.value }))} /></label>
             <label className="form-label">Telefon<input className="form-input" value={form.driver_phone} onChange={e => setForm(f => ({ ...f, driver_phone: e.target.value }))} /></label>
             <label className="form-label">Plaka<input className="form-input" value={form.plate} onChange={e => setForm(f => ({ ...f, plate: e.target.value.toUpperCase() }))} /></label>
             <label className="form-label">Dorse<input className="form-input" value={form.trailer_plate} onChange={e => setForm(f => ({ ...f, trailer_plate: e.target.value.toUpperCase() }))} /></label>
@@ -1951,41 +2048,158 @@ function TruckArrivalPanel({ from, to, label }) {
             <button className="btn btn-primary" disabled={!form.arrival_date || !form.plate.trim() || create.isPending} onClick={() => create.mutate()}>{create.isPending ? 'Kaydediliyor…' : 'Tır Kaydı Ekle'}</button>
           </div>
 
-          <div style={{ overflowX: 'auto' }}>
-            <table className="data-table" style={{ fontSize: '11px', minWidth: '1120px' }}>
-              <thead><tr>{['Geliş', 'Saat', 'Mail deadline', 'Durum', 'Marka/Tedarikçi', 'Tırcı', 'TC', 'Plaka', 'Dorse', 'Tel', 'Eksik', 'Foto', 'İşlem'].map(h => <th key={h} style={{ textAlign: h === 'İşlem' ? 'right' : 'left', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
-              <tbody>
-                {trucks.map(t => {
-                  const missing = t.missing_mail_fields || []
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.35fr) minmax(320px, .65fr)', gap: '12px', alignItems: 'start' }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '8px' }}>
+                {truckFilterDefs.map(f => {
+                  const counts = {
+                    action: actionTruckCount,
+                    mail: truckStats.mail,
+                    missing: truckStats.missing,
+                    today: truckStats.today,
+                    late: truckStats.overdue,
+                    all: truckStats.total,
+                  }
                   return (
-                    <tr key={t.id} style={{ background: t.deadline_passed ? 'color-mix(in srgb, var(--red) 7%, transparent)' : undefined }}>
-                      <td style={{ fontFamily: 'var(--mono)' }}>{t.arrival_date}</td>
-                      <td style={{ fontFamily: 'var(--mono)' }}>{t.arrival_window}</td>
-                      <td style={{ fontFamily: 'var(--mono)', color: t.deadline_passed ? 'var(--red)' : 'var(--text2)' }}>{t.mail_deadline_label}</td>
-                      <td><span className={`badge ${t.status === 'arrived' ? 'badge-green' : t.status === 'cancelled' ? 'badge-gray' : t.mail_sent_at ? 'badge-blue' : 'badge-orange'}`}>{t.status_label}</span></td>
-                      <td>{t.brand_name || t.supplier_name || '—'}</td>
-                      <td>{t.driver_name || '—'}</td>
-                      <td style={{ fontFamily: 'var(--mono)' }}>{t.driver_tc || '—'}</td>
-                      <td style={{ fontFamily: 'var(--mono)', fontWeight: 700 }}>{t.plate}</td>
-                      <td style={{ fontFamily: 'var(--mono)' }}>{t.trailer_plate || '—'}</td>
-                      <td style={{ fontFamily: 'var(--mono)' }}>{t.driver_phone || '—'}</td>
-                      <td style={{ color: missing.length ? 'var(--red)' : 'var(--green)' }}>{missing.length ? missing.join(', ') : 'Tamam'}</td>
-                      <td style={{ fontFamily: 'var(--mono)' }}>{nf(t.photo_count || 0)}</td>
-                      <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                        <button className="btn btn-ghost btn-sm" onClick={() => { setPhotoForm(f => ({ ...f, truck_arrival_id: String(t.id), move_date: t.arrival_date })); fileRef.current?.click() }}>Foto</button>
-                        {isManager && <button className="btn btn-ghost btn-sm" disabled={!t.mail_ready || sendMail.isPending} onClick={() => sendMail.mutate(t.id)}>Mail</button>}
-                        {!t.mail_sent_at && <button className="btn btn-ghost btn-sm" onClick={() => markMail.mutate(t.id)}>Mail atıldı</button>}
-                        <button className="btn btn-ghost btn-sm" onClick={() => markChecked.mutate(t.id)}>Kontrol</button>
-                        {t.status !== 'arrived' && <button className="btn btn-ghost btn-sm" onClick={() => updateTruck.mutate({ id: t.id, body: truckPayload(t, { status: 'arrived' }) })}>Geldi</button>}
-                        {t.status !== 'cancelled' && <button className="btn btn-ghost btn-sm" onClick={() => updateTruck.mutate({ id: t.id, body: truckPayload(t, { status: 'cancelled' }) })}>İptal</button>}
-                        {isManager && <button className="btn btn-danger btn-sm" onClick={async () => { if (await confirmDialog({ title: 'Tır Kaydı Sil', body: `${t.plate} kaydı silinsin mi?`, danger: true })) delTruck.mutate(t.id) }}>Sil</button>}
-                      </td>
-                    </tr>
+                    <button key={f.key} className={`btn btn-sm ${truckFilter === f.key ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTruckFilter(f.key)}>
+                      {f.label} <span style={{ fontFamily: 'var(--mono)' }}>{nf(counts[f.key] || 0)}</span>
+                    </button>
                   )
                 })}
-                {trucks.length === 0 && <tr><td colSpan={13} style={{ textAlign: 'center', color: 'var(--text3)', padding: '14px' }}>Bu ay tır ön bildirimi yok</td></tr>}
-              </tbody>
-            </table>
+              </div>
+              <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: '8px' }}>
+                <table className="data-table" style={{ fontSize: '11px', minWidth: '1040px' }}>
+                  <thead><tr>{['Geliş', 'Mail', 'Durum', 'Marka/Tedarikçi', 'Tırcı / Sicil', 'Araç', 'İletişim', 'Eksik', 'Foto', 'Kontrol'].map(h => <th key={h} style={{ textAlign: h === 'Kontrol' ? 'right' : 'left', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
+                  <tbody>
+                    {filteredTrucks.map(t => {
+                      const missing = t.missing_mail_fields || []
+                      const selected = selectedTruck?.id === t.id
+                      return (
+                        <tr
+                          key={t.id}
+                          onClick={() => setSelectedTruckId(t.id)}
+                          style={{
+                            cursor: 'pointer',
+                            background: selected
+                              ? 'color-mix(in srgb, var(--blue) 12%, transparent)'
+                              : t.deadline_passed || t.arrival_phase === 'late'
+                                ? 'color-mix(in srgb, var(--red) 7%, transparent)'
+                                : undefined,
+                          }}
+                        >
+                          <td>
+                            <div style={{ fontFamily: 'var(--mono)', fontWeight: 800 }}>{t.arrival_date}</div>
+                            <div style={{ fontFamily: 'var(--mono)', color: 'var(--text3)', fontSize: '10px' }}>{t.arrival_window}</div>
+                          </td>
+                          <td>
+                            <span className={`badge ${truckBadgeBySeverity(t.mail_severity)}`}>{t.mail_phase_label || (t.mail_sent_at ? 'Mail atıldı' : 'Bekliyor')}</span>
+                            <div style={{ fontFamily: 'var(--mono)', color: t.deadline_passed ? 'var(--red)' : 'var(--text3)', fontSize: '10px', marginTop: '4px' }}>{t.mail_deadline_label}</div>
+                          </td>
+                          <td>
+                            <span className={`badge ${t.status === 'arrived' ? 'badge-green' : t.status === 'cancelled' ? 'badge-gray' : t.mail_sent_at ? 'badge-blue' : 'badge-amber'}`}>{t.status_label}</span>
+                            <div style={{ marginTop: '4px' }}><span className={`badge ${truckBadgeBySeverity(t.arrival_severity)}`}>{t.arrival_phase_label || 'Planlı'}</span></div>
+                          </td>
+                          <td>{t.brand_name || t.supplier_name || '—'}</td>
+                          <td>
+                            <div>{t.driver_name || '—'}</div>
+                            <div style={{ fontFamily: 'var(--mono)', color: 'var(--text3)', fontSize: '10px' }}>{t.driver_tc || 'sicil yok'}</div>
+                          </td>
+                          <td>
+                            <div style={{ fontFamily: 'var(--mono)', fontWeight: 800 }}>{t.plate}</div>
+                            <div style={{ fontFamily: 'var(--mono)', color: 'var(--text3)', fontSize: '10px' }}>{t.trailer_plate || 'dorse yok'}</div>
+                          </td>
+                          <td>
+                            <div style={{ fontFamily: 'var(--mono)' }}>{t.driver_phone || '—'}</div>
+                            <div style={{ color: 'var(--text3)', fontSize: '10px' }}>{t.center_email || 'mail yok'}</div>
+                          </td>
+                          <td style={{ color: missing.length ? 'var(--red)' : 'var(--green)', maxWidth: '210px' }}>{missing.length ? missing.join(', ') : 'Tamam'}</td>
+                          <td style={{ fontFamily: 'var(--mono)', color: t.photo_count ? 'var(--green)' : 'var(--accent)' }}>{nf(t.photo_count || 0)}</td>
+                          <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                            <button className="btn btn-ghost btn-sm" onClick={e => { e.stopPropagation(); setPhotoForm(f => ({ ...f, truck_arrival_id: String(t.id), move_date: t.arrival_date })); fileRef.current?.click() }}>Foto</button>
+                            <button className="btn btn-ghost btn-sm" onClick={e => { e.stopPropagation(); markChecked.mutate(t.id) }}>Kontrol</button>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                    {filteredTrucks.length === 0 && <tr><td colSpan={10} style={{ textAlign: 'center', color: 'var(--text3)', padding: '14px' }}>Bu filtrede tır kaydı yok</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div style={{ border: '1px solid var(--border)', borderRadius: '8px', background: 'var(--surface2)', padding: '12px', minHeight: '280px' }}>
+              {selectedTruck ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <div style={{ display: 'flex', gap: '8px', justifyContent: 'space-between', alignItems: 'start' }}>
+                    <div>
+                      <div style={{ fontFamily: 'var(--mono)', fontWeight: 900, fontSize: '17px' }}>{selectedTruck.vehicle_summary || selectedTruck.plate}</div>
+                      <div style={{ color: 'var(--text2)', fontSize: '12px' }}>{selectedTruck.brand_name || selectedTruck.supplier_name || 'Tedarikçi yok'} · {selectedTruck.arrival_date} {selectedTruck.arrival_window}</div>
+                    </div>
+                    <span className={`badge ${truckBadgeBySeverity(selectedTruck.mail_severity)}`}>{selectedTruck.mail_phase_label}</span>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                    <div style={{ border: '1px solid var(--border)', borderRadius: '8px', padding: '8px', background: 'var(--surface)' }}>
+                      <div style={{ color: 'var(--text3)', fontSize: '10px' }}>Mail durumu</div>
+                      <strong style={{ color: selectedTruck.deadline_passed ? 'var(--red)' : 'var(--text)' }}>{selectedTruck.mail_notice}</strong>
+                    </div>
+                    <div style={{ border: '1px solid var(--border)', borderRadius: '8px', padding: '8px', background: 'var(--surface)' }}>
+                      <div style={{ color: 'var(--text3)', fontSize: '10px' }}>Geliş durumu</div>
+                      <strong>{selectedTruck.arrival_notice}</strong>
+                    </div>
+                  </div>
+
+                  <div style={{ border: '1px solid color-mix(in srgb, var(--blue) 35%, var(--border))', borderRadius: '8px', background: 'color-mix(in srgb, var(--blue) 6%, var(--surface))', padding: '9px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'center', marginBottom: '7px' }}>
+                      <strong style={{ fontSize: '12px' }}>Ana merkez mail taslağı</strong>
+                      <button className="btn btn-ghost btn-sm" onClick={() => copyTruckMail(selectedTruck)}>Taslağı Kopyala</button>
+                    </div>
+                    <div style={{ display: 'grid', gap: '5px', fontSize: '11px' }}>
+                      <div><span style={{ color: 'var(--text3)' }}>Alıcı:</span> <span style={{ fontFamily: 'var(--mono)' }}>{selectedTruck.mail_preview?.to || selectedTruck.center_email || '—'}</span></div>
+                      <div><span style={{ color: 'var(--text3)' }}>Konu:</span> <span style={{ fontWeight: 700 }}>{selectedTruck.mail_preview?.subject || selectedTruck.mail_subject || '—'}</span></div>
+                      <textarea className="form-input" readOnly value={selectedTruck.mail_preview?.body || selectedTruck.mail_body || ''} style={{ minHeight: '150px', fontFamily: 'var(--mono)', fontSize: '11px', resize: 'vertical', whiteSpace: 'pre-wrap' }} />
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '6px' }}>
+                    {(selectedTruck.mail_checklist || []).map(item => (
+                      <div key={item.key} style={{ display: 'flex', alignItems: 'center', gap: '6px', border: '1px solid var(--border)', borderRadius: '7px', padding: '6px', background: item.ok ? 'color-mix(in srgb, var(--green) 5%, var(--surface))' : 'color-mix(in srgb, var(--red) 5%, var(--surface))' }}>
+                        <span className={`badge ${item.ok ? 'badge-green' : 'badge-red'}`}>{item.ok ? 'OK' : 'Eksik'}</span>
+                        <span style={{ fontSize: '11px' }}>{item.label}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {selectedTruck.action_items?.length > 0 && (
+                    <div style={{ border: '1px solid color-mix(in srgb, var(--accent) 35%, var(--border))', borderRadius: '8px', background: 'color-mix(in srgb, var(--accent) 7%, var(--surface))', padding: '8px' }}>
+                      <strong style={{ fontSize: '12px' }}>Aksiyon listesi</strong>
+                      <ul style={{ margin: '6px 0 0 16px', padding: 0, color: 'var(--text2)', fontSize: '11px' }}>
+                        {selectedTruck.action_items.map((a, idx) => <li key={`${a}-${idx}`}>{a}</li>)}
+                      </ul>
+                    </div>
+                  )}
+
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                    {isManager && <button className="btn btn-primary btn-sm" disabled={!selectedTruck.mail_ready || sendMail.isPending} onClick={() => sendMail.mutate(selectedTruck.id)}>Mail Gönder</button>}
+                    {!selectedTruck.mail_sent_at && <button className="btn btn-ghost btn-sm" onClick={() => markMail.mutate(selectedTruck.id)}>Mail atıldı</button>}
+                    <button className="btn btn-ghost btn-sm" onClick={() => markChecked.mutate(selectedTruck.id)}>Kontrol edildi</button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => { setPhotoForm(f => ({ ...f, truck_arrival_id: String(selectedTruck.id), move_date: selectedTruck.arrival_date })); fileRef.current?.click() }}>Foto bağla</button>
+                    {selectedTruck.status !== 'arrived' && <button className="btn btn-ghost btn-sm" onClick={() => updateTruck.mutate({ id: selectedTruck.id, body: truckPayload(selectedTruck, { status: 'arrived' }) })}>Geldi</button>}
+                    {selectedTruck.status !== 'cancelled' && <button className="btn btn-ghost btn-sm" onClick={() => updateTruck.mutate({ id: selectedTruck.id, body: truckPayload(selectedTruck, { status: 'cancelled' }) })}>İptal</button>}
+                    {isManager && <button className="btn btn-danger btn-sm" onClick={async () => { if (await confirmDialog({ title: 'Tır Kaydı Sil', body: `${selectedTruck.plate} kaydı silinsin mi?`, danger: true })) delTruck.mutate(selectedTruck.id) }}>Sil</button>}
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', color: 'var(--text3)', fontSize: '11px' }}>
+                    <div>Kontrol planı: <strong style={{ color: 'var(--text2)' }}>{selectedTruck.check_plan_label}</strong></div>
+                    <div>Son kontrol: <strong style={{ color: 'var(--text2)' }}>{selectedTruck.last_checked_at || '—'}</strong></div>
+                    <div>Sonraki kontrol: <strong style={{ color: 'var(--text2)' }}>{selectedTruck.next_check_time || '—'}</strong></div>
+                    <div>Fotoğraf: <strong style={{ color: 'var(--text2)' }}>{nf(selectedTruck.photo_count || 0)}</strong></div>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ color: 'var(--text3)', textAlign: 'center', padding: '60px 10px' }}>Tır seçilmedi</div>
+              )}
+            </div>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(280px, .8fr)', gap: '12px' }}>

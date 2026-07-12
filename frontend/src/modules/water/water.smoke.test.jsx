@@ -140,9 +140,35 @@ vi.mock('../../shared/api/client.js', () => ({
           status: 'planned',
           status_label: 'Planlandi',
           missing_mail_fields: [],
+          mail_checklist: [
+            { key: 'center_email', label: 'Ana merkez e-postası', ok: true, value: 'merkez@example.com' },
+            { key: 'driver_name', label: 'Tırcı adı', ok: true, value: 'Ahmet Yilmaz' },
+            { key: 'driver_tc', label: 'Sicil / Arşiv TC', ok: true, value: '12345678901' },
+          ],
           mail_ready: true,
           mail_required: true,
           deadline_passed: false,
+          mail_phase: 'due_ready',
+          mail_phase_label: 'Bugün hazır',
+          mail_severity: 'attention',
+          mail_notice: '6 sa içinde ana merkeze mail atılmalı',
+          arrival_phase: 'today',
+          arrival_phase_label: 'Bugün gelecek',
+          arrival_severity: 'warning',
+          arrival_notice: '2 sa sonra geliş aralığı başlayacak',
+          next_check_time: '11:00',
+          check_plan_label: '08:00-17:00 / 60 dk',
+          vehicle_summary: '34 ABC 123 / 34 DRS 456',
+          mail_subject: 'Su tır giriş bildirimi - 2026-07-10 - 34 ABC 123',
+          mail_body: 'Merhaba,\\n\\nSu sevkiyatı için tır giriş ön bildirimi aşağıdadır.',
+          mail_preview: {
+            to: 'merkez@example.com',
+            subject: 'Su tır giriş bildirimi - 2026-07-10 - 34 ABC 123',
+            body: 'Merhaba,\\n\\nSu sevkiyatı için tır giriş ön bildirimi aşağıdadır.',
+            ready: true,
+            missing_fields: [],
+          },
+          action_items: ['Bugün 17:00 öncesi mail gönderimi kapatılmalı'],
           photo_count: 1,
         },
       ] })
@@ -168,6 +194,10 @@ describe('WaterPage tek-ekran pano smoke', () => {
     expect((await screen.findAllByText('34 ABC 123')).length).toBeGreaterThan(0)
     expect((await screen.findAllByText('IRS-2026-1')).length).toBeGreaterThan(0)
     expect(screen.getByText(/mail bekliyor/)).toBeInTheDocument()
+    expect(screen.getByText('Ana merkez mail taslağı')).toBeInTheDocument()
+    expect(screen.getByText('Taslağı Kopyala')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Aksiyon/ })).toBeInTheDocument()
+    expect(screen.getByText(/Bugün 17:00 öncesi mail/)).toBeInTheDocument()
     expect(screen.getByText(/Foto Y/)).toBeInTheDocument()
   })
 

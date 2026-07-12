@@ -811,33 +811,207 @@ function normalizeTruckPayload(data, userId, existing = null) {
   }
 }
 
+const MAIL_FIELD_DEFS = [
+  ['center_email', 'Ana merkez e-postası'],
+  ['driver_name', 'Tırcı adı'],
+  ['driver_tc', 'Sicil / Arşiv TC'],
+  ['driver_phone', 'Telefon'],
+  ['plate', 'Plaka'],
+  ['trailer_plate', 'Dorse'],
+  ['arrival_date', 'Geliş tarihi'],
+  ['arrival_start_time', 'Geliş başlangıç'],
+  ['arrival_end_time', 'Geliş bitiş'],
+]
+
+function mailChecklist(row) {
+  return MAIL_FIELD_DEFS.map(([key, label]) => ({
+    key, label,
+    ok: !!row[key],
+    value: row[key] || null,
+  }))
+}
+
 function missingMailFields(row) {
-  const fields = [
-    ['center_email', 'Ana merkez e-postası'],
-    ['driver_name', 'Tırcı adı'],
-    ['driver_tc', 'Arşiv TC'],
-    ['driver_phone', 'Telefon'],
-    ['plate', 'Plaka'],
-    ['trailer_plate', 'Dorse'],
-    ['arrival_date', 'Geliş tarihi'],
-  ]
-  return fields.filter(([key]) => !row[key]).map(([, label]) => label)
+  return mailChecklist(row).filter(x => !x.ok).map(x => x.label)
+}
+
+function dateTimeMinute(date, time) {
+  if (!isDate(date) || !isTime(time)) return null
+  const [y, m, d] = date.split('-').map(Number)
+  const [hh, mm] = time.split(':').map(Number)
+  return Math.round(Date.UTC(y, m - 1, d, hh, mm) / 60000)
+}
+
+function durationLabel(minutes) {
+  const abs = Math.abs(Math.round(minutes || 0))
+  if (abs < 60) return `${abs} dk`
+  const hours = Math.floor(abs / 60)
+  const mins = abs % 60
+  if (hours < 24) return mins ? `${hours} sa ${mins} dk` : `${hours} sa`
+  const days = Math.floor(hours / 24)
+  const remHours = hours % 24
+  return remHours ? `${days} gün ${remHours} sa` : `${days} gün`
+}
+
+function nextReminderLabel(row, current) {
+  const start = minutesOf(row.reminder_start_time)
+  const end = minutesOf(row.reminder_end_time)
+  const interval = Math.max(15, parseInt(row.reminder_interval_minutes, 10) || 60)
+  if (current == null || start == null || end == null) return null
+  if (current <= start) return row.reminder_start_time
+  if (current > end) return null
+  const elapsed = current - start
+  const next = start + (Math.floor(elapsed / interval) + 1) * interval
+  if (next > end) return null
+  const hh = String(Math.floor(next / 60)).padStart(2, '0')
+  const mm = String(next % 60).padStart(2, '0')
+  return `${hh}:${mm}`
+}
+
+function truckMailSubject(row) {
+  return `Su tır giriş bildirimi - ${row.arrival_date} - ${row.plate}`
+}
+
+function truckMailBody(row) {
+  return [
+    'Merhaba,',
+    '',
+    'Su sevkiyatı için tır giriş ön bildirimi aşağıdadır.',
+    '',
+    `Geliş tarihi: ${row.arrival_date}`,
+    `Geliş saat aralığı: ${row.arrival_start_time}-${row.arrival_end_time}`,
+    `Mail son saat: ${row.mail_deadline_date} ${row.mail_deadline_time}`,
+    `Kontrol planı: ${row.reminder_start_time}-${row.reminder_end_time} / ${row.reminder_interval_minutes || 60} dk`,
+    `Tedarikçi/marka: ${row.supplier_name || row.brand_name || '-'}`,
+    `Tırcı adı: ${row.driver_name || '-'}`,
+    `Sicil / Arşiv TC: ${row.driver_tc || '-'}`,
+    `Telefon: ${row.driver_phone || '-'}`,
+    `Plaka: ${row.plate}`,
+    `Dorse: ${row.trailer_plate || '-'}`,
+    row.note ? `Not: ${row.note}` : null,
+    '',
+    'Bilgilerinize.',
+  ].filter(Boolean).join('\n')
 }
 
 function decorateTruck(row, now = new Date()) {
-  const today = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Istanbul' }).format(now)
+  const clock = trClock(now)
+  const current = minutesOf(clock.time)
   const missing = missingMailFields(row)
-  const deadlinePassed = row.mail_deadline_date < today
-    || (row.mail_deadline_date === today && minutesOf(new Intl.DateTimeFormat('tr-TR', { timeZone: 'Europe/Istanbul', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(now)) > minutesOf(row.mail_deadline_time))
+  const mailDiff = dateTimeMinute(row.mail_deadline_date, row.mail_deadline_time) - dateTimeMinute(clock.date, clock.time)
+  const arrivalStartDiff = dateTimeMinute(row.arrival_date, row.arrival_start_time) - dateTimeMinute(clock.date, clock.time)
+  const arrivalEndDiff = dateTimeMinute(row.arrival_date, row.arrival_end_time) - dateTimeMinute(clock.date, clock.time)
+  const mailDone = !!row.mail_sent_at || ['arrived', 'cancelled'].includes(row.status)
+  let mailPhase = 'scheduled'
+  let mailPhaseLabel = 'Planlı'
+  let mailSeverity = 'info'
+  let mailNotice = `${row.mail_deadline_label || `${row.mail_deadline_date} ${row.mail_deadline_time}`} son saatine kadar mail hazırlanmalı`
+  if (row.mail_sent_at) {
+    mailPhase = 'sent'
+    mailPhaseLabel = 'Mail atıldı'
+    mailSeverity = 'success'
+    mailNotice = `Mail ${row.mail_sent_at} tarihinde işaretlenmiş`
+  } else if (row.status === 'cancelled') {
+    mailPhase = 'cancelled'
+    mailPhaseLabel = 'İptal'
+    mailSeverity = 'muted'
+    mailNotice = 'Tır kaydı iptal edildi'
+  } else if (mailDiff < 0) {
+    mailPhase = 'overdue'
+    mailPhaseLabel = 'Süre geçti'
+    mailSeverity = 'critical'
+    mailNotice = `Mail son saati ${durationLabel(mailDiff)} geçti`
+  } else if (row.mail_deadline_date === clock.date) {
+    mailPhase = missing.length ? 'due_missing' : 'due_ready'
+    mailPhaseLabel = missing.length ? 'Bugün eksik' : 'Bugün hazır'
+    mailSeverity = missing.length ? 'warning' : 'attention'
+    mailNotice = `${durationLabel(mailDiff)} içinde ana merkeze mail atılmalı`
+  } else if (mailDiff <= 24 * 60) {
+    mailPhase = missing.length ? 'soon_missing' : 'soon_ready'
+    mailPhaseLabel = missing.length ? 'Yakın eksik' : 'Yakın'
+    mailSeverity = missing.length ? 'warning' : 'info'
+    mailNotice = `${durationLabel(mailDiff)} sonra mail deadline`
+  }
+
+  let arrivalPhase = 'scheduled'
+  let arrivalPhaseLabel = 'Planlı'
+  let arrivalSeverity = 'info'
+  let arrivalNotice = `${row.arrival_date} ${row.arrival_start_time}-${row.arrival_end_time} aralığında bekleniyor`
+  if (row.status === 'arrived') {
+    arrivalPhase = 'arrived'
+    arrivalPhaseLabel = 'Geldi'
+    arrivalSeverity = 'success'
+    arrivalNotice = 'Geldi olarak işaretlendi'
+  } else if (row.status === 'cancelled') {
+    arrivalPhase = 'cancelled'
+    arrivalPhaseLabel = 'İptal'
+    arrivalSeverity = 'muted'
+    arrivalNotice = 'Tır kaydı iptal edildi'
+  } else if (arrivalEndDiff < 0) {
+    arrivalPhase = 'late'
+    arrivalPhaseLabel = 'Geliş gecikti'
+    arrivalSeverity = 'critical'
+    arrivalNotice = `Geliş aralığı ${durationLabel(arrivalEndDiff)} önce bitti`
+  } else if (arrivalStartDiff <= 0 && arrivalEndDiff >= 0) {
+    arrivalPhase = 'in_window'
+    arrivalPhaseLabel = 'Geliş aralığında'
+    arrivalSeverity = 'attention'
+    arrivalNotice = `${durationLabel(arrivalEndDiff)} içinde geliş aralığı bitecek`
+  } else if (row.arrival_date === clock.date) {
+    arrivalPhase = 'today'
+    arrivalPhaseLabel = 'Bugün gelecek'
+    arrivalSeverity = 'warning'
+    arrivalNotice = `${durationLabel(arrivalStartDiff)} sonra geliş aralığı başlayacak`
+  }
+
+  const nextCheck = nextReminderLabel(row, current)
+  const actionItems = []
+  if (!mailDone && missing.length) actionItems.push(`Mail için eksik: ${missing.join(', ')}`)
+  if (!row.mail_sent_at && mailDiff < 0 && row.status !== 'cancelled') actionItems.push('Mail deadline geçti, ana merkeze gönderim teyidi alınmalı')
+  if (!row.mail_sent_at && mailDiff >= 0 && row.mail_deadline_date === clock.date) actionItems.push('Bugün 17:00 öncesi mail gönderimi kapatılmalı')
+  if (row.arrival_date === clock.date && row.status !== 'arrived' && row.status !== 'cancelled') actionItems.push('Tır geliş teyidi yapılmalı')
+  if (!row.photo_count) actionItems.push('İrsaliye fotoğrafı henüz yok')
+
+  const mailSubject = truckMailSubject(row)
+  const mailBody = truckMailBody(row)
   return {
     ...row,
     status_label: STATUS_LABEL[row.status] || row.status,
     arrival_window: `${row.arrival_start_time}-${row.arrival_end_time}`,
     mail_deadline_label: `${row.mail_deadline_date} ${row.mail_deadline_time}`,
     missing_mail_fields: missing,
+    mail_checklist: mailChecklist(row),
     mail_ready: missing.length === 0,
-    mail_required: !row.mail_sent_at && !['arrived', 'cancelled'].includes(row.status),
-    deadline_passed: !row.mail_sent_at && deadlinePassed,
+    mail_required: !mailDone,
+    deadline_passed: !row.mail_sent_at && mailDiff < 0 && !['arrived', 'cancelled'].includes(row.status),
+    mail_phase: mailPhase,
+    mail_phase_label: mailPhaseLabel,
+    mail_severity: mailSeverity,
+    mail_minutes_left: mailDiff,
+    mail_time_left_label: mailDiff == null ? null : durationLabel(mailDiff),
+    mail_notice: mailNotice,
+    arrival_phase: arrivalPhase,
+    arrival_phase_label: arrivalPhaseLabel,
+    arrival_severity: arrivalSeverity,
+    arrival_minutes_to_start: arrivalStartDiff,
+    arrival_minutes_to_end: arrivalEndDiff,
+    arrival_notice: arrivalNotice,
+    next_check_time: nextCheck,
+    check_plan_label: `${row.reminder_start_time}-${row.reminder_end_time} / ${row.reminder_interval_minutes || 60} dk`,
+    action_items: actionItems,
+    identity_summary: [row.driver_name, row.driver_tc].filter(Boolean).join(' · ') || null,
+    vehicle_summary: [row.plate, row.trailer_plate].filter(Boolean).join(' / '),
+    contact_summary: [row.driver_phone, row.center_email].filter(Boolean).join(' · ') || null,
+    mail_subject: mailSubject,
+    mail_body: mailBody,
+    mail_preview: {
+      to: row.center_email || null,
+      subject: mailSubject,
+      body: mailBody,
+      ready: missing.length === 0,
+      missing_fields: missing,
+      checklist: mailChecklist(row),
+    },
   }
 }
 
@@ -855,26 +1029,6 @@ export function updateTruckArrivalService(id, data, userId) {
   if (!existing) throw Object.assign(new Error('Tır kaydı bulunamadı'), { statusCode: 404 })
   if (!q.updateTruckArrival(id, normalizeTruckPayload(data, userId, existing)))
     throw Object.assign(new Error('Tır kaydı güncellenemedi'), { statusCode: 500 })
-}
-
-function truckMailBody(row) {
-  return [
-    'Merhaba,',
-    '',
-    'Su sevkiyatı için tır giriş ön bildirimi aşağıdadır.',
-    '',
-    `Geliş tarihi: ${row.arrival_date}`,
-    `Geliş saat aralığı: ${row.arrival_start_time}-${row.arrival_end_time}`,
-    `Tedarikçi/marka: ${row.supplier_name || row.brand_name || '-'}`,
-    `Tırcı adı: ${row.driver_name || '-'}`,
-    `Arşiv TC: ${row.driver_tc || '-'}`,
-    `Telefon: ${row.driver_phone || '-'}`,
-    `Plaka: ${row.plate}`,
-    `Dorse: ${row.trailer_plate || '-'}`,
-    row.note ? `Not: ${row.note}` : null,
-    '',
-    'Bilgilerinize.',
-  ].filter(Boolean).join('\n')
 }
 
 export async function sendTruckArrivalMailService(id, userId) {
@@ -971,33 +1125,41 @@ export function waterEscalations({ now = new Date() } = {}) {
 export function checkTruckArrivalAlerts({ now = new Date() } = {}) {
   const clock = trClock(now)
   const current = minutesOf(clock.time)
+  const tickKey = clock.time.replace(':', '')
   const rows = q.listTruckArrivals({ limit: 1000 })
     .filter(r => !['arrived', 'cancelled'].includes(r.status))
     .filter(r => r.arrival_date === clock.date || r.mail_deadline_date === clock.date)
   let created = 0
+  const alerts = []
   for (const r of rows) {
     const base = `${r.plate}${r.trailer_plate ? ` / ${r.trailer_plate}` : ''}`
+    const missing = missingMailFields(r)
+    const missingText = missing.length ? ` Eksik bilgi: ${missing.join(', ')}.` : ''
     if (!r.mail_sent_at && r.mail_deadline_date === clock.date) {
       const deadline = minutesOf(r.mail_deadline_time)
       const inReminderRange = current >= minutesOf(r.reminder_start_time) && current <= minutesOf(r.reminder_end_time)
       const interval = Math.max(15, parseInt(r.reminder_interval_minutes, 10) || 60)
       const onReminderTick = inReminderRange && ((current - minutesOf(r.reminder_start_time)) % interval === 0)
       if (onReminderTick && current <= deadline) {
+        const message = `Su tırı mail kontrolü: ${base} için ana merkeze ${r.mail_deadline_time}'ye kadar mail atılmalı.${missingText}`
         const n = createNotification({
-          message: `Su tırı mail kontrolü: ${base} için ana merkeze ${r.mail_deadline_time}'ye kadar mail atılmalı.`,
-          severity: 'warning', module: 'water', target_role: 'campus_manager',
-          dedup_key: `water_truck_mail_${r.id}_${clock.date}_${clock.hour}`,
+          message,
+          severity: missing.length ? 'critical' : 'warning', module: 'water', target_role: 'campus_manager',
+          dedup_key: `water_truck_mail_${r.id}_${clock.date}_${tickKey}`,
           link: '/water',
         })
         if (n) created += 1
+        alerts.push({ truck_id: r.id, type: 'mail_due', severity: missing.length ? 'critical' : 'warning', created: !!n, message })
       } else if (current > deadline) {
+        const message = `Su tırı mail süresi geçti: ${base} için ${r.mail_deadline_time} deadline aşıldı, mail atıldı mı kontrol edin.${missingText}`
         const n = createNotification({
-          message: `Su tırı mail süresi geçti: ${base} için ${r.mail_deadline_time} deadline aşıldı, mail atıldı mı kontrol edin.`,
+          message,
           severity: 'critical', module: 'water', target_role: 'campus_manager',
-          dedup_key: `water_truck_deadline_${r.id}_${clock.date}_${clock.hour}`,
+          dedup_key: `water_truck_deadline_${r.id}_${clock.date}_${tickKey}`,
           link: '/water',
         })
         if (n) created += 1
+        alerts.push({ truck_id: r.id, type: 'mail_overdue', severity: 'critical', created: !!n, message })
       }
     }
     if (r.arrival_date === clock.date) {
@@ -1009,19 +1171,21 @@ export function checkTruckArrivalAlerts({ now = new Date() } = {}) {
       const inReminderRange = current >= minutesOf(r.reminder_start_time) && current <= minutesOf(r.reminder_end_time)
       const onReminderTick = inReminderRange && ((current - minutesOf(r.reminder_start_time)) % interval === 0)
       if ((inWindow || late) && onReminderTick) {
+        const message = inWindow
+          ? `Su tırı geliş kontrolü: ${base} bugün ${r.arrival_start_time}-${r.arrival_end_time} aralığında bekleniyor. Tır gelecek mi teyit edin.`
+          : `Su tırı gecikme kontrolü: ${base} için geliş aralığı geçti (${r.arrival_end_time}). Geldi mi kontrol edin.`
         const n = createNotification({
-          message: inWindow
-            ? `Su tırı geliş kontrolü: ${base} bugün ${r.arrival_start_time}-${r.arrival_end_time} aralığında bekleniyor. Tır gelecek mi teyit edin.`
-            : `Su tırı gecikme kontrolü: ${base} için geliş aralığı geçti (${r.arrival_end_time}). Geldi mi kontrol edin.`,
+          message,
           severity: late ? 'critical' : 'info', module: 'water', target_role: 'campus_manager',
-          dedup_key: `water_truck_arrival_${r.id}_${clock.date}_${clock.hour}`,
+          dedup_key: `water_truck_arrival_${r.id}_${clock.date}_${tickKey}`,
           link: '/water',
         })
         if (n) created += 1
+        alerts.push({ truck_id: r.id, type: late ? 'arrival_late' : 'arrival_due', severity: late ? 'critical' : 'info', created: !!n, message })
       }
     }
   }
-  return { checked: rows.length, created, date: clock.date, time: clock.time }
+  return { checked: rows.length, created, date: clock.date, time: clock.time, alerts }
 }
 
 export function waybillPhotosService(filters = {}) {

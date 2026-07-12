@@ -1084,6 +1084,13 @@ describe('Su takip - Tir on bildirimleri ve irsaliye foto arsivi (W11)', () => {
     expect(row.mail_deadline_label).toBe('2027-03-10 17:00')
     expect(row.mail_ready).toBe(true)
     expect(row.missing_mail_fields).toEqual([])
+    expect(row.mail_phase).toBe('scheduled')
+    expect(row.arrival_phase).toBe('scheduled')
+    expect(row.check_plan_label).toBe('08:00-17:00 / 60 dk')
+    expect(row.mail_subject).toBe('Su tır giriş bildirimi - 2027-03-10 - 34 ABC 123')
+    expect(row.mail_preview.to).toBe('merkez@example.com')
+    expect(row.mail_preview.body).toMatch(/Sicil \/ Arşiv TC: 12345678901/)
+    expect(row.action_items).toContain('İrsaliye fotoğrafı henüz yok')
   })
 
   it('mail bilgisi eksik tirda otomatik mail reddedilir; manuel isaretleme durumu mail_sent yapar', async () => {
@@ -1161,9 +1168,38 @@ describe('Su takip - Tir on bildirimleri ve irsaliye foto arsivi (W11)', () => {
     expect(result.checked).toBeGreaterThanOrEqual(1)
     expect(result.created).toBeGreaterThanOrEqual(2)
 
-    const mailNotif = getDB().prepare('SELECT * FROM notifications WHERE dedup_key=?').get(`water_truck_mail_${truck.body.id}_2027-03-15_11`)
-    const arrivalNotif = getDB().prepare('SELECT * FROM notifications WHERE dedup_key=?').get(`water_truck_arrival_${truck.body.id}_2027-03-15_11`)
+    expect(result.alerts.some(a => a.type === 'mail_due')).toBe(true)
+    expect(result.alerts.some(a => a.type === 'arrival_due')).toBe(true)
+    const mailNotif = getDB().prepare('SELECT * FROM notifications WHERE dedup_key=?').get(`water_truck_mail_${truck.body.id}_2027-03-15_1100`)
+    const arrivalNotif = getDB().prepare('SELECT * FROM notifications WHERE dedup_key=?').get(`water_truck_arrival_${truck.body.id}_2027-03-15_1100`)
     expect(mailNotif?.module).toBe('water')
     expect(arrivalNotif?.module).toBe('water')
+  })
+
+  it('15 dakikalik tir kontrol araligi ayni saat icinde ayri bildirim anahtari uretir', async () => {
+    const truck = await auth(request(app).post('/api/water/truck-arrivals')).send({
+      arrival_date: '2027-03-16',
+      arrival_start_time: '09:00',
+      arrival_end_time: '12:00',
+      mail_deadline_date: '2027-03-16',
+      mail_deadline_time: '17:00',
+      reminder_start_time: '08:00',
+      reminder_end_time: '17:00',
+      reminder_interval_minutes: 15,
+      plate: '16 onbes 001',
+      driver_name: 'Veli Ceyrek',
+      driver_tc: '22233344455',
+      driver_phone: '05551110000',
+      trailer_plate: '16 drs 001',
+      center_email: 'merkez@example.com',
+    })
+    expect(truck.status).toBe(201)
+
+    const first = checkTruckArrivalAlerts({ now: new Date('2027-03-16T11:00:00+03:00') })
+    const second = checkTruckArrivalAlerts({ now: new Date('2027-03-16T11:15:00+03:00') })
+    expect(first.created).toBeGreaterThanOrEqual(2)
+    expect(second.created).toBeGreaterThanOrEqual(2)
+    expect(getDB().prepare('SELECT * FROM notifications WHERE dedup_key=?').get(`water_truck_mail_${truck.body.id}_2027-03-16_1100`)).toBeTruthy()
+    expect(getDB().prepare('SELECT * FROM notifications WHERE dedup_key=?').get(`water_truck_mail_${truck.body.id}_2027-03-16_1115`)).toBeTruthy()
   })
 })
