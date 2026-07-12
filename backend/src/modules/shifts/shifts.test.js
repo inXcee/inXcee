@@ -111,6 +111,46 @@ describe('Shifts', () => {
   it('shift_swap_requests tablosu versiyonlu şemada (migration 038, X5)', () => {
     expect(getDB().prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='shift_swap_requests'").get()).toBeTruthy()
   })
+
+  it('calisma noktasi + rol cizelgeye yazilir ve kirilimda sayilir (migration 039)', async () => {
+    const db = getDB()
+    const dept = db.prepare('SELECT id FROM departments LIMIT 1').get()
+    const staff = db.prepare('SELECT id FROM staff WHERE is_active=1 LIMIT 1').get()
+    const shiftDef = db.prepare('SELECT id FROM shift_definitions LIMIT 1').get()
+
+    const loc = await request(app).post('/api/shifts/work-locations').set('Authorization', `Bearer ${managerToken}`)
+      .send({ name: 'X6 OTC Lokal', dept_id: dept.id, sort_order: 1, color_class: 'teal' })
+    expect(loc.status).toBe(201)
+
+    const role = await request(app).post('/api/shifts/roles').set('Authorization', `Bearer ${managerToken}`)
+      .send({ name: 'X6 Ikramci', sort_order: 1 })
+    expect(role.status).toBe(201)
+
+    const upd = await request(app).put(`/api/shifts/staff/${staff.id}`).set('Authorization', `Bearer ${managerToken}`)
+      .send({ role_id: role.body.id })
+    expect(upd.status).toBe(200)
+
+    const assign = await request(app).post('/api/shifts/schedule').set('Authorization', `Bearer ${managerToken}`)
+      .send({ entries: [{
+        staff_id: staff.id, dept_id: dept.id, work_date: '2027-01-05',
+        shift_def_id: shiftDef.id, status: 'scheduled', work_location_id: loc.body.id,
+      }] })
+    expect(assign.status).toBe(200)
+
+    const schedule = await request(app).get('/api/shifts/schedule?week=2027-01-05&week_end=2027-01-05')
+      .set('Authorization', `Bearer ${managerToken}`)
+    const row = schedule.body.find(r => r.staff_id === staff.id)
+    expect(row.work_location_id).toBe(loc.body.id)
+    expect(row.work_location_name).toBe('X6 OTC Lokal')
+    expect(row.role_id).toBe(role.body.id)
+    expect(row.role_name).toBe('X6 Ikramci')
+
+    const breakdown = await request(app).get('/api/shifts/breakdown?from=2027-01-05&to=2027-01-05')
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(breakdown.status).toBe(200)
+    expect(breakdown.body.location_counts.some(x => x.work_location_id === loc.body.id && x.assigned >= 1)).toBe(true)
+    expect(breakdown.body.role_counts.some(x => x.role_id === role.body.id && x.assigned >= 1)).toBe(true)
+  })
 })
 
 describe('Excel çizelge içe aktarımı (/import)', () => {

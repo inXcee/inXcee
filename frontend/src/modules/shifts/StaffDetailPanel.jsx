@@ -34,6 +34,11 @@ export default function StaffDetailPanel({ staffId, onClose }) {
     queryFn: () => api.get('/shifts/definitions').then(r => r.data),
   })
 
+  const { data: staffRoles = [] } = useQuery({
+    queryKey: ['shift-roles'],
+    queryFn: () => api.get('/shifts/roles').then(r => r.data),
+  })
+
   const assignShiftMut = useMutation({
     mutationFn: d => api.post('/shifts/schedule', { entries: [{ staff_id: staffId, dept_id: d.dept_id, shift_def_id: d.shift_def_id || null, work_date: d.work_date, status: 'scheduled' }] }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['staff-detail', staffId] }); qc.invalidateQueries({ queryKey: ['schedule'] }); setActiveForm(null); setFormData({}) },
@@ -120,7 +125,7 @@ export default function StaffDetailPanel({ staffId, onClose }) {
       setFormData({
         full_name: person.full_name || '', tc_no: person.tc_no || '',
         phone: person.phone || '', email: person.email || '',
-        position: person.position || '', department_id: person.department_id?.toString() || '',
+        position: person.position || '', department_id: person.department_id?.toString() || '', role_id: person.role_id?.toString() || '',
         hire_date: person.hire_date || '', birth_date: person.birth_date || '',
         address: person.address || '', emergency_contact: person.emergency_contact || '',
         emergency_phone: person.emergency_phone || '', blood_type: person.blood_type || '',
@@ -169,6 +174,7 @@ export default function StaffDetailPanel({ staffId, onClose }) {
                   </div>
                   <div style={{ display: 'flex', gap: 4, marginTop: 5, flexWrap: 'wrap' }}>
                     {person.dept_name && <span className="badge badge-blue" style={{ fontSize: 8, padding: '1px 6px' }}>{person.dept_name}</span>}
+                    {person.role_name && <span className="badge badge-blue" style={{ fontSize: 8, padding: '1px 6px' }}>{person.role_name}</span>}
                     {person.blood_type && <span className="badge badge-red" style={{ fontSize: 8, padding: '1px 6px' }}>{person.blood_type}</span>}
                     <span className={`badge ${person.is_active ? 'badge-green' : 'badge-gray'}`} style={{ fontSize: 8, padding: '1px 6px' }}>
                       {person.is_active ? 'AKTİF' : 'PASİF'}
@@ -324,6 +330,20 @@ export default function StaffDetailPanel({ staffId, onClose }) {
                       </select>
                     </div>
                     <div>
+                      <label style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: '1px', display: 'block', marginBottom: 4 }}>DEPARTMAN</label>
+                      <select className="form-input" value={formData.department_id || ''} onChange={e => setFormData(p => ({ ...p, department_id: e.target.value }))} style={{ width: '100%', borderRadius: 8 }}>
+                        <option value="">Atanmamis</option>
+                        {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: '1px', display: 'block', marginBottom: 4 }}>ROL / GOREV</label>
+                      <select className="form-input" value={formData.role_id || ''} onChange={e => setFormData(p => ({ ...p, role_id: e.target.value }))} style={{ width: '100%', borderRadius: 8 }}>
+                        <option value="">Rolsuz</option>
+                        {staffRoles.map(role => <option key={role.id} value={role.id}>{role.name}</option>)}
+                      </select>
+                    </div>
+                    <div>
                       <label style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: '1px', display: 'block', marginBottom: 4 }}>KAN GRUBU</label>
                       <select className="form-input" value={formData.blood_type || ''} onChange={e => setFormData(p => ({ ...p, blood_type: e.target.value }))} style={{ width: '100%', borderRadius: 8 }}>
                         <option value="">—</option>
@@ -335,7 +355,7 @@ export default function StaffDetailPanel({ staffId, onClose }) {
                       <textarea className="form-input" value={formData.address || ''} onChange={e => setFormData(p => ({ ...p, address: e.target.value }))} rows={2} style={{ width: '100%', borderRadius: 8, resize: 'vertical' }} />
                     </div>
                     <div style={{ gridColumn: '1/-1', display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
-                      <button className="btn btn-primary" onClick={() => updateStaffMut.mutate({ ...formData, department_id: formData.department_id ? parseInt(formData.department_id) : null, salary: formData.salary ? parseFloat(formData.salary) : null })} disabled={!formData.full_name || updateStaffMut.isPending} style={{ borderRadius: 10 }}>
+                      <button className="btn btn-primary" onClick={() => updateStaffMut.mutate({ ...formData, department_id: formData.department_id ? parseInt(formData.department_id) : null, role_id: formData.role_id ? parseInt(formData.role_id) : null, salary: formData.salary ? parseFloat(formData.salary) : null })} disabled={!formData.full_name || updateStaffMut.isPending} style={{ borderRadius: 10 }}>
                         {updateStaffMut.isPending ? '...' : 'Kaydet'}
                       </button>
                     </div>
@@ -595,6 +615,9 @@ export default function StaffDetailPanel({ staffId, onClose }) {
                             )}
                             {s.start_hour != null && (
                               <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>{formatShiftHours(s.start_hour, s.end_hour)}</span>
+                            )}
+                            {s.work_location_name && (
+                              <span style={{ padding: '2px 8px', borderRadius: 8, background: 'rgba(59,140,240,.10)', color: 'var(--blue)', fontSize: 9, fontWeight: 600 }}>{s.work_location_name}</span>
                             )}
                             {s.status === 'on_leave' && (
                               <span style={{ padding: '2px 8px', borderRadius: 8, background: 'rgba(26,188,156,.15)', color: 'var(--teal)', fontSize: 9, fontWeight: 600 }}>

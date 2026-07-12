@@ -12,12 +12,35 @@ export default function CoverageBoard({ from, to, weekDays = [] }) {
     queryFn: () => api.get('/shifts/coverage', { params: { from, to } }).then(r => r.data),
     enabled: open && !!from && !!to,
   })
+  const { data: breakdown } = useQuery({
+    queryKey: ['shift-breakdown', from, to],
+    queryFn: () => api.get('/shifts/breakdown', { params: { from, to } }).then(r => r.data),
+    enabled: open && !!from && !!to,
+  })
   const shifts = (data?.shifts || []).filter(s => (s.min_staff || 0) > 0)
   const countMap = useMemo(() => {
     const m = {}
     ;(data?.counts || []).forEach(c => { m[`${c.work_date}:${c.shift_def_id}`] = c.assigned })
     return m
   }, [data])
+  const locationRows = useMemo(() => {
+    const byName = new Map()
+    ;(breakdown?.location_counts || []).forEach(item => {
+      const name = item.work_location_name || 'Noktasiz'
+      if (!byName.has(name)) byName.set(name, { name, perDay: {} })
+      byName.get(name).perDay[item.work_date] = item.assigned || 0
+    })
+    return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name, 'tr'))
+  }, [breakdown])
+  const roleRows = useMemo(() => {
+    const byName = new Map()
+    ;(breakdown?.role_counts || []).forEach(item => {
+      const name = item.role_name || 'Rolsuz'
+      if (!byName.has(name)) byName.set(name, { name, perDay: {} })
+      byName.get(name).perDay[item.work_date] = item.assigned || 0
+    })
+    return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name, 'tr'))
+  }, [breakdown])
   const shortfalls = useMemo(() => {
     let n = 0
     shifts.forEach(s => weekDays.forEach(d => { if ((countMap[`${d}:${s.id}`] || 0) < s.min_staff) n += 1 }))
@@ -77,6 +100,46 @@ export default function CoverageBoard({ from, to, weekDays = [] }) {
             </div>
           )
       )}
+      {open && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginTop: '14px' }}>
+          <BreakdownTable title="CALISMA NOKTASI KIRILIMI" label="Nokta" rows={locationRows} weekDays={weekDays} />
+          <BreakdownTable title="ROL KIRILIMI" label="Rol" rows={roleRows} weekDays={weekDays} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+function BreakdownTable({ title, label, rows, weekDays }) {
+  if (!rows.length) return null
+  return (
+    <div style={{ overflowX: 'auto' }}>
+      <div style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)', letterSpacing: '1px', marginBottom: '6px' }}>{title}</div>
+      <table className="data-table" style={{ fontSize: '11px', minWidth: '560px' }}>
+        <thead>
+          <tr>
+            <th style={{ textAlign: 'left' }}>{label}</th>
+            {weekDays.map(d => <th key={d} style={{ textAlign: 'center' }}>{shortDay(d)}</th>)}
+            <th style={{ textAlign: 'right' }}>Toplam</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(row => {
+            const total = weekDays.reduce((sum, date) => sum + (row.perDay[date] || 0), 0)
+            return (
+              <tr key={row.name}>
+                <td style={{ fontWeight: 600 }}>{row.name}</td>
+                {weekDays.map(date => (
+                  <td key={date} style={{ textAlign: 'center', fontFamily: 'var(--mono)', color: row.perDay[date] ? 'var(--text)' : 'var(--text3)' }}>
+                    {row.perDay[date] || 0}
+                  </td>
+                ))}
+                <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 700 }}>{total}</td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
     </div>
   )
 }

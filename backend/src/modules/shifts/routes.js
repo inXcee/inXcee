@@ -5,6 +5,8 @@ import { paginate } from '../../shared/paginate.js'
 import { logger } from '../../shared/logger.js'
 import {
   departmentsService, shiftDefinitionsService, scheduleService, bulkAssignService,
+  workLocationsService, createWorkLocationService, updateWorkLocationService, deleteWorkLocationService,
+  staffRolesService, createStaffRoleService, updateStaffRoleService, deleteStaffRoleService, scheduleBreakdownService,
   staffStatusService, createLeaveService, approveLeaveService, leaveListService,
   leaveBalanceService, createOvertimeService, updateOvertimeService, deleteOvertimeService, overtimeListService, overtimeSummaryService, overtimeDayService, puantajService,
   checkInService, checkOutService, attendanceListService, statisticsService, coverageService, departmentSummaryService,
@@ -108,6 +110,64 @@ shiftsRouter.get('/definitions', ...allStaff, (req, res) => {
   res.json(shiftDefinitionsService())
 })
 
+shiftsRouter.get('/work-locations', ...allStaff, (req, res) => {
+  try { res.json(workLocationsService(req.query)) }
+  catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+shiftsRouter.post('/work-locations', ...managerOrSupervisor, (req, res) => {
+  try {
+    const id = createWorkLocationService(req.body)
+    logAudit(req.user.id, 'work_location_create', 'shifts', id, req.body.name)
+    res.status(201).json({ id })
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+shiftsRouter.put('/work-locations/:id', ...managerOrSupervisor, (req, res) => {
+  try {
+    updateWorkLocationService(+req.params.id, req.body)
+    logAudit(req.user.id, 'work_location_update', 'shifts', +req.params.id, req.body.name || '')
+    res.json({ ok: true })
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+shiftsRouter.delete('/work-locations/:id', ...managerOrSupervisor, (req, res) => {
+  try {
+    deleteWorkLocationService(+req.params.id)
+    logAudit(req.user.id, 'work_location_delete', 'shifts', +req.params.id, '')
+    res.json({ ok: true })
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+shiftsRouter.get('/roles', ...allStaff, (req, res) => {
+  try { res.json(staffRolesService(req.query)) }
+  catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+shiftsRouter.post('/roles', ...managerOrSupervisor, (req, res) => {
+  try {
+    const id = createStaffRoleService(req.body)
+    logAudit(req.user.id, 'staff_role_create', 'shifts', id, req.body.name)
+    res.status(201).json({ id })
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+shiftsRouter.put('/roles/:id', ...managerOrSupervisor, (req, res) => {
+  try {
+    updateStaffRoleService(+req.params.id, req.body)
+    logAudit(req.user.id, 'staff_role_update', 'shifts', +req.params.id, req.body.name || '')
+    res.json({ ok: true })
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+shiftsRouter.delete('/roles/:id', ...managerOrSupervisor, (req, res) => {
+  try {
+    deleteStaffRoleService(+req.params.id)
+    logAudit(req.user.id, 'staff_role_delete', 'shifts', +req.params.id, '')
+    res.json({ ok: true })
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
 // ── Schedule ──
 shiftsRouter.get('/schedule', ...allStaff, (req, res) => {
   const { week, week_end, dept_id } = req.query
@@ -128,6 +188,11 @@ shiftsRouter.post('/schedule', ...managerOrSupervisor, (req, res) => {
   } catch (e) {
     res.status(e.statusCode || 400).json({ error: e.message })
   }
+})
+
+shiftsRouter.get('/breakdown', ...allStaff, (req, res) => {
+  try { res.json(scheduleBreakdownService({ from: req.query.from, to: req.query.to })) }
+  catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
 })
 
 // ── Excel çizelge içe aktarımı (önizleme + uygula) ──

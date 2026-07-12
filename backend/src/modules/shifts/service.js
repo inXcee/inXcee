@@ -1,5 +1,7 @@
 import {
   getDepartments, getShiftDefinitions, getSchedule, bulkAssignShifts, assignmentWarnings,
+  getWorkLocations, createWorkLocation, updateWorkLocation, deleteWorkLocation,
+  getStaffRoles, createStaffRole, updateStaffRole, deleteStaffRole, getScheduleBreakdown,
   getStaffWithShiftStatus, createLeaveRequest, approveLeaveRequest,
   getLeaveRequests, getLeaveBalance, createOvertime, updateOvertime, deleteOvertime, getOvertimeRecords, upsertOvertimeDay,
   getOvertimeSummary, createAttendanceLog, updateCheckout, getAttendanceLogs, getPuantaj,
@@ -103,8 +105,57 @@ export function shiftDefinitionsService() {
   return getShiftDefinitions()
 }
 
+export function workLocationsService(filters = {}) {
+  return getWorkLocations({ includeInactive: filters.all === '1' || filters.includeInactive === true })
+}
+
+export function createWorkLocationService(data) {
+  if (!data?.name?.trim()) throw new Error('Çalışma noktası adı zorunlu')
+  return createWorkLocation({
+    name: data.name.trim(),
+    dept_id: data.dept_id || null,
+    color_class: data.color_class || 'blue',
+    sort_order: data.sort_order ?? 0,
+    is_active: data.is_active,
+  })
+}
+
+export function updateWorkLocationService(id, data) {
+  updateWorkLocation(id, data)
+}
+
+export function deleteWorkLocationService(id) {
+  deleteWorkLocation(id)
+}
+
+export function staffRolesService(filters = {}) {
+  return getStaffRoles({ includeInactive: filters.all === '1' || filters.includeInactive === true })
+}
+
+export function createStaffRoleService(data) {
+  if (!data?.name?.trim()) throw new Error('Rol adı zorunlu')
+  return createStaffRole({
+    name: data.name.trim(),
+    sort_order: data.sort_order ?? 0,
+    is_active: data.is_active,
+  })
+}
+
+export function updateStaffRoleService(id, data) {
+  updateStaffRole(id, data)
+}
+
+export function deleteStaffRoleService(id) {
+  deleteStaffRole(id)
+}
+
 export function scheduleService(weekStart, weekEnd, deptId) {
   return getSchedule(weekStart, weekEnd, deptId)
+}
+
+export function scheduleBreakdownService({ from, to } = {}) {
+  if (!from || !to) throw Object.assign(new Error('from ve to gerekli'), { statusCode: 400 })
+  return getScheduleBreakdown(from, to)
 }
 
 // ── Faz 31: Dönem kilidi guard ──

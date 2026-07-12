@@ -13,6 +13,7 @@ export function buildStaffGrid(rows, allStaff, deptFilter) {
       schedMap.set(r.staff_id, {
         id: r.staff_id, full_name: r.full_name, gender: r.gender, position: r.position,
         dept_id: r.dept_id, dept_name: r.dept_name, dept_color: r.dept_color,
+        role_id: r.role_id, role_name: r.role_name, role_sort_order: r.role_sort_order,
         days: {}
       })
     }
@@ -27,6 +28,7 @@ export function buildStaffGrid(rows, allStaff, deptFilter) {
       result.set(s.id, {
         id: s.id, full_name: s.full_name, gender: s.gender, position: s.position,
         dept_id: s.department_id, dept_name: s.dept_name, dept_color: s.dept_color,
+        role_id: s.role_id, role_name: s.role_name, role_sort_order: s.role_sort_order,
         days: {}
       })
     }
@@ -35,6 +37,8 @@ export function buildStaffGrid(rows, allStaff, deptFilter) {
   // Sort by dept then name
   return Array.from(result.values()).sort((a, b) => {
     if (a.dept_name && b.dept_name && a.dept_name !== b.dept_name) return a.dept_name.localeCompare(b.dept_name, 'tr')
+    if ((a.role_sort_order ?? 9999) !== (b.role_sort_order ?? 9999)) return (a.role_sort_order ?? 9999) - (b.role_sort_order ?? 9999)
+    if (a.role_name && b.role_name && a.role_name !== b.role_name) return a.role_name.localeCompare(b.role_name, 'tr')
     return (a.full_name || '').localeCompare(b.full_name || '', 'tr')
   })
 }

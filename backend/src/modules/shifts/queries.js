@@ -9,17 +9,111 @@ export function getShiftDefinitions() {
   return getDB().prepare('SELECT * FROM shift_definitions ORDER BY id').all()
 }
 
+// ── Work locations / staff roles ──
+export function getWorkLocations({ includeInactive = false } = {}) {
+  let sql = `
+    SELECT wl.*, d.name AS dept_name, d.color_class AS dept_color
+    FROM work_locations wl
+    LEFT JOIN departments d ON d.id = wl.dept_id
+    WHERE 1=1
+  `
+  if (!includeInactive) sql += ' AND wl.is_active = 1'
+  sql += ' ORDER BY wl.sort_order, wl.name'
+  return getDB().prepare(sql).all()
+}
+
+export function createWorkLocation(data) {
+  return getDB().prepare(`
+    INSERT INTO work_locations(name, dept_id, color_class, sort_order, is_active)
+    VALUES(@name, @dept_id, @color_class, @sort_order, @is_active)
+  `).run({
+    name: data.name,
+    dept_id: data.dept_id || null,
+    color_class: data.color_class || 'bg-blue-400',
+    sort_order: Number.isFinite(+data.sort_order) ? +data.sort_order : 0,
+    is_active: data.is_active === undefined ? 1 : (data.is_active ? 1 : 0),
+  }).lastInsertRowid
+}
+
+export function updateWorkLocation(id, data) {
+  const db = getDB()
+  const fields = ['name', 'dept_id', 'color_class', 'sort_order', 'is_active']
+  const sets = []
+  const params = []
+  fields.forEach(f => {
+    if (data[f] !== undefined) {
+      sets.push(`${f}=?`)
+      if (f === 'dept_id') params.push(data[f] || null)
+      else if (f === 'sort_order') params.push(Number.isFinite(+data[f]) ? +data[f] : 0)
+      else if (f === 'is_active') params.push(data[f] ? 1 : 0)
+      else params.push(data[f] || null)
+    }
+  })
+  if (!sets.length) return
+  params.push(id)
+  db.prepare(`UPDATE work_locations SET ${sets.join(',')} WHERE id=?`).run(...params)
+}
+
+export function deleteWorkLocation(id) {
+  getDB().prepare('UPDATE work_locations SET is_active=0 WHERE id=?').run(id)
+}
+
+export function getStaffRoles({ includeInactive = false } = {}) {
+  let sql = 'SELECT * FROM staff_roles WHERE 1=1'
+  if (!includeInactive) sql += ' AND is_active = 1'
+  sql += ' ORDER BY sort_order, name'
+  return getDB().prepare(sql).all()
+}
+
+export function createStaffRole(data) {
+  return getDB().prepare(`
+    INSERT INTO staff_roles(name, sort_order, is_active)
+    VALUES(@name, @sort_order, @is_active)
+  `).run({
+    name: data.name,
+    sort_order: Number.isFinite(+data.sort_order) ? +data.sort_order : 0,
+    is_active: data.is_active === undefined ? 1 : (data.is_active ? 1 : 0),
+  }).lastInsertRowid
+}
+
+export function updateStaffRole(id, data) {
+  const db = getDB()
+  const fields = ['name', 'sort_order', 'is_active']
+  const sets = []
+  const params = []
+  fields.forEach(f => {
+    if (data[f] !== undefined) {
+      sets.push(`${f}=?`)
+      if (f === 'sort_order') params.push(Number.isFinite(+data[f]) ? +data[f] : 0)
+      else if (f === 'is_active') params.push(data[f] ? 1 : 0)
+      else params.push(data[f] || null)
+    }
+  })
+  if (!sets.length) return
+  params.push(id)
+  db.prepare(`UPDATE staff_roles SET ${sets.join(',')} WHERE id=?`).run(...params)
+}
+
+export function deleteStaffRole(id) {
+  const db = getDB()
+  db.prepare('UPDATE staff SET role_id=NULL WHERE role_id=?').run(id)
+  db.prepare('UPDATE staff_roles SET is_active=0 WHERE id=?').run(id)
+}
+
 // ── Staff CRUD ──
 export function getStaffList(filters = {}) {
   const db = getDB()
   let query = `
-    SELECT s.*, d.name as dept_name, d.color_class as dept_color
+    SELECT s.*, d.name as dept_name, d.color_class as dept_color,
+      sr.name as role_name, sr.sort_order as role_sort_order
     FROM staff s
     LEFT JOIN departments d ON d.id = s.department_id
+    LEFT JOIN staff_roles sr ON sr.id = s.role_id
     WHERE 1=1
   `
   const params = []
   if (filters.dept_id) { query += ' AND s.department_id = ?'; params.push(filters.dept_id) }
+  if (filters.role_id) { query += ' AND s.role_id = ?'; params.push(filters.role_id) }
   if (filters.is_active !== undefined) { query += ' AND s.is_active = ?'; params.push(filters.is_active) }
   if (filters.gender) { query += ' AND s.gender = ?'; params.push(filters.gender) }
   if (filters.search) {
@@ -33,9 +127,11 @@ export function getStaffList(filters = {}) {
 
 export function getStaffById(id) {
   return getDB().prepare(`
-    SELECT s.*, d.name as dept_name, d.color_class as dept_color
+    SELECT s.*, d.name as dept_name, d.color_class as dept_color,
+      sr.name as role_name, sr.sort_order as role_sort_order
     FROM staff s
     LEFT JOIN departments d ON d.id = s.department_id
+    LEFT JOIN staff_roles sr ON sr.id = s.role_id
     WHERE s.id = ?
   `).get(id)
 }
@@ -43,9 +139,9 @@ export function getStaffById(id) {
 export function createStaff(data) {
   const db = getDB()
   const r = db.prepare(`
-    INSERT INTO staff(tc_no,full_name,phone,email,position,department_id,hire_date,birth_date,
+    INSERT INTO staff(tc_no,full_name,phone,email,position,department_id,role_id,hire_date,birth_date,
       address,emergency_contact,emergency_phone,blood_type,gender,salary,iban,notes,is_active,role_label,pickup_point_id)
-    VALUES(@tc_no,@full_name,@phone,@email,@position,@department_id,@hire_date,@birth_date,
+    VALUES(@tc_no,@full_name,@phone,@email,@position,@department_id,@role_id,@hire_date,@birth_date,
       @address,@emergency_contact,@emergency_phone,@blood_type,@gender,@salary,@iban,@notes,@is_active,@role_label,@pickup_point_id)
   `).run({
     tc_no: data.tc_no || null,
@@ -54,6 +150,7 @@ export function createStaff(data) {
     email: data.email || null,
     position: data.position || null,
     department_id: data.department_id || null,
+    role_id: data.role_id || null,
     hire_date: data.hire_date || null,
     birth_date: data.birth_date || null,
     address: data.address || null,
@@ -73,7 +170,7 @@ export function createStaff(data) {
 
 export function updateStaff(id, data) {
   const db = getDB()
-  const fields = ['tc_no','full_name','phone','email','position','department_id','hire_date','birth_date',
+  const fields = ['tc_no','full_name','phone','email','position','department_id','role_id','hire_date','birth_date',
     'address','emergency_contact','emergency_phone','blood_type','gender','salary','iban','notes','is_active','role_label','pickup_point_id']
   const sets = []
   const params = []
@@ -97,9 +194,10 @@ export function deleteStaff(id) {
 export function searchStaff(term) {
   const db = getDB()
   return db.prepare(`
-    SELECT s.id, s.full_name, s.tc_no, s.gender, s.phone, s.position, d.name as dept_name
+    SELECT s.id, s.full_name, s.tc_no, s.gender, s.phone, s.position, d.name as dept_name, sr.name as role_name
     FROM staff s
     LEFT JOIN departments d ON d.id = s.department_id
+    LEFT JOIN staff_roles sr ON sr.id = s.role_id
     WHERE s.is_active = 1
       AND (s.full_name LIKE ? OR CAST(s.id AS TEXT) LIKE ? OR s.tc_no LIKE ? OR s.phone LIKE ?)
     ORDER BY s.full_name LIMIT 20
@@ -112,9 +210,12 @@ export function getSchedule(weekStart, weekEnd, deptId) {
   let query = `
     SELECT
       ss.id, ss.work_date, ss.status,
-      s.id as staff_id, s.full_name, s.gender, s.position,
+      s.id as staff_id, s.full_name, s.gender, s.position, s.role_id,
       COALESCE(ss.dept_id, s.department_id) as dept_id,
       d.name as dept_name, d.color_class as dept_color,
+      sr.name as role_name, sr.sort_order as role_sort_order,
+      ss.work_location_id,
+      wl.name as work_location_name, wl.color_class as work_location_color, wl.sort_order as work_location_sort_order,
       sd.id as shift_def_id, sd.name as shift_name, sd.start_hour, sd.end_hour, sd.color_class as shift_color,
       sd.start_hour as shift_start, sd.end_hour as shift_end,
       CASE WHEN ss.status = 'on_leave' THEN COALESCE(ss.leave_type, (
@@ -126,6 +227,8 @@ export function getSchedule(weekStart, weekEnd, deptId) {
     FROM shift_schedule ss
     JOIN staff s ON s.id = ss.staff_id
     LEFT JOIN departments d ON d.id = COALESCE(ss.dept_id, s.department_id)
+    LEFT JOIN staff_roles sr ON sr.id = s.role_id
+    LEFT JOIN work_locations wl ON wl.id = ss.work_location_id
     LEFT JOIN shift_definitions sd ON sd.id = ss.shift_def_id
     WHERE ss.work_date BETWEEN ? AND ?
   `
@@ -141,14 +244,15 @@ export function getSchedule(weekStart, weekEnd, deptId) {
 export function bulkAssignShifts(entries, createdBy) {
   const db = getDB()
   const upsert = db.prepare(`
-    INSERT INTO shift_schedule(staff_id, dept_id, shift_def_id, work_date, status, leave_type, absent_reason, created_by)
-    VALUES(@staff_id, @dept_id, @shift_def_id, @work_date, @status, @leave_type, @absent_reason, @created_by)
+    INSERT INTO shift_schedule(staff_id, dept_id, shift_def_id, work_date, status, leave_type, absent_reason, work_location_id, created_by)
+    VALUES(@staff_id, @dept_id, @shift_def_id, @work_date, @status, @leave_type, @absent_reason, @work_location_id, @created_by)
     ON CONFLICT(staff_id, work_date) DO UPDATE SET
       shift_def_id = excluded.shift_def_id,
       dept_id = excluded.dept_id,
       status = excluded.status,
       leave_type = excluded.leave_type,
-      absent_reason = excluded.absent_reason
+      absent_reason = excluded.absent_reason,
+      work_location_id = excluded.work_location_id
   `)
   const tx = db.transaction(() => {
     entries.forEach(e => {
@@ -160,6 +264,7 @@ export function bulkAssignShifts(entries, createdBy) {
         shift_def_id: e.shift_def_id || null,
         leave_type: status === 'on_leave' ? (e.leave_type || e.leaveType || null) : null,
         absent_reason: status === 'absent' ? (e.absent_reason || null) : null,
+        work_location_id: ['scheduled', 'worked', 'overtime'].includes(status) ? (e.work_location_id || null) : null,
         created_by: createdBy,
       })
     })
@@ -369,14 +474,18 @@ export function getStaffWithShiftStatus(date, deptId) {
   const db = getDB()
   let query = `
     SELECT
-      s.id, s.full_name, s.gender, s.tc_no, s.phone, s.position,
+      s.id, s.full_name, s.gender, s.tc_no, s.phone, s.position, s.role_id,
       d.id as dept_id, d.name as dept_name, d.color_class as dept_color,
+      sr.name as role_name,
       ss.id as schedule_id, ss.status as shift_status,
+      ss.work_location_id, wl.name as work_location_name, wl.color_class as work_location_color,
       sd.name as shift_name, sd.start_hour, sd.end_hour, sd.color_class as shift_color,
       lr.leave_type, lr.status as leave_status
     FROM staff s
     LEFT JOIN departments d ON d.id = s.department_id
+    LEFT JOIN staff_roles sr ON sr.id = s.role_id
     LEFT JOIN shift_schedule ss ON ss.staff_id = s.id AND ss.work_date = ?
+    LEFT JOIN work_locations wl ON wl.id = ss.work_location_id
     LEFT JOIN shift_definitions sd ON sd.id = ss.shift_def_id
     LEFT JOIN leave_requests lr ON lr.staff_id = s.id
       AND lr.status = 'approved'
@@ -764,6 +873,35 @@ export function getShiftCoverage(from, to) {
   return { shifts, counts }
 }
 
+export function getScheduleBreakdown(from, to) {
+  const db = getDB()
+  const workLocations = getWorkLocations({ includeInactive: true })
+  const roles = getStaffRoles({ includeInactive: true })
+  const locationCounts = db.prepare(`
+    SELECT ss.work_date, ss.work_location_id,
+      COALESCE(wl.name, 'Noktasiz') AS work_location_name,
+      COALESCE(wl.color_class, 'gray') AS work_location_color,
+      COUNT(*) AS assigned
+    FROM shift_schedule ss
+    LEFT JOIN work_locations wl ON wl.id = ss.work_location_id
+    WHERE ss.work_date BETWEEN ? AND ? AND ss.status IN ('scheduled','worked','overtime')
+    GROUP BY ss.work_date, ss.work_location_id
+    ORDER BY ss.work_date, wl.sort_order, wl.name
+  `).all(from, to)
+  const roleCounts = db.prepare(`
+    SELECT ss.work_date, s.role_id,
+      COALESCE(sr.name, 'Rolsuz') AS role_name,
+      COUNT(*) AS assigned
+    FROM shift_schedule ss
+    JOIN staff s ON s.id = ss.staff_id
+    LEFT JOIN staff_roles sr ON sr.id = s.role_id
+    WHERE ss.work_date BETWEEN ? AND ? AND ss.status IN ('scheduled','worked','overtime')
+    GROUP BY ss.work_date, s.role_id
+    ORDER BY ss.work_date, sr.sort_order, sr.name
+  `).all(from, to)
+  return { from, to, work_locations: workLocations, roles, location_counts: locationCounts, role_counts: roleCounts }
+}
+
 export function deleteShiftDefinition(id) {
   getDB().prepare('DELETE FROM shift_definitions WHERE id=?').run(id)
 }
@@ -879,20 +1017,26 @@ function addDaysStr(dateStr, n) {
 export function copyWeekSchedule(sourceWeekStart, targetWeekStart, createdBy) {
   const db = getDB()
   const sourceEnd = addDaysStr(sourceWeekStart, 6)
-  const rows = db.prepare('SELECT staff_id, dept_id, shift_def_id, work_date FROM shift_schedule WHERE work_date BETWEEN ? AND ?').all(sourceWeekStart, sourceEnd)
+  const rows = db.prepare('SELECT staff_id, dept_id, shift_def_id, work_location_id, work_date, status, leave_type, absent_reason FROM shift_schedule WHERE work_date BETWEEN ? AND ?').all(sourceWeekStart, sourceEnd)
 
   const dayDiff = Math.round((new Date(targetWeekStart) - new Date(sourceWeekStart)) / 86400000)
 
   const upsert = db.prepare(`
-    INSERT INTO shift_schedule(staff_id, dept_id, shift_def_id, work_date, status, created_by)
-    VALUES(?, ?, ?, ?, 'scheduled', ?)
-    ON CONFLICT(staff_id, work_date) DO UPDATE SET shift_def_id=excluded.shift_def_id, dept_id=excluded.dept_id, status='scheduled'
+    INSERT INTO shift_schedule(staff_id, dept_id, shift_def_id, work_location_id, work_date, status, leave_type, absent_reason, created_by)
+    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(staff_id, work_date) DO UPDATE SET
+      shift_def_id=excluded.shift_def_id,
+      dept_id=excluded.dept_id,
+      work_location_id=excluded.work_location_id,
+      status=excluded.status,
+      leave_type=excluded.leave_type,
+      absent_reason=excluded.absent_reason
   `)
 
   db.transaction(() => {
     rows.forEach(r => {
       const newDate = addDaysStr(r.work_date, dayDiff)
-      upsert.run(r.staff_id, r.dept_id, r.shift_def_id, newDate, createdBy)
+      upsert.run(r.staff_id, r.dept_id, r.shift_def_id, r.work_location_id || null, newDate, r.status || 'scheduled', r.leave_type || null, r.absent_reason || null, createdBy)
     })
   })()
 
@@ -983,9 +1127,11 @@ export function getStaffDetail(staffId) {
   const db = getDB()
 
   const person = db.prepare(`
-    SELECT s.*, d.name as dept_name, d.color_class as dept_color
+    SELECT s.*, d.name as dept_name, d.color_class as dept_color,
+      sr.name as role_name, sr.sort_order as role_sort_order
     FROM staff s
     LEFT JOIN departments d ON d.id = s.department_id
+    LEFT JOIN staff_roles sr ON sr.id = s.role_id
     WHERE s.id = ?
   `).get(staffId)
   if (!person) throw new Error('Personel bulunamadi')
@@ -995,6 +1141,7 @@ export function getStaffDetail(staffId) {
     SELECT ss.work_date, ss.status,
       sd.name as shift_name, sd.start_hour, sd.end_hour, sd.color_class as shift_color,
       d.name as dept_name, d.color_class as dept_color,
+      wl.name as work_location_name, wl.color_class as work_location_color,
       CASE WHEN ss.status = 'on_leave' THEN COALESCE(ss.leave_type, (
         SELECT lr.leave_type FROM leave_requests lr
         WHERE lr.staff_id = ss.staff_id AND lr.status = 'approved'
@@ -1004,6 +1151,7 @@ export function getStaffDetail(staffId) {
     FROM shift_schedule ss
     LEFT JOIN shift_definitions sd ON sd.id = ss.shift_def_id
     LEFT JOIN departments d ON d.id = ss.dept_id
+    LEFT JOIN work_locations wl ON wl.id = ss.work_location_id
     WHERE ss.staff_id = ?
     ORDER BY ss.work_date DESC
     LIMIT 100

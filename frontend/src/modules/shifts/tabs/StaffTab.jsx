@@ -8,7 +8,7 @@ import { useSavedFilters, SavedFiltersBar } from '../../../shared/hooks/useSaved
 import { SkeletonGrid } from '../../../shared/components/Skeleton.jsx'
 import { toastErr, deptColor, BottomSheet } from '../shared.jsx'
 
-function StaffFormSheet({ editStaff, form, setForm, handleSubmit, createMut, updateMut, departments, onClose }) {
+function StaffFormSheet({ editStaff, form, setForm, handleSubmit, createMut, updateMut, departments, staffRoles = [], onClose }) {
   const [tab, setTab] = useState('temel')
   const [error, setError] = useState(null)
 
@@ -83,6 +83,14 @@ function StaffFormSheet({ editStaff, form, setForm, handleSubmit, createMut, upd
                 onChange={e => setForm(p => ({ ...p, department_id: e.target.value }))}>
                 <option value="">Departman seçin...</option>
                 {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="form-label">Rol / Gorev</label>
+              <select className="form-select" value={form.role_id || ''}
+                onChange={e => setForm(p => ({ ...p, role_id: e.target.value }))}>
+                <option value="">Rol secin...</option>
+                {staffRoles.map(role => <option key={role.id} value={role.id}>{role.name}</option>)}
               </select>
             </div>
             <div>
@@ -178,23 +186,28 @@ export default function StaffTab({ departments, onPersonClick }) {
   const user = useAuthStore(s => s.user)
   const canEdit = ['campus_manager', 'shift_supervisor'].includes(user?.role)
 
-  const [filters, setFilters] = useState({ dept_id: '', gender: '', search: '', is_active: '1' })
+  const [filters, setFilters] = useState({ dept_id: '', role_id: '', gender: '', search: '', is_active: '1' })
   const [showForm, setShowForm] = useState(false)
   const [editStaff, setEditStaff] = useState(null)
   const [form, setForm] = useState({})
 
   const staffSavedFilters = useSavedFilters('shifts-staff', filters, setFilters)
-  const hasActiveStaffFilter = !!(filters.dept_id || filters.gender || filters.search || filters.is_active !== '1')
+  const hasActiveStaffFilter = !!(filters.dept_id || filters.role_id || filters.gender || filters.search || filters.is_active !== '1')
 
   const debouncedSearch = useDebounce(filters.search, 300)
   const effectiveFilters = useMemo(
     () => ({ ...filters, search: debouncedSearch }),
-    [filters.dept_id, filters.gender, filters.is_active, debouncedSearch]
+    [filters.dept_id, filters.role_id, filters.gender, filters.is_active, debouncedSearch]
   )
 
   const { data: staffList = [], isLoading } = useQuery({
     queryKey: ['staff-list', effectiveFilters],
     queryFn: () => api.get('/shifts/staff', { params: { ...effectiveFilters, is_active: effectiveFilters.is_active || undefined } }).then(r => r.data),
+  })
+
+  const { data: staffRoles = [] } = useQuery({
+    queryKey: ['shift-roles'],
+    queryFn: () => api.get('/shifts/roles').then(r => r.data),
   })
 
   const createMut = useMutation({
@@ -225,7 +238,7 @@ export default function StaffTab({ departments, onPersonClick }) {
 
   const openNew = () => {
     setForm({
-      full_name: '', tc_no: '', phone: '', email: '', position: '', department_id: '',
+      full_name: '', tc_no: '', phone: '', email: '', position: '', department_id: '', role_id: '',
       hire_date: '', birth_date: '', address: '', emergency_contact: '', emergency_phone: '',
       blood_type: '', gender: 'male', salary: '', notes: '', is_active: 1,
     })
@@ -236,7 +249,7 @@ export default function StaffTab({ departments, onPersonClick }) {
   const openEdit = (s) => {
     setForm({
       full_name: s.full_name || '', tc_no: s.tc_no || '', phone: s.phone || '', email: s.email || '',
-      position: s.position || '', department_id: s.department_id?.toString() || '',
+      position: s.position || '', department_id: s.department_id?.toString() || '', role_id: s.role_id?.toString() || '',
       hire_date: s.hire_date || '', birth_date: s.birth_date || '', address: s.address || '',
       emergency_contact: s.emergency_contact || '', emergency_phone: s.emergency_phone || '',
       blood_type: s.blood_type || '', gender: s.gender || 'male', salary: s.salary?.toString() || '',
@@ -250,6 +263,7 @@ export default function StaffTab({ departments, onPersonClick }) {
     const payload = {
       ...form,
       department_id: form.department_id ? parseInt(form.department_id) : null,
+      role_id: form.role_id ? parseInt(form.role_id) : null,
       salary: form.salary ? parseFloat(form.salary) : null,
       is_active: form.is_active ? 1 : 0,
     }
@@ -315,6 +329,11 @@ export default function StaffTab({ departments, onPersonClick }) {
           style={{ width: 'auto', minWidth: '140px', padding: '5px 11px', fontSize: '11px' }}>
           <option value="">Tum Bolumler</option>
           {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+        </select>
+        <select className="form-select" value={filters.role_id} onChange={e => setFilters(p => ({ ...p, role_id: e.target.value }))}
+          style={{ width: 'auto', minWidth: '130px', padding: '5px 11px', fontSize: '11px' }}>
+          <option value="">Tum Roller</option>
+          {staffRoles.map(role => <option key={role.id} value={role.id}>{role.name}</option>)}
         </select>
         <select className="form-select" value={filters.gender} onChange={e => setFilters(p => ({ ...p, gender: e.target.value }))}
           style={{ width: 'auto', padding: '5px 11px', fontSize: '11px' }}>
@@ -393,6 +412,11 @@ export default function StaffTab({ departments, onPersonClick }) {
                             {s.dept_name}
                           </span>
                         )}
+                        {s.role_name && (
+                          <span style={{ padding: '2px 8px', borderRadius: '20px', fontSize: '9px', fontFamily: 'var(--mono)', fontWeight: 600, background: 'rgba(59,140,240,.10)', color: 'var(--blue)', border: '1px solid rgba(59,140,240,.25)' }}>
+                            {s.role_name}
+                          </span>
+                        )}
                         <span style={{ padding: '2px 8px', borderRadius: '20px', fontSize: '9px', fontFamily: 'var(--mono)', fontWeight: 600, background: s.is_active ? 'rgba(39,201,106,.12)' : 'var(--surface2)', color: s.is_active ? 'var(--green)' : 'var(--text3)' }}>
                           {s.is_active ? 'AKTİF' : 'PASİF'}
                         </span>
@@ -441,6 +465,7 @@ export default function StaffTab({ departments, onPersonClick }) {
           createMut={createMut}
           updateMut={updateMut}
           departments={departments}
+          staffRoles={staffRoles}
           onClose={() => { setShowForm(false); setEditStaff(null) }}
         />
       )}

@@ -8,7 +8,7 @@ const SHIFT_DEFS = [
   { id: 2, name: 'Gece', start_hour: 20, end_hour: 8, color_class: 'bg-indigo-600' },
 ]
 
-function shift(id = 1) {
+function shift(id = 1, extra = {}) {
   const def = SHIFT_DEFS.find(item => item.id === id)
   return {
     status: 'scheduled',
@@ -17,6 +17,7 @@ function shift(id = 1) {
     start_hour: def.start_hour,
     end_hour: def.end_hour,
     shift_color: def.color_class,
+    ...extra,
   }
 }
 
@@ -28,9 +29,10 @@ function buildWorkbook(overrides = {}) {
       dept_id: 1,
       dept_name: 'Teknik',
       position: 'OTC Yemekhane',
+      role_name: 'Ikramci',
       gender: 'male',
       days: {
-        [WEEK[0]]: shift(1),
+        [WEEK[0]]: shift(1, { work_location_name: 'OTC Yemekhane' }),
         [WEEK[1]]: shift(1),
         [WEEK[2]]: { status: 'off' },
         [WEEK[3]]: shift(2),
@@ -43,6 +45,7 @@ function buildWorkbook(overrides = {}) {
       dept_id: 2,
       dept_name: 'Guvenlik',
       position: 'FPU Lokal',
+      role_name: 'Meydanci',
       gender: 'female',
       days: {
         [WEEK[0]]: shift(1),
@@ -99,6 +102,8 @@ describe('scheduleExcelExport - X3 workbook builder', () => {
 
     expect(teknik.getCell('A1').value).toBe('BOLUM CIZELGESI - Teknik')
     expect(teknik.getCell('B8').value).toBe('Ali Yilmaz')
+    expect(teknik.getCell('D8').value).toBe('Ikramci')
+    expect(teknik.getCell('F8').value).toContain('OTC Yemekhane')
     expect(teknik.getCell('B9').value).toBeNull()
     expect(guvenlik.getCell('B8').value).toBe('Ayse Kaya')
   })
@@ -111,6 +116,8 @@ describe('scheduleExcelExport - X3 workbook builder', () => {
     expect(settingsRow).toBeGreaterThan(0)
     expect(raw.getCell(settingsRow, 19).value).toBe('6 sayfa')
     expect(raw.getCell(settingsRow, 20).value).toContain('2 bolum sayfasi')
+    expect(raw.getCell('P4').value).toBe('Ikramci')
+    expect(raw.getCell('Q4').value).toBe('OTC Yemekhane')
   })
 
   it('serializes the generated workbook to an xlsx buffer', async () => {

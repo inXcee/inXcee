@@ -83,6 +83,16 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
     queryFn: () => api.get('/shifts/staff', { params: { is_active: '1' } }).then(r => r.data),
   })
 
+  const { data: workLocations = [] } = useQuery({
+    queryKey: ['shift-work-locations'],
+    queryFn: () => api.get('/shifts/work-locations').then(r => r.data),
+  })
+
+  const { data: staffRoles = [] } = useQuery({
+    queryKey: ['shift-roles'],
+    queryFn: () => api.get('/shifts/roles').then(r => r.data),
+  })
+
   // Build stable weekly grid: merge schedule data with all staff in dept
   const staffGrid = useMemo(() => buildStaffGrid(rows, allStaff, ''), [rows, allStaff])
 
@@ -93,11 +103,24 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
   }
 
   const assignCell = useMutation({
-    mutationFn: ({ staffId, deptId, shiftDefId, date, status }) =>
+    mutationFn: ({ staffId, deptId, shiftDefId, workLocationId, date, status }) =>
       api.post('/shifts/schedule', {
-        entries: [{ staff_id: staffId, dept_id: deptId, shift_def_id: shiftDefId || null, work_date: date, status: status || 'scheduled' }]
+        entries: [{
+          staff_id: staffId,
+          dept_id: deptId,
+          shift_def_id: shiftDefId || null,
+          work_location_id: workLocationId || null,
+          work_date: date,
+          status: status || 'scheduled',
+        }]
       }),
-    onSuccess: (res) => { qc.invalidateQueries({ queryKey: ['schedule'] }); setCellPopover(null); showAssignWarnings(res) },
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ['schedule'] })
+      qc.invalidateQueries({ queryKey: ['shift-breakdown'] })
+      qc.invalidateQueries({ queryKey: ['shift-coverage'] })
+      setCellPopover(null)
+      showAssignWarnings(res)
+    },
     onError: (err) => {
       useToastStore.getState().addToast(err?.response?.data?.error || 'Vardiya atanamadı', 'error')
     },
@@ -105,7 +128,12 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
 
   const deleteShift = useMutation({
     mutationFn: ({ staffId, date }) => api.delete(`/shifts/schedule/${staffId}/${date}`),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['schedule'] }); setCellPopover(null) }
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['schedule'] })
+      qc.invalidateQueries({ queryKey: ['shift-breakdown'] })
+      qc.invalidateQueries({ queryKey: ['shift-coverage'] })
+      setCellPopover(null)
+    }
   })
 
   const quickApply = useMutation({
@@ -119,6 +147,8 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
     },
     onSuccess: (data, vars) => {
       qc.invalidateQueries({ queryKey: ['schedule'] })
+      qc.invalidateQueries({ queryKey: ['shift-breakdown'] })
+      qc.invalidateQueries({ queryKey: ['shift-coverage'] })
       setQuickCode('')
       showAssignWarnings({ data: { warnings: data?.warnings } })
       const count = vars.action === 'delete' ? vars.deletions.length : vars.entries.length
@@ -156,7 +186,11 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
 
   const copyWeek = useMutation({
     mutationFn: () => api.post('/shifts/schedule/copy-week', { source_week: weekStart, target_week: addDays(weekStart, 7) }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['schedule'] }) }
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['schedule'] })
+      qc.invalidateQueries({ queryKey: ['shift-breakdown'] })
+      qc.invalidateQueries({ queryKey: ['shift-coverage'] })
+    }
   })
 
   // Fill ALL active staff same shift, Sunday off
@@ -176,7 +210,13 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
       })
       return api.post('/shifts/schedule', { entries })
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['schedule'] }); setAllFillModal(false); setAllFillDef('') }
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['schedule'] })
+      qc.invalidateQueries({ queryKey: ['shift-breakdown'] })
+      qc.invalidateQueries({ queryKey: ['shift-coverage'] })
+      setAllFillModal(false)
+      setAllFillDef('')
+    }
   })
 
 
@@ -190,7 +230,12 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
       }))
       return api.post('/shifts/schedule', { entries })
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['schedule'] }); setWeekFillPopover(null) }
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['schedule'] })
+      qc.invalidateQueries({ queryKey: ['shift-breakdown'] })
+      qc.invalidateQueries({ queryKey: ['shift-coverage'] })
+      setWeekFillPopover(null)
+    }
   })
 
   // Bulk fill: all staff in a dept
@@ -209,7 +254,12 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
       })
       return api.post('/shifts/schedule', { entries })
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['schedule'] }); setBulkFillModal(false) }
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['schedule'] })
+      qc.invalidateQueries({ queryKey: ['shift-breakdown'] })
+      qc.invalidateQueries({ queryKey: ['shift-coverage'] })
+      setBulkFillModal(false)
+    }
   })
 
   const exportExcel = async () => {
@@ -225,13 +275,23 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
       deptFilter,
       coverageMin,
       shiftDefs,
+      workLocations,
+      staffRoles,
     })
   }
 
   const openCellPopover = (e, person, date) => {
     if (!canEdit) return
     const existing = person.days[date]
-    setCellPopover({ staffId: person.id, deptId: person.dept_id, date, personName: person.full_name, existing })
+    setCellPopover({
+      staffId: person.id,
+      deptId: person.dept_id,
+      date,
+      personName: person.full_name,
+      deptName: person.dept_name,
+      roleName: person.role_name,
+      existing,
+    })
   }
 
   const openWeekFill = (e, person) => {
@@ -265,6 +325,28 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
     return m
   }, [staffGrid, weekDays])
 
+  const roleStatsByDept = useMemo(() => {
+    const byDept = new Map()
+    staffGrid.forEach(person => {
+      const deptName = person.dept_name || 'Departmansiz'
+      const roleName = person.role_name || 'Rolsuz'
+      if (!byDept.has(deptName)) byDept.set(deptName, new Map())
+      const roleMap = byDept.get(deptName)
+      if (!roleMap.has(roleName)) roleMap.set(roleName, { name: roleName, members: 0, work: 0 })
+      const item = roleMap.get(roleName)
+      item.members += 1
+      weekDays.forEach(date => {
+        const cell = person.days?.[date]
+        if (['scheduled', 'worked', 'overtime'].includes(cell?.status)) item.work += 1
+      })
+    })
+    const result = new Map()
+    byDept.forEach((roleMap, deptName) => {
+      result.set(deptName, [...roleMap.values()].sort((a, b) => b.members - a.members || a.name.localeCompare(b.name, 'tr')))
+    })
+    return result
+  }, [staffGrid, weekDays])
+
   // Arama + durum filtresi uygulanmış görünür liste
   const selectedDepartment = useMemo(
     () => departments.find(d => String(d.id) === String(deptFilter)) || null,
@@ -290,7 +372,7 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
     const q = gridSearch.toLocaleLowerCase('tr').trim()
     return staffGrid.filter(p => {
       if (deptFilter && String(p.dept_id) !== String(deptFilter)) return false
-      const haystack = [p.full_name, p.dept_name, p.position].filter(Boolean).join(' ').toLocaleLowerCase('tr')
+      const haystack = [p.full_name, p.dept_name, p.position, p.role_name].filter(Boolean).join(' ').toLocaleLowerCase('tr')
       if (q && !haystack.includes(q)) return false
       if (statusFilter === 'leave' && !weekDays.some(d => p.days[d]?.status === 'on_leave' || p.days[d]?.status === 'off')) return false
       if (statusFilter === 'gaps' && !weekDays.some(d => !p.days[d])) return false
@@ -357,6 +439,7 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
     status: target.cell.status || 'scheduled',
     leave_type: target.cell.leave_type || null,
     absent_reason: target.cell.absent_reason || null,
+    work_location_id: target.cell.work_location_id || null,
   } : null
 
   const undoForTargets = (label, targets, mode) => ({
@@ -415,6 +498,7 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
           staff_id: person.id,
           dept_id: person.dept_id,
           shift_def_id: parsed.shiftDefId,
+          work_location_id: target.cell?.work_location_id || null,
           work_date: date,
           status: parsed.status,
         }],
@@ -526,6 +610,7 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
         staff_id: t.person.id,
         dept_id: t.person.dept_id,
         shift_def_id: parsed.shiftDefId,
+        work_location_id: t.cell?.work_location_id || null,
         work_date: t.date,
         status: parsed.status,
       })),
@@ -602,6 +687,7 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
             staff_id: person.id,
             dept_id: person.dept_id,
             shift_def_id: parsed.shiftDefId,
+            work_location_id: target.cell?.work_location_id || null,
             work_date: date,
             status: parsed.status,
           })
@@ -1114,6 +1200,7 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
                 let rowIdx = 0
                 return groups.map(g => {
                   const st = deptStats.get(g.name)
+                  const roleStats = roleStatsByDept.get(g.name) || []
                   const dc = deptColor(g.color)
                   const collapsed = collapsedDepts.has(g.name)
                   const bandTint = `color-mix(in srgb, ${dc.text || 'var(--text3)'} 12%, var(--surface2))`
@@ -1131,6 +1218,23 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
                           <span style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', marginLeft: '8px' }}>
                             {st?.members ?? g.people.length} kişi{st && (st.male || st.female) ? ` · ♂${st.male} ♀${st.female}` : ''}
                           </span>
+                          {roleStats.length > 0 && (
+                            <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginTop: '5px' }}>
+                              {roleStats.slice(0, 5).map(role => (
+                                <span key={role.name} style={{
+                                  fontFamily: 'var(--mono)',
+                                  fontSize: '8px',
+                                  color: dc.text || 'var(--text2)',
+                                  background: 'rgba(255,255,255,.04)',
+                                  border: '1px solid var(--border)',
+                                  borderRadius: '999px',
+                                  padding: '1px 6px',
+                                }}>
+                                  {role.name} {role.members}k/{role.work}g
+                                </span>
+                              ))}
+                            </div>
+                          )}
                         </td>
                         {weekDays.map((d, i) => {
                           const pd = st?.perDay[i] || { work: 0, leave: 0, empty: 0 }
@@ -1199,6 +1303,7 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
                             }}>{person.position}</span>
                           )}
                           <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginTop: '5px' }}>
+                            <span style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--blue)', background: 'rgba(59,140,240,.10)', border: '1px solid rgba(59,140,240,.25)', borderRadius: '6px', padding: '1px 5px' }}>{person.role_name || 'Rolsuz'}</span>
                             <span style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--green)', background: 'rgba(34,197,94,.10)', border: '1px solid rgba(34,197,94,.25)', borderRadius: '6px', padding: '1px 5px' }}>C {personWeek.work}</span>
                             <span style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--teal)', background: 'rgba(20,184,166,.10)', border: '1px solid rgba(20,184,166,.25)', borderRadius: '6px', padding: '1px 5px' }}>I {personWeek.leave}</span>
                             <span style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: personWeek.empty || personWeek.absent ? 'var(--red)' : 'var(--text3)', background: personWeek.empty || personWeek.absent ? 'rgba(231,76,60,.10)' : 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '6px', padding: '1px 5px' }}>B {personWeek.empty + personWeek.absent}</span>
@@ -1246,8 +1351,8 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
                           pillBg = 'rgba(231,76,60,.12)'; pillColor = 'var(--red)'; pillLabel = '✗ YOK'
                         } else if (sc) {
                           pillBg = sc.bg; pillColor = sc.text
-                          pillLabel = cell.shift_name
-                          pillSub = shiftHoursFrom(cell) || null
+                          pillLabel = shiftHoursFrom(cell) || cell.shift_name
+                          pillSub = cell.work_location_name || cell.shift_name || null
                         }
                       }
 
@@ -1286,7 +1391,14 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
                               deleteShift.mutate({ staffId: person.id, date: d })
                             } else {
                               const shiftDefId = parseInt(rawId)
-                              assignCell.mutate({ staffId: person.id, deptId: person.dept_id, shiftDefId, date: d, status: 'scheduled' })
+                              assignCell.mutate({
+                                staffId: person.id,
+                                deptId: person.dept_id,
+                                shiftDefId,
+                                workLocationId: person.days?.[d]?.work_location_id || null,
+                                date: d,
+                                status: 'scheduled',
+                              })
                             }
                           }}
                           style={{
@@ -1434,6 +1546,7 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
           shiftDefs={shiftDefs}
           assignCell={assignCell}
           deleteShift={deleteShift}
+          workLocations={workLocations}
           formatDate={formatDate}
           shortDay={shortDay}
           shiftColor={shiftColor}
@@ -1509,7 +1622,9 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
                       }}
                     >
                       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{person.full_name}</span>
-                      <span style={{ fontFamily: 'var(--mono)', fontSize: '10px', color }}>{cell ? cellToScheduleCode(cell, shiftDefs) || cell.shift_name || cell.status : '-'}</span>
+                      <span style={{ fontFamily: 'var(--mono)', fontSize: '10px', color, textAlign: 'right' }}>
+                        {cell ? `${shiftHoursFrom(cell) || cellToScheduleCode(cell, shiftDefs) || cell.shift_name || cell.status}${cell.work_location_name ? ` / ${cell.work_location_name}` : ''}` : '-'}
+                      </span>
                     </button>
                   ))}
                   {rows.length === 0 && <div style={{ padding: '10px', color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: '10px' }}>Kayit yok</div>}

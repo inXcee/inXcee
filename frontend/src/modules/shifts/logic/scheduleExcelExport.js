@@ -37,6 +37,18 @@ function quickEmptyFormula(range) {
   return `COUNTBLANK(${range})+COUNTIF(${range},"sil")`
 }
 
+function displayWorkFormula(range) {
+  return `COUNTIFS(${range},"<>",${range},"<>OFF*",${range},"<>Izin*",${range},"<>YOK*",${range},"<>sil")`
+}
+
+function displayRestFormula(range) {
+  return `COUNTIF(${range},"OFF*")+COUNTIF(${range},"Izin*")`
+}
+
+function displayAbsentFormula(range) {
+  return `COUNTIF(${range},"YOK*")`
+}
+
 function riskFormulaForRow(rowNo, workCol, restCol, absentCol, emptyCol) {
   return `IF(${emptyCol}${rowNo}>0,"Bos var",IF(${absentCol}${rowNo}>0,"YOK var",IF(AND(${workCol}${rowNo}>0,${restCol}${rowNo}=0),"OFF eksik","OK")))`
 }
@@ -71,6 +83,11 @@ function displayForCell(cell) {
   if (cell.status === 'off') return 'OFF\nHaftalik izin'
   if (cell.status === 'on_leave') return `Izin - ${leaveTypeLabel(cell.leave_type)}`
   if (cell.status === 'absent') return cell.absent_reason ? `YOK\n${cell.absent_reason}` : 'YOK'
+  if (isWorking(cell)) {
+    const first = shiftHoursFrom(cell) || cell.shift_name || statusLabel(cell)
+    const second = cell.work_location_name || cell.shift_name || ''
+    return second ? `${first}\n${second}` : first
+  }
   return cell.shift_name ? `${cell.shift_name}\n${shiftHoursFrom(cell) || ''}` : statusLabel(cell)
 }
 
@@ -207,10 +224,40 @@ function inferWorkArea(person) {
   return site
 }
 
+function workAreaForCell(cell, person) {
+  return cell?.work_location_name || inferWorkArea(person)
+}
+
 function buildAreaSummary(rows, weekDays) {
   const map = new Map()
   rows.forEach(person => {
-    const key = inferWorkArea(person)
+    weekDays.forEach((date, idx) => {
+      const cell = person.days?.[date]
+      const key = workAreaForCell(cell, person)
+      if (!map.has(key)) {
+        map.set(key, {
+          name: key,
+          memberIds: new Set(),
+          members: 0,
+          perDay: weekDays.map(() => ({ work: 0, rest: 0, empty: 0 })),
+        })
+      }
+      const item = map.get(key)
+      item.memberIds.add(person.id)
+      if (isWorking(cell)) item.perDay[idx].work += 1
+      else if (isRest(cell)) item.perDay[idx].rest += 1
+      else item.perDay[idx].empty += 1
+    })
+  })
+  return [...map.values()]
+    .map(item => ({ ...item, members: item.memberIds.size, memberIds: undefined }))
+    .sort((a, b) => a.name.localeCompare(b.name, 'tr'))
+}
+
+function buildRoleSummary(rows, weekDays) {
+  const map = new Map()
+  rows.forEach(person => {
+    const key = person.role_name || 'Rolsuz'
     if (!map.has(key)) {
       map.set(key, {
         name: key,
@@ -261,6 +308,40 @@ function addStatusFill(cell, status) {
   cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 9 }
 }
 
+function appendSummaryMatrix(ws, startRow, title, firstLabel, rows, weekDays, coverageMin, lowLabel = 'Dusuk') {
+  ws.getCell(startRow, 1).value = title
+  ws.getCell(startRow, 1).font = { bold: true, size: 12, color: { argb: argb(COLORS.ink) } }
+  ws.getRow(startRow + 1).values = [firstLabel, 'Kisi', ...weekDays.map((date, idx) => `${DAY_LABELS[idx]}\n${formatDate(date)}`), 'Toplam', 'En Dusuk', 'Durum']
+  styleHeaderRow(ws.getRow(startRow + 1))
+  rows.forEach(item => {
+    const daily = item.perDay.map(day => day.work)
+    const minValue = daily.length ? Math.min(...daily) : 0
+    const row = ws.addRow([
+      item.name,
+      item.members,
+      ...daily,
+      daily.reduce((sum, value) => sum + value, 0),
+      minValue,
+      minValue < coverageMin ? lowLabel : 'OK',
+    ])
+    row.eachCell((cell, colNo) => {
+      cell.border = border
+      cell.alignment = { horizontal: colNo === 1 ? 'left' : 'center', vertical: 'middle', wrapText: true }
+      cell.font = { size: 9 }
+      if (colNo >= 3 && colNo <= 9 && Number(cell.value || 0) < coverageMin) {
+        cell.fill = fill(COLORS.red)
+        cell.font = { size: 9, bold: true, color: { argb: 'FFFFFFFF' } }
+      }
+      if (colNo === 12) {
+        const status = cell.value
+        cell.fill = fill(status === 'OK' ? COLORS.green : COLORS.amber)
+        cell.font = { size: 9, bold: true, color: { argb: 'FFFFFFFF' } }
+      }
+    })
+  })
+  return ws.lastRow.number
+}
+
 function addControlSheet(wb, {
   sheetNames,
   navSheets,
@@ -276,6 +357,8 @@ function addControlSheet(wb, {
   exportWarnings,
   closingCheck,
   deptSummary,
+  areaSummary,
+  roleSummary,
   coverageMin,
   absentTotal,
   riskyRows,
@@ -344,6 +427,9 @@ function addControlSheet(wb, {
     })
   })
 
+  appendSummaryMatrix(ws, ws.lastRow.number + 3, 'CALISMA NOKTASI OZETI', 'Nokta', areaSummary, weekDays, coverageMin)
+  appendSummaryMatrix(ws, ws.lastRow.number + 3, 'ROL OZETI', 'Rol', roleSummary, weekDays, coverageMin)
+
   const warnStart = ws.lastRow.number + 3
   ws.getCell(warnStart, 1).value = 'UYARI VE KAPANIS LISTESI'
   ws.getCell(warnStart, 1).font = { bold: true, size: 12, color: { argb: argb(COLORS.ink) } }
@@ -392,46 +478,51 @@ function addDepartmentSheet(wb, {
   coverageMin,
   codes,
 }) {
+  const displayRows = [...rows].sort((a, b) => {
+    const roleCompare = (a.role_name || 'Rolsuz').localeCompare(b.role_name || 'Rolsuz', 'tr')
+    if (roleCompare) return roleCompare
+    return String(a.full_name || '').localeCompare(String(b.full_name || ''), 'tr')
+  })
   const ws = wb.addWorksheet(sheetName, { views: [{ state: 'frozen', xSplit: 5, ySplit: 7 }] })
   setupSheet(ws, COLORS.teal)
-  setupTitle(ws, `BOLUM CIZELGESI - ${dept.name}`, `${formatDate(weekStart)} - ${formatDate(weekEnd)} | ${rows.length} personel`, 17)
+  setupTitle(ws, `BOLUM CIZELGESI - ${dept.name}`, `${formatDate(weekStart)} - ${formatDate(weekEnd)} | ${displayRows.length} personel`, 17)
   addNav(ws, navSheets)
-  const deptStats = computeWeekStats(rows, weekDays)
+  const deptStats = computeWeekStats(displayRows, weekDays)
   const entryStartRow = 8
-  const entryEndRow = Math.max(entryStartRow, entryStartRow + rows.length - 1)
+  const entryEndRow = Math.max(entryStartRow, entryStartRow + displayRows.length - 1)
   const entryDayStartCol = 6
   const entryDayEndCol = 12
   const dayStart = colLetter(entryDayStartCol)
   const dayEnd = colLetter(entryDayEndCol)
   const dayRange = `${dayStart}${entryStartRow}:${dayEnd}${entryEndRow}`
-  addMetric(ws, 1, 'Personel', rows.length, COLORS.blue)
-  addMetric(ws, 3, 'Calisma', { formula: quickWorkFormula(dayRange), result: deptStats.working }, COLORS.green)
-  addMetric(ws, 5, 'OFF/Izin', { formula: quickRestFormula(dayRange), result: deptStats.onLeave }, COLORS.teal)
+  addMetric(ws, 1, 'Personel', displayRows.length, COLORS.blue)
+  addMetric(ws, 3, 'Calisma', { formula: displayWorkFormula(dayRange), result: deptStats.working }, COLORS.green)
+  addMetric(ws, 5, 'OFF/Izin', { formula: displayRestFormula(dayRange), result: deptStats.onLeave }, COLORS.teal)
   addMetric(ws, 7, 'Bos', { formula: quickEmptyFormula(dayRange), result: deptStats.empty }, deptStats.empty ? COLORS.red : COLORS.green)
   addMetric(ws, 9, 'Min Kisi', coverageMin, COLORS.purple)
   ws.getRow(7).values = [
-    'Sira', 'Personel', 'Bolum', 'Alan', 'Pozisyon',
+    'Sira', 'Personel', 'Bolum', 'Rol', 'Pozisyon',
     ...weekDays.map((date, idx) => `${DAY_LABELS[idx]}\n${formatDate(date)}`),
     'Calisma', 'OFF/Izin', 'YOK', 'Bos', 'Risk',
   ]
   styleHeaderRow(ws.getRow(7))
-  rows.forEach((person, idx) => {
+  displayRows.forEach((person, idx) => {
     const counts = personCounts(person, weekDays)
     const risk = riskFor(counts)
     const row = ws.addRow([
       idx + 1,
       person.full_name,
       person.dept_name || dept.name,
-      inferWorkArea(person),
+      person.role_name || 'Rolsuz',
       person.position || '-',
-      ...weekDays.map(date => cellToScheduleCode(person.days?.[date], shiftDefs)),
+      ...weekDays.map(date => displayForCell(person.days?.[date])),
       null, null, null, null, null,
     ])
     const rowNo = row.number
     const rowDayRange = `${dayStart}${rowNo}:${dayEnd}${rowNo}`
-    row.getCell(13).value = { formula: quickWorkFormula(rowDayRange), result: counts.work }
-    row.getCell(14).value = { formula: quickRestFormula(rowDayRange), result: counts.rest }
-    row.getCell(15).value = { formula: quickAbsentFormula(rowDayRange), result: counts.absent }
+    row.getCell(13).value = { formula: displayWorkFormula(rowDayRange), result: counts.work }
+    row.getCell(14).value = { formula: displayRestFormula(rowDayRange), result: counts.rest }
+    row.getCell(15).value = { formula: displayAbsentFormula(rowDayRange), result: counts.absent }
     row.getCell(16).value = { formula: quickEmptyFormula(rowDayRange), result: counts.empty }
     row.getCell(17).value = { formula: riskFormulaForRow(rowNo, 'M', 'N', 'O', 'P'), result: risk }
     row.eachCell({ includeEmpty: true }, (cell, colNo) => {
@@ -447,27 +538,14 @@ function addDepartmentSheet(wb, {
       if (colNo === 17) addStatusFill(cell, cellResult(cell.value))
     })
   })
-  if (rows.length) {
-    const codeList = `"${codes.map(item => item.code).join(',')}"`
-    for (let rowNo = entryStartRow; rowNo <= entryEndRow; rowNo += 1) {
-      for (let colNo = entryDayStartCol; colNo <= entryDayEndCol; colNo += 1) {
-        ws.getCell(rowNo, colNo).dataValidation = {
-          type: 'list',
-          allowBlank: true,
-          formulae: [`${codeList}`],
-          showErrorMessage: true,
-          errorStyle: 'warning',
-        }
-      }
-    }
-    applyQuickCodeConditionalFormatting(ws, `${dayStart}${entryStartRow}:${dayEnd}${entryEndRow}`, `${dayStart}${entryStartRow}`, codes)
-  }
   ws.autoFilter = { from: { row: 7, column: 1 }, to: { row: 7, column: 17 } }
   ws.columns = [
     { width: 7 }, { width: 26 }, { width: 18 }, { width: 18 }, { width: 18 },
     ...weekDays.map(() => ({ width: 13 })),
     { width: 10 }, { width: 10 }, { width: 8 }, { width: 8 }, { width: 12 },
   ]
+  appendSummaryMatrix(ws, ws.lastRow.number + 3, 'CALISMA NOKTASI OZETI', 'Nokta', buildAreaSummary(displayRows, weekDays), weekDays, coverageMin)
+  appendSummaryMatrix(ws, ws.lastRow.number + 3, 'ROL OZETI', 'Rol', buildRoleSummary(displayRows, weekDays), weekDays, coverageMin)
   styleAllUsedCells(ws)
   return ws
 }
@@ -498,6 +576,7 @@ export function buildScheduleExcelWorkbook(ExcelJS, {
   const closingCheck = buildPayrollClosingCheck(exportRows, weekDays, { coverageMin })
   const deptSummary = buildDeptSummary(exportRows, weekDays)
   const areaSummary = buildAreaSummary(exportRows, weekDays)
+  const roleSummary = buildRoleSummary(exportRows, weekDays)
   const generatedAt = new Date()
   const codes = quickCodeRows(shiftDefs)
 
@@ -543,6 +622,8 @@ export function buildScheduleExcelWorkbook(ExcelJS, {
     exportWarnings,
     closingCheck,
     deptSummary,
+    areaSummary,
+    roleSummary,
     coverageMin,
     absentTotal,
     riskyRows,
@@ -564,7 +645,7 @@ export function buildScheduleExcelWorkbook(ExcelJS, {
   plan.getCell(6, 1).font = { italic: true, size: 10, color: { argb: argb(COLORS.gray) } }
   plan.getCell(6, 1).alignment = { vertical: 'middle', wrapText: true }
   plan.getRow(7).values = [
-    'Sira', 'Personel', 'Bolum', 'Alan', 'Pozisyon',
+    'Sira', 'Personel', 'Bolum', 'Alan', 'Rol/Gorev',
     ...weekDays.map((date, idx) => `${DAY_LABELS[idx]}\n${formatDate(date)}`),
     'Calisma', 'OFF/Izin', 'YOK', 'Bos', 'Risk',
   ]
@@ -577,7 +658,7 @@ export function buildScheduleExcelWorkbook(ExcelJS, {
       person.full_name,
       person.dept_name || '-',
       inferWorkArea(person),
-      person.position || '-',
+      person.role_name || person.position || '-',
       ...weekDays.map(date => cellToScheduleCode(person.days?.[date], shiftDefs)),
       null, null, null, null, null,
     ])
@@ -776,13 +857,7 @@ export function buildScheduleExcelWorkbook(ExcelJS, {
     const row = operation.addRow([area.name, area.members, ...weekDays.map(() => null), null, null, null])
     const rowNo = row.number
     weekDays.forEach((_date, idx) => {
-      const entryCol = colLetter(entryDayStartCol + idx)
-      const areaRange = sheetRange(sheetNames.plan, `$D$${entryStartRow}:$D$${entryEndRow}`)
-      const dayRange = sheetRange(sheetNames.plan, `$${entryCol}$${entryStartRow}:$${entryCol}$${entryEndRow}`)
-      row.getCell(3 + idx).value = {
-        formula: `COUNTIFS(${areaRange},$A${rowNo},${dayRange},"<>",${dayRange},"<>OFF",${dayRange},"<>I",${dayRange},"<>YOK",${dayRange},"<>sil")`,
-        result: area.perDay[idx].work,
-      }
+      row.getCell(3 + idx).value = area.perDay[idx].work
     })
     const firstDay = colLetter(3)
     const lastDay = colLetter(3 + weekDays.length - 1)
@@ -800,6 +875,8 @@ export function buildScheduleExcelWorkbook(ExcelJS, {
       }
     })
   })
+
+  appendSummaryMatrix(operation, operation.lastRow.number + 3, 'ROL / GOREV OZETI', 'Rol', roleSummary, weekDays, coverageMin)
 
   const warnStart = operation.lastRow.number + 3
   operation.getCell(warnStart, 1).value = 'CANLI UYARI VE PUANTAJ KAPANIS'
@@ -832,7 +909,7 @@ export function buildScheduleExcelWorkbook(ExcelJS, {
   const raw = wb.addWorksheet(sheetNames.raw, { views: [{ state: 'frozen', ySplit: 4 }] })
   setupSheet(raw, COLORS.gray)
   setupTitle(raw, 'VERI, KODLAR VE AYARLAR', 'Filtre, pivot, denetim ve Excel icindeki acilir kod listeleri bu sayfada toplanir.', 23)
-  raw.getRow(3).values = ['staff_id', 'personel', 'dept_id', 'bolum', 'alan', 'pozisyon', 'tarih', 'gun', 'status', 'kod', 'shift_def_id', 'vardiya', 'baslangic', 'bitis', 'not']
+  raw.getRow(3).values = ['staff_id', 'personel', 'dept_id', 'bolum', 'alan', 'pozisyon', 'tarih', 'gun', 'status', 'kod', 'shift_def_id', 'vardiya', 'baslangic', 'bitis', 'not', 'rol', 'calisma_noktasi']
   styleHeaderRow(raw.getRow(3))
   weekDays.forEach((date, idx) => {
     exportRows.forEach(person => {
@@ -853,6 +930,8 @@ export function buildScheduleExcelWorkbook(ExcelJS, {
         cell?.start_hour ?? cell?.shift_start ?? '',
         cell?.end_hour ?? cell?.shift_end ?? '',
         cell?.absent_reason || cell?.leave_type || '',
+        person.role_name || '',
+        cell?.work_location_name || '',
       ])
       row.getCell(7).numFmt = 'yyyy-mm-dd'
       row.eachCell((cellItem, colNo) => {
@@ -924,11 +1003,11 @@ export function buildScheduleExcelWorkbook(ExcelJS, {
       cell.font = { size: 9 }
     })
   })
-  raw.autoFilter = { from: { row: 3, column: 1 }, to: { row: 3, column: 15 } }
+  raw.autoFilter = { from: { row: 3, column: 1 }, to: { row: 3, column: 17 } }
   raw.columns = [
     { width: 9 }, { width: 28 }, { width: 9 }, { width: 18 }, { width: 18 }, { width: 18 },
     { width: 12 }, { width: 8 }, { width: 14 }, { width: 8 }, { width: 11 }, { width: 16 },
-    { width: 10 }, { width: 10 }, { width: 24 }, { width: 4 }, { width: 4 },
+    { width: 10 }, { width: 10 }, { width: 24 }, { width: 16 }, { width: 22 },
     { width: 12 }, { width: 10 }, { width: 24 }, { width: 14 }, { width: 12 }, { width: 34 },
   ]
   styleAllUsedCells(raw)
@@ -960,6 +1039,7 @@ export function buildScheduleExcelWorkbook(ExcelJS, {
     closingCheck,
     deptSummary,
     areaSummary,
+    roleSummary,
   }
 }
 

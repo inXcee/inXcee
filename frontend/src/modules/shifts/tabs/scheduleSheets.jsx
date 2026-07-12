@@ -257,8 +257,10 @@ export function WeekFillSheet({ weekFillPopover, setWeekFillPopover, shiftDefs, 
   )
 }
 
-export function CellAssignSheet({ cellPopover, setCellPopover, shiftDefs, assignCell, deleteShift, formatDate, shortDay, shiftColor }) {
+export function CellAssignSheet({ cellPopover, setCellPopover, shiftDefs, assignCell, deleteShift, workLocations = [], formatDate, shortDay, shiftColor }) {
   const [error, setError] = useState(null)
+  const [draftShiftId, setDraftShiftId] = useState(cellPopover.existing?.shift_def_id ? String(cellPopover.existing.shift_def_id) : '')
+  const [draftLocationId, setDraftLocationId] = useState(cellPopover.existing?.work_location_id ? String(cellPopover.existing.work_location_id) : '')
 
   useEffect(() => {
     const onEsc = e => { if (e.key === 'Escape') setCellPopover(null) }
@@ -280,6 +282,44 @@ export function CellAssignSheet({ cellPopover, setCellPopover, shiftDefs, assign
         </div>
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.1fr) minmax(0, .9fr)', gap: '8px', marginBottom: '10px' }}>
+          <div>
+            <label className="form-label">Saat Araligi</label>
+            <select className="form-select" value={draftShiftId} onChange={e => setDraftShiftId(e.target.value)}>
+              <option value="">Vardiya sec...</option>
+              {shiftDefs.map(s => (
+                <option key={s.id} value={s.id}>{formatShiftHours(s.start_hour, s.end_hour)} - {s.name}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="form-label">Calisma Noktasi</label>
+            <select className="form-select" value={draftLocationId} onChange={e => setDraftLocationId(e.target.value)}>
+              <option value="">Nokta yok</option>
+              {workLocations.map(loc => (
+                <option key={loc.id} value={loc.id}>{loc.name}</option>
+              ))}
+            </select>
+          </div>
+          <button
+            className="btn btn-primary"
+            style={{ gridColumn: '1 / -1', opacity: !draftShiftId ? 0.5 : 1 }}
+            disabled={!draftShiftId || assignCell.isPending}
+            onClick={() => {
+              setError(null)
+              assignCell.mutate({
+                staffId: cellPopover.staffId,
+                deptId: cellPopover.deptId,
+                shiftDefId: parseInt(draftShiftId),
+                workLocationId: draftLocationId ? parseInt(draftLocationId) : null,
+                date: cellPopover.date,
+                status: 'scheduled',
+              }, { onError: () => setError('Vardiya atanamadi. Tekrar deneyin.') })
+            }}
+          >
+            Saat + Nokta Kaydet
+          </button>
+        </div>
         <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '1px', marginBottom: '4px' }}>VARDIYA SEÇ</div>
         {shiftDefs.map(s => {
           const isActive = cellPopover.existing?.shift_def_id === s.id && cellPopover.existing?.status !== 'on_leave'
