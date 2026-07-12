@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   buildScheduleShareHtml,
   buildScheduleShareModel,
+  computeScheduleCanvasLayout,
   scheduleShareFilename,
 } from './scheduleShareExport.js'
 
@@ -119,5 +120,43 @@ describe('scheduleShareExport', () => {
 
   it('creates stable filenames for downloaded images', () => {
     expect(scheduleShareFilename('2026-07-06', 'png')).toBe('vardiya-cizelgesi-2026-07-06.png')
+    expect(scheduleShareFilename('2026-07-06', 'jpg')).toBe('vardiya-cizelgesi-2026-07-06.jpg')
+  })
+
+  it('applies custom colors to shifts and statuses in every mode', () => {
+    const html = buildScheduleShareHtml(payload({
+      options: {
+        colorMode: 'custom',
+        shiftColors: { 1: '#FF0000' },
+        workColor: '#00AA00',
+        offColor: '#000000',
+        absentColor: '#123456',
+      },
+    }))
+    // Vardiya 1 → özel kırmızı; Vardiya 2 (custom override yok) → workColor
+    expect(html).toContain('#FF0000')
+    expect(html).toContain('#00AA00')
+    // OFF ve YOK özel renkleri
+    expect(html).toContain('#000000')
+    expect(html).toContain('#123456')
+    // Legend de özel OFF rengini yansıtır
+    expect(html).toMatch(/swatch[^>]*background:#000000/)
+  })
+
+  it('custom off color overrides even in shift color mode', () => {
+    const html = buildScheduleShareHtml(payload({
+      options: { colorMode: 'shift', offColor: '#ABCDEF' },
+    }))
+    expect(html).toContain('#ABCDEF')
+  })
+
+  it('computes canvas layout geometry without a real 2D context', () => {
+    const model = buildScheduleShareModel(payload())
+    const layout = computeScheduleCanvasLayout(model, null)
+    expect(layout.cols).toBe(7)
+    expect(layout.width).toBeGreaterThan(0)
+    expect(layout.height).toBeGreaterThan(200)
+    expect(layout.dayW).toBeGreaterThan(0)
+    expect(layout.nameW).toBeGreaterThan(0)
   })
 })

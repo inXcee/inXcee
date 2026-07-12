@@ -77,6 +77,7 @@ export default function ScheduleShareModal({
   }, [options])
 
   const patch = (key, value) => setOptions(prev => ({ ...prev, [key]: value }))
+  const patchShiftColor = (id, hex) => setOptions(prev => ({ ...prev, shiftColors: { ...(prev.shiftColors || {}), [id]: hex } }))
   const applyPreset = preset => setOptions(prev => ({ ...prev, ...preset.options }))
   const resetOptions = () => setOptions({ ...DEFAULT_SCHEDULE_SHARE_OPTIONS, title: 'Haftalık Vardiya Çizelgesi' })
   const toggle = key => patch(key, !options[key])
@@ -91,12 +92,13 @@ export default function ScheduleShareModal({
   }
 
   const runImage = async () => {
+    const fmt = (options.imageFormat || 'png').toUpperCase()
     try {
-      setBusy('png')
+      setBusy('img')
       await downloadScheduleShareImage(payload)
-      toast('PNG vardiya görseli indirildi', 'success')
+      toast(`${fmt} vardiya görseli indirildi`, 'success')
     } catch (err) {
-      toast(err?.message || 'PNG görsel indirilemedi', 'error')
+      toast(err?.message || `${fmt} görsel indirilemedi`, 'error')
     } finally {
       setBusy('')
     }
@@ -113,7 +115,7 @@ export default function ScheduleShareModal({
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           <button className="btn btn-primary btn-sm" onClick={runPrint}>PDF / Yazdır</button>
-          <button className="btn btn-ghost btn-sm" onClick={runImage} disabled={busy === 'png'}>{busy === 'png' ? 'Hazırlanıyor...' : 'PNG Görsel İndir'}</button>
+          <button className="btn btn-ghost btn-sm" onClick={runImage} disabled={busy === 'img'}>{busy === 'img' ? 'Hazırlanıyor...' : `${(options.imageFormat || 'png').toUpperCase()} Görsel İndir`}</button>
         </div>
       </div>
 
@@ -129,6 +131,7 @@ export default function ScheduleShareModal({
               Renk modu
               <select className="form-select" value={options.colorMode} onChange={e => patch('colorMode', e.target.value)}>
                 <option value="shift">Vardiya renkleri</option>
+                <option value="custom">Özel (kendi seçtiğim)</option>
                 <option value="department">Departman renkleri</option>
                 <option value="status">Durum renkleri</option>
                 <option value="mono">Sade açık</option>
@@ -161,6 +164,66 @@ export default function ScheduleShareModal({
                 Hafta sonu
                 <input type="color" className="form-input" value={options.weekendColor} onChange={e => patch('weekendColor', e.target.value)} style={{ padding: 3, height: 36 }} />
               </label>
+            </div>
+
+            <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px' }}>
+              <div className="form-label" style={{ marginBottom: 6 }}>Durum renkleri (tüm modlarda geçerli)</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                {[
+                  ['offColor', 'OFF'],
+                  ['leaveColor', 'İZİN'],
+                  ['absentColor', 'YOK'],
+                  ['emptyColor', 'Boş hücre'],
+                ].map(([key, label]) => (
+                  <label key={key} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--text2)' }}>
+                    <input type="color" value={options[key] || '#000000'} onChange={e => patch(key, e.target.value)} style={{ width: 30, height: 26, padding: 1, border: '1px solid var(--border)', borderRadius: 5, background: 'none' }} />
+                    {label}
+                  </label>
+                ))}
+              </div>
+              {options.colorMode === 'custom' && (
+                <div style={{ marginTop: 10 }}>
+                  <div className="form-label" style={{ marginBottom: 6 }}>Vardiya renkleri</div>
+                  <div style={{ display: 'grid', gap: 6 }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--text2)' }}>
+                      <input type="color" value={options.workColor || '#22C55E'} onChange={e => patch('workColor', e.target.value)} style={{ width: 30, height: 26, padding: 1, border: '1px solid var(--border)', borderRadius: 5, background: 'none' }} />
+                      Varsayılan çalışma
+                    </label>
+                    {(shiftDefs || []).map(sd => (
+                      <label key={sd.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--text2)' }}>
+                        <input
+                          type="color"
+                          value={options.shiftColors?.[sd.id] || options.workColor || '#22C55E'}
+                          onChange={e => patchShiftColor(sd.id, e.target.value)}
+                          style={{ width: 30, height: 26, padding: 1, border: '1px solid var(--border)', borderRadius: 5, background: 'none' }}
+                        />
+                        {sd.name} <span style={{ color: 'var(--text3)', fontSize: 9 }}>{sd.start_hour}:00-{sd.end_hour}:00</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px' }}>
+              <div className="form-label" style={{ marginBottom: 6 }}>Görsel (PNG/JPG) çıktı</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                <label className="form-label" style={{ fontSize: 11 }}>
+                  Format
+                  <select className="form-select" value={options.imageFormat || 'png'} onChange={e => patch('imageFormat', e.target.value)}>
+                    <option value="png">PNG (keskin)</option>
+                    <option value="jpg">JPG (küçük dosya)</option>
+                  </select>
+                </label>
+                <label className="form-label" style={{ fontSize: 11 }}>
+                  Kalite
+                  <select className="form-select" value={options.imageScale || 2} onChange={e => patch('imageScale', Number(e.target.value))}>
+                    <option value={1}>1x</option>
+                    <option value={2}>2x (önerilen)</option>
+                    <option value={3}>3x (yüksek)</option>
+                  </select>
+                </label>
+              </div>
             </div>
 
             <div>

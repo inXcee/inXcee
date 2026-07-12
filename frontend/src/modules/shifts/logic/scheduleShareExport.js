@@ -32,6 +32,17 @@ export const DEFAULT_SCHEDULE_SHARE_OPTIONS = {
   weekendColor: '#F59E0B',
   note: '',
   preparedBy: '',
+  // Özel renkler — tüm modlarda OFF/İZİN/YOK/Boş için geçerli; working hücre
+  // rengi 'custom' modunda shiftColors[shift_def_id] ?? workColor ile belirlenir.
+  offColor: '#8B5CF6',
+  leaveColor: '#14B8A6',
+  absentColor: '#DC2626',
+  emptyColor: '#F1F5F9',
+  workColor: '#22C55E',
+  shiftColors: {}, // { [shiftDefId]: '#RRGGBB' } — 'custom' modda vardiya bazlı override
+  // Görsel (PNG/JPG) çıktı ayarları
+  imageFormat: 'png',
+  imageScale: 2,
 }
 
 const DAY_LABELS = ['Pzt', 'Sal', 'Car', 'Per', 'Cum', 'Cmt', 'Paz']
@@ -81,15 +92,31 @@ function statusName(cell) {
   return 'Planli'
 }
 
-function cellHex(cell, person, colorMode) {
-  if (!cell) return STATUS_HEX.empty
-  if (cell.status === 'off') return STATUS_HEX.off
-  if (cell.status === 'on_leave') return leaveHex(cell.leave_type)
-  if (cell.status === 'absent') return STATUS_HEX.absent
+function cellHex(cell, person, opts) {
+  const colorMode = typeof opts === 'string' ? opts : opts?.colorMode
+  const o = typeof opts === 'string' ? {} : (opts || {})
+  if (!cell) return cleanHex(o.emptyColor, STATUS_HEX.empty)
+  // OFF / İZİN / YOK renkleri her modda özel renkten (varsa) gelir
+  if (cell.status === 'off') return cleanHex(o.offColor, STATUS_HEX.off)
+  if (cell.status === 'on_leave') return cleanHex(o.leaveColor, leaveHex(cell.leave_type))
+  if (cell.status === 'absent') return cleanHex(o.absentColor, STATUS_HEX.absent)
+  // Çalışma hücresi
+  if (colorMode === 'custom') {
+    const override = o.shiftColors?.[cell.shift_def_id]
+    return cleanHex(override, cleanHex(o.workColor, STATUS_HEX.scheduled))
+  }
   if (colorMode === 'department') return deptHex(person.dept_color)
   if (colorMode === 'status') return STATUS_HEX[cell.status] || STATUS_HEX.scheduled
   if (colorMode === 'mono') return 'E2E8F0'
   return shiftHex(cell.shift_color)
+}
+
+// Vardiya tanımının efektif rengi (legend + custom mod override'ı dikkate alır)
+function shiftLegendHex(shift, opts) {
+  if (opts?.colorMode === 'custom') {
+    return cleanHex(opts.shiftColors?.[shift.id], cleanHex(opts.workColor, shiftHex(shift.color_class)))
+  }
+  return shiftHex(shift.color_class)
 }
 
 function cellDisplay(cell, options) {
@@ -129,17 +156,17 @@ function dayCountsForPeople(people, date) {
   }, { work: 0, rest: 0, absent: 0, empty: 0 })
 }
 
-function buildLegend(shiftDefs = []) {
+function buildLegend(shiftDefs = [], opts = {}) {
   return [
     ...shiftDefs.map((shift, idx) => ({
       key: `shift-${shift.id || idx}`,
       label: shift.name,
       sub: `${shift.start_hour ?? ''}:00-${shift.end_hour ?? ''}:00`,
-      hex: shiftHex(shift.color_class),
+      hex: shiftLegendHex(shift, opts),
     })),
-    { key: 'off', label: 'OFF', sub: 'Haftalik izin', hex: STATUS_HEX.off },
-    { key: 'leave', label: 'IZIN', sub: 'Onayli izin', hex: STATUS_HEX.on_leave },
-    { key: 'absent', label: 'YOK', sub: 'Devamsizlik', hex: STATUS_HEX.absent },
+    { key: 'off', label: 'OFF', sub: 'Haftalik izin', hex: cleanHex(opts.offColor, STATUS_HEX.off) },
+    { key: 'leave', label: 'IZIN', sub: 'Onayli izin', hex: cleanHex(opts.leaveColor, STATUS_HEX.on_leave) },
+    { key: 'absent', label: 'YOK', sub: 'Devamsizlik', hex: cleanHex(opts.absentColor, STATUS_HEX.absent) },
   ]
 }
 
@@ -194,21 +221,29 @@ export function buildScheduleShareModel({
     groups,
     totals,
     perDay,
-    legend: buildLegend(shiftDefs),
+    legend: buildLegend(shiftDefs, opts),
+    shiftDefs,
     filters: { gridSearch, statusFilter, deptFilter, visible: opts.onlyVisible },
   }
+}
+
+const DENSITY_MAP = {
+  compact: { page: 1120, name: 148, cellPad: 4, font: 9, sub: 7, head: 8, row: 38 },
+  normal: { page: 1320, name: 182, cellPad: 6, font: 10, sub: 8, head: 9, row: 48 },
+  wide: { page: 1540, name: 220, cellPad: 8, font: 11, sub: 9, head: 10, row: 58 },
+}
+
+function densityFor(opts) {
+  const density = DENSITY_MAP[opts.density] || DENSITY_MAP.normal
+  const pageSize = opts.pageSize === 'A3' ? 'A3' : 'A4'
+  const pageWidth = pageSize === 'A3' ? density.page + 420 : density.page
+  return { density, pageSize, pageWidth }
 }
 
 function buildStyles(opts) {
   const accent = cleanHex(opts.accentColor, '2563EB')
   const weekend = cleanHex(opts.weekendColor, 'F59E0B')
-  const pageSize = opts.pageSize === 'A3' ? 'A3' : 'A4'
-  const density = {
-    compact: { page: 1120, name: 148, cellPad: 4, font: 9, sub: 7, head: 8, row: 38 },
-    normal: { page: 1320, name: 182, cellPad: 6, font: 10, sub: 8, head: 9, row: 48 },
-    wide: { page: 1540, name: 220, cellPad: 8, font: 11, sub: 9, head: 10, row: 58 },
-  }[opts.density] || { page: 1320, name: 182, cellPad: 6, font: 10, sub: 8, head: 9, row: 48 }
-  const pageWidth = pageSize === 'A3' ? density.page + 420 : density.page
+  const { density, pageSize, pageWidth } = densityFor(opts)
 
   return `
     * { box-sizing: border-box; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
@@ -331,7 +366,7 @@ function renderScheduleBody(model) {
           </td>
           ${weekDays.map(date => {
             const cell = person.days?.[date]
-            const fill = cellHex(cell, person, opts.colorMode)
+            const fill = cellHex(cell, person, opts)
             const text = opts.colorMode === 'mono' && cell ? '0F172A' : readableText(fill)
             const display = cellDisplay(cell, opts)
             const bg = cell ? `#${fill}` : '#F8FAFC'
@@ -425,53 +460,347 @@ export function openSchedulePrintWindow(payload) {
   window.setTimeout(() => win.print(), 350)
 }
 
-export async function downloadScheduleShareImage(payload) {
-  const model = buildScheduleShareModel(payload)
-  const styles = buildStyles(model.opts)
-  const body = renderScheduleBody(model)
-  const host = document.createElement('div')
-  host.style.position = 'fixed'
-  host.style.left = '-10000px'
-  host.style.top = '0'
-  host.style.background = '#fff'
-  host.innerHTML = `<style>${styles}</style>${body}`
-  document.body.appendChild(host)
+// ── Native canvas render (foreignObject taint sorunu YOK) ───────────────────
+// Not: jsdom'da 2D context olmadığından bu fonksiyon testte doğrudan çağrılmaz;
+// renk/yerleşim mantığı computeScheduleCanvasLayout ile ayrı test edilir.
+const CANVAS_GEO = { pad: 22, headRow: 46, deptBand: 28, metricH: 58, sigH: 96, footerH: 26 }
 
-  const sheet = host.querySelector('.sheet')
-  const width = Math.ceil(sheet?.scrollWidth || 1320)
-  const height = Math.ceil(sheet?.scrollHeight || 900)
-  const xhtml = `<div xmlns="http://www.w3.org/1999/xhtml"><style>${styles}</style>${body}</div>`
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><foreignObject width="100%" height="100%">${xhtml}</foreignObject></svg>`
-  const blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
+function wrapText(ctx, text, maxW) {
+  const words = String(text || '').split(/\s+/).filter(Boolean)
+  if (!words.length) return []
+  const lines = []
+  let line = words[0]
+  for (let i = 1; i < words.length; i += 1) {
+    const test = `${line} ${words[i]}`
+    if (ctx.measureText(test).width > maxW && line) { lines.push(line); line = words[i] }
+    else line = test
+  }
+  lines.push(line)
+  return lines
+}
 
-  try {
-    const image = new Image()
-    await new Promise((resolve, reject) => {
-      image.onload = resolve
-      image.onerror = reject
-      image.src = url
+function fitText(ctx, text, maxW) {
+  const str = String(text ?? '')
+  if (!str || ctx.measureText(str).width <= maxW) return str
+  let t = str
+  while (t.length > 1 && ctx.measureText(`${t}…`).width > maxW) t = t.slice(0, -1)
+  return `${t}…`
+}
+
+// Yükseklik ve kolon geometrisini saf olarak hesaplar (canvas'sız test edilebilir).
+export function computeScheduleCanvasLayout(model, ctx) {
+  const { opts, weekDays, groups, legend } = model
+  const { density, pageWidth } = densityFor(opts)
+  const rowH = Math.max(density.row, 44)
+  const cols = weekDays.length || 7
+  const innerW = pageWidth - CANVAS_GEO.pad * 2
+  const nameW = density.name
+  const dayW = (innerW - nameW) / cols
+
+  let h = CANVAS_GEO.pad
+  h += 64 // başlık bloğu
+  h += opts.includeSummary ? CANVAS_GEO.metricH + 12 : 6
+  h += CANVAS_GEO.headRow
+  groups.forEach(g => { h += CANVAS_GEO.deptBand + g.people.length * rowH })
+  if (!groups.length) h += rowH
+  // not
+  let noteLines = []
+  if (opts.note?.trim() && ctx) {
+    ctx.font = '600 11px Arial'
+    noteLines = wrapText(ctx, `Not: ${opts.note.trim()}`, innerW - 24)
+    h += 14 + noteLines.length * 15 + 14
+  }
+  // legend
+  let legendRows = 0
+  if (opts.includeLegend) {
+    const perRow = Math.max(1, Math.floor(innerW / 190))
+    legendRows = Math.ceil(legend.length / perRow)
+    h += 12 + legendRows * 30
+  }
+  h += opts.includeSignatures ? CANVAS_GEO.sigH : 0
+  h += CANVAS_GEO.footerH
+  h += CANVAS_GEO.pad
+  return { height: Math.ceil(h), width: pageWidth, density, rowH, cols, innerW, nameW, dayW, noteLines }
+}
+
+export function renderScheduleToCanvas(model, scale = 2) {
+  const canvas = document.createElement('canvas')
+  const measure = canvas.getContext('2d')
+  if (!measure) throw new Error('Canvas desteklenmiyor')
+  const geom = computeScheduleCanvasLayout(model, measure)
+  const s = Math.max(1, Math.min(4, scale || 2))
+  canvas.width = Math.ceil(geom.width * s)
+  canvas.height = Math.ceil(geom.height * s)
+  const ctx = canvas.getContext('2d')
+  ctx.scale(s, s)
+  ctx.textBaseline = 'middle'
+
+  const { opts, weekDays, groups, totals, perDay, legend } = model
+  const accent = `#${cleanHex(opts.accentColor, '2563EB')}`
+  const weekend = `#${cleanHex(opts.weekendColor, 'F59E0B')}`
+  const { pad } = CANVAS_GEO
+  const { density, rowH, nameW, dayW, innerW, noteLines } = geom
+  let y = pad
+
+  // Arka plan
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(0, 0, geom.width, geom.height)
+
+  // Başlık
+  ctx.textAlign = 'left'
+  ctx.fillStyle = '#0f172a'
+  ctx.font = '900 24px Arial'
+  ctx.fillText(fitText(ctx, opts.title || DEFAULT_SCHEDULE_SHARE_OPTIONS.title, innerW - 260), pad, y + 16)
+  ctx.font = '700 11px Arial'
+  ctx.fillStyle = '#475569'
+  ctx.fillText(`${formatDate(model.weekStart)} - ${formatDate(model.weekEnd)}`, pad, y + 40)
+  // Sağ damga
+  ctx.textAlign = 'right'
+  ctx.fillStyle = '#64748b'
+  ctx.font = '700 10px Arial'
+  ctx.fillText('Personel paylasim ciktisi', geom.width - pad, y + 8)
+  if (opts.preparedBy) ctx.fillText(fitText(ctx, `Hazirlayan: ${opts.preparedBy}`, 240), geom.width - pad, y + 24)
+  ctx.fillText(new Date().toLocaleString('tr-TR'), geom.width - pad, y + 40)
+  y += 52
+  // accent çizgi
+  ctx.fillStyle = accent
+  ctx.fillRect(pad, y, innerW, 3)
+  y += 12
+
+  // Özet kartlar
+  if (opts.includeSummary) {
+    const cards = [
+      [totals.people, 'Personel'], [totals.work, 'Calisma'],
+      [totals.rest, 'OFF / Izin'], [totals.absent, 'YOK'], [totals.empty, 'Bos Hucre'],
+    ]
+    const gap = 8
+    const cardW = (innerW - gap * 4) / 5
+    cards.forEach(([val, label], i) => {
+      const cx = pad + i * (cardW + gap)
+      ctx.fillStyle = '#f8fafc'
+      ctx.fillRect(cx, y, cardW, CANVAS_GEO.metricH)
+      ctx.fillStyle = accent
+      ctx.fillRect(cx, y, 5, CANVAS_GEO.metricH)
+      ctx.strokeStyle = '#cbd5e1'
+      ctx.lineWidth = 1
+      ctx.strokeRect(cx + 0.5, y + 0.5, cardW - 1, CANVAS_GEO.metricH - 1)
+      ctx.textAlign = 'left'
+      ctx.fillStyle = '#0f172a'
+      ctx.font = '900 19px Arial'
+      ctx.fillText(String(val), cx + 12, y + 22)
+      ctx.fillStyle = '#64748b'
+      ctx.font = '800 9px Arial'
+      ctx.fillText(String(label).toUpperCase(), cx + 12, y + 42)
     })
-    const canvas = document.createElement('canvas')
-    canvas.width = width * 2
-    canvas.height = height * 2
-    const ctx = canvas.getContext('2d')
+    y += CANVAS_GEO.metricH + 12
+  } else {
+    y += 6
+  }
+
+  // Tablo başlığı
+  const drawHeader = (stats) => {
+    ctx.fillStyle = '#e2e8f0'
+    ctx.fillRect(pad, y, innerW, CANVAS_GEO.headRow)
+    ctx.strokeStyle = '#94a3b8'
+    ctx.strokeRect(pad + 0.5, y + 0.5, innerW - 1, CANVAS_GEO.headRow - 1)
+    ctx.textAlign = 'left'
+    ctx.fillStyle = '#0f172a'
+    ctx.font = '800 9px Arial'
+    ctx.fillText('Personel', pad + 8, y + CANVAS_GEO.headRow / 2)
+    weekDays.forEach((date, idx) => {
+      const cx = pad + nameW + idx * dayW
+      if (idx >= 5) { ctx.fillStyle = tint(weekend, 0.22); ctx.fillRect(cx, y, dayW, CANVAS_GEO.headRow) }
+      ctx.strokeStyle = '#cbd5e1'
+      ctx.strokeRect(cx + 0.5, y + 0.5, dayW - 1, CANVAS_GEO.headRow - 1)
+      ctx.textAlign = 'center'
+      ctx.fillStyle = '#0f172a'
+      ctx.font = '800 9px Arial'
+      ctx.fillText(DAY_LABELS[idx] || '', cx + dayW / 2, y + 12)
+      ctx.fillStyle = '#475569'
+      ctx.font = '700 8px Arial'
+      ctx.fillText(formatDate(date), cx + dayW / 2, y + 26)
+      ctx.fillText(`${stats[idx]?.work || 0} cal / ${stats[idx]?.rest || 0} izin`, cx + dayW / 2, y + 38)
+    })
+    y += CANVAS_GEO.headRow
+  }
+  drawHeader(perDay)
+
+  // Satırlar
+  const drawCell = (cell, person, cx) => {
+    const fill = `#${cellHex(cell, person, opts)}`
+    const textColor = opts.colorMode === 'mono' && cell ? '#0F172A' : `#${readableText(cellHex(cell, person, opts))}`
+    ctx.fillStyle = cell ? fill : '#F8FAFC'
+    ctx.fillRect(cx, y, dayW, rowH)
+    ctx.strokeStyle = cell ? fill : '#CBD5E1'
+    ctx.strokeRect(cx + 0.5, y + 0.5, dayW - 1, rowH - 1)
+    const disp = cellDisplay(cell, opts)
+    ctx.textAlign = 'center'
+    ctx.fillStyle = textColor
+    ctx.font = `900 ${density.font}px Arial`
+    ctx.fillText(fitText(ctx, disp.main, dayW - 8), cx + dayW / 2, y + (disp.sub ? rowH / 2 - 7 : rowH / 2))
+    if (disp.sub) {
+      ctx.font = `700 ${density.sub}px Arial`
+      ctx.fillText(fitText(ctx, disp.sub, dayW - 8), cx + dayW / 2, y + rowH / 2 + 8)
+    }
+  }
+
+  const drawGroups = (list) => {
+    list.forEach(group => {
+      // Departman bandı
+      ctx.fillStyle = '#f1f5f9'
+      ctx.fillRect(pad, y, innerW, CANVAS_GEO.deptBand)
+      ctx.strokeStyle = '#cbd5e1'
+      ctx.strokeRect(pad + 0.5, y + 0.5, innerW - 1, CANVAS_GEO.deptBand - 1)
+      const deptColor = `#${cleanHex(deptHex(group.color), '64748B')}`
+      ctx.font = '900 10px Arial'
+      const label = group.name
+      const pillW = ctx.measureText(label).width + 16
+      ctx.fillStyle = deptColor
+      ctx.fillRect(pad + 8, y + 5, pillW, CANVAS_GEO.deptBand - 10)
+      ctx.textAlign = 'left'
+      ctx.fillStyle = '#ffffff'
+      ctx.fillText(label, pad + 16, y + CANVAS_GEO.deptBand / 2)
+      ctx.fillStyle = '#64748b'
+      ctx.font = '700 9px Arial'
+      ctx.fillText(`${group.people.length} kisi`, pad + 16 + pillW, y + CANVAS_GEO.deptBand / 2)
+      y += CANVAS_GEO.deptBand
+
+      group.people.forEach(person => {
+        // İsim hücresi
+        ctx.fillStyle = '#ffffff'
+        ctx.fillRect(pad, y, nameW, rowH)
+        ctx.strokeStyle = '#cbd5e1'
+        ctx.strokeRect(pad + 0.5, y + 0.5, nameW - 1, rowH - 1)
+        ctx.textAlign = 'left'
+        ctx.fillStyle = '#0f172a'
+        ctx.font = '900 10px Arial'
+        ctx.fillText(fitText(ctx, person.full_name, nameW - 12), pad + 8, y + rowH / 2 - 6)
+        const counts = personCounts(person, weekDays)
+        const meta = [
+          opts.includeRole ? (person.role_name || 'Rolsuz') : '',
+          person.position || '',
+          opts.includeStaffTotals ? `C:${counts.work} I:${counts.rest} B:${counts.empty + counts.absent}` : '',
+        ].filter(Boolean).join(' / ')
+        ctx.fillStyle = '#64748b'
+        ctx.font = '700 8px Arial'
+        ctx.fillText(fitText(ctx, meta, nameW - 12), pad + 8, y + rowH / 2 + 8)
+        // Gün hücreleri
+        weekDays.forEach((date, idx) => drawCell(person.days?.[date], person, pad + nameW + idx * dayW))
+        y += rowH
+      })
+    })
+  }
+
+  if (!groups.length) {
     ctx.fillStyle = '#ffffff'
-    ctx.fillRect(0, 0, canvas.width, canvas.height)
-    ctx.scale(2, 2)
-    ctx.drawImage(image, 0, 0)
-    const pngBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png', 0.95))
-    if (!pngBlob) throw new Error('Gorsel olusturulamadi')
-    const pngUrl = URL.createObjectURL(pngBlob)
+    ctx.fillRect(pad, y, innerW, rowH)
+    ctx.strokeStyle = '#cbd5e1'
+    ctx.strokeRect(pad + 0.5, y + 0.5, innerW - 1, rowH - 1)
+    ctx.textAlign = 'center'
+    ctx.fillStyle = '#64748b'
+    ctx.font = '700 11px Arial'
+    ctx.fillText('Kayit yok', pad + innerW / 2, y + rowH / 2)
+    y += rowH
+  } else {
+    drawGroups(groups)
+  }
+
+  // Not
+  if (noteLines.length) {
+    y += 14
+    const noteH = noteLines.length * 15 + 4
+    ctx.fillStyle = '#f8fafc'
+    ctx.fillRect(pad, y, innerW, noteH)
+    ctx.fillStyle = accent
+    ctx.fillRect(pad, y, 5, noteH)
+    ctx.strokeStyle = '#cbd5e1'
+    ctx.strokeRect(pad + 0.5, y + 0.5, innerW - 1, noteH - 1)
+    ctx.textAlign = 'left'
+    ctx.fillStyle = '#334155'
+    ctx.font = '600 11px Arial'
+    noteLines.forEach((line, i) => ctx.fillText(line, pad + 12, y + 12 + i * 15))
+    y += noteH + 10
+  }
+
+  // Legend
+  if (opts.includeLegend) {
+    y += 12
+    ctx.font = '800 9px Arial'
+    let lx = pad
+    let ly = y
+    legend.forEach(item => {
+      const label = `${item.label}${item.sub ? `  ${item.sub}` : ''}`
+      const chipW = 22 + ctx.measureText(label).width + 12
+      if (lx + chipW > pad + innerW) { lx = pad; ly += 30 }
+      ctx.fillStyle = '#ffffff'
+      ctx.fillRect(lx, ly - 11, chipW, 22)
+      ctx.strokeStyle = '#cbd5e1'
+      ctx.strokeRect(lx + 0.5, ly - 10.5, chipW - 1, 21)
+      ctx.fillStyle = `#${cleanHex(item.hex)}`
+      ctx.fillRect(lx + 6, ly - 6, 13, 13)
+      ctx.textAlign = 'left'
+      ctx.fillStyle = '#0f172a'
+      ctx.fillText(label, lx + 24, ly)
+      lx += chipW + 7
+    })
+    y = ly + 22
+  }
+
+  // İmza
+  if (opts.includeSignatures) {
+    const gap = 12
+    const sigW = (innerW - gap * 2) / 3
+    const boxH = 66
+    ;['Hazırlayan', 'Kontrol Eden', 'Onay'].forEach((label, i) => {
+      const sx = pad + i * (sigW + gap)
+      ctx.fillStyle = '#ffffff'
+      ctx.fillRect(sx, y, sigW, boxH)
+      ctx.strokeStyle = '#cbd5e1'
+      ctx.strokeRect(sx + 0.5, y + 0.5, sigW - 1, boxH - 1)
+      ctx.textAlign = 'left'
+      ctx.fillStyle = '#0f172a'
+      ctx.font = '800 10px Arial'
+      ctx.fillText(label, sx + 10, y + 14)
+      ctx.strokeStyle = '#94a3b8'
+      ctx.setLineDash([4, 3])
+      ctx.beginPath(); ctx.moveTo(sx + 10, y + boxH - 16); ctx.lineTo(sx + sigW - 10, y + boxH - 16); ctx.stroke()
+      ctx.setLineDash([])
+      ctx.fillStyle = '#64748b'
+      ctx.font = '700 8px Arial'
+      ctx.fillText(i === 0 && opts.preparedBy ? opts.preparedBy : 'Ad / İmza', sx + 10, y + boxH - 7)
+    })
+    y += boxH + 8
+  }
+
+  // Footer
+  ctx.textAlign = 'left'
+  ctx.fillStyle = '#64748b'
+  ctx.font = '700 9px Arial'
+  ctx.fillText('Vardiya cizelgesi gorsel ciktisi', pad, y + 8)
+  ctx.textAlign = 'right'
+  ctx.fillText(`${formatDate(model.weekStart)} - ${formatDate(model.weekEnd)}`, geom.width - pad, y + 8)
+
+  return canvas
+}
+
+export async function downloadScheduleShareImage(payload, exportOpts = {}) {
+  const model = buildScheduleShareModel(payload)
+  const scale = exportOpts.scale || model.opts.imageScale || 2
+  const format = (exportOpts.format || model.opts.imageFormat || 'png') === 'jpg' ? 'jpg' : 'png'
+  const canvas = renderScheduleToCanvas(model, scale)
+  const mime = format === 'jpg' ? 'image/jpeg' : 'image/png'
+  const blob = await new Promise((resolve, reject) => {
+    canvas.toBlob(b => (b ? resolve(b) : reject(new Error('Gorsel olusturulamadi'))), mime, 0.95)
+  })
+  const url = URL.createObjectURL(blob)
+  try {
     const a = document.createElement('a')
-    a.href = pngUrl
-    a.download = scheduleShareFilename(payload.weekStart, 'png')
+    a.href = url
+    a.download = scheduleShareFilename(payload.weekStart, format)
     document.body.appendChild(a)
     a.click()
     a.remove()
-    window.setTimeout(() => URL.revokeObjectURL(pngUrl), 1000)
   } finally {
-    URL.revokeObjectURL(url)
-    host.remove()
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000)
   }
 }
