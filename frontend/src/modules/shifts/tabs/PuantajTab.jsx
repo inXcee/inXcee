@@ -123,6 +123,25 @@ function PuantajApprovalView({
   }), [enrichedDailyRows, statusFilter])
   const meta = approvalStatusMeta(period.status)
   const closeProblems = audit.totals.scheduled + audit.totals.empty + audit.totals.absentWithoutReason + audit.missingOffStaff
+  const lockChecks = useMemo(() => ([
+    { id: 'sent', label: 'Ay kontrole gonderildi', ok: ['submitted', 'approved', 'locked'].includes(period.status), value: approvalStatusMeta(period.status).label },
+    { id: 'planned', label: 'Planli gun kalmadi', ok: audit.totals.scheduled === 0, value: audit.totals.scheduled },
+    { id: 'empty', label: 'Bos gun kalmadi', ok: audit.totals.empty === 0, value: audit.totals.empty },
+    { id: 'absence', label: 'Nedensiz devamsizlik yok', ok: audit.totals.absentWithoutReason === 0, value: audit.totals.absentWithoutReason },
+    { id: 'off', label: 'OFF eksik personel yok', ok: audit.missingOffStaff === 0, value: audit.missingOffStaff },
+    { id: 'approved', label: 'Tum gunler onayli', ok: dailyRows.length > 0 && (counts.approved || 0) === dailyRows.length, value: `${counts.approved || 0}/${dailyRows.length}` },
+    { id: 'returned', label: 'Geri donen gun yok', ok: (counts.returned || 0) === 0, value: counts.returned || 0 },
+    { id: 'pending', label: 'Bekleyen/eksik gun yok', ok: (counts.pending || 0) === 0 && (counts.missing || 0) === 0, value: (counts.pending || 0) + (counts.missing || 0) },
+  ]), [period.status, audit, counts, dailyRows.length])
+  const lockReady = lockChecks.every(check => check.ok)
+  const topProblemDays = useMemo(() => problemRows
+    .map(row => ({
+      row,
+      score: (row.dayAudit?.scheduled || 0) + (row.dayAudit?.empty || 0) + (row.dayAudit?.absentWithoutReason || 0),
+    }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 5), [problemRows])
+  const topStaffIssues = useMemo(() => (audit.staffIssues || []).slice(0, 5), [audit.staffIssues])
 
   const askDayStatus = (row, status) => {
     let note = row.note || ''
@@ -197,7 +216,15 @@ function PuantajApprovalView({
             <button className="btn btn-ghost btn-sm" disabled={!canEdit || busy || isLocked} onClick={() => onSubmitPeriod(periodNote)} style={{ fontSize: '10px' }}>Kontrole Gonder</button>
             <button className="btn btn-ghost btn-sm" disabled={!isManager || busy || isLocked} onClick={() => onPeriodAction('approve', periodNote)} style={{ fontSize: '10px', color: 'var(--green)' }}>Onayla</button>
             <button className="btn btn-ghost btn-sm" disabled={!isManager || busy || isLocked} onClick={() => onPeriodAction('return', periodNote)} style={{ fontSize: '10px', color: 'var(--red)' }}>Geri Gonder</button>
-            <button className="btn btn-primary btn-sm" disabled={!isManager || busy || isLocked} onClick={() => onPeriodAction('lock', periodNote)} style={{ fontSize: '10px' }}>Onayla ve Kilitle</button>
+            <button
+              className="btn btn-primary btn-sm"
+              disabled={!isManager || busy || isLocked || !lockReady}
+              onClick={() => onPeriodAction('lock', periodNote)}
+              title={lockReady ? 'Ay kilitlenmeye hazir' : 'Kilit icin kapanis kontrol listesini tamamlayin'}
+              style={{ fontSize: '10px' }}
+            >
+              Onayla ve Kilitle
+            </button>
             {isLocked && <button className="btn btn-ghost btn-sm" disabled={!isManager || busy} onClick={() => onPeriodAction('reopen', periodNote)} style={{ fontSize: '10px' }}>Taslak Ac</button>}
           </div>
         </div>
@@ -206,6 +233,118 @@ function PuantajApprovalView({
           <span>Gonderen: {period.submitted_by_name || '-'} / {approvalTime(period.submitted_at)}</span>
           <span>Onaylayan: {period.approved_by_name || '-'} / {approvalTime(period.approved_at)}</span>
           <span>Kilitleyen: {period.locked_by_name || '-'} / {approvalTime(period.locked_at)}</span>
+        </div>
+      </div>
+
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+        gap: '12px',
+      }}>
+        <div style={{ border: '1px solid var(--border)', borderRadius: '10px', background: 'var(--surface)', padding: '12px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '10px' }}>
+            <div>
+              <div style={{ fontFamily: 'var(--display)', fontSize: '12px', letterSpacing: '1px' }}>KILIT ONCESI KAPANIS KONTROLU</div>
+              <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', marginTop: '2px' }}>
+                {lockReady ? 'Ay kilitlenmeye hazir.' : 'Kilitleme icin eksikleri tamamlayin.'}
+              </div>
+            </div>
+            <span style={{
+              border: `1px solid ${lockReady ? 'rgba(34,197,94,.35)' : 'rgba(239,68,68,.35)'}`,
+              background: lockReady ? 'rgba(34,197,94,.10)' : 'rgba(239,68,68,.10)',
+              color: lockReady ? 'var(--green)' : 'var(--red)',
+              borderRadius: '8px',
+              padding: '6px 9px',
+              fontFamily: 'var(--mono)',
+              fontSize: '9px',
+              fontWeight: 800,
+            }}>{lockReady ? 'KILITLEME HAZIR' : 'KILIT BLOKLU'}</span>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '7px' }}>
+            {lockChecks.map(check => (
+              <button
+                key={check.id}
+                type="button"
+                onClick={() => {
+                  if (!check.ok && ['planned', 'empty', 'absence', 'off'].includes(check.id)) setStatusFilter('problem')
+                  if (!check.ok && ['approved', 'returned', 'pending'].includes(check.id)) setStatusFilter(check.id === 'approved' ? 'ready' : check.id)
+                }}
+                style={{
+                  textAlign: 'left',
+                  border: `1px solid ${check.ok ? 'rgba(34,197,94,.28)' : 'rgba(239,68,68,.28)'}`,
+                  borderRadius: '8px',
+                  background: check.ok ? 'rgba(34,197,94,.055)' : 'rgba(239,68,68,.055)',
+                  color: 'var(--text)',
+                  cursor: check.ok ? 'default' : 'pointer',
+                  padding: '8px 9px',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'center' }}>
+                  <span style={{ fontSize: '10px', fontWeight: 700 }}>{check.label}</span>
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: check.ok ? 'var(--green)' : 'var(--red)', fontWeight: 800 }}>
+                    {check.ok ? 'OK' : 'EKSIK'}
+                  </span>
+                </div>
+                <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', marginTop: '4px' }}>{check.value}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ border: '1px solid var(--border)', borderRadius: '10px', background: 'var(--surface)', padding: '12px' }}>
+          <div style={{ fontFamily: 'var(--display)', fontSize: '12px', letterSpacing: '1px', marginBottom: '8px' }}>ONCELIKLI DUZELTMELER</div>
+          {topProblemDays.length === 0 && topStaffIssues.length === 0 ? (
+            <div style={{ color: 'var(--green)', fontFamily: 'var(--display)', fontSize: '13px' }}>Kritik duzeltme kalmadi.</div>
+          ) : (
+            <div style={{ display: 'grid', gap: '7px' }}>
+              {topProblemDays.map(({ row, score }) => (
+                <button
+                  key={row.work_date}
+                  type="button"
+                  onClick={() => setStatusFilter('problem')}
+                  style={{
+                    textAlign: 'left',
+                    border: '1px solid var(--border)',
+                    borderRadius: '8px',
+                    background: 'var(--surface2)',
+                    color: 'var(--text)',
+                    cursor: 'pointer',
+                    padding: '8px',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                    <span style={{ fontSize: '10px', fontWeight: 800 }}>{row.work_date}</span>
+                    <span style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--red)' }}>{score}</span>
+                  </div>
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text3)', marginTop: '3px' }}>
+                    P {row.dayAudit?.scheduled || 0} · Bos {row.dayAudit?.empty || 0} · Y? {row.dayAudit?.absentWithoutReason || 0}
+                  </div>
+                </button>
+              ))}
+              {topStaffIssues.slice(0, Math.max(0, 5 - topProblemDays.length)).map(issue => (
+                <button
+                  key={issue.staff.id}
+                  type="button"
+                  onClick={() => setStatusFilter('problem')}
+                  style={{
+                    textAlign: 'left',
+                    border: '1px solid var(--border)',
+                    borderRadius: '8px',
+                    background: 'var(--surface2)',
+                    color: 'var(--text)',
+                    cursor: 'pointer',
+                    padding: '8px',
+                  }}
+                >
+                  <div style={{ fontSize: '10px', fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{issue.staff.full_name}</div>
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text3)', marginTop: '3px', lineHeight: 1.35 }}>
+                    {issue.issueLabels.join(' · ')}
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -2168,7 +2307,7 @@ export default function PuantajTab({ departments }) {
       a.click()
       URL.revokeObjectURL(url)
     } catch (e) {
-      // CSV download error — intentionally no console.log per project rules
+      // CSV download is optional; keep the current screen usable if it fails.
     }
   }
 
