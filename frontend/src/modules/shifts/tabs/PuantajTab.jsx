@@ -4,7 +4,7 @@ import api from '../../../shared/api/client.js'
 import { useAuthStore } from '../../../shared/store/authStore.js'
 import { useDebounce } from '../../../shared/hooks/useDebounce.js'
 import { SkeletonTable, SkeletonGrid } from '../../../shared/components/Skeleton.jsx'
-import { BottomSheet, ModalOverlay, formatShiftHours, leaveTypeLabel, toastErr, toastOk } from '../shared.jsx'
+import { BottomSheet, ModalOverlay, formatShiftHours, LEAVE_TYPES, leaveTypeLabel, toastErr, toastOk } from '../shared.jsx'
 import { confirmDialog } from '../../../shared/components/ConfirmDialog.jsx'
 import { actionIdForKey, normalizeRect, cellsInRect, isInRect, moveCell, pushUndo, summarizeColumn } from '../logic/puantajGrid.js'
 import { buildPuantajActions, buildActionIndex, metaForEntry, cleanCodeHex } from '../logic/puantajCodes.js'
@@ -1711,13 +1711,17 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
                   const saveFailed = !!failedSaves[`${r.id}-${date}`]
                   const hours = entry?.start_hour != null ? formatShiftHours(entry.start_hour, entry.end_hour) : ''
                   const holidayName = holidayMap.get(date)?.name
+                  const hasDayDetail = !!(entry?.detail_note || entry?.attachment_url || entry?.leave_hours)
                   const title = `${r.full_name} · ${date} · ${meta.label}`
                     + (hours ? ` · ${hours}` : '')
                     + (entry?.work_location_name ? ` · ${entry.work_location_name}` : '')
                     + (holidayName ? ` · 🎌 ${holidayName}` : '')
                     + (entry?.overtime_hours ? ` · FM ${entry.overtime_hours}s` : '')
+                    + (entry?.leave_hours ? ` · Saatlik izin ${entry.leave_hours}s` : '')
                     + (entry?.absent_reason ? ` · Neden: ${entry.absent_reason}` : '')
-                    + (canEdit ? ' · sağ tık: FM/neden' : '')
+                    + (entry?.detail_note ? ` · Not: ${entry.detail_note}` : '')
+                    + (entry?.attachment_name ? ` · Belge: ${entry.attachment_name}` : '')
+                    + (canEdit ? ' · sağ tık: gün detayı' : '')
                   const isActive = activeCell?.row === rowIdx && activeCell?.day === d
                   const inSelection = isInRect(selectionRect, rowIdx, d)
                   return (
@@ -1780,6 +1784,9 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
                         {!busy && entry?.absent_reason ? (
                           <span style={{ position: 'absolute', bottom: '0px', right: '2px', fontSize: '7px', lineHeight: 1, color: 'var(--red)' }}>•</span>
                         ) : null}
+                        {!busy && hasDayDetail ? (
+                          <span style={{ position: 'absolute', bottom: '0px', left: '2px', fontSize: '7px', lineHeight: 1, color: entry?.attachment_url ? 'var(--blue)' : 'var(--teal)', fontWeight: 900 }}>i</span>
+                        ) : null}
                       </button>
                     </td>
                   )
@@ -1823,7 +1830,7 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
       </div>
 
       {cellEditor && (
-        <PuantajCellEditor
+        <PuantajDayDetailEditor
           editor={cellEditor}
           holidayName={holidayMap.get(cellEditor.date)?.name}
           onClose={() => setCellEditor(null)}
@@ -1929,6 +1936,157 @@ function PuantajCellEditor({ editor, holidayName, onClose }) {
           <button className="btn btn-primary btn-sm" onClick={save} disabled={saving}>
             {saving ? 'Kaydediliyor...' : 'Kaydet'}
           </button>
+        </div>
+      </div>
+    </BottomSheet>
+  )
+}
+
+function PuantajDayDetailEditor({ editor, holidayName, onClose }) {
+  const qc = useQueryClient()
+  const { staff, date, entry } = editor
+  const initialStatus = entry?.status && !['sunday', 'no_record'].includes(entry.status) ? entry.status : 'on_leave'
+  const [dayStatus, setDayStatus] = useState(initialStatus)
+  const [leaveType, setLeaveType] = useState(entry?.leave_type || 'annual')
+  const [leaveHours, setLeaveHours] = useState(entry?.leave_hours ?? '')
+  const [detailNote, setDetailNote] = useState(entry?.detail_note || '')
+  const [fmHours, setFmHours] = useState(entry?.overtime_hours ?? '')
+  const [reason, setReason] = useState(entry?.absent_reason || '')
+  const [attachment, setAttachment] = useState(null)
+  const [removeAttachment, setRemoveAttachment] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const isLeave = dayStatus === 'on_leave'
+  const isAbsent = dayStatus === 'absent'
+  const statusMeta = dayStatusMeta(entry, new Date(date).getDay() === 0)
+  const currentAttachment = entry?.attachment_url && !removeAttachment
+  const statusOptions = [
+    ['worked', 'N - Calisti'],
+    ['on_leave', 'I - Izin / Rapor'],
+    ['off', 'H - Haftalik izin'],
+    ['absent', 'Y - Gelmedi'],
+    ['scheduled', 'P - Planli'],
+  ]
+
+  const save = async () => {
+    const hours = fmHours === '' ? 0 : Number(fmHours)
+    if (!Number.isFinite(hours) || hours < 0 || hours > 12) {
+      setError('Mesai saati 0-12 arasinda olmali')
+      return
+    }
+    const hourlyLeave = leaveHours === '' ? null : Number(leaveHours)
+    if (hourlyLeave != null && (!Number.isFinite(hourlyLeave) || hourlyLeave < 0 || hourlyLeave > 24)) {
+      setError('Saatlik izin 0-24 arasinda olmali')
+      return
+    }
+    setSaving(true)
+    setError('')
+    try {
+      if ((entry?.overtime_hours || 0) !== hours) {
+        await api.post('/shifts/overtime/day', { staff_id: staff.id, work_date: date, hours })
+      }
+      const form = new FormData()
+      form.append('staff_id', String(staff.id))
+      form.append('work_date', date)
+      form.append('status', dayStatus)
+      form.append('leave_type', isLeave ? leaveType : '')
+      form.append('leave_hours', isLeave && hourlyLeave != null ? String(hourlyLeave) : '')
+      form.append('absent_reason', isAbsent ? reason.trim() : '')
+      form.append('detail_note', detailNote.trim())
+      if (attachment) form.append('attachment', attachment)
+      if (removeAttachment) form.append('remove_attachment', '1')
+      await api.post('/shifts/puantaj/day-detail', form)
+      qc.invalidateQueries({ queryKey: ['puantaj'] })
+      qc.invalidateQueries({ queryKey: ['puantaj-days-month'] })
+      qc.invalidateQueries({ queryKey: ['staff-detail', staff.id] })
+      onClose()
+    } catch (e) {
+      setSaving(false)
+      setError(e?.response?.data?.error || 'Kaydedilemedi')
+    }
+  }
+
+  return (
+    <BottomSheet onClose={onClose}>
+      <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontFamily: 'var(--display)', fontSize: '15px', letterSpacing: '0.5px' }}>{staff.full_name}</div>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', marginTop: '2px' }}>
+              {date} · {statusMeta.label}{holidayName ? ` · ${holidayName}` : ''}
+            </div>
+          </div>
+          <button onClick={onClose} className="btn btn-ghost btn-sm">X</button>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(110px, 150px)', gap: '10px' }}>
+          <div>
+            <label style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '1px', display: 'block', marginBottom: '4px' }}>PUANTAJ DURUMU</label>
+            <select className="form-input" value={dayStatus} onChange={e => setDayStatus(e.target.value)} style={{ width: '100%', fontSize: '12px' }}>
+              {statusOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '1px', display: 'block', marginBottom: '4px' }}>FM SAAT</label>
+            <input className="form-input" type="number" min="0" max="12" step="0.5" value={fmHours} onChange={e => setFmHours(e.target.value)} style={{ width: '100%', fontSize: '12px' }} />
+          </div>
+        </div>
+
+        {isLeave && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(110px, 150px)', gap: '10px', border: '1px solid rgba(20,184,166,.25)', background: 'rgba(20,184,166,.08)', borderRadius: '8px', padding: '10px' }}>
+            <div>
+              <label style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '1px', display: 'block', marginBottom: '4px' }}>IZIN TURU</label>
+              <select className="form-input" value={leaveType} onChange={e => setLeaveType(e.target.value)} style={{ width: '100%', fontSize: '12px' }}>
+                {Object.entries(LEAVE_TYPES).map(([value, meta]) => <option key={value} value={value}>{meta.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '1px', display: 'block', marginBottom: '4px' }}>SAATLIK IZIN</label>
+              <input className="form-input" type="number" min="0" max="24" step="0.5" value={leaveHours} onChange={e => setLeaveHours(e.target.value)} placeholder="Tam gun" style={{ width: '100%', fontSize: '12px' }} />
+            </div>
+          </div>
+        )}
+
+        {isAbsent && (
+          <div>
+            <label style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '1px', display: 'block', marginBottom: '4px' }}>DEVAMSIZLIK NEDENI</label>
+            <input className="form-input" value={reason} onChange={e => setReason(e.target.value)} maxLength={200} placeholder="Orn. mazeretsiz, gec bildirim..." style={{ width: '100%', fontSize: '12px' }} />
+          </div>
+        )}
+
+        <div>
+          <label style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '1px', display: 'block', marginBottom: '4px' }}>GUN NOTU</label>
+          <textarea className="form-input" value={detailNote} onChange={e => setDetailNote(e.target.value)} rows={3} maxLength={500} placeholder="Rapor no, ucretsiz izin aciklamasi, saatlik izin gerekcesi..." style={{ width: '100%', fontSize: '12px', resize: 'vertical' }} />
+        </div>
+
+        <div style={{ border: '1px dashed var(--border)', borderRadius: '8px', padding: '10px', background: 'var(--surface2)' }}>
+          <label style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '1px', display: 'block', marginBottom: '6px' }}>BELGE (JPG/PNG/WEBP/PDF)</label>
+          {currentAttachment && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'center', marginBottom: '8px' }}>
+              <a href={entry.attachment_url} target="_blank" rel="noreferrer" style={{ fontSize: '11px', color: 'var(--blue)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {entry.attachment_name || 'Mevcut belge'}
+              </a>
+              <button className="btn btn-ghost btn-xs" type="button" onClick={() => setRemoveAttachment(true)}>Kaldir</button>
+            </div>
+          )}
+          {removeAttachment && <div style={{ color: 'var(--red)', fontSize: '11px', marginBottom: '8px' }}>Mevcut belge kaldirilacak.</div>}
+          <input
+            className="form-input"
+            type="file"
+            accept="image/jpeg,image/png,image/webp,application/pdf"
+            onChange={e => {
+              setAttachment(e.target.files?.[0] || null)
+              if (e.target.files?.[0]) setRemoveAttachment(false)
+            }}
+            style={{ width: '100%', fontSize: '12px' }}
+          />
+        </div>
+
+        {error && <div style={{ color: 'var(--red)', fontSize: '11px' }}>{error}</div>}
+
+        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+          <button className="btn btn-ghost btn-sm" onClick={onClose} disabled={saving}>Vazgec</button>
+          <button className="btn btn-primary btn-sm" onClick={save} disabled={saving}>{saving ? 'Kaydediliyor...' : 'Kaydet'}</button>
         </div>
       </div>
     </BottomSheet>

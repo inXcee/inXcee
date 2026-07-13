@@ -630,6 +630,26 @@ export default function StaffDetailPanel({ staffId, onClose }) {
                                 🌙 Haftalık izin
                               </span>
                             )}
+                            {s.leave_hours != null && (
+                              <span style={{ padding: '2px 7px', borderRadius: 8, background: 'rgba(240,165,0,.12)', color: 'var(--accent)', fontSize: 9, fontWeight: 700 }}>
+                                {s.leave_hours}s izin
+                              </span>
+                            )}
+                            {s.absent_reason && (
+                              <span title={s.absent_reason} style={{ padding: '2px 7px', borderRadius: 8, background: 'rgba(239,68,68,.10)', color: 'var(--red)', fontSize: 9, fontWeight: 700 }}>
+                                Neden
+                              </span>
+                            )}
+                            {s.detail_note && (
+                              <span title={s.detail_note} style={{ padding: '2px 7px', borderRadius: 8, background: 'rgba(20,184,166,.10)', color: 'var(--teal)', fontSize: 9, fontWeight: 700 }}>
+                                Not
+                              </span>
+                            )}
+                            {s.attachment_url && (
+                              <a href={s.attachment_url} target="_blank" rel="noreferrer" style={{ padding: '2px 7px', borderRadius: 8, background: 'rgba(59,130,246,.10)', color: 'var(--blue)', fontSize: 9, fontWeight: 700, textDecoration: 'none' }}>
+                                Belge
+                              </a>
+                            )}
                             <span style={{ marginLeft: 'auto', fontSize: 9, fontWeight: 600, color: STATUS_C[s.status] || 'var(--text3)' }}>{STATUS_L[s.status] || s.status}</span>
                           </div>
                         )

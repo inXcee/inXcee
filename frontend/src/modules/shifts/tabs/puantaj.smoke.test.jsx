@@ -91,6 +91,45 @@ describe('PuantajTab smoke', () => {
     expect(offCell).toHaveTextContent('H')
   })
 
+  it('right click opens puantaj day detail editor with leave and document fields', async () => {
+    useAuthStore.setState({ user: { role: 'campus_manager' } })
+    getMock.mockImplementation((url) => {
+      if (url === '/shifts/puantaj') {
+        return Promise.resolve({ data: [
+          { id: 1, full_name: 'Ali Test', department_id: 1, dept_name: 'OTC', worked_days: 0, leave_days: 1 },
+        ] })
+      }
+      if (url === '/shifts/puantaj/days') {
+        return Promise.resolve({ data: {
+          month: '2026-07',
+          days: {
+            1: [
+              { date: '2026-07-01', day_of_week: 3, status: 'on_leave', leave_type: 'unpaid', leave_hours: 4, detail_note: 'Saatlik izin' },
+            ],
+          },
+        } })
+      }
+      if (url === '/shifts/holidays') return Promise.resolve({ data: [] })
+      if (url === '/shifts/puantaj/codes') return Promise.resolve({ data: [] })
+      if (url === '/shifts/period-locks') return Promise.resolve({ data: [] })
+      if (url === '/shifts/puantaj/approval') {
+        return Promise.resolve({ data: { period: '2026-07', period_approval: { status: 'draft' }, daily_approvals: [], events: [] } })
+      }
+      return Promise.resolve({ data: [] })
+    })
+
+    renderWithProviders(<PuantajTab departments={[]} />)
+    fireEvent.click(screen.getAllByText(/TAKV/)[0])
+
+    const cell = await screen.findByTitle(/Ali Test.*2026-07-01/)
+    fireEvent.contextMenu(cell)
+
+    expect(await screen.findByText('PUANTAJ DURUMU')).toBeInTheDocument()
+    expect(screen.getByText('IZIN TURU')).toBeInTheDocument()
+    expect(screen.getByText('SAATLIK IZIN')).toBeInTheDocument()
+    expect(screen.getByText('BELGE (JPG/PNG/WEBP/PDF)')).toBeInTheDocument()
+  })
+
   it('calendar keeps edited code visible and marks it when save fails', async () => {
     useAuthStore.setState({ user: { role: 'campus_manager' } })
     postMock.mockRejectedValueOnce(new Error('offline'))

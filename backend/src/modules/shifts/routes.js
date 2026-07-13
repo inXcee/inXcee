@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import fs from 'fs'
 import { requireRole, requireAuth } from '../../shared/auth/middleware.js'
 import { getDB } from '../../shared/db/index.js'
 import { paginate } from '../../shared/paginate.js'
@@ -29,11 +30,13 @@ import {
   checkConflicts, listHolidays, createHoliday, updateHoliday, deleteHoliday,
   getPayrollExport, getCombinedAbsences,
   listDeductions, createDeduction, deleteDeduction, getPayrollDetailed,
+  upsertPuantajDayDetail,
 } from './queries.js'
 import { importSchedule, listImportBatches, undoImportBatch } from './import.js'
 import { importScheduleSchema } from './schemas.js'
 import { validate } from '../../shared/middleware/validate.js'
 import { logAudit } from '../../shared/audit.js'
+import { documentUpload, verifyDocumentMagicBytes } from '../../shared/uploads/middleware.js'
 
 export const shiftsRouter = Router()
 
@@ -682,6 +685,26 @@ shiftsRouter.patch('/puantaj/approval/period', ...managerOnly, (req, res) => {
     logAudit(req.user.id, 'puantaj_period_approval', 'shifts', null, `${req.body?.period || ''}:${req.body?.action || ''}`)
     res.json(row)
   } catch (e) {
+    res.status(e.statusCode || 400).json({ error: e.message })
+  }
+})
+
+shiftsRouter.post('/puantaj/day-detail', ...managerOrSupervisor, documentUpload.single('attachment'), verifyDocumentMagicBytes, (req, res) => {
+  try {
+    const fileData = req.file ? {
+      attachment_url: `/uploads/${req.file.filename}`,
+      attachment_name: req.file.originalname,
+      attachment_mime: req.file.mimetype,
+    } : {}
+    const row = upsertPuantajDayDetail({ ...req.body, ...fileData }, req.user.id)
+    logAudit(req.user.id, 'puantaj_day_detail', 'shifts', row.id, `${row.staff_id}:${row.work_date}`)
+    res.json({ ok: true, row })
+  } catch (e) {
+    try {
+      if (req.file) fs.unlinkSync(req.file.path)
+    } catch {
+      // best effort cleanup
+    }
     res.status(e.statusCode || 400).json({ error: e.message })
   }
 })

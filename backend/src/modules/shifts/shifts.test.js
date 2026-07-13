@@ -1590,6 +1590,35 @@ describe('Faz 28 — Puantaj bordro girdileri (absent_reason + FM upsert)', () =
     expect(row.absent_reason).toBe(null)
   })
 
+  it('puantaj day-detail saatlik izin ve notu kalici kaydeder', async () => {
+    const r = await request(app).post('/api/shifts/puantaj/day-detail').set('Authorization', `Bearer ${managerToken}`)
+      .field('staff_id', String(staffId))
+      .field('work_date', '2026-09-17')
+      .field('status', 'on_leave')
+      .field('leave_type', 'unpaid')
+      .field('leave_hours', '4')
+      .field('detail_note', 'Saatlik ucretsiz izin formu teslim')
+    expect(r.status).toBe(200)
+    expect(r.body.row.leave_hours).toBe(4)
+    expect(r.body.row.detail_note).toBe('Saatlik ucretsiz izin formu teslim')
+
+    const days = await request(app).get('/api/shifts/puantaj/days?month=2026-09')
+      .set('Authorization', `Bearer ${managerToken}`)
+    const entry = (days.body.days[staffId] || []).find(d => d.date === '2026-09-17')
+    expect(entry).toMatchObject({
+      status: 'on_leave',
+      leave_type: 'unpaid',
+      leave_hours: 4,
+      detail_note: 'Saatlik ucretsiz izin formu teslim',
+    })
+
+    const detail = await request(app).get(`/api/shifts/staff/${staffId}/detail`)
+      .set('Authorization', `Bearer ${managerToken}`)
+    const history = detail.body.shiftHistory.find(d => d.work_date === '2026-09-17')
+    expect(history.leave_hours).toBe(4)
+    expect(history.detail_note).toBe('Saatlik ucretsiz izin formu teslim')
+  })
+
   it('POST /overtime/day upsert: oluştur → güncelle → 0 ile sil', async () => {
     // FM görünürlüğü için gün kaydı gerekli (puantaj/days shift_schedule üzerinden döner)
     await request(app).post('/api/shifts/schedule').set('Authorization', `Bearer ${managerToken}`)

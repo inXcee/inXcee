@@ -15,6 +15,7 @@ const storage = multer.diskStorage({
 })
 
 const ALLOWED_MIME = new Set(['image/jpeg', 'image/png', 'image/webp'])
+const DOCUMENT_MIME = new Set([...ALLOWED_MIME, 'application/pdf'])
 
 function fileFilter(req, file, cb) {
   if (ALLOWED_MIME.has(file.mimetype)) {
@@ -25,6 +26,16 @@ function fileFilter(req, file, cb) {
 }
 
 export const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 }, fileFilter })
+
+function documentFileFilter(req, file, cb) {
+  if (DOCUMENT_MIME.has(file.mimetype)) {
+    cb(null, true)
+  } else {
+    cb(new Error('Sadece JPEG, PNG, WebP veya PDF dosyasi yuklenebilir'))
+  }
+}
+
+export const documentUpload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 }, fileFilter: documentFileFilter })
 
 /**
  * Magic bytes doğrulama middleware — multer'dan sonra kullanılır
@@ -38,6 +49,22 @@ export async function verifyMagicBytes(req, res, next) {
     if (!detected || !ALLOWED_MIME.has(detected.mime)) {
       fs.unlinkSync(req.file.path)
       return res.status(400).json({ error: 'Dosya formatı doğrulanamadı. Sadece gerçek JPEG/PNG/WebP kabul edilir.' })
+    }
+    next()
+  } catch (e) {
+    try { fs.unlinkSync(req.file.path) } catch { /* ignore */ }
+    next(e)
+  }
+}
+
+export async function verifyDocumentMagicBytes(req, res, next) {
+  if (!req.file) return next()
+  try {
+    const buffer = fs.readFileSync(req.file.path)
+    const detected = await fileTypeFromBuffer(buffer)
+    if (!detected || !DOCUMENT_MIME.has(detected.mime)) {
+      fs.unlinkSync(req.file.path)
+      return res.status(400).json({ error: 'Dosya formati dogrulanamadi. Sadece gercek JPEG/PNG/WebP/PDF kabul edilir.' })
     }
     next()
   } catch (e) {

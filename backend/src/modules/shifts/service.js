@@ -1167,6 +1167,11 @@ function dayEntryFromRow(row, date, dow) {
   if (row.leave_type) entry.leave_type = row.leave_type
   if (row.overtime_hours) entry.overtime_hours = row.overtime_hours
   if (row.absent_reason) entry.absent_reason = row.absent_reason
+  if (row.leave_hours != null) entry.leave_hours = row.leave_hours
+  if (row.detail_note) entry.detail_note = row.detail_note
+  if (row.attachment_url) entry.attachment_url = row.attachment_url
+  if (row.attachment_name) entry.attachment_name = row.attachment_name
+  if (row.attachment_mime) entry.attachment_mime = row.attachment_mime
   return entry
 }
 
@@ -1250,6 +1255,12 @@ function staffDayBreakdownServiceLegacy(staffId, month) {
     if (row.shift_name) { entry.shift_name = row.shift_name; entry.start_hour = row.start_hour; entry.end_hour = row.end_hour }
     if (row.leave_type) entry.leave_type = row.leave_type
     if (row.overtime_hours) entry.overtime_hours = row.overtime_hours
+    if (row.absent_reason) entry.absent_reason = row.absent_reason
+    if (row.leave_hours != null) entry.leave_hours = row.leave_hours
+    if (row.detail_note) entry.detail_note = row.detail_note
+    if (row.attachment_url) entry.attachment_url = row.attachment_url
+    if (row.attachment_name) entry.attachment_name = row.attachment_name
+    if (row.attachment_mime) entry.attachment_mime = row.attachment_mime
     result.push(entry)
   }
   return result

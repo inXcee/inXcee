@@ -1453,6 +1453,71 @@ export function deleteScheduleEntry(staffId, workDate) {
   getDB().prepare('DELETE FROM shift_schedule WHERE staff_id=? AND work_date=?').run(staffId, workDate)
 }
 
+export function upsertPuantajDayDetail(data, userId) {
+  const db = getDB()
+  const staffId = Number(data.staff_id)
+  const workDate = String(data.work_date || '')
+  if (!staffId || !/^\d{4}-\d{2}-\d{2}$/.test(workDate)) throw new Error('Personel ve tarih zorunlu')
+  const staff = db.prepare('SELECT department_id FROM staff WHERE id=? AND is_active=1').get(staffId)
+  if (!staff) throw new Error('Personel bulunamadi')
+
+  const existing = db.prepare('SELECT * FROM shift_schedule WHERE staff_id=? AND work_date=?').get(staffId, workDate)
+  const requestedStatus = data.status || existing?.status || (data.leave_type || data.leave_hours ? 'on_leave' : 'scheduled')
+  const status = ['scheduled', 'worked', 'absent', 'on_leave', 'overtime', 'off'].includes(requestedStatus) ? requestedStatus : 'scheduled'
+  const keepsWorkFields = ['scheduled', 'worked', 'overtime'].includes(status)
+  const leaveHours = data.leave_hours === '' || data.leave_hours == null ? null : Number(data.leave_hours)
+  if (leaveHours != null && (!Number.isFinite(leaveHours) || leaveHours < 0 || leaveHours > 24)) throw new Error('Saatlik izin 0-24 arasinda olmali')
+  const removeAttachment = data.remove_attachment === true || data.remove_attachment === 'true' || data.remove_attachment === '1'
+  const hasField = (key) => Object.prototype.hasOwnProperty.call(data, key)
+  const cleanText = (value) => {
+    if (value == null) return null
+    const trimmed = String(value).trim()
+    return trimmed || null
+  }
+
+  const next = {
+    staff_id: staffId,
+    dept_id: existing?.dept_id ?? staff.department_id ?? null,
+    shift_def_id: keepsWorkFields ? (existing?.shift_def_id ?? null) : null,
+    work_location_id: keepsWorkFields ? (existing?.work_location_id ?? null) : null,
+    work_date: workDate,
+    status,
+    leave_type: status === 'on_leave' ? (cleanText(data.leave_type) || existing?.leave_type || 'other') : null,
+    absent_reason: status === 'absent' ? (hasField('absent_reason') ? cleanText(data.absent_reason) : (existing?.absent_reason ?? null)) : null,
+    leave_hours: status === 'on_leave' ? leaveHours : null,
+    detail_note: hasField('detail_note') ? cleanText(data.detail_note) : (existing?.detail_note ?? null),
+    attachment_url: removeAttachment ? null : (data.attachment_url ?? existing?.attachment_url ?? null),
+    attachment_name: removeAttachment ? null : (data.attachment_name ?? existing?.attachment_name ?? null),
+    attachment_mime: removeAttachment ? null : (data.attachment_mime ?? existing?.attachment_mime ?? null),
+    created_by: userId || existing?.created_by || null,
+  }
+
+  db.prepare(`
+    INSERT INTO shift_schedule(
+      staff_id, dept_id, shift_def_id, work_location_id, work_date, status, leave_type, absent_reason,
+      leave_hours, detail_note, attachment_url, attachment_name, attachment_mime, created_by
+    )
+    VALUES(
+      @staff_id, @dept_id, @shift_def_id, @work_location_id, @work_date, @status, @leave_type, @absent_reason,
+      @leave_hours, @detail_note, @attachment_url, @attachment_name, @attachment_mime, @created_by
+    )
+    ON CONFLICT(staff_id, work_date) DO UPDATE SET
+      dept_id=excluded.dept_id,
+      shift_def_id=excluded.shift_def_id,
+      work_location_id=excluded.work_location_id,
+      status=excluded.status,
+      leave_type=excluded.leave_type,
+      absent_reason=excluded.absent_reason,
+      leave_hours=excluded.leave_hours,
+      detail_note=excluded.detail_note,
+      attachment_url=excluded.attachment_url,
+      attachment_name=excluded.attachment_name,
+      attachment_mime=excluded.attachment_mime
+  `).run(next)
+
+  return db.prepare('SELECT * FROM shift_schedule WHERE staff_id=? AND work_date=?').get(staffId, workDate)
+}
+
 // ── Staff detail / profile ──
 export function getStaffDetail(staffId) {
   const db = getDB()
@@ -1478,7 +1543,13 @@ export function getStaffDetail(staffId) {
         WHERE lr.staff_id = ss.staff_id AND lr.status = 'approved'
           AND lr.start_date <= ss.work_date AND lr.end_date >= ss.work_date
         ORDER BY lr.id DESC LIMIT 1
-      )) END as leave_type
+      )) END as leave_type,
+      ss.absent_reason,
+      ss.leave_hours,
+      ss.detail_note,
+      ss.attachment_url,
+      ss.attachment_name,
+      ss.attachment_mime
     FROM shift_schedule ss
     LEFT JOIN shift_definitions sd ON sd.id = ss.shift_def_id
     LEFT JOIN departments d ON d.id = ss.dept_id
@@ -1571,6 +1642,11 @@ export function getStaffDayBreakdown(staffId, monthStart, monthEnd) {
       wl.color_class as work_location_color,
       CASE WHEN ss.status = 'on_leave' THEN COALESCE(ss.leave_type, lr.leave_type) END as leave_type,
       ss.absent_reason,
+      ss.leave_hours,
+      ss.detail_note,
+      ss.attachment_url,
+      ss.attachment_name,
+      ss.attachment_mime,
       ot.hours as overtime_hours
     FROM shift_schedule ss
     LEFT JOIN shift_definitions sd ON sd.id = ss.shift_def_id
@@ -1606,6 +1682,11 @@ export function getPuantajDayRows(monthStart, monthEnd, deptId) {
       sr.name as role_name,
       CASE WHEN ss.status = 'on_leave' THEN COALESCE(ss.leave_type, lr.leave_type) END as leave_type,
       ss.absent_reason,
+      ss.leave_hours,
+      ss.detail_note,
+      ss.attachment_url,
+      ss.attachment_name,
+      ss.attachment_mime,
       ot.hours as overtime_hours
     FROM shift_schedule ss
     JOIN staff s ON s.id = ss.staff_id
