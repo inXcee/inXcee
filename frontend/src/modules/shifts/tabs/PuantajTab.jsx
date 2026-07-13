@@ -54,6 +54,11 @@ function summarizeCalendarDays(days) {
   }, { worked: 0, off: 0, sick: 0, unpaid: 0, absent: 0, leave: 0 })
 }
 
+function normalizePuantajDaysPayload(payload) {
+  const candidate = payload?.days && typeof payload.days === 'object' ? payload.days : payload
+  return candidate && typeof candidate === 'object' && !Array.isArray(candidate) ? candidate : {}
+}
+
 function approvalStatusMeta(status) {
   const map = {
     draft: { label: 'Taslak', color: 'var(--text3)', bg: 'var(--surface2)', border: 'var(--border)' },
@@ -1120,7 +1125,7 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
     queryFn: () => {
       const params = { month }
       if (deptFilter) params.dept_id = deptFilter
-      return api.get('/shifts/puantaj/days', { params }).then(res => res.data.days || {})
+      return api.get('/shifts/puantaj/days', { params }).then(res => normalizePuantajDaysPayload(res.data))
     },
     enabled: !isLoading,
   })
@@ -1133,7 +1138,7 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
     // Yazım uçuştayken (writesPendingRef) sunucu yanıtı local girişleri EZMESİN —
     // eski yanıt henüz kaydedilen hücreleri içermez ("girilenler kayboluyor" bug'ı).
     // Yazımlar bitince onSettled invalidation'ı taze veriyi getirir, o zaman uygulanır.
-    if (monthDayData && !writesPendingRef?.current) setDayData(monthDayData)
+    if (monthDayData && !writesPendingRef?.current) setDayData(normalizePuantajDaysPayload(monthDayData))
   }, [monthDayData]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -2445,12 +2450,12 @@ export default function PuantajTab({ departments }) {
     },
   })
 
-  const { data: auditDayPayload = { days: {} } } = useQuery({
+  const { data: auditDaysByStaff = {} } = useQuery({
     queryKey: ['puantaj-days-month', month, deptFilter],
     queryFn: () => {
       const params = { month }
       if (deptFilter) params.dept_id = deptFilter
-      return api.get('/shifts/puantaj/days', { params }).then(res => res.data)
+      return api.get('/shifts/puantaj/days', { params }).then(res => normalizePuantajDaysPayload(res.data))
     },
     enabled: !isLoading,
   })
@@ -2663,10 +2668,10 @@ export default function PuantajTab({ departments }) {
 
   const puantajAudit = useMemo(() => buildPuantajControl({
     staffRows: filtered,
-    daysByStaff: auditDayPayload.days || {},
+    daysByStaff: auditDaysByStaff,
     holidays: holidayRows,
     month,
-  }), [filtered, auditDayPayload, holidayRows, month])
+  }), [filtered, auditDaysByStaff, holidayRows, month])
 
   const monthLabel = new Date(y, m - 1, 1).toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' }).toUpperCase()
 

@@ -15,6 +15,7 @@ import PuantajTab from './PuantajTab.jsx'
 describe('PuantajTab smoke', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    useAuthStore.setState({ token: null, user: null })
     getMock.mockImplementation(() => Promise.resolve({ data: [] }))
   })
 
@@ -50,5 +51,37 @@ describe('PuantajTab smoke', () => {
     expect(await screen.findByText('DEPARTMAN ONAY MATRISI')).toBeInTheDocument()
     expect(screen.getByText('Yemekhane')).toBeInTheDocument()
     expect(screen.getByText('5/31')).toBeInTheDocument()
+  })
+
+  it('calendar keeps day entries when days endpoint returns full payload', async () => {
+    getMock.mockImplementation((url) => {
+      if (url === '/shifts/puantaj') {
+        return Promise.resolve({ data: [
+          { id: 1, full_name: 'Ali Test', department_id: 1, dept_name: 'OTC', worked_days: 1, off_days: 1 },
+        ] })
+      }
+      if (url === '/shifts/puantaj/days') {
+        return Promise.resolve({ data: {
+          month: '2026-07',
+          days: {
+            1: [
+              { date: '2026-07-01', day_of_week: 3, status: 'worked' },
+              { date: '2026-07-02', day_of_week: 4, status: 'off' },
+            ],
+          },
+        } })
+      }
+      if (url === '/shifts/holidays') return Promise.resolve({ data: [] })
+      if (url === '/shifts/puantaj/codes') return Promise.resolve({ data: [] })
+      return Promise.resolve({ data: [] })
+    })
+
+    renderWithProviders(<PuantajTab departments={[]} />)
+    fireEvent.click(screen.getAllByText(/TAKV/)[0])
+
+    const workedCell = await screen.findByTitle(/Ali Test.*2026-07-01/)
+    const offCell = await screen.findByTitle(/Ali Test.*2026-07-02/)
+    expect(workedCell).toHaveTextContent('N')
+    expect(offCell).toHaveTextContent('H')
   })
 })
