@@ -17,7 +17,7 @@ import {
   rotationTemplatesService, createRotationTemplateService, deleteRotationTemplateService,
   rotationPreviewService, rotationApplyService,
   periodLocksService, lockPeriodService, unlockPeriodService,
-  puantajApprovalService, submitPuantajPeriodService,
+  puantajApprovalService, submitPuantajPeriodService, puantajApprovalOverviewService,
   updatePuantajDayApprovalService, updatePuantajPeriodApprovalService,
   staffDetailService,
   staffListService, staffGetService, staffCreateService, staffUpdateService, staffDeleteService,
@@ -605,6 +605,16 @@ shiftsRouter.get('/puantaj/export/csv', ...allStaff, (req, res) => {
 
 // ── Puantaj day breakdown (after CSV route to avoid staffId='export') ──
 // Puantaj approval workflow (must be before /:staffId routes)
+shiftsRouter.get('/puantaj/approval/overview', ...managerOrSupervisor, (req, res) => {
+  try {
+    const { month } = req.query
+    if (!month) return res.status(400).json({ error: 'month parametresi YYYY-MM formatinda gereklidir' })
+    res.json(puantajApprovalOverviewService({ month }))
+  } catch (e) {
+    res.status(e.statusCode || 400).json({ error: e.message })
+  }
+})
+
 shiftsRouter.get('/puantaj/approval', ...managerOrSupervisor, (req, res) => {
   try {
     const { month, dept_id } = req.query

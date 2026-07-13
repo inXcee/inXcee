@@ -94,6 +94,8 @@ function PuantajApprovalView({
   onPeriodAction,
   onPersonClick,
   lockScopeBlocked = false,
+  overview = null,
+  onSelectDept,
 }) {
   const period = approval?.period_approval || { status: 'draft' }
   const [periodNote, setPeriodNote] = useState(period.note || '')
@@ -223,6 +225,56 @@ function PuantajApprovalView({
             </div>
           ))}
         </div>
+
+        {overview && overview.departments?.length > 0 && (
+          <div style={{ marginTop: '14px' }}>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)', letterSpacing: '1px', marginBottom: '6px' }}>DEPARTMAN ONAY MATRISI</div>
+            <div style={{ overflowX: 'auto' }}>
+              <table className="data-table" style={{ fontSize: '11px', minWidth: '640px' }}>
+                <thead>
+                  <tr>
+                    <th style={{ textAlign: 'left' }}>Departman</th>
+                    <th style={{ textAlign: 'center' }}>Durum</th>
+                    <th style={{ textAlign: 'right' }}>Personel</th>
+                    <th style={{ textAlign: 'right' }}>Onayli Gun</th>
+                    <th style={{ textAlign: 'right' }}>Bekleyen</th>
+                    <th style={{ textAlign: 'right' }}>Geri Donen</th>
+                    <th style={{ textAlign: 'right' }}>Sorun</th>
+                    <th style={{ textAlign: 'right' }}>Son Islem</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {overview.departments.map(dept => {
+                    const deptMeta = approvalStatusMeta(dept.period_status)
+                    const issueTotal = (dept.issues?.scheduled || 0) + (dept.issues?.empty || 0) + (dept.issues?.absent_no_reason || 0)
+                    return (
+                      <tr
+                        key={dept.dept_id}
+                        onClick={() => onSelectDept?.(dept.dept_id)}
+                        title={`${dept.name} filtresine gec`}
+                        style={{ cursor: onSelectDept ? 'pointer' : 'default' }}
+                      >
+                        <td style={{ fontWeight: 700 }}>{dept.name}</td>
+                        <td style={{ textAlign: 'center' }}>
+                          <span style={{ border: `1px solid ${deptMeta.border}`, background: deptMeta.bg, color: deptMeta.color, borderRadius: '6px', padding: '2px 7px', fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 800 }}>{deptMeta.label}</span>
+                        </td>
+                        <td style={{ textAlign: 'right', fontFamily: 'var(--mono)' }}>{dept.staff_count}</td>
+                        <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', color: dept.approved_days === overview.total_days ? 'var(--green)' : 'var(--text)' }}>{dept.approved_days}/{overview.total_days}</td>
+                        <td style={{ textAlign: 'right', fontFamily: 'var(--mono)' }}>{dept.pending_days}</td>
+                        <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', color: dept.returned_days > 0 ? 'var(--red)' : 'var(--text3)' }}>{dept.returned_days}</td>
+                        <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', color: issueTotal > 0 ? 'var(--red)' : 'var(--green)', fontWeight: issueTotal > 0 ? 700 : 400 }}
+                          title={issueTotal > 0 ? `${dept.issues.scheduled} planli · ${dept.issues.empty} bos · ${dept.issues.absent_no_reason} nedensiz Y` : 'Sorun yok'}>
+                          {issueTotal}
+                        </td>
+                        <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)' }}>{approvalTime(dept.last_event_at)}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
 
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 1fr) auto', gap: '8px', alignItems: 'center', marginTop: '12px' }}>
           <input
@@ -2277,8 +2329,16 @@ export default function PuantajTab({ departments }) {
     enabled: roleCanEdit,
   })
 
+  // P4: departman onay matrisi — yalnız onay masasında ve tum-kapsam gorunumunde
+  const { data: approvalOverview = null } = useQuery({
+    queryKey: ['puantaj-approval-overview', month],
+    queryFn: () => api.get('/shifts/puantaj/approval/overview', { params: { month } }).then(res => res.data),
+    enabled: roleCanEdit && viewMode === 'approval' && !deptFilter,
+  })
+
   const refreshApproval = () => {
     qc.invalidateQueries({ queryKey: ['puantaj-approval'] })
+    qc.invalidateQueries({ queryKey: ['puantaj-approval-overview'] })
     qc.invalidateQueries({ queryKey: ['period-locks'] })
   }
 
@@ -2733,6 +2793,8 @@ export default function PuantajTab({ departments }) {
           onPeriodAction={(action, note) => periodApprovalMutation.mutate({ action, note })}
           onPersonClick={setSelectedRow}
           lockScopeBlocked={!!deptFilter}
+          overview={deptFilter ? null : approvalOverview}
+          onSelectDept={(deptId) => setDeptFilter(String(deptId))}
         />
       )}
 

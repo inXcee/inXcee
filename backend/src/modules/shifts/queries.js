@@ -1244,6 +1244,47 @@ export function listPuantajApprovalEvents(period, deptScope, limit = 50) {
   `).all(period, deptScope, limit)
 }
 
+// Departman onay matrisi — dönem için tüm scope'ların durum + sayaç özeti.
+export function getPuantajApprovalOverview(period, monthStart, monthEnd) {
+  const db = getDB()
+  const departments = db.prepare(`
+    SELECT d.id, d.name, d.color_class, COUNT(s.id) AS staff_count
+    FROM departments d
+    JOIN staff s ON s.department_id = d.id AND s.is_active = 1
+    GROUP BY d.id
+    ORDER BY d.name COLLATE NOCASE
+  `).all()
+  const periodRows = db.prepare(`
+    SELECT p.*, u.full_name AS submitted_by_name
+    FROM puantaj_period_approvals p
+    LEFT JOIN users u ON u.id = p.submitted_by
+    WHERE p.period = ?
+  `).all(period)
+  const dailyCounts = db.prepare(`
+    SELECT dept_scope, status, COUNT(*) AS n
+    FROM puantaj_daily_approvals
+    WHERE period = ?
+    GROUP BY dept_scope, status
+  `).all(period)
+  const lastEvents = db.prepare(`
+    SELECT dept_scope, MAX(created_at) AS last_event_at
+    FROM puantaj_approval_events
+    WHERE period = ?
+    GROUP BY dept_scope
+  `).all(period)
+  const issueCounts = db.prepare(`
+    SELECT COALESCE(ss.dept_id, s.department_id) AS dept_id,
+      SUM(CASE WHEN ss.status = 'scheduled' THEN 1 ELSE 0 END) AS scheduled,
+      SUM(CASE WHEN ss.status = 'absent' AND TRIM(COALESCE(ss.absent_reason, '')) = '' THEN 1 ELSE 0 END) AS absent_no_reason,
+      SUM(CASE WHEN strftime('%w', ss.work_date) != '0' THEN 1 ELSE 0 END) AS filled_days
+    FROM shift_schedule ss
+    JOIN staff s ON s.id = ss.staff_id AND s.is_active = 1
+    WHERE ss.work_date BETWEEN ? AND ?
+    GROUP BY COALESCE(ss.dept_id, s.department_id)
+  `).all(monthStart, monthEnd)
+  return { departments, periodRows, dailyCounts, lastEvents, issueCounts }
+}
+
 // Gün onayı guard'ı için tek günün sorun sayaçları (aktif personel bazında).
 export function getPuantajDayIssueCounts(date, deptId) {
   return getDB().prepare(`

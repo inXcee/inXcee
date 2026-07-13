@@ -15,7 +15,7 @@ import {
   getPuantajPeriodApproval, upsertPuantajPeriodApproval,
   listPuantajDailyApprovals, upsertPuantajDailyApproval,
   insertPuantajApprovalEvent, listPuantajApprovalEvents,
-  resetDailyApprovalsForDates, getPuantajDayIssueCounts,
+  resetDailyApprovalsForDates, getPuantajDayIssueCounts, getPuantajApprovalOverview,
   getStaffDetail,
   getStaffList, getStaffById, createStaff, updateStaff, deleteStaff,
   getStaffDayBreakdown, getPuantajDayRows, listDeductions
@@ -360,6 +360,61 @@ function puantajScopeLabel(deptId) {
   if (deptId == null) return 'tum departmanlar'
   const dept = getDB().prepare('SELECT name FROM departments WHERE id = ?').get(deptId)
   return dept?.name || `departman #${deptId}`
+}
+
+// Departman onay matrisi — müdürün tek ekranda tüm scope'ları görmesi için.
+export function puantajApprovalOverviewService({ month } = {}) {
+  const period = validatePuantajPeriod(month)
+  const { year, mon, monthStart, monthEnd, lastDay } = parsePuantajMonth(period)
+  const raw = getPuantajApprovalOverview(period, monthStart, monthEnd)
+
+  let nonSundayDays = 0
+  for (let day = 1; day <= lastDay; day += 1) {
+    if (new Date(year, mon - 1, day).getDay() !== 0) nonSundayDays += 1
+  }
+
+  const periodByScope = new Map(raw.periodRows.map(row => [row.dept_scope, row]))
+  const lastEventByScope = new Map(raw.lastEvents.map(row => [row.dept_scope, row.last_event_at]))
+  const issueByDept = new Map(raw.issueCounts.map(row => [row.dept_id, row]))
+  const dailyByScope = new Map()
+  raw.dailyCounts.forEach(row => {
+    if (!dailyByScope.has(row.dept_scope)) dailyByScope.set(row.dept_scope, {})
+    dailyByScope.get(row.dept_scope)[row.status] = row.n
+  })
+
+  const scopeSummary = (deptScope, staffCount, deptId) => {
+    const daily = dailyByScope.get(deptScope) || {}
+    const approved = daily.approved || 0
+    const issue = deptId != null ? (issueByDept.get(deptId) || {}) : null
+    const expected = deptId != null ? staffCount * nonSundayDays : null
+    return {
+      period_status: periodByScope.get(deptScope)?.status || 'draft',
+      submitted_by_name: periodByScope.get(deptScope)?.submitted_by_name || null,
+      approved_days: approved,
+      pending_days: daily.pending || 0,
+      returned_days: daily.returned || 0,
+      missing_days: lastDay - approved - (daily.pending || 0) - (daily.returned || 0),
+      last_event_at: lastEventByScope.get(deptScope) || null,
+      issues: deptId != null ? {
+        scheduled: issue.scheduled || 0,
+        absent_no_reason: issue.absent_no_reason || 0,
+        empty: Math.max(0, expected - (issue.filled_days || 0)),
+      } : null,
+    }
+  }
+
+  return {
+    period,
+    total_days: lastDay,
+    all: scopeSummary('all', null, null),
+    departments: raw.departments.map(dept => ({
+      dept_id: dept.id,
+      name: dept.name,
+      color_class: dept.color_class,
+      staff_count: dept.staff_count,
+      ...scopeSummary(`dept:${dept.id}`, dept.staff_count, dept.id),
+    })),
+  }
 }
 
 export function submitPuantajPeriodService({ period, dept_id, note } = {}, user = {}) {

@@ -108,6 +108,36 @@ describe('Puantaj onay akisi', () => {
     expect(res.body.events.some(e => (e.note || '').includes('zorla onaylandi'))).toBe(true)
   })
 
+  it('departman onay matrisi durum ve sayaclari dondurur (P4)', async () => {
+    const period = '2027-08'
+    // lockDeptId departmani icin gonder + bir gun onayla (veri yok → force)
+    await request(app).post('/api/shifts/puantaj/approval/submit')
+      .set('Authorization', `Bearer ${shiftToken}`).send({ period, dept_id: lockDeptId })
+    await request(app).patch('/api/shifts/puantaj/approval/day')
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({ period, work_date: '2027-08-03', dept_id: lockDeptId, status: 'approved', force: true })
+
+    const res = await request(app)
+      .get(`/api/shifts/puantaj/approval/overview?month=${period}`)
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(res.status).toBe(200)
+    expect(res.body.period).toBe(period)
+    expect(res.body.total_days).toBe(31)
+    expect(res.body.all.period_status).toBe('draft')
+
+    const dept = res.body.departments.find(d => d.dept_id === lockDeptId)
+    expect(dept).toBeTruthy()
+    expect(dept.staff_count).toBeGreaterThanOrEqual(1)
+    expect(dept.period_status).toBe('submitted')
+    expect(dept.approved_days).toBe(1)
+    expect(dept.issues.empty).toBeGreaterThan(0) // ay bos → eksik gunler gorunur
+
+    const noMonth = await request(app)
+      .get('/api/shifts/puantaj/approval/overview')
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(noMonth.status).toBe(400)
+  })
+
   it('onay akisi bildirimleri: submit mudure, return amire (P2)', async () => {
     const period = '2027-07'
     await request(app).post('/api/shifts/puantaj/approval/submit')

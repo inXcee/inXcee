@@ -1,17 +1,22 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { screen } from '@testing-library/react'
+import { fireEvent, screen } from '@testing-library/react'
 import { renderWithProviders } from '../../../test/renderWithProviders.jsx'
+import { useAuthStore } from '../../../shared/store/authStore.js'
 
+const getMock = vi.fn(() => Promise.resolve({ data: [] }))
 vi.mock('../../../shared/api/client.js', () => ({
   default: {
-    get: vi.fn(() => Promise.resolve({ data: [] })),
+    get: (...args) => getMock(...args),
   },
 }))
 
 import PuantajTab from './PuantajTab.jsx'
 
 describe('PuantajTab smoke', () => {
-  beforeEach(() => vi.clearAllMocks())
+  beforeEach(() => {
+    vi.clearAllMocks()
+    getMock.mockImplementation(() => Promise.resolve({ data: [] }))
+  })
 
   it('çökmeden render olur ve görünüm kontrollerini gösterir', () => {
     renderWithProviders(<PuantajTab departments={[]} />)
@@ -21,5 +26,29 @@ describe('PuantajTab smoke', () => {
     expect(screen.getByText('🔎 KONTROL')).toBeInTheDocument()
     expect(screen.getByText('PUANTAJ KAPANIŞ KONTROLÜ')).toBeInTheDocument()
     expect(screen.getByText(/P → N/)).toBeInTheDocument()
+  })
+
+  it('onay masasında departman onay matrisi görünür (P4)', async () => {
+    useAuthStore.setState({ user: { role: 'campus_manager' } })
+    getMock.mockImplementation((url) => {
+      if (url === '/shifts/puantaj/approval/overview') {
+        return Promise.resolve({ data: {
+          period: '2026-07', total_days: 31,
+          all: { period_status: 'draft' },
+          departments: [
+            { dept_id: 1, name: 'Yemekhane', staff_count: 8, period_status: 'submitted', approved_days: 5, pending_days: 2, returned_days: 1, last_event_at: '2026-07-10 10:00:00', issues: { scheduled: 1, empty: 3, absent_no_reason: 0 } },
+          ],
+        } })
+      }
+      if (url === '/shifts/puantaj/approval') {
+        return Promise.resolve({ data: { period: '2026-07', period_approval: { status: 'draft' }, daily_approvals: [], events: [] } })
+      }
+      return Promise.resolve({ data: [] })
+    })
+    renderWithProviders(<PuantajTab departments={[]} />)
+    fireEvent.click(screen.getByText('ONAY'))
+    expect(await screen.findByText('DEPARTMAN ONAY MATRISI')).toBeInTheDocument()
+    expect(screen.getByText('Yemekhane')).toBeInTheDocument()
+    expect(screen.getByText('5/31')).toBeInTheDocument()
   })
 })
