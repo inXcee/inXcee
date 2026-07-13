@@ -1025,8 +1025,16 @@ function PuantajControlView({ audit, monthLabel, canEdit, isLocked, onOpenCalend
   )
 }
 
-function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, canEdit, selectedAction, setSelectedAction, onApplyStatus, updatingKeys, onPersonClick }) {
+function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, canEdit, selectedAction, setSelectedAction, onApplyStatus, updatingKeys, onPersonClick, approval, onOpenApprovalDay }) {
   const [dayData, setDayData] = useState({}) // staffId → days array
+
+  // Gün onay durumu (onay masası verisi) — başlık rozetleri + onaylı güne yazım uyarısı
+  const approvalByDate = useMemo(() => {
+    const map = new Map()
+    ;(approval?.daily_approvals || []).forEach(row => map.set(row.work_date, row))
+    return map
+  }, [approval])
+  const approvedEditConfirmedRef = useRef(false)
 
   const [entryMode, setEntryMode] = useState('cell')
   const paintingRef = useRef(false)
@@ -1127,8 +1135,21 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
     return { staff: row, date, entry, action, nextEntry }
   }
 
-  const applyChanges = (changes, action = selectedAction) => {
+  const applyChanges = async (changes, action = selectedAction) => {
     if (!canEdit || !action || changes.length === 0) return
+    // Onaylı güne yazım — ilk seferde uyar (onay 'beklemede'ye düşecek)
+    if (!approvedEditConfirmedRef.current) {
+      const approvedDates = [...new Set(changes.map(c => c.date))].filter(d => approvalByDate.get(d)?.status === 'approved')
+      if (approvedDates.length > 0) {
+        const ok = await confirmDialog({
+          title: 'Onaylı Güne Yazım',
+          body: `${approvedDates.join(', ')} onaylı. Değişiklik gün onayını 'beklemede'ye düşürür. Devam edilsin mi?`,
+          danger: true,
+        })
+        if (!ok) return
+        approvedEditConfirmedRef.current = true
+      }
+    }
     onApplyStatus({
       changes,
       action,
@@ -1439,6 +1460,32 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
                   {d}
                 </button>
                 <div style={{ fontSize: '7px', opacity: .75 }}>{isHoliday ? 'RT' : new Date(y, m - 1, d).toLocaleDateString('tr-TR', { weekday: 'short' }).slice(0, 3)}</div>
+                {(() => {
+                  const dateStr = `${month}-${String(d).padStart(2, '0')}`
+                  const dayApproval = approvalByDate.get(dateStr)
+                  if (!dayApproval || dayApproval.status === 'missing') return null
+                  const badge = {
+                    approved: { char: '✓', color: 'var(--green)', label: 'Onaylandi' },
+                    returned: { char: '↩', color: 'var(--red)', label: 'Geri gonderildi' },
+                    pending: { char: '●', color: 'var(--accent)', label: 'Kontrolde' },
+                  }[dayApproval.status]
+                  if (!badge) return null
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => onOpenApprovalDay?.(dateStr)}
+                      title={`Onay: ${badge.label}${dayApproval.approved_by_name ? ` — ${dayApproval.approved_by_name}` : ''}${dayApproval.note ? ` · ${dayApproval.note}` : ''} (onay masasini ac)`}
+                      style={{
+                        display: 'block', margin: '1px auto 0', padding: 0,
+                        width: '14px', height: '11px', lineHeight: '11px',
+                        border: 'none', background: 'transparent', cursor: 'pointer',
+                        color: badge.color, fontSize: '9px', fontWeight: 900,
+                      }}
+                    >
+                      {badge.char}
+                    </button>
+                  )
+                })()}
               </th>
             )})}
           </tr>
@@ -2651,6 +2698,8 @@ export default function PuantajTab({ departments }) {
           onApplyStatus={updatePuantajDay.mutate}
           updatingKeys={updatingKeys}
           onPersonClick={setSelectedRow}
+          approval={approvalPayload}
+          onOpenApprovalDay={() => setViewMode('approval')}
         />
       )}
       {viewMode === 'summary' && (

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { fireEvent, screen } from '@testing-library/react'
 import { renderWithProviders } from '../../../test/renderWithProviders.jsx'
+import { useAuthStore } from '../../../shared/store/authStore.js'
 
 vi.mock('../../../shared/api/client.js', () => ({
   default: {
@@ -68,8 +69,20 @@ describe('shifts tabs smoke', () => {
           { date: '2026-07-04', day_of_week: 6, status: 'on_leave', leave_type: 'unpaid' },
         ] } } })
       }
+      if (url === '/shifts/puantaj/approval') {
+        return Promise.resolve({ data: {
+          period: '2026-07',
+          period_approval: { status: 'submitted' },
+          daily_approvals: [
+            { work_date: '2026-07-01', status: 'approved', approved_by_name: 'Müdür' },
+            { work_date: '2026-07-02', status: 'returned', note: 'Eksik' },
+          ],
+          events: [],
+        } })
+      }
       return Promise.resolve({ data: [] })
     })
+    useAuthStore.setState({ user: { role: 'campus_manager' } })
     renderWithProviders(<PuantajTab departments={[]} />)
     fireEvent.click(screen.getByText(/TAKVİM/))
     expect(await screen.findByText('Ali Test')).toBeInTheDocument()
@@ -80,5 +93,8 @@ describe('shifts tabs smoke', () => {
     expect(screen.getByText('Hucre')).toBeInTheDocument()
     expect(screen.getByText('Boya')).toBeInTheDocument()
     expect(screen.getAllByText('üi').length).toBeGreaterThan(0)
+    // P3: gün başlığında onay rozetleri (approved=✓, returned=↩)
+    expect((await screen.findAllByTitle(/Onay: Onaylandi/)).length).toBe(1)
+    expect(screen.getAllByTitle(/Onay: Geri gonderildi/).length).toBe(1)
   })
 })
