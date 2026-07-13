@@ -22,6 +22,8 @@ import {
 } from './queries.js'
 import { getDB } from '../../shared/db/index.js'
 import { sendPushToWorker } from '../../shared/notifications/push.js'
+import { createNotification } from '../../shared/notifications/service.js'
+import { logger } from '../../shared/logger.js'
 
 // ── Tax helpers (2026 ücret gelirleri tarifesi — GİB) ──
 const TAX_BRACKETS = [
@@ -339,6 +341,27 @@ export function puantajApprovalService({ month, deptId } = {}) {
   }
 }
 
+// Onay akışı bildirimi — hata akışı bozmasın (try/catch), SSE+push createNotification üzerinden.
+function notifyPuantajApproval({ message, targetRole, period, deptScope }) {
+  try {
+    createNotification({
+      message,
+      severity: 'info',
+      module: 'shifts',
+      target_role: targetRole,
+      dedup_key: `puantaj:${period}:${deptScope}:${message}`,
+    })
+  } catch (e) {
+    logger.warn('[Puantaj] bildirim gonderilemedi:', e.message)
+  }
+}
+
+function puantajScopeLabel(deptId) {
+  if (deptId == null) return 'tum departmanlar'
+  const dept = getDB().prepare('SELECT name FROM departments WHERE id = ?').get(deptId)
+  return dept?.name || `departman #${deptId}`
+}
+
 export function submitPuantajPeriodService({ period, dept_id, note } = {}, user = {}) {
   const cleanPeriod = validatePuantajPeriod(period)
   const scope = puantajApprovalScope(dept_id)
@@ -360,6 +383,12 @@ export function submitPuantajPeriodService({ period, dept_id, note } = {}, user 
     status: 'submitted',
     note,
     userId: user.id,
+  })
+  notifyPuantajApproval({
+    message: `📋 Puantaj kontrole gönderildi: ${cleanPeriod} (${puantajScopeLabel(scope.deptId)})${user.full_name ? ` — ${user.full_name}` : ''}`,
+    targetRole: 'campus_manager',
+    period: cleanPeriod,
+    deptScope: scope.deptScope,
   })
   return row
 }
@@ -414,6 +443,14 @@ export function updatePuantajDayApprovalService({ period, work_date, dept_id, st
     note: forced ? [note, 'zorla onaylandi'].filter(Boolean).join(' — ') : note,
     userId: user.id,
   })
+  if (status === 'returned') {
+    notifyPuantajApproval({
+      message: `↩️ Puantaj günü geri gönderildi: ${cleanDate} (${puantajScopeLabel(scope.deptId)})${note ? ` — ${note}` : ''}`,
+      targetRole: 'shift_supervisor',
+      period: cleanPeriod,
+      deptScope: scope.deptScope,
+    })
+  }
   return row
 }
 
@@ -458,6 +495,19 @@ export function updatePuantajPeriodApprovalService({ period, dept_id, action, no
     note,
     userId: user.id,
   })
+  const actionMessages = {
+    approve: `✅ Puantaj onaylandı: ${cleanPeriod} (${puantajScopeLabel(scope.deptId)})`,
+    return: `↩️ Puantaj geri gönderildi: ${cleanPeriod} (${puantajScopeLabel(scope.deptId)})${note ? ` — ${note}` : ''}`,
+    lock: `🔒 Puantaj onaylanıp kilitlendi: ${cleanPeriod}`,
+  }
+  if (actionMessages[action]) {
+    notifyPuantajApproval({
+      message: actionMessages[action],
+      targetRole: 'shift_supervisor',
+      period: cleanPeriod,
+      deptScope: scope.deptScope,
+    })
+  }
   return row
 }
 

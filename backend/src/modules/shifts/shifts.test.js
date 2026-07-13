@@ -108,6 +108,34 @@ describe('Puantaj onay akisi', () => {
     expect(res.body.events.some(e => (e.note || '').includes('zorla onaylandi'))).toBe(true)
   })
 
+  it('onay akisi bildirimleri: submit mudure, return amire (P2)', async () => {
+    const period = '2027-07'
+    await request(app).post('/api/shifts/puantaj/approval/submit')
+      .set('Authorization', `Bearer ${shiftToken}`).send({ period, note: 'Temmuz kontrol' })
+    const managerNotif = getDB().prepare(
+      "SELECT * FROM notifications WHERE target_role='campus_manager' AND message LIKE '%2027-07%' ORDER BY id DESC"
+    ).get()
+    expect(managerNotif).toBeTruthy()
+    expect(managerNotif.message).toContain('kontrole gönderildi')
+
+    await request(app).patch('/api/shifts/puantaj/approval/day')
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({ period, work_date: '2027-07-05', status: 'returned', note: 'Eksik veri' })
+    const supNotif = getDB().prepare(
+      "SELECT * FROM notifications WHERE target_role='shift_supervisor' AND message LIKE '%2027-07-05%' ORDER BY id DESC"
+    ).get()
+    expect(supNotif).toBeTruthy()
+    expect(supNotif.message).toContain('geri gönderildi')
+
+    await request(app).patch('/api/shifts/puantaj/approval/period')
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({ period, action: 'return', note: 'Ay eksik' })
+    const periodNotif = getDB().prepare(
+      "SELECT * FROM notifications WHERE target_role='shift_supervisor' AND message LIKE '%2027-07 %' ORDER BY id DESC"
+    ).get()
+    expect(periodNotif).toBeTruthy()
+  })
+
   it('onayli gune veri girisi gun onayini beklemeye dusurur (P1a)', async () => {
     const period = '2027-06'
     const workDate = '2027-06-02'
