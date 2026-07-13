@@ -2298,7 +2298,7 @@ export default function PuantajTab({ departments }) {
   })
 
   const dayApprovalMutation = useMutation({
-    mutationFn: ({ row, rows: targetRows, status, note }) => {
+    mutationFn: ({ row, rows: targetRows, status, note, force }) => {
       const targets = targetRows?.length ? targetRows : [row]
       return Promise.all(targets.map(target => api.patch('/shifts/puantaj/approval/day', {
         period: month,
@@ -2306,6 +2306,7 @@ export default function PuantajTab({ departments }) {
         dept_id: deptFilter || null,
         status,
         note: note || null,
+        force: force === true,
       })))
     },
     onSuccess: (_, variables) => {
@@ -2313,7 +2314,24 @@ export default function PuantajTab({ departments }) {
       const count = variables.rows?.length || 1
       toastOk(count > 1 ? `${count} gun onay durumu guncellendi` : 'Gun onay durumu guncellendi')
     },
-    onError: toastErr,
+    onError: async (err, variables) => {
+      const problems = err?.response?.data?.details?.problems
+      // 409 = gün verisi sorunlu; müdüre zorla onay seçeneği sun
+      if (err?.response?.status === 409 && problems?.length && variables.status === 'approved' && !variables.force) {
+        if (isManager && !variables.rows?.length) {
+          const ok = await confirmDialog({
+            title: 'Gun Verisi Sorunlu',
+            body: `${problems.join(' · ')}\n\nYine de onaylansin mi? (zorla onay olay kaydina islenir)`,
+            danger: true,
+          })
+          if (ok) dayApprovalMutation.mutate({ ...variables, force: true })
+          return
+        }
+        toastErr(new Error(`Gun onaylanamaz: ${problems.join(', ')}`))
+        return
+      }
+      toastErr(err)
+    },
   })
 
   const periodApprovalMutation = useMutation({

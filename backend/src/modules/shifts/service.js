@@ -15,6 +15,7 @@ import {
   getPuantajPeriodApproval, upsertPuantajPeriodApproval,
   listPuantajDailyApprovals, upsertPuantajDailyApproval,
   insertPuantajApprovalEvent, listPuantajApprovalEvents,
+  resetDailyApprovalsForDates, getPuantajDayIssueCounts,
   getStaffDetail,
   getStaffList, getStaffById, createStaff, updateStaff, deleteStaff,
   getStaffDayBreakdown, getPuantajDayRows, listDeductions
@@ -363,7 +364,26 @@ export function submitPuantajPeriodService({ period, dept_id, note } = {}, user 
   return row
 }
 
-export function updatePuantajDayApprovalService({ period, work_date, dept_id, status, note } = {}, user = {}) {
+// Gün onaylanmadan önce o günün verisi sağlam olmalı; sorun varsa 409.
+// force=true (müdür) ile geçilebilir — zorla onay event notuna işlenir.
+function assertPuantajDayApprovable(period, workDate, deptId) {
+  const counts = getPuantajDayIssueCounts(workDate, deptId) || {}
+  const { year, mon } = parsePuantajMonth(period)
+  const day = Number(String(workDate).slice(8, 10))
+  const isSunday = new Date(year, mon - 1, day).getDay() === 0
+  const problems = []
+  if ((counts.scheduled || 0) > 0) problems.push(`${counts.scheduled} planli gun kapanmamis`)
+  if (!isSunday && (counts.empty || 0) > 0) problems.push(`${counts.empty} personelde bos gun`)
+  if ((counts.absent_no_reason || 0) > 0) problems.push(`${counts.absent_no_reason} devamsizlik nedeni eksik`)
+  if (problems.length > 0) {
+    throw Object.assign(
+      new Error(`Gun onaylanamaz: ${problems.join(', ')}`),
+      { statusCode: 409, details: { work_date: workDate, problems, counts } }
+    )
+  }
+}
+
+export function updatePuantajDayApprovalService({ period, work_date, dept_id, status, note, force } = {}, user = {}) {
   const cleanPeriod = validatePuantajPeriod(period)
   const cleanDate = validatePuantajWorkDate(cleanPeriod, work_date)
   const allowed = new Set(['pending', 'approved', 'returned'])
@@ -372,6 +392,8 @@ export function updatePuantajDayApprovalService({ period, work_date, dept_id, st
   }
   if (['approved', 'returned'].includes(status)) requirePuantajManager(user)
   const scope = puantajApprovalScope(dept_id)
+  const forced = force === true && status === 'approved'
+  if (status === 'approved' && !forced) assertPuantajDayApprovable(cleanPeriod, cleanDate, scope.deptId)
   const row = upsertPuantajDailyApproval({
     period: cleanPeriod,
     workDate: cleanDate,
@@ -389,7 +411,7 @@ export function updatePuantajDayApprovalService({ period, work_date, dept_id, st
     deptId: scope.deptId,
     action: status,
     status,
-    note,
+    note: forced ? [note, 'zorla onaylandi'].filter(Boolean).join(' — ') : note,
     userId: user.id,
   })
   return row
@@ -444,7 +466,8 @@ export function bulkAssignService(entries, createdBy) {
   assertPeriodsUnlocked(entries.map(e => e.work_date))
   const warnings = assignmentWarnings(entries) // onaylı izin ezme uyarısı (bloklamaz)
   bulkAssignShifts(entries, createdBy)
-  return { ok: true, warnings }
+  const approvalsReset = resetDailyApprovalsForDates(entries.map(e => e.work_date), createdBy)
+  return { ok: true, warnings, approvalsReset }
 }
 
 export function staffStatusService(date, deptId) {
@@ -536,6 +559,7 @@ export function overtimeDayService(data, userId) {
   if (!Number.isFinite(hours) || hours < 0 || hours > 12) throw new Error('Mesai saati 0-12 arasında olmalı')
   assertPeriodsUnlocked([data.work_date])
   upsertOvertimeDay(data.staff_id, data.work_date, hours, userId)
+  resetDailyApprovalsForDates([data.work_date], userId)
 }
 
 export function updateOvertimeService(id, data) {
@@ -816,12 +840,14 @@ export function rotationApplyService(body, userId) {
     ...e,
     dept_id: deptByStaff[e.staff_id] || null,
   })), userId)
+  resetDailyApprovalsForDates(entries.map(e => e.work_date), userId)
   return { count: entries.length, warnings }
 }
 
-export function deleteScheduleService(staffId, workDate) {
+export function deleteScheduleService(staffId, workDate, userId) {
   assertPeriodsUnlocked([workDate])
   deleteScheduleEntry(staffId, workDate)
+  resetDailyApprovalsForDates([workDate], userId)
 }
 
 export function staffDetailService(staffId) {

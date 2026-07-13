@@ -1244,6 +1244,90 @@ export function listPuantajApprovalEvents(period, deptScope, limit = 50) {
   `).all(period, deptScope, limit)
 }
 
+// Gün onayı guard'ı için tek günün sorun sayaçları (aktif personel bazında).
+export function getPuantajDayIssueCounts(date, deptId) {
+  return getDB().prepare(`
+    SELECT COUNT(*) AS staff_count,
+      SUM(CASE WHEN ss.status = 'scheduled' THEN 1 ELSE 0 END) AS scheduled,
+      SUM(CASE WHEN ss.status = 'absent' AND TRIM(COALESCE(ss.absent_reason, '')) = '' THEN 1 ELSE 0 END) AS absent_no_reason,
+      SUM(CASE WHEN ss.staff_id IS NULL THEN 1 ELSE 0 END) AS empty
+    FROM staff s
+    LEFT JOIN shift_schedule ss ON ss.staff_id = s.id AND ss.work_date = ?
+    WHERE s.is_active = 1 AND (? IS NULL OR s.department_id = ?)
+  `).get(date, deptId ?? null, deptId ?? null)
+}
+
+// Onay bütünlüğü: puantaj verisi değişen günlerin 'approved' gün onaylarını
+// (tüm scope'larda) 'pending'e düşürür; onaylı dönem varsa 'submitted'a çeker.
+// Her düşürme puantaj_approval_events'e 'data_changed' olarak yazılır.
+export function resetDailyApprovalsForDates(dates, userId) {
+  const db = getDB()
+  const uniqueDates = [...new Set((dates || []).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(String(d || ''))))]
+  if (!uniqueDates.length) return 0
+  let reset = 0
+
+  const findApproved = db.prepare(`
+    SELECT id, period, work_date, dept_scope, dept_id
+    FROM puantaj_daily_approvals
+    WHERE work_date = ? AND status = 'approved'
+  `)
+  const downgradeDay = db.prepare(`
+    UPDATE puantaj_daily_approvals
+    SET status = 'pending', updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `)
+  const findApprovedPeriod = db.prepare(`
+    SELECT id, period, dept_scope, dept_id
+    FROM puantaj_period_approvals
+    WHERE period = ? AND dept_scope = ? AND status = 'approved'
+  `)
+  const downgradePeriod = db.prepare(`
+    UPDATE puantaj_period_approvals
+    SET status = 'submitted', updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `)
+
+  const touchedPeriodScopes = new Set()
+  uniqueDates.forEach(date => {
+    findApproved.all(date).forEach(row => {
+      downgradeDay.run(row.id)
+      reset += 1
+      insertPuantajApprovalEvent({
+        scope: 'day',
+        period: row.period,
+        workDate: row.work_date,
+        deptScope: row.dept_scope,
+        deptId: row.dept_id,
+        action: 'data_changed',
+        status: 'pending',
+        note: 'Puantaj verisi değişti — gün onayı beklemeye düştü',
+        userId,
+      })
+      touchedPeriodScopes.add(`${row.period}|${row.dept_scope}`)
+    })
+  })
+
+  touchedPeriodScopes.forEach(key => {
+    const [period, deptScope] = key.split('|')
+    const periodRow = findApprovedPeriod.get(period, deptScope)
+    if (periodRow) {
+      downgradePeriod.run(periodRow.id)
+      insertPuantajApprovalEvent({
+        scope: 'period',
+        period: periodRow.period,
+        deptScope: periodRow.dept_scope,
+        deptId: periodRow.dept_id,
+        action: 'data_changed',
+        status: 'submitted',
+        note: 'Onaylı dönemde puantaj verisi değişti — dönem onayı geri alındı',
+        userId,
+      })
+    }
+  })
+
+  return reset
+}
+
 // ── Rotation templates (Faz 30 — isimli şablonlar) ──
 export function listRotationTemplates() {
   return getDB().prepare('SELECT * FROM rotation_templates ORDER BY id DESC').all()

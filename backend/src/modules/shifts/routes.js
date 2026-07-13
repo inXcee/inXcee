@@ -186,7 +186,7 @@ shiftsRouter.get('/schedule', ...allStaff, (req, res) => {
 shiftsRouter.post('/schedule', ...managerOrSupervisor, (req, res) => {
   try {
     const result = bulkAssignService(req.body.entries, req.user.id)
-    res.json({ ok: true, warnings: result?.warnings || [] })
+    res.json({ ok: true, warnings: result?.warnings || [], approvalsReset: result?.approvalsReset || 0 })
   } catch (e) {
     res.status(e.statusCode || 400).json({ error: e.message })
   }
@@ -631,7 +631,7 @@ shiftsRouter.patch('/puantaj/approval/day', ...managerOrSupervisor, (req, res) =
     logAudit(req.user.id, 'puantaj_day_approval', 'shifts', null, `${req.body?.work_date || ''}:${req.body?.status || ''}`)
     res.json(row)
   } catch (e) {
-    res.status(e.statusCode || 400).json({ error: e.message })
+    res.status(e.statusCode || 400).json({ error: e.message, details: e.details || null })
   }
 })
 
@@ -837,7 +837,7 @@ shiftsRouter.delete('/period-locks/:period', ...managerOnly, (req, res) => {
 // ── Delete schedule entry ──
 shiftsRouter.delete('/schedule/:staffId/:date', ...managerOrSupervisor, (req, res) => {
   try {
-    deleteScheduleService(req.params.staffId, req.params.date)
+    deleteScheduleService(req.params.staffId, req.params.date, req.user.id)
     res.json({ ok: true })
   } catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
 })

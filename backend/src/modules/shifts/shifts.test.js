@@ -79,19 +79,87 @@ describe('Puantaj onay akisi', () => {
     expect(res.body.events.some(e => e.action === 'submit')).toBe(true)
   })
 
-  it('gun onayini sadece mudur verebilir', async () => {
+  it('gun onayini sadece mudur verebilir; sorunlu gun 409, force ile gecer (P1b)', async () => {
     const supervisor = await request(app)
       .patch('/api/shifts/puantaj/approval/day')
       .set('Authorization', `Bearer ${shiftToken}`)
       .send({ period: '2027-04', work_date: '2027-04-05', status: 'approved' })
     expect(supervisor.status).toBe(403)
 
-    const manager = await request(app)
+    // 2027-04-05 verisi bos → guard 409 + sorun listesi
+    const blocked = await request(app)
       .patch('/api/shifts/puantaj/approval/day')
       .set('Authorization', `Bearer ${managerToken}`)
       .send({ period: '2027-04', work_date: '2027-04-05', status: 'approved', note: 'Gun tamam' })
-    expect(manager.status).toBe(200)
-    expect(manager.body.status).toBe('approved')
+    expect(blocked.status).toBe(409)
+    expect(blocked.body.details.problems.length).toBeGreaterThan(0)
+
+    // Mudur force ile zorla onaylar; olay notuna islenir
+    const forced = await request(app)
+      .patch('/api/shifts/puantaj/approval/day')
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({ period: '2027-04', work_date: '2027-04-05', status: 'approved', note: 'Gun tamam', force: true })
+    expect(forced.status).toBe(200)
+    expect(forced.body.status).toBe('approved')
+
+    const res = await request(app)
+      .get('/api/shifts/puantaj/approval?month=2027-04')
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(res.body.events.some(e => (e.note || '').includes('zorla onaylandi'))).toBe(true)
+  })
+
+  it('onayli gune veri girisi gun onayini beklemeye dusurur (P1a)', async () => {
+    const period = '2027-06'
+    const workDate = '2027-06-02'
+    const activeStaff = getDB().prepare('SELECT id, department_id FROM staff WHERE is_active = 1').all()
+    const insert = getDB().prepare('INSERT INTO shift_schedule(staff_id, dept_id, work_date, status) VALUES(?, ?, ?, ?)')
+    activeStaff.forEach(s => insert.run(s.id, s.department_id || null, workDate, 'worked'))
+
+    const approve = await request(app)
+      .patch('/api/shifts/puantaj/approval/day')
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({ period, work_date: workDate, status: 'approved' })
+    expect(approve.status).toBe(200)
+
+    // Donemi de onayla — veri degisince submitted'a dusmeli
+    await request(app).post('/api/shifts/puantaj/approval/submit')
+      .set('Authorization', `Bearer ${shiftToken}`).send({ period })
+    const periodApprove = await request(app)
+      .patch('/api/shifts/puantaj/approval/period')
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({ period, action: 'approve' })
+    expect(periodApprove.status).toBe(200)
+
+    // Onayli gune yazim → gun onayi pending, donem submitted, data_changed olaylari
+    const write = await request(app)
+      .post('/api/shifts/schedule')
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({ entries: [{ staff_id: staffId, work_date: workDate, status: 'off' }] })
+    expect(write.status).toBe(200)
+    expect(write.body.approvalsReset).toBeGreaterThanOrEqual(1)
+
+    const res = await request(app)
+      .get(`/api/shifts/puantaj/approval?month=${period}`)
+      .set('Authorization', `Bearer ${managerToken}`)
+    const day = res.body.daily_approvals.find(d => d.work_date === workDate)
+    expect(day.status).toBe('pending')
+    expect(res.body.period_approval.status).toBe('submitted')
+    expect(res.body.events.filter(e => e.action === 'data_changed').length).toBeGreaterThanOrEqual(2)
+
+    // Silme yolu da dusurur: tekrar onayla → DELETE → pending
+    const reapprove = await request(app)
+      .patch('/api/shifts/puantaj/approval/day')
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({ period, work_date: workDate, status: 'approved', force: true })
+    expect(reapprove.status).toBe(200)
+    const del = await request(app)
+      .delete(`/api/shifts/schedule/${staffId}/${workDate}`)
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(del.status).toBe(200)
+    const after = await request(app)
+      .get(`/api/shifts/puantaj/approval?month=${period}`)
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(after.body.daily_approvals.find(d => d.work_date === workDate).status).toBe('pending')
   })
 
   it('eksik kapanis varken mudur puantaji kilitleyemez', async () => {
