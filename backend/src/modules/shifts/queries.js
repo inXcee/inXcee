@@ -902,9 +902,7 @@ export function updateCheckout(logId) {
   db.prepare(`
     UPDATE attendance_logs SET check_out_at=datetime('now'), actual_hours=? WHERE id=?
   `).run(actualHours, logId)
-  if (log.shift_schedule_id) {
-    db.prepare(`UPDATE shift_schedule SET status='worked' WHERE id=?`).run(log.shift_schedule_id)
-  }
+  return db.prepare('SELECT * FROM attendance_logs WHERE id=?').get(logId)
 }
 
 export function getAttendanceLogs(filters) {
@@ -921,6 +919,282 @@ export function getAttendanceLogs(filters) {
   if (filters.dept_id) { query += ' AND s.department_id=?'; params.push(filters.dept_id) }
   query += ' ORDER BY al.check_in_at DESC LIMIT 200'
   return db.prepare(query).all(...params)
+}
+
+export function findAttendanceIdentity({ staffId, cardId, cardCode, nfcUid }) {
+  const db = getDB()
+  if (staffId) {
+    const staff = db.prepare('SELECT id, full_name FROM staff WHERE id = ?').get(staffId)
+    return staff ? { staff_id: staff.id, card_id: cardId || null, matched_via: 'staff_id', staff } : null
+  }
+  if (!cardId && !cardCode && !nfcUid) return null
+  const card = cardId
+    ? db.prepare("SELECT * FROM cards WHERE id = ? AND holder_type = 'staff' AND status = 'active'").get(cardId)
+    : cardCode
+      ? db.prepare("SELECT * FROM cards WHERE code = ? AND holder_type = 'staff' AND status = 'active'").get(cardCode)
+      : db.prepare("SELECT * FROM cards WHERE nfc_uid = ? AND holder_type = 'staff' AND status = 'active'").get(nfcUid)
+  if (!card) return null
+  const staff = db.prepare('SELECT id, full_name FROM staff WHERE id = ?').get(card.holder_id)
+  return staff ? { staff_id: staff.id, card_id: card.id, matched_via: cardId ? 'card_id' : cardCode ? 'card_code' : 'nfc_uid', staff } : null
+}
+
+export function insertAttendanceEvent(data) {
+  const db = getDB()
+  const result = db.prepare(`
+    INSERT OR IGNORE INTO attendance_events(
+      event_key, external_event_id, staff_id, card_id, event_type,
+      occurred_at, work_date, source, device_id, match_status,
+      match_detail, raw_payload
+    ) VALUES(
+      @event_key, @external_event_id, @staff_id, @card_id, @event_type,
+      @occurred_at, @work_date, @source, @device_id, @match_status,
+      @match_detail, @raw_payload
+    )
+  `).run(data)
+  const row = db.prepare(`
+    SELECT ae.*, s.full_name
+    FROM attendance_events ae
+    LEFT JOIN staff s ON s.id = ae.staff_id
+    WHERE ae.event_key = ?
+  `).get(data.event_key)
+  return { ...row, inserted: result.changes === 1 }
+}
+
+export function listAttendanceEvents(filters = {}) {
+  const db = getDB()
+  let sql = `
+    SELECT ae.*, s.full_name, d.name AS dept_name, c.code AS card_code
+    FROM attendance_events ae
+    LEFT JOIN staff s ON s.id = ae.staff_id
+    LEFT JOIN departments d ON d.id = s.department_id
+    LEFT JOIN cards c ON c.id = ae.card_id
+    WHERE 1 = 1
+  `
+  const params = []
+  if (filters.from) { sql += ' AND ae.work_date >= ?'; params.push(filters.from) }
+  if (filters.to) { sql += ' AND ae.work_date <= ?'; params.push(filters.to) }
+  if (filters.staff_id) { sql += ' AND ae.staff_id = ?'; params.push(filters.staff_id) }
+  if (filters.dept_id) { sql += ' AND s.department_id = ?'; params.push(filters.dept_id) }
+  if (filters.source) { sql += ' AND ae.source = ?'; params.push(filters.source) }
+  if (filters.device_id) { sql += ' AND ae.device_id = ?'; params.push(filters.device_id) }
+  if (filters.match_status) { sql += ' AND ae.match_status = ?'; params.push(filters.match_status) }
+  sql += ' ORDER BY ae.occurred_at DESC, ae.id DESC LIMIT ?'
+  params.push(Math.min(Math.max(Number(filters.limit) || 200, 1), 1000))
+  return db.prepare(sql).all(...params)
+}
+
+export function listStationAttendanceSourceEvents(from, to) {
+  return getDB().prepare(`
+    SELECT ae.id, ae.card_id, ae.holder_id AS staff_id, ae.event_type,
+      ae.scanned_at, ae.raw_uid, ae.station_id, st.name AS station_name,
+      st.station_type, st.location
+    FROM access_events ae
+    LEFT JOIN scan_stations st ON st.id = ae.station_id
+    WHERE ae.holder_type = 'staff'
+      AND ae.result = 'ok'
+      AND ae.event_type IN ('entry', 'exit')
+      AND date(ae.scanned_at) BETWEEN date(?, '-1 day') AND date(?, '+1 day')
+    ORDER BY ae.scanned_at, ae.id
+  `).all(from, to)
+}
+
+export function getAttendanceCandidateStaffIds(workDate, staffId) {
+  const sql = `
+    SELECT staff_id FROM shift_schedule WHERE work_date = ?
+    UNION
+    SELECT staff_id FROM attendance_events WHERE work_date = ? AND staff_id IS NOT NULL
+  `
+  const rows = getDB().prepare(sql).all(workDate, workDate)
+  const ids = rows.map(row => row.staff_id)
+  return staffId ? ids.filter(id => Number(id) === Number(staffId)) : ids
+}
+
+export function getAttendanceReconciliationContext(staffId, workDate) {
+  const db = getDB()
+  const staff = db.prepare(`
+    SELECT s.id, s.full_name, s.department_id, s.is_active, d.name AS dept_name
+    FROM staff s LEFT JOIN departments d ON d.id = s.department_id
+    WHERE s.id = ?
+  `).get(staffId)
+  const schedule = db.prepare(`
+    SELECT ss.*, sd.name AS shift_name, sd.start_hour, sd.end_hour
+    FROM shift_schedule ss
+    LEFT JOIN shift_definitions sd ON sd.id = ss.shift_def_id
+    WHERE ss.staff_id = ? AND ss.work_date = ?
+  `).get(staffId, workDate)
+  const leave = db.prepare(`
+    SELECT * FROM leave_requests
+    WHERE staff_id = ? AND status = 'approved' AND ? BETWEEN start_date AND end_date
+    ORDER BY id DESC LIMIT 1
+  `).get(staffId, workDate)
+  const periodLock = db.prepare('SELECT * FROM period_locks WHERE period = ?').get(workDate.slice(0, 7))
+  const dailyApproval = db.prepare(`
+    SELECT * FROM puantaj_daily_approvals
+    WHERE work_date = ? AND status = 'approved'
+      AND (dept_scope = 'all' OR dept_scope = ?)
+    ORDER BY CASE WHEN dept_scope = 'all' THEN 0 ELSE 1 END
+    LIMIT 1
+  `).get(workDate, `dept:${schedule?.dept_id || staff?.department_id || 0}`)
+  const latestReconciliation = db.prepare(`
+    SELECT * FROM attendance_daily_reconciliations
+    WHERE staff_id = ? AND work_date = ?
+    ORDER BY id DESC LIMIT 1
+  `).get(staffId, workDate)
+  const events = db.prepare(`
+    SELECT * FROM attendance_events
+    WHERE staff_id = ? AND work_date = ?
+    ORDER BY occurred_at, id
+  `).all(staffId, workDate)
+  return { staff, schedule, leave, periodLock, dailyApproval, latestReconciliation, events }
+}
+
+export function findAttendanceReconciliation(fingerprint) {
+  return getDB().prepare('SELECT * FROM attendance_daily_reconciliations WHERE fingerprint = ?').get(fingerprint)
+}
+
+export function insertAttendanceReconciliation(data) {
+  return getDB().prepare(`
+    INSERT INTO attendance_daily_reconciliations(
+      fingerprint, staff_id, work_date, shift_schedule_id,
+      check_in_event_id, check_out_event_id, source_event_ids,
+      old_status, new_status, result_status, reason_code,
+      planned_start, planned_end, actual_check_in, actual_check_out,
+      worked_minutes, overtime_candidate_minutes, run_source, reconciled_by
+    ) VALUES(
+      @fingerprint, @staff_id, @work_date, @shift_schedule_id,
+      @check_in_event_id, @check_out_event_id, @source_event_ids,
+      @old_status, @new_status, @result_status, @reason_code,
+      @planned_start, @planned_end, @actual_check_in, @actual_check_out,
+      @worked_minutes, @overtime_candidate_minutes, @run_source, @reconciled_by
+    )
+  `).run(data).lastInsertRowid
+}
+
+export function markScheduleWorkedFromAttendance(scheduleId) {
+  return getDB().prepare(`
+    UPDATE shift_schedule SET status = 'worked'
+    WHERE id = ? AND status = 'scheduled'
+  `).run(scheduleId).changes === 1
+}
+
+export function resolveStaleAttendanceExceptions({ staffId, workDate, activeTypes = [], userId }) {
+  const db = getDB()
+  let sql = `
+    UPDATE attendance_exceptions
+    SET status = 'resolved', resolved_by = ?, resolved_at = CURRENT_TIMESTAMP,
+      resolution_note = 'Yeni uzlastirma ile otomatik kapatildi', updated_at = CURRENT_TIMESTAMP
+    WHERE staff_id = ? AND work_date = ? AND status = 'open'
+  `
+  const params = [userId || null, staffId, workDate]
+  if (activeTypes.length) {
+    sql += ` AND exception_type NOT IN (${activeTypes.map(() => '?').join(',')})`
+    params.push(...activeTypes)
+  }
+  return db.prepare(sql).run(...params).changes
+}
+
+export function upsertAttendanceException(data) {
+  const db = getDB()
+  const existing = db.prepare(`
+    SELECT id FROM attendance_exceptions
+    WHERE COALESCE(staff_id, 0) = COALESCE(?, 0)
+      AND work_date = ? AND exception_type = ? AND status = 'open'
+  `).get(data.staff_id, data.work_date, data.exception_type)
+  if (existing) {
+    db.prepare(`
+      UPDATE attendance_exceptions
+      SET shift_schedule_id = @shift_schedule_id,
+        reconciliation_id = @reconciliation_id,
+        source_event_id = @source_event_id,
+        severity = @severity,
+        message = @message,
+        details_json = @details_json,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = @id
+    `).run({ ...data, id: existing.id })
+    return existing.id
+  }
+  return db.prepare(`
+    INSERT INTO attendance_exceptions(
+      staff_id, work_date, shift_schedule_id, reconciliation_id,
+      source_event_id, exception_type, severity, message, details_json
+    ) VALUES(
+      @staff_id, @work_date, @shift_schedule_id, @reconciliation_id,
+      @source_event_id, @exception_type, @severity, @message, @details_json
+    )
+  `).run(data).lastInsertRowid
+}
+
+export function listAttendanceExceptions(filters = {}) {
+  const db = getDB()
+  let sql = `
+    SELECT ax.*, s.full_name, d.name AS dept_name, d.color_class AS dept_color,
+      sd.name AS shift_name, sd.start_hour, sd.end_hour,
+      adr.actual_check_in, adr.actual_check_out, adr.overtime_candidate_minutes,
+      resolver.full_name AS resolved_by_name
+    FROM attendance_exceptions ax
+    LEFT JOIN staff s ON s.id = ax.staff_id
+    LEFT JOIN departments d ON d.id = s.department_id
+    LEFT JOIN shift_schedule ss ON ss.id = ax.shift_schedule_id
+    LEFT JOIN shift_definitions sd ON sd.id = ss.shift_def_id
+    LEFT JOIN attendance_daily_reconciliations adr ON adr.id = ax.reconciliation_id
+    LEFT JOIN users resolver ON resolver.id = ax.resolved_by
+    WHERE 1 = 1
+  `
+  const params = []
+  if (filters.status) { sql += ' AND ax.status = ?'; params.push(filters.status) }
+  if (filters.from) { sql += ' AND ax.work_date >= ?'; params.push(filters.from) }
+  if (filters.to) { sql += ' AND ax.work_date <= ?'; params.push(filters.to) }
+  if (filters.staff_id) { sql += ' AND ax.staff_id = ?'; params.push(filters.staff_id) }
+  if (filters.dept_id) { sql += ' AND s.department_id = ?'; params.push(filters.dept_id) }
+  if (filters.exception_type) { sql += ' AND ax.exception_type = ?'; params.push(filters.exception_type) }
+  sql += ` ORDER BY CASE ax.severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END,
+    ax.work_date DESC, ax.updated_at DESC LIMIT ?`
+  params.push(Math.min(Math.max(Number(filters.limit) || 500, 1), 1000))
+  return db.prepare(sql).all(...params)
+}
+
+export function getAttendanceException(id) {
+  return getDB().prepare('SELECT * FROM attendance_exceptions WHERE id = ?').get(id)
+}
+
+export function updateAttendanceExceptionStatus(id, status, note, userId) {
+  getDB().prepare(`
+    UPDATE attendance_exceptions
+    SET status = ?, resolution_note = ?, resolved_by = ?, resolved_at = CURRENT_TIMESTAMP,
+      updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `).run(status, note || null, userId || null, id)
+  return getAttendanceException(id)
+}
+
+export function getAttendanceMonthSummary(monthStart, monthEnd, deptId) {
+  const db = getDB()
+  let sql = `
+    SELECT s.id AS staff_id,
+      COUNT(DISTINCT adr.work_date) AS reconciled_days,
+      SUM(CASE WHEN adr.result_status = 'matched' THEN 1 ELSE 0 END) AS matched_days,
+      SUM(CASE WHEN adr.result_status IN ('exception','no_events','unplanned') THEN 1 ELSE 0 END) AS exception_days,
+      COALESCE(SUM(adr.overtime_candidate_minutes), 0) AS overtime_candidate_minutes,
+      (SELECT COUNT(*) FROM attendance_exceptions ax
+        WHERE ax.staff_id = s.id AND ax.status = 'open'
+          AND ax.work_date BETWEEN ? AND ?) AS open_exception_count
+    FROM staff s
+    LEFT JOIN attendance_daily_reconciliations adr
+      ON adr.staff_id = s.id
+      AND adr.work_date BETWEEN ? AND ?
+      AND NOT EXISTS (
+        SELECT 1 FROM attendance_daily_reconciliations newer
+        WHERE newer.staff_id = adr.staff_id
+          AND newer.work_date = adr.work_date
+          AND newer.id > adr.id
+      )
+    WHERE 1 = 1
+  `
+  const params = [monthStart, monthEnd, monthStart, monthEnd]
+  if (deptId) { sql += ' AND s.department_id = ?'; params.push(deptId) }
+  sql += ' GROUP BY s.id'
+  return db.prepare(sql).all(...params)
 }
 
 // ── Statistics ──
@@ -1823,7 +2097,16 @@ export function getStaffDayBreakdown(staffId, monthStart, monthEnd) {
       ss.attachment_url,
       ss.attachment_name,
       ss.attachment_mime,
-      ot.hours as overtime_hours
+      ot.hours as overtime_hours,
+      CASE WHEN adr.id IS NOT NULL THEN 'card_kiosk' ELSE 'manual' END as attendance_source,
+      adr.result_status as reconciliation_status,
+      adr.reason_code as reconciliation_reason,
+      adr.actual_check_in,
+      adr.actual_check_out,
+      adr.worked_minutes as attendance_worked_minutes,
+      adr.overtime_candidate_minutes,
+      (SELECT COUNT(*) FROM attendance_exceptions ax
+        WHERE ax.staff_id = ss.staff_id AND ax.work_date = ss.work_date AND ax.status = 'open') as attendance_exception_count
     FROM shift_schedule ss
     LEFT JOIN shift_definitions sd ON sd.id = ss.shift_def_id
     LEFT JOIN work_locations wl ON wl.id = ss.work_location_id
@@ -1832,6 +2115,13 @@ export function getStaffDayBreakdown(staffId, monthStart, monthEnd) {
       AND ss.work_date BETWEEN lr.start_date AND lr.end_date
     LEFT JOIN overtime_records ot ON ot.staff_id = ss.staff_id
       AND ot.work_date = ss.work_date
+    LEFT JOIN attendance_daily_reconciliations adr ON adr.id = (
+      SELECT latest_adr.id
+      FROM attendance_daily_reconciliations latest_adr
+      WHERE latest_adr.staff_id = ss.staff_id AND latest_adr.work_date = ss.work_date
+      ORDER BY latest_adr.id DESC
+      LIMIT 1
+    )
     WHERE ss.staff_id = ? AND ss.work_date BETWEEN ? AND ?
     ORDER BY ss.work_date
   `).all(staffId, monthStart, monthEnd)
@@ -1863,7 +2153,16 @@ export function getPuantajDayRows(monthStart, monthEnd, deptId) {
       ss.attachment_url,
       ss.attachment_name,
       ss.attachment_mime,
-      ot.hours as overtime_hours
+      ot.hours as overtime_hours,
+      CASE WHEN adr.id IS NOT NULL THEN 'card_kiosk' ELSE 'manual' END as attendance_source,
+      adr.result_status as reconciliation_status,
+      adr.reason_code as reconciliation_reason,
+      adr.actual_check_in,
+      adr.actual_check_out,
+      adr.worked_minutes as attendance_worked_minutes,
+      adr.overtime_candidate_minutes,
+      (SELECT COUNT(*) FROM attendance_exceptions ax
+        WHERE ax.staff_id = ss.staff_id AND ax.work_date = ss.work_date AND ax.status = 'open') as attendance_exception_count
     FROM shift_schedule ss
     JOIN staff s ON s.id = ss.staff_id
     LEFT JOIN staff_assignments day_sa ON day_sa.id = (
@@ -1883,6 +2182,13 @@ export function getPuantajDayRows(monthStart, monthEnd, deptId) {
       AND ss.work_date BETWEEN lr.start_date AND lr.end_date
     LEFT JOIN overtime_records ot ON ot.staff_id = ss.staff_id
       AND ot.work_date = ss.work_date
+    LEFT JOIN attendance_daily_reconciliations adr ON adr.id = (
+      SELECT latest_adr.id
+      FROM attendance_daily_reconciliations latest_adr
+      WHERE latest_adr.staff_id = ss.staff_id AND latest_adr.work_date = ss.work_date
+      ORDER BY latest_adr.id DESC
+      LIMIT 1
+    )
     WHERE ss.work_date BETWEEN ? AND ?
   `
   const params = [monthStart, monthEnd]

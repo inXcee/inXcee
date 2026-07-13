@@ -20,12 +20,20 @@ import {
   getStaffDetail,
   getStaffList, getStaffById, createStaff, updateStaff, deleteStaff,
   getStaffAssignments, createStaffAssignment, getStaffDataQualityRows,
-  getStaffDayBreakdown, getPuantajDayRows, listDeductions
+  getStaffDayBreakdown, getPuantajDayRows, listDeductions,
+  findAttendanceIdentity, insertAttendanceEvent, listAttendanceEvents,
+  listStationAttendanceSourceEvents, getAttendanceCandidateStaffIds,
+  getAttendanceReconciliationContext, findAttendanceReconciliation,
+  insertAttendanceReconciliation, markScheduleWorkedFromAttendance,
+  resolveStaleAttendanceExceptions, upsertAttendanceException,
+  listAttendanceExceptions, getAttendanceException, updateAttendanceExceptionStatus,
+  getAttendanceMonthSummary
 } from './queries.js'
 import { getDB } from '../../shared/db/index.js'
 import { sendPushToWorker } from '../../shared/notifications/push.js'
 import { createNotification } from '../../shared/notifications/service.js'
 import { logger } from '../../shared/logger.js'
+import { createHash } from 'node:crypto'
 
 // ── Tax helpers (2026 ücret gelirleri tarifesi — GİB) ──
 const TAX_BRACKETS = [
@@ -885,12 +893,455 @@ export function overtimeSummaryService(month) {
   return getOvertimeSummary(month)
 }
 
-export function checkInService(data) {
-  return createAttendanceLog(data)
+const ATTENDANCE_TOLERANCE_MINUTES = 15
+const ATTENDANCE_OVERTIME_MINUTES = 30
+const ATTENDANCE_MAX_RANGE_DAYS = 31
+
+function turkeyDateParts(value = new Date()) {
+  const date = value instanceof Date ? value : new Date(value)
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Istanbul',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(date)
+  return Object.fromEntries(parts.map(part => [part.type, part.value]))
 }
 
-export function checkOutService(logId) {
-  updateCheckout(logId)
+function turkeyWorkDate(value = new Date()) {
+  const parts = turkeyDateParts(value)
+  return `${parts.year}-${parts.month}-${parts.day}`
+}
+
+function addIsoDays(date, days) {
+  const parsed = new Date(`${date}T12:00:00Z`)
+  parsed.setUTCDate(parsed.getUTCDate() + days)
+  return parsed.toISOString().slice(0, 10)
+}
+
+function validateAttendanceDate(value, field = 'date') {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value || ''))) {
+    throw Object.assign(new Error(`${field} YYYY-MM-DD formatında olmalı`), { statusCode: 400 })
+  }
+  const parsed = new Date(`${value}T12:00:00Z`)
+  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value) {
+    throw Object.assign(new Error(`${field} geçerli bir tarih olmalı`), { statusCode: 400 })
+  }
+  return value
+}
+
+function normalizeAttendanceTimestamp(value) {
+  const parsed = value ? new Date(value) : new Date()
+  if (Number.isNaN(parsed.getTime())) {
+    throw Object.assign(new Error('occurred_at geçerli bir tarih-saat olmalı'), { statusCode: 400 })
+  }
+  if (parsed.getTime() > Date.now() + 5 * 60 * 1000) {
+    throw Object.assign(new Error('Gelecek zamanlı okutma kabul edilmez'), { statusCode: 400 })
+  }
+  return parsed.toISOString()
+}
+
+function attendanceEventKey(data) {
+  if (data.external_event_id) return `${data.source}:${String(data.external_event_id).trim()}`
+  return createHash('sha256').update(JSON.stringify([
+    data.source, data.device_id || '', data.staff_id || 0, data.card_id || 0,
+    data.event_type, data.occurred_at,
+  ])).digest('hex')
+}
+
+export function attendanceEventService(data = {}) {
+  const eventType = data.event_type === 'entry' ? 'check_in'
+    : data.event_type === 'exit' ? 'check_out'
+      : data.event_type
+  if (!['check_in', 'check_out', 'scan'].includes(eventType)) {
+    throw Object.assign(new Error('event_type check_in, check_out veya scan olmalı'), { statusCode: 400 })
+  }
+  const occurredAt = normalizeAttendanceTimestamp(data.occurred_at)
+  const source = String(data.source || 'kiosk').trim().slice(0, 50) || 'kiosk'
+  const deviceId = String(data.device_id || '').trim().slice(0, 100) || null
+  const identity = findAttendanceIdentity({
+    staffId: data.staff_id ? Number(data.staff_id) : null,
+    cardId: data.card_id ? Number(data.card_id) : null,
+    cardCode: data.card_code?.trim(),
+    nfcUid: data.nfc_uid?.trim(),
+  })
+  const rawPayload = data.raw_payload == null
+    ? null
+    : JSON.stringify(data.raw_payload).slice(0, 20000)
+  const event = {
+    external_event_id: data.external_event_id == null ? null : String(data.external_event_id).trim().slice(0, 200),
+    staff_id: identity?.staff_id || null,
+    card_id: identity?.card_id || (data.card_id ? Number(data.card_id) : null),
+    event_type: eventType,
+    occurred_at: occurredAt,
+    work_date: turkeyWorkDate(occurredAt),
+    source,
+    device_id: deviceId,
+    match_status: identity ? 'matched' : 'unmatched',
+    match_detail: identity ? `matched_via:${identity.matched_via}` : 'Personel veya aktif erişim kartı eşleşmedi',
+    raw_payload: rawPayload,
+  }
+  event.event_key = attendanceEventKey(event)
+  const saved = insertAttendanceEvent(event)
+  if (!identity) {
+    upsertAttendanceException({
+      staff_id: null,
+      work_date: event.work_date,
+      shift_schedule_id: null,
+      reconciliation_id: null,
+      source_event_id: saved.id,
+      exception_type: 'unmatched_event',
+      severity: 'critical',
+      message: 'Okutma personel veya aktif kartla eşleşmedi',
+      details_json: JSON.stringify({ source, device_id: deviceId, event_id: saved.id }),
+    })
+  }
+  return saved
+}
+
+export function attendanceEventsService(filters = {}) {
+  if (filters.from) validateAttendanceDate(filters.from, 'from')
+  if (filters.to) validateAttendanceDate(filters.to, 'to')
+  return listAttendanceEvents(filters)
+}
+
+function importStationAttendanceEvents(from, to) {
+  let inserted = 0
+  const rows = listStationAttendanceSourceEvents(from, to)
+  rows.forEach(row => {
+    const occurredAt = new Date(`${String(row.scanned_at).replace(' ', 'T')}Z`).toISOString()
+    const workDate = turkeyWorkDate(occurredAt)
+    if (workDate < from || workDate > to) return
+    const event = attendanceEventService({
+      external_event_id: row.id,
+      staff_id: row.staff_id,
+      card_id: row.card_id,
+      event_type: row.event_type,
+      occurred_at: occurredAt,
+      source: 'access_station',
+      device_id: row.station_id ? `station:${row.station_id}` : 'station:unknown',
+      raw_payload: {
+        access_event_id: row.id,
+        station_name: row.station_name,
+        station_type: row.station_type,
+        location: row.location,
+        raw_uid: row.raw_uid,
+      },
+    })
+    if (event.inserted) inserted += 1
+  })
+  return inserted
+}
+
+function plannedAttendanceWindow(workDate, startHour, endHour) {
+  const start = new Date(`${workDate}T${String(startHour).padStart(2, '0')}:00:00+03:00`)
+  let endDate = workDate
+  if (Number(endHour) <= Number(startHour)) endDate = addIsoDays(workDate, 1)
+  const end = new Date(`${endDate}T${String(endHour).padStart(2, '0')}:00:00+03:00`)
+  return { start, end }
+}
+
+function minutesBetween(later, earlier) {
+  return Math.round((later.getTime() - earlier.getTime()) / 60000)
+}
+
+function attendanceException(type, message, severity = 'warning', details = {}) {
+  return { type, message, severity, details }
+}
+
+function reconcileAttendanceDecision(context) {
+  const { schedule, leave, periodLock, dailyApproval, events, latestReconciliation } = context
+  const latestWasAutomatic = schedule?.status === 'worked'
+    && latestReconciliation?.new_status === 'worked'
+    && latestReconciliation?.result_status === 'matched'
+  const oldStatus = latestWasAutomatic ? (latestReconciliation.old_status || 'scheduled') : (schedule?.status || null)
+  const base = {
+    oldStatus,
+    newStatus: schedule?.status || null,
+    resultStatus: 'skipped',
+    reasonCode: null,
+    checkInEvent: null,
+    checkOutEvent: null,
+    plannedStart: null,
+    plannedEnd: null,
+    actualCheckIn: null,
+    actualCheckOut: null,
+    workedMinutes: null,
+    overtimeCandidateMinutes: 0,
+    shouldMarkWorked: false,
+    exceptions: [],
+  }
+
+  if (periodLock) return { ...base, reasonCode: 'period_locked' }
+  if (leave || schedule?.status === 'on_leave') return { ...base, reasonCode: 'approved_leave' }
+  if (dailyApproval) return { ...base, reasonCode: 'approved_day' }
+  if (!schedule) {
+    if (!events.length) return { ...base, reasonCode: 'no_schedule' }
+    return {
+      ...base,
+      resultStatus: 'unplanned',
+      reasonCode: 'unplanned_attendance',
+      exceptions: [attendanceException('unplanned_attendance', 'Planlı vardiya olmadan kart hareketi var', 'critical', { event_ids: events.map(e => e.id) })],
+    }
+  }
+  if (!['scheduled', 'worked'].includes(schedule.status) || (schedule.status === 'worked' && !latestWasAutomatic)) {
+    return { ...base, reasonCode: 'manual_final_status' }
+  }
+  if (!events.length) {
+    return {
+      ...base,
+      resultStatus: 'no_events',
+      reasonCode: 'missing_scan',
+      exceptions: [attendanceException('missing_scan', 'Planlı vardiya için kart okutması bulunamadı', 'critical')],
+    }
+  }
+  if (events.length === 1) {
+    return {
+      ...base,
+      resultStatus: 'exception',
+      reasonCode: 'single_scan',
+      exceptions: [attendanceException('single_scan', 'Yalnızca bir kart okutması var', 'critical', { event_id: events[0].id })],
+    }
+  }
+  if (schedule.start_hour == null || schedule.end_hour == null) {
+    return {
+      ...base,
+      resultStatus: 'exception',
+      reasonCode: 'missing_shift_definition',
+      exceptions: [attendanceException('missing_shift_definition', 'Planlı vardiyanın saat tanımı bulunamadı', 'critical')],
+    }
+  }
+
+  const checkInEvent = events.find(event => ['check_in', 'scan'].includes(event.event_type))
+  const checkOutEvent = [...events].reverse().find(event => (
+    ['check_out', 'scan'].includes(event.event_type)
+    && (!checkInEvent || new Date(event.occurred_at) > new Date(checkInEvent.occurred_at))
+  ))
+  if (!checkInEvent || !checkOutEvent) {
+    return {
+      ...base,
+      resultStatus: 'exception',
+      reasonCode: 'invalid_sequence',
+      exceptions: [attendanceException('invalid_sequence', 'Giriş-çıkış okutma sırası eşleştirilemedi', 'critical', { event_ids: events.map(e => e.id) })],
+    }
+  }
+
+  const actualIn = new Date(checkInEvent.occurred_at)
+  const actualOut = new Date(checkOutEvent.occurred_at)
+  const planned = plannedAttendanceWindow(schedule.work_date, schedule.start_hour, schedule.end_hour)
+  const workedMinutes = minutesBetween(actualOut, actualIn)
+  const lateMinutes = minutesBetween(actualIn, planned.start)
+  const earlyMinutes = minutesBetween(planned.end, actualOut)
+  const overtimeMinutes = Math.max(0, minutesBetween(actualOut, planned.end))
+  const exceptions = []
+
+  if (actualIn < new Date(planned.start.getTime() - 2 * 60 * 60000)
+    || actualOut > new Date(planned.end.getTime() + 8 * 60 * 60000)) {
+    exceptions.push(attendanceException('outside_shift', 'Vardiya saatlerinin çok dışında kart hareketi var', 'critical', { late_minutes: lateMinutes, overtime_minutes: overtimeMinutes }))
+  } else {
+    if (lateMinutes > ATTENDANCE_TOLERANCE_MINUTES) {
+      exceptions.push(attendanceException('late_arrival', `${lateMinutes} dakika geç giriş`, 'warning', { late_minutes: lateMinutes }))
+    }
+    if (earlyMinutes > ATTENDANCE_TOLERANCE_MINUTES) {
+      exceptions.push(attendanceException('early_departure', `${earlyMinutes} dakika erken çıkış`, 'warning', { early_minutes: earlyMinutes }))
+    }
+  }
+
+  const blockingException = exceptions.some(item => item.type !== 'overtime_candidate')
+  if (!blockingException && overtimeMinutes > ATTENDANCE_OVERTIME_MINUTES) {
+    exceptions.push(attendanceException('overtime_candidate', `${overtimeMinutes} dakika mesai adayı`, 'info', { overtime_minutes: overtimeMinutes }))
+  }
+  return {
+    ...base,
+    newStatus: blockingException ? schedule.status : 'worked',
+    resultStatus: blockingException ? 'exception' : 'matched',
+    reasonCode: blockingException ? exceptions[0].type : (overtimeMinutes > ATTENDANCE_OVERTIME_MINUTES ? 'overtime_candidate' : 'matched'),
+    checkInEvent,
+    checkOutEvent,
+    plannedStart: planned.start.toISOString(),
+    plannedEnd: planned.end.toISOString(),
+    actualCheckIn: actualIn.toISOString(),
+    actualCheckOut: actualOut.toISOString(),
+    workedMinutes,
+    overtimeCandidateMinutes: overtimeMinutes > ATTENDANCE_OVERTIME_MINUTES ? overtimeMinutes : 0,
+    shouldMarkWorked: !blockingException && schedule.status === 'scheduled',
+    exceptions,
+  }
+}
+
+function reconciliationFingerprint(staffId, workDate, context, decision) {
+  return createHash('sha256').update(JSON.stringify({
+    staffId,
+    workDate,
+    scheduleId: context.schedule?.id || null,
+    oldStatus: decision.oldStatus,
+    eventIds: context.events.map(event => event.id),
+    leaveId: context.leave?.id || null,
+    lock: Boolean(context.periodLock),
+    approvalId: context.dailyApproval?.id || null,
+  })).digest('hex')
+}
+
+function reconcileAttendanceDayForStaff(staffId, workDate, userId, runSource) {
+  const db = getDB()
+  return db.transaction(() => {
+    const context = getAttendanceReconciliationContext(staffId, workDate)
+    if (!context.staff) return { staff_id: staffId, work_date: workDate, skipped: true, reason_code: 'staff_not_found' }
+    const decision = reconcileAttendanceDecision(context)
+    const fingerprint = reconciliationFingerprint(staffId, workDate, context, decision)
+    const existing = findAttendanceReconciliation(fingerprint)
+    if (existing) return { ...existing, idempotent: true }
+
+    if (decision.shouldMarkWorked) {
+      markScheduleWorkedFromAttendance(context.schedule.id)
+      resetDailyApprovalsForDates([workDate], userId)
+    }
+    const reconciliationId = insertAttendanceReconciliation({
+      fingerprint,
+      staff_id: staffId,
+      work_date: workDate,
+      shift_schedule_id: context.schedule?.id || null,
+      check_in_event_id: decision.checkInEvent?.id || null,
+      check_out_event_id: decision.checkOutEvent?.id || null,
+      source_event_ids: JSON.stringify(context.events.map(event => event.id)),
+      old_status: decision.oldStatus,
+      new_status: decision.newStatus,
+      result_status: decision.resultStatus,
+      reason_code: decision.reasonCode,
+      planned_start: decision.plannedStart,
+      planned_end: decision.plannedEnd,
+      actual_check_in: decision.actualCheckIn,
+      actual_check_out: decision.actualCheckOut,
+      worked_minutes: decision.workedMinutes,
+      overtime_candidate_minutes: decision.overtimeCandidateMinutes,
+      run_source: runSource,
+      reconciled_by: userId || null,
+    })
+    const activeTypes = decision.exceptions.map(item => item.type)
+    if (!['period_locked', 'approved_day'].includes(decision.reasonCode)) {
+      resolveStaleAttendanceExceptions({ staffId, workDate, activeTypes, userId })
+    }
+    decision.exceptions.forEach(item => upsertAttendanceException({
+      staff_id: staffId,
+      work_date: workDate,
+      shift_schedule_id: context.schedule?.id || null,
+      reconciliation_id: reconciliationId,
+      source_event_id: item.details.event_id || null,
+      exception_type: item.type,
+      severity: item.severity,
+      message: item.message,
+      details_json: JSON.stringify(item.details),
+    }))
+    return {
+      id: reconciliationId,
+      staff_id: staffId,
+      work_date: workDate,
+      result_status: decision.resultStatus,
+      reason_code: decision.reasonCode,
+      old_status: decision.oldStatus,
+      new_status: decision.newStatus,
+      exception_count: decision.exceptions.length,
+      overtime_candidate_minutes: decision.overtimeCandidateMinutes,
+      idempotent: false,
+    }
+  })()
+}
+
+export function reconcileAttendanceService(data = {}, userId = null, runSource = 'manual') {
+  const from = validateAttendanceDate(data.date || data.from || turkeyWorkDate(), data.date ? 'date' : 'from')
+  const to = validateAttendanceDate(data.date || data.to || from, data.date ? 'date' : 'to')
+  if (to < from) throw Object.assign(new Error('to, from tarihinden önce olamaz'), { statusCode: 400 })
+  const dates = []
+  for (let date = from; date <= to; date = addIsoDays(date, 1)) {
+    dates.push(date)
+    if (dates.length > ATTENDANCE_MAX_RANGE_DAYS) {
+      throw Object.assign(new Error(`Tek seferde en fazla ${ATTENDANCE_MAX_RANGE_DAYS} gün uzlaştırılabilir`), { statusCode: 400 })
+    }
+  }
+  const staffId = data.staff_id ? Number(data.staff_id) : null
+  if (data.staff_id && (!Number.isInteger(staffId) || staffId <= 0)) {
+    throw Object.assign(new Error('staff_id sayısal olmalı'), { statusCode: 400 })
+  }
+  const importedEvents = importStationAttendanceEvents(from, to)
+  const today = turkeyWorkDate()
+  const results = []
+  let notDue = 0
+  dates.forEach(workDate => {
+    if (workDate > today) { notDue += 1; return }
+    const candidateIds = getAttendanceCandidateStaffIds(workDate, staffId)
+    candidateIds.forEach(candidateId => {
+      results.push(reconcileAttendanceDayForStaff(candidateId, workDate, userId, runSource))
+    })
+  })
+  return {
+    from,
+    to,
+    imported_events: importedEvents,
+    processed: results.length,
+    changed: results.filter(row => !row.idempotent && row.old_status !== row.new_status).length,
+    matched: results.filter(row => row.result_status === 'matched').length,
+    exceptions: results.filter(row => ['exception', 'no_events', 'unplanned'].includes(row.result_status)).length,
+    skipped: results.filter(row => row.result_status === 'skipped').length,
+    idempotent: results.filter(row => row.idempotent).length,
+    not_due_days: notDue,
+    results,
+  }
+}
+
+export function attendanceExceptionsService(filters = {}) {
+  if (filters.from) validateAttendanceDate(filters.from, 'from')
+  if (filters.to) validateAttendanceDate(filters.to, 'to')
+  const rows = listAttendanceExceptions({ ...filters, status: filters.status || 'open' })
+  return {
+    rows,
+    summary: rows.reduce((acc, row) => {
+      acc.total += 1
+      acc.by_type[row.exception_type] = (acc.by_type[row.exception_type] || 0) + 1
+      acc.by_severity[row.severity] = (acc.by_severity[row.severity] || 0) + 1
+      return acc
+    }, { total: 0, by_type: {}, by_severity: {} }),
+  }
+}
+
+export function updateAttendanceExceptionService(id, data, userId) {
+  const existing = getAttendanceException(id)
+  if (!existing) throw Object.assign(new Error('İstisna kaydı bulunamadı'), { statusCode: 404 })
+  if (!['resolved', 'ignored'].includes(data.status)) {
+    throw Object.assign(new Error('status resolved veya ignored olmalı'), { statusCode: 400 })
+  }
+  if (data.status === 'ignored' && !String(data.note || '').trim()) {
+    throw Object.assign(new Error('Yoksayma işlemi için açıklama zorunlu'), { statusCode: 400 })
+  }
+  return updateAttendanceExceptionStatus(id, data.status, String(data.note || '').trim() || null, userId)
+}
+
+export function checkInService(data) {
+  const id = createAttendanceLog(data)
+  const event = attendanceEventService({
+    external_event_id: `attendance-log:${id}:in`,
+    staff_id: data.staff_id,
+    event_type: 'check_in',
+    occurred_at: new Date().toISOString(),
+    source: data.source || 'legacy_attendance',
+    device_id: data.device_id || null,
+    raw_payload: { attendance_log_id: id, shift_schedule_id: data.shift_schedule_id || null },
+  })
+  return { id, event_id: event.id }
+}
+
+export function checkOutService(logId, data = {}, userId = null) {
+  const log = updateCheckout(logId)
+  const event = attendanceEventService({
+    external_event_id: `attendance-log:${logId}:out`,
+    staff_id: log.staff_id,
+    event_type: 'check_out',
+    occurred_at: new Date().toISOString(),
+    source: data.source || 'legacy_attendance',
+    device_id: data.device_id || null,
+    raw_payload: { attendance_log_id: Number(logId), shift_schedule_id: log.shift_schedule_id || null },
+  })
+  const reconciliation = reconcileAttendanceService({ date: event.work_date, staff_id: log.staff_id }, userId, 'event')
+  return { event_id: event.id, reconciliation }
 }
 
 export function attendanceListService(filters) {
@@ -1312,6 +1763,14 @@ function dayEntryFromRow(row, date, dow) {
   if (row.attachment_url) entry.attachment_url = row.attachment_url
   if (row.attachment_name) entry.attachment_name = row.attachment_name
   if (row.attachment_mime) entry.attachment_mime = row.attachment_mime
+  if (row.attendance_source) entry.attendance_source = row.attendance_source
+  if (row.reconciliation_status) entry.reconciliation_status = row.reconciliation_status
+  if (row.reconciliation_reason) entry.reconciliation_reason = row.reconciliation_reason
+  if (row.actual_check_in) entry.actual_check_in = row.actual_check_in
+  if (row.actual_check_out) entry.actual_check_out = row.actual_check_out
+  if (row.attendance_worked_minutes != null) entry.attendance_worked_minutes = row.attendance_worked_minutes
+  if (row.overtime_candidate_minutes) entry.overtime_candidate_minutes = row.overtime_candidate_minutes
+  if (row.attendance_exception_count != null) entry.attendance_exception_count = row.attendance_exception_count
   return entry
 }
 
@@ -1418,6 +1877,9 @@ export function puantajService(month, deptId, { includeMeta = false } = {}) {
   const db = getDB()
 
   const rows = getPuantaj(monthStart, monthEnd, deptId)
+  const attendanceByStaff = new Map(
+    getAttendanceMonthSummary(monthStart, monthEnd, deptId).map(row => [Number(row.staff_id), row])
+  )
 
   const result = rows.map(row => {
     const salary = row.salary || 0
@@ -1444,9 +1906,15 @@ export function puantajService(month, deptId, { includeMeta = false } = {}) {
     const employerTotalCost = round2(gross + ssiEmployer + unemploymentEmployer)
 
     const attendRate = wdm > 0 ? Math.round(((row.worked_days || 0) / wdm) * 100) : 0
+    const attendance = attendanceByStaff.get(Number(row.id)) || {}
 
     return {
       ...row,
+      attendance_reconciled_days: Number(attendance.reconciled_days || 0),
+      attendance_matched_days: Number(attendance.matched_days || 0),
+      attendance_exception_days: Number(attendance.exception_days || 0),
+      attendance_open_exception_count: Number(attendance.open_exception_count || 0),
+      attendance_overtime_candidate_minutes: Number(attendance.overtime_candidate_minutes || 0),
       daily_rate: round2(dailyRate),
       base_pay: basePay,
       overtime_pay: overtimePay,
@@ -1477,7 +1945,8 @@ export function puantajService(month, deptId, { includeMeta = false } = {}) {
     rows: result,
     as_of_date: asOfDate,
     not_due: notDue,
-    exception_count: 0,
+    exception_count: result.reduce((sum, row) => sum + row.attendance_open_exception_count, 0),
     source: 'shift_schedule',
+    sources: ['shift_schedule', 'attendance_reconciliation'],
   }
 }

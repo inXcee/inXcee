@@ -24,7 +24,9 @@ import {
   staffDetailService,
   staffListService, staffGetService, staffCreateService, staffUpdateService, staffDeleteService,
   staffAssignmentsService, createStaffAssignmentService, staffDataQualityService,
-  puantajCsvService, puantajDaysService, staffDayBreakdownService, payslipService, bankTransferCsvService
+  puantajCsvService, puantajDaysService, staffDayBreakdownService, payslipService, bankTransferCsvService,
+  attendanceEventService, attendanceEventsService, reconcileAttendanceService,
+  attendanceExceptionsService, updateAttendanceExceptionService
 } from './service.js'
 import PDFDocument from 'pdfkit'
 import {
@@ -565,14 +567,60 @@ shiftsRouter.delete('/overtime/:id', ...managerOrSupervisor, (req, res) => {
 })
 
 // ── Attendance ──
+shiftsRouter.get('/attendance/events', ...managerOrSupervisor, (req, res) => {
+  try {
+    res.json(attendanceEventsService(req.query))
+  } catch (e) {
+    res.status(e.statusCode || 400).json({ error: e.message })
+  }
+})
+
+shiftsRouter.post('/attendance/events', ...allStaff, (req, res) => {
+  try {
+    const event = attendanceEventService(req.body)
+    logAudit(req.user?.id || null, 'attendance_event_ingest', 'shifts', event.id, `${event.source}:${event.event_type}`)
+    res.status(event.inserted ? 201 : 200).json(event)
+  } catch (e) {
+    res.status(e.statusCode || 400).json({ error: e.message })
+  }
+})
+
+shiftsRouter.post('/attendance/reconcile', ...managerOrSupervisor, (req, res) => {
+  try {
+    const result = reconcileAttendanceService(req.body, req.user.id, 'manual')
+    logAudit(req.user.id, 'attendance_reconcile', 'shifts', req.body.staff_id || null, `${result.from}:${result.to}:${result.processed}`)
+    res.json(result)
+  } catch (e) {
+    res.status(e.statusCode || 400).json({ error: e.message })
+  }
+})
+
+shiftsRouter.get('/attendance/exceptions', ...managerOrSupervisor, (req, res) => {
+  try {
+    res.json(attendanceExceptionsService(req.query))
+  } catch (e) {
+    res.status(e.statusCode || 400).json({ error: e.message })
+  }
+})
+
+shiftsRouter.patch('/attendance/exceptions/:id', ...managerOrSupervisor, (req, res) => {
+  try {
+    const row = updateAttendanceExceptionService(req.params.id, req.body, req.user.id)
+    logAudit(req.user.id, 'attendance_exception_update', 'shifts', row.id, `${row.status}:${row.exception_type}`)
+    res.json(row)
+  } catch (e) {
+    res.status(e.statusCode || 400).json({ error: e.message })
+  }
+})
+
 shiftsRouter.get('/attendance', ...allStaff, (req, res) => {
   res.json(attendanceListService(req.query))
 })
 
 shiftsRouter.post('/attendance/checkin', ...allStaff, (req, res) => {
   try {
-    const id = checkInService(req.body)
-    res.status(201).json({ id })
+    const result = checkInService(req.body)
+    res.status(201).json(result)
   } catch (e) {
     res.status(400).json({ error: e.message })
   }
@@ -580,8 +628,8 @@ shiftsRouter.post('/attendance/checkin', ...allStaff, (req, res) => {
 
 shiftsRouter.post('/attendance/checkout', ...allStaff, (req, res) => {
   try {
-    checkOutService(req.body.log_id)
-    res.json({ ok: true })
+    const result = checkOutService(req.body.log_id, req.body, req.user?.id || null)
+    res.json({ ok: true, ...result })
   } catch (e) {
     res.status(400).json({ error: e.message })
   }

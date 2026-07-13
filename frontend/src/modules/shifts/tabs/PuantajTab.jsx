@@ -1871,6 +1871,8 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
                     + (entry?.absent_reason ? ` · Neden: ${entry.absent_reason}` : '')
                     + (entry?.detail_note ? ` · Not: ${entry.detail_note}` : '')
                     + (entry?.attachment_name ? ` · Belge: ${entry.attachment_name}` : '')
+                    + (entry?.attendance_source === 'card_kiosk' ? ` · Kart ${attendanceTime(entry.actual_check_in)}-${attendanceTime(entry.actual_check_out)}` : '')
+                    + (entry?.attendance_exception_count ? ` · ${entry.attendance_exception_count} kart kontrolü` : '')
                     + (canEdit ? ' · sağ tık: gün detayı' : '')
                   const isActive = activeCell?.row === rowIdx && activeCell?.day === d
                   const inSelection = isInRect(selectionRect, rowIdx, d)
@@ -1936,6 +1938,9 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
                         ) : null}
                         {!busy && hasDayDetail ? (
                           <span style={{ position: 'absolute', bottom: '0px', left: '2px', fontSize: '7px', lineHeight: 1, color: entry?.attachment_url ? 'var(--blue)' : 'var(--teal)', fontWeight: 900 }}>i</span>
+                        ) : null}
+                        {!busy && entry?.attendance_source === 'card_kiosk' ? (
+                          <span style={{ position: 'absolute', top: '0px', left: '2px', fontSize: '7px', lineHeight: 1, color: entry?.attendance_exception_count ? 'var(--red)' : 'var(--blue)', fontWeight: 900 }}>K</span>
                         ) : null}
                       </button>
                     </td>
@@ -2271,6 +2276,12 @@ function PuantajDayBreakdownSheet({ date, staffRows, daysByStaff, holidayName, o
                     <td>
                       <div style={{ color: hours ? 'var(--text)' : 'var(--text3)' }}>{hours || '-'}</div>
                       <div style={{ color: e?.work_location_name ? 'var(--blue)' : 'var(--text3)', fontSize: '10px', marginTop: '2px' }}>{e?.work_location_name || e?.shift_name || '-'}</div>
+                      {e?.attendance_source === 'card_kiosk' && (
+                        <div style={{ color: e?.attendance_exception_count ? 'var(--red)' : 'var(--teal)', fontSize: '9px', marginTop: '3px', fontFamily: 'var(--mono)' }}>
+                          KART {attendanceTime(e.actual_check_in)}-{attendanceTime(e.actual_check_out)}
+                          {e.attendance_exception_count ? ` · ${e.attendance_exception_count} kontrol` : ''}
+                        </div>
+                      )}
                     </td>
                     <td>
                       <div style={{ color: e?.detail_note || e?.absent_reason ? 'var(--text2)' : 'var(--text3)', maxWidth: '250px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -3088,6 +3099,143 @@ function PuantajCodeManager({ codes, onClose }) {
   )
 }
 
+const ATTENDANCE_EXCEPTION_META = {
+  unmatched_event: { label: 'Eşleşmeyen kart', color: 'var(--red)' },
+  unplanned_attendance: { label: 'Plansız hareket', color: 'var(--red)' },
+  missing_scan: { label: 'Okutma yok', color: 'var(--red)' },
+  single_scan: { label: 'Tek okutma', color: 'var(--red)' },
+  invalid_sequence: { label: 'Giriş/çıkış sırası', color: 'var(--red)' },
+  missing_shift_definition: { label: 'Vardiya saati eksik', color: 'var(--red)' },
+  late_arrival: { label: 'Geç giriş', color: 'var(--accent)' },
+  early_departure: { label: 'Erken çıkış', color: 'var(--accent)' },
+  outside_shift: { label: 'Vardiya dışı hareket', color: 'var(--red)' },
+  overtime_candidate: { label: 'Mesai adayı', color: 'var(--blue)' },
+}
+
+function attendanceTime(value) {
+  if (!value) return '-'
+  return new Date(value).toLocaleTimeString('tr-TR', {
+    timeZone: 'Europe/Istanbul', hour: '2-digit', minute: '2-digit',
+  })
+}
+
+function AttendanceExceptionsSheet({
+  payload,
+  loading,
+  monthLabel,
+  canEdit,
+  busy,
+  onClose,
+  onReconcileMonth,
+  onReconcileDay,
+  onResolve,
+  onPersonClick,
+}) {
+  const rows = payload?.rows || []
+  const summary = payload?.summary || { total: 0, by_type: {}, by_severity: {} }
+  const [typeFilter, setTypeFilter] = useState('all')
+  const [ignoreId, setIgnoreId] = useState(null)
+  const [ignoreNote, setIgnoreNote] = useState('')
+  const filteredRows = typeFilter === 'all' ? rows : rows.filter(row => row.exception_type === typeFilter)
+  const typeRows = Object.entries(summary.by_type || {}).sort((a, b) => b[1] - a[1])
+
+  return (
+    <BottomSheet onClose={onClose}>
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <div style={{ position: 'sticky', top: 0, zIndex: 2, margin: '-16px -20px 0', padding: '16px 20px 10px', background: 'var(--bg)', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+          <div>
+            <div style={{ fontFamily: 'var(--display)', fontSize: '16px', letterSpacing: '1px' }}>KART / KİOSK KONTROLÜ</div>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', marginTop: '3px' }}>
+              {monthLabel} · Ham okutmalar puantaja otomatik değil, kurallı uzlaştırmayla yansır
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: '6px' }}>
+            {canEdit && (
+              <button className="btn btn-primary btn-sm" disabled={busy} onClick={onReconcileMonth}>
+                {busy ? 'İŞLENİYOR...' : 'AYI UZLAŞTIR'}
+              </button>
+            )}
+            <button className="btn btn-ghost btn-sm" onClick={onClose}>X</button>
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: '8px' }}>
+          {[
+            ['Açık kayıt', summary.total || 0, 'var(--text)'],
+            ['Kritik', summary.by_severity?.critical || 0, 'var(--red)'],
+            ['Uyarı', summary.by_severity?.warning || 0, 'var(--accent)'],
+            ['Mesai adayı', summary.by_type?.overtime_candidate || 0, 'var(--blue)'],
+          ].map(([label, value, color]) => (
+            <div key={label} style={{ border: '1px solid var(--border)', borderRadius: '8px', background: 'var(--surface2)', padding: '9px 10px' }}>
+              <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text3)' }}>{label}</div>
+              <div style={{ fontFamily: 'var(--display)', fontSize: '19px', color, marginTop: '3px' }}>{value}</div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', paddingBottom: '2px' }}>
+          <button className={`btn btn-sm ${typeFilter === 'all' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTypeFilter('all')}>
+            TÜM {summary.total || 0}
+          </button>
+          {typeRows.map(([type, count]) => (
+            <button key={type} className={`btn btn-sm ${typeFilter === type ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTypeFilter(type)} style={{ whiteSpace: 'nowrap' }}>
+              {ATTENDANCE_EXCEPTION_META[type]?.label || type} {count}
+            </button>
+          ))}
+        </div>
+
+        {loading ? <SkeletonGrid count={4} /> : filteredRows.length === 0 ? (
+          <div style={{ border: '1px solid rgba(34,197,94,.30)', background: 'rgba(34,197,94,.08)', borderRadius: '8px', padding: '18px', color: 'var(--green)', textAlign: 'center', fontSize: '12px' }}>
+            Bu filtrede açık kart/kiosk istisnası yok.
+          </div>
+        ) : (
+          <div style={{ border: '1px solid var(--border)', borderRadius: '8px', overflow: 'hidden' }}>
+            {filteredRows.map((row, index) => {
+              const meta = ATTENDANCE_EXCEPTION_META[row.exception_type] || { label: row.exception_type, color: 'var(--text2)' }
+              return (
+                <div key={row.id} style={{ padding: '11px 12px', background: 'var(--surface)', borderBottom: index < filteredRows.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', justifyContent: 'space-between', flexWrap: 'wrap' }}>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '7px', flexWrap: 'wrap' }}>
+                        <span style={{ border: `1px solid ${meta.color}`, color: meta.color, borderRadius: '6px', padding: '2px 6px', fontFamily: 'var(--mono)', fontSize: '9px', fontWeight: 900 }}>{meta.label}</span>
+                        <button type="button" onClick={() => row.staff_id && onPersonClick(row.staff_id)} style={{ border: 'none', background: 'none', color: 'var(--text)', cursor: row.staff_id ? 'pointer' : 'default', padding: 0, fontWeight: 800, fontSize: '12px' }}>
+                          {row.full_name || 'Eşleşmeyen kart'}
+                        </button>
+                        <span style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)' }}>{row.work_date}</span>
+                      </div>
+                      <div style={{ fontSize: '11px', color: 'var(--text2)', marginTop: '6px' }}>{row.message}</div>
+                      <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginTop: '5px', fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)' }}>
+                        <span>{row.dept_name || 'Departman yok'}</span>
+                        {row.shift_name && <span>{row.shift_name}</span>}
+                        {(row.actual_check_in || row.actual_check_out) && <span>{attendanceTime(row.actual_check_in)} - {attendanceTime(row.actual_check_out)}</span>}
+                        {row.overtime_candidate_minutes > 0 && <span style={{ color: 'var(--blue)' }}>+{row.overtime_candidate_minutes} dk aday</span>}
+                      </div>
+                    </div>
+                    {canEdit && (
+                      <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
+                        {row.staff_id && <button className="btn btn-ghost btn-xs" disabled={busy} onClick={() => onReconcileDay(row)}>Tekrar</button>}
+                        <button className="btn btn-ghost btn-xs" disabled={busy} onClick={() => onResolve(row, 'resolved', '')}>Çözüldü</button>
+                        <button className="btn btn-ghost btn-xs" disabled={busy} onClick={() => { setIgnoreId(row.id); setIgnoreNote('') }}>Yoksay</button>
+                      </div>
+                    )}
+                  </div>
+                  {ignoreId === row.id && (
+                    <div style={{ display: 'flex', gap: '6px', marginTop: '9px', alignItems: 'center', flexWrap: 'wrap' }}>
+                      <input className="form-input" autoFocus value={ignoreNote} onChange={event => setIgnoreNote(event.target.value)} placeholder="Yoksayma gerekçesi..." style={{ flex: 1, minWidth: '220px', fontSize: '11px' }} />
+                      <button className="btn btn-primary btn-xs" disabled={!ignoreNote.trim() || busy} onClick={() => { onResolve(row, 'ignored', ignoreNote.trim()); setIgnoreId(null) }}>Kaydet</button>
+                      <button className="btn btn-ghost btn-xs" onClick={() => setIgnoreId(null)}>Vazgeç</button>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    </BottomSheet>
+  )
+}
+
 export default function PuantajTab({ departments }) {
   const qc = useQueryClient()
   const user = useAuthStore(s => s.user)
@@ -3169,6 +3317,46 @@ export default function PuantajTab({ departments }) {
   const [showCodeManager, setShowCodeManager] = useState(false)
   const [staffHistoryId, setStaffHistoryId] = useState(null) // kişi geçmişi paneli
   const [dayBreakdownDate, setDayBreakdownDate] = useState(null) // kontrol ekranından gün dökümü
+  const [showAttendanceExceptions, setShowAttendanceExceptions] = useState(false)
+  const monthEndDate = `${month}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`
+
+  const { data: attendanceExceptionPayload = { rows: [], summary: { total: 0, by_type: {}, by_severity: {} } }, isFetching: attendanceExceptionsLoading } = useQuery({
+    queryKey: ['attendance-exceptions', month, deptFilter],
+    queryFn: () => {
+      const params = { from: `${month}-01`, to: monthEndDate, status: 'open' }
+      if (deptFilter) params.dept_id = deptFilter
+      return api.get('/shifts/attendance/exceptions', { params }).then(res => res.data)
+    },
+    enabled: roleCanEdit,
+  })
+
+  const refreshAttendance = () => {
+    qc.invalidateQueries({ queryKey: ['attendance-exceptions'] })
+    qc.invalidateQueries({ queryKey: ['puantaj'] })
+    qc.invalidateQueries({ queryKey: ['puantaj-days-month'] })
+    qc.invalidateQueries({ queryKey: ['puantaj-approval'] })
+  }
+
+  const attendanceReconcileMutation = useMutation({
+    mutationFn: ({ date, staffId } = {}) => api.post('/shifts/attendance/reconcile', date
+      ? { date, staff_id: staffId || null }
+      : { from: `${month}-01`, to: monthEndDate, staff_id: null }),
+    onSuccess: (response) => {
+      refreshAttendance()
+      const result = response.data
+      toastOk(`${result.processed} kayıt uzlaştırıldı · ${result.exceptions} kontrol kaydı`)
+    },
+    onError: toastErr,
+  })
+
+  const attendanceExceptionMutation = useMutation({
+    mutationFn: ({ row, status, note }) => api.patch(`/shifts/attendance/exceptions/${row.id}`, { status, note }),
+    onSuccess: () => {
+      refreshAttendance()
+      toastOk('Kart/kiosk kontrol kaydı güncellendi')
+    },
+    onError: toastErr,
+  })
 
   // P4: departman onay matrisi — yalnız onay masasında ve tum-kapsam gorunumunde
   const { data: approvalOverview = null } = useQuery({
@@ -3519,6 +3707,19 @@ export default function PuantajTab({ departments }) {
             📄 {foyuExporting ? 'HAZIRLANIYOR...' : 'PUANTAJ FÖYÜ'}
           </button>
           {roleCanEdit && (
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => setShowAttendanceExceptions(true)}
+              style={{
+                fontSize: '10px',
+                color: attendanceExceptionPayload.summary?.total ? 'var(--red)' : 'var(--green)',
+                borderColor: attendanceExceptionPayload.summary?.total ? 'rgba(239,68,68,.35)' : 'rgba(34,197,94,.30)',
+              }}
+            >
+              KART KONTROL {attendanceExceptionPayload.summary?.total || 0}
+            </button>
+          )}
+          {roleCanEdit && (
             <button className="btn btn-ghost btn-sm" onClick={() => setShowCodeManager(true)} style={{ fontSize: '10px' }}>
               🎨 KODLAR
             </button>
@@ -3678,6 +3879,21 @@ export default function PuantajTab({ departments }) {
 
       {showCodeManager && (
         <PuantajCodeManager codes={puantajCodes} onClose={() => setShowCodeManager(false)} />
+      )}
+
+      {showAttendanceExceptions && (
+        <AttendanceExceptionsSheet
+          payload={attendanceExceptionPayload}
+          loading={attendanceExceptionsLoading}
+          monthLabel={monthLabel}
+          canEdit={canEdit}
+          busy={attendanceReconcileMutation.isPending || attendanceExceptionMutation.isPending}
+          onClose={() => setShowAttendanceExceptions(false)}
+          onReconcileMonth={() => attendanceReconcileMutation.mutate({})}
+          onReconcileDay={(row) => attendanceReconcileMutation.mutate({ date: row.work_date, staffId: row.staff_id })}
+          onResolve={(row, status, note) => attendanceExceptionMutation.mutate({ row, status, note })}
+          onPersonClick={setStaffHistoryId}
+        />
       )}
 
       {dayBreakdownDate && (

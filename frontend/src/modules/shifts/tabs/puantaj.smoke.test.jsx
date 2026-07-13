@@ -6,11 +6,13 @@ import { useAuthStore } from '../../../shared/store/authStore.js'
 const getMock = vi.fn(() => Promise.resolve({ data: [] }))
 const postMock = vi.fn(() => Promise.resolve({ data: { ok: true } }))
 const deleteMock = vi.fn(() => Promise.resolve({ data: { ok: true } }))
+const patchMock = vi.fn(() => Promise.resolve({ data: { ok: true } }))
 vi.mock('../../../shared/api/client.js', () => ({
   default: {
     get: (...args) => getMock(...args),
     post: (...args) => postMock(...args),
     delete: (...args) => deleteMock(...args),
+    patch: (...args) => patchMock(...args),
   },
 }))
 
@@ -23,6 +25,7 @@ describe('PuantajTab smoke', () => {
     getMock.mockImplementation(() => Promise.resolve({ data: [] }))
     postMock.mockImplementation(() => Promise.resolve({ data: { ok: true } }))
     deleteMock.mockImplementation(() => Promise.resolve({ data: { ok: true } }))
+    patchMock.mockImplementation(() => Promise.resolve({ data: { ok: true } }))
   })
 
   it('çökmeden render olur ve görünüm kontrollerini gösterir', () => {
@@ -57,6 +60,42 @@ describe('PuantajTab smoke', () => {
     expect(await screen.findByText('DEPARTMAN ONAY MATRISI')).toBeInTheDocument()
     expect(screen.getByText('Yemekhane')).toBeInTheDocument()
     expect(screen.getByText('5/31')).toBeInTheDocument()
+  })
+
+  it('kart kontrol sayaci istisna calisma alanini acar', async () => {
+    useAuthStore.setState({ user: { role: 'campus_manager' } })
+    getMock.mockImplementation((url) => {
+      if (url === '/shifts/attendance/exceptions') {
+        return Promise.resolve({ data: {
+          rows: [{
+            id: 45,
+            staff_id: 1,
+            full_name: 'Kart Test Personeli',
+            dept_name: 'OTC',
+            work_date: '2026-07-10',
+            exception_type: 'late_arrival',
+            severity: 'warning',
+            message: '25 dakika gec giris',
+            actual_check_in: '2026-07-10T03:25:00.000Z',
+            actual_check_out: '2026-07-10T12:00:00.000Z',
+          }],
+          summary: { total: 1, by_type: { late_arrival: 1 }, by_severity: { warning: 1 } },
+        } })
+      }
+      if (url === '/shifts/puantaj/approval') {
+        return Promise.resolve({ data: { period_approval: { status: 'draft' }, daily_approvals: [], events: [] } })
+      }
+      return Promise.resolve({ data: [] })
+    })
+
+    renderWithProviders(<PuantajTab departments={[]} />)
+    const button = await screen.findByRole('button', { name: 'KART KONTROL 1' })
+    fireEvent.click(button)
+
+    expect(await screen.findByText('KART / KİOSK KONTROLÜ')).toBeInTheDocument()
+    expect(screen.getByText('Kart Test Personeli')).toBeInTheDocument()
+    expect(screen.getByText('25 dakika gec giris')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'AYI UZLAŞTIR' })).toBeInTheDocument()
   })
 
   it('calendar keeps day entries when days endpoint returns full payload', async () => {

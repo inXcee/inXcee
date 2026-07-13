@@ -21,6 +21,7 @@ import { enforceKvkkRetentionService } from '../../modules/kvkk/service.js'
 import PDFDocument from 'pdfkit'
 import { checkTruckArrivalAlerts, waterDailyDigest, buildReconciliationPDF, waterEscalations } from '../../modules/water/service.js'
 import { captureError } from '../sentry.js'
+import { reconcileAttendanceService } from '../../modules/shifts/service.js'
 
 let emailJob = null
 
@@ -97,6 +98,18 @@ export function startCronJobs() {
       const esc = waterEscalations() // 3+ gün bekleyen + kritik stok → critical push
       if (esc.created > 0) logger.info(`[Cron] water escalations: ${esc.created} critical`)
     } catch (e) { logger.error('[Cron] su günlük özet hatası:', e.message) }
+  }), TZ)
+
+  // Her gece 02:15 - bir onceki gunun kart/kiosk olaylarini puantajla uzlastir.
+  cron.schedule('15 2 * * *', withLock('attendance-reconciliation', () => {
+    const value = new Date(Date.now() - 24 * 60 * 60 * 1000)
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Europe/Istanbul', year: 'numeric', month: '2-digit', day: '2-digit',
+    }).formatToParts(value)
+    const byType = Object.fromEntries(parts.map(part => [part.type, part.value]))
+    const date = `${byType.year}-${byType.month}-${byType.day}`
+    const result = reconcileAttendanceService({ date }, null, 'cron')
+    logger.info(`[Cron] Kart/puantaj uzlastirma ${date}: ${result.processed} kayit, ${result.exceptions} istisna`)
   }), TZ)
 
   // Her ayın 1'i 03:15 — geçen ayın su kapanış PDF özeti (uploads/reports) + müdüre bildirim

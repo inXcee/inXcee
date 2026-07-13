@@ -5,7 +5,7 @@ import QRCode from 'qrcode'
 import { requireRole } from '../../shared/auth/middleware.js'
 import { logAudit } from '../../shared/audit.js'
 import { getDB } from '../../shared/db/index.js'
-import { createAttendanceLog, updateCheckout } from '../shifts/queries.js'
+import { checkInService, checkOutService } from '../shifts/service.js'
 import { logger } from '../../shared/logger.js'
 
 export const qrRouter = Router()
@@ -192,7 +192,7 @@ qrRouter.post('/scan/clock', ...view, (req, res) => {
           staff_id: staff.id, staff_name: staff.full_name,
         })
       }
-      updateCheckout(open.id)
+      checkOutService(open.id, { source: 'qr_clock', device_id: 'qr-scanner' }, req.user.id)
       const done = db.prepare('SELECT actual_hours FROM attendance_logs WHERE id = ?').get(open.id)
       logAudit(req.user.id, 'qr_clock_out', 'qr', staff.id, `log:${open.id} ${done.actual_hours}sa`)
       return res.json({
@@ -205,7 +205,12 @@ qrRouter.post('/scan/clock', ...view, (req, res) => {
     const sched = db.prepare(`
       SELECT id FROM shift_schedule WHERE staff_id = ? AND work_date = date('now')
     `).get(staff.id)
-    const logId = createAttendanceLog({ staff_id: staff.id, shift_schedule_id: sched?.id || null })
+    const { id: logId } = checkInService({
+      staff_id: staff.id,
+      shift_schedule_id: sched?.id || null,
+      source: 'qr_clock',
+      device_id: 'qr-scanner',
+    })
     logAudit(req.user.id, 'qr_clock_in', 'qr', staff.id, `log:${logId}${sched ? ' shift:' + sched.id : ''}`)
     res.json({
       ok: true, action: 'in',
