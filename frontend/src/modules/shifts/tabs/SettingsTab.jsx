@@ -12,7 +12,7 @@ export default function SettingsTab({ departments, shiftDefs }) {
   const [locModal, setLocModal] = useState(null)
   const [locForm, setLocForm] = useState({ name: '', dept_id: '', site: '', color_class: 'bg-blue-400', sort_order: '' })
   const [roleModal, setRoleModal] = useState(null)
-  const [roleForm, setRoleForm] = useState({ name: '', sort_order: '' })
+  const [roleForm, setRoleForm] = useState({ name: '', sort_order: '', expected_dept_id: '' })
 
   const { data: workLocations = [] } = useQuery({
     queryKey: ['shift-work-locations'],
@@ -26,7 +26,7 @@ export default function SettingsTab({ departments, shiftDefs }) {
 
   // Ayarlar'daki her değişiklik açık çizelgeyi/kırılımı/coverage'ı da tazelesin — "düzenleyince planda güncellensin"
   const refreshPlan = () => {
-    const keys = ['shift-defs', 'shift-work-locations', 'shift-roles', 'staff-list', 'staff-list-active', 'schedule', 'shift-coverage', 'shift-breakdown']
+    const keys = ['shift-defs', 'shift-work-locations', 'shift-roles', 'staff-list', 'staff-list-active', 'staff-quality', 'schedule', 'shift-coverage', 'shift-breakdown']
     keys.forEach(k => qc.invalidateQueries({ queryKey: [k] }))
   }
   const createDef = useMutation({ mutationFn: data => api.post('/shifts/definitions', data), onSuccess: () => { refreshPlan(); setDefModal(null) }, onError: toastErr })
@@ -122,25 +122,26 @@ export default function SettingsTab({ departments, shiftDefs }) {
       <div className="panel" style={{ marginBottom: '28px' }}>
         <div className="panel-header">
           <div><div className="panel-title">PERSONEL ROLLERI</div><div className="panel-subtitle">{staffRoles.length} ROL</div></div>
-          <button className="btn btn-primary btn-sm" onClick={() => { setRoleForm({ name: '', sort_order: '' }); setRoleModal({}) }}>+ Yeni Rol</button>
+          <button className="btn btn-primary btn-sm" onClick={() => { setRoleForm({ name: '', sort_order: '', expected_dept_id: '' }); setRoleModal({}) }}>+ Yeni Rol</button>
         </div>
         <div className="panel-body" style={{ padding: 0 }}>
           <table className="data-table responsive-stack">
-            <thead><tr><th>Rol</th><th>Sira</th><th>Islem</th></tr></thead>
+            <thead><tr><th>Rol</th><th>Beklenen Bolum</th><th>Sira</th><th>Islem</th></tr></thead>
             <tbody>
               {staffRoles.map(role => (
                 <tr key={role.id}>
                   <td data-label="Rol" style={{ fontWeight: 600 }}>{role.name}</td>
+                  <td data-label="Beklenen Bolum">{role.expected_dept_name || 'Genel / serbest'}</td>
                   <td data-label="Sira" style={{ fontFamily: 'var(--mono)' }}>{role.sort_order ?? 0}</td>
                   <td data-label="Islem">
                     <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-                      <button className="btn btn-ghost btn-sm" onClick={() => { setRoleForm({ name: role.name, sort_order: role.sort_order?.toString() || '' }); setRoleModal(role) }}>Duzenle</button>
+                      <button className="btn btn-ghost btn-sm" onClick={() => { setRoleForm({ name: role.name, sort_order: role.sort_order?.toString() || '', expected_dept_id: role.expected_dept_id?.toString() || '' }); setRoleModal(role) }}>Duzenle</button>
                       <button className="btn btn-danger btn-sm" onClick={async () => { if (await confirmDialog({ title: 'Rolu Pasiflestir', body: `${role.name} pasif yapilsin mi?`, danger: true })) deleteRole.mutate(role.id) }}>Pasif</button>
                     </div>
                   </td>
                 </tr>
               ))}
-              {staffRoles.length === 0 && <tr><td colSpan={3} style={{ textAlign: 'center', color: 'var(--text3)', padding: '20px' }}>Rol yok</td></tr>}
+              {staffRoles.length === 0 && <tr><td colSpan={4} style={{ textAlign: 'center', color: 'var(--text3)', padding: '20px' }}>Rol yok</td></tr>}
             </tbody>
           </table>
         </div>
@@ -222,13 +223,19 @@ export default function SettingsTab({ departments, shiftDefs }) {
           <h3 style={{ fontFamily: 'var(--display)', fontSize: '18px', letterSpacing: '2px', marginBottom: '16px' }}>{roleModal.id ? 'ROLU DUZENLE' : 'YENI ROL'}</h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
             <div><label className="form-label">Rol Adi</label><input className="form-input" value={roleForm.name} onChange={e => setRoleForm(p => ({ ...p, name: e.target.value }))} /></div>
+            <div><label className="form-label">Beklenen Bolum</label>
+              <select className="form-select" value={roleForm.expected_dept_id} onChange={e => setRoleForm(p => ({ ...p, expected_dept_id: e.target.value }))}>
+                <option value="">Genel / birden fazla bolumde kullanilir</option>
+                {departments.map(department => <option key={department.id} value={department.id}>{department.name}</option>)}
+              </select>
+            </div>
             <div><label className="form-label">Sira</label><input type="number" className="form-input" value={roleForm.sort_order} onChange={e => setRoleForm(p => ({ ...p, sort_order: e.target.value }))} /></div>
           </div>
           <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
             <button className="btn btn-primary" style={{ flex: 1, opacity: !roleForm.name ? 0.5 : 1 }}
               disabled={!roleForm.name}
               onClick={() => {
-                const payload = { name: roleForm.name, sort_order: parseInt(roleForm.sort_order) || 0 }
+                const payload = { name: roleForm.name, sort_order: parseInt(roleForm.sort_order) || 0, expected_dept_id: roleForm.expected_dept_id ? parseInt(roleForm.expected_dept_id) : null }
                 if (roleModal.id) updateRole.mutate({ id: roleModal.id, ...payload }); else createRole.mutate(payload)
               }}>
               {roleModal.id ? 'Guncelle' : 'Olustur'}

@@ -6,7 +6,7 @@ import {
   getLeaveRequests, getLeaveBalance, createOvertime, updateOvertime, deleteOvertime, getOvertimeRecords, upsertOvertimeDay,
   getOvertimeSummary, createAttendanceLog, updateCheckout, getAttendanceLogs, getPuantaj,
   getShiftStatistics, getDepartmentSummary,
-  createDepartment, updateDepartment, deleteDepartment, assignStaffDepartment,
+  createDepartment, updateDepartment, deleteDepartment,
   createShiftDefinition, updateShiftDefinition, deleteShiftDefinition, getShiftCoverage,
   cancelLeaveRequest, createSwapRequest, getSwapRequests, approveSwapRequest, rejectSwapRequest,
   copyWeekSchedule, applyRotationTemplate, searchStaff, deleteScheduleEntry,
@@ -19,6 +19,7 @@ import {
   listPuantajCodes, createPuantajCode, updatePuantajCode, getPuantajCode, deletePuantajCode,
   getStaffDetail,
   getStaffList, getStaffById, createStaff, updateStaff, deleteStaff,
+  getStaffAssignments, createStaffAssignment, getStaffDataQualityRows,
   getStaffDayBreakdown, getPuantajDayRows, listDeductions
 } from './queries.js'
 import { getDB } from '../../shared/db/index.js'
@@ -146,6 +147,7 @@ export function createStaffRoleService(data) {
     name: data.name.trim(),
     sort_order: data.sort_order ?? 0,
     is_active: data.is_active,
+    expected_dept_id: data.expected_dept_id || null,
   })
 }
 
@@ -664,13 +666,141 @@ export function staffGetService(id) {
   return staff
 }
 
-export function staffCreateService(data) {
-  if (!data.full_name) throw new Error('Ad soyad zorunlu')
-  return createStaff(data)
+function todayLocal() {
+  const now = new Date()
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
 }
 
-export function staffUpdateService(id, data) {
-  updateStaff(id, data)
+function normalizeOptionalId(value) {
+  if (value === undefined) return undefined
+  if (value === null || value === '') return null
+  const parsed = Number(value)
+  if (!Number.isInteger(parsed) || parsed <= 0) throw new Error('Görev alanlarında geçersiz kimlik')
+  return parsed
+}
+
+function validateAssignmentDate(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value || '')) throw new Error('Görev başlangıcı YYYY-MM-DD formatında olmalı')
+  return value
+}
+
+export function staffCreateService(data, userId) {
+  if (!data.full_name) throw new Error('Ad soyad zorunlu')
+  const effectiveFrom = validateAssignmentDate(data.assignment_effective_from || data.hire_date || todayLocal())
+  const createWithAssignment = getDB().transaction(() => {
+    const id = createStaff(data)
+    createStaffAssignment({
+      staff_id: id,
+      department_id: normalizeOptionalId(data.department_id) ?? null,
+      role_id: normalizeOptionalId(data.role_id) ?? null,
+      work_location_id: normalizeOptionalId(data.primary_work_location_id) ?? null,
+      effective_from: effectiveFrom,
+      note: data.assignment_note || 'Personel kaydı oluşturuldu',
+      created_by: userId,
+    })
+    return id
+  })
+  return createWithAssignment()
+}
+
+export function staffUpdateService(id, data, userId) {
+  const current = getStaffById(id)
+  if (!current) throw new Error('Personel bulunamadı')
+
+  const effectiveFrom = validateAssignmentDate(data.assignment_effective_from || todayLocal())
+  const departmentId = data.department_id !== undefined ? normalizeOptionalId(data.department_id) : current.department_id
+  const roleId = data.role_id !== undefined ? normalizeOptionalId(data.role_id) : current.role_id
+  const workLocationId = data.primary_work_location_id !== undefined
+    ? normalizeOptionalId(data.primary_work_location_id)
+    : current.primary_work_location_id
+  const assignmentChanged = Number(departmentId || 0) !== Number(current.department_id || 0)
+    || Number(roleId || 0) !== Number(current.role_id || 0)
+    || Number(workLocationId || 0) !== Number(current.primary_work_location_id || 0)
+
+  const updateWithAssignment = getDB().transaction(() => {
+    const staffPatch = { ...data }
+    delete staffPatch.primary_work_location_id
+    delete staffPatch.assignment_effective_from
+    delete staffPatch.assignment_note
+    if (effectiveFrom > todayLocal()) {
+      delete staffPatch.department_id
+      delete staffPatch.role_id
+    }
+    updateStaff(id, staffPatch)
+    if (assignmentChanged) {
+      createStaffAssignment({
+        staff_id: Number(id),
+        department_id: departmentId,
+        role_id: roleId,
+        work_location_id: workLocationId,
+        effective_from: effectiveFrom,
+        note: data.assignment_note || 'Personel görevi güncellendi',
+        created_by: userId,
+      })
+    }
+  })
+  updateWithAssignment()
+}
+
+export function staffAssignmentsService(staffId) {
+  if (!getStaffById(staffId)) throw new Error('Personel bulunamadı')
+  return getStaffAssignments(staffId)
+}
+
+export function createStaffAssignmentService(staffId, data, userId) {
+  const current = getStaffById(staffId)
+  if (!current) throw new Error('Personel bulunamadı')
+  const effectiveFrom = validateAssignmentDate(data.effective_from)
+  return createStaffAssignment({
+    staff_id: Number(staffId),
+    department_id: normalizeOptionalId(data.department_id) ?? null,
+    role_id: normalizeOptionalId(data.role_id) ?? null,
+    work_location_id: normalizeOptionalId(data.work_location_id) ?? null,
+    effective_from: effectiveFrom,
+    note: data.note?.trim() || null,
+    created_by: userId,
+  })
+}
+
+export function staffDataQualityService() {
+  const issueCounts = {}
+  const staffRows = getStaffDataQualityRows()
+  const rows = staffRows.map(staff => {
+    const issues = []
+    const add = (code, label, severity = 'warning') => {
+      issues.push({ code, label, severity })
+      issueCounts[code] = (issueCounts[code] || 0) + 1
+    }
+
+    if (staff.is_active) {
+      if (!staff.department_id) add('missing_department', 'Departman tanımlı değil', 'critical')
+      if (!staff.role_id) add('missing_role', 'Rol tanımlı değil')
+      if (!staff.primary_work_location_id || staff.primary_work_location_active === 0) {
+        add('missing_work_location', 'Aktif ana çalışma noktası tanımlı değil')
+      }
+      if (!Number(staff.salary || 0)) add('missing_salary', 'Maaş bilgisi eksik')
+      if (!String(staff.iban || '').trim()) add('missing_iban', 'IBAN bilgisi eksik')
+      if (staff.expected_dept_id && Number(staff.expected_dept_id) !== Number(staff.department_id)) {
+        add('role_department_mismatch', `${staff.role_name} rolü ${staff.expected_dept_name} departmanına bağlı`, 'critical')
+      }
+      if (staff.primary_work_location_dept_id && Number(staff.primary_work_location_dept_id) !== Number(staff.department_id)) {
+        add('location_department_mismatch', 'Ana çalışma noktası farklı departmana bağlı', 'critical')
+      }
+    } else if (staff.future_schedule_count > 0) {
+      add('inactive_with_schedule', `${staff.future_schedule_count} gelecek vardiyası olan pasif personel`, 'critical')
+    }
+    return { ...staff, issues }
+  }).filter(staff => staff.issues.length > 0)
+
+  return {
+    summary: {
+      checked_staff: staffRows.length,
+      staff_with_issues: rows.length,
+      issue_total: rows.reduce((sum, staff) => sum + staff.issues.length, 0),
+      by_code: issueCounts,
+    },
+    rows,
+  }
 }
 
 export function staffDeleteService(id) {
@@ -788,8 +918,18 @@ export function deleteDepartmentService(id) {
   deleteDepartment(id)
 }
 
-export function assignDeptService(staffId, deptId) {
-  assignStaffDepartment(staffId, deptId)
+export function assignDeptService(staffId, deptId, userId, effectiveFrom = todayLocal()) {
+  const current = getStaffById(staffId)
+  if (!current) throw new Error('Personel bulunamadı')
+  createStaffAssignment({
+    staff_id: Number(staffId),
+    department_id: normalizeOptionalId(deptId) ?? null,
+    role_id: current.role_id,
+    work_location_id: current.primary_work_location_id,
+    effective_from: validateAssignmentDate(effectiveFrom),
+    note: 'Departman toplu atama ile güncellendi',
+    created_by: userId,
+  })
 }
 
 export function createShiftDefService(data) {
@@ -1266,7 +1406,7 @@ function staffDayBreakdownServiceLegacy(staffId, month) {
   return result
 }
 
-export function puantajService(month, deptId) {
+export function puantajService(month, deptId, { includeMeta = false } = {}) {
   if (!month || !/^\d{4}-\d{2}$/.test(month)) {
     throw Object.assign(new Error('month parametresi YYYY-MM formatında gereklidir'), { statusCode: 400 })
   }
@@ -1279,7 +1419,7 @@ export function puantajService(month, deptId) {
 
   const rows = getPuantaj(monthStart, monthEnd, deptId)
 
-  return rows.map(row => {
+  const result = rows.map(row => {
     const salary = row.salary || 0
     const dailyRate = salary / 30
     const basePay = round2(dailyRate * (row.worked_days || 0))
@@ -1328,4 +1468,16 @@ export function puantajService(month, deptId) {
       ytd_tax: round2(calcTax(ytdGross)),
     }
   })
+  if (!includeMeta) return result
+
+  const asOfDate = todayLocal()
+  const asOfMonth = asOfDate.slice(0, 7)
+  const notDue = month < asOfMonth ? 0 : month > asOfMonth ? lastDay : Math.max(0, lastDay - Number(asOfDate.slice(8, 10)))
+  return {
+    rows: result,
+    as_of_date: asOfDate,
+    not_due: notDue,
+    exception_count: 0,
+    source: 'shift_schedule',
+  }
 }

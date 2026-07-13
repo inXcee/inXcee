@@ -8,7 +8,87 @@ import { useSavedFilters, SavedFiltersBar } from '../../../shared/hooks/useSaved
 import { SkeletonGrid } from '../../../shared/components/Skeleton.jsx'
 import { toastErr, deptColor, BottomSheet } from '../shared.jsx'
 
-function StaffFormSheet({ editStaff, form, setForm, handleSubmit, createMut, updateMut, departments, staffRoles = [], onClose }) {
+function localIsoDate() {
+  const now = new Date()
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+}
+
+function StaffQualityPanel({ quality, onEdit }) {
+  const [open, setOpen] = useState(true)
+  const summary = quality?.summary || {}
+  const rows = Array.isArray(quality?.rows) ? quality.rows : []
+  const byCode = summary.by_code || {}
+  const metrics = [
+    ['Sorunlu Personel', summary.staff_with_issues || 0, 'var(--red)'],
+    ['Departman', byCode.missing_department || 0, 'var(--red)'],
+    ['Rol', byCode.missing_role || 0, 'var(--accent)'],
+    ['Ana Nokta', byCode.missing_work_location || 0, 'var(--accent)'],
+    ['Maaş / IBAN', (byCode.missing_salary || 0) + (byCode.missing_iban || 0), 'var(--purple)'],
+    ['Uyumsuzluk', (byCode.role_department_mismatch || 0) + (byCode.location_department_mismatch || 0), 'var(--red)'],
+  ]
+
+  return (
+    <div className="panel" style={{ marginBottom: '16px', borderColor: rows.length ? 'rgba(240,165,0,.45)' : 'rgba(39,201,106,.35)' }}>
+      <div className="panel-header" style={{ alignItems: 'center' }}>
+        <div>
+          <div className="panel-title">PERSONEL VERİ KALİTESİ</div>
+          <div className="panel-subtitle">
+            {summary.checked_staff || 0} kayıt kontrol edildi · {summary.issue_total || 0} açık konu
+          </div>
+        </div>
+        <button type="button" className="btn btn-ghost btn-sm" onClick={() => setOpen(value => !value)}>
+          {open ? 'Daralt' : 'Aç'}
+        </button>
+      </div>
+      {open && (
+        <div className="panel-body" style={{ display: 'grid', gap: '10px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '8px' }}>
+            {metrics.map(([label, value, color]) => (
+              <div key={label} style={{ border: '1px solid var(--border)', borderRadius: '8px', background: 'var(--surface2)', padding: '9px 10px' }}>
+                <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text3)' }}>{label}</div>
+                <div style={{ fontFamily: 'var(--display)', fontSize: '19px', color, marginTop: '3px' }}>{value}</div>
+              </div>
+            ))}
+          </div>
+          {rows.length === 0 ? (
+            <div style={{ color: 'var(--green)', fontFamily: 'var(--display)', fontSize: '14px' }}>Personel ana bilgilerinde açık kontrol görünmüyor.</div>
+          ) : (
+            <div style={{ maxHeight: '320px', overflow: 'auto', border: '1px solid var(--border)', borderRadius: '8px' }}>
+              <table className="data-table" style={{ fontSize: '10px' }}>
+                <thead><tr><th>PERSONEL</th><th>GÖREV</th><th>KONTROLLER</th><th>İŞLEM</th></tr></thead>
+                <tbody>
+                  {rows.map(staff => (
+                    <tr key={staff.id}>
+                      <td style={{ fontWeight: 700 }}>{staff.full_name}</td>
+                      <td>
+                        <div>{staff.dept_name || 'Departmansız'}</div>
+                        <div style={{ color: 'var(--text3)', marginTop: '2px' }}>{staff.role_name || 'Rol yok'} · {staff.primary_work_location_name || 'Nokta yok'}</div>
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                          {staff.issues.map(issue => (
+                            <span key={issue.code} title={issue.label} style={{
+                              border: `1px solid ${issue.severity === 'critical' ? 'rgba(231,76,60,.35)' : 'rgba(240,165,0,.35)'}`,
+                              borderRadius: '5px', padding: '2px 5px',
+                              color: issue.severity === 'critical' ? 'var(--red)' : 'var(--accent)',
+                            }}>{issue.label}</span>
+                          ))}
+                        </div>
+                      </td>
+                      <td><button type="button" className="btn btn-ghost btn-xs" onClick={() => onEdit(staff)}>Düzenle</button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function StaffFormSheet({ editStaff, form, setForm, handleSubmit, createMut, updateMut, departments, staffRoles = [], workLocations = [], onClose }) {
   const [tab, setTab] = useState('temel')
   const [error, setError] = useState(null)
 
@@ -94,6 +174,24 @@ function StaffFormSheet({ editStaff, form, setForm, handleSubmit, createMut, upd
               </select>
             </div>
             <div>
+              <label className="form-label">Ana Çalışma Noktası</label>
+              <select className="form-select" value={form.primary_work_location_id || ''}
+                onChange={e => setForm(p => ({ ...p, primary_work_location_id: e.target.value }))}>
+                <option value="">Çalışma noktası seçin...</option>
+                {workLocations.map(location => (
+                  <option key={location.id} value={location.id}>{location.name}{location.site ? ` · ${location.site}` : ''}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="form-label">Görev Geçerlilik Başlangıcı</label>
+              <input type="date" className="form-input" value={form.assignment_effective_from || ''}
+                onChange={e => setForm(p => ({ ...p, assignment_effective_from: e.target.value }))} />
+              <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text3)', marginTop: '4px' }}>
+                Departman, rol veya nokta değişirse eski görev bu tarihten bir gün önce kapanır.
+              </div>
+            </div>
+            <div>
               <label className="form-label">İşe Giriş Tarihi</label>
               <input type="date" className="form-input" value={form.hire_date || ''}
                 onChange={e => setForm(p => ({ ...p, hire_date: e.target.value }))} />
@@ -155,6 +253,16 @@ function StaffFormSheet({ editStaff, form, setForm, handleSubmit, createMut, upd
                 onChange={e => setForm(p => ({ ...p, salary: e.target.value }))} />
             </div>
             <div>
+              <label className="form-label">IBAN</label>
+              <input className="form-input" value={form.iban || ''} placeholder="TR..."
+                onChange={e => setForm(p => ({ ...p, iban: e.target.value.toUpperCase() }))} />
+            </div>
+            <div>
+              <label className="form-label">Görev Değişikliği Notu</label>
+              <input className="form-input" value={form.assignment_note || ''} placeholder="Örn. OTC Yemekhane görevlendirmesi"
+                onChange={e => setForm(p => ({ ...p, assignment_note: e.target.value }))} />
+            </div>
+            <div>
               <label className="form-label">Notlar</label>
               <textarea className="form-textarea" value={form.notes || ''} rows={3}
                 onChange={e => setForm(p => ({ ...p, notes: e.target.value }))}
@@ -210,9 +318,19 @@ export default function StaffTab({ departments, onPersonClick }) {
     queryFn: () => api.get('/shifts/roles').then(r => r.data),
   })
 
+  const { data: workLocations = [] } = useQuery({
+    queryKey: ['shift-work-locations'],
+    queryFn: () => api.get('/shifts/work-locations').then(r => r.data),
+  })
+
+  const { data: staffQuality = { summary: {}, rows: [] } } = useQuery({
+    queryKey: ['staff-quality'],
+    queryFn: () => api.get('/shifts/staff/quality').then(r => r.data),
+  })
+
   // Personel (dept/rol/aktiflik) değişikliği açık çizelgeyi/kırılımı da tazelesin — çizelge 'staff-list-active' kullanır
   const refreshPlan = () => {
-    const keys = ['staff-list', 'staff-list-active', 'staff-detail', 'schedule', 'departments-summary', 'shift-breakdown', 'shift-coverage']
+    const keys = ['staff-list', 'staff-list-active', 'staff-detail', 'staff-quality', 'schedule', 'departments-summary', 'shift-breakdown', 'shift-coverage']
     keys.forEach(k => qc.invalidateQueries({ queryKey: [k] }))
   }
 
@@ -245,7 +363,8 @@ export default function StaffTab({ departments, onPersonClick }) {
     setForm({
       full_name: '', tc_no: '', phone: '', email: '', position: '', department_id: '', role_id: '',
       hire_date: '', birth_date: '', address: '', emergency_contact: '', emergency_phone: '',
-      blood_type: '', gender: 'male', salary: '', notes: '', is_active: 1,
+      blood_type: '', gender: 'male', salary: '', iban: '', notes: '', is_active: 1,
+      primary_work_location_id: '', assignment_effective_from: localIsoDate(), assignment_note: '',
     })
     setEditStaff(null)
     setShowForm(true)
@@ -258,7 +377,9 @@ export default function StaffTab({ departments, onPersonClick }) {
       hire_date: s.hire_date || '', birth_date: s.birth_date || '', address: s.address || '',
       emergency_contact: s.emergency_contact || '', emergency_phone: s.emergency_phone || '',
       blood_type: s.blood_type || '', gender: s.gender || 'male', salary: s.salary?.toString() || '',
-      notes: s.notes || '', is_active: s.is_active,
+      iban: s.iban || '', notes: s.notes || '', is_active: s.is_active,
+      primary_work_location_id: s.primary_work_location_id?.toString() || '',
+      assignment_effective_from: localIsoDate(), assignment_note: '',
     })
     setEditStaff(s)
     setShowForm(true)
@@ -269,6 +390,7 @@ export default function StaffTab({ departments, onPersonClick }) {
       ...form,
       department_id: form.department_id ? parseInt(form.department_id) : null,
       role_id: form.role_id ? parseInt(form.role_id) : null,
+      primary_work_location_id: form.primary_work_location_id ? parseInt(form.primary_work_location_id) : null,
       salary: form.salary ? parseFloat(form.salary) : null,
       is_active: form.is_active ? 1 : 0,
     }
@@ -313,6 +435,8 @@ export default function StaffTab({ departments, onPersonClick }) {
           <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text3)', letterSpacing: '1px', marginTop: '6px' }}>DEPARTMAN</div>
         </div>
       </div>
+
+      <StaffQualityPanel quality={staffQuality} onEdit={openEdit} />
 
       {/* Filters */}
       <SavedFiltersBar
@@ -422,6 +546,11 @@ export default function StaffTab({ departments, onPersonClick }) {
                             {s.role_name}
                           </span>
                         )}
+                        {s.primary_work_location_name && (
+                          <span style={{ padding: '2px 8px', borderRadius: '20px', fontSize: '9px', fontFamily: 'var(--mono)', fontWeight: 600, background: 'rgba(39,201,106,.10)', color: 'var(--green)', border: '1px solid rgba(39,201,106,.25)' }}>
+                            {s.primary_work_location_name}
+                          </span>
+                        )}
                         <span style={{ padding: '2px 8px', borderRadius: '20px', fontSize: '9px', fontFamily: 'var(--mono)', fontWeight: 600, background: s.is_active ? 'rgba(39,201,106,.12)' : 'var(--surface2)', color: s.is_active ? 'var(--green)' : 'var(--text3)' }}>
                           {s.is_active ? 'AKTİF' : 'PASİF'}
                         </span>
@@ -471,6 +600,7 @@ export default function StaffTab({ departments, onPersonClick }) {
           updateMut={updateMut}
           departments={departments}
           staffRoles={staffRoles}
+          workLocations={workLocations}
           onClose={() => { setShowForm(false); setEditStaff(null) }}
         />
       )}

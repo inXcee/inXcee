@@ -1,5 +1,29 @@
 import { getDB } from '../../shared/db/index.js'
 
+const CURRENT_ASSIGNMENT_JOIN = `
+  LEFT JOIN staff_assignments sa ON sa.id = (
+    SELECT current_sa.id
+    FROM staff_assignments current_sa
+    WHERE current_sa.staff_id = s.id
+      AND current_sa.effective_from <= date('now', 'localtime')
+      AND (current_sa.effective_to IS NULL OR current_sa.effective_to >= date('now', 'localtime'))
+    ORDER BY current_sa.effective_from DESC, current_sa.id DESC
+    LIMIT 1
+  )
+`
+
+const CURRENT_DEPARTMENT_SQL = 'CASE WHEN sa.id IS NOT NULL THEN sa.department_id ELSE s.department_id END'
+const CURRENT_ROLE_SQL = 'CASE WHEN sa.id IS NOT NULL THEN sa.role_id ELSE s.role_id END'
+
+function resolveCurrentStaffAssignment(row) {
+  if (!row) return row
+  return {
+    ...row,
+    department_id: row.current_assignment_id ? row.assignment_department_id : row.department_id,
+    role_id: row.current_assignment_id ? row.assignment_role_id : row.role_id,
+  }
+}
+
 // ── Departments ──
 export function getDepartments() {
   return getDB().prepare('SELECT * FROM departments ORDER BY id').all()
@@ -60,26 +84,32 @@ export function deleteWorkLocation(id) {
 }
 
 export function getStaffRoles({ includeInactive = false } = {}) {
-  let sql = 'SELECT * FROM staff_roles WHERE 1=1'
-  if (!includeInactive) sql += ' AND is_active = 1'
-  sql += ' ORDER BY sort_order, name'
+  let sql = `
+    SELECT sr.*, d.name AS expected_dept_name
+    FROM staff_roles sr
+    LEFT JOIN departments d ON d.id = sr.expected_dept_id
+    WHERE 1=1
+  `
+  if (!includeInactive) sql += ' AND sr.is_active = 1'
+  sql += ' ORDER BY sr.sort_order, sr.name'
   return getDB().prepare(sql).all()
 }
 
 export function createStaffRole(data) {
   return getDB().prepare(`
-    INSERT INTO staff_roles(name, sort_order, is_active)
-    VALUES(@name, @sort_order, @is_active)
+    INSERT INTO staff_roles(name, sort_order, is_active, expected_dept_id)
+    VALUES(@name, @sort_order, @is_active, @expected_dept_id)
   `).run({
     name: data.name,
     sort_order: Number.isFinite(+data.sort_order) ? +data.sort_order : 0,
     is_active: data.is_active === undefined ? 1 : (data.is_active ? 1 : 0),
+    expected_dept_id: data.expected_dept_id || null,
   }).lastInsertRowid
 }
 
 export function updateStaffRole(id, data) {
   const db = getDB()
-  const fields = ['name', 'sort_order', 'is_active']
+  const fields = ['name', 'sort_order', 'is_active', 'expected_dept_id']
   const sets = []
   const params = []
   fields.forEach(f => {
@@ -87,6 +117,7 @@ export function updateStaffRole(id, data) {
       sets.push(`${f}=?`)
       if (f === 'sort_order') params.push(Number.isFinite(+data[f]) ? +data[f] : 0)
       else if (f === 'is_active') params.push(data[f] ? 1 : 0)
+      else if (f === 'expected_dept_id') params.push(data[f] || null)
       else params.push(data[f] || null)
     }
   })
@@ -106,15 +137,30 @@ export function getStaffList(filters = {}) {
   const db = getDB()
   let query = `
     SELECT s.*, d.name as dept_name, d.color_class as dept_color,
-      sr.name as role_name, sr.sort_order as role_sort_order
+      sr.name as role_name, sr.sort_order as role_sort_order,
+      sr.expected_dept_id, expected_dept.name as expected_dept_name,
+      sa.id as current_assignment_id,
+      sa.department_id as assignment_department_id,
+      sa.role_id as assignment_role_id,
+      sa.work_location_id as primary_work_location_id,
+      sa.effective_from as assignment_effective_from,
+      sa.effective_to as assignment_effective_to,
+      wl.name as primary_work_location_name,
+      wl.site as primary_work_location_site,
+      wl.color_class as primary_work_location_color,
+      wl.dept_id as primary_work_location_dept_id,
+      wl.is_active as primary_work_location_active
     FROM staff s
-    LEFT JOIN departments d ON d.id = s.department_id
-    LEFT JOIN staff_roles sr ON sr.id = s.role_id
+    ${CURRENT_ASSIGNMENT_JOIN}
+    LEFT JOIN departments d ON d.id = ${CURRENT_DEPARTMENT_SQL}
+    LEFT JOIN staff_roles sr ON sr.id = ${CURRENT_ROLE_SQL}
+    LEFT JOIN departments expected_dept ON expected_dept.id = sr.expected_dept_id
+    LEFT JOIN work_locations wl ON wl.id = sa.work_location_id
     WHERE 1=1
   `
   const params = []
-  if (filters.dept_id) { query += ' AND s.department_id = ?'; params.push(filters.dept_id) }
-  if (filters.role_id) { query += ' AND s.role_id = ?'; params.push(filters.role_id) }
+  if (filters.dept_id) { query += ` AND ${CURRENT_DEPARTMENT_SQL} = ?`; params.push(filters.dept_id) }
+  if (filters.role_id) { query += ` AND ${CURRENT_ROLE_SQL} = ?`; params.push(filters.role_id) }
   if (filters.is_active !== undefined) { query += ' AND s.is_active = ?'; params.push(filters.is_active) }
   if (filters.gender) { query += ' AND s.gender = ?'; params.push(filters.gender) }
   if (filters.search) {
@@ -123,18 +169,34 @@ export function getStaffList(filters = {}) {
     params.push(term, term, term, term)
   }
   query += ' ORDER BY s.full_name'
-  return db.prepare(query).all(...params)
+  return db.prepare(query).all(...params).map(resolveCurrentStaffAssignment)
 }
 
 export function getStaffById(id) {
-  return getDB().prepare(`
+  const row = getDB().prepare(`
     SELECT s.*, d.name as dept_name, d.color_class as dept_color,
-      sr.name as role_name, sr.sort_order as role_sort_order
+      sr.name as role_name, sr.sort_order as role_sort_order,
+      sr.expected_dept_id, expected_dept.name as expected_dept_name,
+      sa.id as current_assignment_id,
+      sa.department_id as assignment_department_id,
+      sa.role_id as assignment_role_id,
+      sa.work_location_id as primary_work_location_id,
+      sa.effective_from as assignment_effective_from,
+      sa.effective_to as assignment_effective_to,
+      wl.name as primary_work_location_name,
+      wl.site as primary_work_location_site,
+      wl.color_class as primary_work_location_color,
+      wl.dept_id as primary_work_location_dept_id,
+      wl.is_active as primary_work_location_active
     FROM staff s
-    LEFT JOIN departments d ON d.id = s.department_id
-    LEFT JOIN staff_roles sr ON sr.id = s.role_id
+    ${CURRENT_ASSIGNMENT_JOIN}
+    LEFT JOIN departments d ON d.id = ${CURRENT_DEPARTMENT_SQL}
+    LEFT JOIN staff_roles sr ON sr.id = ${CURRENT_ROLE_SQL}
+    LEFT JOIN departments expected_dept ON expected_dept.id = sr.expected_dept_id
+    LEFT JOIN work_locations wl ON wl.id = sa.work_location_id
     WHERE s.id = ?
   `).get(id)
+  return resolveCurrentStaffAssignment(row)
 }
 
 export function createStaff(data) {
@@ -184,6 +246,125 @@ export function updateStaff(id, data) {
   if (sets.length === 0) return
   params.push(id)
   db.prepare(`UPDATE staff SET ${sets.join(',')} WHERE id=?`).run(...params)
+}
+
+export function getStaffAssignments(staffId) {
+  return getDB().prepare(`
+    SELECT sa.*,
+      d.name AS dept_name,
+      d.color_class AS dept_color,
+      sr.name AS role_name,
+      wl.name AS work_location_name,
+      wl.site AS work_location_site,
+      wl.color_class AS work_location_color,
+      u.full_name AS created_by_name
+    FROM staff_assignments sa
+    LEFT JOIN departments d ON d.id = sa.department_id
+    LEFT JOIN staff_roles sr ON sr.id = sa.role_id
+    LEFT JOIN work_locations wl ON wl.id = sa.work_location_id
+    LEFT JOIN users u ON u.id = sa.created_by
+    WHERE sa.staff_id = ?
+    ORDER BY sa.effective_from DESC, sa.id DESC
+  `).all(staffId)
+}
+
+export function createStaffAssignment(data) {
+  const db = getDB()
+  const save = db.transaction(() => {
+    const next = db.prepare(`
+      SELECT effective_from
+      FROM staff_assignments
+      WHERE staff_id = ? AND effective_from > ?
+      ORDER BY effective_from
+      LIMIT 1
+    `).get(data.staff_id, data.effective_from)
+    const effectiveTo = next
+      ? db.prepare("SELECT date(?, '-1 day') AS value").get(next.effective_from).value
+      : null
+    const existing = db.prepare(`
+      SELECT id FROM staff_assignments WHERE staff_id = ? AND effective_from = ?
+    `).get(data.staff_id, data.effective_from)
+
+    let assignmentId
+    if (existing) {
+      db.prepare(`
+        UPDATE staff_assignments
+        SET department_id = @department_id,
+            role_id = @role_id,
+            work_location_id = @work_location_id,
+            effective_to = @effective_to,
+            note = @note,
+            created_by = @created_by
+        WHERE id = @id
+      `).run({
+        id: existing.id,
+        department_id: data.department_id || null,
+        role_id: data.role_id || null,
+        work_location_id: data.work_location_id || null,
+        effective_to: effectiveTo,
+        note: data.note || null,
+        created_by: data.created_by || null,
+      })
+      assignmentId = existing.id
+    } else {
+      db.prepare(`
+        UPDATE staff_assignments
+        SET effective_to = date(@effective_from, '-1 day')
+        WHERE staff_id = @staff_id
+          AND effective_from < @effective_from
+          AND (effective_to IS NULL OR effective_to >= @effective_from)
+      `).run({ staff_id: data.staff_id, effective_from: data.effective_from })
+
+      assignmentId = db.prepare(`
+        INSERT INTO staff_assignments(
+          staff_id, department_id, role_id, work_location_id,
+          effective_from, effective_to, note, created_by
+        ) VALUES(
+          @staff_id, @department_id, @role_id, @work_location_id,
+          @effective_from, @effective_to, @note, @created_by
+        )
+      `).run({
+        staff_id: data.staff_id,
+        department_id: data.department_id || null,
+        role_id: data.role_id || null,
+        work_location_id: data.work_location_id || null,
+        effective_from: data.effective_from,
+        effective_to: effectiveTo,
+        note: data.note || null,
+        created_by: data.created_by || null,
+      }).lastInsertRowid
+    }
+
+    const current = db.prepare(`
+      SELECT department_id, role_id
+      FROM staff_assignments
+      WHERE staff_id = ?
+        AND effective_from <= date('now', 'localtime')
+        AND (effective_to IS NULL OR effective_to >= date('now', 'localtime'))
+      ORDER BY effective_from DESC, id DESC
+      LIMIT 1
+    `).get(data.staff_id)
+    if (current) {
+      db.prepare('UPDATE staff SET department_id = ?, role_id = ? WHERE id = ?')
+        .run(current.department_id, current.role_id, data.staff_id)
+    }
+    return assignmentId
+  })
+  return save()
+}
+
+export function getStaffDataQualityRows() {
+  const db = getDB()
+  const futureByStaff = new Map(db.prepare(`
+    SELECT staff_id, COUNT(*) AS future_schedule_count
+    FROM shift_schedule
+    WHERE work_date >= date('now', 'localtime')
+    GROUP BY staff_id
+  `).all().map(row => [row.staff_id, row.future_schedule_count]))
+  return getStaffList({}).map(row => ({
+    ...row,
+    future_schedule_count: futureByStaff.get(row.id) || 0,
+  }))
 }
 
 export function deleteStaff(id) {
@@ -1522,15 +1703,9 @@ export function upsertPuantajDayDetail(data, userId) {
 export function getStaffDetail(staffId) {
   const db = getDB()
 
-  const person = db.prepare(`
-    SELECT s.*, d.name as dept_name, d.color_class as dept_color,
-      sr.name as role_name, sr.sort_order as role_sort_order
-    FROM staff s
-    LEFT JOIN departments d ON d.id = s.department_id
-    LEFT JOIN staff_roles sr ON sr.id = s.role_id
-    WHERE s.id = ?
-  `).get(staffId)
+  const person = getStaffById(staffId)
   if (!person) throw new Error('Personel bulunamadi')
+  const assignmentHistory = getStaffAssignments(staffId)
 
   // LEFT JOIN: OFF / izin günlerinde shift_def_id NULL — bu satırlar da listelensin
   const shiftHistory = db.prepare(`
@@ -1619,6 +1794,7 @@ export function getStaffDetail(staffId) {
     leaveHistory,
     overtimeRecords,
     attendanceLogs,
+    assignmentHistory,
     monthlyHistory,
     stats: { totalShifts, workedShifts, totalOvertime, totalLeave, absentCount, offCount }
   }
@@ -1678,7 +1854,7 @@ export function getPuantajDayRows(monthStart, monthEnd, deptId) {
       ss.work_location_id,
       wl.name as work_location_name,
       wl.color_class as work_location_color,
-      s.role_id,
+      CASE WHEN day_sa.id IS NOT NULL THEN day_sa.role_id ELSE s.role_id END as role_id,
       sr.name as role_name,
       CASE WHEN ss.status = 'on_leave' THEN COALESCE(ss.leave_type, lr.leave_type) END as leave_type,
       ss.absent_reason,
@@ -1690,19 +1866,28 @@ export function getPuantajDayRows(monthStart, monthEnd, deptId) {
       ot.hours as overtime_hours
     FROM shift_schedule ss
     JOIN staff s ON s.id = ss.staff_id
+    LEFT JOIN staff_assignments day_sa ON day_sa.id = (
+      SELECT dated_sa.id
+      FROM staff_assignments dated_sa
+      WHERE dated_sa.staff_id = ss.staff_id
+        AND dated_sa.effective_from <= ss.work_date
+        AND (dated_sa.effective_to IS NULL OR dated_sa.effective_to >= ss.work_date)
+      ORDER BY dated_sa.effective_from DESC, dated_sa.id DESC
+      LIMIT 1
+    )
     LEFT JOIN shift_definitions sd ON sd.id = ss.shift_def_id
     LEFT JOIN work_locations wl ON wl.id = ss.work_location_id
-    LEFT JOIN staff_roles sr ON sr.id = s.role_id
+    LEFT JOIN staff_roles sr ON sr.id = CASE WHEN day_sa.id IS NOT NULL THEN day_sa.role_id ELSE s.role_id END
     LEFT JOIN leave_requests lr ON lr.staff_id = ss.staff_id
       AND lr.status = 'approved'
       AND ss.work_date BETWEEN lr.start_date AND lr.end_date
     LEFT JOIN overtime_records ot ON ot.staff_id = ss.staff_id
       AND ot.work_date = ss.work_date
-    WHERE s.is_active = 1 AND ss.work_date BETWEEN ? AND ?
+    WHERE ss.work_date BETWEEN ? AND ?
   `
   const params = [monthStart, monthEnd]
   if (deptId) {
-    query += ' AND s.department_id = ?'
+    query += ' AND COALESCE(ss.dept_id, CASE WHEN day_sa.id IS NOT NULL THEN day_sa.department_id ELSE s.department_id END) = ?'
     params.push(deptId)
   }
   query += ' ORDER BY ss.staff_id, ss.work_date'
@@ -1713,7 +1898,9 @@ export function getPuantaj(monthStart, monthEnd, deptId) {
   const db = getDB()
   let query = `
     SELECT
-      s.id, s.full_name, s.position, s.salary, s.gender, s.tc_no, s.department_id, s.role_id,
+      s.id, s.full_name, s.position, s.salary, s.gender, s.tc_no,
+      CASE WHEN period_sa.id IS NOT NULL THEN period_sa.department_id ELSE COALESCE(sch.snapshot_dept_id, s.department_id) END as department_id,
+      CASE WHEN period_sa.id IS NOT NULL THEN period_sa.role_id ELSE s.role_id END as role_id,
       d.name as dept_name, d.color_class as dept_color,
       sr.name as role_name,
       COALESCE(sch.worked_days, 0) as worked_days,
@@ -1729,10 +1916,18 @@ export function getPuantaj(monthStart, monthEnd, deptId) {
       COALESCE(sch.emergency_leave_days, 0) as emergency_leave_days,
       COALESCE(sch.other_leave_days, 0) as other_leave_days
     FROM staff s
-    LEFT JOIN departments d ON d.id = s.department_id
-    LEFT JOIN staff_roles sr ON sr.id = s.role_id
+    LEFT JOIN staff_assignments period_sa ON period_sa.id = (
+      SELECT dated_sa.id
+      FROM staff_assignments dated_sa
+      WHERE dated_sa.staff_id = s.id
+        AND dated_sa.effective_from <= ?
+        AND (dated_sa.effective_to IS NULL OR dated_sa.effective_to >= ?)
+      ORDER BY dated_sa.effective_from DESC, dated_sa.id DESC
+      LIMIT 1
+    )
     LEFT JOIN (
       SELECT ss.staff_id,
+        MAX(ss.dept_id) as snapshot_dept_id,
         COUNT(CASE WHEN ss.status IN ('worked','overtime') THEN 1 END) as worked_days,
         COUNT(CASE WHEN ss.status='scheduled' THEN 1 END) as scheduled_days,
         COUNT(CASE WHEN ss.status='on_leave' THEN 1 END) as leave_days,
@@ -1758,10 +1953,15 @@ export function getPuantaj(monthStart, monthEnd, deptId) {
       WHERE work_date BETWEEN ? AND ?
       GROUP BY staff_id
     ) ot ON ot.staff_id = s.id
-    WHERE s.is_active = 1
+    LEFT JOIN departments d ON d.id = CASE WHEN period_sa.id IS NOT NULL THEN period_sa.department_id ELSE COALESCE(sch.snapshot_dept_id, s.department_id) END
+    LEFT JOIN staff_roles sr ON sr.id = CASE WHEN period_sa.id IS NOT NULL THEN period_sa.role_id ELSE s.role_id END
+    WHERE (s.is_active = 1 OR COALESCE(sch.total_days, 0) > 0 OR COALESCE(ot.overtime_count, 0) > 0)
   `
-  const params = [monthStart, monthEnd, monthStart, monthEnd]
-  if (deptId) { query += ' AND s.department_id = ?'; params.push(deptId) }
+  const params = [monthEnd, monthEnd, monthStart, monthEnd, monthStart, monthEnd]
+  if (deptId) {
+    query += ' AND CASE WHEN period_sa.id IS NOT NULL THEN period_sa.department_id ELSE COALESCE(sch.snapshot_dept_id, s.department_id) END = ?'
+    params.push(deptId)
+  }
   query += ' ORDER BY d.name, s.full_name'
   return db.prepare(query).all(...params)
 }

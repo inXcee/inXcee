@@ -23,6 +23,7 @@ import {
   updatePuantajDayApprovalService, updatePuantajPeriodApprovalService,
   staffDetailService,
   staffListService, staffGetService, staffCreateService, staffUpdateService, staffDeleteService,
+  staffAssignmentsService, createStaffAssignmentService, staffDataQualityService,
   puantajCsvService, puantajDaysService, staffDayBreakdownService, payslipService, bankTransferCsvService
 } from './service.js'
 import PDFDocument from 'pdfkit'
@@ -60,6 +61,10 @@ shiftsRouter.get('/staff/search', ...managerOrSupervisor, (req, res) => {
   res.json(searchStaffService(req.query.q))
 })
 
+shiftsRouter.get('/staff/quality', ...managerOrSupervisor, (req, res) => {
+  res.json(staffDataQualityService())
+})
+
 shiftsRouter.get('/staff/:id', ...managerOrSupervisor, (req, res) => {
   try {
     res.json(staffGetService(req.params.id))
@@ -78,7 +83,7 @@ shiftsRouter.get('/staff/:id/detail', ...allStaff, (req, res) => {
 
 shiftsRouter.post('/staff', ...managerOrSupervisor, (req, res) => {
   try {
-    const id = staffCreateService(req.body)
+    const id = staffCreateService(req.body, req.user.id)
     res.status(201).json({ id })
   } catch (e) {
     res.status(400).json({ error: e.message })
@@ -87,7 +92,7 @@ shiftsRouter.post('/staff', ...managerOrSupervisor, (req, res) => {
 
 shiftsRouter.put('/staff/:id', ...managerOrSupervisor, (req, res) => {
   try {
-    staffUpdateService(req.params.id, req.body)
+    staffUpdateService(req.params.id, req.body, req.user.id)
     res.json({ ok: true })
   } catch (e) {
     res.status(400).json({ error: e.message })
@@ -587,7 +592,7 @@ shiftsRouter.get('/puantaj', ...allStaff, (req, res) => {
   try {
     const { month, dept_id } = req.query
     if (!month) return res.status(400).json({ error: 'month parametresi YYYY-MM formatında gereklidir' })
-    res.json(puantajService(month, dept_id || null))
+    res.json(puantajService(month, dept_id || null, { includeMeta: req.query.meta === '1' }))
   } catch (e) {
     res.status(e.statusCode || 400).json({ error: e.message })
   }
@@ -689,6 +694,23 @@ shiftsRouter.patch('/puantaj/approval/period', ...managerOnly, (req, res) => {
   }
 })
 
+shiftsRouter.get('/staff/:id/assignments', ...managerOrSupervisor, (req, res) => {
+  try {
+    res.json(staffAssignmentsService(req.params.id))
+  } catch (e) {
+    res.status(404).json({ error: e.message })
+  }
+})
+
+shiftsRouter.post('/staff/:id/assignments', ...managerOrSupervisor, (req, res) => {
+  try {
+    const id = createStaffAssignmentService(req.params.id, req.body, req.user.id)
+    res.status(201).json({ id })
+  } catch (e) {
+    res.status(400).json({ error: e.message })
+  }
+})
+
 shiftsRouter.post('/puantaj/day-detail', ...managerOrSupervisor, documentUpload.single('attachment'), verifyDocumentMagicBytes, (req, res) => {
   try {
     const fileData = req.file ? {
@@ -764,7 +786,7 @@ shiftsRouter.delete('/departments/:id', ...managerOrSupervisor, (req, res) => {
 
 shiftsRouter.post('/departments/assign', ...managerOrSupervisor, (req, res) => {
   try {
-    assignDeptService(req.body.staff_id, req.body.dept_id)
+    assignDeptService(req.body.staff_id, req.body.dept_id, req.user.id, req.body.effective_from)
     res.json({ ok: true })
   } catch (e) { res.status(400).json({ error: e.message }) }
 })

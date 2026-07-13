@@ -281,6 +281,27 @@ export function seedDev() {
     otInsert.run(staffIds[7].id, d(-7), 1.0, 'Yemekhane hazırlık')
   }
 
+  // Migrationlar seed'den once calisir. Seed ile sonradan eklenen personelin
+  // de ilk tarihceli gorev kaydi bulunmali; tekrar calistirmak guvenlidir.
+  db.prepare(`
+    INSERT INTO staff_assignments(
+      staff_id, department_id, role_id, work_location_id,
+      effective_from, effective_to, note
+    )
+    SELECT
+      s.id,
+      s.department_id,
+      s.role_id,
+      NULL,
+      COALESCE(NULLIF(s.hire_date, ''), '1970-01-01'),
+      NULL,
+      'Seed initial assignment'
+    FROM staff s
+    WHERE NOT EXISTS (
+      SELECT 1 FROM staff_assignments sa WHERE sa.staff_id = s.id
+    )
+  `).run()
+
   // ── Test personeli (kiosk testleri için id=1 gerekli) ──────────────────────
   try {
     db.prepare(`

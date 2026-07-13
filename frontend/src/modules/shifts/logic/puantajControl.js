@@ -39,14 +39,112 @@ function countEntry(acc, entry, { isSunday = false, isHoliday = false } = {}) {
   return acc
 }
 
-function labelIssues({ scheduled, empty, off, absent, absentWithoutReason }) {
+function labelIssues({ scheduled, empty, off, absent, absentWithoutReason }, { requireOff = true } = {}) {
   const labels = []
   if (scheduled > 0) labels.push(`${scheduled} planlı gün kapanmamış`)
   if (empty > 0) labels.push(`${empty} boş gün`)
-  if (off === 0) labels.push('haftalık izin yok')
+  if (requireOff && off === 0) labels.push('haftalık izin yok')
   if (absentWithoutReason > 0) labels.push(`${absentWithoutReason} devamsız nedeni eksik`)
   if (absent > 0) labels.push(`${absent} devamsız`)
   return labels
+}
+
+function localIsoDate() {
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function scopeForMonth(month, asOfDate, closingMode) {
+  const safeAsOfDate = /^\d{4}-\d{2}-\d{2}$/.test(String(asOfDate || '')) ? String(asOfDate) : localIsoDate()
+  const asOfMonth = safeAsOfDate.slice(0, 7)
+
+  if (closingMode || month < asOfMonth) return { asOfDate: safeAsOfDate, dueThrough: `${month}-31`, allDue: true }
+  if (month > asOfMonth) return { asOfDate: safeAsOfDate, dueThrough: null, allDue: false }
+  return { asOfDate: safeAsOfDate, dueThrough: safeAsOfDate, allDue: false }
+}
+
+function buildScope({ staffRows, daysByStaff, baseDailyRows, includeDay }) {
+  const totals = emptyCounts()
+  const dailyRows = baseDailyRows.map(day => ({ ...day, ...emptyCounts() }))
+  const scopedRows = dailyRows.filter(includeDay)
+  const scopedDates = new Set(scopedRows.map(day => day.date))
+  const requireOff = scopedRows.length > 0
+  const staffIssues = []
+  const scheduledCells = []
+  const byStaffId = {}
+  const dailyIssuesByDate = {}
+  const dailyIssues = []
+
+  staffRows.forEach(staff => {
+    const counts = emptyCounts()
+    const days = daysByStaff?.[staff.id] || []
+    const byDate = new Map(days.map(entry => [entry.date, entry]))
+
+    scopedRows.forEach(dayRow => {
+      const entry = byDate.get(dayRow.date)
+      const isSunday = dayRow.weekday === 0
+      countEntry(counts, entry, { isSunday, isHoliday: dayRow.isHoliday })
+      countEntry(dayRow, entry, { isSunday, isHoliday: dayRow.isHoliday })
+      if (entry?.status === 'scheduled') scheduledCells.push({ staff, entry })
+      const issues = dailyEntryIssues(staff, entry, dayRow)
+      if (issues.length > 0) {
+        if (!dailyIssuesByDate[dayRow.date]) dailyIssuesByDate[dayRow.date] = []
+        dailyIssuesByDate[dayRow.date].push(...issues)
+        dailyIssues.push(...issues)
+      }
+    })
+
+    Object.keys(totals).forEach(key => { totals[key] += counts[key] || 0 })
+    const issueLabels = labelIssues(counts, { requireOff })
+    const missingOff = requireOff && counts.off === 0
+    const issue = {
+      staff,
+      ...counts,
+      missingOff,
+      issueCount: issueLabels.length,
+      issueLabels,
+      ready: counts.scheduled === 0 && counts.empty === 0 && !missingOff && counts.absentWithoutReason === 0,
+    }
+    byStaffId[staff.id] = issue
+    if (issue.issueCount > 0) staffIssues.push(issue)
+  })
+
+  const expectedCells = staffRows.length * scopedRows.filter(day => day.weekday !== 0).length
+  const unresolvedCells = totals.scheduled + totals.empty
+  const completionRate = expectedCells > 0
+    ? Math.max(0, Math.round(((expectedCells - unresolvedCells) / expectedCells) * 100))
+    : 100
+  const missingOffStaff = staffIssues.filter(issue => issue.missingOff).length
+  const missingAbsenceReasonStaff = staffIssues.filter(issue => issue.absentWithoutReason > 0).length
+  const readyStaff = staffRows.length - staffIssues.filter(issue => (
+    issue.scheduled > 0 || issue.empty > 0 || issue.missingOff || issue.absentWithoutReason > 0
+  )).length
+
+  return {
+    totals,
+    dailyRows,
+    staffIssues: staffIssues.sort((a, b) => (
+      (b.scheduled + b.empty + (b.missingOff ? 1 : 0)) - (a.scheduled + a.empty + (a.missingOff ? 1 : 0))
+      || (a.staff.full_name || '').localeCompare(b.staff.full_name || '', 'tr')
+    )),
+    byStaffId,
+    scheduledCells,
+    dailyIssues,
+    dailyIssuesByDate,
+    missingOffStaff,
+    missingAbsenceReasonStaff,
+    readyStaff,
+    expectedCells,
+    unresolvedCells,
+    completionRate,
+    readyToClose: unresolvedCells === 0 && missingOffStaff === 0 && totals.absentWithoutReason === 0,
+    finalStatusCount: staffRows.reduce((sum, staff) => (
+      sum + (daysByStaff?.[staff.id] || []).filter(day => scopedDates.has(day.date) && FINAL_STATUSES.has(day.status)).length
+    ), 0),
+  }
 }
 
 function dailyEntryIssues(staff, entry, dayRow) {
@@ -92,94 +190,50 @@ function dailyEntryIssues(staff, entry, dayRow) {
   }))
 }
 
-export function buildPuantajControl({ staffRows = [], daysByStaff = {}, holidays = [], month } = {}) {
+export function buildPuantajControl({ staffRows = [], daysByStaff = {}, holidays = [], month, asOfDate, closingMode = false } = {}) {
   const { year, mon, daysInMonth } = parseMonth(month)
   const holidaySet = new Set((holidays || []).map(h => h.date).filter(Boolean))
   const dayNumbers = Array.from({ length: daysInMonth }, (_, i) => i + 1)
-  const totals = emptyCounts()
-  const dailyRows = dayNumbers.map(day => {
+  const scope = scopeForMonth(month, asOfDate, closingMode)
+  const baseDailyRows = dayNumbers.map(day => {
     const date = `${month}-${String(day).padStart(2, '0')}`
+    const isDue = scope.allDue || (scope.dueThrough !== null && date <= scope.dueThrough)
     return {
       date,
       day,
       weekday: new Date(year, mon - 1, day).getDay(),
       isHoliday: holidaySet.has(date),
-      ...emptyCounts(),
+      isDue,
+      notDue: !isDue,
     }
   })
-
-  const staffIssues = []
-  const scheduledCells = []
-  const byStaffId = {}
-  const dailyIssuesByDate = {}
-  const dailyIssues = []
-
-  staffRows.forEach(staff => {
-    const counts = emptyCounts()
-    const days = daysByStaff?.[staff.id] || []
-    const byDate = new Map(days.map(entry => [entry.date, entry]))
-
-    dailyRows.forEach(dayRow => {
-      const entry = byDate.get(dayRow.date)
-      const isSunday = dayRow.weekday === 0
-      countEntry(counts, entry, { isSunday, isHoliday: dayRow.isHoliday })
-      countEntry(dayRow, entry, { isSunday, isHoliday: dayRow.isHoliday })
-      if (entry?.status === 'scheduled') scheduledCells.push({ staff, entry })
-      const issues = dailyEntryIssues(staff, entry, dayRow)
-      if (issues.length > 0) {
-        if (!dailyIssuesByDate[dayRow.date]) dailyIssuesByDate[dayRow.date] = []
-        dailyIssuesByDate[dayRow.date].push(...issues)
-        dailyIssues.push(...issues)
-      }
-    })
-
-    Object.keys(totals).forEach(key => { totals[key] += counts[key] || 0 })
-    const issueLabels = labelIssues(counts)
-    const issue = {
-      staff,
-      ...counts,
-      issueCount: issueLabels.length,
-      issueLabels,
-      ready: counts.scheduled === 0 && counts.empty === 0 && counts.off > 0 && counts.absentWithoutReason === 0,
-    }
-    byStaffId[staff.id] = issue
-    if (issue.issueCount > 0) staffIssues.push(issue)
+  const operational = buildScope({
+    staffRows,
+    daysByStaff,
+    baseDailyRows,
+    includeDay: day => day.isDue,
   })
-
-  const expectedCells = staffRows.length * dayNumbers.filter(day => new Date(year, mon - 1, day).getDay() !== 0).length
-  const unresolvedCells = totals.scheduled + totals.empty
-  const completionRate = expectedCells > 0
-    ? Math.max(0, Math.round(((expectedCells - unresolvedCells) / expectedCells) * 100))
-    : 100
-  const missingOffStaff = staffIssues.filter(issue => issue.off === 0).length
-  const missingAbsenceReasonStaff = staffIssues.filter(issue => issue.absentWithoutReason > 0).length
-  const readyStaff = staffRows.length - staffIssues.filter(issue => (
-    issue.scheduled > 0 || issue.empty > 0 || issue.off === 0 || issue.absentWithoutReason > 0
-  )).length
+  const closing = buildScope({
+    staffRows,
+    daysByStaff,
+    baseDailyRows,
+    includeDay: () => true,
+  })
+  const dueDayCount = baseDailyRows.filter(day => day.isDue).length
+  const notDueDayCount = daysInMonth - dueDayCount
 
   return {
     month,
+    asOfDate: scope.asOfDate,
     staffCount: staffRows.length,
     dayNumbers,
-    totals,
-    dailyRows,
-    staffIssues: staffIssues.sort((a, b) => (
-      (b.scheduled + b.empty + (b.off === 0 ? 1 : 0)) - (a.scheduled + a.empty + (a.off === 0 ? 1 : 0))
-      || (a.staff.full_name || '').localeCompare(b.staff.full_name || '', 'tr')
-    )),
-    byStaffId,
-    scheduledCells,
-    dailyIssues,
-    dailyIssuesByDate,
-    missingOffStaff,
-    missingAbsenceReasonStaff,
-    readyStaff,
-    expectedCells,
-    unresolvedCells,
-    completionRate,
-    readyToClose: unresolvedCells === 0 && missingOffStaff === 0 && totals.absentWithoutReason === 0,
-    finalStatusCount: staffRows.reduce((sum, staff) => (
-      sum + (daysByStaff?.[staff.id] || []).filter(day => FINAL_STATUSES.has(day.status)).length
-    ), 0),
+    dueDayCount,
+    notDueDayCount,
+    ...operational,
+    readyToDate: operational.readyToClose,
+    operationalCompletionRate: operational.completionRate,
+    closingCompletionRate: closing.completionRate,
+    readyToClose: closing.readyToClose,
+    closing,
   }
 }

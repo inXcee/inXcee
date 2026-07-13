@@ -63,6 +63,11 @@ function normalizePuantajDaysPayload(payload) {
   return candidate && typeof candidate === 'object' && !Array.isArray(candidate) ? candidate : {}
 }
 
+function normalizePuantajPayload(payload) {
+  if (Array.isArray(payload)) return { rows: payload }
+  return payload && Array.isArray(payload.rows) ? payload : { rows: [] }
+}
+
 function emptyPuantajMonthDays(month) {
   const [year, mon] = month.split('-').map(Number)
   const lastDay = new Date(year, mon, 0).getDate()
@@ -773,11 +778,14 @@ function PuantajSummaryView({ filtered, formatMoney }) {
 }
 
 function PuantajClosurePanel({ audit, canEdit, isLocked, monthLabel, onOpenCalendar, onOpenControl, onSyncScheduled, syncing }) {
-  const blockingCount = audit.staffIssues.filter(issue => issue.scheduled > 0 || issue.empty > 0 || issue.off === 0 || issue.absentWithoutReason > 0).length
+  const blockingCount = audit.staffIssues.filter(issue => issue.scheduled > 0 || issue.empty > 0 || issue.missingOff || issue.absentWithoutReason > 0).length
   const topIssues = audit.staffIssues.slice(0, 5)
   const cards = [
-    ['Kapanış', audit.readyToClose ? 'Hazır' : 'Kontrol', audit.readyToClose ? 'var(--green)' : 'var(--accent)'],
-    ['Tamamlanma', `%${audit.completionRate}`, audit.completionRate >= 95 ? 'var(--green)' : audit.completionRate >= 80 ? 'var(--accent)' : 'var(--red)'],
+    ['Bugüne Kadar', audit.readyToDate ? 'Hazır' : 'Kontrol', audit.readyToDate ? 'var(--green)' : 'var(--accent)'],
+    ['Takip Tamamlanma', `%${audit.operationalCompletionRate}`, audit.operationalCompletionRate >= 95 ? 'var(--green)' : audit.operationalCompletionRate >= 80 ? 'var(--accent)' : 'var(--red)'],
+    ['Ay Kapanışı', audit.readyToClose ? 'Hazır' : 'Hazırlanıyor', audit.readyToClose ? 'var(--green)' : 'var(--accent)'],
+    ['Ay Hazırlığı', `%${audit.closingCompletionRate}`, audit.closingCompletionRate >= 95 ? 'var(--green)' : audit.closingCompletionRate >= 80 ? 'var(--accent)' : 'var(--red)'],
+    ['Vadesi Gelmedi', audit.notDueDayCount, audit.notDueDayCount > 0 ? 'var(--text2)' : 'var(--green)'],
     ['Planlı Kalan', audit.totals.scheduled, audit.totals.scheduled > 0 ? 'var(--accent)' : 'var(--green)'],
     ['Boş Gün', audit.totals.empty, audit.totals.empty > 0 ? 'var(--red)' : 'var(--green)'],
     ['OFF Eksik', audit.missingOffStaff, audit.missingOffStaff > 0 ? 'var(--red)' : 'var(--green)'],
@@ -797,7 +805,7 @@ function PuantajClosurePanel({ audit, canEdit, isLocked, monthLabel, onOpenCalen
           <div>
             <div style={{ fontFamily: 'var(--display)', fontSize: '13px', letterSpacing: '1px' }}>PUANTAJ KAPANIŞ KONTROLÜ</div>
             <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', marginTop: '2px' }}>
-              {monthLabel} · {audit.staffCount} personel · {blockingCount} kontrol gerektiren kişi
+              {monthLabel} · {audit.asOfDate} tarihine kadar {audit.dueDayCount} gün · {blockingCount} kontrol gerektiren kişi
             </div>
           </div>
           <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
@@ -875,10 +883,10 @@ function PuantajControlView({ audit, monthLabel, canEdit, isLocked, onOpenCalend
     const rows = audit.staffIssues || []
     if (issueFilter === 'planned') return rows.filter(row => row.scheduled > 0)
     if (issueFilter === 'empty') return rows.filter(row => row.empty > 0)
-    if (issueFilter === 'off') return rows.filter(row => row.off === 0)
+    if (issueFilter === 'off') return rows.filter(row => row.missingOff)
     if (issueFilter === 'reason') return rows.filter(row => row.absentWithoutReason > 0)
     if (issueFilter === 'absent') return rows.filter(row => row.absent > 0)
-    return rows.filter(row => row.scheduled > 0 || row.empty > 0 || row.off === 0 || row.absentWithoutReason > 0)
+    return rows.filter(row => row.scheduled > 0 || row.empty > 0 || row.missingOff || row.absentWithoutReason > 0)
   }, [audit.staffIssues, issueFilter])
 
   const deptRows = useMemo(() => {
@@ -890,7 +898,7 @@ function PuantajControlView({ audit, monthLabel, canEdit, isLocked, onOpenCalend
       row.people += 1
       row.scheduled += issue.scheduled || 0
       row.empty += issue.empty || 0
-      row.missingOff += issue.off === 0 ? 1 : 0
+      row.missingOff += issue.missingOff ? 1 : 0
       row.reason += issue.absentWithoutReason || 0
       row.absent += issue.absent || 0
     })
@@ -902,6 +910,10 @@ function PuantajControlView({ audit, monthLabel, canEdit, isLocked, onOpenCalend
 
   const dailyRows = audit.dailyRows || []
   const dailyBuckets = useMemo(() => dailyRows.reduce((acc, day) => {
+    if (!day.isDue) {
+      acc.notDue += 1
+      return acc
+    }
     acc.all += 1
     if (isPuantajProblemDay(day)) acc.problem += 1
     if (day.scheduled > 0) acc.planned += 1
@@ -910,16 +922,18 @@ function PuantajControlView({ audit, monthLabel, canEdit, isLocked, onOpenCalend
     if (day.isHoliday) acc.holiday += 1
     if (!isPuantajProblemDay(day)) acc.ready += 1
     return acc
-  }, { all: 0, problem: 0, planned: 0, empty: 0, reason: 0, ready: 0, holiday: 0 }), [dailyRows])
+  }, { all: 0, problem: 0, planned: 0, empty: 0, reason: 0, ready: 0, holiday: 0, notDue: 0 }), [dailyRows])
 
   const filteredDailyRows = useMemo(() => {
-    if (dailyFilter === 'problem') return dailyRows.filter(isPuantajProblemDay)
-    if (dailyFilter === 'planned') return dailyRows.filter(day => day.scheduled > 0)
-    if (dailyFilter === 'empty') return dailyRows.filter(day => day.empty > 0)
-    if (dailyFilter === 'reason') return dailyRows.filter(day => day.absentWithoutReason > 0)
-    if (dailyFilter === 'ready') return dailyRows.filter(day => !isPuantajProblemDay(day))
-    if (dailyFilter === 'holiday') return dailyRows.filter(day => day.isHoliday)
-    return dailyRows
+    if (dailyFilter === 'not_due') return dailyRows.filter(day => !day.isDue)
+    const dueRows = dailyRows.filter(day => day.isDue)
+    if (dailyFilter === 'problem') return dueRows.filter(isPuantajProblemDay)
+    if (dailyFilter === 'planned') return dueRows.filter(day => day.scheduled > 0)
+    if (dailyFilter === 'empty') return dueRows.filter(day => day.empty > 0)
+    if (dailyFilter === 'reason') return dueRows.filter(day => day.absentWithoutReason > 0)
+    if (dailyFilter === 'ready') return dueRows.filter(day => !isPuantajProblemDay(day))
+    if (dailyFilter === 'holiday') return dueRows.filter(day => day.isHoliday)
+    return dueRows
   }, [dailyRows, dailyFilter])
 
   const firstProblemDay = useMemo(() => dailyRows.find(isPuantajProblemDay), [dailyRows])
@@ -973,6 +987,7 @@ function PuantajControlView({ audit, monthLabel, canEdit, isLocked, onOpenCalend
     ['reason', 'Y?', dailyBuckets.reason],
     ['ready', 'HAZIR', dailyBuckets.ready],
     ['holiday', 'RT', dailyBuckets.holiday],
+    ['not_due', 'VADESİZ', dailyBuckets.notDue],
   ]
 
   return (
@@ -1079,7 +1094,7 @@ function PuantajControlView({ audit, monthLabel, canEdit, isLocked, onOpenCalend
                   </tr>
                 ) : filteredDailyRows.map(day => {
                   const unresolved = (day.scheduled || 0) + (day.empty || 0)
-                  const statusColor = unresolved > 0 ? 'var(--accent)' : day.absentWithoutReason > 0 ? 'var(--red)' : 'var(--green)'
+                  const statusColor = !day.isDue ? 'var(--text3)' : unresolved > 0 ? 'var(--accent)' : day.absentWithoutReason > 0 ? 'var(--red)' : 'var(--green)'
                   return (
                     <tr
                       key={day.date}
@@ -1104,7 +1119,7 @@ function PuantajControlView({ audit, monthLabel, canEdit, isLocked, onOpenCalend
                       <td style={{ textAlign: 'center', color: day.empty ? 'var(--red)' : 'var(--text3)', fontFamily: 'var(--mono)' }}>{day.empty || '—'}</td>
                       <td style={{ textAlign: 'center', color: day.absent ? 'var(--red)' : 'var(--text3)', fontFamily: 'var(--mono)' }}>{day.absent || '—'}</td>
                       <td style={{ textAlign: 'center', color: statusColor, fontFamily: 'var(--mono)', fontWeight: 800 }}>
-                        {unresolved > 0 ? 'Kontrol' : day.absentWithoutReason > 0 ? 'Y nedeni' : 'Hazır'}
+                        {!day.isDue ? 'Vadesi gelmedi' : unresolved > 0 ? 'Kontrol' : day.absentWithoutReason > 0 ? 'Y nedeni' : 'Hazır'}
                       </td>
                       <td style={{ textAlign: 'center' }}>
                         <button
@@ -1199,7 +1214,7 @@ function PuantajControlView({ audit, monthLabel, canEdit, isLocked, onOpenCalend
                   <td>{issue.staff.dept_name || '—'}</td>
                   <td style={{ textAlign: 'center', color: issue.scheduled ? 'var(--accent)' : 'var(--text3)', fontFamily: 'var(--mono)' }}>{issue.scheduled || '—'}</td>
                   <td style={{ textAlign: 'center', color: issue.empty ? 'var(--red)' : 'var(--text3)', fontFamily: 'var(--mono)' }}>{issue.empty || '—'}</td>
-                  <td style={{ textAlign: 'center', color: issue.off === 0 ? 'var(--red)' : 'var(--green)', fontFamily: 'var(--mono)' }}>{issue.off || '—'}</td>
+                  <td style={{ textAlign: 'center', color: issue.missingOff ? 'var(--red)' : 'var(--green)', fontFamily: 'var(--mono)' }}>{issue.off || '—'}</td>
                   <td style={{ textAlign: 'center', color: issue.absent ? 'var(--red)' : 'var(--text3)', fontFamily: 'var(--mono)' }}>{issue.absent || '—'}</td>
                   <td style={{ textAlign: 'center', color: issue.absentWithoutReason ? 'var(--red)' : 'var(--green)', fontFamily: 'var(--mono)' }}>{issue.absentWithoutReason || '—'}</td>
                   <td style={{ color: 'var(--text2)' }}>{issue.issueLabels.join(' · ')}</td>
@@ -3110,14 +3125,15 @@ export default function PuantajTab({ departments }) {
     },
   })
 
-  const { data: rows = [], isLoading } = useQuery({
+  const { data: puantajPayload = { rows: [] }, isLoading } = useQuery({
     queryKey: ['puantaj', month, deptFilter],
     queryFn: () => {
-      const params = { month }
+      const params = { month, meta: '1' }
       if (deptFilter) params.dept_id = deptFilter
-      return api.get('/shifts/puantaj', { params }).then(r => r.data)
+      return api.get('/shifts/puantaj', { params }).then(r => normalizePuantajPayload(r.data))
     },
   })
+  const rows = puantajPayload.rows
 
   const { data: auditDaysByStaff = {} } = useQuery({
     queryKey: ['puantaj-days-month', month, deptFilter],
@@ -3349,7 +3365,8 @@ export default function PuantajTab({ departments }) {
     daysByStaff: auditDaysByStaff,
     holidays: holidayRows,
     month,
-  }), [filtered, auditDaysByStaff, holidayRows, month])
+    asOfDate: puantajPayload.as_of_date,
+  }), [filtered, auditDaysByStaff, holidayRows, month, puantajPayload.as_of_date])
 
   const monthLabel = new Date(y, m - 1, 1).toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' }).toUpperCase()
 

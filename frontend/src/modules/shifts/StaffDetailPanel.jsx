@@ -745,7 +745,8 @@ export default function StaffDetailPanel({ staffId, onClose }) {
             {/* GEÇMİŞ — aylık puantaj özeti (son 12 ay) */}
             {!activeForm && detailTab === 'history' && (() => {
               const monthly = data?.monthlyHistory || []
-              if (monthly.length === 0) {
+              const assignments = data?.assignmentHistory || []
+              if (monthly.length === 0 && assignments.length === 0) {
                 return <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text3)', fontSize: 11 }}>Aylık geçmiş kaydı yok</div>
               }
               const monthName = (ym) => {
@@ -754,6 +755,28 @@ export default function StaffDetailPanel({ staffId, onClose }) {
               }
               return (
                 <div style={{ overflowX: 'auto' }}>
+                  {assignments.length > 0 && (
+                    <div style={{ border: '1px solid var(--border)', borderRadius: '8px', background: 'var(--surface2)', padding: '10px', marginBottom: '12px' }}>
+                      <div style={{ fontFamily: 'var(--display)', fontSize: '12px', letterSpacing: '1px', marginBottom: '8px' }}>GÖREV TARİHÇESİ</div>
+                      <div style={{ display: 'grid', gap: '6px' }}>
+                        {assignments.map(assignment => (
+                          <div key={assignment.id} style={{ display: 'grid', gridTemplateColumns: '105px minmax(0, 1fr)', gap: '8px', borderTop: '1px solid var(--border)', paddingTop: '6px' }}>
+                            <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)' }}>
+                              {assignment.effective_from}<br />{assignment.effective_to || 'Devam ediyor'}
+                            </div>
+                            <div>
+                              <div style={{ fontSize: '11px', fontWeight: 700 }}>
+                                {assignment.dept_name || 'Departmansız'} · {assignment.role_name || 'Rol yok'}
+                              </div>
+                              <div style={{ fontSize: '10px', color: 'var(--text3)', marginTop: '2px' }}>
+                                {assignment.work_location_name || 'Ana çalışma noktası yok'}{assignment.note ? ` · ${assignment.note}` : ''}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   <table className="data-table" style={{ fontSize: '11px', minWidth: '460px' }}>
                     <thead>
                       <tr>
@@ -767,6 +790,9 @@ export default function StaffDetailPanel({ staffId, onClose }) {
                       </tr>
                     </thead>
                     <tbody>
+                      {monthly.length === 0 && (
+                        <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--text3)', padding: '14px' }}>Aylık puantaj geçmişi yok</td></tr>
+                      )}
                       {monthly.map(row => (
                         <tr key={row.month}>
                           <td style={{ fontWeight: 700 }}>{monthName(row.month)}</td>

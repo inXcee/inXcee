@@ -796,6 +796,121 @@ describe('Staff CRUD', () => {
   })
 })
 
+describe('Staff assignment history and data quality (044)', () => {
+  it('keeps dated assignments, preserves historical puantaj and reports mismatches', async () => {
+    const db = getDB()
+    const suffix = Date.now().toString(36)
+    const deptA = db.prepare('INSERT INTO departments(name, color_class) VALUES(?, ?)')
+      .run(`Assignment A ${suffix}`, 'blue').lastInsertRowid
+    const deptB = db.prepare('INSERT INTO departments(name, color_class) VALUES(?, ?)')
+      .run(`Assignment B ${suffix}`, 'green').lastInsertRowid
+
+    const location = await request(app)
+      .post('/api/shifts/work-locations')
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({ name: `Assignment Location ${suffix}`, dept_id: deptA, sort_order: 1 })
+    expect(location.status).toBe(201)
+
+    const role = await request(app)
+      .post('/api/shifts/roles')
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({ name: `Assignment Role ${suffix}`, expected_dept_id: deptA, sort_order: 1 })
+    expect(role.status).toBe(201)
+
+    const created = await request(app)
+      .post('/api/shifts/staff')
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({
+        full_name: `Assignment Staff ${suffix}`,
+        department_id: deptA,
+        role_id: role.body.id,
+        primary_work_location_id: location.body.id,
+        assignment_effective_from: '2026-01-01',
+        salary: 30000,
+        iban: 'TR000000000000000000000001',
+        is_active: 1,
+      })
+    expect(created.status).toBe(201)
+    const staffId = created.body.id
+
+    const initial = await request(app)
+      .get(`/api/shifts/staff/${staffId}`)
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(initial.body).toMatchObject({
+      department_id: Number(deptA),
+      role_id: role.body.id,
+      primary_work_location_id: location.body.id,
+    })
+
+    db.prepare(`
+      INSERT INTO shift_schedule(staff_id, dept_id, work_date, status)
+      VALUES(?, ?, '2026-02-10', 'worked')
+    `).run(staffId, deptA)
+
+    const now = new Date()
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+    const changed = await request(app)
+      .put(`/api/shifts/staff/${staffId}`)
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({ department_id: deptB, assignment_effective_from: today, assignment_note: 'B birimine gecis' })
+    expect(changed.status).toBe(200)
+
+    const assignments = await request(app)
+      .get(`/api/shifts/staff/${staffId}/assignments`)
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(assignments.status).toBe(200)
+    expect(assignments.body).toHaveLength(2)
+    expect(assignments.body[0]).toMatchObject({ department_id: Number(deptB), effective_from: today })
+    expect(assignments.body[1].effective_to).toBeTruthy()
+
+    const historical = await request(app)
+      .get('/api/shifts/puantaj?month=2026-02')
+      .set('Authorization', `Bearer ${managerToken}`)
+    const historicalStaff = historical.body.find(row => row.id === staffId)
+    expect(historicalStaff.department_id).toBe(Number(deptA))
+    expect(historicalStaff.role_id).toBe(role.body.id)
+
+    const quality = await request(app)
+      .get('/api/shifts/staff/quality')
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(quality.status).toBe(200)
+    const qualityStaff = quality.body.rows.find(row => row.id === staffId)
+    expect(qualityStaff.issues.map(issue => issue.code)).toEqual(expect.arrayContaining([
+      'role_department_mismatch',
+      'location_department_mismatch',
+    ]))
+
+    const future = await request(app)
+      .post(`/api/shifts/staff/${staffId}/assignments`)
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({
+        department_id: deptA,
+        role_id: role.body.id,
+        work_location_id: location.body.id,
+        effective_from: '2099-01-01',
+        note: 'Gelecek gorev',
+      })
+    expect(future.status).toBe(201)
+    const currentAfterFuture = await request(app)
+      .get(`/api/shifts/staff/${staffId}`)
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(currentAfterFuture.body.department_id).toBe(Number(deptB))
+
+    const detail = await request(app)
+      .get(`/api/shifts/staff/${staffId}/detail`)
+      .set('Authorization', `Bearer ${shiftToken}`)
+    expect(detail.status).toBe(200)
+    expect(detail.body.assignmentHistory).toHaveLength(3)
+
+    const meta = await request(app)
+      .get('/api/shifts/puantaj?month=2026-02&meta=1')
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(meta.body).toMatchObject({ not_due: 0, exception_count: 0, source: 'shift_schedule' })
+    expect(meta.body.as_of_date).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    expect(Array.isArray(meta.body.rows)).toBe(true)
+  })
+})
+
 describe('Leave & Overtime (staff_id)', () => {
   it('POST /leave creates a leave request with staff_id', async () => {
     const staffRes = await request(app).get('/api/shifts/staff').set('Authorization', `Bearer ${shiftToken}`)
