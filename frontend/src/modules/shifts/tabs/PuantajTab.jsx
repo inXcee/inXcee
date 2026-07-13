@@ -1956,6 +1956,11 @@ function PuantajDayBreakdownSheet({ date, staffRows, daysByStaff, holidayName, o
         || row.status === statusFilter
         || (statusFilter === 'worked' && row.status === 'overtime')
         || (statusFilter === 'note' && (row.entry?.detail_note || row.entry?.absent_reason || row.entry?.attachment_url))
+        || (statusFilter === 'issue' && (
+          row.status === 'scheduled'
+          || (row.status === 'no_record' && !isSunday)
+          || (row.status === 'absent' && !String(row.entry?.absent_reason || '').trim())
+        ))
       if (!statusOk) return false
       if (!q) return true
       return [row.staff.full_name, row.staff.dept_name, row.entry?.work_location_name, row.entry?.detail_note, row.entry?.absent_reason]
@@ -1965,7 +1970,7 @@ function PuantajDayBreakdownSheet({ date, staffRows, daysByStaff, holidayName, o
       || (a.staff.dept_name || '').localeCompare(b.staff.dept_name || '', 'tr')
       || (a.staff.full_name || '').localeCompare(b.staff.full_name || '', 'tr')
     ))
-  }, [rows, search, statusFilter])
+  }, [rows, search, statusFilter, isSunday])
 
   const copySummary = async () => {
     const lines = [
@@ -1997,6 +2002,7 @@ function PuantajDayBreakdownSheet({ date, staffRows, daysByStaff, holidayName, o
     ['on_leave', 'IZIN', summary.leave, 'var(--purple)'],
     ['absent', 'YOK', summary.absent, 'var(--red)'],
     ['no_record', 'BOS', summary.empty, 'var(--red)'],
+    ['issue', 'SORUN', summary.issues.length, 'var(--red)'],
     ['note', 'NOT', summary.withNote + summary.withAttachment, 'var(--blue)'],
   ]
 
@@ -2016,8 +2022,8 @@ function PuantajDayBreakdownSheet({ date, staffRows, daysByStaff, holidayName, o
 
   return (
     <BottomSheet onClose={onClose}>
-      <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap' }}>
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <div style={{ position: 'sticky', top: 0, zIndex: 2, margin: '-16px -20px 0', padding: '16px 20px 10px', background: 'var(--bg)', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap' }}>
           <div>
             <div style={{ fontFamily: 'var(--display)', fontSize: '16px', letterSpacing: '1px' }}>GUN DOKUMU</div>
             <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', marginTop: '3px' }}>
@@ -2212,7 +2218,7 @@ function PuantajCellEditor({ editor, holidayName, onClose }) {
 
   return (
     <BottomSheet onClose={onClose}>
-      <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <div>
             <div style={{ fontFamily: 'var(--display)', fontSize: '15px', letterSpacing: '0.5px' }}>{staff.full_name}</div>
@@ -2334,7 +2340,7 @@ function PuantajDayDetailEditor({ editor, holidayName, onClose }) {
 
   return (
     <BottomSheet onClose={onClose}>
-      <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
           <div style={{ minWidth: 0 }}>
             <div style={{ fontFamily: 'var(--display)', fontSize: '15px', letterSpacing: '0.5px' }}>{staff.full_name}</div>

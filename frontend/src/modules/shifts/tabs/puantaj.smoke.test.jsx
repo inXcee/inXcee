@@ -119,7 +119,9 @@ describe('PuantajTab smoke', () => {
     const dayButton = await screen.findByTitle('2026-07-01 gün dökümünü aç')
     fireEvent.click(dayButton)
 
-    expect(await screen.findByText('GUN DOKUMU')).toBeInTheDocument()
+    const title = await screen.findByText('GUN DOKUMU')
+    expect(title).toBeInTheDocument()
+    expect(title.closest('[style*="overflow-y: auto"]')).toBeTruthy()
     expect(screen.getByText('DEPARTMAN')).toBeInTheDocument()
     expect(screen.getByText('CALISMA NOKTASI')).toBeInTheDocument()
     expect(screen.getAllByText('Ali Test').length).toBeGreaterThan(0)
