@@ -54,6 +54,10 @@ function summarizeCalendarDays(days) {
   }, { worked: 0, off: 0, sick: 0, unpaid: 0, absent: 0, leave: 0 })
 }
 
+function isPuantajProblemDay(day) {
+  return (day.scheduled || 0) + (day.empty || 0) > 0 || (day.absentWithoutReason || 0) > 0
+}
+
 function normalizePuantajDaysPayload(payload) {
   const candidate = payload?.days && typeof payload.days === 'object' ? payload.days : payload
   return candidate && typeof candidate === 'object' && !Array.isArray(candidate) ? candidate : {}
@@ -866,6 +870,7 @@ function PuantajClosurePanel({ audit, canEdit, isLocked, monthLabel, onOpenCalen
 
 function PuantajControlView({ audit, monthLabel, canEdit, isLocked, onOpenCalendar, onSyncScheduled, syncing, onPersonClick, onOpenDayBreakdown }) {
   const [issueFilter, setIssueFilter] = useState('blocking')
+  const [dailyFilter, setDailyFilter] = useState('all')
   const issueRows = useMemo(() => {
     const rows = audit.staffIssues || []
     if (issueFilter === 'planned') return rows.filter(row => row.scheduled > 0)
@@ -894,6 +899,30 @@ function PuantajControlView({ audit, monthLabel, canEdit, isLocked, onOpenCalend
       || a.name.localeCompare(b.name, 'tr')
     ))
   }, [audit.staffIssues])
+
+  const dailyRows = audit.dailyRows || []
+  const dailyBuckets = useMemo(() => dailyRows.reduce((acc, day) => {
+    acc.all += 1
+    if (isPuantajProblemDay(day)) acc.problem += 1
+    if (day.scheduled > 0) acc.planned += 1
+    if (day.empty > 0) acc.empty += 1
+    if (day.absentWithoutReason > 0) acc.reason += 1
+    if (day.isHoliday) acc.holiday += 1
+    if (!isPuantajProblemDay(day)) acc.ready += 1
+    return acc
+  }, { all: 0, problem: 0, planned: 0, empty: 0, reason: 0, ready: 0, holiday: 0 }), [dailyRows])
+
+  const filteredDailyRows = useMemo(() => {
+    if (dailyFilter === 'problem') return dailyRows.filter(isPuantajProblemDay)
+    if (dailyFilter === 'planned') return dailyRows.filter(day => day.scheduled > 0)
+    if (dailyFilter === 'empty') return dailyRows.filter(day => day.empty > 0)
+    if (dailyFilter === 'reason') return dailyRows.filter(day => day.absentWithoutReason > 0)
+    if (dailyFilter === 'ready') return dailyRows.filter(day => !isPuantajProblemDay(day))
+    if (dailyFilter === 'holiday') return dailyRows.filter(day => day.isHoliday)
+    return dailyRows
+  }, [dailyRows, dailyFilter])
+
+  const firstProblemDay = useMemo(() => dailyRows.find(isPuantajProblemDay), [dailyRows])
 
   const workflow = [
     {
@@ -934,6 +963,16 @@ function PuantajControlView({ audit, monthLabel, canEdit, isLocked, onOpenCalend
     ['off', 'OFF'],
     ['reason', 'Y Nedeni'],
     ['absent', 'Devamsız'],
+  ]
+
+  const dailyFilterButtons = [
+    ['all', 'TUM', dailyBuckets.all],
+    ['problem', 'SORUN', dailyBuckets.problem],
+    ['planned', 'P', dailyBuckets.planned],
+    ['empty', 'BOS', dailyBuckets.empty],
+    ['reason', 'Y?', dailyBuckets.reason],
+    ['ready', 'HAZIR', dailyBuckets.ready],
+    ['holiday', 'RT', dailyBuckets.holiday],
   ]
 
   return (
@@ -980,7 +1019,44 @@ function PuantajControlView({ audit, monthLabel, canEdit, isLocked, onOpenCalend
             </div>
             <button className="btn btn-ghost btn-sm" onClick={onOpenCalendar} style={{ fontSize: '10px' }}>Takvim</button>
           </div>
-          <div className="panel-body" style={{ padding: 0, maxHeight: '360px', overflow: 'auto' }}>
+          <div className="panel-body" style={{ padding: 0, maxHeight: '390px', overflow: 'auto' }}>
+            <div style={{
+              position: 'sticky',
+              top: 0,
+              zIndex: 3,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              flexWrap: 'wrap',
+              padding: '8px 10px',
+              borderBottom: '1px solid var(--border)',
+              background: 'var(--surface)',
+            }}>
+              {dailyFilterButtons.map(([id, label, count]) => (
+                <button
+                  key={id}
+                  type="button"
+                  className={`filter-chip ${dailyFilter === id ? 'active' : ''}`}
+                  onClick={() => setDailyFilter(id)}
+                  style={{ fontSize: '9px', padding: '3px 8px' }}
+                >
+                  {label}:{count}
+                </button>
+              ))}
+              <span style={{ marginLeft: 'auto', fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)' }}>
+                {filteredDailyRows.length}/{dailyRows.length} gun
+              </span>
+              {firstProblemDay && (
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-xs"
+                  onClick={() => onOpenDayBreakdown?.(firstProblemDay.date)}
+                  title={`${firstProblemDay.date} ilk sorunlu gun dokumunu ac`}
+                >
+                  Ilk Sorun
+                </button>
+              )}
+            </div>
             <table className="data-table" style={{ fontSize: '10px' }}>
               <thead>
                 <tr>
@@ -995,7 +1071,13 @@ function PuantajControlView({ audit, monthLabel, canEdit, isLocked, onOpenCalend
                 </tr>
               </thead>
               <tbody>
-                {audit.dailyRows.map(day => {
+                {filteredDailyRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} style={{ textAlign: 'center', color: 'var(--text3)', padding: '18px' }}>
+                      Bu filtrede gun yok.
+                    </td>
+                  </tr>
+                ) : filteredDailyRows.map(day => {
                   const unresolved = (day.scheduled || 0) + (day.empty || 0)
                   const statusColor = unresolved > 0 ? 'var(--accent)' : day.absentWithoutReason > 0 ? 'var(--red)' : 'var(--green)'
                   return (

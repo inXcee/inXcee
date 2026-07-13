@@ -153,6 +153,11 @@ describe('PuantajTab smoke', () => {
     renderWithProviders(<PuantajTab departments={[]} />)
     fireEvent.click(screen.getByRole('button', { name: 'Kontrol' }))
 
+    expect(await screen.findByRole('button', { name: /SORUN:/ })).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'P:1' })).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: 'P:1' }))
+    expect(screen.getByText('1/31 gun')).toBeInTheDocument()
+
     const [openDay] = await screen.findAllByTitle('2026-07-01 gun dokumunu ac')
     fireEvent.click(openDay)
 
