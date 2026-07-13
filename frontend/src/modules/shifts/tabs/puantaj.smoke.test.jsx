@@ -91,6 +91,41 @@ describe('PuantajTab smoke', () => {
     expect(offCell).toHaveTextContent('H')
   })
 
+  it('calendar day header opens daily breakdown sheet', async () => {
+    getMock.mockImplementation((url) => {
+      if (url === '/shifts/puantaj') {
+        return Promise.resolve({ data: [
+          { id: 1, full_name: 'Ali Test', department_id: 1, dept_name: 'OTC', worked_days: 1 },
+          { id: 2, full_name: 'Ayse Test', department_id: 2, dept_name: 'FPU', leave_days: 1 },
+        ] })
+      }
+      if (url === '/shifts/puantaj/days') {
+        return Promise.resolve({ data: {
+          month: '2026-07',
+          days: {
+            1: [{ date: '2026-07-01', day_of_week: 3, status: 'worked', work_location_name: 'OTC Lokal' }],
+            2: [{ date: '2026-07-01', day_of_week: 3, status: 'on_leave', leave_type: 'sick', detail_note: 'Raporlu' }],
+          },
+        } })
+      }
+      if (url === '/shifts/holidays') return Promise.resolve({ data: [] })
+      if (url === '/shifts/puantaj/codes') return Promise.resolve({ data: [] })
+      return Promise.resolve({ data: [] })
+    })
+
+    renderWithProviders(<PuantajTab departments={[]} />)
+    fireEvent.click(screen.getAllByText(/TAKV/)[0])
+
+    const dayButton = await screen.findByTitle('2026-07-01 gün dökümünü aç')
+    fireEvent.click(dayButton)
+
+    expect(await screen.findByText('GUN DOKUMU')).toBeInTheDocument()
+    expect(screen.getByText('DEPARTMAN')).toBeInTheDocument()
+    expect(screen.getByText('CALISMA NOKTASI')).toBeInTheDocument()
+    expect(screen.getAllByText('Ali Test').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Ayse Test').length).toBeGreaterThan(0)
+  })
+
   it('right click opens puantaj day detail editor with leave and document fields', async () => {
     useAuthStore.setState({ user: { role: 'campus_manager' } })
     getMock.mockImplementation((url) => {

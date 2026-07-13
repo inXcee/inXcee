@@ -1152,6 +1152,7 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
   const [anchor, setAnchor] = useState(null)
   const [undoCount, setUndoCount] = useState(0)
   const undoStackRef = useRef([])
+  const [dayDetailDate, setDayDetailDate] = useState(null)
   const [cellEditor, setCellEditor] = useState(null) // sağ tık → { staff, date, entry }
 
   const daysInMonth = new Date(y, m, 0).getDate()
@@ -1547,7 +1548,8 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
             </th>
             {dayNumbers.map(d => {
               const isHoliday = holidayDays.has(d)
-              const holidayName = isHoliday ? holidayMap.get(`${month}-${String(d).padStart(2, '0')}`)?.name : null
+              const dateStr = `${month}-${String(d).padStart(2, '0')}`
+              const holidayName = isHoliday ? holidayMap.get(dateStr)?.name : null
               const headColor = isHoliday ? 'var(--red)' : sundayDays.has(d) ? 'var(--accent)' : 'var(--text3)'
               return (
               <th key={d} title={holidayName || undefined} style={{
@@ -1582,8 +1584,33 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
                   {d}
                 </button>
                 <div style={{ fontSize: '7px', opacity: .75 }}>{isHoliday ? 'RT' : new Date(y, m - 1, d).toLocaleDateString('tr-TR', { weekday: 'short' }).slice(0, 3)}</div>
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    setDayDetailDate(dateStr)
+                  }}
+                  title={`${dateStr} gün dökümünü aç`}
+                  style={{
+                    display: 'block',
+                    width: '18px',
+                    height: '13px',
+                    lineHeight: '11px',
+                    margin: '1px auto 0',
+                    padding: 0,
+                    borderRadius: '5px',
+                    border: '1px solid var(--border)',
+                    background: 'var(--surface2)',
+                    color: 'var(--text3)',
+                    cursor: 'pointer',
+                    fontFamily: 'var(--mono)',
+                    fontSize: '7px',
+                    fontWeight: 900,
+                  }}
+                >
+                  D
+                </button>
                 {(() => {
-                  const dateStr = `${month}-${String(d).padStart(2, '0')}`
                   const dayApproval = approvalByDate.get(dateStr)
                   if (!dayApproval || dayApproval.status === 'missing') return null
                   const badge = {
@@ -1836,11 +1863,310 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
           onClose={() => setCellEditor(null)}
         />
       )}
+      {dayDetailDate && (
+        <PuantajDayBreakdownSheet
+          date={dayDetailDate}
+          staffRows={filtered}
+          daysByStaff={dayData}
+          holidayName={holidayMap.get(dayDetailDate)?.name}
+          onClose={() => setDayDetailDate(null)}
+          onPersonClick={onPersonClick}
+        />
+      )}
     </div>
   )
 }
 
 // Sağ tık hücre editörü — FM saati (overtime_records upsert) + devamsızlık nedeni
+function PuantajDayBreakdownSheet({ date, staffRows, daysByStaff, holidayName, onClose, onPersonClick }) {
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [search, setSearch] = useState('')
+  const dow = new Date(date).getDay()
+  const isSunday = dow === 0
+  const dayLabel = new Date(date).toLocaleDateString('tr-TR', { day: '2-digit', month: 'long', weekday: 'long' })
+
+  const rows = useMemo(() => staffRows.map(staff => {
+    const entry = (daysByStaff?.[staff.id] || []).find(day => day.date === date)
+    const status = entry?.status || (isSunday ? 'sunday' : 'no_record')
+    return {
+      staff,
+      entry: entry ? { ...entry, status } : { date, day_of_week: dow, status },
+      status,
+      meta: dayStatusMeta(entry || { status }, isSunday),
+    }
+  }), [staffRows, daysByStaff, date, dow, isSunday])
+
+  const summary = useMemo(() => {
+    const base = {
+      worked: 0,
+      scheduled: 0,
+      off: 0,
+      leave: 0,
+      absent: 0,
+      empty: 0,
+      overtimeHours: 0,
+      leaveHours: 0,
+      withNote: 0,
+      withAttachment: 0,
+      missingReason: 0,
+      byDept: new Map(),
+      byLocation: new Map(),
+      byLeave: new Map(),
+      issues: [],
+    }
+    rows.forEach(row => {
+      const { staff, entry, status } = row
+      if (status === 'worked' || status === 'overtime') base.worked += 1
+      else if (status === 'scheduled') base.scheduled += 1
+      else if (status === 'off') base.off += 1
+      else if (status === 'on_leave') base.leave += 1
+      else if (status === 'absent') base.absent += 1
+      else if (status === 'no_record') base.empty += 1
+      base.overtimeHours += Number(entry?.overtime_hours || 0)
+      base.leaveHours += Number(entry?.leave_hours || 0)
+      if (entry?.detail_note || entry?.absent_reason) base.withNote += 1
+      if (entry?.attachment_url) base.withAttachment += 1
+
+      const deptName = staff.dept_name || 'Departmansiz'
+      base.byDept.set(deptName, (base.byDept.get(deptName) || 0) + 1)
+      if (['worked', 'overtime', 'scheduled'].includes(status)) {
+        const locationName = entry?.work_location_name || 'Noktasiz'
+        base.byLocation.set(locationName, (base.byLocation.get(locationName) || 0) + 1)
+      }
+      if (status === 'on_leave') {
+        const label = leaveTypeLabel(entry?.leave_type)
+        base.byLeave.set(label, (base.byLeave.get(label) || 0) + 1)
+      }
+      if (status === 'scheduled') {
+        base.issues.push({ staff, label: 'Planli gun kapanmamis', tone: 'var(--accent)' })
+      } else if (status === 'no_record' && !isSunday) {
+        base.issues.push({ staff, label: 'Bos gun', tone: 'var(--red)' })
+      } else if (status === 'absent' && !String(entry?.absent_reason || '').trim()) {
+        base.missingReason += 1
+        base.issues.push({ staff, label: 'Devamsizlik nedeni eksik', tone: 'var(--red)' })
+      }
+    })
+    return base
+  }, [rows, isSunday])
+
+  const filteredRows = useMemo(() => {
+    const q = search.trim().toLocaleLowerCase('tr')
+    return rows.filter(row => {
+      const statusOk = statusFilter === 'all'
+        || row.status === statusFilter
+        || (statusFilter === 'worked' && row.status === 'overtime')
+        || (statusFilter === 'note' && (row.entry?.detail_note || row.entry?.absent_reason || row.entry?.attachment_url))
+      if (!statusOk) return false
+      if (!q) return true
+      return [row.staff.full_name, row.staff.dept_name, row.entry?.work_location_name, row.entry?.detail_note, row.entry?.absent_reason]
+        .some(value => String(value || '').toLocaleLowerCase('tr').includes(q))
+    }).sort((a, b) => (
+      (a.status || '').localeCompare(b.status || '', 'tr')
+      || (a.staff.dept_name || '').localeCompare(b.staff.dept_name || '', 'tr')
+      || (a.staff.full_name || '').localeCompare(b.staff.full_name || '', 'tr')
+    ))
+  }, [rows, search, statusFilter])
+
+  const copySummary = async () => {
+    const lines = [
+      `${dayLabel} gun dokumu`,
+      `Calisan: ${summary.worked} | Planli: ${summary.scheduled} | OFF: ${summary.off} | Izin: ${summary.leave} | Yok: ${summary.absent} | Bos: ${summary.empty}`,
+      `FM: ${summary.overtimeHours}s | Saatlik izin: ${summary.leaveHours}s | Not/belge: ${summary.withNote + summary.withAttachment}`,
+      '',
+      ...filteredRows.map(row => {
+        const e = row.entry
+        const hours = e?.start_hour != null ? ` ${formatShiftHours(e.start_hour, e.end_hour)}` : ''
+        const place = e?.work_location_name ? ` @${e.work_location_name}` : ''
+        const note = e?.detail_note || e?.absent_reason ? ` - ${e.detail_note || e.absent_reason}` : ''
+        return `${row.staff.full_name} | ${row.staff.dept_name || '-'} | ${row.meta.label}${hours}${place}${note}`
+      })
+    ]
+    try {
+      await navigator.clipboard.writeText(lines.join('\n'))
+      toastOk('Gun dokumu panoya kopyalandi')
+    } catch {
+      toastErr(new Error('Panoya kopyalanamadi'))
+    }
+  }
+
+  const chipRows = [
+    ['all', 'TUM', rows.length, 'var(--text2)'],
+    ['worked', 'N', summary.worked, 'var(--green)'],
+    ['scheduled', 'P', summary.scheduled, 'var(--accent)'],
+    ['off', 'OFF', summary.off, 'var(--teal)'],
+    ['on_leave', 'IZIN', summary.leave, 'var(--purple)'],
+    ['absent', 'YOK', summary.absent, 'var(--red)'],
+    ['no_record', 'BOS', summary.empty, 'var(--red)'],
+    ['note', 'NOT', summary.withNote + summary.withAttachment, 'var(--blue)'],
+  ]
+
+  const renderBreakdown = (title, map, emptyText) => (
+    <div style={{ border: '1px solid var(--border)', borderRadius: '8px', background: 'var(--surface2)', padding: '10px', minHeight: '86px' }}>
+      <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '1px', marginBottom: '8px' }}>{title}</div>
+      {[...map.entries()].length === 0 ? (
+        <div style={{ color: 'var(--text3)', fontSize: '11px' }}>{emptyText}</div>
+      ) : [...map.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([label, value]) => (
+        <div key={label} style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', fontSize: '11px', padding: '3px 0', borderBottom: '1px solid rgba(255,255,255,.04)' }}>
+          <span style={{ color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+          <span style={{ fontFamily: 'var(--mono)', color: 'var(--text)', fontWeight: 800 }}>{value}</span>
+        </div>
+      ))}
+    </div>
+  )
+
+  return (
+    <BottomSheet onClose={onClose}>
+      <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap' }}>
+          <div>
+            <div style={{ fontFamily: 'var(--display)', fontSize: '16px', letterSpacing: '1px' }}>GUN DOKUMU</div>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', marginTop: '3px' }}>
+              {date} · {dayLabel}{holidayName ? ` · ${holidayName}` : ''}
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: '6px' }}>
+            <button className="btn btn-ghost btn-sm" onClick={copySummary} style={{ fontSize: '10px' }}>Kopyala</button>
+            <button className="btn btn-ghost btn-sm" onClick={onClose}>X</button>
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(92px, 1fr))', gap: '8px' }}>
+          {[
+            ['Calisan', summary.worked, 'var(--green)'],
+            ['Planli', summary.scheduled, 'var(--accent)'],
+            ['Izin/OFF', summary.leave + summary.off, 'var(--purple)'],
+            ['Yok/Bos', summary.absent + summary.empty, 'var(--red)'],
+            ['FM', `${summary.overtimeHours}s`, 'var(--accent)'],
+            ['Belge', summary.withAttachment, 'var(--blue)'],
+          ].map(([label, value, color]) => (
+            <div key={label} style={{ border: '1px solid var(--border)', borderRadius: '8px', background: 'var(--surface2)', padding: '8px 10px' }}>
+              <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text3)' }}>{label}</div>
+              <div style={{ fontFamily: 'var(--display)', fontSize: '18px', color, marginTop: '3px' }}>{value}</div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '8px' }}>
+          {renderBreakdown('DEPARTMAN', summary.byDept, 'Departman yok')}
+          {renderBreakdown('CALISMA NOKTASI', summary.byLocation, 'Calisan/plani nokta yok')}
+          {renderBreakdown('IZIN TURU', summary.byLeave, 'Izin kaydi yok')}
+        </div>
+
+        {summary.issues.length > 0 && (
+          <div style={{ border: '1px solid rgba(239,68,68,.30)', borderRadius: '8px', background: 'rgba(239,68,68,.08)', padding: '10px' }}>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--red)', fontWeight: 900, letterSpacing: '1px', marginBottom: '7px' }}>
+              KONTROL GEREKEN {summary.issues.length} KAYIT
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+              {summary.issues.slice(0, 10).map(issue => (
+                <button
+                  key={`${issue.staff.id}-${issue.label}`}
+                  type="button"
+                  onClick={() => { onClose(); onPersonClick?.(issue.staff) }}
+                  style={{
+                    border: '1px solid var(--border)',
+                    borderRadius: '7px',
+                    background: 'var(--surface)',
+                    color: issue.tone,
+                    cursor: 'pointer',
+                    padding: '4px 7px',
+                    fontSize: '10px',
+                    fontWeight: 800,
+                  }}
+                >
+                  {issue.staff.full_name} · {issue.label}
+                </button>
+              ))}
+              {summary.issues.length > 10 && <span style={{ fontSize: '10px', color: 'var(--text3)' }}>+{summary.issues.length - 10} kayit</span>}
+            </div>
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+          {chipRows.map(([id, label, count, color]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setStatusFilter(id)}
+              style={{
+                border: statusFilter === id ? `1px solid ${color}` : '1px solid var(--border)',
+                background: statusFilter === id ? 'var(--surface2)' : 'transparent',
+                color,
+                borderRadius: '7px',
+                padding: '5px 8px',
+                cursor: 'pointer',
+                fontFamily: 'var(--mono)',
+                fontSize: '9px',
+                fontWeight: 900,
+              }}
+            >
+              {label}:{count}
+            </button>
+          ))}
+          <input
+            className="form-input"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Kisi, departman, nokta, not ara..."
+            style={{ marginLeft: 'auto', minWidth: '220px', maxWidth: '320px', fontSize: '11px' }}
+          />
+        </div>
+
+        <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: '8px' }}>
+          <table className="data-table" style={{ minWidth: '760px', fontSize: '11px' }}>
+            <thead>
+              <tr>
+                <th style={{ textAlign: 'left' }}>Personel</th>
+                <th style={{ textAlign: 'left' }}>Departman</th>
+                <th style={{ textAlign: 'center' }}>Durum</th>
+                <th style={{ textAlign: 'left' }}>Saat/Nokta</th>
+                <th style={{ textAlign: 'left' }}>Not/Belge</th>
+                <th style={{ textAlign: 'center' }}>Detay</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredRows.length === 0 ? (
+                <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--text3)', padding: '18px' }}>Bu filtrede kayit yok.</td></tr>
+              ) : filteredRows.map(row => {
+                const e = row.entry
+                const hours = e?.start_hour != null ? formatShiftHours(e.start_hour, e.end_hour) : ''
+                return (
+                  <tr key={row.staff.id}>
+                    <td style={{ fontWeight: 700 }}>{row.staff.full_name}</td>
+                    <td>{row.staff.dept_name || '-'}</td>
+                    <td style={{ textAlign: 'center' }}>
+                      <span style={{ display: 'inline-block', minWidth: '42px', border: `1px solid ${row.meta.border}`, borderRadius: '7px', padding: '3px 6px', background: row.meta.bg, color: row.meta.text, fontFamily: 'var(--mono)', fontWeight: 900 }}>
+                        {row.meta.code || row.meta.label}
+                      </span>
+                    </td>
+                    <td>
+                      <div style={{ color: hours ? 'var(--text)' : 'var(--text3)' }}>{hours || '-'}</div>
+                      <div style={{ color: e?.work_location_name ? 'var(--blue)' : 'var(--text3)', fontSize: '10px', marginTop: '2px' }}>{e?.work_location_name || e?.shift_name || '-'}</div>
+                    </td>
+                    <td>
+                      <div style={{ color: e?.detail_note || e?.absent_reason ? 'var(--text2)' : 'var(--text3)', maxWidth: '250px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {e?.detail_note || e?.absent_reason || (e?.leave_hours ? `${e.leave_hours}s saatlik izin` : '-')}
+                      </div>
+                      {e?.attachment_url && (
+                        <a href={e.attachment_url} target="_blank" rel="noreferrer" style={{ color: 'var(--blue)', fontSize: '10px', textDecoration: 'none' }}>
+                          {e.attachment_name || 'Belge'}
+                        </a>
+                      )}
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      <button className="btn btn-ghost btn-xs" onClick={() => { onClose(); onPersonClick?.(row.staff) }}>Ac</button>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </BottomSheet>
+  )
+}
+
 function PuantajCellEditor({ editor, holidayName, onClose }) {
   const qc = useQueryClient()
   const { staff, date, entry } = editor
