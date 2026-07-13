@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
@@ -3061,15 +3061,63 @@ function BosIadePanel({ from, to, deposit }) {
 
 // ─────────────────────────── MODAL kabuğu ───────────────────────────
 function Modal({ title, onClose, width = '860px', children }) {
+  useEffect(() => {
+    const previous = document.body.style.overflow
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') onClose()
+    }
+    document.body.style.overflow = 'hidden'
+    window.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.body.style.overflow = previous
+      window.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [onClose])
+
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.55)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', zIndex: 1000, padding: '5vh 16px', overflowY: 'auto' }} onClick={onClose}>
-      <div className="panel" style={{ width, maxWidth: '100%', margin: 0 }} onClick={e => e.stopPropagation()}>
+    <div
+      data-testid="water-modal-overlay"
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0,0,0,.58)',
+        display: 'flex',
+        alignItems: 'flex-end',
+        justifyContent: 'center',
+        zIndex: 1000,
+        padding: '0 16px max(16px, env(safe-area-inset-bottom))',
+        overflow: 'hidden',
+      }}
+      onClick={onClose}
+    >
+      <div
+        className="panel"
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        data-testid="water-bottom-sheet"
+        style={{
+          width,
+          maxWidth: '100%',
+          maxHeight: 'min(88vh, 880px)',
+          margin: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+          borderRadius: '16px 16px 0 0',
+          boxShadow: '0 -24px 72px rgba(0,0,0,.48)',
+        }}
+        onClick={e => e.stopPropagation()}
+      >
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '8px 0 5px', background: 'var(--surface)' }}>
+          <div style={{ width: '42px', height: '4px', borderRadius: '999px', background: 'var(--border)' }} />
+        </div>
         <div style={{ height: '2px', background: 'var(--accent)' }} />
-        <div className="panel-header">
+        <div className="panel-header" style={{ flexShrink: 0, background: 'var(--surface)', borderBottom: '1px solid var(--border)' }}>
           <div className="panel-title">{title}</div>
           <button className="btn btn-ghost btn-sm" onClick={onClose}>✕ Kapat</button>
         </div>
-        <div className="panel-body">{children}</div>
+        <div className="panel-body" style={{ overflow: 'auto', minHeight: 0, paddingBottom: 'max(18px, env(safe-area-inset-bottom))' }}>{children}</div>
       </div>
     </div>
   )
