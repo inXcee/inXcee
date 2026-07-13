@@ -59,6 +59,31 @@ function normalizePuantajDaysPayload(payload) {
   return candidate && typeof candidate === 'object' && !Array.isArray(candidate) ? candidate : {}
 }
 
+function emptyPuantajMonthDays(month) {
+  const [year, mon] = month.split('-').map(Number)
+  const lastDay = new Date(year, mon, 0).getDate()
+  return Array.from({ length: lastDay }, (_, i) => {
+    const day = i + 1
+    const date = `${month}-${String(day).padStart(2, '0')}`
+    const dow = new Date(year, mon - 1, day).getDay()
+    return { date, day_of_week: dow, status: dow === 0 ? 'sunday' : 'no_record' }
+  })
+}
+
+function patchPuantajDaysByStaff(payload, changes, month) {
+  const base = normalizePuantajDaysPayload(payload)
+  const next = { ...base }
+  changes.forEach(change => {
+    const staffId = change.staff.id
+    const existingDays = Array.isArray(next[staffId]) ? next[staffId] : []
+    const existingByDate = new Map(existingDays.map(day => [day.date, day]))
+    next[staffId] = emptyPuantajMonthDays(month)
+      .map(day => existingByDate.get(day.date) || day)
+      .map(day => day.date === change.date ? change.nextEntry : day)
+  })
+  return next
+}
+
 function approvalStatusMeta(status) {
   const map = {
     draft: { label: 'Taslak', color: 'var(--text3)', bg: 'var(--surface2)', border: 'var(--border)' },
@@ -1082,6 +1107,33 @@ function PuantajControlView({ audit, monthLabel, canEdit, isLocked, onOpenCalend
 
 function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, canEdit, selectedAction, setSelectedAction, onApplyStatus, updatingKeys, onPersonClick, approval, onOpenApprovalDay, writesPendingRef }) {
   const [dayData, setDayData] = useState({}) // staffId → days array
+  const [failedSaves, setFailedSaves] = useState({})
+  const failedSavesRef = useRef({})
+
+  const setFailedSaveMap = (updater) => {
+    setFailedSaves(prev => {
+      const next = updater(prev)
+      failedSavesRef.current = next
+      return next
+    })
+  }
+
+  const changeKey = (change) => `${change.staff.id}-${change.date}`
+  const clearFailedSaves = (changes) => {
+    const keys = new Set(changes.map(changeKey))
+    setFailedSaveMap(prev => {
+      const next = { ...prev }
+      keys.forEach(key => { delete next[key] })
+      return next
+    })
+  }
+  const markFailedSaves = (changes) => {
+    setFailedSaveMap(prev => {
+      const next = { ...prev }
+      changes.forEach(change => { next[changeKey(change)] = change })
+      return next
+    })
+  }
 
   // Gün onay durumu (onay masası verisi) — başlık rozetleri + onaylı güne yazım uyarısı
   const approvalByDate = useMemo(() => {
@@ -1132,13 +1184,19 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
 
   useEffect(() => {
     setDayData({})
+    failedSavesRef.current = {}
+    setFailedSaves({})
   }, [month, deptFilter])
 
   useEffect(() => {
     // Yazım uçuştayken (writesPendingRef) sunucu yanıtı local girişleri EZMESİN —
     // eski yanıt henüz kaydedilen hücreleri içermez ("girilenler kayboluyor" bug'ı).
     // Yazımlar bitince onSettled invalidation'ı taze veriyi getirir, o zaman uygulanır.
-    if (monthDayData && !writesPendingRef?.current) setDayData(normalizePuantajDaysPayload(monthDayData))
+    if (monthDayData && !writesPendingRef?.current) {
+      const normalized = normalizePuantajDaysPayload(monthDayData)
+      const failedChanges = Object.values(failedSavesRef.current)
+      setDayData(failedChanges.length ? patchPuantajDaysByStaff(normalized, failedChanges, month) : normalized)
+    }
   }, [monthDayData]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -1152,22 +1210,8 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
   const loadedDayRows = filtered.flatMap(row => dayData[row.id] || [])
   const monthTotals = summarizeCalendarDays(loadedDayRows)
 
-  const emptyMonthDays = () => dayNumbers.map(d => {
-    const date = `${month}-${String(d).padStart(2, '0')}`
-    const dow = new Date(y, m - 1, d).getDay()
-    return { date, day_of_week: dow, status: dow === 0 ? 'sunday' : 'no_record' }
-  })
-
   const replaceLocalDays = (changes) => {
-    setDayData(prev => {
-      const next = { ...prev }
-      changes.forEach(change => {
-        const staffId = change.staff.id
-        next[staffId] = (next[staffId] || emptyMonthDays())
-          .map(d => d.date === change.date ? change.nextEntry : d)
-      })
-      return next
-    })
+    setDayData(prev => patchPuantajDaysByStaff(prev, changes, month))
   }
 
   const buildLocalEntry = (date, action, entry) => {
@@ -1208,16 +1252,17 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
         approvedEditConfirmedRef.current = true
       }
     }
+    clearFailedSaves(changes)
+    replaceLocalDays(changes)
+    if (action.status !== 'restore') {
+      undoStackRef.current = pushUndo(undoStackRef.current, changes)
+      setUndoCount(undoStackRef.current.length)
+    }
     onApplyStatus({
       changes,
       action,
-      onLocalUpdate: () => {
-        replaceLocalDays(changes)
-        if (action.status !== 'restore') {
-          undoStackRef.current = pushUndo(undoStackRef.current, changes)
-          setUndoCount(undoStackRef.current.length)
-        }
-      },
+      onSaved: () => clearFailedSaves(changes),
+      onSaveFailed: () => markFailedSaves(changes),
     })
   }
 
@@ -1336,6 +1381,8 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
     if (entryMode !== 'paint' || !paintingRef.current) return
     paintCell(row, day, entry)
   }
+
+  const failedSaveCount = Object.keys(failedSaves).length
 
   if (isLoading || (daysFetching && Object.keys(dayData).length === 0)) return <SkeletonTable rows={6} cols={32} />
 
@@ -1467,6 +1514,23 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
       {canEdit && (
         <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text3)', marginBottom: '8px', letterSpacing: '0.4px' }}>
           ⌨ Ok tuşları: gezin · Shift+ok / Shift+tık: aralık seç · N=çalıştı H=hafta izni R=rapor Ü=ücretsiz İ=yıllık Y=gelmedi P=planlı · Del: sil · Ctrl+Z: geri al · Sağ tık: FM saati / devamsızlık nedeni · <span style={{ color: 'var(--red)' }}>RT=resmi tatil</span>
+        </div>
+      )}
+
+      {failedSaveCount > 0 && (
+        <div style={{
+          marginBottom: '8px',
+          padding: '8px 10px',
+          border: '1px solid rgba(239,68,68,.45)',
+          borderRadius: '8px',
+          background: 'rgba(239,68,68,.10)',
+          color: 'var(--red)',
+          fontFamily: 'var(--mono)',
+          fontSize: '9px',
+          fontWeight: 800,
+          letterSpacing: '0.4px',
+        }}>
+          KAYDEDILEMEYEN {failedSaveCount} HÜCRE VAR · bağlantı/sunucu düzelince aynı hücreye tekrar tıkla
         </div>
       )}
 
@@ -1644,6 +1708,7 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
                   const status = entry?.status || (sundayDays.has(d) ? 'sunday' : 'no_record')
                   const meta = dayStatusMeta(entry, sundayDays.has(d))
                   const busy = updatingKeys?.has(`${r.id}-${date}`)
+                  const saveFailed = !!failedSaves[`${r.id}-${date}`]
                   const hours = entry?.start_hour != null ? formatShiftHours(entry.start_hour, entry.end_hour) : ''
                   const holidayName = holidayMap.get(date)?.name
                   const title = `${r.full_name} · ${date} · ${meta.label}`
@@ -1667,7 +1732,7 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
                       }}>
                       <button
                         type="button"
-                        title={title}
+                        title={saveFailed ? `${title} · KAYDEDILEMEDI, tekrar dene` : title}
                         disabled={!canEdit || busy}
                         onContextMenu={e => {
                           e.preventDefault()
@@ -1683,8 +1748,8 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
                           width: '34px',
                           height: '30px',
                           borderRadius: '7px',
-                          border: status === 'no_record' || status === 'sunday' ? `1px dashed ${meta.border}` : `1px solid ${meta.border}`,
-                          boxShadow: isActive ? '0 0 0 2px var(--accent)' : 'none',
+                          border: saveFailed ? '2px solid var(--red)' : status === 'no_record' || status === 'sunday' ? `1px dashed ${meta.border}` : `1px solid ${meta.border}`,
+                          boxShadow: saveFailed ? '0 0 0 2px rgba(239,68,68,.18)' : isActive ? '0 0 0 2px var(--accent)' : 'none',
                           position: 'relative',
                           background: meta.bg,
                           color: meta.text,
@@ -1695,12 +1760,18 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
                           fontFamily: 'var(--mono)',
                           fontSize: meta.code?.length > 1 ? '9px' : '12px',
                           fontWeight: 800,
-                          opacity: busy ? .55 : 1,
+                          opacity: busy ? .82 : 1,
                           transition: 'transform .08s, filter .12s',
                         }}
                         onMouseLeave={e => { e.currentTarget.style.filter = 'none' }}
                       >
-                        {busy ? '...' : meta.code}
+                        {meta.code || (busy ? '...' : '')}
+                        {busy ? (
+                          <span style={{ position: 'absolute', top: '1px', left: '2px', fontSize: '6px', lineHeight: 1, color: 'var(--accent)', fontWeight: 900 }}>•</span>
+                        ) : null}
+                        {saveFailed ? (
+                          <span style={{ position: 'absolute', top: '0px', right: '2px', fontSize: '8px', lineHeight: 1, color: 'var(--red)', fontWeight: 900 }}>!</span>
+                        ) : null}
                         {!busy && entry?.overtime_hours ? (
                           <span style={{ position: 'absolute', top: '0px', right: '1px', fontSize: '6px', lineHeight: 1, color: 'var(--accent)', fontWeight: 800 }}>
                             +{entry.overtime_hours}
@@ -2503,6 +2574,12 @@ export default function PuantajTab({ departments }) {
   const pendingWritesRef = useRef(0)
   const writesPendingRef = useRef(false)
 
+  const patchPuantajDayCaches = (changes) => {
+    qc.setQueriesData({ queryKey: ['puantaj-days-month'] }, old => (
+      old ? patchPuantajDaysByStaff(old, changes, month) : old
+    ))
+  }
+
   const updatePuantajDay = useMutation({
     mutationKey: ['puantaj-day-update'],
     onMutate: () => {
@@ -2546,10 +2623,12 @@ export default function PuantajTab({ departments }) {
       })
     },
     onSuccess: (_, variables) => {
-      variables.onLocalUpdate?.()
+      patchPuantajDayCaches(variables.changes)
+      variables?.onSaved?.()
     },
-    onError: (err) => {
-      // Dönem kilidi (423) veya diğer hatalar — sunucu reddetti, yerel değişiklik uygulanmaz
+    onError: (err, variables) => {
+      variables?.onSaveFailed?.(err)
+      // Sunucu reddederse hücre ekranda kalır ama kırmızı "kaydedilemedi" olarak işaretlenir.
       toastErr(err)
     },
     onSettled: () => {

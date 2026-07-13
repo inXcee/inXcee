@@ -1,12 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { fireEvent, screen } from '@testing-library/react'
+import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { renderWithProviders } from '../../../test/renderWithProviders.jsx'
 import { useAuthStore } from '../../../shared/store/authStore.js'
 
 const getMock = vi.fn(() => Promise.resolve({ data: [] }))
+const postMock = vi.fn(() => Promise.resolve({ data: { ok: true } }))
+const deleteMock = vi.fn(() => Promise.resolve({ data: { ok: true } }))
 vi.mock('../../../shared/api/client.js', () => ({
   default: {
     get: (...args) => getMock(...args),
+    post: (...args) => postMock(...args),
+    delete: (...args) => deleteMock(...args),
   },
 }))
 
@@ -17,6 +21,8 @@ describe('PuantajTab smoke', () => {
     vi.clearAllMocks()
     useAuthStore.setState({ token: null, user: null })
     getMock.mockImplementation(() => Promise.resolve({ data: [] }))
+    postMock.mockImplementation(() => Promise.resolve({ data: { ok: true } }))
+    deleteMock.mockImplementation(() => Promise.resolve({ data: { ok: true } }))
   })
 
   it('çökmeden render olur ve görünüm kontrollerini gösterir', () => {
@@ -83,5 +89,39 @@ describe('PuantajTab smoke', () => {
     const offCell = await screen.findByTitle(/Ali Test.*2026-07-02/)
     expect(workedCell).toHaveTextContent('N')
     expect(offCell).toHaveTextContent('H')
+  })
+
+  it('calendar keeps edited code visible and marks it when save fails', async () => {
+    useAuthStore.setState({ user: { role: 'campus_manager' } })
+    postMock.mockRejectedValueOnce(new Error('offline'))
+    getMock.mockImplementation((url) => {
+      if (url === '/shifts/puantaj') {
+        return Promise.resolve({ data: [
+          { id: 1, full_name: 'Ali Test', department_id: 1, dept_name: 'OTC', worked_days: 0 },
+        ] })
+      }
+      if (url === '/shifts/puantaj/days') {
+        return Promise.resolve({ data: {
+          month: '2026-07',
+          days: { 1: [] },
+        } })
+      }
+      if (url === '/shifts/holidays') return Promise.resolve({ data: [] })
+      if (url === '/shifts/puantaj/codes') return Promise.resolve({ data: [] })
+      if (url === '/shifts/period-locks') return Promise.resolve({ data: [] })
+      if (url === '/shifts/puantaj/approval') {
+        return Promise.resolve({ data: { period: '2026-07', period_approval: { status: 'draft' }, daily_approvals: [], events: [] } })
+      }
+      return Promise.resolve({ data: [] })
+    })
+
+    renderWithProviders(<PuantajTab departments={[]} />)
+    fireEvent.click(screen.getAllByText(/TAKV/)[0])
+
+    const cell = await screen.findByTitle(/Ali Test.*2026-07-01/)
+    fireEvent.click(cell)
+
+    await waitFor(() => expect(cell).toHaveTextContent('N'))
+    expect(await screen.findByText(/KAYDEDILEMEYEN 1 HÜCRE VAR/)).toBeInTheDocument()
   })
 })
