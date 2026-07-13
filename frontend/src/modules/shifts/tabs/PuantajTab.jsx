@@ -864,7 +864,7 @@ function PuantajClosurePanel({ audit, canEdit, isLocked, monthLabel, onOpenCalen
   )
 }
 
-function PuantajControlView({ audit, monthLabel, canEdit, isLocked, onOpenCalendar, onSyncScheduled, syncing, onPersonClick }) {
+function PuantajControlView({ audit, monthLabel, canEdit, isLocked, onOpenCalendar, onSyncScheduled, syncing, onPersonClick, onOpenDayBreakdown }) {
   const [issueFilter, setIssueFilter] = useState('blocking')
   const issueRows = useMemo(() => {
     const rows = audit.staffIssues || []
@@ -976,7 +976,7 @@ function PuantajControlView({ audit, monthLabel, canEdit, isLocked, onOpenCalend
           <div className="panel-header">
             <div>
               <div className="panel-title">GÜNLÜK KONTROL</div>
-              <div className="panel-subtitle">{monthLabel} · gün gün kapanış durumu</div>
+              <div className="panel-subtitle">{monthLabel} · gün gün kapanış durumu · satıra tıkla</div>
             </div>
             <button className="btn btn-ghost btn-sm" onClick={onOpenCalendar} style={{ fontSize: '10px' }}>Takvim</button>
           </div>
@@ -991,6 +991,7 @@ function PuantajControlView({ audit, monthLabel, canEdit, isLocked, onOpenCalend
                   <th style={{ textAlign: 'center' }}>BOŞ</th>
                   <th style={{ textAlign: 'center' }}>Y</th>
                   <th style={{ textAlign: 'center' }}>DURUM</th>
+                  <th style={{ textAlign: 'center' }}>DETAY</th>
                 </tr>
               </thead>
               <tbody>
@@ -998,7 +999,19 @@ function PuantajControlView({ audit, monthLabel, canEdit, isLocked, onOpenCalend
                   const unresolved = (day.scheduled || 0) + (day.empty || 0)
                   const statusColor = unresolved > 0 ? 'var(--accent)' : day.absentWithoutReason > 0 ? 'var(--red)' : 'var(--green)'
                   return (
-                    <tr key={day.date}>
+                    <tr
+                      key={day.date}
+                      onClick={() => onOpenDayBreakdown?.(day.date)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault()
+                          onOpenDayBreakdown?.(day.date)
+                        }
+                      }}
+                      tabIndex={0}
+                      title={`${day.date} gun dokumunu ac`}
+                      style={{ cursor: onOpenDayBreakdown ? 'pointer' : 'default' }}
+                    >
                       <td>
                         <div style={{ fontWeight: 700 }}>{day.date.slice(8, 10)} · {DAY_SHORT[day.weekday]}</div>
                         {day.isHoliday && <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--red)' }}>RT</div>}
@@ -1010,6 +1023,19 @@ function PuantajControlView({ audit, monthLabel, canEdit, isLocked, onOpenCalend
                       <td style={{ textAlign: 'center', color: day.absent ? 'var(--red)' : 'var(--text3)', fontFamily: 'var(--mono)' }}>{day.absent || '—'}</td>
                       <td style={{ textAlign: 'center', color: statusColor, fontFamily: 'var(--mono)', fontWeight: 800 }}>
                         {unresolved > 0 ? 'Kontrol' : day.absentWithoutReason > 0 ? 'Y nedeni' : 'Hazır'}
+                      </td>
+                      <td style={{ textAlign: 'center' }}>
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-xs"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            onOpenDayBreakdown?.(day.date)
+                          }}
+                          title={`${day.date} gun dokumunu ac`}
+                        >
+                          Ac
+                        </button>
                       </td>
                     </tr>
                   )
@@ -3044,6 +3070,7 @@ export default function PuantajTab({ departments }) {
   useMemo(() => setPuantajCodeRegistry(puantajCodes), [puantajCodes])
   const [showCodeManager, setShowCodeManager] = useState(false)
   const [staffHistoryId, setStaffHistoryId] = useState(null) // kişi geçmişi paneli
+  const [dayBreakdownDate, setDayBreakdownDate] = useState(null) // kontrol ekranından gün dökümü
 
   // P4: departman onay matrisi — yalnız onay masasında ve tum-kapsam gorunumunde
   const { data: approvalOverview = null } = useQuery({
@@ -3526,6 +3553,7 @@ export default function PuantajTab({ departments }) {
           onSyncScheduled={syncScheduledToWorked}
           syncing={updatePuantajDay.isPending}
           onPersonClick={setSelectedRow}
+          onOpenDayBreakdown={setDayBreakdownDate}
         />
       )}
       {viewMode === 'approval' && (
@@ -3551,6 +3579,17 @@ export default function PuantajTab({ departments }) {
 
       {showCodeManager && (
         <PuantajCodeManager codes={puantajCodes} onClose={() => setShowCodeManager(false)} />
+      )}
+
+      {dayBreakdownDate && (
+        <PuantajDayBreakdownSheet
+          date={dayBreakdownDate}
+          staffRows={filtered}
+          daysByStaff={auditDaysByStaff}
+          holidayName={holidayRows.find(row => row.date === dayBreakdownDate)?.name}
+          onClose={() => setDayBreakdownDate(null)}
+          onPersonClick={setSelectedRow}
+        />
       )}
 
       {/* Bordro detail bottom sheet */}
