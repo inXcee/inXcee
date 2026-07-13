@@ -226,8 +226,13 @@ describe('WaterPage tek-ekran pano smoke', () => {
     expect(screen.getByText('Günlük ortalama')).toBeInTheDocument() // W4 yeni istatistik
     expect(screen.getByText('BEKLENEN AYLIK TÜKETİM')).toBeInTheDocument() // W4 karşılaştırma
     expect(screen.getAllByText('Tüm geçmiş').length).toBeGreaterThan(0)
-    expect(screen.getByTestId('water-modal-overlay')).toHaveStyle('align-items: flex-end')
-    expect(screen.getByTestId('water-bottom-sheet')).toHaveAttribute('role', 'dialog')
+    const overlay = screen.getByTestId('water-modal-overlay')
+    const sheet = screen.getByTestId('water-bottom-sheet')
+    expect(overlay).toHaveStyle('position: fixed')
+    expect(sheet).toHaveAttribute('role', 'dialog')
+    expect(sheet.style.position).toBe('fixed')
+    expect(sheet.style.bottom).toBe('0px')
+    expect(sheet.style.height).toBe('min(86vh, 860px)')
   })
 
   it('gelen tır ve boş iade panelleri render olur', async () => {

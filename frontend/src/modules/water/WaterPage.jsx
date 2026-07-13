@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
@@ -3074,22 +3075,18 @@ function Modal({ title, onClose, width = '860px', children }) {
     }
   }, [onClose])
 
-  return (
-    <div
-      data-testid="water-modal-overlay"
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,.58)',
-        display: 'flex',
-        alignItems: 'flex-end',
-        justifyContent: 'center',
-        zIndex: 1000,
-        padding: '0 16px max(16px, env(safe-area-inset-bottom))',
-        overflow: 'hidden',
-      }}
-      onClick={onClose}
-    >
+  return createPortal(
+    <>
+      <div
+        data-testid="water-modal-overlay"
+        style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0,0,0,.58)',
+          zIndex: 1080,
+        }}
+        onClick={onClose}
+      />
       <div
         className="panel"
         role="dialog"
@@ -3097,15 +3094,24 @@ function Modal({ title, onClose, width = '860px', children }) {
         aria-label={title}
         data-testid="water-bottom-sheet"
         style={{
-          width,
-          maxWidth: '100%',
+          position: 'fixed',
+          left: '50%',
+          bottom: 0,
+          zIndex: 1081,
+          width: 'calc(100vw - 24px)',
+          maxWidth: width,
+          height: 'min(86vh, 860px)',
           maxHeight: 'min(88vh, 880px)',
+          minHeight: 'min(360px, calc(100vh - 24px))',
           margin: 0,
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
           borderRadius: '16px 16px 0 0',
           boxShadow: '0 -24px 72px rgba(0,0,0,.48)',
+          transform: 'translateX(-50%)',
+          background: 'var(--surface)',
+          border: '1px solid var(--border)',
         }}
         onClick={e => e.stopPropagation()}
       >
@@ -3119,7 +3125,8 @@ function Modal({ title, onClose, width = '860px', children }) {
         </div>
         <div className="panel-body" style={{ overflow: 'auto', minHeight: 0, paddingBottom: 'max(18px, env(safe-area-inset-bottom))' }}>{children}</div>
       </div>
-    </div>
+    </>,
+    document.body
   )
 }
 
