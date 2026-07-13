@@ -125,6 +125,16 @@ function cellDisplay(cell, options) {
   if (cell.status === 'on_leave') return { main: 'IZIN', sub: leaveTypeLabel(cell.leave_type), note: statusName(cell) }
   if (cell.status === 'absent') return { main: 'YOK', sub: cell.absent_reason || '', note: statusName(cell) }
   if (isWorking(cell)) {
+    const segments = (cell.segments || []).filter(segment => segment.status !== 'cancelled')
+    if (segments.length) {
+      const first = segments[0]
+      const locations = [...new Set(segments.map(segment => segment.work_location_name).filter(Boolean))]
+      return {
+        main: `${first.start_time}-${first.end_time}`,
+        sub: segments.length > 1 ? `${segments.length} parca · ${locations.join(' / ')}` : (locations[0] || first.role_name || ''),
+        note: segments.map(segment => `${segment.start_time}-${segment.end_time} ${segment.work_location_name || ''}`).join(' | '),
+      }
+    }
     const main = shiftHoursFrom(cell) || cell.shift_name || statusName(cell)
     const sub = options.includeLocation
       ? (cell.work_location_name || cell.shift_name || '')

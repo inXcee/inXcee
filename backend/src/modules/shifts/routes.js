@@ -6,14 +6,16 @@ import { paginate } from '../../shared/paginate.js'
 import { logger } from '../../shared/logger.js'
 import {
   departmentsService, shiftDefinitionsService, scheduleService, bulkAssignService,
+  scheduleSegmentsService, createScheduleSegmentService, updateScheduleSegmentService, deleteScheduleSegmentService,
   workLocationsService, createWorkLocationService, updateWorkLocationService, deleteWorkLocationService,
   staffRolesService, createStaffRoleService, updateStaffRoleService, deleteStaffRoleService, scheduleBreakdownService, breakdownAssigneesService,
   staffStatusService, createLeaveService, approveLeaveService, leaveListService,
   leaveBalanceService, createOvertimeService, updateOvertimeService, deleteOvertimeService, overtimeListService, overtimeSummaryService, overtimeDayService, puantajService,
   checkInService, checkOutService, attendanceListService, statisticsService, coverageService, departmentSummaryService,
+  coverageRulesService, createCoverageRuleService, updateCoverageRuleService, deleteCoverageRuleService, scheduleCandidatesService,
   createDepartmentService, updateDepartmentService, deleteDepartmentService, assignDeptService,
   createShiftDefService, updateShiftDefService, deleteShiftDefService,
-  cancelLeaveService, createSwapService, swapListService, approveSwapService, rejectSwapService,
+  cancelLeaveService, createSwapService, swapListService, acceptSwapService, approveSwapService, rejectSwapService,
   copyWeekService, rotationService, searchStaffService, deleteScheduleService,
   rotationTemplatesService, createRotationTemplateService, deleteRotationTemplateService,
   rotationPreviewService, rotationApplyService,
@@ -196,11 +198,58 @@ shiftsRouter.get('/schedule', ...allStaff, (req, res) => {
 
 shiftsRouter.post('/schedule', ...managerOrSupervisor, (req, res) => {
   try {
-    const result = bulkAssignService(req.body.entries, req.user.id)
-    res.json({ ok: true, warnings: result?.warnings || [], approvalsReset: result?.approvalsReset || 0 })
+    const result = bulkAssignService(req.body.entries, req.user, {
+      overrideLeave: req.body.override_leave === true,
+      overrideReason: req.body.override_reason,
+    })
+    if (result.leaveOverride) {
+      logAudit(req.user.id, 'schedule_leave_override', 'shifts', null,
+        `${result.warnings.length} kayit | ${result.leaveOverride.reason}`)
+    }
+    res.json({
+      ok: true,
+      warnings: result?.warnings || [],
+      approvalsReset: result?.approvalsReset || 0,
+      leaveOverride: result?.leaveOverride || null,
+    })
   } catch (e) {
-    res.status(e.statusCode || 400).json({ error: e.message })
+    res.status(e.statusCode || 400).json({ error: e.message, ...(e.details || {}) })
   }
+})
+
+shiftsRouter.get('/schedule/:staffId/:date/segments', ...allStaff, (req, res) => {
+  try { res.json(scheduleSegmentsService(+req.params.staffId, req.params.date)) }
+  catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
+})
+
+shiftsRouter.post('/schedule/segments', ...managerOrSupervisor, (req, res) => {
+  try {
+    const result = createScheduleSegmentService(req.body, req.user)
+    logAudit(req.user.id, 'schedule_segment_create', 'shifts', result.row.id,
+      `${req.body.staff_id} | ${req.body.work_date} | ${result.row.start_time}-${result.row.end_time}`)
+    res.status(201).json(result)
+  } catch (e) { res.status(e.statusCode || 400).json({ error: e.message, ...(e.details || {}) }) }
+})
+
+shiftsRouter.put('/schedule/segments/:id', ...managerOrSupervisor, (req, res) => {
+  try {
+    const row = updateScheduleSegmentService(+req.params.id, req.body, req.user)
+    logAudit(req.user.id, 'schedule_segment_update', 'shifts', row.id, `${row.start_time}-${row.end_time}`)
+    res.json(row)
+  } catch (e) { res.status(e.statusCode || 400).json({ error: e.message, ...(e.details || {}) }) }
+})
+
+shiftsRouter.delete('/schedule/segments/:id', ...managerOrSupervisor, (req, res) => {
+  try {
+    deleteScheduleSegmentService(+req.params.id, req.user)
+    logAudit(req.user.id, 'schedule_segment_delete', 'shifts', +req.params.id, '')
+    res.json({ ok: true })
+  } catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
+})
+
+shiftsRouter.get('/schedule/candidates', ...allStaff, (req, res) => {
+  try { res.json(scheduleCandidatesService(req.query)) }
+  catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
 })
 
 shiftsRouter.get('/breakdown', ...allStaff, (req, res) => {
@@ -810,6 +859,35 @@ shiftsRouter.get('/coverage', ...allStaff, (req, res) => {
   catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
 })
 
+shiftsRouter.get('/coverage-rules', ...allStaff, (req, res) => {
+  try { res.json(coverageRulesService({ includeInactive: req.query.all === '1' })) }
+  catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
+})
+
+shiftsRouter.post('/coverage-rules', ...managerOrSupervisor, (req, res) => {
+  try {
+    const row = createCoverageRuleService(req.body, req.user)
+    logAudit(req.user.id, 'coverage_rule_create', 'shifts', row.id, row.name)
+    res.status(201).json(row)
+  } catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
+})
+
+shiftsRouter.put('/coverage-rules/:id', ...managerOrSupervisor, (req, res) => {
+  try {
+    const row = updateCoverageRuleService(+req.params.id, req.body)
+    logAudit(req.user.id, 'coverage_rule_update', 'shifts', row.id, row.name)
+    res.json(row)
+  } catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
+})
+
+shiftsRouter.delete('/coverage-rules/:id', ...managerOrSupervisor, (req, res) => {
+  try {
+    deleteCoverageRuleService(+req.params.id)
+    logAudit(req.user.id, 'coverage_rule_delete', 'shifts', +req.params.id, '')
+    res.json({ ok: true })
+  } catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
+})
+
 // ── Department CRUD ──
 shiftsRouter.post('/departments', ...managerOrSupervisor, (req, res) => {
   try {
@@ -881,10 +959,18 @@ shiftsRouter.post('/swaps', ...allStaff, (req, res) => {
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
+shiftsRouter.patch('/swaps/:id/accept', ...managerOrSupervisor, (req, res) => {
+  try {
+    const row = acceptSwapService(req.params.id, req.body.target_id)
+    logAudit(req.user.id, 'shift_swap_target_accept', 'shifts', +req.params.id, `target:${row.target_id}`)
+    res.json(row)
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
 shiftsRouter.patch('/swaps/:id/approve', ...managerOrSupervisor, (req, res) => {
   try {
-    approveSwapService(req.params.id, req.user.id)
-    res.json({ ok: true })
+    const row = approveSwapService(req.params.id, req.user.id)
+    res.json({ ok: true, row })
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
 

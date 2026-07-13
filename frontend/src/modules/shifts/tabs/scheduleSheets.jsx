@@ -2,7 +2,7 @@
 // DailyView: günlük departman görünümü; WeekFillSheet: kişinin haftasını doldur;
 // CellAssignSheet: tek hücre vardiya ata/sil. Hepsi prop-tabanlı, davranış aynı.
 import { useState, useMemo, useEffect } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../../shared/api/client.js'
 import { addDays, todayStr, shiftColor, BottomSheet, formatShiftHours, leaveTypeLabel } from '../shared.jsx'
 
@@ -257,10 +257,101 @@ export function WeekFillSheet({ weekFillPopover, setWeekFillPopover, shiftDefs, 
   )
 }
 
-export function CellAssignSheet({ cellPopover, setCellPopover, shiftDefs, assignCell, deleteShift, workLocations = [], formatDate, shortDay, shiftColor }) {
+export function CellAssignSheet({
+  cellPopover, setCellPopover, shiftDefs, assignCell, deleteShift,
+  workLocations = [], staffRoles = [], canOverrideLeave = false,
+  formatDate, shortDay, shiftColor,
+}) {
+  const qc = useQueryClient()
   const [error, setError] = useState(null)
   const [draftShiftId, setDraftShiftId] = useState(cellPopover.existing?.shift_def_id ? String(cellPopover.existing.shift_def_id) : '')
   const [draftLocationId, setDraftLocationId] = useState(cellPopover.existing?.work_location_id ? String(cellPopover.existing.work_location_id) : '')
+  const [overrideLeave, setOverrideLeave] = useState(false)
+  const [overrideReason, setOverrideReason] = useState('')
+  const [editingSegmentId, setEditingSegmentId] = useState(null)
+  const [showCandidates, setShowCandidates] = useState(false)
+  const [segmentDraft, setSegmentDraft] = useState({
+    shift_def_id: '', role_id: cellPopover.person?.role_id ? String(cellPopover.person.role_id) : '',
+    work_location_id: draftLocationId, start_time: '', end_time: '', break_minutes: '0', note: '',
+  })
+
+  const detailKey = ['schedule-segments', cellPopover.staffId, cellPopover.date]
+  const { data: segmentDetail } = useQuery({
+    queryKey: detailKey,
+    queryFn: () => api.get(`/shifts/schedule/${cellPopover.staffId}/${cellPopover.date}/segments`).then(r => r.data),
+  })
+  const segments = segmentDetail?.segments || cellPopover.existing?.segments || []
+
+  const resetSegmentDraft = () => {
+    setEditingSegmentId(null)
+    setShowCandidates(false)
+    setSegmentDraft({
+      shift_def_id: '', role_id: cellPopover.person?.role_id ? String(cellPopover.person.role_id) : '',
+      work_location_id: draftLocationId, start_time: '', end_time: '', break_minutes: '0', note: '',
+    })
+  }
+
+  const segmentMutation = useMutation({
+    mutationFn: payload => editingSegmentId
+      ? api.put(`/shifts/schedule/segments/${editingSegmentId}`, payload)
+      : api.post('/shifts/schedule/segments', {
+          ...payload,
+          staff_id: cellPopover.staffId,
+          dept_id: cellPopover.deptId,
+          work_date: cellPopover.date,
+          override_leave: overrideLeave,
+          override_reason: overrideReason || undefined,
+        }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: detailKey })
+      qc.invalidateQueries({ queryKey: ['schedule'] })
+      qc.invalidateQueries({ queryKey: ['shift-coverage'] })
+      qc.invalidateQueries({ queryKey: ['shift-breakdown'] })
+      setError(null)
+      resetSegmentDraft()
+    },
+    onError: err => setError(err?.response?.data?.error || 'Vardiya parçası kaydedilemedi.'),
+  })
+
+  const deleteSegmentMutation = useMutation({
+    mutationFn: id => api.delete(`/shifts/schedule/segments/${id}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: detailKey })
+      qc.invalidateQueries({ queryKey: ['schedule'] })
+      qc.invalidateQueries({ queryKey: ['shift-coverage'] })
+      resetSegmentDraft()
+    },
+    onError: err => setError(err?.response?.data?.error || 'Vardiya parçası silinemedi.'),
+  })
+
+  const { data: candidateData, isFetching: candidatesLoading } = useQuery({
+    queryKey: ['schedule-candidates', cellPopover.date, segmentDraft],
+    queryFn: () => api.get('/shifts/schedule/candidates', { params: {
+      date: cellPopover.date,
+      dept_id: cellPopover.deptId || undefined,
+      role_id: segmentDraft.role_id || undefined,
+      work_location_id: segmentDraft.work_location_id || undefined,
+      shift_def_id: segmentDraft.shift_def_id || undefined,
+      start_time: segmentDraft.start_time || undefined,
+      end_time: segmentDraft.end_time || undefined,
+      exclude_staff_id: cellPopover.staffId,
+    } }).then(r => r.data),
+    enabled: showCandidates && !!segmentDraft.start_time && !!segmentDraft.end_time,
+  })
+
+  const assignmentOptions = {
+    overrideLeave,
+    overrideReason: overrideReason.trim(),
+  }
+  const clockValue = value => {
+    if (value == null || value === '') return ''
+    const raw = String(value)
+    if (raw.includes(':')) {
+      const [hour, minute = '00'] = raw.split(':')
+      return `${hour.padStart(2, '0')}:${minute.padEnd(2, '0').slice(0, 2)}`
+    }
+    return `${raw.padStart(2, '0')}:00`
+  }
 
   useEffect(() => {
     const onEsc = e => { if (e.key === 'Escape') setCellPopover(null) }
@@ -314,11 +405,141 @@ export function CellAssignSheet({ cellPopover, setCellPopover, shiftDefs, assign
                 workLocationId: draftLocationId ? parseInt(draftLocationId) : null,
                 date: cellPopover.date,
                 status: 'scheduled',
-              }, { onError: () => setError('Vardiya atanamadi. Tekrar deneyin.') })
+                ...assignmentOptions,
+              }, { onError: err => setError(err?.response?.data?.error || 'Vardiya atanamadı. Tekrar deneyin.') })
             }}
           >
             Saat + Nokta Kaydet
           </button>
+        </div>
+        {canOverrideLeave && (
+          <div style={{ padding: '8px 0 12px', borderBottom: '1px solid var(--border)', marginBottom: '8px' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontFamily: 'var(--mono)', fontSize: '10px', color: overrideLeave ? 'var(--amber)' : 'var(--text3)' }}>
+              <input type="checkbox" checked={overrideLeave} onChange={e => setOverrideLeave(e.target.checked)} />
+              Onaylı izin varsa müdür istisnası kullan
+            </label>
+            {overrideLeave && (
+              <input
+                className="form-input"
+                value={overrideReason}
+                onChange={e => setOverrideReason(e.target.value)}
+                placeholder="Zorunlu görevlendirme gerekçesi"
+                style={{ width: '100%', marginTop: '8px' }}
+              />
+            )}
+          </div>
+        )}
+
+        <div style={{ padding: '10px 0 14px', borderBottom: '1px solid var(--border)', marginBottom: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '1px' }}>GÜN İÇİ GÖREV PARÇALARI</div>
+            <span style={{ marginLeft: 'auto', fontFamily: 'var(--mono)', fontSize: '9px', color: segments.length ? 'var(--blue)' : 'var(--text3)' }}>{segments.length} parça</span>
+          </div>
+
+          {segments.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', marginBottom: '10px' }}>
+              {segments.map((segment, index) => (
+                <div key={segment.id} style={{ display: 'grid', gridTemplateColumns: '28px minmax(90px,.7fr) minmax(0,1fr) auto', gap: '8px', alignItems: 'center', padding: '8px 0', borderBottom: index < segments.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)' }}>{index + 1}</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingSegmentId(segment.id)
+                      setShowCandidates(false)
+                      setSegmentDraft({
+                        shift_def_id: segment.shift_def_id ? String(segment.shift_def_id) : '',
+                        role_id: segment.role_id ? String(segment.role_id) : '',
+                        work_location_id: segment.work_location_id ? String(segment.work_location_id) : '',
+                        start_time: segment.start_time || '', end_time: segment.end_time || '',
+                        break_minutes: String(segment.break_minutes || 0), note: segment.note || '',
+                      })
+                    }}
+                    title="Parçayı düzenle"
+                    style={{ border: 0, background: 'transparent', color: 'var(--text)', padding: 0, textAlign: 'left', cursor: 'pointer', fontFamily: 'var(--mono)', fontSize: '11px', fontWeight: 700 }}
+                  >{segment.start_time}-{segment.end_time}</button>
+                  <div style={{ minWidth: 0, fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {[segment.work_location_name, segment.role_name, segment.break_minutes ? `${segment.break_minutes} dk mola` : null].filter(Boolean).join(' · ') || 'Nokta/rol belirtilmedi'}
+                  </div>
+                  <button type="button" className="btn btn-ghost btn-sm" title="Parçayı sil" onClick={() => deleteSegmentMutation.mutate(segment.id)} disabled={deleteSegmentMutation.isPending}>×</button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: '8px' }}>
+            <div>
+              <label className="form-label">Başlangıç</label>
+              <input type="time" className="form-input" value={segmentDraft.start_time} onChange={e => setSegmentDraft(p => ({ ...p, start_time: e.target.value }))} style={{ width: '100%' }} />
+            </div>
+            <div>
+              <label className="form-label">Bitiş</label>
+              <input type="time" className="form-input" value={segmentDraft.end_time} onChange={e => setSegmentDraft(p => ({ ...p, end_time: e.target.value }))} style={{ width: '100%' }} />
+            </div>
+            <div>
+              <label className="form-label">Vardiya Tanımı</label>
+              <select className="form-select" value={segmentDraft.shift_def_id} onChange={e => {
+                const selected = shiftDefs.find(item => String(item.id) === e.target.value)
+                setSegmentDraft(p => ({ ...p, shift_def_id: e.target.value, start_time: selected ? clockValue(selected.start_hour) : p.start_time, end_time: selected ? clockValue(selected.end_hour) : p.end_time }))
+              }}>
+                <option value="">Özel saat</option>
+                {shiftDefs.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="form-label">Mola (dk)</label>
+              <input type="number" min="0" max="480" className="form-input" value={segmentDraft.break_minutes} onChange={e => setSegmentDraft(p => ({ ...p, break_minutes: e.target.value }))} style={{ width: '100%' }} />
+            </div>
+            <div>
+              <label className="form-label">Çalışma Noktası</label>
+              <select className="form-select" value={segmentDraft.work_location_id} onChange={e => setSegmentDraft(p => ({ ...p, work_location_id: e.target.value }))}>
+                <option value="">Nokta yok</option>
+                {workLocations.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="form-label">Rol</label>
+              <select className="form-select" value={segmentDraft.role_id} onChange={e => setSegmentDraft(p => ({ ...p, role_id: e.target.value }))}>
+                <option value="">Ana rol</option>
+                {staffRoles.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+              </select>
+            </div>
+          </div>
+          <input className="form-input" value={segmentDraft.note} onChange={e => setSegmentDraft(p => ({ ...p, note: e.target.value }))} placeholder="Görev notu (opsiyonel)" style={{ width: '100%', marginTop: '8px' }} />
+          <div style={{ display: 'flex', gap: '8px', marginTop: '8px', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              disabled={!segmentDraft.start_time || !segmentDraft.end_time || segmentMutation.isPending || (overrideLeave && overrideReason.trim().length < 5)}
+              onClick={() => segmentMutation.mutate({
+                shift_def_id: segmentDraft.shift_def_id ? parseInt(segmentDraft.shift_def_id) : null,
+                role_id: segmentDraft.role_id ? parseInt(segmentDraft.role_id) : null,
+                work_location_id: segmentDraft.work_location_id ? parseInt(segmentDraft.work_location_id) : null,
+                start_time: segmentDraft.start_time,
+                end_time: segmentDraft.end_time,
+                break_minutes: parseInt(segmentDraft.break_minutes) || 0,
+                note: segmentDraft.note || null,
+              })}
+            >{editingSegmentId ? 'Parçayı Güncelle' : 'Parça Ekle'}</button>
+            {editingSegmentId && <button type="button" className="btn btn-ghost btn-sm" onClick={resetSegmentDraft}>Vazgeç</button>}
+            <button type="button" className="btn btn-ghost btn-sm" disabled={!segmentDraft.start_time || !segmentDraft.end_time} onClick={() => setShowCandidates(value => !value)}>
+              {showCandidates ? 'Adayları Gizle' : 'Uygun Personel'}
+            </button>
+          </div>
+
+          {showCandidates && (
+            <div style={{ marginTop: '10px', borderTop: '1px solid var(--border)', paddingTop: '8px' }}>
+              <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', marginBottom: '6px' }}>DİNLENME, ROL, NOKTA VE ÇAKIŞMA KONTROLÜ</div>
+              {candidatesLoading && <div style={{ fontSize: '10px', color: 'var(--text3)' }}>Adaylar hesaplanıyor...</div>}
+              {(candidateData?.candidates || []).filter(item => item.eligible).slice(0, 5).map(item => (
+                <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
+                  <span style={{ color: 'var(--green)', fontSize: '10px' }}>✓</span>
+                  <span style={{ fontSize: '11px', color: 'var(--text)', flex: 1 }}>{item.full_name}</span>
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)' }}>{item.role_name || 'Rolsüz'} · {item.workload} görev</span>
+                </div>
+              ))}
+              {!candidatesLoading && !(candidateData?.candidates || []).some(item => item.eligible) && <div style={{ fontSize: '10px', color: 'var(--red)' }}>Uygun personel bulunamadı.</div>}
+            </div>
+          )}
         </div>
         <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '1px', marginBottom: '4px' }}>VARDIYA SEÇ</div>
         {shiftDefs.map(s => {
@@ -326,7 +547,7 @@ export function CellAssignSheet({ cellPopover, setCellPopover, shiftDefs, assign
           const sc = shiftColor(s.color_class)
           return (
             <button key={s.id}
-              onClick={() => { setError(null); assignCell.mutate({ staffId: cellPopover.staffId, deptId: cellPopover.deptId, shiftDefId: s.id, date: cellPopover.date, status: 'scheduled' }, { onError: () => setError('Vardiya atanamadı. Tekrar deneyin.') }) }}
+              onClick={() => { setError(null); assignCell.mutate({ staffId: cellPopover.staffId, deptId: cellPopover.deptId, shiftDefId: s.id, workLocationId: draftLocationId ? parseInt(draftLocationId) : null, date: cellPopover.date, status: 'scheduled', ...assignmentOptions }, { onError: err => setError(err?.response?.data?.error || 'Vardiya atanamadı. Tekrar deneyin.') }) }}
               disabled={assignCell.isPending}
               style={{
                 width: '100%', padding: '10px 14px', borderRadius: '8px', textAlign: 'left',

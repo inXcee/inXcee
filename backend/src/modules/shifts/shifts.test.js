@@ -375,17 +375,27 @@ describe('Shifts', () => {
     expect(bad.status).toBe(400)
   })
 
-  it('onaylı izin gününe vardiya atanınca warning döner ama bloklamaz (X5)', async () => {
+  it('onaylı izin gününe vardiya varsayılan engellenir, müdür gerekçesiyle istisna verir', async () => {
     const db = getDB()
     const staff = db.prepare('SELECT id FROM staff WHERE is_active=1 LIMIT 1').get()
     const shiftDef = db.prepare('SELECT id FROM shift_definitions LIMIT 1').get()
     db.prepare("INSERT INTO leave_requests(staff_id, leave_type, start_date, end_date, total_days, status) VALUES(?,?,?,?,?, 'approved')")
       .run(staff.id, 'annual', '2026-08-10', '2026-08-12', 3)
-    const res = await request(app).post('/api/shifts/schedule').set('Authorization', `Bearer ${managerToken}`)
+    const blocked = await request(app).post('/api/shifts/schedule').set('Authorization', `Bearer ${managerToken}`)
       .send({ entries: [{ staff_id: staff.id, work_date: '2026-08-11', shift_def_id: shiftDef.id, status: 'scheduled' }] })
-    expect(res.status).toBe(200)
-    expect(res.body.warnings.some(w => w.kind === 'leave_overwrite' && w.staff_id === staff.id)).toBe(true)
-    // uyarıya rağmen yazıldı (bloklamaz)
+    expect(blocked.status).toBe(409)
+    expect(blocked.body.override_required).toBe(true)
+    expect(blocked.body.warnings.some(w => w.kind === 'leave_overwrite' && w.staff_id === staff.id)).toBe(true)
+    expect(db.prepare('SELECT 1 FROM shift_schedule WHERE staff_id=? AND work_date=?').get(staff.id, '2026-08-11')).toBeFalsy()
+
+    const overridden = await request(app).post('/api/shifts/schedule').set('Authorization', `Bearer ${managerToken}`)
+      .send({
+        entries: [{ staff_id: staff.id, work_date: '2026-08-11', shift_def_id: shiftDef.id, status: 'scheduled' }],
+        override_leave: true,
+        override_reason: 'Operasyon icin zorunlu gorevlendirme',
+      })
+    expect(overridden.status).toBe(200)
+    expect(overridden.body.leaveOverride.reason).toContain('Operasyon')
     expect(db.prepare('SELECT 1 FROM shift_schedule WHERE staff_id=? AND work_date=?').get(staff.id, '2026-08-11')).toBeTruthy()
   })
 

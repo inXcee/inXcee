@@ -126,4 +126,15 @@ describe('scheduleExcelExport - X3 workbook builder', () => {
 
     expect(buffer.byteLength).toBeGreaterThan(8000)
   })
+
+  it('writes every split-shift segment into the schedule cell', () => {
+    const cell = shift(1, { segments: [
+      { id: 1, start_time: '08:00', end_time: '12:00', work_location_name: 'OTC Lokal', role_name: 'Ikramci', status: 'planned' },
+      { id: 2, start_time: '13:00', end_time: '17:00', work_location_name: 'Kamp Yemekhane', role_name: 'Meydanci', status: 'planned' },
+    ] })
+    const result = buildWorkbook({ staffGrid: [{ id: 20, full_name: 'Parcali Personel', dept_name: 'Teknik', role_name: 'Ikramci', days: { [WEEK[0]]: cell } }] })
+    const teknik = result.workbook.getWorksheet('Bolum - Teknik')
+    expect(teknik.getCell('F8').value).toContain('08:00-12:00 OTC Lokal')
+    expect(teknik.getCell('F8').value).toContain('13:00-17:00 Kamp Yemekhane')
+  })
 })

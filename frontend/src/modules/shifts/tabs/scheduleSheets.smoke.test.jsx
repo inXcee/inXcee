@@ -72,4 +72,23 @@ describe('scheduleSheets smoke', () => {
     expect(screen.getByText('VARDIYA SEÇ')).toBeInTheDocument()
     expect(screen.getByText('08:00–17:00')).toBeInTheDocument()
   })
+
+  it('CellAssignSheet gün içi görev parçalarını saat, nokta ve rolle gösterir', async () => {
+    api.get.mockResolvedValueOnce({ data: {
+      schedule: { id: 10, status: 'scheduled' },
+      segments: [{ id: 5, start_time: '08:00', end_time: '12:00', break_minutes: 15, work_location_name: 'OTC Lokal', role_name: 'İkramcı', status: 'planned' }],
+    } })
+    wrap(<CellAssignSheet
+      cellPopover={{ staffId: 1, deptId: 2, personName: 'Test Kişi', date: '2026-06-08', existing: { status: 'scheduled', segments: [] } }}
+      setCellPopover={() => {}} shiftDefs={shiftDefs}
+      workLocations={[{ id: 3, name: 'OTC Lokal' }]}
+      staffRoles={[{ id: 4, name: 'İkramcı' }]}
+      assignCell={{ mutate: () => {}, isPending: false }}
+      deleteShift={{ mutate: () => {}, isPending: false }}
+      formatDate={d => d} shortDay={() => 'Pt'} shiftColor={() => ({ bg: '', text: '' })}
+    />)
+    expect(await screen.findByText('08:00-12:00')).toBeInTheDocument()
+    expect(screen.getByText(/OTC Lokal · İkramcı · 15 dk mola/)).toBeInTheDocument()
+    expect(screen.getByText('GÜN İÇİ GÖREV PARÇALARI')).toBeInTheDocument()
+  })
 })

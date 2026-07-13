@@ -14,7 +14,11 @@ const weekDays = ['2027-01-04', '2027-01-05']
 
 function mockApi() {
   getMock.mockImplementation((url) => {
-    if (url === '/shifts/coverage') return Promise.resolve({ data: { shifts: [], counts: [] } })
+    if (url === '/shifts/coverage') return Promise.resolve({ data: {
+      shifts: [], counts: [],
+      rules: [{ id: 9, name: 'OTC Sabah İkramcı', start_time: '08:00', end_time: '12:00', min_staff: 2, dept_name: 'Yemekhane', role_name: 'İkramcı', work_location_name: 'OTC Lokal' }],
+      rule_counts: [{ rule_id: 9, work_date: '2027-01-05', assigned: 1, min_staff: 2, missing: 1 }],
+    } })
     if (url === '/shifts/breakdown') return Promise.resolve({ data: {
       location_counts: [], role_counts: [],
       site_counts: [{ work_date: '2027-01-05', site: 'OTC', assigned: 2 }],
@@ -39,6 +43,8 @@ describe('CoverageBoard smoke', () => {
     renderWithProviders(<CoverageBoard from="2027-01-04" to="2027-01-05" weekDays={weekDays} onPersonClick={onPersonClick} />)
     fireEvent.click(screen.getByText('▼ Aç'))
     await waitFor(() => expect(screen.getByText('OTC')).toBeInTheDocument())
+    expect(screen.getByText('OTC Sabah İkramcı')).toBeInTheDocument()
+    expect(screen.getByText('1/2')).toBeInTheDocument()
 
     // Site satırındaki dolu hücre (2) tıklanabilir — title ile hedefle (Toplam kolonuyla karışmasın)
     const cell = await screen.findByTitle(/OTC .* kişi \(tıkla\)/)

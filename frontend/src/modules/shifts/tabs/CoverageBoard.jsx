@@ -1,14 +1,30 @@
 import { useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../../shared/api/client.js'
 import { shiftColor, formatShiftHours, shortDay, SidePanel } from '../shared.jsx'
+
+function toClockInput(value) {
+  if (value == null || value === '') return ''
+  const raw = String(value)
+  if (raw.includes(':')) {
+    const [hour, minute = '00'] = raw.split(':')
+    return `${hour.padStart(2, '0')}:${minute.padEnd(2, '0').slice(0, 2)}`
+  }
+  return `${raw.padStart(2, '0')}:00`
+}
 
 // Kadro kapsama panosu (X4): hedefi olan vardiyalar için hafta × gün gerçekleşen vs hedef.
 // Gerçekleşen < hedef → kırmızı.
 // Kırılım hücrelerine tıklayınca o gün+değer için atanan kişiler panelde açılır (tıklanabilir).
-export default function CoverageBoard({ from, to, weekDays = [], onPersonClick }) {
+export default function CoverageBoard({
+  from, to, weekDays = [], onPersonClick, canEdit = false,
+  departments = [], shiftDefs = [], roles = [], locations = [],
+}) {
+  const qc = useQueryClient()
   const [open, setOpen] = useState(false)
   const [picked, setPicked] = useState(null) // { date, dimension, value, label, anchorRect }
+  const [ruleFormOpen, setRuleFormOpen] = useState(false)
+  const [ruleForm, setRuleForm] = useState({ name: '', dept_id: '', role_id: '', work_location_id: '', shift_def_id: '', start_time: '08:00', end_time: '12:00', min_staff: '1', days_of_week: '1,2,3,4,5,6,7' })
   const { data } = useQuery({
     queryKey: ['shift-coverage', from, to],
     queryFn: () => api.get('/shifts/coverage', { params: { from, to } }).then(r => r.data),
@@ -24,6 +40,12 @@ export default function CoverageBoard({ from, to, weekDays = [], onPersonClick }
     const m = {}
     ;(data?.counts || []).forEach(c => { m[`${c.work_date}:${c.shift_def_id}`] = c.assigned })
     return m
+  }, [data])
+  const rules = data?.rules || []
+  const ruleCountMap = useMemo(() => {
+    const map = {}
+    ;(data?.rule_counts || []).forEach(item => { map[`${item.work_date}:${item.rule_id}`] = item })
+    return map
   }, [data])
   const locationRows = useMemo(() => {
     const byName = new Map()
@@ -55,8 +77,22 @@ export default function CoverageBoard({ from, to, weekDays = [], onPersonClick }
   const shortfalls = useMemo(() => {
     let n = 0
     shifts.forEach(s => weekDays.forEach(d => { if ((countMap[`${d}:${s.id}`] || 0) < s.min_staff) n += 1 }))
+    ;(data?.rule_counts || []).forEach(item => { if (item.missing > 0) n += 1 })
     return n
-  }, [shifts, weekDays, countMap])
+  }, [shifts, weekDays, countMap, data])
+
+  const createRule = useMutation({
+    mutationFn: payload => api.post('/shifts/coverage-rules', payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['shift-coverage'] })
+      setRuleFormOpen(false)
+      setRuleForm({ name: '', dept_id: '', role_id: '', work_location_id: '', shift_def_id: '', start_time: '08:00', end_time: '12:00', min_staff: '1', days_of_week: '1,2,3,4,5,6,7' })
+    },
+  })
+  const deleteRule = useMutation({
+    mutationFn: id => api.delete(`/shifts/coverage-rules/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['shift-coverage'] }),
+  })
 
   const openCell = (dimension, value, date, e) => {
     const rect = e.currentTarget.getBoundingClientRect()
@@ -115,6 +151,86 @@ export default function CoverageBoard({ from, to, weekDays = [], onPersonClick }
               </table>
             </div>
           )
+      )}
+      {open && (
+        <div style={{ marginTop: '14px', borderTop: '1px solid var(--border)', paddingTop: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+            <div>
+              <div style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text)', fontWeight: 700, letterSpacing: '1px' }}>SAAT BAZLI OPERASYON KURALLARI</div>
+              <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', marginTop: '2px' }}>Departman · rol · çalışma noktası · saat aralığı</div>
+            </div>
+            {canEdit && <button className="btn btn-ghost btn-sm" style={{ marginLeft: 'auto' }} onClick={() => setRuleFormOpen(value => !value)}>{ruleFormOpen ? 'Vazgeç' : '+ Kural'}</button>}
+          </div>
+
+          {ruleFormOpen && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(145px, 1fr))', gap: '8px', padding: '10px 0', borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)', marginBottom: '10px' }}>
+              <input className="form-input" value={ruleForm.name} onChange={e => setRuleForm(p => ({ ...p, name: e.target.value }))} placeholder="Kural adı" />
+              <select className="form-select" value={ruleForm.dept_id} onChange={e => setRuleForm(p => ({ ...p, dept_id: e.target.value }))}>
+                <option value="">Tüm departmanlar</option>
+                {departments.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+              </select>
+              <select className="form-select" value={ruleForm.role_id} onChange={e => setRuleForm(p => ({ ...p, role_id: e.target.value }))}>
+                <option value="">Tüm roller</option>
+                {roles.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+              </select>
+              <select className="form-select" value={ruleForm.work_location_id} onChange={e => setRuleForm(p => ({ ...p, work_location_id: e.target.value }))}>
+                <option value="">Tüm noktalar</option>
+                {locations.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+              </select>
+              <select className="form-select" value={ruleForm.shift_def_id} onChange={e => {
+                const selected = shiftDefs.find(item => String(item.id) === e.target.value)
+                setRuleForm(p => ({ ...p, shift_def_id: e.target.value, start_time: selected ? toClockInput(selected.start_hour) : p.start_time, end_time: selected ? toClockInput(selected.end_hour) : p.end_time }))
+              }}>
+                <option value="">Tüm vardiyalar</option>
+                {shiftDefs.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+              </select>
+              <input type="time" className="form-input" value={ruleForm.start_time} onChange={e => setRuleForm(p => ({ ...p, start_time: e.target.value }))} />
+              <input type="time" className="form-input" value={ruleForm.end_time} onChange={e => setRuleForm(p => ({ ...p, end_time: e.target.value }))} />
+              <input type="number" min="0" className="form-input" value={ruleForm.min_staff} onChange={e => setRuleForm(p => ({ ...p, min_staff: e.target.value }))} placeholder="Minimum kişi" />
+              <button
+                className="btn btn-primary btn-sm"
+                disabled={!ruleForm.name.trim() || !ruleForm.start_time || !ruleForm.end_time || createRule.isPending}
+                onClick={() => createRule.mutate({
+                  ...ruleForm,
+                  dept_id: ruleForm.dept_id ? parseInt(ruleForm.dept_id) : null,
+                  role_id: ruleForm.role_id ? parseInt(ruleForm.role_id) : null,
+                  work_location_id: ruleForm.work_location_id ? parseInt(ruleForm.work_location_id) : null,
+                  shift_def_id: ruleForm.shift_def_id ? parseInt(ruleForm.shift_def_id) : null,
+                  min_staff: parseInt(ruleForm.min_staff) || 0,
+                })}
+              >Kuralı Kaydet</button>
+            </div>
+          )}
+
+          {rules.length === 0 ? (
+            <div style={{ fontSize: '10px', color: 'var(--text3)', padding: '6px 0' }}>Saat bazlı kapsama kuralı tanımlanmadı.</div>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table className="data-table" style={{ fontSize: '10px', minWidth: '700px' }}>
+                <thead><tr><th style={{ textAlign: 'left' }}>Kural</th><th>Saat</th><th>Hedef</th>{weekDays.map(date => <th key={date}>{shortDay(date)}</th>)}{canEdit && <th />}</tr></thead>
+                <tbody>
+                  {rules.map(rule => (
+                    <tr key={rule.id}>
+                      <td style={{ textAlign: 'left' }}>
+                        <div style={{ fontWeight: 700 }}>{rule.name}</div>
+                        <div style={{ color: 'var(--text3)', fontSize: '8px' }}>{[rule.dept_name, rule.role_name, rule.work_location_name].filter(Boolean).join(' · ') || 'Genel'}</div>
+                      </td>
+                      <td style={{ fontFamily: 'var(--mono)', textAlign: 'center' }}>{rule.start_time}-{rule.end_time}</td>
+                      <td style={{ fontFamily: 'var(--mono)', textAlign: 'center' }}>{rule.min_staff}</td>
+                      {weekDays.map(date => {
+                        const item = ruleCountMap[`${date}:${rule.id}`]
+                        const active = !!item
+                        const under = active && item.missing > 0
+                        return <td key={date} style={{ textAlign: 'center', fontFamily: 'var(--mono)', color: !active ? 'var(--text3)' : under ? 'var(--red)' : 'var(--green)', background: under ? 'rgba(239,68,68,.08)' : undefined }}>{active ? `${item.assigned}/${item.min_staff}` : '—'}</td>
+                      })}
+                      {canEdit && <td><button className="btn btn-ghost btn-sm" title="Kuralı sil" onClick={() => deleteRule.mutate(rule.id)} disabled={deleteRule.isPending}>×</button></td>}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       )}
       {open && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginTop: '14px' }}>

@@ -420,7 +420,129 @@ export function getSchedule(weekStart, weekEnd, deptId) {
     params.push(deptId)
   }
   query += ' ORDER BY d.id, s.full_name, ss.work_date'
-  return db.prepare(query).all(...params)
+  const rows = db.prepare(query).all(...params)
+  if (rows.length === 0) return rows
+
+  let segmentQuery = `
+    SELECT seg.id, seg.schedule_id, seg.sequence_no, seg.shift_def_id,
+      seg.role_id, sr.name AS role_name,
+      seg.work_location_id, wl.name AS work_location_name,
+      wl.color_class AS work_location_color,
+      seg.start_time, seg.end_time, seg.break_minutes,
+      seg.actual_start, seg.actual_end, seg.note, seg.status,
+      sd.name AS shift_name, sd.color_class AS shift_color
+    FROM shift_schedule_segments seg
+    JOIN shift_schedule ss ON ss.id = seg.schedule_id
+    LEFT JOIN shift_definitions sd ON sd.id = seg.shift_def_id
+    LEFT JOIN staff_roles sr ON sr.id = seg.role_id
+    LEFT JOIN work_locations wl ON wl.id = seg.work_location_id
+    WHERE ss.work_date BETWEEN ? AND ?
+  `
+  const segmentParams = [weekStart, weekEnd]
+  if (deptId) {
+    segmentQuery += ' AND ss.dept_id = ?'
+    segmentParams.push(deptId)
+  }
+  segmentQuery += ' ORDER BY seg.schedule_id, seg.sequence_no, seg.id'
+  const bySchedule = new Map()
+  db.prepare(segmentQuery).all(...segmentParams).forEach(segment => {
+    if (!bySchedule.has(segment.schedule_id)) bySchedule.set(segment.schedule_id, [])
+    bySchedule.get(segment.schedule_id).push(segment)
+  })
+  return rows.map(row => ({ ...row, segments: bySchedule.get(row.id) || [] }))
+}
+
+export function getScheduleEntry(staffId, workDate) {
+  return getDB().prepare(`
+    SELECT ss.*, s.full_name, s.role_id AS staff_role_id,
+      COALESCE(ss.dept_id, s.department_id) AS effective_dept_id
+    FROM shift_schedule ss
+    JOIN staff s ON s.id = ss.staff_id
+    WHERE ss.staff_id = ? AND ss.work_date = ?
+  `).get(staffId, workDate)
+}
+
+export function getScheduleSegment(id) {
+  return getDB().prepare(`
+    SELECT seg.*, ss.staff_id, ss.work_date, ss.dept_id,
+      s.full_name, sd.name AS shift_name,
+      sr.name AS role_name, wl.name AS work_location_name
+    FROM shift_schedule_segments seg
+    JOIN shift_schedule ss ON ss.id = seg.schedule_id
+    JOIN staff s ON s.id = ss.staff_id
+    LEFT JOIN shift_definitions sd ON sd.id = seg.shift_def_id
+    LEFT JOIN staff_roles sr ON sr.id = seg.role_id
+    LEFT JOIN work_locations wl ON wl.id = seg.work_location_id
+    WHERE seg.id = ?
+  `).get(id)
+}
+
+export function listScheduleSegments(scheduleId) {
+  return getDB().prepare(`
+    SELECT seg.*, sd.name AS shift_name, sd.color_class AS shift_color,
+      sr.name AS role_name, wl.name AS work_location_name,
+      wl.color_class AS work_location_color
+    FROM shift_schedule_segments seg
+    LEFT JOIN shift_definitions sd ON sd.id = seg.shift_def_id
+    LEFT JOIN staff_roles sr ON sr.id = seg.role_id
+    LEFT JOIN work_locations wl ON wl.id = seg.work_location_id
+    WHERE seg.schedule_id = ?
+    ORDER BY seg.sequence_no, seg.id
+  `).all(scheduleId)
+}
+
+export function createScheduleSegment(data, createdBy) {
+  const db = getDB()
+  const next = db.prepare(`
+    SELECT COALESCE(MAX(sequence_no), 0) + 1 AS sequence_no
+    FROM shift_schedule_segments WHERE schedule_id = ?
+  `).get(data.schedule_id).sequence_no
+  const id = db.prepare(`
+    INSERT INTO shift_schedule_segments(
+      schedule_id, sequence_no, shift_def_id, role_id, work_location_id,
+      start_time, end_time, break_minutes, actual_start, actual_end, note, status, created_by
+    ) VALUES(
+      @schedule_id, @sequence_no, @shift_def_id, @role_id, @work_location_id,
+      @start_time, @end_time, @break_minutes, @actual_start, @actual_end, @note, @status, @created_by
+    )
+  `).run({
+    schedule_id: data.schedule_id,
+    sequence_no: data.sequence_no || next,
+    shift_def_id: data.shift_def_id || null,
+    role_id: data.role_id || null,
+    work_location_id: data.work_location_id || null,
+    start_time: data.start_time,
+    end_time: data.end_time,
+    break_minutes: data.break_minutes || 0,
+    actual_start: data.actual_start || null,
+    actual_end: data.actual_end || null,
+    note: data.note || null,
+    status: data.status || 'planned',
+    created_by: createdBy || null,
+  }).lastInsertRowid
+  return getScheduleSegment(id)
+}
+
+export function updateScheduleSegment(id, data) {
+  const allowed = ['shift_def_id', 'role_id', 'work_location_id', 'start_time', 'end_time', 'break_minutes', 'actual_start', 'actual_end', 'note', 'status', 'sequence_no']
+  const sets = []
+  const params = []
+  allowed.forEach(key => {
+    if (data[key] !== undefined) {
+      sets.push(`${key} = ?`)
+      params.push(data[key] === '' ? null : data[key])
+    }
+  })
+  if (sets.length) {
+    sets.push('updated_at = CURRENT_TIMESTAMP')
+    params.push(id)
+    getDB().prepare(`UPDATE shift_schedule_segments SET ${sets.join(', ')} WHERE id = ?`).run(...params)
+  }
+  return getScheduleSegment(id)
+}
+
+export function deleteScheduleSegment(id) {
+  getDB().prepare('DELETE FROM shift_schedule_segments WHERE id = ?').run(id)
 }
 
 export function bulkAssignShifts(entries, createdBy) {
@@ -1326,43 +1448,360 @@ export function getShiftCoverage(from, to) {
     WHERE ss.work_date BETWEEN ? AND ? AND ss.status IN ('scheduled','worked','overtime') AND ss.shift_def_id IS NOT NULL
     GROUP BY ss.work_date, ss.shift_def_id
   `).all(from, to)
-  return { shifts, counts }
+  const rules = getCoverageRules({ includeInactive: false })
+  const assignments = db.prepare(`
+    SELECT ss.staff_id, ss.work_date,
+      COALESCE(ss.dept_id, s.department_id) AS dept_id,
+      COALESCE(seg.role_id, s.role_id) AS role_id,
+      COALESCE(seg.work_location_id, ss.work_location_id) AS work_location_id,
+      COALESCE(seg.shift_def_id, ss.shift_def_id) AS shift_def_id,
+      seg.start_time, seg.end_time
+    FROM shift_schedule_segments seg
+    JOIN shift_schedule ss ON ss.id = seg.schedule_id
+    JOIN staff s ON s.id = ss.staff_id
+    WHERE ss.work_date BETWEEN ? AND ?
+      AND ss.status IN ('scheduled','worked','overtime')
+      AND seg.status != 'cancelled'
+    UNION ALL
+    SELECT ss.staff_id, ss.work_date,
+      COALESCE(ss.dept_id, s.department_id) AS dept_id,
+      s.role_id, ss.work_location_id, ss.shift_def_id,
+      sd.start_hour AS start_time, sd.end_hour AS end_time
+    FROM shift_schedule ss
+    JOIN staff s ON s.id = ss.staff_id
+    LEFT JOIN shift_definitions sd ON sd.id = ss.shift_def_id
+    WHERE ss.work_date BETWEEN ? AND ?
+      AND ss.status IN ('scheduled','worked','overtime')
+      AND NOT EXISTS (
+        SELECT 1 FROM shift_schedule_segments seg WHERE seg.schedule_id = ss.id AND seg.status != 'cancelled'
+      )
+  `).all(from, to, from, to)
+  const ruleCounts = buildCoverageRuleCounts(rules, assignments, from, to)
+  return { shifts, counts, rules, rule_counts: ruleCounts }
+}
+
+function timeParts(value) {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(String(value || ''))
+  if (!match) return null
+  const hour = Number(match[1])
+  const minute = Number(match[2])
+  if (hour > 23 || minute > 59) return null
+  return hour * 60 + minute
+}
+
+function timeRanges(start, end) {
+  const startMin = timeParts(start)
+  const endMin = timeParts(end)
+  if (startMin == null || endMin == null || startMin === endMin) return []
+  if (endMin > startMin) return [[startMin, endMin]]
+  return [[startMin, 1440], [0, endMin]]
+}
+
+function rangesOverlap(leftStart, leftEnd, rightStart, rightEnd) {
+  const left = timeRanges(leftStart, leftEnd)
+  const right = timeRanges(rightStart, rightEnd)
+  return left.some(a => right.some(b => a[0] < b[1] && b[0] < a[1]))
+}
+
+function isoDay(date) {
+  const day = new Date(`${date}T00:00:00Z`).getUTCDay()
+  return day === 0 ? 7 : day
+}
+
+function dateRange(from, to) {
+  const dates = []
+  const cursor = new Date(`${from}T00:00:00Z`)
+  const end = new Date(`${to}T00:00:00Z`)
+  while (cursor <= end) {
+    dates.push(cursor.toISOString().slice(0, 10))
+    cursor.setUTCDate(cursor.getUTCDate() + 1)
+  }
+  return dates
+}
+
+function buildCoverageRuleCounts(rules, assignments, from, to) {
+  const result = []
+  for (const rule of rules) {
+    const activeDays = new Set(String(rule.days_of_week || '').split(',').map(Number))
+    for (const workDate of dateRange(from, to)) {
+      if (!activeDays.has(isoDay(workDate))) continue
+      const staffIds = new Set(assignments.filter(item => (
+        item.work_date === workDate
+        && (!rule.dept_id || Number(item.dept_id) === Number(rule.dept_id))
+        && (!rule.role_id || Number(item.role_id) === Number(rule.role_id))
+        && (!rule.work_location_id || Number(item.work_location_id) === Number(rule.work_location_id))
+        && (!rule.shift_def_id || Number(item.shift_def_id) === Number(rule.shift_def_id))
+        && rangesOverlap(rule.start_time, rule.end_time, item.start_time, item.end_time)
+      )).map(item => item.staff_id))
+      result.push({
+        rule_id: rule.id,
+        work_date: workDate,
+        assigned: staffIds.size,
+        min_staff: rule.min_staff,
+        missing: Math.max(0, rule.min_staff - staffIds.size),
+      })
+    }
+  }
+  return result
+}
+
+export function getCoverageRules({ includeInactive = false } = {}) {
+  let query = `
+    SELECT cr.*, d.name AS dept_name, sr.name AS role_name,
+      wl.name AS work_location_name, sd.name AS shift_name
+    FROM shift_coverage_rules cr
+    LEFT JOIN departments d ON d.id = cr.dept_id
+    LEFT JOIN staff_roles sr ON sr.id = cr.role_id
+    LEFT JOIN work_locations wl ON wl.id = cr.work_location_id
+    LEFT JOIN shift_definitions sd ON sd.id = cr.shift_def_id
+  `
+  if (!includeInactive) query += ' WHERE cr.is_active = 1'
+  query += ' ORDER BY cr.is_active DESC, cr.name COLLATE NOCASE, cr.id'
+  return getDB().prepare(query).all()
+}
+
+export function createCoverageRule(data, createdBy) {
+  const id = getDB().prepare(`
+    INSERT INTO shift_coverage_rules(
+      name, dept_id, role_id, work_location_id, shift_def_id,
+      start_time, end_time, min_staff, days_of_week, is_active, created_by
+    ) VALUES(
+      @name, @dept_id, @role_id, @work_location_id, @shift_def_id,
+      @start_time, @end_time, @min_staff, @days_of_week, @is_active, @created_by
+    )
+  `).run({
+    name: data.name,
+    dept_id: data.dept_id || null,
+    role_id: data.role_id || null,
+    work_location_id: data.work_location_id || null,
+    shift_def_id: data.shift_def_id || null,
+    start_time: data.start_time,
+    end_time: data.end_time,
+    min_staff: data.min_staff,
+    days_of_week: data.days_of_week,
+    is_active: data.is_active === false || data.is_active === 0 ? 0 : 1,
+    created_by: createdBy || null,
+  }).lastInsertRowid
+  return getDB().prepare('SELECT * FROM shift_coverage_rules WHERE id = ?').get(id)
+}
+
+export function updateCoverageRule(id, data) {
+  const allowed = ['name', 'dept_id', 'role_id', 'work_location_id', 'shift_def_id', 'start_time', 'end_time', 'min_staff', 'days_of_week', 'is_active']
+  const sets = []
+  const params = []
+  allowed.forEach(key => {
+    if (data[key] !== undefined) {
+      sets.push(`${key} = ?`)
+      params.push(data[key] === '' ? null : data[key])
+    }
+  })
+  if (sets.length) {
+    sets.push('updated_at = CURRENT_TIMESTAMP')
+    params.push(id)
+    getDB().prepare(`UPDATE shift_coverage_rules SET ${sets.join(', ')} WHERE id = ?`).run(...params)
+  }
+  return getDB().prepare('SELECT * FROM shift_coverage_rules WHERE id = ?').get(id)
+}
+
+export function deleteCoverageRule(id) {
+  getDB().prepare('DELETE FROM shift_coverage_rules WHERE id = ?').run(id)
+}
+
+function addIsoDays(date, amount) {
+  const value = new Date(`${date}T00:00:00Z`)
+  value.setUTCDate(value.getUTCDate() + amount)
+  return value.toISOString().slice(0, 10)
+}
+
+function scheduledAssignmentsForRange(db, from, to) {
+  return db.prepare(`
+    SELECT ss.staff_id, ss.work_date,
+      COALESCE(seg.role_id, s.role_id) AS role_id,
+      COALESCE(seg.work_location_id, ss.work_location_id) AS work_location_id,
+      COALESCE(seg.shift_def_id, ss.shift_def_id) AS shift_def_id,
+      seg.start_time, seg.end_time
+    FROM shift_schedule_segments seg
+    JOIN shift_schedule ss ON ss.id = seg.schedule_id
+    JOIN staff s ON s.id = ss.staff_id
+    WHERE ss.work_date BETWEEN ? AND ?
+      AND ss.status IN ('scheduled','worked','overtime')
+      AND seg.status != 'cancelled'
+    UNION ALL
+    SELECT ss.staff_id, ss.work_date, s.role_id, ss.work_location_id, ss.shift_def_id,
+      sd.start_hour AS start_time, sd.end_hour AS end_time
+    FROM shift_schedule ss
+    JOIN staff s ON s.id = ss.staff_id
+    LEFT JOIN shift_definitions sd ON sd.id = ss.shift_def_id
+    WHERE ss.work_date BETWEEN ? AND ?
+      AND ss.status IN ('scheduled','worked','overtime')
+      AND NOT EXISTS (
+        SELECT 1 FROM shift_schedule_segments seg WHERE seg.schedule_id = ss.id AND seg.status != 'cancelled'
+      )
+  `).all(from, to, from, to)
+}
+
+function restAfterPrevious(previous, targetStart) {
+  if (!previous) return null
+  const prevStart = timeParts(previous.start_time)
+  let prevEnd = timeParts(previous.end_time)
+  const nextStart = timeParts(targetStart)
+  if (prevStart == null || prevEnd == null || nextStart == null) return null
+  if (prevEnd <= prevStart) prevEnd += 1440
+  return (1440 + nextStart - prevEnd) / 60
+}
+
+function restBeforeNext(targetStart, targetEnd, next) {
+  if (!next) return null
+  const start = timeParts(targetStart)
+  let end = timeParts(targetEnd)
+  const nextStart = timeParts(next.start_time)
+  if (start == null || end == null || nextStart == null) return null
+  if (end <= start) end += 1440
+  return (1440 + nextStart - end) / 60
+}
+
+export function getScheduleCandidates({
+  date, deptId = null, roleId = null, workLocationId = null,
+  shiftDefId = null, startTime = null, endTime = null, excludeStaffId = null,
+}) {
+  const db = getDB()
+  let targetStart = startTime
+  let targetEnd = endTime
+  if (shiftDefId && (!targetStart || !targetEnd)) {
+    const shift = db.prepare('SELECT start_hour, end_hour FROM shift_definitions WHERE id = ?').get(shiftDefId)
+    targetStart ||= shift?.start_hour
+    targetEnd ||= shift?.end_hour
+  }
+
+  const staff = db.prepare(`
+    SELECT s.id, s.full_name, s.position,
+      COALESCE((
+        SELECT sa.department_id FROM staff_assignments sa
+        WHERE sa.staff_id = s.id AND sa.effective_from <= ?
+          AND (sa.effective_to IS NULL OR sa.effective_to >= ?)
+        ORDER BY sa.effective_from DESC, sa.id DESC LIMIT 1
+      ), s.department_id) AS dept_id,
+      COALESCE((
+        SELECT sa.role_id FROM staff_assignments sa
+        WHERE sa.staff_id = s.id AND sa.effective_from <= ?
+          AND (sa.effective_to IS NULL OR sa.effective_to >= ?)
+        ORDER BY sa.effective_from DESC, sa.id DESC LIMIT 1
+      ), s.role_id) AS role_id,
+      (
+        SELECT sa.work_location_id FROM staff_assignments sa
+        WHERE sa.staff_id = s.id AND sa.effective_from <= ?
+          AND (sa.effective_to IS NULL OR sa.effective_to >= ?)
+        ORDER BY sa.effective_from DESC, sa.id DESC LIMIT 1
+      ) AS primary_work_location_id,
+      d.name AS dept_name, sr.name AS role_name, wl.name AS primary_work_location_name
+    FROM staff s
+    LEFT JOIN departments d ON d.id = COALESCE((
+      SELECT sa.department_id FROM staff_assignments sa
+      WHERE sa.staff_id = s.id AND sa.effective_from <= ?
+        AND (sa.effective_to IS NULL OR sa.effective_to >= ?)
+      ORDER BY sa.effective_from DESC, sa.id DESC LIMIT 1
+    ), s.department_id)
+    LEFT JOIN staff_roles sr ON sr.id = COALESCE((
+      SELECT sa.role_id FROM staff_assignments sa
+      WHERE sa.staff_id = s.id AND sa.effective_from <= ?
+        AND (sa.effective_to IS NULL OR sa.effective_to >= ?)
+      ORDER BY sa.effective_from DESC, sa.id DESC LIMIT 1
+    ), s.role_id)
+    LEFT JOIN work_locations wl ON wl.id = (
+      SELECT sa.work_location_id FROM staff_assignments sa
+      WHERE sa.staff_id = s.id AND sa.effective_from <= ?
+        AND (sa.effective_to IS NULL OR sa.effective_to >= ?)
+      ORDER BY sa.effective_from DESC, sa.id DESC LIMIT 1
+    )
+    WHERE s.is_active = 1
+    ORDER BY s.full_name COLLATE NOCASE
+  `).all(date, date, date, date, date, date, date, date, date, date, date, date)
+  const leaves = new Set(db.prepare(`
+    SELECT staff_id FROM leave_requests
+    WHERE status = 'approved' AND ? BETWEEN start_date AND end_date
+  `).all(date).map(row => row.staff_id))
+  const assignments = scheduledAssignmentsForRange(db, addIsoDays(date, -3), addIsoDays(date, 3))
+  const byStaff = new Map()
+  assignments.forEach(item => {
+    if (!byStaff.has(item.staff_id)) byStaff.set(item.staff_id, [])
+    byStaff.get(item.staff_id).push(item)
+  })
+
+  return staff
+    .filter(person => !excludeStaffId || Number(person.id) !== Number(excludeStaffId))
+    .map(person => {
+      const personAssignments = byStaff.get(person.id) || []
+      const sameDay = personAssignments.filter(item => item.work_date === date)
+      const previous = personAssignments
+        .filter(item => item.work_date === addIsoDays(date, -1))
+        .sort((a, b) => String(b.end_time).localeCompare(String(a.end_time)))[0]
+      const next = personAssignments
+        .filter(item => item.work_date === addIsoDays(date, 1))
+        .sort((a, b) => String(a.start_time).localeCompare(String(b.start_time)))[0]
+      const overlap = sameDay.some(item => rangesOverlap(targetStart, targetEnd, item.start_time, item.end_time))
+      const restBefore = restAfterPrevious(previous, targetStart)
+      const restAfter = restBeforeNext(targetStart, targetEnd, next)
+      const reasons = []
+      if (leaves.has(person.id)) reasons.push('approved_leave')
+      if (overlap) reasons.push('time_conflict')
+      if (restBefore != null && restBefore < 11) reasons.push('rest_before')
+      if (restAfter != null && restAfter < 11) reasons.push('rest_after')
+      const roleMatch = roleId && Number(person.role_id) === Number(roleId)
+      const locationMatch = workLocationId && Number(person.primary_work_location_id) === Number(workLocationId)
+      const deptMatch = deptId && Number(person.dept_id) === Number(deptId)
+      const workload = new Set(personAssignments
+        .filter(item => item.work_date >= addIsoDays(date, -3) && item.work_date <= addIsoDays(date, 3))
+        .map(item => item.work_date)).size
+      const score = 50 + (roleMatch ? 30 : 0) + (locationMatch ? 15 : 0) + (deptMatch ? 10 : 0) - Math.min(workload * 2, 20) - reasons.length * 30
+      return {
+        ...person,
+        eligible: reasons.length === 0,
+        reasons,
+        score,
+        workload,
+        rest_before_hours: restBefore == null ? null : Math.round(restBefore * 10) / 10,
+        rest_after_hours: restAfter == null ? null : Math.round(restAfter * 10) / 10,
+      }
+    })
+    .sort((a, b) => Number(b.eligible) - Number(a.eligible) || b.score - a.score || a.full_name.localeCompare(b.full_name, 'tr'))
 }
 
 export function getScheduleBreakdown(from, to) {
   const db = getDB()
   const workLocations = getWorkLocations({ includeInactive: true })
   const roles = getStaffRoles({ includeInactive: true })
-  const locationCounts = db.prepare(`
-    SELECT ss.work_date, ss.work_location_id,
-      COALESCE(wl.name, 'Noktasiz') AS work_location_name,
-      COALESCE(wl.color_class, 'gray') AS work_location_color,
-      COUNT(*) AS assigned
-    FROM shift_schedule ss
-    LEFT JOIN work_locations wl ON wl.id = ss.work_location_id
-    WHERE ss.work_date BETWEEN ? AND ? AND ss.status IN ('scheduled','worked','overtime')
-    GROUP BY ss.work_date, ss.work_location_id
-    ORDER BY ss.work_date, wl.sort_order, wl.name
-  `).all(from, to)
-  const roleCounts = db.prepare(`
-    SELECT ss.work_date, s.role_id,
-      COALESCE(sr.name, 'Rolsuz') AS role_name,
-      COUNT(*) AS assigned
-    FROM shift_schedule ss
-    JOIN staff s ON s.id = ss.staff_id
-    LEFT JOIN staff_roles sr ON sr.id = s.role_id
-    WHERE ss.work_date BETWEEN ? AND ? AND ss.status IN ('scheduled','worked','overtime')
-    GROUP BY ss.work_date, s.role_id
-    ORDER BY ss.work_date, sr.sort_order, sr.name
-  `).all(from, to)
-  const siteCounts = db.prepare(`
-    SELECT ss.work_date, COALESCE(wl.site, 'Sitesiz') AS site, COUNT(*) AS assigned
-    FROM shift_schedule ss
-    LEFT JOIN work_locations wl ON wl.id = ss.work_location_id
-    WHERE ss.work_date BETWEEN ? AND ? AND ss.status IN ('scheduled','worked','overtime')
-    GROUP BY ss.work_date, COALESCE(wl.site, 'Sitesiz')
-    ORDER BY ss.work_date, site
-  `).all(from, to)
+  const assignments = scheduledAssignmentsForRange(db, from, to)
+  const locationsById = new Map(workLocations.map(item => [Number(item.id), item]))
+  const rolesById = new Map(roles.map(item => [Number(item.id), item]))
+  const locationSets = new Map()
+  const roleSets = new Map()
+  const siteSets = new Map()
+  const add = (map, key, staffId) => {
+    if (!map.has(key)) map.set(key, new Set())
+    map.get(key).add(staffId)
+  }
+  assignments.forEach(item => {
+    const location = locationsById.get(Number(item.work_location_id))
+    const role = rolesById.get(Number(item.role_id))
+    add(locationSets, `${item.work_date}|${item.work_location_id || 0}`, item.staff_id)
+    add(roleSets, `${item.work_date}|${item.role_id || 0}`, item.staff_id)
+    add(siteSets, `${item.work_date}|${location?.site || 'Sitesiz'}`, item.staff_id)
+  })
+  const locationCounts = [...locationSets.entries()].map(([key, staffIds]) => {
+    const [workDate, rawId] = key.split('|')
+    const id = Number(rawId) || null
+    const location = locationsById.get(Number(id))
+    return { work_date: workDate, work_location_id: id, work_location_name: location?.name || 'Noktasiz', work_location_color: location?.color_class || 'gray', assigned: staffIds.size }
+  })
+  const roleCounts = [...roleSets.entries()].map(([key, staffIds]) => {
+    const [workDate, rawId] = key.split('|')
+    const id = Number(rawId) || null
+    return { work_date: workDate, role_id: id, role_name: rolesById.get(Number(id))?.name || 'Rolsuz', assigned: staffIds.size }
+  })
+  const siteCounts = [...siteSets.entries()].map(([key, staffIds]) => {
+    const separator = key.indexOf('|')
+    return { work_date: key.slice(0, separator), site: key.slice(separator + 1), assigned: staffIds.size }
+  })
   return { from, to, work_locations: workLocations, roles, location_counts: locationCounts, role_counts: roleCounts, site_counts: siteCounts }
 }
 
@@ -1377,25 +1816,46 @@ export function getBreakdownAssignees({ date, dimension, value }) {
   }[dimension]
   if (!groupExpr) return []
   return db.prepare(`
-    SELECT ss.staff_id, s.full_name, s.position,
+    WITH assignments AS (
+      SELECT ss.staff_id, ss.work_date, ss.status,
+        COALESCE(ss.dept_id, s.department_id) AS dept_id,
+        COALESCE(seg.role_id, s.role_id) AS role_id,
+        COALESCE(seg.work_location_id, ss.work_location_id) AS work_location_id,
+        COALESCE(seg.shift_def_id, ss.shift_def_id) AS shift_def_id,
+        seg.start_time, seg.end_time
+      FROM shift_schedule_segments seg
+      JOIN shift_schedule ss ON ss.id = seg.schedule_id
+      JOIN staff s ON s.id = ss.staff_id
+      WHERE ss.work_date = ? AND ss.status IN ('scheduled','worked','overtime') AND seg.status != 'cancelled'
+      UNION ALL
+      SELECT ss.staff_id, ss.work_date, ss.status,
+        COALESCE(ss.dept_id, s.department_id), s.role_id, ss.work_location_id, ss.shift_def_id,
+        sd.start_hour, sd.end_hour
+      FROM shift_schedule ss
+      JOIN staff s ON s.id = ss.staff_id
+      LEFT JOIN shift_definitions sd ON sd.id = ss.shift_def_id
+      WHERE ss.work_date = ? AND ss.status IN ('scheduled','worked','overtime')
+        AND NOT EXISTS (SELECT 1 FROM shift_schedule_segments seg WHERE seg.schedule_id = ss.id AND seg.status != 'cancelled')
+    )
+    SELECT a.staff_id, s.full_name, s.position,
       COALESCE(d.name, '—') AS dept_name,
       COALESCE(sr.name, '') AS role_name,
       COALESCE(sd.name, '') AS shift_name,
-      sd.start_hour, sd.end_hour,
+      a.start_time AS start_hour, a.end_time AS end_hour,
       COALESCE(wl.name, '') AS work_location_name,
       COALESCE(wl.color_class, '') AS work_location_color,
       COALESCE(wl.site, '') AS site,
-      ss.status
-    FROM shift_schedule ss
-    JOIN staff s ON s.id = ss.staff_id
-    LEFT JOIN departments d ON d.id = COALESCE(ss.dept_id, s.department_id)
-    LEFT JOIN staff_roles sr ON sr.id = s.role_id
-    LEFT JOIN shift_definitions sd ON sd.id = ss.shift_def_id
-    LEFT JOIN work_locations wl ON wl.id = ss.work_location_id
-    WHERE ss.work_date = ? AND ss.status IN ('scheduled','worked','overtime')
+      a.status
+    FROM assignments a
+    JOIN staff s ON s.id = a.staff_id
+    LEFT JOIN departments d ON d.id = a.dept_id
+    LEFT JOIN staff_roles sr ON sr.id = a.role_id
+    LEFT JOIN shift_definitions sd ON sd.id = a.shift_def_id
+    LEFT JOIN work_locations wl ON wl.id = a.work_location_id
+    WHERE 1=1
       AND ${groupExpr} = ?
-    ORDER BY s.full_name COLLATE NOCASE
-  `).all(date, value)
+    ORDER BY s.full_name COLLATE NOCASE, a.start_time
+  `).all(date, date, value)
 }
 
 export function deleteShiftDefinition(id) {
@@ -1458,9 +1918,23 @@ export function ensureSwapTable() {
 export function createSwapRequest(data) {
   ensureSwapTable()
   return getDB().prepare(`
-    INSERT INTO shift_swap_requests(requester_id, target_id, swap_date, requester_shift_id, target_shift_id, reason)
-    VALUES(@requester_id, @target_id, @swap_date, @requester_shift_id, @target_shift_id, @reason)
-  `).run(data).lastInsertRowid
+    INSERT INTO shift_swap_requests(
+      requester_id, target_id, swap_date, requester_shift_id, target_shift_id,
+      requester_segment_id, target_segment_id, reason
+    ) VALUES(
+      @requester_id, @target_id, @swap_date, @requester_shift_id, @target_shift_id,
+      @requester_segment_id, @target_segment_id, @reason
+    )
+  `).run({
+    requester_id: data.requester_id,
+    target_id: data.target_id,
+    swap_date: data.swap_date,
+    requester_shift_id: data.requester_shift_id || null,
+    target_shift_id: data.target_shift_id || null,
+    requester_segment_id: data.requester_segment_id || null,
+    target_segment_id: data.target_segment_id || null,
+    reason: data.reason || null,
+  }).lastInsertRowid
 }
 
 export function getSwapRequests(filters = {}) {
@@ -1469,18 +1943,36 @@ export function getSwapRequests(filters = {}) {
     SELECT sr.*,
       s1.full_name as requester_name, s1.gender as requester_gender,
       s2.full_name as target_name, s2.gender as target_gender,
-      sd1.name as requester_shift_name, sd2.name as target_shift_name
+      sd1.name as requester_shift_name, sd2.name as target_shift_name,
+      rseg.start_time as requester_segment_start, rseg.end_time as requester_segment_end,
+      tseg.start_time as target_segment_start, tseg.end_time as target_segment_end,
+      rwl.name as requester_segment_location, twl.name as target_segment_location
     FROM shift_swap_requests sr
     JOIN staff s1 ON s1.id = sr.requester_id
     JOIN staff s2 ON s2.id = sr.target_id
     LEFT JOIN shift_definitions sd1 ON sd1.id = sr.requester_shift_id
     LEFT JOIN shift_definitions sd2 ON sd2.id = sr.target_shift_id
+    LEFT JOIN shift_schedule_segments rseg ON rseg.id = sr.requester_segment_id
+    LEFT JOIN shift_schedule_segments tseg ON tseg.id = sr.target_segment_id
+    LEFT JOIN work_locations rwl ON rwl.id = rseg.work_location_id
+    LEFT JOIN work_locations twl ON twl.id = tseg.work_location_id
     WHERE 1=1
   `
   const params = []
   if (filters.status) { query += ' AND sr.status=?'; params.push(filters.status) }
   query += ' ORDER BY sr.created_at DESC LIMIT 100'
   return getDB().prepare(query).all(...params)
+}
+
+export function acceptSwapRequest(id, targetId) {
+  ensureSwapTable()
+  const result = getDB().prepare(`
+    UPDATE shift_swap_requests
+    SET target_accepted_at = CURRENT_TIMESTAMP
+    WHERE id = ? AND target_id = ? AND status = 'pending'
+  `).run(id, targetId)
+  if (!result.changes) throw new Error('Takas talebi bulunamadi veya hedef personel uyusmuyor')
+  return getDB().prepare('SELECT * FROM shift_swap_requests WHERE id = ?').get(id)
 }
 
 export function approveSwapRequest(id, approvedBy) {
@@ -1490,12 +1982,31 @@ export function approveSwapRequest(id, approvedBy) {
   if (!swap) throw new Error('Takas talebi bulunamadı veya zaten işlenmiş')
 
   db.transaction(() => {
-    if (swap.requester_shift_id && swap.target_shift_id) {
+    if (swap.requester_segment_id || swap.target_segment_id) {
+      if (!swap.requester_segment_id || !swap.target_segment_id) throw new Error('Parçalı takasta iki vardiya parçası da seçilmeli')
+      if (!swap.target_accepted_at) throw new Error('Hedef personel takası kabul etmeden onaylanamaz')
+      const requesterSegment = getScheduleSegment(swap.requester_segment_id)
+      const targetSegment = getScheduleSegment(swap.target_segment_id)
+      if (!requesterSegment || !targetSegment) throw new Error('Takas vardiya parçası bulunamadı')
+      if (Number(requesterSegment.staff_id) !== Number(swap.requester_id)
+        || Number(targetSegment.staff_id) !== Number(swap.target_id)
+        || requesterSegment.work_date !== swap.swap_date
+        || targetSegment.work_date !== swap.swap_date) {
+        throw new Error('Takas parçası personel veya tarih ile uyuşmuyor')
+      }
+      const fields = ['shift_def_id', 'role_id', 'work_location_id', 'start_time', 'end_time', 'break_minutes', 'note']
+      const set = fields.map(field => `${field}=@${field}`).join(', ')
+      const update = db.prepare(`UPDATE shift_schedule_segments SET ${set}, updated_at=CURRENT_TIMESTAMP WHERE id=@id`)
+      update.run({ ...targetSegment, id: requesterSegment.id })
+      update.run({ ...requesterSegment, id: targetSegment.id })
+    } else if (swap.requester_shift_id && swap.target_shift_id) {
       db.prepare('UPDATE shift_schedule SET shift_def_id=? WHERE staff_id=? AND work_date=?').run(swap.target_shift_id, swap.requester_id, swap.swap_date)
       db.prepare('UPDATE shift_schedule SET shift_def_id=? WHERE staff_id=? AND work_date=?').run(swap.requester_shift_id, swap.target_id, swap.swap_date)
     }
-    db.prepare("UPDATE shift_swap_requests SET status='approved', approved_by=? WHERE id=?").run(approvedBy, id)
+    db.prepare("UPDATE shift_swap_requests SET status='approved', approved_by=?, validation_note=? WHERE id=?")
+      .run(approvedBy, swap.requester_segment_id ? 'Segment personel/tarih ve hedef kabul kontrolü tamamlandı' : 'Günlük vardiya takası', id)
   })()
+  return getDB().prepare('SELECT * FROM shift_swap_requests WHERE id = ?').get(id)
 }
 
 export function rejectSwapRequest(id, approvedBy) {
@@ -1513,7 +2024,18 @@ function addDaysStr(dateStr, n) {
 export function copyWeekSchedule(sourceWeekStart, targetWeekStart, createdBy) {
   const db = getDB()
   const sourceEnd = addDaysStr(sourceWeekStart, 6)
-  const rows = db.prepare('SELECT staff_id, dept_id, shift_def_id, work_location_id, work_date, status, leave_type, absent_reason FROM shift_schedule WHERE work_date BETWEEN ? AND ?').all(sourceWeekStart, sourceEnd)
+  const rows = db.prepare('SELECT id, staff_id, dept_id, shift_def_id, work_location_id, work_date, status, leave_type, absent_reason FROM shift_schedule WHERE work_date BETWEEN ? AND ?').all(sourceWeekStart, sourceEnd)
+  const sourceSegments = db.prepare(`
+    SELECT seg.* FROM shift_schedule_segments seg
+    JOIN shift_schedule ss ON ss.id = seg.schedule_id
+    WHERE ss.work_date BETWEEN ? AND ?
+    ORDER BY seg.schedule_id, seg.sequence_no
+  `).all(sourceWeekStart, sourceEnd)
+  const segmentsBySchedule = new Map()
+  sourceSegments.forEach(segment => {
+    if (!segmentsBySchedule.has(segment.schedule_id)) segmentsBySchedule.set(segment.schedule_id, [])
+    segmentsBySchedule.get(segment.schedule_id).push(segment)
+  })
 
   const dayDiff = Math.round((new Date(targetWeekStart) - new Date(sourceWeekStart)) / 86400000)
 
@@ -1528,11 +2050,30 @@ export function copyWeekSchedule(sourceWeekStart, targetWeekStart, createdBy) {
       leave_type=excluded.leave_type,
       absent_reason=excluded.absent_reason
   `)
+  const findTarget = db.prepare('SELECT id FROM shift_schedule WHERE staff_id = ? AND work_date = ?')
+  const clearTargetSegments = db.prepare('DELETE FROM shift_schedule_segments WHERE schedule_id = ?')
+  const insertSegment = db.prepare(`
+    INSERT INTO shift_schedule_segments(
+      schedule_id, sequence_no, shift_def_id, role_id, work_location_id,
+      start_time, end_time, break_minutes, actual_start, actual_end, note, status, created_by
+    ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?)
+  `)
 
   db.transaction(() => {
     rows.forEach(r => {
       const newDate = addDaysStr(r.work_date, dayDiff)
       upsert.run(r.staff_id, r.dept_id, r.shift_def_id, r.work_location_id || null, newDate, r.status || 'scheduled', r.leave_type || null, r.absent_reason || null, createdBy)
+      const targetId = findTarget.get(r.staff_id, newDate)?.id
+      if (targetId) {
+        clearTargetSegments.run(targetId)
+        ;(segmentsBySchedule.get(r.id) || []).forEach(segment => {
+          insertSegment.run(
+            targetId, segment.sequence_no, segment.shift_def_id, segment.role_id, segment.work_location_id,
+            segment.start_time, segment.end_time, segment.break_minutes || 0,
+            segment.note, segment.status || 'planned', createdBy
+          )
+        })
+      }
     })
   })()
 

@@ -88,6 +88,20 @@ describe('scheduleShareExport', () => {
     expect(html).toContain('PDF icin tarayici yazdir')
   })
 
+  it('summarizes split-shift segments in personnel share output', () => {
+    const splitStaff = [{
+      ...STAFF[0],
+      days: { [WEEK[0]]: shift({ segments: [
+        { start_time: '08:00', end_time: '12:00', work_location_name: 'OTC Lokal', status: 'planned' },
+        { start_time: '13:00', end_time: '17:00', work_location_name: 'Kamp', status: 'planned' },
+      ] }) },
+    }]
+    const html = buildScheduleShareHtml(payload({ staffGrid: splitStaff, visibleGrid: splitStaff }))
+    expect(html).toContain('08:00-12:00')
+    expect(html).toContain('2 parca')
+    expect(html).toContain('OTC Lokal / Kamp')
+  })
+
   it('can export only the visible filtered list and hide location details', () => {
     const html = buildScheduleShareHtml(payload({
       visibleGrid: [STAFF[1]],

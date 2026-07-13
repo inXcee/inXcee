@@ -105,7 +105,7 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
   }
 
   const assignCell = useMutation({
-    mutationFn: ({ staffId, deptId, shiftDefId, workLocationId, date, status }) =>
+    mutationFn: ({ staffId, deptId, shiftDefId, workLocationId, date, status, overrideLeave, overrideReason }) =>
       api.post('/shifts/schedule', {
         entries: [{
           staff_id: staffId,
@@ -114,7 +114,9 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
           work_location_id: workLocationId || null,
           work_date: date,
           status: status || 'scheduled',
-        }]
+        }],
+        override_leave: overrideLeave === true,
+        override_reason: overrideReason || undefined,
       }),
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ['schedule'] })
@@ -865,7 +867,17 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
         )}
       </div>
 
-      {scheduleView === 'weekly' && <CoverageBoard from={weekStart} to={weekEnd} weekDays={weekDays} onPersonClick={onPersonClick} />}
+      {scheduleView === 'weekly' && <CoverageBoard
+        from={weekStart}
+        to={weekEnd}
+        weekDays={weekDays}
+        onPersonClick={onPersonClick}
+        canEdit={canEdit}
+        departments={departments}
+        shiftDefs={shiftDefs}
+        roles={staffRoles}
+        locations={workLocations}
+      />}
 
       {scheduleView === 'weekly' && (
         <div style={{
@@ -1333,7 +1345,10 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
                     {/* Day cells */}
                     {weekDays.map((d, i) => {
                       const cell = person.days[d]
-                      const sc = cell?.shift_color ? shiftColor(cell.shift_color) : null
+                      const segments = (cell?.segments || []).filter(segment => segment.status !== 'cancelled')
+                      const sc = cell?.shift_color
+                        ? shiftColor(cell.shift_color)
+                        : segments[0]?.shift_color ? shiftColor(segments[0].shift_color) : null
                       const sun = isSunday(d)
                       const isToday = d === todayStr()
                       const isLeave = cell?.status === 'on_leave'
@@ -1354,6 +1369,12 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
                           pillBg = lc.bg; pillColor = lc.text; pillLabel = `${lc.emoji} ${lc.short}`; pillSub = leaveTypeLabel(cell.leave_type)
                         } else if (isAbsent) {
                           pillBg = 'rgba(231,76,60,.12)'; pillColor = 'var(--red)'; pillLabel = '✗ YOK'
+                        } else if (segments.length) {
+                          const first = segments[0]
+                          pillBg = sc?.bg || 'var(--surface2)'; pillColor = sc?.text || 'var(--blue)'
+                          pillLabel = `${first.start_time}-${first.end_time}`
+                          const locationCount = new Set(segments.map(segment => segment.work_location_name).filter(Boolean)).size
+                          pillSub = `${segments.length} parça${locationCount ? ` · ${locationCount} nokta` : ''}`
                         } else if (sc) {
                           pillBg = sc.bg; pillColor = sc.text
                           pillLabel = shiftHoursFrom(cell) || cell.shift_name
@@ -1552,6 +1573,8 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
           assignCell={assignCell}
           deleteShift={deleteShift}
           workLocations={workLocations}
+          staffRoles={staffRoles}
+          canOverrideLeave={user?.role === 'campus_manager'}
           formatDate={formatDate}
           shortDay={shortDay}
           shiftColor={shiftColor}

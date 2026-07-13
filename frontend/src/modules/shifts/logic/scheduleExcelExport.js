@@ -84,6 +84,13 @@ function displayForCell(cell) {
   if (cell.status === 'on_leave') return `Izin - ${leaveTypeLabel(cell.leave_type)}`
   if (cell.status === 'absent') return cell.absent_reason ? `YOK\n${cell.absent_reason}` : 'YOK'
   if (isWorking(cell)) {
+    const segments = (cell.segments || []).filter(segment => segment.status !== 'cancelled')
+    if (segments.length) {
+      return segments.map(segment => {
+        const detail = [segment.work_location_name, segment.role_name].filter(Boolean).join(' · ')
+        return `${segment.start_time}-${segment.end_time}${detail ? ` ${detail}` : ''}`
+      }).join('\n')
+    }
     const first = shiftHoursFrom(cell) || cell.shift_name || statusLabel(cell)
     const second = cell.work_location_name || cell.shift_name || ''
     return second ? `${first}\n${second}` : first

@@ -1,5 +1,7 @@
 import {
   getDepartments, getShiftDefinitions, getSchedule, bulkAssignShifts, assignmentWarnings,
+  getScheduleEntry, getScheduleSegment, listScheduleSegments,
+  createScheduleSegment, updateScheduleSegment, deleteScheduleSegment,
   getWorkLocations, createWorkLocation, updateWorkLocation, deleteWorkLocation,
   getStaffRoles, createStaffRole, updateStaffRole, deleteStaffRole, getScheduleBreakdown, getBreakdownAssignees,
   getStaffWithShiftStatus, createLeaveRequest, approveLeaveRequest,
@@ -8,7 +10,8 @@ import {
   getShiftStatistics, getDepartmentSummary,
   createDepartment, updateDepartment, deleteDepartment,
   createShiftDefinition, updateShiftDefinition, deleteShiftDefinition, getShiftCoverage,
-  cancelLeaveRequest, createSwapRequest, getSwapRequests, approveSwapRequest, rejectSwapRequest,
+  getCoverageRules, createCoverageRule, updateCoverageRule, deleteCoverageRule, getScheduleCandidates,
+  cancelLeaveRequest, createSwapRequest, getSwapRequests, acceptSwapRequest, approveSwapRequest, rejectSwapRequest,
   copyWeekSchedule, applyRotationTemplate, searchStaff, deleteScheduleEntry,
   listRotationTemplates, getRotationTemplate, createRotationTemplate, deleteRotationTemplate,
   listPeriodLocks, lockedPeriodsFor, lockPeriod, unlockPeriod,
@@ -650,13 +653,150 @@ export function updatePuantajPeriodApprovalService({ period, dept_id, action, no
   return row
 }
 
-export function bulkAssignService(entries, createdBy) {
+function assertLeaveAssignmentAllowed(warnings, user, overrideLeave, overrideReason) {
+  if (!warnings.length) return
+  if (!overrideLeave) {
+    throw Object.assign(new Error('Onayli izin gunune vardiya atanamaz. Mudur gerekceyle istisna verebilir.'), {
+      statusCode: 409,
+      details: { warnings, override_required: true },
+    })
+  }
+  if (user?.role !== 'campus_manager') {
+    throw Object.assign(new Error('Izin uzerine vardiya istisnasini sadece mudur verebilir.'), { statusCode: 403 })
+  }
+  if (String(overrideReason || '').trim().length < 5) {
+    throw Object.assign(new Error('Izin istisnasi icin en az 5 karakter gerekce gerekli.'), { statusCode: 400 })
+  }
+}
+
+export function bulkAssignService(entries, user, options = {}) {
   if (!entries?.length) throw new Error('Atama listesi boş')
   assertPeriodsUnlocked(entries.map(e => e.work_date))
-  const warnings = assignmentWarnings(entries) // onaylı izin ezme uyarısı (bloklamaz)
-  bulkAssignShifts(entries, createdBy)
-  const approvalsReset = resetDailyApprovalsForDates(entries.map(e => e.work_date), createdBy)
-  return { ok: true, warnings, approvalsReset }
+  const warnings = assignmentWarnings(entries)
+  assertLeaveAssignmentAllowed(warnings, user, options.overrideLeave, options.overrideReason)
+  bulkAssignShifts(entries, user?.id)
+  const approvalsReset = resetDailyApprovalsForDates(entries.map(e => e.work_date), user?.id)
+  return {
+    ok: true,
+    warnings,
+    approvalsReset,
+    leaveOverride: warnings.length > 0 ? {
+      approved_by: user?.id,
+      reason: String(options.overrideReason || '').trim(),
+    } : null,
+  }
+}
+
+function normalizeClock(value, field) {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(String(value || '').trim())
+  if (!match || Number(match[1]) > 23 || Number(match[2]) > 59) {
+    throw Object.assign(new Error(`${field} HH:MM formatinda olmali`), { statusCode: 400 })
+  }
+  return `${String(Number(match[1])).padStart(2, '0')}:${match[2]}`
+}
+
+function clockRanges(start, end) {
+  const toMinutes = value => {
+    const [hour, minute] = value.split(':').map(Number)
+    return hour * 60 + minute
+  }
+  const startMin = toMinutes(start)
+  const endMin = toMinutes(end)
+  if (endMin > startMin) return [[startMin, endMin]]
+  return [[startMin, 1440], [0, endMin]]
+}
+
+function clocksOverlap(leftStart, leftEnd, rightStart, rightEnd) {
+  return clockRanges(leftStart, leftEnd).some(left => (
+    clockRanges(rightStart, rightEnd).some(right => left[0] < right[1] && right[0] < left[1])
+  ))
+}
+
+function normalizeSegmentInput(data, existing = null) {
+  const shiftDefId = data.shift_def_id === undefined ? existing?.shift_def_id : (Number(data.shift_def_id) || null)
+  const shiftDef = shiftDefId ? getShiftDefinitions().find(item => Number(item.id) === Number(shiftDefId)) : null
+  const startTime = normalizeClock(data.start_time ?? existing?.start_time ?? shiftDef?.start_hour, 'Baslangic saati')
+  const endTime = normalizeClock(data.end_time ?? existing?.end_time ?? shiftDef?.end_hour, 'Bitis saati')
+  if (startTime === endTime) throw Object.assign(new Error('Vardiya parcasi baslangic ve bitis saati ayni olamaz'), { statusCode: 400 })
+  const breakMinutes = Number(data.break_minutes ?? existing?.break_minutes ?? 0)
+  if (!Number.isInteger(breakMinutes) || breakMinutes < 0 || breakMinutes > 480) {
+    throw Object.assign(new Error('Mola 0-480 dakika arasinda olmali'), { statusCode: 400 })
+  }
+  return {
+    shift_def_id: shiftDefId,
+    role_id: data.role_id === undefined ? (existing?.role_id || null) : (Number(data.role_id) || null),
+    work_location_id: data.work_location_id === undefined ? (existing?.work_location_id || null) : (Number(data.work_location_id) || null),
+    start_time: startTime,
+    end_time: endTime,
+    break_minutes: breakMinutes,
+    actual_start: data.actual_start === undefined ? existing?.actual_start : (data.actual_start || null),
+    actual_end: data.actual_end === undefined ? existing?.actual_end : (data.actual_end || null),
+    note: data.note === undefined ? existing?.note : (String(data.note || '').trim() || null),
+    status: data.status || existing?.status || 'planned',
+  }
+}
+
+function assertNoSegmentOverlap(scheduleId, segment, excludeId = null) {
+  const overlap = listScheduleSegments(scheduleId).find(item => (
+    item.status !== 'cancelled'
+    && Number(item.id) !== Number(excludeId)
+    && clocksOverlap(segment.start_time, segment.end_time, item.start_time, item.end_time)
+  ))
+  if (overlap) {
+    throw Object.assign(new Error(`${overlap.start_time}-${overlap.end_time} parcasiyla saat cakismasi var`), {
+      statusCode: 409,
+      details: { conflicting_segment: overlap },
+    })
+  }
+}
+
+export function scheduleSegmentsService(staffId, workDate) {
+  const schedule = getScheduleEntry(staffId, workDate)
+  return { schedule, segments: schedule ? listScheduleSegments(schedule.id) : [] }
+}
+
+export function createScheduleSegmentService(data, user) {
+  if (!data?.staff_id || !data?.work_date) throw new Error('Personel ve tarih gerekli')
+  assertPeriodsUnlocked([data.work_date])
+  let schedule = getScheduleEntry(data.staff_id, data.work_date)
+  const assignment = [{
+    staff_id: Number(data.staff_id),
+    dept_id: data.dept_id || schedule?.effective_dept_id || null,
+    shift_def_id: data.shift_def_id || schedule?.shift_def_id || null,
+    work_location_id: data.work_location_id || schedule?.work_location_id || null,
+    work_date: data.work_date,
+    status: 'scheduled',
+  }]
+  const warnings = assignmentWarnings(assignment)
+  assertLeaveAssignmentAllowed(warnings, user, data.override_leave, data.override_reason)
+  if (!schedule || !['scheduled', 'worked', 'overtime'].includes(schedule.status)) {
+    bulkAssignShifts(assignment, user?.id)
+    schedule = getScheduleEntry(data.staff_id, data.work_date)
+  }
+  const segment = normalizeSegmentInput(data)
+  assertNoSegmentOverlap(schedule.id, segment)
+  const row = createScheduleSegment({ ...segment, schedule_id: schedule.id }, user?.id)
+  resetDailyApprovalsForDates([data.work_date], user?.id)
+  return { row, warnings }
+}
+
+export function updateScheduleSegmentService(id, data, user) {
+  const existing = getScheduleSegment(id)
+  if (!existing) throw Object.assign(new Error('Vardiya parcasi bulunamadi'), { statusCode: 404 })
+  assertPeriodsUnlocked([existing.work_date])
+  const segment = normalizeSegmentInput(data, existing)
+  assertNoSegmentOverlap(existing.schedule_id, segment, id)
+  const row = updateScheduleSegment(id, segment)
+  resetDailyApprovalsForDates([existing.work_date], user?.id)
+  return row
+}
+
+export function deleteScheduleSegmentService(id, user) {
+  const existing = getScheduleSegment(id)
+  if (!existing) throw Object.assign(new Error('Vardiya parcasi bulunamadi'), { statusCode: 404 })
+  assertPeriodsUnlocked([existing.work_date])
+  deleteScheduleSegment(id)
+  resetDailyApprovalsForDates([existing.work_date], user?.id)
 }
 
 export function staffStatusService(date, deptId) {
@@ -1395,6 +1535,76 @@ export function coverageService({ from, to } = {}) {
   return getShiftCoverage(from, to)
 }
 
+function normalizeCoverageRule(data, existing = null) {
+  const days = data.days_of_week ?? existing?.days_of_week ?? '1,2,3,4,5,6,7'
+  const normalizedDays = [...new Set(String(days).split(',').map(Number).filter(day => day >= 1 && day <= 7))].sort((a, b) => a - b)
+  if (!normalizedDays.length) throw Object.assign(new Error('En az bir aktif gun secilmeli'), { statusCode: 400 })
+  const minStaff = Number(data.min_staff ?? existing?.min_staff ?? 1)
+  if (!Number.isInteger(minStaff) || minStaff < 0 || minStaff > 999) {
+    throw Object.assign(new Error('Kadro hedefi 0-999 arasinda olmali'), { statusCode: 400 })
+  }
+  return {
+    name: String(data.name ?? existing?.name ?? '').trim(),
+    dept_id: data.dept_id === undefined ? existing?.dept_id : (Number(data.dept_id) || null),
+    role_id: data.role_id === undefined ? existing?.role_id : (Number(data.role_id) || null),
+    work_location_id: data.work_location_id === undefined ? existing?.work_location_id : (Number(data.work_location_id) || null),
+    shift_def_id: data.shift_def_id === undefined ? existing?.shift_def_id : (Number(data.shift_def_id) || null),
+    start_time: normalizeClock(data.start_time ?? existing?.start_time, 'Kapsama baslangici'),
+    end_time: normalizeClock(data.end_time ?? existing?.end_time, 'Kapsama bitisi'),
+    min_staff: minStaff,
+    days_of_week: normalizedDays.join(','),
+    is_active: data.is_active === undefined ? (existing?.is_active ?? 1) : (data.is_active ? 1 : 0),
+  }
+}
+
+export function coverageRulesService({ includeInactive = false } = {}) {
+  return getCoverageRules({ includeInactive })
+}
+
+export function createCoverageRuleService(data, user) {
+  const rule = normalizeCoverageRule(data)
+  if (!rule.name) throw Object.assign(new Error('Kapsama kurali adi gerekli'), { statusCode: 400 })
+  return createCoverageRule(rule, user?.id)
+}
+
+export function updateCoverageRuleService(id, data) {
+  const existing = getCoverageRules({ includeInactive: true }).find(row => Number(row.id) === Number(id))
+  if (!existing) throw Object.assign(new Error('Kapsama kurali bulunamadi'), { statusCode: 404 })
+  return updateCoverageRule(id, normalizeCoverageRule(data, existing))
+}
+
+export function deleteCoverageRuleService(id) {
+  deleteCoverageRule(id)
+}
+
+export function scheduleCandidatesService(filters = {}) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(filters.date || '')) {
+    throw Object.assign(new Error('date YYYY-MM-DD formatinda olmali'), { statusCode: 400 })
+  }
+  const segment = filters.segment_id ? getScheduleSegment(filters.segment_id) : null
+  const result = getScheduleCandidates({
+    date: filters.date,
+    deptId: filters.dept_id || segment?.dept_id || null,
+    roleId: filters.role_id || segment?.role_id || null,
+    workLocationId: filters.work_location_id || segment?.work_location_id || null,
+    shiftDefId: filters.shift_def_id || segment?.shift_def_id || null,
+    startTime: filters.start_time || segment?.start_time || null,
+    endTime: filters.end_time || segment?.end_time || null,
+    excludeStaffId: filters.exclude_staff_id || segment?.staff_id || null,
+  })
+  return {
+    date: filters.date,
+    target: {
+      segment_id: segment?.id || null,
+      role_id: filters.role_id || segment?.role_id || null,
+      work_location_id: filters.work_location_id || segment?.work_location_id || null,
+      start_time: filters.start_time || segment?.start_time || null,
+      end_time: filters.end_time || segment?.end_time || null,
+    },
+    candidates: result,
+  }
+}
+
 export function updateShiftDefService(id, data) {
   updateShiftDefinition(id, data)
 }
@@ -1410,6 +1620,21 @@ export function cancelLeaveService(id) {
 export function createSwapService(data) {
   if (!data.requester_id || !data.target_id || !data.swap_date)
     throw new Error('Zorunlu alanlar eksik')
+  if (Number(data.requester_id) === Number(data.target_id)) throw new Error('Ayni personel kendi vardiyasiyla takas yapamaz')
+  if ((data.requester_segment_id && !data.target_segment_id) || (!data.requester_segment_id && data.target_segment_id)) {
+    throw new Error('Parcali takasta iki vardiya parcasi da secilmeli')
+  }
+  if (data.requester_segment_id) {
+    const requesterSegment = getScheduleSegment(data.requester_segment_id)
+    const targetSegment = getScheduleSegment(data.target_segment_id)
+    if (!requesterSegment || !targetSegment) throw new Error('Takas vardiya parcasi bulunamadi')
+    if (Number(requesterSegment.staff_id) !== Number(data.requester_id)
+      || Number(targetSegment.staff_id) !== Number(data.target_id)
+      || requesterSegment.work_date !== data.swap_date
+      || targetSegment.work_date !== data.swap_date) {
+      throw new Error('Takas parcasi personel veya tarih ile uyusmuyor')
+    }
+  }
   return createSwapRequest(data)
 }
 
@@ -1417,8 +1642,15 @@ export function swapListService(filters) {
   return getSwapRequests(filters)
 }
 
+export function acceptSwapService(id, targetId) {
+  if (!targetId) throw new Error('Hedef personel gerekli')
+  return acceptSwapRequest(id, targetId)
+}
+
 export function approveSwapService(id, userId) {
-  approveSwapRequest(id, userId)
+  const row = approveSwapRequest(id, userId)
+  resetDailyApprovalsForDates([row.swap_date], userId)
+  return row
 }
 
 export function rejectSwapService(id, userId) {
