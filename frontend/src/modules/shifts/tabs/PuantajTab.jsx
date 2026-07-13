@@ -1075,7 +1075,7 @@ function PuantajControlView({ audit, monthLabel, canEdit, isLocked, onOpenCalend
   )
 }
 
-function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, canEdit, selectedAction, setSelectedAction, onApplyStatus, updatingKeys, onPersonClick, approval, onOpenApprovalDay }) {
+function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, canEdit, selectedAction, setSelectedAction, onApplyStatus, updatingKeys, onPersonClick, approval, onOpenApprovalDay, writesPendingRef }) {
   const [dayData, setDayData] = useState({}) // staffId → days array
 
   // Gün onay durumu (onay masası verisi) — başlık rozetleri + onaylı güne yazım uyarısı
@@ -1130,8 +1130,11 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
   }, [month, deptFilter])
 
   useEffect(() => {
-    if (monthDayData) setDayData(monthDayData)
-  }, [monthDayData])
+    // Yazım uçuştayken (writesPendingRef) sunucu yanıtı local girişleri EZMESİN —
+    // eski yanıt henüz kaydedilen hücreleri içermez ("girilenler kayboluyor" bug'ı).
+    // Yazımlar bitince onSettled invalidation'ı taze veriyi getirir, o zaman uygulanır.
+    if (monthDayData && !writesPendingRef?.current) setDayData(monthDayData)
+  }, [monthDayData]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const stopPainting = () => { paintingRef.current = false }
@@ -2489,8 +2492,18 @@ export default function PuantajTab({ departments }) {
     qc.invalidateQueries({ queryKey: ['period-locks'] })
   }
 
+  // Uçuştaki yazım sayacı — RQ v5'te onSettled anında mutation isMutating'e
+  // SAYILMAZ; o yüzden kendi sayacımızı tutuyoruz. writesPendingRef ayrıca
+  // CalendarView'da sunucu verisinin local girişleri ezmesini engeller.
+  const pendingWritesRef = useRef(0)
+  const writesPendingRef = useRef(false)
+
   const updatePuantajDay = useMutation({
     mutationKey: ['puantaj-day-update'],
+    onMutate: () => {
+      pendingWritesRef.current += 1
+      writesPendingRef.current = true
+    },
     mutationFn: ({ changes, action }) => {
       if (action.status === 'clear') {
         return Promise.all(changes.map(change => api.delete(`/shifts/schedule/${change.staff.id}/${change.date}`)))
@@ -2537,8 +2550,10 @@ export default function PuantajTab({ departments }) {
     onSettled: () => {
       // Hızlı girişte her hücre için tam grid refetch'i ekranı yineliyor ve
       // eski (yeni yazımları içermeyen) yanıt local girişleri siliyordu.
-      // Yalnız SON yazım bitince bir kez tazele (settling çağrı 1 sayılır).
-      if (qc.isMutating({ mutationKey: ['puantaj-day-update'] }) <= 1) {
+      // Yalnız TÜM uçuştaki yazımlar bitince bir kez tazele.
+      pendingWritesRef.current = Math.max(0, pendingWritesRef.current - 1)
+      if (pendingWritesRef.current === 0) {
+        writesPendingRef.current = false
         qc.invalidateQueries({ queryKey: ['puantaj'] })
         qc.invalidateQueries({ queryKey: ['puantaj-days-month'] })
         qc.invalidateQueries({ queryKey: ['puantaj-approval'] }) // veri değişimi onayı düşürmüş olabilir (P1)
@@ -2921,6 +2936,7 @@ export default function PuantajTab({ departments }) {
           onPersonClick={setSelectedRow}
           approval={approvalPayload}
           onOpenApprovalDay={() => setViewMode('approval')}
+          writesPendingRef={writesPendingRef}
         />
       )}
       {viewMode === 'summary' && (
