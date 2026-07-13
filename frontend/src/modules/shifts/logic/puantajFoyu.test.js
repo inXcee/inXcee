@@ -1,15 +1,19 @@
 import { describe, it, expect } from 'vitest'
-import { dayCode, buildFoyuRow, FOYU_TOTAL_COLUMNS } from './puantajFoyu.js'
+import { dayCode, buildFoyuRow, buildFoyuCodeIndex, FOYU_TOTAL_COLUMNS } from './puantajFoyu.js'
 
 describe('dayCode', () => {
   it('durum kodlarını eşler', () => {
     expect(dayCode({ status: 'worked' }).code).toBe('N')
     expect(dayCode({ status: 'overtime' }).code).toBe('N')
-    expect(dayCode({ status: 'off' }).code).toBe('h')
-    expect(dayCode({ status: 'on_leave', leave_type: 'sick' }).code).toBe('r')
-    expect(dayCode({ status: 'on_leave', leave_type: 'unpaid' }).code).toBe('üi')
-    expect(dayCode({ status: 'on_leave', leave_type: 'annual' }).code).toBe('yi')
-    expect(dayCode({ status: 'on_leave', leave_type: 'marriage' }).code).toBe('i')
+    expect(dayCode({ status: 'off' }).code).toBe('H')
+    expect(dayCode({ status: 'on_leave', leave_type: 'sick' }).code).toBe('R')
+    expect(dayCode({ status: 'on_leave', leave_type: 'unpaid' }).code).toBe('Üİ')
+    expect(dayCode({ status: 'on_leave', leave_type: 'annual' }).code).toBe('Yİ')
+    expect(dayCode({ status: 'on_leave', leave_type: 'marriage' }).code).toBe('İ')
+    // Kod kayıt indeksi ile: owed → Aİ, bilinmeyen izin → İ (genel)
+    const idx = buildFoyuCodeIndex(null)
+    expect(dayCode({ status: 'on_leave', leave_type: 'owed' }, idx).code).toBe('Aİ')
+    expect(dayCode({ status: 'on_leave', leave_type: 'marriage' }, idx).code).toBe('İ')
     expect(dayCode({ status: 'absent' }).code).toBe('Y')
     expect(dayCode({ status: 'scheduled' }).code).toBe('P')
   })
@@ -40,7 +44,7 @@ describe('buildFoyuRow', () => {
 
   it('hücre kodları ve toplamlar doğru', () => {
     const row = buildFoyuRow(staff, days, holidaySet)
-    expect(row.cells.map(c => c.code)).toEqual(['N', 'N', 'N', 'h', '', 'yi', 'r', 'üi', 'i', 'Y', ''])
+    expect(row.cells.map(c => c.code)).toEqual(['N', 'N', 'N', 'H', '', 'Yİ', 'R', 'Üİ', 'İ', 'Y', ''])
     expect(row.totals).toEqual({
       worked: 3, off: 1, annual: 1, sick: 1, unpaid: 1, otherLeave: 1,
       absent: 1, fmHours: 3, holidayWorked: 1,

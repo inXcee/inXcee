@@ -1,4 +1,4 @@
-import { buildFoyuRow, FOYU_LEGEND, FOYU_TOTAL_COLUMNS } from './puantajFoyu.js'
+import { buildFoyuRow, buildFoyuCodeIndex, buildFoyuLegend, FOYU_TOTAL_COLUMNS } from './puantajFoyu.js'
 import { codeHex } from './shiftColors.js'
 import {
   COLORS,
@@ -216,9 +216,9 @@ function detailRows(rows, daysInMonth) {
   ))
 }
 
-export function buildFoyuRows(staffRows, daysByStaff, holidaySet) {
+export function buildFoyuRows(staffRows, daysByStaff, holidaySet, codeIndex) {
   return staffRows.map(staff => ({
-    ...buildFoyuRow(staff, daysByStaff?.[staff.id] || [], holidaySet),
+    ...buildFoyuRow(staff, daysByStaff?.[staff.id] || [], holidaySet, codeIndex),
     deptId: staff.department_id || staff.dept_id || null,
     position: staff.position || '',
   }))
@@ -326,7 +326,12 @@ function addDataRows(ws, rows, context) {
   })
 }
 
-function addLegend(ws) {
+// Kod → hex: kayıt varsa oradan, yoksa eski sabitler
+function hexForCode(code, context) {
+  return context?.hexByCode?.[code] || codeHex(code)
+}
+
+function addLegend(ws, context) {
   ws.addRow([])
   const title = ws.addRow(['KOD AÇIKLAMALARI'])
   title.height = 18
@@ -334,9 +339,9 @@ function addLegend(ws) {
   const titleCell = title.getCell(1)
   styleTitleCell(titleCell, COLORS.header)
 
-  FOYU_LEGEND.forEach(([code, label]) => {
+  ;(context?.legendRows || buildFoyuLegend(null)).forEach(([code, label]) => {
     const row = ws.addRow([code, label])
-    row.getCell(1).fill = fill(codeHex(code))
+    row.getCell(1).fill = fill(hexForCode(code, context))
     row.getCell(1).font = { bold: true, size: 8, color: { argb: 'FFFFFFFF' } }
     row.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' }
     row.getCell(1).border = border
@@ -393,7 +398,7 @@ function addFoyuSheet(workbook, sheetName, rows, context, tabHex = COLORS.purple
   const sheetContext = { ...context, totalColStart, lastCol }
   addHeaderRow(ws, sheetContext)
   addDataRows(ws, rows, sheetContext)
-  addLegend(ws)
+  addLegend(ws, sheetContext)
   const signatureRow = addSignatureBlocks(ws, lastCol)
   setFoyuWidths(ws, daysInMonth, totalColStart)
 
@@ -656,7 +661,7 @@ function addDetailSheet(workbook, sheetName, rows, context) {
       cell.font = { size: 8, bold: colNo === 5 }
       cell.alignment = { horizontal: [1, 5, 9].includes(colNo) ? 'center' : 'left', vertical: 'middle', wrapText: true }
       if (colNo === 5 && item.code) {
-        cell.fill = fill(codeHex(item.code))
+        cell.fill = fill(hexForCode(item.code, context))
         cell.font = { size: 8, bold: true, color: { argb: 'FFFFFFFF' } }
       }
     })
@@ -824,7 +829,10 @@ export function buildPuantajFoyuWorkbook(ExcelJS, options) {
   const monthHolidays = holidays.filter(holiday => holiday.date?.startsWith(options.month))
   const holidaySet = new Set(monthHolidays.map(holiday => holiday.date))
   const holidayNames = Object.fromEntries(monthHolidays.map(holiday => [holiday.date, holiday.name]))
-  const rows = options.rows || buildFoyuRows(options.staffRows || [], options.daysByStaff || {}, holidaySet)
+  const codeIndex = buildFoyuCodeIndex(options.codes)
+  const legendRows = buildFoyuLegend(options.codes)
+  const hexByCode = Object.fromEntries(Object.values(codeIndex).map(meta => [meta.code, meta.hex]))
+  const rows = options.rows || buildFoyuRows(options.staffRows || [], options.daysByStaff || {}, holidaySet, codeIndex)
   const summaryRows = summarizeFoyuRows(rows)
   const deptName = options.deptName || 'Tüm Departmanlar'
   const companyName = options.companyName || 'YYS Kampüs'
@@ -848,6 +856,8 @@ export function buildPuantajFoyuWorkbook(ExcelJS, options) {
     companyName,
     approval,
     approvalStats,
+    legendRows,
+    hexByCode,
   }
 
   const mainName = uniqueSheetName('Puantaj', usedNames)

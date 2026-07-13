@@ -16,6 +16,7 @@ import {
   listPuantajDailyApprovals, upsertPuantajDailyApproval,
   insertPuantajApprovalEvent, listPuantajApprovalEvents,
   resetDailyApprovalsForDates, getPuantajDayIssueCounts, getPuantajApprovalOverview,
+  listPuantajCodes, createPuantajCode, updatePuantajCode, getPuantajCode, deletePuantajCode,
   getStaffDetail,
   getStaffList, getStaffById, createStaff, updateStaff, deleteStaff,
   getStaffDayBreakdown, getPuantajDayRows, listDeductions
@@ -360,6 +361,79 @@ function puantajScopeLabel(deptId) {
   if (deptId == null) return 'tum departmanlar'
   const dept = getDB().prepare('SELECT name FROM departments WHERE id = ?').get(deptId)
   return dept?.name || `departman #${deptId}`
+}
+
+// ── Puantaj kod kayıt sistemi ──
+const HEX_RE = /^[0-9a-fA-F]{6}$/
+
+function cleanCodeHex(value, fallback = '64748B') {
+  const hex = String(value || '').replace('#', '').trim().toUpperCase()
+  return HEX_RE.test(hex) ? hex : fallback
+}
+
+export function puantajCodesService(filters = {}) {
+  return listPuantajCodes({ includeInactive: filters.all === '1' || filters.includeInactive === true })
+}
+
+export function createPuantajCodeService(data = {}) {
+  const code = String(data.code || '').trim().toLocaleUpperCase('tr')
+  if (!code || code.length > 4) throw Object.assign(new Error('Kod 1-4 karakter olmalı'), { statusCode: 400 })
+  if (!data.label?.trim()) throw Object.assign(new Error('Kod etiketi zorunlu'), { statusCode: 400 })
+  const status = data.status || 'on_leave'
+  if (!['worked', 'off', 'on_leave', 'absent', 'scheduled'].includes(status)) {
+    throw Object.assign(new Error('Geçersiz durum'), { statusCode: 400 })
+  }
+  // İzin kodlarında leave_type otomatik türetilir (küçük harf slug) — kod bazlı ayrım için benzersiz olmalı
+  const leaveType = status === 'on_leave'
+    ? String(data.leave_type || code).trim().toLocaleLowerCase('tr').replace(/[^a-zçğıöşü0-9_]/g, '_')
+    : null
+  try {
+    return createPuantajCode({
+      code,
+      label: data.label.trim(),
+      colorHex: cleanCodeHex(data.color_hex),
+      status,
+      leaveType,
+      sortOrder: data.sort_order,
+    })
+  } catch (e) {
+    if (String(e.message).includes('UNIQUE')) {
+      throw Object.assign(new Error(`'${code}' kodu zaten var`), { statusCode: 400 })
+    }
+    throw e
+  }
+}
+
+export function updatePuantajCodeService(id, data = {}) {
+  const existing = getPuantajCode(id)
+  if (!existing) throw Object.assign(new Error('Kod bulunamadı'), { statusCode: 404 })
+  const fields = {}
+  if (data.label !== undefined) {
+    if (!String(data.label).trim()) throw Object.assign(new Error('Kod etiketi boş olamaz'), { statusCode: 400 })
+    fields.label = String(data.label).trim()
+  }
+  if (data.color_hex !== undefined) fields.color_hex = cleanCodeHex(data.color_hex, existing.color_hex)
+  if (data.sort_order !== undefined) fields.sort_order = Number(data.sort_order) || 0
+  if (data.is_active !== undefined) {
+    if (existing.is_builtin && !data.is_active) {
+      throw Object.assign(new Error('Yerleşik kod pasifleştirilemez'), { statusCode: 400 })
+    }
+    fields.is_active = data.is_active ? 1 : 0
+  }
+  if (data.code !== undefined && !existing.is_builtin) {
+    const code = String(data.code).trim().toLocaleUpperCase('tr')
+    if (!code || code.length > 4) throw Object.assign(new Error('Kod 1-4 karakter olmalı'), { statusCode: 400 })
+    fields.code = code
+  }
+  updatePuantajCode(id, fields)
+  return getPuantajCode(id)
+}
+
+export function deletePuantajCodeService(id) {
+  const existing = getPuantajCode(id)
+  if (!existing) throw Object.assign(new Error('Kod bulunamadı'), { statusCode: 404 })
+  if (existing.is_builtin) throw Object.assign(new Error('Yerleşik kod silinemez — rengini ve etiketini değiştirebilirsiniz'), { statusCode: 400 })
+  deletePuantajCode(id)
 }
 
 // Departman onay matrisi — müdürün tek ekranda tüm scope'ları görmesi için.

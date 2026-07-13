@@ -4,44 +4,42 @@ import api from '../../../shared/api/client.js'
 import { useAuthStore } from '../../../shared/store/authStore.js'
 import { useDebounce } from '../../../shared/hooks/useDebounce.js'
 import { SkeletonTable, SkeletonGrid } from '../../../shared/components/Skeleton.jsx'
-import { BottomSheet, formatShiftHours, leaveTypeLabel, toastErr, toastOk } from '../shared.jsx'
+import { BottomSheet, ModalOverlay, formatShiftHours, leaveTypeLabel, toastErr, toastOk } from '../shared.jsx'
 import { confirmDialog } from '../../../shared/components/ConfirmDialog.jsx'
 import { actionIdForKey, normalizeRect, cellsInRect, isInRect, moveCell, pushUndo, summarizeColumn } from '../logic/puantajGrid.js'
+import { buildPuantajActions, buildActionIndex, metaForEntry, cleanCodeHex } from '../logic/puantajCodes.js'
 import { saveWorkbook } from '../logic/excelKit.js'
 import { buildPuantajFoyuWorkbook } from '../logic/puantajFoyuExcel.js'
 import { buildPuantajControl } from '../logic/puantajControl.js'
+import StaffDetailPanel from '../StaffDetailPanel.jsx'
 
 const COMPANY_NAME = import.meta.env.VITE_COMPANY_NAME || 'YYS Kampüs'
 
-const PUANTAJ_ACTIONS = [
-  { id: 'worked', status: 'worked', code: 'N', label: 'Normal çalıştı', hint: 'Çalışan', bg: 'rgba(34,197,94,.18)', text: '#22c55e', border: 'rgba(34,197,94,.45)' },
-  { id: 'off', status: 'off', code: 'h', label: 'Haftalık izin', hint: 'Hafta tatili', bg: 'rgba(20,184,166,.18)', text: '#14b8a6', border: 'rgba(20,184,166,.45)' },
-  { id: 'sick', status: 'on_leave', leave_type: 'sick', code: 'r', label: 'Raporlu', hint: 'Rapor', bg: 'rgba(249,115,22,.18)', text: '#f97316', border: 'rgba(249,115,22,.45)' },
-  { id: 'unpaid', status: 'on_leave', leave_type: 'unpaid', code: 'üi', label: 'Ücretsiz izin', hint: 'Ücretsiz', bg: 'rgba(100,116,139,.22)', text: '#94a3b8', border: 'rgba(148,163,184,.5)' },
-  { id: 'annual', status: 'on_leave', leave_type: 'annual', code: 'yi', label: 'Yıllık izin', hint: 'Yıllık', bg: 'rgba(59,130,246,.18)', text: '#60a5fa', border: 'rgba(96,165,250,.45)' },
-  { id: 'absent', status: 'absent', code: 'Y', label: 'Gelmedi', hint: 'Yok', bg: 'rgba(239,68,68,.16)', text: '#ef4444', border: 'rgba(239,68,68,.45)' },
-  { id: 'scheduled', status: 'scheduled', code: 'P', label: 'Planlı', hint: 'Plan', bg: 'rgba(148,163,184,.14)', text: 'var(--text3)', border: 'rgba(148,163,184,.32)' },
-  { id: 'clear', status: 'clear', code: 'sil', label: 'Kaydı sil', hint: 'Temizle', bg: 'var(--surface2)', text: 'var(--text3)', border: 'var(--border)' },
-]
+// Kod kayıt sistemi (042): palet DB'den gelir; registry modül seviyesinde tutulur ki
+// dayStatusMeta / ACTION_BY_ID erişen tüm alt bileşenler prop zinciri olmadan çözebilsin.
+// PuantajTab render'ında setPuantajCodeRegistry ile güncellenir (parent önce render olur).
+let CODE_REGISTRY = (() => {
+  const actions = buildPuantajActions(null)
+  return { actions, ...buildActionIndex(actions) }
+})()
 
-const ACTION_BY_ID = Object.fromEntries(PUANTAJ_ACTIONS.map(a => [a.id, a]))
+function setPuantajCodeRegistry(codes) {
+  const actions = buildPuantajActions(codes)
+  CODE_REGISTRY = { actions, ...buildActionIndex(actions) }
+  return CODE_REGISTRY
+}
+
+const ACTION_BY_ID = new Proxy({}, { get: (_, id) => CODE_REGISTRY.byId[id] })
 const MONTH_SHORT = ['OCA', 'SUB', 'MAR', 'NIS', 'MAY', 'HAZ', 'TEM', 'AGU', 'EYL', 'EKI', 'KAS', 'ARA']
 const DAY_SHORT = ['Paz', 'Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt']
 
 function dayStatusMeta(entry, isSunday) {
-  const status = entry?.status || (isSunday ? 'sunday' : 'no_record')
-  if (status === 'on_leave') {
-    if (entry?.leave_type === 'sick') return ACTION_BY_ID.sick
-    if (entry?.leave_type === 'unpaid') return ACTION_BY_ID.unpaid
-    if (entry?.leave_type === 'annual') return ACTION_BY_ID.annual
-    return { id: 'leave', code: 'i', label: leaveTypeLabel(entry?.leave_type), hint: 'İzin', bg: 'rgba(167,139,250,.18)', text: 'var(--purple)', border: 'rgba(167,139,250,.45)' }
-  }
-  if (status === 'worked' || status === 'overtime') return ACTION_BY_ID.worked
-  if (status === 'off') return ACTION_BY_ID.off
-  if (status === 'absent') return ACTION_BY_ID.absent
-  if (status === 'scheduled') return ACTION_BY_ID.scheduled
-  if (status === 'sunday') return { id: 'sunday', code: '', label: 'Pazar', hint: 'Kayıt yok', bg: 'rgba(240,165,0,.05)', text: 'var(--accent)', border: 'rgba(240,165,0,.16)' }
-  return { id: 'no_record', code: '', label: 'Kayıt yok', hint: 'Boş', bg: 'transparent', text: 'transparent', border: 'var(--border)' }
+  return metaForEntry(entry, isSunday, CODE_REGISTRY)
+}
+
+// Durum anahtarına göre kod harfi (özet çipleri için) — kayıttan, yoksa varsayılan.
+function codeChar(actionId, fallback) {
+  return CODE_REGISTRY.byId[actionId]?.code || fallback
 }
 
 function summarizeCalendarDays(days) {
@@ -1048,7 +1046,7 @@ function PuantajControlView({ audit, monthLabel, canEdit, isLocked, onOpenCalend
                 <th>DEPARTMAN</th>
                 <th style={{ textAlign: 'center' }}>P</th>
                 <th style={{ textAlign: 'center' }}>BOŞ</th>
-                <th style={{ textAlign: 'center' }}>h</th>
+                <th style={{ textAlign: 'center' }}>H</th>
                 <th style={{ textAlign: 'center' }}>Y</th>
                 <th style={{ textAlign: 'center' }}>Y NOT</th>
                 <th>NOT</th>
@@ -1342,11 +1340,11 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
         marginBottom: '10px',
       }}>
         {[
-          ['N', 'Normal', monthTotals.worked, ACTION_BY_ID.worked],
-          ['h', 'Haftalık', monthTotals.off, ACTION_BY_ID.off],
-          ['r', 'Raporlu', monthTotals.sick, ACTION_BY_ID.sick],
-          ['üi', 'Ücretsiz', monthTotals.unpaid, ACTION_BY_ID.unpaid],
-          ['Y', 'Gelmedi', monthTotals.absent, ACTION_BY_ID.absent],
+          [codeChar('worked', 'N'), 'Normal', monthTotals.worked, ACTION_BY_ID.worked],
+          [codeChar('off', 'H'), 'Haftalık', monthTotals.off, ACTION_BY_ID.off],
+          [codeChar('sick', 'R'), 'Raporlu', monthTotals.sick, ACTION_BY_ID.sick],
+          [codeChar('unpaid', 'Üİ'), 'Ücretsiz', monthTotals.unpaid, ACTION_BY_ID.unpaid],
+          [codeChar('absent', 'Y'), 'Gelmedi', monthTotals.absent, ACTION_BY_ID.absent],
         ].map(([code, label, value, meta]) => (
           <div key={code} style={{
             border: `1px solid ${meta.border}`,
@@ -1380,7 +1378,7 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
         background: 'var(--surface)',
       }}>
         <span style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '1px', marginRight: '2px' }}>KOD</span>
-        {PUANTAJ_ACTIONS.map(action => {
+        {CODE_REGISTRY.actions.map(action => {
           const active = selectedAction.id === action.id
           return (
             <button
@@ -1619,11 +1617,11 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
                   </button>
                   <div style={{ display: 'flex', gap: '3px', marginTop: '5px', flexWrap: 'wrap' }}>
                     {[
-                      ['N', rowStats.worked, ACTION_BY_ID.worked],
-                      ['h', rowStats.off, ACTION_BY_ID.off],
-                      ['r', rowStats.sick, ACTION_BY_ID.sick],
-                      ['üi', rowStats.unpaid, ACTION_BY_ID.unpaid],
-                      ['Y', rowStats.absent, ACTION_BY_ID.absent],
+                      [codeChar('worked', 'N'), rowStats.worked, ACTION_BY_ID.worked],
+                      [codeChar('off', 'H'), rowStats.off, ACTION_BY_ID.off],
+                      [codeChar('sick', 'R'), rowStats.sick, ACTION_BY_ID.sick],
+                      [codeChar('unpaid', 'Üİ'), rowStats.unpaid, ACTION_BY_ID.unpaid],
+                      [codeChar('absent', 'Y'), rowStats.absent, ACTION_BY_ID.absent],
                       ['T', rowHolidayWorked, { text: 'var(--red)', bg: 'rgba(239,68,68,.12)', border: 'rgba(239,68,68,.4)' }],
                       ['FM', rowFmHours ? `${rowFmHours}s` : 0, { text: 'var(--accent)', bg: 'rgba(240,165,0,.12)', border: 'rgba(240,165,0,.4)' }],
                     ].filter(([, value]) => value && value !== 0).map(([code, value, meta]) => (
@@ -2018,7 +2016,7 @@ function BordroSlip({ row, month, monthLabel }) {
   )
 }
 
-function BordroDetailSheet({ row, month, monthLabel, formatMoney, onClose }) {
+function BordroDetailSheet({ row, month, monthLabel, formatMoney, onClose, onOpenStaffDetail }) {
   const [tab, setTab] = useState('hesap') // 'hesap' | 'gun' | 'ytd'
 
   const { data: days = [], isFetching: daysLoading } = useQuery({
@@ -2065,7 +2063,19 @@ function BordroDetailSheet({ row, month, monthLabel, formatMoney, onClose }) {
               {row.position || '—'} · {row.dept_name || '—'} · {monthLabel}
             </div>
           </div>
-          <button onClick={onClose} className="btn btn-ghost btn-sm">✕</button>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            {onOpenStaffDetail && (
+              <button
+                className="btn btn-ghost btn-sm"
+                style={{ fontSize: '10px' }}
+                title="Kişinin tüm geçmişi: aylık puantaj, vardiyalar, izinler, mesailer"
+                onClick={() => onOpenStaffDetail(row.id)}
+              >
+                🗓️ GEÇMİŞ & VARDİYALAR
+              </button>
+            )}
+            <button onClick={onClose} className="btn btn-ghost btn-sm">✕</button>
+          </div>
         </div>
       </div>
 
@@ -2258,6 +2268,134 @@ function BordroDetailSheet({ row, month, monthLabel, formatMoney, onClose }) {
   )
 }
 
+// Kod yönetimi (042): renk/etiket düzenleme, özel kod ekleme/silme, aktif/pasif.
+// Yerleşik kodlar silinemez/pasifleştirilemez; renk+etiket serbest.
+const CODE_STATUS_OPTIONS = [
+  ['on_leave', 'İzin'],
+  ['worked', 'Çalışma'],
+  ['off', 'Hafta tatili'],
+  ['absent', 'Devamsız'],
+  ['scheduled', 'Planlı'],
+]
+
+function PuantajCodeManager({ codes, onClose }) {
+  const qc = useQueryClient()
+  const [form, setForm] = useState({ code: '', label: '', color_hex: '#A78BFA', status: 'on_leave' })
+  const refresh = () => qc.invalidateQueries({ queryKey: ['puantaj-codes'] })
+
+  const createMut = useMutation({
+    mutationFn: () => api.post('/shifts/puantaj/codes', form),
+    onSuccess: () => { refresh(); toastOk('Kod eklendi'); setForm({ code: '', label: '', color_hex: '#A78BFA', status: 'on_leave' }) },
+    onError: toastErr,
+  })
+  const updateMut = useMutation({
+    mutationFn: ({ id, patch }) => api.put(`/shifts/puantaj/codes/${id}`, patch),
+    onSuccess: () => refresh(),
+    onError: toastErr,
+  })
+  const deleteMut = useMutation({
+    mutationFn: (id) => api.delete(`/shifts/puantaj/codes/${id}`),
+    onSuccess: () => { refresh(); toastOk('Kod silindi') },
+    onError: toastErr,
+  })
+
+  return (
+    <ModalOverlay onClose={onClose} wide>
+      <h3 style={{ fontFamily: 'var(--display)', fontSize: 16, letterSpacing: 2, margin: '0 0 4px' }}>PUANTAJ KODLARI</h3>
+      <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', marginBottom: 12 }}>
+        Renkler takvimde ve Excel föyünde otomatik uygulanır · yerleşik kodlar silinemez
+      </div>
+
+      <div style={{ overflowX: 'auto', maxHeight: '46vh', overflowY: 'auto' }}>
+        <table className="data-table" style={{ fontSize: '11px', minWidth: '520px' }}>
+          <thead>
+            <tr>
+              <th style={{ textAlign: 'left' }}>Kod</th>
+              <th style={{ textAlign: 'left' }}>Etiket</th>
+              <th style={{ textAlign: 'left' }}>Tür</th>
+              <th style={{ textAlign: 'center' }}>Renk</th>
+              <th style={{ textAlign: 'center' }}>Aktif</th>
+              <th style={{ textAlign: 'center' }}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {codes.map(row => (
+              <tr key={row.id}>
+                <td>
+                  <span style={{
+                    display: 'inline-block', minWidth: '30px', textAlign: 'center',
+                    fontFamily: 'var(--mono)', fontWeight: 800, fontSize: '11px',
+                    borderRadius: '6px', padding: '3px 6px',
+                    background: `#${cleanCodeHex(row.color_hex)}2e`,
+                    color: `#${cleanCodeHex(row.color_hex)}`,
+                    border: `1px solid #${cleanCodeHex(row.color_hex)}73`,
+                  }}>{row.code}</span>
+                </td>
+                <td>
+                  <input
+                    className="form-input"
+                    defaultValue={row.label}
+                    onBlur={e => { if (e.target.value.trim() && e.target.value.trim() !== row.label) updateMut.mutate({ id: row.id, patch: { label: e.target.value.trim() } }) }}
+                    style={{ fontSize: '11px', padding: '4px 6px', minWidth: '130px' }}
+                  />
+                </td>
+                <td style={{ color: 'var(--text3)', fontSize: '10px' }}>
+                  {CODE_STATUS_OPTIONS.find(([v]) => v === row.status)?.[1] || row.status}
+                  {row.is_builtin ? <span style={{ marginLeft: 4, fontSize: '8px', color: 'var(--text3)' }}>· yerleşik</span> : null}
+                </td>
+                <td style={{ textAlign: 'center' }}>
+                  <input
+                    type="color"
+                    defaultValue={`#${cleanCodeHex(row.color_hex)}`}
+                    onBlur={e => updateMut.mutate({ id: row.id, patch: { color_hex: e.target.value } })}
+                    style={{ width: 34, height: 26, padding: 1, border: '1px solid var(--border)', borderRadius: 5, background: 'none', cursor: 'pointer' }}
+                  />
+                </td>
+                <td style={{ textAlign: 'center' }}>
+                  <input
+                    type="checkbox"
+                    checked={!!row.is_active}
+                    disabled={!!row.is_builtin}
+                    onChange={e => updateMut.mutate({ id: row.id, patch: { is_active: e.target.checked } })}
+                  />
+                </td>
+                <td style={{ textAlign: 'center' }}>
+                  {!row.is_builtin && (
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      style={{ fontSize: '10px', color: 'var(--red)', padding: '2px 6px' }}
+                      onClick={async () => {
+                        if (await confirmDialog({ title: 'Kodu Sil', body: `'${row.code}' kodu silinecek. Emin misiniz?`, danger: true })) deleteMut.mutate(row.id)
+                      }}
+                    >Sil</button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div style={{ borderTop: '1px solid var(--border)', marginTop: 12, paddingTop: 12 }}>
+        <div className="form-label" style={{ marginBottom: 6 }}>Yeni kod ekle</div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+          <input className="form-input" placeholder="Kod (örn. EĞ)" value={form.code} maxLength={4}
+            onChange={e => setForm(f => ({ ...f, code: e.target.value }))} style={{ width: 90, fontSize: '11px' }} />
+          <input className="form-input" placeholder="Etiket (örn. Eğitim izni)" value={form.label}
+            onChange={e => setForm(f => ({ ...f, label: e.target.value }))} style={{ width: 180, fontSize: '11px' }} />
+          <select className="form-select" value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))} style={{ width: 130, fontSize: '11px' }}>
+            {CODE_STATUS_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          </select>
+          <input type="color" value={form.color_hex} onChange={e => setForm(f => ({ ...f, color_hex: e.target.value }))}
+            style={{ width: 40, height: 32, padding: 1, border: '1px solid var(--border)', borderRadius: 6, background: 'none', cursor: 'pointer' }} />
+          <button className="btn btn-primary btn-sm" disabled={!form.code.trim() || !form.label.trim() || createMut.isPending}
+            onClick={() => createMut.mutate()}>Ekle</button>
+        </div>
+      </div>
+    </ModalOverlay>
+  )
+}
+
 export default function PuantajTab({ departments }) {
   const qc = useQueryClient()
   const user = useAuthStore(s => s.user)
@@ -2329,6 +2467,15 @@ export default function PuantajTab({ departments }) {
     enabled: roleCanEdit,
   })
 
+  // Kod kayıt sistemi (042) — palet + hücre renkleri DB'den; registry render öncesi güncellenir
+  const { data: puantajCodes = [] } = useQuery({
+    queryKey: ['puantaj-codes'],
+    queryFn: () => api.get('/shifts/puantaj/codes', { params: { all: '1' } }).then(res => res.data),
+  })
+  useMemo(() => setPuantajCodeRegistry(puantajCodes), [puantajCodes])
+  const [showCodeManager, setShowCodeManager] = useState(false)
+  const [staffHistoryId, setStaffHistoryId] = useState(null) // kişi geçmişi paneli
+
   // P4: departman onay matrisi — yalnız onay masasında ve tum-kapsam gorunumunde
   const { data: approvalOverview = null } = useQuery({
     queryKey: ['puantaj-approval-overview', month],
@@ -2343,6 +2490,7 @@ export default function PuantajTab({ departments }) {
   }
 
   const updatePuantajDay = useMutation({
+    mutationKey: ['puantaj-day-update'],
     mutationFn: ({ changes, action }) => {
       if (action.status === 'clear') {
         return Promise.all(changes.map(change => api.delete(`/shifts/schedule/${change.staff.id}/${change.date}`)))
@@ -2381,13 +2529,20 @@ export default function PuantajTab({ departments }) {
     },
     onSuccess: (_, variables) => {
       variables.onLocalUpdate?.()
-      qc.invalidateQueries({ queryKey: ['puantaj'] })
-      qc.invalidateQueries({ queryKey: ['puantaj-days-month'] })
     },
     onError: (err) => {
       // Dönem kilidi (423) veya diğer hatalar — sunucu reddetti, yerel değişiklik uygulanmaz
       toastErr(err)
-      qc.invalidateQueries({ queryKey: ['puantaj-days-month'] })
+    },
+    onSettled: () => {
+      // Hızlı girişte her hücre için tam grid refetch'i ekranı yineliyor ve
+      // eski (yeni yazımları içermeyen) yanıt local girişleri siliyordu.
+      // Yalnız SON yazım bitince bir kez tazele (settling çağrı 1 sayılır).
+      if (qc.isMutating({ mutationKey: ['puantaj-day-update'] }) <= 1) {
+        qc.invalidateQueries({ queryKey: ['puantaj'] })
+        qc.invalidateQueries({ queryKey: ['puantaj-days-month'] })
+        qc.invalidateQueries({ queryKey: ['puantaj-approval'] }) // veri değişimi onayı düşürmüş olabilir (P1)
+      }
     },
   })
 
@@ -2576,6 +2731,7 @@ export default function PuantajTab({ departments }) {
         deptName,
         companyName: COMPANY_NAME,
         approval: approvalRes,
+        codes: puantajCodes,
       })
 
       const buf = await workbook.xlsx.writeBuffer()
@@ -2647,6 +2803,11 @@ export default function PuantajTab({ departments }) {
           <button className="btn btn-ghost btn-sm" onClick={downloadFoyu} disabled={foyuExporting} style={{ fontSize: '10px' }}>
             📄 {foyuExporting ? 'HAZIRLANIYOR...' : 'PUANTAJ FÖYÜ'}
           </button>
+          {roleCanEdit && (
+            <button className="btn btn-ghost btn-sm" onClick={() => setShowCodeManager(true)} style={{ fontSize: '10px' }}>
+              🎨 KODLAR
+            </button>
+          )}
           {isManager && (
             <button
               className="btn btn-ghost btn-sm"
@@ -2798,13 +2959,23 @@ export default function PuantajTab({ departments }) {
         />
       )}
 
+      {showCodeManager && (
+        <PuantajCodeManager codes={puantajCodes} onClose={() => setShowCodeManager(false)} />
+      )}
+
       {/* Bordro detail bottom sheet */}
       {selectedRow && (
         <BordroDetailSheet
           row={selectedRow} month={month} monthLabel={monthLabel}
           formatMoney={formatMoney}
           onClose={() => setSelectedRow(null)}
+          onOpenStaffDetail={(staffId) => { setSelectedRow(null); setStaffHistoryId(staffId) }}
         />
+      )}
+
+      {/* Kişi geçmişi — tam personel detay paneli (aylık geçmiş + vardiyalar + izin + mesai) */}
+      {staffHistoryId && (
+        <StaffDetailPanel staffId={staffHistoryId} onClose={() => setStaffHistoryId(null)} />
       )}
     </div>
   )

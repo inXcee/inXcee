@@ -267,6 +267,7 @@ export default function StaffDetailPanel({ staffId, onClose }) {
               { id: 'shifts',   icon: '📅', label: 'VARDİYA' },
               { id: 'leave',    icon: '🏖️', label: 'İZİN' },
               { id: 'overtime', icon: '⏰', label: 'MESAİ' },
+              { id: 'history',  icon: '🗓️', label: 'GEÇMİŞ' },
             ].map(t => (
               <button key={t.id} onClick={() => setDetailTab(t.id)} style={{
                 padding: '10px 18px', border: 'none', background: 'none', cursor: 'pointer',
@@ -720,6 +721,51 @@ export default function StaffDetailPanel({ staffId, onClose }) {
                 )}
               </div>
             )}
+
+            {/* GEÇMİŞ — aylık puantaj özeti (son 12 ay) */}
+            {!activeForm && detailTab === 'history' && (() => {
+              const monthly = data?.monthlyHistory || []
+              if (monthly.length === 0) {
+                return <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text3)', fontSize: 11 }}>Aylık geçmiş kaydı yok</div>
+              }
+              const monthName = (ym) => {
+                const [yy, mm] = ym.split('-').map(Number)
+                return new Date(yy, mm - 1, 1).toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' })
+              }
+              return (
+                <div style={{ overflowX: 'auto' }}>
+                  <table className="data-table" style={{ fontSize: '11px', minWidth: '460px' }}>
+                    <thead>
+                      <tr>
+                        <th style={{ textAlign: 'left' }}>Ay</th>
+                        <th style={{ textAlign: 'right' }}>N</th>
+                        <th style={{ textAlign: 'right' }}>H</th>
+                        <th style={{ textAlign: 'right' }}>İzin</th>
+                        <th style={{ textAlign: 'right' }}>Y</th>
+                        <th style={{ textAlign: 'right' }}>P</th>
+                        <th style={{ textAlign: 'right' }}>FM</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {monthly.map(row => (
+                        <tr key={row.month}>
+                          <td style={{ fontWeight: 700 }}>{monthName(row.month)}</td>
+                          <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--green)' }}>{row.worked || 0}</td>
+                          <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--teal)' }}>{row.off || 0}</td>
+                          <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--purple)' }}>{row.leave || 0}</td>
+                          <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', color: row.absent ? 'var(--red)' : 'var(--text3)' }}>{row.absent || 0}</td>
+                          <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', color: row.scheduled ? 'var(--accent)' : 'var(--text3)' }}>{row.scheduled || 0}</td>
+                          <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', color: row.fm_hours ? 'var(--accent)' : 'var(--text3)' }}>{row.fm_hours ? `${row.fm_hours}s` : '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', marginTop: 8 }}>
+                    Son 12 ay · N=çalıştı H=hafta tatili Y=devamsız P=planlı FM=fazla mesai · gün bazlı detay için VARDİYA sekmesi
+                  </div>
+                </div>
+              )
+            })()}
 
           </div>
         </>

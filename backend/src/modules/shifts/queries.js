@@ -1244,6 +1244,42 @@ export function listPuantajApprovalEvents(period, deptScope, limit = 50) {
   `).all(period, deptScope, limit)
 }
 
+// ── Puantaj kod kayıt sistemi (migration 042) ──
+export function listPuantajCodes({ includeInactive = false } = {}) {
+  let sql = 'SELECT * FROM puantaj_codes WHERE 1=1'
+  if (!includeInactive) sql += ' AND is_active = 1'
+  sql += ' ORDER BY sort_order, code'
+  return getDB().prepare(sql).all()
+}
+
+export function createPuantajCode({ code, label, colorHex, status, leaveType, sortOrder }) {
+  return getDB().prepare(`
+    INSERT INTO puantaj_codes(code, label, color_hex, status, leave_type, sort_order, is_builtin)
+    VALUES(?, ?, ?, ?, ?, ?, 0)
+  `).run(code, label, colorHex, status, leaveType || null, sortOrder ?? 99).lastInsertRowid
+}
+
+export function updatePuantajCode(id, fields) {
+  const allowed = ['code', 'label', 'color_hex', 'leave_type', 'sort_order', 'is_active']
+  const sets = []
+  const params = []
+  allowed.forEach(key => {
+    if (fields[key] !== undefined) { sets.push(`${key} = ?`); params.push(fields[key]) }
+  })
+  if (!sets.length) return
+  sets.push("updated_at = CURRENT_TIMESTAMP")
+  params.push(id)
+  getDB().prepare(`UPDATE puantaj_codes SET ${sets.join(', ')} WHERE id = ?`).run(...params)
+}
+
+export function getPuantajCode(id) {
+  return getDB().prepare('SELECT * FROM puantaj_codes WHERE id = ?').get(id)
+}
+
+export function deletePuantajCode(id) {
+  getDB().prepare('DELETE FROM puantaj_codes WHERE id = ? AND is_builtin = 0').run(id)
+}
+
 // Departman onay matrisi — dönem için tüm scope'ların durum + sayaç özeti.
 export function getPuantajApprovalOverview(period, monthStart, monthEnd) {
   const db = getDB()
@@ -1483,12 +1519,36 @@ export function getStaffDetail(staffId) {
   const absentCount = db.prepare("SELECT COUNT(*) as count FROM shift_schedule WHERE staff_id=? AND status='absent'").get(staffId).count
   const offCount = db.prepare("SELECT COUNT(*) as count FROM shift_schedule WHERE staff_id=? AND status='off'").get(staffId).count
 
+  // Aylık geçmiş — son 12 ay: puantaj sayaçları + FM saati
+  const monthlyHistory = db.prepare(`
+    SELECT substr(ss.work_date, 1, 7) AS month,
+      SUM(CASE WHEN ss.status IN ('worked','overtime') THEN 1 ELSE 0 END) AS worked,
+      SUM(CASE WHEN ss.status = 'off' THEN 1 ELSE 0 END) AS off,
+      SUM(CASE WHEN ss.status = 'on_leave' THEN 1 ELSE 0 END) AS leave,
+      SUM(CASE WHEN ss.status = 'absent' THEN 1 ELSE 0 END) AS absent,
+      SUM(CASE WHEN ss.status = 'scheduled' THEN 1 ELSE 0 END) AS scheduled
+    FROM shift_schedule ss
+    WHERE ss.staff_id = ?
+    GROUP BY substr(ss.work_date, 1, 7)
+    ORDER BY month DESC
+    LIMIT 12
+  `).all(staffId)
+  const monthlyOvertime = db.prepare(`
+    SELECT substr(work_date, 1, 7) AS month, COALESCE(SUM(hours), 0) AS fm_hours
+    FROM overtime_records
+    WHERE staff_id = ?
+    GROUP BY substr(work_date, 1, 7)
+  `).all(staffId)
+  const fmByMonth = new Map(monthlyOvertime.map(row => [row.month, row.fm_hours]))
+  monthlyHistory.forEach(row => { row.fm_hours = fmByMonth.get(row.month) || 0 })
+
   return {
     person,
     shiftHistory,
     leaveHistory,
     overtimeRecords,
     attendanceLogs,
+    monthlyHistory,
     stats: { totalShifts, workedShifts, totalOvertime, totalLeave, absentCount, offCount }
   }
 }

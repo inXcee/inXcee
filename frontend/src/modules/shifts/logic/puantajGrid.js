@@ -13,6 +13,8 @@ const KEY_ACTION_MAP = {
   'ı': 'annual',
   y: 'absent',
   p: 'scheduled',
+  a: 'leave_owed', // Aİ — alacak izin
+  l: 'leave_other', // İ — izinli
 }
 
 export function actionIdForKey(key) {

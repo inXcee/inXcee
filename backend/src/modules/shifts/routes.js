@@ -18,6 +18,7 @@ import {
   rotationPreviewService, rotationApplyService,
   periodLocksService, lockPeriodService, unlockPeriodService,
   puantajApprovalService, submitPuantajPeriodService, puantajApprovalOverviewService,
+  puantajCodesService, createPuantajCodeService, updatePuantajCodeService, deletePuantajCodeService,
   updatePuantajDayApprovalService, updatePuantajPeriodApprovalService,
   staffDetailService,
   staffListService, staffGetService, staffCreateService, staffUpdateService, staffDeleteService,
@@ -604,6 +605,36 @@ shiftsRouter.get('/puantaj/export/csv', ...allStaff, (req, res) => {
 })
 
 // ── Puantaj day breakdown (after CSV route to avoid staffId='export') ──
+// ── Puantaj kod kayıt sistemi (must be before /:staffId routes) ──
+shiftsRouter.get('/puantaj/codes', ...allStaff, (req, res) => {
+  try { res.json(puantajCodesService(req.query)) }
+  catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
+})
+
+shiftsRouter.post('/puantaj/codes', ...managerOrSupervisor, (req, res) => {
+  try {
+    const id = createPuantajCodeService(req.body)
+    logAudit(req.user.id, 'puantaj_code_create', 'shifts', id, req.body?.code)
+    res.status(201).json({ id })
+  } catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
+})
+
+shiftsRouter.put('/puantaj/codes/:id', ...managerOrSupervisor, (req, res) => {
+  try {
+    const row = updatePuantajCodeService(+req.params.id, req.body)
+    logAudit(req.user.id, 'puantaj_code_update', 'shifts', +req.params.id, req.body?.code || req.body?.label || '')
+    res.json(row)
+  } catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
+})
+
+shiftsRouter.delete('/puantaj/codes/:id', ...managerOrSupervisor, (req, res) => {
+  try {
+    deletePuantajCodeService(+req.params.id)
+    logAudit(req.user.id, 'puantaj_code_delete', 'shifts', +req.params.id, '')
+    res.json({ ok: true })
+  } catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
+})
+
 // Puantaj approval workflow (must be before /:staffId routes)
 shiftsRouter.get('/puantaj/approval/overview', ...managerOrSupervisor, (req, res) => {
   try {

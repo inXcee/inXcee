@@ -108,6 +108,45 @@ describe('Puantaj onay akisi', () => {
     expect(res.body.events.some(e => (e.note || '').includes('zorla onaylandi'))).toBe(true)
   })
 
+  it('puantaj kod kayit sistemi: yerlesikler + ozel kod CRUD + yeni izin turu yazilabilir (042)', async () => {
+    const list = await request(app).get('/api/shifts/puantaj/codes').set('Authorization', `Bearer ${shiftToken}`)
+    expect(list.status).toBe(200)
+    const codes = list.body.map(c => c.code)
+    expect(codes).toEqual(expect.arrayContaining(['N', 'H', 'Yİ', 'R', 'Üİ', 'İ', 'Aİ', 'Y', 'P']))
+    const owedCode = list.body.find(c => c.code === 'Aİ')
+    expect(owedCode.leave_type).toBe('owed')
+    expect(owedCode.is_builtin).toBe(1)
+
+    // Yeni izin turu (owed) shift_schedule'a yazilabilir (enum CHECK kalkti)
+    const staff = getDB().prepare('SELECT id FROM staff WHERE is_active=1 LIMIT 1').get()
+    const write = await request(app).post('/api/shifts/schedule').set('Authorization', `Bearer ${managerToken}`)
+      .send({ entries: [{ staff_id: staff.id, work_date: '2027-09-06', status: 'on_leave', leave_type: 'owed' }] })
+    expect(write.status).toBe(200)
+
+    // Ozel kod olustur / guncelle / sil
+    const created = await request(app).post('/api/shifts/puantaj/codes').set('Authorization', `Bearer ${managerToken}`)
+      .send({ code: 'eğ', label: 'Eğitim', color_hex: '#00AAFF', status: 'on_leave' })
+    expect(created.status).toBe(201)
+    const afterCreate = await request(app).get('/api/shifts/puantaj/codes').set('Authorization', `Bearer ${managerToken}`)
+    const custom = afterCreate.body.find(c => c.id === created.body.id)
+    expect(custom.code).toBe('EĞ') // buyuk harfe cevrilir
+    expect(custom.color_hex).toBe('00AAFF')
+
+    const upd = await request(app).put(`/api/shifts/puantaj/codes/${created.body.id}`).set('Authorization', `Bearer ${managerToken}`)
+      .send({ color_hex: '#FF0000', label: 'Eğitim İzni' })
+    expect(upd.status).toBe(200)
+    expect(upd.body.color_hex).toBe('FF0000')
+
+    const dup = await request(app).post('/api/shifts/puantaj/codes').set('Authorization', `Bearer ${managerToken}`)
+      .send({ code: 'N', label: 'Kopya', status: 'worked' })
+    expect(dup.status).toBe(400)
+
+    const delBuiltin = await request(app).delete(`/api/shifts/puantaj/codes/${owedCode.id}`).set('Authorization', `Bearer ${managerToken}`)
+    expect(delBuiltin.status).toBe(400)
+    const delCustom = await request(app).delete(`/api/shifts/puantaj/codes/${created.body.id}`).set('Authorization', `Bearer ${managerToken}`)
+    expect(delCustom.status).toBe(200)
+  })
+
   it('departman onay matrisi durum ve sayaclari dondurur (P4)', async () => {
     const period = '2027-08'
     // lockDeptId departmani icin gonder + bir gun onayla (veri yok → force)
