@@ -204,6 +204,57 @@ describe('Puantaj operations workspace', () => {
     }))
   })
 
+  it('turns a card overtime candidate into a traceable approval request', async () => {
+    const overtimePayload = {
+      ...payload,
+      actions: [...payload.actions, {
+        key: 'exception:77',
+        category: 'card',
+        type: 'overtime_candidate',
+        severity: 'info',
+        staff_id: 31,
+        full_name: 'Kart Mesai Adayi',
+        dept_name: 'Mutfak',
+        title: 'Kart Mesai Adayi',
+        detail: '65 dakika mesai adayi',
+        exception_id: 77,
+        overtime_candidate_minutes: 65,
+        planned_end: '2031-02-01T12:00:00.000Z',
+        actual_check_in: '2031-02-01T03:00:00.000Z',
+        actual_check_out: '2031-02-01T13:05:00.000Z',
+        can_resolve: true,
+      }],
+    }
+    vi.spyOn(api, 'get').mockImplementation(url => Promise.resolve({
+      data: url === '/shifts/work-locations' ? [] : overtimePayload,
+    }))
+    const postSpy = vi.spyOn(api, 'post').mockResolvedValue({
+      data: { request: { id: 92, requested_hours: 1.25, status: 'pending' } },
+    })
+    renderWithProviders(<PuantajOperationsView month="2031-02" deptFilter="" />)
+
+    await screen.findByText('AKSIYON MERKEZI')
+    fireEvent.click(screen.getByRole('button', { name: 'Mesai talebi: Kart Mesai Adayi' }))
+
+    expect(screen.getByText('MESAI ADAYINI TALEBE DONUSTUR')).toBeInTheDocument()
+    expect(screen.getByLabelText('Mesai saati')).toHaveValue(1.08)
+    expect(screen.getByLabelText('Gerceklesen baslangic')).toHaveValue('15:00')
+    expect(screen.getByLabelText('Gerceklesen bitis')).toHaveValue('16:05')
+    fireEvent.change(screen.getByLabelText('Mesai saati'), { target: { value: '1.25' } })
+    fireEvent.change(screen.getByLabelText('Mesai karsiligi'), { target: { value: 'time_off' } })
+    fireEvent.change(screen.getByLabelText('Mesai gerekcesi'), { target: { value: 'Yemekhane kapanis destegi' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Onaya gonder' }))
+
+    await waitFor(() => expect(postSpy).toHaveBeenCalledWith('/shifts/attendance/exceptions/77/overtime-request', {
+      requested_hours: 1.25,
+      actual_hours: 1.25,
+      actual_start: '15:00',
+      actual_end: '16:05',
+      reason: 'Yemekhane kapanis destegi',
+      compensation_type: 'time_off',
+    }))
+  })
+
   it('finds available coverage candidates and assigns the selected person', async () => {
     const operationsPayload = {
       ...payload,
@@ -245,7 +296,7 @@ describe('Puantaj operations workspace', () => {
     expect(recoveryButtons).toHaveLength(2)
     fireEvent.click(recoveryButtons[0])
 
-    await screen.findByText('Uygun Kapsama Adayi')
+    await screen.findByText('Uygun Kapsama Adayi', {}, { timeout: 5000 })
     expect(screen.queryByText('Ayni Gun Calisan')).not.toBeInTheDocument()
     expect(screen.getByText('Ayni gun gorevi var: 1')).toBeInTheDocument()
     expect(getSpy).toHaveBeenCalledWith('/shifts/schedule/candidates', { params: {

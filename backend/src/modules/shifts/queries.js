@@ -1115,6 +1115,55 @@ export function createOvertimeRequest(data) {
   return getOvertimeRequest(id)
 }
 
+export function createOvertimeRequestFromAttendanceException(exceptionId, data, userId) {
+  const db = getDB()
+  const tx = db.transaction(() => {
+    const exception = db.prepare('SELECT * FROM attendance_exceptions WHERE id=?').get(exceptionId)
+    if (!exception) throw Object.assign(new Error('Istisna kaydi bulunamadi'), { statusCode: 404 })
+    if (exception.exception_type !== 'overtime_candidate') {
+      throw Object.assign(new Error('Yalnizca mesai adayi kaydi talebe donusturulebilir'), { statusCode: 400 })
+    }
+    if (exception.status !== 'open' || exception.overtime_request_id) {
+      throw Object.assign(new Error('Mesai adayi daha once islenmis'), { statusCode: 409 })
+    }
+
+    const existing = db.prepare(`
+      SELECT id FROM overtime_requests
+      WHERE staff_id=? AND work_date=? AND status IN ('pending','approved','returned')
+    `).get(data.staff_id, data.work_date)
+    if (existing) {
+      throw Object.assign(new Error('Bu personel ve tarih icin acik bir mesai talebi var.'), { statusCode: 409 })
+    }
+
+    const requestId = db.prepare(`
+      INSERT INTO overtime_requests(
+        staff_id, work_date, planned_start, planned_end, actual_start, actual_end,
+        requested_hours, actual_hours, reason, compensation_type, requested_by
+      ) VALUES(
+        @staff_id, @work_date, @planned_start, @planned_end, @actual_start, @actual_end,
+        @requested_hours, @actual_hours, @reason, @compensation_type, @requested_by
+      )
+    `).run(data).lastInsertRowid
+
+    const updated = db.prepare(`
+      UPDATE attendance_exceptions
+      SET status='resolved', overtime_request_id=?, resolved_by=?, resolved_at=CURRENT_TIMESTAMP,
+        resolution_note=?, updated_at=CURRENT_TIMESTAMP
+      WHERE id=? AND status='open' AND overtime_request_id IS NULL
+    `).run(requestId, userId || null, `Mesai talebi #${requestId} olusturuldu`, exceptionId)
+    if (updated.changes !== 1) {
+      throw Object.assign(new Error('Mesai adayi baska bir kullanici tarafindan islendi'), { statusCode: 409 })
+    }
+    return requestId
+  })
+
+  const requestId = tx()
+  return {
+    request: getOvertimeRequest(requestId),
+    exception: getAttendanceException(exceptionId),
+  }
+}
+
 export function getOvertimeRequest(id) {
   return getDB().prepare(`
     SELECT otr.*, s.full_name, s.gender, s.position,
@@ -1494,7 +1543,13 @@ export function listAttendanceExceptions(filters = {}) {
 }
 
 export function getAttendanceException(id) {
-  return getDB().prepare('SELECT * FROM attendance_exceptions WHERE id = ?').get(id)
+  return getDB().prepare(`
+    SELECT ax.*, adr.planned_start, adr.planned_end,
+      adr.actual_check_in, adr.actual_check_out, adr.overtime_candidate_minutes
+    FROM attendance_exceptions ax
+    LEFT JOIN attendance_daily_reconciliations adr ON adr.id=ax.reconciliation_id
+    WHERE ax.id=?
+  `).get(id)
 }
 
 export function updateAttendanceExceptionStatus(id, status, note, userId) {

@@ -7,7 +7,8 @@ import {
   getStaffWithShiftStatus, createLeaveRequest, getLeaveRequest, approveLeaveRequest,
   getLeaveRequests, getLeaveBalance, addRequestDocuments, listRequestDocuments, getRequestDocument, deleteRequestDocument,
   createOvertime, updateOvertime, deleteOvertime, getOvertimeRecords, upsertOvertimeDay,
-  createOvertimeRequest, getOvertimeRequest, getOvertimeRequests, reviewOvertimeRequest,
+  createOvertimeRequest, createOvertimeRequestFromAttendanceException,
+  getOvertimeRequest, getOvertimeRequests, reviewOvertimeRequest,
   getOvertimeSummary, createAttendanceLog, updateCheckout, getAttendanceLogs, getPuantaj,
   getShiftStatistics, getDepartmentSummary,
   createDepartment, updateDepartment, deleteDepartment,
@@ -1143,6 +1144,10 @@ function optionalClock(value, field) {
 }
 
 export function createOvertimeRequestService(data, user = {}) {
+  return createOvertimeRequest(normalizeOvertimeRequestInput(data, user))
+}
+
+function normalizeOvertimeRequestInput(data, user = {}) {
   const staffId = Number(data.staff_id)
   const workDate = String(data.work_date || '')
   const requestedHours = Number(data.requested_hours ?? data.hours)
@@ -1167,7 +1172,7 @@ export function createOvertimeRequestService(data, user = {}) {
   const compensationType = data.compensation_type || 'pay'
   if (!['pay', 'time_off'].includes(compensationType)) throw Object.assign(new Error('Gecersiz mesai karsiligi'), { statusCode: 400 })
   assertPeriodsUnlocked([workDate])
-  return createOvertimeRequest({
+  return {
     staff_id: staffId,
     work_date: workDate,
     planned_start: optionalClock(data.planned_start, 'Planlanan baslangic'),
@@ -1179,7 +1184,50 @@ export function createOvertimeRequestService(data, user = {}) {
     reason,
     compensation_type: compensationType,
     requested_by: user.id || null,
-  })
+  }
+}
+
+function attendanceClock(value) {
+  if (!value) return null
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return null
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Europe/Istanbul',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(date)
+}
+
+export function createOvertimeRequestFromAttendanceExceptionService(id, data = {}, user = {}) {
+  const exception = getAttendanceException(id)
+  if (!exception) throw Object.assign(new Error('Istisna kaydi bulunamadi'), { statusCode: 404 })
+  if (exception.exception_type !== 'overtime_candidate') {
+    throw Object.assign(new Error('Yalnizca mesai adayi kaydi talebe donusturulebilir'), { statusCode: 400 })
+  }
+  if (exception.status !== 'open' || exception.overtime_request_id) {
+    throw Object.assign(new Error('Mesai adayi daha once islenmis'), { statusCode: 409 })
+  }
+
+  const candidateMinutes = Number(exception.overtime_candidate_minutes || 0)
+  if (!exception.staff_id || candidateMinutes <= 0) {
+    throw Object.assign(new Error('Mesai adayinin personel veya sure bilgisi eksik'), { statusCode: 400 })
+  }
+  const candidateHours = round2(candidateMinutes / 60)
+  const actualStart = attendanceClock(exception.planned_end)
+  const actualEnd = attendanceClock(exception.actual_check_out)
+  const requestData = normalizeOvertimeRequestInput({
+    ...data,
+    staff_id: exception.staff_id,
+    work_date: exception.work_date,
+    requested_hours: data.requested_hours ?? candidateHours,
+    actual_hours: data.actual_hours ?? data.requested_hours ?? candidateHours,
+    actual_start: data.actual_start ?? actualStart,
+    actual_end: data.actual_end ?? actualEnd,
+    reason: data.reason || `Kart uzlastirma: ${candidateMinutes} dakika fazla calisma`,
+  }, user)
+
+  return createOvertimeRequestFromAttendanceException(Number(id), requestData, user.id)
 }
 
 export function overtimeRequestsService(filters) {
@@ -1794,6 +1842,11 @@ function operationActionQueue({
       title: row.full_name || 'Eslesmeyen kart olayi',
       detail: row.message,
       exception_id: row.id,
+      overtime_candidate_minutes: Number(row.overtime_candidate_minutes || 0),
+      planned_start: row.planned_start || null,
+      planned_end: row.planned_end || null,
+      actual_check_in: row.actual_check_in || null,
+      actual_check_out: row.actual_check_out || null,
       can_resolve: true,
     })
   })

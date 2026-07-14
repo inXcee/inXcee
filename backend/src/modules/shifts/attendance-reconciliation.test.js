@@ -193,10 +193,45 @@ describe('Kart/kiosk puantaj uzlastirmasi (045)', () => {
     })
     expect(getDB().prepare('SELECT status FROM shift_schedule WHERE id = ?').get(scheduleId).status).toBe('worked')
     expect(getDB().prepare('SELECT COUNT(*) AS count FROM overtime_records WHERE staff_id = ? AND work_date = ?').get(staffId, date).count).toBe(0)
-    expect(getDB().prepare(`
+    const exception = getDB().prepare(`
       SELECT exception_type FROM attendance_exceptions
       WHERE staff_id = ? AND work_date = ? AND status = 'open'
-    `).get(staffId, date).exception_type).toBe('overtime_candidate')
+    `).get(staffId, date)
+    expect(exception.exception_type).toBe('overtime_candidate')
+
+    const exceptionId = getDB().prepare(`
+      SELECT id FROM attendance_exceptions
+      WHERE staff_id = ? AND work_date = ? AND status = 'open'
+    `).get(staffId, date).id
+    const requestResult = await request(app)
+      .post(`/api/shifts/attendance/exceptions/${exceptionId}/overtime-request`)
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({ compensation_type: 'pay' })
+
+    expect(requestResult.status).toBe(201)
+    expect(requestResult.body.request).toMatchObject({
+      staff_id: staffId,
+      work_date: date,
+      status: 'pending',
+      requested_hours: 1.08,
+      actual_hours: 1.08,
+      actual_start: '15:00',
+      actual_end: '16:05',
+      compensation_type: 'pay',
+    })
+    expect(requestResult.body.exception).toMatchObject({
+      id: exceptionId,
+      status: 'resolved',
+      overtime_request_id: requestResult.body.request.id,
+    })
+    expect(getDB().prepare('SELECT COUNT(*) AS count FROM overtime_records WHERE staff_id = ? AND work_date = ?').get(staffId, date).count).toBe(0)
+
+    const duplicate = await request(app)
+      .post(`/api/shifts/attendance/exceptions/${exceptionId}/overtime-request`)
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({ compensation_type: 'pay' })
+    expect(duplicate.status).toBe(409)
+    expect(getDB().prepare('SELECT COUNT(*) AS count FROM overtime_requests WHERE staff_id = ? AND work_date = ?').get(staffId, date).count).toBe(1)
   })
 
   it('mevcut giris-cikis istasyonu olaylarini otomatik iceri alir', async () => {

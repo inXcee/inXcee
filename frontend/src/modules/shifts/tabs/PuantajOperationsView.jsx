@@ -76,11 +76,17 @@ function shortDate(value) {
 function clock(value) {
   if (!value) return '-'
   const raw = String(value)
+  if (/[zZ]$|[+-]\d{2}:?\d{2}$/.test(raw)) {
+    const zonedDate = new Date(raw)
+    if (!Number.isNaN(zonedDate.getTime())) {
+      return zonedDate.toLocaleTimeString('tr-TR', { timeZone: 'Europe/Istanbul', hour: '2-digit', minute: '2-digit' })
+    }
+  }
   const embeddedTime = raw.match(/(?:T|\s)(\d{2}:\d{2})/) || raw.match(/^(\d{2}:\d{2})/)
   if (embeddedTime) return embeddedTime[1]
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return '-'
-  return date.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
+  return date.toLocaleTimeString('tr-TR', { timeZone: 'Europe/Istanbul', hour: '2-digit', minute: '2-digit' })
 }
 
 function shiftHours(row) {
@@ -256,7 +262,7 @@ function RosterTable({ rows, onPersonClick }) {
   )
 }
 
-function ActionCenter({ rows, onPersonClick, onResolveException, resolvingExceptionId, onCoverageRecoveryOpen }) {
+function ActionCenter({ rows, onPersonClick, onResolveException, resolvingExceptionId, onCoverageRecoveryOpen, onOvertimeCandidateOpen }) {
   const [filter, setFilter] = useState('all')
   const [limit, setLimit] = useState(PAGE_SIZE.actions)
   const filtered = filter === 'all'
@@ -303,7 +309,12 @@ function ActionCenter({ rows, onPersonClick, onResolveException, resolvingExcept
               {row.dept_name && <span style={{ display: 'block', color: 'var(--text3)', fontSize: 8, fontWeight: 500 }}>{row.dept_name}</span>}
             </button>
             <span style={{ color: row.severity === 'critical' ? 'var(--red)' : 'var(--text2)', fontSize: 9 }}>{row.detail}</span>
-            {row.coverage_target ? (
+            {row.type === 'overtime_candidate' ? (
+              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                <button type="button" className="btn btn-primary btn-sm" onClick={() => onOvertimeCandidateOpen?.(row)} aria-label={`Mesai talebi: ${row.title}`}>Talep olustur</button>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => onResolveException?.(row.exception_id, 'ignored')} disabled={resolvingExceptionId === row.exception_id}>Yok say</button>
+              </div>
+            ) : row.coverage_target ? (
               <button type="button" className="btn btn-ghost btn-sm" onClick={() => onCoverageRecoveryOpen?.(row.coverage_target)} aria-label={`Aday bul: ${row.title}`}>Aday bul</button>
             ) : row.can_resolve ? (
               <div style={{ display: 'flex', gap: 4 }}>
@@ -317,6 +328,78 @@ function ActionCenter({ rows, onPersonClick, onResolveException, resolvingExcept
       </div>
       <ProgressiveFooter shown={visibleRows.length} total={filtered.length} pageSize={PAGE_SIZE.actions} onMore={() => setLimit(current => current + PAGE_SIZE.actions)} label="Aksiyonlar" />
     </div>
+  )
+}
+
+function OvertimeCandidatePanel({ target, submitting, onSubmit, onClose, onPersonClick }) {
+  const candidateHours = Math.round((Number(target.overtime_candidate_minutes || 0) / 60) * 100) / 100
+  const [hours, setHours] = useState(candidateHours || '')
+  const [compensationType, setCompensationType] = useState('pay')
+  const [actualStart, setActualStart] = useState(clock(target.planned_end) === '-' ? '' : clock(target.planned_end))
+  const [actualEnd, setActualEnd] = useState(clock(target.actual_check_out) === '-' ? '' : clock(target.actual_check_out))
+  const [reason, setReason] = useState(`Kart uzlastirma: ${Number(target.overtime_candidate_minutes || 0)} dakika fazla calisma`)
+  const validHours = Number(hours) > 0 && Number(hours) <= 12
+  const canSubmit = validHours && reason.trim().length >= 3 && !!actualStart === !!actualEnd
+
+  const submit = event => {
+    event.preventDefault()
+    if (!canSubmit || submitting) return
+    onSubmit?.({
+      requested_hours: Number(hours),
+      actual_hours: Number(hours),
+      actual_start: actualStart || null,
+      actual_end: actualEnd || null,
+      reason: reason.trim(),
+      compensation_type: compensationType,
+    })
+  }
+
+  return (
+    <section style={{ border: '1px solid color-mix(in srgb, var(--blue) 65%, var(--border))', borderRadius: 8, overflow: 'hidden', background: 'var(--surface)' }}>
+      <SectionTitle
+        count={`${Number(target.overtime_candidate_minutes || 0)} dk aday`}
+        action={<button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>Kapat</button>}
+      >MESAI ADAYINI TALEBE DONUSTUR</SectionTitle>
+      <form onSubmit={submit} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 360px), 1fr))', gap: 0 }}>
+        <div style={{ padding: 12, borderRight: '1px solid var(--border)', display: 'grid', alignContent: 'start', gap: 10 }}>
+          <div>
+            <button type="button" onClick={() => target.staff_id && onPersonClick?.(target.staff_id)} style={{ border: 0, background: 'none', color: 'var(--text)', padding: 0, fontWeight: 800, fontSize: 13 }}>{target.full_name || target.title}</button>
+            <div style={{ color: 'var(--text3)', fontSize: 9, marginTop: 3 }}>{target.dept_name || '-'} / {target.work_date}</div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+            <div style={{ padding: 8, background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 6 }}><span style={{ display: 'block', color: 'var(--text3)', fontSize: 8 }}>KART GIRIS / CIKIS</span><strong style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{clock(target.actual_check_in)} - {clock(target.actual_check_out)}</strong></div>
+            <div style={{ padding: 8, background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 6 }}><span style={{ display: 'block', color: 'var(--text3)', fontSize: 8 }}>PLANLI BITIS</span><strong style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{clock(target.planned_end)}</strong></div>
+          </div>
+          <div style={{ color: 'var(--text3)', fontSize: 9, lineHeight: 1.55 }}>Talep onaya gider. Onay verilene kadar puantaja veya mesai odemesine yansimaz.</div>
+        </div>
+        <div style={{ padding: 12, display: 'grid', gap: 10, alignContent: 'start' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(135px, 1fr))', gap: 8 }}>
+            <label style={{ fontSize: 9, color: 'var(--text2)' }}>Mesai saati
+              <input className="form-input" type="number" min="0.01" max="12" step="0.01" value={hours} onChange={event => setHours(event.target.value)} aria-label="Mesai saati" style={{ marginTop: 4 }} />
+            </label>
+            <label style={{ fontSize: 9, color: 'var(--text2)' }}>Karsiligi
+              <select className="form-select" value={compensationType} onChange={event => setCompensationType(event.target.value)} aria-label="Mesai karsiligi" style={{ marginTop: 4 }}>
+                <option value="pay">Ucret</option>
+                <option value="time_off">Serbest zaman</option>
+              </select>
+            </label>
+            <label style={{ fontSize: 9, color: 'var(--text2)' }}>Gerceklesen baslangic
+              <input className="form-input" type="time" value={actualStart} onChange={event => setActualStart(event.target.value)} aria-label="Gerceklesen baslangic" style={{ marginTop: 4 }} />
+            </label>
+            <label style={{ fontSize: 9, color: 'var(--text2)' }}>Gerceklesen bitis
+              <input className="form-input" type="time" value={actualEnd} onChange={event => setActualEnd(event.target.value)} aria-label="Gerceklesen bitis" style={{ marginTop: 4 }} />
+            </label>
+          </div>
+          <label style={{ fontSize: 9, color: 'var(--text2)' }}>Gerekce
+            <textarea className="form-input" value={reason} onChange={event => setReason(event.target.value)} aria-label="Mesai gerekcesi" rows={2} style={{ marginTop: 4, resize: 'vertical' }} />
+          </label>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>Vazgec</button>
+            <button type="submit" className="btn btn-primary btn-sm" disabled={!canSubmit || submitting}>{submitting ? 'Olusturuluyor' : 'Onaya gonder'}</button>
+          </div>
+        </div>
+      </form>
+    </section>
   )
 }
 
@@ -605,6 +688,7 @@ export function PuantajOperationsContent({
   plannerOpen, onPlannerOpen, onPlannerClose, onApplyPlan,
   planning, shiftDefs = [], workLocations = [],
   coverageRecovery, onCoverageRecoveryOpen, onCoverageRecoveryClose, onCoverageCandidateAssign,
+  overtimeCandidate, onOvertimeCandidateOpen, onOvertimeCandidateClose, onOvertimeCandidateSubmit,
 }) {
   const metrics = payload?.metrics || {}
   const roster = asArray(payload?.roster)
@@ -633,8 +717,19 @@ export function PuantajOperationsContent({
           onResolveException={onResolveException}
           resolvingExceptionId={resolvingExceptionId}
           onCoverageRecoveryOpen={onCoverageRecoveryOpen}
+          onOvertimeCandidateOpen={onOvertimeCandidateOpen}
         />
       </section>
+
+      {overtimeCandidate?.target && (
+        <OvertimeCandidatePanel
+          key={overtimeCandidate.target.exception_id}
+          {...overtimeCandidate}
+          onSubmit={onOvertimeCandidateSubmit}
+          onClose={onOvertimeCandidateClose}
+          onPersonClick={onPersonClick}
+        />
+      )}
 
       {coverageRecovery?.target && (
         <CoverageRecoveryPanel
@@ -702,12 +797,14 @@ export default function PuantajOperationsView({ month, deptFilter, onPersonClick
   const [selectedDate, setSelectedDate] = useState(() => dateForMonth(month))
   const [plannerOpen, setPlannerOpen] = useState(false)
   const [coverageTarget, setCoverageTarget] = useState(null)
+  const [overtimeTarget, setOvertimeTarget] = useState(null)
   useEffect(() => {
     if (!selectedDate.startsWith(`${month}-`)) setSelectedDate(dateForMonth(month))
   }, [month, selectedDate])
   useEffect(() => {
     setPlannerOpen(false)
     setCoverageTarget(null)
+    setOvertimeTarget(null)
   }, [selectedDate])
 
   const params = useMemo(() => ({
@@ -810,6 +907,28 @@ export default function PuantajOperationsView({ month, deptFilter, onPersonClick
     },
     onError: toastErr,
   })
+  const overtimeCandidateMutation = useMutation({
+    mutationFn: ({ id, form }) => api.post(`/shifts/attendance/exceptions/${id}/overtime-request`, form),
+    onSuccess: response => {
+      setOvertimeTarget(null)
+      refreshOperations()
+      qc.invalidateQueries({ queryKey: ['overtime-requests'] })
+      qc.invalidateQueries({ queryKey: ['overtime'] })
+      toastOk(`${response.data.request?.requested_hours || 0} saatlik mesai talebi onaya gonderildi`)
+    },
+    onError: toastErr,
+  })
+
+  const openCoverageRecovery = row => {
+    setPlannerOpen(false)
+    setOvertimeTarget(null)
+    setCoverageTarget(row)
+  }
+  const openOvertimeCandidate = row => {
+    setPlannerOpen(false)
+    setCoverageTarget(null)
+    setOvertimeTarget(row)
+  }
 
   const changeDate = (next) => {
     if (next.startsWith(`${month}-`)) setSelectedDate(next)
@@ -841,7 +960,11 @@ export default function PuantajOperationsView({ month, deptFilter, onPersonClick
             onResolveException={(id, status) => resolveExceptionMutation.mutate({ id, status })}
             resolvingExceptionId={resolveExceptionMutation.isPending ? resolveExceptionMutation.variables?.id : null}
             plannerOpen={plannerOpen}
-            onPlannerOpen={() => setPlannerOpen(true)}
+            onPlannerOpen={() => {
+              setCoverageTarget(null)
+              setOvertimeTarget(null)
+              setPlannerOpen(true)
+            }}
             onPlannerClose={() => setPlannerOpen(false)}
             onApplyPlan={plan => planMutation.mutate(plan)}
             planning={planMutation.isPending}
@@ -854,9 +977,16 @@ export default function PuantajOperationsView({ month, deptFilter, onPersonClick
               error: candidatesError ? (candidatesError.response?.data?.error || candidatesError.message) : '',
               assigningId: coverageAssignMutation.isPending ? coverageAssignMutation.variables?.id : null,
             }}
-            onCoverageRecoveryOpen={setCoverageTarget}
+            onCoverageRecoveryOpen={openCoverageRecovery}
             onCoverageRecoveryClose={() => setCoverageTarget(null)}
             onCoverageCandidateAssign={candidate => coverageAssignMutation.mutate(candidate)}
+            overtimeCandidate={{
+              target: overtimeTarget,
+              submitting: overtimeCandidateMutation.isPending,
+            }}
+            onOvertimeCandidateOpen={openOvertimeCandidate}
+            onOvertimeCandidateClose={() => setOvertimeTarget(null)}
+            onOvertimeCandidateSubmit={form => overtimeCandidateMutation.mutate({ id: overtimeTarget.exception_id, form })}
           />
         </OperationsErrorBoundary>
       )}

@@ -13,7 +13,8 @@ import {
   staffStatusService, createLeaveService, approveLeaveService, leaveListService,
   requestDocumentsService, addRequestDocumentsService, deleteRequestDocumentService,
   leaveBalanceService, createOvertimeService, updateOvertimeService, deleteOvertimeService, overtimeListService, overtimeSummaryService, overtimeDayService, puantajService,
-  createOvertimeRequestService, overtimeRequestsService, reviewOvertimeRequestService,
+  createOvertimeRequestService, createOvertimeRequestFromAttendanceExceptionService,
+  overtimeRequestsService, reviewOvertimeRequestService,
   checkInService, checkOutService, attendanceListService, statisticsService, coverageService, departmentSummaryService,
   coverageRulesService, createCoverageRuleService, updateCoverageRuleService, deleteCoverageRuleService, scheduleCandidatesService,
   createDepartmentService, updateDepartmentService, deleteDepartmentService, assignDeptService,
@@ -713,6 +714,16 @@ shiftsRouter.patch('/attendance/exceptions/:id', ...managerOrSupervisor, (req, r
     const row = updateAttendanceExceptionService(req.params.id, req.body, req.user.id)
     logAudit(req.user.id, 'attendance_exception_update', 'shifts', row.id, `${row.status}:${row.exception_type}`)
     res.json(row)
+  } catch (e) {
+    res.status(e.statusCode || 400).json({ error: e.message })
+  }
+})
+
+shiftsRouter.post('/attendance/exceptions/:id/overtime-request', ...managerOrSupervisor, (req, res) => {
+  try {
+    const result = createOvertimeRequestFromAttendanceExceptionService(req.params.id, req.body, req.user)
+    logAudit(req.user.id, 'attendance_overtime_request_create', 'shifts', result.request.id, `exception:${req.params.id}`)
+    res.status(201).json(result)
   } catch (e) {
     res.status(e.statusCode || 400).json({ error: e.message })
   }
