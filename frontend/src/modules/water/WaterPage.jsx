@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect } from 'react'
+import { memo, useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
@@ -6,6 +6,12 @@ import { useToastStore } from '../../shared/store/toastStore.js'
 import { useAuthStore } from '../../shared/store/authStore.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 import WaterQueryErrorCenter from './components/WaterQueryErrorCenter.jsx'
+import {
+  createMatrixDraftState,
+  matrixDraftReducer,
+  matrixPasteChanges,
+  nextMatrixPosition,
+} from './logic/waterMatrix.js'
 
 const toastOk = (m) => useToastStore.getState().addToast(m, 'success')
 const toastErr = (m) => useToastStore.getState().addToast(m, 'error')
@@ -89,6 +95,7 @@ const productInputUnit = (product, unitMap = {}) => {
   return coerceUnitForProduct(unitMap[pid] || defaultUnitForProduct(product), product)
 }
 const unitFromToken = (token) => {
+  if (token == null || String(token).trim() === '') return null
   const t = normUnit(token).replace(/\./g, '')
   if (!t) return null
   if (['p', 'pl', 'plt', 'pal', 'palet', 'pallet'].includes(t)) return 'palet'
@@ -358,13 +365,122 @@ function AlertBand() {
 }
 
 // ─────────────────────────── ANA PANO — INDEX matris + günlük giriş ───────────────────────────
+const EMPTY_MATRIX_ROW = Object.freeze({})
+
+const WaterMatrixRow = memo(function WaterMatrixRow({
+  row,
+  zoneIndex,
+  columns,
+  cellValues,
+  dayMap,
+  productUnits,
+  brandColor,
+  onOpenZone,
+  onChangeCell,
+  onPasteCell,
+  onKeyDownCell,
+  registerInput,
+}) {
+  return (
+    <tr data-testid={`water-matrix-row-${row.zone_id}`}>
+      <td style={{ position: 'sticky', left: 0, zIndex: 1, background: 'var(--surface)', fontWeight: 600, whiteSpace: 'nowrap' }}>
+        <button
+          type="button"
+          onClick={() => onOpenZone(row)}
+          title={`${row.zone_name} geçmişini aç`}
+          style={{
+            border: '1px solid var(--border)',
+            background: row.visible_base ? 'rgba(20,184,166,.08)' : row.visible_draft ? 'rgba(34,197,94,.08)' : 'var(--surface2)',
+            color: 'var(--text)',
+            borderRadius: '7px',
+            padding: '5px 8px',
+            cursor: 'pointer',
+            fontWeight: 700,
+            fontSize: '11px',
+            textAlign: 'left',
+            maxWidth: '190px',
+            width: '100%',
+          }}
+        >
+          <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.zone_name}</span>
+          <span style={{ display: 'block', color: 'var(--text3)', fontSize: '9px', fontWeight: 500 }}>geçmişi aç · ay {nf(row.visible_base)} · bugün {nf(row.visible_day)}</span>
+        </button>
+      </td>
+      {columns.map((product, productIndex) => {
+        const key = cellKey(row.zone_id, product.product_id)
+        const monthBase = row.cells?.[product.product_id]?.base || 0
+        const dayBase = dayMap[key] || 0
+        const raw = cellValues[String(product.product_id)] || ''
+        const inputUnit = productInputUnit(product, productUnits)
+        const parsed = smartQty(raw, product, inputUnit)
+        const active = parsed.valid
+        const pending = String(raw).trim() !== ''
+        const startsBrand = productIndex === 0 || brandKey(columns[productIndex - 1]?.brand_id) !== brandKey(product.brand_id)
+        const tint = brandColor.get(brandKey(product.brand_id))
+        return (
+          <td
+            key={product.product_id}
+            style={{
+              textAlign: 'right',
+              verticalAlign: 'top',
+              borderLeft: startsBrand ? `3px solid ${tint?.fg || 'var(--border)'}` : '1px solid var(--border)',
+              background: active ? 'rgba(34,197,94,.08)' : pending ? 'rgba(239,68,68,.05)' : startsBrand ? tint?.bg : undefined,
+            }}
+          >
+            <div title={monthBase ? humanQty(product, monthBase) : ''} style={{ fontFamily: 'var(--mono)', color: monthBase ? 'var(--text)' : 'var(--text3)' }}>{monthBase ? nf(monthBase) : '·'}</div>
+            <input
+              ref={element => registerInput(key, element)}
+              type="text"
+              inputMode="decimal"
+              className="form-input"
+              value={raw}
+              aria-label={`${row.zone_name} - ${product.name} dağıtım miktarı`}
+              data-matrix-cell={key}
+              onChange={event => onChangeCell(row.zone_id, product.product_id, event.target.value)}
+              onPaste={event => onPasteCell(event, zoneIndex, productIndex)}
+              onKeyDown={event => onKeyDownCell(event, zoneIndex, productIndex)}
+              placeholder="0 / 3p"
+              style={{ width: '66px', height: '26px', textAlign: 'right', fontFamily: 'var(--mono)', fontSize: '11px', padding: '2px 5px', marginTop: '3px' }}
+            />
+            {active && <div style={{ fontSize: '9px', color: 'var(--green)', marginTop: '2px', whiteSpace: 'nowrap' }} title={calcText(product, parsed)}>= {nf(parsed.base)}</div>}
+            {dayBase > 0 && <div style={{ fontSize: '9px', color: 'var(--teal)', marginTop: '2px' }}>bugün {nf(dayBase)}</div>}
+          </td>
+        )
+      })}
+      <td style={{ textAlign: 'right', verticalAlign: 'top', fontFamily: 'var(--mono)', fontWeight: 700, background: 'var(--surface2)' }}>
+        <div style={{ color: row.visible_base ? 'var(--teal)' : 'var(--text3)' }}>{row.visible_base ? nf(row.visible_base) : '·'}</div>
+        {row.visible_draft > 0 && <div style={{ fontSize: '10px', color: 'var(--green)' }}>+{nf(row.visible_draft)}</div>}
+      </td>
+    </tr>
+  )
+}, (previous, next) => (
+  previous.zoneIndex === next.zoneIndex
+  && previous.columns === next.columns
+  && previous.cellValues === next.cellValues
+  && previous.dayMap === next.dayMap
+  && previous.productUnits === next.productUnits
+  && previous.brandColor === next.brandColor
+  && previous.row.zone_id === next.row.zone_id
+  && previous.row.zone_name === next.row.zone_name
+  && previous.row.cells === next.row.cells
+  && previous.row.visible_base === next.row.visible_base
+  && previous.row.visible_day === next.row.visible_day
+  && previous.row.visible_draft === next.row.visible_draft
+  && previous.onOpenZone === next.onOpenZone
+  && previous.onChangeCell === next.onChangeCell
+  && previous.onPasteCell === next.onPasteCell
+  && previous.onKeyDownCell === next.onKeyDownCell
+  && previous.registerInput === next.registerInput
+))
+
 function WaterBoard({ from, to, label, lowItems }) {
   const qc = useQueryClient()
   const [day, setDay] = useState(() => {
     const t = todayStr()
     return (t >= from && t <= to) ? t : from
   })
-  const [cells, setCells] = useState({})
+  const [matrixDraft, dispatchMatrix] = useReducer(matrixDraftReducer, undefined, createMatrixDraftState)
+  const cells = matrixDraft.cells
   const [productUnits, setProductUnits] = useState({})
   const [selectedZone, setSelectedZone] = useState(null)
   const [exporting, setExporting] = useState(false)
@@ -373,6 +489,8 @@ function WaterBoard({ from, to, label, lowItems }) {
   const [zoneSort, setZoneSort] = useState('total_desc')
   const [zoneActivity, setZoneActivity] = useState('all')
   const inputRefs = useRef({})
+  const matrixRowsRef = useRef([])
+  const matrixColumnsRef = useRef([])
 
   const pivotQuery = useQuery({
     queryKey: ['water-pivot', from, to],
@@ -422,12 +540,17 @@ function WaterBoard({ from, to, label, lowItems }) {
   const draft = useMemo(() => {
     const byCell = {}, byZone = {}, byProduct = {}
     let total = 0
-    Object.entries(cells).forEach(([k, raw]) => {
-      const [z, p] = k.split(':')
-      const product = columnsById.get(+p)
-      const parsed = smartQty(raw, product, inputUnitFor(product))
-      if (!parsed.valid) return
-      byCell[k] = parsed; byZone[z] = (byZone[z] || 0) + parsed.base; byProduct[p] = (byProduct[p] || 0) + parsed.base; total += parsed.base
+    Object.entries(cells).forEach(([z, rowCells]) => {
+      Object.entries(rowCells).forEach(([p, raw]) => {
+        const product = columnsById.get(+p)
+        const parsed = smartQty(raw, product, inputUnitFor(product))
+        if (!parsed.valid) return
+        const key = cellKey(z, p)
+        byCell[key] = parsed
+        byZone[z] = (byZone[z] || 0) + parsed.base
+        byProduct[p] = (byProduct[p] || 0) + parsed.base
+        total += parsed.base
+      })
     })
     return { byCell, byZone, byProduct, total, count: Object.keys(byCell).length }
   }, [cells, columnsById, productUnits])
@@ -485,6 +608,9 @@ function WaterBoard({ from, to, label, lowItems }) {
     return { byProduct, month, today, draft: draftTotal }
   }, [visibleCols, visibleZoneRows, dayMap, draft])
 
+  matrixRowsRef.current = visibleZoneRows
+  matrixColumnsRef.current = visibleCols
+
   const saveBatch = useMutation({
     mutationFn: (lines) => api.post('/water/distribute/batch', { move_date: day, lines }),
     onSuccess: (r) => {
@@ -492,36 +618,68 @@ function WaterBoard({ from, to, label, lowItems }) {
       qc.invalidateQueries({ queryKey: ['water-summary'] })
       qc.invalidateQueries({ queryKey: ['water-day'] })
       toastOk(`${r.data.count} dağıtım kaydedildi (${day})`)
-      setCells({})
+      dispatchMatrix({ type: 'clear' })
     },
     onError: (e) => toastErr(errMsg(e, 'Kaydedilemedi')),
   })
 
-  const updateCell = (zoneId, productId, value) => setCells(prev => {
-    const next = { ...prev }; const k = cellKey(zoneId, productId)
-    if (String(value ?? '').trim() === '') delete next[k]; else next[k] = value
-    return next
-  })
+  const updateCell = useCallback((zoneId, productId, value) => {
+    dispatchMatrix({ type: 'set-cell', zoneId, productId, value })
+  }, [])
 
-  const handlePaste = (e, zoneIdx, prodIdx) => {
-    const text = e.clipboardData?.getData('text')
+  const registerInput = useCallback((key, element) => {
+    if (element) inputRefs.current[key] = element
+    else delete inputRefs.current[key]
+  }, [])
+
+  const handlePaste = useCallback((event, zoneIndex, productIndex) => {
+    const text = event.clipboardData?.getData('text')
     if (!text || (!text.includes('\t') && !text.includes('\n'))) return
-    e.preventDefault()
-    const rows = text.trimEnd().split(/\r?\n/).map(r => r.split('\t'))
-    setCells(prev => {
-      const next = { ...prev }
-      rows.forEach((cols, ro) => {
-        const zone = visibleZoneRows[zoneIdx + ro]; if (!zone) return
-        cols.forEach((raw, co) => {
-          const col = visibleCols[prodIdx + co]; if (!col) return
-          const val = raw.trim().replace(',', '.'); const k = cellKey(zone.zone_id, col.product_id)
-          if (val === '') delete next[k]; else next[k] = val
-        })
-      })
-      return next
+    event.preventDefault()
+    const pasted = matrixPasteChanges(text, matrixRowsRef.current, matrixColumnsRef.current, zoneIndex, productIndex)
+    if (!pasted.changes.length) return
+    dispatchMatrix({ type: 'merge-cells', changes: pasted.changes })
+    const changedRows = new Set(pasted.changes.map(change => String(change.zoneId))).size
+    toastOk(`${changedRows} satır yapıştırıldı`)
+  }, [])
+
+  const focusMatrixCell = useCallback((rowIndex, columnIndex) => {
+    const zone = matrixRowsRef.current[rowIndex]
+    const product = matrixColumnsRef.current[columnIndex]
+    if (!zone || !product) return
+    const input = inputRefs.current[cellKey(zone.zone_id, product.product_id)]
+    input?.focus()
+    input?.select()
+  }, [])
+
+  const handleCellKeyDown = useCallback((event, rowIndex, columnIndex) => {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLocaleLowerCase('tr') === 'z' && !event.shiftKey) {
+      event.preventDefault()
+      dispatchMatrix({ type: 'undo' })
+      return
+    }
+    if (event.key === 'Escape') {
+      event.currentTarget.blur()
+      return
+    }
+    if (event.ctrlKey || event.metaKey || event.altKey) return
+    if (event.key === 'ArrowLeft' && (event.currentTarget.selectionStart || 0) > 0) return
+    if (event.key === 'ArrowRight' && (event.currentTarget.selectionEnd || 0) < event.currentTarget.value.length) return
+
+    const next = nextMatrixPosition({
+      key: event.key,
+      rowIndex,
+      columnIndex,
+      rowCount: matrixRowsRef.current.length,
+      columnCount: matrixColumnsRef.current.length,
+      shiftKey: event.shiftKey,
     })
-    toastOk(`${rows.length} satır yapıştırıldı`)
-  }
+    if (!next) return
+    event.preventDefault()
+    focusMatrixCell(next.rowIndex, next.columnIndex)
+  }, [focusMatrixCell])
+
+  const openZone = useCallback((zone) => setSelectedZone(zone), [])
 
   const save = () => {
     const lines = Object.entries(draft.byCell).map(([k, parsed]) => {
@@ -548,10 +706,11 @@ function WaterBoard({ from, to, label, lowItems }) {
       tpl.lines.forEach(l => { next[l.product_id] = coerceUnitForProduct(l.default_unit, columnsById.get(l.product_id) || {}) })
       return next
     })
-    setCells(prev => {
-      const next = { ...prev }
-      tpl.lines.forEach(l => { if (l.default_qty != null) next[cellKey(l.zone_id, l.product_id)] = String(l.default_qty) })
-      return next
+    dispatchMatrix({
+      type: 'merge-cells',
+      changes: tpl.lines
+        .filter(line => line.default_qty != null)
+        .map(line => ({ zoneId: line.zone_id, productId: line.product_id, value: String(line.default_qty) })),
     })
     const filled = tpl.lines.filter(l => l.default_qty != null).length
     toastOk(`"${tpl.name}" uygulandı — ${filled}/${tpl.lines.length} hücre dolduruldu`)
@@ -882,6 +1041,16 @@ function WaterBoard({ from, to, label, lowItems }) {
           <span style={{ fontSize: '11px', color: 'var(--text3)' }}>Hücre birimi:</span>
           <button className="btn btn-ghost btn-sm" onClick={() => setAllInputUnits('default')}>Baz</button>
           <button className="btn btn-ghost btn-sm" onClick={() => setAllInputUnits('palet')}>Palet</button>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            aria-label="Son taslak değişikliğini geri al"
+            title="Son taslak değişikliğini geri al (Ctrl+Z)"
+            onClick={() => dispatchMatrix({ type: 'undo' })}
+            disabled={!matrixDraft.history.length}
+          >
+            Geri Al
+          </button>
           <button className="btn btn-ghost btn-sm" onClick={exportExcel} disabled={exporting || !pivot}>⬇ {exporting ? '…' : 'Excel'}</button>
           <button className="btn btn-primary btn-sm" onClick={save} disabled={saveBatch.isPending || draft.count === 0}>
             {saveBatch.isPending ? 'Kaydediliyor…' : draft.count ? `${draft.count} Hücreyi Kaydet` : 'Kaydet'}
@@ -1025,67 +1194,23 @@ function WaterBoard({ from, to, label, lowItems }) {
                 </tr>
               </thead>
               <tbody>
-                {visibleZoneRows.map((row, zoneIdx) => {
-                  const rowDraft = row.visible_draft || 0
-                  return (
-                    <tr key={row.zone_id}>
-                      <td style={{ position: 'sticky', left: 0, zIndex: 1, background: 'var(--surface)', fontWeight: 600, whiteSpace: 'nowrap' }}>
-                        <button
-                          type="button"
-                          onClick={() => setSelectedZone(row)}
-                          title={`${row.zone_name} geçmişini aç`}
-                          style={{
-                            border: '1px solid var(--border)',
-                            background: row.visible_base ? 'rgba(20,184,166,.08)' : row.visible_draft ? 'rgba(34,197,94,.08)' : 'var(--surface2)',
-                            color: 'var(--text)',
-                            borderRadius: '7px',
-                            padding: '5px 8px',
-                            cursor: 'pointer',
-                            fontWeight: 700,
-                            fontSize: '11px',
-                            textAlign: 'left',
-                            maxWidth: '190px',
-                            width: '100%',
-                          }}
-                        >
-                          <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.zone_name}</span>
-                          <span style={{ display: 'block', color: 'var(--text3)', fontSize: '9px', fontWeight: 500 }}>geçmişi aç · ay {nf(row.visible_base)} · bugün {nf(row.visible_day)}</span>
-                        </button>
-                      </td>
-                      {visibleCols.map((c, prodIdx) => {
-                        const key = cellKey(row.zone_id, c.product_id)
-                        const monthBase = row.cells[c.product_id]?.base || 0
-                        const dayBase = dayMap[key] || 0
-                        const raw = cells[key] || ''
-                        const parsed = draft.byCell[key] || smartQty(raw, c, inputUnitFor(c))
-                        const active = parsed.valid
-                        const pending = String(raw).trim() !== ''
-                        const startsBrand = prodIdx === 0 || brandKey(visibleCols[prodIdx - 1]?.brand_id) !== brandKey(c.brand_id)
-                        const tint = brandColor.get(brandKey(c.brand_id))
-                        return (
-                          <td key={c.product_id} style={{ textAlign: 'right', verticalAlign: 'top', borderLeft: startsBrand ? `3px solid ${tint?.fg || 'var(--border)'}` : '1px solid var(--border)', background: active ? 'rgba(34,197,94,.08)' : pending ? 'rgba(239,68,68,.05)' : startsBrand ? tint?.bg : undefined }}>
-                            <div title={monthBase ? humanQty(c, monthBase) : ''} style={{ fontFamily: 'var(--mono)', color: monthBase ? 'var(--text)' : 'var(--text3)' }}>{monthBase ? nf(monthBase) : '·'}</div>
-                            <input
-                              ref={el => { if (el) inputRefs.current[key] = el }}
-                              type="text" inputMode="decimal"
-                              className="form-input" value={raw}
-                              onChange={e => updateCell(row.zone_id, c.product_id, e.target.value)}
-                              onPaste={e => handlePaste(e, zoneIdx, prodIdx)}
-                              placeholder="0 / 3p"
-                              style={{ width: '66px', height: '26px', textAlign: 'right', fontFamily: 'var(--mono)', fontSize: '11px', padding: '2px 5px', marginTop: '3px' }}
-                            />
-                            {active && <div style={{ fontSize: '9px', color: 'var(--green)', marginTop: '2px', whiteSpace: 'nowrap' }} title={calcText(c, parsed)}>= {nf(parsed.base)}</div>}
-                            {dayBase > 0 && <div style={{ fontSize: '9px', color: 'var(--teal)', marginTop: '2px' }}>bugün {nf(dayBase)}</div>}
-                          </td>
-                        )
-                      })}
-                      <td style={{ textAlign: 'right', verticalAlign: 'top', fontFamily: 'var(--mono)', fontWeight: 700, background: 'var(--surface2)' }}>
-                        <div style={{ color: row.visible_base ? 'var(--teal)' : 'var(--text3)' }}>{row.visible_base ? nf(row.visible_base) : '·'}</div>
-                        {rowDraft > 0 && <div style={{ fontSize: '10px', color: 'var(--green)' }}>+{nf(rowDraft)}</div>}
-                      </td>
-                    </tr>
-                  )
-                })}
+                {visibleZoneRows.map((row, zoneIndex) => (
+                  <WaterMatrixRow
+                    key={row.zone_id}
+                    row={row}
+                    zoneIndex={zoneIndex}
+                    columns={visibleCols}
+                    cellValues={cells[String(row.zone_id)] || EMPTY_MATRIX_ROW}
+                    dayMap={dayMap}
+                    productUnits={productUnits}
+                    brandColor={brandColor}
+                    onOpenZone={openZone}
+                    onChangeCell={updateCell}
+                    onPasteCell={handlePaste}
+                    onKeyDownCell={handleCellKeyDown}
+                    registerInput={registerInput}
+                  />
+                ))}
                 {visibleZoneRows.length === 0 && (
                   <tr>
                     <td colSpan={visibleCols.length + 2} style={{ textAlign: 'center', padding: '18px', color: 'var(--text3)' }}>Filtreye uygun dağıtım yeri yok</td>

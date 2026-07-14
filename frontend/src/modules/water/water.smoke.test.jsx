@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { fireEvent, screen, within } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { renderWithProviders } from '../../test/renderWithProviders.jsx'
 import { useAuthStore } from '../../shared/store/authStore.js'
 
@@ -199,6 +199,7 @@ vi.mock('../../shared/api/client.js', () => ({
 }))
 
 import WaterPage from './WaterPage.jsx'
+import api from '../../shared/api/client.js'
 
 describe('WaterPage tek-ekran pano smoke', () => {
   beforeEach(() => vi.clearAllMocks())
@@ -247,6 +248,36 @@ describe('WaterPage tek-ekran pano smoke', () => {
     expect(screen.getByText(/Tüm Markalar/)).toBeInTheDocument()
     // dağıtım yeri toplamı (91) matriste
     expect((await screen.findAllByText('91')).length).toBeGreaterThan(0)
+  })
+
+  it('matriste klavye gezinme, geri alma, Excel yapıştırma ve toplu kayıt çalışır', async () => {
+    renderWithProviders(<WaterPage />)
+    const first = await screen.findByLabelText('OTC Kamp Alanı - Damacana dağıtım miktarı')
+    const second = screen.getByLabelText('OTC Kamp Alanı - 0.5 L dağıtım miktarı')
+    const undo = screen.getByRole('button', { name: 'Son taslak değişikliğini geri al' })
+
+    expect(undo).toBeDisabled()
+    fireEvent.change(first, { target: { value: '3p' } })
+    expect(await screen.findByText('= 108')).toBeInTheDocument()
+    expect(undo).toBeEnabled()
+
+    fireEvent.keyDown(first, { key: 'Tab' })
+    expect(second).toHaveFocus()
+
+    fireEvent.click(undo)
+    expect(first).toHaveValue('')
+
+    fireEvent.paste(first, { clipboardData: { getData: () => '2\t3' } })
+    expect(first).toHaveValue('2')
+    expect(second).toHaveValue('3')
+
+    fireEvent.click(screen.getByRole('button', { name: '2 Hücreyi Kaydet' }))
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith('/water/distribute/batch', expect.objectContaining({
+      lines: [
+        { zone_id: 1, product_id: 1, input_qty: 2, input_unit: 'adet' },
+        { zone_id: 1, product_id: 2, input_qty: 3, input_unit: 'koli' },
+      ],
+    })))
   })
 
   it('dağıtım yeri satırı tıklanınca dağıtım geçmişi modalı açılır', async () => {
