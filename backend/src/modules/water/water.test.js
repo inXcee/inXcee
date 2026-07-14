@@ -639,7 +639,7 @@ describe('Su takip — Ay Sonu Kapanış / Uyuşturma (W2)', () => {
     expect(row.diff_human).toBe('-5 adet')
   })
 
-  it('ay kapanışı kilitler; kilitli aya kayıt uyarı döndürür (engellemez)', async () => {
+  it('ay kapanışı kilitler; kilitli aya yeni kaydı 423 ile engeller', async () => {
     const close = await auth(request(app).post('/api/water/monthly-close')).send({ month: MONTH, note: 'Haziran kapandı' })
     expect(close.status).toBe(201)
     expect(close.body.is_locked).toBe(1)
@@ -647,11 +647,11 @@ describe('Su takip — Ay Sonu Kapanış / Uyuşturma (W2)', () => {
     const rec = await auth(request(app).get(`/api/water/reconciliation?month=${MONTH}`))
     expect(rec.body.locked).toBe(true)
 
-    // kilitli aya yeni giriş — kaydedilir ama uyarı gelir
+    // Kilitli aya yeni giriş yazılmaz; önce kilidin açılması gerekir.
     const intake = await auth(request(app).post('/api/water/intake'))
       .send({ product_id: pRec, input_qty: 5, input_unit: 'adet', move_date: '2026-06-25', waybill_no: 'KAP-LATE' })
-    expect(intake.status).toBe(201)
-    expect(intake.body.warning).toMatch(/Kapanmış aya kayıt/)
+    expect(intake.status).toBe(423)
+    expect(intake.body.error).toMatch(/2026-06 ayı kilitli.*kilidi açın/i)
   })
 
   it('kapanış/kilit sadece kampüs müdürüne açık (403 vardiya)', async () => {
@@ -659,12 +659,13 @@ describe('Su takip — Ay Sonu Kapanış / Uyuşturma (W2)', () => {
     expect(r.status).toBe(403)
   })
 
-  it('kilidi açma — kayıt sonrası uyarı kalkar', async () => {
+  it('kilidi açma — kayıt yeniden yapılabilir', async () => {
     const unlock = await auth(request(app).post(`/api/water/monthly-close/${MONTH}/unlock`))
     expect(unlock.status).toBe(200)
     const intake = await auth(request(app).post('/api/water/intake'))
       .send({ product_id: pRec, input_qty: 1, input_unit: 'adet', move_date: '2026-06-26' })
-    expect(intake.body.warning).toBeNull()
+    expect(intake.status).toBe(201)
+    expect(intake.body.id).toBeTruthy()
   })
 
   it('olmayan ay kilidi açılamaz (404)', async () => {
@@ -1948,5 +1949,169 @@ describe('Su takip — kesirli miktar tutarlılığı', () => {
     expectFractionRejected(badCount)
     expect(goodCount.status).toBe(200)
     expect(goodCount.body).toMatchObject({ system_base: 6, counted_base: 6, diff_base: 0, status: 'even' })
+  })
+})
+
+describe('Su takip — kilitli ay yaptırımı', () => {
+  const MONTH = '2031-02'
+  const LOCKED_DAY = `${MONTH}-10`
+  const OPEN_DAY = '2031-03-10'
+  const auth = (req) => req.set('Authorization', `Bearer ${managerToken}`)
+  let productId
+  let otherProductId
+  let zoneId
+  let lockedIntakeId
+  let lockedDistributionId
+  let openDistributionId
+  let lockedReturnId
+  let lockedAdjustmentId
+
+  const lockState = () => {
+    const db = getDB()
+    return {
+      movements: db.prepare('SELECT COUNT(*) AS count FROM water_movements WHERE product_id=?').get(productId).count,
+      returns: db.prepare('SELECT COUNT(*) AS count FROM water_returns WHERE product_id=?').get(productId).count,
+      adjustments: db.prepare('SELECT COUNT(*) AS count FROM water_adjustments WHERE product_id=?').get(productId).count,
+      stockCount: db.prepare(`
+        SELECT system_base, counted_base, diff_base, reason, note
+        FROM water_stock_counts WHERE month=? AND product_id=?
+      `).get(MONTH, productId),
+    }
+  }
+  const movementState = (id) => getDB().prepare(`
+    SELECT product_id, zone_id, move_date, qty_base, input_qty, input_unit
+    FROM water_movements WHERE id=?
+  `).get(id)
+  const expectLocked = (...responses) => {
+    for (const response of responses) {
+      expect(response.status).toBe(423)
+      expect(response.body.error).toMatch(new RegExp(`${MONTH} ayı kilitli.*kilidi açın`, 'i'))
+    }
+  }
+
+  beforeAll(async () => {
+    const product = await auth(request(app).post('/api/water/products')).send({
+      name: 'KİLİT TEST DAMACANA', unit_label: 'adet', units_per_case: 1, cases_per_pallet: 36, is_returnable: true,
+    })
+    const otherProduct = await auth(request(app).post('/api/water/products')).send({
+      name: 'KİLİT TEST DİĞER', unit_label: 'adet', units_per_case: 1, cases_per_pallet: 24,
+    })
+    const zone = await auth(request(app).post('/api/water/zones')).send({ name: 'KİLİT TEST BÖLGESİ' })
+    productId = product.body.id
+    otherProductId = otherProduct.body.id
+    zoneId = zone.body.id
+
+    lockedIntakeId = (await auth(request(app).post('/api/water/intake')).send({
+      product_id: productId, input_qty: 100, input_unit: 'adet', move_date: LOCKED_DAY, waybill_no: 'KILIT-IN',
+    })).body.id
+    lockedDistributionId = (await auth(request(app).post('/api/water/distribute')).send({
+      product_id: productId, zone_id: zoneId, input_qty: 10, input_unit: 'adet', move_date: LOCKED_DAY,
+    })).body.id
+    openDistributionId = (await auth(request(app).post('/api/water/distribute')).send({
+      product_id: productId, zone_id: zoneId, input_qty: 3, input_unit: 'adet', move_date: OPEN_DAY,
+    })).body.id
+    lockedReturnId = (await auth(request(app).post('/api/water/returns')).send({
+      product_id: productId, input_qty: 2, input_unit: 'adet', move_date: LOCKED_DAY,
+    })).body.id
+    lockedAdjustmentId = (await auth(request(app).post('/api/water/adjustments')).send({
+      product_id: productId, direction: 'out', input_qty: 1, input_unit: 'adet', move_date: LOCKED_DAY, reason: 'fire_kirik',
+    })).body.id
+
+    const close = await auth(request(app).post('/api/water/monthly-close')).send({ month: MONTH, note: 'Kilit testi' })
+    expect(close.status).toBe(201)
+    expect(close.body.is_locked).toBe(1)
+  })
+
+  it('tekli giriş, dağıtım, iade, düzeltme ve sayımı hiçbir satır yazmadan engeller', async () => {
+    const before = lockState()
+    const intake = await auth(request(app).post('/api/water/intake')).send({
+      product_id: productId, input_qty: 5, input_unit: 'adet', move_date: LOCKED_DAY,
+    })
+    const distribution = await auth(request(app).post('/api/water/distribute')).send({
+      product_id: productId, zone_id: zoneId, input_qty: 5, input_unit: 'adet', move_date: LOCKED_DAY,
+    })
+    const returned = await auth(request(app).post('/api/water/returns')).send({
+      product_id: productId, input_qty: 5, input_unit: 'adet', move_date: LOCKED_DAY,
+    })
+    const adjustment = await auth(request(app).post('/api/water/adjustments')).send({
+      product_id: productId, direction: 'in', input_qty: 5, input_unit: 'adet', move_date: LOCKED_DAY, reason: 'sayim_farki',
+    })
+    const stockCount = await auth(request(app).post('/api/water/stock-count')).send({
+      month: MONTH, product_id: productId, counted_qty: 95, counted_unit: 'adet', reason: 'sayim_farki',
+    })
+
+    expectLocked(intake, distribution, returned, adjustment, stockCount)
+    expect(lockState()).toEqual(before)
+  })
+
+  it('toplu işlemi, tek kilitli satır varsa açık ay satırı dahil atomik reddeder', async () => {
+    const before = lockState()
+    const batchIntake = await auth(request(app).post('/api/water/intake/batch')).send({
+      move_date: LOCKED_DAY,
+      lines: [{ product_id: productId, input_qty: 1, input_unit: 'adet' }],
+    })
+    const batchDistribution = await auth(request(app).post('/api/water/distribute/batch')).send({
+      lines: [
+        { product_id: productId, zone_id: zoneId, input_qty: 1, input_unit: 'adet', move_date: OPEN_DAY },
+        { product_id: productId, zone_id: zoneId, input_qty: 1, input_unit: 'adet', move_date: LOCKED_DAY },
+      ],
+    })
+    const batchReturn = await auth(request(app).post('/api/water/returns/batch')).send({
+      lines: [
+        { product_id: productId, input_qty: 1, input_unit: 'adet', move_date: OPEN_DAY },
+        { product_id: productId, input_qty: 1, input_unit: 'adet', move_date: LOCKED_DAY },
+      ],
+    })
+
+    expectLocked(batchIntake, batchDistribution, batchReturn)
+    expect(lockState()).toEqual(before)
+  })
+
+  it('dağıtım güncellemesinde hem mevcut hem hedef ayın kilidini denetler', async () => {
+    const lockedBefore = movementState(lockedDistributionId)
+    const openBefore = movementState(openDistributionId)
+    const moveLockedRecord = await auth(request(app).put(`/api/water/movements/${lockedDistributionId}`)).send({
+      product_id: otherProductId, zone_id: zoneId, input_qty: 4, input_unit: 'adet', move_date: OPEN_DAY,
+    })
+    const moveIntoLockedMonth = await auth(request(app).put(`/api/water/movements/${openDistributionId}`)).send({
+      product_id: otherProductId, zone_id: zoneId, input_qty: 4, input_unit: 'adet', move_date: LOCKED_DAY,
+    })
+
+    expectLocked(moveLockedRecord, moveIntoLockedMonth)
+    expect(movementState(lockedDistributionId)).toEqual(lockedBefore)
+    expect(movementState(openDistributionId)).toEqual(openBefore)
+  })
+
+  it('kilitli hareket, iade ve düzeltme kayıtlarını silmez', async () => {
+    const before = lockState()
+    const deleteIn = await auth(request(app).delete(`/api/water/movements/${lockedIntakeId}`))
+    const deleteOut = await auth(request(app).delete(`/api/water/movements/${lockedDistributionId}`))
+    const deleteReturn = await auth(request(app).delete(`/api/water/returns/${lockedReturnId}`))
+    const deleteAdjustment = await auth(request(app).delete(`/api/water/adjustments/${lockedAdjustmentId}`))
+
+    expectLocked(deleteIn, deleteOut, deleteReturn, deleteAdjustment)
+    expect(lockState()).toEqual(before)
+    expect(movementState(lockedIntakeId)).toBeTruthy()
+    expect(movementState(lockedDistributionId)).toBeTruthy()
+  })
+
+  it('kilit yalnız ilgili aya uygulanır; açıldıktan sonra geçmiş ay yeniden düzenlenebilir', async () => {
+    const openMonthIntake = await auth(request(app).post('/api/water/intake')).send({
+      product_id: productId, input_qty: 2, input_unit: 'adet', move_date: OPEN_DAY,
+    })
+    expect(openMonthIntake.status).toBe(201)
+
+    const unlock = await auth(request(app).post(`/api/water/monthly-close/${MONTH}/unlock`))
+    expect(unlock.status).toBe(200)
+    const lockedMonthIntake = await auth(request(app).post('/api/water/intake')).send({
+      product_id: productId, input_qty: 2, input_unit: 'adet', move_date: LOCKED_DAY,
+    })
+    const stockCount = await auth(request(app).post('/api/water/stock-count')).send({
+      month: MONTH, product_id: productId, counted_qty: 0, counted_unit: 'adet', reason: 'sayim_farki',
+    })
+
+    expect(lockedMonthIntake.status).toBe(201)
+    expect(stockCount.status).toBe(200)
+    expect(getDB().prepare('SELECT is_locked FROM water_monthly_closures WHERE month=?').get(MONTH).is_locked).toBe(0)
   })
 })

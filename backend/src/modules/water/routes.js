@@ -13,7 +13,7 @@ import {
   createReturnService, batchReturnService, deleteReturnService, returnsService, depositService,
   summaryService, pivotService, batchIntakeService, batchDistributeService, parseDistributionText,
   alertsService, forecastService, trendsService, reconciliationService, buildReconciliationPDF, saveStockCountService, monthlyCloseService, monthlyUnlockService,
-  monthLockWarning, pendingDistributionsService,
+  pendingDistributionsService,
   templatesService, createTemplateService, deleteTemplateService,
   adjustmentsService, createAdjustmentService, deleteAdjustmentService, COUNT_REASONS,
   reviewQueueService, approveReviewsService,
@@ -132,7 +132,7 @@ waterRouter.post('/intake', ...mgr, (req, res, next) => {
   try {
     const id = createIntakeService(req.body, req.user.id)
     logAudit(req.user.id, 'water_intake', 'water', id, `${req.body.input_qty} ${req.body.input_unit}`)
-    res.status(201).json({ id, warning: monthLockWarning(req.body.move_date) })
+    res.status(201).json({ id })
   } catch (e) { fail(next, e) }
 })
 
@@ -141,7 +141,7 @@ waterRouter.post('/intake/batch', ...mgr, (req, res, next) => {
   try {
     const { ids, matched } = batchIntakeService(req.body, req.user.id)
     logAudit(req.user.id, 'water_intake_batch', 'water', null, `irsaliye:${req.body.waybill_no || '-'} ${ids.length} satır`)
-    res.status(201).json({ ids, count: ids.length, matched, warning: monthLockWarning(req.body.move_date) })
+    res.status(201).json({ ids, count: ids.length, matched })
   } catch (e) { fail(next, e) }
 })
 
@@ -150,7 +150,7 @@ waterRouter.post('/distribute', ...mgr, (req, res, next) => {
   try {
     const id = createDistributionService(req.body, req.user.id)
     logAudit(req.user.id, 'water_distribute', 'water', id, `zone:${req.body.zone_id} ${req.body.input_qty} ${req.body.input_unit}`)
-    res.status(201).json({ id, warning: monthLockWarning(req.body.move_date) })
+    res.status(201).json({ id })
   } catch (e) { fail(next, e) }
 })
 

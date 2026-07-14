@@ -246,6 +246,7 @@ function validateMovement(data, requireZone) {
   if (!INPUT_UNITS.includes(data.input_unit)) throw Object.assign(new Error('Geçersiz birim'), { statusCode: 400 })
   assertAvailableUnit(product, data.input_unit)
   if (!/^\d{4}-\d{2}-\d{2}$/.test(data.move_date || '')) throw Object.assign(new Error('Tarih YYYY-MM-DD olmalı'), { statusCode: 400 })
+  assertMonthUnlocked(data.move_date)
   if (requireZone) {
     if (!data.zone_id || !q.getZone(data.zone_id)) throw Object.assign(new Error('Bölge seçilmeli'), { statusCode: 400 })
   }
@@ -328,6 +329,7 @@ export function deleteMovementService(id) {
   return q.runInTransaction(() => {
     const existing = q.getMovement(id)
     if (!existing) throw Object.assign(new Error('Hareket bulunamadı'), { statusCode: 404 })
+    assertMonthUnlocked(existing.move_date)
     if (existing.type === 'in') {
       const usage = q.intakeAllocationUsage(id)
       if (usage.allocated_base > 0) {
@@ -349,6 +351,7 @@ export function updateDistributionService(id, data, userId) {
   const existing = q.getMovement(id)
   if (!existing) throw Object.assign(new Error('Hareket bulunamadı'), { statusCode: 404 })
   if (existing.type !== 'out') throw Object.assign(new Error('Sadece dağıtım kaydı düzenlenebilir'), { statusCode: 400 })
+  assertMonthUnlocked(existing.move_date)
   const { product, qty } = validateMovement(data, true)
   const row = {
     type: 'out', product_id: product.id, zone_id: data.zone_id, move_date: data.move_date,
@@ -526,6 +529,7 @@ function validateReturnLine(line, moveDate) {
   if (!INPUT_UNITS.includes(line.input_unit)) throw Object.assign(new Error('Geçersiz birim'), { statusCode: 400 })
   assertAvailableUnit(product, line.input_unit)
   if (!/^\d{4}-\d{2}-\d{2}$/.test(moveDate || '')) throw Object.assign(new Error('Tarih YYYY-MM-DD olmalı'), { statusCode: 400 })
+  assertMonthUnlocked(moveDate)
   return { product, qty }
 }
 
@@ -555,7 +559,9 @@ export function batchReturnService(data, userId) {
 }
 
 export function deleteReturnService(id) {
-  if (!q.getReturn(id)) throw Object.assign(new Error('İade kaydı bulunamadı'), { statusCode: 404 })
+  const existing = q.getReturn(id)
+  if (!existing) throw Object.assign(new Error('İade kaydı bulunamadı'), { statusCode: 404 })
+  assertMonthUnlocked(existing.move_date)
   q.deleteReturn(id)
 }
 
@@ -732,6 +738,7 @@ export function createAdjustmentService(data, userId) {
   if (!INPUT_UNITS.includes(unit)) throw Object.assign(new Error('Geçersiz birim'), { statusCode: 400 })
   assertAvailableUnit(product, unit)
   if (!/^\d{4}-\d{2}-\d{2}$/.test(data.move_date || '')) throw Object.assign(new Error('Tarih YYYY-MM-DD olmalı'), { statusCode: 400 })
+  assertMonthUnlocked(data.move_date)
   if (!REASON_KEYS.has(data.reason)) throw Object.assign(new Error('Sebep seçilmeli'), { statusCode: 400 })
   const id = q.createAdjustment({
     product_id: product.id, move_date: data.move_date, direction: data.direction,
@@ -743,7 +750,9 @@ export function createAdjustmentService(data, userId) {
 }
 
 export function deleteAdjustmentService(id) {
-  if (!q.getAdjustment(id)) throw Object.assign(new Error('Düzeltme bulunamadı'), { statusCode: 404 })
+  const existing = q.getAdjustment(id)
+  if (!existing) throw Object.assign(new Error('Düzeltme bulunamadı'), { statusCode: 404 })
+  assertMonthUnlocked(existing.move_date)
   q.deleteAdjustment(id)
 }
 
@@ -1532,11 +1541,15 @@ export const COUNT_REASONS = [
 const REASON_KEYS = new Set(COUNT_REASONS.map(r => r.key))
 const isMonth = (m) => /^\d{4}-\d{2}$/.test(m || '')
 
-// Kilitli aya kayıt uyarısı (ilk sürüm: engelleme yok, sadece uyarı — bkz PLAN varsayımları)
-export function monthLockWarning(moveDate) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(moveDate || '')) return null
-  const closure = q.getClosure(moveDate.slice(0, 7))
-  return closure?.is_locked ? `Kapanmış aya kayıt (${moveDate.slice(0, 7)})` : null
+export function assertMonthUnlocked(dateOrMonth) {
+  const value = String(dateOrMonth || '')
+  const month = isMonth(value) ? value : /^\d{4}-\d{2}-\d{2}$/.test(value) ? value.slice(0, 7) : null
+  if (!month) return
+  if (q.getClosure(month)?.is_locked) {
+    throw Object.assign(new Error(
+      `${month} ayı kilitli. Bu aya ait kayıt eklenemez, değiştirilemez veya silinemez. Önce Ay Kapanışı bölümünden kilidi açın.`,
+    ), { statusCode: 423 })
+  }
 }
 
 export function reconciliationService({ month } = {}) {
@@ -1586,6 +1599,7 @@ function systemBaseFor(month, productId) {
 
 export function saveStockCountService(data, userId) {
   if (!isMonth(data?.month)) throw Object.assign(new Error('Ay YYYY-MM formatında olmalı'), { statusCode: 400 })
+  assertMonthUnlocked(data.month)
   const product = q.getProduct(data.product_id)
   if (!product) throw Object.assign(new Error('Ürün bulunamadı'), { statusCode: 400 })
   const counted = Number(data.counted_qty)

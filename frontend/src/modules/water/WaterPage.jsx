@@ -2928,6 +2928,7 @@ function MonthClosurePanel({ month, label }) {
   const setDraft = (pid, patch) => setDrafts(prev => ({ ...prev, [pid]: { ...prev[pid], ...patch } }))
 
   const commit = (row) => {
+    if (locked) return toastErr(`${label} kilitli; sayımı değiştirmek için önce kilidi açın`)
     const d = drafts[row.product_id] || {}
     if (d.counted == null || String(d.counted).trim() === '') return
     const counted = Number(String(d.counted).replace(',', '.'))
@@ -2939,7 +2940,7 @@ function MonthClosurePanel({ month, label }) {
   }
 
   const askClose = async () => {
-    if (await confirmDialog({ title: `${label} kapatılsın mı?`, message: 'Ay kilitlenir; kilitli aya girilen kayıtlar uyarı verir. Kilidi sonra açabilirsiniz.', confirmText: 'Ayı Kilitle' })) closeMonth.mutate()
+    if (await confirmDialog({ title: `${label} kapatılsın mı?`, message: 'Ay kilitlenir; bu aya yeni kayıt ekleme, mevcut kaydı değiştirme ve silme işlemleri engellenir. Gerekirse önce kilidi açabilirsiniz.', confirmText: 'Ayı Kilitle' })) closeMonth.mutate()
   }
   const downloadPdf = async () => {
     try {
@@ -2968,6 +2969,11 @@ function MonthClosurePanel({ month, label }) {
 
       {open && (
         <>
+          {locked && (
+            <div role="status" style={{ marginBottom: '10px', padding: '9px 11px', border: '1px solid rgba(239,68,68,.35)', borderRadius: '6px', background: 'rgba(239,68,68,.07)', color: 'var(--red)', fontSize: '11px', fontWeight: 600 }}>
+              Bu ay kilitli. Kayıtlar ve fiziksel sayımlar yalnız kilit açıldıktan sonra değiştirilebilir.
+            </div>
+          )}
           {t && (
             <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap', margin: '4px 0 12px', fontSize: '11px', color: 'var(--text2)' }}>
               <span>{t.products} ürün</span>
@@ -3005,16 +3011,18 @@ function MonthClosurePanel({ month, label }) {
                       <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 600 }} title={row.system_human}>{nf(row.system_base)}</td>
                       <td style={{ textAlign: 'right' }}>
                         <input aria-label={`${row.product_name} sayım`} inputMode="decimal"
+                          disabled={locked}
                           defaultValue={row.counted_base ?? ''}
                           onChange={e => setDraft(row.product_id, { counted: e.target.value })}
                           onKeyDown={e => { if (e.key === 'Enter') commit(row) }}
                           onBlur={() => commit(row)}
-                          style={{ width: '68px', textAlign: 'right', fontFamily: 'var(--mono)', padding: '2px 4px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '5px', color: 'var(--text)' }} />
+                          style={{ width: '68px', textAlign: 'right', fontFamily: 'var(--mono)', padding: '2px 4px', background: locked ? 'var(--surface)' : 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '5px', color: locked ? 'var(--text3)' : 'var(--text)', cursor: locked ? 'not-allowed' : undefined }} />
                       </td>
                       <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', color: hasDiff ? 'var(--red)' : 'var(--text3)' }}>{diff == null ? '·' : nf(diff)}</td>
                       <td style={{ textAlign: 'right' }}>
                         {hasDiff ? (
                           <select aria-label={`${row.product_name} sebep`} value={d.reason ?? row.reason ?? ''}
+                            disabled={locked}
                             onChange={e => setDraft(row.product_id, { reason: e.target.value })}
                             style={{ fontSize: '10px', padding: '2px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '5px', color: 'var(--text)', maxWidth: '110px' }}>
                             <option value="">— seç —</option>

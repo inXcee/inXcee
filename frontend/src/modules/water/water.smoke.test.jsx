@@ -31,6 +31,8 @@ const DAILY_ROWS = [
   },
 ]
 
+let reconciliationLocked = false
+
 vi.mock('../../shared/api/client.js', () => ({
   default: {
     get: vi.fn((url, config = {}) => {
@@ -97,7 +99,7 @@ vi.mock('../../shared/api/client.js', () => ({
         totals: { count: 1, overdue: 1, unallocated_base: 15 },
       } })
       if (url === '/water/reconciliation') return Promise.resolve({ data: {
-        month: '2026-07', locked: false, closure: null,
+        month: '2026-07', locked: reconciliationLocked, closure: reconciliationLocked ? { month: '2026-07', is_locked: 1 } : null,
         reasons: [{ key: 'fire_kirik', label: 'Fire / kırık' }, { key: 'sayim_farki', label: 'Sayım farkı' }],
         rows: [{ product_id: 1, product_name: 'Damacana', brand_name: 'MİLA SU', unit_label: 'damacana',
           opening_base: 100, month_in: 50, month_out: 30, month_adjust: 0, month_return: 0, system_base: 120,
@@ -202,7 +204,10 @@ import WaterPage from './WaterPage.jsx'
 import api from '../../shared/api/client.js'
 
 describe('WaterPage tek-ekran pano smoke', () => {
-  beforeEach(() => vi.clearAllMocks())
+  beforeEach(() => {
+    vi.clearAllMocks()
+    reconciliationLocked = false
+  })
 
   it('tir on bildirim ve irsaliye foto arsivi paneli render olur', async () => {
     renderWithProviders(<WaterPage />)
@@ -333,6 +338,20 @@ describe('WaterPage tek-ekran pano smoke', () => {
     expect(await within(panel).findByText('120')).toBeInTheDocument() // sistem kalanı = 100 + 50 - 30
     expect(within(panel).getByLabelText('Damacana sayım')).toBeInTheDocument()
     expect(within(panel).getByText('📄 PDF Özet')).toBeInTheDocument() // W9 PDF butonu
+  })
+
+  it('kilitli ayda sayımı salt okunur gösterir ve kilit açıklamasını sunar', async () => {
+    reconciliationLocked = true
+    useAuthStore.setState({ user: { role: 'campus_manager', username: 'mudur' } })
+    renderWithProviders(<WaterPage />)
+    const title = await screen.findByText(/AY KAPANIŞI/)
+    const panel = title.closest('.panel')
+    fireEvent.click(within(panel).getByText('▼ Aç'))
+
+    expect(await within(panel).findByRole('status')).toHaveTextContent(/Bu ay kilitli/)
+    expect(within(panel).getByLabelText('Damacana sayım')).toBeDisabled()
+    expect(within(panel).getByRole('button', { name: /Kilidi Aç/ })).toBeInTheDocument()
+    useAuthStore.setState({ user: null })
   })
 
   it('trend paneli açılınca aylık akış + bölge/ürün analizini gösterir', async () => {
