@@ -15,7 +15,7 @@ import { shiftHex } from './shiftColors.js'
 import {
   COLORS, border, argb, fill, colLetter, quoteSheet, sheetRange,
   setupTitle, setupSheet, styleHeaderRow, styleAllUsedCells, addMetric, saveWorkbook,
-} from './excelKit.js'
+} from '../../../shared/logic/excelKit.js'
 
 const DAY_LABELS = ['Pzt', 'Sal', 'Car', 'Per', 'Cum', 'Cmt', 'Paz']
 

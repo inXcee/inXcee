@@ -1,5 +1,4 @@
-// Paylaşılan ExcelJS yardımcıları — vardiya çizelge Excel + puantaj föyü + (ileride) diğer
-// export'lar ortak kullanır. Renk/dolgu/kenarlık/başlık/sayfa-kurulum/indirme tek yerde.
+// Shared ExcelJS primitives used by schedule, puantaj and water report exports.
 
 export const COLORS = {
   ink: '0F172A',
@@ -22,7 +21,6 @@ export const border = {
   right: { style: 'thin', color: { argb: 'FFE2E8F0' } },
 }
 
-// 6 haneli hex (veya #hex) → ExcelJS ARGB
 export const argb = hex => `FF${String(hex || COLORS.gray).replace('#', '').toUpperCase()}`
 export const fill = hex => ({ type: 'pattern', pattern: 'solid', fgColor: { argb: argb(hex) } })
 
@@ -40,11 +38,11 @@ export function colLetter(col) {
 export function quoteSheet(sheetName) {
   return `'${String(sheetName).replaceAll("'", "''")}'`
 }
+
 export function sheetRange(sheetName, range) {
   return `${quoteSheet(sheetName)}!${range}`
 }
 
-// İki satır birleşik başlık (title + subtitle) — koyu zemin, beyaz yazı
 export function setupTitle(ws, titleText, subtitle, lastCol) {
   ws.mergeCells(1, 1, 1, lastCol)
   ws.mergeCells(2, 1, 2, lastCol)
@@ -60,7 +58,6 @@ export function setupTitle(ws, titleText, subtitle, lastCol) {
   ws.getRow(2).height = 20
 }
 
-// Yazdırma-hazır sayfa kurulumu (landscape, fitToWidth, dar kenar boşlukları)
 export function setupSheet(ws, tabHex = COLORS.blue) {
   ws.properties.defaultRowHeight = 20
   ws.properties.tabColor = { argb: argb(tabHex) }
@@ -93,7 +90,6 @@ export function styleAllUsedCells(ws) {
   })
 }
 
-// 2 satırlık metrik kartı (etiket + büyük değer) — startCol'dan 2 sütun birleşik
 export function addMetric(ws, startCol, label, value, hex) {
   ws.mergeCells(4, startCol, 4, startCol + 1)
   ws.mergeCells(5, startCol, 5, startCol + 1)
@@ -109,7 +105,6 @@ export function addMetric(ws, startCol, label, value, hex) {
   })
 }
 
-// workbook buffer → tarayıcıdan indir
 export function saveWorkbook(buffer, filename, options = {}) {
   let url = ''
   try {

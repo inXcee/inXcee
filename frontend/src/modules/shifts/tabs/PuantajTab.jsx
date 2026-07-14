@@ -8,7 +8,7 @@ import { BottomSheet, ModalOverlay, formatShiftHours, LEAVE_TYPES, leaveTypeLabe
 import { confirmDialog } from '../../../shared/components/ConfirmDialog.jsx'
 import { actionIdForKey, normalizeRect, cellsInRect, isInRect, moveCell, pushUndo, summarizeColumn } from '../logic/puantajGrid.js'
 import { buildPuantajActions, buildActionIndex, metaForEntry, cleanCodeHex } from '../logic/puantajCodes.js'
-import { saveWorkbook } from '../logic/excelKit.js'
+import { saveWorkbook } from '../../../shared/logic/excelKit.js'
 import { buildPuantajFoyuWorkbook } from '../logic/puantajFoyuExcel.js'
 import { buildPuantajControl } from '../logic/puantajControl.js'
 import StaffDetailPanel from '../StaffDetailPanel.jsx'

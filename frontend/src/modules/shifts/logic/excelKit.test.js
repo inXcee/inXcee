@@ -12,7 +12,7 @@ import {
   setupTitle,
   sheetRange,
   styleHeaderRow,
-} from './excelKit.js'
+} from '../../../shared/logic/excelKit.js'
 
 describe('excelKit - shared Excel helpers (X1)', () => {
   const originalCreateObjectURL = Object.getOwnPropertyDescriptor(URL, 'createObjectURL')

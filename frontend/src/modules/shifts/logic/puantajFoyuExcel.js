@@ -11,7 +11,7 @@ import {
   setupTitle,
   styleHeaderRow,
   addMetric,
-} from './excelKit.js'
+} from '../../../shared/logic/excelKit.js'
 
 const SIGNATURE_LABELS = ['DÜZENLEYEN', 'KONTROL EDEN', 'ONAYLAYAN']
 const FIRST_DATA_ROW = 4

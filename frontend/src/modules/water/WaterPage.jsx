@@ -25,6 +25,11 @@ import {
   unitLabel,
   unitOptionsForProduct,
 } from './logic/waterUnits.js'
+import {
+  buildWaterExcelWorkbook,
+  loadWaterExcelReportData,
+  saveWaterExcelReport,
+} from './logic/waterExcelExport.js'
 
 const toastOk = (m) => useToastStore.getState().addToast(m, 'success')
 const toastErr = (m) => useToastStore.getState().addToast(m, 'error')
@@ -628,310 +633,28 @@ function WaterBoard({ from, to, label, lowItems }) {
     toastOk(`"${tpl.name}" uygulandı — ${filled}/${tpl.lines.length} hücre dolduruldu`)
   }
 
-  const exportExcelLegacy = async () => {
-    if (!pivot) return
-    setExporting(true)
-    try {
-      const ExcelJS = (await import('exceljs')).default
-      const wb = new ExcelJS.Workbook()
-      const ws = wb.addWorksheet('INDEX')
-      const border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } }
-      const cols = orderedCols
-      const totalCols = 1 + cols.length + 1
-      ws.mergeCells(1, 1, 1, totalCols)
-      ws.getCell(1, 1).value = `INDEX — ${label}`
-      ws.getCell(1, 1).font = { bold: true, size: 13 }
-      ws.mergeCells(2, 1, 3, 1); ws.getCell(2, 1).value = 'DAĞITIM YERİ'
-      let cIdx = 2
-      ;(pivot.brands || []).forEach(b => {
-        const span = b.product_ids.length; if (span < 1) return
-        ws.mergeCells(2, cIdx, 2, cIdx + span - 1); ws.getCell(2, cIdx).value = b.brand_name; cIdx += span
-      })
-      ws.mergeCells(2, totalCols, 3, totalCols); ws.getCell(2, totalCols).value = 'TOPLAM'
-      cols.forEach((c, i) => { ws.getCell(3, 2 + i).value = c.name })
-      for (let r = 2; r <= 3; r++) ws.getRow(r).eachCell(c => {
-        c.font = { bold: true, color: { argb: 'FFFFFFFF' } }; c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF334155' } }
-        c.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }; c.border = border
-      })
-      let rowNo = 4
-      zones.forEach(row => {
-        ws.getCell(rowNo, 1).value = row.zone_name
-        cols.forEach((c, i) => { ws.getCell(rowNo, 2 + i).value = (row.cells[c.product_id]?.base) || null })
-        ws.getCell(rowNo, totalCols).value = row.total_base || null
-        ws.getRow(rowNo).eachCell({ includeEmpty: true }, c => { c.border = border })
-        ws.getCell(rowNo, totalCols).font = { bold: true }; rowNo++
-      })
-      ws.getCell(rowNo, 1).value = 'GENEL TOPLAM'
-      cols.forEach((c, i) => { ws.getCell(rowNo, 2 + i).value = pivot.colTotals[c.product_id]?.base || 0 })
-      ws.getCell(rowNo, totalCols).value = pivot.grandTotal
-      ws.getRow(rowNo).eachCell({ includeEmpty: true }, c => {
-        c.font = { bold: true }; c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFDE68A' } }; c.border = border
-      })
-      ws.getColumn(1).width = 26
-      for (let i = 0; i < cols.length; i++) ws.getColumn(2 + i).width = 11
-      ws.getColumn(totalCols).width = 12
-      const buf = await wb.xlsx.writeBuffer()
-      const a = document.createElement('a')
-      a.href = URL.createObjectURL(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }))
-      a.download = `su-index-${from}_${to}.xlsx`; a.click(); URL.revokeObjectURL(a.href)
-    } catch { toastErr('Excel oluşturulamadı') } finally { setExporting(false) }
-  }
-
   const exportExcel = async () => {
     if (!pivot) return
     setExporting(true)
     try {
       const ExcelJS = (await import('exceljs')).default
-      const [summaryRes, outRes, inRes, returnsRes, pendingRes, adjRes] = await Promise.all([
-        api.get('/water/summary', { params: { from, to } }),
-        api.get('/water/movements', { params: { type: 'out', from, to, limit: 1000 } }),
-        api.get('/water/movements', { params: { type: 'in', from, to, limit: 1000 } }),
-        api.get('/water/returns', { params: { from, to } }),
-        api.get('/water/pending'),
-        api.get('/water/adjustments', { params: { from, to } }),
-      ])
-      const summary = summaryRes.data || {}
-      const outRows = outRes.data || []
-      const inRows = inRes.data || []
-      const returnRows = returnsRes.data || []
-      const pendingRows = pendingRes.data?.rows || []
-      const adjRows = adjRes.data?.rows || []
-      const cols = orderedCols
-      const totals = summary.totals || {}
-      const stock = summary.stock || []
-      const daily = summary.daily || []
-      const zoneTotals = summary.zones || []
-
-      const wb = new ExcelJS.Workbook()
-      wb.creator = 'YYS Su Takip'
-      wb.created = new Date()
-      wb.modified = new Date()
-
-      const numFmt = '#,##0'
-      const border = {
-        top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
-        bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
-        left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
-        right: { style: 'thin', color: { argb: 'FFE2E8F0' } },
-      }
-      const fills = { title: 'FF0F172A', header: 'FF334155', sub: 'FFE2E8F0', total: 'FFFDE68A', red: 'FFFEE2E2' }
-      const clean = (v) => {
-        if (v == null) return ''
-        const s = String(v)
-        return /^[=+\-@\t\r]/.test(s) ? `'${s}` : s
-      }
-      const title = (ws, text, lastCol) => {
-        ws.mergeCells(1, 1, 1, lastCol)
-        const cell = ws.getCell(1, 1)
-        cell.value = text
-        cell.font = { bold: true, size: 14, color: { argb: 'FFFFFFFF' } }
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fills.title } }
-        cell.alignment = { horizontal: 'center', vertical: 'middle' }
-        ws.getRow(1).height = 24
-      }
-      const header = (ws, rowNo, lastCol, fill = fills.header) => {
-        for (let i = 1; i <= lastCol; i++) {
-          const cell = ws.getCell(rowNo, i)
-          cell.font = { bold: true, color: { argb: fill === fills.sub ? 'FF0F172A' : 'FFFFFFFF' } }
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fill } }
-          cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }
-          cell.border = border
-        }
-      }
-      const table = (ws, headerRow, lastRow, lastCol, numericCols = []) => {
-        header(ws, headerRow, lastCol)
-        ws.autoFilter = { from: { row: headerRow, column: 1 }, to: { row: Math.max(headerRow, lastRow), column: lastCol } }
-        ws.views = [{ state: 'frozen', ySplit: headerRow }]
-        for (let r = headerRow + 1; r <= lastRow; r++) {
-          for (let c = 1; c <= lastCol; c++) {
-            const cell = ws.getCell(r, c)
-            cell.border = border
-            cell.alignment = { vertical: 'middle', wrapText: true }
-            if (numericCols.includes(c)) cell.numFmt = numFmt
-            if ((r - headerRow) % 2 === 0) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } }
-          }
-        }
-      }
-
-      const wsSummary = wb.addWorksheet('Aylık Özet')
-      title(wsSummary, `SU TAKİP AYLIK ÖZET - ${label}`, 8)
-      wsSummary.addRow(['Dönem başlangıç', from, 'Dönem bitiş', to, 'Oluşturma', new Date().toLocaleString('tr-TR'), '', ''])
-      wsSummary.addRow([])
-      wsSummary.addRow(['Gösterge', 'Değer', 'Açıklama', '', 'Gösterge', 'Değer', 'Açıklama', ''])
-      wsSummary.addRow(['Gelen', totals.period_in || 0, 'Seçili ayda gelen dolu ürün', '', 'Dağıtım', totals.period_out || 0, 'Bölgelere verilen', ''])
-      wsSummary.addRow(['Kalan Stok', totals.balance || 0, 'Tüm zamanlı giriş - dağıtım', '', 'Boş İade', totals.period_return || 0, 'Dönen boş kap', ''])
-      wsSummary.addRow(['Düşük Stok', totals.low_count || 0, 'Eşik altındaki ürün', '', 'Dolaşımda Boş', totals.outstanding || 0, 'Depozito takibi', ''])
-      wsSummary.addRow([])
-      wsSummary.addRow(['Stok Durumu'])
-      wsSummary.addRow(['Marka', 'Ürün', 'Baz Birim', 'Gelen', 'Dağıtım', 'Kalan', 'Kalan Okunur', 'Durum'])
-      stock.forEach(s => wsSummary.addRow([clean(s.brand_name), clean(s.name), clean(s.unit_label), s.total_in || 0, s.total_out || 0, s.balance || 0, clean(s.balance_human || humanQty(s, s.balance)), s.low ? 'DÜŞÜK' : 'OK']))
-      if (!stock.length) wsSummary.addRow(['', 'Stok verisi yok'])
-      header(wsSummary, 4, 8, fills.sub)
-      const stockLast = 10 + Math.max(stock.length, 1)
-      table(wsSummary, 10, stockLast, 8, [4, 5, 6])
-      for (let r = 11; r <= stockLast; r++) if (wsSummary.getCell(r, 8).value === 'DÜŞÜK') wsSummary.getRow(r).eachCell(c => { c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fills.red } } })
-      wsSummary.columns = [{ width: 16 }, { width: 24 }, { width: 12 }, { width: 12 }, { width: 12 }, { width: 12 }, { width: 22 }, { width: 12 }]
-
-      const wsMatch = wb.addWorksheet('Ay Uyuşturma')
-      title(wsMatch, `AY SONU GELEN / DAĞITILAN UYUŞTURMA - ${label}`, 9)
-      wsMatch.addRow(['Marka', 'Ürün', 'Baz Birim', 'Ay Gelen', 'Ay Dağıtım', 'Ay Farkı', 'Anlık Kalan', 'Kalan Okunur', 'Durum'])
-      stock.forEach(s => {
-        const periodNet = Number(s.period_net || 0)
-        const status = s.negative ? 'EKSİ STOK' : periodNet < 0 ? 'AY EKSİ' : periodNet > 0 ? 'FAZLA' : 'TAM'
-        wsMatch.addRow([clean(s.brand_name), clean(s.name), clean(s.unit_label), Number(s.period_in || 0), Number(s.period_out || 0), periodNet, Number(s.balance || 0), clean(s.balance_human || humanQty(s, s.balance)), status])
+      const reportData = await loadWaterExcelReportData(api, { from, to })
+      const report = buildWaterExcelWorkbook(ExcelJS, {
+        pivot,
+        columns: orderedCols,
+        ...reportData,
+        from,
+        to,
+        label,
       })
-      if (!stock.length) wsMatch.addRow(['', 'Ürün verisi yok'])
-      table(wsMatch, 2, Math.max(2, 2 + stock.length), 9, [4, 5, 6, 7])
-      for (let r = 3; r <= 2 + stock.length; r++) {
-        const status = wsMatch.getCell(r, 9).value
-        if (status === 'EKSİ STOK' || status === 'AY EKSİ') wsMatch.getRow(r).eachCell(c => { c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fills.red } } })
-      }
-      wsMatch.columns = [{ width: 16 }, { width: 24 }, { width: 12 }, { width: 12 }, { width: 12 }, { width: 12 }, { width: 14 }, { width: 22 }, { width: 12 }]
-
-      const wsIndex = wb.addWorksheet('INDEX')
-      const totalCols = 1 + cols.length + 1
-      title(wsIndex, `INDEX - DAĞITIM YERİ MATRİSİ - ${label}`, totalCols)
-      wsIndex.getCell(2, 1).value = 'Dönem'
-      wsIndex.getCell(2, 2).value = `${from} / ${to}`
-      wsIndex.getCell(2, 4).value = 'Genel toplam'
-      wsIndex.getCell(2, 5).value = pivot.grandTotal || 0
-      wsIndex.getCell(2, 5).numFmt = numFmt
-      wsIndex.mergeCells(3, 1, 5, 1); wsIndex.getCell(3, 1).value = 'DAĞITIM YERİ'
-      let cIdx = 2
-      ;(pivot.brands || []).forEach(b => {
-        const span = b.product_ids.length
-        if (span < 1) return
-        wsIndex.mergeCells(3, cIdx, 3, cIdx + span - 1)
-        wsIndex.getCell(3, cIdx).value = clean(b.brand_name)
-        cIdx += span
-      })
-      wsIndex.mergeCells(3, totalCols, 5, totalCols); wsIndex.getCell(3, totalCols).value = 'TOPLAM'
-      cols.forEach((c, i) => {
-        wsIndex.getCell(4, 2 + i).value = clean(c.name)
-        wsIndex.getCell(5, 2 + i).value = `${c.unit_label || 'adet'} / 1 palet=${nf(multiplier(c, 'palet'))}`
-      })
-      for (let r = 3; r <= 5; r++) wsIndex.getRow(r).eachCell({ includeEmpty: true }, cell => {
-        cell.font = { bold: true, color: { argb: 'FFFFFFFF' } }
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fills.header } }
-        cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }
-        cell.border = border
-      })
-      let rowNo = 6
-      zones.forEach(row => {
-        wsIndex.getCell(rowNo, 1).value = clean(row.zone_name)
-        cols.forEach((c, i) => { wsIndex.getCell(rowNo, 2 + i).value = (row.cells[c.product_id]?.base) || null })
-        wsIndex.getCell(rowNo, totalCols).value = row.total_base || null
-        wsIndex.getRow(rowNo).eachCell({ includeEmpty: true }, cell => { cell.border = border; cell.numFmt = numFmt })
-        wsIndex.getCell(rowNo, totalCols).font = { bold: true }
-        rowNo++
-      })
-      wsIndex.getCell(rowNo, 1).value = 'GENEL TOPLAM'
-      cols.forEach((c, i) => { wsIndex.getCell(rowNo, 2 + i).value = pivot.colTotals[c.product_id]?.base || 0 })
-      wsIndex.getCell(rowNo, totalCols).value = pivot.grandTotal
-      wsIndex.getRow(rowNo).eachCell({ includeEmpty: true }, cell => {
-        cell.font = { bold: true }
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fills.total } }
-        cell.border = border
-        cell.numFmt = numFmt
-      })
-      wsIndex.views = [{ state: 'frozen', ySplit: 5, xSplit: 1 }]
-      wsIndex.getColumn(1).width = 26
-      for (let i = 0; i < cols.length; i++) wsIndex.getColumn(2 + i).width = 12
-      wsIndex.getColumn(totalCols).width = 12
-
-      const wsDaily = wb.addWorksheet('Günlük Çizelge')
-      title(wsDaily, `GÜNLÜK AKIŞ - ${label}`, 7)
-      wsDaily.addRow(['Tarih', 'Gün', 'Gelen', 'Dağıtım', 'Net', 'Kümülatif Net', 'Not'])
-      daily.forEach((d, idx) => {
-        const r = 3 + idx
-        wsDaily.addRow([d.move_date, dayLong(d.move_date), d.in_base || 0, d.out_base || 0, { formula: `C${r}-D${r}`, result: (d.in_base || 0) - (d.out_base || 0) }, { formula: idx === 0 ? `E${r}` : `F${r - 1}+E${r}`, result: 0 }, ''])
-      })
-      table(wsDaily, 2, Math.max(2, 2 + daily.length), 7, [3, 4, 5, 6])
-      wsDaily.columns = [{ width: 14 }, { width: 24 }, { width: 14 }, { width: 14 }, { width: 14 }, { width: 16 }, { width: 22 }]
-
-      const wsOut = wb.addWorksheet('Dağıtım Defteri')
-      title(wsOut, `DAĞITIM DEFTERİ - ${label}`, 11)
-      wsOut.addRow(['Tarih', 'Saat', 'Bölge', 'Marka', 'Ürün', 'Girilen Miktar', 'Birim', 'Hesaplanan', 'İrsaliye Kaynağı', 'Kaydı Giren', 'Not'])
-      outRows.forEach(r => wsOut.addRow([r.move_date, movementTime(r.created_at), clean(r.zone_name), clean(r.brand_name), clean(r.product_name), Number(r.input_qty || 0), clean(r.input_unit), Number(r.qty_base || 0), clean(r.source_waybills), clean(r.created_by_name || r.created_by_username), clean(r.note)]))
-      table(wsOut, 2, Math.max(2, 2 + outRows.length), 11, [6, 8])
-      wsOut.columns = [{ width: 14 }, { width: 10 }, { width: 24 }, { width: 16 }, { width: 22 }, { width: 14 }, { width: 10 }, { width: 14 }, { width: 30 }, { width: 18 }, { width: 24 }]
-
-      const wsIn = wb.addWorksheet('İrsaliye Stok')
-      title(wsIn, `GELEN TIR / İRSALİYE STOK - ${label}`, 12)
-      wsIn.addRow(['Tarih', 'İrsaliye', 'Marka', 'Ürün', 'Girilen Miktar', 'Birim', 'Hesaplanan', 'Dağıtılan', 'Kalan', 'Kalan Okunur', 'Kaydı Giren', 'Not'])
-      inRows.forEach(r => wsIn.addRow([r.move_date, clean(r.waybill_no || `Giriş #${r.id}`), clean(r.brand_name), clean(r.product_name), Number(r.input_qty || 0), clean(r.input_unit), Number(r.qty_base || 0), Number(r.intake_allocated_base || 0), Number(r.remaining_base || 0), clean(r.remaining_human || humanQty(r, r.remaining_base)), clean(r.created_by_name || r.created_by_username), clean(r.note)]))
-      table(wsIn, 2, Math.max(2, 2 + inRows.length), 12, [5, 7, 8, 9])
-      wsIn.columns = [{ width: 14 }, { width: 18 }, { width: 16 }, { width: 22 }, { width: 14 }, { width: 10 }, { width: 14 }, { width: 14 }, { width: 14 }, { width: 22 }, { width: 18 }, { width: 22 }]
-
-      const wsZones = wb.addWorksheet('Bölge Toplamları')
-      title(wsZones, `BÖLGE / ÜRÜN TOPLAMLARI - ${label}`, 7)
-      wsZones.addRow(['Bölge', 'Marka', 'Ürün', 'Baz Birim', 'Toplam', 'Okunur', 'Not'])
-      zoneTotals.forEach(z => wsZones.addRow([clean(z.zone_name), clean(z.brand_name), clean(z.product_name), clean(z.unit_label), Number(z.total_out || 0), clean(humanQty(z, z.total_out)), '']))
-      table(wsZones, 2, Math.max(2, 2 + zoneTotals.length), 7, [5])
-      wsZones.columns = [{ width: 26 }, { width: 16 }, { width: 22 }, { width: 12 }, { width: 14 }, { width: 22 }, { width: 18 }]
-
-      const wsRules = wb.addWorksheet('Ürün Kuralları')
-      title(wsRules, 'ÜRÜN / PALET ÇEVRİM KURALLARI', 8)
-      wsRules.addRow(['Marka', 'Ürün', 'Baz Birim', 'Koli İçi', 'Palet Koli/Paket', '1 Palet Baz', 'Varsayılan Giriş', 'Min Stok'])
-      cols.forEach(p => wsRules.addRow([clean(p.brand_name), clean(p.name), clean(p.unit_label), Number(p.units_per_case || 1), Number(p.cases_per_pallet || 1), Number(multiplier(p, 'palet') || 1), unitLabel(defaultUnitForProduct(p)), Number(p.min_level || 0)]))
-      table(wsRules, 2, Math.max(2, 2 + cols.length), 8, [4, 5, 6, 8])
-      wsRules.columns = [{ width: 16 }, { width: 24 }, { width: 12 }, { width: 10 }, { width: 16 }, { width: 14 }, { width: 16 }, { width: 12 }]
-
-      const wsReturns = wb.addWorksheet('Boş İade')
-      title(wsReturns, `BOŞ İADE / DEPOZİTO - ${label}`, 8)
-      wsReturns.addRow(['Tarih', 'Marka', 'Ürün', 'Girilen Miktar', 'Birim', 'Hesaplanan', 'Kaydı Giren', 'Not'])
-      returnRows.forEach(r => wsReturns.addRow([r.move_date, clean(r.brand_name), clean(r.product_name), Number(r.input_qty || 0), clean(r.input_unit), Number(r.qty_base || 0), clean(r.created_by_name || r.created_by_username), clean(r.note)]))
-      table(wsReturns, 2, Math.max(2, 2 + returnRows.length), 8, [4, 6])
-      wsReturns.columns = [{ width: 14 }, { width: 16 }, { width: 22 }, { width: 14 }, { width: 10 }, { width: 14 }, { width: 18 }, { width: 24 }]
-
-      // İrsaliye Bekleyenler (W9)
-      const wsPending = wb.addWorksheet('İrsaliye Bekleyen')
-      title(wsPending, 'İRSALİYE BEKLEYEN DAĞITIMLAR', 7)
-      wsPending.addRow(['Tarih', 'Dağıtım Yeri', 'Ürün', 'Dağıtılan', 'Eşleşen', 'Bekleyen', 'Gün'])
-      pendingRows.forEach(p => wsPending.addRow([p.move_date, clean(p.zone_name), clean(p.product_name), Number(p.qty_base || 0), Number(p.allocated_base || 0), Number(p.unallocated_base || 0), Number(p.waiting_days || 0)]))
-      if (!pendingRows.length) wsPending.addRow(['', 'Bekleyen dağıtım yok'])
-      table(wsPending, 2, Math.max(2, 2 + pendingRows.length), 7, [4, 5, 6, 7])
-      for (let r = 3; r <= 2 + pendingRows.length; r++) if (Number(wsPending.getCell(r, 7).value) >= 3) wsPending.getRow(r).eachCell(c => { c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fills.red } } })
-      wsPending.columns = [{ width: 14 }, { width: 26 }, { width: 22 }, { width: 12 }, { width: 12 }, { width: 12 }, { width: 8 }]
-
-      // Eksi Stoklar (W9)
-      const negStock = stock.filter(s => s.negative || s.balance < 0)
-      const wsNeg = wb.addWorksheet('Eksi Stoklar')
-      title(wsNeg, `EKSİ STOKTAKİ ÜRÜNLER - ${label}`, 5)
-      wsNeg.addRow(['Marka', 'Ürün', 'Baz Birim', 'Bakiye', 'Eksik (okunur)'])
-      negStock.forEach(s => wsNeg.addRow([clean(s.brand_name), clean(s.name), clean(s.unit_label), Number(s.balance || 0), clean(s.deficit_human || humanQty(s, Math.abs(s.balance)))]))
-      if (!negStock.length) wsNeg.addRow(['', 'Eksi stok yok 🎉'])
-      table(wsNeg, 2, Math.max(2, 2 + negStock.length), 5, [4])
-      for (let r = 3; r <= 2 + negStock.length; r++) wsNeg.getRow(r).eachCell(c => { c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fills.red } } })
-      wsNeg.columns = [{ width: 16 }, { width: 24 }, { width: 12 }, { width: 12 }, { width: 20 }]
-
-      // Sayım / Düzeltme Fişleri (W9)
-      const wsAdj = wb.addWorksheet('Düzeltme Fişleri')
-      title(wsAdj, `STOK DÜZELTME / SAYIM FİŞLERİ - ${label}`, 6)
-      wsAdj.addRow(['Tarih', 'Ürün', 'Yön', 'Etki (baz)', 'Sebep', 'Not'])
-      adjRows.forEach(a => wsAdj.addRow([a.move_date, clean(a.product_name), a.direction === 'in' ? 'Artı (+)' : 'Eksi (−)', Number(a.signed_base || 0), clean(a.reason), clean(a.note)]))
-      if (!adjRows.length) wsAdj.addRow(['', 'Düzeltme kaydı yok'])
-      table(wsAdj, 2, Math.max(2, 2 + adjRows.length), 6, [4])
-      wsAdj.columns = [{ width: 14 }, { width: 24 }, { width: 12 }, { width: 12 }, { width: 18 }, { width: 24 }]
-
-      wb.eachSheet(sheet => {
-        sheet.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 }
-        sheet.properties.defaultRowHeight = 18
-      })
-      const buf = await wb.xlsx.writeBuffer()
-      const a = document.createElement('a')
-      a.href = URL.createObjectURL(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }))
-      a.download = `su-takip-detayli-${from}_${to}.xlsx`
-      a.click()
-      URL.revokeObjectURL(a.href)
-      toastOk('Detaylı Excel hazırlandı')
-    } catch (e) {
-      toastErr(errMsg(e, 'Excel oluşturulamadı'))
+      await saveWaterExcelReport(report.workbook, report.filename)
+      toastOk(`${report.sheetNames.length} sayfalık detaylı Excel hazırlandı`)
+    } catch (error) {
+      toastErr(errMsg(error, 'Excel oluşturulamadı'))
     } finally {
       setExporting(false)
     }
   }
-
   return (
     <>
     <div className="panel" data-testid="water-board">

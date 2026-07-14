@@ -292,6 +292,40 @@ describe('WaterPage tek-ekran pano smoke', () => {
     })))
   })
 
+  it('detaylı Excel düğmesi tüm rapor verisini yükleyip dosyayı indirir', async () => {
+    const originalCreateObjectURL = Object.getOwnPropertyDescriptor(URL, 'createObjectURL')
+    const originalRevokeObjectURL = Object.getOwnPropertyDescriptor(URL, 'revokeObjectURL')
+    const createObjectURL = vi.fn(() => 'blob:water-report')
+    const revokeObjectURL = vi.fn()
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: createObjectURL })
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: revokeObjectURL })
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+
+    try {
+      renderWithProviders(<WaterPage />)
+      const board = await screen.findByTestId('water-board')
+      const exportButton = within(board).getByRole('button', { name: /Excel/ })
+      await waitFor(() => expect(exportButton).toBeEnabled())
+      fireEvent.click(exportButton)
+
+      await waitFor(() => expect(createObjectURL).toHaveBeenCalled(), { timeout: 10000 })
+      expect(click).toHaveBeenCalledTimes(1)
+      expect(revokeObjectURL).toHaveBeenCalledWith('blob:water-report')
+      expect(api.get).toHaveBeenCalledWith('/water/movements', {
+        params: { type: 'out', from: expect.any(String), to: expect.any(String), limit: 1000 },
+      })
+      expect(api.get).toHaveBeenCalledWith('/water/adjustments', {
+        params: { from: expect.any(String), to: expect.any(String) },
+      })
+    } finally {
+      click.mockRestore()
+      if (originalCreateObjectURL) Object.defineProperty(URL, 'createObjectURL', originalCreateObjectURL)
+      else delete URL.createObjectURL
+      if (originalRevokeObjectURL) Object.defineProperty(URL, 'revokeObjectURL', originalRevokeObjectURL)
+      else delete URL.revokeObjectURL
+    }
+  }, 15000)
+
   it('dağıtım yeri satırı tıklanınca dağıtım geçmişi modalı açılır', async () => {
     renderWithProviders(<WaterPage />)
     const zoneButtons = await screen.findAllByText('OTC Kamp Alanı')
