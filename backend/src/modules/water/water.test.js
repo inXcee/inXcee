@@ -1301,3 +1301,53 @@ describe('Su takip - Tir on bildirimleri ve irsaliye foto arsivi (W11)', () => {
     expect(getDB().prepare('SELECT * FROM notifications WHERE dedup_key=?').get(`water_truck_deadline_${truck.body.id}_2027-03-18_1716`)).toBeTruthy()
   })
 })
+
+describe('Su takip - merkezi endpoint hata hatti', () => {
+  it('4xx yanitlari normal dondurur, 5xx hatalarini error_log kaydina aktarir', async () => {
+    const db = getDB()
+    const previousNodeEnv = process.env.NODE_ENV
+    db.exec('BEGIN')
+    try {
+      process.env.NODE_ENV = 'development'
+      const initialErrorCount = db.prepare('SELECT COUNT(*) AS count FROM error_log').get().count
+
+      const validation = await request(app)
+        .post('/api/water/products')
+        .set('Authorization', `Bearer ${managerToken}`)
+        .send({ name: '' })
+      expect(validation.status).toBe(400)
+      expect(db.prepare('SELECT COUNT(*) AS count FROM error_log').get().count).toBe(initialErrorCount)
+
+      db.exec(`
+        CREATE TEMP TRIGGER force_water_product_failure
+        BEFORE INSERT ON water_products
+        BEGIN
+          SELECT RAISE(ABORT, 'forced water route failure');
+        END
+      `)
+      const failure = await request(app)
+        .post('/api/water/products')
+        .set('Authorization', `Bearer ${managerToken}`)
+        .send({ name: 'Hata Hatti Test Urunu' })
+
+      expect(failure.status).toBe(500)
+      expect(failure.body).toEqual({ error: 'Sunucu hatası' })
+      const logged = db.prepare(`
+        SELECT source, severity, message, url, user_id
+        FROM error_log
+        ORDER BY id DESC
+        LIMIT 1
+      `).get()
+      expect(logged).toMatchObject({
+        source: 'backend',
+        severity: 'error',
+        message: 'forced water route failure',
+        url: 'POST /api/water/products',
+      })
+      expect(logged.user_id).toBeTruthy()
+    } finally {
+      process.env.NODE_ENV = previousNodeEnv
+      if (db.inTransaction) db.exec('ROLLBACK')
+    }
+  })
+})

@@ -1,14 +1,15 @@
 import { initSentry } from './shared/sentry.js'
-// Sentry init en basta — diger modul'lerin runtime hatalarini yakalayabilmesi icin.
-initSentry()
-
-import app from './app.js'
 import { initDB, getDB } from './shared/db/index.js'
 import { initProdDB } from './shared/db/initProd.js'
 import { startCronJobs } from './shared/cron/index.js'
 import { seedDev } from './shared/db/seed.js'
 import { logger } from './shared/logger.js'
 import { startWorker, stopWorker } from './shared/jobs/index.js'
+
+// ESM statik importlari modul govdesinden once calisir. App'i dinamik yukleyerek
+// Express Sentry hata middleware'inin init sonrasinda kurulmasini garanti et.
+initSentry()
+const { default: app } = await import('./app.js')
 
 // Zorunlu env kontrolü (Task 1'de eklendi)
 if (!process.env.JWT_SECRET) {

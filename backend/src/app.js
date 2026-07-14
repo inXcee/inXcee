@@ -413,6 +413,7 @@ app.use((err, req, res, _next) => {
       })
     } catch { /* ignore — hata loglarken hata olursa sessiz */ }
   }
+  if (res.headersSent) return _next(err)
   res.status(status).json({ error: status < 500 ? err.message : 'Sunucu hatası' })
 })
 
