@@ -882,6 +882,24 @@ function nextReminderLabel(row, current) {
   return `${hh}:${mm}`
 }
 
+function minuteSlotKey(totalMinutes) {
+  const safe = Math.max(0, Math.min(1439, Math.round(totalMinutes)))
+  return `${String(Math.floor(safe / 60)).padStart(2, '0')}${String(safe % 60).padStart(2, '0')}`
+}
+
+function reminderSlot(current, start, end, interval) {
+  if ([current, start, end].some(value => value == null) || current < start || current > end) return null
+  const slotMinute = start + Math.floor((current - start) / interval) * interval
+  return { minute: slotMinute, key: minuteSlotKey(slotMinute) }
+}
+
+function overdueSlot(current, deadline, interval) {
+  if (current == null || deadline == null || current <= deadline) return null
+  const firstOverdueMinute = deadline + 1
+  const slotMinute = firstOverdueMinute + Math.floor((current - firstOverdueMinute) / interval) * interval
+  return { minute: slotMinute, key: minuteSlotKey(slotMinute) }
+}
+
 function truckMailSubject(row) {
   return `Su amaçlı nakliye personel giriş talebi - ${row.arrival_date} - ${row.plate}`
 }
@@ -1284,7 +1302,6 @@ export function waterEscalations({ now = new Date() } = {}) {
 export function checkTruckArrivalAlerts({ now = new Date() } = {}) {
   const clock = trClock(now)
   const current = minutesOf(clock.time)
-  const tickKey = clock.time.replace(':', '')
   const rows = q.listTruckArrivals({ limit: 1000 })
     .filter(r => !['arrived', 'cancelled'].includes(r.status))
     .filter(r => r.arrival_date === clock.date || r.mail_deadline_date === clock.date)
@@ -1294,27 +1311,27 @@ export function checkTruckArrivalAlerts({ now = new Date() } = {}) {
     const base = `${r.plate}${r.trailer_plate ? ` / ${r.trailer_plate}` : ''}`
     const missing = missingMailFields(r)
     const missingText = missing.length ? ` Eksik bilgi: ${missing.join(', ')}.` : ''
+    const interval = Math.max(15, parseInt(r.reminder_interval_minutes, 10) || 60)
+    const reminder = reminderSlot(current, minutesOf(r.reminder_start_time), minutesOf(r.reminder_end_time), interval)
     if (!r.mail_sent_at && r.mail_deadline_date === clock.date) {
       const deadline = minutesOf(r.mail_deadline_time)
-      const inReminderRange = current >= minutesOf(r.reminder_start_time) && current <= minutesOf(r.reminder_end_time)
-      const interval = Math.max(15, parseInt(r.reminder_interval_minutes, 10) || 60)
-      const onReminderTick = inReminderRange && ((current - minutesOf(r.reminder_start_time)) % interval === 0)
-      if (onReminderTick && current <= deadline) {
+      if (reminder && current <= deadline) {
         const message = `Su tırı mail kontrolü: ${base} için ana merkeze ${r.mail_deadline_time}'ye kadar mail atılmalı.${missingText}`
         const n = createNotification({
           message,
           severity: missing.length ? 'critical' : 'warning', module: 'water', target_role: 'campus_manager',
-          dedup_key: `water_truck_mail_${r.id}_${clock.date}_${tickKey}`,
+          dedup_key: `water_truck_mail_${r.id}_${clock.date}_${reminder.key}`,
           link: '/water',
         })
         if (n) created += 1
         alerts.push({ truck_id: r.id, type: 'mail_due', severity: missing.length ? 'critical' : 'warning', created: !!n, message })
       } else if (current > deadline) {
+        const overdue = overdueSlot(current, deadline, interval)
         const message = `Su tırı mail süresi geçti: ${base} için ${r.mail_deadline_time} deadline aşıldı, mail atıldı mı kontrol edin.${missingText}`
         const n = createNotification({
           message,
           severity: 'critical', module: 'water', target_role: 'campus_manager',
-          dedup_key: `water_truck_deadline_${r.id}_${clock.date}_${tickKey}`,
+          dedup_key: `water_truck_deadline_${r.id}_${clock.date}_${overdue.key}`,
           link: '/water',
         })
         if (n) created += 1
@@ -1326,17 +1343,14 @@ export function checkTruckArrivalAlerts({ now = new Date() } = {}) {
       const end = minutesOf(r.arrival_end_time)
       const inWindow = current >= start && current <= end
       const late = current > end
-      const interval = Math.max(15, parseInt(r.reminder_interval_minutes, 10) || 60)
-      const inReminderRange = current >= minutesOf(r.reminder_start_time) && current <= minutesOf(r.reminder_end_time)
-      const onReminderTick = inReminderRange && ((current - minutesOf(r.reminder_start_time)) % interval === 0)
-      if ((inWindow || late) && onReminderTick) {
+      if ((inWindow || late) && reminder) {
         const message = inWindow
           ? `Su tırı geliş kontrolü: ${base} bugün ${r.arrival_start_time}-${r.arrival_end_time} aralığında bekleniyor. Tır gelecek mi teyit edin.`
           : `Su tırı gecikme kontrolü: ${base} için geliş aralığı geçti (${r.arrival_end_time}). Geldi mi kontrol edin.`
         const n = createNotification({
           message,
           severity: late ? 'critical' : 'info', module: 'water', target_role: 'campus_manager',
-          dedup_key: `water_truck_arrival_${r.id}_${clock.date}_${tickKey}`,
+          dedup_key: `water_truck_arrival_${r.id}_${clock.date}_${reminder.key}`,
           link: '/water',
         })
         if (n) created += 1

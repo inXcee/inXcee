@@ -24,6 +24,7 @@ import { captureError } from '../sentry.js'
 import { reconcileAttendanceService } from '../../modules/shifts/service.js'
 
 let emailJob = null
+export const WATER_TRUCK_ALERT_CRON = '* * * * *'
 
 // Tüm saat-spesifik cron'lar Türkiye saatiyle çalışsın — sunucu UTC olabilir,
 // 05:50 / 06:00 / 02:00 / 03:00 gibi saatler kullanıcı için anlamlı.
@@ -81,8 +82,9 @@ export function startCronJobs() {
     } catch (e) { logger.error('[Cron] Stok cron hatası:', e) }
   }, TZ)
 
-  // Her 1 dakikada makine zamanlayıcı kontrolü (overlap-safe)
-  cron.schedule('0 * * * *', withLock('water-truck-alerts', () => {
+  // Tır hatırlatma aralıkları 15 dakikaya kadar düşebildiği için her dakika tara.
+  // Servis slot bazlı dedup uygular; aynı aralıkta tekrar bildirim üretmez.
+  cron.schedule(WATER_TRUCK_ALERT_CRON, withLock('water-truck-alerts', () => {
     checkTruckArrivalAlerts()
   }), TZ)
 

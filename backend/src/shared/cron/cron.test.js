@@ -64,3 +64,10 @@ describe('Daily task generation', () => {
     expect(() => generateDailyTasks()).not.toThrow()
   })
 })
+
+describe('Cron schedule contracts', () => {
+  it('water truck alerts are evaluated every minute', async () => {
+    const { WATER_TRUCK_ALERT_CRON } = await import('./index.js')
+    expect(WATER_TRUCK_ALERT_CRON).toBe('* * * * *')
+  })
+})
