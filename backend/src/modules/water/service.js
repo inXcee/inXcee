@@ -11,6 +11,7 @@ import { parseRecipients } from '../email/service.js'
 // her üründe kabul edilir; açılır listeler ürüne uygun birimleri gösterir.
 const INPUT_UNITS = ['adet', 'koli', 'paket', 'palet']
 const BASE_UNITS = new Set(INPUT_UNITS)
+const WHOLE_BASE_TOLERANCE = 1e-9
 export const WATER_OPERATION_ROLES = Object.freeze(['campus_manager', 'shift_supervisor'])
 
 export function notifyWaterOperations({ dedup_key, ...notification }) {
@@ -72,7 +73,20 @@ function assertAvailableUnit(product, unit) {
 }
 
 export function toBase(product, qty, unit) {
-  return Math.round(qty * unitMultiplier(product, unit))
+  const numericQty = Number(qty)
+  const rawBase = numericQty * unitMultiplier(product, unit)
+  const roundedBase = Math.round(rawBase)
+  const tolerance = WHOLE_BASE_TOLERANCE * Math.max(1, Math.abs(rawBase))
+  if (!Number.isFinite(rawBase) || !Number.isSafeInteger(roundedBase)) {
+    throw Object.assign(new Error('Miktar güvenli sayı aralığında olmalı'), { statusCode: 400 })
+  }
+  if (Math.abs(rawBase - roundedBase) > tolerance) {
+    const baseLabel = product?.unit_label || baseInputUnit(product)
+    throw Object.assign(new Error(
+      `${product?.name || 'Ürün'} miktarı tam ${baseLabel} karşılığına dönüşmeli; kesirli baz miktar kaydedilemez`,
+    ), { statusCode: 400 })
+  }
+  return roundedBase
 }
 
 // base miktarı palet/koli/paket/adet kırılımına çevirir (insan-okur özet)
@@ -131,9 +145,18 @@ export function productsService(opts) { return q.listProducts(opts) }
 // böylece brand/is_returnable göndermeyen eski istemciler bu alanları silmez.
 function productFields(data, existing = null) {
   const has = (k) => Object.prototype.hasOwnProperty.call(data, k)
-  const upc = parseInt(data.units_per_case) || 1
-  const cpp = parseInt(data.cases_per_pallet) || 1
-  if (upc < 1 || cpp < 1) throw Object.assign(new Error('Koli/palet adedi 1 veya daha büyük olmalı'), { statusCode: 400 })
+  const wholeSetting = (value, fallback, label, min = 0) => {
+    if (value == null || value === '') return fallback
+    const numeric = Number(value)
+    if (!Number.isSafeInteger(numeric) || numeric < min) {
+      throw Object.assign(new Error(`${label} ${min || 0} veya daha büyük tam sayı olmalı`), { statusCode: 400 })
+    }
+    return numeric
+  }
+  const upc = wholeSetting(has('units_per_case') ? data.units_per_case : null, existing?.units_per_case || 1, 'Koli içi miktarı', 1)
+  const cpp = wholeSetting(has('cases_per_pallet') ? data.cases_per_pallet : null, existing?.cases_per_pallet || 1, 'Palet içi miktarı', 1)
+  const minLevel = wholeSetting(has('min_level') ? data.min_level : null, existing?.min_level || 0, 'Minimum stok')
+  const criticalLevel = wholeSetting(has('critical_level') ? data.critical_level : null, existing?.critical_level || 0, 'Kritik stok')
   let brand_id = existing ? existing.brand_id : null
   if (has('brand_id')) {
     if (data.brand_id == null || data.brand_id === '') brand_id = null
@@ -147,8 +170,8 @@ function productFields(data, existing = null) {
   return {
     name: data.name.trim(), unit_label: data.unit_label || 'adet',
     units_per_case: upc, cases_per_pallet: cpp,
-    min_level: Math.max(0, parseInt(data.min_level) || 0),
-    critical_level: Math.max(0, parseInt(data.critical_level) || 0),
+    min_level: minLevel,
+    critical_level: criticalLevel,
     brand_id, is_returnable, sort_order,
   }
 }
@@ -478,6 +501,9 @@ export function parseDistributionText(text) {
       if (!product) issues.push('ürün')
       if (!(qty > 0)) issues.push('miktar')
       if (product && !availableUnits(product).includes(unit)) issues.push('birim')
+      if (product && qty > 0 && availableUnits(product).includes(unit)) {
+        try { toBase(product, qty, unit) } catch { issues.push('miktar') }
+      }
       items.push({
         raw: line,
         zone_id: zone?.id || null, zone_name: zone?.name || null,
@@ -739,6 +765,7 @@ export function createTemplateService(data, userId) {
     assertAvailableUnit(product, unit)
     const qty = l.default_qty == null || l.default_qty === '' ? null : Number(l.default_qty)
     if (qty != null && (!Number.isFinite(qty) || qty < 0)) throw Object.assign(new Error('Varsayılan miktar geçersiz'), { statusCode: 400 })
+    if (qty != null) toBase(product, qty, unit)
     lines.push({ zone_id: l.zone_id, product_id: product.id, default_qty: qty, default_unit: unit })
   }
   if (lines.length === 0) throw Object.assign(new Error('En az bir satır gerekli'), { statusCode: 400 })

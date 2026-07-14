@@ -54,6 +54,15 @@ describe('Su takip — çevrim mantığı', () => {
     expect(toBase({ unit_label: 'paket', units_per_case: 1, cases_per_pallet: 80 }, 2, 'palet')).toBe(160)
     expect(humanize({ unit_label: 'koli', units_per_case: 1, cases_per_pallet: 180 }, 1810)).toBe('10 palet 10 koli')
   })
+
+  it('kesirli giriş yalnız tam baz miktarına dönüşüyorsa kabul edilir', () => {
+    expect(toBase({ name: 'Şişe Su', unit_label: 'şişe', units_per_case: 12, cases_per_pallet: 70 }, 0.5, 'koli')).toBe(6)
+    expect(toBase({ name: 'Damacana', unit_label: 'damacana', units_per_case: 1, cases_per_pallet: 36 }, 2.5, 'palet')).toBe(90)
+    expect(() => toBase({ name: 'Şişe Su', unit_label: 'şişe', units_per_case: 12, cases_per_pallet: 70 }, 2.5, 'adet'))
+      .toThrow(/tam şişe karşılığına dönüşmeli/)
+    expect(() => toBase({ name: 'Cam Su', unit_label: 'paket', units_per_case: 1, cases_per_pallet: 133 }, 0.5, 'palet'))
+      .toThrow(/tam paket karşılığına dönüşmeli/)
+  })
 })
 
 describe('Su takip — API', () => {
@@ -1821,5 +1830,123 @@ describe('Su takip - denetim izi', () => {
       },
       after: null,
     })
+  })
+})
+
+describe('Su takip — kesirli miktar tutarlılığı', () => {
+  const auth = (req) => req.set('Authorization', `Bearer ${managerToken}`)
+  let productId
+  let zoneId
+
+  beforeAll(async () => {
+    const product = await auth(request(app).post('/api/water/products')).send({
+      name: 'KESİR TEST ŞİŞE SU', unit_label: 'adet', units_per_case: 12, cases_per_pallet: 36, is_returnable: true,
+    })
+    const zone = await auth(request(app).post('/api/water/zones')).send({ name: 'KESİR TEST BÖLGESİ' })
+    expect(product.status).toBe(201)
+    expect(zone.status).toBe(201)
+    productId = product.body.id
+    zoneId = zone.body.id
+  })
+
+  const expectFractionRejected = (response) => {
+    expect(response.status).toBe(400)
+    expect(response.body.error).toMatch(/tam adet karşılığına dönüşmeli/)
+  }
+
+  it('tam baz sonuca dönüşen kesirli koli girişini aynen saklar', async () => {
+    const response = await auth(request(app).post('/api/water/intake')).send({
+      product_id: productId, input_qty: 0.5, input_unit: 'koli', move_date: '2030-01-02', waybill_no: 'KESIR-OK',
+    })
+    expect(response.status).toBe(201)
+    expect(getDB().prepare('SELECT input_qty, input_unit, qty_base FROM water_movements WHERE id=?').get(response.body.id))
+      .toEqual({ input_qty: 0.5, input_unit: 'koli', qty_base: 6 })
+  })
+
+  it('ürün çarpanları ve baz stok eşiklerinde kesirli değeri kırpmaz', async () => {
+    const badCaseSize = await auth(request(app).post('/api/water/products')).send({
+      name: 'KESİR ÇARPAN HATALI', unit_label: 'adet', units_per_case: 12.5, cases_per_pallet: 36,
+    })
+    const badThreshold = await auth(request(app).post('/api/water/products')).send({
+      name: 'KESİR EŞİK HATALI', unit_label: 'adet', units_per_case: 12, cases_per_pallet: 36, min_level: 2.5,
+    })
+
+    expect(badCaseSize.status).toBe(400)
+    expect(badCaseSize.body.error).toMatch(/Koli içi miktarı.*tam sayı/)
+    expect(badThreshold.status).toBe(400)
+    expect(badThreshold.body.error).toMatch(/Minimum stok.*tam sayı/)
+  })
+
+  it('tekli ve toplu stok hareketlerinde kesirli baz miktarı atomik olarak reddeder', async () => {
+    const countBefore = getDB().prepare('SELECT COUNT(*) AS count FROM water_movements WHERE product_id=?').get(productId).count
+    const intake = await auth(request(app).post('/api/water/intake')).send({
+      product_id: productId, input_qty: 2.5, input_unit: 'adet', move_date: '2030-01-03',
+    })
+    const distribution = await auth(request(app).post('/api/water/distribute')).send({
+      product_id: productId, zone_id: zoneId, input_qty: 2.5, input_unit: 'adet', move_date: '2030-01-03',
+    })
+    const batchIntake = await auth(request(app).post('/api/water/intake/batch')).send({
+      move_date: '2030-01-03',
+      lines: [
+        { product_id: productId, input_qty: 1, input_unit: 'adet' },
+        { product_id: productId, input_qty: 2.5, input_unit: 'adet' },
+      ],
+    })
+    const batchDistribution = await auth(request(app).post('/api/water/distribute/batch')).send({
+      move_date: '2030-01-03',
+      lines: [
+        { product_id: productId, zone_id: zoneId, input_qty: 1, input_unit: 'adet' },
+        { product_id: productId, zone_id: zoneId, input_qty: 2.5, input_unit: 'adet' },
+      ],
+    })
+
+    ;[intake, distribution, batchIntake, batchDistribution].forEach(expectFractionRejected)
+    expect(getDB().prepare('SELECT COUNT(*) AS count FROM water_movements WHERE product_id=?').get(productId).count).toBe(countBefore)
+  })
+
+  it('iade ve stok düzeltmesinde kesirli baz miktarı reddeder', async () => {
+    const returnsBefore = getDB().prepare('SELECT COUNT(*) AS count FROM water_returns WHERE product_id=?').get(productId).count
+    const adjustmentsBefore = getDB().prepare('SELECT COUNT(*) AS count FROM water_adjustments WHERE product_id=?').get(productId).count
+    const singleReturn = await auth(request(app).post('/api/water/returns')).send({
+      product_id: productId, input_qty: 2.5, input_unit: 'adet', move_date: '2030-01-04',
+    })
+    const batchReturn = await auth(request(app).post('/api/water/returns/batch')).send({
+      move_date: '2030-01-04',
+      lines: [
+        { product_id: productId, input_qty: 1, input_unit: 'adet' },
+        { product_id: productId, input_qty: 2.5, input_unit: 'adet' },
+      ],
+    })
+    const adjustment = await auth(request(app).post('/api/water/adjustments')).send({
+      product_id: productId, direction: 'in', input_qty: 2.5, input_unit: 'adet',
+      move_date: '2030-01-04', reason: 'sayim_farki',
+    })
+
+    ;[singleReturn, batchReturn, adjustment].forEach(expectFractionRejected)
+    expect(getDB().prepare('SELECT COUNT(*) AS count FROM water_returns WHERE product_id=?').get(productId).count).toBe(returnsBefore)
+    expect(getDB().prepare('SELECT COUNT(*) AS count FROM water_adjustments WHERE product_id=?').get(productId).count).toBe(adjustmentsBefore)
+  })
+
+  it('şablon ve ay sayımında aynı tam baz kuralını uygular', async () => {
+    const badTemplate = await auth(request(app).post('/api/water/templates')).send({
+      name: 'KESİR TEST HATALI ŞABLON',
+      lines: [{ zone_id: zoneId, product_id: productId, default_qty: 2.5, default_unit: 'adet' }],
+    })
+    const goodTemplate = await auth(request(app).post('/api/water/templates')).send({
+      name: 'KESİR TEST GEÇERLİ ŞABLON',
+      lines: [{ zone_id: zoneId, product_id: productId, default_qty: 0.5, default_unit: 'koli' }],
+    })
+    const badCount = await auth(request(app).post('/api/water/stock-count')).send({
+      month: '2030-01', product_id: productId, counted_qty: 2.5, counted_unit: 'adet', reason: 'sayim_farki',
+    })
+    const goodCount = await auth(request(app).post('/api/water/stock-count')).send({
+      month: '2030-01', product_id: productId, counted_qty: 0.5, counted_unit: 'koli',
+    })
+
+    expectFractionRejected(badTemplate)
+    expect(goodTemplate.status).toBe(201)
+    expectFractionRejected(badCount)
+    expect(goodCount.status).toBe(200)
+    expect(goodCount.body).toMatchObject({ system_base: 6, counted_base: 6, diff_base: 0, status: 'even' })
   })
 })

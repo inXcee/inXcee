@@ -12,115 +12,26 @@ import {
   matrixPasteChanges,
   nextMatrixPosition,
 } from './logic/waterMatrix.js'
+import {
+  availableUnitsForProduct,
+  baseUnitForProduct,
+  coerceUnitForProduct,
+  defaultUnitForProduct,
+  exactBaseQuantity,
+  humanQty,
+  multiplier,
+  productInputUnit,
+  smartQty,
+  unitLabel,
+  unitOptionsForProduct,
+} from './logic/waterUnits.js'
 
 const toastOk = (m) => useToastStore.getState().addToast(m, 'success')
 const toastErr = (m) => useToastStore.getState().addToast(m, 'error')
-const errMsg = (e, f) => e?.response?.data?.error || f
+const errMsg = (e, f) => e?.response?.data?.error || e?.message || f
 
-const UNITS = [['adet', 'Adet'], ['koli', 'Koli'], ['paket', 'Paket'], ['palet', 'Palet']]
-const BASE_UNITS = new Set(['adet', 'koli', 'paket', 'palet'])
 const todayStr = () => new Date().toLocaleDateString('sv-SE')
 const nf = (n) => new Intl.NumberFormat('tr-TR').format(n || 0)
-const normUnit = (u) => String(u || 'adet').toLocaleLowerCase('tr').trim()
-const baseUnitForProduct = (p) => {
-  const unit = normUnit(p?.unit_label)
-  return BASE_UNITS.has(unit) ? unit : 'adet'
-}
-const multiplier = (p, unit) => {
-  const baseUnit = baseUnitForProduct(p)
-  const perCase = Math.max(1, Number(p?.units_per_case || 1))
-  const perPallet = Math.max(1, Number(p?.cases_per_pallet || 1))
-  if (unit === 'adet') return 1
-  if (unit === 'koli') return baseUnit === 'koli' ? 1 : perCase
-  if (unit === 'paket') return baseUnit === 'paket' ? 1 : 1
-  if (unit === 'palet') {
-    if (baseUnit === 'palet') return 1
-    if (baseUnit === 'koli' || baseUnit === 'paket') return perPallet
-    return perCase * perPallet
-  }
-  return 1
-}
-const humanQty = (p, base) => {
-  const label = p?.unit_label || 'adet'
-  const sign = Number(base) < 0 ? '-' : ''
-  let rest = Math.abs(Math.round(base || 0))
-  if (rest === 0) return `0 ${label}`
-  const parts = []
-  const perCase = Math.max(1, Number(p?.units_per_case || 1))
-  const casesPerPallet = Math.max(1, Number(p?.cases_per_pallet || 1))
-  const baseUnit = baseUnitForProduct(p)
-  const perPallet = baseUnit === 'palet' ? 1 : (baseUnit === 'koli' || baseUnit === 'paket') ? casesPerPallet : perCase * casesPerPallet
-  if (perPallet > 1 && rest >= perPallet) {
-    const palet = Math.floor(rest / perPallet); parts.push(`${palet} palet`); rest -= palet * perPallet
-  }
-  if (baseUnit === 'adet' && perCase > 1 && rest >= perCase) {
-    const koli = Math.floor(rest / perCase); parts.push(`${koli} koli`); rest -= koli * perCase
-  }
-  if (rest > 0) parts.push(`${rest} ${label}`)
-  return sign ? `-${parts.join(' ')}` : parts.join(' ')
-}
-const defaultUnitForProduct = (p) => {
-  const baseUnit = baseUnitForProduct(p)
-  if (baseUnit === 'koli' || baseUnit === 'paket') return baseUnit
-  if ((p?.units_per_case || 1) > 1) return 'koli'
-  return 'adet'
-}
-const availableUnitsForProduct = (p) => {
-  const baseUnit = baseUnitForProduct(p)
-  const upc = Math.max(1, Number(p?.units_per_case || 1))
-  const cpp = Math.max(1, Number(p?.cases_per_pallet || 1))
-  const units = []
-  if (baseUnit === 'koli') units.push('koli')
-  else if (baseUnit === 'paket') units.push('paket')
-  else if (baseUnit === 'palet') units.push('palet')
-  else units.push('adet')
-  if (baseUnit === 'koli' || (baseUnit === 'adet' && upc > 1)) units.push('koli')
-  if (baseUnit === 'paket') units.push('paket')
-  if (baseUnit !== 'palet' && cpp > 1) units.push('palet')
-  return [...new Set(units)]
-}
-const unitOptionsForProduct = (p) => UNITS.filter(([unit]) => availableUnitsForProduct(p).includes(unit))
-const coerceUnitForProduct = (unit, p) => {
-  const units = availableUnitsForProduct(p)
-  return units.includes(unit) ? unit : units[units.length - 1] || 'adet'
-}
-const parseQty = (v) => {
-  if (typeof v === 'number') return Number.isFinite(v) ? v : 0
-  const n = Number(String(v ?? '').replace(',', '.').trim())
-  return Number.isFinite(n) ? n : 0
-}
-const unitLabel = (unit) => UNITS.find(([v]) => v === unit)?.[1] || unit || 'Adet'
-const productInputUnit = (product, unitMap = {}) => {
-  const pid = product?.product_id || product?.id
-  return coerceUnitForProduct(unitMap[pid] || defaultUnitForProduct(product), product)
-}
-const unitFromToken = (token) => {
-  if (token == null || String(token).trim() === '') return null
-  const t = normUnit(token).replace(/\./g, '')
-  if (!t) return null
-  if (['p', 'pl', 'plt', 'pal', 'palet', 'pallet'].includes(t)) return 'palet'
-  if (['pk', 'pkt', 'pak', 'paket'].includes(t)) return 'paket'
-  if (['k', 'kl', 'kol', 'koli'].includes(t)) return 'koli'
-  if (['a', 'ad', 'adet', 'tane'].includes(t)) return 'adet'
-  return null
-}
-const smartQty = (raw, product, fallbackUnit) => {
-  const text = String(raw ?? '').trim()
-  const fallback = coerceUnitForProduct(fallbackUnit, product)
-  if (!text) return { input_qty: 0, input_unit: fallback, base: 0, valid: false }
-  const normalized = text.replace(',', '.').toLocaleLowerCase('tr')
-  const match = normalized.match(/^([0-9]+(?:\.[0-9]+)?)\s*([a-zçğıöşü.]+)?$/i)
-  const qty = match ? Number(match[1]) : parseQty(text)
-  const tokenUnit = match ? unitFromToken(match[2]) : null
-  const wantedUnit = tokenUnit || fallback
-  const available = availableUnitsForProduct(product)
-  if (tokenUnit && !available.includes(tokenUnit)) {
-    return { input_qty: qty || 0, input_unit: tokenUnit, base: 0, valid: false, tokenUnit }
-  }
-  const unit = available.includes(wantedUnit) ? wantedUnit : fallback
-  const base = Number.isFinite(qty) && qty > 0 ? Math.round(qty * multiplier(product, unit)) : 0
-  return { input_qty: qty, input_unit: unit, base, valid: base > 0, tokenUnit }
-}
 const calcText = (product, parsed) => {
   if (!parsed?.valid) return ''
   const baseLabel = product?.unit_label || 'adet'
@@ -443,6 +354,7 @@ const WaterMatrixRow = memo(function WaterMatrixRow({
               style={{ width: '66px', height: '26px', textAlign: 'right', fontFamily: 'var(--mono)', fontSize: '11px', padding: '2px 5px', marginTop: '3px' }}
             />
             {active && <div style={{ fontSize: '9px', color: 'var(--green)', marginTop: '2px', whiteSpace: 'nowrap' }} title={calcText(product, parsed)}>= {nf(parsed.base)}</div>}
+            {pending && parsed.error && <div style={{ fontSize: '9px', color: 'var(--red)', marginTop: '2px', lineHeight: 1.2 }} title={parsed.error}>{parsed.error}</div>}
             {dayBase > 0 && <div style={{ fontSize: '9px', color: 'var(--teal)', marginTop: '2px' }}>bugün {nf(dayBase)}</div>}
           </td>
         )
@@ -1583,7 +1495,7 @@ function DailyDistributionModal({ day, from, to, onDayChange, onClose }) {
   const saveEdit = () => {
     if (!editing?.zone_id) return toastErr('Bölge seçin')
     if (!editing?.product_id) return toastErr('Ürün seçin')
-    if (!editCalc?.valid) return toastErr('Geçerli miktar girin')
+    if (!editCalc?.valid) return toastErr(editCalc?.error || 'Geçerli miktar girin')
     updateMovement.mutate({
       id: editing.id,
       payload: {
@@ -1646,7 +1558,7 @@ function DailyDistributionModal({ day, from, to, onDayChange, onClose }) {
           <div style={{ border: '1px solid rgba(20,184,166,.45)', background: 'rgba(20,184,166,.07)', borderRadius: '8px', padding: '10px', display: 'grid', gridTemplateColumns: 'repeat(6, minmax(120px, 1fr))', gap: '8px', alignItems: 'end' }}>
             <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'center' }}>
               <strong style={{ fontSize: '12px' }}>Kayıt #{editing.id} düzenleniyor</strong>
-              <span style={{ color: 'var(--text3)', fontSize: '11px' }}>{editCalc?.valid ? calcText(selectedProduct, editCalc) : 'Miktar girince hesaplanır'}</span>
+              <span style={{ color: editCalc?.error ? 'var(--red)' : 'var(--text3)', fontSize: '11px' }}>{editCalc?.valid ? calcText(selectedProduct, editCalc) : editCalc?.error || 'Miktar girince hesaplanır'}</span>
             </div>
             <label style={{ fontSize: '11px', color: 'var(--text2)' }}>Tarih
               <input type="date" className="form-input" value={editing.move_date} onChange={e => setEditing(v => ({ ...v, move_date: e.target.value }))} style={{ fontSize: '12px' }} />
@@ -3437,8 +3349,11 @@ function GelenTirPanel({ from, to, label, stockItems = [] }) {
   const addRow = () => setRows(rs => [...rs, { ...blankRow }])
   const rmRow = (i) => setRows(rs => rs.length > 1 ? rs.filter((_, idx) => idx !== i) : rs)
   const rowCalc = (r) => smartQty(r.input_qty, products.find(p => String(p.id) === String(r.product_id)), r.input_unit)
-  const validRows = rows.filter(r => r.product_id && rowCalc(r).valid)
+  const enteredRows = rows.filter(r => r.product_id || String(r.input_qty || '').trim() || String(r.note || '').trim())
+  const validRows = enteredRows.filter(r => r.product_id && rowCalc(r).valid)
+  const invalidRows = enteredRows.filter(r => !r.product_id || !rowCalc(r).valid)
   const submit = () => {
+    if (invalidRows.length > 0) return toastErr(rowCalc(invalidRows[0]).error || 'Eksik veya geçersiz ürün satırını düzeltin')
     if (validRows.length === 0) return toastErr('En az bir geçerli ürün satırı girin')
     saveBatch.mutate({
       move_date: date, waybill_no: waybill.trim() || undefined,
@@ -3474,7 +3389,7 @@ function GelenTirPanel({ from, to, label, stockItems = [] }) {
                       </select></td>
                       <td><input type="text" inputMode="decimal" className="form-input" style={{ fontSize: '11px' }} placeholder="3 / 3p" value={r.input_qty} onChange={e => updRow(i, { input_qty: e.target.value })} /></td>
                       <td><select className="form-select" style={{ fontSize: '11px' }} value={coerceUnitForProduct(r.input_unit, p)} onChange={e => updRow(i, { input_unit: e.target.value })}>{unitOptionsForProduct(p).map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></td>
-                      <td style={{ fontFamily: 'var(--mono)', color: calc.valid ? 'var(--green)' : 'var(--text3)' }}>{calc.valid ? nf(calc.base) : '·'}</td>
+                      <td style={{ fontFamily: 'var(--mono)', color: calc.valid ? 'var(--green)' : calc.error ? 'var(--red)' : 'var(--text3)', maxWidth: '110px' }}>{calc.valid ? nf(calc.base) : calc.error || '·'}</td>
                       <td><input className="form-input" style={{ fontSize: '11px' }} placeholder="opsiyonel" value={r.note} onChange={e => updRow(i, { note: e.target.value })} /></td>
                       <td style={{ textAlign: 'center' }}>{rows.length > 1 && <button type="button" onClick={() => rmRow(i)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--red)' }}>✕</button>}</td>
                     </tr>
@@ -3485,7 +3400,7 @@ function GelenTirPanel({ from, to, label, stockItems = [] }) {
           </div>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
             <button type="button" className="btn btn-ghost btn-sm" onClick={addRow}>+ Ürün satırı</button>
-            <button className="btn btn-primary btn-sm" onClick={submit} disabled={saveBatch.isPending || validRows.length === 0} style={{ marginLeft: 'auto' }}>{saveBatch.isPending ? 'Kaydediliyor…' : `İrsaliyeyi Kaydet (${validRows.length} ürün)`}</button>
+            <button className="btn btn-primary btn-sm" onClick={submit} disabled={saveBatch.isPending || validRows.length === 0 || invalidRows.length > 0} style={{ marginLeft: 'auto' }}>{saveBatch.isPending ? 'Kaydediliyor…' : `İrsaliyeyi Kaydet (${validRows.length} ürün)`}</button>
           </div>
           <div style={{ border: '1px solid var(--border)', borderRadius: '8px', overflow: 'auto', maxHeight: '280px' }}>
             <table className="data-table" style={{ fontSize: '11px' }}>
@@ -3553,6 +3468,7 @@ function BosIadePanel({ from, to, deposit }) {
 
   const [form, setForm] = useState({ product_id: '', input_qty: '', input_unit: 'adet', move_date: todayStr() })
   const selected = returnable.find(p => String(p.id) === String(form.product_id))
+  const returnCalc = smartQty(form.input_qty, selected, form.input_unit)
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['water-returns'] }); qc.invalidateQueries({ queryKey: ['water-summary'] })
@@ -3565,8 +3481,8 @@ function BosIadePanel({ from, to, deposit }) {
   const del = useMutation({ mutationFn: (id) => api.delete(`/water/returns/${id}`), onSuccess: () => { invalidate(); toastOk('Silindi') }, onError: (e) => toastErr(errMsg(e, 'Silinemedi')) })
   const submit = () => {
     if (!form.product_id) return toastErr('İade edilebilir ürün seçin')
-    if (!(Number(form.input_qty) > 0)) return toastErr('Miktar girin')
-    save.mutate({ product_id: +form.product_id, input_qty: Number(form.input_qty), input_unit: form.input_unit, move_date: form.move_date })
+    if (!returnCalc.valid) return toastErr(returnCalc.error || 'Miktar girin')
+    save.mutate({ product_id: +form.product_id, input_qty: returnCalc.input_qty, input_unit: returnCalc.input_unit, move_date: form.move_date })
   }
 
   return (
@@ -3595,13 +3511,14 @@ function BosIadePanel({ from, to, deposit }) {
               <option value="">Ürün…</option>
               {returnable.map(p => <option key={p.id} value={p.id}>{p.brand_name ? `${p.brand_name} · ` : ''}{p.name}</option>)}
             </select>
-            <input type="number" min="0" step="any" className="form-input" placeholder="Miktar" value={form.input_qty} onChange={e => setForm(f => ({ ...f, input_qty: e.target.value }))} />
+            <input type="text" inputMode="decimal" className="form-input" placeholder="Miktar" value={form.input_qty} onChange={e => setForm(f => ({ ...f, input_qty: e.target.value }))} />
             <select className="form-select" value={form.input_unit} onChange={e => setForm(f => ({ ...f, input_unit: e.target.value }))}>
               {unitOptionsForProduct(selected).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
             </select>
-            <button className="btn btn-primary btn-sm" onClick={submit} disabled={save.isPending}>Ekle</button>
+            <button className="btn btn-primary btn-sm" onClick={submit} disabled={save.isPending || (!!form.input_qty && !returnCalc.valid)}>Ekle</button>
           </div>
         )}
+        {!!form.input_qty && <div style={{ fontSize: '10px', color: returnCalc.valid ? 'var(--green)' : 'var(--red)' }}>{returnCalc.valid ? calcText(selected, returnCalc) : returnCalc.error || 'Geçerli miktar girin'}</div>}
         <table className="data-table" style={{ fontSize: '11px' }}>
           <tbody>
             {returns.slice(0, 8).map(r => (
@@ -3725,7 +3642,7 @@ function AdjustModal({ onClose }) {
   const del = useMutation({ mutationFn: (id) => api.delete(`/water/adjustments/${id}`), onSuccess: () => { invalidate(); toastOk('Silindi') }, onError: (e) => toastErr(errMsg(e, 'Silinemedi')) })
   const submit = () => {
     if (!form.product_id) return toastErr('Ürün seçin')
-    if (!calc.valid) return toastErr('Miktar girin')
+    if (!calc.valid) return toastErr(calc.error || 'Miktar girin')
     if (!form.reason) return toastErr('Sebep seçin')
     create.mutate()
   }
@@ -3762,8 +3679,8 @@ function AdjustModal({ onClose }) {
         <div style={{ flex: 1, minWidth: '150px' }}><label className="form-label">Not</label><input className="form-input" value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} placeholder="opsiyonel" /></div>
         <button className="btn btn-primary" disabled={create.isPending} onClick={submit}>Kaydet</button>
       </div>
-      <div style={{ minHeight: '20px', fontSize: '11px', color: calc.valid ? (form.direction === 'in' ? 'var(--green)' : 'var(--red)') : 'var(--text3)', marginBottom: '10px' }}>
-        {calc.valid ? `Stok etkisi: ${form.direction === 'in' ? '+' : '−'}${nf(calc.base)} ${selected?.unit_label || 'adet'}` : 'Ürün + miktar girince stok etkisi burada görünür.'}
+      <div style={{ minHeight: '20px', fontSize: '11px', color: calc.valid ? (form.direction === 'in' ? 'var(--green)' : 'var(--red)') : calc.error ? 'var(--red)' : 'var(--text3)', marginBottom: '10px' }}>
+        {calc.valid ? `Stok etkisi: ${form.direction === 'in' ? '+' : '−'}${nf(calc.base)} ${selected?.unit_label || 'adet'}` : calc.error || 'Ürün + miktar girince stok etkisi burada görünür.'}
       </div>
       <div style={{ maxHeight: '38vh', overflowY: 'auto', border: '1px solid var(--border)', borderRadius: '8px' }}>
         <table className="data-table" style={{ fontSize: '11px' }}>
@@ -3809,7 +3726,10 @@ function TextDistribute({ products, zones, onSaved }) {
     mutationFn: () => api.post('/water/distribute/parse', { text }).then(r => r.data),
     onSuccess: (d) => {
       if (!d.items.length) { toastErr('Metinden satır çıkarılamadı'); return }
-      setItems(d.items.map((it, i) => ({ ...it, _id: i })))
+      setItems(d.items.map((it, i) => {
+        const product = products.find(p => String(p.id) === String(it.product_id))
+        return { ...it, input_unit: coerceUnitForProduct(it.input_unit, product), _id: i }
+      }))
     },
     onError: (e) => toastErr(errMsg(e, 'Çözümlenemedi')),
   })
@@ -3820,11 +3740,17 @@ function TextDistribute({ products, zones, onSaved }) {
   })
 
   const upd = (id, patch) => setItems(items.map(it => it._id === id ? { ...it, ...patch } : it))
-  const validCount = items?.filter(it => it.zone_id && it.product_id && Number(it.input_qty) > 0).length || 0
+  const itemCalc = (item) => smartQty(item.input_qty, products.find(p => String(p.id) === String(item.product_id)), item.input_unit)
+  const validItems = items?.filter(item => item.zone_id && item.product_id && itemCalc(item).valid) || []
+  const validCount = validItems.length
+  const invalidItemCount = items ? items.length - validCount : 0
 
   const save = () => {
-    const lines = items.filter(it => it.zone_id && it.product_id && Number(it.input_qty) > 0)
-      .map(it => ({ zone_id: +it.zone_id, product_id: +it.product_id, input_qty: Number(it.input_qty), input_unit: it.input_unit }))
+    if (invalidItemCount > 0) return toastErr('Kırmızı satırları düzeltmeden toplu kayıt yapılamaz')
+    const lines = validItems.map(item => {
+      const calc = itemCalc(item)
+      return { zone_id: +item.zone_id, product_id: +item.product_id, input_qty: calc.input_qty, input_unit: calc.input_unit }
+    })
     if (!lines.length) return toastErr('Kaydedilecek geçerli satır yok')
     saveBatch.mutate(lines)
   }
@@ -3853,8 +3779,9 @@ function TextDistribute({ products, zones, onSaved }) {
               <thead><tr><th>Dağıtım yeri</th><th>Ürün</th><th>Miktar</th><th>Birim</th><th></th></tr></thead>
               <tbody>
                 {items.map(it => {
-                  const bad = !it.zone_id || !it.product_id || !(Number(it.input_qty) > 0)
                   const selectedProduct = products.find(p => String(p.id) === String(it.product_id))
+                  const calc = itemCalc(it)
+                  const bad = !it.zone_id || !it.product_id || !calc.valid
                   return (
                     <tr key={it._id} style={{ background: bad ? 'rgba(239,68,68,.06)' : undefined }}>
                       <td><select className="form-select" style={{ fontSize: '11px', minWidth: '130px' }} value={it.zone_id || ''} onChange={e => upd(it._id, { zone_id: e.target.value })}>
@@ -3864,7 +3791,7 @@ function TextDistribute({ products, zones, onSaved }) {
                         upd(it._id, { product_id: e.target.value, input_unit: defaultUnitForProduct(p) })
                       }}>
                         <option value="">— seç —</option>{products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></td>
-                      <td><input type="number" min="0" step="any" className="form-input" style={{ fontSize: '11px', width: '70px' }} value={it.input_qty ?? ''} onChange={e => upd(it._id, { input_qty: e.target.value })} /></td>
+                      <td><input type="text" inputMode="decimal" className="form-input" title={calc.error || ''} style={{ fontSize: '11px', width: '86px', borderColor: calc.error ? 'var(--red)' : undefined }} value={it.input_qty ?? ''} onChange={e => upd(it._id, { input_qty: e.target.value })} />{calc.error && <div style={{ color: 'var(--red)', fontSize: '9px' }}>{calc.error}</div>}</td>
                       <td><select className="form-select" style={{ fontSize: '11px' }} value={it.input_unit} onChange={e => upd(it._id, { input_unit: e.target.value })}>{unitOptionsForProduct(selectedProduct).map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></td>
                       <td style={{ textAlign: 'right' }}><button onClick={() => setItems(items.filter(x => x._id !== it._id))} style={{ border: 'none', background: 'transparent', color: 'var(--text3)', cursor: 'pointer' }}>✕</button></td>
                     </tr>
@@ -3877,7 +3804,7 @@ function TextDistribute({ products, zones, onSaved }) {
             <button className="btn btn-ghost btn-sm" onClick={() => setItems(null)}>← Geri</button>
             <span style={{ marginLeft: 'auto', display: 'flex', gap: '8px', alignItems: 'center' }}>
               <span style={{ fontSize: '11px', color: 'var(--text3)' }}>Tarih: {moveDate}</span>
-              <button className="btn btn-primary" onClick={save} disabled={saveBatch.isPending || validCount === 0}>{saveBatch.isPending ? 'Kaydediliyor…' : `${validCount} Dağıtımı Kaydet`}</button>
+              <button className="btn btn-primary" onClick={save} disabled={saveBatch.isPending || validCount === 0 || invalidItemCount > 0}>{saveBatch.isPending ? 'Kaydediliyor…' : `${validCount} Dağıtımı Kaydet`}</button>
             </span>
           </div>
         </>
@@ -3945,6 +3872,24 @@ function TemplatesTab() {
   const [name, setName] = useState('')
   const [lines, setLines] = useState([])
 
+  const templateLineStatus = (line) => {
+    const product = productsById.get(+line.product_id)
+    const configured = !!(line.zone_id || line.product_id || String(line.default_qty ?? '').trim())
+    if (!configured) return { configured: false, valid: false, error: null }
+    if (!line.zone_id || !product) return { configured: true, valid: false, error: 'Yer ve ürün seçin' }
+    if (line.default_qty === '' || line.default_qty == null) return { configured: true, valid: true, error: null }
+    const qty = Number(line.default_qty)
+    const conversion = exactBaseQuantity(product, qty, line.default_unit)
+    if (!Number.isFinite(qty) || qty < 0) return { configured: true, valid: false, error: 'Geçerli miktar girin' }
+    if (!conversion.exact) return { configured: true, valid: false, error: `Tam ${product.unit_label || 'adet'} gerekli` }
+    return { configured: true, valid: true, error: null }
+  }
+  const validLines = lines.filter(line => templateLineStatus(line).valid).length
+  const invalidLines = lines.filter(line => {
+    const status = templateLineStatus(line)
+    return status.configured && !status.valid
+  }).length
+
   const invalidate = () => qc.invalidateQueries({ queryKey: ['water-templates'] })
   const create = useMutation({
     mutationFn: () => api.post('/water/templates', {
@@ -3959,7 +3904,6 @@ function TemplatesTab() {
   const addLine = () => setLines(ls => [...ls, { zone_id: '', product_id: '', default_qty: '', default_unit: 'adet' }])
   const updLine = (i, patch) => setLines(ls => ls.map((l, idx) => idx === i ? { ...l, ...patch } : l))
   const rmLine = (i) => setLines(ls => ls.filter((_, idx) => idx !== i))
-  const validLines = lines.filter(l => l.zone_id && l.product_id).length
 
   return (
     <div>
@@ -3971,17 +3915,21 @@ function TemplatesTab() {
         {lines.map((l, i) => {
           const prod = productsById.get(+l.product_id)
           const unitOpts = prod ? unitOptionsForProduct(prod) : [['adet', 'Adet']]
+          const lineStatus = templateLineStatus(l)
           return (
             <div key={i} style={{ display: 'flex', gap: '6px', marginBottom: '6px', alignItems: 'center' }}>
               <select className="form-select" style={{ flex: 1, fontSize: '11px' }} value={l.zone_id} onChange={e => updLine(i, { zone_id: e.target.value })}>
                 <option value="">Dağıtım yeri…</option>
                 {zones.map(z => <option key={z.id} value={z.id}>{z.name}</option>)}
               </select>
-              <select className="form-select" style={{ flex: 1, fontSize: '11px' }} value={l.product_id} onChange={e => updLine(i, { product_id: e.target.value, default_unit: 'adet' })}>
+              <select className="form-select" style={{ flex: 1, fontSize: '11px' }} value={l.product_id} onChange={e => {
+                const product = productsById.get(+e.target.value)
+                updLine(i, { product_id: e.target.value, default_unit: defaultUnitForProduct(product) })
+              }}>
                 <option value="">Ürün…</option>
                 {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
-              <input type="number" min="0" className="form-input" style={{ width: '72px', fontSize: '11px' }} value={l.default_qty} onChange={e => updLine(i, { default_qty: e.target.value })} placeholder="miktar" />
+              <input type="number" min="0" step="any" className="form-input" title={lineStatus.error || ''} style={{ width: '82px', fontSize: '11px', borderColor: lineStatus.error ? 'var(--red)' : undefined }} value={l.default_qty} onChange={e => updLine(i, { default_qty: e.target.value })} placeholder={lineStatus.error || 'miktar'} />
               <select className="form-select" style={{ width: '90px', fontSize: '11px' }} value={l.default_unit} onChange={e => updLine(i, { default_unit: e.target.value })}>
                 {unitOpts.map(([v, lab]) => <option key={v} value={v}>{lab}</option>)}
               </select>
@@ -3990,7 +3938,7 @@ function TemplatesTab() {
           )
         })}
         {lines.length === 0 && <div style={{ fontSize: '11px', color: 'var(--text3)', padding: '6px 0' }}>Satır ekleyin (dağıtım yeri + ürün + varsayılan miktar/birim).</div>}
-        <button className="btn btn-primary btn-sm" style={{ marginTop: '8px' }} disabled={!name.trim() || validLines === 0 || create.isPending} onClick={() => create.mutate()}>{create.isPending ? 'Kaydediliyor…' : `Şablonu Kaydet (${validLines} satır)`}</button>
+        <button className="btn btn-primary btn-sm" style={{ marginTop: '8px' }} disabled={!name.trim() || validLines === 0 || invalidLines > 0 || create.isPending} onClick={() => create.mutate()}>{create.isPending ? 'Kaydediliyor…' : `Şablonu Kaydet (${validLines} satır)`}</button>
       </div>
 
       <div style={{ maxHeight: '38vh', overflowY: 'auto' }}>
@@ -4029,8 +3977,14 @@ function ProductsTab() {
     const upc = +form.units_per_case || 1, cpp = +form.cases_per_pallet || 1
     const productShape = { unit_label: form.unit_label, units_per_case: upc, cases_per_pallet: cpp }
     const minUnit = coerceUnitForProduct(form.min_unit, productShape)
-    const mult = multiplier(productShape, minUnit)
-    return { name: form.name.trim(), unit_label: form.unit_label, units_per_case: upc, cases_per_pallet: cpp, min_level: Math.round((+form.min_qty || 0) * mult), critical_level: Math.round((+form.crit_qty || 0) * mult), brand_id: form.brand_id || null, is_returnable: form.is_returnable, is_active: form.is_active }
+    const thresholdBase = (raw, label) => {
+      const qty = raw === '' ? 0 : Number(raw)
+      if (!Number.isFinite(qty) || qty < 0) throw new Error(`${label} miktarı geçersiz`)
+      const conversion = exactBaseQuantity(productShape, qty, minUnit)
+      if (!conversion.exact) throw new Error(`${label} tam ${form.unit_label || 'adet'} karşılığına dönüşmeli`)
+      return conversion.base
+    }
+    return { name: form.name.trim(), unit_label: form.unit_label, units_per_case: upc, cases_per_pallet: cpp, min_level: thresholdBase(form.min_qty, 'Minimum stok'), critical_level: thresholdBase(form.crit_qty, 'Kritik stok'), brand_id: form.brand_id || null, is_returnable: form.is_returnable, is_active: form.is_active }
   }
   const create = useMutation({ mutationFn: () => api.post('/water/products', payload()), onSuccess: () => { invalidate(); setForm(blank); toastOk('Ürün eklendi') }, onError: (e) => toastErr(errMsg(e, 'Eklenemedi')) })
   const update = useMutation({ mutationFn: () => api.put(`/water/products/${form.id}`, payload()), onSuccess: () => { invalidate(); setForm(blank); toastOk('Ürün güncellendi') }, onError: (e) => toastErr(errMsg(e, 'Güncellenemedi')) })
@@ -4080,8 +4034,8 @@ function ProductsTab() {
         </div></div>
         <div style={{ width: '78px' }}><label className="form-label">Koli içi</label><input type="number" min="1" className="form-input" value={form.units_per_case} onChange={e => updatePackageNumber('units_per_case', e.target.value)} /></div>
         <div style={{ width: '86px' }}><label className="form-label">Palet çarp.</label><input type="number" min="1" className="form-input" value={form.cases_per_pallet} onChange={e => updatePackageNumber('cases_per_pallet', e.target.value)} /></div>
-        <div style={{ width: '72px' }}><label className="form-label">Min. stok</label><input type="number" min="0" className="form-input" value={form.min_qty} onChange={e => setForm(f => ({ ...f, min_qty: e.target.value }))} /></div>
-        <div style={{ width: '72px' }}><label className="form-label" title="Min’den düşük acil eşik">Kritik</label><input type="number" min="0" className="form-input" value={form.crit_qty} onChange={e => setForm(f => ({ ...f, crit_qty: e.target.value }))} /></div>
+        <div style={{ width: '72px' }}><label className="form-label">Min. stok</label><input type="number" min="0" step="any" className="form-input" value={form.min_qty} onChange={e => setForm(f => ({ ...f, min_qty: e.target.value }))} /></div>
+        <div style={{ width: '72px' }}><label className="form-label" title="Min’den düşük acil eşik">Kritik</label><input type="number" min="0" step="any" className="form-input" value={form.crit_qty} onChange={e => setForm(f => ({ ...f, crit_qty: e.target.value }))} /></div>
         <div style={{ width: '72px' }}><label className="form-label">Min. birim</label><select className="form-select" value={coerceUnitForProduct(form.min_unit, formPackage)} onChange={e => setForm(f => ({ ...f, min_unit: e.target.value }))}>{formUnitOptions.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
         <div style={{ minWidth: '130px' }}><label className="form-label">Marka</label><select className="form-select" value={form.brand_id} onChange={e => setForm(f => ({ ...f, brand_id: e.target.value }))}>
           <option value="">Markasız</option>{brands.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}

@@ -252,11 +252,16 @@ describe('WaterPage tek-ekran pano smoke', () => {
 
   it('matriste klavye gezinme, geri alma, Excel yapıştırma ve toplu kayıt çalışır', async () => {
     renderWithProviders(<WaterPage />)
+    const board = await screen.findByTestId('water-board')
     const first = await screen.findByLabelText('OTC Kamp Alanı - Damacana dağıtım miktarı')
     const second = screen.getByLabelText('OTC Kamp Alanı - 0.5 L dağıtım miktarı')
     const undo = screen.getByRole('button', { name: 'Son taslak değişikliğini geri al' })
 
     expect(undo).toBeDisabled()
+    fireEvent.change(first, { target: { value: '2,5' } })
+    expect(await within(board).findByText('Tam damacana gerekli')).toBeInTheDocument()
+    expect(within(board).getByRole('button', { name: 'Kaydet' })).toBeDisabled()
+
     fireEvent.change(first, { target: { value: '3p' } })
     expect(await screen.findByText('= 108')).toBeInTheDocument()
     expect(undo).toBeEnabled()
@@ -264,6 +269,8 @@ describe('WaterPage tek-ekran pano smoke', () => {
     fireEvent.keyDown(first, { key: 'Tab' })
     expect(second).toHaveFocus()
 
+    fireEvent.click(undo)
+    expect(first).toHaveValue('2,5')
     fireEvent.click(undo)
     expect(first).toHaveValue('')
 
