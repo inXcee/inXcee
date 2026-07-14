@@ -1615,6 +1615,73 @@ export function getOperationsDashboardData({ date, monthStart, monthEnd, deptId 
     ORDER BY COALESCE(sd.start_hour, 99), d.name, s.full_name
   `).all(date, date, date, date, date, ...(deptId ? [deptId] : []))
 
+  const unassignedParams = [date, date, date, date]
+  let unassignedDeptSql = ''
+  if (deptId) {
+    unassignedDeptSql = ' AND COALESCE(sa.department_id, s.department_id) = ?'
+    unassignedParams.push(deptId)
+  }
+  const unassignedStaff = db.prepare(`
+    WITH event_summary AS (
+      SELECT staff_id, COUNT(*) AS event_count,
+        MIN(occurred_at) AS first_event_at, MAX(occurred_at) AS last_event_at
+      FROM attendance_events
+      WHERE work_date = ? AND staff_id IS NOT NULL
+      GROUP BY staff_id
+    )
+    SELECT s.id AS staff_id, s.full_name, s.position,
+      COALESCE(sa.department_id, s.department_id) AS dept_id,
+      d.name AS dept_name, d.color_class AS dept_color,
+      COALESCE(sa.role_id, s.role_id) AS role_id, sr.name AS role_name,
+      sa.work_location_id, wl.name AS work_location_name,
+      COALESCE(ev.event_count, 0) AS event_count,
+      ev.first_event_at, ev.last_event_at
+    FROM staff s
+    LEFT JOIN staff_assignments sa ON sa.id = (
+      SELECT sa2.id
+      FROM staff_assignments sa2
+      WHERE sa2.staff_id = s.id
+        AND sa2.effective_from <= ?
+        AND (sa2.effective_to IS NULL OR sa2.effective_to >= ?)
+      ORDER BY sa2.effective_from DESC, sa2.id DESC
+      LIMIT 1
+    )
+    LEFT JOIN departments d ON d.id = COALESCE(sa.department_id, s.department_id)
+    LEFT JOIN staff_roles sr ON sr.id = COALESCE(sa.role_id, s.role_id)
+    LEFT JOIN work_locations wl ON wl.id = sa.work_location_id
+    LEFT JOIN event_summary ev ON ev.staff_id = s.id
+    WHERE s.is_active = 1
+      AND NOT EXISTS (
+        SELECT 1 FROM shift_schedule ss
+        WHERE ss.staff_id = s.id AND ss.work_date = ?
+      )${unassignedDeptSql}
+    ORDER BY CASE WHEN COALESCE(ev.event_count, 0) > 0 THEN 0 ELSE 1 END,
+      d.name, s.full_name
+  `).all(...unassignedParams)
+
+  const unplannedEventParams = [date, date]
+  let unplannedEventDeptSql = ''
+  if (deptId) {
+    unplannedEventDeptSql = ' AND s.department_id = ?'
+    unplannedEventParams.push(deptId)
+  }
+  const unplannedEvents = db.prepare(`
+    SELECT ae.id, ae.staff_id, ae.event_type, ae.occurred_at, ae.source,
+      ae.device_id, ae.match_status, ae.match_detail,
+      s.full_name, s.department_id AS dept_id, d.name AS dept_name,
+      c.code AS card_code
+    FROM attendance_events ae
+    LEFT JOIN staff s ON s.id = ae.staff_id
+    LEFT JOIN departments d ON d.id = s.department_id
+    LEFT JOIN cards c ON c.id = ae.card_id
+    WHERE ae.work_date = ?
+      AND (ae.staff_id IS NULL OR NOT EXISTS (
+        SELECT 1 FROM shift_schedule ss
+        WHERE ss.staff_id = ae.staff_id AND ss.work_date = ?
+      ))${unplannedEventDeptSql}
+    ORDER BY ae.occurred_at, ae.id
+  `).all(...unplannedEventParams)
+
   const trendParams = [monthStart, monthEnd]
   let trendDeptSql = ''
   if (deptId) {
@@ -1743,13 +1810,28 @@ export function getOperationsDashboardData({ date, monthStart, monthEnd, deptId 
     ORDER BY remaining, s.full_name
   `).all(...balanceParams)
 
-  const activeStaffParams = []
+  const activeStaffParams = [date, date]
   let activeStaffSql = ''
-  if (deptId) { activeStaffSql = ' AND s.department_id=?'; activeStaffParams.push(deptId) }
-  const activeStaff = db.prepare(`SELECT COUNT(*) AS count FROM staff s WHERE s.is_active=1${activeStaffSql}`).get(...activeStaffParams).count
+  if (deptId) { activeStaffSql = ' AND COALESCE(sa.department_id, s.department_id)=?'; activeStaffParams.push(deptId) }
+  const activeStaff = db.prepare(`
+    SELECT COUNT(*) AS count
+    FROM staff s
+    LEFT JOIN staff_assignments sa ON sa.id = (
+      SELECT sa2.id
+      FROM staff_assignments sa2
+      WHERE sa2.staff_id = s.id
+        AND sa2.effective_from <= ?
+        AND (sa2.effective_to IS NULL OR sa2.effective_to >= ?)
+      ORDER BY sa2.effective_from DESC, sa2.id DESC
+      LIMIT 1
+    )
+    WHERE s.is_active=1${activeStaffSql}
+  `).get(...activeStaffParams).count
 
   return {
     roster,
+    unassignedStaff,
+    unplannedEvents,
     trends,
     breakdowns,
     streakRows,

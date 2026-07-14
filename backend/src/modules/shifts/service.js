@@ -1775,6 +1775,143 @@ function operationDutyManagers(roster) {
   }))
 }
 
+function operationActionQueue({
+  roster, unassignedStaff, unplannedEvents, coverageRows, dailyExceptions,
+  pendingLeaves, pendingOvertime, selectedDate, asOfDate,
+}) {
+  const actions = []
+  const exceptionKeys = new Set()
+  dailyExceptions.forEach(row => {
+    exceptionKeys.add(`${row.staff_id || 0}:${row.exception_type}`)
+    actions.push({
+      key: `exception:${row.id}`,
+      category: 'card',
+      type: row.exception_type,
+      severity: row.severity || 'warning',
+      staff_id: row.staff_id || null,
+      full_name: row.full_name || null,
+      dept_name: row.dept_name || null,
+      title: row.full_name || 'Eslesmeyen kart olayi',
+      detail: row.message,
+      exception_id: row.id,
+      can_resolve: true,
+    })
+  })
+
+  coverageRows.filter(row => Number(row.missing || 0) > 0).forEach(row => {
+    const missing = Number(row.missing || 0)
+    actions.push({
+      key: `coverage:${row.rule_id}:${row.work_date}`,
+      category: 'coverage',
+      type: 'coverage_gap',
+      severity: missing >= 2 ? 'critical' : 'warning',
+      staff_id: null,
+      full_name: null,
+      dept_name: row.dept_name || null,
+      title: row.name,
+      detail: `${missing} kisi eksik · ${row.assigned}/${row.min_staff} personel`,
+      can_resolve: false,
+    })
+  })
+
+  roster.forEach(row => {
+    if (row.status === 'absent') {
+      actions.push({
+        key: `absent:${row.schedule_id}`,
+        category: 'attendance',
+        type: 'absent',
+        severity: 'critical',
+        staff_id: row.staff_id,
+        full_name: row.full_name,
+        dept_name: row.dept_name || null,
+        title: row.full_name,
+        detail: row.absent_reason || 'Devamsizlik kaydi kontrol edilmeli',
+        can_resolve: false,
+      })
+    }
+    if (row.attendance_state === 'pending_scan' && !exceptionKeys.has(`${row.staff_id}:missing_scan`)) {
+      actions.push({
+        key: `pending-scan:${row.schedule_id}`,
+        category: 'card',
+        type: 'missing_scan',
+        severity: 'warning',
+        staff_id: row.staff_id,
+        full_name: row.full_name,
+        dept_name: row.dept_name || null,
+        title: row.full_name,
+        detail: `${row.shift_name || 'Planli vardiya'} icin kart okutma bulunamadi`,
+        can_resolve: false,
+      })
+    }
+  })
+
+  unassignedStaff.forEach(row => {
+    const hasEvents = Number(row.event_count || 0) > 0
+    actions.push({
+      key: `unassigned:${row.staff_id}`,
+      category: hasEvents ? 'card' : 'schedule',
+      type: hasEvents ? 'unplanned_attendance' : 'missing_schedule',
+      severity: hasEvents ? 'critical' : (selectedDate > asOfDate ? 'info' : 'warning'),
+      staff_id: row.staff_id,
+      full_name: row.full_name,
+      dept_name: row.dept_name || null,
+      title: row.full_name,
+      detail: hasEvents
+        ? `${Number(row.event_count)} kart olayi var, vardiya plani yok`
+        : 'Aktif personel icin gunluk vardiya girilmemis',
+      can_resolve: false,
+    })
+  })
+
+  unplannedEvents.filter(row => !row.staff_id).forEach(row => {
+    actions.push({
+      key: `unmatched-event:${row.id}`,
+      category: 'card',
+      type: 'unmatched_event',
+      severity: 'critical',
+      staff_id: null,
+      full_name: null,
+      dept_name: null,
+      title: row.card_code ? `Kart ${row.card_code}` : 'Tanimlanamayan kart',
+      detail: `${row.occurred_at} · ${row.source || 'bilinmeyen kaynak'}`,
+      event_id: row.id,
+      can_resolve: false,
+    })
+  })
+
+  pendingLeaves.forEach(row => actions.push({
+    key: `leave:${row.id}`,
+    category: 'request',
+    type: 'pending_leave',
+    severity: 'info',
+    staff_id: row.staff_id,
+    full_name: row.full_name,
+    dept_name: row.dept_name || null,
+    title: row.full_name,
+    detail: `${row.start_date} - ${row.end_date} izin talebi bekliyor`,
+    request_id: row.id,
+    can_resolve: false,
+  }))
+  pendingOvertime.forEach(row => actions.push({
+    key: `overtime:${row.id}`,
+    category: 'request',
+    type: 'pending_overtime',
+    severity: 'info',
+    staff_id: row.staff_id,
+    full_name: row.full_name,
+    dept_name: row.dept_name || null,
+    title: row.full_name,
+    detail: `${row.work_date} · ${Number(row.requested_hours || 0)} saat mesai talebi`,
+    request_id: row.id,
+    can_resolve: false,
+  }))
+
+  const severityOrder = { critical: 0, warning: 1, info: 2 }
+  return actions.sort((a, b) => (severityOrder[a.severity] ?? 3) - (severityOrder[b.severity] ?? 3)
+    || String(a.category).localeCompare(String(b.category), 'tr')
+    || String(a.title).localeCompare(String(b.title), 'tr'))
+}
+
 export function operationsDashboardService({ date, month, deptId } = {}) {
   const selectedDate = validateAttendanceDate(date || todayLocal(), 'date')
   const selectedMonth = month || selectedDate.slice(0, 7)
@@ -1798,6 +1935,14 @@ export function operationsDashboardService({ date, month, deptId } = {}) {
     ...row,
     attendance_state: operationAttendanceState(row, selectedDate, asOfDate),
   }))
+  const unassignedStaff = raw.unassignedStaff.map(row => ({
+    ...row,
+    attendance_state: Number(row.event_count || 0) > 0 ? 'unplanned_scan' : 'unassigned',
+  }))
+  const dailyExceptions = listAttendanceExceptions({
+    status: 'open', from: selectedDate, to: selectedDate,
+    ...(parsedDeptId ? { dept_id: parsedDeptId } : {}),
+  })
   const payroll = puantajService(selectedMonth, parsedDeptId)
   const coverage = getShiftCoverage(monthStart, monthEnd)
   const rulesById = new Map(coverage.rules.map(rule => [Number(rule.id), rule]))
@@ -1891,6 +2036,22 @@ export function operationsDashboardService({ date, month, deptId } = {}) {
     ...leaveBalanceRisks,
     ...endingLeaveRisks,
   ]
+  const actions = operationActionQueue({
+    roster,
+    unassignedStaff,
+    unplannedEvents: raw.unplannedEvents,
+    coverageRows,
+    dailyExceptions,
+    pendingLeaves: raw.pendingLeaves,
+    pendingOvertime: raw.pendingOvertime,
+    selectedDate,
+    asOfDate,
+  })
+  const actionSummary = actions.reduce((summary, row) => {
+    summary.by_category[row.category] = (summary.by_category[row.category] || 0) + 1
+    summary.by_severity[row.severity] = (summary.by_severity[row.severity] || 0) + 1
+    return summary
+  }, { total: actions.length, by_category: {}, by_severity: {} })
 
   const metrics = {
     active_staff: Number(raw.activeStaff || 0),
@@ -1899,7 +2060,12 @@ export function operationsDashboardService({ date, month, deptId } = {}) {
     on_leave: roster.filter(row => row.status === 'on_leave').length,
     absent: roster.filter(row => row.status === 'absent').length,
     pending_scan: roster.filter(row => row.attendance_state === 'pending_scan').length,
-    open_exceptions: roster.reduce((sum, row) => sum + Number(row.open_exception_count || 0), 0),
+    open_exceptions: dailyExceptions.length,
+    unassigned_staff: unassignedStaff.length,
+    unplanned_scans: unassignedStaff.filter(row => Number(row.event_count || 0) > 0).length
+      + raw.unplannedEvents.filter(row => !row.staff_id).length,
+    action_required: actions.length,
+    critical_actions: Number(actionSummary.by_severity.critical || 0),
     coverage_missing: coverageRows.reduce((sum, row) => sum + Number(row.missing || 0), 0),
     pending_leave_requests: raw.pendingLeaves.length,
     pending_overtime_requests: raw.pendingOvertime.length,
@@ -1914,6 +2080,11 @@ export function operationsDashboardService({ date, month, deptId } = {}) {
     dept_id: parsedDeptId,
     metrics,
     roster,
+    unassigned_staff: unassignedStaff,
+    unplanned_events: raw.unplannedEvents,
+    attendance_exceptions: dailyExceptions,
+    actions,
+    action_summary: actionSummary,
     coverage: coverageRows,
     trends,
     breakdowns,

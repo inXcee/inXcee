@@ -10,6 +10,7 @@ let departmentId
 let scheduledStaffId
 let managerStaffId
 let absentStaffId
+let unassignedStaffId
 let leaveRequestId
 let overtimeRequestId
 
@@ -41,6 +42,14 @@ beforeAll(async () => {
     INSERT INTO staff(full_name,department_id,is_active,salary,tc_no,iban)
     VALUES('Devamsiz Operasyon Personeli',?,1,28000,'33333333333','TR0003')
   `).run(departmentId).lastInsertRowid)
+  unassignedStaffId = Number(db.prepare(`
+    INSERT INTO staff(full_name,department_id,role_id,is_active,salary,tc_no,iban)
+    VALUES('Plansiz Kart Basan Personel',?,?,1,29000,'44444444444','TR0004')
+  `).run(departmentId, roleId).lastInsertRowid)
+  db.prepare(`
+    INSERT INTO staff_assignments(staff_id,department_id,role_id,work_location_id,effective_from,note)
+    VALUES(?,?,?,?, '2025-01-01', 'Operasyon testi')
+  `).run(unassignedStaffId, departmentId, roleId, locationId)
 
   const insertSchedule = db.prepare(`
     INSERT INTO shift_schedule(staff_id,dept_id,shift_def_id,work_location_id,work_date,status)
@@ -91,6 +100,15 @@ beforeAll(async () => {
       occurred_at: `${workDate}T15:00:00+03:00`,
       source: 'operation_test',
     })
+  await request(app).post('/api/shifts/attendance/events')
+    .set('Authorization', `Bearer ${supervisorToken}`)
+    .send({
+      staff_id: unassignedStaffId,
+      external_event_id: 'operation-unplanned-in',
+      event_type: 'check_in',
+      occurred_at: `${workDate}T07:10:00+03:00`,
+      source: 'operation_test',
+    })
 })
 
 describe('Phase 5 daily operations dashboard', () => {
@@ -103,11 +121,13 @@ describe('Phase 5 daily operations dashboard', () => {
     expect(response.status).toBe(200)
     expect(response.body).toMatchObject({ date: workDate, month, dept_id: departmentId })
     expect(response.body.metrics).toMatchObject({
-      active_staff: 3,
+      active_staff: 4,
       scheduled: 2,
       worked: 1,
       absent: 1,
       pending_scan: 1,
+      unassigned_staff: 1,
+      unplanned_scans: 1,
       pending_leave_requests: 1,
       pending_overtime_requests: 1,
       coverage_missing: 1,
@@ -115,6 +135,17 @@ describe('Phase 5 daily operations dashboard', () => {
     })
     expect(response.body.roster.find(row => row.staff_id === scheduledStaffId).attendance_state).toBe('pending_scan')
     expect(response.body.roster.find(row => row.staff_id === managerStaffId).attendance_state).toBe('worked')
+    expect(response.body.unassigned_staff[0]).toMatchObject({
+      staff_id: unassignedStaffId,
+      role_name: 'Vardiya Amiri',
+      work_location_name: 'Test Yemekhane',
+      attendance_state: 'unplanned_scan',
+      event_count: 1,
+    })
+    expect(response.body.unplanned_events).toHaveLength(1)
+    expect(response.body.actions.some(row => row.type === 'unplanned_attendance' && row.staff_id === unassignedStaffId && row.severity === 'critical')).toBe(true)
+    expect(response.body.actions.some(row => row.type === 'missing_scan' && row.staff_id === scheduledStaffId)).toBe(true)
+    expect(response.body.action_summary.total).toBe(response.body.metrics.action_required)
     expect(response.body.coverage[0]).toMatchObject({ name: 'Yemekhane Acilis', assigned: 2, missing: 1 })
     expect(response.body.duty_managers.some(row => row.staff_id === managerStaffId)).toBe(true)
     expect(response.body.risks.some(row => row.type === 'high_overtime' && row.staff_id === managerStaffId)).toBe(true)
@@ -145,14 +176,14 @@ describe('Phase 5 puantaj closing package', () => {
     expect(response.body.approval.period).toBe(month)
     expect(response.body.leave_requests.some(row => row.id === leaveRequestId)).toBe(true)
     expect(response.body.overtime_requests.some(row => row.id === overtimeRequestId)).toBe(true)
-    expect(response.body.attendance_events).toHaveLength(2)
+    expect(response.body.attendance_events).toHaveLength(3)
     expect(response.body.documents[0]).toMatchObject({ request_type: 'leave', request_id: leaveRequestId })
-    expect(response.body.accounting).toHaveLength(3)
+    expect(response.body.accounting).toHaveLength(4)
     expect(response.body.summary).toMatchObject({
-      staff_count: 3,
+      staff_count: 4,
       leave_requests: 1,
       overtime_requests: 1,
-      attendance_events: 2,
+      attendance_events: 3,
       documents: 1,
     })
   })

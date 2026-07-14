@@ -1,6 +1,8 @@
-import { describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
-import { PuantajOperationsContent } from './PuantajOperationsView.jsx'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import api from '../../../shared/api/client.js'
+import { renderWithProviders } from '../../../test/renderWithProviders.jsx'
+import PuantajOperationsView, { PuantajOperationsContent } from './PuantajOperationsView.jsx'
 
 const payload = {
   metrics: {
@@ -10,6 +12,10 @@ const payload = {
     on_leave: 1,
     absent: 1,
     pending_scan: 2,
+    unassigned_staff: 1,
+    unplanned_scans: 1,
+    action_required: 2,
+    critical_actions: 1,
     coverage_missing: 1,
     pending_leave_requests: 1,
     pending_overtime_requests: 1,
@@ -33,6 +39,23 @@ const payload = {
       overtime_hours: 0,
     },
   ],
+  unassigned_staff: [
+    {
+      staff_id: 12,
+      full_name: 'Plansiz Kart Basan',
+      dept_name: 'Mutfak',
+      role_name: 'Ikramci',
+      work_location_name: 'OTC Yemekhane',
+      attendance_state: 'unplanned_scan',
+      event_count: 1,
+      first_event_at: '2026-07-14T07:10:00+03:00',
+    },
+  ],
+  actions: [
+    { key: 'exception:41', category: 'card', type: 'single_scan', severity: 'critical', staff_id: 13, full_name: 'Kart Istisnasi', dept_name: 'Mutfak', title: 'Kart Istisnasi', detail: 'Tek kart okutma bulundu', exception_id: 41, can_resolve: true },
+    { key: 'unassigned:14', category: 'schedule', type: 'missing_schedule', severity: 'warning', staff_id: 14, full_name: 'Vardiya Eksik', dept_name: 'Teknik', title: 'Vardiya Eksik', detail: 'Aktif personel icin gunluk vardiya girilmemis', can_resolve: false },
+  ],
+  action_summary: { total: 2, by_category: { card: 1, schedule: 1 }, by_severity: { critical: 1, warning: 1 } },
   coverage: [
     { rule_id: 1, work_date: '2026-07-14', name: 'Yemekhane acilisi', work_location_name: 'OTC Yemekhane', role_name: 'Ikramci', start_time: '06:00', end_time: '09:00', assigned: 2, min_staff: 3, missing: 1 },
   ],
@@ -51,11 +74,16 @@ const payload = {
 }
 
 describe('Puantaj operations workspace', () => {
+  afterEach(() => vi.restoreAllMocks())
+
   it('renders daily flow, coverage, requests, trends and cost breakdowns', () => {
     render(<PuantajOperationsContent payload={payload} selectedDate="2026-07-14" />)
 
     expect(screen.getByText('GUNLUK PERSONEL AKISI')).toBeInTheDocument()
+    expect(screen.getByText('AKSIYON MERKEZI')).toBeInTheDocument()
     expect(screen.getByText('Okutma Bekleyen')).toBeInTheDocument()
+    expect(screen.getByText('Plansiz Kart Basan')).toBeInTheDocument()
+    expect(screen.getAllByText('Plansiz okutma').length).toBeGreaterThan(1)
     expect(screen.getByText('Okutma bekliyor')).toBeInTheDocument()
     expect(screen.getByText('Yemekhane acilisi')).toBeInTheDocument()
     expect(screen.getByText('Izin Bekleyen')).toBeInTheDocument()
@@ -80,5 +108,40 @@ describe('Puantaj operations workspace', () => {
     expect(onPersonClick).toHaveBeenCalledWith(7)
     fireEvent.click(screen.getByText(/14 Tem/))
     expect(onSelectedDate).toHaveBeenCalledWith('2026-07-14')
+  })
+
+  it('filters actions and resolves a card exception from the queue', () => {
+    const onResolveException = vi.fn()
+    render(
+      <PuantajOperationsContent
+        payload={payload}
+        selectedDate="2026-07-14"
+        onResolveException={onResolveException}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Coz' }))
+    expect(onResolveException).toHaveBeenCalledWith(41, 'resolved')
+
+    fireEvent.click(screen.getByRole('button', { name: /Cizelge/ }))
+    expect(screen.getByText('Vardiya Eksik')).toBeInTheDocument()
+    expect(screen.queryByText('Kart Istisnasi')).not.toBeInTheDocument()
+  })
+
+  it('reconciles the selected day and updates an exception through the API', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({ data: payload })
+    const postSpy = vi.spyOn(api, 'post').mockResolvedValue({ data: { processed: 2, exceptions: 1 } })
+    const patchSpy = vi.spyOn(api, 'patch').mockResolvedValue({ data: { id: 41, status: 'resolved' } })
+    renderWithProviders(<PuantajOperationsView month="2031-02" deptFilter="" />)
+
+    await screen.findByText('AKSIYON MERKEZI')
+    fireEvent.click(screen.getByRole('button', { name: 'Gunu uzlastir' }))
+    await waitFor(() => expect(postSpy).toHaveBeenCalledWith('/shifts/attendance/reconcile', { date: '2031-02-01' }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Coz' }))
+    await waitFor(() => expect(patchSpy).toHaveBeenCalledWith('/shifts/attendance/exceptions/41', {
+      status: 'resolved',
+      note: 'Gunluk operasyon merkezinden guncellendi',
+    }))
   })
 })

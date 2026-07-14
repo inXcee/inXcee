@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import api from '../../../shared/api/client.js'
+import { toastErr, toastOk } from '../shared.jsx'
 
 const STATE_META = {
   worked: ['Calisti', 'var(--green)'],
@@ -11,7 +12,17 @@ const STATE_META = {
   on_leave: ['Izinli', 'var(--teal)'],
   off: ['OFF', 'var(--purple)'],
   absent: ['Devamsiz', 'var(--red)'],
+  unassigned: ['Vardiya yok', 'var(--accent)'],
+  unplanned_scan: ['Plansiz okutma', 'var(--red)'],
   not_due: ['Henuz gelmedi', 'var(--text3)'],
+}
+
+const ACTION_CATEGORY_LABELS = {
+  card: 'Kart',
+  schedule: 'Cizelge',
+  coverage: 'Kapsama',
+  attendance: 'Yoklama',
+  request: 'Talep',
 }
 
 const RISK_LABELS = {
@@ -96,6 +107,8 @@ function MetricBand({ metrics }) {
     ['Izinli', metrics.on_leave, 'var(--teal)'],
     ['Devamsiz', metrics.absent, metrics.absent ? 'var(--red)' : 'var(--green)'],
     ['Kart bekleyen', metrics.pending_scan, metrics.pending_scan ? 'var(--red)' : 'var(--green)'],
+    ['Vardiya girilmemis', metrics.unassigned_staff, metrics.unassigned_staff ? 'var(--accent)' : 'var(--green)'],
+    ['Plansiz okutma', metrics.unplanned_scans, metrics.unplanned_scans ? 'var(--red)' : 'var(--green)'],
     ['Kapsama acigi', metrics.coverage_missing, metrics.coverage_missing ? 'var(--red)' : 'var(--green)'],
     ['Bekleyen talep', (metrics.pending_leave_requests || 0) + (metrics.pending_overtime_requests || 0), 'var(--accent)'],
     ['Aylik mesai', `${Number(metrics.overtime_hours_month || 0).toLocaleString('tr-TR')} s`, 'var(--purple)'],
@@ -128,7 +141,7 @@ function RosterTable({ rows, onPersonClick }) {
         </thead>
         <tbody>
           {rows.map(row => (
-            <tr key={row.schedule_id} style={{ background: row.attendance_state === 'pending_scan' || row.attendance_state === 'review' ? 'color-mix(in srgb, var(--red) 5%, transparent)' : undefined }}>
+            <tr key={row.schedule_id || `unassigned-${row.staff_id}`} style={{ background: ['pending_scan', 'review', 'unplanned_scan'].includes(row.attendance_state) ? 'color-mix(in srgb, var(--red) 5%, transparent)' : undefined }}>
               <td>
                 <button type="button" onClick={() => onPersonClick?.(row.staff_id)} style={{ border: 0, background: 'none', color: 'var(--text)', padding: 0, cursor: 'pointer', fontWeight: 800, textAlign: 'left' }}>
                   {row.full_name}
@@ -147,6 +160,64 @@ function RosterTable({ rows, onPersonClick }) {
           {!rows.length && <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--text3)', padding: 28 }}>Bu tarih icin vardiya kaydi yok.</td></tr>}
         </tbody>
       </table>
+    </div>
+  )
+}
+
+function ActionCenter({ rows, onPersonClick, onResolveException, resolvingExceptionId }) {
+  const [filter, setFilter] = useState('all')
+  const filtered = filter === 'all'
+    ? rows
+    : filter === 'urgent'
+      ? rows.filter(row => row.severity === 'critical')
+      : rows.filter(row => row.category === filter)
+  const filters = [
+    ['all', 'Tumu'],
+    ['urgent', 'Kritik'],
+    ['card', 'Kart'],
+    ['schedule', 'Cizelge'],
+    ['coverage', 'Kapsama'],
+    ['attendance', 'Yoklama'],
+    ['request', 'Talepler'],
+  ]
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 4, padding: 8, borderBottom: '1px solid var(--border)', overflowX: 'auto' }}>
+        {filters.map(([value, label]) => {
+          const count = value === 'all'
+            ? rows.length
+            : value === 'urgent'
+              ? rows.filter(row => row.severity === 'critical').length
+              : rows.filter(row => row.category === value).length
+          return (
+            <button key={value} type="button" className="btn btn-ghost btn-sm" onClick={() => setFilter(value)} aria-pressed={filter === value}
+              style={{ flexShrink: 0, background: filter === value ? 'var(--surface3)' : undefined, color: filter === value ? 'var(--text)' : 'var(--text3)' }}>
+              {label} <span style={{ fontFamily: 'var(--mono)', fontSize: 8 }}>{count}</span>
+            </button>
+          )
+        })}
+      </div>
+      <div style={{ overflow: 'auto', maxHeight: 390 }}>
+        {filtered.map(row => (
+          <div key={row.key} style={{ display: 'grid', gridTemplateColumns: '10px 70px minmax(150px, .7fr) minmax(220px, 1.4fr) auto', gap: 9, alignItems: 'center', padding: '8px 12px', borderBottom: '1px solid var(--border)', minWidth: 720 }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: row.severity === 'critical' ? 'var(--red)' : row.severity === 'warning' ? 'var(--accent)' : 'var(--blue)' }} />
+            <span style={{ color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: 8, textTransform: 'uppercase' }}>{ACTION_CATEGORY_LABELS[row.category] || row.category}</span>
+            <button type="button" onClick={() => row.staff_id && onPersonClick?.(row.staff_id)} disabled={!row.staff_id}
+              style={{ border: 0, background: 'none', padding: 0, textAlign: 'left', color: 'var(--text)', cursor: row.staff_id ? 'pointer' : 'default', fontWeight: 800, fontSize: 10 }}>
+              {row.title || '-'}
+              {row.dept_name && <span style={{ display: 'block', color: 'var(--text3)', fontSize: 8, fontWeight: 500 }}>{row.dept_name}</span>}
+            </button>
+            <span style={{ color: row.severity === 'critical' ? 'var(--red)' : 'var(--text2)', fontSize: 9 }}>{row.detail}</span>
+            {row.can_resolve ? (
+              <div style={{ display: 'flex', gap: 4 }}>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => onResolveException?.(row.exception_id, 'resolved')} disabled={resolvingExceptionId === row.exception_id}>Coz</button>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => onResolveException?.(row.exception_id, 'ignored')} disabled={resolvingExceptionId === row.exception_id}>Yok say</button>
+              </div>
+            ) : <span />}
+          </div>
+        ))}
+        {!filtered.length && <div style={{ padding: 20, color: 'var(--green)', fontSize: 10, textAlign: 'center' }}>Bu filtrede bekleyen aksiyon yok.</div>}
+      </div>
     </div>
   )
 }
@@ -245,19 +316,34 @@ function BreakdownTable({ rows, showCost = false }) {
   )
 }
 
-export function PuantajOperationsContent({ payload, selectedDate, onSelectedDate, onPersonClick }) {
+export function PuantajOperationsContent({
+  payload, selectedDate, onSelectedDate, onPersonClick,
+  onResolveException, resolvingExceptionId,
+}) {
   const metrics = payload?.metrics || {}
   const roster = payload?.roster || []
+  const unassignedStaff = payload?.unassigned_staff || []
+  const dailyRows = [...roster, ...unassignedStaff]
   const pending = payload?.pending || { leaves: [], overtime: [] }
   const breakdowns = payload?.breakdowns || { departments: [], roles: [], locations: [] }
   return (
     <div style={{ display: 'grid', gap: 12 }}>
       <MetricBand metrics={metrics} />
 
+      <section style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', background: 'var(--surface)' }}>
+        <SectionTitle count={`${payload?.action_summary?.by_severity?.critical || 0} kritik / ${payload?.actions?.length || 0} toplam`}>AKSIYON MERKEZI</SectionTitle>
+        <ActionCenter
+          rows={payload?.actions || []}
+          onPersonClick={onPersonClick}
+          onResolveException={onResolveException}
+          resolvingExceptionId={resolvingExceptionId}
+        />
+      </section>
+
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 420px), 1fr))', gap: 12, alignItems: 'start' }}>
         <section style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', background: 'var(--surface)' }}>
-          <SectionTitle count={`${roster.length} kisi`}>GUNLUK PERSONEL AKISI</SectionTitle>
-          <RosterTable rows={roster} onPersonClick={onPersonClick} />
+          <SectionTitle count={`${dailyRows.length} kisi · ${unassignedStaff.length} vardiyasiz`}>GUNLUK PERSONEL AKISI</SectionTitle>
+          <RosterTable rows={dailyRows} onPersonClick={onPersonClick} />
         </section>
         <div style={{ display: 'grid', gap: 12 }}>
           <section style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', background: 'var(--surface)' }}>
@@ -296,6 +382,7 @@ export function PuantajOperationsContent({ payload, selectedDate, onSelectedDate
 }
 
 export default function PuantajOperationsView({ month, deptFilter, onPersonClick }) {
+  const qc = useQueryClient()
   const [selectedDate, setSelectedDate] = useState(() => dateForMonth(month))
   useEffect(() => {
     if (!selectedDate.startsWith(`${month}-`)) setSelectedDate(dateForMonth(month))
@@ -310,6 +397,31 @@ export default function PuantajOperationsView({ month, deptFilter, onPersonClick
     queryKey: ['shifts-operations-dashboard', month, selectedDate, deptFilter],
     queryFn: () => api.get('/shifts/operations/dashboard', { params }).then(response => response.data),
   })
+  const refreshOperations = () => {
+    qc.invalidateQueries({ queryKey: ['shifts-operations-dashboard'] })
+    qc.invalidateQueries({ queryKey: ['attendance-exceptions'] })
+    qc.invalidateQueries({ queryKey: ['puantaj'] })
+    qc.invalidateQueries({ queryKey: ['puantaj-days-month'] })
+  }
+  const reconcileMutation = useMutation({
+    mutationFn: () => api.post('/shifts/attendance/reconcile', { date: selectedDate }),
+    onSuccess: response => {
+      refreshOperations()
+      toastOk(`${response.data.processed} personel uzlastirildi · ${response.data.exceptions} kontrol kaydi`)
+    },
+    onError: toastErr,
+  })
+  const resolveExceptionMutation = useMutation({
+    mutationFn: ({ id, status }) => api.patch(`/shifts/attendance/exceptions/${id}`, {
+      status,
+      note: 'Gunluk operasyon merkezinden guncellendi',
+    }),
+    onSuccess: () => {
+      refreshOperations()
+      toastOk('Kart istisnasi guncellendi')
+    },
+    onError: toastErr,
+  })
 
   const changeDate = (next) => {
     if (next.startsWith(`${month}-`)) setSelectedDate(next)
@@ -323,12 +435,24 @@ export default function PuantajOperationsView({ month, deptFilter, onPersonClick
         {localDate().startsWith(`${month}-`) && <button type="button" className="btn btn-ghost btn-sm" onClick={() => setSelectedDate(localDate())}>Bugun</button>}
         <strong style={{ marginLeft: 6, fontFamily: 'var(--display)', fontSize: 12, letterSpacing: 1 }}>{shortDate(selectedDate).toLocaleUpperCase('tr-TR')}</strong>
         <span style={{ marginLeft: 'auto', color: isFetching ? 'var(--accent)' : 'var(--text3)', fontFamily: 'var(--mono)', fontSize: 9 }}>{isFetching ? 'GUNCELLENIYOR' : `SON KONTROL ${new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}`}</span>
+        <button type="button" className="btn btn-primary btn-sm" onClick={() => reconcileMutation.mutate()} disabled={reconcileMutation.isPending || isFetching}>
+          {reconcileMutation.isPending ? 'Uzlastiriliyor' : 'Gunu uzlastir'}
+        </button>
         <button type="button" className="btn btn-ghost btn-sm" onClick={() => refetch()} disabled={isFetching}>Yenile</button>
       </div>
 
       {isLoading && <div style={{ padding: 32, textAlign: 'center', color: 'var(--text3)' }}>Operasyon verileri yukleniyor.</div>}
       {error && <div style={{ padding: 14, border: '1px solid color-mix(in srgb, var(--red) 45%, var(--border))', color: 'var(--red)', borderRadius: 8 }}>{error.response?.data?.error || error.message}</div>}
-      {data && <PuantajOperationsContent payload={data} selectedDate={selectedDate} onSelectedDate={setSelectedDate} onPersonClick={onPersonClick} />}
+      {data && (
+        <PuantajOperationsContent
+          payload={data}
+          selectedDate={selectedDate}
+          onSelectedDate={setSelectedDate}
+          onPersonClick={onPersonClick}
+          onResolveException={(id, status) => resolveExceptionMutation.mutate({ id, status })}
+          resolvingExceptionId={resolveExceptionMutation.isPending ? resolveExceptionMutation.variables?.id : null}
+        />
+      )}
     </div>
   )
 }
