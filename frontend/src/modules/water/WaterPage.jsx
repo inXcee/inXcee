@@ -180,6 +180,7 @@ export default function WaterPage() {
   const isManager = useAuthStore(s => s.user?.role === 'campus_manager')
   const [ym, setYm] = useState({ y: now.getFullYear(), m: now.getMonth() + 1 })
   const [modal, setModal] = useState(null) // 'settings' | 'text' | 'adjust' | null
+  const [truckFocus, setTruckFocus] = useState({ seq: 0, mode: 'new' })
   const { from, to, label } = monthBounds(ym.y, ym.m)
 
   const { data: summary } = useQuery({
@@ -214,6 +215,22 @@ export default function WaterPage() {
         </div>
       </div>
 
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '14px', alignItems: 'center', marginBottom: '16px', borderTop: '1px solid color-mix(in srgb, var(--teal) 45%, var(--border))', borderRight: '1px solid color-mix(in srgb, var(--teal) 45%, var(--border))', borderBottom: '1px solid color-mix(in srgb, var(--teal) 45%, var(--border))', borderLeft: '5px solid var(--teal)', borderRadius: '8px', background: 'color-mix(in srgb, var(--teal) 7%, var(--surface))', padding: '12px 14px' }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ display: 'flex', gap: '7px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <strong style={{ fontSize: '13px' }}>PERSONEL / TIR GİRİŞİ VE MAİL DOSYASI</strong>
+            <span className="badge badge-green">PDF</span>
+            <span className="badge badge-blue">EXCEL</span>
+            <span className="badge badge-amber">PNG</span>
+          </div>
+          <div style={{ color: 'var(--text2)', fontSize: '11px', marginTop: '4px' }}>Tırcı bilgilerini gir, ana merkez mailini hazırla ve aynı kaydı üç formatta indir.</div>
+        </div>
+        <div style={{ display: 'flex', gap: '7px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          <button className="btn btn-primary btn-sm" onClick={() => setTruckFocus({ seq: Date.now(), mode: 'new' })}>Yeni Giriş Hazırla</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => setTruckFocus({ seq: Date.now(), mode: 'records' })}>Kayıt ve Çıktılar</button>
+        </div>
+      </div>
+
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '12px', marginBottom: '16px' }}>
         {[
           ['Ay Dağıtım', t?.period_out, 'var(--accent)'],
@@ -236,7 +253,7 @@ export default function WaterPage() {
 
       <PendingWaybillPanel />
 
-      <TruckArrivalPanel from={from} to={to} label={label} />
+      <TruckArrivalPanel from={from} to={to} label={label} focusRequest={truckFocus} />
 
       <MonthClosurePanel month={`${ym.y}-${String(ym.m).padStart(2, '0')}`} label={label} />
 
@@ -1922,10 +1939,11 @@ const triggerDownload = (url, filename) => {
   anchor.remove()
 }
 
-function TruckArrivalPanel({ from, to, label }) {
+function TruckArrivalPanel({ from, to, label, focusRequest }) {
   const qc = useQueryClient()
   const isManager = useAuthStore(s => s.user?.role === 'campus_manager')
   const fileRef = useRef(null)
+  const panelRef = useRef(null)
   const entryFormRef = useRef(null)
   const [open, setOpen] = useState(true)
   const [truckFilter, setTruckFilter] = useState('action')
@@ -1957,6 +1975,16 @@ function TruckArrivalPanel({ from, to, label }) {
     queryFn: () => api.get('/water/brands').then(r => r.data),
   })
 
+  useEffect(() => {
+    if (!focusRequest?.seq) return undefined
+    setOpen(true)
+    const timer = setTimeout(() => {
+      const target = focusRequest.mode === 'new' ? entryFormRef.current : panelRef.current
+      target?.scrollIntoView({ behavior: 'smooth', block: focusRequest.mode === 'new' ? 'center' : 'start' })
+    }, 0)
+    return () => clearTimeout(timer)
+  }, [focusRequest])
+
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['water-truck-arrivals'] })
     qc.invalidateQueries({ queryKey: ['water-waybill-photos'] })
@@ -1969,16 +1997,22 @@ function TruckArrivalPanel({ from, to, label }) {
         ? api.put(`/water/truck-arrivals/${editingTruckId}`, body)
         : api.post('/water/truck-arrivals', body)
     },
-    onSuccess: () => {
+    onSuccess: response => {
+      const savedId = Number(editingTruckId || response.data?.id)
       invalidate()
+      if (savedId) {
+        setSelectedTruckId(savedId)
+        setTruckFilter('all')
+      }
       setForm(f => ({
         ...f,
         driver_name: '', driver_tc: '', driver_phone: '', plate: '', trailer_plate: '',
         host_person_name: '', host_person_phone: '', work_area: '', note: '',
         status: 'planned',
       }))
-      toastOk(editingTruckId ? 'Personel giriş ve tır kaydı güncellendi' : 'Tır ön bildirimi kaydedildi')
+      toastOk(editingTruckId ? 'Kayıt güncellendi; çıktı paketi kullanıma hazır' : 'Kayıt oluşturuldu; PDF, Excel ve PNG çıktıları hazır')
       setEditingTruckId(null)
+      requestAnimationFrame(() => entryFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }))
     },
     onError: e => toastErr(errMsg(e, 'Tır kaydı oluşturulamadı')),
   })
@@ -2360,7 +2394,7 @@ function TruckArrivalPanel({ from, to, label }) {
   }
 
   return (
-    <div className="panel" style={{ marginTop: '16px', borderTop: `3px solid ${danger ? 'var(--red)' : 'var(--teal)'}` }}>
+    <div ref={panelRef} id="water-truck-entry" className="panel" style={{ marginTop: '16px', borderTop: `3px solid ${danger ? 'var(--red)' : 'var(--teal)'}`, scrollMarginTop: '18px' }}>
       <div className="panel-header" style={{ alignItems: 'center', gap: '10px' }}>
         <div>
           <div className="panel-title">TIR / İRSALİYE TAKİBİ — {label}</div>
@@ -2474,6 +2508,22 @@ function TruckArrivalPanel({ from, to, label }) {
             </section>
           </div>
           <div ref={entryFormRef} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(118px, 1fr))', gap: '8px', alignItems: 'end', border: `1px solid ${editingTruckId ? 'color-mix(in srgb, var(--amber) 55%, var(--border))' : 'var(--border)'}`, background: 'var(--surface2)', borderRadius: '8px', padding: '10px' }}>
+            <div style={{ gridColumn: '1 / -1', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '12px', alignItems: 'center', border: '1px solid color-mix(in srgb, var(--teal) 35%, var(--border))', borderRadius: '8px', background: 'color-mix(in srgb, var(--teal) 6%, var(--surface))', padding: '10px 11px' }}>
+              <div>
+                <strong style={{ display: 'block', fontSize: '12px' }}>PERSONEL GİRİŞİ VE ÇIKTI MERKEZİ</strong>
+                <div style={{ color: 'var(--text2)', fontSize: '10px', marginTop: '3px' }}>
+                  <span style={{ fontWeight: 800 }}>1.</span> Bilgileri doldur&nbsp;&nbsp; <span style={{ fontWeight: 800 }}>2.</span> Kaydı oluştur&nbsp;&nbsp; <span style={{ fontWeight: 800 }}>3.</span> Mail eklerini indir
+                </div>
+                <div style={{ color: selectedTruck ? 'var(--green)' : 'var(--text3)', fontSize: '10px', marginTop: '5px', fontFamily: 'var(--mono)' }}>
+                  {selectedTruck ? `Aktif çıktı: ${selectedTruck.arrival_date} · ${selectedTruck.vehicle_summary || selectedTruck.plate}` : 'Henüz kayıt yok. Bilgileri doldurup Tır Kaydı Oluştur düğmesine basın.'}
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                <button className="btn btn-primary btn-sm" disabled={!selectedTruck || Boolean(gateExporting)} onClick={() => downloadGateEntryPdf(selectedTruck)}>{gateExporting === 'pdf' ? 'Hazırlanıyor…' : 'PDF Hazırla'}</button>
+                <button className="btn btn-ghost btn-sm" disabled={!selectedTruck || Boolean(gateExporting)} onClick={() => downloadGateEntryExcel(selectedTruck)}>{gateExporting === 'excel' ? 'Hazırlanıyor…' : 'Excel Hazırla'}</button>
+                <button className="btn btn-ghost btn-sm" disabled={!selectedTruck || Boolean(gateExporting)} onClick={() => downloadGateEntryPng(selectedTruck)}>{gateExporting === 'png' ? 'Hazırlanıyor…' : 'PNG Hazırla'}</button>
+              </div>
+            </div>
             {editingTruckId && (
               <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', padding: '7px 9px', borderRadius: '7px', background: 'color-mix(in srgb, var(--amber) 12%, var(--surface))' }}>
                 <strong style={{ fontSize: '12px' }}>Kayıt #{editingTruckId} düzenleniyor</strong>
@@ -2513,7 +2563,10 @@ function TruckArrivalPanel({ from, to, label }) {
             <label className="form-label">Çalışma yapacağı bölge<input className="form-input" value={form.work_area} onChange={e => setForm(f => ({ ...f, work_area: e.target.value }))} placeholder="FPU Kamp Alanı" /></label>
             <label className="form-label">Ana merkez mail<input type="email" className="form-input" value={form.center_email} onChange={e => setForm(f => ({ ...f, center_email: e.target.value }))} /></label>
             <label className="form-label" style={{ gridColumn: '1 / -1' }}>Not<input className="form-input" value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} /></label>
-            <button className="btn btn-primary" disabled={!form.arrival_date || !form.plate.trim() || create.isPending} onClick={() => create.mutate()}>{create.isPending ? 'Kaydediliyor…' : editingTruckId ? 'Kaydı Güncelle' : 'Tır Kaydı Ekle'}</button>
+            <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap', paddingTop: '9px', borderTop: '1px solid var(--border)' }}>
+              <button className="btn btn-primary" disabled={!form.arrival_date || !form.plate.trim() || create.isPending} onClick={() => create.mutate()}>{create.isPending ? 'Kaydediliyor…' : editingTruckId ? 'Kaydı Güncelle ve Çıktıları Yenile' : 'Tır Kaydı Oluştur'}</button>
+              <span style={{ color: 'var(--text3)', fontSize: '10px' }}>Kayıttan sonra PDF, Excel ve PNG düğmeleri otomatik aktifleşir.</span>
+            </div>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.35fr) minmax(320px, .65fr)', gap: '12px', alignItems: 'start' }}>

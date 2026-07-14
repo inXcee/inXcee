@@ -204,6 +204,9 @@ describe('WaterPage tek-ekran pano smoke', () => {
 
   it('tir on bildirim ve irsaliye foto arsivi paneli render olur', async () => {
     renderWithProviders(<WaterPage />)
+    expect(await screen.findByText('PERSONEL / TIR GİRİŞİ VE MAİL DOSYASI')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Yeni Giriş Hazırla' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Kayıt ve Çıktılar' })).toBeInTheDocument()
     expect(await screen.findByText(/TIR \/.*TAK/)).toBeInTheDocument()
     expect((await screen.findAllByText('34 ABC 123')).length).toBeGreaterThan(0)
     expect((await screen.findAllByText('IRS-2026-1')).length).toBeGreaterThan(0)
@@ -211,6 +214,10 @@ describe('WaterPage tek-ekran pano smoke', () => {
     expect(screen.getByText('Ana merkez mail taslağı')).toBeInTheDocument()
     expect(screen.getByText('Personel giriş / güvenlik bilgileri')).toBeInTheDocument()
     expect(screen.getByText('PERSONEL GİRİŞ KARTI')).toBeInTheDocument()
+    expect(screen.getByText('PERSONEL GİRİŞİ VE ÇIKTI MERKEZİ')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'PDF Hazırla' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Excel Hazırla' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'PNG Hazırla' })).toBeEnabled()
     expect(screen.getByText('Çıktıya hazır')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'PDF İndir' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Excel İndir' })).toBeInTheDocument()
