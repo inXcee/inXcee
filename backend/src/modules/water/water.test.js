@@ -1106,6 +1106,14 @@ describe('Su takip - Tir on bildirimleri ve irsaliye foto arsivi (W11)', () => {
       entry_reason: 'SU AMAÇLI NAKLİYE', work_area: 'FPU KAMP ALANI', ready: true,
     })
     expect(row.action_items).toContain('İrsaliye fotoğrafı henüz yok')
+
+    const pdf = await auth(request(app).get(`/api/water/truck-arrivals/${row.id}/gate-entry.pdf`)).buffer()
+    expect(pdf.status).toBe(200)
+    expect(pdf.headers['content-type']).toMatch(/application\/pdf/)
+    expect(pdf.headers['content-disposition']).toMatch(/su-nakliye-personel-giris-2027-03-10-34-ABC-123\.pdf/)
+    expect(pdf.body.subarray(0, 4).toString()).toBe('%PDF')
+    expect(pdf.body.length).toBeGreaterThan(2000)
+    expect(pdf.body.toString('latin1').match(/\/Type \/Page\b/g)).toHaveLength(2)
   })
 
   it('personel girişinde kimlik türü doğrulanır', async () => {
@@ -1114,6 +1122,12 @@ describe('Su takip - Tir on bildirimleri ve irsaliye foto arsivi (W11)', () => {
     })
     expect(invalid.status).toBe(400)
     expect(invalid.body.error).toMatch(/Kimlik türü/)
+  })
+
+  it('olmayan tırın personel giriş PDF isteği 404 döner', async () => {
+    const missing = await auth(request(app).get('/api/water/truck-arrivals/999999/gate-entry.pdf'))
+    expect(missing.status).toBe(404)
+    expect(missing.body.error).toMatch(/Tır kaydı bulunamadı/)
   })
 
   it('mail bilgisi eksik tirda otomatik mail reddedilir; manuel isaretleme durumu mail_sent yapar', async () => {

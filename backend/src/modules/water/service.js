@@ -1,4 +1,5 @@
 import * as q from './queries.js'
+import fs from 'node:fs'
 import { createNotification } from '../../shared/notifications/service.js'
 import { composeAndSend } from '../email/service.js'
 
@@ -919,6 +920,120 @@ function truckMailBody(row) {
   ].filter(Boolean).join('\n')
 }
 
+function registerGatePdfFonts(doc) {
+  const candidates = [
+    ['C:/Windows/Fonts/arial.ttf', 'C:/Windows/Fonts/arialbd.ttf'],
+    ['/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'],
+    ['/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf', '/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf'],
+  ]
+  const pair = candidates.find(([regular, bold]) => fs.existsSync(regular) && fs.existsSync(bold))
+  if (!pair) return { regular: 'Helvetica', bold: 'Helvetica-Bold' }
+  try {
+    doc.registerFont('GateRegular', pair[0])
+    doc.registerFont('GateBold', pair[1])
+    return { regular: 'GateRegular', bold: 'GateBold' }
+  } catch {
+    return { regular: 'Helvetica', bold: 'Helvetica-Bold' }
+  }
+}
+
+export function truckGateEntryService(id) {
+  const row = q.getTruckArrival(id)
+  if (!row) throw Object.assign(new Error('Tır kaydı bulunamadı'), { statusCode: 404 })
+  return decorateTruck(row)
+}
+
+export function buildTruckGateEntryPDF(truck, doc) {
+  if (!truck?.id) throw Object.assign(new Error('Tır kaydı bulunamadı'), { statusCode: 404 })
+  const fonts = registerGatePdfFonts(doc)
+  const entry = truck.gate_entry || {}
+  const pageWidth = doc.page.width
+  const pageHeight = doc.page.height
+  const margin = 48
+  const innerWidth = pageWidth - margin * 2
+  doc.info.Title = truck.mail_subject
+  doc.info.Subject = 'Su amaçlı nakliye personel giriş talebi'
+  doc.info.Author = 'Şantiye Yatakhane Yönetim Sistemi'
+
+  doc.rect(0, 0, pageWidth, 92).fill('#155E75')
+  doc.font(fonts.bold).fontSize(19).fillColor('#FFFFFF')
+    .text('SU AMAÇLI NAKLİYE', margin, 30, { width: innerWidth })
+  doc.font(fonts.regular).fontSize(10).fillColor('#CFFAFE')
+    .text('PERSONEL VE ARAÇ GİRİŞ TALEBİ', margin, 58, { width: innerWidth })
+  doc.font(fonts.bold).fontSize(9).fillColor('#0F172A')
+    .text(`KAYIT NO  #${truck.id}`, margin, 112)
+  doc.font(fonts.regular).fillColor('#475569')
+    .text(`GELİŞ  ${trDateLabel(truck.arrival_date)}  ${truck.arrival_window}`, margin, 129)
+  doc.font(fonts.bold).fillColor('#0F172A')
+    .text('KONU', margin, 162, { width: 54 })
+  doc.roundedRect(margin + 54, 154, innerWidth - 54, 40, 4).fillAndStroke('#F0F9FF', '#7DD3FC')
+  doc.font(fonts.bold).fontSize(10).fillColor('#0F172A')
+    .text(truck.mail_subject, margin + 66, 168, { width: innerWidth - 78, ellipsis: true })
+
+  doc.font(fonts.regular).fontSize(10).fillColor('#1E293B')
+    .text(truck.mail_body, margin, 216, { width: innerWidth, lineGap: 4 })
+
+  const signatureY = pageHeight - 132
+  const signatureGap = 12
+  const signatureWidth = (innerWidth - signatureGap * 2) / 3
+  ;['HAZIRLAYAN', 'KONTROL EDEN', 'ONAY'].forEach((label, index) => {
+    const x = margin + index * (signatureWidth + signatureGap)
+    doc.roundedRect(x, signatureY, signatureWidth, 58, 4).stroke('#CBD5E1')
+    doc.font(fonts.bold).fontSize(8).fillColor('#475569').text(label, x + 10, signatureY + 9)
+    doc.moveTo(x + 10, signatureY + 42).lineTo(x + signatureWidth - 10, signatureY + 42).dash(3, { space: 3 }).stroke('#94A3B8').undash()
+  })
+  doc.font(fonts.regular).fontSize(7).fillColor('#64748B')
+    .text(`Oluşturma: ${new Date().toLocaleString('tr-TR')}  ·  YYS Su Takibi`, margin, pageHeight - 60, { width: innerWidth, align: 'center' })
+
+  doc.addPage({ size: 'A4', layout: 'landscape', margin: 24 })
+  const landscapeWidth = doc.page.width
+  const tableX = 24
+  const tableWidth = landscapeWidth - 48
+  doc.rect(0, 0, landscapeWidth, 66).fill('#155E75')
+  doc.font(fonts.bold).fontSize(16).fillColor('#FFFFFF')
+    .text('PERSONEL GÜNLÜK GİRİŞ FORMU', tableX, 24, { width: tableWidth, align: 'center' })
+  doc.font(fonts.regular).fontSize(8).fillColor('#475569')
+    .text(`${trDateLabel(truck.arrival_date)} · ${truck.arrival_window} · ${truck.vehicle_summary}`, tableX, 78, { width: tableWidth, align: 'center' })
+
+  const headers = [
+    'ADI SOYADI', 'T.C. KİMLİK / PASAPORT NUMARASI', 'TELEFON NUMARASI', 'ARAÇ PLAKASI',
+    'ZİYARET EDİLECEK FİRMA', 'ZİYARET EDİLECEK KİŞİ', 'ZİYARET EDİLECEK KİŞİ TELEFONU',
+    'GİRİŞ TARİHİ', 'GİRİŞ SAATİ', 'SAHA GİRİŞ NEDENİ', 'ÇALIŞMA YAPACAĞI BÖLGE',
+  ]
+  const values = [
+    entry.full_name || '-', `${entry.identity_label || 'T.C. Kimlik'}\n${entry.identity_no || '-'}`,
+    entry.phone || '-', [entry.plate, entry.trailer_plate].filter(Boolean).join('\n'),
+    entry.visit_company || '-', entry.host_person_name || '-', entry.host_person_phone || '-',
+    trDateLabel(entry.entry_date), `${entry.entry_start_time || '-'}-${entry.entry_end_time || '-'}`,
+    entry.entry_reason || 'SU AMAÇLI NAKLİYE', entry.work_area || '-',
+  ]
+  const baseWidths = [72, 88, 70, 72, 110, 82, 84, 58, 62, 74, 82]
+  const widthScale = tableWidth / baseWidths.reduce((sum, width) => sum + width, 0)
+  const widths = baseWidths.map(width => width * widthScale)
+  const drawRow = (items, y, height, header = false) => {
+    let x = tableX
+    items.forEach((item, index) => {
+      const width = widths[index]
+      doc.rect(x, y, width, height).fillAndStroke(header ? '#D6EAF0' : '#FFFFFF', '#64748B')
+      doc.font(header ? fonts.bold : fonts.regular).fontSize(header ? 6.4 : 7.8).fillColor('#0F172A')
+        .text(String(item || '-'), x + 4, y + 7, { width: width - 8, height: height - 14, align: 'center', valign: 'center', ellipsis: true })
+      x += width
+    })
+  }
+  drawRow(headers, 104, 58, true)
+  drawRow(values, 162, 82)
+
+  const requestY = 272
+  doc.roundedRect(tableX, requestY, tableWidth, 112, 5).fillAndStroke('#F8FAFC', '#CBD5E1')
+  doc.font(fonts.bold).fontSize(9).fillColor('#155E75').text('GİRİŞ TALEBİ', tableX + 14, requestY + 12)
+  const requestText = `${trDateLabel(truck.arrival_date)} tarihinde ${truck.arrival_window} saatleri arasında ${entry.full_name || 'bilgileri bulunan personelin'}, ${truck.vehicle_summary} ile ${entry.work_area || 'belirtilen bölgede'} su amaçlı nakliyesi olacaktır. Personel ve araç girişinin sağlanması hususunda yardımlarınızı rica ederiz.`
+  doc.font(fonts.regular).fontSize(9).fillColor('#1E293B').text(requestText, tableX + 14, requestY + 34, { width: tableWidth - 28, lineGap: 3 })
+  doc.font(fonts.regular).fontSize(7).fillColor('#64748B')
+    .text(`Alıcı: ${truck.center_email || '-'}  ·  Kayıt #${truck.id}`, tableX, doc.page.height - 34, { width: tableWidth, align: 'center' })
+  doc.end()
+  return truck
+}
+
 function decorateTruck(row, now = new Date()) {
   const clock = trClock(now)
   const current = minutesOf(clock.time)
@@ -1080,7 +1195,7 @@ export async function sendTruckArrivalMailService(id, userId) {
   if (!row) throw Object.assign(new Error('Tır kaydı bulunamadı'), { statusCode: 404 })
   const missing = missingMailFields(row)
   if (missing.length) throw Object.assign(new Error(`Mail için eksik bilgi: ${missing.join(', ')}`), { statusCode: 400 })
-  const subject = `Su tır giriş bildirimi - ${row.arrival_date} - ${row.plate}`
+  const subject = truckMailSubject(row)
   const result = await composeAndSend({ to: row.center_email, subject, body: truckMailBody(row) })
   q.setTruckMailSent(id, userId)
   return { ...result, truck: decorateTruck(q.getTruckArrival(id)) }

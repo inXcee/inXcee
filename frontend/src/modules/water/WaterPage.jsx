@@ -1866,6 +1866,62 @@ const truckFilterDefs = [
   { key: 'all', label: 'Tümü' },
 ]
 
+const gateEntryFileBase = (truck) => (
+  `su-nakliye-personel-giris-${truck?.arrival_date || todayStr()}-${String(truck?.plate || 'arac').trim().replace(/\s+/g, '-')}`
+)
+const gateEntryRows = (truck) => {
+  const entry = truck?.gate_entry || {}
+  return [
+    ['ADI SOYADI', entry.full_name || truck?.driver_name || '-'],
+    ['T.C. KİMLİK / PASAPORT NUMARASI', `${entry.identity_label || (truck?.identity_type === 'passport' ? 'Pasaport' : 'T.C. Kimlik')}: ${entry.identity_no || truck?.driver_tc || '-'}`],
+    ['TELEFON NUMARASI', entry.phone || truck?.driver_phone || '-'],
+    ['ARAÇ PLAKASI', [entry.plate || truck?.plate, entry.trailer_plate || truck?.trailer_plate].filter(Boolean).join('\n') || '-'],
+    ['ZİYARET EDİLECEK FİRMA', entry.visit_company || truck?.visit_company || '-'],
+    ['ZİYARET EDİLECEK KİŞİ', entry.host_person_name || truck?.host_person_name || '-'],
+    ['ZİYARET EDİLECEK KİŞİ TELEFONU', entry.host_person_phone || truck?.host_person_phone || '-'],
+    ['GİRİŞ TARİHİ', entry.entry_date || truck?.arrival_date || '-'],
+    ['GİRİŞ SAATİ', [entry.entry_start_time || truck?.arrival_start_time, entry.entry_end_time || truck?.arrival_end_time].filter(Boolean).join('-') || '-'],
+    ['SAHA GİRİŞ NEDENİ', entry.entry_reason || truck?.entry_reason || 'SU AMAÇLI NAKLİYE'],
+    ['ÇALIŞMA YAPACAĞI BÖLGE', entry.work_area || truck?.work_area || '-'],
+  ]
+}
+const canvasTextLines = (ctx, value, maxWidth, maxLines = 99) => {
+  const output = []
+  const paragraphs = String(value ?? '-').split(/\r?\n/)
+  for (const paragraph of paragraphs) {
+    const words = paragraph.trim().split(/\s+/).filter(Boolean)
+    if (!words.length) {
+      output.push('')
+      continue
+    }
+    let line = ''
+    words.forEach(word => {
+      const next = line ? `${line} ${word}` : word
+      if (line && ctx.measureText(next).width > maxWidth) {
+        output.push(line)
+        line = word
+      } else {
+        line = next
+      }
+    })
+    if (line) output.push(line)
+  }
+  if (output.length <= maxLines) return output
+  const trimmed = output.slice(0, maxLines)
+  let last = `${trimmed[maxLines - 1]}...`
+  while (last.length > 3 && ctx.measureText(last).width > maxWidth) last = `${last.slice(0, -4)}...`
+  trimmed[maxLines - 1] = last
+  return trimmed
+}
+const triggerDownload = (url, filename) => {
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+}
+
 function TruckArrivalPanel({ from, to, label }) {
   const qc = useQueryClient()
   const isManager = useAuthStore(s => s.user?.role === 'campus_manager')
@@ -1875,6 +1931,7 @@ function TruckArrivalPanel({ from, to, label }) {
   const [truckFilter, setTruckFilter] = useState('action')
   const [selectedTruckId, setSelectedTruckId] = useState(null)
   const [editingTruckId, setEditingTruckId] = useState(null)
+  const [gateExporting, setGateExporting] = useState('')
   const [photoForm, setPhotoForm] = useState({ truck_arrival_id: '', waybill_no: '', move_date: todayStr(), note: '' })
   const [form, setForm] = useState({
     arrival_date: todayStr(), arrival_start_time: '08:00', arrival_end_time: '17:00',
@@ -2096,6 +2153,7 @@ function TruckArrivalPanel({ from, to, label }) {
 
   const downloadGateEntryExcel = async (t) => {
     if (!t) return
+    setGateExporting('excel')
     try {
       const ExcelJS = (await import('exceljs')).default
       const wb = new ExcelJS.Workbook()
@@ -2103,7 +2161,6 @@ function TruckArrivalPanel({ from, to, label }) {
       wb.created = new Date()
       wb.subject = 'Su nakliyesi personel günlük giriş bildirimi'
 
-      const entry = t.gate_entry || {}
       const gate = wb.addWorksheet('PERSONEL GÜNLÜK GİRİŞ', {
         pageSetup: { orientation: 'landscape', paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 1 },
         views: [{ showGridLines: false }],
@@ -2117,24 +2174,9 @@ function TruckArrivalPanel({ from, to, label }) {
       gate.getRow(1).height = 30
       gate.getRow(2).height = 8
 
-      const headers = [
-        'ADI SOYADI', 'T.C. KİMLİK / PASAPORT NUMARASI', 'TELEFON NUMARASI', 'ARAÇ PLAKASI',
-        'ZİYARET EDİLECEK FİRMA', 'ZİYARET EDİLECEK KİŞİ', 'ZİYARET EDİLECEK KİŞİ TELEFONU',
-        'GİRİŞ TARİHİ', 'GİRİŞ SAATİ', 'SAHA GİRİŞ NEDENİ', 'ÇALIŞMA YAPACAĞI BÖLGE',
-      ]
-      const values = [
-        entry.full_name || t.driver_name || '-',
-        `${entry.identity_label || (t.identity_type === 'passport' ? 'Pasaport' : 'T.C. Kimlik')}: ${entry.identity_no || t.driver_tc || '-'}`,
-        entry.phone || t.driver_phone || '-',
-        [entry.plate || t.plate, entry.trailer_plate || t.trailer_plate].filter(Boolean).join('\n'),
-        entry.visit_company || t.visit_company || '-',
-        entry.host_person_name || t.host_person_name || '-',
-        entry.host_person_phone || t.host_person_phone || '-',
-        entry.entry_date || t.arrival_date || '-',
-        [entry.entry_start_time || t.arrival_start_time, entry.entry_end_time || t.arrival_end_time].filter(Boolean).join('-'),
-        entry.entry_reason || t.entry_reason || 'SU AMAÇLI NAKLİYE',
-        entry.work_area || t.work_area || '-',
-      ]
+      const rows = gateEntryRows(t)
+      const headers = rows.map(([header]) => header)
+      const values = rows.map(([, value]) => value)
       gate.addRow([])
       gate.addRow(headers)
       gate.addRow(values)
@@ -2186,14 +2228,134 @@ function TruckArrivalPanel({ from, to, label }) {
 
       const buffer = await wb.xlsx.writeBuffer()
       const blobUrl = URL.createObjectURL(new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }))
-      const a = document.createElement('a')
-      a.href = blobUrl
-      a.download = `su-nakliye-personel-giris-${t.arrival_date}-${String(t.plate || 'arac').replace(/\s+/g, '-')}.xlsx`
-      a.click()
+      triggerDownload(blobUrl, `${gateEntryFileBase(t)}.xlsx`)
       setTimeout(() => URL.revokeObjectURL(blobUrl), 1000)
       toastOk('Personel giriş formu ve resmi yazı Excel olarak hazırlandı')
     } catch {
       toastErr('Personel giriş Exceli oluşturulamadı')
+    } finally {
+      setGateExporting('')
+    }
+  }
+
+  const downloadGateEntryPdf = async (t) => {
+    if (!t) return
+    setGateExporting('pdf')
+    try {
+      const response = await api.get(`/water/truck-arrivals/${t.id}/gate-entry.pdf`, { responseType: 'blob' })
+      const blobUrl = URL.createObjectURL(response.data)
+      triggerDownload(blobUrl, `${gateEntryFileBase(t)}.pdf`)
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 1000)
+      toastOk('Kurumsal personel giriş PDF’i hazırlandı')
+    } catch (error) {
+      toastErr(errMsg(error, 'Personel giriş PDF’i oluşturulamadı'))
+    } finally {
+      setGateExporting('')
+    }
+  }
+
+  const downloadGateEntryPng = async (t) => {
+    if (!t) return
+    setGateExporting('png')
+    try {
+      const width = 1600
+      const height = 1000
+      const scale = 2
+      const canvas = document.createElement('canvas')
+      canvas.width = width * scale
+      canvas.height = height * scale
+      const ctx = canvas.getContext('2d')
+      if (!ctx) throw new Error('Canvas kullanılamıyor')
+      ctx.scale(scale, scale)
+      ctx.fillStyle = '#ffffff'
+      ctx.fillRect(0, 0, width, height)
+
+      ctx.fillStyle = '#155e75'
+      ctx.fillRect(0, 0, width, 104)
+      ctx.fillStyle = '#ffffff'
+      ctx.font = '700 34px Arial, sans-serif'
+      ctx.textAlign = 'left'
+      ctx.fillText('PERSONEL GÜNLÜK GİRİŞ', 32, 55)
+      ctx.font = '18px Arial, sans-serif'
+      ctx.fillStyle = '#cffafe'
+      ctx.fillText('Su amaçlı nakliye personel giriş talebi', 32, 84)
+      ctx.textAlign = 'right'
+      ctx.font = '700 20px Arial, sans-serif'
+      ctx.fillStyle = '#ffffff'
+      ctx.fillText(`${t.arrival_date || '-'}  ·  ${t.vehicle_summary || t.plate || '-'}`, width - 32, 62)
+
+      const rows = gateEntryRows(t)
+      const columnWidths = [125, 170, 117, 117, 205, 161, 139, 95, 102, 146, 163]
+      const tableX = 15
+      const headerY = 130
+      const headerHeight = 88
+      const valueHeight = 142
+      let x = tableX
+      rows.forEach(([header, value], index) => {
+        const cellWidth = columnWidths[index]
+        ctx.fillStyle = index % 2 ? '#e0f2fe' : '#ecfeff'
+        ctx.fillRect(x, headerY, cellWidth, headerHeight)
+        ctx.strokeStyle = '#475569'
+        ctx.lineWidth = 1
+        ctx.strokeRect(x, headerY, cellWidth, headerHeight)
+        ctx.font = '700 14px Arial, sans-serif'
+        ctx.fillStyle = '#0f172a'
+        ctx.textAlign = 'center'
+        const headerLines = canvasTextLines(ctx, header, cellWidth - 12, 4)
+        const headerStart = headerY + (headerHeight - headerLines.length * 18) / 2 + 14
+        headerLines.forEach((line, lineIndex) => ctx.fillText(line, x + cellWidth / 2, headerStart + lineIndex * 18))
+
+        ctx.fillStyle = '#ffffff'
+        ctx.fillRect(x, headerY + headerHeight, cellWidth, valueHeight)
+        ctx.strokeRect(x, headerY + headerHeight, cellWidth, valueHeight)
+        ctx.font = '18px Arial, sans-serif'
+        ctx.fillStyle = '#111827'
+        const valueLines = canvasTextLines(ctx, value, cellWidth - 14, 5)
+        const valueStart = headerY + headerHeight + (valueHeight - valueLines.length * 23) / 2 + 17
+        valueLines.forEach((line, lineIndex) => ctx.fillText(line, x + cellWidth / 2, valueStart + lineIndex * 23))
+        x += cellWidth
+      })
+
+      const requestY = 400
+      ctx.fillStyle = '#f8fafc'
+      ctx.fillRect(28, requestY, width - 56, 475)
+      ctx.strokeStyle = '#94a3b8'
+      ctx.strokeRect(28, requestY, width - 56, 475)
+      ctx.fillStyle = '#155e75'
+      ctx.fillRect(28, requestY, 11, 475)
+      ctx.textAlign = 'left'
+      ctx.fillStyle = '#0f172a'
+      ctx.font = '700 25px Arial, sans-serif'
+      ctx.fillText('ANA MERKEZ PERSONEL GİRİŞ TALEBİ', 62, requestY + 48)
+      ctx.font = '700 17px Arial, sans-serif'
+      ctx.fillStyle = '#334155'
+      const subject = `Konu: ${t.mail_preview?.subject || t.mail_subject || '-'}`
+      canvasTextLines(ctx, subject, width - 145, 2).forEach((line, index) => ctx.fillText(line, 62, requestY + 85 + index * 23))
+      ctx.font = '19px Arial, sans-serif'
+      ctx.fillStyle = '#1e293b'
+      const body = t.mail_preview?.body || t.mail_body || ''
+      canvasTextLines(ctx, body, width - 145, 13).forEach((line, index) => ctx.fillText(line, 62, requestY + 148 + index * 27))
+
+      ctx.fillStyle = '#e0f2fe'
+      ctx.fillRect(28, 898, width - 56, 70)
+      ctx.fillStyle = '#0e7490'
+      ctx.font = '700 17px Arial, sans-serif'
+      ctx.fillText(`Alıcı: ${t.mail_preview?.to || t.center_email || '-'}`, 50, 928)
+      ctx.font = '15px Arial, sans-serif'
+      ctx.fillStyle = '#475569'
+      ctx.fillText(`Kayıt no: ${t.id}  ·  Oluşturulma: ${new Date().toLocaleString('tr-TR')}  ·  Şantiye Su Takibi`, 50, 953)
+
+      const blob = await new Promise((resolve, reject) => {
+        canvas.toBlob(result => result ? resolve(result) : reject(new Error('PNG üretilemedi')), 'image/png')
+      })
+      const blobUrl = URL.createObjectURL(blob)
+      triggerDownload(blobUrl, `${gateEntryFileBase(t)}.png`)
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 1000)
+      toastOk('Mailde paylaşılabilir yüksek çözünürlüklü PNG hazırlandı')
+    } catch {
+      toastErr('Personel giriş PNG görseli oluşturulamadı')
+    } finally {
+      setGateExporting('')
     }
   }
 
@@ -2459,8 +2621,13 @@ function TruckArrivalPanel({ from, to, label }) {
 
                   <div style={{ border: '1px solid color-mix(in srgb, var(--teal) 38%, var(--border))', borderRadius: '8px', background: 'color-mix(in srgb, var(--teal) 6%, var(--surface))', padding: '9px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'center', marginBottom: '7px' }}>
-                      <strong style={{ fontSize: '12px' }}>PERSONEL GİRİŞ KARTI</strong>
-                      <button className="btn btn-ghost btn-sm" onClick={() => downloadGateEntryExcel(selectedTruck)}>Giriş Exceli</button>
+                      <div>
+                        <strong style={{ fontSize: '12px' }}>PERSONEL GİRİŞ KARTI</strong>
+                        <div style={{ color: 'var(--text3)', fontSize: '10px', marginTop: '2px' }}>Mail eki ve ana merkez bildirimi için tek kayıt</div>
+                      </div>
+                      <span className={`badge ${(selectedTruck.missing_mail_fields || []).length ? 'badge-red' : 'badge-green'}`}>
+                        {(selectedTruck.missing_mail_fields || []).length ? `${selectedTruck.missing_mail_fields.length} eksik alan` : 'Çıktıya hazır'}
+                      </span>
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '6px 10px', fontSize: '11px' }}>
                       {[
@@ -2479,6 +2646,17 @@ function TruckArrivalPanel({ from, to, label }) {
                           <strong style={{ display: 'block', overflowWrap: 'anywhere' }}>{value || '—'}</strong>
                         </div>
                       ))}
+                    </div>
+                    <div style={{ marginTop: '10px', paddingTop: '9px', borderTop: '1px solid color-mix(in srgb, var(--teal) 24%, var(--border))', display: 'flex', gap: '8px', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
+                      <div>
+                        <div style={{ fontWeight: 800, fontSize: '11px' }}>PAYLAŞIM ÇIKTILARI</div>
+                        <div style={{ color: 'var(--text3)', fontSize: '9px' }}>PDF resmi yazı · Excel düzenlenebilir tablo · PNG hızlı paylaşım</div>
+                      </div>
+                      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                        <button className="btn btn-primary btn-sm" disabled={Boolean(gateExporting)} onClick={() => downloadGateEntryPdf(selectedTruck)}>{gateExporting === 'pdf' ? 'Hazırlanıyor…' : 'PDF İndir'}</button>
+                        <button className="btn btn-ghost btn-sm" disabled={Boolean(gateExporting)} onClick={() => downloadGateEntryExcel(selectedTruck)}>{gateExporting === 'excel' ? 'Hazırlanıyor…' : 'Excel İndir'}</button>
+                        <button className="btn btn-ghost btn-sm" disabled={Boolean(gateExporting)} onClick={() => downloadGateEntryPng(selectedTruck)}>{gateExporting === 'png' ? 'Hazırlanıyor…' : 'PNG Görsel'}</button>
+                      </div>
                     </div>
                   </div>
 

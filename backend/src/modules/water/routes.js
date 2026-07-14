@@ -19,6 +19,7 @@ import {
   adjustmentsService, createAdjustmentService, deleteAdjustmentService, COUNT_REASONS,
   reviewQueueService, approveReviewsService,
   truckArrivalsService, createTruckArrivalService, updateTruckArrivalService, deleteTruckArrivalService,
+  truckGateEntryService, buildTruckGateEntryPDF,
   sendTruckArrivalMailService, markTruckMailSentService, markTruckCheckedService, checkTruckArrivalAlerts,
   waybillPhotosService, createWaybillPhotoService, deleteWaybillPhotoService,
 } from './service.js'
@@ -197,6 +198,18 @@ waterRouter.get('/truck-arrivals', ...mgr, (req, res) => {
     const { from, to, status, limit } = req.query
     res.json(truckArrivalsService({ from, to, status, limit }))
   } catch (e) { logger.error('[water]', e); fail(res, e) }
+})
+waterRouter.get('/truck-arrivals/:id/gate-entry.pdf', ...mgr, (req, res) => {
+  try {
+    const truck = truckGateEntryService(+req.params.id)
+    const filename = `su-nakliye-personel-giris-${truck.arrival_date}-${truck.plate.replace(/\s+/g, '-')}.pdf`
+    const doc = new PDFDocument({ size: 'A4', margin: 48 })
+    res.setHeader('Content-Type', 'application/pdf')
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
+    doc.pipe(res)
+    buildTruckGateEntryPDF(truck, doc)
+    logAudit(req.user.id, 'water_truck_gate_pdf', 'water', truck.id, filename)
+  } catch (e) { logger.error('[water/truck-gate-pdf]', e); if (!res.headersSent) fail(res, e) }
 })
 waterRouter.post('/truck-arrivals', ...mgr, (req, res) => {
   try {
