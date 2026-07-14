@@ -628,31 +628,58 @@ export function setClosureLock(month, isLocked) {
   return getDB().prepare('UPDATE water_monthly_closures SET is_locked=? WHERE month=?').run(isLocked ? 1 : 0, month).changes > 0
 }
 
-// Ürün bazında: ay başı devreden (ay öncesi net) + ay gelen/dağıtılan + ay iadesi + varsa sayım fişi
-export function reconciliationRows(month) {
-  const monthStart = `${month}-01`
-  return getDB().prepare(`
+function reconciliationStatement(month, productId) {
+  const monthNumber = Number(month.slice(5, 7))
+  const year = Number(month.slice(0, 4))
+  const nextMonth = monthNumber === 12 ? 1 : monthNumber + 1
+  const nextYear = monthNumber === 12 ? year + 1 : year
+  const params = {
+    month,
+    monthStart: `${month}-01`,
+    monthEnd: `${nextYear}-${String(nextMonth).padStart(2, '0')}-01`,
+  }
+  const productFilter = productId == null ? '' : 'AND p.id = @productId'
+  if (productId != null) params.productId = productId
+
+  const statement = getDB().prepare(`
     SELECT p.id AS product_id, p.name AS product_name, p.unit_label, p.units_per_case, p.cases_per_pallet,
       p.brand_id, b.name AS brand_name,
       COALESCE((SELECT SUM(CASE WHEN m.type='in' THEN m.qty_base ELSE -m.qty_base END)
-                FROM water_movements m WHERE m.product_id=p.id AND m.move_date < ?), 0)
+                FROM water_movements m WHERE m.product_id=p.id AND m.move_date < @monthStart), 0)
       + COALESCE((SELECT SUM(CASE WHEN a.direction='in' THEN a.qty_base ELSE -a.qty_base END)
-                FROM water_adjustments a WHERE a.product_id=p.id AND a.move_date < ?), 0) AS opening_base,
+                FROM water_adjustments a WHERE a.product_id=p.id AND a.move_date < @monthStart), 0) AS opening_base,
       COALESCE((SELECT SUM(m.qty_base) FROM water_movements m
-                WHERE m.product_id=p.id AND m.type='in' AND substr(m.move_date,1,7)=?), 0) AS month_in,
+                WHERE m.product_id=p.id AND m.type='in'
+                  AND m.move_date >= @monthStart AND m.move_date < @monthEnd), 0) AS month_in,
       COALESCE((SELECT SUM(m.qty_base) FROM water_movements m
-                WHERE m.product_id=p.id AND m.type='out' AND substr(m.move_date,1,7)=?), 0) AS month_out,
+                WHERE m.product_id=p.id AND m.type='out'
+                  AND m.move_date >= @monthStart AND m.move_date < @monthEnd), 0) AS month_out,
       COALESCE((SELECT SUM(CASE WHEN a.direction='in' THEN a.qty_base ELSE -a.qty_base END)
-                FROM water_adjustments a WHERE a.product_id=p.id AND substr(a.move_date,1,7)=?), 0) AS month_adjust,
+                FROM water_adjustments a WHERE a.product_id=p.id
+                  AND a.move_date >= @monthStart AND a.move_date < @monthEnd), 0) AS month_adjust,
       COALESCE((SELECT SUM(r.qty_base) FROM water_returns r
-                WHERE r.product_id=p.id AND substr(r.move_date,1,7)=?), 0) AS month_return,
+                WHERE r.product_id=p.id
+                  AND r.move_date >= @monthStart AND r.move_date < @monthEnd), 0) AS month_return,
       sc.counted_base, sc.reason AS count_reason, sc.note AS count_note
     FROM water_products p
     LEFT JOIN water_brands b ON b.id = p.brand_id
-    LEFT JOIN water_stock_counts sc ON sc.product_id = p.id AND sc.month = ?
-    WHERE p.is_active = 1
+    LEFT JOIN water_stock_counts sc ON sc.product_id = p.id AND sc.month = @month
+    WHERE p.is_active = 1 ${productFilter}
     ORDER BY COALESCE(b.sort_order, 999), p.sort_order, p.name
-  `).all(monthStart, monthStart, month, month, month, month, month)
+  `)
+  return { statement, params }
+}
+
+// Ürün bazında: ay başı devreden (ay öncesi net) + ay gelen/dağıtılan + ay iadesi + varsa sayım fişi
+export function reconciliationRows(month) {
+  const { statement, params } = reconciliationStatement(month)
+  return statement.all(params)
+}
+
+// Sayım fişi tek ürün içindir; tüm ürünlerin uzlaştırmasını hesaplamaz.
+export function reconciliationRow(month, productId) {
+  const { statement, params } = reconciliationStatement(month, productId)
+  return statement.get(params)
 }
 
 export function upsertStockCount(row) {

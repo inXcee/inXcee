@@ -1542,7 +1542,7 @@ export function reconciliationService({ month } = {}) {
 
 // Sistem kalanını (ay öncesi devreden + ay net) ürün bazında döndürür — sayım/kapanış için
 function systemBaseFor(month, productId) {
-  const row = q.reconciliationRows(month).find(r => r.product_id === productId)
+  const row = q.reconciliationRow(month, productId)
   return row ? row.opening_base + row.month_in - row.month_out + (row.month_adjust || 0) : 0
 }
 

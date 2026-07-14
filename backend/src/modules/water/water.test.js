@@ -5,6 +5,7 @@ import { initDB, getDB } from '../../shared/db/index.js'
 import { seedDev } from '../../shared/db/seed.js'
 import PDFDocument from 'pdfkit'
 import { toBase, humanize, availableUnits, checkTruckArrivalAlerts, waterDailyDigest, buildReconciliationPDF, waterEscalations } from './service.js'
+import { reconciliationRow, reconciliationRows } from './queries.js'
 
 let managerToken, laundryToken
 beforeAll(async () => {
@@ -545,6 +546,42 @@ describe('Su takip — Ay Sonu Kapanış / Uyuşturma (W2)', () => {
     expect(row.system_base).toBe(120) // 100 + 50 - 30
     expect(row.status).toBe('pending') // henüz sayım yok
     expect(Array.isArray(r.body.reasons)).toBe(true)
+  })
+
+  it('tek ürün uzlaştırması ay sınırlarını korur ve toplu sonuçla aynıdır', async () => {
+    await auth(request(app).post('/api/water/intake'))
+      .send({ product_id: pRec, input_qty: 9, input_unit: 'adet', move_date: '2026-07-01', waybill_no: 'KAP-NEXT' })
+    await auth(request(app).post('/api/water/intake'))
+      .send({ product_id: pRec, input_qty: 4, input_unit: 'adet', move_date: '2026-12-31', waybill_no: 'KAP-YEAR-END' })
+    await auth(request(app).post('/api/water/intake'))
+      .send({ product_id: pRec, input_qty: 7, input_unit: 'adet', move_date: '2027-01-01', waybill_no: 'KAP-NEXT-YEAR' })
+
+    const single = reconciliationRow(MONTH, pRec)
+    const fromAll = reconciliationRows(MONTH).find(row => row.product_id === pRec)
+    expect(single).toEqual(fromAll)
+    expect(single.month_in).toBe(50)
+    expect(reconciliationRow('2026-12', pRec).month_in).toBe(4)
+    expect(reconciliationRow(MONTH, -999999)).toBeUndefined()
+  })
+
+  it('uzlaştırma tarih aralıkları bileşik indeksleri kullanır', () => {
+    const db = getDB()
+    const movementPlan = db.prepare(`
+      EXPLAIN QUERY PLAN SELECT qty_base FROM water_movements
+      WHERE product_id=? AND move_date>=? AND move_date<?
+    `).all(pRec, '2026-06-01', '2026-07-01')
+    const adjustmentPlan = db.prepare(`
+      EXPLAIN QUERY PLAN SELECT qty_base FROM water_adjustments
+      WHERE product_id=? AND move_date>=? AND move_date<?
+    `).all(pRec, '2026-06-01', '2026-07-01')
+    const returnPlan = db.prepare(`
+      EXPLAIN QUERY PLAN SELECT qty_base FROM water_returns
+      WHERE product_id=? AND move_date>=? AND move_date<?
+    `).all(pRec, '2026-06-01', '2026-07-01')
+
+    expect(movementPlan.map(row => row.detail).join(' ')).toContain('idx_water_mov_product_date')
+    expect(adjustmentPlan.map(row => row.detail).join(' ')).toContain('idx_water_adj_product_date')
+    expect(returnPlan.map(row => row.detail).join(' ')).toContain('idx_water_ret_product_date')
   })
 
   it('geçersiz ay formatı 400', async () => {
