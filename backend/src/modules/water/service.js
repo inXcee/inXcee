@@ -11,6 +11,15 @@ import { parseRecipients } from '../email/service.js'
 // her üründe kabul edilir; açılır listeler ürüne uygun birimleri gösterir.
 const INPUT_UNITS = ['adet', 'koli', 'paket', 'palet']
 const BASE_UNITS = new Set(INPUT_UNITS)
+export const WATER_OPERATION_ROLES = Object.freeze(['campus_manager', 'shift_supervisor'])
+
+export function notifyWaterOperations({ dedup_key, ...notification }) {
+  return WATER_OPERATION_ROLES.map((role, index) => createNotification({
+    ...notification,
+    target_role: role,
+    dedup_key: dedup_key && index > 0 ? `${dedup_key}_${role}` : dedup_key,
+  })).filter(Boolean)
+}
 
 function normUnit(unit) {
   return (unit || 'adet').toString().toLocaleLowerCase('tr').trim()
@@ -164,9 +173,9 @@ function checkLowStock(productIds) {
     if (!p || !p.min_level || p.min_level <= 0) continue
     const bal = q.getProductBalance(pid)
     if (bal < p.min_level) {
-      createNotification({
+      notifyWaterOperations({
         message: `Su stoğu düşük: ${p.name} — kalan ${humanize(p, bal)} (eşik ${humanize(p, p.min_level)})`,
-        severity: 'warning', module: 'water', target_role: 'campus_manager',
+        severity: 'warning', module: 'water',
         dedup_key: `water_low_${pid}`,
       })
     }
@@ -1347,14 +1356,14 @@ export function waterDailyDigest({ now = new Date() } = {}) {
   const actionable = parts.length > 0
   let notified = false
   if (actionable) {
-    const n = createNotification({
+    const notifications = notifyWaterOperations({
       message: `Su takip günlük özet (${today}): ${parts.join(', ')}.`,
       severity: (s.negative || f.order_count) ? 'warning' : 'info',
-      module: 'water', target_role: 'campus_manager',
+      module: 'water',
       dedup_key: `water_digest_${today}`,
       link: '/water',
     })
-    notified = !!n
+    notified = notifications.length > 0
   }
   return { date: today, actionable, notified, parts, summary: s, order_count: f.order_count, soon_count: f.soon_count }
 }
@@ -1365,20 +1374,20 @@ export function waterEscalations({ now = new Date() } = {}) {
   const today = clock.date
   let created = 0
   for (const p of pendingDistributionsService({ today }).rows.filter(r => r.severity === 'overdue')) {
-    const n = createNotification({
+    const notifications = notifyWaterOperations({
       message: `Su: ${p.product_name} → ${p.zone_name} dağıtımı ${p.waiting_days} gündür irsaliye bekliyor (bekleyen ${p.unallocated_human}).`,
-      severity: 'critical', module: 'water', target_role: 'campus_manager',
+      severity: 'critical', module: 'water',
       dedup_key: `water_esc_pending_${p.movement_id}_${today}`, link: '/water',
     })
-    if (n) created += 1
+    if (notifications.length) created += 1
   }
   for (const s of (summaryService({}).stock || []).filter(x => x.critical)) {
-    const n = createNotification({
+    const notifications = notifyWaterOperations({
       message: `Su: ${s.name} KRİTİK stok — kalan ${s.balance_human}${s.min_human ? ` (eşik ${s.min_human})` : ''}.`,
-      severity: 'critical', module: 'water', target_role: 'campus_manager',
+      severity: 'critical', module: 'water',
       dedup_key: `water_esc_critical_${s.product_id}_${today}`, link: '/water',
     })
-    if (n) created += 1
+    if (notifications.length) created += 1
   }
   return { date: today, created }
 }
@@ -1401,25 +1410,25 @@ export function checkTruckArrivalAlerts({ now = new Date() } = {}) {
       const deadline = minutesOf(r.mail_deadline_time)
       if (reminder && current <= deadline) {
         const message = `Su tırı mail kontrolü: ${base} için ana merkeze ${r.mail_deadline_time}'ye kadar mail atılmalı.${missingText}`
-        const n = createNotification({
+        const notifications = notifyWaterOperations({
           message,
-          severity: missing.length ? 'critical' : 'warning', module: 'water', target_role: 'campus_manager',
+          severity: missing.length ? 'critical' : 'warning', module: 'water',
           dedup_key: `water_truck_mail_${r.id}_${clock.date}_${reminder.key}`,
           link: '/water',
         })
-        if (n) created += 1
-        alerts.push({ truck_id: r.id, type: 'mail_due', severity: missing.length ? 'critical' : 'warning', created: !!n, message })
+        if (notifications.length) created += 1
+        alerts.push({ truck_id: r.id, type: 'mail_due', severity: missing.length ? 'critical' : 'warning', created: notifications.length > 0, message })
       } else if (current > deadline) {
         const overdue = overdueSlot(current, deadline, interval)
         const message = `Su tırı mail süresi geçti: ${base} için ${r.mail_deadline_time} deadline aşıldı, mail atıldı mı kontrol edin.${missingText}`
-        const n = createNotification({
+        const notifications = notifyWaterOperations({
           message,
-          severity: 'critical', module: 'water', target_role: 'campus_manager',
+          severity: 'critical', module: 'water',
           dedup_key: `water_truck_deadline_${r.id}_${clock.date}_${overdue.key}`,
           link: '/water',
         })
-        if (n) created += 1
-        alerts.push({ truck_id: r.id, type: 'mail_overdue', severity: 'critical', created: !!n, message })
+        if (notifications.length) created += 1
+        alerts.push({ truck_id: r.id, type: 'mail_overdue', severity: 'critical', created: notifications.length > 0, message })
       }
     }
     if (r.arrival_date === clock.date) {
@@ -1431,14 +1440,14 @@ export function checkTruckArrivalAlerts({ now = new Date() } = {}) {
         const message = inWindow
           ? `Su tırı geliş kontrolü: ${base} bugün ${r.arrival_start_time}-${r.arrival_end_time} aralığında bekleniyor. Tır gelecek mi teyit edin.`
           : `Su tırı gecikme kontrolü: ${base} için geliş aralığı geçti (${r.arrival_end_time}). Geldi mi kontrol edin.`
-        const n = createNotification({
+        const notifications = notifyWaterOperations({
           message,
-          severity: late ? 'critical' : 'info', module: 'water', target_role: 'campus_manager',
+          severity: late ? 'critical' : 'info', module: 'water',
           dedup_key: `water_truck_arrival_${r.id}_${clock.date}_${reminder.key}`,
           link: '/water',
         })
-        if (n) created += 1
-        alerts.push({ truck_id: r.id, type: late ? 'arrival_late' : 'arrival_due', severity: late ? 'critical' : 'info', created: !!n, message })
+        if (notifications.length) created += 1
+        alerts.push({ truck_id: r.id, type: late ? 'arrival_late' : 'arrival_due', severity: late ? 'critical' : 'info', created: notifications.length > 0, message })
       }
     }
   }

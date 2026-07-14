@@ -19,7 +19,7 @@ import { pruneTokenBlacklist } from '../auth/service.js'
 import { runBackupService, listBackupsService, deleteBackupService } from '../../modules/backup/service.js'
 import { enforceKvkkRetentionService } from '../../modules/kvkk/service.js'
 import PDFDocument from 'pdfkit'
-import { checkTruckArrivalAlerts, waterDailyDigest, buildReconciliationPDF, waterEscalations } from '../../modules/water/service.js'
+import { checkTruckArrivalAlerts, waterDailyDigest, buildReconciliationPDF, waterEscalations, notifyWaterOperations } from '../../modules/water/service.js'
 import { cleanupWaterFiles } from '../../modules/water/file-lifecycle.js'
 import { captureError } from '../sentry.js'
 import { reconcileAttendanceService } from '../../modules/shifts/service.js'
@@ -132,7 +132,7 @@ export function startCronJobs() {
       stream.on('finish', () => {
         try {
           logAudit(null, 'water_monthly_pdf', 'water', null, `${month} PDF: ${filePath}`)
-          createNotification({ message: `Su takip ${month} ay kapanış PDF özeti hazır.`, module: 'water', target_role: 'campus_manager', dedup_key: `water_monthly_pdf_${month}`, link: '/water' })
+          notifyWaterOperations({ message: `Su takip ${month} ay kapanış PDF özeti hazır.`, module: 'water', dedup_key: `water_monthly_pdf_${month}`, link: '/water' })
         } catch { /* ignore */ }
       })
     } catch (e) {

@@ -9,10 +9,11 @@ import { toBase, humanize, availableUnits, checkTruckArrivalAlerts, waterDailyDi
 import { reconciliationRow, reconciliationRows } from './queries.js'
 import { uploadFilePathFromUrl } from './file-lifecycle.js'
 
-let managerToken, laundryToken
+let managerToken, supervisorToken, laundryToken
 beforeAll(async () => {
   process.env.DB_PATH = ':memory:'; initDB(); seedDev()
   managerToken = (await request(app).post('/api/auth/login').send({ username: 'mudur', password: 'admin123' })).body.token
+  supervisorToken = (await request(app).post('/api/auth/login').send({ username: 'vardiya', password: 'admin123' })).body.token
   laundryToken = (await request(app).post('/api/auth/login').send({ username: 'camasir', password: 'admin123' })).body.token
 })
 
@@ -300,6 +301,14 @@ describe('Su takip — toplu giriş + metinden dağıtım + düşük stok + ay s
     expect(dam.min_level).toBe(200)
     expect(dam.low).toBe(true)
     expect(r.body.totals.low_count).toBeGreaterThanOrEqual(1)
+
+    const distributed = await request(app).post('/api/water/distribute').set('Authorization', `Bearer ${managerToken}`)
+      .send({ product_id: pDam, zone_id: zoneA, input_qty: 1, input_unit: 'adet', move_date: '2026-04-02' })
+    expect(distributed.status).toBe(201)
+    const managerNotification = getDB().prepare('SELECT * FROM notifications WHERE dedup_key=?').get(`water_low_${pDam}`)
+    const supervisorNotification = getDB().prepare('SELECT * FROM notifications WHERE dedup_key=?').get(`water_low_${pDam}_shift_supervisor`)
+    expect(managerNotification?.target_role).toBe('campus_manager')
+    expect(supervisorNotification?.target_role).toBe('shift_supervisor')
   })
 
   it('ay bazlı seri döner (group=month)', async () => {
@@ -1046,6 +1055,8 @@ describe('Su takip — Eskalasyon (V5)', () => {
     expect(r.created).toBeGreaterThanOrEqual(1)
     const esc = getDB().prepare("SELECT COUNT(*) c FROM notifications WHERE dedup_key LIKE 'water_esc_%'").get()
     expect(esc.c).toBeGreaterThanOrEqual(1)
+    const roles = getDB().prepare("SELECT DISTINCT target_role FROM notifications WHERE dedup_key LIKE 'water_esc_%'").all().map(row => row.target_role)
+    expect(roles).toEqual(expect.arrayContaining(['campus_manager', 'shift_supervisor']))
     // aynı gün ikinci çağrı → hepsi dedup, yeni bildirim yok
     const r2 = waterEscalations({ now: NOW })
     expect(r2.created).toBe(0)
@@ -1070,7 +1081,7 @@ describe('Su takip — Ay kapanışı PDF servisi (V4)', () => {
 })
 
 describe('Su takip — Günlük operasyon özeti (V3)', () => {
-  it('digest actionable öğeleri toplar, müdüre bildirim üretir ve günlük dedup uygular', () => {
+  it('digest actionable öğeleri iki operasyon rolüne dağıtır ve günlük dedup uygular', async () => {
     const r = waterDailyDigest()
     expect(r.actionable).toBe(true) // önceki testlerden eksi/bekleyen kayıtlar mevcut
     expect(r.notified).toBe(true)
@@ -1080,6 +1091,13 @@ describe('Su takip — Günlük operasyon özeti (V3)', () => {
     expect(notif).toBeTruthy()
     expect(notif.message).toMatch(/günlük özet/)
     expect(notif.target_role).toBe('campus_manager')
+    const supervisorNotif = getDB().prepare('SELECT * FROM notifications WHERE dedup_key=?').get(`water_digest_${r.date}_shift_supervisor`)
+    expect(supervisorNotif?.target_role).toBe('shift_supervisor')
+
+    const supervisorFeed = await request(app).get('/api/notifications?module=water')
+      .set('Authorization', `Bearer ${supervisorToken}`)
+    expect(supervisorFeed.status).toBe(200)
+    expect(supervisorFeed.body.items.some(item => item.id === supervisorNotif.id)).toBe(true)
 
     // aynı gün ikinci çağrı → dedup, yeni bildirim yok
     const r2 = waterDailyDigest()
@@ -1334,8 +1352,12 @@ describe('Su takip - Tir on bildirimleri ve irsaliye foto arsivi (W11)', () => {
     expect(result.alerts.some(a => a.type === 'arrival_due')).toBe(true)
     const mailNotif = getDB().prepare('SELECT * FROM notifications WHERE dedup_key=?').get(`water_truck_mail_${truck.body.id}_2027-03-15_1100`)
     const arrivalNotif = getDB().prepare('SELECT * FROM notifications WHERE dedup_key=?').get(`water_truck_arrival_${truck.body.id}_2027-03-15_1100`)
+    const supervisorMail = getDB().prepare('SELECT * FROM notifications WHERE dedup_key=?').get(`water_truck_mail_${truck.body.id}_2027-03-15_1100_shift_supervisor`)
+    const supervisorArrival = getDB().prepare('SELECT * FROM notifications WHERE dedup_key=?').get(`water_truck_arrival_${truck.body.id}_2027-03-15_1100_shift_supervisor`)
     expect(mailNotif?.module).toBe('water')
     expect(arrivalNotif?.module).toBe('water')
+    expect(supervisorMail?.target_role).toBe('shift_supervisor')
+    expect(supervisorArrival?.target_role).toBe('shift_supervisor')
   })
 
   it('15 dakikalik tir kontrol araligi ayni saat icinde ayri bildirim anahtari uretir', async () => {
