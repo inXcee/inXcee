@@ -657,6 +657,12 @@ export function updatePuantajPeriodApprovalService({ period, dept_id, action, no
   }
   const status = actionMap[action]
   if (!status) throw Object.assign(new Error('action approve, return, lock veya reopen olmalidir'), { statusCode: 400 })
+  if (action === 'approve') {
+    const current = getPuantajPeriodApproval(cleanPeriod, scope.deptScope)
+    if ((current?.status || 'draft') !== 'submitted') {
+      throw Object.assign(new Error('Onay için önce dönemi gönderin (submitted olmalı).'), { statusCode: 409 })
+    }
+  }
   if (['lock', 'reopen'].includes(action) && scope.deptId != null) {
     throw Object.assign(new Error('Ay kilidi tum kapsam icin yapilir; departman filtresini kaldirin'), { statusCode: 400 })
   }

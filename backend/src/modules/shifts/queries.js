@@ -907,6 +907,12 @@ export function approveLeaveRequest(id, approvedBy, status, { note = null, expec
   const db = getDB()
   const req = db.prepare('SELECT * FROM leave_requests WHERE id=?').get(id)
   if (!req) throw new Error('İzin talebi bulunamadı')
+  if (req.status === status) {
+    throw Object.assign(new Error(`İzin talebi zaten '${status}' durumunda.`), {
+      statusCode: 409,
+      details: { current_status: req.status },
+    })
+  }
   if (expectedVersion != null && Number(expectedVersion) !== Number(req.version || 1)) {
     throw Object.assign(new Error('Izin talebi baska bir kullanici tarafindan guncellendi.'), {
       statusCode: 409,
@@ -1213,6 +1219,12 @@ export function reviewOvertimeRequest(id, data, reviewedBy) {
   const db = getDB()
   const request = db.prepare('SELECT * FROM overtime_requests WHERE id=?').get(id)
   if (!request) throw Object.assign(new Error('Mesai talebi bulunamadi.'), { statusCode: 404 })
+  if (request.status === data.status) {
+    throw Object.assign(new Error(`Mesai talebi zaten '${data.status}' durumunda.`), {
+      statusCode: 409,
+      details: { current_status: request.status },
+    })
+  }
   if (data.expected_version != null && Number(data.expected_version) !== Number(request.version)) {
     throw Object.assign(new Error('Mesai talebi baska bir kullanici tarafindan guncellendi.'), {
       statusCode: 409,
