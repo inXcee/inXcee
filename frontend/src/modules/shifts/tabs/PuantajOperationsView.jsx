@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { Component, useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import api from '../../../shared/api/client.js'
 import { toastErr, toastOk } from '../shared.jsx'
@@ -31,6 +31,17 @@ const RISK_LABELS = {
   high_overtime: 'Yüksek mesai',
   low_leave_balance: 'Düşük izin bakiyesi',
   ending_report: 'Biten rapor',
+}
+
+const PAGE_SIZE = {
+  actions: 25,
+  roster: 35,
+  planner: 40,
+  risks: 25,
+}
+
+function asArray(value) {
+  return Array.isArray(value) ? value : []
 }
 
 function localDate() {
@@ -100,6 +111,48 @@ function SectionTitle({ children, count, action }) {
   )
 }
 
+function ProgressiveFooter({ shown, total, pageSize, onMore, label = 'Liste' }) {
+  if (!total || shown >= total) return null
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, padding: 8, borderTop: '1px solid var(--border)', background: 'var(--surface2)' }}>
+      <span style={{ color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: 9 }}>{shown} / {total} gosteriliyor</span>
+      <button type="button" className="btn btn-ghost btn-sm" onClick={onMore} aria-label={`${label}: daha fazla goster`}>
+        {Math.min(pageSize, total - shown)} daha goster
+      </button>
+    </div>
+  )
+}
+
+class OperationsErrorBoundary extends Component {
+  state = { error: null }
+
+  static getDerivedStateFromError(error) {
+    return { error }
+  }
+
+  componentDidUpdate(previousProps) {
+    if (previousProps.resetKey !== this.props.resetKey && this.state.error) {
+      this.setState({ error: null })
+    }
+  }
+
+  retry = () => {
+    this.setState({ error: null })
+    this.props.onRetry?.()
+  }
+
+  render() {
+    if (!this.state.error) return this.props.children
+    return (
+      <div role="alert" style={{ display: 'grid', justifyItems: 'start', gap: 8, padding: 16, border: '1px solid color-mix(in srgb, var(--red) 45%, var(--border))', borderRadius: 8, background: 'var(--surface)', color: 'var(--red)' }}>
+        <strong style={{ fontFamily: 'var(--display)', fontSize: 12 }}>OPERASYON EKRANI ACILAMADI</strong>
+        <span style={{ color: 'var(--text2)', fontSize: 10 }}>Verilerden biri beklenmeyen bicimde geldi. Sayfayi kapatmadan tekrar deneyebilirsiniz.</span>
+        <button type="button" className="btn btn-primary btn-sm" onClick={this.retry}>Tekrar dene</button>
+      </div>
+    )
+  }
+}
+
 function MetricBand({ metrics }) {
   const items = [
     ['Aktif personel', metrics.active_staff, 'var(--text)'],
@@ -130,9 +183,38 @@ function MetricBand({ metrics }) {
 }
 
 function RosterTable({ rows, onPersonClick }) {
+  const [search, setSearch] = useState('')
+  const [stateFilter, setStateFilter] = useState('all')
+  const [limit, setLimit] = useState(PAGE_SIZE.roster)
+  const filtered = useMemo(() => {
+    const needle = search.trim().toLocaleLowerCase('tr-TR')
+    return rows.filter(row => {
+      if (stateFilter !== 'all' && row.attendance_state !== stateFilter) return false
+      if (!needle) return true
+      return `${row.full_name || ''} ${row.dept_name || ''} ${row.role_name || ''} ${row.work_location_name || ''}`
+        .toLocaleLowerCase('tr-TR').includes(needle)
+    })
+  }, [rows, search, stateFilter])
+  const visibleRows = filtered.slice(0, limit)
+  useEffect(() => setLimit(PAGE_SIZE.roster), [search, stateFilter, rows.length])
   return (
-    <div style={{ overflow: 'auto', maxHeight: 440 }}>
-      <table className="data-table" style={{ minWidth: 820, fontSize: 10 }}>
+    <div>
+      <div style={{ display: 'flex', gap: 6, padding: 8, borderBottom: '1px solid var(--border)', overflowX: 'auto' }}>
+        <input className="form-input" value={search} onChange={event => setSearch(event.target.value)} placeholder="Personel, rol veya nokta ara" aria-label="Gunluk personel ara" style={{ minWidth: 190, flex: 1 }} />
+        <select className="form-input" value={stateFilter} onChange={event => setStateFilter(event.target.value)} aria-label="Gunluk durum filtresi" style={{ width: 150 }}>
+          <option value="all">Tum durumlar</option>
+          <option value="worked">Calisti</option>
+          <option value="pending_scan">Kart bekleyen</option>
+          <option value="review">Kontrol gerekli</option>
+          <option value="on_leave">Izinli</option>
+          <option value="off">OFF</option>
+          <option value="absent">Devamsiz</option>
+          <option value="unassigned">Vardiya yok</option>
+          <option value="unplanned_scan">Plansiz okutma</option>
+        </select>
+      </div>
+      <div style={{ overflow: 'auto', maxHeight: 440 }}>
+        <table className="data-table" style={{ minWidth: 820, fontSize: 10 }}>
         <thead style={{ position: 'sticky', top: 0, zIndex: 2 }}>
           <tr>
             <th>Personel</th><th>Departman / Rol</th><th>Vardiya</th><th>Calisma noktasi</th>
@@ -140,8 +222,8 @@ function RosterTable({ rows, onPersonClick }) {
           </tr>
         </thead>
         <tbody>
-          {rows.map(row => (
-            <tr key={row.schedule_id || `unassigned-${row.staff_id}`} style={{ background: ['pending_scan', 'review', 'unplanned_scan'].includes(row.attendance_state) ? 'color-mix(in srgb, var(--red) 5%, transparent)' : undefined }}>
+          {visibleRows.map(row => (
+            <tr data-testid="operations-roster-row" key={row.schedule_id || `unassigned-${row.staff_id}`} style={{ background: ['pending_scan', 'review', 'unplanned_scan'].includes(row.attendance_state) ? 'color-mix(in srgb, var(--red) 5%, transparent)' : undefined }}>
               <td>
                 <button type="button" onClick={() => onPersonClick?.(row.staff_id)} style={{ border: 0, background: 'none', color: 'var(--text)', padding: 0, cursor: 'pointer', fontWeight: 800, textAlign: 'left' }}>
                   {row.full_name}
@@ -157,15 +239,18 @@ function RosterTable({ rows, onPersonClick }) {
               <td style={{ textAlign: 'right', fontFamily: 'var(--mono)' }}>{Number(row.overtime_hours || 0) || '-'}</td>
             </tr>
           ))}
-          {!rows.length && <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--text3)', padding: 28 }}>Bu tarih icin vardiya kaydi yok.</td></tr>}
+          {!filtered.length && <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--text3)', padding: 28 }}>Filtreye uyan personel kaydi yok.</td></tr>}
         </tbody>
       </table>
+      </div>
+      <ProgressiveFooter shown={visibleRows.length} total={filtered.length} pageSize={PAGE_SIZE.roster} onMore={() => setLimit(current => current + PAGE_SIZE.roster)} label="Gunluk personel" />
     </div>
   )
 }
 
 function ActionCenter({ rows, onPersonClick, onResolveException, resolvingExceptionId }) {
   const [filter, setFilter] = useState('all')
+  const [limit, setLimit] = useState(PAGE_SIZE.actions)
   const filtered = filter === 'all'
     ? rows
     : filter === 'urgent'
@@ -180,6 +265,8 @@ function ActionCenter({ rows, onPersonClick, onResolveException, resolvingExcept
     ['attendance', 'Yoklama'],
     ['request', 'Talepler'],
   ]
+  const visibleRows = filtered.slice(0, limit)
+  useEffect(() => setLimit(PAGE_SIZE.actions), [filter, rows.length])
   return (
     <div>
       <div style={{ display: 'flex', gap: 4, padding: 8, borderBottom: '1px solid var(--border)', overflowX: 'auto' }}>
@@ -198,8 +285,8 @@ function ActionCenter({ rows, onPersonClick, onResolveException, resolvingExcept
         })}
       </div>
       <div style={{ overflow: 'auto', maxHeight: 390 }}>
-        {filtered.map(row => (
-          <div key={row.key} style={{ display: 'grid', gridTemplateColumns: '10px 70px minmax(150px, .7fr) minmax(220px, 1.4fr) auto', gap: 9, alignItems: 'center', padding: '8px 12px', borderBottom: '1px solid var(--border)', minWidth: 720 }}>
+        {visibleRows.map(row => (
+          <div data-testid="operations-action-row" key={row.key} style={{ display: 'grid', gridTemplateColumns: '10px 70px minmax(150px, .7fr) minmax(220px, 1.4fr) auto', gap: 9, alignItems: 'center', padding: '8px 12px', borderBottom: '1px solid var(--border)', minWidth: 720 }}>
             <span style={{ width: 8, height: 8, borderRadius: '50%', background: row.severity === 'critical' ? 'var(--red)' : row.severity === 'warning' ? 'var(--accent)' : 'var(--blue)' }} />
             <span style={{ color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: 8, textTransform: 'uppercase' }}>{ACTION_CATEGORY_LABELS[row.category] || row.category}</span>
             <button type="button" onClick={() => row.staff_id && onPersonClick?.(row.staff_id)} disabled={!row.staff_id}
@@ -218,6 +305,7 @@ function ActionCenter({ rows, onPersonClick, onResolveException, resolvingExcept
         ))}
         {!filtered.length && <div style={{ padding: 20, color: 'var(--green)', fontSize: 10, textAlign: 'center' }}>Bu filtrede bekleyen aksiyon yok.</div>}
       </div>
+      <ProgressiveFooter shown={visibleRows.length} total={filtered.length} pageSize={PAGE_SIZE.actions} onMore={() => setLimit(current => current + PAGE_SIZE.actions)} label="Aksiyonlar" />
     </div>
   )
 }
@@ -228,12 +316,15 @@ function DailyPlanner({ rows, shiftDefs, workLocations, date, onApply, onClose, 
   const [mode, setMode] = useState('scheduled')
   const [shiftDefId, setShiftDefId] = useState('')
   const [workLocationId, setWorkLocationId] = useState('')
+  const [limit, setLimit] = useState(PAGE_SIZE.planner)
   const visibleRows = useMemo(() => {
     const needle = search.trim().toLocaleLowerCase('tr-TR')
     if (!needle) return rows
     return rows.filter(row => `${row.full_name || ''} ${row.dept_name || ''} ${row.role_name || ''} ${row.work_location_name || ''}`
       .toLocaleLowerCase('tr-TR').includes(needle))
   }, [rows, search])
+  const displayedRows = visibleRows.slice(0, limit)
+  useEffect(() => setLimit(PAGE_SIZE.planner), [search, rows.length])
   const allVisibleSelected = visibleRows.length > 0 && visibleRows.every(row => selected.has(row.staff_id))
   const selectedRows = rows.filter(row => selected.has(row.staff_id))
   const toggleAllVisible = () => {
@@ -275,7 +366,7 @@ function DailyPlanner({ rows, shiftDefs, workLocations, date, onApply, onClose, 
             <table className="data-table" style={{ minWidth: 680, fontSize: 10 }}>
               <thead style={{ position: 'sticky', top: 0, zIndex: 2 }}><tr><th style={{ width: 36 }}><input type="checkbox" aria-label="Gorunen personelin tumunu sec" checked={allVisibleSelected} onChange={toggleAllVisible} /></th><th>Personel</th><th>Departman / Rol</th><th>Ana nokta</th><th>Kart</th></tr></thead>
               <tbody>
-                {visibleRows.map(row => (
+                {displayedRows.map(row => (
                   <tr key={row.staff_id} onClick={() => toggleRow(row.staff_id)} style={{ cursor: 'pointer', background: selected.has(row.staff_id) ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : undefined }}>
                     <td onClick={event => event.stopPropagation()}><input type="checkbox" aria-label={`${row.full_name} sec`} checked={selected.has(row.staff_id)} onChange={() => toggleRow(row.staff_id)} /></td>
                     <td><strong>{row.full_name}</strong><span style={{ display: 'block', color: 'var(--text3)', fontSize: 8 }}>{row.position || '-'}</span></td>
@@ -288,6 +379,7 @@ function DailyPlanner({ rows, shiftDefs, workLocations, date, onApply, onClose, 
               </tbody>
             </table>
           </div>
+          <ProgressiveFooter shown={displayedRows.length} total={visibleRows.length} pageSize={PAGE_SIZE.planner} onMore={() => setLimit(current => current + PAGE_SIZE.planner)} label="Planlama personeli" />
         </div>
         <div style={{ padding: 12, display: 'grid', alignContent: 'start', gap: 12 }}>
           <div>
@@ -367,9 +459,13 @@ function RequestList({ leaves, overtime, onPersonClick }) {
 }
 
 function RiskList({ rows, onPersonClick }) {
+  const [limit, setLimit] = useState(PAGE_SIZE.risks)
+  const visibleRows = rows.slice(0, limit)
+  useEffect(() => setLimit(PAGE_SIZE.risks), [rows.length])
   return (
-    <div style={{ overflow: 'auto', maxHeight: 300 }}>
-      {rows.map((row, index) => (
+    <div>
+      <div style={{ overflow: 'auto', maxHeight: 300 }}>
+      {visibleRows.map((row, index) => (
         <button key={`${row.type}-${row.staff_id || index}-${row.value}`} type="button" onClick={() => row.staff_id && onPersonClick?.(row.staff_id)} style={{ width: '100%', display: 'grid', gridTemplateColumns: '10px 120px minmax(0, 1fr) auto', alignItems: 'center', gap: 8, border: 0, borderBottom: '1px solid var(--border)', background: 'transparent', color: 'var(--text)', padding: '8px 12px', textAlign: 'left', cursor: row.staff_id ? 'pointer' : 'default' }}>
           <span style={{ width: 8, height: 8, borderRadius: '50%', background: row.severity === 'critical' ? 'var(--red)' : row.severity === 'warning' ? 'var(--accent)' : 'var(--blue)' }} />
           <span style={{ color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: 9 }}>{RISK_LABELS[row.type] || row.type}</span>
@@ -378,6 +474,8 @@ function RiskList({ rows, onPersonClick }) {
         </button>
       ))}
       {!rows.length && <div style={{ padding: 16, color: 'var(--green)', fontSize: 10 }}>Aylik risk uyarisi yok.</div>}
+      </div>
+      <ProgressiveFooter shown={visibleRows.length} total={rows.length} pageSize={PAGE_SIZE.risks} onMore={() => setLimit(current => current + PAGE_SIZE.risks)} label="Riskler" />
     </div>
   )
 }
@@ -426,19 +524,26 @@ export function PuantajOperationsContent({
   planning, shiftDefs = [], workLocations = [],
 }) {
   const metrics = payload?.metrics || {}
-  const roster = payload?.roster || []
-  const unassignedStaff = payload?.unassigned_staff || []
+  const roster = asArray(payload?.roster)
+  const unassignedStaff = asArray(payload?.unassigned_staff)
   const dailyRows = [...roster, ...unassignedStaff]
   const pending = payload?.pending || { leaves: [], overtime: [] }
   const breakdowns = payload?.breakdowns || { departments: [], roles: [], locations: [] }
+  const actions = asArray(payload?.actions)
+  const coverage = asArray(payload?.coverage)
+  const dutyManagers = asArray(payload?.duty_managers)
+  const risks = asArray(payload?.risks)
+  const trends = asArray(payload?.trends)
+  const pendingLeaves = asArray(pending.leaves)
+  const pendingOvertime = asArray(pending.overtime)
   return (
     <div style={{ display: 'grid', gap: 12 }}>
       <MetricBand metrics={metrics} />
 
       <section style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', background: 'var(--surface)' }}>
-        <SectionTitle count={`${payload?.action_summary?.by_severity?.critical || 0} kritik / ${payload?.actions?.length || 0} toplam`}>AKSIYON MERKEZI</SectionTitle>
+        <SectionTitle count={`${payload?.action_summary?.by_severity?.critical || 0} kritik / ${actions.length} toplam`}>AKSIYON MERKEZI</SectionTitle>
         <ActionCenter
-          rows={payload?.actions || []}
+          rows={actions}
           onPersonClick={onPersonClick}
           onResolveException={onResolveException}
           resolvingExceptionId={resolvingExceptionId}
@@ -465,34 +570,34 @@ export function PuantajOperationsContent({
         <div style={{ display: 'grid', gap: 12 }}>
           <section style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', background: 'var(--surface)' }}>
             <SectionTitle count={`${metrics.coverage_missing || 0} eksik`}>KAPSAMA</SectionTitle>
-            <CoverageList rows={payload?.coverage || []} />
+            <CoverageList rows={coverage} />
           </section>
           <section style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', background: 'var(--surface)' }}>
-            <SectionTitle count={(pending.leaves?.length || 0) + (pending.overtime?.length || 0)}>BEKLEYEN TALEPLER</SectionTitle>
-            <RequestList leaves={pending.leaves || []} overtime={pending.overtime || []} onPersonClick={onPersonClick} />
+            <SectionTitle count={pendingLeaves.length + pendingOvertime.length}>BEKLEYEN TALEPLER</SectionTitle>
+            <RequestList leaves={pendingLeaves} overtime={pendingOvertime} onPersonClick={onPersonClick} />
           </section>
           <section style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', background: 'var(--surface)' }}>
-            <SectionTitle count={payload?.duty_managers?.length || 0}>GOREVLI AMIR</SectionTitle>
-            {(payload?.duty_managers || []).map(row => <button key={row.staff_id} type="button" className="btn btn-ghost btn-sm" onClick={() => onPersonClick?.(row.staff_id)} style={{ width: '100%', border: 0, borderBottom: '1px solid var(--border)', borderRadius: 0, justifyContent: 'space-between' }}><span>{row.full_name}</span><span style={{ color: 'var(--text3)' }}>{row.shift_name || row.role_name || '-'}</span></button>)}
-            {!payload?.duty_managers?.length && <div style={{ padding: 16, color: 'var(--accent)', fontSize: 10 }}>Bu gun icin amir atamasi bulunamadi.</div>}
+            <SectionTitle count={dutyManagers.length}>GOREVLI AMIR</SectionTitle>
+            {dutyManagers.map(row => <button key={row.staff_id} type="button" className="btn btn-ghost btn-sm" onClick={() => onPersonClick?.(row.staff_id)} style={{ width: '100%', border: 0, borderBottom: '1px solid var(--border)', borderRadius: 0, justifyContent: 'space-between' }}><span>{row.full_name}</span><span style={{ color: 'var(--text3)' }}>{row.shift_name || row.role_name || '-'}</span></button>)}
+            {!dutyManagers.length && <div style={{ padding: 16, color: 'var(--accent)', fontSize: 10 }}>Bu gun icin amir atamasi bulunamadi.</div>}
           </section>
         </div>
       </div>
 
       <section style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', background: 'var(--surface)' }}>
-        <SectionTitle count={payload?.risks?.length || 0}>AYLIK RISK VE UYARI KUYRUGU</SectionTitle>
-        <RiskList rows={payload?.risks || []} onPersonClick={onPersonClick} />
+        <SectionTitle count={risks.length}>AYLIK RISK VE UYARI KUYRUGU</SectionTitle>
+        <RiskList rows={risks} onPersonClick={onPersonClick} />
       </section>
 
       <section style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', background: 'var(--surface)' }}>
         <SectionTitle>GUN GUN OPERASYON TRENDI</SectionTitle>
-        <TrendTable rows={payload?.trends || []} selectedDate={selectedDate} onSelectDate={onSelectedDate} />
+        <TrendTable rows={trends} selectedDate={selectedDate} onSelectDate={onSelectedDate} />
       </section>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))', gap: 12, alignItems: 'start' }}>
-        <section style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', background: 'var(--surface)' }}><SectionTitle>DEPARTMAN / MALIYET</SectionTitle><BreakdownTable rows={breakdowns.departments || []} showCost /></section>
-        <section style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', background: 'var(--surface)' }}><SectionTitle>ROL KIRILIMI</SectionTitle><BreakdownTable rows={breakdowns.roles || []} /></section>
-        <section style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', background: 'var(--surface)' }}><SectionTitle>LOKAL / NOKTA KIRILIMI</SectionTitle><BreakdownTable rows={breakdowns.locations || []} /></section>
+        <section style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', background: 'var(--surface)' }}><SectionTitle>DEPARTMAN / MALIYET</SectionTitle><BreakdownTable rows={asArray(breakdowns.departments)} showCost /></section>
+        <section style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', background: 'var(--surface)' }}><SectionTitle>ROL KIRILIMI</SectionTitle><BreakdownTable rows={asArray(breakdowns.roles)} /></section>
+        <section style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', background: 'var(--surface)' }}><SectionTitle>LOKAL / NOKTA KIRILIMI</SectionTitle><BreakdownTable rows={asArray(breakdowns.locations)} /></section>
       </div>
     </div>
   )
@@ -587,21 +692,23 @@ export default function PuantajOperationsView({ month, deptFilter, onPersonClick
       {isLoading && <div style={{ padding: 32, textAlign: 'center', color: 'var(--text3)' }}>Operasyon verileri yukleniyor.</div>}
       {error && <div style={{ padding: 14, border: '1px solid color-mix(in srgb, var(--red) 45%, var(--border))', color: 'var(--red)', borderRadius: 8 }}>{error.response?.data?.error || error.message}</div>}
       {data && (
-        <PuantajOperationsContent
-          payload={data}
-          selectedDate={selectedDate}
-          onSelectedDate={setSelectedDate}
-          onPersonClick={onPersonClick}
-          onResolveException={(id, status) => resolveExceptionMutation.mutate({ id, status })}
-          resolvingExceptionId={resolveExceptionMutation.isPending ? resolveExceptionMutation.variables?.id : null}
-          plannerOpen={plannerOpen}
-          onPlannerOpen={() => setPlannerOpen(true)}
-          onPlannerClose={() => setPlannerOpen(false)}
-          onApplyPlan={plan => planMutation.mutate(plan)}
-          planning={planMutation.isPending}
-          shiftDefs={shiftDefs}
-          workLocations={workLocations}
-        />
+        <OperationsErrorBoundary resetKey={`${month}:${selectedDate}:${deptFilter}:${data?.generated_at || ''}`} onRetry={() => refetch()}>
+          <PuantajOperationsContent
+            payload={data}
+            selectedDate={selectedDate}
+            onSelectedDate={setSelectedDate}
+            onPersonClick={onPersonClick}
+            onResolveException={(id, status) => resolveExceptionMutation.mutate({ id, status })}
+            resolvingExceptionId={resolveExceptionMutation.isPending ? resolveExceptionMutation.variables?.id : null}
+            plannerOpen={plannerOpen}
+            onPlannerOpen={() => setPlannerOpen(true)}
+            onPlannerClose={() => setPlannerOpen(false)}
+            onApplyPlan={plan => planMutation.mutate(plan)}
+            planning={planMutation.isPending}
+            shiftDefs={asArray(shiftDefs)}
+            workLocations={asArray(workLocations)}
+          />
+        </OperationsErrorBoundary>
       )}
     </div>
   )

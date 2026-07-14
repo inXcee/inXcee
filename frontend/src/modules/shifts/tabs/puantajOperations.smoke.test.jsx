@@ -93,6 +93,64 @@ describe('Puantaj operations workspace', () => {
     expect(screen.getAllByText('OTC Yemekhane').length).toBeGreaterThan(1)
   })
 
+  it('keeps large operation queues bounded and expands them on demand', () => {
+    const largePayload = {
+      ...payload,
+      actions: Array.from({ length: 80 }, (_, index) => ({
+        key: `action-${index}`,
+        category: index % 2 ? 'schedule' : 'card',
+        severity: index < 3 ? 'critical' : 'warning',
+        staff_id: index + 1,
+        title: `Aksiyon ${index + 1}`,
+        detail: 'Kontrol bekliyor',
+        can_resolve: false,
+      })),
+      roster: Array.from({ length: 80 }, (_, index) => ({
+        schedule_id: index + 1,
+        staff_id: index + 1,
+        full_name: `Personel ${index + 1}`,
+        dept_name: index % 2 ? 'Mutfak' : 'Teknik',
+        role_name: 'Gorevli',
+        shift_name: 'Sabah',
+        start_hour: 6,
+        end_hour: 15,
+        attendance_state: 'worked',
+      })),
+      unassigned_staff: [],
+      risks: Array.from({ length: 60 }, (_, index) => ({
+        type: 'high_overtime',
+        severity: 'warning',
+        staff_id: index + 1,
+        full_name: `Riskli Personel ${index + 1}`,
+        value: index,
+        message: `${index + 1} saat mesai`,
+      })),
+    }
+
+    render(<PuantajOperationsContent payload={largePayload} selectedDate="2026-07-14" />)
+
+    expect(screen.getAllByTestId('operations-action-row')).toHaveLength(25)
+    expect(screen.getAllByTestId('operations-roster-row')).toHaveLength(35)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Aksiyonlar: daha fazla goster' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Gunluk personel: daha fazla goster' }))
+    expect(screen.getAllByTestId('operations-action-row')).toHaveLength(50)
+    expect(screen.getAllByTestId('operations-roster-row')).toHaveLength(70)
+
+    fireEvent.change(screen.getByLabelText('Gunluk personel ara'), { target: { value: 'Personel 80' } })
+    expect(screen.getAllByTestId('operations-roster-row')).toHaveLength(1)
+    expect(screen.getByText('Personel 80')).toBeInTheDocument()
+  })
+
+  it('shows empty operation sections when collection fields are malformed', () => {
+    render(<PuantajOperationsContent payload={{ metrics: {}, roster: {}, actions: null, pending: { leaves: {} }, breakdowns: { roles: {} } }} selectedDate="2026-07-14" />)
+
+    expect(screen.getByText('AKSIYON MERKEZI')).toBeInTheDocument()
+    expect(screen.getByText('Bu filtrede bekleyen aksiyon yok.')).toBeInTheDocument()
+    expect(screen.getByText('Filtreye uyan personel kaydi yok.')).toBeInTheDocument()
+    expect(screen.getByText('Aylik risk uyarisi yok.')).toBeInTheDocument()
+  })
+
   it('opens personnel and changes the selected trend day', () => {
     const onPersonClick = vi.fn()
     const onSelectedDate = vi.fn()
