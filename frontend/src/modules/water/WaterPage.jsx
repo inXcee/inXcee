@@ -5,6 +5,7 @@ import api from '../../shared/api/client.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
 import { useAuthStore } from '../../shared/store/authStore.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
+import WaterQueryErrorCenter from './components/WaterQueryErrorCenter.jsx'
 
 const toastOk = (m) => useToastStore.getState().addToast(m, 'success')
 const toastErr = (m) => useToastStore.getState().addToast(m, 'error')
@@ -183,10 +184,11 @@ export default function WaterPage() {
   const [truckFocus, setTruckFocus] = useState({ seq: 0, mode: 'new' })
   const { from, to, label } = monthBounds(ym.y, ym.m)
 
-  const { data: summary } = useQuery({
+  const summaryQuery = useQuery({
     queryKey: ['water-summary', from, to],
     queryFn: () => api.get('/water/summary', { params: { from, to } }).then(r => r.data),
   })
+  const summary = summaryQuery.data
 
   const shiftMonth = (delta) => setYm(({ y, m }) => {
     const idx = (y * 12 + (m - 1)) + delta
@@ -197,6 +199,8 @@ export default function WaterPage() {
   return (
     <div className="fade-up">
       <div className="sect"><div className="sect-title">SU TAKİP</div><div className="sect-line" /></div>
+
+      <WaterQueryErrorCenter />
 
       <AlertBand />
 
@@ -242,7 +246,7 @@ export default function WaterPage() {
         ].map(([lbl, val, color]) => (
           <div key={lbl} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '12px', padding: '12px 16px' }}>
             <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '1px' }}>{lbl}</div>
-            <div style={{ fontFamily: 'var(--display)', fontSize: '24px', color, marginTop: '2px' }}>{nf(val)}</div>
+            <div style={{ fontFamily: 'var(--display)', fontSize: '24px', color, marginTop: '2px' }}>{summaryQuery.isError ? '—' : nf(val)}</div>
           </div>
         ))}
       </div>
@@ -370,10 +374,11 @@ function WaterBoard({ from, to, label, lowItems }) {
   const [zoneActivity, setZoneActivity] = useState('all')
   const inputRefs = useRef({})
 
-  const { data: pivot, isLoading } = useQuery({
+  const pivotQuery = useQuery({
     queryKey: ['water-pivot', from, to],
     queryFn: () => api.get('/water/pivot', { params: { from, to } }).then(r => r.data),
   })
+  const { data: pivot, isLoading } = pivotQuery
   const { data: dayRows = [] } = useQuery({
     queryKey: ['water-day', day],
     queryFn: () => api.get('/water/movements', { params: { type: 'out', from: day, to: day } }).then(r => r.data),
@@ -977,7 +982,14 @@ function WaterBoard({ from, to, label, lowItems }) {
           </div>
         )}
 
-        {isLoading ? <div style={{ padding: '20px', color: 'var(--text3)' }}>Yükleniyor…</div> : !orderedCols.length ? (
+        {pivotQuery.isError ? (
+          <div style={{ padding: '18px 20px', borderTop: '1px solid var(--border)', color: 'var(--text2)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+            <span>Dağıtım matrisi alınamadı.</span>
+            <button type="button" className="btn btn-danger btn-sm" onClick={() => pivotQuery.refetch()} disabled={pivotQuery.isFetching}>
+              {pivotQuery.isFetching ? 'Deneniyor...' : 'Tekrar dene'}
+            </button>
+          </div>
+        ) : isLoading ? <div style={{ padding: '20px', color: 'var(--text3)' }}>Yükleniyor…</div> : !orderedCols.length ? (
           <div style={{ padding: '20px', color: 'var(--text3)' }}>Ürün tanımı yok — ⚙ Ayarlar’dan ekleyin.</div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
