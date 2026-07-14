@@ -1870,16 +1870,20 @@ function TruckArrivalPanel({ from, to, label }) {
   const qc = useQueryClient()
   const isManager = useAuthStore(s => s.user?.role === 'campus_manager')
   const fileRef = useRef(null)
+  const entryFormRef = useRef(null)
   const [open, setOpen] = useState(true)
   const [truckFilter, setTruckFilter] = useState('action')
   const [selectedTruckId, setSelectedTruckId] = useState(null)
+  const [editingTruckId, setEditingTruckId] = useState(null)
   const [photoForm, setPhotoForm] = useState({ truck_arrival_id: '', waybill_no: '', move_date: todayStr(), note: '' })
   const [form, setForm] = useState({
     arrival_date: todayStr(), arrival_start_time: '08:00', arrival_end_time: '17:00',
     mail_deadline_date: todayStr(), mail_deadline_time: '17:00',
     reminder_start_time: '08:00', reminder_end_time: '17:00', reminder_interval_minutes: 60,
     supplier_name: '', brand_id: '', driver_name: '', driver_tc: '', driver_phone: '',
-    plate: '', trailer_plate: '', center_email: '', note: '',
+    plate: '', trailer_plate: '', identity_type: 'tc', visit_company: '',
+    host_person_name: '', host_person_phone: '', entry_reason: 'SU AMAÇLI NAKLİYE',
+    work_area: '', center_email: '', note: '',
   })
 
   const { data: trucks = [] } = useQuery({
@@ -1902,11 +1906,22 @@ function TruckArrivalPanel({ from, to, label }) {
     qc.invalidateQueries({ queryKey: ['water-alerts'] })
   }
   const create = useMutation({
-    mutationFn: () => api.post('/water/truck-arrivals', { ...form, brand_id: form.brand_id || null }),
+    mutationFn: () => {
+      const body = { ...form, brand_id: form.brand_id || null }
+      return editingTruckId
+        ? api.put(`/water/truck-arrivals/${editingTruckId}`, body)
+        : api.post('/water/truck-arrivals', body)
+    },
     onSuccess: () => {
       invalidate()
-      setForm(f => ({ ...f, driver_name: '', driver_tc: '', driver_phone: '', plate: '', trailer_plate: '', note: '' }))
-      toastOk('Tır ön bildirimi kaydedildi')
+      setForm(f => ({
+        ...f,
+        driver_name: '', driver_tc: '', driver_phone: '', plate: '', trailer_plate: '',
+        host_person_name: '', host_person_phone: '', work_area: '', note: '',
+        status: 'planned',
+      }))
+      toastOk(editingTruckId ? 'Personel giriş ve tır kaydı güncellendi' : 'Tır ön bildirimi kaydedildi')
+      setEditingTruckId(null)
     },
     onError: e => toastErr(errMsg(e, 'Tır kaydı oluşturulamadı')),
   })
@@ -1972,8 +1987,24 @@ function TruckArrivalPanel({ from, to, label }) {
     supplier_name: t.supplier_name || '', brand_id: t.brand_id || null,
     driver_name: t.driver_name || '', driver_tc: t.driver_tc || '', driver_phone: t.driver_phone || '',
     plate: t.plate, trailer_plate: t.trailer_plate || '', center_email: t.center_email || '',
+    identity_type: t.identity_type || 'tc', visit_company: t.visit_company || '',
+    host_person_name: t.host_person_name || '', host_person_phone: t.host_person_phone || '',
+    entry_reason: t.entry_reason || 'SU AMAÇLI NAKLİYE', work_area: t.work_area || '',
     note: t.note || '', status: t.status, ...patch,
   })
+  const editTruck = (t) => {
+    setEditingTruckId(t.id)
+    setForm({ ...truckPayload(t), brand_id: t.brand_id ? String(t.brand_id) : '' })
+    requestAnimationFrame(() => entryFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }))
+  }
+  const cancelTruckEdit = () => {
+    setEditingTruckId(null)
+    setForm(f => ({
+      ...f,
+      driver_name: '', driver_tc: '', driver_phone: '', plate: '', trailer_plate: '',
+      host_person_name: '', host_person_phone: '', work_area: '', note: '', status: 'planned',
+    }))
+  }
   const today = todayStr()
   const truckStats = useMemo(() => {
     const active = trucks.filter(t => !['arrived', 'cancelled'].includes(t.status))
@@ -2060,6 +2091,109 @@ function TruckArrivalPanel({ from, to, label }) {
       toastOk('Mail taslağı panoya kopyalandı')
     } catch {
       toastErr('Mail taslağı kopyalanamadı')
+    }
+  }
+
+  const downloadGateEntryExcel = async (t) => {
+    if (!t) return
+    try {
+      const ExcelJS = (await import('exceljs')).default
+      const wb = new ExcelJS.Workbook()
+      wb.creator = 'Şantiye Yatakhane Yönetim Sistemi'
+      wb.created = new Date()
+      wb.subject = 'Su nakliyesi personel günlük giriş bildirimi'
+
+      const entry = t.gate_entry || {}
+      const gate = wb.addWorksheet('PERSONEL GÜNLÜK GİRİŞ', {
+        pageSetup: { orientation: 'landscape', paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 1 },
+        views: [{ showGridLines: false }],
+      })
+      gate.mergeCells('A1:K1')
+      const title = gate.getCell('A1')
+      title.value = 'PERSONEL GÜNLÜK GİRİŞ'
+      title.font = { name: 'Times New Roman', size: 16, bold: true, color: { argb: 'FFFFFFFF' } }
+      title.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF155E75' } }
+      title.alignment = { horizontal: 'center', vertical: 'middle' }
+      gate.getRow(1).height = 30
+      gate.getRow(2).height = 8
+
+      const headers = [
+        'ADI SOYADI', 'T.C. KİMLİK / PASAPORT NUMARASI', 'TELEFON NUMARASI', 'ARAÇ PLAKASI',
+        'ZİYARET EDİLECEK FİRMA', 'ZİYARET EDİLECEK KİŞİ', 'ZİYARET EDİLECEK KİŞİ TELEFONU',
+        'GİRİŞ TARİHİ', 'GİRİŞ SAATİ', 'SAHA GİRİŞ NEDENİ', 'ÇALIŞMA YAPACAĞI BÖLGE',
+      ]
+      const values = [
+        entry.full_name || t.driver_name || '-',
+        `${entry.identity_label || (t.identity_type === 'passport' ? 'Pasaport' : 'T.C. Kimlik')}: ${entry.identity_no || t.driver_tc || '-'}`,
+        entry.phone || t.driver_phone || '-',
+        [entry.plate || t.plate, entry.trailer_plate || t.trailer_plate].filter(Boolean).join('\n'),
+        entry.visit_company || t.visit_company || '-',
+        entry.host_person_name || t.host_person_name || '-',
+        entry.host_person_phone || t.host_person_phone || '-',
+        entry.entry_date || t.arrival_date || '-',
+        [entry.entry_start_time || t.arrival_start_time, entry.entry_end_time || t.arrival_end_time].filter(Boolean).join('-'),
+        entry.entry_reason || t.entry_reason || 'SU AMAÇLI NAKLİYE',
+        entry.work_area || t.work_area || '-',
+      ]
+      gate.addRow([])
+      gate.addRow(headers)
+      gate.addRow(values)
+      gate.columns = [17, 23, 16, 16, 28, 22, 19, 13, 14, 20, 22].map(width => ({ width }))
+      gate.getRow(3).height = 46
+      gate.getRow(4).height = 72
+      for (let rowNo = 3; rowNo <= 4; rowNo += 1) {
+        gate.getRow(rowNo).eachCell(cell => {
+          cell.font = { name: 'Times New Roman', size: rowNo === 3 ? 9 : 11, bold: rowNo === 3 }
+          cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }
+          cell.border = {
+            top: { style: 'thin', color: { argb: 'FF334155' } },
+            left: { style: 'thin', color: { argb: 'FF334155' } },
+            bottom: { style: 'thin', color: { argb: 'FF334155' } },
+            right: { style: 'thin', color: { argb: 'FF334155' } },
+          }
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: rowNo === 3 ? 'FFD6EAF0' : 'FFFFFFFF' } }
+        })
+      }
+      gate.autoFilter = 'A3:K4'
+      gate.pageSetup.printArea = 'A1:K4'
+      gate.headerFooter.oddFooter = '&LŞantiye Su Takibi&C&F&R&P / &N'
+
+      const letter = wb.addWorksheet('RESMİ YAZI', {
+        pageSetup: { orientation: 'portrait', paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 1 },
+        views: [{ showGridLines: false }],
+      })
+      letter.columns = [{ width: 4 }, { width: 18 }, { width: 18 }, { width: 18 }, { width: 18 }, { width: 4 }]
+      letter.mergeCells('B2:E2')
+      letter.getCell('B2').value = 'SU AMAÇLI NAKLİYE PERSONEL GİRİŞ TALEBİ'
+      letter.getCell('B2').font = { name: 'Times New Roman', size: 15, bold: true, color: { argb: 'FF155E75' } }
+      letter.getCell('B2').alignment = { horizontal: 'center' }
+      letter.mergeCells('B4:E4')
+      letter.getCell('B4').value = `Konu: ${t.mail_preview?.subject || t.mail_subject || '-'}`
+      letter.getCell('B4').font = { name: 'Times New Roman', size: 11, bold: true }
+      letter.mergeCells('B6:E18')
+      letter.getCell('B6').value = t.mail_preview?.body || t.mail_body || ''
+      letter.getCell('B6').font = { name: 'Times New Roman', size: 11 }
+      letter.getCell('B6').alignment = { vertical: 'top', wrapText: true }
+      letter.getCell('B6').border = {
+        top: { style: 'thin', color: { argb: 'FF94A3B8' } }, left: { style: 'thin', color: { argb: 'FF94A3B8' } },
+        bottom: { style: 'thin', color: { argb: 'FF94A3B8' } }, right: { style: 'thin', color: { argb: 'FF94A3B8' } },
+      }
+      letter.getRow(6).height = 280
+      letter.mergeCells('B20:E20')
+      letter.getCell('B20').value = `Alıcı: ${t.mail_preview?.to || t.center_email || '-'}`
+      letter.getCell('B20').font = { name: 'Times New Roman', size: 10, italic: true, color: { argb: 'FF475569' } }
+      letter.pageSetup.printArea = 'B2:E20'
+
+      const buffer = await wb.xlsx.writeBuffer()
+      const blobUrl = URL.createObjectURL(new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }))
+      const a = document.createElement('a')
+      a.href = blobUrl
+      a.download = `su-nakliye-personel-giris-${t.arrival_date}-${String(t.plate || 'arac').replace(/\s+/g, '-')}.xlsx`
+      a.click()
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 1000)
+      toastOk('Personel giriş formu ve resmi yazı Excel olarak hazırlandı')
+    } catch {
+      toastErr('Personel giriş Exceli oluşturulamadı')
     }
   }
 
@@ -2177,7 +2311,13 @@ function TruckArrivalPanel({ from, to, label }) {
               </div>
             </section>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(118px, 1fr))', gap: '8px', alignItems: 'end', border: '1px solid var(--border)', background: 'var(--surface2)', borderRadius: '8px', padding: '10px' }}>
+          <div ref={entryFormRef} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(118px, 1fr))', gap: '8px', alignItems: 'end', border: `1px solid ${editingTruckId ? 'color-mix(in srgb, var(--amber) 55%, var(--border))' : 'var(--border)'}`, background: 'var(--surface2)', borderRadius: '8px', padding: '10px' }}>
+            {editingTruckId && (
+              <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', padding: '7px 9px', borderRadius: '7px', background: 'color-mix(in srgb, var(--amber) 12%, var(--surface))' }}>
+                <strong style={{ fontSize: '12px' }}>Kayıt #{editingTruckId} düzenleniyor</strong>
+                <button className="btn btn-ghost btn-sm" onClick={cancelTruckEdit}>Düzenlemeyi İptal</button>
+              </div>
+            )}
             <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: '8px', paddingBottom: '2px' }}>
               <span className="badge badge-blue">1</span>
               <strong style={{ fontSize: '12px' }}>Geliş, mail deadline ve kontrol aralığı</strong>
@@ -2195,17 +2335,23 @@ function TruckArrivalPanel({ from, to, label }) {
             <label className="form-label">Tedarikçi<input className="form-input" value={form.supplier_name} onChange={e => setForm(f => ({ ...f, supplier_name: e.target.value }))} /></label>
             <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: '8px', paddingTop: '8px', borderTop: '1px solid var(--border)' }}>
               <span className="badge badge-amber">2</span>
-              <strong style={{ fontSize: '12px' }}>Tırcı, araç ve ana merkez bilgileri</strong>
-              <span style={{ color: 'var(--text3)', fontSize: '11px' }}>eksik alanlar mail gönderimini bilinçli olarak durdurur</span>
+              <strong style={{ fontSize: '12px' }}>Personel giriş / güvenlik bilgileri</strong>
+              <span style={{ color: 'var(--text3)', fontSize: '11px' }}>fotoğraftaki günlük giriş formu ve resmi yazı aynı kayıttan hazırlanır</span>
             </div>
             <label className="form-label">Tırcı adı<input className="form-input" value={form.driver_name} onChange={e => setForm(f => ({ ...f, driver_name: e.target.value }))} /></label>
-            <label className="form-label">Sicil / Arşiv TC<input className="form-input" value={form.driver_tc} onChange={e => setForm(f => ({ ...f, driver_tc: e.target.value }))} /></label>
+            <label className="form-label">Kimlik türü<select className="form-select" value={form.identity_type} onChange={e => setForm(f => ({ ...f, identity_type: e.target.value }))}><option value="tc">T.C. Kimlik</option><option value="passport">Pasaport</option></select></label>
+            <label className="form-label">TC / Pasaport / Sicil no<input className="form-input" value={form.driver_tc} onChange={e => setForm(f => ({ ...f, driver_tc: e.target.value }))} /></label>
             <label className="form-label">Telefon<input className="form-input" value={form.driver_phone} onChange={e => setForm(f => ({ ...f, driver_phone: e.target.value }))} /></label>
             <label className="form-label">Plaka<input className="form-input" value={form.plate} onChange={e => setForm(f => ({ ...f, plate: e.target.value.toUpperCase() }))} /></label>
             <label className="form-label">Dorse<input className="form-input" value={form.trailer_plate} onChange={e => setForm(f => ({ ...f, trailer_plate: e.target.value.toUpperCase() }))} /></label>
+            <label className="form-label" style={{ gridColumn: '1 / -1' }}>Ziyaret edilecek firma<input className="form-input" value={form.visit_company} onChange={e => setForm(f => ({ ...f, visit_company: e.target.value }))} placeholder="AVS Küresel Gıda Tedarik ve Yönetim A.Ş." /></label>
+            <label className="form-label">Ziyaret edilecek kişi<input className="form-input" value={form.host_person_name} onChange={e => setForm(f => ({ ...f, host_person_name: e.target.value }))} /></label>
+            <label className="form-label">Yetkili telefonu<input className="form-input" value={form.host_person_phone} onChange={e => setForm(f => ({ ...f, host_person_phone: e.target.value }))} /></label>
+            <label className="form-label">Saha giriş nedeni<input className="form-input" value={form.entry_reason} onChange={e => setForm(f => ({ ...f, entry_reason: e.target.value }))} /></label>
+            <label className="form-label">Çalışma yapacağı bölge<input className="form-input" value={form.work_area} onChange={e => setForm(f => ({ ...f, work_area: e.target.value }))} placeholder="FPU Kamp Alanı" /></label>
             <label className="form-label">Ana merkez mail<input type="email" className="form-input" value={form.center_email} onChange={e => setForm(f => ({ ...f, center_email: e.target.value }))} /></label>
-            <label className="form-label" style={{ gridColumn: 'span 2' }}>Not<input className="form-input" value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} /></label>
-            <button className="btn btn-primary" disabled={!form.arrival_date || !form.plate.trim() || create.isPending} onClick={() => create.mutate()}>{create.isPending ? 'Kaydediliyor…' : 'Tır Kaydı Ekle'}</button>
+            <label className="form-label" style={{ gridColumn: '1 / -1' }}>Not<input className="form-input" value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} /></label>
+            <button className="btn btn-primary" disabled={!form.arrival_date || !form.plate.trim() || create.isPending} onClick={() => create.mutate()}>{create.isPending ? 'Kaydediliyor…' : editingTruckId ? 'Kaydı Güncelle' : 'Tır Kaydı Ekle'}</button>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.35fr) minmax(320px, .65fr)', gap: '12px', alignItems: 'start' }}>
@@ -2311,6 +2457,31 @@ function TruckArrivalPanel({ from, to, label }) {
                     </div>
                   </div>
 
+                  <div style={{ border: '1px solid color-mix(in srgb, var(--teal) 38%, var(--border))', borderRadius: '8px', background: 'color-mix(in srgb, var(--teal) 6%, var(--surface))', padding: '9px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'center', marginBottom: '7px' }}>
+                      <strong style={{ fontSize: '12px' }}>PERSONEL GİRİŞ KARTI</strong>
+                      <button className="btn btn-ghost btn-sm" onClick={() => downloadGateEntryExcel(selectedTruck)}>Giriş Exceli</button>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '6px 10px', fontSize: '11px' }}>
+                      {[
+                        ['Adı soyadı', selectedTruck.gate_entry?.full_name || selectedTruck.driver_name],
+                        ['Kimlik / sicil', `${selectedTruck.gate_entry?.identity_label || 'T.C. Kimlik'} · ${selectedTruck.gate_entry?.identity_no || selectedTruck.driver_tc || '—'}`],
+                        ['Telefon', selectedTruck.gate_entry?.phone || selectedTruck.driver_phone],
+                        ['Araç / dorse', selectedTruck.vehicle_summary],
+                        ['Ziyaret firması', selectedTruck.gate_entry?.visit_company || selectedTruck.visit_company],
+                        ['Ziyaret kişisi', [selectedTruck.gate_entry?.host_person_name || selectedTruck.host_person_name, selectedTruck.gate_entry?.host_person_phone || selectedTruck.host_person_phone].filter(Boolean).join(' · ')],
+                        ['Giriş tarihi / saati', `${selectedTruck.arrival_date} · ${selectedTruck.arrival_window}`],
+                        ['Giriş nedeni', selectedTruck.gate_entry?.entry_reason || selectedTruck.entry_reason],
+                        ['Çalışma bölgesi', selectedTruck.gate_entry?.work_area || selectedTruck.work_area],
+                      ].map(([key, value]) => (
+                        <div key={key} style={{ minWidth: 0 }}>
+                          <div style={{ color: 'var(--text3)', fontSize: '9px', textTransform: 'uppercase' }}>{key}</div>
+                          <strong style={{ display: 'block', overflowWrap: 'anywhere' }}>{value || '—'}</strong>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
                   <div style={{ border: '1px solid color-mix(in srgb, var(--blue) 35%, var(--border))', borderRadius: '8px', background: 'color-mix(in srgb, var(--blue) 6%, var(--surface))', padding: '9px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'center', marginBottom: '7px' }}>
                       <strong style={{ fontSize: '12px' }}>Ana merkez mail taslağı</strong>
@@ -2343,6 +2514,7 @@ function TruckArrivalPanel({ from, to, label }) {
 
                   <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                     {isManager && <button className="btn btn-primary btn-sm" disabled={!selectedTruck.mail_ready || sendMail.isPending} onClick={() => sendMail.mutate(selectedTruck.id)}>Mail Gönder</button>}
+                    <button className="btn btn-ghost btn-sm" onClick={() => editTruck(selectedTruck)}>Düzenle</button>
                     {!selectedTruck.mail_sent_at && <button className="btn btn-ghost btn-sm" onClick={() => markMail.mutate(selectedTruck.id)}>Mail atıldı</button>}
                     <button className="btn btn-ghost btn-sm" onClick={() => markChecked.mutate(selectedTruck.id)}>Kontrol edildi</button>
                     <button className="btn btn-ghost btn-sm" onClick={() => { setPhotoForm(f => ({ ...f, truck_arrival_id: String(selectedTruck.id), move_date: selectedTruck.arrival_date })); fileRef.current?.click() }}>Foto bağla</button>

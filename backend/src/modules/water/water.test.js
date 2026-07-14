@@ -1070,6 +1070,12 @@ describe('Su takip - Tir on bildirimleri ve irsaliye foto arsivi (W11)', () => {
       driver_phone: '05551112233',
       plate: '34 abc 123',
       trailer_plate: '34 drs 456',
+      identity_type: 'tc',
+      visit_company: 'AVS Küresel Gıda Tedarik ve Yönetim A.Ş.',
+      host_person_name: 'Sercan Sucu',
+      host_person_phone: '0539111344',
+      entry_reason: 'SU AMAÇLI NAKLİYE',
+      work_area: 'FPU KAMP ALANI',
       center_email: 'merkez@example.com',
       note: 'Ana kapidan giris',
     })
@@ -1087,10 +1093,27 @@ describe('Su takip - Tir on bildirimleri ve irsaliye foto arsivi (W11)', () => {
     expect(row.mail_phase).toBe('scheduled')
     expect(row.arrival_phase).toBe('scheduled')
     expect(row.check_plan_label).toBe('08:00-17:00 / 60 dk')
-    expect(row.mail_subject).toBe('Su tır giriş bildirimi - 2027-03-10 - 34 ABC 123')
+    expect(row.mail_subject).toBe('Su amaçlı nakliye personel giriş talebi - 2027-03-10 - 34 ABC 123')
     expect(row.mail_preview.to).toBe('merkez@example.com')
-    expect(row.mail_preview.body).toMatch(/Sicil \/ Arşiv TC: 12345678901/)
+    expect(row.mail_preview.body).toMatch(/10\.03\.2027 tarihinde 09:00-11:00 saatleri arasında Ahmet Yilmaz/)
+    expect(row.mail_preview.body).toMatch(/Personel ve araç girişinin sağlanması hususunda yardımlarınızı rica ederiz/)
+    expect(row.mail_preview.body).toMatch(/T\.C\. Kimlik \/ Sicil-Arşiv No: 12345678901/)
+    expect(row.mail_preview.body).toMatch(/Ziyaret edilecek kişi: Sercan Sucu/)
+    expect(row.mail_preview.body).toMatch(/Çalışma yapacağı bölge: FPU KAMP ALANI/)
+    expect(row.gate_entry).toMatchObject({
+      full_name: 'Ahmet Yilmaz', identity_type: 'tc', identity_no: '12345678901',
+      visit_company: 'AVS Küresel Gıda Tedarik ve Yönetim A.Ş.', host_person_name: 'Sercan Sucu',
+      entry_reason: 'SU AMAÇLI NAKLİYE', work_area: 'FPU KAMP ALANI', ready: true,
+    })
     expect(row.action_items).toContain('İrsaliye fotoğrafı henüz yok')
+  })
+
+  it('personel girişinde kimlik türü doğrulanır', async () => {
+    const invalid = await auth(request(app).post('/api/water/truck-arrivals')).send({
+      arrival_date: '2027-03-10', plate: '34 TEST 049', identity_type: 'ehliyet',
+    })
+    expect(invalid.status).toBe(400)
+    expect(invalid.body.error).toMatch(/Kimlik türü/)
   })
 
   it('mail bilgisi eksik tirda otomatik mail reddedilir; manuel isaretleme durumu mail_sent yapar', async () => {

@@ -719,11 +719,13 @@ export function createTruckArrival(row) {
       arrival_date, arrival_start_time, arrival_end_time, mail_deadline_date, mail_deadline_time,
       reminder_start_time, reminder_end_time, reminder_interval_minutes,
       supplier_name, brand_id, driver_name, driver_tc, driver_phone, plate, trailer_plate,
+      identity_type, visit_company, host_person_name, host_person_phone, entry_reason, work_area,
       center_email, status, note, created_by, updated_by
     ) VALUES(
       @arrival_date, @arrival_start_time, @arrival_end_time, @mail_deadline_date, @mail_deadline_time,
       @reminder_start_time, @reminder_end_time, @reminder_interval_minutes,
       @supplier_name, @brand_id, @driver_name, @driver_tc, @driver_phone, @plate, @trailer_plate,
+      @identity_type, @visit_company, @host_person_name, @host_person_phone, @entry_reason, @work_area,
       @center_email, @status, @note, @created_by, @updated_by
     )
   `).run(row).lastInsertRowid
@@ -738,6 +740,8 @@ export function updateTruckArrival(id, row) {
       reminder_interval_minutes=@reminder_interval_minutes,
       supplier_name=@supplier_name, brand_id=@brand_id, driver_name=@driver_name, driver_tc=@driver_tc,
       driver_phone=@driver_phone, plate=@plate, trailer_plate=@trailer_plate, center_email=@center_email,
+      identity_type=@identity_type, visit_company=@visit_company, host_person_name=@host_person_name,
+      host_person_phone=@host_person_phone, entry_reason=@entry_reason, work_area=@work_area,
       status=@status, note=@note, updated_by=@updated_by, updated_at=CURRENT_TIMESTAMP
     WHERE id=@id
   `).run({ ...row, id }).changes > 0

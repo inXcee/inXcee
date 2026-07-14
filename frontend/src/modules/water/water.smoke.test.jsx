@@ -136,6 +136,12 @@ vi.mock('../../shared/api/client.js', () => ({
           driver_phone: '0555 111 22 33',
           plate: '34 ABC 123',
           trailer_plate: '34 DRS 456',
+          identity_type: 'tc',
+          visit_company: 'AVS Küresel Gıda Tedarik ve Yönetim A.Ş.',
+          host_person_name: 'Sercan Sucu',
+          host_person_phone: '0539 111 33 44',
+          entry_reason: 'SU AMAÇLI NAKLİYE',
+          work_area: 'FPU KAMP ALANI',
           center_email: 'merkez@example.com',
           status: 'planned',
           status_label: 'Planlandi',
@@ -159,12 +165,20 @@ vi.mock('../../shared/api/client.js', () => ({
           next_check_time: '11:00',
           check_plan_label: '08:00-17:00 / 60 dk',
           vehicle_summary: '34 ABC 123 / 34 DRS 456',
-          mail_subject: 'Su tır giriş bildirimi - 2026-07-10 - 34 ABC 123',
-          mail_body: 'Merhaba,\\n\\nSu sevkiyatı için tır giriş ön bildirimi aşağıdadır.',
+          gate_entry: {
+            full_name: 'Ahmet Yilmaz', identity_type: 'tc', identity_label: 'T.C. Kimlik',
+            identity_no: '12345678901', phone: '0555 111 22 33', plate: '34 ABC 123',
+            trailer_plate: '34 DRS 456', visit_company: 'AVS Küresel Gıda Tedarik ve Yönetim A.Ş.',
+            host_person_name: 'Sercan Sucu', host_person_phone: '0539 111 33 44',
+            entry_date: '2026-07-10', entry_start_time: '08:00', entry_end_time: '12:00',
+            entry_reason: 'SU AMAÇLI NAKLİYE', work_area: 'FPU KAMP ALANI', ready: true, missing_fields: [],
+          },
+          mail_subject: 'Su amaçlı nakliye personel giriş talebi - 2026-07-10 - 34 ABC 123',
+          mail_body: 'Merhaba,\\n\\n10.07.2026 tarihinde Ahmet Yilmaz isimli kişinin su amaçlı nakliyesi olacaktır. Personel ve araç girişinin sağlanması hususunda yardımlarınızı rica ederiz.',
           mail_preview: {
             to: 'merkez@example.com',
-            subject: 'Su tır giriş bildirimi - 2026-07-10 - 34 ABC 123',
-            body: 'Merhaba,\\n\\nSu sevkiyatı için tır giriş ön bildirimi aşağıdadır.',
+            subject: 'Su amaçlı nakliye personel giriş talebi - 2026-07-10 - 34 ABC 123',
+            body: 'Merhaba,\\n\\n10.07.2026 tarihinde Ahmet Yilmaz isimli kişinin su amaçlı nakliyesi olacaktır. Personel ve araç girişinin sağlanması hususunda yardımlarınızı rica ederiz.',
             ready: true,
             missing_fields: [],
           },
@@ -195,6 +209,12 @@ describe('WaterPage tek-ekran pano smoke', () => {
     expect((await screen.findAllByText('IRS-2026-1')).length).toBeGreaterThan(0)
     expect(screen.getByText(/mail bekliyor/)).toBeInTheDocument()
     expect(screen.getByText('Ana merkez mail taslağı')).toBeInTheDocument()
+    expect(screen.getByText('Personel giriş / güvenlik bilgileri')).toBeInTheDocument()
+    expect(screen.getByText('PERSONEL GİRİŞ KARTI')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Giriş Exceli' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Düzenle' })).toBeInTheDocument()
+    expect(screen.getAllByText('FPU KAMP ALANI').length).toBeGreaterThan(0)
+    expect(screen.getByDisplayValue(/Personel ve araç girişinin sağlanması/)).toBeInTheDocument()
     expect(screen.getByText('Taslağı Kopyala')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Aksiyon/ })).toBeInTheDocument()
     expect(screen.getByText(/Saatlik kontrol plan/)).toBeInTheDocument()

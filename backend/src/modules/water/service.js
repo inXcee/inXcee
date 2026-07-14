@@ -789,6 +789,8 @@ function normalizeTruckPayload(data, userId, existing = null) {
   }
   const center_email = clean(data.center_email)
   if (center_email && !EMAIL_RE.test(center_email)) throw Object.assign(new Error('Ana merkez e-postası geçersiz'), { statusCode: 400 })
+  const identity_type = data.identity_type || existing?.identity_type || 'tc'
+  if (!['tc', 'passport'].includes(identity_type)) throw Object.assign(new Error('Kimlik türü TC veya pasaport olmalı'), { statusCode: 400 })
   const status = data.status || existing?.status || 'planned'
   if (!TRUCK_STATUS.has(status)) throw Object.assign(new Error('Geçersiz tır durumu'), { statusCode: 400 })
   return {
@@ -803,6 +805,12 @@ function normalizeTruckPayload(data, userId, existing = null) {
     driver_phone: clean(data.driver_phone),
     plate: plate.toUpperCase(),
     trailer_plate: clean(data.trailer_plate)?.toUpperCase() || null,
+    identity_type,
+    visit_company: clean(data.visit_company),
+    host_person_name: clean(data.host_person_name),
+    host_person_phone: clean(data.host_person_phone),
+    entry_reason: clean(data.entry_reason) || existing?.entry_reason || 'SU AMAÇLI NAKLİYE',
+    work_area: clean(data.work_area),
     center_email,
     status,
     note: clean(data.note),
@@ -818,6 +826,11 @@ const MAIL_FIELD_DEFS = [
   ['driver_phone', 'Telefon'],
   ['plate', 'Plaka'],
   ['trailer_plate', 'Dorse'],
+  ['visit_company', 'Ziyaret edilecek firma'],
+  ['host_person_name', 'Ziyaret edilecek kişi'],
+  ['host_person_phone', 'Ziyaret edilecek kişi telefonu'],
+  ['entry_reason', 'Saha giriş nedeni'],
+  ['work_area', 'Çalışma yapılacak bölge'],
   ['arrival_date', 'Geliş tarihi'],
   ['arrival_start_time', 'Geliş başlangıç'],
   ['arrival_end_time', 'Geliş bitiş'],
@@ -869,28 +882,40 @@ function nextReminderLabel(row, current) {
 }
 
 function truckMailSubject(row) {
-  return `Su tır giriş bildirimi - ${row.arrival_date} - ${row.plate}`
+  return `Su amaçlı nakliye personel giriş talebi - ${row.arrival_date} - ${row.plate}`
+}
+
+function trDateLabel(value) {
+  if (!isDate(value)) return value || '-'
+  const [year, month, day] = value.split('-')
+  return `${day}.${month}.${year}`
 }
 
 function truckMailBody(row) {
+  const identityLabel = row.identity_type === 'passport' ? 'Pasaport' : 'T.C. Kimlik'
+  const arrivalWindow = `${row.arrival_start_time}-${row.arrival_end_time}`
   return [
     'Merhaba,',
     '',
-    'Su sevkiyatı için tır giriş ön bildirimi aşağıdadır.',
+    `${trDateLabel(row.arrival_date)} tarihinde ${arrivalWindow} saatleri arasında ${row.driver_name || 'aşağıda bilgileri bulunan personelin'}, ${row.plate}${row.trailer_plate ? ` araç / ${row.trailer_plate} dorse` : ' plakalı araç'} ile ${row.work_area || 'belirtilen bölgede'} su amaçlı nakliyesi olacaktır. Personel ve araç girişinin sağlanması hususunda yardımlarınızı rica ederiz.`,
     '',
-    `Geliş tarihi: ${row.arrival_date}`,
-    `Geliş saat aralığı: ${row.arrival_start_time}-${row.arrival_end_time}`,
-    `Mail son saat: ${row.mail_deadline_date} ${row.mail_deadline_time}`,
-    `Kontrol planı: ${row.reminder_start_time}-${row.reminder_end_time} / ${row.reminder_interval_minutes || 60} dk`,
-    `Tedarikçi/marka: ${row.supplier_name || row.brand_name || '-'}`,
-    `Tırcı adı: ${row.driver_name || '-'}`,
-    `Sicil / Arşiv TC: ${row.driver_tc || '-'}`,
-    `Telefon: ${row.driver_phone || '-'}`,
-    `Plaka: ${row.plate}`,
-    `Dorse: ${row.trailer_plate || '-'}`,
+    'PERSONEL GÜNLÜK GİRİŞ BİLGİLERİ',
+    `Adı soyadı: ${row.driver_name || '-'}`,
+    `${identityLabel} / Sicil-Arşiv No: ${row.driver_tc || '-'}`,
+    `Telefon numarası: ${row.driver_phone || '-'}`,
+    `Araç plakası: ${row.plate}`,
+    `Dorse plakası: ${row.trailer_plate || '-'}`,
+    `Ziyaret edilecek firma: ${row.visit_company || '-'}`,
+    `Ziyaret edilecek kişi: ${row.host_person_name || '-'}`,
+    `Ziyaret edilecek kişi telefonu: ${row.host_person_phone || '-'}`,
+    `Giriş tarihi: ${trDateLabel(row.arrival_date)}`,
+    `Giriş saat aralığı: ${arrivalWindow}`,
+    `Saha giriş nedeni: ${row.entry_reason || 'SU AMAÇLI NAKLİYE'}`,
+    `Çalışma yapacağı bölge: ${row.work_area || '-'}`,
+    `Tedarikçi / marka: ${row.supplier_name || row.brand_name || '-'}`,
     row.note ? `Not: ${row.note}` : null,
     '',
-    'Bilgilerinize.',
+    'Bilgilerinize sunar, yardımlarınızı rica ederiz.',
   ].filter(Boolean).join('\n')
 }
 
@@ -1002,6 +1027,25 @@ function decorateTruck(row, now = new Date()) {
     identity_summary: [row.driver_name, row.driver_tc].filter(Boolean).join(' · ') || null,
     vehicle_summary: [row.plate, row.trailer_plate].filter(Boolean).join(' / '),
     contact_summary: [row.driver_phone, row.center_email].filter(Boolean).join(' · ') || null,
+    gate_entry: {
+      full_name: row.driver_name || null,
+      identity_type: row.identity_type || 'tc',
+      identity_label: row.identity_type === 'passport' ? 'Pasaport' : 'T.C. Kimlik',
+      identity_no: row.driver_tc || null,
+      phone: row.driver_phone || null,
+      plate: row.plate,
+      trailer_plate: row.trailer_plate || null,
+      visit_company: row.visit_company || null,
+      host_person_name: row.host_person_name || null,
+      host_person_phone: row.host_person_phone || null,
+      entry_date: row.arrival_date,
+      entry_start_time: row.arrival_start_time,
+      entry_end_time: row.arrival_end_time,
+      entry_reason: row.entry_reason || 'SU AMAÇLI NAKLİYE',
+      work_area: row.work_area || null,
+      ready: missing.length === 0,
+      missing_fields: missing,
+    },
     mail_subject: mailSubject,
     mail_body: mailBody,
     mail_preview: {
