@@ -1314,7 +1314,9 @@ export function markTruckCheckedService(id, userId) {
 }
 
 export function deleteTruckArrivalService(id) {
-  if (!q.deleteTruckArrival(id)) throw Object.assign(new Error('Tır kaydı bulunamadı'), { statusCode: 404 })
+  const result = q.deleteTruckArrival(id)
+  if (!result) throw Object.assign(new Error('Tır kaydı bulunamadı'), { statusCode: 404 })
+  return result
 }
 
 function trClock(now = new Date()) {

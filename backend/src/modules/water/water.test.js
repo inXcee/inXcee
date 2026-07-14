@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll } from 'vitest'
+import fs from 'node:fs'
 import request from 'supertest'
 import app from '../../app.js'
 import { initDB, getDB } from '../../shared/db/index.js'
@@ -6,6 +7,7 @@ import { seedDev } from '../../shared/db/seed.js'
 import PDFDocument from 'pdfkit'
 import { toBase, humanize, availableUnits, checkTruckArrivalAlerts, waterDailyDigest, buildReconciliationPDF, waterEscalations } from './service.js'
 import { reconciliationRow, reconciliationRows } from './queries.js'
+import { uploadFilePathFromUrl } from './file-lifecycle.js'
 
 let managerToken, laundryToken
 beforeAll(async () => {
@@ -1247,14 +1249,63 @@ describe('Su takip - Tir on bildirimleri ve irsaliye foto arsivi (W11)', () => {
     expect(photos.status).toBe(200)
     const photo = photos.body.find(x => x.id === uploaded.body.id)
     expect(photo).toBeTruthy()
-    expect(photo.photo_url).toMatch(/^\/uploads\//)
+    expect(photo.photo_url).toMatch(/^\/uploads\/water-waybill-/)
     expect(photo.plate).toBe('06 IRS 012')
     expect(photo.waybill_no).toBe('W11-IRS-001')
+    const filePath = uploadFilePathFromUrl(photo.photo_url)
+    expect(fs.existsSync(filePath)).toBe(true)
 
     const del = await auth(request(app).delete(`/api/water/waybill-photos/${uploaded.body.id}`))
     expect(del.status).toBe(200)
+    expect(del.body.file_status).toBe('deleted')
+    expect(fs.existsSync(filePath)).toBe(false)
     const after = await auth(request(app).get(`/api/water/waybill-photos?truck_arrival_id=${truck.body.id}`))
     expect(after.body.some(x => x.id === uploaded.body.id)).toBe(false)
+  })
+
+  it('tır silinince yalnız tıra bağlı fotoğrafı siler, stok girişine bağlı irsaliyeyi korur', async () => {
+    const product = await auth(request(app).post('/api/water/products')).send({
+      name: 'W11 Dosya Yasam Dongusu', unit_label: 'adet', units_per_case: 1, cases_per_pallet: 1,
+    })
+    const intake = await auth(request(app).post('/api/water/intake')).send({
+      product_id: product.body.id, input_qty: 5, input_unit: 'adet', move_date: '2027-03-13', waybill_no: 'W11-LIFE-IN',
+    })
+    const truck = await auth(request(app).post('/api/water/truck-arrivals')).send({
+      arrival_date: '2027-03-13', plate: '06 life 013',
+    })
+
+    const truckOnly = await auth(request(app).post('/api/water/waybill-photos'))
+      .field('truck_arrival_id', String(truck.body.id))
+      .field('move_date', '2027-03-13')
+      .attach('photo', jpeg, 'yalniz-tir.jpg')
+    const linked = await auth(request(app).post('/api/water/waybill-photos'))
+      .field('truck_arrival_id', String(truck.body.id))
+      .field('movement_id', String(intake.body.id))
+      .field('move_date', '2027-03-13')
+      .attach('photo', jpeg, 'stok-girisi.jpg')
+
+    const truckOnlyRow = getDB().prepare('SELECT * FROM water_waybill_photos WHERE id=?').get(truckOnly.body.id)
+    const linkedRow = getDB().prepare('SELECT * FROM water_waybill_photos WHERE id=?').get(linked.body.id)
+    const truckOnlyPath = uploadFilePathFromUrl(truckOnlyRow.photo_url)
+    const linkedPath = uploadFilePathFromUrl(linkedRow.photo_url)
+    expect(fs.existsSync(truckOnlyPath)).toBe(true)
+    expect(fs.existsSync(linkedPath)).toBe(true)
+
+    const deleted = await auth(request(app).delete(`/api/water/truck-arrivals/${truck.body.id}`))
+    expect(deleted.status).toBe(200)
+    expect(deleted.body).toMatchObject({
+      deleted_photo_count: 1, preserved_photo_count: 1, file_cleanup_pending: 0,
+    })
+    expect(getDB().prepare('SELECT * FROM water_waybill_photos WHERE id=?').get(truckOnly.body.id)).toBeUndefined()
+    expect(fs.existsSync(truckOnlyPath)).toBe(false)
+
+    const preserved = getDB().prepare('SELECT * FROM water_waybill_photos WHERE id=?').get(linked.body.id)
+    expect(preserved).toMatchObject({ truck_arrival_id: null, movement_id: intake.body.id })
+    expect(fs.existsSync(linkedPath)).toBe(true)
+
+    const removePreserved = await auth(request(app).delete(`/api/water/waybill-photos/${linked.body.id}`))
+    expect(removePreserved.status).toBe(200)
+    expect(fs.existsSync(linkedPath)).toBe(false)
   })
 
   it('dakikalik kontrol mail deadline ve gelis araligi icin bildirim uretir', async () => {

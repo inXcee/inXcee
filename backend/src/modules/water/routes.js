@@ -1,10 +1,10 @@
 import { Router } from 'express'
 import PDFDocument from 'pdfkit'
 import fs from 'node:fs'
-import path from 'node:path'
 import { requireRole } from '../../shared/auth/middleware.js'
 import { logAudit } from '../../shared/audit.js'
-import { upload, verifyMagicBytes } from '../../shared/uploads/middleware.js'
+import { createImageUpload, verifyMagicBytes } from '../../shared/uploads/middleware.js'
+import { removeUploadFile } from './file-lifecycle.js'
 import {
   productsService, createProductService, updateProductService, deleteProductService,
   brandsService, createBrandService, updateBrandService, deleteBrandService,
@@ -26,6 +26,7 @@ import {
 export const waterRouter = Router()
 const mgr = requireRole('campus_manager', 'shift_supervisor')
 const managerOnly = requireRole('campus_manager')
+const waybillUpload = createImageUpload('water-waybill')
 
 const fail = (next, e) => next(e)
 
@@ -268,9 +269,17 @@ waterRouter.put('/truck-arrivals/:id', ...mgr, (req, res, next) => {
 })
 waterRouter.delete('/truck-arrivals/:id', ...managerOnly, (req, res, next) => {
   try {
-    deleteTruckArrivalService(+req.params.id)
-    logAudit(req.user.id, 'water_truck_delete', 'water', +req.params.id, '')
-    res.json({ ok: true })
+    const result = deleteTruckArrivalService(+req.params.id)
+    const fileResults = result.deleted_photos.map(photo => removeUploadFile(photo.photo_url))
+    const pending = fileResults.filter(item => item.status === 'failed').length
+    const detail = `foto_silinen:${result.deleted_photos.length} foto_korunan:${result.preserved_photo_ids.length} dosya_bekleyen:${pending}`
+    logAudit(req.user.id, 'water_truck_delete', 'water', +req.params.id, detail)
+    res.json({
+      ok: true,
+      deleted_photo_count: result.deleted_photos.length,
+      preserved_photo_count: result.preserved_photo_ids.length,
+      file_cleanup_pending: pending,
+    })
   } catch (e) { fail(next, e) }
 })
 waterRouter.post('/truck-arrivals/:id/send-mail', ...managerOnly, async (req, res, next) => {
@@ -309,7 +318,7 @@ waterRouter.get('/waybill-photos', ...mgr, (req, res, next) => {
     }))
   } catch (e) { fail(next, e) }
 })
-waterRouter.post('/waybill-photos', ...mgr, upload.single('photo'), verifyMagicBytes, (req, res, next) => {
+waterRouter.post('/waybill-photos', ...mgr, waybillUpload.single('photo'), verifyMagicBytes, (req, res, next) => {
   try {
     const id = createWaybillPhotoService(req.body, req.file, req.user.id)
     logAudit(req.user.id, 'water_waybill_photo_upload', 'water', id, req.body.waybill_no || '')
@@ -322,12 +331,9 @@ waterRouter.post('/waybill-photos', ...mgr, upload.single('photo'), verifyMagicB
 waterRouter.delete('/waybill-photos/:id', ...mgr, (req, res, next) => {
   try {
     const row = deleteWaybillPhotoService(+req.params.id)
-    if (row.photo_url?.startsWith('/uploads/')) {
-      const file = path.join(process.env.UPLOADS_DIR || 'uploads', path.basename(row.photo_url))
-      try { fs.unlinkSync(file) } catch { /* ignore */ }
-    }
+    const fileResult = removeUploadFile(row.photo_url)
     logAudit(req.user.id, 'water_waybill_photo_delete', 'water', +req.params.id, '')
-    res.json({ ok: true })
+    res.json({ ok: true, file_status: fileResult.status })
   } catch (e) { fail(next, e) }
 })
 

@@ -20,6 +20,7 @@ import { runBackupService, listBackupsService, deleteBackupService } from '../..
 import { enforceKvkkRetentionService } from '../../modules/kvkk/service.js'
 import PDFDocument from 'pdfkit'
 import { checkTruckArrivalAlerts, waterDailyDigest, buildReconciliationPDF, waterEscalations } from '../../modules/water/service.js'
+import { cleanupWaterFiles } from '../../modules/water/file-lifecycle.js'
 import { captureError } from '../sentry.js'
 import { reconcileAttendanceService } from '../../modules/shifts/service.js'
 
@@ -234,16 +235,16 @@ export function startCronJobs() {
   cron.schedule('10 6 * * *', withLock('cert-expiry', () => {
     try {
       const count = checkCertExpiries()
-      if (count > 0) console.log('[Cron] cert-expiry:', count, 'bildirim')
-    } catch (e) { console.error('[Cron] Sertifika vade hatasi:', e.message) }
+      if (count > 0) logger.info(`[Cron] cert-expiry: ${count} bildirim`)
+    } catch (e) { logger.error('[Cron] Sertifika vade hatasi:', e.message) }
   }), TZ)
 
   // Her gün 06:20 — disiplin otomasyonu (30g 3 sarı → kırmızı, 90g temiz → af)
   cron.schedule('20 6 * * *', withLock('discipline-automation', () => {
     try {
       const r = runDisciplineAutomation()
-      if (r.auto_red > 0 || r.amnesty > 0) console.log('[Cron] discipline-automation:', r)
-    } catch (e) { console.error('[Cron] Disiplin otomasyon hatasi:', e.message) }
+      if (r.auto_red > 0 || r.amnesty > 0) logger.info('[Cron] discipline-automation:', r)
+    } catch (e) { logger.error('[Cron] Disiplin otomasyon hatasi:', e.message) }
   }), TZ)
 
   // Her gece 02:00 — eski audit log + okunmuş bildirimler 90 gün, hata logları 30 gün
@@ -258,6 +259,13 @@ export function startCronJobs() {
       // Süresi dolmuş token blacklist kayıtlarını temizle
       const pruned = pruneTokenBlacklist()
       if (pruned > 0) logger.info(`[Cron] ${pruned} süresi dolmuş token blacklist kaydı temizlendi`)
+      const waterFiles = cleanupWaterFiles()
+      if (waterFiles.orphan_files_deleted || waterFiles.reports_deleted) {
+        logger.info(`[Cron] Su dosya temizliği: ${waterFiles.orphan_files_deleted} yetim dosya, ${waterFiles.reports_deleted} eski rapor`)
+        logAudit(null, 'water_file_retention', 'water', null,
+          `yetim:${waterFiles.orphan_files_deleted} rapor:${waterFiles.reports_deleted}`)
+      }
+      if (waterFiles.errors.length) logger.warn(`[Cron] Su dosya temizliği ${waterFiles.errors.length} dosyada tamamlanamadı`)
     } catch (e) { logger.error('[Cron] Temizleme hatası:', e.message) }
   }), TZ)
 

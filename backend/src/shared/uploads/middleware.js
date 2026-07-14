@@ -6,13 +6,18 @@ import { fileTypeFromBuffer } from 'file-type'
 const uploadDir = process.env.UPLOADS_DIR || 'uploads'
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true })
 
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, uploadDir),
-  filename: (req, file, cb) => {
-    const unique = Date.now() + '-' + Math.round(Math.random() * 1e9)
-    cb(null, unique + path.extname(file.originalname))
-  }
-})
+function createStorage(prefix = '') {
+  const safePrefix = String(prefix).replace(/[^a-z0-9-]/gi, '').replace(/-+$/, '')
+  return multer.diskStorage({
+    destination: (req, file, cb) => cb(null, uploadDir),
+    filename: (req, file, cb) => {
+      const unique = Date.now() + '-' + Math.round(Math.random() * 1e9)
+      cb(null, `${safePrefix ? `${safePrefix}-` : ''}${unique}${path.extname(file.originalname)}`)
+    }
+  })
+}
+
+const storage = createStorage()
 
 const ALLOWED_MIME = new Set(['image/jpeg', 'image/png', 'image/webp'])
 const DOCUMENT_MIME = new Set([...ALLOWED_MIME, 'application/pdf'])
@@ -26,6 +31,10 @@ function fileFilter(req, file, cb) {
 }
 
 export const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 }, fileFilter })
+
+export function createImageUpload(prefix) {
+  return multer({ storage: createStorage(prefix), limits: { fileSize: 10 * 1024 * 1024 }, fileFilter })
+}
 
 function documentFileFilter(req, file, cb) {
   if (DOCUMENT_MIME.has(file.mimetype)) {

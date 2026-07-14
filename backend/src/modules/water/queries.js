@@ -820,7 +820,31 @@ export function setTruckChecked(id, userId) {
 }
 
 export function deleteTruckArrival(id) {
-  return getDB().prepare('DELETE FROM water_truck_arrivals WHERE id=?').run(id).changes > 0
+  const db = getDB()
+  const remove = db.transaction(() => {
+    const truck = db.prepare('SELECT * FROM water_truck_arrivals WHERE id=?').get(id)
+    if (!truck) return null
+
+    const photos = db.prepare('SELECT * FROM water_waybill_photos WHERE truck_arrival_id=?').all(id)
+    const deletedPhotos = photos.filter(photo => photo.movement_id == null)
+    const preservedPhotos = photos.filter(photo => photo.movement_id != null)
+
+    if (deletedPhotos.length) {
+      const deletePhoto = db.prepare('DELETE FROM water_waybill_photos WHERE id=?')
+      deletedPhotos.forEach(photo => deletePhoto.run(photo.id))
+    }
+    if (preservedPhotos.length) {
+      db.prepare('UPDATE water_waybill_photos SET truck_arrival_id=NULL WHERE truck_arrival_id=? AND movement_id IS NOT NULL').run(id)
+    }
+    db.prepare('DELETE FROM water_truck_arrivals WHERE id=?').run(id)
+
+    return {
+      truck,
+      deleted_photos: deletedPhotos,
+      preserved_photo_ids: preservedPhotos.map(photo => photo.id),
+    }
+  })
+  return remove.immediate()
 }
 
 export function listWaybillPhotos({ truck_arrival_id, movement_id, waybill_no, from, to, limit = 200 } = {}) {
@@ -850,6 +874,10 @@ export function listWaybillPhotos({ truck_arrival_id, movement_id, waybill_no, f
 
 export function getWaybillPhoto(id) {
   return getDB().prepare('SELECT * FROM water_waybill_photos WHERE id=?').get(id)
+}
+
+export function listWaybillPhotoUrls() {
+  return getDB().prepare('SELECT photo_url FROM water_waybill_photos WHERE photo_url IS NOT NULL').all().map(row => row.photo_url)
 }
 
 export function createWaybillPhoto(row) {
