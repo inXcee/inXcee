@@ -3288,7 +3288,7 @@ function AttendanceExceptionsSheet({
   )
 }
 
-export default function PuantajTab({ departments, onPersonClick }) {
+export default function PuantajTab({ departments, shiftDefs = [], onPersonClick }) {
   const qc = useQueryClient()
   const user = useAuthStore(s => s.user)
   const roleCanEdit = ['campus_manager', 'shift_supervisor'].includes(user?.role)
@@ -3941,7 +3941,7 @@ export default function PuantajTab({ departments, onPersonClick }) {
         <PuantajSummaryView filtered={filtered} formatMoney={formatMoney} />
       )}
       {viewMode === 'operations' && roleCanEdit && (
-        <PuantajOperationsView month={month} deptFilter={deptFilter} onPersonClick={onPersonClick} />
+        <PuantajOperationsView month={month} deptFilter={deptFilter} shiftDefs={shiftDefs} onPersonClick={onPersonClick} />
       )}
       {viewMode === 'control' && (
         <PuantajControlView

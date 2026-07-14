@@ -42,6 +42,7 @@ const payload = {
   unassigned_staff: [
     {
       staff_id: 12,
+      dept_id: 3,
       full_name: 'Plansiz Kart Basan',
       dept_name: 'Mutfak',
       role_name: 'Ikramci',
@@ -129,7 +130,7 @@ describe('Puantaj operations workspace', () => {
   })
 
   it('reconciles the selected day and updates an exception through the API', async () => {
-    vi.spyOn(api, 'get').mockResolvedValue({ data: payload })
+    vi.spyOn(api, 'get').mockImplementation(url => Promise.resolve({ data: url === '/shifts/work-locations' ? [] : payload }))
     const postSpy = vi.spyOn(api, 'post').mockResolvedValue({ data: { processed: 2, exceptions: 1 } })
     const patchSpy = vi.spyOn(api, 'patch').mockResolvedValue({ data: { id: 41, status: 'resolved' } })
     renderWithProviders(<PuantajOperationsView month="2031-02" deptFilter="" />)
@@ -142,6 +143,65 @@ describe('Puantaj operations workspace', () => {
     await waitFor(() => expect(patchSpy).toHaveBeenCalledWith('/shifts/attendance/exceptions/41', {
       status: 'resolved',
       note: 'Gunluk operasyon merkezinden guncellendi',
+    }))
+  })
+
+  it('builds an OFF plan for selected unassigned personnel', () => {
+    const onApplyPlan = vi.fn()
+    render(
+      <PuantajOperationsContent
+        payload={payload}
+        selectedDate="2026-07-14"
+        plannerOpen
+        onApplyPlan={onApplyPlan}
+        shiftDefs={[{ id: 5, name: 'Sabah', start_hour: 6, end_hour: 15 }]}
+        workLocations={[{ id: 9, name: 'OTC Yemekhane', is_active: 1 }]}
+      />,
+    )
+
+    fireEvent.click(screen.getByLabelText('Plansiz Kart Basan sec'))
+    fireEvent.click(screen.getByRole('button', { name: 'OFF' }))
+    fireEvent.click(screen.getByRole('button', { name: '1 Personele Uygula' }))
+    expect(onApplyPlan).toHaveBeenCalledWith(expect.objectContaining({
+      status: 'off',
+      shiftDefId: null,
+      workLocationId: null,
+      staffRows: [expect.objectContaining({ staff_id: 12, dept_id: 3 })],
+    }))
+  })
+
+  it('posts a version-safe bulk shift plan and work location', async () => {
+    vi.spyOn(api, 'get').mockImplementation(url => Promise.resolve({
+      data: url === '/shifts/work-locations'
+        ? [{ id: 9, name: 'OTC Yemekhane', is_active: 1 }]
+        : payload,
+    }))
+    const postSpy = vi.spyOn(api, 'post').mockResolvedValue({ data: { rows: [{ id: 91 }] } })
+    renderWithProviders(
+      <PuantajOperationsView
+        month="2031-02"
+        deptFilter=""
+        shiftDefs={[{ id: 5, name: 'Sabah', start_hour: 6, end_hour: 15 }]}
+      />,
+    )
+
+    await screen.findByText('AKSIYON MERKEZI')
+    fireEvent.click(screen.getByRole('button', { name: 'Vardiyasizlari planla' }))
+    fireEvent.click(screen.getByLabelText('Plansiz Kart Basan sec'))
+    fireEvent.change(screen.getByLabelText('Vardiya'), { target: { value: '5' } })
+    fireEvent.change(screen.getByLabelText('Calisma noktasi'), { target: { value: '9' } })
+    fireEvent.click(screen.getByRole('button', { name: '1 Personele Uygula' }))
+
+    await waitFor(() => expect(postSpy).toHaveBeenCalledWith('/shifts/schedule', {
+      entries: [{
+        staff_id: 12,
+        dept_id: 3,
+        work_date: '2031-02-01',
+        status: 'scheduled',
+        shift_def_id: 5,
+        work_location_id: 9,
+        expected_version: 0,
+      }],
     }))
   })
 })

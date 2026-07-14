@@ -194,7 +194,7 @@ export default function ShiftsPage() {
           {activeTab === 'staff'       && <StaffTab departments={departments} onPersonClick={handlePersonClick} />}
           {activeTab === 'leave'       && <LeaveTab departments={departments} onPersonClick={handlePersonClick} />}
           {activeTab === 'overtime'    && <OvertimeTab departments={departments} onPersonClick={handlePersonClick} />}
-          {activeTab === 'puantaj'     && <PuantajTab departments={departments} onPersonClick={handlePersonClick} />}
+          {activeTab === 'puantaj'     && <PuantajTab departments={departments} shiftDefs={shiftDefs} onPersonClick={handlePersonClick} />}
           {activeTab === 'departments' && <DepartmentsTab />}
           {activeTab === 'swap'        && <SwapTab />}
           {activeTab === 'settings'    && <SettingsTab departments={departments} shiftDefs={shiftDefs} />}

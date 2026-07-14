@@ -222,6 +222,109 @@ function ActionCenter({ rows, onPersonClick, onResolveException, resolvingExcept
   )
 }
 
+function DailyPlanner({ rows, shiftDefs, workLocations, date, onApply, onClose, isPending }) {
+  const [search, setSearch] = useState('')
+  const [selected, setSelected] = useState(() => new Set())
+  const [mode, setMode] = useState('scheduled')
+  const [shiftDefId, setShiftDefId] = useState('')
+  const [workLocationId, setWorkLocationId] = useState('')
+  const visibleRows = useMemo(() => {
+    const needle = search.trim().toLocaleLowerCase('tr-TR')
+    if (!needle) return rows
+    return rows.filter(row => `${row.full_name || ''} ${row.dept_name || ''} ${row.role_name || ''} ${row.work_location_name || ''}`
+      .toLocaleLowerCase('tr-TR').includes(needle))
+  }, [rows, search])
+  const allVisibleSelected = visibleRows.length > 0 && visibleRows.every(row => selected.has(row.staff_id))
+  const selectedRows = rows.filter(row => selected.has(row.staff_id))
+  const toggleAllVisible = () => {
+    setSelected(current => {
+      const next = new Set(current)
+      if (allVisibleSelected) visibleRows.forEach(row => next.delete(row.staff_id))
+      else visibleRows.forEach(row => next.add(row.staff_id))
+      return next
+    })
+  }
+  const toggleRow = staffId => {
+    setSelected(current => {
+      const next = new Set(current)
+      if (next.has(staffId)) next.delete(staffId)
+      else next.add(staffId)
+      return next
+    })
+  }
+  const canApply = selectedRows.length > 0 && (mode === 'off' || shiftDefId)
+  const apply = () => {
+    if (!canApply) return
+    onApply?.({
+      staffRows: selectedRows,
+      status: mode,
+      shiftDefId: mode === 'scheduled' ? Number(shiftDefId) : null,
+      workLocationId: mode === 'scheduled' && workLocationId ? Number(workLocationId) : null,
+    })
+  }
+  return (
+    <section style={{ border: '1px solid var(--accent)', borderRadius: 8, overflow: 'hidden', background: 'var(--surface)' }}>
+      <SectionTitle count={`${rows.length} vardiyasiz`} action={<button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>Kapat</button>}>GUNLUK TOPLU PLANLAMA · {shortDate(date).toLocaleUpperCase('tr-TR')}</SectionTitle>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 360px), 1fr))', alignItems: 'stretch' }}>
+        <div style={{ minWidth: 0, borderRight: '1px solid var(--border)' }}>
+          <div style={{ display: 'flex', gap: 6, padding: 8, borderBottom: '1px solid var(--border)' }}>
+            <input className="form-input" value={search} onChange={event => setSearch(event.target.value)} placeholder="Personel, departman, rol veya nokta ara" style={{ minWidth: 180, flex: 1 }} />
+            <button type="button" className="btn btn-ghost btn-sm" onClick={toggleAllVisible}>{allVisibleSelected ? 'Gorunenleri birak' : 'Gorunenleri sec'}</button>
+          </div>
+          <div style={{ overflow: 'auto', maxHeight: 380 }}>
+            <table className="data-table" style={{ minWidth: 680, fontSize: 10 }}>
+              <thead style={{ position: 'sticky', top: 0, zIndex: 2 }}><tr><th style={{ width: 36 }}><input type="checkbox" aria-label="Gorunen personelin tumunu sec" checked={allVisibleSelected} onChange={toggleAllVisible} /></th><th>Personel</th><th>Departman / Rol</th><th>Ana nokta</th><th>Kart</th></tr></thead>
+              <tbody>
+                {visibleRows.map(row => (
+                  <tr key={row.staff_id} onClick={() => toggleRow(row.staff_id)} style={{ cursor: 'pointer', background: selected.has(row.staff_id) ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : undefined }}>
+                    <td onClick={event => event.stopPropagation()}><input type="checkbox" aria-label={`${row.full_name} sec`} checked={selected.has(row.staff_id)} onChange={() => toggleRow(row.staff_id)} /></td>
+                    <td><strong>{row.full_name}</strong><span style={{ display: 'block', color: 'var(--text3)', fontSize: 8 }}>{row.position || '-'}</span></td>
+                    <td>{row.dept_name || '-'}<span style={{ display: 'block', color: 'var(--text3)', fontSize: 8 }}>{row.role_name || 'Rolsuz'}</span></td>
+                    <td>{row.work_location_name || 'Nokta tanimsiz'}</td>
+                    <td><StatusBadge state={row.attendance_state} /></td>
+                  </tr>
+                ))}
+                {!visibleRows.length && <tr><td colSpan={5} style={{ padding: 24, textAlign: 'center', color: 'var(--text3)' }}>Aramaya uyan vardiyasiz personel yok.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div style={{ padding: 12, display: 'grid', alignContent: 'start', gap: 12 }}>
+          <div>
+            <div style={{ fontSize: 9, color: 'var(--text3)', fontFamily: 'var(--mono)', marginBottom: 5 }}>PLANLAMA MODU</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4, padding: 3, background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 7 }}>
+              {[['scheduled', 'Vardiya'], ['off', 'OFF']].map(([value, label]) => <button key={value} type="button" className="btn btn-ghost btn-sm" onClick={() => setMode(value)} aria-pressed={mode === value} style={{ background: mode === value ? 'var(--surface)' : 'transparent', color: mode === value ? 'var(--text)' : 'var(--text3)' }}>{label}</button>)}
+            </div>
+          </div>
+          {mode === 'scheduled' && (
+            <>
+              <label className="form-label">Vardiya
+                <select className="form-input" value={shiftDefId} onChange={event => setShiftDefId(event.target.value)}>
+                  <option value="">Vardiya secin</option>
+                  {shiftDefs.map(row => <option key={row.id} value={row.id}>{row.name} · {String(row.start_hour).padStart(2, '0')}:00-{String(row.end_hour).padStart(2, '0')}:00</option>)}
+                </select>
+              </label>
+              <label className="form-label">Calisma noktasi
+                <select className="form-input" value={workLocationId} onChange={event => setWorkLocationId(event.target.value)}>
+                  <option value="">Nokta secilmedi</option>
+                  {workLocations.filter(row => row.is_active !== 0).map(row => <option key={row.id} value={row.id}>{row.name}</option>)}
+                </select>
+              </label>
+            </>
+          )}
+          <div style={{ borderTop: '1px solid var(--border)', paddingTop: 10, color: 'var(--text3)', fontSize: 9, lineHeight: 1.6 }}>
+            <strong style={{ color: 'var(--text)', fontSize: 12 }}>{selectedRows.length}</strong> personel secili
+            <br />Kayitlar {date} tarihi icin uygulanacak.
+          </div>
+          <button type="button" className="btn btn-primary" onClick={apply} disabled={!canApply || isPending} style={{ width: '100%', opacity: !canApply ? .55 : 1 }}>
+            {isPending ? 'Uygulaniyor' : `${selectedRows.length} Personele Uygula`}
+          </button>
+        </div>
+      </div>
+    </section>
+  )
+}
+
 function CoverageList({ rows }) {
   const missing = rows.filter(row => Number(row.missing || 0) > 0)
   const visible = missing.length ? missing : rows
@@ -319,6 +422,8 @@ function BreakdownTable({ rows, showCost = false }) {
 export function PuantajOperationsContent({
   payload, selectedDate, onSelectedDate, onPersonClick,
   onResolveException, resolvingExceptionId,
+  plannerOpen, onPlannerOpen, onPlannerClose, onApplyPlan,
+  planning, shiftDefs = [], workLocations = [],
 }) {
   const metrics = payload?.metrics || {}
   const roster = payload?.roster || []
@@ -340,9 +445,21 @@ export function PuantajOperationsContent({
         />
       </section>
 
+      {plannerOpen && (
+        <DailyPlanner
+          rows={unassignedStaff}
+          shiftDefs={shiftDefs}
+          workLocations={workLocations}
+          date={selectedDate}
+          onApply={onApplyPlan}
+          onClose={onPlannerClose}
+          isPending={planning}
+        />
+      )}
+
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 420px), 1fr))', gap: 12, alignItems: 'start' }}>
         <section style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', background: 'var(--surface)' }}>
-          <SectionTitle count={`${dailyRows.length} kisi · ${unassignedStaff.length} vardiyasiz`}>GUNLUK PERSONEL AKISI</SectionTitle>
+          <SectionTitle count={`${dailyRows.length} kisi · ${unassignedStaff.length} vardiyasiz`} action={unassignedStaff.length > 0 && <button type="button" className="btn btn-ghost btn-sm" onClick={onPlannerOpen}>Vardiyasizlari planla</button>}>GUNLUK PERSONEL AKISI</SectionTitle>
           <RosterTable rows={dailyRows} onPersonClick={onPersonClick} />
         </section>
         <div style={{ display: 'grid', gap: 12 }}>
@@ -381,12 +498,14 @@ export function PuantajOperationsContent({
   )
 }
 
-export default function PuantajOperationsView({ month, deptFilter, onPersonClick }) {
+export default function PuantajOperationsView({ month, deptFilter, onPersonClick, shiftDefs = [] }) {
   const qc = useQueryClient()
   const [selectedDate, setSelectedDate] = useState(() => dateForMonth(month))
+  const [plannerOpen, setPlannerOpen] = useState(false)
   useEffect(() => {
     if (!selectedDate.startsWith(`${month}-`)) setSelectedDate(dateForMonth(month))
   }, [month, selectedDate])
+  useEffect(() => setPlannerOpen(false), [selectedDate])
 
   const params = useMemo(() => ({
     month,
@@ -396,6 +515,10 @@ export default function PuantajOperationsView({ month, deptFilter, onPersonClick
   const { data, isLoading, isFetching, error, refetch } = useQuery({
     queryKey: ['shifts-operations-dashboard', month, selectedDate, deptFilter],
     queryFn: () => api.get('/shifts/operations/dashboard', { params }).then(response => response.data),
+  })
+  const { data: workLocations = [] } = useQuery({
+    queryKey: ['shift-work-locations'],
+    queryFn: () => api.get('/shifts/work-locations').then(response => response.data),
   })
   const refreshOperations = () => {
     qc.invalidateQueries({ queryKey: ['shifts-operations-dashboard'] })
@@ -419,6 +542,26 @@ export default function PuantajOperationsView({ month, deptFilter, onPersonClick
     onSuccess: () => {
       refreshOperations()
       toastOk('Kart istisnasi guncellendi')
+    },
+    onError: toastErr,
+  })
+  const planMutation = useMutation({
+    mutationFn: plan => api.post('/shifts/schedule', {
+      entries: plan.staffRows.map(row => ({
+        staff_id: row.staff_id,
+        dept_id: row.dept_id || null,
+        work_date: selectedDate,
+        status: plan.status,
+        shift_def_id: plan.status === 'scheduled' ? plan.shiftDefId : null,
+        work_location_id: plan.status === 'scheduled' ? plan.workLocationId : null,
+        expected_version: 0,
+      })),
+    }),
+    onSuccess: response => {
+      setPlannerOpen(false)
+      refreshOperations()
+      qc.invalidateQueries({ queryKey: ['schedule'] })
+      toastOk(`${response.data.rows?.length || 0} personelin gunluk plani kaydedildi`)
     },
     onError: toastErr,
   })
@@ -451,6 +594,13 @@ export default function PuantajOperationsView({ month, deptFilter, onPersonClick
           onPersonClick={onPersonClick}
           onResolveException={(id, status) => resolveExceptionMutation.mutate({ id, status })}
           resolvingExceptionId={resolveExceptionMutation.isPending ? resolveExceptionMutation.variables?.id : null}
+          plannerOpen={plannerOpen}
+          onPlannerOpen={() => setPlannerOpen(true)}
+          onPlannerClose={() => setPlannerOpen(false)}
+          onApplyPlan={plan => planMutation.mutate(plan)}
+          planning={planMutation.isPending}
+          shiftDefs={shiftDefs}
+          workLocations={workLocations}
         />
       )}
     </div>
