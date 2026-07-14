@@ -32,7 +32,7 @@ import {
   insertAttendanceReconciliation, markScheduleWorkedFromAttendance,
   resolveStaleAttendanceExceptions, upsertAttendanceException,
   listAttendanceExceptions, getAttendanceException, updateAttendanceExceptionStatus,
-  getAttendanceMonthSummary
+  getAttendanceMonthSummary, getOperationsDashboardData, getPuantajClosingPackageData
 } from './queries.js'
 import { getDB } from '../../shared/db/index.js'
 import { sendPushToWorker } from '../../shared/notifications/push.js'
@@ -1697,6 +1697,281 @@ export function attendanceListService(filters) {
 
 export function statisticsService(date) {
   return getShiftStatistics(date)
+}
+
+function operationAttendanceState(row, selectedDate, asOfDate) {
+  if (row.status === 'on_leave') return 'on_leave'
+  if (row.status === 'off') return 'off'
+  if (row.status === 'absent') return 'absent'
+  if (row.status === 'worked' || row.status === 'overtime') return 'worked'
+  if (selectedDate > asOfDate) return 'not_due'
+  if (Number(row.open_exception_count || 0) > 0) return 'review'
+  if (row.reconciliation_status === 'matched') return 'matched'
+  if (Number(row.event_count || 0) === 0) return 'pending_scan'
+  return 'scanned'
+}
+
+function operationConsecutiveRisks(rows, asOfDate, limit = 6) {
+  const byStaff = new Map()
+  rows.filter(row => row.work_date <= asOfDate).forEach(row => {
+    if (!byStaff.has(row.staff_id)) byStaff.set(row.staff_id, [])
+    byStaff.get(row.staff_id).push(row)
+  })
+  const risks = []
+  byStaff.forEach(staffRows => {
+    let current = 0
+    let maximum = 0
+    let currentStart = null
+    let maximumStart = null
+    let maximumEnd = null
+    let previousDate = null
+    staffRows.forEach(row => {
+      const currentTime = new Date(`${row.work_date}T12:00:00Z`).getTime()
+      const previousTime = previousDate ? new Date(`${previousDate}T12:00:00Z`).getTime() : null
+      const adjacent = previousTime != null && currentTime - previousTime === 86400000
+      if (!adjacent) {
+        current = 0
+        currentStart = row.work_date
+      }
+      current += 1
+      if (current > maximum) {
+        maximum = current
+        maximumStart = currentStart
+        maximumEnd = row.work_date
+      }
+      previousDate = row.work_date
+    })
+    if (maximum > limit) {
+      const first = staffRows[0]
+      risks.push({
+        type: 'consecutive_work',
+        severity: maximum >= 10 ? 'critical' : 'warning',
+        staff_id: first.staff_id,
+        full_name: first.full_name,
+        dept_name: first.dept_name,
+        value: maximum,
+        start_date: maximumStart,
+        end_date: maximumEnd,
+        message: `${maximum} gun araliksiz calisma`,
+      })
+    }
+  })
+  return risks.sort((a, b) => b.value - a.value)
+}
+
+function operationDutyManagers(roster) {
+  const managementTerms = ['amir', 'sorumlu', 'mudur', 'müdür', 'sef', 'şef', 'supervisor']
+  return roster.filter(row => {
+    const title = `${row.role_name || ''} ${row.position || ''}`.toLocaleLowerCase('tr-TR')
+    return managementTerms.some(term => title.includes(term))
+  }).map(row => ({
+    staff_id: row.staff_id,
+    full_name: row.full_name,
+    role_name: row.role_name,
+    dept_name: row.dept_name,
+    shift_name: row.shift_name,
+    start_hour: row.start_hour,
+    end_hour: row.end_hour,
+  }))
+}
+
+export function operationsDashboardService({ date, month, deptId } = {}) {
+  const selectedDate = validateAttendanceDate(date || todayLocal(), 'date')
+  const selectedMonth = month || selectedDate.slice(0, 7)
+  const { monthStart, monthEnd, lastDay } = parsePuantajMonth(selectedMonth)
+  if (!selectedDate.startsWith(`${selectedMonth}-`)) {
+    throw Object.assign(new Error('date secilen month icinde olmali'), { statusCode: 400 })
+  }
+  const parsedDeptId = deptId == null || deptId === '' ? null : Number(deptId)
+  if (parsedDeptId != null && (!Number.isInteger(parsedDeptId) || parsedDeptId <= 0)) {
+    throw Object.assign(new Error('dept_id sayisal olmali'), { statusCode: 400 })
+  }
+
+  const raw = getOperationsDashboardData({
+    date: selectedDate,
+    monthStart,
+    monthEnd,
+    deptId: parsedDeptId,
+  })
+  const asOfDate = todayLocal()
+  const roster = raw.roster.map(row => ({
+    ...row,
+    attendance_state: operationAttendanceState(row, selectedDate, asOfDate),
+  }))
+  const payroll = puantajService(selectedMonth, parsedDeptId)
+  const coverage = getShiftCoverage(monthStart, monthEnd)
+  const rulesById = new Map(coverage.rules.map(rule => [Number(rule.id), rule]))
+  const coverageRows = coverage.rule_counts
+    .filter(row => row.work_date === selectedDate)
+    .map(row => ({ ...rulesById.get(Number(row.rule_id)), ...row }))
+    .filter(row => !parsedDeptId || Number(row.dept_id) === parsedDeptId)
+    .sort((a, b) => b.missing - a.missing || String(a.name).localeCompare(String(b.name), 'tr'))
+  const coverageMissingByDate = new Map()
+  coverage.rule_counts.forEach(row => {
+    const rule = rulesById.get(Number(row.rule_id))
+    if (parsedDeptId && Number(rule?.dept_id) !== parsedDeptId) return
+    coverageMissingByDate.set(row.work_date, (coverageMissingByDate.get(row.work_date) || 0) + Number(row.missing || 0))
+  })
+  const trendByDate = new Map(raw.trends.map(row => [row.date, row]))
+  const trends = Array.from({ length: lastDay }, (_, index) => {
+    const workDate = `${selectedMonth}-${String(index + 1).padStart(2, '0')}`
+    return {
+      date: workDate,
+      scheduled: 0,
+      worked: 0,
+      on_leave: 0,
+      absent: 0,
+      off: 0,
+      overtime_hours: 0,
+      open_exceptions: 0,
+      ...(trendByDate.get(workDate) || {}),
+      coverage_missing: coverageMissingByDate.get(workDate) || 0,
+      not_due: workDate > asOfDate,
+    }
+  })
+
+  const costByDepartment = new Map()
+  payroll.forEach(row => {
+    const name = row.dept_name || 'Departmansiz'
+    const current = costByDepartment.get(name) || {
+      gross: 0, employer_total_cost: 0, overtime_hours: 0, leave_days: 0, absent_days: 0,
+    }
+    current.gross += Number(row.gross || 0)
+    current.employer_total_cost += Number(row.employer_total_cost || 0)
+    current.overtime_hours += Number(row.overtime_hours || 0)
+    current.leave_days += Number(row.leave_days || 0)
+    current.absent_days += Number(row.absent_days || 0)
+    costByDepartment.set(name, current)
+  })
+  const breakdowns = {
+    departments: raw.breakdowns.filter(row => row.dimension === 'department').map(row => ({
+      ...row,
+      ...(costByDepartment.get(row.name) || {}),
+    })),
+    roles: raw.breakdowns.filter(row => row.dimension === 'role'),
+    locations: raw.breakdowns.filter(row => row.dimension === 'location'),
+  }
+
+  const highOvertime = payroll.filter(row => Number(row.overtime_hours || 0) >= 30).map(row => ({
+    type: 'high_overtime',
+    severity: Number(row.overtime_hours || 0) >= 45 ? 'critical' : 'warning',
+    staff_id: row.id,
+    full_name: row.full_name,
+    dept_name: row.dept_name,
+    value: Number(row.overtime_hours || 0),
+    message: `${Number(row.overtime_hours || 0)} saat aylik mesai`,
+  }))
+  const missingDocuments = payroll.filter(row => Number(row.missing_required_documents || 0) > 0).map(row => ({
+    type: 'missing_document',
+    severity: 'critical',
+    staff_id: row.id,
+    full_name: row.full_name,
+    dept_name: row.dept_name,
+    value: Number(row.missing_required_documents || 0),
+    message: `${Number(row.missing_required_documents || 0)} zorunlu belge eksik`,
+  }))
+  const leaveBalanceRisks = raw.lowLeaveBalances.map(row => ({
+    type: 'low_leave_balance',
+    severity: Number(row.remaining) <= 0 ? 'critical' : 'warning',
+    ...row,
+    value: Number(row.remaining),
+    message: `${Number(row.remaining)} gun yillik izin kaldi`,
+  }))
+  const endingLeaveRisks = raw.endingLeaves.map(row => ({
+    type: 'ending_report',
+    severity: 'info',
+    ...row,
+    value: row.end_date,
+    message: `Rapor ${row.end_date} tarihinde bitiyor`,
+  }))
+  const risks = [
+    ...missingDocuments,
+    ...operationConsecutiveRisks(raw.streakRows, asOfDate),
+    ...highOvertime,
+    ...leaveBalanceRisks,
+    ...endingLeaveRisks,
+  ]
+
+  const metrics = {
+    active_staff: Number(raw.activeStaff || 0),
+    scheduled: roster.filter(row => ['scheduled', 'worked', 'overtime'].includes(row.status)).length,
+    worked: roster.filter(row => ['worked', 'overtime'].includes(row.status)).length,
+    on_leave: roster.filter(row => row.status === 'on_leave').length,
+    absent: roster.filter(row => row.status === 'absent').length,
+    pending_scan: roster.filter(row => row.attendance_state === 'pending_scan').length,
+    open_exceptions: roster.reduce((sum, row) => sum + Number(row.open_exception_count || 0), 0),
+    coverage_missing: coverageRows.reduce((sum, row) => sum + Number(row.missing || 0), 0),
+    pending_leave_requests: raw.pendingLeaves.length,
+    pending_overtime_requests: raw.pendingOvertime.length,
+    overtime_hours_month: payroll.reduce((sum, row) => sum + Number(row.overtime_hours || 0), 0),
+    employer_cost_month: payroll.reduce((sum, row) => sum + Number(row.employer_total_cost || 0), 0),
+  }
+
+  return {
+    date: selectedDate,
+    month: selectedMonth,
+    as_of_date: asOfDate,
+    dept_id: parsedDeptId,
+    metrics,
+    roster,
+    coverage: coverageRows,
+    trends,
+    breakdowns,
+    risks,
+    duty_managers: operationDutyManagers(roster),
+    pending: {
+      leaves: raw.pendingLeaves,
+      overtime: raw.pendingOvertime,
+    },
+  }
+}
+
+export function puantajClosingPackageService(month, deptId) {
+  const { monthStart, monthEnd } = parsePuantajMonth(month)
+  const parsedDeptId = deptId == null || deptId === '' ? null : Number(deptId)
+  if (parsedDeptId != null && (!Number.isInteger(parsedDeptId) || parsedDeptId <= 0)) {
+    throw Object.assign(new Error('dept_id sayisal olmali'), { statusCode: 400 })
+  }
+  const packageRows = getPuantajClosingPackageData({ monthStart, monthEnd, deptId: parsedDeptId })
+  const payroll = puantajService(month, parsedDeptId)
+  return {
+    period: month,
+    generated_at: new Date().toISOString(),
+    dept_id: parsedDeptId,
+    approval: puantajApprovalService({ month, deptId: parsedDeptId }),
+    leave_requests: packageRows.leaveRequests,
+    overtime_requests: packageRows.overtimeRequests,
+    attendance_events: packageRows.attendanceEvents,
+    attendance_exceptions: packageRows.attendanceExceptions,
+    documents: packageRows.documents,
+    accounting: payroll.map(row => ({
+      staff_id: row.id,
+      tc_no: row.tc_no || '',
+      full_name: row.full_name,
+      dept_name: row.dept_name || '',
+      iban: row.iban || '',
+      worked_days: Number(row.worked_days || 0),
+      paid_leave_units: Number(row.paid_leave_units || 0),
+      absent_days: Number(row.absent_days || 0),
+      overtime_hours: Number(row.overtime_hours || 0),
+      sgk_day_units: Number(row.sgk_day_units || 0),
+      gross: Number(row.gross || 0),
+      total_deductions: Number(row.total_deductions || 0),
+      net: Number(row.net || 0),
+      employer_total_cost: Number(row.employer_total_cost || 0),
+    })),
+    summary: {
+      staff_count: payroll.length,
+      gross: round2(payroll.reduce((sum, row) => sum + Number(row.gross || 0), 0)),
+      net: round2(payroll.reduce((sum, row) => sum + Number(row.net || 0), 0)),
+      employer_total_cost: round2(payroll.reduce((sum, row) => sum + Number(row.employer_total_cost || 0), 0)),
+      leave_requests: packageRows.leaveRequests.length,
+      overtime_requests: packageRows.overtimeRequests.length,
+      attendance_events: packageRows.attendanceEvents.length,
+      attendance_exceptions: packageRows.attendanceExceptions.length,
+      documents: packageRows.documents.length,
+    },
+  }
 }
 
 export function departmentSummaryService() {

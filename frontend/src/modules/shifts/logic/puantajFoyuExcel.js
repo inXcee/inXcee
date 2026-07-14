@@ -822,6 +822,234 @@ function addApprovalSheet(workbook, sheetName, rows, context, mainInfo) {
   return { ws, sheetName, firstRow: dailyFirstRow, lastRow, eventsHeaderRow }
 }
 
+function formatExportDateTime(value) {
+  if (!value) return ''
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return String(value)
+  return parsed.toLocaleString('tr-TR', {
+    day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
+  })
+}
+
+function addAppendixSheet(workbook, sheetName, rows, context, config) {
+  const columns = config.columns
+  const headerRowNo = 4
+  const firstRow = 5
+  const ws = workbook.addWorksheet(sheetName, {
+    views: [{ state: 'frozen', ySplit: headerRowNo, showGridLines: false }],
+  })
+  setupSheet(ws, config.tabHex || COLORS.blue)
+  setupTitle(
+    ws,
+    `${context.companyName} - ${config.title}`,
+    `Donem: ${context.monthLabel}   ·   ${rows.length} kayit   ·   Olusturma: ${formatExportDateTime(context.generatedAt)}`,
+    columns.length,
+  )
+  const header = ws.getRow(headerRowNo)
+  header.values = columns.map(column => column.label)
+  styleHeaderRow(header)
+  header.height = 28
+
+  rows.forEach((source, index) => {
+    const rowNo = firstRow + index
+    const row = ws.getRow(rowNo)
+    row.values = columns.map(column => (
+      column.formula
+        ? formulaResult(column.formula(source, rowNo), column.value ? column.value(source) : '')
+        : column.value
+          ? column.value(source)
+          : source[column.key] ?? ''
+    ))
+    row.eachCell({ includeEmpty: true }, (cell, colNo) => {
+      if (colNo > columns.length) return
+      const column = columns[colNo - 1]
+      cell.border = border
+      cell.font = { size: 8, color: { argb: argb(COLORS.ink) }, bold: column.bold === true }
+      cell.alignment = {
+        horizontal: column.align || (column.numeric ? 'right' : 'left'),
+        vertical: 'middle',
+        wrapText: true,
+      }
+      if (column.numFmt) cell.numFmt = column.numFmt
+      if (column.highlight?.(source)) {
+        cell.fill = fill(column.highlight(source))
+        cell.font = { ...cell.font, bold: true }
+      }
+    })
+  })
+
+  const dataLastRow = firstRow + Math.max(rows.length, 1) - 1
+  const numericColumns = columns.map((column, index) => ({ ...column, colNo: index + 1 })).filter(column => column.numeric)
+  let lastRow = dataLastRow
+  if (numericColumns.length && rows.length) {
+    const totalRowNo = dataLastRow + 1
+    const totalRow = ws.getRow(totalRowNo)
+    totalRow.getCell(1).value = 'FILTRELI TOPLAM'
+    totalRow.getCell(1).font = { bold: true, color: { argb: 'FFFFFFFF' } }
+    totalRow.getCell(1).fill = fill(COLORS.header)
+    columns.forEach((column, index) => {
+      const colNo = index + 1
+      const cell = totalRow.getCell(colNo)
+      if (column.numeric) {
+        const range = `${colLetter(colNo)}${firstRow}:${colLetter(colNo)}${dataLastRow}`
+        const result = rows.reduce((sum, source) => sum + Number(column.value ? column.value(source) : source[column.key] || 0), 0)
+        cell.value = formulaResult(`SUBTOTAL(109,${range})`, result)
+        cell.numFmt = column.numFmt || '0.00'
+      }
+      cell.border = border
+      cell.fill = fill(COLORS.header)
+      cell.font = { bold: true, color: { argb: 'FFFFFFFF' } }
+      cell.alignment = { horizontal: column.numeric ? 'right' : 'left', vertical: 'middle' }
+    })
+    lastRow = totalRowNo
+  }
+
+  columns.forEach((column, index) => { ws.getColumn(index + 1).width = column.width || 14 })
+  ws.autoFilter = { from: { row: headerRowNo, column: 1 }, to: { row: dataLastRow, column: columns.length } }
+  ws.pageSetup.printTitlesRow = `1:${headerRowNo}`
+  ws.pageSetup.printArea = `A1:${colLetter(columns.length)}${lastRow}`
+  ws.headerFooter.oddFooter = `&L${context.monthLabel}&R${sheetName} - Sayfa &P / &N`
+  return { ws, sheetName, firstRow, lastRow, rowCount: rows.length }
+}
+
+function addClosingAppendices(workbook, usedNames, context, closingPackage = {}) {
+  const leaveRows = closingPackage.leave_requests || []
+  const overtimeRows = closingPackage.overtime_requests || []
+  const attendanceRows = closingPackage.attendance_events || []
+  const exceptionRows = closingPackage.attendance_exceptions || []
+  const documentRows = closingPackage.documents || []
+  const accountingRows = closingPackage.accounting || []
+
+  const leaveName = uniqueSheetName('Izin Talepleri', usedNames)
+  const leave = addAppendixSheet(workbook, leaveName, leaveRows, context, {
+    title: 'IZIN TALEPLERI VE BELGE KONTROLU', tabHex: COLORS.teal,
+    columns: [
+      { key: 'id', label: 'NO', width: 7, align: 'center' },
+      { key: 'full_name', label: 'ADI SOYADI', width: 24, bold: true },
+      { key: 'tc_no', label: 'TC', width: 14 },
+      { key: 'dept_name', label: 'DEPARTMAN', width: 17 },
+      { key: 'leave_type', label: 'IZIN TURU', width: 13 },
+      { key: 'start_date', label: 'BASLANGIC', width: 12, align: 'center' },
+      { key: 'end_date', label: 'BITIS', width: 12, align: 'center' },
+      { key: 'total_days', label: 'GUN', width: 8, numeric: true, numFmt: '0.00' },
+      { key: 'leave_hours', label: 'SAAT', width: 8, numeric: true, numFmt: '0.00' },
+      { key: 'status', label: 'DURUM', width: 12, align: 'center', highlight: row => row.status === 'approved' ? 'DCFCE7' : row.status === 'rejected' ? 'FEE2E2' : 'FEF3C7' },
+      { key: 'reason', label: 'GEREKCE', width: 30 },
+      { key: 'document_count', label: 'BELGE', width: 8, numeric: true, numFmt: '0' },
+      { key: 'review_note', label: 'INCELEME NOTU', width: 28 },
+      { key: 'reviewer_name', label: 'INCELEYEN', width: 20 },
+    ],
+  })
+
+  const overtimeName = uniqueSheetName('Mesai Talepleri', usedNames)
+  const overtime = addAppendixSheet(workbook, overtimeName, overtimeRows, context, {
+    title: 'FAZLA MESAI TALEP VE ONAY TAKIBI', tabHex: COLORS.purple,
+    columns: [
+      { key: 'id', label: 'NO', width: 7, align: 'center' },
+      { key: 'work_date', label: 'TARIH', width: 12, align: 'center' },
+      { key: 'full_name', label: 'ADI SOYADI', width: 24, bold: true },
+      { key: 'tc_no', label: 'TC', width: 14 },
+      { key: 'dept_name', label: 'DEPARTMAN', width: 17 },
+      { key: 'planned_start', label: 'PLAN BAS.', width: 11, align: 'center' },
+      { key: 'planned_end', label: 'PLAN BIT.', width: 11, align: 'center' },
+      { key: 'requested_hours', label: 'TALEP SAAT', width: 10, numeric: true, numFmt: '0.00' },
+      { key: 'actual_start', label: 'FIILI BAS.', width: 11, align: 'center' },
+      { key: 'actual_end', label: 'FIILI BIT.', width: 11, align: 'center' },
+      { key: 'actual_hours', label: 'FIILI SAAT', width: 10, numeric: true, numFmt: '0.00' },
+      { key: 'compensation_type', label: 'KARSILIK', width: 12 },
+      { key: 'status', label: 'DURUM', width: 12, align: 'center', highlight: row => row.status === 'approved' ? 'DCFCE7' : row.status === 'rejected' ? 'FEE2E2' : 'FEF3C7' },
+      { key: 'reason', label: 'GEREKCE', width: 28 },
+      { key: 'document_count', label: 'BELGE', width: 8, numeric: true, numFmt: '0' },
+      { key: 'reviewer_name', label: 'INCELEYEN', width: 20 },
+      { key: 'review_note', label: 'INCELEME NOTU', width: 28 },
+    ],
+  })
+
+  const attendanceName = uniqueSheetName('Kart Olaylari', usedNames)
+  const attendance = addAppendixSheet(workbook, attendanceName, attendanceRows, context, {
+    title: 'DEGISTIRILEMEZ HAM KART OLAYLARI', tabHex: COLORS.blue,
+    columns: [
+      { key: 'id', label: 'OLAY NO', width: 9, align: 'center' },
+      { key: 'work_date', label: 'IS GUNU', width: 12, align: 'center' },
+      { key: 'occurred_at', label: 'OLAY ZAMANI', width: 19, value: row => formatExportDateTime(row.occurred_at) },
+      { key: 'full_name', label: 'ADI SOYADI', width: 24, bold: true },
+      { key: 'dept_name', label: 'DEPARTMAN', width: 17 },
+      { key: 'event_type', label: 'OLAY', width: 12, align: 'center' },
+      { key: 'source', label: 'KAYNAK', width: 15 },
+      { key: 'device_id', label: 'CIHAZ', width: 16 },
+      { key: 'card_code', label: 'KART', width: 14 },
+      { key: 'match_status', label: 'ESLESME', width: 12, align: 'center', highlight: row => row.match_status === 'matched' ? 'DCFCE7' : 'FEE2E2' },
+      { key: 'match_detail', label: 'ESLESME DETAYI', width: 32 },
+    ],
+  })
+
+  const exceptionName = uniqueSheetName('Kart Istisnalari', usedNames)
+  const exceptions = addAppendixSheet(workbook, exceptionName, exceptionRows, context, {
+    title: 'KART VE PUANTAJ ISTISNA DENETIMI', tabHex: COLORS.red,
+    columns: [
+      { key: 'id', label: 'NO', width: 8, align: 'center' },
+      { key: 'work_date', label: 'TARIH', width: 12, align: 'center' },
+      { key: 'full_name', label: 'ADI SOYADI', width: 24, bold: true },
+      { key: 'dept_name', label: 'DEPARTMAN', width: 17 },
+      { key: 'exception_type', label: 'ISTISNA', width: 18 },
+      { key: 'severity', label: 'SEVIYE', width: 11, align: 'center', highlight: row => row.severity === 'critical' ? 'FEE2E2' : row.severity === 'warning' ? 'FEF3C7' : 'DBEAFE' },
+      { key: 'status', label: 'DURUM', width: 11, align: 'center' },
+      { key: 'message', label: 'ACIKLAMA', width: 36 },
+      { key: 'resolution_note', label: 'COZUM NOTU', width: 28 },
+      { key: 'resolved_by_name', label: 'COZEN', width: 20 },
+      { key: 'resolved_at', label: 'COZUM ZAMANI', width: 19, value: row => formatExportDateTime(row.resolved_at) },
+    ],
+  })
+
+  const documentName = uniqueSheetName('Belge Indeksi', usedNames)
+  const documents = addAppendixSheet(workbook, documentName, documentRows, context, {
+    title: 'IZIN, MESAI VE GUN BELGE INDEKSI', tabHex: COLORS.amber,
+    columns: [
+      { key: 'id', label: 'BELGE NO', width: 9, align: 'center' },
+      { key: 'request_type', label: 'KAYIT TURU', width: 13 },
+      { key: 'request_id', label: 'KAYIT NO', width: 10, align: 'center' },
+      { key: 'full_name', label: 'ADI SOYADI', width: 24, bold: true },
+      { key: 'dept_name', label: 'DEPARTMAN', width: 17 },
+      { key: 'start_date', label: 'BASLANGIC', width: 12, align: 'center' },
+      { key: 'end_date', label: 'BITIS', width: 12, align: 'center' },
+      { key: 'file_name', label: 'DOSYA', width: 32 },
+      { key: 'mime_type', label: 'TUR', width: 18 },
+      { key: 'file_size', label: 'BOYUT', width: 12, numeric: true, numFmt: '#,##0' },
+      { key: 'file_url', label: 'ARSIV YOLU', width: 36 },
+      { key: 'created_at', label: 'YUKLEME', width: 19, value: row => formatExportDateTime(row.created_at) },
+    ],
+  })
+
+  const accountingName = uniqueSheetName('Muhasebe Aktarim', usedNames)
+  const accounting = addAppendixSheet(workbook, accountingName, accountingRows, context, {
+    title: 'MUHASEBE VE BORDRO AKTARIM KONTROLU', tabHex: COLORS.green,
+    columns: [
+      { key: 'staff_id', label: 'SICIL', width: 9, align: 'center' },
+      { key: 'tc_no', label: 'TC', width: 14, highlight: row => row.tc_no ? null : 'FEE2E2' },
+      { key: 'full_name', label: 'ADI SOYADI', width: 24, bold: true },
+      { key: 'dept_name', label: 'DEPARTMAN', width: 17 },
+      { key: 'iban', label: 'IBAN', width: 28, highlight: row => row.iban ? null : 'FEE2E2' },
+      { key: 'worked_days', label: 'CALISTI', width: 10, numeric: true, numFmt: '0.00' },
+      { key: 'paid_leave_units', label: 'UCRETLI IZIN', width: 12, numeric: true, numFmt: '0.00' },
+      { key: 'absent_days', label: 'DEVAMSIZ', width: 10, numeric: true, numFmt: '0.00' },
+      { key: 'overtime_hours', label: 'FM SAAT', width: 10, numeric: true, numFmt: '0.00' },
+      { key: 'sgk_day_units', label: 'SGK GUN', width: 10, numeric: true, numFmt: '0.00' },
+      { key: 'gross', label: 'BRUT', width: 14, numeric: true, numFmt: '#,##0.00' },
+      { key: 'total_deductions', label: 'KESINTI', width: 14, numeric: true, numFmt: '#,##0.00' },
+      { key: 'net', label: 'NET', width: 14, numeric: true, numFmt: '#,##0.00' },
+      { key: 'employer_total_cost', label: 'ISVEREN MALIYETI', width: 17, numeric: true, numFmt: '#,##0.00' },
+      {
+        key: 'control', label: 'KONTROL', width: 12, align: 'center', bold: true,
+        value: row => row.tc_no && row.iban ? 'HAZIR' : 'EKSIK',
+        formula: (_row, rowNo) => `IF(OR(B${rowNo}="",E${rowNo}=""),"EKSIK","HAZIR")`,
+        highlight: row => row.tc_no && row.iban ? 'DCFCE7' : 'FEE2E2',
+      },
+    ],
+  })
+
+  return { leave, overtime, attendance, exceptions, documents, accounting }
+}
+
 export function buildPuantajFoyuWorkbook(ExcelJS, options) {
   const [y, m] = options.month.split('-').map(Number)
   const daysInMonth = options.daysInMonth || new Date(y, m, 0).getDate()
@@ -858,6 +1086,7 @@ export function buildPuantajFoyuWorkbook(ExcelJS, options) {
     approvalStats,
     legendRows,
     hexByCode,
+    generatedAt: options.closingPackage?.generated_at || new Date().toISOString(),
   }
 
   const mainName = uniqueSheetName('Puantaj', usedNames)
@@ -876,6 +1105,7 @@ export function buildPuantajFoyuWorkbook(ExcelJS, options) {
   const approvalInfo = addApprovalSheet(workbook, approvalName, rows, context, mainInfo)
   const detailName = uniqueSheetName('Vardiya Detay', usedNames)
   const detailInfo = addDetailSheet(workbook, detailName, rows, context)
+  const appendices = addClosingAppendices(workbook, usedNames, context, options.closingPackage)
 
   return {
     workbook,
@@ -889,6 +1119,7 @@ export function buildPuantajFoyuWorkbook(ExcelJS, options) {
       closing: closingName,
       approval: approvalName,
       detail: detailName,
+      appendices: Object.fromEntries(Object.entries(appendices).map(([key, info]) => [key, info.sheetName])),
     },
     sheetInfo: {
       main: mainInfo,
@@ -898,6 +1129,7 @@ export function buildPuantajFoyuWorkbook(ExcelJS, options) {
       closing: closingInfo,
       approval: approvalInfo,
       detail: detailInfo,
+      appendices,
     },
   }
 }

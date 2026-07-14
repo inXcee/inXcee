@@ -1537,6 +1537,333 @@ export function getAttendanceMonthSummary(monthStart, monthEnd, deptId) {
 }
 
 // ── Statistics ──
+// Daily operations workspace: keep the raw operational read model in one place so
+// the screen, alerts and exports all use the same attendance/schedule facts.
+export function getOperationsDashboardData({ date, monthStart, monthEnd, deptId = null }) {
+  const db = getDB()
+  const deptSql = deptId ? ' AND COALESCE(ss.dept_id, s.department_id) = ?' : ''
+
+  const roster = db.prepare(`
+    WITH segment_summary AS (
+      SELECT seg.schedule_id,
+        MIN(seg.start_time) AS segment_start,
+        MAX(seg.end_time) AS segment_end,
+        GROUP_CONCAT(DISTINCT sr.name) AS segment_roles,
+        GROUP_CONCAT(DISTINCT wl.name) AS segment_locations
+      FROM shift_schedule_segments seg
+      LEFT JOIN staff_roles sr ON sr.id = seg.role_id
+      LEFT JOIN work_locations wl ON wl.id = seg.work_location_id
+      WHERE seg.status != 'cancelled'
+      GROUP BY seg.schedule_id
+    ), event_summary AS (
+      SELECT staff_id, work_date, COUNT(*) AS event_count,
+        MIN(occurred_at) AS first_event_at, MAX(occurred_at) AS last_event_at
+      FROM attendance_events
+      WHERE work_date = ? AND staff_id IS NOT NULL
+      GROUP BY staff_id, work_date
+    ), exception_summary AS (
+      SELECT staff_id, work_date, COUNT(*) AS open_exception_count,
+        SUM(CASE WHEN severity = 'critical' THEN 1 ELSE 0 END) AS critical_exception_count
+      FROM attendance_exceptions
+      WHERE work_date = ? AND status = 'open' AND staff_id IS NOT NULL
+      GROUP BY staff_id, work_date
+    ), latest_reconciliation AS (
+      SELECT adr.*
+      FROM attendance_daily_reconciliations adr
+      JOIN (
+        SELECT staff_id, work_date, MAX(id) AS id
+        FROM attendance_daily_reconciliations
+        WHERE work_date = ?
+        GROUP BY staff_id, work_date
+      ) latest ON latest.id = adr.id
+    ), overtime_summary AS (
+      SELECT staff_id, work_date, SUM(hours) AS overtime_hours
+      FROM overtime_records
+      WHERE work_date = ?
+      GROUP BY staff_id, work_date
+    )
+    SELECT ss.id AS schedule_id, ss.staff_id, s.full_name, s.position,
+      COALESCE(ss.dept_id, s.department_id) AS dept_id,
+      d.name AS dept_name, d.color_class AS dept_color,
+      s.role_id, COALESCE(seg.segment_roles, sr.name) AS role_name,
+      ss.work_location_id,
+      COALESCE(seg.segment_locations, wl.name) AS work_location_name,
+      ss.shift_def_id, sd.name AS shift_name, sd.start_hour, sd.end_hour,
+      seg.segment_start, seg.segment_end,
+      ss.status, ss.leave_type, ss.leave_hours, ss.absent_reason,
+      COALESCE(ev.event_count, 0) AS event_count,
+      ev.first_event_at, ev.last_event_at,
+      rec.result_status AS reconciliation_status,
+      rec.reason_code AS reconciliation_reason,
+      rec.actual_check_in, rec.actual_check_out, rec.worked_minutes,
+      COALESCE(rec.overtime_candidate_minutes, 0) AS overtime_candidate_minutes,
+      COALESCE(ex.open_exception_count, 0) AS open_exception_count,
+      COALESCE(ex.critical_exception_count, 0) AS critical_exception_count,
+      COALESCE(ot.overtime_hours, 0) AS overtime_hours
+    FROM shift_schedule ss
+    JOIN staff s ON s.id = ss.staff_id
+    LEFT JOIN departments d ON d.id = COALESCE(ss.dept_id, s.department_id)
+    LEFT JOIN staff_roles sr ON sr.id = s.role_id
+    LEFT JOIN work_locations wl ON wl.id = ss.work_location_id
+    LEFT JOIN shift_definitions sd ON sd.id = ss.shift_def_id
+    LEFT JOIN segment_summary seg ON seg.schedule_id = ss.id
+    LEFT JOIN event_summary ev ON ev.staff_id = ss.staff_id AND ev.work_date = ss.work_date
+    LEFT JOIN exception_summary ex ON ex.staff_id = ss.staff_id AND ex.work_date = ss.work_date
+    LEFT JOIN latest_reconciliation rec ON rec.staff_id = ss.staff_id AND rec.work_date = ss.work_date
+    LEFT JOIN overtime_summary ot ON ot.staff_id = ss.staff_id AND ot.work_date = ss.work_date
+    WHERE ss.work_date = ?${deptSql}
+    ORDER BY COALESCE(sd.start_hour, 99), d.name, s.full_name
+  `).all(date, date, date, date, date, ...(deptId ? [deptId] : []))
+
+  const trendParams = [monthStart, monthEnd]
+  let trendDeptSql = ''
+  if (deptId) {
+    trendDeptSql = ' AND COALESCE(ss.dept_id, s.department_id) = ?'
+    trendParams.push(deptId)
+  }
+  const trends = db.prepare(`
+    WITH schedule_counts AS (
+      SELECT ss.work_date,
+        COUNT(DISTINCT CASE WHEN ss.status IN ('scheduled','worked','overtime') THEN ss.staff_id END) AS scheduled,
+        COUNT(DISTINCT CASE WHEN ss.status IN ('worked','overtime') THEN ss.staff_id END) AS worked,
+        COUNT(DISTINCT CASE WHEN ss.status = 'on_leave' THEN ss.staff_id END) AS on_leave,
+        COUNT(DISTINCT CASE WHEN ss.status = 'absent' THEN ss.staff_id END) AS absent,
+        COUNT(DISTINCT CASE WHEN ss.status = 'off' THEN ss.staff_id END) AS off
+      FROM shift_schedule ss
+      JOIN staff s ON s.id = ss.staff_id
+      WHERE ss.work_date BETWEEN ? AND ?${trendDeptSql}
+      GROUP BY ss.work_date
+    )
+    SELECT sc.work_date AS date, sc.scheduled, sc.worked, sc.on_leave, sc.absent, sc.off,
+      COALESCE((SELECT SUM(ot.hours) FROM overtime_records ot JOIN staff os ON os.id=ot.staff_id
+        WHERE ot.work_date=sc.work_date${deptId ? ' AND os.department_id = ?' : ''}), 0) AS overtime_hours,
+      COALESCE((SELECT COUNT(*) FROM attendance_exceptions ax LEFT JOIN staff es ON es.id=ax.staff_id
+        WHERE ax.work_date=sc.work_date AND ax.status='open'${deptId ? ' AND es.department_id = ?' : ''}), 0) AS open_exceptions
+    FROM schedule_counts sc
+    ORDER BY sc.work_date
+  `).all(...trendParams, ...(deptId ? [deptId, deptId] : []))
+
+  const breakdownParams = [monthStart, monthEnd]
+  let breakdownDeptSql = ''
+  if (deptId) {
+    breakdownDeptSql = ' AND COALESCE(ss.dept_id, s.department_id) = ?'
+    breakdownParams.push(deptId)
+  }
+  const breakdowns = db.prepare(`
+    WITH assignments AS (
+      SELECT DISTINCT ss.staff_id, ss.work_date, ss.status,
+        COALESCE(ss.dept_id, s.department_id) AS dept_id,
+        d.name AS dept_name,
+        COALESCE(seg.role_id, s.role_id) AS role_id,
+        COALESCE(seg_role.name, staff_role.name) AS role_name,
+        COALESCE(seg.work_location_id, ss.work_location_id) AS location_id,
+        COALESCE(seg_location.name, schedule_location.name) AS location_name
+      FROM shift_schedule ss
+      JOIN staff s ON s.id = ss.staff_id
+      LEFT JOIN shift_schedule_segments seg ON seg.schedule_id = ss.id AND seg.status != 'cancelled'
+      LEFT JOIN departments d ON d.id = COALESCE(ss.dept_id, s.department_id)
+      LEFT JOIN staff_roles staff_role ON staff_role.id = s.role_id
+      LEFT JOIN staff_roles seg_role ON seg_role.id = seg.role_id
+      LEFT JOIN work_locations schedule_location ON schedule_location.id = ss.work_location_id
+      LEFT JOIN work_locations seg_location ON seg_location.id = seg.work_location_id
+      WHERE ss.work_date BETWEEN ? AND ?${breakdownDeptSql}
+    ), dimensions AS (
+      SELECT 'department' AS dimension, dept_id AS dimension_id,
+        COALESCE(dept_name, 'Departmansiz') AS name, staff_id, work_date, status
+      FROM assignments
+      UNION ALL
+      SELECT 'role', role_id, COALESCE(role_name, 'Rolsuz'), staff_id, work_date, status FROM assignments
+      UNION ALL
+      SELECT 'location', location_id, COALESCE(location_name, 'Nokta tanimsiz'), staff_id, work_date, status FROM assignments
+    )
+    SELECT dimension, dimension_id, name,
+      COUNT(DISTINCT staff_id) AS staff_count,
+      COUNT(DISTINCT staff_id || ':' || work_date) AS person_days,
+      COUNT(DISTINCT CASE WHEN status IN ('worked','overtime') THEN staff_id || ':' || work_date END) AS worked_days,
+      COUNT(DISTINCT CASE WHEN status = 'scheduled' THEN staff_id || ':' || work_date END) AS planned_days,
+      COUNT(DISTINCT CASE WHEN status = 'on_leave' THEN staff_id || ':' || work_date END) AS leave_days,
+      COUNT(DISTINCT CASE WHEN status = 'absent' THEN staff_id || ':' || work_date END) AS absent_days
+    FROM dimensions
+    GROUP BY dimension, dimension_id, name
+    ORDER BY dimension, person_days DESC, name
+  `).all(...breakdownParams)
+
+  const streakParams = [monthStart, monthEnd]
+  let streakDeptSql = ''
+  if (deptId) {
+    streakDeptSql = ' AND COALESCE(ss.dept_id, s.department_id) = ?'
+    streakParams.push(deptId)
+  }
+  const streakRows = db.prepare(`
+    SELECT ss.staff_id, s.full_name, ss.work_date, ss.status,
+      COALESCE(ss.dept_id, s.department_id) AS dept_id, d.name AS dept_name
+    FROM shift_schedule ss
+    JOIN staff s ON s.id=ss.staff_id
+    LEFT JOIN departments d ON d.id=COALESCE(ss.dept_id, s.department_id)
+    WHERE ss.work_date BETWEEN ? AND ?
+      AND ss.status IN ('scheduled','worked','overtime')${streakDeptSql}
+    ORDER BY ss.staff_id, ss.work_date
+  `).all(...streakParams)
+
+  const pendingLeaves = getLeaveRequests({ status: 'pending', ...(deptId ? { dept_id: deptId } : {}) })
+  const pendingOvertime = getOvertimeRequests({ status: 'pending', ...(deptId ? { dept_id: deptId } : {}) })
+  const endingLeaveParams = [date, date]
+  let endingLeaveDeptSql = ''
+  if (deptId) {
+    endingLeaveDeptSql = ' AND s.department_id = ?'
+    endingLeaveParams.push(deptId)
+  }
+  const endingLeaves = db.prepare(`
+    SELECT lr.id, lr.staff_id, s.full_name, s.department_id AS dept_id,
+      d.name AS dept_name, lr.leave_type, lr.end_date, lr.reason
+    FROM leave_requests lr
+    JOIN staff s ON s.id=lr.staff_id
+    LEFT JOIN departments d ON d.id=s.department_id
+    WHERE lr.status='approved' AND lr.leave_type='sick'
+      AND lr.end_date BETWEEN ? AND date(?, '+7 day')${endingLeaveDeptSql}
+    ORDER BY lr.end_date, s.full_name
+  `).all(...endingLeaveParams)
+
+  const balanceParams = [Number(monthStart.slice(0, 4))]
+  let balanceDeptSql = ''
+  if (deptId) {
+    balanceDeptSql = ' AND s.department_id = ?'
+    balanceParams.push(deptId)
+  }
+  const lowLeaveBalances = db.prepare(`
+    SELECT s.id AS staff_id, s.full_name, s.department_id AS dept_id,
+      d.name AS dept_name, COALESCE(lb.annual_total, 15) AS annual_total,
+      COALESCE(lb.annual_used, 0) AS annual_used,
+      COALESCE(lb.annual_total, 15) - COALESCE(lb.annual_used, 0) AS remaining
+    FROM staff s
+    LEFT JOIN departments d ON d.id=s.department_id
+    LEFT JOIN leave_balance lb ON lb.staff_id=s.id AND lb.year=?
+    WHERE s.is_active=1${balanceDeptSql}
+      AND COALESCE(lb.annual_total, 15) - COALESCE(lb.annual_used, 0) <= 3
+    ORDER BY remaining, s.full_name
+  `).all(...balanceParams)
+
+  const activeStaffParams = []
+  let activeStaffSql = ''
+  if (deptId) { activeStaffSql = ' AND s.department_id=?'; activeStaffParams.push(deptId) }
+  const activeStaff = db.prepare(`SELECT COUNT(*) AS count FROM staff s WHERE s.is_active=1${activeStaffSql}`).get(...activeStaffParams).count
+
+  return {
+    roster,
+    trends,
+    breakdowns,
+    streakRows,
+    pendingLeaves,
+    pendingOvertime,
+    endingLeaves,
+    lowLeaveBalances,
+    activeStaff,
+  }
+}
+
+export function getPuantajClosingPackageData({ monthStart, monthEnd, deptId = null }) {
+  const db = getDB()
+  const leavesParams = [monthEnd, monthStart]
+  let leavesDeptSql = ''
+  if (deptId) { leavesDeptSql = ' AND s.department_id=?'; leavesParams.push(deptId) }
+  const leaveRequests = db.prepare(`
+    SELECT lr.*, s.full_name, s.tc_no, s.department_id AS dept_id, d.name AS dept_name,
+      reviewer.full_name AS reviewer_name,
+      (SELECT COUNT(*) FROM leave_documents ld WHERE ld.leave_request_id=lr.id) AS document_count
+    FROM leave_requests lr
+    JOIN staff s ON s.id=lr.staff_id
+    LEFT JOIN departments d ON d.id=s.department_id
+    LEFT JOIN users reviewer ON reviewer.id=lr.approved_by
+    WHERE lr.start_date<=? AND lr.end_date>=?${leavesDeptSql}
+    ORDER BY lr.start_date, s.full_name
+  `).all(...leavesParams)
+
+  const overtimeParams = [monthStart, monthEnd]
+  let overtimeDeptSql = ''
+  if (deptId) { overtimeDeptSql = ' AND s.department_id=?'; overtimeParams.push(deptId) }
+  const overtimeRequests = db.prepare(`
+    SELECT otr.*, s.full_name, s.tc_no, s.department_id AS dept_id, d.name AS dept_name,
+      reviewer.full_name AS reviewer_name,
+      (SELECT COUNT(*) FROM leave_documents ld WHERE ld.overtime_request_id=otr.id) AS document_count
+    FROM overtime_requests otr
+    JOIN staff s ON s.id=otr.staff_id
+    LEFT JOIN departments d ON d.id=s.department_id
+    LEFT JOIN users reviewer ON reviewer.id=otr.reviewed_by
+    WHERE otr.work_date BETWEEN ? AND ?${overtimeDeptSql}
+    ORDER BY otr.work_date, s.full_name
+  `).all(...overtimeParams)
+
+  const eventParams = [monthStart, monthEnd]
+  let eventDeptSql = ''
+  if (deptId) { eventDeptSql = ' AND s.department_id=?'; eventParams.push(deptId) }
+  const attendanceEvents = db.prepare(`
+    SELECT ae.id, ae.work_date, ae.occurred_at, ae.event_type, ae.source, ae.device_id,
+      ae.match_status, ae.match_detail, ae.staff_id, s.full_name,
+      s.department_id AS dept_id, d.name AS dept_name, c.code AS card_code
+    FROM attendance_events ae
+    LEFT JOIN staff s ON s.id=ae.staff_id
+    LEFT JOIN departments d ON d.id=s.department_id
+    LEFT JOIN cards c ON c.id=ae.card_id
+    WHERE ae.work_date BETWEEN ? AND ?${eventDeptSql}
+    ORDER BY ae.occurred_at, ae.id
+  `).all(...eventParams)
+
+  const exceptionParams = [monthStart, monthEnd]
+  let exceptionDeptSql = ''
+  if (deptId) { exceptionDeptSql = ' AND s.department_id=?'; exceptionParams.push(deptId) }
+  const attendanceExceptions = db.prepare(`
+    SELECT ax.*, s.full_name, s.department_id AS dept_id, d.name AS dept_name,
+      resolver.full_name AS resolved_by_name
+    FROM attendance_exceptions ax
+    LEFT JOIN staff s ON s.id=ax.staff_id
+    LEFT JOIN departments d ON d.id=s.department_id
+    LEFT JOIN users resolver ON resolver.id=ax.resolved_by
+    WHERE ax.work_date BETWEEN ? AND ?${exceptionDeptSql}
+    ORDER BY ax.work_date, ax.id
+  `).all(...exceptionParams)
+
+  const documentParams = [monthEnd, monthStart, monthStart, monthEnd, monthStart, monthEnd]
+  let documentDeptSql = ''
+  if (deptId) {
+    documentDeptSql = ' AND COALESCE(ls.department_id, os.department_id, ss_staff.department_id)=?'
+    documentParams.push(deptId)
+  }
+  const documents = db.prepare(`
+    SELECT ld.id, ld.file_name, ld.mime_type, ld.file_size, ld.file_url, ld.created_at,
+      ld.leave_request_id, ld.overtime_request_id, ld.schedule_id,
+      CASE WHEN ld.leave_request_id IS NOT NULL THEN 'leave'
+        WHEN ld.overtime_request_id IS NOT NULL THEN 'overtime' ELSE 'schedule' END AS request_type,
+      COALESCE(lr.staff_id, otr.staff_id, ss.staff_id) AS staff_id,
+      COALESCE(ls.full_name, os.full_name, ss_staff.full_name) AS full_name,
+      COALESCE(ld.leave_request_id, ld.overtime_request_id, ld.schedule_id) AS request_id,
+      COALESCE(lr.start_date, otr.work_date, ss.work_date) AS start_date,
+      COALESCE(lr.end_date, otr.work_date, ss.work_date) AS end_date,
+      COALESCE(ld_leave.name, ld_ot.name, ld_ss.name) AS dept_name
+    FROM leave_documents ld
+    LEFT JOIN leave_requests lr ON lr.id=ld.leave_request_id
+    LEFT JOIN overtime_requests otr ON otr.id=ld.overtime_request_id
+    LEFT JOIN shift_schedule ss ON ss.id=ld.schedule_id
+    LEFT JOIN staff ls ON ls.id=lr.staff_id
+    LEFT JOIN staff os ON os.id=otr.staff_id
+    LEFT JOIN staff ss_staff ON ss_staff.id=ss.staff_id
+    LEFT JOIN departments ld_leave ON ld_leave.id=ls.department_id
+    LEFT JOIN departments ld_ot ON ld_ot.id=os.department_id
+    LEFT JOIN departments ld_ss ON ld_ss.id=ss_staff.department_id
+    WHERE ((lr.start_date<=? AND lr.end_date>=?)
+      OR otr.work_date BETWEEN ? AND ?
+      OR ss.work_date BETWEEN ? AND ?)${documentDeptSql}
+    ORDER BY ld.created_at, ld.id
+  `).all(...documentParams)
+
+  return {
+    leaveRequests,
+    overtimeRequests,
+    attendanceEvents,
+    attendanceExceptions,
+    documents,
+  }
+}
+
 export function getShiftStatistics(date) {
   const db = getDB()
 
@@ -1683,7 +2010,8 @@ export function getShiftCoverage(from, to) {
     SELECT ss.staff_id, ss.work_date,
       COALESCE(ss.dept_id, s.department_id) AS dept_id,
       s.role_id, ss.work_location_id, ss.shift_def_id,
-      sd.start_hour AS start_time, sd.end_hour AS end_time
+      printf('%02d:00', sd.start_hour) AS start_time,
+      printf('%02d:00', sd.end_hour) AS end_time
     FROM shift_schedule ss
     JOIN staff s ON s.id = ss.staff_id
     LEFT JOIN shift_definitions sd ON sd.id = ss.shift_def_id

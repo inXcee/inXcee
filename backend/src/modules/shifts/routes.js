@@ -31,7 +31,8 @@ import {
   staffAssignmentsService, createStaffAssignmentService, staffDataQualityService,
   puantajCsvService, puantajDaysService, staffDayBreakdownService, payslipService, bankTransferCsvService,
   attendanceEventService, attendanceEventsService, reconcileAttendanceService,
-  attendanceExceptionsService, updateAttendanceExceptionService
+  attendanceExceptionsService, updateAttendanceExceptionService,
+  operationsDashboardService, puantajClosingPackageService
 } from './service.js'
 import PDFDocument from 'pdfkit'
 import {
@@ -721,6 +722,18 @@ shiftsRouter.get('/attendance', ...allStaff, (req, res) => {
   res.json(attendanceListService(req.query))
 })
 
+shiftsRouter.get('/operations/dashboard', ...managerOrSupervisor, (req, res) => {
+  try {
+    res.json(operationsDashboardService({
+      date: req.query.date,
+      month: req.query.month,
+      deptId: req.query.dept_id || null,
+    }))
+  } catch (e) {
+    res.status(e.statusCode || 400).json({ error: e.message })
+  }
+})
+
 shiftsRouter.post('/attendance/checkin', ...allStaff, (req, res) => {
   try {
     const result = checkInService(req.body)
@@ -766,6 +779,16 @@ shiftsRouter.get('/puantaj/export/csv', ...allStaff, (req, res) => {
 
 // ── Puantaj day breakdown (after CSV route to avoid staffId='export') ──
 // ── Puantaj kod kayıt sistemi (must be before /:staffId routes) ──
+shiftsRouter.get('/puantaj/closing-package', ...managerOrSupervisor, (req, res) => {
+  try {
+    const { month, dept_id } = req.query
+    if (!month) return res.status(400).json({ error: 'month parametresi YYYY-MM formatinda gereklidir' })
+    res.json(puantajClosingPackageService(month, dept_id || null))
+  } catch (e) {
+    res.status(e.statusCode || 400).json({ error: e.message })
+  }
+})
+
 shiftsRouter.get('/puantaj/codes', ...allStaff, (req, res) => {
   try { res.json(puantajCodesService(req.query)) }
   catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }

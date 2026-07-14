@@ -85,7 +85,7 @@ describe('scheduleShareExport', () => {
     expect(html).toContain('OTC Yemekhane')
     expect(html).toContain('Gunduz')
     expect(html).toContain('#60A5FA')
-    expect(html).toContain('PDF icin tarayici yazdir')
+    expect(html).toContain('Revizyon 1')
   })
 
   it('summarizes split-shift segments in personnel share output', () => {
@@ -120,6 +120,9 @@ describe('scheduleShareExport', () => {
         pageBreakByDept: true,
         pageSize: 'A3',
         preparedBy: 'Vardiya Amirligi',
+        publicationDate: '2026-07-05',
+        revision: '3',
+        documentNo: 'VRD-2026-07',
         note: 'Bu cizelge personele duyurulacak.',
         includeSignatures: true,
       },
@@ -128,6 +131,8 @@ describe('scheduleShareExport', () => {
     expect(html).toContain('@page { size: A3 landscape')
     expect(html).toContain('dept-block split')
     expect(html).toContain('Hazirlayan: Vardiya Amirligi')
+    expect(html).toContain('Yayin: 5 Tem / Rev: 3')
+    expect(html).toContain('Belge No: VRD-2026-07')
     expect(html).toContain('Bu cizelge personele duyurulacak.')
     expect(html).toContain('Kontrol Eden')
   })
@@ -135,6 +140,7 @@ describe('scheduleShareExport', () => {
   it('creates stable filenames for downloaded images', () => {
     expect(scheduleShareFilename('2026-07-06', 'png')).toBe('vardiya-cizelgesi-2026-07-06.png')
     expect(scheduleShareFilename('2026-07-06', 'jpg')).toBe('vardiya-cizelgesi-2026-07-06.jpg')
+    expect(scheduleShareFilename('2026-07-06', 'png', '3')).toBe('vardiya-cizelgesi-2026-07-06-r3.png')
   })
 
   it('applies custom colors to shifts and statuses in every mode', () => {

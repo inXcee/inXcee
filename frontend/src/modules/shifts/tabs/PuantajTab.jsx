@@ -12,6 +12,7 @@ import { saveWorkbook } from '../logic/excelKit.js'
 import { buildPuantajFoyuWorkbook } from '../logic/puantajFoyuExcel.js'
 import { buildPuantajControl } from '../logic/puantajControl.js'
 import StaffDetailPanel from '../StaffDetailPanel.jsx'
+import PuantajOperationsView from './PuantajOperationsView.jsx'
 
 const COMPANY_NAME = import.meta.env.VITE_COMPANY_NAME || 'YYS Kampüs'
 
@@ -3287,7 +3288,7 @@ function AttendanceExceptionsSheet({
   )
 }
 
-export default function PuantajTab({ departments }) {
+export default function PuantajTab({ departments, onPersonClick }) {
   const qc = useQueryClient()
   const user = useAuthStore(s => s.user)
   const roleCanEdit = ['campus_manager', 'shift_supervisor'].includes(user?.role)
@@ -3297,7 +3298,7 @@ export default function PuantajTab({ departments }) {
   const [deptFilter, setDeptFilter] = useState('')
   const [search, setSearch] = useState('')
   const debouncedPuantajSearch = useDebounce(search, 250)
-  const [viewMode, setViewMode] = useState('list') // 'list' | 'calendar' | 'summary' | 'control' | 'approval'
+  const [viewMode, setViewMode] = useState('list') // list | calendar | summary | operations | control | approval
   const [showEmployer, setShowEmployer] = useState(false)
   const [selectedRow, setSelectedRow] = useState(null) // row object for bordro detail
   const [sortBy, setSortBy] = useState('name')
@@ -3693,10 +3694,14 @@ export default function PuantajTab({ departments }) {
       const approvalRequest = roleCanEdit
         ? api.get('/shifts/puantaj/approval', { params }).then(res => res.data).catch(() => approvalPayload)
         : Promise.resolve(null)
-      const [daysRes, holidaysRes, approvalRes, ExcelJS] = await Promise.all([
+      const closingPackageRequest = roleCanEdit
+        ? api.get('/shifts/puantaj/closing-package', { params }).then(res => res.data)
+        : Promise.resolve(null)
+      const [daysRes, holidaysRes, approvalRes, closingPackage, ExcelJS] = await Promise.all([
         api.get('/shifts/puantaj/days', { params }).then(res => res.data.days || {}),
         api.get('/shifts/holidays', { params: { year: y } }).then(res => res.data),
         approvalRequest,
+        closingPackageRequest,
         import('exceljs').then(mod => mod.default),
       ])
       const deptName = deptFilter ? (departments.find(d => String(d.id) === String(deptFilter))?.name || '—') : 'Tüm Departmanlar'
@@ -3710,6 +3715,7 @@ export default function PuantajTab({ departments }) {
         companyName: COMPANY_NAME,
         approval: approvalRes,
         codes: puantajCodes,
+        closingPackage,
       })
 
       const buf = await workbook.xlsx.writeBuffer()
@@ -3756,6 +3762,20 @@ export default function PuantajTab({ departments }) {
               {label}
             </button>
           ))}
+          {roleCanEdit && (
+            <button
+              key="operations"
+              onClick={() => setViewMode('operations')}
+              style={{
+                padding: '4px 10px', borderRadius: '6px', fontSize: '10px', fontFamily: 'var(--mono)',
+                letterSpacing: '0.5px', border: 'none', cursor: 'pointer',
+                background: viewMode === 'operations' ? 'var(--accent)' : 'transparent',
+                color: viewMode === 'operations' ? '#000' : 'var(--text3)',
+              }}
+            >
+              OPERASYON
+            </button>
+          )}
           <button
             key="approval"
             onClick={() => setViewMode('approval')}
@@ -3876,16 +3896,18 @@ export default function PuantajTab({ departments }) {
         })}
       </div>
 
-      <PuantajClosurePanel
-        audit={puantajAudit}
-        canEdit={canEdit}
-        isLocked={isLocked}
-        monthLabel={monthLabel}
-        onOpenCalendar={() => setViewMode('calendar')}
-        onOpenControl={() => setViewMode('control')}
-        onSyncScheduled={syncScheduledToWorked}
-        syncing={updatePuantajDay.isPending}
-      />
+      {viewMode !== 'operations' && (
+        <PuantajClosurePanel
+          audit={puantajAudit}
+          canEdit={canEdit}
+          isLocked={isLocked}
+          monthLabel={monthLabel}
+          onOpenCalendar={() => setViewMode('calendar')}
+          onOpenControl={() => setViewMode('control')}
+          onSyncScheduled={syncScheduledToWorked}
+          syncing={updatePuantajDay.isPending}
+        />
+      )}
 
       {/* Mode content */}
       {viewMode === 'list' && (
@@ -3917,6 +3939,9 @@ export default function PuantajTab({ departments }) {
       )}
       {viewMode === 'summary' && (
         <PuantajSummaryView filtered={filtered} formatMoney={formatMoney} />
+      )}
+      {viewMode === 'operations' && roleCanEdit && (
+        <PuantajOperationsView month={month} deptFilter={deptFilter} onPersonClick={onPersonClick} />
       )}
       {viewMode === 'control' && (
         <PuantajControlView

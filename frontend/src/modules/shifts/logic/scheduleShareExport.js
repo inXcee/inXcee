@@ -32,6 +32,9 @@ export const DEFAULT_SCHEDULE_SHARE_OPTIONS = {
   weekendColor: '#F59E0B',
   note: '',
   preparedBy: '',
+  publicationDate: '',
+  revision: '1',
+  documentNo: '',
   // Özel renkler — tüm modlarda OFF/İZİN/YOK/Boş için geçerli; working hücre
   // rengi 'custom' modunda shiftColors[shift_def_id] ?? workColor ile belirlenir.
   offColor: '#8B5CF6',
@@ -306,6 +309,7 @@ function buildStyles(opts) {
 function renderScheduleBody(model) {
   const { opts, weekDays, groups, totals, perDay, legend, weekStart, weekEnd, filters } = model
   const generated = new Date().toLocaleString('tr-TR')
+  const publicationDate = opts.publicationDate || new Date().toISOString().slice(0, 10)
   const title = escapeHtml(opts.title || DEFAULT_SCHEDULE_SHARE_OPTIONS.title)
   const filterText = [
     filters.visible ? 'gorunen liste' : 'tum personel',
@@ -322,6 +326,8 @@ function renderScheduleBody(model) {
       <div class="stamp">
         <b>Personel paylasim ciktisi</b><br />
         ${opts.preparedBy ? `Hazirlayan: ${escapeHtml(opts.preparedBy)}<br />` : ''}
+        Yayin: ${escapeHtml(formatDate(publicationDate))} / Rev: ${escapeHtml(opts.revision || '1')}<br />
+        ${opts.documentNo ? `Belge No: ${escapeHtml(opts.documentNo)}<br />` : ''}
         ${escapeHtml(generated)}
       </div>
     </div>
@@ -440,8 +446,8 @@ function renderScheduleBody(model) {
       ${legendHtml}
       ${signaturesHtml}
       <div class="footer">
-        <span>PDF icin tarayici yazdir ekraninda "PDF olarak kaydet" secilebilir.</span>
-        <span>${escapeHtml(formatDate(weekStart))} - ${escapeHtml(formatDate(weekEnd))}</span>
+        <span>${opts.documentNo ? `Belge No: ${escapeHtml(opts.documentNo)} / ` : ''}Revizyon ${escapeHtml(opts.revision || '1')}</span>
+        <span>${escapeHtml(formatDate(weekStart))} - ${escapeHtml(formatDate(weekEnd))} / Yayin ${escapeHtml(formatDate(publicationDate))}</span>
       </div>
     </div>
   `
@@ -454,9 +460,10 @@ export function buildScheduleShareHtml(payload) {
   return `<!doctype html><html><head><meta charset="utf-8" /><title>${escapeHtml(model.opts.title)}</title><style>${styles}</style></head><body>${body}</body></html>`
 }
 
-export function scheduleShareFilename(weekStart, ext) {
+export function scheduleShareFilename(weekStart, ext, revision = '') {
   const safeDate = String(weekStart || 'hafta').replace(/[^0-9a-zA-Z_-]/g, '-')
-  return `vardiya-cizelgesi-${safeDate}.${ext}`
+  const safeRevision = String(revision || '').replace(/[^0-9a-zA-Z_-]/g, '')
+  return `vardiya-cizelgesi-${safeDate}${safeRevision ? `-r${safeRevision}` : ''}.${ext}`
 }
 
 export function openSchedulePrintWindow(payload) {
@@ -570,7 +577,8 @@ export function renderScheduleToCanvas(model, scale = 2) {
   ctx.font = '700 10px Arial'
   ctx.fillText('Personel paylasim ciktisi', geom.width - pad, y + 8)
   if (opts.preparedBy) ctx.fillText(fitText(ctx, `Hazirlayan: ${opts.preparedBy}`, 240), geom.width - pad, y + 24)
-  ctx.fillText(new Date().toLocaleString('tr-TR'), geom.width - pad, y + 40)
+  const publicationDate = opts.publicationDate || new Date().toISOString().slice(0, 10)
+  ctx.fillText(fitText(ctx, `Yayin ${formatDate(publicationDate)} / Rev ${opts.revision || '1'}`, 260), geom.width - pad, y + 40)
   y += 52
   // accent çizgi
   ctx.fillStyle = accent
@@ -806,7 +814,7 @@ export async function downloadScheduleShareImage(payload, exportOpts = {}) {
   try {
     const a = document.createElement('a')
     a.href = url
-    a.download = scheduleShareFilename(payload.weekStart, format)
+    a.download = scheduleShareFilename(payload.weekStart, format, model.opts.revision)
     document.body.appendChild(a)
     a.click()
     a.remove()

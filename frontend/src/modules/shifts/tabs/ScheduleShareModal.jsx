@@ -246,6 +246,21 @@ export default function ScheduleShareModal({
               <textarea className="form-input" value={options.note || ''} onChange={e => patch('note', e.target.value)} placeholder="Personele gönderilecek açıklama..." style={{ minHeight: 70, resize: 'vertical' }} />
             </label>
 
+            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr .65fr 1fr', gap: 8 }}>
+              <label className="form-label">
+                Yayin tarihi
+                <input type="date" className="form-input" value={options.publicationDate || ''} onChange={e => patch('publicationDate', e.target.value)} />
+              </label>
+              <label className="form-label">
+                Revizyon
+                <input className="form-input" value={options.revision || ''} onChange={e => patch('revision', e.target.value.slice(0, 12))} placeholder="1" />
+              </label>
+              <label className="form-label">
+                Belge no
+                <input className="form-input" value={options.documentNo || ''} onChange={e => patch('documentNo', e.target.value.slice(0, 30))} placeholder="VRD-2026-07" />
+              </label>
+            </div>
+
             {[
               ['onlyVisible', 'Sadece görünen filtreli liste'],
               ['pageBreakByDept', 'Her departman ayrı sayfadan başlasın'],
