@@ -714,16 +714,15 @@ export function getPayrollDetailed(yearMonth) {
   const endDate = new Date(start)
   endDate.setMonth(endDate.getMonth() + 1)
   const end = endDate.toISOString().slice(0, 10)
+  const endInclusive = new Date(endDate.getTime() - 86400000).toISOString().slice(0, 10)
 
   return db.prepare(`
     SELECT s.id, s.full_name, s.tc_no, s.salary, s.position,
       d.name as dept_name,
-      COALESCE((SELECT COUNT(*) FROM shift_schedule
-        WHERE staff_id = s.id AND status IN ('worked','overtime') AND work_date >= ? AND work_date < ?), 0) as worked_days,
-      COALESCE((SELECT COUNT(*) FROM shift_schedule
-        WHERE staff_id = s.id AND status = 'absent' AND work_date >= ? AND work_date < ?), 0) as absent_days,
-      COALESCE((SELECT COUNT(*) FROM shift_schedule
-        WHERE staff_id = s.id AND status = 'on_leave' AND work_date >= ? AND work_date < ?), 0) as leave_days,
+      COALESCE(u.worked_days, 0) as worked_days,
+      COALESCE(u.absent_days, 0) as absent_days,
+      COALESCE(u.leave_days, 0) as leave_days,
+      COALESCE(u.paid_leave_units, 0) as paid_leave_units,
       COALESCE((SELECT SUM(hours) FROM overtime_records
         WHERE staff_id = s.id AND work_date >= ? AND work_date < ?), 0) as overtime_hours,
       COALESCE((SELECT COUNT(*) FROM shift_schedule ss
@@ -734,52 +733,49 @@ export function getPayrollDetailed(yearMonth) {
         WHERE ss.staff_id = s.id AND ss.status IN ('worked','overtime') AND ss.work_date >= ? AND ss.work_date < ?), 0) as weighted_days,
       COALESCE((SELECT SUM(amount) FROM payroll_deductions
         WHERE staff_id = s.id AND period = ?), 0) as total_deductions,
-      COALESCE((SELECT COUNT(*) FROM shift_schedule
-        WHERE staff_id = s.id AND status = 'off' AND work_date >= ? AND work_date < ?), 0) as off_days,
-      -- B5: SGK gün = çalıştığı + izinli + hafta tatili (yasal düşmeyen) günler
-      (
-        COALESCE((SELECT COUNT(*) FROM shift_schedule
-          WHERE staff_id = s.id AND status IN ('worked','overtime') AND work_date >= ? AND work_date < ?), 0)
-        + COALESCE((SELECT COUNT(*) FROM shift_schedule
-          WHERE staff_id = s.id AND status IN ('on_leave','off') AND work_date >= ? AND work_date < ?), 0)
-      ) as sgk_days
+      COALESCE(u.off_days, 0) as off_days,
+      (COALESCE(u.worked_days, 0) + COALESCE(u.off_days, 0) + COALESCE(u.sgk_day_units, 0)) as sgk_days
     FROM staff s
     LEFT JOIN departments d ON d.id = s.department_id
+    LEFT JOIN (
+      ${puantajUnitsSubquery()}
+    ) u ON u.staff_id = s.id
     WHERE s.is_active = 1
     ORDER BY d.name, s.full_name
-  `).all(start, end, start, end, start, end, start, end, start, end, start, end, yearMonth, start, end, start, end, start, end)
+  `).all(start, end, start, end, start, end, yearMonth, start, endInclusive)
 }
 
-// H4 V7 — Bordro export (kişi başı aylık özet)
+// H4 V7 — Bordro export (kişi başı aylık özet) — puantaj kod etkileriyle
 export function getPayrollExport(yearMonth) {
-  // yearMonth: 'YYYY-MM'
   const db = getDB()
   const start = `${yearMonth}-01`
   const endDate = new Date(start)
   endDate.setMonth(endDate.getMonth() + 1)
   const end = endDate.toISOString().slice(0, 10)
+  const endInclusive = new Date(endDate.getTime() - 86400000).toISOString().slice(0, 10)
 
-  const rows = db.prepare(`
+  return db.prepare(`
     SELECT s.id, s.full_name, s.tc_no, s.salary, s.position,
       d.name as dept_name,
-      COALESCE((SELECT COUNT(*) FROM shift_schedule
-        WHERE staff_id = s.id AND status IN ('worked','overtime') AND work_date >= ? AND work_date < ?), 0) as worked_days,
-      COALESCE((SELECT COUNT(*) FROM shift_schedule
-        WHERE staff_id = s.id AND status = 'absent' AND work_date >= ? AND work_date < ?), 0) as absent_days,
-      COALESCE((SELECT COUNT(*) FROM shift_schedule
-        WHERE staff_id = s.id AND status = 'on_leave' AND work_date >= ? AND work_date < ?), 0) as leave_days,
+      COALESCE(u.worked_days, 0) as worked_days,
+      COALESCE(u.absent_days, 0) as absent_days,
+      COALESCE(u.leave_days, 0) as leave_days,
+      COALESCE(u.paid_leave_units, 0) as paid_leave_units,
+      COALESCE(u.off_days, 0) as off_days,
       COALESCE((SELECT SUM(hours) FROM overtime_records
         WHERE staff_id = s.id AND work_date >= ? AND work_date < ?), 0) as overtime_hours,
       COALESCE((SELECT COUNT(*) FROM shift_schedule ss
         JOIN holidays h ON h.date = ss.work_date
-        WHERE ss.staff_id = s.id AND ss.status IN ('worked','overtime') AND ss.work_date >= ? AND ss.work_date < ?), 0) as holiday_days
+        WHERE ss.staff_id = s.id AND ss.status IN ('worked','overtime') AND ss.work_date >= ? AND ss.work_date < ?), 0) as holiday_days,
+      (COALESCE(u.worked_days, 0) + COALESCE(u.off_days, 0) + COALESCE(u.sgk_day_units, 0)) as sgk_days
     FROM staff s
     LEFT JOIN departments d ON d.id = s.department_id
+    LEFT JOIN (
+      ${puantajUnitsSubquery()}
+    ) u ON u.staff_id = s.id
     WHERE s.is_active = 1
     ORDER BY d.name, s.full_name
-  `).all(start, end, start, end, start, end, start, end, start, end)
-
-  return rows
+  `).all(start, end, start, end, start, endInclusive)
 }
 
 // H4 V8 — Birleşik devamsızlık (vardiya absent + transport no-show)
@@ -3532,6 +3528,47 @@ export function getPuantajDayRows(monthStart, monthEnd, deptId) {
   return db.prepare(query).all(...params)
 }
 
+// Puantaj kod-etkili gün birimleri alt-sorgusu — föy (getPuantaj) ve bordro
+// raporları (getPayrollExport/getPayrollDetailed) tek kaynaktan beslensin diye.
+// Placeholder sırası: (monthStart, monthEndInclusive) — ss.work_date BETWEEN.
+export function puantajUnitsSubquery() {
+  return `
+    SELECT ss.staff_id,
+      MAX(ss.dept_id) as snapshot_dept_id,
+      COUNT(CASE WHEN ss.status IN ('worked','overtime') THEN 1 END) as worked_days,
+      COUNT(CASE WHEN ss.status='scheduled' THEN 1 END) as scheduled_days,
+      COUNT(CASE WHEN ss.status='on_leave' THEN 1 END) as leave_days,
+      COUNT(CASE WHEN ss.status='absent' THEN 1 END) as absent_days,
+      COUNT(CASE WHEN ss.status='off' THEN 1 END) as off_days,
+      COUNT(*) as total_days,
+      COUNT(CASE WHEN ss.status='on_leave' AND COALESCE(ss.leave_type, lr.leave_type)='annual' THEN 1 END) as annual_leave_days,
+      COUNT(CASE WHEN ss.status='on_leave' AND COALESCE(ss.leave_type, lr.leave_type)='sick' THEN 1 END) as sick_leave_days,
+      COUNT(CASE WHEN ss.status='on_leave' AND COALESCE(ss.leave_type, lr.leave_type)='emergency' THEN 1 END) as emergency_leave_days,
+      COUNT(CASE WHEN ss.status='on_leave' AND (COALESCE(ss.leave_type, lr.leave_type) IS NULL OR COALESCE(ss.leave_type, lr.leave_type) NOT IN ('annual','sick','emergency')) THEN 1 END) as other_leave_days,
+      SUM(CASE WHEN ss.status='on_leave' AND COALESCE(pc.is_paid, 0)=1 THEN
+        CASE WHEN COALESCE(ss.leave_hours, 0)>0
+          THEN (ss.leave_hours / 8.0) * COALESCE(pc.hour_multiplier, 0)
+          ELSE COALESCE(pc.day_multiplier, 0)
+        END ELSE 0 END) as paid_leave_units,
+      SUM(CASE WHEN ss.status='on_leave' THEN COALESCE(pc.sgk_day_factor, 0) ELSE 0 END) as sgk_day_units,
+      COUNT(CASE WHEN ss.status='on_leave' AND COALESCE(pc.requires_document,0)=1
+        AND ss.attachment_url IS NULL
+        AND NOT EXISTS(SELECT 1 FROM leave_documents ld WHERE ld.schedule_id=ss.id OR ld.leave_request_id=lr.id)
+        THEN 1 END) as missing_required_documents
+    FROM shift_schedule ss
+    LEFT JOIN leave_requests lr ON lr.staff_id = ss.staff_id
+      AND lr.status = 'approved'
+      AND ss.work_date BETWEEN lr.start_date AND lr.end_date
+    LEFT JOIN puantaj_codes pc ON pc.id=COALESCE(ss.puantaj_code_id, (
+      SELECT fallback_pc.id FROM puantaj_codes fallback_pc
+      WHERE fallback_pc.is_active=1 AND fallback_pc.status=ss.status
+        AND (ss.status!='on_leave' OR fallback_pc.leave_type=COALESCE(ss.leave_type, lr.leave_type))
+      ORDER BY fallback_pc.is_builtin DESC, fallback_pc.sort_order, fallback_pc.id LIMIT 1
+    ))
+    WHERE ss.work_date BETWEEN ? AND ?
+    GROUP BY ss.staff_id`
+}
+
 export function getPuantaj(monthStart, monthEnd, deptId) {
   const db = getDB()
   let query = `
@@ -3567,40 +3604,7 @@ export function getPuantaj(monthStart, monthEnd, deptId) {
       LIMIT 1
     )
     LEFT JOIN (
-      SELECT ss.staff_id,
-        MAX(ss.dept_id) as snapshot_dept_id,
-        COUNT(CASE WHEN ss.status IN ('worked','overtime') THEN 1 END) as worked_days,
-        COUNT(CASE WHEN ss.status='scheduled' THEN 1 END) as scheduled_days,
-        COUNT(CASE WHEN ss.status='on_leave' THEN 1 END) as leave_days,
-        COUNT(CASE WHEN ss.status='absent' THEN 1 END) as absent_days,
-        COUNT(CASE WHEN ss.status='off' THEN 1 END) as off_days,
-        COUNT(*) as total_days,
-        COUNT(CASE WHEN ss.status='on_leave' AND COALESCE(ss.leave_type, lr.leave_type)='annual' THEN 1 END) as annual_leave_days,
-        COUNT(CASE WHEN ss.status='on_leave' AND COALESCE(ss.leave_type, lr.leave_type)='sick' THEN 1 END) as sick_leave_days,
-        COUNT(CASE WHEN ss.status='on_leave' AND COALESCE(ss.leave_type, lr.leave_type)='emergency' THEN 1 END) as emergency_leave_days,
-        COUNT(CASE WHEN ss.status='on_leave' AND (COALESCE(ss.leave_type, lr.leave_type) IS NULL OR COALESCE(ss.leave_type, lr.leave_type) NOT IN ('annual','sick','emergency')) THEN 1 END) as other_leave_days,
-        SUM(CASE WHEN ss.status='on_leave' AND COALESCE(pc.is_paid, 0)=1 THEN
-          CASE WHEN COALESCE(ss.leave_hours, 0)>0
-            THEN (ss.leave_hours / 8.0) * COALESCE(pc.hour_multiplier, 0)
-            ELSE COALESCE(pc.day_multiplier, 0)
-          END ELSE 0 END) as paid_leave_units,
-        SUM(CASE WHEN ss.status='on_leave' THEN COALESCE(pc.sgk_day_factor, 0) ELSE 0 END) as sgk_day_units,
-        COUNT(CASE WHEN ss.status='on_leave' AND COALESCE(pc.requires_document,0)=1
-          AND ss.attachment_url IS NULL
-          AND NOT EXISTS(SELECT 1 FROM leave_documents ld WHERE ld.schedule_id=ss.id OR ld.leave_request_id=lr.id)
-          THEN 1 END) as missing_required_documents
-      FROM shift_schedule ss
-      LEFT JOIN leave_requests lr ON lr.staff_id = ss.staff_id
-        AND lr.status = 'approved'
-        AND ss.work_date BETWEEN lr.start_date AND lr.end_date
-      LEFT JOIN puantaj_codes pc ON pc.id=COALESCE(ss.puantaj_code_id, (
-        SELECT fallback_pc.id FROM puantaj_codes fallback_pc
-        WHERE fallback_pc.is_active=1 AND fallback_pc.status=ss.status
-          AND (ss.status!='on_leave' OR fallback_pc.leave_type=COALESCE(ss.leave_type, lr.leave_type))
-        ORDER BY fallback_pc.is_builtin DESC, fallback_pc.sort_order, fallback_pc.id LIMIT 1
-      ))
-      WHERE ss.work_date BETWEEN ? AND ?
-      GROUP BY ss.staff_id
+      ${puantajUnitsSubquery()}
     ) sch ON sch.staff_id = s.id
     LEFT JOIN (
       SELECT staff_id,
