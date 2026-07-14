@@ -1351,3 +1351,98 @@ describe('Su takip - merkezi endpoint hata hatti', () => {
     }
   })
 })
+
+describe('Su takip - intake ve FIFO atomikligi', () => {
+  const auth = (builder) => builder.set('Authorization', `Bearer ${managerToken}`)
+
+  async function createAtomicFixture(suffix, qty = 7) {
+    const product = await auth(request(app).post('/api/water/products')).send({
+      name: `Atomic FIFO ${suffix}`,
+      unit_label: 'adet',
+      units_per_case: 1,
+      cases_per_pallet: 1,
+    })
+    const zone = await auth(request(app).post('/api/water/zones')).send({
+      name: `Atomic Zone ${suffix}`,
+      code: `AT-${suffix}`,
+    })
+    expect(product.status).toBe(201)
+    expect(zone.status).toBe(201)
+
+    const distribution = await auth(request(app).post('/api/water/distribute')).send({
+      product_id: product.body.id,
+      zone_id: zone.body.id,
+      input_qty: qty,
+      input_unit: 'adet',
+      move_date: '2028-01-05',
+    })
+    expect(distribution.status).toBe(201)
+    return { productId: product.body.id, distributionId: distribution.body.id }
+  }
+
+  function forceAllocationFailure(triggerName, distributionId) {
+    getDB().exec(`
+      CREATE TEMP TRIGGER ${triggerName}
+      BEFORE INSERT ON water_movement_allocations
+      WHEN NEW.out_movement_id = ${Number(distributionId)}
+      BEGIN
+        SELECT RAISE(ABORT, 'forced FIFO reconcile failure');
+      END
+    `)
+  }
+
+  it('tekli intake tahsisi basarisizsa hareket kaydini geri alir', async () => {
+    const db = getDB()
+    const { productId, distributionId } = await createAtomicFixture('SINGLE')
+    const triggerName = 'force_single_fifo_failure'
+    forceAllocationFailure(triggerName, distributionId)
+    try {
+      const response = await auth(request(app).post('/api/water/intake')).send({
+        product_id: productId,
+        input_qty: 7,
+        input_unit: 'adet',
+        move_date: '2028-01-06',
+        waybill_no: 'ATOMIC-SINGLE-FAIL',
+      })
+
+      expect(response.status).toBe(500)
+      expect(db.prepare('SELECT COUNT(*) AS count FROM water_movements WHERE waybill_no=?').get('ATOMIC-SINGLE-FAIL').count).toBe(0)
+      expect(db.prepare('SELECT COUNT(*) AS count FROM water_movement_allocations WHERE out_movement_id=?').get(distributionId).count).toBe(0)
+      expect(db.prepare('SELECT needs_review FROM water_movements WHERE id=?').get(distributionId).needs_review).toBe(1)
+    } finally {
+      db.exec(`DROP TRIGGER IF EXISTS ${triggerName}`)
+    }
+  })
+
+  it('toplu intake reconcile hatasinda butun irsaliye satirlarini geri alir', async () => {
+    const db = getDB()
+    const { productId, distributionId } = await createAtomicFixture('BATCH')
+    const secondProduct = await auth(request(app).post('/api/water/products')).send({
+      name: 'Atomic FIFO BATCH SECOND',
+      unit_label: 'adet',
+      units_per_case: 1,
+      cases_per_pallet: 1,
+    })
+    expect(secondProduct.status).toBe(201)
+
+    const triggerName = 'force_batch_fifo_failure'
+    forceAllocationFailure(triggerName, distributionId)
+    try {
+      const response = await auth(request(app).post('/api/water/intake/batch')).send({
+        move_date: '2028-01-06',
+        waybill_no: 'ATOMIC-BATCH-FAIL',
+        lines: [
+          { product_id: productId, input_qty: 7, input_unit: 'adet' },
+          { product_id: secondProduct.body.id, input_qty: 3, input_unit: 'adet' },
+        ],
+      })
+
+      expect(response.status).toBe(500)
+      expect(db.prepare('SELECT COUNT(*) AS count FROM water_movements WHERE waybill_no=?').get('ATOMIC-BATCH-FAIL').count).toBe(0)
+      expect(db.prepare('SELECT COUNT(*) AS count FROM water_movement_allocations WHERE out_movement_id=?').get(distributionId).count).toBe(0)
+      expect(db.prepare('SELECT needs_review FROM water_movements WHERE id=?').get(distributionId).needs_review).toBe(1)
+    } finally {
+      db.exec(`DROP TRIGGER IF EXISTS ${triggerName}`)
+    }
+  })
+})

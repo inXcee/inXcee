@@ -253,13 +253,15 @@ function reconcileUnallocatedOut(productIds) {
 
 export function createIntakeService(data, userId) {
   const { product, qty } = validateMovement(data, false)
-  const id = q.createMovement({
-    type: 'in', product_id: product.id, zone_id: null, move_date: data.move_date,
-    qty_base: toBase(product, qty, data.input_unit), input_qty: qty, input_unit: data.input_unit,
-    waybill_no: data.waybill_no?.trim() || null, note: data.note?.trim() || null, created_by: userId || null,
+  return q.runInTransaction(() => {
+    const id = q.createMovement({
+      type: 'in', product_id: product.id, zone_id: null, move_date: data.move_date,
+      qty_base: toBase(product, qty, data.input_unit), input_qty: qty, input_unit: data.input_unit,
+      waybill_no: data.waybill_no?.trim() || null, note: data.note?.trim() || null, created_by: userId || null,
+    })
+    reconcileUnallocatedOut(product.id)
+    return id
   })
-  reconcileUnallocatedOut(product.id)
-  return id
 }
 
 export function createDistributionService(data, userId) {
@@ -310,9 +312,11 @@ export function batchIntakeService(data, userId) {
       waybill_no: data.waybill_no?.trim() || null, note: (l.note || data.note)?.trim() || null, created_by: userId || null,
     }
   })
-  const ids = q.createMovementsBatch(rows)
-  const matched = reconcileUnallocatedOut(rows.map(r => r.product_id))
-  return { ids, matched }
+  return q.runInTransaction(() => {
+    const ids = q.createMovementsBatch(rows)
+    const matched = reconcileUnallocatedOut(rows.map(r => r.product_id))
+    return { ids, matched }
+  })
 }
 
 export function movementsService(filters) {

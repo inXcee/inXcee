@@ -98,6 +98,10 @@ export function deleteZone(id) {
 }
 
 // ── Hareketler ──
+export function runInTransaction(work) {
+  return getDB().transaction(work)()
+}
+
 export function createMovement(m) {
   return getDB().prepare(`
     INSERT INTO water_movements(type, product_id, zone_id, move_date, qty_base, input_qty, input_unit, waybill_no, note, created_by)
