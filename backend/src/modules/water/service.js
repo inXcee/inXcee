@@ -1,7 +1,9 @@
 import * as q from './queries.js'
 import fs from 'node:fs'
 import { createNotification } from '../../shared/notifications/service.js'
-import { composeAndSend } from '../email/service.js'
+import { getDB } from '../../shared/db/index.js'
+import { enqueue } from '../../shared/jobs/index.js'
+import { parseRecipients } from '../email/service.js'
 
 // ── Çevrim mantığı: ürünün doğal takip birimi + palet/koli/paket kırılımı ──
 // qty_base Excel'deki ham takip sayısıdır. Bu sayı damacanada adet, bardakta koli,
@@ -1083,6 +1085,11 @@ function decorateTruck(row, now = new Date()) {
   const arrivalStartDiff = dateTimeMinute(row.arrival_date, row.arrival_start_time) - dateTimeMinute(clock.date, clock.time)
   const arrivalEndDiff = dateTimeMinute(row.arrival_date, row.arrival_end_time) - dateTimeMinute(clock.date, clock.time)
   const mailDone = !!row.mail_sent_at || ['arrived', 'cancelled'].includes(row.status)
+  const mailJobActive = ['pending', 'processing'].includes(row.mail_job_status)
+  const mailJobFailed = !!row.mail_job_id && (
+    row.mail_job_status === 'failed'
+    || (row.mail_job_status === 'done' && !!row.mail_job_last_error)
+  )
   let mailPhase = 'scheduled'
   let mailPhaseLabel = 'Planlı'
   let mailSeverity = 'info'
@@ -1097,6 +1104,16 @@ function decorateTruck(row, now = new Date()) {
     mailPhaseLabel = 'İptal'
     mailSeverity = 'muted'
     mailNotice = 'Tır kaydı iptal edildi'
+  } else if (mailJobActive) {
+    mailPhase = row.mail_job_status === 'processing' ? 'sending' : 'queued'
+    mailPhaseLabel = row.mail_job_status === 'processing' ? 'Gönderiliyor' : 'Mail sırada'
+    mailSeverity = row.mail_job_status === 'processing' ? 'attention' : 'info'
+    mailNotice = `Mail kalıcı gönderim kuyruğunda · deneme ${row.mail_job_attempts || 0}/${row.mail_job_max_attempts || 5}`
+  } else if (mailJobFailed) {
+    mailPhase = 'send_failed'
+    mailPhaseLabel = 'Gönderilemedi'
+    mailSeverity = 'critical'
+    mailNotice = row.mail_job_last_error || 'Mail gönderimi bütün denemelerde başarısız oldu'
   } else if (mailDiff < 0) {
     mailPhase = 'overdue'
     mailPhaseLabel = 'Süre geçti'
@@ -1147,6 +1164,8 @@ function decorateTruck(row, now = new Date()) {
 
   const nextCheck = nextReminderLabel(row, current)
   const actionItems = []
+  if (mailJobActive) actionItems.push(`Mail gönderim kuyruğunda · iş #${row.mail_job_id}`)
+  if (mailJobFailed) actionItems.push('Mail gönderimi başarısız; hata kontrol edilip yeniden kuyruğa alınmalı')
   if (!mailDone && missing.length) actionItems.push(`Mail için eksik: ${missing.join(', ')}`)
   if (!row.mail_sent_at && mailDiff < 0 && row.status !== 'cancelled') actionItems.push('Mail deadline geçti, ana merkeze gönderim teyidi alınmalı')
   if (!row.mail_sent_at && mailDiff >= 0 && row.mail_deadline_date === clock.date) actionItems.push('Bugün 17:00 öncesi mail gönderimi kapatılmalı')
@@ -1171,6 +1190,16 @@ function decorateTruck(row, now = new Date()) {
     mail_minutes_left: mailDiff,
     mail_time_left_label: mailDiff == null ? null : durationLabel(mailDiff),
     mail_notice: mailNotice,
+    mail_queue: row.mail_job_id ? {
+      job_id: row.mail_job_id,
+      status: row.mail_job_status,
+      attempts: row.mail_job_attempts || 0,
+      max_attempts: row.mail_job_max_attempts || 5,
+      last_error: row.mail_job_last_error || null,
+      queued_at: row.mail_queued_at || null,
+      active: mailJobActive,
+      failed: mailJobFailed,
+    } : null,
     arrival_phase: arrivalPhase,
     arrival_phase_label: arrivalPhaseLabel,
     arrival_severity: arrivalSeverity,
@@ -1231,15 +1260,32 @@ export function updateTruckArrivalService(id, data, userId) {
     throw Object.assign(new Error('Tır kaydı güncellenemedi'), { statusCode: 500 })
 }
 
-export async function sendTruckArrivalMailService(id, userId) {
+export function sendTruckArrivalMailService(id, userId) {
   const row = q.getTruckArrival(id)
   if (!row) throw Object.assign(new Error('Tır kaydı bulunamadı'), { statusCode: 404 })
+  if (row.mail_sent_at) throw Object.assign(new Error('Bu tırın maili daha önce gönderilmiş'), { statusCode: 409 })
   const missing = missingMailFields(row)
   if (missing.length) throw Object.assign(new Error(`Mail için eksik bilgi: ${missing.join(', ')}`), { statusCode: 400 })
+  parseRecipients(row.center_email)
+
+  if (['pending', 'processing'].includes(row.mail_job_status)) {
+    return { queued: true, alreadyQueued: true, job_id: row.mail_job_id, truck: decorateTruck(row) }
+  }
+
   const subject = truckMailSubject(row)
-  const result = await composeAndSend({ to: row.center_email, subject, body: truckMailBody(row) })
-  q.setTruckMailSent(id, userId)
-  return { ...result, truck: decorateTruck(q.getTruckArrival(id)) }
+  const queueMail = getDB().transaction(() => {
+    const jobId = enqueue('water.truck-mail', {
+      truckArrivalId: id,
+      requestedBy: userId || null,
+      to: row.center_email,
+      subject,
+      body: truckMailBody(row),
+    }, { maxAttempts: 5 })
+    if (!q.setTruckMailQueued(id, jobId, userId)) throw new Error('Tır mail kuyruğu kayda bağlanamadı')
+    return jobId
+  })
+  const jobId = queueMail.immediate()
+  return { queued: true, alreadyQueued: false, job_id: jobId, truck: decorateTruck(q.getTruckArrival(id)) }
 }
 
 export function markTruckMailSentService(id, userId) {

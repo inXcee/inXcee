@@ -234,8 +234,8 @@ waterRouter.delete('/truck-arrivals/:id', ...managerOnly, (req, res, next) => {
 waterRouter.post('/truck-arrivals/:id/send-mail', ...managerOnly, async (req, res, next) => {
   try {
     const result = await sendTruckArrivalMailService(+req.params.id, req.user.id)
-    logAudit(req.user.id, 'water_truck_mail_send', 'water', +req.params.id, result.messageId || '')
-    res.json(result)
+    logAudit(req.user.id, 'water_truck_mail_queue', 'water', +req.params.id, `job:${result.job_id}`)
+    res.status(result.alreadyQueued ? 200 : 202).json(result)
   } catch (e) { fail(next, e) }
 })
 waterRouter.post('/truck-arrivals/:id/mark-mail-sent', ...mgr, (req, res, next) => {

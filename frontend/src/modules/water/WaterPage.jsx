@@ -1976,7 +1976,7 @@ function TruckArrivalPanel({ from, to, label, focusRequest }) {
   const { data: trucks = [] } = useQuery({
     queryKey: ['water-truck-arrivals', from, to],
     queryFn: () => api.get('/water/truck-arrivals', { params: { from, to, limit: 300 } }).then(r => r.data),
-    refetchInterval: 60000,
+    refetchInterval: query => (query.state.data || []).some(t => ['pending', 'processing'].includes(t.mail_queue?.status)) ? 2000 : 60000,
   })
   const { data: photos = [] } = useQuery({
     queryKey: ['water-waybill-photos', from, to],
@@ -2035,7 +2035,10 @@ function TruckArrivalPanel({ from, to, label, focusRequest }) {
   })
   const sendMail = useMutation({
     mutationFn: id => api.post(`/water/truck-arrivals/${id}/send-mail`),
-    onSuccess: () => { invalidate(); toastOk('Ana merkeze mail gönderildi') },
+    onSuccess: response => {
+      invalidate()
+      toastOk(response.data?.alreadyQueued ? 'Mail zaten gönderim kuyruğunda' : 'Mail gönderim kuyruğuna alındı')
+    },
     onError: e => toastErr(errMsg(e, 'Mail gönderilemedi')),
   })
   const markMail = useMutation({
@@ -2677,6 +2680,11 @@ function TruckArrivalPanel({ from, to, label, focusRequest }) {
                     <div style={{ border: '1px solid var(--border)', borderRadius: '8px', padding: '8px', background: 'var(--surface)' }}>
                       <div style={{ color: 'var(--text3)', fontSize: '10px' }}>Mail durumu</div>
                       <strong style={{ color: selectedTruck.deadline_passed ? 'var(--red)' : 'var(--text)' }}>{selectedTruck.mail_notice}</strong>
+                      {selectedTruck.mail_queue && (
+                        <div style={{ color: selectedTruck.mail_queue.failed ? 'var(--red)' : 'var(--text3)', fontFamily: 'var(--mono)', fontSize: '10px', marginTop: '4px' }}>
+                          İş #{selectedTruck.mail_queue.job_id} · {selectedTruck.mail_queue.attempts}/{selectedTruck.mail_queue.max_attempts} deneme
+                        </div>
+                      )}
                     </div>
                     <div style={{ border: '1px solid var(--border)', borderRadius: '8px', padding: '8px', background: 'var(--surface)' }}>
                       <div style={{ color: 'var(--text3)', fontSize: '10px' }}>Geliş durumu</div>
@@ -2756,7 +2764,19 @@ function TruckArrivalPanel({ from, to, label, focusRequest }) {
                   )}
 
                   <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                    {isManager && <button className="btn btn-primary btn-sm" disabled={!selectedTruck.mail_ready || sendMail.isPending} onClick={() => sendMail.mutate(selectedTruck.id)}>Mail Gönder</button>}
+                    {isManager && !selectedTruck.mail_sent_at && (
+                      <button
+                        className="btn btn-primary btn-sm"
+                        disabled={!selectedTruck.mail_ready || sendMail.isPending || selectedTruck.mail_queue?.active}
+                        onClick={() => sendMail.mutate(selectedTruck.id)}
+                      >
+                        {sendMail.isPending
+                          ? 'Kuyruğa alınıyor…'
+                          : selectedTruck.mail_queue?.active
+                            ? selectedTruck.mail_queue.status === 'processing' ? 'Gönderiliyor…' : 'Mail kuyrukta'
+                            : selectedTruck.mail_queue?.failed ? 'Tekrar Kuyruğa Al' : 'Maili Kuyruğa Al'}
+                      </button>
+                    )}
                     <button className="btn btn-ghost btn-sm" onClick={() => editTruck(selectedTruck)}>Düzenle</button>
                     {!selectedTruck.mail_sent_at && <button className="btn btn-ghost btn-sm" onClick={() => markMail.mutate(selectedTruck.id)}>Mail atıldı</button>}
                     <button className="btn btn-ghost btn-sm" onClick={() => markChecked.mutate(selectedTruck.id)}>Kontrol edildi</button>

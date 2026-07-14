@@ -700,10 +700,13 @@ export function monthlySeries({ from, to, product_id } = {}) {
 export function listTruckArrivals({ from, to, status, limit = 200 } = {}) {
   let sql = `
     SELECT t.*, b.name AS brand_name, u.full_name AS created_by_name,
+      j.status AS mail_job_status, j.attempts AS mail_job_attempts,
+      j.max_attempts AS mail_job_max_attempts, j.last_error AS mail_job_last_error,
       (SELECT COUNT(*) FROM water_waybill_photos p WHERE p.truck_arrival_id=t.id) AS photo_count
     FROM water_truck_arrivals t
     LEFT JOIN water_brands b ON b.id=t.brand_id
     LEFT JOIN users u ON u.id=t.created_by
+    LEFT JOIN job_queue j ON j.id=t.mail_job_id
     WHERE 1=1
   `
   const params = []
@@ -718,9 +721,12 @@ export function listTruckArrivals({ from, to, status, limit = 200 } = {}) {
 export function getTruckArrival(id) {
   return getDB().prepare(`
     SELECT t.*, b.name AS brand_name,
+      j.status AS mail_job_status, j.attempts AS mail_job_attempts,
+      j.max_attempts AS mail_job_max_attempts, j.last_error AS mail_job_last_error,
       (SELECT COUNT(*) FROM water_waybill_photos p WHERE p.truck_arrival_id=t.id) AS photo_count
     FROM water_truck_arrivals t
     LEFT JOIN water_brands b ON b.id=t.brand_id
+    LEFT JOIN job_queue j ON j.id=t.mail_job_id
     WHERE t.id=?
   `).get(id)
 }
@@ -767,6 +773,15 @@ export function setTruckMailSent(id, userId) {
         updated_by=?, updated_at=CURRENT_TIMESTAMP
     WHERE id=?
   `).run(userId || null, id).changes > 0
+}
+
+export function setTruckMailQueued(id, jobId, userId) {
+  return getDB().prepare(`
+    UPDATE water_truck_arrivals
+    SET mail_job_id=?, mail_queued_at=CURRENT_TIMESTAMP,
+        updated_by=?, updated_at=CURRENT_TIMESTAMP
+    WHERE id=?
+  `).run(jobId, userId || null, id).changes > 0
 }
 
 export function setTruckChecked(id, userId) {

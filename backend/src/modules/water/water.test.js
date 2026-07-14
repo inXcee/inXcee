@@ -1147,6 +1147,43 @@ describe('Su takip - Tir on bildirimleri ve irsaliye foto arsivi (W11)', () => {
     expect(marked.body.mail_sent_at).toBeTruthy()
   })
 
+  it('hazır tır mailini kalıcı kuyruğa atomik ekler ve çift istekte aynı işi döndürür', async () => {
+    const created = await auth(request(app).post('/api/water/truck-arrivals')).send({
+      arrival_date: '2027-03-11',
+      arrival_start_time: '09:00',
+      arrival_end_time: '11:00',
+      plate: '35 queue 050',
+      driver_name: 'Kuyruk Test',
+      driver_tc: '12345678901',
+      driver_phone: '05550000050',
+      trailer_plate: '35 DOR 050',
+      visit_company: 'AVS Tedarik',
+      host_person_name: 'Sercan Sucu',
+      host_person_phone: '0539111344',
+      work_area: 'FPU KAMP ALANI',
+      center_email: 'merkez@example.com',
+    })
+    expect(created.status).toBe(201)
+
+    const queued = await auth(request(app).post(`/api/water/truck-arrivals/${created.body.id}/send-mail`))
+    expect(queued.status).toBe(202)
+    expect(queued.body).toMatchObject({ queued: true, alreadyQueued: false })
+    expect(queued.body.truck.mail_phase).toBe('queued')
+    expect(queued.body.truck.mail_queue).toMatchObject({ status: 'pending', active: true, attempts: 0, max_attempts: 5 })
+
+    const job = getDB().prepare('SELECT * FROM job_queue WHERE id=?').get(queued.body.job_id)
+    expect(job.type).toBe('water.truck-mail')
+    expect(JSON.parse(job.payload)).toMatchObject({
+      truckArrivalId: created.body.id,
+      to: 'merkez@example.com',
+    })
+
+    const duplicate = await auth(request(app).post(`/api/water/truck-arrivals/${created.body.id}/send-mail`))
+    expect(duplicate.status).toBe(200)
+    expect(duplicate.body).toMatchObject({ queued: true, alreadyQueued: true, job_id: queued.body.job_id })
+    expect(getDB().prepare("SELECT COUNT(*) AS count FROM job_queue WHERE type='water.truck-mail'").get().count).toBe(1)
+  })
+
   it('irsaliye fotografi tir kaydina baglanir, arsivde listelenir ve silinir', async () => {
     const truck = await auth(request(app).post('/api/water/truck-arrivals')).send({
       arrival_date: '2027-03-12',

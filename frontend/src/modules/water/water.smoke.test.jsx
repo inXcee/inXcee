@@ -154,10 +154,11 @@ vi.mock('../../shared/api/client.js', () => ({
           mail_ready: true,
           mail_required: true,
           deadline_passed: false,
-          mail_phase: 'due_ready',
-          mail_phase_label: 'Bugün hazır',
-          mail_severity: 'attention',
-          mail_notice: '6 sa içinde ana merkeze mail atılmalı',
+          mail_phase: 'queued',
+          mail_phase_label: 'Mail sırada',
+          mail_severity: 'info',
+          mail_notice: 'Mail kalıcı gönderim kuyruğunda · deneme 0/5',
+          mail_queue: { job_id: 501, status: 'pending', attempts: 0, max_attempts: 5, active: true, failed: false },
           arrival_phase: 'today',
           arrival_phase_label: 'Bugün gelecek',
           arrival_severity: 'warning',
@@ -226,6 +227,7 @@ describe('WaterPage tek-ekran pano smoke', () => {
     expect(screen.getAllByText('FPU KAMP ALANI').length).toBeGreaterThan(0)
     expect(screen.getByDisplayValue(/Personel ve araç girişinin sağlanması/)).toBeInTheDocument()
     expect(screen.getByText('Taslağı Kopyala')).toBeInTheDocument()
+    expect(screen.getByText('İş #501 · 0/5 deneme')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Aksiyon/ })).toBeInTheDocument()
     expect(screen.getByText(/Saatlik kontrol plan/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Toplu kontrol/ })).toBeInTheDocument()
