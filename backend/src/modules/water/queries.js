@@ -169,6 +169,16 @@ export function addMovementAllocations(rows) {
   })
   return tx(rows)
 }
+
+export function intakeAllocationUsage(inMovementId) {
+  return getDB().prepare(`
+    SELECT COUNT(DISTINCT out_movement_id) AS distribution_count,
+           COALESCE(SUM(qty_base), 0) AS allocated_base
+    FROM water_movement_allocations
+    WHERE in_movement_id=?
+  `).get(inMovementId)
+}
+
 export function deleteMovement(id) {
   return getDB().prepare('DELETE FROM water_movements WHERE id=?').run(id).changes > 0
 }
@@ -198,20 +208,18 @@ export function updateMovementWithAllocations(id, plan) {
   return tx()
 }
 
-export function openIntakeLots(productId, { releaseOutMovementId } = {}) {
-  const releaseClause = releaseOutMovementId ? 'AND wa.out_movement_id != ?' : ''
-  const params = releaseOutMovementId ? [releaseOutMovementId, productId] : [productId]
+export function openIntakeLots(productId) {
   return getDB().prepare(`
     SELECT mv.id, mv.product_id, mv.move_date, mv.waybill_no, mv.qty_base,
            COALESCE(SUM(wa.qty_base), 0) AS allocated_base,
            mv.qty_base - COALESCE(SUM(wa.qty_base), 0) AS remaining_base
     FROM water_movements mv
-    LEFT JOIN water_movement_allocations wa ON wa.in_movement_id = mv.id ${releaseClause}
+    LEFT JOIN water_movement_allocations wa ON wa.in_movement_id = mv.id
     WHERE mv.type='in' AND mv.product_id=?
     GROUP BY mv.id
     HAVING remaining_base > 0
     ORDER BY mv.move_date ASC, mv.id ASC
-  `).all(...params)
+  `).all(productId)
 }
 
 export function openDistributionNeeds(productId) {

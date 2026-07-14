@@ -205,12 +205,12 @@ function validateMovement(data, requireZone) {
   return { product, qty }
 }
 
-function buildAllocationPlans(rows, { releaseOutMovementId } = {}) {
+function buildAllocationPlans(rows) {
   const lotsByProduct = new Map()
   const plans = []
   for (const row of rows) {
     if (!lotsByProduct.has(row.product_id)) {
-      lotsByProduct.set(row.product_id, q.openIntakeLots(row.product_id, { releaseOutMovementId }).map(lot => ({ ...lot })))
+      lotsByProduct.set(row.product_id, q.openIntakeLots(row.product_id).map(lot => ({ ...lot })))
     }
     const lots = lotsByProduct.get(row.product_id)
     let need = row.qty_base
@@ -278,8 +278,24 @@ export function createDistributionService(data, userId) {
 }
 
 export function deleteMovementService(id) {
-  if (!q.getMovement(id)) throw Object.assign(new Error('Hareket bulunamadı'), { statusCode: 404 })
-  q.deleteMovement(id)
+  return q.runInTransaction(() => {
+    const existing = q.getMovement(id)
+    if (!existing) throw Object.assign(new Error('Hareket bulunamadı'), { statusCode: 404 })
+    if (existing.type === 'in') {
+      const usage = q.intakeAllocationUsage(id)
+      if (usage.allocated_base > 0) {
+        throw Object.assign(new Error(
+          `Bu giriş ${usage.distribution_count} dağıtıma toplam ${usage.allocated_base} birim tahsis edilmiş. Önce bağlı dağıtımları düzenleyin veya silin.`,
+        ), { statusCode: 409 })
+      }
+      q.deleteMovement(id)
+      return existing
+    }
+
+    q.deleteMovement(id)
+    reconcileUnallocatedOut(existing.product_id)
+    return existing
+  })
 }
 
 export function updateDistributionService(id, data, userId) {
@@ -292,10 +308,13 @@ export function updateDistributionService(id, data, userId) {
     qty_base: toBase(product, qty, data.input_unit), input_qty: qty, input_unit: data.input_unit,
     waybill_no: null, note: data.note?.trim() || null, created_by: existing.created_by || userId || null,
   }
-  const [plan] = buildAllocationPlans([row], { releaseOutMovementId: id })
-  if (!q.updateMovementWithAllocations(id, plan)) throw Object.assign(new Error('Hareket güncellenemedi'), { statusCode: 500 })
-  q.flagReviewForUnallocated([id])
-  q.clearResolvedReviews([existing.product_id, product.id])
+  q.runInTransaction(() => {
+    if (!q.updateMovementWithAllocations(id, { movement: row, allocations: [] })) {
+      throw Object.assign(new Error('Hareket güncellenemedi'), { statusCode: 500 })
+    }
+    reconcileUnallocatedOut([existing.product_id, product.id])
+    q.flagReviewForUnallocated([id])
+  })
   checkLowStock([existing.product_id, product.id])
 }
 

@@ -1446,3 +1446,117 @@ describe('Su takip - intake ve FIFO atomikligi', () => {
     }
   })
 })
+
+describe('Su takip - hareket degisikliginde FIFO butunlugu', () => {
+  const auth = (builder) => builder.set('Authorization', `Bearer ${managerToken}`)
+
+  async function createProduct(name) {
+    const response = await auth(request(app).post('/api/water/products')).send({
+      name,
+      unit_label: 'adet',
+      units_per_case: 1,
+      cases_per_pallet: 1,
+    })
+    expect(response.status).toBe(201)
+    return response.body.id
+  }
+
+  async function createZone(name, code) {
+    const response = await auth(request(app).post('/api/water/zones')).send({ name, code })
+    expect(response.status).toBe(201)
+    return response.body.id
+  }
+
+  async function intake(productId, qty, waybillNo) {
+    const response = await auth(request(app).post('/api/water/intake')).send({
+      product_id: productId,
+      input_qty: qty,
+      input_unit: 'adet',
+      move_date: '2028-02-01',
+      waybill_no: waybillNo,
+    })
+    expect(response.status).toBe(201)
+    return response.body.id
+  }
+
+  async function distribute(productId, zoneId, qty, moveDate) {
+    const response = await auth(request(app).post('/api/water/distribute')).send({
+      product_id: productId,
+      zone_id: zoneId,
+      input_qty: qty,
+      input_unit: 'adet',
+      move_date: moveDate,
+    })
+    expect(response.status).toBe(201)
+    return response.body.id
+  }
+
+  it('OUT silinince serbest kalan lotu siradaki bekleyen dagitima aktarir', async () => {
+    const db = getDB()
+    const productId = await createProduct('FIFO DELETE OUT')
+    const zoneId = await createZone('FIFO Delete Zone', 'FIFO-DEL')
+    const intakeId = await intake(productId, 10, 'FIFO-DELETE-IN')
+    const allocatedOutId = await distribute(productId, zoneId, 10, '2028-02-02')
+    const pendingOutId = await distribute(productId, zoneId, 6, '2028-02-03')
+
+    expect(db.prepare('SELECT needs_review FROM water_movements WHERE id=?').get(pendingOutId).needs_review).toBe(1)
+    const deleted = await auth(request(app).delete(`/api/water/movements/${allocatedOutId}`))
+
+    expect(deleted.status).toBe(200)
+    expect(db.prepare('SELECT COUNT(*) AS count FROM water_movements WHERE id=?').get(allocatedOutId).count).toBe(0)
+    expect(db.prepare('SELECT COALESCE(SUM(qty_base),0) AS total FROM water_movement_allocations WHERE out_movement_id=?').get(pendingOutId).total).toBe(6)
+    expect(db.prepare('SELECT needs_review FROM water_movements WHERE id=?').get(pendingOutId).needs_review).toBe(0)
+    expect(db.prepare('SELECT COALESCE(SUM(qty_base),0) AS total FROM water_movement_allocations WHERE in_movement_id=?').get(intakeId).total).toBe(6)
+  })
+
+  it('tahsisli IN silmeyi aciklamali 409 ile engeller', async () => {
+    const db = getDB()
+    const productId = await createProduct('FIFO DELETE IN')
+    const zoneId = await createZone('FIFO Intake Zone', 'FIFO-IN')
+    const intakeId = await intake(productId, 5, 'FIFO-RESTRICT-IN')
+    const outId = await distribute(productId, zoneId, 3, '2028-02-02')
+
+    const response = await auth(request(app).delete(`/api/water/movements/${intakeId}`))
+
+    expect(response.status).toBe(409)
+    expect(response.body.error).toMatch(/1 dağıtıma toplam 3 birim tahsis edilmiş/)
+    expect(db.prepare('SELECT COUNT(*) AS count FROM water_movements WHERE id=?').get(intakeId).count).toBe(1)
+    expect(db.prepare('SELECT COALESCE(SUM(qty_base),0) AS total FROM water_movement_allocations WHERE out_movement_id=?').get(outId).total).toBe(3)
+  })
+
+  it('dagitim urunu A dan B ye degisince iki urunun tahsislerini yeniden dengeler', async () => {
+    const db = getDB()
+    const productA = await createProduct('FIFO UPDATE PRODUCT A')
+    const productB = await createProduct('FIFO UPDATE PRODUCT B')
+    const zoneId = await createZone('FIFO Update Zone', 'FIFO-UPD')
+    const intakeA = await intake(productA, 10, 'FIFO-UPDATE-A')
+    const movingOutId = await distribute(productA, zoneId, 10, '2028-02-02')
+    const pendingAId = await distribute(productA, zoneId, 6, '2028-02-03')
+    const intakeB = await intake(productB, 8, 'FIFO-UPDATE-B')
+
+    const updated = await auth(request(app).put(`/api/water/movements/${movingOutId}`)).send({
+      product_id: productB,
+      zone_id: zoneId,
+      input_qty: 8,
+      input_unit: 'adet',
+      move_date: '2028-02-04',
+      note: 'A dan B ye aktarildi',
+    })
+
+    expect(updated.status).toBe(200)
+    expect(db.prepare('SELECT product_id FROM water_movements WHERE id=?').get(movingOutId).product_id).toBe(productB)
+    expect(db.prepare('SELECT COALESCE(SUM(qty_base),0) AS total FROM water_movement_allocations WHERE out_movement_id=?').get(pendingAId).total).toBe(6)
+    expect(db.prepare('SELECT needs_review FROM water_movements WHERE id=?').get(pendingAId).needs_review).toBe(0)
+    expect(db.prepare('SELECT COALESCE(SUM(qty_base),0) AS total FROM water_movement_allocations WHERE in_movement_id=?').get(intakeA).total).toBe(6)
+
+    const updatedSources = db.prepare(`
+      SELECT src.product_id, SUM(wa.qty_base) AS total
+      FROM water_movement_allocations wa
+      JOIN water_movements src ON src.id=wa.in_movement_id
+      WHERE wa.out_movement_id=?
+      GROUP BY src.product_id
+    `).all(movingOutId)
+    expect(updatedSources).toEqual([{ product_id: productB, total: 8 }])
+    expect(db.prepare('SELECT COALESCE(SUM(qty_base),0) AS total FROM water_movement_allocations WHERE in_movement_id=?').get(intakeB).total).toBe(8)
+  })
+})
