@@ -103,13 +103,17 @@ export function updateBrandService(id, data) {
   const clash = q.getBrandByName(data.name.trim())
   if (clash && clash.id !== id) throw Object.assign(new Error('Bu marka zaten var'), { statusCode: 409 })
   const color = Object.prototype.hasOwnProperty.call(data, 'color') ? normColor(data.color) : existing.color
-  q.updateBrand(id, { name: data.name.trim(), sort_order: parseInt(data.sort_order) || 0, is_active: data.is_active !== false, color })
+  if (!q.updateBrand(id, { name: data.name.trim(), sort_order: parseInt(data.sort_order) || 0, is_active: data.is_active !== false, color }))
+    throw Object.assign(new Error('Marka güncellenemedi'), { statusCode: 500 })
+  return { before: existing, after: q.getBrand(id) }
 }
 export function deleteBrandService(id) {
-  if (!q.getBrand(id)) throw Object.assign(new Error('Marka bulunamadı'), { statusCode: 404 })
+  const existing = q.getBrand(id)
+  if (!existing) throw Object.assign(new Error('Marka bulunamadı'), { statusCode: 404 })
   if (q.brandProductCount(id) > 0)
     throw Object.assign(new Error('Bu markaya bağlı ürün var — önce ürünlerin markasını değiştirin'), { statusCode: 409 })
-  q.deleteBrand(id)
+  if (!q.deleteBrand(id)) throw Object.assign(new Error('Marka silinemedi'), { statusCode: 500 })
+  return existing
 }
 
 // ── Ürün servisleri ──
@@ -147,7 +151,9 @@ export function updateProductService(id, data) {
   const existing = q.getProduct(id)
   if (!existing) throw Object.assign(new Error('Ürün bulunamadı'), { statusCode: 404 })
   if (!data?.name?.trim()) throw Object.assign(new Error('Ürün adı gerekli'), { statusCode: 400 })
-  q.updateProduct(id, { ...productFields(data, existing), is_active: data.is_active !== false })
+  if (!q.updateProduct(id, { ...productFields(data, existing), is_active: data.is_active !== false }))
+    throw Object.assign(new Error('Ürün güncellenemedi'), { statusCode: 500 })
+  return { before: existing, after: q.getProduct(id) }
 }
 
 // Dağıtım sonrası: stok eşik altına düştüyse yöneticiye bildirim (günde bir, dedup)
@@ -167,10 +173,12 @@ function checkLowStock(productIds) {
   }
 }
 export function deleteProductService(id) {
-  if (!q.getProduct(id)) throw Object.assign(new Error('Ürün bulunamadı'), { statusCode: 404 })
+  const existing = q.getProduct(id)
+  if (!existing) throw Object.assign(new Error('Ürün bulunamadı'), { statusCode: 404 })
   if (q.productMovementCount(id) > 0)
     throw Object.assign(new Error('Bu ürüne ait hareket var — silmek yerine pasife alın'), { statusCode: 409 })
-  q.deleteProduct(id)
+  if (!q.deleteProduct(id)) throw Object.assign(new Error('Ürün silinemedi'), { statusCode: 500 })
+  return existing
 }
 
 // ── Bölge servisleri ──
@@ -181,15 +189,20 @@ export function createZoneService(data) {
   return q.createZone({ name: data.name.trim(), code: data.code?.trim() || null, note: data.note?.trim() || null, expected_monthly: expectedMonthly(data) })
 }
 export function updateZoneService(id, data) {
-  if (!q.getZone(id)) throw Object.assign(new Error('Bölge bulunamadı'), { statusCode: 404 })
+  const existing = q.getZone(id)
+  if (!existing) throw Object.assign(new Error('Bölge bulunamadı'), { statusCode: 404 })
   if (!data?.name?.trim()) throw Object.assign(new Error('Bölge adı gerekli'), { statusCode: 400 })
-  q.updateZone(id, { name: data.name.trim(), code: data.code?.trim() || null, note: data.note?.trim() || null, is_active: data.is_active !== false, expected_monthly: expectedMonthly(data) })
+  if (!q.updateZone(id, { name: data.name.trim(), code: data.code?.trim() || null, note: data.note?.trim() || null, is_active: data.is_active !== false, expected_monthly: expectedMonthly(data) }))
+    throw Object.assign(new Error('Bölge güncellenemedi'), { statusCode: 500 })
+  return { before: existing, after: q.getZone(id) }
 }
 export function deleteZoneService(id) {
-  if (!q.getZone(id)) throw Object.assign(new Error('Bölge bulunamadı'), { statusCode: 404 })
+  const existing = q.getZone(id)
+  if (!existing) throw Object.assign(new Error('Bölge bulunamadı'), { statusCode: 404 })
   if (q.zoneMovementCount(id) > 0)
     throw Object.assign(new Error('Bu bölgeye ait hareket var — silmek yerine pasife alın'), { statusCode: 409 })
-  q.deleteZone(id)
+  if (!q.deleteZone(id)) throw Object.assign(new Error('Bölge silinemedi'), { statusCode: 500 })
+  return existing
 }
 
 // ── Hareket servisleri ──

@@ -29,6 +29,20 @@ const managerOnly = requireRole('campus_manager')
 
 const fail = (next, e) => next(e)
 
+const AUDIT_FIELDS = {
+  product: ['name', 'unit_label', 'units_per_case', 'cases_per_pallet', 'is_active', 'min_level', 'critical_level', 'brand_id', 'is_returnable', 'sort_order'],
+  brand: ['name', 'sort_order', 'is_active', 'color'],
+  zone: ['name', 'code', 'note', 'is_active', 'expected_monthly'],
+  movement: ['type', 'product_id', 'zone_id', 'move_date', 'qty_base', 'input_qty', 'input_unit', 'waybill_no', 'note'],
+}
+
+function auditChange(before, after, fields) {
+  const pick = row => row == null
+    ? null
+    : Object.fromEntries(fields.filter(key => Object.prototype.hasOwnProperty.call(row, key)).map(key => [key, row[key]]))
+  return JSON.stringify({ before: pick(before), after: pick(after) })
+}
+
 // ── Ürünler ──
 waterRouter.get('/products', ...mgr, (req, res, next) => {
   try { res.json(productsService({ includeInactive: req.query.all === '1' })) } catch (e) { fail(next, e) }
@@ -38,10 +52,18 @@ waterRouter.post('/products', ...mgr, (req, res, next) => {
   catch (e) { fail(next, e) }
 })
 waterRouter.put('/products/:id', ...mgr, (req, res, next) => {
-  try { updateProductService(+req.params.id, req.body); res.json({ ok: true }) } catch (e) { fail(next, e) }
+  try {
+    const change = updateProductService(+req.params.id, req.body)
+    logAudit(req.user.id, 'water_product_update', 'water', +req.params.id, auditChange(change.before, change.after, AUDIT_FIELDS.product))
+    res.json({ ok: true })
+  } catch (e) { fail(next, e) }
 })
 waterRouter.delete('/products/:id', ...mgr, (req, res, next) => {
-  try { deleteProductService(+req.params.id); res.json({ ok: true }) } catch (e) { fail(next, e) }
+  try {
+    const before = deleteProductService(+req.params.id)
+    logAudit(req.user.id, 'water_product_delete', 'water', +req.params.id, auditChange(before, null, AUDIT_FIELDS.product))
+    res.json({ ok: true })
+  } catch (e) { fail(next, e) }
 })
 
 // ── Markalar ──
@@ -53,10 +75,18 @@ waterRouter.post('/brands', ...mgr, (req, res, next) => {
   catch (e) { fail(next, e) }
 })
 waterRouter.put('/brands/:id', ...mgr, (req, res, next) => {
-  try { updateBrandService(+req.params.id, req.body); res.json({ ok: true }) } catch (e) { fail(next, e) }
+  try {
+    const change = updateBrandService(+req.params.id, req.body)
+    logAudit(req.user.id, 'water_brand_update', 'water', +req.params.id, auditChange(change.before, change.after, AUDIT_FIELDS.brand))
+    res.json({ ok: true })
+  } catch (e) { fail(next, e) }
 })
 waterRouter.delete('/brands/:id', ...mgr, (req, res, next) => {
-  try { deleteBrandService(+req.params.id); res.json({ ok: true }) } catch (e) { fail(next, e) }
+  try {
+    const before = deleteBrandService(+req.params.id)
+    logAudit(req.user.id, 'water_brand_delete', 'water', +req.params.id, auditChange(before, null, AUDIT_FIELDS.brand))
+    res.json({ ok: true })
+  } catch (e) { fail(next, e) }
 })
 
 // ── Bölgeler ──
@@ -68,10 +98,18 @@ waterRouter.post('/zones', ...mgr, (req, res, next) => {
   catch (e) { fail(next, e) }
 })
 waterRouter.put('/zones/:id', ...mgr, (req, res, next) => {
-  try { updateZoneService(+req.params.id, req.body); res.json({ ok: true }) } catch (e) { fail(next, e) }
+  try {
+    const change = updateZoneService(+req.params.id, req.body)
+    logAudit(req.user.id, 'water_zone_update', 'water', +req.params.id, auditChange(change.before, change.after, AUDIT_FIELDS.zone))
+    res.json({ ok: true })
+  } catch (e) { fail(next, e) }
 })
 waterRouter.delete('/zones/:id', ...mgr, (req, res, next) => {
-  try { deleteZoneService(+req.params.id); res.json({ ok: true }) } catch (e) { fail(next, e) }
+  try {
+    const before = deleteZoneService(+req.params.id)
+    logAudit(req.user.id, 'water_zone_delete', 'water', +req.params.id, auditChange(before, null, AUDIT_FIELDS.zone))
+    res.json({ ok: true })
+  } catch (e) { fail(next, e) }
 })
 
 // ── Hareketler ──
@@ -138,7 +176,11 @@ waterRouter.put('/movements/:id', ...mgr, (req, res, next) => {
 })
 
 waterRouter.delete('/movements/:id', ...mgr, (req, res, next) => {
-  try { deleteMovementService(+req.params.id); res.json({ ok: true }) } catch (e) { fail(next, e) }
+  try {
+    const before = deleteMovementService(+req.params.id)
+    logAudit(req.user.id, 'water_movement_delete', 'water', +req.params.id, auditChange(before, null, AUDIT_FIELDS.movement))
+    res.json({ ok: true })
+  } catch (e) { fail(next, e) }
 })
 
 // ── Boş kap / palet iadeleri (depozito) ──

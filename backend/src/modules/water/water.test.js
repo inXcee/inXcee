@@ -1552,6 +1552,10 @@ describe('Su takip - hareket degisikliginde FIFO butunlugu', () => {
     const zoneId = await createZone('FIFO Intake Zone', 'FIFO-IN')
     const intakeId = await intake(productId, 5, 'FIFO-RESTRICT-IN')
     const outId = await distribute(productId, zoneId, 3, '2028-02-02')
+    const auditCountBefore = db.prepare(`
+      SELECT COUNT(*) AS count FROM audit_log
+      WHERE action='water_movement_delete' AND target_id=?
+    `).get(intakeId).count
 
     const response = await auth(request(app).delete(`/api/water/movements/${intakeId}`))
 
@@ -1559,6 +1563,10 @@ describe('Su takip - hareket degisikliginde FIFO butunlugu', () => {
     expect(response.body.error).toMatch(/1 dağıtıma toplam 3 birim tahsis edilmiş/)
     expect(db.prepare('SELECT COUNT(*) AS count FROM water_movements WHERE id=?').get(intakeId).count).toBe(1)
     expect(db.prepare('SELECT COALESCE(SUM(qty_base),0) AS total FROM water_movement_allocations WHERE out_movement_id=?').get(outId).total).toBe(3)
+    expect(db.prepare(`
+      SELECT COUNT(*) AS count FROM audit_log
+      WHERE action='water_movement_delete' AND target_id=?
+    `).get(intakeId).count).toBe(auditCountBefore)
   })
 
   it('dagitim urunu A dan B ye degisince iki urunun tahsislerini yeniden dengeler', async () => {
@@ -1595,5 +1603,113 @@ describe('Su takip - hareket degisikliginde FIFO butunlugu', () => {
     `).all(movingOutId)
     expect(updatedSources).toEqual([{ product_id: productB, total: 8 }])
     expect(db.prepare('SELECT COALESCE(SUM(qty_base),0) AS total FROM water_movement_allocations WHERE in_movement_id=?').get(intakeB).total).toBe(8)
+  })
+})
+
+describe('Su takip - denetim izi', () => {
+  const auth = builder => builder.set('Authorization', `Bearer ${managerToken}`)
+  const auditRow = (action, targetId) => getDB().prepare(`
+    SELECT * FROM audit_log WHERE action=? AND target_id=? ORDER BY id DESC LIMIT 1
+  `).get(action, targetId)
+
+  it('ürün güncelleme ve silmede önce/sonra değerlerini kaydeder', async () => {
+    const created = await auth(request(app).post('/api/water/products')).send({
+      name: 'AUDIT ÜRÜN', unit_label: 'adet', units_per_case: 1, cases_per_pallet: 24,
+      min_level: 3, critical_level: 1,
+    })
+    expect(created.status).toBe(201)
+    const productId = created.body.id
+
+    const updated = await auth(request(app).put(`/api/water/products/${productId}`)).send({
+      name: 'AUDIT ÜRÜN YENİ', unit_label: 'adet', units_per_case: 2, cases_per_pallet: 30,
+      min_level: 5, critical_level: 2, is_returnable: true, is_active: true,
+    })
+    expect(updated.status).toBe(200)
+    const updateAudit = auditRow('water_product_update', productId)
+    expect(updateAudit).toBeTruthy()
+    expect(JSON.parse(updateAudit.detail)).toMatchObject({
+      before: { name: 'AUDIT ÜRÜN', cases_per_pallet: 24, min_level: 3 },
+      after: { name: 'AUDIT ÜRÜN YENİ', cases_per_pallet: 30, min_level: 5, is_returnable: 1 },
+    })
+
+    const deleted = await auth(request(app).delete(`/api/water/products/${productId}`))
+    expect(deleted.status).toBe(200)
+    expect(JSON.parse(auditRow('water_product_delete', productId).detail)).toMatchObject({
+      before: { name: 'AUDIT ÜRÜN YENİ' }, after: null,
+    })
+  })
+
+  it('marka güncelleme ve silmeyi renk dahil kaydeder', async () => {
+    const created = await auth(request(app).post('/api/water/brands')).send({ name: 'AUDIT MARKA', color: '#112233' })
+    expect(created.status).toBe(201)
+    const brandId = created.body.id
+
+    const updated = await auth(request(app).put(`/api/water/brands/${brandId}`)).send({
+      name: 'AUDIT MARKA YENİ', color: '#445566', sort_order: 8, is_active: true,
+    })
+    expect(updated.status).toBe(200)
+    expect(JSON.parse(auditRow('water_brand_update', brandId).detail)).toMatchObject({
+      before: { name: 'AUDIT MARKA', color: '#112233' },
+      after: { name: 'AUDIT MARKA YENİ', color: '#445566', sort_order: 8 },
+    })
+
+    const deleted = await auth(request(app).delete(`/api/water/brands/${brandId}`))
+    expect(deleted.status).toBe(200)
+    expect(JSON.parse(auditRow('water_brand_delete', brandId).detail)).toMatchObject({
+      before: { name: 'AUDIT MARKA YENİ' }, after: null,
+    })
+  })
+
+  it('dağıtım yeri güncelleme ve silmeyi hedef kimliğiyle kaydeder', async () => {
+    const created = await auth(request(app).post('/api/water/zones')).send({
+      name: 'AUDIT BÖLGE', code: 'AUD-1', note: 'ilk', expected_monthly: 100,
+    })
+    expect(created.status).toBe(201)
+    const zoneId = created.body.id
+
+    const updated = await auth(request(app).put(`/api/water/zones/${zoneId}`)).send({
+      name: 'AUDIT BÖLGE YENİ', code: 'AUD-2', note: 'güncel', expected_monthly: 180, is_active: true,
+    })
+    expect(updated.status).toBe(200)
+    expect(JSON.parse(auditRow('water_zone_update', zoneId).detail)).toEqual({
+      before: { name: 'AUDIT BÖLGE', code: 'AUD-1', note: 'ilk', is_active: 1, expected_monthly: 100 },
+      after: { name: 'AUDIT BÖLGE YENİ', code: 'AUD-2', note: 'güncel', is_active: 1, expected_monthly: 180 },
+    })
+
+    const deleted = await auth(request(app).delete(`/api/water/zones/${zoneId}`))
+    expect(deleted.status).toBe(200)
+    expect(JSON.parse(auditRow('water_zone_delete', zoneId).detail)).toMatchObject({
+      before: { name: 'AUDIT BÖLGE YENİ', code: 'AUD-2' }, after: null,
+    })
+  })
+
+  it('stok hareketi silmeyi miktar ve bağlantılarıyla kaydeder; başarısız silmeyi kaydetmez', async () => {
+    const product = await auth(request(app).post('/api/water/products')).send({
+      name: 'AUDIT HAREKET ÜRÜNÜ', unit_label: 'adet', units_per_case: 1, cases_per_pallet: 1,
+    })
+    const zone = await auth(request(app).post('/api/water/zones')).send({ name: 'AUDIT HAREKET BÖLGESİ' })
+    const movement = await auth(request(app).post('/api/water/distribute')).send({
+      product_id: product.body.id, zone_id: zone.body.id,
+      input_qty: 3, input_unit: 'adet', move_date: '2028-03-01', note: 'audit silme',
+    })
+    expect(movement.status).toBe(201)
+
+    const countBefore = getDB().prepare("SELECT COUNT(*) AS count FROM audit_log WHERE action='water_movement_delete'").get().count
+    const missing = await auth(request(app).delete('/api/water/movements/999999999'))
+    expect(missing.status).toBe(404)
+    expect(getDB().prepare("SELECT COUNT(*) AS count FROM audit_log WHERE action='water_movement_delete'").get().count).toBe(countBefore)
+
+    const deleted = await auth(request(app).delete(`/api/water/movements/${movement.body.id}`))
+    expect(deleted.status).toBe(200)
+    const audit = auditRow('water_movement_delete', movement.body.id)
+    expect(audit).toMatchObject({ module: 'water', target_id: movement.body.id })
+    expect(JSON.parse(audit.detail)).toEqual({
+      before: {
+        type: 'out', product_id: product.body.id, zone_id: zone.body.id,
+        move_date: '2028-03-01', qty_base: 3, input_qty: 3, input_unit: 'adet',
+        waybill_no: null, note: 'audit silme',
+      },
+      after: null,
+    })
   })
 })
