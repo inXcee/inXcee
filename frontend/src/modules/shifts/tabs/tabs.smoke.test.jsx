@@ -26,12 +26,21 @@ describe('shifts tabs smoke', () => {
 
   it('LeaveTab çökmeden render olur', () => {
     renderWithProviders(<LeaveTab departments={[]} onPersonClick={() => {}} />)
-    expect(screen.getByText('IZIN TALEPLERI')).toBeInTheDocument()
+    expect(screen.getByText('İZİN TALEPLERİ')).toBeInTheDocument()
   })
 
   it('OvertimeTab çökmeden render olur', () => {
     renderWithProviders(<OvertimeTab departments={[]} onPersonClick={() => {}} />)
-    expect(screen.getByText('MESAI KAYITLARI')).toBeInTheDocument()
+    expect(screen.getByText('MESAİ TALEP VE ONAYLARI')).toBeInTheDocument()
+  })
+
+  it('OvertimeTab kontrollü mesai talep formunu açar', async () => {
+    useAuthStore.setState({ user: { role: 'shift_supervisor' } })
+    renderWithProviders(<OvertimeTab departments={[]} onPersonClick={() => {}} />)
+    fireEvent.click(screen.getByRole('button', { name: /Mesai Talebi/ }))
+    expect(await screen.findByText('YENİ MESAİ TALEBİ')).toBeInTheDocument()
+    expect(screen.getByText('Karşılık')).toBeInTheDocument()
+    expect(screen.getByText('Belge / fotoğraf (en fazla 5)')).toBeInTheDocument()
   })
 
   it('DepartmentsTab çökmeden render olur', () => {

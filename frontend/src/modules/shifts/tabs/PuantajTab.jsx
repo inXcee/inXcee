@@ -1341,7 +1341,17 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
   const buildLocalEntry = (date, action, entry) => {
     const dow = new Date(date).getDay()
     if (action.status === 'clear') return { date, day_of_week: dow, status: dow === 0 ? 'sunday' : 'no_record' }
-    const next = { date, day_of_week: dow, status: action.status }
+    const next = {
+      date,
+      day_of_week: dow,
+      status: action.status,
+      row_version: Number(entry?.row_version || 0),
+    }
+    if (Number(action.codeId) > 0) {
+      next.puantaj_code_id = Number(action.codeId)
+      next.puantaj_code = action.code
+      next.puantaj_code_label = action.label
+    }
     if (action.leave_type) next.leave_type = action.leave_type
     if (['worked', 'scheduled', 'overtime'].includes(action.status)) {
       if (entry?.shift_def_id) next.shift_def_id = entry.shift_def_id
@@ -1385,7 +1395,10 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
     onApplyStatus({
       changes,
       action,
-      onSaved: () => clearFailedSaves(changes),
+      onSaved: savedChanges => {
+        clearFailedSaves(changes)
+        if (savedChanges?.length) replaceLocalDays(savedChanges)
+      },
       onSaveFailed: () => markFailedSaves(changes),
     })
   }
@@ -2338,6 +2351,7 @@ function PuantajCellEditor({ editor, holidayName, onClose }) {
             work_date: date,
             status: 'absent',
             absent_reason: reason.trim() || null,
+            expected_version: Number(entry?.row_version || 0),
           }]
         })
       }
@@ -2454,6 +2468,7 @@ function PuantajDayDetailEditor({ editor, holidayName, onClose }) {
       const form = new FormData()
       form.append('staff_id', String(staff.id))
       form.append('work_date', date)
+      form.append('expected_version', String(Number(entry?.row_version || 0)))
       form.append('status', dayStatus)
       form.append('leave_type', isLeave ? leaveType : '')
       form.append('leave_hours', isLeave && hourlyLeave != null ? String(hourlyLeave) : '')
@@ -2981,14 +2996,20 @@ const CODE_STATUS_OPTIONS = [
   ['scheduled', 'Planlı'],
 ]
 
+const EMPTY_CODE_FORM = {
+  code: '', label: '', color_hex: '#A78BFA', status: 'on_leave',
+  is_paid: false, sgk_day_factor: 0, day_multiplier: 0, hour_multiplier: 0,
+  overtime_effect: 'none', requires_document: false, requires_reason: false,
+}
+
 function PuantajCodeManager({ codes, onClose }) {
   const qc = useQueryClient()
-  const [form, setForm] = useState({ code: '', label: '', color_hex: '#A78BFA', status: 'on_leave' })
+  const [form, setForm] = useState(EMPTY_CODE_FORM)
   const refresh = () => qc.invalidateQueries({ queryKey: ['puantaj-codes'] })
 
   const createMut = useMutation({
     mutationFn: () => api.post('/shifts/puantaj/codes', form),
-    onSuccess: () => { refresh(); toastOk('Kod eklendi'); setForm({ code: '', label: '', color_hex: '#A78BFA', status: 'on_leave' }) },
+    onSuccess: () => { refresh(); toastOk('Kod eklendi'); setForm(EMPTY_CODE_FORM) },
     onError: toastErr,
   })
   const updateMut = useMutation({
@@ -3002,23 +3023,29 @@ function PuantajCodeManager({ codes, onClose }) {
     onError: toastErr,
   })
 
+  const updateNumber = (row, field, value) => {
+    const number = Number(value)
+    if (Number.isFinite(number) && number !== Number(row[field] || 0)) {
+      updateMut.mutate({ id: row.id, patch: { [field]: number } })
+    }
+  }
+
+  const ruleInputStyle = { width: 58, fontSize: '10px', padding: '4px 5px', textAlign: 'center' }
+
   return (
     <ModalOverlay onClose={onClose} wide>
       <h3 style={{ fontFamily: 'var(--display)', fontSize: 16, letterSpacing: 2, margin: '0 0 4px' }}>PUANTAJ KODLARI</h3>
       <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', marginBottom: 12 }}>
-        Renkler takvimde ve Excel föyünde otomatik uygulanır · yerleşik kodlar silinemez
+        Kod kuralları bordro, SGK günü, kapanış kontrolü ve belge zorunluluğunu doğrudan belirler.
       </div>
 
-      <div style={{ overflowX: 'auto', maxHeight: '46vh', overflowY: 'auto' }}>
-        <table className="data-table" style={{ fontSize: '11px', minWidth: '520px' }}>
+      <div style={{ overflow: 'auto', maxHeight: '48vh', border: '1px solid var(--border)', borderRadius: '8px' }}>
+        <table className="data-table" style={{ fontSize: '11px', minWidth: '1160px' }}>
           <thead>
             <tr>
-              <th style={{ textAlign: 'left' }}>Kod</th>
-              <th style={{ textAlign: 'left' }}>Etiket</th>
-              <th style={{ textAlign: 'left' }}>Tür</th>
-              <th style={{ textAlign: 'center' }}>Renk</th>
-              <th style={{ textAlign: 'center' }}>Aktif</th>
-              <th style={{ textAlign: 'center' }}></th>
+              <th>Kod</th><th>Etiket</th><th>Tür</th><th>Renk</th><th>Ücretli</th>
+              <th title="Sosyal güvenlik gün etkisi">SGK</th><th title="Tam gün ücret katsayısı">Gün ×</th>
+              <th title="Saatlik izin ücret katsayısı">Saat ×</th><th>Mesai</th><th>Belge</th><th>Gerekçe</th><th>Aktif</th><th></th>
             </tr>
           </thead>
           <tbody>
@@ -3044,7 +3071,7 @@ function PuantajCodeManager({ codes, onClose }) {
                 </td>
                 <td style={{ color: 'var(--text3)', fontSize: '10px' }}>
                   {CODE_STATUS_OPTIONS.find(([v]) => v === row.status)?.[1] || row.status}
-                  {row.is_builtin ? <span style={{ marginLeft: 4, fontSize: '8px', color: 'var(--text3)' }}>· yerleşik</span> : null}
+                  {row.is_builtin ? <span style={{ display: 'block', fontSize: '8px', color: 'var(--text3)' }}>yerleşik</span> : null}
                 </td>
                 <td style={{ textAlign: 'center' }}>
                   <input
@@ -3054,6 +3081,17 @@ function PuantajCodeManager({ codes, onClose }) {
                     style={{ width: 34, height: 26, padding: 1, border: '1px solid var(--border)', borderRadius: 5, background: 'none', cursor: 'pointer' }}
                   />
                 </td>
+                <td style={{ textAlign: 'center' }}><input type="checkbox" checked={!!row.is_paid} onChange={event => updateMut.mutate({ id: row.id, patch: { is_paid: event.target.checked } })} /></td>
+                <td><input key={`${row.id}-sgk-${row.sgk_day_factor}`} className="form-input" type="number" min="0" max="1" step="0.25" defaultValue={row.sgk_day_factor ?? 0} onBlur={event => updateNumber(row, 'sgk_day_factor', event.target.value)} style={ruleInputStyle} /></td>
+                <td><input key={`${row.id}-day-${row.day_multiplier}`} className="form-input" type="number" min="0" max="3" step="0.25" defaultValue={row.day_multiplier ?? 0} onBlur={event => updateNumber(row, 'day_multiplier', event.target.value)} style={ruleInputStyle} /></td>
+                <td><input key={`${row.id}-hour-${row.hour_multiplier}`} className="form-input" type="number" min="0" max="5" step="0.25" defaultValue={row.hour_multiplier ?? 0} onBlur={event => updateNumber(row, 'hour_multiplier', event.target.value)} style={ruleInputStyle} /></td>
+                <td>
+                  <select className="form-select" value={row.overtime_effect || 'none'} onChange={event => updateMut.mutate({ id: row.id, patch: { overtime_effect: event.target.value } })} style={{ minWidth: 88, fontSize: '9px', padding: '4px' }}>
+                    <option value="none">Etkisiz</option><option value="eligible">Uygun</option><option value="blocks">Engeller</option>
+                  </select>
+                </td>
+                <td style={{ textAlign: 'center' }}><input type="checkbox" checked={!!row.requires_document} onChange={event => updateMut.mutate({ id: row.id, patch: { requires_document: event.target.checked } })} /></td>
+                <td style={{ textAlign: 'center' }}><input type="checkbox" checked={!!row.requires_reason} onChange={event => updateMut.mutate({ id: row.id, patch: { requires_reason: event.target.checked } })} /></td>
                 <td style={{ textAlign: 'center' }}>
                   <input
                     type="checkbox"
@@ -3081,18 +3119,31 @@ function PuantajCodeManager({ codes, onClose }) {
 
       <div style={{ borderTop: '1px solid var(--border)', marginTop: 12, paddingTop: 12 }}>
         <div className="form-label" style={{ marginBottom: 6 }}>Yeni kod ekle</div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '85px minmax(150px, 1fr) 125px 46px', gap: 8, alignItems: 'end' }}>
           <input className="form-input" placeholder="Kod (örn. EĞ)" value={form.code} maxLength={4}
-            onChange={e => setForm(f => ({ ...f, code: e.target.value }))} style={{ width: 90, fontSize: '11px' }} />
+            onChange={e => setForm(f => ({ ...f, code: e.target.value }))} style={{ fontSize: '11px' }} />
           <input className="form-input" placeholder="Etiket (örn. Eğitim izni)" value={form.label}
-            onChange={e => setForm(f => ({ ...f, label: e.target.value }))} style={{ width: 180, fontSize: '11px' }} />
-          <select className="form-select" value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))} style={{ width: 130, fontSize: '11px' }}>
+            onChange={e => setForm(f => ({ ...f, label: e.target.value }))} style={{ fontSize: '11px' }} />
+          <select className="form-select" value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))} style={{ fontSize: '11px' }}>
             {CODE_STATUS_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
           </select>
           <input type="color" value={form.color_hex} onChange={e => setForm(f => ({ ...f, color_hex: e.target.value }))}
-            style={{ width: 40, height: 32, padding: 1, border: '1px solid var(--border)', borderRadius: 6, background: 'none', cursor: 'pointer' }} />
-          <button className="btn btn-primary btn-sm" disabled={!form.code.trim() || !form.label.trim() || createMut.isPending}
-            onClick={() => createMut.mutate()}>Ekle</button>
+            style={{ width: 42, height: 32, padding: 1, border: '1px solid var(--border)', borderRadius: 6, background: 'none', cursor: 'pointer' }} />
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(90px, 1fr))', gap: 8, marginTop: 8 }}>
+          <label style={{ fontSize: '10px', color: 'var(--text2)' }}>SGK gün katsayısı<input className="form-input" type="number" min="0" max="1" step="0.25" value={form.sgk_day_factor} onChange={event => setForm(previous => ({ ...previous, sgk_day_factor: Number(event.target.value) }))} style={{ marginTop: 3 }} /></label>
+          <label style={{ fontSize: '10px', color: 'var(--text2)' }}>Gün katsayısı<input className="form-input" type="number" min="0" max="3" step="0.25" value={form.day_multiplier} onChange={event => setForm(previous => ({ ...previous, day_multiplier: Number(event.target.value) }))} style={{ marginTop: 3 }} /></label>
+          <label style={{ fontSize: '10px', color: 'var(--text2)' }}>Saat katsayısı<input className="form-input" type="number" min="0" max="5" step="0.25" value={form.hour_multiplier} onChange={event => setForm(previous => ({ ...previous, hour_multiplier: Number(event.target.value) }))} style={{ marginTop: 3 }} /></label>
+          <label style={{ fontSize: '10px', color: 'var(--text2)' }}>Mesai etkisi<select className="form-select" value={form.overtime_effect} onChange={event => setForm(previous => ({ ...previous, overtime_effect: event.target.value }))} style={{ marginTop: 3 }}><option value="none">Etkisiz</option><option value="eligible">Uygun</option><option value="blocks">Engeller</option></select></label>
+        </div>
+        <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center', marginTop: 10 }}>
+          {[['is_paid', 'Ücretli'], ['requires_document', 'Belge zorunlu'], ['requires_reason', 'Gerekçe zorunlu']].map(([field, label]) => (
+            <label key={field} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: '10px', color: 'var(--text2)' }}>
+              <input type="checkbox" checked={!!form[field]} onChange={event => setForm(previous => ({ ...previous, [field]: event.target.checked }))} />{label}
+            </label>
+          ))}
+          <button className="btn btn-primary btn-sm" style={{ marginLeft: 'auto' }} disabled={!form.code.trim() || !form.label.trim() || createMut.isPending}
+            onClick={() => createMut.mutate()}>Kodu Ekle</button>
         </div>
       </div>
     </ModalOverlay>
@@ -3391,7 +3442,9 @@ export default function PuantajTab({ departments }) {
     },
     mutationFn: ({ changes, action }) => {
       if (action.status === 'clear') {
-        return Promise.all(changes.map(change => api.delete(`/shifts/schedule/${change.staff.id}/${change.date}`)))
+        return Promise.all(changes.map(change => api.delete(`/shifts/schedule/${change.staff.id}/${change.date}`, {
+          params: { expected_version: Number(change.entry?.row_version || 0) },
+        })))
       }
       if (action.status === 'restore') {
         // Undo: her hücre kendi önceki durumuna döner — boşa dönenler silinir, kalanlar upsert edilir
@@ -3399,7 +3452,9 @@ export default function PuantajTab({ departments }) {
         const deletions = changes.filter(isEmpty)
         const upserts = changes.filter(change => !isEmpty(change))
         return Promise.all([
-          ...deletions.map(change => api.delete(`/shifts/schedule/${change.staff.id}/${change.date}`)),
+          ...deletions.map(change => api.delete(`/shifts/schedule/${change.staff.id}/${change.date}`, {
+            params: { expected_version: Number(change.entry?.row_version || 0) },
+          })),
           ...(upserts.length ? [api.post('/shifts/schedule', {
             entries: upserts.map(change => ({
               staff_id: change.staff.id,
@@ -3409,6 +3464,8 @@ export default function PuantajTab({ departments }) {
               work_date: change.date,
               status: change.nextEntry.status,
               leave_type: change.nextEntry.leave_type || null,
+              puantaj_code_id: Number(change.nextEntry.puantaj_code_id) > 0 ? Number(change.nextEntry.puantaj_code_id) : null,
+              expected_version: Number(change.entry?.row_version || 0),
             }))
           })] : []),
         ])
@@ -3422,12 +3479,30 @@ export default function PuantajTab({ departments }) {
           work_date: change.date,
           status: action.status,
           leave_type: action.leave_type || null,
+          puantaj_code_id: Number(action.codeId) > 0 ? Number(action.codeId) : null,
+          expected_version: Number(change.entry?.row_version || 0),
         }))
       })
     },
-    onSuccess: (_, variables) => {
-      patchPuantajDayCaches(variables.changes)
-      variables?.onSaved?.()
+    onSuccess: (response, variables) => {
+      const responseList = Array.isArray(response) ? response : [response]
+      const savedRows = responseList.flatMap(item => item?.data?.rows || [])
+      const savedByCell = new Map(savedRows.map(row => [`${row.staff_id}:${row.work_date}`, row]))
+      const savedChanges = variables.changes.map(change => {
+        const row = savedByCell.get(`${change.staff.id}:${change.date}`)
+        if (!row) return change
+        return {
+          ...change,
+          nextEntry: {
+            ...change.nextEntry,
+            schedule_id: row.id,
+            row_version: row.row_version,
+            puantaj_code_id: row.puantaj_code_id || change.nextEntry.puantaj_code_id || null,
+          },
+        }
+      })
+      patchPuantajDayCaches(savedChanges)
+      variables?.onSaved?.(savedChanges)
     },
     onError: (err, variables) => {
       variables?.onSaveFailed?.(err)
@@ -3721,7 +3796,7 @@ export default function PuantajTab({ departments }) {
           )}
           {roleCanEdit && (
             <button className="btn btn-ghost btn-sm" onClick={() => setShowCodeManager(true)} style={{ fontSize: '10px' }}>
-              🎨 KODLAR
+              KODLAR
             </button>
           )}
           {isManager && (

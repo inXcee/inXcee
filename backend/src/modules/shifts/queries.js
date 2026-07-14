@@ -577,6 +577,12 @@ export function bulkAssignShifts(entries, createdBy) {
       const status = e.status || 'scheduled'
       const leaveType = status === 'on_leave' ? (e.leave_type || e.leaveType || null) : null
       const existing = findExisting.get(e.staff_id, e.work_date)
+      if (!existing && e.expected_version != null && Number(e.expected_version) !== 0) {
+        throw Object.assign(new Error('Bu hucre silinmis veya baska bir kullanici tarafindan degistirilmis. Guncel veri yeniden yuklendi.'), {
+          statusCode: 409,
+          details: { conflict: true, staff_id: e.staff_id, work_date: e.work_date, current_version: 0 },
+        })
+      }
       if (existing && e.expected_version != null && Number(e.expected_version) !== Number(existing.row_version)) {
         throw Object.assign(new Error('Bu hucre baska bir kullanici tarafindan degistirildi. Guncel veri yeniden yuklendi.'), {
           statusCode: 409,
@@ -2702,6 +2708,12 @@ export function applyRotationTemplate(staffIds, deptId, shiftDefIds, startDate, 
 export function deleteScheduleEntry(staffId, workDate, expectedVersion = null) {
   const db = getDB()
   const current = db.prepare('SELECT row_version FROM shift_schedule WHERE staff_id=? AND work_date=?').get(staffId, workDate)
+  if (!current && expectedVersion != null && Number(expectedVersion) !== 0) {
+    throw Object.assign(new Error('Bu hucre zaten silinmis veya baska bir kullanici tarafindan degistirilmis.'), {
+      statusCode: 409,
+      details: { conflict: true, current_version: 0 },
+    })
+  }
   if (current && expectedVersion != null && Number(expectedVersion) !== Number(current.row_version)) {
     throw Object.assign(new Error('Bu hucre baska bir kullanici tarafindan degistirildi. Guncel veri yeniden yuklendi.'), {
       statusCode: 409,
@@ -2720,6 +2732,12 @@ export function upsertPuantajDayDetail(data, userId) {
   if (!staff) throw new Error('Personel bulunamadi')
 
   const existing = db.prepare('SELECT * FROM shift_schedule WHERE staff_id=? AND work_date=?').get(staffId, workDate)
+  if (!existing && data.expected_version != null && Number(data.expected_version) !== 0) {
+    throw Object.assign(new Error('Bu hucre silinmis veya baska bir kullanici tarafindan degistirilmis. Guncel veri yeniden yuklendi.'), {
+      statusCode: 409,
+      details: { conflict: true, current_version: 0 },
+    })
+  }
   if (existing && data.expected_version != null && Number(data.expected_version) !== Number(existing.row_version || 1)) {
     throw Object.assign(new Error('Bu hucre baska bir kullanici tarafindan degistirildi. Guncel veri yeniden yuklendi.'), {
       statusCode: 409,

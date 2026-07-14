@@ -1,4 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest'
+import Database from 'better-sqlite3'
+import { readFileSync } from 'node:fs'
 import request from 'supertest'
 import app from '../../app.js'
 import { getDB, initDB } from '../../shared/db/index.js'
@@ -26,6 +28,29 @@ beforeAll(async () => {
 })
 
 describe('Phase 4 leave, overtime and puantaj workflow', () => {
+  it('applies the workflow migration when leave_requests already contains data', () => {
+    const populated = new Database(':memory:')
+    populated.exec(`
+      PRAGMA foreign_keys=ON;
+      CREATE TABLE users(id INTEGER PRIMARY KEY);
+      CREATE TABLE staff(id INTEGER PRIMARY KEY);
+      CREATE TABLE puantaj_codes(id INTEGER PRIMARY KEY, code TEXT, leave_type TEXT);
+      CREATE TABLE leave_requests(id INTEGER PRIMARY KEY, staff_id INTEGER, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
+      CREATE TABLE shift_schedule(id INTEGER PRIMARY KEY, staff_id INTEGER, work_date TEXT);
+      CREATE TABLE overtime_records(id INTEGER PRIMARY KEY, staff_id INTEGER, work_date TEXT, hours REAL);
+      INSERT INTO users(id) VALUES(1);
+      INSERT INTO staff(id) VALUES(1);
+      INSERT INTO puantaj_codes(id,code,leave_type) VALUES(1,'N',NULL);
+      INSERT INTO leave_requests(id,staff_id) VALUES(1,1);
+    `)
+
+    const sql = readFileSync(new URL('../../shared/db/migrations/047_puantaj_request_workflow.sql', import.meta.url), 'utf8')
+    expect(() => populated.exec(sql)).not.toThrow()
+    expect(populated.prepare('SELECT updated_at, version FROM leave_requests WHERE id=1').get()).toMatchObject({ version: 1 })
+    expect(populated.prepare('SELECT updated_at FROM leave_requests WHERE id=1').get().updated_at).toBeTruthy()
+    populated.close()
+  })
+
   it('creates request workflow tables, code effects and optimistic version columns', () => {
     const db = getDB()
     expect(db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='overtime_requests'").get()).toBeTruthy()
@@ -147,6 +172,17 @@ describe('Phase 4 leave, overtime and puantaj workflow', () => {
       .send({ entries: [{ staff_id: staffId, work_date: '2029-06-06', status: 'absent', expected_version: 1 }] })
     expect(stale.status).toBe(409)
     expect(stale.body).toMatchObject({ conflict: true, current_version: 2 })
+
+    const removed = await request(app).delete('/api/shifts/schedule/' + staffId + '/2029-06-06')
+      .set('Authorization', `Bearer ${supervisorToken}`)
+      .query({ expected_version: 2 })
+    expect(removed.status).toBe(200)
+
+    const writeAfterDelete = await request(app).post('/api/shifts/schedule')
+      .set('Authorization', `Bearer ${supervisorToken}`)
+      .send({ entries: [{ staff_id: staffId, work_date: '2029-06-06', status: 'worked', expected_version: 2 }] })
+    expect(writeAfterDelete.status).toBe(409)
+    expect(writeAfterDelete.body).toMatchObject({ conflict: true, current_version: 0 })
   })
 
   it('uses configurable leave multipliers in payroll calculation', async () => {

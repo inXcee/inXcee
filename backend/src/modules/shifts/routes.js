@@ -1115,5 +1115,5 @@ shiftsRouter.delete('/schedule/:staffId/:date', ...managerOrSupervisor, (req, re
   try {
     deleteScheduleService(req.params.staffId, req.params.date, req.user.id, req.query.expected_version)
     res.json({ ok: true })
-  } catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
+  } catch (e) { res.status(e.statusCode || 400).json({ error: e.message, ...(e.details || {}) }) }
 })

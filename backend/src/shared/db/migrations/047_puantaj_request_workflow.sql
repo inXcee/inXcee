@@ -23,7 +23,16 @@ ALTER TABLE leave_requests ADD COLUMN leave_hours REAL;
 ALTER TABLE leave_requests ADD COLUMN requested_by INTEGER REFERENCES users(id);
 ALTER TABLE leave_requests ADD COLUMN review_note TEXT;
 ALTER TABLE leave_requests ADD COLUMN version INTEGER NOT NULL DEFAULT 1;
-ALTER TABLE leave_requests ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP;
+-- SQLite dolu tabloya non-constant default eklemeyi reddeder. Kolonu sade ekleyip
+-- mevcut/yeni satirlari ayri adimlarda doldurmak canli veritabaniyla da calisir.
+ALTER TABLE leave_requests ADD COLUMN updated_at DATETIME;
+UPDATE leave_requests SET updated_at=COALESCE(created_at, CURRENT_TIMESTAMP) WHERE updated_at IS NULL;
+CREATE TRIGGER IF NOT EXISTS trg_leave_requests_updated_at_insert
+AFTER INSERT ON leave_requests
+WHEN NEW.updated_at IS NULL
+BEGIN
+  UPDATE leave_requests SET updated_at=CURRENT_TIMESTAMP WHERE id=NEW.id;
+END;
 
 CREATE TABLE IF NOT EXISTS overtime_requests (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -274,6 +274,29 @@ describe('PuantajTab smoke', () => {
     fireEvent.click(cell)
 
     await waitFor(() => expect(cell).toHaveTextContent('N'))
+    await waitFor(() => expect(postMock).toHaveBeenCalledWith('/shifts/schedule', expect.objectContaining({
+      entries: [expect.objectContaining({ staff_id: 1, work_date: '2026-07-01', expected_version: 0 })],
+    })))
     expect(await screen.findByText(/KAYDEDILEMEYEN 1 HÜCRE VAR/)).toBeInTheDocument()
+  })
+
+  it('kod yönetiminde bordro ve belge kurallarını gösterir', async () => {
+    useAuthStore.setState({ user: { role: 'campus_manager' } })
+    getMock.mockImplementation((url) => {
+      if (url === '/shifts/puantaj/codes') return Promise.resolve({ data: [{
+        id: 1, code: 'N', label: 'Normal çalıştı', status: 'worked', color_hex: '22C55E',
+        is_builtin: 1, is_active: 1, is_paid: 1, sgk_day_factor: 1, day_multiplier: 1,
+        hour_multiplier: 1, overtime_effect: 'eligible', requires_document: 0, requires_reason: 0,
+      }] })
+      if (url === '/shifts/puantaj/approval') return Promise.resolve({ data: { period_approval: { status: 'draft' }, daily_approvals: [], events: [] } })
+      return Promise.resolve({ data: [] })
+    })
+
+    renderWithProviders(<PuantajTab departments={[]} />)
+    fireEvent.click(await screen.findByRole('button', { name: /KODLAR/ }))
+    expect(await screen.findByText('PUANTAJ KODLARI')).toBeInTheDocument()
+    expect(screen.getByTitle('Sosyal güvenlik gün etkisi')).toBeInTheDocument()
+    expect(screen.getByText('Belge')).toBeInTheDocument()
+    expect(screen.getByText('Gerekçe')).toBeInTheDocument()
   })
 })
