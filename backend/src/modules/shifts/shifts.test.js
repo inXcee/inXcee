@@ -1416,8 +1416,13 @@ describe('Faz 27 — Çizelgede saat aliası + izin türü', () => {
       ] })
     // 08-04'ü kapsayan onaylı RAPOR izni
     const lr = await request(app).post('/api/shifts/leave').set('Authorization', `Bearer ${managerToken}`)
-      .send({ staff_id: staffId, leave_type: 'sick', start_date: '2026-08-04', end_date: '2026-08-04' })
+      .send({ staff_id: staffId, leave_type: 'sick', start_date: '2026-08-04', end_date: '2026-08-04', reason: 'Doktor raporu' })
     expect(lr.status).toBe(201)
+    const document = await request(app)
+      .post(`/api/shifts/request-documents/leave/${lr.body.id}`)
+      .set('Authorization', `Bearer ${managerToken}`)
+      .attach('documents', Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64'), 'rapor.png')
+    expect(document.status).toBe(201)
     await request(app).patch(`/api/shifts/leave/${lr.body.id}`).set('Authorization', `Bearer ${managerToken}`)
       .send({ status: 'approved' })
 
@@ -1508,8 +1513,21 @@ describe('E1 — İzin bakiye takibi', () => {
 
   async function createLeave(start, end, type = 'annual') {
     const r = await request(app).post('/api/shifts/leave').set('Authorization', `Bearer ${managerToken}`)
-      .send({ staff_id: staffId, leave_type: type, start_date: start, end_date: end })
+      .send({
+        staff_id: staffId,
+        leave_type: type,
+        start_date: start,
+        end_date: end,
+        reason: type === 'sick' ? 'Doktor raporu' : undefined,
+      })
     expect(r.status).toBe(201)
+    if (type === 'sick') {
+      const document = await request(app)
+        .post(`/api/shifts/request-documents/leave/${r.body.id}`)
+        .set('Authorization', `Bearer ${managerToken}`)
+        .attach('documents', Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64'), 'rapor.png')
+      expect(document.status).toBe(201)
+    }
     return r.body.id
   }
 

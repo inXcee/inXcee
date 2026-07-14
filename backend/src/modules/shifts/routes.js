@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import fs from 'fs'
+import path from 'path'
 import { requireRole, requireAuth } from '../../shared/auth/middleware.js'
 import { getDB } from '../../shared/db/index.js'
 import { paginate } from '../../shared/paginate.js'
@@ -10,7 +11,9 @@ import {
   workLocationsService, createWorkLocationService, updateWorkLocationService, deleteWorkLocationService,
   staffRolesService, createStaffRoleService, updateStaffRoleService, deleteStaffRoleService, scheduleBreakdownService, breakdownAssigneesService,
   staffStatusService, createLeaveService, approveLeaveService, leaveListService,
+  requestDocumentsService, addRequestDocumentsService, deleteRequestDocumentService,
   leaveBalanceService, createOvertimeService, updateOvertimeService, deleteOvertimeService, overtimeListService, overtimeSummaryService, overtimeDayService, puantajService,
+  createOvertimeRequestService, overtimeRequestsService, reviewOvertimeRequestService,
   checkInService, checkOutService, attendanceListService, statisticsService, coverageService, departmentSummaryService,
   coverageRulesService, createCoverageRuleService, updateCoverageRuleService, deleteCoverageRuleService, scheduleCandidatesService,
   createDepartmentService, updateDepartmentService, deleteDepartmentService, assignDeptService,
@@ -36,6 +39,7 @@ import {
   getPayrollExport, getCombinedAbsences,
   listDeductions, createDeduction, deleteDeduction, getPayrollDetailed,
   upsertPuantajDayDetail,
+  resetDailyApprovalsForDates,
 } from './queries.js'
 import { importSchedule, listImportBatches, undoImportBatch } from './import.js'
 import { importScheduleSchema } from './schemas.js'
@@ -211,6 +215,7 @@ shiftsRouter.post('/schedule', ...managerOrSupervisor, (req, res) => {
       warnings: result?.warnings || [],
       approvalsReset: result?.approvalsReset || 0,
       leaveOverride: result?.leaveOverride || null,
+      rows: result?.rows || [],
     })
   } catch (e) {
     res.status(e.statusCode || 400).json({ error: e.message, ...(e.details || {}) })
@@ -555,7 +560,7 @@ shiftsRouter.get('/leave', ...allStaff, (req, res) => {
 
 shiftsRouter.post('/leave', ...allStaff, (req, res) => {
   try {
-    const id = createLeaveService(req.body)
+    const id = createLeaveService(req.body, req.user.id)
     res.status(201).json({ id })
   } catch (e) {
     res.status(400).json({ error: e.message })
@@ -564,11 +569,40 @@ shiftsRouter.post('/leave', ...allStaff, (req, res) => {
 
 shiftsRouter.patch('/leave/:id', ...managerOrSupervisor, (req, res) => {
   try {
-    approveLeaveService(req.params.id, req.user.id, req.body.status)
-    res.json({ ok: true })
+    const row = approveLeaveService(req.params.id, req.user, req.body.status, req.body)
+    logAudit(req.user.id, 'leave_review', 'shifts', +req.params.id, `${req.body.status}:${req.body.review_note || ''}`)
+    res.json({ ok: true, row })
   } catch (e) {
-    res.status(400).json({ error: e.message })
+    res.status(e.statusCode || 400).json({ error: e.message, ...(e.details || {}) })
   }
+})
+
+shiftsRouter.get('/request-documents/:type/:id', ...allStaff, (req, res) => {
+  try { res.json(requestDocumentsService(req.params.type, req.params.id)) }
+  catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
+})
+
+shiftsRouter.post('/request-documents/:type/:id', ...allStaff, documentUpload.array('documents', 5), verifyDocumentMagicBytes, (req, res) => {
+  try {
+    const rows = addRequestDocumentsService(req.params.type, req.params.id, req.files || [], req.user.id)
+    logAudit(req.user.id, 'shift_request_documents_add', 'shifts', +req.params.id, `${req.params.type}:${req.files?.length || 0}`)
+    res.status(201).json(rows)
+  } catch (e) {
+    ;(req.files || []).forEach(file => { try { fs.unlinkSync(file.path) } catch { /* ignore */ } })
+    res.status(e.statusCode || 400).json({ error: e.message })
+  }
+})
+
+shiftsRouter.delete('/request-documents/:id', ...managerOrSupervisor, (req, res) => {
+  try {
+    const document = deleteRequestDocumentService(req.params.id)
+    if (document.file_url?.startsWith('/uploads/')) {
+      const filePath = path.join(process.env.UPLOADS_DIR || 'uploads', path.basename(document.file_url))
+      try { fs.unlinkSync(filePath) } catch { /* best effort */ }
+    }
+    logAudit(req.user.id, 'shift_request_document_delete', 'shifts', +req.params.id, document.file_name)
+    res.json({ ok: true })
+  } catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
 })
 
 // ── Overtime ──
@@ -579,6 +613,27 @@ shiftsRouter.get('/overtime/summary', ...allStaff, (req, res) => {
 
 shiftsRouter.get('/overtime', ...allStaff, (req, res) => {
   res.json(overtimeListService(req.query))
+})
+
+shiftsRouter.get('/overtime/requests', ...allStaff, (req, res) => {
+  try { res.json(overtimeRequestsService(req.query)) }
+  catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
+})
+
+shiftsRouter.post('/overtime/requests', ...managerOrSupervisor, (req, res) => {
+  try {
+    const row = createOvertimeRequestService(req.body, req.user)
+    logAudit(req.user.id, 'overtime_request_create', 'shifts', row.id, `${row.staff_id}:${row.work_date}`)
+    res.status(201).json(row)
+  } catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
+})
+
+shiftsRouter.patch('/overtime/requests/:id', ...managerOrSupervisor, (req, res) => {
+  try {
+    const row = reviewOvertimeRequestService(req.params.id, req.body, req.user)
+    logAudit(req.user.id, 'overtime_request_review', 'shifts', +req.params.id, `${req.body.status}:${req.body.review_note || ''}`)
+    res.json(row)
+  } catch (e) { res.status(e.statusCode || 400).json({ error: e.message, ...(e.details || {}) }) }
 })
 
 shiftsRouter.post('/overtime', ...managerOrSupervisor, (req, res) => {
@@ -816,6 +871,7 @@ shiftsRouter.post('/puantaj/day-detail', ...managerOrSupervisor, documentUpload.
       attachment_mime: req.file.mimetype,
     } : {}
     const row = upsertPuantajDayDetail({ ...req.body, ...fileData }, req.user.id)
+    resetDailyApprovalsForDates([row.work_date], req.user.id)
     logAudit(req.user.id, 'puantaj_day_detail', 'shifts', row.id, `${row.staff_id}:${row.work_date}`)
     res.json({ ok: true, row })
   } catch (e) {
@@ -942,7 +998,7 @@ shiftsRouter.delete('/definitions/:id', ...managerOrSupervisor, (req, res) => {
 // ── Leave cancel ──
 shiftsRouter.delete('/leave/:id', ...managerOrSupervisor, (req, res) => {
   try {
-    cancelLeaveService(req.params.id)
+    cancelLeaveService(req.params.id, req.user.id)
     res.json({ ok: true })
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
@@ -1057,7 +1113,7 @@ shiftsRouter.delete('/period-locks/:period', ...managerOnly, (req, res) => {
 // ── Delete schedule entry ──
 shiftsRouter.delete('/schedule/:staffId/:date', ...managerOrSupervisor, (req, res) => {
   try {
-    deleteScheduleService(req.params.staffId, req.params.date, req.user.id)
+    deleteScheduleService(req.params.staffId, req.params.date, req.user.id, req.query.expected_version)
     res.json({ ok: true })
   } catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
 })

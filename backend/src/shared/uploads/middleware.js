@@ -58,17 +58,20 @@ export async function verifyMagicBytes(req, res, next) {
 }
 
 export async function verifyDocumentMagicBytes(req, res, next) {
-  if (!req.file) return next()
+  const files = req.files ? Object.values(req.files).flat() : (req.file ? [req.file] : [])
+  if (!files.length) return next()
   try {
-    const buffer = fs.readFileSync(req.file.path)
-    const detected = await fileTypeFromBuffer(buffer)
-    if (!detected || !DOCUMENT_MIME.has(detected.mime)) {
-      fs.unlinkSync(req.file.path)
-      return res.status(400).json({ error: 'Dosya formati dogrulanamadi. Sadece gercek JPEG/PNG/WebP/PDF kabul edilir.' })
+    for (const file of files) {
+      const buffer = fs.readFileSync(file.path)
+      const detected = await fileTypeFromBuffer(buffer)
+      if (!detected || !DOCUMENT_MIME.has(detected.mime)) {
+        files.forEach(item => { try { fs.unlinkSync(item.path) } catch { /* ignore */ } })
+        return res.status(400).json({ error: 'Dosya formati dogrulanamadi. Sadece gercek JPEG/PNG/WebP/PDF kabul edilir.' })
+      }
     }
     next()
   } catch (e) {
-    try { fs.unlinkSync(req.file.path) } catch { /* ignore */ }
+    files.forEach(file => { try { fs.unlinkSync(file.path) } catch { /* ignore */ } })
     next(e)
   }
 }

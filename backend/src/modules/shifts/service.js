@@ -4,8 +4,10 @@ import {
   createScheduleSegment, updateScheduleSegment, deleteScheduleSegment,
   getWorkLocations, createWorkLocation, updateWorkLocation, deleteWorkLocation,
   getStaffRoles, createStaffRole, updateStaffRole, deleteStaffRole, getScheduleBreakdown, getBreakdownAssignees,
-  getStaffWithShiftStatus, createLeaveRequest, approveLeaveRequest,
-  getLeaveRequests, getLeaveBalance, createOvertime, updateOvertime, deleteOvertime, getOvertimeRecords, upsertOvertimeDay,
+  getStaffWithShiftStatus, createLeaveRequest, getLeaveRequest, approveLeaveRequest,
+  getLeaveRequests, getLeaveBalance, addRequestDocuments, listRequestDocuments, getRequestDocument, deleteRequestDocument,
+  createOvertime, updateOvertime, deleteOvertime, getOvertimeRecords, upsertOvertimeDay,
+  createOvertimeRequest, getOvertimeRequest, getOvertimeRequests, reviewOvertimeRequest,
   getOvertimeSummary, createAttendanceLog, updateCheckout, getAttendanceLogs, getPuantaj,
   getShiftStatistics, getDepartmentSummary,
   createDepartment, updateDepartment, deleteDepartment,
@@ -72,12 +74,21 @@ function getYtdGross(db, staffId, year, month) {
     WHERE staff_id = ? AND work_date >= ? AND work_date < ?
   `).get(staffId, janStart, monthStart)
 
-  // Paid leave days: only annual + emergency (matching puantajService leave_pay rule)
+  // Paid leave units are driven by the configured puantaj code effects.
   const lv = db.prepare(`
-    SELECT COALESCE(SUM(CASE WHEN leave_type IN ('annual','emergency') THEN total_days ELSE 0 END), 0) as paid_leave_days
-    FROM leave_requests
-    WHERE staff_id = ? AND status = 'approved'
-      AND start_date >= ? AND start_date < ?
+    SELECT COALESCE(SUM(CASE WHEN ss.status='on_leave' AND COALESCE(pc.is_paid,0)=1 THEN
+      CASE WHEN COALESCE(ss.leave_hours,0)>0
+        THEN (ss.leave_hours/8.0)*COALESCE(pc.hour_multiplier,0)
+        ELSE COALESCE(pc.day_multiplier,0)
+      END ELSE 0 END),0) as paid_leave_units
+    FROM shift_schedule ss
+    LEFT JOIN puantaj_codes pc ON pc.id=COALESCE(ss.puantaj_code_id, (
+      SELECT fallback_pc.id FROM puantaj_codes fallback_pc
+      WHERE fallback_pc.is_active=1 AND fallback_pc.status=ss.status
+        AND (ss.status!='on_leave' OR fallback_pc.leave_type=ss.leave_type)
+      ORDER BY fallback_pc.is_builtin DESC, fallback_pc.sort_order, fallback_pc.id LIMIT 1
+    ))
+    WHERE ss.staff_id=? AND ss.work_date>=? AND ss.work_date<?
   `).get(staffId, janStart, monthStart)
 
   const ot = db.prepare(`
@@ -87,7 +98,7 @@ function getYtdGross(db, staffId, year, month) {
   `).get(staffId, janStart, monthStart)
 
   return (
-    dailyRate * ((sch?.worked_days || 0) + (sch?.off_days || 0) + (lv?.paid_leave_days || 0)) +
+    dailyRate * ((sch?.worked_days || 0) + (sch?.off_days || 0) + (lv?.paid_leave_units || 0)) +
     (dailyRate / 8) * 1.5 * (ot?.hours || 0)
   )
 }
@@ -384,6 +395,30 @@ function cleanCodeHex(value, fallback = '64748B') {
   return HEX_RE.test(hex) ? hex : fallback
 }
 
+function boundedCodeNumber(value, fallback, min, max, label) {
+  const number = value == null || value === '' ? fallback : Number(value)
+  if (!Number.isFinite(number) || number < min || number > max) {
+    throw Object.assign(new Error(`${label} ${min}-${max} arasinda olmali`), { statusCode: 400 })
+  }
+  return number
+}
+
+function codeEffectFields(data = {}, existing = {}) {
+  const overtimeEffect = data.overtime_effect ?? existing.overtime_effect ?? 'none'
+  if (!['none', 'eligible', 'blocks'].includes(overtimeEffect)) {
+    throw Object.assign(new Error('Gecersiz mesai etkisi'), { statusCode: 400 })
+  }
+  return {
+    is_paid: data.is_paid == null ? Number(existing.is_paid || 0) : (data.is_paid ? 1 : 0),
+    sgk_day_factor: boundedCodeNumber(data.sgk_day_factor, Number(existing.sgk_day_factor || 0), 0, 1, 'SGK gun katsayisi'),
+    day_multiplier: boundedCodeNumber(data.day_multiplier, Number(existing.day_multiplier || 0), 0, 3, 'Gun katsayisi'),
+    hour_multiplier: boundedCodeNumber(data.hour_multiplier, Number(existing.hour_multiplier || 0), 0, 5, 'Saat katsayisi'),
+    overtime_effect: overtimeEffect,
+    requires_document: data.requires_document == null ? Number(existing.requires_document || 0) : (data.requires_document ? 1 : 0),
+    requires_reason: data.requires_reason == null ? Number(existing.requires_reason || 0) : (data.requires_reason ? 1 : 0),
+  }
+}
+
 export function puantajCodesService(filters = {}) {
   return listPuantajCodes({ includeInactive: filters.all === '1' || filters.includeInactive === true })
 }
@@ -400,6 +435,7 @@ export function createPuantajCodeService(data = {}) {
   const leaveType = status === 'on_leave'
     ? String(data.leave_type || code).trim().toLocaleLowerCase('tr').replace(/[^a-zçğıöşü0-9_]/g, '_')
     : null
+  const effects = codeEffectFields(data)
   try {
     return createPuantajCode({
       code,
@@ -408,6 +444,13 @@ export function createPuantajCodeService(data = {}) {
       status,
       leaveType,
       sortOrder: data.sort_order,
+      isPaid: effects.is_paid,
+      sgkDayFactor: effects.sgk_day_factor,
+      dayMultiplier: effects.day_multiplier,
+      hourMultiplier: effects.hour_multiplier,
+      overtimeEffect: effects.overtime_effect,
+      requiresDocument: effects.requires_document,
+      requiresReason: effects.requires_reason,
     })
   } catch (e) {
     if (String(e.message).includes('UNIQUE')) {
@@ -438,6 +481,7 @@ export function updatePuantajCodeService(id, data = {}) {
     if (!code || code.length > 4) throw Object.assign(new Error('Kod 1-4 karakter olmalı'), { statusCode: 400 })
     fields.code = code
   }
+  Object.assign(fields, codeEffectFields(data, existing))
   updatePuantajCode(id, fields)
   return getPuantajCode(id)
 }
@@ -546,6 +590,10 @@ function assertPuantajDayApprovable(period, workDate, deptId) {
   if ((counts.scheduled || 0) > 0) problems.push(`${counts.scheduled} planli gun kapanmamis`)
   if (!isSunday && (counts.empty || 0) > 0) problems.push(`${counts.empty} personelde bos gun`)
   if ((counts.absent_no_reason || 0) > 0) problems.push(`${counts.absent_no_reason} devamsizlik nedeni eksik`)
+  if ((counts.required_reason_missing || 0) > 0) problems.push(`${counts.required_reason_missing} kayitta zorunlu gerekce eksik`)
+  if ((counts.required_document_missing || 0) > 0) problems.push(`${counts.required_document_missing} kayitta zorunlu belge eksik`)
+  if ((counts.pending_overtime_requests || 0) > 0) problems.push(`${counts.pending_overtime_requests} mesai talebi bekliyor`)
+  if ((counts.pending_leave_requests || 0) > 0) problems.push(`${counts.pending_leave_requests} izin talebi bekliyor`)
   if (problems.length > 0) {
     throw Object.assign(
       new Error(`Gun onaylanamaz: ${problems.join(', ')}`),
@@ -674,10 +722,11 @@ export function bulkAssignService(entries, user, options = {}) {
   assertPeriodsUnlocked(entries.map(e => e.work_date))
   const warnings = assignmentWarnings(entries)
   assertLeaveAssignmentAllowed(warnings, user, options.overrideLeave, options.overrideReason)
-  bulkAssignShifts(entries, user?.id)
+  const rows = bulkAssignShifts(entries, user?.id)
   const approvalsReset = resetDailyApprovalsForDates(entries.map(e => e.work_date), user?.id)
   return {
     ok: true,
+    rows,
     warnings,
     approvalsReset,
     leaveOverride: warnings.length > 0 ? {
@@ -960,20 +1009,63 @@ export function searchStaffService(term) {
 }
 
 // ── Leave ──
-export function createLeaveService(data) {
+function requestDateRange(startDate, endDate) {
+  const dates = []
+  for (let date = startDate; date <= endDate; date = addIsoDays(date, 1)) dates.push(date)
+  return dates
+}
+
+function puantajCodeForLeaveType(leaveType) {
+  return listPuantajCodes({ includeInactive: true }).find(code => code.status === 'on_leave' && code.leave_type === leaveType)
+}
+
+export function createLeaveService(data, userId) {
   if (!data.staff_id || !data.leave_type || !data.start_date || !data.end_date)
     throw new Error('Zorunlu alanlar eksik')
   const start = new Date(data.start_date)
   const end = new Date(data.end_date)
   if (end < start) throw new Error('Bitiş tarihi başlangıçtan önce olamaz')
   const totalDays = Math.round((end - start) / 86400000) + 1
+  const leaveHours = data.leave_hours == null || data.leave_hours === '' ? null : Number(data.leave_hours)
+  if (leaveHours != null && (!Number.isFinite(leaveHours) || leaveHours <= 0 || leaveHours > 8)) {
+    throw Object.assign(new Error('Saatlik izin 0-8 saat arasinda olmali'), { statusCode: 400 })
+  }
+  if (leaveHours != null && totalDays !== 1) {
+    throw Object.assign(new Error('Saatlik izin yalniz tek gun icin girilebilir'), { statusCode: 400 })
+  }
   // reason opsiyonel — named parameter eksikse better-sqlite3 hata verir
-  return createLeaveRequest({ ...data, reason: data.reason ?? null, total_days: totalDays })
+  return createLeaveRequest({
+    ...data,
+    leave_hours: leaveHours,
+    reason: data.reason?.trim() || null,
+    requested_by: userId || null,
+    total_days: totalDays,
+  })
 }
 
-export function approveLeaveService(id, userId, status) {
+export function approveLeaveService(id, user, status, options = {}) {
   if (!['approved', 'rejected'].includes(status)) throw new Error('Geçersiz durum')
-  approveLeaveRequest(id, userId, status)
+  const request = getLeaveRequest(id)
+  if (!request) throw Object.assign(new Error('Izin talebi bulunamadi'), { statusCode: 404 })
+  if (status === 'approved') {
+    assertPeriodsUnlocked(requestDateRange(request.start_date, request.end_date))
+    const code = puantajCodeForLeaveType(request.leave_type)
+    const documents = listRequestDocuments({ leaveRequestId: request.id })
+    if (code?.requires_document && documents.length === 0) {
+      throw Object.assign(new Error(`${code.label} onayi icin belge zorunlu`), {
+        statusCode: 409,
+        details: { document_required: true, code: code.code },
+      })
+    }
+    if (code?.requires_reason && String(request.reason || '').trim().length < 3) {
+      throw Object.assign(new Error(`${code.label} onayi icin gerekce zorunlu`), { statusCode: 409 })
+    }
+  }
+  const row = approveLeaveRequest(id, user?.id, status, {
+    note: options.review_note,
+    expectedVersion: options.expected_version,
+  })
+  resetDailyApprovalsForDates(requestDateRange(request.start_date, request.end_date), user?.id)
   // AVS kioska push (personel telefonda abone olduysa) — opsiyonel, ana akışı bozma
   try {
     const r = getDB().prepare('SELECT staff_id FROM leave_requests WHERE id=?').get(id)
@@ -986,6 +1078,7 @@ export function approveLeaveService(id, userId, status) {
       }).catch(() => {})
     }
   } catch { /* push opsiyonel */ }
+  return row
 }
 
 export function leaveListService(filters) {
@@ -997,6 +1090,43 @@ export function leaveBalanceService(staffId) {
   return getLeaveBalance(staffId, year)
 }
 
+function uploadedDocumentRows(files = []) {
+  return files.map(file => ({
+    file_url: `/uploads/${file.filename}`,
+    file_name: file.originalname,
+    mime_type: file.mimetype,
+    file_size: file.size || null,
+  }))
+}
+
+export function requestDocumentsService(type, id) {
+  if (type === 'leave') return listRequestDocuments({ leaveRequestId: Number(id) })
+  if (type === 'overtime') return listRequestDocuments({ overtimeRequestId: Number(id) })
+  if (type === 'schedule') return listRequestDocuments({ scheduleId: Number(id) })
+  throw Object.assign(new Error('Gecersiz belge turu'), { statusCode: 400 })
+}
+
+export function addRequestDocumentsService(type, id, files, userId) {
+  if (!files?.length) throw Object.assign(new Error('En az bir belge secilmeli'), { statusCode: 400 })
+  const target = {
+    leaveRequestId: type === 'leave' ? Number(id) : null,
+    overtimeRequestId: type === 'overtime' ? Number(id) : null,
+    scheduleId: type === 'schedule' ? Number(id) : null,
+  }
+  if (!Object.values(target).some(Boolean)) throw Object.assign(new Error('Gecersiz belge turu'), { statusCode: 400 })
+  if (type === 'leave' && !getLeaveRequest(id)) throw Object.assign(new Error('Izin talebi bulunamadi'), { statusCode: 404 })
+  if (type === 'overtime' && !getOvertimeRequest(id)) throw Object.assign(new Error('Mesai talebi bulunamadi'), { statusCode: 404 })
+  addRequestDocuments({ ...target, files: uploadedDocumentRows(files), uploadedBy: userId })
+  return requestDocumentsService(type, id)
+}
+
+export function deleteRequestDocumentService(id) {
+  const document = getRequestDocument(id)
+  if (!document) throw Object.assign(new Error('Belge bulunamadi'), { statusCode: 404 })
+  deleteRequestDocument(id)
+  return document
+}
+
 export function createOvertimeService(data, userId) {
   if (!data.staff_id || !data.work_date || !data.hours)
     throw new Error('Zorunlu alanlar eksik')
@@ -1006,6 +1136,83 @@ export function createOvertimeService(data, userId) {
 
 export function overtimeListService(filters) {
   return getOvertimeRecords(filters)
+}
+
+function optionalClock(value, field) {
+  return value ? normalizeClock(value, field) : null
+}
+
+export function createOvertimeRequestService(data, user = {}) {
+  const staffId = Number(data.staff_id)
+  const workDate = String(data.work_date || '')
+  const requestedHours = Number(data.requested_hours ?? data.hours)
+  const actualHours = data.actual_hours == null || data.actual_hours === '' ? null : Number(data.actual_hours)
+  const reason = String(data.reason || '').trim()
+  if (!staffId || !/^\d{4}-\d{2}-\d{2}$/.test(workDate)) {
+    throw Object.assign(new Error('Personel ve tarih zorunlu'), { statusCode: 400 })
+  }
+  if (!Number.isFinite(requestedHours) || requestedHours <= 0 || requestedHours > 12) {
+    throw Object.assign(new Error('Mesai saati 0-12 arasinda olmali'), { statusCode: 400 })
+  }
+  if (actualHours != null && (!Number.isFinite(actualHours) || actualHours < 0 || actualHours > 12)) {
+    throw Object.assign(new Error('Gerceklesen mesai 0-12 saat arasinda olmali'), { statusCode: 400 })
+  }
+  if (reason.length < 3) throw Object.assign(new Error('Mesai gerekcesi zorunlu'), { statusCode: 400 })
+  if (!!data.planned_start !== !!data.planned_end) {
+    throw Object.assign(new Error('Planlanan baslangic ve bitis birlikte girilmeli'), { statusCode: 400 })
+  }
+  if (!!data.actual_start !== !!data.actual_end) {
+    throw Object.assign(new Error('Gerceklesen baslangic ve bitis birlikte girilmeli'), { statusCode: 400 })
+  }
+  const compensationType = data.compensation_type || 'pay'
+  if (!['pay', 'time_off'].includes(compensationType)) throw Object.assign(new Error('Gecersiz mesai karsiligi'), { statusCode: 400 })
+  assertPeriodsUnlocked([workDate])
+  return createOvertimeRequest({
+    staff_id: staffId,
+    work_date: workDate,
+    planned_start: optionalClock(data.planned_start, 'Planlanan baslangic'),
+    planned_end: optionalClock(data.planned_end, 'Planlanan bitis'),
+    actual_start: optionalClock(data.actual_start, 'Gerceklesen baslangic'),
+    actual_end: optionalClock(data.actual_end, 'Gerceklesen bitis'),
+    requested_hours: requestedHours,
+    actual_hours: actualHours,
+    reason,
+    compensation_type: compensationType,
+    requested_by: user.id || null,
+  })
+}
+
+export function overtimeRequestsService(filters) {
+  return getOvertimeRequests(filters)
+}
+
+export function reviewOvertimeRequestService(id, data, user = {}) {
+  const request = getOvertimeRequest(id)
+  if (!request) throw Object.assign(new Error('Mesai talebi bulunamadi'), { statusCode: 404 })
+  const status = data.status
+  if (!['approved', 'rejected', 'returned'].includes(status)) {
+    throw Object.assign(new Error('Gecersiz mesai talep durumu'), { statusCode: 400 })
+  }
+  if (['rejected', 'returned'].includes(status) && String(data.review_note || '').trim().length < 3) {
+    throw Object.assign(new Error('Iade veya ret gerekcesi zorunlu'), { statusCode: 400 })
+  }
+  const actualHours = data.actual_hours == null || data.actual_hours === ''
+    ? (request.actual_hours ?? request.requested_hours)
+    : Number(data.actual_hours)
+  if (!Number.isFinite(actualHours) || actualHours < 0 || actualHours > 12) {
+    throw Object.assign(new Error('Gerceklesen mesai 0-12 saat arasinda olmali'), { statusCode: 400 })
+  }
+  assertPeriodsUnlocked([request.work_date])
+  const row = reviewOvertimeRequest(id, {
+    ...data,
+    status,
+    actual_hours: actualHours,
+    actual_start: optionalClock(data.actual_start, 'Gerceklesen baslangic'),
+    actual_end: optionalClock(data.actual_end, 'Gerceklesen bitis'),
+    review_note: String(data.review_note || '').trim() || null,
+  }, user.id)
+  resetDailyApprovalsForDates([request.work_date], user.id)
+  return row
 }
 
 // Faz 28 — puantaj hücresinden gün bazlı FM girişi (0 = kaydı sil)
@@ -1613,8 +1820,12 @@ export function deleteShiftDefService(id) {
   deleteShiftDefinition(id)
 }
 
-export function cancelLeaveService(id) {
+export function cancelLeaveService(id, userId) {
+  const request = getLeaveRequest(id)
+  if (!request) throw Object.assign(new Error('Izin talebi bulunamadi'), { statusCode: 404 })
+  assertPeriodsUnlocked(requestDateRange(request.start_date, request.end_date))
   cancelLeaveRequest(id)
+  resetDailyApprovalsForDates(requestDateRange(request.start_date, request.end_date), userId)
 }
 
 export function createSwapService(data) {
@@ -1846,9 +2057,9 @@ export function rotationApplyService(body, userId) {
   return { count: entries.length, warnings }
 }
 
-export function deleteScheduleService(staffId, workDate, userId) {
+export function deleteScheduleService(staffId, workDate, userId, expectedVersion = null) {
   assertPeriodsUnlocked([workDate])
-  deleteScheduleEntry(staffId, workDate)
+  deleteScheduleEntry(staffId, workDate, expectedVersion)
   resetDailyApprovalsForDates([workDate], userId)
 }
 
@@ -1975,6 +2186,12 @@ function parsePuantajMonth(month) {
 function dayEntryFromRow(row, date, dow) {
   const entry = { date, day_of_week: dow, status: row.status }
   if (row.schedule_id) entry.schedule_id = row.schedule_id
+  if (row.row_version != null) entry.row_version = row.row_version
+  if (row.puantaj_code_id) entry.puantaj_code_id = row.puantaj_code_id
+  if (row.puantaj_code) entry.puantaj_code = row.puantaj_code
+  if (row.puantaj_code_label) entry.puantaj_code_label = row.puantaj_code_label
+  if (row.requires_document != null) entry.requires_document = row.requires_document
+  if (row.requires_reason != null) entry.requires_reason = row.requires_reason
   if (row.dept_id != null) entry.dept_id = row.dept_id
   if (row.shift_def_id) entry.shift_def_id = row.shift_def_id
   if (row.shift_name) {
@@ -1995,6 +2212,7 @@ function dayEntryFromRow(row, date, dow) {
   if (row.attachment_url) entry.attachment_url = row.attachment_url
   if (row.attachment_name) entry.attachment_name = row.attachment_name
   if (row.attachment_mime) entry.attachment_mime = row.attachment_mime
+  if (row.document_count != null) entry.document_count = row.document_count
   if (row.attendance_source) entry.attendance_source = row.attendance_source
   if (row.reconciliation_status) entry.reconciliation_status = row.reconciliation_status
   if (row.reconciliation_reason) entry.reconciliation_reason = row.reconciliation_reason
@@ -2118,7 +2336,7 @@ export function puantajService(month, deptId, { includeMeta = false } = {}) {
     const dailyRate = salary / 30
     const basePay = round2(dailyRate * (row.worked_days || 0))
     const overtimePay = round2((dailyRate / 8) * 1.5 * (row.overtime_hours || 0))
-    const leavePay = round2(dailyRate * ((row.annual_leave_days || 0) + (row.emergency_leave_days || 0)))
+    const leavePay = round2(dailyRate * (row.paid_leave_units || 0))
     // Hafta tatili (off) ücretlidir — İş Kanunu m.46
     const weeklyOffPay = round2(dailyRate * (row.off_days || 0))
     const gross = round2(basePay + overtimePay + leavePay + weeklyOffPay)
@@ -2151,6 +2369,9 @@ export function puantajService(month, deptId, { includeMeta = false } = {}) {
       base_pay: basePay,
       overtime_pay: overtimePay,
       leave_pay: leavePay,
+      paid_leave_units: round2(row.paid_leave_units || 0),
+      sgk_day_units: round2(row.sgk_day_units || 0),
+      missing_required_documents: Number(row.missing_required_documents || 0),
       weekly_off_pay: weeklyOffPay,
       gross,
       ssi_worker: ssiWorker,

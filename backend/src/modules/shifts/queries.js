@@ -391,7 +391,7 @@ export function getSchedule(weekStart, weekEnd, deptId) {
   const db = getDB()
   let query = `
     SELECT
-      ss.id, ss.work_date, ss.status,
+      ss.id, ss.work_date, ss.status, ss.row_version, ss.puantaj_code_id,
       s.id as staff_id, s.full_name, s.gender, s.position, s.role_id,
       COALESCE(ss.dept_id, s.department_id) as dept_id,
       d.name as dept_name, d.color_class as dept_color,
@@ -405,13 +405,16 @@ export function getSchedule(weekStart, weekEnd, deptId) {
         WHERE lr.staff_id = ss.staff_id AND lr.status = 'approved'
           AND lr.start_date <= ss.work_date AND lr.end_date >= ss.work_date
         ORDER BY lr.id DESC LIMIT 1
-      )) END as leave_type
+      )) END as leave_type,
+      pc.code as puantaj_code, pc.label as puantaj_code_label,
+      pc.requires_document, pc.requires_reason
     FROM shift_schedule ss
     JOIN staff s ON s.id = ss.staff_id
     LEFT JOIN departments d ON d.id = COALESCE(ss.dept_id, s.department_id)
     LEFT JOIN staff_roles sr ON sr.id = s.role_id
     LEFT JOIN work_locations wl ON wl.id = ss.work_location_id
     LEFT JOIN shift_definitions sd ON sd.id = ss.shift_def_id
+    LEFT JOIN puantaj_codes pc ON pc.id = ss.puantaj_code_id
     WHERE ss.work_date BETWEEN ? AND ?
   `
   const params = [weekStart, weekEnd]
@@ -547,33 +550,56 @@ export function deleteScheduleSegment(id) {
 
 export function bulkAssignShifts(entries, createdBy) {
   const db = getDB()
+  const findExisting = db.prepare('SELECT id, row_version FROM shift_schedule WHERE staff_id=? AND work_date=?')
+  const findCode = db.prepare(`
+    SELECT id FROM puantaj_codes
+    WHERE is_active=1 AND status=?
+      AND (? IS NULL OR leave_type=? OR (leave_type IS NULL AND ? IS NULL))
+    ORDER BY CASE WHEN leave_type=? THEN 0 ELSE 1 END, is_builtin DESC, sort_order, id
+    LIMIT 1
+  `)
   const upsert = db.prepare(`
-    INSERT INTO shift_schedule(staff_id, dept_id, shift_def_id, work_date, status, leave_type, absent_reason, work_location_id, created_by)
-    VALUES(@staff_id, @dept_id, @shift_def_id, @work_date, @status, @leave_type, @absent_reason, @work_location_id, @created_by)
+    INSERT INTO shift_schedule(staff_id, dept_id, shift_def_id, work_date, status, leave_type, absent_reason, work_location_id, puantaj_code_id, created_by)
+    VALUES(@staff_id, @dept_id, @shift_def_id, @work_date, @status, @leave_type, @absent_reason, @work_location_id, @puantaj_code_id, @created_by)
     ON CONFLICT(staff_id, work_date) DO UPDATE SET
       shift_def_id = excluded.shift_def_id,
       dept_id = excluded.dept_id,
       status = excluded.status,
       leave_type = excluded.leave_type,
       absent_reason = excluded.absent_reason,
-      work_location_id = excluded.work_location_id
+      work_location_id = excluded.work_location_id,
+      puantaj_code_id = excluded.puantaj_code_id,
+      row_version = shift_schedule.row_version + 1
   `)
+  const saved = []
   const tx = db.transaction(() => {
     entries.forEach(e => {
       const status = e.status || 'scheduled'
+      const leaveType = status === 'on_leave' ? (e.leave_type || e.leaveType || null) : null
+      const existing = findExisting.get(e.staff_id, e.work_date)
+      if (existing && e.expected_version != null && Number(e.expected_version) !== Number(existing.row_version)) {
+        throw Object.assign(new Error('Bu hucre baska bir kullanici tarafindan degistirildi. Guncel veri yeniden yuklendi.'), {
+          statusCode: 409,
+          details: { conflict: true, staff_id: e.staff_id, work_date: e.work_date, current_version: existing.row_version },
+        })
+      }
+      const inferredCode = findCode.get(status, leaveType, leaveType, leaveType, leaveType)
       upsert.run({
         ...e,
         status,
         dept_id: e.dept_id ?? null,
         shift_def_id: e.shift_def_id || null,
-        leave_type: status === 'on_leave' ? (e.leave_type || e.leaveType || null) : null,
+        leave_type: leaveType,
         absent_reason: status === 'absent' ? (e.absent_reason || null) : null,
         work_location_id: ['scheduled', 'worked', 'overtime'].includes(status) ? (e.work_location_id || null) : null,
+        puantaj_code_id: e.puantaj_code_id || inferredCode?.id || null,
         created_by: createdBy,
       })
+      saved.push(db.prepare('SELECT * FROM shift_schedule WHERE staff_id=? AND work_date=?').get(e.staff_id, e.work_date))
     })
   })
   tx()
+  return saved
 }
 
 // H4 V1 — Çakışma kontrolü: aynı staff'ın aynı günde mevcut vardiya/izin var mı?
@@ -816,10 +842,14 @@ export function createLeaveRequest(data) {
   if (existing) throw new Error('Bu tarih aralığında zaten bir izin talebi mevcut')
 
   const r = db.prepare(`
-    INSERT INTO leave_requests(staff_id, leave_type, start_date, end_date, total_days, reason)
-    VALUES(@staff_id, @leave_type, @start_date, @end_date, @total_days, @reason)
+    INSERT INTO leave_requests(staff_id, leave_type, start_date, end_date, total_days, leave_hours, reason, requested_by)
+    VALUES(@staff_id, @leave_type, @start_date, @end_date, @total_days, @leave_hours, @reason, @requested_by)
   `).run(data)
   return r.lastInsertRowid
+}
+
+export function getLeaveRequest(id) {
+  return getDB().prepare('SELECT * FROM leave_requests WHERE id=?').get(id)
 }
 
 // E1 — leave_balance sayaç kolonu eşlemesi (diğer izin tipleri sayaçsız)
@@ -836,19 +866,29 @@ function adjustLeaveBalance(db, req, delta) {
 
 function markLeaveOnSchedule(db, req, approvedBy) {
   const staff = db.prepare('SELECT department_id FROM staff WHERE id=?').get(req.staff_id)
+  const code = db.prepare(`
+    SELECT id FROM puantaj_codes
+    WHERE status='on_leave' AND is_active=1 AND leave_type=?
+    ORDER BY is_builtin DESC, sort_order, id LIMIT 1
+  `).get(req.leave_type)
   const upsertLeave = db.prepare(`
-    INSERT INTO shift_schedule(staff_id, dept_id, shift_def_id, work_date, status, leave_type, created_by)
-    VALUES(?, ?, NULL, ?, 'on_leave', ?, ?)
-    ON CONFLICT(staff_id, work_date) DO UPDATE SET status='on_leave', leave_type=excluded.leave_type
+    INSERT INTO shift_schedule(staff_id, dept_id, shift_def_id, work_date, status, leave_type, leave_hours, puantaj_code_id, created_by)
+    VALUES(?, ?, NULL, ?, 'on_leave', ?, ?, ?, ?)
+    ON CONFLICT(staff_id, work_date) DO UPDATE SET
+      status='on_leave', leave_type=excluded.leave_type, leave_hours=excluded.leave_hours,
+      puantaj_code_id=excluded.puantaj_code_id, row_version=shift_schedule.row_version+1
   `)
   for (let date = req.start_date; date <= req.end_date; date = addDaysStr(date, 1)) {
-    upsertLeave.run(req.staff_id, staff?.department_id || null, date, req.leave_type || null, approvedBy || null)
+    upsertLeave.run(req.staff_id, staff?.department_id || null, date, req.leave_type || null, req.leave_hours || null, code?.id || null, approvedBy || null)
   }
 }
 
 function clearLeaveFromSchedule(db, req) {
   const restorePlanned = db.prepare(`
-    UPDATE shift_schedule SET status='scheduled', leave_type=NULL
+    UPDATE shift_schedule
+    SET status='scheduled', leave_type=NULL, leave_hours=NULL,
+        puantaj_code_id=(SELECT id FROM puantaj_codes WHERE status='scheduled' AND is_active=1 ORDER BY is_builtin DESC, sort_order LIMIT 1),
+        row_version=row_version+1
     WHERE staff_id=? AND work_date=? AND status='on_leave' AND shift_def_id IS NOT NULL
   `)
   const deleteLeaveOnly = db.prepare(`
@@ -861,10 +901,16 @@ function clearLeaveFromSchedule(db, req) {
   }
 }
 
-export function approveLeaveRequest(id, approvedBy, status) {
+export function approveLeaveRequest(id, approvedBy, status, { note = null, expectedVersion = null } = {}) {
   const db = getDB()
   const req = db.prepare('SELECT * FROM leave_requests WHERE id=?').get(id)
   if (!req) throw new Error('İzin talebi bulunamadı')
+  if (expectedVersion != null && Number(expectedVersion) !== Number(req.version || 1)) {
+    throw Object.assign(new Error('Izin talebi baska bir kullanici tarafindan guncellendi.'), {
+      statusCode: 409,
+      details: { conflict: true, current_version: req.version || 1 },
+    })
+  }
   const wasApproved = req.status === 'approved'
 
   // E1 — yıllık izinde bakiye kontrolü (pending → approved geçişinde)
@@ -878,8 +924,11 @@ export function approveLeaveRequest(id, approvedBy, status) {
 
   const tx = db.transaction(() => {
     db.prepare(`
-      UPDATE leave_requests SET status=?, approved_by=?, approved_at=datetime('now') WHERE id=?
-    `).run(status, approvedBy, id)
+      UPDATE leave_requests
+      SET status=?, approved_by=?, approved_at=datetime('now'), review_note=?,
+          version=version+1, updated_at=CURRENT_TIMESTAMP
+      WHERE id=?
+    `).run(status, approvedBy, note, id)
 
     if (status === 'approved' && !wasApproved) {
       markLeaveOnSchedule(db, req, approvedBy)
@@ -891,6 +940,7 @@ export function approveLeaveRequest(id, approvedBy, status) {
     }
   })
   tx()
+  return db.prepare('SELECT * FROM leave_requests WHERE id=?').get(id)
 }
 
 export function getLeaveRequests(filters) {
@@ -909,7 +959,24 @@ export function getLeaveRequests(filters) {
   if (filters.staff_id) { query += ' AND lr.staff_id=?'; params.push(filters.staff_id) }
   if (filters.leave_type) { query += ' AND lr.leave_type=?'; params.push(filters.leave_type) }
   query += ' ORDER BY lr.created_at DESC LIMIT 200'
-  return db.prepare(query).all(...params)
+  const rows = db.prepare(query).all(...params)
+  if (!rows.length) return rows
+  const placeholders = rows.map(() => '?').join(',')
+  const docs = db.prepare(`
+    SELECT * FROM leave_documents
+    WHERE leave_request_id IN (${placeholders})
+    ORDER BY created_at, id
+  `).all(...rows.map(row => row.id))
+  const byRequest = new Map()
+  docs.forEach(doc => {
+    if (!byRequest.has(doc.leave_request_id)) byRequest.set(doc.leave_request_id, [])
+    byRequest.get(doc.leave_request_id).push(doc)
+  })
+  return rows.map(row => ({
+    ...row,
+    documents: byRequest.get(row.id) || [],
+    document_count: (byRequest.get(row.id) || []).length,
+  }))
 }
 
 export function getLeaveBalance(staffId, year) {
@@ -920,6 +987,43 @@ export function getLeaveBalance(staffId, year) {
     balance = db.prepare('SELECT * FROM leave_balance WHERE staff_id=? AND year=?').get(staffId, year)
   }
   return balance
+}
+
+export function addRequestDocuments({ leaveRequestId = null, overtimeRequestId = null, scheduleId = null, files = [], uploadedBy = null }) {
+  const db = getDB()
+  const insert = db.prepare(`
+    INSERT INTO leave_documents(
+      leave_request_id, overtime_request_id, schedule_id,
+      file_url, file_name, mime_type, file_size, uploaded_by
+    ) VALUES(?,?,?,?,?,?,?,?)
+  `)
+  const ids = []
+  db.transaction(() => {
+    files.forEach(file => {
+      ids.push(insert.run(
+        leaveRequestId, overtimeRequestId, scheduleId,
+        file.file_url, file.file_name, file.mime_type, file.file_size || null, uploadedBy
+      ).lastInsertRowid)
+    })
+  })()
+  return ids
+}
+
+export function listRequestDocuments({ leaveRequestId = null, overtimeRequestId = null, scheduleId = null }) {
+  const [column, value] = leaveRequestId
+    ? ['leave_request_id', leaveRequestId]
+    : overtimeRequestId
+      ? ['overtime_request_id', overtimeRequestId]
+      : ['schedule_id', scheduleId]
+  return getDB().prepare(`SELECT * FROM leave_documents WHERE ${column}=? ORDER BY created_at, id`).all(value)
+}
+
+export function getRequestDocument(id) {
+  return getDB().prepare('SELECT * FROM leave_documents WHERE id=?').get(id)
+}
+
+export function deleteRequestDocument(id) {
+  return getDB().prepare('DELETE FROM leave_documents WHERE id=?').run(id).changes
 }
 
 // ── Overtime ──
@@ -984,6 +1088,113 @@ export function getOvertimeSummary(month) {
     GROUP BY d.id
     ORDER BY total_hours DESC
   `).all(month)
+}
+
+export function createOvertimeRequest(data) {
+  const db = getDB()
+  const existing = db.prepare(`
+    SELECT id FROM overtime_requests
+    WHERE staff_id=? AND work_date=? AND status IN ('pending','approved','returned')
+  `).get(data.staff_id, data.work_date)
+  if (existing) throw Object.assign(new Error('Bu personel ve tarih icin acik bir mesai talebi var.'), { statusCode: 409 })
+  const id = db.prepare(`
+    INSERT INTO overtime_requests(
+      staff_id, work_date, planned_start, planned_end, actual_start, actual_end,
+      requested_hours, actual_hours, reason, compensation_type, requested_by
+    ) VALUES(
+      @staff_id, @work_date, @planned_start, @planned_end, @actual_start, @actual_end,
+      @requested_hours, @actual_hours, @reason, @compensation_type, @requested_by
+    )
+  `).run(data).lastInsertRowid
+  return getOvertimeRequest(id)
+}
+
+export function getOvertimeRequest(id) {
+  return getDB().prepare(`
+    SELECT otr.*, s.full_name, s.gender, s.position,
+      d.name as dept_name, d.color_class as dept_color,
+      reviewer.full_name as reviewer_name
+    FROM overtime_requests otr
+    JOIN staff s ON s.id=otr.staff_id
+    LEFT JOIN departments d ON d.id=s.department_id
+    LEFT JOIN users reviewer ON reviewer.id=otr.reviewed_by
+    WHERE otr.id=?
+  `).get(id)
+}
+
+export function getOvertimeRequests(filters = {}) {
+  const db = getDB()
+  let sql = `
+    SELECT otr.*, s.full_name, s.gender, s.position,
+      d.name as dept_name, d.color_class as dept_color,
+      reviewer.full_name as reviewer_name
+    FROM overtime_requests otr
+    JOIN staff s ON s.id=otr.staff_id
+    LEFT JOIN departments d ON d.id=s.department_id
+    LEFT JOIN users reviewer ON reviewer.id=otr.reviewed_by
+    WHERE 1=1
+  `
+  const params = []
+  if (filters.status) { sql += ' AND otr.status=?'; params.push(filters.status) }
+  if (filters.month) { sql += " AND strftime('%Y-%m', otr.work_date)=?"; params.push(filters.month) }
+  if (filters.staff_id) { sql += ' AND otr.staff_id=?'; params.push(filters.staff_id) }
+  if (filters.dept_id) { sql += ' AND s.department_id=?'; params.push(filters.dept_id) }
+  sql += ' ORDER BY otr.work_date DESC, otr.id DESC LIMIT 300'
+  const rows = db.prepare(sql).all(...params)
+  if (!rows.length) return rows
+  const placeholders = rows.map(() => '?').join(',')
+  const docs = db.prepare(`
+    SELECT * FROM leave_documents WHERE overtime_request_id IN (${placeholders}) ORDER BY created_at, id
+  `).all(...rows.map(row => row.id))
+  const byRequest = new Map()
+  docs.forEach(doc => {
+    if (!byRequest.has(doc.overtime_request_id)) byRequest.set(doc.overtime_request_id, [])
+    byRequest.get(doc.overtime_request_id).push(doc)
+  })
+  return rows.map(row => ({
+    ...row,
+    documents: byRequest.get(row.id) || [],
+    document_count: (byRequest.get(row.id) || []).length,
+  }))
+}
+
+export function reviewOvertimeRequest(id, data, reviewedBy) {
+  const db = getDB()
+  const request = db.prepare('SELECT * FROM overtime_requests WHERE id=?').get(id)
+  if (!request) throw Object.assign(new Error('Mesai talebi bulunamadi.'), { statusCode: 404 })
+  if (data.expected_version != null && Number(data.expected_version) !== Number(request.version)) {
+    throw Object.assign(new Error('Mesai talebi baska bir kullanici tarafindan guncellendi.'), {
+      statusCode: 409,
+      details: { conflict: true, current_version: request.version },
+    })
+  }
+  const actualHours = data.actual_hours == null ? (request.actual_hours ?? request.requested_hours) : Number(data.actual_hours)
+  const tx = db.transaction(() => {
+    db.prepare(`
+      UPDATE overtime_requests
+      SET status=?, actual_start=COALESCE(?,actual_start), actual_end=COALESCE(?,actual_end),
+          actual_hours=?, review_note=?, reviewed_by=?, reviewed_at=CURRENT_TIMESTAMP,
+          version=version+1, updated_at=CURRENT_TIMESTAMP
+      WHERE id=?
+    `).run(data.status, data.actual_start || null, data.actual_end || null, actualHours, data.review_note || null, reviewedBy || null, id)
+
+    if (data.status === 'approved' && request.compensation_type === 'pay' && actualHours > 0) {
+      const existingRecord = db.prepare('SELECT id FROM overtime_records WHERE overtime_request_id=?').get(id)
+      if (existingRecord) {
+        db.prepare('UPDATE overtime_records SET hours=?, reason=?, approved_by=? WHERE id=?')
+          .run(actualHours, request.reason, reviewedBy || null, existingRecord.id)
+      } else {
+        db.prepare(`
+          INSERT INTO overtime_records(staff_id, work_date, hours, reason, approved_by, overtime_request_id)
+          VALUES(?,?,?,?,?,?)
+        `).run(request.staff_id, request.work_date, actualHours, request.reason, reviewedBy || null, id)
+      }
+    } else {
+      db.prepare('DELETE FROM overtime_records WHERE overtime_request_id=?').run(id)
+    }
+  })
+  tx()
+  return getOvertimeRequest(id)
 }
 
 export function updateOvertime(id, data) {
@@ -1868,7 +2079,7 @@ export function cancelLeaveRequest(id) {
   const req = db.prepare('SELECT * FROM leave_requests WHERE id=?').get(id)
   if (!req) throw new Error('İzin talebi bulunamadı')
   const tx = db.transaction(() => {
-    db.prepare("UPDATE leave_requests SET status='rejected' WHERE id=?").run(id)
+    db.prepare("UPDATE leave_requests SET status='rejected', version=version+1, updated_at=CURRENT_TIMESTAMP WHERE id=?").run(id)
     clearLeaveFromSchedule(db, req)
     // E1 — onaylı izin iptalinde bakiye iadesi
     if (req.status === 'approved') adjustLeaveBalance(db, req, -1)
@@ -2248,15 +2459,30 @@ export function listPuantajCodes({ includeInactive = false } = {}) {
   return getDB().prepare(sql).all()
 }
 
-export function createPuantajCode({ code, label, colorHex, status, leaveType, sortOrder }) {
+export function createPuantajCode({
+  code, label, colorHex, status, leaveType, sortOrder,
+  isPaid, sgkDayFactor, dayMultiplier, hourMultiplier, overtimeEffect,
+  requiresDocument, requiresReason,
+}) {
   return getDB().prepare(`
-    INSERT INTO puantaj_codes(code, label, color_hex, status, leave_type, sort_order, is_builtin)
-    VALUES(?, ?, ?, ?, ?, ?, 0)
-  `).run(code, label, colorHex, status, leaveType || null, sortOrder ?? 99).lastInsertRowid
+    INSERT INTO puantaj_codes(
+      code, label, color_hex, status, leave_type, sort_order, is_builtin,
+      is_paid, sgk_day_factor, day_multiplier, hour_multiplier, overtime_effect,
+      requires_document, requires_reason
+    ) VALUES(?,?,?,?,?,?,0,?,?,?,?,?,?,?)
+  `).run(
+    code, label, colorHex, status, leaveType || null, sortOrder ?? 99,
+    isPaid, sgkDayFactor, dayMultiplier, hourMultiplier, overtimeEffect,
+    requiresDocument, requiresReason
+  ).lastInsertRowid
 }
 
 export function updatePuantajCode(id, fields) {
-  const allowed = ['code', 'label', 'color_hex', 'leave_type', 'sort_order', 'is_active']
+  const allowed = [
+    'code', 'label', 'color_hex', 'leave_type', 'sort_order', 'is_active',
+    'is_paid', 'sgk_day_factor', 'day_multiplier', 'hour_multiplier',
+    'overtime_effect', 'requires_document', 'requires_reason',
+  ]
   const sets = []
   const params = []
   allowed.forEach(key => {
@@ -2323,11 +2549,39 @@ export function getPuantajDayIssueCounts(date, deptId) {
     SELECT COUNT(*) AS staff_count,
       SUM(CASE WHEN ss.status = 'scheduled' THEN 1 ELSE 0 END) AS scheduled,
       SUM(CASE WHEN ss.status = 'absent' AND TRIM(COALESCE(ss.absent_reason, '')) = '' THEN 1 ELSE 0 END) AS absent_no_reason,
-      SUM(CASE WHEN ss.staff_id IS NULL THEN 1 ELSE 0 END) AS empty
+      SUM(CASE WHEN ss.staff_id IS NULL THEN 1 ELSE 0 END) AS empty,
+      SUM(CASE WHEN pc.requires_reason=1 AND TRIM(COALESCE(ss.detail_note, ss.absent_reason, ''))='' THEN 1 ELSE 0 END) AS required_reason_missing,
+      SUM(CASE WHEN pc.requires_document=1 AND ss.attachment_url IS NULL
+        AND NOT EXISTS(
+          SELECT 1 FROM leave_documents ld
+          WHERE ld.schedule_id=ss.id OR ld.leave_request_id IN (
+            SELECT lr.id FROM leave_requests lr
+            WHERE lr.staff_id=s.id AND lr.status='approved' AND ? BETWEEN lr.start_date AND lr.end_date
+          )
+        ) THEN 1 ELSE 0 END) AS required_document_missing,
+      (SELECT COUNT(*) FROM overtime_requests otr
+        JOIN staff os ON os.id=otr.staff_id
+        WHERE otr.work_date=? AND otr.status IN ('pending','returned')
+          AND (? IS NULL OR os.department_id=?)) AS pending_overtime_requests,
+      (SELECT COUNT(*) FROM leave_requests lr
+        JOIN staff ls ON ls.id=lr.staff_id
+        WHERE lr.status='pending' AND ? BETWEEN lr.start_date AND lr.end_date
+          AND (? IS NULL OR ls.department_id=?)) AS pending_leave_requests
     FROM staff s
     LEFT JOIN shift_schedule ss ON ss.staff_id = s.id AND ss.work_date = ?
+    LEFT JOIN puantaj_codes pc ON pc.id=COALESCE(ss.puantaj_code_id, (
+      SELECT fallback_pc.id FROM puantaj_codes fallback_pc
+      WHERE fallback_pc.is_active=1 AND fallback_pc.status=ss.status
+        AND (ss.status!='on_leave' OR fallback_pc.leave_type=ss.leave_type)
+      ORDER BY fallback_pc.is_builtin DESC, fallback_pc.sort_order, fallback_pc.id LIMIT 1
+    ))
     WHERE s.is_active = 1 AND (? IS NULL OR s.department_id = ?)
-  `).get(date, deptId ?? null, deptId ?? null)
+  `).get(
+    date,
+    date, deptId ?? null, deptId ?? null,
+    date, deptId ?? null, deptId ?? null,
+    date, deptId ?? null, deptId ?? null
+  )
 }
 
 // Onay bütünlüğü: puantaj verisi değişen günlerin 'approved' gün onaylarını
@@ -2445,8 +2699,16 @@ export function applyRotationTemplate(staffIds, deptId, shiftDefIds, startDate, 
 }
 
 // ── Delete shift schedule entry ──
-export function deleteScheduleEntry(staffId, workDate) {
-  getDB().prepare('DELETE FROM shift_schedule WHERE staff_id=? AND work_date=?').run(staffId, workDate)
+export function deleteScheduleEntry(staffId, workDate, expectedVersion = null) {
+  const db = getDB()
+  const current = db.prepare('SELECT row_version FROM shift_schedule WHERE staff_id=? AND work_date=?').get(staffId, workDate)
+  if (current && expectedVersion != null && Number(expectedVersion) !== Number(current.row_version)) {
+    throw Object.assign(new Error('Bu hucre baska bir kullanici tarafindan degistirildi. Guncel veri yeniden yuklendi.'), {
+      statusCode: 409,
+      details: { conflict: true, current_version: current.row_version },
+    })
+  }
+  db.prepare('DELETE FROM shift_schedule WHERE staff_id=? AND work_date=?').run(staffId, workDate)
 }
 
 export function upsertPuantajDayDetail(data, userId) {
@@ -2458,6 +2720,12 @@ export function upsertPuantajDayDetail(data, userId) {
   if (!staff) throw new Error('Personel bulunamadi')
 
   const existing = db.prepare('SELECT * FROM shift_schedule WHERE staff_id=? AND work_date=?').get(staffId, workDate)
+  if (existing && data.expected_version != null && Number(data.expected_version) !== Number(existing.row_version || 1)) {
+    throw Object.assign(new Error('Bu hucre baska bir kullanici tarafindan degistirildi. Guncel veri yeniden yuklendi.'), {
+      statusCode: 409,
+      details: { conflict: true, current_version: existing.row_version || 1 },
+    })
+  }
   const requestedStatus = data.status || existing?.status || (data.leave_type || data.leave_hours ? 'on_leave' : 'scheduled')
   const status = ['scheduled', 'worked', 'absent', 'on_leave', 'overtime', 'off'].includes(requestedStatus) ? requestedStatus : 'scheduled'
   const keepsWorkFields = ['scheduled', 'worked', 'overtime'].includes(status)
@@ -2471,6 +2739,26 @@ export function upsertPuantajDayDetail(data, userId) {
     return trimmed || null
   }
 
+  const leaveType = status === 'on_leave' ? (cleanText(data.leave_type) || existing?.leave_type || 'other') : null
+  const code = data.puantaj_code_id
+    ? db.prepare('SELECT * FROM puantaj_codes WHERE id=? AND is_active=1').get(Number(data.puantaj_code_id))
+    : db.prepare(`
+      SELECT * FROM puantaj_codes
+      WHERE is_active=1 AND status=? AND (? IS NULL OR leave_type=?)
+      ORDER BY CASE WHEN leave_type=? THEN 0 ELSE 1 END, is_builtin DESC, sort_order, id LIMIT 1
+    `).get(status, leaveType, leaveType, leaveType)
+  const detailNote = hasField('detail_note') ? cleanText(data.detail_note) : (existing?.detail_note ?? null)
+  const nextAttachmentUrl = removeAttachment ? null : (data.attachment_url ?? existing?.attachment_url ?? null)
+  const documentCount = existing?.id
+    ? db.prepare('SELECT COUNT(*) as count FROM leave_documents WHERE schedule_id=?').get(existing.id).count
+    : 0
+  if (code?.requires_reason && !detailNote) {
+    throw Object.assign(new Error(`${code.label} icin gerekce zorunlu`), { statusCode: 409, details: { reason_required: true } })
+  }
+  if (code?.requires_document && !nextAttachmentUrl && !documentCount) {
+    throw Object.assign(new Error(`${code.label} icin belge zorunlu`), { statusCode: 409, details: { document_required: true } })
+  }
+
   const next = {
     staff_id: staffId,
     dept_id: existing?.dept_id ?? staff.department_id ?? null,
@@ -2478,24 +2766,25 @@ export function upsertPuantajDayDetail(data, userId) {
     work_location_id: keepsWorkFields ? (existing?.work_location_id ?? null) : null,
     work_date: workDate,
     status,
-    leave_type: status === 'on_leave' ? (cleanText(data.leave_type) || existing?.leave_type || 'other') : null,
+    leave_type: leaveType,
     absent_reason: status === 'absent' ? (hasField('absent_reason') ? cleanText(data.absent_reason) : (existing?.absent_reason ?? null)) : null,
     leave_hours: status === 'on_leave' ? leaveHours : null,
-    detail_note: hasField('detail_note') ? cleanText(data.detail_note) : (existing?.detail_note ?? null),
-    attachment_url: removeAttachment ? null : (data.attachment_url ?? existing?.attachment_url ?? null),
+    detail_note: detailNote,
+    attachment_url: nextAttachmentUrl,
     attachment_name: removeAttachment ? null : (data.attachment_name ?? existing?.attachment_name ?? null),
     attachment_mime: removeAttachment ? null : (data.attachment_mime ?? existing?.attachment_mime ?? null),
+    puantaj_code_id: code?.id || null,
     created_by: userId || existing?.created_by || null,
   }
 
   db.prepare(`
     INSERT INTO shift_schedule(
       staff_id, dept_id, shift_def_id, work_location_id, work_date, status, leave_type, absent_reason,
-      leave_hours, detail_note, attachment_url, attachment_name, attachment_mime, created_by
+      leave_hours, detail_note, attachment_url, attachment_name, attachment_mime, puantaj_code_id, created_by
     )
     VALUES(
       @staff_id, @dept_id, @shift_def_id, @work_location_id, @work_date, @status, @leave_type, @absent_reason,
-      @leave_hours, @detail_note, @attachment_url, @attachment_name, @attachment_mime, @created_by
+      @leave_hours, @detail_note, @attachment_url, @attachment_name, @attachment_mime, @puantaj_code_id, @created_by
     )
     ON CONFLICT(staff_id, work_date) DO UPDATE SET
       dept_id=excluded.dept_id,
@@ -2508,7 +2797,9 @@ export function upsertPuantajDayDetail(data, userId) {
       detail_note=excluded.detail_note,
       attachment_url=excluded.attachment_url,
       attachment_name=excluded.attachment_name,
-      attachment_mime=excluded.attachment_mime
+      attachment_mime=excluded.attachment_mime,
+      puantaj_code_id=excluded.puantaj_code_id,
+      row_version=shift_schedule.row_version+1
   `).run(next)
 
   return db.prepare('SELECT * FROM shift_schedule WHERE staff_id=? AND work_date=?').get(staffId, workDate)
@@ -2625,6 +2916,12 @@ export function getStaffDayBreakdown(staffId, monthStart, monthEnd) {
       ss.dept_id,
       ss.shift_def_id,
       ss.status,
+      ss.row_version,
+      ss.puantaj_code_id,
+      pc.code as puantaj_code,
+      pc.label as puantaj_code_label,
+      pc.requires_document,
+      pc.requires_reason,
       sd.name as shift_name,
       sd.start_hour,
       sd.end_hour,
@@ -2638,6 +2935,7 @@ export function getStaffDayBreakdown(staffId, monthStart, monthEnd) {
       ss.attachment_url,
       ss.attachment_name,
       ss.attachment_mime,
+      (SELECT COUNT(*) FROM leave_documents ld WHERE ld.schedule_id=ss.id) as document_count,
       ot.hours as overtime_hours,
       CASE WHEN adr.id IS NOT NULL THEN 'card_kiosk' ELSE 'manual' END as attendance_source,
       adr.result_status as reconciliation_status,
@@ -2650,6 +2948,7 @@ export function getStaffDayBreakdown(staffId, monthStart, monthEnd) {
         WHERE ax.staff_id = ss.staff_id AND ax.work_date = ss.work_date AND ax.status = 'open') as attendance_exception_count
     FROM shift_schedule ss
     LEFT JOIN shift_definitions sd ON sd.id = ss.shift_def_id
+    LEFT JOIN puantaj_codes pc ON pc.id = ss.puantaj_code_id
     LEFT JOIN work_locations wl ON wl.id = ss.work_location_id
     LEFT JOIN leave_requests lr ON lr.staff_id = ss.staff_id
       AND lr.status = 'approved'
@@ -2679,6 +2978,12 @@ export function getPuantajDayRows(monthStart, monthEnd, deptId) {
       ss.dept_id,
       ss.shift_def_id,
       ss.status,
+      ss.row_version,
+      ss.puantaj_code_id,
+      pc.code as puantaj_code,
+      pc.label as puantaj_code_label,
+      pc.requires_document,
+      pc.requires_reason,
       sd.name as shift_name,
       sd.start_hour,
       sd.end_hour,
@@ -2694,6 +2999,7 @@ export function getPuantajDayRows(monthStart, monthEnd, deptId) {
       ss.attachment_url,
       ss.attachment_name,
       ss.attachment_mime,
+      (SELECT COUNT(*) FROM leave_documents ld WHERE ld.schedule_id=ss.id) as document_count,
       ot.hours as overtime_hours,
       CASE WHEN adr.id IS NOT NULL THEN 'card_kiosk' ELSE 'manual' END as attendance_source,
       adr.result_status as reconciliation_status,
@@ -2716,6 +3022,7 @@ export function getPuantajDayRows(monthStart, monthEnd, deptId) {
       LIMIT 1
     )
     LEFT JOIN shift_definitions sd ON sd.id = ss.shift_def_id
+    LEFT JOIN puantaj_codes pc ON pc.id = ss.puantaj_code_id
     LEFT JOIN work_locations wl ON wl.id = ss.work_location_id
     LEFT JOIN staff_roles sr ON sr.id = CASE WHEN day_sa.id IS NOT NULL THEN day_sa.role_id ELSE s.role_id END
     LEFT JOIN leave_requests lr ON lr.staff_id = ss.staff_id
@@ -2761,7 +3068,10 @@ export function getPuantaj(monthStart, monthEnd, deptId) {
       COALESCE(sch.annual_leave_days, 0) as annual_leave_days,
       COALESCE(sch.sick_leave_days, 0) as sick_leave_days,
       COALESCE(sch.emergency_leave_days, 0) as emergency_leave_days,
-      COALESCE(sch.other_leave_days, 0) as other_leave_days
+      COALESCE(sch.other_leave_days, 0) as other_leave_days,
+      COALESCE(sch.paid_leave_units, 0) as paid_leave_units,
+      COALESCE(sch.sgk_day_units, 0) as sgk_day_units,
+      COALESCE(sch.missing_required_documents, 0) as missing_required_documents
     FROM staff s
     LEFT JOIN staff_assignments period_sa ON period_sa.id = (
       SELECT dated_sa.id
@@ -2784,11 +3094,27 @@ export function getPuantaj(monthStart, monthEnd, deptId) {
         COUNT(CASE WHEN ss.status='on_leave' AND COALESCE(ss.leave_type, lr.leave_type)='annual' THEN 1 END) as annual_leave_days,
         COUNT(CASE WHEN ss.status='on_leave' AND COALESCE(ss.leave_type, lr.leave_type)='sick' THEN 1 END) as sick_leave_days,
         COUNT(CASE WHEN ss.status='on_leave' AND COALESCE(ss.leave_type, lr.leave_type)='emergency' THEN 1 END) as emergency_leave_days,
-        COUNT(CASE WHEN ss.status='on_leave' AND (COALESCE(ss.leave_type, lr.leave_type) IS NULL OR COALESCE(ss.leave_type, lr.leave_type) NOT IN ('annual','sick','emergency')) THEN 1 END) as other_leave_days
+        COUNT(CASE WHEN ss.status='on_leave' AND (COALESCE(ss.leave_type, lr.leave_type) IS NULL OR COALESCE(ss.leave_type, lr.leave_type) NOT IN ('annual','sick','emergency')) THEN 1 END) as other_leave_days,
+        SUM(CASE WHEN ss.status='on_leave' AND COALESCE(pc.is_paid, 0)=1 THEN
+          CASE WHEN COALESCE(ss.leave_hours, 0)>0
+            THEN (ss.leave_hours / 8.0) * COALESCE(pc.hour_multiplier, 0)
+            ELSE COALESCE(pc.day_multiplier, 0)
+          END ELSE 0 END) as paid_leave_units,
+        SUM(CASE WHEN ss.status='on_leave' THEN COALESCE(pc.sgk_day_factor, 0) ELSE 0 END) as sgk_day_units,
+        COUNT(CASE WHEN ss.status='on_leave' AND COALESCE(pc.requires_document,0)=1
+          AND ss.attachment_url IS NULL
+          AND NOT EXISTS(SELECT 1 FROM leave_documents ld WHERE ld.schedule_id=ss.id OR ld.leave_request_id=lr.id)
+          THEN 1 END) as missing_required_documents
       FROM shift_schedule ss
       LEFT JOIN leave_requests lr ON lr.staff_id = ss.staff_id
         AND lr.status = 'approved'
         AND ss.work_date BETWEEN lr.start_date AND lr.end_date
+      LEFT JOIN puantaj_codes pc ON pc.id=COALESCE(ss.puantaj_code_id, (
+        SELECT fallback_pc.id FROM puantaj_codes fallback_pc
+        WHERE fallback_pc.is_active=1 AND fallback_pc.status=ss.status
+          AND (ss.status!='on_leave' OR fallback_pc.leave_type=COALESCE(ss.leave_type, lr.leave_type))
+        ORDER BY fallback_pc.is_builtin DESC, fallback_pc.sort_order, fallback_pc.id LIMIT 1
+      ))
       WHERE ss.work_date BETWEEN ? AND ?
       GROUP BY ss.staff_id
     ) sch ON sch.staff_id = s.id
