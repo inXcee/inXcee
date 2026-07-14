@@ -58,7 +58,7 @@ const payload = {
   ],
   action_summary: { total: 2, by_category: { card: 1, schedule: 1 }, by_severity: { critical: 1, warning: 1 } },
   coverage: [
-    { rule_id: 1, work_date: '2026-07-14', name: 'Yemekhane acilisi', work_location_name: 'OTC Yemekhane', role_name: 'Ikramci', start_time: '06:00', end_time: '09:00', assigned: 2, min_staff: 3, missing: 1 },
+    { rule_id: 1, work_date: '2026-07-14', name: 'Yemekhane acilisi', dept_id: 1, role_id: 1, work_location_id: 1, shift_def_id: null, work_location_name: 'OTC Yemekhane', role_name: 'Ikramci', start_time: '06:00', end_time: '09:00', assigned: 2, min_staff: 3, missing: 1 },
   ],
   pending: {
     leaves: [{ id: 1, staff_id: 8, full_name: 'Izin Bekleyen', dept_name: 'Mutfak', start_date: '2026-07-20', end_date: '2026-07-21', leave_type: 'annual' }],
@@ -201,6 +201,75 @@ describe('Puantaj operations workspace', () => {
     await waitFor(() => expect(patchSpy).toHaveBeenCalledWith('/shifts/attendance/exceptions/41', {
       status: 'resolved',
       note: 'Gunluk operasyon merkezinden guncellendi',
+    }))
+  })
+
+  it('finds available coverage candidates and assigns the selected person', async () => {
+    const operationsPayload = {
+      ...payload,
+      actions: [...payload.actions, {
+        key: 'coverage:1:2026-07-14',
+        category: 'coverage',
+        severity: 'warning',
+        title: 'Yemekhane acilisi',
+        detail: '1 kisi eksik',
+        can_resolve: false,
+      }],
+    }
+    const candidate = {
+      id: 21,
+      full_name: 'Uygun Kapsama Adayi',
+      dept_id: 1,
+      dept_name: 'Mutfak',
+      role_id: 1,
+      role_name: 'Ikramci',
+      primary_work_location_id: 1,
+      eligible: true,
+      same_day_assignments: 0,
+      reasons: [],
+      workload: 2,
+      score: 97,
+      rest_before_hours: 14,
+    }
+    const busyCandidate = { ...candidate, id: 22, full_name: 'Ayni Gun Calisan', same_day_assignments: 1 }
+    const getSpy = vi.spyOn(api, 'get').mockImplementation(url => {
+      if (url === '/shifts/work-locations') return Promise.resolve({ data: [] })
+      if (url === '/shifts/schedule/candidates') return Promise.resolve({ data: { candidates: [candidate, busyCandidate] } })
+      return Promise.resolve({ data: operationsPayload })
+    })
+    const postSpy = vi.spyOn(api, 'post').mockResolvedValue({ data: { row: { id: 301 } } })
+    renderWithProviders(<PuantajOperationsView month="2031-02" deptFilter="" />)
+
+    await screen.findByText('AKSIYON MERKEZI')
+    const recoveryButtons = screen.getAllByRole('button', { name: 'Aday bul: Yemekhane acilisi' })
+    expect(recoveryButtons).toHaveLength(2)
+    fireEvent.click(recoveryButtons[0])
+
+    await screen.findByText('Uygun Kapsama Adayi')
+    expect(screen.queryByText('Ayni Gun Calisan')).not.toBeInTheDocument()
+    expect(screen.getByText('Ayni gun gorevi var: 1')).toBeInTheDocument()
+    expect(getSpy).toHaveBeenCalledWith('/shifts/schedule/candidates', { params: {
+      date: '2031-02-01',
+      dept_id: 1,
+      role_id: 1,
+      work_location_id: 1,
+      shift_def_id: undefined,
+      start_time: '06:00',
+      end_time: '09:00',
+    } })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Goreve ata: Uygun Kapsama Adayi' }))
+    await waitFor(() => expect(postSpy).toHaveBeenCalledWith('/shifts/schedule/segments', {
+      staff_id: 21,
+      dept_id: 1,
+      work_date: '2031-02-01',
+      shift_def_id: null,
+      role_id: 1,
+      work_location_id: 1,
+      start_time: '06:00',
+      end_time: '09:00',
+      break_minutes: 0,
+      note: 'Operasyon kapsama tamamlama: Yemekhane acilisi',
     }))
   })
 

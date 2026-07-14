@@ -2386,6 +2386,7 @@ export function getScheduleCandidates({
         reasons,
         score,
         workload,
+        same_day_assignments: sameDay.length,
         rest_before_hours: restBefore == null ? null : Math.round(restBefore * 10) / 10,
         rest_after_hours: restAfter == null ? null : Math.round(restAfter * 10) / 10,
       }

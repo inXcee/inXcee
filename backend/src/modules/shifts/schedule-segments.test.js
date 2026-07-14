@@ -162,8 +162,10 @@ describe('Phase 3 split shifts and operational coverage', () => {
     const leave = candidates.body.candidates.find(item => item.id === secondStaffId)
     expect(conflict.eligible).toBe(false)
     expect(conflict.reasons).toContain('time_conflict')
+    expect(conflict.same_day_assignments).toBe(1)
     expect(leave.eligible).toBe(false)
     expect(leave.reasons).toContain('approved_leave')
+    expect(leave.same_day_assignments).toBe(0)
   })
 
   it('supervisor cannot override approved leave even with a reason', async () => {

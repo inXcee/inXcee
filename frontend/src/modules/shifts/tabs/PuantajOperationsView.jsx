@@ -33,6 +33,14 @@ const RISK_LABELS = {
   ending_report: 'Biten rapor',
 }
 
+const CANDIDATE_REASON_LABELS = {
+  approved_leave: 'Onayli izin',
+  time_conflict: 'Saat cakismasi',
+  rest_before: 'Onceki vardiyadan dinlenme az',
+  rest_after: 'Sonraki vardiyaya dinlenme az',
+  already_scheduled: 'Ayni gun gorevi var',
+}
+
 const PAGE_SIZE = {
   actions: 25,
   roster: 35,
@@ -248,7 +256,7 @@ function RosterTable({ rows, onPersonClick }) {
   )
 }
 
-function ActionCenter({ rows, onPersonClick, onResolveException, resolvingExceptionId }) {
+function ActionCenter({ rows, onPersonClick, onResolveException, resolvingExceptionId, onCoverageRecoveryOpen }) {
   const [filter, setFilter] = useState('all')
   const [limit, setLimit] = useState(PAGE_SIZE.actions)
   const filtered = filter === 'all'
@@ -295,7 +303,9 @@ function ActionCenter({ rows, onPersonClick, onResolveException, resolvingExcept
               {row.dept_name && <span style={{ display: 'block', color: 'var(--text3)', fontSize: 8, fontWeight: 500 }}>{row.dept_name}</span>}
             </button>
             <span style={{ color: row.severity === 'critical' ? 'var(--red)' : 'var(--text2)', fontSize: 9 }}>{row.detail}</span>
-            {row.can_resolve ? (
+            {row.coverage_target ? (
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => onCoverageRecoveryOpen?.(row.coverage_target)} aria-label={`Aday bul: ${row.title}`}>Aday bul</button>
+            ) : row.can_resolve ? (
               <div style={{ display: 'flex', gap: 4 }}>
                 <button type="button" className="btn btn-ghost btn-sm" onClick={() => onResolveException?.(row.exception_id, 'resolved')} disabled={resolvingExceptionId === row.exception_id}>Coz</button>
                 <button type="button" className="btn btn-ghost btn-sm" onClick={() => onResolveException?.(row.exception_id, 'ignored')} disabled={resolvingExceptionId === row.exception_id}>Yok say</button>
@@ -417,25 +427,97 @@ function DailyPlanner({ rows, shiftDefs, workLocations, date, onApply, onClose, 
   )
 }
 
-function CoverageList({ rows }) {
+function CoverageList({ rows, onFindCandidates, activeRuleId }) {
   const missing = rows.filter(row => Number(row.missing || 0) > 0)
   const visible = missing.length ? missing : rows
   return (
     <div style={{ display: 'grid' }}>
       {visible.map(row => (
-        <div key={`${row.rule_id}-${row.work_date}`} style={{ padding: '9px 12px', borderBottom: '1px solid var(--border)', display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: 8 }}>
+        <div key={`${row.rule_id}-${row.work_date}`} style={{ padding: '9px 12px', borderBottom: '1px solid var(--border)', display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: 8, alignItems: 'center' }}>
           <div style={{ minWidth: 0 }}>
             <strong style={{ fontSize: 10 }}>{row.name}</strong>
             <div style={{ fontSize: 9, color: 'var(--text3)', marginTop: 2 }}>{[row.work_location_name, row.role_name, `${row.start_time}-${row.end_time}`].filter(Boolean).join(' / ')}</div>
           </div>
-          <div style={{ textAlign: 'right', color: row.missing ? 'var(--red)' : 'var(--green)', fontFamily: 'var(--mono)', fontWeight: 800 }}>
-            {row.assigned}/{row.min_staff}
-            <div style={{ fontSize: 8 }}>{row.missing ? `${row.missing} eksik` : 'tam'}</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ textAlign: 'right', color: row.missing ? 'var(--red)' : 'var(--green)', fontFamily: 'var(--mono)', fontWeight: 800 }}>
+              {row.assigned}/{row.min_staff}
+              <div style={{ fontSize: 8 }}>{row.missing ? `${row.missing} eksik` : 'tam'}</div>
+            </div>
+            {Number(row.missing || 0) > 0 && (
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => onFindCandidates?.(row)} aria-pressed={Number(activeRuleId) === Number(row.rule_id)} aria-label={`Aday bul: ${row.name}`}>
+                Aday bul
+              </button>
+            )}
           </div>
         </div>
       ))}
       {!visible.length && <div style={{ padding: 16, color: 'var(--text3)', fontSize: 10 }}>Aktif kapsama kurali yok.</div>}
     </div>
+  )
+}
+
+function CoverageRecoveryPanel({ target, candidates, loading, error, assigningId, onAssign, onClose }) {
+  const eligible = candidates.filter(row => row?.eligible && Number(row.same_day_assignments || 0) === 0)
+  const blocked = candidates.filter(row => row && (!row.eligible || Number(row.same_day_assignments || 0) > 0))
+  const blockedReasons = blocked.reduce((summary, row) => {
+    asArray(row.reasons).forEach(reason => summary.set(reason, (summary.get(reason) || 0) + 1))
+    if (Number(row.same_day_assignments || 0) > 0) summary.set('already_scheduled', (summary.get('already_scheduled') || 0) + 1)
+    return summary
+  }, new Map())
+  return (
+    <section style={{ border: '1px solid color-mix(in srgb, var(--accent) 65%, var(--border))', borderRadius: 8, overflow: 'hidden', background: 'var(--surface)' }}>
+      <SectionTitle
+        count={`${target.missing || 0} kisi eksik`}
+        action={<button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>Kapat</button>}
+      >KAPSAMA TAMAMLAMA</SectionTitle>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 360px), 1fr))', alignItems: 'stretch' }}>
+        <div style={{ padding: 12, borderRight: '1px solid var(--border)', display: 'grid', alignContent: 'start', gap: 10 }}>
+          <div>
+            <strong style={{ fontSize: 13 }}>{target.name}</strong>
+            <div style={{ color: 'var(--text3)', fontSize: 9, marginTop: 4 }}>{[target.dept_name, target.role_name, target.work_location_name].filter(Boolean).join(' / ') || 'Genel kapsama'}</div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+            <div style={{ padding: 8, background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 6 }}><span style={{ display: 'block', color: 'var(--text3)', fontSize: 8 }}>SAAT</span><strong style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{target.start_time}-{target.end_time}</strong></div>
+            <div style={{ padding: 8, background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 6 }}><span style={{ display: 'block', color: 'var(--text3)', fontSize: 8 }}>MEVCUT / HEDEF</span><strong style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{target.assigned}/{target.min_staff}</strong></div>
+          </div>
+          <div style={{ fontSize: 9, color: 'var(--text3)', lineHeight: 1.6 }}>
+            <strong style={{ color: 'var(--green)' }}>{eligible.length} uygun</strong> / {blocked.length} engelli aday
+            {[...blockedReasons.entries()].map(([reason, count]) => (
+              <span key={reason} style={{ display: 'block' }}>{CANDIDATE_REASON_LABELS[reason] || reason}: {count}</span>
+            ))}
+          </div>
+        </div>
+        <div style={{ minWidth: 0 }}>
+          {loading && <div style={{ padding: 24, color: 'var(--text3)', textAlign: 'center', fontSize: 10 }}>Uygun personel hesaplaniyor.</div>}
+          {error && <div role="alert" style={{ padding: 14, color: 'var(--red)', fontSize: 10 }}>{error}</div>}
+          {!loading && !error && eligible.slice(0, 8).map(candidate => {
+            const roleMatch = !target.role_id || Number(candidate.role_id) === Number(target.role_id)
+            const locationMatch = !target.work_location_id || Number(candidate.primary_work_location_id) === Number(target.work_location_id)
+            return (
+              <div key={candidate.id} style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', padding: '9px 12px', borderBottom: '1px solid var(--border)' }}>
+                <div style={{ minWidth: 150, flex: '1 1 180px' }}>
+                  <strong style={{ fontSize: 10 }}>{candidate.full_name}</strong>
+                  <span style={{ display: 'block', color: 'var(--text3)', fontSize: 8 }}>{candidate.dept_name || '-'} / {candidate.role_name || 'Rolsuz'}</span>
+                </div>
+                <div style={{ color: 'var(--text3)', fontSize: 8, lineHeight: 1.55, minWidth: 160, flex: '1 1 200px' }}>
+                  <span style={{ color: roleMatch ? 'var(--green)' : 'var(--accent)', marginRight: 8 }}>{roleMatch ? 'Rol uyumlu' : 'Gecici rol'}</span>
+                  <span style={{ color: locationMatch ? 'var(--green)' : 'var(--accent)' }}>{locationMatch ? 'Nokta uyumlu' : 'Farkli nokta'}</span>
+                  <span style={{ display: 'block' }}>{candidate.workload || 0} gorev / 7 gun{candidate.rest_before_hours != null ? ` / once ${candidate.rest_before_hours}s dinlenme` : ''}</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 7, marginLeft: 'auto' }}>
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', whiteSpace: 'nowrap' }}>{candidate.score} puan</span>
+                  <button type="button" className="btn btn-primary btn-sm" onClick={() => onAssign?.(candidate)} disabled={assigningId != null} aria-label={`Goreve ata: ${candidate.full_name}`}>
+                    {Number(assigningId) === Number(candidate.id) ? 'Ataniyor' : 'Goreve ata'}
+                  </button>
+                </div>
+              </div>
+            )
+          })}
+          {!loading && !error && !eligible.length && <div style={{ padding: 24, color: 'var(--red)', textAlign: 'center', fontSize: 10 }}>Izin, cakisma ve dinlenme kontrollerini gecen uygun personel bulunamadi.</div>}
+          {!loading && eligible.length > 8 && <div style={{ padding: 8, textAlign: 'center', color: 'var(--text3)', fontSize: 9 }}>En uygun 8 aday gosteriliyor / toplam {eligible.length}</div>}
+        </div>
+      </div>
+    </section>
   )
 }
 
@@ -522,6 +604,7 @@ export function PuantajOperationsContent({
   onResolveException, resolvingExceptionId,
   plannerOpen, onPlannerOpen, onPlannerClose, onApplyPlan,
   planning, shiftDefs = [], workLocations = [],
+  coverageRecovery, onCoverageRecoveryOpen, onCoverageRecoveryClose, onCoverageCandidateAssign,
 }) {
   const metrics = payload?.metrics || {}
   const roster = asArray(payload?.roster)
@@ -531,6 +614,8 @@ export function PuantajOperationsContent({
   const breakdowns = payload?.breakdowns || { departments: [], roles: [], locations: [] }
   const actions = asArray(payload?.actions)
   const coverage = asArray(payload?.coverage)
+  const coverageByActionKey = new Map(coverage.map(row => [`coverage:${row.rule_id}:${row.work_date}`, row]))
+  const actionRows = actions.map(row => ({ ...row, coverage_target: coverageByActionKey.get(row.key) || null }))
   const dutyManagers = asArray(payload?.duty_managers)
   const risks = asArray(payload?.risks)
   const trends = asArray(payload?.trends)
@@ -543,12 +628,21 @@ export function PuantajOperationsContent({
       <section style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', background: 'var(--surface)' }}>
         <SectionTitle count={`${payload?.action_summary?.by_severity?.critical || 0} kritik / ${actions.length} toplam`}>AKSIYON MERKEZI</SectionTitle>
         <ActionCenter
-          rows={actions}
+          rows={actionRows}
           onPersonClick={onPersonClick}
           onResolveException={onResolveException}
           resolvingExceptionId={resolvingExceptionId}
+          onCoverageRecoveryOpen={onCoverageRecoveryOpen}
         />
       </section>
+
+      {coverageRecovery?.target && (
+        <CoverageRecoveryPanel
+          {...coverageRecovery}
+          onAssign={onCoverageCandidateAssign}
+          onClose={onCoverageRecoveryClose}
+        />
+      )}
 
       {plannerOpen && (
         <DailyPlanner
@@ -570,7 +664,7 @@ export function PuantajOperationsContent({
         <div style={{ display: 'grid', gap: 12 }}>
           <section style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', background: 'var(--surface)' }}>
             <SectionTitle count={`${metrics.coverage_missing || 0} eksik`}>KAPSAMA</SectionTitle>
-            <CoverageList rows={coverage} />
+            <CoverageList rows={coverage} onFindCandidates={onCoverageRecoveryOpen} activeRuleId={coverageRecovery?.target?.rule_id} />
           </section>
           <section style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', background: 'var(--surface)' }}>
             <SectionTitle count={pendingLeaves.length + pendingOvertime.length}>BEKLEYEN TALEPLER</SectionTitle>
@@ -607,10 +701,14 @@ export default function PuantajOperationsView({ month, deptFilter, onPersonClick
   const qc = useQueryClient()
   const [selectedDate, setSelectedDate] = useState(() => dateForMonth(month))
   const [plannerOpen, setPlannerOpen] = useState(false)
+  const [coverageTarget, setCoverageTarget] = useState(null)
   useEffect(() => {
     if (!selectedDate.startsWith(`${month}-`)) setSelectedDate(dateForMonth(month))
   }, [month, selectedDate])
-  useEffect(() => setPlannerOpen(false), [selectedDate])
+  useEffect(() => {
+    setPlannerOpen(false)
+    setCoverageTarget(null)
+  }, [selectedDate])
 
   const params = useMemo(() => ({
     month,
@@ -625,11 +723,28 @@ export default function PuantajOperationsView({ month, deptFilter, onPersonClick
     queryKey: ['shift-work-locations'],
     queryFn: () => api.get('/shifts/work-locations').then(response => response.data),
   })
+  const candidateParams = useMemo(() => ({
+    date: selectedDate,
+    dept_id: coverageTarget?.dept_id || undefined,
+    role_id: coverageTarget?.role_id || undefined,
+    work_location_id: coverageTarget?.work_location_id || undefined,
+    shift_def_id: coverageTarget?.shift_def_id || undefined,
+    start_time: coverageTarget?.start_time || undefined,
+    end_time: coverageTarget?.end_time || undefined,
+  }), [selectedDate, coverageTarget])
+  const { data: candidateData, isFetching: candidatesLoading, error: candidatesError } = useQuery({
+    queryKey: ['schedule-candidates', 'operations', candidateParams],
+    queryFn: () => api.get('/shifts/schedule/candidates', { params: candidateParams }).then(response => response.data),
+    enabled: !!coverageTarget,
+  })
   const refreshOperations = () => {
     qc.invalidateQueries({ queryKey: ['shifts-operations-dashboard'] })
     qc.invalidateQueries({ queryKey: ['attendance-exceptions'] })
     qc.invalidateQueries({ queryKey: ['puantaj'] })
     qc.invalidateQueries({ queryKey: ['puantaj-days-month'] })
+    qc.invalidateQueries({ queryKey: ['schedule'] })
+    qc.invalidateQueries({ queryKey: ['shift-coverage'] })
+    qc.invalidateQueries({ queryKey: ['schedule-candidates'] })
   }
   const reconcileMutation = useMutation({
     mutationFn: () => api.post('/shifts/attendance/reconcile', { date: selectedDate }),
@@ -670,6 +785,31 @@ export default function PuantajOperationsView({ month, deptFilter, onPersonClick
     },
     onError: toastErr,
   })
+  const coverageAssignMutation = useMutation({
+    mutationFn: candidate => api.post('/shifts/schedule/segments', {
+      staff_id: candidate.id,
+      dept_id: coverageTarget?.dept_id || candidate.dept_id || null,
+      work_date: selectedDate,
+      shift_def_id: coverageTarget?.shift_def_id || null,
+      role_id: coverageTarget?.role_id || candidate.role_id || null,
+      work_location_id: coverageTarget?.work_location_id || candidate.primary_work_location_id || null,
+      start_time: coverageTarget?.start_time,
+      end_time: coverageTarget?.end_time,
+      break_minutes: 0,
+      note: `Operasyon kapsama tamamlama: ${coverageTarget?.name || 'Kapsama kurali'}`,
+    }),
+    onSuccess: (_response, candidate) => {
+      refreshOperations()
+      setCoverageTarget(current => {
+        if (!current) return null
+        const remaining = Math.max(0, Number(current.missing || 0) - 1)
+        if (!remaining) return null
+        return { ...current, missing: remaining, assigned: Number(current.assigned || 0) + 1 }
+      })
+      toastOk(`${candidate.full_name} kapsama gorevine atandi`)
+    },
+    onError: toastErr,
+  })
 
   const changeDate = (next) => {
     if (next.startsWith(`${month}-`)) setSelectedDate(next)
@@ -707,6 +847,16 @@ export default function PuantajOperationsView({ month, deptFilter, onPersonClick
             planning={planMutation.isPending}
             shiftDefs={asArray(shiftDefs)}
             workLocations={asArray(workLocations)}
+            coverageRecovery={{
+              target: coverageTarget,
+              candidates: asArray(candidateData?.candidates),
+              loading: candidatesLoading,
+              error: candidatesError ? (candidatesError.response?.data?.error || candidatesError.message) : '',
+              assigningId: coverageAssignMutation.isPending ? coverageAssignMutation.variables?.id : null,
+            }}
+            onCoverageRecoveryOpen={setCoverageTarget}
+            onCoverageRecoveryClose={() => setCoverageTarget(null)}
+            onCoverageCandidateAssign={candidate => coverageAssignMutation.mutate(candidate)}
           />
         </OperationsErrorBoundary>
       )}
