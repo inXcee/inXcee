@@ -1,8 +1,8 @@
-# S1 — Güvenlik & Doğruluk Sprint (Vardiya + Su)
+# S1 — Güvenlik & Doğruluk Sprint (Vardiya)
 
 **Tarih:** 2026-07-14
 **Durum:** Tasarım onaylandı, uygulama planı bekliyor
-**Kapsam:** Çoklu-ajan A-Z incelemesinden (vardiya + su modülleri) çıkan en yüksek riskli güvenlik ve veri-doğruluğu bulgularının kapatılması.
+**Kapsam:** Çoklu-ajan A-Z incelemesinden çıkan, **vardiya (shifts) modülündeki** en yüksek riskli güvenlik ve veri-doğruluğu bulgularının kapatılması. Su modülü fazları (kullanıcı kararıyla) bu sprintten çıkarıldı, ayrı bir tura bırakıldı.
 
 ## Arka Plan
 
@@ -14,9 +14,9 @@
 
 ## Mimari İlkeler
 
-- **Faz izolasyonu:** 6 bağımsız faz, her biri kendi kırmızı→yeşil→commit döngüsü (CLAUDE.md "faz faz çalış" kuralı). Fazlar birbirine bağımlı değil, ayrı deploy edilebilir.
+- **Faz izolasyonu:** 3 bağımsız faz, her biri kendi kırmızı→yeşil→commit döngüsü (CLAUDE.md "faz faz çalış" kuralı). Fazlar birbirine bağımlı değil, ayrı deploy edilebilir.
 - **TDD:** Her faz önce başarısız test, sonra düzeltme. Backend değişikliği olan her faz `npx vitest run` geçmeden commit edilmez.
-- **Migration disiplini:** F6 dışında yeni migration gerekmez; F6'da migration kullanılmaz (yalnız cron ifadesi). Yeni tablo/kolon eklenmiyor.
+- **Migration disiplini:** Yeni migration/tablo/kolon gerekmez — yalnız route guard'ları, sorgu mantığı ve durum geçiş kontrolleri değişir.
 - **Davranış değişikliği yalnız F2'de:** bilinçli, kullanıcı onaylı (bordro artık kod etkilerini yansıtır).
 
 ## Fazlar
@@ -60,23 +60,7 @@ PDF (`/payslip/:staffId/pdf`), banka CSV (`/bank-transfer`), detay export tümü
 
 **Dosyalar:** `backend/src/modules/shifts/queries.js`, gerekiyorsa `service.js` (PDF/CSV üreticileri).
 
-### F3 — Su FIFO Atomiklik + Silme (water)
-
-**Sorun:** Üç bütünlük açığı.
-
-**Tasarım:**
-- **Atomiklik:** `createIntakeService` (service.js:254) ve `batchIntakeService` (service.js:301) içinde `createMovement(...)` + `reconcileUnallocatedOut(...)` tek `db.transaction()` içine sarılır. Reconcile hata verirse giriş kaydı da geri sarılır.
-- **Giriş silme:** `deleteMovementService` (service.js:278) tahsisli girişi silmeye çalışınca oluşan FK RESTRICT hatasını yakalar, `statusCode=409` + "Bu irsaliyeye bağlı dağıtım kaydı var, önce dağıtımları düzenleyin" mesajı döner (ham 500 yerine).
-- **Silme sonrası reconcile:** Bir OUT (dağıtım) silindiğinde `reconcileUnallocatedOut` + `clearResolvedReviews` tetiklenir; serbest kalan lotlar bekleyen diğer çıkışlara yeniden dağıtılır, `needs_review` bayrakları güncellenir.
-
-**Test:**
-- Atomiklik: `reconcileUnallocatedOut` hata fırlatacak şekilde ayarla → intake sonrası `water_movements`'ta yeni satır OLMADIĞINI doğrula (rollback).
-- Giriş silme: tahsisli giriş sil → 409 + mesaj.
-- OUT silme: kısmi eşleşmiş bir dağıtımı sil → serbest lotun bekleyen başka çıkışa yeniden tahsis edildiğini doğrula.
-
-**Dosyalar:** `backend/src/modules/water/service.js`, gerekiyorsa `queries.js` (transaction sarmalayıcı).
-
-### F4 — Onay State Machine Guard'ları (shifts)
+### F3 — Onay State Machine Guard'ları (shifts)
 
 **Sorun:** Üç geçersiz durum geçişi engellenmemiş.
 
@@ -91,38 +75,17 @@ Karar: geçersiz geçiş **409 + net mesaj** (sessiz idempotent no-op değil) �
 
 **Dosyalar:** `backend/src/modules/shifts/service.js`, `queries.js`.
 
-### F5 — Su Hataları → Sentry + error_log (water)
-
-**Sorun:** Su route'ları `fail(res, e)` ile hatayı yutuyor, `next(err)` çağırmıyor → Sentry error handler ve `reportErrorService` (error_log) su 5xx'lerini hiç görmüyor. Su service'te `captureError` çağrısı yok.
-
-**Tasarım:** `fail()` helper'ı (routes.js:31) `status >= 500` olduğunda `captureError(e, { module: 'water', route: req.route?.path })` çağıracak şekilde zenginleştirilir. Tek fonksiyon değişikliği tüm su 5xx'lerini kapsar. Test ortamında `captureError` no-op olduğu için yan etki yok.
-
-**Test:** Kasıtlı 500 fırlatan bir su endpoint'i (mock ile) → `captureError` mock'unun `module:'water'` ile çağrıldığını doğrula; 4xx'te çağrılmadığını doğrula.
-
-**Dosyalar:** `backend/src/modules/water/routes.js` (`fail` helper + `captureError` import).
-
-### F6 — Tır Uyarı Cron Zamanlaması (water)
-
-**Sorun:** Cron saatlik (`'0 * * * *'`, cron/index.js:85) ama `checkTruckArrivalAlerts` hatırlatma mantığı dakika-modülo (`service.js:1300,1329`). 15/30 dk aralıklı hatırlatmalar yalnız saat başına denk gelirse ateşleniyor; deadline aşımı saat içinde kaçabiliyor.
-
-**Tasarım:** Cron ifadesi `'*/15 * * * *'`'e çekilir (her 15 dakikada). Mevcut modülo mantığı 15dk hizasında doğru çalışır. Yanlış yorum satırı (`:84`) düzeltilir. `withLock` overlap koruması zaten var, sıklaşan tick güvenli.
-
-Not: `last_alert_at` temelli (cron granülaritesinden bağımsız) tam çözüm ileride bir iyileştirme fazına bırakıldı — S1'de düşük-riskli minimal düzeltme tercih edildi.
-
-**Test:** `reminder_interval_minutes=15` senaryosunda 15dk hizasındaki tick'te hatırlatmanın ateşlendiğini doğrulayan mevcut testin geçtiğini teyit et (cron ifadesi değişikliği testleri etkilemiyorsa cron kayıt testine assertion ekle).
-
-**Dosyalar:** `backend/src/shared/cron/index.js`.
-
 ## Kapsam Dışı (sonraki sprintlere)
 
+- **Su modülü güvenlik/doğruluk fazları** (FIFO atomiklik + silme davranışı, su 5xx'lerinin Sentry+error_log'a bağlanması, tır uyarı cron zamanlaması) → kullanıcı kararıyla ayrı bir tura bırakıldı
 - Grid performans (React.memo/virtualization), N+1 sorgular → **S2**
 - Dev dosya bölünmesi, testsiz akışlar, PLAN.md/spec güncellemesi → **S3**
 - İzin↔puantaj görsel bağı, self-service puantaj, staff↔personnel köprü → **S4**
-- `last_alert_at` temelli cron, alan-maskeleme, iki 360 görünümü birleştirme → sonraki iyileştirme turları
+- Alan-maskeleme, iki 360 görünümü birleştirme → sonraki iyileştirme turları
 
 ## Başarı Kriterleri
 
-- 6 fazın tamamı: ilgili düşük-yetkili/geçersiz-durum testleri 403/409 dönüyor.
+- 3 fazın tamamı: ilgili düşük-yetkili/geçersiz-durum testleri 403/409 dönüyor.
 - `npx vitest run` (backend) tam yeşil; regresyon yok.
 - F2: föy ve bordro çıktısı aynı birimleri veriyor (tutarlılık testi geçiyor).
 - Her faz ayrı semantic commit; sırayla push + deploy.
