@@ -83,7 +83,7 @@ shiftsRouter.get('/staff/:id', ...managerOrSupervisor, (req, res) => {
   }
 })
 
-shiftsRouter.get('/staff/:id/detail', ...allStaff, (req, res) => {
+shiftsRouter.get('/staff/:id/detail', ...managerOrSupervisor, (req, res) => {
   try {
     res.json(staffDetailService(req.params.id))
   } catch (e) {
@@ -560,7 +560,7 @@ shiftsRouter.get('/leave', ...allStaff, (req, res) => {
   res.json(leaveListService(req.query))
 })
 
-shiftsRouter.post('/leave', ...allStaff, (req, res) => {
+shiftsRouter.post('/leave', ...managerOrSupervisor, (req, res) => {
   try {
     const id = createLeaveService(req.body, req.user.id)
     res.status(201).json({ id })
@@ -681,7 +681,7 @@ shiftsRouter.get('/attendance/events', ...managerOrSupervisor, (req, res) => {
   }
 })
 
-shiftsRouter.post('/attendance/events', ...allStaff, (req, res) => {
+shiftsRouter.post('/attendance/events', ...managerOrSupervisor, (req, res) => {
   try {
     const event = attendanceEventService(req.body)
     logAudit(req.user?.id || null, 'attendance_event_ingest', 'shifts', event.id, `${event.source}:${event.event_type}`)
@@ -745,7 +745,7 @@ shiftsRouter.get('/operations/dashboard', ...managerOrSupervisor, (req, res) => 
   }
 })
 
-shiftsRouter.post('/attendance/checkin', ...allStaff, (req, res) => {
+shiftsRouter.post('/attendance/checkin', ...managerOrSupervisor, (req, res) => {
   try {
     const result = checkInService(req.body)
     res.status(201).json(result)
@@ -754,7 +754,7 @@ shiftsRouter.post('/attendance/checkin', ...allStaff, (req, res) => {
   }
 })
 
-shiftsRouter.post('/attendance/checkout', ...allStaff, (req, res) => {
+shiftsRouter.post('/attendance/checkout', ...managerOrSupervisor, (req, res) => {
   try {
     const result = checkOutService(req.body.log_id, req.body, req.user?.id || null)
     res.json({ ok: true, ...result })
@@ -1042,7 +1042,7 @@ shiftsRouter.get('/swaps', ...allStaff, (req, res) => {
   res.json(swapListService(req.query))
 })
 
-shiftsRouter.post('/swaps', ...allStaff, (req, res) => {
+shiftsRouter.post('/swaps', ...managerOrSupervisor, (req, res) => {
   try {
     const id = createSwapService(req.body)
     res.status(201).json({ id })
