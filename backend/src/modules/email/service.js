@@ -18,6 +18,15 @@ function getSmtpConfig() {
   }
 }
 
+export function getSmtpStatus() {
+  const cfg = getSmtpConfig()
+  const missing = []
+  if (!cfg.host) missing.push('host')
+  if (!cfg.user) missing.push('user')
+  if (!cfg.pass) missing.push('pass')
+  return { configured: missing.length === 0, missing }
+}
+
 function createTransport() {
   const cfg = getSmtpConfig()
   if (!cfg.host) throw new Error('SMTP_HOST tanımlı değil — Ayarlar → Genel & E-Posta sayfasında SMTP host doldurun')

@@ -2,13 +2,14 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../email/service.js', () => ({
   composeAndSend: vi.fn(),
+  sendEmail: vi.fn(),
 }))
 
 import { initDB, getDB } from '../../shared/db/index.js'
 import { enqueue, tickOnce } from '../../shared/jobs/index.js'
 import { handlers } from '../../shared/jobs/handlers.js'
-import { composeAndSend } from '../email/service.js'
-import { sendTruckArrivalMailJob } from './jobs.js'
+import { composeAndSend, sendEmail } from '../email/service.js'
+import { sendDailyDigestMailJob, sendTruckArrivalMailJob } from './jobs.js'
 
 function createTruck(plate = '34 TEST 050') {
   return getDB().prepare(`
@@ -34,9 +35,11 @@ beforeAll(() => {
 })
 
 beforeEach(() => {
-  getDB().exec('DELETE FROM job_queue; DELETE FROM water_truck_arrivals;')
+  getDB().exec('DELETE FROM water_daily_digest_deliveries; DELETE FROM job_queue; DELETE FROM water_truck_arrivals;')
   composeAndSend.mockReset()
+  sendEmail.mockReset()
   handlers['water.truck-mail'] = sendTruckArrivalMailJob
+  handlers['water.daily-digest-mail'] = sendDailyDigestMailJob
 })
 
 describe('water.truck-mail job', () => {
@@ -79,5 +82,84 @@ describe('water.truck-mail job', () => {
     expect(job.last_error).toContain('SMTP_HOST')
     expect(truck.mail_sent_at).toBeNull()
     expect(composeAndSend).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('water.daily-digest-mail job', () => {
+  function createDelivery() {
+    return getDB().prepare(`
+      INSERT INTO water_daily_digest_deliveries(
+        digest_date, status, recipients, subject, summary_json
+      ) VALUES('2027-03-20', 'queued', '["yonetim@example.com"]', 'Günlük özet', '{}')
+    `).run().lastInsertRowid
+  }
+
+  function digestPayload(deliveryId) {
+    return {
+      deliveryId,
+      to: 'yonetim@example.com',
+      subject: 'Günlük özet',
+      html: '<p>Özet</p>',
+      text: 'Özet',
+    }
+  }
+
+  it('geçici hatayı kuyrukta yeniden dener ve başarıda teslimi kapatır', async () => {
+    const deliveryId = createDelivery()
+    sendEmail
+      .mockRejectedValueOnce(new Error('ETIMEDOUT'))
+      .mockResolvedValueOnce({ messageId: 'digest-053' })
+    const jobId = enqueue('water.daily-digest-mail', digestPayload(deliveryId), { maxAttempts: 5 })
+    getDB().prepare('UPDATE water_daily_digest_deliveries SET job_id=? WHERE id=?').run(jobId, deliveryId)
+
+    await tickOnce()
+    let job = getDB().prepare('SELECT * FROM job_queue WHERE id=?').get(jobId)
+    let delivery = getDB().prepare('SELECT * FROM water_daily_digest_deliveries WHERE id=?').get(deliveryId)
+    expect(job.status).toBe('pending')
+    expect(delivery.status).toBe('retrying')
+    expect(delivery.last_error).toContain('ETIMEDOUT')
+
+    getDB().prepare("UPDATE job_queue SET run_after=strftime('%s','now') WHERE id=?").run(jobId)
+    await tickOnce()
+
+    job = getDB().prepare('SELECT * FROM job_queue WHERE id=?').get(jobId)
+    delivery = getDB().prepare('SELECT * FROM water_daily_digest_deliveries WHERE id=?').get(deliveryId)
+    expect(job.status).toBe('done')
+    expect(delivery.status).toBe('sent')
+    expect(delivery.message_id).toBe('digest-053')
+    expect(delivery.sent_at).toBeTruthy()
+    expect(sendEmail).toHaveBeenCalledTimes(2)
+  })
+
+  it('kalıcı SMTP yapılandırma hatasını teslim kaydında görünür bırakır', async () => {
+    const deliveryId = createDelivery()
+    sendEmail.mockRejectedValue(new Error('SMTP_HOST tanımlı değil'))
+    const jobId = enqueue('water.daily-digest-mail', digestPayload(deliveryId), { maxAttempts: 5 })
+    getDB().prepare('UPDATE water_daily_digest_deliveries SET job_id=? WHERE id=?').run(jobId, deliveryId)
+
+    await tickOnce()
+
+    const job = getDB().prepare('SELECT * FROM job_queue WHERE id=?').get(jobId)
+    const delivery = getDB().prepare('SELECT * FROM water_daily_digest_deliveries WHERE id=?').get(deliveryId)
+    expect(job.status).toBe('done')
+    expect(job.attempts).toBe(1)
+    expect(job.last_error).toContain('SMTP_HOST')
+    expect(delivery.status).toBe('failed')
+    expect(delivery.last_error).toContain('SMTP_HOST')
+  })
+
+  it('son geçici hata denemesinde teslim kaydını da başarısız olarak kapatır', async () => {
+    const deliveryId = createDelivery()
+    sendEmail.mockRejectedValue(new Error('ETIMEDOUT'))
+    const jobId = enqueue('water.daily-digest-mail', digestPayload(deliveryId), { maxAttempts: 1 })
+    getDB().prepare('UPDATE water_daily_digest_deliveries SET job_id=? WHERE id=?').run(jobId, deliveryId)
+
+    await tickOnce()
+
+    const job = getDB().prepare('SELECT * FROM job_queue WHERE id=?').get(jobId)
+    const delivery = getDB().prepare('SELECT * FROM water_daily_digest_deliveries WHERE id=?').get(deliveryId)
+    expect(job.status).toBe('failed')
+    expect(delivery.status).toBe('failed')
+    expect(delivery.last_error).toContain('ETIMEDOUT')
   })
 })

@@ -98,6 +98,11 @@ export function startCronJobs() {
     try {
       const r = waterDailyDigest()
       if (r.notified) logger.info(`[Cron] water-daily-digest: ${r.parts.join(', ')}`)
+      if (r.email?.status === 'queued' && !r.email.already_queued) {
+        logger.info(`[Cron] water-daily-digest e-posta kuyruğa alındı: ${r.email.recipients.length} alıcı`)
+      } else if (r.email?.status === 'smtp_disabled' || r.email?.status === 'no_recipients') {
+        logger.warn(`[Cron] water-daily-digest e-posta atlandı: ${r.email.error}`)
+      }
       const esc = waterEscalations() // 3+ gün bekleyen + kritik stok → critical push
       if (esc.created > 0) logger.info(`[Cron] water escalations: ${esc.created} critical`)
     } catch (e) { logger.error('[Cron] su günlük özet hatası:', e.message) }

@@ -12,7 +12,7 @@ Su Takip ekranı aşağıdaki akışları tek modülde yönetir:
 - günlük matris, dağıtım yeri geçmişi, stok, trend, tahmin ve sipariş önerileri;
 - sayım, kontrollü stok düzeltmesi, ay uyuşturma, ay kilidi ve PDF/Excel çıktıları;
 - su tırı ön bildirimi, ana merkez maili, kapı giriş formu ve irsaliye fotoğraf arşivi;
-- operasyon uyarıları, bildirimler, otomatik raporlar ve dosya yaşam döngüsü.
+- operasyon uyarıları, günlük SMTP özeti, teslim geçmişi, otomatik raporlar ve dosya yaşam döngüsü.
 
 ## Mimari
 
@@ -28,7 +28,8 @@ Su Takip ekranı aşağıdaki akışları tek modülde yönetir:
 | `trucks.js` | Tır planı, kontrol slotları, mail kuyruğu, kapı giriş belgesi ve fotoğraf arşivi |
 | `units.js` | Ürüne göre geçerli birimler, tam baz miktar dönüşümü ve insan-okur miktar |
 | `notifications.js` | Su operasyon bildirimlerinin rol fan-out'u ve düşük stok kontrolü |
-| `jobs.js` | Kalıcı `water.truck-mail` iş kuyruğu handler'ı |
+| `daily-digest.js` | Günlük özet e-posta içeriği, SMTP/alıcı kontrolü, günlük dedup ve teslim geçmişi |
+| `jobs.js` | Kalıcı `water.truck-mail` ve `water.daily-digest-mail` iş kuyruğu handler'ları |
 | `file-lifecycle.js` | Güvenli dosya silme, yetim irsaliye fotoğrafı ve rapor retention temizliği |
 | `queries.js` | Parametreli SQLite sorguları ve transaction yardımcıları |
 
@@ -41,6 +42,7 @@ Su Takip ekranı aşağıdaki akışları tek modülde yönetir:
 | `WaterPage.jsx` | Sayfa kabuğu, sekmeler, giriş formları, ay kapanışı ve ayarlar |
 | `components/WaterBoard.jsx` | Pencerelenmiş Excel benzeri dağıtım matrisi, günlük kayıt ve rapor dışa aktarımı |
 | `components/TruckArrivalPanel.jsx` | Tır, mail, kapı giriş ve irsaliye fotoğraf çalışma alanı |
+| `components/WaterDailyDigestPanel.jsx` | Günlük özet SMTP/alıcı durumu, elle yeniden deneme ve 14 günlük teslim geçmişi |
 | `components/DailyDistributionModal.jsx` | Seçilen günün bütün dağıtım dökümü |
 | `components/ZoneHistoryModal.jsx` | Dağıtım yeri geçmişi ve dönem karşılaştırması |
 | `components/WaterModal.jsx` | Portal tabanlı erişilebilir modal kabuğu |
@@ -60,7 +62,7 @@ Tüm endpoint'ler JWT ile korunur. `/api/water` router'ı uygulama seviyesinde `
 | Yetki grubu | Roller | İşlemler |
 |---|---|---|
 | Operasyon | `campus_manager`, `shift_supervisor` | Listeleme/raporlama, katalog yönetimi, giriş-dağıtım-iade, şablon, sayım, tır oluşturma/güncelleme, manuel kontrol ve fotoğraf arşivi |
-| Müdür | `campus_manager` | Stok düzeltme/silme, eksi stok onayı, ay kilitleme/açma, tır silme, gerçek mail kuyruğa alma, tır uyarı taramasını elle çalıştırma |
+| Müdür | `campus_manager` | Stok düzeltme/silme, eksi stok onayı, ay kilitleme/açma, tır silme, gerçek mail kuyruğa alma, günlük özeti elle çalıştırma, tır uyarı taramasını elle çalıştırma |
 
 `technical`, `laundry` ve `housekeeper` rollerinin Su Takip API erişimi yoktur. Saha dağıtım yetkisi genişletilecekse yeni endpoint açmak yerine mevcut role middleware ve audit kapsamı bilinçli olarak değiştirilmelidir.
 
@@ -93,6 +95,16 @@ Stok yetersizliği dağıtımı engellemez. Karşılanamayan miktar `needs_revie
 - `target_stock_days`: varsayılan hedef stok günü ile tedarik + emniyet süresinin büyük olanıdır. Uzun teslim süreli ürünlerde önerilen miktarın teslim gelmeden yetersiz kalmasını önler.
 
 Ürün ayarlarında tedarik ve emniyet günleri `0-365` aralığında tam sayı olarak yönetilir. Tahmin paneli geciken siparişleri ve sipariş son gününü gösterir. Detaylı Excel kapanış paketindeki **Sipariş Planı** sayfası aynı hesapları, renkli durumları ve filtrelenebilir ürün satırlarını içerir.
+
+## Günlük Operasyon Özeti
+
+Her gün 06:15'te stok/irsaliye uyarıları ile sipariş planı birleştirilir. Uygulama içi bildirim yalnızca aksiyon varsa üretilir; SMTP yapılandırılmış ve operasyon rollerinde e-posta tanımlıysa temiz günler dahil günlük e-posta kalıcı kuyruğa alınır.
+
+- Alıcılar `campus_manager` ve `shift_supervisor` rollerinden toplanır ve e-posta adresi bazında tekilleştirilir.
+- Aynı tarihin aktif işi cron ile elle çalıştırma çakışsa bile SQLite transaction içinde ikinci kez kuyruğa alınmaz.
+- `water.daily-digest-mail` geçici SMTP hatalarında en fazla beş kez üstel gecikmeyle denenir.
+- SMTP kapalı, alıcı eksik, kuyrukta, yeniden deneniyor, gönderildi ve gönderilemedi durumları `water_daily_digest_deliveries` tablosunda saklanır.
+- Müdür ekrandan bugünün özetini hazırlayabilir; tamamlanmış veya başarısız teslimi bilinçli olarak yeniden gönderebilir. Vardiya sorumlusu teslim geçmişini salt okunur görür.
 
 ## Hareket ve FIFO Akışı
 
@@ -139,7 +151,7 @@ Kapı giriş PDF'i `GET /truck-arrivals/:id/gate-entry.pdf` ile üretilir. UI ay
 
 ## API Referansı
 
-Tablodaki `Operasyon`, iki operasyon rolünü; `Müdür`, yalnızca `campus_manager` rolünü ifade eder. Bütün yollar `/api/water` önekine sahiptir. Route sözleşmesi 56 method+yol handler'ından ve 43 benzersiz yoldan oluşur.
+Tablodaki `Operasyon`, iki operasyon rolünü; `Müdür`, yalnızca `campus_manager` rolünü ifade eder. Bütün yollar `/api/water` önekine sahiptir. Route sözleşmesi 58 method+yol handler'ından ve 45 benzersiz yoldan oluşur.
 
 ### Katalog
 
@@ -175,6 +187,8 @@ Tablodaki `Operasyon`, iki operasyon rolünü; `Müdür`, yalnızca `campus_mana
 | GET | `/summary` | Operasyon | Stok, dönem akışı, bölge ve seri özeti |
 | GET | `/pivot` | Operasyon | Dağıtım yeri x ürün/marka matrisi |
 | GET | `/alerts` | Operasyon | Günlük operasyon uyarıları |
+| GET | `/daily-digest` | Operasyon | SMTP/alıcı durumu ve günlük özet teslim geçmişi |
+| POST | `/daily-digest/run` | Müdür | Bugünün özetini üret ve uygun ise e-postayı kuyruğa al |
 | GET | `/forecast` | Operasyon | Tüketim hızı ve sipariş önerisi |
 | GET | `/trends` | Operasyon | 3/6/12 aylık trend kırılımları |
 | GET | `/pending` | Operasyon | FIFO irsaliye eşleşmesi bekleyen çıkışlar |
@@ -217,11 +231,11 @@ Bütün zamanlanmış işler `Europe/Istanbul` saat diliminde ve overlap kilidi 
 | Zaman | İş | Davranış |
 |---|---|---|
 | Her dakika | `water-truck-alerts` | 15-240 dakikalık kullanıcı slotlarını değerlendirir; slot bazlı dedup ile mail/geliş/gecikme uyarısı üretir |
-| Her gün 06:15 | `water-daily-digest` | Bekleyen irsaliye, negatif/düşük/kritik stok, sipariş önerisi ve kayıtsız bölge özetini bildirir; eskalasyonları çalıştırır |
+| Her gün 06:15 | `water-daily-digest` | Uyarı/sipariş özetini bildirir, SMTP uygunsa günlük e-postayı kalıcı kuyruğa alır ve eskalasyonları çalıştırır |
 | Her ayın 1'i 03:15 | `water-monthly-pdf` | Geçen ayın `su-kapanis-YYYY-MM.pdf` raporunu üretir ve hazır bildirimini yollar |
 | Her gün 02:00 | `cleanup` | Yetim su fotoğrafları ve süresi dolan raporları temizler, sonucu audit'e yazar |
 
-Su operasyon bildirimleri hem `campus_manager` hem `shift_supervisor` rollerine fan-out edilir. Dedup anahtarları rol ve zaman slotu bazında tekrar bildirimleri engeller. Günlük özet şu an uygulama içi/push bildirimi üretir; otomatik günlük özet e-postası planlı fakat uygulanmış değildir.
+Su operasyon bildirimleri hem `campus_manager` hem `shift_supervisor` rollerine fan-out edilir. Dedup anahtarları rol ve zaman slotu bazında tekrar bildirimlerini; günlük teslim tablosu ve transaction kontrolü de yinelenen e-posta işini engeller.
 
 ## Dosya Yaşam Döngüsü
 
@@ -235,7 +249,7 @@ Su operasyon bildirimleri hem `campus_manager` hem `shift_supervisor` rollerine 
 
 ## Audit, Hata ve Tutarlılık
 
-Katalog oluşturma/güncelleme/silme, hareketler, tır/mail/kontrol, fotoğraf, sayım, düzeltme, inceleme ve ay kapanışı önemli audit eylemleri üretir. Cron rapor ve dosya retention sonuçları da audit'e yazılır.
+Katalog oluşturma/güncelleme/silme, hareketler, tır/mail/kontrol, günlük özeti elle çalıştırma, fotoğraf, sayım, düzeltme, inceleme ve ay kapanışı önemli audit eylemleri üretir. Cron rapor ve dosya retention sonuçları da audit'e yazılır.
 
 Route hataları `next(error)` ile merkezi handler'a gider. HTTP 4xx mesajları istemciye açıklayıcı biçimde döner; 5xx yanıtı `Sunucu hatası` olarak maskelenir ve `error_log`/Sentry kaydı oluşturulur. Frontend `WaterQueryErrorCenter`, başarısız sorguyu boş veri gibi göstermeden kullanıcıya tekrar deneme imkanı verir.
 
@@ -279,7 +293,6 @@ Kritik regresyonlar: tam baz miktar matematiği, giriş+FIFO atomikliği, ürün
 
 ## Bilinçli Olarak Ertelenenler
 
-- günlük su özetinin otomatik SMTP e-postası;
 - SKT/son kullanma tarihi takibi;
 - mobil/QR saha girişi;
 - firma bazlı tüketim faturalaması;

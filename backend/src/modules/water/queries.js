@@ -728,6 +728,124 @@ export function monthlySeries({ from, to, product_id } = {}) {
   `).all(...params)
 }
 
+// ── Günlük operasyon özeti e-posta teslimi ──
+export function listWaterOperationEmails() {
+  return getDB().prepare(`
+    SELECT DISTINCT lower(trim(email)) AS email
+    FROM users
+    WHERE role IN ('campus_manager', 'shift_supervisor')
+      AND email IS NOT NULL
+      AND trim(email) != ''
+    ORDER BY email
+  `).all().map(row => row.email)
+}
+
+export function getDailyDigestDeliveryByDate(digestDate) {
+  return getDB().prepare(`
+    SELECT d.*, j.status AS job_status, j.attempts AS job_attempts,
+      j.max_attempts AS job_max_attempts, j.last_error AS job_last_error,
+      u.full_name AS requested_by_name
+    FROM water_daily_digest_deliveries d
+    LEFT JOIN job_queue j ON j.id=d.job_id
+    LEFT JOIN users u ON u.id=d.requested_by
+    WHERE d.digest_date=?
+  `).get(digestDate)
+}
+
+export function getDailyDigestDelivery(id) {
+  return getDB().prepare(`
+    SELECT d.*, j.status AS job_status, j.attempts AS job_attempts,
+      j.max_attempts AS job_max_attempts, j.last_error AS job_last_error,
+      u.full_name AS requested_by_name
+    FROM water_daily_digest_deliveries d
+    LEFT JOIN job_queue j ON j.id=d.job_id
+    LEFT JOIN users u ON u.id=d.requested_by
+    WHERE d.id=?
+  `).get(id)
+}
+
+export function upsertDailyDigestDelivery(row) {
+  const db = getDB()
+  db.prepare(`
+    INSERT INTO water_daily_digest_deliveries(
+      digest_date, status, source, recipients, subject, summary_json,
+      last_error, requested_by
+    ) VALUES(
+      @digest_date, @status, @source, @recipients, @subject, @summary_json,
+      @last_error, @requested_by
+    )
+    ON CONFLICT(digest_date) DO UPDATE SET
+      status=excluded.status,
+      source=excluded.source,
+      recipients=excluded.recipients,
+      subject=excluded.subject,
+      summary_json=excluded.summary_json,
+      job_id=NULL,
+      message_id=NULL,
+      last_error=excluded.last_error,
+      requested_by=excluded.requested_by,
+      queued_at=NULL,
+      sent_at=NULL,
+      updated_at=CURRENT_TIMESTAMP
+  `).run(row)
+  return getDailyDigestDeliveryByDate(row.digest_date)
+}
+
+export function linkDailyDigestJob(id, jobId) {
+  return getDB().prepare(`
+    UPDATE water_daily_digest_deliveries
+    SET status='queued', job_id=?, queued_at=CURRENT_TIMESTAMP,
+      last_error=NULL, updated_at=CURRENT_TIMESTAMP
+    WHERE id=?
+  `).run(jobId, id).changes > 0
+}
+
+export function markDailyDigestSending(id) {
+  return getDB().prepare(`
+    UPDATE water_daily_digest_deliveries
+    SET status='sending', last_error=NULL, updated_at=CURRENT_TIMESTAMP
+    WHERE id=? AND sent_at IS NULL
+  `).run(id).changes > 0
+}
+
+export function markDailyDigestRetrying(id, errorMessage) {
+  return getDB().prepare(`
+    UPDATE water_daily_digest_deliveries
+    SET status='retrying', last_error=?, updated_at=CURRENT_TIMESTAMP
+    WHERE id=? AND sent_at IS NULL
+  `).run(errorMessage || null, id).changes > 0
+}
+
+export function markDailyDigestFailed(id, errorMessage) {
+  return getDB().prepare(`
+    UPDATE water_daily_digest_deliveries
+    SET status='failed', last_error=?, updated_at=CURRENT_TIMESTAMP
+    WHERE id=? AND sent_at IS NULL
+  `).run(errorMessage || null, id).changes > 0
+}
+
+export function markDailyDigestSent(id, messageId) {
+  return getDB().prepare(`
+    UPDATE water_daily_digest_deliveries
+    SET status='sent', message_id=?, sent_at=CURRENT_TIMESTAMP,
+      last_error=NULL, updated_at=CURRENT_TIMESTAMP
+    WHERE id=?
+  `).run(messageId || null, id).changes > 0
+}
+
+export function listDailyDigestDeliveries(limit = 14) {
+  return getDB().prepare(`
+    SELECT d.*, j.status AS job_status, j.attempts AS job_attempts,
+      j.max_attempts AS job_max_attempts, j.last_error AS job_last_error,
+      u.full_name AS requested_by_name
+    FROM water_daily_digest_deliveries d
+    LEFT JOIN job_queue j ON j.id=d.job_id
+    LEFT JOIN users u ON u.id=d.requested_by
+    ORDER BY d.digest_date DESC, d.id DESC
+    LIMIT ?
+  `).all(limit)
+}
+
 // ── Tır ön bildirimleri + irsaliye foto arşivi ──
 export function listTruckArrivals({ from, to, status, limit = 200 } = {}) {
   let sql = `

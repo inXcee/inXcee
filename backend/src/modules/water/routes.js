@@ -12,7 +12,8 @@ import {
   createIntakeService, createDistributionService, deleteMovementService, updateDistributionService, movementsService,
   createReturnService, batchReturnService, deleteReturnService, returnsService, depositService,
   summaryService, pivotService, batchIntakeService, batchDistributeService, parseDistributionText,
-  alertsService, forecastService, trendsService, reconciliationService, buildReconciliationPDF, saveStockCountService, monthlyCloseService, monthlyUnlockService,
+  alertsService, forecastService, trendsService, waterDailyDigest, dailyDigestDeliveriesService,
+  reconciliationService, buildReconciliationPDF, saveStockCountService, monthlyCloseService, monthlyUnlockService,
   pendingDistributionsService,
   templatesService, createTemplateService, deleteTemplateService,
   adjustmentsService, createAdjustmentService, deleteAdjustmentService, COUNT_REASONS,
@@ -220,6 +221,23 @@ waterRouter.get('/pivot', ...mgr, (req, res, next) => {
 // ── Operasyon Uyarı Merkezi ("Bugün Yapılacaklar") ──
 waterRouter.get('/alerts', ...mgr, (req, res, next) => {
   try { res.json(alertsService({ today: req.query.today })) } catch (e) { fail(next, e) }
+})
+
+// ── Günlük operasyon özeti teslim geçmişi / elle çalıştırma ──
+waterRouter.get('/daily-digest', ...mgr, (req, res, next) => {
+  try { res.json(dailyDigestDeliveriesService({ limit: req.query.limit })) } catch (e) { fail(next, e) }
+})
+waterRouter.post('/daily-digest/run', ...managerOnly, (req, res, next) => {
+  try {
+    const result = waterDailyDigest({
+      forceEmail: req.body?.force === true,
+      requestedBy: req.user.id,
+      source: 'manual',
+    })
+    logAudit(req.user.id, 'water_daily_digest_run', 'water', result.email?.id || null, result.email?.status || 'unknown')
+    const queued = result.email?.status === 'queued' && !result.email?.already_queued
+    res.status(queued ? 202 : 200).json(result)
+  } catch (e) { fail(next, e) }
 })
 
 // ── Tüketim öngörüsü & sipariş önerisi ──

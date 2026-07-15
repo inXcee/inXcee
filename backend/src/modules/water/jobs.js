@@ -1,5 +1,5 @@
 import * as q from './queries.js'
-import { composeAndSend } from '../email/service.js'
+import { composeAndSend, sendEmail } from '../email/service.js'
 
 function permanentError(error) {
   error.permanent = true
@@ -27,6 +27,36 @@ export async function sendTruckArrivalMailJob({ truckArrivalId, requestedBy, to,
     return result
   } catch (error) {
     if (error?.permanent || isPermanentMailError(error)) throw permanentError(error)
+    throw error
+  }
+}
+
+export async function sendDailyDigestMailJob({ deliveryId, to, subject, html, text }) {
+  const id = Number(deliveryId)
+  if (!Number.isInteger(id) || id <= 0) throw permanentError(new Error('Günlük su özeti: geçersiz teslim kimliği'))
+
+  const delivery = q.getDailyDigestDelivery(id)
+  if (!delivery) throw permanentError(new Error('Günlük su özeti: teslim kaydı bulunamadı'))
+  if (delivery.sent_at) return { skipped: 'already_sent' }
+  if (!to) throw permanentError(new Error('Günlük su özeti: alıcı gerekli'))
+
+  q.markDailyDigestSending(id)
+  try {
+    const result = await sendEmail({ to, subject, html, text })
+    if (!q.markDailyDigestSent(id, result?.messageId)) {
+      throw permanentError(new Error('Günlük su özeti gönderildi ancak teslim kaydı kapatılamadı'))
+    }
+    return result
+  } catch (error) {
+    const message = error?.message || String(error)
+    if (error?.permanent || isPermanentMailError(error)) {
+      q.markDailyDigestFailed(id, message)
+      throw permanentError(error)
+    }
+    const attemptsExhausted = Number(delivery.job_max_attempts) > 0
+      && Number(delivery.job_attempts) >= Number(delivery.job_max_attempts)
+    if (attemptsExhausted) q.markDailyDigestFailed(id, message)
+    else q.markDailyDigestRetrying(id, message)
     throw error
   }
 }

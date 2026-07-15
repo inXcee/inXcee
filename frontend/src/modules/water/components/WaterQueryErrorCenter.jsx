@@ -7,6 +7,7 @@ const QUERY_LABELS = {
   'water-alerts': 'Operasyon uyarıları',
   'water-brands': 'Markalar',
   'water-daily-ledger': 'Günlük dağıtım dökümü',
+  'water-daily-digest': 'Günlük özet teslimi',
   'water-day': 'Günlük dağıtımlar',
   'water-deposit': 'Depozito bakiyesi',
   'water-forecast': 'Stok tahmini',

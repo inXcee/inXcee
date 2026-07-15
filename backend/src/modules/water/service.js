@@ -4,9 +4,11 @@ import { assertMonthUnlocked, isCountReason, writeReconciliationPDF } from './re
 import { forecastService, summaryService } from './analytics.js'
 import { checkLowStock, notifyWaterOperations } from './notifications.js'
 import { trClock } from './trucks.js'
+import { queueWaterDailyDigestEmail } from './daily-digest.js'
 export { availableUnits, humanize, toBase, unitMultiplier } from './units.js'
 export { depositService, forecastService, summaryService, trendsService } from './analytics.js'
 export { notifyWaterOperations, WATER_OPERATION_ROLES } from './notifications.js'
+export { dailyDigestDeliveriesService } from './daily-digest.js'
 export {
   batchDistributeService,
   batchIntakeService,
@@ -544,12 +546,20 @@ export function approveReviewsService(ids) {
 }
 
 
-// ── Günlük operasyon özeti (V3) — cron 06:15, müdüre tek bildirim (push'a fan-out) ──
-export function waterDailyDigest({ now = new Date() } = {}) {
+// ── Günlük operasyon özeti (V3/V3.1) — bildirim + kalıcı SMTP kuyruğu ──
+export function waterDailyDigest({
+  now = new Date(),
+  queueEmail = true,
+  forceEmail = false,
+  requestedBy = null,
+  source = 'cron',
+} = {}) {
   const clock = trClock(now)
   const today = clock.date
-  const s = alertsService({ today }).summary
-  const f = forecastService({ today }).totals
+  const alerts = alertsService({ today })
+  const forecast = forecastService({ today })
+  const s = alerts.summary
+  const f = forecast.totals
   const parts = []
   if (s.pending) parts.push(`${s.pending} irsaliye bekleyen`)
   if (s.negative) parts.push(`${s.negative} eksi stok`)
@@ -570,7 +580,7 @@ export function waterDailyDigest({ now = new Date() } = {}) {
     })
     notified = notifications.length > 0
   }
-  return {
+  const digest = {
     date: today,
     actionable,
     notified,
@@ -580,6 +590,20 @@ export function waterDailyDigest({ now = new Date() } = {}) {
     overdue_order_count: f.overdue_order_count,
     due_soon_order_count: f.due_soon_order_count,
     soon_count: f.soon_count,
+    details: {
+      pending: alerts.pending_waybill.slice(0, 20),
+      negative: alerts.negative_stock.slice(0, 20),
+      low: alerts.low_stock.slice(0, 20),
+      over_distributed: alerts.over_distributed.slice(0, 20),
+      idle_zones: alerts.idle_zones.slice(0, 20),
+      orders: forecast.order_suggestions.slice(0, 20),
+    },
+  }
+  return {
+    ...digest,
+    email: queueEmail
+      ? queueWaterDailyDigestEmail(digest, { force: forceEmail, requestedBy, source })
+      : null,
   }
 }
 

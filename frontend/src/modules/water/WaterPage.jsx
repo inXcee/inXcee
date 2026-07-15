@@ -8,6 +8,7 @@ import DailyDistributionModal from './components/DailyDistributionModal.jsx'
 import TruckArrivalPanel from './components/TruckArrivalPanel.jsx'
 import WaterBoard from './components/WaterBoard.jsx'
 import WaterCollapsiblePanel from './components/WaterCollapsiblePanel.jsx'
+import WaterDailyDigestPanel from './components/WaterDailyDigestPanel.jsx'
 import WaterModal from './components/WaterModal.jsx'
 import WaterQueryErrorCenter from './components/WaterQueryErrorCenter.jsx'
 import ZoneHistoryModal from './components/ZoneHistoryModal.jsx'
@@ -66,6 +67,8 @@ export default function WaterPage() {
       <WaterQueryErrorCenter />
 
       <AlertBand />
+
+      <WaterDailyDigestPanel />
 
       <ReviewPanel />
 

@@ -6,7 +6,7 @@ import webpush from 'web-push'
 import { getDB } from '../db/index.js'
 import { logger } from '../logger.js'
 import { sendEmail } from '../../modules/email/service.js'
-import { sendTruckArrivalMailJob } from '../../modules/water/jobs.js'
+import { sendDailyDigestMailJob, sendTruckArrivalMailJob } from '../../modules/water/jobs.js'
 import { sendWhatsAppText } from '../notifications/whatsapp-send.js'
 
 const PUBLIC = process.env.VAPID_PUBLIC_KEY
@@ -73,6 +73,7 @@ export const handlers = {
   'push.send': sendPushJob,
   'push.worker': sendWorkerPushJob,
   'email.send': sendEmailJob,
+  'water.daily-digest-mail': sendDailyDigestMailJob,
   'water.truck-mail': sendTruckArrivalMailJob,
   'whatsapp.send': sendWhatsAppJob,
 }

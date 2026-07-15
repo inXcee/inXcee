@@ -431,7 +431,7 @@ Modülü reaktiften → öngörülü+proaktif yapma. Öncelik: öngörü/sipari�
 - [x] `waterDailyDigest({now})` — `alertsService` + `forecastService` birleşir; bekleyen/eksi/düşük/sipariş-önerisi/7-günden-az/kayıtsız-bölge özeti; müdür + vardiya sorumlusuna rol-bazlı `createNotification` (push'a fan-out) + günlük dedup
 - [x] Cron `15 6 * * *` (`withLock('water-daily-digest')`) — TR 06:15 günlük tetik
 - [x] +1 backend test (89/89 water, 1420/1420 tüm suite): actionable+notified+dedup doğrulandı
-- [ ] Not: özet e-posta (SMTP açıksa) V3.1'e ertelendi — çekirdek proaktif teslim (in-app + push bildirimi) hazır
+- [x] V3.1 tamamlandı: SMTP uygunsa günlük özet kalıcı iş kuyruğuna alınır; teslim geçmişi ve elle yeniden deneme su ekranında görünür.
 
 ### Faz V4 — Otomatik aylık kapanış PDF ✅
 - [x] `buildReconciliationPDF(month, doc)` servise çıkarıldı (route + cron ortak kullanır); `/reconciliation/:month/pdf` route sadeleşti
@@ -515,4 +515,12 @@ W11 tır/foto KODU commit'liydi ama `036_water_truck_waybill_archive.sql` untrac
 - [x] Excel kapanış paketi 14 sayfaya çıkarıldı; filtrelenebilir, renkli `Sipariş Planı` sayfası ve ürün kurallarında tedarik alanları eklendi.
 - [x] Günlük operasyon özeti gecikmiş sipariş sayısını bildiriyor; API, hesaplama, arayüz ve Excel testleri eklendi.
 
-Kalan ertelenen ürünler tamamlanmış sayılmaz: günlük özet SMTP maili, SKT, mobil/QR, firma faturalama ve ortak ziyaretçi/güvenlik modülü entegrasyonu.
+### Faz V7 — Günlük SMTP Özeti ve Teslim Takibi ✅
+- [x] Migration 053 ile `water_daily_digest_deliveries`: tarih bazlı tek kayıt, SMTP/alıcı eksikliği, kuyruk/yeniden deneme/başarı/hata, job ve message-id takibi.
+- [x] `water.daily-digest-mail` kalıcı işi: iki operasyon rolünün tekilleştirilmiş alıcıları, 5 deneme, üstel gecikme ve aynı gün için transaction içi dedup.
+- [x] HTML + düz metin günlük rapor: irsaliye/eksi/düşük stok KPI'ları, geciken siparişler ve ürün bazlı sipariş planı.
+- [x] `GET /daily-digest` ve müdüre özel `POST /daily-digest/run`; elle çalıştırma audit'i ve 06:15 cron teslim durumu logları.
+- [x] Su ekranında `Günlük Özet Teslimi`: SMTP/alıcı hazırlığı, son özet, canlı kuyruk durumu, hata nedeni, deneme sayısı ve 14 günlük geçmiş.
+- [x] Backend servis/API/job testleri, frontend etkileşim testi ve modül runbook'u güncellendi.
+
+Kalan ertelenen ürünler tamamlanmış sayılmaz: SKT, mobil/QR, firma faturalama ve ortak ziyaretçi/güvenlik modülü entegrasyonu.

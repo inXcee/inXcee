@@ -1116,7 +1116,7 @@ describe('Su takip — Ay kapanışı PDF servisi (V4)', () => {
 
 describe('Su takip — Günlük operasyon özeti (V3)', () => {
   it('digest actionable öğeleri iki operasyon rolüne dağıtır ve günlük dedup uygular', async () => {
-    const r = waterDailyDigest()
+    const r = waterDailyDigest({ queueEmail: false })
     expect(r.actionable).toBe(true) // önceki testlerden eksi/bekleyen kayıtlar mevcut
     expect(r.notified).toBe(true)
     expect(Array.isArray(r.parts) && r.parts.length).toBeTruthy()
@@ -1134,7 +1134,7 @@ describe('Su takip — Günlük operasyon özeti (V3)', () => {
     expect(supervisorFeed.body.items.some(item => item.id === supervisorNotif.id)).toBe(true)
 
     // aynı gün ikinci çağrı → dedup, yeni bildirim yok
-    const r2 = waterDailyDigest()
+    const r2 = waterDailyDigest({ queueEmail: false })
     expect(r2.notified).toBe(false)
   })
 })
