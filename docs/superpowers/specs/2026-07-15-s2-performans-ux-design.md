@@ -8,11 +8,11 @@
 
 S1 (güvenlik & doğruluk) 3 fazla tamamlandı ve canlıda (`fbc428a` → `1b429a5b` → `590e1f6`). S2, keşif raporlarının performans/UX eksenindeki vardiya bulgularını alır:
 
-- **Backend N+1:** `puantajService` her personel için `getYtdGross` çağırıyor; `getYtdGross` personel başına 4 ayrı sorgu çalıştırıyor → N personel için ~4N sorgu. `operationsDashboardService` aynı `puantajService`'i istekte ikinci kez hesaplıyor.
+- **Backend N+1:** `puantajService` her personel için `getYtdGross` çağırıyor; `getYtdGross` personel başına 4 ayrı sorgu çalıştırıyor → N personel için ~4N sorgu. (Keşif düzeltmesi: `operationsDashboardService` puantajService'i istek başına **tek** kez çağırıyor — asıl maliyet bu N+1; bulk düzeltmesi dashboard'ı da otomatik hızlandırır.)
 - **Takvim render:** `PuantajCalendarView` N×31 hücreyi inline render ediyor; modülde hiç `React.memo` yok — her ok tuşu/seçim değişimi tüm tabloyu yeniden çiziyor. tfoot gün toplamı her render'da O(31×N) tarama.
-- **Loading tutarsızlığı:** LeaveTab/OvertimeTab listeleri `isLoading` kullanmıyor (yükleme sırasında boş-durum görünüp veri gelince atlıyor); CSV/PDF indirme hataları bazı yollarda sessiz yutuluyor.
+- **Loading tutarsızlığı:** LeaveTab/OvertimeTab listeleri `isLoading` kullanmıyor (yükleme sırasında boş-durum görünüp veri gelince atlıyor). (Keşif düzeltmesi: PayrollPage indirmeleri zaten toast'lu; sessiz yutan tek yol `PuantajTab.downloadCsv`.)
 - **Erişilebilirlik/kalıntı:** Dönem geri-gönderme notu `window.prompt` ile alınıyor (stilsiz, erişilemez, test edilemez); `routes.js`'te 2 adet `console.error` (CLAUDE.md kuralına aykırı).
-- **Keşfedilebilirlik:** PayrollPage / HolidaysPage / CombinedAbsencesPage yalnız doğrudan URL ile erişilebiliyor — ShiftsPage nav'ında yok.
+- **Keşfedilebilirlik:** PayrollPage / HolidaysPage / CombinedAbsencesPage yalnız `/settings` altında (SettingsLayout OPERASYON grubu) erişilebiliyor — vardiya çalışma alanından (ShiftsPage) hızlı erişim yok; kullanıcı bordro için Ayarlar'a gitmek zorunda.
 
 ## Mimari İlkeler
 
