@@ -1,11 +1,20 @@
 import * as q from './queries.js'
 import { INPUT_UNITS, assertAvailableUnit, availableUnits, humanize, toBase } from './units.js'
+import { assertMonthUnlocked, isCountReason, writeReconciliationPDF } from './reconciliation.js'
 import fs from 'node:fs'
 import { createNotification } from '../../shared/notifications/service.js'
 import { getDB } from '../../shared/db/index.js'
 import { enqueue } from '../../shared/jobs/index.js'
 import { parseRecipients } from '../email/service.js'
 export { availableUnits, humanize, toBase, unitMultiplier } from './units.js'
+export {
+  assertMonthUnlocked,
+  COUNT_REASONS,
+  monthlyCloseService,
+  monthlyUnlockService,
+  reconciliationService,
+  saveStockCountService,
+} from './reconciliation.js'
 
 export const WATER_OPERATION_ROLES = Object.freeze(['campus_manager', 'shift_supervisor'])
 
@@ -646,7 +655,7 @@ export function createAdjustmentService(data, userId) {
   assertAvailableUnit(product, unit)
   if (!/^\d{4}-\d{2}-\d{2}$/.test(data.move_date || '')) throw Object.assign(new Error('Tarih YYYY-MM-DD olmalı'), { statusCode: 400 })
   assertMonthUnlocked(data.move_date)
-  if (!REASON_KEYS.has(data.reason)) throw Object.assign(new Error('Sebep seçilmeli'), { statusCode: 400 })
+  if (!isCountReason(data.reason)) throw Object.assign(new Error('Sebep seçilmeli'), { statusCode: 400 })
   const id = q.createAdjustment({
     product_id: product.id, move_date: data.move_date, direction: data.direction,
     qty_base: toBase(product, qty, unit), input_qty: qty, input_unit: unit,
@@ -1436,148 +1445,10 @@ export function deleteWaybillPhotoService(id) {
   return row
 }
 
-// ── Ay Sonu Kapanış / Uyuşturma ──
-export const COUNT_REASONS = [
-  { key: 'eksik_irsaliye', label: 'Eksik irsaliye' },
-  { key: 'fazla_dagitim', label: 'Fazla dağıtım' },
-  { key: 'sayim_farki', label: 'Sayım farkı' },
-  { key: 'fire_kirik', label: 'Fire / kırık' },
-  { key: 'yanlis_urun', label: 'Yanlış ürün' },
-  { key: 'devir_duzeltme', label: 'Devir düzeltme' },
-]
-const REASON_KEYS = new Set(COUNT_REASONS.map(r => r.key))
-const isMonth = (m) => /^\d{4}-\d{2}$/.test(m || '')
-
-export function assertMonthUnlocked(dateOrMonth) {
-  const value = String(dateOrMonth || '')
-  const month = isMonth(value) ? value : /^\d{4}-\d{2}-\d{2}$/.test(value) ? value.slice(0, 7) : null
-  if (!month) return
-  if (q.getClosure(month)?.is_locked) {
-    throw Object.assign(new Error(
-      `${month} ayı kilitli. Bu aya ait kayıt eklenemez, değiştirilemez veya silinemez. Önce Ay Kapanışı bölümünden kilidi açın.`,
-    ), { statusCode: 423 })
-  }
-}
-
-export function reconciliationService({ month } = {}) {
-  if (!isMonth(month)) throw Object.assign(new Error('Ay YYYY-MM formatında olmalı'), { statusCode: 400 })
-  const closure = q.getClosure(month)
-  const rows = q.reconciliationRows(month).map(r => {
-    const monthAdjust = r.month_adjust || 0
-    const system_base = r.opening_base + r.month_in - r.month_out + monthAdjust
-    const counted = r.counted_base
-    const diff = counted == null ? null : counted - system_base
-    const status = counted == null ? 'pending' : diff === 0 ? 'even' : diff > 0 ? 'over' : 'short'
-    return {
-      product_id: r.product_id, product_name: r.product_name, unit_label: r.unit_label,
-      brand_id: r.brand_id || null, brand_name: r.brand_name || null,
-      opening_base: r.opening_base, month_in: r.month_in, month_out: r.month_out,
-      month_adjust: monthAdjust, month_return: r.month_return,
-      system_base, counted_base: counted, diff_base: diff,
-      reason: r.count_reason || null, count_note: r.count_note || null, status,
-      opening_human: humanize(r, r.opening_base),
-      month_in_human: humanize(r, r.month_in),
-      month_out_human: humanize(r, r.month_out),
-      month_adjust_human: monthAdjust ? humanize(r, monthAdjust) : null,
-      month_return_human: humanize(r, r.month_return),
-      system_human: humanize(r, system_base),
-      counted_human: counted == null ? null : humanize(r, counted),
-      diff_human: diff == null ? null : humanize(r, diff),
-    }
-  })
-  const totals = {
-    products: rows.length,
-    counted: rows.filter(r => r.counted_base != null).length,
-    pending: rows.filter(r => r.status === 'pending').length,
-    mismatch: rows.filter(r => r.status === 'over' || r.status === 'short').length,
-    system_base: rows.reduce((s, r) => s + r.system_base, 0),
-  }
-  return {
-    month, locked: !!closure?.is_locked, closure: closure || null,
-    reasons: COUNT_REASONS, rows, totals,
-  }
-}
-
-// Sistem kalanını (ay öncesi devreden + ay net) ürün bazında döndürür — sayım/kapanış için
-function systemBaseFor(month, productId) {
-  const row = q.reconciliationRow(month, productId)
-  return row ? row.opening_base + row.month_in - row.month_out + (row.month_adjust || 0) : 0
-}
-
-export function saveStockCountService(data, userId) {
-  if (!isMonth(data?.month)) throw Object.assign(new Error('Ay YYYY-MM formatında olmalı'), { statusCode: 400 })
-  assertMonthUnlocked(data.month)
-  const product = q.getProduct(data.product_id)
-  if (!product) throw Object.assign(new Error('Ürün bulunamadı'), { statusCode: 400 })
-  const counted = Number(data.counted_qty)
-  if (!Number.isFinite(counted) || counted < 0) throw Object.assign(new Error('Sayım miktarı 0 veya daha büyük olmalı'), { statusCode: 400 })
-  const unit = data.counted_unit || 'adet'
-  if (!INPUT_UNITS.includes(unit)) throw Object.assign(new Error('Geçersiz birim'), { statusCode: 400 })
-  assertAvailableUnit(product, unit)
-  const system_base = systemBaseFor(data.month, product.id)
-  const counted_base = toBase(product, counted, unit)
-  const diff_base = counted_base - system_base
-  if (diff_base !== 0 && !REASON_KEYS.has(data.reason))
-    throw Object.assign(new Error('Fark var — açıklama (sebep) zorunlu'), { statusCode: 400 })
-  q.upsertStockCount({
-    month: data.month, product_id: product.id, system_base, counted_base, diff_base,
-    reason: diff_base !== 0 ? data.reason : null, note: data.note?.trim() || null, created_by: userId || null,
-  })
-  return { system_base, counted_base, diff_base, status: diff_base === 0 ? 'even' : diff_base > 0 ? 'over' : 'short' }
-}
-
-export function monthlyCloseService(data, userId) {
-  if (!isMonth(data?.month)) throw Object.assign(new Error('Ay YYYY-MM formatında olmalı'), { statusCode: 400 })
-  const rows = q.reconciliationRows(data.month).map(r => ({ product_id: r.product_id, system_base: r.opening_base + r.month_in - r.month_out + (r.month_adjust || 0) }))
-  q.snapshotClosure(data.month, rows)
-  q.upsertClosure({ month: data.month, note: data.note?.trim() || null, closed_by: userId || null, is_locked: 1 })
-  return q.getClosure(data.month)
-}
-
-export function monthlyUnlockService(month) {
-  if (!isMonth(month)) throw Object.assign(new Error('Ay YYYY-MM formatında olmalı'), { statusCode: 400 })
-  if (!q.getClosure(month)) throw Object.assign(new Error('Bu ay için kapanış kaydı yok'), { statusCode: 404 })
-  q.setClosureLock(month, 0)
-}
-
 // Ay kapanışı kısa PDF içeriğini verilen pdfkit doc'una yazar + doc.end().
 // Route res'e pipe eder, cron dosya stream'ine pipe eder (V4). pdfkit'i çağıran import eder.
 export function buildReconciliationPDF(month, doc) {
-  if (!/^\d{4}-\d{2}$/.test(month || '')) throw Object.assign(new Error('Ay YYYY-MM formatında olmalı'), { statusCode: 400 })
-  const [y, m] = month.split('-').map(Number)
-  const from = `${month}-01`
-  const to = `${month}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`
-  const summary = summaryService({ from, to })
-  const rec = reconciliationService({ month })
-  const t = summary.totals || {}
-  const zoneAgg = new Map()
-  for (const z of summary.zones || []) zoneAgg.set(z.zone_id, { name: z.zone_name, total: (zoneAgg.get(z.zone_id)?.total || 0) + (z.total_out || 0) })
-  const topZones = [...zoneAgg.values()].sort((a, b) => b.total - a.total).slice(0, 8)
-  const negatives = (summary.stock || []).filter(s => s.negative)
-
-  doc.fontSize(18).font('Helvetica-Bold').fillColor('#0f172a').text(`SU TAKIP AY KAPANISI - ${month}`, { align: 'center' })
-  doc.moveDown(0.3)
-  doc.fontSize(9).font('Helvetica').fillColor('#6b7280')
-    .text(`Olusturma: ${new Date().toLocaleString('tr-TR')}${rec.locked ? '  -  AY KILITLI' : ''}`, { align: 'center' })
-  doc.moveDown(1)
-  const line = (label, val) => { doc.fontSize(11).font('Helvetica-Bold').fillColor('#374151').text(label, { continued: true }).font('Helvetica').fillColor('#0f172a').text(`  ${val}`) }
-  doc.fontSize(13).font('Helvetica-Bold').fillColor('#0f172a').text('OZET'); doc.moveDown(0.3)
-  line('Ay gelen (tir):', String(t.period_in || 0))
-  line('Ay dagitilan:', String(t.period_out || 0))
-  line('Kalan stok (anlik):', String(t.balance || 0))
-  line('Eksi stoktaki urun sayisi:', String(t.deficit_count || 0))
-  line('Sayim farkli urun sayisi:', String(rec.totals?.mismatch || 0))
-  doc.moveDown(0.8)
-  doc.fontSize(13).font('Helvetica-Bold').fillColor('#0f172a').text('EN COK DAGITILAN YERLER'); doc.moveDown(0.3)
-  if (topZones.length === 0) doc.fontSize(10).font('Helvetica').fillColor('#9ca3af').text('Kayit yok.')
-  else topZones.forEach((z, i) => doc.fontSize(10).font('Helvetica').fillColor('#374151').text(`${i + 1}. ${z.name}  -  ${z.total}`))
-  if (negatives.length) {
-    doc.moveDown(0.8)
-    doc.fontSize(13).font('Helvetica-Bold').fillColor('#dc2626').text('EKSI STOKLAR'); doc.moveDown(0.3)
-    negatives.forEach(s => doc.fontSize(10).font('Helvetica').fillColor('#374151').text(`- ${s.name}: ${s.balance}`))
-  }
-  doc.end()
-  return { month, from, to }
+  return writeReconciliationPDF(month, doc, summaryService)
 }
 
 // ── Tüketim öngörüsü & sipariş önerisi (V1) ──
