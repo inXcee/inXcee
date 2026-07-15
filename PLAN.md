@@ -523,4 +523,13 @@ W11 tır/foto KODU commit'liydi ama `036_water_truck_waybill_archive.sql` untrac
 - [x] Su ekranında `Günlük Özet Teslimi`: SMTP/alıcı hazırlığı, son özet, canlı kuyruk durumu, hata nedeni, deneme sayısı ve 14 günlük geçmiş.
 - [x] Backend servis/API/job testleri, frontend etkileşim testi ve modül runbook'u güncellendi.
 
-Kalan ertelenen ürünler tamamlanmış sayılmaz: SKT, mobil/QR, firma faturalama ve ortak ziyaretçi/güvenlik modülü entegrasyonu.
+### Faz V8 — Lot, SKT, FEFO ve Karantina ✅
+- [x] Migration 054 ile ürün bazlı Lot/SKT zorunluluğu ve uyarı günü; giriş bazında lot, üretim/SKT tarihi ve karantina alanları eklendi.
+- [x] Giriş doğrulaması tekli/toplu irsaliyeye bağlandı; SKT'li ürünlerde FEFO, diğer ürünlerde FIFO sırası korunarak atomik tahsis yapılıyor.
+- [x] Geçmiş, SKT'si eksik ve karantina lotları dağıtımdan çıkarıldı; karantina açılınca bekleyen dağıtımlar otomatik yeniden uzlaştırılıyor.
+- [x] `GET /lots` ve audit'li `PUT /lots/:id`; kritik/sağlıklı kırılımı, ürün filtresi, gerekçeli karantina ve açıklamalı hata akışı eklendi.
+- [x] Su ekranına Lot ve SKT Kontrolü; giriş satırlarına lot/üretim/SKT; ürün ayarlarına zorunluluk/eşik alanları eklendi.
+- [x] Günlük SMTP özeti kritik lotları içeriyor; Excel kapanış paketi renkli ve filtrelenebilir `Lot & SKT` sayfasıyla 15 sayfaya çıktı.
+- [x] Backend FEFO/karantina ve frontend panel/Excel/invalidation regresyon testleri eklendi; modül runbook'u güncellendi.
+
+Kalan ertelenen ürünler tamamlanmış sayılmaz: mobil/QR, firma faturalama ve ortak ziyaretçi/güvenlik modülü entegrasyonu.

@@ -17,6 +17,7 @@ describe('water query invalidation', () => {
       'water-reconciliation',
       'water-forecast',
       'water-trends',
+      'water-lots',
     ]))
   })
 
@@ -39,6 +40,18 @@ describe('water query invalidation', () => {
       'water-products',
       'water-summary',
       'water-reconciliation',
+      'water-daily-ledger',
+      'water-zone-history',
+      'water-lots',
+    ]))
+  })
+
+  it('lot güncellemesinde lot, irsaliye, uyarı ve dağıtım geçmişini yeniler', () => {
+    expect(waterQueryKeysForScopes('lots')).toEqual(expect.arrayContaining([
+      'water-lots',
+      'water-intake',
+      'water-pending',
+      'water-alerts',
       'water-daily-ledger',
       'water-zone-history',
     ]))

@@ -9,6 +9,7 @@ import TruckArrivalPanel from './components/TruckArrivalPanel.jsx'
 import WaterBoard from './components/WaterBoard.jsx'
 import WaterCollapsiblePanel from './components/WaterCollapsiblePanel.jsx'
 import WaterDailyDigestPanel from './components/WaterDailyDigestPanel.jsx'
+import WaterExpiryPanel from './components/WaterExpiryPanel.jsx'
 import WaterModal from './components/WaterModal.jsx'
 import WaterQueryErrorCenter from './components/WaterQueryErrorCenter.jsx'
 import ZoneHistoryModal from './components/ZoneHistoryModal.jsx'
@@ -69,6 +70,8 @@ export default function WaterPage() {
       <AlertBand />
 
       <WaterDailyDigestPanel />
+
+      <WaterExpiryPanel />
 
       <ReviewPanel />
 
@@ -169,6 +172,7 @@ function AlertBand() {
     )
   }
 
+  const lotStatusLabel = { expired: 'SKT geçti', expiring: 'SKT yaklaşıyor', quarantined: 'karantina', missing: 'SKT eksik' }
   const CARDS = [
     { key: 'pending', icon: '🧾', label: 'İrsaliye Bekleyen', count: s.pending, color: 'var(--accent)', items: data.pending_waybill,
       render: (it) => `${it.product_name} — ${it.unallocated_human} (${it.count} kayıt, ${it.waiting_days} gün)` },
@@ -178,6 +182,8 @@ function AlertBand() {
       render: (it) => `${it.product_name} — dağıtılan ${it.period_out_human}, gelen ${it.period_in_human} (fazla ${it.diff_human})` },
     { key: 'low', icon: '🔽', label: 'Düşük Stok', count: s.low, color: 'var(--amber, #d97706)', items: data.low_stock,
       render: (it) => `${it.product_name} — kalan ${it.balance_human} (eşik ${it.min_human})` },
+    { key: 'lots', icon: 'SKT', label: 'Lot / SKT', count: s.lot_critical, color: 'var(--red)', items: data.lot_alerts,
+      render: (it) => `${it.product_name} — ${it.lot_no || 'lot yok'} · ${lotStatusLabel[it.health] || it.health} · ${it.remaining_human}` },
     { key: 'idle', icon: '🕳', label: 'Bugün Kayıtsız Bölge', count: s.idle_zones, color: 'var(--text3)', items: data.idle_zones,
       render: (it) => it.zone_name },
   ].filter(c => c.count > 0)
@@ -863,7 +869,7 @@ function GelenTirPanel({ from, to, label, stockItems = [] }) {
   // Çok-satırlı irsaliye: üstte irsaliye no + tarih tek kez, altında N ürün satırı
   const [waybill, setWaybill] = useState('')
   const [date, setDate] = useState(todayStr())
-  const blankRow = { product_id: '', input_qty: '', input_unit: 'palet', note: '' }
+  const blankRow = { product_id: '', input_qty: '', input_unit: 'palet', lot_no: '', production_date: '', expiry_date: '', note: '' }
   const [rows, setRows] = useState([{ ...blankRow }])
 
   const saveBatch = useMutation({
@@ -880,15 +886,38 @@ function GelenTirPanel({ from, to, label, stockItems = [] }) {
   const addRow = () => setRows(rs => [...rs, { ...blankRow }])
   const rmRow = (i) => setRows(rs => rs.length > 1 ? rs.filter((_, idx) => idx !== i) : rs)
   const rowCalc = (r) => smartQty(r.input_qty, products.find(p => String(p.id) === String(r.product_id)), r.input_unit)
-  const enteredRows = rows.filter(r => r.product_id || String(r.input_qty || '').trim() || String(r.note || '').trim())
-  const validRows = enteredRows.filter(r => r.product_id && rowCalc(r).valid)
-  const invalidRows = enteredRows.filter(r => !r.product_id || !rowCalc(r).valid)
+  const rowIssue = (r) => {
+    const product = products.find(p => String(p.id) === String(r.product_id))
+    if (!product) return 'Ürün seçin'
+    const calc = rowCalc(r)
+    if (!calc.valid) return calc.error || 'Miktarı kontrol edin'
+    if (product.expiry_tracking && !r.lot_no.trim()) return `${product.name} için lot numarası zorunlu`
+    if (product.expiry_tracking && !r.expiry_date) return `${product.name} için SKT zorunlu`
+    if (r.production_date && r.production_date > date) return 'Üretim tarihi giriş tarihinden sonra olamaz'
+    if (r.production_date && r.expiry_date && r.production_date > r.expiry_date) return 'SKT üretim tarihinden önce olamaz'
+    if (r.expiry_date && r.expiry_date < date) return 'SKT giriş tarihinden önce olamaz'
+    return null
+  }
+  const enteredRows = rows.filter(r => r.product_id || String(r.input_qty || '').trim() || r.lot_no.trim() || r.production_date || r.expiry_date || String(r.note || '').trim())
+  const validRows = enteredRows.filter(r => !rowIssue(r))
+  const invalidRows = enteredRows.filter(r => rowIssue(r))
   const submit = () => {
-    if (invalidRows.length > 0) return toastErr(rowCalc(invalidRows[0]).error || 'Eksik veya geçersiz ürün satırını düzeltin')
+    if (invalidRows.length > 0) return toastErr(rowIssue(invalidRows[0]) || 'Eksik veya geçersiz ürün satırını düzeltin')
     if (validRows.length === 0) return toastErr('En az bir geçerli ürün satırı girin')
     saveBatch.mutate({
       move_date: date, waybill_no: waybill.trim() || undefined,
-      lines: validRows.map(r => { const c = rowCalc(r); return { product_id: +r.product_id, input_qty: c.input_qty, input_unit: c.input_unit, note: r.note?.trim() || undefined } }),
+      lines: validRows.map(r => {
+        const c = rowCalc(r)
+        return {
+          product_id: +r.product_id,
+          input_qty: c.input_qty,
+          input_unit: c.input_unit,
+          lot_no: r.lot_no.trim() || undefined,
+          production_date: r.production_date || undefined,
+          expiry_date: r.expiry_date || undefined,
+          note: r.note?.trim() || undefined,
+        }
+      }),
     })
   }
 
@@ -901,9 +930,9 @@ function GelenTirPanel({ from, to, label, stockItems = [] }) {
             <div style={{ flex: 1, minWidth: '140px' }}><label className="form-label">İrsaliye no</label><input className="form-input" placeholder="Ör. IRS-2026-045" value={waybill} onChange={e => setWaybill(e.target.value)} /></div>
             <div style={{ width: '150px' }}><label className="form-label">Tarih</label><input type="date" className="form-input" value={date} onChange={e => setDate(e.target.value)} /></div>
           </div>
-          <div style={{ border: '1px solid var(--border)', borderRadius: '8px', overflow: 'hidden' }}>
-            <table className="data-table" style={{ fontSize: '11px', width: '100%' }}>
-              <thead><tr><th>Ürün</th><th style={{ width: '78px' }}>Miktar</th><th style={{ width: '82px' }}>Birim</th><th style={{ width: '110px' }}>Hesaplanan</th><th>Not</th><th style={{ width: '30px' }}></th></tr></thead>
+          <div style={{ border: '1px solid var(--border)', borderRadius: '8px', overflowX: 'auto' }}>
+            <table className="data-table" style={{ fontSize: '11px', width: '100%', minWidth: '980px' }}>
+              <thead><tr><th>Ürün</th><th style={{ width: '78px' }}>Miktar</th><th style={{ width: '82px' }}>Birim</th><th style={{ width: '110px' }}>Hesaplanan</th><th style={{ width: '120px' }}>Lot</th><th style={{ width: '155px' }}>Üretim / SKT</th><th>Not</th><th style={{ width: '30px' }}></th></tr></thead>
               <tbody>
                 {rows.map((r, i) => {
                   const p = products.find(x => String(x.id) === String(r.product_id))
@@ -921,6 +950,11 @@ function GelenTirPanel({ from, to, label, stockItems = [] }) {
                       <td><input type="text" inputMode="decimal" className="form-input" style={{ fontSize: '11px' }} placeholder="3 / 3p" value={r.input_qty} onChange={e => updRow(i, { input_qty: e.target.value })} /></td>
                       <td><select className="form-select" style={{ fontSize: '11px' }} value={coerceUnitForProduct(r.input_unit, p)} onChange={e => updRow(i, { input_unit: e.target.value })}>{unitOptionsForProduct(p).map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></td>
                       <td style={{ fontFamily: 'var(--mono)', color: calc.valid ? 'var(--green)' : calc.error ? 'var(--red)' : 'var(--text3)', maxWidth: '110px' }}>{calc.valid ? nf(calc.base) : calc.error || '·'}</td>
+                      <td><input className="form-input" style={{ fontSize: '11px' }} placeholder={p?.expiry_tracking ? 'Lot no *' : 'Lot no'} value={r.lot_no} onChange={e => updRow(i, { lot_no: e.target.value })} /></td>
+                      <td><div style={{ display: 'grid', gap: '4px' }}>
+                        <input type="date" className="form-input" style={{ fontSize: '10px', minWidth: '138px' }} title="Üretim tarihi" aria-label={`${i + 1}. satır üretim tarihi`} value={r.production_date} onChange={e => updRow(i, { production_date: e.target.value })} />
+                        <input type="date" className="form-input" style={{ fontSize: '10px', minWidth: '138px', borderColor: p?.expiry_tracking && !r.expiry_date ? 'var(--amber, #b45309)' : undefined }} title="Son kullanma tarihi" aria-label={`${i + 1}. satır son kullanma tarihi`} value={r.expiry_date} onChange={e => updRow(i, { expiry_date: e.target.value })} />
+                      </div></td>
                       <td><input className="form-input" style={{ fontSize: '11px' }} placeholder="opsiyonel" value={r.note} onChange={e => updRow(i, { note: e.target.value })} /></td>
                       <td style={{ textAlign: 'center' }}>{rows.length > 1 && <button type="button" onClick={() => rmRow(i)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--red)' }}>✕</button>}</td>
                     </tr>
@@ -935,18 +969,19 @@ function GelenTirPanel({ from, to, label, stockItems = [] }) {
           </div>
           <div style={{ border: '1px solid var(--border)', borderRadius: '8px', overflow: 'auto', maxHeight: '280px' }}>
             <table className="data-table" style={{ fontSize: '11px' }}>
-              <thead><tr><th>Tarih</th><th>İrsaliye</th><th>Ürün</th><th style={{ textAlign: 'right' }}>Gelen</th><th style={{ textAlign: 'right' }}>Kalan</th></tr></thead>
+              <thead><tr><th>Tarih</th><th>İrsaliye</th><th>Ürün</th><th>Lot / SKT</th><th style={{ textAlign: 'right' }}>Gelen</th><th style={{ textAlign: 'right' }}>Kalan</th></tr></thead>
               <tbody>
                 {intakes.slice(0, 12).map(r => (
                   <tr key={r.id}>
                     <td style={{ fontFamily: 'var(--mono)' }}>{r.move_date}</td>
                     <td style={{ fontFamily: 'var(--mono)', color: r.waybill_no ? 'var(--text)' : 'var(--text3)' }}>{r.waybill_no || '—'}</td>
                     <td>{r.brand_name ? `${r.brand_name} · ` : ''}{r.product_name}</td>
+                    <td><div style={{ fontFamily: 'var(--mono)' }}>{r.lot_no || '—'}</div><div style={{ fontSize: '10px', color: r.expiry_date ? 'var(--text3)' : (r.expiry_tracking ? 'var(--red)' : 'var(--text3)') }}>{r.expiry_date || (r.expiry_tracking ? 'SKT eksik' : 'Takip kapalı')}</div></td>
                     <td style={{ textAlign: 'right', fontFamily: 'var(--mono)' }}>{r.qty_human || humanQty(r, r.qty_base)}</td>
                     <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', color: (r.remaining_base || 0) > 0 ? 'var(--teal)' : 'var(--text3)' }}>{r.remaining_human || nf(r.remaining_base)}</td>
                   </tr>
                 ))}
-                {intakes.length === 0 && <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--text3)', padding: '12px' }}>Bu ay gelen tır kaydı yok</td></tr>}
+                {intakes.length === 0 && <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--text3)', padding: '12px' }}>Bu ay gelen tır kaydı yok</td></tr>}
               </tbody>
             </table>
           </div>
@@ -1424,7 +1459,7 @@ function TemplatesTab() {
 // ─────────────────────────── ÜRÜNLER + MARKA ───────────────────────────
 function ProductsTab() {
   const qc = useQueryClient()
-  const blank = { id: null, name: '', unit_label: 'adet', units_per_case: '1', cases_per_pallet: '1', min_qty: '', crit_qty: '', min_unit: 'adet', lead_time_days: '7', safety_stock_days: '3', brand_id: '', is_returnable: false, is_active: true }
+  const blank = { id: null, name: '', unit_label: 'adet', units_per_case: '1', cases_per_pallet: '1', min_qty: '', crit_qty: '', min_unit: 'adet', lead_time_days: '7', safety_stock_days: '3', expiry_tracking: false, expiry_warning_days: '30', brand_id: '', is_returnable: false, is_active: true }
   const [form, setForm] = useState(blank)
   const { data: products = [] } = useQuery({ queryKey: ['water-products-all'], queryFn: () => api.get('/water/products', { params: { all: 1 } }).then(r => r.data) })
   const { data: brands = [] } = useQuery({ queryKey: ['water-brands'], queryFn: () => api.get('/water/brands').then(r => r.data) })
@@ -1455,6 +1490,8 @@ function ProductsTab() {
       critical_level: thresholdBase(form.crit_qty, 'Kritik stok'),
       lead_time_days: daySetting(form.lead_time_days, 'Tedarik süresi'),
       safety_stock_days: daySetting(form.safety_stock_days, 'Emniyet günü'),
+      expiry_tracking: form.expiry_tracking,
+      expiry_warning_days: daySetting(form.expiry_warning_days, 'SKT uyarı günü'),
       brand_id: form.brand_id || null,
       is_returnable: form.is_returnable,
       is_active: form.is_active,
@@ -1465,8 +1502,8 @@ function ProductsTab() {
   const del = useMutation({ mutationFn: (id) => api.delete(`/water/products/${id}`), onSuccess: () => { invalidate(); toastOk('Silindi') }, onError: (e) => toastErr(errMsg(e, 'Silinemedi')) })
   const patch = useMutation({ mutationFn: (p) => api.put(`/water/products/${p.id}`, p), onSuccess: () => { invalidate(); toastOk('Güncellendi') }, onError: (e) => toastErr(errMsg(e, 'Güncellenemedi')) })
 
-  const editProduct = (p) => setForm({ id: p.id, name: p.name, unit_label: p.unit_label, units_per_case: String(p.units_per_case), cases_per_pallet: String(p.cases_per_pallet), min_qty: p.min_level ? String(p.min_level) : '', crit_qty: p.critical_level ? String(p.critical_level) : '', min_unit: 'adet', lead_time_days: String(p.lead_time_days ?? 7), safety_stock_days: String(p.safety_stock_days ?? 3), brand_id: p.brand_id ? String(p.brand_id) : '', is_returnable: !!p.is_returnable, is_active: p.is_active !== 0 })
-  const toggleActive = (p) => patch.mutate({ id: p.id, name: p.name, unit_label: p.unit_label, units_per_case: p.units_per_case, cases_per_pallet: p.cases_per_pallet, min_level: p.min_level, critical_level: p.critical_level, lead_time_days: p.lead_time_days, safety_stock_days: p.safety_stock_days, brand_id: p.brand_id, is_returnable: p.is_returnable, is_active: p.is_active === 0 })
+  const editProduct = (p) => setForm({ id: p.id, name: p.name, unit_label: p.unit_label, units_per_case: String(p.units_per_case), cases_per_pallet: String(p.cases_per_pallet), min_qty: p.min_level ? String(p.min_level) : '', crit_qty: p.critical_level ? String(p.critical_level) : '', min_unit: 'adet', lead_time_days: String(p.lead_time_days ?? 7), safety_stock_days: String(p.safety_stock_days ?? 3), expiry_tracking: !!p.expiry_tracking, expiry_warning_days: String(p.expiry_warning_days ?? 30), brand_id: p.brand_id ? String(p.brand_id) : '', is_returnable: !!p.is_returnable, is_active: p.is_active !== 0 })
+  const toggleActive = (p) => patch.mutate({ id: p.id, name: p.name, unit_label: p.unit_label, units_per_case: p.units_per_case, cases_per_pallet: p.cases_per_pallet, min_level: p.min_level, critical_level: p.critical_level, lead_time_days: p.lead_time_days, safety_stock_days: p.safety_stock_days, expiry_tracking: p.expiry_tracking, expiry_warning_days: p.expiry_warning_days, brand_id: p.brand_id, is_returnable: p.is_returnable, is_active: p.is_active === 0 })
   const formPackage = { unit_label: form.unit_label, units_per_case: +form.units_per_case || 1, cases_per_pallet: +form.cases_per_pallet || 1 }
   const packageMode = baseUnitForProduct(formPackage) === 'paket' ? 'packPallet'
     : baseUnitForProduct(formPackage) === 'koli' ? 'casePallet'
@@ -1513,6 +1550,10 @@ function ProductsTab() {
         <div style={{ width: '72px' }}><label className="form-label">Min. birim</label><select className="form-select" value={coerceUnitForProduct(form.min_unit, formPackage)} onChange={e => setForm(f => ({ ...f, min_unit: e.target.value }))}>{formUnitOptions.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
         <div style={{ width: '84px' }}><label className="form-label" title="Sipariş ile teslim arasındaki ortalama gün">Tedarik gün</label><input type="number" min="0" max="365" step="1" className="form-input" value={form.lead_time_days} onChange={e => setForm(f => ({ ...f, lead_time_days: e.target.value }))} /></div>
         <div style={{ width: '84px' }}><label className="form-label" title="Gecikme ve tüketim dalgalanmasına karşı ek stok günü">Emniyet gün</label><input type="number" min="0" max="365" step="1" className="form-input" value={form.safety_stock_days} onChange={e => setForm(f => ({ ...f, safety_stock_days: e.target.value }))} /></div>
+        <label style={{ display: 'flex', gap: '5px', alignItems: 'center', fontSize: '11px', color: 'var(--text2)', cursor: 'pointer', paddingBottom: '9px' }} title="Yeni girişte lot numarası ve son kullanma tarihi zorunlu olur">
+          <input type="checkbox" checked={form.expiry_tracking} onChange={e => setForm(f => ({ ...f, expiry_tracking: e.target.checked }))} /> Lot/SKT zorunlu
+        </label>
+        <div style={{ width: '86px' }}><label className="form-label" title="SKT yaklaşırken kaç gün önce uyarı verileceği">SKT uyarı</label><input type="number" min="0" max="365" step="1" className="form-input" value={form.expiry_warning_days} onChange={e => setForm(f => ({ ...f, expiry_warning_days: e.target.value }))} /></div>
         <div style={{ minWidth: '130px' }}><label className="form-label">Marka</label><select className="form-select" value={form.brand_id} onChange={e => setForm(f => ({ ...f, brand_id: e.target.value }))}>
           <option value="">Markasız</option>{brands.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
         </select></div>
@@ -1527,11 +1568,11 @@ function ProductsTab() {
         {form.id && <button className="btn btn-ghost btn-sm" onClick={() => setForm(blank)}>+ Yeni</button>}
         <button className="btn btn-primary" disabled={!form.name.trim() || create.isPending || update.isPending} onClick={() => form.id ? update.mutate() : create.mutate()}>{form.id ? 'Güncelle' : 'Ekle'}</button>
       </div>
-      <div style={{ fontSize: '10px', color: 'var(--text3)', marginBottom: '12px' }}>Baz birim Excel hücresindeki ham sayıdır; ör. damacana adet, 0.33/0.5 koli, 5 L/cam paket. Palet çarpanı bu ham sayıya çevrilir. Sipariş son günü, ürünün tedarik + emniyet gününe göre otomatik hesaplanır.</div>
+      <div style={{ fontSize: '10px', color: 'var(--text3)', marginBottom: '12px' }}>Baz birim Excel hücresindeki ham sayıdır; ör. damacana adet, 0.33/0.5 koli, 5 L/cam paket. Palet çarpanı bu ham sayıya çevrilir. Lot/SKT zorunlu açılırsa her yeni irsaliye satırında lot ve SKT istenir; yaklaşma uyarısı ürün bazında hesaplanır.</div>
 
       <div style={{ maxHeight: '40vh', overflowY: 'auto' }}>
-        <table className="data-table" style={{ fontSize: '12px', minWidth: '920px' }}>
-          <thead><tr><th>Ad</th><th>Marka</th><th>Birimler</th><th style={{ textAlign: 'right' }}>1 Koli</th><th style={{ textAlign: 'right' }}>1 Palet</th><th style={{ textAlign: 'right' }}>Min.</th><th style={{ textAlign: 'right' }}>Kritik</th><th style={{ textAlign: 'right' }}>Tedarik + emniyet</th><th></th></tr></thead>
+        <table className="data-table" style={{ fontSize: '12px', minWidth: '1040px' }}>
+          <thead><tr><th>Ad</th><th>Marka</th><th>Birimler</th><th style={{ textAlign: 'right' }}>1 Koli</th><th style={{ textAlign: 'right' }}>1 Palet</th><th style={{ textAlign: 'right' }}>Min.</th><th style={{ textAlign: 'right' }}>Kritik</th><th style={{ textAlign: 'right' }}>Tedarik + emniyet</th><th>Lot / SKT</th><th></th></tr></thead>
           <tbody>
             {products.map(p => (
               <tr key={p.id} style={{ opacity: p.is_active ? 1 : 0.5 }}>
@@ -1543,6 +1584,7 @@ function ProductsTab() {
                 <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', color: p.min_level ? 'var(--text)' : 'var(--text3)' }}>{p.min_level ? `${nf(p.min_level)}` : '—'}</td>
                 <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', color: p.critical_level ? 'var(--red)' : 'var(--text3)' }}>{p.critical_level ? `${nf(p.critical_level)}` : '—'}</td>
                 <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--text2)', whiteSpace: 'nowrap' }}>{p.lead_time_days ?? 7}g + {p.safety_stock_days ?? 3}g</td>
+                <td>{p.expiry_tracking ? <span className="badge badge-amber">Zorunlu · {p.expiry_warning_days ?? 30}g</span> : <span style={{ color: 'var(--text3)' }}>Kapalı</span>}</td>
                 <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                   <button onClick={() => editProduct(p)} className="btn btn-ghost btn-sm">Düzenle</button>
                   <button onClick={() => toggleActive(p)} className="btn btn-ghost btn-sm" title={p.is_active ? 'Pasife al' : 'Aktifleştir'}>{p.is_active ? 'Pasife al' : 'Aktif et'}</button>

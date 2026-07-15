@@ -46,6 +46,13 @@ function digestFixture(date = '2027-03-20') {
       low: [],
       over_distributed: [],
       idle_zones: [],
+      lots: [{
+        product_name: '0.5 L Su',
+        lot_no: 'LOT-053',
+        expiry_date: '2027-03-19',
+        health: 'expired',
+        remaining_human: '20 koli',
+      }],
       orders: [{
         product_name: 'Damacana',
         balance_human: '10 damacana',
@@ -119,6 +126,8 @@ describe('Su günlük operasyon özeti e-posta teslimi', () => {
 
     expect(email.subject).toContain('2027-03-20')
     expect(email.html).toContain('&lt;Damacana &amp; Cam&gt;')
+    expect(email.html).toContain('LOT-053')
+    expect(email.html).toContain('SKT geçti')
     expect(email.text).toContain('80 damacana')
   })
 

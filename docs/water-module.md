@@ -8,7 +8,8 @@ Su Takip ekranı aşağıdaki akışları tek modülde yönetir:
 
 - ürün, marka, dağıtım yeri ve ürün-birim kuralları;
 - tekli/toplu irsaliye girişi, tekli/toplu dağıtım ve metinden dağıtım çözümleme;
-- FIFO irsaliye eşleştirmesi, negatif stok kontrol kuyruğu ve boş kap/palet iadeleri;
+- SKT kontrollü FEFO irsaliye eşleştirmesi, negatif stok kontrol kuyruğu ve boş kap/palet iadeleri;
+- giriş lotu, üretim/SKT tarihi, yaklaşan SKT uyarısı ve gerekçeli karantina yönetimi;
 - günlük matris, dağıtım yeri geçmişi, stok, trend, tahmin ve sipariş önerileri;
 - sayım, kontrollü stok düzeltmesi, ay uyuşturma, ay kilidi ve PDF/Excel çıktıları;
 - su tırı ön bildirimi, ana merkez maili, kapı giriş formu ve irsaliye fotoğraf arşivi;
@@ -22,7 +23,9 @@ Su Takip ekranı aşağıdaki akışları tek modülde yönetir:
 |---|---|
 | `routes.js` | `/api/water` HTTP sözleşmesi, rol kontrolü, upload, audit ve PDF yanıtları |
 | `service.js` | Katalog, iade, şablon, uyarı, inceleme kuyruğu ve dışa aktarılan servis yüzeyi |
-| `movements.js` | Giriş/dağıtım doğrulaması, transaction, FIFO tahsis ve yeniden uzlaştırma |
+| `movements.js` | Giriş/dağıtım doğrulaması, transaction, FEFO/FIFO tahsis ve yeniden uzlaştırma |
+| `lot-fields.js` | Lot numarası, üretim/SKT tarihi ve ürün bazlı zorunluluk doğrulaması |
+| `lots.js` | Açık lot sağlık durumu, yaklaşan SKT, karantina ve yeniden tahsis |
 | `reconciliation.js` | Sayım, ay uyuşturma, 423 ay kilidi ve kapanış PDF verisi |
 | `analytics.js` | Özet, trend, tüketim hızı, gün-yeter ve sipariş önerisi |
 | `trucks.js` | Tır planı, kontrol slotları, mail kuyruğu, kapı giriş belgesi ve fotoğraf arşivi |
@@ -43,6 +46,7 @@ Su Takip ekranı aşağıdaki akışları tek modülde yönetir:
 | `components/WaterBoard.jsx` | Pencerelenmiş Excel benzeri dağıtım matrisi, günlük kayıt ve rapor dışa aktarımı |
 | `components/TruckArrivalPanel.jsx` | Tır, mail, kapı giriş ve irsaliye fotoğraf çalışma alanı |
 | `components/WaterDailyDigestPanel.jsx` | Günlük özet SMTP/alıcı durumu, elle yeniden deneme ve 14 günlük teslim geçmişi |
+| `components/WaterExpiryPanel.jsx` | Açık lot, yaklaşan/geçen SKT, eksik bilgi ve karantina çalışma alanı |
 | `components/DailyDistributionModal.jsx` | Seçilen günün bütün dağıtım dökümü |
 | `components/ZoneHistoryModal.jsx` | Dağıtım yeri geçmişi ve dönem karşılaştırması |
 | `components/WaterModal.jsx` | Portal tabanlı erişilebilir modal kabuğu |
@@ -79,11 +83,26 @@ Tüm endpoint'ler JWT ile korunur. `/api/water` router'ı uygulama seviyesinde `
 - `cases_per_pallet`: bir paletteki koli veya paket sayısıdır.
 - `lead_time_days`: sipariş verildikten sonra ürünün sahaya ulaşmasının beklenen gün sayısıdır (varsayılan 7).
 - `safety_stock_days`: tedarik gecikmesi ve tüketim dalgalanması için ek stok günüdür (varsayılan 3).
+- `expiry_tracking`: ürün girişinde lot numarası ve SKT'yi zorunlu kılar.
+- `expiry_warning_days`: SKT yaklaşma uyarısının kaç gün önce başlayacağını belirler (varsayılan 30).
 - Her giriş tam sayılı bir baz miktara dönüşmelidir. Örneğin dönüşüm 2,5 baz birim üretiyorsa kayıt yuvarlanmaz, HTTP 400 ile reddedilir.
 - `5 lt / paket / 80 paket-palet`, `damacana / adet / 36 adet-palet` gibi farklı ürün modelleri aynı dönüşüm motoruyla çalışır.
 - Frontend canlı hesaplama ile backend `toBase` doğrulaması aynı kuralları izler; backend son otoritedir.
 
-Stok yetersizliği dağıtımı engellemez. Karşılanamayan miktar `needs_review=1` ile kontrol kuyruğuna düşer ve stok negatif görünebilir. Bu sayede saha kaydı kaybolmaz; müdür daha sonra irsaliye girerek FIFO eşleştirmesini tamamlar veya kaydı inceleyip onaylar.
+Stok yetersizliği dağıtımı engellemez. Karşılanamayan miktar `needs_review=1` ile kontrol kuyruğuna düşer ve stok negatif görünebilir. Bu sayede saha kaydı kaybolmaz; müdür daha sonra irsaliye girerek FEFO/FIFO eşleştirmesini tamamlar veya kaydı inceleyip onaylar.
+
+## Lot, SKT ve Karantina
+
+Üründe Lot/SKT takibi etkinse tekli ve toplu irsaliye girişinde lot numarası ile son kullanma tarihi zorunludur. Üretim tarihi isteğe bağlıdır; girildiğinde giriş tarihinden veya SKT'den sonra olamaz. SKT giriş tarihinden önce olamaz.
+
+- Açık giriş lotları `sağlıklı`, `SKT yaklaşıyor`, `SKT geçti`, `SKT eksik` veya `karantina` olarak sınıflandırılır.
+- Ürünün `expiry_warning_days` değeri yaklaşan SKT eşiğidir; ürün bazında `0-365` gün arasında yönetilir.
+- Dağıtım yalnızca kullanılabilir lotlardan yapılır. Önce SKT'si en yakın lot, eşitlikte en eski giriş kullanılır; SKT takibi olmayan ürünlerde FIFO sırası korunur.
+- SKT'si geçmiş, takip zorunlu olduğu halde SKT'si eksik veya karantinadaki lot tahsise girmez. Karşılanamayan dağıtım kaybolmaz; inceleme kuyruğunda bekler.
+- Lot karantinadan çıkarılınca aynı ürünün bekleyen dağıtımları transaction içinde yeniden uzlaştırılır.
+- Lot güncellemesi önce/sonra değerleriyle audit'e yazılır; karantinaya alma gerekçesiz yapılamaz.
+
+`Lot ve SKT Kontrolü` paneli kritik sayaçları, kalan miktarı, irsaliyeyi ve tarihleri tek tabloda gösterir. Günlük operasyon e-postası kritik lotları ayrı bölümde taşır. Excel kapanış paketi 15 sayfadır; `Lot & SKT` sayfası renkli durum satırları ve filtrelenebilir açık lot listesini içerir.
 
 ## Tahmin ve Sipariş Planı
 
@@ -98,7 +117,7 @@ Stok yetersizliği dağıtımı engellemez. Karşılanamayan miktar `needs_revie
 
 ## Günlük Operasyon Özeti
 
-Her gün 06:15'te stok/irsaliye uyarıları ile sipariş planı birleştirilir. Uygulama içi bildirim yalnızca aksiyon varsa üretilir; SMTP yapılandırılmış ve operasyon rollerinde e-posta tanımlıysa temiz günler dahil günlük e-posta kalıcı kuyruğa alınır.
+Her gün 06:15'te stok/irsaliye uyarıları, kritik lot/SKT kayıtları ve sipariş planı birleştirilir. Uygulama içi bildirim yalnızca aksiyon varsa üretilir; SMTP yapılandırılmış ve operasyon rollerinde e-posta tanımlıysa temiz günler dahil günlük e-posta kalıcı kuyruğa alınır.
 
 - Alıcılar `campus_manager` ve `shift_supervisor` rollerinden toplanır ve e-posta adresi bazında tekilleştirilir.
 - Aynı tarihin aktif işi cron ile elle çalıştırma çakışsa bile SQLite transaction içinde ikinci kez kuyruğa alınmaz.
@@ -106,16 +125,16 @@ Her gün 06:15'te stok/irsaliye uyarıları ile sipariş planı birleştirilir. 
 - SMTP kapalı, alıcı eksik, kuyrukta, yeniden deneniyor, gönderildi ve gönderilemedi durumları `water_daily_digest_deliveries` tablosunda saklanır.
 - Müdür ekrandan bugünün özetini hazırlayabilir; tamamlanmış veya başarısız teslimi bilinçli olarak yeniden gönderebilir. Vardiya sorumlusu teslim geçmişini salt okunur görür.
 
-## Hareket ve FIFO Akışı
+## Hareket ve FEFO/FIFO Akışı
 
-1. Giriş satırı doğrulanır ve giriş ile bekleyen dağıtımların FIFO uzlaştırması aynı transaction içinde yazılır.
-2. Dağıtım, açık giriş lotlarını en eski lot önce olacak şekilde tahsis eder.
+1. Giriş satırı ile lot/SKT alanları doğrulanır; giriş ve bekleyen dağıtımların uzlaştırması aynı transaction içinde yazılır.
+2. Dağıtım, kullanılabilir açık giriş lotlarını en yakın SKT önce olacak şekilde tahsis eder; aynı SKT'de giriş tarihi, SKT'siz ürünlerde FIFO belirleyicidir.
 3. Karşılanamayan bölüm inceleme kuyruğuna düşer; sonradan gelen irsaliye bekleyen dağıtımları otomatik kapatır.
 4. Dağıtım güncellenince eski ve yeni ürünün tahsisleri birlikte yeniden uzlaştırılır.
 5. Dağıtım silinince serbest kalan lotlar diğer bekleyen çıkışlara yeniden dağıtılır ve çözülen inceleme bayrakları temizlenir.
 6. Başka dağıtımlara tahsis edilmiş giriş doğrudan silinemez; API HTTP 409 ve bağlı kullanım açıklaması döndürür.
 
-Tekli giriş, toplu giriş ve FIFO uzlaştırması transaction içindedir. API hataları route içinde yutulmaz; Express merkezi hata katmanına aktarılır. Beklenmeyen 5xx hataları `error_log` ve yapılandırılmışsa Sentry'ye gider.
+Tekli giriş, toplu giriş ve FEFO/FIFO uzlaştırması transaction içindedir. API hataları route içinde yutulmaz; Express merkezi hata katmanına aktarılır. Beklenmeyen 5xx hataları `error_log` ve yapılandırılmışsa Sentry'ye gider.
 
 ## Ay Kapanışı ve Kilit
 
@@ -151,7 +170,7 @@ Kapı giriş PDF'i `GET /truck-arrivals/:id/gate-entry.pdf` ile üretilir. UI ay
 
 ## API Referansı
 
-Tablodaki `Operasyon`, iki operasyon rolünü; `Müdür`, yalnızca `campus_manager` rolünü ifade eder. Bütün yollar `/api/water` önekine sahiptir. Route sözleşmesi 58 method+yol handler'ından ve 45 benzersiz yoldan oluşur.
+Tablodaki `Operasyon`, iki operasyon rolünü; `Müdür`, yalnızca `campus_manager` rolünü ifade eder. Bütün yollar `/api/water` önekine sahiptir. Route sözleşmesi 60 method+yol handler'ından ve 47 benzersiz yoldan oluşur.
 
 ### Katalog
 
@@ -191,7 +210,9 @@ Tablodaki `Operasyon`, iki operasyon rolünü; `Müdür`, yalnızca `campus_mana
 | POST | `/daily-digest/run` | Müdür | Bugünün özetini üret ve uygun ise e-postayı kuyruğa al |
 | GET | `/forecast` | Operasyon | Tüketim hızı ve sipariş önerisi |
 | GET | `/trends` | Operasyon | 3/6/12 aylık trend kırılımları |
-| GET | `/pending` | Operasyon | FIFO irsaliye eşleşmesi bekleyen çıkışlar |
+| GET | `/pending` | Operasyon | FEFO/FIFO irsaliye eşleşmesi bekleyen çıkışlar |
+| GET | `/lots` | Operasyon | Açık lotları SKT sağlık durumu ve kalan miktarıyla listele |
+| PUT | `/lots/:id` | Operasyon | Lot/SKT bilgisini veya gerekçeli karantina durumunu güncelle |
 | GET | `/review` | Operasyon | Negatif stok kontrol kuyruğu |
 | POST | `/review/approve` | Müdür | Seçilen kontrol kayıtlarını onayla |
 | GET/POST | `/templates` | Operasyon | Hızlı dağıtım şablonu listele/oluştur |
@@ -249,7 +270,7 @@ Su operasyon bildirimleri hem `campus_manager` hem `shift_supervisor` rollerine 
 
 ## Audit, Hata ve Tutarlılık
 
-Katalog oluşturma/güncelleme/silme, hareketler, tır/mail/kontrol, günlük özeti elle çalıştırma, fotoğraf, sayım, düzeltme, inceleme ve ay kapanışı önemli audit eylemleri üretir. Cron rapor ve dosya retention sonuçları da audit'e yazılır.
+Katalog oluşturma/güncelleme/silme, hareketler, lot/SKT ve karantina, tır/mail/kontrol, günlük özeti elle çalıştırma, fotoğraf, sayım, düzeltme, inceleme ve ay kapanışı önemli audit eylemleri üretir. Cron rapor ve dosya retention sonuçları da audit'e yazılır.
 
 Route hataları `next(error)` ile merkezi handler'a gider. HTTP 4xx mesajları istemciye açıklayıcı biçimde döner; 5xx yanıtı `Sunucu hatası` olarak maskelenir ve `error_log`/Sentry kaydı oluşturulur. Frontend `WaterQueryErrorCenter`, başarısız sorguyu boş veri gibi göstermeden kullanıcıya tekrar deneme imkanı verir.
 
@@ -279,13 +300,13 @@ npx vitest run src/modules/water
 npm run build
 ```
 
-Kritik regresyonlar: tam baz miktar matematiği, giriş+FIFO atomikliği, ürün değişiminde yeniden tahsis, bağlı giriş silmede 409, kilitli ayda 423, tır slot dedup'u, mail retry/kalıcı hata, upload silme/retention, matris yapıştırma-klavye-undo ve Excel çalışma kitabı.
+Kritik regresyonlar: tam baz miktar matematiği, giriş+FEFO atomikliği, geçmiş/karantina lotunun atlanması, karantina açıldığında yeniden tahsis, ürün değişiminde yeniden tahsis, bağlı giriş silmede 409, kilitli ayda 423, tır slot dedup'u, mail retry/kalıcı hata, upload silme/retention, matris yapıştırma-klavye-undo ve Excel çalışma kitabı.
 
 ## Operasyon Kontrol Listesi
 
-1. Ürün birim kurallarını ve min/kritik eşikleri doğrula.
+1. Ürün birim, min/kritik stok ve Lot/SKT uyarı kurallarını doğrula.
 2. Günlük dağıtımları matriste kaydet; negatif kayıt varsa inceleme kuyruğunu kapat.
-3. Gelen irsaliyeyi aynı gün gir ve FIFO bekleyen listesini kontrol et.
+3. Gelen irsaliyeyi aynı gün lot/SKT bilgileriyle gir; kritik lot panelini ve FEFO bekleyen listesini kontrol et.
 4. Tır kaydında mail kontrol listesini tamamla; gerçek gönderim ile harici teyidi karıştırma.
 5. Ay sonunda tüm ürünleri say, fark varsa sebep/not gir, PDF'i kontrol et ve ayı kilitle.
 6. Kilit açılması gerekiyorsa gerekçeyi operasyon notuna yaz; düzeltme sonrası yeniden kapat.
@@ -293,7 +314,6 @@ Kritik regresyonlar: tam baz miktar matematiği, giriş+FIFO atomikliği, ürün
 
 ## Bilinçli Olarak Ertelenenler
 
-- SKT/son kullanma tarihi takibi;
 - mobil/QR saha girişi;
 - firma bazlı tüketim faturalaması;
 - kapı giriş verisinin ortak ziyaretçi/güvenlik modülüne taşınması.

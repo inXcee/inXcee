@@ -42,23 +42,27 @@ export function listProducts({ includeInactive = false } = {}) {
 export function getProduct(id) {
   return getDB().prepare(`${PRODUCT_SELECT} WHERE p.id=?`).get(id)
 }
-export function createProduct({ name, unit_label, units_per_case, cases_per_pallet, min_level, critical_level, lead_time_days, safety_stock_days, brand_id, is_returnable, sort_order }) {
+export function createProduct({ name, unit_label, units_per_case, cases_per_pallet, min_level, critical_level, lead_time_days, safety_stock_days, expiry_tracking, expiry_warning_days, brand_id, is_returnable, sort_order }) {
   return getDB().prepare(`
     INSERT INTO water_products(
       name, unit_label, units_per_case, cases_per_pallet, min_level, critical_level,
-      lead_time_days, safety_stock_days, brand_id, is_returnable, sort_order
-    ) VALUES(?,?,?,?,?,?,?,?,?,?,?)
+      lead_time_days, safety_stock_days, expiry_tracking, expiry_warning_days,
+      brand_id, is_returnable, sort_order
+    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
   `).run(
     name, unit_label || 'adet', units_per_case || 1, cases_per_pallet || 1, min_level || 0, critical_level || 0,
-    lead_time_days ?? 7, safety_stock_days ?? 3, brand_id || null, is_returnable ? 1 : 0, sort_order || 0,
+    lead_time_days ?? 7, safety_stock_days ?? 3, expiry_tracking ? 1 : 0, expiry_warning_days ?? 30,
+    brand_id || null, is_returnable ? 1 : 0, sort_order || 0,
   ).lastInsertRowid
 }
-export function updateProduct(id, { name, unit_label, units_per_case, cases_per_pallet, is_active, min_level, critical_level, lead_time_days, safety_stock_days, brand_id, is_returnable, sort_order }) {
+export function updateProduct(id, { name, unit_label, units_per_case, cases_per_pallet, is_active, min_level, critical_level, lead_time_days, safety_stock_days, expiry_tracking, expiry_warning_days, brand_id, is_returnable, sort_order }) {
   return getDB().prepare(`
     UPDATE water_products SET name=?, unit_label=?, units_per_case=?, cases_per_pallet=?, is_active=?, min_level=?, critical_level=?,
-      lead_time_days=?, safety_stock_days=?, brand_id=?, is_returnable=?, sort_order=? WHERE id=?
+      lead_time_days=?, safety_stock_days=?, expiry_tracking=?, expiry_warning_days=?,
+      brand_id=?, is_returnable=?, sort_order=? WHERE id=?
   `).run(name, unit_label || 'adet', units_per_case || 1, cases_per_pallet || 1, is_active ? 1 : 0, min_level || 0, critical_level || 0,
-    lead_time_days ?? 7, safety_stock_days ?? 3, brand_id || null, is_returnable ? 1 : 0, sort_order || 0, id).changes > 0
+    lead_time_days ?? 7, safety_stock_days ?? 3, expiry_tracking ? 1 : 0, expiry_warning_days ?? 30,
+    brand_id || null, is_returnable ? 1 : 0, sort_order || 0, id).changes > 0
 }
 export function getProductBalance(productId) {
   const mv = getDB().prepare(`
@@ -108,8 +112,13 @@ export function runInTransaction(work) {
 
 export function createMovement(m) {
   return getDB().prepare(`
-    INSERT INTO water_movements(type, product_id, zone_id, move_date, qty_base, input_qty, input_unit, waybill_no, note, created_by)
-    VALUES(@type, @product_id, @zone_id, @move_date, @qty_base, @input_qty, @input_unit, @waybill_no, @note, @created_by)
+    INSERT INTO water_movements(
+      type, product_id, zone_id, move_date, qty_base, input_qty, input_unit,
+      waybill_no, note, created_by, lot_no, production_date, expiry_date
+    ) VALUES(
+      @type, @product_id, @zone_id, @move_date, @qty_base, @input_qty, @input_unit,
+      @waybill_no, @note, @created_by, @lot_no, @production_date, @expiry_date
+    )
   `).run(m).lastInsertRowid
 }
 export function getMovement(id) {
@@ -120,8 +129,13 @@ export function getMovement(id) {
 export function createMovementsBatch(movements) {
   const db = getDB()
   const stmt = db.prepare(`
-    INSERT INTO water_movements(type, product_id, zone_id, move_date, qty_base, input_qty, input_unit, waybill_no, note, created_by)
-    VALUES(@type, @product_id, @zone_id, @move_date, @qty_base, @input_qty, @input_unit, @waybill_no, @note, @created_by)
+    INSERT INTO water_movements(
+      type, product_id, zone_id, move_date, qty_base, input_qty, input_unit,
+      waybill_no, note, created_by, lot_no, production_date, expiry_date
+    ) VALUES(
+      @type, @product_id, @zone_id, @move_date, @qty_base, @input_qty, @input_unit,
+      @waybill_no, @note, @created_by, @lot_no, @production_date, @expiry_date
+    )
   `)
   const tx = db.transaction((rows) => {
     const ids = []
@@ -215,15 +229,74 @@ export function updateMovementWithAllocations(id, plan) {
 export function openIntakeLots(productId) {
   return getDB().prepare(`
     SELECT mv.id, mv.product_id, mv.move_date, mv.waybill_no, mv.qty_base,
+           mv.lot_no, mv.production_date, mv.expiry_date, mv.lot_status,
+           p.expiry_tracking,
            COALESCE(SUM(wa.qty_base), 0) AS allocated_base,
            mv.qty_base - COALESCE(SUM(wa.qty_base), 0) AS remaining_base
     FROM water_movements mv
+    JOIN water_products p ON p.id=mv.product_id
     LEFT JOIN water_movement_allocations wa ON wa.in_movement_id = mv.id
-    WHERE mv.type='in' AND mv.product_id=?
+    WHERE mv.type='in' AND mv.product_id=? AND mv.lot_status='active'
     GROUP BY mv.id
     HAVING remaining_base > 0
-    ORDER BY mv.move_date ASC, mv.id ASC
+    ORDER BY CASE WHEN mv.expiry_date IS NULL THEN 1 ELSE 0 END,
+      mv.expiry_date ASC, mv.move_date ASC, mv.id ASC
   `).all(productId)
+}
+
+export function getIntakeLot(id) {
+  return getDB().prepare(`
+    SELECT mv.*, p.name AS product_name, p.unit_label, p.units_per_case, p.cases_per_pallet,
+      p.expiry_tracking, p.expiry_warning_days, b.name AS brand_name,
+      COALESCE((SELECT SUM(wa.qty_base) FROM water_movement_allocations wa WHERE wa.in_movement_id=mv.id), 0) AS allocated_base,
+      mv.qty_base - COALESCE((SELECT SUM(wa.qty_base) FROM water_movement_allocations wa WHERE wa.in_movement_id=mv.id), 0) AS remaining_base,
+      u.full_name AS lot_status_updated_by_name
+    FROM water_movements mv
+    JOIN water_products p ON p.id=mv.product_id
+    LEFT JOIN water_brands b ON b.id=p.brand_id
+    LEFT JOIN users u ON u.id=mv.lot_status_updated_by
+    WHERE mv.id=? AND mv.type='in'
+  `).get(id)
+}
+
+export function updateIntakeLot(id, data) {
+  return getDB().prepare(`
+    UPDATE water_movements
+    SET lot_no=@lot_no, production_date=@production_date, expiry_date=@expiry_date,
+      lot_status=@lot_status, lot_status_note=@lot_status_note,
+      lot_status_updated_by=@lot_status_updated_by, lot_status_updated_at=CURRENT_TIMESTAMP
+    WHERE id=@id AND type='in'
+  `).run({ ...data, id }).changes > 0
+}
+
+export function listIntakeLots({ product_id } = {}) {
+  const params = []
+  let productFilter = ''
+  if (product_id) {
+    productFilter = 'AND mv.product_id=?'
+    params.push(product_id)
+  }
+  return getDB().prepare(`
+    WITH lots AS (
+      SELECT mv.*, p.name AS product_name, p.unit_label, p.units_per_case, p.cases_per_pallet,
+        p.expiry_tracking, p.expiry_warning_days, b.name AS brand_name,
+        COALESCE((SELECT SUM(wa.qty_base) FROM water_movement_allocations wa WHERE wa.in_movement_id=mv.id), 0) AS allocated_base,
+        mv.qty_base - COALESCE((SELECT SUM(wa.qty_base) FROM water_movement_allocations wa WHERE wa.in_movement_id=mv.id), 0) AS remaining_base,
+        u.full_name AS lot_status_updated_by_name
+      FROM water_movements mv
+      JOIN water_products p ON p.id=mv.product_id
+      LEFT JOIN water_brands b ON b.id=p.brand_id
+      LEFT JOIN users u ON u.id=mv.lot_status_updated_by
+      WHERE mv.type='in'
+        AND (p.expiry_tracking=1 OR mv.lot_no IS NOT NULL OR mv.expiry_date IS NOT NULL OR mv.lot_status!='active')
+        ${productFilter}
+    )
+    SELECT * FROM lots
+    WHERE remaining_base > 0
+    ORDER BY CASE WHEN lot_status='quarantined' THEN 0 ELSE 1 END,
+      CASE WHEN expiry_date IS NULL THEN 1 ELSE 0 END,
+      expiry_date ASC, move_date ASC, id ASC
+  `).all(...params)
 }
 
 export function openDistributionNeeds(productId) {
@@ -246,7 +319,8 @@ export function openDistributionNeeds(productId) {
 export function listMovements({ type, product_id, zone_id, from, to, limit = 200 } = {}) {
   let q = `
     SELECT mv.*, p.name AS product_name, p.unit_label, p.units_per_case, p.cases_per_pallet,
-           p.brand_id, b.name AS brand_name, z.name AS zone_name,
+           p.brand_id, p.expiry_tracking, p.expiry_warning_days,
+           b.name AS brand_name, z.name AS zone_name,
            u.full_name AS created_by_name, u.username AS created_by_username,
            (
              SELECT GROUP_CONCAT(COALESCE(src.waybill_no, 'GİRİŞ #' || src.id) || ': ' || wa.qty_base, ', ')

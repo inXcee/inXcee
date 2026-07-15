@@ -33,6 +33,7 @@ export const WATER_EXCEL_SHEETS = [
   'Günlük Çizelge',
   'Dağıtım Defteri',
   'İrsaliye Stok',
+  'Lot & SKT',
   'Bölge Toplamları',
   'Ürün Kuralları',
   'Boş İade',
@@ -49,10 +50,11 @@ const SHEET_DESCRIPTIONS = {
   'Günlük Çizelge': 'Günlük giriş, dağıtım, net ve kümülatif net akış',
   'Dağıtım Defteri': 'Tek tek dağıtım hareketleri ve irsaliye kaynakları',
   'İrsaliye Stok': 'Gelen irsaliyeler, dağıtılan ve kalan lot miktarları',
+  'Lot & SKT': 'Açık lotların SKT, karantina ve kullanılabilirlik durumu',
   'Bölge Toplamları': 'Dağıtım yeri, marka ve ürün kırılımı',
   'Ürün Kuralları': 'Koli, paket, palet ve baz birim çevrimleri',
   'Boş İade': 'Boş kap ve depozito dönüş kayıtları',
-  'İrsaliye Bekleyen': 'FIFO ile henüz eşleşmemiş dağıtımlar',
+  'İrsaliye Bekleyen': 'FEFO ile henüz eşleşmemiş dağıtımlar',
   'Eksi Stoklar': 'Negatif bakiyedeki ürünler',
   'Düzeltme Fişleri': 'Sayım ve stok düzeltme hareketleri',
 }
@@ -124,6 +126,7 @@ const paintRow = (sheet, rowNumber, color) => {
 const tabColor = sheetName => {
   if (sheetName === 'Kontrol') return COLORS.teal
   if (sheetName.includes('Eksi') || sheetName.includes('Bekleyen')) return COLORS.red
+  if (sheetName.includes('SKT')) return COLORS.amber
   if (sheetName.includes('Özet') || sheetName === 'INDEX') return COLORS.blue
   if (sheetName.includes('İrsaliye')) return COLORS.green
   if (sheetName.includes('Düzeltme')) return COLORS.amber
@@ -139,11 +142,12 @@ const finalizeWorkbook = workbook => {
 }
 
 export async function loadWaterExcelReportData(api, { from, to }) {
-  const [summaryRes, forecastRes, outRes, inRes, returnsRes, pendingRes, adjustmentsRes] = await Promise.all([
+  const [summaryRes, forecastRes, outRes, inRes, lotsRes, returnsRes, pendingRes, adjustmentsRes] = await Promise.all([
     api.get('/water/summary', { params: { from, to } }),
     api.get('/water/forecast', { params: { today: to } }),
     api.get('/water/movements', { params: { type: 'out', from, to, limit: 1000 } }),
     api.get('/water/movements', { params: { type: 'in', from, to, limit: 1000 } }),
+    api.get('/water/lots', { params: { today: to } }),
     api.get('/water/returns', { params: { from, to } }),
     api.get('/water/pending'),
     api.get('/water/adjustments', { params: { from, to } }),
@@ -154,6 +158,8 @@ export async function loadWaterExcelReportData(api, { from, to }) {
     forecast: forecastRes.data || {},
     outRows: outRes.data || [],
     inRows: inRes.data || [],
+    lotRows: lotsRes.data?.rows || [],
+    lotSummary: lotsRes.data?.summary || {},
     returnRows: returnsRes.data || [],
     pendingRows: pendingRes.data?.rows || [],
     adjustmentRows: adjustmentsRes.data?.rows || [],
@@ -172,6 +178,8 @@ export function buildWaterExcelWorkbook(ExcelJS, options) {
     forecast = {},
     outRows = [],
     inRows = [],
+    lotRows = [],
+    lotSummary = {},
     returnRows = [],
     pendingRows = [],
     adjustmentRows = [],
@@ -226,6 +234,7 @@ export function buildWaterExcelWorkbook(ExcelJS, options) {
     ['3+ gün irsaliye bekleyen', overduePending.length, overduePending.length ? 'GECİKMİŞ' : 'TAMAM', 'İrsaliye kaynağını eşleştirin'],
     ['Düşük stok', Number(totals.low_count || 0), Number(totals.low_count || 0) ? 'SİPARİŞ' : 'TAMAM', 'Sipariş önerilerini inceleyin'],
     ['Gecikmiş sipariş', Number(forecastTotals.overdue_order_count || 0), Number(forecastTotals.overdue_order_count || 0) ? 'GECİKMİŞ' : 'TAMAM', 'Sipariş Planı sayfasındaki son tarihleri kontrol edin'],
+    ['Kritik lot / SKT', Number(lotSummary.critical || 0), Number(lotSummary.critical || 0) ? 'KONTROL' : 'TAMAM', 'Lot & SKT sayfasında geçmiş, yaklaşan ve karantina kayıtlarını inceleyin'],
     ['Ay dağıtımı gelenden fazla ürün', periodDeficits.length, periodDeficits.length ? 'UYUŞTUR' : 'TAMAM', 'Ay Uyuşturma sayfasını kontrol edin'],
   ]
   checks.forEach(check => control.addRow(check))
@@ -238,6 +247,7 @@ export function buildWaterExcelWorkbook(ExcelJS, options) {
     const count = sheetName === 'Dağıtım Defteri' ? outRows.length
       : sheetName === 'Sipariş Planı' ? forecastRows.length
       : sheetName === 'İrsaliye Stok' ? inRows.length
+        : sheetName === 'Lot & SKT' ? lotRows.length
         : sheetName === 'Boş İade' ? returnRows.length
           : sheetName === 'İrsaliye Bekleyen' ? pendingRows.length
             : sheetName === 'Eksi Stoklar' ? negativeStock.length
@@ -434,16 +444,42 @@ export function buildWaterExcelWorkbook(ExcelJS, options) {
   distributions.columns = [{ width: 14 }, { width: 10 }, { width: 24 }, { width: 16 }, { width: 22 }, { width: 14 }, { width: 10 }, { width: 14 }, { width: 30 }, { width: 18 }, { width: 24 }]
 
   const intakes = workbook.addWorksheet('İrsaliye Stok')
-  title(intakes, `GELEN TIR / İRSALİYE STOK - ${label}`, 12)
-  intakes.addRow(['Tarih', 'İrsaliye', 'Marka', 'Ürün', 'Girilen Miktar', 'Birim', 'Hesaplanan', 'Dağıtılan', 'Kalan', 'Kalan Okunur', 'Kaydı Giren', 'Not'])
+  title(intakes, `GELEN TIR / İRSALİYE STOK - ${label}`, 16)
+  intakes.addRow(['Tarih', 'İrsaliye', 'Marka', 'Ürün', 'Lot', 'Üretim', 'SKT', 'Lot Durumu', 'Girilen Miktar', 'Birim', 'Hesaplanan', 'Dağıtılan', 'Kalan', 'Kalan Okunur', 'Kaydı Giren', 'Not'])
   inRows.forEach(row => intakes.addRow([
     row.move_date, safeExcelText(row.waybill_no || `Giriş #${row.id}`), safeExcelText(row.brand_name), safeExcelText(row.product_name),
+    safeExcelText(row.lot_no), row.production_date || '', row.expiry_date || '', row.lot_status === 'quarantined' ? 'KARANTİNA' : 'AKTİF',
     Number(row.input_qty || 0), safeExcelText(row.input_unit), Number(row.qty_base || 0), Number(row.intake_allocated_base || 0),
     Number(row.remaining_base || 0), safeExcelText(row.remaining_human || humanQty(row, row.remaining_base)),
     safeExcelText(row.created_by_name || row.created_by_username), safeExcelText(row.note),
   ]))
-  table(intakes, 2, Math.max(2, 2 + inRows.length), 12, [5, 7, 8, 9])
-  intakes.columns = [{ width: 14 }, { width: 18 }, { width: 16 }, { width: 22 }, { width: 14 }, { width: 10 }, { width: 14 }, { width: 14 }, { width: 14 }, { width: 22 }, { width: 18 }, { width: 22 }]
+  table(intakes, 2, Math.max(2, 2 + inRows.length), 16, [9, 11, 12, 13])
+  intakes.columns = [{ width: 14 }, { width: 18 }, { width: 16 }, { width: 22 }, { width: 16 }, { width: 14 }, { width: 14 }, { width: 14 }, { width: 14 }, { width: 10 }, { width: 14 }, { width: 14 }, { width: 14 }, { width: 22 }, { width: 18 }, { width: 22 }]
+
+  const lotHealthLabel = health => ({
+    expired: 'SKT GEÇTİ',
+    expiring: 'SKT YAKLAŞIYOR',
+    quarantined: 'KARANTİNA',
+    missing: 'SKT EKSİK',
+    healthy: 'SAĞLIKLI',
+  }[health] || health || '')
+  const lots = workbook.addWorksheet('Lot & SKT')
+  title(lots, `AÇIK LOT / SKT KONTROLÜ - ${to}`, 12)
+  lots.addRow(['Durum', 'Marka', 'Ürün', 'Lot', 'İrsaliye', 'Giriş Tarihi', 'Üretim', 'SKT', 'Kalan Baz', 'Kalan Okunur', 'Kalan Gün', 'Durum Açıklaması'])
+  lotRows.forEach(row => lots.addRow([
+    lotHealthLabel(row.health), safeExcelText(row.brand_name), safeExcelText(row.product_name), safeExcelText(row.lot_no),
+    safeExcelText(row.waybill_no || `Giriş #${row.id}`), row.move_date, row.production_date || '', row.expiry_date || '',
+    Number(row.remaining_base || 0), safeExcelText(row.remaining_human), row.days_to_expiry == null ? '' : Number(row.days_to_expiry),
+    safeExcelText(row.lot_status_note),
+  ]))
+  if (!lotRows.length) lots.addRow(['SAĞLIKLI', '', 'Açık takip lotu yok'])
+  table(lots, 2, Math.max(2, 2 + lotRows.length), 12, [9, 11])
+  lotRows.forEach((row, index) => {
+    if (['expired', 'missing'].includes(row.health)) paintRow(lots, 3 + index, FILLS.red)
+    else if (['expiring', 'quarantined'].includes(row.health)) paintRow(lots, 3 + index, FILLS.amber)
+    else paintRow(lots, 3 + index, FILLS.green)
+  })
+  lots.columns = [{ width: 18 }, { width: 16 }, { width: 24 }, { width: 16 }, { width: 18 }, { width: 14 }, { width: 14 }, { width: 14 }, { width: 13 }, { width: 22 }, { width: 12 }, { width: 28 }]
 
   const zoneSheet = workbook.addWorksheet('Bölge Toplamları')
   title(zoneSheet, `BÖLGE / ÜRÜN TOPLAMLARI - ${label}`, 7)
@@ -456,15 +492,16 @@ export function buildWaterExcelWorkbook(ExcelJS, options) {
   zoneSheet.columns = [{ width: 26 }, { width: 16 }, { width: 22 }, { width: 12 }, { width: 14 }, { width: 22 }, { width: 18 }]
 
   const rules = workbook.addWorksheet('Ürün Kuralları')
-  title(rules, 'ÜRÜN / PALET / TEDARİK KURALLARI', 10)
-  rules.addRow(['Marka', 'Ürün', 'Baz Birim', 'Koli İçi', 'Palet Koli/Paket', '1 Palet Baz', 'Varsayılan Giriş', 'Min Stok', 'Tedarik Gün', 'Emniyet Gün'])
+  title(rules, 'ÜRÜN / PALET / TEDARİK / SKT KURALLARI', 12)
+  rules.addRow(['Marka', 'Ürün', 'Baz Birim', 'Koli İçi', 'Palet Koli/Paket', '1 Palet Baz', 'Varsayılan Giriş', 'Min Stok', 'Tedarik Gün', 'Emniyet Gün', 'Lot/SKT Zorunlu', 'SKT Uyarı Gün'])
   columns.forEach(product => rules.addRow([
     safeExcelText(product.brand_name), safeExcelText(product.name), safeExcelText(product.unit_label),
     Number(product.units_per_case || 1), Number(product.cases_per_pallet || 1), Number(multiplier(product, 'palet') || 1),
     unitLabel(defaultUnitForProduct(product)), Number(product.min_level || 0), Number(product.lead_time_days ?? 7), Number(product.safety_stock_days ?? 3),
+    product.expiry_tracking ? 'EVET' : 'HAYIR', Number(product.expiry_warning_days ?? 30),
   ]))
-  table(rules, 2, Math.max(2, 2 + columns.length), 10, [4, 5, 6, 8, 9, 10])
-  rules.columns = [{ width: 16 }, { width: 24 }, { width: 12 }, { width: 10 }, { width: 16 }, { width: 14 }, { width: 16 }, { width: 12 }, { width: 13 }, { width: 13 }]
+  table(rules, 2, Math.max(2, 2 + columns.length), 12, [4, 5, 6, 8, 9, 10, 12])
+  rules.columns = [{ width: 16 }, { width: 24 }, { width: 12 }, { width: 10 }, { width: 16 }, { width: 14 }, { width: 16 }, { width: 12 }, { width: 13 }, { width: 13 }, { width: 17 }, { width: 15 }]
 
   const returns = workbook.addWorksheet('Boş İade')
   title(returns, `BOŞ İADE / DEPOZİTO - ${label}`, 8)
@@ -523,6 +560,7 @@ export function buildWaterExcelWorkbook(ExcelJS, options) {
       overduePending: overduePending.length,
       lowStock: Number(totals.low_count || 0),
       overdueOrders: Number(forecastTotals.overdue_order_count || 0),
+      criticalLots: Number(lotSummary.critical || 0),
       periodDeficits: periodDeficits.length,
     },
   }

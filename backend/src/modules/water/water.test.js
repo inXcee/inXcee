@@ -1851,7 +1851,8 @@ describe('Su takip - denetim izi', () => {
       before: {
         type: 'out', product_id: product.body.id, zone_id: zone.body.id,
         move_date: '2028-03-01', qty_base: 3, input_qty: 3, input_unit: 'adet',
-        waybill_no: null, note: 'audit silme',
+        waybill_no: null, lot_no: null, production_date: null, expiry_date: null,
+        lot_status: 'active', lot_status_note: null, note: 'audit silme',
       },
       after: null,
     })

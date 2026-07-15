@@ -5,10 +5,12 @@ import { forecastService, summaryService } from './analytics.js'
 import { checkLowStock, notifyWaterOperations } from './notifications.js'
 import { trClock } from './trucks.js'
 import { queueWaterDailyDigestEmail } from './daily-digest.js'
+import { intakeLotsService, updateIntakeLotService } from './lots.js'
 export { availableUnits, humanize, toBase, unitMultiplier } from './units.js'
 export { depositService, forecastService, summaryService, trendsService } from './analytics.js'
 export { notifyWaterOperations, WATER_OPERATION_ROLES } from './notifications.js'
 export { dailyDigestDeliveriesService } from './daily-digest.js'
+export { intakeLotsService, updateIntakeLotService }
 export {
   batchDistributeService,
   batchIntakeService,
@@ -91,6 +93,7 @@ function productFields(data, existing = null) {
   const criticalLevel = wholeSetting(has('critical_level') ? data.critical_level : null, existing?.critical_level || 0, 'Kritik stok')
   const leadTimeDays = wholeSetting(has('lead_time_days') ? data.lead_time_days : null, existing?.lead_time_days ?? 7, 'Tedarik süresi', 0, 365)
   const safetyStockDays = wholeSetting(has('safety_stock_days') ? data.safety_stock_days : null, existing?.safety_stock_days ?? 3, 'Emniyet stoku günü', 0, 365)
+  const expiryWarningDays = wholeSetting(has('expiry_warning_days') ? data.expiry_warning_days : null, existing?.expiry_warning_days ?? 30, 'SKT uyarı günü', 0, 365)
   let brand_id = existing ? existing.brand_id : null
   if (has('brand_id')) {
     if (data.brand_id == null || data.brand_id === '') brand_id = null
@@ -100,6 +103,7 @@ function productFields(data, existing = null) {
     }
   }
   const is_returnable = has('is_returnable') ? !!data.is_returnable : (existing ? !!existing.is_returnable : false)
+  const expiry_tracking = has('expiry_tracking') ? !!data.expiry_tracking : (existing ? !!existing.expiry_tracking : false)
   const sort_order = has('sort_order') ? (parseInt(data.sort_order) || 0) : (existing ? existing.sort_order : 0)
   return {
     name: data.name.trim(), unit_label: data.unit_label || 'adet',
@@ -108,6 +112,8 @@ function productFields(data, existing = null) {
     critical_level: criticalLevel,
     lead_time_days: leadTimeDays,
     safety_stock_days: safetyStockDays,
+    expiry_tracking,
+    expiry_warning_days: expiryWarningDays,
     brand_id, is_returnable, sort_order,
   }
 }
@@ -319,6 +325,7 @@ export function pivotService({ from, to } = {}) {
     units_per_case: p.units_per_case, cases_per_pallet: p.cases_per_pallet,
     min_level: p.min_level || 0, critical_level: p.critical_level || 0,
     lead_time_days: p.lead_time_days ?? 7, safety_stock_days: p.safety_stock_days ?? 3,
+    expiry_tracking: p.expiry_tracking || 0, expiry_warning_days: p.expiry_warning_days ?? 30,
     is_returnable: p.is_returnable || 0,
   }))
 
@@ -374,6 +381,7 @@ export function alertsService({ today } = {}) {
   const monthStart = `${month}-01`
 
   const pmap = new Map(q.listProducts().map(p => [p.id, p]))
+  const lotTracking = intakeLotsService({ today: day, status: 'critical' })
 
   // 1. İrsaliye bekleyen dağıtımlar (eşleşmemiş çıkış) — ürün bazında grupla
   const needMap = new Map()
@@ -434,9 +442,21 @@ export function alertsService({ today } = {}) {
     over: over_distributed.length,
     low: low_stock.length,
     idle_zones: idle_zones.length,
+    lot_critical: lotTracking.summary.critical,
   }
-  summary.total = summary.pending + summary.negative + summary.over + summary.low + summary.idle_zones
-  return { date: day, month, summary, pending_waybill, negative_stock, over_distributed, low_stock, idle_zones }
+  summary.total = summary.pending + summary.negative + summary.over + summary.low + summary.idle_zones + summary.lot_critical
+  return {
+    date: day,
+    month,
+    summary,
+    pending_waybill,
+    negative_stock,
+    over_distributed,
+    low_stock,
+    idle_zones,
+    lot_alerts: lotTracking.rows,
+    lot_summary: lotTracking.summary,
+  }
 }
 
 // ── Stok düzeltme / sayım fişi (W7) ──
@@ -564,6 +584,7 @@ export function waterDailyDigest({
   if (s.pending) parts.push(`${s.pending} irsaliye bekleyen`)
   if (s.negative) parts.push(`${s.negative} eksi stok`)
   if (s.low) parts.push(`${s.low} düşük stok`)
+  if (s.lot_critical) parts.push(`${s.lot_critical} lot/SKT uyarısı`)
   if (f.order_count) parts.push(`${f.order_count} sipariş önerisi`)
   if (f.overdue_order_count) parts.push(`${f.overdue_order_count} gecikmiş sipariş`)
   if (f.soon_count) parts.push(`${f.soon_count} ürün 7 günden az`)
@@ -573,7 +594,7 @@ export function waterDailyDigest({
   if (actionable) {
     const notifications = notifyWaterOperations({
       message: `Su takip günlük özet (${today}): ${parts.join(', ')}.`,
-      severity: (s.negative || f.order_count) ? 'warning' : 'info',
+      severity: (s.negative || s.lot_critical || f.order_count) ? 'warning' : 'info',
       module: 'water',
       dedup_key: `water_digest_${today}`,
       link: '/water',
@@ -596,6 +617,7 @@ export function waterDailyDigest({
       low: alerts.low_stock.slice(0, 20),
       over_distributed: alerts.over_distributed.slice(0, 20),
       idle_zones: alerts.idle_zones.slice(0, 20),
+      lots: alerts.lot_alerts.slice(0, 20),
       orders: forecast.order_suggestions.slice(0, 20),
     },
   }

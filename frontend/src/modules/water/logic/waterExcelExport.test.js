@@ -20,6 +20,8 @@ const PRODUCTS = [
     min_level: 72,
     lead_time_days: 5,
     safety_stock_days: 2,
+    expiry_tracking: true,
+    expiry_warning_days: 30,
   },
   {
     product_id: 2,
@@ -32,6 +34,8 @@ const PRODUCTS = [
     min_level: 360,
     lead_time_days: 10,
     safety_stock_days: 4,
+    expiry_tracking: true,
+    expiry_warning_days: 45,
   },
 ]
 
@@ -155,7 +159,27 @@ function reportOptions(overrides = {}) {
       qty_base: 108,
       intake_allocated_base: 90,
       remaining_base: 18,
+      lot_no: 'LOT-DAM-01',
+      production_date: '2026-06-15',
+      expiry_date: '2026-08-05',
+      lot_status: 'active',
       created_by_name: 'Müdür',
+    }],
+    lotSummary: { all: 1, critical: 1, expired: 0, expiring: 1, quarantined: 0, missing: 0, healthy: 0 },
+    lotRows: [{
+      id: 20,
+      health: 'expiring',
+      brand_name: 'Mila Su',
+      product_name: 'Damacana',
+      lot_no: 'LOT-DAM-01',
+      waybill_no: 'IRS-1',
+      move_date: '2026-07-15',
+      production_date: '2026-06-15',
+      expiry_date: '2026-08-05',
+      remaining_base: 18,
+      remaining_human: '18 adet',
+      days_to_expiry: 5,
+      lot_status_note: '',
     }],
     returnRows: [{
       move_date: '2026-07-15',
@@ -201,6 +225,7 @@ describe('waterExcelExport', () => {
         if (url === '/water/forecast') return Promise.resolve({ data: { rows: [{ product_id: 7 }] } })
         if (url === '/water/movements' && config.params.type === 'out') return Promise.resolve({ data: [{ id: 1 }] })
         if (url === '/water/movements' && config.params.type === 'in') return Promise.resolve({ data: [{ id: 2 }] })
+        if (url === '/water/lots') return Promise.resolve({ data: { rows: [{ id: 8 }], summary: { critical: 1 } } })
         if (url === '/water/returns') return Promise.resolve({ data: [{ id: 3 }] })
         if (url === '/water/pending') return Promise.resolve({ data: { rows: [{ id: 4 }] } })
         if (url === '/water/adjustments') return Promise.resolve({ data: { rows: [{ id: 5 }] } })
@@ -210,36 +235,43 @@ describe('waterExcelExport', () => {
 
     const result = await loadWaterExcelReportData(api, { from: '2026-07-01', to: '2026-07-31' })
 
-    expect(api.get).toHaveBeenCalledTimes(7)
+    expect(api.get).toHaveBeenCalledTimes(8)
     expect(result).toMatchObject({
       forecast: { rows: [{ product_id: 7 }] },
       outRows: [{ id: 1 }],
       inRows: [{ id: 2 }],
+      lotRows: [{ id: 8 }],
+      lotSummary: { critical: 1 },
       returnRows: [{ id: 3 }],
       pendingRows: [{ id: 4 }],
       adjustmentRows: [{ id: 5 }],
     })
   })
 
-  it('builds the complete 14-sheet closing workbook and control center', () => {
+  it('builds the complete 15-sheet closing workbook and control center', () => {
     const report = buildWaterExcelWorkbook(ExcelJS, reportOptions())
 
     expect(report.sheetNames).toEqual(WATER_EXCEL_SHEETS)
     expect(report.filename).toBe('su-takip-detayli-2026-07-01_2026-07-31.xlsx')
-    expect(report.checks).toEqual({ negativeStock: 1, overduePending: 1, lowStock: 1, overdueOrders: 1, periodDeficits: 2 })
+    expect(report.checks).toEqual({ negativeStock: 1, overduePending: 1, lowStock: 1, overdueOrders: 1, criticalLots: 1, periodDeficits: 2 })
 
     const control = report.workbook.getWorksheet('Kontrol')
     expect(control.getCell('A1').value).toContain('SU TAKİP KONTROL PANELİ')
     expect(control.getCell('B8').value).toBe(1)
     expect(control.getCell('C8').value).toBe('KONTROL')
-    expect(control.getCell('A15').value).toMatchObject({ text: 'Aylık Özet', hyperlink: "#'Aylık Özet'!A1" })
-    expect(control.getCell('A16').value).toMatchObject({ text: 'Sipariş Planı', hyperlink: "#'Sipariş Planı'!A1" })
+    expect(control.getCell('A16').value).toMatchObject({ text: 'Aylık Özet', hyperlink: "#'Aylık Özet'!A1" })
+    expect(control.getCell('A17').value).toMatchObject({ text: 'Sipariş Planı', hyperlink: "#'Sipariş Planı'!A1" })
 
     const orderPlan = report.workbook.getWorksheet('Sipariş Planı')
     expect(orderPlan.getCell('A5').value).toBe('GECİKMİŞ')
     expect(orderPlan.getCell('G5').value).toBe(5)
     expect(orderPlan.getCell('H5').value).toBe(2)
     expect(orderPlan.getCell('I5').value).toBe('2026-07-27')
+
+    const lots = report.workbook.getWorksheet('Lot & SKT')
+    expect(lots.getCell('A3').value).toBe('SKT YAKLAŞIYOR')
+    expect(lots.getCell('D3').value).toBe('LOT-DAM-01')
+    expect(lots.getCell('K3').value).toBe(5)
   })
 
   it('keeps editable formulas, exact decimals and safe text in report cells', () => {

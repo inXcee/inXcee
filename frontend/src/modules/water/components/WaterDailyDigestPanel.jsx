@@ -165,6 +165,7 @@ export default function WaterDailyDigestPanel() {
               <span>İrsaliye <strong>{counts.pending || 0}</strong></span>
               <span>Eksi <strong style={{ color: counts.negative ? 'var(--red)' : 'inherit' }}>{counts.negative || 0}</strong></span>
               <span>Düşük <strong>{counts.low || 0}</strong></span>
+              <span>SKT <strong style={{ color: counts.lot_critical ? 'var(--red)' : 'inherit' }}>{counts.lot_critical || 0}</strong></span>
               <span>Sipariş <strong>{summary.order_count || 0}</strong></span>
             </div>
             <div style={{ marginTop: '4px', color: 'var(--text3)', fontSize: '11px' }}>

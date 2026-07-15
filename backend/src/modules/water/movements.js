@@ -2,9 +2,14 @@ import * as q from './queries.js'
 import { INPUT_UNITS, assertAvailableUnit, humanize, toBase } from './units.js'
 import { assertMonthUnlocked } from './reconciliation.js'
 import { checkLowStock } from './notifications.js'
+import { normalizeIntakeLot } from './lot-fields.js'
 
 const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
 const errorWithStatus = (message, statusCode) => Object.assign(new Error(message), { statusCode })
+const lotCanServe = (lot, moveDate) => {
+  if (lot.expiry_tracking && !lot.expiry_date) return false
+  return !lot.expiry_date || lot.expiry_date >= moveDate
+}
 
 function validateMovement(data, requireZone) {
   const product = q.getProduct(data.product_id)
@@ -37,6 +42,7 @@ function buildAllocationPlans(rows) {
     for (const lot of lots) {
       if (needed <= 0) break
       if (lot.remaining_base <= 0) continue
+      if (!lotCanServe(lot, row.move_date)) continue
       const allocated = Math.min(needed, lot.remaining_base)
       allocations.push({ in_movement_id: lot.id, qty_base: allocated })
       lot.remaining_base -= allocated
@@ -61,6 +67,7 @@ function reconcileUnallocatedOut(productIds) {
       for (const lot of lots) {
         if (remaining <= 0) break
         if (lot.remaining_base <= 0) continue
+        if (!lotCanServe(lot, need.move_date)) continue
         const allocated = Math.min(remaining, lot.remaining_base)
         allocationRows.push({
           out_movement_id: need.id,
@@ -77,8 +84,13 @@ function reconcileUnallocatedOut(productIds) {
   return matched
 }
 
+export function reconcileProductAllocations(productIds) {
+  return reconcileUnallocatedOut(productIds)
+}
+
 export function createIntakeService(data, userId) {
   const { product, quantity } = validateMovement(data, false)
+  const lot = normalizeIntakeLot(data, product, data.move_date)
   return q.runInTransaction(() => {
     const id = q.createMovement({
       type: 'in',
@@ -91,6 +103,7 @@ export function createIntakeService(data, userId) {
       waybill_no: data.waybill_no?.trim() || null,
       note: data.note?.trim() || null,
       created_by: userId || null,
+      ...lot,
     })
     reconcileUnallocatedOut(product.id)
     return id
@@ -177,6 +190,7 @@ export function batchIntakeService(data, userId) {
 
   const rows = lines.map(line => {
     const { product, quantity } = validateMovement({ ...line, move_date: data.move_date }, false)
+    const lot = normalizeIntakeLot(line, product, data.move_date)
     return {
       type: 'in',
       product_id: product.id,
@@ -188,6 +202,7 @@ export function batchIntakeService(data, userId) {
       waybill_no: data.waybill_no?.trim() || null,
       note: (line.note || data.note)?.trim() || null,
       created_by: userId || null,
+      ...lot,
     }
   })
   return q.runInTransaction(() => {

@@ -65,6 +65,7 @@ export function buildWaterDailyDigestEmail(digest) {
   const summary = digest.summary || {}
   const details = digest.details || {}
   const orders = Array.isArray(details.orders) ? details.orders : []
+  const lots = Array.isArray(details.lots) ? details.lots : []
   const subject = `Su Takip Günlük Operasyon Özeti - ${digest.date}`
   const statusLine = digest.parts.length
     ? digest.parts.join(', ')
@@ -75,6 +76,20 @@ export function buildWaterDailyDigestEmail(digest) {
       <td style="padding:7px 8px;border:1px solid #dbe3ea">${escapeHtml(order.balance_human || '-')}</td>
       <td style="padding:7px 8px;border:1px solid #dbe3ea">${escapeHtml(order.order_by_date || '-')}</td>
       <td style="padding:7px 8px;border:1px solid #dbe3ea">${escapeHtml(order.suggested_human || '-')}</td>
+    </tr>`).join('')
+  const lotStatusLabel = status => ({
+    expired: 'SKT geçti',
+    expiring: 'SKT yaklaşıyor',
+    quarantined: 'Karantina',
+    missing: 'SKT eksik',
+  }[status] || status || '-')
+  const lotRows = lots.slice(0, 12).map(lot => `
+    <tr>
+      <td style="padding:7px 8px;border:1px solid #dbe3ea">${escapeHtml(lot.product_name)}</td>
+      <td style="padding:7px 8px;border:1px solid #dbe3ea">${escapeHtml(lot.lot_no || '-')}</td>
+      <td style="padding:7px 8px;border:1px solid #dbe3ea">${escapeHtml(lot.expiry_date || '-')}</td>
+      <td style="padding:7px 8px;border:1px solid #dbe3ea">${escapeHtml(lotStatusLabel(lot.health))}</td>
+      <td style="padding:7px 8px;border:1px solid #dbe3ea">${escapeHtml(lot.remaining_human || '-')}</td>
     </tr>`).join('')
 
   const html = `<!doctype html><html lang="tr"><head><meta charset="utf-8"></head>
@@ -92,6 +107,16 @@ export function buildWaterDailyDigestEmail(digest) {
         <div style="margin-top:18px;padding:12px 14px;border-left:4px solid ${digest.actionable ? '#b45309' : '#15803d'};background:#f8fafc;font-size:14px;line-height:1.5">
           ${escapeHtml(statusLine)}
         </div>
+        ${lotRows ? `<h2 style="font-size:16px;margin:22px 0 8px">Lot / SKT Kontrolü</h2>
+          <table style="width:100%;border-collapse:collapse;font-size:12px">
+            <thead><tr style="background:#e2e8f0">
+              <th style="padding:7px 8px;border:1px solid #cbd5e1;text-align:left">Ürün</th>
+              <th style="padding:7px 8px;border:1px solid #cbd5e1;text-align:left">Lot</th>
+              <th style="padding:7px 8px;border:1px solid #cbd5e1;text-align:left">SKT</th>
+              <th style="padding:7px 8px;border:1px solid #cbd5e1;text-align:left">Durum</th>
+              <th style="padding:7px 8px;border:1px solid #cbd5e1;text-align:left">Kalan</th>
+            </tr></thead><tbody>${lotRows}</tbody>
+          </table>` : ''}
         ${orderRows ? `<h2 style="font-size:16px;margin:22px 0 8px">Sipariş Planı</h2>
           <table style="width:100%;border-collapse:collapse;font-size:12px">
             <thead><tr style="background:#e2e8f0">
@@ -114,6 +139,7 @@ export function buildWaterDailyDigestEmail(digest) {
     `İrsaliye bekleyen: ${summary.pending || 0}`,
     `Eksi stok: ${summary.negative || 0}`,
     `Düşük stok: ${summary.low || 0}`,
+    `Lot/SKT uyarısı: ${summary.lot_critical || 0}`,
     `Sipariş önerisi: ${digest.order_count || 0}`,
     `Gecikmiş sipariş: ${digest.overdue_order_count || 0}`,
   ]
@@ -121,6 +147,12 @@ export function buildWaterDailyDigestEmail(digest) {
     textLines.push('', 'SİPARİŞ PLANI')
     for (const order of orders.slice(0, 12)) {
       textLines.push(`- ${order.product_name}: ${order.suggested_human || '-'} · son gün ${order.order_by_date || '-'}`)
+    }
+  }
+  if (lots.length) {
+    textLines.push('', 'LOT / SKT KONTROLÜ')
+    for (const lot of lots.slice(0, 12)) {
+      textLines.push(`- ${lot.product_name}: ${lot.lot_no || 'lot yok'} · ${lot.expiry_date || 'SKT yok'} · ${lotStatusLabel(lot.health)} · ${lot.remaining_human || '-'}`)
     }
   }
   textLines.push('', 'Ayrıntılar: YYS > Su Takip')

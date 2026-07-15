@@ -13,6 +13,7 @@ import {
   createReturnService, batchReturnService, deleteReturnService, returnsService, depositService,
   summaryService, pivotService, batchIntakeService, batchDistributeService, parseDistributionText,
   alertsService, forecastService, trendsService, waterDailyDigest, dailyDigestDeliveriesService,
+  intakeLotsService, updateIntakeLotService,
   reconciliationService, buildReconciliationPDF, saveStockCountService, monthlyCloseService, monthlyUnlockService,
   pendingDistributionsService,
   templatesService, createTemplateService, deleteTemplateService,
@@ -32,10 +33,10 @@ const waybillUpload = createImageUpload('water-waybill')
 const fail = (next, e) => next(e)
 
 const AUDIT_FIELDS = {
-  product: ['name', 'unit_label', 'units_per_case', 'cases_per_pallet', 'is_active', 'min_level', 'critical_level', 'lead_time_days', 'safety_stock_days', 'brand_id', 'is_returnable', 'sort_order'],
+  product: ['name', 'unit_label', 'units_per_case', 'cases_per_pallet', 'is_active', 'min_level', 'critical_level', 'lead_time_days', 'safety_stock_days', 'expiry_tracking', 'expiry_warning_days', 'brand_id', 'is_returnable', 'sort_order'],
   brand: ['name', 'sort_order', 'is_active', 'color'],
   zone: ['name', 'code', 'note', 'is_active', 'expected_monthly'],
-  movement: ['type', 'product_id', 'zone_id', 'move_date', 'qty_base', 'input_qty', 'input_unit', 'waybill_no', 'note'],
+  movement: ['type', 'product_id', 'zone_id', 'move_date', 'qty_base', 'input_qty', 'input_unit', 'waybill_no', 'lot_no', 'production_date', 'expiry_date', 'lot_status', 'lot_status_note', 'note'],
 }
 
 function auditChange(before, after, fields) {
@@ -226,6 +227,26 @@ waterRouter.get('/alerts', ...mgr, (req, res, next) => {
 // ── Günlük operasyon özeti teslim geçmişi / elle çalıştırma ──
 waterRouter.get('/daily-digest', ...mgr, (req, res, next) => {
   try { res.json(dailyDigestDeliveriesService({ limit: req.query.limit })) } catch (e) { fail(next, e) }
+})
+
+// Giriş lotları, SKT sağlık durumu ve karantina yönetimi
+waterRouter.get('/lots', ...mgr, (req, res, next) => {
+  try {
+    res.json(intakeLotsService({
+      today: req.query.today,
+      status: req.query.status,
+      product_id: req.query.product_id ? +req.query.product_id : undefined,
+    }))
+  } catch (e) { fail(next, e) }
+})
+waterRouter.put('/lots/:id', ...mgr, (req, res, next) => {
+  try {
+    const change = updateIntakeLotService(+req.params.id, req.body, req.user.id)
+    logAudit(req.user.id, 'water_lot_update', 'water', +req.params.id, auditChange(change.before, change.after, [
+      'lot_no', 'production_date', 'expiry_date', 'lot_status', 'lot_status_note',
+    ]))
+    res.json({ ok: true, matched: change.matched, lot: change.after })
+  } catch (e) { fail(next, e) }
 })
 waterRouter.post('/daily-digest/run', ...managerOnly, (req, res, next) => {
   try {

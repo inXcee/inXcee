@@ -12,6 +12,7 @@ const QUERY_LABELS = {
   'water-deposit': 'Depozito bakiyesi',
   'water-forecast': 'Stok tahmini',
   'water-intake': 'Gelen irsaliyeler',
+  'water-lots': 'Lot ve SKT takibi',
   'water-pending': 'İrsaliye bekleyenler',
   'water-pivot': 'Dağıtım matrisi',
   'water-products': 'Ürünler',

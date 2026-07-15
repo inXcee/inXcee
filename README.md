@@ -55,7 +55,7 @@ checkin · checkout · capacity · housekeeping · laundry · maintenance · dis
 
 **Frontend** (`frontend/src/modules/`): Aynı modül seti + `mobile/` (housekeeper + technician PWA), `laundry-kiosk/`.
 
-Her modül `routes.js` (Express router) · `service.js` (iş mantığı) · `queries.js` (parametreli SQL) yapısını izler. Su modülünün FIFO, ay kilidi, tır-mail ve dosya yaşam döngüsü için [Su Takip Modülü](docs/water-module.md) belgesine; genel geliştirme kuralları için `CLAUDE.md` dosyasına bakın.
+Her modül `routes.js` (Express router) · `service.js` (iş mantığı) · `queries.js` (parametreli SQL) yapısını izler. Su modülünün FEFO/FIFO, Lot/SKT, ay kilidi, tır-mail ve dosya yaşam döngüsü için [Su Takip Modülü](docs/water-module.md) belgesine; genel geliştirme kuralları için `CLAUDE.md` dosyasına bakın.
 
 ---
 
