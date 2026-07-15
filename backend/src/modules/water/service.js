@@ -1,12 +1,14 @@
 import * as q from './queries.js'
 import { INPUT_UNITS, assertAvailableUnit, availableUnits, humanize, toBase } from './units.js'
 import { assertMonthUnlocked, isCountReason, writeReconciliationPDF } from './reconciliation.js'
+import { forecastService, summaryService } from './analytics.js'
 import fs from 'node:fs'
 import { createNotification } from '../../shared/notifications/service.js'
 import { getDB } from '../../shared/db/index.js'
 import { enqueue } from '../../shared/jobs/index.js'
 import { parseRecipients } from '../email/service.js'
 export { availableUnits, humanize, toBase, unitMultiplier } from './units.js'
+export { depositService, forecastService, summaryService, trendsService } from './analytics.js'
 export {
   assertMonthUnlocked,
   COUNT_REASONS,
@@ -483,21 +485,6 @@ export function deleteReturnService(id) {
 
 export function returnsService(filters) {
   return q.listReturns(filters).map(r => ({ ...r, qty_human: humanize(r, r.qty_base) }))
-}
-
-export function depositService({ from, to } = {}) {
-  return q.depositBalances({ from, to }).map(d => {
-    const outstanding = d.total_in - d.total_return
-    return {
-      product_id: d.id, name: d.name, brand_id: d.brand_id, brand_name: d.brand_name || null,
-      unit_label: d.unit_label,
-      total_in: d.total_in, total_return: d.total_return, period_return: d.period_return, outstanding,
-      total_in_human: humanize(d, d.total_in),
-      total_return_human: humanize(d, d.total_return),
-      period_return_human: humanize(d, d.period_return),
-      outstanding_human: humanize(d, outstanding),
-    }
-  })
 }
 
 // ── INDEX pivot: firma (satır) × marka-gruplu ürün (sütun) ──
@@ -1449,132 +1436,4 @@ export function deleteWaybillPhotoService(id) {
 // Route res'e pipe eder, cron dosya stream'ine pipe eder (V4). pdfkit'i çağıran import eder.
 export function buildReconciliationPDF(month, doc) {
   return writeReconciliationPDF(month, doc, summaryService)
-}
-
-// ── Tüketim öngörüsü & sipariş önerisi (V1) ──
-const FORECAST_LEAD_DAYS = 7   // tedarik süresi varsayılanı
-const FORECAST_SAFETY_DAYS = 3 // emniyet payı
-function addDays(iso, n) {
-  const d = new Date(`${iso}T00:00:00Z`)
-  d.setUTCDate(d.getUTCDate() + n)
-  return d.toISOString().slice(0, 10)
-}
-
-// today: istemci yerel günü; window: ortalama penceresi (gün); targetDays: hedef kapsama
-export function forecastService({ today, window = 30, targetDays = 30 } = {}) {
-  const day = /^\d{4}-\d{2}-\d{2}$/.test(today || '') ? today : new Date().toLocaleDateString('sv-SE')
-  const win = Math.max(1, parseInt(window) || 30)
-  const target = Math.max(1, parseInt(targetDays) || 30)
-  const rates = new Map(q.consumptionRates({ window: win, asOf: day }).map(r => [r.product_id, r]))
-  const reorderDays = FORECAST_LEAD_DAYS + FORECAST_SAFETY_DAYS
-
-  const rows = q.stockByProduct().map(p => {
-    const balance = p.total_in - p.total_out + (p.adjust_net || 0)
-    const r = rates.get(p.id) || {}
-    const outSum = r.out_sum || 0
-    const avgDaily = outSum / win
-    const hasData = outSum > 0 && (r.active_days || 0) >= 2
-    const daysOfCover = avgDaily > 0 ? Math.floor(Math.max(0, balance) / avgDaily) : null
-    const targetStock = Math.ceil(avgDaily * target)
-    const belowReorder = daysOfCover != null && daysOfCover <= reorderDays
-    const suggestedBase = (hasData && belowReorder) ? Math.max(0, targetStock - balance) : 0
-    return {
-      product_id: p.id, product_name: p.name, unit_label: p.unit_label,
-      brand_id: p.brand_id || null, brand_name: p.brand_name || null,
-      balance, balance_human: humanize(p, balance),
-      avg_daily: Math.round(avgDaily * 100) / 100, avg_daily_human: humanize(p, Math.round(avgDaily)),
-      days_of_cover: daysOfCover,
-      stockout_date: daysOfCover != null ? addDays(day, daysOfCover) : null,
-      needs_order: suggestedBase > 0,
-      suggested_base: suggestedBase, suggested_human: suggestedBase ? humanize(p, suggestedBase) : null,
-      confidence: hasData ? 'ok' : 'low',
-    }
-  })
-  const orderSuggestions = rows.filter(r => r.needs_order).sort((a, b) => (a.days_of_cover ?? 1e9) - (b.days_of_cover ?? 1e9))
-  const totals = {
-    products: rows.length,
-    order_count: orderSuggestions.length,
-    soon_count: rows.filter(r => r.days_of_cover != null && r.days_of_cover <= 7).length,
-  }
-  return { date: day, window: win, target_days: target, rows, order_suggestions: orderSuggestions, totals }
-}
-
-// ── Trend & analiz (V2) ── son N ay: aylık akış + bölge/ürün sıralaması
-export function trendsService({ months = 6, today } = {}) {
-  const day = /^\d{4}-\d{2}-\d{2}$/.test(today || '') ? today : new Date().toLocaleDateString('sv-SE')
-  const n = Math.max(1, Math.min(24, parseInt(months) || 6))
-  const [y, m] = day.slice(0, 7).split('-').map(Number)
-  const startIdx = y * 12 + (m - 1) - (n - 1)
-  const from = `${Math.floor(startIdx / 12)}-${String((startIdx % 12) + 1).padStart(2, '0')}-01`
-  const to = day
-  const monthly = q.monthlySeries({ from, to }).map(r => ({ month: r.move_date, in_base: r.in_base, out_base: r.out_base }))
-  const zoneAgg = new Map()
-  for (const z of q.zoneTotals({ from, to })) {
-    const cur = zoneAgg.get(z.id) || { zone_id: z.id, zone_name: z.name, total: 0 }
-    cur.total += z.total_out || 0
-    zoneAgg.set(z.id, cur)
-  }
-  const zones = [...zoneAgg.values()].sort((a, b) => b.total - a.total).slice(0, 10)
-  const products = q.productFlow({ from, to })
-    .map(p => ({ product_id: p.id, name: p.name, brand_name: p.brand_name || null, out: p.period_out, out_human: humanize(p, p.period_out) }))
-    .filter(p => p.out > 0).sort((a, b) => b.out - a.out).slice(0, 10)
-  return { from, to, months: n, monthly, zones, products }
-}
-
-// ── Özet / dashboard ──
-export function summaryService({ from, to, product_id, group = 'day' } = {}) {
-  const periodByProduct = new Map(q.productFlow({ from, to }).map(p => [p.id, p]))
-  const stock = q.stockByProduct().map(p => {
-    const period = periodByProduct.get(p.id) || {}
-    const adjustNet = p.adjust_net || 0
-    const balance = p.total_in - p.total_out + adjustNet
-    const periodIn = period.period_in || 0
-    const periodOut = period.period_out || 0
-    const periodNet = periodIn - periodOut
-    const deficit = Math.max(0, -balance)
-    const low = balance < 0 || (p.min_level > 0 && balance < p.min_level)
-    const critical = balance < 0 || (p.critical_level > 0 && balance < p.critical_level)
-    const periodStatus = periodNet < 0 ? 'period_deficit' : periodNet > 0 ? 'period_surplus' : 'period_even'
-    return {
-      product_id: p.id, name: p.name, unit_label: p.unit_label,
-      brand_id: p.brand_id || null, brand_name: p.brand_name || null,
-      units_per_case: p.units_per_case, cases_per_pallet: p.cases_per_pallet,
-      total_in: p.total_in, total_out: p.total_out, adjust_net: adjustNet, balance, deficit,
-      adjust_human: adjustNet ? humanize(p, adjustNet) : null,
-      period_in: periodIn, period_out: periodOut, period_net: periodNet, period_status: periodStatus,
-      min_level: p.min_level, critical_level: p.critical_level || 0, low, critical, negative: balance < 0,
-      in_human: humanize(p, p.total_in),
-      out_human: humanize(p, p.total_out),
-      balance_human: humanize(p, balance),
-      deficit_human: deficit ? humanize(p, deficit) : null,
-      period_in_human: humanize(p, periodIn),
-      period_out_human: humanize(p, periodOut),
-      period_net_human: humanize(p, periodNet),
-      min_human: p.min_level > 0 ? humanize(p, p.min_level) : null,
-    }
-  })
-  const zonesRaw = q.zoneTotals({ from, to, product_id })
-  const zones = zonesRaw.map(z => ({
-    zone_id: z.id, zone_name: z.name, product_id: z.product_id, product_name: z.product_name,
-    total_out: z.total_out, out_human: humanize(z, z.total_out),
-  }))
-  const daily = group === 'month'
-    ? q.monthlySeries({ from, to, product_id })
-    : q.dailySeries({ from, to, product_id })
-  const flow = q.periodFlow({ from, to })
-  const deposit = depositService({ from, to })
-  const totals = {
-    period_in: flow.period_in,
-    period_out: flow.period_out,
-    period_net: flow.period_in - flow.period_out,
-    balance: stock.reduce((s, p) => s + p.balance, 0),
-    deficit_total: stock.reduce((s, p) => s + p.deficit, 0),
-    deficit_count: stock.filter(p => p.negative).length,
-    period_deficit_count: stock.filter(p => p.period_net < 0).length,
-    low_count: stock.filter(p => p.low).length,
-    critical_count: stock.filter(p => p.critical).length,
-    period_return: deposit.reduce((s, d) => s + d.period_return, 0),
-    outstanding: deposit.reduce((s, d) => s + d.outstanding, 0),
-  }
-  return { stock, zones, daily, totals, deposit, group }
 }
