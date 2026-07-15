@@ -192,7 +192,10 @@ function AlertBand() {
           return (
             <button key={c.key} onClick={() => setOpen(isOpen ? null : c.key)}
               style={{ textAlign: 'left', cursor: 'pointer', background: isOpen ? 'var(--surface2)' : 'var(--surface)',
-                border: `1px solid ${isOpen ? c.color : 'var(--border)'}`, borderLeft: `3px solid ${c.color}`,
+                borderTop: `1px solid ${isOpen ? c.color : 'var(--border)'}`,
+                borderRight: `1px solid ${isOpen ? c.color : 'var(--border)'}`,
+                borderBottom: `1px solid ${isOpen ? c.color : 'var(--border)'}`,
+                borderLeft: `3px solid ${c.color}`,
                 borderRadius: '10px', padding: '10px 12px', transition: 'border-color .15s' }}
               title="Detayı aç/kapat">
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -205,7 +208,8 @@ function AlertBand() {
         })}
       </div>
       {active && (
-        <div style={{ marginTop: '10px', background: 'var(--surface)', border: `1px solid var(--border)`,
+        <div style={{ marginTop: '10px', background: 'var(--surface)', borderTop: '1px solid var(--border)',
+          borderRight: '1px solid var(--border)', borderBottom: '1px solid var(--border)',
           borderLeft: `3px solid ${active.color}`, borderRadius: '10px', padding: '10px 14px' }}>
           <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text2)', marginBottom: '6px' }}>
             {active.icon} {active.label} ({active.count})

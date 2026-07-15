@@ -1,11 +1,13 @@
-import { memo, useCallback, useMemo, useReducer, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import api from '../../../shared/api/client.js'
 import { useToastStore } from '../../../shared/store/toastStore.js'
 import {
   createMatrixDraftState,
+  MATRIX_ROW_HEIGHT,
   matrixDraftReducer,
   matrixPasteChanges,
+  matrixVirtualWindow,
   nextMatrixPosition,
 } from '../logic/waterMatrix.js'
 import {
@@ -54,8 +56,8 @@ const WaterMatrixRow = memo(function WaterMatrixRow({
   registerInput,
 }) {
   return (
-    <tr data-testid={`water-matrix-row-${row.zone_id}`}>
-      <td style={{ position: 'sticky', left: 0, zIndex: 1, background: 'var(--surface)', fontWeight: 600, whiteSpace: 'nowrap' }}>
+    <tr data-testid={`water-matrix-row-${row.zone_id}`} style={{ height: `${MATRIX_ROW_HEIGHT}px` }}>
+      <td style={{ position: 'sticky', left: 0, zIndex: 1, background: 'var(--surface)', fontWeight: 600, whiteSpace: 'nowrap', height: `${MATRIX_ROW_HEIGHT}px`, padding: '7px 10px' }}>
         <button
           type="button"
           onClick={() => onOpenZone(row)}
@@ -95,6 +97,8 @@ const WaterMatrixRow = memo(function WaterMatrixRow({
             style={{
               textAlign: 'right',
               verticalAlign: 'top',
+              height: `${MATRIX_ROW_HEIGHT}px`,
+              padding: '7px 10px',
               borderLeft: startsBrand ? `3px solid ${tint?.fg || 'var(--border)'}` : '1px solid var(--border)',
               background: active ? 'rgba(34,197,94,.08)' : pending ? 'rgba(239,68,68,.05)' : startsBrand ? tint?.bg : undefined,
             }}
@@ -120,7 +124,7 @@ const WaterMatrixRow = memo(function WaterMatrixRow({
           </td>
         )
       })}
-      <td style={{ textAlign: 'right', verticalAlign: 'top', fontFamily: 'var(--mono)', fontWeight: 700, background: 'var(--surface2)' }}>
+      <td style={{ textAlign: 'right', verticalAlign: 'top', fontFamily: 'var(--mono)', fontWeight: 700, background: 'var(--surface2)', height: `${MATRIX_ROW_HEIGHT}px`, padding: '7px 10px' }}>
         <div style={{ color: row.visible_base ? 'var(--teal)' : 'var(--text3)' }}>{row.visible_base ? nf(row.visible_base) : '·'}</div>
         {row.visible_draft > 0 && <div style={{ fontSize: '10px', color: 'var(--green)' }}>+{nf(row.visible_draft)}</div>}
       </td>
@@ -163,6 +167,9 @@ function WaterBoard({ from, to, label, lowItems = [], onOpenZone }) {
   const inputRefs = useRef({})
   const matrixRowsRef = useRef([])
   const matrixColumnsRef = useRef([])
+  const matrixViewportRef = useRef(null)
+  const pendingFocusRef = useRef(null)
+  const [matrixScrollTop, setMatrixScrollTop] = useState(0)
 
   const pivotQuery = useQuery({
     queryKey: ['water-pivot', from, to],
@@ -280,8 +287,35 @@ function WaterBoard({ from, to, label, lowItems = [], onOpenZone }) {
     return { byProduct, month, today, draft: draftTotal }
   }, [visibleCols, visibleZoneRows, dayMap, draft])
 
+  const virtualWindow = useMemo(() => matrixVirtualWindow({
+    rowCount: visibleZoneRows.length,
+    scrollTop: matrixScrollTop,
+  }), [visibleZoneRows.length, matrixScrollTop])
+  const renderedZoneRows = useMemo(
+    () => visibleZoneRows.slice(virtualWindow.start, virtualWindow.end),
+    [visibleZoneRows, virtualWindow.start, virtualWindow.end],
+  )
+
   matrixRowsRef.current = visibleZoneRows
   matrixColumnsRef.current = visibleCols
+
+  useEffect(() => {
+    const viewport = matrixViewportRef.current
+    if (viewport) viewport.scrollTop = 0
+    setMatrixScrollTop(0)
+  }, [zoneFilter, brandFilter, zoneSort, zoneActivity])
+
+  useEffect(() => {
+    const pending = pendingFocusRef.current
+    if (!pending) return
+    const zone = matrixRowsRef.current[pending.rowIndex]
+    const product = matrixColumnsRef.current[pending.columnIndex]
+    const input = zone && product ? inputRefs.current[cellKey(zone.zone_id, product.product_id)] : null
+    if (!input) return
+    pendingFocusRef.current = null
+    input.focus()
+    input.select()
+  }, [virtualWindow.start, virtualWindow.end, visibleCols])
 
   const saveBatch = useMutation({
     mutationFn: (lines) => api.post('/water/distribute/batch', { move_date: day, lines }),
@@ -318,8 +352,17 @@ function WaterBoard({ from, to, label, lowItems = [], onOpenZone }) {
     const product = matrixColumnsRef.current[columnIndex]
     if (!zone || !product) return
     const input = inputRefs.current[cellKey(zone.zone_id, product.product_id)]
-    input?.focus()
-    input?.select()
+    if (input) {
+      input.focus()
+      input.select()
+      return
+    }
+    const viewport = matrixViewportRef.current
+    if (!viewport) return
+    pendingFocusRef.current = { rowIndex, columnIndex }
+    const nextScrollTop = Math.max(0, (rowIndex - 2) * MATRIX_ROW_HEIGHT)
+    viewport.scrollTop = nextScrollTop
+    setMatrixScrollTop(nextScrollTop)
   }, [])
 
   const handleCellKeyDown = useCallback((event, rowIndex, columnIndex) => {
@@ -548,9 +591,14 @@ function WaterBoard({ from, to, label, lowItems = [], onOpenZone }) {
         ) : isLoading ? <div style={{ padding: '20px', color: 'var(--text3)' }}>Yükleniyor…</div> : !orderedCols.length ? (
           <div style={{ padding: '20px', color: 'var(--text3)' }}>Ürün tanımı yok — ⚙ Ayarlar’dan ekleyin.</div>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
+          <div
+            ref={matrixViewportRef}
+            data-testid="water-matrix-viewport"
+            onScroll={event => setMatrixScrollTop(event.currentTarget.scrollTop)}
+            style={{ overflow: 'auto', maxHeight: virtualWindow.enabled ? 'min(68vh, 640px)' : undefined }}
+          >
             <table className="data-table" style={{ fontSize: '11px', minWidth: Math.max(760, 250 + visibleCols.length * 108) }}>
-              <thead>
+              <thead style={virtualWindow.enabled ? { position: 'sticky', top: 0, zIndex: 4, background: 'var(--surface)' } : undefined}>
                 <tr>
                   <th rowSpan={2} style={{ position: 'sticky', left: 0, zIndex: 3, background: 'var(--surface)', textAlign: 'left', minWidth: '176px' }}>DAĞITIM YERİ</th>
                   {visibleBrandGroups.map(b => {
@@ -581,11 +629,16 @@ function WaterBoard({ from, to, label, lowItems = [], onOpenZone }) {
                 </tr>
               </thead>
               <tbody>
-                {visibleZoneRows.map((row, zoneIndex) => (
+                {virtualWindow.before > 0 && (
+                  <tr aria-hidden="true">
+                    <td colSpan={visibleCols.length + 2} style={{ height: `${virtualWindow.before}px`, padding: 0, border: 0 }} />
+                  </tr>
+                )}
+                {renderedZoneRows.map((row, localIndex) => (
                   <WaterMatrixRow
                     key={row.zone_id}
                     row={row}
-                    zoneIndex={zoneIndex}
+                    zoneIndex={virtualWindow.start + localIndex}
                     columns={visibleCols}
                     cellValues={cells[String(row.zone_id)] || EMPTY_MATRIX_ROW}
                     dayMap={dayMap}
@@ -598,13 +651,18 @@ function WaterBoard({ from, to, label, lowItems = [], onOpenZone }) {
                     registerInput={registerInput}
                   />
                 ))}
+                {virtualWindow.after > 0 && (
+                  <tr aria-hidden="true">
+                    <td colSpan={visibleCols.length + 2} style={{ height: `${virtualWindow.after}px`, padding: 0, border: 0 }} />
+                  </tr>
+                )}
                 {visibleZoneRows.length === 0 && (
                   <tr>
                     <td colSpan={visibleCols.length + 2} style={{ textAlign: 'center', padding: '18px', color: 'var(--text3)' }}>Filtreye uygun dağıtım yeri yok</td>
                   </tr>
                 )}
               </tbody>
-              <tfoot>
+              <tfoot style={virtualWindow.enabled ? { position: 'sticky', bottom: 0, zIndex: 3 } : undefined}>
                 <tr style={{ borderTop: '2px solid var(--border)' }}>
                   <td style={{ position: 'sticky', left: 0, zIndex: 1, background: 'var(--surface2)', fontWeight: 700 }}>GENEL TOPLAM</td>
                   {visibleCols.map((c, prodIdx) => {

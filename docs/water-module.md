@@ -39,14 +39,14 @@ Su Takip ekranı aşağıdaki akışları tek modülde yönetir:
 | Dosya | Sorumluluk |
 |---|---|
 | `WaterPage.jsx` | Sayfa kabuğu, sekmeler, giriş formları, ay kapanışı ve ayarlar |
-| `components/WaterBoard.jsx` | Excel benzeri dağıtım matrisi, günlük kayıt ve rapor dışa aktarımı |
+| `components/WaterBoard.jsx` | Pencerelenmiş Excel benzeri dağıtım matrisi, günlük kayıt ve rapor dışa aktarımı |
 | `components/TruckArrivalPanel.jsx` | Tır, mail, kapı giriş ve irsaliye fotoğraf çalışma alanı |
 | `components/DailyDistributionModal.jsx` | Seçilen günün bütün dağıtım dökümü |
 | `components/ZoneHistoryModal.jsx` | Dağıtım yeri geçmişi ve dönem karşılaştırması |
 | `components/WaterModal.jsx` | Portal tabanlı erişilebilir modal kabuğu |
 | `components/WaterQueryErrorCenter.jsx` | Veri yok ile API hatasını ayıran merkezi hata görünümü |
 | `logic/waterUnits.js` | Backend birim kuralının istemci karşılığı |
-| `logic/waterMatrix.js` | Hücre değişikliği, yapıştırma, klavye gezinme ve geri alma reducer'ı |
+| `logic/waterMatrix.js` | Hücre değişikliği, yapıştırma, klavye gezinme, satır pencereleme ve geri alma reducer'ı |
 | `logic/waterQueryInvalidation.js` | Mutation sonrası kapsam bazlı TanStack Query invalidation |
 | `logic/waterExcelExport.js` | Çok sayfalı su takip Excel çalışma kitabı |
 | `logic/truckOperations.js` | Tır filtreleri, öncelik, kontrol slotu ve kapı giriş export verisi |

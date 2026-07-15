@@ -501,7 +501,7 @@ W11 tır/foto KODU commit'liydi ama `036_water_truck_waybill_archive.sql` untrac
 - [x] Hareket/katalog/tır/foto/sayım/kapanış audit boşlukları kapatıldı; su bildirimleri müdür ve vardiya sorumlusuna fan-out ediliyor.
 - [x] Sayım ve ay uyuşturma sorguları ürün/ay odaklı hale getirildi; tarih aralığı sorguları index kullanacak biçime alındı.
 - [x] Tır/foto silme yaşam döngüsü, yetim irsaliye fotoğrafı temizliği ve PDF retention işi eklendi.
-- [x] Matris satırları memoize edildi; hücre klavye navigasyonu, Excel yapıştırma ve geri alma saf reducer/test kapsamına alındı.
+- [x] Matris satırları memoize ve eşik üstünde overscan'li pencerelenmiş hale getirildi; hücre klavye navigasyonu görünmeyen satıra otomatik kaydırma, Excel yapıştırma ve geri alma ile test kapsamına alındı.
 - [x] Kesirli girişler sessiz yuvarlanmıyor; yalnızca tam baz miktara dönüşen değerler saklanıyor.
 - [x] Ay kilidi giriş/dağıtım/iade/sayım/düzeltme ekleme-güncelleme-silme işlemlerinde HTTP 423 ile uygulanıyor.
 - [x] Frontend query hata merkezi ve kapsam bazlı query invalidation eklendi; "veri yok" ile "API hatası" ayrıldı.

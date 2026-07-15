@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   applyMatrixChanges,
   createMatrixDraftState,
+  matrixVirtualWindow,
   matrixDraftReducer,
   matrixPasteChanges,
   nextMatrixPosition,
@@ -74,5 +75,41 @@ describe('water matrix navigation', () => {
     expect(nextMatrixPosition({ ...base, rowIndex: 0, columnIndex: 1, key: 'Tab' })).toEqual({ rowIndex: 1, columnIndex: 0 })
     expect(nextMatrixPosition({ ...base, rowIndex: 1, columnIndex: 0, key: 'Tab', shiftKey: true })).toEqual({ rowIndex: 0, columnIndex: 1 })
     expect(nextMatrixPosition({ ...base, rowIndex: 1, columnIndex: 1, key: 'Tab' })).toBeNull()
+  })
+})
+
+describe('water matrix virtualization', () => {
+  it('keeps small matrices fully mounted', () => {
+    expect(matrixVirtualWindow({ rowCount: 12, scrollTop: 400 })).toEqual({
+      enabled: false,
+      start: 0,
+      end: 12,
+      before: 0,
+      after: 0,
+    })
+  })
+
+  it('renders an overscanned window and preserves total spacer height', () => {
+    const window = matrixVirtualWindow({
+      rowCount: 100,
+      scrollTop: 40 * 82,
+      viewportHeight: 410,
+      rowHeight: 82,
+      overscan: 3,
+    })
+
+    expect(window).toEqual({
+      enabled: true,
+      start: 37,
+      end: 48,
+      before: 37 * 82,
+      after: 52 * 82,
+    })
+    expect(window.before + (window.end - window.start) * 82 + window.after).toBe(100 * 82)
+  })
+
+  it('clamps an oversized scroll offset to the final row window', () => {
+    const window = matrixVirtualWindow({ rowCount: 30, scrollTop: 999999, viewportHeight: 164, rowHeight: 82, overscan: 1 })
+    expect(window).toMatchObject({ enabled: true, start: 26, end: 30, after: 0 })
   })
 })

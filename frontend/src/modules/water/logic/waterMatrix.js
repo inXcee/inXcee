@@ -1,5 +1,8 @@
 const HISTORY_LIMIT = 50
 
+export const MATRIX_ROW_HEIGHT = 82
+export const MATRIX_VIRTUALIZATION_THRESHOLD = 24
+
 export const createMatrixDraftState = () => ({ cells: {}, history: [] })
 
 const cleanValue = (value) => String(value ?? '').trim()
@@ -103,4 +106,38 @@ export function nextMatrixPosition({ key, rowIndex, columnIndex, rowCount, colum
 
   if (nextRow < 0 || nextRow >= rowCount || nextColumn < 0 || nextColumn >= columnCount) return null
   return { rowIndex: nextRow, columnIndex: nextColumn }
+}
+
+export function matrixVirtualWindow({
+  rowCount,
+  scrollTop = 0,
+  viewportHeight = 640,
+  rowHeight = MATRIX_ROW_HEIGHT,
+  overscan = 4,
+  threshold = MATRIX_VIRTUALIZATION_THRESHOLD,
+}) {
+  const count = Math.max(0, Math.trunc(Number(rowCount) || 0))
+  if (count <= threshold) {
+    return { enabled: false, start: 0, end: count, before: 0, after: 0 }
+  }
+
+  const height = Math.max(1, Number(rowHeight) || MATRIX_ROW_HEIGHT)
+  const view = Math.max(height, Number(viewportHeight) || 640)
+  const buffer = Math.max(0, Math.trunc(Number(overscan) || 0))
+  const firstVisible = Math.min(count - 1, Math.max(0, Math.floor(Math.max(0, Number(scrollTop) || 0) / height)))
+  const visibleCount = Math.max(1, Math.ceil(view / height))
+  const windowSize = Math.min(count, visibleCount + buffer * 2)
+  let start = Math.max(0, firstVisible - buffer)
+  let end = Math.min(count, start + windowSize)
+
+  if (end === count) start = Math.max(0, end - windowSize)
+  end = Math.min(count, start + windowSize)
+
+  return {
+    enabled: true,
+    start,
+    end,
+    before: start * height,
+    after: (count - end) * height,
+  }
 }

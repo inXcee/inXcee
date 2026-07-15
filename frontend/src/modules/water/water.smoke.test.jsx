@@ -32,6 +32,8 @@ const DAILY_ROWS = [
 ]
 
 let reconciliationLocked = false
+const DEFAULT_PIVOT_ROWS = [{ zone_id: 1, zone_name: 'OTC Kamp Alanı', cells: { 1: { base: 91, human: '91 damacana' } }, total_base: 91 }]
+let pivotRows = DEFAULT_PIVOT_ROWS
 
 vi.mock('../../shared/api/client.js', () => ({
   default: {
@@ -52,7 +54,7 @@ vi.mock('../../shared/api/client.js', () => ({
           { product_id: 1, name: 'Damacana', unit_label: 'damacana', brand_id: 1, brand_name: 'MİLA SU', units_per_case: 1, cases_per_pallet: 36 },
           { product_id: 2, name: '0.5 L', unit_label: 'koli', brand_id: 1, brand_name: 'MİLA SU', units_per_case: 1, cases_per_pallet: 140 },
         ],
-        rows: [{ zone_id: 1, zone_name: 'OTC Kamp Alanı', cells: { 1: { base: 91, human: '91 damacana' } }, total_base: 91 }],
+        rows: pivotRows,
         colTotals: { 1: { base: 91, human: '2 palet 19 damacana' }, 2: { base: 0, human: '0 koli' } },
         grandTotal: 91,
       } })
@@ -207,6 +209,7 @@ describe('WaterPage tek-ekran pano smoke', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     reconciliationLocked = false
+    pivotRows = DEFAULT_PIVOT_ROWS
   })
 
   it('tir on bildirim ve irsaliye foto arsivi paneli render olur', async () => {
@@ -290,6 +293,32 @@ describe('WaterPage tek-ekran pano smoke', () => {
         { zone_id: 1, product_id: 2, input_qty: 3, input_unit: 'koli' },
       ],
     })))
+  })
+
+  it('büyük dağıtım matrisini pencereleyip kaydırılan satırları getirir', async () => {
+    pivotRows = Array.from({ length: 80 }, (_, index) => ({
+      zone_id: index + 1,
+      zone_name: `Bölge ${String(index + 1).padStart(3, '0')}`,
+      cells: {},
+      total_base: 0,
+    }))
+
+    renderWithProviders(<WaterPage />)
+    const viewport = await screen.findByTestId('water-matrix-viewport')
+    await screen.findByTestId('water-matrix-row-1')
+    expect(screen.getAllByTestId(/^water-matrix-row-/).length).toBeLessThan(80)
+    expect(screen.queryByTestId('water-matrix-row-70')).not.toBeInTheDocument()
+
+    const windowEdge = screen.getByLabelText('Bölge 012 - Damacana dağıtım miktarı')
+    windowEdge.focus()
+    fireEvent.keyDown(windowEdge, { key: 'ArrowDown' })
+    await waitFor(() => expect(screen.getByLabelText('Bölge 013 - Damacana dağıtım miktarı')).toHaveFocus())
+
+    viewport.scrollTop = 68 * 82
+    fireEvent.scroll(viewport)
+
+    expect(await screen.findByTestId('water-matrix-row-70')).toBeInTheDocument()
+    expect(screen.queryByTestId('water-matrix-row-1')).not.toBeInTheDocument()
   })
 
   it('detaylı Excel düğmesi tüm rapor verisini yükleyip dosyayı indirir', async () => {
