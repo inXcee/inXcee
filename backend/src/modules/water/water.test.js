@@ -970,7 +970,10 @@ describe('Su takip — Tüketim öngörüsü & sipariş önerisi (V1)', () => {
   const auth = (r) => r.set('Authorization', `Bearer ${managerToken}`)
 
   beforeAll(async () => {
-    pOrder = (await auth(request(app).post('/api/water/products')).send({ name: 'FC Order 1L', unit_label: 'adet', units_per_case: 1, cases_per_pallet: 1 })).body.id
+    pOrder = (await auth(request(app).post('/api/water/products')).send({
+      name: 'FC Order 1L', unit_label: 'adet', units_per_case: 1, cases_per_pallet: 1,
+      lead_time_days: 4, safety_stock_days: 2,
+    })).body.id
     pStock = (await auth(request(app).post('/api/water/products')).send({ name: 'FC Stock 1L', unit_label: 'adet', units_per_case: 1, cases_per_pallet: 1 })).body.id
     zone = (await auth(request(app).post('/api/water/zones')).send({ name: 'FC Bölge' })).body.id
     // pOrder: 100 giriş + 90 dağıtım (9 gün × 10) → balance 10, avg 3/gün (90/30), gün-yeter 3
@@ -983,6 +986,21 @@ describe('Su takip — Tüketim öngörüsü & sipariş önerisi (V1)', () => {
     await auth(request(app).post('/api/water/distribute')).send({ product_id: pStock, zone_id: zone, input_qty: 30, input_unit: 'adet', move_date: '2027-03-15' })
   })
 
+  it('ürün bazlı tedarik ve emniyet günlerini saklar, geçersiz aralığı reddeder', async () => {
+    const products = await auth(request(app).get('/api/water/products'))
+    expect(products.body.find(product => product.id === pOrder)).toMatchObject({
+      lead_time_days: 4,
+      safety_stock_days: 2,
+    })
+
+    const invalid = await auth(request(app).put(`/api/water/products/${pOrder}`)).send({
+      name: 'FC Order 1L', unit_label: 'adet', units_per_case: 1, cases_per_pallet: 1,
+      lead_time_days: 366, safety_stock_days: 2,
+    })
+    expect(invalid.status).toBe(400)
+    expect(invalid.body.error).toMatch(/0-365/)
+  })
+
   it('düşük stoklu ürün için gün-yeter + sipariş önerisi hesaplar', async () => {
     const r = await auth(request(app).get(`/api/water/forecast?today=${TODAY}`))
     expect(r.status).toBe(200)
@@ -990,6 +1008,12 @@ describe('Su takip — Tüketim öngörüsü & sipariş önerisi (V1)', () => {
     expect(row.balance).toBe(10)
     expect(row.avg_daily).toBe(3) // 90/30
     expect(row.days_of_cover).toBe(3) // floor(10/3)
+    expect(row.lead_time_days).toBe(4)
+    expect(row.safety_stock_days).toBe(2)
+    expect(row.reorder_point_days).toBe(6)
+    expect(row.order_due_in_days).toBe(-3)
+    expect(row.order_by_date).toBe('2027-03-28')
+    expect(row.order_urgency).toBe('overdue')
     expect(row.needs_order).toBe(true)
     expect(row.suggested_base).toBe(80) // ceil(3×30) − 10
     expect(row.confidence).toBe('ok')

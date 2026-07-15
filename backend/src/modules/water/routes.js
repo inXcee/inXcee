@@ -31,7 +31,7 @@ const waybillUpload = createImageUpload('water-waybill')
 const fail = (next, e) => next(e)
 
 const AUDIT_FIELDS = {
-  product: ['name', 'unit_label', 'units_per_case', 'cases_per_pallet', 'is_active', 'min_level', 'critical_level', 'brand_id', 'is_returnable', 'sort_order'],
+  product: ['name', 'unit_label', 'units_per_case', 'cases_per_pallet', 'is_active', 'min_level', 'critical_level', 'lead_time_days', 'safety_stock_days', 'brand_id', 'is_returnable', 'sort_order'],
   brand: ['name', 'sort_order', 'is_active', 'color'],
   zone: ['name', 'code', 'note', 'is_active', 'expected_monthly'],
   movement: ['type', 'product_id', 'zone_id', 'move_date', 'qty_base', 'input_qty', 'input_unit', 'waybill_no', 'note'],

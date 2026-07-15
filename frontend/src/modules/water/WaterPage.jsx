@@ -302,18 +302,26 @@ function ForecastPanel() {
   })
   const rows = data?.rows || []
   const orders = data?.order_suggestions || []
-  const t = data?.totals || { order_count: 0, soon_count: 0 }
+  const t = data?.totals || { order_count: 0, overdue_order_count: 0, due_soon_order_count: 0, soon_count: 0 }
   const withData = useMemo(() => [...rows].filter(r => r.days_of_cover != null).sort((a, b) => a.days_of_cover - b.days_of_cover), [rows])
   if (!data || (withData.length === 0 && orders.length === 0)) return null
 
   const coverColor = (d) => d == null ? 'var(--text3)' : d <= 7 ? 'var(--red)' : d <= 14 ? 'var(--amber, #d97706)' : 'var(--green)'
+  const urgencyColor = (urgency) => urgency === 'overdue' ? 'var(--red)' : urgency === 'due_soon' ? 'var(--amber, #d97706)' : urgency === 'insufficient_data' ? 'var(--text3)' : 'var(--green)'
+  const orderDateLabel = (row) => row.order_urgency === 'insufficient_data'
+    ? 'veri az'
+    : row.order_urgency === 'overdue'
+    ? `${Math.abs(row.order_due_in_days)}g gecikti`
+    : row.order_urgency === 'due_soon'
+      ? `${row.order_due_in_days}g kaldı`
+      : row.order_by_date || '—'
   return (
     <WaterCollapsiblePanel
       id="water-forecast-panel"
       open={open}
       onToggle={() => setOpen(value => !value)}
       title="📉 SİPARİŞ ÖNERİLERİ & GÜN-YETER"
-      subtitle={<>{t.order_count > 0 ? <span style={{ color: 'var(--red)', fontWeight: 600 }}>{t.order_count} ürün sipariş bekliyor</span> : 'sipariş gerekmiyor'} · {t.soon_count} ürün 7 günden az · son 30 gün tüketimine göre</>}
+      subtitle={<>{t.order_count > 0 ? <span style={{ color: 'var(--red)', fontWeight: 600 }}>{t.order_count} ürün sipariş bekliyor</span> : 'sipariş gerekmiyor'}{t.overdue_order_count > 0 ? <> · <span style={{ color: 'var(--red)', fontWeight: 700 }}>{t.overdue_order_count} gecikmiş</span></> : null} · {t.soon_count} ürün 7 günden az · ürün bazlı tedarik süresine göre</>}
       style={{ marginTop: '16px', borderTop: `3px solid ${t.order_count ? 'var(--red)' : 'var(--teal)'}` }}
     >
           {orders.length > 0 && (
@@ -322,15 +330,16 @@ function ForecastPanel() {
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                 {orders.map(o => (
                   <span key={o.product_id} style={{ fontSize: '11px', border: '1px solid var(--red)', background: 'color-mix(in srgb, var(--red) 8%, transparent)', borderRadius: '8px', padding: '4px 9px' }}>
-                    {o.brand_name ? `${o.brand_name} · ` : ''}<b>{o.product_name}</b> → {o.suggested_human} <span style={{ color: 'var(--text3)' }}>({o.days_of_cover}g yeter)</span>
+                    {o.brand_name ? `${o.brand_name} · ` : ''}<b>{o.product_name}</b> → {o.suggested_human}{' '}
+                    <span style={{ color: urgencyColor(o.order_urgency), fontWeight: 700 }}>({orderDateLabel(o)})</span>
                   </span>
                 ))}
               </div>
             </div>
           )}
           <div style={{ overflowX: 'auto' }}>
-            <table className="data-table" style={{ fontSize: '11px', minWidth: '640px' }}>
-              <thead><tr>{['Ürün', 'Bakiye', 'Günlük ort.', 'Gün yeter', 'Tahmini bitiş', 'Öneri'].map((h, i) => <th key={i} style={{ textAlign: h === 'Ürün' ? 'left' : 'right', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
+            <table className="data-table" style={{ fontSize: '11px', minWidth: '900px' }}>
+              <thead><tr>{['Ürün', 'Bakiye', 'Günlük ort.', 'Gün yeter', 'Tedarik + emniyet', 'Sipariş son günü', 'Tahmini bitiş', 'Öneri'].map((h, i) => <th key={i} style={{ textAlign: h === 'Ürün' ? 'left' : 'right', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
               <tbody>
                 {withData.map(r => (
                   <tr key={r.product_id}>
@@ -338,6 +347,8 @@ function ForecastPanel() {
                     <td style={{ textAlign: 'right', fontFamily: 'var(--mono)' }} title={r.balance_human}>{nf(r.balance)}</td>
                     <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--text3)' }}>{r.avg_daily}</td>
                     <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 700, color: coverColor(r.days_of_cover) }}>{r.days_of_cover}g</td>
+                    <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--text2)' }}>{r.lead_time_days}g + {r.safety_stock_days}g</td>
+                    <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: r.needs_order ? 700 : 500, color: urgencyColor(r.order_urgency) }} title={r.order_by_date || ''}>{orderDateLabel(r)}</td>
                     <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--text3)' }}>{r.stockout_date || '—'}</td>
                     <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', color: r.needs_order ? 'var(--red)' : 'var(--text3)' }}>{r.needs_order ? r.suggested_human : '—'}</td>
                   </tr>
@@ -1410,7 +1421,7 @@ function TemplatesTab() {
 // ─────────────────────────── ÜRÜNLER + MARKA ───────────────────────────
 function ProductsTab() {
   const qc = useQueryClient()
-  const blank = { id: null, name: '', unit_label: 'adet', units_per_case: '1', cases_per_pallet: '1', min_qty: '', crit_qty: '', min_unit: 'adet', brand_id: '', is_returnable: false, is_active: true }
+  const blank = { id: null, name: '', unit_label: 'adet', units_per_case: '1', cases_per_pallet: '1', min_qty: '', crit_qty: '', min_unit: 'adet', lead_time_days: '7', safety_stock_days: '3', brand_id: '', is_returnable: false, is_active: true }
   const [form, setForm] = useState(blank)
   const { data: products = [] } = useQuery({ queryKey: ['water-products-all'], queryFn: () => api.get('/water/products', { params: { all: 1 } }).then(r => r.data) })
   const { data: brands = [] } = useQuery({ queryKey: ['water-brands'], queryFn: () => api.get('/water/brands').then(r => r.data) })
@@ -1427,15 +1438,32 @@ function ProductsTab() {
       if (!conversion.exact) throw new Error(`${label} tam ${form.unit_label || 'adet'} karşılığına dönüşmeli`)
       return conversion.base
     }
-    return { name: form.name.trim(), unit_label: form.unit_label, units_per_case: upc, cases_per_pallet: cpp, min_level: thresholdBase(form.min_qty, 'Minimum stok'), critical_level: thresholdBase(form.crit_qty, 'Kritik stok'), brand_id: form.brand_id || null, is_returnable: form.is_returnable, is_active: form.is_active }
+    const daySetting = (raw, label) => {
+      const value = Number(raw)
+      if (!Number.isInteger(value) || value < 0 || value > 365) throw new Error(`${label} 0-365 arasında tam sayı olmalı`)
+      return value
+    }
+    return {
+      name: form.name.trim(),
+      unit_label: form.unit_label,
+      units_per_case: upc,
+      cases_per_pallet: cpp,
+      min_level: thresholdBase(form.min_qty, 'Minimum stok'),
+      critical_level: thresholdBase(form.crit_qty, 'Kritik stok'),
+      lead_time_days: daySetting(form.lead_time_days, 'Tedarik süresi'),
+      safety_stock_days: daySetting(form.safety_stock_days, 'Emniyet günü'),
+      brand_id: form.brand_id || null,
+      is_returnable: form.is_returnable,
+      is_active: form.is_active,
+    }
   }
   const create = useMutation({ mutationFn: () => api.post('/water/products', payload()), onSuccess: () => { invalidate(); setForm(blank); toastOk('Ürün eklendi') }, onError: (e) => toastErr(errMsg(e, 'Eklenemedi')) })
   const update = useMutation({ mutationFn: () => api.put(`/water/products/${form.id}`, payload()), onSuccess: () => { invalidate(); setForm(blank); toastOk('Ürün güncellendi') }, onError: (e) => toastErr(errMsg(e, 'Güncellenemedi')) })
   const del = useMutation({ mutationFn: (id) => api.delete(`/water/products/${id}`), onSuccess: () => { invalidate(); toastOk('Silindi') }, onError: (e) => toastErr(errMsg(e, 'Silinemedi')) })
   const patch = useMutation({ mutationFn: (p) => api.put(`/water/products/${p.id}`, p), onSuccess: () => { invalidate(); toastOk('Güncellendi') }, onError: (e) => toastErr(errMsg(e, 'Güncellenemedi')) })
 
-  const editProduct = (p) => setForm({ id: p.id, name: p.name, unit_label: p.unit_label, units_per_case: String(p.units_per_case), cases_per_pallet: String(p.cases_per_pallet), min_qty: p.min_level ? String(p.min_level) : '', crit_qty: p.critical_level ? String(p.critical_level) : '', min_unit: 'adet', brand_id: p.brand_id ? String(p.brand_id) : '', is_returnable: !!p.is_returnable, is_active: p.is_active !== 0 })
-  const toggleActive = (p) => patch.mutate({ id: p.id, name: p.name, unit_label: p.unit_label, units_per_case: p.units_per_case, cases_per_pallet: p.cases_per_pallet, min_level: p.min_level, critical_level: p.critical_level, brand_id: p.brand_id, is_returnable: p.is_returnable, is_active: p.is_active === 0 })
+  const editProduct = (p) => setForm({ id: p.id, name: p.name, unit_label: p.unit_label, units_per_case: String(p.units_per_case), cases_per_pallet: String(p.cases_per_pallet), min_qty: p.min_level ? String(p.min_level) : '', crit_qty: p.critical_level ? String(p.critical_level) : '', min_unit: 'adet', lead_time_days: String(p.lead_time_days ?? 7), safety_stock_days: String(p.safety_stock_days ?? 3), brand_id: p.brand_id ? String(p.brand_id) : '', is_returnable: !!p.is_returnable, is_active: p.is_active !== 0 })
+  const toggleActive = (p) => patch.mutate({ id: p.id, name: p.name, unit_label: p.unit_label, units_per_case: p.units_per_case, cases_per_pallet: p.cases_per_pallet, min_level: p.min_level, critical_level: p.critical_level, lead_time_days: p.lead_time_days, safety_stock_days: p.safety_stock_days, brand_id: p.brand_id, is_returnable: p.is_returnable, is_active: p.is_active === 0 })
   const formPackage = { unit_label: form.unit_label, units_per_case: +form.units_per_case || 1, cases_per_pallet: +form.cases_per_pallet || 1 }
   const packageMode = baseUnitForProduct(formPackage) === 'paket' ? 'packPallet'
     : baseUnitForProduct(formPackage) === 'koli' ? 'casePallet'
@@ -1480,6 +1508,8 @@ function ProductsTab() {
         <div style={{ width: '72px' }}><label className="form-label">Min. stok</label><input type="number" min="0" step="any" className="form-input" value={form.min_qty} onChange={e => setForm(f => ({ ...f, min_qty: e.target.value }))} /></div>
         <div style={{ width: '72px' }}><label className="form-label" title="Min’den düşük acil eşik">Kritik</label><input type="number" min="0" step="any" className="form-input" value={form.crit_qty} onChange={e => setForm(f => ({ ...f, crit_qty: e.target.value }))} /></div>
         <div style={{ width: '72px' }}><label className="form-label">Min. birim</label><select className="form-select" value={coerceUnitForProduct(form.min_unit, formPackage)} onChange={e => setForm(f => ({ ...f, min_unit: e.target.value }))}>{formUnitOptions.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
+        <div style={{ width: '84px' }}><label className="form-label" title="Sipariş ile teslim arasındaki ortalama gün">Tedarik gün</label><input type="number" min="0" max="365" step="1" className="form-input" value={form.lead_time_days} onChange={e => setForm(f => ({ ...f, lead_time_days: e.target.value }))} /></div>
+        <div style={{ width: '84px' }}><label className="form-label" title="Gecikme ve tüketim dalgalanmasına karşı ek stok günü">Emniyet gün</label><input type="number" min="0" max="365" step="1" className="form-input" value={form.safety_stock_days} onChange={e => setForm(f => ({ ...f, safety_stock_days: e.target.value }))} /></div>
         <div style={{ minWidth: '130px' }}><label className="form-label">Marka</label><select className="form-select" value={form.brand_id} onChange={e => setForm(f => ({ ...f, brand_id: e.target.value }))}>
           <option value="">Markasız</option>{brands.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
         </select></div>
@@ -1494,11 +1524,11 @@ function ProductsTab() {
         {form.id && <button className="btn btn-ghost btn-sm" onClick={() => setForm(blank)}>+ Yeni</button>}
         <button className="btn btn-primary" disabled={!form.name.trim() || create.isPending || update.isPending} onClick={() => form.id ? update.mutate() : create.mutate()}>{form.id ? 'Güncelle' : 'Ekle'}</button>
       </div>
-      <div style={{ fontSize: '10px', color: 'var(--text3)', marginBottom: '12px' }}>Baz birim Excel hücresindeki ham sayıdır; ör. damacana adet, 0.33/0.5 koli, 5 L/cam paket. Palet çarpanı bu ham sayıya çevrilir. “İade edilebilir” = boş dönüşü takip edilen kaplar.</div>
+      <div style={{ fontSize: '10px', color: 'var(--text3)', marginBottom: '12px' }}>Baz birim Excel hücresindeki ham sayıdır; ör. damacana adet, 0.33/0.5 koli, 5 L/cam paket. Palet çarpanı bu ham sayıya çevrilir. Sipariş son günü, ürünün tedarik + emniyet gününe göre otomatik hesaplanır.</div>
 
       <div style={{ maxHeight: '40vh', overflowY: 'auto' }}>
-        <table className="data-table" style={{ fontSize: '12px' }}>
-          <thead><tr><th>Ad</th><th>Marka</th><th>Birimler</th><th style={{ textAlign: 'right' }}>1 Koli</th><th style={{ textAlign: 'right' }}>1 Palet</th><th style={{ textAlign: 'right' }}>Min.</th><th style={{ textAlign: 'right' }}>Kritik</th><th></th></tr></thead>
+        <table className="data-table" style={{ fontSize: '12px', minWidth: '920px' }}>
+          <thead><tr><th>Ad</th><th>Marka</th><th>Birimler</th><th style={{ textAlign: 'right' }}>1 Koli</th><th style={{ textAlign: 'right' }}>1 Palet</th><th style={{ textAlign: 'right' }}>Min.</th><th style={{ textAlign: 'right' }}>Kritik</th><th style={{ textAlign: 'right' }}>Tedarik + emniyet</th><th></th></tr></thead>
           <tbody>
             {products.map(p => (
               <tr key={p.id} style={{ opacity: p.is_active ? 1 : 0.5 }}>
@@ -1509,6 +1539,7 @@ function ProductsTab() {
                 <td style={{ textAlign: 'right', fontFamily: 'var(--mono)' }}>{paletText(p)}</td>
                 <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', color: p.min_level ? 'var(--text)' : 'var(--text3)' }}>{p.min_level ? `${nf(p.min_level)}` : '—'}</td>
                 <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', color: p.critical_level ? 'var(--red)' : 'var(--text3)' }}>{p.critical_level ? `${nf(p.critical_level)}` : '—'}</td>
+                <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--text2)', whiteSpace: 'nowrap' }}>{p.lead_time_days ?? 7}g + {p.safety_stock_days ?? 3}g</td>
                 <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                   <button onClick={() => editProduct(p)} className="btn btn-ghost btn-sm">Düzenle</button>
                   <button onClick={() => toggleActive(p)} className="btn btn-ghost btn-sm" title={p.is_active ? 'Pasife al' : 'Aktifleştir'}>{p.is_active ? 'Pasife al' : 'Aktif et'}</button>

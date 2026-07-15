@@ -508,4 +508,11 @@ W11 tır/foto KODU commit'liydi ama `036_water_truck_waybill_archive.sql` untrac
 - [x] Büyük frontend/backend su dosyaları hareket, analiz, uzlaştırma, tır, matris, modal ve ortak mantık sınırlarına bölündü; altı açılır panel ortak erişilebilir kabuğa taşındı.
 - [x] Güncel mimari, 56 method+yol handler'ı (43 benzersiz yol), yetki matrisi, cron/job akışları, dosya retention, test ve operasyon runbook'u `docs/water-module.md` altında belgelendi.
 
-Ertelenen ürünler tamamlanmış sayılmaz: ürün bazlı lead time, günlük özet SMTP maili, SKT, mobil/QR, firma faturalama ve ortak ziyaretçi/güvenlik modülü entegrasyonu.
+### Faz V6 — Ürün Bazlı Tedarik ve Sipariş Son Günü ✅
+- [x] Migration 052 ile ürüne `lead_time_days` ve `safety_stock_days` eklendi; eski ürünler 7+3 gün varsayılanıyla geriye uyumlu kaldı.
+- [x] Tahmin motoru ürün bazlı sipariş eşiği, sipariş son günü, gecikme/yaklaşma durumu ve uzun tedarikte genişleyen hedef stok hesaplıyor.
+- [x] Ürün ayarları tedarik/emniyet günlerini yönetiyor; tahmin paneli geciken siparişleri ve son tarihi ayırt ediyor.
+- [x] Excel kapanış paketi 14 sayfaya çıkarıldı; filtrelenebilir, renkli `Sipariş Planı` sayfası ve ürün kurallarında tedarik alanları eklendi.
+- [x] Günlük operasyon özeti gecikmiş sipariş sayısını bildiriyor; API, hesaplama, arayüz ve Excel testleri eklendi.
+
+Kalan ertelenen ürünler tamamlanmış sayılmaz: günlük özet SMTP maili, SKT, mobil/QR, firma faturalama ve ortak ziyaretçi/güvenlik modülü entegrasyonu.

@@ -1,8 +1,8 @@
 import * as q from './queries.js'
 import { humanize } from './units.js'
 
-const FORECAST_LEAD_DAYS = 7
-const FORECAST_SAFETY_DAYS = 3
+const DEFAULT_FORECAST_LEAD_DAYS = 7
+const DEFAULT_FORECAST_SAFETY_DAYS = 3
 const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
 
 function localIsoDate() {
@@ -42,8 +42,6 @@ export function forecastService({ today, window = 30, targetDays = 30 } = {}) {
   const normalizedTarget = Math.max(1, parseInt(targetDays, 10) || 30)
   const rates = new Map(q.consumptionRates({ window: normalizedWindow, asOf: day })
     .map(rate => [rate.product_id, rate]))
-  const reorderDays = FORECAST_LEAD_DAYS + FORECAST_SAFETY_DAYS
-
   const rows = q.stockByProduct().map(product => {
     const balance = product.total_in - product.total_out + (product.adjust_net || 0)
     const rate = rates.get(product.id) || {}
@@ -53,9 +51,23 @@ export function forecastService({ today, window = 30, targetDays = 30 } = {}) {
     const daysOfCover = averageDaily > 0
       ? Math.floor(Math.max(0, balance) / averageDaily)
       : null
-    const targetStock = Math.ceil(averageDaily * normalizedTarget)
-    const belowReorder = daysOfCover != null && daysOfCover <= reorderDays
+    const leadTimeDays = Number.isInteger(product.lead_time_days) ? product.lead_time_days : DEFAULT_FORECAST_LEAD_DAYS
+    const safetyStockDays = Number.isInteger(product.safety_stock_days) ? product.safety_stock_days : DEFAULT_FORECAST_SAFETY_DAYS
+    const reorderPointDays = leadTimeDays + safetyStockDays
+    const orderDueInDays = daysOfCover == null ? null : daysOfCover - reorderPointDays
+    const stockoutDate = daysOfCover != null ? addDays(day, daysOfCover) : null
+    const orderByDate = orderDueInDays != null ? addDays(day, orderDueInDays) : null
+    const targetStockDays = Math.max(normalizedTarget, reorderPointDays)
+    const targetStock = Math.ceil(averageDaily * targetStockDays)
+    const belowReorder = daysOfCover != null && daysOfCover <= reorderPointDays
     const suggestedBase = hasData && belowReorder ? Math.max(0, targetStock - balance) : 0
+    const orderUrgency = !hasData || orderDueInDays == null
+      ? 'insufficient_data'
+      : orderDueInDays <= 0
+        ? 'overdue'
+        : orderDueInDays <= 3
+          ? 'due_soon'
+          : 'planned'
 
     return {
       product_id: product.id,
@@ -68,7 +80,14 @@ export function forecastService({ today, window = 30, targetDays = 30 } = {}) {
       avg_daily: Math.round(averageDaily * 100) / 100,
       avg_daily_human: humanize(product, Math.round(averageDaily)),
       days_of_cover: daysOfCover,
-      stockout_date: daysOfCover != null ? addDays(day, daysOfCover) : null,
+      stockout_date: stockoutDate,
+      lead_time_days: leadTimeDays,
+      safety_stock_days: safetyStockDays,
+      reorder_point_days: reorderPointDays,
+      target_stock_days: targetStockDays,
+      order_due_in_days: orderDueInDays,
+      order_by_date: orderByDate,
+      order_urgency: orderUrgency,
       needs_order: suggestedBase > 0,
       suggested_base: suggestedBase,
       suggested_human: suggestedBase ? humanize(product, suggestedBase) : null,
@@ -77,10 +96,12 @@ export function forecastService({ today, window = 30, targetDays = 30 } = {}) {
   })
   const orderSuggestions = rows
     .filter(row => row.needs_order)
-    .sort((left, right) => (left.days_of_cover ?? 1e9) - (right.days_of_cover ?? 1e9))
+    .sort((left, right) => (left.order_due_in_days ?? 1e9) - (right.order_due_in_days ?? 1e9))
   const totals = {
     products: rows.length,
     order_count: orderSuggestions.length,
+    overdue_order_count: orderSuggestions.filter(row => row.order_urgency === 'overdue').length,
+    due_soon_order_count: orderSuggestions.filter(row => row.order_urgency === 'due_soon').length,
     soon_count: rows.filter(row => row.days_of_cover != null && row.days_of_cover <= 7).length,
   }
 

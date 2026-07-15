@@ -75,11 +75,24 @@ Tüm endpoint'ler JWT ile korunur. `/api/water` router'ı uygulama seviyesinde `
 
 - `units_per_case`: bir koli içindeki adet sayısıdır.
 - `cases_per_pallet`: bir paletteki koli veya paket sayısıdır.
+- `lead_time_days`: sipariş verildikten sonra ürünün sahaya ulaşmasının beklenen gün sayısıdır (varsayılan 7).
+- `safety_stock_days`: tedarik gecikmesi ve tüketim dalgalanması için ek stok günüdür (varsayılan 3).
 - Her giriş tam sayılı bir baz miktara dönüşmelidir. Örneğin dönüşüm 2,5 baz birim üretiyorsa kayıt yuvarlanmaz, HTTP 400 ile reddedilir.
 - `5 lt / paket / 80 paket-palet`, `damacana / adet / 36 adet-palet` gibi farklı ürün modelleri aynı dönüşüm motoruyla çalışır.
 - Frontend canlı hesaplama ile backend `toBase` doğrulaması aynı kuralları izler; backend son otoritedir.
 
 Stok yetersizliği dağıtımı engellemez. Karşılanamayan miktar `needs_review=1` ile kontrol kuyruğuna düşer ve stok negatif görünebilir. Bu sayede saha kaydı kaybolmaz; müdür daha sonra irsaliye girerek FIFO eşleştirmesini tamamlar veya kaydı inceleyip onaylar.
+
+## Tahmin ve Sipariş Planı
+
+`GET /forecast`, son 30 günlük dağıtımı ürün bazında günlük ortalamaya çevirir. Her ürün için `lead_time_days + safety_stock_days` sipariş eşiği olarak kullanılır; ortak bir global teslim süresi kullanılmaz.
+
+- `order_by_date`: tahmini stok bitiş tarihinden tedarik ve emniyet günleri geri gidilerek hesaplanan sipariş son günüdür.
+- `order_due_in_days`: sipariş son gününe kalan gün; negatif değer gecikmeyi gösterir.
+- `order_urgency`: `overdue`, `due_soon`, `planned` veya `insufficient_data` durumudur.
+- `target_stock_days`: varsayılan hedef stok günü ile tedarik + emniyet süresinin büyük olanıdır. Uzun teslim süreli ürünlerde önerilen miktarın teslim gelmeden yetersiz kalmasını önler.
+
+Ürün ayarlarında tedarik ve emniyet günleri `0-365` aralığında tam sayı olarak yönetilir. Tahmin paneli geciken siparişleri ve sipariş son gününü gösterir. Detaylı Excel kapanış paketindeki **Sipariş Planı** sayfası aynı hesapları, renkli durumları ve filtrelenebilir ürün satırlarını içerir.
 
 ## Hareket ve FIFO Akışı
 
@@ -266,7 +279,6 @@ Kritik regresyonlar: tam baz miktar matematiği, giriş+FIFO atomikliği, ürün
 
 ## Bilinçli Olarak Ertelenenler
 
-- ürün bazlı `lead_time_days` (tahmin halen ortak lead/safety varsayımı kullanır);
 - günlük su özetinin otomatik SMTP e-postası;
 - SKT/son kullanma tarihi takibi;
 - mobil/QR saha girişi;

@@ -42,19 +42,23 @@ export function listProducts({ includeInactive = false } = {}) {
 export function getProduct(id) {
   return getDB().prepare(`${PRODUCT_SELECT} WHERE p.id=?`).get(id)
 }
-export function createProduct({ name, unit_label, units_per_case, cases_per_pallet, min_level, critical_level, brand_id, is_returnable, sort_order }) {
+export function createProduct({ name, unit_label, units_per_case, cases_per_pallet, min_level, critical_level, lead_time_days, safety_stock_days, brand_id, is_returnable, sort_order }) {
   return getDB().prepare(`
-    INSERT INTO water_products(name, unit_label, units_per_case, cases_per_pallet, min_level, critical_level, brand_id, is_returnable, sort_order)
-    VALUES(?,?,?,?,?,?,?,?,?)
-  `).run(name, unit_label || 'adet', units_per_case || 1, cases_per_pallet || 1, min_level || 0, critical_level || 0,
-    brand_id || null, is_returnable ? 1 : 0, sort_order || 0).lastInsertRowid
+    INSERT INTO water_products(
+      name, unit_label, units_per_case, cases_per_pallet, min_level, critical_level,
+      lead_time_days, safety_stock_days, brand_id, is_returnable, sort_order
+    ) VALUES(?,?,?,?,?,?,?,?,?,?,?)
+  `).run(
+    name, unit_label || 'adet', units_per_case || 1, cases_per_pallet || 1, min_level || 0, critical_level || 0,
+    lead_time_days ?? 7, safety_stock_days ?? 3, brand_id || null, is_returnable ? 1 : 0, sort_order || 0,
+  ).lastInsertRowid
 }
-export function updateProduct(id, { name, unit_label, units_per_case, cases_per_pallet, is_active, min_level, critical_level, brand_id, is_returnable, sort_order }) {
+export function updateProduct(id, { name, unit_label, units_per_case, cases_per_pallet, is_active, min_level, critical_level, lead_time_days, safety_stock_days, brand_id, is_returnable, sort_order }) {
   return getDB().prepare(`
     UPDATE water_products SET name=?, unit_label=?, units_per_case=?, cases_per_pallet=?, is_active=?, min_level=?, critical_level=?,
-      brand_id=?, is_returnable=?, sort_order=? WHERE id=?
+      lead_time_days=?, safety_stock_days=?, brand_id=?, is_returnable=?, sort_order=? WHERE id=?
   `).run(name, unit_label || 'adet', units_per_case || 1, cases_per_pallet || 1, is_active ? 1 : 0, min_level || 0, critical_level || 0,
-    brand_id || null, is_returnable ? 1 : 0, sort_order || 0, id).changes > 0
+    lead_time_days ?? 7, safety_stock_days ?? 3, brand_id || null, is_returnable ? 1 : 0, sort_order || 0, id).changes > 0
 }
 export function getProductBalance(productId) {
   const mv = getDB().prepare(`
@@ -293,6 +297,7 @@ export function listMovements({ type, product_id, zone_id, from, to, limit = 200
 export function stockByProduct() {
   return getDB().prepare(`
     SELECT p.id, p.name, p.unit_label, p.units_per_case, p.cases_per_pallet, p.min_level, p.critical_level,
+      p.lead_time_days, p.safety_stock_days,
       p.brand_id, b.name AS brand_name,
       COALESCE(SUM(CASE WHEN mv.type='in'  THEN mv.qty_base END), 0) AS total_in,
       COALESCE(SUM(CASE WHEN mv.type='out' THEN mv.qty_base END), 0) AS total_out,

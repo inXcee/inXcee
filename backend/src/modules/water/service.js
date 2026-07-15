@@ -74,11 +74,12 @@ export function productsService(opts) { return q.listProducts(opts) }
 // böylece brand/is_returnable göndermeyen eski istemciler bu alanları silmez.
 function productFields(data, existing = null) {
   const has = (k) => Object.prototype.hasOwnProperty.call(data, k)
-  const wholeSetting = (value, fallback, label, min = 0) => {
+  const wholeSetting = (value, fallback, label, min = 0, max = Number.MAX_SAFE_INTEGER) => {
     if (value == null || value === '') return fallback
     const numeric = Number(value)
-    if (!Number.isSafeInteger(numeric) || numeric < min) {
-      throw Object.assign(new Error(`${label} ${min || 0} veya daha büyük tam sayı olmalı`), { statusCode: 400 })
+    if (!Number.isSafeInteger(numeric) || numeric < min || numeric > max) {
+      const range = max === Number.MAX_SAFE_INTEGER ? `${min || 0} veya daha büyük` : `${min}-${max} arasında`
+      throw Object.assign(new Error(`${label} ${range} tam sayı olmalı`), { statusCode: 400 })
     }
     return numeric
   }
@@ -86,6 +87,8 @@ function productFields(data, existing = null) {
   const cpp = wholeSetting(has('cases_per_pallet') ? data.cases_per_pallet : null, existing?.cases_per_pallet || 1, 'Palet içi miktarı', 1)
   const minLevel = wholeSetting(has('min_level') ? data.min_level : null, existing?.min_level || 0, 'Minimum stok')
   const criticalLevel = wholeSetting(has('critical_level') ? data.critical_level : null, existing?.critical_level || 0, 'Kritik stok')
+  const leadTimeDays = wholeSetting(has('lead_time_days') ? data.lead_time_days : null, existing?.lead_time_days ?? 7, 'Tedarik süresi', 0, 365)
+  const safetyStockDays = wholeSetting(has('safety_stock_days') ? data.safety_stock_days : null, existing?.safety_stock_days ?? 3, 'Emniyet stoku günü', 0, 365)
   let brand_id = existing ? existing.brand_id : null
   if (has('brand_id')) {
     if (data.brand_id == null || data.brand_id === '') brand_id = null
@@ -101,6 +104,8 @@ function productFields(data, existing = null) {
     units_per_case: upc, cases_per_pallet: cpp,
     min_level: minLevel,
     critical_level: criticalLevel,
+    lead_time_days: leadTimeDays,
+    safety_stock_days: safetyStockDays,
     brand_id, is_returnable, sort_order,
   }
 }
@@ -310,6 +315,9 @@ export function pivotService({ from, to } = {}) {
     product_id: p.id, name: p.name, unit_label: p.unit_label,
     brand_id: p.brand_id || null, brand_name: p.brand_name || 'Markasız',
     units_per_case: p.units_per_case, cases_per_pallet: p.cases_per_pallet,
+    min_level: p.min_level || 0, critical_level: p.critical_level || 0,
+    lead_time_days: p.lead_time_days ?? 7, safety_stock_days: p.safety_stock_days ?? 3,
+    is_returnable: p.is_returnable || 0,
   }))
 
   const rows = zones.map(z => {
@@ -547,6 +555,7 @@ export function waterDailyDigest({ now = new Date() } = {}) {
   if (s.negative) parts.push(`${s.negative} eksi stok`)
   if (s.low) parts.push(`${s.low} düşük stok`)
   if (f.order_count) parts.push(`${f.order_count} sipariş önerisi`)
+  if (f.overdue_order_count) parts.push(`${f.overdue_order_count} gecikmiş sipariş`)
   if (f.soon_count) parts.push(`${f.soon_count} ürün 7 günden az`)
   if (s.idle_zones) parts.push(`${s.idle_zones} bölge bugün kayıtsız`)
   const actionable = parts.length > 0
@@ -561,7 +570,17 @@ export function waterDailyDigest({ now = new Date() } = {}) {
     })
     notified = notifications.length > 0
   }
-  return { date: today, actionable, notified, parts, summary: s, order_count: f.order_count, soon_count: f.soon_count }
+  return {
+    date: today,
+    actionable,
+    notified,
+    parts,
+    summary: s,
+    order_count: f.order_count,
+    overdue_order_count: f.overdue_order_count,
+    due_soon_order_count: f.due_soon_order_count,
+    soon_count: f.soon_count,
+  }
 }
 
 // ── Eskalasyon (V5) — 3+ gün bekleyen irsaliye + kritik stok → critical bildirim (push'a fan-out) ──

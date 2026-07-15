@@ -18,6 +18,8 @@ const PRODUCTS = [
     units_per_case: 1,
     cases_per_pallet: 36,
     min_level: 72,
+    lead_time_days: 5,
+    safety_stock_days: 2,
   },
   {
     product_id: 2,
@@ -28,6 +30,8 @@ const PRODUCTS = [
     units_per_case: 1,
     cases_per_pallet: 180,
     min_level: 360,
+    lead_time_days: 10,
+    safety_stock_days: 4,
   },
 ]
 
@@ -102,6 +106,28 @@ function reportOptions(overrides = {}) {
         total_out: 108,
       }],
     },
+    forecast: {
+      date: '2026-07-31',
+      window: 30,
+      target_days: 30,
+      totals: { order_count: 1, overdue_order_count: 1, due_soon_order_count: 0, soon_count: 1 },
+      rows: [{
+        product_id: 1,
+        product_name: 'Damacana',
+        brand_name: 'Mila Su',
+        balance: 10,
+        avg_daily: 3,
+        days_of_cover: 3,
+        lead_time_days: 5,
+        safety_stock_days: 2,
+        order_by_date: '2026-07-27',
+        stockout_date: '2026-08-03',
+        order_urgency: 'overdue',
+        needs_order: true,
+        suggested_base: 80,
+        suggested_human: '80 adet',
+      }],
+    },
     outRows: [{
       move_date: '2026-07-15',
       created_at: '2026-07-15 10:25:00',
@@ -172,6 +198,7 @@ describe('waterExcelExport', () => {
     const api = {
       get: vi.fn((url, config) => {
         if (url === '/water/summary') return Promise.resolve({ data: { totals: { period_in: 1 } } })
+        if (url === '/water/forecast') return Promise.resolve({ data: { rows: [{ product_id: 7 }] } })
         if (url === '/water/movements' && config.params.type === 'out') return Promise.resolve({ data: [{ id: 1 }] })
         if (url === '/water/movements' && config.params.type === 'in') return Promise.resolve({ data: [{ id: 2 }] })
         if (url === '/water/returns') return Promise.resolve({ data: [{ id: 3 }] })
@@ -183,8 +210,9 @@ describe('waterExcelExport', () => {
 
     const result = await loadWaterExcelReportData(api, { from: '2026-07-01', to: '2026-07-31' })
 
-    expect(api.get).toHaveBeenCalledTimes(6)
+    expect(api.get).toHaveBeenCalledTimes(7)
     expect(result).toMatchObject({
+      forecast: { rows: [{ product_id: 7 }] },
       outRows: [{ id: 1 }],
       inRows: [{ id: 2 }],
       returnRows: [{ id: 3 }],
@@ -193,18 +221,25 @@ describe('waterExcelExport', () => {
     })
   })
 
-  it('builds the complete 13-sheet closing workbook and control center', () => {
+  it('builds the complete 14-sheet closing workbook and control center', () => {
     const report = buildWaterExcelWorkbook(ExcelJS, reportOptions())
 
     expect(report.sheetNames).toEqual(WATER_EXCEL_SHEETS)
     expect(report.filename).toBe('su-takip-detayli-2026-07-01_2026-07-31.xlsx')
-    expect(report.checks).toEqual({ negativeStock: 1, overduePending: 1, lowStock: 1, periodDeficits: 2 })
+    expect(report.checks).toEqual({ negativeStock: 1, overduePending: 1, lowStock: 1, overdueOrders: 1, periodDeficits: 2 })
 
     const control = report.workbook.getWorksheet('Kontrol')
     expect(control.getCell('A1').value).toContain('SU TAKİP KONTROL PANELİ')
     expect(control.getCell('B8').value).toBe(1)
     expect(control.getCell('C8').value).toBe('KONTROL')
-    expect(control.getCell('A14').value).toMatchObject({ text: 'Aylık Özet', hyperlink: "#'Aylık Özet'!A1" })
+    expect(control.getCell('A15').value).toMatchObject({ text: 'Aylık Özet', hyperlink: "#'Aylık Özet'!A1" })
+    expect(control.getCell('A16').value).toMatchObject({ text: 'Sipariş Planı', hyperlink: "#'Sipariş Planı'!A1" })
+
+    const orderPlan = report.workbook.getWorksheet('Sipariş Planı')
+    expect(orderPlan.getCell('A5').value).toBe('GECİKMİŞ')
+    expect(orderPlan.getCell('G5').value).toBe(5)
+    expect(orderPlan.getCell('H5').value).toBe(2)
+    expect(orderPlan.getCell('I5').value).toBe('2026-07-27')
   })
 
   it('keeps editable formulas, exact decimals and safe text in report cells', () => {

@@ -65,6 +65,8 @@ describe('water analytics module', () => {
         unit_label: 'koli',
         units_per_case: 1,
         cases_per_pallet: 66,
+        lead_time_days: 12,
+        safety_stock_days: 4,
         total_in: 100,
         total_out: 20,
         adjust_net: 0,
@@ -89,13 +91,51 @@ describe('water analytics module', () => {
       avg_daily: 10,
       days_of_cover: 8,
       stockout_date: '2026-07-23',
+      lead_time_days: 12,
+      safety_stock_days: 4,
+      reorder_point_days: 16,
+      order_due_in_days: -8,
+      order_by_date: '2026-07-07',
+      order_urgency: 'overdue',
       needs_order: true,
       suggested_base: 220,
       confidence: 'ok',
     })
     expect(result.rows[1]).toMatchObject({ needs_order: false, suggested_base: 0, confidence: 'low' })
     expect(result.order_suggestions.map(row => row.product_id)).toEqual([1])
-    expect(result.totals).toEqual({ products: 2, order_count: 1, soon_count: 0 })
+    expect(result.totals).toEqual({ products: 2, order_count: 1, overdue_order_count: 1, due_soon_order_count: 0, soon_count: 0 })
+  })
+
+  it('uses each product lead and safety days when deciding whether to order', () => {
+    queryMocks.consumptionRates.mockReturnValue([
+      { product_id: 1, out_sum: 300, active_days: 10 },
+      { product_id: 2, out_sum: 300, active_days: 10 },
+    ])
+    queryMocks.stockByProduct.mockReturnValue([
+      { id: 1, name: 'Hızlı Tedarik', unit_label: 'adet', units_per_case: 1, cases_per_pallet: 1, lead_time_days: 2, safety_stock_days: 1, total_in: 80, total_out: 0, adjust_net: 0 },
+      { id: 2, name: 'Yavaş Tedarik', unit_label: 'adet', units_per_case: 1, cases_per_pallet: 1, lead_time_days: 35, safety_stock_days: 5, total_in: 80, total_out: 0, adjust_net: 0 },
+    ])
+
+    const result = forecastService({ today: '2026-07-15', window: 30, targetDays: 30 })
+
+    expect(result.rows.find(row => row.product_id === 1)).toMatchObject({
+      days_of_cover: 8,
+      reorder_point_days: 3,
+      order_due_in_days: 5,
+      order_by_date: '2026-07-20',
+      needs_order: false,
+      order_urgency: 'planned',
+    })
+    expect(result.rows.find(row => row.product_id === 2)).toMatchObject({
+      days_of_cover: 8,
+      reorder_point_days: 40,
+      target_stock_days: 40,
+      order_due_in_days: -32,
+      order_by_date: '2026-06-13',
+      needs_order: true,
+      suggested_base: 320,
+      order_urgency: 'overdue',
+    })
   })
 
   it('normalizes trend range and aggregates zones across products', () => {

@@ -4,8 +4,8 @@ import { renderWithProviders } from '../../test/renderWithProviders.jsx'
 import { useAuthStore } from '../../shared/store/authStore.js'
 
 const PRODUCTS = [
-  { id: 1, name: 'Damacana', unit_label: 'damacana', units_per_case: 1, cases_per_pallet: 36, is_active: 1, min_level: 0, brand_id: 1, brand_name: 'MİLA SU', is_returnable: 1 },
-  { id: 2, name: '0.5 L', unit_label: 'koli', units_per_case: 1, cases_per_pallet: 140, is_active: 1, min_level: 0, brand_id: 1, brand_name: 'MİLA SU', is_returnable: 0 },
+  { id: 1, name: 'Damacana', unit_label: 'damacana', units_per_case: 1, cases_per_pallet: 36, is_active: 1, min_level: 0, lead_time_days: 5, safety_stock_days: 2, brand_id: 1, brand_name: 'MİLA SU', is_returnable: 1 },
+  { id: 2, name: '0.5 L', unit_label: 'koli', units_per_case: 1, cases_per_pallet: 140, is_active: 1, min_level: 0, lead_time_days: 10, safety_stock_days: 4, brand_id: 1, brand_name: 'MİLA SU', is_returnable: 0 },
 ]
 
 const DAILY_ROWS = [
@@ -51,8 +51,8 @@ vi.mock('../../shared/api/client.js', () => ({
         from: p.from, to: p.to,
         brands: [{ brand_id: 1, brand_name: 'MİLA SU', product_ids: [1, 2] }],
         columns: [
-          { product_id: 1, name: 'Damacana', unit_label: 'damacana', brand_id: 1, brand_name: 'MİLA SU', units_per_case: 1, cases_per_pallet: 36 },
-          { product_id: 2, name: '0.5 L', unit_label: 'koli', brand_id: 1, brand_name: 'MİLA SU', units_per_case: 1, cases_per_pallet: 140 },
+          { product_id: 1, name: 'Damacana', unit_label: 'damacana', brand_id: 1, brand_name: 'MİLA SU', units_per_case: 1, cases_per_pallet: 36, lead_time_days: 5, safety_stock_days: 2 },
+          { product_id: 2, name: '0.5 L', unit_label: 'koli', brand_id: 1, brand_name: 'MİLA SU', units_per_case: 1, cases_per_pallet: 140, lead_time_days: 10, safety_stock_days: 4 },
         ],
         rows: pivotRows,
         colTotals: { 1: { base: 91, human: '2 palet 19 damacana' }, 2: { base: 0, human: '0 koli' } },
@@ -76,11 +76,11 @@ vi.mock('../../shared/api/client.js', () => ({
       if (url === '/water/forecast') return Promise.resolve({ data: {
         date: '2026-07-09', window: 30, target_days: 30,
         rows: [
-          { product_id: 1, product_name: 'Damacana', brand_name: 'MİLA SU', unit_label: 'damacana', balance: 10, balance_human: '10 damacana', avg_daily: 3, avg_daily_human: '3 damacana', days_of_cover: 3, stockout_date: '2026-07-12', needs_order: true, suggested_base: 80, suggested_human: '80 damacana', confidence: 'ok' },
-          { product_id: 2, product_name: '0.5 L', brand_name: 'MİLA SU', unit_label: 'koli', balance: 970, balance_human: '970 koli', avg_daily: 1, avg_daily_human: '1 koli', days_of_cover: 970, stockout_date: '2029-01-01', needs_order: false, suggested_base: 0, suggested_human: null, confidence: 'ok' },
+          { product_id: 1, product_name: 'Damacana', brand_name: 'MİLA SU', unit_label: 'damacana', balance: 10, balance_human: '10 damacana', avg_daily: 3, avg_daily_human: '3 damacana', days_of_cover: 3, stockout_date: '2026-07-12', lead_time_days: 5, safety_stock_days: 2, reorder_point_days: 7, order_due_in_days: -4, order_by_date: '2026-07-05', order_urgency: 'overdue', needs_order: true, suggested_base: 80, suggested_human: '80 damacana', confidence: 'ok' },
+          { product_id: 2, product_name: '0.5 L', brand_name: 'MİLA SU', unit_label: 'koli', balance: 970, balance_human: '970 koli', avg_daily: 1, avg_daily_human: '1 koli', days_of_cover: 970, stockout_date: '2029-01-01', lead_time_days: 10, safety_stock_days: 4, reorder_point_days: 14, order_due_in_days: 956, order_by_date: '2029-02-19', order_urgency: 'planned', needs_order: false, suggested_base: 0, suggested_human: null, confidence: 'ok' },
         ],
-        order_suggestions: [{ product_id: 1, product_name: 'Damacana', brand_name: 'MİLA SU', suggested_human: '80 damacana', days_of_cover: 3 }],
-        totals: { products: 2, order_count: 1, soon_count: 1 },
+        order_suggestions: [{ product_id: 1, product_name: 'Damacana', brand_name: 'MİLA SU', suggested_human: '80 damacana', days_of_cover: 3, lead_time_days: 5, safety_stock_days: 2, order_due_in_days: -4, order_by_date: '2026-07-05', order_urgency: 'overdue' }],
+        totals: { products: 2, order_count: 1, overdue_order_count: 1, due_soon_order_count: 0, soon_count: 1 },
       } })
       if (url === '/water/review') return Promise.resolve({ data: {
         rows: [{ movement_id: 5, move_date: '2026-07-04', zone_name: 'OTC Kamp Alanı', product_name: 'Damacana', brand_name: 'MİLA SU', created_by_name: 'Müdür', qty_base: 8, unallocated_base: 8, qty_human: '8 damacana', unallocated_human: '8 damacana' }],
@@ -435,6 +435,8 @@ describe('WaterPage tek-ekran pano smoke', () => {
     expect(await within(panel).findByText('ÖNERİLEN SİPARİŞLER')).toBeInTheDocument()
     expect(within(panel).getAllByText(/80 damacana/).length).toBeGreaterThan(0) // önerilen sipariş miktarı
     expect(within(panel).getByText('3g')).toBeInTheDocument() // gün yeter (tablo)
+    expect(within(panel).getByText('5g + 2g')).toBeInTheDocument()
+    expect(within(panel).getAllByText(/4g gecikti/).length).toBeGreaterThan(0)
   })
 
   it('irsaliye bekleyenler paneli bekleyen dağıtımı ve gecikmeyi listeler', async () => {
@@ -473,13 +475,16 @@ describe('WaterPage tek-ekran pano smoke', () => {
     useAuthStore.setState({ user: null })
   })
 
-  it('ürün ayarlarında kritik stok alanı ve marka renk seçici var', async () => {
+  it('ürün ayarlarında kritik stok, tedarik planı ve marka renk seçici var', async () => {
     renderWithProviders(<WaterPage />)
     fireEvent.click(await screen.findByText('⚙ Ayarlar'))
     fireEvent.click(await screen.findByText('💧 Ürünler & Marka'))
     expect(await screen.findByText('MARKALAR (TEDARİKÇİ)')).toBeInTheDocument()
     expect(await screen.findByLabelText('MİLA SU rengi')).toBeInTheDocument() // W8 marka renk seçici
     expect(screen.getAllByText('Kritik').length).toBeGreaterThan(0) // W8 kritik stok
+    expect(screen.getByText('Tedarik gün')).toBeInTheDocument()
+    expect(screen.getByText('Emniyet gün')).toBeInTheDocument()
+    expect(screen.getAllByText('5g + 2g').length).toBeGreaterThan(0)
   })
 
   it('Ayarlar modalı dağıtım yerlerini açar, Metinden modalı açılır', async () => {

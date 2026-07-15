@@ -27,6 +27,7 @@ const FILLS = {
 export const WATER_EXCEL_SHEETS = [
   'Kontrol',
   'Aylık Özet',
+  'Sipariş Planı',
   'Ay Uyuşturma',
   'INDEX',
   'Günlük Çizelge',
@@ -42,6 +43,7 @@ export const WATER_EXCEL_SHEETS = [
 
 const SHEET_DESCRIPTIONS = {
   'Aylık Özet': 'Dönem göstergeleri ve güncel stok durumu',
+  'Sipariş Planı': 'Ürün bazlı tedarik süresi, emniyet payı ve sipariş son günü',
   'Ay Uyuşturma': 'Ay içinde gelen, dağıtılan ve kalan karşılaştırması',
   INDEX: 'Dağıtım yeri ve ürün matrisi; toplam hücreleri formüllüdür',
   'Günlük Çizelge': 'Günlük giriş, dağıtım, net ve kümülatif net akış',
@@ -137,8 +139,9 @@ const finalizeWorkbook = workbook => {
 }
 
 export async function loadWaterExcelReportData(api, { from, to }) {
-  const [summaryRes, outRes, inRes, returnsRes, pendingRes, adjustmentsRes] = await Promise.all([
+  const [summaryRes, forecastRes, outRes, inRes, returnsRes, pendingRes, adjustmentsRes] = await Promise.all([
     api.get('/water/summary', { params: { from, to } }),
+    api.get('/water/forecast', { params: { today: to } }),
     api.get('/water/movements', { params: { type: 'out', from, to, limit: 1000 } }),
     api.get('/water/movements', { params: { type: 'in', from, to, limit: 1000 } }),
     api.get('/water/returns', { params: { from, to } }),
@@ -148,6 +151,7 @@ export async function loadWaterExcelReportData(api, { from, to }) {
 
   return {
     summary: summaryRes.data || {},
+    forecast: forecastRes.data || {},
     outRows: outRes.data || [],
     inRows: inRes.data || [],
     returnRows: returnsRes.data || [],
@@ -165,6 +169,7 @@ export function buildWaterExcelWorkbook(ExcelJS, options) {
     pivot = {},
     columns = [],
     summary = {},
+    forecast = {},
     outRows = [],
     inRows = [],
     returnRows = [],
@@ -183,6 +188,8 @@ export function buildWaterExcelWorkbook(ExcelJS, options) {
   const negativeStock = stock.filter(item => item.negative || Number(item.balance) < 0)
   const overduePending = pendingRows.filter(item => Number(item.waiting_days || 0) >= 3)
   const periodDeficits = stock.filter(item => Number(item.period_net || 0) < 0)
+  const forecastRows = forecast.rows || []
+  const forecastTotals = forecast.totals || {}
 
   const workbook = new ExcelJS.Workbook()
   workbook.creator = 'YYS Su Takip'
@@ -218,6 +225,7 @@ export function buildWaterExcelWorkbook(ExcelJS, options) {
     ['Eksi stok', negativeStock.length, negativeStock.length ? 'KONTROL' : 'TAMAM', 'Sayım ve eksik irsaliyeleri doğrulayın'],
     ['3+ gün irsaliye bekleyen', overduePending.length, overduePending.length ? 'GECİKMİŞ' : 'TAMAM', 'İrsaliye kaynağını eşleştirin'],
     ['Düşük stok', Number(totals.low_count || 0), Number(totals.low_count || 0) ? 'SİPARİŞ' : 'TAMAM', 'Sipariş önerilerini inceleyin'],
+    ['Gecikmiş sipariş', Number(forecastTotals.overdue_order_count || 0), Number(forecastTotals.overdue_order_count || 0) ? 'GECİKMİŞ' : 'TAMAM', 'Sipariş Planı sayfasındaki son tarihleri kontrol edin'],
     ['Ay dağıtımı gelenden fazla ürün', periodDeficits.length, periodDeficits.length ? 'UYUŞTUR' : 'TAMAM', 'Ay Uyuşturma sayfasını kontrol edin'],
   ]
   checks.forEach(check => control.addRow(check))
@@ -228,6 +236,7 @@ export function buildWaterExcelWorkbook(ExcelJS, options) {
   control.addRow(['Rapor Sayfası', 'İçerik', 'Kayıt', '', '', '', '', ''])
   WATER_EXCEL_SHEETS.slice(1).forEach(sheetName => {
     const count = sheetName === 'Dağıtım Defteri' ? outRows.length
+      : sheetName === 'Sipariş Planı' ? forecastRows.length
       : sheetName === 'İrsaliye Stok' ? inRows.length
         : sheetName === 'Boş İade' ? returnRows.length
           : sheetName === 'İrsaliye Bekleyen' ? pendingRows.length
@@ -264,6 +273,41 @@ export function buildWaterExcelWorkbook(ExcelJS, options) {
     if (summarySheet.getCell(row, 8).value === 'DÜŞÜK') paintRow(summarySheet, row, FILLS.red)
   }
   summarySheet.columns = [{ width: 16 }, { width: 24 }, { width: 12 }, { width: 12 }, { width: 12 }, { width: 12 }, { width: 22 }, { width: 12 }]
+
+  const orderPlan = workbook.addWorksheet('Sipariş Planı')
+  title(orderPlan, `ÜRÜN BAZLI SİPARİŞ PLANI - ${label}`, 13)
+  orderPlan.addRow(['Hesap tarihi', forecast.date || to, 'Tüketim penceresi', `${forecast.window || 30} gün`, 'Asgari hedef stok', `${forecast.target_days || 30} gün`, '', '', '', '', '', '', ''])
+  orderPlan.addRow([])
+  orderPlan.addRow(['Durum', 'Marka', 'Ürün', 'Bakiye', 'Günlük Ortalama', 'Gün Yeter', 'Tedarik Gün', 'Emniyet Gün', 'Sipariş Son Günü', 'Tahmini Bitiş', 'Hedef Gün', 'Önerilen Baz', 'Öneri'])
+  const urgencyLabel = urgency => urgency === 'overdue' ? 'GECİKMİŞ' : urgency === 'due_soon' ? 'YAKLAŞIYOR' : urgency === 'planned' ? 'PLANLI' : 'YETERSİZ VERİ'
+  forecastRows.forEach(row => orderPlan.addRow([
+    urgencyLabel(row.order_urgency),
+    safeExcelText(row.brand_name),
+    safeExcelText(row.product_name),
+    Number(row.balance || 0),
+    Number(row.avg_daily || 0),
+    row.days_of_cover == null ? '' : Number(row.days_of_cover),
+    Number(row.lead_time_days ?? 7),
+    Number(row.safety_stock_days ?? 3),
+    row.order_by_date || '',
+    row.stockout_date || '',
+    Number(row.target_stock_days ?? forecast.target_days ?? 30),
+    Number(row.suggested_base || 0),
+    safeExcelText(row.suggested_human),
+  ]))
+  if (!forecastRows.length) orderPlan.addRow(['', '', 'Tahmin verisi yok'])
+  table(orderPlan, 4, Math.max(4, 4 + forecastRows.length), 13, [4, 5, 6, 7, 8, 11, 12])
+  forecastRows.forEach((row, index) => {
+    if (row.order_urgency === 'overdue') paintRow(orderPlan, 5 + index, FILLS.red)
+    else if (row.order_urgency === 'due_soon') paintRow(orderPlan, 5 + index, FILLS.amber)
+    else if (row.needs_order) paintRow(orderPlan, 5 + index, FILLS.green)
+  })
+  orderPlan.views = [{ state: 'frozen', ySplit: 4, xSplit: 3 }]
+  orderPlan.autoFilter = { from: 'A4', to: 'M4' }
+  orderPlan.columns = [
+    { width: 16 }, { width: 16 }, { width: 24 }, { width: 12 }, { width: 16 }, { width: 11 },
+    { width: 13 }, { width: 13 }, { width: 17 }, { width: 17 }, { width: 12 }, { width: 16 }, { width: 22 },
+  ]
 
   const match = workbook.addWorksheet('Ay Uyuşturma')
   title(match, `AY SONU GELEN / DAĞITILAN UYUŞTURMA - ${label}`, 9)
@@ -412,15 +456,15 @@ export function buildWaterExcelWorkbook(ExcelJS, options) {
   zoneSheet.columns = [{ width: 26 }, { width: 16 }, { width: 22 }, { width: 12 }, { width: 14 }, { width: 22 }, { width: 18 }]
 
   const rules = workbook.addWorksheet('Ürün Kuralları')
-  title(rules, 'ÜRÜN / PALET ÇEVRİM KURALLARI', 8)
-  rules.addRow(['Marka', 'Ürün', 'Baz Birim', 'Koli İçi', 'Palet Koli/Paket', '1 Palet Baz', 'Varsayılan Giriş', 'Min Stok'])
+  title(rules, 'ÜRÜN / PALET / TEDARİK KURALLARI', 10)
+  rules.addRow(['Marka', 'Ürün', 'Baz Birim', 'Koli İçi', 'Palet Koli/Paket', '1 Palet Baz', 'Varsayılan Giriş', 'Min Stok', 'Tedarik Gün', 'Emniyet Gün'])
   columns.forEach(product => rules.addRow([
     safeExcelText(product.brand_name), safeExcelText(product.name), safeExcelText(product.unit_label),
     Number(product.units_per_case || 1), Number(product.cases_per_pallet || 1), Number(multiplier(product, 'palet') || 1),
-    unitLabel(defaultUnitForProduct(product)), Number(product.min_level || 0),
+    unitLabel(defaultUnitForProduct(product)), Number(product.min_level || 0), Number(product.lead_time_days ?? 7), Number(product.safety_stock_days ?? 3),
   ]))
-  table(rules, 2, Math.max(2, 2 + columns.length), 8, [4, 5, 6, 8])
-  rules.columns = [{ width: 16 }, { width: 24 }, { width: 12 }, { width: 10 }, { width: 16 }, { width: 14 }, { width: 16 }, { width: 12 }]
+  table(rules, 2, Math.max(2, 2 + columns.length), 10, [4, 5, 6, 8, 9, 10])
+  rules.columns = [{ width: 16 }, { width: 24 }, { width: 12 }, { width: 10 }, { width: 16 }, { width: 14 }, { width: 16 }, { width: 12 }, { width: 13 }, { width: 13 }]
 
   const returns = workbook.addWorksheet('Boş İade')
   title(returns, `BOŞ İADE / DEPOZİTO - ${label}`, 8)
@@ -478,6 +522,7 @@ export function buildWaterExcelWorkbook(ExcelJS, options) {
       negativeStock: negativeStock.length,
       overduePending: overduePending.length,
       lowStock: Number(totals.low_count || 0),
+      overdueOrders: Number(forecastTotals.overdue_order_count || 0),
       periodDeficits: periodDeficits.length,
     },
   }
