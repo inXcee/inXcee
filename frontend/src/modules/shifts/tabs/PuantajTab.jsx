@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from 'react'
+import { useState, useMemo, useEffect, useRef, memo } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import api from '../../../shared/api/client.js'
 import { useAuthStore } from '../../../shared/store/authStore.js'
@@ -6,7 +6,7 @@ import { useDebounce } from '../../../shared/hooks/useDebounce.js'
 import { SkeletonTable, SkeletonGrid } from '../../../shared/components/Skeleton.jsx'
 import { BottomSheet, ModalOverlay, formatShiftHours, LEAVE_TYPES, leaveTypeLabel, toastErr, toastOk } from '../shared.jsx'
 import { confirmDialog } from '../../../shared/components/ConfirmDialog.jsx'
-import { actionIdForKey, normalizeRect, cellsInRect, isInRect, moveCell, pushUndo, summarizeColumn } from '../logic/puantajGrid.js'
+import { actionIdForKey, normalizeRect, cellsInRect, moveCell, pushUndo, summarizeColumn } from '../logic/puantajGrid.js'
 import { buildPuantajActions, buildActionIndex, metaForEntry, cleanCodeHex } from '../logic/puantajCodes.js'
 import { saveWorkbook } from '../../../shared/logic/excelKit.js'
 import { buildPuantajFoyuWorkbook } from '../logic/puantajFoyuExcel.js'
@@ -1229,6 +1229,224 @@ function PuantajControlView({ audit, monthLabel, canEdit, isLocked, onOpenCalend
   )
 }
 
+// Memo referans kararlılığı: gün verisi olmayan satırlar hep aynı boş diziyi alır.
+const EMPTY_DAYS = []
+
+// Takvim personel satırı — React.memo yalnız VERİ prop'ları değişince yeniden çizer.
+// Handler prop'ları KASITLI olarak karşılaştırılmıyor: hepsi PuantajCalendarView'daki
+// ref-tabanlı zamansız closure'lar (activeCellRef vb.), bayat state okumazlar.
+const PuantajRow = memo(function PuantajRow({
+  r, rowIdx, days, month, dayNumbers, canEdit, selectedAction,
+  sundayDays, holidayMap, holidayDays,
+  activeDay,        // number | null — yalnız bu satır aktifse gün no
+  selRange,         // 'd1-d2' string | null — seçim bu satırı kapsıyorsa
+  busyKey,          // bu satırın meşgul günleri: '05,12' gibi string ('' = yok)
+  failedKey,        // bu satırın kaydedilemeyen günleri: aynı format
+  onPersonClick, onApplyRow, onCellClick, onCellMouseDown, onCellMouseEnter, onCellContextMenu,
+}) {
+  const dayMap = {}
+  days.forEach(d => { dayMap[d.date.split('-')[2]] = d })
+  const rowStats = summarizeCalendarDays(days)
+  const rowFmHours = days.reduce((s, dd) => s + (dd.overtime_hours || 0), 0)
+  const rowHolidayWorked = days.filter(dd => holidayMap.has(dd.date) && ['worked', 'overtime'].includes(dd.status)).length
+  const busySet = new Set(busyKey ? busyKey.split(',') : [])
+  const failedSet = new Set(failedKey ? failedKey.split(',') : [])
+  const [selFrom, selTo] = selRange ? selRange.split('-').map(Number) : [null, null]
+
+  return (
+    <tr style={{ borderBottom: '1px solid var(--border)' }}>
+      <td style={{ position: 'sticky', left: 0, background: 'var(--surface)', padding: '7px 10px', fontWeight: '500', zIndex: 3, borderRight: '1px solid var(--border)', borderBottom: '1px solid var(--border)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div style={{
+            width: '30px',
+            height: '30px',
+            borderRadius: '8px',
+            background: 'var(--surface2)',
+            border: '1px solid var(--border)',
+            color: 'var(--text2)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontFamily: 'var(--display)',
+            fontSize: '12px',
+            flexShrink: 0,
+          }}>{r.full_name?.charAt(0)?.toUpperCase() || '?'}</div>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <button
+              type="button"
+              onClick={() => onPersonClick?.(r)}
+              title="Personel detayini ac"
+              style={{
+                display: 'block',
+                width: '100%',
+                maxWidth: '155px',
+                border: 'none',
+                background: 'transparent',
+                color: 'var(--text)',
+                cursor: 'pointer',
+                fontSize: '12px',
+                fontWeight: 700,
+                textAlign: 'left',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                padding: 0,
+              }}
+            >
+              {r.full_name}
+            </button>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '155px' }}>{r.dept_name || 'Departmansız'}</div>
+          </div>
+        </div>
+        <button
+          type="button"
+          disabled={!canEdit}
+          onClick={() => onApplyRow(r)}
+          title="Bu personelin ayini secili kodla doldur"
+          style={{
+            width: '100%',
+            marginTop: '6px',
+            borderRadius: '6px',
+            border: '1px solid var(--border)',
+            background: 'var(--surface2)',
+            color: canEdit ? 'var(--accent)' : 'var(--text3)',
+            cursor: canEdit ? 'pointer' : 'not-allowed',
+            fontFamily: 'var(--mono)',
+            fontSize: '8px',
+            fontWeight: 800,
+            padding: '3px 6px',
+          }}
+        >
+          Ayi secili kodla doldur
+        </button>
+        <div style={{ display: 'flex', gap: '3px', marginTop: '5px', flexWrap: 'wrap' }}>
+          {[
+            [codeChar('worked', 'N'), rowStats.worked, ACTION_BY_ID.worked],
+            [codeChar('off', 'H'), rowStats.off, ACTION_BY_ID.off],
+            [codeChar('sick', 'R'), rowStats.sick, ACTION_BY_ID.sick],
+            [codeChar('unpaid', 'Üİ'), rowStats.unpaid, ACTION_BY_ID.unpaid],
+            [codeChar('absent', 'Y'), rowStats.absent, ACTION_BY_ID.absent],
+            ['T', rowHolidayWorked, { text: 'var(--red)', bg: 'rgba(239,68,68,.12)', border: 'rgba(239,68,68,.4)' }],
+            ['FM', rowFmHours ? `${rowFmHours}s` : 0, { text: 'var(--accent)', bg: 'rgba(240,165,0,.12)', border: 'rgba(240,165,0,.4)' }],
+          ].filter(([, value]) => value && value !== 0).map(([code, value, meta]) => (
+            <span key={code} style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: meta.text, background: meta.bg, border: `1px solid ${meta.border}`, borderRadius: '4px', padding: '1px 4px' }}>{code}:{value}</span>
+          ))}
+        </div>
+      </td>
+      {dayNumbers.map(d => {
+        const dayStr = String(d).padStart(2, '0')
+        const entry = dayMap[dayStr]
+        const date = `${month}-${dayStr}`
+        const status = entry?.status || (sundayDays.has(d) ? 'sunday' : 'no_record')
+        const meta = dayStatusMeta(entry, sundayDays.has(d))
+        const busy = busySet.has(dayStr)
+        const saveFailed = failedSet.has(dayStr)
+        const hours = entry?.start_hour != null ? formatShiftHours(entry.start_hour, entry.end_hour) : ''
+        const holidayName = holidayMap.get(date)?.name
+        const hasDayDetail = !!(entry?.detail_note || entry?.attachment_url || entry?.leave_hours)
+        const title = `${r.full_name} · ${date} · ${meta.label}`
+          + (hours ? ` · ${hours}` : '')
+          + (entry?.work_location_name ? ` · ${entry.work_location_name}` : '')
+          + (holidayName ? ` · 🎌 ${holidayName}` : '')
+          + (entry?.overtime_hours ? ` · FM ${entry.overtime_hours}s` : '')
+          + (entry?.leave_hours ? ` · Saatlik izin ${entry.leave_hours}s` : '')
+          + (entry?.absent_reason ? ` · Neden: ${entry.absent_reason}` : '')
+          + (entry?.detail_note ? ` · Not: ${entry.detail_note}` : '')
+          + (entry?.attachment_name ? ` · Belge: ${entry.attachment_name}` : '')
+          + (entry?.attendance_source === 'card_kiosk' ? ` · Kart ${attendanceTime(entry.actual_check_in)}-${attendanceTime(entry.actual_check_out)}` : '')
+          + (entry?.attendance_exception_count ? ` · ${entry.attendance_exception_count} kart kontrolü` : '')
+          + (canEdit ? ' · sağ tık: gün detayı' : '')
+        const isActive = activeDay === d
+        const inSelection = selFrom != null && d >= selFrom && d <= selTo
+        return (
+          <td key={d}
+            style={{
+              width: '42px', textAlign: 'center', padding: '3px',
+              background: inSelection ? 'rgba(240,165,0,.12)'
+                : holidayDays.has(d) ? 'rgba(239,68,68,.05)'
+                : sundayDays.has(d) ? 'rgba(240,165,0,.035)' : 'transparent',
+              borderRight: '1px solid var(--border)',
+              borderBottom: '1px solid var(--border)',
+            }}>
+            <button
+              type="button"
+              title={saveFailed ? `${title} · KAYDEDILEMEDI, tekrar dene` : title}
+              disabled={!canEdit || busy}
+              onContextMenu={e => {
+                e.preventDefault()
+                if (canEdit) onCellContextMenu(r, date, entry)
+              }}
+              onMouseDown={e => onCellMouseDown(r, d, entry, e)}
+              onMouseEnter={e => {
+                onCellMouseEnter(r, d, entry)
+                if (canEdit) e.currentTarget.style.filter = 'brightness(1.12)'
+              }}
+              onClick={e => onCellClick(r, d, entry, rowIdx, e)}
+              style={{
+                width: '34px',
+                height: '30px',
+                borderRadius: '7px',
+                border: saveFailed ? '2px solid var(--red)' : status === 'no_record' || status === 'sunday' ? `1px dashed ${meta.border}` : `1px solid ${meta.border}`,
+                boxShadow: saveFailed ? '0 0 0 2px rgba(239,68,68,.18)' : isActive ? '0 0 0 2px var(--accent)' : 'none',
+                position: 'relative',
+                background: meta.bg,
+                color: meta.text,
+                cursor: canEdit ? 'pointer' : 'default',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontFamily: 'var(--mono)',
+                fontSize: meta.code?.length > 1 ? '9px' : '12px',
+                fontWeight: 800,
+                opacity: busy ? .82 : 1,
+                transition: 'transform .08s, filter .12s',
+              }}
+              onMouseLeave={e => { e.currentTarget.style.filter = 'none' }}
+            >
+              {meta.code || (busy ? '...' : '')}
+              {busy ? (
+                <span style={{ position: 'absolute', top: '1px', left: '2px', fontSize: '6px', lineHeight: 1, color: 'var(--accent)', fontWeight: 900 }}>•</span>
+              ) : null}
+              {saveFailed ? (
+                <span style={{ position: 'absolute', top: '0px', right: '2px', fontSize: '8px', lineHeight: 1, color: 'var(--red)', fontWeight: 900 }}>!</span>
+              ) : null}
+              {!busy && entry?.overtime_hours ? (
+                <span style={{ position: 'absolute', top: '0px', right: '1px', fontSize: '6px', lineHeight: 1, color: 'var(--accent)', fontWeight: 800 }}>
+                  +{entry.overtime_hours}
+                </span>
+              ) : null}
+              {!busy && entry?.absent_reason ? (
+                <span style={{ position: 'absolute', bottom: '0px', right: '2px', fontSize: '7px', lineHeight: 1, color: 'var(--red)' }}>•</span>
+              ) : null}
+              {!busy && hasDayDetail ? (
+                <span style={{ position: 'absolute', bottom: '0px', left: '2px', fontSize: '7px', lineHeight: 1, color: entry?.attachment_url ? 'var(--blue)' : 'var(--teal)', fontWeight: 900 }}>i</span>
+              ) : null}
+              {!busy && entry?.attendance_source === 'card_kiosk' ? (
+                <span style={{ position: 'absolute', top: '0px', left: '2px', fontSize: '7px', lineHeight: 1, color: entry?.attendance_exception_count ? 'var(--red)' : 'var(--blue)', fontWeight: 900 }}>K</span>
+              ) : null}
+            </button>
+          </td>
+        )
+      })}
+    </tr>
+  )
+}, (prev, next) =>
+  prev.days === next.days &&
+  prev.activeDay === next.activeDay &&
+  prev.selRange === next.selRange &&
+  prev.busyKey === next.busyKey &&
+  prev.failedKey === next.failedKey &&
+  prev.canEdit === next.canEdit &&
+  prev.selectedAction === next.selectedAction &&
+  prev.month === next.month &&
+  prev.dayNumbers === next.dayNumbers &&
+  prev.sundayDays === next.sundayDays &&
+  prev.holidayMap === next.holidayMap &&
+  prev.holidayDays === next.holidayDays &&
+  prev.r === next.r && prev.rowIdx === next.rowIdx
+  // handler prop'ları KASITLI karşılaştırılmıyor — hepsi ref-tabanlı zamansız closure
+)
+
 function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, canEdit, selectedAction, setSelectedAction, onApplyStatus, updatingKeys, onPersonClick, approval, onOpenApprovalDay, writesPendingRef }) {
   const [dayData, setDayData] = useState({}) // staffId → days array
   const [failedSaves, setFailedSaves] = useState({})
@@ -1274,6 +1492,13 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
   // Excel-grid etkileşimi: aktif hücre + Shift seçim çapası + undo yığını
   const [activeCell, setActiveCell] = useState(null) // { row: filtered index, day: 1..31 }
   const [anchor, setAnchor] = useState(null)
+
+  // Zamansız handler'lar (satır memo'su için): state ref üzerinden okunur — memo'lu
+  // satıra geçen closure'lar bayatlamaz (failedSavesRef deseninin genişletilmişi).
+  const activeCellRef = useRef(activeCell); activeCellRef.current = activeCell
+  const anchorRef = useRef(anchor); anchorRef.current = anchor
+  const entryModeRef = useRef(entryMode); entryModeRef.current = entryMode
+  const dayDataRef = useRef(dayData); dayDataRef.current = dayData
   const [undoCount, setUndoCount] = useState(0)
   const undoStackRef = useRef([])
   const [dayDetailDate, setDayDetailDate] = useState(null)
@@ -1295,7 +1520,7 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
     () => new Set([...holidayMap.keys()].map(d => parseInt(d.split('-')[2], 10))),
     [holidayMap]
   )
-  const dayNumbers = Array.from({ length: daysInMonth }, (_, i) => i + 1)
+  const dayNumbers = useMemo(() => Array.from({ length: daysInMonth }, (_, i) => i + 1), [daysInMonth])
 
   const { data: monthDayData, isFetching: daysFetching } = useQuery({
     queryKey: ['puantaj-days-month', month, deptFilter],
@@ -1331,9 +1556,17 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
   }, [])
 
   // Sunday indices (day of week for day 1)
-  const sundayDays = new Set(dayNumbers.filter(d => new Date(y, m - 1, d).getDay() === 0))
+  const sundayDays = useMemo(
+    () => new Set(dayNumbers.filter(d => new Date(y, m - 1, d).getDay() === 0)),
+    [dayNumbers, y, m]
+  )
   const loadedDayRows = filtered.flatMap(row => dayData[row.id] || [])
   const monthTotals = summarizeCalendarDays(loadedDayRows)
+  const columnTotals = useMemo(() => dayNumbers.map(d => {
+    const dayStr = String(d).padStart(2, '0')
+    const col = summarizeColumn(filtered.map(r => (dayData[r.id] || []).find(x => x.date.endsWith(`-${dayStr}`))))
+    return { d, col, leaveTotal: col.leave + col.off }
+  }), [dayNumbers, filtered, dayData])
 
   const replaceLocalDays = (changes) => {
     setDayData(prev => patchPuantajDaysByStaff(prev, changes, month))
@@ -1406,7 +1639,7 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
 
   const entryFor = (row, day) => {
     const dayStr = String(day).padStart(2, '0')
-    return (dayData[row.id] || []).find(d => d.date.endsWith(`-${dayStr}`))
+    return (dayDataRef.current[row.id] || []).find(d => d.date.endsWith(`-${dayStr}`))
   }
 
   const applyCell = (row, day, entry) => {
@@ -1423,11 +1656,17 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
   }
 
   // Seçili dikdörtgene (yoksa aktif hücreye) kodu uygula
-  const selectionRect = anchor && activeCell ? normalizeRect(anchor, activeCell) : null
+  const selectionRect = useMemo(
+    () => (anchor && activeCell ? normalizeRect(anchor, activeCell) : null),
+    [anchor, activeCell]
+  )
 
   const applyActionToSelection = (action) => {
     if (!canEdit || !action) return
-    const cells = selectionRect ? cellsInRect(selectionRect) : (activeCell ? [activeCell] : [])
+    const rect = anchorRef.current && activeCellRef.current
+      ? normalizeRect(anchorRef.current, activeCellRef.current)
+      : null
+    const cells = rect ? cellsInRect(rect) : (activeCellRef.current ? [activeCellRef.current] : [])
     const changes = cells
       .filter(c => filtered[c.row])
       .map(c => buildChange(filtered[c.row], c.day, entryFor(filtered[c.row], c.day), action))
@@ -1463,8 +1702,8 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
     if (e.ctrlKey || e.metaKey || e.altKey) return
     if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
       e.preventDefault()
-      const base = activeCell || { row: 0, day: 1 }
-      if (e.shiftKey) { if (!anchor) setAnchor(base) } else setAnchor(null)
+      const base = activeCellRef.current || { row: 0, day: 1 }
+      if (e.shiftKey) { if (!anchorRef.current) setAnchor(base) } else setAnchor(null)
       setActiveCell(moveCell(base, e.key, filtered.length - 1, daysInMonth))
       return
     }
@@ -1482,15 +1721,16 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
   }
 
   const clickCell = (row, day, entry, rowIdx, event) => {
-    if (entryMode === 'paint') return
-    if (event.shiftKey && activeCell) {
+    if (entryModeRef.current === 'paint') return
+    const currentActive = activeCellRef.current
+    if (event.shiftKey && currentActive) {
       // Excel gibi: Shift+tık — aktif hücreden tıklanana dikdörtgen, seçili kodla doldur
-      const rect = normalizeRect(activeCell, { row: rowIdx, day })
+      const rect = normalizeRect(currentActive, { row: rowIdx, day })
       const changes = cellsInRect(rect)
         .filter(c => filtered[c.row])
         .map(c => buildChange(filtered[c.row], c.day, entryFor(filtered[c.row], c.day)))
       applyChanges(changes)
-      setAnchor(activeCell)
+      setAnchor(currentActive)
       setActiveCell({ row: rowIdx, day })
       return
     }
@@ -1508,7 +1748,7 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
   }
 
   const beginPaint = (row, day, entry, event) => {
-    if (entryMode !== 'paint' || event.button !== 0) return
+    if (entryModeRef.current !== 'paint' || event.button !== 0) return
     event.preventDefault()
     paintingRef.current = true
     paintedKeysRef.current = new Set()
@@ -1516,7 +1756,7 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
   }
 
   const enterPaint = (row, day, entry) => {
-    if (entryMode !== 'paint' || !paintingRef.current) return
+    if (entryModeRef.current !== 'paint' || !paintingRef.current) return
     paintCell(row, day, entry)
   }
 
@@ -1778,189 +2018,20 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
         </thead>
         <tbody>
           {filtered.map((r, rowIdx) => {
-            const days = dayData[r.id] || []
-            const dayMap = {}
-            days.forEach(d => { dayMap[d.date.split('-')[2]] = d })
-            const rowStats = summarizeCalendarDays(days)
-            const rowFmHours = days.reduce((s, dd) => s + (dd.overtime_hours || 0), 0)
-            const rowHolidayWorked = days.filter(dd => holidayMap.has(dd.date) && ['worked', 'overtime'].includes(dd.status)).length
-
+            const days = dayData[r.id] || EMPTY_DAYS
+            const rowPrefix = `${r.id}-${month}-`
+            const busyKey = updatingKeys ? [...updatingKeys].filter(k => k.startsWith(rowPrefix)).map(k => k.slice(-2)).sort().join(',') : ''
+            const failedKey = Object.keys(failedSaves).filter(k => k.startsWith(rowPrefix)).map(k => k.slice(-2)).sort().join(',')
+            const activeDay = activeCell?.row === rowIdx ? activeCell.day : null
+            const selRange = selectionRect && rowIdx >= selectionRect.r1 && rowIdx <= selectionRect.r2
+              ? `${selectionRect.d1}-${selectionRect.d2}` : null
             return (
-              <tr key={r.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                <td style={{ position: 'sticky', left: 0, background: 'var(--surface)', padding: '7px 10px', fontWeight: '500', zIndex: 3, borderRight: '1px solid var(--border)', borderBottom: '1px solid var(--border)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <div style={{
-                      width: '30px',
-                      height: '30px',
-                      borderRadius: '8px',
-                      background: 'var(--surface2)',
-                      border: '1px solid var(--border)',
-                      color: 'var(--text2)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontFamily: 'var(--display)',
-                      fontSize: '12px',
-                      flexShrink: 0,
-                    }}>{r.full_name?.charAt(0)?.toUpperCase() || '?'}</div>
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                      <button
-                        type="button"
-                        onClick={() => onPersonClick?.(r)}
-                        title="Personel detayini ac"
-                        style={{
-                          display: 'block',
-                          width: '100%',
-                          maxWidth: '155px',
-                          border: 'none',
-                          background: 'transparent',
-                          color: 'var(--text)',
-                          cursor: 'pointer',
-                          fontSize: '12px',
-                          fontWeight: 700,
-                          textAlign: 'left',
-                          whiteSpace: 'nowrap',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          padding: 0,
-                        }}
-                      >
-                        {r.full_name}
-                      </button>
-                      <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '155px' }}>{r.dept_name || 'Departmansız'}</div>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    disabled={!canEdit}
-                    onClick={() => applyRow(r)}
-                    title="Bu personelin ayini secili kodla doldur"
-                    style={{
-                      width: '100%',
-                      marginTop: '6px',
-                      borderRadius: '6px',
-                      border: '1px solid var(--border)',
-                      background: 'var(--surface2)',
-                      color: canEdit ? 'var(--accent)' : 'var(--text3)',
-                      cursor: canEdit ? 'pointer' : 'not-allowed',
-                      fontFamily: 'var(--mono)',
-                      fontSize: '8px',
-                      fontWeight: 800,
-                      padding: '3px 6px',
-                    }}
-                  >
-                    Ayi secili kodla doldur
-                  </button>
-                  <div style={{ display: 'flex', gap: '3px', marginTop: '5px', flexWrap: 'wrap' }}>
-                    {[
-                      [codeChar('worked', 'N'), rowStats.worked, ACTION_BY_ID.worked],
-                      [codeChar('off', 'H'), rowStats.off, ACTION_BY_ID.off],
-                      [codeChar('sick', 'R'), rowStats.sick, ACTION_BY_ID.sick],
-                      [codeChar('unpaid', 'Üİ'), rowStats.unpaid, ACTION_BY_ID.unpaid],
-                      [codeChar('absent', 'Y'), rowStats.absent, ACTION_BY_ID.absent],
-                      ['T', rowHolidayWorked, { text: 'var(--red)', bg: 'rgba(239,68,68,.12)', border: 'rgba(239,68,68,.4)' }],
-                      ['FM', rowFmHours ? `${rowFmHours}s` : 0, { text: 'var(--accent)', bg: 'rgba(240,165,0,.12)', border: 'rgba(240,165,0,.4)' }],
-                    ].filter(([, value]) => value && value !== 0).map(([code, value, meta]) => (
-                      <span key={code} style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: meta.text, background: meta.bg, border: `1px solid ${meta.border}`, borderRadius: '4px', padding: '1px 4px' }}>{code}:{value}</span>
-                    ))}
-                  </div>
-                </td>
-                {dayNumbers.map(d => {
-                  const dayStr = String(d).padStart(2, '0')
-                  const entry = dayMap[dayStr]
-                  const date = `${month}-${dayStr}`
-                  const status = entry?.status || (sundayDays.has(d) ? 'sunday' : 'no_record')
-                  const meta = dayStatusMeta(entry, sundayDays.has(d))
-                  const busy = updatingKeys?.has(`${r.id}-${date}`)
-                  const saveFailed = !!failedSaves[`${r.id}-${date}`]
-                  const hours = entry?.start_hour != null ? formatShiftHours(entry.start_hour, entry.end_hour) : ''
-                  const holidayName = holidayMap.get(date)?.name
-                  const hasDayDetail = !!(entry?.detail_note || entry?.attachment_url || entry?.leave_hours)
-                  const title = `${r.full_name} · ${date} · ${meta.label}`
-                    + (hours ? ` · ${hours}` : '')
-                    + (entry?.work_location_name ? ` · ${entry.work_location_name}` : '')
-                    + (holidayName ? ` · 🎌 ${holidayName}` : '')
-                    + (entry?.overtime_hours ? ` · FM ${entry.overtime_hours}s` : '')
-                    + (entry?.leave_hours ? ` · Saatlik izin ${entry.leave_hours}s` : '')
-                    + (entry?.absent_reason ? ` · Neden: ${entry.absent_reason}` : '')
-                    + (entry?.detail_note ? ` · Not: ${entry.detail_note}` : '')
-                    + (entry?.attachment_name ? ` · Belge: ${entry.attachment_name}` : '')
-                    + (entry?.attendance_source === 'card_kiosk' ? ` · Kart ${attendanceTime(entry.actual_check_in)}-${attendanceTime(entry.actual_check_out)}` : '')
-                    + (entry?.attendance_exception_count ? ` · ${entry.attendance_exception_count} kart kontrolü` : '')
-                    + (canEdit ? ' · sağ tık: gün detayı' : '')
-                  const isActive = activeCell?.row === rowIdx && activeCell?.day === d
-                  const inSelection = isInRect(selectionRect, rowIdx, d)
-                  return (
-                    <td key={d}
-                      style={{
-                        width: '42px', textAlign: 'center', padding: '3px',
-                        background: inSelection ? 'rgba(240,165,0,.12)'
-                          : holidayDays.has(d) ? 'rgba(239,68,68,.05)'
-                          : sundayDays.has(d) ? 'rgba(240,165,0,.035)' : 'transparent',
-                        borderRight: '1px solid var(--border)',
-                        borderBottom: '1px solid var(--border)',
-                      }}>
-                      <button
-                        type="button"
-                        title={saveFailed ? `${title} · KAYDEDILEMEDI, tekrar dene` : title}
-                        disabled={!canEdit || busy}
-                        onContextMenu={e => {
-                          e.preventDefault()
-                          if (canEdit) setCellEditor({ staff: r, date, entry })
-                        }}
-                        onMouseDown={e => beginPaint(r, d, entry, e)}
-                        onMouseEnter={e => {
-                          enterPaint(r, d, entry)
-                          if (canEdit) e.currentTarget.style.filter = 'brightness(1.12)'
-                        }}
-                        onClick={e => clickCell(r, d, entry, rowIdx, e)}
-                        style={{
-                          width: '34px',
-                          height: '30px',
-                          borderRadius: '7px',
-                          border: saveFailed ? '2px solid var(--red)' : status === 'no_record' || status === 'sunday' ? `1px dashed ${meta.border}` : `1px solid ${meta.border}`,
-                          boxShadow: saveFailed ? '0 0 0 2px rgba(239,68,68,.18)' : isActive ? '0 0 0 2px var(--accent)' : 'none',
-                          position: 'relative',
-                          background: meta.bg,
-                          color: meta.text,
-                          cursor: canEdit ? 'pointer' : 'default',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontFamily: 'var(--mono)',
-                          fontSize: meta.code?.length > 1 ? '9px' : '12px',
-                          fontWeight: 800,
-                          opacity: busy ? .82 : 1,
-                          transition: 'transform .08s, filter .12s',
-                        }}
-                        onMouseLeave={e => { e.currentTarget.style.filter = 'none' }}
-                      >
-                        {meta.code || (busy ? '...' : '')}
-                        {busy ? (
-                          <span style={{ position: 'absolute', top: '1px', left: '2px', fontSize: '6px', lineHeight: 1, color: 'var(--accent)', fontWeight: 900 }}>•</span>
-                        ) : null}
-                        {saveFailed ? (
-                          <span style={{ position: 'absolute', top: '0px', right: '2px', fontSize: '8px', lineHeight: 1, color: 'var(--red)', fontWeight: 900 }}>!</span>
-                        ) : null}
-                        {!busy && entry?.overtime_hours ? (
-                          <span style={{ position: 'absolute', top: '0px', right: '1px', fontSize: '6px', lineHeight: 1, color: 'var(--accent)', fontWeight: 800 }}>
-                            +{entry.overtime_hours}
-                          </span>
-                        ) : null}
-                        {!busy && entry?.absent_reason ? (
-                          <span style={{ position: 'absolute', bottom: '0px', right: '2px', fontSize: '7px', lineHeight: 1, color: 'var(--red)' }}>•</span>
-                        ) : null}
-                        {!busy && hasDayDetail ? (
-                          <span style={{ position: 'absolute', bottom: '0px', left: '2px', fontSize: '7px', lineHeight: 1, color: entry?.attachment_url ? 'var(--blue)' : 'var(--teal)', fontWeight: 900 }}>i</span>
-                        ) : null}
-                        {!busy && entry?.attendance_source === 'card_kiosk' ? (
-                          <span style={{ position: 'absolute', top: '0px', left: '2px', fontSize: '7px', lineHeight: 1, color: entry?.attendance_exception_count ? 'var(--red)' : 'var(--blue)', fontWeight: 900 }}>K</span>
-                        ) : null}
-                      </button>
-                    </td>
-                  )
-                })}
-              </tr>
+              <PuantajRow key={r.id} r={r} rowIdx={rowIdx} days={days} month={month} dayNumbers={dayNumbers}
+                canEdit={canEdit} selectedAction={selectedAction} sundayDays={sundayDays} holidayMap={holidayMap} holidayDays={holidayDays}
+                activeDay={activeDay} selRange={selRange} busyKey={busyKey} failedKey={failedKey}
+                onPersonClick={onPersonClick} onApplyRow={applyRow} onCellClick={clickCell}
+                onCellMouseDown={beginPaint} onCellMouseEnter={enterPaint}
+                onCellContextMenu={(staff, date, entry) => setCellEditor({ staff, date, entry })} />
             )
           })}
         </tbody>
@@ -1974,10 +2045,7 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
                 <span style={{ color: ACTION_BY_ID.absent.text }}>■ yok</span>
               </div>
             </td>
-            {dayNumbers.map(d => {
-              const dayStr = String(d).padStart(2, '0')
-              const col = summarizeColumn(filtered.map(r => (dayData[r.id] || []).find(x => x.date.endsWith(`-${dayStr}`))))
-              const leaveTotal = col.leave + col.off
+            {columnTotals.map(({ d, col, leaveTotal }) => {
               return (
                 <td key={d} style={{
                   position: 'sticky', bottom: 0, zIndex: 5,
