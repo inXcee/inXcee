@@ -4,14 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Proje
 
-Şantiye yatakhane yönetim sistemi — 8 modüllü tam stack web uygulaması.
+Şantiye yatakhane yönetim sistemi — operasyon, vardiya/puantaj, su/lojistik ve destek süreçlerini kapsayan çok modüllü tam stack web uygulaması.
 
 ## Komutlar
 
 ### Geliştirme
 ```bash
 npm install          # root'ta — tüm bağımlılıklar
-npm run dev          # frontend (5173) + backend (3001) eş zamanlı başlatır
+npm run dev          # frontend (5174) + backend (3001) eş zamanlı başlatır
 ```
 
 ### Backend
@@ -45,6 +45,16 @@ cd backend && node -e "import('./src/shared/db/index.js').then(m=>m.initDB()).th
 - `backend/src/shared/` — `auth/`, `db/`, `notifications/`, `cron/`
 - `frontend/src/modules/<modül>/` — her modül kendi sayfaları
 - `frontend/src/shared/` — `components/`, `hooks/`, `store/`, `api/`
+
+### Su Takip Modülü
+
+- Güncel işletim, API, yetki, cron ve dosya yaşam döngüsü kaynağı: `docs/water-module.md`.
+- `backend/src/modules/water/service.js` geriye uyumlu facade'dır. Hareket/FIFO `movements.js`, ay kilidi `reconciliation.js`, analiz `analytics.js`, tır/mail `trucks.js`, birim matematiği `units.js` içinde tutulur.
+- Dated stok mutation'ları `assertMonthUnlocked` kuralını atlayamaz; kilitli ay HTTP 423 döndürür.
+- Giriş ile FIFO uzlaştırması aynı transaction içinde kalmalıdır. Dağıtım güncelleme/silme eski ve yeni ürün tahsislerini yeniden uzlaştırmalıdır.
+- Ürün miktarı sessizce yuvarlanmaz; kullanıcı miktarı tam baz birime dönüşmüyorsa 400 döner.
+- Frontend mutation'ları merkezi `invalidateWaterQueries` kapsamlarını kullanır; yeni dağınık query-key listeleri eklenmez.
+- Gerçek tır maili `water.truck-mail` kalıcı kuyruğundan gider. `mark-mail-sent` yalnızca harici gönderim teyididir.
 
 ## Veritabanı
 

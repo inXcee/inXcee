@@ -324,8 +324,8 @@ Doğrulama: 804/804 backend, build temiz, 8/8 e2e
 - [x] +8 backend test (34/34 email, 1331/1331 tüm suite), +1 frontend smoke, build temiz
 
 ### Faz 34 — Su takip modülü ✅
-- [x] Şema (migration 025): water_products (units_per_case/cases_per_pallet), water_zones, water_movements (in/out, qty_base=adet) + 4 varsayılan ürün seed
-- [x] Otomatik çevrim: toBase (palet/koli/adet→adet) + humanize (adet→palet/koli/birim kırılımı)
+- [x] Şema (migration 025): water_products (units_per_case/cases_per_pallet), water_zones, water_movements (in/out, qty_base=ürünün doğal takip birimi) + 4 varsayılan ürün seed
+- [x] Otomatik çevrim: toBase (palet/koli/paket/adet→ürün baz birimi) + humanize (baz miktar→palet/koli/paket/adet kırılımı); kesirli baz sonuç yuvarlanmadan reddedilir
 - [x] Backend water/ modülü: ürün+bölge CRUD (hareketi varsa 409), giriş(irsaliye)/dağıtım, silme, movements listesi, summary (stok bakiyesi + bölge×ürün + günlük seri + toplamlar)
 - [x] WaterPage (sidebar Operasyon → 💧 Su Takip): Özet (KPI + recharts günlük grafik + stok tablosu + bölge kartları + tarih filtresi), Giriş, Dağıtım, Bölgeler, Ürünler sekmeleri
 - [x] +14 backend test (1345/1345 tüm suite), +2 frontend smoke, build temiz
@@ -354,7 +354,7 @@ Amaç: su takibini kayıt tablosundan → günlük dağıtım + irsaliye + eksi 
 - [x] Migration 030: `water_monthly_closures` (ay, kilit, not, kapatan) + `water_stock_counts` (ay×ürün tekil: system_base, counted_base, diff_base, reason, note)
 - [x] `GET /api/water/reconciliation?month=` — ürün bazlı ay başı devreden/gelen/dağıtılan/boş iade/sistem kalan + sayım + fark + durum (pending/even/over/short) + insan-okur; totals (ürün/sayıldı/bekleyen/farklı)
 - [x] `POST /api/water/stock-count` — sayım upsert, fark≠0 ise sebep zorunlu (6 sebep: eksik_irsaliye/fazla_dagitim/sayim_farki/fire_kirik/yanlis_urun/devir_duzeltme), sistem kalanı okuma anında hesaplanır (bayat fark yok)
-- [x] `POST /api/water/monthly-close` (+ snapshot) / `.../:month/unlock` — **sadece kampüs müdürü**; kilitli aya intake/distribute → 201 + `warning` alanı (engelleme yok, PLAN varsayımı)
+- [x] `POST /api/water/monthly-close` (+ snapshot) / `.../:month/unlock` — **sadece kampüs müdürü**; kilitli aya giriş/dağıtım/iade/sayım/düzeltme ekleme-güncelleme-silme işlemleri HTTP 423 ile engellenir
 - [x] `MonthClosurePanel` (WaterPage): açılır tablo — devreden/gelen/dağıtılan/iade/sistem + inline sayım input + fark + sebep select + durum rozeti; müdüre 🔒 kilitle / 🔓 aç (confirmDialog); KİLİTLİ banner
 - [x] +8 backend test (57/57 water, 1388/1388 tüm suite) + 1 frontend smoke (7/7), build temiz
 
@@ -407,7 +407,7 @@ Amaç: su takibini kayıt tablosundan → günlük dağıtım + irsaliye + eksi 
 ### Faz W10 — Rol ve Onay Akışı ✅
 - [x] Migration 035: `water_movements.needs_review` (güvenli ADD COLUMN + index)
 - [x] Stok karşılığı olmadan girilen dağıtım → `needs_review=1` (create + batch); `GET /review` kuyruğu (mgr görebilir), `POST /review/approve` toplu/tekil onay (**sadece müdür**), audit log
-- [x] Rol dağılımı netleşti: günlük dağıtım/giriş → mgr (müdür+vardiya); **müdür-only**: ay kapanışı/kilit, stok düzeltme, toplu onay
+- [x] Rol dağılımı netleşti: günlük dağıtım/giriş → mgr (müdür+vardiya); **müdür-only**: ay kapanışı/kilit, stok düzeltme, toplu onay, tır silme ve gerçek mail kuyruğa alma
 - [x] Frontend: `ReviewPanel` — müdüre kırmızı "N eksi stok dağıtımı kontrol bekliyor" bandı + ✓ Toplu Onayla + satır bazlı onay + açılır liste
 - [x] +3 backend test (80/80 water, 1411/1411 tüm suite) + 1 frontend smoke (12/12), build temiz
 
@@ -428,14 +428,14 @@ Modülü reaktiften → öngörülü+proaktif yapma. Öncelik: öngörü/sipari�
 - [x] +8 backend test (88/88 water, 1419/1419 tüm suite) + 2 frontend smoke (14/14), build temiz. (Global lead-time sabit; per-ürün lead_time_days ileride opsiyonel migration.)
 
 ### Faz V3 — Günlük operasyon özeti (bildirim) ✅
-- [x] `waterDailyDigest({now})` — `alertsService` + `forecastService` birleşir; bekleyen/eksi/düşük/sipariş-önerisi/7-günden-az/kayıtsız-bölge özeti; müdüre tek `createNotification` (push'a fan-out) + günlük `dedup_key` (water_digest_{gün})
+- [x] `waterDailyDigest({now})` — `alertsService` + `forecastService` birleşir; bekleyen/eksi/düşük/sipariş-önerisi/7-günden-az/kayıtsız-bölge özeti; müdür + vardiya sorumlusuna rol-bazlı `createNotification` (push'a fan-out) + günlük dedup
 - [x] Cron `15 6 * * *` (`withLock('water-daily-digest')`) — TR 06:15 günlük tetik
 - [x] +1 backend test (89/89 water, 1420/1420 tüm suite): actionable+notified+dedup doğrulandı
 - [ ] Not: özet e-posta (SMTP açıksa) V3.1'e ertelendi — çekirdek proaktif teslim (in-app + push bildirimi) hazır
 
 ### Faz V4 — Otomatik aylık kapanış PDF ✅
 - [x] `buildReconciliationPDF(month, doc)` servise çıkarıldı (route + cron ortak kullanır); `/reconciliation/:month/pdf` route sadeleşti
-- [x] Cron `15 3 1 * *` (`withLock('water-monthly-pdf')`) — ayın 1'i geçen ayın PDF'ini `uploads/reports/su-kapanis-{ay}.pdf`'e yazar + müdüre bildirim (envanter aylık-PDF deseni)
+- [x] Cron `15 3 1 * *` (`withLock('water-monthly-pdf')`) — ayın 1'i geçen ayın PDF'ini `uploads/reports/su-kapanis-{ay}.pdf`'e yazar + müdür ve vardiya sorumlusuna bildirim (envanter aylık-PDF deseni)
 - [x] +2 backend test (91/91 water): buildReconciliationPDF geçerli PDF (%PDF magic) + geçersiz ay throw
 
 ### Faz V5 — Eskalasyon & zengin kanallar ✅
@@ -489,3 +489,23 @@ Excel-öncelikli: renk tutarlılığı + yazdırma/düzen + bölüm sayfaları +
 
 ### 🔧 Ara-düzeltme: eksik migration 036 (fix `1b9e697`)
 W11 tır/foto KODU commit'liydi ama `036_water_truck_waybill_archive.sql` untracked kalmış → prod'da truck tabloları YOK (API 500, cron hata), pre-deploy W11 testleri sunucuda 500 → deploy bloke. Migration commit'lendi (idempotent), deploy açıldı + prod'daki kırık tır özelliği düzeldi.
+
+---
+
+## 2026-07-15 Su Takip Denetim ve Sağlamlaştırma ✅
+
+- [x] Tır kontrol cron'u dakikada bire çekildi; 15/30/60 dakikalık slotlar ve deadline aşımı İstanbul saatiyle, slot-dedup'lu çalışıyor.
+- [x] Su route hataları merkezi Express hata katmanına bağlandı; beklenmeyen hatalar `error_log` ve yapılandırılmışsa Sentry'ye ulaşıyor.
+- [x] Giriş + FIFO uzlaştırma atomik hale getirildi; dağıtım güncelleme/silme eski/yeni ürün lotlarını yeniden tahsis ediyor, tahsisli giriş silme açıklamalı 409 dönüyor.
+- [x] Tır maili senkron SMTP çağrısından kalıcı `water.truck-mail` kuyruğuna taşındı; transaction ile tıra bağlanıyor, 5 deneme ve üstel gecikme kullanıyor.
+- [x] Hareket/katalog/tır/foto/sayım/kapanış audit boşlukları kapatıldı; su bildirimleri müdür ve vardiya sorumlusuna fan-out ediliyor.
+- [x] Sayım ve ay uyuşturma sorguları ürün/ay odaklı hale getirildi; tarih aralığı sorguları index kullanacak biçime alındı.
+- [x] Tır/foto silme yaşam döngüsü, yetim irsaliye fotoğrafı temizliği ve PDF retention işi eklendi.
+- [x] Matris satırları memoize edildi; hücre klavye navigasyonu, Excel yapıştırma ve geri alma saf reducer/test kapsamına alındı.
+- [x] Kesirli girişler sessiz yuvarlanmıyor; yalnızca tam baz miktara dönüşen değerler saklanıyor.
+- [x] Ay kilidi giriş/dağıtım/iade/sayım/düzeltme ekleme-güncelleme-silme işlemlerinde HTTP 423 ile uygulanıyor.
+- [x] Frontend query hata merkezi ve kapsam bazlı query invalidation eklendi; "veri yok" ile "API hatası" ayrıldı.
+- [x] Büyük frontend/backend su dosyaları hareket, analiz, uzlaştırma, tır, matris, modal ve ortak mantık sınırlarına bölündü.
+- [x] Güncel mimari, 56 method+yol handler'ı (43 benzersiz yol), yetki matrisi, cron/job akışları, dosya retention, test ve operasyon runbook'u `docs/water-module.md` altında belgelendi.
+
+Ertelenen ürünler tamamlanmış sayılmaz: ürün bazlı lead time, günlük özet SMTP maili, SKT, mobil/QR, firma faturalama ve ortak ziyaretçi/güvenlik modülü entegrasyonu.

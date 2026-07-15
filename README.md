@@ -1,6 +1,6 @@
 # YYS — Yatakhane Yönetim Sistemi
 
-Şantiye yatakhane operasyonları için tam yığın (full-stack) web uygulaması: oda yönetimi, vardiya, çamaşırhane, bakım, disiplin, envanter, self-servis kiosk, mobil PWA (housekeeper + technician).
+Şantiye yatakhane operasyonları için tam yığın (full-stack) web uygulaması: oda yönetimi, vardiya/puantaj, su ve tır takibi, çamaşırhane, bakım, disiplin, envanter, self-servis kiosk ve mobil PWA (housekeeper + technician).
 
 **Yığın:** Express + better-sqlite3 (backend) · React + Vite + TanStack Query (frontend) · JWT auth · SSE bildirim · PWA · Tailwind
 
@@ -51,11 +51,11 @@ Production'da seed çalışmaz; ilk açılışta `/setup` rotasından admin olu�
 ## Modüller
 
 **Backend** (`backend/src/modules/`):
-checkin · checkout · capacity · housekeeping · laundry · maintenance · discipline · inventory · shifts · self-service · dashboard · reports · room-history · users · setup · backup · kvkk · system · email · announcements · notification-prefs · error-log · mobile-auth · avs-workers
+checkin · checkout · capacity · housekeeping · laundry · maintenance · discipline · inventory · **water** · shifts · self-service · dashboard · reports · room-history · users · setup · backup · kvkk · system · email · announcements · notification-prefs · error-log · mobile-auth · avs-workers
 
 **Frontend** (`frontend/src/modules/`): Aynı modül seti + `mobile/` (housekeeper + technician PWA), `laundry-kiosk/`.
 
-Her modül `routes.js` (Express router) · `service.js` (iş mantığı) · `queries.js` (parametreli SQL) yapısını izler. Detay için `CLAUDE.md`.
+Her modül `routes.js` (Express router) · `service.js` (iş mantığı) · `queries.js` (parametreli SQL) yapısını izler. Su modülünün FIFO, ay kilidi, tır-mail ve dosya yaşam döngüsü için [Su Takip Modülü](docs/water-module.md) belgesine; genel geliştirme kuralları için `CLAUDE.md` dosyasına bakın.
 
 ---
 
@@ -117,7 +117,7 @@ BACKEND_URL=https://yourdomain.com bash scripts/deploy/post-deploy-smoke.sh
 
 ## Ortam Değişkenleri
 
-`.env.example` içinde tam liste; özetle:
+`.env.example` temel çalışma ayarlarını örnekler; modül özel seçenekleri ilgili işletim belgesinde yer alır. Özetle:
 
 | Değişken          | Zorunlu? | Açıklama                                                   |
 |-------------------|----------|------------------------------------------------------------|
@@ -129,7 +129,9 @@ BACKEND_URL=https://yourdomain.com bash scripts/deploy/post-deploy-smoke.sh
 | `UPLOADS_DIR`     |          | Prod: `/var/data/uploads`                                  |
 | `BACKUP_DIR`      |          | Prod: `/var/data/backups`                                  |
 | `TRUST_PROXY`     |          | Reverse proxy arkasında `1`, lokalde `loopback`            |
-| `SMTP_*`          |          | Otomatik e-posta raporu için (opsiyonel)                   |
+| `SMTP_*`          |          | Tır maili ve diğer e-posta akışları için (opsiyonel)       |
+| `WATER_UPLOAD_ORPHAN_GRACE_DAYS` | | Yetim irsaliye fotoğrafı bekleme süresi (varsayılan 7 gün) |
+| `UPLOAD_REPORT_RETENTION_DAYS` | | Üretilen PDF saklama süresi (varsayılan 730 gün)             |
 
 `JWT_SECRET` üretmek:
 ```bash
@@ -175,7 +177,7 @@ CI: `.github/workflows/ci.yml` — push ve PR'larda otomatik (Node 22, in-memory
 - helmet (CSP dahil), compression, rate-limit (login + PIN brute-force), sanitizeBody middleware aktif
 - SSE auth header tabanlı (URL'de token leak yok)
 - Role-based middleware (`requireRole`, `requireKioskOrStaff`) tüm korumalı route'larda
-- Audit log: discipline + maintenance + login (KVKK uyumlu retention cron'u var)
+- Audit log: giriş, disiplin, bakım, su hareketleri, tır/mail, sayım ve ay kapanışı dahil kritik operasyonlar (KVKK uyumlu retention cron'u var)
 
 ---
 
