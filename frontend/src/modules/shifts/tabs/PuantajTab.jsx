@@ -1443,11 +1443,14 @@ const PuantajRow = memo(function PuantajRow({
   prev.sundayDays === next.sundayDays &&
   prev.holidayMap === next.holidayMap &&
   prev.holidayDays === next.holidayDays &&
+  // codesVersion satır içinde kullanılmaz — mutable CODE_REGISTRY güncellenince
+  // memo'yu patlatıp satırların yeni kod paletiyle boyanmasını sağlar.
+  prev.codesVersion === next.codesVersion &&
   prev.r === next.r && prev.rowIdx === next.rowIdx
   // handler prop'ları KASITLI karşılaştırılmıyor — hepsi ref-tabanlı zamansız closure
 )
 
-function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, canEdit, selectedAction, setSelectedAction, onApplyStatus, updatingKeys, onPersonClick, approval, onOpenApprovalDay, writesPendingRef }) {
+function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, canEdit, selectedAction, setSelectedAction, onApplyStatus, updatingKeys, onPersonClick, approval, onOpenApprovalDay, writesPendingRef, codesVersion }) {
   const [dayData, setDayData] = useState({}) // staffId → days array
   const [failedSaves, setFailedSaves] = useState({})
   const failedSavesRef = useRef({})
@@ -1499,6 +1502,8 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
   const anchorRef = useRef(anchor); anchorRef.current = anchor
   const entryModeRef = useRef(entryMode); entryModeRef.current = entryMode
   const dayDataRef = useRef(dayData); dayDataRef.current = dayData
+  const filteredRef = useRef(filtered); filteredRef.current = filtered
+  const approvalByDateRef = useRef(approvalByDate); approvalByDateRef.current = approvalByDate
   const [undoCount, setUndoCount] = useState(0)
   const undoStackRef = useRef([])
   const [dayDetailDate, setDayDetailDate] = useState(null)
@@ -1609,7 +1614,7 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
     if (!canEdit || !action || changes.length === 0) return
     // Onaylı güne yazım — ilk seferde uyar (onay 'beklemede'ye düşecek)
     if (!approvedEditConfirmedRef.current) {
-      const approvedDates = [...new Set(changes.map(c => c.date))].filter(d => approvalByDate.get(d)?.status === 'approved')
+      const approvedDates = [...new Set(changes.map(c => c.date))].filter(d => approvalByDateRef.current.get(d)?.status === 'approved')
       if (approvedDates.length > 0) {
         const ok = await confirmDialog({
           title: 'Onaylı Güne Yazım',
@@ -1726,9 +1731,10 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
     if (event.shiftKey && currentActive) {
       // Excel gibi: Shift+tık — aktif hücreden tıklanana dikdörtgen, seçili kodla doldur
       const rect = normalizeRect(currentActive, { row: rowIdx, day })
+      const rows = filteredRef.current
       const changes = cellsInRect(rect)
-        .filter(c => filtered[c.row])
-        .map(c => buildChange(filtered[c.row], c.day, entryFor(filtered[c.row], c.day)))
+        .filter(c => rows[c.row])
+        .map(c => buildChange(rows[c.row], c.day, entryFor(rows[c.row], c.day)))
       applyChanges(changes)
       setAnchor(currentActive)
       setActiveCell({ row: rowIdx, day })
@@ -2028,7 +2034,7 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
             return (
               <PuantajRow key={r.id} r={r} rowIdx={rowIdx} days={days} month={month} dayNumbers={dayNumbers}
                 canEdit={canEdit} selectedAction={selectedAction} sundayDays={sundayDays} holidayMap={holidayMap} holidayDays={holidayDays}
-                activeDay={activeDay} selRange={selRange} busyKey={busyKey} failedKey={failedKey}
+                activeDay={activeDay} selRange={selRange} busyKey={busyKey} failedKey={failedKey} codesVersion={codesVersion}
                 onPersonClick={onPersonClick} onApplyRow={applyRow} onCellClick={clickCell}
                 onCellMouseDown={beginPaint} onCellMouseEnter={enterPaint}
                 onCellContextMenu={(staff, date, entry) => setCellEditor({ staff, date, entry })} />
@@ -4003,6 +4009,7 @@ export default function PuantajTab({ departments, shiftDefs = [], onPersonClick 
           approval={approvalPayload}
           onOpenApprovalDay={() => setViewMode('approval')}
           writesPendingRef={writesPendingRef}
+          codesVersion={puantajCodes}
         />
       )}
       {viewMode === 'summary' && (
