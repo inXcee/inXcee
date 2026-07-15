@@ -54,7 +54,7 @@ function round2(x) {
   return Math.round(x * 100) / 100
 }
 
-function getYtdGross(db, staffId, year, month) {
+export function getYtdGross(db, staffId, year, month) {
   // month is 1-based. Returns gross from Jan 1 to (month-01) exclusive.
   // Must mirror puantajService pay logic: only 'worked'/'overtime' days + annual/emergency leave are paid.
   if (month <= 1) return 0
@@ -102,6 +102,69 @@ function getYtdGross(db, staffId, year, month) {
     dailyRate * ((sch?.worked_days || 0) + (sch?.off_days || 0) + (lv?.paid_leave_units || 0)) +
     (dailyRate / 8) * 1.5 * (ot?.hours || 0)
   )
+}
+
+// getYtdGross'un toplu hali — tüm personelin yıl başından ay başına (exclusive)
+// YTD brütünü 4 sabit sorguyla hesaplar (personel başına sorgu çalıştırmaz).
+// Sorgular getYtdGross'un birebir GROUP BY staff_id'li karşılıkları — ikisi
+// aynı sonucu vermek ZORUNDA (bkz. ytd-bulk.test.js eşdeğerlik testi).
+// Dönüş: Map<staffId, ytdGross> (maaşsız/aktivitesiz personel map'te yer almaz → 0 kabul edilir)
+export function getYtdGrossBulk(db, year, month) {
+  const map = new Map()
+  if (month <= 1) return map
+  const janStart = `${year}-01-01`
+  const monthStart = `${year}-${String(month).padStart(2, '0')}-01`
+
+  const salaries = new Map(db.prepare('SELECT id, salary FROM staff').all().map(r => [r.id, r.salary || 0]))
+
+  const schRows = db.prepare(`
+    SELECT staff_id,
+      COALESCE(COUNT(CASE WHEN status IN ('worked','overtime') THEN 1 END), 0) as worked_days,
+      COALESCE(COUNT(CASE WHEN status = 'off' THEN 1 END), 0) as off_days
+    FROM shift_schedule
+    WHERE work_date >= ? AND work_date < ?
+    GROUP BY staff_id
+  `).all(janStart, monthStart)
+
+  const lvRows = db.prepare(`
+    SELECT ss.staff_id,
+      COALESCE(SUM(CASE WHEN ss.status='on_leave' AND COALESCE(pc.is_paid,0)=1 THEN
+        CASE WHEN COALESCE(ss.leave_hours,0)>0
+          THEN (ss.leave_hours/8.0)*COALESCE(pc.hour_multiplier,0)
+          ELSE COALESCE(pc.day_multiplier,0)
+        END ELSE 0 END),0) as paid_leave_units
+    FROM shift_schedule ss
+    LEFT JOIN puantaj_codes pc ON pc.id=COALESCE(ss.puantaj_code_id, (
+      SELECT fallback_pc.id FROM puantaj_codes fallback_pc
+      WHERE fallback_pc.is_active=1 AND fallback_pc.status=ss.status
+        AND (ss.status!='on_leave' OR fallback_pc.leave_type=ss.leave_type)
+      ORDER BY fallback_pc.is_builtin DESC, fallback_pc.sort_order, fallback_pc.id LIMIT 1
+    ))
+    WHERE ss.work_date>=? AND ss.work_date<?
+    GROUP BY ss.staff_id
+  `).all(janStart, monthStart)
+
+  const otRows = db.prepare(`
+    SELECT staff_id, COALESCE(SUM(hours), 0) as hours
+    FROM overtime_records
+    WHERE work_date >= ? AND work_date < ?
+    GROUP BY staff_id
+  `).all(janStart, monthStart)
+
+  const schMap = new Map(schRows.map(r => [r.staff_id, r]))
+  const lvMap = new Map(lvRows.map(r => [r.staff_id, r.paid_leave_units || 0]))
+  const otMap = new Map(otRows.map(r => [r.staff_id, r.hours || 0]))
+
+  for (const [id, salary] of salaries) {
+    if (salary === 0) continue
+    const sch = schMap.get(id)
+    const units = (sch?.worked_days || 0) + (sch?.off_days || 0) + (lvMap.get(id) || 0)
+    const hours = otMap.get(id) || 0
+    if (units === 0 && hours === 0) continue
+    const dailyRate = salary / 30
+    map.set(id, dailyRate * units + (dailyRate / 8) * 1.5 * hours)
+  }
+  return map
 }
 
 export function calcTax(ytdGross) {
@@ -2832,6 +2895,7 @@ export function puantajService(month, deptId, { includeMeta = false } = {}) {
   const db = getDB()
 
   const rows = getPuantaj(monthStart, monthEnd, deptId)
+  const ytdMap = getYtdGrossBulk(db, year, mon)
   const attendanceByStaff = new Map(
     getAttendanceMonthSummary(monthStart, monthEnd, deptId).map(row => [Number(row.staff_id), row])
   )
@@ -2846,7 +2910,7 @@ export function puantajService(month, deptId, { includeMeta = false } = {}) {
     const weeklyOffPay = round2(dailyRate * (row.off_days || 0))
     const gross = round2(basePay + overtimePay + leavePay + weeklyOffPay)
 
-    const ytdGrossPrev = getYtdGross(db, row.id, year, mon)
+    const ytdGrossPrev = ytdMap.get(row.id) || 0
     const ytdGross = round2(ytdGrossPrev + gross)
 
     const ssiWorker = round2(gross * 0.14)
