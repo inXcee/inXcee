@@ -12,6 +12,7 @@ import {
   truckFilterDefs,
   truckPriorityScore,
 } from '../logic/truckOperations.js'
+import { invalidateWaterQueries } from '../logic/waterQueryInvalidation.js'
 
 const toastOk = message => useToastStore.getState().addToast(message, 'success')
 const toastErr = message => useToastStore.getState().addToast(message, 'error')
@@ -102,11 +103,7 @@ function TruckArrivalPanel({ from, to, label, focusRequest }) {
     return () => clearTimeout(timer)
   }, [focusRequest])
 
-  const invalidate = () => {
-    qc.invalidateQueries({ queryKey: ['water-truck-arrivals'] })
-    qc.invalidateQueries({ queryKey: ['water-waybill-photos'] })
-    qc.invalidateQueries({ queryKey: ['water-alerts'] })
-  }
+  const invalidate = () => invalidateWaterQueries(qc, 'trucks')
   const create = useMutation({
     mutationFn: () => {
       const body = { ...form, brand_id: form.brand_id || null }

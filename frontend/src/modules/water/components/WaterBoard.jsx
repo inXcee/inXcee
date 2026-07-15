@@ -21,6 +21,7 @@ import {
   loadWaterExcelReportData,
   saveWaterExcelReport,
 } from '../logic/waterExcelExport.js'
+import { invalidateWaterQueries } from '../logic/waterQueryInvalidation.js'
 
 const toastOk = (message) => useToastStore.getState().addToast(message, 'success')
 const toastErr = (message) => useToastStore.getState().addToast(message, 'error')
@@ -292,9 +293,7 @@ function WaterBoard({ from, to, label, lowItems = [], onOpenZone }) {
   const saveBatch = useMutation({
     mutationFn: (lines) => api.post('/water/distribute/batch', { move_date: day, lines }),
     onSuccess: (r) => {
-      qc.invalidateQueries({ queryKey: ['water-pivot'] })
-      qc.invalidateQueries({ queryKey: ['water-summary'] })
-      qc.invalidateQueries({ queryKey: ['water-day'] })
+      invalidateWaterQueries(qc, 'distribution')
       toastOk(`${r.data.count} dağıtım kaydedildi (${day})`)
       dispatchMatrix({ type: 'clear' })
     },

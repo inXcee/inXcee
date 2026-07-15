@@ -21,6 +21,7 @@ import {
   unitLabel,
   unitOptionsForProduct,
 } from './logic/waterUnits.js'
+import { invalidateWaterQueries } from './logic/waterQueryInvalidation.js'
 
 const toastOk = (m) => useToastStore.getState().addToast(m, 'success')
 const toastErr = (m) => useToastStore.getState().addToast(m, 'error')
@@ -567,14 +568,7 @@ function DailyDistributionModal({ day, from, to, onDayChange, onClose }) {
   const canPrev = !from || prevDay >= from
   const canNext = !to || nextDay <= to
 
-  const invalidate = () => {
-    qc.invalidateQueries({ queryKey: ['water-daily-ledger'] })
-    qc.invalidateQueries({ queryKey: ['water-summary'] })
-    qc.invalidateQueries({ queryKey: ['water-pivot'] })
-    qc.invalidateQueries({ queryKey: ['water-day'] })
-    qc.invalidateQueries({ queryKey: ['water-zone-history'] })
-    qc.invalidateQueries({ queryKey: ['water-intake'] })
-  }
+  const invalidate = () => invalidateWaterQueries(qc, 'distribution')
   const updateMovement = useMutation({
     mutationFn: ({ id, payload }) => api.put(`/water/movements/${id}`, payload),
     onSuccess: (_, vars) => {
@@ -832,7 +826,7 @@ function ReviewPanel() {
   const rows = data?.rows || []
   const approve = useMutation({
     mutationFn: (ids) => api.post('/water/review/approve', ids ? { ids } : {}),
-    onSuccess: (r) => { qc.invalidateQueries({ queryKey: ['water-review'] }); qc.invalidateQueries({ queryKey: ['water-alerts'] }); toastOk(`${r.data.approved} kayıt onaylandı ✓`) },
+    onSuccess: (r) => { invalidateWaterQueries(qc, 'review'); toastOk(`${r.data.approved} kayıt onaylandı ✓`) },
     onError: (e) => toastErr(errMsg(e, 'Onaylanamadı')),
   })
   if (!data || rows.length === 0) return null
@@ -1017,8 +1011,7 @@ function MonthClosurePanel({ month, label }) {
   const saveCount = useMutation({
     mutationFn: (body) => api.post('/water/stock-count', body),
     onSuccess: (_r, body) => {
-      qc.invalidateQueries({ queryKey: ['water-reconciliation', month] })
-      qc.invalidateQueries({ queryKey: ['water-alerts'] })
+      invalidateWaterQueries(qc, 'reconciliation')
       setDrafts(prev => { const n = { ...prev }; delete n[body.product_id]; return n })
       toastOk('Sayım kaydedildi')
     },
@@ -1026,12 +1019,12 @@ function MonthClosurePanel({ month, label }) {
   })
   const closeMonth = useMutation({
     mutationFn: () => api.post('/water/monthly-close', { month }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['water-reconciliation', month] }); toastOk(`${label} kapatıldı 🔒`) },
+    onSuccess: () => { invalidateWaterQueries(qc, 'reconciliation'); toastOk(`${label} kapatıldı 🔒`) },
     onError: (e) => toastErr(errMsg(e, 'Kapatılamadı')),
   })
   const unlockMonth = useMutation({
     mutationFn: () => api.post(`/water/monthly-close/${month}/unlock`),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['water-reconciliation', month] }); toastOk(`${label} kilidi açıldı 🔓`) },
+    onSuccess: () => { invalidateWaterQueries(qc, 'reconciliation'); toastOk(`${label} kilidi açıldı 🔓`) },
     onError: (e) => toastErr(errMsg(e, 'Açılamadı')),
   })
 
@@ -1455,8 +1448,7 @@ function GelenTirPanel({ from, to, label, stockItems = [] }) {
   const saveBatch = useMutation({
     mutationFn: (payload) => api.post('/water/intake/batch', payload),
     onSuccess: (r) => {
-      qc.invalidateQueries({ queryKey: ['water-intake'] }); qc.invalidateQueries({ queryKey: ['water-summary'] })
-      qc.invalidateQueries({ queryKey: ['water-pending'] }); qc.invalidateQueries({ queryKey: ['water-alerts'] })
+      invalidateWaterQueries(qc, 'intake')
       const m = r.data.matched ? ` · ${r.data.matched} bekleyen dağıtım eşleşti ✓` : ''
       toastOk(`${r.data.count} ürün kaydedildi${m}`)
       setRows([{ ...blankRow }]); setWaybill('')
@@ -1588,9 +1580,7 @@ function BosIadePanel({ from, to, deposit }) {
   const selected = returnable.find(p => String(p.id) === String(form.product_id))
   const returnCalc = smartQty(form.input_qty, selected, form.input_unit)
 
-  const invalidate = () => {
-    qc.invalidateQueries({ queryKey: ['water-returns'] }); qc.invalidateQueries({ queryKey: ['water-summary'] })
-  }
+  const invalidate = () => invalidateWaterQueries(qc, 'returns')
   const save = useMutation({
     mutationFn: (payload) => api.post('/water/returns', payload),
     onSuccess: () => { invalidate(); toastOk('İade kaydedildi'); setForm(f => ({ ...f, input_qty: '' })) },
@@ -1748,10 +1738,7 @@ function AdjustModal({ onClose }) {
   const [form, setForm] = useState({ product_id: '', direction: 'in', input_qty: '', input_unit: 'adet', move_date: todayStr(), reason: '', note: '' })
   const selected = products.find(p => String(p.id) === String(form.product_id))
   const calc = smartQty(form.input_qty, selected, form.input_unit)
-  const invalidate = () => {
-    qc.invalidateQueries({ queryKey: ['water-adjustments'] }); qc.invalidateQueries({ queryKey: ['water-summary'] })
-    qc.invalidateQueries({ queryKey: ['water-reconciliation'] }); qc.invalidateQueries({ queryKey: ['water-alerts'] }); qc.invalidateQueries({ queryKey: ['water-pivot'] })
-  }
+  const invalidate = () => invalidateWaterQueries(qc, 'adjustments')
   const create = useMutation({
     mutationFn: () => api.post('/water/adjustments', { product_id: +form.product_id, direction: form.direction, input_qty: calc.input_qty, input_unit: calc.input_unit, move_date: form.move_date, reason: form.reason, note: form.note?.trim() || undefined }),
     onSuccess: () => { invalidate(); setForm(f => ({ ...f, input_qty: '', note: '' })); toastOk('Düzeltme kaydedildi') },
@@ -1826,7 +1813,7 @@ function TextModal({ onClose }) {
   const qc = useQueryClient()
   const { data: products = [] } = useQuery({ queryKey: ['water-products'], queryFn: () => api.get('/water/products').then(r => r.data) })
   const { data: zones = [] } = useQuery({ queryKey: ['water-zones'], queryFn: () => api.get('/water/zones').then(r => r.data) })
-  const onSaved = () => { qc.invalidateQueries({ queryKey: ['water-pivot'] }); qc.invalidateQueries({ queryKey: ['water-summary'] }); qc.invalidateQueries({ queryKey: ['water-day'] }) }
+  const onSaved = () => invalidateWaterQueries(qc, 'distribution')
   return (
     <Modal title="METİNDEN DAĞITIM" onClose={onClose} width="720px">
       <TextDistribute products={products} zones={zones} onSaved={onSaved} />
@@ -1936,7 +1923,7 @@ function ZonesTab() {
   const qc = useQueryClient()
   const [form, setForm] = useState({ name: '', code: '', note: '', expected_monthly: '' })
   const { data: zones = [] } = useQuery({ queryKey: ['water-zones'], queryFn: () => api.get('/water/zones').then(r => r.data) })
-  const invalidate = () => { qc.invalidateQueries({ queryKey: ['water-zones'] }); qc.invalidateQueries({ queryKey: ['water-pivot'] }) }
+  const invalidate = () => invalidateWaterQueries(qc, 'zones')
   const create = useMutation({ mutationFn: (p) => api.post('/water/zones', p), onSuccess: () => { invalidate(); setForm({ name: '', code: '', note: '', expected_monthly: '' }); toastOk('Dağıtım yeri eklendi') }, onError: (e) => toastErr(errMsg(e, 'Eklenemedi')) })
   const update = useMutation({ mutationFn: ({ id, ...p }) => api.put(`/water/zones/${id}`, p), onSuccess: () => { invalidate(); toastOk('Güncellendi') }, onError: (e) => toastErr(errMsg(e, 'Güncellenemedi')) })
   const del = useMutation({ mutationFn: (id) => api.delete(`/water/zones/${id}`), onSuccess: () => { invalidate(); toastOk('Silindi') }, onError: (e) => toastErr(errMsg(e, 'Silinemedi')) })
@@ -2008,7 +1995,7 @@ function TemplatesTab() {
     return status.configured && !status.valid
   }).length
 
-  const invalidate = () => qc.invalidateQueries({ queryKey: ['water-templates'] })
+  const invalidate = () => invalidateWaterQueries(qc, 'templates')
   const create = useMutation({
     mutationFn: () => api.post('/water/templates', {
       name: name.trim(),
@@ -2090,7 +2077,7 @@ function ProductsTab() {
   const { data: products = [] } = useQuery({ queryKey: ['water-products-all'], queryFn: () => api.get('/water/products', { params: { all: 1 } }).then(r => r.data) })
   const { data: brands = [] } = useQuery({ queryKey: ['water-brands'], queryFn: () => api.get('/water/brands').then(r => r.data) })
 
-  const invalidate = () => { qc.invalidateQueries({ queryKey: ['water-products-all'] }); qc.invalidateQueries({ queryKey: ['water-products'] }); qc.invalidateQueries({ queryKey: ['water-summary'] }); qc.invalidateQueries({ queryKey: ['water-pivot'] }); qc.invalidateQueries({ queryKey: ['water-deposit'] }) }
+  const invalidate = () => invalidateWaterQueries(qc, 'products')
   const payload = () => {
     const upc = +form.units_per_case || 1, cpp = +form.cases_per_pallet || 1
     const productShape = { unit_label: form.unit_label, units_per_case: upc, cases_per_pallet: cpp }
@@ -2195,7 +2182,7 @@ function ProductsTab() {
         </table>
       </div>
 
-      <BrandManager brands={brands} onChange={() => { qc.invalidateQueries({ queryKey: ['water-brands'] }); invalidate() }} />
+      <BrandManager brands={brands} onChange={() => invalidateWaterQueries(qc, 'brands')} />
     </div>
   )
 }
