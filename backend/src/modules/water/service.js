@@ -2,13 +2,23 @@ import * as q from './queries.js'
 import { INPUT_UNITS, assertAvailableUnit, availableUnits, humanize, toBase } from './units.js'
 import { assertMonthUnlocked, isCountReason, writeReconciliationPDF } from './reconciliation.js'
 import { forecastService, summaryService } from './analytics.js'
+import { checkLowStock, notifyWaterOperations } from './notifications.js'
 import fs from 'node:fs'
-import { createNotification } from '../../shared/notifications/service.js'
 import { getDB } from '../../shared/db/index.js'
 import { enqueue } from '../../shared/jobs/index.js'
 import { parseRecipients } from '../email/service.js'
 export { availableUnits, humanize, toBase, unitMultiplier } from './units.js'
 export { depositService, forecastService, summaryService, trendsService } from './analytics.js'
+export { notifyWaterOperations, WATER_OPERATION_ROLES } from './notifications.js'
+export {
+  batchDistributeService,
+  batchIntakeService,
+  createDistributionService,
+  createIntakeService,
+  deleteMovementService,
+  movementsService,
+  updateDistributionService,
+} from './movements.js'
 export {
   assertMonthUnlocked,
   COUNT_REASONS,
@@ -17,17 +27,6 @@ export {
   reconciliationService,
   saveStockCountService,
 } from './reconciliation.js'
-
-export const WATER_OPERATION_ROLES = Object.freeze(['campus_manager', 'shift_supervisor'])
-
-export function notifyWaterOperations({ dedup_key, ...notification }) {
-  return WATER_OPERATION_ROLES.map((role, index) => createNotification({
-    ...notification,
-    target_role: role,
-    dedup_key: dedup_key && index > 0 ? `${dedup_key}_${role}` : dedup_key,
-  })).filter(Boolean)
-}
-
 
 // ── Marka servisleri ──
 export function brandsService(opts) { return q.listBrands(opts) }
@@ -106,22 +105,6 @@ export function updateProductService(id, data) {
   return { before: existing, after: q.getProduct(id) }
 }
 
-// Dağıtım sonrası: stok eşik altına düştüyse yöneticiye bildirim (günde bir, dedup)
-function checkLowStock(productIds) {
-  const uniq = [...new Set(productIds)]
-  for (const pid of uniq) {
-    const p = q.getProduct(pid)
-    if (!p || !p.min_level || p.min_level <= 0) continue
-    const bal = q.getProductBalance(pid)
-    if (bal < p.min_level) {
-      notifyWaterOperations({
-        message: `Su stoğu düşük: ${p.name} — kalan ${humanize(p, bal)} (eşik ${humanize(p, p.min_level)})`,
-        severity: 'warning', module: 'water',
-        dedup_key: `water_low_${pid}`,
-      })
-    }
-  }
-}
 export function deleteProductService(id) {
   const existing = q.getProduct(id)
   if (!existing) throw Object.assign(new Error('Ürün bulunamadı'), { statusCode: 404 })
@@ -153,193 +136,6 @@ export function deleteZoneService(id) {
     throw Object.assign(new Error('Bu bölgeye ait hareket var — silmek yerine pasife alın'), { statusCode: 409 })
   if (!q.deleteZone(id)) throw Object.assign(new Error('Bölge silinemedi'), { statusCode: 500 })
   return existing
-}
-
-// ── Hareket servisleri ──
-function validateMovement(data, requireZone) {
-  const product = q.getProduct(data.product_id)
-  if (!product) throw Object.assign(new Error('Ürün bulunamadı'), { statusCode: 400 })
-  const qty = Number(data.input_qty)
-  if (!Number.isFinite(qty) || qty <= 0) throw Object.assign(new Error('Miktar 0’dan büyük olmalı'), { statusCode: 400 })
-  if (!INPUT_UNITS.includes(data.input_unit)) throw Object.assign(new Error('Geçersiz birim'), { statusCode: 400 })
-  assertAvailableUnit(product, data.input_unit)
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(data.move_date || '')) throw Object.assign(new Error('Tarih YYYY-MM-DD olmalı'), { statusCode: 400 })
-  assertMonthUnlocked(data.move_date)
-  if (requireZone) {
-    if (!data.zone_id || !q.getZone(data.zone_id)) throw Object.assign(new Error('Bölge seçilmeli'), { statusCode: 400 })
-  }
-  return { product, qty }
-}
-
-function buildAllocationPlans(rows) {
-  const lotsByProduct = new Map()
-  const plans = []
-  for (const row of rows) {
-    if (!lotsByProduct.has(row.product_id)) {
-      lotsByProduct.set(row.product_id, q.openIntakeLots(row.product_id).map(lot => ({ ...lot })))
-    }
-    const lots = lotsByProduct.get(row.product_id)
-    let need = row.qty_base
-    const allocations = []
-    for (const lot of lots) {
-      if (need <= 0) break
-      if (lot.remaining_base <= 0) continue
-      const take = Math.min(need, lot.remaining_base)
-      allocations.push({ in_movement_id: lot.id, qty_base: take })
-      lot.remaining_base -= take
-      need -= take
-    }
-    plans.push({ movement: row, allocations })
-  }
-  return plans
-}
-
-function reconcileUnallocatedOut(productIds) {
-  const ids = [...new Set((Array.isArray(productIds) ? productIds : [productIds]).filter(Boolean).map(Number))]
-  const allocationRows = []
-  for (const productId of ids) {
-    const lots = q.openIntakeLots(productId).map(lot => ({ ...lot }))
-    const needs = q.openDistributionNeeds(productId).map(row => ({ ...row }))
-    for (const need of needs) {
-      let remaining = need.unallocated_base || 0
-      for (const lot of lots) {
-        if (remaining <= 0) break
-        if (lot.remaining_base <= 0) continue
-        const take = Math.min(remaining, lot.remaining_base)
-        allocationRows.push({ out_movement_id: need.id, in_movement_id: lot.id, qty_base: take })
-        lot.remaining_base -= take
-        remaining -= take
-      }
-    }
-  }
-  const matched = q.addMovementAllocations(allocationRows)
-  q.clearResolvedReviews(ids)
-  return matched
-}
-
-export function createIntakeService(data, userId) {
-  const { product, qty } = validateMovement(data, false)
-  return q.runInTransaction(() => {
-    const id = q.createMovement({
-      type: 'in', product_id: product.id, zone_id: null, move_date: data.move_date,
-      qty_base: toBase(product, qty, data.input_unit), input_qty: qty, input_unit: data.input_unit,
-      waybill_no: data.waybill_no?.trim() || null, note: data.note?.trim() || null, created_by: userId || null,
-    })
-    reconcileUnallocatedOut(product.id)
-    return id
-  })
-}
-
-export function createDistributionService(data, userId) {
-  const { product, qty } = validateMovement(data, true)
-  const row = {
-    type: 'out', product_id: product.id, zone_id: data.zone_id, move_date: data.move_date,
-    qty_base: toBase(product, qty, data.input_unit), input_qty: qty, input_unit: data.input_unit,
-    waybill_no: null, note: data.note?.trim() || null, created_by: userId || null,
-  }
-  const [id] = q.createMovementsBatchWithAllocations(buildAllocationPlans([row]))
-  q.flagReviewForUnallocated([id]) // stok karşılığı yoksa "kontrol bekliyor"
-  checkLowStock([product.id])
-  return id
-}
-
-export function deleteMovementService(id) {
-  return q.runInTransaction(() => {
-    const existing = q.getMovement(id)
-    if (!existing) throw Object.assign(new Error('Hareket bulunamadı'), { statusCode: 404 })
-    assertMonthUnlocked(existing.move_date)
-    if (existing.type === 'in') {
-      const usage = q.intakeAllocationUsage(id)
-      if (usage.allocated_base > 0) {
-        throw Object.assign(new Error(
-          `Bu giriş ${usage.distribution_count} dağıtıma toplam ${usage.allocated_base} birim tahsis edilmiş. Önce bağlı dağıtımları düzenleyin veya silin.`,
-        ), { statusCode: 409 })
-      }
-      q.deleteMovement(id)
-      return existing
-    }
-
-    q.deleteMovement(id)
-    reconcileUnallocatedOut(existing.product_id)
-    return existing
-  })
-}
-
-export function updateDistributionService(id, data, userId) {
-  const existing = q.getMovement(id)
-  if (!existing) throw Object.assign(new Error('Hareket bulunamadı'), { statusCode: 404 })
-  if (existing.type !== 'out') throw Object.assign(new Error('Sadece dağıtım kaydı düzenlenebilir'), { statusCode: 400 })
-  assertMonthUnlocked(existing.move_date)
-  const { product, qty } = validateMovement(data, true)
-  const row = {
-    type: 'out', product_id: product.id, zone_id: data.zone_id, move_date: data.move_date,
-    qty_base: toBase(product, qty, data.input_unit), input_qty: qty, input_unit: data.input_unit,
-    waybill_no: null, note: data.note?.trim() || null, created_by: existing.created_by || userId || null,
-  }
-  q.runInTransaction(() => {
-    if (!q.updateMovementWithAllocations(id, { movement: row, allocations: [] })) {
-      throw Object.assign(new Error('Hareket güncellenemedi'), { statusCode: 500 })
-    }
-    reconcileUnallocatedOut([existing.product_id, product.id])
-    q.flagReviewForUnallocated([id])
-  })
-  checkLowStock([existing.product_id, product.id])
-}
-
-// Toplu irsaliye girişi: tek tarih/irsaliye altında çok ürün
-export function batchIntakeService(data, userId) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(data?.move_date || '')) throw Object.assign(new Error('Tarih YYYY-MM-DD olmalı'), { statusCode: 400 })
-  const lines = Array.isArray(data.lines) ? data.lines.filter(l => Number(l.input_qty) > 0) : []
-  if (lines.length === 0) throw Object.assign(new Error('En az bir ürün satırı gerekli'), { statusCode: 400 })
-  const rows = lines.map(l => {
-    const { product, qty } = validateMovement({ ...l, move_date: data.move_date }, false)
-    return {
-      type: 'in', product_id: product.id, zone_id: null, move_date: data.move_date,
-      qty_base: toBase(product, qty, l.input_unit), input_qty: qty, input_unit: l.input_unit,
-      waybill_no: data.waybill_no?.trim() || null, note: (l.note || data.note)?.trim() || null, created_by: userId || null,
-    }
-  })
-  return q.runInTransaction(() => {
-    const ids = q.createMovementsBatch(rows)
-    const matched = reconcileUnallocatedOut(rows.map(r => r.product_id))
-    return { ids, matched }
-  })
-}
-
-export function movementsService(filters) {
-  return q.listMovements(filters).map(m => ({
-    ...m,
-    qty_human: humanize(m, m.qty_base),
-    allocation_human: m.allocated_base ? humanize(m, m.allocated_base) : null,
-    intake_allocated_human: m.intake_allocated_base ? humanize(m, m.intake_allocated_base) : null,
-    remaining_human: m.remaining_base != null ? humanize(m, m.remaining_base) : null,
-    unallocated_human: m.unallocated_base ? humanize(m, m.unallocated_base) : null,
-    allocation_status: m.type === 'out'
-      ? (m.unallocated_base > 0 ? 'pending' : 'matched')
-      : (m.remaining_base > 0 ? 'open' : 'closed'),
-  }))
-}
-
-// ── Toplu dağıtım (yapılandırılmış satırlar) ──
-export function batchDistributeService(data, userId) {
-  const batchDate = data?.move_date
-  if (batchDate && !/^\d{4}-\d{2}-\d{2}$/.test(batchDate)) throw Object.assign(new Error('Tarih YYYY-MM-DD olmalı'), { statusCode: 400 })
-  const lines = Array.isArray(data.lines) ? data.lines.filter(l => Number(l.input_qty) > 0) : []
-  if (lines.length === 0) throw Object.assign(new Error('En az bir dağıtım satırı gerekli'), { statusCode: 400 })
-  const rows = lines.map(l => {
-    const moveDate = l.move_date || batchDate
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(moveDate || '')) throw Object.assign(new Error('Tarih YYYY-MM-DD olmalı'), { statusCode: 400 })
-    const { product, qty } = validateMovement({ ...l, move_date: moveDate }, true)
-    return {
-      type: 'out', product_id: product.id, zone_id: l.zone_id, move_date: moveDate,
-      qty_base: toBase(product, qty, l.input_unit), input_qty: qty, input_unit: l.input_unit,
-      waybill_no: null, note: data.note?.trim() || null, created_by: userId || null,
-    }
-  })
-  const ids = q.createMovementsBatchWithAllocations(buildAllocationPlans(rows))
-  q.flagReviewForUnallocated(ids) // stok karşılığı olmayan satırlar "kontrol bekliyor"
-  checkLowStock(rows.map(r => r.product_id))
-  return ids
 }
 
 // ── Serbest metin dağıtım ayrıştırıcı ──
