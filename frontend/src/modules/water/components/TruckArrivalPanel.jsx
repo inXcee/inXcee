@@ -13,13 +13,11 @@ import {
   truckPriorityScore,
 } from '../logic/truckOperations.js'
 import { invalidateWaterQueries } from '../logic/waterQueryInvalidation.js'
+import { nf, todayStr } from '../logic/waterUi.js'
 
 const toastOk = message => useToastStore.getState().addToast(message, 'success')
 const toastErr = message => useToastStore.getState().addToast(message, 'error')
 const errMsg = (error, fallback) => error?.response?.data?.error || error?.message || fallback
-const todayStr = () => new Date().toLocaleDateString('sv-SE')
-const nf = value => new Intl.NumberFormat('tr-TR').format(value || 0)
-
 const canvasTextLines = (ctx, value, maxWidth, maxLines = 99) => {
   const output = []
   const paragraphs = String(value ?? '-').split(/\r?\n/)

@@ -1,13 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
+import { useMemo, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
 import { useAuthStore } from '../../shared/store/authStore.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
-import WaterBoard from './components/WaterBoard.jsx'
-import WaterQueryErrorCenter from './components/WaterQueryErrorCenter.jsx'
+import DailyDistributionModal from './components/DailyDistributionModal.jsx'
 import TruckArrivalPanel from './components/TruckArrivalPanel.jsx'
+import WaterBoard from './components/WaterBoard.jsx'
+import WaterModal from './components/WaterModal.jsx'
+import WaterQueryErrorCenter from './components/WaterQueryErrorCenter.jsx'
+import ZoneHistoryModal from './components/ZoneHistoryModal.jsx'
 import {
   availableUnitsForProduct,
   baseUnitForProduct,
@@ -18,66 +20,20 @@ import {
   multiplier,
   productInputUnit,
   smartQty,
-  unitLabel,
   unitOptionsForProduct,
 } from './logic/waterUnits.js'
 import { invalidateWaterQueries } from './logic/waterQueryInvalidation.js'
+import { calcText, dateRange, dayShort, nf, todayStr } from './logic/waterUi.js'
 
 const toastOk = (m) => useToastStore.getState().addToast(m, 'success')
 const toastErr = (m) => useToastStore.getState().addToast(m, 'error')
 const errMsg = (e, f) => e?.response?.data?.error || e?.message || f
-
-const todayStr = () => new Date().toLocaleDateString('sv-SE')
-const nf = (n) => new Intl.NumberFormat('tr-TR').format(n || 0)
-const calcText = (product, parsed) => {
-  if (!parsed?.valid) return ''
-  const baseLabel = product?.unit_label || 'adet'
-  return `${nf(parsed.input_qty)} ${unitLabel(parsed.input_unit)} = ${nf(parsed.base)} ${baseLabel}`
-}
 
 const MONTHS_TR = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık']
 const pad2 = (n) => String(n).padStart(2, '0')
 const monthBounds = (y, m) => {
   const last = new Date(y, m, 0).getDate()
   return { from: `${y}-${pad2(m)}-01`, to: `${y}-${pad2(m)}-${pad2(last)}`, label: `${MONTHS_TR[m - 1]} ${y}` }
-}
-const isoDate = (d) => d.toLocaleDateString('sv-SE')
-const dateRange = (from, to) => {
-  if (!from || !to) return []
-  const out = []
-  const d = new Date(`${from}T00:00:00`)
-  const end = new Date(`${to}T00:00:00`)
-  while (d <= end) {
-    out.push(isoDate(d))
-    d.setDate(d.getDate() + 1)
-  }
-  return out
-}
-const dayShort = (iso) => new Date(`${iso}T00:00:00`).toLocaleDateString('tr-TR', { weekday: 'short' })
-const dayLong = (iso) => new Date(`${iso}T00:00:00`).toLocaleDateString('tr-TR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })
-const movementTime = (value) => {
-  if (!value) return ''
-  const d = new Date(String(value).replace(' ', 'T'))
-  if (Number.isNaN(d.getTime())) return ''
-  return d.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
-}
-const shiftIsoDay = (iso, delta) => {
-  const d = new Date(`${iso}T00:00:00`)
-  d.setDate(d.getDate() + delta)
-  return isoDate(d)
-}
-const csvCell = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`
-const downloadCsv = (filename, headers, rows) => {
-  const csv = [headers, ...rows].map(row => row.map(csvCell).join(';')).join('\n')
-  const blob = new Blob([`\ufeff${csv}`], { type: 'text/csv;charset=utf-8;' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  document.body.appendChild(a)
-  a.click()
-  a.remove()
-  setTimeout(() => URL.revokeObjectURL(url), 0)
 }
 // ─────────────────────────── ANA SAYFA (tek ekran pano) ───────────────────────────
 export default function WaterPage() {
@@ -269,549 +225,6 @@ function AlertBand() {
 
 // ─────────────────────────── ANA PANO — INDEX matris + günlük giriş ───────────────────────────
 
-function ZoneHistoryModal({ zone, from, to, label, onClose }) {
-  const [range, setRange] = useState('month')
-  // Tüm geçmişi tek çek; 7-gün / ay / tüm görünümleri + ay karşılaştırmasını client'ta türet
-  const { data: allRows = [], isLoading } = useQuery({
-    queryKey: ['water-zone-history', zone.zone_id],
-    queryFn: () => api.get('/water/movements', { params: { type: 'out', zone_id: zone.zone_id, limit: 1000 } }).then(r => r.data),
-  })
-
-  const today = todayStr()
-  const weekStart = shiftIsoDay(today, -6) // son 7 gün (bugün dahil)
-  const month = from.slice(0, 7)
-  const prevMonth = shiftIsoDay(from, -1).slice(0, 7)
-
-  const rows = useMemo(() => {
-    if (range === 'week') return allRows.filter(r => r.move_date >= weekStart && r.move_date <= today)
-    if (range === 'month') return allRows.filter(r => r.move_date >= from && r.move_date <= to)
-    return allRows
-  }, [allRows, range, from, to, weekStart, today])
-
-  // Ay karşılaştırması + beklenen tüketim sapması (tüm geçmişten)
-  const compare = useMemo(() => {
-    let thisM = 0, prevM = 0
-    allRows.forEach(r => {
-      const m = (r.move_date || '').slice(0, 7)
-      if (m === month) thisM += r.qty_base || 0
-      else if (m === prevMonth) prevM += r.qty_base || 0
-    })
-    const expected = zone.expected_monthly || 0
-    const momDelta = prevM > 0 ? Math.round(((thisM - prevM) / prevM) * 100) : null
-    const expDelta = expected > 0 ? Math.round(((thisM - expected) / expected) * 100) : null
-    const overExpected = expected > 0 && Math.abs(thisM - expected) / expected > 0.25
-    return { thisM, prevM, expected, momDelta, expDelta, overExpected }
-  }, [allRows, month, prevMonth, zone.expected_monthly])
-
-  const stats = useMemo(() => {
-    const byDay = new Map()
-    const byProduct = new Map()
-    let total = 0
-    rows.forEach(r => {
-      total += r.qty_base || 0
-      const day = byDay.get(r.move_date) || { date: r.move_date, total: 0, rows: [], products: new Map() }
-      day.total += r.qty_base || 0
-      day.rows.push(r)
-      const dayProduct = day.products.get(r.product_id) || { product: r, total: 0 }
-      dayProduct.total += r.qty_base || 0
-      day.products.set(r.product_id, dayProduct)
-      byDay.set(r.move_date, day)
-
-      const product = byProduct.get(r.product_id) || { product: r, total: 0, count: 0 }
-      product.total += r.qty_base || 0
-      product.count += 1
-      byProduct.set(r.product_id, product)
-    })
-    const days = [...byDay.values()].sort((a, b) => b.date.localeCompare(a.date))
-    const products = [...byProduct.values()].sort((a, b) => b.total - a.total)
-    const activeDays = days.length
-    return {
-      total, days, products, activeDays, recordCount: rows.length,
-      dailyAvg: activeDays ? Math.round(total / activeDays) : 0,
-      lastDate: days[0]?.date || null,
-    }
-  }, [rows])
-
-  const rangeLabel = range === 'week' ? 'Son 7 gün' : range === 'month' ? label : 'Tüm geçmiş'
-
-  return (
-    <Modal title={`${zone.zone_name} — DAĞITIM GEÇMİŞİ`} onClose={onClose} width="1040px">
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
-          <div style={{ display: 'flex', gap: '2px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '8px', padding: '2px' }}>
-            {[
-              ['week', 'Son 7 gün'],
-              ['month', `Seçili ay: ${label}`],
-              ['all', 'Tüm geçmiş'],
-            ].map(([id, text]) => (
-              <button
-                key={id}
-                type="button"
-                onClick={() => setRange(id)}
-                style={{
-                  border: 'none',
-                  borderRadius: '6px',
-                  padding: '6px 10px',
-                  fontSize: '11px',
-                  cursor: 'pointer',
-                  background: range === id ? 'var(--accent)' : 'transparent',
-                  color: range === id ? '#000' : 'var(--text3)',
-                  fontWeight: 700,
-                }}
-              >
-                {text}
-              </button>
-            ))}
-          </div>
-          <div style={{ color: 'var(--text3)', fontSize: '11px' }}>Görüntülenen dönem: {rangeLabel}</div>
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(128px, 1fr))', gap: '10px' }}>
-          {[
-            ['Toplam dağıtım', nf(stats.total), 'var(--accent)'],
-            ['Günlük ortalama', nf(stats.dailyAvg), 'var(--teal)'],
-            ['Dağıtım günü', nf(stats.activeDays), 'var(--text)'],
-            ['Son dağıtım', stats.lastDate || '—', 'var(--text2)'],
-            ['Ürün çeşidi', nf(stats.products.length), 'var(--green)'],
-          ].map(([name, value, color]) => (
-            <div key={name} style={{ background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '8px', padding: '10px 12px' }}>
-              <div style={{ fontSize: '9px', color: 'var(--text3)', letterSpacing: '.5px' }}>{name}</div>
-              <div style={{ fontFamily: name === 'Son dağıtım' ? 'var(--mono)' : 'var(--display)', fontSize: name === 'Son dağıtım' ? '15px' : '22px', color, marginTop: name === 'Son dağıtım' ? '4px' : 0 }}>{value}</div>
-            </div>
-          ))}
-        </div>
-
-        {/* Ay karşılaştırması + beklenen tüketim sapması */}
-        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-          <div style={{ flex: '1 1 220px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '8px', padding: '10px 12px' }}>
-            <div style={{ fontSize: '9px', color: 'var(--text3)', letterSpacing: '.5px' }}>BU AY / ÖNCEKİ AY</div>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', marginTop: '3px' }}>
-              <span style={{ fontFamily: 'var(--display)', fontSize: '20px' }}>{nf(compare.thisM)}</span>
-              <span style={{ color: 'var(--text3)', fontSize: '12px' }}>← {nf(compare.prevM)}</span>
-              {compare.momDelta != null && (
-                <span style={{ fontSize: '12px', fontWeight: 700, color: compare.momDelta > 0 ? 'var(--accent)' : compare.momDelta < 0 ? 'var(--green)' : 'var(--text3)' }}>
-                  {compare.momDelta > 0 ? '▲' : compare.momDelta < 0 ? '▼' : ''}%{Math.abs(compare.momDelta)}
-                </span>
-              )}
-            </div>
-          </div>
-          <div style={{ flex: '1 1 220px', background: compare.overExpected ? 'color-mix(in srgb, var(--red) 10%, var(--surface2))' : 'var(--surface2)', border: `1px solid ${compare.overExpected ? 'var(--red)' : 'var(--border)'}`, borderRadius: '8px', padding: '10px 12px' }}>
-            <div style={{ fontSize: '9px', color: 'var(--text3)', letterSpacing: '.5px' }}>BEKLENEN AYLIK TÜKETİM</div>
-            {compare.expected > 0 ? (
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', marginTop: '3px' }}>
-                <span style={{ fontFamily: 'var(--display)', fontSize: '20px' }}>{nf(compare.expected)}</span>
-                <span style={{ fontSize: '12px', fontWeight: 700, color: compare.overExpected ? 'var(--red)' : 'var(--green)' }}>
-                  {compare.expDelta > 0 ? '▲' : compare.expDelta < 0 ? '▼' : ''}%{Math.abs(compare.expDelta)}
-                </span>
-                {compare.overExpected && <span style={{ fontSize: '11px', color: 'var(--red)', fontWeight: 600 }}>⚠ sapma</span>}
-              </div>
-            ) : (
-              <div style={{ fontSize: '11px', color: 'var(--text3)', marginTop: '5px' }}>Tanımsız — ⚙ Ayarlar’dan bölgeye ekleyin</div>
-            )}
-          </div>
-        </div>
-
-        {isLoading ? (
-          <div style={{ padding: '18px', color: 'var(--text3)' }}>Geçmiş yükleniyor…</div>
-        ) : rows.length === 0 ? (
-          <div style={{ padding: '18px', color: 'var(--text3)', border: '1px dashed var(--border)', borderRadius: '8px', textAlign: 'center' }}>Bu dönem için dağıtım kaydı yok.</div>
-        ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.25fr) minmax(280px, .75fr)', gap: '14px' }}>
-            <div style={{ border: '1px solid var(--border)', borderRadius: '8px', overflow: 'auto', maxHeight: '52vh' }}>
-              <table className="data-table" style={{ fontSize: '11px' }}>
-                <thead>
-                  <tr>
-                    <th style={{ minWidth: '92px' }}>Gün</th>
-                    <th>Verilen ürünler</th>
-                    <th style={{ textAlign: 'right', minWidth: '98px' }}>Gün toplamı</th>
-                    <th style={{ minWidth: '130px' }}>İrsaliye bağlantısı</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {stats.days.map(day => {
-                    const linked = [...new Set(day.rows.flatMap(r => String(r.source_waybills || '').split(',').map(x => x.trim()).filter(Boolean)))]
-                    return (
-                      <tr key={day.date}>
-                        <td>
-                          <div style={{ fontFamily: 'var(--mono)', fontWeight: 700 }}>{day.date}</div>
-                          <div style={{ color: 'var(--text3)', fontSize: '9px' }}>{dayShort(day.date)}</div>
-                        </td>
-                        <td>
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
-                            {[...day.products.values()].sort((a, b) => b.total - a.total).map(p => (
-                              <span key={p.product.product_id} style={{ border: '1px solid var(--border)', background: 'var(--surface2)', borderRadius: '999px', padding: '3px 7px', whiteSpace: 'nowrap' }}>
-                                {p.product.product_name}: <b>{humanQty(p.product, p.total)}</b>
-                              </span>
-                            ))}
-                          </div>
-                        </td>
-                        <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 700, color: 'var(--accent)' }}>{nf(day.total)}</td>
-                        <td style={{ color: linked.length ? 'var(--text2)' : 'var(--text3)', fontSize: '10px' }}>{linked.length ? linked.join(' · ') : '—'}</td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <div>
-                <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text2)', marginBottom: '8px' }}>ÜRÜN TOPLAMI</div>
-                <div style={{ border: '1px solid var(--border)', borderRadius: '8px', overflow: 'auto', maxHeight: '210px' }}>
-                  <table className="data-table" style={{ fontSize: '11px' }}>
-                    <tbody>
-                      {stats.products.map(p => (
-                        <tr key={p.product.product_id}>
-                          <td>
-                            <div style={{ fontWeight: 600 }}>{p.product.brand_name ? `${p.product.brand_name} · ` : ''}{p.product.product_name}</div>
-                            <div style={{ color: 'var(--text3)', fontSize: '9px' }}>{p.count} kayıt</div>
-                          </td>
-                          <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 700 }}>{humanQty(p.product, p.total)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              <div>
-                <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text2)', marginBottom: '8px' }}>SON KAYITLAR</div>
-                <div style={{ border: '1px solid var(--border)', borderRadius: '8px', overflow: 'auto', maxHeight: '240px' }}>
-                  <table className="data-table" style={{ fontSize: '11px' }}>
-                    <tbody>
-                      {rows.slice(0, 12).map(r => (
-                        <tr key={r.id}>
-                          <td style={{ fontFamily: 'var(--mono)' }}>{r.move_date}</td>
-                          <td>{r.product_name}</td>
-                          <td style={{ textAlign: 'right', fontFamily: 'var(--mono)' }}>{r.qty_human || humanQty(r, r.qty_base)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-    </Modal>
-  )
-}
-
-function DailyDistributionModal({ day, from, to, onDayChange, onClose }) {
-  const qc = useQueryClient()
-  const [filter, setFilter] = useState('')
-  const [editing, setEditing] = useState(null)
-  const { data: rows = [], isLoading } = useQuery({
-    queryKey: ['water-daily-ledger', day],
-    enabled: !!day,
-    queryFn: () => api.get('/water/movements', { params: { type: 'out', from: day, to: day, limit: 600 } }).then(r => r.data),
-  })
-  const { data: products = [] } = useQuery({
-    queryKey: ['water-products'],
-    enabled: !!editing,
-    queryFn: () => api.get('/water/products').then(r => r.data),
-  })
-  const { data: zones = [] } = useQuery({
-    queryKey: ['water-zones'],
-    enabled: !!editing,
-    queryFn: () => api.get('/water/zones').then(r => r.data),
-  })
-
-  const visibleRows = useMemo(() => {
-    const needle = filter.trim().toLocaleLowerCase('tr')
-    if (!needle) return rows
-    return rows.filter(r => [
-      r.zone_name, r.product_name, r.brand_name, r.source_waybills,
-      r.created_by_name, r.created_by_username, r.note, r.input_unit, r.qty_human,
-    ].some(v => String(v || '').toLocaleLowerCase('tr').includes(needle)))
-  }, [rows, filter])
-
-  const stats = useMemo(() => {
-    const byZone = new Map()
-    const byProduct = new Map()
-    let total = 0, pending = 0
-    visibleRows.forEach(r => {
-      const qty = Number(r.qty_base || 0)
-      total += qty
-      pending += Number(r.unallocated_base || 0)
-      const zoneKey = r.zone_id || r.zone_name || 'unknown'
-      const zone = byZone.get(zoneKey) || { key: zoneKey, zone_name: r.zone_name || 'Bölge yok', total: 0, count: 0, products: new Map() }
-      zone.total += qty
-      zone.count += 1
-      const zoneProduct = zone.products.get(r.product_id) || { product: r, total: 0 }
-      zoneProduct.total += qty
-      zone.products.set(r.product_id, zoneProduct)
-      byZone.set(zoneKey, zone)
-
-      const product = byProduct.get(r.product_id) || { product: r, total: 0, count: 0, zones: new Set() }
-      product.total += qty
-      product.count += 1
-      if (r.zone_name) product.zones.add(r.zone_name)
-      byProduct.set(r.product_id, product)
-    })
-    return {
-      total,
-      zoneCount: byZone.size,
-      productCount: byProduct.size,
-      recordCount: visibleRows.length,
-      pending,
-      zones: [...byZone.values()].sort((a, b) => b.total - a.total),
-      products: [...byProduct.values()].sort((a, b) => b.total - a.total),
-    }
-  }, [visibleRows])
-
-  const selectedProduct = products.find(p => String(p.id) === String(editing?.product_id))
-  const editCalc = editing ? smartQty(editing.input_qty, selectedProduct, editing.input_unit) : null
-  const prevDay = shiftIsoDay(day, -1)
-  const nextDay = shiftIsoDay(day, 1)
-  const canPrev = !from || prevDay >= from
-  const canNext = !to || nextDay <= to
-
-  const invalidate = () => invalidateWaterQueries(qc, 'distribution')
-  const updateMovement = useMutation({
-    mutationFn: ({ id, payload }) => api.put(`/water/movements/${id}`, payload),
-    onSuccess: (_, vars) => {
-      invalidate()
-      toastOk('Dağıtım kaydı güncellendi')
-      setEditing(null)
-      if (vars?.payload?.move_date && vars.payload.move_date !== day) onDayChange?.(vars.payload.move_date)
-    },
-    onError: (e) => toastErr(errMsg(e, 'Güncellenemedi')),
-  })
-  const deleteMovement = useMutation({
-    mutationFn: (id) => api.delete(`/water/movements/${id}`),
-    onSuccess: () => { invalidate(); toastOk('Dağıtım kaydı silindi'); setEditing(null) },
-    onError: (e) => toastErr(errMsg(e, 'Silinemedi')),
-  })
-
-  const startEdit = (r) => setEditing({
-    id: r.id,
-    move_date: r.move_date || day,
-    zone_id: r.zone_id || '',
-    product_id: r.product_id || '',
-    input_qty: r.input_qty || '',
-    input_unit: r.input_unit || defaultUnitForProduct(r),
-    note: r.note || '',
-  })
-  const saveEdit = () => {
-    if (!editing?.zone_id) return toastErr('Bölge seçin')
-    if (!editing?.product_id) return toastErr('Ürün seçin')
-    if (!editCalc?.valid) return toastErr(editCalc?.error || 'Geçerli miktar girin')
-    updateMovement.mutate({
-      id: editing.id,
-      payload: {
-        zone_id: +editing.zone_id,
-        product_id: +editing.product_id,
-        move_date: editing.move_date,
-        input_qty: editCalc.input_qty,
-        input_unit: editCalc.input_unit,
-        note: editing.note?.trim() || undefined,
-      },
-    })
-  }
-  const exportCsv = () => {
-    downloadCsv(`su-dagitim-${day}.csv`, ['Tarih', 'Saat', 'Bölge', 'Marka', 'Ürün', 'Girilen', 'Hesaplanan', 'İrsaliye', 'Kaydı Giren', 'Not'],
-      visibleRows.map(r => [
-        r.move_date, movementTime(r.created_at), r.zone_name, r.brand_name, r.product_name,
-        `${nf(r.input_qty)} ${r.input_unit}`, r.qty_human || humanQty(r, r.qty_base),
-        r.source_waybills || '', r.created_by_name || r.created_by_username || '', r.note || '',
-      ]))
-  }
-
-  return (
-    <Modal title={`${day} - GÜNLÜK DAĞITIM DEFTERİ`} onClose={onClose} width="1160px">
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
-          <div>
-            <div style={{ fontFamily: 'var(--display)', fontSize: '22px' }}>{dayLong(day)}</div>
-            <div style={{ color: 'var(--text3)', fontSize: '11px' }}>O gün girilen dağıtım kayıtları, irsaliye bağlantıları ve kaydı giren kullanıcı</div>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(82px, 1fr))', gap: '8px' }}>
-            {[
-              ['Toplam', nf(stats.total), 'var(--accent)'],
-              ['Bölge', nf(stats.zoneCount), 'var(--teal)'],
-              ['Ürün', nf(stats.productCount), 'var(--green)'],
-              ['Kayıt', nf(stats.recordCount), 'var(--text)'],
-              ['Bekleyen', nf(stats.pending), stats.pending > 0 ? 'var(--red)' : 'var(--text3)'],
-            ].map(([name, value, color]) => (
-              <div key={name} style={{ border: '1px solid var(--border)', background: 'var(--surface2)', padding: '7px 9px', borderRadius: '8px', textAlign: 'right' }}>
-                <div style={{ fontSize: '9px', color: 'var(--text3)' }}>{name}</div>
-                <div style={{ fontFamily: 'var(--display)', fontSize: '18px', color }}>{value}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '8px', padding: '8px' }}>
-          <button className="btn btn-ghost btn-sm" type="button" disabled={!canPrev} onClick={() => onDayChange?.(prevDay)}>‹ Önceki</button>
-          <button className="btn btn-ghost btn-sm" type="button" disabled={!canNext} onClick={() => onDayChange?.(nextDay)}>Sonraki ›</button>
-          <input
-            className="form-input"
-            value={filter}
-            onChange={e => setFilter(e.target.value)}
-            placeholder="Bölge, ürün, irsaliye, kişi ara..."
-            style={{ minWidth: '240px', flex: '1 1 260px', fontSize: '12px' }}
-          />
-          <button className="btn btn-ghost btn-sm" type="button" disabled={!visibleRows.length} onClick={exportCsv}>CSV</button>
-        </div>
-
-        {editing && (
-          <div style={{ border: '1px solid rgba(20,184,166,.45)', background: 'rgba(20,184,166,.07)', borderRadius: '8px', padding: '10px', display: 'grid', gridTemplateColumns: 'repeat(6, minmax(120px, 1fr))', gap: '8px', alignItems: 'end' }}>
-            <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'center' }}>
-              <strong style={{ fontSize: '12px' }}>Kayıt #{editing.id} düzenleniyor</strong>
-              <span style={{ color: editCalc?.error ? 'var(--red)' : 'var(--text3)', fontSize: '11px' }}>{editCalc?.valid ? calcText(selectedProduct, editCalc) : editCalc?.error || 'Miktar girince hesaplanır'}</span>
-            </div>
-            <label style={{ fontSize: '11px', color: 'var(--text2)' }}>Tarih
-              <input type="date" className="form-input" value={editing.move_date} onChange={e => setEditing(v => ({ ...v, move_date: e.target.value }))} style={{ fontSize: '12px' }} />
-            </label>
-            <label style={{ fontSize: '11px', color: 'var(--text2)' }}>Bölge
-              <select className="form-select" value={editing.zone_id} onChange={e => setEditing(v => ({ ...v, zone_id: e.target.value }))} style={{ fontSize: '12px' }}>
-                <option value="">Seçin</option>
-                {zones.map(z => <option key={z.id} value={z.id}>{z.name}</option>)}
-              </select>
-            </label>
-            <label style={{ fontSize: '11px', color: 'var(--text2)' }}>Ürün
-              <select className="form-select" value={editing.product_id} onChange={e => {
-                const product = products.find(p => String(p.id) === e.target.value)
-                setEditing(v => ({ ...v, product_id: e.target.value, input_unit: defaultUnitForProduct(product) }))
-              }} style={{ fontSize: '12px' }}>
-                <option value="">Seçin</option>
-                {products.map(p => <option key={p.id} value={p.id}>{p.brand_name ? `${p.brand_name} · ` : ''}{p.name}</option>)}
-              </select>
-            </label>
-            <label style={{ fontSize: '11px', color: 'var(--text2)' }}>Miktar
-              <input className="form-input" value={editing.input_qty} onChange={e => setEditing(v => ({ ...v, input_qty: e.target.value }))} style={{ fontSize: '12px' }} />
-            </label>
-            <label style={{ fontSize: '11px', color: 'var(--text2)' }}>Birim
-              <select className="form-select" value={editing.input_unit} onChange={e => setEditing(v => ({ ...v, input_unit: e.target.value }))} style={{ fontSize: '12px' }}>
-                {unitOptionsForProduct(selectedProduct).map(([unit, label]) => <option key={unit} value={unit}>{label}</option>)}
-              </select>
-            </label>
-            <label style={{ fontSize: '11px', color: 'var(--text2)' }}>Not
-              <input className="form-input" value={editing.note} onChange={e => setEditing(v => ({ ...v, note: e.target.value }))} style={{ fontSize: '12px' }} />
-            </label>
-            <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-              <button className="btn btn-ghost btn-sm" type="button" onClick={() => setEditing(null)}>Vazgeç</button>
-              <button className="btn btn-primary btn-sm" type="button" disabled={updateMovement.isPending} onClick={saveEdit}>{updateMovement.isPending ? 'Kaydediliyor…' : 'Kaydet'}</button>
-            </div>
-          </div>
-        )}
-
-        {isLoading ? (
-          <div style={{ padding: '18px', color: 'var(--text3)' }}>Günlük kayıtlar yükleniyor...</div>
-        ) : rows.length === 0 ? (
-          <div style={{ padding: '18px', color: 'var(--text3)', border: '1px dashed var(--border)', borderRadius: '8px', textAlign: 'center' }}>Bu gün için dağıtım kaydı yok.</div>
-        ) : visibleRows.length === 0 ? (
-          <div style={{ padding: '18px', color: 'var(--text3)', border: '1px dashed var(--border)', borderRadius: '8px', textAlign: 'center' }}>Filtreye uygun kayıt yok.</div>
-        ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.35fr) minmax(300px, .65fr)', gap: '14px' }}>
-            <div style={{ border: '1px solid var(--border)', borderRadius: '8px', overflow: 'auto', maxHeight: '58vh' }}>
-              <table className="data-table" style={{ fontSize: '11px', minWidth: '980px' }}>
-                <thead>
-                  <tr>
-                    <th style={{ minWidth: '76px' }}>Saat</th>
-                    <th style={{ minWidth: '160px' }}>Kime / nereye</th>
-                    <th style={{ minWidth: '160px' }}>Ürün</th>
-                    <th style={{ textAlign: 'right', minWidth: '90px' }}>Girilen</th>
-                    <th style={{ textAlign: 'right', minWidth: '112px' }}>Hesaplanan</th>
-                    <th style={{ minWidth: '150px' }}>İrsaliye</th>
-                    <th style={{ minWidth: '120px' }}>Kaydı giren</th>
-                    <th style={{ minWidth: '120px' }}>Not</th>
-                    <th style={{ minWidth: '120px' }}>İşlem</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {visibleRows.map(r => {
-                    const pending = Number(r.unallocated_base || 0)
-                    return (
-                    <tr key={r.id} style={{ background: pending > 0 ? 'rgba(239,68,68,.06)' : undefined }}>
-                      <td>
-                        <div style={{ fontFamily: 'var(--mono)', fontWeight: 700 }}>{movementTime(r.created_at) || '--:--'}</div>
-                        <div style={{ color: 'var(--text3)', fontSize: '9px' }}>#{r.id}</div>
-                      </td>
-                      <td style={{ fontWeight: 700 }}>{r.zone_name || '-'}</td>
-                      <td>
-                        <div style={{ fontWeight: 600 }}>{r.product_name}</div>
-                        <div style={{ color: 'var(--text3)', fontSize: '9px' }}>{r.brand_name || 'Marka yok'}</div>
-                      </td>
-                      <td style={{ textAlign: 'right', fontFamily: 'var(--mono)' }}>{nf(r.input_qty)} {r.input_unit}</td>
-                      <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 700, color: 'var(--accent)' }}>{r.qty_human || humanQty(r, r.qty_base)}</td>
-                      <td style={{ color: r.source_waybills || pending > 0 ? 'var(--text2)' : 'var(--text3)', fontSize: '10px' }}>
-                        {r.source_waybills || '-'}
-                        {pending > 0 && <div style={{ color: 'var(--red)', fontWeight: 800, marginTop: '3px' }}>-{r.unallocated_human || humanQty(r, pending)} irsaliye bekliyor</div>}
-                      </td>
-                      <td>{r.created_by_name || r.created_by_username || '-'}</td>
-                      <td style={{ color: r.note ? 'var(--text2)' : 'var(--text3)' }}>{r.note || '-'}</td>
-                      <td>
-                        <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
-                          <button className="btn btn-ghost btn-sm" type="button" onClick={() => startEdit(r)}>Düzenle</button>
-                          <button
-                            className="btn btn-danger btn-sm"
-                            type="button"
-                            disabled={deleteMovement.isPending}
-                            onClick={async () => {
-                              if (await confirmDialog({ title: 'Dağıtım Kaydını Sil', body: `${r.zone_name || '-'} / ${r.product_name} kaydı silinsin mi?`, danger: true })) deleteMovement.mutate(r.id)
-                            }}
-                          >
-                            Sil
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <div>
-                <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text2)', marginBottom: '8px' }}>BÖLGE TOPLAMI</div>
-                <div style={{ border: '1px solid var(--border)', borderRadius: '8px', overflow: 'auto', maxHeight: '240px' }}>
-                  <table className="data-table" style={{ fontSize: '11px' }}>
-                    <tbody>
-                      {stats.zones.map(z => (
-                        <tr key={z.key}>
-                          <td>
-                            <div style={{ fontWeight: 700 }}>{z.zone_name}</div>
-                            <div style={{ color: 'var(--text3)', fontSize: '9px' }}>
-                              {[...z.products.values()].sort((a, b) => b.total - a.total).slice(0, 2).map(p => `${p.product.product_name}: ${nf(p.total)}`).join(' · ')}
-                            </div>
-                          </td>
-                          <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 700 }}>{nf(z.total)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              <div>
-                <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text2)', marginBottom: '8px' }}>ÜRÜN TOPLAMI</div>
-                <div style={{ border: '1px solid var(--border)', borderRadius: '8px', overflow: 'auto', maxHeight: '240px' }}>
-                  <table className="data-table" style={{ fontSize: '11px' }}>
-                    <tbody>
-                      {stats.products.map(p => (
-                        <tr key={p.product.product_id}>
-                          <td>
-                            <div style={{ fontWeight: 700 }}>{p.product.brand_name ? `${p.product.brand_name} · ` : ''}{p.product.product_name}</div>
-                            <div style={{ color: 'var(--text3)', fontSize: '9px' }}>{p.count} kayıt · {p.zones.size} bölge</div>
-                          </td>
-                          <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 700 }}>{humanQty(p.product, p.total)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-    </Modal>
-  )
-}
 
 // ─────────────────────────── Onay Akışı (kontrol bekleyen eksi stok) ───────────────────────────
 function ReviewPanel() {
@@ -1645,87 +1058,18 @@ function BosIadePanel({ from, to, deposit }) {
   )
 }
 
-// ─────────────────────────── MODAL kabuğu ───────────────────────────
-function Modal({ title, onClose, width = '860px', children }) {
-  useEffect(() => {
-    const previous = document.body.style.overflow
-    const closeOnEscape = (event) => {
-      if (event.key === 'Escape') onClose()
-    }
-    document.body.style.overflow = 'hidden'
-    window.addEventListener('keydown', closeOnEscape)
-    return () => {
-      document.body.style.overflow = previous
-      window.removeEventListener('keydown', closeOnEscape)
-    }
-  }, [onClose])
-
-  return createPortal(
-    <>
-      <div
-        data-testid="water-modal-overlay"
-        style={{
-          position: 'fixed',
-          inset: 0,
-          background: 'rgba(0,0,0,.58)',
-          zIndex: 1080,
-        }}
-        onClick={onClose}
-      />
-      <div
-        className="panel"
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-        data-testid="water-bottom-sheet"
-        style={{
-          position: 'fixed',
-          left: '50%',
-          bottom: 0,
-          zIndex: 1081,
-          width: 'calc(100vw - 24px)',
-          maxWidth: width,
-          height: 'min(86vh, 860px)',
-          maxHeight: 'min(88vh, 880px)',
-          minHeight: 'min(360px, calc(100vh - 24px))',
-          margin: 0,
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden',
-          borderRadius: '16px 16px 0 0',
-          boxShadow: '0 -24px 72px rgba(0,0,0,.48)',
-          transform: 'translateX(-50%)',
-          background: 'var(--surface)',
-          border: '1px solid var(--border)',
-        }}
-        onClick={e => e.stopPropagation()}
-      >
-        <div style={{ display: 'flex', justifyContent: 'center', padding: '8px 0 5px', background: 'var(--surface)' }}>
-          <div style={{ width: '42px', height: '4px', borderRadius: '999px', background: 'var(--border)' }} />
-        </div>
-        <div style={{ height: '2px', background: 'var(--accent)' }} />
-        <div className="panel-header" style={{ flexShrink: 0, background: 'var(--surface)', borderBottom: '1px solid var(--border)' }}>
-          <div className="panel-title">{title}</div>
-          <button className="btn btn-ghost btn-sm" onClick={onClose}>✕ Kapat</button>
-        </div>
-        <div className="panel-body" style={{ overflow: 'auto', minHeight: 0, paddingBottom: 'max(18px, env(safe-area-inset-bottom))' }}>{children}</div>
-      </div>
-    </>,
-    document.body
-  )
-}
 
 function SettingsModal({ onClose }) {
   const [tab, setTab] = useState('firmalar')
   return (
-    <Modal title="AYARLAR" onClose={onClose} width="900px">
+    <WaterModal title="AYARLAR" onClose={onClose} width="900px">
       <div style={{ display: 'flex', gap: '2px', marginBottom: '14px', background: 'var(--surface2)', borderRadius: '8px', padding: '2px', border: '1px solid var(--border)', width: 'fit-content' }}>
         {[['firmalar', '📍 Dağıtım Yerleri'], ['urunler', '💧 Ürünler & Marka'], ['sablonlar', '🗂 Şablonlar']].map(([id, l]) => (
           <button key={id} onClick={() => setTab(id)} style={{ border: 'none', borderRadius: '6px', padding: '6px 12px', fontSize: '11px', cursor: 'pointer', background: tab === id ? 'var(--accent)' : 'transparent', color: tab === id ? '#000' : 'var(--text3)' }}>{l}</button>
         ))}
       </div>
       {tab === 'firmalar' ? <ZonesTab /> : tab === 'urunler' ? <ProductsTab /> : <TemplatesTab />}
-    </Modal>
+    </WaterModal>
   )
 }
 
@@ -1754,7 +1098,7 @@ function AdjustModal({ onClose }) {
   const reasonLabel = (k) => reasons.find(r => r.key === k)?.label || k
 
   return (
-    <Modal title="STOK DÜZELTME / SAYIM FİŞİ" onClose={onClose} width="760px">
+    <WaterModal title="STOK DÜZELTME / SAYIM FİŞİ" onClose={onClose} width="760px">
       <div style={{ fontSize: '11px', color: 'var(--text3)', marginBottom: '10px' }}>Kontrollü stok düzeltmesi — normal dağıtımdan ayrı tutulur, ay uyuşturmasında “Düzeltme” kolonunda görünür.</div>
       <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'end', marginBottom: '12px' }}>
         <div style={{ flex: 1, minWidth: '150px' }}><label className="form-label">Ürün</label>
@@ -1805,7 +1149,7 @@ function AdjustModal({ onClose }) {
           </tbody>
         </table>
       </div>
-    </Modal>
+    </WaterModal>
   )
 }
 
@@ -1815,9 +1159,9 @@ function TextModal({ onClose }) {
   const { data: zones = [] } = useQuery({ queryKey: ['water-zones'], queryFn: () => api.get('/water/zones').then(r => r.data) })
   const onSaved = () => invalidateWaterQueries(qc, 'distribution')
   return (
-    <Modal title="METİNDEN DAĞITIM" onClose={onClose} width="720px">
+    <WaterModal title="METİNDEN DAĞITIM" onClose={onClose} width="720px">
       <TextDistribute products={products} zones={zones} onSaved={onSaved} />
-    </Modal>
+    </WaterModal>
   )
 }
 

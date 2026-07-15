@@ -13,7 +13,6 @@ import {
   humanQty,
   productInputUnit,
   smartQty,
-  unitLabel,
   unitOptionsForProduct,
 } from '../logic/waterUnits.js'
 import {
@@ -22,17 +21,11 @@ import {
   saveWaterExcelReport,
 } from '../logic/waterExcelExport.js'
 import { invalidateWaterQueries } from '../logic/waterQueryInvalidation.js'
+import { calcText, nf, todayStr } from '../logic/waterUi.js'
 
 const toastOk = (message) => useToastStore.getState().addToast(message, 'success')
 const toastErr = (message) => useToastStore.getState().addToast(message, 'error')
 const errMsg = (error, fallback) => error?.response?.data?.error || error?.message || fallback
-const todayStr = () => new Date().toLocaleDateString('sv-SE')
-const nf = (value) => new Intl.NumberFormat('tr-TR').format(value || 0)
-const calcText = (product, parsed) => {
-  if (!parsed?.valid) return ''
-  const baseLabel = product?.unit_label || 'adet'
-  return `${nf(parsed.input_qty)} ${unitLabel(parsed.input_unit)} = ${nf(parsed.base)} ${baseLabel}`
-}
 const cellKey = (zoneId, productId) => `${zoneId}:${productId}`
 const brandKey = (id) => id == null ? 'null' : String(id)
 
