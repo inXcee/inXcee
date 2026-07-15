@@ -13,6 +13,7 @@ import {
   truckPriorityScore,
 } from '../logic/truckOperations.js'
 import { invalidateWaterQueries } from '../logic/waterQueryInvalidation.js'
+import WaterCollapsiblePanel from './WaterCollapsiblePanel.jsx'
 import { nf, todayStr } from '../logic/waterUi.js'
 
 const toastOk = message => useToastStore.getState().addToast(message, 'success')
@@ -509,20 +510,20 @@ function TruckArrivalPanel({ from, to, label, focusRequest }) {
   }
 
   return (
-    <div ref={panelRef} id="water-truck-entry" className="panel" style={{ marginTop: '16px', borderTop: `3px solid ${danger ? 'var(--red)' : 'var(--teal)'}`, scrollMarginTop: '18px' }}>
-      <div className="panel-header" style={{ alignItems: 'center', gap: '10px' }}>
-        <div>
-          <div className="panel-title">TIR / İRSALİYE TAKİBİ — {label}</div>
-          <div className="panel-subtitle">{truckStats.total} tır kaydı · {truckStats.mail} mail bekliyor · {truckStats.photos} irsaliye fotoğrafı</div>
-        </div>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px', alignItems: 'center' }}>
-          {truckStats.today > 0 && <span className="badge badge-amber">{truckStats.today} bugün</span>}
-          {truckStats.overdue > 0 && <span className="badge badge-red">{truckStats.overdue} kritik</span>}
-          <button className="btn btn-ghost btn-sm" onClick={() => setOpen(o => !o)}>{open ? '▲ Gizle' : '▼ Aç'}</button>
-        </div>
-      </div>
-      {open && (
-        <div className="panel-body" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+    <WaterCollapsiblePanel
+      ref={panelRef}
+      id="water-truck-entry"
+      open={open}
+      onToggle={() => setOpen(value => !value)}
+      title={<>TIR / İRSALİYE TAKİBİ — {label}</>}
+      subtitle={`${truckStats.total} tır kaydı · ${truckStats.mail} mail bekliyor · ${truckStats.photos} irsaliye fotoğrafı`}
+      beforeToggle={<>
+        {truckStats.today > 0 && <span className="badge badge-amber">{truckStats.today} bugün</span>}
+        {truckStats.overdue > 0 && <span className="badge badge-red">{truckStats.overdue} kritik</span>}
+      </>}
+      style={{ marginTop: '16px', borderTop: `3px solid ${danger ? 'var(--red)' : 'var(--teal)'}`, scrollMarginTop: '18px' }}
+    >
+      <div className="panel-body" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(138px, 1fr))', gap: '8px' }}>
             {[
               ['Mail bekleyen', truckStats.mail, 'var(--accent)', `${truckStats.ready} hazır`],
@@ -938,9 +939,8 @@ function TruckArrivalPanel({ from, to, label, focusRequest }) {
               </table>
             </div>
           </div>
-        </div>
-      )}
-    </div>
+      </div>
+    </WaterCollapsiblePanel>
   )
 }
 

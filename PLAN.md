@@ -505,7 +505,7 @@ W11 tır/foto KODU commit'liydi ama `036_water_truck_waybill_archive.sql` untrac
 - [x] Kesirli girişler sessiz yuvarlanmıyor; yalnızca tam baz miktara dönüşen değerler saklanıyor.
 - [x] Ay kilidi giriş/dağıtım/iade/sayım/düzeltme ekleme-güncelleme-silme işlemlerinde HTTP 423 ile uygulanıyor.
 - [x] Frontend query hata merkezi ve kapsam bazlı query invalidation eklendi; "veri yok" ile "API hatası" ayrıldı.
-- [x] Büyük frontend/backend su dosyaları hareket, analiz, uzlaştırma, tır, matris, modal ve ortak mantık sınırlarına bölündü.
+- [x] Büyük frontend/backend su dosyaları hareket, analiz, uzlaştırma, tır, matris, modal ve ortak mantık sınırlarına bölündü; altı açılır panel ortak erişilebilir kabuğa taşındı.
 - [x] Güncel mimari, 56 method+yol handler'ı (43 benzersiz yol), yetki matrisi, cron/job akışları, dosya retention, test ve operasyon runbook'u `docs/water-module.md` altında belgelendi.
 
 Ertelenen ürünler tamamlanmış sayılmaz: ürün bazlı lead time, günlük özet SMTP maili, SKT, mobil/QR, firma faturalama ve ortak ziyaretçi/güvenlik modülü entegrasyonu.

@@ -44,6 +44,7 @@ Su Takip ekranı aşağıdaki akışları tek modülde yönetir:
 | `components/DailyDistributionModal.jsx` | Seçilen günün bütün dağıtım dökümü |
 | `components/ZoneHistoryModal.jsx` | Dağıtım yeri geçmişi ve dönem karşılaştırması |
 | `components/WaterModal.jsx` | Portal tabanlı erişilebilir modal kabuğu |
+| `components/WaterCollapsiblePanel.jsx` | Açılır operasyon panellerinin ortak başlık, aksiyon ve erişilebilirlik kabuğu |
 | `components/WaterQueryErrorCenter.jsx` | Veri yok ile API hatasını ayıran merkezi hata görünümü |
 | `logic/waterUnits.js` | Backend birim kuralının istemci karşılığı |
 | `logic/waterMatrix.js` | Hücre değişikliği, yapıştırma, klavye gezinme, satır pencereleme ve geri alma reducer'ı |

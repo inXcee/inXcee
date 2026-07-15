@@ -7,6 +7,7 @@ import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 import DailyDistributionModal from './components/DailyDistributionModal.jsx'
 import TruckArrivalPanel from './components/TruckArrivalPanel.jsx'
 import WaterBoard from './components/WaterBoard.jsx'
+import WaterCollapsiblePanel from './components/WaterCollapsiblePanel.jsx'
 import WaterModal from './components/WaterModal.jsx'
 import WaterQueryErrorCenter from './components/WaterQueryErrorCenter.jsx'
 import ZoneHistoryModal from './components/ZoneHistoryModal.jsx'
@@ -249,18 +250,27 @@ function ReviewPanel() {
   if (!data || rows.length === 0) return null
 
   return (
-    <div style={{ marginBottom: '16px', background: 'color-mix(in srgb, var(--red) 8%, var(--surface))', border: '1px solid var(--red)', borderLeft: '3px solid var(--red)', borderRadius: '10px', padding: '10px 14px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-        <span style={{ fontSize: '15px' }}>🔎</span>
-        <span style={{ fontSize: '13px', color: 'var(--text)', fontWeight: 600 }}>{rows.length} eksi stok dağıtımı kontrol bekliyor</span>
-        <span style={{ fontSize: '11px', color: 'var(--text3)' }}>stok karşılığı olmadan girildi</span>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px' }}>
-          <button className="btn btn-ghost btn-sm" onClick={() => setOpen(o => !o)}>{open ? '▲ Gizle' : '▼ Listele'}</button>
-          {isManager && <button className="btn btn-primary btn-sm" disabled={approve.isPending} onClick={async () => { if (await confirmDialog({ title: 'Toplu Onay', message: `${rows.length} dağıtım kaydı onaylansın mı?`, confirmText: 'Hepsini Onayla' })) approve.mutate(null) }}>✓ Toplu Onayla</button>}
+    <WaterCollapsiblePanel
+      id="water-review-panel"
+      open={open}
+      onToggle={() => setOpen(value => !value)}
+      openLabel="Listele"
+      className=""
+      headerClassName=""
+      headerStyle={{ display: 'flex', flexWrap: 'wrap' }}
+      headerLead={(
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: '15px' }}>🔎</span>
+          <span style={{ fontSize: '13px', color: 'var(--text)', fontWeight: 600 }}>{rows.length} eksi stok dağıtımı kontrol bekliyor</span>
+          <span style={{ fontSize: '11px', color: 'var(--text3)' }}>stok karşılığı olmadan girildi</span>
         </div>
-      </div>
-      {open && (
-        <div style={{ marginTop: '8px', overflowX: 'auto' }}>
+      )}
+      afterToggle={isManager && (
+        <button type="button" className="btn btn-primary btn-sm" disabled={approve.isPending} onClick={async () => { if (await confirmDialog({ title: 'Toplu Onay', message: `${rows.length} dağıtım kaydı onaylansın mı?`, confirmText: 'Hepsini Onayla' })) approve.mutate(null) }}>✓ Toplu Onayla</button>
+      )}
+      style={{ marginBottom: '16px', background: 'color-mix(in srgb, var(--red) 8%, var(--surface))', border: '1px solid var(--red)', borderLeft: '3px solid var(--red)', borderRadius: '10px', padding: '10px 14px' }}
+    >
+      <div style={{ marginTop: '8px', overflowX: 'auto' }}>
           <table className="data-table" style={{ fontSize: '11px', minWidth: '640px' }}>
             <thead><tr>{['Tarih', 'Bölge', 'Ürün', 'Miktar', 'Karşılıksız', 'Giren', isManager ? '' : null].filter(h => h !== null).map((h, i) => <th key={i} style={{ textAlign: ['Tarih', 'Bölge', 'Ürün', 'Giren'].includes(h) ? 'left' : 'right', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
             <tbody>
@@ -277,9 +287,8 @@ function ReviewPanel() {
               ))}
             </tbody>
           </table>
-        </div>
-      )}
-    </div>
+      </div>
+    </WaterCollapsiblePanel>
   )
 }
 
@@ -299,18 +308,14 @@ function ForecastPanel() {
 
   const coverColor = (d) => d == null ? 'var(--text3)' : d <= 7 ? 'var(--red)' : d <= 14 ? 'var(--amber, #d97706)' : 'var(--green)'
   return (
-    <div className="panel" style={{ marginTop: '16px', borderTop: `3px solid ${t.order_count ? 'var(--red)' : 'var(--teal)'}` }}>
-      <div className="panel-header" style={{ alignItems: 'center' }}>
-        <div>
-          <div className="panel-title">📉 SİPARİŞ ÖNERİLERİ & GÜN-YETER</div>
-          <div className="panel-subtitle">
-            {t.order_count > 0 ? <span style={{ color: 'var(--red)', fontWeight: 600 }}>{t.order_count} ürün sipariş bekliyor</span> : 'sipariş gerekmiyor'} · {t.soon_count} ürün 7 günden az · son 30 gün tüketimine göre
-          </div>
-        </div>
-        <button className="btn btn-ghost btn-sm" style={{ marginLeft: 'auto' }} onClick={() => setOpen(o => !o)}>{open ? '▲ Gizle' : '▼ Aç'}</button>
-      </div>
-      {open && (
-        <>
+    <WaterCollapsiblePanel
+      id="water-forecast-panel"
+      open={open}
+      onToggle={() => setOpen(value => !value)}
+      title="📉 SİPARİŞ ÖNERİLERİ & GÜN-YETER"
+      subtitle={<>{t.order_count > 0 ? <span style={{ color: 'var(--red)', fontWeight: 600 }}>{t.order_count} ürün sipariş bekliyor</span> : 'sipariş gerekmiyor'} · {t.soon_count} ürün 7 günden az · son 30 gün tüketimine göre</>}
+      style={{ marginTop: '16px', borderTop: `3px solid ${t.order_count ? 'var(--red)' : 'var(--teal)'}` }}
+    >
           {orders.length > 0 && (
             <div style={{ padding: '0 0 10px' }}>
               <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--red)', marginBottom: '6px' }}>ÖNERİLEN SİPARİŞLER</div>
@@ -340,9 +345,7 @@ function ForecastPanel() {
               </tbody>
             </table>
           </div>
-        </>
-      )}
-    </div>
+    </WaterCollapsiblePanel>
   )
 }
 
@@ -360,18 +363,15 @@ function PendingWaybillPanel() {
   if (t.count === 0) return null // hiç bekleyen yoksa gizle (AlertBand zaten "güncel" der)
 
   return (
-    <div className="panel" style={{ marginTop: '16px', borderTop: `3px solid ${t.overdue ? 'var(--red)' : 'var(--accent)'}` }}>
-      <div className="panel-header" style={{ alignItems: 'center' }}>
-        <div>
-          <div className="panel-title">🧾 İRSALİYE BEKLEYEN DAĞITIMLAR ({t.count})</div>
-          <div className="panel-subtitle">
-            {t.overdue > 0 ? <span style={{ color: 'var(--red)', fontWeight: 600 }}>{t.overdue} tanesi 3+ gündür bekliyor</span> : 'hepsi taze'} · yeni irsaliye girince otomatik kapanır
-          </div>
-        </div>
-        <button className="btn btn-ghost btn-sm" style={{ marginLeft: 'auto' }} onClick={() => setOpen(o => !o)}>{open ? '▲ Gizle' : '▼ Aç'}</button>
-      </div>
-      {open && (
-        <div style={{ overflowX: 'auto' }}>
+    <WaterCollapsiblePanel
+      id="water-pending-waybill-panel"
+      open={open}
+      onToggle={() => setOpen(value => !value)}
+      title={`🧾 İRSALİYE BEKLEYEN DAĞITIMLAR (${t.count})`}
+      subtitle={<>{t.overdue > 0 ? <span style={{ color: 'var(--red)', fontWeight: 600 }}>{t.overdue} tanesi 3+ gündür bekliyor</span> : 'hepsi taze'} · yeni irsaliye girince otomatik kapanır</>}
+      style={{ marginTop: '16px', borderTop: `3px solid ${t.overdue ? 'var(--red)' : 'var(--accent)'}` }}
+    >
+      <div style={{ overflowX: 'auto' }}>
           <table className="data-table" style={{ fontSize: '11px', minWidth: '820px' }}>
             <thead>
               <tr>
@@ -395,9 +395,8 @@ function PendingWaybillPanel() {
               ))}
             </tbody>
           </table>
-        </div>
-      )}
-    </div>
+      </div>
+    </WaterCollapsiblePanel>
   )
 }
 
@@ -472,23 +471,20 @@ function MonthClosurePanel({ month, label }) {
   }
 
   return (
-    <div className="panel" style={{ marginTop: '16px', borderTop: `3px solid ${locked ? 'var(--red)' : 'var(--amber, #d97706)'}` }}>
-      <div className="panel-header" style={{ alignItems: 'center', gap: '10px' }}>
-        <div>
-          <div className="panel-title">AY KAPANIŞI — {label} {locked && <span style={{ color: 'var(--red)', fontSize: '12px' }}>🔒 KİLİTLİ</span>}</div>
-          <div className="panel-subtitle">Sistem kalanı vs fiziksel sayım — fark + açıklama + kilit</div>
-        </div>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px' }}>
-          <button className="btn btn-ghost btn-sm" onClick={() => setOpen(o => !o)}>{open ? '▲ Gizle' : '▼ Aç'}</button>
-          {open && <button className="btn btn-ghost btn-sm" onClick={downloadPdf}>📄 PDF Özet</button>}
-          {open && isManager && (locked
-            ? <button className="btn btn-ghost btn-sm" onClick={() => unlockMonth.mutate()}>🔓 Kilidi Aç</button>
-            : <button className="btn btn-primary btn-sm" onClick={askClose}>🔒 Ayı Kilitle</button>)}
-        </div>
-      </div>
-
-      {open && (
-        <>
+    <WaterCollapsiblePanel
+      id={`water-month-closure-${month}`}
+      open={open}
+      onToggle={() => setOpen(value => !value)}
+      title={<>AY KAPANIŞI — {label} {locked && <span style={{ color: 'var(--red)', fontSize: '12px' }}>🔒 KİLİTLİ</span>}</>}
+      subtitle="Sistem kalanı vs fiziksel sayım — fark + açıklama + kilit"
+      afterToggle={<>
+        {open && <button type="button" className="btn btn-ghost btn-sm" onClick={downloadPdf}>📄 PDF Özet</button>}
+        {open && isManager && (locked
+          ? <button type="button" className="btn btn-ghost btn-sm" onClick={() => unlockMonth.mutate()}>🔓 Kilidi Aç</button>
+          : <button type="button" className="btn btn-primary btn-sm" onClick={askClose}>🔒 Ayı Kilitle</button>)}
+      </>}
+      style={{ marginTop: '16px', borderTop: `3px solid ${locked ? 'var(--red)' : 'var(--amber, #d97706)'}` }}
+    >
           {locked && (
             <div role="status" style={{ marginBottom: '10px', padding: '9px 11px', border: '1px solid rgba(239,68,68,.35)', borderRadius: '6px', background: 'rgba(239,68,68,.07)', color: 'var(--red)', fontSize: '11px', fontWeight: 600 }}>
               Bu ay kilitli. Kayıtlar ve fiziksel sayımlar yalnız kilit açıldıktan sonra değiştirilebilir.
@@ -559,9 +555,7 @@ function MonthClosurePanel({ month, label }) {
               </tbody>
             </table>
           </div>
-        </>
-      )}
-    </div>
+    </WaterCollapsiblePanel>
   )
 }
 
@@ -582,23 +576,20 @@ function TrendPanel() {
   const maxZone = Math.max(1, ...zones.map(z => z.total))
 
   return (
-    <div className="panel" style={{ marginTop: '16px', borderTop: '3px solid var(--teal)' }}>
-      <div className="panel-header" style={{ alignItems: 'center' }}>
-        <div>
-          <div className="panel-title">📈 TREND & ANALİZ</div>
-          <div className="panel-subtitle">aylık gelen/dağıtım + en çok tüketen bölge/ürün</div>
-        </div>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px', alignItems: 'center' }}>
-          {open && (
-            <select className="form-select" aria-label="Dönem" value={months} onChange={e => setMonths(+e.target.value)} style={{ fontSize: '12px', width: 'auto' }}>
-              {[3, 6, 12].map(m => <option key={m} value={m}>Son {m} ay</option>)}
-            </select>
-          )}
-          <button className="btn btn-ghost btn-sm" onClick={() => setOpen(o => !o)}>{open ? '▲ Gizle' : '▼ Aç'}</button>
-        </div>
-      </div>
-      {open && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '18px', paddingTop: '4px' }}>
+    <WaterCollapsiblePanel
+      id="water-trend-panel"
+      open={open}
+      onToggle={() => setOpen(value => !value)}
+      title="📈 TREND & ANALİZ"
+      subtitle="aylık gelen/dağıtım + en çok tüketen bölge/ürün"
+      beforeToggle={open && (
+        <select className="form-select" aria-label="Dönem" value={months} onChange={e => setMonths(+e.target.value)} style={{ fontSize: '12px', width: 'auto' }}>
+          {[3, 6, 12].map(m => <option key={m} value={m}>Son {m} ay</option>)}
+        </select>
+      )}
+      style={{ marginTop: '16px', borderTop: '3px solid var(--teal)' }}
+    >
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '18px', paddingTop: '4px' }}>
           <div>
             <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text2)', marginBottom: '8px' }}>AYLIK GELEN / DAĞITIM</div>
             {monthly.map(m => (
@@ -634,9 +625,8 @@ function TrendPanel() {
               </tbody>
             </table>
           </div>
-        </div>
-      )}
-    </div>
+      </div>
+    </WaterCollapsiblePanel>
   )
 }
 
