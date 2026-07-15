@@ -1,17 +1,12 @@
 import * as q from './queries.js'
+import { INPUT_UNITS, assertAvailableUnit, availableUnits, humanize, toBase } from './units.js'
 import fs from 'node:fs'
 import { createNotification } from '../../shared/notifications/service.js'
 import { getDB } from '../../shared/db/index.js'
 import { enqueue } from '../../shared/jobs/index.js'
 import { parseRecipients } from '../email/service.js'
+export { availableUnits, humanize, toBase, unitMultiplier } from './units.js'
 
-// ── Çevrim mantığı: ürünün doğal takip birimi + palet/koli/paket kırılımı ──
-// qty_base Excel'deki ham takip sayısıdır. Bu sayı damacanada adet, bardakta koli,
-// 5 L/cam suda paket, tahta palette palet olabilir. "adet" ham sayı girişi olarak
-// her üründe kabul edilir; açılır listeler ürüne uygun birimleri gösterir.
-const INPUT_UNITS = ['adet', 'koli', 'paket', 'palet']
-const BASE_UNITS = new Set(INPUT_UNITS)
-const WHOLE_BASE_TOLERANCE = 1e-9
 export const WATER_OPERATION_ROLES = Object.freeze(['campus_manager', 'shift_supervisor'])
 
 export function notifyWaterOperations({ dedup_key, ...notification }) {
@@ -22,94 +17,6 @@ export function notifyWaterOperations({ dedup_key, ...notification }) {
   })).filter(Boolean)
 }
 
-function normUnit(unit) {
-  return (unit || 'adet').toString().toLocaleLowerCase('tr').trim()
-}
-
-function baseInputUnit(product) {
-  const unit = normUnit(product?.unit_label)
-  return BASE_UNITS.has(unit) ? unit : 'adet'
-}
-
-export function unitMultiplier(product, unit) {
-  const input = normUnit(unit)
-  const baseUnit = baseInputUnit(product)
-  const upc = Math.max(1, parseInt(product?.units_per_case) || 1)
-  const cpp = Math.max(1, parseInt(product?.cases_per_pallet) || 1)
-  if (input === 'adet') return 1
-  if (input === 'koli') {
-    if (baseUnit === 'koli') return 1
-    if (baseUnit === 'paket' || baseUnit === 'palet') throw Object.assign(new Error('Geçersiz birim'), { statusCode: 400 })
-    return upc
-  }
-  if (input === 'paket') {
-    if (baseUnit === 'paket') return 1
-    throw Object.assign(new Error('Geçersiz birim'), { statusCode: 400 })
-  }
-  if (input === 'palet') {
-    if (baseUnit === 'palet') return 1
-    if (baseUnit === 'koli' || baseUnit === 'paket') return cpp
-    return upc * cpp
-  }
-  throw Object.assign(new Error('Geçersiz birim'), { statusCode: 400 })
-}
-
-export function availableUnits(product) {
-  const units = ['adet']
-  const baseUnit = baseInputUnit(product)
-  const upc = Math.max(1, parseInt(product?.units_per_case) || 1)
-  const cpp = Math.max(1, parseInt(product?.cases_per_pallet) || 1)
-  if (baseUnit === 'koli' || (baseUnit === 'adet' && upc > 1)) units.push('koli')
-  if (baseUnit === 'paket') units.push('paket')
-  if (baseUnit === 'palet') units.push('palet')
-  if (baseUnit !== 'palet' && cpp > 1) units.push('palet')
-  return [...new Set(units)]
-}
-
-function assertAvailableUnit(product, unit) {
-  if (!availableUnits(product).includes(unit)) {
-    throw Object.assign(new Error(`${product.name} için ${unit} birimi kullanılamaz`), { statusCode: 400 })
-  }
-}
-
-export function toBase(product, qty, unit) {
-  const numericQty = Number(qty)
-  const rawBase = numericQty * unitMultiplier(product, unit)
-  const roundedBase = Math.round(rawBase)
-  const tolerance = WHOLE_BASE_TOLERANCE * Math.max(1, Math.abs(rawBase))
-  if (!Number.isFinite(rawBase) || !Number.isSafeInteger(roundedBase)) {
-    throw Object.assign(new Error('Miktar güvenli sayı aralığında olmalı'), { statusCode: 400 })
-  }
-  if (Math.abs(rawBase - roundedBase) > tolerance) {
-    const baseLabel = product?.unit_label || baseInputUnit(product)
-    throw Object.assign(new Error(
-      `${product?.name || 'Ürün'} miktarı tam ${baseLabel} karşılığına dönüşmeli; kesirli baz miktar kaydedilemez`,
-    ), { statusCode: 400 })
-  }
-  return roundedBase
-}
-
-// base miktarı palet/koli/paket/adet kırılımına çevirir (insan-okur özet)
-export function humanize(product, base) {
-  const upc = Math.max(1, parseInt(product?.units_per_case) || 1)
-  const cpp = Math.max(1, parseInt(product?.cases_per_pallet) || 1)
-  const baseUnit = baseInputUnit(product)
-  const perPallet = baseUnit === 'palet' ? 1 : (baseUnit === 'koli' || baseUnit === 'paket') ? cpp : upc * cpp
-  const unit = product?.unit_label || 'adet'
-  const sign = Number(base) < 0 ? '-' : ''
-  let rem = Math.abs(Math.round(base || 0))
-  const parts = []
-  if (perPallet > 1) {
-    const palet = Math.floor(rem / perPallet); rem %= perPallet
-    if (palet) parts.push(`${palet} palet`)
-  }
-  if (baseUnit === 'adet' && upc > 1) {
-    const koli = Math.floor(rem / upc); rem %= upc
-    if (koli) parts.push(`${koli} koli`)
-  }
-  if (rem || parts.length === 0) parts.push(`${rem} ${unit}`)
-  return sign ? `-${parts.join(' ')}` : parts.join(' ')
-}
 
 // ── Marka servisleri ──
 export function brandsService(opts) { return q.listBrands(opts) }
