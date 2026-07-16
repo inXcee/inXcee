@@ -31,6 +31,7 @@ import {
   staffDetailService,
   staffListService, staffGetService, staffCreateService, staffUpdateService, staffDeleteService,
   staffAssignmentsService, createStaffAssignmentService, staffDataQualityService,
+  bulkStaffAssignmentService, bulkStaffDeactivateService,
   puantajCsvService, puantajDaysService, staffDayBreakdownService, payslipService, bankTransferCsvService,
   attendanceEventService, attendanceEventsService, reconcileAttendanceService,
   attendanceExceptionsService, updateAttendanceExceptionService,
@@ -49,11 +50,48 @@ import { importScheduleSchema } from './schemas.js'
 import { validate } from '../../shared/middleware/validate.js'
 import { logAudit } from '../../shared/audit.js'
 import { documentUpload, verifyDocumentMagicBytes } from '../../shared/uploads/middleware.js'
+import { sanitizeDossierPerson } from '../personnel/access-policy.js'
 
 export const shiftsRouter = Router()
 
 const managerOrSupervisor = requireRole('campus_manager', 'shift_supervisor')
 const managerOnly = requireRole('campus_manager')
+
+function sanitizeStaffRows(data, role) {
+  return Array.isArray(data)
+    ? data.map(row => sanitizeDossierPerson(row, role))
+    : sanitizeDossierPerson(data, role)
+}
+
+function allowedStaffMutation(body, role) {
+  const data = { ...(body || {}) }
+  if (role !== 'campus_manager') {
+    delete data.tc_no
+    delete data.salary
+    delete data.iban
+  }
+  return data
+}
+
+function sanitizeStaffQuality(data, role) {
+  if (role === 'campus_manager') return data
+  const hiddenCodes = new Set(['missing_salary', 'missing_iban'])
+  const rows = (data?.rows || []).map(row => ({
+    ...sanitizeDossierPerson(row, role),
+    issues: (row.issues || []).filter(issue => !hiddenCodes.has(issue.code)),
+  })).filter(row => row.issues.length > 0)
+  const byCode = { ...(data?.summary?.by_code || {}) }
+  hiddenCodes.forEach(code => delete byCode[code])
+  return {
+    summary: {
+      ...(data?.summary || {}),
+      staff_with_issues: rows.length,
+      issue_total: rows.reduce((total, row) => total + row.issues.length, 0),
+      by_code: byCode,
+    },
+    rows,
+  }
+}
 
 // ── Staff CRUD — Personel bilgileri (maaş, TC, adres) sadece yönetim rollerine ──
 shiftsRouter.get('/staff', ...managerOrSupervisor, (req, res) => {
@@ -62,22 +100,22 @@ shiftsRouter.get('/staff', ...managerOrSupervisor, (req, res) => {
     const db = getDB()
     const total = db.prepare('SELECT COUNT(*) as c FROM staff').get().c
     const data = staffListService({ ...req.query, _limit: limit, _offset: offset })
-    return res.json({ data, total, page, limit })
+    return res.json({ data: sanitizeStaffRows(data, req.user.role), total, page, limit })
   }
-  res.json(staffListService(req.query))
+  res.json(sanitizeStaffRows(staffListService(req.query), req.user.role))
 })
 
 shiftsRouter.get('/staff/search', ...managerOrSupervisor, (req, res) => {
-  res.json(searchStaffService(req.query.q))
+  res.json(sanitizeStaffRows(searchStaffService(req.query.q), req.user.role))
 })
 
 shiftsRouter.get('/staff/quality', ...managerOrSupervisor, (req, res) => {
-  res.json(staffDataQualityService())
+  res.json(sanitizeStaffQuality(staffDataQualityService(), req.user.role))
 })
 
 shiftsRouter.get('/staff/:id', ...managerOrSupervisor, (req, res) => {
   try {
-    res.json(staffGetService(req.params.id))
+    res.json(sanitizeDossierPerson(staffGetService(req.params.id), req.user.role))
   } catch (e) {
     res.status(404).json({ error: e.message })
   }
@@ -85,7 +123,8 @@ shiftsRouter.get('/staff/:id', ...managerOrSupervisor, (req, res) => {
 
 shiftsRouter.get('/staff/:id/detail', ...managerOrSupervisor, (req, res) => {
   try {
-    res.json(staffDetailService(req.params.id))
+    const detail = staffDetailService(req.params.id)
+    res.json({ ...detail, person: sanitizeDossierPerson(detail.person, req.user.role) })
   } catch (e) {
     res.status(404).json({ error: e.message })
   }
@@ -93,7 +132,7 @@ shiftsRouter.get('/staff/:id/detail', ...managerOrSupervisor, (req, res) => {
 
 shiftsRouter.post('/staff', ...managerOrSupervisor, (req, res) => {
   try {
-    const id = staffCreateService(req.body, req.user.id)
+    const id = staffCreateService(allowedStaffMutation(req.body, req.user.role), req.user.id)
     res.status(201).json({ id })
   } catch (e) {
     res.status(400).json({ error: e.message })
@@ -102,14 +141,34 @@ shiftsRouter.post('/staff', ...managerOrSupervisor, (req, res) => {
 
 shiftsRouter.put('/staff/:id', ...managerOrSupervisor, (req, res) => {
   try {
-    staffUpdateService(req.params.id, req.body, req.user.id)
+    staffUpdateService(req.params.id, allowedStaffMutation(req.body, req.user.role), req.user.id)
     res.json({ ok: true })
   } catch (e) {
     res.status(400).json({ error: e.message })
   }
 })
 
-shiftsRouter.delete('/staff/:id', ...managerOrSupervisor, (req, res) => {
+shiftsRouter.post('/staff/bulk/assignment', ...managerOrSupervisor, (req, res) => {
+  try {
+    const result = bulkStaffAssignmentService(req.body, req.user.id)
+    logAudit(req.user.id, 'staff_bulk_assignment', 'shifts', null, `${result.updated.length} personel`)
+    res.json(result)
+  } catch (e) {
+    res.status(400).json({ error: e.message })
+  }
+})
+
+shiftsRouter.post('/staff/bulk/deactivate', ...managerOnly, (req, res) => {
+  try {
+    const result = bulkStaffDeactivateService(req.body)
+    logAudit(req.user.id, 'staff_bulk_deactivate', 'shifts', null, `${result.updated.length} personel`)
+    res.json(result)
+  } catch (e) {
+    res.status(400).json({ error: e.message })
+  }
+})
+
+shiftsRouter.delete('/staff/:id', ...managerOnly, (req, res) => {
   try {
     staffDeleteService(req.params.id)
     res.json({ ok: true })

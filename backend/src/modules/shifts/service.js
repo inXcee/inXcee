@@ -24,7 +24,7 @@ import {
   resetDailyApprovalsForDates, getPuantajDayIssueCounts, getPuantajApprovalOverview,
   listPuantajCodes, createPuantajCode, updatePuantajCode, getPuantajCode, deletePuantajCode,
   getStaffDetail,
-  getStaffList, getStaffById, createStaff, updateStaff, deleteStaff,
+  getStaffList, getStaffDirectoryMetrics, getStaffById, createStaff, updateStaff, deleteStaff,
   getStaffAssignments, createStaffAssignment, getStaffDataQualityRows,
   getStaffDayBreakdown, getPuantajDayRows, listDeductions,
   findAttendanceIdentity, insertAttendanceEvent, listAttendanceEvents,
@@ -925,7 +925,30 @@ export function staffStatusService(date, deptId) {
 
 // ── Staff CRUD ──
 export function staffListService(filters) {
-  return getStaffList(filters)
+  const rows = getStaffList(filters)
+  if (!['1', 1, true, 'true'].includes(filters?.directory)) return rows
+  const metrics = new Map(getStaffDirectoryMetrics(rows.map(row => row.id)).map(row => [Number(row.staff_id), row]))
+  return rows.map(row => {
+    const summary = metrics.get(Number(row.id)) || {}
+    const riskCount = [
+      summary.missing_documents,
+      summary.expired_documents,
+      summary.overdue_followups,
+      summary.open_attendance_exceptions,
+      summary.expired_certificates,
+      summary.open_onboarding,
+      summary.open_offboarding,
+      !row.department_id ? 1 : 0,
+      !row.role_id ? 1 : 0,
+      !row.primary_work_location_id ? 1 : 0,
+    ].reduce((total, value) => total + (Number(value || 0) > 0 ? 1 : 0), 0)
+    return {
+      ...row,
+      ...summary,
+      risk_count: riskCount,
+      equipment_count: Number(summary.active_inventory || 0) + Number(summary.active_kkd || 0),
+    }
+  })
 }
 
 export function staffGetService(id) {
@@ -1028,6 +1051,52 @@ export function createStaffAssignmentService(staffId, data, userId) {
     note: data.note?.trim() || null,
     created_by: userId,
   })
+}
+
+function normalizeStaffIds(values) {
+  if (!Array.isArray(values)) throw new Error('Personel listesi zorunlu')
+  const ids = [...new Set(values.map(Number).filter(value => Number.isInteger(value) && value > 0))]
+  if (ids.length === 0) throw new Error('En az bir personel seçilmeli')
+  if (ids.length > 200) throw new Error('Tek işlemde en fazla 200 personel güncellenebilir')
+  return ids
+}
+
+export function bulkStaffAssignmentService(data, userId) {
+  const staffIds = normalizeStaffIds(data.staff_ids)
+  const hasDepartment = Object.prototype.hasOwnProperty.call(data, 'department_id')
+  const hasLocation = Object.prototype.hasOwnProperty.call(data, 'work_location_id')
+  if (!hasDepartment && !hasLocation) throw new Error('Departman veya çalışma lokasyonu seçilmeli')
+  const effectiveFrom = validateAssignmentDate(data.effective_from || todayLocal())
+  const departmentId = hasDepartment ? normalizeOptionalId(data.department_id) : undefined
+  const workLocationId = hasLocation ? normalizeOptionalId(data.work_location_id) : undefined
+
+  const save = getDB().transaction(() => staffIds.map(staffId => {
+    const current = getStaffById(staffId)
+    if (!current) throw new Error(`Personel bulunamadı: ${staffId}`)
+    createStaffAssignment({
+      staff_id: staffId,
+      department_id: hasDepartment ? departmentId : current.department_id,
+      role_id: current.role_id,
+      work_location_id: hasLocation ? workLocationId : current.primary_work_location_id,
+      effective_from: effectiveFrom,
+      note: data.note?.trim() || 'Toplu personel ataması',
+      created_by: userId,
+    })
+    return staffId
+  }))
+  return { updated: save(), effective_from: effectiveFrom }
+}
+
+export function bulkStaffDeactivateService(data) {
+  const staffIds = normalizeStaffIds(data.staff_ids)
+  const save = getDB().transaction(() => {
+    for (const staffId of staffIds) {
+      if (!getStaffById(staffId)) throw new Error(`Personel bulunamadı: ${staffId}`)
+      deleteStaff(staffId)
+    }
+    return staffIds
+  })
+  return { updated: save() }
 }
 
 export function staffDataQualityService() {

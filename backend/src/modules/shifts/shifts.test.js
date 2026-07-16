@@ -770,7 +770,9 @@ describe('Staff CRUD', () => {
     const res = await request(app).get(`/api/shifts/staff/${createdStaffId}`).set('Authorization', `Bearer ${shiftToken}`)
     expect(res.status).toBe(200)
     expect(res.body.full_name).toBe('Test Personel')
-    expect(res.body.tc_no).toBe('99999999999')
+    expect(res.body.tc_no).toBe('999******99')
+    expect(res.body).not.toHaveProperty('salary')
+    expect(res.body).not.toHaveProperty('iban')
   })
 
   it('GET /staff/:id/detail returns detailed info', async () => {
@@ -778,6 +780,9 @@ describe('Staff CRUD', () => {
     expect(res.status).toBe(200)
     expect(res.body.person).toBeTruthy()
     expect(res.body.person.full_name).toBe('Test Personel')
+    expect(res.body.person.tc_no).toBe('999******99')
+    expect(res.body.person).not.toHaveProperty('salary')
+    expect(res.body.person).not.toHaveProperty('iban')
   })
 
   it('PUT /staff/:id updates staff (manager)', async () => {
@@ -803,6 +808,101 @@ describe('Staff CRUD', () => {
       .set('Authorization', `Bearer ${managerToken}`)
       .send({ phone: '05551112233' })
     expect(res.status).toBe(400)
+  })
+
+  it('returns directory risk metrics and protects sensitive list fields', async () => {
+    const db = getDB()
+    db.prepare(`
+      INSERT INTO staff_followups(staff_id, title, due_at, status)
+      VALUES(?, 'Gecikmis liste gorevi', datetime('now', '-1 day'), 'open')
+    `).run(createdStaffId)
+    const supervisor = await request(app)
+      .get(`/api/shifts/staff?directory=1&search=${encodeURIComponent('Güncellenmiş Personel')}`)
+      .set('Authorization', `Bearer ${shiftToken}`)
+    expect(supervisor.status).toBe(200)
+    expect(supervisor.body[0]).toMatchObject({
+      id: createdStaffId,
+      overdue_followups: 1,
+    })
+    expect(supervisor.body[0].risk_count).toBeGreaterThan(0)
+    expect(supervisor.body[0]).not.toHaveProperty('salary')
+    expect(supervisor.body[0]).not.toHaveProperty('iban')
+
+    const manager = await request(app)
+      .get(`/api/shifts/staff?directory=1&search=${encodeURIComponent('Güncellenmiş Personel')}`)
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(manager.status).toBe(200)
+    expect(manager.body[0]).toHaveProperty('salary')
+    expect(manager.body[0]).toHaveProperty('iban')
+  })
+
+  it('supports controlled bulk assignment and manager-only deactivation', async () => {
+    const first = await request(app).post('/api/shifts/staff')
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({ full_name: 'Toplu Atama Bir', is_active: 1 })
+    const second = await request(app).post('/api/shifts/staff')
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({ full_name: 'Toplu Atama Iki', is_active: 1 })
+    const departmentId = getDB().prepare('SELECT id FROM departments ORDER BY id LIMIT 1').get().id
+
+    const assignment = await request(app).post('/api/shifts/staff/bulk/assignment')
+      .set('Authorization', `Bearer ${shiftToken}`)
+      .send({
+        staff_ids: [first.body.id, second.body.id],
+        department_id: departmentId,
+      })
+    expect(assignment.status).toBe(200)
+    expect(assignment.body.updated).toEqual([first.body.id, second.body.id])
+
+    const assignedRow = await request(app).get(`/api/shifts/staff/${first.body.id}`)
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(assignedRow.body.department_id).toBe(Number(departmentId))
+
+    const denied = await request(app).post('/api/shifts/staff/bulk/deactivate')
+      .set('Authorization', `Bearer ${shiftToken}`)
+      .send({ staff_ids: [first.body.id, second.body.id] })
+    expect(denied.status).toBe(403)
+
+    const deactivated = await request(app).post('/api/shifts/staff/bulk/deactivate')
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({ staff_ids: [first.body.id, second.body.id] })
+    expect(deactivated.status).toBe(200)
+    expect(deactivated.body.updated).toEqual([first.body.id, second.body.id])
+  })
+
+  it('prevents supervisors from writing sensitive staff fields', async () => {
+    const created = await request(app).post('/api/shifts/staff')
+      .set('Authorization', `Bearer ${shiftToken}`)
+      .send({
+        full_name: 'Supervisor Güvenli Kayıt',
+        tc_no: '81111111111',
+        salary: 99999,
+        iban: 'TR000000000000000000000001',
+      })
+    expect(created.status).toBe(201)
+
+    const managerView = await request(app).get(`/api/shifts/staff/${created.body.id}`)
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(managerView.body.tc_no).toBe(null)
+    expect(managerView.body.salary).toBe(null)
+    expect(managerView.body.iban).toBe(null)
+
+    await request(app).put(`/api/shifts/staff/${created.body.id}`)
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({ tc_no: '82222222222', salary: 42000, iban: 'TR330006100519786457841326' })
+    const supervisorUpdate = await request(app).put(`/api/shifts/staff/${created.body.id}`)
+      .set('Authorization', `Bearer ${shiftToken}`)
+      .send({ position: 'Operasyon Sorumlusu', tc_no: '83333333333', salary: 1, iban: 'TR1' })
+    expect(supervisorUpdate.status).toBe(200)
+
+    const protectedView = await request(app).get(`/api/shifts/staff/${created.body.id}`)
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(protectedView.body).toMatchObject({
+      position: 'Operasyon Sorumlusu',
+      tc_no: '82222222222',
+      salary: 42000,
+      iban: 'TR330006100519786457841326',
+    })
   })
 })
 

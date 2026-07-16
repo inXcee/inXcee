@@ -164,13 +164,88 @@ export function getStaffList(filters = {}) {
   if (filters.role_id) { query += ` AND ${CURRENT_ROLE_SQL} = ?`; params.push(filters.role_id) }
   if (filters.is_active !== undefined) { query += ' AND s.is_active = ?'; params.push(filters.is_active) }
   if (filters.gender) { query += ' AND s.gender = ?'; params.push(filters.gender) }
+  if (filters.work_location_id) { query += ' AND sa.work_location_id = ?'; params.push(filters.work_location_id) }
   if (filters.search) {
     query += ' AND (s.full_name LIKE ? OR s.tc_no LIKE ? OR s.phone LIKE ? OR s.position LIKE ?)'
     const term = `%${filters.search}%`
     params.push(term, term, term, term)
   }
   query += ' ORDER BY s.full_name'
+  if (filters._limit) {
+    query += ' LIMIT ? OFFSET ?'
+    params.push(Number(filters._limit), Number(filters._offset || 0))
+  }
   return db.prepare(query).all(...params).map(resolveCurrentStaffAssignment)
+}
+
+export function getStaffDirectoryMetrics(staffIds = []) {
+  const ids = [...new Set(staffIds.map(Number).filter(Number.isInteger))]
+  if (ids.length === 0) return []
+  const placeholders = ids.map(() => '?').join(',')
+  return getDB().prepare(`
+    SELECT
+      s.id AS staff_id,
+      (SELECT COUNT(*) FROM staff_followups sf
+        WHERE sf.staff_id=s.id AND sf.status='open') AS open_followups,
+      (SELECT COUNT(*) FROM staff_followups sf
+        WHERE sf.staff_id=s.id AND sf.status='open' AND sf.due_at IS NOT NULL
+          AND sf.due_at < datetime('now', 'localtime')) AS overdue_followups,
+      (SELECT COUNT(*) FROM attendance_exceptions ax
+        WHERE ax.staff_id=s.id AND ax.status='open') AS open_attendance_exceptions,
+      (SELECT COUNT(*) FROM inventory_checkouts ic
+        WHERE ic.staff_id=s.id AND ic.returned_at IS NULL
+          AND (ic.quantity-COALESCE(ic.returned_qty,0))>0) AS active_inventory,
+      (SELECT COUNT(*) FROM kkd_assignments ka
+        WHERE ka.staff_id=s.id AND ka.returned_at IS NULL) AS active_kkd,
+      (SELECT COUNT(*) FROM training_attendances ta
+        WHERE ta.staff_id=s.id AND ta.attended=1 AND ta.cert_expires_at IS NOT NULL
+          AND ta.cert_expires_at < date('now', 'localtime')) AS expired_certificates,
+      (SELECT COUNT(*) FROM training_attendances ta
+        WHERE ta.staff_id=s.id AND ta.attended=1
+          AND ta.cert_expires_at BETWEEN date('now', 'localtime')
+          AND date('now', 'localtime', '+30 days')) AS expiring_certificates,
+      (SELECT COUNT(*) FROM hr_checklists hc
+        WHERE hc.staff_id=s.id AND hc.kind='onboarding' AND hc.status='open') AS open_onboarding,
+      (SELECT COUNT(*) FROM hr_checklists hc
+        WHERE hc.staff_id=s.id AND hc.kind='offboarding' AND hc.status='open') AS open_offboarding,
+      (SELECT COUNT(*) FROM documents doc
+        WHERE doc.staff_id=s.id AND doc.archived_at IS NULL
+          AND doc.expires_on IS NOT NULL
+          AND doc.expires_on < date('now', 'localtime')) AS expired_documents,
+      (SELECT COUNT(*) FROM documents doc
+        WHERE doc.staff_id=s.id AND doc.archived_at IS NULL
+          AND doc.expires_on BETWEEN date('now', 'localtime')
+          AND date('now', 'localtime', '+30 days')) AS expiring_documents,
+      (
+        SELECT COUNT(*)
+        FROM staff_document_requirements req
+        WHERE req.is_active=1
+          AND (req.department_id IS NULL OR req.department_id=s.department_id)
+          AND (req.role_id IS NULL OR req.role_id=s.role_id)
+          AND NOT EXISTS (
+            SELECT 1 FROM documents doc
+            WHERE doc.staff_id=s.id
+              AND doc.document_kind=req.document_kind
+              AND doc.archived_at IS NULL
+          )
+      ) AS missing_documents,
+      (SELECT ss.status FROM shift_schedule ss
+        WHERE ss.staff_id=s.id AND ss.work_date=date('now', 'localtime')
+        ORDER BY ss.id DESC LIMIT 1) AS today_status,
+      (SELECT sd.name FROM shift_schedule ss
+        LEFT JOIN shift_definitions sd ON sd.id=ss.shift_def_id
+        WHERE ss.staff_id=s.id AND ss.work_date=date('now', 'localtime')
+        ORDER BY ss.id DESC LIMIT 1) AS today_shift_name,
+      (SELECT ss.work_date FROM shift_schedule ss
+        WHERE ss.staff_id=s.id AND ss.work_date>date('now', 'localtime')
+          AND ss.status NOT IN ('off','on_leave')
+        ORDER BY ss.work_date LIMIT 1) AS next_shift_date,
+      (SELECT pr.total_score FROM performance_reviews pr
+        WHERE pr.staff_id=s.id
+        ORDER BY pr.reviewed_at DESC, pr.id DESC LIMIT 1) AS latest_performance_score
+    FROM staff s
+    WHERE s.id IN (${placeholders})
+  `).all(...ids)
 }
 
 export function getStaffById(id) {

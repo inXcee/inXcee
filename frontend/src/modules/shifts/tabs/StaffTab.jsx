@@ -6,7 +6,8 @@ import { confirmDialog } from '../../../shared/components/ConfirmDialog.jsx'
 import { useDebounce } from '../../../shared/hooks/useDebounce.js'
 import { useSavedFilters, SavedFiltersBar } from '../../../shared/hooks/useSavedFilters.jsx'
 import { SkeletonGrid } from '../../../shared/components/Skeleton.jsx'
-import { toastErr, deptColor, BottomSheet } from '../shared.jsx'
+import { exportRowsToCsv } from '../../../shared/utils/exportData.js'
+import { toastErr, toastOk, deptColor, BottomSheet } from '../shared.jsx'
 
 function localIsoDate() {
   const now = new Date()
@@ -88,7 +89,7 @@ function StaffQualityPanel({ quality, onEdit }) {
   )
 }
 
-function StaffFormSheet({ editStaff, form, setForm, handleSubmit, createMut, updateMut, departments, staffRoles = [], workLocations = [], onClose }) {
+function StaffFormSheet({ editStaff, form, setForm, handleSubmit, createMut, updateMut, departments, staffRoles = [], workLocations = [], canViewSensitive, onClose }) {
   const [tab, setTab] = useState('temel')
   const [error, setError] = useState(null)
 
@@ -137,11 +138,13 @@ function StaffFormSheet({ editStaff, form, setForm, handleSubmit, createMut, upd
               <input className="form-input" value={form.full_name || ''}
                 onChange={e => setForm(p => ({ ...p, full_name: e.target.value }))} />
             </div>
-            <div>
-              <label className="form-label">TC Kimlik No</label>
-              <input className="form-input" value={form.tc_no || ''} maxLength={11}
-                onChange={e => setForm(p => ({ ...p, tc_no: e.target.value }))} />
-            </div>
+            {canViewSensitive && (
+              <div>
+                <label className="form-label">TC Kimlik No</label>
+                <input className="form-input" value={form.tc_no || ''} maxLength={11}
+                  onChange={e => setForm(p => ({ ...p, tc_no: e.target.value }))} />
+              </div>
+            )}
             <div>
               <label className="form-label">Telefon</label>
               <input className="form-input" type="tel" value={form.phone || ''} placeholder="05XX XXX XXXX"
@@ -247,16 +250,20 @@ function StaffFormSheet({ editStaff, form, setForm, handleSubmit, createMut, upd
                 <option value="female">Kadın</option>
               </select>
             </div>
-            <div>
-              <label className="form-label">Maaş (TL)</label>
-              <input type="number" className="form-input" value={form.salary || ''}
-                onChange={e => setForm(p => ({ ...p, salary: e.target.value }))} />
-            </div>
-            <div>
-              <label className="form-label">IBAN</label>
-              <input className="form-input" value={form.iban || ''} placeholder="TR..."
-                onChange={e => setForm(p => ({ ...p, iban: e.target.value.toUpperCase() }))} />
-            </div>
+            {canViewSensitive && (
+              <>
+                <div>
+                  <label className="form-label">Maaş (TL)</label>
+                  <input type="number" className="form-input" value={form.salary || ''}
+                    onChange={e => setForm(p => ({ ...p, salary: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="form-label">IBAN</label>
+                  <input className="form-input" value={form.iban || ''} placeholder="TR..."
+                    onChange={e => setForm(p => ({ ...p, iban: e.target.value.toUpperCase() }))} />
+                </div>
+              </>
+            )}
             <div>
               <label className="form-label">Görev Değişikliği Notu</label>
               <input className="form-input" value={form.assignment_note || ''} placeholder="Örn. OTC Yemekhane görevlendirmesi"
@@ -289,49 +296,224 @@ function StaffFormSheet({ editStaff, form, setForm, handleSubmit, createMut, upd
 // ═══════════════════════════════════════════════════════════════════════════════
 //  TAB 0 — PERSONEL YONETIMI (Staff Management)
 // ═══════════════════════════════════════════════════════════════════════════════
+const DIRECTORY_COLUMNS = [
+  { key: 'assignment', label: 'Görev ve Lokasyon' },
+  { key: 'contact', label: 'İletişim' },
+  { key: 'today', label: 'Bugünkü Durum' },
+  { key: 'documents', label: 'Belgeler' },
+  { key: 'followups', label: 'Görevler' },
+  { key: 'equipment', label: 'Zimmet / KKD' },
+  { key: 'performance', label: 'Performans' },
+  { key: 'status', label: 'Durum' },
+]
+
+const DEFAULT_COLUMNS = DIRECTORY_COLUMNS.map(column => column.key)
+const EMPTY_LIST = []
+const EMPTY_QUALITY = { summary: {}, rows: [] }
+
+function usePersistentState(key, fallback) {
+  const [value, setValue] = useState(() => {
+    try {
+      const stored = localStorage.getItem(key)
+      return stored ? JSON.parse(stored) : fallback
+    } catch {
+      return fallback
+    }
+  })
+  useEffect(() => {
+    try { localStorage.setItem(key, JSON.stringify(value)) } catch { /* browser storage unavailable */ }
+  }, [key, value])
+  return [value, setValue]
+}
+
+function numberValue(value) {
+  return Number(value || 0)
+}
+
+function riskMatches(staff, risk) {
+  if (!risk) return true
+  if (risk === 'any') return numberValue(staff.risk_count) > 0
+  if (risk === 'documents') return numberValue(staff.missing_documents) + numberValue(staff.expired_documents) + numberValue(staff.expiring_documents) > 0
+  if (risk === 'followups') return numberValue(staff.open_followups) > 0
+  if (risk === 'attendance') return numberValue(staff.open_attendance_exceptions) > 0
+  if (risk === 'equipment') return numberValue(staff.equipment_count) > 0
+  if (risk === 'certificates') return numberValue(staff.expired_certificates) + numberValue(staff.expiring_certificates) > 0
+  if (risk === 'checklists') return numberValue(staff.open_onboarding) + numberValue(staff.open_offboarding) > 0
+  if (risk === 'assignment') return !staff.department_id || !staff.role_id || !staff.primary_work_location_id
+  if (risk === 'contract') {
+    if (!staff.contract_end) return false
+    const days = Math.ceil((new Date(staff.contract_end).getTime() - Date.now()) / 86400000)
+    return days <= 30
+  }
+  return true
+}
+
+function RiskBadges({ staff, compact = false }) {
+  const badges = []
+  const add = (key, label, tone = 'amber') => badges.push({ key, label, tone })
+  if (numberValue(staff.expired_documents)) add('expired-docs', `${staff.expired_documents} süresi dolmuş belge`, 'red')
+  if (numberValue(staff.missing_documents)) add('missing-docs', `${staff.missing_documents} eksik belge`)
+  if (numberValue(staff.overdue_followups)) add('overdue', `${staff.overdue_followups} gecikmiş görev`, 'red')
+  else if (numberValue(staff.open_followups)) add('followups', `${staff.open_followups} açık görev`, 'blue')
+  if (numberValue(staff.open_attendance_exceptions)) add('attendance', `${staff.open_attendance_exceptions} devam sorunu`, 'red')
+  if (numberValue(staff.expired_certificates)) add('certificates', `${staff.expired_certificates} sertifika dolmuş`, 'red')
+  if (numberValue(staff.open_onboarding) + numberValue(staff.open_offboarding)) add('checklists', 'Açık İK süreci', 'purple')
+  if (!staff.department_id || !staff.role_id || !staff.primary_work_location_id) add('assignment', 'Atama eksik')
+
+  if (badges.length === 0) {
+    return <span style={{ color: 'var(--green)', fontSize: '10px', fontFamily: 'var(--mono)' }}>Kontroller temiz</span>
+  }
+  const tone = {
+    red: ['rgba(231,76,60,.11)', 'var(--red)', 'rgba(231,76,60,.3)'],
+    amber: ['rgba(240,165,0,.11)', 'var(--accent)', 'rgba(240,165,0,.3)'],
+    blue: ['rgba(59,140,240,.11)', 'var(--blue)', 'rgba(59,140,240,.3)'],
+    purple: ['rgba(168,85,247,.11)', 'var(--purple)', 'rgba(168,85,247,.3)'],
+  }
+  return (
+    <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+      {badges.slice(0, compact ? 3 : badges.length).map(badge => {
+        const colors = tone[badge.tone] || tone.amber
+        return (
+          <span key={badge.key} style={{
+            padding: '2px 6px', borderRadius: '5px', fontFamily: 'var(--mono)', fontSize: '8px',
+            background: colors[0], color: colors[1], border: `1px solid ${colors[2]}`,
+          }}>{badge.label}</span>
+        )
+      })}
+      {compact && badges.length > 3 && (
+        <span style={{ color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: '8px', padding: '3px' }}>+{badges.length - 3}</span>
+      )}
+    </div>
+  )
+}
+
+function SummaryCard({ value, label, color }) {
+  return (
+    <div style={{ padding: '16px 18px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '12px', borderLeft: `3px solid ${color}` }}>
+      <div style={{ fontFamily: 'var(--display)', fontSize: '28px', color, lineHeight: 1 }}>{value}</div>
+      <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text3)', letterSpacing: '1px', marginTop: '6px' }}>{label}</div>
+    </div>
+  )
+}
+
+function BulkAssignmentSheet({ count, departments, workLocations, isPending, onSubmit, onClose }) {
+  const [bulkForm, setBulkForm] = useState({
+    department_id: '__keep__',
+    work_location_id: '__keep__',
+    effective_from: localIsoDate(),
+    note: '',
+  })
+  const hasChange = bulkForm.department_id !== '__keep__' || bulkForm.work_location_id !== '__keep__'
+  const submit = () => {
+    const payload = {
+      effective_from: bulkForm.effective_from,
+      note: bulkForm.note,
+    }
+    if (bulkForm.department_id !== '__keep__') payload.department_id = bulkForm.department_id ? Number(bulkForm.department_id) : null
+    if (bulkForm.work_location_id !== '__keep__') payload.work_location_id = bulkForm.work_location_id ? Number(bulkForm.work_location_id) : null
+    onSubmit(payload)
+  }
+  return (
+    <BottomSheet onClose={onClose}>
+      <div style={{ padding: '0 20px 14px', borderBottom: '1px solid var(--border)' }}>
+        <div style={{ fontFamily: 'var(--display)', fontSize: '17px' }}>TOPLU PERSONEL ATAMASI</div>
+        <div style={{ color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: '9px', marginTop: '4px' }}>{count} personel seçildi</div>
+      </div>
+      <div style={{ padding: '18px 20px', display: 'grid', gap: '14px', overflowY: 'auto' }}>
+        <div>
+          <label className="form-label">Departman</label>
+          <select className="form-select" value={bulkForm.department_id} onChange={e => setBulkForm(p => ({ ...p, department_id: e.target.value }))}>
+            <option value="__keep__">Değiştirme</option>
+            <option value="">Atamayı kaldır</option>
+            {departments.map(department => <option key={department.id} value={department.id}>{department.name}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="form-label">Çalışma lokasyonu</label>
+          <select className="form-select" value={bulkForm.work_location_id} onChange={e => setBulkForm(p => ({ ...p, work_location_id: e.target.value }))}>
+            <option value="__keep__">Değiştirme</option>
+            <option value="">Atamayı kaldır</option>
+            {workLocations.map(location => <option key={location.id} value={location.id}>{location.name}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="form-label">Geçerlilik başlangıcı</label>
+          <input type="date" className="form-input" value={bulkForm.effective_from} onChange={e => setBulkForm(p => ({ ...p, effective_from: e.target.value }))} />
+        </div>
+        <div>
+          <label className="form-label">İşlem notu</label>
+          <textarea className="form-textarea" rows={3} value={bulkForm.note} onChange={e => setBulkForm(p => ({ ...p, note: e.target.value }))} placeholder="Örn. Yeni saha organizasyonu" />
+        </div>
+      </div>
+      <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border)', display: 'flex', gap: '8px' }}>
+        <button className="btn btn-primary" style={{ flex: 1 }} disabled={!hasChange || isPending} onClick={submit}>
+          {isPending ? 'Uygulanıyor...' : `${count} Personele Uygula`}
+        </button>
+        <button className="btn btn-ghost" onClick={onClose}>İptal</button>
+      </div>
+    </BottomSheet>
+  )
+}
+
 export default function StaffTab({ departments, onPersonClick }) {
   const qc = useQueryClient()
   const user = useAuthStore(s => s.user)
   const canEdit = ['campus_manager', 'shift_supervisor'].includes(user?.role)
+  const canViewSensitive = user?.role === 'campus_manager'
+  const canDeactivate = user?.role === 'campus_manager'
 
-  const [filters, setFilters] = useState({ dept_id: '', role_id: '', gender: '', search: '', is_active: '1' })
+  const [filters, setFilters] = useState({
+    dept_id: '', role_id: '', work_location_id: '', gender: '', search: '', is_active: '1', risk: '',
+  })
+  const [viewMode, setViewMode] = usePersistentState('yys-shifts-staff-view', 'table')
+  const [visibleColumns, setVisibleColumns] = usePersistentState('yys-shifts-staff-columns', DEFAULT_COLUMNS)
+  const [sort, setSort] = usePersistentState('yys-shifts-staff-sort', { key: 'name', direction: 'asc' })
+  const [pageSize, setPageSize] = usePersistentState('yys-shifts-staff-page-size', 20)
+  const [page, setPage] = useState(1)
+  const [selected, setSelected] = useState(() => new Set())
   const [showForm, setShowForm] = useState(false)
+  const [showBulkAssignment, setShowBulkAssignment] = useState(false)
   const [editStaff, setEditStaff] = useState(null)
   const [form, setForm] = useState({})
 
   const staffSavedFilters = useSavedFilters('shifts-staff', filters, setFilters)
-  const hasActiveStaffFilter = !!(filters.dept_id || filters.role_id || filters.gender || filters.search || filters.is_active !== '1')
-
-  const debouncedSearch = useDebounce(filters.search, 300)
-  const effectiveFilters = useMemo(
-    () => ({ ...filters, search: debouncedSearch }),
-    [filters.dept_id, filters.role_id, filters.gender, filters.is_active, debouncedSearch]
+  const hasActiveStaffFilter = !!(
+    filters.dept_id || filters.role_id || filters.work_location_id || filters.gender
+    || filters.search || filters.risk || filters.is_active !== '1'
   )
+  const debouncedSearch = useDebounce(filters.search, 300)
+  const effectiveFilters = useMemo(() => ({
+    dept_id: filters.dept_id,
+    role_id: filters.role_id,
+    work_location_id: filters.work_location_id,
+    gender: filters.gender,
+    is_active: filters.is_active,
+    search: debouncedSearch,
+  }), [filters.dept_id, filters.role_id, filters.work_location_id, filters.gender, filters.is_active, debouncedSearch])
 
-  const { data: staffList = [], isLoading } = useQuery({
+  const { data: staffList = EMPTY_LIST, isLoading } = useQuery({
     queryKey: ['staff-list', effectiveFilters],
-    queryFn: () => api.get('/shifts/staff', { params: { ...effectiveFilters, is_active: effectiveFilters.is_active || undefined } }).then(r => r.data),
+    queryFn: () => api.get('/shifts/staff', {
+      params: { ...effectiveFilters, directory: 1, is_active: effectiveFilters.is_active || undefined },
+    }).then(r => r.data),
   })
-
-  const { data: staffRoles = [] } = useQuery({
+  const { data: staffRoles = EMPTY_LIST } = useQuery({
     queryKey: ['shift-roles'],
     queryFn: () => api.get('/shifts/roles').then(r => r.data),
   })
-
-  const { data: workLocations = [] } = useQuery({
+  const { data: workLocations = EMPTY_LIST } = useQuery({
     queryKey: ['shift-work-locations'],
     queryFn: () => api.get('/shifts/work-locations').then(r => r.data),
   })
-
-  const { data: staffQuality = { summary: {}, rows: [] } } = useQuery({
+  const { data: staffQuality = EMPTY_QUALITY } = useQuery({
     queryKey: ['staff-quality'],
     queryFn: () => api.get('/shifts/staff/quality').then(r => r.data),
+    enabled: canViewSensitive,
   })
 
-  // Personel (dept/rol/aktiflik) değişikliği açık çizelgeyi/kırılımı da tazelesin — çizelge 'staff-list-active' kullanır
   const refreshPlan = () => {
     const keys = ['staff-list', 'staff-list-active', 'staff-detail', 'staff-quality', 'schedule', 'departments-summary', 'shift-breakdown', 'shift-coverage']
-    keys.forEach(k => qc.invalidateQueries({ queryKey: [k] }))
+    keys.forEach(key => qc.invalidateQueries({ queryKey: [key] }))
   }
 
   const createMut = useMutation({
@@ -340,23 +522,47 @@ export default function StaffTab({ departments, onPersonClick }) {
       refreshPlan()
       setShowForm(false)
       setForm({})
+      toastOk('Personel kaydı oluşturuldu')
     },
     onError: toastErr,
   })
-
   const updateMut = useMutation({
     mutationFn: ({ id, ...data }) => api.put(`/shifts/staff/${id}`, data),
     onSuccess: () => {
       refreshPlan()
+      setShowForm(false)
       setEditStaff(null)
       setForm({})
+      toastOk('Personel bilgileri güncellendi')
     },
     onError: toastErr,
   })
-
   const deleteMut = useMutation({
     mutationFn: id => api.delete(`/shifts/staff/${id}`),
-    onSuccess: refreshPlan,
+    onSuccess: () => {
+      refreshPlan()
+      toastOk('Personel pasife alındı')
+    },
+    onError: toastErr,
+  })
+  const bulkAssignmentMut = useMutation({
+    mutationFn: data => api.post('/shifts/staff/bulk/assignment', { ...data, staff_ids: [...selected] }),
+    onSuccess: response => {
+      refreshPlan()
+      setShowBulkAssignment(false)
+      setSelected(new Set())
+      toastOk(`${response.data.updated.length} personelin ataması güncellendi`)
+    },
+    onError: toastErr,
+  })
+  const bulkDeactivateMut = useMutation({
+    mutationFn: () => api.post('/shifts/staff/bulk/deactivate', { staff_ids: [...selected] }),
+    onSuccess: response => {
+      refreshPlan()
+      setSelected(new Set())
+      toastOk(`${response.data.updated.length} personel pasife alındı`)
+    },
+    onError: toastErr,
   })
 
   const openNew = () => {
@@ -369,76 +575,144 @@ export default function StaffTab({ departments, onPersonClick }) {
     setEditStaff(null)
     setShowForm(true)
   }
-
-  const openEdit = (s) => {
+  const openEdit = staff => {
     setForm({
-      full_name: s.full_name || '', tc_no: s.tc_no || '', phone: s.phone || '', email: s.email || '',
-      position: s.position || '', department_id: s.department_id?.toString() || '', role_id: s.role_id?.toString() || '',
-      hire_date: s.hire_date || '', birth_date: s.birth_date || '', address: s.address || '',
-      emergency_contact: s.emergency_contact || '', emergency_phone: s.emergency_phone || '',
-      blood_type: s.blood_type || '', gender: s.gender || 'male', salary: s.salary?.toString() || '',
-      iban: s.iban || '', notes: s.notes || '', is_active: s.is_active,
-      primary_work_location_id: s.primary_work_location_id?.toString() || '',
+      full_name: staff.full_name || '', tc_no: canViewSensitive ? staff.tc_no || '' : '', phone: staff.phone || '', email: staff.email || '',
+      position: staff.position || '', department_id: staff.department_id?.toString() || '', role_id: staff.role_id?.toString() || '',
+      hire_date: staff.hire_date || '', birth_date: staff.birth_date || '', address: staff.address || '',
+      emergency_contact: staff.emergency_contact || '', emergency_phone: staff.emergency_phone || '',
+      blood_type: staff.blood_type || '', gender: staff.gender || 'male',
+      salary: canViewSensitive ? staff.salary?.toString() || '' : '', iban: canViewSensitive ? staff.iban || '' : '',
+      notes: staff.notes || '', is_active: staff.is_active,
+      primary_work_location_id: staff.primary_work_location_id?.toString() || '',
       assignment_effective_from: localIsoDate(), assignment_note: '',
     })
-    setEditStaff(s)
+    setEditStaff(staff)
     setShowForm(true)
   }
-
   const handleSubmit = () => {
     const payload = {
       ...form,
-      department_id: form.department_id ? parseInt(form.department_id) : null,
-      role_id: form.role_id ? parseInt(form.role_id) : null,
-      primary_work_location_id: form.primary_work_location_id ? parseInt(form.primary_work_location_id) : null,
-      salary: form.salary ? parseFloat(form.salary) : null,
+      department_id: form.department_id ? Number(form.department_id) : null,
+      role_id: form.role_id ? Number(form.role_id) : null,
+      primary_work_location_id: form.primary_work_location_id ? Number(form.primary_work_location_id) : null,
       is_active: form.is_active ? 1 : 0,
     }
-    if (editStaff) {
-      updateMut.mutate({ id: editStaff.id, ...payload })
-    } else {
-      createMut.mutate(payload)
+    if (canViewSensitive) payload.salary = form.salary ? Number(form.salary) : null
+    else {
+      delete payload.tc_no
+      delete payload.salary
+      delete payload.iban
     }
+    if (editStaff) updateMut.mutate({ id: editStaff.id, ...payload })
+    else createMut.mutate(payload)
   }
 
-  // Group by department for summary
-  const deptCounts = useMemo(() => {
-    const counts = {}
-    staffList.forEach(s => {
-      const name = s.dept_name || 'Atanmamis'
-      counts[name] = (counts[name] || 0) + 1
+  const filteredAndSorted = useMemo(() => {
+    const rows = staffList.filter(staff => riskMatches(staff, filters.risk))
+    const direction = sort.direction === 'desc' ? -1 : 1
+    return [...rows].sort((left, right) => {
+      let a
+      let b
+      if (sort.key === 'risk') {
+        a = numberValue(left.risk_count)
+        b = numberValue(right.risk_count)
+      } else if (sort.key === 'documents') {
+        a = numberValue(left.missing_documents) + numberValue(left.expired_documents)
+        b = numberValue(right.missing_documents) + numberValue(right.expired_documents)
+      } else if (sort.key === 'followups') {
+        a = numberValue(left.overdue_followups) + numberValue(left.open_followups)
+        b = numberValue(right.overdue_followups) + numberValue(right.open_followups)
+      } else if (sort.key === 'hire_date') {
+        a = left.hire_date || ''
+        b = right.hire_date || ''
+      } else {
+        a = left.full_name || ''
+        b = right.full_name || ''
+      }
+      if (typeof a === 'number' && typeof b === 'number') return (a - b) * direction
+      return String(a).localeCompare(String(b), 'tr') * direction
     })
-    return counts
+  }, [staffList, filters.risk, sort])
+
+  const totalPages = Math.max(1, Math.ceil(filteredAndSorted.length / pageSize))
+  const pageRows = filteredAndSorted.slice((page - 1) * pageSize, page * pageSize)
+  useEffect(() => { setPage(1) }, [filters, sort, pageSize])
+  useEffect(() => { if (page > totalPages) setPage(totalPages) }, [page, totalPages])
+  useEffect(() => {
+    const available = new Set(staffList.map(staff => staff.id))
+    setSelected(previous => new Set([...previous].filter(id => available.has(id))))
   }, [staffList])
 
-  const maleCount = staffList.filter(s => s.gender === 'male').length
-  const femaleCount = staffList.filter(s => s.gender === 'female').length
+  const pageAllSelected = pageRows.length > 0 && pageRows.every(staff => selected.has(staff.id))
+  const togglePage = () => setSelected(previous => {
+    const next = new Set(previous)
+    if (pageAllSelected) pageRows.forEach(staff => next.delete(staff.id))
+    else pageRows.forEach(staff => next.add(staff.id))
+    return next
+  })
+  const toggleSelected = id => setSelected(previous => {
+    const next = new Set(previous)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    return next
+  })
+  const toggleColumn = key => setVisibleColumns(previous =>
+    previous.includes(key) ? previous.filter(column => column !== key) : [...previous, key]
+  )
+  const deactivateOne = async staff => {
+    const confirmed = await confirmDialog({
+      title: 'Personeli Pasifleştir',
+      body: `${staff.full_name} pasif yapılsın mı?`,
+      confirmLabel: 'Pasifleştir',
+      danger: true,
+    })
+    if (confirmed) deleteMut.mutate(staff.id)
+  }
+  const deactivateSelected = async () => {
+    const confirmed = await confirmDialog({
+      title: 'Seçili Personeli Pasifleştir',
+      body: `${selected.size} personel pasif yapılacak. Bu işlem vardiya listelerinden kaldırır.`,
+      confirmLabel: 'Personelleri Pasifleştir',
+      danger: true,
+    })
+    if (confirmed) bulkDeactivateMut.mutate()
+  }
+  const exportSelected = () => {
+    const rows = selected.size
+      ? filteredAndSorted.filter(staff => selected.has(staff.id))
+      : filteredAndSorted
+    exportRowsToCsv([
+      { key: 'full_name', label: 'Ad Soyad' },
+      { key: 'tc_no', label: 'TC Kimlik' },
+      { key: 'phone', label: 'Telefon' },
+      { key: 'position', label: 'Pozisyon' },
+      { key: 'dept_name', label: 'Departman' },
+      { key: 'role_name', label: 'Rol' },
+      { key: 'primary_work_location_name', label: 'Lokasyon' },
+      { key: 'missing_documents', label: 'Eksik Belge' },
+      { key: 'overdue_followups', label: 'Gecikmiş Görev' },
+      { key: 'equipment_count', label: 'Aktif Zimmet/KKD' },
+    ], rows, `personel-dizini-${localIsoDate()}.csv`)
+  }
+
+  const riskStaffCount = staffList.filter(staff => numberValue(staff.risk_count) > 0).length
+  const missingDocumentCount = staffList.reduce((sum, staff) => sum + numberValue(staff.missing_documents), 0)
+  const overdueFollowupCount = staffList.reduce((sum, staff) => sum + numberValue(staff.overdue_followups), 0)
+  const equipmentCount = staffList.reduce((sum, staff) => sum + numberValue(staff.equipment_count), 0)
 
   return (
     <div className="fade-up">
-      {/* Summary cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: '10px', marginBottom: '20px' }}>
-        <div style={{ padding: '16px 18px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '12px', borderLeft: '3px solid var(--text2)' }}>
-          <div style={{ fontFamily: 'var(--display)', fontSize: '28px', color: 'var(--text)', lineHeight: 1 }}>{staffList.length}</div>
-          <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text3)', letterSpacing: '1px', marginTop: '6px' }}>TOPLAM PERSONEL</div>
-        </div>
-        <div style={{ padding: '16px 18px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '12px', borderLeft: '3px solid var(--blue)' }}>
-          <div style={{ fontFamily: 'var(--display)', fontSize: '28px', color: 'var(--blue)', lineHeight: 1 }}>{maleCount}</div>
-          <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text3)', letterSpacing: '1px', marginTop: '6px' }}>ERKEK</div>
-        </div>
-        <div style={{ padding: '16px 18px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '12px', borderLeft: '3px solid #f472b6' }}>
-          <div style={{ fontFamily: 'var(--display)', fontSize: '28px', color: '#f472b6', lineHeight: 1 }}>{femaleCount}</div>
-          <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text3)', letterSpacing: '1px', marginTop: '6px' }}>KADIN</div>
-        </div>
-        <div style={{ padding: '16px 18px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '12px', borderLeft: '3px solid var(--green)' }}>
-          <div style={{ fontFamily: 'var(--display)', fontSize: '28px', color: 'var(--green)', lineHeight: 1 }}>{Object.keys(deptCounts).length}</div>
-          <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text3)', letterSpacing: '1px', marginTop: '6px' }}>DEPARTMAN</div>
-        </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(135px, 1fr))', gap: '10px', marginBottom: '18px' }}>
+        <SummaryCard value={staffList.length} label="TOPLAM PERSONEL" color="var(--text)" />
+        <SummaryCard value={riskStaffCount} label="RİSK / EKSİK KAYIT" color={riskStaffCount ? 'var(--red)' : 'var(--green)'} />
+        <SummaryCard value={missingDocumentCount} label="EKSİK BELGE" color={missingDocumentCount ? 'var(--accent)' : 'var(--green)'} />
+        <SummaryCard value={overdueFollowupCount} label="GECİKMİŞ GÖREV" color={overdueFollowupCount ? 'var(--red)' : 'var(--green)'} />
+        <SummaryCard value={equipmentCount} label="AKTİF ZİMMET / KKD" color="var(--blue)" />
       </div>
 
-      <StaffQualityPanel quality={staffQuality} onEdit={openEdit} />
+      {canViewSensitive && <StaffQualityPanel quality={staffQuality} onEdit={openEdit} />}
 
-      {/* Filters */}
       <SavedFiltersBar
         presets={staffSavedFilters.presets}
         onApply={staffSavedFilters.apply}
@@ -446,150 +720,296 @@ export default function StaffTab({ departments, onPersonClick }) {
         onRemove={staffSavedFilters.remove}
         hasActiveFilter={hasActiveStaffFilter}
       />
-      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
-        <input
-          className="form-input"
-          placeholder="Ad, TC, telefon veya pozisyon ara..."
-          value={filters.search}
-          onChange={e => setFilters(p => ({ ...p, search: e.target.value }))}
-          style={{ flex: '1 1 200px', maxWidth: '320px', padding: '6px 12px', fontSize: '12px' }}
-        />
-        <select className="form-select" value={filters.dept_id} onChange={e => setFilters(p => ({ ...p, dept_id: e.target.value }))}
-          style={{ width: 'auto', minWidth: '140px', padding: '5px 11px', fontSize: '11px' }}>
-          <option value="">Tum Bolumler</option>
-          {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-        </select>
-        <select className="form-select" value={filters.role_id} onChange={e => setFilters(p => ({ ...p, role_id: e.target.value }))}
-          style={{ width: 'auto', minWidth: '130px', padding: '5px 11px', fontSize: '11px' }}>
-          <option value="">Tum Roller</option>
-          {staffRoles.map(role => <option key={role.id} value={role.id}>{role.name}</option>)}
-        </select>
-        <select className="form-select" value={filters.gender} onChange={e => setFilters(p => ({ ...p, gender: e.target.value }))}
-          style={{ width: 'auto', padding: '5px 11px', fontSize: '11px' }}>
-          <option value="">Tum Cinsiyet</option>
-          <option value="male">Erkek</option>
-          <option value="female">Kadin</option>
-        </select>
-        <select className="form-select" value={filters.is_active} onChange={e => setFilters(p => ({ ...p, is_active: e.target.value }))}
-          style={{ width: 'auto', padding: '5px 11px', fontSize: '11px' }}>
-          <option value="1">Aktif</option>
-          <option value="0">Pasif</option>
-          <option value="">Tumunu</option>
-        </select>
-        {canEdit && (
-          <button className="btn btn-primary btn-sm" onClick={openNew} style={{ marginLeft: 'auto' }}>
-            + Yeni Personel
-          </button>
-        )}
+
+      <div className="panel" style={{ marginBottom: '12px' }}>
+        <div className="panel-body" style={{ display: 'grid', gap: '10px' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px' }}>
+            <input className="form-input" placeholder="Ad, TC, telefon veya pozisyon ara..." value={filters.search}
+              onChange={e => setFilters(p => ({ ...p, search: e.target.value }))}
+              style={{ flex: '1 1 240px', maxWidth: '360px', padding: '7px 12px', fontSize: '12px' }} />
+            <select className="form-select" value={filters.dept_id} onChange={e => setFilters(p => ({ ...p, dept_id: e.target.value }))}
+              style={{ width: 'auto', minWidth: '140px', padding: '6px 10px', fontSize: '11px' }}>
+              <option value="">Tüm departmanlar</option>
+              {departments.map(department => <option key={department.id} value={department.id}>{department.name}</option>)}
+            </select>
+            <select className="form-select" value={filters.role_id} onChange={e => setFilters(p => ({ ...p, role_id: e.target.value }))}
+              style={{ width: 'auto', minWidth: '130px', padding: '6px 10px', fontSize: '11px' }}>
+              <option value="">Tüm roller</option>
+              {staffRoles.map(role => <option key={role.id} value={role.id}>{role.name}</option>)}
+            </select>
+            <select className="form-select" value={filters.work_location_id} onChange={e => setFilters(p => ({ ...p, work_location_id: e.target.value }))}
+              style={{ width: 'auto', minWidth: '150px', padding: '6px 10px', fontSize: '11px' }}>
+              <option value="">Tüm lokasyonlar</option>
+              {workLocations.map(location => <option key={location.id} value={location.id}>{location.name}</option>)}
+            </select>
+            <select className="form-select" value={filters.risk} onChange={e => setFilters(p => ({ ...p, risk: e.target.value }))}
+              style={{ width: 'auto', minWidth: '145px', padding: '6px 10px', fontSize: '11px' }}>
+              <option value="">Tüm riskler</option>
+              <option value="any">Riski olanlar</option>
+              <option value="documents">Belge eksiği / süresi</option>
+              <option value="followups">Açık / gecikmiş görev</option>
+              <option value="attendance">Devam problemi</option>
+              <option value="equipment">Aktif zimmet / KKD</option>
+              <option value="certificates">Sertifika süresi</option>
+              <option value="checklists">Açık giriş / çıkış süreci</option>
+              <option value="assignment">Atama eksiği</option>
+              <option value="contract">Sözleşme bitişi</option>
+            </select>
+            <select className="form-select" value={filters.is_active} onChange={e => setFilters(p => ({ ...p, is_active: e.target.value }))}
+              style={{ width: 'auto', padding: '6px 10px', fontSize: '11px' }}>
+              <option value="1">Aktif</option>
+              <option value="0">Pasif</option>
+              <option value="">Tümü</option>
+            </select>
+            <select className="form-select" value={`${sort.key}:${sort.direction}`}
+              onChange={e => {
+                const [key, direction] = e.target.value.split(':')
+                setSort({ key, direction })
+              }}
+              style={{ width: 'auto', minWidth: '145px', padding: '6px 10px', fontSize: '11px' }}>
+              <option value="name:asc">Ada göre A-Z</option>
+              <option value="name:desc">Ada göre Z-A</option>
+              <option value="risk:desc">Risk en yüksek</option>
+              <option value="documents:desc">Belge eksiği en yüksek</option>
+              <option value="followups:desc">Görev sayısı en yüksek</option>
+              <option value="hire_date:desc">İşe giriş en yeni</option>
+            </select>
+            {canEdit && <button className="btn btn-primary btn-sm" onClick={openNew} style={{ marginLeft: 'auto' }}>+ Yeni Personel</button>}
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center', borderTop: '1px solid var(--border)', paddingTop: '10px' }}>
+            <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: '7px', overflow: 'hidden' }}>
+              <button className={`btn btn-xs ${viewMode === 'table' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setViewMode('table')}>Tablo</button>
+              <button className={`btn btn-xs ${viewMode === 'cards' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setViewMode('cards')}>Kartlar</button>
+            </div>
+            <details style={{ position: 'relative' }}>
+              <summary className="btn btn-ghost btn-xs" style={{ listStyle: 'none', cursor: 'pointer' }}>Kolonlar</summary>
+              <div style={{
+                position: 'absolute', zIndex: 20, top: '32px', left: 0, minWidth: '190px',
+                padding: '10px', border: '1px solid var(--border)', borderRadius: '8px',
+                background: 'var(--surface)', boxShadow: '0 12px 30px rgba(0,0,0,.28)',
+              }}>
+                {DIRECTORY_COLUMNS.map(column => (
+                  <label key={column.key} style={{ display: 'flex', gap: '8px', alignItems: 'center', padding: '5px', fontSize: '11px' }}>
+                    <input type="checkbox" checked={visibleColumns.includes(column.key)} onChange={() => toggleColumn(column.key)} />
+                    {column.label}
+                  </label>
+                ))}
+              </div>
+            </details>
+            <button className="btn btn-ghost btn-xs" onClick={exportSelected}>CSV Dışa Aktar</button>
+            <span style={{ color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: '9px' }}>
+              {filteredAndSorted.length} sonuç · {selected.size} seçili
+            </span>
+          </div>
+        </div>
       </div>
 
-      {/* Staff card grid */}
+      {selected.size > 0 && (
+        <div style={{
+          marginBottom: '12px', padding: '10px 12px', borderRadius: '10px',
+          border: '1px solid rgba(59,140,240,.35)', background: 'rgba(59,140,240,.08)',
+          display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center',
+        }}>
+          <strong style={{ fontSize: '12px' }}>{selected.size} personel seçildi</strong>
+          <button className="btn btn-primary btn-xs" onClick={() => setShowBulkAssignment(true)}>Departman / Lokasyon Ata</button>
+          <button className="btn btn-ghost btn-xs" onClick={exportSelected}>Seçilileri Dışa Aktar</button>
+          {canDeactivate && <button className="btn btn-danger btn-xs" onClick={deactivateSelected} disabled={bulkDeactivateMut.isPending}>Toplu Pasifleştir</button>}
+          <button className="btn btn-ghost btn-xs" onClick={() => setSelected(new Set())} style={{ marginLeft: 'auto' }}>Seçimi Temizle</button>
+        </div>
+      )}
+
       {isLoading ? (
         <SkeletonGrid count={6} minWidth={260} />
-      ) : staffList.length === 0 ? (
+      ) : filteredAndSorted.length === 0 ? (
         <div className="empty-state">
           <div className="empty-icon">👥</div>
-          <div className="empty-title">PERSONEL YOK</div>
-          <div className="empty-sub">Filtrelerinize uygun personel bulunamadı</div>
+          <div className="empty-title">PERSONEL BULUNAMADI</div>
+          <div className="empty-sub">Arama ve risk filtrelerini değiştirerek yeniden deneyin.</div>
+        </div>
+      ) : viewMode === 'table' ? (
+        <div className="panel" style={{ overflow: 'hidden' }}>
+          <div style={{ overflowX: 'auto' }}>
+            <table className="data-table" style={{ minWidth: '1040px', fontSize: '10px' }}>
+              <thead>
+                <tr>
+                  <th style={{ width: 34 }}><input aria-label="Sayfadaki personeli seç" type="checkbox" checked={pageAllSelected} onChange={togglePage} /></th>
+                  <th>PERSONEL / RİSKLER</th>
+                  {visibleColumns.includes('assignment') && <th>GÖREV / LOKASYON</th>}
+                  {visibleColumns.includes('contact') && <th>İLETİŞİM</th>}
+                  {visibleColumns.includes('today') && <th>BUGÜN</th>}
+                  {visibleColumns.includes('documents') && <th>BELGELER</th>}
+                  {visibleColumns.includes('followups') && <th>GÖREVLER</th>}
+                  {visibleColumns.includes('equipment') && <th>ZİMMET</th>}
+                  {visibleColumns.includes('performance') && <th>PERFORMANS</th>}
+                  {visibleColumns.includes('status') && <th>DURUM</th>}
+                  <th>İŞLEM</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pageRows.map(staff => {
+                  const dc = deptColor(staff.dept_color)
+                  return (
+                    <tr key={staff.id} onClick={() => onPersonClick?.(staff.id)} style={{ cursor: 'pointer' }}>
+                      <td onClick={event => event.stopPropagation()}>
+                        <input aria-label={`${staff.full_name} seç`} type="checkbox" checked={selected.has(staff.id)} onChange={() => toggleSelected(staff.id)} />
+                      </td>
+                      <td style={{ minWidth: '220px' }}>
+                        <div style={{ display: 'flex', gap: '9px', alignItems: 'flex-start' }}>
+                          <div style={{
+                            width: 34, height: 34, borderRadius: '50%', flexShrink: 0,
+                            background: staff.gender === 'female' ? 'rgba(244,114,182,.18)' : 'rgba(59,140,240,.18)',
+                            color: staff.gender === 'female' ? '#f472b6' : 'var(--blue)',
+                            display: 'grid', placeItems: 'center', fontFamily: 'var(--display)', fontSize: '15px',
+                          }}>{staff.full_name?.charAt(0)?.toUpperCase() || '?'}</div>
+                          <div>
+                            <div style={{ fontWeight: 700, color: 'var(--text)', marginBottom: '2px' }}>{staff.full_name}</div>
+                            <div style={{ color: 'var(--text3)', marginBottom: '5px' }}>{staff.position || 'Pozisyon belirtilmemiş'}{staff.tc_no ? ` · ${staff.tc_no}` : ''}</div>
+                            <RiskBadges staff={staff} compact />
+                          </div>
+                        </div>
+                      </td>
+                      {visibleColumns.includes('assignment') && (
+                        <td>
+                          <div><span style={{ color: dc.text, fontWeight: 700 }}>{staff.dept_name || 'Departman yok'}</span></div>
+                          <div style={{ color: 'var(--text2)', marginTop: '3px' }}>{staff.role_name || 'Rol yok'}</div>
+                          <div style={{ color: 'var(--text3)', marginTop: '3px' }}>{staff.primary_work_location_name || 'Lokasyon yok'}</div>
+                        </td>
+                      )}
+                      {visibleColumns.includes('contact') && (
+                        <td>
+                          <div>{staff.phone || '—'}</div>
+                          <div style={{ color: 'var(--text3)', marginTop: '3px', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis' }}>{staff.email || 'E-posta yok'}</div>
+                        </td>
+                      )}
+                      {visibleColumns.includes('today') && (
+                        <td>
+                          <div style={{ fontWeight: 700 }}>{staff.today_shift_name || (staff.today_status === 'on_leave' ? 'İzinli' : 'Plan yok')}</div>
+                          <div style={{ color: 'var(--text3)', marginTop: '3px' }}>{staff.today_status || '—'}</div>
+                          {staff.next_shift_date && <div style={{ color: 'var(--blue)', marginTop: '3px' }}>Sonraki: {staff.next_shift_date}</div>}
+                        </td>
+                      )}
+                      {visibleColumns.includes('documents') && (
+                        <td>
+                          <div style={{ color: numberValue(staff.missing_documents) ? 'var(--accent)' : 'var(--green)' }}>{numberValue(staff.missing_documents)} eksik</div>
+                          <div style={{ color: numberValue(staff.expired_documents) ? 'var(--red)' : 'var(--text3)', marginTop: '3px' }}>{numberValue(staff.expired_documents)} süresi dolmuş</div>
+                        </td>
+                      )}
+                      {visibleColumns.includes('followups') && (
+                        <td>
+                          <div>{numberValue(staff.open_followups)} açık</div>
+                          <div style={{ color: numberValue(staff.overdue_followups) ? 'var(--red)' : 'var(--text3)', marginTop: '3px' }}>{numberValue(staff.overdue_followups)} gecikmiş</div>
+                        </td>
+                      )}
+                      {visibleColumns.includes('equipment') && (
+                        <td>
+                          <div>{numberValue(staff.active_inventory)} zimmet</div>
+                          <div style={{ color: 'var(--text3)', marginTop: '3px' }}>{numberValue(staff.active_kkd)} KKD</div>
+                        </td>
+                      )}
+                      {visibleColumns.includes('performance') && (
+                        <td>
+                          <div style={{ fontFamily: 'var(--display)', fontSize: '16px', color: staff.latest_performance_score ? 'var(--blue)' : 'var(--text3)' }}>
+                            {staff.latest_performance_score ?? '—'}
+                          </div>
+                          <div style={{ color: 'var(--text3)', marginTop: '2px' }}>son puan</div>
+                        </td>
+                      )}
+                      {visibleColumns.includes('status') && (
+                        <td>
+                          <span className={`badge ${staff.is_active ? 'badge-green' : 'badge-gray'}`}>{staff.is_active ? 'Aktif' : 'Pasif'}</span>
+                          {staff.hire_date && <div style={{ color: 'var(--text3)', marginTop: '5px' }}>Giriş: {staff.hire_date}</div>}
+                        </td>
+                      )}
+                      <td onClick={event => event.stopPropagation()}>
+                        <div style={{ display: 'flex', gap: '4px' }}>
+                          <button className="btn btn-ghost btn-xs" onClick={() => onPersonClick?.(staff.id)}>Dosya</button>
+                          {canEdit && <button className="btn btn-ghost btn-xs" onClick={() => openEdit(staff)}>Düzenle</button>}
+                          {canDeactivate && staff.is_active === 1 && <button className="btn btn-danger btn-xs" onClick={() => deactivateOne(staff)}>Pasif</button>}
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '12px' }}>
-          {staffList.map(s => {
-            const dc = deptColor(s.dept_color)
-            const avatarBg = s.gender === 'female' ? 'rgba(244,114,182,.18)' : 'rgba(59,140,240,.18)'
-            const avatarColor = s.gender === 'female' ? '#f472b6' : 'var(--blue)'
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(285px, 1fr))', gap: '12px' }}>
+          {pageRows.map(staff => {
+            const dc = deptColor(staff.dept_color)
             return (
-              <div key={s.id} style={{
-                background: 'var(--surface)', border: '1px solid var(--border)',
-                borderRadius: '14px', overflow: 'hidden',
-                transition: 'box-shadow .2s, transform .15s',
-                cursor: 'pointer',
-              }}
-                onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 8px 32px rgba(0,0,0,.25)'; e.currentTarget.style.transform = 'translateY(-2px)' }}
-                onMouseLeave={e => { e.currentTarget.style.boxShadow = 'none'; e.currentTarget.style.transform = 'none' }}
-              >
-                {/* Card header — dept color stripe */}
+              <article key={staff.id} onClick={() => onPersonClick?.(staff.id)} style={{
+                background: 'var(--surface)', border: selected.has(staff.id) ? '1px solid var(--blue)' : '1px solid var(--border)',
+                borderRadius: '14px', overflow: 'hidden', cursor: 'pointer',
+              }}>
                 <div style={{ height: 4, background: dc.bg || 'var(--border)' }} />
-
-                <div style={{ padding: '16px' }}>
-                  {/* Avatar + name row */}
-                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', marginBottom: '12px' }}>
-                    <div
-                      onClick={() => onPersonClick && onPersonClick(s.id)}
-                      style={{
-                        width: '46px', height: '46px', borderRadius: '50%', flexShrink: 0,
-                        background: avatarBg, color: avatarColor,
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        fontFamily: 'var(--display)', fontSize: '20px', fontWeight: 700,
-                      }}
-                    >
-                      {s.full_name?.charAt(0)?.toUpperCase() || '?'}
-                    </div>
+                <div style={{ padding: '14px' }}>
+                  <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+                    <input aria-label={`${staff.full_name} seç`} type="checkbox" checked={selected.has(staff.id)}
+                      onClick={event => event.stopPropagation()} onChange={() => toggleSelected(staff.id)} />
+                    <div style={{
+                      width: 42, height: 42, borderRadius: '50%', flexShrink: 0,
+                      background: staff.gender === 'female' ? 'rgba(244,114,182,.18)' : 'rgba(59,140,240,.18)',
+                      color: staff.gender === 'female' ? '#f472b6' : 'var(--blue)',
+                      display: 'grid', placeItems: 'center', fontFamily: 'var(--display)', fontSize: '18px',
+                    }}>{staff.full_name?.charAt(0)?.toUpperCase() || '?'}</div>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div
-                        onClick={() => onPersonClick && onPersonClick(s.id)}
-                        style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text)', marginBottom: '3px', lineHeight: 1.2 }}
-                      >
-                        {s.full_name}
-                      </div>
-                      {s.position && (
-                        <div style={{ fontSize: '11px', color: 'var(--text2)', marginBottom: '4px' }}>{s.position}</div>
-                      )}
-                      <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-                        {s.dept_name && (
-                          <span style={{ padding: '2px 8px', borderRadius: '20px', fontSize: '9px', fontFamily: 'var(--mono)', fontWeight: 600, background: dc.bg, color: dc.text }}>
-                            {s.dept_name}
-                          </span>
-                        )}
-                        {s.role_name && (
-                          <span style={{ padding: '2px 8px', borderRadius: '20px', fontSize: '9px', fontFamily: 'var(--mono)', fontWeight: 600, background: 'rgba(59,140,240,.10)', color: 'var(--blue)', border: '1px solid rgba(59,140,240,.25)' }}>
-                            {s.role_name}
-                          </span>
-                        )}
-                        {s.primary_work_location_name && (
-                          <span style={{ padding: '2px 8px', borderRadius: '20px', fontSize: '9px', fontFamily: 'var(--mono)', fontWeight: 600, background: 'rgba(39,201,106,.10)', color: 'var(--green)', border: '1px solid rgba(39,201,106,.25)' }}>
-                            {s.primary_work_location_name}
-                          </span>
-                        )}
-                        <span style={{ padding: '2px 8px', borderRadius: '20px', fontSize: '9px', fontFamily: 'var(--mono)', fontWeight: 600, background: s.is_active ? 'rgba(39,201,106,.12)' : 'var(--surface2)', color: s.is_active ? 'var(--green)' : 'var(--text3)' }}>
-                          {s.is_active ? 'AKTİF' : 'PASİF'}
-                        </span>
-                        {s.blood_type && (
-                          <span style={{ padding: '2px 8px', borderRadius: '20px', fontSize: '9px', fontFamily: 'var(--mono)', background: 'rgba(231,76,60,.1)', color: 'var(--red)' }}>
-                            {s.blood_type}
-                          </span>
-                        )}
+                      <div style={{ fontWeight: 700, fontSize: '14px' }}>{staff.full_name}</div>
+                      <div style={{ color: 'var(--text3)', fontSize: '10px', marginTop: '3px' }}>{staff.position || 'Pozisyon belirtilmemiş'}</div>
+                      <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginTop: '7px' }}>
+                        <span style={{ padding: '2px 7px', borderRadius: 12, background: dc.bg, color: dc.text, fontSize: '9px' }}>{staff.dept_name || 'Departman yok'}</span>
+                        <span style={{ padding: '2px 7px', borderRadius: 12, background: 'var(--surface2)', color: 'var(--text2)', fontSize: '9px' }}>{staff.role_name || 'Rol yok'}</span>
                       </div>
                     </div>
                   </div>
-
-                  {/* Info row */}
-                  <div style={{ display: 'flex', gap: '12px', fontSize: '11px', color: 'var(--text3)', fontFamily: 'var(--mono)', borderTop: '1px solid var(--border)', paddingTop: '10px' }}>
-                    {s.phone && <span>📞 {s.phone}</span>}
-                    {s.hire_date && <span>📅 {new Date(s.hire_date).toLocaleDateString('tr-TR', { year: '2-digit', month: 'short' })}</span>}
+                  <div style={{ marginTop: '12px' }}><RiskBadges staff={staff} /></div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px', marginTop: '12px' }}>
+                    {[
+                      [numberValue(staff.missing_documents), 'Eksik belge'],
+                      [numberValue(staff.open_followups), 'Açık görev'],
+                      [numberValue(staff.open_attendance_exceptions), 'Devam'],
+                      [numberValue(staff.equipment_count), 'Zimmet'],
+                    ].map(([value, label]) => (
+                      <div key={label} style={{ padding: '7px 5px', textAlign: 'center', background: 'var(--surface2)', borderRadius: '7px' }}>
+                        <div style={{ fontFamily: 'var(--display)', fontSize: '15px' }}>{value}</div>
+                        <div style={{ color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: '7px', marginTop: '2px' }}>{label}</div>
+                      </div>
+                    ))}
                   </div>
-
-                  {/* Actions */}
-                  {canEdit && (
-                    <div style={{ display: 'flex', gap: '6px', marginTop: '10px' }}>
-                      <button
-                        onClick={e => { e.stopPropagation(); openEdit(s) }}
-                        style={{ flex: 1, padding: '6px', borderRadius: '8px', fontSize: '11px', cursor: 'pointer', background: 'var(--surface2)', border: '1px solid var(--border)', color: 'var(--text2)' }}
-                      >✏️ Düzenle</button>
-                      <button
-                        onClick={async e => { e.stopPropagation(); if (await confirmDialog({ title: 'Personeli Pasifleştir', body: `${s.full_name} pasif yapılsın mı?`, confirmLabel: 'Pasifleştir', danger: true })) deleteMut.mutate(s.id) }}
-                        style={{ padding: '6px 10px', borderRadius: '8px', fontSize: '11px', cursor: 'pointer', background: 'rgba(231,76,60,.1)', border: '1px solid rgba(231,76,60,.3)', color: 'var(--red)' }}
-                      >Pasif</button>
-                    </div>
-                  )}
+                  <div style={{ marginTop: '10px', paddingTop: '9px', borderTop: '1px solid var(--border)', color: 'var(--text3)', fontSize: '10px' }}>
+                    {staff.primary_work_location_name || 'Lokasyon atanmamış'} · {staff.phone || 'Telefon yok'}
+                  </div>
+                  <div style={{ display: 'flex', gap: '6px', marginTop: '10px' }} onClick={event => event.stopPropagation()}>
+                    <button className="btn btn-primary btn-xs" style={{ flex: 1 }} onClick={() => onPersonClick?.(staff.id)}>Personel Dosyası</button>
+                    {canEdit && <button className="btn btn-ghost btn-xs" onClick={() => openEdit(staff)}>Düzenle</button>}
+                    {canDeactivate && staff.is_active === 1 && <button className="btn btn-danger btn-xs" onClick={() => deactivateOne(staff)}>Pasif</button>}
+                  </div>
                 </div>
-              </div>
+              </article>
             )
           })}
         </div>
       )}
 
-      {/* Create/Edit Sheet */}
+      {!isLoading && filteredAndSorted.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginTop: '14px' }}>
+          <div style={{ color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: '9px' }}>
+            {(page - 1) * pageSize + 1}-{Math.min(page * pageSize, filteredAndSorted.length)} / {filteredAndSorted.length}
+          </div>
+          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+            <select className="form-select" value={pageSize} onChange={e => setPageSize(Number(e.target.value))} style={{ width: 'auto', padding: '5px 8px', fontSize: '10px' }}>
+              <option value={10}>10 / sayfa</option>
+              <option value={20}>20 / sayfa</option>
+              <option value={50}>50 / sayfa</option>
+            </select>
+            <button className="btn btn-ghost btn-xs" disabled={page <= 1} onClick={() => setPage(value => value - 1)}>Önceki</button>
+            <span style={{ fontFamily: 'var(--mono)', fontSize: '9px' }}>{page} / {totalPages}</span>
+            <button className="btn btn-ghost btn-xs" disabled={page >= totalPages} onClick={() => setPage(value => value + 1)}>Sonraki</button>
+          </div>
+        </div>
+      )}
+
       {showForm && (
         <StaffFormSheet
           editStaff={editStaff}
@@ -601,7 +1021,18 @@ export default function StaffTab({ departments, onPersonClick }) {
           departments={departments}
           staffRoles={staffRoles}
           workLocations={workLocations}
+          canViewSensitive={canViewSensitive}
           onClose={() => { setShowForm(false); setEditStaff(null) }}
+        />
+      )}
+      {showBulkAssignment && (
+        <BulkAssignmentSheet
+          count={selected.size}
+          departments={departments}
+          workLocations={workLocations}
+          isPending={bulkAssignmentMut.isPending}
+          onSubmit={data => bulkAssignmentMut.mutate(data)}
+          onClose={() => setShowBulkAssignment(false)}
         />
       )}
     </div>
