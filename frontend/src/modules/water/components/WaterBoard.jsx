@@ -150,7 +150,7 @@ const WaterMatrixRow = memo(function WaterMatrixRow({
   && previous.registerInput === next.registerInput
 ))
 
-function WaterBoard({ from, to, label, lowItems = [], onOpenZone }) {
+function WaterBoard({ from, to, label, lowItems = [], onOpenZone, onDraftCountChange }) {
   const qc = useQueryClient()
   const [day, setDay] = useState(() => {
     const t = todayStr()
@@ -233,6 +233,20 @@ function WaterBoard({ from, to, label, lowItems = [], onOpenZone }) {
     })
     return { byCell, byZone, byProduct, total, count: Object.keys(byCell).length }
   }, [cells, columnsById, productUnits])
+
+  useEffect(() => {
+    onDraftCountChange?.(draft.count)
+  }, [draft.count, onDraftCountChange])
+
+  useEffect(() => {
+    if (draft.count === 0) return undefined
+    const protectDraft = (event) => {
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', protectDraft)
+    return () => window.removeEventListener('beforeunload', protectDraft)
+  }, [draft.count])
 
   const brandStats = useMemo(() => (pivot?.brands || []).map(b => {
     const ids = b.product_ids || []

@@ -48,6 +48,8 @@ export default function WaterPage() {
   const [modal, setModal] = useState(null) // 'settings' | 'text' | 'adjust' | null
   const [truckFocus, setTruckFocus] = useState({ seq: 0, mode: 'new' })
   const [selectedZone, setSelectedZone] = useState(null)
+  const [waterDraftCount, setWaterDraftCount] = useState(0)
+  const [monthChangePending, setMonthChangePending] = useState(false)
   const { from, to, label } = monthBounds(ym.y, ym.m)
 
   const summaryQuery = useQuery({
@@ -62,10 +64,30 @@ export default function WaterPage() {
   })
   const summary = summaryQuery.data
 
-  const shiftMonth = (delta) => setYm(({ y, m }) => {
-    const idx = (y * 12 + (m - 1)) + delta
-    return { y: Math.floor(idx / 12), m: (idx % 12) + 1 }
-  })
+  const shiftMonth = async (delta) => {
+    if (monthChangePending) return
+    setMonthChangePending(true)
+    try {
+      if (waterDraftCount > 0) {
+        const confirmed = await confirmDialog({
+          title: 'Kaydedilmemiş su dağıtımı',
+          body: `${waterDraftCount} hücrede kaydedilmemiş dağıtım var. Dönem değiştirilirse bu taslak temizlenecek.`,
+          confirmLabel: 'Taslağı Sil ve Geç',
+          cancelLabel: 'Bu Ayda Kal',
+          danger: true,
+        })
+        if (!confirmed) return
+      }
+      setWaterDraftCount(0)
+      setSelectedZone(null)
+      setYm(({ y, m }) => {
+        const idx = (y * 12 + (m - 1)) + delta
+        return { y: Math.floor(idx / 12), m: (idx % 12) + 1 }
+      })
+    } finally {
+      setMonthChangePending(false)
+    }
+  }
   const t = summary?.totals
   const lowItems = useMemo(() => (summary?.stock || []).filter(item => item.low), [summary?.stock])
 
@@ -85,9 +107,14 @@ export default function WaterPage() {
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', marginBottom: '16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '9px', padding: '3px 4px' }}>
-          <button className="btn btn-ghost btn-sm" onClick={() => shiftMonth(-1)} style={{ padding: '4px 8px' }}>‹</button>
+          <button aria-label="Önceki su takip ayı" className="btn btn-ghost btn-sm" disabled={monthChangePending} onClick={() => shiftMonth(-1)} style={{ padding: '4px 8px' }}>‹</button>
           <span style={{ fontFamily: 'var(--mono)', fontSize: '13px', minWidth: '120px', textAlign: 'center', fontWeight: 600 }}>{label}</span>
-          <button className="btn btn-ghost btn-sm" onClick={() => shiftMonth(1)} style={{ padding: '4px 8px' }}>›</button>
+          <button aria-label="Sonraki su takip ayı" className="btn btn-ghost btn-sm" disabled={monthChangePending} onClick={() => shiftMonth(1)} style={{ padding: '4px 8px' }}>›</button>
+          {summaryQuery.isFetching && (
+            <span role="status" aria-live="polite" style={{ fontSize: '10px', color: 'var(--text3)', whiteSpace: 'nowrap' }}>
+              Dönem verileri güncelleniyor…
+            </span>
+          )}
         </div>
         <div style={{ display: 'flex', gap: '8px' }}>
           <button className="btn btn-ghost btn-sm" onClick={() => setModal('text')}>📝 Metinden</button>
@@ -123,12 +150,20 @@ export default function WaterPage() {
         ].map(([lbl, val, color]) => (
           <div key={lbl} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '12px', padding: '12px 16px' }}>
             <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '1px' }}>{lbl}</div>
-            <div style={{ fontFamily: 'var(--display)', fontSize: '24px', color, marginTop: '2px' }}>{summaryQuery.isError ? '—' : nf(val)}</div>
+            <div style={{ fontFamily: 'var(--display)', fontSize: '24px', color, marginTop: '2px' }}>{summaryQuery.isPending || summaryQuery.isError ? '—' : nf(val)}</div>
           </div>
         ))}
       </div>
 
-      <WaterBoard from={from} to={to} label={label} lowItems={lowItems} onOpenZone={setSelectedZone} />
+      <WaterBoard
+        key={`${from}:${to}`}
+        from={from}
+        to={to}
+        label={label}
+        lowItems={lowItems}
+        onOpenZone={setSelectedZone}
+        onDraftCountChange={setWaterDraftCount}
+      />
 
       {selectedZone && (
         <ZoneHistoryModal zone={selectedZone} from={from} to={to} label={label} onClose={() => setSelectedZone(null)} />

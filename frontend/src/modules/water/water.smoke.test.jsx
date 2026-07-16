@@ -3,6 +3,11 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { renderWithProviders } from '../../test/renderWithProviders.jsx'
 import { useAuthStore } from '../../shared/store/authStore.js'
 
+vi.mock('../../shared/components/ConfirmDialog.jsx', async importOriginal => {
+  const actual = await importOriginal()
+  return { ...actual, confirmDialog: vi.fn(() => Promise.resolve(true)) }
+})
+
 const PRODUCTS = [
   { id: 1, name: 'Damacana', unit_label: 'damacana', units_per_case: 1, cases_per_pallet: 36, is_active: 1, min_level: 0, lead_time_days: 5, safety_stock_days: 2, brand_id: 1, brand_name: 'MİLA SU', is_returnable: 1 },
   { id: 2, name: '0.5 L', unit_label: 'koli', units_per_case: 1, cases_per_pallet: 140, is_active: 1, min_level: 0, lead_time_days: 10, safety_stock_days: 4, brand_id: 1, brand_name: 'MİLA SU', is_returnable: 0 },
@@ -215,10 +220,12 @@ vi.mock('../../shared/api/client.js', () => ({
 
 import WaterPage from './WaterPage.jsx'
 import api from '../../shared/api/client.js'
+import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 
 describe('WaterPage tek-ekran pano smoke', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    confirmDialog.mockResolvedValue(true)
     reconciliationLocked = false
     pivotRows = DEFAULT_PIVOT_ROWS
   })
@@ -306,6 +313,33 @@ describe('WaterPage tek-ekran pano smoke', () => {
         { zone_id: 1, product_id: 2, input_qty: 3, input_unit: 'koli' },
       ],
     })))
+  })
+
+  it('kaydedilmemiş dağıtım varken ay değişimini korur ve onaydan sonra taslağı temizler', async () => {
+    renderWithProviders(<WaterPage />)
+    const first = await screen.findByLabelText('OTC Kamp Alanı - Damacana dağıtım miktarı')
+    fireEvent.change(first, { target: { value: '2' } })
+    expect(screen.getByRole('button', { name: '1 Hücreyi Kaydet' })).toBeEnabled()
+
+    confirmDialog.mockResolvedValueOnce(false)
+    fireEvent.click(screen.getByRole('button', { name: 'Önceki su takip ayı' }))
+    await waitFor(() => expect(confirmDialog).toHaveBeenCalledWith(expect.objectContaining({
+      title: 'Kaydedilmemiş su dağıtımı',
+    })))
+    expect(screen.getByLabelText('OTC Kamp Alanı - Damacana dağıtım miktarı')).toHaveValue('2')
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Önceki su takip ayı' })).toBeEnabled())
+
+    confirmDialog.mockResolvedValueOnce(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Önceki su takip ayı' }))
+    const previousMonth = new Date()
+    previousMonth.setDate(1)
+    previousMonth.setMonth(previousMonth.getMonth() - 1)
+    const expectedDay = `${previousMonth.getFullYear()}-${String(previousMonth.getMonth() + 1).padStart(2, '0')}-01`
+    await waitFor(() => expect(first).not.toBeInTheDocument())
+    const nextBoard = screen.getByTestId('water-board')
+    await waitFor(() => expect(within(nextBoard).getByDisplayValue(expectedDay)).toBeInTheDocument())
+    expect(await screen.findByLabelText('OTC Kamp Alanı - Damacana dağıtım miktarı')).toHaveValue('')
+    expect(within(nextBoard).getByRole('button', { name: 'Kaydet' })).toBeDisabled()
   })
 
   it('büyük dağıtım matrisini pencereleyip kaydırılan satırları getirir', async () => {
