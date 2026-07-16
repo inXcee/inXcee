@@ -20,6 +20,7 @@ import StaffDocumentsPanel from './dossier/StaffDocumentsPanel.jsx'
 import {
   StaffPerformancePanel, StaffSafetyPanel, StaffEquipmentPanel, StaffChecklistPanel,
 } from './dossier/StaffOperationalPanels.jsx'
+import { StaffNotesPanel, StaffTimelinePanel } from './dossier/StaffNotesTimeline.jsx'
 
 const TABS = [
   ['overview', 'Genel Bakış'],
@@ -31,6 +32,8 @@ const TABS = [
   ['equipment', 'Zimmet ve Ekipman'],
   ['hr', 'İşe Giriş/Çıkış'],
   ['operations', 'Operasyonel Bağlantılar'],
+  ['notes', 'Notlar ve Görevler'],
+  ['timeline', 'Zaman Çizelgesi'],
 ]
 
 function ErrorState({ staffId, error, onBack }) {
@@ -318,6 +321,8 @@ export default function StaffDossierPage() {
       {activeTab === 'equipment' && <StaffEquipmentPanel staffId={staffId} canManage={dossier.access?.can_manage_followups} />}
       {activeTab === 'hr' && <StaffChecklistPanel staffId={staffId} canManage={dossier.access?.can_manage_followups} />}
       {activeTab === 'operations' && <OperationsTab dossier={dossier} operations={operationsQuery.data} isLoading={operationsQuery.isLoading} />}
+      {activeTab === 'notes' && <StaffNotesPanel staffId={staffId} access={dossier.access} />}
+      {activeTab === 'timeline' && <StaffTimelinePanel staffId={staffId} />}
     </div>
   )
 }

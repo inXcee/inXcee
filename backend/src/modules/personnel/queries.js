@@ -257,11 +257,53 @@ export function getTimeline(staffId) {
 }
 
 // ── Notlar CRUD ──
-export function addNote({ staffId, authorId, authorName, note, pinned }) {
+const NOTE_CATEGORIES = new Set([
+  'general', 'document', 'attendance', 'performance', 'safety',
+  'equipment', 'onboarding', 'offboarding', 'transport', 'dormitory',
+])
+
+export function addNote({ staffId, authorId, authorName, note, pinned, category, visibility }) {
+  const cat = NOTE_CATEGORIES.has(category) ? category : 'general'
+  const vis = visibility === 'sensitive' ? 'sensitive' : 'operational'
   return getDB().prepare(`
-    INSERT INTO staff_notes(staff_id, author_id, author_name, note, pinned)
-    VALUES(?,?,?,?,?)
-  `).run(staffId, authorId, authorName, note, pinned ? 1 : 0).lastInsertRowid
+    INSERT INTO staff_notes(staff_id, author_id, author_name, note, pinned, category, visibility)
+    VALUES(?,?,?,?,?,?,?)
+  `).run(staffId, authorId, authorName, note, pinned ? 1 : 0, cat, vis).lastInsertRowid
+}
+
+// Rol bazlı: hassas notlar yalnız müdüre listelenir; arşivlenenler ayrı işaretlenir.
+export function listNotes(staffId, { includeSensitive = false, includeArchived = false } = {}) {
+  const where = ['staff_id=?']
+  const params = [staffId]
+  if (!includeSensitive) where.push("visibility<>'sensitive'")
+  if (!includeArchived) where.push('archived_at IS NULL')
+  return getDB().prepare(`
+    SELECT id, author_id, author_name, note, pinned, category, visibility,
+      created_at, updated_at, archived_at
+    FROM staff_notes
+    WHERE ${where.join(' AND ')}
+    ORDER BY pinned DESC, created_at DESC LIMIT 100
+  `).all(...params)
+}
+
+export function updateNote(noteId, { note, category, visibility }) {
+  const fields = []
+  const params = []
+  if (note != null) { fields.push('note=?'); params.push(String(note).slice(0, 4000)) }
+  if (category != null && NOTE_CATEGORIES.has(category)) { fields.push('category=?'); params.push(category) }
+  if (visibility != null) { fields.push('visibility=?'); params.push(visibility === 'sensitive' ? 'sensitive' : 'operational') }
+  if (!fields.length) return
+  params.push(noteId)
+  getDB().prepare(`UPDATE staff_notes SET ${fields.join(', ')} WHERE id=?`).run(...params)
+}
+
+export function archiveNote(noteId) {
+  getDB().prepare('UPDATE staff_notes SET archived_at=CURRENT_TIMESTAMP WHERE id=?').run(noteId)
+}
+
+// Vardiya sorumlusu hassas notu okuyamaz/yönetemez.
+export function getNoteVisibility(noteId) {
+  return getDB().prepare('SELECT visibility FROM staff_notes WHERE id=?').get(noteId)?.visibility || null
 }
 
 export function deleteNote(noteId) {

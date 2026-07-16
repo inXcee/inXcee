@@ -2,7 +2,10 @@ import { Router } from 'express'
 import { requireRole } from '../../shared/auth/middleware.js'
 import { logAudit } from '../../shared/audit.js'
 import { validate } from '../../shared/middleware/validate.js'
-import { addNoteSchema, emergencyContactSchema, emergencyContactUpdateSchema, archiveSchema, importPersonnelSchema } from './schemas.js'
+import { addNoteSchema, updateNoteSchema, createFollowupSchema, updateFollowupSchema, emergencyContactSchema, emergencyContactUpdateSchema, archiveSchema, importPersonnelSchema } from './schemas.js'
+import {
+  listFollowups, createFollowup, updateFollowup, completeFollowup, cancelFollowup,
+} from './staff-followups.js'
 import * as q from './queries.js'
 import { importPersonnel, listPersonnelImportBatches, undoPersonnelImport } from './import.js'
 import { logger } from '../../shared/logger.js'
@@ -151,29 +154,124 @@ personnelRouter.get('/:id/timeline', ...view, (req, res) => {
 })
 
 // ── Notlar ──
+personnelRouter.get('/:id/notes', ...view, (req, res) => {
+  try {
+    res.json(q.listNotes(+req.params.id, {
+      includeSensitive: req.user.role === 'campus_manager',
+      includeArchived: req.query.archived === '1',
+    }))
+  } catch (e) { logger.error('[personnel/notes]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
 personnelRouter.post('/:id/notes', ...mgr, validate(addNoteSchema), (req, res) => {
   try {
-    const { note, pinned } = req.validated
+    const { note, pinned, category, visibility } = req.validated
+    // Vardiya sorumlusu hassas not oluşturamaz.
+    if (visibility === 'sensitive' && req.user.role !== 'campus_manager') {
+      return res.status(403).json({ error: 'Hassas not için kampüs müdürü yetkisi gerekir' })
+    }
     const id = q.addNote({
       staffId: +req.params.id,
       authorId: req.user.id,
       authorName: req.user.full_name || req.user.username,
-      note,
-      pinned,
+      note, pinned, category, visibility,
     })
     logAudit(req.user.id, 'staff_note_add', 'personnel', +req.params.id, note.slice(0, 50))
     res.status(201).json({ id })
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
-personnelRouter.delete('/notes/:noteId', ...mgr, (req, res) => {
+// Hassas notu yalnız müdür okuyabilir/yönetebilir — mutasyon uçlarında da uygula.
+function guardSensitiveNote(req, res, next) {
+  const visibility = q.getNoteVisibility(+req.params.noteId)
+  if (visibility === null) return res.status(404).json({ error: 'Not bulunamadı' })
+  if (visibility === 'sensitive' && req.user.role !== 'campus_manager') {
+    return res.status(403).json({ error: 'Bu nota erişim yetkiniz yok' })
+  }
+  next()
+}
+
+personnelRouter.patch('/notes/:noteId', ...mgr, guardSensitiveNote, validate(updateNoteSchema), (req, res) => {
+  try {
+    if (req.validated.visibility === 'sensitive' && req.user.role !== 'campus_manager') {
+      return res.status(403).json({ error: 'Hassas not için kampüs müdürü yetkisi gerekir' })
+    }
+    q.updateNote(+req.params.noteId, req.validated)
+    logAudit(req.user.id, 'staff_note_update', 'personnel', +req.params.noteId, '')
+    res.json({ ok: true })
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+personnelRouter.post('/notes/:noteId/archive', ...mgr, guardSensitiveNote, (req, res) => {
+  try {
+    q.archiveNote(+req.params.noteId)
+    logAudit(req.user.id, 'staff_note_archive', 'personnel', +req.params.noteId, '')
+    res.json({ ok: true })
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+personnelRouter.delete('/notes/:noteId', ...mgr, guardSensitiveNote, (req, res) => {
   try { q.deleteNote(+req.params.noteId); res.json({ ok: true }) }
   catch (e) { res.status(400).json({ error: e.message }) }
 })
 
-personnelRouter.patch('/notes/:noteId/pin', ...mgr, (req, res) => {
+personnelRouter.patch('/notes/:noteId/pin', ...mgr, guardSensitiveNote, (req, res) => {
   try { q.togglePinNote(+req.params.noteId); res.json({ ok: true }) }
   catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+// ── Görevler ve takip (Faz 7) ──
+personnelRouter.get('/:id/followups', ...view, (req, res) => {
+  try {
+    res.json(listFollowups(+req.params.id, { status: req.query.status }))
+  } catch (e) {
+    if (e.statusCode) return res.status(e.statusCode).json({ error: e.message })
+    logger.error('[personnel/followups]', e); res.status(500).json({ error: 'Sunucu hatası' })
+  }
+})
+
+personnelRouter.post('/:id/followups', ...mgr, validate(createFollowupSchema), (req, res) => {
+  try {
+    const result = createFollowup(+req.params.id, req.validated, { userId: req.user.id })
+    logAudit(req.user.id, 'staff_followup_create', 'personnel', +req.params.id, req.validated.title.slice(0, 60))
+    res.status(201).json(result)
+  } catch (e) {
+    if (e.statusCode) return res.status(e.statusCode).json({ error: e.message })
+    logger.error('[personnel/followup-create]', e); res.status(500).json({ error: 'Sunucu hatası' })
+  }
+})
+
+personnelRouter.patch('/followups/:followupId', ...mgr, validate(updateFollowupSchema), (req, res) => {
+  try {
+    const result = updateFollowup(+req.params.followupId, req.validated, { userId: req.user.id })
+    logAudit(req.user.id, 'staff_followup_update', 'personnel', +req.params.followupId, '')
+    res.json(result)
+  } catch (e) {
+    if (e.statusCode) return res.status(e.statusCode).json({ error: e.message })
+    logger.error('[personnel/followup-update]', e); res.status(500).json({ error: 'Sunucu hatası' })
+  }
+})
+
+personnelRouter.post('/followups/:followupId/complete', ...mgr, (req, res) => {
+  try {
+    completeFollowup(+req.params.followupId, { userId: req.user.id })
+    logAudit(req.user.id, 'staff_followup_complete', 'personnel', +req.params.followupId, '')
+    res.json({ ok: true })
+  } catch (e) {
+    if (e.statusCode) return res.status(e.statusCode).json({ error: e.message })
+    logger.error('[personnel/followup-complete]', e); res.status(500).json({ error: 'Sunucu hatası' })
+  }
+})
+
+personnelRouter.post('/followups/:followupId/cancel', ...mgr, (req, res) => {
+  try {
+    cancelFollowup(+req.params.followupId, { userId: req.user.id })
+    logAudit(req.user.id, 'staff_followup_cancel', 'personnel', +req.params.followupId, '')
+    res.json({ ok: true })
+  } catch (e) {
+    if (e.statusCode) return res.status(e.statusCode).json({ error: e.message })
+    logger.error('[personnel/followup-cancel]', e); res.status(500).json({ error: 'Sunucu hatası' })
+  }
 })
 
 // ── Acil iletişim ──

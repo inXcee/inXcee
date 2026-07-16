@@ -3,11 +3,35 @@ import { z } from 'zod'
 // Cross-cutting Zod sweep — personnel modülü yazma uçları.
 // routes.js bunları validate() ile bağlar; req.validated tek kaynak olur.
 
+const CATEGORY_ENUM = z.enum([
+  'general', 'document', 'attendance', 'performance', 'safety',
+  'equipment', 'onboarding', 'offboarding', 'transport', 'dormitory',
+])
+
 export const addNoteSchema = z.object({
   note: z.string().trim().min(1, 'Not boş olamaz').max(4000, 'Not çok uzun (max 4000)'),
   // pinned form/JSON'dan bool ya da "true"/"false" gelebilir; coerce + varsayılan.
   pinned: z.coerce.boolean().optional().default(false),
+  category: CATEGORY_ENUM.optional(),
+  visibility: z.enum(['operational', 'sensitive']).optional(),
 })
+
+export const updateNoteSchema = z.object({
+  note: z.string().trim().min(1).max(4000).optional(),
+  category: CATEGORY_ENUM.optional(),
+  visibility: z.enum(['operational', 'sensitive']).optional(),
+})
+
+export const createFollowupSchema = z.object({
+  title: z.string().trim().min(1, 'Görev başlığı gerekli').max(300, 'Başlık çok uzun'),
+  description: z.string().trim().max(2000).nullish(),
+  category: CATEGORY_ENUM.optional(),
+  priority: z.enum(['low', 'medium', 'high', 'critical']).optional(),
+  assigned_user_id: z.coerce.number().int().positive().nullish(),
+  due_at: z.string().trim().max(40).nullish(),
+})
+
+export const updateFollowupSchema = createFollowupSchema.partial()
 
 export const emergencyContactSchema = z.object({
   name: z.string().trim().min(1, 'İsim gerekli').max(200, 'İsim çok uzun'),
