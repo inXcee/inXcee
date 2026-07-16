@@ -11,6 +11,7 @@ describe('water product unit rules', () => {
     expect(availableUnitsForProduct({ unit_label: 'adet', units_per_case: 12, cases_per_pallet: 70 })).toEqual(['adet', 'koli', 'palet'])
     expect(availableUnitsForProduct({ unit_label: 'koli', units_per_case: 1, cases_per_pallet: 180 })).toEqual(['koli', 'palet'])
     expect(availableUnitsForProduct({ unit_label: 'paket', units_per_case: 1, cases_per_pallet: 80 })).toEqual(['paket', 'palet'])
+    expect(availableUnitsForProduct({ unit_label: 'damacana', base_unit: 'koli', units_per_case: 1, cases_per_pallet: 36 })).toEqual(['koli', 'palet'])
   })
 
   it('accepts fractional packages or pallets only when the base result is whole', () => {

@@ -42,25 +42,25 @@ export function listProducts({ includeInactive = false } = {}) {
 export function getProduct(id) {
   return getDB().prepare(`${PRODUCT_SELECT} WHERE p.id=?`).get(id)
 }
-export function createProduct({ name, unit_label, units_per_case, cases_per_pallet, min_level, critical_level, lead_time_days, safety_stock_days, expiry_tracking, expiry_warning_days, brand_id, is_returnable, sort_order }) {
+export function createProduct({ name, unit_label, base_unit, units_per_case, cases_per_pallet, min_level, critical_level, lead_time_days, safety_stock_days, expiry_tracking, expiry_warning_days, brand_id, is_returnable, sort_order }) {
   return getDB().prepare(`
     INSERT INTO water_products(
-      name, unit_label, units_per_case, cases_per_pallet, min_level, critical_level,
+      name, unit_label, base_unit, units_per_case, cases_per_pallet, min_level, critical_level,
       lead_time_days, safety_stock_days, expiry_tracking, expiry_warning_days,
       brand_id, is_returnable, sort_order
-    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
+    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `).run(
-    name, unit_label || 'adet', units_per_case || 1, cases_per_pallet || 1, min_level || 0, critical_level || 0,
+    name, unit_label || 'adet', base_unit || 'adet', units_per_case || 1, cases_per_pallet || 1, min_level || 0, critical_level || 0,
     lead_time_days ?? 7, safety_stock_days ?? 3, expiry_tracking ? 1 : 0, expiry_warning_days ?? 30,
     brand_id || null, is_returnable ? 1 : 0, sort_order || 0,
   ).lastInsertRowid
 }
-export function updateProduct(id, { name, unit_label, units_per_case, cases_per_pallet, is_active, min_level, critical_level, lead_time_days, safety_stock_days, expiry_tracking, expiry_warning_days, brand_id, is_returnable, sort_order }) {
+export function updateProduct(id, { name, unit_label, base_unit, units_per_case, cases_per_pallet, is_active, min_level, critical_level, lead_time_days, safety_stock_days, expiry_tracking, expiry_warning_days, brand_id, is_returnable, sort_order }) {
   return getDB().prepare(`
-    UPDATE water_products SET name=?, unit_label=?, units_per_case=?, cases_per_pallet=?, is_active=?, min_level=?, critical_level=?,
+    UPDATE water_products SET name=?, unit_label=?, base_unit=?, units_per_case=?, cases_per_pallet=?, is_active=?, min_level=?, critical_level=?,
       lead_time_days=?, safety_stock_days=?, expiry_tracking=?, expiry_warning_days=?,
       brand_id=?, is_returnable=?, sort_order=? WHERE id=?
-  `).run(name, unit_label || 'adet', units_per_case || 1, cases_per_pallet || 1, is_active ? 1 : 0, min_level || 0, critical_level || 0,
+  `).run(name, unit_label || 'adet', base_unit || 'adet', units_per_case || 1, cases_per_pallet || 1, is_active ? 1 : 0, min_level || 0, critical_level || 0,
     lead_time_days ?? 7, safety_stock_days ?? 3, expiry_tracking ? 1 : 0, expiry_warning_days ?? 30,
     brand_id || null, is_returnable ? 1 : 0, sort_order || 0, id).changes > 0
 }
@@ -530,12 +530,27 @@ export function reviewQueue() {
     ORDER BY mv.move_date ASC, mv.id ASC
   `).all()
 }
-export function approveReviews(ids) {
-  if (Array.isArray(ids) && ids.length) {
-    const ph = ids.map(() => '?').join(',')
-    return getDB().prepare(`UPDATE water_movements SET needs_review=0 WHERE id IN (${ph}) AND needs_review=1`).run(...ids).changes
-  }
-  return getDB().prepare("UPDATE water_movements SET needs_review=0 WHERE type='out' AND needs_review=1").run().changes
+export function approveReviews(ids, note, userId) {
+  const db = getDB()
+  const wanted = Array.isArray(ids) && ids.length ? new Set(ids.map(Number)) : null
+  const tx = db.transaction(() => {
+    const rows = reviewQueue().filter(row => !wanted || wanted.has(Number(row.id)))
+    if (!rows.length) return 0
+    const approve = db.prepare("UPDATE water_movements SET needs_review=0 WHERE id=? AND type='out' AND needs_review=1")
+    const record = db.prepare(`
+      INSERT INTO water_review_decisions(movement_id, decision, unallocated_base, note, reviewed_by)
+      VALUES(?, 'approved_exception', ?, ?, ?)
+    `)
+    let approved = 0
+    for (const row of rows) {
+      if (approve.run(row.id).changes > 0) {
+        record.run(row.id, row.unallocated_base, note, userId)
+        approved += 1
+      }
+    }
+    return approved
+  })
+  return tx.immediate()
 }
 
 export function clearResolvedReviews(productIds = null) {

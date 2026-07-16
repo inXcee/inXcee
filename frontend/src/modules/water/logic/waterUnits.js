@@ -5,7 +5,7 @@ const WHOLE_TOLERANCE = 1e-9
 const normUnit = (unit) => String(unit || 'adet').toLocaleLowerCase('tr').trim()
 
 export const baseUnitForProduct = (product) => {
-  const unit = normUnit(product?.unit_label)
+  const unit = normUnit(product?.base_unit || product?.unit_label)
   return BASE_UNITS.has(unit) ? unit : 'adet'
 }
 

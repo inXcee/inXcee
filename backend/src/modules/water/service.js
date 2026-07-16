@@ -75,6 +75,38 @@ export function deleteBrandService(id) {
 
 // ── Ürün servisleri ──
 export function productsService(opts) { return q.listProducts(opts) }
+const BASE_UNITS = new Set(['adet', 'koli', 'paket', 'palet'])
+const normalizedName = value => String(value || '').trim().toLocaleLowerCase('tr')
+const normalizedCode = value => String(value || '').trim().toLocaleUpperCase('tr')
+const conflict = message => Object.assign(new Error(message), { statusCode: 409 })
+const uniqueWrite = (work, message) => {
+  try {
+    return work()
+  } catch (error) {
+    if (error?.code === 'SQLITE_CONSTRAINT_UNIQUE' || /UNIQUE constraint failed/i.test(error?.message || '')) {
+      throw conflict(message)
+    }
+    throw error
+  }
+}
+
+function assertProductUnique(fields, excludeId = null) {
+  const clash = q.listProducts({ includeInactive: true }).find(product =>
+    Number(product.id) !== Number(excludeId)
+      && normalizedName(product.name) === normalizedName(fields.name)
+      && Number(product.brand_id || 0) === Number(fields.brand_id || 0))
+  if (clash) throw conflict('Aynı marka altında bu ürün adı zaten var')
+}
+
+function assertZoneUnique(fields, excludeId = null) {
+  const zones = q.listZones({ includeInactive: true })
+  if (zones.some(zone => Number(zone.id) !== Number(excludeId) && normalizedName(zone.name) === normalizedName(fields.name))) {
+    throw conflict('Bu bölge adı zaten var')
+  }
+  if (fields.code && zones.some(zone => Number(zone.id) !== Number(excludeId) && normalizedCode(zone.code) === normalizedCode(fields.code))) {
+    throw conflict('Bu bölge kodu zaten var')
+  }
+}
 // existing verildiğinde (update) gövdeden atlanan alanlar mevcut değerden korunur —
 // böylece brand/is_returnable göndermeyen eski istemciler bu alanları silmez.
 function productFields(data, existing = null) {
@@ -106,8 +138,14 @@ function productFields(data, existing = null) {
   const is_returnable = has('is_returnable') ? !!data.is_returnable : (existing ? !!existing.is_returnable : false)
   const expiry_tracking = has('expiry_tracking') ? !!data.expiry_tracking : (existing ? !!existing.expiry_tracking : false)
   const sort_order = has('sort_order') ? (parseInt(data.sort_order) || 0) : (existing ? existing.sort_order : 0)
+  const displayUnit = String(has('unit_label') ? data.unit_label : existing?.unit_label || 'adet').trim() || 'adet'
+  const inferredBase = BASE_UNITS.has(normalizedName(displayUnit)) ? normalizedName(displayUnit) : 'adet'
+  const base_unit = normalizedName(has('base_unit') ? data.base_unit : existing?.base_unit || inferredBase)
+  if (!BASE_UNITS.has(base_unit)) {
+    throw Object.assign(new Error('Baz birim adet, koli, paket veya palet olmalı'), { statusCode: 400 })
+  }
   return {
-    name: data.name.trim(), unit_label: data.unit_label || 'adet',
+    name: data.name.trim(), unit_label: displayUnit, base_unit,
     units_per_case: upc, cases_per_pallet: cpp,
     min_level: minLevel,
     critical_level: criticalLevel,
@@ -120,13 +158,17 @@ function productFields(data, existing = null) {
 }
 export function createProductService(data) {
   if (!data?.name?.trim()) throw Object.assign(new Error('Ürün adı gerekli'), { statusCode: 400 })
-  return q.createProduct(productFields(data))
+  const fields = productFields(data)
+  assertProductUnique(fields)
+  return uniqueWrite(() => q.createProduct(fields), 'Aynı marka altında bu ürün adı zaten var')
 }
 export function updateProductService(id, data) {
   const existing = q.getProduct(id)
   if (!existing) throw Object.assign(new Error('Ürün bulunamadı'), { statusCode: 404 })
   if (!data?.name?.trim()) throw Object.assign(new Error('Ürün adı gerekli'), { statusCode: 400 })
-  if (!q.updateProduct(id, { ...productFields(data, existing), is_active: data.is_active !== false }))
+  const fields = productFields(data, existing)
+  assertProductUnique(fields, id)
+  if (!uniqueWrite(() => q.updateProduct(id, { ...fields, is_active: data.is_active !== false }), 'Aynı marka altında bu ürün adı zaten var'))
     throw Object.assign(new Error('Ürün güncellenemedi'), { statusCode: 500 })
   return { before: existing, after: q.getProduct(id) }
 }
@@ -145,13 +187,17 @@ export function zonesService(opts) { return q.listZones(opts) }
 const expectedMonthly = (data) => Math.max(0, parseInt(data.expected_monthly) || 0)
 export function createZoneService(data) {
   if (!data?.name?.trim()) throw Object.assign(new Error('Bölge adı gerekli'), { statusCode: 400 })
-  return q.createZone({ name: data.name.trim(), code: data.code?.trim() || null, note: data.note?.trim() || null, expected_monthly: expectedMonthly(data) })
+  const fields = { name: data.name.trim(), code: data.code?.trim() || null, note: data.note?.trim() || null, expected_monthly: expectedMonthly(data) }
+  assertZoneUnique(fields)
+  return uniqueWrite(() => q.createZone(fields), 'Bölge adı veya kodu zaten var')
 }
 export function updateZoneService(id, data) {
   const existing = q.getZone(id)
   if (!existing) throw Object.assign(new Error('Bölge bulunamadı'), { statusCode: 404 })
   if (!data?.name?.trim()) throw Object.assign(new Error('Bölge adı gerekli'), { statusCode: 400 })
-  if (!q.updateZone(id, { name: data.name.trim(), code: data.code?.trim() || null, note: data.note?.trim() || null, is_active: data.is_active !== false, expected_monthly: expectedMonthly(data) }))
+  const fields = { name: data.name.trim(), code: data.code?.trim() || null, note: data.note?.trim() || null, is_active: data.is_active !== false, expected_monthly: expectedMonthly(data) }
+  assertZoneUnique(fields, id)
+  if (!uniqueWrite(() => q.updateZone(id, fields), 'Bölge adı veya kodu zaten var'))
     throw Object.assign(new Error('Bölge güncellenemedi'), { statusCode: 500 })
   return { before: existing, after: q.getZone(id) }
 }
@@ -561,9 +607,14 @@ export function reviewQueueService() {
   }))
   return { rows, count: rows.length }
 }
-export function approveReviewsService(ids) {
+export function approveReviewsService(ids, note, userId) {
   const list = Array.isArray(ids) ? ids.map(Number).filter(Boolean) : null
-  return q.approveReviews(list)
+  const reason = String(note || '').trim()
+  if (reason.length < 3 || reason.length > 500) {
+    throw Object.assign(new Error('Onay gerekçesi 3-500 karakter olmalı'), { statusCode: 400 })
+  }
+  if (!userId) throw Object.assign(new Error('Onaylayan kullanıcı gerekli'), { statusCode: 400 })
+  return q.approveReviews(list, reason, userId)
 }
 
 

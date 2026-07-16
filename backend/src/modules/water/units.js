@@ -13,7 +13,7 @@ function normalizedUnit(unit) {
 }
 
 function baseInputUnit(product) {
-  const unit = normalizedUnit(product?.unit_label)
+  const unit = normalizedUnit(product?.base_unit || product?.unit_label)
   return BASE_UNITS.has(unit) ? unit : 'adet'
 }
 

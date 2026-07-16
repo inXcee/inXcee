@@ -4,6 +4,7 @@ import api from '../../shared/api/client.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
 import { useAuthStore } from '../../shared/store/authStore.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
+import { inputDialog } from '../../shared/components/InputDialog.jsx'
 import DailyDistributionModal from './components/DailyDistributionModal.jsx'
 import TruckArrivalPanel from './components/TruckArrivalPanel.jsx'
 import WaterBoard from './components/WaterBoard.jsx'
@@ -252,10 +253,22 @@ function ReviewPanel() {
   })
   const rows = data?.rows || []
   const approve = useMutation({
-    mutationFn: (ids) => api.post('/water/review/approve', ids ? { ids } : {}),
+    mutationFn: ({ ids, note }) => api.post('/water/review/approve', { ids, note }),
     onSuccess: (r) => { invalidateWaterQueries(qc, 'review'); toastOk(`${r.data.approved} kayıt onaylandı ✓`) },
     onError: (e) => toastErr(errMsg(e, 'Onaylanamadı')),
   })
+  const approveWithNote = async (ids) => {
+    const note = await inputDialog({
+      title: ids ? 'İstisna Onayı' : 'Toplu İstisna Onayı',
+      body: 'Stok karşılığı olmayan dağıtımın neden onaylandığını yazın. Bu gerekçe denetim geçmişinde saklanır.',
+      placeholder: 'Örn. Acil saha ihtiyacı; irsaliye sonradan işlenecek',
+      confirmLabel: 'Gerekçeyle Onayla',
+    })
+    if (note == null) return
+    const reason = note.trim()
+    if (reason.length < 3) return toastErr('Onay gerekçesi en az 3 karakter olmalı')
+    approve.mutate({ ids, note: reason })
+  }
   if (!data || rows.length === 0) return null
 
   return (
@@ -275,7 +288,7 @@ function ReviewPanel() {
         </div>
       )}
       afterToggle={isManager && (
-        <button type="button" className="btn btn-primary btn-sm" disabled={approve.isPending} onClick={async () => { if (await confirmDialog({ title: 'Toplu Onay', message: `${rows.length} dağıtım kaydı onaylansın mı?`, confirmText: 'Hepsini Onayla' })) approve.mutate(null) }}>✓ Toplu Onayla</button>
+        <button type="button" className="btn btn-primary btn-sm" disabled={approve.isPending} onClick={() => approveWithNote(null)}>✓ Toplu Onayla</button>
       )}
       style={{ marginBottom: '16px', background: 'color-mix(in srgb, var(--red) 8%, var(--surface))', border: '1px solid var(--red)', borderLeft: '3px solid var(--red)', borderRadius: '10px', padding: '10px 14px' }}
     >
@@ -291,7 +304,7 @@ function ReviewPanel() {
                   <td style={{ textAlign: 'right', fontFamily: 'var(--mono)' }} title={r.qty_human}>{nf(r.qty_base)}</td>
                   <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--red)', fontWeight: 600 }} title={r.unallocated_human}>{nf(r.unallocated_base)}</td>
                   <td style={{ color: 'var(--text3)' }}>{r.created_by_name || '—'}</td>
-                  {isManager && <td style={{ textAlign: 'right' }}><button className="btn btn-ghost btn-sm" disabled={approve.isPending} onClick={() => approve.mutate([r.movement_id])}>Onayla</button></td>}
+                  {isManager && <td style={{ textAlign: 'right' }}><button className="btn btn-ghost btn-sm" disabled={approve.isPending} onClick={() => approveWithNote([r.movement_id])}>Onayla</button></td>}
                 </tr>
               ))}
             </tbody>
@@ -1459,7 +1472,7 @@ function TemplatesTab() {
 // ─────────────────────────── ÜRÜNLER + MARKA ───────────────────────────
 function ProductsTab() {
   const qc = useQueryClient()
-  const blank = { id: null, name: '', unit_label: 'adet', units_per_case: '1', cases_per_pallet: '1', min_qty: '', crit_qty: '', min_unit: 'adet', lead_time_days: '7', safety_stock_days: '3', expiry_tracking: false, expiry_warning_days: '30', brand_id: '', is_returnable: false, is_active: true }
+  const blank = { id: null, name: '', unit_label: 'adet', base_unit: 'adet', units_per_case: '1', cases_per_pallet: '1', min_qty: '', crit_qty: '', min_unit: 'adet', lead_time_days: '7', safety_stock_days: '3', expiry_tracking: false, expiry_warning_days: '30', brand_id: '', is_returnable: false, is_active: true }
   const [form, setForm] = useState(blank)
   const { data: products = [] } = useQuery({ queryKey: ['water-products-all'], queryFn: () => api.get('/water/products', { params: { all: 1 } }).then(r => r.data) })
   const { data: brands = [] } = useQuery({ queryKey: ['water-brands'], queryFn: () => api.get('/water/brands').then(r => r.data) })
@@ -1467,7 +1480,7 @@ function ProductsTab() {
   const invalidate = () => invalidateWaterQueries(qc, 'products')
   const payload = () => {
     const upc = +form.units_per_case || 1, cpp = +form.cases_per_pallet || 1
-    const productShape = { unit_label: form.unit_label, units_per_case: upc, cases_per_pallet: cpp }
+    const productShape = { unit_label: form.unit_label, base_unit: form.base_unit, units_per_case: upc, cases_per_pallet: cpp }
     const minUnit = coerceUnitForProduct(form.min_unit, productShape)
     const thresholdBase = (raw, label) => {
       const qty = raw === '' ? 0 : Number(raw)
@@ -1484,6 +1497,7 @@ function ProductsTab() {
     return {
       name: form.name.trim(),
       unit_label: form.unit_label,
+      base_unit: form.base_unit,
       units_per_case: upc,
       cases_per_pallet: cpp,
       min_level: thresholdBase(form.min_qty, 'Minimum stok'),
@@ -1502,23 +1516,23 @@ function ProductsTab() {
   const del = useMutation({ mutationFn: (id) => api.delete(`/water/products/${id}`), onSuccess: () => { invalidate(); toastOk('Silindi') }, onError: (e) => toastErr(errMsg(e, 'Silinemedi')) })
   const patch = useMutation({ mutationFn: (p) => api.put(`/water/products/${p.id}`, p), onSuccess: () => { invalidate(); toastOk('Güncellendi') }, onError: (e) => toastErr(errMsg(e, 'Güncellenemedi')) })
 
-  const editProduct = (p) => setForm({ id: p.id, name: p.name, unit_label: p.unit_label, units_per_case: String(p.units_per_case), cases_per_pallet: String(p.cases_per_pallet), min_qty: p.min_level ? String(p.min_level) : '', crit_qty: p.critical_level ? String(p.critical_level) : '', min_unit: 'adet', lead_time_days: String(p.lead_time_days ?? 7), safety_stock_days: String(p.safety_stock_days ?? 3), expiry_tracking: !!p.expiry_tracking, expiry_warning_days: String(p.expiry_warning_days ?? 30), brand_id: p.brand_id ? String(p.brand_id) : '', is_returnable: !!p.is_returnable, is_active: p.is_active !== 0 })
-  const toggleActive = (p) => patch.mutate({ id: p.id, name: p.name, unit_label: p.unit_label, units_per_case: p.units_per_case, cases_per_pallet: p.cases_per_pallet, min_level: p.min_level, critical_level: p.critical_level, lead_time_days: p.lead_time_days, safety_stock_days: p.safety_stock_days, expiry_tracking: p.expiry_tracking, expiry_warning_days: p.expiry_warning_days, brand_id: p.brand_id, is_returnable: p.is_returnable, is_active: p.is_active === 0 })
-  const formPackage = { unit_label: form.unit_label, units_per_case: +form.units_per_case || 1, cases_per_pallet: +form.cases_per_pallet || 1 }
+  const editProduct = (p) => setForm({ id: p.id, name: p.name, unit_label: p.unit_label, base_unit: baseUnitForProduct(p), units_per_case: String(p.units_per_case), cases_per_pallet: String(p.cases_per_pallet), min_qty: p.min_level ? String(p.min_level) : '', crit_qty: p.critical_level ? String(p.critical_level) : '', min_unit: 'adet', lead_time_days: String(p.lead_time_days ?? 7), safety_stock_days: String(p.safety_stock_days ?? 3), expiry_tracking: !!p.expiry_tracking, expiry_warning_days: String(p.expiry_warning_days ?? 30), brand_id: p.brand_id ? String(p.brand_id) : '', is_returnable: !!p.is_returnable, is_active: p.is_active !== 0 })
+  const toggleActive = (p) => patch.mutate({ id: p.id, name: p.name, unit_label: p.unit_label, base_unit: baseUnitForProduct(p), units_per_case: p.units_per_case, cases_per_pallet: p.cases_per_pallet, min_level: p.min_level, critical_level: p.critical_level, lead_time_days: p.lead_time_days, safety_stock_days: p.safety_stock_days, expiry_tracking: p.expiry_tracking, expiry_warning_days: p.expiry_warning_days, brand_id: p.brand_id, is_returnable: p.is_returnable, is_active: p.is_active === 0 })
+  const formPackage = { unit_label: form.unit_label, base_unit: form.base_unit, units_per_case: +form.units_per_case || 1, cases_per_pallet: +form.cases_per_pallet || 1 }
   const packageMode = baseUnitForProduct(formPackage) === 'paket' ? 'packPallet'
     : baseUnitForProduct(formPackage) === 'koli' ? 'casePallet'
       : (+form.cases_per_pallet || 1) > 1 ? 'piecePallet' : 'single'
   const formUnitOptions = unitOptionsForProduct(formPackage)
   const updatePackageNumber = (field, value) => setForm(f => {
     const next = { ...f, [field]: value }
-    const nextPackage = { unit_label: next.unit_label, units_per_case: +next.units_per_case || 1, cases_per_pallet: +next.cases_per_pallet || 1 }
+    const nextPackage = { unit_label: next.unit_label, base_unit: next.base_unit, units_per_case: +next.units_per_case || 1, cases_per_pallet: +next.cases_per_pallet || 1 }
     return { ...next, min_unit: coerceUnitForProduct(next.min_unit, nextPackage) }
   })
   const setPackageMode = (mode) => {
-    if (mode === 'single') setForm(f => ({ ...f, unit_label: 'adet', units_per_case: '1', cases_per_pallet: '1', min_unit: 'adet' }))
-    else if (mode === 'piecePallet') setForm(f => ({ ...f, units_per_case: '1', cases_per_pallet: f.cases_per_pallet === '1' ? '36' : f.cases_per_pallet, min_unit: 'adet' }))
-    else if (mode === 'casePallet') setForm(f => ({ ...f, unit_label: 'koli', units_per_case: '1', cases_per_pallet: f.cases_per_pallet === '1' ? '140' : f.cases_per_pallet, min_unit: 'koli' }))
-    else setForm(f => ({ ...f, unit_label: 'paket', units_per_case: '1', cases_per_pallet: f.cases_per_pallet === '1' ? '80' : f.cases_per_pallet, min_unit: 'paket' }))
+    if (mode === 'single') setForm(f => ({ ...f, base_unit: 'adet', units_per_case: '1', cases_per_pallet: '1', min_unit: 'adet' }))
+    else if (mode === 'piecePallet') setForm(f => ({ ...f, base_unit: 'adet', units_per_case: '1', cases_per_pallet: f.cases_per_pallet === '1' ? '36' : f.cases_per_pallet, min_unit: 'adet' }))
+    else if (mode === 'casePallet') setForm(f => ({ ...f, base_unit: 'koli', units_per_case: '1', cases_per_pallet: f.cases_per_pallet === '1' ? '140' : f.cases_per_pallet, min_unit: 'koli' }))
+    else setForm(f => ({ ...f, base_unit: 'paket', units_per_case: '1', cases_per_pallet: f.cases_per_pallet === '1' ? '80' : f.cases_per_pallet, min_unit: 'paket' }))
   }
   const paletText = (p) => {
     const mult = multiplier(p, 'palet')
@@ -1534,10 +1548,11 @@ function ProductsTab() {
     <div>
       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: '6px' }}>
         <div style={{ flex: 1, minWidth: '150px' }}><label className="form-label">{form.id ? 'Ürün düzenle' : 'Ürün adı'}</label><input className="form-input" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Ör. 0.5 L Şişe Su" /></div>
-        <div style={{ width: '80px' }}><label className="form-label">Baz birim</label><input className="form-input" value={form.unit_label} onChange={e => setForm(f => {
-          const next = { ...f, unit_label: e.target.value }
-          return { ...next, min_unit: coerceUnitForProduct(next.min_unit, { unit_label: next.unit_label, units_per_case: +next.units_per_case || 1, cases_per_pallet: +next.cases_per_pallet || 1 }) }
-        })} /></div>
+        <div style={{ width: '92px' }}><label className="form-label">Baz birim</label><select className="form-select" value={form.base_unit} onChange={e => setForm(f => {
+          const next = { ...f, base_unit: e.target.value }
+          return { ...next, min_unit: coerceUnitForProduct(next.min_unit, { base_unit: next.base_unit, unit_label: next.unit_label, units_per_case: +next.units_per_case || 1, cases_per_pallet: +next.cases_per_pallet || 1 }) }
+        })}><option value="adet">Adet</option><option value="koli">Koli</option><option value="paket">Paket</option><option value="palet">Palet</option></select></div>
+        <div style={{ width: '100px' }}><label className="form-label">Gösterim</label><input className="form-input" value={form.unit_label} onChange={e => setForm(f => ({ ...f, unit_label: e.target.value }))} placeholder="damacana" /></div>
         <div style={{ minWidth: '200px' }}><label className="form-label">Paket tipi</label><div style={{ display: 'flex', gap: '2px', background: 'var(--surface2)', borderRadius: '7px', padding: '2px', border: '1px solid var(--border)' }}>
           {[['single', 'Tekil'], ['piecePallet', 'Adet+Palet'], ['casePallet', 'Koli+Palet'], ['packPallet', 'Paket+Palet']].map(([id, label]) => (
             <button key={id} type="button" onClick={() => setPackageMode(id)} style={{ border: 'none', borderRadius: '5px', padding: '6px 9px', fontSize: '10px', cursor: 'pointer', background: packageMode === id ? 'var(--accent)' : 'transparent', color: packageMode === id ? '#000' : 'var(--text3)' }}>{label}</button>

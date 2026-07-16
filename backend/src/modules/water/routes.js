@@ -34,7 +34,7 @@ const waybillUpload = createImageUpload('water-waybill')
 const fail = (next, e) => next(e)
 
 const AUDIT_FIELDS = {
-  product: ['name', 'unit_label', 'units_per_case', 'cases_per_pallet', 'is_active', 'min_level', 'critical_level', 'lead_time_days', 'safety_stock_days', 'expiry_tracking', 'expiry_warning_days', 'brand_id', 'is_returnable', 'sort_order'],
+  product: ['name', 'unit_label', 'base_unit', 'units_per_case', 'cases_per_pallet', 'is_active', 'min_level', 'critical_level', 'lead_time_days', 'safety_stock_days', 'expiry_tracking', 'expiry_warning_days', 'brand_id', 'is_returnable', 'sort_order'],
   brand: ['name', 'sort_order', 'is_active', 'color'],
   zone: ['name', 'code', 'note', 'is_active', 'expected_monthly'],
   movement: ['type', 'product_id', 'zone_id', 'move_date', 'qty_base', 'input_qty', 'input_unit', 'waybill_no', 'lot_no', 'production_date', 'expiry_date', 'lot_status', 'lot_status_note', 'note'],
@@ -427,8 +427,8 @@ waterRouter.get('/review', ...mgr, (req, res, next) => {
 })
 waterRouter.post('/review/approve', ...managerOnly, (req, res, next) => {
   try {
-    const approved = approveReviewsService(req.body?.ids)
-    logAudit(req.user.id, 'water_review_approve', 'water', null, `${approved} kayıt onaylandı`)
+    const approved = approveReviewsService(req.body?.ids, req.body?.note, req.user.id)
+    logAudit(req.user.id, 'water_review_approve', 'water', null, JSON.stringify({ approved, ids: req.body?.ids || null, note: req.body?.note }))
     res.json({ approved })
   } catch (e) { fail(next, e) }
 })

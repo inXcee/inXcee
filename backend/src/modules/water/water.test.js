@@ -46,6 +46,7 @@ describe('Su takip — çevrim mantığı', () => {
     expect(availableUnits({ units_per_case: 12, cases_per_pallet: 70 })).toEqual(['adet', 'koli', 'palet'])
     expect(availableUnits({ unit_label: 'koli', units_per_case: 1, cases_per_pallet: 180 })).toEqual(['adet', 'koli', 'palet'])
     expect(availableUnits({ unit_label: 'paket', units_per_case: 1, cases_per_pallet: 80 })).toEqual(['adet', 'paket', 'palet'])
+    expect(availableUnits({ unit_label: 'damacana', base_unit: 'koli', units_per_case: 1, cases_per_pallet: 36 })).toEqual(['adet', 'koli', 'palet'])
   })
 
   it('fotoğraftaki palet kurallarını doğal takip birimine çevirir', () => {
@@ -90,6 +91,37 @@ describe('Su takip — API', () => {
     zoneId = r.body.id
     const list = await request(app).get('/api/water/zones').set('Authorization', `Bearer ${managerToken}`)
     expect(list.body.some(z => z.id === zoneId)).toBe(true)
+  })
+
+  it('ürün baz birimi kontrollüdür; aynı marka-ürün ve bölge ana verisi tekildir', async () => {
+    const brand = await request(app).post('/api/water/brands').set('Authorization', `Bearer ${managerToken}`)
+      .send({ name: 'YÖNETİŞİM MARKA' })
+    expect(brand.status).toBe(201)
+
+    const product = await request(app).post('/api/water/products').set('Authorization', `Bearer ${managerToken}`)
+      .send({ name: 'Yönetişim Ürünü', unit_label: 'ölçü', base_unit: 'adet', brand_id: brand.body.id })
+    expect(product.status).toBe(201)
+    expect(getDB().prepare('SELECT base_unit FROM water_products WHERE id=?').get(product.body.id).base_unit).toBe('adet')
+
+    const invalidUnit = await request(app).post('/api/water/products').set('Authorization', `Bearer ${managerToken}`)
+      .send({ name: 'Yönetişim Hatalı', unit_label: 'kasa', base_unit: 'kasa' })
+    expect(invalidUnit.status).toBe(400)
+
+    const duplicateProduct = await request(app).post('/api/water/products').set('Authorization', `Bearer ${managerToken}`)
+      .send({ name: '  YÖNETİŞİM ÜRÜNÜ ', unit_label: 'ölçü', base_unit: 'adet', brand_id: brand.body.id })
+    expect(duplicateProduct.status).toBe(409)
+
+    const zone = await request(app).post('/api/water/zones').set('Authorization', `Bearer ${managerToken}`)
+      .send({ name: 'Yönetişim Sahası', code: 'YG-01' })
+    expect(zone.status).toBe(201)
+    expect((await request(app).post('/api/water/zones').set('Authorization', `Bearer ${managerToken}`)
+      .send({ name: ' YÖNETİŞİM SAHASI ', code: 'YG-02' })).status).toBe(409)
+    expect((await request(app).post('/api/water/zones').set('Authorization', `Bearer ${managerToken}`)
+      .send({ name: 'Başka Saha', code: 'yg-01' })).status).toBe(409)
+
+    expect(() => getDB().prepare(`
+      INSERT INTO water_zones(name, code) VALUES('yönetİşİm sahası', 'YG-99')
+    `).run()).toThrow(/UNIQUE/)
   })
 
   it('giriş (irsaliye) — 2 palet 0.5L = 280 koli base', async () => {
@@ -984,17 +1016,31 @@ describe('Su takip — Onay akışı (W10)', () => {
     expect(r.body.rows.some(x => x.product_name === 'ONAY Stoklu 1L')).toBe(false)
   })
 
-  it('vardiya onaylayamaz (403); müdür toplu onaylar → kuyruk temizlenir', async () => {
-    const forbidden = await request(app).post('/api/water/review/approve').set('Authorization', `Bearer ${supervisorToken}`).send({})
+  it('vardiya onaylayamaz (403); müdür gerekçeyle toplu onaylar ve karar geçmişi oluşur', async () => {
+    const forbidden = await request(app).post('/api/water/review/approve').set('Authorization', `Bearer ${supervisorToken}`).send({ note: 'Yetkisiz onay' })
     expect(forbidden.status).toBe(403)
     // vardiya kuyruğu görebilir (mgr)
     expect((await request(app).get('/api/water/review').set('Authorization', `Bearer ${supervisorToken}`)).status).toBe(200)
 
     expect((await auth(request(app).get('/api/water/review'))).body.count).toBeGreaterThanOrEqual(1)
-    const ok = await auth(request(app).post('/api/water/review/approve')).send({}) // ids yok → hepsini onayla
+    const missingReason = await auth(request(app).post('/api/water/review/approve')).send({})
+    expect(missingReason.status).toBe(400)
+
+    const note = 'Acil saha ihtiyacı; irsaliye daha sonra işlenecek'
+    const ok = await auth(request(app).post('/api/water/review/approve')).send({ note }) // ids yok → hepsini onayla
     expect(ok.status).toBe(200)
     expect(ok.body.approved).toBeGreaterThanOrEqual(1)
     expect((await auth(request(app).get('/api/water/review'))).body.count).toBe(0)
+
+    const manager = getDB().prepare("SELECT id FROM users WHERE username='mudur'").get()
+    const decision = getDB().prepare(`
+      SELECT * FROM water_review_decisions WHERE note=? ORDER BY id DESC LIMIT 1
+    `).get(note)
+    expect(decision).toMatchObject({
+      decision: 'approved_exception',
+      reviewed_by: manager.id,
+    })
+    expect(decision.unallocated_base).toBeGreaterThan(0)
   })
 })
 
