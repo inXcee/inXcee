@@ -1,17 +1,18 @@
-import { useState, useCallback } from 'react'
+import { lazy, startTransition, Suspense, useCallback, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { useUrlParamState } from '../../shared/hooks/useUrlParamState.js'
 import HelpHint from '../../shared/components/HelpHint.jsx'
-import LeaveTab from './tabs/LeaveTab.jsx'
-import OvertimeTab from './tabs/OvertimeTab.jsx'
-import DepartmentsTab from './tabs/DepartmentsTab.jsx'
-import SwapTab from './tabs/SwapTab.jsx'
-import SettingsTab from './tabs/SettingsTab.jsx'
-import StaffTab from './tabs/StaffTab.jsx'
-import ScheduleTab from './tabs/ScheduleTab.jsx'
-import PuantajTab from './tabs/PuantajTab.jsx'
 import StaffDetailPanel from './StaffDetailPanel.jsx'
+
+const ScheduleTab = lazy(() => import('./tabs/ScheduleTab.jsx'))
+const StaffTab = lazy(() => import('./tabs/StaffTab.jsx'))
+const LeaveTab = lazy(() => import('./tabs/LeaveTab.jsx'))
+const OvertimeTab = lazy(() => import('./tabs/OvertimeTab.jsx'))
+const PuantajTab = lazy(() => import('./tabs/PuantajTab.jsx'))
+const SwapTab = lazy(() => import('./tabs/SwapTab.jsx'))
+const DepartmentsTab = lazy(() => import('./tabs/DepartmentsTab.jsx'))
+const SettingsTab = lazy(() => import('./tabs/SettingsTab.jsx'))
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  MAIN — ShiftsPage
@@ -26,6 +27,30 @@ const NAV_ITEMS = [
   { id: 'departments', icon: '🏢', label: 'Bölümler' },
   { id: 'settings',    icon: '⚙️', label: 'Ayarlar' },
 ]
+const REFERENCE_STALE_TIME = 5 * 60 * 1000
+
+function ShiftTabFallback({ label }) {
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      style={{
+        minHeight: '240px',
+        display: 'grid',
+        placeItems: 'center',
+        border: '1px solid var(--border)',
+        borderRadius: '12px',
+        background: 'var(--surface)',
+        color: 'var(--text3)',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontFamily: 'var(--mono)', fontSize: '11px' }}>
+        <span className="page-spinner" />
+        {label || 'Vardiya ekranı'} yükleniyor…
+      </div>
+    </div>
+  )
+}
 
 export default function ShiftsPage() {
   const [activeTab, setActiveTab] = useUrlParamState('tab', 'schedule')
@@ -35,11 +60,13 @@ export default function ShiftsPage() {
   const { data: departments = [] } = useQuery({
     queryKey: ['departments'],
     queryFn: () => api.get('/shifts/departments').then(r => r.data),
+    staleTime: REFERENCE_STALE_TIME,
   })
 
   const { data: shiftDefs = [] } = useQuery({
     queryKey: ['shift-defs'],
     queryFn: () => api.get('/shifts/definitions').then(r => r.data),
+    staleTime: REFERENCE_STALE_TIME,
   })
 
   const { data: pendingLeaves = [] } = useQuery({
@@ -52,6 +79,9 @@ export default function ShiftsPage() {
   const handlePersonClick = useCallback((id) => {
     setSelectedStaff(id)
   }, [])
+  const handleTabChange = useCallback((id) => {
+    startTransition(() => setActiveTab(id))
+  }, [setActiveTab])
 
   const activeNav = NAV_ITEMS.find(n => n.id === activeTab)
 
@@ -103,7 +133,7 @@ export default function ShiftsPage() {
             return (
               <button
                 key={item.id}
-                onClick={() => setActiveTab(item.id)}
+                onClick={() => handleTabChange(item.id)}
                 style={{
                   width: '100%', padding: '12px 0',
                   paddingLeft: navExpanded ? '16px' : 0,
@@ -190,14 +220,16 @@ export default function ShiftsPage() {
 
         {/* Content area */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '24px 28px' }}>
-          {activeTab === 'schedule'    && <ScheduleTab departments={departments} shiftDefs={shiftDefs} onPersonClick={handlePersonClick} />}
-          {activeTab === 'staff'       && <StaffTab departments={departments} onPersonClick={handlePersonClick} />}
-          {activeTab === 'leave'       && <LeaveTab departments={departments} onPersonClick={handlePersonClick} />}
-          {activeTab === 'overtime'    && <OvertimeTab departments={departments} onPersonClick={handlePersonClick} />}
-          {activeTab === 'puantaj'     && <PuantajTab departments={departments} shiftDefs={shiftDefs} onPersonClick={handlePersonClick} />}
-          {activeTab === 'departments' && <DepartmentsTab />}
-          {activeTab === 'swap'        && <SwapTab />}
-          {activeTab === 'settings'    && <SettingsTab departments={departments} shiftDefs={shiftDefs} />}
+          <Suspense fallback={<ShiftTabFallback label={activeNav?.label} />}>
+            {activeTab === 'schedule'    && <ScheduleTab departments={departments} shiftDefs={shiftDefs} onPersonClick={handlePersonClick} />}
+            {activeTab === 'staff'       && <StaffTab departments={departments} onPersonClick={handlePersonClick} />}
+            {activeTab === 'leave'       && <LeaveTab departments={departments} onPersonClick={handlePersonClick} />}
+            {activeTab === 'overtime'    && <OvertimeTab departments={departments} onPersonClick={handlePersonClick} />}
+            {activeTab === 'puantaj'     && <PuantajTab departments={departments} shiftDefs={shiftDefs} onPersonClick={handlePersonClick} />}
+            {activeTab === 'departments' && <DepartmentsTab />}
+            {activeTab === 'swap'        && <SwapTab />}
+            {activeTab === 'settings'    && <SettingsTab departments={departments} shiftDefs={shiftDefs} />}
+          </Suspense>
         </div>
       </div>
 
