@@ -238,7 +238,7 @@ export default function ShiftsPage() {
 
       {/* Staff detail side panel */}
       {selectedStaff && (
-        <StaffDetailPanel staffId={selectedStaff} onClose={() => setSelectedStaff(null)} />
+        <StaffDetailPanel staffId={selectedStaff} departments={departments} onClose={() => setSelectedStaff(null)} />
       )}
     </div>
   )

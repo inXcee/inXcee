@@ -39,6 +39,11 @@ const DOSSIER = {
   recent_activity: [{ id: 'shift-1', kind: 'shift', date: '2026-07-16', title: 'Gündüz · worked', severity: 'info' }],
   data_quality: { missing_fields: [] },
   room: { block: 'S2', room_no: '204', bed_no: '2' },
+  annual_leave: {
+    has_hire_date: true, has_started: true, entitled_days: 14, annual_used: 4, remaining: 10,
+    service_years: 3, service_months: 2, hire_date: '2023-05-01',
+    entitlement_start_date: '2024-05-01', next_anniversary: '2027-05-01', age_rule_applied: false,
+  },
 }
 
 describe('StaffDossierPage smoke', () => {
@@ -99,6 +104,8 @@ describe('StaffDossierPage smoke', () => {
 
     fireEvent.click(screen.getByRole('tab', { name: 'Çalışma ve Devam' }))
     expect(await screen.findByText('VARDİYA GEÇMİŞİ')).toBeInTheDocument()
+    expect(screen.getByText('YILLIK İZİN HAKKI')).toBeInTheDocument()
+    expect(screen.getByText('HAK EDİLEN')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('tab', { name: 'Belgeler' }))
     expect(await screen.findByText('İSG Eğitim Belgesi')).toBeInTheDocument()

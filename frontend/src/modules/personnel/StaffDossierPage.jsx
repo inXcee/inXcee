@@ -13,6 +13,7 @@ import {
   DossierSection,
   DossierUpcoming,
   DossierWorkMetrics,
+  DossierAnnualLeave,
   formatDossierDate,
   useStaffDossier,
 } from './dossier/StaffDossierShared.jsx'
@@ -194,6 +195,9 @@ function WorkTab({ dossier, detail, isLoading }) {
               </div>
             ))}
             {!attendance.length && <div style={{ color: 'var(--text3)', fontSize: 11 }}>Devam kaydı bulunmuyor.</div>}
+          </DossierSection>
+          <DossierSection title="YILLIK İZİN HAKKI" subtitle="İş Kanunu m.53 · kıdem bazlı">
+            <DossierAnnualLeave annual={dossier.annual_leave} />
           </DossierSection>
           <DossierSection title="İZİN VE MESAİ">
             <DossierField label="İzin kaydı" value={`${detail?.leaveHistory?.length || 0} kayıt`} />

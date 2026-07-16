@@ -46,6 +46,7 @@ import {
   resetDailyApprovalsForDates,
 } from './queries.js'
 import { importSchedule, listImportBatches, undoImportBatch } from './import.js'
+import { annualLeaveSummary } from './leave-entitlement.js'
 import { importScheduleSchema } from './schemas.js'
 import { validate } from '../../shared/middleware/validate.js'
 import { logAudit } from '../../shared/audit.js'
@@ -613,6 +614,15 @@ shiftsRouter.get('/personnel', ...managerOrSupervisor, (req, res) => {
 // ── Leave requests ──
 shiftsRouter.get('/leave/balance/:staffId', ...managerOrSupervisor, (req, res) => {
   res.json(leaveBalanceService(req.params.staffId))
+})
+
+// Yıllık izin hak edişi (İş Kanunu m.53) — kıdem + yaş kuralı + kalan.
+shiftsRouter.get('/leave/entitlement/:staffId', ...managerOrSupervisor, (req, res) => {
+  try {
+    const summary = annualLeaveSummary(+req.params.staffId, { asOf: req.query.asOf })
+    if (!summary) return res.status(404).json({ error: 'Personel bulunamadı' })
+    res.json(summary)
+  } catch (e) { logger.error('[shifts/entitlement]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 shiftsRouter.get('/leave', ...managerOrSupervisor, (req, res) => {

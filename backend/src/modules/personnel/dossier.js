@@ -1,4 +1,5 @@
 import { getDB } from '../../shared/db/index.js'
+import { computeAnnualEntitlement } from '../shifts/leave-entitlement.js'
 
 const TIMELINE_KINDS = new Set([
   'shift', 'leave', 'overtime', 'attendance', 'document', 'performance',
@@ -278,6 +279,21 @@ export function getDossier(staffId, { includeSensitive = false } = {}) {
   `).get(staffId, last30, today)
 
   const documents = documentSummary(db, person)
+
+  // Yıllık izin hak edişi (İş Kanunu m.53) + bu yılın bakiyesi.
+  const entitlement = computeAnnualEntitlement({ hireDate: person.hire_date, birthDate: person.birth_date })
+  const balanceYear = new Date().getFullYear()
+  const annualBalance = db.prepare(
+    'SELECT annual_total, annual_used FROM leave_balance WHERE staff_id=? AND year=?'
+  ).get(staffId, balanceYear)
+  const annualUsed = annualBalance?.annual_used || 0
+  const annualLeave = {
+    ...entitlement,
+    year: balanceYear,
+    annual_used: annualUsed,
+    remaining: entitlement.has_started ? Math.max(0, entitlement.entitled_days - annualUsed) : 0,
+  }
+
   const counters = db.prepare(`
     SELECT
       (SELECT COUNT(*) FROM staff_followups
@@ -379,6 +395,7 @@ export function getDossier(staffId, { includeSensitive = false } = {}) {
   return {
     person,
     identity_link: identityLink,
+    annual_leave: annualLeave,
     today: {
       shift: todayShift,
       attendance: db.prepare(`

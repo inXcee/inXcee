@@ -152,6 +152,52 @@ export function DossierWorkMetrics({ dossier }) {
   )
 }
 
+export function DossierAnnualLeave({ annual, compact = false }) {
+  if (!annual) return null
+  const serviceLabel = annual.has_hire_date
+    ? `${annual.service_years} yıl${annual.service_months ? ` ${annual.service_months} ay` : ''}`
+    : '—'
+  if (!annual.has_hire_date) {
+    return (
+      <div style={{ padding: '9px 11px', borderRadius: 8, color: 'var(--accent)', background: 'rgba(240,165,0,.08)', border: '1px solid rgba(240,165,0,.25)', fontSize: 11 }}>
+        İşe giriş tarihi eksik — yıllık izin hakkı hesaplanamıyor. "Düzenle" ile ekleyin.
+      </div>
+    )
+  }
+  if (!annual.has_started) {
+    return (
+      <div style={{ display: 'grid', gap: 8 }}>
+        <div style={{ padding: '9px 11px', borderRadius: 8, color: 'var(--blue)', background: 'rgba(59,140,240,.08)', border: '1px solid rgba(59,140,240,.25)', fontSize: 11 }}>
+          Yıllık izin hakkı henüz doğmadı. <b>{annual.entitlement_start_date}</b> tarihinde başlayacak ({annual.days_to_start} gün kaldı).
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+          <DossierField label="İşe giriş" value={formatDossierDate(annual.hire_date)} />
+          <DossierField label="Kıdem" value={serviceLabel} />
+        </div>
+      </div>
+    )
+  }
+  return (
+    <div style={{ display: 'grid', gap: 10 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(90px, 1fr))', gap: 8 }}>
+        <DossierMetric label="HAK EDİLEN" value={`${annual.entitled_days}g`} color="var(--blue)" />
+        <DossierMetric label="KULLANILAN" value={`${annual.annual_used}g`} color={annual.annual_used ? 'var(--accent)' : 'var(--text3)'} />
+        <DossierMetric label="KALAN" value={`${annual.remaining}g`} color={annual.remaining > 0 ? 'var(--green)' : 'var(--red)'} />
+      </div>
+      {!compact && (
+        <div>
+          <DossierField label="İşe giriş" value={formatDossierDate(annual.hire_date)} />
+          <DossierField label="Kıdem" value={serviceLabel} />
+          <DossierField label="Hak başlangıcı" value={formatDossierDate(annual.entitlement_start_date)} />
+          <DossierField label="Sonraki yenilenme" value={formatDossierDate(annual.next_anniversary)} />
+          {annual.age_rule_applied && <DossierField label="Yaş kuralı" value="Uygulandı (min 20 gün)" />}
+          {annual.mismatch && <DossierField label="Uyarı" value="Takip edilen bakiye yasal hak ile uyuşmuyor" />}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function DossierUpcoming({ items = [], compact = false }) {
   if (!items.length) return <div style={{ color: 'var(--text3)', fontSize: 11 }}>Yaklaşan tarih bulunmuyor.</div>
   return (

@@ -310,7 +310,7 @@ export function createStaff(data) {
 export function updateStaff(id, data) {
   const db = getDB()
   const fields = ['tc_no','full_name','phone','email','position','department_id','role_id','hire_date','birth_date',
-    'address','emergency_contact','emergency_phone','blood_type','gender','salary','iban','notes','is_active','role_label','pickup_point_id']
+    'contract_end','address','emergency_contact','emergency_phone','blood_type','gender','salary','iban','notes','is_active','role_label','pickup_point_id']
   const sets = []
   const params = []
   fields.forEach(f => {
