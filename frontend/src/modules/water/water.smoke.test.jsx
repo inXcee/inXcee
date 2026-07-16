@@ -112,12 +112,14 @@ vi.mock('../../shared/api/client.js', () => ({
       } })
       if (url === '/water/alerts') return Promise.resolve({ data: {
         date: '2026-07-09', month: '2026-07',
-        summary: { pending: 1, negative: 1, over: 0, low: 0, idle_zones: 1, total: 3 },
+        summary: { pending: 1, negative: 1, over: 0, low: 0, idle_zones: 1, lot_critical: 0, total: 3 },
         pending_waybill: [{ product_id: 1, product_name: 'Damacana', count: 2, unallocated_base: 5, unallocated_human: '5 damacana', oldest_date: '2026-07-05', waiting_days: 4 }],
         negative_stock: [{ product_id: 2, product_name: '0.5 L', balance: -10, balance_human: '-10 koli', deficit_human: '10 koli' }],
         over_distributed: [],
         low_stock: [],
         idle_zones: [{ zone_id: 2, zone_name: 'Boş Bölge' }],
+        lot_alerts: [],
+        lot_summary: { all: 0, critical: 0, expired: 0, expiring: 0, quarantined: 0, missing: 0, healthy: 0 },
       } })
       if (url === '/water/truck-arrivals') return Promise.resolve({ data: [
         {
@@ -454,7 +456,9 @@ describe('WaterPage tek-ekran pano smoke', () => {
     renderWithProviders(<WaterPage />)
     const title = await screen.findByText(/İRSALİYE BEKLEYEN DAĞITIMLAR/)
     const panel = title.closest('.panel')
+    expect(api.get.mock.calls.some(([url]) => url === '/water/pending')).toBe(false)
     fireEvent.click(within(panel).getByText('▼ Aç'))
+    await waitFor(() => expect(api.get.mock.calls.some(([url]) => url === '/water/pending')).toBe(true))
     expect(await within(panel).findByText('OTC Kamp Alanı')).toBeInTheDocument()
     expect(within(panel).getByText('6g')).toBeInTheDocument() // 6 gündür bekliyor
     expect(within(panel).getByText('IRS-1: 5')).toBeInTheDocument() // kısmi eşleşen irsaliye

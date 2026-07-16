@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import api from '../../../shared/api/client.js'
 import { useAuthStore } from '../../../shared/store/authStore.js'
 import { todayStr } from '../logic/waterUi.js'
-import WaterDailyDigestPanel from './WaterDailyDigestPanel.jsx'
+import WaterDailyDigestPanel, { dailyDigestRefetchInterval } from './WaterDailyDigestPanel.jsx'
 
 vi.mock('../../../shared/api/client.js', () => ({
   default: { get: vi.fn(), post: vi.fn() },
@@ -67,5 +67,17 @@ describe('WaterDailyDigestPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Yeniden dene' }))
     await waitFor(() => expect(api.post).toHaveBeenCalledWith('/water/daily-digest/run', { force: true }))
     await waitFor(() => expect(api.get).toHaveBeenCalledTimes(2))
+  })
+
+  it('yenileme sıklığını panel ve aktif teslim durumuna göre azaltır', () => {
+    const today = todayStr()
+    expect(dailyDigestRefetchInterval({ data: { rows: [] }, open: false, today })).toBe(300000)
+    expect(dailyDigestRefetchInterval({ data: { rows: [] }, open: true, today })).toBe(60000)
+    expect(dailyDigestRefetchInterval({
+      data: { rows: [{ date: today, status: 'queued' }] },
+      open: false,
+      today,
+    })).toBe(5000)
+    expect(dailyDigestRefetchInterval({ data: { rows: [] }, open: true, today, testMode: true })).toBe(false)
   })
 })

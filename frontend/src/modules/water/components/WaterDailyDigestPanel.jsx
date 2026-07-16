@@ -62,6 +62,14 @@ function digestButtonLabel(todayRow) {
   return 'İşleniyor'
 }
 
+export function dailyDigestRefetchInterval({ data, open, today, testMode = false }) {
+  if (testMode) return false
+  const rows = data?.rows || []
+  const todayRow = rows.find(row => row.date === today)
+  if (todayRow && ACTIVE_STATUSES.has(todayRow.status)) return 5000
+  return open ? 60000 : 300000
+}
+
 export default function WaterDailyDigestPanel() {
   const [open, setOpen] = useState(false)
   const queryClient = useQueryClient()
@@ -70,7 +78,12 @@ export default function WaterDailyDigestPanel() {
   const query = useQuery({
     queryKey: ['water-daily-digest'],
     queryFn: () => api.get('/water/daily-digest', { params: { limit: 14 } }).then(response => response.data),
-    refetchInterval: import.meta.env.MODE === 'test' ? false : 15000,
+    refetchInterval: currentQuery => dailyDigestRefetchInterval({
+      data: currentQuery.state.data,
+      open,
+      today,
+      testMode: import.meta.env.MODE === 'test',
+    }),
   })
   const rows = query.data?.rows || []
   const todayRow = useMemo(() => rows.find(row => row.date === today) || null, [rows, today])

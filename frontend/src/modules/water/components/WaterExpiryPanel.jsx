@@ -55,7 +55,7 @@ function metric(label, value, color) {
   )
 }
 
-export default function WaterExpiryPanel() {
+export default function WaterExpiryPanel({ alertSnapshot = null }) {
   const [open, setOpen] = useState(false)
   const [filter, setFilter] = useState('critical')
   const [editing, setEditing] = useState(null)
@@ -65,10 +65,16 @@ export default function WaterExpiryPanel() {
   const query = useQuery({
     queryKey: ['water-lots', today],
     queryFn: () => api.get('/water/lots', { params: { today } }).then(response => response.data),
-    refetchInterval: import.meta.env.MODE === 'test' ? false : 60000,
+    enabled: open,
+    refetchInterval: import.meta.env.MODE === 'test' ? false : (open ? 60000 : false),
   })
-  const summary = query.data?.summary || {}
-  const allRows = query.data?.rows || []
+  const alertData = alertSnapshot
+    ? { summary: alertSnapshot.lot_summary || {}, rows: alertSnapshot.lot_alerts || [] }
+    : null
+  const data = open ? (query.data || alertData) : (alertData || query.data)
+  const summary = data?.summary || {}
+  const allRows = data?.rows || []
+  const detailLoading = open && query.isFetching && !query.data
   const rows = useMemo(() => {
     if (filter === 'all') return allRows
     if (filter === 'critical') return allRows.filter(row => row.health !== 'healthy')
@@ -119,8 +125,8 @@ export default function WaterExpiryPanel() {
     update.mutate({ ...form, lot_no: form.lot_no.trim(), lot_status_note: form.lot_status_note.trim() })
   }
 
-  const subtitle = query.isLoading
-    ? 'Lot bilgileri yükleniyor'
+  const subtitle = !data
+    ? 'Lot özeti yükleniyor'
     : summary.critical
       ? `${summary.critical} kritik lot · ${summary.expired || 0} geçmiş · ${summary.expiring || 0} yaklaşan`
       : summary.all
@@ -191,11 +197,11 @@ export default function WaterExpiryPanel() {
                     </td>
                   </tr>
                 ))}
-                {!query.isLoading && rows.length === 0 && (
+                {!detailLoading && rows.length === 0 && (
                   <tr><td colSpan="9" style={{ textAlign: 'center', color: 'var(--text3)', padding: '20px' }}>Bu filtrede açık lot bulunmuyor.</td></tr>
                 )}
-                {query.isLoading && (
-                  <tr><td colSpan="9" style={{ textAlign: 'center', color: 'var(--text3)', padding: '20px' }}>Lotlar yükleniyor...</td></tr>
+                {detailLoading && (
+                  <tr><td colSpan="9" style={{ textAlign: 'center', color: 'var(--text3)', padding: '20px' }}>Lot ayrıntıları güncelleniyor...</td></tr>
                 )}
               </tbody>
             </table>

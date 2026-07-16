@@ -42,6 +42,7 @@ const monthBounds = (y, m) => {
 // ─────────────────────────── ANA SAYFA (tek ekran pano) ───────────────────────────
 export default function WaterPage() {
   const now = new Date()
+  const today = todayStr()
   const isManager = useAuthStore(s => s.user?.role === 'campus_manager')
   const [ym, setYm] = useState({ y: now.getFullYear(), m: now.getMonth() + 1 })
   const [modal, setModal] = useState(null) // 'settings' | 'text' | 'adjust' | null
@@ -52,6 +53,12 @@ export default function WaterPage() {
   const summaryQuery = useQuery({
     queryKey: ['water-summary', from, to],
     queryFn: () => api.get('/water/summary', { params: { from, to } }).then(r => r.data),
+  })
+  const alertsQuery = useQuery({
+    queryKey: ['water-alerts', today],
+    queryFn: () => api.get('/water/alerts', { params: { today } }).then(r => r.data),
+    refetchInterval: 60000,
+    staleTime: 30000,
   })
   const summary = summaryQuery.data
 
@@ -68,11 +75,11 @@ export default function WaterPage() {
 
       <WaterQueryErrorCenter />
 
-      <AlertBand />
+      <AlertBand data={alertsQuery.data} />
 
       <WaterDailyDigestPanel />
 
-      <WaterExpiryPanel />
+      <WaterExpiryPanel alertSnapshot={alertsQuery.data} />
 
       <ReviewPanel />
 
@@ -129,7 +136,7 @@ export default function WaterPage() {
 
       <ForecastPanel />
 
-      <PendingWaybillPanel />
+      <PendingWaybillPanel alertSnapshot={alertsQuery.data} />
 
       <TruckArrivalPanel from={from} to={to} label={label} focusRequest={truckFocus} />
 
@@ -152,14 +159,8 @@ export default function WaterPage() {
 }
 
 // ─────────────────────────── Operasyon Uyarı Merkezi ("Bugün Yapılacaklar") ───────────────────────────
-function AlertBand() {
+function AlertBand({ data }) {
   const [open, setOpen] = useState(null) // hangi kategori açık
-  const today = todayStr()
-  const { data } = useQuery({
-    queryKey: ['water-alerts', today],
-    queryFn: () => api.get('/water/alerts', { params: { today } }).then(r => r.data),
-    refetchInterval: 60000,
-  })
 
   const s = data?.summary
   if (!data) return null
@@ -383,16 +384,25 @@ function ForecastPanel() {
 }
 
 // ─────────────────────────── İrsaliye Bekleyenler (eşleşmemiş dağıtımlar) ───────────────────────────
-function PendingWaybillPanel() {
+function PendingWaybillPanel({ alertSnapshot }) {
   const [open, setOpen] = useState(false)
   const today = todayStr()
-  const { data } = useQuery({
+  const query = useQuery({
     queryKey: ['water-pending', today],
     queryFn: () => api.get('/water/pending', { params: { today } }).then(r => r.data),
-    refetchInterval: 60000,
+    enabled: open,
+    refetchInterval: import.meta.env.MODE === 'test' ? false : (open ? 60000 : false),
   })
-  const rows = data?.rows || []
-  const t = data?.totals || { count: 0, overdue: 0 }
+  const alertRows = alertSnapshot?.pending_waybill || []
+  const alertTotals = {
+    count: alertRows.reduce((sum, row) => sum + Number(row.count || 0), 0),
+    overdue: null,
+  }
+  const rows = query.data?.rows || []
+  const t = query.data?.totals || alertTotals
+  const hasOverdue = query.data
+    ? t.overdue > 0
+    : alertRows.some(row => Number(row.waiting_days || 0) >= 3)
   if (t.count === 0) return null // hiç bekleyen yoksa gizle (AlertBand zaten "güncel" der)
 
   return (
@@ -401,8 +411,10 @@ function PendingWaybillPanel() {
       open={open}
       onToggle={() => setOpen(value => !value)}
       title={`🧾 İRSALİYE BEKLEYEN DAĞITIMLAR (${t.count})`}
-      subtitle={<>{t.overdue > 0 ? <span style={{ color: 'var(--red)', fontWeight: 600 }}>{t.overdue} tanesi 3+ gündür bekliyor</span> : 'hepsi taze'} · yeni irsaliye girince otomatik kapanır</>}
-      style={{ marginTop: '16px', borderTop: `3px solid ${t.overdue ? 'var(--red)' : 'var(--accent)'}` }}
+      subtitle={<>{hasOverdue
+        ? <span style={{ color: 'var(--red)', fontWeight: 600 }}>{query.data ? `${t.overdue} tanesi` : 'gecikmiş kayıt var'} · 3+ gündür bekliyor</span>
+        : 'hepsi taze'} · yeni irsaliye girince otomatik kapanır</>}
+      style={{ marginTop: '16px', borderTop: `3px solid ${hasOverdue ? 'var(--red)' : 'var(--accent)'}` }}
     >
       <div style={{ overflowX: 'auto' }}>
           <table className="data-table" style={{ fontSize: '11px', minWidth: '820px' }}>
@@ -414,6 +426,9 @@ function PendingWaybillPanel() {
               </tr>
             </thead>
             <tbody>
+              {query.isLoading && (
+                <tr><td colSpan="8" style={{ textAlign: 'center', color: 'var(--text3)', padding: '18px' }}>Bekleyen dağıtımlar yükleniyor...</td></tr>
+              )}
               {rows.map(r => (
                 <tr key={r.movement_id}>
                   <td style={{ fontFamily: 'var(--mono)' }}>{r.move_date}</td>
