@@ -61,7 +61,7 @@ fi
 echo ""
 echo "[5/5] ESLint undefined variable taraması..."
 if command -v npx &>/dev/null && [ -f "node_modules/.bin/eslint" ]; then
-  LINT_ERRORS=$(npx eslint backend/src/ frontend/src/ --no-eslintrc --rule '{"no-undef": "error"}' --parser-options=ecmaVersion:2022,sourceType:module,ecmaFeatures:{jsx:true} 2>&1 | grep "error" | head -10 || true)
+  LINT_ERRORS=$(npx eslint backend/src/ frontend/src/ --no-eslintrc --no-inline-config --env node,browser,es2022 --rule '{"no-undef": "error"}' --parser-options=ecmaVersion:2022,sourceType:module,ecmaFeatures:{jsx:true} 2>&1 | grep "error" | head -10 || true)
   if [ -z "$LINT_ERRORS" ]; then
     echo "✓ Undefined variable yok"
   else
