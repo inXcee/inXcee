@@ -242,9 +242,15 @@ waterRouter.get('/lots', ...mgr, (req, res, next) => {
 waterRouter.put('/lots/:id', ...mgr, (req, res, next) => {
   try {
     const change = updateIntakeLotService(+req.params.id, req.body, req.user.id)
-    logAudit(req.user.id, 'water_lot_update', 'water', +req.params.id, auditChange(change.before, change.after, [
+    const audit = JSON.parse(auditChange(change.before, change.after, [
       'lot_no', 'production_date', 'expiry_date', 'lot_status', 'lot_status_note',
     ]))
+    logAudit(req.user.id, 'water_lot_update', 'water', +req.params.id, JSON.stringify({
+      ...audit,
+      affected_distribution_ids: change.affected_distribution_ids,
+      released_base: change.released_base,
+      reallocated_rows: change.matched,
+    }))
     res.json({ ok: true, matched: change.matched, lot: change.after })
   } catch (e) { fail(next, e) }
 })

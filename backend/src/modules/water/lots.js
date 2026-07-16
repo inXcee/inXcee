@@ -70,30 +70,45 @@ export function intakeLotsService({ today, status = 'all', product_id } = {}) {
 export function updateIntakeLotService(id, data, userId) {
   const existing = q.getIntakeLot(id)
   if (!existing) throw errorWithStatus('Giriş lotu bulunamadı', 404)
-  if (existing.remaining_base <= 0) throw errorWithStatus('Tamamı dağıtılmış lot düzenlenemez', 409)
 
   const has = key => Object.prototype.hasOwnProperty.call(data || {}, key)
+  const lotStatus = data?.lot_status || existing.lot_status || 'active'
+  if (!LOT_STATUSES.has(lotStatus)) throw errorWithStatus('Geçersiz lot durumu', 400)
+  const statusChanged = lotStatus !== existing.lot_status
+  if (existing.remaining_base <= 0 && !(statusChanged && lotStatus === 'quarantined')) {
+    throw errorWithStatus('Tamamı dağıtılmış lot düzenlenemez', 409)
+  }
   const metadata = normalizeIntakeLot({
     lot_no: has('lot_no') ? data.lot_no : existing.lot_no,
     production_date: has('production_date') ? data.production_date : existing.production_date,
     expiry_date: has('expiry_date') ? data.expiry_date : existing.expiry_date,
   }, existing, existing.move_date)
-  const lotStatus = data?.lot_status || existing.lot_status || 'active'
-  if (!LOT_STATUSES.has(lotStatus)) throw errorWithStatus('Geçersiz lot durumu', 400)
   const rawStatusNote = has('lot_status_note') ? data.lot_status_note : existing.lot_status_note
   const statusNote = rawStatusNote == null ? '' : String(rawStatusNote).trim()
   if (statusNote.length > 500) throw errorWithStatus('Lot durum açıklaması en fazla 500 karakter olabilir', 400)
   if (lotStatus === 'quarantined' && !statusNote) throw errorWithStatus('Karantina gerekçesi zorunlu', 400)
 
   const result = q.runInTransaction(() => {
+    const releasedAllocations = statusChanged && lotStatus === 'quarantined'
+      ? q.releaseIntakeAllocations(id)
+      : []
     if (!q.updateIntakeLot(id, {
       ...metadata,
       lot_status: lotStatus,
       lot_status_note: statusNote || null,
       lot_status_updated_by: userId || null,
     })) throw errorWithStatus('Lot güncellenemedi', 500)
-    const matched = lotStatus === 'active' ? reconcileProductAllocations(existing.product_id) : 0
-    return { after: q.getIntakeLot(id), matched }
+    const affectedDistributionIds = [...new Set(releasedAllocations.map(row => Number(row.out_movement_id)))]
+    const matched = (lotStatus === 'active' || affectedDistributionIds.length)
+      ? reconcileProductAllocations(existing.product_id)
+      : 0
+    if (affectedDistributionIds.length) q.flagReviewForUnallocated(affectedDistributionIds)
+    return {
+      after: q.getIntakeLot(id),
+      matched,
+      affected_distribution_ids: affectedDistributionIds,
+      released_base: releasedAllocations.reduce((sum, row) => sum + Number(row.qty_base || 0), 0),
+    }
   })
 
   return { before: existing, ...result }

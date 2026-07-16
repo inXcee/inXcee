@@ -672,6 +672,28 @@ describe('Su takip — Ay Sonu Kapanış / Uyuşturma (W2)', () => {
     const r = await auth(request(app).post('/api/water/monthly-close/2099-01/unlock'))
     expect(r.status).toBe(404)
   })
+
+  it('kapanış kaydı yazılamazsa stok snapshot kayıtlarını geri alır', async () => {
+    const db = getDB()
+    const month = '2098-04'
+    const triggerName = 'fail_water_monthly_close'
+    db.exec(`
+      CREATE TEMP TRIGGER ${triggerName}
+      BEFORE INSERT ON water_monthly_closures
+      WHEN NEW.month = '${month}'
+      BEGIN
+        SELECT RAISE(ABORT, 'forced monthly close failure');
+      END
+    `)
+    try {
+      const response = await auth(request(app).post('/api/water/monthly-close')).send({ month })
+      expect(response.status).toBe(500)
+      expect(db.prepare('SELECT COUNT(*) AS count FROM water_stock_counts WHERE month=?').get(month).count).toBe(0)
+      expect(db.prepare('SELECT COUNT(*) AS count FROM water_monthly_closures WHERE month=?').get(month).count).toBe(0)
+    } finally {
+      db.exec(`DROP TRIGGER IF EXISTS ${triggerName}`)
+    }
+  })
 })
 
 describe('Su takip — İrsaliye Bekleyenler (W3)', () => {
@@ -901,9 +923,21 @@ describe('Su takip — Ürün/Marka güçlendirme (W8)', () => {
 
   it('ürün pasife alınır — aktif listede gizli, all listede görünür', async () => {
     const pid = (await auth(request(app).post('/api/water/products')).send({ name: 'W8 Pasif Ürün', unit_label: 'adet', units_per_case: 1, cases_per_pallet: 1 })).body.id
+    await auth(request(app).post('/api/water/intake')).send({
+      product_id: pid,
+      input_qty: 12,
+      input_unit: 'adet',
+      move_date: '2027-02-10',
+      waybill_no: 'PASIF-TARIHCE',
+    })
     await auth(request(app).put(`/api/water/products/${pid}`)).send({ name: 'W8 Pasif Ürün', unit_label: 'adet', units_per_case: 1, cases_per_pallet: 1, is_active: false })
     expect((await auth(request(app).get('/api/water/products'))).body.some(x => x.id === pid)).toBe(false)
     expect((await auth(request(app).get('/api/water/products?all=1'))).body.some(x => x.id === pid)).toBe(true)
+    const reconciliation = await auth(request(app).get('/api/water/reconciliation?month=2027-02'))
+    expect(reconciliation.body.rows.find(row => row.product_id === pid)).toMatchObject({
+      month_in: 12,
+      system_base: 12,
+    })
   })
 })
 

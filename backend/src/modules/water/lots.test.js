@@ -163,4 +163,67 @@ describe('Su lot ve SKT takibi', () => {
     expect(release.body.matched).toBe(1)
     expect(getDB().prepare('SELECT needs_review FROM water_movements WHERE id=?').get(distribution.body.id).needs_review).toBe(0)
   })
+
+  it('dağıtımdan sonra karantinaya alınan lotun tahsislerini sağlıklı lota taşır', async () => {
+    const productId = await createTrackedProduct('SKT TEST SONRADAN KARANTINA')
+    const quarantinedLot = await intake(productId, {
+      lotNo: 'KAR-SONRA', moveDate: '2027-06-01', expiryDate: '2027-08-01', qty: 10,
+    })
+    const backupLot = await intake(productId, {
+      lotNo: 'YEDEK', moveDate: '2027-06-02', expiryDate: '2027-12-01', qty: 10,
+    })
+    const distribution = await auth(request(app).post('/api/water/distribute')).send({
+      product_id: productId,
+      zone_id: zoneId,
+      input_qty: 6,
+      input_unit: 'adet',
+      move_date: '2027-06-10',
+    })
+    expect(getDB().prepare(
+      'SELECT in_movement_id FROM water_movement_allocations WHERE out_movement_id=?',
+    ).get(distribution.body.id).in_movement_id).toBe(quarantinedLot.body.id)
+
+    const quarantine = await request(app).put(`/api/water/lots/${quarantinedLot.body.id}`)
+      .set('Authorization', `Bearer ${supervisorToken}`)
+      .send({ lot_status: 'quarantined', lot_status_note: 'Geri çağırma kararı' })
+
+    expect(quarantine.status).toBe(200)
+    expect(quarantine.body.matched).toBe(1)
+    expect(getDB().prepare(
+      'SELECT in_movement_id FROM water_movement_allocations WHERE out_movement_id=?',
+    ).get(distribution.body.id).in_movement_id).toBe(backupLot.body.id)
+    expect(getDB().prepare(
+      'SELECT COUNT(*) AS count FROM water_movement_allocations WHERE in_movement_id=?',
+    ).get(quarantinedLot.body.id).count).toBe(0)
+    expect(getDB().prepare(
+      'SELECT needs_review FROM water_movements WHERE id=?',
+    ).get(distribution.body.id).needs_review).toBe(0)
+  })
+
+  it('tamamı dağıtılmış lot karantinaya alınırsa karşılanamayan dağıtımı incelemeye taşır', async () => {
+    const productId = await createTrackedProduct('SKT TEST TAM KARANTINA')
+    const created = await intake(productId, {
+      lotNo: 'TAM-KAR', moveDate: '2027-06-01', expiryDate: '2027-12-01', qty: 5,
+    })
+    const distribution = await auth(request(app).post('/api/water/distribute')).send({
+      product_id: productId,
+      zone_id: zoneId,
+      input_qty: 5,
+      input_unit: 'adet',
+      move_date: '2027-06-10',
+    })
+
+    const quarantine = await request(app).put(`/api/water/lots/${created.body.id}`)
+      .set('Authorization', `Bearer ${supervisorToken}`)
+      .send({ lot_status: 'quarantined', lot_status_note: 'Tam geri çağırma' })
+
+    expect(quarantine.status).toBe(200)
+    expect(quarantine.body.matched).toBe(0)
+    expect(getDB().prepare(
+      'SELECT COUNT(*) AS count FROM water_movement_allocations WHERE out_movement_id=?',
+    ).get(distribution.body.id).count).toBe(0)
+    expect(getDB().prepare(
+      'SELECT needs_review FROM water_movements WHERE id=?',
+    ).get(distribution.body.id).needs_review).toBe(1)
+  })
 })

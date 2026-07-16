@@ -5,6 +5,7 @@ const queryMocks = vi.hoisted(() => ({
   getProduct: vi.fn(),
   reconciliationRow: vi.fn(),
   reconciliationRows: vi.fn(),
+  runInTransaction: vi.fn(),
   setClosureLock: vi.fn(),
   snapshotClosure: vi.fn(),
   upsertClosure: vi.fn(),
@@ -29,6 +30,7 @@ describe('water reconciliation module', () => {
     vi.clearAllMocks()
     queryMocks.getClosure.mockReturnValue(undefined)
     queryMocks.reconciliationRows.mockReturnValue([])
+    queryMocks.runInTransaction.mockImplementation(work => work())
   })
 
   it('publishes one immutable reason contract for counts and adjustments', () => {

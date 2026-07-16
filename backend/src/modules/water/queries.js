@@ -197,6 +197,20 @@ export function intakeAllocationUsage(inMovementId) {
   `).get(inMovementId)
 }
 
+export function releaseIntakeAllocations(inMovementId) {
+  const db = getDB()
+  const rows = db.prepare(`
+    SELECT out_movement_id, qty_base
+    FROM water_movement_allocations
+    WHERE in_movement_id=?
+    ORDER BY out_movement_id
+  `).all(inMovementId)
+  if (rows.length) {
+    db.prepare('DELETE FROM water_movement_allocations WHERE in_movement_id=?').run(inMovementId)
+  }
+  return rows
+}
+
 export function deleteMovement(id) {
   return getDB().prepare('DELETE FROM water_movements WHERE id=?').run(id).changes > 0
 }
@@ -743,7 +757,22 @@ function reconciliationStatement(month, productId) {
     FROM water_products p
     LEFT JOIN water_brands b ON b.id = p.brand_id
     LEFT JOIN water_stock_counts sc ON sc.product_id = p.id AND sc.month = @month
-    WHERE p.is_active = 1 ${productFilter}
+    WHERE (
+      p.is_active = 1
+      OR EXISTS (
+        SELECT 1 FROM water_movements historical_movement
+        WHERE historical_movement.product_id=p.id AND historical_movement.move_date < @monthEnd
+      )
+      OR EXISTS (
+        SELECT 1 FROM water_adjustments historical_adjustment
+        WHERE historical_adjustment.product_id=p.id AND historical_adjustment.move_date < @monthEnd
+      )
+      OR EXISTS (
+        SELECT 1 FROM water_returns historical_return
+        WHERE historical_return.product_id=p.id AND historical_return.move_date < @monthEnd
+      )
+      OR sc.product_id IS NOT NULL
+    ) ${productFilter}
     ORDER BY COALESCE(b.sort_order, 999), p.sort_order, p.name
   `)
   return { statement, params }

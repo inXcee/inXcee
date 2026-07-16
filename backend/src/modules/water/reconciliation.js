@@ -133,18 +133,20 @@ export function saveStockCountService(data, userId) {
 
 export function monthlyCloseService(data, userId) {
   if (!isMonth(data?.month)) throw badRequest('Ay YYYY-MM formatında olmalı')
-  const rows = q.reconciliationRows(data.month).map(row => ({
-    product_id: row.product_id,
-    system_base: row.opening_base + row.month_in - row.month_out + (row.month_adjust || 0),
-  }))
-  q.snapshotClosure(data.month, rows)
-  q.upsertClosure({
-    month: data.month,
-    note: data.note?.trim() || null,
-    closed_by: userId || null,
-    is_locked: 1,
+  return q.runInTransaction(() => {
+    const rows = q.reconciliationRows(data.month).map(row => ({
+      product_id: row.product_id,
+      system_base: row.opening_base + row.month_in - row.month_out + (row.month_adjust || 0),
+    }))
+    q.snapshotClosure(data.month, rows)
+    q.upsertClosure({
+      month: data.month,
+      note: data.note?.trim() || null,
+      closed_by: userId || null,
+      is_locked: 1,
+    })
+    return q.getClosure(data.month)
   })
-  return q.getClosure(data.month)
 }
 
 export function monthlyUnlockService(month) {
