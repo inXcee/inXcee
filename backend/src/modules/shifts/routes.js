@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import fs from 'fs'
 import path from 'path'
-import { requireRole, requireAuth } from '../../shared/auth/middleware.js'
+import { requireRole } from '../../shared/auth/middleware.js'
 import { getDB } from '../../shared/db/index.js'
 import { paginate } from '../../shared/paginate.js'
 import { logger } from '../../shared/logger.js'
@@ -53,7 +53,6 @@ export const shiftsRouter = Router()
 
 const managerOrSupervisor = requireRole('campus_manager', 'shift_supervisor')
 const managerOnly = requireRole('campus_manager')
-const allStaff = [requireAuth]
 
 // ── Staff CRUD — Personel bilgileri (maaş, TC, adres) sadece yönetim rollerine ──
 shiftsRouter.get('/staff', ...managerOrSupervisor, (req, res) => {
@@ -119,19 +118,19 @@ shiftsRouter.delete('/staff/:id', ...managerOrSupervisor, (req, res) => {
 })
 
 // ── Departments & definitions ──
-shiftsRouter.get('/departments', ...allStaff, (req, res) => {
+shiftsRouter.get('/departments', ...managerOrSupervisor, (req, res) => {
   res.json(departmentsService())
 })
 
-shiftsRouter.get('/departments/summary', ...allStaff, (req, res) => {
+shiftsRouter.get('/departments/summary', ...managerOrSupervisor, (req, res) => {
   res.json(departmentSummaryService())
 })
 
-shiftsRouter.get('/definitions', ...allStaff, (req, res) => {
+shiftsRouter.get('/definitions', ...managerOrSupervisor, (req, res) => {
   res.json(shiftDefinitionsService())
 })
 
-shiftsRouter.get('/work-locations', ...allStaff, (req, res) => {
+shiftsRouter.get('/work-locations', ...managerOrSupervisor, (req, res) => {
   try { res.json(workLocationsService(req.query)) }
   catch (e) { res.status(400).json({ error: e.message }) }
 })
@@ -160,7 +159,7 @@ shiftsRouter.delete('/work-locations/:id', ...managerOrSupervisor, (req, res) =>
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
-shiftsRouter.get('/roles', ...allStaff, (req, res) => {
+shiftsRouter.get('/roles', ...managerOrSupervisor, (req, res) => {
   try { res.json(staffRolesService(req.query)) }
   catch (e) { res.status(400).json({ error: e.message }) }
 })
@@ -190,7 +189,7 @@ shiftsRouter.delete('/roles/:id', ...managerOrSupervisor, (req, res) => {
 })
 
 // ── Schedule ──
-shiftsRouter.get('/schedule', ...allStaff, (req, res) => {
+shiftsRouter.get('/schedule', ...managerOrSupervisor, (req, res) => {
   const { week, week_end, dept_id } = req.query
   if (!week) return res.status(400).json({ error: 'week parametresi gerekli (YYYY-MM-DD)' })
   const weekStart = week
@@ -224,7 +223,7 @@ shiftsRouter.post('/schedule', ...managerOrSupervisor, (req, res) => {
   }
 })
 
-shiftsRouter.get('/schedule/:staffId/:date/segments', ...allStaff, (req, res) => {
+shiftsRouter.get('/schedule/:staffId/:date/segments', ...managerOrSupervisor, (req, res) => {
   try { res.json(scheduleSegmentsService(+req.params.staffId, req.params.date)) }
   catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
 })
@@ -254,17 +253,17 @@ shiftsRouter.delete('/schedule/segments/:id', ...managerOrSupervisor, (req, res)
   } catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
 })
 
-shiftsRouter.get('/schedule/candidates', ...allStaff, (req, res) => {
+shiftsRouter.get('/schedule/candidates', ...managerOrSupervisor, (req, res) => {
   try { res.json(scheduleCandidatesService(req.query)) }
   catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
 })
 
-shiftsRouter.get('/breakdown', ...allStaff, (req, res) => {
+shiftsRouter.get('/breakdown', ...managerOrSupervisor, (req, res) => {
   try { res.json(scheduleBreakdownService({ from: req.query.from, to: req.query.to })) }
   catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
 })
 
-shiftsRouter.get('/breakdown/assignees', ...allStaff, (req, res) => {
+shiftsRouter.get('/breakdown/assignees', ...managerOrSupervisor, (req, res) => {
   try { res.json(breakdownAssigneesService({ date: req.query.date, dimension: req.query.dimension, value: req.query.value })) }
   catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
 })
@@ -314,7 +313,7 @@ shiftsRouter.post('/schedule/check-conflicts', ...managerOrSupervisor, (req, res
 })
 
 // ── H4 V3: Resmi tatil tablosu ──
-shiftsRouter.get('/holidays', ...allStaff, (req, res) => {
+shiftsRouter.get('/holidays', ...managerOrSupervisor, (req, res) => {
   try { res.json(listHolidays({ year: req.query.year })) }
   catch (e) { logger.error('[holidays/list]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
@@ -546,17 +545,17 @@ shiftsRouter.get('/combined-absences', ...managerOrSupervisor, (req, res) => {
 })
 
 // ── Personnel status (now staff) ──
-shiftsRouter.get('/personnel', ...allStaff, (req, res) => {
+shiftsRouter.get('/personnel', ...managerOrSupervisor, (req, res) => {
   const date = req.query.date || new Date().toISOString().split('T')[0]
   res.json(staffStatusService(date, req.query.dept_id || null))
 })
 
 // ── Leave requests ──
-shiftsRouter.get('/leave/balance/:staffId', ...allStaff, (req, res) => {
+shiftsRouter.get('/leave/balance/:staffId', ...managerOrSupervisor, (req, res) => {
   res.json(leaveBalanceService(req.params.staffId))
 })
 
-shiftsRouter.get('/leave', ...allStaff, (req, res) => {
+shiftsRouter.get('/leave', ...managerOrSupervisor, (req, res) => {
   res.json(leaveListService(req.query))
 })
 
@@ -579,12 +578,12 @@ shiftsRouter.patch('/leave/:id', ...managerOrSupervisor, (req, res) => {
   }
 })
 
-shiftsRouter.get('/request-documents/:type/:id', ...allStaff, (req, res) => {
+shiftsRouter.get('/request-documents/:type/:id', ...managerOrSupervisor, (req, res) => {
   try { res.json(requestDocumentsService(req.params.type, req.params.id)) }
   catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
 })
 
-shiftsRouter.post('/request-documents/:type/:id', ...allStaff, documentUpload.array('documents', 5), verifyDocumentMagicBytes, (req, res) => {
+shiftsRouter.post('/request-documents/:type/:id', ...managerOrSupervisor, documentUpload.array('documents', 5), verifyDocumentMagicBytes, (req, res) => {
   try {
     const rows = addRequestDocumentsService(req.params.type, req.params.id, req.files || [], req.user.id)
     logAudit(req.user.id, 'shift_request_documents_add', 'shifts', +req.params.id, `${req.params.type}:${req.files?.length || 0}`)
@@ -608,16 +607,16 @@ shiftsRouter.delete('/request-documents/:id', ...managerOrSupervisor, (req, res)
 })
 
 // ── Overtime ──
-shiftsRouter.get('/overtime/summary', ...allStaff, (req, res) => {
+shiftsRouter.get('/overtime/summary', ...managerOrSupervisor, (req, res) => {
   const month = req.query.month || new Date().toISOString().substring(0, 7)
   res.json(overtimeSummaryService(month))
 })
 
-shiftsRouter.get('/overtime', ...allStaff, (req, res) => {
+shiftsRouter.get('/overtime', ...managerOrSupervisor, (req, res) => {
   res.json(overtimeListService(req.query))
 })
 
-shiftsRouter.get('/overtime/requests', ...allStaff, (req, res) => {
+shiftsRouter.get('/overtime/requests', ...managerOrSupervisor, (req, res) => {
   try { res.json(overtimeRequestsService(req.query)) }
   catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
 })
@@ -729,7 +728,7 @@ shiftsRouter.post('/attendance/exceptions/:id/overtime-request', ...managerOrSup
   }
 })
 
-shiftsRouter.get('/attendance', ...allStaff, (req, res) => {
+shiftsRouter.get('/attendance', ...managerOrSupervisor, (req, res) => {
   res.json(attendanceListService(req.query))
 })
 
@@ -764,7 +763,7 @@ shiftsRouter.post('/attendance/checkout', ...managerOrSupervisor, (req, res) => 
 })
 
 // ── Puantaj (Timesheet) ──
-shiftsRouter.get('/puantaj', ...allStaff, (req, res) => {
+shiftsRouter.get('/puantaj', ...managerOrSupervisor, (req, res) => {
   try {
     const { month, dept_id } = req.query
     if (!month) return res.status(400).json({ error: 'month parametresi YYYY-MM formatında gereklidir' })
@@ -775,7 +774,7 @@ shiftsRouter.get('/puantaj', ...allStaff, (req, res) => {
 })
 
 // ── Puantaj CSV Export (must be before /:staffId routes) ──
-shiftsRouter.get('/puantaj/export/csv', ...allStaff, (req, res) => {
+shiftsRouter.get('/puantaj/export/csv', ...managerOrSupervisor, (req, res) => {
   try {
     const { month, dept_id } = req.query
     if (!month) return res.status(400).json({ error: 'month parametresi YYYY-MM formatında gereklidir' })
@@ -800,7 +799,7 @@ shiftsRouter.get('/puantaj/closing-package', ...managerOrSupervisor, (req, res) 
   }
 })
 
-shiftsRouter.get('/puantaj/codes', ...allStaff, (req, res) => {
+shiftsRouter.get('/puantaj/codes', ...managerOrSupervisor, (req, res) => {
   try { res.json(puantajCodesService(req.query)) }
   catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
 })
@@ -919,7 +918,7 @@ shiftsRouter.post('/puantaj/day-detail', ...managerOrSupervisor, documentUpload.
 })
 
 // Puantaj day breakdown (after approval routes to avoid staffId collisions)
-shiftsRouter.get('/puantaj/days', ...allStaff, (req, res) => {
+shiftsRouter.get('/puantaj/days', ...managerOrSupervisor, (req, res) => {
   try {
     const { month, dept_id } = req.query
     if (!month) return res.status(400).json({ error: 'month parametresi YYYY-MM formatÄ±nda gereklidir' })
@@ -929,7 +928,7 @@ shiftsRouter.get('/puantaj/days', ...allStaff, (req, res) => {
   }
 })
 
-shiftsRouter.get('/puantaj/:staffId/days', ...allStaff, (req, res) => {
+shiftsRouter.get('/puantaj/:staffId/days', ...managerOrSupervisor, (req, res) => {
   try {
     res.json(staffDayBreakdownService(req.params.staffId, req.query.month))
   } catch (e) {
@@ -938,18 +937,18 @@ shiftsRouter.get('/puantaj/:staffId/days', ...allStaff, (req, res) => {
 })
 
 // ── Statistics ──
-shiftsRouter.get('/statistics', ...allStaff, (req, res) => {
+shiftsRouter.get('/statistics', ...managerOrSupervisor, (req, res) => {
   const date = req.query.date || new Date().toISOString().split('T')[0]
   res.json(statisticsService(date))
 })
 
 // Kapsama panosu (X4): vardiya×gün gerçekleşen vs hedef (min_staff)
-shiftsRouter.get('/coverage', ...allStaff, (req, res) => {
+shiftsRouter.get('/coverage', ...managerOrSupervisor, (req, res) => {
   try { res.json(coverageService({ from: req.query.from, to: req.query.to })) }
   catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
 })
 
-shiftsRouter.get('/coverage-rules', ...allStaff, (req, res) => {
+shiftsRouter.get('/coverage-rules', ...managerOrSupervisor, (req, res) => {
   try { res.json(coverageRulesService({ includeInactive: req.query.all === '1' })) }
   catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
 })
@@ -1038,7 +1037,7 @@ shiftsRouter.delete('/leave/:id', ...managerOrSupervisor, (req, res) => {
 })
 
 // ── Swap requests ──
-shiftsRouter.get('/swaps', ...allStaff, (req, res) => {
+shiftsRouter.get('/swaps', ...managerOrSupervisor, (req, res) => {
   res.json(swapListService(req.query))
 })
 

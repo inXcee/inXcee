@@ -300,8 +300,8 @@ export default function App() {
             <Route path="maintenance" element={<MaintenancePage />} />
             <Route path="room-history" element={<RoomHistoryPage />} />
             <Route path="whatsapp" element={<WhatsAppPage />} />
-            <Route path="shifts" element={<ShiftsPage />} />
-            <Route path="water" element={<WaterPage />} />
+            <Route path="shifts" element={<RoleRoute roles={['campus_manager','shift_supervisor']}><ShiftsPage /></RoleRoute>} />
+            <Route path="water" element={<RoleRoute roles={['campus_manager','shift_supervisor']}><WaterPage /></RoleRoute>} />
             <Route path="reports-advanced" element={<AdvancedReportsPage />} />
             <Route path="integrity" element={<IntegrityPage />} />
             <Route path="personnel/:id" element={<Personnel360Page />} />
