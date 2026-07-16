@@ -1437,6 +1437,9 @@ const PuantajRow = memo(function PuantajRow({
   prev.busyKey === next.busyKey &&
   prev.failedKey === next.failedKey &&
   prev.canEdit === next.canEdit &&
+  // selectedAction satır gövdesinde okunmaz ama SİLME: onApplyRow (parent applyRow)
+  // onu closure'dan okur — bu karşılaştırma, kod seçimi değişince satırın taze
+  // handler almasını garantiler; yoksa "Ayı seçili kodla doldur" bayat kodu uygular.
   prev.selectedAction === next.selectedAction &&
   prev.month === next.month &&
   prev.dayNumbers === next.dayNumbers &&
