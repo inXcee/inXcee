@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef, memo } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useIsMutating, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import api from '../../../shared/api/client.js'
 import { useAuthStore } from '../../../shared/store/authStore.js'
 import { useDebounce } from '../../../shared/hooks/useDebounce.js'
@@ -3505,12 +3505,24 @@ export default function PuantajTab({ departments, shiftDefs = [], onPersonClick 
   // CalendarView'da sunucu verisinin local girişleri ezmesini engeller.
   const pendingWritesRef = useRef(0)
   const writesPendingRef = useRef(false)
+  const pendingWriteCount = useIsMutating({ mutationKey: ['puantaj-day-update'] })
+  const writesBusy = pendingWriteCount > 0
 
-  const patchPuantajDayCaches = (changes) => {
-    qc.setQueriesData({ queryKey: ['puantaj-days-month'] }, old => (
-      old ? patchPuantajDaysByStaff(old, changes, month) : old
+  const patchPuantajDayCache = (changes, scopeMonth, scopeDeptFilter) => {
+    qc.setQueryData(['puantaj-days-month', scopeMonth, scopeDeptFilter], old => (
+      old ? patchPuantajDaysByStaff(old, changes, scopeMonth) : old
     ))
   }
+
+  useEffect(() => {
+    if (!writesBusy) return undefined
+    const protectPendingWrites = (event) => {
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', protectPendingWrites)
+    return () => window.removeEventListener('beforeunload', protectPendingWrites)
+  }, [writesBusy])
 
   const updatePuantajDay = useMutation({
     mutationKey: ['puantaj-day-update'],
@@ -3579,7 +3591,9 @@ export default function PuantajTab({ departments, shiftDefs = [], onPersonClick 
           },
         }
       })
-      patchPuantajDayCaches(savedChanges)
+      const scopeMonth = variables.scopeMonth || variables.changes[0]?.date?.slice(0, 7) || month
+      const scopeDeptFilter = variables.scopeDeptFilter ?? ''
+      patchPuantajDayCache(savedChanges, scopeMonth, scopeDeptFilter)
       variables?.onSaved?.(savedChanges)
     },
     onError: (err, variables) => {
@@ -3671,6 +3685,12 @@ export default function PuantajTab({ departments, shiftDefs = [], onPersonClick 
       : new Set()
   ), [updatePuantajDay.isPending, updatePuantajDay.variables])
 
+  const mutatePuantajDay = (variables, options) => updatePuantajDay.mutate({
+    ...variables,
+    scopeMonth: month,
+    scopeDeptFilter: deptFilter,
+  }, options)
+
   const formatMoney = (val) => {
     if (val == null || val === 0) return '—'
     return new Intl.NumberFormat('tr-TR', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(val) + ' ₺'
@@ -3725,23 +3745,30 @@ export default function PuantajTab({ departments, shiftDefs = [], onPersonClick 
       action: ACTION_BY_ID.worked,
       nextEntry: { ...entry, status: 'worked' },
     }))
-    updatePuantajDay.mutate(
+    mutatePuantajDay(
       { changes, action: ACTION_BY_ID.worked },
       { onSuccess: () => toastOk(`${changes.length} planlı gün puantaja aktarıldı`) }
     )
   }
 
   const setMonthInYear = (targetMonth, targetYear = y) => {
+    if (writesBusy) return
     setMonth(`${targetYear}-${String(targetMonth).padStart(2, '0')}`)
   }
 
   const prevMonth = () => {
+    if (writesBusy) return
     const d = new Date(y, m - 2, 1)
     setMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
   }
   const nextMonth = () => {
+    if (writesBusy) return
     const d = new Date(y, m, 1)
     setMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
+  }
+
+  const selectDepartment = (value) => {
+    if (!writesBusy) setDeptFilter(String(value ?? ''))
   }
 
   const downloadCsv = async () => {
@@ -3813,12 +3840,12 @@ export default function PuantajTab({ departments, shiftDefs = [], onPersonClick 
     <div className="fade-up">
       {/* Top bar */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center', marginBottom: '12px' }}>
-        <button className="btn btn-ghost btn-sm" onClick={prevMonth}>←</button>
+        <button aria-label="Önceki puantaj ayı" className="btn btn-ghost btn-sm" disabled={writesBusy} onClick={prevMonth}>←</button>
         <span style={{ fontFamily: 'var(--display)', fontSize: '14px', letterSpacing: '1px' }}>{monthLabel}</span>
-        <button className="btn btn-ghost btn-sm" onClick={nextMonth}>→</button>
-        <button className="btn btn-ghost btn-sm" onClick={() => setMonth(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`)}>Bu Ay</button>
+        <button aria-label="Sonraki puantaj ayı" className="btn btn-ghost btn-sm" disabled={writesBusy} onClick={nextMonth}>→</button>
+        <button aria-label="Güncel puantaj ayı" className="btn btn-ghost btn-sm" disabled={writesBusy} onClick={() => setMonth(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`)}>Bu Ay</button>
 
-        <select className="form-select" value={deptFilter} onChange={e => setDeptFilter(e.target.value)}
+        <select aria-label="Puantaj departmanı" className="form-select" value={deptFilter} disabled={writesBusy} onChange={e => selectDepartment(e.target.value)}
           style={{ width: 'auto', minWidth: '150px', fontSize: '11px', padding: '5px 11px' }}>
           <option value="">Tüm Departmanlar</option>
           {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
@@ -3829,10 +3856,10 @@ export default function PuantajTab({ departments, shiftDefs = [], onPersonClick 
         {/* View mode */}
         <div style={{ display: 'flex', gap: '2px', background: 'var(--surface2)', borderRadius: '8px', padding: '2px', border: '1px solid var(--border)' }}>
           {[['list','📋 LİSTE'],['calendar','📅 TAKVİM'],['summary','🏢 ÖZET'],['control','🔎 KONTROL']].map(([id, label]) => (
-            <button key={id} onClick={() => setViewMode(id)}
+            <button key={id} disabled={writesBusy} onClick={() => setViewMode(id)}
               style={{
                 padding: '4px 10px', borderRadius: '6px', fontSize: '10px', fontFamily: 'var(--mono)',
-                letterSpacing: '0.5px', border: 'none', cursor: 'pointer',
+                letterSpacing: '0.5px', border: 'none', cursor: writesBusy ? 'wait' : 'pointer',
                 background: viewMode === id ? 'var(--accent)' : 'transparent',
                 color: viewMode === id ? '#000' : 'var(--text3)',
               }}>
@@ -3842,10 +3869,11 @@ export default function PuantajTab({ departments, shiftDefs = [], onPersonClick 
           {roleCanEdit && (
             <button
               key="operations"
+              disabled={writesBusy}
               onClick={() => setViewMode('operations')}
               style={{
                 padding: '4px 10px', borderRadius: '6px', fontSize: '10px', fontFamily: 'var(--mono)',
-                letterSpacing: '0.5px', border: 'none', cursor: 'pointer',
+                letterSpacing: '0.5px', border: 'none', cursor: writesBusy ? 'wait' : 'pointer',
                 background: viewMode === 'operations' ? 'var(--accent)' : 'transparent',
                 color: viewMode === 'operations' ? '#000' : 'var(--text3)',
               }}
@@ -3855,10 +3883,11 @@ export default function PuantajTab({ departments, shiftDefs = [], onPersonClick 
           )}
           <button
             key="approval"
+            disabled={writesBusy}
             onClick={() => setViewMode('approval')}
             style={{
               padding: '4px 10px', borderRadius: '6px', fontSize: '10px', fontFamily: 'var(--mono)',
-              letterSpacing: '0.5px', border: 'none', cursor: 'pointer',
+              letterSpacing: '0.5px', border: 'none', cursor: writesBusy ? 'wait' : 'pointer',
               background: viewMode === 'approval' ? 'var(--accent)' : 'transparent',
               color: viewMode === 'approval' ? '#000' : 'var(--text3)',
             }}
@@ -3872,10 +3901,10 @@ export default function PuantajTab({ departments, shiftDefs = [], onPersonClick 
             style={{ fontSize: '10px' }}>
             💼 {showEmployer ? 'Maliyet Gizle' : 'Maliyet Göster'}
           </button>
-          <button className="btn btn-ghost btn-sm" onClick={downloadCsv} style={{ fontSize: '10px' }}>
+          <button className="btn btn-ghost btn-sm" onClick={downloadCsv} disabled={writesBusy} style={{ fontSize: '10px' }}>
             ⬇ CSV İndir
           </button>
-          <button className="btn btn-ghost btn-sm" onClick={downloadFoyu} disabled={foyuExporting} style={{ fontSize: '10px' }}>
+          <button className="btn btn-ghost btn-sm" onClick={downloadFoyu} disabled={foyuExporting || writesBusy} style={{ fontSize: '10px' }}>
             📄 {foyuExporting ? 'HAZIRLANIYOR...' : 'PUANTAJ FÖYÜ'}
           </button>
           {roleCanEdit && (
@@ -3899,7 +3928,7 @@ export default function PuantajTab({ departments, shiftDefs = [], onPersonClick 
           {isManager && (
             <button
               className="btn btn-ghost btn-sm"
-              disabled={toggleLock.isPending}
+              disabled={toggleLock.isPending || writesBusy}
               style={{ fontSize: '10px', color: isLocked ? 'var(--green)' : 'var(--red)' }}
               onClick={async () => {
                 if (isLocked) {
@@ -3915,6 +3944,18 @@ export default function PuantajTab({ departments, shiftDefs = [], onPersonClick 
           )}
         </div>
       </div>
+
+      {writesBusy && (
+        <div role="status" aria-live="polite" style={{
+          display: 'flex', alignItems: 'center', gap: '8px',
+          marginBottom: '12px', padding: '8px 12px',
+          background: 'rgba(59,130,246,.08)', border: '1px solid rgba(59,130,246,.30)', borderRadius: '8px',
+          color: 'var(--text2)', fontSize: '11px',
+        }}>
+          <span className="page-spinner" />
+          Puantaj değişiklikleri kaydediliyor; dönem ve departman geçişleri kayıt tamamlanınca açılacak.
+        </div>
+      )}
 
       {isLocked && (
         <div style={{
@@ -3943,9 +3984,9 @@ export default function PuantajTab({ departments, shiftDefs = [], onPersonClick 
         borderRadius: '8px',
         background: 'var(--surface)',
       }}>
-        <button className="btn btn-ghost btn-sm" onClick={() => setMonthInYear(m, y - 1)} style={{ minWidth: '34px' }}>{'<'}</button>
+        <button aria-label="Önceki puantaj yılı" className="btn btn-ghost btn-sm" disabled={writesBusy} onClick={() => setMonthInYear(m, y - 1)} style={{ minWidth: '34px' }}>{'<'}</button>
         <span style={{ minWidth: '54px', textAlign: 'center', fontFamily: 'var(--display)', fontSize: '13px', color: 'var(--text)' }}>{y}</span>
-        <button className="btn btn-ghost btn-sm" onClick={() => setMonthInYear(m, y + 1)} style={{ minWidth: '34px' }}>{'>'}</button>
+        <button aria-label="Sonraki puantaj yılı" className="btn btn-ghost btn-sm" disabled={writesBusy} onClick={() => setMonthInYear(m, y + 1)} style={{ minWidth: '34px' }}>{'>'}</button>
         {MONTH_SHORT.map((label, index) => {
           const targetMonth = index + 1
           const active = targetMonth === m
@@ -3953,6 +3994,7 @@ export default function PuantajTab({ departments, shiftDefs = [], onPersonClick 
             <button
               key={label}
               type="button"
+              disabled={writesBusy}
               onClick={() => setMonthInYear(targetMonth)}
               style={{
                 minWidth: '46px',
@@ -3961,7 +4003,7 @@ export default function PuantajTab({ departments, shiftDefs = [], onPersonClick 
                 border: active ? '1px solid var(--accent)' : '1px solid var(--border)',
                 background: active ? 'var(--accent)' : 'var(--surface2)',
                 color: active ? '#000' : 'var(--text3)',
-                cursor: 'pointer',
+                cursor: writesBusy ? 'wait' : 'pointer',
                 fontFamily: 'var(--mono)',
                 fontSize: '9px',
                 fontWeight: 800,
@@ -4006,7 +4048,7 @@ export default function PuantajTab({ departments, shiftDefs = [], onPersonClick 
           canEdit={canEdit}
           selectedAction={selectedAction}
           setSelectedAction={setSelectedAction}
-          onApplyStatus={updatePuantajDay.mutate}
+          onApplyStatus={mutatePuantajDay}
           updatingKeys={updatingKeys}
           onPersonClick={setSelectedRow}
           approval={approvalPayload}
@@ -4051,7 +4093,7 @@ export default function PuantajTab({ departments, shiftDefs = [], onPersonClick 
           onPersonClick={setSelectedRow}
           lockScopeBlocked={!!deptFilter}
           overview={deptFilter ? null : approvalOverview}
-          onSelectDept={(deptId) => setDeptFilter(String(deptId))}
+          onSelectDept={selectDepartment}
         />
       )}
 

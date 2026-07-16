@@ -280,6 +280,47 @@ describe('PuantajTab smoke', () => {
     expect(await screen.findByText(/KAYDEDILEMEYEN 1 HÜCRE VAR/)).toBeInTheDocument()
   })
 
+  it('puantaj yazımı sürerken dönem ve departman geçişlerini kilitler', async () => {
+    useAuthStore.setState({ user: { role: 'campus_manager' } })
+    const current = new Date()
+    const month = `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}`
+    const workDate = `${month}-01`
+    let resolveSave
+    postMock.mockImplementationOnce(() => new Promise(resolve => { resolveSave = resolve }))
+    getMock.mockImplementation((url) => {
+      if (url === '/shifts/puantaj') {
+        return Promise.resolve({ data: [
+          { id: 1, full_name: 'Bekleyen Kayıt', department_id: 1, dept_name: 'OTC', worked_days: 0 },
+        ] })
+      }
+      if (url === '/shifts/puantaj/days') {
+        return Promise.resolve({ data: { month, days: { 1: [] } } })
+      }
+      if (url === '/shifts/holidays' || url === '/shifts/puantaj/codes' || url === '/shifts/period-locks') {
+        return Promise.resolve({ data: [] })
+      }
+      if (url === '/shifts/puantaj/approval') {
+        return Promise.resolve({ data: { period: month, period_approval: { status: 'draft' }, daily_approvals: [], events: [] } })
+      }
+      return Promise.resolve({ data: [] })
+    })
+
+    renderWithProviders(<PuantajTab departments={[{ id: 1, name: 'OTC' }]} />)
+    fireEvent.click(screen.getAllByText(/TAKV/)[0])
+    fireEvent.click(await screen.findByTitle(new RegExp(`Bekleyen Kayıt.*${workDate}`)))
+
+    expect(await screen.findByRole('status')).toHaveTextContent('Puantaj değişiklikleri kaydediliyor')
+    expect(screen.getByRole('button', { name: 'Önceki puantaj ayı' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Sonraki puantaj ayı' })).toBeDisabled()
+    expect(screen.getByLabelText('Puantaj departmanı')).toBeDisabled()
+    expect(screen.getByRole('button', { name: /CSV İndir/ })).toBeDisabled()
+
+    resolveSave({ data: { rows: [{ id: 10, staff_id: 1, work_date: workDate, row_version: 1 }] } })
+    await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument())
+    expect(screen.getByRole('button', { name: 'Önceki puantaj ayı' })).toBeEnabled()
+    expect(screen.getByLabelText('Puantaj departmanı')).toBeEnabled()
+  })
+
   it('kod yönetiminde bordro ve belge kurallarını gösterir', async () => {
     useAuthStore.setState({ user: { role: 'campus_manager' } })
     getMock.mockImplementation((url) => {
