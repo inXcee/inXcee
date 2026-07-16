@@ -5,12 +5,14 @@ import { initDB, getDB } from '../../shared/db/index.js'
 import { seedDev } from '../../shared/db/seed.js'
 
 let token
+let supervisorToken
 let staffId
 beforeAll(async () => {
   process.env.DB_PATH = ':memory:'
   initDB()
   seedDev()
   token = (await request(app).post('/api/auth/login').send({ username: 'mudur', password: 'admin123' })).body.token
+  supervisorToken = (await request(app).post('/api/auth/login').send({ username: 'vardiya', password: 'admin123' })).body.token
 
   // Seed personel yoksa oluştur
   const staff = (await request(app).get('/api/shifts/staff').set('Authorization', `Bearer ${token}`)).body
@@ -203,11 +205,34 @@ describe('Yetki kontrolü', () => {
     expect(res.status).toBe(403)
   })
 
-  it('view rolu 360 ve risk goruntuleyebilir', async () => {
+  it('dusuk yetkili rol birlesik personel dosyasini goruntuleyemez', async () => {
     const t = (await request(app).post('/api/auth/login').send({ username: 'camasir', password: 'admin123' })).body.token
     const r1 = await request(app).get(`/api/personnel/${staffId}/360`).set('Authorization', `Bearer ${t}`)
-    expect(r1.status).toBe(200)
+    expect(r1.status).toBe(403)
     const r2 = await request(app).get('/api/personnel/risk').set('Authorization', `Bearer ${t}`)
-    expect(r2.status).toBe(200)
+    expect(r2.status).toBe(403)
+  })
+
+  it('vardiya sorumlusu operasyonel dosyayi maskeli gorur', async () => {
+    const db = getDB()
+    db.prepare('UPDATE staff SET tc_no=?, salary=?, iban=? WHERE id=?')
+      .run('79999999991', 42000, 'TR330006100519786457841326', staffId)
+    const res = await request(app).get(`/api/personnel/${staffId}/360`)
+      .set('Authorization', `Bearer ${supervisorToken}`)
+    expect(res.status).toBe(200)
+    expect(res.body.person.tc_no).toBe('799******91')
+    expect(res.body.person).not.toHaveProperty('salary')
+    expect(res.body.person).not.toHaveProperty('iban')
+    expect(res.body.access.can_view_sensitive_fields).toBe(false)
+  })
+
+  it('kampus muduru hassas personel alanlarini gorur', async () => {
+    const res = await request(app).get(`/api/personnel/${staffId}/360`)
+      .set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(200)
+    expect(res.body.person.tc_no).toBe('79999999991')
+    expect(res.body.person.salary).toBe(42000)
+    expect(res.body.person.iban).toBe('TR330006100519786457841326')
+    expect(res.body.access.can_view_sensitive_fields).toBe(true)
   })
 })

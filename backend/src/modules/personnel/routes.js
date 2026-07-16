@@ -6,10 +6,11 @@ import { addNoteSchema, emergencyContactSchema, emergencyContactUpdateSchema, ar
 import * as q from './queries.js'
 import { importPersonnel, listPersonnelImportBatches, undoPersonnelImport } from './import.js'
 import { logger } from '../../shared/logger.js'
+import { applyDossierAccess, dossierAccess } from './access-policy.js'
 
 export const personnelRouter = Router()
 const mgr = requireRole('campus_manager', 'shift_supervisor')
-const view = requireRole('campus_manager', 'shift_supervisor', 'laundry', 'housekeeper', 'technical')
+const view = dossierAccess
 
 // ── Excel toplu içe aktarım ──
 personnelRouter.post('/import', ...mgr, validate(importPersonnelSchema), (req, res) => {
@@ -39,7 +40,7 @@ personnelRouter.get('/:id/360', ...view, (req, res) => {
   try {
     const data = q.get360(+req.params.id)
     if (!data) return res.status(404).json({ error: 'Personel bulunamadı' })
-    res.json(data)
+    res.json(applyDossierAccess(data, req.user.role))
   } catch (e) { logger.error('[personnel/360]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
