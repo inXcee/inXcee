@@ -31,7 +31,7 @@ describe('shifts staff smoke', () => {
 
   it('StaffDetailPanel çökmeden render olur (veri yok)', async () => {
     renderWithProviders(<StaffDetailPanel staffId={1} onClose={() => {}} />)
-    expect(await screen.findByText('Veri bulunamadı')).toBeInTheDocument()
+    expect(await screen.findByText('PERSONEL DOSYASI YÜKLENEMEDİ')).toBeInTheDocument()
   })
 
   it('personel dizini tablo, risk rozeti, seçim ve kart görünümünü destekler', async () => {
