@@ -94,20 +94,39 @@ function UploadForm({ staffId, kinds, canSensitive, onDone }) {
   )
 }
 
+function downloadBlob(res, fileName) {
+  const url = URL.createObjectURL(res.data)
+  const a = window.document.createElement('a')
+  a.href = url; a.download = fileName || 'belge'
+  a.click(); URL.revokeObjectURL(url)
+}
+
 function DocumentRow({ document, staffId, canManage }) {
   const qc = useQueryClient()
+  const versionRef = useRef(null)
+  const [showVersions, setShowVersions] = useState(false)
+  const [uploading, setUploading] = useState(false)
   const tone = STATUS_TONE[document.status] || STATUS_TONE.active
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['staff-documents', String(staffId)] })
     qc.invalidateQueries({ queryKey: ['staff-dossier', String(staffId)] })
+    qc.invalidateQueries({ queryKey: ['staff-document-catalog'] })
   }
   const download = async () => {
     try {
-      const res = await api.get(`/personnel/documents/${document.id}/download`, { responseType: 'blob' })
-      const url = URL.createObjectURL(res.data)
-      const a = window.document.createElement('a')
-      a.href = url; a.download = document.file_name || 'belge'
-      a.click(); URL.revokeObjectURL(url)
+      const url = document.read_only
+        ? `/personnel/documents/attachment/${document.attachment_id}/download`
+        : `/personnel/documents/${document.id}/download`
+      const res = await api.get(url, { responseType: 'blob' })
+      downloadBlob(res, document.file_name)
+    } catch (error) {
+      toast(error.response?.data?.error || 'İndirilemedi', 'error')
+    }
+  }
+  const downloadVersion = async (versionId, fileName) => {
+    try {
+      const res = await api.get(`/personnel/documents/${versionId}/download`, { responseType: 'blob' })
+      downloadBlob(res, fileName)
     } catch (error) {
       toast(error.response?.data?.error || 'İndirilemedi', 'error')
     }
@@ -122,36 +141,86 @@ function DocumentRow({ document, staffId, canManage }) {
       toast(error.response?.data?.error || 'Arşivlenemedi', 'error')
     }
   }
+  // Yeni sürüm: aynı version_group + tür ile yükleme; eski sürümler geçmişte kalır.
+  const onNewVersion = async (event) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    setUploading(true)
+    try {
+      const data = new FormData()
+      data.append('file', file)
+      data.append('version_group', document.version_group)
+      data.append('document_kind', document.document_kind)
+      data.append('title', document.title)
+      if (document.document_no) data.append('document_no', document.document_no)
+      if (document.visibility) data.append('visibility', document.visibility)
+      await api.post(`/personnel/${staffId}/documents`, data)
+      toast('Yeni sürüm yüklendi'); invalidate()
+    } catch (error) {
+      toast(error.response?.data?.error || 'Yükleme başarısız', 'error')
+    } finally {
+      setUploading(false)
+      if (versionRef.current) versionRef.current.value = ''
+    }
+  }
+  const versionCount = document.version_count || 1
   return (
     <div style={{
-      display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: 8, alignItems: 'center',
       padding: '9px 10px', borderRadius: 8, background: 'var(--surface2)',
       borderLeft: `3px solid ${tone.color}`, opacity: document.status === 'archived' ? 0.65 : 1,
     }}>
-      <div style={{ minWidth: 0 }}>
-        <div style={{ fontSize: 12, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {document.title}
-          {document.visibility === 'sensitive' && <span style={{ marginLeft: 6, color: 'var(--accent)', fontFamily: 'var(--mono)', fontSize: 7 }}>HASSAS</span>}
-          {document.read_only && <span style={{ marginLeft: 6, color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: 7 }}>SALT OKUNUR</span>}
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: 8, alignItems: 'center' }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {document.title}
+            {document.visibility === 'sensitive' && <span style={{ marginLeft: 6, color: 'var(--accent)', fontFamily: 'var(--mono)', fontSize: 7 }}>HASSAS</span>}
+            {document.read_only && <span style={{ marginLeft: 6, color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: 7 }}>SALT OKUNUR</span>}
+            {versionCount > 1 && <span style={{ marginLeft: 6, color: 'var(--blue)', fontFamily: 'var(--mono)', fontSize: 7 }}>v{versionCount}</span>}
+          </div>
+          <div style={{ color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: 8, marginTop: 3 }}>
+            {document.kind_label}{document.document_no ? ` · ${document.document_no}` : ''}
+            {document.period ? ` · ${document.period}` : ''}
+            {document.expires_on ? ` · bitiş ${document.expires_on}` : ''} · {formatDossierDate(document.uploaded_at)}
+          </div>
         </div>
-        <div style={{ color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: 8, marginTop: 3 }}>
-          {document.kind_label}{document.document_no ? ` · ${document.document_no}` : ''}
-          {document.expires_on ? ` · bitiş ${document.expires_on}` : ''} · {formatDossierDate(document.uploaded_at)}
-        </div>
-      </div>
-      <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-        <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: tone.color }}>{tone.label}</span>
-        {document.restricted ? (
-          <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--text4)' }}>YETKİ YOK</span>
-        ) : document.read_only ? null : (
-          <>
+        <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+          <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: tone.color }}>{tone.label}</span>
+          {document.restricted ? (
+            <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--text4)' }}>YETKİ YOK</span>
+          ) : document.read_only ? (
             <button className="btn btn-ghost btn-sm" onClick={download} title="İndir">⬇</button>
-            {canManage && document.status !== 'archived' && (
-              <button className="btn btn-ghost btn-sm" onClick={archive} title="Arşivle">🗄</button>
-            )}
-          </>
-        )}
+          ) : (
+            <>
+              {versionCount > 1 && (
+                <button className="btn btn-ghost btn-sm" onClick={() => setShowVersions(v => !v)} title="Sürüm geçmişi">🕑</button>
+              )}
+              <button className="btn btn-ghost btn-sm" onClick={download} title="İndir">⬇</button>
+              {canManage && document.status !== 'archived' && (
+                <>
+                  <button className="btn btn-ghost btn-sm" onClick={() => versionRef.current?.click()} disabled={uploading} title="Yeni sürüm yükle">{uploading ? '…' : '⤴'}</button>
+                  <input ref={versionRef} type="file" onChange={onNewVersion} accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx" style={{ display: 'none' }} />
+                  <button className="btn btn-ghost btn-sm" onClick={archive} title="Arşivle">🗄</button>
+                </>
+              )}
+            </>
+          )}
+        </div>
       </div>
+      {showVersions && versionCount > 1 && (
+        <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border)', display: 'grid', gap: 4 }}>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--text3)' }}>SÜRÜM GEÇMİŞİ</div>
+          {document.versions.map((version, index) => (
+            <div key={version.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 10, padding: '3px 0' }}>
+              <span style={{ color: index === 0 ? 'var(--text)' : 'var(--text3)' }}>
+                {index === 0 ? '● Güncel' : `v${versionCount - index}`} · {formatDossierDate(version.uploaded_at)}{version.uploaded_by_name ? ` · ${version.uploaded_by_name}` : ''}
+              </span>
+              {version.can_access && (
+                <button className="btn btn-ghost btn-sm" onClick={() => downloadVersion(version.id, version.file_name)} title="Bu sürümü indir" style={{ fontSize: 9 }}>⬇</button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

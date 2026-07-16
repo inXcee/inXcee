@@ -33,6 +33,27 @@ export const createFollowupSchema = z.object({
 
 export const updateFollowupSchema = createFollowupSchema.partial()
 
+const DOCUMENT_KIND_ENUM = z.enum([
+  'identity', 'contract', 'social_security', 'health_report', 'certificate',
+  'training', 'kvkk', 'bank', 'payroll', 'discipline', 'work_accident', 'other',
+])
+
+export const createRequirementSchema = z.object({
+  document_kind: DOCUMENT_KIND_ENUM,
+  display_name: z.string().trim().min(1, 'Görünen ad gerekli').max(120, 'Ad çok uzun'),
+  department_id: z.coerce.number().int().positive().nullish(),
+  role_id: z.coerce.number().int().positive().nullish(),
+  requires_expiry: z.coerce.boolean().optional().default(false),
+  visibility: z.enum(['operational', 'sensitive']).optional(),
+})
+
+export const updateRequirementSchema = z.object({
+  display_name: z.string().trim().min(1).max(120).optional(),
+  requires_expiry: z.coerce.boolean().optional(),
+  visibility: z.enum(['operational', 'sensitive']).optional(),
+  is_active: z.coerce.boolean().optional(),
+})
+
 export const emergencyContactSchema = z.object({
   name: z.string().trim().min(1, 'İsim gerekli').max(200, 'İsim çok uzun'),
   relationship: z.string().trim().max(100, 'Yakınlık çok uzun').nullish(),

@@ -1,4 +1,5 @@
 import fs from 'fs'
+import path from 'path'
 import { getDB } from '../../shared/db/index.js'
 import { canAccessDossierDocument } from './access-policy.js'
 
@@ -18,6 +19,12 @@ const KIND_LABELS = {
   health_report: 'Sağlık raporu', certificate: 'Sertifika', training: 'Eğitim',
   kvkk: 'KVKK', bank: 'Banka', payroll: 'Bordro', discipline: 'Disiplin',
   work_accident: 'İş kazası', other: 'Diğer',
+}
+
+const LEAVE_TYPE_LABELS = {
+  annual: 'Yıllık izin', sick: 'Hastalık izni', emergency: 'Acil izin',
+  maternity: 'Doğum izni', paternity: 'Babalık izni', marriage: 'Evlilik izni',
+  bereavement: 'Vefat izni', unpaid: 'Ücretsiz izin',
 }
 
 function isoToday() {
@@ -101,7 +108,27 @@ export function listStaffDocuments(staffId, { role } = {}) {
     ORDER BY d.archived_at IS NOT NULL, d.uploaded_at DESC, d.id DESC
   `).all(staffId)
 
-  const documents = rows.map(row => shapeDocument(row, role, today))
+  // Sürüm gruplama: aynı version_group tek "güncel" belge + sürüm geçmişi olarak
+  // döner. Satırlar arşiv-sonra + uploaded_at DESC sıralı → grubun ilk satırı güncel.
+  const groups = new Map()
+  for (const row of rows) {
+    const key = row.version_group || `single-${row.id}`
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key).push(row)
+  }
+  const documents = [...groups.values()].map(groupRows => {
+    const current = shapeDocument(groupRows[0], role, today)
+    const versions = groupRows.map(row => ({
+      id: row.id,
+      uploaded_at: row.uploaded_at,
+      uploaded_by_name: row.uploaded_by_name,
+      archived_at: row.archived_at,
+      file_name: current.restricted ? null : row.file_name,
+      size_bytes: row.size_bytes,
+      can_access: current.can_access,
+    }))
+    return { ...current, version_count: versions.length, versions }
+  })
 
   // Zorunlu belge kuralları: türe göre eksik/mevcut.
   const person = db.prepare('SELECT department_id, role_id FROM staff WHERE id=?').get(staffId)
@@ -119,35 +146,48 @@ export function listStaffDocuments(staffId, { role } = {}) {
     satisfied: activeKinds.has(requirement.document_kind),
   }))
 
-  // İzin / mesai / puantaj ekleri — salt-okunur, kaynak türü etiketli.
+  // İzin / mesai / puantaj ekleri — salt-okunur, izin türü + tarih ile net etiketli.
   const attachments = db.prepare(`
     SELECT ld.id, ld.file_name, ld.mime_type, ld.file_size, ld.document_kind, ld.created_at,
       CASE
         WHEN ld.leave_request_id IS NOT NULL THEN 'leave'
         WHEN ld.overtime_request_id IS NOT NULL THEN 'overtime'
         ELSE 'puantaj'
-      END AS source
+      END AS source,
+      lr.leave_type, lr.start_date AS leave_start, lr.end_date AS leave_end,
+      orq.work_date AS overtime_date, ss.work_date AS schedule_date
     FROM leave_documents ld
     LEFT JOIN leave_requests lr ON lr.id=ld.leave_request_id
     LEFT JOIN overtime_requests orq ON orq.id=ld.overtime_request_id
     LEFT JOIN shift_schedule ss ON ss.id=ld.schedule_id
     WHERE lr.staff_id=? OR orq.staff_id=? OR ss.staff_id=?
     ORDER BY ld.created_at DESC, ld.id DESC
-  `).all(staffId, staffId, staffId).map(row => ({
-    id: `attachment-${row.id}`,
-    source: row.source,
-    document_kind: row.document_kind || 'other',
-    kind_label: row.source === 'leave' ? 'İzin eki' : row.source === 'overtime' ? 'Mesai eki' : 'Puantaj eki',
-    title: row.file_name,
-    file_name: row.file_name,
-    mime_type: row.mime_type,
-    size_bytes: row.file_size,
-    uploaded_at: row.created_at,
-    visibility: 'operational',
-    status: 'active',
-    read_only: true,
-    can_access: true,
-  }))
+  `).all(staffId, staffId, staffId).map(row => {
+    const leaveLabel = row.source === 'leave'
+      ? `${LEAVE_TYPE_LABELS[row.leave_type] || 'İzin'} eki`
+      : row.source === 'overtime' ? 'Mesai eki' : 'Puantaj eki'
+    const period = row.source === 'leave'
+      ? (row.leave_start ? `${row.leave_start}${row.leave_end && row.leave_end !== row.leave_start ? ` → ${row.leave_end}` : ''}` : null)
+      : (row.overtime_date || row.schedule_date || null)
+    return {
+      id: `attachment-${row.id}`,
+      attachment_id: row.id,
+      source: row.source,
+      leave_type: row.leave_type || null,
+      document_kind: row.document_kind || 'other',
+      kind_label: leaveLabel,
+      period,
+      title: row.file_name,
+      file_name: row.file_name,
+      mime_type: row.mime_type,
+      size_bytes: row.file_size,
+      uploaded_at: row.created_at,
+      visibility: 'operational',
+      status: 'active',
+      read_only: true,
+      can_access: true,
+    }
+  })
 
   const visible = documents.filter(document => !document.archived_at)
   return {
@@ -307,4 +347,148 @@ export function getStaffDocumentForDownload(documentId, { role } = {}) {
     throw err
   }
   return document
+}
+
+// İzin/mesai/puantaj eki indirme — leave_documents.file_url disk yoluna çözülür.
+// Gerçek yükleme /uploads/<filename> (düz) — shifts indirme deseniyle aynı:
+// UPLOADS_DIR + basename. Yol geçişi (path traversal) basename ile engellenir.
+export function getAttachmentForDownload(attachmentId) {
+  const db = getDB()
+  const row = db.prepare(`
+    SELECT id, file_name, mime_type, file_url FROM leave_documents WHERE id=?
+  `).get(attachmentId)
+  if (!row) throw fail('Ek bulunamadı', 404)
+  if (!row.file_url) throw fail('Dosya bulunamadı', 410)
+  const base = process.env.UPLOADS_DIR || 'uploads'
+  const filePath = path.join(base, path.basename(String(row.file_url)))
+  if (!fs.existsSync(filePath)) throw fail('Dosya bulunamadı', 410)
+  return { ...row, file_path: filePath }
+}
+
+function fail(message, statusCode = 400) {
+  const err = new Error(message)
+  err.statusCode = statusCode
+  return err
+}
+
+/* ─── Zorunlu belge kuralları (staff_document_requirements) ─────────────── */
+export function listDocumentRequirements() {
+  const db = getDB()
+  const rows = db.prepare(`
+    SELECT r.id, r.document_kind, r.display_name, r.department_id, r.role_id,
+      r.requires_expiry, r.visibility, r.is_active, r.created_at,
+      d.name AS department_name, sr.name AS role_name
+    FROM staff_document_requirements r
+    LEFT JOIN departments d ON d.id=r.department_id
+    LEFT JOIN staff_roles sr ON sr.id=r.role_id
+    ORDER BY r.is_active DESC, r.display_name
+  `).all()
+  return {
+    requirements: rows.map(row => ({ ...row, kind_label: KIND_LABELS[row.document_kind] || row.document_kind })),
+    kinds: DOCUMENT_KINDS.map(kind => ({ value: kind, label: KIND_LABELS[kind] })),
+  }
+}
+
+function assertRequirementScope(db, { departmentId, roleId }) {
+  if (departmentId != null && !db.prepare('SELECT id FROM departments WHERE id=?').get(departmentId)) {
+    throw fail('Departman bulunamadı')
+  }
+  if (roleId != null && !db.prepare('SELECT id FROM staff_roles WHERE id=?').get(roleId)) {
+    throw fail('Personel rolü bulunamadı')
+  }
+}
+
+export function createDocumentRequirement(data, { userId } = {}) {
+  const db = getDB()
+  const documentKind = String(data.document_kind || '')
+  if (!KIND_SET.has(documentKind)) throw fail('Geçersiz belge türü')
+  const displayName = String(data.display_name || '').trim()
+  if (!displayName) throw fail('Görünen ad gerekli')
+  const departmentId = data.department_id ? +data.department_id : null
+  const roleId = data.role_id ? +data.role_id : null
+  assertRequirementScope(db, { departmentId, roleId })
+  const visibility = data.visibility === 'sensitive' ? 'sensitive' : 'operational'
+  try {
+    const result = db.prepare(`
+      INSERT INTO staff_document_requirements(
+        document_kind, display_name, department_id, role_id, requires_expiry,
+        visibility, is_active, created_by
+      ) VALUES(?,?,?,?,?,?,1,?)
+    `).run(documentKind, displayName, departmentId, roleId,
+      data.requires_expiry ? 1 : 0, visibility, userId ?? null)
+    return { id: result.lastInsertRowid }
+  } catch (e) {
+    if (String(e.message).includes('UNIQUE')) throw fail('Bu tür/departman/rol için kural zaten var')
+    throw e
+  }
+}
+
+export function updateDocumentRequirement(id, data) {
+  const db = getDB()
+  const existing = db.prepare('SELECT id FROM staff_document_requirements WHERE id=?').get(id)
+  if (!existing) throw fail('Kural bulunamadı', 404)
+  const fields = []
+  const params = []
+  const set = (column, value) => { fields.push(`${column}=?`); params.push(value) }
+  if (data.display_name != null) {
+    const name = String(data.display_name).trim()
+    if (!name) throw fail('Görünen ad boş olamaz')
+    set('display_name', name.slice(0, 120))
+  }
+  if (data.requires_expiry != null) set('requires_expiry', data.requires_expiry ? 1 : 0)
+  if (data.visibility != null) set('visibility', data.visibility === 'sensitive' ? 'sensitive' : 'operational')
+  if (data.is_active != null) set('is_active', data.is_active ? 1 : 0)
+  if (!fields.length) return { ok: true, unchanged: true }
+  params.push(id)
+  db.prepare(`UPDATE staff_document_requirements SET ${fields.join(', ')} WHERE id=?`).run(...params)
+  return { ok: true }
+}
+
+export function deleteDocumentRequirement(id) {
+  const db = getDB()
+  const result = db.prepare('DELETE FROM staff_document_requirements WHERE id=?').run(id)
+  if (!result.changes) throw fail('Kural bulunamadı', 404)
+  return { ok: true }
+}
+
+/* ─── Çapraz-personel belge kataloğu (genel belgeler sayfası) ───────────── */
+export function listDocumentCatalog({ staffId, documentKind, status, q, includeArchived, role } = {}) {
+  const db = getDB()
+  const today = isoToday()
+  const where = ['d.staff_id IS NOT NULL']
+  const params = []
+  if (staffId) { where.push('d.staff_id=?'); params.push(+staffId) }
+  if (documentKind && KIND_SET.has(documentKind)) { where.push('d.document_kind=?'); params.push(documentKind) }
+  if (!includeArchived) where.push('d.archived_at IS NULL')
+  if (q) { where.push('(d.title LIKE ? OR d.document_no LIKE ? OR s.full_name LIKE ?)'); params.push(`%${q}%`, `%${q}%`, `%${q}%`) }
+  const rows = db.prepare(`
+    SELECT d.id, d.staff_id, d.document_kind, d.title, d.document_no, d.issued_on,
+      d.expires_on, d.visibility, d.version_group, d.uploaded_at, d.archived_at,
+      d.mime_type, d.size_bytes, d.file_name, s.full_name AS staff_name,
+      dep.name AS department_name
+    FROM documents d
+    JOIN staff s ON s.id=d.staff_id
+    LEFT JOIN departments dep ON dep.id=s.department_id
+    WHERE ${where.join(' AND ')}
+    ORDER BY d.uploaded_at DESC, d.id DESC
+    LIMIT 500
+  `).all(...params)
+  let shaped = rows.map(row => ({
+    ...shapeDocument(row, role, today),
+    staff_id: row.staff_id,
+    staff_name: row.staff_name,
+    department_name: row.department_name,
+  }))
+  if (status) shaped = shaped.filter(document => document.status === status)
+  return {
+    documents: shaped,
+    total: shaped.length,
+    kinds: DOCUMENT_KINDS.map(kind => ({ value: kind, label: KIND_LABELS[kind] })),
+    statuses: [
+      { value: 'active', label: 'Geçerli' },
+      { value: 'expiring', label: 'Süresi yaklaşan' },
+      { value: 'expired', label: 'Süresi dolmuş' },
+      { value: 'archived', label: 'Arşiv' },
+    ],
+  }
 }

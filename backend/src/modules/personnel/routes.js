@@ -2,7 +2,7 @@ import { Router } from 'express'
 import { requireRole } from '../../shared/auth/middleware.js'
 import { logAudit } from '../../shared/audit.js'
 import { validate } from '../../shared/middleware/validate.js'
-import { addNoteSchema, updateNoteSchema, createFollowupSchema, updateFollowupSchema, emergencyContactSchema, emergencyContactUpdateSchema, archiveSchema, importPersonnelSchema } from './schemas.js'
+import { addNoteSchema, updateNoteSchema, createFollowupSchema, updateFollowupSchema, createRequirementSchema, updateRequirementSchema, emergencyContactSchema, emergencyContactUpdateSchema, archiveSchema, importPersonnelSchema } from './schemas.js'
 import {
   listFollowups, createFollowup, updateFollowup, completeFollowup, cancelFollowup,
 } from './staff-followups.js'
@@ -16,10 +16,13 @@ import fs from 'fs'
 import {
   listStaffDocuments, createStaffDocument, updateStaffDocument,
   archiveStaffDocument, getStaffDocumentForDownload,
+  listDocumentRequirements, createDocumentRequirement, updateDocumentRequirement,
+  deleteDocumentRequirement, listDocumentCatalog, getAttachmentForDownload,
 } from './staff-documents.js'
 
 export const personnelRouter = Router()
 const mgr = requireRole('campus_manager', 'shift_supervisor')
+const mgrOnly = requireRole('campus_manager')
 const view = dossierAccess
 
 function cleanupUpload(file) {
@@ -76,6 +79,73 @@ personnelRouter.get('/:id/dossier/timeline', ...view, (req, res) => {
     if (!data) return res.status(404).json({ error: 'Personel bulunamadı' })
     res.json(data)
   } catch (e) { logger.error('[personnel/dossier-timeline]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// ── Zorunlu belge kuralları (tür yönetimi) — spesifik yollar önce ──
+personnelRouter.get('/document-requirements', ...view, (req, res) => {
+  try { res.json(listDocumentRequirements()) }
+  catch (e) { logger.error('[personnel/doc-requirements]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+personnelRouter.post('/document-requirements', ...mgrOnly, validate(createRequirementSchema), (req, res) => {
+  try {
+    const result = createDocumentRequirement(req.validated, { userId: req.user.id })
+    logAudit(req.user.id, 'staff_doc_requirement_create', 'personnel', result.id, req.validated.document_kind)
+    res.status(201).json(result)
+  } catch (e) {
+    if (e.statusCode) return res.status(e.statusCode).json({ error: e.message })
+    logger.error('[personnel/doc-requirement-create]', e); res.status(500).json({ error: 'Sunucu hatası' })
+  }
+})
+
+personnelRouter.patch('/document-requirements/:reqId', ...mgrOnly, validate(updateRequirementSchema), (req, res) => {
+  try {
+    const result = updateDocumentRequirement(+req.params.reqId, req.validated)
+    logAudit(req.user.id, 'staff_doc_requirement_update', 'personnel', +req.params.reqId, '')
+    res.json(result)
+  } catch (e) {
+    if (e.statusCode) return res.status(e.statusCode).json({ error: e.message })
+    logger.error('[personnel/doc-requirement-update]', e); res.status(500).json({ error: 'Sunucu hatası' })
+  }
+})
+
+personnelRouter.delete('/document-requirements/:reqId', ...mgrOnly, (req, res) => {
+  try {
+    deleteDocumentRequirement(+req.params.reqId)
+    logAudit(req.user.id, 'staff_doc_requirement_delete', 'personnel', +req.params.reqId, '')
+    res.json({ ok: true })
+  } catch (e) {
+    if (e.statusCode) return res.status(e.statusCode).json({ error: e.message })
+    logger.error('[personnel/doc-requirement-delete]', e); res.status(500).json({ error: 'Sunucu hatası' })
+  }
+})
+
+// ── Çapraz-personel belge kataloğu (genel belgeler sayfası) ──
+personnelRouter.get('/documents/catalog', ...view, (req, res) => {
+  try {
+    res.json(listDocumentCatalog({
+      staffId: req.query.staff_id,
+      documentKind: req.query.document_kind,
+      status: req.query.status,
+      q: req.query.q,
+      includeArchived: req.query.archived === '1',
+      role: req.user.role,
+    }))
+  } catch (e) { logger.error('[personnel/document-catalog]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// ── İzin/mesai/puantaj eki indirme (salt-okunur, operasyonel) ──
+personnelRouter.get('/documents/attachment/:attachmentId/download', ...view, (req, res) => {
+  try {
+    const document = getAttachmentForDownload(+req.params.attachmentId)
+    logAudit(req.user.id, 'staff_attachment_download', 'personnel', +req.params.attachmentId, '')
+    res.setHeader('Content-Type', document.mime_type || 'application/octet-stream')
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(document.file_name || 'ek')}"`)
+    fs.createReadStream(document.file_path).pipe(res)
+  } catch (e) {
+    if (e.statusCode) return res.status(e.statusCode).json({ error: e.message })
+    logger.error('[personnel/attachment-download]', e); res.status(500).json({ error: 'Sunucu hatası' })
+  }
 })
 
 // ── Birleşik belge yönetimi (Faz 5) ──

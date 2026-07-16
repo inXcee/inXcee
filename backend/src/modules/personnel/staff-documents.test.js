@@ -141,4 +141,101 @@ describe('unified staff documents api', () => {
       .set('Authorization', `Bearer ${lowToken}`)
     expect(res.status).toBe(403)
   })
+
+  it('groups uploads that share a version_group and exposes version history', async () => {
+    const first = await upload(managerToken, { document_kind: 'contract', title: 'Sözleşme v1' })
+    expect(first.status).toBe(201)
+    created.push(first.body.id)
+    const group = first.body.version_group
+
+    const second = await upload(managerToken, { document_kind: 'contract', title: 'Sözleşme v2', version_group: group })
+    expect(second.status).toBe(201)
+    expect(second.body.version_group).toBe(group)
+    created.push(second.body.id)
+
+    const list = await request(app).get(`/api/personnel/${staffId}/documents`)
+      .set('Authorization', `Bearer ${managerToken}`)
+    const grouped = list.body.documents.find(d => d.version_group === group)
+    expect(grouped.version_count).toBe(2)
+    expect(grouped.versions).toHaveLength(2)
+    // Güncel = en yeni yükleme (v2)
+    expect(grouped.title).toBe('Sözleşme v2')
+  })
+
+  it('labels leave attachments with their leave type and supports download', async () => {
+    const list = await request(app).get(`/api/personnel/${staffId}/documents`)
+      .set('Authorization', `Bearer ${managerToken}`)
+    const leave = list.body.attachments.find(a => a.source === 'leave')
+    expect(leave.leave_type).toBe('annual')
+    expect(leave.kind_label).toContain('Yıllık izin')
+
+    // Diskte gerçek ek dosyası oluştur ve indirmeyi doğrula (UPLOADS_DIR + basename)
+    const base = process.env.UPLOADS_DIR || 'uploads'
+    fs.mkdirSync(base, { recursive: true })
+    const fileName = `leave-att-${Date.now()}.pdf`
+    fs.writeFileSync(`${base}/${fileName}`, '%PDF-1.4 leave attachment')
+    const db = getDB()
+    db.prepare('UPDATE leave_documents SET file_url=? WHERE id=?')
+      .run(`/uploads/${fileName}`, leave.attachment_id)
+    try {
+      const dl = await request(app).get(`/api/personnel/documents/attachment/${leave.attachment_id}/download`)
+        .set('Authorization', `Bearer ${managerToken}`)
+      expect(dl.status).toBe(200)
+    } finally {
+      try { fs.unlinkSync(`${base}/${fileName}`) } catch { /* yok */ }
+    }
+  })
+})
+
+describe('staff document requirements (type management)', () => {
+  let requirementId
+
+  it('lets the manager create, list, update and delete a requirement', async () => {
+    const create = await request(app).post('/api/personnel/document-requirements')
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({ document_kind: 'certificate', display_name: 'Yüksekte Çalışma Sertifikası', requires_expiry: true })
+    expect(create.status).toBe(201)
+    requirementId = create.body.id
+
+    const list = await request(app).get('/api/personnel/document-requirements')
+      .set('Authorization', `Bearer ${managerToken}`)
+    const row = list.body.requirements.find(r => r.id === requirementId)
+    expect(row.display_name).toBe('Yüksekte Çalışma Sertifikası')
+    expect(row.requires_expiry).toBe(1)
+    expect(row.kind_label).toBe('Sertifika')
+
+    const patch = await request(app).patch(`/api/personnel/document-requirements/${requirementId}`)
+      .set('Authorization', `Bearer ${managerToken}`).send({ is_active: false })
+    expect(patch.status).toBe(200)
+
+    const del = await request(app).delete(`/api/personnel/document-requirements/${requirementId}`)
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(del.status).toBe(200)
+  })
+
+  it('blocks the supervisor from managing requirement rules', async () => {
+    const res = await request(app).post('/api/personnel/document-requirements')
+      .set('Authorization', `Bearer ${supervisorToken}`)
+      .send({ document_kind: 'other', display_name: 'X' })
+    expect(res.status).toBe(403)
+  })
+})
+
+describe('cross-staff document catalog', () => {
+  it('lists documents across staff with kind filter and masks sensitive for supervisor', async () => {
+    const all = await request(app).get('/api/personnel/documents/catalog')
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(all.status).toBe(200)
+    expect(all.body.documents.length).toBeGreaterThan(0)
+    expect(all.body.documents[0].staff_name).toBeTruthy()
+
+    const filtered = await request(app).get('/api/personnel/documents/catalog?document_kind=bank')
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(filtered.body.documents.every(d => d.document_kind === 'bank')).toBe(true)
+
+    // Vardiya sorumlusu hassas belgeyi maskeli görür (restricted)
+    const supervisorView = await request(app).get('/api/personnel/documents/catalog?document_kind=bank')
+      .set('Authorization', `Bearer ${supervisorToken}`)
+    expect(supervisorView.body.documents.every(d => d.restricted === true && d.file_name === null)).toBe(true)
+  })
 })

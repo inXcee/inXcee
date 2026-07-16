@@ -12,6 +12,7 @@ const OvertimeTab = lazy(() => import('./tabs/OvertimeTab.jsx'))
 const PuantajTab = lazy(() => import('./tabs/PuantajTab.jsx'))
 const SwapTab = lazy(() => import('./tabs/SwapTab.jsx'))
 const DepartmentsTab = lazy(() => import('./tabs/DepartmentsTab.jsx'))
+const DocumentsTab = lazy(() => import('./tabs/DocumentsTab.jsx'))
 const SettingsTab = lazy(() => import('./tabs/SettingsTab.jsx'))
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -23,6 +24,7 @@ const NAV_ITEMS = [
   { id: 'leave',       icon: '🏖️', label: 'İzinler' },
   { id: 'overtime',    icon: '⏰', label: 'Mesai' },
   { id: 'puantaj',     icon: '📊', label: 'Puantaj' },
+  { id: 'documents',   icon: '📁', label: 'Belgeler' },
   { id: 'swap',        icon: '🔁', label: 'Takas' },
   { id: 'departments', icon: '🏢', label: 'Bölümler' },
   { id: 'settings',    icon: '⚙️', label: 'Ayarlar' },
@@ -226,6 +228,7 @@ export default function ShiftsPage() {
             {activeTab === 'leave'       && <LeaveTab departments={departments} onPersonClick={handlePersonClick} />}
             {activeTab === 'overtime'    && <OvertimeTab departments={departments} onPersonClick={handlePersonClick} />}
             {activeTab === 'puantaj'     && <PuantajTab departments={departments} shiftDefs={shiftDefs} onPersonClick={handlePersonClick} />}
+            {activeTab === 'documents'   && <DocumentsTab departments={departments} />}
             {activeTab === 'departments' && <DepartmentsTab />}
             {activeTab === 'swap'        && <SwapTab />}
             {activeTab === 'settings'    && <SettingsTab departments={departments} shiftDefs={shiftDefs} />}
