@@ -17,12 +17,19 @@ import {
   useStaffDossier,
 } from './dossier/StaffDossierShared.jsx'
 import StaffDocumentsPanel from './dossier/StaffDocumentsPanel.jsx'
+import {
+  StaffPerformancePanel, StaffSafetyPanel, StaffEquipmentPanel, StaffChecklistPanel,
+} from './dossier/StaffOperationalPanels.jsx'
 
 const TABS = [
   ['overview', 'Genel Bakış'],
   ['identity', 'Kimlik ve İletişim'],
   ['work', 'Çalışma ve Devam'],
   ['documents', 'Belgeler'],
+  ['performance', 'Performans ve Hedefler'],
+  ['safety', 'İSG ve Sertifikalar'],
+  ['equipment', 'Zimmet ve Ekipman'],
+  ['hr', 'İşe Giriş/Çıkış'],
   ['operations', 'Operasyonel Bağlantılar'],
 ]
 
@@ -306,6 +313,10 @@ export default function StaffDossierPage() {
       {activeTab === 'identity' && <IdentityTab dossier={dossier} detail={detailQuery.data} isLoading={detailQuery.isLoading} />}
       {activeTab === 'work' && <WorkTab dossier={dossier} detail={detailQuery.data} isLoading={detailQuery.isLoading} />}
       {activeTab === 'documents' && <StaffDocumentsPanel staffId={staffId} access={dossier.access} />}
+      {activeTab === 'performance' && <StaffPerformancePanel staffId={staffId} canManage={dossier.access?.can_manage_followups} />}
+      {activeTab === 'safety' && <StaffSafetyPanel staffId={staffId} />}
+      {activeTab === 'equipment' && <StaffEquipmentPanel staffId={staffId} canManage={dossier.access?.can_manage_followups} />}
+      {activeTab === 'hr' && <StaffChecklistPanel staffId={staffId} canManage={dossier.access?.can_manage_followups} />}
       {activeTab === 'operations' && <OperationsTab dossier={dossier} operations={operationsQuery.data} isLoading={operationsQuery.isLoading} />}
     </div>
   )
