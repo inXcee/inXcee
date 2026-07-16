@@ -7,6 +7,7 @@ import * as q from './queries.js'
 import { importPersonnel, listPersonnelImportBatches, undoPersonnelImport } from './import.js'
 import { logger } from '../../shared/logger.js'
 import { applyDossierAccess, dossierAccess } from './access-policy.js'
+import { getDossier, getDossierTimeline } from './dossier.js'
 
 export const personnelRouter = Router()
 const mgr = requireRole('campus_manager', 'shift_supervisor')
@@ -33,6 +34,35 @@ personnelRouter.post('/import/batches/:id/undo', ...mgr, (req, res) => {
     logAudit(req.user.id, 'personnel_import_undo', 'personnel', +req.params.id, `${result.personnelDeleted} sakin geri alındı`)
     res.json(result)
   } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+// Unified personnel dossier
+personnelRouter.get('/:id/dossier', ...view, (req, res) => {
+  try {
+    const data = getDossier(+req.params.id, {
+      includeSensitive: req.user.role === 'campus_manager',
+    })
+    if (!data) return res.status(404).json({ error: 'Personel bulunamadı' })
+    res.json(applyDossierAccess(data, req.user.role))
+  } catch (e) { logger.error('[personnel/dossier]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+personnelRouter.get('/:id/dossier/timeline', ...view, (req, res) => {
+  try {
+    const kinds = typeof req.query.types === 'string'
+      ? req.query.types.split(',').map(value => value.trim()).filter(Boolean)
+      : []
+    const data = getDossierTimeline(+req.params.id, {
+      page: req.query.page,
+      limit: req.query.limit,
+      from: req.query.from,
+      to: req.query.to,
+      kinds,
+      includeSensitive: req.user.role === 'campus_manager',
+    })
+    if (!data) return res.status(404).json({ error: 'Personel bulunamadı' })
+    res.json(data)
+  } catch (e) { logger.error('[personnel/dossier-timeline]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 // ── 360° ──
