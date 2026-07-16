@@ -230,6 +230,162 @@ h1, h2, h3, h4 { font-family: var(--display); letter-spacing: 2px; }
 /* Form */
 .form-input, .form-select, .form-textarea { width: 100%; background: var(--surface2); border: 1px solid var(--border); border-radius: 7px; padding: 9px 13px; color: var(--text); font-family: var(--sans); font-size: 13px; outline: none; transition: border-color .15s, box-shadow .15s; }
 .form-input:focus, .form-select:focus, .form-textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(240,165,0,.08); }
+
+/* Su takip — gelen tır / irsaliye kayıt merkezi */
+.water-intake-section-stack { display: flex; flex-direction: column; gap: 16px; margin-top: 16px; }
+.water-intake-panel { min-height: 680px; }
+.water-intake-panel-body { display: flex; flex-direction: column; gap: 18px; }
+.water-intake-header-status { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.water-intake-meta-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, .8fr) 170px minmax(340px, 1.4fr);
+  align-items: stretch;
+  gap: 12px;
+}
+.water-intake-field-help { margin-top: 5px; color: var(--text3); font-size: 10px; }
+.water-waybill-photo-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-height: 76px;
+  padding: 12px 14px;
+  border: 1px dashed rgba(59,130,246,.55);
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(59,130,246,.08), rgba(20,184,166,.04));
+}
+.water-waybill-photo-copy { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.water-waybill-photo-copy strong { display: block; color: var(--text); font-size: 12px; }
+.water-waybill-photo-copy div:last-child { margin-top: 3px; color: var(--text3); font-size: 10px; line-height: 1.4; }
+.water-waybill-photo-icon {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  border-radius: 10px;
+  background: rgba(59,130,246,.13);
+  font-size: 18px;
+}
+.water-waybill-photo-drafts {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(240px, .55fr);
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface2);
+}
+.water-waybill-photo-preview-list { display: flex; gap: 9px; overflow-x: auto; padding-bottom: 2px; }
+.water-waybill-photo-preview {
+  position: relative;
+  width: 104px;
+  min-width: 104px;
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface);
+}
+.water-waybill-photo-preview img,
+.water-waybill-photo-fallback {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border-radius: 6px;
+  background: rgba(59,130,246,.1);
+  color: var(--text3);
+  font-family: var(--mono);
+  font-size: 9px;
+}
+.water-waybill-photo-preview button {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  width: 23px;
+  height: 23px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(15,23,42,.88);
+  color: #fff;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+}
+.water-waybill-photo-preview span {
+  display: block;
+  margin-top: 5px;
+  overflow: hidden;
+  color: var(--text3);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.water-waybill-photo-note { align-self: center; margin: 0; }
+.water-intake-lines { display: flex; flex-direction: column; gap: 9px; }
+.water-intake-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--text2);
+}
+.water-intake-section-heading strong {
+  display: block;
+  color: var(--text2);
+  font-size: 11px;
+  letter-spacing: .6px;
+  text-transform: uppercase;
+}
+.water-intake-section-heading span { display: block; margin-top: 2px; color: var(--text3); font-size: 10px; }
+.water-intake-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16px;
+  padding: 12px 14px;
+  border: 1px solid rgba(34,197,94,.22);
+  border-radius: 10px;
+  background: rgba(34,197,94,.05);
+}
+.water-intake-actions > div { margin-right: auto; color: var(--text3); font-size: 11px; }
+.water-intake-actions strong { color: var(--text2); }
+.water-intake-lower-grid { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(300px, .75fr); gap: 14px; }
+.water-intake-history, .water-intake-insights { display: flex; flex-direction: column; gap: 9px; min-width: 0; }
+.water-intake-photo-link {
+  position: relative;
+  display: inline-flex;
+  width: 42px;
+  height: 34px;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface2);
+  cursor: pointer;
+}
+.water-intake-photo-link img { width: 100%; height: 100%; object-fit: cover; }
+.water-intake-photo-link span {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  min-width: 16px;
+  padding: 1px 4px;
+  border-radius: 8px;
+  background: rgba(15,23,42,.9);
+  color: #fff;
+  font-size: 8px;
+  text-align: center;
+}
+
+@media (max-width: 1100px) {
+  .water-intake-meta-grid { grid-template-columns: minmax(220px, 1fr) 170px; }
+  .water-waybill-photo-card { grid-column: 1 / -1; }
+  .water-intake-lower-grid { grid-template-columns: 1fr; }
+  .water-intake-insights { display: grid; grid-template-columns: 1fr 1fr; align-items: start; }
+  .water-intake-insights .water-intake-section-heading { grid-column: auto; }
+}
 .form-label { font-family: var(--mono); font-size: 9px; color: var(--text3); letter-spacing: 2px; text-transform: uppercase; margin-bottom: 6px; display: block; }
 .form-select option { background: var(--surface2); }
 .form-textarea { resize: vertical; min-height: 80px; line-height: 1.5; }
@@ -389,6 +545,15 @@ h1, h2, h3, h4 { font-family: var(--display); letter-spacing: 2px; }
   /* Panels — tighter padding */
   .panel-header { padding: 10px 14px; flex-wrap: wrap; gap: 8px; }
   .panel-body { padding: 12px 14px; }
+  .water-intake-panel { min-height: 0; }
+  .water-intake-meta-grid,
+  .water-waybill-photo-drafts,
+  .water-intake-insights { grid-template-columns: 1fr; }
+  .water-waybill-photo-card,
+  .water-intake-actions,
+  .water-intake-section-heading { align-items: stretch; flex-direction: column; }
+  .water-intake-actions .btn { width: 100%; }
+  .water-intake-history { overflow: hidden; }
 
   /* Forms — prevent iOS zoom on focus */
   .form-input, .form-select, .form-textarea { font-size: 16px !important; padding: 12px 13px; }

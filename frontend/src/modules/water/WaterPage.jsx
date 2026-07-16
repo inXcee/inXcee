@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
@@ -181,7 +181,7 @@ export default function WaterPage() {
 
       <TrendPanel />
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '16px', marginTop: '16px' }}>
+      <div className="water-intake-section-stack">
         <GelenTirPanel from={from} to={to} label={label} stockItems={summary?.stock || []} />
         <BosIadePanel from={from} to={to} deposit={summary?.deposit || []} />
       </div>
@@ -917,6 +917,10 @@ function GelenTirPanel({ from, to, label, stockItems = [] }) {
   const qc = useQueryClient()
   const { data: products = [] } = useQuery({ queryKey: ['water-products'], queryFn: () => api.get('/water/products').then(r => r.data) })
   const { data: intakes = [] } = useQuery({ queryKey: ['water-intake', from, to], queryFn: () => api.get('/water/movements', { params: { type: 'in', from, to } }).then(r => r.data) })
+  const { data: waybillPhotos = [] } = useQuery({
+    queryKey: ['water-waybill-photos', from, to],
+    queryFn: () => api.get('/water/waybill-photos', { params: { from, to, limit: 120 } }).then(r => r.data),
+  })
 
   const byProduct = useMemo(() => {
     const m = new Map()
@@ -932,16 +936,88 @@ function GelenTirPanel({ from, to, label, stockItems = [] }) {
   // Çok-satırlı irsaliye: üstte irsaliye no + tarih tek kez, altında N ürün satırı
   const [waybill, setWaybill] = useState('')
   const [date, setDate] = useState(todayStr())
+  const [photoNote, setPhotoNote] = useState('')
+  const [photoDrafts, setPhotoDrafts] = useState([])
+  const photoDraftsRef = useRef([])
+  const photoInputRef = useRef(null)
   const blankRow = { product_id: '', input_qty: '', input_unit: 'palet', lot_no: '', production_date: '', expiry_date: '', note: '' }
   const [rows, setRows] = useState([{ ...blankRow }])
 
+  useEffect(() => {
+    photoDraftsRef.current = photoDrafts
+  }, [photoDrafts])
+
+  useEffect(() => () => {
+    photoDraftsRef.current.forEach(photo => {
+      if (photo.previewUrl) URL.revokeObjectURL(photo.previewUrl)
+    })
+  }, [])
+
+  const clearPhotoDrafts = () => {
+    setPhotoDrafts(current => {
+      current.forEach(photo => {
+        if (photo.previewUrl) URL.revokeObjectURL(photo.previewUrl)
+      })
+      return []
+    })
+  }
+
+  const addPhotoDrafts = (fileList) => {
+    const files = Array.from(fileList || [])
+    const accepted = files.filter(file => ['image/jpeg', 'image/png', 'image/webp'].includes(file.type) && file.size <= 10 * 1024 * 1024)
+    const rejected = files.length - accepted.length
+    const available = Math.max(0, 5 - photoDrafts.length)
+    const selected = accepted.slice(0, available)
+    if (rejected > 0) toastErr(`${rejected} dosya atlandı. JPEG, PNG veya WebP ve en fazla 10 MB olmalı.`)
+    if (accepted.length > available) toastErr('Bir irsaliyeye en fazla 5 fotoğraf eklenebilir.')
+    if (selected.length === 0) return
+    setPhotoDrafts(current => [
+      ...current,
+      ...selected.map(file => ({
+        id: `${file.name}-${file.lastModified}-${Math.random()}`,
+        file,
+        previewUrl: typeof URL.createObjectURL === 'function' ? URL.createObjectURL(file) : '',
+      })),
+    ])
+  }
+
+  const removePhotoDraft = (id) => {
+    setPhotoDrafts(current => current.filter(photo => {
+      if (photo.id !== id) return true
+      if (photo.previewUrl) URL.revokeObjectURL(photo.previewUrl)
+      return false
+    }))
+  }
+
   const saveBatch = useMutation({
-    mutationFn: (payload) => api.post('/water/intake/batch', payload),
+    mutationFn: async ({ intake, photos, note }) => {
+      const response = await api.post('/water/intake/batch', intake)
+      const movementId = response.data.ids?.[0]
+      const uploadResults = await Promise.allSettled(photos.map(photo => {
+        const fd = new FormData()
+        fd.append('photo', photo.file)
+        if (movementId) fd.append('movement_id', String(movementId))
+        if (intake.waybill_no) fd.append('waybill_no', intake.waybill_no)
+        fd.append('move_date', intake.move_date)
+        if (note) fd.append('note', note)
+        return api.post('/water/waybill-photos', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+      }))
+      return {
+        data: response.data,
+        uploadedPhotoCount: uploadResults.filter(result => result.status === 'fulfilled').length,
+        failedPhotoCount: uploadResults.filter(result => result.status === 'rejected').length,
+      }
+    },
     onSuccess: (r) => {
-      invalidateWaterQueries(qc, 'intake')
-      const m = r.data.matched ? ` · ${r.data.matched} bekleyen dağıtım eşleşti ✓` : ''
-      toastOk(`${r.data.count} ürün kaydedildi${m}`)
-      setRows([{ ...blankRow }]); setWaybill('')
+      invalidateWaterQueries(qc, 'intake', 'trucks')
+      const matchedText = r.data.matched ? ` · ${r.data.matched} bekleyen dağıtım eşleşti ✓` : ''
+      const photoText = r.uploadedPhotoCount ? ` · ${r.uploadedPhotoCount} fotoğraf arşivlendi` : ''
+      toastOk(`${r.data.count} ürün kaydedildi${matchedText}${photoText}`)
+      if (r.failedPhotoCount) toastErr(`${r.failedPhotoCount} fotoğraf yüklenemedi; irsaliye kaydı ise başarıyla oluşturuldu.`)
+      setRows([{ ...blankRow }])
+      setWaybill('')
+      setPhotoNote('')
+      clearPhotoDrafts()
     },
     onError: (e) => toastErr(errMsg(e, 'Kaydedilemedi')),
   })
@@ -967,34 +1043,105 @@ function GelenTirPanel({ from, to, label, stockItems = [] }) {
   const submit = () => {
     if (invalidRows.length > 0) return toastErr(rowIssue(invalidRows[0]) || 'Eksik veya geçersiz ürün satırını düzeltin')
     if (validRows.length === 0) return toastErr('En az bir geçerli ürün satırı girin')
+    if (photoDrafts.length > 0 && !waybill.trim()) return toastErr('Fotoğraflı kayıt için irsaliye numarası girin')
     saveBatch.mutate({
-      move_date: date, waybill_no: waybill.trim() || undefined,
-      lines: validRows.map(r => {
-        const c = rowCalc(r)
-        return {
-          product_id: +r.product_id,
-          input_qty: c.input_qty,
-          input_unit: c.input_unit,
-          lot_no: r.lot_no.trim() || undefined,
-          production_date: r.production_date || undefined,
-          expiry_date: r.expiry_date || undefined,
-          note: r.note?.trim() || undefined,
-        }
-      }),
+      intake: {
+        move_date: date,
+        waybill_no: waybill.trim() || undefined,
+        lines: validRows.map(r => {
+          const c = rowCalc(r)
+          return {
+            product_id: +r.product_id,
+            input_qty: c.input_qty,
+            input_unit: c.input_unit,
+            lot_no: r.lot_no.trim() || undefined,
+            production_date: r.production_date || undefined,
+            expiry_date: r.expiry_date || undefined,
+            note: r.note?.trim() || undefined,
+          }
+        }),
+      },
+      photos: photoDrafts,
+      note: photoNote.trim(),
     })
   }
 
   return (
-    <div className="panel" style={{ borderTop: '3px solid var(--green)' }}>
-      <div className="panel-header"><div><div className="panel-title">GELEN TIR / İRSALİYE — {label}</div><div className="panel-subtitle">Çok satırlı irsaliye — tek no/tarih, N ürün; kayıtta bekleyen dağıtımlar otomatik kapanır</div></div></div>
-      <div className="panel-body" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.05fr) minmax(260px, .95fr)', gap: '14px' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'end' }}>
-            <div style={{ flex: 1, minWidth: '140px' }}><label className="form-label">İrsaliye no</label><input className="form-input" placeholder="Ör. IRS-2026-045" value={waybill} onChange={e => setWaybill(e.target.value)} /></div>
-            <div style={{ width: '150px' }}><label className="form-label">Tarih</label><input type="date" className="form-input" value={date} onChange={e => setDate(e.target.value)} /></div>
+    <div className="panel water-intake-panel" style={{ borderTop: '3px solid var(--green)' }}>
+      <div className="panel-header">
+        <div>
+          <div className="panel-title">GELEN TIR / İRSALİYE — {label}</div>
+          <div className="panel-subtitle">İrsaliye bilgisi, ürün satırları ve teslim fotoğrafları tek kayıtta; bekleyen dağıtımlar otomatik kapanır</div>
+        </div>
+        <div className="water-intake-header-status">
+          <span className="badge badge-green">{validRows.length} ürün</span>
+          <span className="badge badge-blue">{photoDrafts.length} fotoğraf</span>
+        </div>
+      </div>
+      <div className="panel-body water-intake-panel-body">
+        <div className="water-intake-meta-grid">
+          <div>
+            <label className="form-label">İrsaliye no</label>
+            <input className="form-input" placeholder="Ör. IRS-2026-045" value={waybill} onChange={e => setWaybill(e.target.value)} />
+            <div className="water-intake-field-help">Fotoğraf eklenirse arşivde bu numarayla aranır.</div>
+          </div>
+          <div>
+            <label className="form-label">Teslim tarihi</label>
+            <input type="date" className="form-input" value={date} onChange={e => setDate(e.target.value)} />
+            <div className="water-intake-field-help">Stok ve irsaliye tarihi</div>
+          </div>
+          <div className="water-waybill-photo-card">
+            <div className="water-waybill-photo-copy">
+              <div className="water-waybill-photo-icon">📷</div>
+              <div>
+                <strong>İrsaliye fotoğrafı</strong>
+                <div>JPEG, PNG veya WebP · en fazla 5 dosya · dosya başına 10 MB</div>
+              </div>
+            </div>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => photoInputRef.current?.click()} disabled={photoDrafts.length >= 5 || saveBatch.isPending}>
+              {photoDrafts.length ? '+ Fotoğraf ekle' : 'Fotoğraf seç / kamera'}
+            </button>
+            <input
+              ref={photoInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              multiple
+              aria-label="İrsaliye fotoğrafı seç"
+              style={{ display: 'none' }}
+              onChange={e => {
+                addPhotoDrafts(e.target.files)
+                e.target.value = ''
+              }}
+            />
+          </div>
+        </div>
+
+        {photoDrafts.length > 0 && (
+          <div className="water-waybill-photo-drafts">
+            <div className="water-waybill-photo-preview-list">
+              {photoDrafts.map((photo, index) => (
+                <div className="water-waybill-photo-preview" key={photo.id}>
+                  {photo.previewUrl
+                    ? <img src={photo.previewUrl} alt={`İrsaliye önizleme ${index + 1}`} />
+                    : <div className="water-waybill-photo-fallback">FOTO</div>}
+                  <button type="button" aria-label={`${index + 1}. irsaliye fotoğrafını kaldır`} onClick={() => removePhotoDraft(photo.id)}>×</button>
+                  <span>{photo.file.name}</span>
+                </div>
+              ))}
+            </div>
+            <label className="form-label water-waybill-photo-note">Fotoğraf notu
+              <input className="form-input" placeholder="Örn. teslim alan, hasar veya açıklama" value={photoNote} onChange={e => setPhotoNote(e.target.value)} />
+            </label>
+          </div>
+        )}
+
+        <div className="water-intake-lines">
+          <div className="water-intake-section-heading">
+            <div><strong>İrsaliye ürünleri</strong><span>Her ürün, miktar ve varsa lot/SKT bilgisini ayrı satırda girin.</span></div>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={addRow}>+ Ürün satırı</button>
           </div>
           <div style={{ border: '1px solid var(--border)', borderRadius: '8px', overflowX: 'auto' }}>
-            <table className="data-table" style={{ fontSize: '11px', width: '100%', minWidth: '980px' }}>
+            <table className="data-table" style={{ fontSize: '11px', width: '100%', minWidth: '920px' }}>
               <thead><tr><th>Ürün</th><th style={{ width: '78px' }}>Miktar</th><th style={{ width: '82px' }}>Birim</th><th style={{ width: '110px' }}>Hesaplanan</th><th style={{ width: '120px' }}>Lot</th><th style={{ width: '155px' }}>Üretim / SKT</th><th>Not</th><th style={{ width: '30px' }}></th></tr></thead>
               <tbody>
                 {rows.map((r, i) => {
@@ -1026,33 +1173,55 @@ function GelenTirPanel({ from, to, label, stockItems = [] }) {
               </tbody>
             </table>
           </div>
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={addRow}>+ Ürün satırı</button>
-            <button className="btn btn-primary btn-sm" onClick={submit} disabled={saveBatch.isPending || validRows.length === 0 || invalidRows.length > 0} style={{ marginLeft: 'auto' }}>{saveBatch.isPending ? 'Kaydediliyor…' : `İrsaliyeyi Kaydet (${validRows.length} ürün)`}</button>
+          <div className="water-intake-actions">
+            <div>
+              <strong>{validRows.length} geçerli ürün</strong>
+              <span>{photoDrafts.length ? ` · ${photoDrafts.length} fotoğraf kayıtla birlikte arşivlenecek` : ' · Fotoğraf isteğe bağlı'}</span>
+            </div>
+            <button className="btn btn-primary" onClick={submit} disabled={saveBatch.isPending || validRows.length === 0 || invalidRows.length > 0}>
+              {saveBatch.isPending ? 'İrsaliye ve fotoğraflar kaydediliyor…' : `İrsaliyeyi Kaydet (${validRows.length} ürün)`}
+            </button>
           </div>
-          <div style={{ border: '1px solid var(--border)', borderRadius: '8px', overflow: 'auto', maxHeight: '280px' }}>
+        </div>
+
+        <div className="water-intake-lower-grid">
+          <div className="water-intake-history">
+            <div className="water-intake-section-heading">
+              <div><strong>Son gelen irsaliyeler</strong><span>Bu ayın son 12 stok giriş kaydı</span></div>
+            </div>
+            <div style={{ border: '1px solid var(--border)', borderRadius: '8px', overflow: 'auto', maxHeight: '360px' }}>
             <table className="data-table" style={{ fontSize: '11px' }}>
-              <thead><tr><th>Tarih</th><th>İrsaliye</th><th>Ürün</th><th>Lot / SKT</th><th style={{ textAlign: 'right' }}>Gelen</th><th style={{ textAlign: 'right' }}>Kalan</th></tr></thead>
+              <thead><tr><th>Tarih</th><th>İrsaliye</th><th>Foto</th><th>Ürün</th><th>Lot / SKT</th><th style={{ textAlign: 'right' }}>Gelen</th><th style={{ textAlign: 'right' }}>Kalan</th></tr></thead>
               <tbody>
-                {intakes.slice(0, 12).map(r => (
-                  <tr key={r.id}>
+                {intakes.slice(0, 12).map(r => {
+                  const linkedPhotos = waybillPhotos.filter(photo => Number(photo.movement_id) === Number(r.id) || (r.waybill_no && photo.waybill_no === r.waybill_no))
+                  const firstPhoto = linkedPhotos[0]
+                  return <tr key={r.id}>
                     <td style={{ fontFamily: 'var(--mono)' }}>{r.move_date}</td>
                     <td style={{ fontFamily: 'var(--mono)', color: r.waybill_no ? 'var(--text)' : 'var(--text3)' }}>{r.waybill_no || '—'}</td>
+                    <td>
+                      {firstPhoto ? (
+                        <button type="button" className="water-intake-photo-link" onClick={() => window.open(firstPhoto.photo_url, '_blank')} aria-label={`${r.waybill_no || 'İrsaliye'} fotoğrafını aç`}>
+                          <img src={firstPhoto.photo_url} alt="" />
+                          <span>{linkedPhotos.length}</span>
+                        </button>
+                      ) : <span style={{ color: 'var(--text3)' }}>—</span>}
+                    </td>
                     <td>{r.brand_name ? `${r.brand_name} · ` : ''}{r.product_name}</td>
                     <td><div style={{ fontFamily: 'var(--mono)' }}>{r.lot_no || '—'}</div><div style={{ fontSize: '10px', color: r.expiry_date ? 'var(--text3)' : (r.expiry_tracking ? 'var(--red)' : 'var(--text3)') }}>{r.expiry_date || (r.expiry_tracking ? 'SKT eksik' : 'Takip kapalı')}</div></td>
                     <td style={{ textAlign: 'right', fontFamily: 'var(--mono)' }}>{r.qty_human || humanQty(r, r.qty_base)}</td>
                     <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', color: (r.remaining_base || 0) > 0 ? 'var(--teal)' : 'var(--text3)' }}>{r.remaining_human || nf(r.remaining_base)}</td>
                   </tr>
-                ))}
-                {intakes.length === 0 && <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--text3)', padding: '12px' }}>Bu ay gelen tır kaydı yok</td></tr>}
+                })}
+                {intakes.length === 0 && <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--text3)', padding: '12px' }}>Bu ay gelen tır kaydı yok</td></tr>}
               </tbody>
             </table>
+            </div>
           </div>
-        </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text2)' }}>ELDEKİ SU/STOK</div>
-          <div style={{ border: '1px solid var(--border)', borderRadius: '8px', overflow: 'auto', maxHeight: '190px' }}>
+          <div className="water-intake-insights">
+            <div className="water-intake-section-heading"><div><strong>Eldeki su / stok</strong><span>Anlık kullanılabilir miktar</span></div></div>
+            <div style={{ border: '1px solid var(--border)', borderRadius: '8px', overflow: 'auto', maxHeight: '190px' }}>
             <table className="data-table" style={{ fontSize: '11px' }}>
               <tbody>
                 {stockItems.map(s => (
@@ -1064,9 +1233,9 @@ function GelenTirPanel({ from, to, label, stockItems = [] }) {
                 {stockItems.length === 0 && <tr><td style={{ textAlign: 'center', color: 'var(--text3)', padding: '12px' }}>Stok verisi yok</td></tr>}
               </tbody>
             </table>
-          </div>
-          <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text2)', marginTop: '4px' }}>BU AY GELEN ÜRÜN ÖZETİ</div>
-          <div style={{ border: '1px solid var(--border)', borderRadius: '8px', overflow: 'auto', maxHeight: '190px' }}>
+            </div>
+            <div className="water-intake-section-heading" style={{ marginTop: '4px' }}><div><strong>Bu ay gelen ürün özeti</strong><span>Toplam giriş ve irsaliyede kalan</span></div></div>
+            <div style={{ border: '1px solid var(--border)', borderRadius: '8px', overflow: 'auto', maxHeight: '190px' }}>
             <table className="data-table" style={{ fontSize: '11px' }}>
               <tbody>
                 {byProduct.map(r => (
@@ -1081,6 +1250,7 @@ function GelenTirPanel({ from, to, label, stockItems = [] }) {
                 {byProduct.length === 0 && <tr><td style={{ textAlign: 'center', color: 'var(--text3)', padding: '12px' }}>Gelen ürün özeti yok</td></tr>}
               </tbody>
             </table>
+            </div>
           </div>
         </div>
       </div>

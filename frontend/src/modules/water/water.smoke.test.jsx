@@ -425,9 +425,40 @@ describe('WaterPage tek-ekran pano smoke', () => {
     expect(await screen.findByText(/GELEN TIR/)).toBeInTheDocument()
     expect(screen.getByText('+ Ürün satırı')).toBeInTheDocument() // W6 çok-satırlı form
     expect(screen.getByText(/İrsaliyeyi Kaydet/)).toBeInTheDocument()
+    expect(screen.getByText('İrsaliye fotoğrafı')).toBeInTheDocument()
+    expect(screen.getByLabelText('İrsaliye fotoğrafı seç')).toBeInTheDocument()
     expect(screen.getByText('BOŞ İADE — DEPOZİTO')).toBeInTheDocument()
     // depozito kartı (dolaşımda 90)
     expect((await screen.findAllByText('90')).length).toBeGreaterThan(0)
+  })
+
+  it('gelen irsaliye kaydıyla seçilen fotoğrafı hareket arşivine bağlar', async () => {
+    renderWithProviders(<WaterPage />)
+    const title = await screen.findByText(/GELEN TIR/)
+    const panel = title.closest('.panel')
+    const productSelect = within(panel).getAllByRole('combobox')[0]
+    const file = new File([new Uint8Array([0xff, 0xd8, 0xff])], 'irsaliye.jpg', { type: 'image/jpeg', lastModified: 1 })
+
+    fireEvent.change(within(panel).getByPlaceholderText('Ör. IRS-2026-045'), { target: { value: 'IRS-2026-045' } })
+    fireEvent.change(productSelect, { target: { value: '1' } })
+    fireEvent.change(within(panel).getByPlaceholderText('3 / 3p'), { target: { value: '3' } })
+    fireEvent.change(within(panel).getByLabelText('İrsaliye fotoğrafı seç'), { target: { files: [file] } })
+
+    expect(within(panel).getByText('1 fotoğraf')).toBeInTheDocument()
+    fireEvent.click(within(panel).getByRole('button', { name: 'İrsaliyeyi Kaydet (1 ürün)' }))
+
+    await waitFor(() => {
+      expect(api.post).toHaveBeenCalledWith('/water/intake/batch', expect.objectContaining({
+        waybill_no: 'IRS-2026-045',
+        lines: [expect.objectContaining({ product_id: 1, input_qty: 3, input_unit: 'palet' })],
+      }))
+    })
+    await waitFor(() => expect(api.post.mock.calls.some(([url]) => url === '/water/waybill-photos')).toBe(true))
+    const photoCall = api.post.mock.calls.find(([url]) => url === '/water/waybill-photos')
+    expect(photoCall[1]).toBeInstanceOf(FormData)
+    expect(photoCall[1].get('movement_id')).toBe('1')
+    expect(photoCall[1].get('waybill_no')).toBe('IRS-2026-045')
+    expect(photoCall[1].get('photo')).toBe(file)
   })
 
   it('uyarı merkezi bandı kartları gösterir ve tıklanınca detay açılır', async () => {
