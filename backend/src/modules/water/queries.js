@@ -1033,7 +1033,39 @@ export function updateTruckArrival(id, row) {
   `).run({ ...row, id }).changes > 0
 }
 
-export function setTruckMailSent(id, userId) {
+export function setTruckMailSent(id, userId, delivery = {}) {
+  const expectedVersion = Number(delivery.expectedVersion)
+  if (Number.isInteger(expectedVersion) && expectedVersion > 0) {
+    return getDB().prepare(`
+      UPDATE water_truck_arrivals
+      SET mail_sent_at=CURRENT_TIMESTAMP, mail_message_id=?,
+          status=CASE WHEN status='planned' THEN 'mail_sent' ELSE status END,
+          updated_by=?, updated_at=CURRENT_TIMESTAMP
+      WHERE id=? AND mail_version=?
+    `).run(delivery.messageId || null, userId || null, id, expectedVersion).changes > 0
+  }
+
+  const version = Number(delivery.version)
+  if (Number.isInteger(version) && version > 0) {
+    return getDB().prepare(`
+      UPDATE water_truck_arrivals
+      SET mail_sent_at=CURRENT_TIMESTAMP, mail_version=?,
+          mail_snapshot_to=?, mail_snapshot_subject=?, mail_snapshot_body=?,
+          mail_snapshot_at=CURRENT_TIMESTAMP, mail_message_id=?,
+          status=CASE WHEN status='planned' THEN 'mail_sent' ELSE status END,
+          updated_by=?, updated_at=CURRENT_TIMESTAMP
+      WHERE id=?
+    `).run(
+      version,
+      delivery.to || null,
+      delivery.subject || null,
+      delivery.body || null,
+      delivery.messageId || null,
+      userId || null,
+      id,
+    ).changes > 0
+  }
+
   return getDB().prepare(`
     UPDATE water_truck_arrivals
     SET mail_sent_at=CURRENT_TIMESTAMP,
@@ -1043,13 +1075,23 @@ export function setTruckMailSent(id, userId) {
   `).run(userId || null, id).changes > 0
 }
 
-export function setTruckMailQueued(id, jobId, userId) {
+export function setTruckMailQueued(id, jobId, userId, snapshot) {
   return getDB().prepare(`
     UPDATE water_truck_arrivals
     SET mail_job_id=?, mail_queued_at=CURRENT_TIMESTAMP,
+        mail_version=?, mail_snapshot_to=?, mail_snapshot_subject=?, mail_snapshot_body=?,
+        mail_snapshot_at=CURRENT_TIMESTAMP, mail_message_id=NULL,
         updated_by=?, updated_at=CURRENT_TIMESTAMP
     WHERE id=?
-  `).run(jobId, userId || null, id).changes > 0
+  `).run(
+    jobId,
+    snapshot.version,
+    snapshot.to,
+    snapshot.subject,
+    snapshot.body,
+    userId || null,
+    id,
+  ).changes > 0
 }
 
 export function setTruckChecked(id, userId) {

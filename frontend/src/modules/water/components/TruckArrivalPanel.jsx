@@ -844,6 +844,27 @@ function TruckArrivalPanel({ from, to, label, focusRequest }) {
                       <div><span style={{ color: 'var(--text3)' }}>Konu:</span> <span style={{ fontWeight: 700 }}>{selectedTruck.mail_preview?.subject || selectedTruck.mail_subject || '—'}</span></div>
                       <textarea className="form-input" readOnly value={selectedTruck.mail_preview?.body || selectedTruck.mail_body || ''} style={{ minHeight: '150px', fontFamily: 'var(--mono)', fontSize: '11px', resize: 'vertical', whiteSpace: 'pre-wrap' }} />
                     </div>
+                    {selectedTruck.mail_delivery_snapshot && (
+                      <div style={{ marginTop: '8px', padding: '8px', border: '1px solid var(--border)', borderRadius: '7px', background: 'var(--surface)', fontSize: '10px' }}>
+                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+                          <span className="badge badge-blue">Gönderim kaydı v{selectedTruck.mail_delivery_snapshot.version}</span>
+                          {selectedTruck.mail_delivery_snapshot.message_id && (
+                            <span style={{ color: 'var(--text3)', fontFamily: 'var(--mono)', overflowWrap: 'anywhere' }}>
+                              Message-ID: {selectedTruck.mail_delivery_snapshot.message_id}
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ color: 'var(--text3)', marginTop: '5px' }}>
+                          Snapshot alıcısı: <strong style={{ color: 'var(--text2)' }}>{selectedTruck.mail_delivery_snapshot.to || '—'}</strong>
+                          {selectedTruck.mail_delivery_snapshot.snapshot_at ? ` · ${selectedTruck.mail_delivery_snapshot.snapshot_at}` : ''}
+                        </div>
+                        {selectedTruck.mail_record_changed && (
+                          <div style={{ color: 'var(--red)', fontWeight: 800, marginTop: '5px' }}>
+                            Güncel kayıt, gönderilen mail içeriğinden farklı.
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '6px' }}>
@@ -878,12 +899,12 @@ function TruckArrivalPanel({ from, to, label, focusRequest }) {
                             : selectedTruck.mail_queue?.failed ? 'Tekrar Kuyruğa Al' : 'Maili Kuyruğa Al'}
                       </button>
                     )}
-                    <button className="btn btn-ghost btn-sm" onClick={() => editTruck(selectedTruck)}>Düzenle</button>
-                    {!selectedTruck.mail_sent_at && <button className="btn btn-ghost btn-sm" onClick={() => markMail.mutate(selectedTruck.id)}>Mail atıldı</button>}
+                    <button className="btn btn-ghost btn-sm" disabled={selectedTruck.mail_queue?.active} title={selectedTruck.mail_queue?.active ? 'Mail kuyruktayken düzenleme kilitlidir' : undefined} onClick={() => editTruck(selectedTruck)}>Düzenle</button>
+                    {!selectedTruck.mail_sent_at && <button className="btn btn-ghost btn-sm" disabled={selectedTruck.mail_queue?.active} onClick={() => markMail.mutate(selectedTruck.id)}>Mail atıldı</button>}
                     <button className="btn btn-ghost btn-sm" onClick={() => markChecked.mutate(selectedTruck.id)}>Kontrol edildi</button>
                     <button className="btn btn-ghost btn-sm" onClick={() => { setPhotoForm(f => ({ ...f, truck_arrival_id: String(selectedTruck.id), move_date: selectedTruck.arrival_date })); fileRef.current?.click() }}>Foto bağla</button>
-                    {selectedTruck.status !== 'arrived' && <button className="btn btn-ghost btn-sm" onClick={() => updateTruck.mutate({ id: selectedTruck.id, body: truckPayload(selectedTruck, { status: 'arrived' }) })}>Geldi</button>}
-                    {selectedTruck.status !== 'cancelled' && <button className="btn btn-ghost btn-sm" onClick={() => updateTruck.mutate({ id: selectedTruck.id, body: truckPayload(selectedTruck, { status: 'cancelled' }) })}>İptal</button>}
+                    {selectedTruck.status !== 'arrived' && <button className="btn btn-ghost btn-sm" disabled={selectedTruck.mail_queue?.active} onClick={() => updateTruck.mutate({ id: selectedTruck.id, body: truckPayload(selectedTruck, { status: 'arrived' }) })}>Geldi</button>}
+                    {selectedTruck.status !== 'cancelled' && <button className="btn btn-ghost btn-sm" disabled={selectedTruck.mail_queue?.active} onClick={() => updateTruck.mutate({ id: selectedTruck.id, body: truckPayload(selectedTruck, { status: 'cancelled' }) })}>İptal</button>}
                     {isManager && <button className="btn btn-danger btn-sm" onClick={async () => { if (await confirmDialog({ title: 'Tır Kaydı Sil', body: `${selectedTruck.plate} kaydı silinsin mi?`, danger: true })) delTruck.mutate(selectedTruck.id) }}>Sil</button>}
                   </div>
 

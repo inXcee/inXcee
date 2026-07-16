@@ -13,8 +13,15 @@ import { sendDailyDigestMailJob, sendTruckArrivalMailJob } from './jobs.js'
 
 function createTruck(plate = '34 TEST 050') {
   return getDB().prepare(`
-    INSERT INTO water_truck_arrivals(arrival_date, mail_deadline_date, plate, center_email)
-    VALUES('2027-03-20', '2027-03-19', ?, 'merkez@example.com')
+    INSERT INTO water_truck_arrivals(
+      arrival_date, mail_deadline_date, plate, center_email,
+      mail_version, mail_snapshot_to, mail_snapshot_subject, mail_snapshot_body, mail_snapshot_at
+    )
+    VALUES(
+      '2027-03-20', '2027-03-19', ?, 'merkez@example.com',
+      1, 'merkez@example.com', 'Su nakliye girişi',
+      'Personel ve araç girişi için yardımlarınızı rica ederiz.', CURRENT_TIMESTAMP
+    )
   `).run(plate).lastInsertRowid
 }
 
@@ -25,6 +32,7 @@ function payload(truckArrivalId) {
     to: 'merkez@example.com',
     subject: 'Su nakliye girişi',
     body: 'Personel ve araç girişi için yardımlarınızı rica ederiz.',
+    mailVersion: 1,
   }
 }
 
@@ -65,6 +73,8 @@ describe('water.truck-mail job', () => {
     expect(job.attempts).toBe(2)
     expect(truck.status).toBe('mail_sent')
     expect(truck.mail_sent_at).toBeTruthy()
+    expect(truck.mail_message_id).toBe('mail-050')
+    expect(truck.mail_version).toBe(1)
     expect(composeAndSend).toHaveBeenCalledTimes(2)
   })
 

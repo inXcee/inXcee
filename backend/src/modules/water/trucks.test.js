@@ -30,8 +30,10 @@ import {
   checkTruckArrivalAlerts,
   createTruckArrivalService,
   createWaybillPhotoService,
+  markTruckMailSentService,
   sendTruckArrivalMailService,
   truckArrivalsService,
+  updateTruckArrivalService,
 } from './trucks.js'
 
 function readyTruck(overrides = {}) {
@@ -69,6 +71,12 @@ function readyTruck(overrides = {}) {
     mail_job_max_attempts: null,
     mail_job_last_error: null,
     mail_queued_at: null,
+    mail_version: 0,
+    mail_snapshot_to: null,
+    mail_snapshot_subject: null,
+    mail_snapshot_body: null,
+    mail_snapshot_at: null,
+    mail_message_id: null,
     photo_count: 0,
     ...overrides,
   }
@@ -89,6 +97,8 @@ describe('water truck operations', () => {
     queryMocks.listTruckArrivals.mockReturnValue([])
     queryMocks.listWaybillPhotos.mockReturnValue([])
     queryMocks.setTruckMailQueued.mockReturnValue(true)
+    queryMocks.setTruckMailSent.mockReturnValue(true)
+    queryMocks.updateTruckArrival.mockReturnValue(true)
   })
 
   it('normalizes gate-entry data and enforces operational time rules', () => {
@@ -175,8 +185,18 @@ describe('water truck operations', () => {
   it('queues mail transactionally and returns the existing active job on duplicate requests', () => {
     let row = readyTruck()
     queryMocks.getTruckArrival.mockImplementation(() => row)
-    queryMocks.setTruckMailQueued.mockImplementation((id, jobId) => {
-      row = { ...row, mail_job_id: jobId, mail_job_status: 'pending', mail_queued_at: '2027-03-16 09:00:00' }
+    queryMocks.setTruckMailQueued.mockImplementation((id, jobId, userId, snapshot) => {
+      row = {
+        ...row,
+        mail_job_id: jobId,
+        mail_job_status: 'pending',
+        mail_queued_at: '2027-03-16 09:00:00',
+        mail_version: snapshot.version,
+        mail_snapshot_to: snapshot.to,
+        mail_snapshot_subject: snapshot.subject,
+        mail_snapshot_body: snapshot.body,
+        mail_snapshot_at: '2027-03-16 09:00:00',
+      }
       return true
     })
 
@@ -189,13 +209,23 @@ describe('water truck operations', () => {
       to: 'merkez@example.com',
       subject: expect.stringContaining('34 SU 217'),
       body: expect.stringContaining('PERSONEL GÜNLÜK GİRİŞ BİLGİLERİ'),
+      mailVersion: 1,
     }), { maxAttempts: 5 })
-    expect(queryMocks.setTruckMailQueued).toHaveBeenCalledWith(7, 91, 12)
+    expect(queryMocks.setTruckMailQueued).toHaveBeenCalledWith(7, 91, 12, expect.objectContaining({
+      version: 1,
+      to: 'merkez@example.com',
+      subject: expect.stringContaining('34 SU 217'),
+      body: expect.stringContaining('PERSONEL GÜNLÜK GİRİŞ BİLGİLERİ'),
+    }))
     expect(queued).toMatchObject({
       queued: true,
       alreadyQueued: false,
       job_id: 91,
-      truck: { mail_phase: 'queued', mail_queue: { job_id: 91, active: true } },
+      truck: {
+        mail_phase: 'queued',
+        mail_queue: { job_id: 91, active: true },
+        mail_delivery_snapshot: { version: 1, to: 'merkez@example.com' },
+      },
     })
 
     expect(sendTruckArrivalMailService(7, 12)).toMatchObject({
@@ -204,6 +234,63 @@ describe('water truck operations', () => {
       job_id: 91,
     })
     expect(enqueue).toHaveBeenCalledOnce()
+  })
+
+  it('locks mail-sensitive edits while queued but allows reminder plan updates', () => {
+    const row = readyTruck({ mail_job_id: 91, mail_job_status: 'pending' })
+    queryMocks.getTruckArrival.mockReturnValue(row)
+
+    expect(() => updateTruckArrivalService(7, {
+      ...row,
+      plate: '34 YENI 217',
+    }, 12)).toThrowError(expect.objectContaining({
+      statusCode: 409,
+      message: 'Mail gönderim kuyruğundayken mail içeriği veya tır durumu değiştirilemez',
+    }))
+    expect(queryMocks.updateTruckArrival).not.toHaveBeenCalled()
+
+    updateTruckArrivalService(7, {
+      ...row,
+      reminder_interval_minutes: 45,
+    }, 12)
+    expect(queryMocks.updateTruckArrival).toHaveBeenCalledWith(7, expect.objectContaining({
+      reminder_interval_minutes: 45,
+      plate: '34 SU 217',
+    }))
+  })
+
+  it('stores a versioned snapshot for manual mail marking and exposes later record drift', () => {
+    let row = readyTruck()
+    queryMocks.getTruckArrival.mockImplementation(() => row)
+    queryMocks.setTruckMailSent.mockImplementation((id, userId, snapshot) => {
+      row = {
+        ...row,
+        status: 'mail_sent',
+        mail_sent_at: '2027-03-16 10:00:00',
+        mail_version: snapshot.version,
+        mail_snapshot_to: snapshot.to,
+        mail_snapshot_subject: snapshot.subject,
+        mail_snapshot_body: snapshot.body,
+        mail_snapshot_at: '2027-03-16 10:00:00',
+      }
+      return true
+    })
+
+    const marked = markTruckMailSentService(7, 12)
+    expect(queryMocks.setTruckMailSent).toHaveBeenCalledWith(7, 12, expect.objectContaining({
+      version: 1,
+      to: 'merkez@example.com',
+    }))
+    expect(marked).toMatchObject({
+      status: 'mail_sent',
+      mail_delivery_snapshot: { version: 1, to: 'merkez@example.com' },
+      mail_record_changed: false,
+    })
+
+    queryMocks.listTruckArrivals.mockReturnValue([{ ...row, plate: '34 DEG 217' }])
+    const [changed] = truckArrivalsService()
+    expect(changed.mail_record_changed).toBe(true)
+    expect(changed.action_items).toContain('Güncel tır kaydı, gönderilen mail içeriğinden farklı')
   })
 
   it('uses the current reminder slot for minute-level mail and arrival alerts', () => {

@@ -11,7 +11,14 @@ function isPermanentMailError(error) {
   return /SMTP_HOST tanımlı değil|SMTP kullanıcı tanımlı değil|SMTP şifre tanımlı değil|alıcı .* gerekli|geçersiz e-posta|konu boş|mesaj boş/i.test(error?.message || '')
 }
 
-export async function sendTruckArrivalMailJob({ truckArrivalId, requestedBy, to, subject, body }) {
+export async function sendTruckArrivalMailJob({
+  truckArrivalId,
+  requestedBy,
+  to,
+  subject,
+  body,
+  mailVersion,
+}) {
   const id = Number(truckArrivalId)
   if (!Number.isInteger(id) || id <= 0) throw permanentError(new Error('Tır maili: geçersiz kayıt kimliği'))
 
@@ -21,7 +28,10 @@ export async function sendTruckArrivalMailJob({ truckArrivalId, requestedBy, to,
 
   try {
     const result = await composeAndSend({ to, subject, body })
-    if (!q.setTruckMailSent(id, requestedBy)) {
+    if (!q.setTruckMailSent(id, requestedBy, {
+      messageId: result?.messageId || null,
+      expectedVersion: mailVersion,
+    })) {
       throw permanentError(new Error('Tır maili gönderildi ancak kayıt kapatılamadı'))
     }
     return result

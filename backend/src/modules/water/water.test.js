@@ -1333,6 +1333,10 @@ describe('Su takip - Tir on bildirimleri ve irsaliye foto arsivi (W11)', () => {
     expect(marked.status).toBe(200)
     expect(marked.body.status).toBe('mail_sent')
     expect(marked.body.mail_sent_at).toBeTruthy()
+    expect(marked.body.mail_delivery_snapshot).toMatchObject({
+      version: 1,
+      subject: expect.stringContaining('35 TEST 111'),
+    })
   })
 
   it('hazır tır mailini kalıcı kuyruğa atomik ekler ve çift istekte aynı işi döndürür', async () => {
@@ -1358,13 +1362,34 @@ describe('Su takip - Tir on bildirimleri ve irsaliye foto arsivi (W11)', () => {
     expect(queued.body).toMatchObject({ queued: true, alreadyQueued: false })
     expect(queued.body.truck.mail_phase).toBe('queued')
     expect(queued.body.truck.mail_queue).toMatchObject({ status: 'pending', active: true, attempts: 0, max_attempts: 5 })
+    expect(queued.body.truck.mail_delivery_snapshot).toMatchObject({
+      version: 1,
+      to: 'merkez@example.com',
+      subject: expect.stringContaining('35 QUEUE 050'),
+    })
 
     const job = getDB().prepare('SELECT * FROM job_queue WHERE id=?').get(queued.body.job_id)
     expect(job.type).toBe('water.truck-mail')
     expect(JSON.parse(job.payload)).toMatchObject({
       truckArrivalId: created.body.id,
       to: 'merkez@example.com',
+      mailVersion: 1,
     })
+    const stored = getDB().prepare('SELECT * FROM water_truck_arrivals WHERE id=?').get(created.body.id)
+    expect(stored).toMatchObject({
+      mail_version: 1,
+      mail_snapshot_to: 'merkez@example.com',
+      mail_job_id: queued.body.job_id,
+    })
+    expect(stored.mail_snapshot_subject).toContain('35 QUEUE 050')
+    expect(stored.mail_snapshot_body).toContain('Kuyruk Test')
+
+    const locked = await auth(request(app).put(`/api/water/truck-arrivals/${created.body.id}`)).send({
+      arrival_date: '2027-03-11',
+      plate: '35 CHANGED 050',
+    })
+    expect(locked.status).toBe(409)
+    expect(locked.body.error).toMatch(/Mail gönderim kuyruğundayken/)
 
     const duplicate = await auth(request(app).post(`/api/water/truck-arrivals/${created.body.id}/send-mail`))
     expect(duplicate.status).toBe(200)

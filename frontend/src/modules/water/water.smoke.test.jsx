@@ -163,6 +163,15 @@ vi.mock('../../shared/api/client.js', () => ({
           mail_severity: 'info',
           mail_notice: 'Mail kalıcı gönderim kuyruğunda · deneme 0/5',
           mail_queue: { job_id: 501, status: 'pending', attempts: 0, max_attempts: 5, active: true, failed: false },
+          mail_delivery_snapshot: {
+            version: 1,
+            to: 'merkez@example.com',
+            subject: 'Su amaçlı nakliye personel giriş talebi - 2026-07-10 - 34 ABC 123',
+            body: 'Merhaba,\\n\\n10.07.2026 tarihinde Ahmet Yilmaz isimli kişinin su amaçlı nakliyesi olacaktır.',
+            snapshot_at: '2026-07-09 16:30:00',
+            message_id: null,
+          },
+          mail_record_changed: false,
           arrival_phase: 'today',
           arrival_phase_label: 'Bugün gelecek',
           arrival_severity: 'warning',
@@ -222,6 +231,8 @@ describe('WaterPage tek-ekran pano smoke', () => {
     expect((await screen.findAllByText('IRS-2026-1')).length).toBeGreaterThan(0)
     expect(screen.getByText(/mail bekliyor/)).toBeInTheDocument()
     expect(screen.getByText('Ana merkez mail taslağı')).toBeInTheDocument()
+    expect(screen.getByText('Gönderim kaydı v1')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Düzenle' })).toBeDisabled()
     expect(screen.getByText('Personel giriş / güvenlik bilgileri')).toBeInTheDocument()
     expect(screen.getByText('PERSONEL GİRİŞ KARTI')).toBeInTheDocument()
     expect(screen.getByText('PERSONEL GİRİŞİ VE ÇIKTI MERKEZİ')).toBeInTheDocument()

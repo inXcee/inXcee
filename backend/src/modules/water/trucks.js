@@ -124,6 +124,27 @@ const MAIL_FIELD_DEFS = [
   ['arrival_start_time', 'Geliş başlangıç'],
   ['arrival_end_time', 'Geliş bitiş'],
 ]
+const MAIL_LOCKED_FIELDS = [
+  'arrival_date',
+  'arrival_start_time',
+  'arrival_end_time',
+  'supplier_name',
+  'brand_id',
+  'driver_name',
+  'driver_tc',
+  'driver_phone',
+  'plate',
+  'trailer_plate',
+  'identity_type',
+  'visit_company',
+  'host_person_name',
+  'host_person_phone',
+  'entry_reason',
+  'work_area',
+  'center_email',
+  'note',
+  'status',
+]
 
 function mailChecklist(row) {
   return MAIL_FIELD_DEFS.map(([key, label]) => ({
@@ -225,6 +246,19 @@ function truckMailBody(row) {
     '',
     'Bilgilerinize sunar, yardımlarınızı rica ederiz.',
   ].filter(Boolean).join('\n')
+}
+
+function truckMailSnapshot(row, version = Number(row.mail_version || 0) + 1) {
+  return {
+    version,
+    to: row.center_email || null,
+    subject: truckMailSubject(row),
+    body: truckMailBody(row),
+  }
+}
+
+function sameTruckValue(left, right) {
+  return (left ?? null) === (right ?? null)
 }
 
 function registerGatePdfFonts(doc) {
@@ -479,6 +513,17 @@ function decorateTruck(row, now = new Date()) {
 
   const mailSubject = truckMailSubject(row)
   const mailBody = truckMailBody(row)
+  const hasMailSnapshot = Number(row.mail_version || 0) > 0
+    && !!row.mail_snapshot_subject
+    && !!row.mail_snapshot_body
+  const mailRecordChanged = hasMailSnapshot && (
+    (row.mail_snapshot_to || null) !== (row.center_email || null)
+    || row.mail_snapshot_subject !== mailSubject
+    || row.mail_snapshot_body !== mailBody
+  )
+  if (row.mail_sent_at && mailRecordChanged) {
+    actionItems.push('Güncel tır kaydı, gönderilen mail içeriğinden farklı')
+  }
   return {
     ...row,
     status_label: STATUS_LABEL[row.status] || row.status,
@@ -505,6 +550,15 @@ function decorateTruck(row, now = new Date()) {
       active: mailJobActive,
       failed: mailJobFailed,
     } : null,
+    mail_delivery_snapshot: hasMailSnapshot ? {
+      version: Number(row.mail_version),
+      to: row.mail_snapshot_to || null,
+      subject: row.mail_snapshot_subject,
+      body: row.mail_snapshot_body,
+      snapshot_at: row.mail_snapshot_at || null,
+      message_id: row.mail_message_id || null,
+    } : null,
+    mail_record_changed: mailRecordChanged,
     arrival_phase: arrivalPhase,
     arrival_phase_label: arrivalPhaseLabel,
     arrival_severity: arrivalSeverity,
@@ -561,7 +615,16 @@ export function createTruckArrivalService(data, userId) {
 export function updateTruckArrivalService(id, data, userId) {
   const existing = q.getTruckArrival(id)
   if (!existing) throw Object.assign(new Error('Tır kaydı bulunamadı'), { statusCode: 404 })
-  if (!q.updateTruckArrival(id, normalizeTruckPayload(data, userId, existing))) {
+  const normalized = normalizeTruckPayload(data, userId, existing)
+  if (
+    ['pending', 'processing'].includes(existing.mail_job_status)
+    && MAIL_LOCKED_FIELDS.some(field => !sameTruckValue(existing[field], normalized[field]))
+  ) {
+    throw Object.assign(new Error('Mail gönderim kuyruğundayken mail içeriği veya tır durumu değiştirilemez'), {
+      statusCode: 409,
+    })
+  }
+  if (!q.updateTruckArrival(id, normalized)) {
     throw Object.assign(new Error('Tır kaydı güncellenemedi'), { statusCode: 500 })
   }
 }
@@ -587,34 +650,56 @@ export function sendTruckArrivalMailService(id, userId) {
     }
   }
 
-  const subject = truckMailSubject(row)
   const queueMail = getDB().transaction(() => {
+    const current = q.getTruckArrival(id)
+    if (!current) {
+      throw Object.assign(new Error('Tır kaydı bulunamadı'), { statusCode: 404 })
+    }
+    if (current.mail_sent_at) {
+      throw Object.assign(new Error('Bu tırın maili daha önce gönderilmiş'), { statusCode: 409 })
+    }
+    if (['pending', 'processing'].includes(current.mail_job_status)) {
+      return { jobId: current.mail_job_id, alreadyQueued: true }
+    }
+    const currentMissing = missingMailFields(current)
+    if (currentMissing.length) {
+      throw Object.assign(new Error(`Mail için eksik bilgi: ${currentMissing.join(', ')}`), { statusCode: 400 })
+    }
+    parseRecipients(current.center_email)
+    const snapshot = truckMailSnapshot(current)
     const jobId = enqueue('water.truck-mail', {
       truckArrivalId: id,
       requestedBy: userId || null,
-      to: row.center_email,
-      subject,
-      body: truckMailBody(row),
+      to: snapshot.to,
+      subject: snapshot.subject,
+      body: snapshot.body,
+      mailVersion: snapshot.version,
     }, { maxAttempts: 5 })
-    if (!q.setTruckMailQueued(id, jobId, userId)) {
+    if (!q.setTruckMailQueued(id, jobId, userId, snapshot)) {
       throw new Error('Tır mail kuyruğu kayda bağlanamadı')
     }
-    return jobId
+    return { jobId, alreadyQueued: false }
   })
-  const jobId = queueMail.immediate()
+  const queued = queueMail.immediate()
   return {
     queued: true,
-    alreadyQueued: false,
-    job_id: jobId,
+    alreadyQueued: queued.alreadyQueued,
+    job_id: queued.jobId,
     truck: decorateTruck(q.getTruckArrival(id)),
   }
 }
 
 export function markTruckMailSentService(id, userId) {
-  if (!q.getTruckArrival(id)) {
+  const row = q.getTruckArrival(id)
+  if (!row) {
     throw Object.assign(new Error('Tır kaydı bulunamadı'), { statusCode: 404 })
   }
-  q.setTruckMailSent(id, userId)
+  if (['pending', 'processing'].includes(row.mail_job_status)) {
+    throw Object.assign(new Error('Kuyruktaki mail sonuçlanmadan manuel gönderildi işareti verilemez'), {
+      statusCode: 409,
+    })
+  }
+  q.setTruckMailSent(id, userId, truckMailSnapshot(row))
   return decorateTruck(q.getTruckArrival(id))
 }
 
