@@ -24,6 +24,14 @@ function Loading() {
   return <div style={{ color: 'var(--text3)', fontSize: 11 }}>Yükleniyor…</div>
 }
 
+function ErrorNote({ error }) {
+  return (
+    <div style={{ color: 'var(--red)', fontSize: 11, padding: '8px 10px', borderRadius: 8, background: 'rgba(231,76,60,.07)', border: '1px solid rgba(231,76,60,.2)' }}>
+      Kayıtlar yüklenemedi: {error?.response?.data?.error || error?.message || 'bağlantı hatası'}
+    </div>
+  )
+}
+
 /* ─── Performans ve Hedefler ─────────────────────────────── */
 export function StaffPerformancePanel({ staffId, canManage }) {
   const qc = useQueryClient()
@@ -53,7 +61,7 @@ export function StaffPerformancePanel({ staffId, canManage }) {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 12 }}>
       <DossierSection title="DEĞERLENDİRME GEÇMİŞİ" subtitle={reviews.isLoading ? 'Yükleniyor…' : `${reviews.data?.length || 0} değerlendirme`}>
-        {reviews.isLoading ? <Loading /> : reviews.data?.length ? (
+        {reviews.isLoading ? <Loading /> : reviews.isError ? <ErrorNote error={reviews.error} /> : reviews.data?.length ? (
           <div style={{ display: 'grid', gap: 7 }}>
             {reviews.data.slice(0, 8).map(review => (
               <div key={review.id} style={{ padding: '8px 10px', borderRadius: 8, background: 'var(--surface2)', borderLeft: '3px solid var(--blue)' }}>
@@ -74,7 +82,7 @@ export function StaffPerformancePanel({ staffId, canManage }) {
       </DossierSection>
 
       <DossierSection title="HEDEFLER" subtitle={goals.isLoading ? 'Yükleniyor…' : `${goals.data?.length || 0} hedef`}>
-        {goals.isLoading ? <Loading /> : goals.data?.length ? (
+        {goals.isLoading ? <Loading /> : goals.isError ? <ErrorNote error={goals.error} /> : goals.data?.length ? (
           <div style={{ display: 'grid', gap: 8 }}>
             {goals.data.slice(0, 10).map(goal => (
               <div key={goal.id} style={{ padding: '9px 10px', borderRadius: 8, background: 'var(--surface2)' }}>
@@ -108,7 +116,7 @@ export function StaffPerformancePanel({ staffId, canManage }) {
             <button type="submit" className="btn btn-primary btn-sm" disabled={pointMutation.isPending || !pointForm.reason.trim()}>+ Puan</button>
           </form>
         )}
-        {positive.isLoading ? <Loading /> : positive.data?.length ? (
+        {positive.isLoading ? <Loading /> : positive.isError ? <ErrorNote error={positive.error} /> : positive.data?.length ? (
           <div style={{ display: 'grid', gap: 5 }}>
             {positive.data.slice(0, 8).map(point => (
               <div key={point.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid var(--border)', fontSize: 10 }}>
@@ -132,7 +140,7 @@ export function StaffSafetyPanel({ staffId }) {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 12 }}>
       <DossierSection title="EĞİTİM VE SERTİFİKALAR" subtitle={training.isLoading ? 'Yükleniyor…' : `${training.data?.length || 0} kayıt`}>
-        {training.isLoading ? <Loading /> : training.data?.length ? (
+        {training.isLoading ? <Loading /> : training.isError ? <ErrorNote error={training.error} /> : training.data?.length ? (
           <div style={{ display: 'grid', gap: 7 }}>
             {training.data.slice(0, 12).map(row => {
               const expired = row.cert_expires_at && row.cert_expires_at < today
@@ -154,7 +162,7 @@ export function StaffSafetyPanel({ staffId }) {
       </DossierSection>
 
       <DossierSection title="İŞ KAZALARI VE İSG OLAYLARI" subtitle={accidents.isLoading ? 'Yükleniyor…' : `${accidents.data?.length || 0} kayıt`}>
-        {accidents.isLoading ? <Loading /> : accidents.data?.length ? (
+        {accidents.isLoading ? <Loading /> : accidents.isError ? <ErrorNote error={accidents.error} /> : accidents.data?.length ? (
           <div style={{ display: 'grid', gap: 7 }}>
             {accidents.data.slice(0, 10).map(accident => (
               <div key={accident.id} style={{ padding: '8px 10px', borderRadius: 8, background: 'rgba(231,76,60,.06)', border: '1px solid rgba(231,76,60,.2)' }}>
@@ -204,7 +212,7 @@ export function StaffEquipmentPanel({ staffId, canManage }) {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 12 }}>
       <DossierSection title="ENVANTER ZİMMETLERİ" subtitle={inventory.isLoading ? 'Yükleniyor…' : `${inventoryRows.length} kayıt`}>
-        {inventory.isLoading ? <Loading /> : inventoryRows.length ? (
+        {inventory.isLoading ? <Loading /> : inventory.isError ? <ErrorNote error={inventory.error} /> : inventoryRows.length ? (
           <div style={{ display: 'grid', gap: 6 }}>
             {inventoryRows.slice(0, 12).map(item => {
               const active = !item.returned_at && ((item.quantity || 0) - (item.returned_qty || 0)) > 0
@@ -227,7 +235,7 @@ export function StaffEquipmentPanel({ staffId, canManage }) {
       </DossierSection>
 
       <DossierSection title="KKD KAYITLARI" subtitle={kkd.isLoading ? 'Yükleniyor…' : `${kkdRows.length} kayıt`}>
-        {kkd.isLoading ? <Loading /> : kkdRows.length ? (
+        {kkd.isLoading ? <Loading /> : kkd.isError ? <ErrorNote error={kkd.error} /> : kkdRows.length ? (
           <div style={{ display: 'grid', gap: 6 }}>
             {kkdRows.slice(0, 12).map(item => {
               const active = !item.returned_at
@@ -276,7 +284,7 @@ export function StaffChecklistPanel({ staffId, canManage }) {
   return (
     <div style={{ display: 'grid', gap: 12 }}>
       <DossierSection title="İŞE GİRİŞ / ÇIKIŞ SÜREÇLERİ" subtitle={checklists.isLoading ? 'Yükleniyor…' : `${lists.length} süreç`}>
-        {checklists.isLoading ? <Loading /> : lists.length ? (
+        {checklists.isLoading ? <Loading /> : checklists.isError ? <ErrorNote error={checklists.error} /> : lists.length ? (
           <div style={{ display: 'grid', gap: 8 }}>
             {lists.map(list => (
               <div key={list.id} style={{ padding: '10px 12px', borderRadius: 9, background: 'var(--surface2)', border: '1px solid var(--border)' }}>

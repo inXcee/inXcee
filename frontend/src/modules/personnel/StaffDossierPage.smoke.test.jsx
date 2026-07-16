@@ -93,20 +93,38 @@ describe('StaffDossierPage smoke', () => {
     expect(screen.getByText('2 zorunlu belge eksik')).toBeInTheDocument()
     expect(screen.getByText('%75')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Kimlik ve İletişim' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Kimlik ve İletişim' }))
     expect(await screen.findByText('GÖREV VE LOKASYON GEÇMİŞİ')).toBeInTheDocument()
     expect(await screen.findByText('711******11')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Çalışma ve Devam' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Çalışma ve Devam' }))
     expect(await screen.findByText('VARDİYA GEÇMİŞİ')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Belgeler' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Belgeler' }))
     expect(await screen.findByText('İSG Eğitim Belgesi')).toBeInTheDocument()
     expect(screen.getByText('İş sözleşmesi')).toBeInTheDocument()
     expect(api.get).toHaveBeenCalledWith('/personnel/7/documents')
 
-    fireEvent.click(screen.getByRole('button', { name: 'Operasyonel Bağlantılar' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Operasyonel Bağlantılar' }))
     expect(await screen.findByText('Merkez Durak')).toBeInTheDocument()
     expect(api.get).toHaveBeenCalledWith('/personnel/7/360')
+  })
+
+  it('erişilebilir tablist ve klavye ok navigasyonu sunar', async () => {
+    renderWithProviders(
+      <Routes>
+        <Route path="/shifts/personnel/:staffId" element={<StaffDossierPage />} />
+      </Routes>,
+      { route: '/shifts/personnel/7' },
+    )
+    await screen.findByText('Ayşe Dossier')
+    const tablist = screen.getByRole('tablist')
+    expect(tablist).toBeInTheDocument()
+    const overviewTab = screen.getByRole('tab', { name: 'Genel Bakış' })
+    expect(overviewTab).toHaveAttribute('aria-selected', 'true')
+    // ← → ile sekme değişir
+    fireEvent.keyDown(tablist, { key: 'ArrowRight' })
+    expect(await screen.findByText('GÖREV VE LOKASYON GEÇMİŞİ')).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Kimlik ve İletişim' })).toHaveAttribute('aria-selected', 'true')
   })
 })

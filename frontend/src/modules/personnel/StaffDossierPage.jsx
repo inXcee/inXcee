@@ -282,6 +282,20 @@ export default function StaffDossierPage() {
   })
   const activeTab = useMemo(() => TABS.some(([key]) => key === tab) ? tab : 'overview', [tab])
 
+  // Erişilebilir sekme klavye navigasyonu: ←/→/Home/End ile sekmeler arası gezinme.
+  const onTabKeyDown = (event) => {
+    const index = TABS.findIndex(([key]) => key === activeTab)
+    let nextIndex = null
+    if (event.key === 'ArrowRight') nextIndex = (index + 1) % TABS.length
+    else if (event.key === 'ArrowLeft') nextIndex = (index - 1 + TABS.length) % TABS.length
+    else if (event.key === 'Home') nextIndex = 0
+    else if (event.key === 'End') nextIndex = TABS.length - 1
+    if (nextIndex != null) {
+      event.preventDefault()
+      setTab(TABS[nextIndex][0])
+    }
+  }
+
   if (isLoading) return <SkeletonCard lines={10} />
   if (error || !dossier?.person) return <ErrorState staffId={staffId} error={error} onBack={() => navigate(-1)} />
 
@@ -300,18 +314,20 @@ export default function StaffDossierPage() {
         <button className="btn btn-ghost btn-sm" onClick={() => navigate(-1)}>← Geri</button>
       </div>
       <DossierHeader dossier={dossier} actions={actions} />
-      <nav aria-label="Personel dosyası sekmeleri" style={{
+      <div role="tablist" aria-label="Personel dosyası sekmeleri" onKeyDown={onTabKeyDown} style={{
         display: 'flex', gap: 4, overflowX: 'auto', padding: 4,
         background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 11,
       }}>
         {TABS.map(([key, label]) => (
-          <button key={key} type="button" onClick={() => setTab(key)}
+          <button key={key} type="button" role="tab" id={`dossier-tab-${key}`}
+            aria-selected={activeTab === key} tabIndex={activeTab === key ? 0 : -1}
+            onClick={() => setTab(key)}
             className={`btn btn-sm ${activeTab === key ? 'btn-primary' : 'btn-ghost'}`}
             style={{ whiteSpace: 'nowrap', flex: '1 0 auto' }}>
             {label}
           </button>
         ))}
-      </nav>
+      </div>
       {activeTab === 'overview' && <OverviewTab dossier={dossier} />}
       {activeTab === 'identity' && <IdentityTab dossier={dossier} detail={detailQuery.data} isLoading={detailQuery.isLoading} />}
       {activeTab === 'work' && <WorkTab dossier={dossier} detail={detailQuery.data} isLoading={detailQuery.isLoading} />}
