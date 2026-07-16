@@ -8,10 +8,20 @@ import { importPersonnel, listPersonnelImportBatches, undoPersonnelImport } from
 import { logger } from '../../shared/logger.js'
 import { applyDossierAccess, dossierAccess } from './access-policy.js'
 import { getDossier, getDossierTimeline } from './dossier.js'
+import { documentUpload, verifyDocumentBytes } from '../../shared/uploads/document-middleware.js'
+import fs from 'fs'
+import {
+  listStaffDocuments, createStaffDocument, updateStaffDocument,
+  archiveStaffDocument, getStaffDocumentForDownload,
+} from './staff-documents.js'
 
 export const personnelRouter = Router()
 const mgr = requireRole('campus_manager', 'shift_supervisor')
 const view = dossierAccess
+
+function cleanupUpload(file) {
+  if (file?.path) { try { fs.unlinkSync(file.path) } catch { /* zaten yok */ } }
+}
 
 // ── Excel toplu içe aktarım ──
 personnelRouter.post('/import', ...mgr, validate(importPersonnelSchema), (req, res) => {
@@ -63,6 +73,67 @@ personnelRouter.get('/:id/dossier/timeline', ...view, (req, res) => {
     if (!data) return res.status(404).json({ error: 'Personel bulunamadı' })
     res.json(data)
   } catch (e) { logger.error('[personnel/dossier-timeline]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// ── Birleşik belge yönetimi (Faz 5) ──
+personnelRouter.get('/:id/documents', ...view, (req, res) => {
+  try {
+    res.json(listStaffDocuments(+req.params.id, { role: req.user.role }))
+  } catch (e) {
+    if (e.statusCode) return res.status(e.statusCode).json({ error: e.message })
+    logger.error('[personnel/documents]', e); res.status(500).json({ error: 'Sunucu hatası' })
+  }
+})
+
+personnelRouter.post('/:id/documents', ...view, documentUpload.single('file'), verifyDocumentBytes, (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'Dosya gerekli' })
+    const result = createStaffDocument(+req.params.id, req.file, req.body, {
+      role: req.user.role, userId: req.user.id,
+    })
+    logAudit(req.user.id, 'staff_document_upload', 'personnel', +req.params.id,
+      `${req.body.document_kind || 'other'}: ${req.body.title || req.file.originalname}`)
+    res.status(201).json(result)
+  } catch (e) {
+    cleanupUpload(req.file)
+    if (e.statusCode) return res.status(e.statusCode).json({ error: e.message })
+    logger.error('[personnel/document-upload]', e); res.status(500).json({ error: 'Sunucu hatası' })
+  }
+})
+
+personnelRouter.patch('/documents/:documentId', ...view, (req, res) => {
+  try {
+    const result = updateStaffDocument(+req.params.documentId, req.body, { role: req.user.role })
+    logAudit(req.user.id, 'staff_document_update', 'documents', +req.params.documentId, '')
+    res.json(result)
+  } catch (e) {
+    if (e.statusCode) return res.status(e.statusCode).json({ error: e.message })
+    logger.error('[personnel/document-update]', e); res.status(500).json({ error: 'Sunucu hatası' })
+  }
+})
+
+personnelRouter.post('/documents/:documentId/archive', ...view, (req, res) => {
+  try {
+    const result = archiveStaffDocument(+req.params.documentId, { role: req.user.role })
+    logAudit(req.user.id, 'staff_document_archive', 'documents', +req.params.documentId, '')
+    res.json(result)
+  } catch (e) {
+    if (e.statusCode) return res.status(e.statusCode).json({ error: e.message })
+    logger.error('[personnel/document-archive]', e); res.status(500).json({ error: 'Sunucu hatası' })
+  }
+})
+
+personnelRouter.get('/documents/:documentId/download', ...view, (req, res) => {
+  try {
+    const document = getStaffDocumentForDownload(+req.params.documentId, { role: req.user.role })
+    logAudit(req.user.id, 'staff_document_download', 'documents', +req.params.documentId, '')
+    res.setHeader('Content-Type', document.mime_type || 'application/octet-stream')
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(document.file_name || 'belge')}"`)
+    fs.createReadStream(document.file_path).pipe(res)
+  } catch (e) {
+    if (e.statusCode) return res.status(e.statusCode).json({ error: e.message })
+    logger.error('[personnel/document-download]', e); res.status(500).json({ error: 'Sunucu hatası' })
+  }
 })
 
 // ── 360° ──

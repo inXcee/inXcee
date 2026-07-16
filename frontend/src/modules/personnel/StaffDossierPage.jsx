@@ -16,11 +16,13 @@ import {
   formatDossierDate,
   useStaffDossier,
 } from './dossier/StaffDossierShared.jsx'
+import StaffDocumentsPanel from './dossier/StaffDocumentsPanel.jsx'
 
 const TABS = [
   ['overview', 'Genel Bakış'],
   ['identity', 'Kimlik ve İletişim'],
   ['work', 'Çalışma ve Devam'],
+  ['documents', 'Belgeler'],
   ['operations', 'Operasyonel Bağlantılar'],
 ]
 
@@ -303,6 +305,7 @@ export default function StaffDossierPage() {
       {activeTab === 'overview' && <OverviewTab dossier={dossier} />}
       {activeTab === 'identity' && <IdentityTab dossier={dossier} detail={detailQuery.data} isLoading={detailQuery.isLoading} />}
       {activeTab === 'work' && <WorkTab dossier={dossier} detail={detailQuery.data} isLoading={detailQuery.isLoading} />}
+      {activeTab === 'documents' && <StaffDocumentsPanel staffId={staffId} access={dossier.access} />}
       {activeTab === 'operations' && <OperationsTab dossier={dossier} operations={operationsQuery.data} isLoading={operationsQuery.isLoading} />}
     </div>
   )
