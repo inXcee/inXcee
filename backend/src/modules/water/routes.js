@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import PDFDocument from 'pdfkit'
+import { isIsoMonth } from '../../shared/validation/date.js'
 import fs from 'node:fs'
 import { requireRole } from '../../shared/auth/middleware.js'
 import { logAudit } from '../../shared/audit.js'
@@ -446,7 +447,7 @@ waterRouter.get('/reconciliation', ...mgr, (req, res, next) => {
 waterRouter.get('/reconciliation/:month/pdf', ...mgr, (req, res, next) => {
   try {
     const month = req.params.month
-    if (!/^\d{4}-\d{2}$/.test(month)) return res.status(400).json({ error: 'Ay YYYY-MM formatında olmalı' })
+    if (!isIsoMonth(month)) return res.status(400).json({ error: 'Ay YYYY-MM formatında olmalı' })
     const doc = new PDFDocument({ size: 'A4', margin: 40 })
     res.setHeader('Content-Type', 'application/pdf')
     res.setHeader('Content-Disposition', `attachment; filename="su-ay-kapanis-${month}.pdf"`)

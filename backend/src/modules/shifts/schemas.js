@@ -1,6 +1,7 @@
 import { z } from 'zod'
+import { isIsoDate } from '../../shared/validation/date.js'
 
-const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Tarih YYYY-MM-DD formatında olmalı')
+const isoDate = z.string().refine(isIsoDate, 'Tarih geçerli bir YYYY-MM-DD tarihi olmalı')
 
 // Excel içe aktarımı — frontend'in ürettiği kanonik çizelge payload'ı.
 const importCell = z.object({

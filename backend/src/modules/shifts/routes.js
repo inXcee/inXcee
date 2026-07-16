@@ -5,6 +5,7 @@ import { requireRole } from '../../shared/auth/middleware.js'
 import { getDB } from '../../shared/db/index.js'
 import { paginate } from '../../shared/paginate.js'
 import { logger } from '../../shared/logger.js'
+import { isIsoMonth } from '../../shared/validation/date.js'
 import {
   departmentsService, shiftDefinitionsService, scheduleService, bulkAssignService,
   scheduleSegmentsService, createScheduleSegmentService, updateScheduleSegmentService, deleteScheduleSegmentService,
@@ -341,7 +342,7 @@ shiftsRouter.delete('/holidays/:id', ...managerOrSupervisor, (req, res) => {
 shiftsRouter.get('/payroll-export', ...managerOrSupervisor, (req, res) => {
   try {
     const ym = req.query.month || new Date().toISOString().slice(0, 7)
-    if (!/^\d{4}-\d{2}$/.test(ym)) return res.status(400).json({ error: 'month YYYY-MM formatında olmalı' })
+    if (!isIsoMonth(ym)) return res.status(400).json({ error: 'month YYYY-MM formatında olmalı' })
     res.json({ month: ym, rows: getPayrollExport(ym) })
   } catch (e) { logger.error('[payroll]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
@@ -365,7 +366,7 @@ shiftsRouter.post('/deductions', ...managerOrSupervisor, (req, res) => {
     if (!['damage', 'discipline', 'late', 'advance', 'tax', 'other'].includes(kind)) {
       return res.status(400).json({ error: 'Geçersiz kind' })
     }
-    if (!/^\d{4}-\d{2}$/.test(period)) {
+    if (!isIsoMonth(period)) {
       return res.status(400).json({ error: 'period YYYY-MM formatında olmalı' })
     }
     const id = createDeduction(req.body, req.user.id)
@@ -383,7 +384,7 @@ shiftsRouter.delete('/deductions/:id', ...managerOrSupervisor, (req, res) => {
 shiftsRouter.get('/payroll-detailed', ...managerOrSupervisor, (req, res) => {
   try {
     const ym = req.query.month || new Date().toISOString().slice(0, 7)
-    if (!/^\d{4}-\d{2}$/.test(ym)) return res.status(400).json({ error: 'month YYYY-MM formatında olmalı' })
+    if (!isIsoMonth(ym)) return res.status(400).json({ error: 'month YYYY-MM formatında olmalı' })
     res.json({ month: ym, rows: getPayrollDetailed(ym) })
   } catch (e) { logger.error('[payroll-detailed]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
@@ -392,7 +393,7 @@ shiftsRouter.get('/payroll-detailed', ...managerOrSupervisor, (req, res) => {
 shiftsRouter.get('/bank-transfer', ...managerOrSupervisor, (req, res) => {
   try {
     const ym = req.query.month || new Date().toISOString().slice(0, 7)
-    if (!/^\d{4}-\d{2}$/.test(ym)) return res.status(400).json({ error: 'month YYYY-MM formatında olmalı' })
+    if (!isIsoMonth(ym)) return res.status(400).json({ error: 'month YYYY-MM formatında olmalı' })
     const csv = bankTransferCsvService(ym)
     res.setHeader('Content-Type', 'text/csv; charset=utf-8')
     res.setHeader('Content-Disposition', `attachment; filename="banka-transfer-${ym}.csv"`)

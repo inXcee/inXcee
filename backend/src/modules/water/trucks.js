@@ -5,6 +5,7 @@ import { parseRecipients } from '../email/service.js'
 import * as q from './queries.js'
 import { humanize } from './units.js'
 import { notifyWaterOperations } from './notifications.js'
+import { isIsoDate, isTime } from '../../shared/validation/date.js'
 
 const TRUCK_STATUS = new Set(['planned', 'mail_sent', 'confirmed', 'arrived', 'cancelled'])
 const STATUS_LABEL = {
@@ -15,8 +16,6 @@ const STATUS_LABEL = {
   cancelled: 'İptal',
 }
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-const isDate = (value) => /^\d{4}-\d{2}-\d{2}$/.test(value || '')
-const isTime = (value) => /^\d{2}:\d{2}$/.test(value || '')
 const minutesOf = (value) => {
   if (!isTime(value)) return null
   const [hours, minutes] = value.split(':').map(Number)
@@ -37,7 +36,7 @@ function validateTimeRange(start, end, label) {
 }
 
 function normalizeTruckPayload(data, userId, existing = null) {
-  if (!isDate(data?.arrival_date)) {
+  if (!isIsoDate(data?.arrival_date)) {
     throw Object.assign(new Error('Geliş tarihi YYYY-MM-DD olmalı'), { statusCode: 400 })
   }
   const arrival_start_time = data.arrival_start_time || existing?.arrival_start_time || '08:00'
@@ -46,7 +45,7 @@ function normalizeTruckPayload(data, userId, existing = null) {
   const mail_deadline_time = data.mail_deadline_time || existing?.mail_deadline_time || '17:00'
   const reminder_start_time = data.reminder_start_time || existing?.reminder_start_time || '08:00'
   const reminder_end_time = data.reminder_end_time || existing?.reminder_end_time || '17:00'
-  if (!isDate(mail_deadline_date)) {
+  if (!isIsoDate(mail_deadline_date)) {
     throw Object.assign(new Error('Mail son tarihi YYYY-MM-DD olmalı'), { statusCode: 400 })
   }
   validateTimeRange(arrival_start_time, arrival_end_time, 'Geliş aralığı')
@@ -140,7 +139,7 @@ function missingMailFields(row) {
 }
 
 function dateTimeMinute(date, time) {
-  if (!isDate(date) || !isTime(time)) return null
+  if (!isIsoDate(date) || !isTime(time)) return null
   const [year, month, day] = date.split('-').map(Number)
   const [hours, minutes] = time.split(':').map(Number)
   return Math.round(Date.UTC(year, month - 1, day, hours, minutes) / 60000)
@@ -195,7 +194,7 @@ function truckMailSubject(row) {
 }
 
 function trDateLabel(value) {
-  if (!isDate(value)) return value || '-'
+  if (!isIsoDate(value)) return value || '-'
   const [year, month, day] = value.split('-')
   return `${day}.${month}.${year}`
 }
@@ -763,7 +762,7 @@ export function createWaybillPhotoService(data, file, userId) {
     throw Object.assign(new Error('Fotoğraf sadece giriş/irsaliye kaydına bağlanabilir'), { statusCode: 400 })
   }
   const moveDate = data.move_date || movement?.move_date || truck?.arrival_date
-  if (!isDate(moveDate)) {
+  if (!isIsoDate(moveDate)) {
     throw Object.assign(new Error('Fotoğraf tarihi YYYY-MM-DD olmalı'), { statusCode: 400 })
   }
   return q.createWaybillPhoto({

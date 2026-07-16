@@ -39,6 +39,7 @@ import { getDB } from '../../shared/db/index.js'
 import { sendPushToWorker } from '../../shared/notifications/push.js'
 import { createNotification } from '../../shared/notifications/service.js'
 import { logger } from '../../shared/logger.js'
+import { isIsoDate, isIsoMonth } from '../../shared/validation/date.js'
 import { createHash } from 'node:crypto'
 
 // ── Tax helpers (2026 ücret gelirleri tarifesi — GİB) ──
@@ -280,12 +281,12 @@ export function periodLocksService() {
 }
 
 export function lockPeriodService(period, userId, note) {
-  if (!/^\d{4}-\d{2}$/.test(period || '')) throw new Error('period YYYY-MM formatında olmalı')
+  if (!isIsoMonth(period)) throw new Error('period YYYY-MM formatında olmalı')
   lockPeriod(period, userId, note)
 }
 
 export function unlockPeriodService(period) {
-  if (!/^\d{4}-\d{2}$/.test(period || '')) throw new Error('period YYYY-MM formatında olmalı')
+  if (!isIsoMonth(period)) throw new Error('period YYYY-MM formatında olmalı')
   unlockPeriod(period)
 }
 
@@ -304,7 +305,7 @@ function validatePuantajPeriod(period) {
 }
 
 function validatePuantajWorkDate(period, workDate) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(workDate || '') || !String(workDate).startsWith(`${period}-`)) {
+  if (!isIsoDate(workDate) || !String(workDate).startsWith(`${period}-`)) {
     throw Object.assign(new Error('work_date secilen ay icinde YYYY-MM-DD formatinda olmalidir'), { statusCode: 400 })
   }
   const day = Number(String(workDate).slice(8, 10))
@@ -947,7 +948,7 @@ function normalizeOptionalId(value) {
 }
 
 function validateAssignmentDate(value) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value || '')) throw new Error('Görev başlangıcı YYYY-MM-DD formatında olmalı')
+  if (!isIsoDate(value)) throw new Error('Görev başlangıcı geçerli bir YYYY-MM-DD tarihi olmalı')
   return value
 }
 
@@ -1222,7 +1223,7 @@ function normalizeOvertimeRequestInput(data, user = {}) {
   const requestedHours = Number(data.requested_hours ?? data.hours)
   const actualHours = data.actual_hours == null || data.actual_hours === '' ? null : Number(data.actual_hours)
   const reason = String(data.reason || '').trim()
-  if (!staffId || !/^\d{4}-\d{2}-\d{2}$/.test(workDate)) {
+  if (!staffId || !isIsoDate(workDate)) {
     throw Object.assign(new Error('Personel ve tarih zorunlu'), { statusCode: 400 })
   }
   if (!Number.isFinite(requestedHours) || requestedHours <= 0 || requestedHours > 12) {
@@ -1335,7 +1336,7 @@ export function reviewOvertimeRequestService(id, data, user = {}) {
 // Faz 28 — puantaj hücresinden gün bazlı FM girişi (0 = kaydı sil)
 export function overtimeDayService(data, userId) {
   if (!data?.staff_id || !data?.work_date) throw new Error('staff_id ve work_date gerekli')
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(data.work_date)) throw new Error('work_date YYYY-MM-DD formatında olmalı')
+  if (!isIsoDate(data.work_date)) throw new Error('work_date YYYY-MM-DD formatında olmalı')
   const hours = Number(data.hours)
   if (!Number.isFinite(hours) || hours < 0 || hours > 12) throw new Error('Mesai saati 0-12 arasında olmalı')
   assertPeriodsUnlocked([data.work_date])
@@ -1384,7 +1385,7 @@ function addIsoDays(date, days) {
 }
 
 function validateAttendanceDate(value, field = 'date') {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value || ''))) {
+  if (!isIsoDate(value)) {
     throw Object.assign(new Error(`${field} YYYY-MM-DD formatında olmalı`), { statusCode: 400 })
   }
   const parsed = new Date(`${value}T12:00:00Z`)
@@ -2353,7 +2354,7 @@ export function deleteCoverageRuleService(id) {
 }
 
 export function scheduleCandidatesService(filters = {}) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(filters.date || '')) {
+  if (!isIsoDate(filters.date)) {
     throw Object.assign(new Error('date YYYY-MM-DD formatinda olmali'), { statusCode: 400 })
   }
   const segment = filters.segment_id ? getScheduleSegment(filters.segment_id) : null
@@ -2571,7 +2572,7 @@ function resolveRotationInput(body) {
   validateRotationPattern(pattern)
   const staffIds = (body.staff_ids || []).map(Number).filter(Boolean)
   if (staffIds.length === 0) throw new Error('Personel seçilmedi')
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(body.start_date || '')) throw new Error('start_date YYYY-MM-DD formatında olmalı')
+  if (!isIsoDate(body.start_date)) throw new Error('start_date YYYY-MM-DD formatında olmalı')
   const weeks = Math.min(Math.max(parseInt(body.weeks) || 1, 1), 8)
   return { pattern, staffIds, startDate: body.start_date, days: weeks * 7, stagger: !!body.stagger }
 }
@@ -2636,7 +2637,7 @@ export function staffDetailService(staffId) {
 }
 
 export function puantajCsvService(month, deptId) {
-  if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+  if (!isIsoMonth(month)) {
     throw Object.assign(new Error('month parametresi YYYY-MM formatında gereklidir'), { statusCode: 400 })
   }
   const rows = puantajService(month, deptId)
@@ -2741,7 +2742,7 @@ export function payslipService(staffId, month) {
 }
 
 function parsePuantajMonth(month) {
-  if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+  if (!isIsoMonth(month)) {
     throw Object.assign(new Error('month parametresi YYYY-MM formatÄ±nda gereklidir'), { statusCode: 400 })
   }
   const [year, mon] = month.split('-').map(Number)
@@ -2835,7 +2836,7 @@ export function staffDayBreakdownService(staffId, month) {
 }
 
 function staffDayBreakdownServiceLegacy(staffId, month) {
-  if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+  if (!isIsoMonth(month)) {
     throw Object.assign(new Error('month parametresi YYYY-MM formatında gereklidir'), { statusCode: 400 })
   }
   if (!staffId || isNaN(Number(staffId))) {
@@ -2884,7 +2885,7 @@ function staffDayBreakdownServiceLegacy(staffId, month) {
 }
 
 export function puantajService(month, deptId, { includeMeta = false } = {}) {
-  if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+  if (!isIsoMonth(month)) {
     throw Object.assign(new Error('month parametresi YYYY-MM formatında gereklidir'), { statusCode: 400 })
   }
   const [year, mon] = month.split('-').map(Number)

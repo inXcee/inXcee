@@ -6,6 +6,7 @@ import { checkLowStock, notifyWaterOperations } from './notifications.js'
 import { trClock } from './trucks.js'
 import { queueWaterDailyDigestEmail } from './daily-digest.js'
 import { intakeLotsService, updateIntakeLotService } from './lots.js'
+import { isIsoDate } from '../../shared/validation/date.js'
 export { availableUnits, humanize, toBase, unitMultiplier } from './units.js'
 export { depositService, forecastService, summaryService, trendsService } from './analytics.js'
 export { notifyWaterOperations, WATER_OPERATION_ROLES } from './notifications.js'
@@ -267,7 +268,7 @@ function validateReturnLine(line, moveDate) {
   if (!Number.isFinite(qty) || qty <= 0) throw Object.assign(new Error('Miktar 0’dan büyük olmalı'), { statusCode: 400 })
   if (!INPUT_UNITS.includes(line.input_unit)) throw Object.assign(new Error('Geçersiz birim'), { statusCode: 400 })
   assertAvailableUnit(product, line.input_unit)
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(moveDate || '')) throw Object.assign(new Error('Tarih YYYY-MM-DD olmalı'), { statusCode: 400 })
+  if (!isIsoDate(moveDate)) throw Object.assign(new Error('Tarih YYYY-MM-DD olmalı'), { statusCode: 400 })
   assertMonthUnlocked(moveDate)
   return { product, qty }
 }
@@ -376,7 +377,7 @@ function daysBetween(fromIso, toIso) {
 // today: istemci yerel gününü gönderir (sunucu TZ'ine güvenme — geçmişte UTC/yerel
 // gün kayması bug'ları yaşandı). Geçersizse sunucu yerel gününe düşer.
 export function alertsService({ today } = {}) {
-  const day = /^\d{4}-\d{2}-\d{2}$/.test(today || '') ? today : new Date().toLocaleDateString('sv-SE')
+  const day = isIsoDate(today) ? today : new Date().toLocaleDateString('sv-SE')
   const month = day.slice(0, 7)
   const monthStart = `${month}-01`
 
@@ -478,7 +479,7 @@ export function createAdjustmentService(data, userId) {
   const unit = data.input_unit || 'adet'
   if (!INPUT_UNITS.includes(unit)) throw Object.assign(new Error('Geçersiz birim'), { statusCode: 400 })
   assertAvailableUnit(product, unit)
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(data.move_date || '')) throw Object.assign(new Error('Tarih YYYY-MM-DD olmalı'), { statusCode: 400 })
+  if (!isIsoDate(data.move_date)) throw Object.assign(new Error('Tarih YYYY-MM-DD olmalı'), { statusCode: 400 })
   assertMonthUnlocked(data.move_date)
   if (!isCountReason(data.reason)) throw Object.assign(new Error('Sebep seçilmeli'), { statusCode: 400 })
   const id = q.createAdjustment({
@@ -528,7 +529,7 @@ export function deleteTemplateService(id) {
 
 // ── İrsaliye Bekleyenler (eşleşmemiş dağıtımlar) ──
 export function pendingDistributionsService({ today } = {}) {
-  const day = /^\d{4}-\d{2}-\d{2}$/.test(today || '') ? today : new Date().toLocaleDateString('sv-SE')
+  const day = isIsoDate(today) ? today : new Date().toLocaleDateString('sv-SE')
   const rows = q.pendingDistributions().map(r => {
     const waiting_days = daysBetween(r.move_date, day)
     return {

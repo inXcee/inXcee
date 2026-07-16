@@ -1,5 +1,6 @@
 import * as q from './queries.js'
 import { INPUT_UNITS, assertAvailableUnit, humanize, toBase } from './units.js'
+import { isIsoDate, isIsoMonth } from '../../shared/validation/date.js'
 
 export const COUNT_REASONS = Object.freeze([
   Object.freeze({ key: 'eksik_irsaliye', label: 'Eksik irsaliye' }),
@@ -11,12 +12,10 @@ export const COUNT_REASONS = Object.freeze([
 ])
 
 const REASON_KEYS = new Set(COUNT_REASONS.map(reason => reason.key))
-const MONTH_PATTERN = /^\d{4}-\d{2}$/
-const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
 const badRequest = message => Object.assign(new Error(message), { statusCode: 400 })
 
 function isMonth(value) {
-  return MONTH_PATTERN.test(value || '')
+  return isIsoMonth(value)
 }
 
 function systemBaseFor(month, productId) {
@@ -30,7 +29,7 @@ export function isCountReason(value) {
 
 export function assertMonthUnlocked(dateOrMonth) {
   const value = String(dateOrMonth || '')
-  const month = isMonth(value) ? value : DATE_PATTERN.test(value) ? value.slice(0, 7) : null
+  const month = isMonth(value) ? value : isIsoDate(value) ? value.slice(0, 7) : null
   if (!month) return
   if (q.getClosure(month)?.is_locked) {
     throw Object.assign(new Error(

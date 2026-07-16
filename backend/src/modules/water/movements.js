@@ -3,8 +3,8 @@ import { INPUT_UNITS, assertAvailableUnit, humanize, toBase } from './units.js'
 import { assertMonthUnlocked } from './reconciliation.js'
 import { checkLowStock } from './notifications.js'
 import { normalizeIntakeLot } from './lot-fields.js'
+import { isIsoDate } from '../../shared/validation/date.js'
 
-const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
 const errorWithStatus = (message, statusCode) => Object.assign(new Error(message), { statusCode })
 const lotCanServe = (lot, moveDate) => {
   if (lot.expiry_tracking && !lot.expiry_date) return false
@@ -20,7 +20,7 @@ function validateMovement(data, requireZone) {
   }
   if (!INPUT_UNITS.includes(data.input_unit)) throw errorWithStatus('Geçersiz birim', 400)
   assertAvailableUnit(product, data.input_unit)
-  if (!ISO_DATE_PATTERN.test(data.move_date || '')) throw errorWithStatus('Tarih YYYY-MM-DD olmalı', 400)
+  if (!isIsoDate(data.move_date)) throw errorWithStatus('Tarih YYYY-MM-DD olmalı', 400)
   assertMonthUnlocked(data.move_date)
   if (requireZone && (!data.zone_id || !q.getZone(data.zone_id))) {
     throw errorWithStatus('Bölge seçilmeli', 400)
@@ -184,7 +184,7 @@ export function updateDistributionService(id, data, userId) {
 }
 
 export function batchIntakeService(data, userId) {
-  if (!ISO_DATE_PATTERN.test(data?.move_date || '')) throw errorWithStatus('Tarih YYYY-MM-DD olmalı', 400)
+  if (!isIsoDate(data?.move_date)) throw errorWithStatus('Tarih YYYY-MM-DD olmalı', 400)
   const lines = Array.isArray(data.lines) ? data.lines.filter(line => Number(line.input_qty) > 0) : []
   if (lines.length === 0) throw errorWithStatus('En az bir ürün satırı gerekli', 400)
 
@@ -230,13 +230,13 @@ export function movementsService(filters) {
 
 export function batchDistributeService(data, userId) {
   const batchDate = data?.move_date
-  if (batchDate && !ISO_DATE_PATTERN.test(batchDate)) throw errorWithStatus('Tarih YYYY-MM-DD olmalı', 400)
+  if (batchDate && !isIsoDate(batchDate)) throw errorWithStatus('Tarih YYYY-MM-DD olmalı', 400)
   const lines = Array.isArray(data.lines) ? data.lines.filter(line => Number(line.input_qty) > 0) : []
   if (lines.length === 0) throw errorWithStatus('En az bir dağıtım satırı gerekli', 400)
 
   const rows = lines.map(line => {
     const moveDate = line.move_date || batchDate
-    if (!ISO_DATE_PATTERN.test(moveDate || '')) throw errorWithStatus('Tarih YYYY-MM-DD olmalı', 400)
+    if (!isIsoDate(moveDate)) throw errorWithStatus('Tarih YYYY-MM-DD olmalı', 400)
     const { product, quantity } = validateMovement({ ...line, move_date: moveDate }, true)
     return {
       type: 'out',

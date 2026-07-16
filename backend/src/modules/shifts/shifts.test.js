@@ -1676,6 +1676,12 @@ describe('L1 — Bordro PDF', () => {
     expect(r.status).toBe(400)
   })
 
+  it('bank-transfer takvim dışı month 400', async () => {
+    const r = await request(app).get('/api/shifts/bank-transfer?month=2026-13')
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(r.status).toBe(400)
+  })
+
   it('staff iban alanı create/update ile korunur', async () => {
     const created = await request(app).post('/api/shifts/staff')
       .set('Authorization', `Bearer ${managerToken}`)

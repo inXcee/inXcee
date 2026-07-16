@@ -1249,6 +1249,23 @@ describe('Su takip - Tir on bildirimleri ve irsaliye foto arsivi (W11)', () => {
     expect(invalid.body.error).toMatch(/Kimlik türü/)
   })
 
+  it('tır kaydında takvim dışı tarih ve saat reddedilir', async () => {
+    const invalidDate = await auth(request(app).post('/api/water/truck-arrivals')).send({
+      arrival_date: '2027-02-30', plate: '34 TEST 050',
+    })
+    expect(invalidDate.status).toBe(400)
+    expect(invalidDate.body.error).toMatch(/Geliş tarihi/)
+
+    const invalidTime = await auth(request(app).post('/api/water/truck-arrivals')).send({
+      arrival_date: '2027-03-10',
+      arrival_start_time: '25:70',
+      arrival_end_time: '26:00',
+      plate: '34 TEST 051',
+    })
+    expect(invalidTime.status).toBe(400)
+    expect(invalidTime.body.error).toMatch(/saatleri HH:MM/)
+  })
+
   it('olmayan tırın personel giriş PDF isteği 404 döner', async () => {
     const missing = await auth(request(app).get('/api/water/truck-arrivals/999999/gate-entry.pdf'))
     expect(missing.status).toBe(404)

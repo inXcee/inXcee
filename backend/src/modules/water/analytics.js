@@ -1,9 +1,9 @@
 import * as q from './queries.js'
 import { humanize } from './units.js'
+import { isIsoDate } from '../../shared/validation/date.js'
 
 const DEFAULT_FORECAST_LEAD_DAYS = 7
 const DEFAULT_FORECAST_SAFETY_DAYS = 3
-const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
 
 function localIsoDate() {
   return new Date().toLocaleDateString('sv-SE')
@@ -37,7 +37,7 @@ export function depositService({ from, to } = {}) {
 }
 
 export function forecastService({ today, window = 30, targetDays = 30 } = {}) {
-  const day = ISO_DATE_PATTERN.test(today || '') ? today : localIsoDate()
+  const day = isIsoDate(today) ? today : localIsoDate()
   const normalizedWindow = Math.max(1, parseInt(window, 10) || 30)
   const normalizedTarget = Math.max(1, parseInt(targetDays, 10) || 30)
   const rates = new Map(q.consumptionRates({ window: normalizedWindow, asOf: day })
@@ -116,7 +116,7 @@ export function forecastService({ today, window = 30, targetDays = 30 } = {}) {
 }
 
 export function trendsService({ months = 6, today } = {}) {
-  const day = ISO_DATE_PATTERN.test(today || '') ? today : localIsoDate()
+  const day = isIsoDate(today) ? today : localIsoDate()
   const monthCount = Math.max(1, Math.min(24, parseInt(months, 10) || 6))
   const [year, month] = day.slice(0, 7).split('-').map(Number)
   const startIndex = year * 12 + (month - 1) - (monthCount - 1)

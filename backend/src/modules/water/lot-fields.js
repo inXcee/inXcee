@@ -1,15 +1,11 @@
-const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
+import { isIsoDate } from '../../shared/validation/date.js'
 
 const badRequest = message => Object.assign(new Error(message), { statusCode: 400 })
 
 function optionalDate(value, label) {
   if (value == null || String(value).trim() === '') return null
   const normalized = String(value).trim()
-  if (!ISO_DATE_PATTERN.test(normalized)) throw badRequest(`${label} YYYY-MM-DD olmalı`)
-  const date = new Date(`${normalized}T00:00:00Z`)
-  if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== normalized) {
-    throw badRequest(`${label} geçerli bir tarih olmalı`)
-  }
+  if (!isIsoDate(normalized)) throw badRequest(`${label} geçerli bir YYYY-MM-DD tarihi olmalı`)
   return normalized
 }
 

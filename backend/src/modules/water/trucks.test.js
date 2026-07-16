@@ -126,6 +126,24 @@ describe('water truck operations', () => {
       statusCode: 400,
       message: 'Geliş aralığı başlangıcı bitişten sonra olamaz',
     }))
+
+    expect(() => createTruckArrivalService({
+      arrival_date: '2027-02-30',
+      plate: '34 HATA 2',
+    }, 12)).toThrowError(expect.objectContaining({
+      statusCode: 400,
+      message: 'Geliş tarihi YYYY-MM-DD olmalı',
+    }))
+
+    expect(() => createTruckArrivalService({
+      arrival_date: '2027-03-17',
+      arrival_start_time: '25:70',
+      arrival_end_time: '26:00',
+      plate: '34 HATA 3',
+    }, 12)).toThrowError(expect.objectContaining({
+      statusCode: 400,
+      message: 'Geliş aralığı saatleri HH:MM olmalı',
+    }))
   })
 
   it('decorates list rows with mail readiness and gate-entry summaries', () => {

@@ -2,8 +2,8 @@ import * as q from './queries.js'
 import { humanize } from './units.js'
 import { normalizeIntakeLot } from './lot-fields.js'
 import { reconcileProductAllocations } from './movements.js'
+import { isIsoDate } from '../../shared/validation/date.js'
 
-const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
 const LOT_STATUSES = new Set(['active', 'quarantined'])
 const LOT_FILTERS = new Set(['all', 'critical', 'expired', 'expiring', 'quarantined', 'missing', 'healthy'])
 
@@ -38,7 +38,7 @@ function serializeLot(row, today) {
 }
 
 export function intakeLotsService({ today, status = 'all', product_id } = {}) {
-  const day = ISO_DATE_PATTERN.test(today || '') ? today : new Date().toLocaleDateString('sv-SE')
+  const day = isIsoDate(today) ? today : new Date().toLocaleDateString('sv-SE')
   const normalizedStatus = LOT_FILTERS.has(status) ? status : 'all'
   const allRows = q.listIntakeLots({ product_id }).map(row => serializeLot(row, day))
   const rows = normalizedStatus === 'all'

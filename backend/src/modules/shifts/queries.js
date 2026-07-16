@@ -1,4 +1,5 @@
 import { getDB } from '../../shared/db/index.js'
+import { isIsoDate } from '../../shared/validation/date.js'
 
 const CURRENT_ASSIGNMENT_JOIN = `
   LEFT JOIN staff_assignments sa ON sa.id = (
@@ -3069,7 +3070,7 @@ export function getPuantajDayIssueCounts(date, deptId) {
 // Her düşürme puantaj_approval_events'e 'data_changed' olarak yazılır.
 export function resetDailyApprovalsForDates(dates, userId) {
   const db = getDB()
-  const uniqueDates = [...new Set((dates || []).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(String(d || ''))))]
+  const uniqueDates = [...new Set((dates || []).filter(isIsoDate))]
   if (!uniqueDates.length) return 0
   let reset = 0
 
@@ -3201,7 +3202,7 @@ export function upsertPuantajDayDetail(data, userId) {
   const db = getDB()
   const staffId = Number(data.staff_id)
   const workDate = String(data.work_date || '')
-  if (!staffId || !/^\d{4}-\d{2}-\d{2}$/.test(workDate)) throw new Error('Personel ve tarih zorunlu')
+  if (!staffId || !isIsoDate(workDate)) throw new Error('Personel ve tarih zorunlu')
   const staff = db.prepare('SELECT department_id FROM staff WHERE id=? AND is_active=1').get(staffId)
   if (!staff) throw new Error('Personel bulunamadi')
 
