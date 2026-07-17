@@ -197,6 +197,12 @@ export function getStaffDirectoryMetrics(staffIds = []) {
           AND (ic.quantity-COALESCE(ic.returned_qty,0))>0) AS active_inventory,
       (SELECT COUNT(*) FROM kkd_assignments ka
         WHERE ka.staff_id=s.id AND ka.returned_at IS NULL) AS active_kkd,
+      (SELECT COUNT(*) FROM staff_uniform_issues ui
+        WHERE ui.staff_id=s.id AND ui.returned_at IS NULL) AS active_uniform,
+      s.hire_date AS hire_date,
+      s.birth_date AS birth_date,
+      (SELECT lb.annual_used FROM leave_balance lb
+        WHERE lb.staff_id=s.id AND lb.year=CAST(strftime('%Y','now') AS INTEGER)) AS annual_used,
       (SELECT COUNT(*) FROM training_attendances ta
         WHERE ta.staff_id=s.id AND ta.attended=1 AND ta.cert_expires_at IS NOT NULL
           AND ta.cert_expires_at < date('now', 'localtime')) AS expired_certificates,

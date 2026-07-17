@@ -836,6 +836,27 @@ describe('Staff CRUD', () => {
     expect(manager.body[0]).toHaveProperty('iban')
   })
 
+  it('exposes annual leave remaining and active equipment (incl. uniform) in the directory', async () => {
+    const db = getDB()
+    const year = new Date().getFullYear()
+    db.prepare("UPDATE staff SET hire_date=date('now','-3 years') WHERE id=?").run(createdStaffId)
+    db.prepare('INSERT OR REPLACE INTO leave_balance(staff_id, year, annual_total, annual_used) VALUES(?,?,?,?)')
+      .run(createdStaffId, year, 14, 4)
+    db.prepare("INSERT INTO staff_uniform_issues(staff_id, item_key, quantity) VALUES(?, 'work_pants', 1)")
+      .run(createdStaffId)
+
+    const res = await request(app)
+      .get(`/api/shifts/staff?directory=1&search=${encodeURIComponent('Güncellenmiş Personel')}`)
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(res.status).toBe(200)
+    const row = res.body[0]
+    expect(row.annual_leave_started).toBe(true)
+    expect(row.annual_leave_entitled).toBe(14)
+    expect(row.annual_leave_remaining).toBe(10) // 14 hak - 4 kullanılan
+    expect(row.active_uniform).toBe(1)
+    expect(row.equipment_count).toBeGreaterThanOrEqual(1) // kıyafet zimmeti dahil
+  })
+
   it('supports controlled bulk assignment and manager-only deactivation', async () => {
     const first = await request(app).post('/api/shifts/staff')
       .set('Authorization', `Bearer ${managerToken}`)

@@ -36,6 +36,7 @@ import {
   getAttendanceMonthSummary, getOperationsDashboardData, getPuantajClosingPackageData
 } from './queries.js'
 import { getDB } from '../../shared/db/index.js'
+import { computeAnnualEntitlement } from './leave-entitlement.js'
 import { sendPushToWorker } from '../../shared/notifications/push.js'
 import { createNotification } from '../../shared/notifications/service.js'
 import { logger } from '../../shared/logger.js'
@@ -942,11 +943,20 @@ export function staffListService(filters) {
       !row.role_id ? 1 : 0,
       !row.primary_work_location_id ? 1 : 0,
     ].reduce((total, value) => total + (Number(value || 0) > 0 ? 1 : 0), 0)
+    const entitlement = computeAnnualEntitlement({ hireDate: summary.hire_date, birthDate: summary.birth_date })
+    const annualRemaining = entitlement.has_started
+      ? Math.max(0, entitlement.entitled_days - Number(summary.annual_used || 0))
+      : 0
     return {
       ...row,
       ...summary,
       risk_count: riskCount,
-      equipment_count: Number(summary.active_inventory || 0) + Number(summary.active_kkd || 0),
+      equipment_count: Number(summary.active_inventory || 0)
+        + Number(summary.active_kkd || 0)
+        + Number(summary.active_uniform || 0),
+      annual_leave_remaining: annualRemaining,
+      annual_leave_entitled: entitlement.entitled_days,
+      annual_leave_started: entitlement.has_started,
     }
   })
 }

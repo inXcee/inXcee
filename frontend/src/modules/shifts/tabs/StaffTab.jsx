@@ -300,9 +300,10 @@ const DIRECTORY_COLUMNS = [
   { key: 'assignment', label: 'Görev ve Lokasyon' },
   { key: 'contact', label: 'İletişim' },
   { key: 'today', label: 'Bugünkü Durum' },
+  { key: 'leave', label: 'Yıllık İzin' },
   { key: 'documents', label: 'Belgeler' },
   { key: 'followups', label: 'Görevler' },
-  { key: 'equipment', label: 'Zimmet / KKD' },
+  { key: 'equipment', label: 'Aktif Zimmet' },
   { key: 'performance', label: 'Performans' },
   { key: 'status', label: 'Durum' },
 ]
@@ -466,7 +467,7 @@ export default function StaffTab({ departments, onPersonClick }) {
     dept_id: '', role_id: '', work_location_id: '', gender: '', search: '', is_active: '1', risk: '',
   })
   const [viewMode, setViewMode] = usePersistentState('yys-shifts-staff-view', 'table')
-  const [visibleColumns, setVisibleColumns] = usePersistentState('yys-shifts-staff-columns', DEFAULT_COLUMNS)
+  const [visibleColumns, setVisibleColumns] = usePersistentState('yys-shifts-staff-columns-v2', DEFAULT_COLUMNS)
   const [sort, setSort] = usePersistentState('yys-shifts-staff-sort', { key: 'name', direction: 'asc' })
   const [pageSize, setPageSize] = usePersistentState('yys-shifts-staff-page-size', 20)
   const [page, setPage] = useState(1)
@@ -837,9 +838,10 @@ export default function StaffTab({ departments, onPersonClick }) {
                   {visibleColumns.includes('assignment') && <th>GÖREV / LOKASYON</th>}
                   {visibleColumns.includes('contact') && <th>İLETİŞİM</th>}
                   {visibleColumns.includes('today') && <th>BUGÜN</th>}
+                  {visibleColumns.includes('leave') && <th>YILLIK İZİN</th>}
                   {visibleColumns.includes('documents') && <th>BELGELER</th>}
                   {visibleColumns.includes('followups') && <th>GÖREVLER</th>}
-                  {visibleColumns.includes('equipment') && <th>ZİMMET</th>}
+                  {visibleColumns.includes('equipment') && <th>AKTİF ZİMMET</th>}
                   {visibleColumns.includes('performance') && <th>PERFORMANS</th>}
                   {visibleColumns.includes('status') && <th>DURUM</th>}
                   <th>İŞLEM</th>
@@ -888,6 +890,20 @@ export default function StaffTab({ departments, onPersonClick }) {
                           {staff.next_shift_date && <div style={{ color: 'var(--blue)', marginTop: '3px' }}>Sonraki: {staff.next_shift_date}</div>}
                         </td>
                       )}
+                      {visibleColumns.includes('leave') && (
+                        <td>
+                          {staff.annual_leave_started ? (
+                            <>
+                              <div style={{ fontFamily: 'var(--display)', fontSize: '16px', color: numberValue(staff.annual_leave_remaining) > 0 ? 'var(--green)' : 'var(--red)' }}>
+                                {numberValue(staff.annual_leave_remaining)}g
+                              </div>
+                              <div style={{ color: 'var(--text3)', marginTop: '2px' }}>/ {numberValue(staff.annual_leave_entitled)}g hak</div>
+                            </>
+                          ) : (
+                            <div style={{ color: 'var(--text3)' }}>{staff.hire_date ? 'Hak doğmadı' : 'Giriş tarihi yok'}</div>
+                          )}
+                        </td>
+                      )}
                       {visibleColumns.includes('documents') && (
                         <td>
                           <div style={{ color: numberValue(staff.missing_documents) ? 'var(--accent)' : 'var(--green)' }}>{numberValue(staff.missing_documents)} eksik</div>
@@ -902,8 +918,12 @@ export default function StaffTab({ departments, onPersonClick }) {
                       )}
                       {visibleColumns.includes('equipment') && (
                         <td>
-                          <div>{numberValue(staff.active_inventory)} zimmet</div>
-                          <div style={{ color: 'var(--text3)', marginTop: '3px' }}>{numberValue(staff.active_kkd)} KKD</div>
+                          <div style={{ fontFamily: 'var(--display)', fontSize: '16px', color: numberValue(staff.equipment_count) ? 'var(--accent)' : 'var(--text3)' }}>
+                            {numberValue(staff.equipment_count)}
+                          </div>
+                          <div style={{ color: 'var(--text3)', marginTop: '2px' }}>
+                            {numberValue(staff.active_inventory)} env · {numberValue(staff.active_kkd)} KKD · {numberValue(staff.active_uniform)} kıyafet
+                          </div>
                         </td>
                       )}
                       {visibleColumns.includes('performance') && (
