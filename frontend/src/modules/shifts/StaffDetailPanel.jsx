@@ -75,7 +75,10 @@ function QuickEditForm({ person, departments, roles, isPending, onSave, onCancel
           <textarea className="form-textarea" rows={2} value={form.address} onChange={event => set('address', event.target.value)} />
         </div>
       </div>
-      <div style={{ display: 'flex', gap: 7 }}>
+      <div style={{
+        display: 'flex', gap: 7, position: 'sticky', bottom: 0, zIndex: 1,
+        padding: '10px 0 2px', background: 'var(--bg)', borderTop: '1px solid var(--border)',
+      }}>
         <button className="btn btn-primary btn-sm" disabled={!form.full_name || isPending} onClick={() => onSave(form)}>
           {isPending ? 'Kaydediliyor…' : 'Kaydet'}
         </button>
@@ -182,7 +185,7 @@ export default function StaffDetailPanel({ staffId, onClose, departments = [] })
 
   return (
     <BottomSheet onClose={onClose}>
-      <div style={{ padding: '4px 18px 18px', overflowY: 'auto', display: 'grid', gap: 12 }}>
+      <div style={{ flex: 1, minHeight: 0, padding: '4px 18px 18px', overflowY: 'auto', display: 'grid', gap: 12, alignContent: 'start' }}>
         {isLoading && <SkeletonCard lines={8} />}
         {!isLoading && (error || !dossier?.person) && (
           <div style={{ padding: 22, textAlign: 'center' }}>
@@ -194,7 +197,7 @@ export default function StaffDetailPanel({ staffId, onClose, departments = [] })
           <>
             <DossierHeader dossier={dossier} actions={actions} />
             {editing ? (
-              <DossierSection title="HIZLI DÜZENLEME" subtitle="TC, maaş ve IBAN gibi finans alanları tam dosyadan yönetilir">
+              <DossierSection title="HIZLI DÜZENLEME" subtitle="TC, maaş ve IBAN gibi finans alanları tam dosyadan yönetilir" style={{ overflow: 'visible' }}>
                 <QuickEditForm
                   person={dossier.person}
                   departments={departments}

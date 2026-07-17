@@ -22,6 +22,7 @@ import {
   StaffPerformancePanel, StaffSafetyPanel, StaffEquipmentPanel, StaffChecklistPanel,
 } from './dossier/StaffOperationalPanels.jsx'
 import { StaffNotesPanel, StaffTimelinePanel } from './dossier/StaffNotesTimeline.jsx'
+import StaffUniformPanel from './dossier/StaffUniformPanel.jsx'
 
 const TABS = [
   ['overview', 'Genel Bakış'],
@@ -338,7 +339,12 @@ export default function StaffDossierPage() {
       {activeTab === 'documents' && <StaffDocumentsPanel staffId={staffId} access={dossier.access} />}
       {activeTab === 'performance' && <StaffPerformancePanel staffId={staffId} canManage={dossier.access?.can_manage_followups} />}
       {activeTab === 'safety' && <StaffSafetyPanel staffId={staffId} />}
-      {activeTab === 'equipment' && <StaffEquipmentPanel staffId={staffId} canManage={dossier.access?.can_manage_followups} />}
+      {activeTab === 'equipment' && (
+        <div style={{ display: 'grid', gap: 12 }}>
+          <StaffEquipmentPanel staffId={staffId} canManage={dossier.access?.can_manage_followups} />
+          <StaffUniformPanel staffId={staffId} access={dossier.access} />
+        </div>
+      )}
       {activeTab === 'hr' && <StaffChecklistPanel staffId={staffId} canManage={dossier.access?.can_manage_followups} />}
       {activeTab === 'operations' && <OperationsTab dossier={dossier} operations={operationsQuery.data} isLoading={operationsQuery.isLoading} />}
       {activeTab === 'notes' && <StaffNotesPanel staffId={staffId} access={dossier.access} />}

@@ -6,6 +6,10 @@ import { addNoteSchema, updateNoteSchema, createFollowupSchema, updateFollowupSc
 import {
   listFollowups, createFollowup, updateFollowup, completeFollowup, cancelFollowup,
 } from './staff-followups.js'
+import {
+  listUniform, saveUniformSizes, issueUniform, returnUniformIssue,
+  listUniformItems, createUniformItem, updateUniformItem, deleteUniformItem,
+} from './staff-uniform.js'
 import * as q from './queries.js'
 import { importPersonnel, listPersonnelImportBatches, undoPersonnelImport } from './import.js'
 import { logger } from '../../shared/logger.js'
@@ -117,6 +121,86 @@ personnelRouter.delete('/document-requirements/:reqId', ...mgrOnly, (req, res) =
   } catch (e) {
     if (e.statusCode) return res.status(e.statusCode).json({ error: e.message })
     logger.error('[personnel/doc-requirement-delete]', e); res.status(500).json({ error: 'Sunucu hatası' })
+  }
+})
+
+// ── Kıyafet/ekipman tür kataloğu (yönetim) — spesifik yollar önce ──
+personnelRouter.get('/uniform/items', ...view, (req, res) => {
+  try { res.json(listUniformItems()) }
+  catch (e) { logger.error('[personnel/uniform-items]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+personnelRouter.post('/uniform/items', ...mgrOnly, (req, res) => {
+  try {
+    const result = createUniformItem(req.body, { userId: req.user.id })
+    logAudit(req.user.id, 'uniform_item_create', 'personnel', result.id, result.item_key)
+    res.status(201).json(result)
+  } catch (e) {
+    if (e.statusCode) return res.status(e.statusCode).json({ error: e.message })
+    logger.error('[personnel/uniform-item-create]', e); res.status(500).json({ error: 'Sunucu hatası' })
+  }
+})
+
+personnelRouter.patch('/uniform/items/:itemId', ...mgrOnly, (req, res) => {
+  try {
+    res.json(updateUniformItem(+req.params.itemId, req.body))
+    logAudit(req.user.id, 'uniform_item_update', 'personnel', +req.params.itemId, '')
+  } catch (e) {
+    if (e.statusCode) return res.status(e.statusCode).json({ error: e.message })
+    logger.error('[personnel/uniform-item-update]', e); res.status(500).json({ error: 'Sunucu hatası' })
+  }
+})
+
+personnelRouter.delete('/uniform/items/:itemId', ...mgrOnly, (req, res) => {
+  try {
+    const result = deleteUniformItem(+req.params.itemId)
+    logAudit(req.user.id, 'uniform_item_delete', 'personnel', +req.params.itemId, '')
+    res.json(result)
+  } catch (e) {
+    if (e.statusCode) return res.status(e.statusCode).json({ error: e.message })
+    logger.error('[personnel/uniform-item-delete]', e); res.status(500).json({ error: 'Sunucu hatası' })
+  }
+})
+
+personnelRouter.post('/uniform/issues/:issueId/return', ...mgr, (req, res) => {
+  try {
+    returnUniformIssue(+req.params.issueId, { userId: req.user.id })
+    logAudit(req.user.id, 'uniform_return', 'personnel', +req.params.issueId, '')
+    res.json({ ok: true })
+  } catch (e) {
+    if (e.statusCode) return res.status(e.statusCode).json({ error: e.message })
+    logger.error('[personnel/uniform-return]', e); res.status(500).json({ error: 'Sunucu hatası' })
+  }
+})
+
+// ── Kişi kıyafet/beden + zimmet ──
+personnelRouter.get('/:id/uniform', ...view, (req, res) => {
+  try { res.json(listUniform(+req.params.id)) }
+  catch (e) {
+    if (e.statusCode) return res.status(e.statusCode).json({ error: e.message })
+    logger.error('[personnel/uniform]', e); res.status(500).json({ error: 'Sunucu hatası' })
+  }
+})
+
+personnelRouter.put('/:id/uniform/sizes', ...mgr, (req, res) => {
+  try {
+    const result = saveUniformSizes(+req.params.id, req.body?.sizes, { userId: req.user.id })
+    logAudit(req.user.id, 'uniform_sizes_save', 'personnel', +req.params.id, `${result.saved} beden`)
+    res.json(result)
+  } catch (e) {
+    if (e.statusCode) return res.status(e.statusCode).json({ error: e.message })
+    logger.error('[personnel/uniform-sizes]', e); res.status(500).json({ error: 'Sunucu hatası' })
+  }
+})
+
+personnelRouter.post('/:id/uniform/issue', ...mgr, (req, res) => {
+  try {
+    const result = issueUniform(+req.params.id, req.body, { userId: req.user.id })
+    logAudit(req.user.id, 'uniform_issue', 'personnel', +req.params.id, req.body?.item_key || '')
+    res.status(201).json(result)
+  } catch (e) {
+    if (e.statusCode) return res.status(e.statusCode).json({ error: e.message })
+    logger.error('[personnel/uniform-issue]', e); res.status(500).json({ error: 'Sunucu hatası' })
   }
 })
 
