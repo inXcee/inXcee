@@ -56,15 +56,33 @@ export default function CoverageBoard({
     })
     return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name, 'tr'))
   }, [breakdown])
-  const roleRows = useMemo(() => {
-    const byName = new Map()
+  // Rol kırılımı grup bazlı: Yemek/İkram · Bulaşıkhane · Diğer (karışmasın).
+  const roleGroups = useMemo(() => {
+    const groups = new Map()
     ;(breakdown?.role_counts || []).forEach(item => {
-      const name = item.role_name || 'Rolsuz'
+      const group = item.role_group || 'Diğer'
+      const name = item.role_name || 'Rolsüz'
+      if (!groups.has(group)) groups.set(group, new Map())
+      const byName = groups.get(group)
       if (!byName.has(name)) byName.set(name, { name, perDay: {} })
       byName.get(name).perDay[item.work_date] = item.assigned || 0
     })
-    return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name, 'tr'))
+    const order = ['Yemek/İkram', 'Bulaşıkhane', 'Diğer']
+    return order.filter(g => groups.has(g)).map(g => ({
+      group: g,
+      rows: [...groups.get(g).values()].sort((a, b) => a.name.localeCompare(b.name, 'tr')),
+    }))
   }, [breakdown])
+  // Boş lokal uyarısı: aktif ama o gün 0 kişili lokaller (gün gün gruplu).
+  const emptyByDate = useMemo(() => {
+    const map = new Map()
+    ;(breakdown?.empty_locations || []).forEach(item => {
+      if (!map.has(item.work_date)) map.set(item.work_date, [])
+      map.get(item.work_date).push(item.work_location_name)
+    })
+    return map
+  }, [breakdown])
+  const emptyCount = breakdown?.empty_locations?.length || 0
   const siteRows = useMemo(() => {
     const byName = new Map()
     ;(breakdown?.site_counts || []).forEach(item => {
@@ -80,6 +98,7 @@ export default function CoverageBoard({
     ;(data?.rule_counts || []).forEach(item => { if (item.missing > 0) n += 1 })
     return n
   }, [shifts, weekDays, countMap, data])
+  const totalWarnings = shortfalls + emptyCount
 
   const createRule = useMutation({
     mutationFn: payload => api.post('/shifts/coverage-rules', payload),
@@ -102,18 +121,33 @@ export default function CoverageBoard({
   if (!from) return null
 
   return (
-    <div className="panel" style={{ marginBottom: '12px', borderTop: `3px solid ${shortfalls ? 'var(--red)' : 'var(--teal)'}` }}>
+    <div className="panel" style={{ marginBottom: '12px', borderTop: `3px solid ${totalWarnings ? 'var(--red)' : 'var(--teal)'}` }}>
       <div className="panel-header" style={{ alignItems: 'center' }}>
         <div>
           <div className="panel-title">🎯 KADRO KAPSAMASI</div>
           <div className="panel-subtitle">
             {open
-              ? (shortfalls ? <span style={{ color: 'var(--red)', fontWeight: 600 }}>{shortfalls} vardiya-gün hedefin altında</span> : 'tüm hedefler tamam')
+              ? (totalWarnings
+                  ? <span style={{ color: 'var(--red)', fontWeight: 600 }}>{shortfalls} vardiya-gün hedefin altında{emptyCount ? ` · ${emptyCount} boş lokal-gün` : ''}</span>
+                  : 'tüm hedefler tamam · boş lokal yok')
               : 'hedefi olan vardiyalar için gerçekleşen vs hedef (haftalık)'}
           </div>
         </div>
         <button className="btn btn-ghost btn-sm" style={{ marginLeft: 'auto' }} onClick={() => setOpen(o => !o)}>{open ? '▲ Gizle' : '▼ Aç'}</button>
       </div>
+      {open && emptyCount > 0 && (
+        <div style={{ margin: '0 0 10px', padding: '9px 12px', borderRadius: 8, background: 'rgba(239,68,68,.08)', border: '1px solid rgba(239,68,68,.3)' }}>
+          <div style={{ color: 'var(--red)', fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 700, letterSpacing: 1, marginBottom: 5 }}>⚠ BOŞ LOKAL UYARISI ({emptyCount})</div>
+          <div style={{ display: 'grid', gap: 3 }}>
+            {[...emptyByDate.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([date, locs]) => (
+              <div key={date} style={{ fontSize: 11 }}>
+                <span style={{ fontFamily: 'var(--mono)', color: 'var(--text3)', marginRight: 6 }}>{shortDay(date)}</span>
+                {[...new Set(locs)].map(name => <span key={name} className="badge badge-red" style={{ marginRight: 4 }}>{name}</span>)}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       {open && (
         shifts.length === 0
           ? <div style={{ fontSize: '11px', color: 'var(--text3)', padding: '4px 2px' }}>Hedefli vardiya yok — Ayarlar → vardiya tanımına <b>Kadro Hedefi</b> girin.</div>
@@ -234,9 +268,11 @@ export default function CoverageBoard({
       )}
       {open && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginTop: '14px' }}>
-          <BreakdownTable title="SITE KIRILIMI (OTC / LOKAL / KAMP)" label="Site" dimension="site" rows={siteRows} weekDays={weekDays} onCell={openCell} />
-          <BreakdownTable title="CALISMA NOKTASI KIRILIMI" label="Nokta" dimension="location" rows={locationRows} weekDays={weekDays} onCell={openCell} />
-          <BreakdownTable title="ROL KIRILIMI" label="Rol" dimension="role" rows={roleRows} weekDays={weekDays} onCell={openCell} />
+          <BreakdownTable title="SITE KIRILIMI (OTC / LOKAL / KAMP · YEMEKHANE)" label="Site" dimension="site" rows={siteRows} weekDays={weekDays} onCell={openCell} />
+          <BreakdownTable title="ÇALIŞMA NOKTASI KIRILIMI (atanmamış → Yemekhane)" label="Nokta" dimension="location" rows={locationRows} weekDays={weekDays} onCell={openCell} />
+          {roleGroups.map(group => (
+            <BreakdownTable key={group.group} title={`ROL — ${group.group.toLocaleUpperCase('tr')}`} label="Rol" dimension="role" rows={group.rows} weekDays={weekDays} onCell={openCell} />
+          ))}
         </div>
       )}
       {picked && (

@@ -231,8 +231,24 @@ function inferWorkArea(person) {
   return site
 }
 
+// Çalışma noktası seçilmemiş vardiya → "Yemekhane" grubu (kadro kapsamasıyla tutarlı).
+const DEFAULT_WORK_AREA = 'Yemekhane'
+
 function workAreaForCell(cell, person) {
-  return cell?.work_location_name || inferWorkArea(person)
+  return cell?.work_location_name || DEFAULT_WORK_AREA
+}
+
+// İkram/aşçı/lokal → "Yemek/İkram", bulaşıkhane ayrı, kalanı "Diğer" (ASCII-normalize).
+const ROLE_GROUP_ORDER = { 'Yemek/İkram': 0, 'Bulaşıkhane': 1, 'Diğer': 2 }
+function roleGroupOf(roleName) {
+  const name = String(roleName || '')
+    .replace(/İ/g, 'I').replace(/ı/g, 'i').replace(/Ş/g, 'S').replace(/ş/g, 's')
+    .replace(/Ğ/g, 'G').replace(/ğ/g, 'g').replace(/Ü/g, 'U').replace(/ü/g, 'u')
+    .replace(/Ö/g, 'O').replace(/ö/g, 'o').replace(/Ç/g, 'C').replace(/ç/g, 'c')
+    .toLowerCase()
+  if (name.includes('bulasik')) return 'Bulaşıkhane'
+  if (['ikram', 'asci', 'lokal', 'garson', 'mutfak', 'servis', 'yemek'].some(k => name.includes(k))) return 'Yemek/İkram'
+  return 'Diğer'
 }
 
 function buildAreaSummary(rows, weekDays) {
@@ -264,10 +280,14 @@ function buildAreaSummary(rows, weekDays) {
 function buildRoleSummary(rows, weekDays) {
   const map = new Map()
   rows.forEach(person => {
-    const key = person.role_name || 'Rolsuz'
+    const roleName = person.role_name || 'Rolsüz'
+    const group = roleGroupOf(roleName)
+    // İkram/lokal ile bulaşıkhane karışmasın: grup etiketiyle ayrılır ve gruplu sıralanır.
+    const key = `${group}: ${roleName}`
     if (!map.has(key)) {
       map.set(key, {
         name: key,
+        group,
         members: 0,
         perDay: weekDays.map(() => ({ work: 0, rest: 0, empty: 0 })),
       })
@@ -281,7 +301,10 @@ function buildRoleSummary(rows, weekDays) {
       else item.perDay[idx].empty += 1
     })
   })
-  return [...map.values()].sort((a, b) => a.name.localeCompare(b.name, 'tr'))
+  return [...map.values()].sort((a, b) => {
+    const g = (ROLE_GROUP_ORDER[a.group] ?? 9) - (ROLE_GROUP_ORDER[b.group] ?? 9)
+    return g !== 0 ? g : a.name.localeCompare(b.name, 'tr')
+  })
 }
 
 function cleanSheetName(value) {

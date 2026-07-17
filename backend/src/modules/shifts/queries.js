@@ -2539,6 +2539,23 @@ export function getScheduleCandidates({
     .sort((a, b) => Number(b.eligible) - Number(a.eligible) || b.score - a.score || a.full_name.localeCompare(b.full_name, 'tr'))
 }
 
+// Rol grubu: ikram/aşçı/lokal rolleri "Yemek/İkram", bulaşıkhane ayrı, kalanı "Diğer".
+// İkram/lokal ile bulaşıkhane çıktıda karışmasın diye ayrı gruplanır.
+export function roleGroupOf(roleName) {
+  // Türkçe İ/ı büyük-küçük tuzağını aşmak için ASCII'ye indir, sonra karşılaştır.
+  const name = String(roleName || '')
+    .replace(/İ/g, 'I').replace(/ı/g, 'i').replace(/Ş/g, 'S').replace(/ş/g, 's')
+    .replace(/Ğ/g, 'G').replace(/ğ/g, 'g').replace(/Ü/g, 'U').replace(/ü/g, 'u')
+    .replace(/Ö/g, 'O').replace(/ö/g, 'o').replace(/Ç/g, 'C').replace(/ç/g, 'c')
+    .toLowerCase()
+  if (name.includes('bulasik')) return 'Bulaşıkhane'
+  if (['ikram', 'asci', 'lokal', 'garson', 'mutfak', 'servis', 'yemek'].some(k => name.includes(k))) return 'Yemek/İkram'
+  return 'Diğer'
+}
+
+// Atanmamış (çalışma noktası seçilmemiş) vardiyalı personelin toplandığı sanal grup.
+export const DEFAULT_WORK_AREA = 'Yemekhane'
+
 export function getScheduleBreakdown(from, to) {
   const db = getDB()
   const workLocations = getWorkLocations({ includeInactive: true })
@@ -2555,37 +2572,68 @@ export function getScheduleBreakdown(from, to) {
   }
   assignments.forEach(item => {
     const location = locationsById.get(Number(item.work_location_id))
-    const role = rolesById.get(Number(item.role_id))
     add(locationSets, `${item.work_date}|${item.work_location_id || 0}`, item.staff_id)
     add(roleSets, `${item.work_date}|${item.role_id || 0}`, item.staff_id)
-    add(siteSets, `${item.work_date}|${location?.site || 'Sitesiz'}`, item.staff_id)
+    // Nokta seçilmemişse site de "Yemekhane" grubuna yazılır (lokal olarak sayılmasın).
+    add(siteSets, `${item.work_date}|${location?.site || DEFAULT_WORK_AREA}`, item.staff_id)
   })
   const locationCounts = [...locationSets.entries()].map(([key, staffIds]) => {
     const [workDate, rawId] = key.split('|')
     const id = Number(rawId) || null
     const location = locationsById.get(Number(id))
-    return { work_date: workDate, work_location_id: id, work_location_name: location?.name || 'Noktasiz', work_location_color: location?.color_class || 'gray', assigned: staffIds.size }
+    return {
+      work_date: workDate,
+      work_location_id: id,
+      // Atanmamışlar "Yemekhane" grubu — "Noktasız" değil.
+      work_location_name: location?.name || DEFAULT_WORK_AREA,
+      work_location_color: location?.color_class || 'bg-amber-400',
+      is_default_area: !id,
+      assigned: staffIds.size,
+    }
   })
   const roleCounts = [...roleSets.entries()].map(([key, staffIds]) => {
     const [workDate, rawId] = key.split('|')
     const id = Number(rawId) || null
-    return { work_date: workDate, role_id: id, role_name: rolesById.get(Number(id))?.name || 'Rolsuz', assigned: staffIds.size }
+    const roleName = rolesById.get(Number(id))?.name || 'Rolsüz'
+    return { work_date: workDate, role_id: id, role_name: roleName, role_group: roleGroupOf(roleName), assigned: staffIds.size }
   })
   const siteCounts = [...siteSets.entries()].map(([key, staffIds]) => {
     const separator = key.indexOf('|')
     return { work_date: key.slice(0, separator), site: key.slice(separator + 1), assigned: staffIds.size }
   })
-  return { from, to, work_locations: workLocations, roles, location_counts: locationCounts, role_counts: roleCounts, site_counts: siteCounts }
+
+  // Boş lokal tespiti: aralıkta çalışan (bir gün ≥1 kişi olan) her aktif lokasyonun
+  // 0 kişili günleri — "normalde dolu ama bugün boş" lokalleri yakalar. İşçi Lokali gibi
+  // zorunlu noktalar ayrıca coverage kurallarıyla (her gün) izlenir.
+  const dayCount = new Map()
+  locationCounts.forEach(lc => { if (lc.work_location_id) dayCount.set(`${lc.work_date}|${lc.work_location_id}`, lc.assigned) })
+  const operatingIds = new Set(locationCounts.filter(lc => lc.work_location_id && lc.assigned > 0).map(lc => Number(lc.work_location_id)))
+  const emptyLocations = []
+  for (const loc of workLocations.filter(l => l.is_active !== 0)) {
+    if (!operatingIds.has(Number(loc.id))) continue
+    for (const workDate of dateRange(from, to)) {
+      if ((dayCount.get(`${workDate}|${loc.id}`) || 0) === 0) {
+        emptyLocations.push({ work_date: workDate, work_location_id: loc.id, work_location_name: loc.name })
+      }
+    }
+  }
+
+  return {
+    from, to, work_locations: workLocations, roles,
+    location_counts: locationCounts, role_counts: roleCounts, site_counts: siteCounts,
+    empty_locations: emptyLocations,
+  }
 }
 
 // Bir kırılım hücresine (dimension × değer × gün) atanan kişileri getir — tıkla-panel için.
 // dimension: 'site' | 'location' | 'role'
 export function getBreakdownAssignees({ date, dimension, value }) {
   const db = getDB()
+  // Atanmamış nokta/site "Yemekhane" grubunda toplanır (breakdown ile tutarlı).
   const groupExpr = {
-    site: "COALESCE(wl.site, 'Sitesiz')",
-    location: "COALESCE(wl.name, 'Noktasiz')",
-    role: "COALESCE(sr.name, 'Rolsuz')",
+    site: "COALESCE(wl.site, 'Yemekhane')",
+    location: "COALESCE(wl.name, 'Yemekhane')",
+    role: "COALESCE(sr.name, 'Rolsüz')",
   }[dimension]
   if (!groupExpr) return []
   return db.prepare(`

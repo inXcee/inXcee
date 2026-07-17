@@ -85,6 +85,39 @@ function isWorking(cell) {
   return ['scheduled', 'worked', 'overtime'].includes(cell?.status)
 }
 
+// Çalışma noktası seçilmemiş → "Yemekhane" (kadro kapsamasıyla tutarlı).
+const SHARE_DEFAULT_AREA = 'Yemekhane'
+const SHARE_ROLE_ORDER = { 'Yemek/İkram': 0, 'Bulaşıkhane': 1, 'Diğer': 2 }
+function shareRoleGroup(roleName) {
+  const name = String(roleName || '')
+    .replace(/İ/g, 'I').replace(/ı/g, 'i').replace(/Ş/g, 'S').replace(/ş/g, 's')
+    .replace(/Ğ/g, 'G').replace(/ğ/g, 'g').replace(/Ü/g, 'U').replace(/ü/g, 'u')
+    .replace(/Ö/g, 'O').replace(/ö/g, 'o').replace(/Ç/g, 'C').replace(/ç/g, 'c')
+    .toLowerCase()
+  if (name.includes('bulasik')) return 'Bulaşıkhane'
+  if (['ikram', 'asci', 'lokal', 'garson', 'mutfak', 'servis', 'yemek'].some(k => name.includes(k))) return 'Yemek/İkram'
+  return 'Diğer'
+}
+
+// Haftalık nokta + rol-grubu dağılımı (çıktı özetinde gösterim için).
+export function scheduleCoverageDigest(groups, weekDays) {
+  const area = new Map()
+  const roleGroup = new Map()
+  ;(groups || []).forEach(group => (group.people || []).forEach(person => {
+    const rg = shareRoleGroup(person.role_name)
+    weekDays.forEach(date => {
+      const cell = person.days?.[date]
+      if (!isWorking(cell)) return
+      const name = cell.work_location_name || SHARE_DEFAULT_AREA
+      area.set(name, (area.get(name) || 0) + 1)
+      roleGroup.set(rg, (roleGroup.get(rg) || 0) + 1)
+    })
+  }))
+  const areaRows = [...area.entries()].sort((a, b) => b[1] - a[1])
+  const roleRows = [...roleGroup.entries()].sort((a, b) => (SHARE_ROLE_ORDER[a[0]] ?? 9) - (SHARE_ROLE_ORDER[b[0]] ?? 9))
+  return { areaRows, roleRows }
+}
+
 function statusName(cell) {
   if (!cell) return 'Bos'
   if (cell.status === 'off') return 'OFF'
@@ -343,6 +376,17 @@ function renderScheduleBody(model) {
     </div>
   ` : ''
 
+  // Nokta + rol-grubu dağılımı (atanmamış → Yemekhane; İkram/Bulaşıkhane ayrı).
+  const coverageDigest = (opts.includeLocation || opts.includeRole)
+    ? scheduleCoverageDigest(groups, weekDays)
+    : { areaRows: [], roleRows: [] }
+  const coverageNote = (coverageDigest.areaRows.length || coverageDigest.roleRows.length) ? `
+    <div class="coverage-note" style="margin:6px 0 2px;font-size:10px;color:#334155;display:flex;flex-wrap:wrap;gap:14px;">
+      ${opts.includeLocation && coverageDigest.areaRows.length ? `<div><b>Noktalar (atama-gün):</b> ${coverageDigest.areaRows.map(([n, c]) => `${escapeHtml(n)} ${c}`).join(' · ')}</div>` : ''}
+      ${opts.includeRole && coverageDigest.roleRows.length ? `<div><b>Rol grupları:</b> ${coverageDigest.roleRows.map(([n, c]) => `${escapeHtml(n)} ${c}`).join(' · ')}</div>` : ''}
+    </div>
+  ` : ''
+
   const tableHeadFor = (dayStats = perDay) => `
       <thead>
         <tr>
@@ -441,6 +485,7 @@ function renderScheduleBody(model) {
     <div class="sheet">
       ${header}
       ${metrics}
+      ${coverageNote}
       ${tableHtml}
       ${noteHtml}
       ${legendHtml}

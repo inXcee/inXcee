@@ -3,8 +3,31 @@ import {
   buildScheduleShareHtml,
   buildScheduleShareModel,
   computeScheduleCanvasLayout,
+  scheduleCoverageDigest,
   scheduleShareFilename,
 } from './scheduleShareExport.js'
+
+describe('scheduleCoverageDigest', () => {
+  const week = ['2026-07-06', '2026-07-07']
+  const groups = [{
+    name: 'Yemek', people: [
+      { role_name: 'Ikramci', days: { '2026-07-06': { status: 'worked', work_location_name: 'İşçi Lokali' }, '2026-07-07': { status: 'worked' } } },
+      { role_name: 'Bulasikhane', days: { '2026-07-06': { status: 'worked' } } },
+    ],
+  }]
+
+  it('buckets unassigned cells into Yemekhane and separates role groups', () => {
+    const digest = scheduleCoverageDigest(groups, week)
+    const areaNames = digest.areaRows.map(([n]) => n)
+    expect(areaNames).toContain('Yemekhane') // atanmamış hücreler
+    expect(areaNames).toContain('İşçi Lokali')
+    const roleNames = digest.roleRows.map(([n]) => n)
+    expect(roleNames).toContain('Yemek/İkram')
+    expect(roleNames).toContain('Bulaşıkhane')
+    // Yemek/İkram grubu bulaşıkhaneden önce sıralanır
+    expect(roleNames.indexOf('Yemek/İkram')).toBeLessThan(roleNames.indexOf('Bulaşıkhane'))
+  })
+})
 
 const WEEK = ['2026-07-06', '2026-07-07', '2026-07-08', '2026-07-09', '2026-07-10', '2026-07-11', '2026-07-12']
 const SHIFT_DEFS = [
