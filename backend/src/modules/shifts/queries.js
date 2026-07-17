@@ -473,7 +473,7 @@ export function getSchedule(weekStart, weekEnd, deptId) {
   const db = getDB()
   let query = `
     SELECT
-      ss.id, ss.work_date, ss.status, ss.row_version, ss.puantaj_code_id,
+      ss.id, ss.work_date, ss.status, ss.row_version, ss.puantaj_code_id, ss.absent_reason,
       s.id as staff_id, s.full_name, s.gender, s.position, s.role_id,
       COALESCE(ss.dept_id, s.department_id) as dept_id,
       d.name as dept_name, d.color_class as dept_color,
