@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { buildDailySignatureModel, buildSignatureModels, classifySignatureCell } from './scheduleSignatureExport.js'
+import {
+  buildDailySignatureModel, buildSignatureModels, classifySignatureCell,
+  renderSignaturePageHtml, renderSignaturePagesHtml, signaturePagesCss,
+} from './scheduleSignatureExport.js'
 
 const DATE = '2026-07-13'
 
@@ -71,5 +74,35 @@ describe('buildDailySignatureModel', () => {
     const multi = buildSignatureModels({ people: PEOPLE, dates: [DATE, '2026-07-14'] })
     expect(multi).toHaveLength(2)
     expect(multi[1].working_count).toBe(0) // ikinci günde hücre yok
+  })
+})
+
+describe('signature HTML rendering', () => {
+  const model = buildDailySignatureModel({ people: PEOPLE, date: DATE })
+
+  it('renders a printable signature page with table, no-sign section and footer', () => {
+    const html = renderSignaturePageHtml(model, { revision: '2', generated: '2026-07-13 09:00' })
+    expect(html).toContain('GÜNLÜK VARDİYA İMZA LİSTESİ')
+    expect(html).toContain('İmza')
+    expect(html).toContain('Fiili Vardiya / Durum')
+    expect(html).toContain('İMZA ALINMAYACAK PERSONEL')
+    expect(html).toContain('Hazırlayan')
+    expect(html).toContain('Onay (Vardiya Amiri)')
+    expect(html).toContain('Revizyon: 2')
+    expect(html).toContain('06:15-10:00') // parçalı vardiya segmenti
+  })
+
+  it('adds entry/exit columns for double signature', () => {
+    const dbl = buildDailySignatureModel({ people: PEOPLE, date: DATE, options: { doubleSignature: true } })
+    const html = renderSignaturePageHtml(dbl)
+    expect(html).toContain('Giriş İmza')
+    expect(html).toContain('Çıkış İmza')
+  })
+
+  it('produces one page per day and valid CSS', () => {
+    const models = buildSignatureModels({ people: PEOPLE, dates: [DATE, '2026-07-14'] })
+    const html = renderSignaturePagesHtml(models, {})
+    expect((html.match(/class="sig-page"/g) || []).length).toBe(2)
+    expect(signaturePagesCss()).toContain('@page signature')
   })
 })

@@ -22,12 +22,13 @@ describe('ScheduleShareModal smoke', () => {
       />
     )
 
+    expect(screen.getByText('ÇIKTI MERKEZİ')).toBeInTheDocument()
     expect(screen.getByText('PDF / Yazdır')).toBeInTheDocument()
-    expect(screen.getByText('PNG Görsel İndir')).toBeInTheDocument()
-    expect(screen.getByText('Hazır şablon')).toBeInTheDocument()
+    expect(screen.getByText('Çizelge PNG')).toBeInTheDocument()
+    // İçerik / gün / imza kontrolleri
+    expect(screen.getByText('İçerik')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'İmza' })).toBeInTheDocument()
+    expect(screen.getByText('İzin / OFF / raporlu özetini göster')).toBeInTheDocument()
     expect(screen.getByText('Ayarları Sıfırla')).toBeInTheDocument()
-    expect(screen.getByText('Kağıt')).toBeInTheDocument()
-    expect(screen.getByText('Her departman ayrı sayfadan başlasın')).toBeInTheDocument()
-    expect(screen.getByText('İmza / kontrol alanı')).toBeInTheDocument()
   })
 })

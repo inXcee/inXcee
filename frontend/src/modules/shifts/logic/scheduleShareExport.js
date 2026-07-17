@@ -505,6 +505,44 @@ export function buildScheduleShareHtml(payload) {
   return `<!doctype html><html><head><meta charset="utf-8" /><title>${escapeHtml(model.opts.title)}</title><style>${styles}</style></head><body>${body}</body></html>`
 }
 
+// Çıktı Merkezi birleşik HTML: (opsiyonel) haftalık çizelge yatay A4 + seçilen
+// günlerin imza sayfaları dikey A4. Named @page ile karışık yönlendirme.
+export function buildOutputCenterHtml({
+  includeSchedule = true,
+  schedulePayload = null,
+  signatureCss = '',
+  signaturePagesHtml = '',
+  title = 'Çıktı Merkezi',
+}) {
+  let styles = ''
+  let body = ''
+  let docTitle = title
+  if (includeSchedule && schedulePayload) {
+    const model = buildScheduleShareModel(schedulePayload)
+    docTitle = model.opts.title || title
+    styles += buildStyles(model.opts)
+    // Çizelge sayfası named page (yatay) — imza dikey sayfalarıyla çakışmasın.
+    styles += ' @page schedule { size: A4 landscape; margin: 8mm; } .schedule-doc .sheet { page: schedule; }'
+    body += `<div class="schedule-doc">${renderScheduleBody(model)}</div>`
+  }
+  if (signaturePagesHtml) {
+    styles += signatureCss
+    body += signaturePagesHtml
+  }
+  return `<!doctype html><html><head><meta charset="utf-8" /><title>${escapeHtml(docTitle)}</title><style>${styles}</style></head><body>${body}</body></html>`
+}
+
+export function openOutputCenterPrintWindow(payload) {
+  const html = buildOutputCenterHtml(payload)
+  const win = window.open('', '_blank', 'width=1280,height=900')
+  if (!win) throw new Error('Yazdirma penceresi acilamadi')
+  win.document.open()
+  win.document.write(html)
+  win.document.close()
+  win.focus()
+  window.setTimeout(() => win.print(), 350)
+}
+
 export function scheduleShareFilename(weekStart, ext, revision = '') {
   const safeDate = String(weekStart || 'hafta').replace(/[^0-9a-zA-Z_-]/g, '-')
   const safeRevision = String(revision || '').replace(/[^0-9a-zA-Z_-]/g, '')
