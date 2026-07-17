@@ -119,6 +119,20 @@ export default function ScheduleShareModal({
     } catch (err) { toast(err?.message || `${fmt} görsel indirilemedi`, 'error') } finally { setBusy('') }
   }
 
+  const runExcel = async () => {
+    try {
+      setBusy('xls')
+      const { exportScheduleExcel } = await import('../logic/scheduleExcelExport.js')
+      await exportScheduleExcel({
+        weekStart, weekEnd, weekDays, staffGrid, visibleGrid,
+        gridSearch, statusFilter, deptFilter, shiftDefs, coverageMin: 1,
+        signatureDates: content === 'schedule' ? [] : signatureDates,
+        signatureOptions: { ...sigOpts, revision: options.revision },
+      })
+      toast('Excel indirildi', 'success')
+    } catch (err) { toast(err?.message || 'Excel indirilemedi', 'error') } finally { setBusy('') }
+  }
+
   const SegBtn = ({ active, onClick, children }) => (
     <button className={`btn btn-sm ${active ? 'btn-primary' : 'btn-ghost'}`} onClick={onClick} style={{ flex: 1 }}>{children}</button>
   )
@@ -134,6 +148,7 @@ export default function ScheduleShareModal({
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           <button className="btn btn-primary btn-sm" onClick={runPrint}>PDF / Yazdır</button>
+          <button className="btn btn-ghost btn-sm" onClick={runExcel} disabled={busy === 'xls'}>{busy === 'xls' ? 'Hazırlanıyor...' : 'Excel'}</button>
           <button className="btn btn-ghost btn-sm" onClick={runImage} disabled={busy === 'img'}>{busy === 'img' ? 'Hazırlanıyor...' : `Çizelge ${(options.imageFormat || 'png').toUpperCase()}`}</button>
         </div>
       </div>

@@ -137,4 +137,29 @@ describe('scheduleExcelExport - X3 workbook builder', () => {
     expect(teknik.getCell('F8').value).toContain('08:00-12:00 OTC Lokal')
     expect(teknik.getCell('F8').value).toContain('13:00-17:00 Kamp Yemekhane')
   })
+
+  it('adds print-ready daily signature sheets for the selected days', () => {
+    // WEEK[4]: Ali devamsız → imza-alınmayacak bölümünde görünür
+    const result = buildWorkbook({ signatureDates: [WEEK[4]], signatureOptions: { showLocationAndRole: true, showSummary: true, revision: '3' } })
+    expect(result.sheetNames.signatures).toHaveLength(1)
+    const ws = result.workbook.getWorksheet(result.sheetNames.signatures[0])
+    expect(ws).toBeTruthy()
+    expect(ws.name.startsWith('İmza -')).toBe(true)
+    expect(ws.pageSetup.orientation).toBe('portrait')
+    const flat = []
+    ws.eachRow(row => row.eachCell(cell => flat.push(String(cell.value?.result ?? cell.value ?? ''))))
+    const text = flat.join(' | ')
+    expect(text).toContain('Fiili Vardiya / Durum')
+    expect(text).toContain('İMZA ALINMAYACAK PERSONEL')
+    expect(text).toContain('Onay (Vardiya Amiri):')
+  })
+
+  it('adds entry/exit signature columns when double signature is on', () => {
+    const result = buildWorkbook({ signatureDates: [WEEK[0]], signatureOptions: { doubleSignature: true } })
+    const ws = result.workbook.getWorksheet(result.sheetNames.signatures[0])
+    const flat = []
+    ws.eachRow(row => row.eachCell(cell => flat.push(String(cell.value ?? ''))))
+    expect(flat).toContain('Giriş İmza')
+    expect(flat).toContain('Çıkış İmza')
+  })
 })

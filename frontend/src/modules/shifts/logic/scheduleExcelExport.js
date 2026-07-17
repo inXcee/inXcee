@@ -12,6 +12,7 @@ import {
   shiftHoursFrom,
 } from '../shared.jsx'
 import { shiftHex } from './shiftColors.js'
+import { buildDailySignatureModel } from './scheduleSignatureExport.js'
 import {
   COLORS, border, argb, fill, colLetter, quoteSheet, sheetRange,
   setupTitle, setupSheet, styleHeaderRow, styleAllUsedCells, addMetric, saveWorkbook,
@@ -580,6 +581,96 @@ function addDepartmentSheet(wb, {
   return ws
 }
 
+const SIGN_WEEKDAY = ['Paz', 'Pzt', 'Sal', 'Car', 'Per', 'Cum', 'Cmt'] // getDay: 0=Pazar
+export function signatureSheetLabel(date) {
+  const day = new Date(`${date}T00:00:00`).getDay()
+  return `İmza - ${SIGN_WEEKDAY[day]} ${String(date).slice(8, 10)}`
+}
+
+// Günlük imza çalışma sayfası — A4 dikey, baskıya hazır (tekrar eden başlık, uygun satır yüksekliği).
+function addSignatureSheet(wb, { sheetName, model, weekLabel, revision, generatedAt }) {
+  const opts = model.opts
+  const double = opts.doubleSignature
+  const cols = [{ w: 5 }, { w: 26 }, { w: 22 }, { w: 22 }]
+  const headers = ['No', 'Personel', 'Bölüm / Görev', 'Planlanan Vardiya']
+  if (opts.showLocationAndRole) { headers.push('Çalışma Noktası'); cols.push({ w: 18 }) }
+  headers.push('Fiili Vardiya / Durum'); cols.push({ w: 20 })
+  if (double) { headers.push('Giriş İmza', 'Çıkış İmza'); cols.push({ w: 16 }, { w: 16 }) }
+  else { headers.push('İmza'); cols.push({ w: 20 }) }
+  headers.push('Açıklama'); cols.push({ w: 18 })
+  const lastCol = headers.length
+
+  const ws = wb.addWorksheet(sheetName)
+  setupSheet(ws, COLORS.blue)
+  ws.pageSetup = { ...ws.pageSetup, orientation: 'portrait', fitToWidth: 1, fitToHeight: 0 }
+  ws.columns = cols.map(c => ({ width: c.w }))
+
+  setupTitle(ws, 'GÜNLÜK VARDİYA İMZA LİSTESİ',
+    `${model.date} · ${weekLabel} · ${model.working_count} çalışan · Rev ${revision}${generatedAt ? ` · ${formatDate(generatedAt)}` : ''}`, lastCol)
+  let r = (ws.lastRow ? ws.lastRow.number : 3) + 1
+
+  const headerRow = ws.getRow(r)
+  headers.forEach((h, i) => { headerRow.getCell(i + 1).value = h })
+  styleHeaderRow(headerRow)
+  ws.views = [{ state: 'frozen', ySplit: r }]
+  ws.pageSetup.printTitlesRow = `${r}:${r}`
+  r += 1
+
+  const multiDept = model.groups.length > 1 || opts.pageBreakByDept
+  model.groups.forEach((group, gi) => {
+    if (multiDept) {
+      const dr = ws.getRow(r)
+      dr.getCell(1).value = `${group.dept_name} (${group.rows.length})`
+      ws.mergeCells(r, 1, r, lastCol)
+      dr.getCell(1).font = { bold: true, size: 10 }
+      r += 1
+    }
+    group.rows.forEach(row => {
+      const values = [row.no, row.full_name,
+        [group.dept_name, opts.showLocationAndRole ? row.role : ''].filter(Boolean).join(' / '),
+        row.planned_shift]
+      if (opts.showLocationAndRole) values.push(row.work_location)
+      values.push('')                       // Fiili vardiya/durum (boş)
+      values.push('')                       // İmza (boş)
+      if (double) values.push('')           // Çıkış imza (boş)
+      values.push('')                       // Açıklama
+      const rr = ws.getRow(r)
+      values.forEach((v, i) => { rr.getCell(i + 1).value = v })
+      rr.height = 26
+      r += 1
+    })
+    if (opts.pageBreakByDept && gi < model.groups.length - 1) {
+      try { ws.getRow(r - 1).addPageBreak() } catch { /* ExcelJS sürümünde yoksa atla */ }
+    }
+  })
+
+  if (opts.showSummary && model.non_signature.length) {
+    r += 1
+    const title = ws.getRow(r)
+    title.getCell(1).value = 'İMZA ALINMAYACAK PERSONEL'
+    title.getCell(1).font = { bold: true, color: { argb: 'FFB91C1C' } }
+    r += 1
+    model.non_signature.forEach(cat => {
+      const cr = ws.getRow(r)
+      cr.getCell(1).value = `${cat.label} (${cat.people.length})`
+      cr.getCell(1).font = { bold: true, size: 9 }
+      cr.getCell(3).value = cat.people.map(p => p.full_name + (p.detail ? ` (${p.detail})` : '')).join(', ')
+      ws.mergeCells(r, 3, r, lastCol)
+      r += 1
+    })
+  }
+
+  r += 2
+  const footer = ws.getRow(r)
+  footer.getCell(1).value = 'Hazırlayan:'
+  footer.getCell(Math.max(3, Math.ceil(lastCol / 2))).value = 'Kontrol:'
+  footer.getCell(lastCol).value = 'Onay (Vardiya Amiri):'
+  footer.font = { bold: true, size: 9 }
+
+  styleAllUsedCells(ws)
+  return ws
+}
+
 export function buildScheduleExcelWorkbook(ExcelJS, {
   weekStart,
   weekEnd,
@@ -591,6 +682,8 @@ export function buildScheduleExcelWorkbook(ExcelJS, {
   deptFilter,
   coverageMin = 1,
   shiftDefs = [],
+  signatureDates = [],
+  signatureOptions = {},
 }) {
   const wb = new ExcelJS.Workbook()
   wb.creator = 'YYS'
@@ -1058,11 +1151,23 @@ export function buildScheduleExcelWorkbook(ExcelJS, {
     })
   })
 
+  // Günlük imza sayfaları (seçilen günler için) — baskıya hazır A4 dikey.
+  const signatureSheetNames = []
+  const sigDates = Array.isArray(signatureDates) ? signatureDates : []
+  const weekLabel = `${weekStart} - ${weekEnd}`
+  sigDates.forEach(date => {
+    const model = buildDailySignatureModel({ people: exportRows, date, options: signatureOptions })
+    const sheetName = uniqueSheetName(signatureSheetLabel(date), usedSheetNames)
+    addSignatureSheet(wb, { sheetName, model, weekLabel, revision: signatureOptions.revision || '1', generatedAt })
+    signatureSheetNames.push(sheetName)
+  })
+
   return {
     workbook: wb,
     sheetNames: {
       ...sheetNames,
       departments: departmentSheets.map(item => item.sheetName),
+      signatures: signatureSheetNames,
     },
     exportRows,
     exportWarnings,
