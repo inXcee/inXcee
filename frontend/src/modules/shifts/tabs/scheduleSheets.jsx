@@ -4,7 +4,11 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../../shared/api/client.js'
-import { addDays, todayStr, shiftColor, BottomSheet, formatShiftHours, leaveTypeLabel } from '../shared.jsx'
+import { addDays, todayStr, shiftColor, BottomSheet, formatShiftHours, leaveTypeLabel, LEAVE_TYPES, leaveCellMeta } from '../shared.jsx'
+
+// İzin türü seçici sırası — en sık kullanılanlar önde. 'Genel' (tür yok) başta,
+// puantajda leave_requests'e göre çözülür. Kaynak: shared.jsx LEAVE_TYPES.
+const LEAVE_PICKER_TYPES = ['annual', 'sick', 'unpaid', 'emergency', 'owed', 'maternity', 'paternity', 'marriage', 'bereavement']
 
 // ─── Daily View ───────────────────────────────────────────────────────────────
 export function DailyView({ departments, date, onDateChange }) {
@@ -564,7 +568,35 @@ export function CellAssignSheet({
             </button>
           )
         })}
-        <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+        {/* İZİN TÜRÜ — hücreye doğrudan yıllık/ücretsiz/raporlu vb. yazılabilsin */}
+        <div style={{ marginTop: '10px' }}>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '1px', marginBottom: '6px' }}>İZİN / RAPOR TÜRÜ</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+            {[{ key: null, label: 'Genel İzin' }, ...LEAVE_PICKER_TYPES.map(key => ({ key, label: LEAVE_TYPES[key]?.label || key }))].map(({ key, label }) => {
+              const meta = leaveCellMeta(key)
+              const isOnLeave = cellPopover.existing?.status === 'on_leave'
+              const active = isOnLeave && (cellPopover.existing?.leave_type || null) === key
+              return (
+                <button
+                  key={key || 'generic'}
+                  onClick={() => { setError(null); assignCell.mutate({ staffId: cellPopover.staffId, deptId: cellPopover.deptId, shiftDefId: null, date: cellPopover.date, status: 'on_leave', leaveType: key, ...assignmentOptions }, { onError: err => setError(err?.response?.data?.error || 'İşlem başarısız. Tekrar deneyin.') }) }}
+                  disabled={assignCell.isPending}
+                  title={label}
+                  style={{
+                    padding: '7px 10px', borderRadius: '8px', cursor: 'pointer',
+                    border: `2px solid ${active ? meta.text : 'var(--border)'}`,
+                    background: active ? meta.bg : 'var(--surface2)',
+                    color: active ? meta.text : 'var(--text2)',
+                    fontFamily: 'var(--mono)', fontSize: '10px', fontWeight: 600,
+                  }}>
+                  {key ? `${meta.emoji} ` : ''}{label}{active && ' ✓'}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
           <button
             onClick={() => { setError(null); assignCell.mutate({ staffId: cellPopover.staffId, deptId: cellPopover.deptId, shiftDefId: null, date: cellPopover.date, status: 'off' }, { onError: () => setError('İşlem başarısız. Tekrar deneyin.') }) }}
             disabled={assignCell.isPending}
@@ -575,19 +607,7 @@ export function CellAssignSheet({
               color: cellPopover.existing?.status === 'off' ? 'var(--purple)' : 'var(--text2)',
               fontFamily: 'var(--mono)', fontSize: '11px', fontWeight: 600,
             }}>
-            🌙 OFF {cellPopover.existing?.status === 'off' && '✓'}
-          </button>
-          <button
-            onClick={() => { setError(null); assignCell.mutate({ staffId: cellPopover.staffId, deptId: cellPopover.deptId, shiftDefId: null, date: cellPopover.date, status: 'on_leave' }, { onError: () => setError('İşlem başarısız. Tekrar deneyin.') }) }}
-            disabled={assignCell.isPending}
-            style={{
-              flex: 1, padding: '10px', borderRadius: '8px', cursor: 'pointer',
-              border: `2px solid ${cellPopover.existing?.status === 'on_leave' ? 'var(--teal)' : 'var(--border)'}`,
-              background: cellPopover.existing?.status === 'on_leave' ? 'rgba(26,188,156,.12)' : 'var(--surface2)',
-              color: cellPopover.existing?.status === 'on_leave' ? 'var(--teal)' : 'var(--text2)',
-              fontFamily: 'var(--mono)', fontSize: '11px', fontWeight: 600,
-            }}>
-            {cellPopover.existing?.status === 'on_leave' ? leaveTypeLabel(cellPopover.existing?.leave_type) : 'İZİN'} {cellPopover.existing?.status === 'on_leave' && '✓'}
+            🌙 OFF (Haftalık) {cellPopover.existing?.status === 'off' && '✓'}
           </button>
           {cellPopover.existing && (
             <button

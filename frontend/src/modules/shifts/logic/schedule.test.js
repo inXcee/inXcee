@@ -124,6 +124,22 @@ describe('parseQuickScheduleCode', () => {
     expect(parseQuickScheduleCode('', SHIFT_DEFS)).toEqual({ action: 'noop' })
     expect(parseQuickScheduleCode('bilinmez', SHIFT_DEFS).action).toBe('invalid')
   })
+
+  it('genel izin kodlari tur belirtmeden on_leave verir', () => {
+    expect(parseQuickScheduleCode('i', SHIFT_DEFS)).toEqual({ action: 'assign', shiftDefId: null, status: 'on_leave', leaveType: null })
+    expect(parseQuickScheduleCode('izin', SHIFT_DEFS)).toEqual({ action: 'assign', shiftDefId: null, status: 'on_leave', leaveType: null })
+  })
+
+  it('ozel izin turu kodlarini leaveType ile dondurur', () => {
+    expect(parseQuickScheduleCode('YIL', SHIFT_DEFS)).toEqual({ action: 'assign', shiftDefId: null, status: 'on_leave', leaveType: 'annual' })
+    expect(parseQuickScheduleCode('yillik', SHIFT_DEFS)).toEqual({ action: 'assign', shiftDefId: null, status: 'on_leave', leaveType: 'annual' })
+    expect(parseQuickScheduleCode('ucr', SHIFT_DEFS)).toEqual({ action: 'assign', shiftDefId: null, status: 'on_leave', leaveType: 'unpaid' })
+    expect(parseQuickScheduleCode('RAP', SHIFT_DEFS)).toEqual({ action: 'assign', shiftDefId: null, status: 'on_leave', leaveType: 'sick' })
+    expect(parseQuickScheduleCode('rapor', SHIFT_DEFS)).toEqual({ action: 'assign', shiftDefId: null, status: 'on_leave', leaveType: 'sick' })
+    expect(parseQuickScheduleCode('acil', SHIFT_DEFS)).toEqual({ action: 'assign', shiftDefId: null, status: 'on_leave', leaveType: 'emergency' })
+    expect(parseQuickScheduleCode('dogum', SHIFT_DEFS)).toEqual({ action: 'assign', shiftDefId: null, status: 'on_leave', leaveType: 'maternity' })
+    expect(parseQuickScheduleCode('alacak', SHIFT_DEFS)).toEqual({ action: 'assign', shiftDefId: null, status: 'on_leave', leaveType: 'owed' })
+  })
 })
 
 describe('cellToScheduleCode', () => {
@@ -132,6 +148,25 @@ describe('cellToScheduleCode', () => {
     expect(cellToScheduleCode({ status: 'off' }, SHIFT_DEFS)).toBe('OFF')
     expect(cellToScheduleCode({ status: 'on_leave' }, SHIFT_DEFS)).toBe('I')
     expect(cellToScheduleCode({ status: 'absent' }, SHIFT_DEFS)).toBe('YOK')
+  })
+
+  it('izin turunu ozel kisa koda cevirir (kopyala/yapistir icin)', () => {
+    expect(cellToScheduleCode({ status: 'on_leave', leave_type: 'annual' }, SHIFT_DEFS)).toBe('YIL')
+    expect(cellToScheduleCode({ status: 'on_leave', leave_type: 'unpaid' }, SHIFT_DEFS)).toBe('UCR')
+    expect(cellToScheduleCode({ status: 'on_leave', leave_type: 'sick' }, SHIFT_DEFS)).toBe('RAP')
+    expect(cellToScheduleCode({ status: 'on_leave', leave_type: 'owed' }, SHIFT_DEFS)).toBe('ALACAK')
+    // Tur eslesmezse generic I'ye duser
+    expect(cellToScheduleCode({ status: 'on_leave', leave_type: 'other' }, SHIFT_DEFS)).toBe('I')
+  })
+})
+
+describe('izin kodu round-trip', () => {
+  it('cellToScheduleCode -> parseQuickScheduleCode ayni izin turunu korur', () => {
+    for (const type of ['annual', 'unpaid', 'sick', 'emergency', 'maternity', 'paternity', 'marriage', 'bereavement', 'owed']) {
+      const code = cellToScheduleCode({ status: 'on_leave', leave_type: type }, SHIFT_DEFS)
+      const parsed = parseQuickScheduleCode(code, SHIFT_DEFS)
+      expect(parsed).toEqual({ action: 'assign', shiftDefId: null, status: 'on_leave', leaveType: type })
+    }
   })
 })
 

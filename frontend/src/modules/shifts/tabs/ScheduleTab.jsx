@@ -105,7 +105,7 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
   }
 
   const assignCell = useMutation({
-    mutationFn: ({ staffId, deptId, shiftDefId, workLocationId, date, status, overrideLeave, overrideReason }) =>
+    mutationFn: ({ staffId, deptId, shiftDefId, workLocationId, date, status, leaveType, overrideLeave, overrideReason }) =>
       api.post('/shifts/schedule', {
         entries: [{
           staff_id: staffId,
@@ -114,6 +114,7 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
           work_location_id: workLocationId || null,
           work_date: date,
           status: status || 'scheduled',
+          leave_type: (status === 'on_leave') ? (leaveType || null) : null,
         }],
         override_leave: overrideLeave === true,
         override_reason: overrideReason || undefined,
@@ -505,6 +506,7 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
           work_location_id: target.cell?.work_location_id || null,
           work_date: date,
           status: parsed.status,
+          leave_type: parsed.status === 'on_leave' ? (parsed.leaveType || null) : null,
         }],
         undo: undoForTargets('Hücre düzenleme', [target], 'assign'),
       })
@@ -617,6 +619,7 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
         work_location_id: t.cell?.work_location_id || null,
         work_date: t.date,
         status: parsed.status,
+        leave_type: parsed.status === 'on_leave' ? (parsed.leaveType || null) : null,
       })),
       undo: undoForTargets('Toplu kod', targets, 'assign'),
     })
@@ -694,6 +697,7 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
             work_location_id: target.cell?.work_location_id || null,
             work_date: date,
             status: parsed.status,
+            leave_type: parsed.status === 'on_leave' ? (parsed.leaveType || null) : null,
           })
           assignUndoTargets.push(target)
         }
@@ -985,7 +989,8 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
                 value={quickCode}
                 onChange={e => setQuickCode(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') applyQuickCode() }}
-                placeholder="1 / 2 / G / OFF / I / YOK / sil"
+                placeholder="1 2 G · OFF I YIL RAP UCR ACIL · YOK sil"
+                title="Vardiya: 1/2/G/A/Ge · İzin: I(genel) YIL(yıllık) RAP(raporlu) UCR(ücretsiz) ACIL DOGUM BABALIK EVLILIK VEFAT ALACAK · OFF(haftalık) YOK(devamsız) sil"
                 style={{
                   flex: '1 1 170px',
                   minWidth: '160px',

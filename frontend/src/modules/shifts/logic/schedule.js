@@ -82,18 +82,51 @@ export function parseShiftCell(val, shiftDefs) {
   return null
 }
 
+// \u0130zin t\u00fcr\u00fc \u2192 kanonik k\u0131sa kod. cellToScheduleCode bunu \u00fcretir; kopyala/yap\u0131\u015ft\u0131r
+// ve h\u0131zl\u0131 giri\u015f round-trip'inin tek kayna\u011f\u0131. 'other' i\u00e7in \u00f6zel kod yok \u2192 generic 'I'.
+export const LEAVE_TYPE_CODE = {
+  annual: 'YIL',
+  unpaid: 'UCR',
+  sick: 'RAP',
+  emergency: 'ACIL',
+  maternity: 'DOGUM',
+  paternity: 'BABALIK',
+  marriage: 'EVLILIK',
+  bereavement: 'VEFAT',
+  owed: 'ALACAK',
+}
+// Kod (ASCII, k\u00fc\u00e7\u00fck harf) \u2192 izin t\u00fcr\u00fc. Kanonik kodlar + yayg\u0131n e\u015f anlaml\u0131lar.
+const LEAVE_CODE_TYPE = {
+  yil: 'annual', yillik: 'annual',
+  ucr: 'unpaid', ucretsiz: 'unpaid',
+  rap: 'sick', rapor: 'sick', raporlu: 'sick',
+  acil: 'emergency',
+  dogum: 'maternity',
+  babalik: 'paternity',
+  evlilik: 'marriage',
+  vefat: 'bereavement',
+  alacak: 'owed',
+}
+
 export function parseQuickScheduleCode(val, shiftDefs) {
   if (!val && val !== 0) return { action: 'noop' }
   const raw = String(val).trim()
   if (!raw) return { action: 'noop' }
   const v = raw.toLocaleLowerCase('tr')
-  const plain = v.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  // NFD + kombine i\u015faret temizli\u011fi \u015f/\u011f/\u00fc/\u00f6/\u00e7'yi ASCII'ye indirir; noktas\u0131z '\u0131' atomik
+  // oldu\u011fu i\u00e7in ayr\u0131ca i'ye katlan\u0131r (YIL\u2192'y\u0131l'\u2192'yil' round-trip'i i\u00e7in kritik).
+  const plain = v.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\u0131/g, 'i')
 
   if (['sil', 'delete', 'del', 'x', 'kaldir', 'clear', '0'].includes(plain)) {
     return { action: 'delete' }
   }
-  if (['i', 'izin', 'tatil', 'rapor', 'yillik'].includes(plain)) {
-    return { action: 'assign', shiftDefId: null, status: 'on_leave' }
+  // Genel izin (t\u00fcr belirtilmeden) \u2014 puantajda leave_requests'e g\u00f6re \u00e7\u00f6z\u00fcl\u00fcr.
+  if (['i', 'izin', 'izinli', 'tatil'].includes(plain)) {
+    return { action: 'assign', shiftDefId: null, status: 'on_leave', leaveType: null }
+  }
+  // Belirli izin t\u00fcr\u00fc (y\u0131ll\u0131k / \u00fccretsiz / raporlu / acil / do\u011fum ...).
+  if (LEAVE_CODE_TYPE[plain]) {
+    return { action: 'assign', shiftDefId: null, status: 'on_leave', leaveType: LEAVE_CODE_TYPE[plain] }
   }
   if (['off', 'o', 'h', 'haftalik'].includes(plain)) {
     return { action: 'assign', shiftDefId: null, status: 'off' }
@@ -122,7 +155,7 @@ export function parseQuickScheduleCode(val, shiftDefs) {
 export function cellToScheduleCode(cell, shiftDefs = []) {
   if (!cell) return ''
   if (cell.status === 'off') return 'OFF'
-  if (cell.status === 'on_leave') return 'I'
+  if (cell.status === 'on_leave') return LEAVE_TYPE_CODE[cell.leave_type] || 'I'
   if (cell.status === 'absent') return 'YOK'
   if (cell.shift_def_id) {
     const idx = shiftDefs.findIndex(s => s.id === cell.shift_def_id)
