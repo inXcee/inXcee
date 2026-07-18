@@ -165,6 +165,47 @@ export function cellToScheduleCode(cell, shiftDefs = []) {
   return ''
 }
 
+// Pano metnini ızgaraya yapıştırma planı — saf/test edilebilir çekirdek.
+// text: TSV (\t sütun, \n satır). targets: seçili {staffId,date} listesi (anchor = ilk).
+// Tek değer + çok hücre seçimi → broadcast (tüm seçime yayar); aksi halde anchor'dan
+// pozisyonel yapıştırır. Dönüş assignments {staffId,date,shiftDefId,status,leaveType} +
+// deletions {staffId,date}; çağıran dept_id/work_location_id ekleyip API entry'sine çevirir.
+export function planCellPaste({ text, targets = [], rowOrderIds = [], weekDays = [], shiftDefs = [] }) {
+  const grid = String(text || '').split(/\r?\n/).filter(line => line.length > 0).map(r => r.split('\t'))
+  const assignments = []
+  const deletions = []
+  if (!grid.length || !targets.length) return { assignments, deletions, mode: 'none' }
+
+  const pushParsed = (staffId, date, code) => {
+    const parsed = parseQuickScheduleCode(code, shiftDefs)
+    if (parsed.action === 'delete') deletions.push({ staffId, date })
+    else if (parsed.action === 'assign') {
+      assignments.push({ staffId, date, shiftDefId: parsed.shiftDefId, status: parsed.status, leaveType: parsed.leaveType ?? null })
+    }
+  }
+
+  const isSingle = grid.length === 1 && grid[0].length === 1
+  if (isSingle && targets.length > 1) {
+    targets.forEach(t => pushParsed(t.staffId, t.date, grid[0][0]))
+    return { assignments, deletions, mode: 'broadcast' }
+  }
+
+  const anchor = targets[0]
+  const rowStart = rowOrderIds.indexOf(anchor.staffId)
+  const colStart = weekDays.indexOf(anchor.date)
+  if (rowStart < 0 || colStart < 0) return { assignments, deletions, mode: 'none' }
+  grid.forEach((cols, ri) => {
+    const staffId = rowOrderIds[rowStart + ri]
+    if (staffId == null) return
+    cols.forEach((code, ci) => {
+      const date = weekDays[colStart + ci]
+      if (!date) return
+      pushParsed(staffId, date, code)
+    })
+  })
+  return { assignments, deletions, mode: 'positional' }
+}
+
 function parseHour(value) {
   if (value == null || value === '') return null
   const [h, m = '0'] = String(value).split(':')

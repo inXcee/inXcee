@@ -10,6 +10,7 @@ import {
   buildPayrollClosingCheck,
   daysInMonth,
   parseScheduleSheet,
+  planCellPaste,
 } from './schedule.js'
 
 const SHIFT_DEFS = [
@@ -262,6 +263,73 @@ describe('buildPayrollClosingCheck', () => {
     expect(check.totals.pendingLeave).toBe(1)
     expect(check.totals.overtimeHours).toBe(2)
     expect(check.issues.map(i => i.type)).toEqual(expect.arrayContaining(['empty', 'coverage', 'pending_leave', 'off_missing', 'absent', 'overtime']))
+  })
+})
+
+describe('planCellPaste', () => {
+  const rowOrderIds = [10, 11, 12]
+  const weekDays = WEEK
+
+  it('tek değer + çok hücre seçimi → broadcast (hepsine yayar)', () => {
+    const targets = [
+      { staffId: 10, date: WEEK[0] },
+      { staffId: 11, date: WEEK[0] },
+      { staffId: 12, date: WEEK[1] },
+    ]
+    const res = planCellPaste({ text: '1', targets, rowOrderIds, weekDays, shiftDefs: SHIFT_DEFS })
+    expect(res.mode).toBe('broadcast')
+    expect(res.assignments).toHaveLength(3)
+    expect(res.assignments.every(a => a.shiftDefId === 10 && a.status === 'scheduled')).toBe(true)
+    expect(res.deletions).toHaveLength(0)
+  })
+
+  it('broadcast izin türünü taşır', () => {
+    const targets = [{ staffId: 10, date: WEEK[0] }, { staffId: 11, date: WEEK[0] }]
+    const res = planCellPaste({ text: 'YIL', targets, rowOrderIds, weekDays, shiftDefs: SHIFT_DEFS })
+    expect(res.mode).toBe('broadcast')
+    expect(res.assignments).toEqual([
+      { staffId: 10, date: WEEK[0], shiftDefId: null, status: 'on_leave', leaveType: 'annual' },
+      { staffId: 11, date: WEEK[0], shiftDefId: null, status: 'on_leave', leaveType: 'annual' },
+    ])
+  })
+
+  it('broadcast sil → tüm seçili hücreler silinir', () => {
+    const targets = [{ staffId: 10, date: WEEK[0] }, { staffId: 11, date: WEEK[1] }]
+    const res = planCellPaste({ text: 'sil', targets, rowOrderIds, weekDays, shiftDefs: SHIFT_DEFS })
+    expect(res.mode).toBe('broadcast')
+    expect(res.assignments).toHaveLength(0)
+    expect(res.deletions).toEqual([{ staffId: 10, date: WEEK[0] }, { staffId: 11, date: WEEK[1] }])
+  })
+
+  it('çok hücreli pano → anchor\'dan pozisyonel yapıştırır', () => {
+    const targets = [{ staffId: 10, date: WEEK[0] }]
+    const res = planCellPaste({ text: '1\t2\nI\tOFF', targets, rowOrderIds, weekDays, shiftDefs: SHIFT_DEFS })
+    expect(res.mode).toBe('positional')
+    expect(res.assignments).toEqual([
+      { staffId: 10, date: WEEK[0], shiftDefId: 10, status: 'scheduled', leaveType: null },
+      { staffId: 10, date: WEEK[1], shiftDefId: 20, status: 'scheduled', leaveType: null },
+      { staffId: 11, date: WEEK[0], shiftDefId: null, status: 'on_leave', leaveType: null },
+      { staffId: 11, date: WEEK[1], shiftDefId: null, status: 'off', leaveType: null },
+    ])
+  })
+
+  it('tek değer + tek hücre → pozisyonel (broadcast değil)', () => {
+    const targets = [{ staffId: 12, date: WEEK[2] }]
+    const res = planCellPaste({ text: '2', targets, rowOrderIds, weekDays, shiftDefs: SHIFT_DEFS })
+    expect(res.mode).toBe('positional')
+    expect(res.assignments).toEqual([{ staffId: 12, date: WEEK[2], shiftDefId: 20, status: 'scheduled', leaveType: null }])
+  })
+
+  it('grid taşması ızgara dışına yazmaz', () => {
+    const targets = [{ staffId: 12, date: WEEK[6] }] // son satır, son gün
+    const res = planCellPaste({ text: '1\t2\n1\t2', targets, rowOrderIds, weekDays, shiftDefs: SHIFT_DEFS })
+    // sadece anchor hücresi ızgara içinde
+    expect(res.assignments).toEqual([{ staffId: 12, date: WEEK[6], shiftDefId: 10, status: 'scheduled', leaveType: null }])
+  })
+
+  it('boş metin → hiçbir şey', () => {
+    const res = planCellPaste({ text: '', targets: [{ staffId: 10, date: WEEK[0] }], rowOrderIds, weekDays, shiftDefs: SHIFT_DEFS })
+    expect(res).toEqual({ assignments: [], deletions: [], mode: 'none' })
   })
 })
 

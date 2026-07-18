@@ -11,7 +11,7 @@ import {
   shiftColor, deptColor, ModalOverlay, StaffSearch,
   formatShiftHours, shiftHoursFrom, leaveCellMeta, leaveTypeLabel,
 } from '../shared.jsx'
-import { buildStaffGrid, computeWeekStats, parseQuickScheduleCode, cellToScheduleCode, buildScheduleWarnings } from '../logic/schedule.js'
+import { buildStaffGrid, computeWeekStats, parseQuickScheduleCode, cellToScheduleCode, buildScheduleWarnings, planCellPaste } from '../logic/schedule.js'
 import { DailyView, WeekFillSheet, CellAssignSheet } from './scheduleSheets.jsx'
 import ScheduleImportModal from './ScheduleImportModal.jsx'
 import CoverageBoard from './CoverageBoard.jsx'
@@ -656,6 +656,17 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
     useToastStore.getState().addToast(`${selectedCellItems.length} hücre kopyalandı`, 'success')
   }
 
+  const cutSelectedCells = async () => {
+    const targets = selectedOrToast()
+    if (!targets.length) return
+    await copySelectedCells()
+    quickApply.mutate({
+      action: 'delete',
+      deletions: targets.map(t => ({ staffId: t.person.id, date: t.date })),
+      undo: undoForTargets('Kes', targets, 'delete'),
+    })
+  }
+
   const pasteIntoSelection = async () => {
     const targets = selectedOrToast()
     if (!targets.length) return
@@ -669,43 +680,46 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
       return
     }
 
-    const anchor = targets[0]
-    const rowStart = visibleGrid.findIndex(p => p.id === anchor.person.id)
-    const colStart = weekDays.indexOf(anchor.date)
-    const rows = text.split(/\r?\n/).filter(Boolean).map(r => r.split('\t'))
-    const entries = []
-    const deletions = []
-    const assignUndoTargets = []
-    const deleteUndoTargets = []
-    rows.forEach((cols, ri) => {
-      const person = visibleGrid[rowStart + ri]
-      if (!person) return
-      cols.forEach((code, ci) => {
-        const date = weekDays[colStart + ci]
-        if (!date) return
-        const parsed = parseQuickScheduleCode(code, shiftDefs)
-        const target = { person, date, cell: person.days?.[date] }
-        if (parsed.action === 'delete') {
-          deletions.push({ staffId: person.id, date })
-          deleteUndoTargets.push(target)
-        }
-        if (parsed.action === 'assign') {
-          entries.push({
-            staff_id: person.id,
-            dept_id: person.dept_id,
-            shift_def_id: parsed.shiftDefId,
-            work_location_id: target.cell?.work_location_id || null,
-            work_date: date,
-            status: parsed.status,
-            leave_type: parsed.status === 'on_leave' ? (parsed.leaveType || null) : null,
-          })
-          assignUndoTargets.push(target)
-        }
-      })
+    // Tek değer + çok hücre → broadcast (doldur); aksi halde anchor'dan pozisyonel.
+    const plan = planCellPaste({
+      text,
+      targets: targets.map(t => ({ staffId: t.person.id, date: t.date })),
+      rowOrderIds: visibleGrid.map(p => p.id),
+      weekDays,
+      shiftDefs,
     })
-    if (entries.length) quickApply.mutate({ action: 'assign', entries, undo: undoForTargets('Excel yapıştır', assignUndoTargets, 'assign') })
-    if (deletions.length) quickApply.mutate({ action: 'delete', deletions, undo: undoForTargets('Excel yapıştır silme', deleteUndoTargets, 'delete') })
-    if (!entries.length && !deletions.length) useToastStore.getState().addToast('Yapıştırılan kodlar anlaşılmadı', 'error')
+    if (plan.mode === 'none' || (!plan.assignments.length && !plan.deletions.length)) {
+      useToastStore.getState().addToast('Yapıştırılan kodlar anlaşılmadı', 'error')
+      return
+    }
+
+    const personById = new Map(visibleGrid.map(p => [p.id, p]))
+    const cellOf = (staffId, date) => personById.get(staffId)?.days?.[date]
+    const targetFor = (staffId, date) => ({ person: personById.get(staffId), date, cell: cellOf(staffId, date) })
+
+    if (plan.assignments.length) {
+      const entries = plan.assignments.map(a => ({
+        staff_id: a.staffId,
+        dept_id: personById.get(a.staffId)?.dept_id,
+        shift_def_id: a.shiftDefId,
+        work_location_id: cellOf(a.staffId, a.date)?.work_location_id || null,
+        work_date: a.date,
+        status: a.status,
+        leave_type: a.status === 'on_leave' ? (a.leaveType || null) : null,
+      }))
+      quickApply.mutate({
+        action: 'assign',
+        entries,
+        undo: undoForTargets(plan.mode === 'broadcast' ? 'Doldur (yapıştır)' : 'Yapıştır', plan.assignments.map(a => targetFor(a.staffId, a.date)), 'assign'),
+      })
+    }
+    if (plan.deletions.length) {
+      quickApply.mutate({
+        action: 'delete',
+        deletions: plan.deletions,
+        undo: undoForTargets('Yapıştır silme', plan.deletions.map(d => targetFor(d.staffId, d.date)), 'delete'),
+      })
+    }
   }
 
   useEffect(() => {
@@ -731,6 +745,25 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
     const selector = `[data-schedule-cell="${cellKey(activeCell.staffId, activeCell.date)}"]`
     document.querySelector(selector)?.focus?.()
   }, [activeCell, editingCell])
+
+  // Klavye kısayolları: Ctrl/Cmd + C/X/V (kopyala/kes/yapıştır). Input veya hücre-içi
+  // düzenleme sırasında devre dışı; seçili hücre yoksa varsayılan davranışa dokunmaz.
+  useEffect(() => {
+    if (!canEdit || scheduleView !== 'weekly') return
+    const handler = (e) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return
+      if (editingCell) return
+      const tag = (e.target?.tagName || '').toUpperCase()
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.target?.isContentEditable) return
+      if (!selectedCellItems.length) return
+      const key = e.key.toLowerCase()
+      if (key === 'c') { e.preventDefault(); copySelectedCells() }
+      else if (key === 'x') { e.preventDefault(); cutSelectedCells() }
+      else if (key === 'v') { e.preventDefault(); pasteIntoSelection() }
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [canEdit, scheduleView, editingCell, selectedCellItems, copySelectedCells, cutSelectedCells, pasteIntoSelection])
 
   return (
     <div className="fade-up">
@@ -1004,8 +1037,9 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
                 }}
               />
               <button className="btn btn-primary btn-sm" disabled={quickApply.isPending} onClick={() => applyQuickCode()}>Uygula</button>
-              <button className="btn btn-ghost btn-sm" onClick={copySelectedCells}>Kopyala</button>
-              <button className="btn btn-ghost btn-sm" disabled={quickApply.isPending} onClick={pasteIntoSelection}>Yapıştır</button>
+              <button className="btn btn-ghost btn-sm" title="Seçili hücreleri kopyala (Ctrl+C)" onClick={copySelectedCells}>Kopyala</button>
+              <button className="btn btn-ghost btn-sm" title="Kes: kopyala + sil (Ctrl+X)" disabled={quickApply.isPending} onClick={cutSelectedCells}>Kes</button>
+              <button className="btn btn-ghost btn-sm" title="Yapıştır (Ctrl+V). Tek hücre kopyalayıp çok hücre seçiliyken tümünü doldurur." disabled={quickApply.isPending} onClick={pasteIntoSelection}>Yapıştır</button>
               <button className="btn btn-ghost btn-sm" onClick={() => { setSelectedCells(new Set()); setSelectionAnchor(null) }}>Temizle</button>
               <button className="btn btn-ghost btn-sm" disabled={!actionHistory.length || undoQuickApply.isPending} onClick={() => actionHistory[0] && undoQuickApply.mutate(actionHistory[0])}>Geri al</button>
               {activeCell && (
