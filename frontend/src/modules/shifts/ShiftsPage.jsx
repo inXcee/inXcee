@@ -88,7 +88,7 @@ export default function ShiftsPage() {
   const activeNav = NAV_ITEMS.find(n => n.id === activeTab)
 
   return (
-    <div className="fade-up" style={{ display: 'flex', height: '100%', margin: '-32px -40px', minHeight: 'calc(100vh - 60px)', position: 'relative' }}>
+    <div className="fade-up" style={{ display: 'flex', height: 'calc(100vh - 64px)', margin: '-32px -40px', minHeight: 0, position: 'relative' }}>
 
       {/* ── Left navigation sidebar ── */}
       <nav style={{
@@ -196,7 +196,7 @@ export default function ShiftsPage() {
       </nav>
 
       {/* ── Main content ── */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
 
         {/* Sticky top bar */}
         <div style={{
@@ -220,8 +220,9 @@ export default function ShiftsPage() {
           </div>
         </div>
 
-        {/* Content area */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '24px 28px' }}>
+        {/* Content area — asıl kaydırıcı; minHeight:0 sayesinde flex içinde daralıp
+            iç kaydırma yapar (sticky sürükle paleti + sticky üst bar bu sayede çalışır) */}
+        <div style={{ flex: 1, overflowY: 'auto', minHeight: 0, padding: '24px 28px' }}>
           <Suspense fallback={<ShiftTabFallback label={activeNav?.label} />}>
             {activeTab === 'schedule'    && <ScheduleTab departments={departments} shiftDefs={shiftDefs} onPersonClick={handlePersonClick} />}
             {activeTab === 'staff'       && <StaffTab departments={departments} onPersonClick={handlePersonClick} />}

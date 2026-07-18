@@ -1056,13 +1056,15 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
         </div>
       )}
 
-      {/* ── Shift palette (D&D) ── */}
+      {/* ── Shift palette (D&D) — sticky: uzun çizelgede aşağı kaydırınca üstte kalır ── */}
       {scheduleView === 'weekly' && canEdit && !('ontouchstart' in window) && (
         <div style={{
           display: 'flex', gap: '8px', marginBottom: '12px',
           padding: '8px 12px', background: 'var(--surface2)',
           borderRadius: '8px', border: '1px solid var(--border)',
-          alignItems: 'center',
+          alignItems: 'center', flexWrap: 'wrap',
+          position: 'sticky', top: 0, zIndex: 15,
+          boxShadow: '0 6px 16px rgba(0,0,0,.22)',
         }}>
           <span style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '1px', marginRight: '4px' }}>
             SÜRÜKLE:
