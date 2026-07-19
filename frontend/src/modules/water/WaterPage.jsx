@@ -1464,6 +1464,22 @@ function TextDistribute({ products, zones, onSaved }) {
     onError: (e) => toastErr(errMsg(e, 'Kaydedilemedi')),
   })
 
+  // "Adı yoksa ekle": eşleşmeyen başlıklar (zone_raw) için tek tıkla dağıtım yeri oluştur.
+  const qc = useQueryClient()
+  const createZone = useMutation({ mutationFn: (name) => api.post('/water/zones', { name }) })
+  const addZone = async (rawName) => {
+    try {
+      await createZone.mutateAsync(rawName)
+      const fresh = await api.get('/water/zones').then(r => r.data)
+      const z = fresh.find(x => x.name === rawName.trim())
+      if (z) setItems(cur => cur.map(it => (!it.zone_id && it.zone_raw === rawName) ? { ...it, zone_id: z.id } : it))
+      qc.invalidateQueries({ queryKey: ['water-zones'] })
+      toastOk(`"${rawName}" dağıtım yeri eklendi`)
+    } catch (e) { toastErr(errMsg(e, 'Eklenemedi')) }
+  }
+  const missingZones = [...new Set((items || []).filter(it => !it.zone_id && it.zone_raw).map(it => it.zone_raw))]
+  const addAllZones = async () => { for (const n of missingZones) await addZone(n) }
+
   const upd = (id, patch) => setItems(items.map(it => it._id === id ? { ...it, ...patch } : it))
   const itemCalc = (item) => smartQty(item.input_qty, products.find(p => String(p.id) === String(item.product_id)), item.input_unit)
   const validItems = items?.filter(item => item.zone_id && item.product_id && itemCalc(item).valid) || []
@@ -1499,6 +1515,15 @@ function TextDistribute({ products, zones, onSaved }) {
       ) : (
         <>
           <div style={{ fontSize: '11px', color: 'var(--text2)' }}>{validCount}/{items.length} satır hazır. Eksikleri (kırmızı) düzeltip kaydet.</div>
+          {missingZones.length > 0 && (
+            <div style={{ padding: '9px 12px', borderRadius: '8px', background: 'rgba(240,165,0,.1)', border: '1px solid rgba(240,165,0,.35)', display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center' }}>
+              <span style={{ fontSize: '11px', color: 'var(--accent)', fontWeight: 600 }}>⚠ {missingZones.length} yeni dağıtım yeri:</span>
+              {missingZones.map(n => (
+                <button key={n} className="btn btn-ghost btn-xs" title="Bu dağıtım yerini oluştur ve satırlara ata" disabled={createZone.isPending} onClick={() => addZone(n)}>＋ {n}</button>
+              ))}
+              <button className="btn btn-primary btn-xs" style={{ marginLeft: 'auto' }} disabled={createZone.isPending} onClick={addAllZones}>Hepsini oluştur</button>
+            </div>
+          )}
           <div style={{ overflowX: 'auto' }}>
             <table className="data-table" style={{ fontSize: '11px' }}>
               <thead><tr><th>Dağıtım yeri</th><th>Ürün</th><th>Miktar</th><th>Birim</th><th></th></tr></thead>
@@ -1509,8 +1534,14 @@ function TextDistribute({ products, zones, onSaved }) {
                   const bad = !it.zone_id || !it.product_id || !calc.valid
                   return (
                     <tr key={it._id} style={{ background: bad ? 'rgba(239,68,68,.06)' : undefined }}>
-                      <td><select className="form-select" style={{ fontSize: '11px', minWidth: '130px' }} value={it.zone_id || ''} onChange={e => upd(it._id, { zone_id: e.target.value })}>
-                        <option value="">— seç —</option>{zones.map(z => <option key={z.id} value={z.id}>{z.name}</option>)}</select></td>
+                      <td>
+                        <select className="form-select" style={{ fontSize: '11px', minWidth: '130px' }} value={it.zone_id || ''} onChange={e => upd(it._id, { zone_id: e.target.value })}>
+                          <option value="">{it.zone_raw ? `— seç (${it.zone_raw}) —` : '— seç —'}</option>{zones.map(z => <option key={z.id} value={z.id}>{z.name}</option>)}
+                        </select>
+                        {!it.zone_id && it.zone_raw && (
+                          <button className="btn btn-ghost btn-xs" style={{ marginTop: '3px', fontSize: '9px' }} disabled={createZone.isPending} onClick={() => addZone(it.zone_raw)} title={`"${it.zone_raw}" dağıtım yerini oluştur`}>＋ "{it.zone_raw}" oluştur</button>
+                        )}
+                      </td>
                       <td><select className="form-select" style={{ fontSize: '11px', minWidth: '130px' }} value={it.product_id || ''} onChange={e => {
                         const p = products.find(x => String(x.id) === e.target.value)
                         upd(it._id, { product_id: e.target.value, input_unit: defaultUnitForProduct(p) })

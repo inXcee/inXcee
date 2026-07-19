@@ -274,6 +274,35 @@ describe('Su takip — toplu giriş + metinden dağıtım + düşük stok + ay s
     expect(r.body.items[0].issues).toContain('bölge')
   })
 
+  it('metinden dağıtım — başlık satırı + altındaki ürünler bölgeyi devralır', async () => {
+    const text = 'B Blok Yemekhane\n5 koli 0.5\n10 damacana\n\nC Blok Şantiye\n2 palet 0.33'
+    const r = await request(app).post('/api/water/distribute/parse').set('Authorization', `Bearer ${managerToken}`).send({ text })
+    expect(r.status).toBe(200)
+    const items = r.body.items
+    expect(items.length).toBe(3)
+    expect(items.filter(i => i.zone_id === zoneA).length).toBe(2)  // 0.5 + damacana, başlıktan devraldı
+    expect(items.find(i => i.product_id === p033).zone_id).toBe(zoneB)
+    expect(items.every(i => i.ok)).toBe(true)
+  })
+
+  it('metinden dağıtım — eşleşmeyen başlık zone_raw olarak taşınır (adı yoksa ekle akışı)', async () => {
+    const text = 'Bilinmeyen Depo\n3 koli 0.5\n2 palet 0.33'
+    const r = await request(app).post('/api/water/distribute/parse').set('Authorization', `Bearer ${managerToken}`).send({ text })
+    const items = r.body.items
+    expect(items.length).toBe(2)
+    expect(items.every(i => i.zone_id === null)).toBe(true)
+    expect(items.every(i => i.zone_raw === 'Bilinmeyen Depo')).toBe(true)
+    expect(items.every(i => i.issues.includes('bölge'))).toBe(true)
+  })
+
+  it('metinden dağıtım — satır içi bölge sonraki başlıksız satıra taşınır', async () => {
+    const text = 'B Blok Yemekhane 5 koli 0.5\n10 damacana'
+    const r = await request(app).post('/api/water/distribute/parse').set('Authorization', `Bearer ${managerToken}`).send({ text })
+    const items = r.body.items
+    expect(items.length).toBe(2)
+    expect(items.every(i => i.zone_id === zoneA)).toBe(true)
+  })
+
   it('toplu dağıtım kaydı — bölgeye yazılır', async () => {
     const r = await request(app).post('/api/water/distribute/batch').set('Authorization', `Bearer ${managerToken}`)
       .send({ move_date: '2026-08-02', lines: [

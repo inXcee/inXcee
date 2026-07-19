@@ -242,14 +242,21 @@ function matchProduct(segment, products) {
   return best
 }
 
+// Bölge adı/kodu satırın BAŞINDA olmalı — tek satır formatında bölge baştadır
+// ("Kuzey klm 2 palet ..."). Metnin her yerinde aramak, kısa bölge adlarının
+// ("ev", "su") ürün/miktar kelimelerine tesadüfen eşleşmesine yol açıyordu.
 function matchZone(line, zones) {
   const ln = normTr(line)
+  const startsWith = (needle) => needle && (ln === needle || ln.startsWith(needle + ' '))
   let best = null, bestLen = 0
   for (const z of zones) {
     const name = normTr(z.name)
-    const code = z.code ? normTr(z.code) : null
-    if (name && ln.includes(name) && name.length > bestLen) { best = z; bestLen = name.length }
-    else if (code && ln.includes(code) && code.length > bestLen) { best = z; bestLen = code.length }
+    let code = z.code ? normTr(z.code) : null
+    // Çok kısa (<2) veya tamamen sayısal kodu yok say: miktarlar sayısaldır,
+    // "1 palet ..." gibi satırlar kodu "1" olan bir bölgeye yanlış eşleşiyordu.
+    if (code && (code.length < 2 || /^\d+$/.test(code))) code = null
+    if (name && name.length > bestLen && startsWith(name)) { best = z; bestLen = name.length }
+    else if (code && code.length > bestLen && startsWith(code)) { best = z; bestLen = code.length }
   }
   return best
 }
@@ -266,17 +273,41 @@ function parseSegmentQty(segment) {
   return { qty: null, unit: 'adet' }
 }
 
+// Bir satır DAĞITIM satırı mı (miktar+birim/kap içerir) yoksa BÖLGE BAŞLIĞI mı?
+// "4 palet ...", "70 adet ...", "10 damacana" → dağıtım; "Otc yemekhane",
+// "Rönesans C2 depo", "Osmangazi gemisi" → başlık (rakam olsa da "C2" birim değil).
+function isDistributionLine(line) {
+  return /\d+\s*(palet|koli|paket|adet|kutu|damacana|bardak|[şs]i[şs]e)/i.test(normTr(line))
+}
+
+// Serbest metin dağıtım ayrıştırıcı — iki formatı da destekler:
+//  1) tek satır: "BÖLGE 5 koli 0.5, 10 damacana"
+//  2) başlık + liste:  "BÖLGE\n5 koli 0.5\n10 damacana"  (ürünler başlığın bölgesini devralır)
+// Eşleşmeyen başlık zone_raw olarak taşınır → "adı yoksa ekle" akışı için.
 export function parseDistributionText(text) {
   const zones = q.listZones()
   const products = q.listProducts()
-  const lines = String(text || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean)
+  const lines = String(text || '').split(/\r?\n/).map(l => l.trim())
   const items = []
+  let currentZone = null       // eşleşen bölge objesi (bağlam)
+  let currentZoneRaw = null    // eşleşmeyen başlığın ham metni
   for (const line of lines) {
-    const zone = matchZone(line, zones)
-    // bölge adını çıkar, kalanı ürün segmentlerine böl
+    if (!line) continue        // boş satır blok ayracı; bağlamı korur
+    if (!isDistributionLine(line)) {
+      // Bölge başlığı satırı: bağlamı güncelle, kayıt üretme
+      const zone = matchZone(line, zones)
+      currentZone = zone || null
+      currentZoneRaw = zone ? null : line
+      continue
+    }
+    // Dağıtım satırı: satır içi bölge varsa onu kullan + bağlamı güncelle, yoksa başlıktan devral
+    const zoneOnLine = matchZone(line, zones)
+    if (zoneOnLine) { currentZone = zoneOnLine; currentZoneRaw = null }
+    const zone = zoneOnLine || currentZone
+    const zoneRaw = zone ? null : currentZoneRaw
     let rest = line
-    if (zone) {
-      const re = new RegExp(zone.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')
+    if (zoneOnLine) {
+      const re = new RegExp(zoneOnLine.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')
       rest = line.replace(re, ' ')
     }
     const segments = rest.split(/[,;]|\s\+\s|\bve\b/i).map(s => s.trim()).filter(Boolean)
@@ -296,6 +327,7 @@ export function parseDistributionText(text) {
       items.push({
         raw: line,
         zone_id: zone?.id || null, zone_name: zone?.name || null,
+        zone_raw: zone ? null : (zoneRaw || null),
         product_id: product?.id || null, product_name: product?.name || null,
         input_qty: qty, input_unit: unit,
         ok: issues.length === 0, issues,
