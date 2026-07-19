@@ -52,6 +52,24 @@ describe('buildStaffGrid', () => {
     expect(grid.map(p => p.id)).toEqual([1])
   })
 
+  it('dept-siz personel araya girse de aynı departmanı bitişik tutar (duplicate-key fix)', () => {
+    // Gerçek dünya: bazı personelin departmanı yok. Eski sıralayıcı dept'i sadece
+    // iki tarafta da dept_name varsa karşılaştırdığından, dept-siz kişi iki "Temizlik"
+    // arasına girip grubu bölüyor → tbody'de aynı key iki kez → React uyarısı.
+    const allStaff = [
+      { id: 1, full_name: 'X', department_id: 5, dept_name: 'Temizlik', role_sort_order: 1 },
+      { id: 2, full_name: 'Y', department_id: null, dept_name: null, role_sort_order: 2 },
+      { id: 3, full_name: 'Z', department_id: 5, dept_name: 'Temizlik', role_sort_order: 3 },
+    ]
+    const grid = buildStaffGrid([], allStaff, '')
+    const depts = grid.map(p => p.dept_name || 'Departmansız')
+    const runs = depts.filter((d, i) => d !== depts[i - 1]) // ardışık blok başlangıçları
+    // Her departman adı yalnızca TEK bir bitişik blok oluşturmalı
+    expect(new Set(runs).size).toBe(runs.length)
+    // dept-siz kişi sona düşer, iki Temizlik bitişik kalır
+    expect(depts).toEqual(['Temizlik', 'Temizlik', 'Departmansız'])
+  })
+
   it('departman sonra ada göre Türkçe sıralar', () => {
     const allStaff = [
       { id: 1, full_name: 'Zeki', department_id: 1, dept_name: 'B' },

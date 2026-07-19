@@ -34,9 +34,18 @@ export function buildStaffGrid(rows, allStaff, deptFilter) {
     }
   })
 
-  // Sort by dept then name
+  // Sort by dept then role then name.
+  // Departman BİRİNCİL anahtar: aynı departman her zaman bitişik kalır (aksi halde
+  // dept-siz personel iki aynı-adlı grup arasına girip tbody'de duplicate key üretir).
+  // Departmansız (null/boş) personel sona, kendi arasında gruplanır.
   return Array.from(result.values()).sort((a, b) => {
-    if (a.dept_name && b.dept_name && a.dept_name !== b.dept_name) return a.dept_name.localeCompare(b.dept_name, 'tr')
+    const deptA = a.dept_name || ''
+    const deptB = b.dept_name || ''
+    if (deptA !== deptB) {
+      if (!deptA) return 1
+      if (!deptB) return -1
+      return deptA.localeCompare(deptB, 'tr')
+    }
     if ((a.role_sort_order ?? 9999) !== (b.role_sort_order ?? 9999)) return (a.role_sort_order ?? 9999) - (b.role_sort_order ?? 9999)
     if (a.role_name && b.role_name && a.role_name !== b.role_name) return a.role_name.localeCompare(b.role_name, 'tr')
     return (a.full_name || '').localeCompare(b.full_name || '', 'tr')
