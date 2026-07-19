@@ -2679,6 +2679,129 @@ export function getBreakdownAssignees({ date, dimension, value }) {
   `).all(date, date, value)
 }
 
+// Bir gün + an (atMinutes) için lokasyon doluluğu — saf/test edilebilir çekirdek.
+// assignments: [{ staff_id, full_name, role_name, dept_name, work_location_id, start_time, end_time }]
+//   start_time/end_time "HH:MM" (gece aşırı destekli) veya null → gün boyu mevcut sayılır.
+// locations: aktif work_locations [{ id, name, site, color_class, is_active }]
+// rules: coverage kuralları; atMinutes: gün içi dakika; date: kuralın gününü belirler.
+export function computeLocationOccupancy({ assignments = [], locations = [], rules = [], date, atMinutes } = {}) {
+  const at = Number.isFinite(atMinutes) ? atMinutes : 0
+  const day = date ? isoDay(date) : null
+  const coversAt = (start, end) => {
+    if (start == null || start === '' || end == null || end === '') return true
+    const ranges = timeRanges(start, end)
+    if (!ranges.length) return true
+    return ranges.some(([s, e]) => at >= s && at < e)
+  }
+  const activeLocs = locations.filter(l => l.is_active !== 0)
+  const locById = new Map(activeLocs.map(l => [Number(l.id), l]))
+
+  // Bu gün + bu an geçerli kuralların lokasyon başına gerektirdiği min kişi.
+  const requiredByLoc = new Map()
+  rules.forEach(rule => {
+    if (!rule.work_location_id) return
+    const days = new Set(String(rule.days_of_week || '').split(',').map(Number))
+    if (day != null && !days.has(day)) return
+    if (!coversAt(rule.start_time, rule.end_time)) return
+    const id = Number(rule.work_location_id)
+    requiredByLoc.set(id, Math.max(requiredByLoc.get(id) || 0, Number(rule.min_staff) || 0))
+  })
+
+  // O an mevcut personel — lokasyon başına (0 = atanmamış → Yemekhane).
+  const presentByLoc = new Map()
+  assignments.forEach(a => {
+    if (!coversAt(a.start_time, a.end_time)) return
+    const id = a.work_location_id ? Number(a.work_location_id) : 0
+    if (!presentByLoc.has(id)) presentByLoc.set(id, [])
+    presentByLoc.get(id).push({
+      staff_id: a.staff_id, full_name: a.full_name,
+      role_name: a.role_name || '', dept_name: a.dept_name || '',
+      start_time: a.start_time || '', end_time: a.end_time || '',
+    })
+  })
+
+  const ids = new Set()
+  activeLocs.forEach(l => ids.add(Number(l.id)))
+  requiredByLoc.forEach((_, id) => ids.add(id))
+  presentByLoc.forEach((_, id) => { if (id) ids.add(id) })
+
+  const rows = [...ids].map(id => {
+    const loc = locById.get(id)
+    const present = (presentByLoc.get(id) || []).sort((a, b) => a.full_name.localeCompare(b.full_name, 'tr'))
+    const required = requiredByLoc.get(id) || 0
+    const count = present.length
+    return {
+      work_location_id: id,
+      name: loc?.name || `#${id}`,
+      site: loc?.site || DEFAULT_WORK_AREA,
+      color_class: loc?.color_class || 'bg-slate-400',
+      is_default_area: false,
+      present, count, required,
+      empty: count === 0,
+      understaffed: required > 0 && count < required,
+    }
+  })
+
+  const defaultPresent = (presentByLoc.get(0) || []).sort((a, b) => a.full_name.localeCompare(b.full_name, 'tr'))
+  if (defaultPresent.length) {
+    rows.push({
+      work_location_id: null, name: DEFAULT_WORK_AREA, site: DEFAULT_WORK_AREA,
+      color_class: 'bg-amber-400', is_default_area: true,
+      present: defaultPresent, count: defaultPresent.length, required: 0,
+      empty: false, understaffed: false,
+    })
+  }
+
+  rows.sort((a, b) => (a.site || '').localeCompare(b.site || '', 'tr') || a.name.localeCompare(b.name, 'tr'))
+  return rows
+}
+
+// Canlı "ŞU AN" doluluğu: seçili gün + an için lokasyon başına kim var + eksik/boş.
+export function getLocationOccupancy({ date, atMinutes } = {}) {
+  const db = getDB()
+  const locations = getWorkLocations({ includeInactive: false })
+  const rules = getCoverageRules({ includeInactive: false })
+  const assignments = db.prepare(`
+    WITH a AS (
+      SELECT ss.staff_id,
+        COALESCE(ss.dept_id, s.department_id) AS dept_id,
+        COALESCE(seg.role_id, s.role_id) AS role_id,
+        COALESCE(seg.work_location_id, ss.work_location_id) AS work_location_id,
+        seg.start_time, seg.end_time
+      FROM shift_schedule_segments seg
+      JOIN shift_schedule ss ON ss.id = seg.schedule_id
+      JOIN staff s ON s.id = ss.staff_id
+      WHERE ss.work_date = ? AND ss.status IN ('scheduled','worked','overtime') AND seg.status != 'cancelled'
+      UNION ALL
+      SELECT ss.staff_id, COALESCE(ss.dept_id, s.department_id), s.role_id, ss.work_location_id,
+        CASE WHEN sd.start_hour IS NULL THEN NULL ELSE printf('%02d:00', sd.start_hour) END,
+        CASE WHEN sd.end_hour IS NULL THEN NULL ELSE printf('%02d:00', sd.end_hour) END
+      FROM shift_schedule ss
+      JOIN staff s ON s.id = ss.staff_id
+      LEFT JOIN shift_definitions sd ON sd.id = ss.shift_def_id
+      WHERE ss.work_date = ? AND ss.status IN ('scheduled','worked','overtime')
+        AND NOT EXISTS (SELECT 1 FROM shift_schedule_segments seg WHERE seg.schedule_id = ss.id AND seg.status != 'cancelled')
+    )
+    SELECT a.staff_id, a.work_location_id, a.start_time, a.end_time,
+      s.full_name, COALESCE(sr.name, '') AS role_name, COALESCE(d.name, '') AS dept_name
+    FROM a
+    JOIN staff s ON s.id = a.staff_id
+    LEFT JOIN staff_roles sr ON sr.id = a.role_id
+    LEFT JOIN departments d ON d.id = a.dept_id
+  `).all(date, date)
+  const rows = computeLocationOccupancy({ assignments, locations, rules, date, atMinutes })
+  const alerts = rows.filter(r => r.understaffed)
+  return {
+    date,
+    at_minutes: atMinutes,
+    rows,
+    present_total: rows.reduce((sum, r) => sum + r.count, 0),
+    empty_count: rows.filter(r => !r.is_default_area && r.empty).length,
+    alert_count: alerts.length,
+    alerts: alerts.map(r => ({ work_location_id: r.work_location_id, name: r.name, site: r.site, count: r.count, required: r.required })),
+  }
+}
+
 export function deleteShiftDefinition(id) {
   getDB().prepare('DELETE FROM shift_definitions WHERE id=?').run(id)
 }

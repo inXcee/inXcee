@@ -10,7 +10,7 @@ import {
   departmentsService, shiftDefinitionsService, scheduleService, bulkAssignService,
   scheduleSegmentsService, createScheduleSegmentService, updateScheduleSegmentService, deleteScheduleSegmentService,
   workLocationsService, createWorkLocationService, updateWorkLocationService, deleteWorkLocationService,
-  staffRolesService, createStaffRoleService, updateStaffRoleService, deleteStaffRoleService, scheduleBreakdownService, breakdownAssigneesService,
+  staffRolesService, createStaffRoleService, updateStaffRoleService, deleteStaffRoleService, scheduleBreakdownService, breakdownAssigneesService, locationOccupancyService,
   staffStatusService, createLeaveService, approveLeaveService, leaveListService,
   requestDocumentsService, addRequestDocumentsService, deleteRequestDocumentService,
   leaveBalanceService, createOvertimeService, updateOvertimeService, deleteOvertimeService, overtimeListService, overtimeSummaryService, overtimeDayService, puantajService,
@@ -326,6 +326,12 @@ shiftsRouter.get('/breakdown', ...managerOrSupervisor, (req, res) => {
 
 shiftsRouter.get('/breakdown/assignees', ...managerOrSupervisor, (req, res) => {
   try { res.json(breakdownAssigneesService({ date: req.query.date, dimension: req.query.dimension, value: req.query.value })) }
+  catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
+})
+
+// Canlı "ŞU AN" lokasyon doluluğu (date + at="HH:MM")
+shiftsRouter.get('/occupancy', ...managerOrSupervisor, (req, res) => {
+  try { res.json(locationOccupancyService({ date: req.query.date, at: req.query.at })) }
   catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
 })
 

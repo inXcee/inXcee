@@ -3,7 +3,7 @@ import {
   getScheduleEntry, getScheduleSegment, listScheduleSegments,
   createScheduleSegment, updateScheduleSegment, deleteScheduleSegment,
   getWorkLocations, createWorkLocation, updateWorkLocation, deleteWorkLocation,
-  getStaffRoles, createStaffRole, updateStaffRole, deleteStaffRole, getScheduleBreakdown, getBreakdownAssignees,
+  getStaffRoles, createStaffRole, updateStaffRole, deleteStaffRole, getScheduleBreakdown, getBreakdownAssignees, getLocationOccupancy,
   getStaffWithShiftStatus, createLeaveRequest, getLeaveRequest, approveLeaveRequest,
   getLeaveRequests, getLeaveBalance, addRequestDocuments, listRequestDocuments, getRequestDocument, deleteRequestDocument,
   createOvertime, updateOvertime, deleteOvertime, getOvertimeRecords, upsertOvertimeDay,
@@ -262,6 +262,18 @@ export function breakdownAssigneesService({ date, dimension, value } = {}) {
     throw Object.assign(new Error('gecersiz dimension'), { statusCode: 400 })
   }
   return { date, dimension, value: value ?? '', assignees: getBreakdownAssignees({ date, dimension, value: value ?? '' }) }
+}
+
+// Canlı "ŞU AN" lokasyon doluluğu: date + at ("HH:MM") → o an kim nerede, boş/eksik.
+export function locationOccupancyService({ date, at } = {}) {
+  if (!date) throw Object.assign(new Error('date gerekli'), { statusCode: 400 })
+  let atMinutes = 0
+  if (at != null && at !== '') {
+    const m = /^(\d{1,2}):(\d{2})$/.exec(String(at))
+    if (!m || Number(m[1]) > 23 || Number(m[2]) > 59) throw Object.assign(new Error('gecersiz saat (HH:MM)'), { statusCode: 400 })
+    atMinutes = Number(m[1]) * 60 + Number(m[2])
+  }
+  return getLocationOccupancy({ date, atMinutes })
 }
 
 // ── Faz 31: Dönem kilidi guard ──

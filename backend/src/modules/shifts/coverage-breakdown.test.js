@@ -90,3 +90,45 @@ describe('schedule breakdown enhancements', () => {
     expect(res.body.rules.some(r => r.work_location_id === isciLokaliId)).toBe(true)
   })
 })
+
+describe('canlı lokasyon doluluğu (occupancy)', () => {
+  it('şu an kim nerede + boş nokta döner; kural saati dışı boşluk uyarı değildir', async () => {
+    const db = getDB()
+    const deptId = db.prepare('SELECT id FROM departments ORDER BY id LIMIT 1').get().id
+    const staffId = db.prepare("INSERT INTO staff(full_name, role_id, is_active) VALUES('Occ Test Kisi', ?, 1)").run(ikramciRoleId).lastInsertRowid
+    const schedId = db.prepare("INSERT INTO shift_schedule(staff_id, dept_id, work_date, status, work_location_id) VALUES(?,?,?,'scheduled',?)").run(staffId, deptId, d1, isciLokaliId).lastInsertRowid
+    db.prepare("INSERT INTO shift_schedule_segments(schedule_id, sequence_no, work_location_id, role_id, start_time, end_time, status) VALUES(?,?,?,?, '06:15','15:00','planned')").run(schedId, 1, isciLokaliId, ikramciRoleId)
+
+    const res = await request(app).get(`/api/shifts/occupancy?date=${d1}&at=09:00`).set('Authorization', `Bearer ${managerToken}`)
+    expect(res.status).toBe(200)
+    const lokal = res.body.rows.find(r => r.work_location_id === isciLokaliId)
+    expect(lokal.present.some(p => p.full_name === 'Occ Test Kisi')).toBe(true)
+    expect(lokal.understaffed).toBe(false)
+
+    const res2 = await request(app).get(`/api/shifts/occupancy?date=${d1}&at=04:00`).set('Authorization', `Bearer ${managerToken}`)
+    const lokal2 = res2.body.rows.find(r => r.work_location_id === isciLokaliId)
+    expect(lokal2.count).toBe(0)
+    expect(lokal2.empty).toBe(true)
+    expect(lokal2.understaffed).toBe(false) // 04:00 hiçbir kural kapsamıyor
+  })
+
+  it('kural saatinde boş zorunlu lokal understaffed + alert verir', async () => {
+    // d2: İşçi Lokali'ye kimse atanmadı; 09:00 kuralı (06:15-15:00, min 1) → uyarı
+    const res = await request(app).get(`/api/shifts/occupancy?date=${d2}&at=09:00`).set('Authorization', `Bearer ${managerToken}`)
+    const lokal = res.body.rows.find(r => r.work_location_id === isciLokaliId)
+    expect(lokal.required).toBeGreaterThanOrEqual(1)
+    expect(lokal.understaffed).toBe(true)
+    expect(res.body.alerts.some(a => a.work_location_id === isciLokaliId)).toBe(true)
+    expect(res.body.alert_count).toBeGreaterThanOrEqual(1)
+  })
+
+  it('date olmadan 400 döner', async () => {
+    const res = await request(app).get('/api/shifts/occupancy?at=09:00').set('Authorization', `Bearer ${managerToken}`)
+    expect(res.status).toBe(400)
+  })
+
+  it('supervisor erişebilir, yetkisiz 401/403', async () => {
+    const res = await request(app).get(`/api/shifts/occupancy?date=${d1}&at=09:00`)
+    expect([401, 403]).toContain(res.status)
+  })
+})
