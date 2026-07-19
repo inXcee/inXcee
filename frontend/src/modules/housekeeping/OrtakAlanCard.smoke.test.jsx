@@ -25,6 +25,15 @@ describe('housekeeping/OrtakAlanCard smoke', () => {
         onComplete={() => {}} onUncomplete={() => {}} onSkip={() => {}} />
     )
     expect(screen.getByAltText('temizlik kanıtı')).toBeInTheDocument()
-    expect(screen.getByTitle('14 günlük temizlik geçmişi')).toBeInTheDocument()
+    expect(screen.getByTitle('Son 7 günlük temizlik geçmişi')).toBeInTheDocument()
+  })
+
+  it('koridor görevini ayrı başlık ve geçmiş anahtarıyla gösterir', () => {
+    renderWithProviders(
+      <OrtakAlanCard task={{ id: 9, completed_at: null, skipped: 0, qr_location: 'M1-1-corridor' }} block="M1" floor={1}
+        onComplete={() => {}} onUncomplete={() => {}} onSkip={() => {}} />
+    )
+    expect(screen.getByText('KORİDOR')).toBeInTheDocument()
+    expect(screen.getByText('Kat koridoru ve geçiş alanları')).toBeInTheDocument()
   })
 })

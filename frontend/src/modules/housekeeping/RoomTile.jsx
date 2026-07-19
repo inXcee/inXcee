@@ -113,6 +113,13 @@ export default function RoomTile({ rno, task, roomInfo, isDnd, dndInfo, isM, isS
       {hasNote && (
         <div style={{ position: 'absolute', top: '6px', right: '4px', width: '5px', height: '5px', borderRadius: '50%', background: 'var(--accent)' }} title="Oda notu var" />
       )}
+      {task?.photo_url && (
+        <div style={{
+          position: 'absolute', top: '6px', right: hasNote ? '12px' : '4px',
+          fontSize: '8px', lineHeight: 1, padding: '2px', borderRadius: '3px',
+          background: 'rgba(39,201,106,.2)', color: 'var(--green)',
+        }} title="Temizlik kanıt fotoğrafı var">📷</div>
+      )}
       {/* DND badge */}
       {isDnd && !isDone && (
         <div style={{ position: 'absolute', top: '5px', left: '3px', fontFamily: 'var(--mono)', fontSize: '5px', color: 'var(--accent)', background: 'rgba(240,165,0,.3)', borderRadius: '2px', padding: '0 2px', lineHeight: 1.5 }}

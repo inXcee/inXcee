@@ -7,22 +7,40 @@ export function generateDailyTasks(date = new Date()) {
   const dateStr  = date.toLocaleDateString('sv-SE')
   const scheduled = `${dateStr} 08:00:00`
   const insert = db.prepare(`
-    INSERT OR IGNORE INTO cleaning_tasks(area, block, floor, task_type, scheduled_at, qr_location)
-    VALUES(?,?,?,?,?,?)
+    INSERT INTO cleaning_tasks(area, block, floor, task_type, scheduled_at, qr_location)
+    SELECT ?,?,?,?,?,?
+    WHERE NOT EXISTS (
+      SELECT 1 FROM cleaning_tasks
+      WHERE qr_location=? AND DATE(scheduled_at)=?
+    )
   `)
   let count = 0
   const tx = db.transaction(() => {
     // M blokları için ortak alan task'i (sadece M tipi ortak banyo/WC içerir)
     const mFloors = db.prepare("SELECT DISTINCT block, floor FROM rooms WHERE block LIKE 'M%'").all()
+    const commonAreas = [
+      { code: 'corridor', label: 'Koridor' },
+      { code: 'toilet', label: 'Tuvalet / WC' },
+      { code: 'bathroom', label: 'Banyo' },
+      { code: 'stairs', label: 'Merdiven' },
+    ]
     mFloors.forEach(({ block, floor }) => {
-      insert.run(`${block} ${floor}.Kat Ortak Alan`, block, floor, 'common_area', scheduled, `${block}-${floor}-common`)
-      count++
+      commonAreas.forEach(({ code, label }) => {
+        const qrLocation = `${block}-${floor}-${code}`
+        count += insert.run(
+          `${block} ${floor}.Kat ${label}`, block, floor, 'common_area', scheduled,
+          qrLocation, qrLocation, dateStr,
+        ).changes
+      })
     })
     // Tüm aktif odalar için bireysel oda task'i (M, S ve Y bloklar dahil)
     const allRooms = db.prepare("SELECT id, block, floor, room_no FROM rooms WHERE status='active'").all()
     allRooms.forEach(r => {
-      insert.run(`${r.block} Oda ${r.room_no}`, r.block, r.floor, 'room', scheduled, `${r.block}-${r.room_no}`)
-      count++
+      const qrLocation = `${r.block}-${r.room_no}`
+      count += insert.run(
+        `${r.block} Oda ${r.room_no}`, r.block, r.floor, 'room', scheduled,
+        qrLocation, qrLocation, dateStr,
+      ).changes
     })
   })
   tx()
@@ -115,6 +133,39 @@ export function getTaskHistory(qrLocation, days = 30) {
       AND date(ct.scheduled_at) >= date('now', 'localtime', ?)
     ORDER BY ct.scheduled_at DESC
   `).all(qrLocation, offset)
+}
+
+export function getPhotoOverview({ days = 7, block, floor } = {}) {
+  const db = getDB()
+  const safeDays = Math.max(1, Math.min(7, Number(days) || 7))
+  const offset = `-${safeDays - 1} days`
+  let sql = `
+    SELECT ct.id, ct.area, ct.block, ct.floor, ct.task_type, ct.qr_location,
+           ct.scheduled_at, ct.completed_at, ct.skipped, ct.skip_reason,
+           ct.photo_url, ct.verified_by_qr,
+           CASE
+             WHEN ct.task_type='room' THEN 'room'
+             WHEN ct.qr_location LIKE '%-corridor' THEN 'corridor'
+             WHEN ct.qr_location LIKE '%-toilet' THEN 'toilet'
+             WHEN ct.qr_location LIKE '%-bathroom' THEN 'bathroom'
+             WHEN ct.qr_location LIKE '%-stairs' THEN 'stairs'
+             ELSE 'common'
+           END AS area_code,
+           u.full_name AS assignee_name,
+           w.full_name AS worker_name
+    FROM cleaning_tasks ct
+    LEFT JOIN users u ON u.id=ct.assigned_to
+    LEFT JOIN staff w ON w.id=ct.completed_by_worker_id
+    WHERE DATE(ct.scheduled_at) >= DATE('now', 'localtime', ?)
+  `
+  const params = [offset]
+  if (block) { sql += ' AND ct.block=?'; params.push(block) }
+  if (floor !== undefined && floor !== null && floor !== '') {
+    sql += ' AND ct.floor=?'; params.push(Number(floor))
+  }
+  sql += ` ORDER BY DATE(ct.scheduled_at) DESC, ct.block, ct.floor,
+           CASE ct.task_type WHEN 'common_area' THEN 0 ELSE 1 END, ct.area`
+  return db.prepare(sql).all(...params)
 }
 
 export function getDNDRooms() {

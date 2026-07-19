@@ -23,6 +23,7 @@ import { checkTruckArrivalAlerts, waterDailyDigest, buildReconciliationPDF, wate
 import { cleanupWaterFiles } from '../../modules/water/file-lifecycle.js'
 import { captureError } from '../sentry.js'
 import { reconcileAttendanceService } from '../../modules/shifts/service.js'
+import { cleanupHousekeepingPhotos } from '../../modules/housekeeping/photo-retention.js'
 
 let emailJob = null
 export const WATER_TRUCK_ALERT_CRON = '* * * * *'
@@ -271,6 +272,15 @@ export function startCronJobs() {
           `yetim:${waterFiles.orphan_files_deleted} rapor:${waterFiles.reports_deleted}`)
       }
       if (waterFiles.errors.length) logger.warn(`[Cron] Su dosya temizliği ${waterFiles.errors.length} dosyada tamamlanamadı`)
+      const housekeepingPhotos = cleanupHousekeepingPhotos()
+      if (housekeepingPhotos.references_cleared || housekeepingPhotos.orphan_files_deleted) {
+        logger.info(`[Cron] Temizlik fotoğraf temizliği: ${housekeepingPhotos.references_cleared} kayıt, ${housekeepingPhotos.orphan_files_deleted} yetim dosya`)
+        logAudit(null, 'photo_retention_cleanup', 'housekeeping', null,
+          `${housekeepingPhotos.retention_days} gün; kayıt:${housekeepingPhotos.references_cleared} yetim:${housekeepingPhotos.orphan_files_deleted}`)
+      }
+      if (housekeepingPhotos.errors.length) {
+        logger.warn(`[Cron] Temizlik fotoğraf temizliği ${housekeepingPhotos.errors.length} dosyada tamamlanamadı`)
+      }
     } catch (e) { logger.error('[Cron] Temizleme hatası:', e.message) }
   }), TZ)
 

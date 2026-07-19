@@ -1,6 +1,6 @@
 // M bloklar için ortak alan (koridor · WC · banyo · merdiven) görev kartı.
 // Tamamla / geri al / atla aksiyonları orkestratörden prop olarak gelir.
-// Foto kanıt: bugünkü görevin fotoğrafı + 📜 ile 14 günlük geçmiş açılır.
+// Foto kanıt: bugünkü görevin fotoğrafı + 📜 ile saklama süresi içindeki geçmiş açılır.
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
@@ -14,6 +14,15 @@ export default function OrtakAlanCard({ task, block, floor, onComplete, onUncomp
   const [photo, setPhoto] = useState(null) // temizlik kanıt fotoğrafı (dataURL)
   const done    = !!task?.completed_at
   const skipped = task?.skipped === 1
+  const areaCode = task?.qr_location?.split('-').at(-1) || 'common'
+  const areaMeta = {
+    corridor: { label: 'KORİDOR', icon: '↔', description: 'Kat koridoru ve geçiş alanları' },
+    toilet: { label: 'TUVALET / WC', icon: '🚽', description: 'Ortak tuvalet ve WC alanları' },
+    bathroom: { label: 'BANYO', icon: '🚿', description: 'Ortak duş ve banyo alanları' },
+    stairs: { label: 'MERDİVEN', icon: '↗', description: 'Merdiven, sahanlık ve korkuluklar' },
+    common: { label: 'ORTAK ALAN', icon: '🏢', description: 'Koridor, WC, banyo ve merdiven ortak alanları' },
+  }[areaCode] || { label: task?.area || 'ORTAK ALAN', icon: '🏢', description: 'Ortak kullanım alanı' }
+  const historyQr = task?.qr_location || `${block}-${floor}-common`
 
   async function onPhotoPick(e) {
     const file = e.target.files?.[0]
@@ -22,11 +31,11 @@ export default function OrtakAlanCard({ task, block, floor, onComplete, onUncomp
     try { setPhoto(await downscalePhoto(file)) } catch { /* sessiz */ }
   }
 
-  // Geçmiş yalnız açılınca çekilir — qr_location üretim anahtarı: `${block}-${floor}-common`
+  // Her ortak alan kendi qr_location anahtarıyla ayrı izlenir.
   const { data: history = [] } = useQuery({
-    queryKey: ['hk-common-history', block, floor],
-    queryFn: () => api.get(`/housekeeping/task-history?qr_location=${encodeURIComponent(`${block}-${floor}-common`)}&days=14`).then(r => r.data),
-    enabled: showHistory && !!block && floor != null,
+    queryKey: ['hk-common-history', historyQr],
+    queryFn: () => api.get(`/housekeeping/task-history?qr_location=${encodeURIComponent(historyQr)}&days=7`).then(r => r.data),
+    enabled: showHistory && !!historyQr,
     staleTime: 30000,
   })
 
@@ -44,7 +53,7 @@ export default function OrtakAlanCard({ task, block, floor, onComplete, onUncomp
           display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px',
           background: done ? 'rgba(39,201,106,.15)' : skipped ? 'rgba(61,78,106,.2)' : 'rgba(59,140,240,.12)',
         }}>
-          {done ? '✅' : skipped ? '⊘' : '🏢'}
+          {done ? '✅' : skipped ? '⊘' : areaMeta.icon}
         </div>
         <div style={{ flex: 1 }}>
           <div style={{
@@ -52,12 +61,12 @@ export default function OrtakAlanCard({ task, block, floor, onComplete, onUncomp
             color: done ? 'var(--green)' : skipped ? 'var(--text3)' : 'var(--text)',
             textDecoration: skipped ? 'line-through' : 'none',
           }}>
-            ORTAK ALAN — KORİDOR · WC · BANYO · MERDİVEN
+            {areaMeta.label}
           </div>
           <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', marginTop: '3px' }}>
             {done && task?.assignee_name && `✓ ${task.assignee_name} · ${new Date(task.completed_at).toLocaleTimeString('tr-TR', { hour:'2-digit', minute:'2-digit' })}`}
             {skipped && task?.skip_reason && `Atlandı: ${task.skip_reason}`}
-            {!done && !skipped && 'Kat koridoru, WC ve banyo ortak alanlarını kapsar'}
+            {!done && !skipped && areaMeta.description}
           </div>
         </div>
         {done && task?.photo_url && (
@@ -68,7 +77,7 @@ export default function OrtakAlanCard({ task, block, floor, onComplete, onUncomp
         )}
         <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
           {block && floor != null && (
-            <button className="btn btn-ghost btn-xs" title="14 günlük temizlik geçmişi"
+            <button className="btn btn-ghost btn-xs" title="Son 7 günlük temizlik geçmişi"
               onClick={() => setShowHistory(s => !s)}>📜</button>
           )}
           {!task && <span style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text4)' }}>Görev yok</span>}
@@ -108,11 +117,11 @@ export default function OrtakAlanCard({ task, block, floor, onComplete, onUncomp
         </div>
       )}
 
-      {/* 14 günlük geçmiş — WC/banyo temizliği foto kanıtlarıyla */}
+      {/* Saklama süresi içindeki geçmiş — alan bazlı fotoğraf kanıtlarıyla */}
       {showHistory && (
         <div style={{ padding: '10px 16px', borderTop: '1px solid var(--border)', background: 'var(--surface2)' }}>
           <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text3)', letterSpacing: '2px', marginBottom: '7px' }}>
-            ORTAK ALAN TEMİZLİK GEÇMİŞİ — 14 GÜN
+            {areaMeta.label} TEMİZLİK GEÇMİŞİ — SON 7 GÜN
           </div>
           {history.length === 0 && (
             <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text4)' }}>Kayıt yok</div>

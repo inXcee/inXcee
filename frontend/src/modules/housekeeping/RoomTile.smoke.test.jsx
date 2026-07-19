@@ -16,4 +16,9 @@ describe('housekeeping/RoomTile smoke', () => {
     render(<RoomTile rno="102" task={{ completed_at: '2026-01-01' }} roomInfo={null} isM={true} selected={false} onSelect={() => {}} />)
     expect(screen.getByTitle('Oda 102 — TEMİZ')).toBeInTheDocument()
   })
+
+  it('kanıt fotoğrafı olan odada kamera göstergesi gösterir', () => {
+    render(<RoomTile rno="103" task={{ completed_at: '2026-01-01', photo_url: '/uploads/room.jpg' }} roomInfo={null} isM={true} selected={false} onSelect={() => {}} />)
+    expect(screen.getByTitle('Temizlik kanıt fotoğrafı var')).toBeInTheDocument()
+  })
 })

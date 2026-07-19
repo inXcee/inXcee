@@ -2,6 +2,11 @@ import * as q from './queries.js'
 import { createNotification } from '../../shared/notifications/service.js'
 import { EVENT_KINDS } from '../../shared/notifications/events.js'
 import { logAudit } from '../../shared/audit.js'
+import {
+  cleanupHousekeepingPhotos,
+  getHousekeepingPhotoRetentionDays,
+  setHousekeepingPhotoRetentionDays,
+} from './photo-retention.js'
 
 export const generateDailyTasksService  = q.generateDailyTasks
 export const getTasksService            = q.getTasks
@@ -9,6 +14,37 @@ export const getDNDRoomsService         = q.getDNDRooms
 
 export const getFloorTaskPreviewService = q.getFloorTaskPreview
 export const getTaskHistoryService       = q.getTaskHistory
+
+export function getPhotoOverviewService(filters = {}) {
+  const retentionDays = getHousekeepingPhotoRetentionDays()
+  const periodDays = Math.max(1, Math.min(retentionDays, Number(filters.days) || retentionDays))
+  const items = q.getPhotoOverview({ ...filters, days: periodDays })
+  const summary = items.reduce((totals, item) => {
+    totals.total++
+    if (item.skipped) totals.skipped++
+    else if (item.completed_at) {
+      totals.completed++
+      if (item.photo_url) totals.with_photo++
+      else totals.without_photo++
+    } else totals.pending++
+    return totals
+  }, { total: 0, completed: 0, with_photo: 0, without_photo: 0, pending: 0, skipped: 0 })
+  return { retention_days: retentionDays, period_days: periodDays, summary, items }
+}
+
+export function getPhotoRetentionPolicyService() {
+  return { retention_days: getHousekeepingPhotoRetentionDays(), options: [3, 7] }
+}
+
+export function setPhotoRetentionPolicyService(days, userId) {
+  const retentionDays = setHousekeepingPhotoRetentionDays(days)
+  logAudit(userId, 'photo_retention_update', 'housekeeping', null, `${retentionDays} gün`)
+  return { retention_days: retentionDays, options: [3, 7] }
+}
+
+export function cleanupHousekeepingPhotosService(options) {
+  return cleanupHousekeepingPhotos(options)
+}
 
 export function completeFloorTasksService(block, floor, date, userId) {
   const count = q.completeFloorTasks(block, floor, date, userId)

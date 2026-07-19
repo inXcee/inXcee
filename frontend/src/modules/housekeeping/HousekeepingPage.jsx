@@ -13,6 +13,7 @@ import OrtakAlanCard from './OrtakAlanCard.jsx'
 import BlockFloorView from './BlockFloorView.jsx'
 import RoomDetailPanel from './RoomDetailPanel.jsx'
 import StaffSection from './StaffSection.jsx'
+import PhotoControlCenter from './PhotoControlCenter.jsx'
 
 export default function HousekeepingPage() {
   const qc = useQueryClient()
@@ -21,6 +22,7 @@ export default function HousekeepingPage() {
   const [floor, setFloor]           = useState(1)
   const [selectedRoomNo, setSelected] = useState(null)
   const [uncleanedOnly, setUncleanedOnly] = useState(false)
+  const [viewMode, setViewMode] = useState('plan')
 
   const cfg = BLOCK_BY_NAME[block]
   const isM = cfg?.type === 'M'
@@ -112,9 +114,9 @@ export default function HousekeepingPage() {
     ? tasks.find(t => t.block === block && t.floor === floor && t.task_type === 'room' && roomNoFromQr(t.qr_location) === selectedRoomNo)
     : null
 
-  const commonTask = isM
-    ? tasks.find(t => t.block === block && t.floor === floor && t.task_type === 'common_area')
-    : null
+  const commonTasks = isM
+    ? tasks.filter(t => t.block === block && t.floor === floor && t.task_type === 'common_area')
+    : []
 
   return (
     <div className="fade-up" style={{ position: 'relative', zIndex: 1 }}>
@@ -142,6 +144,13 @@ export default function HousekeepingPage() {
           ], tasks, `temizlik_${TODAY}.csv`)}>↓ CSV</button>
         )}
       </div>
+
+      <div style={{ display: 'flex', gap: '5px', marginBottom: '14px', padding: '3px', width: 'fit-content', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '9px' }}>
+        <button className={`filter-chip${viewMode === 'plan' ? ' active' : ''}`} onClick={() => setViewMode('plan')}>🧹 GÜNLÜK PLAN</button>
+        <button className={`filter-chip${viewMode === 'photos' ? ' active' : ''}`} onClick={() => { setViewMode('photos'); setSelected(null) }}>📷 FOTOĞRAF MERKEZİ</button>
+      </div>
+
+      {viewMode === 'photos' ? <PhotoControlCenter /> : <>
 
       {/* Progress */}
       {isLoading
@@ -276,14 +285,19 @@ export default function HousekeepingPage() {
 
         <div className="panel-body">
           {isM && (
-            <OrtakAlanCard
-              task={commonTask}
-              block={block}
-              floor={floor}
-              onComplete={(id, cl, photoBlob) => completeTask.mutate({ id, checklist: cl, photoBlob })}
-              onUncomplete={(id) => uncompleteTask.mutate(id)}
-              onSkip={(id, reason, undo) => skipTask.mutate({ id, reason, undo })}
-            />
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(320px,1fr))', gap: '10px', marginBottom: '16px' }}>
+              {(commonTasks.length ? commonTasks : [null]).map((commonTask, index) => (
+                <OrtakAlanCard
+                  key={commonTask?.id || `common-empty-${index}`}
+                  task={commonTask}
+                  block={block}
+                  floor={floor}
+                  onComplete={(id, cl, photoBlob) => completeTask.mutate({ id, checklist: cl, photoBlob })}
+                  onUncomplete={(id) => uncompleteTask.mutate(id)}
+                  onSkip={(id, reason, undo) => skipTask.mutate({ id, reason, undo })}
+                />
+              ))}
+            </div>
           )}
           {!isLoading && (
             <BlockFloorView
@@ -309,6 +323,7 @@ export default function HousekeepingPage() {
           onInvalidateRooms={() => qc.invalidateQueries(['capacity-rooms', block])}
         />
       )}
+      </>}
     </div>
   )
 }

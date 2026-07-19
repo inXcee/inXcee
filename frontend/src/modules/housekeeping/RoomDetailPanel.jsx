@@ -55,7 +55,7 @@ export default function RoomDetailPanel({ block, floor, roomNo, task, isPrivateB
   // Temizlik geçmişi — qr_location üretim anahtarı: `${block}-${roomNo}`
   const { data: cleanHistory = [] } = useQuery({
     queryKey: ['hk-task-history', block, roomNo],
-    queryFn: () => api.get(`/housekeeping/task-history?qr_location=${encodeURIComponent(`${block}-${roomNo}`)}&days=14`).then(r => r.data),
+    queryFn: () => api.get(`/housekeeping/task-history?qr_location=${encodeURIComponent(`${block}-${roomNo}`)}&days=7`).then(r => r.data),
     staleTime: 30000,
   })
   const room   = details?.room
@@ -546,11 +546,11 @@ export default function RoomDetailPanel({ block, floor, roomNo, task, isPrivateB
             </>)
           })()}
 
-          {/* Temizlik geçmişi — foto kanıtlı (son 14 gün) */}
+          {/* Temizlik geçmişi — foto kanıtlı (son 7 gün) */}
           {cleanHistory.length > 0 && (
             <>
               <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '2px', marginBottom: '10px' }}>
-                TEMİZLİK GEÇMİŞİ — 14 GÜN
+                TEMİZLİK GEÇMİŞİ — SON 7 GÜN
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginBottom: '14px', maxHeight: '240px', overflowY: 'auto' }}>
                 {cleanHistory.map(h => {

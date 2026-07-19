@@ -43,3 +43,9 @@ export const completeTaskSchema = z.object({
   checklist: z.any().optional(),
   via_qr: z.coerce.boolean().optional().default(false),
 })
+
+export const photoRetentionSchema = z.object({
+  retention_days: z.coerce.number().int().refine(value => value === 3 || value === 7, {
+    message: 'Fotoğraf saklama süresi 3 veya 7 gün olmalı',
+  }),
+})

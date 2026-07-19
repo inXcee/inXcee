@@ -5,10 +5,13 @@ import { initDB } from '../../shared/db/index.js'
 import { seedDev } from '../../shared/db/seed.js'
 
 let token
+let managerToken
 beforeAll(async () => {
   process.env.DB_PATH = ':memory:'; initDB(); seedDev()
   const r = await request(app).post('/api/auth/login').send({ username: 'meydanci', password: 'admin123' })
   token = r.body.token
+  const manager = await request(app).post('/api/auth/login').send({ username: 'mudur', password: 'admin123' })
+  managerToken = manager.body.token
 })
 
 describe('Housekeeping — Zod sweep', () => {
@@ -38,7 +41,7 @@ describe('Housekeeping — hub complete foto kanıtı', () => {
       .attach('photo', jpeg, 'oda.jpg')
     expect(res.status).toBe(200)
     const after = db.prepare('SELECT photo_url, checklist, completed_at FROM cleaning_tasks WHERE id=?').get(t.lastInsertRowid)
-    expect(after.photo_url).toMatch(/^\/uploads\//)
+    expect(after.photo_url).toMatch(/^\/uploads\/housekeeping-/)
     expect(JSON.parse(after.checklist)).toEqual(['bed', 'floor'])
     expect(after.completed_at).toBeTruthy()
   })
@@ -115,6 +118,39 @@ describe('Housekeeping', () => {
       const commonTasks = tasksRes.body.filter(t => t.block === yb && t.task_type === 'common_area')
       expect(commonTasks.length, `Y blok ${yb} için common_area task olmamali`).toBe(0)
     }
+  })
+  it('M blok ortak alanlarini koridor, tuvalet, banyo ve merdiven olarak ayri uretir', async () => {
+    const tasksRes = await request(app).get('/api/housekeeping/tasks?block=M1').set('Authorization', `Bearer ${token}`)
+    const floorTasks = tasksRes.body.filter(t => t.floor === 1 && t.task_type === 'common_area')
+    expect(floorTasks.map(t => t.qr_location)).toEqual(expect.arrayContaining([
+      'M1-1-corridor', 'M1-1-toilet', 'M1-1-bathroom', 'M1-1-stairs',
+    ]))
+  })
+  it('fotograf kontrol merkezini ozet ve alan kodlariyla dondurur', async () => {
+    const res = await request(app).get('/api/housekeeping/photo-overview?days=7&block=M1')
+      .set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(200)
+    expect(res.body.retention_days).toBe(7)
+    expect(res.body.summary.total).toBe(res.body.items.length)
+    expect(res.body.items.some(item => item.area_code === 'corridor')).toBe(true)
+    expect(res.body.items.every(item => item.block === 'M1')).toBe(true)
+  })
+  it('yonetici fotograf saklama suresini yalnizca 3 veya 7 gun yapabilir', async () => {
+    const changed = await request(app).patch('/api/housekeeping/photo-retention')
+      .set('Authorization', `Bearer ${managerToken}`).send({ retention_days: 3 })
+    expect(changed.status).toBe(200)
+    expect(changed.body.retention_days).toBe(3)
+
+    const invalid = await request(app).patch('/api/housekeeping/photo-retention')
+      .set('Authorization', `Bearer ${managerToken}`).send({ retention_days: 5 })
+    expect(invalid.status).toBe(400)
+
+    const forbidden = await request(app).patch('/api/housekeeping/photo-retention')
+      .set('Authorization', `Bearer ${token}`).send({ retention_days: 7 })
+    expect(forbidden.status).toBe(403)
+
+    await request(app).patch('/api/housekeeping/photo-retention')
+      .set('Authorization', `Bearer ${managerToken}`).send({ retention_days: 7 })
   })
   it('completes task by QR', async () => {
     const db = (await import('../../shared/db/index.js')).getDB()

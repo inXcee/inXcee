@@ -1,16 +1,18 @@
 import { Router } from 'express'
 import { requireRole } from '../../shared/auth/middleware.js'
-import { upload, verifyMagicBytes } from '../../shared/uploads/middleware.js'
+import { createImageUpload, upload, verifyMagicBytes } from '../../shared/uploads/middleware.js'
 import * as svc from './service.js'
 import { logger } from '../../shared/logger.js'
 import { validate } from '../../shared/middleware/validate.js'
 import {
   completeFloorSchema, skipTaskSchema, roomNotesSchema, noCleanSchema,
-  faultReportSchema, createStaffSchema, updateStaffSchema, completeTaskSchema,
+  faultReportSchema, createStaffSchema, updateStaffSchema, completeTaskSchema, photoRetentionSchema,
 } from './schemas.js'
 
 export const housekeepingRouter = Router()
 const hkAccess = requireRole('campus_manager', 'housekeeper')
+const managerAccess = requireRole('campus_manager')
+const housekeepingPhotoUpload = createImageUpload('housekeeping')
 
 housekeepingRouter.get('/tasks', ...hkAccess, (req, res) => {
   try { res.json(svc.getTasksService(req.query)) }
@@ -29,6 +31,26 @@ housekeepingRouter.get('/task-history', ...hkAccess, (req, res) => {
     if (!qr_location) return res.status(400).json({ error: 'qr_location gerekli' })
     res.json(svc.getTaskHistoryService(qr_location, days ? +days : 30))
   } catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+})
+
+housekeepingRouter.get('/photo-overview', ...hkAccess, (req, res) => {
+  try { res.json(svc.getPhotoOverviewService(req.query)) }
+  catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+housekeepingRouter.get('/photo-retention', ...hkAccess, (req, res) => {
+  try { res.json(svc.getPhotoRetentionPolicyService()) }
+  catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+housekeepingRouter.patch('/photo-retention', ...managerAccess, validate(photoRetentionSchema), (req, res) => {
+  try { res.json(svc.setPhotoRetentionPolicyService(req.validated.retention_days, req.user.id)) }
+  catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+housekeepingRouter.post('/photo-retention/cleanup', ...managerAccess, (req, res) => {
+  try { res.json(svc.cleanupHousekeepingPhotosService()) }
+  catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 housekeepingRouter.get('/tasks/floor-preview', ...hkAccess, (req, res) => {
@@ -57,7 +79,7 @@ function coerceCompleteBody(req, res, next) {
   next()
 }
 
-housekeepingRouter.post('/tasks/:id/complete', ...hkAccess, upload.single('photo'), verifyMagicBytes, coerceCompleteBody, validate(completeTaskSchema), (req, res) => {
+housekeepingRouter.post('/tasks/:id/complete', ...hkAccess, housekeepingPhotoUpload.single('photo'), verifyMagicBytes, coerceCompleteBody, validate(completeTaskSchema), (req, res) => {
   try {
     const photoUrl = req.file ? '/uploads/' + req.file.filename : null
     svc.completeTaskService(+req.params.id, req.user.id, req.validated.checklist || null, req.validated.via_qr, photoUrl)
