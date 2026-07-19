@@ -2,6 +2,8 @@ import { useState, useEffect, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import api from '../../../shared/api/client.js'
 import { todayStr, addDays, shiftColor, formatDate, shortDay } from '../shared.jsx'
+import { openOccupancyPrintWindow, exportOccupancyExcel } from '../logic/occupancyExport.js'
+import { useToastStore } from '../../../shared/store/toastStore.js'
 
 function nowHHMM() {
   const d = new Date()
@@ -88,6 +90,21 @@ export default function LiveOccupancyBoard({ onPersonClick }) {
         >
           {live && isToday ? '● CANLI' : '○ ŞU AN'}
         </button>
+
+        <div style={{ display: 'flex', gap: '6px' }}>
+          <button
+            className="btn btn-ghost btn-sm"
+            disabled={!rows.length}
+            title="Bu anlık görüntüyü yazdır / PDF"
+            onClick={() => { try { openOccupancyPrintWindow({ date, time, rows }) } catch (e) { useToastStore.getState().addToast(e.message || 'Yazdırılamadı', 'error') } }}
+          >⎙ PDF</button>
+          <button
+            className="btn btn-ghost btn-sm"
+            disabled={!rows.length}
+            title="Bu anlık görüntüyü Excel indir"
+            onClick={async () => { try { await exportOccupancyExcel({ date, time, rows }) } catch (e) { useToastStore.getState().addToast(e.message || 'İndirilemedi', 'error') } }}
+          >⬇ Excel</button>
+        </div>
 
         <div style={{ marginLeft: 'auto', display: 'flex', gap: '14px', alignItems: 'center', fontFamily: 'var(--mono)', fontSize: 11 }}>
           <span style={{ color: 'var(--green)' }}>👥 {presentTotal} kişi sahada</span>
