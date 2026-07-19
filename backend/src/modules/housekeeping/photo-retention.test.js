@@ -47,6 +47,48 @@ describe('housekeeping photo retention', () => {
     expect(db.prepare('SELECT COUNT(*) AS count FROM cleaning_tasks').get().count).toBe(2)
   })
 
+  it('coklu foto tablosunda suresi dolan fotografi siler ve kapagi resenkronlar', () => {
+    const db = getDB()
+    const oldPhoto = path.join(uploadsDir, 'housekeeping-multi-old.jpg')
+    const newPhoto = path.join(uploadsDir, 'housekeeping-multi-new.jpg')
+    fs.writeFileSync(oldPhoto, 'old'); fs.writeFileSync(newPhoto, 'new')
+    const task = db.prepare(`
+      INSERT INTO cleaning_tasks(area, block, floor, task_type, scheduled_at, qr_location, completed_at, photo_url)
+      VALUES('M1 Oda 101','M1',1,'room','2026-07-18 08:00:00','M1-101','2026-07-18 09:00:00','/uploads/housekeeping-multi-old.jpg')
+    `).run().lastInsertRowid
+    db.prepare("INSERT INTO cleaning_task_photos(task_id, photo_url, sort_order, uploaded_at) VALUES(?,?,?,?)")
+      .run(task, '/uploads/housekeeping-multi-old.jpg', 0, '2026-07-01 09:00:00')
+    db.prepare("INSERT INTO cleaning_task_photos(task_id, photo_url, sort_order, uploaded_at) VALUES(?,?,?,?)")
+      .run(task, '/uploads/housekeeping-multi-new.jpg', 1, '2026-07-18 09:00:00')
+
+    const result = cleanupHousekeepingPhotos({ uploadsDir, retentionDays: 7, now: new Date('2026-07-19T12:00:00Z') })
+
+    expect(result.task_photos_deleted).toBe(1)
+    expect(fs.existsSync(oldPhoto)).toBe(false)
+    expect(fs.existsSync(newPhoto)).toBe(true)
+    // Kalan tek foto → kapak ona senkronlandı
+    expect(db.prepare('SELECT photo_url FROM cleaning_tasks WHERE id=?').get(task).photo_url).toBe('/uploads/housekeeping-multi-new.jpg')
+    expect(db.prepare('SELECT COUNT(*) AS c FROM cleaning_task_photos WHERE task_id=?').get(task).c).toBe(1)
+  })
+
+  it('coklu tabloda referansli fotografi orphan sanip SILMEZ (kritik)', () => {
+    const db = getDB()
+    const keep = path.join(uploadsDir, 'housekeeping-keep.jpg')
+    fs.writeFileSync(keep, 'x')
+    const oldTime = new Date('2026-07-01T00:00:00Z')
+    fs.utimesSync(keep, oldTime, oldTime) // dosya eski ama tabloda referansli + uploaded_at yeni
+    const task = db.prepare(`
+      INSERT INTO cleaning_tasks(area, block, floor, task_type, scheduled_at, qr_location)
+      VALUES('M1 Oda 102','M1',1,'room','2026-07-19 08:00:00','M1-102')
+    `).run().lastInsertRowid
+    db.prepare("INSERT INTO cleaning_task_photos(task_id, photo_url, sort_order, uploaded_at) VALUES(?,?,?,?)")
+      .run(task, '/uploads/housekeeping-keep.jpg', 0, '2026-07-19 09:00:00')
+
+    const result = cleanupHousekeepingPhotos({ uploadsDir, retentionDays: 3, now: new Date('2026-07-19T12:00:00Z') })
+    expect(result.orphan_files_deleted).toBe(0)
+    expect(fs.existsSync(keep)).toBe(true)
+  })
+
   it('eski yetim housekeeping dosyalarini temizler, diger modullere dokunmaz', () => {
     const orphan = path.join(uploadsDir, 'housekeeping-orphan.jpg')
     const other = path.join(uploadsDir, 'maintenance-old.jpg')

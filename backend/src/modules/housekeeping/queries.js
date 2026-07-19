@@ -83,6 +83,70 @@ export function uncompleteTask(taskId) {
   `).run(taskId)
 }
 
+// ── Çoklu fotoğraf (cleaning_task_photos) ──────────────────────────────────────
+export const CLEANING_PHOTO_CATEGORIES = ['genel', 'oncesi', 'sonrasi', 'detay', 'hasar']
+
+function normalizePhotoCategory(value) {
+  const v = String(value || '').trim().toLowerCase()
+  return CLEANING_PHOTO_CATEGORIES.includes(v) ? v : 'genel'
+}
+
+// Görevin kapak fotoğrafını (cleaning_tasks.photo_url) tablodaki ilk fotoğrafa senkronlar.
+export function syncTaskCover(taskId) {
+  const db = getDB()
+  const first = db.prepare(
+    'SELECT photo_url FROM cleaning_task_photos WHERE task_id=? ORDER BY sort_order, id LIMIT 1'
+  ).get(taskId)
+  db.prepare('UPDATE cleaning_tasks SET photo_url=? WHERE id=?').run(first?.photo_url || null, taskId)
+  return first?.photo_url || null
+}
+
+export function listTaskPhotos(taskId) {
+  return getDB().prepare(`
+    SELECT p.id, p.task_id, p.photo_url, p.category, p.caption, p.sort_order,
+           p.uploaded_by, p.uploaded_at, u.full_name AS uploaded_by_name
+    FROM cleaning_task_photos p
+    LEFT JOIN users u ON u.id=p.uploaded_by
+    WHERE p.task_id=?
+    ORDER BY p.sort_order, p.id
+  `).all(taskId)
+}
+
+// Bir göreve bir veya birden fazla fotoğraf ekler. photos: [{ photo_url, category, caption }]
+export function addTaskPhotos(taskId, photos = [], userId = null) {
+  const db = getDB()
+  const list = (photos || []).filter(p => p && p.photo_url)
+  if (!list.length) return []
+  const startRow = db.prepare('SELECT COALESCE(MAX(sort_order), -1) AS m FROM cleaning_task_photos WHERE task_id=?').get(taskId).m
+  const insert = db.prepare(`
+    INSERT INTO cleaning_task_photos(task_id, photo_url, category, caption, sort_order, uploaded_by)
+    VALUES(?,?,?,?,?,?)
+  `)
+  const ids = []
+  const tx = db.transaction(() => {
+    list.forEach((p, i) => {
+      const info = insert.run(taskId, p.photo_url, normalizePhotoCategory(p.category), p.caption || null, startRow + 1 + i, userId)
+      ids.push(info.lastInsertRowid)
+    })
+    syncTaskCover(taskId)
+  })
+  tx()
+  return listTaskPhotos(taskId).filter(p => ids.includes(p.id))
+}
+
+// Fotoğrafı siler; silinen kaydı döner (çağıran dosyayı diskten kaldırır). Kapak resenkronlanır.
+export function deleteTaskPhoto(taskId, photoId) {
+  const db = getDB()
+  const row = db.prepare('SELECT * FROM cleaning_task_photos WHERE id=? AND task_id=?').get(photoId, taskId)
+  if (!row) return null
+  const tx = db.transaction(() => {
+    db.prepare('DELETE FROM cleaning_task_photos WHERE id=?').run(photoId)
+    syncTaskCover(taskId)
+  })
+  tx()
+  return row
+}
+
 export function skipTask(taskId, reason, userId) {
   const db = getDB()
   db.prepare(`
@@ -125,6 +189,7 @@ export function getTaskHistory(qrLocation, days = 30) {
   return db.prepare(`
     SELECT ct.id, ct.area, ct.task_type, ct.scheduled_at, ct.completed_at,
            ct.skipped, ct.skip_reason, ct.photo_url, ct.verified_by_qr,
+           (SELECT COUNT(*) FROM cleaning_task_photos p WHERE p.task_id=ct.id) AS photo_count,
            u.full_name as assignee_name, w.full_name as worker_name
     FROM cleaning_tasks ct
     LEFT JOIN users u ON u.id=ct.assigned_to
@@ -143,6 +208,7 @@ export function getPhotoOverview({ days = 7, block, floor } = {}) {
     SELECT ct.id, ct.area, ct.block, ct.floor, ct.task_type, ct.qr_location,
            ct.scheduled_at, ct.completed_at, ct.skipped, ct.skip_reason,
            ct.photo_url, ct.verified_by_qr,
+           (SELECT COUNT(*) FROM cleaning_task_photos p WHERE p.task_id=ct.id) AS photo_count,
            CASE
              WHEN ct.task_type='room' THEN 'room'
              WHEN ct.qr_location LIKE '%-corridor' THEN 'corridor'

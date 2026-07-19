@@ -54,10 +54,13 @@ export function cleanupHousekeepingPhotos({
 
   let filesDeleted = 0
   let referencesCleared = 0
+  let taskPhotosDeleted = 0
   let orphanFilesDeleted = 0
   const errors = []
+  const touchedTasks = new Set()
   const clearReference = db.prepare('UPDATE cleaning_tasks SET photo_url=NULL WHERE id=?')
 
+  // 1) Eski tekil kapak referansları (geriye uyum: tablo satırı olmayan photo_url'ler)
   for (const item of expired) {
     const filePath = localUploadPath(item.photo_url, uploadsDir)
     try {
@@ -67,16 +70,49 @@ export function cleanupHousekeepingPhotos({
       }
       clearReference.run(item.id)
       referencesCleared++
+      touchedTasks.add(item.id)
     } catch (error) {
       errors.push({ task_id: item.id, message: error.message })
     }
   }
 
+  // 2) Çoklu fotoğraf tablosu: yükleme tarihine göre süresi dolanları sil (dosya + satır)
+  const expiredPhotos = db.prepare(`
+    SELECT id, task_id, photo_url FROM cleaning_task_photos WHERE uploaded_at < ?
+  `).all(cutoffSql)
+  const deletePhotoRow = db.prepare('DELETE FROM cleaning_task_photos WHERE id=?')
+  for (const item of expiredPhotos) {
+    const filePath = localUploadPath(item.photo_url, uploadsDir)
+    try {
+      if (filePath && fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath)
+        filesDeleted++
+      }
+      deletePhotoRow.run(item.id)
+      taskPhotosDeleted++
+      touchedTasks.add(item.task_id)
+    } catch (error) {
+      errors.push({ photo_id: item.id, message: error.message })
+    }
+  }
+
+  // 3) Etkilenen görevlerin kapağını (photo_url) tablodaki kalan ilk fotoğrafa resenkronla
+  const resyncCover = db.prepare(`
+    UPDATE cleaning_tasks SET photo_url=(
+      SELECT photo_url FROM cleaning_task_photos WHERE task_id=? ORDER BY sort_order, id LIMIT 1
+    ) WHERE id=?
+  `)
+  for (const taskId of touchedTasks) {
+    try { resyncCover.run(taskId, taskId) } catch (error) { errors.push({ task_id: taskId, message: error.message }) }
+  }
+
+  // 4) Yetim dosyalar: HİÇBİR referansı (kapak VEYA çoklu tablo) olmayan + süresi dolan housekeeping-* dosyaları
   const root = path.resolve(uploadsDir)
   if (fs.existsSync(root)) {
-    const referencedNames = new Set(db.prepare(`
-      SELECT photo_url FROM cleaning_tasks WHERE photo_url IS NOT NULL
-    `).all().map(row => path.basename(row.photo_url)))
+    const referencedNames = new Set([
+      ...db.prepare('SELECT photo_url FROM cleaning_tasks WHERE photo_url IS NOT NULL').all().map(row => path.basename(row.photo_url)),
+      ...db.prepare('SELECT photo_url FROM cleaning_task_photos').all().map(row => path.basename(row.photo_url)),
+    ])
     for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
       if (!entry.isFile() || !entry.name.startsWith('housekeeping-')) continue
       if (referencedNames.has(entry.name)) continue
@@ -97,6 +133,7 @@ export function cleanupHousekeepingPhotos({
     cutoff: cutoff.toISOString(),
     files_deleted: filesDeleted,
     references_cleared: referencesCleared,
+    task_photos_deleted: taskPhotosDeleted,
     orphan_files_deleted: orphanFilesDeleted,
     errors,
   }
