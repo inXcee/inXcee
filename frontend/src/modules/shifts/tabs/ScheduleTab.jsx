@@ -13,6 +13,7 @@ import {
 } from '../shared.jsx'
 import { buildStaffGrid, computeWeekStats, parseQuickScheduleCode, cellToScheduleCode, buildScheduleWarnings, planCellPaste } from '../logic/schedule.js'
 import { DailyView, WeekFillSheet, CellAssignSheet } from './scheduleSheets.jsx'
+import LiveOccupancyBoard from './LiveOccupancyBoard.jsx'
 import ScheduleImportModal from './ScheduleImportModal.jsx'
 import CoverageBoard from './CoverageBoard.jsx'
 import { PayrollClosingModal, ScheduleTemplateModal } from './ScheduleControlModals.jsx'
@@ -811,6 +812,11 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
             className={`filter-chip${scheduleView === 'daily' ? ' active' : ''}`}
             onClick={() => { setScheduleView('daily'); setDailyDate(typeof todayStr === 'function' ? todayStr() : todayStr) }}
           >GÜNLÜK</button>
+          <button
+            className={`filter-chip${scheduleView === 'live' ? ' active' : ''}`}
+            onClick={() => setScheduleView('live')}
+            title="Şu an hangi noktada kim var, hangi lokal boş/eksik"
+          >ŞU AN</button>
         </div>
 
         {/* Dept filter */}
@@ -1150,6 +1156,11 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
           date={dailyDate}
           onDateChange={setDailyDate}
         />
+      )}
+
+      {/* View: ŞU AN — canlı lokasyon doluluğu */}
+      {scheduleView === 'live' && (
+        <LiveOccupancyBoard onPersonClick={onPersonClick} />
       )}
 
       {/* View: HAFTALIK */}
