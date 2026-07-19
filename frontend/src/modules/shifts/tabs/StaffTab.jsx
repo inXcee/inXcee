@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { Fragment, useState, useEffect, useMemo, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../../shared/api/client.js'
 import { useAuthStore } from '../../../shared/store/authStore.js'
@@ -89,7 +89,7 @@ function StaffQualityPanel({ quality, onEdit }) {
   )
 }
 
-function StaffFormSheet({ editStaff, form, setForm, handleSubmit, createMut, updateMut, departments, staffRoles = [], workLocations = [], canViewSensitive, onClose }) {
+export function StaffFormSheet({ editStaff, form, setForm, handleSubmit, createMut, updateMut, departments, staffRoles = [], workLocations = [], canViewSensitive, onClose }) {
   const [tab, setTab] = useState('temel')
   const [error, setError] = useState(null)
 
@@ -198,6 +198,11 @@ function StaffFormSheet({ editStaff, form, setForm, handleSubmit, createMut, upd
               <label className="form-label">İşe Giriş Tarihi</label>
               <input type="date" className="form-input" value={form.hire_date || ''}
                 onChange={e => setForm(p => ({ ...p, hire_date: e.target.value }))} />
+            </div>
+            <div>
+              <label className="form-label">Sözleşme Bitiş Tarihi</label>
+              <input type="date" className="form-input" value={form.contract_end || ''}
+                onChange={e => setForm(p => ({ ...p, contract_end: e.target.value }))} />
             </div>
             {editStaff && (
               <div>
@@ -311,6 +316,27 @@ const DIRECTORY_COLUMNS = [
 const DEFAULT_COLUMNS = DIRECTORY_COLUMNS.map(column => column.key)
 const EMPTY_LIST = []
 const EMPTY_QUALITY = { summary: {}, rows: [] }
+const DEFAULT_FILTERS = {
+  dept_id: '', role_id: '', work_location_id: '', gender: '', search: '', is_active: '1', risk: '', focus: '',
+}
+
+const FOCUS_FILTERS = [
+  { key: '', label: 'Tüm personel' },
+  { key: 'favorites', label: 'Favoriler' },
+  { key: 'scheduled', label: 'Bugün vardiyada' },
+  { key: 'leave', label: 'Bugün izinli' },
+  { key: 'unplanned', label: 'Bugün plansız' },
+  { key: 'assignment', label: 'Ataması eksik' },
+  { key: 'contact', label: 'İletişimi eksik' },
+]
+
+const VIEW_PROFILES = [
+  { key: 'full', label: 'Tam Kayıt', description: 'Tüm personel kolonları', viewMode: 'table', density: 'comfortable', group: true, columns: DEFAULT_COLUMNS },
+  { key: 'operations', label: 'Operasyon', description: 'Vardiya ve saha odağı', viewMode: 'table', density: 'compact', group: true, columns: ['assignment', 'today', 'followups', 'equipment', 'status'] },
+  { key: 'hr', label: 'İK Kontrol', description: 'Belge, izin ve performans', viewMode: 'table', density: 'comfortable', group: false, columns: ['contact', 'leave', 'documents', 'followups', 'performance', 'status'] },
+  { key: 'quick', label: 'Hızlı Liste', description: 'Az kolon, çok personel', viewMode: 'table', density: 'compact', group: false, columns: ['assignment', 'contact', 'today', 'status'] },
+  { key: 'cards', label: 'Ekip Kartları', description: 'Görsel ekip görünümü', viewMode: 'cards', density: 'comfortable', group: true, columns: DEFAULT_COLUMNS },
+]
 
 function usePersistentState(key, fallback) {
   const [value, setValue] = useState(() => {
@@ -346,6 +372,17 @@ function riskMatches(staff, risk) {
     const days = Math.ceil((new Date(staff.contract_end).getTime() - Date.now()) / 86400000)
     return days <= 30
   }
+  return true
+}
+
+function focusMatches(staff, focus, favoriteIds = []) {
+  if (!focus) return true
+  if (focus === 'favorites') return favoriteIds.includes(staff.id)
+  if (focus === 'scheduled') return !!staff.today_shift_name
+  if (focus === 'leave') return staff.today_status === 'on_leave'
+  if (focus === 'unplanned') return !staff.today_shift_name && staff.today_status !== 'on_leave'
+  if (focus === 'assignment') return !staff.department_id || !staff.role_id || !staff.primary_work_location_id
+  if (focus === 'contact') return !staff.phone || !staff.email
   return true
 }
 
@@ -388,12 +425,20 @@ function RiskBadges({ staff, compact = false }) {
   )
 }
 
-function SummaryCard({ value, label, color }) {
+function SummaryCard({ value, label, color, active = false, onClick }) {
   return (
-    <div style={{ padding: '16px 18px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '12px', borderLeft: `3px solid ${color}` }}>
+    <button type="button" onClick={onClick} aria-pressed={active} aria-label={`${label}: ${value}`} style={{
+      padding: '16px 18px', background: active ? `color-mix(in srgb, ${color} 12%, var(--surface2))` : 'var(--surface2)',
+      borderStyle: 'solid', borderWidth: '1px 1px 1px 3px',
+      borderColor: active ? color : `var(--border) var(--border) var(--border) ${color}`, borderRadius: '12px',
+      color: 'inherit', textAlign: 'left', cursor: onClick ? 'pointer' : 'default', width: '100%',
+      boxShadow: active ? `0 0 0 2px color-mix(in srgb, ${color} 16%, transparent)` : 'none',
+      transition: 'border-color .18s ease, transform .18s ease, box-shadow .18s ease',
+    }}>
       <div style={{ fontFamily: 'var(--display)', fontSize: '28px', color, lineHeight: 1 }}>{value}</div>
       <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text3)', letterSpacing: '1px', marginTop: '6px' }}>{label}</div>
-    </div>
+      {onClick && <div style={{ fontFamily: 'var(--mono)', fontSize: '7px', color: active ? color : 'var(--text3)', marginTop: '7px' }}>{active ? 'FİLTRE AKTİF' : 'FİLTRELE'}</div>}
+    </button>
   )
 }
 
@@ -456,31 +501,140 @@ function BulkAssignmentSheet({ count, departments, workLocations, isPending, onS
   )
 }
 
+function DepartmentOverview({ rows, selectedDepartment, onSelect }) {
+  const [open, setOpen] = usePersistentState('yys-shifts-staff-department-overview', true)
+  const distribution = useMemo(() => {
+    const counts = new Map()
+    rows.forEach(staff => {
+      const key = String(staff.department_id || 'none')
+      const current = counts.get(key) || { id: key, name: staff.dept_name || 'Departmansız', count: 0, color: staff.dept_color }
+      current.count += 1
+      counts.set(key, current)
+    })
+    return [...counts.values()].sort((left, right) => right.count - left.count || left.name.localeCompare(right.name, 'tr'))
+  }, [rows])
+  const maximum = Math.max(1, ...distribution.map(item => item.count))
+
+  return (
+    <div className="panel" style={{ marginBottom: 12 }}>
+      <div className="panel-header" style={{ alignItems: 'center', padding: '10px 14px' }}>
+        <div>
+          <div className="panel-title">BÖLÜM DAĞILIMI</div>
+          <div className="panel-subtitle">Bölüme dokunarak personel listesini anında süzün</div>
+        </div>
+        <button type="button" className="btn btn-ghost btn-xs" onClick={() => setOpen(value => !value)}>{open ? 'Daralt' : 'Göster'}</button>
+      </div>
+      {open && (
+        <div className="panel-body" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(135px, 1fr))', gap: 7, paddingTop: 0 }}>
+          {distribution.map(item => {
+            const active = String(selectedDepartment || '') === item.id
+            const dc = deptColor(item.color)
+            return (
+              <button key={item.id} type="button" aria-pressed={active} onClick={() => onSelect(active ? '' : item.id)} style={{
+                border: `1px solid ${active ? dc.text : 'var(--border)'}`, borderRadius: 9, padding: '8px 9px',
+                background: active ? dc.bg : 'var(--surface2)', color: 'inherit', cursor: 'pointer', textAlign: 'left', minWidth: 0,
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6, alignItems: 'center' }}>
+                  <strong style={{ color: active ? dc.text : 'var(--text2)', fontSize: 10, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</strong>
+                  <span style={{ fontFamily: 'var(--display)', color: dc.text, fontSize: 15 }}>{item.count}</span>
+                </div>
+                <div style={{ height: 3, borderRadius: 3, background: 'var(--border)', overflow: 'hidden', marginTop: 6 }}>
+                  <div style={{ height: '100%', width: `${Math.max(8, (item.count / maximum) * 100)}%`, background: dc.text, borderRadius: 3 }} />
+                </div>
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function StaffCompareSheet({ staffRows, onPersonClick, onClose }) {
+  const compareMetrics = [
+    ['Bölüm / rol', staff => `${staff.dept_name || '—'} · ${staff.role_name || '—'}`],
+    ['Ana lokasyon', staff => staff.primary_work_location_name || 'Atanmamış'],
+    ['Bugünkü durum', staff => staff.today_shift_name || (staff.today_status === 'on_leave' ? 'İzinli' : 'Plan yok')],
+    ['Yıllık izin', staff => staff.annual_leave_started ? `${numberValue(staff.annual_leave_remaining)} / ${numberValue(staff.annual_leave_entitled)} gün` : 'Hak oluşmadı'],
+    ['Belge durumu', staff => `${numberValue(staff.missing_documents)} eksik · ${numberValue(staff.expired_documents)} süresi dolmuş`],
+    ['Açık görev', staff => `${numberValue(staff.open_followups)} açık · ${numberValue(staff.overdue_followups)} gecikmiş`],
+    ['Devam sorunu', staff => numberValue(staff.open_attendance_exceptions)],
+    ['Zimmet / KKD', staff => numberValue(staff.equipment_count)],
+    ['Performans', staff => staff.latest_performance_score ?? '—'],
+    ['Toplam risk', staff => numberValue(staff.risk_count)],
+  ]
+  return (
+    <BottomSheet onClose={onClose}>
+      <div style={{ padding: '0 20px 12px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+        <div>
+          <div style={{ fontFamily: 'var(--display)', fontSize: 17 }}>PERSONEL KARŞILAŞTIRMA</div>
+          <div style={{ color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: 9, marginTop: 4 }}>{staffRows.length} personelin operasyon bilgileri yan yana</div>
+        </div>
+        <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>Kapat</button>
+      </div>
+      <div style={{ flex: 1, overflow: 'auto', padding: '14px 20px' }}>
+        <table className="data-table staff-compare-table" style={{ minWidth: Math.max(720, 190 + staffRows.length * 220) }}>
+          <thead>
+            <tr>
+              <th style={{ width: 170 }}>KARŞILAŞTIRMA</th>
+              {staffRows.map(staff => (
+                <th key={staff.id}>
+                  <div style={{ color: 'var(--text)', fontSize: 11, letterSpacing: 0, textTransform: 'none' }}>{staff.full_name}</div>
+                  <div style={{ color: 'var(--text3)', fontSize: 8, letterSpacing: 0, marginTop: 3 }}>{staff.position || 'Pozisyon yok'}</div>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {compareMetrics.map(([label, renderValue]) => (
+              <tr key={label}>
+                <td style={{ color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: 9 }}>{label}</td>
+                {staffRows.map(staff => <td key={staff.id} style={{ fontWeight: label === 'Toplam risk' ? 800 : 500 }}>{renderValue(staff)}</td>)}
+              </tr>
+            ))}
+            <tr>
+              <td>İşlem</td>
+              {staffRows.map(staff => (
+                <td key={staff.id}><button type="button" className="btn btn-primary btn-xs" onClick={() => { onPersonClick?.(staff.id); onClose() }}>Dosyayı Aç</button></td>
+              ))}
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </BottomSheet>
+  )
+}
+
 export default function StaffTab({ departments, onPersonClick }) {
   const qc = useQueryClient()
+  const searchInputRef = useRef(null)
   const user = useAuthStore(s => s.user)
   const canEdit = ['campus_manager', 'shift_supervisor'].includes(user?.role)
   const canViewSensitive = user?.role === 'campus_manager'
   const canDeactivate = user?.role === 'campus_manager'
 
-  const [filters, setFilters] = useState({
-    dept_id: '', role_id: '', work_location_id: '', gender: '', search: '', is_active: '1', risk: '',
-  })
+  const [filters, setFilters] = useState(DEFAULT_FILTERS)
   const [viewMode, setViewMode] = usePersistentState('yys-shifts-staff-view', 'table')
   const [visibleColumns, setVisibleColumns] = usePersistentState('yys-shifts-staff-columns-v2', DEFAULT_COLUMNS)
   const [sort, setSort] = usePersistentState('yys-shifts-staff-sort', { key: 'name', direction: 'asc' })
   const [pageSize, setPageSize] = usePersistentState('yys-shifts-staff-page-size', 20)
+  const [density, setDensity] = usePersistentState('yys-shifts-staff-density', 'comfortable')
+  const [groupByDepartment, setGroupByDepartment] = usePersistentState('yys-shifts-staff-group-department', false)
+  const [viewProfile, setViewProfile] = usePersistentState('yys-shifts-staff-view-profile', 'custom')
+  const [favoriteIds, setFavoriteIds] = usePersistentState('yys-shifts-staff-favorites', [])
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false)
   const [page, setPage] = useState(1)
   const [selected, setSelected] = useState(() => new Set())
   const [showForm, setShowForm] = useState(false)
   const [showBulkAssignment, setShowBulkAssignment] = useState(false)
+  const [showCompare, setShowCompare] = useState(false)
   const [editStaff, setEditStaff] = useState(null)
   const [form, setForm] = useState({})
 
   const staffSavedFilters = useSavedFilters('shifts-staff', filters, setFilters)
   const hasActiveStaffFilter = !!(
     filters.dept_id || filters.role_id || filters.work_location_id || filters.gender
-    || filters.search || filters.risk || filters.is_active !== '1'
+    || filters.search || filters.risk || filters.focus || filters.is_active !== '1'
   )
   const debouncedSearch = useDebounce(filters.search, 300)
   const effectiveFilters = useMemo(() => ({
@@ -498,6 +652,10 @@ export default function StaffTab({ departments, onPersonClick }) {
       params: { ...effectiveFilters, directory: 1, is_active: effectiveFilters.is_active || undefined },
     }).then(r => r.data),
   })
+  const { data: directoryOverview = EMPTY_LIST } = useQuery({
+    queryKey: ['staff-directory-overview'],
+    queryFn: () => api.get('/shifts/staff', { params: { directory: 1, is_active: 1 } }).then(r => r.data),
+  })
   const { data: staffRoles = EMPTY_LIST } = useQuery({
     queryKey: ['shift-roles'],
     queryFn: () => api.get('/shifts/roles').then(r => r.data),
@@ -513,7 +671,7 @@ export default function StaffTab({ departments, onPersonClick }) {
   })
 
   const refreshPlan = () => {
-    const keys = ['staff-list', 'staff-list-active', 'staff-detail', 'staff-quality', 'schedule', 'departments-summary', 'shift-breakdown', 'shift-coverage']
+    const keys = ['staff-list', 'staff-list-active', 'staff-directory-overview', 'staff-detail', 'staff-quality', 'schedule', 'departments-summary', 'shift-breakdown', 'shift-coverage']
     keys.forEach(key => qc.invalidateQueries({ queryKey: [key] }))
   }
 
@@ -569,7 +727,7 @@ export default function StaffTab({ departments, onPersonClick }) {
   const openNew = () => {
     setForm({
       full_name: '', tc_no: '', phone: '', email: '', position: '', department_id: '', role_id: '',
-      hire_date: '', birth_date: '', address: '', emergency_contact: '', emergency_phone: '',
+      hire_date: '', contract_end: '', birth_date: '', address: '', emergency_contact: '', emergency_phone: '',
       blood_type: '', gender: 'male', salary: '', iban: '', notes: '', is_active: 1,
       primary_work_location_id: '', assignment_effective_from: localIsoDate(), assignment_note: '',
     })
@@ -580,7 +738,7 @@ export default function StaffTab({ departments, onPersonClick }) {
     setForm({
       full_name: staff.full_name || '', tc_no: canViewSensitive ? staff.tc_no || '' : '', phone: staff.phone || '', email: staff.email || '',
       position: staff.position || '', department_id: staff.department_id?.toString() || '', role_id: staff.role_id?.toString() || '',
-      hire_date: staff.hire_date || '', birth_date: staff.birth_date || '', address: staff.address || '',
+      hire_date: staff.hire_date || '', contract_end: staff.contract_end || '', birth_date: staff.birth_date || '', address: staff.address || '',
       emergency_contact: staff.emergency_contact || '', emergency_phone: staff.emergency_phone || '',
       blood_type: staff.blood_type || '', gender: staff.gender || 'male',
       salary: canViewSensitive ? staff.salary?.toString() || '' : '', iban: canViewSensitive ? staff.iban || '' : '',
@@ -610,9 +768,13 @@ export default function StaffTab({ departments, onPersonClick }) {
   }
 
   const filteredAndSorted = useMemo(() => {
-    const rows = staffList.filter(staff => riskMatches(staff, filters.risk))
+    const rows = staffList.filter(staff => riskMatches(staff, filters.risk) && focusMatches(staff, filters.focus, favoriteIds))
     const direction = sort.direction === 'desc' ? -1 : 1
     return [...rows].sort((left, right) => {
+      if (groupByDepartment) {
+        const departmentOrder = String(left.dept_name || 'Departmansız').localeCompare(String(right.dept_name || 'Departmansız'), 'tr')
+        if (departmentOrder !== 0) return departmentOrder
+      }
       let a
       let b
       if (sort.key === 'risk') {
@@ -634,7 +796,7 @@ export default function StaffTab({ departments, onPersonClick }) {
       if (typeof a === 'number' && typeof b === 'number') return (a - b) * direction
       return String(a).localeCompare(String(b), 'tr') * direction
     })
-  }, [staffList, filters.risk, sort])
+  }, [staffList, filters.risk, filters.focus, favoriteIds, sort, groupByDepartment])
 
   const totalPages = Math.max(1, Math.ceil(filteredAndSorted.length / pageSize))
   const pageRows = filteredAndSorted.slice((page - 1) * pageSize, page * pageSize)
@@ -644,8 +806,22 @@ export default function StaffTab({ departments, onPersonClick }) {
     const available = new Set(staffList.map(staff => staff.id))
     setSelected(previous => new Set([...previous].filter(id => available.has(id))))
   }, [staffList])
+  useEffect(() => {
+    const handleShortcut = event => {
+      if (event.key === '/' && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) {
+        event.preventDefault()
+        searchInputRef.current?.focus()
+      }
+      if (event.key === 'Escape' && document.activeElement === searchInputRef.current && filters.search) {
+        setFilters(previous => ({ ...previous, search: '' }))
+      }
+    }
+    document.addEventListener('keydown', handleShortcut)
+    return () => document.removeEventListener('keydown', handleShortcut)
+  }, [filters.search])
 
   const pageAllSelected = pageRows.length > 0 && pageRows.every(staff => selected.has(staff.id))
+  const filteredAllSelected = filteredAndSorted.length > 0 && filteredAndSorted.every(staff => selected.has(staff.id))
   const togglePage = () => setSelected(previous => {
     const next = new Set(previous)
     if (pageAllSelected) pageRows.forEach(staff => next.delete(staff.id))
@@ -658,9 +834,32 @@ export default function StaffTab({ departments, onPersonClick }) {
     else next.add(id)
     return next
   })
-  const toggleColumn = key => setVisibleColumns(previous =>
-    previous.includes(key) ? previous.filter(column => column !== key) : [...previous, key]
-  )
+  const toggleAllFiltered = () => setSelected(previous => {
+    const next = new Set(previous)
+    if (filteredAllSelected) filteredAndSorted.forEach(staff => next.delete(staff.id))
+    else filteredAndSorted.forEach(staff => next.add(staff.id))
+    return next
+  })
+  const invertPageSelection = () => setSelected(previous => {
+    const next = new Set(previous)
+    pageRows.forEach(staff => {
+      if (next.has(staff.id)) next.delete(staff.id)
+      else next.add(staff.id)
+    })
+    return next
+  })
+  const toggleColumn = key => {
+    setViewProfile('custom')
+    setVisibleColumns(previous => previous.includes(key) ? previous.filter(column => column !== key) : [...previous, key])
+  }
+  const toggleFavorite = id => setFavoriteIds(previous => previous.includes(id) ? previous.filter(item => item !== id) : [...previous, id])
+  const applyViewProfile = profile => {
+    setViewMode(profile.viewMode)
+    setDensity(profile.density)
+    setGroupByDepartment(profile.group)
+    setVisibleColumns(profile.columns)
+    setViewProfile(profile.key)
+  }
   const deactivateOne = async staff => {
     const confirmed = await confirmDialog({
       title: 'Personeli Pasifleştir',
@@ -701,16 +900,63 @@ export default function StaffTab({ departments, onPersonClick }) {
   const missingDocumentCount = staffList.reduce((sum, staff) => sum + numberValue(staff.missing_documents), 0)
   const overdueFollowupCount = staffList.reduce((sum, staff) => sum + numberValue(staff.overdue_followups), 0)
   const equipmentCount = staffList.reduce((sum, staff) => sum + numberValue(staff.equipment_count), 0)
+  const quickFocusCounts = Object.fromEntries(FOCUS_FILTERS.map(option => [
+    option.key,
+    staffList.filter(staff => focusMatches(staff, option.key, favoriteIds)).length,
+  ]))
+  const visibleColumnCount = visibleColumns.length + 3
+  const pageGroups = useMemo(() => {
+    if (!groupByDepartment) return [{ key: 'all', label: '', rows: pageRows }]
+    const groups = []
+    pageRows.forEach(staff => {
+      const label = staff.dept_name || 'Departmansız'
+      const last = groups[groups.length - 1]
+      if (last?.label === label) last.rows.push(staff)
+      else groups.push({ key: `${label}-${staff.department_id || 'none'}`, label, rows: [staff] })
+    })
+    return groups
+  }, [groupByDepartment, pageRows])
+
+  const filterLabels = {
+    search: filters.search ? `Arama: ${filters.search}` : '',
+    dept_id: departments.find(item => String(item.id) === String(filters.dept_id))?.name,
+    role_id: staffRoles.find(item => String(item.id) === String(filters.role_id))?.name,
+    work_location_id: workLocations.find(item => String(item.id) === String(filters.work_location_id))?.name,
+    gender: filters.gender === 'female' ? 'Kadın' : filters.gender === 'male' ? 'Erkek' : '',
+    is_active: filters.is_active === '0' ? 'Pasif' : filters.is_active === '' ? 'Aktif + pasif' : '',
+    risk: {
+      any: 'Riski olanlar', documents: 'Belge riski', followups: 'Görev riski', attendance: 'Devam riski',
+      equipment: 'Zimmet / KKD', certificates: 'Sertifika riski', checklists: 'İK süreci', assignment: 'Atama eksiği', contract: 'Sözleşme bitişi',
+    }[filters.risk],
+    focus: filters.focus ? FOCUS_FILTERS.find(item => item.key === filters.focus)?.label : '',
+  }
+  const activeFilterEntries = Object.entries(filterLabels).filter(([, label]) => label)
+  const clearAllFilters = () => setFilters({ ...DEFAULT_FILTERS })
+  const toggleRiskFilter = risk => setFilters(previous => ({ ...previous, risk: previous.risk === risk ? '' : risk, focus: '' }))
+  const selectedStaffRows = staffList.filter(staff => selected.has(staff.id))
 
   return (
     <div className="fade-up">
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(135px, 1fr))', gap: '10px', marginBottom: '18px' }}>
-        <SummaryCard value={staffList.length} label="TOPLAM PERSONEL" color="var(--text)" />
-        <SummaryCard value={riskStaffCount} label="RİSK / EKSİK KAYIT" color={riskStaffCount ? 'var(--red)' : 'var(--green)'} />
-        <SummaryCard value={missingDocumentCount} label="EKSİK BELGE" color={missingDocumentCount ? 'var(--accent)' : 'var(--green)'} />
-        <SummaryCard value={overdueFollowupCount} label="GECİKMİŞ GÖREV" color={overdueFollowupCount ? 'var(--red)' : 'var(--green)'} />
-        <SummaryCard value={equipmentCount} label="AKTİF ZİMMET / KKD" color="var(--blue)" />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '10px', marginBottom: '14px' }}>
+        <SummaryCard value={staffList.length} label="TOPLAM PERSONEL" color="var(--text)" active={!hasActiveStaffFilter} onClick={clearAllFilters} />
+        <SummaryCard value={riskStaffCount} label="RİSK / EKSİK KAYIT" color={riskStaffCount ? 'var(--red)' : 'var(--green)'} active={filters.risk === 'any'} onClick={() => toggleRiskFilter('any')} />
+        <SummaryCard value={missingDocumentCount} label="EKSİK BELGE" color={missingDocumentCount ? 'var(--accent)' : 'var(--green)'} active={filters.risk === 'documents'} onClick={() => toggleRiskFilter('documents')} />
+        <SummaryCard value={overdueFollowupCount} label="GECİKMİŞ GÖREV" color={overdueFollowupCount ? 'var(--red)' : 'var(--green)'} active={filters.risk === 'followups'} onClick={() => toggleRiskFilter('followups')} />
+        <SummaryCard value={equipmentCount} label="AKTİF ZİMMET / KKD" color="var(--blue)" active={filters.risk === 'equipment'} onClick={() => toggleRiskFilter('equipment')} />
       </div>
+
+      {directoryOverview.length > 0 && (
+        <DepartmentOverview
+          rows={directoryOverview}
+          selectedDepartment={filters.dept_id}
+          onSelect={departmentId => setFilters(previous => ({
+            ...previous,
+            dept_id: departmentId === 'none' ? '' : departmentId,
+            risk: departmentId === 'none' ? 'assignment' : '',
+            focus: '',
+          }))}
+        />
+      )}
 
       {canViewSensitive && <StaffQualityPanel quality={staffQuality} onEdit={openEdit} />}
 
@@ -722,66 +968,130 @@ export default function StaffTab({ departments, onPersonClick }) {
         hasActiveFilter={hasActiveStaffFilter}
       />
 
-      <div className="panel" style={{ marginBottom: '12px' }}>
-        <div className="panel-body" style={{ display: 'grid', gap: '10px' }}>
+      <div className="panel" style={{ marginBottom: '12px', overflow: 'visible' }}>
+        <div className="panel-body" style={{ display: 'grid', gap: '12px' }}>
           <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px' }}>
-            <input className="form-input" placeholder="Ad, TC, telefon veya pozisyon ara..." value={filters.search}
-              onChange={e => setFilters(p => ({ ...p, search: e.target.value }))}
-              style={{ flex: '1 1 240px', maxWidth: '360px', padding: '7px 12px', fontSize: '12px' }} />
-            <select className="form-select" value={filters.dept_id} onChange={e => setFilters(p => ({ ...p, dept_id: e.target.value }))}
-              style={{ width: 'auto', minWidth: '140px', padding: '6px 10px', fontSize: '11px' }}>
-              <option value="">Tüm departmanlar</option>
-              {departments.map(department => <option key={department.id} value={department.id}>{department.name}</option>)}
-            </select>
-            <select className="form-select" value={filters.role_id} onChange={e => setFilters(p => ({ ...p, role_id: e.target.value }))}
-              style={{ width: 'auto', minWidth: '130px', padding: '6px 10px', fontSize: '11px' }}>
-              <option value="">Tüm roller</option>
-              {staffRoles.map(role => <option key={role.id} value={role.id}>{role.name}</option>)}
-            </select>
-            <select className="form-select" value={filters.work_location_id} onChange={e => setFilters(p => ({ ...p, work_location_id: e.target.value }))}
-              style={{ width: 'auto', minWidth: '150px', padding: '6px 10px', fontSize: '11px' }}>
-              <option value="">Tüm lokasyonlar</option>
-              {workLocations.map(location => <option key={location.id} value={location.id}>{location.name}</option>)}
-            </select>
-            <select className="form-select" value={filters.risk} onChange={e => setFilters(p => ({ ...p, risk: e.target.value }))}
-              style={{ width: 'auto', minWidth: '145px', padding: '6px 10px', fontSize: '11px' }}>
-              <option value="">Tüm riskler</option>
-              <option value="any">Riski olanlar</option>
-              <option value="documents">Belge eksiği / süresi</option>
-              <option value="followups">Açık / gecikmiş görev</option>
-              <option value="attendance">Devam problemi</option>
-              <option value="equipment">Aktif zimmet / KKD</option>
-              <option value="certificates">Sertifika süresi</option>
-              <option value="checklists">Açık giriş / çıkış süreci</option>
-              <option value="assignment">Atama eksiği</option>
-              <option value="contract">Sözleşme bitişi</option>
-            </select>
-            <select className="form-select" value={filters.is_active} onChange={e => setFilters(p => ({ ...p, is_active: e.target.value }))}
-              style={{ width: 'auto', padding: '6px 10px', fontSize: '11px' }}>
-              <option value="1">Aktif</option>
-              <option value="0">Pasif</option>
-              <option value="">Tümü</option>
-            </select>
-            <select className="form-select" value={`${sort.key}:${sort.direction}`}
-              onChange={e => {
-                const [key, direction] = e.target.value.split(':')
-                setSort({ key, direction })
-              }}
-              style={{ width: 'auto', minWidth: '145px', padding: '6px 10px', fontSize: '11px' }}>
-              <option value="name:asc">Ada göre A-Z</option>
-              <option value="name:desc">Ada göre Z-A</option>
-              <option value="risk:desc">Risk en yüksek</option>
-              <option value="documents:desc">Belge eksiği en yüksek</option>
-              <option value="followups:desc">Görev sayısı en yüksek</option>
-              <option value="hire_date:desc">İşe giriş en yeni</option>
-            </select>
+            <div style={{ position: 'relative', flex: '1 1 320px', maxWidth: '560px' }}>
+              <input ref={searchInputRef} aria-label="Personel ara" className="form-input" placeholder="Ad, TC, telefon, e-posta veya pozisyon ara..." value={filters.search}
+                onChange={e => setFilters(p => ({ ...p, search: e.target.value }))}
+                style={{ width: '100%', padding: '10px 76px 10px 38px', fontSize: '13px' }} />
+              <span aria-hidden="true" style={{ position: 'absolute', left: 13, top: 10, color: 'var(--text3)', fontSize: 15 }}>⌕</span>
+              {filters.search ? (
+                <button type="button" className="btn btn-ghost btn-xs" onClick={() => setFilters(previous => ({ ...previous, search: '' }))}
+                  style={{ position: 'absolute', right: 7, top: 7 }}>Temizle</button>
+              ) : (
+                <span style={{ position: 'absolute', right: 10, top: 11, color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: 8 }}>/ ARA</span>
+              )}
+            </div>
+            <button type="button" className={`btn btn-sm ${showAdvancedFilters ? 'btn-primary' : 'btn-ghost'}`} aria-expanded={showAdvancedFilters} onClick={() => setShowAdvancedFilters(value => !value)}>
+              ⚙ Gelişmiş Filtreler{activeFilterEntries.length ? ` (${activeFilterEntries.length})` : ''}
+            </button>
+            {hasActiveStaffFilter && <button type="button" className="btn btn-ghost btn-sm" onClick={clearAllFilters}>Filtreleri Sıfırla</button>}
             {canEdit && <button className="btn btn-primary btn-sm" onClick={openNew} style={{ marginLeft: 'auto' }}>+ Yeni Personel</button>}
           </div>
+
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center' }}>
+            <span style={{ color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: 8, marginRight: 3 }}>HIZLI ODAK</span>
+            {FOCUS_FILTERS.map(option => {
+              const active = filters.focus === option.key && !filters.risk
+              return (
+                <button key={option.key || 'all'} type="button" aria-pressed={active} onClick={() => setFilters(previous => ({ ...previous, focus: option.key, risk: '' }))}
+                  style={{
+                    border: `1px solid ${active ? 'var(--blue)' : 'var(--border)'}`, borderRadius: 999, padding: '5px 9px',
+                    background: active ? 'rgba(59,140,240,.13)' : 'var(--surface2)', color: active ? 'var(--blue)' : 'var(--text2)',
+                    cursor: 'pointer', fontSize: 10, display: 'inline-flex', gap: 6, alignItems: 'center',
+                  }}>
+                  {option.label}<strong style={{ fontFamily: 'var(--mono)', fontSize: 8 }}>{quickFocusCounts[option.key] || 0}</strong>
+                </button>
+              )
+            })}
+          </div>
+
+          {activeFilterEntries.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '8px 10px', borderRadius: 8, background: 'rgba(59,140,240,.06)', border: '1px dashed rgba(59,140,240,.25)' }}>
+              <span style={{ color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: 8, alignSelf: 'center' }}>AKTİF</span>
+              {activeFilterEntries.map(([key, label]) => (
+                <button key={key} type="button" onClick={() => setFilters(previous => ({ ...previous, [key]: key === 'is_active' ? '1' : '' }))}
+                  title={`${label} filtresini kaldır`} style={{ border: 0, borderRadius: 6, background: 'rgba(59,140,240,.14)', color: 'var(--blue)', padding: '4px 7px', cursor: 'pointer', fontSize: 9 }}>
+                  {label} ×
+                </button>
+              ))}
+            </div>
+          )}
+
+          {showAdvancedFilters && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(155px, 1fr))', gap: 9, padding: 12, borderRadius: 10, background: 'var(--surface2)', border: '1px solid var(--border)' }}>
+              <select aria-label="Departman filtresi" className="form-select" value={filters.dept_id} onChange={e => setFilters(p => ({ ...p, dept_id: e.target.value }))}>
+                <option value="">Tüm departmanlar</option>
+                {departments.map(department => <option key={department.id} value={department.id}>{department.name}</option>)}
+              </select>
+              <select aria-label="Rol filtresi" className="form-select" value={filters.role_id} onChange={e => setFilters(p => ({ ...p, role_id: e.target.value }))}>
+                <option value="">Tüm roller</option>
+                {staffRoles.map(role => <option key={role.id} value={role.id}>{role.name}</option>)}
+              </select>
+              <select aria-label="Lokasyon filtresi" className="form-select" value={filters.work_location_id} onChange={e => setFilters(p => ({ ...p, work_location_id: e.target.value }))}>
+                <option value="">Tüm lokasyonlar</option>
+                {workLocations.map(location => <option key={location.id} value={location.id}>{location.name}</option>)}
+              </select>
+              <select aria-label="Risk filtresi" className="form-select" value={filters.risk} onChange={e => setFilters(p => ({ ...p, risk: e.target.value, focus: '' }))}>
+                <option value="">Tüm riskler</option>
+                <option value="any">Riski olanlar</option>
+                <option value="documents">Belge eksiği / süresi</option>
+                <option value="followups">Açık / gecikmiş görev</option>
+                <option value="attendance">Devam problemi</option>
+                <option value="equipment">Aktif zimmet / KKD</option>
+                <option value="certificates">Sertifika süresi</option>
+                <option value="checklists">Açık giriş / çıkış süreci</option>
+                <option value="assignment">Atama eksiği</option>
+                <option value="contract">Sözleşme bitişi</option>
+              </select>
+              <select aria-label="Cinsiyet filtresi" className="form-select" value={filters.gender} onChange={e => setFilters(p => ({ ...p, gender: e.target.value }))}>
+                <option value="">Tüm cinsiyetler</option>
+                <option value="female">Kadın</option>
+                <option value="male">Erkek</option>
+              </select>
+              <select aria-label="Durum filtresi" className="form-select" value={filters.is_active} onChange={e => setFilters(p => ({ ...p, is_active: e.target.value }))}>
+                <option value="1">Aktif personel</option>
+                <option value="0">Pasif personel</option>
+                <option value="">Aktif + pasif</option>
+              </select>
+              <select aria-label="Personel sıralaması" className="form-select" value={`${sort.key}:${sort.direction}`} onChange={e => {
+                const [key, direction] = e.target.value.split(':')
+                setSort({ key, direction })
+              }}>
+                <option value="name:asc">Ada göre A-Z</option>
+                <option value="name:desc">Ada göre Z-A</option>
+                <option value="risk:desc">Risk en yüksek</option>
+                <option value="documents:desc">Belge eksiği en yüksek</option>
+                <option value="followups:desc">Görev sayısı en yüksek</option>
+                <option value="hire_date:desc">İşe giriş en yeni</option>
+              </select>
+            </div>
+          )}
+
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+            <span style={{ color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: 8, marginRight: 3 }}>HAZIR GÖRÜNÜM</span>
+            {VIEW_PROFILES.map(profile => (
+              <button key={profile.key} type="button" aria-pressed={viewProfile === profile.key} title={profile.description} onClick={() => applyViewProfile(profile)}
+                className={`btn btn-xs ${viewProfile === profile.key ? 'btn-primary' : 'btn-ghost'}`}>
+                {profile.label}
+              </button>
+            ))}
+            {viewProfile === 'custom' && <span style={{ color: 'var(--purple)', fontFamily: 'var(--mono)', fontSize: 8 }}>ÖZEL DÜZEN</span>}
+          </div>
+
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center', borderTop: '1px solid var(--border)', paddingTop: '10px' }}>
             <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: '7px', overflow: 'hidden' }}>
-              <button className={`btn btn-xs ${viewMode === 'table' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setViewMode('table')}>Tablo</button>
-              <button className={`btn btn-xs ${viewMode === 'cards' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setViewMode('cards')}>Kartlar</button>
+              <button aria-pressed={viewMode === 'table'} className={`btn btn-xs ${viewMode === 'table' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => { setViewMode('table'); setViewProfile('custom') }}>Tablo</button>
+              <button aria-pressed={viewMode === 'cards'} className={`btn btn-xs ${viewMode === 'cards' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => { setViewMode('cards'); setViewProfile('custom') }}>Kartlar</button>
             </div>
+            <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: '7px', overflow: 'hidden' }}>
+              <button aria-pressed={density === 'compact'} className={`btn btn-xs ${density === 'compact' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => { setDensity('compact'); setViewProfile('custom') }}>Sıkı</button>
+              <button aria-pressed={density === 'comfortable'} className={`btn btn-xs ${density === 'comfortable' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => { setDensity('comfortable'); setViewProfile('custom') }}>Rahat</button>
+            </div>
+            <label style={{ display: 'inline-flex', gap: 6, alignItems: 'center', fontSize: 10, cursor: 'pointer', padding: '4px 7px', border: '1px solid var(--border)', borderRadius: 7 }}>
+              <input type="checkbox" checked={groupByDepartment} onChange={e => { setGroupByDepartment(e.target.checked); setViewProfile('custom') }} /> Bölüme göre grupla
+            </label>
             <details style={{ position: 'relative' }}>
               <summary className="btn btn-ghost btn-xs" style={{ listStyle: 'none', cursor: 'pointer' }}>Kolonlar</summary>
               <div style={{
@@ -798,7 +1108,7 @@ export default function StaffTab({ departments, onPersonClick }) {
               </div>
             </details>
             <button className="btn btn-ghost btn-xs" onClick={exportSelected}>CSV Dışa Aktar</button>
-            <span style={{ color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: '9px' }}>
+            <span aria-live="polite" style={{ color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: '9px', marginLeft: 'auto' }}>
               {filteredAndSorted.length} sonuç · {selected.size} seçili
             </span>
           </div>
@@ -807,11 +1117,20 @@ export default function StaffTab({ departments, onPersonClick }) {
 
       {selected.size > 0 && (
         <div style={{
-          marginBottom: '12px', padding: '10px 12px', borderRadius: '10px',
+          position: 'sticky', top: 8, zIndex: 12, marginBottom: '12px', padding: '10px 12px', borderRadius: '10px',
           border: '1px solid rgba(59,140,240,.35)', background: 'rgba(59,140,240,.08)',
-          display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center',
+          backdropFilter: 'blur(12px)', display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center',
         }}>
           <strong style={{ fontSize: '12px' }}>{selected.size} personel seçildi</strong>
+          <button className="btn btn-ghost btn-xs" onClick={togglePage}>{pageAllSelected ? 'Sayfa Seçimini Kaldır' : 'Sayfadakileri Seç'}</button>
+          <button className="btn btn-ghost btn-xs" onClick={toggleAllFiltered}>{filteredAllSelected ? 'Tüm Sonuçları Bırak' : `${filteredAndSorted.length} Sonucun Tümünü Seç`}</button>
+          <button className="btn btn-ghost btn-xs" onClick={invertPageSelection}>Sayfa Seçimini Ters Çevir</button>
+          {selected.size >= 2 && (
+            <button className="btn btn-primary btn-xs" onClick={() => setShowCompare(true)} disabled={selected.size > 4}
+              title={selected.size > 4 ? 'Karşılaştırmak için en fazla 4 personel seçin' : 'Seçili personelleri yan yana karşılaştır'}>
+              {selected.size > 4 ? 'Karşılaştırma için 2–4 kişi seçin' : `${selected.size} Kişiyi Karşılaştır`}
+            </button>
+          )}
           <button className="btn btn-primary btn-xs" onClick={() => setShowBulkAssignment(true)}>Departman / Lokasyon Ata</button>
           <button className="btn btn-ghost btn-xs" onClick={exportSelected}>Seçilileri Dışa Aktar</button>
           {canDeactivate && <button className="btn btn-danger btn-xs" onClick={deactivateSelected} disabled={bulkDeactivateMut.isPending}>Toplu Pasifleştir</button>}
@@ -830,8 +1149,8 @@ export default function StaffTab({ departments, onPersonClick }) {
       ) : viewMode === 'table' ? (
         <div className="panel" style={{ overflow: 'hidden' }}>
           <div style={{ overflowX: 'auto' }}>
-            <table className="data-table" style={{ minWidth: '1040px', fontSize: '10px' }}>
-              <thead>
+            <table className={`data-table staff-directory-table ${density === 'compact' ? 'staff-directory-table--compact' : ''}`} style={{ minWidth: '1040px', fontSize: '10px' }}>
+              <thead style={{ position: 'sticky', top: 0, zIndex: 3, background: 'var(--surface)' }}>
                 <tr>
                   <th style={{ width: 34 }}><input aria-label="Sayfadaki personeli seç" type="checkbox" checked={pageAllSelected} onChange={togglePage} /></th>
                   <th>PERSONEL / RİSKLER</th>
@@ -848,7 +1167,17 @@ export default function StaffTab({ departments, onPersonClick }) {
                 </tr>
               </thead>
               <tbody>
-                {pageRows.map(staff => {
+                {pageGroups.map(group => (
+                  <Fragment key={group.key}>
+                    {group.label && (
+                      <tr className="staff-directory-group-row">
+                        <td colSpan={visibleColumnCount}>
+                          <span>{group.label}</span>
+                          <strong>{group.rows.length} kişi</strong>
+                        </td>
+                      </tr>
+                    )}
+                    {group.rows.map(staff => {
                   const dc = deptColor(staff.dept_color)
                   return (
                     <tr key={staff.id} onClick={() => onPersonClick?.(staff.id)} style={{ cursor: 'pointer' }}>
@@ -863,8 +1192,15 @@ export default function StaffTab({ departments, onPersonClick }) {
                             color: staff.gender === 'female' ? '#f472b6' : 'var(--blue)',
                             display: 'grid', placeItems: 'center', fontFamily: 'var(--display)', fontSize: '15px',
                           }}>{staff.full_name?.charAt(0)?.toUpperCase() || '?'}</div>
-                          <div>
-                            <div style={{ fontWeight: 700, color: 'var(--text)', marginBottom: '2px' }}>{staff.full_name}</div>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 2 }}>
+                              <button type="button" aria-label={`${staff.full_name} ${favoriteIds.includes(staff.id) ? 'favorilerden çıkar' : 'favorilere ekle'}`}
+                                title={favoriteIds.includes(staff.id) ? 'Favorilerden çıkar' : 'Favorilere ekle'} onClick={event => { event.stopPropagation(); toggleFavorite(staff.id) }}
+                                style={{ border: 0, background: 'transparent', color: favoriteIds.includes(staff.id) ? 'var(--accent)' : 'var(--text3)', padding: 0, cursor: 'pointer', fontSize: 14 }}>
+                                {favoriteIds.includes(staff.id) ? '★' : '☆'}
+                              </button>
+                              <div style={{ fontWeight: 700, color: 'var(--text)' }}>{staff.full_name}</div>
+                            </div>
                             <div style={{ color: 'var(--text3)', marginBottom: '5px' }}>{staff.position || 'Pozisyon belirtilmemiş'}{staff.tc_no ? ` · ${staff.tc_no}` : ''}</div>
                             <RiskBadges staff={staff} compact />
                           </div>
@@ -949,14 +1285,25 @@ export default function StaffTab({ departments, onPersonClick }) {
                       </td>
                     </tr>
                   )
-                })}
+                    })}
+                  </Fragment>
+                ))}
               </tbody>
             </table>
           </div>
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(285px, 1fr))', gap: '12px' }}>
-          {pageRows.map(staff => {
+        <div style={{ display: 'grid', gap: 14 }}>
+          {pageGroups.map(group => (
+            <section key={group.key}>
+              {group.label && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, padding: '7px 10px', borderRadius: 8, background: 'rgba(59,140,240,.08)', borderLeft: '3px solid var(--blue)' }}>
+                  <strong style={{ color: 'var(--blue)', fontSize: 11 }}>{group.label}</strong>
+                  <span style={{ color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: 8 }}>{group.rows.length} kişi</span>
+                </div>
+              )}
+              <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fill, minmax(${density === 'compact' ? 255 : 285}px, 1fr))`, gap: density === 'compact' ? 8 : 12 }}>
+          {group.rows.map(staff => {
             const dc = deptColor(staff.dept_color)
             return (
               <article key={staff.id} onClick={() => onPersonClick?.(staff.id)} style={{
@@ -964,7 +1311,7 @@ export default function StaffTab({ departments, onPersonClick }) {
                 borderRadius: '14px', overflow: 'hidden', cursor: 'pointer',
               }}>
                 <div style={{ height: 4, background: dc.bg || 'var(--border)' }} />
-                <div style={{ padding: '14px' }}>
+                <div style={{ padding: density === 'compact' ? '10px' : '14px' }}>
                   <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
                     <input aria-label={`${staff.full_name} seç`} type="checkbox" checked={selected.has(staff.id)}
                       onClick={event => event.stopPropagation()} onChange={() => toggleSelected(staff.id)} />
@@ -975,7 +1322,14 @@ export default function StaffTab({ departments, onPersonClick }) {
                       display: 'grid', placeItems: 'center', fontFamily: 'var(--display)', fontSize: '18px',
                     }}>{staff.full_name?.charAt(0)?.toUpperCase() || '?'}</div>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 700, fontSize: '14px' }}>{staff.full_name}</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                        <button type="button" aria-label={`${staff.full_name} ${favoriteIds.includes(staff.id) ? 'favorilerden çıkar' : 'favorilere ekle'}`}
+                          title={favoriteIds.includes(staff.id) ? 'Favorilerden çıkar' : 'Favorilere ekle'} onClick={event => { event.stopPropagation(); toggleFavorite(staff.id) }}
+                          style={{ border: 0, background: 'transparent', color: favoriteIds.includes(staff.id) ? 'var(--accent)' : 'var(--text3)', padding: 0, cursor: 'pointer', fontSize: 16 }}>
+                          {favoriteIds.includes(staff.id) ? '★' : '☆'}
+                        </button>
+                        <div style={{ fontWeight: 700, fontSize: '14px' }}>{staff.full_name}</div>
+                      </div>
                       <div style={{ color: 'var(--text3)', fontSize: '10px', marginTop: '3px' }}>{staff.position || 'Pozisyon belirtilmemiş'}</div>
                       <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginTop: '7px' }}>
                         <span style={{ padding: '2px 7px', borderRadius: 12, background: dc.bg, color: dc.text, fontSize: '9px' }}>{staff.dept_name || 'Departman yok'}</span>
@@ -1009,6 +1363,9 @@ export default function StaffTab({ departments, onPersonClick }) {
               </article>
             )
           })}
+              </div>
+            </section>
+          ))}
         </div>
       )}
 
@@ -1022,6 +1379,7 @@ export default function StaffTab({ departments, onPersonClick }) {
               <option value={10}>10 / sayfa</option>
               <option value={20}>20 / sayfa</option>
               <option value={50}>50 / sayfa</option>
+              <option value={100}>100 / sayfa</option>
             </select>
             <button className="btn btn-ghost btn-xs" disabled={page <= 1} onClick={() => setPage(value => value - 1)}>Önceki</button>
             <span style={{ fontFamily: 'var(--mono)', fontSize: '9px' }}>{page} / {totalPages}</span>
@@ -1054,6 +1412,9 @@ export default function StaffTab({ departments, onPersonClick }) {
           onSubmit={data => bulkAssignmentMut.mutate(data)}
           onClose={() => setShowBulkAssignment(false)}
         />
+      )}
+      {showCompare && (
+        <StaffCompareSheet staffRows={selectedStaffRows} onPersonClick={onPersonClick} onClose={() => setShowCompare(false)} />
       )}
     </div>
   )

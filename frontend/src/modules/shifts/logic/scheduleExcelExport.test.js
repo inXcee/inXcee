@@ -162,4 +162,46 @@ describe('scheduleExcelExport - X3 workbook builder', () => {
     expect(flat).toContain('Giriş İmza')
     expect(flat).toContain('Çıkış İmza')
   })
+
+  it('adds department-based weekly signature sheets with change rows', () => {
+    const result = buildWorkbook({
+      signatureDates: WEEK,
+      signatureOptions: { layout: 'weekly', rowsPerPage: 14, blankRows: 2, showLocationAndRole: true, revision: '4' },
+    })
+    expect(result.sheetNames.signatures).toHaveLength(2)
+    const teknikName = result.sheetNames.signatures.find(name => name.includes('Teknik'))
+    const ws = result.workbook.getWorksheet(teknikName)
+    expect(ws.pageSetup.orientation).toBe('landscape')
+    const flat = []
+    ws.eachRow(row => row.eachCell(cell => flat.push(String(cell.value?.result ?? cell.value ?? ''))))
+    const text = flat.join(' | ')
+    expect(text).toContain('HAFTALIK PERSONEL İMZA FÖYÜ')
+    expect(text).toContain('OFF')
+    expect(text).toContain('Sonradan Eklenen / Vardiyası Değişen Personel')
+  })
+
+  it('packs 25 personnel into each combined weekly signature sheet', () => {
+    const staffGrid = Array.from({ length: 26 }, (_, index) => ({
+      id: index + 1,
+      full_name: `Personel ${index + 1}`,
+      dept_name: index < 13 ? 'Teknik' : 'Mutfak',
+      role_name: 'Görevli',
+      days: { [WEEK[0]]: shift(1) },
+    }))
+    const result = buildWorkbook({
+      staffGrid,
+      signatureDates: WEEK,
+      signatureOptions: { layout: 'weekly', groupMode: 'combined', rowsPerPage: 25, blankRows: 2, showLocationAndRole: true },
+    })
+
+    expect(result.sheetNames.signatures).toHaveLength(2)
+    const ws = result.workbook.getWorksheet(result.sheetNames.signatures[0])
+    expect(ws.pageSetup.fitToHeight).toBe(1)
+    const headerRow = ws.getColumn(1).values.findIndex(value => value === 'No')
+    expect(ws.getRow(headerRow).values).not.toContain('Bölüm')
+    expect(ws.getCell(headerRow + 1, 1).value).toMatch(/Teknik|Mutfak/)
+    expect(ws.getRow(headerRow + 2).height).toBe(18)
+    const names = ws.getColumn(2).values.map(value => String(value || ''))
+    expect(names).toContain('Personel 25')
+  })
 })

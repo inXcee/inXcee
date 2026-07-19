@@ -273,7 +273,7 @@ export function BottomSheet({ onClose, children }) {
 // createPortal ile document.body'ye render edilir: aksi halde transform'lu bir
 // ata eleman (örn. sayfa .fade-up animasyonu) `position:fixed`'i kendine göre
 // konumlandırır ve modal viewport ortası yerine sayfa içeriğine "atlar".
-export function ModalOverlay({ children, onClose, wide }) {
+export function ModalOverlay({ children, onClose, wide, extraWide }) {
   // Arka plan scroll kilidi — modal açıkken sayfa kaymasın.
   useEffect(() => {
     document.body.style.overflow = 'hidden'
@@ -298,7 +298,7 @@ export function ModalOverlay({ children, onClose, wide }) {
           borderRadius: '10px',
           padding: '24px',
           width: '100%',
-          maxWidth: wide ? '680px' : '460px',
+          maxWidth: extraWide ? '1180px' : (wide ? '680px' : '460px'),
           maxHeight: '85vh',
           overflowY: 'auto',
         }}

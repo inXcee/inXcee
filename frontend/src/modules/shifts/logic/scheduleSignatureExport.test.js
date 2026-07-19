@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
-  buildDailySignatureModel, buildSignatureModels, classifySignatureCell,
-  renderSignaturePageHtml, renderSignaturePagesHtml, signaturePagesCss,
+  buildDailySignatureModel, buildSignatureModels, buildWeeklySignatureModel, classifySignatureCell,
+  renderSignaturePageHtml, renderSignaturePagesHtml, renderWeeklySignaturePagesHtml, signaturePagesCss,
 } from './scheduleSignatureExport.js'
 
 const DATE = '2026-07-13'
@@ -104,5 +104,97 @@ describe('signature HTML rendering', () => {
     const html = renderSignaturePagesHtml(models, {})
     expect((html.match(/class="sig-page"/g) || []).length).toBe(2)
     expect(signaturePagesCss()).toContain('@page signature')
+  })
+})
+
+describe('weekly signature sheet', () => {
+  const SECOND_DATE = '2026-07-14'
+  const weeklyPeople = [
+    {
+      full_name: 'Ahmet Kaya', dept_name: 'Mutfak', role_name: 'İkramcı', days: {
+        [DATE]: { status: 'scheduled', shift_name: 'Gündüz', start_hour: 8, end_hour: 16, work_location_name: 'OTC' },
+        [SECOND_DATE]: { status: 'off' },
+      },
+    },
+    {
+      full_name: 'Ayşe Demir', dept_name: 'Mutfak', role_name: 'Aşçı', days: {
+        [DATE]: { status: 'on_leave', leave_type: 'sick', absent_reason: 'Özel sağlık açıklaması' },
+        [SECOND_DATE]: { status: 'scheduled', shift_name: 'Akşam', start_hour: 16, end_hour: 24 },
+      },
+    },
+  ]
+
+  it('keeps one department sheet for the week and marks non-signing cells', () => {
+    const model = buildWeeklySignatureModel({ people: weeklyPeople, dates: [DATE, SECOND_DATE] })
+    expect(model.pages).toHaveLength(1)
+    expect(model.pages[0].department).toBe('Mutfak')
+    expect(model.pages[0].rows).toHaveLength(2)
+    const ahmet = model.pages[0].rows.find(row => row.full_name === 'Ahmet Kaya')
+    const ayse = model.pages[0].rows.find(row => row.full_name === 'Ayşe Demir')
+    expect(ahmet.days[0]).toMatchObject({ category: 'working', can_sign: true })
+    expect(ahmet.days[1]).toMatchObject({ label: 'OFF', can_sign: false })
+    expect(ayse.days[0]).toMatchObject({ label: 'RAPORLU', detail: '', can_sign: false })
+  })
+
+  it('renders a landscape weekly form with practical change rows', () => {
+    const model = buildWeeklySignatureModel({ people: weeklyPeople, dates: [DATE, SECOND_DATE], options: { blankRows: 2 } })
+    const html = renderWeeklySignaturePagesHtml(model, { revision: '3', weekLabel: `${DATE} - ${SECOND_DATE}` })
+    expect(html).toContain('HAFTALIK PERSONEL İMZA FÖYÜ')
+    expect(html).toContain('Sonradan Eklenen / Vardiyası Değişen')
+    expect(html).toContain('Revizyon: 3')
+    expect(html).not.toContain('Özel sağlık açıklaması')
+    expect(signaturePagesCss()).toContain('@page weekly-signature')
+  })
+
+  it('fits 25 personnel plus change rows on one economical page', () => {
+    const manyPeople = Array.from({ length: 25 }, (_, index) => ({
+      full_name: `Personel ${index + 1}`, dept_name: 'Teknik', days: {},
+    }))
+    const model = buildWeeklySignatureModel({ people: manyPeople, dates: [DATE], options: { rowsPerPage: 25, blankRows: 3 } })
+    const html = renderWeeklySignaturePagesHtml(model)
+
+    expect(model.pages).toHaveLength(1)
+    expect(model.pages[0].rows).toHaveLength(25)
+    expect(model.pages[0].show_blank_rows).toBe(true)
+    expect(html).toContain('weekly-economy')
+  })
+
+  it('combines departments and renders each department once above its personnel group', () => {
+    const manyPeople = Array.from({ length: 61 }, (_, index) => ({
+      full_name: `Personel ${index + 1}`,
+      dept_name: index < 31 ? 'Teknik' : 'Mutfak',
+      days: {},
+    }))
+    const model = buildWeeklySignatureModel({ people: manyPeople, dates: [DATE], options: { groupMode: 'combined', rowsPerPage: 25, blankRows: 2 } })
+    const html = renderWeeklySignaturePagesHtml(model)
+
+    expect(model.pages).toHaveLength(3)
+    expect(model.pages.map(page => page.rows.length)).toEqual([25, 25, 11])
+    expect(model.pages.every(page => page.combined)).toBe(true)
+    expect(model.pages[2].show_blank_rows).toBe(true)
+    expect(html).toContain('class="weekly-dept-band"')
+    expect(html).not.toContain('class="weekly-department"')
+    expect(html).not.toContain('<th class="weekly-department">Bölüm</th>')
+    expect(html).toContain('Teknik')
+    expect(html).toContain('Mutfak')
+  })
+
+  it('can hide department bands for a completely plain compact list', () => {
+    const model = buildWeeklySignatureModel({ people: weeklyPeople, dates: [DATE, SECOND_DATE], options: { groupMode: 'combined', showDepartmentBands: false, rowsPerPage: 25 } })
+    const html = renderWeeklySignaturePagesHtml(model)
+
+    expect(model.pages[0].combined).toBe(true)
+    expect(html).not.toContain('class="weekly-dept-band"')
+  })
+
+  it('starts a second economical page only after 25 personnel', () => {
+    const manyPeople = Array.from({ length: 26 }, (_, index) => ({
+      full_name: `Personel ${index + 1}`, dept_name: 'Teknik', days: {},
+    }))
+    const model = buildWeeklySignatureModel({ people: manyPeople, dates: [DATE], options: { rowsPerPage: 25, blankRows: 3 } })
+    expect(model.pages).toHaveLength(2)
+    expect(model.pages[0].rows).toHaveLength(25)
+    expect(model.pages[0].show_blank_rows).toBe(false)
+    expect(model.pages[1].show_blank_rows).toBe(true)
   })
 })

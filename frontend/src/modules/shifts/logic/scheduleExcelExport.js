@@ -12,7 +12,7 @@ import {
   shiftHoursFrom,
 } from '../shared.jsx'
 import { shiftHex } from './shiftColors.js'
-import { buildDailySignatureModel } from './scheduleSignatureExport.js'
+import { buildDailySignatureModel, buildWeeklySignatureModel } from './scheduleSignatureExport.js'
 import {
   COLORS, border, argb, fill, colLetter, quoteSheet, sheetRange,
   setupTitle, setupSheet, styleHeaderRow, styleAllUsedCells, addMetric, saveWorkbook,
@@ -671,6 +671,108 @@ function addSignatureSheet(wb, { sheetName, model, weekLabel, revision, generate
   return ws
 }
 
+function addWeeklySignatureSheet(wb, { sheetName, model, page, weekLabel, revision, generatedAt }) {
+  const showRole = model.opts.showLocationAndRole
+  const showDepartmentBands = !!page.combined && model.opts.showDepartmentBands !== false
+  const headers = ['No', 'Personel']
+  const widths = [5, 25]
+  if (showRole) { headers.push('Görev'); widths.push(17) }
+  model.dates.forEach(date => {
+    const day = new Date(`${date}T00:00:00`)
+    headers.push(`${SIGN_WEEKDAY[day.getDay()]}\n${date}`)
+    widths.push(17)
+  })
+  const lastCol = headers.length
+  const ws = wb.addWorksheet(sheetName)
+  setupSheet(ws, COLORS.blue)
+  ws.pageSetup = { ...ws.pageSetup, orientation: 'landscape', fitToWidth: 1, fitToHeight: 1 }
+  ws.columns = widths.map(width => ({ width }))
+  setupTitle(ws, 'HAFTALIK PERSONEL İMZA FÖYÜ',
+    `${page.department} · ${weekLabel} · Rev ${revision} · Sayfa ${page.page}/${page.page_count}${generatedAt ? ` · ${formatDate(generatedAt)}` : ''}`, lastCol)
+
+  let rowNo = (ws.lastRow ? ws.lastRow.number : 3) + 1
+  const headerRow = ws.getRow(rowNo)
+  headers.forEach((header, index) => { headerRow.getCell(index + 1).value = header })
+  styleHeaderRow(headerRow)
+  headerRow.height = Number(model.opts.rowsPerPage) >= 25 ? 24 : 30
+  const identityCols = 2 + (showRole ? 1 : 0)
+  ws.views = [{ state: 'frozen', ySplit: rowNo, xSplit: identityCols }]
+  ws.pageSetup.printTitlesRow = `${rowNo}:${rowNo}`
+  rowNo += 1
+
+  let previousDepartment = ''
+  page.rows.forEach((person, index) => {
+    if (showDepartmentBands && person.department !== previousDepartment) {
+      const band = ws.getRow(rowNo)
+      band.getCell(1).value = person.department
+      ws.mergeCells(rowNo, 1, rowNo, lastCol)
+      band.height = Number(model.opts.rowsPerPage) >= 25 ? 12 : 17
+      band.getCell(1).fill = fill(COLORS.blue)
+      band.getCell(1).font = { bold: true, size: Number(model.opts.rowsPerPage) >= 25 ? 6.5 : 8, color: { argb: 'FFFFFFFF' } }
+      band.getCell(1).alignment = { horizontal: 'left', vertical: 'middle' }
+      rowNo += 1
+    }
+    previousDepartment = person.department
+    const values = [page.row_offset + index + 1, person.full_name]
+    if (showRole) values.push(person.role || '-')
+    person.days.forEach(day => {
+      values.push(day.can_sign
+        ? `${day.label}${day.detail ? `\n${day.detail}` : ''}\n\nİmza:`
+        : `${day.label}\nİmza aranmaz`)
+    })
+    const row = ws.getRow(rowNo)
+    values.forEach((value, colIndex) => { row.getCell(colIndex + 1).value = value })
+    const economy = Number(model.opts.rowsPerPage) >= 25
+    row.height = economy ? (model.opts.doubleSignature ? 24 : 18) : (model.opts.doubleSignature ? 46 : 36)
+    row.eachCell({ includeEmpty: true }, (cell, colIndex) => {
+      cell.border = border
+      cell.alignment = { horizontal: colIndex <= identityCols ? 'left' : 'center', vertical: 'top', wrapText: true }
+      cell.font = { size: economy ? 6.5 : (colIndex <= identityCols ? 9 : 8), bold: colIndex === 2 }
+      if (colIndex > identityCols) {
+        const day = person.days[colIndex - identityCols - 1]
+        cell.fill = fill(day?.category === 'working' ? COLORS.green
+          : day?.category === 'absent' ? COLORS.red
+          : day?.category === 'report' ? COLORS.amber
+          : day?.category === 'off' ? COLORS.purple
+          : COLORS.gray)
+        cell.font = { size: economy ? 6 : 8, bold: true, color: { argb: 'FFFFFFFF' } }
+      }
+    })
+    rowNo += 1
+  })
+
+  if (page.show_blank_rows && Number(model.opts.blankRows) > 0) {
+    rowNo += 1
+    const changeTitle = ws.getRow(rowNo)
+    changeTitle.getCell(1).value = 'Sonradan Eklenen / Vardiyası Değişen Personel'
+    ws.mergeCells(rowNo, 1, rowNo, lastCol)
+    changeTitle.getCell(1).font = { bold: true, size: 9 }
+    rowNo += 1
+    const changeHeaders = ['No', 'Personel', 'Tarih', 'Önceki Durum', 'Yeni Durum', 'Personel / Amir İmzası']
+    const changeHeader = ws.getRow(rowNo)
+    changeHeaders.forEach((header, index) => { changeHeader.getCell(index + 1).value = header })
+    if (lastCol > changeHeaders.length) ws.mergeCells(rowNo, changeHeaders.length, rowNo, lastCol)
+    styleHeaderRow(changeHeader)
+    rowNo += 1
+    const blankCount = Math.min(6, Math.max(0, Number(model.opts.blankRows) || 0))
+    for (let index = 0; index < blankCount; index += 1) {
+      const row = ws.getRow(rowNo)
+      row.getCell(1).value = index + 1
+      row.height = Number(model.opts.rowsPerPage) >= 25 ? 16 : 23
+      for (let col = 1; col <= lastCol; col += 1) row.getCell(col).border = border
+      rowNo += 1
+    }
+  }
+
+  rowNo += 2
+  const footer = ws.getRow(rowNo)
+  footer.getCell(1).value = 'Listeyi Hazırlayan / İmza:'
+  footer.getCell(Math.max(3, Math.ceil(lastCol / 2))).value = 'Vardiya Amiri Kontrolü / İmza:'
+  footer.font = { bold: true, size: 9 }
+  styleAllUsedCells(ws)
+  return ws
+}
+
 export function buildScheduleExcelWorkbook(ExcelJS, {
   weekStart,
   weekEnd,
@@ -1151,16 +1253,26 @@ export function buildScheduleExcelWorkbook(ExcelJS, {
     })
   })
 
-  // Günlük imza sayfaları (seçilen günler için) — baskıya hazır A4 dikey.
+  // İmza sayfaları: haftalık bölüm föyü (önerilen) veya günlük A4 liste.
   const signatureSheetNames = []
   const sigDates = Array.isArray(signatureDates) ? signatureDates : []
   const weekLabel = `${weekStart} - ${weekEnd}`
-  sigDates.forEach(date => {
-    const model = buildDailySignatureModel({ people: exportRows, date, options: signatureOptions })
-    const sheetName = uniqueSheetName(signatureSheetLabel(date), usedSheetNames)
-    addSignatureSheet(wb, { sheetName, model, weekLabel, revision: signatureOptions.revision || '1', generatedAt })
-    signatureSheetNames.push(sheetName)
-  })
+  if (signatureOptions.layout === 'weekly' && sigDates.length) {
+    const weeklyModel = buildWeeklySignatureModel({ people: exportRows, dates: sigDates, options: signatureOptions })
+    weeklyModel.pages.forEach(page => {
+      const suffix = page.page_count > 1 ? ` ${page.page}` : ''
+      const sheetName = uniqueSheetName(`Hafta İmza - ${page.department}${suffix}`, usedSheetNames)
+      addWeeklySignatureSheet(wb, { sheetName, model: weeklyModel, page, weekLabel, revision: signatureOptions.revision || '1', generatedAt })
+      signatureSheetNames.push(sheetName)
+    })
+  } else {
+    sigDates.forEach(date => {
+      const model = buildDailySignatureModel({ people: exportRows, date, options: signatureOptions })
+      const sheetName = uniqueSheetName(signatureSheetLabel(date), usedSheetNames)
+      addSignatureSheet(wb, { sheetName, model, weekLabel, revision: signatureOptions.revision || '1', generatedAt })
+      signatureSheetNames.push(sheetName)
+    })
+  }
 
   return {
     workbook: wb,

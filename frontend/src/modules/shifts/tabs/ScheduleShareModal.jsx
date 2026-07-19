@@ -8,12 +8,14 @@ import {
   openOutputCenterPrintWindow,
 } from '../logic/scheduleShareExport.js'
 import {
-  buildSignatureModels,
+  buildSignatureModels, buildWeeklySignatureModel,
   renderSignaturePagesHtml,
+  renderWeeklySignaturePagesHtml,
   signaturePagesCss,
 } from '../logic/scheduleSignatureExport.js'
+import { downloadWeeklySignatureImages } from '../logic/weeklySignatureImageExport.js'
 
-const SHARE_OPTIONS_KEY = 'shift_schedule_share_options_v2'
+const SHARE_OPTIONS_KEY = 'shift_schedule_share_options_v3'
 const SHARE_PRESETS = [
   { label: 'Personel', options: { colorMode: 'shift', density: 'compact', includeSummary: false, includeRole: true, includeLocation: true, includeLegend: true, includeSignatures: false, pageBreakByDept: false } },
   { label: 'Yönetici', options: { colorMode: 'status', density: 'normal', includeSummary: true, includeRole: true, includeLocation: true, includeStaffTotals: true, includeLegend: true, includeSignatures: true, pageBreakByDept: false } },
@@ -41,6 +43,12 @@ export default function ScheduleShareModal({
     sig_showSummary: true,
     sig_doubleSignature: false,
     sig_pageBreakByDept: false,
+    sig_layout: 'weekly',
+    sig_groupMode: 'combined',
+    sig_showDepartmentBands: true,
+    sig_rowsPerPage: 25,
+    sig_blankRows: 2,
+    sig_imageScale: 2,
     ...loadSavedOptions(),
   }))
   const [content, setContent] = useState('both')       // schedule | signatures | both
@@ -66,6 +74,10 @@ export default function ScheduleShareModal({
     showSummary: options.sig_showSummary !== false,
     doubleSignature: !!options.sig_doubleSignature,
     pageBreakByDept: !!options.sig_pageBreakByDept,
+    groupMode: options.sig_groupMode || 'combined',
+    showDepartmentBands: options.sig_showDepartmentBands !== false,
+    rowsPerPage: Number(options.sig_rowsPerPage) || 25,
+    blankRows: Number(options.sig_blankRows ?? 2),
     onlyWorking: true,
   }), [options])
 
@@ -73,19 +85,27 @@ export default function ScheduleShareModal({
   const signatureModels = useMemo(
     () => buildSignatureModels({ people, dates: signatureDates, options: sigOpts }),
     [people, signatureDates, sigOpts])
+  const weeklySignatureModel = useMemo(
+    () => buildWeeklySignatureModel({ people, dates: signatureDates, options: sigOpts }),
+    [people, signatureDates, sigOpts])
 
   const outputPayload = useMemo(() => ({
     includeSchedule: content !== 'signatures',
     schedulePayload: payload,
     signatureCss: signaturePagesCss(),
-    signaturePagesHtml: signatureModels.length
-      ? renderSignaturePagesHtml(signatureModels, {
+    signaturePagesHtml: signatureDates.length
+      ? (options.sig_layout === 'daily'
+        ? renderSignaturePagesHtml(signatureModels, {
           revision: options.revision, generated: new Date().toLocaleString('tr-TR'),
           weekLabel: `${weekStart} - ${weekEnd}`,
         })
+        : renderWeeklySignaturePagesHtml(weeklySignatureModel, {
+          revision: options.revision, generated: new Date().toLocaleString('tr-TR'),
+          weekLabel: `${weekStart} - ${weekEnd}`,
+        }))
       : '',
     title: options.title,
-  }), [content, payload, signatureModels, options.revision, options.title, weekStart, weekEnd])
+  }), [content, payload, signatureDates, signatureModels, weeklySignatureModel, options.sig_layout, options.revision, options.title, weekStart, weekEnd])
 
   const previewHtml = useMemo(() => buildOutputCenterHtml(outputPayload), [outputPayload])
 
@@ -96,7 +116,15 @@ export default function ScheduleShareModal({
   const patch = (key, value) => setOptions(prev => ({ ...prev, [key]: value }))
   const patchShiftColor = (id, hex) => setOptions(prev => ({ ...prev, shiftColors: { ...(prev.shiftColors || {}), [id]: hex } }))
   const applyPreset = preset => setOptions(prev => ({ ...prev, ...preset.options }))
-  const resetOptions = () => setOptions({ ...DEFAULT_SCHEDULE_SHARE_OPTIONS, title: 'Haftalık Vardiya Çizelgesi', sig_showLocationAndRole: true, sig_showSummary: true, sig_doubleSignature: false, sig_pageBreakByDept: false })
+  const resetOptions = () => setOptions({ ...DEFAULT_SCHEDULE_SHARE_OPTIONS, title: 'Haftalık Vardiya Çizelgesi', sig_showLocationAndRole: true, sig_showSummary: true, sig_doubleSignature: false, sig_pageBreakByDept: false, sig_layout: 'weekly', sig_groupMode: 'combined', sig_showDepartmentBands: true, sig_rowsPerPage: 25, sig_blankRows: 2, sig_imageScale: 2 })
+  const applySignatureProfile = (rowsPerPage, blankRows) => setOptions(prev => ({
+    ...prev,
+    sig_layout: 'weekly',
+    sig_groupMode: 'combined',
+    sig_showDepartmentBands: true,
+    sig_rowsPerPage: rowsPerPage,
+    sig_blankRows: blankRows,
+  }))
   const toggle = key => patch(key, !options[key])
   const toggleDay = date => setSelectedDays(prev => { const next = new Set(prev); next.has(date) ? next.delete(date) : next.add(date); return next })
 
@@ -119,6 +147,24 @@ export default function ScheduleShareModal({
     } catch (err) { toast(err?.message || `${fmt} görsel indirilemedi`, 'error') } finally { setBusy('') }
   }
 
+  const runSignatureImage = async () => {
+    if (!signatureDates.length) {
+      toast('İmza görseli için en az bir gün seçin', 'warning'); return
+    }
+    try {
+      setBusy('sigimg')
+      const result = await downloadWeeklySignatureImages(weeklySignatureModel, {
+        revision: options.revision,
+        generated: new Date().toLocaleString('tr-TR'),
+        weekLabel: `${weekStart} - ${weekEnd}`,
+      }, {
+        scale: Number(options.sig_imageScale) || 2,
+        weekStart,
+      })
+      toast(result.pageCount > 1 ? `${result.pageCount} imza görseli ZIP olarak indirildi` : 'İmza föyü PNG olarak indirildi', 'success')
+    } catch (err) { toast(err?.message || 'İmza görseli indirilemedi', 'error') } finally { setBusy('') }
+  }
+
   const runExcel = async () => {
     try {
       setBusy('xls')
@@ -127,7 +173,7 @@ export default function ScheduleShareModal({
         weekStart, weekEnd, weekDays, staffGrid, visibleGrid,
         gridSearch, statusFilter, deptFilter, shiftDefs, coverageMin: 1,
         signatureDates: content === 'schedule' ? [] : signatureDates,
-        signatureOptions: { ...sigOpts, revision: options.revision },
+        signatureOptions: { ...sigOpts, layout: options.sig_layout || 'weekly', revision: options.revision },
       })
       toast('Excel indirildi', 'success')
     } catch (err) { toast(err?.message || 'Excel indirilemedi', 'error') } finally { setBusy('') }
@@ -138,18 +184,19 @@ export default function ScheduleShareModal({
   )
 
   return (
-    <ModalOverlay onClose={onClose} wide>
+    <ModalOverlay onClose={onClose} extraWide>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', marginBottom: 14 }}>
         <div>
           <h3 style={{ fontFamily: 'var(--display)', fontSize: 18, letterSpacing: 2, margin: 0 }}>ÇIKTI MERKEZİ</h3>
           <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', marginTop: 4 }}>
-            {visibleGrid.length}/{staffGrid.length} personel · çizelge + günlük imza listeleri
+            {visibleGrid.length}/{staffGrid.length} personel · çizelge + pratik imza föyleri
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           <button className="btn btn-primary btn-sm" onClick={runPrint}>PDF / Yazdır</button>
           <button className="btn btn-ghost btn-sm" onClick={runExcel} disabled={busy === 'xls'}>{busy === 'xls' ? 'Hazırlanıyor...' : 'Excel'}</button>
-          <button className="btn btn-ghost btn-sm" onClick={runImage} disabled={busy === 'img'}>{busy === 'img' ? 'Hazırlanıyor...' : `Çizelge ${(options.imageFormat || 'png').toUpperCase()}`}</button>
+          {content !== 'signatures' && <button className="btn btn-ghost btn-sm" onClick={runImage} disabled={busy === 'img'}>{busy === 'img' ? 'Hazırlanıyor...' : `Çizelge ${(options.imageFormat || 'png').toUpperCase()}`}</button>}
+          {content !== 'schedule' && (options.sig_layout || 'weekly') === 'weekly' && <button className="btn btn-ghost btn-sm" onClick={runSignatureImage} disabled={busy === 'sigimg'}>{busy === 'sigimg' ? 'Hazırlanıyor...' : 'İmza PNG'}</button>}
         </div>
       </div>
 
@@ -167,6 +214,18 @@ export default function ScheduleShareModal({
 
               {content !== 'schedule' && (
                 <>
+                  <div className="form-label" style={{ marginBottom: 6 }}>Föy tipi</div>
+                  <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+                    <SegBtn active={(options.sig_layout || 'weekly') === 'weekly'} onClick={() => patch('sig_layout', 'weekly')}>Haftalık Föy</SegBtn>
+                    <SegBtn active={options.sig_layout === 'daily'} onClick={() => patch('sig_layout', 'daily')}>Günlük Liste</SegBtn>
+                  </div>
+                  <div style={{ fontSize: 9, color: 'var(--text3)', lineHeight: 1.4, marginBottom: 9 }}>
+                    {(options.sig_layout || 'weekly') === 'weekly'
+                      ? ((options.sig_groupMode || 'combined') === 'combined'
+                        ? 'Az sayfa modu: personeller birleşik listelenir, bölüm adı grubun üstünde tek şerit olarak gösterilir.'
+                        : 'Bölüm bazlı mod: her bölüm kendi imza föyünde gösterilir.')
+                      : 'Seçilen her gün için ayrı imza listesi hazırlanır.'}
+                  </div>
                   <div className="form-label" style={{ marginBottom: 6 }}>Gün seçimi</div>
                   <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
                     <SegBtn active={dayScope === 'all'} onClick={() => setDayScope('all')}>Tüm hafta</SegBtn>
@@ -182,18 +241,67 @@ export default function ScheduleShareModal({
                       ))}
                     </div>
                   )}
-                  <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', marginBottom: 8 }}>
-                    {signatureDates.length} günlük imza sayfası üretilecek
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--blue)', fontWeight: 800, marginBottom: 8, padding: '6px 8px', border: '1px solid rgba(59,140,240,.35)', borderRadius: 6, background: 'rgba(59,140,240,.07)' }}>
+                    {(options.sig_layout || 'weekly') === 'weekly'
+                      ? `${signatureDates.length} gün · ${weeklySignatureModel.pages.length} tahmini sayfa · ${people.length} personel`
+                      : `${signatureDates.length} günlük imza sayfası üretilecek`}
                   </div>
                   <div className="form-label" style={{ marginBottom: 6 }}>İmza biçimi</div>
                   <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
                     <SegBtn active={!options.sig_doubleSignature} onClick={() => patch('sig_doubleSignature', false)}>Tek imza</SegBtn>
                     <SegBtn active={!!options.sig_doubleSignature} onClick={() => patch('sig_doubleSignature', true)}>Giriş+Çıkış</SegBtn>
                   </div>
+                  {(options.sig_layout || 'weekly') === 'weekly' && (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7, marginBottom: 8 }}>
+                      <div style={{ gridColumn: '1 / -1' }}>
+                        <div className="form-label" style={{ fontSize: 10, marginBottom: 5 }}>Hızlı düzen</div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 5 }}>
+                          <button className={`btn btn-xs ${Number(options.sig_rowsPerPage) === 25 && (options.sig_groupMode || 'combined') === 'combined' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => applySignatureProfile(25, 2)}>Ekonomik 25</button>
+                          <button className={`btn btn-xs ${Number(options.sig_rowsPerPage) === 18 && (options.sig_groupMode || 'combined') === 'combined' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => applySignatureProfile(18, 3)}>Dengeli 18</button>
+                          <button className={`btn btn-xs ${Number(options.sig_rowsPerPage) === 12 && (options.sig_groupMode || 'combined') === 'combined' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => applySignatureProfile(12, 3)}>Rahat 12</button>
+                        </div>
+                      </div>
+                      <div style={{ gridColumn: '1 / -1' }}>
+                        <div className="form-label" style={{ fontSize: 10, marginBottom: 5 }}>Sayfa gruplaması</div>
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <SegBtn active={(options.sig_groupMode || 'combined') === 'combined'} onClick={() => patch('sig_groupMode', 'combined')}>Az Sayfa</SegBtn>
+                          <SegBtn active={options.sig_groupMode === 'department'} onClick={() => patch('sig_groupMode', 'department')}>Bölüm Bazlı</SegBtn>
+                        </div>
+                      </div>
+                      <label className="form-label" style={{ fontSize: 10 }}>
+                        Sayfadaki personel
+                        <select className="form-select" value={options.sig_rowsPerPage || 25} onChange={e => patch('sig_rowsPerPage', Number(e.target.value))}>
+                          <option value={12}>12 - rahat imza</option>
+                          <option value={18}>18 - dengeli</option>
+                          <option value={25}>25 - ekonomik / az sayfa</option>
+                        </select>
+                      </label>
+                      <label className="form-label" style={{ fontSize: 10 }}>
+                        Boş değişiklik satırı
+                        <select className="form-select" value={options.sig_blankRows ?? 3} onChange={e => patch('sig_blankRows', Number(e.target.value))}>
+                          {[0, 2, 3, 4, 5].map(value => <option key={value} value={value}>{value}</option>)}
+                        </select>
+                      </label>
+                      <label className="form-label" style={{ fontSize: 10, gridColumn: '1 / -1' }}>
+                        İmza PNG kalitesi
+                        <select className="form-select" value={options.sig_imageScale || 2} onChange={e => patch('sig_imageScale', Number(e.target.value))}>
+                          <option value={1}>1x - hızlı</option>
+                          <option value={2}>2x - önerilen</option>
+                          <option value={3}>3x - yüksek çözünürlük</option>
+                        </select>
+                        <span style={{ display: 'block', marginTop: 4, color: 'var(--text3)', lineHeight: 1.35 }}>Tek sayfa PNG, birden fazla bölüm veya sayfa tek ZIP paketi olur.</span>
+                      </label>
+                    </div>
+                  )}
                   {[
-                    ['sig_showSummary', 'İzin / OFF / raporlu özetini göster'],
                     ['sig_showLocationAndRole', 'Çalışma noktası ve görev bilgisi'],
-                    ['sig_pageBreakByDept', 'Bölümlere göre ayrı sayfa'],
+                    ...((options.sig_layout || 'weekly') === 'weekly' ? [
+                      ['sig_showDepartmentBands', 'Bölüm adını personel grubunun üstünde şerit olarak göster'],
+                    ] : []),
+                    ...((options.sig_layout || 'weekly') === 'daily' ? [
+                      ['sig_showSummary', 'İzin / OFF / raporlu özetini göster'],
+                      ['sig_pageBreakByDept', 'Bölümlere göre ayrı sayfa'],
+                    ] : []),
                   ].map(([key, label]) => (
                     <label key={key} style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text2)', fontSize: 12, marginBottom: 4 }}>
                       <input type="checkbox" checked={options[key] !== false} onChange={() => patch(key, !(options[key] !== false))} />
@@ -279,7 +387,7 @@ export default function ScheduleShareModal({
               </>
             )}
 
-            <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px' }}>
+            {content !== 'signatures' && <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px' }}>
               <div className="form-label" style={{ marginBottom: 6 }}>Görsel (PNG/JPG) çıktı — çizelge</div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                 <label className="form-label" style={{ fontSize: 11 }}>
@@ -298,7 +406,7 @@ export default function ScheduleShareModal({
                   </select>
                 </label>
               </div>
-            </div>
+            </div>}
 
             <div>
               <div className="form-label">Hazır şablon (çizelge)</div>

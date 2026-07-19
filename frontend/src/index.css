@@ -190,6 +190,22 @@ h1, h2, h3, h4 { font-family: var(--display); letter-spacing: 2px; }
 .data-table td { padding: 10px 14px; border-bottom: 1px solid rgba(35,45,63,.4); font-size: 12.5px; vertical-align: middle; }
 .data-table tbody tr:hover td { background: rgba(255,255,255,.018); }
 .data-table tbody tr:last-child td { border-bottom: none; }
+.staff-directory-table--compact th { padding: 7px 9px; font-size: 8px; }
+.staff-directory-table--compact td { padding: 6px 9px; font-size: 10px; }
+.staff-directory-table .staff-directory-group-row td {
+  padding: 6px 12px;
+  background: color-mix(in srgb, var(--blue) 9%, var(--surface2));
+  border-top: 1px solid color-mix(in srgb, var(--blue) 30%, var(--border));
+  border-bottom: 1px solid color-mix(in srgb, var(--blue) 22%, var(--border));
+  color: var(--blue);
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: .6px;
+}
+.staff-directory-table .staff-directory-group-row td strong { float: right; color: var(--text3); font-size: 8px; }
+.staff-compare-table th:first-child,
+.staff-compare-table td:first-child { position: sticky; left: 0; z-index: 2; background: var(--surface); }
+.staff-compare-table thead th:first-child { z-index: 3; }
 
 /* Filter chip */
 .filter-chip { padding: 5px 12px; border-radius: 20px; font-family: var(--mono); font-size: 10px; cursor: pointer; background: var(--surface2); color: var(--text2); border: 1px solid var(--border); transition: all .15s; letter-spacing: .5px; }

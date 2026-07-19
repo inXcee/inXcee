@@ -165,6 +165,97 @@ export function buildSignatureModels({ people = [], dates = [], options = {} }) 
   return dates.map(date => buildDailySignatureModel({ people, date, options }))
 }
 
+const WEEKLY_STATUS_LABELS = {
+  off: 'OFF',
+  annual: 'YILLIK İZİN',
+  report: 'RAPORLU',
+  other_leave: 'İZİNLİ',
+  absent: 'YOK',
+  unplanned: 'PLAN YOK',
+}
+
+function weeklyDayCell(cell, date, opts) {
+  const category = classifySignatureCell(cell)
+  if (category !== 'working') {
+    return { date, category, label: WEEKLY_STATUS_LABELS[category], detail: '', can_sign: false }
+  }
+  const planned = plannedShift(cell)
+  return {
+    date,
+    category,
+    label: planned.text || cell.shift_name || 'Vardiya',
+    detail: opts.showLocationAndRole ? workLocation(cell) : '',
+    can_sign: true,
+  }
+}
+
+function chunks(rows, size) {
+  const result = []
+  for (let index = 0; index < rows.length; index += size) result.push(rows.slice(index, index + size))
+  return result.length ? result : [[]]
+}
+
+// Bölüm başına haftanın tamamını tek föyde toplar. Her gün hücresinde vardiya
+// bilgisi ve imza çizgisi bulunur; OFF/izin/rapor/YOK hücreleri imzaya kapanır.
+export function buildWeeklySignatureModel({ people = [], dates = [], options = {} }) {
+  const opts = {
+    showLocationAndRole: true,
+    doubleSignature: false,
+    rowsPerPage: 12,
+    blankRows: 3,
+    groupMode: 'department',
+    showDepartmentBands: true,
+    ...options,
+  }
+  const rowsPerPage = Math.min(25, Math.max(8, Number(opts.rowsPerPage) || 12))
+  const departments = new Map()
+
+  people.forEach(person => {
+    const department = person.dept_name || 'Departmansız'
+    if (!departments.has(department)) departments.set(department, [])
+    departments.get(department).push({
+      staff_id: person.staff_id ?? person.id,
+      full_name: person.full_name,
+      role: person.role_name || person.position || '',
+      department,
+      days: dates.map(date => weeklyDayCell(person.days?.[date], date, opts)),
+    })
+  })
+
+  const sortedDepartments = [...departments.entries()]
+    .sort(([a], [b]) => a.localeCompare(b, 'tr'))
+    .map(([department, rows]) => [department, rows.sort((a, b) => a.role.localeCompare(b.role, 'tr') || a.full_name.localeCompare(b.full_name, 'tr'))])
+  const pages = []
+  if (opts.groupMode === 'combined') {
+    const allRows = sortedDepartments.flatMap(([, rows]) => rows)
+    const combinedChunks = chunks(allRows, rowsPerPage)
+    combinedChunks.forEach((pageRows, index) => pages.push({
+      department: 'Tüm Bölümler',
+      combined: true,
+      rows: pageRows,
+      page: index + 1,
+      page_count: combinedChunks.length,
+      row_offset: index * rowsPerPage,
+      show_blank_rows: index === combinedChunks.length - 1,
+    }))
+  } else {
+    sortedDepartments.forEach(([department, rows]) => {
+      const departmentChunks = chunks(rows, rowsPerPage)
+      departmentChunks.forEach((pageRows, index) => pages.push({
+        department,
+        combined: false,
+        rows: pageRows,
+        page: index + 1,
+        page_count: departmentChunks.length,
+        row_offset: index * rowsPerPage,
+        show_blank_rows: index === departmentChunks.length - 1,
+      }))
+    })
+  }
+
+  return { dates, opts, pages, people_count: people.length }
+}
+
 /* ─── HTML çıktısı (PDF / Yazdır) — her gün ayrı A4 dikey imza sayfası ─────── */
 
 const WEEKDAY_TR = ['Pazar', 'Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi']
@@ -181,6 +272,7 @@ function weekdayLabel(date) {
 export function signaturePagesCss() {
   return `
     @page signature { size: A4 portrait; margin: 12mm; }
+    @page weekly-signature { size: A4 landscape; margin: 8mm; }
     .sig-page { page: signature; page-break-before: always; font-family: Arial, sans-serif; color: #0f172a; }
     .sig-page:first-child { page-break-before: auto; }
     .sig-head { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #0f172a; padding-bottom: 6px; margin-bottom: 8px; }
@@ -201,6 +293,65 @@ export function signaturePagesCss() {
     .sig-footer { display: flex; justify-content: space-between; gap: 16px; margin-top: 26px; }
     .sig-footer div { flex: 1; text-align: center; font-size: 9px; }
     .sig-footer .line { border-top: 1px solid #0f172a; margin-top: 34px; padding-top: 3px; }
+    .weekly-sig-page { page: weekly-signature; page-break-before: always; break-inside: avoid; font-family: Arial, sans-serif; color: #0f172a; }
+    .weekly-sig-head { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #2563eb; padding-bottom: 7px; margin-bottom: 8px; }
+    .weekly-sig-title { font-size: 17px; font-weight: 800; letter-spacing: .4px; }
+    .weekly-sig-sub { margin-top: 3px; color: #475569; font-size: 9px; font-weight: 700; }
+    .weekly-sig-meta { text-align: right; color: #64748b; font-size: 8px; line-height: 1.5; }
+    table.weekly-sig { width: 100%; table-layout: fixed; border-collapse: collapse; }
+    table.weekly-sig th, table.weekly-sig td { border: 1px solid #94a3b8; }
+    table.weekly-sig th { padding: 4px 3px; background: #e2e8f0; font-size: 7px; text-align: center; }
+    table.weekly-sig th span { display: block; margin-top: 2px; color: #475569; font-size: 6.5px; }
+    table.weekly-sig td { height: 36px; padding: 3px; vertical-align: top; font-size: 7px; }
+    table.weekly-sig .weekly-no { width: 24px; text-align: center; }
+    table.weekly-sig .weekly-person { width: 130px; }
+    table.weekly-sig .weekly-role { width: 82px; }
+    table.weekly-sig tr.weekly-dept-band td { height: 17px; padding: 2px 7px; background: #dbeafe; color: #1e3a8a; font-size: 6.5px; font-weight: 900; letter-spacing: .35px; vertical-align: middle; }
+    .weekly-person b { display: block; font-size: 8px; }
+    .weekly-day { text-align: center; }
+    .weekly-day > b { display: block; font-size: 7px; line-height: 1.15; }
+    .weekly-day small { display: block; margin-top: 2px; color: #64748b; font-size: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .weekly-working { background: #f0fdf4; }
+    .weekly-off { background: #f5f3ff; }
+    .weekly-annual, .weekly-other_leave { background: #f0fdfa; }
+    .weekly-report { background: #fff7ed; }
+    .weekly-absent { background: #fef2f2; }
+    .weekly-unplanned { background: #f8fafc; color: #64748b; }
+    .weekly-sign-line { display: block; margin-top: 9px; border-top: 1px dotted #64748b; color: #94a3b8; font-size: 5.5px; text-align: left; }
+    .weekly-no-sign { display: block; margin-top: 9px; color: #94a3b8; font-size: 5.5px; font-style: italic; }
+    .weekly-change-title { margin-top: 8px; font-size: 8px; font-weight: 800; }
+    table.weekly-change { width: 100%; margin-top: 3px; border-collapse: collapse; table-layout: fixed; }
+    table.weekly-change th, table.weekly-change td { border: 1px solid #94a3b8; padding: 3px; font-size: 6.5px; }
+    table.weekly-change th { background: #f1f5f9; }
+    table.weekly-change td { height: 20px; }
+    .weekly-sig-footer { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 8px; }
+    .weekly-sig-footer div { border-top: 1px solid #64748b; padding-top: 3px; color: #475569; font-size: 7px; text-align: center; }
+    .weekly-sig-page.weekly-compact .weekly-sig-head { padding-bottom: 4px; margin-bottom: 5px; }
+    .weekly-sig-page.weekly-compact .weekly-sig-title { font-size: 14px; }
+    .weekly-sig-page.weekly-compact table.weekly-sig th { padding: 2px; font-size: 6px; }
+    .weekly-sig-page.weekly-compact table.weekly-sig td { height: 25px; padding: 2px; font-size: 6px; }
+    .weekly-sig-page.weekly-compact .weekly-person b { font-size: 7px; }
+    .weekly-sig-page.weekly-compact .weekly-day > b { font-size: 6px; }
+    .weekly-sig-page.weekly-compact .weekly-sign-line,
+    .weekly-sig-page.weekly-compact .weekly-no-sign { margin-top: 5px; font-size: 5px; }
+    .weekly-sig-page.weekly-economy .weekly-sig-head { padding-bottom: 3px; margin-bottom: 4px; }
+    .weekly-sig-page.weekly-economy .weekly-sig-title { font-size: 12px; }
+    .weekly-sig-page.weekly-economy .weekly-sig-sub,
+    .weekly-sig-page.weekly-economy .weekly-sig-meta { font-size: 6.5px; }
+    .weekly-sig-page.weekly-economy table.weekly-sig th { padding: 1px; font-size: 5.3px; }
+    .weekly-sig-page.weekly-economy table.weekly-sig th span { margin-top: 1px; font-size: 5px; }
+    .weekly-sig-page.weekly-economy table.weekly-sig td { height: 20px; padding: 1px 2px; font-size: 5.4px; }
+    .weekly-sig-page.weekly-economy table.weekly-sig tr.weekly-dept-band td { height: 12px; padding: 1px 5px; font-size: 5.2px; }
+    .weekly-sig-page.weekly-economy .weekly-person b { font-size: 6.3px; }
+    .weekly-sig-page.weekly-economy .weekly-day > b { font-size: 5.4px; }
+    .weekly-sig-page.weekly-economy .weekly-day small { margin-top: 1px; font-size: 4.7px; }
+    .weekly-sig-page.weekly-economy .weekly-sign-line,
+    .weekly-sig-page.weekly-economy .weekly-no-sign { margin-top: 3px; font-size: 4.5px; }
+    .weekly-sig-page.weekly-economy .weekly-change-title { margin-top: 4px; font-size: 6.5px; }
+    .weekly-sig-page.weekly-economy table.weekly-change th,
+    .weekly-sig-page.weekly-economy table.weekly-change td { padding: 1px 2px; font-size: 5.2px; }
+    .weekly-sig-page.weekly-economy table.weekly-change td { height: 13px; }
+    .weekly-sig-page.weekly-economy .weekly-sig-footer { margin-top: 5px; }
   `
 }
 
@@ -279,4 +430,47 @@ export function renderSignaturePageHtml(model, meta = {}) {
 // Seçilen günlerin tüm imza sayfalarını tek HTML gövdesi olarak birleştirir.
 export function renderSignaturePagesHtml(models, meta = {}) {
   return models.map(model => renderSignaturePageHtml(model, meta)).join('\n')
+}
+
+function weeklySignLines(doubleSignature) {
+  return doubleSignature
+    ? '<span class="weekly-sign-line">Giriş</span><span class="weekly-sign-line">Çıkış</span>'
+    : '<span class="weekly-sign-line">İmza</span>'
+}
+
+function weeklyChangeRows(count) {
+  const safeCount = Math.min(6, Math.max(0, Number(count) || 0))
+  if (!safeCount) return ''
+  const rows = Array.from({ length: safeCount }, (_, index) => `<tr><td>${index + 1}</td><td></td><td></td><td></td><td></td><td></td></tr>`).join('')
+  return `<div class="weekly-change-title">Sonradan Eklenen / Vardiyası Değişen Personel</div>
+    <table class="weekly-change"><thead><tr><th>No</th><th>Personel</th><th>Tarih</th><th>Önceki Durum</th><th>Yeni Durum</th><th>Personel / Amir İmzası</th></tr></thead><tbody>${rows}</tbody></table>`
+}
+
+export function renderWeeklySignaturePagesHtml(model, meta = {}) {
+  const revision = meta.revision || '1'
+  const generated = meta.generated || ''
+  const weekLabel = meta.weekLabel || model.dates.join(' - ')
+  return model.pages.map(page => {
+    const densityClass = Number(model.opts.rowsPerPage) >= 25 ? ' weekly-economy' : Number(model.opts.rowsPerPage) >= 18 ? ' weekly-compact' : ''
+    const dayHeads = model.dates.map(date => `<th>${esc(weekdayLabel(date))}<span>${esc(date)}</span></th>`).join('')
+    const columnCount = 2 + (model.opts.showLocationAndRole ? 1 : 0) + model.dates.length
+    let previousDepartment = ''
+    const rows = page.rows.map((row, index) => {
+      const departmentBand = page.combined && model.opts.showDepartmentBands !== false && row.department !== previousDepartment
+        ? `<tr class="weekly-dept-band"><td colspan="${columnCount}">${esc(row.department)}</td></tr>` : ''
+      previousDepartment = row.department
+      return `${departmentBand}<tr>
+      <td class="weekly-no">${page.row_offset + index + 1}</td>
+      <td class="weekly-person"><b>${esc(row.full_name)}</b></td>
+      ${model.opts.showLocationAndRole ? `<td class="weekly-role">${esc(row.role || '-')}</td>` : ''}
+      ${row.days.map(day => `<td class="weekly-day weekly-${esc(day.category)}"><b>${esc(day.label)}</b>${day.detail ? `<small>${esc(day.detail)}</small>` : ''}${day.can_sign ? weeklySignLines(model.opts.doubleSignature) : '<span class="weekly-no-sign">İmza aranmaz</span>'}</td>`).join('')}
+    </tr>`
+    }).join('')
+    return `<section class="weekly-sig-page${densityClass}">
+      <div class="weekly-sig-head"><div><div class="weekly-sig-title">HAFTALIK PERSONEL İMZA FÖYÜ</div><div class="weekly-sig-sub">${esc(page.department)} · ${esc(weekLabel)} · ${page.rows.length} personel</div></div><div class="weekly-sig-meta">Revizyon: ${esc(revision)}<br />Sayfa: ${page.page}/${page.page_count}${generated ? `<br />Oluşturma: ${esc(generated)}` : ''}</div></div>
+      <table class="weekly-sig"><thead><tr><th class="weekly-no">No</th><th class="weekly-person">Personel</th>${model.opts.showLocationAndRole ? '<th class="weekly-role">Görev</th>' : ''}${dayHeads}</tr></thead><tbody>${rows}</tbody></table>
+      ${page.show_blank_rows ? weeklyChangeRows(model.opts.blankRows) : ''}
+      <div class="weekly-sig-footer"><div>Listeyi Hazırlayan / İmza</div><div>Vardiya Amiri Kontrolü / İmza</div></div>
+    </section>`
+  }).join('\n')
 }
