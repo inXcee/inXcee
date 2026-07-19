@@ -11,7 +11,7 @@ export default function OrtakAlanCard({ task, block, floor, onComplete, onUncomp
   const [showSkip, setShowSkip] = useState(false)
   const [skipReason, setSkipReason] = useState('')
   const [showHistory, setShowHistory] = useState(false)
-  const [photo, setPhoto] = useState(null) // temizlik kanıt fotoğrafı (dataURL)
+  const [photos, setPhotos] = useState([]) // temizlik kanıt fotoğrafları (dataURL listesi)
   const done    = !!task?.completed_at
   const skipped = task?.skipped === 1
   const areaCode = task?.qr_location?.split('-').at(-1) || 'common'
@@ -25,10 +25,11 @@ export default function OrtakAlanCard({ task, block, floor, onComplete, onUncomp
   const historyQr = task?.qr_location || `${block}-${floor}-common`
 
   async function onPhotoPick(e) {
-    const file = e.target.files?.[0]
+    const files = [...(e.target.files || [])]
     e.target.value = ''
-    if (!file) return
-    try { setPhoto(await downscalePhoto(file)) } catch { /* sessiz */ }
+    for (const file of files) {
+      try { const d = await downscalePhoto(file); setPhotos(prev => [...prev, d]) } catch { /* sessiz */ }
+    }
   }
 
   // Her ortak alan kendi qr_location anahtarıyla ayrı izlenir.
@@ -85,19 +86,19 @@ export default function OrtakAlanCard({ task, block, floor, onComplete, onUncomp
           {task && skipped && <button className="btn btn-ghost btn-xs" onClick={() => onSkip(task.id, null, true)}>↩ Geri Al</button>}
           {task && !done && !skipped && (
             <>
-              {photo ? (
-                <img src={photo} alt="kanıt-hazır" title="Kanıt fotoğrafı hazır — Tamam ile gönderilir (kaldırmak için tıkla)"
-                  onClick={() => setPhoto(null)}
-                  style={{ width: '28px', height: '28px', objectFit: 'cover', borderRadius: '5px', border: '1px solid var(--green)', cursor: 'pointer' }} />
-              ) : (
-                <label className="btn btn-ghost btn-xs" style={{ cursor: 'pointer' }} title="Temizlik kanıt fotoğrafı çek">
-                  📷
-                  <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={onPhotoPick} />
-                </label>
-              )}
+              {photos.length > 0 ? (
+                <button className="btn btn-ghost btn-xs" title="Hazır kanıt fotoğrafları — hepsini kaldırmak için tıkla"
+                  onClick={() => setPhotos([])} style={{ color: 'var(--green)', borderColor: 'var(--green)' }}>
+                  📷 {photos.length} ✕
+                </button>
+              ) : null}
+              <label className="btn btn-ghost btn-xs" style={{ cursor: 'pointer' }} title="Temizlik kanıt fotoğrafı çek/seç (çoklu)">
+                📷{photos.length > 0 ? '+' : ''}
+                <input type="file" accept="image/*" capture="environment" multiple style={{ display: 'none' }} onChange={onPhotoPick} />
+              </label>
               <button className="btn btn-ghost btn-xs" onClick={() => setShowSkip(!showSkip)}>⊘ Atla</button>
-              <button className="btn btn-primary btn-xs" onClick={() => { onComplete(task.id, null, photo ? dataUrlToBlob(photo) : null); setPhoto(null) }}>
-                {photo ? '📷✓' : '✓'} Tamam
+              <button className="btn btn-primary btn-xs" onClick={() => { onComplete(task.id, null, photos.map(p => ({ blob: dataUrlToBlob(p), category: 'genel' }))); setPhotos([]) }}>
+                {photos.length > 0 ? '📷✓' : '✓'} Tamam
               </button>
             </>
           )}

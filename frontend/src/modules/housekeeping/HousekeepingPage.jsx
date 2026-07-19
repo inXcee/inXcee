@@ -68,11 +68,14 @@ export default function HousekeepingPage() {
   })
 
   const completeTask = useMutation({
-    mutationFn: ({ id, checklist, photoBlob }) => {
-      if (!photoBlob) return api.post(`/housekeeping/tasks/${id}/complete`, { checklist })
+    mutationFn: ({ id, checklist, photos }) => {
+      // photos: [{ blob, category }] — çoklu kanıt fotoğrafı (geriye uyum: boşsa fotosuz tamamla)
+      const list = Array.isArray(photos) ? photos.filter(p => p && p.blob) : (photos ? [{ blob: photos }] : [])
+      if (!list.length) return api.post(`/housekeeping/tasks/${id}/complete`, { checklist })
       const fd = new FormData()
       if (checklist) fd.append('checklist', JSON.stringify(checklist))
-      fd.append('photo', photoBlob, 'temizlik.jpg')
+      if (list[0].category) fd.append('category', list[0].category)
+      list.forEach((p, i) => fd.append('photos', p.blob, `temizlik-${i + 1}.jpg`))
       return api.post(`/housekeeping/tasks/${id}/complete`, fd)
     },
     ...optimisticTaskUpdate((t, vars) =>
@@ -292,7 +295,7 @@ export default function HousekeepingPage() {
                   task={commonTask}
                   block={block}
                   floor={floor}
-                  onComplete={(id, cl, photoBlob) => completeTask.mutate({ id, checklist: cl, photoBlob })}
+                  onComplete={(id, cl, photos) => completeTask.mutate({ id, checklist: cl, photos })}
                   onUncomplete={(id) => uncompleteTask.mutate(id)}
                   onSkip={(id, reason, undo) => skipTask.mutate({ id, reason, undo })}
                 />
@@ -316,7 +319,7 @@ export default function HousekeepingPage() {
           key={`${block}-${floor}-${selectedRoomNo}`}
           block={block} floor={floor} roomNo={selectedRoomNo}
           task={selectedTask} isPrivateBath={!isM}
-          onComplete={(id, cl, photoBlob) => completeTask.mutate({ id, checklist: cl, photoBlob })}
+          onComplete={(id, cl, photos) => completeTask.mutate({ id, checklist: cl, photos })}
           onUncomplete={(id) => uncompleteTask.mutate(id)}
           onSkip={(id, reason, undo) => skipTask.mutate({ id, reason, undo })}
           onClose={() => setSelected(null)}

@@ -24,6 +24,16 @@ export const SKIP_REASONS = [
   'Diğer',
 ]
 
+// Temizlik fotoğrafı kategorileri (backend enum ile birebir: genel/oncesi/sonrasi/detay/hasar).
+export const PHOTO_CATEGORIES = [
+  { id: 'genel',   label: 'Genel',   icon: '📷', color: 'var(--blue)' },
+  { id: 'oncesi',  label: 'Öncesi',  icon: '⏮', color: 'var(--accent)' },
+  { id: 'sonrasi', label: 'Sonrası', icon: '✨', color: 'var(--green)' },
+  { id: 'detay',   label: 'Detay',   icon: '🔍', color: 'var(--purple)' },
+  { id: 'hasar',   label: 'Hasar',   icon: '⚠', color: 'var(--red)' },
+]
+export const PHOTO_CATEGORY_MAP = Object.fromEntries(PHOTO_CATEGORIES.map(c => [c.id, c]))
+
 export function roomNoFromQr(qr) {
   if (!qr) return null
   const parts = qr.split('-')

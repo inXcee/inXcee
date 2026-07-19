@@ -7,7 +7,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
 import { BLOCK_BY_NAME } from '../../shared/blocks.js'
-import { CHECKLIST_ITEMS, SKIP_REASONS } from './shared.jsx'
+import { CHECKLIST_ITEMS, SKIP_REASONS, PHOTO_CATEGORIES, PHOTO_CATEGORY_MAP } from './shared.jsx'
 import { downscalePhoto, dataUrlToBlob } from '../../shared/photo.js'
 
 export default function RoomDetailPanel({ block, floor, roomNo, task, isPrivateBath, onComplete, onUncomplete, onSkip, onClose, onInvalidateRooms }) {
@@ -30,14 +30,23 @@ export default function RoomDetailPanel({ block, floor, roomNo, task, isPrivateB
   const [noCleanLocal, setNoCleanLocal] = useState(null)
   const [noteText, setNoteText] = useState('')
   const [noteInited, setNoteInited] = useState(false)
-  const [cleanPhoto, setCleanPhoto] = useState(null) // temizlik kanıt fotoğrafı (dataURL)
+  const [cleanPhotos, setCleanPhotos] = useState([]) // temizlik kanıt fotoğrafları [{ dataUrl }]
+  const [cleanCategory, setCleanCategory] = useState('genel')
 
   async function onCleanPhotoPick(e) {
-    const file = e.target.files?.[0]
+    const files = [...(e.target.files || [])]
     e.target.value = ''
-    if (!file) return
-    try { setCleanPhoto(await downscalePhoto(file)) } catch { /* sessiz */ }
+    if (!files.length) return
+    for (const file of files) {
+      try {
+        const dataUrl = await downscalePhoto(file)
+        setCleanPhotos(prev => [...prev, { dataUrl }])
+      } catch { /* sessiz */ }
+    }
   }
+  const removeCleanPhoto = (idx) => setCleanPhotos(prev => prev.filter((_, i) => i !== idx))
+  // Tamamlarken gönderilecek foto listesi (blob + seçili kategori)
+  const cleanPhotoPayload = () => cleanPhotos.map(p => ({ blob: dataUrlToBlob(p.dataUrl), category: cleanCategory }))
 
   const done    = !!task?.completed_at
   const skipped = task?.skipped === 1
@@ -359,7 +368,7 @@ export default function RoomDetailPanel({ block, floor, roomNo, task, isPrivateB
                 <button className="btn btn-ghost btn-sm" style={{ flex: 1 }} onClick={() => onSkip(task.id, null, true)}>
                   ↩ ATLAMAYI GERİ AL
                 </button>
-                <button className="btn btn-primary btn-sm" style={{ flex: 1 }} onClick={() => onComplete(task.id, [...checkedItems], cleanPhoto ? dataUrlToBlob(cleanPhoto) : null)}>
+                <button className="btn btn-primary btn-sm" style={{ flex: 1 }} onClick={() => onComplete(task.id, [...checkedItems], cleanPhotoPayload())}>
                   ✓ Yine de Tamamla
                 </button>
               </div>
@@ -368,25 +377,39 @@ export default function RoomDetailPanel({ block, floor, roomNo, task, isPrivateB
 
           {task && !done && !skipped && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {/* Temizlik kanıt fotoğrafı (opsiyonel) */}
-              {cleanPhoto ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '8px', padding: '8px 10px' }}>
-                  <img src={cleanPhoto} alt="temizlik kanıtı" style={{ width: '52px', height: '52px', objectFit: 'cover', borderRadius: '6px', border: '1px solid var(--border)' }} />
-                  <span style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--green)', flex: 1 }}>📷 Kanıt fotoğrafı hazır</span>
-                  <button className="btn btn-ghost btn-xs" onClick={() => setCleanPhoto(null)}>✕</button>
+              {/* Kanıt fotoğrafları (çoklu) + kategori seçimi */}
+              <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                {PHOTO_CATEGORIES.map(c => (
+                  <button key={c.id} type="button"
+                    className={`filter-chip${cleanCategory === c.id ? ' active' : ''}`}
+                    onClick={() => setCleanCategory(c.id)}
+                    style={cleanCategory === c.id ? { color: c.color, borderColor: c.color } : undefined}
+                    title={`Yeni eklenen fotoğraflar "${c.label}" kategorisine gider`}
+                  >{c.icon} {c.label}</button>
+                ))}
+              </div>
+              {cleanPhotos.length > 0 && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(64px,1fr))', gap: '6px' }}>
+                  {cleanPhotos.map((p, i) => (
+                    <div key={i} style={{ position: 'relative' }}>
+                      <img src={p.dataUrl} alt={`kanıt ${i + 1}`} style={{ width: '100%', height: '58px', objectFit: 'cover', borderRadius: '6px', border: '1px solid var(--border)' }} />
+                      <button type="button" onClick={() => removeCleanPhoto(i)} title="Kaldır"
+                        style={{ position: 'absolute', top: '-6px', right: '-6px', width: '18px', height: '18px', borderRadius: '50%', border: 'none', background: 'var(--red)', color: '#fff', cursor: 'pointer', fontSize: '10px', lineHeight: '18px', padding: 0 }}>✕</button>
+                    </div>
+                  ))}
                 </div>
-              ) : (
-                <label className="btn btn-ghost btn-sm" style={{ width: '100%', cursor: 'pointer', textAlign: 'center' }}>
-                  📷 KANIT FOTOĞRAFI ÇEK / SEÇ
-                  <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={onCleanPhotoPick} />
-                </label>
               )}
+              <label className="btn btn-ghost btn-sm" style={{ width: '100%', cursor: 'pointer', textAlign: 'center' }}>
+                📷 FOTOĞRAF EKLE {cleanPhotos.length > 0 ? `(${cleanPhotos.length} eklendi)` : '(çek / seç)'}
+                <input type="file" accept="image/*" capture="environment" multiple style={{ display: 'none' }} onChange={onCleanPhotoPick} />
+              </label>
               <button
                 className="btn btn-primary btn-sm"
                 style={{ width: '100%', padding: '10px' }}
-                onClick={() => onComplete(task.id, [...checkedItems], cleanPhoto ? dataUrlToBlob(cleanPhoto) : null)}
+                onClick={() => onComplete(task.id, [...checkedItems], cleanPhotoPayload())}
               >
-                {cleanPhoto ? '📷✓' : '✓'} TEMİZLİK TAMAMLANDI
+                {cleanPhotos.length > 0 ? '📷✓ ' : '✓ '}TEMİZLİK TAMAMLANDI
+                {cleanPhotos.length > 0 && <span style={{ opacity: 0.75, marginLeft: '4px', fontSize: '9px' }}>({cleanPhotos.length} foto)</span>}
                 {checkedCount > 0 && <span style={{ opacity: 0.75, marginLeft: '6px', fontSize: '9px' }}>({checkedCount} madde)</span>}
               </button>
               {!showSkip ? (
