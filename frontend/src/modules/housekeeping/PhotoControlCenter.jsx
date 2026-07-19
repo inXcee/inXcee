@@ -4,6 +4,7 @@ import api from '../../shared/api/client.js'
 import { useAuthStore } from '../../shared/store/authStore.js'
 import { PHOTO_CATEGORIES, PHOTO_CATEGORY_MAP } from './shared.jsx'
 import TaskPhotoGallery from './TaskPhotoGallery.jsx'
+import { openPhotoReportPrint, exportPhotoReportExcel } from './photoReportExport.js'
 
 const AREA_META = {
   room: { label: 'Oda', icon: '🛏', color: 'var(--blue)' },
@@ -91,6 +92,8 @@ export default function PhotoControlCenter() {
     return totals
   }, { with_photo: 0, without_photo: 0, pending: 0, skipped: 0 }), [filtered])
 
+  const reportSubtitle = `${block === 'all' ? 'Tüm bloklar' : `${block} blok`}${floor === 'all' ? '' : ` · kat ${floor}`}${area === 'all' ? '' : ` · ${AREA_META[area]?.label || area}`} · ${dateScope === 'today' ? 'bugün' : `son ${retentionDays} gün`}`
+
   const resetFilters = () => {
     setBlock('all'); setFloor('all'); setArea('all'); setStatus('all'); setCategory('all'); setDateScope('today'); setQuery(''); setVisible(48)
   }
@@ -166,6 +169,12 @@ export default function PhotoControlCenter() {
           </select>
           <input className="form-input" aria-label="Oda veya alan ara" value={query} onChange={event => setQuery(event.target.value)} placeholder="Oda / alan ara…" style={{ width: '175px' }} />
           <button className="btn btn-ghost btn-sm" onClick={resetFilters}>FİLTRELERİ SIFIRLA</button>
+          <button className="btn btn-ghost btn-sm" disabled={!filtered.length}
+            title="Filtrelenen görevlerin foto kanıt raporunu yazdır / PDF"
+            onClick={() => openPhotoReportPrint({ items: filtered, subtitle: reportSubtitle })}>⎙ PDF</button>
+          <button className="btn btn-ghost btn-sm" disabled={!filtered.length}
+            title="Filtrelenen görevlerin foto listesini Excel indir"
+            onClick={() => exportPhotoReportExcel({ items: filtered, filename: `foto-kanit-${today}.xlsx` })}>⬇ Excel</button>
           <span style={{ marginLeft: 'auto', fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)' }}>{filtered.length} KAYIT</span>
         </div>
       </div>
