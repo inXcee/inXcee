@@ -1,12 +1,13 @@
 import { Router } from 'express'
 import { requireRole } from '../../shared/auth/middleware.js'
-import { createImageUpload, upload, verifyMagicBytes } from '../../shared/uploads/middleware.js'
+import { createImageUpload, upload, verifyMagicBytes, verifyImageMagicBytes } from '../../shared/uploads/middleware.js'
 import * as svc from './service.js'
 import { logger } from '../../shared/logger.js'
 import { validate } from '../../shared/middleware/validate.js'
 import {
   completeFloorSchema, skipTaskSchema, roomNotesSchema, noCleanSchema,
   faultReportSchema, createStaffSchema, updateStaffSchema, completeTaskSchema, photoRetentionSchema,
+  addTaskPhotoSchema, updateTaskPhotoSchema,
 } from './schemas.js'
 
 export const housekeepingRouter = Router()
@@ -79,13 +80,50 @@ function coerceCompleteBody(req, res, next) {
   next()
 }
 
-housekeepingRouter.post('/tasks/:id/complete', ...hkAccess, housekeepingPhotoUpload.single('photo'), verifyMagicBytes, coerceCompleteBody, validate(completeTaskSchema), (req, res) => {
+// Complete: hem eski tekil 'photo' alanını hem yeni çoklu 'photos' alanını kabul eder.
+const completeUpload = housekeepingPhotoUpload.fields([{ name: 'photo', maxCount: 1 }, { name: 'photos', maxCount: 10 }])
+housekeepingRouter.post('/tasks/:id/complete', ...hkAccess, completeUpload, verifyImageMagicBytes, coerceCompleteBody, validate(completeTaskSchema), (req, res) => {
   try {
-    const photoUrl = req.file ? '/uploads/' + req.file.filename : null
-    svc.completeTaskService(+req.params.id, req.user.id, req.validated.checklist || null, req.validated.via_qr, photoUrl)
+    const taskId = +req.params.id
+    const files = [...(req.files?.photo || []), ...(req.files?.photos || [])]
+    svc.completeTaskService(taskId, req.user.id, req.validated.checklist || null, req.validated.via_qr, null)
+    if (files.length) {
+      svc.addTaskPhotosService(taskId, files.map(f => ({
+        photo_url: '/uploads/' + f.filename, category: req.validated.category, caption: req.validated.caption,
+      })), req.user.id)
+    }
     res.json({ ok: true })
   }
   catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+// ── Görev fotoğrafları (çoklu) ──
+housekeepingRouter.get('/tasks/:id/photos', ...hkAccess, (req, res) => {
+  try { res.json({ photos: svc.listTaskPhotosService(+req.params.id) }) }
+  catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+const taskPhotosUpload = housekeepingPhotoUpload.array('photos', 10)
+housekeepingRouter.post('/tasks/:id/photos', ...hkAccess, taskPhotosUpload, verifyImageMagicBytes, validate(addTaskPhotoSchema), (req, res) => {
+  try {
+    const files = req.files || []
+    if (!files.length) return res.status(400).json({ error: 'En az bir fotoğraf gerekli' })
+    const added = svc.addTaskPhotosService(+req.params.id, files.map(f => ({
+      photo_url: '/uploads/' + f.filename, category: req.validated.category, caption: req.validated.caption,
+    })), req.user.id)
+    res.status(201).json({ photos: added })
+  }
+  catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+housekeepingRouter.patch('/tasks/:id/photos/:photoId', ...hkAccess, validate(updateTaskPhotoSchema), (req, res) => {
+  try { res.json(svc.updateTaskPhotoService(+req.params.id, +req.params.photoId, req.validated, req.user.id)) }
+  catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
+})
+
+housekeepingRouter.delete('/tasks/:id/photos/:photoId', ...managerAccess, (req, res) => {
+  try { res.json(svc.deleteTaskPhotoService(+req.params.id, +req.params.photoId, req.user.id)) }
+  catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
 })
 
 housekeepingRouter.patch('/tasks/:id/uncomplete', ...hkAccess, (req, res) => {

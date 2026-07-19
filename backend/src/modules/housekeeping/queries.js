@@ -134,6 +134,17 @@ export function addTaskPhotos(taskId, photos = [], userId = null) {
   return listTaskPhotos(taskId).filter(p => ids.includes(p.id))
 }
 
+// Fotoğrafın kategori/açıklamasını günceller. Bulunamazsa null.
+export function updateTaskPhoto(taskId, photoId, patch = {}) {
+  const db = getDB()
+  const row = db.prepare('SELECT * FROM cleaning_task_photos WHERE id=? AND task_id=?').get(photoId, taskId)
+  if (!row) return null
+  const category = patch.category !== undefined ? normalizePhotoCategory(patch.category) : row.category
+  const caption = patch.caption !== undefined ? (patch.caption || null) : row.caption
+  db.prepare('UPDATE cleaning_task_photos SET category=?, caption=? WHERE id=?').run(category, caption, photoId)
+  return db.prepare('SELECT * FROM cleaning_task_photos WHERE id=?').get(photoId)
+}
+
 // Fotoğrafı siler; silinen kaydı döner (çağıran dosyayı diskten kaldırır). Kapak resenkronlanır.
 export function deleteTaskPhoto(taskId, photoId) {
   const db = getDB()

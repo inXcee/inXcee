@@ -34,6 +34,16 @@ function localUploadPath(photoUrl, uploadsDir) {
   return candidate
 }
 
+// Tek bir yükleme dosyasını güvenli şekilde diskten kaldırır (uploads dizini dışına çıkamaz).
+export function removeHousekeepingPhotoFile(photoUrl, uploadsDir = process.env.UPLOADS_DIR || 'uploads') {
+  const filePath = localUploadPath(photoUrl, uploadsDir)
+  if (!filePath) return false
+  try {
+    if (fs.existsSync(filePath)) { fs.unlinkSync(filePath); return true }
+  } catch { /* ignore */ }
+  return false
+}
+
 export function cleanupHousekeepingPhotos({
   uploadsDir = process.env.UPLOADS_DIR || 'uploads',
   now = new Date(),

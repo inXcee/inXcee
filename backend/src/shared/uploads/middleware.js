@@ -66,6 +66,27 @@ export async function verifyMagicBytes(req, res, next) {
   }
 }
 
+// Çoklu dosya (array/fields) VEYA tekil (req.file) resim yüklemeleri için magic-bytes doğrulama.
+// verifyMagicBytes yalnızca req.file'a bakar; çoklu yüklemede bu kullanılmalı.
+export async function verifyImageMagicBytes(req, res, next) {
+  const files = req.files ? Object.values(req.files).flat() : (req.file ? [req.file] : [])
+  if (!files.length) return next()
+  try {
+    for (const file of files) {
+      const buffer = fs.readFileSync(file.path)
+      const detected = await fileTypeFromBuffer(buffer)
+      if (!detected || !ALLOWED_MIME.has(detected.mime)) {
+        files.forEach(item => { try { fs.unlinkSync(item.path) } catch { /* ignore */ } })
+        return res.status(400).json({ error: 'Dosya formatı doğrulanamadı. Sadece gerçek JPEG/PNG/WebP kabul edilir.' })
+      }
+    }
+    next()
+  } catch (e) {
+    files.forEach(file => { try { fs.unlinkSync(file.path) } catch { /* ignore */ } })
+    next(e)
+  }
+}
+
 export async function verifyDocumentMagicBytes(req, res, next) {
   const files = req.files ? Object.values(req.files).flat() : (req.file ? [req.file] : [])
   if (!files.length) return next()

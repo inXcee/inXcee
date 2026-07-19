@@ -6,6 +6,7 @@ import {
   cleanupHousekeepingPhotos,
   getHousekeepingPhotoRetentionDays,
   setHousekeepingPhotoRetentionDays,
+  removeHousekeepingPhotoFile,
 } from './photo-retention.js'
 
 export const generateDailyTasksService  = q.generateDailyTasks
@@ -60,6 +61,30 @@ export function completeFloorTasksService(block, floor, date, userId) {
 export function completeTaskService(taskId, userId, checklist, viaQr = false, photoUrl = null) {
   q.completeTask(taskId, userId, checklist, viaQr, photoUrl)
   logAudit(userId, 'task_complete', 'housekeeping', taskId, viaQr ? 'via_qr' : photoUrl ? 'with_photo' : null)
+}
+
+// ── Çoklu fotoğraf servisleri ─────────────────────────────────────────────────
+export const listTaskPhotosService = q.listTaskPhotos
+
+export function addTaskPhotosService(taskId, photos, userId) {
+  const added = q.addTaskPhotos(taskId, photos, userId)
+  if (added.length) logAudit(userId, 'task_photos_add', 'housekeeping', taskId, `${added.length} foto`)
+  return added
+}
+
+export function updateTaskPhotoService(taskId, photoId, patch, userId) {
+  const row = q.updateTaskPhoto(taskId, photoId, patch)
+  if (!row) throw Object.assign(new Error('Fotoğraf bulunamadı'), { statusCode: 404 })
+  logAudit(userId, 'task_photo_update', 'housekeeping', taskId, `#${photoId}`)
+  return row
+}
+
+export function deleteTaskPhotoService(taskId, photoId, userId) {
+  const row = q.deleteTaskPhoto(taskId, photoId)
+  if (!row) throw Object.assign(new Error('Fotoğraf bulunamadı'), { statusCode: 404 })
+  removeHousekeepingPhotoFile(row.photo_url)
+  logAudit(userId, 'task_photo_delete', 'housekeeping', taskId, `#${photoId}`)
+  return { ok: true }
 }
 
 export const uncompleteTaskService = q.uncompleteTask

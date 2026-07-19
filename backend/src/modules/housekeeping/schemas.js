@@ -39,9 +39,28 @@ export const updateStaffSchema = z.object({
   assigned_floor: z.coerce.number().int().nullable().optional(),
 })
 
+const photoCategoryEnum = z.enum(['genel', 'oncesi', 'sonrasi', 'detay', 'hasar'], {
+  errorMap: () => ({ message: 'Geçersiz kategori' }),
+}).optional()
+const photoCaption = z.string().trim().max(300, 'Açıklama çok uzun').nullish()
+
 export const completeTaskSchema = z.object({
   checklist: z.any().optional(),
   via_qr: z.coerce.boolean().optional().default(false),
+  category: photoCategoryEnum,
+  caption: photoCaption,
+})
+
+export const addTaskPhotoSchema = z.object({
+  category: photoCategoryEnum,
+  caption: photoCaption,
+})
+
+export const updateTaskPhotoSchema = z.object({
+  category: photoCategoryEnum,
+  caption: photoCaption,
+}).refine(v => v.category !== undefined || v.caption !== undefined, {
+  message: 'Güncellenecek alan yok (category veya caption)',
 })
 
 export const photoRetentionSchema = z.object({
