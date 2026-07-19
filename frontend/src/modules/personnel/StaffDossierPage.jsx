@@ -1,6 +1,6 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { SkeletonCard } from '../../shared/components/Skeleton.jsx'
 import { useUrlParamState } from '../../shared/hooks/useUrlParamState.js'
@@ -19,10 +19,13 @@ import {
 } from './dossier/StaffDossierShared.jsx'
 import StaffDocumentsPanel from './dossier/StaffDocumentsPanel.jsx'
 import {
-  StaffPerformancePanel, StaffSafetyPanel, StaffEquipmentPanel, StaffChecklistPanel,
+  StaffSafetyPanel, StaffEquipmentPanel, StaffChecklistPanel,
 } from './dossier/StaffOperationalPanels.jsx'
+import StaffPerformancePanel from './dossier/StaffPerformancePanel.jsx'
 import { StaffNotesPanel, StaffTimelinePanel } from './dossier/StaffNotesTimeline.jsx'
 import StaffUniformPanel from './dossier/StaffUniformPanel.jsx'
+import { StaffFormSheet } from '../shifts/tabs/StaffTab.jsx'
+import { useToastStore } from '../../shared/store/toastStore.js'
 
 const TABS = [
   ['overview', 'Genel Bakış'],
@@ -38,6 +41,50 @@ const TABS = [
   ['timeline', 'Zaman Çizelgesi'],
 ]
 
+const SHIFT_STATUS_LABELS = {
+  worked: 'Çalışma',
+  off: 'Hafta tatili',
+  on_leave: 'İzinli',
+  absent: 'Devamsız',
+  sick: 'Raporlu',
+}
+
+function localIsoDate() {
+  const now = new Date()
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+}
+
+function asList(value) {
+  return Array.isArray(value) ? value : []
+}
+
+function staffEditForm(person) {
+  return {
+    full_name: person.full_name || '',
+    tc_no: person.tc_no || '',
+    phone: person.phone || '',
+    email: person.email || '',
+    position: person.position || '',
+    department_id: person.department_id?.toString() || '',
+    role_id: person.role_id?.toString() || '',
+    primary_work_location_id: person.primary_work_location_id?.toString() || '',
+    assignment_effective_from: localIsoDate(),
+    assignment_note: '',
+    hire_date: person.hire_date || '',
+    contract_end: person.contract_end || '',
+    birth_date: person.birth_date || '',
+    address: person.address || '',
+    emergency_contact: person.emergency_contact || '',
+    emergency_phone: person.emergency_phone || '',
+    blood_type: person.blood_type || '',
+    gender: person.gender || 'male',
+    salary: person.salary?.toString() || '',
+    iban: person.iban || '',
+    notes: person.notes || '',
+    is_active: Number(person.is_active) === 1 ? 1 : 0,
+  }
+}
+
 function ErrorState({ staffId, error, onBack }) {
   return (
     <div style={{ maxWidth: 680, padding: 8 }}>
@@ -52,6 +99,81 @@ function ErrorState({ staffId, error, onBack }) {
       </div>
     </div>
   )
+}
+
+function TrackingItem({ eyebrow, title, detail, tone = 'var(--blue)', warning = false, onClick }) {
+  return (
+    <button type="button" onClick={onClick} aria-label={`${eyebrow}: ${title}`} style={{
+      minWidth: 0, display: 'grid', gridTemplateColumns: '9px minmax(0, 1fr)', gap: 9,
+      padding: '10px 11px', borderRadius: 10, textAlign: 'left', cursor: 'pointer', color: 'inherit',
+      background: warning ? 'rgba(240,165,0,.07)' : 'var(--surface2)',
+      border: `1px solid ${warning ? 'rgba(240,165,0,.28)' : 'var(--border)'}`,
+    }}>
+      <span style={{ width: 8, height: 8, borderRadius: '50%', background: warning ? 'var(--accent)' : tone, marginTop: 3 }} />
+      <span style={{ minWidth: 0 }}>
+        <span style={{ display: 'block', fontFamily: 'var(--mono)', color: 'var(--text3)', fontSize: 8, letterSpacing: .8 }}>{eyebrow}</span>
+        <strong style={{ display: 'block', marginTop: 3, fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title || '—'}</strong>
+        <span style={{ display: 'block', marginTop: 3, color: warning ? 'var(--accent)' : 'var(--text3)', fontSize: 9, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{detail || 'Ayrıntıyı aç'}</span>
+      </span>
+    </button>
+  )
+}
+
+function StaffTrackingCenter({ dossier, staffId, onNavigate, onEdit }) {
+  const person = dossier.person || {}
+  const todayShift = dossier.today?.shift
+  const nextShift = dossier.next_shift
+  const room = dossier.room
+  const riskCount = dossier.risks?.length || 0
+  const documentIssues = Number(dossier.documents?.missing || 0) + Number(dossier.documents?.expired || 0)
+  const todayStatus = todayShift?.shift_name || SHIFT_STATUS_LABELS[todayShift?.status] || todayShift?.status
+  const nextStatus = nextShift?.shift_name || SHIFT_STATUS_LABELS[nextShift?.status] || nextShift?.status
+  const todayHours = todayShift?.start_hour != null ? `${String(todayShift.start_hour).padStart(2, '0')}:00–${String(todayShift.end_hour).padStart(2, '0')}:00` : null
+  const assignmentMissing = !person.role_name || !person.primary_work_location_name
+
+  return (
+    <section aria-label="Personel takip merkezi" style={{
+      padding: 12, borderRadius: 13, border: '1px solid var(--border)',
+      background: 'linear-gradient(135deg, var(--surface), rgba(59,140,240,.035))',
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 9 }}>
+        <div>
+          <div style={{ fontFamily: 'var(--display)', fontSize: 13, letterSpacing: 1 }}>PERSONEL TAKİP MERKEZİ</div>
+          <div style={{ color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: 8, marginTop: 2 }}>Güncel görev, yer, vardiya ve açık kontroller</div>
+        </div>
+        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          {onEdit && <button type="button" className="btn btn-ghost btn-xs" onClick={onEdit}>Bilgileri güncelle</button>}
+          <Link className="btn btn-primary btn-xs" to={`/shifts?tab=schedule&staff=${staffId}`}>Vardiyaya git</Link>
+        </div>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(175px, 1fr))', gap: 7 }}>
+        <TrackingItem eyebrow="GÖREV VE ANA NOKTA" title={`${person.dept_name || 'Departman yok'} · ${person.role_name || person.position || 'Rol yok'}`}
+          detail={person.primary_work_location_name || 'Ana çalışma noktası eksik'} warning={assignmentMissing} onClick={() => onNavigate('identity')} />
+        <TrackingItem eyebrow="BUGÜNKÜ PLAN" title={todayStatus || 'Vardiya planı yok'}
+          detail={[todayHours, todayShift?.work_location_name || person.primary_work_location_name].filter(Boolean).join(' · ') || 'Plan oluşturmak için açın'}
+          tone={todayShift ? 'var(--green)' : 'var(--text3)'} warning={!!todayShift && !todayShift.work_location_name && !person.primary_work_location_name} onClick={() => onNavigate('work')} />
+        <TrackingItem eyebrow="SONRAKİ VARDİYA" title={nextShift ? `${nextShift.work_date} · ${nextStatus || 'Planlı'}` : 'Planlanmış vardiya yok'}
+          detail={nextShift?.work_location_name || 'Vardiya planını görüntüle'} tone="var(--purple)" onClick={() => onNavigate('work')} />
+        <TrackingItem eyebrow="KONAKLAMA" title={room ? `${room.block}-${room.room_no} · Yatak ${room.bed_no || '—'}` : 'Oda ataması yok'}
+          detail={room?.floor != null ? `${room.floor}. kat` : 'Operasyon bağlantılarını aç'} warning={!room} tone="var(--teal)" onClick={() => onNavigate('operations')} />
+        <TrackingItem eyebrow="İLETİŞİM" title={person.phone || 'Telefon eksik'} detail={person.email || 'E-posta eksik'}
+          warning={!person.phone || !person.email} onClick={() => onNavigate('identity')} />
+        <TrackingItem eyebrow="AÇIK KONTROLLER" title={riskCount ? `${riskCount} uyarı · Risk ${dossier.risk_score || 0}` : 'Açık kritik uyarı yok'}
+          detail={documentIssues ? `${documentIssues} belge konusu var` : `Belge tamamlama %${dossier.documents?.completion_rate ?? 100}`}
+          warning={riskCount > 0 || documentIssues > 0} tone="var(--green)" onClick={() => onNavigate(documentIssues ? 'documents' : 'overview')} />
+      </div>
+    </section>
+  )
+}
+
+function dossierTabCount(tab, dossier) {
+  const counters = dossier.counters || {}
+  if (tab === 'overview') return dossier.risks?.length || 0
+  if (tab === 'documents') return Number(dossier.documents?.missing || 0) + Number(dossier.documents?.expired || 0)
+  if (tab === 'equipment') return Number(counters.active_inventory || 0) + Number(counters.active_kkd || 0)
+  if (tab === 'notes') return Number(counters.open_followups || 0)
+  if (tab === 'work') return Number(counters.open_attendance_exceptions || 0)
+  return 0
 }
 
 function OverviewTab({ dossier }) {
@@ -270,7 +392,10 @@ export default function StaffDossierPage() {
   const params = useParams()
   const staffId = params.staffId || params.id
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const [tab, setTab] = useUrlParamState('tab', 'overview')
+  const [showEdit, setShowEdit] = useState(false)
+  const [editForm, setEditForm] = useState({})
   const { data: dossier, isLoading, error } = useStaffDossier(staffId)
   const needsDetail = tab === 'identity' || tab === 'work'
   const detailQuery = useQuery({
@@ -284,6 +409,36 @@ export default function StaffDossierPage() {
     queryFn: () => api.get(`/personnel/${staffId}/360`).then(response => response.data),
     enabled: !!staffId && tab === 'operations',
     staleTime: 60000,
+  })
+  const departmentsQuery = useQuery({
+    queryKey: ['shift-departments'],
+    queryFn: () => api.get('/shifts/departments').then(response => response.data),
+    enabled: showEdit,
+    staleTime: 60000,
+  })
+  const rolesQuery = useQuery({
+    queryKey: ['shift-roles'],
+    queryFn: () => api.get('/shifts/roles').then(response => response.data),
+    enabled: showEdit,
+    staleTime: 60000,
+  })
+  const locationsQuery = useQuery({
+    queryKey: ['shift-work-locations'],
+    queryFn: () => api.get('/shifts/work-locations').then(response => response.data),
+    enabled: showEdit,
+    staleTime: 60000,
+  })
+  const updateStaff = useMutation({
+    mutationFn: payload => api.put(`/shifts/staff/${staffId}`, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['staff-dossier', String(staffId)] })
+      queryClient.invalidateQueries({ queryKey: ['staff-detail', String(staffId)] })
+      queryClient.invalidateQueries({ queryKey: ['staff-list'] })
+      queryClient.invalidateQueries({ queryKey: ['staff-directory-overview'] })
+      setShowEdit(false)
+      useToastStore.getState().addToast('Personel dosyası güncellendi', 'success')
+    },
+    onError: error => useToastStore.getState().addToast(error.response?.data?.error || 'Personel güncellenemedi', 'error'),
   })
   const activeTab = useMemo(() => TABS.some(([key]) => key === tab) ? tab : 'overview', [tab])
 
@@ -304,8 +459,30 @@ export default function StaffDossierPage() {
   if (isLoading) return <SkeletonCard lines={10} />
   if (error || !dossier?.person) return <ErrorState staffId={staffId} error={error} onBack={() => navigate(-1)} />
 
+  const openEdit = () => {
+    setEditForm(staffEditForm(dossier.person))
+    setShowEdit(true)
+  }
+  const submitEdit = () => {
+    const payload = {
+      ...editForm,
+      department_id: editForm.department_id ? Number(editForm.department_id) : null,
+      role_id: editForm.role_id ? Number(editForm.role_id) : null,
+      primary_work_location_id: editForm.primary_work_location_id ? Number(editForm.primary_work_location_id) : null,
+      is_active: editForm.is_active ? 1 : 0,
+    }
+    if (dossier.access?.can_view_sensitive_fields) payload.salary = editForm.salary ? Number(editForm.salary) : null
+    else {
+      delete payload.tc_no
+      delete payload.salary
+      delete payload.iban
+    }
+    updateStaff.mutate(payload)
+  }
+
   const actions = (
     <>
+      {dossier.access?.can_manage_followups && <button type="button" className="btn btn-primary btn-sm" onClick={openEdit}>✎ Dosyayı Düzenle</button>}
       <Link className="btn btn-primary btn-sm" to={`/shifts?tab=schedule&staff=${staffId}`}>+ Vardiya</Link>
       <Link className="btn btn-ghost btn-sm" to={`/shifts?tab=leave&staff=${staffId}`}>İzin</Link>
       <Link className="btn btn-ghost btn-sm" to={`/shifts?tab=overtime&staff=${staffId}`}>Mesai</Link>
@@ -319,19 +496,29 @@ export default function StaffDossierPage() {
         <button className="btn btn-ghost btn-sm" onClick={() => navigate(-1)}>← Geri</button>
       </div>
       <DossierHeader dossier={dossier} actions={actions} />
+      <StaffTrackingCenter dossier={dossier} staffId={staffId} onNavigate={setTab}
+        onEdit={dossier.access?.can_manage_followups ? openEdit : null} />
       <div role="tablist" aria-label="Personel dosyası sekmeleri" onKeyDown={onTabKeyDown} style={{
         display: 'flex', gap: 4, overflowX: 'auto', padding: 4,
         background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 11,
       }}>
-        {TABS.map(([key, label]) => (
-          <button key={key} type="button" role="tab" id={`dossier-tab-${key}`}
-            aria-selected={activeTab === key} tabIndex={activeTab === key ? 0 : -1}
-            onClick={() => setTab(key)}
-            className={`btn btn-sm ${activeTab === key ? 'btn-primary' : 'btn-ghost'}`}
-            style={{ whiteSpace: 'nowrap', flex: '1 0 auto' }}>
-            {label}
-          </button>
-        ))}
+        {TABS.map(([key, label]) => {
+          const count = dossierTabCount(key, dossier)
+          return (
+            <button key={key} type="button" role="tab" id={`dossier-tab-${key}`}
+              aria-selected={activeTab === key} tabIndex={activeTab === key ? 0 : -1}
+              onClick={() => setTab(key)}
+              className={`btn btn-sm ${activeTab === key ? 'btn-primary' : 'btn-ghost'}`}
+              style={{ whiteSpace: 'nowrap', flex: '1 0 auto', gap: 5 }}>
+              <span>{label}</span>
+              {count > 0 && <span aria-hidden="true" title={`${count} açık kayıt`} style={{
+                minWidth: 17, height: 17, padding: '0 4px', borderRadius: 9, display: 'inline-grid', placeItems: 'center',
+                background: activeTab === key ? 'rgba(255,255,255,.22)' : 'rgba(240,165,0,.14)',
+                color: activeTab === key ? 'inherit' : 'var(--accent)', fontFamily: 'var(--mono)', fontSize: 8,
+              }}>{count}</span>}
+            </button>
+          )
+        })}
       </div>
       {activeTab === 'overview' && <OverviewTab dossier={dossier} />}
       {activeTab === 'identity' && <IdentityTab dossier={dossier} detail={detailQuery.data} isLoading={detailQuery.isLoading} />}
@@ -349,6 +536,21 @@ export default function StaffDossierPage() {
       {activeTab === 'operations' && <OperationsTab dossier={dossier} operations={operationsQuery.data} isLoading={operationsQuery.isLoading} />}
       {activeTab === 'notes' && <StaffNotesPanel staffId={staffId} access={dossier.access} />}
       {activeTab === 'timeline' && <StaffTimelinePanel staffId={staffId} />}
+      {showEdit && (
+        <StaffFormSheet
+          editStaff={dossier.person}
+          form={editForm}
+          setForm={setEditForm}
+          handleSubmit={submitEdit}
+          createMut={{ isPending: false }}
+          updateMut={updateStaff}
+          departments={asList(departmentsQuery.data)}
+          staffRoles={asList(rolesQuery.data)}
+          workLocations={asList(locationsQuery.data)}
+          canViewSensitive={dossier.access?.can_view_sensitive_fields}
+          onClose={() => setShowEdit(false)}
+        />
+      )}
     </div>
   )
 }

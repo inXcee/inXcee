@@ -1,4 +1,4 @@
-import { fireEvent, screen } from '@testing-library/react'
+import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithProviders } from '../../test/renderWithProviders.jsx'
@@ -6,6 +6,7 @@ import { renderWithProviders } from '../../test/renderWithProviders.jsx'
 vi.mock('../../shared/api/client.js', () => ({
   default: {
     get: vi.fn(),
+    put: vi.fn(),
   },
 }))
 
@@ -26,7 +27,7 @@ const DOSSIER = {
     phone: '05550000000',
     email: 'ayse@example.com',
   },
-  access: { can_view_sensitive_fields: false, can_manage_operational_documents: true, can_manage_sensitive_documents: false },
+  access: { can_view_sensitive_fields: false, can_manage_operational_documents: true, can_manage_sensitive_documents: false, can_manage_followups: true },
   identity_link: { status: 'confirmed', personnel_id: 17 },
   today: { shift: { status: 'worked', shift_name: 'Gündüz', start_hour: 8, end_hour: 17 }, attendance: null },
   next_shift: { work_date: '2026-07-17', shift_name: 'Gündüz' },
@@ -49,6 +50,7 @@ const DOSSIER = {
 describe('StaffDossierPage smoke', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    api.put.mockResolvedValue({ data: { ok: true } })
     window.history.replaceState({}, '', '/shifts/personnel/7')
     api.get.mockImplementation(url => {
       if (url === '/personnel/7/dossier') return Promise.resolve({ data: DOSSIER })
@@ -95,6 +97,9 @@ describe('StaffDossierPage smoke', () => {
     )
 
     expect(await screen.findByText('Ayşe Dossier')).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Personel takip merkezi' })).toBeInTheDocument()
+    expect(screen.getByText('PERSONEL TAKİP MERKEZİ')).toBeInTheDocument()
+    expect(screen.getAllByTitle('3 açık kayıt')).toHaveLength(2)
     expect(screen.getByText('2 zorunlu belge eksik')).toBeInTheDocument()
     expect(screen.getByText('%75')).toBeInTheDocument()
 
@@ -133,5 +138,42 @@ describe('StaffDossierPage smoke', () => {
     fireEvent.keyDown(tablist, { key: 'ArrowRight' })
     expect(await screen.findByText('GÖREV VE LOKASYON GEÇMİŞİ')).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'Kimlik ve İletişim' })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('takip merkezi kartlarından doğru personel ayrıntısına tek tıkla geçer', async () => {
+    renderWithProviders(
+      <Routes>
+        <Route path="/shifts/personnel/:staffId" element={<StaffDossierPage />} />
+      </Routes>,
+      { route: '/shifts/personnel/7' },
+    )
+
+    await screen.findByText('PERSONEL TAKİP MERKEZİ')
+    fireEvent.click(screen.getByRole('button', { name: /GÖREV VE ANA NOKTA/i }))
+    expect(await screen.findByText('GÖREV VE LOKASYON GEÇMİŞİ')).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Kimlik ve İletişim' })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('personel dosyasını aynı ekrandan kapsamlı düzenler', async () => {
+    renderWithProviders(
+      <Routes>
+        <Route path="/shifts/personnel/:staffId" element={<StaffDossierPage />} />
+      </Routes>,
+      { route: '/shifts/personnel/7' },
+    )
+
+    fireEvent.click(await screen.findByRole('button', { name: /Dosyayı Düzenle/i }))
+    const phone = screen.getByDisplayValue('05550000000')
+    fireEvent.change(phone, { target: { value: '05551112233' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Güncelle' }))
+
+    await waitFor(() => expect(api.put).toHaveBeenCalledWith('/shifts/staff/7', expect.objectContaining({
+      full_name: 'Ayşe Dossier',
+      phone: '05551112233',
+      is_active: 1,
+    })))
+    expect(api.put.mock.calls[0][1]).not.toHaveProperty('tc_no')
+    expect(api.put.mock.calls[0][1]).not.toHaveProperty('salary')
+    expect(api.put.mock.calls[0][1]).not.toHaveProperty('iban')
   })
 })

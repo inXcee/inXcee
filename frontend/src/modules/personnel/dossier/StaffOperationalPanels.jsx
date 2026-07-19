@@ -33,7 +33,7 @@ function ErrorNote({ error }) {
 }
 
 /* ─── Performans ve Hedefler ─────────────────────────────── */
-export function StaffPerformancePanel({ staffId, canManage }) {
+function LegacyStaffPerformancePanel({ staffId, canManage }) {
   const qc = useQueryClient()
   const reviews = useStaffResource('staff-perf-reviews', staffId, `/performance/reviews?staff_id=${staffId}`)
   const goals = useStaffResource('staff-perf-goals', staffId, `/performance/goals?staff_id=${staffId}`)
