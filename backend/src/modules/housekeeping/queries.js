@@ -220,6 +220,7 @@ export function getPhotoOverview({ days = 7, block, floor } = {}) {
            ct.scheduled_at, ct.completed_at, ct.skipped, ct.skip_reason,
            ct.photo_url, ct.verified_by_qr,
            (SELECT COUNT(*) FROM cleaning_task_photos p WHERE p.task_id=ct.id) AS photo_count,
+           (SELECT GROUP_CONCAT(DISTINCT p.category) FROM cleaning_task_photos p WHERE p.task_id=ct.id) AS photo_categories,
            CASE
              WHEN ct.task_type='room' THEN 'room'
              WHEN ct.qr_location LIKE '%-corridor' THEN 'corridor'

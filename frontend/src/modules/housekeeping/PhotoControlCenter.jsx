@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { useAuthStore } from '../../shared/store/authStore.js'
+import { PHOTO_CATEGORIES, PHOTO_CATEGORY_MAP } from './shared.jsx'
+import TaskPhotoGallery from './TaskPhotoGallery.jsx'
 
 const AREA_META = {
   room: { label: 'Oda', icon: '🛏', color: 'var(--blue)' },
@@ -43,9 +45,11 @@ export default function PhotoControlCenter() {
   const [floor, setFloor] = useState('all')
   const [area, setArea] = useState('all')
   const [status, setStatus] = useState('all')
+  const [category, setCategory] = useState('all')
   const [dateScope, setDateScope] = useState('today')
   const [query, setQuery] = useState('')
   const [visible, setVisible] = useState(48)
+  const [galleryTask, setGalleryTask] = useState(null)
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['housekeeping-photo-overview', days],
@@ -77,9 +81,10 @@ export default function PhotoControlCenter() {
     if (floor !== 'all' && Number(item.floor) !== Number(floor)) return false
     if (area !== 'all' && item.area_code !== area) return false
     if (status !== 'all' && taskStatus(item) !== status) return false
+    if (category !== 'all' && !String(item.photo_categories || '').split(',').includes(category)) return false
     if (query && !`${item.area} ${item.qr_location}`.toLocaleLowerCase('tr-TR').includes(query.toLocaleLowerCase('tr-TR'))) return false
     return true
-  }), [items, dateScope, today, block, floor, area, status, query])
+  }), [items, dateScope, today, block, floor, area, status, category, query])
 
   const filteredSummary = useMemo(() => filtered.reduce((totals, item) => {
     totals[taskStatus(item)]++
@@ -87,7 +92,7 @@ export default function PhotoControlCenter() {
   }, { with_photo: 0, without_photo: 0, pending: 0, skipped: 0 }), [filtered])
 
   const resetFilters = () => {
-    setBlock('all'); setFloor('all'); setArea('all'); setStatus('all'); setDateScope('today'); setQuery(''); setVisible(48)
+    setBlock('all'); setFloor('all'); setArea('all'); setStatus('all'); setCategory('all'); setDateScope('today'); setQuery(''); setVisible(48)
   }
 
   return (
@@ -155,6 +160,10 @@ export default function PhotoControlCenter() {
             <option value="all">Tüm alanlar</option>
             {Object.entries(AREA_META).map(([key, meta]) => <option key={key} value={key}>{meta.label}</option>)}
           </select>
+          <select className="form-select" aria-label="Kategori filtresi" value={category} onChange={event => setCategory(event.target.value)} style={{ width: '135px' }}>
+            <option value="all">Tüm kategoriler</option>
+            {PHOTO_CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.icon} {c.label}</option>)}
+          </select>
           <input className="form-input" aria-label="Oda veya alan ara" value={query} onChange={event => setQuery(event.target.value)} placeholder="Oda / alan ara…" style={{ width: '175px' }} />
           <button className="btn btn-ghost btn-sm" onClick={resetFilters}>FİLTRELERİ SIFIRLA</button>
           <span style={{ marginLeft: 'auto', fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)' }}>{filtered.length} KAYIT</span>
@@ -181,19 +190,30 @@ export default function PhotoControlCenter() {
               <article key={item.id} className="panel" style={{ overflow: 'hidden', borderColor: state === 'without_photo' ? 'rgba(239,68,68,.55)' : undefined }}>
                 <div style={{ height: '3px', background: stateMeta.color }} />
                 {item.photo_url ? (
-                  <button onClick={() => window.open(item.photo_url, '_blank')} title="Fotoğrafı büyüt" style={{ width: '100%', height: '125px', border: 0, padding: 0, cursor: 'zoom-in', background: 'var(--surface2)' }}>
+                  <button onClick={() => setGalleryTask(item)} title={`${item.photo_count || 1} fotoğrafı gör`} style={{ position: 'relative', width: '100%', height: '125px', border: 0, padding: 0, cursor: 'zoom-in', background: 'var(--surface2)' }}>
                     <img loading="lazy" src={item.photo_url} alt={`${item.area} temizlik kanıtı`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    {item.photo_count > 1 && (
+                      <span style={{ position: 'absolute', top: '6px', right: '6px', background: 'rgba(0,0,0,.66)', color: '#fff', borderRadius: '999px', padding: '2px 8px', fontFamily: 'var(--mono)', fontSize: '10px', fontWeight: 700 }}>📷 {item.photo_count}</span>
+                    )}
                   </button>
                 ) : (
-                  <div style={{ height: '78px', display: 'grid', placeItems: 'center', background: state === 'without_photo' ? 'rgba(239,68,68,.08)' : 'var(--surface2)' }}>
-                    <div style={{ textAlign: 'center' }}><div style={{ fontSize: '24px' }}>{state === 'without_photo' ? '📷!' : meta.icon}</div><div style={{ fontFamily: 'var(--mono)', fontSize: '7px', color: stateMeta.color, marginTop: '3px' }}>{stateMeta.label.toUpperCase()}</div></div>
-                  </div>
+                  <button onClick={() => isManager && setGalleryTask(item)} title={isManager ? 'Fotoğraf ekle' : undefined} style={{ width: '100%', height: '78px', display: 'grid', placeItems: 'center', border: 0, cursor: isManager ? 'pointer' : 'default', background: state === 'without_photo' ? 'rgba(239,68,68,.08)' : 'var(--surface2)' }}>
+                    <div style={{ textAlign: 'center' }}><div style={{ fontSize: '24px' }}>{state === 'without_photo' ? '📷!' : meta.icon}</div><div style={{ fontFamily: 'var(--mono)', fontSize: '7px', color: stateMeta.color, marginTop: '3px' }}>{isManager && state === 'without_photo' ? '+ FOTO EKLE' : stateMeta.label.toUpperCase()}</div></div>
+                  </button>
                 )}
                 <div style={{ padding: '10px 11px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'start' }}>
                     <div>
                       <div style={{ fontFamily: 'var(--display)', fontSize: '13px', color: 'var(--text)' }}>{item.area}</div>
                       <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text3)', marginTop: '3px' }}>{item.block} BLOK · KAT {item.floor} · {meta.label}</div>
+                      {item.photo_categories && (
+                        <div style={{ display: 'flex', gap: '3px', flexWrap: 'wrap', marginTop: '4px' }}>
+                          {String(item.photo_categories).split(',').filter(Boolean).map(c => {
+                            const cm = PHOTO_CATEGORY_MAP[c]
+                            return cm ? <span key={c} style={{ fontFamily: 'var(--mono)', fontSize: '7px', color: cm.color, border: `1px solid ${cm.color}`, borderRadius: '4px', padding: '0 4px' }}>{cm.label}</span> : null
+                          })}
+                        </div>
+                      )}
                     </div>
                     <span style={{ color: stateMeta.color, fontWeight: 700 }} title={stateMeta.label}>{stateMeta.icon}</span>
                   </div>
@@ -217,6 +237,15 @@ export default function PhotoControlCenter() {
       <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text4)', marginTop: '12px', textAlign: 'center' }}>
         Temizlik kayıtları korunur; yalnızca kanıt fotoğrafları seçilen sürenin sonunda gece otomatik kaldırılır.
       </div>
+
+      {galleryTask && (
+        <TaskPhotoGallery
+          task={galleryTask}
+          isManager={isManager}
+          onClose={() => setGalleryTask(null)}
+          onChanged={() => qc.invalidateQueries({ queryKey: ['housekeeping-photo-overview'] })}
+        />
+      )}
     </div>
   )
 }
