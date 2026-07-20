@@ -30,10 +30,19 @@ git pull --ff-only
 NEW_COMMIT=$(git rev-parse HEAD)
 
 if [[ "$PREV_COMMIT" == "$NEW_COMMIT" ]]; then
-  ok "Zaten en güncel ($NEW_COMMIT). Çıkılıyor."
-  exit 0
+  # Git güncel ama build/PM2 reload yarım kalmış olabilir (pull başarılı olup sonraki
+  # adımlar çökerse tekrar çalıştırmak da burada çıkardı → sunucu eski kodu sunmaya
+  # devam ederdi). FORCE=1 ile build+reload zorlanır.
+  if [[ "${FORCE:-0}" == "1" ]]; then
+    ok "Zaten en güncel ($NEW_COMMIT) — FORCE=1, build/reload yine de çalıştırılıyor."
+  else
+    ok "Zaten en güncel ($NEW_COMMIT). Çıkılıyor."
+    echo "    Build/reload'u zorlamak için: FORCE=1 bash scripts/deploy/update.sh"
+    exit 0
+  fi
+else
+  ok "$PREV_COMMIT → $NEW_COMMIT"
 fi
-ok "$PREV_COMMIT → $NEW_COMMIT"
 
 step "2/6 npm ci"
 npm ci --silent
