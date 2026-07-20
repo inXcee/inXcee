@@ -29,6 +29,13 @@ const SECTION_TITLES = {
   zones: 'DAĞITIM YERİ × ÜRÜN',
   intakes: 'GELEN İRSALİYELER',
 }
+// İçindekiler tek satıra sığmalı — kısa adlar.
+const SECTION_SHORT = {
+  matrix: 'Yer × Gün matrisi',
+  days: 'Gün gün detay',
+  zones: 'Yer × Ürün',
+  intakes: 'İrsaliyeler',
+}
 
 // pdfkit'in `text(..., { goTo })` seçeneği lineBreak:false ile satır genişliğini
 // hesaplayamıyor (NaN → bozuk annotation). Bağlantı dikdörtgenini kendimiz veriyoruz.
@@ -237,16 +244,25 @@ function drawSummaryPage(doc, fonts, ctx) {
   // Tıklanabilir içindekiler — yalnız ek bölüm varsa
   let top = 134
   if (report.sections?.length) {
-    doc.font(fonts.bold).fontSize(6.5).fillColor(MUTED).text(text('EK BÖLÜMLER:'), margin, 131, { lineBreak: false })
-    let linkX = margin + doc.widthOfString(text('EK BÖLÜMLER:')) + 6
-    doc.font(fonts.bold).fontSize(6.5).fillColor(BAND)
-    for (const section of report.sections) {
-      const label = text(`▸ ${SECTION_TITLES[section]}`)
+    const prefix = text('EK BÖLÜMLER:')
+    const labels = report.sections.map(section => text(`▸ ${SECTION_SHORT[section]}`))
+    // Satır sağ marjı aşmasın: sığana kadar puntoyu düşür (geniş fontta kritik).
+    doc.font(fonts.bold)
+    let size = 6.5
+    const lineWidth = () => {
+      doc.fontSize(size)
+      return doc.widthOfString(prefix) + 6 + labels.reduce((sum, label) => sum + doc.widthOfString(label) + 10, 0)
+    }
+    while (size > 4.4 && lineWidth() > innerWidth) size = Math.max(4.4, size - 0.2)
+    doc.fillColor(MUTED).text(prefix, margin, 131, { lineBreak: false })
+    let linkX = margin + doc.widthOfString(prefix) + 6
+    doc.fillColor(BAND)
+    labels.forEach((label, index) => {
       const width = doc.widthOfString(label)
       doc.text(label, linkX, 131, { lineBreak: false })
-      linkArea(doc, `sec-${section}`, linkX, 129, width, 10)
+      linkArea(doc, `sec-${report.sections[index]}`, linkX, 129, width, 10)
       linkX += width + 10
-    }
+    })
     top = 145
   }
 
