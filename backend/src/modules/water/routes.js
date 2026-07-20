@@ -25,6 +25,7 @@ import {
   truckGateEntryService, buildTruckGateEntryPDF,
   sendTruckArrivalMailService, markTruckMailSentService, markTruckCheckedService, checkTruckArrivalAlerts,
   waybillPhotosService, createWaybillPhotoService, deleteWaybillPhotoService,
+  accountingReportService, writeAccountingReportPDF,
 } from './service.js'
 
 export const waterRouter = Router()
@@ -510,6 +511,22 @@ waterRouter.post('/monthly-close/:month/unlock', ...managerOnly, (req, res, next
     monthlyUnlockService(req.params.month)
     logAudit(req.user.id, 'water_month_unlock', 'water', null, req.params.month)
     res.json({ ok: true })
+  } catch (e) { fail(next, e) }
+})
+
+// ── Muhasebe raporu (gün gün gelen/dağıtılan — tek sayfa) ──
+waterRouter.get('/report/accounting', ...mgr, (req, res, next) => {
+  try { res.json(accountingReportService({ from: req.query.from, to: req.query.to })) } catch (e) { fail(next, e) }
+})
+waterRouter.get('/report/accounting.pdf', ...mgr, (req, res, next) => {
+  try {
+    const report = accountingReportService({ from: req.query.from, to: req.query.to })
+    const doc = new PDFDocument({ size: 'A4', margin: 28 })
+    res.setHeader('Content-Type', 'application/pdf')
+    res.setHeader('Content-Disposition', `attachment; filename="su-muhasebe-raporu-${report.from}_${report.to}.pdf"`)
+    doc.pipe(res)
+    writeAccountingReportPDF(report, doc)
+    logAudit(req.user.id, 'water_accounting_pdf', 'water', null, `${report.from}..${report.to}`)
   } catch (e) { fail(next, e) }
 })
 

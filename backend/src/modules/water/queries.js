@@ -477,6 +477,33 @@ export function productFlow({ from, to } = {}) {
   `).all(...params)
 }
 
+// Dönem başı devir: `before` gününden ÖNCEKİ tüm hareket + düzeltme neti (ürün bazında).
+export function openingBalances(before) {
+  return getDB().prepare(`
+    SELECT p.id,
+      COALESCE((SELECT SUM(CASE WHEN mv.type='in' THEN mv.qty_base ELSE -mv.qty_base END)
+                FROM water_movements mv WHERE mv.product_id = p.id AND mv.move_date < ?), 0)
+      + COALESCE((SELECT SUM(CASE WHEN a.direction='in' THEN a.qty_base ELSE -a.qty_base END)
+                  FROM water_adjustments a WHERE a.product_id = p.id AND a.move_date < ?), 0) AS opening_base
+    FROM water_products p
+    WHERE p.is_active = 1
+  `).all(before, before)
+}
+
+// Seçili aralıktaki işaretli düzeltme neti (ürün bazında)
+export function adjustmentFlow({ from, to } = {}) {
+  const cond = []
+  const params = []
+  if (from) { cond.push('move_date>=?'); params.push(from) }
+  if (to) { cond.push('move_date<=?'); params.push(to) }
+  const where = cond.length ? 'WHERE ' + cond.join(' AND ') : ''
+  return getDB().prepare(`
+    SELECT product_id, COALESCE(SUM(CASE WHEN direction='in' THEN qty_base ELSE -qty_base END), 0) AS adjust_base
+    FROM water_adjustments ${where}
+    GROUP BY product_id
+  `).all(...params)
+}
+
 // ── Stok düzeltme / sayım fişi (W7) ──
 // İşaretli net etki: in = +qty_base, out = −qty_base
 export function createAdjustment(a) {

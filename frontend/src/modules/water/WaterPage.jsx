@@ -717,6 +717,7 @@ function TrendPanel() {
 
 function MonthlyReportPanel({ summary, from, to, label }) {
   const [selectedDay, setSelectedDay] = useState(null)
+  const [pdfBusy, setPdfBusy] = useState(false)
   const dailyMap = useMemo(() => {
     const m = new Map()
     ;(summary?.daily || []).forEach(d => m.set(d.move_date, d))
@@ -745,6 +746,18 @@ function MonthlyReportPanel({ summary, from, to, label }) {
     .filter(d => (d.in_base || 0) > 0 || (d.out_base || 0) > 0)
     .sort((a, b) => b.iso.localeCompare(a.iso)), [days, dailyMap])
 
+  // Muhasebeye gönderilecek tek sayfa döküm — gün gün gelen/dağıtılan + ürün/yer/irsaliye kırılımı
+  const downloadAccountingPdf = async () => {
+    setPdfBusy(true)
+    try {
+      const r = await api.get('/water/report/accounting.pdf', { params: { from, to }, responseType: 'blob' })
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(r.data)
+      a.download = `su-muhasebe-raporu-${from}_${to}.pdf`; a.click(); URL.revokeObjectURL(a.href)
+      toastOk('Muhasebe raporu indirildi 🧾')
+    } catch { toastErr('Rapor oluşturulamadı') } finally { setPdfBusy(false) }
+  }
+
   return (
     <>
     <div className="panel" style={{ marginTop: '16px', borderTop: '3px solid var(--teal)' }}>
@@ -752,6 +765,16 @@ function MonthlyReportPanel({ summary, from, to, label }) {
         <div>
           <div className="panel-title">AYLIK RAPOR — {label}</div>
           <div className="panel-subtitle">Gün gün akış, eldeki stok ve bölge dağıtım özeti</div>
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            style={{ marginTop: '8px' }}
+            disabled={pdfBusy}
+            onClick={downloadAccountingPdf}
+            title={`${label} için gün gün gelen/dağıtılan dökümü — muhasebeye gönderilebilir tek sayfa PDF`}
+          >
+            {pdfBusy ? 'Hazırlanıyor…' : '🧾 Muhasebe Raporu (PDF)'}
+          </button>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(86px, 1fr))', gap: '8px', marginLeft: 'auto', minWidth: '360px' }}>
           {[

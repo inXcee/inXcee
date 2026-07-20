@@ -11,6 +11,7 @@ export { availableUnits, humanize, toBase, unitMultiplier } from './units.js'
 export { depositService, forecastService, summaryService, trendsService } from './analytics.js'
 export { notifyWaterOperations, WATER_OPERATION_ROLES } from './notifications.js'
 export { dailyDigestDeliveriesService } from './daily-digest.js'
+export { accountingReportService, writeAccountingReportPDF } from './report.js'
 export { intakeLotsService, updateIntakeLotService }
 export {
   batchDistributeService,

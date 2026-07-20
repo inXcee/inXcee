@@ -1,5 +1,5 @@
-import fs from 'node:fs'
 import { getDB } from '../../shared/db/index.js'
+import { registerTurkishFonts } from '../../shared/pdf/fonts.js'
 import { enqueue } from '../../shared/jobs/index.js'
 import { parseRecipients } from '../email/service.js'
 import * as q from './queries.js'
@@ -261,23 +261,6 @@ function sameTruckValue(left, right) {
   return (left ?? null) === (right ?? null)
 }
 
-function registerGatePdfFonts(doc) {
-  const candidates = [
-    ['C:/Windows/Fonts/arial.ttf', 'C:/Windows/Fonts/arialbd.ttf'],
-    ['/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'],
-    ['/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf', '/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf'],
-  ]
-  const pair = candidates.find(([regular, bold]) => fs.existsSync(regular) && fs.existsSync(bold))
-  if (!pair) return { regular: 'Helvetica', bold: 'Helvetica-Bold' }
-  try {
-    doc.registerFont('GateRegular', pair[0])
-    doc.registerFont('GateBold', pair[1])
-    return { regular: 'GateRegular', bold: 'GateBold' }
-  } catch {
-    return { regular: 'Helvetica', bold: 'Helvetica-Bold' }
-  }
-}
-
 export function truckGateEntryService(id) {
   const row = q.getTruckArrival(id)
   if (!row) throw Object.assign(new Error('Tır kaydı bulunamadı'), { statusCode: 404 })
@@ -286,7 +269,7 @@ export function truckGateEntryService(id) {
 
 export function buildTruckGateEntryPDF(truck, doc) {
   if (!truck?.id) throw Object.assign(new Error('Tır kaydı bulunamadı'), { statusCode: 404 })
-  const fonts = registerGatePdfFonts(doc)
+  const fonts = registerTurkishFonts(doc, 'Gate')
   const entry = truck.gate_entry || {}
   const pageWidth = doc.page.width
   const pageHeight = doc.page.height
