@@ -170,6 +170,18 @@ const nf = new Intl.NumberFormat('tr-TR')
 const num = value => nf.format(Math.round(value || 0))
 const signed = value => (value > 0 ? `+${num(value)}` : num(value))
 
+// Sunucudaki font (DejaVu) Windows'takinden (Arial) geniştir; 8 haneli bir toplam
+// sütuna sığmayabilir. Kırpmak yerine o hücrenin puntosunu düşürüyoruz.
+function fitFontSize(doc, value, available, base, min = 5) {
+  let size = base
+  doc.fontSize(size)
+  while (size > min && doc.widthOfString(value) > available) {
+    size = Math.max(min, size - 0.3)
+    doc.fontSize(size)
+  }
+  return size
+}
+
 function drawTable(doc, fonts, { x, y, width, title, columns, rows, note }) {
   const text = value => pdfText(value, fonts)
   let cursor = y
@@ -180,9 +192,11 @@ function drawTable(doc, fonts, { x, y, width, title, columns, rows, note }) {
   const rowHeight = 12.4
   doc.rect(x, cursor, width, 13).fill('#E2E8F0')
   let columnX = x
-  doc.font(fonts.bold).fontSize(6.6).fillColor('#334155')
+  doc.font(fonts.bold).fillColor('#334155')
   for (const column of columns) {
-    doc.text(text(column.label), columnX + 3, cursor + 3.6, { width: column.width - 6, align: column.align || 'left' })
+    const available = column.width - 6
+    fitFontSize(doc, text(column.label), available, 6.6, 4.6)
+    doc.text(text(column.label), columnX + 3, cursor + 3.6, { width: available, align: column.align || 'left', lineBreak: false })
     columnX += column.width
   }
   cursor += 13
@@ -193,13 +207,16 @@ function drawTable(doc, fonts, { x, y, width, title, columns, rows, note }) {
     columnX = x
     for (const column of columns) {
       const cell = column.cell(row)
+      const value = text(cell?.value ?? '—')
+      const available = column.width - 6
       doc.font(cell?.bold ? fonts.bold : fonts.regular).fillColor(cell?.color || INK)
-        .text(text(cell?.value ?? '—'), columnX + 3, cursor + 3.2, {
-          width: column.width - 6,
-          align: column.align || 'left',
-          ellipsis: true,
-          lineBreak: false,
-        })
+      const size = fitFontSize(doc, value, available, 7)
+      doc.text(value, columnX + 3, cursor + 3.2 + (7 - size) / 2, {
+        width: available,
+        align: column.align || 'left',
+        ellipsis: true,
+        lineBreak: false,
+      })
       columnX += column.width
     }
     cursor += rowHeight
@@ -250,8 +267,12 @@ export function writeAccountingReportPDF(report, doc) {
   kpis.forEach((kpi, index) => {
     const x = margin + index * (kpiWidth + gap)
     doc.roundedRect(x, 74, kpiWidth, 44, 3).lineWidth(0.7).strokeColor(LINE).stroke()
-    doc.font(fonts.bold).fontSize(5.8).fillColor(MUTED).text(text(kpi.label), x + 6, 81, { width: kpiWidth - 12 })
-    doc.font(fonts.bold).fontSize(15).fillColor(kpi.color || INK).text(text(kpi.value), x + 6, 93, { width: kpiWidth - 12 })
+    doc.font(fonts.bold).fillColor(MUTED)
+    fitFontSize(doc, text(kpi.label), kpiWidth - 12, 5.8, 4.2)
+    doc.text(text(kpi.label), x + 6, 81, { width: kpiWidth - 12, lineBreak: false })
+    doc.font(fonts.bold).fillColor(kpi.color || INK)
+    const size = fitFontSize(doc, text(kpi.value), kpiWidth - 12, 15, 8)
+    doc.text(text(kpi.value), x + 6, 93 + (15 - size) / 2, { width: kpiWidth - 12, lineBreak: false })
   })
   doc.font(fonts.regular).fontSize(6).fillColor(MUTED).text(
     text(`Hareketli gün: ${totals.active_days}  ·  İrsaliye: ${totals.intake_count}  ·  Tır: ${totals.truck_count}  ·  Dağıtım yeri: ${totals.zone_count}`

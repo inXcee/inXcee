@@ -137,23 +137,45 @@ describe('Su muhasebe raporu — PDF ve yetki', () => {
     }
 
     const report = accountingReportService({ from: '2027-03-01', to: '2027-03-31' })
-    const doc = new PDFDocument({ size: 'A4', margin: 28 })
-    doc.on('data', () => {})
-    const draws = []
-    const originalText = doc.text.bind(doc)
-    doc.text = (value, x, y, options) => {
-      if (typeof x === 'number' && typeof y === 'number') {
-        draws.push({ value: String(value), x, y, size: doc._fontSize, width: options?.width ?? null, measured: doc.widthOfString(String(value)) })
-      }
-      return originalText(value, x, y, options)
-    }
-    writeAccountingReportPDF(report, doc)
-
     expect(report.daily).toHaveLength(31)
-    const clipped = draws.filter(draw => draw.width != null && draw.measured > draw.width + 0.5)
-    expect(clipped.map(draw => draw.value)).toEqual([])
-    expect(draws.filter(draw => draw.y + draw.size * 1.2 > 841.89)).toEqual([])
-    expect(draws.filter(draw => draw.x + (draw.width ?? draw.measured) > 595.28 - 27.5)).toEqual([])
+
+    // widthFactor: sunucudaki font (DejaVu) Windows'takinden geniştir — 1.35 ile
+    // o durumu taklit edip yerleşimin yalnızca yerel fonta bağlı olmadığını görürüz.
+    const audit = (widthFactor) => {
+      const doc = new PDFDocument({ size: 'A4', margin: 28 })
+      doc.on('data', () => {})
+      const originalWidth = doc.widthOfString.bind(doc)
+      doc.widthOfString = (value, options) => originalWidth(value, options) * widthFactor
+      const draws = []
+      const originalText = doc.text.bind(doc)
+      doc.text = (value, x, y, options) => {
+        if (typeof x === 'number' && typeof y === 'number') {
+          draws.push({
+            value: String(value), x, y, size: doc._fontSize,
+            width: options?.width ?? null,
+            wraps: options?.lineBreak !== false,
+            measured: doc.widthOfString(String(value)),
+          })
+        }
+        return originalText(value, x, y, options)
+      }
+      writeAccountingReportPDF(report, doc)
+      // Sarma izni olan paragraflar (dipnot) taşma sayılmaz; tek satırlık hücreler sayılır.
+      const lineCount = draw => (draw.wraps && draw.width ? Math.max(1, Math.ceil(draw.measured / draw.width)) : 1)
+      const bottomOf = draw => draw.y + lineCount(draw) * draw.size * 1.25
+      const note = draws.find(draw => draw.value.startsWith('Miktarlar her ürünün'))
+      const signature = draws.find(draw => draw.value === 'HAZIRLAYAN')
+      return {
+        clipped: draws.filter(draw => !draw.wraps && draw.width != null && draw.measured > draw.width + 0.5).map(draw => draw.value),
+        belowPage: draws.filter(draw => bottomOf(draw) > 841.89).map(draw => draw.value),
+        offRight: draws.filter(draw => draw.x + (draw.width ?? draw.measured) > 595.28 - 27.5).map(draw => draw.value),
+        noteOverlapsSignature: bottomOf(note) > signature.y - 6,
+      }
+    }
+
+    for (const factor of [1, 1.35]) {
+      expect(audit(factor)).toEqual({ clipped: [], belowPage: [], offRight: [], noteOverlapsSignature: false })
+    }
   })
 
   it('yetkisiz rol erişemez', async () => {
