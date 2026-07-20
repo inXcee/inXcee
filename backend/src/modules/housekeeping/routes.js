@@ -73,6 +73,12 @@ housekeepingRouter.post('/tasks/complete-floor', ...hkAccess, validate(completeF
 })
 
 // Multipart 'photo' destekli — FormData'da checklist JSON string gelir, parse edilir
+// Foto başına kategori: yüklenen dosyalarla aynı sıradaki categories[i]; yoksa toplu category.
+function categoryAt(validated, index) {
+  const list = validated.categories == null ? [] : [].concat(validated.categories)
+  return list[index] || validated.category
+}
+
 function coerceCompleteBody(req, res, next) {
   if (typeof req.body?.checklist === 'string') {
     try { req.body.checklist = req.body.checklist ? JSON.parse(req.body.checklist) : null } catch { req.body.checklist = null }
@@ -88,8 +94,8 @@ housekeepingRouter.post('/tasks/:id/complete', ...hkAccess, completeUpload, veri
     const files = [...(req.files?.photo || []), ...(req.files?.photos || [])]
     svc.completeTaskService(taskId, req.user.id, req.validated.checklist || null, req.validated.via_qr, null)
     if (files.length) {
-      svc.addTaskPhotosService(taskId, files.map(f => ({
-        photo_url: '/uploads/' + f.filename, category: req.validated.category, caption: req.validated.caption,
+      svc.addTaskPhotosService(taskId, files.map((f, i) => ({
+        photo_url: '/uploads/' + f.filename, category: categoryAt(req.validated, i), caption: req.validated.caption,
       })), req.user.id)
     }
     res.json({ ok: true })
@@ -108,8 +114,8 @@ housekeepingRouter.post('/tasks/:id/photos', ...hkAccess, taskPhotosUpload, veri
   try {
     const files = req.files || []
     if (!files.length) return res.status(400).json({ error: 'En az bir fotoğraf gerekli' })
-    const added = svc.addTaskPhotosService(+req.params.id, files.map(f => ({
-      photo_url: '/uploads/' + f.filename, category: req.validated.category, caption: req.validated.caption,
+    const added = svc.addTaskPhotosService(+req.params.id, files.map((f, i) => ({
+      photo_url: '/uploads/' + f.filename, category: categoryAt(req.validated, i), caption: req.validated.caption,
     })), req.user.id)
     res.status(201).json({ photos: added })
   }

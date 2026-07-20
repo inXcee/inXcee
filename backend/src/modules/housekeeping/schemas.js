@@ -39,20 +39,29 @@ export const updateStaffSchema = z.object({
   assigned_floor: z.coerce.number().int().nullable().optional(),
 })
 
-const photoCategoryEnum = z.enum(['genel', 'oncesi', 'sonrasi', 'detay', 'hasar'], {
+const PHOTO_CATEGORY_VALUES = ['genel', 'oncesi', 'sonrasi', 'detay', 'hasar']
+const photoCategoryEnum = z.enum(PHOTO_CATEGORY_VALUES, {
   errorMap: () => ({ message: 'Geçersiz kategori' }),
 }).optional()
+// Foto başına kategori: yüklenen dosyalarla aynı sırada tekrarlanan alan.
+// Tek dosyada string, çoklu dosyada dizi olarak gelir.
+const photoCategoryList = z.union([
+  z.enum(PHOTO_CATEGORY_VALUES, { errorMap: () => ({ message: 'Geçersiz kategori' }) }),
+  z.array(z.enum(PHOTO_CATEGORY_VALUES, { errorMap: () => ({ message: 'Geçersiz kategori' }) })),
+]).optional()
 const photoCaption = z.string().trim().max(300, 'Açıklama çok uzun').nullish()
 
 export const completeTaskSchema = z.object({
   checklist: z.any().optional(),
   via_qr: z.coerce.boolean().optional().default(false),
   category: photoCategoryEnum,
+  categories: photoCategoryList,
   caption: photoCaption,
 })
 
 export const addTaskPhotoSchema = z.object({
   category: photoCategoryEnum,
+  categories: photoCategoryList,
   caption: photoCaption,
 })
 

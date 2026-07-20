@@ -93,6 +93,60 @@ describe('housekeeping çoklu fotoğraf uçları', () => {
     expect(row.photo_url).toMatch(/^\/uploads\/housekeeping-/)
   })
 
+  it('foto başına kategori: categories[] dosyalarla aynı sırada eşlenir', async () => {
+    const t = getDB().prepare(
+      "INSERT INTO cleaning_tasks(area, block, floor, task_type, scheduled_at, qr_location) VALUES('M3 Oda 301','M3',3,'room',datetime('now','localtime'),'M3-301')"
+    ).run().lastInsertRowid
+    const res = await request(app).post(`/api/housekeeping/tasks/${t}/photos`)
+      .set(auth(housekeeperToken))
+      .field('categories', 'oncesi')
+      .field('categories', 'sonrasi')
+      .attach('photos', JPEG, 'a.jpg')
+      .attach('photos', JPEG, 'b.jpg')
+    expect(res.status).toBe(201)
+    expect(res.body.photos.map(p => p.category)).toEqual(['oncesi', 'sonrasi'])
+  })
+
+  it('foto başına kategori eksikse toplu category devreye girer', async () => {
+    const t = getDB().prepare(
+      "INSERT INTO cleaning_tasks(area, block, floor, task_type, scheduled_at, qr_location) VALUES('M3 Oda 302','M3',3,'room',datetime('now','localtime'),'M3-302')"
+    ).run().lastInsertRowid
+    const res = await request(app).post(`/api/housekeeping/tasks/${t}/photos`)
+      .set(auth(housekeeperToken))
+      .field('category', 'hasar')
+      .field('categories', 'oncesi')   // sadece ilk dosya için
+      .attach('photos', JPEG, 'a.jpg')
+      .attach('photos', JPEG, 'b.jpg')
+    expect(res.status).toBe(201)
+    expect(res.body.photos.map(p => p.category)).toEqual(['oncesi', 'hasar'])
+  })
+
+  it('complete çoklu foto + foto başına kategori', async () => {
+    const t = getDB().prepare(
+      "INSERT INTO cleaning_tasks(area, block, floor, task_type, scheduled_at, qr_location) VALUES('M3 Oda 303','M3',3,'room',datetime('now','localtime'),'M3-303')"
+    ).run().lastInsertRowid
+    const res = await request(app).post(`/api/housekeeping/tasks/${t}/complete`)
+      .set(auth(housekeeperToken))
+      .field('categories', 'oncesi')
+      .field('categories', 'sonrasi')
+      .attach('photos', JPEG, 'x.jpg')
+      .attach('photos', JPEG, 'y.jpg')
+    expect(res.status).toBe(200)
+    const list = await request(app).get(`/api/housekeeping/tasks/${t}/photos`).set(auth(managerToken))
+    expect(list.body.photos.map(p => p.category)).toEqual(['oncesi', 'sonrasi'])
+  })
+
+  it('geçersiz kategori 400 döner', async () => {
+    const t = getDB().prepare(
+      "INSERT INTO cleaning_tasks(area, block, floor, task_type, scheduled_at, qr_location) VALUES('M3 Oda 304','M3',3,'room',datetime('now','localtime'),'M3-304')"
+    ).run().lastInsertRowid
+    const res = await request(app).post(`/api/housekeeping/tasks/${t}/photos`)
+      .set(auth(housekeeperToken))
+      .field('categories', 'olmayan')
+      .attach('photos', JPEG, 'a.jpg')
+    expect(res.status).toBe(400)
+  })
+
   it('photo-overview foto sayısını döner', async () => {
     const res = await request(app).get('/api/housekeeping/photo-overview?days=7').set(auth(managerToken))
     expect(res.status).toBe(200)

@@ -30,7 +30,9 @@ export default function RoomDetailPanel({ block, floor, roomNo, task, isPrivateB
   const [noCleanLocal, setNoCleanLocal] = useState(null)
   const [noteText, setNoteText] = useState('')
   const [noteInited, setNoteInited] = useState(false)
-  const [cleanPhotos, setCleanPhotos] = useState([]) // temizlik kanıt fotoğrafları [{ dataUrl }]
+  // Her fotoğraf KENDİ kategorisini taşır (çekim anındaki seçili kategoriyle başlar,
+  // sonra tek tek değiştirilebilir) → aynı tamamlamada hem "öncesi" hem "sonrası" olabilir.
+  const [cleanPhotos, setCleanPhotos] = useState([]) // [{ dataUrl, category }]
   const [cleanCategory, setCleanCategory] = useState('genel')
 
   async function onCleanPhotoPick(e) {
@@ -40,13 +42,14 @@ export default function RoomDetailPanel({ block, floor, roomNo, task, isPrivateB
     for (const file of files) {
       try {
         const dataUrl = await downscalePhoto(file)
-        setCleanPhotos(prev => [...prev, { dataUrl }])
+        setCleanPhotos(prev => [...prev, { dataUrl, category: cleanCategory }])
       } catch { /* sessiz */ }
     }
   }
   const removeCleanPhoto = (idx) => setCleanPhotos(prev => prev.filter((_, i) => i !== idx))
-  // Tamamlarken gönderilecek foto listesi (blob + seçili kategori)
-  const cleanPhotoPayload = () => cleanPhotos.map(p => ({ blob: dataUrlToBlob(p.dataUrl), category: cleanCategory }))
+  const setPhotoCategory = (idx, category) => setCleanPhotos(prev => prev.map((p, i) => i === idx ? { ...p, category } : p))
+  // Tamamlarken gönderilecek foto listesi (blob + o fotoğrafın kendi kategorisi)
+  const cleanPhotoPayload = () => cleanPhotos.map(p => ({ blob: dataUrlToBlob(p.dataUrl), category: p.category || cleanCategory }))
 
   const done    = !!task?.completed_at
   const skipped = task?.skipped === 1
@@ -390,13 +393,24 @@ export default function RoomDetailPanel({ block, floor, roomNo, task, isPrivateB
               </div>
               {cleanPhotos.length > 0 && (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(64px,1fr))', gap: '6px' }}>
-                  {cleanPhotos.map((p, i) => (
-                    <div key={i} style={{ position: 'relative' }}>
-                      <img src={p.dataUrl} alt={`kanıt ${i + 1}`} style={{ width: '100%', height: '58px', objectFit: 'cover', borderRadius: '6px', border: '1px solid var(--border)' }} />
-                      <button type="button" onClick={() => removeCleanPhoto(i)} title="Kaldır"
-                        style={{ position: 'absolute', top: '-6px', right: '-6px', width: '18px', height: '18px', borderRadius: '50%', border: 'none', background: 'var(--red)', color: '#fff', cursor: 'pointer', fontSize: '10px', lineHeight: '18px', padding: 0 }}>✕</button>
-                    </div>
-                  ))}
+                  {cleanPhotos.map((p, i) => {
+                    const cm = PHOTO_CATEGORY_MAP[p.category] || PHOTO_CATEGORY_MAP.genel
+                    return (
+                      <div key={i} style={{ position: 'relative' }}>
+                        <img src={p.dataUrl} alt={`kanıt ${i + 1}`} style={{ width: '100%', height: '58px', objectFit: 'cover', borderRadius: '6px', border: `2px solid ${cm.color}` }} />
+                        <button type="button" onClick={() => removeCleanPhoto(i)} title="Kaldır"
+                          style={{ position: 'absolute', top: '-6px', right: '-6px', width: '18px', height: '18px', borderRadius: '50%', border: 'none', background: 'var(--red)', color: '#fff', cursor: 'pointer', fontSize: '10px', lineHeight: '18px', padding: 0 }}>✕</button>
+                        <select
+                          value={p.category || 'genel'}
+                          onChange={e => setPhotoCategory(i, e.target.value)}
+                          title="Bu fotoğrafın kategorisi"
+                          style={{ width: '100%', marginTop: '2px', fontSize: '9px', padding: '1px 2px', borderRadius: '4px', background: 'var(--surface2)', color: cm.color, border: `1px solid ${cm.color}` }}
+                        >
+                          {PHOTO_CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
+                        </select>
+                      </div>
+                    )
+                  })}
                 </div>
               )}
               <label className="btn btn-ghost btn-sm" style={{ width: '100%', cursor: 'pointer', textAlign: 'center' }}>

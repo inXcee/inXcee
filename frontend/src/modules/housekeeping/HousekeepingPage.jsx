@@ -74,8 +74,11 @@ export default function HousekeepingPage() {
       if (!list.length) return api.post(`/housekeeping/tasks/${id}/complete`, { checklist })
       const fd = new FormData()
       if (checklist) fd.append('checklist', JSON.stringify(checklist))
-      if (list[0].category) fd.append('category', list[0].category)
-      list.forEach((p, i) => fd.append('photos', p.blob, `temizlik-${i + 1}.jpg`))
+      // Her fotoğraf kendi kategorisiyle: categories[i] ↔ photos[i] (aynı sırada)
+      list.forEach((p, i) => {
+        fd.append('photos', p.blob, `temizlik-${i + 1}.jpg`)
+        fd.append('categories', p.category || 'genel')
+      })
       return api.post(`/housekeeping/tasks/${id}/complete`, fd)
     },
     ...optimisticTaskUpdate((t, vars) =>
