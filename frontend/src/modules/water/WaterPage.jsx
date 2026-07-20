@@ -718,6 +718,7 @@ function TrendPanel() {
 function MonthlyReportPanel({ summary, from, to, label }) {
   const [selectedDay, setSelectedDay] = useState(null)
   const [pdfBusy, setPdfBusy] = useState(false)
+  const [reportOptions, setReportOptions] = useState(false)
   const dailyMap = useMemo(() => {
     const m = new Map()
     ;(summary?.daily || []).forEach(d => m.set(d.move_date, d))
@@ -746,16 +747,20 @@ function MonthlyReportPanel({ summary, from, to, label }) {
     .filter(d => (d.in_base || 0) > 0 || (d.out_base || 0) > 0)
     .sort((a, b) => b.iso.localeCompare(a.iso)), [days, dailyMap])
 
-  // Muhasebeye gönderilecek tek sayfa döküm — gün gün gelen/dağıtılan + ürün/yer/irsaliye kırılımı
-  const downloadAccountingPdf = async () => {
+  // Muhasebeye gönderilecek döküm. Özet her zaman tek sayfa; ek bölümler seçilirse
+  // gün gün nereye ne kadar dağıtıldığı tıklanabilir olarak eklenir.
+  const downloadAccountingPdf = async ({ from: fromArg = from, to: toArg = to, sections = [] } = {}) => {
     setPdfBusy(true)
     try {
-      const r = await api.get('/water/report/accounting.pdf', { params: { from, to }, responseType: 'blob' })
+      const params = { from: fromArg, to: toArg }
+      if (sections.length) params.sections = sections.join(',')
+      const r = await api.get('/water/report/accounting.pdf', { params, responseType: 'blob' })
       const a = document.createElement('a')
       a.href = URL.createObjectURL(r.data)
-      a.download = `su-muhasebe-raporu-${from}_${to}.pdf`; a.click(); URL.revokeObjectURL(a.href)
-      toastOk('Muhasebe raporu indirildi 🧾')
-    } catch { toastErr('Rapor oluşturulamadı') } finally { setPdfBusy(false) }
+      a.download = `su-muhasebe-raporu-${fromArg}_${toArg}.pdf`; a.click(); URL.revokeObjectURL(a.href)
+      toastOk(sections.length ? 'Kapsamlı muhasebe raporu indirildi 🧾' : 'Muhasebe raporu indirildi 🧾')
+      return true
+    } catch { toastErr('Rapor oluşturulamadı'); return false } finally { setPdfBusy(false) }
   }
 
   return (
@@ -765,16 +770,26 @@ function MonthlyReportPanel({ summary, from, to, label }) {
         <div>
           <div className="panel-title">AYLIK RAPOR — {label}</div>
           <div className="panel-subtitle">Gün gün akış, eldeki stok ve bölge dağıtım özeti</div>
-          <button
-            type="button"
-            className="btn btn-primary btn-sm"
-            style={{ marginTop: '8px' }}
-            disabled={pdfBusy}
-            onClick={downloadAccountingPdf}
-            title={`${label} için gün gün gelen/dağıtılan dökümü — muhasebeye gönderilebilir tek sayfa PDF`}
-          >
-            {pdfBusy ? 'Hazırlanıyor…' : '🧾 Muhasebe Raporu (PDF)'}
-          </button>
+          <div style={{ display: 'flex', gap: '6px', marginTop: '8px', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              disabled={pdfBusy}
+              onClick={() => downloadAccountingPdf()}
+              title={`${label} için gün gün gelen/dağıtılan dökümü — muhasebeye gönderilebilir tek sayfa PDF`}
+            >
+              {pdfBusy ? 'Hazırlanıyor…' : '🧾 Muhasebe Raporu (PDF)'}
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              disabled={pdfBusy}
+              onClick={() => setReportOptions(true)}
+              title="Tarih aralığı ve ek bölümleri (gün gün nereye ne kadar, matris, irsaliyeler) seç"
+            >
+              ⚙ Kapsamlı rapor…
+            </button>
+          </div>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(86px, 1fr))', gap: '8px', marginLeft: 'auto', minWidth: '360px' }}>
           {[
@@ -933,7 +948,92 @@ function MonthlyReportPanel({ summary, from, to, label }) {
       </div>
     </div>
     {selectedDay && <DailyDistributionModal day={selectedDay} from={from} to={to} onDayChange={setSelectedDay} onClose={() => setSelectedDay(null)} />}
+    {reportOptions && (
+      <AccountingReportModal
+        from={from}
+        to={to}
+        label={label}
+        busy={pdfBusy}
+        onDownload={downloadAccountingPdf}
+        onClose={() => setReportOptions(false)}
+      />
+    )}
     </>
+  )
+}
+
+const REPORT_SECTION_OPTIONS = [
+  { id: 'matrix', label: 'Dağıtım yeri × gün matrisi', hint: 'Yatay tek tablo: hangi yere hangi gün ne kadar' },
+  { id: 'days', label: 'Gün gün detay (nereye ne kadar)', hint: 'Her gün için yer yer, ürün kırılımıyla' },
+  { id: 'zones', label: 'Dağıtım yeri × ürün', hint: 'Her yerin dönem toplamı, ürün ürün' },
+  { id: 'intakes', label: 'Gelen irsaliyelerin tamamı', hint: 'Tarih, irsaliye no, ürün, miktar' },
+]
+
+function AccountingReportModal({ from, to, label, busy, onDownload, onClose }) {
+  const [range, setRange] = useState({ from, to })
+  const [picked, setPicked] = useState(() => REPORT_SECTION_OPTIONS.map(option => option.id))
+  const toggle = id => setPicked(prev => (prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]))
+  const rangeOk = range.from && range.to && range.from <= range.to
+  const sections = REPORT_SECTION_OPTIONS.filter(option => picked.includes(option.id)).map(option => option.id)
+
+  const submit = async () => {
+    if (!rangeOk) return toastErr('Tarih aralığı geçersiz')
+    if (await onDownload({ from: range.from, to: range.to, sections })) onClose()
+  }
+
+  return (
+    <WaterModal title={`MUHASEBE RAPORU — ${label}`} width="620px" onClose={onClose}>
+      <div style={{ fontSize: '12px', color: 'var(--text2)', marginBottom: '12px' }}>
+        Özet sayfası (KPI, gün gün akış, ürün/yer/irsaliye özeti) her zaman ilk sayfada gelir.
+        Aşağıdaki bölümler işaretliyse arkasına eklenir; PDF'te tıklanabilir içindekiler ve yer imleri oluşur.
+      </div>
+
+      <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '14px' }}>
+        <label style={{ fontSize: '11px', color: 'var(--text3)' }}>
+          Başlangıç
+          <input type="date" className="input" value={range.from} max={range.to}
+            onChange={e => setRange(prev => ({ ...prev, from: e.target.value }))}
+            style={{ display: 'block', marginTop: '4px' }} />
+        </label>
+        <label style={{ fontSize: '11px', color: 'var(--text3)' }}>
+          Bitiş
+          <input type="date" className="input" value={range.to} min={range.from}
+            onChange={e => setRange(prev => ({ ...prev, to: e.target.value }))}
+            style={{ display: 'block', marginTop: '4px' }} />
+        </label>
+        <button type="button" className="btn btn-ghost btn-sm" style={{ alignSelf: 'flex-end' }}
+          onClick={() => setRange({ from, to })}>↺ {label}</button>
+      </div>
+      {!rangeOk && <div style={{ fontSize: '11px', color: 'var(--red)', marginBottom: '10px' }}>Başlangıç bitişten sonra olamaz.</div>}
+
+      <div style={{ display: 'grid', gap: '6px', marginBottom: '14px' }}>
+        {REPORT_SECTION_OPTIONS.map(option => (
+          <label key={option.id} style={{
+            display: 'flex', gap: '9px', alignItems: 'flex-start', padding: '8px 10px', cursor: 'pointer',
+            border: '1px solid var(--border)', borderRadius: '8px',
+            background: picked.includes(option.id) ? 'rgba(14,116,144,.08)' : 'transparent',
+          }}>
+            <input type="checkbox" checked={picked.includes(option.id)} onChange={() => toggle(option.id)} />
+            <span>
+              <span style={{ fontSize: '12px', fontWeight: 600 }}>{option.label}</span>
+              <span style={{ display: 'block', fontSize: '10px', color: 'var(--text3)' }}>{option.hint}</span>
+            </span>
+          </label>
+        ))}
+      </div>
+
+      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+        <button type="button" className="btn btn-primary" disabled={busy || !rangeOk} onClick={submit}>
+          {busy ? 'Hazırlanıyor…' : `⬇ PDF indir${sections.length ? ` (özet + ${sections.length} bölüm)` : ' (yalnız özet)'}`}
+        </button>
+        <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => setPicked([])}>Bölümleri temizle</button>
+        <button type="button" className="btn btn-ghost" disabled={busy}
+          onClick={() => setPicked(REPORT_SECTION_OPTIONS.map(option => option.id))}>Hepsini seç</button>
+      </div>
+      <div style={{ fontSize: '10px', color: 'var(--text3)', marginTop: '10px' }}>
+        Gün gün detay 62 günden uzun aralıklarda üretilmez; matris o durumda ay ay gösterir.
+      </div>
+    </WaterModal>
   )
 }
 

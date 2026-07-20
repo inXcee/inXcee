@@ -1,21 +1,23 @@
-// Muhasebe raporu: seçili aralığın gün gün gelen/dağıtılan dökümü + ürün, yer ve
-// irsaliye kırılımı — tek A4 sayfaya sığacak şekilde.
+// Muhasebe raporu verisi: özet sayfası (tek A4) + istendiğinde gün gün nereye ne
+// kadar dağıtıldığının tam dökümü. PDF çizimi report-pdf.js içinde.
 import * as q from './queries.js'
 import { humanize } from './units.js'
 import { isIsoDate } from '../../shared/validation/date.js'
-import { registerTurkishFonts, pdfText } from '../../shared/pdf/fonts.js'
 
 const badRequest = message => Object.assign(new Error(message), { statusCode: 400 })
 
 const MAX_RANGE_DAYS = 400
 // Tek sayfada okunur kalan gün satırı sayısı — üstüne çıkınca aylık gruplanır.
 const DAILY_ROW_LIMIT = 34
-const ZONE_ROW_LIMIT = 12
-const INTAKE_ROW_LIMIT = 10
-const PRODUCT_ROW_LIMIT = 12
+// Gün gün detay bölümünün makul kaldığı üst sınır; üstünde detay üretilmez.
+const MAX_DETAIL_DAYS = 62
+const DETAIL_MOVEMENT_LIMIT = 20000
 
-const WEEKDAYS = ['Paz', 'Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt']
-const MONTHS = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık']
+export const REPORT_SECTIONS = Object.freeze(['matrix', 'days', 'zones', 'intakes'])
+
+export const WEEKDAYS = ['Paz', 'Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt']
+export const WEEKDAYS_LONG = ['Pazar', 'Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi']
+export const MONTHS = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık']
 
 const utc = iso => {
   const [year, month, day] = iso.split('-').map(Number)
@@ -46,13 +48,24 @@ function monthKeys(from, to) {
 
 const dayLabel = iso => `${iso.slice(8, 10)}.${iso.slice(5, 7)} ${WEEKDAYS[new Date(utc(iso)).getUTCDay()]}`
 const monthLabel = key => `${MONTHS[Number(key.slice(5, 7)) - 1]} ${key.slice(0, 4)}`
+export const weekdayLong = iso => WEEKDAYS_LONG[new Date(utc(iso)).getUTCDay()]
 export const trDate = iso => (isIsoDate(iso) ? `${iso.slice(8, 10)}.${iso.slice(5, 7)}.${iso.slice(0, 4)}` : '—')
 
-export function accountingReportService({ from, to } = {}) {
+// "matrix,days" gibi bir listeyi (veya diziyi) bilinen bölüm adlarına indirger.
+export function parseSections(value) {
+  if (value == null || value === '') return []
+  const raw = Array.isArray(value) ? value : String(value).split(',')
+  const wanted = new Set(raw.map(item => String(item).trim().toLowerCase()))
+  if (wanted.has('all') || wanted.has('full')) return [...REPORT_SECTIONS]
+  return REPORT_SECTIONS.filter(section => wanted.has(section))
+}
+
+export function accountingReportService({ from, to, sections } = {}) {
   if (!isIsoDate(from) || !isIsoDate(to)) throw badRequest('Tarih aralığı YYYY-AA-GG formatında olmalı')
   if (from > to) throw badRequest('Başlangıç tarihi bitiş tarihinden sonra olamaz')
   const dayCount = dayDiff(from, to) + 1
   if (dayCount > MAX_RANGE_DAYS) throw badRequest(`Rapor aralığı en fazla ${MAX_RANGE_DAYS} gün olabilir`)
+  const wantedSections = parseSections(sections)
 
   const openingByProduct = new Map(q.openingBalances(from).map(row => [row.id, row.opening_base]))
   const adjustByProduct = new Map(q.adjustmentFlow({ from, to }).map(row => [row.product_id, row.adjust_base]))
@@ -124,14 +137,17 @@ export function accountingReportService({ from, to } = {}) {
   }
   const zones = [...zoneMap.values()].sort((left, right) => right.total_out - left.total_out)
 
-  const intakes = q.listMovements({ type: 'in', from, to, limit: 500 })
+  const intakes = q.listMovements({ type: 'in', from, to, limit: 2000 })
     .map(row => ({
       id: row.id,
       move_date: row.move_date,
       waybill_no: row.waybill_no || null,
       product_name: row.product_name,
+      brand_name: row.brand_name || null,
+      note: row.note || null,
       qty_base: row.qty_base,
       qty_human: humanize(row, row.qty_base),
+      remaining_base: row.remaining_base ?? null,
     }))
     .sort((left, right) => (left.move_date === right.move_date ? left.id - right.id : left.move_date < right.move_date ? -1 : 1))
 
@@ -155,237 +171,118 @@ export function accountingReportService({ from, to } = {}) {
     review_count: q.reviewQueue().length,
   }
 
-  return { from, to, day_count: dayCount, grouped, daily, products, zones, intakes, totals, locked_months: lockedMonths }
-}
-
-// ── PDF ──
-
-const INK = '#0F172A'
-const MUTED = '#64748B'
-const LINE = '#CBD5E1'
-const BAND = '#0E7490'
-const ZEBRA = '#F1F5F9'
-
-const nf = new Intl.NumberFormat('tr-TR')
-const num = value => nf.format(Math.round(value || 0))
-const signed = value => (value > 0 ? `+${num(value)}` : num(value))
-
-// Sunucudaki font (DejaVu) Windows'takinden (Arial) geniştir; 8 haneli bir toplam
-// sütuna sığmayabilir. Kırpmak yerine o hücrenin puntosunu düşürüyoruz.
-function fitFontSize(doc, value, available, base, min = 4.5) {
-  let size = base
-  doc.fontSize(size)
-  while (size > min && doc.widthOfString(value) > available) {
-    size = Math.max(min, size - 0.3)
-    doc.fontSize(size)
+  const report = {
+    from, to, day_count: dayCount, grouped, daily, products, zones, intakes, totals,
+    locked_months: lockedMonths, sections: wantedSections,
   }
-  return size
-}
-
-function drawTable(doc, fonts, { x, y, width, title, columns, rows, note }) {
-  const text = value => pdfText(value, fonts)
-  let cursor = y
-  if (title) {
-    doc.font(fonts.bold).fontSize(8.5).fillColor(INK).text(text(title), x, cursor, { width })
-    cursor += 12
-  }
-  const rowHeight = 12.4
-  doc.rect(x, cursor, width, 13).fill('#E2E8F0')
-  let columnX = x
-  doc.font(fonts.bold).fillColor('#334155')
-  for (const column of columns) {
-    const available = column.width - 6
-    fitFontSize(doc, text(column.label), available, 6.6, 4.6)
-    doc.text(text(column.label), columnX + 3, cursor + 3.6, { width: available, align: column.align || 'left', lineBreak: false })
-    columnX += column.width
-  }
-  cursor += 13
-
-  doc.fontSize(7).font(fonts.regular)
-  rows.forEach((row, index) => {
-    if (index % 2 === 1) doc.rect(x, cursor, width, rowHeight).fill(ZEBRA)
-    columnX = x
-    for (const column of columns) {
-      const cell = column.cell(row)
-      const value = text(cell?.value ?? '—')
-      const available = column.width - 6
-      doc.font(cell?.bold ? fonts.bold : fonts.regular).fillColor(cell?.color || INK)
-      const size = fitFontSize(doc, value, available, 7)
-      doc.text(value, columnX + 3, cursor + 3.2 + (7 - size) / 2, {
-        width: available,
-        align: column.align || 'left',
-        ellipsis: true,
-        lineBreak: false,
-      })
-      columnX += column.width
-    }
-    cursor += rowHeight
-  })
-
-  doc.moveTo(x, cursor).lineTo(x + width, cursor).lineWidth(0.5).strokeColor(LINE).stroke()
-  if (note) {
-    cursor += 2
-    doc.font(fonts.regular).fontSize(6).fillColor(MUTED).text(text(note), x, cursor, { width })
-    cursor += 8
-  }
-  return cursor + 8
-}
-
-export function writeAccountingReportPDF(report, doc) {
-  const fonts = registerTurkishFonts(doc, 'Rpt')
-  const text = value => pdfText(value, fonts)
-  const margin = 28
-  const pageWidth = doc.page.width
-  const pageHeight = doc.page.height
-  const innerWidth = pageWidth - margin * 2
-  const { totals } = report
-
-  doc.info.Title = `Su Takip Muhasebe Raporu ${report.from} - ${report.to}`
-  doc.info.Author = 'Şantiye Yatakhane Yönetim Sistemi'
-  // Alt bilgi satırı varsayılan alt boşluğun içine taşarsa pdfkit ikinci sayfa açar.
-  doc.page.margins.bottom = 8
-
-  // Başlık bandı
-  doc.rect(0, 0, pageWidth, 62).fill(BAND)
-  doc.font(fonts.bold).fontSize(16).fillColor('#FFFFFF')
-    .text(text('SU TAKİP — MUHASEBE RAPORU'), margin, 14, { width: innerWidth })
-  doc.font(fonts.regular).fontSize(9).fillColor('#CFFAFE')
-    .text(text(`${trDate(report.from)} — ${trDate(report.to)}  ·  ${report.day_count} gün`), margin, 36, { width: innerWidth })
-  doc.fontSize(7).fillColor('#A5F3FC')
-    .text(text(`Oluşturma: ${new Date().toLocaleString('tr-TR')}`), margin, 38, { width: innerWidth, align: 'right' })
-
-  // KPI kutuları
-  const kpis = [
-    { label: 'DEVİR (DÖNEM BAŞI)', value: num(totals.opening) },
-    { label: 'GELEN', value: num(totals.period_in), color: '#15803D' },
-    { label: 'DAĞITILAN', value: num(totals.period_out), color: '#B91C1C' },
-    { label: 'BOŞ DAMACANA İADE', value: num(totals.period_return) },
-    { label: 'KAPANIŞ STOKU', value: num(totals.closing), color: totals.closing < 0 ? '#B91C1C' : BAND },
-  ]
-  const gap = 7
-  const kpiWidth = (innerWidth - gap * (kpis.length - 1)) / kpis.length
-  kpis.forEach((kpi, index) => {
-    const x = margin + index * (kpiWidth + gap)
-    doc.roundedRect(x, 74, kpiWidth, 44, 3).lineWidth(0.7).strokeColor(LINE).stroke()
-    doc.font(fonts.bold).fillColor(MUTED)
-    fitFontSize(doc, text(kpi.label), kpiWidth - 12, 5.8, 4.2)
-    doc.text(text(kpi.label), x + 6, 81, { width: kpiWidth - 12, lineBreak: false })
-    doc.font(fonts.bold).fillColor(kpi.color || INK)
-    const size = fitFontSize(doc, text(kpi.value), kpiWidth - 12, 15, 8)
-    doc.text(text(kpi.value), x + 6, 93 + (15 - size) / 2, { width: kpiWidth - 12, lineBreak: false })
-  })
-  doc.font(fonts.regular).fontSize(6).fillColor(MUTED).text(
-    text(`Hareketli gün: ${totals.active_days}  ·  İrsaliye: ${totals.intake_count}  ·  Tır: ${totals.truck_count}  ·  Dağıtım yeri: ${totals.zone_count}`
-      + `  ·  Eksi stoklu ürün: ${totals.negative_count}  ·  İnceleme kuyruğu: ${totals.review_count}`
-      + (report.locked_months.length ? `  ·  Kilitli ay: ${report.locked_months.join(', ')}` : '')),
-    margin, 122, { width: innerWidth },
-  )
-
-  const top = 136
-  const columnGap = 12
-  const leftWidth = 268
-  const rightWidth = innerWidth - leftWidth - columnGap
-  const rightX = margin + leftWidth + columnGap
-  const hasAdjust = report.daily.some(row => row.adjust_base !== 0)
-
-  // Sol sütun — gün gün hareket
-  const dailyColumns = hasAdjust
-    ? [
-      { label: report.grouped ? 'AY' : 'TARİH', width: 72, cell: row => ({ value: row.label, color: row.empty ? '#94A3B8' : INK }) },
-      { label: 'GELEN', width: 48, align: 'right', cell: row => ({ value: row.in_base ? num(row.in_base) : '·', color: row.in_base ? '#15803D' : '#CBD5E1' }) },
-      { label: 'DAĞITILAN', width: 55, align: 'right', cell: row => ({ value: row.out_base ? num(row.out_base) : '·', color: row.out_base ? '#B91C1C' : '#CBD5E1' }) },
-      { label: 'DÜZELTME', width: 47, align: 'right', cell: row => ({ value: row.adjust_base ? signed(row.adjust_base) : '·', color: row.adjust_base ? '#B45309' : '#CBD5E1' }) },
-      { label: 'KALAN', width: 46, align: 'right', cell: row => ({ value: num(row.balance_base), bold: true, color: row.balance_base < 0 ? '#B91C1C' : INK }) },
-    ]
-    : [
-      { label: report.grouped ? 'AY' : 'TARİH', width: 84, cell: row => ({ value: row.label, color: row.empty ? '#94A3B8' : INK }) },
-      { label: 'GELEN', width: 60, align: 'right', cell: row => ({ value: row.in_base ? num(row.in_base) : '·', color: row.in_base ? '#15803D' : '#CBD5E1' }) },
-      { label: 'DAĞITILAN', width: 64, align: 'right', cell: row => ({ value: row.out_base ? num(row.out_base) : '·', color: row.out_base ? '#B91C1C' : '#CBD5E1' }) },
-      { label: 'KALAN', width: 60, align: 'right', cell: row => ({ value: num(row.balance_base), bold: true, color: row.balance_base < 0 ? '#B91C1C' : INK }) },
-    ]
-  const dailyRows = [...report.daily, {
-    label: 'TOPLAM',
-    in_base: totals.period_in,
-    out_base: totals.period_out,
-    adjust_base: totals.period_adjust,
-    balance_base: totals.closing,
-    total: true,
-  }]
-  const leftY = drawTable(doc, fonts, {
-    x: margin, y: top, width: leftWidth, columns: dailyColumns, rows: dailyRows,
-    title: report.grouped ? 'AY AY HAREKET' : 'GÜN GÜN HAREKET',
-    note: 'Kalan sütunu devirden başlayan yürüyen bakiyedir.',
-  })
-
-  // Sağ sütun — ürün kırılımı
-  let rightY = drawTable(doc, fonts, {
-    x: rightX, y: top, width: rightWidth, title: 'ÜRÜN BAZINDA',
-    columns: [
-      { label: 'ÜRÜN', width: rightWidth - 176, cell: row => ({ value: row.name }) },
-      { label: 'DEVİR', width: 42, align: 'right', cell: row => ({ value: num(row.opening_base) }) },
-      { label: 'GELEN', width: 42, align: 'right', cell: row => ({ value: num(row.period_in), color: '#15803D' }) },
-      { label: 'DAĞITILAN', width: 46, align: 'right', cell: row => ({ value: num(row.period_out), color: '#B91C1C' }) },
-      { label: 'KALAN', width: 46, align: 'right', cell: row => ({ value: num(row.closing_base), bold: true, color: row.closing_base < 0 ? '#B91C1C' : INK }) },
-    ],
-    rows: [...report.products.slice(0, PRODUCT_ROW_LIMIT), {
-      name: 'TOPLAM',
-      opening_base: totals.opening,
-      period_in: totals.period_in,
-      period_out: totals.period_out,
-      closing_base: totals.closing,
-    }],
-    note: report.products.length > PRODUCT_ROW_LIMIT
-      ? `İlk ${PRODUCT_ROW_LIMIT} ürün gösterildi (toplam ${report.products.length}).`
-      : null,
-  })
-
-  rightY = drawTable(doc, fonts, {
-    x: rightX, y: rightY, width: rightWidth, title: 'DAĞITIM YERLERİ',
-    columns: [
-      { label: 'YER', width: rightWidth - 60, cell: row => ({ value: row.zone_name }) },
-      { label: 'DAĞITILAN', width: 60, align: 'right', cell: row => ({ value: num(row.total_out), bold: true }) },
-    ],
-    rows: report.zones.slice(0, ZONE_ROW_LIMIT),
-    note: report.zones.length > ZONE_ROW_LIMIT
-      ? `En çok dağıtılan ${ZONE_ROW_LIMIT} yer gösterildi (toplam ${report.zones.length}).`
-      : (report.zones.length ? null : 'Bu aralıkta dağıtım kaydı yok.'),
-  })
-
-  rightY = drawTable(doc, fonts, {
-    x: rightX, y: rightY, width: rightWidth, title: 'GELEN İRSALİYELER',
-    columns: [
-      { label: 'TARİH', width: 44, cell: row => ({ value: trDate(row.move_date).slice(0, 5) }) },
-      { label: 'İRSALİYE', width: 62, cell: row => ({ value: row.waybill_no || '—' }) },
-      { label: 'ÜRÜN', width: rightWidth - 156, cell: row => ({ value: row.product_name }) },
-      { label: 'MİKTAR', width: 50, align: 'right', cell: row => ({ value: num(row.qty_base), bold: true }) },
-    ],
-    rows: report.intakes.slice(0, INTAKE_ROW_LIMIT),
-    note: report.intakes.length > INTAKE_ROW_LIMIT
-      ? `İlk ${INTAKE_ROW_LIMIT} giriş gösterildi (toplam ${report.intakes.length}).`
-      : (report.intakes.length ? null : 'Bu aralıkta giriş kaydı yok.'),
-  })
-
-  // Alt bilgi + imza
-  const footerY = Math.max(leftY, rightY, pageHeight - 96)
-  doc.font(fonts.regular).fontSize(6).fillColor(MUTED).text(
-    text('Miktarlar her ürünün kendi baz biriminde (adet/koli/palet) verilmiştir; toplam sütunları bu baz birimlerin aritmetik toplamıdır. '
-      + 'Kapanış stoku = devir + gelen − dağıtılan + düzeltme.'),
-    margin, footerY, { width: innerWidth },
-  )
-
-  const signatureY = pageHeight - 74
-  const signatureGap = 12
-  const signatureWidth = (innerWidth - signatureGap * 2) / 3
-  ;['HAZIRLAYAN', 'KONTROL EDEN', 'ONAY'].forEach((label, index) => {
-    const x = margin + index * (signatureWidth + signatureGap)
-    doc.roundedRect(x, signatureY, signatureWidth, 46, 3).lineWidth(0.7).strokeColor(LINE).stroke()
-    doc.font(fonts.bold).fontSize(6).fillColor(MUTED).text(text(label), x + 8, signatureY + 7)
-    doc.moveTo(x + 8, signatureY + 34).lineTo(x + signatureWidth - 8, signatureY + 34)
-      .dash(3, { space: 3 }).lineWidth(0.7).strokeColor('#94A3B8').stroke().undash()
-  })
-  doc.font(fonts.regular).fontSize(6).fillColor('#94A3B8')
-    .text(text('YYS Su Takibi'), margin, pageHeight - 22, { width: innerWidth, align: 'center' })
-
-  doc.end()
+  if (wantedSections.length) report.detail = buildDetail(report, { from, to, grouped })
   return report
 }
+
+// Gün × yer × ürün dökümü — matris, gün detayları ve yer/ürün kırılımı aynı
+// hareket listesinden türetilir (tek sorgu).
+function buildDetail(report, { from, to, grouped }) {
+  const movements = q.listMovements({ from, to, limit: DETAIL_MOVEMENT_LIMIT })
+  const truncated = movements.length >= DETAIL_MOVEMENT_LIMIT
+  const columns = (grouped ? monthKeys(from, to) : dayKeys(from, to))
+    .map(key => ({ key, label: grouped ? monthLabel(key) : key.slice(8, 10), full: grouped ? monthLabel(key) : trDate(key) }))
+  const columnIndex = new Map(columns.map((column, index) => [column.key, index]))
+  const bucketKey = date => (grouped ? date.slice(0, 7) : date)
+
+  const zoneRows = new Map()
+  const zoneProducts = new Map()
+  const dayBuckets = new Map()
+
+  for (const movement of movements) {
+    const key = bucketKey(movement.move_date)
+    const day = dayBuckets.get(movement.move_date) || { intakes: [], distributions: [] }
+    const human = humanize(movement, movement.qty_base)
+    if (movement.type === 'in') {
+      day.intakes.push({
+        waybill_no: movement.waybill_no || null,
+        product_name: movement.product_name,
+        qty_base: movement.qty_base,
+        qty_human: human,
+      })
+    } else {
+      const zoneName = movement.zone_name || 'Yer belirtilmemiş'
+      const zoneId = movement.zone_id || 0
+      day.distributions.push({
+        zone_id: zoneId,
+        zone_name: zoneName,
+        product_name: movement.product_name,
+        qty_base: movement.qty_base,
+        qty_human: human,
+      })
+
+      const row = zoneRows.get(zoneId)
+        || { zone_id: zoneId, zone_name: zoneName, total: 0, cells: new Array(columns.length).fill(0) }
+      row.total += movement.qty_base
+      const index = columnIndex.get(key)
+      if (index != null) row.cells[index] += movement.qty_base
+      zoneRows.set(zoneId, row)
+
+      const products = zoneProducts.get(zoneId) || new Map()
+      const product = products.get(movement.product_id)
+        || { product_id: movement.product_id, name: movement.product_name, total: 0, sample: movement }
+      product.total += movement.qty_base
+      products.set(movement.product_id, product)
+      zoneProducts.set(zoneId, products)
+    }
+    dayBuckets.set(movement.move_date, day)
+  }
+
+  const rows = [...zoneRows.values()].sort((left, right) => right.total - left.total)
+  const columnTotals = columns.map((_, index) => rows.reduce((sum, row) => sum + row.cells[index], 0))
+
+  const dailyByKey = new Map(report.daily.map(row => [row.key, row]))
+  const activeDates = [...dayBuckets.keys()].sort()
+  const detailDays = activeDates.length > MAX_DETAIL_DAYS ? [] : activeDates.map(date => {
+    const bucket = dayBuckets.get(date)
+    const summary = dailyByKey.get(grouped ? date.slice(0, 7) : date) || {}
+    const perZone = new Map()
+    for (const line of bucket.distributions) {
+      const current = perZone.get(line.zone_id) || { zone_id: line.zone_id, zone_name: line.zone_name, total: 0, lines: [] }
+      current.total += line.qty_base
+      current.lines.push(line)
+      perZone.set(line.zone_id, current)
+    }
+    const zonesOfDay = [...perZone.values()].sort((left, right) => right.total - left.total)
+    zonesOfDay.forEach(zone => zone.lines.sort((left, right) => right.qty_base - left.qty_base))
+    return {
+      key: date,
+      label: trDate(date),
+      weekday: weekdayLong(date),
+      in_base: bucket.intakes.reduce((sum, line) => sum + line.qty_base, 0),
+      out_base: bucket.distributions.reduce((sum, line) => sum + line.qty_base, 0),
+      balance_base: grouped ? null : (summary.balance_base ?? null),
+      intakes: bucket.intakes,
+      zones: zonesOfDay,
+    }
+  })
+
+  return {
+    columns,
+    grouped,
+    rows: rows.map(row => ({ ...row })),
+    column_totals: columnTotals,
+    grand_total: rows.reduce((sum, row) => sum + row.total, 0),
+    days: detailDays,
+    days_skipped: activeDates.length > MAX_DETAIL_DAYS ? activeDates.length : 0,
+    zone_products: rows.map(row => ({
+      zone_id: row.zone_id,
+      zone_name: row.zone_name,
+      total: row.total,
+      products: [...(zoneProducts.get(row.zone_id) || new Map()).values()]
+        .sort((left, right) => right.total - left.total)
+        .map(product => ({
+          product_id: product.product_id,
+          name: product.name,
+          total: product.total,
+          human: humanize(product.sample, product.total),
+        })),
+    })),
+    truncated,
+  }
+}
+

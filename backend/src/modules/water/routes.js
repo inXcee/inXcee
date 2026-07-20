@@ -514,19 +514,23 @@ waterRouter.post('/monthly-close/:month/unlock', ...managerOnly, (req, res, next
   } catch (e) { fail(next, e) }
 })
 
-// ── Muhasebe raporu (gün gün gelen/dağıtılan — tek sayfa) ──
+// ── Muhasebe raporu ──
+// Özet tek sayfa; sections=matrix,days,zones,intakes (veya all) ek bölümleri açar.
 waterRouter.get('/report/accounting', ...mgr, (req, res, next) => {
-  try { res.json(accountingReportService({ from: req.query.from, to: req.query.to })) } catch (e) { fail(next, e) }
+  try {
+    res.json(accountingReportService({ from: req.query.from, to: req.query.to, sections: req.query.sections }))
+  } catch (e) { fail(next, e) }
 })
 waterRouter.get('/report/accounting.pdf', ...mgr, (req, res, next) => {
   try {
-    const report = accountingReportService({ from: req.query.from, to: req.query.to })
+    const report = accountingReportService({ from: req.query.from, to: req.query.to, sections: req.query.sections })
     const doc = new PDFDocument({ size: 'A4', margin: 28 })
     res.setHeader('Content-Type', 'application/pdf')
     res.setHeader('Content-Disposition', `attachment; filename="su-muhasebe-raporu-${report.from}_${report.to}.pdf"`)
     doc.pipe(res)
     writeAccountingReportPDF(report, doc)
-    logAudit(req.user.id, 'water_accounting_pdf', 'water', null, `${report.from}..${report.to}`)
+    logAudit(req.user.id, 'water_accounting_pdf', 'water', null,
+      `${report.from}..${report.to}${report.sections.length ? ` +${report.sections.join(',')}` : ''}`)
   } catch (e) { fail(next, e) }
 })
 
