@@ -130,7 +130,41 @@ export function createDistributionService(data, userId) {
   return id
 }
 
-export function deleteMovementService(id) {
+// Giriş (irsaliye) kaydını düzenle — yanlış girilen tır/irsaliye düzeltmesi.
+// Bu girişin beslediği tahsisler serbest bırakılır, kayıt güncellenir ve
+// etkilenen ürünler için FIFO yeniden uzlaştırılır (karşılanamayan dağıtım
+// inceleme kuyruğuna düşer). Ay kilidi hem eski hem yeni tarih için geçerlidir.
+export function updateIntakeService(id, data, userId) {
+  const existing = q.getMovement(id)
+  if (!existing) throw errorWithStatus('Hareket bulunamadı', 404)
+  if (existing.type !== 'in') throw errorWithStatus('Sadece giriş kaydı düzenlenebilir', 400)
+  assertMonthUnlocked(existing.move_date)
+  const { product, quantity } = validateMovement(data, false)
+  assertMonthUnlocked(data.move_date)
+  const lot = normalizeIntakeLot(data, product, data.move_date)
+  return q.runInTransaction(() => {
+    const freed = q.releaseIntakeAllocations(id)
+    const ok = q.updateIntakeMovement(id, {
+      product_id: product.id,
+      move_date: data.move_date,
+      qty_base: toBase(product, quantity, data.input_unit),
+      input_qty: quantity,
+      input_unit: data.input_unit,
+      waybill_no: data.waybill_no?.trim() || null,
+      note: data.note?.trim() || null,
+      ...lot,
+    })
+    if (!ok) throw errorWithStatus('Giriş güncellenemedi', 500)
+    reconcileUnallocatedOut([existing.product_id, product.id])
+    if (freed.length) q.flagReviewForUnallocated([...new Set(freed.map(f => f.out_movement_id))])
+    checkLowStock([existing.product_id, product.id])
+    return q.getMovement(id)
+  })
+}
+
+// force=true: dağıtımlara tahsis edilmiş girişi de sil. Tahsisler çözülür,
+// serbest kalan dağıtımlar başka lotlardan karşılanır veya inceleme kuyruğuna düşer.
+export function deleteMovementService(id, { force = false } = {}) {
   return q.runInTransaction(() => {
     const existing = q.getMovement(id)
     if (!existing) throw errorWithStatus('Hareket bulunamadı', 404)
@@ -138,19 +172,40 @@ export function deleteMovementService(id) {
 
     if (existing.type === 'in') {
       const usage = q.intakeAllocationUsage(id)
-      if (usage.allocated_base > 0) {
+      if (usage.allocated_base > 0 && !force) {
         throw errorWithStatus(
-          `Bu giriş ${usage.distribution_count} dağıtıma toplam ${usage.allocated_base} birim tahsis edilmiş. Önce bağlı dağıtımları düzenleyin veya silin.`,
+          `Bu giriş ${usage.distribution_count} dağıtıma toplam ${usage.allocated_base} birim tahsis edilmiş. Önce bağlı dağıtımları düzenleyin/silin veya "bağlantıları çözerek sil" seçeneğini kullanın.`,
           409,
         )
       }
+      const freed = usage.allocated_base > 0 ? q.releaseIntakeAllocations(id) : []
       q.deleteMovement(id)
+      if (freed.length) {
+        reconcileUnallocatedOut(existing.product_id)
+        q.flagReviewForUnallocated([...new Set(freed.map(f => f.out_movement_id))])
+      }
       return existing
     }
 
     q.deleteMovement(id)
     reconcileUnallocatedOut(existing.product_id)
     return existing
+  })
+}
+
+// Bir dönemdeki DAĞITIM (out) kayıtlarını topluca sil — giriş/iade kayıtlarına
+// DOKUNULMAZ. Ay kilidine saygılıdır (kilitli ay → 423, hiçbir şey silinmez);
+// silinen ürünler için serbest kalan lotlar FIFO ile yeniden uzlaştırılır.
+export function clearDistributionsService({ from, to } = {}) {
+  if (!isIsoDate(from) || !isIsoDate(to)) throw errorWithStatus('Tarih YYYY-MM-DD olmalı', 400)
+  if (from > to) throw errorWithStatus('Başlangıç tarihi bitişten sonra olamaz', 400)
+  return q.runInTransaction(() => {
+    const rows = q.listMovements({ type: 'out', from, to, limit: 100000 })
+    for (const m of rows) assertMonthUnlocked(m.move_date)
+    const productIds = new Set()
+    for (const m of rows) { q.deleteMovement(m.id); productIds.add(m.product_id) }
+    if (productIds.size) reconcileUnallocatedOut([...productIds])
+    return { deleted: rows.length, from, to }
   })
 }
 
@@ -181,6 +236,15 @@ export function updateDistributionService(id, data, userId) {
     q.flagReviewForUnallocated([id])
   })
   checkLowStock([existing.product_id, product.id])
+}
+
+// PUT /movements/:id tek uç — kayıt türüne göre doğru servise yönlendirir.
+export function updateMovementService(id, data, userId) {
+  const existing = q.getMovement(id)
+  if (!existing) throw errorWithStatus('Hareket bulunamadı', 404)
+  return existing.type === 'in'
+    ? updateIntakeService(id, data, userId)
+    : updateDistributionService(id, data, userId)
 }
 
 export function batchIntakeService(data, userId) {

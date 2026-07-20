@@ -119,6 +119,7 @@ export default function WaterPage() {
         <div style={{ display: 'flex', gap: '8px' }}>
           <button className="btn btn-ghost btn-sm" onClick={() => setModal('text')}>📝 Metinden</button>
           {isManager && <button className="btn btn-ghost btn-sm" onClick={() => setModal('adjust')}>🛠 Düzeltme</button>}
+          {isManager && <button className="btn btn-ghost btn-sm" onClick={() => setModal('clear')}>🗑 Dönem Temizle</button>}
           <button className="btn btn-ghost btn-sm" onClick={() => setModal('settings')}>⚙ Ayarlar</button>
         </div>
       </div>
@@ -189,6 +190,7 @@ export default function WaterPage() {
       {modal === 'settings' && <SettingsModal onClose={() => setModal(null)} />}
       {modal === 'text' && <TextModal onClose={() => setModal(null)} />}
       {modal === 'adjust' && <AdjustModal onClose={() => setModal(null)} />}
+      {modal === 'clear' && <ClearPeriodModal onClose={() => setModal(null)} />}
     </div>
   )
 }
@@ -922,6 +924,31 @@ function GelenTirPanel({ from, to, label, stockItems = [] }) {
     queryFn: () => api.get('/water/waybill-photos', { params: { from, to, limit: 120 } }).then(r => r.data),
   })
 
+  // Yanlış girilen irsaliye/tır kaydını düzelt veya sil
+  const isManagerUser = useAuthStore(s => s.user?.role === 'campus_manager')
+  const [editIntake, setEditIntake] = useState(null)
+  const invalidateIntake = () => invalidateWaterQueries(qc, 'intake', 'distribution', 'review')
+  const delIntake = useMutation({ mutationFn: ({ id, force }) => api.delete(`/water/movements/${id}${force ? '?force=1' : ''}`) })
+  const askDeleteIntake = async (r) => {
+    const ok = await confirmDialog({ title: 'Girişi Sil', body: `${r.move_date} · ${r.product_name} (${r.waybill_no || 'irsaliyesiz'}) girişi silinsin mi?`, danger: true })
+    if (!ok) return
+    try {
+      await delIntake.mutateAsync({ id: r.id, force: false })
+      invalidateIntake(); toastOk('Giriş silindi')
+    } catch (e) {
+      if (e?.response?.status !== 409) return toastErr(errMsg(e, 'Silinemedi'))
+      if (!isManagerUser) return toastErr(errMsg(e, 'Bu giriş dağıtımlara tahsis edilmiş'))
+      const force = await confirmDialog({
+        title: 'Bağlantıları Çözerek Sil',
+        body: `${errMsg(e, '')}\n\nDağıtımlar silinmez; karşılıksız kalıp inceleme kuyruğuna düşer. Devam edilsin mi?`,
+        danger: true,
+      })
+      if (!force) return
+      try { await delIntake.mutateAsync({ id: r.id, force: true }); invalidateIntake(); toastOk('Giriş ve bağlantıları silindi') }
+      catch (e2) { toastErr(errMsg(e2, 'Silinemedi')) }
+    }
+  }
+
   const byProduct = useMemo(() => {
     const m = new Map()
     intakes.forEach(r => {
@@ -1191,7 +1218,7 @@ function GelenTirPanel({ from, to, label, stockItems = [] }) {
             </div>
             <div style={{ border: '1px solid var(--border)', borderRadius: '8px', overflow: 'auto', maxHeight: '360px' }}>
             <table className="data-table" style={{ fontSize: '11px' }}>
-              <thead><tr><th>Tarih</th><th>İrsaliye</th><th>Foto</th><th>Ürün</th><th>Lot / SKT</th><th style={{ textAlign: 'right' }}>Gelen</th><th style={{ textAlign: 'right' }}>Kalan</th></tr></thead>
+              <thead><tr><th>Tarih</th><th>İrsaliye</th><th>Foto</th><th>Ürün</th><th>Lot / SKT</th><th style={{ textAlign: 'right' }}>Gelen</th><th style={{ textAlign: 'right' }}>Kalan</th><th style={{ textAlign: 'right' }}>İşlem</th></tr></thead>
               <tbody>
                 {intakes.slice(0, 12).map(r => {
                   const linkedPhotos = waybillPhotos.filter(photo => Number(photo.movement_id) === Number(r.id) || (r.waybill_no && photo.waybill_no === r.waybill_no))
@@ -1211,9 +1238,13 @@ function GelenTirPanel({ from, to, label, stockItems = [] }) {
                     <td><div style={{ fontFamily: 'var(--mono)' }}>{r.lot_no || '—'}</div><div style={{ fontSize: '10px', color: r.expiry_date ? 'var(--text3)' : (r.expiry_tracking ? 'var(--red)' : 'var(--text3)') }}>{r.expiry_date || (r.expiry_tracking ? 'SKT eksik' : 'Takip kapalı')}</div></td>
                     <td style={{ textAlign: 'right', fontFamily: 'var(--mono)' }}>{r.qty_human || humanQty(r, r.qty_base)}</td>
                     <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', color: (r.remaining_base || 0) > 0 ? 'var(--teal)' : 'var(--text3)' }}>{r.remaining_human || nf(r.remaining_base)}</td>
+                    <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      <button className="btn btn-ghost btn-sm" title="Girişi düzenle" onClick={() => setEditIntake(r)}>✎</button>
+                      <button className="btn btn-ghost btn-sm" title="Girişi sil" style={{ color: 'var(--red)' }} onClick={() => askDeleteIntake(r)}>✕</button>
+                    </td>
                   </tr>
                 })}
-                {intakes.length === 0 && <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--text3)', padding: '12px' }}>Bu ay gelen tır kaydı yok</td></tr>}
+                {intakes.length === 0 && <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--text3)', padding: '12px' }}>Bu ay gelen tır kaydı yok</td></tr>}
               </tbody>
             </table>
             </div>
@@ -1254,7 +1285,82 @@ function GelenTirPanel({ from, to, label, stockItems = [] }) {
           </div>
         </div>
       </div>
+      {editIntake && (
+        <IntakeEditModal row={editIntake} products={products} onClose={() => setEditIntake(null)} onSaved={invalidateIntake} />
+      )}
     </div>
+  )
+}
+
+// Yanlış girilen giriş (irsaliye/tır) kaydını düzelt — ürün, miktar, tarih, irsaliye, lot/SKT
+function IntakeEditModal({ row, products, onClose, onSaved }) {
+  const [form, setForm] = useState({
+    product_id: String(row.product_id || ''),
+    input_qty: String(row.input_qty ?? ''),
+    input_unit: row.input_unit || 'palet',
+    move_date: row.move_date || todayStr(),
+    waybill_no: row.waybill_no || '',
+    lot_no: row.lot_no || '',
+    production_date: row.production_date || '',
+    expiry_date: row.expiry_date || '',
+    note: row.note || '',
+  })
+  const set = (patch) => setForm(f => ({ ...f, ...patch }))
+  const product = products.find(p => String(p.id) === String(form.product_id))
+  const calc = smartQty(form.input_qty, product, form.input_unit)
+  const save = useMutation({
+    mutationFn: () => api.put(`/water/movements/${row.id}`, {
+      product_id: +form.product_id,
+      input_qty: calc.input_qty,
+      input_unit: calc.input_unit,
+      move_date: form.move_date,
+      waybill_no: form.waybill_no.trim() || null,
+      lot_no: form.lot_no.trim() || null,
+      production_date: form.production_date || null,
+      expiry_date: form.expiry_date || null,
+      note: form.note.trim() || null,
+    }),
+    onSuccess: () => { onSaved(); toastOk('Giriş güncellendi'); onClose() },
+    onError: (e) => toastErr(errMsg(e, 'Güncellenemedi')),
+  })
+  return (
+    <WaterModal title="GİRİŞ (İRSALİYE) DÜZENLE" onClose={onClose} width="560px">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        <div style={{ fontSize: '11px', color: 'var(--text3)' }}>
+          Değişiklik sonrası bu girişin tahsisleri çözülüp FIFO yeniden hesaplanır; karşılanamayan dağıtım inceleme kuyruğuna düşer.
+        </div>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <div style={{ flex: 2 }}><label className="form-label">Ürün</label>
+            <select className="form-select" value={form.product_id} onChange={e => { const p = products.find(x => String(x.id) === e.target.value); set({ product_id: e.target.value, input_unit: defaultUnitForProduct(p) }) }}>
+              {products.map(p => <option key={p.id} value={p.id}>{p.brand_name ? `${p.brand_name} · ` : ''}{p.name}</option>)}
+            </select>
+          </div>
+          <div style={{ width: '110px' }}><label className="form-label">Miktar</label>
+            <input className="form-input" inputMode="decimal" value={form.input_qty} onChange={e => set({ input_qty: e.target.value })} style={{ borderColor: calc.error ? 'var(--red)' : undefined }} />
+          </div>
+          <div style={{ width: '110px' }}><label className="form-label">Birim</label>
+            <select className="form-select" value={form.input_unit} onChange={e => set({ input_unit: e.target.value })}>
+              {unitOptionsForProduct(product).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+          </div>
+        </div>
+        {calc.error && <div style={{ color: 'var(--red)', fontSize: '11px' }}>{calc.error}</div>}
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <div style={{ flex: 1 }}><label className="form-label">Tarih</label><input type="date" className="form-input" value={form.move_date} onChange={e => set({ move_date: e.target.value })} /></div>
+          <div style={{ flex: 1 }}><label className="form-label">İrsaliye No</label><input className="form-input" value={form.waybill_no} onChange={e => set({ waybill_no: e.target.value })} /></div>
+        </div>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <div style={{ flex: 1 }}><label className="form-label">Lot</label><input className="form-input" value={form.lot_no} onChange={e => set({ lot_no: e.target.value })} /></div>
+          <div style={{ flex: 1 }}><label className="form-label">Üretim</label><input type="date" className="form-input" value={form.production_date} onChange={e => set({ production_date: e.target.value })} /></div>
+          <div style={{ flex: 1 }}><label className="form-label">SKT</label><input type="date" className="form-input" value={form.expiry_date} onChange={e => set({ expiry_date: e.target.value })} /></div>
+        </div>
+        <div><label className="form-label">Not</label><input className="form-input" value={form.note} onChange={e => set({ note: e.target.value })} /></div>
+        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+          <button className="btn btn-ghost" onClick={onClose}>Vazgeç</button>
+          <button className="btn btn-primary" disabled={!calc.valid || save.isPending} onClick={() => save.mutate()}>{save.isPending ? 'Kaydediliyor…' : 'Kaydet'}</button>
+        </div>
+      </div>
+    </WaterModal>
   )
 }
 
@@ -1437,6 +1543,50 @@ function TextModal({ onClose }) {
   return (
     <WaterModal title="METİNDEN DAĞITIM" onClose={onClose} width="720px">
       <TextDistribute products={products} zones={zones} onSaved={onSaved} />
+    </WaterModal>
+  )
+}
+
+// Dönem temizle: seçili aralıktaki DAĞITIM kayıtlarını sil (giriş/iade dokunulmaz, ay-kilidi saygılı)
+function ClearPeriodModal({ onClose }) {
+  const qc = useQueryClient()
+  const monthStart = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01` }
+  const [from, setFrom] = useState(monthStart())
+  const [to, setTo] = useState(todayStr())
+  const [confirm, setConfirm] = useState(false)
+  const rangeOk = from && to && from <= to
+  const { data: preview, isFetching } = useQuery({
+    queryKey: ['water-clear-preview', from, to],
+    queryFn: () => api.get('/water/movements', { params: { type: 'out', from, to, limit: 100000 } }).then(r => r.data),
+    enabled: rangeOk,
+  })
+  const count = preview?.length ?? null
+  const clear = useMutation({
+    mutationFn: () => api.post('/water/movements/clear', { from, to }),
+    onSuccess: (r) => { invalidateWaterQueries(qc, 'distribution', 'review'); toastOk(`${r.data.deleted} dağıtım kaydı silindi`); onClose() },
+    onError: (e) => toastErr(errMsg(e, 'Silinemedi')),
+  })
+  return (
+    <WaterModal title="DÖNEM TEMİZLE (DAĞITIMLAR)" onClose={onClose} width="520px">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <div style={{ fontSize: '12px', color: 'var(--text2)' }}>
+          Seçilen aralıktaki <b>dağıtım</b> kayıtları silinir. <b>Girişler ve iadeler etkilenmez</b>, kilitli aylar silinmez. Bu işlem <b>geri alınamaz</b>.
+        </div>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <div style={{ flex: 1 }}><label className="form-label">Başlangıç</label><input type="date" className="form-input" value={from} onChange={e => setFrom(e.target.value)} /></div>
+          <div style={{ flex: 1 }}><label className="form-label">Bitiş</label><input type="date" className="form-input" value={to} onChange={e => setTo(e.target.value)} /></div>
+        </div>
+        <div style={{ padding: '10px 12px', borderRadius: '8px', background: count ? 'rgba(239,68,68,.08)' : 'var(--surface2)', border: `1px solid ${count ? 'rgba(239,68,68,.35)' : 'var(--border)'}`, fontSize: '12px' }}>
+          {!rangeOk ? 'Geçerli bir tarih aralığı seçin.' : isFetching || count === null ? 'Önizleme yükleniyor…' : count === 0 ? 'Bu aralıkta silinecek dağıtım kaydı yok.' : <span style={{ color: 'var(--red)', fontWeight: 600 }}>⚠ {count} dağıtım kaydı silinecek.</span>}
+        </div>
+        <label style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '12px' }}>
+          <input type="checkbox" checked={confirm} onChange={e => setConfirm(e.target.checked)} /> Silmeyi onaylıyorum (geri alınamaz)
+        </label>
+        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+          <button className="btn btn-ghost" onClick={onClose}>Vazgeç</button>
+          <button className="btn btn-danger" disabled={!confirm || !count || clear.isPending} onClick={() => clear.mutate()}>{clear.isPending ? 'Siliniyor…' : `${count || 0} Kaydı Sil`}</button>
+        </div>
+      </div>
     </WaterModal>
   )
 }

@@ -315,6 +315,88 @@ describe('Su takip — toplu giriş + metinden dağıtım + düşük stok + ay s
     expect(allocs.c).toBeGreaterThanOrEqual(2)
   })
 
+  it('dönem temizle — dağıtımları siler, girişe dokunmaz, sadece müdür', async () => {
+    const auth = t => ({ Authorization: `Bearer ${t}` })
+    await request(app).post('/api/water/intake').set(auth(managerToken))
+      .send({ product_id: p05, input_qty: 5, input_unit: 'koli', move_date: '2026-10-01' })
+    await request(app).post('/api/water/distribute/batch').set(auth(managerToken))
+      .send({ move_date: '2026-10-02', lines: [
+        { zone_id: zoneA, product_id: p05, input_qty: 2, input_unit: 'koli' },
+        { zone_id: zoneB, product_id: p05, input_qty: 1, input_unit: 'koli' },
+      ] })
+    // Vardiya sorumlusu (operasyon) toplu temizleyemez
+    const forbidden = await request(app).post('/api/water/movements/clear').set(auth(supervisorToken)).send({ from: '2026-10-01', to: '2026-10-31' })
+    expect(forbidden.status).toBe(403)
+    // Müdür temizler → sadece 2 dağıtım silinir
+    const r = await request(app).post('/api/water/movements/clear').set(auth(managerToken)).send({ from: '2026-10-01', to: '2026-10-31' })
+    expect(r.status).toBe(200)
+    expect(r.body.deleted).toBe(2)
+    const outs = await request(app).get('/api/water/movements?type=out&from=2026-10-01&to=2026-10-31').set(auth(managerToken))
+    expect(outs.body.length).toBe(0)
+    const ins = await request(app).get('/api/water/movements?type=in&from=2026-10-01&to=2026-10-31').set(auth(managerToken))
+    expect(ins.body.length).toBe(1)  // giriş korunur
+  })
+
+  it('giriş düzenleme — miktar düzeltilir ve FIFO yeniden uzlaşır', async () => {
+    const auth = t => ({ Authorization: `Bearer ${t}` })
+    const intake = await request(app).post('/api/water/intake').set(auth(managerToken))
+      .send({ product_id: p05, input_qty: 10, input_unit: 'koli', move_date: '2026-11-01', waybill_no: 'IRS-1' })
+    expect(intake.status).toBe(201)
+    const id = intake.body.id ?? intake.body
+    // yanlış yazılmış: 10 yerine 3 olmalıydı
+    const upd = await request(app).put(`/api/water/movements/${id}`).set(auth(managerToken))
+      .send({ product_id: p05, input_qty: 3, input_unit: 'koli', move_date: '2026-11-01', waybill_no: 'IRS-1-DUZELTME' })
+    expect(upd.status).toBe(200)
+    const list = await request(app).get('/api/water/movements?type=in&from=2026-11-01&to=2026-11-30').set(auth(managerToken))
+    const row = list.body.find(m => m.id === id)
+    expect(row.input_qty).toBe(3)
+    expect(row.waybill_no).toBe('IRS-1-DUZELTME')
+  })
+
+  it('tahsisli girişi silmek 409 verir, force ile bağlantılar çözülerek silinir', async () => {
+    const auth = t => ({ Authorization: `Bearer ${t}` })
+    const intake = await request(app).post('/api/water/intake').set(auth(managerToken))
+      .send({ product_id: p033, input_qty: 5, input_unit: 'palet', move_date: '2026-12-01' })
+    const id = intake.body.id ?? intake.body
+    // bu girişten karşılanan bir dağıtım
+    await request(app).post('/api/water/distribute').set(auth(managerToken))
+      .send({ zone_id: zoneA, product_id: p033, input_qty: 1, input_unit: 'palet', move_date: '2026-12-02' })
+
+    const blocked = await request(app).delete(`/api/water/movements/${id}`).set(auth(managerToken))
+    expect(blocked.status).toBe(409)
+    expect(blocked.body.error).toMatch(/tahsis/)
+
+    // vardiya sorumlusu force kullanamaz
+    const forbidden = await request(app).delete(`/api/water/movements/${id}?force=1`).set(auth(supervisorToken))
+    expect(forbidden.status).toBe(403)
+
+    const forced = await request(app).delete(`/api/water/movements/${id}?force=1`).set(auth(managerToken))
+    expect(forced.status).toBe(200)
+    const ins = await request(app).get('/api/water/movements?type=in&from=2026-12-01&to=2026-12-31').set(auth(managerToken))
+    expect(ins.body.find(m => m.id === id)).toBeUndefined()
+    // dağıtım korunur, karşılıksız kalır (inceleme kuyruğu)
+    const outs = await request(app).get('/api/water/movements?type=out&from=2026-12-01&to=2026-12-31').set(auth(managerToken))
+    expect(outs.body.length).toBe(1)
+    expect(outs.body[0].unallocated_base).toBeGreaterThan(0)
+  })
+
+  it('dağıtım kaydı PUT ile hâlâ düzenlenebilir (regresyon)', async () => {
+    const auth = t => ({ Authorization: `Bearer ${t}` })
+    const d = await request(app).post('/api/water/distribute').set(auth(managerToken))
+      .send({ zone_id: zoneA, product_id: p05, input_qty: 2, input_unit: 'koli', move_date: '2026-11-05' })
+    const id = d.body.id ?? d.body
+    const upd = await request(app).put(`/api/water/movements/${id}`).set(auth(managerToken))
+      .send({ zone_id: zoneB, product_id: p05, input_qty: 4, input_unit: 'koli', move_date: '2026-11-05' })
+    expect(upd.status).toBe(200)
+    const outs = await request(app).get('/api/water/movements?type=out&from=2026-11-05&to=2026-11-05').set(auth(managerToken))
+    expect(outs.body.find(m => m.id === id).input_qty).toBe(4)
+  })
+
+  it('dönem temizle — geçersiz tarih 400', async () => {
+    const r = await request(app).post('/api/water/movements/clear').set('Authorization', `Bearer ${managerToken}`).send({ from: 'x', to: '2026-10-31' })
+    expect(r.status).toBe(400)
+  })
+
   it('toplu dağıtım satır bazlı tarih kabul eder', async () => {
     const r = await request(app).post('/api/water/distribute/batch').set('Authorization', `Bearer ${managerToken}`)
       .send({ note: 'günlük çizelge', lines: [

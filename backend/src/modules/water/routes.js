@@ -10,7 +10,7 @@ import {
   productsService, createProductService, updateProductService, deleteProductService,
   brandsService, createBrandService, updateBrandService, deleteBrandService,
   zonesService, createZoneService, updateZoneService, deleteZoneService,
-  createIntakeService, createDistributionService, deleteMovementService, updateDistributionService, movementsService,
+  createIntakeService, createDistributionService, deleteMovementService, clearDistributionsService, updateMovementService, movementsService,
   createReturnService, batchReturnService, deleteReturnService, returnsService, depositService,
   summaryService, pivotService, batchIntakeService, batchDistributeService, parseDistributionText,
   alertsService, forecastService, trendsService, waterDailyDigest, dailyDigestDeliveriesService,
@@ -171,9 +171,10 @@ waterRouter.post('/distribute/batch', ...mgr, (req, res, next) => {
   } catch (e) { fail(next, e) }
 })
 
+// Giriş (irsaliye) ve dağıtım kayıtlarını düzenler — tür otomatik ayırt edilir.
 waterRouter.put('/movements/:id', ...mgr, (req, res, next) => {
   try {
-    updateDistributionService(+req.params.id, req.body, req.user.id)
+    updateMovementService(+req.params.id, req.body, req.user.id)
     logAudit(req.user.id, 'water_movement_update', 'water', +req.params.id, `${req.body.input_qty} ${req.body.input_unit}`)
     res.json({ ok: true })
   } catch (e) { fail(next, e) }
@@ -181,9 +182,22 @@ waterRouter.put('/movements/:id', ...mgr, (req, res, next) => {
 
 waterRouter.delete('/movements/:id', ...mgr, (req, res, next) => {
   try {
-    const before = deleteMovementService(+req.params.id)
-    logAudit(req.user.id, 'water_movement_delete', 'water', +req.params.id, auditChange(before, null, AUDIT_FIELDS.movement))
+    const force = req.query.force === '1' || req.query.force === 'true'
+    if (force && req.user.role !== 'campus_manager') {
+      return res.status(403).json({ error: 'Bağlantıları çözerek silme yetkisi yalnızca müdürde' })
+    }
+    const before = deleteMovementService(+req.params.id, { force })
+    logAudit(req.user.id, force ? 'water_movement_delete_force' : 'water_movement_delete', 'water', +req.params.id, auditChange(before, null, AUDIT_FIELDS.movement))
     res.json({ ok: true })
+  } catch (e) { fail(next, e) }
+})
+
+// Bir dönemdeki dağıtım kayıtlarını topluca sil (müdür). Giriş/iade dokunulmaz; ay kilidine saygılı.
+waterRouter.post('/movements/clear', ...managerOnly, (req, res, next) => {
+  try {
+    const result = clearDistributionsService({ from: req.body.from, to: req.body.to })
+    logAudit(req.user.id, 'water_movements_clear', 'water', null, `${result.from}..${result.to} → ${result.deleted} dağıtım silindi`)
+    res.json(result)
   } catch (e) { fail(next, e) }
 })
 

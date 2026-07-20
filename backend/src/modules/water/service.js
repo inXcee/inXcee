@@ -17,9 +17,12 @@ export {
   batchIntakeService,
   createDistributionService,
   createIntakeService,
+  clearDistributionsService,
   deleteMovementService,
   movementsService,
   updateDistributionService,
+  updateIntakeService,
+  updateMovementService,
 } from './movements.js'
 export {
   assertMonthUnlocked,

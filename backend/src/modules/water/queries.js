@@ -240,6 +240,17 @@ export function updateMovementWithAllocations(id, plan) {
   return tx()
 }
 
+// Giriş (irsaliye) kaydını güncelle — lot/SKT alanları dahil. Yalnızca type='in'.
+export function updateIntakeMovement(id, movement) {
+  return getDB().prepare(`
+    UPDATE water_movements
+    SET product_id=@product_id, move_date=@move_date, qty_base=@qty_base,
+        input_qty=@input_qty, input_unit=@input_unit, waybill_no=@waybill_no, note=@note,
+        lot_no=@lot_no, production_date=@production_date, expiry_date=@expiry_date
+    WHERE id=@id AND type='in'
+  `).run({ ...movement, id }).changes > 0
+}
+
 export function openIntakeLots(productId) {
   return getDB().prepare(`
     SELECT mv.id, mv.product_id, mv.move_date, mv.waybill_no, mv.qty_base,
