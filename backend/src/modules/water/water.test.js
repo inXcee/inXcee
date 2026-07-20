@@ -295,6 +295,55 @@ describe('Su takip — toplu giriş + metinden dağıtım + düşük stok + ay s
     expect(items.every(i => i.issues.includes('bölge'))).toBe(true)
   })
 
+  it('alt yer ekle/listele/sil — bölgeye toplanan teslim noktaları', async () => {
+    const auth = { Authorization: `Bearer ${managerToken}` }
+    const add = await request(app).post(`/api/water/zones/${zoneA}/sub-locations`).set(auth).send({ name: 'Gemi' })
+    expect(add.status).toBe(201)
+    expect(add.body.name).toBe('Gemi')
+    await request(app).post(`/api/water/zones/${zoneA}/sub-locations`).set(auth).send({ name: 'Modüller Bölgesi' })
+
+    const list = await request(app).get(`/api/water/zones/${zoneA}/sub-locations`).set(auth)
+    expect(list.body.map(s => s.name)).toEqual(['Gemi', 'Modüller Bölgesi'])
+
+    // aynı bölgede aynı ad tekrar edilemez (çakışma → 409)
+    const dup = await request(app).post(`/api/water/zones/${zoneA}/sub-locations`).set(auth).send({ name: 'Gemi' })
+    expect(dup.status).toBe(409)
+
+    // zones listesi alt yerleri de döner
+    const zones = await request(app).get('/api/water/zones').set(auth)
+    const zA = zones.body.find(z => z.id === zoneA)
+    expect(zA.sub_locations.map(s => s.name)).toEqual(['Gemi', 'Modüller Bölgesi'])
+
+    const del = await request(app).delete(`/api/water/zones/${zoneA}/sub-locations/${add.body.id}`).set(auth)
+    expect(del.status).toBe(200)
+    const after = await request(app).get(`/api/water/zones/${zoneA}/sub-locations`).set(auth)
+    expect(after.body.map(s => s.name)).toEqual(['Modüller Bölgesi'])
+  })
+
+  it('metinden dağıtım — alt yer adı bölgeye çözümlenir ve hangi alt yer olduğu döner', async () => {
+    const auth = { Authorization: `Bearer ${managerToken}` }
+    await request(app).post(`/api/water/zones/${zoneB}/sub-locations`).set(auth).send({ name: 'Deniz Gemisi' })
+    const r = await request(app).post('/api/water/distribute/parse').set(auth)
+      .send({ text: 'Deniz Gemisi 2 palet 0.33' })
+    const item = r.body.items[0]
+    expect(item.zone_id).toBe(zoneB)
+    expect(item.zone_sub_location).toBe('Deniz Gemisi')
+    expect(item.ok).toBe(true)
+  })
+
+  it('bölge adı düzeltilebilir (yanlış yazılan ad)', async () => {
+    const auth = { Authorization: `Bearer ${managerToken}` }
+    const created = await request(app).post('/api/water/zones').set(auth).send({ name: 'Yanlis Yazilmis Yer' })
+    const id = created.body.id ?? created.body
+    const upd = await request(app).put(`/api/water/zones/${id}`).set(auth)
+      .send({ name: 'Doğru Yazılmış Yer', code: 'DGR', note: 'düzeltildi' })
+    expect(upd.status).toBe(200)
+    const zones = await request(app).get('/api/water/zones').set(auth)
+    const z = zones.body.find(x => x.id === id)
+    expect(z.name).toBe('Doğru Yazılmış Yer')
+    expect(z.code).toBe('DGR')
+  })
+
   it('metinden dağıtım — satır içi bölge sonraki başlıksız satıra taşınır', async () => {
     const text = 'B Blok Yemekhane 5 koli 0.5\n10 damacana'
     const r = await request(app).post('/api/water/distribute/parse').set('Authorization', `Bearer ${managerToken}`).send({ text })

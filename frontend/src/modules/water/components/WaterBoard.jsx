@@ -61,7 +61,9 @@ const WaterMatrixRow = memo(function WaterMatrixRow({
         <button
           type="button"
           onClick={() => onOpenZone(row)}
-          title={`${row.zone_name} geçmişini aç`}
+          title={(row.sub_locations || []).length
+            ? `${row.zone_name} geçmişini aç\n\nBu bölgeye yazılan yerler:\n• ${row.sub_locations.join('\n• ')}`
+            : `${row.zone_name} geçmişini aç`}
           style={{
             border: '1px solid var(--border)',
             background: row.visible_base ? 'rgba(20,184,166,.08)' : row.visible_draft ? 'rgba(34,197,94,.08)' : 'var(--surface2)',
@@ -139,6 +141,7 @@ const WaterMatrixRow = memo(function WaterMatrixRow({
   && previous.brandColor === next.brandColor
   && previous.row.zone_id === next.row.zone_id
   && previous.row.zone_name === next.row.zone_name
+  && previous.row.sub_locations === next.row.sub_locations
   && previous.row.cells === next.row.cells
   && previous.row.visible_base === next.row.visible_base
   && previous.row.visible_day === next.row.visible_day

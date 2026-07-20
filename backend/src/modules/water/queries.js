@@ -85,7 +85,38 @@ export function deleteProduct(id) {
 // ── Bölgeler ──
 export function listZones({ includeInactive = false } = {}) {
   const where = includeInactive ? '' : 'WHERE is_active = 1'
-  return getDB().prepare(`SELECT * FROM water_zones ${where} ORDER BY name`).all()
+  const zones = getDB().prepare(`SELECT * FROM water_zones ${where} ORDER BY name`).all()
+  const subs = getDB().prepare(
+    'SELECT id, zone_id, name FROM water_zone_sub_locations ORDER BY sort_order, name'
+  ).all()
+  const byZone = new Map()
+  for (const s of subs) {
+    if (!byZone.has(s.zone_id)) byZone.set(s.zone_id, [])
+    byZone.get(s.zone_id).push({ id: s.id, name: s.name })
+  }
+  return zones.map(z => ({ ...z, sub_locations: byZone.get(z.id) || [] }))
+}
+
+// ── Dağıtım yeri alt yerleri (tek bölgeye toplanan teslim noktaları) ──
+export function listZoneSubLocations(zoneId) {
+  return getDB().prepare(
+    'SELECT * FROM water_zone_sub_locations WHERE zone_id=? ORDER BY sort_order, name'
+  ).all(zoneId)
+}
+
+export function createZoneSubLocation(zoneId, name) {
+  const db = getDB()
+  const next = db.prepare('SELECT COALESCE(MAX(sort_order), -1) + 1 AS n FROM water_zone_sub_locations WHERE zone_id=?').get(zoneId).n
+  const id = db.prepare('INSERT INTO water_zone_sub_locations(zone_id, name, sort_order) VALUES(?,?,?)').run(zoneId, name, next).lastInsertRowid
+  return db.prepare('SELECT * FROM water_zone_sub_locations WHERE id=?').get(id)
+}
+
+export function deleteZoneSubLocation(zoneId, id) {
+  const db = getDB()
+  const row = db.prepare('SELECT * FROM water_zone_sub_locations WHERE id=? AND zone_id=?').get(id, zoneId)
+  if (!row) return null
+  db.prepare('DELETE FROM water_zone_sub_locations WHERE id=?').run(id)
+  return row
 }
 export function getZone(id) {
   return getDB().prepare('SELECT * FROM water_zones WHERE id=?').get(id)

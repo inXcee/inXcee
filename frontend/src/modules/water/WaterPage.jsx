@@ -1733,6 +1733,37 @@ function ZonesTab() {
     if (expected === (z.expected_monthly || 0)) return
     update.mutate({ id: z.id, name: z.name, code: z.code, note: z.note, is_active: z.is_active !== 0, expected_monthly: expected })
   }
+
+  // Ad/kod/not düzenleme (yanlış yazılan adları düzeltmek için)
+  const [editingId, setEditingId] = useState(null)
+  const [editForm, setEditForm] = useState({ name: '', code: '', note: '' })
+  const [subDraft, setSubDraft] = useState('')
+  const startEdit = (z) => { setEditingId(z.id); setEditForm({ name: z.name, code: z.code || '', note: z.note || '' }); setSubDraft('') }
+  const saveEdit = (z) => {
+    const name = editForm.name.trim()
+    if (!name) return toastErr('Bölge adı gerekli')
+    update.mutate(
+      { id: z.id, name, code: editForm.code.trim() || null, note: editForm.note.trim() || null, is_active: z.is_active !== 0, expected_monthly: z.expected_monthly || 0 },
+      { onSuccess: () => { invalidate(); setEditingId(null); toastOk('Dağıtım yeri güncellendi') } }
+    )
+  }
+  // Alt yerler: tek bölgeye toplanan gerçek teslim noktaları
+  const addSub = useMutation({
+    mutationFn: ({ zoneId, name }) => api.post(`/water/zones/${zoneId}/sub-locations`, { name }),
+    onSuccess: () => { invalidate(); setSubDraft(''); toastOk('Alt yer eklendi') },
+    onError: (e) => toastErr(errMsg(e, 'Eklenemedi')),
+  })
+  const delSub = useMutation({
+    mutationFn: ({ zoneId, id }) => api.delete(`/water/zones/${zoneId}/sub-locations/${id}`),
+    onSuccess: () => { invalidate(); toastOk('Alt yer silindi') },
+    onError: (e) => toastErr(errMsg(e, 'Silinemedi')),
+  })
+  const subTitle = (z) => {
+    const subs = z.sub_locations || []
+    return subs.length
+      ? `${z.name} altındaki teslim noktaları:\n• ${subs.map(s => s.name).join('\n• ')}`
+      : `${z.name} — alt yer tanımlı değil`
+  }
   return (
     <div>
       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: '14px' }}>
@@ -1744,23 +1775,71 @@ function ZonesTab() {
       </div>
       <div style={{ maxHeight: '46vh', overflowY: 'auto' }}>
         <table className="data-table" style={{ fontSize: '12px' }}>
-          <thead><tr><th>Ad</th><th>Kod</th><th style={{ textAlign: 'right' }}>Beklenen/ay</th><th>Not</th><th></th></tr></thead>
+          <thead><tr><th>Ad</th><th>Kod</th><th style={{ textAlign: 'right' }}>Beklenen/ay</th><th>Not</th><th>Alt yerler (bu bölgeye yazılanlar)</th><th></th></tr></thead>
           <tbody>
-            {zones.map(z => (
+            {zones.map(z => {
+              const editing = editingId === z.id
+              const subs = z.sub_locations || []
+              return (
               <tr key={z.id}>
-                <td style={{ fontWeight: 600 }}>{z.name}</td>
-                <td style={{ fontFamily: 'var(--mono)', color: 'var(--text3)' }}>{z.code || '—'}</td>
+                <td style={{ fontWeight: 600 }}>
+                  {editing
+                    ? <input className="form-input" style={{ minWidth: '150px' }} value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))} />
+                    : <span title={subTitle(z)} style={{ cursor: 'help', borderBottom: subs.length ? '1px dotted var(--text3)' : 'none' }}>
+                        {z.name}{subs.length > 0 && <span style={{ marginLeft: 5, fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--teal)' }}>+{subs.length}</span>}
+                      </span>}
+                </td>
+                <td style={{ fontFamily: 'var(--mono)', color: 'var(--text3)' }}>
+                  {editing
+                    ? <input className="form-input" style={{ width: '80px' }} value={editForm.code} onChange={e => setEditForm(f => ({ ...f, code: e.target.value }))} />
+                    : (z.code || '—')}
+                </td>
                 <td style={{ textAlign: 'right' }}>
                   <input type="number" min="0" aria-label={`${z.name} beklenen aylık`} defaultValue={z.expected_monthly || ''}
                     onBlur={e => saveExpected(z, e.target.value)}
                     onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
                     style={{ width: '72px', textAlign: 'right', fontFamily: 'var(--mono)', padding: '3px 5px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '5px', color: 'var(--text)' }} placeholder="—" />
                 </td>
-                <td style={{ color: 'var(--text3)' }}>{z.note || '—'}</td>
-                <td style={{ textAlign: 'right' }}><button onClick={async () => { if (await confirmDialog({ title: 'Dağıtım Yerini Sil', body: `"${z.name}" silinsin mi?`, danger: true })) del.mutate(z.id) }} className="btn btn-danger btn-sm">Sil</button></td>
+                <td style={{ color: 'var(--text3)' }}>
+                  {editing
+                    ? <input className="form-input" style={{ minWidth: '120px' }} value={editForm.note} onChange={e => setEditForm(f => ({ ...f, note: e.target.value }))} />
+                    : (z.note || '—')}
+                </td>
+                <td>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', alignItems: 'center' }}>
+                    {subs.map(s => (
+                      <span key={s.id} title={`"${s.name}" → ${z.name}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '10px', padding: '1px 6px', borderRadius: '999px', background: 'rgba(20,184,166,.12)', border: '1px solid rgba(20,184,166,.35)', color: 'var(--teal)' }}>
+                        {s.name}
+                        {editing && <button onClick={() => delSub.mutate({ zoneId: z.id, id: s.id })} title="Alt yeri kaldır" style={{ border: 'none', background: 'transparent', color: 'var(--red)', cursor: 'pointer', padding: 0, fontSize: '10px' }}>✕</button>}
+                      </span>
+                    ))}
+                    {subs.length === 0 && !editing && <span style={{ color: 'var(--text3)', fontSize: '11px' }}>—</span>}
+                    {editing && (
+                      <span style={{ display: 'inline-flex', gap: '4px' }}>
+                        <input className="form-input" style={{ width: '150px', fontSize: '11px', padding: '2px 6px' }} placeholder="ör. Osmangazi Gemisi"
+                          value={subDraft} onChange={e => setSubDraft(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter' && subDraft.trim()) addSub.mutate({ zoneId: z.id, name: subDraft.trim() }) }} />
+                        <button className="btn btn-ghost btn-sm" disabled={!subDraft.trim() || addSub.isPending} onClick={() => addSub.mutate({ zoneId: z.id, name: subDraft.trim() })}>+ Ekle</button>
+                      </span>
+                    )}
+                  </div>
+                </td>
+                <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                  {editing ? (
+                    <>
+                      <button className="btn btn-primary btn-sm" disabled={update.isPending} onClick={() => saveEdit(z)}>Kaydet</button>
+                      <button className="btn btn-ghost btn-sm" onClick={() => setEditingId(null)}>Vazgeç</button>
+                    </>
+                  ) : (
+                    <>
+                      <button className="btn btn-ghost btn-sm" title="Adı/kodu/notu düzenle, alt yer ekle" onClick={() => startEdit(z)}>✎</button>
+                      <button onClick={async () => { if (await confirmDialog({ title: 'Dağıtım Yerini Sil', body: `"${z.name}" silinsin mi?`, danger: true })) del.mutate(z.id) }} className="btn btn-danger btn-sm">Sil</button>
+                    </>
+                  )}
+                </td>
               </tr>
-            ))}
-            {zones.length === 0 && <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--text3)', padding: '16px' }}>Dağıtım yeri yok</td></tr>}
+            )})}
+            {zones.length === 0 && <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--text3)', padding: '16px' }}>Dağıtım yeri yok</td></tr>}
           </tbody>
         </table>
       </div>

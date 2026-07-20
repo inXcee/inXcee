@@ -10,6 +10,7 @@ import {
   productsService, createProductService, updateProductService, deleteProductService,
   brandsService, createBrandService, updateBrandService, deleteBrandService,
   zonesService, createZoneService, updateZoneService, deleteZoneService,
+  zoneSubLocationsService, createZoneSubLocationService, deleteZoneSubLocationService,
   createIntakeService, createDistributionService, deleteMovementService, clearDistributionsService, updateMovementService, movementsService,
   createReturnService, batchReturnService, deleteReturnService, returnsService, depositService,
   summaryService, pivotService, batchIntakeService, batchDistributeService, parseDistributionText,
@@ -112,6 +113,25 @@ waterRouter.delete('/zones/:id', ...mgr, (req, res, next) => {
   try {
     const before = deleteZoneService(+req.params.id)
     logAudit(req.user.id, 'water_zone_delete', 'water', +req.params.id, auditChange(before, null, AUDIT_FIELDS.zone))
+    res.json({ ok: true })
+  } catch (e) { fail(next, e) }
+})
+
+// ── Alt yerler: bir bölgeye toplanan teslim noktaları (parser'da takma ad) ──
+waterRouter.get('/zones/:id/sub-locations', ...mgr, (req, res, next) => {
+  try { res.json(zoneSubLocationsService(+req.params.id)) } catch (e) { fail(next, e) }
+})
+waterRouter.post('/zones/:id/sub-locations', ...mgr, (req, res, next) => {
+  try {
+    const row = createZoneSubLocationService(+req.params.id, req.body)
+    logAudit(req.user.id, 'water_zone_sub_create', 'water', +req.params.id, row.name)
+    res.status(201).json(row)
+  } catch (e) { fail(next, e) }
+})
+waterRouter.delete('/zones/:id/sub-locations/:subId', ...mgr, (req, res, next) => {
+  try {
+    const row = deleteZoneSubLocationService(+req.params.id, +req.params.subId)
+    logAudit(req.user.id, 'water_zone_sub_delete', 'water', +req.params.id, row.name)
     res.json({ ok: true })
   } catch (e) { fail(next, e) }
 })

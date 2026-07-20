@@ -204,6 +204,26 @@ export function updateZoneService(id, data) {
     throw Object.assign(new Error('Bölge güncellenemedi'), { statusCode: 500 })
   return { before: existing, after: q.getZone(id) }
 }
+// ── Alt yerler: tek bölgeye toplanan gerçek teslim noktaları (parser'da takma ad) ──
+export function zoneSubLocationsService(zoneId) {
+  if (!q.getZone(zoneId)) throw Object.assign(new Error('Bölge bulunamadı'), { statusCode: 404 })
+  return q.listZoneSubLocations(zoneId)
+}
+
+export function createZoneSubLocationService(zoneId, data) {
+  if (!q.getZone(zoneId)) throw Object.assign(new Error('Bölge bulunamadı'), { statusCode: 404 })
+  const name = data?.name?.trim()
+  if (!name) throw Object.assign(new Error('Alt yer adı gerekli'), { statusCode: 400 })
+  if (name.length > 120) throw Object.assign(new Error('Alt yer adı çok uzun'), { statusCode: 400 })
+  return uniqueWrite(() => q.createZoneSubLocation(zoneId, name), 'Bu bölgede aynı adlı alt yer zaten var')
+}
+
+export function deleteZoneSubLocationService(zoneId, id) {
+  const row = q.deleteZoneSubLocation(zoneId, id)
+  if (!row) throw Object.assign(new Error('Alt yer bulunamadı'), { statusCode: 404 })
+  return row
+}
+
 export function deleteZoneService(id) {
   const existing = q.getZone(id)
   if (!existing) throw Object.assign(new Error('Bölge bulunamadı'), { statusCode: 404 })
@@ -248,20 +268,31 @@ function matchProduct(segment, products) {
 // Bölge adı/kodu satırın BAŞINDA olmalı — tek satır formatında bölge baştadır
 // ("Kuzey klm 2 palet ..."). Metnin her yerinde aramak, kısa bölge adlarının
 // ("ev", "su") ürün/miktar kelimelerine tesadüfen eşleşmesine yol açıyordu.
+// Bölge adı/kodu VEYA alt yer adı satırın başında olmalı. Alt yerler takma addır:
+// "Osmangazi gemisi ..." → OSMANGAZİ. En uzun eşleşme kazanır; iki FARKLI bölge aynı
+// uzunlukta eşleşirse belirsiz sayılır ve eşleştirilmez (kullanıcı seçsin).
+// Dönüş: { zone, subLocation }
 function matchZone(line, zones) {
   const ln = normTr(line)
   const startsWith = (needle) => needle && (ln === needle || ln.startsWith(needle + ' '))
-  let best = null, bestLen = 0
+  let best = null, bestLen = 0, bestSub = null, ambiguous = false
+  const consider = (zone, needle, subName = null) => {
+    if (!needle || !startsWith(needle)) return
+    const len = needle.length
+    if (len > bestLen) { best = zone; bestLen = len; bestSub = subName; ambiguous = false }
+    else if (len === bestLen && best && best.id !== zone.id) ambiguous = true
+  }
   for (const z of zones) {
-    const name = normTr(z.name)
+    consider(z, normTr(z.name))
     let code = z.code ? normTr(z.code) : null
     // Çok kısa (<2) veya tamamen sayısal kodu yok say: miktarlar sayısaldır,
     // "1 palet ..." gibi satırlar kodu "1" olan bir bölgeye yanlış eşleşiyordu.
     if (code && (code.length < 2 || /^\d+$/.test(code))) code = null
-    if (name && name.length > bestLen && startsWith(name)) { best = z; bestLen = name.length }
-    else if (code && code.length > bestLen && startsWith(code)) { best = z; bestLen = code.length }
+    consider(z, code)
+    for (const s of z.sub_locations || []) consider(z, normTr(s.name), s.name)
   }
-  return best
+  if (ambiguous || !best) return { zone: null, subLocation: null }
+  return { zone: best, subLocation: bestSub }
 }
 
 function parseSegmentQty(segment) {
@@ -294,19 +325,23 @@ export function parseDistributionText(text) {
   const items = []
   let currentZone = null       // eşleşen bölge objesi (bağlam)
   let currentZoneRaw = null    // eşleşmeyen başlığın ham metni
+  let currentZoneSub = null    // hangi alt yerden eşleşti (varsa)
   for (const line of lines) {
     if (!line) continue        // boş satır blok ayracı; bağlamı korur
     if (!isDistributionLine(line)) {
       // Bölge başlığı satırı: bağlamı güncelle, kayıt üretme
-      const zone = matchZone(line, zones)
+      const { zone, subLocation } = matchZone(line, zones)
       currentZone = zone || null
+      currentZoneSub = zone ? subLocation : null
       currentZoneRaw = zone ? null : line
       continue
     }
     // Dağıtım satırı: satır içi bölge varsa onu kullan + bağlamı güncelle, yoksa başlıktan devral
-    const zoneOnLine = matchZone(line, zones)
-    if (zoneOnLine) { currentZone = zoneOnLine; currentZoneRaw = null }
+    const onLine = matchZone(line, zones)
+    const zoneOnLine = onLine.zone
+    if (zoneOnLine) { currentZone = zoneOnLine; currentZoneSub = onLine.subLocation; currentZoneRaw = null }
     const zone = zoneOnLine || currentZone
+    const zoneSub = zoneOnLine ? onLine.subLocation : (zone ? currentZoneSub : null)
     const zoneRaw = zone ? null : currentZoneRaw
     let rest = line
     if (zoneOnLine) {
@@ -330,6 +365,7 @@ export function parseDistributionText(text) {
       items.push({
         raw: line,
         zone_id: zone?.id || null, zone_name: zone?.name || null,
+        zone_sub_location: zone ? (zoneSub || null) : null,
         zone_raw: zone ? null : (zoneRaw || null),
         product_id: product?.id || null, product_name: product?.name || null,
         input_qty: qty, input_unit: unit,
@@ -418,7 +454,11 @@ export function pivotService({ from, to } = {}) {
       const base = cell.get(`${z.id}:${p.id}`) || 0
       if (base) { cells[p.id] = { base, human: humanize(p, base) }; rowTotal += base }
     }
-    return { zone_id: z.id, zone_name: z.name, expected_monthly: z.expected_monthly || 0, cells, total_base: rowTotal }
+    return {
+      zone_id: z.id, zone_name: z.name, expected_monthly: z.expected_monthly || 0,
+      sub_locations: (z.sub_locations || []).map(s => s.name),
+      cells, total_base: rowTotal,
+    }
   })
 
   const colTotals = {}
