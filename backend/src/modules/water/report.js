@@ -172,7 +172,7 @@ const signed = value => (value > 0 ? `+${num(value)}` : num(value))
 
 // Sunucudaki font (DejaVu) Windows'takinden (Arial) geniştir; 8 haneli bir toplam
 // sütuna sığmayabilir. Kırpmak yerine o hücrenin puntosunu düşürüyoruz.
-function fitFontSize(doc, value, available, base, min = 5) {
+function fitFontSize(doc, value, available, base, min = 4.5) {
   let size = base
   doc.fontSize(size)
   while (size > min && doc.widthOfString(value) > available) {

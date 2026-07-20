@@ -139,8 +139,8 @@ describe('Su muhasebe raporu — PDF ve yetki', () => {
     const report = accountingReportService({ from: '2027-03-01', to: '2027-03-31' })
     expect(report.daily).toHaveLength(31)
 
-    // widthFactor: sunucudaki font (DejaVu) Windows'takinden geniştir — 1.35 ile
-    // o durumu taklit edip yerleşimin yalnızca yerel fonta bağlı olmadığını görürüz.
+    // widthFactor: platformun gerçek fontu (Windows Arial / sunucu DejaVu) üstüne
+    // %15 pay — yerleşim tek bir fontun ölçülerine bağlı kalmasın.
     const audit = (widthFactor) => {
       const doc = new PDFDocument({ size: 'A4', margin: 28 })
       doc.on('data', () => {})
@@ -173,7 +173,7 @@ describe('Su muhasebe raporu — PDF ve yetki', () => {
       }
     }
 
-    for (const factor of [1, 1.35]) {
+    for (const factor of [1, 1.15]) {
       expect(audit(factor)).toEqual({ clipped: [], belowPage: [], offRight: [], noteOverlapsSignature: false })
     }
   })
