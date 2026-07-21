@@ -129,12 +129,18 @@ describe('Su muhasebe raporu — PDF ve yetki', () => {
     const db = getDB()
     const zoneIds = ['Uzun İsimli Şantiye Bölgesi Arka Taraf', 'Kısa Yer', 'Orta Uzunlukta Bölge Adı']
       .map(name => db.prepare('INSERT INTO water_zones(name) VALUES(?)').run(name).lastInsertRowid)
+    const secondProduct = db.prepare(`INSERT INTO water_products(name, unit_label, units_per_case, cases_per_pallet)
+      VALUES('İkinci Yoğunluk Ürünü', 'koli', 1, 10)`).run().lastInsertRowid
     const insert = db.prepare(`INSERT INTO water_movements(type, product_id, zone_id, move_date, qty_base, input_qty, input_unit, waybill_no)
       VALUES(?,?,?,?,?,?,?,?)`)
     for (let day = 1; day <= 31; day += 1) {
       const date = `2027-03-${String(day).padStart(2, '0')}`
       insert.run('in', productId, null, date, 1234567, 1, 'koli', `IRS-2027-${day}`)
-      zoneIds.forEach(zone => insert.run('out', productId, zone, date, 987654, 1, 'koli', null))
+      // İki ürün → matriste yer satırının altında ürün alt satırları da çizilir
+      zoneIds.forEach(zone => {
+        insert.run('out', productId, zone, date, 987654, 1, 'koli', null)
+        insert.run('out', secondProduct, zone, date, 54321, 1, 'koli', null)
+      })
     }
 
     const summaryReport = accountingReportService({ from: '2027-03-01', to: '2027-03-31' })
@@ -221,6 +227,44 @@ describe('Su muhasebe raporu — kapsamlı bölümler', () => {
     const zoneA = detail.rows.find(row => row.zone_name === 'Rapor Bölge A')
     expect(zoneA.total).toBe(12)
     expect(zoneA.cells[2]).toBe(12) // 03.06 → 3. sütun
+  })
+
+  it('matris satırı, o yere hangi üründen ne kadar gittiğini gün gün taşır', () => {
+    const { detail } = accountingReportService({ ...range, sections: 'matrix' })
+    const zoneA = detail.rows.find(row => row.zone_name === 'Rapor Bölge A')
+    expect(zoneA.products).toHaveLength(1)
+    const product = zoneA.products[0]
+    expect(product).toMatchObject({ name: 'Rapor Suyu', total: 12, days_active: 1, human: '1 palet 2 koli' })
+    expect(product.cells[2]).toBe(12)
+    expect(product.cells.reduce((sum, value) => sum + value, 0)).toBe(product.total)
+    // Yerin ürünleri toplamı yer toplamına eşit olmalı
+    for (const row of detail.rows) {
+      expect(row.products.reduce((sum, item) => sum + item.total, 0)).toBe(row.total)
+      for (const item of row.products) {
+        expect(item.cells.reduce((sum, value) => sum + value, 0)).toBe(item.total)
+      }
+    }
+  })
+
+  it('ürün × gün matrisi dönem dağıtımını tam kapsar', () => {
+    const report = accountingReportService({ ...range, sections: 'matrix' })
+    const { product_rows: productRows } = report.detail
+    expect(productRows.reduce((sum, row) => sum + row.total, 0)).toBe(report.totals.period_out)
+    const suyu = productRows.find(row => row.name === 'Rapor Suyu')
+    expect(suyu.share).toBe(100)
+    expect(suyu.cells.reduce((sum, value) => sum + value, 0)).toBe(report.totals.period_out)
+    // Sütun toplamları yer matrisi ile ürün matrisinde aynı olmalı
+    productRows.forEach(() => {})
+    const productColumnTotals = report.detail.columns.map((_, index) =>
+      productRows.reduce((sum, row) => sum + row.cells[index], 0))
+    expect(productColumnTotals).toEqual(report.detail.column_totals)
+  })
+
+  it('özet istatistikleri: hareketli gün ortalaması ve en yoğun gün', () => {
+    const { totals } = accountingReportService(range)
+    expect(totals.active_days).toBe(3)
+    expect(totals.avg_out_active).toBe(Math.round(totals.period_out / 3))
+    expect(totals.busiest).toMatchObject({ key: '2026-06-03', out_base: 12 })
   })
 
   it('gün detayı yalnız hareketli günleri, yer ve ürün kırılımıyla verir', () => {

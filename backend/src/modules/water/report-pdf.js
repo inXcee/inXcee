@@ -235,7 +235,9 @@ function drawSummaryPage(doc, fonts, ctx) {
     doc.text(text(kpi.value), x + 6, 93 + (15 - size) / 2, { width: kpiWidth - 12, lineBreak: false })
   })
   doc.font(fonts.regular).fontSize(6).fillColor(MUTED).text(
-    text(`Hareketli gün: ${totals.active_days}  ·  İrsaliye: ${totals.intake_count}  ·  Tır: ${totals.truck_count}  ·  Dağıtım yeri: ${totals.zone_count}`
+    text(`Hareketli gün: ${totals.active_days}  ·  Hareketli gün ortalaması: ${num(totals.avg_out_active)}`
+      + (totals.busiest ? `  ·  En yoğun: ${totals.busiest.label} (${num(totals.busiest.out_base)})` : '')
+      + `  ·  İrsaliye: ${totals.intake_count}  ·  Tır: ${totals.truck_count}  ·  Dağıtım yeri: ${totals.zone_count}`
       + `  ·  Eksi stoklu ürün: ${totals.negative_count}  ·  İnceleme kuyruğu: ${totals.review_count}`
       + (report.locked_months.length ? `  ·  Kilitli ay: ${report.locked_months.join(', ')}` : '')),
     margin, 121, { width: innerWidth },
@@ -380,16 +382,21 @@ function drawMatrixSection(doc, fonts, ctx) {
   const title = SECTION_TITLES.matrix
 
   let layout = sectionPage(doc, fonts, ctx, { title, landscape: true, destination: 'sec-matrix' })
-  const labelWidth = 118
-  const totalWidth = 42
-  const cellWidth = Math.max(13, (layout.innerWidth - labelWidth - totalWidth) / detail.columns.length)
-  const rowHeight = 12.6
+  const labelWidth = 128
+  const totalWidth = 40
+  const shareWidth = 26
+  const columnsWidth = layout.innerWidth - labelWidth - totalWidth - shareWidth
+  const cellWidth = Math.max(12, columnsWidth / detail.columns.length)
+  const totalX = () => layout.margin + labelWidth + detail.columns.length * cellWidth
+  const shareX = () => totalX() + totalWidth
+  const zoneHeight = 12.4
+  const productHeight = 9.8
 
-  const header = (y) => {
+  const header = (y, labelText) => {
     doc.rect(layout.margin, y, layout.innerWidth, 14).fill('#E2E8F0')
     doc.font(fonts.bold).fillColor('#334155')
-    fitFontSize(doc, text('DAĞITIM YERİ'), labelWidth - 6, 6.4, 4.6)
-    doc.text(text('DAĞITIM YERİ'), layout.margin + 3, y + 4, { width: labelWidth - 6, lineBreak: false })
+    fitFontSize(doc, text(labelText), labelWidth - 6, 6.4, 4.6)
+    doc.text(text(labelText), layout.margin + 3, y + 4, { width: labelWidth - 6, lineBreak: false })
     detail.columns.forEach((column, index) => {
       const x = layout.margin + labelWidth + index * cellWidth
       fitFontSize(doc, text(column.label), cellWidth - 2, 6.2, 4.2)
@@ -399,50 +406,96 @@ function drawMatrixSection(doc, fonts, ctx) {
     })
     doc.fillColor('#334155')
     fitFontSize(doc, text('TOPLAM'), totalWidth - 4, 6.4, 4.6)
-    doc.text(text('TOPLAM'), layout.margin + labelWidth + detail.columns.length * cellWidth + 2, y + 4,
-      { width: totalWidth - 4, align: 'right', lineBreak: false })
+    doc.text(text('TOPLAM'), totalX() + 2, y + 4, { width: totalWidth - 4, align: 'right', lineBreak: false })
+    fitFontSize(doc, text('PAY'), shareWidth - 4, 6.4, 4.6)
+    doc.text(text('PAY'), shareX() + 2, y + 4, { width: shareWidth - 4, align: 'right', lineBreak: false })
     return y + 14
   }
 
-  let y = header(layout.top)
+  let y = header(layout.top, 'DAĞITIM YERİ')
   let striped = 0
-  const drawRow = (row, { bold = false } = {}) => {
-    if (y + rowHeight > layout.bottom) {
+  let headerLabel = 'DAĞITIM YERİ'
+
+  const ensure = (height) => {
+    if (y + height > layout.bottom) {
       layout = sectionPage(doc, fonts, ctx, { title, landscape: true, continued: true })
-      y = header(layout.top)
+      y = header(layout.top, headerLabel)
       striped = 0
     }
-    if (striped % 2 === 1) doc.rect(layout.margin, y, layout.innerWidth, rowHeight).fill(ZEBRA)
-    striped += 1
-    const font = bold ? fonts.bold : fonts.regular
-    doc.font(font).fillColor(INK)
-    const size = fitFontSize(doc, text(row.zone_name), labelWidth - 6, 7)
-    doc.text(text(row.zone_name), layout.margin + 3, y + 3.2 + (7 - size) / 2,
-      { width: labelWidth - 6, lineBreak: false, ellipsis: true })
-    row.cells.forEach((value, index) => {
-      const x = layout.margin + labelWidth + index * cellWidth
-      doc.font(font).fillColor(value ? INK : FADE)
-      const cellText = value ? compactCell(doc, value, cellWidth - 2) : '·'
-      const cellSize = fitFontSize(doc, cellText, cellWidth - 2, 6.4, 4.2)
-      doc.text(cellText, x + 1, y + 3.4 + (6.4 - cellSize) / 2, { width: cellWidth - 2, align: 'center', lineBreak: false })
-    })
-    doc.font(fonts.bold).fillColor(INK)
-    const totalText = compactCell(doc, row.total, totalWidth - 4, 4.5)
-    const totalSize = fitFontSize(doc, totalText, totalWidth - 4, 7)
-    doc.text(totalText, layout.margin + labelWidth + detail.columns.length * cellWidth + 2, y + 3.2 + (7 - totalSize) / 2,
-      { width: totalWidth - 4, align: 'right', lineBreak: false })
-    y += rowHeight
   }
 
-  rows.forEach(row => drawRow(row))
-  drawRow({ zone_name: 'TOPLAM', cells: detail.column_totals, total: detail.grand_total }, { bold: true })
+  // level: 'zone' (kalın, gölgeli) | 'product' (girintili alt satır) | 'total'
+  const drawRow = (row, { level = 'zone' } = {}) => {
+    const height = level === 'product' ? productHeight : zoneHeight
+    ensure(height)
+    const isProduct = level === 'product'
+    if (!isProduct && striped % 2 === 1) doc.rect(layout.margin, y, layout.innerWidth, height).fill(ZEBRA)
+    if (!isProduct) striped += 1
+    const font = level === 'zone' || level === 'total' ? fonts.bold : fonts.regular
+    const baseSize = isProduct ? 6.2 : 7
+    const labelColor = isProduct ? '#475569' : INK
+    const indent = isProduct ? 12 : 3
+    const label = isProduct ? `└ ${row.name}` : row.name
 
+    doc.font(font).fillColor(labelColor)
+    const size = fitFontSize(doc, text(label), labelWidth - indent - 3, baseSize, 4.2)
+    doc.text(text(label), layout.margin + indent, y + (height - size) / 2 - 0.4,
+      { width: labelWidth - indent - 3, lineBreak: false, ellipsis: true })
+
+    row.cells.forEach((value, index) => {
+      const x = layout.margin + labelWidth + index * cellWidth
+      doc.font(font).fillColor(value ? (isProduct ? '#475569' : INK) : FADE)
+      const cellText = value ? compactCell(doc, value, cellWidth - 2) : '·'
+      const cellSize = fitFontSize(doc, cellText, cellWidth - 2, isProduct ? 5.8 : 6.4, 4.2)
+      doc.text(cellText, x + 1, y + (height - cellSize) / 2 - 0.4, { width: cellWidth - 2, align: 'center', lineBreak: false })
+    })
+
+    doc.font(fonts.bold).fillColor(isProduct ? '#475569' : INK)
+    const totalText = compactCell(doc, row.total, totalWidth - 4, 4.5)
+    const totalSize = fitFontSize(doc, totalText, totalWidth - 4, baseSize)
+    doc.text(totalText, totalX() + 2, y + (height - totalSize) / 2 - 0.4,
+      { width: totalWidth - 4, align: 'right', lineBreak: false })
+
+    if (row.share != null) {
+      doc.font(fonts.regular).fillColor(MUTED)
+      const shareText = `%${String(row.share).replace('.', ',')}`
+      const shareSize = fitFontSize(doc, shareText, shareWidth - 4, isProduct ? 5.6 : 6.2, 4.2)
+      doc.text(shareText, shareX() + 2, y + (height - shareSize) / 2 - 0.4,
+        { width: shareWidth - 4, align: 'right', lineBreak: false })
+    }
+    y += height
+  }
+
+  for (const row of rows) {
+    // Tek ürünlü yerde alt satır yerine ürünü başlığa yaz — sayfa şişmesin.
+    const single = row.products?.length === 1
+    drawRow({ ...row, name: single ? `${row.zone_name} · ${row.products[0].name}` : row.zone_name })
+    if (!single) for (const product of row.products || []) drawRow(product, { level: 'product' })
+  }
+  drawRow({ name: 'TOPLAM', cells: detail.column_totals, total: detail.grand_total, share: 100 }, { level: 'total' })
   doc.moveTo(layout.margin, y).lineTo(layout.margin + layout.innerWidth, y).lineWidth(0.5).strokeColor(LINE).stroke()
   const notes = [
     detail.grouped ? 'Sütunlar aydır (aralık uzun).' : 'Sütunlar ayın günleridir; mavi gün başlığına tıklayınca o günün detayına gider.',
+    'Her yerin altındaki girintili satırlar o yere hangi üründen ne kadar gittiğini gösterir.',
     detail.rows.length > MATRIX_ZONE_LIMIT ? `En çok dağıtılan ${MATRIX_ZONE_LIMIT} yer gösterildi (toplam ${detail.rows.length}).` : null,
   ].filter(Boolean).join('  ·  ')
   doc.font(fonts.regular).fontSize(6).fillColor(MUTED).text(text(notes), layout.margin, y + 4, { width: layout.innerWidth })
+  y += 18
+
+  // Ürün × gün: dönem genelinde hangi gün hangi üründen ne çıktı
+  if (detail.product_rows?.length) {
+    headerLabel = 'ÜRÜN'
+    // Başlık + en az iki satır aynı sayfada kalsın; tamamı sığmıyorsa satırlar kendi kırılımını yapar.
+    ensure(Math.min(14 + 11 + zoneHeight * 3, layout.bottom - layout.top))
+    doc.font(fonts.bold).fontSize(8).fillColor(INK)
+      .text(text('ÜRÜN × GÜN'), layout.margin, y, { width: layout.innerWidth, lineBreak: false })
+    y += 11
+    y = header(y, 'ÜRÜN')
+    striped = 0
+    for (const product of detail.product_rows) drawRow(product)
+    drawRow({ name: 'TOPLAM', cells: detail.column_totals, total: detail.grand_total, share: 100 }, { level: 'total' })
+    doc.moveTo(layout.margin, y).lineTo(layout.margin + layout.innerWidth, y).lineWidth(0.5).strokeColor(LINE).stroke()
+  }
 }
 
 // ── Bölüm 3: gün gün detay ──
@@ -520,9 +573,13 @@ function drawZonesSection(doc, fonts, ctx) {
     flow.reserve(22)
     const head = flow.place(12.6)
     doc.font(fonts.bold).fontSize(7.4).fillColor(INK)
-    const nameSize = fitFontSize(doc, text(zone.zone_name), head.width - 60, 7.4, 5)
+    const nameSize = fitFontSize(doc, text(zone.zone_name), head.width - 84, 7.4, 5)
     doc.text(text(zone.zone_name), head.x + 2, head.y + 2 + (7.4 - nameSize) / 2,
-      { width: head.width - 60, lineBreak: false, ellipsis: true })
+      { width: head.width - 84, lineBreak: false, ellipsis: true })
+    doc.font(fonts.regular).fillColor(MUTED)
+    const shareText = text(`%${String(zone.share ?? 0).replace('.', ',')} pay`)
+    fitFontSize(doc, shareText, 40, 6, 4.4)
+    doc.text(shareText, head.x + head.width - 84, head.y + 3.4, { width: 40, align: 'right', lineBreak: false })
     doc.font(fonts.bold).fontSize(7.4).fillColor(BAND)
       .text(num(zone.total), head.x, head.y + 2, { width: head.width - 2, align: 'right', lineBreak: false })
     doc.moveTo(head.x + 2, head.y + 11.6).lineTo(head.x + head.width - 2, head.y + 11.6)
@@ -531,12 +588,13 @@ function drawZonesSection(doc, fonts, ctx) {
     for (const product of zone.products) {
       const spot = flow.place(9.4)
       doc.font(fonts.regular).fillColor('#334155')
-      const productSize = fitFontSize(doc, text(product.name), spot.width - 96, 6.4, 4.6)
+      const productSize = fitFontSize(doc, text(product.name), spot.width - 140, 6.4, 4.6)
       doc.text(text(product.name), spot.x + 8, spot.y + 1.4 + (6.4 - productSize) / 2,
-        { width: spot.width - 96, lineBreak: false, ellipsis: true })
+        { width: spot.width - 140, lineBreak: false, ellipsis: true })
       doc.font(fonts.regular).fillColor(MUTED)
-      fitFontSize(doc, text(product.human), 52, 5.8, 4.2)
-      doc.text(text(product.human), spot.x + spot.width - 96, spot.y + 2, { width: 52, align: 'right', lineBreak: false })
+      const detailText = text(`${product.human}${product.days_active ? ` · ${product.days_active} gün` : ''}`)
+      fitFontSize(doc, detailText, 88, 5.8, 4.2)
+      doc.text(detailText, spot.x + spot.width - 132, spot.y + 2, { width: 88, align: 'right', lineBreak: false })
       doc.font(fonts.bold).fillColor(INK)
       const size = fitFontSize(doc, num(product.total), 38, 6.6)
       doc.text(num(product.total), spot.x, spot.y + 1.4 + (6.6 - size) / 2,

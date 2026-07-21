@@ -963,7 +963,7 @@ function MonthlyReportPanel({ summary, from, to, label }) {
 }
 
 const REPORT_SECTION_OPTIONS = [
-  { id: 'matrix', label: 'Dağıtım yeri × gün matrisi', hint: 'Yatay tek tablo: hangi yere hangi gün ne kadar' },
+  { id: 'matrix', label: 'Dağıtım yeri × gün matrisi', hint: 'Hangi yere hangi gün ne kadar + o yerde hangi üründen; altında ürün × gün' },
   { id: 'days', label: 'Gün gün detay (nereye ne kadar)', hint: 'Her gün için yer yer, ürün kırılımıyla' },
   { id: 'zones', label: 'Dağıtım yeri × ürün', hint: 'Her yerin dönem toplamı, ürün ürün' },
   { id: 'intakes', label: 'Gelen irsaliyelerin tamamı', hint: 'Tarih, irsaliye no, ürün, miktar' },

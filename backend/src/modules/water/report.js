@@ -170,6 +170,10 @@ export function accountingReportService({ from, to, sections } = {}) {
     negative_count: products.filter(row => row.closing_base < 0).length,
     review_count: q.reviewQueue().length,
   }
+  const activeRows = daily.filter(row => !row.empty)
+  totals.avg_out_active = activeRows.length ? Math.round(totals.period_out / activeRows.length) : 0
+  const busiest = activeRows.reduce((best, row) => (!best || row.out_base > best.out_base ? row : best), null)
+  totals.busiest = busiest ? { key: busiest.key, label: busiest.label, out_base: busiest.out_base } : null
 
   const report = {
     from, to, day_count: dayCount, grouped, daily, products, zones, intakes, totals,
@@ -192,6 +196,8 @@ function buildDetail(report, { from, to, grouped }) {
   const zoneRows = new Map()
   const zoneProducts = new Map()
   const dayBuckets = new Map()
+  const productRows = new Map()
+  const emptyCells = () => new Array(columns.length).fill(0)
 
   for (const movement of movements) {
     const key = bucketKey(movement.move_date)
@@ -215,19 +221,29 @@ function buildDetail(report, { from, to, grouped }) {
         qty_human: human,
       })
 
-      const row = zoneRows.get(zoneId)
-        || { zone_id: zoneId, zone_name: zoneName, total: 0, cells: new Array(columns.length).fill(0) }
-      row.total += movement.qty_base
       const index = columnIndex.get(key)
+      const row = zoneRows.get(zoneId)
+        || { zone_id: zoneId, zone_name: zoneName, total: 0, cells: emptyCells() }
+      row.total += movement.qty_base
       if (index != null) row.cells[index] += movement.qty_base
       zoneRows.set(zoneId, row)
 
+      // Yerin içinde ürün ürün kırılım — matriste alt satır olarak çizilir.
       const products = zoneProducts.get(zoneId) || new Map()
       const product = products.get(movement.product_id)
-        || { product_id: movement.product_id, name: movement.product_name, total: 0, sample: movement }
+        || { product_id: movement.product_id, name: movement.product_name, total: 0, days: new Set(), cells: emptyCells(), sample: movement }
       product.total += movement.qty_base
+      product.days.add(movement.move_date)
+      if (index != null) product.cells[index] += movement.qty_base
       products.set(movement.product_id, product)
       zoneProducts.set(zoneId, products)
+
+      // Dönem geneli: hangi ürün hangi gün ne kadar çıktı
+      const productRow = productRows.get(movement.product_id)
+        || { product_id: movement.product_id, name: movement.product_name, total: 0, cells: emptyCells(), sample: movement }
+      productRow.total += movement.qty_base
+      if (index != null) productRow.cells[index] += movement.qty_base
+      productRows.set(movement.product_id, productRow)
     }
     dayBuckets.set(movement.move_date, day)
   }
@@ -261,26 +277,53 @@ function buildDetail(report, { from, to, grouped }) {
     }
   })
 
+  const grandTotal = rows.reduce((sum, row) => sum + row.total, 0)
+  const share = value => (grandTotal ? Math.round((value / grandTotal) * 1000) / 10 : 0)
+  const productsOfZone = zoneId => [...(zoneProducts.get(zoneId) || new Map()).values()]
+    .sort((left, right) => right.total - left.total)
+
   return {
     columns,
     grouped,
-    rows: rows.map(row => ({ ...row })),
+    // Her yer satırı, o yere hangi ürünün hangi gün gittiğini alt satır olarak taşır.
+    rows: rows.map(row => ({
+      ...row,
+      share: share(row.total),
+      products: productsOfZone(row.zone_id).map(product => ({
+        product_id: product.product_id,
+        name: product.name,
+        total: product.total,
+        cells: product.cells,
+        human: humanize(product.sample, product.total),
+        days_active: product.days.size,
+      })),
+    })),
     column_totals: columnTotals,
-    grand_total: rows.reduce((sum, row) => sum + row.total, 0),
+    grand_total: grandTotal,
+    product_rows: [...productRows.values()]
+      .sort((left, right) => right.total - left.total)
+      .map(product => ({
+        product_id: product.product_id,
+        name: product.name,
+        total: product.total,
+        cells: product.cells,
+        human: humanize(product.sample, product.total),
+        share: share(product.total),
+      })),
     days: detailDays,
     days_skipped: activeDates.length > MAX_DETAIL_DAYS ? activeDates.length : 0,
     zone_products: rows.map(row => ({
       zone_id: row.zone_id,
       zone_name: row.zone_name,
       total: row.total,
-      products: [...(zoneProducts.get(row.zone_id) || new Map()).values()]
-        .sort((left, right) => right.total - left.total)
-        .map(product => ({
-          product_id: product.product_id,
-          name: product.name,
-          total: product.total,
-          human: humanize(product.sample, product.total),
-        })),
+      share: share(row.total),
+      products: productsOfZone(row.zone_id).map(product => ({
+        product_id: product.product_id,
+        name: product.name,
+        total: product.total,
+        human: humanize(product.sample, product.total),
+        days_active: product.days.size,
+      })),
     })),
     truncated,
   }
