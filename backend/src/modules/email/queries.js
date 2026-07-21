@@ -1,5 +1,9 @@
 import { getDB } from '../../shared/db/index.js'
 
+// Kayıtlı SMTP şifresi/anahtarı yerine dönen maske. İstemci bunu geri gönderirse
+// "değiştirme" demektir; gerçek değer DB'de kalır.
+export const SMTP_PASS_MASK = '●●●●'
+
 export function getSetting(key) {
   const db = getDB()
   const row = db.prepare('SELECT value FROM system_settings WHERE key=?').get(key)
@@ -28,7 +32,10 @@ export function getEmailSettings() {
       host:  getSetting('smtp_host') ?? '',
       port:  parseInt(getSetting('smtp_port') ?? '587', 10) || 587,
       user:  getSetting('smtp_user') ?? '',
-      pass:  getSetting('smtp_pass') ?? '',
+      // Şifre/anahtar tarayıcıya ASLA açık gitmez; kayıtlıysa maske döner.
+      // Maske geri gönderilirse setEmailSettings onu yok sayar (mevcut değer korunur).
+      pass:  getSetting('smtp_pass') ? SMTP_PASS_MASK : '',
+      pass_set: Boolean(getSetting('smtp_pass')),
       from:  getSetting('smtp_from') ?? '',
     },
   }
@@ -46,8 +53,8 @@ export function setEmailSettings({ enabled, hour, minute, cc, days, sections, sm
     if (smtp.port !== undefined) setSetting('smtp_port', smtp.port)
     if (smtp.user !== undefined) setSetting('smtp_user', smtp.user)
     if (smtp.from !== undefined) setSetting('smtp_from', smtp.from)
-    // pass yalnızca boş değilse yaz (maskelenmiş "●●●●" göndermemek için)
-    if (smtp.pass && smtp.pass !== '●●●●') setSetting('smtp_pass', smtp.pass)
+    // pass yalnızca boş değilse ve maske değilse yaz (mevcut anahtar silinmesin)
+    if (smtp.pass && smtp.pass !== SMTP_PASS_MASK) setSetting('smtp_pass', String(smtp.pass).trim())
   }
 }
 

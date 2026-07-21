@@ -80,6 +80,13 @@ export default function SettingsPage() {
   // Kayıtlı host bir ön ayarla eşleşiyorsa yardım metni tıklamadan da görünsün.
   const activePreset = SMTP_PRESETS.find(preset => preset.id === smtpPreset)
     ?? SMTP_PRESETS.find(preset => preset.host === current?.smtp?.host)
+  // Host değişti ama şifre alanına dokunulmadıysa eski anahtar yeni sunucuya gider → 535.
+  const passNeedsUpdate = Boolean(
+    data?.smtp?.pass_set
+    && current?.smtp?.host
+    && current.smtp.host !== data.smtp.host
+    && !current.smtp.pass,
+  )
 
   const save = useMutation({
     mutationFn: body => api.put('/settings/email', body),
@@ -240,7 +247,13 @@ export default function SettingsPage() {
             <span style={{ fontSize:'11px', color:'#94a3b8', alignSelf:'center' }}>HAZIR AYAR:</span>
             {SMTP_PRESETS.map(preset => (
               <button key={preset.id} type="button"
-                onClick={() => { patchSmtp({ host: preset.host, port: preset.port }); setSmtpPreset(preset.id) }}
+                onClick={() => {
+                  // Sağlayıcı değişiyorsa eski anahtar yeni sunucuda çalışmaz:
+                  // şifre alanını boşalt ki kullanıcı yenisini yazmak zorunda kalsın.
+                  const changingProvider = current.smtp?.host && current.smtp.host !== preset.host
+                  patchSmtp({ host: preset.host, port: preset.port, ...(changingProvider ? { pass: '' } : {}) })
+                  setSmtpPreset(preset.id)
+                }}
                 style={{ padding:'5px 12px', borderRadius:'8px', border:'none', cursor:'pointer', fontSize:'12px', fontWeight:600,
                   background: current.smtp?.host === preset.host ? 'var(--accent)' : '#e2e8f0',
                   color: current.smtp?.host === preset.host ? '#fff' : '#64748b' }}>
@@ -277,16 +290,23 @@ export default function SettingsPage() {
                 value={current.smtp?.user ?? ''} onChange={e => patchSmtp({ user: e.target.value })} />
             </div>
             <div>
-              <label className="form-label">ŞİFRE</label>
+              <label className="form-label">ŞİFRE / SMTP ANAHTARI</label>
               <div style={{ position:'relative' }}>
                 <input type={showSmtpPass ? 'text' : 'password'} className="form-input"
-                  placeholder="●●●●" style={{ paddingRight:'36px' }}
+                  placeholder={data?.smtp?.pass_set ? 'Kayıtlı — değiştirmek için yeni anahtarı yazın' : 'Sağlayıcınızın SMTP anahtarı'}
+                  style={{ paddingRight:'36px' }}
                   value={current.smtp?.pass ?? ''} onChange={e => patchSmtp({ pass: e.target.value })} />
                 <button type="button" onClick={() => setShowSmtpPass(v => !v)}
                   style={{ position:'absolute', right:'8px', top:'50%', transform:'translateY(-50%)', background:'none', border:'none', cursor:'pointer', color:'#94a3b8', fontSize:'14px' }}>
                   {showSmtpPass ? '🙈' : '👁️'}
                 </button>
               </div>
+              {passNeedsUpdate && (
+                <div style={{ fontSize:'11px', color:'#b45309', marginTop:'4px', lineHeight:1.4 }}>
+                  ⚠ Sunucu adresi değişti ama şifre alanı boş — kaydedersen <b>eski sağlayıcının anahtarı</b> kullanılmaya
+                  devam eder ve kimlik doğrulama başarısız olur. Yeni sağlayıcının anahtarını yazın.
+                </div>
+              )}
             </div>
           </div>
           <div>

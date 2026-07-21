@@ -338,6 +338,32 @@ describe('Faz 33 — Ek dosya arşivi', () => {
   })
 })
 
+describe('SMTP şifresi tarayıcıya sızmaz', () => {
+  it('GET ayarlarda şifre maskelenir, pass_set bilgisi verilir', async () => {
+    const { setSetting } = await import('./queries.js')
+    setSetting('smtp_pass', 'cok-gizli-anahtar-123')
+    const res = await request(app).get('/api/settings/email')
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(res.status).toBe(200)
+    expect(res.body.smtp.pass).toBe('●●●●')
+    expect(res.body.smtp.pass_set).toBe(true)
+    expect(JSON.stringify(res.body)).not.toContain('cok-gizli-anahtar-123')
+  })
+
+  it('maske geri gönderilirse kayıtlı şifre korunur, yenisi yazılırsa değişir', async () => {
+    const { getSetting } = await import('./queries.js')
+    const base = { enabled: false, hour: 7, minute: 0, cc: '', days: [1], sections: ['occupancy'] }
+
+    await request(app).put('/api/settings/email').set('Authorization', `Bearer ${managerToken}`)
+      .send({ ...base, smtp: { host: 'smtp-relay.brevo.com', port: 587, user: 'x@y.com', from: 'YYS', pass: '●●●●' } })
+    expect(getSetting('smtp_pass')).toBe('cok-gizli-anahtar-123')
+
+    await request(app).put('/api/settings/email').set('Authorization', `Bearer ${managerToken}`)
+      .send({ ...base, smtp: { host: 'smtp-relay.brevo.com', port: 587, user: 'x@y.com', from: 'YYS', pass: '  yeni-anahtar  ' } })
+    expect(getSetting('smtp_pass')).toBe('yeni-anahtar')
+  })
+})
+
 describe('SMTP tanılama — gönderen normalizasyonu ve hata çevirisi', () => {
   it('gönderen alanı e-posta değilse ad olarak kullanılır', async () => {
     const { resolveFrom } = await import('./service.js')
