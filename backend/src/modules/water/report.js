@@ -2,7 +2,17 @@
 // kadar dağıtıldığının tam dökümü. PDF çizimi report-pdf.js içinde.
 import * as q from './queries.js'
 import { humanize } from './units.js'
+import { COUNT_REASONS, reconciliationService } from './reconciliation.js'
 import { isIsoDate } from '../../shared/validation/date.js'
+
+const REASON_LABELS = new Map(COUNT_REASONS.map(reason => [reason.key, reason.label]))
+const TRUCK_STATUS_LABELS = {
+  planned: 'Planlandı',
+  mail_sent: 'Mail gitti',
+  confirmed: 'Onaylandı',
+  arrived: 'Geldi',
+  cancelled: 'İptal',
+}
 
 const badRequest = message => Object.assign(new Error(message), { statusCode: 400 })
 
@@ -13,7 +23,13 @@ const DAILY_ROW_LIMIT = 34
 const MAX_DETAIL_DAYS = 62
 const DETAIL_MOVEMENT_LIMIT = 20000
 
-export const REPORT_SECTIONS = Object.freeze(['matrix', 'days', 'zones', 'intakes'])
+// Dağıtım detayı (büyük, kendi sayfalarına) + muhasebe ekleri (küçük, tek akışta)
+export const REPORT_SECTIONS = Object.freeze([
+  'matrix', 'days', 'zones', 'intakes',
+  'deposit', 'adjustments', 'trucks', 'counts', 'checks',
+])
+const DETAIL_SECTIONS = Object.freeze(['matrix', 'days', 'zones'])
+export const EXTRA_SECTIONS = Object.freeze(['deposit', 'adjustments', 'trucks', 'counts', 'checks'])
 
 export const WEEKDAYS = ['Paz', 'Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt']
 export const WEEKDAYS_LONG = ['Pazar', 'Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi']
@@ -179,8 +195,141 @@ export function accountingReportService({ from, to, sections } = {}) {
     from, to, day_count: dayCount, grouped, daily, products, zones, intakes, totals,
     locked_months: lockedMonths, sections: wantedSections,
   }
-  if (wantedSections.length) report.detail = buildDetail(report, { from, to, grouped })
+  if (wantedSections.some(section => DETAIL_SECTIONS.includes(section))) {
+    report.detail = buildDetail(report, { from, to, grouped })
+  }
+  if (wantedSections.some(section => EXTRA_SECTIONS.includes(section))) {
+    report.extras = buildExtras(report, { from, to, sections: wantedSections })
+  }
   return report
+}
+
+// Muhasebe ekleri — her biri yalnız istendiğinde hesaplanır.
+function buildExtras(report, { from, to, sections }) {
+  const extras = {}
+  const months = monthKeys(from, to)
+
+  if (sections.includes('deposit')) {
+    extras.deposit = q.depositBalances({ from, to }).map(row => {
+      const outstanding = (row.total_in || 0) - (row.total_return || 0)
+      return {
+        product_id: row.id,
+        name: row.name,
+        brand_name: row.brand_name || null,
+        total_in: row.total_in || 0,
+        total_return: row.total_return || 0,
+        period_return: row.period_return || 0,
+        outstanding,
+        outstanding_human: humanize(row, outstanding),
+        period_return_human: humanize(row, row.period_return || 0),
+      }
+    })
+  }
+
+  if (sections.includes('adjustments')) {
+    extras.adjustments = q.listAdjustments({ from, to, limit: 1000 })
+      .map(row => ({
+        id: row.id,
+        move_date: row.move_date,
+        product_name: row.product_name,
+        direction: row.direction,
+        qty_base: row.qty_base,
+        signed_base: row.direction === 'in' ? row.qty_base : -row.qty_base,
+        qty_human: humanize(row, row.qty_base),
+        reason: row.reason || null,
+        reason_label: REASON_LABELS.get(row.reason) || row.reason || '—',
+        note: row.note || null,
+        created_by_name: row.created_by_name || null,
+      }))
+      .sort((left, right) => (left.move_date === right.move_date ? left.id - right.id : left.move_date < right.move_date ? -1 : 1))
+  }
+
+  if (sections.includes('trucks')) {
+    extras.trucks = q.listTruckArrivals({ from, to, limit: 500 })
+      .map(row => ({
+        id: row.id,
+        arrival_date: row.arrival_date,
+        window: `${(row.arrival_start_time || '').slice(0, 5)}-${(row.arrival_end_time || '').slice(0, 5)}`,
+        plate: row.plate,
+        trailer_plate: row.trailer_plate || null,
+        supplier_name: row.supplier_name || null,
+        brand_name: row.brand_name || null,
+        driver_name: row.driver_name || null,
+        status: row.status,
+        status_label: TRUCK_STATUS_LABELS[row.status] || row.status,
+        mail_sent: Boolean(row.mail_sent_at),
+        photo_count: row.photo_count || 0,
+      }))
+      .sort((left, right) => (left.arrival_date === right.arrival_date ? left.id - right.id : left.arrival_date < right.arrival_date ? -1 : 1))
+  }
+
+  if (sections.includes('counts')) {
+    extras.counts = months
+      .map(month => {
+        const reconciliation = reconciliationService({ month })
+        const counted = reconciliation.rows.filter(row => row.counted_base != null)
+        return {
+          month,
+          locked: reconciliation.locked,
+          closed_at: reconciliation.closure?.closed_at || null,
+          closed_by: reconciliation.closure?.closed_by_name || null,
+          note: reconciliation.closure?.note || null,
+          pending: reconciliation.totals.pending,
+          mismatch: reconciliation.totals.mismatch,
+          rows: counted.map(row => ({
+            product_name: row.product_name,
+            system_base: row.system_base,
+            counted_base: row.counted_base,
+            diff_base: row.diff_base,
+            status: row.status,
+            reason: row.reason,
+            reason_label: REASON_LABELS.get(row.reason) || row.reason || '—',
+            note: row.count_note || null,
+          })),
+        }
+      })
+      .filter(month => month.rows.length || month.locked || month.closed_at)
+  }
+
+  if (sections.includes('checks')) extras.checks = buildChecks(report, { months })
+  return extras
+}
+
+// Muhasebenin "bu rapora güvenebilir miyim" sorusuna cevap veren kontrol listesi.
+function buildChecks(report, { months }) {
+  const checks = []
+  const add = (level, label, detail) => checks.push({ level, label, detail })
+
+  const negatives = report.products.filter(row => row.closing_base < 0)
+  add(negatives.length ? 'error' : 'ok', 'Eksi stoklu ürün',
+    negatives.length ? negatives.map(row => `${row.name} (${row.closing_base})`).join(', ') : 'Yok')
+
+  const review = q.reviewQueue()
+  const reviewInRange = review.filter(row => row.move_date >= report.from && row.move_date <= report.to)
+  add(reviewInRange.length ? 'warn' : 'ok', 'Karşılıksız dağıtım (inceleme kuyruğu)',
+    reviewInRange.length
+      ? `${reviewInRange.length} kayıt · ${reviewInRange.reduce((sum, row) => sum + row.unallocated_base, 0)} birim girişle eşleşmedi`
+      : 'Tüm dağıtımlar bir girişe bağlandı')
+
+  const withoutWaybill = report.intakes.filter(row => !row.waybill_no)
+  add(withoutWaybill.length ? 'warn' : 'ok', 'İrsaliyesiz giriş',
+    withoutWaybill.length ? `${withoutWaybill.length} giriş irsaliye numarasız` : 'Tüm girişlerde irsaliye no var')
+
+  const unlocked = months.filter(month => !report.locked_months.includes(month))
+  add(unlocked.length ? 'warn' : 'ok', 'Ay kilidi',
+    unlocked.length
+      ? `${unlocked.join(', ')} açık — rapor sonrası kayıt değişebilir`
+      : `${report.locked_months.join(', ')} kilitli`)
+
+  const pendingCounts = months.reduce((sum, month) => sum + reconciliationService({ month }).totals.pending, 0)
+  add(pendingCounts ? 'warn' : 'ok', 'Fiziksel sayım',
+    pendingCounts ? `${pendingCounts} ürün×ay sayılmadı` : 'Aralıktaki tüm ürünler sayıldı')
+
+  const unnamedZone = (report.detail?.rows || []).find(row => row.zone_id === 0)
+  if (unnamedZone) add('warn', 'Yer belirtilmemiş dağıtım', `${unnamedZone.total} birim bir dağıtım yerine bağlı değil`)
+
+  if (report.detail?.truncated) add('error', 'Kayıt sınırı', 'Hareket sayısı sınırı aşıldı, detay eksik olabilir')
+  return checks
 }
 
 // Gün × yer × ürün dökümü — matris, gün detayları ve yer/ürün kırılımı aynı

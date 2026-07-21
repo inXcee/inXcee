@@ -339,6 +339,16 @@ describe('Su muhasebe raporu — kapsamlı bölümler', () => {
     expect(detail.days.every(day => day.balance_base === null)).toBe(true)
   })
 
+  it('istenmeyen bölüm için veri üretilmez', () => {
+    const onlyMatrix = accountingReportService({ ...range, sections: 'matrix' })
+    expect(onlyMatrix.detail).toBeDefined()
+    expect(onlyMatrix.extras).toBeUndefined()
+    const onlyTrucks = accountingReportService({ ...range, sections: 'trucks' })
+    expect(onlyTrucks.detail).toBeUndefined()
+    expect(onlyTrucks.extras.trucks).toBeDefined()
+    expect(onlyTrucks.extras.deposit).toBeUndefined()
+  })
+
   it('62+ hareketli günde gün detayı atlanır, sayısı raporlanır', () => {
     const db = getDB()
     const insert = db.prepare(`INSERT INTO water_movements(type, product_id, zone_id, move_date, qty_base, input_qty, input_unit)
@@ -351,5 +361,102 @@ describe('Su muhasebe raporu — kapsamlı bölümler', () => {
     const { detail } = accountingReportService({ from: '2028-01-01', to: '2028-03-31', sections: 'days' })
     expect(detail.days).toEqual([])
     expect(detail.days_skipped).toBe(70)
+  })
+})
+
+describe('Su muhasebe raporu — muhasebe ekleri', () => {
+  const range = { from: '2026-09-01', to: '2026-09-30' }
+  let returnableId
+
+  beforeAll(() => {
+    const db = getDB()
+    returnableId = db.prepare(`INSERT INTO water_products(name, unit_label, units_per_case, cases_per_pallet, is_returnable)
+      VALUES('Rapor Damacana', 'damacana', 1, 1, 1)`).run().lastInsertRowid
+    const zoneId = db.prepare('INSERT INTO water_zones(name) VALUES(?)').run('Ek Bölüm Testi').lastInsertRowid
+
+    db.prepare(`INSERT INTO water_movements(type, product_id, zone_id, move_date, qty_base, input_qty, input_unit, waybill_no)
+      VALUES('in', ?, NULL, '2026-09-02', 500, 500, 'adet', 'IRS-EK-1')`).run(returnableId)
+    db.prepare(`INSERT INTO water_movements(type, product_id, zone_id, move_date, qty_base, input_qty, input_unit, waybill_no)
+      VALUES('in', ?, NULL, '2026-09-03', 100, 100, 'adet', NULL)`).run(returnableId)
+    db.prepare(`INSERT INTO water_movements(type, product_id, zone_id, move_date, qty_base, input_qty, input_unit)
+      VALUES('out', ?, ?, '2026-09-04', 120, 120, 'adet')`).run(returnableId, zoneId)
+    db.prepare(`INSERT INTO water_returns(product_id, move_date, qty_base, input_qty, input_unit)
+      VALUES(?, '2026-09-10', 80, 80, 'adet')`).run(returnableId)
+
+    db.prepare(`INSERT INTO water_adjustments(product_id, move_date, direction, qty_base, input_qty, input_unit, reason, note)
+      VALUES(?, '2026-09-20', 'out', 30, 30, 'adet', 'fire_kirik', 'Kırıldı')`).run(returnableId)
+    db.prepare(`INSERT INTO water_adjustments(product_id, move_date, direction, qty_base, input_qty, input_unit, reason, note)
+      VALUES(?, '2026-09-05', 'in', 10, 10, 'adet', 'eksik_irsaliye', NULL)`).run(returnableId)
+
+    db.prepare(`INSERT INTO water_truck_arrivals(arrival_date, arrival_start_time, arrival_end_time, mail_deadline_date,
+      plate, supplier_name, status, mail_sent_at)
+      VALUES('2026-09-12', '08:00', '17:00', '2026-09-11', '67 AAA 111', 'Test Nakliyat', 'arrived', '2026-09-11 10:00')`).run()
+    db.prepare(`INSERT INTO water_truck_arrivals(arrival_date, arrival_start_time, arrival_end_time, mail_deadline_date,
+      plate, supplier_name, status)
+      VALUES('2026-09-06', '09:00', '12:00', '2026-09-05', '34 BBB 222', 'Diğer Nakliyat', 'cancelled')`).run()
+
+    db.prepare(`INSERT INTO water_stock_counts(month, product_id, system_base, counted_base, diff_base, reason, note)
+      VALUES('2026-09', ?, 450, 440, -10, 'sayim_farki', 'Depo')`).run(returnableId)
+  })
+
+  it('iade durumu: sahada kalan = verilen − iade', () => {
+    const { extras } = accountingReportService({ ...range, sections: 'deposit' })
+    const row = extras.deposit.find(item => item.product_id === returnableId)
+    expect(row).toMatchObject({ total_in: 600, total_return: 80, period_return: 80, outstanding: 520 })
+    expect(row.outstanding_human).toBe('520 damacana')
+  })
+
+  it('düzeltmeler tarih sırasında, işaretli ve sebep etiketli', () => {
+    const { extras } = accountingReportService({ ...range, sections: 'adjustments' })
+    expect(extras.adjustments.map(row => row.move_date)).toEqual(['2026-09-05', '2026-09-20'])
+    expect(extras.adjustments[0]).toMatchObject({ signed_base: 10, reason_label: 'Eksik irsaliye' })
+    expect(extras.adjustments[1]).toMatchObject({ signed_base: -30, reason_label: 'Fire / kırık', note: 'Kırıldı' })
+  })
+
+  it('tırlar tarih sırasında, durum etiketli ve mail bilgisiyle', () => {
+    const { extras } = accountingReportService({ ...range, sections: 'trucks' })
+    expect(extras.trucks.map(row => row.plate)).toEqual(['34 BBB 222', '67 AAA 111'])
+    expect(extras.trucks[0]).toMatchObject({ status_label: 'İptal', mail_sent: false, window: '09:00-12:00' })
+    expect(extras.trucks[1]).toMatchObject({ status_label: 'Geldi', mail_sent: true })
+  })
+
+  it('sayım bölümü yalnız kaydı olan ayı verir', () => {
+    const { extras } = accountingReportService({ ...range, sections: 'counts' })
+    expect(extras.counts).toHaveLength(1)
+    expect(extras.counts[0].month).toBe('2026-09')
+    const row = extras.counts[0].rows.find(item => item.product_name === 'Rapor Damacana')
+    expect(row).toMatchObject({ counted_base: 440, reason_label: 'Sayım farkı' })
+    expect(row.diff_base).toBe(row.counted_base - row.system_base)
+  })
+
+  it('kontrol listesi seviyeleriyle gelir', () => {
+    const { extras } = accountingReportService({ ...range, sections: 'checks' })
+    const byLabel = new Map(extras.checks.map(check => [check.label, check]))
+    expect(byLabel.get('İrsaliyesiz giriş')).toMatchObject({ level: 'warn' })
+    expect(byLabel.get('İrsaliyesiz giriş').detail).toMatch(/1 giriş/)
+    expect(byLabel.get('Ay kilidi')).toMatchObject({ level: 'warn' })
+    expect(extras.checks.every(check => ['ok', 'warn', 'error'].includes(check.level))).toBe(true)
+  })
+
+  it('PDF: her ek bölüm kendi hedefini koyar, mükerrer hedef yok', async () => {
+    const report = accountingReportService({ ...range, sections: 'all' })
+    const doc = new PDFDocument({ size: 'A4', margin: 28 })
+    doc.on('data', () => {})
+    const done = new Promise(resolve => doc.on('end', resolve))
+    const targets = []
+    const links = []
+    const originalDestination = doc.addNamedDestination.bind(doc)
+    doc.addNamedDestination = (name, ...args) => { targets.push(name); return originalDestination(name, ...args) }
+    const originalGoTo = doc.goTo.bind(doc)
+    doc.goTo = (x, y, w, h, name) => { links.push(name); return originalGoTo(x, y, w, h, name) }
+
+    writeAccountingReportPDF(report, doc)
+    await done
+
+    for (const section of ['deposit', 'adjustments', 'trucks', 'counts', 'checks']) {
+      expect(targets).toContain(`sec-${section}`)
+    }
+    expect(targets.filter((name, index) => targets.indexOf(name) !== index)).toEqual([])
+    expect([...new Set(links)].filter(name => !targets.includes(name))).toEqual([])
   })
 })

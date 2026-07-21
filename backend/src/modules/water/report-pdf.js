@@ -28,6 +28,11 @@ const SECTION_TITLES = {
   days: 'GÜN GÜN DETAY — NEREYE NE KADAR',
   zones: 'DAĞITIM YERİ × ÜRÜN',
   intakes: 'GELEN İRSALİYELER',
+  deposit: 'BOŞ DAMACANA / İADE DURUMU',
+  adjustments: 'STOK DÜZELTMELERİ',
+  trucks: 'TIR GELİŞLERİ',
+  counts: 'AY KAPANIŞI VE FİZİKSEL SAYIM',
+  checks: 'KONTROL LİSTESİ',
 }
 // İçindekiler tek satıra sığmalı — kısa adlar.
 const SECTION_SHORT = {
@@ -35,7 +40,15 @@ const SECTION_SHORT = {
   days: 'Gün gün detay',
   zones: 'Yer × Ürün',
   intakes: 'İrsaliyeler',
+  deposit: 'İade durumu',
+  adjustments: 'Düzeltmeler',
+  trucks: 'Tırlar',
+  counts: 'Sayım',
+  checks: 'Kontrol listesi',
 }
+// Küçük tablolar tek "MUHASEBE EKLERİ" akışında toplanır — sayfa israfı olmasın.
+const EXTRA_SECTIONS = ['deposit', 'adjustments', 'trucks', 'counts', 'checks']
+const EXTRAS_TITLE = 'MUHASEBE EKLERİ'
 
 // pdfkit'in `text(..., { goTo })` seçeneği lineBreak:false ile satır genişliğini
 // hesaplayamıyor (NaN → bozuk annotation). Bağlantı dikdörtgenini kendimiz veriyoruz.
@@ -157,8 +170,11 @@ function sectionPage(doc, fonts, ctx, { title, landscape = false, destination = 
 
 // Sütun akışı: blokları sırayla yerleştirir, sütun dolunca yana, sayfa dolunca
 // yeni sayfaya geçer. "Mümkün olduğunca az sayfa" bunun sayesinde.
-function columnFlow(doc, fonts, ctx, { title, columns = 2, gap = 14, landscape = false }) {
-  let layout = sectionPage(doc, fonts, ctx, { title, landscape, destination: `sec-${ctx.currentSection}` })
+function columnFlow(doc, fonts, ctx, { title, columns = 2, gap = 14, landscape = false, destination }) {
+  let layout = sectionPage(doc, fonts, ctx, {
+    title, landscape,
+    destination: destination === undefined ? `sec-${ctx.currentSection}` : destination,
+  })
   let columnIndex = 0
   let y = layout.top
   const widthOf = () => (layout.innerWidth - gap * (columns - 1)) / columns
@@ -248,24 +264,38 @@ function drawSummaryPage(doc, fonts, ctx) {
   if (report.sections?.length) {
     const prefix = text('EK BÖLÜMLER:')
     const labels = report.sections.map(section => text(`▸ ${SECTION_SHORT[section]}`))
-    // Satır sağ marjı aşmasın: sığana kadar puntoyu düşür (geniş fontta kritik).
+    // Sağ marjı aşmasın: en fazla iki satıra dizilir, sığmıyorsa punto düşer.
     doc.font(fonts.bold)
-    let size = 6.5
-    const lineWidth = () => {
+    let size = 6.4
+    let lines = []
+    const layoutLines = () => {
       doc.fontSize(size)
-      return doc.widthOfString(prefix) + 6 + labels.reduce((sum, label) => sum + doc.widthOfString(label) + 10, 0)
+      const result = [[]]
+      let x = doc.widthOfString(prefix) + 6
+      labels.forEach((label, index) => {
+        const width = doc.widthOfString(label) + 10
+        if (x + width > innerWidth && result[result.length - 1].length) { result.push([]); x = 0 }
+        result[result.length - 1].push({ label, index, x })
+        x += width
+      })
+      return result
     }
-    while (size > 4.4 && lineWidth() > innerWidth) size = Math.max(4.4, size - 0.2)
-    doc.fillColor(MUTED).text(prefix, margin, 131, { lineBreak: false })
-    let linkX = margin + doc.widthOfString(prefix) + 6
-    doc.fillColor(BAND)
-    labels.forEach((label, index) => {
-      const width = doc.widthOfString(label)
-      doc.text(label, linkX, 131, { lineBreak: false })
-      linkArea(doc, `sec-${report.sections[index]}`, linkX, 129, width, 10)
-      linkX += width + 10
+    for (;;) {
+      lines = layoutLines()
+      if (lines.length <= 2 || size <= 4.4) break
+      size = Math.max(4.4, size - 0.2)
+    }
+    doc.fontSize(size).fillColor(MUTED).text(prefix, margin, 131, { lineBreak: false })
+    lines.forEach((line, lineIndex) => {
+      const y = 131 + lineIndex * (size + 2.4)
+      doc.fillColor(BAND)
+      for (const item of line) {
+        const x = margin + item.x
+        doc.text(item.label, x, y, { lineBreak: false })
+        linkArea(doc, `sec-${report.sections[item.index]}`, x, y - 2, doc.widthOfString(item.label), size + 3)
+      }
     })
-    top = 145
+    top = 145 + (lines.length - 1) * (size + 2.4)
   }
 
   const columnGap = 12
@@ -651,6 +681,191 @@ function drawIntakesSection(doc, fonts, ctx) {
   doc.text(num(report.totals.period_in), totalSpot.x, totalSpot.y + 2, { width: width - 2, align: 'right', lineBreak: false })
 }
 
+// ── Bölüm 6: muhasebe ekleri (küçük tablolar tek akışta) ──
+
+// flow içine sığdırılmış küçük tablo; sütun/sayfa değişince başlık tekrar çizilir.
+function flowTable(doc, fonts, flow, { columns, rows, rowHeight = 9.8, headerHeight = 11 }) {
+  const text = value => pdfText(value, fonts)
+  const width = flow.columnWidth
+  const fixed = columns.filter(column => !column.flex).reduce((sum, column) => sum + column.w, 0)
+  const laid = columns.map(column => ({ ...column, w: column.flex ? Math.max(28, width - fixed) : column.w }))
+  const offsets = []
+  laid.reduce((x, column) => { offsets.push(x); return x + column.w }, 0)
+
+  const header = () => {
+    const spot = flow.place(headerHeight)
+    doc.rect(spot.x, spot.y, width, headerHeight - 1).fill('#E2E8F0')
+    doc.font(fonts.bold).fillColor('#334155')
+    laid.forEach((column, index) => {
+      fitFontSize(doc, text(column.label), column.w - 4, 5.8, 4.2)
+      doc.text(text(column.label), spot.x + offsets[index] + 2, spot.y + 2.6,
+        { width: column.w - 4, align: column.align || 'left', lineBreak: false })
+    })
+  }
+
+  header()
+  let striped = 0
+  for (const row of rows) {
+    if (flow.willBreak(rowHeight)) { header(); striped = 0 }
+    const spot = flow.place(rowHeight)
+    if (striped % 2 === 1) doc.rect(spot.x, spot.y, width, rowHeight).fill(ZEBRA)
+    striped += 1
+    laid.forEach((column, index) => {
+      const cell = column.cell(row) || {}
+      const value = text(cell.value ?? '—')
+      doc.font(cell.bold ? fonts.bold : fonts.regular).fillColor(cell.color || INK)
+      const size = fitFontSize(doc, value, column.w - 4, 6.4, 4.2)
+      doc.text(value, spot.x + offsets[index] + 2, spot.y + (rowHeight - size) / 2 - 0.3,
+        { width: column.w - 4, align: column.align || 'left', lineBreak: false, ellipsis: true })
+    })
+  }
+}
+
+function extraBlockTitle(doc, fonts, flow, ctx, section) {
+  flow.reserve(34)
+  const spot = flow.place(13)
+  doc.font(fonts.bold).fontSize(8).fillColor(BAND)
+    .text(pdfText(SECTION_TITLES[section], fonts), spot.x, spot.y + 1, { width: spot.width, lineBreak: false })
+  markTarget(doc, `sec-${section}`, spot.x, Math.max(0, spot.y - 8))
+  const parent = ctx.extrasOutline
+  if (parent?.addItem) parent.addItem(pdfText(SECTION_TITLES[section], fonts))
+  doc.moveTo(spot.x, spot.y + 11.5).lineTo(spot.x + spot.width, spot.y + 11.5)
+    .lineWidth(0.6).strokeColor(BAND).stroke()
+  return spot
+}
+
+function extraNote(doc, fonts, flow, message) {
+  const spot = flow.place(10)
+  doc.font(fonts.regular).fontSize(6).fillColor(MUTED)
+    .text(pdfText(message, fonts), spot.x + 2, spot.y + 1.5, { width: spot.width - 4, lineBreak: false, ellipsis: true })
+}
+
+// Blok yüksekliği kabaca: başlık + tablo başlığı + satırlar + dipnot.
+function estimateExtraHeight(section, extras) {
+  const table = count => 13 + 11 + count * 9.8 + 10
+  if (section === 'deposit') return table((extras.deposit || []).filter(row => row.total_in || row.total_return).length || 1)
+  if (section === 'adjustments') return table((extras.adjustments || []).length || 1)
+  if (section === 'trucks') return table((extras.trucks || []).length || 1)
+  if (section === 'counts') {
+    return 13 + (extras.counts || []).reduce((sum, month) => sum + 11 + 11 + month.rows.length * 9.8, 0) + 10
+  }
+  if (section === 'checks') return 13 + (extras.checks || []).length * 13 + 10
+  return 0
+}
+
+function drawExtrasSection(doc, fonts, ctx) {
+  const report = ctx.report
+  const extras = report.extras || {}
+  const text = value => pdfText(value, fonts)
+  const sections = EXTRA_SECTIONS.filter(section => report.sections.includes(section))
+  // Hepsi tek sütuna sığıyorsa tam genişlik kullan (tablolar daha okunur);
+  // sığmıyorsa iki sütuna dizip sayfa sayısını düşür.
+  const estimated = sections.reduce((sum, section) => sum + estimateExtraHeight(section, extras), 0)
+  const columns = estimated <= (doc.page.height - 46 - 26) ? 1 : 2
+  // Hedefleri her blok kendisi koyar (sec-deposit, sec-trucks …); sayfa ayrı hedef almaz.
+  const flow = columnFlow(doc, fonts, ctx, { title: EXTRAS_TITLE, columns, gap: 16, destination: null })
+  ctx.extrasOutline = ctx.outline.children[ctx.outline.children.length - 1]
+
+  for (const section of sections) {
+    extraBlockTitle(doc, fonts, flow, ctx, section)
+
+    if (section === 'deposit') {
+      const rows = (extras.deposit || []).filter(row => row.total_in || row.total_return)
+      if (!rows.length) { extraNote(doc, fonts, flow, 'İadeli ürün hareketi yok.'); continue }
+      flowTable(doc, fonts, flow, {
+        columns: [
+          { label: 'ÜRÜN', flex: true, w: 0, cell: row => ({ value: row.name }) },
+          { label: 'VERİLEN', w: 40, align: 'right', cell: row => ({ value: num(row.total_in) }) },
+          { label: 'İADE', w: 38, align: 'right', cell: row => ({ value: num(row.total_return) }) },
+          { label: 'DÖNEM', w: 38, align: 'right', cell: row => ({ value: num(row.period_return), color: GREEN }) },
+          { label: 'SAHADA', w: 42, align: 'right', cell: row => ({ value: num(row.outstanding), bold: true, color: row.outstanding > 0 ? '#B45309' : INK }) },
+        ],
+        rows,
+      })
+      extraNote(doc, fonts, flow, 'Sahada = tüm zamanlar verilen − iade edilen (depozito riski).')
+      continue
+    }
+
+    if (section === 'adjustments') {
+      const rows = extras.adjustments || []
+      if (!rows.length) { extraNote(doc, fonts, flow, 'Bu aralıkta stok düzeltmesi yok.'); continue }
+      flowTable(doc, fonts, flow, {
+        columns: [
+          { label: 'TARİH', w: 34, cell: row => ({ value: trDate(row.move_date).slice(0, 5) }) },
+          { label: 'ÜRÜN', flex: true, w: 0, cell: row => ({ value: row.product_name }) },
+          { label: 'MİKTAR', w: 40, align: 'right', cell: row => ({ value: signed(row.signed_base), bold: true, color: row.signed_base < 0 ? RED : GREEN }) },
+          { label: 'SEBEP', w: 58, cell: row => ({ value: row.reason_label, color: MUTED }) },
+        ],
+        rows,
+      })
+      const net = rows.reduce((sum, row) => sum + row.signed_base, 0)
+      extraNote(doc, fonts, flow, `${rows.length} düzeltme · net ${signed(net)}`)
+      continue
+    }
+
+    if (section === 'trucks') {
+      const rows = extras.trucks || []
+      if (!rows.length) { extraNote(doc, fonts, flow, 'Bu aralıkta tır kaydı yok.'); continue }
+      flowTable(doc, fonts, flow, {
+        columns: [
+          { label: 'TARİH', w: 34, cell: row => ({ value: trDate(row.arrival_date).slice(0, 5) }) },
+          { label: 'PLAKA', w: 46, cell: row => ({ value: row.plate }) },
+          { label: 'TEDARİKÇİ / MARKA', flex: true, w: 0, cell: row => ({ value: row.supplier_name || row.brand_name || '—' }) },
+          { label: 'SAAT', w: 40, cell: row => ({ value: row.window, color: MUTED }) },
+          { label: 'DURUM', w: 44, align: 'right', cell: row => ({ value: row.status_label, color: row.status === 'cancelled' ? RED : MUTED }) },
+        ],
+        rows,
+      })
+      const mailed = rows.filter(row => row.mail_sent).length
+      extraNote(doc, fonts, flow, `${rows.length} tır · ${mailed} tanesinde giriş maili gönderildi`)
+      continue
+    }
+
+    if (section === 'counts') {
+      const months = extras.counts || []
+      if (!months.length) { extraNote(doc, fonts, flow, 'Aralıkta kapanış veya sayım kaydı yok.'); continue }
+      for (const month of months) {
+        const head = flow.place(11)
+        doc.font(fonts.bold).fontSize(7).fillColor(INK)
+          .text(text(`${month.month}${month.locked ? '  🔒 kilitli' : '  açık'}`), head.x + 2, head.y + 1.5,
+            { width: head.width - 4, lineBreak: false })
+        doc.font(fonts.regular).fillColor(MUTED)
+        const meta = text(`${month.rows.length} sayım · ${month.mismatch} fark · ${month.pending} bekliyor`)
+        fitFontSize(doc, meta, head.width - 4, 6, 4.2)
+        doc.text(meta, head.x, head.y + 2.4, { width: head.width - 4, align: 'right', lineBreak: false })
+        if (!month.rows.length) { extraNote(doc, fonts, flow, 'Sayım kaydı yok.'); continue }
+        flowTable(doc, fonts, flow, {
+          columns: [
+            { label: 'ÜRÜN', flex: true, w: 0, cell: row => ({ value: row.product_name }) },
+            { label: 'SİSTEM', w: 40, align: 'right', cell: row => ({ value: num(row.system_base) }) },
+            { label: 'SAYIM', w: 40, align: 'right', cell: row => ({ value: num(row.counted_base) }) },
+            { label: 'FARK', w: 38, align: 'right', cell: row => ({ value: signed(row.diff_base), bold: true, color: row.diff_base ? (row.diff_base < 0 ? RED : '#B45309') : GREEN }) },
+            { label: 'SEBEP', w: 52, cell: row => ({ value: row.diff_base ? row.reason_label : '—', color: MUTED }) },
+          ],
+          rows: month.rows,
+        })
+      }
+      continue
+    }
+
+    if (section === 'checks') {
+      const checks = extras.checks || []
+      for (const check of checks) {
+        const spot = flow.place(13)
+        const color = check.level === 'error' ? RED : check.level === 'warn' ? '#B45309' : GREEN
+        doc.circle(spot.x + 4, spot.y + 4.6, 2.2).fill(color)
+        doc.font(fonts.bold).fontSize(6.6).fillColor(INK)
+          .text(text(check.label), spot.x + 10, spot.y + 1, { width: spot.width - 12, lineBreak: false, ellipsis: true })
+        doc.font(fonts.regular).fillColor(MUTED)
+        fitFontSize(doc, text(check.detail), spot.width - 12, 5.8, 4.2)
+        doc.text(text(check.detail), spot.x + 10, spot.y + 7.4, { width: spot.width - 12, lineBreak: false, ellipsis: true })
+      }
+      extraNote(doc, fonts, flow, 'Yeşil: sorun yok · Turuncu: dikkat · Kırmızı: rapor öncesi düzeltilmeli.')
+      continue
+    }
+  }
+}
+
 const SECTION_RENDERERS = {
   matrix: drawMatrixSection,
   days: drawDaysSection,
@@ -665,20 +880,26 @@ export function writeAccountingReportPDF(report, doc) {
 
   const ctx = { report, fonts, pageNo: 1, outline: doc.outline, currentSection: null }
   drawSummaryPage(doc, fonts, ctx)
-  const sections = (report.sections || []).filter(section => SECTION_RENDERERS[section])
-  if (sections.length) {
+  const bigSections = (report.sections || []).filter(section => SECTION_RENDERERS[section])
+  const extraSections = EXTRA_SECTIONS.filter(section => (report.sections || []).includes(section))
+  if (bigSections.length || extraSections.length) {
     ctx.outline.addItem(pdfText('ÖZET', fonts))
     doc.font(fonts.regular).fontSize(6).fillColor('#94A3B8')
       .text(pdfText('Sayfa 1', fonts), doc.page.margins.left, doc.page.height - 20,
         { width: doc.page.width - doc.page.margins.left * 2, align: 'right', lineBreak: false })
   }
 
-  for (const section of sections) {
+  for (const section of bigSections) {
     if (section !== 'intakes' && !report.detail) continue
     if (section === 'days' && !report.detail?.days?.length) continue
     if ((section === 'matrix' || section === 'zones') && !report.detail?.rows?.length) continue
     ctx.currentSection = section
     SECTION_RENDERERS[section](doc, fonts, ctx)
+  }
+
+  if (extraSections.length) {
+    ctx.currentSection = extraSections[0]
+    drawExtrasSection(doc, fonts, ctx)
   }
 
   doc.end()

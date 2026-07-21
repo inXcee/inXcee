@@ -962,12 +962,28 @@ function MonthlyReportPanel({ summary, from, to, label }) {
   )
 }
 
-const REPORT_SECTION_OPTIONS = [
-  { id: 'matrix', label: 'Dağıtım yeri × gün matrisi', hint: 'Hangi yere hangi gün ne kadar + o yerde hangi üründen; altında ürün × gün' },
-  { id: 'days', label: 'Gün gün detay (nereye ne kadar)', hint: 'Her gün için yer yer, ürün kırılımıyla' },
-  { id: 'zones', label: 'Dağıtım yeri × ürün', hint: 'Her yerin dönem toplamı, ürün ürün' },
-  { id: 'intakes', label: 'Gelen irsaliyelerin tamamı', hint: 'Tarih, irsaliye no, ürün, miktar' },
+const REPORT_SECTION_GROUPS = [
+  {
+    title: 'DAĞITIM DETAYI',
+    options: [
+      { id: 'matrix', label: 'Dağıtım yeri × gün matrisi', hint: 'Hangi yere hangi gün ne kadar + o yerde hangi üründen; altında ürün × gün' },
+      { id: 'days', label: 'Gün gün detay (nereye ne kadar)', hint: 'Her gün için yer yer, ürün kırılımıyla' },
+      { id: 'zones', label: 'Dağıtım yeri × ürün', hint: 'Her yerin dönem toplamı, ürün ürün, payı ve kaç gün' },
+      { id: 'intakes', label: 'Gelen irsaliyelerin tamamı', hint: 'Tarih, irsaliye no, ürün, miktar' },
+    ],
+  },
+  {
+    title: 'MUHASEBE EKLERİ',
+    options: [
+      { id: 'deposit', label: 'Boş damacana / iade durumu', hint: 'Verilen, iade edilen, sahada kalan (depozito riski)' },
+      { id: 'adjustments', label: 'Stok düzeltmeleri', hint: 'Tarih, ürün, miktar, sebep — fire/sayım farkı dökümü' },
+      { id: 'trucks', label: 'Tır gelişleri', hint: 'Plaka, tedarikçi, saat aralığı, durum, mail' },
+      { id: 'counts', label: 'Ay kapanışı ve fiziksel sayım', hint: 'Sistem vs sayım, fark ve sebebi, kilit durumu' },
+      { id: 'checks', label: 'Kontrol listesi', hint: 'Eksi stok, karşılıksız dağıtım, irsaliyesiz giriş, ay kilidi' },
+    ],
+  },
 ]
+const REPORT_SECTION_OPTIONS = REPORT_SECTION_GROUPS.flatMap(group => group.options)
 
 function AccountingReportModal({ from, to, label, busy, onDownload, onClose }) {
   const [range, setRange] = useState({ from, to })
@@ -1006,21 +1022,28 @@ function AccountingReportModal({ from, to, label, busy, onDownload, onClose }) {
       </div>
       {!rangeOk && <div style={{ fontSize: '11px', color: 'var(--red)', marginBottom: '10px' }}>Başlangıç bitişten sonra olamaz.</div>}
 
-      <div style={{ display: 'grid', gap: '6px', marginBottom: '14px' }}>
-        {REPORT_SECTION_OPTIONS.map(option => (
-          <label key={option.id} style={{
-            display: 'flex', gap: '9px', alignItems: 'flex-start', padding: '8px 10px', cursor: 'pointer',
-            border: '1px solid var(--border)', borderRadius: '8px',
-            background: picked.includes(option.id) ? 'rgba(14,116,144,.08)' : 'transparent',
-          }}>
-            <input type="checkbox" checked={picked.includes(option.id)} onChange={() => toggle(option.id)} />
-            <span>
-              <span style={{ fontSize: '12px', fontWeight: 600 }}>{option.label}</span>
-              <span style={{ display: 'block', fontSize: '10px', color: 'var(--text3)' }}>{option.hint}</span>
-            </span>
-          </label>
-        ))}
-      </div>
+      {REPORT_SECTION_GROUPS.map(group => (
+        <div key={group.title} style={{ marginBottom: '12px' }}>
+          <div style={{ fontSize: '10px', fontWeight: 700, color: 'var(--text3)', letterSpacing: '.04em', marginBottom: '5px' }}>
+            {group.title}
+          </div>
+          <div style={{ display: 'grid', gap: '5px' }}>
+            {group.options.map(option => (
+              <label key={option.id} style={{
+                display: 'flex', gap: '9px', alignItems: 'flex-start', padding: '7px 10px', cursor: 'pointer',
+                border: '1px solid var(--border)', borderRadius: '8px',
+                background: picked.includes(option.id) ? 'rgba(14,116,144,.08)' : 'transparent',
+              }}>
+                <input type="checkbox" checked={picked.includes(option.id)} onChange={() => toggle(option.id)} />
+                <span>
+                  <span style={{ fontSize: '12px', fontWeight: 600 }}>{option.label}</span>
+                  <span style={{ display: 'block', fontSize: '10px', color: 'var(--text3)' }}>{option.hint}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+        </div>
+      ))}
 
       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
         <button type="button" className="btn btn-primary" disabled={busy || !rangeOk} onClick={submit}>
@@ -1031,7 +1054,8 @@ function AccountingReportModal({ from, to, label, busy, onDownload, onClose }) {
           onClick={() => setPicked(REPORT_SECTION_OPTIONS.map(option => option.id))}>Hepsini seç</button>
       </div>
       <div style={{ fontSize: '10px', color: 'var(--text3)', marginTop: '10px' }}>
-        Gün gün detay 62 günden uzun aralıklarda üretilmez; matris o durumda ay ay gösterir.
+        Muhasebe ekleri sığdığı sürece tek sayfada toplanır. Gün gün detay 62 günden uzun aralıklarda
+        üretilmez; matris o durumda ay ay gösterir.
       </div>
     </WaterModal>
   )
