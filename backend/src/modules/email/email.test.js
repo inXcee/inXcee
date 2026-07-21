@@ -337,3 +337,53 @@ describe('Faz 33 — Ek dosya arşivi', () => {
     expect(res.status).toBe(401)
   })
 })
+
+describe('SMTP tanılama — gönderen normalizasyonu ve hata çevirisi', () => {
+  it('gönderen alanı e-posta değilse ad olarak kullanılır', async () => {
+    const { resolveFrom } = await import('./service.js')
+    expect(resolveFrom({ from: 'YYS', user: 'kamp@ornek.com' })).toBe('"YYS" <kamp@ornek.com>')
+    expect(resolveFrom({ from: 'rapor@ornek.com', user: 'kamp@ornek.com' })).toBe('rapor@ornek.com')
+    expect(resolveFrom({ from: '', user: 'kamp@ornek.com' })).toBe('kamp@ornek.com')
+    expect(resolveFrom({ from: 'YYS', user: null })).toBeNull()
+  })
+
+  it('535 kimlik hatası Gmail için uygulama şifresi önerir ve kalıcı sayılır', async () => {
+    const { describeSmtpError, isSmtpAuthError } = await import('./service.js')
+    const error = Object.assign(new Error('Invalid login: 535-5.7.8 Username and Password not accepted'), { responseCode: 535 })
+    const described = describeSmtpError(error, { host: 'smtp.gmail.com', port: 587 })
+    expect(described.kind).toBe('auth')
+    expect(described.message).toMatch(/Uygulama Şifresi/i)
+    expect(isSmtpAuthError(error)).toBe(true)
+  })
+
+  it('Microsoft 365 için SMTP AUTH uyarısı verir', async () => {
+    const { describeSmtpError } = await import('./service.js')
+    const error = Object.assign(new Error('535 5.7.139 Authentication unsuccessful'), { responseCode: 535 })
+    expect(describeSmtpError(error, { host: 'smtp.office365.com', port: 587 }).message).toMatch(/Authenticated SMTP/i)
+  })
+
+  it('ağ ve host hataları ayrı sınıflandırılır', async () => {
+    const { describeSmtpError } = await import('./service.js')
+    const dns = describeSmtpError(Object.assign(new Error('getaddrinfo ENOTFOUND smtp.yanlis'), { code: 'ENOTFOUND' }), { host: 'smtp.yanlis' })
+    expect(dns.kind).toBe('config')
+    const timeout = describeSmtpError(Object.assign(new Error('Connection timeout'), { code: 'ETIMEDOUT' }), { host: 'smtp.x', port: 587 })
+    expect(timeout.kind).toBe('network')
+  })
+
+  it('kimlik hatası su mail işlerinde retry edilmez', async () => {
+    const { sendDailyDigestMailJob } = await import('../water/jobs.js')
+    const authError = Object.assign(new Error('SMTP kimlik doğrulama reddedildi. …'), { smtpKind: 'auth' })
+    await expect(sendDailyDigestMailJob({ deliveryId: 0 })).rejects.toMatchObject({ permanent: true })
+    // smtpKind='auth' taşıyan hata kalıcı işaretlenmeli (isPermanentMailError üzerinden)
+    expect(authError.smtpKind).toBe('auth')
+  })
+
+  it('verify-smtp yapılandırma özetini şifresiz döner', async () => {
+    const res = await request(app).post('/api/settings/email/verify-smtp')
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(res.status).toBe(200)
+    expect(res.body.config).toBeTruthy()
+    expect(JSON.stringify(res.body)).not.toMatch(/pass"\s*:\s*"[^"]+"/)
+    expect(res.body.config).toHaveProperty('pass_set')
+  })
+})

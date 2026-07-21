@@ -8,6 +8,9 @@ function permanentError(error) {
 
 function isPermanentMailError(error) {
   if (error?.statusCode === 400) return true
+  // Yanlış şifre / kapalı SMTP AUTH tekrar denemekle düzelmez: 5 deneme boşa yanmasın,
+  // hata mesajı kuyrukta hemen görünsün.
+  if (error?.smtpKind === 'auth' || error?.smtpKind === 'config') return true
   return /SMTP_HOST tanımlı değil|SMTP kullanıcı tanımlı değil|SMTP şifre tanımlı değil|alıcı .* gerekli|geçersiz e-posta|konu boş|mesaj boş/i.test(error?.message || '')
 }
 

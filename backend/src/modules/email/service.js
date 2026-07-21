@@ -27,6 +27,49 @@ export function getSmtpStatus() {
   return { configured: missing.length === 0, missing }
 }
 
+// "YYS" gibi yalnız görünen ad girilmişse bu geçerli bir gönderen adresi değildir;
+// kimlik doğrulanan hesapla birleştirilir: YYS <hesap@ornek.com>
+export function resolveFrom({ from, user }) {
+  const value = String(from || '').trim()
+  if (!value) return user || null
+  if (value.includes('@')) return value
+  if (!user) return null
+  return `"${value.replace(/"/g, '')}" <${user}>`
+}
+
+// SMTP hatalarını uygulanabilir Türkçe yönlendirmeye çevirir.
+// kind: 'auth' | 'network' | 'config' | 'unknown' — 'auth' ve 'config' retry ile düzelmez.
+export function describeSmtpError(error, cfg = getSmtpConfig()) {
+  const raw = error?.message || String(error || '')
+  const code = error?.code || ''
+  const responseCode = error?.responseCode || 0
+  const host = String(cfg?.host || '').toLowerCase()
+
+  if (responseCode === 535 || code === 'EAUTH' || /invalid login|authentication (failed|unsuccessful)|5\.7\.8/i.test(raw)) {
+    const hint = host.includes('gmail')
+      ? 'Gmail hesap şifresi SMTP\'de çalışmaz: 2 Adımlı Doğrulama\'yı açıp 16 haneli bir Uygulama Şifresi (App Password) üretin ve şifre alanına boşluksuz yapıştırın.'
+      : host.includes('office365') || host.includes('outlook')
+        ? 'Microsoft 365 kiracınızda SMTP AUTH kapalı olabilir; yöneticiden hesap için "Authenticated SMTP" iznini açmasını isteyin.'
+        : 'Kullanıcı adı veya şifre kabul edilmedi; sağlayıcınızın SMTP şifresini (uygulama şifresi gerekiyorsa onu) kullanın.'
+    return { kind: 'auth', message: `SMTP kimlik doğrulama reddedildi. ${hint}`, raw }
+  }
+  if (code === 'ENOTFOUND' || code === 'EDNS' || /getaddrinfo/i.test(raw)) {
+    return { kind: 'config', message: `SMTP sunucusu bulunamadı (${cfg?.host || '—'}). Host adresini kontrol edin.`, raw }
+  }
+  if (code === 'ETIMEDOUT' || code === 'ECONNECTION' || code === 'ECONNREFUSED' || /timeout|timed out/i.test(raw)) {
+    return { kind: 'network', message: `SMTP sunucusuna bağlanılamadı (${cfg?.host || '—'}:${cfg?.port || '—'}). Port/güvenlik duvarı ayarını kontrol edin.`, raw }
+  }
+  if (/tanımlı değil/i.test(raw)) return { kind: 'config', message: raw, raw }
+  if (responseCode === 553 || responseCode === 550 || /from address|sender address|5\.7\.1/i.test(raw)) {
+    return { kind: 'config', message: 'Gönderen adresi sağlayıcı tarafından reddedildi; "Gönderen" alanı kimlik doğrulanan hesapla aynı olmalı.', raw }
+  }
+  return { kind: 'unknown', message: raw, raw }
+}
+
+export function isSmtpAuthError(error) {
+  return describeSmtpError(error).kind === 'auth'
+}
+
 function createTransport() {
   const cfg = getSmtpConfig()
   if (!cfg.host) throw new Error('SMTP_HOST tanımlı değil — Ayarlar → Genel & E-Posta sayfasında SMTP host doldurun')
@@ -45,14 +88,25 @@ export async function sendEmail({ to, subject, html, text }) {
   if (!to) throw new Error('email: alıcı (to) gerekli')
   const transport = createTransport()
   const cfg = getSmtpConfig()
-  const info = await transport.sendMail({
-    from: cfg.from || cfg.user,
-    to,
-    subject: subject || '(konu yok)',
-    html: html || undefined,
-    text: text || undefined,
-  })
-  return { messageId: info.messageId }
+  try {
+    const info = await transport.sendMail({
+      from: resolveFrom(cfg),
+      to,
+      subject: subject || '(konu yok)',
+      html: html || undefined,
+      text: text || undefined,
+    })
+    return { messageId: info.messageId }
+  } catch (error) {
+    // Ham sağlayıcı hatası yerine ne yapılacağını söyleyen mesaj; tür bilgisi
+    // job queue'nun kalıcı/geçici kararı için korunur.
+    const described = describeSmtpError(error, cfg)
+    throw Object.assign(new Error(described.message), {
+      smtpKind: described.kind,
+      smtpRaw: described.raw,
+      cause: error,
+    })
+  }
 }
 
 // ── Faz 32: Şablonlar + serbest e-posta gönderimi ──
@@ -135,12 +189,31 @@ export async function composeAndSend({ to, cc, subject, body, attachmentIds }) {
 
 // SMTP bağlantı testi — gerçek e-posta göndermez
 export async function verifySmtp() {
+  const cfg = getSmtpConfig()
+  // Şifre asla dönülmez; yalnız doldurulmuş olup olmadığı bilgisi.
+  const summary = {
+    host: cfg.host || null,
+    port: cfg.port || null,
+    user: cfg.user || null,
+    from: resolveFrom(cfg),
+    from_input: cfg.from || null,
+    secure: cfg.port === 465,
+    pass_set: Boolean(cfg.pass),
+  }
+  const warnings = []
+  if (cfg.from && !String(cfg.from).includes('@')) {
+    warnings.push(`"Gönderen" alanı e-posta adresi değil; ad olarak kullanılıp ${summary.from} şeklinde gönderilecek.`)
+  }
+  if (cfg.host && cfg.port && ![25, 465, 587, 2525].includes(cfg.port)) {
+    warnings.push(`${cfg.port} portu alışılmadık; Gmail/Microsoft 365 için 587 (STARTTLS) kullanın.`)
+  }
   try {
     const t = createTransport()
     await t.verify()
-    return { ok: true, message: 'SMTP bağlantısı başarılı' }
+    return { ok: true, message: 'SMTP bağlantısı başarılı', config: summary, warnings }
   } catch (e) {
-    return { ok: false, error: e.message }
+    const described = describeSmtpError(e, cfg)
+    return { ok: false, error: described.message, kind: described.kind, detail: described.raw, config: summary, warnings }
   }
 }
 

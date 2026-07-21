@@ -79,3 +79,40 @@ describe('GET /api/system/metrics', () => {
     expect(res.text).toContain('http_request_duration_seconds')
   })
 })
+
+describe('Job kuyruğu — başarısız işleri görme ve yeniden deneme', () => {
+  it('başarısız işler listelenir ve kuyruğa geri konur', async () => {
+    const { getDB } = await import('../../shared/db/index.js')
+    const db = getDB()
+    db.prepare(`INSERT INTO job_queue(type, payload, run_after, max_attempts, attempts, status, last_error)
+      VALUES('water.daily-digest-mail', '{}', 0, 5, 5, 'failed', 'Invalid login: 535-5.7.8')`).run()
+    db.prepare(`INSERT INTO job_queue(type, payload, run_after, max_attempts, attempts, status, last_error)
+      VALUES('email.send', '{}', 0, 3, 3, 'failed', 'Invalid login: 535-5.7.8')`).run()
+
+    const list = await request(app).get('/api/system/jobs')
+      .set('Authorization', `Bearer ${adminToken}`)
+    expect(list.status).toBe(200)
+    expect(list.body.failed.length).toBeGreaterThanOrEqual(2)
+    expect(list.body.stats).toBeTruthy()
+
+    // Yalnız tek türü kuyruğa al
+    const retry = await request(app).post('/api/system/jobs/retry')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ type: 'water.daily-digest-mail' })
+    expect(retry.status).toBe(200)
+    expect(retry.body.requeued).toBe(1)
+
+    const row = db.prepare("SELECT status, attempts, last_error FROM job_queue WHERE type='water.daily-digest-mail'").get()
+    expect(row).toMatchObject({ status: 'pending', attempts: 0, last_error: null })
+    const untouched = db.prepare("SELECT status FROM job_queue WHERE type='email.send'").get()
+    expect(untouched.status).toBe('failed')
+  })
+
+  it('yetkisiz rol kuyruğa dokunamaz', async () => {
+    expect((await request(app).get('/api/system/jobs')
+      .set('Authorization', `Bearer ${userToken}`)).status).toBe(403)
+    expect((await request(app).post('/api/system/jobs/retry')
+      .set('Authorization', `Bearer ${userToken}`).send({})).status).toBe(403)
+    expect((await request(app).post('/api/system/jobs/retry').send({})).status).toBe(401)
+  })
+})

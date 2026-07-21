@@ -3,6 +3,8 @@ import { requireRole } from '../../shared/auth/middleware.js'
 import { getSystemInfoService } from './service.js'
 import { logger } from '../../shared/logger.js'
 import { register } from '../../shared/metrics.js'
+import { getStats, listFailed, retryFailed } from '../../shared/jobs/index.js'
+import { logAudit } from '../../shared/audit.js'
 
 export const systemRouter = Router()
 const adminOnly = requireRole('campus_manager')
@@ -10,6 +12,24 @@ const adminOnly = requireRole('campus_manager')
 systemRouter.get('/info', ...adminOnly, (req, res) => {
   try { res.json(getSystemInfoService()) }
   catch (e) { logger.error('[System]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// Kuyruk durumu + başarısız işler (ör. SMTP hatası yüzünden gitmeyen mailler)
+systemRouter.get('/jobs', ...adminOnly, (req, res) => {
+  try {
+    res.json({ stats: getStats(), failed: listFailed({ type: req.query.type || undefined }) })
+  } catch (e) { logger.error('[System]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// Başarısız işleri kuyruğa geri koy — SMTP düzeltildikten sonra bekleyenleri gönderir.
+systemRouter.post('/jobs/retry', ...adminOnly, (req, res) => {
+  try {
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(Number).filter(Number.isInteger) : null
+    const type = req.body?.type ? String(req.body.type) : null
+    const requeued = retryFailed({ ids, type })
+    logAudit(req.user.id, 'jobs_retry', 'system', null, `${requeued} iş kuyruğa alındı${type ? ` (${type})` : ''}`)
+    res.json({ requeued })
+  } catch (e) { logger.error('[System]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 // /api/system/metrics — Prometheus scrape endpoint.

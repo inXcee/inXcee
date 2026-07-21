@@ -22,6 +22,41 @@ export function enqueue(type, payload, opts = {}) {
   return result.lastInsertRowid
 }
 
+// Basarisiz isleri kuyruga geri koyar (ornek: SMTP duzeltildikten sonra bekleyen
+// mailler). Deneme sayaci sifirlanir, hata mesaji temizlenir.
+export function listFailed({ type, limit = 50 } = {}) {
+  const db = getDB()
+  const params = []
+  let sql = `SELECT id, type, attempts, max_attempts, last_error, created_at
+             FROM job_queue WHERE status='failed'`
+  if (type) { sql += ' AND type=?'; params.push(type) }
+  sql += ' ORDER BY id DESC LIMIT ?'
+  params.push(limit)
+  return db.prepare(sql).all(...params)
+}
+
+export function retryFailed({ type, ids } = {}) {
+  const db = getDB()
+  const now = Math.floor(Date.now() / 1000)
+  if (Array.isArray(ids) && ids.length) {
+    const placeholders = ids.map(() => '?').join(',')
+    return db.prepare(`
+      UPDATE job_queue SET status='pending', attempts=0, last_error=NULL, run_after=?
+      WHERE status='failed' AND id IN (${placeholders})
+    `).run(now, ...ids).changes
+  }
+  if (type) {
+    return db.prepare(`
+      UPDATE job_queue SET status='pending', attempts=0, last_error=NULL, run_after=?
+      WHERE status='failed' AND type=?
+    `).run(now, type).changes
+  }
+  return db.prepare(`
+    UPDATE job_queue SET status='pending', attempts=0, last_error=NULL, run_after=?
+    WHERE status='failed'
+  `).run(now).changes
+}
+
 // Tek bir tick: bir is varsa onu islet, true don. Yoksa false.
 export async function tickOnce() {
   const db = getDB()
