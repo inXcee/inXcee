@@ -356,6 +356,18 @@ describe('SMTP tanılama — gönderen normalizasyonu ve hata çevirisi', () => 
     expect(isSmtpAuthError(error)).toBe(true)
   })
 
+  it('Brevo için SMTP anahtarı ve doğrulanmış gönderici uyarısı verir', async () => {
+    const { describeSmtpError } = await import('./service.js')
+    const auth = describeSmtpError(Object.assign(new Error('Invalid login'), { responseCode: 535 }),
+      { host: 'smtp-relay.brevo.com', port: 587 })
+    expect(auth.kind).toBe('auth')
+    expect(auth.message).toMatch(/SMTP anahtar/i)
+    const sender = describeSmtpError(Object.assign(new Error('550 5.7.1 Sender not authorized'), { responseCode: 550 }),
+      { host: 'smtp-relay.brevo.com', port: 587 })
+    expect(sender.kind).toBe('config')
+    expect(sender.message).toMatch(/doğrulanmış gönderici/i)
+  })
+
   it('Microsoft 365 için SMTP AUTH uyarısı verir', async () => {
     const { describeSmtpError } = await import('./service.js')
     const error = Object.assign(new Error('535 5.7.139 Authentication unsuccessful'), { responseCode: 535 })

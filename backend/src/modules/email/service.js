@@ -45,12 +45,15 @@ export function describeSmtpError(error, cfg = getSmtpConfig()) {
   const responseCode = error?.responseCode || 0
   const host = String(cfg?.host || '').toLowerCase()
 
+  const isBrevo = host.includes('brevo') || host.includes('sendinblue')
   if (responseCode === 535 || code === 'EAUTH' || /invalid login|authentication (failed|unsuccessful)|5\.7\.8/i.test(raw)) {
-    const hint = host.includes('gmail')
-      ? 'Gmail hesap şifresi SMTP\'de çalışmaz: 2 Adımlı Doğrulama\'yı açıp 16 haneli bir Uygulama Şifresi (App Password) üretin ve şifre alanına boşluksuz yapıştırın.'
-      : host.includes('office365') || host.includes('outlook')
-        ? 'Microsoft 365 kiracınızda SMTP AUTH kapalı olabilir; yöneticiden hesap için "Authenticated SMTP" iznini açmasını isteyin.'
-        : 'Kullanıcı adı veya şifre kabul edilmedi; sağlayıcınızın SMTP şifresini (uygulama şifresi gerekiyorsa onu) kullanın.'
+    const hint = isBrevo
+      ? 'Brevo\'da SMTP & API → SMTP sekmesindeki "Login" değerini kullanıcı, oradaki SMTP anahtarını şifre olarak girin (hesap şifreniz çalışmaz).'
+      : host.includes('gmail')
+        ? 'Gmail hesap şifresi SMTP\'de çalışmaz: 2 Adımlı Doğrulama\'yı açıp 16 haneli bir Uygulama Şifresi (App Password) üretin ve şifre alanına boşluksuz yapıştırın.'
+        : host.includes('office365') || host.includes('outlook')
+          ? 'Microsoft 365 kiracınızda SMTP AUTH kapalı olabilir; yöneticiden hesap için "Authenticated SMTP" iznini açmasını isteyin.'
+          : 'Kullanıcı adı veya şifre kabul edilmedi; sağlayıcınızın SMTP şifresini (uygulama şifresi gerekiyorsa onu) kullanın.'
     return { kind: 'auth', message: `SMTP kimlik doğrulama reddedildi. ${hint}`, raw }
   }
   if (code === 'ENOTFOUND' || code === 'EDNS' || /getaddrinfo/i.test(raw)) {
@@ -60,8 +63,11 @@ export function describeSmtpError(error, cfg = getSmtpConfig()) {
     return { kind: 'network', message: `SMTP sunucusuna bağlanılamadı (${cfg?.host || '—'}:${cfg?.port || '—'}). Port/güvenlik duvarı ayarını kontrol edin.`, raw }
   }
   if (/tanımlı değil/i.test(raw)) return { kind: 'config', message: raw, raw }
-  if (responseCode === 553 || responseCode === 550 || /from address|sender address|5\.7\.1/i.test(raw)) {
-    return { kind: 'config', message: 'Gönderen adresi sağlayıcı tarafından reddedildi; "Gönderen" alanı kimlik doğrulanan hesapla aynı olmalı.', raw }
+  if (responseCode === 553 || responseCode === 550 || /from address|sender ?(address)? not|unrecognized sender|5\.7\.1/i.test(raw)) {
+    const hint = isBrevo
+      ? 'Brevo yalnız doğrulanmış göndericiden mail atar: Senders bölümünden "Gönderen" adresini ekleyip doğrulayın.'
+      : '"Gönderen" alanı kimlik doğrulanan hesapla aynı olmalı.'
+    return { kind: 'config', message: `Gönderen adresi sağlayıcı tarafından reddedildi. ${hint}`, raw }
   }
   return { kind: 'unknown', message: raw, raw }
 }

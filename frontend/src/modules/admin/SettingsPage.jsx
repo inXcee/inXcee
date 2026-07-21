@@ -7,6 +7,29 @@ import { SkeletonCard } from '../../shared/components/Skeleton.jsx'
 
 const DAYS = ['Paz','Pzt','Sal','Çar','Per','Cum','Cmt']
 const MINUTES = [0, 15, 30, 45]
+
+// Sağlayıcı ön ayarları: host/port doldurulur, kalan üç alana ne yazılacağı anlatılır.
+// Şifre hiçbir zaman ön ayardan gelmez — kullanıcı kendi anahtarını yapıştırır.
+const SMTP_PRESETS = [
+  {
+    id: 'brevo', label: 'Brevo', host: 'smtp-relay.brevo.com', port: 587,
+    userHint: 'Brevo panelinde SMTP & API → SMTP sekmesindeki "Login" değeri (genelde ...@smtp-brevo.com)',
+    passHint: 'Aynı sayfadaki SMTP anahtarı — Brevo hesap şifreniz DEĞİL',
+    fromHint: 'Brevo\'da doğrulanmış gönderici adresi olmalı (Senders, Domains & Dedicated IPs → Senders)',
+  },
+  {
+    id: 'gmail', label: 'Gmail', host: 'smtp.gmail.com', port: 587,
+    userHint: 'Tam Gmail adresiniz',
+    passHint: '2 Adımlı Doğrulama açıkken üretilen 16 haneli Uygulama Şifresi (boşluksuz)',
+    fromHint: 'Aynı Gmail adresi; sadece görünen ad yazarsanız adresle birleştirilir',
+  },
+  {
+    id: 'm365', label: 'Microsoft 365', host: 'smtp.office365.com', port: 587,
+    userHint: 'Tam iş e-posta adresiniz',
+    passHint: 'Hesap şifresi (MFA varsa uygulama şifresi)',
+    fromHint: 'Kimlik doğrulanan adresle aynı olmalı; yönetici "Authenticated SMTP" iznini açmalı',
+  },
+]
 const SECTIONS = [
   { key:'occupancy',   label:'Doluluk' },
   { key:'housekeeping',label:'Temizlik' },
@@ -29,6 +52,7 @@ export default function SettingsPage() {
   const qc = useQueryClient()
   const pushToast = useToastStore(s => s.push)
   const [showSmtpPass, setShowSmtpPass] = useState(false)
+  const [smtpPreset, setSmtpPreset] = useState(null)
   const [previewHtml, setPreviewHtml] = useState(null)
   const [previewLoading, setPreviewLoading] = useState(false)
 
@@ -53,6 +77,9 @@ export default function SettingsPage() {
 
   const [form, setForm] = useState(null)
   const current = form ?? data
+  // Kayıtlı host bir ön ayarla eşleşiyorsa yardım metni tıklamadan da görünsün.
+  const activePreset = SMTP_PRESETS.find(preset => preset.id === smtpPreset)
+    ?? SMTP_PRESETS.find(preset => preset.host === current?.smtp?.host)
 
   const save = useMutation({
     mutationFn: body => api.put('/settings/email', body),
@@ -206,11 +233,35 @@ export default function SettingsPage() {
 
         {/* Bölüm 4: SMTP */}
         <Panel title="SMTP AYARLARI">
-          <p style={{ fontSize:'12px', color:'#64748b', marginBottom:'12px' }}>Boş bırakılırsa .env ayarları kullanılır.</p>
+          <p style={{ fontSize:'12px', color:'#64748b', marginBottom:'10px' }}>Boş bırakılırsa .env ayarları kullanılır.</p>
+
+          {/* Sağlayıcı ön ayarı: host/port'u doldurur, hangi alana ne yazılacağını anlatır */}
+          <div style={{ display:'flex', gap:'6px', flexWrap:'wrap', marginBottom:'10px' }}>
+            <span style={{ fontSize:'11px', color:'#94a3b8', alignSelf:'center' }}>HAZIR AYAR:</span>
+            {SMTP_PRESETS.map(preset => (
+              <button key={preset.id} type="button"
+                onClick={() => { patchSmtp({ host: preset.host, port: preset.port }); setSmtpPreset(preset.id) }}
+                style={{ padding:'5px 12px', borderRadius:'8px', border:'none', cursor:'pointer', fontSize:'12px', fontWeight:600,
+                  background: current.smtp?.host === preset.host ? 'var(--accent)' : '#e2e8f0',
+                  color: current.smtp?.host === preset.host ? '#fff' : '#64748b' }}>
+                {preset.label}
+              </button>
+            ))}
+          </div>
+          {activePreset && (
+            <div style={{ fontSize:'11px', lineHeight:1.6, color:'#334155', background:'#f1f5f9',
+              border:'1px solid #e2e8f0', borderRadius:'8px', padding:'9px 11px', marginBottom:'12px' }}>
+              <b>{activePreset.label}</b> — {activePreset.host}:{activePreset.port}
+              <div style={{ marginTop:'4px' }}>· <b>Kullanıcı:</b> {activePreset.userHint}</div>
+              <div>· <b>Şifre:</b> {activePreset.passHint}</div>
+              <div>· <b>From:</b> {activePreset.fromHint}</div>
+            </div>
+          )}
+
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'12px', marginBottom:'12px' }}>
             <div>
               <label className="form-label">HOST</label>
-              <input className="form-input" placeholder="smtp.gmail.com"
+              <input className="form-input" placeholder="smtp-relay.brevo.com"
                 value={current.smtp?.host ?? ''} onChange={e => patchSmtp({ host: e.target.value })} />
             </div>
             <div>
