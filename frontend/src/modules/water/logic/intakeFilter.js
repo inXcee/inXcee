@@ -66,6 +66,46 @@ export const INTAKE_SORTS = {
   remaining_desc: (a, b) => (Number(b.remaining_base) || 0) - (Number(a.remaining_base) || 0) || cmpDateDesc(a, b),
 }
 
+// Fotoğraf → o irsaliyeyle gelen giriş satırları. Önce hareket id'siyle doğrudan
+// eşleşme aranır (o eşleşmenin irsaliye kardeş satırları da dahil edilir), yoksa
+// irsaliye numarasıyla.
+export function buildIntakeIndex(intakes = []) {
+  const byMovementId = new Map()
+  const byWaybill = new Map()
+  for (const row of intakes) {
+    byMovementId.set(Number(row.id), row)
+    if (row.waybill_no) {
+      const key = String(row.waybill_no)
+      byWaybill.set(key, [...(byWaybill.get(key) || []), row])
+    }
+  }
+  return { byMovementId, byWaybill }
+}
+
+export function photoIntakes(photo, index) {
+  if (!index) return []
+  const direct = photo?.movement_id != null ? index.byMovementId.get(Number(photo.movement_id)) : null
+  if (direct) {
+    return direct.waybill_no ? (index.byWaybill.get(String(direct.waybill_no)) || [direct]) : [direct]
+  }
+  if (photo?.waybill_no) return index.byWaybill.get(String(photo.waybill_no)) || []
+  return []
+}
+
+// Fotoğraf arşivinde arama: irsaliye no, plaka, tarih, not + bağlı ürün/marka adları.
+export function filterPhotos(photos = [], { search = '', index } = {}) {
+  const needle = normText(search)
+  if (!needle) return photos
+  return photos.filter(photo => {
+    const lines = photoIntakes(photo, index)
+    const hay = normText([
+      photo.waybill_no, photo.plate, photo.move_date, photo.note,
+      ...lines.map(line => `${line.product_name} ${line.brand_name || ''}`),
+    ].filter(Boolean).join(' '))
+    return hay.includes(needle)
+  })
+}
+
 // Aktif hızlı filtreler AND'lenir; arama ürün/marka/irsaliye/lot/not üzerinde çalışır.
 export function filterIntakes(intakes = [], { search = '', quick = [], sort = 'date_desc', photo } = {}) {
   const needle = normText(search)

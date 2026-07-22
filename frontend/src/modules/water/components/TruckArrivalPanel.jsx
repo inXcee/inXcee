@@ -15,6 +15,8 @@ import {
 import { invalidateWaterQueries } from '../logic/waterQueryInvalidation.js'
 import WaterCollapsiblePanel from './WaterCollapsiblePanel.jsx'
 import { nf, todayStr } from '../logic/waterUi.js'
+import { buildIntakeIndex, filterPhotos, photoIntakes } from '../logic/intakeFilter.js'
+import { baseEquivalent, humanQty } from '../logic/waterUnits.js'
 
 const toastOk = message => useToastStore.getState().addToast(message, 'success')
 const toastErr = message => useToastStore.getState().addToast(message, 'error')
@@ -85,12 +87,24 @@ function TruckArrivalPanel({ from, to, label, focusRequest }) {
   })
   const { data: photos = [] } = useQuery({
     queryKey: ['water-waybill-photos', from, to],
-    queryFn: () => api.get('/water/waybill-photos', { params: { from, to, limit: 120 } }).then(r => r.data),
+    queryFn: () => api.get('/water/waybill-photos', { params: { from, to, limit: 500 } }).then(r => r.data),
   })
   const { data: brands = [] } = useQuery({
     queryKey: ['water-brands'],
     queryFn: () => api.get('/water/brands').then(r => r.data),
   })
+  // Fotoğrafın altına o irsaliyeyle ne geldiğini yazmak için giriş kayıtları
+  // (GelenTirPanel ile aynı anahtar — önbellek paylaşılır)
+  const { data: intakeRows = [] } = useQuery({
+    queryKey: ['water-intake', from, to],
+    queryFn: () => api.get('/water/movements', { params: { type: 'in', from, to, limit: 1000 } }).then(r => r.data),
+  })
+  const [photoSearch, setPhotoSearch] = useState('')
+  const intakeIndex = useMemo(() => buildIntakeIndex(intakeRows), [intakeRows])
+  const filteredPhotos = useMemo(
+    () => filterPhotos(photos, { search: photoSearch, index: intakeIndex }),
+    [photos, photoSearch, intakeIndex],
+  )
 
   useEffect(() => {
     if (!focusRequest?.seq) return undefined
@@ -931,22 +945,49 @@ function TruckArrivalPanel({ from, to, label, focusRequest }) {
                 <button className="btn btn-primary btn-sm" onClick={() => fileRef.current?.click()} disabled={uploadPhoto.isPending}>{uploadPhoto.isPending ? 'Yükleniyor…' : 'Foto Yükle'}</button>
                 <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp,image/*" style={{ display: 'none' }} onChange={e => { const file = e.target.files?.[0]; if (file) uploadPhoto.mutate(file); e.target.value = '' }} />
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(116px, 1fr))', gap: '8px' }}>
-                {photos.slice(0, 12).map(p => (
-                  <button key={p.id} type="button" onClick={() => window.open(p.photo_url, '_blank')} style={{ border: '1px solid var(--border)', background: 'var(--surface2)', borderRadius: '8px', padding: '5px', cursor: 'pointer', textAlign: 'left' }}>
-                    <img src={p.photo_url} alt="irsaliye" style={{ width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', borderRadius: '6px', display: 'block' }} />
-                    <div style={{ fontSize: '10px', color: 'var(--text2)', marginTop: '4px', fontFamily: 'var(--mono)' }}>{p.move_date}</div>
-                    <div style={{ fontSize: '10px', color: 'var(--text3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.waybill_no || p.plate || 'irsaliye'}</div>
-                  </button>
-                ))}
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '8px' }}>
+                <input
+                  className="form-input"
+                  style={{ fontSize: '11px', flex: '1 1 180px', maxWidth: '300px' }}
+                  placeholder="İrsaliye no, plaka, ürün ara…"
+                  value={photoSearch}
+                  onChange={e => setPhotoSearch(e.target.value)}
+                />
+                <span style={{ fontSize: '11px', color: 'var(--text3)' }}>
+                  {photoSearch.trim() ? `${filteredPhotos.length} / ${photos.length}` : `${photos.length} fotoğraf · tüm ay`}
+                </span>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(126px, 1fr))', gap: '8px', maxHeight: '520px', overflow: 'auto', paddingRight: '2px' }}>
+                {filteredPhotos.map(p => {
+                  const lines = photoIntakes(p, intakeIndex)
+                  return (
+                    <button key={p.id} type="button" onClick={() => window.open(p.photo_url, '_blank')} style={{ border: '1px solid var(--border)', background: 'var(--surface2)', borderRadius: '8px', padding: '5px', cursor: 'pointer', textAlign: 'left' }}>
+                      <img src={p.photo_url} alt="irsaliye" loading="lazy" style={{ width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', borderRadius: '6px', display: 'block' }} />
+                      <div style={{ fontSize: '10px', color: 'var(--text2)', marginTop: '4px', fontFamily: 'var(--mono)' }}>{p.move_date}</div>
+                      <div style={{ fontSize: '10px', color: 'var(--text3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.waybill_no || p.plate || 'irsaliye'}</div>
+                      {lines.slice(0, 2).map(line => {
+                        const equivalent = baseEquivalent(line, line.qty_base)
+                        return (
+                          <div key={line.id} style={{ fontSize: '9px', color: 'var(--teal)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                            title={`${line.product_name}: ${line.qty_human || humanQty(line, line.qty_base)}${equivalent ? ` = ${equivalent}` : ''}`}>
+                            {line.product_name}: {line.qty_human || humanQty(line, line.qty_base)}{equivalent ? ` = ${equivalent}` : ''}
+                          </div>
+                        )
+                      })}
+                      {lines.length > 2 && <div style={{ fontSize: '9px', color: 'var(--text3)' }}>+{lines.length - 2} ürün daha</div>}
+                      {lines.length === 0 && <div style={{ fontSize: '9px', color: 'var(--text3)' }}>giriş kaydı bağlı değil</div>}
+                    </button>
+                  )
+                })}
                 {photos.length === 0 && <div style={{ color: 'var(--text3)', fontSize: '12px', padding: '12px' }}>Fotoğraf yok</div>}
+                {photos.length > 0 && filteredPhotos.length === 0 && <div style={{ color: 'var(--text3)', fontSize: '12px', padding: '12px' }}>Aramayla eşleşen fotoğraf yok</div>}
               </div>
             </div>
-            <div style={{ overflowX: 'auto' }}>
+            <div style={{ overflow: 'auto', maxHeight: '560px' }}>
               <table className="data-table" style={{ fontSize: '11px', minWidth: '430px' }}>
                 <thead><tr><th>Tarih</th><th>İrsaliye</th><th>Plaka</th><th>Yükleyen</th><th></th></tr></thead>
                 <tbody>
-                  {photos.slice(0, 10).map(p => (
+                  {filteredPhotos.map(p => (
                     <tr key={p.id}>
                       <td style={{ fontFamily: 'var(--mono)' }}>{p.move_date}</td>
                       <td>{p.waybill_no || '—'}</td>
@@ -955,7 +996,7 @@ function TruckArrivalPanel({ from, to, label, focusRequest }) {
                       <td style={{ textAlign: 'right' }}><button className="btn btn-danger btn-sm" onClick={async () => { if (await confirmDialog({ title: 'İrsaliye Fotoğrafı Sil', body: 'Fotoğraf silinsin mi?', danger: true })) delPhoto.mutate(p.id) }}>Sil</button></td>
                     </tr>
                   ))}
-                  {photos.length === 0 && <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--text3)', padding: '10px' }}>Kayıt yok</td></tr>}
+                  {filteredPhotos.length === 0 && <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--text3)', padding: '10px' }}>Kayıt yok</td></tr>}
                 </tbody>
               </table>
             </div>

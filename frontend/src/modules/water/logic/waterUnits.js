@@ -59,6 +59,15 @@ export const humanQty = (product, base) => {
   return sign ? `-${parts.join(' ')}` : parts.join(' ')
 }
 
+// "2 palet" muhasebe için tek başına yetmez — baz birim karşılığını da verir
+// ("280 koli"). Okunur metin zaten baz metinle aynıysa null döner (tekrar yazma).
+export const baseEquivalent = (product, base) => {
+  const value = Math.round(Number(base) || 0)
+  const label = product?.unit_label || 'adet'
+  if (humanQty(product, value) === `${value} ${label}`) return null
+  return `${new Intl.NumberFormat('tr-TR').format(value)} ${label}`
+}
+
 export const defaultUnitForProduct = (product) => {
   const baseUnit = baseUnitForProduct(product)
   if (baseUnit === 'koli' || baseUnit === 'paket') return baseUnit

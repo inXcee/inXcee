@@ -16,6 +16,7 @@ import WaterQueryErrorCenter from './components/WaterQueryErrorCenter.jsx'
 import ZoneHistoryModal from './components/ZoneHistoryModal.jsx'
 import {
   availableUnitsForProduct,
+  baseEquivalent,
   baseUnitForProduct,
   coerceUnitForProduct,
   defaultUnitForProduct,
@@ -1075,7 +1076,7 @@ function GelenTirPanel({ from, to, label, stockItems = [] }) {
   const { data: intakes = [] } = useQuery({ queryKey: ['water-intake', from, to], queryFn: () => api.get('/water/movements', { params: { type: 'in', from, to, limit: 1000 } }).then(r => r.data) })
   const { data: waybillPhotos = [] } = useQuery({
     queryKey: ['water-waybill-photos', from, to],
-    queryFn: () => api.get('/water/waybill-photos', { params: { from, to, limit: 120 } }).then(r => r.data),
+    queryFn: () => api.get('/water/waybill-photos', { params: { from, to, limit: 500 } }).then(r => r.data),
   })
 
   // Yanlış girilen irsaliye/tır kaydını düzelt veya sil
@@ -1458,8 +1459,14 @@ function GelenTirPanel({ from, to, label, stockItems = [] }) {
                     </td>
                     <td>{r.brand_name ? `${r.brand_name} · ` : ''}{r.product_name}</td>
                     <td><div style={{ fontFamily: 'var(--mono)' }}>{r.lot_no || '—'}</div><div style={{ fontSize: '10px', color: r.expiry_date ? 'var(--text3)' : (r.expiry_tracking ? 'var(--red)' : 'var(--text3)') }}>{r.expiry_date || (r.expiry_tracking ? 'SKT eksik' : 'Takip kapalı')}</div></td>
-                    <td style={{ textAlign: 'right', fontFamily: 'var(--mono)' }}>{r.qty_human || humanQty(r, r.qty_base)}</td>
-                    <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', color: (r.remaining_base || 0) > 0 ? 'var(--teal)' : 'var(--text3)' }}>{r.remaining_human || nf(r.remaining_base)}</td>
+                    <td style={{ textAlign: 'right', fontFamily: 'var(--mono)' }}>
+                      <div>{r.qty_human || humanQty(r, r.qty_base)}</div>
+                      {baseEquivalent(r, r.qty_base) && <div style={{ fontSize: '9px', color: 'var(--text3)' }}>= {baseEquivalent(r, r.qty_base)}</div>}
+                    </td>
+                    <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', color: (r.remaining_base || 0) > 0 ? 'var(--teal)' : 'var(--text3)' }}>
+                      <div>{r.remaining_human || nf(r.remaining_base)}</div>
+                      {(r.remaining_base || 0) > 0 && baseEquivalent(r, r.remaining_base) && <div style={{ fontSize: '9px', color: 'var(--text3)' }}>= {baseEquivalent(r, r.remaining_base)}</div>}
+                    </td>
                     <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                       <button className="btn btn-ghost btn-sm" title="Girişi düzenle" onClick={() => setEditIntake(r)}>✎</button>
                       <button className="btn btn-ghost btn-sm" title="Girişi sil" style={{ color: 'var(--red)' }} onClick={() => askDeleteIntake(r)}>✕</button>
@@ -1514,9 +1521,12 @@ function GelenTirPanel({ from, to, label, stockItems = [] }) {
                   <tr key={r.name + (r.brand || '')}>
                     <td style={{ color: 'var(--text2)' }}>
                       <div style={{ fontWeight: 600 }}>{r.brand ? `${r.brand} · ` : ''}{r.name}</div>
-                      <div style={{ color: 'var(--text3)', fontSize: '9px' }}>irsaliye kalan {humanQty(r.p, r.remaining)}</div>
+                      <div style={{ color: 'var(--text3)', fontSize: '9px' }}>irsaliye kalan {humanQty(r.p, r.remaining)}{baseEquivalent(r.p, r.remaining) ? ` (${baseEquivalent(r.p, r.remaining)})` : ''}</div>
                     </td>
-                    <td style={{ textAlign: 'right', fontFamily: 'var(--mono)' }}>{humanQty(r.p, r.base)}</td>
+                    <td style={{ textAlign: 'right', fontFamily: 'var(--mono)' }}>
+                      <div>{humanQty(r.p, r.base)}</div>
+                      {baseEquivalent(r.p, r.base) && <div style={{ fontSize: '9px', color: 'var(--text3)' }}>= {baseEquivalent(r.p, r.base)}</div>}
+                    </td>
                   </tr>
                 ))}
                 {byProduct.length === 0 && <tr><td style={{ textAlign: 'center', color: 'var(--text3)', padding: '12px' }}>Gelen ürün özeti yok</td></tr>}
