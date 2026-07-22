@@ -829,7 +829,7 @@ function MonthlyReportPanel({ summary, from, to, label }) {
                   type="button"
                   data-testid={`water-day-${iso}`}
                   onClick={() => setSelectedDay(iso)}
-                  title={`${iso} · gelen ${nf(d.in_base)} · dağıtım ${nf(d.out_base)}`}
+                  title={`${iso} · gelen ${nf(d.in_base)} · dağıtım ${nf(d.out_base)} · net ${(d.in_base || 0) - (d.out_base || 0) >= 0 ? '+' : ''}${nf((d.in_base || 0) - (d.out_base || 0))} — tıkla: günlük defter (gelen + dağıtım)`}
                   style={{
                     minHeight: '74px',
                     border: `1px solid ${hasIn || hasOut ? 'rgba(20,184,166,.55)' : 'var(--border)'}`,
@@ -862,16 +862,22 @@ function MonthlyReportPanel({ summary, from, to, label }) {
               <div style={{ border: '1px solid var(--border)', borderRadius: '8px', overflow: 'auto', maxHeight: '190px' }}>
                 <table className="data-table" style={{ fontSize: '11px' }}>
                   <tbody>
-                    {busyDays.map(d => (
-                      <tr key={d.iso} onClick={() => setSelectedDay(d.iso)} style={{ cursor: 'pointer' }} title={`${d.iso} günlük defteri`}>
-                        <td>
-                          <div style={{ fontFamily: 'var(--mono)', fontWeight: 700 }}>{d.iso}</div>
-                          <div style={{ color: 'var(--text3)', fontSize: '9px' }}>{dayShort(d.iso)}</div>
-                        </td>
-                        <td style={{ color: 'var(--green)', fontFamily: 'var(--mono)' }}>G {nf(d.in_base)}</td>
-                        <td style={{ color: 'var(--accent)', fontFamily: 'var(--mono)', textAlign: 'right' }}>D {nf(d.out_base)}</td>
-                      </tr>
-                    ))}
+                    {busyDays.map(d => {
+                      const net = (d.in_base || 0) - (d.out_base || 0)
+                      return (
+                        <tr key={d.iso} onClick={() => setSelectedDay(d.iso)} style={{ cursor: 'pointer' }} title={`${d.iso} günlük defteri (gelen + dağıtım)`}>
+                          <td>
+                            <div style={{ fontFamily: 'var(--mono)', fontWeight: 700 }}>{d.iso}</div>
+                            <div style={{ color: 'var(--text3)', fontSize: '9px' }}>{dayShort(d.iso)}</div>
+                          </td>
+                          <td style={{ color: 'var(--green)', fontFamily: 'var(--mono)' }}>G {nf(d.in_base)}</td>
+                          <td style={{ color: 'var(--accent)', fontFamily: 'var(--mono)' }}>D {nf(d.out_base)}</td>
+                          <td style={{ color: net < 0 ? 'var(--red)' : 'var(--teal)', fontFamily: 'var(--mono)', textAlign: 'right' }} title="Net = gelen − dağıtılan">
+                            {net >= 0 ? '+' : ''}{nf(net)}
+                          </td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>

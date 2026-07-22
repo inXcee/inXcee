@@ -5,6 +5,7 @@ import { confirmDialog } from '../../../shared/components/ConfirmDialog.jsx'
 import { useToastStore } from '../../../shared/store/toastStore.js'
 import { invalidateWaterQueries } from '../logic/waterQueryInvalidation.js'
 import {
+  baseEquivalent,
   defaultUnitForProduct,
   humanQty,
   smartQty,
@@ -33,6 +34,12 @@ export default function DailyDistributionModal({ day, from, to, onDayChange, onC
     enabled: !!day,
     queryFn: () => api.get('/water/movements', { params: { type: 'out', from: day, to: day, limit: 600 } }).then(r => r.data),
   })
+  // Günün gelen irsaliyeleri — defter tek başına dağıtım değil, giriş de gösterir
+  const { data: inRows = [], isLoading: inLoading } = useQuery({
+    queryKey: ['water-daily-ledger-in', day],
+    enabled: !!day,
+    queryFn: () => api.get('/water/movements', { params: { type: 'in', from: day, to: day, limit: 300 } }).then(r => r.data),
+  })
   const { data: products = [] } = useQuery({
     queryKey: ['water-products'],
     enabled: !!editing,
@@ -52,6 +59,16 @@ export default function DailyDistributionModal({ day, from, to, onDayChange, onC
       r.created_by_name, r.created_by_username, r.note, r.input_unit, r.qty_human,
     ].some(v => String(v || '').toLocaleLowerCase('tr').includes(needle)))
   }, [rows, filter])
+
+  const visibleInRows = useMemo(() => {
+    const needle = filter.trim().toLocaleLowerCase('tr')
+    if (!needle) return inRows
+    return inRows.filter(r => [
+      r.waybill_no, r.product_name, r.brand_name, r.lot_no,
+      r.created_by_name, r.created_by_username, r.note, r.input_unit, r.qty_human,
+    ].some(v => String(v || '').toLocaleLowerCase('tr').includes(needle)))
+  }, [inRows, filter])
+  const inTotal = useMemo(() => visibleInRows.reduce((sum, r) => sum + Number(r.qty_base || 0), 0), [visibleInRows])
 
   const stats = useMemo(() => {
     const byZone = new Map()
@@ -137,28 +154,37 @@ export default function DailyDistributionModal({ day, from, to, onDayChange, onC
     })
   }
   const exportCsv = () => {
-    downloadCsv(`su-dagitim-${day}.csv`, ['Tarih', 'Saat', 'Bölge', 'Marka', 'Ürün', 'Girilen', 'Hesaplanan', 'İrsaliye', 'Kaydı Giren', 'Not'],
-      visibleRows.map(r => [
-        r.move_date, movementTime(r.created_at), r.zone_name, r.brand_name, r.product_name,
-        `${nf(r.input_qty)} ${r.input_unit}`, r.qty_human || humanQty(r, r.qty_base),
-        r.source_waybills || '', r.created_by_name || r.created_by_username || '', r.note || '',
-      ]))
+    downloadCsv(`su-gunluk-defter-${day}.csv`,
+      ['Tür', 'Tarih', 'Saat', 'Bölge', 'Marka', 'Ürün', 'Girilen', 'Hesaplanan', 'Baz karşılığı', 'İrsaliye', 'Kaydı Giren', 'Not'],
+      [
+        ...visibleInRows.map(r => [
+          'GELEN', r.move_date, movementTime(r.created_at), '', r.brand_name, r.product_name,
+          `${nf(r.input_qty)} ${r.input_unit}`, r.qty_human || humanQty(r, r.qty_base),
+          baseEquivalent(r, r.qty_base) || '', r.waybill_no || '', r.created_by_name || r.created_by_username || '', r.note || '',
+        ]),
+        ...visibleRows.map(r => [
+          'DAĞITIM', r.move_date, movementTime(r.created_at), r.zone_name, r.brand_name, r.product_name,
+          `${nf(r.input_qty)} ${r.input_unit}`, r.qty_human || humanQty(r, r.qty_base),
+          baseEquivalent(r, r.qty_base) || '', r.source_waybills || '', r.created_by_name || r.created_by_username || '', r.note || '',
+        ]),
+      ])
   }
 
   return (
-    <WaterModal title={`${day} - GÜNLÜK DAĞITIM DEFTERİ`} onClose={onClose} width="1160px">
+    <WaterModal title={`${day} - GÜNLÜK DEFTER`} onClose={onClose} width="1160px">
       <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
           <div>
             <div style={{ fontFamily: 'var(--display)', fontSize: '22px' }}>{dayLong(day)}</div>
-            <div style={{ color: 'var(--text3)', fontSize: '11px' }}>O gün girilen dağıtım kayıtları, irsaliye bağlantıları ve kaydı giren kullanıcı</div>
+            <div style={{ color: 'var(--text3)', fontSize: '11px' }}>O günün gelen irsaliyeleri + dağıtım kayıtları, irsaliye bağlantıları ve kaydı giren</div>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(82px, 1fr))', gap: '8px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, minmax(78px, 1fr))', gap: '8px' }}>
             {[
-              ['Toplam', nf(stats.total), 'var(--accent)'],
+              ['Gelen', nf(inTotal), inTotal > 0 ? 'var(--green)' : 'var(--text3)'],
+              ['Dağıtılan', nf(stats.total), 'var(--accent)'],
               ['Bölge', nf(stats.zoneCount), 'var(--teal)'],
               ['Ürün', nf(stats.productCount), 'var(--green)'],
-              ['Kayıt', nf(stats.recordCount), 'var(--text)'],
+              ['Kayıt', nf(stats.recordCount + visibleInRows.length), 'var(--text)'],
               ['Bekleyen', nf(stats.pending), stats.pending > 0 ? 'var(--red)' : 'var(--text3)'],
             ].map(([name, value, color]) => (
               <div key={name} style={{ border: '1px solid var(--border)', background: 'var(--surface2)', padding: '7px 9px', borderRadius: '8px', textAlign: 'right' }}>
@@ -224,12 +250,63 @@ export default function DailyDistributionModal({ day, from, to, onDayChange, onC
           </div>
         )}
 
-        {isLoading ? (
+        {(isLoading || inLoading) ? (
           <div style={{ padding: '18px', color: 'var(--text3)' }}>Günlük kayıtlar yükleniyor...</div>
+        ) : (
+          <>
+        {visibleInRows.length > 0 && (
+          <div>
+            <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--green)', marginBottom: '6px' }}>
+              GELEN (İRSALİYE) — {visibleInRows.length} kayıt
+            </div>
+            <div style={{ border: '1px solid rgba(34,197,94,.35)', borderRadius: '8px', overflow: 'auto', maxHeight: '32vh' }}>
+              <table className="data-table" style={{ fontSize: '11px', minWidth: '860px' }}>
+                <thead>
+                  <tr>
+                    <th style={{ minWidth: '70px' }}>Saat</th>
+                    <th style={{ minWidth: '110px' }}>İrsaliye</th>
+                    <th style={{ minWidth: '170px' }}>Ürün</th>
+                    <th style={{ textAlign: 'right', minWidth: '90px' }}>Girilen</th>
+                    <th style={{ textAlign: 'right', minWidth: '130px' }}>Hesaplanan</th>
+                    <th style={{ textAlign: 'right', minWidth: '110px' }}>İrsaliyede kalan</th>
+                    <th style={{ minWidth: '110px' }}>Kaydı giren</th>
+                    <th style={{ minWidth: '110px' }}>Not</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visibleInRows.map(r => (
+                    <tr key={r.id}>
+                      <td>
+                        <div style={{ fontFamily: 'var(--mono)', fontWeight: 700 }}>{movementTime(r.created_at) || '--:--'}</div>
+                        <div style={{ color: 'var(--text3)', fontSize: '9px' }}>#{r.id}</div>
+                      </td>
+                      <td style={{ fontFamily: 'var(--mono)', color: r.waybill_no ? 'var(--text)' : 'var(--amber, #b45309)' }}>{r.waybill_no || 'irsaliyesiz'}</td>
+                      <td>
+                        <div style={{ fontWeight: 600 }}>{r.product_name}</div>
+                        <div style={{ color: 'var(--text3)', fontSize: '9px' }}>{r.brand_name || 'Marka yok'}{r.lot_no ? ` · Lot ${r.lot_no}` : ''}</div>
+                      </td>
+                      <td style={{ textAlign: 'right', fontFamily: 'var(--mono)' }}>{nf(r.input_qty)} {r.input_unit}</td>
+                      <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 700, color: 'var(--green)' }}>
+                        <div>{r.qty_human || humanQty(r, r.qty_base)}</div>
+                        {baseEquivalent(r, r.qty_base) && <div style={{ fontSize: '9px', color: 'var(--text3)', fontWeight: 400 }}>= {baseEquivalent(r, r.qty_base)}</div>}
+                      </td>
+                      <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', color: (r.remaining_base || 0) > 0 ? 'var(--teal)' : 'var(--text3)' }}>{r.remaining_human || nf(r.remaining_base)}</td>
+                      <td>{r.created_by_name || r.created_by_username || '-'}</td>
+                      <td style={{ color: r.note ? 'var(--text2)' : 'var(--text3)' }}>{r.note || '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {rows.length === 0 && visibleInRows.length === 0 && inRows.length === 0 ? (
+          <div style={{ padding: '18px', color: 'var(--text3)', border: '1px dashed var(--border)', borderRadius: '8px', textAlign: 'center' }}>Bu gün için giriş veya dağıtım kaydı yok.</div>
         ) : rows.length === 0 ? (
-          <div style={{ padding: '18px', color: 'var(--text3)', border: '1px dashed var(--border)', borderRadius: '8px', textAlign: 'center' }}>Bu gün için dağıtım kaydı yok.</div>
+          <div style={{ padding: '14px', color: 'var(--text3)', border: '1px dashed var(--border)', borderRadius: '8px', textAlign: 'center' }}>Bu gün dağıtım kaydı yok.</div>
         ) : visibleRows.length === 0 ? (
-          <div style={{ padding: '18px', color: 'var(--text3)', border: '1px dashed var(--border)', borderRadius: '8px', textAlign: 'center' }}>Filtreye uygun kayıt yok.</div>
+          <div style={{ padding: '18px', color: 'var(--text3)', border: '1px dashed var(--border)', borderRadius: '8px', textAlign: 'center' }}>Filtreye uygun dağıtım kaydı yok.</div>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.35fr) minmax(300px, .65fr)', gap: '14px' }}>
             <div style={{ border: '1px solid var(--border)', borderRadius: '8px', overflow: 'auto', maxHeight: '58vh' }}>
@@ -333,6 +410,8 @@ export default function DailyDistributionModal({ day, from, to, onDayChange, onC
               </div>
             </div>
           </div>
+        )}
+          </>
         )}
       </div>
     </WaterModal>
