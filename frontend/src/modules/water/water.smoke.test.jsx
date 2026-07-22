@@ -248,10 +248,10 @@ describe('WaterPage tek-ekran pano smoke', () => {
     const photos = await screen.findByRole('checkbox', { name: /İrsaliye fotoğrafları/ })
     await waitFor(() => expect(photos).toBeDisabled())
     expect(photos).not.toBeChecked()
-    expect(screen.getByRole('button', { name: /PDF indir \(özet \+ 10 seçili bölüm\)/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /PDF indir \(özet \+ 9 seçili bölüm\)/ })).toBeInTheDocument()
   })
 
-  it('ana muhasebe PDF düğmesi günlük defter ve fotoğrafları varsayılan gönderir', async () => {
+  it('ana muhasebe PDF düğmesi az sayfa için yalnız fotoğraf bölümünü ekler', async () => {
     const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
     URL.createObjectURL = vi.fn(() => 'blob:test-report')
     URL.revokeObjectURL = vi.fn()
@@ -259,7 +259,7 @@ describe('WaterPage tek-ekran pano smoke', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: '🧾 Muhasebe Raporu (PDF)' }))
     await waitFor(() => expect(api.get).toHaveBeenCalledWith('/water/report/accounting.pdf', expect.objectContaining({
-      params: expect.objectContaining({ sections: 'ledger,photos' }),
+      params: expect.objectContaining({ sections: 'photos' }),
       responseType: 'blob',
     })))
     click.mockRestore()

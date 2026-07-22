@@ -763,7 +763,9 @@ function MonthlyReportPanel({ summary, from, to, label }) {
 
   // Ana muhasebe çıktısı günlük defteri ve varsa irsaliye fotoğraflarını doğrudan
   // içerir; kapsamlı rapor penceresi diğer ekleri ayrıca seçtirir.
-  const downloadAccountingPdf = async ({ from: fromArg = from, to: toArg = to, sections = ['ledger', 'photos'] } = {}) => {
+  // Tek tık = az sayfa: özet + irsaliye fotoğrafları. Günlük defter gibi çok
+  // sayfalı bölümler "Kapsamlı rapor…" modalından bilerek açılır.
+  const downloadAccountingPdf = async ({ from: fromArg = from, to: toArg = to, sections = ['photos'] } = {}) => {
     setPdfBusy(true)
     try {
       const params = { from: fromArg, to: toArg }
@@ -986,10 +988,10 @@ const REPORT_SECTION_GROUPS = [
   {
     title: 'DAĞITIM DETAYI',
     options: [
-      { id: 'ledger', label: 'Günlük defter (tüm hareketler)', hint: 'Gelen, dağıtım, boş kap iadesi ve stok düzeltmesi tarih sırasıyla' },
-      { id: 'matrix', label: 'Dağıtım yeri × gün matrisi', hint: 'Hangi yere hangi gün ne kadar + o yerde hangi üründen; altında ürün × gün' },
+      { id: 'ledger', label: 'Günlük defter (tüm hareketler)', heavy: true, hint: 'Her kayıt tek tek — ÇOK SAYFA ekler; gerekince açın (varsayılan kapalı)' },
+      { id: 'matrix', label: 'Dağıtım yeri × gün matrisi', hint: 'Hangi yere hangi gün ne kadar; ürün kırılımı Yer × Ürün matrisinde' },
       { id: 'days', label: 'Gün gün detay (nereye ne kadar)', hint: 'Her gün için yer yer, ürün kırılımıyla' },
-      { id: 'zones', label: 'Dağıtım yeri × ürün', hint: 'Her yerin dönem toplamı, ürün ürün, payı ve kaç gün' },
+      { id: 'zones', label: 'Dağıtım yeri × ürün matrisi', hint: 'Ürün adları bir kez üstte sütun olarak; her yerin ürün ürün toplamı + pay' },
       { id: 'intakes', label: 'Gelen irsaliyelerin tamamı', hint: 'Tarih, irsaliye no, ürün, miktar' },
       { id: 'photos', label: 'İrsaliye fotoğrafları', hint: 'Büyük belge kartları halinde; tarih, irsaliye içeriği ve açıklamasıyla (en çok 48)' },
     ],
@@ -1009,7 +1011,9 @@ const REPORT_SECTION_OPTIONS = REPORT_SECTION_GROUPS.flatMap(group => group.opti
 
 function AccountingReportModal({ from, to, label, busy, onDownload, onClose }) {
   const [range, setRange] = useState({ from, to })
-  const [picked, setPicked] = useState(() => REPORT_SECTION_OPTIONS.map(option => option.id))
+  // Ağır bölümler (ör. günlük defter) varsayılan kapalı — rapor kısa kalsın,
+  // detay isteyen işaretleyip açsın. "Hepsini seç" yine tümünü açar.
+  const [picked, setPicked] = useState(() => REPORT_SECTION_OPTIONS.filter(option => !option.heavy).map(option => option.id))
   const toggle = id => setPicked(prev => (prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]))
   const rangeOk = range.from && range.to && range.from <= range.to
   const reportPhotosQuery = useQuery({

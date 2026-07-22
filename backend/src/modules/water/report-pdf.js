@@ -557,16 +557,16 @@ function drawMatrixSection(doc, fonts, ctx) {
   }
 
   for (const row of rows) {
-    // Tek ürünlü yerde alt satır yerine ürünü başlığa yaz — sayfa şişmesin.
+    // Ürün kırılımı artık ayrı "DAĞITIM YERİ × ÜRÜN" matrisinde (ürün adları bir
+    // kez, üstte) — burada yer satırı tek satır kalır, sayfa sayısı düşer.
     const single = row.products?.length === 1
     drawRow({ ...row, name: single ? `${row.zone_name} · ${row.products[0].name}` : row.zone_name })
-    if (!single) for (const product of row.products || []) drawRow(product, { level: 'product' })
   }
   drawRow({ name: 'TOPLAM', cells: detail.column_totals, total: detail.grand_total, share: 100 }, { level: 'total' })
   doc.moveTo(layout.margin, y).lineTo(layout.margin + layout.innerWidth, y).lineWidth(0.5).strokeColor(LINE).stroke()
   const notes = [
     detail.grouped ? 'Sütunlar aydır (aralık uzun).' : 'Sütunlar ayın günleridir; mavi gün başlığına tıklayınca o günün detayına gider.',
-    'Her yerin altındaki girintili satırlar o yere hangi üründen ne kadar gittiğini gösterir.',
+    'Hangi yere hangi üründen gittiği "Dağıtım Yeri × Ürün" matrisindedir.',
     detail.rows.length > MATRIX_ZONE_LIMIT ? `En çok dağıtılan ${MATRIX_ZONE_LIMIT} yer gösterildi (toplam ${detail.rows.length}).` : null,
   ].filter(Boolean).join('  ·  ')
   doc.font(fonts.regular).fontSize(6).fillColor(MUTED).text(text(notes), layout.margin, y + 4, { width: layout.innerWidth })
@@ -603,25 +603,25 @@ function drawLedgerSection(doc, fonts, ctx) {
   }
 
   const tableHeader = label => {
-    const spot = flow.place(14)
-    doc.rect(spot.x, spot.y, spot.width, 13).fill('#E2E8F0')
-    doc.font(fonts.bold).fontSize(6).fillColor('#334155')
-    doc.text(text(label || 'İŞLEM'), spot.x + 5, spot.y + 4, { width: 57, lineBreak: false })
-    doc.text(text('ÜRÜN'), spot.x + 66, spot.y + 4, { width: 128, lineBreak: false })
-    doc.text(text('DETAY / AÇIKLAMA'), spot.x + 202, spot.y + 4, { width: spot.width - 302, lineBreak: false })
-    doc.text(text('MİKTAR'), spot.x + spot.width - 96, spot.y + 4, { width: 90, align: 'right', lineBreak: false })
+    const spot = flow.place(12)
+    doc.rect(spot.x, spot.y, spot.width, 11).fill('#E2E8F0')
+    doc.font(fonts.bold).fontSize(5.8).fillColor('#334155')
+    doc.text(text(label || 'İŞLEM'), spot.x + 4, spot.y + 3.2, { width: 44, lineBreak: false })
+    doc.text(text('ÜRÜN'), spot.x + 52, spot.y + 3.2, { width: 122, lineBreak: false })
+    doc.text(text('DETAY / NOT / KAYDI GİREN'), spot.x + 178, spot.y + 3.2, { width: spot.width - 284, lineBreak: false })
+    doc.text(text('MİKTAR'), spot.x + spot.width - 104, spot.y + 3.2, { width: 100, align: 'right', lineBreak: false })
   }
 
   let striped = 0
   for (const day of ledger.days) {
-    flow.reserve(62)
-    const head = flow.place(29)
-    doc.roundedRect(head.x, head.y, head.width, 25, 4).fillAndStroke('#ECFEFF', '#A5F3FC')
-    doc.rect(head.x, head.y, 4, 25).fill(BAND)
-    doc.font(fonts.bold).fontSize(9).fillColor(INK)
-      .text(text(`${day.label} · ${day.weekday}`), head.x + 10, head.y + 5, { width: 180, lineBreak: false })
-    doc.font(fonts.regular).fontSize(5.8).fillColor(MUTED)
-      .text(text(`${day.entries.length} kayıt`), head.x + 10, head.y + 16, { width: 180, lineBreak: false })
+    flow.reserve(42)
+    const head = flow.place(16)
+    doc.roundedRect(head.x, head.y, head.width, 14, 3).fillAndStroke('#ECFEFF', '#A5F3FC')
+    doc.rect(head.x, head.y, 3, 14).fill(BAND)
+    doc.font(fonts.bold).fontSize(7.6).fillColor(INK)
+      .text(text(`${day.label} · ${day.weekday}`), head.x + 8, head.y + 3.6, { width: 150, lineBreak: false })
+    doc.font(fonts.regular).fontSize(5.6).fillColor(MUTED)
+      .text(text(`${day.entries.length} kayıt`), head.x + 156, head.y + 4.6, { width: 50, lineBreak: false })
     const summary = [
       day.intake_base ? `Gelen ${num(day.intake_base)}` : null,
       day.distribution_base ? `Dağıtım ${num(day.distribution_base)}` : null,
@@ -629,54 +629,52 @@ function drawLedgerSection(doc, fonts, ctx) {
       day.adjustment_base ? `Düzeltme ${signed(day.adjustment_base)}` : null,
     ].filter(Boolean).join('  ·  ')
     doc.font(fonts.bold).fillColor(BAND)
-    fitFontSize(doc, text(summary), head.width - 206, 7, 4.5)
-    doc.text(text(summary), head.x + 196, head.y + 9, { width: head.width - 206, align: 'right', lineBreak: false })
+    fitFontSize(doc, text(summary), head.width - 216, 6.4, 4.3)
+    doc.text(text(summary), head.x + 208, head.y + 4, { width: head.width - 216, align: 'right', lineBreak: false })
     markTarget(doc, `ledger-day-${day.key}`, head.x, Math.max(0, head.y - 6))
 
     tableHeader()
     striped = 0
     for (const entry of day.entries) {
-      if (flow.willBreak(23)) {
-        flow.reserve(37)
+      if (flow.willBreak(12.4)) {
+        flow.reserve(25)
         tableHeader(`${day.label} · DEVAM`)
         striped = 0
       }
-      const spot = flow.place(23)
-      if (striped % 2 === 1) doc.rect(spot.x, spot.y, spot.width, 22).fill(ZEBRA)
+      // Tek satırlık kayıt: işlem çipi + ürün + birleşik detay + miktar (az sayfa)
+      const spot = flow.place(12.4)
+      if (striped % 2 === 1) doc.rect(spot.x, spot.y, spot.width, 12.4).fill(ZEBRA)
       striped += 1
       const style = kindStyle[entry.kind] || { color: BAND, tint: '#ECFEFF' }
-      doc.roundedRect(spot.x + 4, spot.y + 5, 55, 12, 3).fill(style.tint)
+      doc.roundedRect(spot.x + 4, spot.y + 1.7, 44, 9, 2.5).fill(style.tint)
       doc.font(fonts.bold).fillColor(style.color)
-      fitFontSize(doc, text(entry.kind_label), 49, 6.2, 4.5)
-      doc.text(text(entry.kind_label), spot.x + 7, spot.y + 8, { width: 49, align: 'center', lineBreak: false })
+      fitFontSize(doc, text(entry.kind_label), 40, 5.6, 4.2)
+      doc.text(text(entry.kind_label), spot.x + 6, spot.y + 3.6, { width: 40, align: 'center', lineBreak: false })
 
       doc.font(fonts.bold).fillColor(INK)
-      fitFontSize(doc, text(entry.product_name), 128, 6.8, 4.6)
-      doc.text(text(entry.product_name), spot.x + 66, spot.y + 5, { width: 128, lineBreak: false, ellipsis: true })
-      doc.font(fonts.regular).fontSize(5.4).fillColor(MUTED)
-        .text(text(`#${entry.source_id}`), spot.x + 66, spot.y + 14, { width: 128, lineBreak: false })
+      const productSize = fitFontSize(doc, text(entry.product_name), 122, 6.4, 4.4)
+      doc.text(text(entry.product_name), spot.x + 52, spot.y + (12.4 - productSize) / 2 - 0.4,
+        { width: 122, lineBreak: false, ellipsis: true })
 
-      const detailWidth = spot.width - 302
-      doc.font(fonts.bold).fillColor('#334155')
-      fitFontSize(doc, text(entry.context), detailWidth, 6.4, 4.5)
-      doc.text(text(entry.context), spot.x + 202, spot.y + 4.5, { width: detailWidth, lineBreak: false, ellipsis: true })
-      const subline = [entry.note, entry.created_by_name].filter(Boolean).join(' · ') || '—'
-      doc.font(fonts.regular).fillColor(MUTED)
-      fitFontSize(doc, text(subline), detailWidth, 5.4, 4.2)
-      doc.text(text(subline), spot.x + 202, spot.y + 13.5, { width: detailWidth, lineBreak: false, ellipsis: true })
+      const detailWidth = spot.width - 284
+      const detailText = [entry.context, entry.note, entry.created_by_name].filter(Boolean).join(' · ') || '—'
+      doc.font(fonts.regular).fillColor('#475569')
+      const detailSize = fitFontSize(doc, text(detailText), detailWidth, 5.8, 4.2)
+      doc.text(text(detailText), spot.x + 178, spot.y + (12.4 - detailSize) / 2 - 0.3,
+        { width: detailWidth, lineBreak: false, ellipsis: true })
 
-      const amount = entry.kind === 'adjustment'
+      const amountCore = entry.kind === 'adjustment'
         ? `${entry.stock_effect > 0 ? '+' : '−'}${entry.qty_human}`
         : entry.qty_human
+      const amount = entry.qty_human === `${entry.qty_base} ${entry.unit_label || 'adet'}`
+        ? amountCore
+        : `${amountCore} = ${num(entry.qty_base)}`
       doc.font(fonts.bold).fillColor(style.color)
-      fitFontSize(doc, text(amount), 90, 6.8, 4.4)
-      doc.text(text(amount), spot.x + spot.width - 96, spot.y + 5, { width: 90, align: 'right', lineBreak: false })
-      doc.font(fonts.regular).fontSize(5.2).fillColor(MUTED)
-        .text(text(`${num(entry.qty_base)} baz`), spot.x + spot.width - 96, spot.y + 14, { width: 90, align: 'right', lineBreak: false })
-      doc.moveTo(spot.x + 4, spot.y + 22).lineTo(spot.x + spot.width - 4, spot.y + 22)
-        .lineWidth(0.25).strokeColor('#E2E8F0').stroke()
+      const amountSize = fitFontSize(doc, text(amount), 100, 6.4, 4.2)
+      doc.text(text(amount), spot.x + spot.width - 104, spot.y + (12.4 - amountSize) / 2 - 0.4,
+        { width: 100, align: 'right', lineBreak: false })
     }
-    flow.place(7)
+    flow.place(3)
   }
 
   if (ledger.truncated) {
@@ -697,13 +695,13 @@ function drawDaysSection(doc, fonts, ctx) {
   const dayItems = ctx.outline.children[ctx.outline.children.length - 1]
 
   for (const day of detail.days) {
-    flow.reserve(30)
-    const head = flow.place(17)
-    doc.rect(head.x, head.y, head.width, 15).fill('#ECFEFF')
+    flow.reserve(26)
+    const head = flow.place(14.5)
+    doc.rect(head.x, head.y, head.width, 13).fill('#ECFEFF')
     // Sol renk çubuğu: giriş olan gün yeşil, yalnız dağıtım olan gün turkuaz
-    doc.rect(head.x, head.y, 3, 15).fill(day.in_base ? GREEN : BAND)
-    doc.font(fonts.bold).fontSize(8).fillColor(INK)
-      .text(text(`${day.label} ${day.weekday}`), head.x + 6, head.y + 4, { width: head.width - 6, lineBreak: false })
+    doc.rect(head.x, head.y, 3, 13).fill(day.in_base ? GREEN : BAND)
+    doc.font(fonts.bold).fontSize(7.4).fillColor(INK)
+      .text(text(`${day.label} ${day.weekday}`), head.x + 6, head.y + 3.4, { width: head.width - 6, lineBreak: false })
     markTarget(doc, `day-${day.key}`, head.x, Math.max(0, head.y - 6))
     const summary = [
       day.in_base ? `gelen ${num(day.in_base)}` : null,
@@ -711,92 +709,148 @@ function drawDaysSection(doc, fonts, ctx) {
       day.balance_base == null ? null : `kalan ${num(day.balance_base)}`,
     ].filter(Boolean).join('  ·  ')
     doc.font(fonts.regular).fillColor(MUTED)
-    fitFontSize(doc, text(summary), head.width - 8, 6.2, 4.6)
-    doc.text(text(summary), head.x + 4, head.y + 4, { width: head.width - 8, align: 'right', lineBreak: false })
+    fitFontSize(doc, text(summary), head.width - 8, 6, 4.4)
+    doc.text(text(summary), head.x + 4, head.y + 3.8, { width: head.width - 8, align: 'right', lineBreak: false })
     if (dayItems?.addItem) dayItems.addItem(pdfText(day.label, fonts))
 
     for (const intake of day.intakes) {
-      const spot = flow.place(9.6)
-      doc.font(fonts.regular).fontSize(6.4).fillColor(GREEN)
+      const spot = flow.place(8.6)
+      doc.font(fonts.regular).fontSize(6.2).fillColor(GREEN)
       // Okunur miktar da yazılsın: "⊕ giriş IRS-100 — 0.5 L Şişe Su · 4 palet" + sağda baz
       const humanPart = intake.qty_human && intake.qty_human !== `${intake.qty_base} ${intake.unit_label || 'adet'}`
         ? ` · ${intake.qty_human}`
         : ''
       const label = text(`⊕ giriş  ${intake.waybill_no || 'irsaliyesiz'} — ${intake.product_name}${humanPart}`)
-      fitFontSize(doc, label, spot.width - 40, 6.4, 4.6)
-      doc.text(label, spot.x + 4, spot.y + 1.4, { width: spot.width - 40, lineBreak: false, ellipsis: true })
-      doc.font(fonts.bold).fontSize(6.4).fillColor(GREEN)
-        .text(num(intake.qty_base), spot.x, spot.y + 1.4, { width: spot.width - 2, align: 'right', lineBreak: false })
+      fitFontSize(doc, label, spot.width - 40, 6.2, 4.4)
+      doc.text(label, spot.x + 4, spot.y + 1.2, { width: spot.width - 40, lineBreak: false, ellipsis: true })
+      doc.font(fonts.bold).fontSize(6.2).fillColor(GREEN)
+        .text(num(intake.qty_base), spot.x, spot.y + 1.2, { width: spot.width - 2, align: 'right', lineBreak: false })
     }
 
     for (const zone of day.zones) {
-      const spot = flow.place(10.4)
+      const spot = flow.place(9.2)
       doc.font(fonts.regular).fillColor(INK)
       const nameWidth = Math.min(96, spot.width * 0.42)
-      const nameSize = fitFontSize(doc, text(zone.zone_name), nameWidth, 6.8, 4.2)
-      doc.text(text(zone.zone_name), spot.x + 4, spot.y + 1.6 + (6.8 - nameSize) / 2,
+      const nameSize = fitFontSize(doc, text(zone.zone_name), nameWidth, 6.6, 4.2)
+      doc.text(text(zone.zone_name), spot.x + 4, spot.y + 1.3 + (6.6 - nameSize) / 2,
         { width: nameWidth, lineBreak: false, ellipsis: true })
 
       const breakdown = zone.lines.map(line => `${line.product_name} ${num(line.qty_base)}`).join(' · ')
       const breakdownWidth = spot.width - nameWidth - 46
       doc.font(fonts.regular).fillColor(MUTED)
-      fitFontSize(doc, text(breakdown), breakdownWidth, 5.8, 4.2)
-      doc.text(text(breakdown), spot.x + 6 + nameWidth, spot.y + 2.4,
+      fitFontSize(doc, text(breakdown), breakdownWidth, 5.6, 4)
+      doc.text(text(breakdown), spot.x + 6 + nameWidth, spot.y + 2,
         { width: breakdownWidth, lineBreak: false, ellipsis: true })
 
       doc.font(fonts.bold).fillColor(INK)
-      const totalSize = fitFontSize(doc, num(zone.total), 40, 7)
-      doc.text(num(zone.total), spot.x, spot.y + 1.6 + (7 - totalSize) / 2,
+      const totalSize = fitFontSize(doc, num(zone.total), 40, 6.8)
+      doc.text(num(zone.total), spot.x, spot.y + 1.3 + (6.8 - totalSize) / 2,
         { width: spot.width - 2, align: 'right', lineBreak: false })
     }
 
-    const rule = flow.place(5)
-    doc.moveTo(rule.x + 2, rule.y + 2).lineTo(rule.x + rule.width - 2, rule.y + 2)
-      .lineWidth(0.4).strokeColor('#E2E8F0').stroke()
+    flow.place(2.5)
   }
 }
 
-// ── Bölüm 4: dağıtım yeri × ürün ──
+// ── Bölüm 4: dağıtım yeri × ürün (ürün adları BİR KEZ, üstte sütun olarak) ──
+
+const PRODUCT_COLUMN_LIMIT = 14
 
 function drawZonesSection(doc, fonts, ctx) {
   const { detail } = ctx.report
   const text = value => pdfText(value, fonts)
   const title = SECTION_TITLES.zones
-  const flow = columnFlow(doc, fonts, ctx, { title, columns: 2, gap: 16 })
+  const products = detail.product_rows.slice(0, PRODUCT_COLUMN_LIMIT)
+  const zones = detail.rows.slice(0, MATRIX_ZONE_LIMIT)
+  // Yer satırındaki ürün toplamlarına hızlı erişim
+  const zoneProductTotal = new Map(detail.rows.map(row =>
+    [row.zone_id, new Map((row.products || []).map(product => [product.product_id, product.total]))]))
 
-  for (const zone of detail.zone_products) {
-    flow.reserve(22)
-    const head = flow.place(12.6)
-    doc.font(fonts.bold).fontSize(7.4).fillColor(INK)
-    const nameSize = fitFontSize(doc, text(zone.zone_name), head.width - 84, 7.4, 5)
-    doc.text(text(zone.zone_name), head.x + 2, head.y + 2 + (7.4 - nameSize) / 2,
-      { width: head.width - 84, lineBreak: false, ellipsis: true })
-    doc.font(fonts.regular).fillColor(MUTED)
-    const shareText = text(`%${String(zone.share ?? 0).replace('.', ',')} pay`)
-    fitFontSize(doc, shareText, 40, 6, 4.4)
-    doc.text(shareText, head.x + head.width - 84, head.y + 3.4, { width: 40, align: 'right', lineBreak: false })
-    doc.font(fonts.bold).fontSize(7.4).fillColor(BAND)
-      .text(num(zone.total), head.x, head.y + 2, { width: head.width - 2, align: 'right', lineBreak: false })
-    doc.moveTo(head.x + 2, head.y + 11.6).lineTo(head.x + head.width - 2, head.y + 11.6)
-      .lineWidth(0.4).strokeColor('#E2E8F0').stroke()
+  let layout = sectionPage(doc, fonts, ctx, { title, landscape: true, destination: 'sec-zones' })
+  const labelWidth = 150
+  const totalWidth = 48
+  const shareWidth = 30
+  const cellWidth = (layout.innerWidth - labelWidth - totalWidth - shareWidth) / Math.max(1, products.length)
+  const totalX = () => layout.margin + labelWidth + products.length * cellWidth
+  const rowHeight = 12.4
+  const headerHeight = 24
 
-    for (const product of zone.products) {
-      const spot = flow.place(9.4)
-      doc.font(fonts.regular).fillColor('#334155')
-      const productSize = fitFontSize(doc, text(product.name), spot.width - 140, 6.4, 4.6)
-      doc.text(text(product.name), spot.x + 8, spot.y + 1.4 + (6.4 - productSize) / 2,
-        { width: spot.width - 140, lineBreak: false, ellipsis: true })
+  const header = (y) => {
+    doc.rect(layout.margin, y, layout.innerWidth, headerHeight).fill('#E2E8F0')
+    doc.font(fonts.bold).fillColor('#334155')
+    fitFontSize(doc, text('DAĞITIM YERİ'), labelWidth - 6, 6.6, 4.6)
+    doc.text(text('DAĞITIM YERİ'), layout.margin + 3, y + 8, { width: labelWidth - 6, lineBreak: false })
+    products.forEach((product, index) => {
+      const x = layout.margin + labelWidth + index * cellWidth
+      // Ürün adı bir kez burada — satırlarda tekrar edilmez
+      doc.font(fonts.bold).fillColor('#334155')
+      fitFontSize(doc, text(product.name), cellWidth - 4, 6, 4.2)
+      doc.text(text(product.name), x + 2, y + 4, { width: cellWidth - 4, align: 'center', lineBreak: false, ellipsis: true })
       doc.font(fonts.regular).fillColor(MUTED)
-      const detailText = text(`${product.human}${product.days_active ? ` · ${product.days_active} gün` : ''}`)
-      fitFontSize(doc, detailText, 88, 5.8, 4.2)
-      doc.text(detailText, spot.x + spot.width - 132, spot.y + 2, { width: 88, align: 'right', lineBreak: false })
-      doc.font(fonts.bold).fillColor(INK)
-      const size = fitFontSize(doc, num(product.total), 38, 6.6)
-      doc.text(num(product.total), spot.x, spot.y + 1.4 + (6.6 - size) / 2,
-        { width: spot.width - 2, align: 'right', lineBreak: false })
-    }
-    flow.place(4)
+      const unitText = text(product.unit_label || 'adet')
+      fitFontSize(doc, unitText, cellWidth - 4, 5.2, 4)
+      doc.text(unitText, x + 2, y + 14, { width: cellWidth - 4, align: 'center', lineBreak: false })
+    })
+    doc.font(fonts.bold).fillColor('#334155')
+    fitFontSize(doc, text('TOPLAM'), totalWidth - 4, 6.6, 4.6)
+    doc.text(text('TOPLAM'), totalX() + 2, y + 8, { width: totalWidth - 4, align: 'right', lineBreak: false })
+    fitFontSize(doc, text('PAY'), shareWidth - 4, 6.6, 4.6)
+    doc.text(text('PAY'), totalX() + totalWidth + 2, y + 8, { width: shareWidth - 4, align: 'right', lineBreak: false })
+    return y + headerHeight
   }
+
+  let y = header(layout.top)
+  let striped = 0
+  const drawRow = (label, cells, total, share, { total: isTotal = false } = {}) => {
+    if (y + rowHeight > layout.bottom) {
+      layout = sectionPage(doc, fonts, ctx, { title, landscape: true, continued: true })
+      y = header(layout.top)
+      striped = 0
+    }
+    if (isTotal) doc.rect(layout.margin, y, layout.innerWidth, rowHeight).fill('#FEF3C7')
+    else if (striped % 2 === 1) doc.rect(layout.margin, y, layout.innerWidth, rowHeight).fill(ZEBRA)
+    striped += 1
+    const font = isTotal ? fonts.bold : fonts.regular
+    doc.font(fonts.bold).fillColor(INK)
+    const nameSize = fitFontSize(doc, text(label), labelWidth - 6, 7, 4.2)
+    doc.text(text(label), layout.margin + 3, y + (rowHeight - nameSize) / 2 - 0.4,
+      { width: labelWidth - 6, lineBreak: false, ellipsis: true })
+    cells.forEach((value, index) => {
+      const x = layout.margin + labelWidth + index * cellWidth
+      doc.font(font).fillColor(value ? INK : FADE)
+      const cellText = value ? compactCell(doc, value, cellWidth - 4) : '·'
+      const cellSize = fitFontSize(doc, cellText, cellWidth - 4, 6.6, 4.2)
+      doc.text(cellText, x + 2, y + (rowHeight - cellSize) / 2 - 0.4, { width: cellWidth - 4, align: 'center', lineBreak: false })
+    })
+    doc.font(fonts.bold).fillColor(INK)
+    const totalText = compactCell(doc, total, totalWidth - 4, 4.5)
+    const totalSize = fitFontSize(doc, totalText, totalWidth - 4, 7)
+    doc.text(totalText, totalX() + 2, y + (rowHeight - totalSize) / 2 - 0.4,
+      { width: totalWidth - 4, align: 'right', lineBreak: false })
+    if (share != null) {
+      doc.font(fonts.regular).fillColor(MUTED)
+      const shareText = `%${String(share).replace('.', ',')}`
+      const shareSize = fitFontSize(doc, shareText, shareWidth - 4, 6.2, 4.2)
+      doc.text(shareText, totalX() + totalWidth + 2, y + (rowHeight - shareSize) / 2 - 0.4,
+        { width: shareWidth - 4, align: 'right', lineBreak: false })
+    }
+    y += rowHeight
+  }
+
+  for (const zone of zones) {
+    const totals = zoneProductTotal.get(zone.zone_id) || new Map()
+    drawRow(zone.zone_name, products.map(product => totals.get(product.product_id) || 0), zone.total, zone.share)
+  }
+  drawRow('TOPLAM', products.map(product => product.total), detail.grand_total, 100, { total: true })
+  doc.moveTo(layout.margin, y).lineTo(layout.margin + layout.innerWidth, y).lineWidth(0.5).strokeColor(LINE).stroke()
+  const notes = [
+    'Hücreler ürünün kendi baz birimindedir (başlık altındaki birim).',
+    detail.product_rows.length > PRODUCT_COLUMN_LIMIT
+      ? `En çok dağıtılan ${PRODUCT_COLUMN_LIMIT} ürün gösterildi (toplam ${detail.product_rows.length}).` : null,
+    detail.rows.length > MATRIX_ZONE_LIMIT
+      ? `En çok dağıtılan ${MATRIX_ZONE_LIMIT} yer gösterildi (toplam ${detail.rows.length}).` : null,
+  ].filter(Boolean).join('  ·  ')
+  doc.font(fonts.regular).fontSize(6).fillColor(MUTED).text(text(notes), layout.margin, y + 4, { width: layout.innerWidth })
 }
 
 // ── Bölüm 5: gelen irsaliyeler ──
