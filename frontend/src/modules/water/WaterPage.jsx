@@ -27,7 +27,14 @@ import {
   unitOptionsForProduct,
 } from './logic/waterUnits.js'
 import { invalidateWaterQueries } from './logic/waterQueryInvalidation.js'
-import { calcText, dateRange, dayShort, nf, todayStr } from './logic/waterUi.js'
+import { calcText, dateRange, dayShort, downloadCsv, nf, todayStr } from './logic/waterUi.js'
+import {
+  buildPhotoIndex,
+  filterIntakes,
+  intakeHasPhoto,
+  intakeQualityCounts,
+  INTAKE_FLAG_LABELS,
+} from './logic/intakeFilter.js'
 
 const toastOk = (m) => useToastStore.getState().addToast(m, 'success')
 const toastErr = (m) => useToastStore.getState().addToast(m, 'error')
@@ -1065,7 +1072,7 @@ function AccountingReportModal({ from, to, label, busy, onDownload, onClose }) {
 function GelenTirPanel({ from, to, label, stockItems = [] }) {
   const qc = useQueryClient()
   const { data: products = [] } = useQuery({ queryKey: ['water-products'], queryFn: () => api.get('/water/products').then(r => r.data) })
-  const { data: intakes = [] } = useQuery({ queryKey: ['water-intake', from, to], queryFn: () => api.get('/water/movements', { params: { type: 'in', from, to } }).then(r => r.data) })
+  const { data: intakes = [] } = useQuery({ queryKey: ['water-intake', from, to], queryFn: () => api.get('/water/movements', { params: { type: 'in', from, to, limit: 1000 } }).then(r => r.data) })
   const { data: waybillPhotos = [] } = useQuery({
     queryKey: ['water-waybill-photos', from, to],
     queryFn: () => api.get('/water/waybill-photos', { params: { from, to, limit: 120 } }).then(r => r.data),
@@ -1106,6 +1113,31 @@ function GelenTirPanel({ from, to, label, stockItems = [] }) {
     })
     return [...m.values()].sort((a, b) => b.base - a.base)
   }, [intakes])
+
+  // Gelen irsaliyeler paneli: arama + hızlı filtre + sıralama (tüm ay gösterilir)
+  const [intakeSearch, setIntakeSearch] = useState('')
+  const [intakeSort, setIntakeSort] = useState('date_desc')
+  const [intakeQuick, setIntakeQuick] = useState([])
+  const toggleIntakeQuick = key => setIntakeQuick(cur => cur.includes(key) ? cur.filter(k => k !== key) : [...cur, key])
+  const photoIndex = useMemo(() => buildPhotoIndex(waybillPhotos), [waybillPhotos])
+  const intakeCounts = useMemo(() => intakeQualityCounts(intakes, photoIndex), [intakes, photoIndex])
+  const filteredIntakes = useMemo(
+    () => filterIntakes(intakes, { search: intakeSearch, quick: intakeQuick, sort: intakeSort, photo: photoIndex }),
+    [intakes, intakeSearch, intakeQuick, intakeSort, photoIndex],
+  )
+  const intakeFiltered = intakeSearch.trim() !== '' || intakeQuick.length > 0
+  const clearIntakeFilters = () => { setIntakeSearch(''); setIntakeQuick([]) }
+  const exportIntakeCsv = () => {
+    if (filteredIntakes.length === 0) return toastErr('Dışa aktarılacak kayıt yok')
+    const headers = ['Tarih', 'İrsaliye', 'Marka', 'Ürün', 'Lot', 'SKT', 'Gelen (baz)', 'Kalan (baz)', 'Fotoğraf', 'Not']
+    const rows = filteredIntakes.map(r => [
+      r.move_date, r.waybill_no || '', r.brand_name || '', r.product_name, r.lot_no || '',
+      r.expiry_date || (r.expiry_tracking ? 'EKSİK' : ''), r.qty_base ?? '', r.remaining_base ?? '',
+      intakeHasPhoto(r, photoIndex) ? 'var' : 'yok', r.note || '',
+    ])
+    downloadCsv(`su-irsaliyeler-${from}_${to}.csv`, headers, rows)
+    toastOk(`${rows.length} irsaliye CSV indirildi`)
+  }
 
   // Çok-satırlı irsaliye: üstte irsaliye no + tarih tek kez, altında N ürün satırı
   const [waybill, setWaybill] = useState('')
@@ -1361,13 +1393,56 @@ function GelenTirPanel({ from, to, label, stockItems = [] }) {
         <div className="water-intake-lower-grid">
           <div className="water-intake-history">
             <div className="water-intake-section-heading">
-              <div><strong>Son gelen irsaliyeler</strong><span>Bu ayın son 12 stok giriş kaydı</span></div>
+              <div>
+                <strong>Gelen irsaliyeler</strong>
+                <span>{intakeFiltered ? `${filteredIntakes.length} / ${intakes.length} kayıt` : `Bu ayın tüm giriş kayıtları · ${intakes.length} kayıt`}</span>
+              </div>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={exportIntakeCsv} disabled={filteredIntakes.length === 0} title="Görünen irsaliyeleri CSV indir">⬇ CSV</button>
             </div>
-            <div style={{ border: '1px solid var(--border)', borderRadius: '8px', overflow: 'auto', maxHeight: '360px' }}>
+
+            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center', margin: '0 0 8px' }}>
+              <input
+                className="form-input"
+                style={{ fontSize: '11px', minWidth: '150px', flex: '1 1 150px' }}
+                placeholder="Ürün, marka, irsaliye, lot ara…"
+                value={intakeSearch}
+                onChange={e => setIntakeSearch(e.target.value)}
+              />
+              <select className="form-input" style={{ fontSize: '11px', width: 'auto' }} value={intakeSort} onChange={e => setIntakeSort(e.target.value)} aria-label="Sıralama">
+                <option value="date_desc">Tarih ↓ (yeni)</option>
+                <option value="date_asc">Tarih ↑ (eski)</option>
+                <option value="qty_desc">Gelen (çok)</option>
+                <option value="remaining_desc">Kalan (çok)</option>
+              </select>
+              {Object.entries(INTAKE_FLAG_LABELS).map(([key, lbl]) => {
+                const on = intakeQuick.includes(key)
+                const count = intakeCounts[key] || 0
+                const alarm = key !== 'has_remaining' && count > 0
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => toggleIntakeQuick(key)}
+                    title={`${lbl} kayıtları göster`}
+                    style={{
+                      fontSize: '10px', fontWeight: 600, padding: '4px 9px', borderRadius: '999px', cursor: 'pointer',
+                      border: `1px solid ${on ? 'var(--accent)' : 'var(--border)'}`,
+                      background: on ? 'var(--accent)' : 'transparent',
+                      color: on ? '#000' : (alarm ? 'var(--amber, #b45309)' : 'var(--text3)'),
+                    }}
+                  >
+                    {lbl} {count}
+                  </button>
+                )
+              })}
+              {intakeFiltered && <button type="button" className="btn btn-ghost btn-sm" onClick={clearIntakeFilters}>✕ Temizle</button>}
+            </div>
+
+            <div style={{ border: '1px solid var(--border)', borderRadius: '8px', overflow: 'auto', maxHeight: '420px' }}>
             <table className="data-table" style={{ fontSize: '11px' }}>
               <thead><tr><th>Tarih</th><th>İrsaliye</th><th>Foto</th><th>Ürün</th><th>Lot / SKT</th><th style={{ textAlign: 'right' }}>Gelen</th><th style={{ textAlign: 'right' }}>Kalan</th><th style={{ textAlign: 'right' }}>İşlem</th></tr></thead>
               <tbody>
-                {intakes.slice(0, 12).map(r => {
+                {filteredIntakes.map(r => {
                   const linkedPhotos = waybillPhotos.filter(photo => Number(photo.movement_id) === Number(r.id) || (r.waybill_no && photo.waybill_no === r.waybill_no))
                   const firstPhoto = linkedPhotos[0]
                   return <tr key={r.id}>
@@ -1392,7 +1467,26 @@ function GelenTirPanel({ from, to, label, stockItems = [] }) {
                   </tr>
                 })}
                 {intakes.length === 0 && <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--text3)', padding: '12px' }}>Bu ay gelen tır kaydı yok</td></tr>}
+                {intakes.length > 0 && filteredIntakes.length === 0 && (
+                  <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--text3)', padding: '12px' }}>
+                    Filtreyle eşleşen irsaliye yok · <button type="button" className="btn btn-ghost btn-sm" onClick={clearIntakeFilters}>Temizle</button>
+                  </td></tr>
+                )}
               </tbody>
+              {filteredIntakes.length > 0 && (
+                <tfoot>
+                  <tr style={{ borderTop: '2px solid var(--border)', fontWeight: 600 }}>
+                    <td colSpan={5} style={{ color: 'var(--text2)' }}>
+                      {filteredIntakes.length} irsaliye
+                      {intakeCounts.no_waybill > 0 && ` · ${intakeCounts.no_waybill} irsaliyesiz`}
+                      {intakeCounts.no_expiry > 0 && ` · ${intakeCounts.no_expiry} SKT eksik`}
+                    </td>
+                    <td colSpan={3} style={{ textAlign: 'right', color: 'var(--text3)', fontWeight: 400 }}>
+                      Miktar toplamı ürün özetinde →
+                    </td>
+                  </tr>
+                </tfoot>
+              )}
             </table>
             </div>
           </div>
