@@ -990,7 +990,7 @@ const REPORT_SECTION_GROUPS = [
     options: [
       { id: 'ledger', label: 'Günlük defter (tüm hareketler)', heavy: true, hint: 'Her kayıt tek tek — ÇOK SAYFA ekler; gerekince açın (varsayılan kapalı)' },
       { id: 'matrix', label: 'Dağıtım yeri × gün matrisi', hint: 'Hangi yere hangi gün ne kadar; ürün kırılımı Yer × Ürün matrisinde' },
-      { id: 'days', label: 'Gün gün detay (nereye ne kadar)', hint: 'Her gün için yer yer, ürün kırılımıyla' },
+      { id: 'days', label: 'Gün gün detay (nereye ne kadar)', hint: 'Her gün mini tablo: ürünler üstte sütun (bölüm başında lejant), yerler satır' },
       { id: 'zones', label: 'Dağıtım yeri × ürün matrisi', hint: 'Ürün adları bir kez üstte sütun olarak; her yerin ürün ürün toplamı + pay' },
       { id: 'intakes', label: 'Gelen irsaliyelerin tamamı', hint: 'Tarih, irsaliye no, ürün, miktar' },
       { id: 'photos', label: 'İrsaliye fotoğrafları', hint: 'Büyük belge kartları halinde; tarih, irsaliye içeriği ve açıklamasıyla (en çok 48)' },

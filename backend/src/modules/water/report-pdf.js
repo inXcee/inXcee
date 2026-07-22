@@ -691,14 +691,79 @@ function drawDaysSection(doc, fonts, ctx) {
   const { detail } = ctx.report
   const text = value => pdfText(value, fonts)
   const title = SECTION_TITLES.days
-  const flow = columnFlow(doc, fonts, ctx, { title, columns: 2, gap: 16 })
+  // Ürünler her gün tablosunda SÜTUN: adları bölüm başındaki lejantta BİR KEZ
+  // yazılır, başlıklarda yalnız numara taşınır (tekrar yok, dar sütun yeter).
+  const products = detail.product_rows.slice(0, PRODUCT_COLUMN_LIMIT)
+  const overflow = detail.product_rows.length > products.length
+  const columnIndexById = new Map(products.map((product, index) => [product.product_id, index]))
+  const columnCount = products.length + (overflow ? 1 : 0)
+  const flowColumns = columnCount <= 4 ? 2 : 1
+  const flow = columnFlow(doc, fonts, ctx, { title, columns: flowColumns, gap: 16 })
   const dayItems = ctx.outline.children[ctx.outline.children.length - 1]
 
+  // Lejant: 1 = ürün adı (birim) · 2 = …
+  const legendParts = products.map((product, index) => `${index + 1} = ${product.name} (${product.unit_label || 'adet'})`)
+  if (overflow) legendParts.push(`D = Diğer (${detail.product_rows.length - products.length} ürün)`)
+  const legendText = text(`SÜTUNLAR:  ${legendParts.join('   ·   ')}`)
+  doc.font(fonts.bold).fontSize(6)
+  const legendLines = Math.max(1, Math.ceil(doc.widthOfString(legendText) / (flow.columnWidth - 8)))
+  const legend = flow.place(legendLines * 7.6 + 6)
+  doc.fillColor('#0F766E').text(legendText, legend.x + 2, legend.y + 1.5, { width: legend.width - 6, lineGap: 1.2 })
+
+  const labelWidth = () => Math.max(56, flow.columnWidth - 36 - columnCount * cellW())
+  const cellW = () => {
+    const available = flow.columnWidth - 36 - 62 // total 36, min yer etiketi 62
+    return Math.min(34, Math.max(20, available / Math.max(1, columnCount)))
+  }
+
+  const tableHeader = (dayLabel) => {
+    const spot = flow.place(9.5)
+    doc.rect(spot.x, spot.y, spot.width, 8.5).fill('#E2E8F0')
+    doc.font(fonts.bold).fontSize(5.6).fillColor('#334155')
+    doc.text(text(dayLabel || 'YER'), spot.x + 3, spot.y + 2.2, { width: labelWidth() - 4, lineBreak: false, ellipsis: true })
+    for (let index = 0; index < columnCount; index += 1) {
+      const x = spot.x + labelWidth() + index * cellW()
+      const label = index < products.length ? String(index + 1) : 'D'
+      doc.text(text(label), x, spot.y + 2.2, { width: cellW() - 2, align: 'center', lineBreak: false })
+    }
+    doc.text(text('TOP'), spot.x + spot.width - 34, spot.y + 2.2, { width: 32, align: 'right', lineBreak: false })
+  }
+
+  const drawTableRow = (label, cells, total, { fill = null, bold = false, color = INK } = {}) => {
+    const spot = flow.place(8.8)
+    if (fill) doc.rect(spot.x, spot.y, spot.width, 8.8).fill(fill)
+    doc.font(bold ? fonts.bold : fonts.regular).fillColor(color)
+    const nameSize = fitFontSize(doc, text(label), labelWidth() - 4, 6.2, 4.2)
+    doc.text(text(label), spot.x + 3, spot.y + (8.8 - nameSize) / 2 - 0.3,
+      { width: labelWidth() - 4, lineBreak: false, ellipsis: true })
+    cells.forEach((value, index) => {
+      const x = spot.x + labelWidth() + index * cellW()
+      doc.font(bold ? fonts.bold : fonts.regular).fillColor(value ? color : FADE)
+      const cellText = value ? compactCell(doc, value, cellW() - 2) : '·'
+      const cellSize = fitFontSize(doc, cellText, cellW() - 2, 5.8, 4)
+      doc.text(cellText, x, spot.y + (8.8 - cellSize) / 2 - 0.3, { width: cellW() - 2, align: 'center', lineBreak: false })
+    })
+    doc.font(fonts.bold).fillColor(color)
+    const totalText = compactCell(doc, total, 32, 4.2)
+    const totalSize = fitFontSize(doc, totalText, 32, 6.2, 4.2)
+    doc.text(totalText, spot.x + spot.width - 34, spot.y + (8.8 - totalSize) / 2 - 0.3,
+      { width: 32, align: 'right', lineBreak: false })
+  }
+
+  const cellsFor = lines => {
+    const cells = new Array(columnCount).fill(0)
+    for (const line of lines) {
+      const index = columnIndexById.get(line.product_id)
+      if (index != null) cells[index] += line.qty_base
+      else if (overflow) cells[columnCount - 1] += line.qty_base
+    }
+    return cells
+  }
+
   for (const day of detail.days) {
-    flow.reserve(26)
+    flow.reserve(34)
     const head = flow.place(14.5)
     doc.rect(head.x, head.y, head.width, 13).fill('#ECFEFF')
-    // Sol renk çubuğu: giriş olan gün yeşil, yalnız dağıtım olan gün turkuaz
     doc.rect(head.x, head.y, 3, 13).fill(day.in_base ? GREEN : BAND)
     doc.font(fonts.bold).fontSize(7.4).fillColor(INK)
       .text(text(`${day.label} ${day.weekday}`), head.x + 6, head.y + 3.4, { width: head.width - 6, lineBreak: false })
@@ -716,7 +781,6 @@ function drawDaysSection(doc, fonts, ctx) {
     for (const intake of day.intakes) {
       const spot = flow.place(8.6)
       doc.font(fonts.regular).fontSize(6.2).fillColor(GREEN)
-      // Okunur miktar da yazılsın: "⊕ giriş IRS-100 — 0.5 L Şişe Su · 4 palet" + sağda baz
       const humanPart = intake.qty_human && intake.qty_human !== `${intake.qty_base} ${intake.unit_label || 'adet'}`
         ? ` · ${intake.qty_human}`
         : ''
@@ -727,28 +791,21 @@ function drawDaysSection(doc, fonts, ctx) {
         .text(num(intake.qty_base), spot.x, spot.y + 1.2, { width: spot.width - 2, align: 'right', lineBreak: false })
     }
 
-    for (const zone of day.zones) {
-      const spot = flow.place(9.2)
-      doc.font(fonts.regular).fillColor(INK)
-      const nameWidth = Math.min(96, spot.width * 0.42)
-      const nameSize = fitFontSize(doc, text(zone.zone_name), nameWidth, 6.6, 4.2)
-      doc.text(text(zone.zone_name), spot.x + 4, spot.y + 1.3 + (6.6 - nameSize) / 2,
-        { width: nameWidth, lineBreak: false, ellipsis: true })
-
-      const breakdown = zone.lines.map(line => `${line.product_name} ${num(line.qty_base)}`).join(' · ')
-      const breakdownWidth = spot.width - nameWidth - 46
-      doc.font(fonts.regular).fillColor(MUTED)
-      fitFontSize(doc, text(breakdown), breakdownWidth, 5.6, 4)
-      doc.text(text(breakdown), spot.x + 6 + nameWidth, spot.y + 2,
-        { width: breakdownWidth, lineBreak: false, ellipsis: true })
-
-      doc.font(fonts.bold).fillColor(INK)
-      const totalSize = fitFontSize(doc, num(zone.total), 40, 6.8)
-      doc.text(num(zone.total), spot.x, spot.y + 1.3 + (6.8 - totalSize) / 2,
-        { width: spot.width - 2, align: 'right', lineBreak: false })
+    if (day.zones.length) {
+      tableHeader()
+      const dayTotals = new Array(columnCount).fill(0)
+      for (const zone of day.zones) {
+        if (flow.willBreak(8.8)) tableHeader(`${day.label} · devam`)
+        const cells = cellsFor(zone.lines)
+        cells.forEach((value, index) => { dayTotals[index] += value })
+        drawTableRow(zone.zone_name, cells, zone.total)
+      }
+      if (day.zones.length > 1) {
+        if (flow.willBreak(8.8)) tableHeader(`${day.label} · devam`)
+        drawTableRow('TOPLAM', dayTotals, day.out_base, { fill: '#FEF3C7', bold: true })
+      }
     }
-
-    flow.place(2.5)
+    flow.place(3)
   }
 }
 

@@ -501,6 +501,7 @@ function buildDetail(report, { from, to, grouped }) {
       day.distributions.push({
         zone_id: zoneId,
         zone_name: zoneName,
+        product_id: movement.product_id,
         product_name: movement.product_name,
         qty_base: movement.qty_base,
         qty_human: human,
