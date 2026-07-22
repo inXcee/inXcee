@@ -35,7 +35,7 @@ function digestFixture(date = '2027-03-20') {
     actionable: true,
     notified: true,
     parts: ['1 eksi stok', '1 sipariş önerisi'],
-    summary: { pending: 0, negative: 1, low: 0, idle_zones: 0 },
+    summary: { pending: 0, negative: 1, low: 0, idle_zones: 0, document_issues: 1 },
     order_count: 1,
     overdue_order_count: 1,
     due_soon_order_count: 0,
@@ -52,6 +52,13 @@ function digestFixture(date = '2027-03-20') {
         expiry_date: '2027-03-19',
         health: 'expired',
         remaining_human: '20 koli',
+      }],
+      documents: [{
+        move_date: '2027-03-17',
+        waybill_no: 'IRS-17',
+        product_names: ['0.5 L Su'],
+        issue_label: 'İrsaliye fotoğrafı eksik',
+        waiting_days: 3,
       }],
       orders: [{
         product_name: 'Damacana',
@@ -128,7 +135,10 @@ describe('Su günlük operasyon özeti e-posta teslimi', () => {
     expect(email.html).toContain('&lt;Damacana &amp; Cam&gt;')
     expect(email.html).toContain('LOT-053')
     expect(email.html).toContain('SKT geçti')
+    expect(email.html).toContain('Eksik İrsaliye Evrakları')
+    expect(email.html).toContain('IRS-17')
     expect(email.text).toContain('80 damacana')
+    expect(email.text).toContain('İrsaliye fotoğrafı eksik')
   })
 
   it('teslim geçmişini vardiya sorumlusuna açar, elle çalıştırmayı müdürle sınırlar', async () => {

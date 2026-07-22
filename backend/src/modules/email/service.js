@@ -145,7 +145,7 @@ function textToHtml(text) {
 
 // Serbest e-posta gönderimi — şablon doldurulup gönderilir. SMTP kuruluysa yollar,
 // değilse anlamlı hata (statusCode 502) döner ki frontend "kopyala" fallback sunabilsin.
-export async function composeAndSend({ to, cc, subject, body, attachmentIds }) {
+export async function composeAndSend({ to, cc, subject, body, attachmentIds, generatedAttachments = [] }) {
   const recipients = parseRecipients(to)
   if (!subject?.trim()) throw Object.assign(new Error('Konu boş olamaz'), { statusCode: 400 })
   if (!body?.trim()) throw Object.assign(new Error('Mesaj boş olamaz'), { statusCode: 400 })
@@ -164,6 +164,20 @@ export async function composeAndSend({ to, cc, subject, body, attachmentIds }) {
       if (!fs.existsSync(p)) throw Object.assign(new Error(`Ek dosya diskte yok: ${r.name}`), { statusCode: 400 })
       attachments.push({ filename: r.original_name, path: p })
     }
+  }
+  if (!Array.isArray(generatedAttachments)) {
+    throw Object.assign(new Error('Oluşturulan ekler geçersiz'), { statusCode: 400 })
+  }
+  for (const attachment of generatedAttachments) {
+    const filename = String(attachment?.filename || '').trim()
+    if (!filename || (!Buffer.isBuffer(attachment?.content) && !(attachment?.content instanceof Uint8Array))) {
+      throw Object.assign(new Error('Oluşturulan eklerden biri geçersiz'), { statusCode: 400 })
+    }
+    attachments.push({
+      filename,
+      content: attachment.content,
+      ...(attachment.contentType ? { contentType: attachment.contentType } : {}),
+    })
   }
 
   let transport

@@ -422,6 +422,23 @@ export function listMovements({ type, product_id, zone_id, from, to, limit = 200
   return getDB().prepare(q).all(...params)
 }
 
+// Operasyon bandındaki irsaliye evrak kontrolü için ağır lot/dağıtım alt
+// sorgularını çalıştırmadan yalnız gerekli giriş alanlarını getirir.
+export function listIntakeDocumentLines({ from, to, limit = 20000 } = {}) {
+  let sql = `
+    SELECT mv.id, mv.move_date, mv.waybill_no, p.name AS product_name
+    FROM water_movements mv
+    JOIN water_products p ON p.id=mv.product_id
+    WHERE mv.type='in'
+  `
+  const params = []
+  if (from) { sql += ' AND mv.move_date>=?'; params.push(from) }
+  if (to) { sql += ' AND mv.move_date<=?'; params.push(to) }
+  sql += ' ORDER BY mv.move_date ASC, mv.id ASC LIMIT ?'
+  params.push(limit)
+  return getDB().prepare(sql).all(...params)
+}
+
 // ── Özet sorguları (qty_base = adet cinsinden) ──
 // Kalan stok TÜM ZAMANLAR üzerinden (gerçek anlık stok). Dönem giriş/çıkış ayrı hesaplanır.
 export function stockByProduct() {
@@ -691,6 +708,19 @@ export function zoneTotals({ from, to, product_id } = {}) {
   `).all(...params)
 }
 
+export function zoneMonthlyTotals({ from, to }) {
+  return getDB().prepare(`
+    SELECT z.id AS zone_id, z.name AS zone_name,
+      substr(mv.move_date, 1, 7) AS month,
+      SUM(mv.qty_base) AS total_out
+    FROM water_movements mv
+    JOIN water_zones z ON z.id = mv.zone_id
+    WHERE mv.type='out' AND mv.move_date>=? AND mv.move_date<=?
+    GROUP BY z.id, substr(mv.move_date, 1, 7)
+    ORDER BY z.name, month
+  `).all(from, to)
+}
+
 export function dailySeries({ from, to, product_id } = {}) {
   const cond = []
   const params = []
@@ -740,6 +770,15 @@ export function createReturnsBatch(rows) {
   const tx = db.transaction((list) => list.map(r => stmt.run(r).lastInsertRowid))
   return tx(rows)
 }
+
+export function depositPosition(productId) {
+  return getDB().prepare(`
+    SELECT
+      COALESCE((SELECT SUM(qty_base) FROM water_movements WHERE product_id=? AND type='in'), 0) AS total_in,
+      COALESCE((SELECT SUM(qty_base) FROM water_returns WHERE product_id=?), 0) AS total_return
+  `).get(productId, productId)
+}
+
 export function getReturn(id) {
   return getDB().prepare('SELECT * FROM water_returns WHERE id=?').get(id)
 }
@@ -749,10 +788,11 @@ export function deleteReturn(id) {
 export function listReturns({ product_id, from, to, limit = 200 } = {}) {
   let sql = `
     SELECT r.*, p.name AS product_name, p.unit_label, p.units_per_case, p.cases_per_pallet,
-           p.brand_id, b.name AS brand_name
+           p.brand_id, b.name AS brand_name, u.full_name AS created_by_name
     FROM water_returns r
     JOIN water_products p ON p.id = r.product_id
     LEFT JOIN water_brands b ON b.id = p.brand_id
+    LEFT JOIN users u ON u.id = r.created_by
     WHERE 1=1
   `
   const params = []
@@ -1222,6 +1262,15 @@ export function listWaybillPhotos({ truck_arrival_id, movement_id, waybill_no, f
   sql += ' ORDER BY ph.move_date DESC, ph.id DESC LIMIT ?'
   params.push(limit)
   return getDB().prepare(sql).all(...params)
+}
+
+export function listWaybillPhotoLinks({ limit = 20000 } = {}) {
+  return getDB().prepare(`
+    SELECT movement_id, waybill_no
+    FROM water_waybill_photos
+    ORDER BY id DESC
+    LIMIT ?
+  `).all(limit)
 }
 
 export function getWaybillPhoto(id) {

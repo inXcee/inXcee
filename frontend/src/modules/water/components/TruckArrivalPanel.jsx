@@ -152,7 +152,7 @@ function TruckArrivalPanel({ from, to, label, focusRequest }) {
     mutationFn: id => api.post(`/water/truck-arrivals/${id}/send-mail`),
     onSuccess: response => {
       invalidate()
-      toastOk(response.data?.alreadyQueued ? 'Mail zaten gönderim kuyruğunda' : 'Mail gönderim kuyruğuna alındı')
+      toastOk(response.data?.alreadyQueued ? 'Mail zaten gönderim kuyruğunda' : 'Mail, PDF ve Excel ekleriyle gönderim kuyruğuna alındı')
     },
     onError: e => toastErr(errMsg(e, 'Mail gönderilemedi')),
   })
@@ -319,84 +319,13 @@ function TruckArrivalPanel({ from, to, label, focusRequest }) {
     if (!t) return
     setGateExporting('excel')
     try {
-      const ExcelJS = (await import('exceljs')).default
-      const wb = new ExcelJS.Workbook()
-      wb.creator = 'Şantiye Yatakhane Yönetim Sistemi'
-      wb.created = new Date()
-      wb.subject = 'Su nakliyesi personel günlük giriş bildirimi'
-
-      const gate = wb.addWorksheet('PERSONEL GÜNLÜK GİRİŞ', {
-        pageSetup: { orientation: 'landscape', paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 1 },
-        views: [{ showGridLines: false }],
-      })
-      gate.mergeCells('A1:K1')
-      const title = gate.getCell('A1')
-      title.value = 'PERSONEL GÜNLÜK GİRİŞ'
-      title.font = { name: 'Times New Roman', size: 16, bold: true, color: { argb: 'FFFFFFFF' } }
-      title.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF155E75' } }
-      title.alignment = { horizontal: 'center', vertical: 'middle' }
-      gate.getRow(1).height = 30
-      gate.getRow(2).height = 8
-
-      const rows = gateEntryRows(t)
-      const headers = rows.map(([header]) => header)
-      const values = rows.map(([, value]) => value)
-      gate.addRow([])
-      gate.addRow(headers)
-      gate.addRow(values)
-      gate.columns = [17, 23, 16, 16, 28, 22, 19, 13, 14, 20, 22].map(width => ({ width }))
-      gate.getRow(3).height = 46
-      gate.getRow(4).height = 72
-      for (let rowNo = 3; rowNo <= 4; rowNo += 1) {
-        gate.getRow(rowNo).eachCell(cell => {
-          cell.font = { name: 'Times New Roman', size: rowNo === 3 ? 9 : 11, bold: rowNo === 3 }
-          cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }
-          cell.border = {
-            top: { style: 'thin', color: { argb: 'FF334155' } },
-            left: { style: 'thin', color: { argb: 'FF334155' } },
-            bottom: { style: 'thin', color: { argb: 'FF334155' } },
-            right: { style: 'thin', color: { argb: 'FF334155' } },
-          }
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: rowNo === 3 ? 'FFD6EAF0' : 'FFFFFFFF' } }
-        })
-      }
-      gate.autoFilter = 'A3:K4'
-      gate.pageSetup.printArea = 'A1:K4'
-      gate.headerFooter.oddFooter = '&LŞantiye Su Takibi&C&F&R&P / &N'
-
-      const letter = wb.addWorksheet('RESMİ YAZI', {
-        pageSetup: { orientation: 'portrait', paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 1 },
-        views: [{ showGridLines: false }],
-      })
-      letter.columns = [{ width: 4 }, { width: 18 }, { width: 18 }, { width: 18 }, { width: 18 }, { width: 4 }]
-      letter.mergeCells('B2:E2')
-      letter.getCell('B2').value = 'SU AMAÇLI NAKLİYE PERSONEL GİRİŞ TALEBİ'
-      letter.getCell('B2').font = { name: 'Times New Roman', size: 15, bold: true, color: { argb: 'FF155E75' } }
-      letter.getCell('B2').alignment = { horizontal: 'center' }
-      letter.mergeCells('B4:E4')
-      letter.getCell('B4').value = `Konu: ${t.mail_preview?.subject || t.mail_subject || '-'}`
-      letter.getCell('B4').font = { name: 'Times New Roman', size: 11, bold: true }
-      letter.mergeCells('B6:E18')
-      letter.getCell('B6').value = t.mail_preview?.body || t.mail_body || ''
-      letter.getCell('B6').font = { name: 'Times New Roman', size: 11 }
-      letter.getCell('B6').alignment = { vertical: 'top', wrapText: true }
-      letter.getCell('B6').border = {
-        top: { style: 'thin', color: { argb: 'FF94A3B8' } }, left: { style: 'thin', color: { argb: 'FF94A3B8' } },
-        bottom: { style: 'thin', color: { argb: 'FF94A3B8' } }, right: { style: 'thin', color: { argb: 'FF94A3B8' } },
-      }
-      letter.getRow(6).height = 280
-      letter.mergeCells('B20:E20')
-      letter.getCell('B20').value = `Alıcı: ${t.mail_preview?.to || t.center_email || '-'}`
-      letter.getCell('B20').font = { name: 'Times New Roman', size: 10, italic: true, color: { argb: 'FF475569' } }
-      letter.pageSetup.printArea = 'B2:E20'
-
-      const buffer = await wb.xlsx.writeBuffer()
-      const blobUrl = URL.createObjectURL(new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }))
+      const response = await api.get(`/water/truck-arrivals/${t.id}/gate-entry.xlsx`, { responseType: 'blob' })
+      const blobUrl = URL.createObjectURL(response.data)
       triggerDownload(blobUrl, `${gateEntryFileBase(t)}.xlsx`)
       setTimeout(() => URL.revokeObjectURL(blobUrl), 1000)
-      toastOk('Personel giriş formu ve resmi yazı Excel olarak hazırlandı')
-    } catch {
-      toastErr('Personel giriş Exceli oluşturulamadı')
+      toastOk('Personel giriş çizelgesi Excel olarak hazırlandı')
+    } catch (error) {
+      toastErr(errMsg(error, 'Personel giriş Exceli oluşturulamadı'))
     } finally {
       setGateExporting('')
     }
@@ -695,7 +624,7 @@ function TruckArrivalPanel({ from, to, label, focusRequest }) {
             <label className="form-label" style={{ gridColumn: '1 / -1' }}>Not<input className="form-input" value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} /></label>
             <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap', paddingTop: '9px', borderTop: '1px solid var(--border)' }}>
               <button className="btn btn-primary" disabled={!form.arrival_date || !form.plate.trim() || create.isPending} onClick={() => create.mutate()}>{create.isPending ? 'Kaydediliyor…' : editingTruckId ? 'Kaydı Güncelle ve Çıktıları Yenile' : 'Tır Kaydı Oluştur'}</button>
-              <span style={{ color: 'var(--text3)', fontSize: '10px' }}>Kayıttan sonra PDF, Excel ve PNG düğmeleri otomatik aktifleşir.</span>
+              <span style={{ color: 'var(--text3)', fontSize: '10px' }}>Kayıttan sonra PDF, Excel ve PNG düğmeleri aktifleşir; gönderilen maile PDF ve Excel otomatik eklenir.</span>
             </div>
           </div>
 
@@ -838,7 +767,7 @@ function TruckArrivalPanel({ from, to, label, focusRequest }) {
                     <div style={{ marginTop: '10px', paddingTop: '9px', borderTop: '1px solid color-mix(in srgb, var(--teal) 24%, var(--border))', display: 'flex', gap: '8px', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
                       <div>
                         <div style={{ fontWeight: 800, fontSize: '11px' }}>PAYLAŞIM ÇIKTILARI</div>
-                        <div style={{ color: 'var(--text3)', fontSize: '9px' }}>PDF resmi yazı · Excel düzenlenebilir tablo · PNG hızlı paylaşım</div>
+                        <div style={{ color: 'var(--text3)', fontSize: '9px' }}>PDF ve Excel aynı giriş çizelgesini kullanır, mail gönderiminde ikisi de otomatik eklenir · PNG hızlı paylaşım</div>
                       </div>
                       <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                         <button className="btn btn-primary btn-sm" disabled={Boolean(gateExporting)} onClick={() => downloadGateEntryPdf(selectedTruck)}>{gateExporting === 'pdf' ? 'Hazırlanıyor…' : 'PDF İndir'}</button>

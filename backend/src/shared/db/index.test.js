@@ -1,9 +1,18 @@
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, it, expect, beforeAll } from 'vitest'
-import { getDB, initDB } from './index.js'
+import { getDB, initDB, resolveDatabasePath } from './index.js'
 
 beforeAll(() => { process.env.DB_PATH = ':memory:'; initDB() })
 
 describe('DB schema', () => {
+  it('göreli geliştirme DB yolunu çalışma klasöründen bağımsız proje köküne çözer', () => {
+    const projectRoot = fileURLToPath(new URL('../../../../', import.meta.url))
+    expect(resolveDatabasePath(undefined)).toBe(path.join(projectRoot, 'yys.db'))
+    expect(resolveDatabasePath('var/dev.db')).toBe(path.join(projectRoot, 'var', 'dev.db'))
+    expect(resolveDatabasePath(':memory:')).toBe(':memory:')
+  })
+
   it('creates personnel table', () => {
     const db = getDB()
     const row = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='personnel'").get()

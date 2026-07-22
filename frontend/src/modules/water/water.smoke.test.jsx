@@ -39,6 +39,10 @@ const DAILY_ROWS = [
 let reconciliationLocked = false
 const DEFAULT_PIVOT_ROWS = [{ zone_id: 1, zone_name: 'OTC Kamp Alanı', cells: { 1: { base: 91, human: '91 damacana' } }, total_base: 91 }]
 let pivotRows = DEFAULT_PIVOT_ROWS
+const DEFAULT_WAYBILL_PHOTOS = [
+  { id: 1, truck_arrival_id: 1, waybill_no: 'IRS-2026-1', move_date: '2026-07-10', photo_url: '/uploads/irsaliye.jpg', plate: '34 ABC 123', uploaded_by_name: 'Mudur' },
+]
+let waybillPhotos = DEFAULT_WAYBILL_PHOTOS
 
 vi.mock('../../shared/api/client.js', () => ({
   default: {
@@ -69,7 +73,11 @@ vi.mock('../../shared/api/client.js', () => ({
       if (url === '/water/movements' && p.type === 'out' && (p.zone_id || p.from === '2026-07-01')) return Promise.resolve({ data: DAILY_ROWS })
       if (url === '/water/movements') return Promise.resolve({ data: [] })
       if (url === '/water/products') return Promise.resolve({ data: PRODUCTS })
-      if (url === '/water/zones') return Promise.resolve({ data: [{ id: 1, name: 'OTC Kamp Alanı', code: 'OTC' }] })
+      if (url === '/water/zones/target-suggestions') return Promise.resolve({ data: {
+        as_of: '2026-07-09', from: '2026-05-01', to: '2026-07-09', months: 3, with_data: 1,
+        suggestions: [{ zone_id: 1, zone_name: 'OTC Kamp Alanı', current_expected: 0, suggested_monthly: 203, difference: 203, observed_months: 1, requested_months: 3, confidence: 'low', total_consumption: 91, history: [{ month: '2026-07', actual: 91, normalized: 203, observed_days: 9, days_in_month: 31 }] }],
+      } })
+      if (url === '/water/zones') return Promise.resolve({ data: [{ id: 1, name: 'OTC Kamp Alanı', code: 'OTC', expected_monthly: 0 }] })
       if (url === '/water/returns') return Promise.resolve({ data: [] })
       if (url === '/water/brands') return Promise.resolve({ data: [{ id: 1, name: 'MİLA SU' }] })
       if (url === '/water/trends') return Promise.resolve({ data: {
@@ -117,14 +125,17 @@ vi.mock('../../shared/api/client.js', () => ({
       } })
       if (url === '/water/alerts') return Promise.resolve({ data: {
         date: '2026-07-09', month: '2026-07',
-        summary: { pending: 1, negative: 1, over: 0, low: 0, idle_zones: 1, lot_critical: 0, total: 3 },
+        summary: { pending: 1, negative: 1, over: 0, low: 0, plan_behind_zones: 1, idle_zones: 1, lot_critical: 0, document_issues: 1, total: 4 },
         pending_waybill: [{ product_id: 1, product_name: 'Damacana', count: 2, unallocated_base: 5, unallocated_human: '5 damacana', oldest_date: '2026-07-05', waiting_days: 4 }],
         negative_stock: [{ product_id: 2, product_name: '0.5 L', balance: -10, balance_human: '-10 koli', deficit_human: '10 koli' }],
         over_distributed: [],
         low_stock: [],
-        idle_zones: [{ zone_id: 2, zone_name: 'Boş Bölge' }],
+        plan_behind_zones: [{ zone_id: 2, zone_name: 'Plan Gerisi Bölge', actual_to_date: 25, expected_to_date: 40, gap: 15, progress_percent: 63 }],
+        idle_zones: [{ zone_id: 2, zone_name: 'Plan Gerisi Bölge', actual_to_date: 25, expected_to_date: 40, gap: 15, progress_percent: 63 }],
         lot_alerts: [],
         lot_summary: { all: 0, critical: 0, expired: 0, expiring: 0, quarantined: 0, missing: 0, healthy: 0 },
+        document_issues: [{ document_key: 'waybill:irs-eksik', move_date: '2026-07-08', waybill_no: 'IRS-EKSIK', product_names: ['Damacana'], line_count: 2, issue: 'missing_photo', issue_label: 'İrsaliye fotoğrafı eksik', waiting_days: 1 }],
+        document_summary: { total: 2, complete: 1, incomplete: 1, missing_photo: 1, missing_waybill: 0, complete_percent: 50 },
       } })
       if (url === '/water/truck-arrivals') return Promise.resolve({ data: [
         {
@@ -207,9 +218,7 @@ vi.mock('../../shared/api/client.js', () => ({
           photo_count: 1,
         },
       ] })
-      if (url === '/water/waybill-photos') return Promise.resolve({ data: [
-        { id: 1, truck_arrival_id: 1, waybill_no: 'IRS-2026-1', move_date: '2026-07-10', photo_url: '/uploads/irsaliye.jpg', plate: '34 ABC 123', uploaded_by_name: 'Mudur' },
-      ] })
+      if (url === '/water/waybill-photos') return Promise.resolve({ data: waybillPhotos })
       return Promise.resolve({ data: [] })
     }),
     post: vi.fn(() => Promise.resolve({ data: { ids: [1], count: 1 } })),
@@ -228,6 +237,32 @@ describe('WaterPage tek-ekran pano smoke', () => {
     confirmDialog.mockResolvedValue(true)
     reconciliationLocked = false
     pivotRows = DEFAULT_PIVOT_ROWS
+    waybillPhotos = DEFAULT_WAYBILL_PHOTOS
+  })
+
+  it('fotoğrafı olmayan aralıkta rapor fotoğraf bölümünü seçili saymaz', async () => {
+    waybillPhotos = []
+    renderWithProviders(<WaterPage />)
+
+    fireEvent.click(await screen.findByRole('button', { name: '⚙ Kapsamlı rapor…' }))
+    const photos = await screen.findByRole('checkbox', { name: /İrsaliye fotoğrafları/ })
+    await waitFor(() => expect(photos).toBeDisabled())
+    expect(photos).not.toBeChecked()
+    expect(screen.getByRole('button', { name: /PDF indir \(özet \+ 10 seçili bölüm\)/ })).toBeInTheDocument()
+  })
+
+  it('ana muhasebe PDF düğmesi günlük defter ve fotoğrafları varsayılan gönderir', async () => {
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    URL.createObjectURL = vi.fn(() => 'blob:test-report')
+    URL.revokeObjectURL = vi.fn()
+    renderWithProviders(<WaterPage />)
+
+    fireEvent.click(await screen.findByRole('button', { name: '🧾 Muhasebe Raporu (PDF)' }))
+    await waitFor(() => expect(api.get).toHaveBeenCalledWith('/water/report/accounting.pdf', expect.objectContaining({
+      params: expect.objectContaining({ sections: 'ledger,photos' }),
+      responseType: 'blob',
+    })))
+    click.mockRestore()
   })
 
   it('tir on bildirim ve irsaliye foto arsivi paneli render olur', async () => {
@@ -469,6 +504,10 @@ describe('WaterPage tek-ekran pano smoke', () => {
     fireEvent.click(pendingCard)
     // detay listesinde bekleyen dağıtım satırı görünür
     expect(await screen.findByText(/Damacana — 5 damacana \(2 kayıt, 4 gün\)/)).toBeInTheDocument()
+    const documentCard = screen.getByText('Eksik İrsaliye Evrakı')
+    expect(screen.getByText('%50 evrak tam')).toBeInTheDocument()
+    fireEvent.click(documentCard)
+    expect(await screen.findByText(/IRS-EKSIK.*İrsaliye fotoğrafı eksik/)).toBeInTheDocument()
   })
 
   it('ay kapanışı paneli açılınca uyuşturma satırı + sistem kalanı gösterir', async () => {
@@ -574,6 +613,15 @@ describe('WaterPage tek-ekran pano smoke', () => {
     fireEvent.click(screen.getByText('✕ Kapat'))
     fireEvent.click(screen.getByText('📝 Metinden'))
     expect(await screen.findByText('METİNDEN DAĞITIM')).toBeInTheDocument()
+  })
+
+  it('dağıtım yeri için üç aylık hedef önerisini gösterir ve tek tıkla uygular', async () => {
+    renderWithProviders(<WaterPage />)
+    fireEvent.click(await screen.findByText('⚙ Ayarlar'))
+    expect(await screen.findByText('🎯 Akıllı aylık hedef')).toBeInTheDocument()
+    expect(await screen.findByText('203 / ay')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'OTC Kamp Alanı hedef önerisini uygula' }))
+    await waitFor(() => expect(api.put).toHaveBeenCalledWith('/water/zones/1', expect.objectContaining({ expected_monthly: 203 })))
   })
 })
 

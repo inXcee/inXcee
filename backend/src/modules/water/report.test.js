@@ -1,11 +1,11 @@
-import { describe, it, expect, beforeAll } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import request from 'supertest'
 import PDFDocument from 'pdfkit'
 import app from '../../app.js'
 import { initDB, getDB } from '../../shared/db/index.js'
 import { seedDev } from '../../shared/db/seed.js'
 import { accountingReportService, parseSections, REPORT_SECTIONS } from './report.js'
-import { writeAccountingReportPDF } from './report-pdf.js'
+import { writeAccountingReportPDF, attachReportPhotos } from './report-pdf.js'
 
 let managerToken, laundryToken, productId, zoneA, zoneB
 
@@ -205,6 +205,7 @@ describe('Su muhasebe raporu — kapsamlı bölümler', () => {
 
   it('bölüm listesi ayrıştırılır, bilinmeyen ad yok sayılır', () => {
     expect(parseSections('matrix,days')).toEqual(['matrix', 'days'])
+    expect(parseSections('ledger,photos')).toEqual(['ledger', 'photos'])
     expect(parseSections('all')).toEqual([...REPORT_SECTIONS])
     expect(parseSections(['DAYS', ' zones '])).toEqual(['days', 'zones'])
     expect(parseSections('bilinmeyen')).toEqual([])
@@ -308,12 +309,12 @@ describe('Su muhasebe raporu — kapsamlı bölümler', () => {
     const pages = buffer.toString('latin1').match(/\/Type\s*\/Page[^s]/g) || []
 
     expect(pages.length).toBeGreaterThan(1)
-    expect(pages.length).toBeLessThanOrEqual(6)
+    expect(pages.length).toBeLessThanOrEqual(7)
     expect(links.length).toBeGreaterThan(0)
     expect(links.every(link => link.rect.every(Number.isFinite))).toBe(true)
     expect(links.map(link => link.name).filter(name => !targets.includes(name))).toEqual([])
     // Bölüm kısayolları + her gün için bir hedef
-    expect(targets).toEqual(expect.arrayContaining(['sec-matrix', 'sec-days', 'sec-zones', 'sec-intakes']))
+    expect(targets).toEqual(expect.arrayContaining(['sec-ledger', 'sec-matrix', 'sec-days', 'sec-zones', 'sec-intakes']))
     for (const day of report.detail.days) expect(targets).toContain(`day-${day.key}`)
   })
 
@@ -399,6 +400,20 @@ describe('Su muhasebe raporu — muhasebe ekleri', () => {
       VALUES('2026-09', ?, 450, 440, -10, 'sayim_farki', 'Depo')`).run(returnableId)
   })
 
+  it('günlük defter giriş, dağıtım, boş iade ve düzeltmeleri tarih sırasıyla birleştirir', () => {
+    const { ledger } = accountingReportService({ ...range, sections: 'ledger' })
+    expect(ledger.total_entries).toBe(6)
+    expect(ledger.days.map(day => day.key)).toEqual([
+      '2026-09-02', '2026-09-03', '2026-09-04', '2026-09-05', '2026-09-10', '2026-09-20',
+    ])
+    expect(ledger.days.flatMap(day => day.entries).map(entry => entry.kind)).toEqual([
+      'intake', 'intake', 'distribution', 'adjustment', 'return', 'adjustment',
+    ])
+    expect(ledger.days.find(day => day.key === '2026-09-10')).toMatchObject({ return_base: 80 })
+    expect(ledger.days.find(day => day.key === '2026-09-20')).toMatchObject({ adjustment_base: -30 })
+    expect(ledger.truncated).toBe(false)
+  })
+
   it('iade durumu: sahada kalan = verilen − iade', () => {
     const { extras } = accountingReportService({ ...range, sections: 'deposit' })
     const row = extras.deposit.find(item => item.product_id === returnableId)
@@ -434,6 +449,8 @@ describe('Su muhasebe raporu — muhasebe ekleri', () => {
     const byLabel = new Map(extras.checks.map(check => [check.label, check]))
     expect(byLabel.get('İrsaliyesiz giriş')).toMatchObject({ level: 'warn' })
     expect(byLabel.get('İrsaliyesiz giriş').detail).toMatch(/1 giriş/)
+    expect(byLabel.get('İrsaliye evrak tamlığı')).toMatchObject({ level: 'warn' })
+    expect(byLabel.get('İrsaliye evrak tamlığı').detail).toMatch(/fotoğrafsız.*numarasız/)
     expect(byLabel.get('Ay kilidi')).toMatchObject({ level: 'warn' })
     expect(extras.checks.every(check => ['ok', 'warn', 'error'].includes(check.level))).toBe(true)
   })
@@ -458,5 +475,88 @@ describe('Su muhasebe raporu — muhasebe ekleri', () => {
     }
     expect(targets.filter((name, index) => targets.indexOf(name) !== index)).toEqual([])
     expect([...new Set(links)].filter(name => !targets.includes(name))).toEqual([])
+  })
+})
+
+describe('Su muhasebe raporu — irsaliye fotoğrafları bölümü', () => {
+  const range = { from: '2026-10-01', to: '2026-10-31' }
+  let photoProductId
+
+  beforeAll(async () => {
+    const db = getDB()
+    photoProductId = db.prepare(`INSERT INTO water_products(name, unit_label, units_per_case, cases_per_pallet)
+      VALUES('Foto Ürünü', 'koli', 1, 140)`).run().lastInsertRowid
+    const movementId = db.prepare(`INSERT INTO water_movements(type, product_id, zone_id, move_date, qty_base, input_qty, input_unit, waybill_no)
+      VALUES('in', ?, NULL, '2026-10-05', 280, 2, 'palet', 'FOTO-1')`).run(photoProductId).lastInsertRowid
+    db.prepare(`INSERT INTO water_movements(type, product_id, zone_id, move_date, qty_base, input_qty, input_unit, waybill_no)
+      VALUES('in', ?, NULL, '2026-10-05', 140, 1, 'palet', 'FOTO-1')`).run(photoProductId)
+
+    // Geçerli küçük bir JPEG üret (sharp ile) ve uploads klasörüne yaz
+    const fs = await import('node:fs')
+    const path = await import('node:path')
+    const sharp = (await import('sharp')).default
+    const dir = path.resolve('uploads')
+    fs.mkdirSync(dir, { recursive: true })
+    const jpeg = await sharp({ create: { width: 80, height: 60, channels: 3, background: { r: 180, g: 220, b: 250 } } })
+      .jpeg().toBuffer()
+    fs.writeFileSync(path.join(dir, 'water-waybill-test-report-photo.jpg'), jpeg)
+
+    db.prepare(`INSERT INTO water_waybill_photos(movement_id, waybill_no, move_date, photo_url)
+      VALUES(?, 'FOTO-1', '2026-10-05', '/uploads/water-waybill-test-report-photo.jpg')`).run(movementId)
+    db.prepare(`INSERT INTO water_waybill_photos(movement_id, waybill_no, move_date, photo_url)
+      VALUES(NULL, NULL, '2026-10-07', '/uploads/water-waybill-olmayan-dosya.jpg')`).run()
+  })
+
+  afterAll(async () => {
+    const fs = await import('node:fs')
+    const path = await import('node:path')
+    try { fs.unlinkSync(path.resolve('uploads/water-waybill-test-report-photo.jpg')) } catch {}
+  })
+
+  it('fotoğraf verisi içerik satırlarıyla (irsaliye kardeşleri dahil) gelir', () => {
+    const report = accountingReportService({ ...range, sections: 'photos' })
+    expect(report.photos.items).toHaveLength(2)
+    const linked = report.photos.items.find(item => item.waybill_no === 'FOTO-1')
+    expect(linked.content).toHaveLength(2) // aynı irsaliyenin iki ürün satırı
+    expect(linked.content[0]).toMatchObject({ product_name: 'Foto Ürünü' })
+    expect(report.photos.skipped).toBe(0)
+  })
+
+  it('attachReportPhotos: dosyayı küçültüp gömer, olmayan dosyayı işaretler', async () => {
+    const report = accountingReportService({ ...range, sections: 'photos' })
+    await attachReportPhotos(report)
+    const ok = report.photos.items.find(item => item.waybill_no === 'FOTO-1')
+    const missing = report.photos.items.find(item => !item.waybill_no)
+    expect(Buffer.isBuffer(ok.buffer)).toBe(true)
+    expect(ok.buffer.length).toBeGreaterThan(100)
+    expect(missing.buffer).toBeUndefined()
+    expect(missing.error).toBe('dosya yok')
+  })
+
+  it('PDF fotoğraf sayfası üretir; buffer\'sız fotoğraf uyarıyla basılır', async () => {
+    const report = accountingReportService({ ...range, sections: 'photos' })
+    await attachReportPhotos(report)
+    const doc = new PDFDocument({ size: 'A4', margin: 28 })
+    const chunks = []
+    doc.on('data', chunk => chunks.push(chunk))
+    const done = new Promise(resolve => doc.on('end', resolve))
+    const targets = []
+    const originalDestination = doc.addNamedDestination.bind(doc)
+    doc.addNamedDestination = (name, ...args) => { targets.push(name); return originalDestination(name, ...args) }
+    writeAccountingReportPDF(report, doc)
+    await done
+    const buffer = Buffer.concat(chunks)
+    expect(targets).toContain('sec-photos')
+    // Gömülü JPEG → PDF içinde DCTDecode filtresi bulunur
+    expect(buffer.toString('latin1')).toContain('DCTDecode')
+    expect((buffer.toString('latin1').match(/\/Type\s*\/Page[^s]/g) || []).length).toBe(2) // özet + foto sayfası
+  })
+
+  it('PDF endpoint sections=photos ile çalışır', async () => {
+    const res = await request(app).get('/api/water/report/accounting.pdf?from=2026-10-01&to=2026-10-31&sections=photos')
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(res.status).toBe(200)
+    expect(res.headers['content-type']).toContain('application/pdf')
+    expect(res.body.length).toBeGreaterThan(20000)
   })
 })

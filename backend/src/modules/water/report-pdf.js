@@ -1,9 +1,41 @@
 // Muhasebe raporunun PDF çizimi. Veri report.js'ten gelir; burada yalnız yerleşim var.
-// Bölümler (matrix/days/zones/intakes) rapor içindeki `sections` ile seçilir; her
-// bölüm yer imi (outline) ve adlandırılmış hedef alır, özet sayfasındaki
+// Bölümler (ledger/matrix/days/zones/intakes/photos + ekler) rapor içindeki `sections` ile
+// seçilir; her bölüm yer imi (outline) ve adlandırılmış hedef alır, özet sayfasındaki
 // içindekiler ile matristeki gün başlıkları oraya atlar.
+import fs from 'node:fs'
 import { registerTurkishFonts, pdfText } from '../../shared/pdf/fonts.js'
 import { trDate } from './report.js'
+import { uploadFilePathFromUrl } from './file-lifecycle.js'
+
+// Fotoğrafları PDF'e gömülecek boyuta indirir (sharp varsa ~640px JPEG; yoksa
+// yalnız küçük dosyalar olduğu gibi alınır). Çizimden ÖNCE await edilir — çizici
+// senkron kalır. item.buffer doldurulur, okunamayanlar item.error alır.
+export async function attachReportPhotos(report, { maxWidth = 640, quality = 68, rawLimit = 1_500_000 } = {}) {
+  const items = report?.photos?.items || []
+  if (!items.length) return report
+  let sharp = null
+  try { sharp = (await import('sharp')).default } catch { sharp = null }
+  for (const item of items) {
+    const filePath = uploadFilePathFromUrl(item.url)
+    if (!filePath || !fs.existsSync(filePath)) { item.error = 'dosya yok'; continue }
+    try {
+      if (sharp) {
+        item.buffer = await sharp(filePath)
+          .rotate() // EXIF yönünü uygula (telefon fotoğrafları yan gelmesin)
+          .resize({ width: maxWidth, withoutEnlargement: true })
+          .jpeg({ quality })
+          .toBuffer()
+      } else {
+        const raw = fs.readFileSync(filePath)
+        if (raw.length > rawLimit) { item.error = 'dosya çok büyük'; continue }
+        item.buffer = raw
+      }
+    } catch {
+      item.error = 'okunamadı'
+    }
+  }
+  return report
+}
 
 const INK = '#0F172A'
 const MUTED = '#64748B'
@@ -12,6 +44,8 @@ const BAND = '#0E7490'
 const ZEBRA = '#F1F5F9'
 const GREEN = '#15803D'
 const RED = '#B91C1C'
+const ORANGE = '#B45309'
+const PURPLE = '#7E22CE'
 const FADE = '#CBD5E1'
 
 const ZONE_ROW_LIMIT = 12
@@ -24,10 +58,12 @@ const num = value => nf.format(Math.round(value || 0))
 const signed = value => (value > 0 ? `+${num(value)}` : num(value))
 
 const SECTION_TITLES = {
+  ledger: 'GÜNLÜK DEFTER — TÜM HAREKETLER',
   matrix: 'DAĞITIM YERİ × GÜN MATRİSİ',
   days: 'GÜN GÜN DETAY — NEREYE NE KADAR',
   zones: 'DAĞITIM YERİ × ÜRÜN',
   intakes: 'GELEN İRSALİYELER',
+  photos: 'İRSALİYE FOTOĞRAFLARI',
   deposit: 'BOŞ DAMACANA / İADE DURUMU',
   adjustments: 'STOK DÜZELTMELERİ',
   trucks: 'TIR GELİŞLERİ',
@@ -36,10 +72,12 @@ const SECTION_TITLES = {
 }
 // İçindekiler tek satıra sığmalı — kısa adlar.
 const SECTION_SHORT = {
+  ledger: 'Günlük defter',
   matrix: 'Yer × Gün matrisi',
   days: 'Gün gün detay',
   zones: 'Yer × Ürün',
   intakes: 'İrsaliyeler',
+  photos: 'Fotoğraflar',
   deposit: 'İade durumu',
   adjustments: 'Düzeltmeler',
   trucks: 'Tırlar',
@@ -49,6 +87,18 @@ const SECTION_SHORT = {
 // Küçük tablolar tek "MUHASEBE EKLERİ" akışında toplanır — sayfa israfı olmasın.
 const EXTRA_SECTIONS = ['deposit', 'adjustments', 'trucks', 'counts', 'checks']
 const EXTRAS_TITLE = 'MUHASEBE EKLERİ'
+
+// Veri yoksa bölüm çizilmez — içindekiler de aynı listeyi kullanmalı ki
+// hedefsiz (kırık) bağlantı oluşmasın.
+function renderableSections(report) {
+  return (report.sections || []).filter(section => {
+    if (section === 'ledger') return Boolean(report.ledger?.days?.length)
+    if (section === 'photos') return Boolean(report.photos?.items?.length)
+    if (section === 'days') return Boolean(report.detail?.days?.length)
+    if (section === 'matrix' || section === 'zones') return Boolean(report.detail?.rows?.length)
+    return true
+  })
+}
 
 // pdfkit'in `text(..., { goTo })` seçeneği lineBreak:false ile satır genişliğini
 // hesaplayamıyor (NaN → bozuk annotation). Bağlantı dikdörtgenini kendimiz veriyoruz.
@@ -105,13 +155,14 @@ function drawTable(doc, fonts, { x, y, width, title, columns, rows, note }) {
 
   doc.fontSize(7).font(fonts.regular)
   rows.forEach((row, index) => {
-    if (index % 2 === 1) doc.rect(x, cursor, width, rowHeight).fill(ZEBRA)
+    if (row.__total) doc.rect(x, cursor, width, rowHeight).fill('#FEF3C7')
+    else if (index % 2 === 1) doc.rect(x, cursor, width, rowHeight).fill(ZEBRA)
     columnX = x
     for (const column of columns) {
       const cell = column.cell(row)
       const value = text(cell?.value ?? '—')
       const available = column.width - 6
-      doc.font(cell?.bold ? fonts.bold : fonts.regular).fillColor(cell?.color || INK)
+      doc.font(cell?.bold || row.__total ? fonts.bold : fonts.regular).fillColor(cell?.color || INK)
       const size = fitFontSize(doc, value, available, 7)
       doc.text(value, columnX + 3, cursor + 3.2 + (7 - size) / 2, {
         width: available,
@@ -240,9 +291,12 @@ function drawSummaryPage(doc, fonts, ctx) {
   ]
   const gap = 7
   const kpiWidth = (innerWidth - gap * (kpis.length - 1)) / kpis.length
+  const KPI_TINTS = { '#15803D': '#F0FDF4', '#B91C1C': '#FEF2F2', [BAND]: '#ECFEFF' }
   kpis.forEach((kpi, index) => {
     const x = margin + index * (kpiWidth + gap)
-    doc.roundedRect(x, 74, kpiWidth, 44, 3).lineWidth(0.7).strokeColor(LINE).stroke()
+    // Renkli KPI'ya aynı tonun çok açık zemini — rapor bir bakışta okunur
+    doc.roundedRect(x, 74, kpiWidth, 44, 3).fillAndStroke(KPI_TINTS[kpi.color] || '#F8FAFC', kpi.color || LINE)
+    doc.lineWidth(0.7)
     doc.font(fonts.bold).fillColor(MUTED)
     fitFontSize(doc, text(kpi.label), kpiWidth - 12, 5.8, 4.2)
     doc.text(text(kpi.label), x + 6, 81, { width: kpiWidth - 12, lineBreak: false })
@@ -259,11 +313,12 @@ function drawSummaryPage(doc, fonts, ctx) {
     margin, 121, { width: innerWidth },
   )
 
-  // Tıklanabilir içindekiler — yalnız ek bölüm varsa
+  // Tıklanabilir içindekiler — yalnız gerçekten çizilecek bölümler listelenir
+  const tocSections = renderableSections(report)
   let top = 134
-  if (report.sections?.length) {
+  if (tocSections.length) {
     const prefix = text('EK BÖLÜMLER:')
-    const labels = report.sections.map(section => text(`▸ ${SECTION_SHORT[section]}`))
+    const labels = tocSections.map(section => text(`▸ ${SECTION_SHORT[section]}`))
     // Sağ marjı aşmasın: en fazla iki satıra dizilir, sığmıyorsa punto düşer.
     doc.font(fonts.bold)
     let size = 6.4
@@ -292,7 +347,7 @@ function drawSummaryPage(doc, fonts, ctx) {
       for (const item of line) {
         const x = margin + item.x
         doc.text(item.label, x, y, { lineBreak: false })
-        linkArea(doc, `sec-${report.sections[item.index]}`, x, y - 2, doc.widthOfString(item.label), size + 3)
+        linkArea(doc, `sec-${tocSections[item.index]}`, x, y - 2, doc.widthOfString(item.label), size + 3)
       }
     })
     top = 145 + (lines.length - 1) * (size + 2.4)
@@ -303,18 +358,20 @@ function drawSummaryPage(doc, fonts, ctx) {
   const rightWidth = innerWidth - leftWidth - columnGap
   const rightX = margin + leftWidth + columnGap
   const hasAdjust = report.daily.some(row => row.adjust_base !== 0)
-  const dayLinks = new Set((report.detail?.days || []).map(day => day.key))
+  const detailDayLinks = new Set((report.detail?.days || []).map(day => day.key))
+  const ledgerDayLinks = new Set((report.ledger?.days || []).map(day => day.key))
+  const dayTarget = key => detailDayLinks.has(key) ? `day-${key}` : (ledgerDayLinks.has(key) ? `ledger-day-${key}` : null)
 
   const dailyColumns = hasAdjust
     ? [
-      { label: report.grouped ? 'AY' : 'TARİH', width: 72, cell: row => ({ value: row.label, color: row.empty ? '#94A3B8' : INK, goTo: dayLinks.has(row.key) ? `day-${row.key}` : null }) },
+      { label: report.grouped ? 'AY' : 'TARİH', width: 72, cell: row => ({ value: row.label, color: row.empty ? '#94A3B8' : INK, goTo: dayTarget(row.key) }) },
       { label: 'GELEN', width: 48, align: 'right', cell: row => ({ value: row.in_base ? num(row.in_base) : '·', color: row.in_base ? GREEN : FADE }) },
       { label: 'DAĞITILAN', width: 55, align: 'right', cell: row => ({ value: row.out_base ? num(row.out_base) : '·', color: row.out_base ? RED : FADE }) },
       { label: 'DÜZELTME', width: 47, align: 'right', cell: row => ({ value: row.adjust_base ? signed(row.adjust_base) : '·', color: row.adjust_base ? '#B45309' : FADE }) },
       { label: 'KALAN', width: 46, align: 'right', cell: row => ({ value: num(row.balance_base), bold: true, color: row.balance_base < 0 ? RED : INK }) },
     ]
     : [
-      { label: report.grouped ? 'AY' : 'TARİH', width: 84, cell: row => ({ value: row.label, color: row.empty ? '#94A3B8' : INK, goTo: dayLinks.has(row.key) ? `day-${row.key}` : null }) },
+      { label: report.grouped ? 'AY' : 'TARİH', width: 84, cell: row => ({ value: row.label, color: row.empty ? '#94A3B8' : INK, goTo: dayTarget(row.key) }) },
       { label: 'GELEN', width: 60, align: 'right', cell: row => ({ value: row.in_base ? num(row.in_base) : '·', color: row.in_base ? GREEN : FADE }) },
       { label: 'DAĞITILAN', width: 64, align: 'right', cell: row => ({ value: row.out_base ? num(row.out_base) : '·', color: row.out_base ? RED : FADE }) },
       { label: 'KALAN', width: 60, align: 'right', cell: row => ({ value: num(row.balance_base), bold: true, color: row.balance_base < 0 ? RED : INK }) },
@@ -325,11 +382,12 @@ function drawSummaryPage(doc, fonts, ctx) {
     out_base: totals.period_out,
     adjust_base: totals.period_adjust,
     balance_base: totals.closing,
+    __total: true,
   }]
   const leftY = drawTable(doc, fonts, {
     x: margin, y: top, width: leftWidth, columns: dailyColumns, rows: dailyRows,
     title: report.grouped ? 'AY AY HAREKET' : 'GÜN GÜN HAREKET',
-    note: dayLinks.size
+    note: detailDayLinks.size || ledgerDayLinks.size
       ? 'Kalan = devirden yürüyen bakiye. Tarihe tıklayınca o günün detayına gider.'
       : 'Kalan sütunu devirden başlayan yürüyen bakiyedir.',
   })
@@ -349,6 +407,7 @@ function drawSummaryPage(doc, fonts, ctx) {
       period_in: totals.period_in,
       period_out: totals.period_out,
       closing_base: totals.closing,
+      __total: true,
     }],
     note: report.products.length > PRODUCT_ROW_LIMIT
       ? `İlk ${PRODUCT_ROW_LIMIT} ürün gösterildi (toplam ${report.products.length}).`
@@ -459,7 +518,8 @@ function drawMatrixSection(doc, fonts, ctx) {
     const height = level === 'product' ? productHeight : zoneHeight
     ensure(height)
     const isProduct = level === 'product'
-    if (!isProduct && striped % 2 === 1) doc.rect(layout.margin, y, layout.innerWidth, height).fill(ZEBRA)
+    if (level === 'total') doc.rect(layout.margin, y, layout.innerWidth, height).fill('#FEF3C7')
+    else if (!isProduct && striped % 2 === 1) doc.rect(layout.margin, y, layout.innerWidth, height).fill(ZEBRA)
     if (!isProduct) striped += 1
     const font = level === 'zone' || level === 'total' ? fonts.bold : fonts.regular
     const baseSize = isProduct ? 6.2 : 7
@@ -528,7 +588,106 @@ function drawMatrixSection(doc, fonts, ctx) {
   }
 }
 
-// ── Bölüm 3: gün gün detay ──
+// ── Günlük defter: giriş, dağıtım, boş iade ve düzeltmeler ──
+
+function drawLedgerSection(doc, fonts, ctx) {
+  const { ledger } = ctx.report
+  const text = value => pdfText(value, fonts)
+  const title = SECTION_TITLES.ledger
+  const flow = columnFlow(doc, fonts, ctx, { title, columns: 1, gap: 0 })
+  const kindStyle = {
+    intake: { color: GREEN, tint: '#F0FDF4' },
+    distribution: { color: RED, tint: '#FEF2F2' },
+    return: { color: PURPLE, tint: '#FAF5FF' },
+    adjustment: { color: ORANGE, tint: '#FFFBEB' },
+  }
+
+  const tableHeader = label => {
+    const spot = flow.place(14)
+    doc.rect(spot.x, spot.y, spot.width, 13).fill('#E2E8F0')
+    doc.font(fonts.bold).fontSize(6).fillColor('#334155')
+    doc.text(text(label || 'İŞLEM'), spot.x + 5, spot.y + 4, { width: 57, lineBreak: false })
+    doc.text(text('ÜRÜN'), spot.x + 66, spot.y + 4, { width: 128, lineBreak: false })
+    doc.text(text('DETAY / AÇIKLAMA'), spot.x + 202, spot.y + 4, { width: spot.width - 302, lineBreak: false })
+    doc.text(text('MİKTAR'), spot.x + spot.width - 96, spot.y + 4, { width: 90, align: 'right', lineBreak: false })
+  }
+
+  let striped = 0
+  for (const day of ledger.days) {
+    flow.reserve(62)
+    const head = flow.place(29)
+    doc.roundedRect(head.x, head.y, head.width, 25, 4).fillAndStroke('#ECFEFF', '#A5F3FC')
+    doc.rect(head.x, head.y, 4, 25).fill(BAND)
+    doc.font(fonts.bold).fontSize(9).fillColor(INK)
+      .text(text(`${day.label} · ${day.weekday}`), head.x + 10, head.y + 5, { width: 180, lineBreak: false })
+    doc.font(fonts.regular).fontSize(5.8).fillColor(MUTED)
+      .text(text(`${day.entries.length} kayıt`), head.x + 10, head.y + 16, { width: 180, lineBreak: false })
+    const summary = [
+      day.intake_base ? `Gelen ${num(day.intake_base)}` : null,
+      day.distribution_base ? `Dağıtım ${num(day.distribution_base)}` : null,
+      day.return_base ? `Boş iade ${num(day.return_base)}` : null,
+      day.adjustment_base ? `Düzeltme ${signed(day.adjustment_base)}` : null,
+    ].filter(Boolean).join('  ·  ')
+    doc.font(fonts.bold).fillColor(BAND)
+    fitFontSize(doc, text(summary), head.width - 206, 7, 4.5)
+    doc.text(text(summary), head.x + 196, head.y + 9, { width: head.width - 206, align: 'right', lineBreak: false })
+    markTarget(doc, `ledger-day-${day.key}`, head.x, Math.max(0, head.y - 6))
+
+    tableHeader()
+    striped = 0
+    for (const entry of day.entries) {
+      if (flow.willBreak(23)) {
+        flow.reserve(37)
+        tableHeader(`${day.label} · DEVAM`)
+        striped = 0
+      }
+      const spot = flow.place(23)
+      if (striped % 2 === 1) doc.rect(spot.x, spot.y, spot.width, 22).fill(ZEBRA)
+      striped += 1
+      const style = kindStyle[entry.kind] || { color: BAND, tint: '#ECFEFF' }
+      doc.roundedRect(spot.x + 4, spot.y + 5, 55, 12, 3).fill(style.tint)
+      doc.font(fonts.bold).fillColor(style.color)
+      fitFontSize(doc, text(entry.kind_label), 49, 6.2, 4.5)
+      doc.text(text(entry.kind_label), spot.x + 7, spot.y + 8, { width: 49, align: 'center', lineBreak: false })
+
+      doc.font(fonts.bold).fillColor(INK)
+      fitFontSize(doc, text(entry.product_name), 128, 6.8, 4.6)
+      doc.text(text(entry.product_name), spot.x + 66, spot.y + 5, { width: 128, lineBreak: false, ellipsis: true })
+      doc.font(fonts.regular).fontSize(5.4).fillColor(MUTED)
+        .text(text(`#${entry.source_id}`), spot.x + 66, spot.y + 14, { width: 128, lineBreak: false })
+
+      const detailWidth = spot.width - 302
+      doc.font(fonts.bold).fillColor('#334155')
+      fitFontSize(doc, text(entry.context), detailWidth, 6.4, 4.5)
+      doc.text(text(entry.context), spot.x + 202, spot.y + 4.5, { width: detailWidth, lineBreak: false, ellipsis: true })
+      const subline = [entry.note, entry.created_by_name].filter(Boolean).join(' · ') || '—'
+      doc.font(fonts.regular).fillColor(MUTED)
+      fitFontSize(doc, text(subline), detailWidth, 5.4, 4.2)
+      doc.text(text(subline), spot.x + 202, spot.y + 13.5, { width: detailWidth, lineBreak: false, ellipsis: true })
+
+      const amount = entry.kind === 'adjustment'
+        ? `${entry.stock_effect > 0 ? '+' : '−'}${entry.qty_human}`
+        : entry.qty_human
+      doc.font(fonts.bold).fillColor(style.color)
+      fitFontSize(doc, text(amount), 90, 6.8, 4.4)
+      doc.text(text(amount), spot.x + spot.width - 96, spot.y + 5, { width: 90, align: 'right', lineBreak: false })
+      doc.font(fonts.regular).fontSize(5.2).fillColor(MUTED)
+        .text(text(`${num(entry.qty_base)} baz`), spot.x + spot.width - 96, spot.y + 14, { width: 90, align: 'right', lineBreak: false })
+      doc.moveTo(spot.x + 4, spot.y + 22).lineTo(spot.x + spot.width - 4, spot.y + 22)
+        .lineWidth(0.25).strokeColor('#E2E8F0').stroke()
+    }
+    flow.place(7)
+  }
+
+  if (ledger.truncated) {
+    const warning = flow.place(20)
+    doc.roundedRect(warning.x, warning.y, warning.width, 16, 3).fill('#FEF2F2')
+    doc.font(fonts.bold).fontSize(6.5).fillColor(RED)
+      .text(text('Kayıt sınırına ulaşıldı; bu bölüm eksik olabilir.'), warning.x + 7, warning.y + 5, { width: warning.width - 14 })
+  }
+}
+
+// ── Gün gün dağıtım detayı ──
 
 function drawDaysSection(doc, fonts, ctx) {
   const { detail } = ctx.report
@@ -541,8 +700,10 @@ function drawDaysSection(doc, fonts, ctx) {
     flow.reserve(30)
     const head = flow.place(17)
     doc.rect(head.x, head.y, head.width, 15).fill('#ECFEFF')
+    // Sol renk çubuğu: giriş olan gün yeşil, yalnız dağıtım olan gün turkuaz
+    doc.rect(head.x, head.y, 3, 15).fill(day.in_base ? GREEN : BAND)
     doc.font(fonts.bold).fontSize(8).fillColor(INK)
-      .text(text(`${day.label} ${day.weekday}`), head.x + 4, head.y + 4, { width: head.width - 4, lineBreak: false })
+      .text(text(`${day.label} ${day.weekday}`), head.x + 6, head.y + 4, { width: head.width - 6, lineBreak: false })
     markTarget(doc, `day-${day.key}`, head.x, Math.max(0, head.y - 6))
     const summary = [
       day.in_base ? `gelen ${num(day.in_base)}` : null,
@@ -557,7 +718,11 @@ function drawDaysSection(doc, fonts, ctx) {
     for (const intake of day.intakes) {
       const spot = flow.place(9.6)
       doc.font(fonts.regular).fontSize(6.4).fillColor(GREEN)
-      const label = text(`⊕ giriş  ${intake.waybill_no || 'irsaliyesiz'} — ${intake.product_name}`)
+      // Okunur miktar da yazılsın: "⊕ giriş IRS-100 — 0.5 L Şişe Su · 4 palet" + sağda baz
+      const humanPart = intake.qty_human && intake.qty_human !== `${intake.qty_base} ${intake.unit_label || 'adet'}`
+        ? ` · ${intake.qty_human}`
+        : ''
+      const label = text(`⊕ giriş  ${intake.waybill_no || 'irsaliyesiz'} — ${intake.product_name}${humanPart}`)
       fitFontSize(doc, label, spot.width - 40, 6.4, 4.6)
       doc.text(label, spot.x + 4, spot.y + 1.4, { width: spot.width - 40, lineBreak: false, ellipsis: true })
       doc.font(fonts.bold).fontSize(6.4).fillColor(GREEN)
@@ -679,6 +844,102 @@ function drawIntakesSection(doc, fonts, ctx) {
   doc.font(fonts.bold).fontSize(7).fillColor(INK)
     .text(text(`TOPLAM (${report.intakes.length} giriş)`), totalSpot.x + 2, totalSpot.y + 2, { width: width - 60, lineBreak: false })
   doc.text(num(report.totals.period_in), totalSpot.x, totalSpot.y + 2, { width: width - 2, align: 'right', lineBreak: false })
+}
+
+// ── İrsaliye fotoğrafları (okunur, iki sütunlu belge kartları) ──
+
+function drawPhotosSection(doc, fonts, ctx) {
+  const photos = ctx.report.photos
+  const text = value => pdfText(value, fonts)
+  const title = SECTION_TITLES.photos
+  let layout = sectionPage(doc, fonts, ctx, { title, destination: 'sec-photos' })
+
+  const columns = 2
+  const gap = 12
+  const cellWidth = (layout.innerWidth - gap * (columns - 1)) / columns
+  const imageHeight = 235
+  const cellHeight = imageHeight + 56
+  let column = 0
+  let x = layout.margin
+  let y = layout.top + 34
+
+  doc.roundedRect(layout.margin, layout.top, layout.innerWidth, 24, 4).fill('#ECFEFF')
+  doc.font(fonts.bold).fontSize(7.5).fillColor(BAND)
+    .text(text(`${photos.total} fotoğraf · ${photos.items.length} belge rapora eklendi`), layout.margin + 9, layout.top + 6, {
+      width: layout.innerWidth - 18, lineBreak: false,
+    })
+  doc.font(fonts.regular).fontSize(6).fillColor(MUTED)
+    .text(text(photos.skipped ? `${photos.skipped} fotoğraf üst sınır nedeniyle gösterilmedi.` : 'Fotoğraflar tarih sırasındadır; bağlı irsaliye içeriği kart altında yer alır.'),
+      layout.margin + 9, layout.top + 15, { width: layout.innerWidth - 18, lineBreak: false })
+
+  // Soldan sağa akış: satır dolunca aşağı, sayfa dolunca yeni sayfa.
+  const advance = () => {
+    column += 1
+    if (column >= columns) {
+      column = 0
+      y += cellHeight + gap
+    }
+    x = layout.margin + column * (cellWidth + gap)
+  }
+
+  for (const item of photos.items) {
+    if (y + cellHeight > layout.bottom) {
+      layout = sectionPage(doc, fonts, ctx, { title, continued: true })
+      column = 0
+      x = layout.margin
+      y = layout.top
+    }
+    doc.roundedRect(x, y, cellWidth, cellHeight, 5).fillAndStroke('#FFFFFF', LINE)
+    doc.roundedRect(x + 4, y + 4, cellWidth - 8, imageHeight, 3).fill('#F8FAFC')
+    if (item.buffer) {
+      try {
+        doc.image(item.buffer, x + 4, y + 4, {
+          fit: [cellWidth - 8, imageHeight],
+          align: 'center',
+          valign: 'center',
+        })
+      } catch {
+        item.error = 'görüntü basılamadı'
+      }
+    }
+    if (!item.buffer || item.error) {
+      doc.font(fonts.regular).fontSize(7).fillColor(MUTED)
+        .text(text(`⚠ ${item.error || 'fotoğraf yüklenmedi'}`), x + 8, y + imageHeight / 2, {
+          width: cellWidth - 16, align: 'center', lineBreak: false,
+        })
+    }
+    const captionY = y + imageHeight + 8
+    doc.roundedRect(x + 7, captionY - 1, 64, 13, 3).fill('#ECFEFF')
+    doc.font(fonts.bold).fontSize(6.2).fillColor(BAND)
+      .text(text(trDate(item.move_date)), x + 10, captionY + 2.5, { width: 58, align: 'center', lineBreak: false })
+    doc.font(fonts.bold).fontSize(7.2).fillColor(INK)
+    const head = text(item.waybill_no ? `İrsaliye ${item.waybill_no}` : (item.plate || 'İrsaliyesiz belge'))
+    fitFontSize(doc, head, cellWidth - 84, 7.2, 4.6)
+    doc.text(head, x + 78, captionY + 1.5, { width: cellWidth - 85, lineBreak: false, ellipsis: true })
+    const contentText = item.content.length
+      ? item.content.map(line => `${line.product_name}: ${line.qty_human || num(line.qty_base)}`).join(' · ')
+      : (item.note || 'giriş kaydı bağlı değil')
+    doc.font(fonts.regular).fillColor(item.content.length ? '#0F766E' : MUTED)
+    fitFontSize(doc, text(contentText), cellWidth - 14, 6.2, 4.2)
+    doc.text(text(contentText), x + 7, captionY + 17, { width: cellWidth - 14, lineBreak: false, ellipsis: true })
+    const meta = [item.plate ? `Plaka ${item.plate}` : null, item.note, item.uploaded_by_name ? `Yükleyen: ${item.uploaded_by_name}` : null]
+      .filter(Boolean).join(' · ') || item.original_name || 'Belge arşivi'
+    doc.font(fonts.regular).fillColor(MUTED)
+    fitFontSize(doc, text(meta), cellWidth - 14, 5.4, 4.1)
+    doc.text(text(meta), x + 7, captionY + 29, { width: cellWidth - 14, lineBreak: false, ellipsis: true })
+    advance()
+  }
+
+  // Not satırı: kalan hücrenin altına
+  const noteY = column === 0 ? y : y + cellHeight + 8
+  const notes = [
+    `${photos.items.length} fotoğraf gömüldü`,
+    photos.skipped ? `${photos.skipped} fotoğraf sınır nedeniyle atlandı (toplam ${photos.total})` : null,
+    photos.items.some(item => item.error) ? `${photos.items.filter(item => item.error).length} fotoğraf okunamadı` : null,
+  ].filter(Boolean).join('  ·  ')
+  if (noteY + 12 <= layout.bottom) {
+    doc.font(fonts.regular).fontSize(6).fillColor(MUTED).text(text(notes), layout.margin, noteY, { width: layout.innerWidth })
+  }
 }
 
 // ── Bölüm 6: muhasebe ekleri (küçük tablolar tek akışta) ──
@@ -867,10 +1128,12 @@ function drawExtrasSection(doc, fonts, ctx) {
 }
 
 const SECTION_RENDERERS = {
+  ledger: drawLedgerSection,
   matrix: drawMatrixSection,
   days: drawDaysSection,
   zones: drawZonesSection,
   intakes: drawIntakesSection,
+  photos: drawPhotosSection,
 }
 
 export function writeAccountingReportPDF(report, doc) {
@@ -880,8 +1143,9 @@ export function writeAccountingReportPDF(report, doc) {
 
   const ctx = { report, fonts, pageNo: 1, outline: doc.outline, currentSection: null }
   drawSummaryPage(doc, fonts, ctx)
-  const bigSections = (report.sections || []).filter(section => SECTION_RENDERERS[section])
-  const extraSections = EXTRA_SECTIONS.filter(section => (report.sections || []).includes(section))
+  const activeSections = renderableSections(report)
+  const bigSections = activeSections.filter(section => SECTION_RENDERERS[section])
+  const extraSections = EXTRA_SECTIONS.filter(section => activeSections.includes(section))
   if (bigSections.length || extraSections.length) {
     ctx.outline.addItem(pdfText('ÖZET', fonts))
     doc.font(fonts.regular).fontSize(6).fillColor('#94A3B8')
@@ -890,9 +1154,15 @@ export function writeAccountingReportPDF(report, doc) {
   }
 
   for (const section of bigSections) {
-    if (section !== 'intakes' && !report.detail) continue
-    if (section === 'days' && !report.detail?.days?.length) continue
-    if ((section === 'matrix' || section === 'zones') && !report.detail?.rows?.length) continue
+    if (section === 'photos') {
+      if (!report.photos?.items?.length) continue
+    } else if (section === 'ledger') {
+      if (!report.ledger?.days?.length) continue
+    } else {
+      if (section !== 'intakes' && !report.detail) continue
+      if (section === 'days' && !report.detail?.days?.length) continue
+      if ((section === 'matrix' || section === 'zones') && !report.detail?.rows?.length) continue
+    }
     ctx.currentSection = section
     SECTION_RENDERERS[section](doc, fonts, ctx)
   }

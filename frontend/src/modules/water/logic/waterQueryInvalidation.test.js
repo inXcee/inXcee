@@ -18,6 +18,7 @@ describe('water query invalidation', () => {
       'water-forecast',
       'water-trends',
       'water-lots',
+      'water-zone-target-suggestions',
     ]))
   })
 
@@ -44,6 +45,10 @@ describe('water query invalidation', () => {
       'water-zone-history',
       'water-lots',
     ]))
+  })
+
+  it('bölge ayarları değişince hedef önerisini de yeniler', () => {
+    expect(waterQueryKeysForScopes('zones')).toContain('water-zone-target-suggestions')
   })
 
   it('lot güncellemesinde lot, irsaliye, uyarı ve dağıtım geçmişini yeniler', () => {

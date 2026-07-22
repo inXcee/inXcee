@@ -1,9 +1,10 @@
-// Muhasebe raporu verisi: özet sayfası (tek A4) + istendiğinde gün gün nereye ne
-// kadar dağıtıldığının tam dökümü. PDF çizimi report-pdf.js içinde.
+// Muhasebe raporu verisi: özet sayfası + günlük defter, dağıtım dökümleri,
+// irsaliye fotoğrafları ve muhasebe ekleri. PDF çizimi report-pdf.js içinde.
 import * as q from './queries.js'
 import { humanize } from './units.js'
 import { COUNT_REASONS, reconciliationService } from './reconciliation.js'
 import { isIsoDate } from '../../shared/validation/date.js'
+import { waybillDocumentStatus } from './document-status.js'
 
 const REASON_LABELS = new Map(COUNT_REASONS.map(reason => [reason.key, reason.label]))
 const TRUCK_STATUS_LABELS = {
@@ -22,14 +23,17 @@ const DAILY_ROW_LIMIT = 34
 // Gün gün detay bölümünün makul kaldığı üst sınır; üstünde detay üretilmez.
 const MAX_DETAIL_DAYS = 62
 const DETAIL_MOVEMENT_LIMIT = 20000
+const LEDGER_ROW_LIMIT = 20000
 
 // Dağıtım detayı (büyük, kendi sayfalarına) + muhasebe ekleri (küçük, tek akışta)
 export const REPORT_SECTIONS = Object.freeze([
-  'matrix', 'days', 'zones', 'intakes',
+  'ledger', 'matrix', 'days', 'zones', 'intakes', 'photos',
   'deposit', 'adjustments', 'trucks', 'counts', 'checks',
 ])
 const DETAIL_SECTIONS = Object.freeze(['matrix', 'days', 'zones'])
 export const EXTRA_SECTIONS = Object.freeze(['deposit', 'adjustments', 'trucks', 'counts', 'checks'])
+// PDF'e gömülecek fotoğraf üst sınırı — aşanı raporda not düşülür.
+export const MAX_REPORT_PHOTOS = 48
 
 export const WEEKDAYS = ['Paz', 'Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt']
 export const WEEKDAYS_LONG = ['Pazar', 'Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi']
@@ -195,13 +199,135 @@ export function accountingReportService({ from, to, sections } = {}) {
     from, to, day_count: dayCount, grouped, daily, products, zones, intakes, totals,
     locked_months: lockedMonths, sections: wantedSections,
   }
+  if (wantedSections.includes('ledger')) report.ledger = buildLedger({ from, to })
   if (wantedSections.some(section => DETAIL_SECTIONS.includes(section))) {
     report.detail = buildDetail(report, { from, to, grouped })
   }
   if (wantedSections.some(section => EXTRA_SECTIONS.includes(section))) {
     report.extras = buildExtras(report, { from, to, sections: wantedSections })
   }
+  if (wantedSections.includes('photos')) report.photos = buildPhotos(report, { from, to })
   return report
+}
+
+// İrsaliye fotoğrafları + her fotoğrafın altına yazılacak içerik (o irsaliyeyle
+// ne geldi). Dosya okunmaz — PDF rotası basmadan önce attachReportPhotos çağırır.
+function buildPhotos(report, { from, to }) {
+  const rows = q.listWaybillPhotos({ from, to, limit: 500 })
+  const byId = new Map(report.intakes.map(row => [Number(row.id), row]))
+  const byWaybill = new Map()
+  for (const row of report.intakes) {
+    if (!row.waybill_no) continue
+    const key = String(row.waybill_no)
+    byWaybill.set(key, [...(byWaybill.get(key) || []), row])
+  }
+  const linkedLines = photo => {
+    const direct = photo.movement_id != null ? byId.get(Number(photo.movement_id)) : null
+    if (direct) return direct.waybill_no ? (byWaybill.get(String(direct.waybill_no)) || [direct]) : [direct]
+    if (photo.waybill_no) return byWaybill.get(String(photo.waybill_no)) || []
+    return []
+  }
+  const sorted = [...rows].sort((left, right) =>
+    (left.move_date === right.move_date ? left.id - right.id : left.move_date < right.move_date ? -1 : 1))
+  const items = sorted.slice(0, MAX_REPORT_PHOTOS).map(photo => ({
+    id: photo.id,
+    url: photo.photo_url,
+    move_date: photo.move_date,
+    waybill_no: photo.waybill_no || null,
+    plate: photo.plate || null,
+    note: photo.note || null,
+    original_name: photo.original_name || null,
+    uploaded_by_name: photo.uploaded_by_name || null,
+    content: linkedLines(photo).map(line => ({
+      product_name: line.product_name,
+      qty_base: line.qty_base,
+      qty_human: line.qty_human,
+    })),
+  }))
+  return { items, total: rows.length, skipped: Math.max(0, rows.length - items.length) }
+}
+
+// Günlük defter: muhasebenin tarih sırasıyla bütün su hareketlerini tek yerde
+// görebilmesi için giriş, dağıtım, boş kap iadesi ve stok düzeltmesini birleştirir.
+function buildLedger({ from, to }) {
+  const movements = q.listMovements({ from, to, limit: LEDGER_ROW_LIMIT })
+  const returns = q.listReturns({ from, to, limit: LEDGER_ROW_LIMIT })
+  const adjustments = q.listAdjustments({ from, to, limit: LEDGER_ROW_LIMIT })
+  const entries = [
+    ...movements.map(row => ({
+      id: `movement-${row.id}`,
+      source_id: row.id,
+      move_date: row.move_date,
+      created_at: row.created_at || '',
+      kind: row.type === 'in' ? 'intake' : 'distribution',
+      kind_label: row.type === 'in' ? 'Gelen' : 'Dağıtım',
+      product_name: row.product_name,
+      qty_base: row.qty_base,
+      qty_human: humanize(row, row.qty_base),
+      stock_effect: row.type === 'in' ? row.qty_base : -row.qty_base,
+      context: row.type === 'in' ? (row.waybill_no ? `İrsaliye ${row.waybill_no}` : 'İrsaliyesiz giriş') : (row.zone_name || 'Yer belirtilmemiş'),
+      note: row.note || null,
+      created_by_name: row.created_by_name || null,
+    })),
+    ...returns.map(row => ({
+      id: `return-${row.id}`,
+      source_id: row.id,
+      move_date: row.move_date,
+      created_at: row.created_at || '',
+      kind: 'return',
+      kind_label: 'Boş iade',
+      product_name: row.product_name,
+      qty_base: row.qty_base,
+      qty_human: humanize(row, row.qty_base),
+      stock_effect: 0,
+      context: 'Depozito / boş kap dönüşü',
+      note: row.note || null,
+      created_by_name: row.created_by_name || null,
+    })),
+    ...adjustments.map(row => ({
+      id: `adjustment-${row.id}`,
+      source_id: row.id,
+      move_date: row.move_date,
+      created_at: row.created_at || '',
+      kind: 'adjustment',
+      kind_label: row.direction === 'in' ? 'Stok +' : 'Stok −',
+      product_name: row.product_name,
+      qty_base: row.qty_base,
+      qty_human: humanize(row, row.qty_base),
+      stock_effect: row.direction === 'in' ? row.qty_base : -row.qty_base,
+      context: REASON_LABELS.get(row.reason) || row.reason || 'Stok düzeltmesi',
+      note: row.note || null,
+      created_by_name: row.created_by_name || null,
+    })),
+  ].sort((left, right) => left.move_date.localeCompare(right.move_date)
+    || left.created_at.localeCompare(right.created_at)
+    || left.id.localeCompare(right.id))
+
+  const byDay = new Map()
+  for (const entry of entries) {
+    const day = byDay.get(entry.move_date) || {
+      key: entry.move_date,
+      label: trDate(entry.move_date),
+      weekday: weekdayLong(entry.move_date),
+      intake_base: 0,
+      distribution_base: 0,
+      return_base: 0,
+      adjustment_base: 0,
+      entries: [],
+    }
+    day.entries.push(entry)
+    if (entry.kind === 'intake') day.intake_base += entry.qty_base
+    if (entry.kind === 'distribution') day.distribution_base += entry.qty_base
+    if (entry.kind === 'return') day.return_base += entry.qty_base
+    if (entry.kind === 'adjustment') day.adjustment_base += entry.stock_effect
+    byDay.set(entry.move_date, day)
+  }
+
+  return {
+    days: [...byDay.values()],
+    total_entries: entries.length,
+    truncated: movements.length >= LEDGER_ROW_LIMIT || returns.length >= LEDGER_ROW_LIMIT || adjustments.length >= LEDGER_ROW_LIMIT,
+  }
 }
 
 // Muhasebe ekleri — her biri yalnız istendiğinde hesaplanır.
@@ -315,6 +441,12 @@ function buildChecks(report, { months }) {
   add(withoutWaybill.length ? 'warn' : 'ok', 'İrsaliyesiz giriş',
     withoutWaybill.length ? `${withoutWaybill.length} giriş irsaliye numarasız` : 'Tüm girişlerde irsaliye no var')
 
+  const documentStatus = waybillDocumentStatus({ from: report.from, to: report.to, today: report.to })
+  add(documentStatus.incomplete ? 'warn' : 'ok', 'İrsaliye evrak tamlığı',
+    documentStatus.incomplete
+      ? `${documentStatus.complete}/${documentStatus.total} belge tam (%${documentStatus.complete_percent}) · ${documentStatus.missing_photo} fotoğrafsız · ${documentStatus.missing_waybill} numarasız`
+      : `${documentStatus.total} belgenin numarası ve fotoğrafı tam`)
+
   const unlocked = months.filter(month => !report.locked_months.includes(month))
   add(unlocked.length ? 'warn' : 'ok', 'Ay kilidi',
     unlocked.length
@@ -328,7 +460,7 @@ function buildChecks(report, { months }) {
   const unnamedZone = (report.detail?.rows || []).find(row => row.zone_id === 0)
   if (unnamedZone) add('warn', 'Yer belirtilmemiş dağıtım', `${unnamedZone.total} birim bir dağıtım yerine bağlı değil`)
 
-  if (report.detail?.truncated) add('error', 'Kayıt sınırı', 'Hareket sayısı sınırı aşıldı, detay eksik olabilir')
+  if (report.detail?.truncated || report.ledger?.truncated) add('error', 'Kayıt sınırı', 'Hareket sayısı sınırı aşıldı, detay eksik olabilir')
   return checks
 }
 
@@ -356,6 +488,7 @@ function buildDetail(report, { from, to, grouped }) {
       day.intakes.push({
         waybill_no: movement.waybill_no || null,
         product_name: movement.product_name,
+        unit_label: movement.unit_label || 'adet',
         qty_base: movement.qty_base,
         qty_human: human,
       })
@@ -477,4 +610,3 @@ function buildDetail(report, { from, to, grouped }) {
     truncated,
   }
 }
-

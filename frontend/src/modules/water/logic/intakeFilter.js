@@ -54,6 +54,19 @@ export function intakeQualityCounts(intakes = [], photo) {
   return counts
 }
 
+// Aynı irsaliye numarasına bağlı ürün satırları tek belge sayılır. İrsaliye
+// numarası olmayan her giriş ise bağımsız bir teslim kaydıdır.
+export function countIntakeDocuments(intakes = []) {
+  const numbered = new Set()
+  let unnumbered = 0
+  for (const row of intakes) {
+    const waybill = String(row.waybill_no ?? '').trim()
+    if (waybill) numbered.add(waybill)
+    else unnumbered += 1
+  }
+  return numbered.size + unnumbered
+}
+
 const cmpDateDesc = (a, b) =>
   String(b.move_date).localeCompare(String(a.move_date)) || (Number(b.id) || 0) - (Number(a.id) || 0)
 const cmpDateAsc = (a, b) =>

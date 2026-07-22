@@ -66,6 +66,7 @@ export function buildWaterDailyDigestEmail(digest) {
   const details = digest.details || {}
   const orders = Array.isArray(details.orders) ? details.orders : []
   const lots = Array.isArray(details.lots) ? details.lots : []
+  const documents = Array.isArray(details.documents) ? details.documents : []
   const subject = `Su Takip Günlük Operasyon Özeti - ${digest.date}`
   const statusLine = digest.parts.length
     ? digest.parts.join(', ')
@@ -91,6 +92,14 @@ export function buildWaterDailyDigestEmail(digest) {
       <td style="padding:7px 8px;border:1px solid #dbe3ea">${escapeHtml(lotStatusLabel(lot.health))}</td>
       <td style="padding:7px 8px;border:1px solid #dbe3ea">${escapeHtml(lot.remaining_human || '-')}</td>
     </tr>`).join('')
+  const documentRows = documents.slice(0, 12).map(document => `
+    <tr>
+      <td style="padding:7px 8px;border:1px solid #dbe3ea">${escapeHtml(document.move_date)}</td>
+      <td style="padding:7px 8px;border:1px solid #dbe3ea">${escapeHtml(document.waybill_no || 'Numarasız')}</td>
+      <td style="padding:7px 8px;border:1px solid #dbe3ea">${escapeHtml((document.product_names || []).join(', ') || '-')}</td>
+      <td style="padding:7px 8px;border:1px solid #dbe3ea">${escapeHtml(document.issue_label || '-')}</td>
+      <td style="padding:7px 8px;border:1px solid #dbe3ea;text-align:right">${escapeHtml(document.waiting_days || 0)}</td>
+    </tr>`).join('')
 
   const html = `<!doctype html><html lang="tr"><head><meta charset="utf-8"></head>
   <body style="margin:0;background:#eef2f5;font-family:Arial,sans-serif;color:#17212b">
@@ -107,6 +116,16 @@ export function buildWaterDailyDigestEmail(digest) {
         <div style="margin-top:18px;padding:12px 14px;border-left:4px solid ${digest.actionable ? '#b45309' : '#15803d'};background:#f8fafc;font-size:14px;line-height:1.5">
           ${escapeHtml(statusLine)}
         </div>
+        ${documentRows ? `<h2 style="font-size:16px;margin:22px 0 8px">Eksik İrsaliye Evrakları</h2>
+          <table style="width:100%;border-collapse:collapse;font-size:12px">
+            <thead><tr style="background:#e2e8f0">
+              <th style="padding:7px 8px;border:1px solid #cbd5e1;text-align:left">Tarih</th>
+              <th style="padding:7px 8px;border:1px solid #cbd5e1;text-align:left">İrsaliye</th>
+              <th style="padding:7px 8px;border:1px solid #cbd5e1;text-align:left">Ürün</th>
+              <th style="padding:7px 8px;border:1px solid #cbd5e1;text-align:left">Eksik</th>
+              <th style="padding:7px 8px;border:1px solid #cbd5e1;text-align:right">Gün</th>
+            </tr></thead><tbody>${documentRows}</tbody>
+          </table>` : ''}
         ${lotRows ? `<h2 style="font-size:16px;margin:22px 0 8px">Lot / SKT Kontrolü</h2>
           <table style="width:100%;border-collapse:collapse;font-size:12px">
             <thead><tr style="background:#e2e8f0">
@@ -140,6 +159,7 @@ export function buildWaterDailyDigestEmail(digest) {
     `Eksi stok: ${summary.negative || 0}`,
     `Düşük stok: ${summary.low || 0}`,
     `Lot/SKT uyarısı: ${summary.lot_critical || 0}`,
+    `Eksik irsaliye evrakı: ${summary.document_issues || 0}`,
     `Sipariş önerisi: ${digest.order_count || 0}`,
     `Gecikmiş sipariş: ${digest.overdue_order_count || 0}`,
   ]
@@ -153,6 +173,12 @@ export function buildWaterDailyDigestEmail(digest) {
     textLines.push('', 'LOT / SKT KONTROLÜ')
     for (const lot of lots.slice(0, 12)) {
       textLines.push(`- ${lot.product_name}: ${lot.lot_no || 'lot yok'} · ${lot.expiry_date || 'SKT yok'} · ${lotStatusLabel(lot.health)} · ${lot.remaining_human || '-'}`)
+    }
+  }
+  if (documents.length) {
+    textLines.push('', 'EKSİK İRSALİYE EVRAKLARI')
+    for (const document of documents.slice(0, 12)) {
+      textLines.push(`- ${document.move_date} · ${document.waybill_no || 'numarasız'} · ${(document.product_names || []).join(', ') || '-'} · ${document.issue_label || '-'}`)
     }
   }
   textLines.push('', 'Ayrıntılar: YYS > Su Takip')

@@ -1,9 +1,18 @@
 import Database from 'better-sqlite3'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { SCHEMA } from './schema.js'
 import { logger } from '../logger.js'
 import { applyMigrations } from './runner.js'
 
 let db
+const PROJECT_ROOT = fileURLToPath(new URL('../../../../', import.meta.url))
+
+export function resolveDatabasePath(configuredPath) {
+  if (configuredPath === ':memory:') return configuredPath
+  if (!configuredPath) return path.join(PROJECT_ROOT, 'yys.db')
+  return path.isAbsolute(configuredPath) ? configuredPath : path.resolve(PROJECT_ROOT, configuredPath)
+}
 
 function runMigrations(database) {
   const cols = database.prepare('PRAGMA table_info(personnel)').all().map(c => c.name)
@@ -22,8 +31,8 @@ export function initDB() {
   // Development default: 'yys.db' (proje kökü)
   // Production: DB_PATH=/var/data/yys.db — kalıcı disk (VPS) veya Render persistent disk
   // /tmp kullanmak VERİ KAYBI yaratır — restart/deploy'da silinir!
-  const path = process.env.DB_PATH || 'yys.db'
-  db = new Database(path)
+  const dbPath = resolveDatabasePath(process.env.DB_PATH)
+  db = new Database(dbPath)
   db.pragma('journal_mode = WAL')
   db.pragma('busy_timeout = 5000')
   db.pragma('synchronous = NORMAL')

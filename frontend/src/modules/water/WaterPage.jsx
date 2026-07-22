@@ -31,6 +31,7 @@ import { invalidateWaterQueries } from './logic/waterQueryInvalidation.js'
 import { calcText, dateRange, dayShort, downloadCsv, nf, todayStr } from './logic/waterUi.js'
 import {
   buildPhotoIndex,
+  countIntakeDocuments,
   filterIntakes,
   intakeHasPhoto,
   intakeQualityCounts,
@@ -231,8 +232,12 @@ function AlertBand({ data }) {
       render: (it) => `${it.product_name} — kalan ${it.balance_human} (eşik ${it.min_human})` },
     { key: 'lots', icon: 'SKT', label: 'Lot / SKT', count: s.lot_critical, color: 'var(--red)', items: data.lot_alerts,
       render: (it) => `${it.product_name} — ${it.lot_no || 'lot yok'} · ${lotStatusLabel[it.health] || it.health} · ${it.remaining_human}` },
-    { key: 'idle', icon: '🕳', label: 'Bugün Kayıtsız Bölge', count: s.idle_zones, color: 'var(--text3)', items: data.idle_zones,
-      render: (it) => it.zone_name },
+    { key: 'documents', icon: '📷', label: 'Eksik İrsaliye Evrakı', count: s.document_issues, color: 'var(--amber, #d97706)', items: data.document_issues,
+      detail: data.document_summary ? `%${data.document_summary.complete_percent} evrak tam` : null,
+      render: (it) => `${it.move_date} · ${it.waybill_no || 'numarasız'} — ${it.product_names.join(', ')} · ${it.issue_label} (${it.waiting_days} gün)` },
+    { key: 'plan', icon: '🎯', label: 'Plan Gerisinde Bölge', count: s.plan_behind_zones ?? s.idle_zones, color: 'var(--amber, #d97706)', items: data.plan_behind_zones || data.idle_zones,
+      detail: 'Aylık hedefe göre',
+      render: (it) => `${it.zone_name} — ${it.actual_to_date}/${it.expected_to_date} (${it.progress_percent}%, açık ${it.gap})` },
   ].filter(c => c.count > 0)
 
   const active = CARDS.find(c => c.key === open)
@@ -260,6 +265,7 @@ function AlertBand({ data }) {
                 <span style={{ fontFamily: 'var(--display)', fontSize: '22px', color: c.color }}>{c.count}</span>
               </div>
               <div style={{ fontSize: '11px', color: 'var(--text2)', marginTop: '2px' }}>{c.label}</div>
+              {c.detail && <div style={{ fontSize: '10px', color: 'var(--text3)', marginTop: '2px' }}>{c.detail}</div>}
             </button>
           )
         })}
@@ -755,9 +761,9 @@ function MonthlyReportPanel({ summary, from, to, label }) {
     .filter(d => (d.in_base || 0) > 0 || (d.out_base || 0) > 0)
     .sort((a, b) => b.iso.localeCompare(a.iso)), [days, dailyMap])
 
-  // Muhasebeye gönderilecek döküm. Özet her zaman tek sayfa; ek bölümler seçilirse
-  // gün gün nereye ne kadar dağıtıldığı tıklanabilir olarak eklenir.
-  const downloadAccountingPdf = async ({ from: fromArg = from, to: toArg = to, sections = [] } = {}) => {
+  // Ana muhasebe çıktısı günlük defteri ve varsa irsaliye fotoğraflarını doğrudan
+  // içerir; kapsamlı rapor penceresi diğer ekleri ayrıca seçtirir.
+  const downloadAccountingPdf = async ({ from: fromArg = from, to: toArg = to, sections = ['ledger', 'photos'] } = {}) => {
     setPdfBusy(true)
     try {
       const params = { from: fromArg, to: toArg }
@@ -784,7 +790,7 @@ function MonthlyReportPanel({ summary, from, to, label }) {
               className="btn btn-primary btn-sm"
               disabled={pdfBusy}
               onClick={() => downloadAccountingPdf()}
-              title={`${label} için gün gün gelen/dağıtılan dökümü — muhasebeye gönderilebilir tek sayfa PDF`}
+              title={`${label} için günlük defter ve irsaliye fotoğraflarıyla muhasebe PDF'i`}
             >
               {pdfBusy ? 'Hazırlanıyor…' : '🧾 Muhasebe Raporu (PDF)'}
             </button>
@@ -980,10 +986,12 @@ const REPORT_SECTION_GROUPS = [
   {
     title: 'DAĞITIM DETAYI',
     options: [
+      { id: 'ledger', label: 'Günlük defter (tüm hareketler)', hint: 'Gelen, dağıtım, boş kap iadesi ve stok düzeltmesi tarih sırasıyla' },
       { id: 'matrix', label: 'Dağıtım yeri × gün matrisi', hint: 'Hangi yere hangi gün ne kadar + o yerde hangi üründen; altında ürün × gün' },
       { id: 'days', label: 'Gün gün detay (nereye ne kadar)', hint: 'Her gün için yer yer, ürün kırılımıyla' },
       { id: 'zones', label: 'Dağıtım yeri × ürün', hint: 'Her yerin dönem toplamı, ürün ürün, payı ve kaç gün' },
       { id: 'intakes', label: 'Gelen irsaliyelerin tamamı', hint: 'Tarih, irsaliye no, ürün, miktar' },
+      { id: 'photos', label: 'İrsaliye fotoğrafları', hint: 'Büyük belge kartları halinde; tarih, irsaliye içeriği ve açıklamasıyla (en çok 48)' },
     ],
   },
   {
@@ -1004,7 +1012,17 @@ function AccountingReportModal({ from, to, label, busy, onDownload, onClose }) {
   const [picked, setPicked] = useState(() => REPORT_SECTION_OPTIONS.map(option => option.id))
   const toggle = id => setPicked(prev => (prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]))
   const rangeOk = range.from && range.to && range.from <= range.to
-  const sections = REPORT_SECTION_OPTIONS.filter(option => picked.includes(option.id)).map(option => option.id)
+  const reportPhotosQuery = useQuery({
+    queryKey: ['water-waybill-photos', range.from, range.to],
+    queryFn: () => api.get('/water/waybill-photos', { params: { from: range.from, to: range.to, limit: 500 } }).then(r => r.data),
+    enabled: Boolean(rangeOk),
+  })
+  const reportPhotoCount = reportPhotosQuery.data?.length || 0
+  const photosUnavailable = reportPhotosQuery.isSuccess && reportPhotoCount === 0
+  const optionAvailable = option => option.id !== 'photos' || !photosUnavailable
+  const sections = REPORT_SECTION_OPTIONS
+    .filter(option => picked.includes(option.id) && optionAvailable(option))
+    .map(option => option.id)
 
   const submit = async () => {
     if (!rangeOk) return toastErr('Tarih aralığı geçersiz')
@@ -1042,34 +1060,43 @@ function AccountingReportModal({ from, to, label, busy, onDownload, onClose }) {
             {group.title}
           </div>
           <div style={{ display: 'grid', gap: '5px' }}>
-            {group.options.map(option => (
+            {group.options.map(option => {
+              const unavailable = !optionAvailable(option)
+              const selected = sections.includes(option.id)
+              const hint = option.id === 'photos' && reportPhotosQuery.isSuccess
+                ? (reportPhotoCount > 0 ? `${option.hint} · Bu aralıkta ${reportPhotoCount} fotoğraf var.` : 'Bu aralıkta irsaliye fotoğrafı yok; PDF bölümü eklenmeyecek.')
+                : option.hint
+              return (
               <label key={option.id} style={{
-                display: 'flex', gap: '9px', alignItems: 'flex-start', padding: '7px 10px', cursor: 'pointer',
+                display: 'flex', gap: '9px', alignItems: 'flex-start', padding: '7px 10px',
                 border: '1px solid var(--border)', borderRadius: '8px',
-                background: picked.includes(option.id) ? 'rgba(14,116,144,.08)' : 'transparent',
+                background: selected ? 'rgba(14,116,144,.08)' : 'transparent',
+                opacity: unavailable ? 0.55 : 1,
+                cursor: unavailable ? 'not-allowed' : 'pointer',
               }}>
-                <input type="checkbox" checked={picked.includes(option.id)} onChange={() => toggle(option.id)} />
+                <input type="checkbox" checked={selected} disabled={unavailable} onChange={() => toggle(option.id)} />
                 <span>
                   <span style={{ fontSize: '12px', fontWeight: 600 }}>{option.label}</span>
-                  <span style={{ display: 'block', fontSize: '10px', color: 'var(--text3)' }}>{option.hint}</span>
+                  <span style={{ display: 'block', fontSize: '10px', color: 'var(--text3)' }}>{hint}</span>
                 </span>
               </label>
-            ))}
+              )
+            })}
           </div>
         </div>
       ))}
 
       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
         <button type="button" className="btn btn-primary" disabled={busy || !rangeOk} onClick={submit}>
-          {busy ? 'Hazırlanıyor…' : `⬇ PDF indir${sections.length ? ` (özet + ${sections.length} bölüm)` : ' (yalnız özet)'}`}
+          {busy ? 'Hazırlanıyor…' : `⬇ PDF indir${sections.length ? ` (özet + ${sections.length} seçili bölüm)` : ' (yalnız özet)'}`}
         </button>
         <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => setPicked([])}>Bölümleri temizle</button>
         <button type="button" className="btn btn-ghost" disabled={busy}
-          onClick={() => setPicked(REPORT_SECTION_OPTIONS.map(option => option.id))}>Hepsini seç</button>
+          onClick={() => setPicked(REPORT_SECTION_OPTIONS.filter(optionAvailable).map(option => option.id))}>Hepsini seç</button>
       </div>
       <div style={{ fontSize: '10px', color: 'var(--text3)', marginTop: '10px' }}>
-        Muhasebe ekleri sığdığı sürece tek sayfada toplanır. Gün gün detay 62 günden uzun aralıklarda
-        üretilmez; matris o durumda ay ay gösterir.
+        Günlük defter seçilen aralıktaki tüm hareketli günleri kapsar. Dağıtım gün detayı 62 günden uzun
+        aralıklarda üretilmez; matris o durumda ay ay gösterir. Muhasebe ekleri sığdığı sürece tek sayfada toplanır.
       </div>
     </WaterModal>
   )
@@ -1132,6 +1159,7 @@ function GelenTirPanel({ from, to, label, stockItems = [] }) {
     () => filterIntakes(intakes, { search: intakeSearch, quick: intakeQuick, sort: intakeSort, photo: photoIndex }),
     [intakes, intakeSearch, intakeQuick, intakeSort, photoIndex],
   )
+  const intakeDocumentCount = useMemo(() => countIntakeDocuments(filteredIntakes), [filteredIntakes])
   const intakeFiltered = intakeSearch.trim() !== '' || intakeQuick.length > 0
   const clearIntakeFilters = () => { setIntakeSearch(''); setIntakeQuick([]) }
   const exportIntakeCsv = () => {
@@ -1143,7 +1171,7 @@ function GelenTirPanel({ from, to, label, stockItems = [] }) {
       intakeHasPhoto(r, photoIndex) ? 'var' : 'yok', r.note || '',
     ])
     downloadCsv(`su-irsaliyeler-${from}_${to}.csv`, headers, rows)
-    toastOk(`${rows.length} irsaliye CSV indirildi`)
+    toastOk(`${countIntakeDocuments(filteredIntakes)} irsaliye · ${rows.length} ürün satırı CSV indirildi`)
   }
 
   // Çok-satırlı irsaliye: üstte irsaliye no + tarih tek kez, altında N ürün satırı
@@ -1490,7 +1518,7 @@ function GelenTirPanel({ from, to, label, stockItems = [] }) {
                 <tfoot>
                   <tr style={{ borderTop: '2px solid var(--border)', fontWeight: 600 }}>
                     <td colSpan={5} style={{ color: 'var(--text2)' }}>
-                      {filteredIntakes.length} irsaliye
+                      {intakeDocumentCount} irsaliye · {filteredIntakes.length} ürün satırı
                       {intakeCounts.no_waybill > 0 && ` · ${intakeCounts.no_waybill} irsaliyesiz`}
                       {intakeCounts.no_expiry > 0 && ` · ${intakeCounts.no_expiry} SKT eksik`}
                     </td>
@@ -1981,6 +2009,11 @@ function ZonesTab() {
   const qc = useQueryClient()
   const [form, setForm] = useState({ name: '', code: '', note: '', expected_monthly: '' })
   const { data: zones = [] } = useQuery({ queryKey: ['water-zones'], queryFn: () => api.get('/water/zones').then(r => r.data) })
+  const { data: targetData } = useQuery({
+    queryKey: ['water-zone-target-suggestions', todayStr()],
+    queryFn: () => api.get('/water/zones/target-suggestions', { params: { as_of: todayStr(), months: 3 } }).then(r => r.data),
+  })
+  const targetByZone = useMemo(() => new Map((targetData?.suggestions || []).map(item => [item.zone_id, item])), [targetData])
   const invalidate = () => invalidateWaterQueries(qc, 'zones')
   const create = useMutation({ mutationFn: (p) => api.post('/water/zones', p), onSuccess: () => { invalidate(); setForm({ name: '', code: '', note: '', expected_monthly: '' }); toastOk('Dağıtım yeri eklendi') }, onError: (e) => toastErr(errMsg(e, 'Eklenemedi')) })
   const update = useMutation({ mutationFn: ({ id, ...p }) => api.put(`/water/zones/${id}`, p), onSuccess: () => { invalidate(); toastOk('Güncellendi') }, onError: (e) => toastErr(errMsg(e, 'Güncellenemedi')) })
@@ -2023,6 +2056,11 @@ function ZonesTab() {
   }
   return (
     <div>
+      <div style={{ marginBottom: '12px', padding: '9px 11px', borderRadius: '8px', border: '1px solid rgba(245,158,11,.35)', background: 'rgba(245,158,11,.07)', fontSize: '11px', color: 'var(--text2)' }}>
+        <strong style={{ color: 'var(--amber, #d97706)' }}>🎯 Akıllı aylık hedef</strong>
+        {' · '}Son 3 takvim ayındaki dağıtım ortalaması kullanılır; içinde bulunulan kısmi ay, ay sonuna ölçeklenir.
+        {targetData && <span style={{ color: 'var(--text3)' }}> · {targetData.with_data}/{zones.length} bölgede veri var</span>}
+      </div>
       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: '14px' }}>
         <div style={{ flex: 1, minWidth: '150px' }}><label className="form-label">Dağıtım yeri adı</label><input className="form-input" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Ör. OTC Kamp Alanı" /></div>
         <div style={{ width: '90px' }}><label className="form-label">Kod</label><input className="form-input" value={form.code} onChange={e => setForm(f => ({ ...f, code: e.target.value }))} /></div>
@@ -2032,11 +2070,13 @@ function ZonesTab() {
       </div>
       <div style={{ maxHeight: '46vh', overflowY: 'auto' }}>
         <table className="data-table" style={{ fontSize: '12px' }}>
-          <thead><tr><th>Ad</th><th>Kod</th><th style={{ textAlign: 'right' }}>Beklenen/ay</th><th>Not</th><th>Alt yerler (bu bölgeye yazılanlar)</th><th></th></tr></thead>
+          <thead><tr><th>Ad</th><th>Kod</th><th style={{ textAlign: 'right' }}>Beklenen/ay</th><th>3 aylık öneri</th><th>Not</th><th>Alt yerler (bu bölgeye yazılanlar)</th><th></th></tr></thead>
           <tbody>
             {zones.map(z => {
               const editing = editingId === z.id
               const subs = z.sub_locations || []
+              const target = targetByZone.get(z.id)
+              const confidenceLabel = { low: 'düşük güven', medium: 'orta güven', high: 'yüksek güven' }[target?.confidence]
               return (
               <tr key={z.id}>
                 <td style={{ fontWeight: 600 }}>
@@ -2052,10 +2092,20 @@ function ZonesTab() {
                     : (z.code || '—')}
                 </td>
                 <td style={{ textAlign: 'right' }}>
-                  <input type="number" min="0" aria-label={`${z.name} beklenen aylık`} defaultValue={z.expected_monthly || ''}
+                  <input key={`${z.id}:${z.expected_monthly || 0}`} type="number" min="0" aria-label={`${z.name} beklenen aylık`} defaultValue={z.expected_monthly || ''}
                     onBlur={e => saveExpected(z, e.target.value)}
                     onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
                     style={{ width: '72px', textAlign: 'right', fontFamily: 'var(--mono)', padding: '3px 5px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '5px', color: 'var(--text)' }} placeholder="—" />
+                </td>
+                <td>
+                  {target?.observed_months > 0 ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' }} title={target.history.map(item => `${item.month}: ${item.actual} → ${item.normalized}/ay`).join('\n')}>
+                      <span><strong style={{ fontFamily: 'var(--mono)', color: 'var(--amber, #d97706)' }}>{target.suggested_monthly} / ay</strong><br /><small style={{ color: 'var(--text3)' }}>{target.observed_months}/3 ay · {confidenceLabel}</small></span>
+                      <button className="btn btn-ghost btn-sm" aria-label={`${z.name} hedef önerisini uygula`}
+                        disabled={update.isPending || target.suggested_monthly === (z.expected_monthly || 0)}
+                        onClick={() => saveExpected(z, target.suggested_monthly)}>Uygula</button>
+                    </div>
+                  ) : <span style={{ color: 'var(--text3)', fontSize: '11px' }}>Veri yok</span>}
                 </td>
                 <td style={{ color: 'var(--text3)' }}>
                   {editing
@@ -2096,7 +2146,7 @@ function ZonesTab() {
                 </td>
               </tr>
             )})}
-            {zones.length === 0 && <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--text3)', padding: '16px' }}>Dağıtım yeri yok</td></tr>}
+            {zones.length === 0 && <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--text3)', padding: '16px' }}>Dağıtım yeri yok</td></tr>}
           </tbody>
         </table>
       </div>

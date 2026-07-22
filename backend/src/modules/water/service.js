@@ -6,14 +6,16 @@ import { checkLowStock, notifyWaterOperations } from './notifications.js'
 import { trClock } from './trucks.js'
 import { queueWaterDailyDigestEmail } from './daily-digest.js'
 import { intakeLotsService, updateIntakeLotService } from './lots.js'
+import { waybillDocumentStatus } from './document-status.js'
 import { isIsoDate } from '../../shared/validation/date.js'
 export { availableUnits, humanize, toBase, unitMultiplier } from './units.js'
 export { depositService, forecastService, summaryService, trendsService } from './analytics.js'
 export { notifyWaterOperations, WATER_OPERATION_ROLES } from './notifications.js'
 export { dailyDigestDeliveriesService } from './daily-digest.js'
 export { accountingReportService, parseSections, REPORT_SECTIONS } from './report.js'
-export { writeAccountingReportPDF } from './report-pdf.js'
+export { writeAccountingReportPDF, attachReportPhotos } from './report-pdf.js'
 export { intakeLotsService, updateIntakeLotService }
+export { waybillDocumentStatus }
 export {
   batchDistributeService,
   batchIntakeService,
@@ -35,7 +37,6 @@ export {
   saveStockCountService,
 } from './reconciliation.js'
 export {
-  buildTruckGateEntryPDF,
   checkTruckArrivalAlerts,
   createTruckArrivalService,
   createWaybillPhotoService,
@@ -49,6 +50,10 @@ export {
   updateTruckArrivalService,
   waybillPhotosService,
 } from './trucks.js'
+export {
+  createTruckGateEntryWorkbookBuffer as buildTruckGateEntryExcel,
+  writeTruckGateEntryPDF as buildTruckGateEntryPDF,
+} from './gate-entry-documents.js'
 
 // ── Marka servisleri ──
 export function brandsService(opts) { return q.listBrands(opts) }
@@ -205,6 +210,70 @@ export function updateZoneService(id, data) {
   if (!uniqueWrite(() => q.updateZone(id, fields), 'Bölge adı veya kodu zaten var'))
     throw Object.assign(new Error('Bölge güncellenemedi'), { statusCode: 500 })
   return { before: existing, after: q.getZone(id) }
+}
+
+function monthStartAtOffset(day, offset) {
+  const [year, month] = day.split('-').map(Number)
+  return new Date(Date.UTC(year, month - 1 + offset, 1)).toISOString().slice(0, 10)
+}
+
+export function zoneTargetSuggestionsService({ as_of, months = 3 } = {}) {
+  const day = as_of == null ? new Date().toLocaleDateString('sv-SE') : as_of
+  if (!isIsoDate(day)) throw Object.assign(new Error('as_of YYYY-MM-DD formatında olmalı'), { statusCode: 400 })
+  const windowMonths = Number(months)
+  if (!Number.isInteger(windowMonths) || windowMonths < 1 || windowMonths > 12) {
+    throw Object.assign(new Error('months 1-12 arasında tam sayı olmalı'), { statusCode: 400 })
+  }
+
+  const from = monthStartAtOffset(day, -(windowMonths - 1))
+  const currentMonth = day.slice(0, 7)
+  const currentDay = Number(day.slice(8, 10))
+  const monthKeys = Array.from({ length: windowMonths }, (_, index) =>
+    monthStartAtOffset(day, index - (windowMonths - 1)).slice(0, 7))
+  const totalsByZone = new Map()
+  for (const row of q.zoneMonthlyTotals({ from, to: day })) {
+    if (!totalsByZone.has(row.zone_id)) totalsByZone.set(row.zone_id, new Map())
+    totalsByZone.get(row.zone_id).set(row.month, row.total_out)
+  }
+
+  const suggestions = q.listZones().map(zone => {
+    const zoneTotals = totalsByZone.get(zone.id) || new Map()
+    const history = monthKeys.map(month => {
+      const actual = zoneTotals.get(month) || 0
+      const [yearValue, monthValue] = month.split('-').map(Number)
+      const daysInMonth = new Date(Date.UTC(yearValue, monthValue, 0)).getUTCDate()
+      const observedDays = month === currentMonth ? currentDay : daysInMonth
+      const normalized = actual > 0 ? Math.round(actual * daysInMonth / observedDays) : 0
+      return { month, actual, normalized, observed_days: observedDays, days_in_month: daysInMonth }
+    })
+    const observed = history.filter(item => item.actual > 0)
+    const suggestedMonthly = observed.length
+      ? Math.round(observed.reduce((sum, item) => sum + item.normalized, 0) / observed.length)
+      : 0
+    const confidence = observed.length >= 3 ? 'high' : observed.length === 2 ? 'medium' : observed.length === 1 ? 'low' : 'none'
+    const currentExpected = zone.expected_monthly || 0
+    return {
+      zone_id: zone.id,
+      zone_name: zone.name,
+      current_expected: currentExpected,
+      suggested_monthly: suggestedMonthly,
+      difference: suggestedMonthly - currentExpected,
+      observed_months: observed.length,
+      requested_months: windowMonths,
+      confidence,
+      total_consumption: history.reduce((sum, item) => sum + item.actual, 0),
+      history,
+    }
+  })
+
+  return {
+    as_of: day,
+    from,
+    to: day,
+    months: windowMonths,
+    with_data: suggestions.filter(item => item.observed_months > 0).length,
+    suggestions,
+  }
 }
 // ── Alt yerler: tek bölgeye toplanan gerçek teslim noktaları (parser'da takma ad) ──
 export function zoneSubLocationsService(zoneId) {
@@ -389,14 +458,25 @@ function validateReturnLine(line, moveDate) {
   assertAvailableUnit(product, line.input_unit)
   if (!isIsoDate(moveDate)) throw Object.assign(new Error('Tarih YYYY-MM-DD olmalı'), { statusCode: 400 })
   assertMonthUnlocked(moveDate)
-  return { product, qty }
+  return { product, qty, qtyBase: toBase(product, qty, line.input_unit) }
+}
+
+function assertReturnCapacity(product, requestedBase) {
+  const position = q.depositPosition(product.id)
+  const available = position.total_in - position.total_return
+  if (requestedBase > available) {
+    throw Object.assign(new Error(
+      `${product.name} için iade miktarı dolaşımdaki bakiyeyi aşıyor (mevcut: ${humanize(product, Math.max(0, available))})`,
+    ), { statusCode: 409 })
+  }
 }
 
 export function createReturnService(data, userId) {
-  const { product, qty } = validateReturnLine(data, data.move_date)
+  const { product, qty, qtyBase } = validateReturnLine(data, data.move_date)
+  assertReturnCapacity(product, qtyBase)
   return q.createReturn({
     product_id: product.id, move_date: data.move_date,
-    qty_base: toBase(product, qty, data.input_unit), input_qty: qty, input_unit: data.input_unit,
+    qty_base: qtyBase, input_qty: qty, input_unit: data.input_unit,
     note: data.note?.trim() || null, created_by: userId || null,
   })
 }
@@ -405,15 +485,20 @@ export function batchReturnService(data, userId) {
   const batchDate = data?.move_date
   const lines = Array.isArray(data.lines) ? data.lines.filter(l => Number(l.input_qty) > 0) : []
   if (lines.length === 0) throw Object.assign(new Error('En az bir iade satırı gerekli'), { statusCode: 400 })
+  const products = new Map()
   const rows = lines.map(l => {
     const moveDate = l.move_date || batchDate
-    const { product, qty } = validateReturnLine(l, moveDate)
+    const { product, qty, qtyBase } = validateReturnLine(l, moveDate)
+    products.set(product.id, product)
     return {
       product_id: product.id, move_date: moveDate,
-      qty_base: toBase(product, qty, l.input_unit), input_qty: qty, input_unit: l.input_unit,
+      qty_base: qtyBase, input_qty: qty, input_unit: l.input_unit,
       note: (l.note || data.note)?.trim() || null, created_by: userId || null,
     }
   })
+  const totals = new Map()
+  for (const row of rows) totals.set(row.product_id, (totals.get(row.product_id) || 0) + row.qty_base)
+  for (const [productId, requestedBase] of totals) assertReturnCapacity(products.get(productId), requestedBase)
   return q.createReturnsBatch(rows)
 }
 
@@ -497,6 +582,42 @@ function daysBetween(fromIso, toIso) {
   return Math.max(0, Math.round((b - a) / 86400000))
 }
 
+// Aylık hedefi olan bölgeleri ayın geçen kısmındaki gerçekleşmeye göre izler.
+// Bir günlük hedef kadar tolerans, gün içindeki veri giriş saatinden kaynaklanan
+// gereksiz uyarıları önler. Hedefi olmayan bölgeler plan uyarısına dahil edilmez.
+function zonesBehindMonthlyPlan(day, monthStart) {
+  const [year, month, elapsedDays] = day.split('-').map(Number)
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate()
+  const actualByZone = new Map()
+  for (const row of q.zoneTotals({ from: monthStart, to: day })) {
+    actualByZone.set(row.id, (actualByZone.get(row.id) || 0) + row.total_out)
+  }
+
+  return q.listZones()
+    .filter(zone => zone.expected_monthly > 0)
+    .map(zone => {
+      const expectedMonthly = zone.expected_monthly
+      const dailyTarget = expectedMonthly / daysInMonth
+      const expectedToDate = dailyTarget * elapsedDays
+      const actualToDate = actualByZone.get(zone.id) || 0
+      const gap = Math.max(0, expectedToDate - actualToDate)
+      return {
+        zone_id: zone.id,
+        zone_name: zone.name,
+        expected_monthly: expectedMonthly,
+        expected_to_date: Math.round(expectedToDate * 10) / 10,
+        actual_to_date: actualToDate,
+        gap: Math.round(gap * 10) / 10,
+        daily_target: Math.round(dailyTarget * 10) / 10,
+        progress_percent: expectedToDate > 0
+          ? Math.min(100, Math.round((actualToDate / expectedToDate) * 100))
+          : 100,
+      }
+    })
+    .filter(zone => zone.gap > zone.daily_target)
+    .sort((left, right) => right.gap - left.gap || left.zone_name.localeCompare(right.zone_name, 'tr'))
+}
+
 // today: istemci yerel gününü gönderir (sunucu TZ'ine güvenme — geçmişte UTC/yerel
 // gün kayması bug'ları yaşandı). Geçersizse sunucu yerel gününe düşer.
 export function alertsService({ today } = {}) {
@@ -506,6 +627,7 @@ export function alertsService({ today } = {}) {
 
   const pmap = new Map(q.listProducts().map(p => [p.id, p]))
   const lotTracking = intakeLotsService({ today: day, status: 'critical' })
+  const documentStatus = waybillDocumentStatus({ from: monthStart, to: day, today: day })
 
   // 1. İrsaliye bekleyen dağıtımlar (eşleşmemiş çıkış) — ürün bazında grupla
   const needMap = new Map()
@@ -557,18 +679,22 @@ export function alertsService({ today } = {}) {
       }
     })
 
-  // 5. Bugün hiç dağıtım kaydı girilmeyen aktif bölgeler
-  const idle_zones = q.zonesWithoutMovementOn(day).map(z => ({ zone_id: z.id, zone_name: z.name }))
+  // 5. Aylık hedefi tanımlı olup ayın geçen kısmındaki planın gerisinde kalan bölgeler
+  const plan_behind_zones = zonesBehindMonthlyPlan(day, monthStart)
 
   const summary = {
     pending: pending_waybill.length,
     negative: negative_stock.length,
     over: over_distributed.length,
     low: low_stock.length,
-    idle_zones: idle_zones.length,
+    plan_behind_zones: plan_behind_zones.length,
+    // Eski istemciler için geriye dönük uyumluluk; içerik artık plan sapmasını temsil eder.
+    idle_zones: plan_behind_zones.length,
     lot_critical: lotTracking.summary.critical,
+    document_issues: documentStatus.incomplete,
   }
-  summary.total = summary.pending + summary.negative + summary.over + summary.low + summary.idle_zones + summary.lot_critical
+  summary.total = summary.pending + summary.negative + summary.over + summary.low + summary.plan_behind_zones
+    + summary.lot_critical + summary.document_issues
   return {
     date: day,
     month,
@@ -577,9 +703,20 @@ export function alertsService({ today } = {}) {
     negative_stock,
     over_distributed,
     low_stock,
-    idle_zones,
+    plan_behind_zones,
+    idle_zones: plan_behind_zones,
     lot_alerts: lotTracking.rows,
     lot_summary: lotTracking.summary,
+    document_issues: documentStatus.issues,
+    document_summary: {
+      total: documentStatus.total,
+      complete: documentStatus.complete,
+      incomplete: documentStatus.incomplete,
+      missing_photo: documentStatus.missing_photo,
+      missing_waybill: documentStatus.missing_waybill,
+      complete_percent: documentStatus.complete_percent,
+      truncated: documentStatus.truncated,
+    },
   }
 }
 
@@ -714,10 +851,11 @@ export function waterDailyDigest({
   if (s.negative) parts.push(`${s.negative} eksi stok`)
   if (s.low) parts.push(`${s.low} düşük stok`)
   if (s.lot_critical) parts.push(`${s.lot_critical} lot/SKT uyarısı`)
+  if (s.document_issues) parts.push(`${s.document_issues} irsaliye evrakı eksik`)
   if (f.order_count) parts.push(`${f.order_count} sipariş önerisi`)
   if (f.overdue_order_count) parts.push(`${f.overdue_order_count} gecikmiş sipariş`)
   if (f.soon_count) parts.push(`${f.soon_count} ürün 7 günden az`)
-  if (s.idle_zones) parts.push(`${s.idle_zones} bölge bugün kayıtsız`)
+  if (s.plan_behind_zones) parts.push(`${s.plan_behind_zones} bölge aylık planın gerisinde`)
   const actionable = parts.length > 0
   let notified = false
   if (actionable) {
@@ -745,8 +883,10 @@ export function waterDailyDigest({
       negative: alerts.negative_stock.slice(0, 20),
       low: alerts.low_stock.slice(0, 20),
       over_distributed: alerts.over_distributed.slice(0, 20),
-      idle_zones: alerts.idle_zones.slice(0, 20),
+      plan_behind_zones: alerts.plan_behind_zones.slice(0, 20),
+      idle_zones: alerts.plan_behind_zones.slice(0, 20),
       lots: alerts.lot_alerts.slice(0, 20),
+      documents: alerts.document_issues.slice(0, 20),
       orders: forecast.order_suggestions.slice(0, 20),
     },
   }

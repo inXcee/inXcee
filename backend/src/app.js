@@ -104,6 +104,18 @@ const allowedOrigins = process.env.ALLOWED_ORIGIN
   ? process.env.ALLOWED_ORIGIN.split(',').map(o => o.trim())
   : ['http://localhost:5173', 'http://localhost:5174']
 
+const isDevelopmentLoopbackOrigin = origin => {
+  if (process.env.NODE_ENV === 'production') return false
+  try {
+    const url = new URL(origin)
+    return url.protocol === 'http:'
+      && ['localhost', '127.0.0.1'].includes(url.hostname)
+      && ['5173', '5174', '5175'].includes(url.port)
+  } catch {
+    return false
+  }
+}
+
 const app = express()
 
 // Reverse proxy (Render/Railway/Nginx) arkasında req.ip'nin gerçek client IP'sini döndürmesi için.
@@ -156,7 +168,7 @@ app.use(cors({
   origin: (origin, callback) => {
     // Postman, curl gibi origin'siz isteklere izin ver (server-to-server, healthcheck)
     if (!origin) return callback(null, true)
-    if (allowedOrigins.includes(origin)) return callback(null, true)
+    if (allowedOrigins.includes(origin) || isDevelopmentLoopbackOrigin(origin)) return callback(null, true)
     callback(new Error(`CORS: ${origin} origin'ine izin verilmiyor`))
   },
   credentials: true,

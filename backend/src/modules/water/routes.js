@@ -9,7 +9,7 @@ import { removeUploadFile } from './file-lifecycle.js'
 import {
   productsService, createProductService, updateProductService, deleteProductService,
   brandsService, createBrandService, updateBrandService, deleteBrandService,
-  zonesService, createZoneService, updateZoneService, deleteZoneService,
+  zonesService, zoneTargetSuggestionsService, createZoneService, updateZoneService, deleteZoneService,
   zoneSubLocationsService, createZoneSubLocationService, deleteZoneSubLocationService,
   createIntakeService, createDistributionService, deleteMovementService, clearDistributionsService, updateMovementService, movementsService,
   createReturnService, batchReturnService, deleteReturnService, returnsService, depositService,
@@ -22,10 +22,10 @@ import {
   adjustmentsService, createAdjustmentService, deleteAdjustmentService, COUNT_REASONS,
   reviewQueueService, approveReviewsService,
   truckArrivalsService, createTruckArrivalService, updateTruckArrivalService, deleteTruckArrivalService,
-  truckGateEntryService, buildTruckGateEntryPDF,
+  truckGateEntryService, buildTruckGateEntryPDF, buildTruckGateEntryExcel,
   sendTruckArrivalMailService, markTruckMailSentService, markTruckCheckedService, checkTruckArrivalAlerts,
   waybillPhotosService, createWaybillPhotoService, deleteWaybillPhotoService,
-  accountingReportService, writeAccountingReportPDF,
+  accountingReportService, writeAccountingReportPDF, attachReportPhotos,
 } from './service.js'
 
 export const waterRouter = Router()
@@ -98,6 +98,10 @@ waterRouter.delete('/brands/:id', ...mgr, (req, res, next) => {
 // ── Bölgeler ──
 waterRouter.get('/zones', ...mgr, (req, res, next) => {
   try { res.json(zonesService({ includeInactive: req.query.all === '1' })) } catch (e) { fail(next, e) }
+})
+waterRouter.get('/zones/target-suggestions', ...mgr, (req, res, next) => {
+  try { res.json(zoneTargetSuggestionsService({ as_of: req.query.as_of, months: req.query.months == null ? 3 : +req.query.months })) }
+  catch (e) { fail(next, e) }
 })
 waterRouter.post('/zones', ...mgr, (req, res, next) => {
   try { const id = createZoneService(req.body); logAudit(req.user.id, 'water_zone_create', 'water', id, req.body.name); res.status(201).json({ id }) }
@@ -326,12 +330,23 @@ waterRouter.get('/truck-arrivals/:id/gate-entry.pdf', ...mgr, (req, res, next) =
   try {
     const truck = truckGateEntryService(+req.params.id)
     const filename = `su-nakliye-personel-giris-${truck.arrival_date}-${truck.plate.replace(/\s+/g, '-')}.pdf`
-    const doc = new PDFDocument({ size: 'A4', margin: 48 })
+    const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: 24 })
     res.setHeader('Content-Type', 'application/pdf')
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
     doc.pipe(res)
     buildTruckGateEntryPDF(truck, doc)
     logAudit(req.user.id, 'water_truck_gate_pdf', 'water', truck.id, filename)
+  } catch (e) { fail(next, e) }
+})
+waterRouter.get('/truck-arrivals/:id/gate-entry.xlsx', ...mgr, async (req, res, next) => {
+  try {
+    const truck = truckGateEntryService(+req.params.id)
+    const filename = `su-nakliye-personel-giris-${truck.arrival_date}-${truck.plate.replace(/\s+/g, '-')}.xlsx`
+    const workbook = await buildTruckGateEntryExcel(truck)
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
+    res.send(workbook)
+    logAudit(req.user.id, 'water_truck_gate_xlsx', 'water', truck.id, filename)
   } catch (e) { fail(next, e) }
 })
 waterRouter.post('/truck-arrivals', ...mgr, (req, res, next) => {
@@ -515,15 +530,17 @@ waterRouter.post('/monthly-close/:month/unlock', ...managerOnly, (req, res, next
 })
 
 // ── Muhasebe raporu ──
-// Özet tek sayfa; sections=matrix,days,zones,intakes (veya all) ek bölümleri açar.
+// Özet tek sayfa; sections=ledger,photos,matrix,days,zones,intakes (veya all) ek bölümleri açar.
 waterRouter.get('/report/accounting', ...mgr, (req, res, next) => {
   try {
     res.json(accountingReportService({ from: req.query.from, to: req.query.to, sections: req.query.sections }))
   } catch (e) { fail(next, e) }
 })
-waterRouter.get('/report/accounting.pdf', ...mgr, (req, res, next) => {
+waterRouter.get('/report/accounting.pdf', ...mgr, async (req, res, next) => {
   try {
     const report = accountingReportService({ from: req.query.from, to: req.query.to, sections: req.query.sections })
+    // Fotoğraflar çizimden önce diskten okunup küçültülür (çizici senkron kalır)
+    if (report.photos?.items?.length) await attachReportPhotos(report)
     const doc = new PDFDocument({ size: 'A4', margin: 28 })
     res.setHeader('Content-Type', 'application/pdf')
     res.setHeader('Content-Disposition', `attachment; filename="su-muhasebe-raporu-${report.from}_${report.to}.pdf"`)

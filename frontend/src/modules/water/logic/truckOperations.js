@@ -67,7 +67,7 @@ export function gateEntryRows(truck) {
     ['ADI SOYADI', entry.full_name || truck?.driver_name || '-'],
     [
       'T.C. KİMLİK / PASAPORT NUMARASI',
-      `${entry.identity_label || (truck?.identity_type === 'passport' ? 'Pasaport' : 'T.C. Kimlik')}: ${entry.identity_no || truck?.driver_tc || '-'}`,
+      entry.identity_no || truck?.driver_tc || '-',
     ],
     ['TELEFON NUMARASI', entry.phone || truck?.driver_phone || '-'],
     [

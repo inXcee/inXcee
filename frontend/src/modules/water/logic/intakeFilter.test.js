@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   normText, buildPhotoIndex, intakeHasPhoto, intakeQualityCounts, filterIntakes,
-  buildIntakeIndex, photoIntakes, filterPhotos,
+  buildIntakeIndex, photoIntakes, filterPhotos, countIntakeDocuments,
 } from './intakeFilter.js'
 import { baseEquivalent } from './waterUnits.js'
 
@@ -38,6 +38,18 @@ describe('intakeQualityCounts', () => {
     expect(counts.no_expiry).toBe(1)      // id 3 (takip açık, SKT yok)
     expect(counts.no_photo).toBe(2)       // id 2, id 3
     expect(counts.has_remaining).toBe(3)  // id 2,3,4
+  })
+})
+
+describe('countIntakeDocuments', () => {
+  it('aynı irsaliyenin ürün satırlarını tek belge, numarasız girişleri ayrı kayıt sayar', () => {
+    expect(countIntakeDocuments([
+      { id: 1, waybill_no: 'IRS-10' },
+      { id: 2, waybill_no: 'IRS-10' },
+      { id: 3, waybill_no: ' IRS-11 ' },
+      { id: 4, waybill_no: null },
+      { id: 5, waybill_no: '' },
+    ])).toBe(4)
   })
 })
 

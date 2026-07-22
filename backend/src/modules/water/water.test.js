@@ -9,6 +9,13 @@ import { toBase, humanize, availableUnits, checkTruckArrivalAlerts, waterDailyDi
 import { reconciliationRow, reconciliationRows } from './queries.js'
 import { uploadFilePathFromUrl } from './file-lifecycle.js'
 
+function binaryParser(res, callback) {
+  res.setEncoding('binary')
+  let data = ''
+  res.on('data', chunk => { data += chunk })
+  res.on('end', () => callback(null, Buffer.from(data, 'binary')))
+}
+
 let managerToken, supervisorToken, laundryToken
 beforeAll(async () => {
   process.env.DB_PATH = ':memory:'; initDB(); seedDev()
@@ -605,6 +612,27 @@ describe('Su takip — marka + boş kap iadesi + INDEX pivot', () => {
     expect(r.body.count).toBe(2)
   })
 
+  it('dolaşımdaki bakiyeyi aşan tekli ve toplu iadeyi kayıt yazmadan reddeder', async () => {
+    const product = await request(app).post('/api/water/products').set('Authorization', `Bearer ${managerToken}`)
+      .send({ name: 'İADE LİMİT TESTİ', unit_label: 'adet', units_per_case: 1, cases_per_pallet: 1, is_returnable: true })
+    const productId = product.body.id
+    await request(app).post('/api/water/intake').set('Authorization', `Bearer ${managerToken}`)
+      .send({ product_id: productId, input_qty: 10, input_unit: 'adet', move_date: '2026-09-01', waybill_no: 'IADE-LIMIT' })
+
+    const single = await request(app).post('/api/water/returns').set('Authorization', `Bearer ${managerToken}`)
+      .send({ product_id: productId, input_qty: 11, input_unit: 'adet', move_date: '2026-09-02' })
+    expect(single.status).toBe(409)
+    expect(single.body.error).toMatch(/dolaşımdaki bakiyeyi aşıyor/)
+
+    const batch = await request(app).post('/api/water/returns/batch').set('Authorization', `Bearer ${managerToken}`)
+      .send({ move_date: '2026-09-02', lines: [
+        { product_id: productId, input_qty: 6, input_unit: 'adet' },
+        { product_id: productId, input_qty: 5, input_unit: 'adet' },
+      ] })
+    expect(batch.status).toBe(409)
+    expect(getDB().prepare('SELECT COUNT(*) AS count FROM water_returns WHERE product_id=?').get(productId).count).toBe(0)
+  })
+
   it('depozito bakiyesi — dolaşımdaki = giriş − iade', async () => {
     const r = await request(app).get('/api/water/deposit').set('Authorization', `Bearer ${managerToken}`)
     expect(r.status).toBe(200)
@@ -662,8 +690,8 @@ describe('Su takip — Operasyon Uyarı Merkezi (W1)', () => {
     // Düşük stok ürün: küçük giriş + yüksek eşik (balance >= 0 ama eşiğin altında)
     pLow = (await auth(request(app).post('/api/water/products'))
       .send({ name: 'UYARI Düşük 0.7', unit_label: 'adet', units_per_case: 1, cases_per_pallet: 1, min_level: 100 })).body.id
-    zActive = (await auth(request(app).post('/api/water/zones')).send({ name: 'UYARI Aktif Bölge' })).body.id
-    zIdle = (await auth(request(app).post('/api/water/zones')).send({ name: 'UYARI Boş Bölge' })).body.id
+    zActive = (await auth(request(app).post('/api/water/zones')).send({ name: 'UYARI Aktif Bölge', expected_monthly: 20 })).body.id
+    zIdle = (await auth(request(app).post('/api/water/zones')).send({ name: 'UYARI Plan Gerisi Bölge', expected_monthly: 310 })).body.id
 
     // pNeg: bugün 7 adet dağıt (girişsiz → eksi + bekleyen)
     await auth(request(app).post('/api/water/distribute'))
@@ -711,10 +739,29 @@ describe('Su takip — Operasyon Uyarı Merkezi (W1)', () => {
     expect(r.body.negative_stock.some(p => p.product_id === pLow)).toBe(false)
   })
 
-  it('bugün kayıtsız bölgeler kartı — boş bölge var, bugün dağıtım yapılan bölge yok', async () => {
+  it('evrak kontrolü — fotoğrafsız irsaliyeyi tek eksik belge olarak gösterir', async () => {
     const r = await auth(request(app).get(`/api/water/alerts?today=${DAY}`))
-    expect(r.body.idle_zones.some(z => z.zone_id === zIdle)).toBe(true)
-    expect(r.body.idle_zones.some(z => z.zone_id === zActive)).toBe(false)
+    const document = r.body.document_issues.find(item => item.waybill_no === 'UYARI-IN')
+    expect(document).toMatchObject({ issue: 'missing_photo', issue_label: 'İrsaliye fotoğrafı eksik', line_count: 1 })
+    expect(r.body.summary.document_issues).toBeGreaterThanOrEqual(1)
+    expect(r.body.document_summary.complete_percent).toBeGreaterThanOrEqual(0)
+    expect(r.body.document_summary.complete_percent).toBeLessThanOrEqual(100)
+  })
+
+  it('plan gerisindeki bölgeler kartı — aylık hedefi izler, günlük veri gürültüsü üretmez', async () => {
+    const r = await auth(request(app).get(`/api/water/alerts?today=${DAY}`))
+    const behind = r.body.plan_behind_zones.find(z => z.zone_id === zIdle)
+    expect(behind).toMatchObject({
+      expected_monthly: 310,
+      expected_to_date: 90,
+      actual_to_date: 0,
+      gap: 90,
+      daily_target: 10,
+      progress_percent: 0,
+    })
+    expect(r.body.plan_behind_zones.some(z => z.zone_id === zActive)).toBe(false)
+    expect(r.body.summary.plan_behind_zones).toBeGreaterThanOrEqual(1)
+    expect(r.body.idle_zones).toEqual(r.body.plan_behind_zones)
   })
 
   it('bekleme günü — geçmiş tarihli bekleyen dağıtım için doğru gün sayısı', async () => {
@@ -956,6 +1003,43 @@ describe('Su takip — Dağıtım yeri beklenen tüketim (W4)', () => {
     const z = await auth(request(app).post('/api/water/zones')).send({ name: 'BEKLENENSIZ Bölge' })
     const zone = (await auth(request(app).get('/api/water/zones'))).body.find(x => x.id === z.body.id)
     expect(zone.expected_monthly).toBe(0)
+  })
+
+  it('son üç ay dağıtımından aylık hedef önerisi üretir ve kısmi ayı normalize eder', async () => {
+    const product = (await auth(request(app).post('/api/water/products')).send({
+      name: 'HEDEF ÖNERİ Ürünü', unit_label: 'adet', units_per_case: 1, cases_per_pallet: 1,
+    })).body.id
+    const zone = (await auth(request(app).post('/api/water/zones')).send({ name: 'HEDEF ÖNERİ Bölgesi' })).body.id
+    for (const [move_date, input_qty] of [['2027-01-10', 100], ['2027-02-10', 200], ['2027-03-15', 150]]) {
+      const movement = await auth(request(app).post('/api/water/distribute')).send({
+        product_id: product, zone_id: zone, input_qty, input_unit: 'adet', move_date,
+      })
+      expect(movement.status).toBe(201)
+    }
+
+    const response = await auth(request(app).get('/api/water/zones/target-suggestions?as_of=2027-03-15&months=3'))
+    expect(response.status).toBe(200)
+    const suggestion = response.body.suggestions.find(item => item.zone_id === zone)
+    expect(suggestion).toMatchObject({
+      current_expected: 0,
+      suggested_monthly: 203,
+      difference: 203,
+      observed_months: 3,
+      requested_months: 3,
+      confidence: 'high',
+      total_consumption: 450,
+    })
+    expect(suggestion.history).toEqual([
+      { month: '2027-01', actual: 100, normalized: 100, observed_days: 31, days_in_month: 31 },
+      { month: '2027-02', actual: 200, normalized: 200, observed_days: 28, days_in_month: 28 },
+      { month: '2027-03', actual: 150, normalized: 310, observed_days: 15, days_in_month: 31 },
+    ])
+  })
+
+  it('hedef önerisi parametrelerini doğrular ve yetkisiz rolü engeller', async () => {
+    expect((await auth(request(app).get('/api/water/zones/target-suggestions?as_of=yanlis'))).status).toBe(400)
+    expect((await auth(request(app).get('/api/water/zones/target-suggestions?months=0'))).status).toBe(400)
+    expect((await request(app).get('/api/water/zones/target-suggestions').set('Authorization', `Bearer ${laundryToken}`)).status).toBe(403)
   })
 })
 
@@ -1444,7 +1528,16 @@ describe('Su takip - Tir on bildirimleri ve irsaliye foto arsivi (W11)', () => {
     expect(pdf.headers['content-disposition']).toMatch(/su-nakliye-personel-giris-2027-03-10-34-ABC-123\.pdf/)
     expect(pdf.body.subarray(0, 4).toString()).toBe('%PDF')
     expect(pdf.body.length).toBeGreaterThan(2000)
-    expect(pdf.body.toString('latin1').match(/\/Type \/Page\b/g)).toHaveLength(2)
+    expect(pdf.body.toString('latin1').match(/\/Type \/Page\b/g)).toHaveLength(1)
+
+    const xlsx = await auth(request(app).get(`/api/water/truck-arrivals/${row.id}/gate-entry.xlsx`))
+      .buffer(true)
+      .parse(binaryParser)
+    expect(xlsx.status).toBe(200)
+    expect(xlsx.headers['content-type']).toMatch(/application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet/)
+    expect(xlsx.headers['content-disposition']).toMatch(/su-nakliye-personel-giris-2027-03-10-34-ABC-123\.xlsx/)
+    expect(xlsx.body.subarray(0, 2).toString()).toBe('PK')
+    expect(xlsx.body.length).toBeGreaterThan(5000)
   })
 
   it('personel girişinde kimlik türü doğrulanır', async () => {

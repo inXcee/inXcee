@@ -4,6 +4,10 @@ vi.mock('../email/service.js', () => ({
   composeAndSend: vi.fn(),
   sendEmail: vi.fn(),
 }))
+const createTruckGateEntryAttachments = vi.hoisted(() => vi.fn())
+vi.mock('./gate-entry-documents.js', () => ({
+  createTruckGateEntryAttachments,
+}))
 
 import { initDB, getDB } from '../../shared/db/index.js'
 import { enqueue, tickOnce } from '../../shared/jobs/index.js'
@@ -46,6 +50,11 @@ beforeEach(() => {
   getDB().exec('DELETE FROM water_daily_digest_deliveries; DELETE FROM job_queue; DELETE FROM water_truck_arrivals;')
   composeAndSend.mockReset()
   sendEmail.mockReset()
+  createTruckGateEntryAttachments.mockReset()
+  createTruckGateEntryAttachments.mockResolvedValue([
+    { filename: 'personel-giris.pdf', content: Buffer.from('%PDF'), contentType: 'application/pdf' },
+    { filename: 'personel-giris.xlsx', content: Buffer.from('PK'), contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' },
+  ])
   handlers['water.truck-mail'] = sendTruckArrivalMailJob
   handlers['water.daily-digest-mail'] = sendDailyDigestMailJob
 })
@@ -76,6 +85,12 @@ describe('water.truck-mail job', () => {
     expect(truck.mail_message_id).toBe('mail-050')
     expect(truck.mail_version).toBe(1)
     expect(composeAndSend).toHaveBeenCalledTimes(2)
+    expect(composeAndSend).toHaveBeenLastCalledWith(expect.objectContaining({
+      generatedAttachments: expect.arrayContaining([
+        expect.objectContaining({ filename: 'personel-giris.pdf' }),
+        expect.objectContaining({ filename: 'personel-giris.xlsx' }),
+      ]),
+    }))
   })
 
   it('SMTP yapılandırma hatasını kalıcı sayar ve tekrar göndermez', async () => {

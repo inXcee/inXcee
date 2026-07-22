@@ -89,7 +89,7 @@ describe('water truck operation helpers', () => {
     const rows = gateEntryRows(truck)
     expect(rows).toHaveLength(11)
     expect(rows).toContainEqual(['ADI SOYADI', 'Yüksel Bektaş'])
-    expect(rows).toContainEqual(['T.C. KİMLİK / PASAPORT NUMARASI', 'Pasaport: P12345'])
+    expect(rows).toContainEqual(['T.C. KİMLİK / PASAPORT NUMARASI', 'P12345'])
     expect(rows).toContainEqual(['ARAÇ PLAKASI', '34 ABC 123\n34 DRS 456'])
     expect(rows).toContainEqual(['GİRİŞ SAATİ', '08:00-12:00'])
     expect(rows).toContainEqual(['ÇALIŞMA YAPACAĞI BÖLGE', 'FPU KAMP'])

@@ -1,5 +1,6 @@
 import * as q from './queries.js'
 import { composeAndSend, sendEmail } from '../email/service.js'
+import { createTruckGateEntryAttachments } from './gate-entry-documents.js'
 
 function permanentError(error) {
   error.permanent = true
@@ -30,7 +31,8 @@ export async function sendTruckArrivalMailJob({
   if (truck.mail_sent_at) return { skipped: 'already_sent' }
 
   try {
-    const result = await composeAndSend({ to, subject, body })
+    const generatedAttachments = await createTruckGateEntryAttachments(truck)
+    const result = await composeAndSend({ to, subject, body, generatedAttachments })
     if (!q.setTruckMailSent(id, requestedBy, {
       messageId: result?.messageId || null,
       expectedVersion: mailVersion,

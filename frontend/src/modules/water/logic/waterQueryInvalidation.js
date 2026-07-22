@@ -13,6 +13,7 @@ const WATER_QUERY_KEYS_BY_SCOPE = Object.freeze({
     'water-forecast',
     'water-trends',
     'water-lots',
+    'water-zone-target-suggestions',
   ]),
   intake: Object.freeze([
     'water-intake',
@@ -63,6 +64,7 @@ const WATER_QUERY_KEYS_BY_SCOPE = Object.freeze({
     'water-alerts',
     'water-daily-ledger',
     'water-zone-history',
+    'water-zone-target-suggestions',
   ]),
   templates: Object.freeze([
     'water-templates',
