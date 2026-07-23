@@ -1,7 +1,7 @@
 # Su Muhasebe Raporu — "Dağıtım Yeri × Gün" Bölümünün GÜN↓ × ÜRÜN→ Dökümüne Dönüşümü
 
 **Tarih:** 2026-07-23
-**Durum:** Onaylandı (kullanıcı, A seçeneği)
+**Durum:** Uygulandı (2026-07-23 — commit af9c1f5d + 3844f785)
 **Kapsam:** Yalnız PDF çizimi (`backend/src/modules/water/report-pdf.js`). Veri katmanı (`report.js`) değişmez.
 
 ## Problem
