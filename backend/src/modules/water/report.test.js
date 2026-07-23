@@ -659,6 +659,33 @@ describe('Su muhasebe raporu — GÜN×ÜRÜN yerleşimi', () => {
     expect(values.filter(value => value === 'Damacana Test')).toEqual([])
   })
 
+  it('yer × ürün sayfası marka gruplu başlık taşır (Excel düzeni)', async () => {
+    const db = getDB()
+    const addBrand = db.prepare('INSERT INTO water_brands(name, sort_order) VALUES(?, 99)')
+    const brandA = addBrand.run('Grup Marka A').lastInsertRowid
+    const brandB = addBrand.run('Grup Marka B').lastInsertRowid
+    const addProduct = db.prepare(`INSERT INTO water_products(name, unit_label, units_per_case, cases_per_pallet, brand_id)
+      VALUES('Grup Damacana', 'adet', 1, 10, ?)`)
+    const productA = addProduct.run(brandA).lastInsertRowid
+    const productB = addProduct.run(brandB).lastInsertRowid
+    const zoneId = db.prepare('INSERT INTO water_zones(name) VALUES(?)').run('Grup Test Yeri').lastInsertRowid
+    const addMove = db.prepare(`INSERT INTO water_movements(type, product_id, zone_id, move_date, qty_base, input_qty, input_unit)
+      VALUES('out', ?, ?, '2027-08-03', ?, 1, 'adet')`)
+    addMove.run(productA, zoneId, 40)
+    addMove.run(productB, zoneId, 25)
+
+    const report = accountingReportService({ from: '2027-08-01', to: '2027-08-31', sections: 'zones' })
+    const { draws } = await renderDraws(report)
+    const values = draws.filter(draw => draw.page > 1).map(draw => draw.value)
+    // Üst bantta marka adı BİR KEZ, altında ürün adı düz (birleşik "Ad · Marka" değil)
+    expect(values).toContain('Grup Marka A')
+    expect(values).toContain('Grup Marka B')
+    expect(values.filter(value => value === 'Grup Damacana').length).toBe(2)
+    expect(values.filter(value => value.startsWith('Grup Damacana ·'))).toEqual([])
+    // Excel'deki gibi sıra numarası sütunu
+    expect(values).toContain('1')
+  })
+
   it('gün gün detay: başlıklar ürün adlı, numaralı lejant yok', async () => {
     const report = accountingReportService({ from: '2026-06-01', to: '2026-06-30', sections: 'days' })
     const { draws } = await renderDraws(report)

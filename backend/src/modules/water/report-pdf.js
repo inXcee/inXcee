@@ -916,7 +916,10 @@ function drawDaysSection(doc, fonts, ctx) {
   }
 }
 
-// ── Bölüm 4: dağıtım yeri × ürün (ürün adları BİR KEZ, üstte sütun olarak) ──
+// ── Bölüm 4: dağıtım yeri × ürün — sütunlar MARKA gruplu (Excel "INDEX" düzeni) ──
+
+// Marka bantları için yumuşak dolgular (sırayla döner; Excel'deki renk bantları gibi)
+const BRAND_TINTS = ['#D9EAD3', '#CFE2F3', '#FCE5CD', '#EAD1DC', '#E0E7FF']
 
 function drawZonesSection(doc, fonts, ctx) {
   const { detail } = ctx.report
@@ -924,46 +927,75 @@ function drawZonesSection(doc, fonts, ctx) {
   const title = SECTION_TITLES.zones
   const products = detail.product_rows.slice(0, PRODUCT_COLUMN_LIMIT)
   const zones = detail.rows.slice(0, MATRIX_ZONE_LIMIT)
+  // Sütunlar markaya göre gruplanır: markalar toplamına göre çoktan aza,
+  // markasızlar sona ("MARKASIZ" bandı); grup içi sıra çoktan aza kalır.
+  const groupMap = new Map()
+  products.forEach(product => {
+    const key = product.brand_name || ''
+    const group = groupMap.get(key) || { brand: product.brand_name || null, total: 0, products: [] }
+    group.total += product.total
+    group.products.push(product)
+    groupMap.set(key, group)
+  })
+  const brandGroups = [...groupMap.values()]
+    .sort((left, right) => Number(left.brand === null) - Number(right.brand === null) || right.total - left.total)
+  const ordered = brandGroups.flatMap(group => group.products)
   // Yer satırındaki ürün toplamlarına hızlı erişim
   const zoneProductTotal = new Map(detail.rows.map(row =>
     [row.zone_id, new Map((row.products || []).map(product => [product.product_id, product.total]))]))
 
   let layout = sectionPage(doc, fonts, ctx, { title, landscape: true, destination: 'sec-zones' })
-  const labelWidth = 150
+  const indexWidth = 16
+  const labelWidth = 136
   const totalWidth = 48
   const shareWidth = 30
-  const cellWidth = (layout.innerWidth - labelWidth - totalWidth - shareWidth) / Math.max(1, products.length)
-  const totalX = () => layout.margin + labelWidth + products.length * cellWidth
+  const cellWidth = (layout.innerWidth - indexWidth - labelWidth - totalWidth - shareWidth) / Math.max(1, ordered.length)
+  const cellsX = layout.margin + indexWidth + labelWidth
+  const totalX = () => cellsX + ordered.length * cellWidth
   const rowHeight = 12.4
-  const headerHeight = 24
+  const bandHeight = 10
+  const headerHeight = bandHeight + 24
 
   const header = (y) => {
     doc.rect(layout.margin, y, layout.innerWidth, headerHeight).fill('#E2E8F0')
+    // Üst bant: marka adı, kendi ürün sütunlarının tam genişliğinde BİR KEZ
+    let bandX = cellsX
+    brandGroups.forEach((group, groupIndex) => {
+      const bandWidth = group.products.length * cellWidth
+      doc.rect(bandX, y, bandWidth, bandHeight).fill(BRAND_TINTS[groupIndex % BRAND_TINTS.length])
+      doc.font(fonts.bold).fillColor('#1E293B')
+      const bandText = text(group.brand || 'MARKASIZ')
+      fitFontSize(doc, bandText, bandWidth - 4, 6.2, 4.2)
+      doc.text(bandText, bandX + 2, y + 2.4, { width: bandWidth - 4, align: 'center', lineBreak: false, ellipsis: true })
+      bandX += bandWidth
+    })
     doc.font(fonts.bold).fillColor('#334155')
+    fitFontSize(doc, text('NO'), indexWidth - 2, 5.6, 4)
+    doc.text(text('NO'), layout.margin + 1, y + bandHeight + 8, { width: indexWidth - 2, lineBreak: false })
     fitFontSize(doc, text('DAĞITIM YERİ'), labelWidth - 6, 6.6, 4.6)
-    doc.text(text('DAĞITIM YERİ'), layout.margin + 3, y + 8, { width: labelWidth - 6, lineBreak: false })
-    products.forEach((product, index) => {
-      const x = layout.margin + labelWidth + index * cellWidth
-      // Ürün adı (markalı) bir kez burada — satırlarda tekrar edilmez
+    doc.text(text('DAĞITIM YERİ'), layout.margin + indexWidth + 3, y + bandHeight + 8, { width: labelWidth - 6, lineBreak: false })
+    ordered.forEach((product, index) => {
+      const x = cellsX + index * cellWidth
+      // Ürün adı düz (markası üstteki bantta) + altında birimi
       doc.font(fonts.bold).fillColor('#334155')
-      fitFontSize(doc, text(productLabel(product)), cellWidth - 4, 6, 4.2)
-      doc.text(text(productLabel(product)), x + 2, y + 4, { width: cellWidth - 4, align: 'center', lineBreak: false, ellipsis: true })
+      fitFontSize(doc, text(product.name), cellWidth - 4, 6, 4.2)
+      doc.text(text(product.name), x + 2, y + bandHeight + 4, { width: cellWidth - 4, align: 'center', lineBreak: false, ellipsis: true })
       doc.font(fonts.regular).fillColor(MUTED)
       const unitText = text(product.unit_label || 'adet')
       fitFontSize(doc, unitText, cellWidth - 4, 5.2, 4)
-      doc.text(unitText, x + 2, y + 14, { width: cellWidth - 4, align: 'center', lineBreak: false })
+      doc.text(unitText, x + 2, y + bandHeight + 14, { width: cellWidth - 4, align: 'center', lineBreak: false })
     })
     doc.font(fonts.bold).fillColor('#334155')
     fitFontSize(doc, text('TOPLAM'), totalWidth - 4, 6.6, 4.6)
-    doc.text(text('TOPLAM'), totalX() + 2, y + 8, { width: totalWidth - 4, align: 'right', lineBreak: false })
+    doc.text(text('TOPLAM'), totalX() + 2, y + bandHeight + 8, { width: totalWidth - 4, align: 'right', lineBreak: false })
     fitFontSize(doc, text('PAY'), shareWidth - 4, 6.6, 4.6)
-    doc.text(text('PAY'), totalX() + totalWidth + 2, y + 8, { width: shareWidth - 4, align: 'right', lineBreak: false })
+    doc.text(text('PAY'), totalX() + totalWidth + 2, y + bandHeight + 8, { width: shareWidth - 4, align: 'right', lineBreak: false })
     return y + headerHeight
   }
 
   let y = header(layout.top)
   let striped = 0
-  const drawRow = (label, cells, total, share, { total: isTotal = false } = {}) => {
+  const drawRow = (rowNo, label, cells, total, share, { total: isTotal = false } = {}) => {
     if (y + rowHeight > layout.bottom) {
       layout = sectionPage(doc, fonts, ctx, { title, landscape: true, continued: true })
       y = header(layout.top)
@@ -973,12 +1005,18 @@ function drawZonesSection(doc, fonts, ctx) {
     else if (striped % 2 === 1) doc.rect(layout.margin, y, layout.innerWidth, rowHeight).fill(ZEBRA)
     striped += 1
     const font = isTotal ? fonts.bold : fonts.regular
+    if (rowNo != null) {
+      doc.font(fonts.regular).fillColor(MUTED)
+      const rowNoText = String(rowNo)
+      const rowNoSize = fitFontSize(doc, rowNoText, indexWidth - 2, 5.8, 4)
+      doc.text(rowNoText, layout.margin + 1, y + (rowHeight - rowNoSize) / 2 - 0.4, { width: indexWidth - 2, lineBreak: false })
+    }
     doc.font(fonts.bold).fillColor(INK)
     const nameSize = fitFontSize(doc, text(label), labelWidth - 6, 7, 4.2)
-    doc.text(text(label), layout.margin + 3, y + (rowHeight - nameSize) / 2 - 0.4,
+    doc.text(text(label), layout.margin + indexWidth + 3, y + (rowHeight - nameSize) / 2 - 0.4,
       { width: labelWidth - 6, lineBreak: false, ellipsis: true })
     cells.forEach((value, index) => {
-      const x = layout.margin + labelWidth + index * cellWidth
+      const x = cellsX + index * cellWidth
       doc.font(font).fillColor(value ? INK : FADE)
       const cellText = value ? compactCell(doc, value, cellWidth - 4) : '·'
       const cellSize = fitFontSize(doc, cellText, cellWidth - 4, 6.6, 4.2)
@@ -999,14 +1037,14 @@ function drawZonesSection(doc, fonts, ctx) {
     y += rowHeight
   }
 
-  for (const zone of zones) {
+  zones.forEach((zone, zoneIndex) => {
     const totals = zoneProductTotal.get(zone.zone_id) || new Map()
-    drawRow(zone.zone_name, products.map(product => totals.get(product.product_id) || 0), zone.total, zone.share)
-  }
-  drawRow('TOPLAM', products.map(product => product.total), detail.grand_total, 100, { total: true })
+    drawRow(zoneIndex + 1, zone.zone_name, ordered.map(product => totals.get(product.product_id) || 0), zone.total, zone.share)
+  })
+  drawRow(null, 'GENEL TOPLAM', ordered.map(product => product.total), detail.grand_total, 100, { total: true })
   doc.moveTo(layout.margin, y).lineTo(layout.margin + layout.innerWidth, y).lineWidth(0.5).strokeColor(LINE).stroke()
   const notes = [
-    'Hücreler ürünün kendi baz birimindedir (başlık altındaki birim).',
+    'Sütunlar markaya göre gruplanmıştır (üst bant); hücreler ürünün kendi baz birimindedir (başlık altındaki birim).',
     detail.product_rows.length > PRODUCT_COLUMN_LIMIT
       ? `En çok dağıtılan ${PRODUCT_COLUMN_LIMIT} ürün gösterildi (toplam ${detail.product_rows.length}).` : null,
     detail.rows.length > MATRIX_ZONE_LIMIT
