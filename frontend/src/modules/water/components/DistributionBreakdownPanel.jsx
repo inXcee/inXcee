@@ -10,6 +10,7 @@ import {
   filterZones,
 } from '../logic/distributionBreakdown.js'
 import WaterCollapsiblePanel from './WaterCollapsiblePanel.jsx'
+import WaterIndexSheet from './WaterIndexSheet.jsx'
 
 const toastOk = message => useToastStore.getState().addToast(message, 'success')
 const toastErr = message => useToastStore.getState().addToast(message, 'error')
@@ -23,6 +24,7 @@ const SECTIONS = 'matrix,days'
 
 export default function DistributionBreakdownPanel({ from, to, label }) {
   const [open, setOpen] = useState(false)
+  const [view, setView] = useState('index') // 'index' = Excel düzeni, 'list' = arama/aç-kapa listesi
   const [openZones, setOpenZones] = useState(() => new Set())
   const [openDays, setOpenDays] = useState(() => new Set())
   const [search, setSearch] = useState('')
@@ -33,8 +35,23 @@ export default function DistributionBreakdownPanel({ from, to, label }) {
     queryFn: () => api.get('/water/report/accounting', { params: { from, to, sections: SECTIONS } }).then(r => r.data),
     enabled: open, // panel kapalıyken veri çekilmez
   })
+  // INDEX görünümü ürün sütun sırasını (marka → ürün) ve palet çevrimlerini
+  // ürün listesinden, boş kap iadelerini returns'tan alır.
+  const productsQuery = useQuery({
+    queryKey: ['water-products'],
+    queryFn: () => api.get('/water/products').then(r => r.data),
+    enabled: open,
+  })
+  const returnsQuery = useQuery({
+    queryKey: ['water-returns', from, to],
+    queryFn: () => api.get('/water/returns', { params: { from, to, limit: 500 } }).then(r => r.data),
+    enabled: open,
+  })
 
   const report = query.data
+  // Beklenmedik yanıt şekli panelin tamamını düşürmesin — dizi değilse boş kabul et.
+  const products = Array.isArray(productsQuery.data) ? productsQuery.data : []
+  const returns = Array.isArray(returnsQuery.data) ? returnsQuery.data : []
   const breakdown = useMemo(() => buildBreakdown(report || {}), [report])
   const zones = useMemo(() => filterZones(breakdown.zones, search), [breakdown.zones, search])
   const hasData = breakdown.zones.length > 0
@@ -141,6 +158,26 @@ export default function DistributionBreakdownPanel({ from, to, label }) {
               ))}
             </div>
 
+            {/* Görünüm seçici */}
+            <div style={{ display: 'flex', gap: '6px', marginBottom: '10px' }}>
+              {[['index', 'INDEX (Excel düzeni)'], ['list', 'Liste görünümü']].map(([key, caption]) => (
+                <button
+                  key={key}
+                  type="button"
+                  className={`btn btn-sm ${view === key ? 'btn-primary' : 'btn-ghost'}`}
+                  onClick={() => setView(key)}
+                >
+                  {caption}
+                </button>
+              ))}
+            </div>
+
+            {view === 'index' && (
+              <WaterIndexSheet report={report} products={products} returns={returns} />
+            )}
+
+            {view === 'list' && (
+            <>
             {/* Kontroller */}
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', marginBottom: '10px' }}>
               <input
@@ -276,6 +313,8 @@ export default function DistributionBreakdownPanel({ from, to, label }) {
               <span style={{ fontFamily: 'var(--mono)' }}>{nf(breakdown.totals.grandTotal)}</span>
               <span style={{ color: 'var(--text3)', fontSize: '11px', width: '48px', textAlign: 'right' }}>%100</span>
             </div>
+            </>
+            )}
           </>
         )}
       </div>

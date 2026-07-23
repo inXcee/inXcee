@@ -29,7 +29,7 @@ export function monthDayNumbers(from, to) {
 
 // Ürün sütunları + marka bantları (aynı markanın ürünleri yan yana gelir).
 function productColumns(products) {
-  const columns = (products || []).map(product => ({
+  const columns = (Array.isArray(products) ? products : []).map(product => ({
     product_id: product.id,
     name: product.name,
     brand: product.brand_name || null,
@@ -127,7 +127,7 @@ export function buildIntakeMatrix({ report, products }) {
 
 // Palet çevrimleri: 1 palet kaç baz birim eder (Excel'deki sağ üst lejant).
 export function buildPaletteLegend(products) {
-  return (products || [])
+  return (Array.isArray(products) ? products : [])
     .filter(product => Number(product.cases_per_pallet) > 0)
     .map(product => {
       const perCase = Number(product.units_per_case) || 1
@@ -147,7 +147,7 @@ export function buildPaletteLegend(products) {
 // Boş kap iadeleri markaya göre gruplanır (Excel'de MİLA / AVRİL ayrı tablolar).
 export function buildReturnGroups(returns) {
   const groups = new Map()
-  for (const row of returns || []) {
+  for (const row of Array.isArray(returns) ? returns : []) {
     const brand = row.brand_name || 'MARKASIZ'
     const group = groups.get(brand) || { brand, rows: [], total: 0 }
     const perPallet = Number(row.cases_per_pallet) || 0
