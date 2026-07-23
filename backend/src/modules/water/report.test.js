@@ -560,3 +560,78 @@ describe('Su muhasebe raporu — irsaliye fotoğrafları bölümü', () => {
     expect(res.body.length).toBeGreaterThan(20000)
   })
 })
+
+describe('Su muhasebe raporu — GÜN×ÜRÜN yerleşimi', () => {
+  // Çizilen metinleri sayfa numarasıyla yakalar; koordinat/font asserti YOK
+  // (Windows Arial ≠ sunucu DejaVu — yerleşim testleri font-bağımsız kalmalı).
+  const renderDraws = async (report) => {
+    const doc = new PDFDocument({ size: 'A4', margin: 28 })
+    doc.on('data', () => {})
+    const done = new Promise(resolve => doc.on('end', resolve))
+    const draws = []
+    const links = []
+    const targets = []
+    let page = 1
+    const originalAddPage = doc.addPage.bind(doc)
+    doc.addPage = (...args) => { page += 1; return originalAddPage(...args) }
+    const originalText = doc.text.bind(doc)
+    doc.text = (value, x, y, options) => {
+      if (typeof x === 'number' && typeof y === 'number') draws.push({ value: String(value), page })
+      return originalText(value, x, y, options)
+    }
+    const originalGoTo = doc.goTo.bind(doc)
+    doc.goTo = (x, y, w, h, name) => { links.push(name); return originalGoTo(x, y, w, h, name) }
+    const originalDestination = doc.addNamedDestination.bind(doc)
+    doc.addNamedDestination = (name, ...args) => { targets.push(name); return originalDestination(name, ...args) }
+    writeAccountingReportPDF(report, doc)
+    await done
+    return { draws, links, targets }
+  }
+
+  it('matris: ürün adları üstte, günler aşağı, yer tabloları tek tek', async () => {
+    const report = accountingReportService({ from: '2026-06-01', to: '2026-06-30', sections: 'matrix' })
+    const { draws, links, targets } = await renderDraws(report)
+    const matrixDraws = draws.filter(draw => draw.page > 1) // sayfa 1 = özet
+    const count = value => matrixDraws.filter(draw => draw.value === value).length
+    // Ürün adı başlıklarda: genel tablo + Bölge A tablosu + Bölge B tablosu
+    expect(count('Rapor Suyu')).toBe(3)
+    // Gün etiketi satır olarak: genel tabloda + yalnız o gün hareketi olan yerin tablosunda
+    expect(count('03.06 Çar')).toBe(2) // genel + Rapor Bölge A
+    expect(count('05.06 Cum')).toBe(2) // genel + Rapor Bölge B
+    // Eski gün-numarası sütun başlıkları tamamen gitti
+    expect(count('01')).toBe(0)
+    expect(count('02')).toBe(0)
+    // Yer bantları tek tek çizildi
+    expect(count('Rapor Bölge A')).toBe(1)
+    expect(count('Rapor Bölge B')).toBe(1)
+    // Gün detay bölümü basılmıyor → hedefsiz gün bağlantısı da olmamalı
+    expect(links.filter(name => !targets.includes(name))).toEqual([])
+  })
+
+  it('matris uzun aralıkta ay satırlarına düşer', async () => {
+    const report = accountingReportService({ from: '2026-05-01', to: '2026-07-31', sections: 'matrix' })
+    const { draws } = await renderDraws(report)
+    const matrixDraws = draws.filter(draw => draw.page > 1)
+    // 'Haziran 2026' genel tabloda satır + hareketli yer tablolarında satır
+    expect(matrixDraws.filter(draw => draw.value === 'Haziran 2026').length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('yer tablosunda 6 üründen fazlası Diğer sütununda toplanır', async () => {
+    const db = getDB()
+    const zoneId = db.prepare('INSERT INTO water_zones(name) VALUES(?)').run('Çok Ürünlü Yer').lastInsertRowid
+    const insertProduct = db.prepare(`INSERT INTO water_products(name, unit_label, units_per_case, cases_per_pallet)
+      VALUES(?, 'koli', 1, 10)`)
+    const insertMove = db.prepare(`INSERT INTO water_movements(type, product_id, zone_id, move_date, qty_base, input_qty, input_unit)
+      VALUES('out', ?, ?, '2027-06-10', ?, 1, 'koli')`)
+    for (let index = 1; index <= 7; index += 1) {
+      const id = insertProduct.run(`Kalabalık Ürün ${index}`).lastInsertRowid
+      insertMove.run(id, zoneId, 100 - index) // çoktan aza: Ürün 1 en büyük, Ürün 7 en küçük
+    }
+    const report = accountingReportService({ from: '2027-06-01', to: '2027-06-30', sections: 'matrix' })
+    const { draws } = await renderDraws(report)
+    const values = draws.filter(draw => draw.page > 1).map(draw => draw.value)
+    expect(values).toContain('Diğer') // yer tablosunda 7. sütun
+    expect(values.some(value => value.startsWith('Diğer: Kalabalık Ürün 7'))).toBe(true) // kapsam notu
+    expect(values).toContain('Kalabalık Ürün 1') // görünen 6'nın adı başlıkta
+  })
+})

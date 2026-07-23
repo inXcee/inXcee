@@ -1,7 +1,7 @@
 // Muhasebe raporunun PDF çizimi. Veri report.js'ten gelir; burada yalnız yerleşim var.
 // Bölümler (ledger/matrix/days/zones/intakes/photos + ekler) rapor içindeki `sections` ile
 // seçilir; her bölüm yer imi (outline) ve adlandırılmış hedef alır, özet sayfasındaki
-// içindekiler ile matristeki gün başlıkları oraya atlar.
+// içindekiler ile matristeki gün satırları oraya atlar.
 import fs from 'node:fs'
 import { registerTurkishFonts, pdfText } from '../../shared/pdf/fonts.js'
 import { trDate } from './report.js'
@@ -52,6 +52,10 @@ const ZONE_ROW_LIMIT = 12
 const INTAKE_ROW_LIMIT = 10
 const PRODUCT_ROW_LIMIT = 12
 const MATRIX_ZONE_LIMIT = 60
+// Genel/gün tablolarında yan yana en fazla bu kadar ürün sütunu gösterilir.
+const PRODUCT_COLUMN_LIMIT = 14
+// Yer tablosunda yan yana en fazla bu kadar ürün sütunu; fazlası "Diğer"de toplanır.
+const ZONE_PRODUCT_COLUMNS = 6
 
 const nf = new Intl.NumberFormat('tr-TR')
 const num = value => nf.format(Math.round(value || 0))
@@ -59,7 +63,7 @@ const signed = value => (value > 0 ? `+${num(value)}` : num(value))
 
 const SECTION_TITLES = {
   ledger: 'GÜNLÜK DEFTER — TÜM HAREKETLER',
-  matrix: 'DAĞITIM YERİ × GÜN MATRİSİ',
+  matrix: 'DAĞITIM YERİ × GÜN — ÜRÜN DÖKÜMÜ',
   days: 'GÜN GÜN DETAY — NEREYE NE KADAR',
   zones: 'DAĞITIM YERİ × ÜRÜN',
   intakes: 'GELEN İRSALİYELER',
@@ -73,7 +77,7 @@ const SECTION_TITLES = {
 // İçindekiler tek satıra sığmalı — kısa adlar.
 const SECTION_SHORT = {
   ledger: 'Günlük defter',
-  matrix: 'Yer × Gün matrisi',
+  matrix: 'Yer · Gün · Ürün',
   days: 'Gün gün detay',
   zones: 'Yer × Ürün',
   intakes: 'İrsaliyeler',
@@ -221,27 +225,32 @@ function sectionPage(doc, fonts, ctx, { title, landscape = false, destination = 
 
 // Sütun akışı: blokları sırayla yerleştirir, sütun dolunca yana, sayfa dolunca
 // yeni sayfaya geçer. "Mümkün olduğunca az sayfa" bunun sayesinde.
-function columnFlow(doc, fonts, ctx, { title, columns = 2, gap = 14, landscape = false, destination }) {
-  let layout = sectionPage(doc, fonts, ctx, {
+// startAt: {layout, y} — bölüm aynı sayfada başka bir bloğun altından sürer;
+// ilk sayfada tüm kolonlar o hizadan başlar, sayfa kırılınca normal tepeye döner.
+function columnFlow(doc, fonts, ctx, { title, columns = 2, gap = 14, landscape = false, destination, startAt = null }) {
+  let layout = startAt ? startAt.layout : sectionPage(doc, fonts, ctx, {
     title, landscape,
     destination: destination === undefined ? `sec-${ctx.currentSection}` : destination,
   })
   let columnIndex = 0
-  let y = layout.top
+  let top = startAt ? startAt.y : layout.top
+  let y = top
   const widthOf = () => (layout.innerWidth - gap * (columns - 1)) / columns
+  const advance = () => {
+    columnIndex += 1
+    if (columnIndex >= columns) {
+      layout = sectionPage(doc, fonts, ctx, { title, landscape, continued: true })
+      columnIndex = 0
+      top = layout.top
+    }
+    y = top
+  }
 
   return {
     get columnWidth() { return widthOf() },
     willBreak(height) { return y + height > layout.bottom },
     place(height) {
-      if (y + height > layout.bottom) {
-        columnIndex += 1
-        if (columnIndex >= columns) {
-          layout = sectionPage(doc, fonts, ctx, { title, landscape, continued: true })
-          columnIndex = 0
-        }
-        y = layout.top
-      }
+      if (y + height > layout.bottom) advance()
       const spot = { x: layout.margin + columnIndex * (widthOf() + gap), y, width: widthOf() }
       y += height
       return spot
@@ -249,14 +258,7 @@ function columnFlow(doc, fonts, ctx, { title, columns = 2, gap = 14, landscape =
     // Blok başlığı yalnız başına kalmasın: başlık + ilk satır aynı sütuna sığmıyorsa
     // ikisini birlikte taşı.
     reserve(height) {
-      if (y + height > layout.bottom) {
-        columnIndex += 1
-        if (columnIndex >= columns) {
-          layout = sectionPage(doc, fonts, ctx, { title, landscape, continued: true })
-          columnIndex = 0
-        }
-        y = layout.top
-      }
+      if (y + height > layout.bottom) advance()
     },
   }
 }
@@ -358,7 +360,10 @@ function drawSummaryPage(doc, fonts, ctx) {
   const rightWidth = innerWidth - leftWidth - columnGap
   const rightX = margin + leftWidth + columnGap
   const hasAdjust = report.daily.some(row => row.adjust_base !== 0)
-  const detailDayLinks = new Set((report.detail?.days || []).map(day => day.key))
+  // day-* hedefini yalnız gün detay bölümü gerçekten basılıyorsa hedefle —
+  // aksi halde (örn. sections=matrix) özetteki bağlantı hedefsiz (kırık) kalır.
+  const daysRendered = renderableSections(report).includes('days')
+  const detailDayLinks = new Set(daysRendered ? (report.detail?.days || []).map(day => day.key) : [])
   const ledgerDayLinks = new Set((report.ledger?.days || []).map(day => day.key))
   const dayTarget = key => detailDayLinks.has(key) ? `day-${key}` : (ledgerDayLinks.has(key) ? `ledger-day-${key}` : null)
 
@@ -461,131 +466,226 @@ function drawSummaryPage(doc, fonts, ctx) {
     .text(text('YYS Su Takibi'), margin, pageHeight - 22, { width: innerWidth, align: 'center' })
 }
 
-// ── Bölüm 2: dağıtım yeri × gün matrisi (yatay) ──
+// ── Bölüm 2: GÜN ↓ × ÜRÜN → dökümü (ay geneli + her yer tek tek) ──
 
 function drawMatrixSection(doc, fonts, ctx) {
-  const { detail } = ctx.report
+  const { detail, daily } = ctx.report
   const text = value => pdfText(value, fonts)
-  const dayLinks = new Set((detail.days || []).map(day => day.key))
-  const rows = detail.rows.slice(0, MATRIX_ZONE_LIMIT)
+  // Gün bağlantısı yalnız gün detay bölümü gerçekten basılacaksa kurulur —
+  // hedefsiz (kırık) bağlantı kalmasın (örn. sections=matrix tek başına).
+  const daysRendered = renderableSections(ctx.report).includes('days')
+  const dayLinks = new Set(daysRendered ? (detail.days || []).map(day => day.key) : [])
+  const zones = detail.rows.slice(0, MATRIX_ZONE_LIMIT)
+  const products = detail.product_rows.slice(0, PRODUCT_COLUMN_LIMIT)
   const title = SECTION_TITLES.matrix
 
-  let layout = sectionPage(doc, fonts, ctx, { title, landscape: true, destination: 'sec-matrix' })
-  const labelWidth = 128
-  const totalWidth = 40
-  const shareWidth = 26
-  const columnsWidth = layout.innerWidth - labelWidth - totalWidth - shareWidth
-  const cellWidth = Math.max(12, columnsWidth / detail.columns.length)
-  const totalX = () => layout.margin + labelWidth + detail.columns.length * cellWidth
-  const shareX = () => totalX() + totalWidth
-  const zoneHeight = 12.4
-  const productHeight = 9.8
+  let layout = sectionPage(doc, fonts, ctx, { title, destination: 'sec-matrix' })
+  let y = layout.top
 
-  const header = (y, labelText) => {
-    doc.rect(layout.margin, y, layout.innerWidth, 14).fill('#E2E8F0')
+  // — Ay geneli tablo: satırlar gün (grouped modda ay), sütunlar ürün —
+  const labelWidth = 64
+  const totalWidth = 44
+  const cellWidth = (layout.innerWidth - labelWidth - totalWidth) / Math.max(1, products.length)
+  const totalX = () => layout.margin + labelWidth + products.length * cellWidth
+  const headerHeight = 24
+  const rowHeight = 10.4
+
+  const globalHeader = (top) => {
+    doc.rect(layout.margin, top, layout.innerWidth, headerHeight).fill('#E2E8F0')
     doc.font(fonts.bold).fillColor('#334155')
-    fitFontSize(doc, text(labelText), labelWidth - 6, 6.4, 4.6)
-    doc.text(text(labelText), layout.margin + 3, y + 4, { width: labelWidth - 6, lineBreak: false })
-    detail.columns.forEach((column, index) => {
+    fitFontSize(doc, text('GÜN'), labelWidth - 6, 6.6, 4.6)
+    doc.text(text('GÜN'), layout.margin + 3, top + 8, { width: labelWidth - 6, lineBreak: false })
+    products.forEach((product, index) => {
       const x = layout.margin + labelWidth + index * cellWidth
-      fitFontSize(doc, text(column.label), cellWidth - 2, 6.2, 4.2)
-      doc.fillColor(dayLinks.has(column.key) ? BAND : '#334155')
-      doc.text(text(column.label), x + 1, y + 4, { width: cellWidth - 2, align: 'center', lineBreak: false })
-      if (dayLinks.has(column.key)) linkArea(doc, `day-${column.key}`, x, y, cellWidth, 14)
-    })
-    doc.fillColor('#334155')
-    fitFontSize(doc, text('TOPLAM'), totalWidth - 4, 6.4, 4.6)
-    doc.text(text('TOPLAM'), totalX() + 2, y + 4, { width: totalWidth - 4, align: 'right', lineBreak: false })
-    fitFontSize(doc, text('PAY'), shareWidth - 4, 6.4, 4.6)
-    doc.text(text('PAY'), shareX() + 2, y + 4, { width: shareWidth - 4, align: 'right', lineBreak: false })
-    return y + 14
-  }
-
-  let y = header(layout.top, 'DAĞITIM YERİ')
-  let striped = 0
-  let headerLabel = 'DAĞITIM YERİ'
-
-  const ensure = (height) => {
-    if (y + height > layout.bottom) {
-      layout = sectionPage(doc, fonts, ctx, { title, landscape: true, continued: true })
-      y = header(layout.top, headerLabel)
-      striped = 0
-    }
-  }
-
-  // level: 'zone' (kalın, gölgeli) | 'product' (girintili alt satır) | 'total'
-  const drawRow = (row, { level = 'zone' } = {}) => {
-    const height = level === 'product' ? productHeight : zoneHeight
-    ensure(height)
-    const isProduct = level === 'product'
-    if (level === 'total') doc.rect(layout.margin, y, layout.innerWidth, height).fill('#FEF3C7')
-    else if (!isProduct && striped % 2 === 1) doc.rect(layout.margin, y, layout.innerWidth, height).fill(ZEBRA)
-    if (!isProduct) striped += 1
-    const font = level === 'zone' || level === 'total' ? fonts.bold : fonts.regular
-    const baseSize = isProduct ? 6.2 : 7
-    const labelColor = isProduct ? '#475569' : INK
-    const indent = isProduct ? 12 : 3
-    const label = isProduct ? `└ ${row.name}` : row.name
-
-    doc.font(font).fillColor(labelColor)
-    const size = fitFontSize(doc, text(label), labelWidth - indent - 3, baseSize, 4.2)
-    doc.text(text(label), layout.margin + indent, y + (height - size) / 2 - 0.4,
-      { width: labelWidth - indent - 3, lineBreak: false, ellipsis: true })
-
-    row.cells.forEach((value, index) => {
-      const x = layout.margin + labelWidth + index * cellWidth
-      doc.font(font).fillColor(value ? (isProduct ? '#475569' : INK) : FADE)
-      const cellText = value ? compactCell(doc, value, cellWidth - 2) : '·'
-      const cellSize = fitFontSize(doc, cellText, cellWidth - 2, isProduct ? 5.8 : 6.4, 4.2)
-      doc.text(cellText, x + 1, y + (height - cellSize) / 2 - 0.4, { width: cellWidth - 2, align: 'center', lineBreak: false })
-    })
-
-    doc.font(fonts.bold).fillColor(isProduct ? '#475569' : INK)
-    const totalText = compactCell(doc, row.total, totalWidth - 4, 4.5)
-    const totalSize = fitFontSize(doc, totalText, totalWidth - 4, baseSize)
-    doc.text(totalText, totalX() + 2, y + (height - totalSize) / 2 - 0.4,
-      { width: totalWidth - 4, align: 'right', lineBreak: false })
-
-    if (row.share != null) {
+      // Ürün adı ve birimi başlıkta bir kez — hücrelerde tekrar yok
+      doc.font(fonts.bold).fillColor('#334155')
+      fitFontSize(doc, text(product.name), cellWidth - 4, 6, 4.2)
+      doc.text(text(product.name), x + 2, top + 4, { width: cellWidth - 4, align: 'center', lineBreak: false, ellipsis: true })
       doc.font(fonts.regular).fillColor(MUTED)
-      const shareText = `%${String(row.share).replace('.', ',')}`
-      const shareSize = fitFontSize(doc, shareText, shareWidth - 4, isProduct ? 5.6 : 6.2, 4.2)
-      doc.text(shareText, shareX() + 2, y + (height - shareSize) / 2 - 0.4,
-        { width: shareWidth - 4, align: 'right', lineBreak: false })
+      const unitText = text(product.unit_label || 'adet')
+      fitFontSize(doc, unitText, cellWidth - 4, 5.2, 4)
+      doc.text(unitText, x + 2, top + 14, { width: cellWidth - 4, align: 'center', lineBreak: false })
+    })
+    doc.font(fonts.bold).fillColor('#334155')
+    fitFontSize(doc, text('TOPLAM'), totalWidth - 4, 6.6, 4.6)
+    doc.text(text('TOPLAM'), totalX() + 2, top + 8, { width: totalWidth - 4, align: 'right', lineBreak: false })
+    return top + headerHeight
+  }
+
+  const ensureGlobal = (height) => {
+    if (y + height > layout.bottom) {
+      layout = sectionPage(doc, fonts, ctx, { title, continued: true })
+      y = globalHeader(layout.top)
     }
-    y += height
   }
 
-  for (const row of rows) {
-    // Ürün kırılımı artık ayrı "DAĞITIM YERİ × ÜRÜN" matrisinde (ürün adları bir
-    // kez, üstte) — burada yer satırı tek satır kalır, sayfa sayısı düşer.
-    const single = row.products?.length === 1
-    drawRow({ ...row, name: single ? `${row.zone_name} · ${row.products[0].name}` : row.zone_name })
-  }
-  drawRow({ name: 'TOPLAM', cells: detail.column_totals, total: detail.grand_total, share: 100 }, { level: 'total' })
+  y = globalHeader(y)
+  detail.columns.forEach((column, index) => {
+    ensureGlobal(rowHeight)
+    // daily, columns ile aynı anahtar sırasından üretilir (dayKeys/monthKeys) —
+    // gün etiketi ("03.06 Çar" / "Haziran 2026") oradan gelir.
+    const label = daily[index]?.label || column.full
+    const rowTotal = detail.column_totals[index] || 0
+    const linked = dayLinks.has(column.key)
+    if (index % 2 === 1) doc.rect(layout.margin, y, layout.innerWidth, rowHeight).fill(ZEBRA)
+    doc.font(linked ? fonts.bold : fonts.regular).fillColor(linked ? BAND : rowTotal ? INK : FADE)
+    const labelSize = fitFontSize(doc, text(label), labelWidth - 6, 6.2, 4.2)
+    doc.text(text(label), layout.margin + 3, y + (rowHeight - labelSize) / 2 - 0.3, { width: labelWidth - 6, lineBreak: false })
+    if (linked) linkArea(doc, `day-${column.key}`, layout.margin, y, labelWidth, rowHeight)
+    products.forEach((product, productIndex) => {
+      const x = layout.margin + labelWidth + productIndex * cellWidth
+      const value = product.cells[index] || 0
+      doc.font(fonts.regular).fillColor(value ? INK : FADE)
+      const cellText = value ? compactCell(doc, value, cellWidth - 4) : '·'
+      const cellSize = fitFontSize(doc, cellText, cellWidth - 4, 6.2, 4.2)
+      doc.text(cellText, x + 2, y + (rowHeight - cellSize) / 2 - 0.3, { width: cellWidth - 4, align: 'center', lineBreak: false })
+    })
+    doc.font(fonts.bold).fillColor(rowTotal ? INK : FADE)
+    const totalText = rowTotal ? compactCell(doc, rowTotal, totalWidth - 4, 4.5) : '·'
+    const totalSize = fitFontSize(doc, totalText, totalWidth - 4, 6.4)
+    doc.text(totalText, totalX() + 2, y + (rowHeight - totalSize) / 2 - 0.3, { width: totalWidth - 4, align: 'right', lineBreak: false })
+    y += rowHeight
+  })
+
+  ensureGlobal(rowHeight * 2 + 12)
+  doc.rect(layout.margin, y, layout.innerWidth, rowHeight).fill('#FEF3C7')
+  doc.font(fonts.bold).fillColor(INK)
+  doc.fontSize(6.4).text(text('TOPLAM'), layout.margin + 3, y + 2.4, { width: labelWidth - 6, lineBreak: false })
+  products.forEach((product, index) => {
+    const x = layout.margin + labelWidth + index * cellWidth
+    const cellText = compactCell(doc, product.total, cellWidth - 4)
+    const cellSize = fitFontSize(doc, cellText, cellWidth - 4, 6.4, 4.2)
+    doc.text(cellText, x + 2, y + (rowHeight - cellSize) / 2 - 0.3, { width: cellWidth - 4, align: 'center', lineBreak: false })
+  })
+  const grandText = compactCell(doc, detail.grand_total, totalWidth - 4, 4.5)
+  const grandSize = fitFontSize(doc, grandText, totalWidth - 4, 6.4)
+  doc.text(grandText, totalX() + 2, y + (rowHeight - grandSize) / 2 - 0.3, { width: totalWidth - 4, align: 'right', lineBreak: false })
+  y += rowHeight
+
+  // PAY satırı: her ürünün dönem payı
+  doc.font(fonts.regular).fillColor(MUTED)
+  doc.fontSize(5.6).text(text('PAY'), layout.margin + 3, y + 2, { width: labelWidth - 6, lineBreak: false })
+  products.forEach((product, index) => {
+    const x = layout.margin + labelWidth + index * cellWidth
+    const shareText = text(`%${String(product.share).replace('.', ',')}`)
+    const shareSize = fitFontSize(doc, shareText, cellWidth - 4, 5.6, 4)
+    doc.text(shareText, x + 2, y + 2 + (5.6 - shareSize) / 2, { width: cellWidth - 4, align: 'center', lineBreak: false })
+  })
+  doc.fontSize(5.6).text(text('%100'), totalX() + 2, y + 2, { width: totalWidth - 4, align: 'right', lineBreak: false })
+  y += 10
   doc.moveTo(layout.margin, y).lineTo(layout.margin + layout.innerWidth, y).lineWidth(0.5).strokeColor(LINE).stroke()
-  const notes = [
-    detail.grouped ? 'Sütunlar aydır (aralık uzun).' : 'Sütunlar ayın günleridir; mavi gün başlığına tıklayınca o günün detayına gider.',
-    'Hangi yere hangi üründen gittiği "Dağıtım Yeri × Ürün" matrisindedir.',
-    detail.rows.length > MATRIX_ZONE_LIMIT ? `En çok dağıtılan ${MATRIX_ZONE_LIMIT} yer gösterildi (toplam ${detail.rows.length}).` : null,
-  ].filter(Boolean).join('  ·  ')
-  doc.font(fonts.regular).fontSize(6).fillColor(MUTED).text(text(notes), layout.margin, y + 4, { width: layout.innerWidth })
-  y += 18
+  y += 6
 
-  // Ürün × gün: dönem genelinde hangi gün hangi üründen ne çıktı
-  if (detail.product_rows?.length) {
-    headerLabel = 'ÜRÜN'
-    // Başlık + en az iki satır aynı sayfada kalsın; tamamı sığmıyorsa satırlar kendi kırılımını yapar.
-    ensure(Math.min(14 + 11 + zoneHeight * 3, layout.bottom - layout.top))
-    doc.font(fonts.bold).fontSize(8).fillColor(INK)
-      .text(text('ÜRÜN × GÜN'), layout.margin, y, { width: layout.innerWidth, lineBreak: false })
-    y += 11
-    y = header(y, 'ÜRÜN')
-    striped = 0
-    for (const product of detail.product_rows) drawRow(product)
-    drawRow({ name: 'TOPLAM', cells: detail.column_totals, total: detail.grand_total, share: 100 }, { level: 'total' })
-    doc.moveTo(layout.margin, y).lineTo(layout.margin + layout.innerWidth, y).lineWidth(0.5).strokeColor(LINE).stroke()
+  // — Her yer tek tek: GÜN ↓ × o yerin ürünleri → (2 kolonlu akış, aynı sayfadan sürer) —
+  const flow = columnFlow(doc, fonts, ctx, { title, columns: 2, gap: 16, startAt: { layout, y } })
+
+  const drawZoneTable = (zone) => {
+    const zoneProducts = zone.products || []
+    const visible = zoneProducts.slice(0, ZONE_PRODUCT_COLUMNS)
+    const hidden = zoneProducts.slice(ZONE_PRODUCT_COLUMNS)
+    const columnCount = visible.length + (hidden.length ? 1 : 0)
+    const labelW = 50
+    const totalW = 34
+    const cellW = (flow.columnWidth - labelW - totalW) / Math.max(1, columnCount)
+    const headerH = 16
+    const rowH = 9
+
+    const activeIndexes = []
+    zone.cells.forEach((value, index) => { if (value) activeIndexes.push(index) })
+
+    const header = (continued) => {
+      const spot = flow.place(headerH + 1)
+      doc.rect(spot.x, spot.y, spot.width, headerH).fill('#E2E8F0')
+      doc.font(fonts.bold).fontSize(5.4).fillColor('#334155')
+      doc.text(text(continued ? 'GÜN · devam' : 'GÜN'), spot.x + 3, spot.y + (headerH - 5.4) / 2,
+        { width: labelW - 4, lineBreak: false, ellipsis: true })
+      const labels = [...visible.map(product => product.name), ...(hidden.length ? ['Diğer'] : [])]
+      labels.forEach((name, index) => {
+        const x = spot.x + labelW + index * cellW
+        doc.font(fonts.bold).fillColor('#334155')
+        // Ürün adı başlıkta TAM — iki satıra kadar sarabilsin diye ~2 satır genişliğine göre punto
+        fitFontSize(doc, text(name), (cellW - 3) * 1.9, 5.2, 4)
+        doc.text(text(name), x + 1.5, spot.y + 2, { width: cellW - 3, height: headerH - 3, align: 'center', ellipsis: true, lineGap: 0 })
+      })
+      doc.font(fonts.bold).fontSize(5.4).fillColor('#334155')
+      doc.text(text('TOP'), spot.x + spot.width - totalW, spot.y + (headerH - 5.4) / 2,
+        { width: totalW - 2, align: 'right', lineBreak: false })
+    }
+
+    const row = (label, cells, total, { bold = false, fill = null, linkKey = null } = {}) => {
+      if (flow.willBreak(rowH)) header(true)
+      const spot = flow.place(rowH)
+      if (fill) doc.rect(spot.x, spot.y, spot.width, rowH).fill(fill)
+      const linked = linkKey != null && dayLinks.has(linkKey)
+      doc.font(bold ? fonts.bold : fonts.regular).fillColor(linked ? BAND : INK)
+      const labelSize = fitFontSize(doc, text(label), labelW - 4, 5.8, 4)
+      doc.text(text(label), spot.x + 3, spot.y + (rowH - labelSize) / 2 - 0.2, { width: labelW - 4, lineBreak: false })
+      if (linked) linkArea(doc, `day-${linkKey}`, spot.x, spot.y, labelW, rowH)
+      cells.forEach((value, index) => {
+        const x = spot.x + labelW + index * cellW
+        doc.font(bold ? fonts.bold : fonts.regular).fillColor(value ? INK : FADE)
+        const cellText = value ? compactCell(doc, value, cellW - 3) : '·'
+        const cellSize = fitFontSize(doc, cellText, cellW - 3, 5.8, 4)
+        doc.text(cellText, x + 1.5, spot.y + (rowH - cellSize) / 2 - 0.2, { width: cellW - 3, align: 'center', lineBreak: false })
+      })
+      doc.font(fonts.bold).fillColor(INK)
+      const totalText = compactCell(doc, total, totalW - 2, 4)
+      const totalSize = fitFontSize(doc, totalText, totalW - 2, 5.8, 4)
+      doc.text(totalText, spot.x + spot.width - totalW, spot.y + (rowH - totalSize) / 2 - 0.2,
+        { width: totalW - 2, align: 'right', lineBreak: false })
+    }
+
+    // Bant + başlık + ilk satır bölünmesin
+    flow.reserve(14.5 + headerH + rowH + 3)
+    const band = flow.place(14.5)
+    doc.rect(band.x, band.y, band.width, 13).fill('#ECFEFF')
+    doc.rect(band.x, band.y, 3, 13).fill(BAND)
+    doc.font(fonts.bold).fontSize(7).fillColor(INK)
+    const nameSize = fitFontSize(doc, text(zone.zone_name), band.width - 112, 7, 4.4)
+    doc.text(text(zone.zone_name), band.x + 6, band.y + (13 - nameSize) / 2, { width: band.width - 112, lineBreak: false, ellipsis: true })
+    doc.font(fonts.regular).fillColor(MUTED)
+    const meta = text(`toplam ${num(zone.total)} · %${String(zone.share).replace('.', ',')}`)
+    fitFontSize(doc, meta, 102, 6, 4.2)
+    doc.text(meta, band.x + band.width - 106, band.y + 3.8, { width: 102, align: 'right', lineBreak: false })
+
+    header(false)
+    for (const index of activeIndexes) {
+      const cells = [
+        ...visible.map(product => product.cells[index] || 0),
+        ...(hidden.length ? [hidden.reduce((sum, product) => sum + (product.cells[index] || 0), 0)] : []),
+      ]
+      row(daily[index]?.label || detail.columns[index].full, cells, zone.cells[index], { linkKey: detail.columns[index].key })
+    }
+    if (activeIndexes.length > 1) {
+      const totals = [
+        ...visible.map(product => product.total),
+        ...(hidden.length ? [hidden.reduce((sum, product) => sum + product.total, 0)] : []),
+      ]
+      row('TOPLAM', totals, zone.total, { bold: true, fill: '#FEF3C7' })
+    }
+    if (hidden.length) {
+      const note = flow.place(8)
+      doc.font(fonts.regular).fontSize(5.4).fillColor(MUTED)
+      const noteText = text(`Diğer: ${hidden.map(product => product.name).join(', ')} (toplam ${num(hidden.reduce((sum, product) => sum + product.total, 0))})`)
+      fitFontSize(doc, noteText, note.width - 4, 5.4, 4)
+      doc.text(noteText, note.x + 2, note.y + 1.5, { width: note.width - 4, lineBreak: false, ellipsis: true })
+    }
+    flow.place(4)
   }
+
+  for (const zone of zones) drawZoneTable(zone)
+
+  const notes = [
+    detail.grouped ? 'Satırlar aydır (aralık uzun).' : 'Yer tablolarında yalnız hareket olan günler listelenir.',
+    daysRendered ? 'Mavi gün etiketi o günün detayına gider.' : null,
+    'Hücreler ürünün kendi baz birimindedir.',
+    detail.product_rows.length > PRODUCT_COLUMN_LIMIT
+      ? `Genel tabloda en çok dağıtılan ${PRODUCT_COLUMN_LIMIT} ürün var (toplam ${detail.product_rows.length}).` : null,
+    detail.rows.length > MATRIX_ZONE_LIMIT
+      ? `En çok dağıtılan ${MATRIX_ZONE_LIMIT} yer gösterildi (toplam ${detail.rows.length}).` : null,
+  ].filter(Boolean).join('  ·  ')
+  const noteSpot = flow.place(24)
+  doc.font(fonts.regular).fontSize(6).fillColor(MUTED).text(text(notes), noteSpot.x, noteSpot.y + 3, { width: noteSpot.width })
 }
 
 // ── Günlük defter: giriş, dağıtım, boş iade ve düzeltmeler ──
@@ -810,8 +910,6 @@ function drawDaysSection(doc, fonts, ctx) {
 }
 
 // ── Bölüm 4: dağıtım yeri × ürün (ürün adları BİR KEZ, üstte sütun olarak) ──
-
-const PRODUCT_COLUMN_LIMIT = 14
 
 function drawZonesSection(doc, fonts, ctx) {
   const { detail } = ctx.report
