@@ -634,4 +634,15 @@ describe('Su muhasebe raporu — GÜN×ÜRÜN yerleşimi', () => {
     expect(values.some(value => value.startsWith('Diğer: Kalabalık Ürün 7'))).toBe(true) // kapsam notu
     expect(values).toContain('Kalabalık Ürün 1') // görünen 6'nın adı başlıkta
   })
+
+  it('gün gün detay: başlıklar ürün adlı, numaralı lejant yok', async () => {
+    const report = accountingReportService({ from: '2026-06-01', to: '2026-06-30', sections: 'days' })
+    const { draws } = await renderDraws(report)
+    const values = draws.filter(draw => draw.page > 1).map(draw => draw.value)
+    // Dağıtım olan iki günün (03.06, 05.06) tablo başlığında ürün adı; giriş günü 02.06'da tablo yok
+    expect(values.filter(value => value === 'Rapor Suyu').length).toBe(2)
+    // Lejant satırı ve numaralı sütun başlığı kalmadı
+    expect(values.some(value => value.startsWith('SÜTUNLAR'))).toBe(false)
+    expect(values.filter(value => value === '1').length).toBe(0)
+  })
 })

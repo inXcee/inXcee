@@ -791,8 +791,8 @@ function drawDaysSection(doc, fonts, ctx) {
   const { detail } = ctx.report
   const text = value => pdfText(value, fonts)
   const title = SECTION_TITLES.days
-  // Ürünler her gün tablosunda SÜTUN: adları bölüm başındaki lejantta BİR KEZ
-  // yazılır, başlıklarda yalnız numara taşınır (tekrar yok, dar sütun yeter).
+  // Ürünler her gün tablosunda SÜTUN; adları numara/lejant yerine HER tablonun
+  // başlığında tam yazılır (gerekirse punto küçülür, iki satıra sarar).
   const products = detail.product_rows.slice(0, PRODUCT_COLUMN_LIMIT)
   const overflow = detail.product_rows.length > products.length
   const columnIndexById = new Map(products.map((product, index) => [product.product_id, index]))
@@ -801,14 +801,12 @@ function drawDaysSection(doc, fonts, ctx) {
   const flow = columnFlow(doc, fonts, ctx, { title, columns: flowColumns, gap: 16 })
   const dayItems = ctx.outline.children[ctx.outline.children.length - 1]
 
-  // Lejant: 1 = ürün adı (birim) · 2 = …
-  const legendParts = products.map((product, index) => `${index + 1} = ${product.name} (${product.unit_label || 'adet'})`)
-  if (overflow) legendParts.push(`D = Diğer (${detail.product_rows.length - products.length} ürün)`)
-  const legendText = text(`SÜTUNLAR:  ${legendParts.join('   ·   ')}`)
-  doc.font(fonts.bold).fontSize(6)
-  const legendLines = Math.max(1, Math.ceil(doc.widthOfString(legendText) / (flow.columnWidth - 8)))
-  const legend = flow.place(legendLines * 7.6 + 6)
-  doc.fillColor('#0F766E').text(legendText, legend.x + 2, legend.y + 1.5, { width: legend.width - 6, lineGap: 1.2 })
+  if (overflow) {
+    const note = flow.place(9)
+    doc.font(fonts.regular).fontSize(5.6).fillColor(MUTED)
+      .text(text(`"Diğer" sütunu: en çok dağıtılan ${products.length} ürün dışındaki ${detail.product_rows.length - products.length} ürünün toplamıdır.`),
+        note.x + 2, note.y + 1, { width: note.width - 4, lineBreak: false, ellipsis: true })
+  }
 
   const labelWidth = () => Math.max(56, flow.columnWidth - 36 - columnCount * cellW())
   const cellW = () => {
@@ -816,17 +814,23 @@ function drawDaysSection(doc, fonts, ctx) {
     return Math.min(34, Math.max(20, available / Math.max(1, columnCount)))
   }
 
+  const HEADER_HEIGHT = 16
   const tableHeader = (dayLabel) => {
-    const spot = flow.place(9.5)
-    doc.rect(spot.x, spot.y, spot.width, 8.5).fill('#E2E8F0')
+    const spot = flow.place(HEADER_HEIGHT + 1)
+    doc.rect(spot.x, spot.y, spot.width, HEADER_HEIGHT).fill('#E2E8F0')
     doc.font(fonts.bold).fontSize(5.6).fillColor('#334155')
-    doc.text(text(dayLabel || 'YER'), spot.x + 3, spot.y + 2.2, { width: labelWidth() - 4, lineBreak: false, ellipsis: true })
+    doc.text(text(dayLabel || 'YER'), spot.x + 3, spot.y + (HEADER_HEIGHT - 5.6) / 2,
+      { width: labelWidth() - 4, lineBreak: false, ellipsis: true })
     for (let index = 0; index < columnCount; index += 1) {
       const x = spot.x + labelWidth() + index * cellW()
-      const label = index < products.length ? String(index + 1) : 'D'
-      doc.text(text(label), x, spot.y + 2.2, { width: cellW() - 2, align: 'center', lineBreak: false })
+      const label = index < products.length ? products[index].name : 'Diğer'
+      doc.font(fonts.bold).fillColor('#334155')
+      // İki satıra kadar sarabilsin diye ~2 satır genişliğine göre punto seç
+      fitFontSize(doc, text(label), (cellW() - 2) * 1.9, 5.2, 4)
+      doc.text(text(label), x, spot.y + 2, { width: cellW() - 2, height: HEADER_HEIGHT - 3, align: 'center', ellipsis: true, lineGap: 0 })
     }
-    doc.text(text('TOP'), spot.x + spot.width - 34, spot.y + 2.2, { width: 32, align: 'right', lineBreak: false })
+    doc.font(fonts.bold).fontSize(5.6).fillColor('#334155')
+    doc.text(text('TOP'), spot.x + spot.width - 34, spot.y + (HEADER_HEIGHT - 5.6) / 2, { width: 32, align: 'right', lineBreak: false })
   }
 
   const drawTableRow = (label, cells, total, { fill = null, bold = false, color = INK } = {}) => {
@@ -861,7 +865,7 @@ function drawDaysSection(doc, fonts, ctx) {
   }
 
   for (const day of detail.days) {
-    flow.reserve(34)
+    flow.reserve(42)
     const head = flow.place(14.5)
     doc.rect(head.x, head.y, head.width, 13).fill('#ECFEFF')
     doc.rect(head.x, head.y, 3, 13).fill(day.in_base ? GREEN : BAND)
