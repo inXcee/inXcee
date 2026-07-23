@@ -491,6 +491,7 @@ function buildDetail(report, { from, to, grouped }) {
       day.intakes.push({
         waybill_no: movement.waybill_no || null,
         product_name: movement.product_name,
+        brand_name: movement.brand_name || null,
         unit_label: movement.unit_label || 'adet',
         qty_base: movement.qty_base,
         qty_human: human,
@@ -517,7 +518,7 @@ function buildDetail(report, { from, to, grouped }) {
       // Yerin içinde ürün ürün kırılım — matriste alt satır olarak çizilir.
       const products = zoneProducts.get(zoneId) || new Map()
       const product = products.get(movement.product_id)
-        || { product_id: movement.product_id, name: movement.product_name, total: 0, days: new Set(), cells: emptyCells(), sample: movement }
+        || { product_id: movement.product_id, name: movement.product_name, brand_name: movement.brand_name || null, total: 0, days: new Set(), cells: emptyCells(), sample: movement }
       product.total += movement.qty_base
       product.days.add(movement.move_date)
       if (index != null) product.cells[index] += movement.qty_base
@@ -526,7 +527,7 @@ function buildDetail(report, { from, to, grouped }) {
 
       // Dönem geneli: hangi ürün hangi gün ne kadar çıktı
       const productRow = productRows.get(movement.product_id)
-        || { product_id: movement.product_id, name: movement.product_name, total: 0, cells: emptyCells(), sample: movement }
+        || { product_id: movement.product_id, name: movement.product_name, brand_name: movement.brand_name || null, total: 0, cells: emptyCells(), sample: movement }
       productRow.total += movement.qty_base
       if (index != null) productRow.cells[index] += movement.qty_base
       productRows.set(movement.product_id, productRow)
@@ -578,6 +579,7 @@ function buildDetail(report, { from, to, grouped }) {
       products: productsOfZone(row.zone_id).map(product => ({
         product_id: product.product_id,
         name: product.name,
+        brand_name: product.brand_name,
         total: product.total,
         cells: product.cells,
         human: humanize(product.sample, product.total),
@@ -591,6 +593,7 @@ function buildDetail(report, { from, to, grouped }) {
       .map(product => ({
         product_id: product.product_id,
         name: product.name,
+        brand_name: product.brand_name,
         unit_label: product.sample?.unit_label || 'adet',
         total: product.total,
         cells: product.cells,
@@ -607,6 +610,7 @@ function buildDetail(report, { from, to, grouped }) {
       products: productsOfZone(row.zone_id).map(product => ({
         product_id: product.product_id,
         name: product.name,
+        brand_name: product.brand_name,
         total: product.total,
         human: humanize(product.sample, product.total),
         days_active: product.days.size,

@@ -635,6 +635,30 @@ describe('Su muhasebe raporu — GÜN×ÜRÜN yerleşimi', () => {
     expect(values).toContain('Kalabalık Ürün 1') // görünen 6'nın adı başlıkta
   })
 
+  it('aynı adlı ürünler başlıkta markasıyla ayrışır (Damacana · marka)', async () => {
+    const db = getDB()
+    const addBrand = db.prepare('INSERT INTO water_brands(name, sort_order) VALUES(?, 99)')
+    const brandOne = addBrand.run('Marka Bir').lastInsertRowid
+    const brandTwo = addBrand.run('Marka İki').lastInsertRowid
+    const addProduct = db.prepare(`INSERT INTO water_products(name, unit_label, units_per_case, cases_per_pallet, brand_id)
+      VALUES('Damacana Test', 'adet', 1, 10, ?)`)
+    const productOne = addProduct.run(brandOne).lastInsertRowid
+    const productTwo = addProduct.run(brandTwo).lastInsertRowid
+    const zoneId = db.prepare('INSERT INTO water_zones(name) VALUES(?)').run('Marka Test Yeri').lastInsertRowid
+    const addMove = db.prepare(`INSERT INTO water_movements(type, product_id, zone_id, move_date, qty_base, input_qty, input_unit)
+      VALUES('out', ?, ?, '2027-07-05', ?, 1, 'adet')`)
+    addMove.run(productOne, zoneId, 40)
+    addMove.run(productTwo, zoneId, 25)
+
+    const report = accountingReportService({ from: '2027-07-01', to: '2027-07-31', sections: 'matrix' })
+    const { draws } = await renderDraws(report)
+    const values = draws.filter(draw => draw.page > 1).map(draw => draw.value)
+    // Genel tablo + yer tablosu başlıklarında marka görünür — hangisi hangi damacana belli
+    expect(values).toContain('Damacana Test · Marka Bir')
+    expect(values).toContain('Damacana Test · Marka İki')
+    expect(values.filter(value => value === 'Damacana Test')).toEqual([])
+  })
+
   it('gün gün detay: başlıklar ürün adlı, numaralı lejant yok', async () => {
     const report = accountingReportService({ from: '2026-06-01', to: '2026-06-30', sections: 'days' })
     const { draws } = await renderDraws(report)

@@ -138,6 +138,9 @@ function compactCell(doc, value, available, min = 4.2) {
   return `${Math.round(value / 1000)}b`
 }
 
+// Ürün etiketi: aynı adlı ürünler (örn. iki markanın damacanası) markasıyla ayrışır.
+const productLabel = product => (product.brand_name ? `${product.name} · ${product.brand_name}` : product.name)
+
 function drawTable(doc, fonts, { x, y, width, title, columns, rows, note }) {
   const text = value => pdfText(value, fonts)
   let cursor = y
@@ -497,10 +500,10 @@ function drawMatrixSection(doc, fonts, ctx) {
     doc.text(text('GÜN'), layout.margin + 3, top + 8, { width: labelWidth - 6, lineBreak: false })
     products.forEach((product, index) => {
       const x = layout.margin + labelWidth + index * cellWidth
-      // Ürün adı ve birimi başlıkta bir kez — hücrelerde tekrar yok
+      // Ürün adı (markalı) ve birimi başlıkta bir kez — hücrelerde tekrar yok
       doc.font(fonts.bold).fillColor('#334155')
-      fitFontSize(doc, text(product.name), cellWidth - 4, 6, 4.2)
-      doc.text(text(product.name), x + 2, top + 4, { width: cellWidth - 4, align: 'center', lineBreak: false, ellipsis: true })
+      fitFontSize(doc, text(productLabel(product)), cellWidth - 4, 6, 4.2)
+      doc.text(text(productLabel(product)), x + 2, top + 4, { width: cellWidth - 4, align: 'center', lineBreak: false, ellipsis: true })
       doc.font(fonts.regular).fillColor(MUTED)
       const unitText = text(product.unit_label || 'adet')
       fitFontSize(doc, unitText, cellWidth - 4, 5.2, 4)
@@ -599,7 +602,7 @@ function drawMatrixSection(doc, fonts, ctx) {
       doc.font(fonts.bold).fontSize(5.4).fillColor('#334155')
       doc.text(text(continued ? 'GÜN · devam' : 'GÜN'), spot.x + 3, spot.y + (headerH - 5.4) / 2,
         { width: labelW - 4, lineBreak: false, ellipsis: true })
-      const labels = [...visible.map(product => product.name), ...(hidden.length ? ['Diğer'] : [])]
+      const labels = [...visible.map(product => productLabel(product)), ...(hidden.length ? ['Diğer'] : [])]
       labels.forEach((name, index) => {
         const x = spot.x + labelW + index * cellW
         doc.font(fonts.bold).fillColor('#334155')
@@ -666,7 +669,7 @@ function drawMatrixSection(doc, fonts, ctx) {
     if (hidden.length) {
       const note = flow.place(8)
       doc.font(fonts.regular).fontSize(5.4).fillColor(MUTED)
-      const noteText = text(`Diğer: ${hidden.map(product => product.name).join(', ')} (toplam ${num(hidden.reduce((sum, product) => sum + product.total, 0))})`)
+      const noteText = text(`Diğer: ${hidden.map(product => productLabel(product)).join(', ')} (toplam ${num(hidden.reduce((sum, product) => sum + product.total, 0))})`)
       fitFontSize(doc, noteText, note.width - 4, 5.4, 4)
       doc.text(noteText, note.x + 2, note.y + 1.5, { width: note.width - 4, lineBreak: false, ellipsis: true })
     }
@@ -823,7 +826,7 @@ function drawDaysSection(doc, fonts, ctx) {
       { width: labelWidth() - 4, lineBreak: false, ellipsis: true })
     for (let index = 0; index < columnCount; index += 1) {
       const x = spot.x + labelWidth() + index * cellW()
-      const label = index < products.length ? products[index].name : 'Diğer'
+      const label = index < products.length ? productLabel(products[index]) : 'Diğer'
       doc.font(fonts.bold).fillColor('#334155')
       // İki satıra kadar sarabilsin diye ~2 satır genişliğine göre punto seç
       fitFontSize(doc, text(label), (cellW() - 2) * 1.9, 5.2, 4)
@@ -888,7 +891,7 @@ function drawDaysSection(doc, fonts, ctx) {
       const humanPart = intake.qty_human && intake.qty_human !== `${intake.qty_base} ${intake.unit_label || 'adet'}`
         ? ` · ${intake.qty_human}`
         : ''
-      const label = text(`⊕ giriş  ${intake.waybill_no || 'irsaliyesiz'} — ${intake.product_name}${humanPart}`)
+      const label = text(`⊕ giriş  ${intake.waybill_no || 'irsaliyesiz'} — ${intake.product_name}${intake.brand_name ? ` · ${intake.brand_name}` : ''}${humanPart}`)
       fitFontSize(doc, label, spot.width - 40, 6.2, 4.4)
       doc.text(label, spot.x + 4, spot.y + 1.2, { width: spot.width - 40, lineBreak: false, ellipsis: true })
       doc.font(fonts.bold).fontSize(6.2).fillColor(GREEN)
@@ -941,10 +944,10 @@ function drawZonesSection(doc, fonts, ctx) {
     doc.text(text('DAĞITIM YERİ'), layout.margin + 3, y + 8, { width: labelWidth - 6, lineBreak: false })
     products.forEach((product, index) => {
       const x = layout.margin + labelWidth + index * cellWidth
-      // Ürün adı bir kez burada — satırlarda tekrar edilmez
+      // Ürün adı (markalı) bir kez burada — satırlarda tekrar edilmez
       doc.font(fonts.bold).fillColor('#334155')
-      fitFontSize(doc, text(product.name), cellWidth - 4, 6, 4.2)
-      doc.text(text(product.name), x + 2, y + 4, { width: cellWidth - 4, align: 'center', lineBreak: false, ellipsis: true })
+      fitFontSize(doc, text(productLabel(product)), cellWidth - 4, 6, 4.2)
+      doc.text(text(productLabel(product)), x + 2, y + 4, { width: cellWidth - 4, align: 'center', lineBreak: false, ellipsis: true })
       doc.font(fonts.regular).fillColor(MUTED)
       const unitText = text(product.unit_label || 'adet')
       fitFontSize(doc, unitText, cellWidth - 4, 5.2, 4)
