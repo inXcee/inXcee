@@ -9,6 +9,7 @@ import {
   exportBreakdownExcel,
   filterZones,
 } from '../logic/distributionBreakdown.js'
+import { buildIndexSheetRows } from '../logic/waterIndexSheet.js'
 import WaterCollapsiblePanel from './WaterCollapsiblePanel.jsx'
 import WaterIndexSheet from './WaterIndexSheet.jsx'
 
@@ -74,7 +75,9 @@ export default function DistributionBreakdownPanel({ from, to, label }) {
   const downloadExcel = async () => {
     setBusy('excel')
     try {
-      await exportBreakdownExcel({ breakdown, report, from, to })
+      // Excel de ekrandaki INDEX düzenini taşır (INDEX + Gelen Tır + Palet + Boş İade)
+      const sheets = buildIndexSheetRows({ report, products, returns })
+      await exportBreakdownExcel({ breakdown, report, from, to, sheets })
       toastOk('Dağıtım dökümü Excel indirildi 📊')
     } catch { toastErr('Excel oluşturulamadı') } finally { setBusy('') }
   }

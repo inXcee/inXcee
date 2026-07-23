@@ -144,6 +144,66 @@ export function buildPaletteLegend(products) {
     })
 }
 
+// Excel çıktısı: ekrandaki INDEX düzeninin birebir satır karşılığı.
+// Marka bandı ilk satırda; markanın adı kendi ilk sütununa yazılır, kalan
+// sütunları boş bırakılır (ExcelJS tarafında merge edilir).
+function brandBandRow(brandGroups, leadCols, columnCount) {
+  const row = new Array(leadCols).fill('')
+  brandGroups.forEach(group => {
+    row.push(group.brand)
+    for (let index = 1; index < group.span; index += 1) row.push('')
+  })
+  while (row.length < leadCols + columnCount) row.push('')
+  row.push('') // TOPLAM sütununun bandı boş
+  return row
+}
+
+export function buildIndexSheetRows({ report, products, returns }) {
+  const matrix = buildIndexMatrix({ report, products })
+  const intake = buildIntakeMatrix({ report, products })
+  const legend = buildPaletteLegend(products)
+  const groups = buildReturnGroups(returns)
+  const names = matrix.columns.map(column => column.name)
+
+  const indexRows = [
+    brandBandRow(matrix.brandGroups, 2, matrix.columns.length),
+    ['SIRA', 'FİRMA ADI', ...names, 'TOPLAM'],
+    ...matrix.rows.map(row => [row.seq, row.zone_name, ...row.cells, row.total]),
+    ['', 'TOPLAM', ...matrix.columnTotals, matrix.grandTotal],
+    ['', 'GENEL TOPLAM', ...matrix.columnTotals, matrix.grandTotal],
+  ]
+  // Yer satırı yoksa TOPLAM/GENEL TOPLAM da anlamsız — yalnız başlıklar kalsın.
+  if (!matrix.rows.length) indexRows.splice(2)
+
+  const intakeRows = [
+    brandBandRow(intake.brandGroups, 1, intake.columns.length),
+    ['GÜN', ...names, 'TOPLAM'],
+    ...intake.rows.map(row => [row.dayNo, ...row.cells, row.total]),
+    ['TOPLAM', ...intake.columnTotals, intake.grandTotal],
+  ]
+
+  const returnRows = []
+  groups.forEach(group => {
+    group.rows.forEach(row => {
+      returnRows.push([group.brand, row.move_date, row.product_name, row.pallets ?? '', row.qty_base])
+    })
+    returnRows.push([group.brand, '', 'TOPLAM', '', group.total])
+  })
+
+  return {
+    index: { rows: indexRows, brandGroups: matrix.brandGroups, leadCols: 2 },
+    intake: { rows: intakeRows, brandGroups: intake.brandGroups, leadCols: 1 },
+    palette: {
+      headers: ['MARKA', 'ÜRÜN', 'PALET İÇERİĞİ'],
+      rows: legend.map(item => [item.brand || '', item.label, item.text]),
+    },
+    returns: {
+      headers: ['MARKA', 'TARİH', 'ÜRÜN', 'PALET', 'ADET'],
+      rows: returnRows,
+    },
+  }
+}
+
 // Boş kap iadeleri markaya göre gruplanır (Excel'de MİLA / AVRİL ayrı tablolar).
 export function buildReturnGroups(returns) {
   const groups = new Map()

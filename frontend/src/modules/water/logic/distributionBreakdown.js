@@ -219,9 +219,54 @@ function addSheet(workbook, name, { headers, rows }, { numberFrom, tabColor }) {
   return sheet
 }
 
-export function buildBreakdownWorkbook(ExcelJS, breakdown, report) {
+// Ham satır bloğu (kendi başlıklarını taşıyan INDEX/Gelen Tır sayfaları için).
+function addRawSheet(workbook, name, { rows, brandGroups, leadCols }, tabColor) {
+  const sheet = workbook.addWorksheet(name, { views: [{ state: 'frozen', ySplit: 2 }] })
+  sheet.properties.tabColor = { argb: tabColor }
+  rows.forEach(row => sheet.addRow(row))
+  // Marka bandı: her markanın hücrelerini birleştir ve renklendir
+  let column = leadCols + 1
+  ;(brandGroups || []).forEach((group, index) => {
+    if (group.span > 1) sheet.mergeCells(1, column, 1, column + group.span - 1)
+    const cell = sheet.getCell(1, column)
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: BRAND_FILLS[index % BRAND_FILLS.length] } }
+    cell.font = { bold: true }
+    cell.alignment = { horizontal: 'center' }
+    column += group.span
+  })
+  const headerRow = sheet.getRow(2)
+  headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } }
+  headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF334155' } }
+  headerRow.alignment = { horizontal: 'center', wrapText: true }
+  // Son iki satır (TOPLAM / GENEL TOPLAM) vurgulanır
+  if (rows.length > 2) {
+    ;[rows.length - 1, rows.length].forEach(rowNo => {
+      const row = sheet.getRow(rowNo)
+      if (String(row.getCell(1).value ?? '').length || String(row.getCell(2).value ?? '').includes('TOPLAM')) {
+        row.font = { bold: true }
+        row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFDE68A' } }
+      }
+    })
+  }
+  sheet.columns.forEach((col, index) => {
+    const header = String(rows[1]?.[index] ?? '')
+    col.width = Math.min(30, Math.max(9, header.length + 3))
+    if (index >= leadCols) col.numFmt = NUMBER_FORMAT
+  })
+  sheet.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 }
+  return sheet
+}
+
+const BRAND_FILLS = ['FFD9EAD3', 'FFCFE2F3', 'FFFCE5CD', 'FFEAD1DC', 'FFE0E7FF']
+
+export function buildBreakdownWorkbook(ExcelJS, breakdown, report, sheets = null) {
   const workbook = new ExcelJS.Workbook()
   const { summary, daily } = breakdownExcelRows(breakdown, report)
+
+  // INDEX düzeni (ekranla birebir) — varsa ilk sayfa olur
+  if (sheets?.index?.rows?.length) addRawSheet(workbook, 'INDEX', sheets.index, 'FF0E7490')
+  if (sheets?.intake?.rows?.length) addRawSheet(workbook, 'Gelen Tır', sheets.intake, 'FF15803D')
+
   // Özet: NO + YER metin, sonrası sayı
   const summarySheet = addSheet(workbook, 'Özet', summary, { numberFrom: 2, tabColor: 'FF0E7490' })
   // Genel toplam satırı vurgulanır (muhasebe önce ona bakıyor)
@@ -231,12 +276,14 @@ export function buildBreakdownWorkbook(ExcelJS, breakdown, report) {
     totalRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFDE68A' } }
   }
   addSheet(workbook, 'Gün Detay', daily, { numberFrom: 5, tabColor: 'FF64748B' })
+  if (sheets?.palette?.rows?.length) addSheet(workbook, 'Palet Çevrimleri', sheets.palette, { numberFrom: 99, tabColor: 'FFB45309' })
+  if (sheets?.returns?.rows?.length) addSheet(workbook, 'Boş İade', sheets.returns, { numberFrom: 3, tabColor: 'FF7E22CE' })
   return { workbook }
 }
 
-export async function exportBreakdownExcel({ breakdown, report, from, to }) {
+export async function exportBreakdownExcel({ breakdown, report, from, to, sheets = null }) {
   const ExcelJS = (await import('exceljs')).default
-  const { workbook } = buildBreakdownWorkbook(ExcelJS, breakdown, report)
+  const { workbook } = buildBreakdownWorkbook(ExcelJS, breakdown, report, sheets)
   const buffer = await workbook.xlsx.writeBuffer()
   const { saveWorkbook } = await import('../../../shared/logic/excelKit.js')
   saveWorkbook(buffer, `su-dagitim-dokumu-${from}_${to}.xlsx`)

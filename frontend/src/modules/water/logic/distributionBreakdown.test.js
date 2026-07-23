@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   ZONE_PRODUCT_COLUMNS,
   buildBreakdown,
+  buildBreakdownWorkbook,
   filterZones,
   dayLines,
   breakdownExcelRows,
@@ -171,6 +172,28 @@ describe('dağıtım dökümü — Excel satırları', () => {
     expect(daily.rows[1]).toEqual([
       '2026-07-01', 'Çarşamba', 'OSMANGAZİ', 'Damacana', 'AVRİL', 50, '50 adet', '', '',
     ])
+  })
+
+  it('workbook INDEX düzeni verilince tüm sayfaları kurar', async () => {
+    const ExcelJS = (await import('exceljs')).default
+    const breakdown = buildBreakdown(makeReport())
+    const sheets = {
+      index: { rows: [['', '', 'MİLA SU', ''], ['SIRA', 'FİRMA ADI', 'Bardak Su', 'TOPLAM'], [1, 'OSMANGAZİ', 400, 400]], brandGroups: [{ brand: 'MİLA SU', span: 1 }], leadCols: 2 },
+      intake: { rows: [['', 'MİLA SU', ''], ['GÜN', 'Bardak Su', 'TOPLAM'], [1, 100, 100]], brandGroups: [{ brand: 'MİLA SU', span: 1 }], leadCols: 1 },
+      palette: { headers: ['MARKA', 'ÜRÜN', 'PALET İÇERİĞİ'], rows: [['MİLA SU', 'Bardak Su', '1 palet = 66 koli']] },
+      returns: { headers: ['MARKA', 'TARİH', 'ÜRÜN', 'PALET', 'ADET'], rows: [['AVRİL', '2026-07-06', 'Damacana', 24, 864]] },
+    }
+    const { workbook } = buildBreakdownWorkbook(ExcelJS, breakdown, makeReport(), sheets)
+    expect(workbook.worksheets.map(sheet => sheet.name)).toEqual([
+      'INDEX', 'Gelen Tır', 'Özet', 'Gün Detay', 'Palet Çevrimleri', 'Boş İade',
+    ])
+    expect(workbook.getWorksheet('INDEX').getCell(2, 2).value).toBe('FİRMA ADI')
+  })
+
+  it('INDEX düzeni yoksa eski iki sayfa korunur (geri uyum)', async () => {
+    const ExcelJS = (await import('exceljs')).default
+    const { workbook } = buildBreakdownWorkbook(ExcelJS, buildBreakdown(makeReport()), makeReport())
+    expect(workbook.worksheets.map(sheet => sheet.name)).toEqual(['Özet', 'Gün Detay'])
   })
 
   it('boş rapor güvenli sonuç verir', () => {

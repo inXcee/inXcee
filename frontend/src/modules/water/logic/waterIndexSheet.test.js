@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   buildIndexMatrix,
+  buildIndexSheetRows,
   buildIntakeMatrix,
   buildPaletteLegend,
   buildReturnGroups,
@@ -153,6 +154,38 @@ describe('palet çevrim lejantı', () => {
   it('palet tanımı olmayan ürünü atlar', () => {
     const legend = buildPaletteLegend([{ id: 9, name: 'Tanımsız', unit_label: 'adet', cases_per_pallet: 0 }])
     expect(legend).toEqual([])
+  })
+})
+
+describe('Excel satırları (INDEX düzeni)', () => {
+  const returns = [
+    { id: 1, move_date: '2026-07-06', product_name: 'Damacana', brand_name: 'AVRİL', qty_base: 864, unit_label: 'adet', cases_per_pallet: 36 },
+  ]
+
+  it('INDEX sayfası: marka bandı + başlık + satırlar + TOPLAM', () => {
+    const { index } = buildIndexSheetRows({ report, products, returns })
+    // 1. satır marka bandı: iki boş öncü hücre, sonra markalar kendi sütun sayısınca
+    expect(index.rows[0]).toEqual(['', '', 'MİLA SU', '', '', '', 'AVRİL', ''])
+    expect(index.rows[1]).toEqual(['SIRA', 'FİRMA ADI', 'Damacana', 'Bardak Su', '0,33 LT', 'Cam Su', 'Damacana', 'TOPLAM'])
+    expect(index.rows[2]).toEqual([1, 'OTC KAMP ALANI', 91, 0, 0, 0, 70, 161])
+    expect(index.rows.at(-1)).toEqual(['', 'GENEL TOPLAM', 91, 90, 0, 0, 70, 251])
+  })
+
+  it('Gelen Tır sayfası: 31 gün satırı + toplam', () => {
+    const { intake } = buildIndexSheetRows({ report, products, returns })
+    expect(intake.rows[1]).toEqual(['GÜN', 'Damacana', 'Bardak Su', '0,33 LT', 'Cam Su', 'Damacana', 'TOPLAM'])
+    expect(intake.rows[2]).toEqual([1, 290, 7697, 0, 0, 0, 7987])
+    expect(intake.rows).toHaveLength(2 + 31 + 1) // bant + başlık + günler + toplam
+    expect(intake.rows.at(-1)[0]).toBe('TOPLAM')
+  })
+
+  it('Palet ve Boş İade sayfaları', () => {
+    const { palette, returns: returnSheet } = buildIndexSheetRows({ report, products, returns })
+    expect(palette.headers).toEqual(['MARKA', 'ÜRÜN', 'PALET İÇERİĞİ'])
+    expect(palette.rows[0]).toEqual(['MİLA SU', 'Damacana', '1 palet = 36 adet'])
+    expect(returnSheet.headers).toEqual(['MARKA', 'TARİH', 'ÜRÜN', 'PALET', 'ADET'])
+    expect(returnSheet.rows[0]).toEqual(['AVRİL', '2026-07-06', 'Damacana', 24, 864])
+    expect(returnSheet.rows.at(-1)).toEqual(['AVRİL', '', 'TOPLAM', '', 864])
   })
 })
 
