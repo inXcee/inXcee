@@ -282,6 +282,28 @@ describe('Su muhasebe raporu — kapsamlı bölümler', () => {
     expect(outDay.balance_base).toBe(103) // 15 devir + 100 giriş − 12
   })
 
+  // Kendi ayrık aralığında çalışır: yukarıdaki yerleşim testleri Haziran 2026'daki
+  // yer/ürün sayımlarına bakıyor, oraya kayıt eklemek onları bozar.
+  it('gün detay satırları not ve kaydeden bilgisini taşır (panel 2. seviye)', () => {
+    const db = getDB()
+    const zoneId = db.prepare('INSERT INTO water_zones(name) VALUES(?)').run('Not Test Yeri').lastInsertRowid
+    const userId = db.prepare('SELECT id FROM users LIMIT 1').get().id
+    const insert = db.prepare(`INSERT INTO water_movements(type, product_id, zone_id, move_date, qty_base, input_qty, input_unit, note, created_by)
+      VALUES('out', ?, ?, ?, 7, 7, 'koli', ?, ?)`)
+    insert.run(productId, zoneId, '2027-09-15', 'sabah teslim', userId)
+    insert.run(productId, zoneId, '2027-09-16', null, null)
+
+    const { detail } = accountingReportService({ from: '2027-09-01', to: '2027-09-30', sections: 'days' })
+    const line = detail.days.find(item => item.key === '2027-09-15')
+      .zones.find(zone => zone.zone_name === 'Not Test Yeri').lines[0]
+    expect(line).toMatchObject({ product_name: 'Rapor Suyu', qty_base: 7, note: 'sabah teslim' })
+    expect(line.created_by_name).toBeTruthy()
+    // Notsuz/kaydedensiz hareketlerde alanlar null gelir (undefined değil — panel ayrımı net olsun)
+    const plainLine = detail.days.find(item => item.key === '2027-09-16').zones[0].lines[0]
+    expect(plainLine.note).toBeNull()
+    expect(plainLine.created_by_name).toBeNull()
+  })
+
   it('yer × ürün kırılımı okunur birim de taşır', () => {
     const { detail } = accountingReportService({ ...range, sections: 'zones' })
     const zoneA = detail.zone_products.find(zone => zone.zone_name === 'Rapor Bölge A')

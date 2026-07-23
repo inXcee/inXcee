@@ -6,6 +6,7 @@ import { useAuthStore } from '../../shared/store/authStore.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 import { inputDialog } from '../../shared/components/InputDialog.jsx'
 import DailyDistributionModal from './components/DailyDistributionModal.jsx'
+import DistributionBreakdownPanel from './components/DistributionBreakdownPanel.jsx'
 import TruckArrivalPanel from './components/TruckArrivalPanel.jsx'
 import WaterBoard from './components/WaterBoard.jsx'
 import WaterCollapsiblePanel from './components/WaterCollapsiblePanel.jsx'
@@ -188,6 +189,8 @@ export default function WaterPage() {
       <MonthClosurePanel month={`${ym.y}-${String(ym.m).padStart(2, '0')}`} label={label} />
 
       <MonthlyReportPanel summary={summary} from={from} to={to} label={label} />
+
+      <DistributionBreakdownPanel from={from} to={to} label={label} />
 
       <TrendPanel />
 

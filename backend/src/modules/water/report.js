@@ -504,8 +504,12 @@ function buildDetail(report, { from, to, grouped }) {
         zone_name: zoneName,
         product_id: movement.product_id,
         product_name: movement.product_name,
+        brand_name: movement.brand_name || null,
         qty_base: movement.qty_base,
         qty_human: human,
+        // Panelin gün açılımı bunları gösterir; rapor PDF'i kullanmaz.
+        note: movement.note || null,
+        created_by_name: movement.created_by_name || null,
       })
 
       const index = columnIndex.get(key)
