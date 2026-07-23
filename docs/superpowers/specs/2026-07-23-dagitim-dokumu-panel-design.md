@@ -1,7 +1,7 @@
 # Dağıtım Dökümü Paneli — Tek Sayfada Yer × Gün × Ürün (Açılır/Kapanır)
 
 **Tarih:** 2026-07-23
-**Durum:** Onaylandı (kullanıcı: iki seviye açılım + Excel **ve** PDF indirme)
+**Durum:** Uygulandı (commit 9ef77e65) — yerelde; canlıya alınmadı
 **Kapsam:** Frontend su modülü (yeni panel + türetme/Excel mantığı) + küçük backend alan eklentisi.
 
 ## Problem
