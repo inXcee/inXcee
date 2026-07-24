@@ -23,6 +23,8 @@ describe('buildDayDetailHtml', () => {
     expect(html).toContain('Çalışan: 1')
     expect(html).toContain('Yemekhane')
     expect(html).toContain('Sabah')
+    expect(html).toContain('<table class="matrix">')
+    expect(html).toContain('Gün kadrosu')
     expect(html).toContain('Ali')
     expect(html).toContain('⚪ İzinli (1)')
   })

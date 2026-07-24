@@ -50,37 +50,36 @@ beforeEach(() => {
 })
 
 describe('DayDetailBoard', () => {
-  it('kapalıyken veri çekmez; açılınca toplu özet + bölümleri gösterir', async () => {
-    const user = userEvent.setup()
+  it('açık başlar; toplu özet, vardiya toplamı ve tüm bölümleri gösterir', async () => {
     renderBoard()
-    expect(api.get).not.toHaveBeenCalled()
 
-    await user.click(screen.getByRole('button', { name: /Aç/ }))
-
-    await waitFor(() => expect(screen.getByText('Yemekhane')).toBeInTheDocument())
+    expect(await screen.findByRole('button', { name: 'Yemekhane detayları' })).toBeInTheDocument()
     expect(api.get).toHaveBeenCalledWith('/shifts/day-detail', expect.objectContaining({
       params: { date: '2026-07-05', group_by: 'dept' },
     }))
     // Toplu özet rozetleri
+    expect(screen.getByText('GÜN KADROSU')).toBeInTheDocument()
     expect(screen.getByText('ÇALIŞAN')).toBeInTheDocument()
     expect(screen.getByText('RAPORLU')).toBeInTheDocument()
-    expect(screen.getByText('Temizlik')).toBeInTheDocument()
+    expect(screen.getByText('VARDİYA TOPLAMLARI')).toBeInTheDocument()
+    expect(screen.getByText('VARDİYA × DEPARTMAN — KİŞİ SAYILARI')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Temizlik detayları' })).toBeInTheDocument()
   })
 
   it('bölüme tıklayınca vardiya + kişi + izin/rapor/devamsız kovaları açılır', async () => {
     const user = userEvent.setup()
     renderBoard()
-    await user.click(screen.getByRole('button', { name: /Aç/ }))
-    await waitFor(() => expect(screen.getByText('Yemekhane')).toBeInTheDocument())
+    const groupButton = await screen.findByRole('button', { name: 'Yemekhane detayları' })
 
     expect(screen.queryByText('Ali')).not.toBeInTheDocument()
-    await user.click(screen.getByText('Yemekhane'))
+    await user.click(groupButton)
 
     expect(await screen.findByRole('button', { name: 'Ali' })).toBeInTheDocument()
     expect(screen.getByText(/2 kişi/)).toBeInTheDocument()
-    expect(screen.getByText(/⚪ İzinli/)).toBeInTheDocument()
-    expect(screen.getByText(/🔴 Raporlu/)).toBeInTheDocument()
-    expect(screen.getByText(/⛔ Devamsız/)).toBeInTheDocument()
+    expect(screen.getByText('İzinli (1)')).toBeInTheDocument()
+    expect(screen.getByText('Raporlu (1)')).toBeInTheDocument()
+    expect(screen.getByText('Devamsız (1)')).toBeInTheDocument()
+    expect(screen.getByText('Mutfak')).toBeInTheDocument()
   })
 
   it('kişiye tıklayınca onPersonClick çağrılır', async () => {
@@ -92,9 +91,7 @@ describe('DayDetailBoard', () => {
         <DayDetailBoard weekDays={['2026-07-05']} onPersonClick={onPersonClick} />
       </QueryClientProvider>,
     )
-    await user.click(screen.getByRole('button', { name: /Aç/ }))
-    await waitFor(() => expect(screen.getByText('Yemekhane')).toBeInTheDocument())
-    await user.click(screen.getByText('Yemekhane'))
+    await user.click(await screen.findByRole('button', { name: 'Yemekhane detayları' }))
     await user.click(await screen.findByRole('button', { name: 'Ali' }))
     expect(onPersonClick).toHaveBeenCalledWith(1)
   })
@@ -102,8 +99,7 @@ describe('DayDetailBoard', () => {
   it('gruplama değişince yeni istek atılır', async () => {
     const user = userEvent.setup()
     renderBoard()
-    await user.click(screen.getByRole('button', { name: /Aç/ }))
-    await waitFor(() => expect(screen.getByText('Yemekhane')).toBeInTheDocument())
+    await screen.findByRole('button', { name: 'Yemekhane detayları' })
 
     await user.click(screen.getByRole('button', { name: 'Site' }))
     await waitFor(() => expect(api.get).toHaveBeenCalledWith('/shifts/day-detail', expect.objectContaining({
@@ -113,10 +109,20 @@ describe('DayDetailBoard', () => {
 
   it('kayıt yoksa bilgilendirir, indirme butonları çıkmaz', async () => {
     api.get.mockResolvedValue({ data: { date: '2026-07-05', group_by: 'dept', totals: {}, groups: [] } })
-    const user = userEvent.setup()
     renderBoard()
-    await user.click(screen.getByRole('button', { name: /Aç/ }))
     expect(await screen.findByText('Bu gün için çizelge kaydı yok.')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Excel/ })).not.toBeInTheDocument()
+  })
+
+  it('kişi/rol/konum araması eşleşen bölümü bulur ve detayını açar', async () => {
+    const user = userEvent.setup()
+    renderBoard()
+    await screen.findByRole('button', { name: 'Yemekhane detayları' })
+
+    await user.type(screen.getByRole('searchbox', { name: 'Gün detayında ara' }), 'Temizlikçi')
+
+    expect(screen.queryByRole('button', { name: 'Yemekhane detayları' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Temizlik detayları' })).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('button', { name: 'Emre' })).toBeInTheDocument()
   })
 })

@@ -1,6 +1,6 @@
 // Gün detayı çıktıları: Excel (exceljs lazy) ve yazdırma görünümü (tarayıcı → PDF).
 // Satır üretimi dayDetail.js'te; burada yalnız dosya/sayfa kurulumu.
-import { dayDetailRows, dayDetailSummary } from './dayDetail.js'
+import { buildShiftMatrix, dayDetailRows, dayDetailSummary } from './dayDetail.js'
 
 const GROUP_LABEL = { dept: 'Departman', site: 'Site', location: 'Çalışma noktası' }
 
@@ -12,11 +12,64 @@ export async function exportDayDetailExcel(detail) {
   const ExcelJS = (await import('exceljs')).default
   const { saveWorkbook } = await import('../../../shared/logic/excelKit.js')
   const { headers, rows } = dayDetailRows(detail)
+  const matrix = buildShiftMatrix(detail)
   const workbook = new ExcelJS.Workbook()
-  const sheet = workbook.addWorksheet('Gün Detayı', { views: [{ state: 'frozen', ySplit: 3 }] })
+  const summarySheet = workbook.addWorksheet('Kadro Özeti', { views: [{ state: 'frozen', ySplit: 4, xSplit: 1 }] })
+  const groupLabel = GROUP_LABEL[detail.group_by] || 'Departman'
+  const matrixHeaders = [
+    groupLabel.toLocaleUpperCase('tr'),
+    ...matrix.columns.map(column => (
+      `${column.shift_name}${column.start_hour != null && column.start_hour !== ''
+        ? ` ${column.start_hour}${column.end_hour ? `–${column.end_hour}` : ''}`
+        : ''}`
+    )),
+    'ÇALIŞAN', 'İZİNLİ', 'RAPORLU', 'DEVAMSIZ', 'İZİN GÜNÜ', 'GÜN KADROSU',
+  ]
+
+  summarySheet.mergeCells(1, 1, 1, matrixHeaders.length)
+  summarySheet.getCell(1, 1).value = `VARDİYA KADRO ÖZETİ · ${detail.date} · ${groupLabel} bazında`
+  summarySheet.getCell(1, 1).font = { bold: true, size: 13, color: { argb: 'FFFFFFFF' } }
+  summarySheet.getCell(1, 1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF334155' } }
+  summarySheet.mergeCells(2, 1, 2, matrixHeaders.length)
+  summarySheet.getCell(2, 1).value = summaryLine(detail)
+  summarySheet.getCell(2, 1).font = { size: 10, color: { argb: 'FF475569' } }
+  summarySheet.addRow([])
+  const matrixHeaderRow = summarySheet.addRow(matrixHeaders)
+  matrixHeaderRow.font = { bold: true, color: { argb: 'FFFFFFFF' } }
+  matrixHeaderRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0E7490' } }
+  for (const row of matrix.rows) {
+    summarySheet.addRow([
+      row.name,
+      ...row.cells,
+      row.working,
+      row.on_leave,
+      row.sick,
+      row.absent,
+      row.off,
+      row.total,
+    ])
+  }
+  const totalRow = summarySheet.addRow([
+    'TOPLAM',
+    ...matrix.columnTotals,
+    matrix.totals.working,
+    matrix.totals.on_leave,
+    matrix.totals.sick,
+    matrix.totals.absent,
+    matrix.totals.off,
+    matrix.totals.total,
+  ])
+  totalRow.font = { bold: true }
+  totalRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEF3C7' } }
+  summarySheet.columns.forEach((column, index) => {
+    column.width = index === 0 ? 26 : Math.min(24, Math.max(12, matrixHeaders[index].length + 2))
+  })
+  summarySheet.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 }
+
+  const sheet = workbook.addWorksheet('Kişi Detayı', { views: [{ state: 'frozen', ySplit: 3 }] })
 
   sheet.mergeCells(1, 1, 1, headers.length)
-  sheet.getCell(1, 1).value = `GÜN DETAYI · ${detail.date} · ${GROUP_LABEL[detail.group_by] || 'Departman'} bazında`
+  sheet.getCell(1, 1).value = `KİŞİ DETAYI · ${detail.date} · ${groupLabel} bazında`
   sheet.getCell(1, 1).font = { bold: true, size: 13, color: { argb: 'FFFFFFFF' } }
   sheet.getCell(1, 1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF334155' } }
   sheet.mergeCells(2, 1, 2, headers.length)
@@ -45,6 +98,27 @@ const escapeHtml = value => String(value ?? '').replace(/[&<>"]/g, ch => (
 // Bölüm bölüm yazdırma görünümü — tarayıcının "PDF olarak kaydet"i ile alınır.
 export function buildDayDetailHtml(detail) {
   const groupLabel = GROUP_LABEL[detail.group_by] || 'Departman'
+  const matrix = buildShiftMatrix(detail)
+  const matrixHtml = matrix.rows.length
+    ? `<table class="matrix">
+        <thead><tr>
+          <th>${escapeHtml(groupLabel)}</th>
+          ${matrix.columns.map(column => `<th>${escapeHtml(column.shift_name)}${column.start_hour != null && column.start_hour !== '' ? `<small>${escapeHtml(column.start_hour)}${column.end_hour ? `–${escapeHtml(column.end_hour)}` : ''}</small>` : ''}</th>`).join('')}
+          <th>Çalışan</th><th>İzinli</th><th>Raporlu</th><th>Devamsız</th><th>İzin günü</th><th>Gün kadrosu</th>
+        </tr></thead>
+        <tbody>
+          ${matrix.rows.map(row => `<tr>
+            <td>${escapeHtml(row.name)}</td>
+            ${row.cells.map(value => `<td>${value || '·'}</td>`).join('')}
+            <td>${row.working}</td><td>${row.on_leave}</td><td>${row.sick}</td><td>${row.absent}</td><td>${row.off}</td><td><b>${row.total}</b></td>
+          </tr>`).join('')}
+          <tr class="total"><td>TOPLAM</td>
+            ${matrix.columnTotals.map(value => `<td>${value}</td>`).join('')}
+            <td>${matrix.totals.working}</td><td>${matrix.totals.on_leave}</td><td>${matrix.totals.sick}</td><td>${matrix.totals.absent}</td><td>${matrix.totals.off}</td><td>${matrix.totals.total}</td>
+          </tr>
+        </tbody>
+      </table>`
+    : ''
   const bucket = (title, items, render) => (items.length
     ? `<div class="bucket"><span class="bk">${title} (${items.length})</span> ${items.map(render).join(' · ')}</div>`
     : '')
@@ -68,6 +142,12 @@ export function buildDayDetailHtml(detail) {
   body { font-family: Arial, sans-serif; color: #0f172a; margin: 24px; font-size: 12px; }
   h1 { font-size: 18px; margin: 0 0 4px; }
   .summary { color: #475569; margin-bottom: 16px; font-size: 12px; }
+  .matrix { width: 100%; border-collapse: collapse; margin: 0 0 16px; font-size: 10px; }
+  .matrix th, .matrix td { border: 1px solid #cbd5e1; padding: 4px 5px; text-align: center; }
+  .matrix th:first-child, .matrix td:first-child { text-align: left; }
+  .matrix th { background: #0e7490; color: white; }
+  .matrix th small { display: block; font-weight: 400; opacity: .8; margin-top: 2px; }
+  .matrix .total { background: #fef3c7; font-weight: 700; }
   section { border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; page-break-inside: avoid; }
   h2 { font-size: 14px; margin: 0 0 8px; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px; }
   h2 .meta { font-size: 10px; color: #64748b; font-weight: 400; margin-left: 8px; }
@@ -81,6 +161,7 @@ export function buildDayDetailHtml(detail) {
 </style></head><body>
   <h1>GÜN DETAYI · ${escapeHtml(detail.date)} · ${groupLabel} bazında</h1>
   <div class="summary">${escapeHtml(summaryLine(detail))}</div>
+  ${matrixHtml}
   ${sections || '<p>Bu gün için çizelge kaydı yok.</p>'}
 </body></html>`
 }

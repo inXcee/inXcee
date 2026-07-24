@@ -923,7 +923,7 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
         locations={workLocations}
       />}
 
-      {scheduleView === 'weekly' && <DayDetailBoard weekDays={weekDays} onPersonClick={onPersonClick} />}
+      {scheduleView === 'weekly' && <DayDetailBoard key={weekDays[0] || 'current-week'} weekDays={weekDays} onPersonClick={onPersonClick} />}
 
       {scheduleView === 'weekly' && (
         <div style={{

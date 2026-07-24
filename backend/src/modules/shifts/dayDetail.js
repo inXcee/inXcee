@@ -28,21 +28,43 @@ function startMinutes(value) {
 }
 
 function groupKeyFor(row, groupBy) {
-  if (groupBy === 'site') return row.site || 'Yemekhane'
-  if (groupBy === 'location') return row.work_location_name || 'Yemekhane'
+  if (groupBy === 'site') return row.site || 'Site belirtilmemiş'
+  if (groupBy === 'location') return row.work_location_name || 'Konum belirtilmemiş'
   return row.dept_name || 'Departmansız'
 }
 
 export function buildDayDetail(rows = [], { groupBy = 'dept' } = {}) {
   const gb = GROUP_BYS.has(groupBy) ? groupBy : 'dept'
   const groups = new Map()
+  const statusIds = {
+    working: new Set(),
+    on_leave: new Set(),
+    sick: new Set(),
+    absent: new Set(),
+    off: new Set(),
+  }
   const ensure = (name) => {
     if (!groups.has(name)) {
-      groups.set(name, { name, shiftMap: new Map(), on_leave: [], sick: [], absent: [], off: [] })
+      groups.set(name, {
+        key: `${gb}:${name}`,
+        name,
+        shiftMap: new Map(),
+        workingIds: new Set(),
+        on_leave: new Map(),
+        sick: new Map(),
+        absent: new Map(),
+        off: new Map(),
+      })
     }
     return groups.get(name)
   }
-  const totals = { working: 0, on_leave: 0, sick: 0, absent: 0, off: 0 }
+  const personBase = row => ({
+    staff_id: row.staff_id,
+    full_name: row.full_name,
+    role_name: row.role_name || '',
+    work_location_name: row.work_location_name || '',
+    site: row.site || '',
+  })
 
   for (const row of rows) {
     const working = WORKING.has(row.status)
@@ -56,40 +78,50 @@ export function buildDayDetail(rows = [], { groupBy = 'dept' } = {}) {
     const group = ensure(groupName)
 
     if (working) {
-      totals.working += 1
-      const key = row.shift_def_id ?? 'none'
+      statusIds.working.add(row.staff_id)
+      group.workingIds.add(row.staff_id)
+      const key = [
+        row.shift_def_id ?? `name:${row.shift_name || 'none'}`,
+        row.start_hour ?? '',
+        row.end_hour ?? '',
+      ].join('|')
       if (!group.shiftMap.has(key)) {
         group.shiftMap.set(key, {
+          shift_key: key,
           shift_def_id: row.shift_def_id ?? null,
           shift_name: row.shift_name || 'Vardiya atanmamış',
           start_hour: row.start_hour ?? null,
           end_hour: row.end_hour ?? null,
-          people: [],
+          peopleMap: new Map(),
         })
       }
-      group.shiftMap.get(key).people.push({
-        staff_id: row.staff_id,
-        full_name: row.full_name,
-        role_name: row.role_name || '',
-        work_location_name: row.work_location_name || '',
-        site: row.site || '',
-      })
+      const shift = group.shiftMap.get(key)
+      if (!shift.peopleMap.has(row.staff_id)) {
+        shift.peopleMap.set(row.staff_id, { ...personBase(row), work_locations: [], sites: [] })
+      }
+      const person = shift.peopleMap.get(row.staff_id)
+      if (row.work_location_name && !person.work_locations.includes(row.work_location_name)) {
+        person.work_locations.push(row.work_location_name)
+      }
+      if (row.site && !person.sites.includes(row.site)) person.sites.push(row.site)
+      person.work_location_name = person.work_locations.join(' / ')
+      person.site = person.sites.join(' / ')
     } else if (row.status === 'on_leave' && row.leave_type === 'sick') {
-      totals.sick += 1
-      group.sick.push({ staff_id: row.staff_id, full_name: row.full_name })
+      statusIds.sick.add(row.staff_id)
+      group.sick.set(row.staff_id, personBase(row))
     } else if (row.status === 'on_leave') {
-      totals.on_leave += 1
-      group.on_leave.push({
-        staff_id: row.staff_id, full_name: row.full_name,
+      statusIds.on_leave.add(row.staff_id)
+      group.on_leave.set(row.staff_id, {
+        ...personBase(row),
         leave_type: row.leave_type || 'other',
         leave_type_label: LEAVE_LABELS[row.leave_type] || 'İzinli',
       })
     } else if (row.status === 'absent') {
-      totals.absent += 1
-      group.absent.push({ staff_id: row.staff_id, full_name: row.full_name, reason: row.absent_reason || '' })
+      statusIds.absent.add(row.staff_id)
+      group.absent.set(row.staff_id, { ...personBase(row), reason: row.absent_reason || '' })
     } else if (row.status === 'off') {
-      totals.off += 1
-      group.off.push({ staff_id: row.staff_id, full_name: row.full_name })
+      statusIds.off.add(row.staff_id)
+      group.off.set(row.staff_id, personBase(row))
     }
   }
 
@@ -97,23 +129,46 @@ export function buildDayDetail(rows = [], { groupBy = 'dept' } = {}) {
   const result = [...groups.values()]
     .map(group => {
       const shifts = [...group.shiftMap.values()]
-        .map(shift => ({ ...shift, count: shift.people.length, people: shift.people.sort(byName) }))
+        .map(({ peopleMap, ...shift }) => {
+          const people = [...peopleMap.values()]
+            .map(({ work_locations, sites, ...person }) => ({
+              ...person,
+              work_locations,
+              sites,
+            }))
+            .sort(byName)
+          return { ...shift, count: people.length, people }
+        })
         .sort((left, right) =>
           startMinutes(left.start_hour) - startMinutes(right.start_hour)
           || String(left.shift_name).localeCompare(String(right.shift_name), 'tr'))
+      const onLeave = [...group.on_leave.values()].sort(byName)
+      const sick = [...group.sick.values()].sort(byName)
+      const absent = [...group.absent.values()].sort(byName)
+      const off = [...group.off.values()].sort(byName)
+      const rosterIds = new Set([
+        ...group.workingIds,
+        ...group.on_leave.keys(),
+        ...group.sick.keys(),
+        ...group.absent.keys(),
+        ...group.off.keys(),
+      ])
       return {
+        key: group.key,
         name: group.name,
         shifts,
-        on_leave: group.on_leave.sort(byName),
-        sick: group.sick.sort(byName),
-        absent: group.absent.sort(byName),
-        off: group.off.sort(byName),
+        on_leave: onLeave,
+        sick,
+        absent,
+        off,
         totals: {
-          working: shifts.reduce((sum, shift) => sum + shift.count, 0),
-          on_leave: group.on_leave.length,
-          sick: group.sick.length,
-          absent: group.absent.length,
-          off: group.off.length,
+          working: group.workingIds.size,
+          assignments: shifts.reduce((sum, shift) => sum + shift.count, 0),
+          on_leave: onLeave.length,
+          sick: sick.length,
+          absent: absent.length,
+          off: off.length,
+          roster: rosterIds.size,
         },
       }
     })
@@ -121,5 +176,19 @@ export function buildDayDetail(rows = [], { groupBy = 'dept' } = {}) {
       right.totals.working - left.totals.working
       || String(left.name).localeCompare(String(right.name), 'tr'))
 
-  return { group_by: gb, totals: { ...totals, groups: result.length }, groups: result }
+  const rosterIds = new Set(Object.values(statusIds).flatMap(ids => [...ids]))
+  return {
+    group_by: gb,
+    totals: {
+      working: statusIds.working.size,
+      assignments: result.reduce((sum, group) => sum + group.totals.assignments, 0),
+      on_leave: statusIds.on_leave.size,
+      sick: statusIds.sick.size,
+      absent: statusIds.absent.size,
+      off: statusIds.off.size,
+      roster: rosterIds.size,
+      groups: result.length,
+    },
+    groups: result,
+  }
 }

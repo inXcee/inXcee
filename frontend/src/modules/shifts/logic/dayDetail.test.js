@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { dayDetailRows, dayDetailSummary, personStatusLabel } from './dayDetail.js'
+import {
+  buildShiftMatrix,
+  buildShiftOverview,
+  dayDetailRows,
+  dayDetailSummary,
+  groupMatchesSearch,
+  personStatusLabel,
+} from './dayDetail.js'
 
 const detail = {
   date: '2026-07-05',
@@ -33,15 +40,142 @@ const detail = {
   ],
 }
 
+// Çok departmanlı gerçek senaryo: matris yalnız yemek tarafını değil hepsini kapsamalı.
+const multiDept = {
+  date: '2026-07-05',
+  group_by: 'dept',
+  totals: { working: 12, on_leave: 2, sick: 1, absent: 1, off: 1, groups: 4 },
+  groups: [
+    {
+      name: 'Temizlik',
+      shifts: [
+        { shift_def_id: 1, shift_name: 'Gündüz', start_hour: '08:00', end_hour: '16:00', count: 4, people: [] },
+        { shift_def_id: 2, shift_name: 'Akşam', start_hour: '16:00', end_hour: '24:00', count: 2, people: [] },
+      ],
+      on_leave: [{ staff_id: 90, full_name: 'T1', leave_type_label: 'Yıllık izin' }],
+      sick: [], absent: [{ staff_id: 91, full_name: 'T2', reason: '' }], off: [],
+      totals: { working: 6, on_leave: 1, sick: 0, absent: 1, off: 0 },
+    },
+    {
+      name: 'Mutfak',
+      shifts: [{ shift_def_id: 1, shift_name: 'Gündüz', start_hour: '08:00', end_hour: '16:00', count: 3, people: [] }],
+      on_leave: [{ staff_id: 92, full_name: 'M1', leave_type_label: 'Acil izin' }],
+      sick: [{ staff_id: 93, full_name: 'M2' }], absent: [], off: [{ staff_id: 94, full_name: 'M3' }],
+      totals: { working: 3, on_leave: 1, sick: 1, absent: 0, off: 1 },
+    },
+    {
+      name: 'Güvenlik',
+      // Gece vardiyası yalnız bu bölümde var — sütun yine de tüm tabloda çıkmalı
+      shifts: [{ shift_def_id: 3, shift_name: 'Gece', start_hour: '00:00', end_hour: '08:00', count: 2, people: [] }],
+      on_leave: [], sick: [], absent: [], off: [],
+      totals: { working: 2, on_leave: 0, sick: 0, absent: 0, off: 0 },
+    },
+    {
+      name: 'Teknik',
+      shifts: [{ shift_def_id: 2, shift_name: 'Akşam', start_hour: '16:00', end_hour: '24:00', count: 1, people: [] }],
+      on_leave: [], sick: [], absent: [], off: [],
+      totals: { working: 1, on_leave: 0, sick: 0, absent: 0, off: 0 },
+    },
+  ],
+}
+
+describe('buildShiftMatrix — vardiya × bölüm', () => {
+  const matrix = buildShiftMatrix(multiDept)
+
+  it('sütunlar tüm bölümlerin vardiyalarının birleşimi, saate göre sıralı', () => {
+    expect(matrix.columns.map(c => c.shift_name)).toEqual(['Gece', 'Gündüz', 'Akşam'])
+  })
+
+  it('her bölüm kendi satırında, çalışan sayısına göre çoktan aza', () => {
+    expect(matrix.rows.map(r => r.name)).toEqual(['Temizlik', 'Mutfak', 'Güvenlik', 'Teknik'])
+  })
+
+  it('hücreler doğru vardiyaya düşer, olmayan vardiya 0 kalır', () => {
+    const temizlik = matrix.rows.find(r => r.name === 'Temizlik')
+    expect(temizlik.cells).toEqual([0, 4, 2]) // Gece 0 · Gündüz 4 · Akşam 2
+    const guvenlik = matrix.rows.find(r => r.name === 'Güvenlik')
+    expect(guvenlik.cells).toEqual([2, 0, 0])
+    const teknik = matrix.rows.find(r => r.name === 'Teknik')
+    expect(teknik.cells).toEqual([0, 0, 1])
+  })
+
+  it('satırda izin/rapor/devamsız ve kadro toplamı taşınır', () => {
+    const mutfak = matrix.rows.find(r => r.name === 'Mutfak')
+    expect(mutfak).toMatchObject({ working: 3, on_leave: 1, sick: 1, absent: 0, off: 1 })
+    expect(mutfak.total).toBe(6) // 3 + 1 + 1 + 0 + 1 = o gün kadroda görünen herkes
+  })
+
+  it('sütun toplamları ve genel toplam tutarlı', () => {
+    expect(matrix.columnTotals).toEqual([2, 7, 3]) // Gece 2 · Gündüz 4+3 · Akşam 2+1
+    expect(matrix.columnTotals.reduce((a, b) => a + b, 0)).toBe(matrix.totals.assignments)
+    expect(matrix.totals).toMatchObject({ working: 12, on_leave: 2, sick: 1, absent: 1, off: 1 })
+    // Satır çalışan toplamları da genel çalışanla eşleşmeli
+    expect(matrix.rows.reduce((sum, r) => sum + r.working, 0)).toBe(matrix.totals.working)
+  })
+
+  it('boş detay güvenli', () => {
+    const empty = buildShiftMatrix({ groups: [], totals: {} })
+    expect(empty.columns).toEqual([])
+    expect(empty.rows).toEqual([])
+    expect(empty.columnTotals).toEqual([])
+    expect(buildShiftMatrix(null).rows).toEqual([])
+  })
+})
+
+describe('buildShiftOverview', () => {
+  it('vardiya toplamını ve departman dağılımını üretir', () => {
+    const overview = buildShiftOverview(multiDept)
+    expect(overview.map(shift => [shift.shift_name, shift.count])).toEqual([
+      ['Gece', 2],
+      ['Gündüz', 7],
+      ['Akşam', 3],
+    ])
+    expect(overview.find(shift => shift.shift_name === 'Gündüz').groups).toEqual([
+      { key: 'Temizlik', name: 'Temizlik', count: 4 },
+      { key: 'Mutfak', name: 'Mutfak', count: 3 },
+    ])
+  })
+
+  it('aynı vardiya tanımının farklı saatlerini ayrı gösterir', () => {
+    const overview = buildShiftOverview({
+      groups: [{
+        name: 'Teknik',
+        shifts: [
+          { shift_def_id: 1, shift_name: 'Gündüz', start_hour: '08:00', end_hour: '12:00', count: 1, people: [] },
+          { shift_def_id: 1, shift_name: 'Gündüz', start_hour: '12:00', end_hour: '16:00', count: 2, people: [] },
+        ],
+        totals: { working: 2 },
+      }],
+      totals: { working: 2 },
+    })
+    expect(overview).toHaveLength(2)
+    expect(overview.map(shift => shift.count)).toEqual([1, 2])
+  })
+})
+
 describe('dayDetailSummary', () => {
   it('toplu özet rozetlerini üretir', () => {
     expect(dayDetailSummary(detail)).toEqual([
+      { key: 'roster', label: 'Gün kadrosu', value: 7 },
       { key: 'working', label: 'Çalışan', value: 3 },
       { key: 'on_leave', label: 'İzinli', value: 1 },
       { key: 'sick', label: 'Raporlu', value: 1 },
       { key: 'absent', label: 'Devamsız', value: 1 },
       { key: 'off', label: 'İzin günü', value: 1 },
     ])
+  })
+})
+
+describe('groupMatchesSearch', () => {
+  const group = detail.groups[0]
+
+  it('departman, kişi, rol, konum ve durum detayında Türkçe arar', () => {
+    expect(groupMatchesSearch(group, 'yemekhane')).toBe(true)
+    expect(groupMatchesSearch(group, 'aşçı')).toBe(true)
+    expect(groupMatchesSearch(group, 'mutfak')).toBe(true)
+    expect(groupMatchesSearch(group, 'yıllık')).toBe(true)
+    expect(groupMatchesSearch(group, 'haber')).toBe(true)
+    expect(groupMatchesSearch(group, 'teknik')).toBe(false)
   })
 })
 
@@ -79,6 +213,6 @@ describe('dayDetailRows (Excel/print düz satırlar)', () => {
   it('boş detay güvenli', () => {
     const empty = dayDetailRows({ groups: [], totals: {} })
     expect(empty.rows).toEqual([])
-    expect(dayDetailSummary({ totals: {} })[0]).toEqual({ key: 'working', label: 'Çalışan', value: 0 })
+    expect(dayDetailSummary({ totals: {} })[0]).toEqual({ key: 'roster', label: 'Gün kadrosu', value: 0 })
   })
 })

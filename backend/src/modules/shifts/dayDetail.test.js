@@ -38,10 +38,10 @@ describe('buildDayDetail — departman gruplama', () => {
 
   it('izin/rapor/devamsız/off ayrı kovalarda, vardiyaya sızmaz', () => {
     const yem = result.groups[0]
-    expect(yem.totals).toMatchObject({ working: 3, on_leave: 1, sick: 1, absent: 1, off: 1 })
+    expect(yem.totals).toMatchObject({ working: 3, assignments: 3, on_leave: 1, sick: 1, absent: 1, off: 1, roster: 7 })
     expect(yem.on_leave[0]).toMatchObject({ full_name: 'Ayşe', leave_type: 'annual', leave_type_label: 'Yıllık izin' })
     expect(yem.sick.map(p => p.full_name)).toEqual(['Mehmet'])
-    expect(yem.absent[0]).toMatchObject({ full_name: 'Hasan', reason: 'Haber vermedi' })
+    expect(yem.absent[0]).toMatchObject({ full_name: 'Hasan', role_name: 'Garson', reason: 'Haber vermedi' })
     expect(yem.off.map(p => p.full_name)).toEqual(['Fatma'])
     // Çalışan hücrelerine izinli/raporlu karışmadı
     expect(yem.shifts.flatMap(s => s.people).map(p => p.full_name)).not.toContain('Ayşe')
@@ -50,6 +50,34 @@ describe('buildDayDetail — departman gruplama', () => {
   it('grup çalışan toplamı vardiya sayılarının toplamına eşit', () => {
     result.groups.forEach(group => {
       expect(group.totals.working).toBe(group.shifts.reduce((sum, s) => sum + s.count, 0))
+    })
+  })
+})
+
+describe('buildDayDetail — çoklu vardiya/konum segmentleri', () => {
+  it('toplu çalışanı benzersiz kişi, vardiya görevlerini ayrı sayar', () => {
+    const result = buildDayDetail([
+      { ...rows[0], work_location_name: 'Mutfak-A', site: 'Yemekhane' },
+      { ...rows[0], shift_def_id: 11, shift_name: 'Akşam', start_hour: '16:00', end_hour: '20:00', work_location_name: 'Servis-A' },
+    ], { groupBy: 'dept' })
+
+    expect(result.totals).toMatchObject({ working: 1, assignments: 2, roster: 1 })
+    expect(result.groups[0].totals).toMatchObject({ working: 1, assignments: 2, roster: 1 })
+    expect(result.groups[0].shifts.map(shift => shift.count)).toEqual([1, 1])
+  })
+
+  it('aynı vardiyadaki aynı kişinin farklı konumlarını tek kişi üzerinde birleştirir', () => {
+    const result = buildDayDetail([
+      { ...rows[0], work_location_name: 'Mutfak-A' },
+      { ...rows[0], work_location_name: 'Mutfak-B' },
+    ], { groupBy: 'dept' })
+
+    expect(result.totals).toMatchObject({ working: 1, assignments: 1, roster: 1 })
+    expect(result.groups[0].shifts[0].count).toBe(1)
+    expect(result.groups[0].shifts[0].people[0]).toMatchObject({
+      full_name: 'Ali',
+      work_location_name: 'Mutfak-A / Mutfak-B',
+      work_locations: ['Mutfak-A', 'Mutfak-B'],
     })
   })
 })
