@@ -2539,8 +2539,24 @@ export function getScheduleCandidates({
     .sort((a, b) => Number(b.eligible) - Number(a.eligible) || b.score - a.score || a.full_name.localeCompare(b.full_name, 'tr'))
 }
 
-// Rol grubu: ikram/aşçı/lokal rolleri "Yemek/İkram", bulaşıkhane ayrı, kalanı "Diğer".
-// İkram/lokal ile bulaşıkhane çıktıda karışmasın diye ayrı gruplanır.
+// Rol grubu anahtarları — ASCII'ye indirgenmiş, küçük harf. Sıra önemlidir:
+// önce en özgül grup (bulaşıkhane, mutfaktan önce) denenir.
+// Not: staff_roles tablosunda departman bağı yok, bu yüzden sınıflandırma rol
+// adına dayanır. Yeni bir departman/rol eklenirse anahtarı buraya eklenmeli —
+// eşleşmeyen rol "Diğer" grubunda kalır.
+const ROLE_GROUP_KEYWORDS = [
+  ['Bulaşıkhane', ['bulasik']],
+  ['Çamaşırhane', ['camasir', 'utu', 'kurutma', 'yikama']],
+  ['Yemek/İkram', ['ikram', 'asci', 'lokal', 'garson', 'mutfak', 'servis', 'yemek', 'komi']],
+  ['Temizlik', ['temizlik', 'meydanci', 'hizmetli', 'kat gorevlisi', 'housekeep']],
+  ['Teknik', ['teknik', 'teknisyen', 'elektrik', 'tesisat', 'bakim', 'onarim', 'usta', 'kaynakci', 'marangoz']],
+  ['Güvenlik', ['guvenlik', 'bekci', 'security']],
+  ['Bahçe', ['bahce', 'bahci', 'peyzaj', 'cevre duzen']],
+  ['Sağlık', ['saglik', 'revir', 'hemsire', 'doktor', 'ilk yardim', 'paramedik']],
+  ['İdari', ['idari', 'ofis', 'muhasebe', 'insan kaynak', 'sekreter', 'memur', 'satin alma', 'depo sorumlu']],
+]
+
+// Rol grubu: her departman kendi grubunu alır; hiçbiri eşleşmezse "Diğer".
 export function roleGroupOf(roleName) {
   // Türkçe İ/ı büyük-küçük tuzağını aşmak için ASCII'ye indir, sonra karşılaştır.
   const name = String(roleName || '')
@@ -2548,13 +2564,20 @@ export function roleGroupOf(roleName) {
     .replace(/Ğ/g, 'G').replace(/ğ/g, 'g').replace(/Ü/g, 'U').replace(/ü/g, 'u')
     .replace(/Ö/g, 'O').replace(/ö/g, 'o').replace(/Ç/g, 'C').replace(/ç/g, 'c')
     .toLowerCase()
-  if (name.includes('bulasik')) return 'Bulaşıkhane'
-  if (['ikram', 'asci', 'lokal', 'garson', 'mutfak', 'servis', 'yemek'].some(k => name.includes(k))) return 'Yemek/İkram'
+  // Sıra önemli: en özgül anahtar önce denenir (ör. "bulaşık" mutfaktan önce).
+  for (const [group, keywords] of ROLE_GROUP_KEYWORDS) {
+    if (keywords.some(keyword => name.includes(keyword))) return group
+  }
   return 'Diğer'
 }
 
 // Atanmamış (çalışma noktası seçilmemiş) vardiyalı personelin toplandığı sanal grup.
-export const DEFAULT_WORK_AREA = 'Yemekhane'
+// Eskiden "Yemekhane" idi; bu, noktası girilmemiş herkesi yemekhaneye sayıyor ve
+// GÜN DETAYI paneliyle çelişiyordu. Artık nötr etiket — iki panel aynı sayıyı verir.
+export const DEFAULT_SITE = 'Site belirtilmemiş'
+export const DEFAULT_LOCATION = 'Konum belirtilmemiş'
+// Geriye uyum: eski adı kullanan çağrılar konum etiketini alsın.
+export const DEFAULT_WORK_AREA = DEFAULT_LOCATION
 
 export function getScheduleBreakdown(from, to) {
   const db = getDB()
@@ -2575,7 +2598,7 @@ export function getScheduleBreakdown(from, to) {
     add(locationSets, `${item.work_date}|${item.work_location_id || 0}`, item.staff_id)
     add(roleSets, `${item.work_date}|${item.role_id || 0}`, item.staff_id)
     // Nokta seçilmemişse site de "Yemekhane" grubuna yazılır (lokal olarak sayılmasın).
-    add(siteSets, `${item.work_date}|${location?.site || DEFAULT_WORK_AREA}`, item.staff_id)
+    add(siteSets, `${item.work_date}|${location?.site || DEFAULT_SITE}`, item.staff_id)
   })
   const locationCounts = [...locationSets.entries()].map(([key, staffIds]) => {
     const [workDate, rawId] = key.split('|')
@@ -2585,7 +2608,7 @@ export function getScheduleBreakdown(from, to) {
       work_date: workDate,
       work_location_id: id,
       // Atanmamışlar "Yemekhane" grubu — "Noktasız" değil.
-      work_location_name: location?.name || DEFAULT_WORK_AREA,
+      work_location_name: location?.name || DEFAULT_LOCATION,
       work_location_color: location?.color_class || 'bg-amber-400',
       is_default_area: !id,
       assigned: staffIds.size,
@@ -2631,8 +2654,10 @@ export function getBreakdownAssignees({ date, dimension, value }) {
   const db = getDB()
   // Atanmamış nokta/site "Yemekhane" grubunda toplanır (breakdown ile tutarlı).
   const groupExpr = {
-    site: "COALESCE(wl.site, 'Yemekhane')",
-    location: "COALESCE(wl.name, 'Yemekhane')",
+    // Etiketler yukarıdaki sabitlerle birebir aynı olmalı — yoksa kırılım
+    // hücresine tıklayınca kimse gelmez.
+    site: `COALESCE(wl.site, '${DEFAULT_SITE}')`,
+    location: `COALESCE(wl.name, '${DEFAULT_LOCATION}')`,
     role: "COALESCE(sr.name, 'Rolsüz')",
   }[dimension]
   if (!groupExpr) return []
@@ -2788,7 +2813,7 @@ export function computeLocationOccupancy({ assignments = [], locations = [], rul
     return {
       work_location_id: id,
       name: loc?.name || `#${id}`,
-      site: loc?.site || DEFAULT_WORK_AREA,
+      site: loc?.site || DEFAULT_SITE,
       color_class: loc?.color_class || 'bg-slate-400',
       is_default_area: false,
       present, count, required,
@@ -2800,7 +2825,7 @@ export function computeLocationOccupancy({ assignments = [], locations = [], rul
   const defaultPresent = (presentByLoc.get(0) || []).sort((a, b) => a.full_name.localeCompare(b.full_name, 'tr'))
   if (defaultPresent.length) {
     rows.push({
-      work_location_id: null, name: DEFAULT_WORK_AREA, site: DEFAULT_WORK_AREA,
+      work_location_id: null, name: DEFAULT_LOCATION, site: DEFAULT_SITE,
       color_class: 'bg-amber-400', is_default_area: true,
       present: defaultPresent, count: defaultPresent.length, required: 0,
       empty: false, understaffed: false,

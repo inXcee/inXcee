@@ -43,21 +43,41 @@ describe('roleGroupOf classifier', () => {
     expect(roleGroupOf('Ikramci')).toBe('Yemek/İkram')
     expect(roleGroupOf('Asci')).toBe('Yemek/İkram')
     expect(roleGroupOf('Bulasikhane')).toBe('Bulaşıkhane')
-    expect(roleGroupOf('Temizlik')).toBe('Diğer')
+  })
+
+  // Eskiden yemek dışındaki her rol "Diğer" torbasına düşüyordu; artık her
+  // departman kendi grubunu alır.
+  it('gives every department its own group instead of one Diğer bucket', () => {
+    expect(roleGroupOf('Temizlik Gorevlisi')).toBe('Temizlik')
+    expect(roleGroupOf('Meydanci')).toBe('Temizlik')
+    expect(roleGroupOf('Teknisyen')).toBe('Teknik')
+    expect(roleGroupOf('Elektrikci')).toBe('Teknik')
+    expect(roleGroupOf('Guvenlik Gorevlisi')).toBe('Güvenlik')
+    expect(roleGroupOf('Camasirci')).toBe('Çamaşırhane')
+    expect(roleGroupOf('Bahcivan')).toBe('Bahçe')
+    expect(roleGroupOf('Hemsire')).toBe('Sağlık')
+    expect(roleGroupOf('Muhasebe Sorumlusu')).toBe('İdari')
+  })
+
+  it('falls back to Diğer only when nothing matches', () => {
+    expect(roleGroupOf('Tanimsiz Rol')).toBe('Diğer')
+    expect(roleGroupOf('')).toBe('Diğer')
+    expect(roleGroupOf(null)).toBe('Diğer')
   })
 })
 
 describe('schedule breakdown enhancements', () => {
-  it('buckets unassigned scheduled staff into a Yemekhane group and tags role groups', async () => {
+  it('buckets unassigned scheduled staff into a neutral group and tags role groups', async () => {
     const res = await request(app).get(`/api/shifts/breakdown?from=${d1}&to=${d2}`)
       .set('Authorization', `Bearer ${managerToken}`)
     expect(res.status).toBe(200)
-    const yemekhane = res.body.location_counts.find(l => l.work_location_name === 'Yemekhane' && l.work_date === d1)
-    expect(yemekhane).toBeTruthy()
-    expect(yemekhane.is_default_area).toBe(true)
-    expect(yemekhane.assigned).toBeGreaterThanOrEqual(2)
-    // "Noktasız" etiketi artık kullanılmıyor
-    expect(res.body.location_counts.some(l => l.work_location_name === 'Noktasiz')).toBe(false)
+    // Noktası girilmemiş kişiler artık Yemekhane'ye sayılmaz (GÜN DETAYI ile tutarlı).
+    const unassignedBucket = res.body.location_counts.find(l => l.work_location_name === 'Konum belirtilmemiş' && l.work_date === d1)
+    expect(unassignedBucket).toBeTruthy()
+    expect(unassignedBucket.is_default_area).toBe(true)
+    expect(unassignedBucket.assigned).toBeGreaterThanOrEqual(2)
+    expect(res.body.location_counts.some(l => l.work_location_name === 'Yemekhane')).toBe(false)
+    expect(res.body.site_counts.some(s => s.site === 'Site belirtilmemiş')).toBe(true)
 
     const roleGroups = new Set(res.body.role_counts.map(r => r.role_group))
     expect(roleGroups.has('Yemek/İkram')).toBe(true)
@@ -74,8 +94,9 @@ describe('schedule breakdown enhancements', () => {
     expect(res.body.empty_locations.some(e => e.work_location_id === locId && e.work_date === d1)).toBe(false)
   })
 
-  it('resolves assignees for the Yemekhane bucket', async () => {
-    const res = await request(app).get(`/api/shifts/breakdown/assignees?date=${d1}&dimension=location&value=Yemekhane`)
+  // Etiket ile SQL'deki COALESCE metni aynı olmalı; aksi halde hücreye tıklayınca boş gelir.
+  it('resolves assignees for the unassigned bucket', async () => {
+    const res = await request(app).get(`/api/shifts/breakdown/assignees?date=${d1}&dimension=location&value=${encodeURIComponent('Konum belirtilmemiş')}`)
       .set('Authorization', `Bearer ${managerToken}`)
     expect(res.status).toBe(200)
     expect(res.body.assignees.length).toBeGreaterThanOrEqual(2)

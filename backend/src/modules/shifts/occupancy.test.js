@@ -23,7 +23,7 @@ describe('computeLocationOccupancy', () => {
     const assignments = [
       assign(10, 'Ali', 1, '08:00', '16:00'),
       assign(11, 'Ayse', 2, '06:15', '15:00'),
-      assign(12, 'Veli', null, '08:00', '16:00'), // atanmamış → Yemekhane
+      assign(12, 'Veli', null, '08:00', '16:00'), // atanmamış → nötr grup
     ]
     const rows = computeLocationOccupancy({ assignments, locations: LOCATIONS, rules: RULES, date: DATE, atMinutes: at(9) })
     expect(rowOf(rows, 'OTC Yemekhane').count).toBe(1)
@@ -31,10 +31,10 @@ describe('computeLocationOccupancy', () => {
     expect(rowOf(rows, 'Isci Lokali').count).toBe(1)
     expect(rowOf(rows, 'Isci Lokali').understaffed).toBe(false)
     expect(rowOf(rows, 'Kamp Yemekhane').empty).toBe(true)
-    // atanmamış kişi default Yemekhane satırında
-    const yemek = rowOf(rows, 'Yemekhane')
-    expect(yemek.is_default_area).toBe(true)
-    expect(yemek.count).toBe(1)
+    // atanmamış kişi nötr "Konum belirtilmemiş" satırında (Yemekhane'ye sayılmaz)
+    const unassigned = rowOf(rows, 'Konum belirtilmemiş')
+    expect(unassigned.is_default_area).toBe(true)
+    expect(unassigned.count).toBe(1)
   })
 
   it('kural gerektirdiği saatte lokal boşsa understaffed işaretler', () => {

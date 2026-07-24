@@ -232,23 +232,40 @@ function inferWorkArea(person) {
   return site
 }
 
-// Çalışma noktası seçilmemiş vardiya → "Yemekhane" grubu (kadro kapsamasıyla tutarlı).
-const DEFAULT_WORK_AREA = 'Yemekhane'
+// Çalışma noktası seçilmemiş vardiya → nötr grup (backend DEFAULT_LOCATION ile aynı;
+// eskiden "Yemekhane" idi, noktası girilmemiş herkesi yemekhaneye sayıyordu).
+const DEFAULT_WORK_AREA = 'Konum belirtilmemiş'
 
 function workAreaForCell(cell, person) {
   return cell?.work_location_name || DEFAULT_WORK_AREA
 }
 
-// İkram/aşçı/lokal → "Yemek/İkram", bulaşıkhane ayrı, kalanı "Diğer" (ASCII-normalize).
-const ROLE_GROUP_ORDER = { 'Yemek/İkram': 0, 'Bulaşıkhane': 1, 'Diğer': 2 }
+// Her departman kendi grubunu alır; eşleşmeyen "Diğer"de kalır.
+// KAYNAK: backend queries.js → ROLE_GROUP_KEYWORDS / roleGroupOf. İkisi aynı
+// grupları üretmeli — orada bir anahtar değişirse burası da güncellenmeli.
+const ROLE_GROUP_KEYWORDS = [
+  ['Bulaşıkhane', ['bulasik']],
+  ['Çamaşırhane', ['camasir', 'utu', 'kurutma', 'yikama']],
+  ['Yemek/İkram', ['ikram', 'asci', 'lokal', 'garson', 'mutfak', 'servis', 'yemek', 'komi']],
+  ['Temizlik', ['temizlik', 'meydanci', 'hizmetli', 'kat gorevlisi', 'housekeep']],
+  ['Teknik', ['teknik', 'teknisyen', 'elektrik', 'tesisat', 'bakim', 'onarim', 'usta', 'kaynakci', 'marangoz']],
+  ['Güvenlik', ['guvenlik', 'bekci', 'security']],
+  ['Bahçe', ['bahce', 'bahci', 'peyzaj', 'cevre duzen']],
+  ['Sağlık', ['saglik', 'revir', 'hemsire', 'doktor', 'ilk yardim', 'paramedik']],
+  ['İdari', ['idari', 'ofis', 'muhasebe', 'insan kaynak', 'sekreter', 'memur', 'satin alma', 'depo sorumlu']],
+]
+const ROLE_GROUP_ORDER = Object.fromEntries(ROLE_GROUP_KEYWORDS.map(([group], index) => [group, index]))
+ROLE_GROUP_ORDER['Diğer'] = ROLE_GROUP_KEYWORDS.length
+
 function roleGroupOf(roleName) {
   const name = String(roleName || '')
     .replace(/İ/g, 'I').replace(/ı/g, 'i').replace(/Ş/g, 'S').replace(/ş/g, 's')
     .replace(/Ğ/g, 'G').replace(/ğ/g, 'g').replace(/Ü/g, 'U').replace(/ü/g, 'u')
     .replace(/Ö/g, 'O').replace(/ö/g, 'o').replace(/Ç/g, 'C').replace(/ç/g, 'c')
     .toLowerCase()
-  if (name.includes('bulasik')) return 'Bulaşıkhane'
-  if (['ikram', 'asci', 'lokal', 'garson', 'mutfak', 'servis', 'yemek'].some(k => name.includes(k))) return 'Yemek/İkram'
+  for (const [group, keywords] of ROLE_GROUP_KEYWORDS) {
+    if (keywords.some(keyword => name.includes(keyword))) return group
+  }
   return 'Diğer'
 }
 
