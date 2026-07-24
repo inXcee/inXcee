@@ -2111,3 +2111,46 @@ describe('Faz 31 — Dönem kilidi (ay kapatma)', () => {
     await request(app).delete('/api/shifts/period-locks/2026-11').set('Authorization', `Bearer ${managerToken}`)
   })
 })
+
+describe('Gün detayı endpoint (/shifts/day-detail)', () => {
+  const DATE = '2029-03-15'
+  let deptId
+
+  beforeAll(() => {
+    const db = getDB()
+    deptId = db.prepare("INSERT INTO departments(name, color_class) VALUES('Gün Detay Test Dept','test')").run().lastInsertRowid
+    const shiftDefId = db.prepare("INSERT INTO shift_definitions(name, start_hour, end_hour, color_class) VALUES('GD Sabah', 8, 16, 'bg-blue-400')").run().lastInsertRowid
+    const mkStaff = name => db.prepare('INSERT INTO staff(full_name, department_id, is_active, salary) VALUES(?,?,1,30000)').run(name, deptId).lastInsertRowid
+    const ins = db.prepare('INSERT INTO shift_schedule(staff_id, dept_id, shift_def_id, work_date, status, leave_type, absent_reason) VALUES(?,?,?,?,?,?,?)')
+    ins.run(mkStaff('GD Çalışan Bir'), deptId, shiftDefId, DATE, 'worked', null, null)
+    ins.run(mkStaff('GD Çalışan İki'), deptId, shiftDefId, DATE, 'scheduled', null, null)
+    ins.run(mkStaff('GD İzinli'), deptId, null, DATE, 'on_leave', 'annual', null)
+    ins.run(mkStaff('GD Raporlu'), deptId, null, DATE, 'on_leave', 'sick', null)
+    ins.run(mkStaff('GD Devamsız'), deptId, null, DATE, 'absent', null, 'Haber vermedi')
+    ins.run(mkStaff('GD İzin Günü'), deptId, null, DATE, 'off', null, null)
+  })
+
+  it('bölüm bölüm kadro + izin/rapor/devamsız kovalarını verir', async () => {
+    const res = await request(app).get(`/api/shifts/day-detail?date=${DATE}&group_by=dept`)
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(res.status).toBe(200)
+    expect(res.body.group_by).toBe('dept')
+    const group = res.body.groups.find(g => g.name === 'Gün Detay Test Dept')
+    expect(group).toBeTruthy()
+    expect(group.totals).toMatchObject({ working: 2, on_leave: 1, sick: 1, absent: 1, off: 1 })
+    expect(group.shifts[0].people.map(p => p.full_name)).toEqual(['GD Çalışan Bir', 'GD Çalışan İki'])
+    expect(group.on_leave[0]).toMatchObject({ full_name: 'GD İzinli', leave_type_label: 'Yıllık izin' })
+    expect(group.sick[0].full_name).toBe('GD Raporlu')
+    expect(group.absent[0]).toMatchObject({ full_name: 'GD Devamsız', reason: 'Haber vermedi' })
+  })
+
+  it('süpervizör de erişebilir, hatalı tarih 400, yetkisiz rol 403', async () => {
+    const sup = await request(app).get(`/api/shifts/day-detail?date=${DATE}`).set('Authorization', `Bearer ${shiftToken}`)
+    expect(sup.status).toBe(200)
+    const bad = await request(app).get('/api/shifts/day-detail?date=yarin').set('Authorization', `Bearer ${managerToken}`)
+    expect(bad.status).toBe(400)
+    const laundryToken = (await request(app).post('/api/auth/login').send({ username: 'camasir', password: 'admin123' })).body.token
+    const forbidden = await request(app).get(`/api/shifts/day-detail?date=${DATE}`).set('Authorization', `Bearer ${laundryToken}`)
+    expect(forbidden.status).toBe(403)
+  })
+})

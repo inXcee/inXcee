@@ -2679,6 +2679,61 @@ export function getBreakdownAssignees({ date, dimension, value }) {
   `).all(date, date, value)
 }
 
+// Gün detayı için o günün TÜM schedule satırları: çalışanlar (segment kırılımlı) +
+// izinli/raporlu/devamsız/off. buildDayDetail (dayDetail.js) bunları kovalar.
+export function getDayDetailRows(date) {
+  const db = getDB()
+  return db.prepare(`
+    WITH working AS (
+      -- Segmentli çalışanlar (gün içi çoklu vardiya/nokta)
+      SELECT ss.staff_id, ss.status,
+        COALESCE(ss.dept_id, s.department_id) AS dept_id,
+        COALESCE(seg.role_id, s.role_id) AS role_id,
+        COALESCE(seg.work_location_id, ss.work_location_id) AS work_location_id,
+        COALESCE(seg.shift_def_id, ss.shift_def_id) AS shift_def_id,
+        seg.start_time AS start_hour, seg.end_time AS end_hour,
+        NULL AS leave_type, NULL AS absent_reason
+      FROM shift_schedule_segments seg
+      JOIN shift_schedule ss ON ss.id = seg.schedule_id
+      JOIN staff s ON s.id = ss.staff_id
+      WHERE ss.work_date = ? AND ss.status IN ('scheduled','worked','overtime') AND seg.status != 'cancelled'
+      UNION ALL
+      -- Segmentsiz çalışanlar
+      SELECT ss.staff_id, ss.status,
+        COALESCE(ss.dept_id, s.department_id), s.role_id, ss.work_location_id, ss.shift_def_id,
+        sd.start_hour, sd.end_hour, NULL, NULL
+      FROM shift_schedule ss
+      JOIN staff s ON s.id = ss.staff_id
+      LEFT JOIN shift_definitions sd ON sd.id = ss.shift_def_id
+      WHERE ss.work_date = ? AND ss.status IN ('scheduled','worked','overtime')
+        AND NOT EXISTS (SELECT 1 FROM shift_schedule_segments seg WHERE seg.schedule_id = ss.id AND seg.status != 'cancelled')
+      UNION ALL
+      -- İzinli / raporlu / devamsız / off (vardiyaya yazılmaz)
+      SELECT ss.staff_id, ss.status,
+        COALESCE(ss.dept_id, s.department_id), s.role_id, ss.work_location_id, ss.shift_def_id,
+        sd.start_hour, sd.end_hour, ss.leave_type, ss.absent_reason
+      FROM shift_schedule ss
+      JOIN staff s ON s.id = ss.staff_id
+      LEFT JOIN shift_definitions sd ON sd.id = ss.shift_def_id
+      WHERE ss.work_date = ? AND ss.status IN ('on_leave','absent','off')
+    )
+    SELECT w.staff_id, s.full_name, w.status, w.leave_type, w.absent_reason,
+      COALESCE(d.name, '') AS dept_name,
+      COALESCE(sr.name, '') AS role_name,
+      COALESCE(sd.name, '') AS shift_name,
+      w.start_hour, w.end_hour,
+      COALESCE(wl.name, '') AS work_location_name,
+      COALESCE(wl.site, '') AS site
+    FROM working w
+    JOIN staff s ON s.id = w.staff_id
+    LEFT JOIN departments d ON d.id = w.dept_id
+    LEFT JOIN staff_roles sr ON sr.id = w.role_id
+    LEFT JOIN shift_definitions sd ON sd.id = w.shift_def_id
+    LEFT JOIN work_locations wl ON wl.id = w.work_location_id
+    ORDER BY s.full_name COLLATE NOCASE
+  `).all(date, date, date)
+}
+
 // Bir gün + an (atMinutes) için lokasyon doluluğu — saf/test edilebilir çekirdek.
 // assignments: [{ staff_id, full_name, role_name, dept_name, work_location_id, start_time, end_time }]
 //   start_time/end_time "HH:MM" (gece aşırı destekli) veya null → gün boyu mevcut sayılır.

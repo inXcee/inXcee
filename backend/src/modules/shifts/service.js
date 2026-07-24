@@ -3,7 +3,7 @@ import {
   getScheduleEntry, getScheduleSegment, listScheduleSegments,
   createScheduleSegment, updateScheduleSegment, deleteScheduleSegment,
   getWorkLocations, createWorkLocation, updateWorkLocation, deleteWorkLocation,
-  getStaffRoles, createStaffRole, updateStaffRole, deleteStaffRole, getScheduleBreakdown, getBreakdownAssignees, getLocationOccupancy,
+  getStaffRoles, createStaffRole, updateStaffRole, deleteStaffRole, getScheduleBreakdown, getBreakdownAssignees, getLocationOccupancy, getDayDetailRows,
   getStaffWithShiftStatus, createLeaveRequest, getLeaveRequest, approveLeaveRequest,
   getLeaveRequests, getLeaveBalance, addRequestDocuments, listRequestDocuments, getRequestDocument, deleteRequestDocument,
   createOvertime, updateOvertime, deleteOvertime, getOvertimeRecords, upsertOvertimeDay,
@@ -37,6 +37,7 @@ import {
 } from './queries.js'
 import { getDB } from '../../shared/db/index.js'
 import { computeAnnualEntitlement } from './leave-entitlement.js'
+import { buildDayDetail } from './dayDetail.js'
 import { sendPushToWorker } from '../../shared/notifications/push.js'
 import { createNotification } from '../../shared/notifications/service.js'
 import { logger } from '../../shared/logger.js'
@@ -262,6 +263,13 @@ export function breakdownAssigneesService({ date, dimension, value } = {}) {
     throw Object.assign(new Error('gecersiz dimension'), { statusCode: 400 })
   }
   return { date, dimension, value: value ?? '', assignees: getBreakdownAssignees({ date, dimension, value: value ?? '' }) }
+}
+
+// Gün detayı: bir gün için bölüm bölüm kadro + izin/rapor/devamsız kovaları.
+export function dayDetailService({ date, group_by } = {}) {
+  if (!date || !isIsoDate(date)) throw Object.assign(new Error('date YYYY-MM-DD formatında gerekli'), { statusCode: 400 })
+  const rows = getDayDetailRows(date)
+  return { date, ...buildDayDetail(rows, { groupBy: group_by || 'dept' }) }
 }
 
 // Canlı "ŞU AN" lokasyon doluluğu: date + at ("HH:MM") → o an kim nerede, boş/eksik.
