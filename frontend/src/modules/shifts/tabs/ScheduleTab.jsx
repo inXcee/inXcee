@@ -16,6 +16,7 @@ import { DailyView, WeekFillSheet, CellAssignSheet } from './scheduleSheets.jsx'
 import LiveOccupancyBoard from './LiveOccupancyBoard.jsx'
 import ScheduleImportModal from './ScheduleImportModal.jsx'
 import CoverageBoard from './CoverageBoard.jsx'
+import DayDetailBoard from './DayDetailBoard.jsx'
 import { PayrollClosingModal, ScheduleTemplateModal } from './ScheduleControlModals.jsx'
 import ScheduleShareModal from './ScheduleShareModal.jsx'
 
@@ -921,6 +922,8 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
         roles={staffRoles}
         locations={workLocations}
       />}
+
+      {scheduleView === 'weekly' && <DayDetailBoard weekDays={weekDays} onPersonClick={onPersonClick} />}
 
       {scheduleView === 'weekly' && (
         <div style={{
