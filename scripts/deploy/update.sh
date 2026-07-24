@@ -8,10 +8,15 @@
 # Yapılan işler:
 #   1. git pull
 #   2. npm ci
-#   3. frontend build
+#   3. frontend build   (öncesinde yayındaki dist yedeklenir)
 #   4. pre-deploy check
 #   5. PM2 reload (zero-downtime)
 #   6. post-deploy smoke test
+#
+# Hep-ya-hiç: 3. adımdan sonra herhangi bir adım düşerse ve backend henüz
+# reload edilmemişse frontend eski haline geri alınır — "yeni arayüz + eski
+# backend" (yeni endpoint'lerde 404) durumu oluşmaz. Reload'dan sonraki bir
+# hatada ise yeni frontend korunur (backend zaten yeni kodda).
 # ════════════════════════════════════════════════════════════════════
 
 set -euo pipefail
@@ -21,8 +26,45 @@ DOMAIN="${DOMAIN:-avskamp.com}"
 
 step() { echo -e "\n\033[1;36m▶ $*\033[0m"; }
 ok()   { echo -e "  \033[1;32m✓ $*\033[0m"; }
+warn() { echo -e "  \033[1;33m⚠ $*\033[0m"; }
 
 cd "$APP_DIR"
+
+# ── Yarım deploy koruması ────────────────────────────────────────────
+# nginx doğrudan frontend/dist'i sunar. Build (ve pre-deploy-check'in kendi
+# içindeki build) dist'i ANINDA yayına indirir; ama PM2 reload daha sonraki
+# adımda. Kontroller düşerse eskiden "yeni arayüz + eski backend" kalıyordu →
+# yeni endpoint'ler 404. Bunu önlemek için build öncesi dist'in fotoğrafı
+# alınır; deploy tamamlanmadan düşerse eski dist geri konur.
+DIST="$APP_DIR/frontend/dist"
+ROLLBACK="$APP_DIR/frontend/.dist-rollback"
+BACKEND_RELOADED=0
+rm -rf "$ROLLBACK"
+
+cleanup() {
+  local code=$?
+  trap - EXIT
+  if [[ $code -eq 0 ]]; then
+    rm -rf "$ROLLBACK"
+    exit 0
+  fi
+  if [[ "$BACKEND_RELOADED" == "1" ]]; then
+    # Backend yeni kodda; yeni arayüzü geri almak tutarsızlık yaratırdı.
+    warn "Backend yeni koda geçti, sonraki adım düştü — frontend yeni halinde bırakıldı."
+    echo "     Siteyi kontrol edin: https://$DOMAIN"
+    rm -rf "$ROLLBACK"
+  elif [[ -d "$ROLLBACK" ]]; then
+    rm -rf "$DIST"
+    mv "$ROLLBACK" "$DIST"
+    warn "Deploy tamamlanmadı — frontend ESKİ haline geri alındı."
+    echo "     Backend zaten eski kodda, site tutarlı durumda."
+    echo "     Hatayı düzeltin, sonra: FORCE=1 bash scripts/deploy/update.sh"
+  else
+    warn "Deploy tamamlanmadı (build öncesi). Site değişmedi."
+  fi
+  exit $code
+}
+trap cleanup EXIT
 
 step "1/6 Git pull"
 PREV_COMMIT=$(git rev-parse HEAD)
@@ -49,6 +91,11 @@ npm ci --silent
 ok "Bağımlılıklar yüklü"
 
 step "3/6 Frontend build"
+# Yayındaki dist'in fotoğrafı — bundan sonrası düşerse cleanup geri koyar.
+if [[ -d "$DIST" ]]; then
+  cp -a "$DIST" "$ROLLBACK"
+  ok "Mevcut dist yedeklendi (geri alma için)"
+fi
 npm run build -w frontend --silent
 ok "frontend/dist hazır"
 
@@ -62,6 +109,7 @@ fi
 
 step "5/6 PM2 reload (zero-downtime)"
 pm2 reload yys-backend --update-env
+BACKEND_RELOADED=1
 ok "Backend yeniden yüklendi"
 
 # Backend hazır olana kadar kısa bekleme
