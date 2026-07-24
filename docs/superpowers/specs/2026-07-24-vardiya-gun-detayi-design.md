@@ -1,7 +1,7 @@
 # Vardiya Gün Detayı — Bölüm Bölüm Kadro + İzin/Rapor/Devamsız
 
 **Tarih:** 2026-07-24
-**Durum:** Onaylandı (kullanıcı: departman varsayılan, tam paket, ScheduleTab paneli, yazdırma-PDF)
+**Durum:** Uygulandı (commit f84fd9da + 530f54f5 + 2d442a0f) — yerelde; canlıya alınmadı
 **Kapsam:** Backend yeni okuma endpoint'i (yazma yok) + frontend yeni panel + Excel/print export.
 
 ## Problem
