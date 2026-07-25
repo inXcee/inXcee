@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import BlockDetailSections from './BlockDetailSections.jsx'
 import api from '../../shared/api/client.js'
 
-vi.mock('../../shared/api/client.js', () => ({ default: { get: vi.fn() } }))
+vi.mock('../../shared/api/client.js', () => ({ default: { get: vi.fn(), patch: vi.fn(() => Promise.resolve({ data: { ok: true } })) } }))
 
 const full = {
   block: 'M1',
@@ -103,5 +103,37 @@ describe('BlockDetailSections', () => {
     renderSections()
     await user.click(await screen.findByText(/AÇIK ARIZALAR/))
     expect(await screen.findByText('Açık arıza yok.')).toBeInTheDocument()
+  })
+})
+
+describe('BlockDetailSections — tek oda durumu (Faz C1)', () => {
+  const openRoom = async (user) => {
+    await user.click(await screen.findByText(/ODALAR VE KİŞİLER/))
+    await user.click(screen.getByRole('button', { name: /101/ }))
+  }
+
+  it('yönetici tek odayı karantinaya alabilir (blok geneli değil)', async () => {
+    const user = userEvent.setup()
+    renderSections({ isManager: true })
+    await openRoom(user)
+
+    await user.click(await screen.findByRole('button', { name: /KARANTINA/ }))
+    expect(api.patch).toHaveBeenCalledWith('/capacity/rooms/11/status', { status: 'quarantine' })
+  })
+
+  it('odanın mevcut durumu buton olarak gösterilmez', async () => {
+    const user = userEvent.setup()
+    renderSections({ isManager: true })
+    await openRoom(user)
+    // Oda zaten 'active' → AKTIF butonu olmamalı
+    expect(screen.queryByRole('button', { name: /AKTIF/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /BAKIM/ })).toBeInTheDocument()
+  })
+
+  it('yönetici değilse oda durumu butonları çıkmaz', async () => {
+    const user = userEvent.setup()
+    renderSections({ isManager: false })
+    await openRoom(user)
+    expect(screen.queryByRole('button', { name: /KARANTINA/ })).not.toBeInTheDocument()
   })
 })

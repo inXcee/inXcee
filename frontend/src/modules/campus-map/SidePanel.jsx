@@ -219,7 +219,7 @@ export default function SidePanel({ block, cfg, stats: s, rooms, mode, timeserie
 
       {/* Arıza / temizlik / oda-kişi — sayfadan çıkmadan, rol-duyarlı */}
       <div style={{ borderTop: '1px solid var(--border)', marginTop: 12, paddingTop: 4 }}>
-        <BlockDetailSections block={block} onPersonClick={onPersonClick} />
+        <BlockDetailSections block={block} onPersonClick={onPersonClick} isManager={isManager} />
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 12, borderTop: '1px solid var(--border)', paddingTop: 12 }}>

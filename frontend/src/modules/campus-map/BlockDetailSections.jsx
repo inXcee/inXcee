@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
+import { useToastStore } from '../../shared/store/toastStore.js'
 
 // Blok panelinde inline arıza / temizlik / oda-kişi bölümleri.
 // Veri rol-duyarlı tek uçtan gelir; yetkisi olmayan bölüm hiç render edilmez.
@@ -42,8 +43,30 @@ function Collapsible({ title, count, children, defaultOpen = false }) {
   )
 }
 
-export default function BlockDetailSections({ block, onPersonClick }) {
+const ROOM_STATUS = [
+  { id: 'quarantine', label: '⊘ KARANTINA', color: '#a855f7' },
+  { id: 'maintenance', label: '⚒ BAKIM', color: '#f59e0b' },
+  { id: 'active', label: '✓ AKTIF', color: '#16a34a' },
+]
+
+export default function BlockDetailSections({ block, onPersonClick, isManager = false }) {
   const [openRoom, setOpenRoom] = useState(null)
+  const queryClient = useQueryClient()
+  const addToast = useToastStore(s => s.addToast)
+
+  // Tek oda durumu — eskiden yalnız TÜM blok topluca değiştirilebiliyordu.
+  const roomStatus = useMutation({
+    mutationFn: ({ roomId, status }) => api.patch(`/capacity/rooms/${roomId}/status`, { status }),
+    onSuccess: (_data, vars) => {
+      const label = vars.status === 'quarantine' ? 'karantinaya alindi'
+        : vars.status === 'maintenance' ? 'bakima alindi' : 'aktif yapildi'
+      addToast(`Oda ${label}`, 'success')
+      queryClient.invalidateQueries({ queryKey: ['campus-block-detail', block] })
+      queryClient.invalidateQueries({ queryKey: ['campus-map-summary'] })
+      queryClient.invalidateQueries({ queryKey: ['capacity-rooms-all'] })
+    },
+    onError: err => addToast(err?.response?.data?.error || 'Oda durumu degistirilemedi', 'error'),
+  })
 
   const { data, isPending, isError } = useQuery({
     queryKey: ['campus-block-detail', block],
@@ -137,7 +160,33 @@ export default function BlockDetailSections({ block, onPersonClick }) {
 
               {room && (
                 <div style={{ ...box, marginTop: 7 }}>
-                  <div style={caption}>ODA {room.room_no} · {room.occupied}/{room.active_beds} KİŞİ</div>
+                  <div style={caption}>
+                    ODA {room.room_no} · {room.occupied}/{room.active_beds} KİŞİ
+                    {room.status !== 'active' && <span style={{ color: '#a855f7' }}> · {room.status.toUpperCase()}</span>}
+                  </div>
+
+                  {/* Tek oda durumu — blok geneli değil, sadece bu oda */}
+                  {isManager && (
+                    <div style={{ display: 'flex', gap: 4, marginBottom: 6 }}>
+                      {ROOM_STATUS.filter(item => item.id !== room.status).map(item => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          disabled={roomStatus.isPending}
+                          onClick={() => roomStatus.mutate({ roomId: room.id, status: item.id })}
+                          title={`Oda ${room.room_no} → ${item.label}`}
+                          style={{
+                            flex: 1, fontFamily: 'var(--mono)', fontSize: 8, padding: '3px 4px',
+                            border: '1px solid var(--border)', borderRadius: 4, cursor: 'pointer',
+                            background: 'transparent', color: item.color,
+                          }}
+                        >
+                          {item.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
                   {room.occupants.length === 0 ? (
                     <div style={{ fontSize: 10, color: 'var(--text3)' }}>Bu odada kayıtlı kişi yok.</div>
                   ) : (
