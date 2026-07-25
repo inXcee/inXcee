@@ -1,7 +1,10 @@
 import { Router } from 'express'
 import { requireAuth, requireRole } from '../../shared/auth/middleware.js'
 import { getDB } from '../../shared/db/index.js'
-import { getCampusSummary, getCampusTimeseries } from './queries.js'
+import {
+  getCampusSummary, getCampusTimeseries,
+  getBlockFaults, getBlockCleaning, getBlockRoomsWithOccupants,
+} from './queries.js'
 import { logger } from '../../shared/logger.js'
 
 export const campusMapRouter = Router()
@@ -25,6 +28,34 @@ campusMapRouter.get('/timeseries', requireAuth, (req, res) => {
     res.json({ days, blocks: getCampusTimeseries(days) })
   } catch (e) {
     logger.error('[campus-map.timeseries]', e)
+    res.status(500).json({ error: 'Sunucu hatasi' })
+  }
+})
+
+// Blok detayi — harita panelinde inline gosterim (arıza / temizlik / oda+kisi).
+// Harita gibi requireAuth ile acik, ama BOLUMLER rol-duyarli: kaynak modullerin
+// yetki kurallari birebir korunur, yetkisi olmayan bolum yanita hic konmaz.
+const FAULT_ROLES = ['campus_manager', 'shift_supervisor', 'technical']
+const CLEANING_ROLES = ['campus_manager', 'housekeeper']
+const ROOM_ROLES = ['campus_manager', 'shift_supervisor']
+
+campusMapRouter.get('/block/:block/detail', requireAuth, (req, res) => {
+  try {
+    const block = String(req.params.block || '').trim()
+    if (!block || block.length > 8) return res.status(400).json({ error: 'Gecersiz blok' })
+    const role = req.user.role
+    const can = {
+      faults: FAULT_ROLES.includes(role),
+      cleaning: CLEANING_ROLES.includes(role),
+      rooms: ROOM_ROLES.includes(role),
+    }
+    const payload = { block, can }
+    if (can.faults) payload.faults = getBlockFaults(block)
+    if (can.cleaning) payload.cleaning = getBlockCleaning(block)
+    if (can.rooms) payload.rooms = getBlockRoomsWithOccupants(block)
+    res.json(payload)
+  } catch (e) {
+    logger.error('[campus-map.block-detail]', e)
     res.status(500).json({ error: 'Sunucu hatasi' })
   }
 })

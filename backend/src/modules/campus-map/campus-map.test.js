@@ -127,3 +127,88 @@ describe('Campus Map pins', () => {
     expect(res.status).toBe(400)
   })
 })
+
+describe('Campus Map blok detayi (/block/:block/detail)', () => {
+  it('mudur tum bolumleri gorur: ariza + temizlik + oda/kisi', async () => {
+    const res = await request(app).get('/api/campus-map/block/M1/detail')
+      .set('Authorization', `Bearer ${mgrToken}`)
+    expect(res.status).toBe(200)
+    expect(res.body.block).toBe('M1')
+    expect(res.body.can).toEqual({ faults: true, cleaning: true, rooms: true })
+    expect(Array.isArray(res.body.faults)).toBe(true)
+    expect(res.body.cleaning).toMatchObject({
+      total: expect.any(Number), done: expect.any(Number), pending: expect.any(Number), pct: expect.any(Number),
+    })
+    expect(Array.isArray(res.body.rooms)).toBe(true)
+    expect(res.body.rooms.length).toBeGreaterThan(0)
+    const room = res.body.rooms[0]
+    expect(room).toHaveProperty('room_no')
+    expect(room).toHaveProperty('active_beds')
+    expect(Array.isArray(room.occupants)).toBe(true)
+    // Odalar bu bloğa ait olmalı
+    expect(res.body.rooms.every(r => r.id > 0)).toBe(true)
+  })
+
+  it('oda sakinleri ad/şirket/giriş bilgisiyle gelir', async () => {
+    const res = await request(app).get('/api/campus-map/block/M1/detail')
+      .set('Authorization', `Bearer ${mgrToken}`)
+    const withPeople = res.body.rooms.find(r => r.occupants.length > 0)
+    if (withPeople) {
+      const person = withPeople.occupants[0]
+      expect(person).toHaveProperty('personnel_id')
+      expect(person).toHaveProperty('full_name')
+      expect(person).toHaveProperty('company')
+      expect(person).toHaveProperty('assigned_at')
+      // occupied sayısı gerçek sakin sayısıyla tutarlı
+      expect(withPeople.occupied).toBe(withPeople.occupants.length)
+    }
+  })
+
+  it('süpervizör arıza+oda görür, temizlik görmez', async () => {
+    const res = await request(app).get('/api/campus-map/block/M1/detail')
+      .set('Authorization', `Bearer ${supToken}`)
+    expect(res.status).toBe(200)
+    expect(res.body.can).toEqual({ faults: true, cleaning: false, rooms: true })
+    expect(res.body.cleaning).toBeUndefined()
+    expect(res.body.faults).toBeDefined()
+  })
+
+  it('çamaşırhane rolü hiçbir hassas bölümü görmez (yetkisiz veri sızmaz)', async () => {
+    const laundryToken = (await request(app).post('/api/auth/login')
+      .send({ username: 'camasir', password: 'admin123' })).body.token
+    const res = await request(app).get('/api/campus-map/block/M1/detail')
+      .set('Authorization', `Bearer ${laundryToken}`)
+    expect(res.status).toBe(200)
+    expect(res.body.can).toEqual({ faults: false, cleaning: false, rooms: false })
+    expect(res.body.faults).toBeUndefined()
+    expect(res.body.cleaning).toBeUndefined()
+    expect(res.body.rooms).toBeUndefined()
+  })
+
+  it('meydancı (housekeeper) yalnız temizliği görür', async () => {
+    const hkToken = (await request(app).post('/api/auth/login')
+      .send({ username: 'meydanci', password: 'admin123' })).body.token
+    const res = await request(app).get('/api/campus-map/block/M1/detail')
+      .set('Authorization', `Bearer ${hkToken}`)
+    expect(res.body.can).toEqual({ faults: false, cleaning: true, rooms: false })
+    expect(res.body.cleaning).toBeDefined()
+    expect(res.body.rooms).toBeUndefined()
+  })
+
+  it('olmayan blok boş sonuç verir, geçersiz blok 400', async () => {
+    const empty = await request(app).get('/api/campus-map/block/ZZ/detail')
+      .set('Authorization', `Bearer ${mgrToken}`)
+    expect(empty.status).toBe(200)
+    expect(empty.body.rooms).toEqual([])
+    expect(empty.body.faults).toEqual([])
+    expect(empty.body.cleaning.total).toBe(0)
+
+    const bad = await request(app).get('/api/campus-map/block/COKUZUNBLOK/detail')
+      .set('Authorization', `Bearer ${mgrToken}`)
+    expect(bad.status).toBe(400)
+  })
+
+  it('token yoksa 401', async () => {
+    expect((await request(app).get('/api/campus-map/block/M1/detail')).status).toBe(401)
+  })
+})

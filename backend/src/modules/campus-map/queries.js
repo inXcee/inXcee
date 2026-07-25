@@ -121,6 +121,67 @@ export function getCampusSummary() {
   return result
 }
 
+// ── Blok detayi (harita panelinde inline gosterim) ───────────────────
+// Blok adi maintenance_requests.location'in ILK KELIMESIDIR ("M1 Kat 1 Oda 101").
+// Bosluklu on-ek eslesmesi 'A' ile 'A1'i karistirmaz — bu yuzden LIKE 'A %'.
+export function getBlockFaults(block) {
+  return getDB().prepare(`
+    SELECT mr.id, mr.location, mr.description, mr.priority, mr.status, mr.opened_at,
+      t.full_name AS technician_name
+    FROM maintenance_requests mr
+    LEFT JOIN technicians t ON t.id = mr.assigned_to
+    WHERE mr.status != 'done' AND (mr.location = ? OR mr.location LIKE ? || ' %')
+    ORDER BY CASE mr.priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END, mr.opened_at DESC
+    LIMIT 100
+  `).all(block, block)
+}
+
+export function getBlockCleaning(block, today = new Date().toISOString().slice(0, 10)) {
+  const row = getDB().prepare(`
+    SELECT COUNT(*) AS total,
+      SUM(CASE WHEN completed_at IS NOT NULL THEN 1 ELSE 0 END) AS done,
+      SUM(CASE WHEN skipped = 1 THEN 1 ELSE 0 END) AS skipped
+    FROM cleaning_tasks
+    WHERE block = ? AND date(scheduled_at) = ?
+  `).get(block, today)
+  const total = row?.total || 0
+  const done = row?.done || 0
+  const skipped = row?.skipped || 0
+  return { total, done, skipped, pending: Math.max(0, total - done - skipped), pct: total ? Math.round((done / total) * 100) : 0 }
+}
+
+// Odalar + o odada kalanlar (oda tiklaninca sagdaki kisi paneli bunu kullanir).
+export function getBlockRoomsWithOccupants(block) {
+  const db = getDB()
+  const rooms = db.prepare(`
+    SELECT r.id, r.room_no, r.floor, r.status, r.active_beds, r.notes,
+      (SELECT COUNT(*) FROM room_assignments ra WHERE ra.room_id = r.id AND ra.check_out_at IS NULL) AS occupied
+    FROM rooms r WHERE r.block = ?
+    ORDER BY r.floor, r.room_no
+  `).all(block)
+  if (!rooms.length) return []
+  const occupants = db.prepare(`
+    SELECT ra.room_id, p.id AS personnel_id, p.full_name, p.company, ra.bed_no, ra.assigned_at
+    FROM room_assignments ra
+    JOIN rooms r ON r.id = ra.room_id
+    JOIN personnel p ON p.id = ra.personnel_id
+    WHERE r.block = ? AND ra.check_out_at IS NULL
+    ORDER BY ra.bed_no, p.full_name
+  `).all(block)
+  const byRoom = new Map()
+  for (const person of occupants) {
+    if (!byRoom.has(person.room_id)) byRoom.set(person.room_id, [])
+    byRoom.get(person.room_id).push({
+      personnel_id: person.personnel_id,
+      full_name: person.full_name,
+      company: person.company || '',
+      bed_no: person.bed_no ?? null,
+      assigned_at: person.assigned_at || null,
+    })
+  }
+  return rooms.map(room => ({ ...room, occupants: byRoom.get(room.id) || [] }))
+}
+
 // Per-blok son N gun doluluk zaman serisi (oda durumu degisiklikleri historik takip edilmedigi icin
 // sadece o tarihte aktif room_assignment'lara gore occupancy hesaplanir; total_beds suanki aktif yatak)
 export function getCampusTimeseries(days = 7) {
