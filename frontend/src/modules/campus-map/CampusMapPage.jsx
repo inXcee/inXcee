@@ -241,12 +241,12 @@ export default function CampusMapPage() {
 
   const totalStats = useMemo(() => {
     let total_beds = 0, occupied = 0, empty = 0, q = 0, m = 0, f = 0,
-        clean_total = 0, clean_done = 0, day = 0, night = 0
+        clean_total = 0, clean_done = 0, day = 0, night = 0, unknown = 0
     for (const s of Object.values(stats)) {
       total_beds += s.total_beds; occupied += s.occupied
       empty += s.empty_rooms; q += s.quarantine; m += s.maintenance; f += s.open_faults
       clean_total += s.cleaning_total; clean_done += s.cleaning_done
-      day += s.day_count; night += s.night_count
+      day += s.day_count; night += s.night_count; unknown += (s.unknown_count || 0)
     }
     // Şirket modunun üst metriği için kampüs geneli şirket dağılımı
     const byCompany = new Map()
@@ -257,7 +257,7 @@ export default function CampusMapPage() {
     }
     const ranked = [...byCompany.entries()].sort((a, b) => b[1] - a[1])
     return { total_beds, occupied, empty, quarantine: q, maintenance: m, fault: f,
-      clean_total, clean_done, day, night,
+      clean_total, clean_done, day, night, unknown,
       block_count: Object.keys(stats).length,
       company_count: ranked.length,
       top_company: ranked.length ? { company: ranked[0][0], count: ranked[0][1] } : null }

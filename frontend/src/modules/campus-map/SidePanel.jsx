@@ -112,7 +112,10 @@ export default function SidePanel({ block, cfg, stats: s, rooms, mode, timeserie
           )
         }
         if (id === 'shifts') {
-          const total = s.day_count + s.night_count
+          // Vardiya kaydı olmayan sakinler eskiden sessizce "gündüz" sayılıyordu;
+          // artık ayrı kova — veri eksikliği görünür olsun.
+          const unknown = s.unknown_count || 0
+          const total = s.day_count + s.night_count + unknown
           return (
             <PanelSection key={id} title="VARDIYA DAGILIMI" badge={total > 0 ? `${total}` : '—'} primary={primary}>
               {total === 0 ? (
@@ -122,11 +125,13 @@ export default function SidePanel({ block, cfg, stats: s, rooms, mode, timeserie
                   <div style={{ display: 'flex', height: 8, borderRadius: 4, overflow: 'hidden' }}>
                     <div style={{ width: `${(s.day_count / total) * 100}%`, background: '#f97316' }} />
                     <div style={{ width: `${(s.night_count / total) * 100}%`, background: '#8b5cf6' }} />
+                    <div style={{ width: `${(unknown / total) * 100}%`, background: '#475569' }} />
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4,
                     fontFamily: 'var(--mono)', fontSize: 9 }}>
                     <span style={{ color: '#f97316' }}>☀ GUNDUZ {s.day_count}</span>
                     <span style={{ color: '#8b5cf6' }}>☾ GECE {s.night_count}</span>
+                    {unknown > 0 && <span style={{ color: '#94a3b8' }}>? BILINMIYOR {unknown}</span>}
                   </div>
                 </>
               )}

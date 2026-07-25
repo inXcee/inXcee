@@ -255,3 +255,36 @@ describe('Ariza esletirme kurali (rozet ile liste ayni olmali)', () => {
     expect(detail.body.faults.some(f => f.description === 'Kapali kayit')).toBe(false)
   })
 })
+
+describe('Vardiya kovalari (kaydi olmayan gunduze yazilmasin)', () => {
+  it('day / night / unknown ayri sayilir', async () => {
+    const { getDB } = await import('../../shared/db/index.js')
+    const db = getDB()
+    const room = db.prepare("SELECT id, block FROM rooms WHERE block='M3' LIMIT 1").get()
+    const mk = name => db.prepare('INSERT INTO personnel(full_name) VALUES(?)').run(name).lastInsertRowid
+    let bed = 0
+    const assign = pid => db.prepare('INSERT INTO room_assignments(room_id, personnel_id, bed_no) VALUES(?,?,?)').run(room.id, pid, ++bed)
+
+    const dayP = mk('VB Gunduzcu'); const nightP = mk('VB Gececi'); const unknownP = mk('VB Kayitsiz')
+    db.prepare("INSERT INTO shifts(personnel_id, shift_type) VALUES(?,'day')").run(dayP)
+    db.prepare("INSERT INTO shifts(personnel_id, shift_type) VALUES(?,'night')").run(nightP)
+    // unknownP icin shifts kaydi YOK — eskiden sessizce "gunduz" sayiliyordu
+    assign(dayP); assign(nightP); assign(unknownP)
+
+    const res = await request(app).get('/api/campus-map/summary').set('Authorization', `Bearer ${mgrToken}`)
+    const m3 = res.body.blocks.M3
+    expect(m3.day_count).toBeGreaterThanOrEqual(1)
+    expect(m3.night_count).toBeGreaterThanOrEqual(1)
+    expect(m3.unknown_count).toBeGreaterThanOrEqual(1)
+    // Kayitsiz kisi gunduze eklenmemis olmali
+    expect(m3.day_count + m3.night_count + m3.unknown_count).toBeGreaterThanOrEqual(3)
+  })
+
+  it('her blokta unknown_count alani bulunur', async () => {
+    const res = await request(app).get('/api/campus-map/summary').set('Authorization', `Bearer ${mgrToken}`)
+    for (const block of Object.values(res.body.blocks)) {
+      expect(block).toHaveProperty('unknown_count')
+      expect(typeof block.unknown_count).toBe('number')
+    }
+  })
+})

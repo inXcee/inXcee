@@ -54,10 +54,13 @@ export function getCampusSummary() {
   `).all(today)
 
   // 4) Vardiya dagilimi — aktif personelin vardiya tipine gore blok bazinda
+  // Vardiya kaydi OLMAYAN sakin eskiden COALESCE ile sessizce "gunduz" sayiliyordu;
+  // bu gunduz sayisini sisiriyor ve veri eksikligini gizliyordu → ayri kova.
   const shifts = db.prepare(`
     SELECT r.block,
-      SUM(CASE WHEN COALESCE(s.shift_type,'day')='day' THEN 1 ELSE 0 END) as day_count,
-      SUM(CASE WHEN s.shift_type='night' THEN 1 ELSE 0 END) as night_count
+      SUM(CASE WHEN s.shift_type='day' THEN 1 ELSE 0 END) as day_count,
+      SUM(CASE WHEN s.shift_type='night' THEN 1 ELSE 0 END) as night_count,
+      SUM(CASE WHEN s.shift_type IS NULL OR s.shift_type NOT IN ('day','night') THEN 1 ELSE 0 END) as unknown_count
     FROM room_assignments ra
     JOIN rooms r ON r.id = ra.room_id
     JOIN personnel p ON p.id = ra.personnel_id
@@ -98,6 +101,7 @@ export function getCampusSummary() {
       cleaning_pct: 0,
       day_count: 0,
       night_count: 0,
+      unknown_count: 0,
       top_companies: [],
     }
   }
@@ -118,6 +122,7 @@ export function getCampusSummary() {
     if (result[s.block]) {
       result[s.block].day_count = s.day_count
       result[s.block].night_count = s.night_count
+      result[s.block].unknown_count = s.unknown_count
     }
   }
   for (const c of companies) {

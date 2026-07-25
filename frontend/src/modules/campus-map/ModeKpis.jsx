@@ -26,7 +26,9 @@ export default function ModeKpis({ mode, totalStats: t }) {
     shifts: [
       ['GUNDUZ VARDIYA', t.day, '#f97316'],
       ['GECE VARDIYA', t.night, '#8b5cf6'],
-      ['TOPLAM PERSONEL', t.day + t.night, 'var(--text)'],
+      // Vardiya kaydi olmayanlar — eskiden gunduze sayiliyordu, artik gorunur.
+      ['BILINMIYOR', t.unknown || 0, (t.unknown || 0) > 0 ? '#94a3b8' : 'var(--text3)'],
+      ['TOPLAM PERSONEL', t.day + t.night + (t.unknown || 0), 'var(--text)'],
     ],
     quarantine: [
       ['KARANTINA ODASI', t.quarantine, '#dc2626'],

@@ -112,8 +112,12 @@ export function computeMetric(mode, s, cfg) {
       }
     }
     case 'shifts': {
-      const total = s.day_count + s.night_count
-      const nightPct = total > 0 ? Math.round((s.night_count / total) * 100) : 0
+      // Bilinmeyen (vardiya kaydı olmayan) sakinler toplama dahildir ama gece
+      // oranını bozmasın diye yüzde yalnız bilinenler üzerinden hesaplanır.
+      const unknown = s.unknown_count || 0
+      const known = s.day_count + s.night_count
+      const total = known + unknown
+      const nightPct = known > 0 ? Math.round((s.night_count / known) * 100) : 0
       // Gece vardiyasi yogunlugu = mavi-mor, gunduz = turuncu
       let color = '#6b7280'
       if (total > 0) {
@@ -125,7 +129,9 @@ export function computeMetric(mode, s, cfg) {
         value: nightPct, color,
         badge: null,
         centerLabel: total > 0 ? `${total}` : '—',
-        subLabel: total > 0 ? `G${s.day_count}/N${s.night_count}` : 'bos',
+        subLabel: total > 0
+          ? `G${s.day_count}/N${s.night_count}${unknown > 0 ? `/?${unknown}` : ''}`
+          : 'bos',
       }
     }
     case 'quarantine': {
