@@ -38,3 +38,25 @@ describe('campus-map/SidePanel smoke', () => {
     expect(container).toBeEmptyDOMElement()
   })
 })
+
+describe('campus-map/SidePanel yönetici aksiyonları', () => {
+  it('yönetici için blok durum aksiyonları görünür (sağ tık gerektirmez)', () => {
+    const onBulkAction = vi.fn()
+    render(withQuery(<SidePanel block="M1" cfg={BLOCK_BY_NAME.M1} stats={s} rooms={[]} mode="occupancy"
+      timeseries={null} onClose={() => {}} onNavigate={() => {}} onQuickFault={() => {}}
+      isManager onBulkAction={onBulkAction} />))
+    expect(screen.getByText('TÜM BLOK ODALARINI…')).toBeInTheDocument()
+    // "KARANTINA" metni MiniStat rozetinde de geçiyor — buton rolüyle ayır.
+    screen.getByRole('button', { name: /KARANTINA/ }).click()
+    expect(onBulkAction).toHaveBeenCalledWith('quarantine')
+    screen.getByRole('button', { name: /AKTIF/ }).click()
+    expect(onBulkAction).toHaveBeenCalledWith('active')
+  })
+
+  it('yönetici değilse durum aksiyonları gizli', () => {
+    render(withQuery(<SidePanel block="M1" cfg={BLOCK_BY_NAME.M1} stats={s} rooms={[]} mode="occupancy"
+      timeseries={null} onClose={() => {}} onNavigate={() => {}} onQuickFault={() => {}}
+      isManager={false} onBulkAction={() => {}} />))
+    expect(screen.queryByText('TÜM BLOK ODALARINI…')).not.toBeInTheDocument()
+  })
+})

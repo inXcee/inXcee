@@ -905,6 +905,8 @@ export default function CampusMapPage() {
             onNavigate={navigate}
             onQuickFault={() => setQuickFault({ block: selectedBlock })}
             onPersonClick={(personnelId) => navigate(`/personnel/${personnelId}`)}
+            isManager={isManager}
+            onBulkAction={(action) => bulkAction(action, [selectedBlock])}
           />
         ) : (
           // Blok seçili değilken boş kutu yerine "şu an ne yapılmalı" listesi

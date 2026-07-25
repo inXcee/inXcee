@@ -6,7 +6,7 @@ import { MiniStat, btnPrimary, btnSecondary } from './shared.jsx'
 import Sparkline from './Sparkline.jsx'
 import BlockDetailSections from './BlockDetailSections.jsx'
 
-export default function SidePanel({ block, cfg, stats: s, rooms, mode, timeseries, onClose, onNavigate, onQuickFault, onPersonClick }) {
+export default function SidePanel({ block, cfg, stats: s, rooms, mode, timeseries, onClose, onNavigate, onQuickFault, onPersonClick, isManager = false, onBulkAction }) {
   if (!cfg || !s) return null
   const pct = s.occupancy_pct
   const color = pct >= 85 ? '#dc2626' : pct >= 60 ? '#f59e0b' : pct > 0 ? '#16a34a' : '#6b7280'
@@ -205,6 +205,21 @@ export default function SidePanel({ block, cfg, stats: s, rooms, mode, timeserie
           <button onClick={() => onNavigate(`/room-history?block=${block}`)} style={btnSecondary}>⊙ GECMIS</button>
           <button onClick={() => onNavigate(`/checkin?block=${block}`)} style={btnSecondary}>↗ CHECK-IN</button>
         </div>
+
+        {/* Oda durumu aksiyonları — eskiden yalnız sağ tık menüsünde olduğu için
+            keşfedilmesi zordu; artık görünür. */}
+        {isManager && onBulkAction && (
+          <div>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: 9, letterSpacing: 1, color: 'var(--text3)', margin: '4px 0 5px' }}>
+              TÜM BLOK ODALARINI…
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 5 }}>
+              <button onClick={() => onBulkAction('quarantine')} style={{ ...btnSecondary, color: '#a855f7' }} title="Bloğun tüm odalarını karantinaya al">⊘ KARANTINA</button>
+              <button onClick={() => onBulkAction('maintenance')} style={{ ...btnSecondary, color: '#f59e0b' }} title="Bloğun tüm odalarını bakıma al">⚒ BAKIM</button>
+              <button onClick={() => onBulkAction('active')} style={{ ...btnSecondary, color: '#16a34a' }} title="Bloğun tüm odalarını aktif yap">✓ AKTIF</button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
