@@ -27,6 +27,8 @@ import MapPin from './MapPin.jsx'
 import HoverCard from './HoverCard.jsx'
 import ComparePanel from './ComparePanel.jsx'
 import SidePanel from './SidePanel.jsx'
+import AttentionQueue from './AttentionQueue.jsx'
+import CampusOverviewTable from './CampusOverviewTable.jsx'
 
 export default function CampusMapPage() {
   const user = useAuthStore(s => s.user)
@@ -904,19 +906,21 @@ export default function CampusMapPage() {
             onQuickFault={() => setQuickFault({ block: selectedBlock })}
           />
         ) : (
-          <div style={{
-            width: 320, background: 'var(--surface)', border: '1px dashed var(--border)',
-            borderRadius: 8, padding: 24, textAlign: 'center', color: 'var(--text3)',
-            fontFamily: 'var(--mono)', fontSize: 11, letterSpacing: 1,
-          }}>
-            <div style={{ fontSize: 32, marginBottom: 8, opacity: 0.4 }}>◉</div>
-            BIR PIN'E TIKLA<br />
-            <span style={{ fontSize: 9, color: 'var(--text4)' }}>
-              {currentMode?.desc}
-            </span>
-          </div>
+          // Blok seçili değilken boş kutu yerine "şu an ne yapılmalı" listesi
+          <AttentionQueue
+            stats={stats}
+            modeDesc={currentMode?.desc}
+            onSelect={(b) => { zoomToBlock(b); setSelectedBlock(b) }}
+          />
         )}
       </div>
+
+      {/* Tüm blokların sayıları tek tabloda — satıra tıkla haritada göster */}
+      <CampusOverviewTable
+        stats={stats}
+        selectedBlock={selectedBlock}
+        onSelect={(b) => { zoomToBlock(b); setSelectedBlock(b) }}
+      />
     </div>
   )
 }
