@@ -4,8 +4,9 @@
 import { blockColor } from '../../shared/blocks.js'
 import { MiniStat, btnPrimary, btnSecondary } from './shared.jsx'
 import Sparkline from './Sparkline.jsx'
+import BlockDetailSections from './BlockDetailSections.jsx'
 
-export default function SidePanel({ block, cfg, stats: s, rooms, mode, timeseries, onClose, onNavigate, onQuickFault }) {
+export default function SidePanel({ block, cfg, stats: s, rooms, mode, timeseries, onClose, onNavigate, onQuickFault, onPersonClick }) {
   if (!cfg || !s) return null
   const pct = s.occupancy_pct
   const color = pct >= 85 ? '#dc2626' : pct >= 60 ? '#f59e0b' : pct > 0 ? '#16a34a' : '#6b7280'
@@ -181,6 +182,11 @@ export default function SidePanel({ block, cfg, stats: s, rooms, mode, timeserie
           </div>
         )
       })}
+
+      {/* Arıza / temizlik / oda-kişi — sayfadan çıkmadan, rol-duyarlı */}
+      <div style={{ borderTop: '1px solid var(--border)', marginTop: 12, paddingTop: 4 }}>
+        <BlockDetailSections block={block} onPersonClick={onPersonClick} />
+      </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 12, borderTop: '1px solid var(--border)', paddingTop: 12 }}>
         <button onClick={() => onNavigate(`/capacity?block=${block}`)} style={btnPrimary}>
