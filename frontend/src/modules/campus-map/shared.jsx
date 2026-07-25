@@ -91,7 +91,8 @@ export function computeMetric(mode, s, cfg) {
         value: Math.min(100, n * 20), color,
         badge: n > 0 ? { text: String(n), color: '#dc2626' } : null,
         centerLabel: n > 0 ? `${n}⚠` : '✓',
-        subLabel: n > 0 ? `${n} ariza` : 'temiz',
+        // "temiz" yaziyordu — temizlik moduyla karistiriliyordu.
+        subLabel: n > 0 ? `${n} ariza` : 'ariza yok',
       }
     }
     case 'cleaning': {
@@ -262,4 +263,76 @@ export const searchItemStyle = {
   background: 'transparent', border: 'none', borderBottom: '1px solid var(--border)',
   padding: '8px 10px', cursor: 'pointer', color: 'var(--text)', textAlign: 'left',
   transition: 'background .1s',
+}
+
+// Üst şeritteki kampüs-geneli metrik. MODES'taki HER mod bir karşılık üretmeli —
+// eskiden burada olmayan bir 'premium' modu vardı ve gerçek 'company' modu
+// default'a düşüp boş başlık basıyordu.
+export function topMetricFor(mode, t) {
+  const s = t || {}
+  const pct = (part, whole) => (whole > 0 ? `%${Math.round((part / whole) * 100)}` : '—')
+  switch (mode) {
+    case 'occupancy':
+      return { label: 'KAMPUS DOLULUK', value: pct(s.occupied, s.total_beds), sub: `${s.occupied || 0}/${s.total_beds || 0}` }
+    case 'faults':
+      return { label: 'TOPLAM ACIK ARIZA', value: s.fault || 0, sub: `${s.block_count || 0} blok` }
+    case 'cleaning':
+      return { label: 'BUGUN TEMIZLIK', value: pct(s.clean_done, s.clean_total), sub: `${s.clean_done || 0}/${s.clean_total || 0}` }
+    case 'shifts':
+      return {
+        label: 'GECE/GUNDUZ',
+        value: `${s.night || 0}/${s.day || 0}`,
+        sub: (s.night || 0) + (s.day || 0) > 0 ? `${pct(s.night, (s.night || 0) + (s.day || 0))} gece` : '—',
+      }
+    case 'quarantine':
+      return { label: 'KARANTINA+BAKIM', value: (s.quarantine || 0) + (s.maintenance || 0), sub: `Q${s.quarantine || 0} B${s.maintenance || 0}` }
+    case 'company':
+      return {
+        label: 'EN BUYUK SIRKET',
+        value: s.top_company?.company || '—',
+        sub: s.top_company ? `${s.top_company.count} kisi · ${s.company_count || 0} sirket` : `${s.company_count || 0} sirket`,
+      }
+    default:
+      return { label: '', value: '', sub: '' }
+  }
+}
+
+// Oda kutusunun rengi — SEÇİLİ MODA göre. Eskiden her modda doluluk rengiydi.
+// Not: oda bazlı temizlik verisi yok (cleaning_tasks blok+kat düzeyinde), bu yüzden
+// cleaning/shifts/company modlarında uydurma renk üretmeyip doluluğa düşülür.
+// open_fault_count oda düzeyinde eşleşir ("...Oda 101"); blok rozeti ise ortak alan
+// arızalarını da sayar — ikisinin farkı beklenendir.
+export function roomColor(mode, room) {
+  const r = room || {}
+  const gray = '#6b7280'
+  if (r.status === 'quarantine') return '#dc2626'
+  if (r.status === 'maintenance') return '#f59e0b'
+
+  if (mode === 'faults') {
+    const n = r.open_fault_count || 0
+    if (n >= 5) return '#dc2626'
+    if (n >= 2) return '#f59e0b'
+    if (n >= 1) return '#eab308'
+    return gray
+  }
+  if (mode === 'quarantine') return '#16a34a' // karantina/bakım yukarıda döndü → kalan hepsi normal
+
+  const beds = r.active_beds || 0
+  if (beds <= 0) return gray
+  const pct = Math.round(((r.occupied || 0) / beds) * 100)
+  if (pct >= 100) return '#dc2626'
+  if (pct >= 60) return '#f59e0b'
+  if (pct > 0) return '#16a34a'
+  return gray
+}
+
+// Blok panelindeki katlanabilir bölümler. Seçili modun bölümü BAŞA gelir ve açık
+// başlar; diğerleri katlanmış kalır (bilgi kaybolmaz, sıra moda göre değişir).
+// faults/quarantine modlarının verisi her zaman görünen mini-stat şeridinde olduğu
+// için onlarda varsayılan sıra korunur.
+export const PANEL_SECTIONS = ['occupancy', 'shifts', 'cleaning', 'company']
+
+export function orderPanelSections(mode) {
+  const primary = PANEL_SECTIONS.includes(mode) ? mode : 'occupancy'
+  return [primary, ...PANEL_SECTIONS.filter(section => section !== primary)]
 }

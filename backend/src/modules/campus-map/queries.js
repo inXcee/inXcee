@@ -1,5 +1,13 @@
 import { getDB } from '../../shared/db/index.js'
 
+// Ariza konumundan blok adi — TEK KAYNAK. Blok adi location'in ilk kelimesidir
+// ("M1 Kat 1 Oda 101" → "M1", "M1 Ortak Alan" → "M1", "M1" → "M1").
+// getBlockFaults'taki SQL bunun birebir karsiligidir (location = ? OR LIKE ? || ' %');
+// ikisinin ayrismadigini campus-map.test.js "rozet ile liste ayni olmali" testi korur.
+export function blockOfLocation(location) {
+  return String(location || '').trim().split(/\s+/)[0] || ''
+}
+
 // Tum bloklar icin tek seferde komuta merkezi ozet sorgusu.
 // Frontend bunu cagirir, mode switcher icin gerekli butun veriler tek seferde gelir.
 export function getCampusSummary() {
@@ -25,13 +33,12 @@ export function getCampusSummary() {
     GROUP BY r.block
   `).all()
 
-  // 2) Acik ariza sayisi — maintenance_requests location LIKE '%block%'
-  const faults = db.prepare(`
-    SELECT r.block, COUNT(*) as open_faults
-    FROM maintenance_requests mr
-    JOIN rooms r ON mr.location LIKE '%' || r.block || '%Oda ' || r.room_no || '%'
-    WHERE mr.status != 'done'
-    GROUP BY r.block
+  // 2) Acik ariza sayisi — TEK KURAL: blok adi location'in ilk kelimesidir.
+  // Eskiden burada "location LIKE '%blok%Oda no%'" kullaniliyordu; o kural yalniz
+  // gercek bir odaya baglanabilen arizalari sayiyor, "M1 Ortak Alan" gibi odasiz
+  // kayitlari gormezden geliyordu → pin rozeti ile panel listesi celisiyordu.
+  const openFaultRows = db.prepare(`
+    SELECT location FROM maintenance_requests WHERE status != 'done'
   `).all()
 
   // 3) Bugun temizlik gorevleri
@@ -94,8 +101,9 @@ export function getCampusSummary() {
       top_companies: [],
     }
   }
-  for (const f of faults) {
-    if (result[f.block]) result[f.block].open_faults = f.open_faults
+  for (const row of openFaultRows) {
+    const block = blockOfLocation(row.location)
+    if (block && result[block]) result[block].open_faults += 1
   }
   for (const c of cleaning) {
     if (result[c.block]) {

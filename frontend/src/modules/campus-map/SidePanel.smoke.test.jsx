@@ -60,3 +60,39 @@ describe('campus-map/SidePanel yönetici aksiyonları', () => {
     expect(screen.queryByText('TÜM BLOK ODALARINI…')).not.toBeInTheDocument()
   })
 })
+
+describe('campus-map/SidePanel bölümleri modu takip eder', () => {
+  const renderMode = mode => render(withQuery(
+    <SidePanel block="M1" cfg={BLOCK_BY_NAME.M1} stats={s} rooms={[]} mode={mode}
+      timeseries={null} onClose={() => {}} onNavigate={() => {}} onQuickFault={() => {}} />
+  ))
+
+  it('TEMIZLIK modunda temizlik bölümü başta ve açık', () => {
+    renderMode('cleaning')
+    const sections = screen.getAllByRole('button', { name: /bölümü$/ })
+    expect(sections[0]).toHaveAccessibleName('BUGUN TEMIZLIK bölümü')
+    expect(sections[0]).toHaveAttribute('aria-expanded', 'true')
+    // diğerleri katlanmış
+    expect(sections[1]).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('DOLULUK modunda doluluk başta — temizlik artık üstte görünmüyor', () => {
+    renderMode('occupancy')
+    const sections = screen.getAllByRole('button', { name: /bölümü$/ })
+    expect(sections[0]).toHaveAccessibleName('DOLULUK bölümü')
+    expect(sections[0]).toHaveAttribute('aria-expanded', 'true')
+    const cleaning = sections.find(b => b.textContent.includes('TEMIZLIK'))
+    expect(cleaning).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('VARDIYA modunda vardiya başta', () => {
+    renderMode('shifts')
+    expect(screen.getAllByRole('button', { name: /bölümü$/ })[0])
+      .toHaveAccessibleName('VARDIYA DAGILIMI bölümü')
+  })
+
+  it('hiçbir bölüm kaybolmaz (dördü de listede)', () => {
+    renderMode('occupancy')
+    expect(screen.getAllByRole('button', { name: /bölümü$/ })).toHaveLength(4)
+  })
+})

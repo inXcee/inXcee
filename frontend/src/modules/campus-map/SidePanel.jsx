@@ -2,11 +2,45 @@
 // vardiya/temizlik/şirket dağılımları, kat-kat oda grid'i ve hızlı navigasyon
 // butonları. Navigasyon onNavigate(path) ile orkestratöre delege edilir.
 import { blockColor } from '../../shared/blocks.js'
-import { MiniStat, btnPrimary, btnSecondary } from './shared.jsx'
+import { useEffect, useMemo, useState } from 'react'
+import { MiniStat, btnPrimary, btnSecondary, roomColor, orderPanelSections } from './shared.jsx'
 import Sparkline from './Sparkline.jsx'
 import BlockDetailSections from './BlockDetailSections.jsx'
 
+// Katlanabilir panel bölümü. primary = seçili modun bölümü → başta ve açık gelir.
+function PanelSection({ title, badge, badgeColor, primary = false, children }) {
+  const [open, setOpen] = useState(primary)
+  // Mod değişince birincil bölüm açılsın, diğerleri kapansın.
+  useEffect(() => { setOpen(primary) }, [primary])
+  return (
+    <div style={{
+      marginBottom: 10, border: `1px solid ${primary ? 'var(--accent)' : 'var(--border)'}`,
+      borderRadius: 6, padding: '7px 9px',
+      background: primary ? 'rgba(245,158,11,.06)' : 'transparent',
+    }}
+    >
+      <button
+        type="button"
+        onClick={() => setOpen(value => !value)}
+        aria-expanded={open}
+        aria-label={`${title} bölümü`}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 6, width: '100%', background: 'none',
+          border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'var(--mono)', fontSize: 9,
+          letterSpacing: 1, color: primary ? 'var(--accent)' : 'var(--text3)', fontWeight: 700,
+        }}
+      >
+        <span>{open ? '▾' : '▸'}</span>
+        <span>{title}</span>
+        {badge != null && <span style={{ marginLeft: 'auto', color: badgeColor || 'var(--text2)' }}>{badge}</span>}
+      </button>
+      {open && <div style={{ marginTop: 6 }}>{children}</div>}
+    </div>
+  )
+}
+
 export default function SidePanel({ block, cfg, stats: s, rooms, mode, timeseries, onClose, onNavigate, onQuickFault, onPersonClick, isManager = false, onBulkAction }) {
+  const sectionOrder = useMemo(() => orderPanelSections(mode), [mode])
   if (!cfg || !s) return null
   const pct = s.occupancy_pct
   const color = pct >= 85 ? '#dc2626' : pct >= 60 ? '#f59e0b' : pct > 0 ? '#16a34a' : '#6b7280'
@@ -32,43 +66,7 @@ export default function SidePanel({ block, cfg, stats: s, rooms, mode, timeserie
         }}>✕</button>
       </div>
 
-      <div style={{ marginBottom: 14 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4,
-          fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: 1 }}>
-          <span>DOLULUK</span>
-          <span style={{ color }}>%{pct}</span>
-        </div>
-        <div style={{ height: 8, background: 'var(--surface2)', borderRadius: 4, overflow: 'hidden' }}>
-          <div style={{ width: `${pct}%`, height: '100%', background: color, transition: 'width .3s' }} />
-        </div>
-        <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text2)', marginTop: 4, textAlign: 'center' }}>
-          {s.occupied} / {s.total_beds} yatak
-        </div>
-      </div>
-
-      {/* Sparkline — son 14 gun trend */}
-      {timeseries?.points?.length >= 2 && (
-        <div style={{ marginBottom: 14, background: 'var(--surface2)', borderRadius: 6, padding: '8px 10px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
-            <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: 1 }}>
-              SON {timeseries.points.length} GUN TREND
-            </span>
-            <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>
-              {(() => {
-                const pts = timeseries.points
-                const last = pts[pts.length - 1].occupancy_pct
-                const prev = pts[Math.max(0, pts.length - 8)].occupancy_pct
-                const diff = last - prev
-                if (diff === 0) return '— sabit'
-                return diff > 0 ? `↑ +${diff}%` : `↓ ${diff}%`
-              })()}
-            </span>
-          </div>
-          <Sparkline points={timeseries.points} color={color} />
-        </div>
-      )}
-
-      {/* 6'lı mini grid */}
+      {/* Her zaman görünen durum şeridi — arıza/karantina modlarının verisi burada */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 4, marginBottom: 14 }}>
         <MiniStat label="ODA" value={s.total_rooms} />
         <MiniStat label="BOS" value={s.empty_rooms} color="var(--accent)" />
@@ -78,56 +76,95 @@ export default function SidePanel({ block, cfg, stats: s, rooms, mode, timeserie
         <MiniStat label="BAKIM" value={s.maintenance} color={s.maintenance > 0 ? '#f59e0b' : 'var(--text3)'} />
       </div>
 
-      {/* Vardiya dağılımı */}
-      {(s.day_count + s.night_count) > 0 && (
-        <div style={{ marginBottom: 14 }}>
-          <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: 1, marginBottom: 4 }}>
-            VARDIYA DAGILIMI
-          </div>
-          <div style={{ display: 'flex', height: 8, borderRadius: 4, overflow: 'hidden' }}>
-            <div style={{ width: `${(s.day_count / (s.day_count + s.night_count)) * 100}%`, background: '#f97316' }} />
-            <div style={{ width: `${(s.night_count / (s.day_count + s.night_count)) * 100}%`, background: '#8b5cf6' }} />
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4,
-            fontFamily: 'var(--mono)', fontSize: 9 }}>
-            <span style={{ color: '#f97316' }}>☀ GUNDUZ {s.day_count}</span>
-            <span style={{ color: '#8b5cf6' }}>☾ GECE {s.night_count}</span>
-          </div>
-        </div>
-      )}
-
-      {/* Temizlik durumu */}
-      {s.cleaning_total > 0 && (
-        <div style={{ marginBottom: 14 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between',
-            fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: 1, marginBottom: 4 }}>
-            <span>BUGUN TEMIZLIK</span>
-            <span>%{s.cleaning_pct}</span>
-          </div>
-          <div style={{ height: 6, background: 'var(--surface2)', borderRadius: 3, overflow: 'hidden' }}>
-            <div style={{ width: `${s.cleaning_pct}%`, height: '100%', background: '#16a34a' }} />
-          </div>
-          <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text2)', marginTop: 3 }}>
-            {s.cleaning_done}/{s.cleaning_total} tamamlandı{s.cleaning_skipped > 0 ? ` • ${s.cleaning_skipped} atlandi` : ''}
-          </div>
-        </div>
-      )}
-
-      {/* Top şirketler */}
-      {s.top_companies?.length > 0 && (
-        <div style={{ marginBottom: 14 }}>
-          <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: 1, marginBottom: 4 }}>
-            ANA SIRKETLER
-          </div>
-          {s.top_companies.map(c => (
-            <div key={c.company} style={{ display: 'flex', justifyContent: 'space-between',
-              fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text2)', padding: '2px 0' }}>
-              <span>{c.company}</span>
-              <span style={{ color: 'var(--accent)' }}>{c.count}</span>
-            </div>
-          ))}
-        </div>
-      )}
+      {/* Bölümler seçili moda göre sıralanır: modun bölümü başta ve açık, diğerleri katlı */}
+      {sectionOrder.map((id, index) => {
+        const primary = index === 0
+        if (id === 'occupancy') {
+          return (
+            <PanelSection key={id} title="DOLULUK" badge={`%${pct}`} badgeColor={color} primary={primary}>
+              <div style={{ height: 8, background: 'var(--surface2)', borderRadius: 4, overflow: 'hidden' }}>
+                <div style={{ width: `${pct}%`, height: '100%', background: color, transition: 'width .3s' }} />
+              </div>
+              <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text2)', marginTop: 4, textAlign: 'center' }}>
+                {s.occupied} / {s.total_beds} yatak
+              </div>
+              {timeseries?.points?.length >= 2 && (
+                <div style={{ marginTop: 10, background: 'var(--surface2)', borderRadius: 6, padding: '8px 10px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
+                    <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: 1 }}>
+                      SON {timeseries.points.length} GUN TREND
+                    </span>
+                    <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>
+                      {(() => {
+                        const pts = timeseries.points
+                        const last = pts[pts.length - 1].occupancy_pct
+                        const prev = pts[Math.max(0, pts.length - 8)].occupancy_pct
+                        const diff = last - prev
+                        if (diff === 0) return '— sabit'
+                        return diff > 0 ? `↑ +${diff}%` : `↓ ${diff}%`
+                      })()}
+                    </span>
+                  </div>
+                  <Sparkline points={timeseries.points} color={color} />
+                </div>
+              )}
+            </PanelSection>
+          )
+        }
+        if (id === 'shifts') {
+          const total = s.day_count + s.night_count
+          return (
+            <PanelSection key={id} title="VARDIYA DAGILIMI" badge={total > 0 ? `${total}` : '—'} primary={primary}>
+              {total === 0 ? (
+                <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>Vardiya kaydi yok.</div>
+              ) : (
+                <>
+                  <div style={{ display: 'flex', height: 8, borderRadius: 4, overflow: 'hidden' }}>
+                    <div style={{ width: `${(s.day_count / total) * 100}%`, background: '#f97316' }} />
+                    <div style={{ width: `${(s.night_count / total) * 100}%`, background: '#8b5cf6' }} />
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4,
+                    fontFamily: 'var(--mono)', fontSize: 9 }}>
+                    <span style={{ color: '#f97316' }}>☀ GUNDUZ {s.day_count}</span>
+                    <span style={{ color: '#8b5cf6' }}>☾ GECE {s.night_count}</span>
+                  </div>
+                </>
+              )}
+            </PanelSection>
+          )
+        }
+        if (id === 'cleaning') {
+          return (
+            <PanelSection key={id} title="BUGUN TEMIZLIK" badge={s.cleaning_total > 0 ? `%${s.cleaning_pct}` : '—'} primary={primary}>
+              {s.cleaning_total === 0 ? (
+                <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>Bugun icin gorev uretilmemis.</div>
+              ) : (
+                <>
+                  <div style={{ height: 6, background: 'var(--surface2)', borderRadius: 3, overflow: 'hidden' }}>
+                    <div style={{ width: `${s.cleaning_pct}%`, height: '100%', background: '#16a34a' }} />
+                  </div>
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text2)', marginTop: 3 }}>
+                    {s.cleaning_done}/{s.cleaning_total} tamamlandı{s.cleaning_skipped > 0 ? ` • ${s.cleaning_skipped} atlandi` : ''}
+                  </div>
+                </>
+              )}
+            </PanelSection>
+          )
+        }
+        return (
+          <PanelSection key={id} title="ANA SIRKETLER" badge={s.top_companies?.length ? String(s.top_companies.length) : '—'} primary={primary}>
+            {!s.top_companies?.length ? (
+              <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>Sirket kaydi yok.</div>
+            ) : s.top_companies.map(c => (
+              <div key={c.company} style={{ display: 'flex', justifyContent: 'space-between',
+                fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text2)', padding: '2px 0' }}>
+                <span>{c.company}</span>
+                <span style={{ color: 'var(--accent)' }}>{c.count}</span>
+              </div>
+            ))}
+          </PanelSection>
+        )
+      })}
 
       {/* Kat-kat oda grid */}
       {Array.from({ length: cfg.floors }, (_, i) => i + 1).map(floor => {
@@ -147,15 +184,7 @@ export default function SidePanel({ block, cfg, stats: s, rooms, mode, timeserie
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(40px, 1fr))', gap: 3 }}>
               {floorRooms.map(r => {
-                const rpct = r.active_beds > 0 ? Math.round(((r.occupied || 0) / r.active_beds) * 100) : 0
-                let bg = '#6b7280'
-                if (r.status === 'quarantine') bg = '#dc2626'
-                else if (r.status === 'maintenance') bg = '#f59e0b'
-                else if (r.active_beds > 0) {
-                  if (rpct >= 100) bg = '#dc2626'
-                  else if (rpct >= 60) bg = '#f59e0b'
-                  else if (rpct > 0) bg = '#16a34a'
-                }
+                const bg = roomColor(mode, r)
                 return (
                   <div key={r.id}
                     title={`Oda ${r.room_no} • ${r.occupied || 0}/${r.active_beds || 0}${r.status !== 'active' ? ' • ' + r.status : ''}${r.open_fault_count ? ' • ' + r.open_fault_count + ' ariza' : ''}`}

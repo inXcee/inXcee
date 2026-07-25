@@ -212,3 +212,46 @@ describe('Campus Map blok detayi (/block/:block/detail)', () => {
     expect((await request(app).get('/api/campus-map/block/M1/detail')).status).toBe(401)
   })
 })
+
+describe('Ariza esletirme kurali (rozet ile liste ayni olmali)', () => {
+  it('odasiz blok arizasi hem ozet rozetinde hem panel listesinde sayilir', async () => {
+    const { getDB } = await import('../../shared/db/index.js')
+    const db = getDB()
+    // "M1 Ortak Alan" — gerçek bir odaya bağlanamaz ama M1'in arızasıdır
+    db.prepare(`INSERT INTO maintenance_requests(location, description, priority, status)
+      VALUES('M1 Ortak Alan', 'Aydinlatma arizasi', 'medium', 'open')`).run()
+
+    const summary = await request(app).get('/api/campus-map/summary').set('Authorization', `Bearer ${mgrToken}`)
+    const detail = await request(app).get('/api/campus-map/block/M1/detail').set('Authorization', `Bearer ${mgrToken}`)
+
+    const badge = summary.body.blocks.M1.open_faults
+    const listed = detail.body.faults.length
+    expect(listed).toBeGreaterThan(0)
+    expect(badge).toBe(listed) // iki kural ayrismamali
+    expect(detail.body.faults.some(f => f.location === 'M1 Ortak Alan')).toBe(true)
+  })
+
+  it('bosluklu onek: A blogu A1in arizasini saymaz', async () => {
+    const { getDB } = await import('../../shared/db/index.js')
+    const db = getDB()
+    db.prepare(`INSERT INTO maintenance_requests(location, description, priority, status)
+      VALUES('A1 Kat 2 Oda 210', 'Sadece A1', 'low', 'open')`).run()
+
+    const summary = await request(app).get('/api/campus-map/summary').set('Authorization', `Bearer ${mgrToken}`)
+    const aDetail = await request(app).get('/api/campus-map/block/A/detail').set('Authorization', `Bearer ${mgrToken}`)
+
+    expect(aDetail.body.faults.some(f => f.location.startsWith('A1'))).toBe(false)
+    expect(summary.body.blocks.A1.open_faults).toBe(
+      (await request(app).get('/api/campus-map/block/A1/detail').set('Authorization', `Bearer ${mgrToken}`)).body.faults.length
+    )
+  })
+
+  it('kapanmis ariza sayilmaz', async () => {
+    const { getDB } = await import('../../shared/db/index.js')
+    const db = getDB()
+    db.prepare(`INSERT INTO maintenance_requests(location, description, priority, status)
+      VALUES('M2 Kat 1 Oda 101', 'Kapali kayit', 'low', 'done')`).run()
+    const detail = await request(app).get('/api/campus-map/block/M2/detail').set('Authorization', `Bearer ${mgrToken}`)
+    expect(detail.body.faults.some(f => f.description === 'Kapali kayit')).toBe(false)
+  })
+})

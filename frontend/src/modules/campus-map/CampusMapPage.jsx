@@ -13,7 +13,7 @@ import { BLOCKS, BLOCK_BY_NAME, blockColor } from '../../shared/blocks.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 import HelpHint from '../../shared/components/HelpHint.jsx'
 import {
-  VIEW_W, VIEW_H, MODES, extractBlock, eventColor, computeMetric, defaultPins,
+  VIEW_W, VIEW_H, MODES, extractBlock, eventColor, computeMetric, defaultPins, topMetricFor,
   chipBtn, lblToolbar, btnGhost, btnGreen, btnAccent, btnDanger, btnDangerSolid, btnWarn,
   zoomBtn, searchItemStyle,
 } from './shared.jsx'
@@ -248,8 +248,19 @@ export default function CampusMapPage() {
       clean_total += s.cleaning_total; clean_done += s.cleaning_done
       day += s.day_count; night += s.night_count
     }
+    // Şirket modunun üst metriği için kampüs geneli şirket dağılımı
+    const byCompany = new Map()
+    for (const s of Object.values(stats)) {
+      for (const c of s.top_companies || []) {
+        byCompany.set(c.company, (byCompany.get(c.company) || 0) + (c.count || 0))
+      }
+    }
+    const ranked = [...byCompany.entries()].sort((a, b) => b[1] - a[1])
     return { total_beds, occupied, empty, quarantine: q, maintenance: m, fault: f,
-      clean_total, clean_done, day, night }
+      clean_total, clean_done, day, night,
+      block_count: Object.keys(stats).length,
+      company_count: ranked.length,
+      top_company: ranked.length ? { company: ranked[0][0], count: ranked[0][1] } : null }
   }, [stats])
 
   // ── Drag ─────────────────────────────────────────────────────────────────
@@ -413,18 +424,8 @@ export default function CampusMapPage() {
 
   const currentMode = MODES.find(m => m.id === mode)
 
-  // Top metric for current mode (header bar)
-  const topMetric = useMemo(() => {
-    switch (mode) {
-      case 'occupancy': return { label: 'KAMPUS DOLULUK', value: totalStats.total_beds > 0 ? `%${Math.round((totalStats.occupied / totalStats.total_beds) * 100)}` : '—', sub: `${totalStats.occupied}/${totalStats.total_beds}` }
-      case 'faults':    return { label: 'TOPLAM ACIK ARIZA', value: totalStats.fault, sub: `${BLOCKS.length} blok` }
-      case 'cleaning':  return { label: 'BUGUN TEMIZLIK', value: totalStats.clean_total > 0 ? `%${Math.round((totalStats.clean_done / totalStats.clean_total) * 100)}` : '—', sub: `${totalStats.clean_done}/${totalStats.clean_total}` }
-      case 'shifts':    return { label: 'GECE/GUNDUZ', value: `${totalStats.night}/${totalStats.day}`, sub: totalStats.night + totalStats.day > 0 ? `%${Math.round((totalStats.night / (totalStats.night + totalStats.day)) * 100)} gece` : '—' }
-      case 'quarantine': return { label: 'KARANTINA+BAKIM', value: totalStats.quarantine + totalStats.maintenance, sub: `Q${totalStats.quarantine} B${totalStats.maintenance}` }
-      case 'premium':   return { label: 'PREMIUM BLOK', value: BLOCKS.filter(b => b.type === 'Y').length, sub: 'ozel banyolu' }
-      default: return { label: '', value: '', sub: '' }
-    }
-  }, [mode, totalStats])
+  // Top metric for current mode (header bar) — saf fonksiyon shared.jsx'te, testli.
+  const topMetric = useMemo(() => topMetricFor(mode, totalStats), [mode, totalStats])
 
   // Pin click — edit modunda inspector, normalde seçim/çoklu seçim
   function handlePinClick(e, block) {
