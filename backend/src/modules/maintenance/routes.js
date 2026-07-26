@@ -19,10 +19,12 @@ const techAccess = requireRole('campus_manager', 'shift_supervisor', 'technical'
 
 maintenanceRouter.post('/requests', ...techAccess, upload.single('photo_before'), verifyMagicBytes, validate(createRequestSchema), (req, res) => {
   try {
-    const { location, description, priority, wait_reason } = req.validated
+    const { location, block, room_id, description, priority, wait_reason } = req.validated
     const photoBefore = req.file ? `/uploads/${req.file.filename}` : null
     const id = svc.createRequestService({
       location,
+      block,
+      roomId: room_id,
       description,
       priority,
       reporterUserId: req.user.id,

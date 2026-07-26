@@ -24,6 +24,12 @@ describe('Maintenance — assign endpoint', () => {
     requestId = res.body.id
   })
 
+  it('persists canonical block and room for legacy location text', () => {
+    const row = db.prepare('SELECT block, room_id FROM maintenance_requests WHERE id=?').get(requestId)
+    const room = db.prepare("SELECT id FROM rooms WHERE block='B' AND room_no='101'").get()
+    expect(row).toEqual({ block: 'B', room_id: room.id })
+  })
+
   it('creates a technician', async () => {
     const res = await request(app)
       .post('/api/maintenance/technicians')

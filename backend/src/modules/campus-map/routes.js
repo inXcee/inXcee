@@ -4,8 +4,12 @@ import { getDB } from '../../shared/db/index.js'
 import {
   getCampusSummary, getCampusTimeseries,
   getBlockFaults, getBlockCleaning, getBlockRoomsWithOccupants,
+  getMaintenanceDataQuality, getUnknownShiftQueue, getOpenFaultQueue, getCleaningQueue,
+  buildBlockHealth, buildCampusHealth,
 } from './queries.js'
 import { logger } from '../../shared/logger.js'
+import { istanbulDate } from '../../shared/time.js'
+import { isIsoDate } from '../../shared/validation/date.js'
 
 export const campusMapRouter = Router()
 
@@ -39,16 +43,128 @@ const FAULT_ROLES = ['campus_manager', 'shift_supervisor', 'technical']
 const CLEANING_ROLES = ['campus_manager', 'housekeeper']
 const ROOM_ROLES = ['campus_manager', 'shift_supervisor']
 
+function permissionsFor(role) {
+  return {
+    faults: FAULT_ROLES.includes(role),
+    cleaning: CLEANING_ROLES.includes(role),
+    rooms: ROOM_ROLES.includes(role),
+  }
+}
+
+function requestedDate(req, res) {
+  const date = req.query.date ? String(req.query.date) : istanbulDate()
+  if (!isIsoDate(date)) {
+    res.status(400).json({ error: 'Gecersiz tarih' })
+    return null
+  }
+  return date
+}
+
+function campusKpis(blocks, health) {
+  const values = Object.values(blocks)
+  const sum = key => values.reduce((total, block) => total + Number(block[key] || 0), 0)
+  return {
+    ...health,
+    total_blocks: values.length,
+    total_rooms: sum('total_rooms'),
+    total_beds: sum('total_beds'),
+    occupied: sum('occupied'),
+    available_beds: Math.max(0, sum('total_beds') - sum('occupied')),
+    open_faults: sum('open_faults'),
+    cleaning_total: sum('cleaning_total'),
+    cleaning_done: sum('cleaning_done'),
+    quarantine_rooms: sum('quarantine'),
+    maintenance_rooms: sum('maintenance'),
+    unknown_shift_count: sum('unknown_count'),
+  }
+}
+
+// Yeni operasyon sozlesmesi: rol-duyarli kuyruklar ve veri kalitesi tek cagriyla gelir.
+campusMapRouter.get('/operations', requireAuth, (req, res) => {
+  try {
+    const date = requestedDate(req, res)
+    if (!date) return
+    const permissions = permissionsFor(req.user.role)
+    const summary = getCampusSummary(date)
+    const dataQuality = getMaintenanceDataQuality()
+    const unknownShifts = getUnknownShiftQueue()
+    const unknownShiftCount = Object.values(summary)
+      .reduce((total, block) => total + Number(block.unknown_count || 0), 0)
+    const blocks = Object.fromEntries(Object.entries(summary).map(([name, block]) => [
+      name,
+      { ...block, ...buildBlockHealth(block) },
+    ]))
+    const health = buildCampusHealth(blocks, dataQuality)
+    const queues = { data_quality: {} }
+    if (permissions.faults) queues.data_quality.unmapped_faults = dataQuality.unmapped_faults
+    if (permissions.rooms) queues.data_quality.unknown_shifts = unknownShifts
+    if (permissions.faults) queues.faults = getOpenFaultQueue()
+    if (permissions.cleaning) queues.cleaning = getCleaningQueue(date)
+
+    res.json({
+      generated_at: new Date().toISOString(),
+      date,
+      permissions,
+      freshness: {
+        status: 'current',
+        stale_sources: [],
+      },
+      campus: campusKpis(blocks, health),
+      blocks,
+      queues,
+      data_quality: {
+        unmapped_fault_count: dataQuality.unmapped_fault_count,
+        ...(permissions.faults ? { unmapped_faults: dataQuality.unmapped_faults } : {}),
+        unknown_shift_count: unknownShiftCount,
+        stale_sources: [],
+      },
+    })
+  } catch (e) {
+    logger.error('[campus-map.operations]', e)
+    res.status(500).json({ error: 'Sunucu hatasi' })
+  }
+})
+
+campusMapRouter.get('/block/:block/workspace', requireAuth, (req, res) => {
+  try {
+    const date = requestedDate(req, res)
+    if (!date) return
+    const block = String(req.params.block || '').trim()
+    if (!block || block.length > 8) return res.status(400).json({ error: 'Gecersiz blok' })
+    const summary = getCampusSummary(date)
+    if (!summary[block]) return res.status(404).json({ error: 'Blok bulunamadi' })
+    const permissions = permissionsFor(req.user.role)
+    const unknownShifts = getUnknownShiftQueue().filter(item => item.block === block)
+    const dataQuality = getMaintenanceDataQuality()
+    const overview = { ...summary[block], ...buildBlockHealth(summary[block]) }
+    const payload = {
+      generated_at: new Date().toISOString(),
+      date,
+      block,
+      permissions,
+      freshness: { status: 'current', stale_sources: [] },
+      overview,
+      data_quality: {
+        unmapped_fault_count: dataQuality.unmapped_fault_count,
+        unknown_shift_count: unknownShifts.length,
+        stale_sources: [],
+      },
+    }
+    if (permissions.faults) payload.faults = getBlockFaults(block)
+    if (permissions.cleaning) payload.cleaning = getBlockCleaning(block, date)
+    if (permissions.rooms) payload.rooms = getBlockRoomsWithOccupants(block)
+    res.json(payload)
+  } catch (e) {
+    logger.error('[campus-map.block-workspace]', e)
+    res.status(500).json({ error: 'Sunucu hatasi' })
+  }
+})
+
 campusMapRouter.get('/block/:block/detail', requireAuth, (req, res) => {
   try {
     const block = String(req.params.block || '').trim()
     if (!block || block.length > 8) return res.status(400).json({ error: 'Gecersiz blok' })
-    const role = req.user.role
-    const can = {
-      faults: FAULT_ROLES.includes(role),
-      cleaning: CLEANING_ROLES.includes(role),
-      rooms: ROOM_ROLES.includes(role),
-    }
+    const can = permissionsFor(req.user.role)
     const payload = { block, can }
     if (can.faults) payload.faults = getBlockFaults(block)
     if (can.cleaning) payload.cleaning = getBlockCleaning(block)

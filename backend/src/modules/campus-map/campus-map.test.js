@@ -4,11 +4,14 @@ import app from '../../app.js'
 import { initDB } from '../../shared/db/index.js'
 import { seedDev } from '../../shared/db/seed.js'
 
-let mgrToken, supToken
+let mgrToken, supToken, techToken, hkToken, laundryToken
 beforeAll(async () => {
   process.env.DB_PATH = ':memory:'; initDB(); seedDev()
   mgrToken = (await request(app).post('/api/auth/login').send({ username: 'mudur', password: 'admin123' })).body.token
   supToken = (await request(app).post('/api/auth/login').send({ username: 'vardiya', password: 'admin123' })).body.token
+  techToken = (await request(app).post('/api/auth/login').send({ username: 'teknik', password: 'admin123' })).body.token
+  hkToken = (await request(app).post('/api/auth/login').send({ username: 'meydanci', password: 'admin123' })).body.token
+  laundryToken = (await request(app).post('/api/auth/login').send({ username: 'camasir', password: 'admin123' })).body.token
 })
 
 describe('Campus Map summary', () => {
@@ -51,6 +54,73 @@ describe('Campus Map summary', () => {
   it('GET /summary requires auth', async () => {
     const res = await request(app).get('/api/campus-map/summary')
     expect(res.status).toBe(401)
+  })
+})
+
+describe('Campus operations contract', () => {
+  it('tireli arizayi sayar, eslesmeyen kaydi kalite kuyruguna alir ve sahte 100 saglik gostermez', async () => {
+    const { getDB } = await import('../../shared/db/index.js')
+    const db = getDB()
+    const first = db.prepare(`INSERT INTO maintenance_requests(location, description, priority, status)
+      VALUES('M1-203', 'Operations tireli test', 'high', 'open')`).run().lastInsertRowid
+    const second = db.prepare(`INSERT INTO maintenance_requests(location, description, priority, status)
+      VALUES('Tanimsiz saha noktasi', 'Operations eslesmeyen test', 'low', 'open')`).run().lastInsertRowid
+
+    const res = await request(app).get('/api/campus-map/operations?date=2026-07-26')
+      .set('Authorization', `Bearer ${mgrToken}`)
+
+    expect(res.status).toBe(200)
+    expect(res.body.generated_at).toBeTypeOf('string')
+    expect(res.body.date).toBe('2026-07-26')
+    expect(res.body.permissions).toEqual({ faults: true, cleaning: true, rooms: true })
+    expect(res.body.blocks.M1.open_faults).toBeGreaterThan(0)
+    expect(res.body.queues.faults.some(item => item.id === Number(first) && item.block === 'M1')).toBe(true)
+    expect(res.body.data_quality.unmapped_faults.some(item => item.id === Number(second))).toBe(true)
+    expect(res.body.campus.status).toBe('data_issue')
+    expect(res.body.campus.health_score).toBeLessThan(100)
+
+    db.prepare('DELETE FROM maintenance_requests WHERE id IN (?, ?)').run(first, second)
+  })
+
+  it('rol yetkisine gore operasyon kuyruklarini tamamen gizler', async () => {
+    const technical = await request(app).get('/api/campus-map/operations')
+      .set('Authorization', `Bearer ${techToken}`)
+    expect(technical.body.queues.faults).toBeDefined()
+    expect(technical.body.queues.cleaning).toBeUndefined()
+
+    const housekeeper = await request(app).get('/api/campus-map/operations')
+      .set('Authorization', `Bearer ${hkToken}`)
+    expect(housekeeper.body.queues.cleaning).toBeDefined()
+    expect(housekeeper.body.queues.faults).toBeUndefined()
+
+    const laundry = await request(app).get('/api/campus-map/operations')
+      .set('Authorization', `Bearer ${laundryToken}`)
+    expect(laundry.body.queues.faults).toBeUndefined()
+    expect(laundry.body.queues.cleaning).toBeUndefined()
+  })
+
+  it('workspace tarih ve rol baglamini korur', async () => {
+    const res = await request(app).get('/api/campus-map/block/M1/workspace?date=2026-07-26')
+      .set('Authorization', `Bearer ${supToken}`)
+    expect(res.status).toBe(200)
+    expect(res.body).toMatchObject({
+      block: 'M1',
+      date: '2026-07-26',
+      permissions: { faults: true, cleaning: false, rooms: true },
+    })
+    expect(res.body.faults).toBeDefined()
+    expect(res.body.cleaning).toBeUndefined()
+    expect(res.body.rooms).toBeDefined()
+    expect(res.body.overview).toHaveProperty('health_score')
+  })
+
+  it('gecersiz tarih ve bilinmeyen blok icin acik hata doner', async () => {
+    const badDate = await request(app).get('/api/campus-map/operations?date=2026-02-30')
+      .set('Authorization', `Bearer ${mgrToken}`)
+    expect(badDate.status).toBe(400)
+    const unknownBlock = await request(app).get('/api/campus-map/block/ZZ/workspace')
+      .set('Authorization', `Bearer ${mgrToken}`)
+    expect(unknownBlock.status).toBe(404)
   })
 })
 

@@ -344,15 +344,25 @@ export function getMaintenanceDetail() {
     ORDER BY n DESC LIMIT 10
   `).all()
 
-  // Blok bazli (location'da blok adi gectikce)
+  // Blok bazli: kanonik alan birincil, migration oncesi nullable kayitlar icin
+  // sinirli ve A/A1'i karistirmayan geriye uyumlu eslesme.
   const byBlock = db.prepare(`
-    SELECT block,
+    SELECT b.block,
       SUM(CASE WHEN mr.opened_at >= datetime('now', '-90 days') THEN 1 ELSE 0 END) AS toplam,
       SUM(CASE WHEN mr.opened_at >= datetime('now', '-90 days') AND mr.status='done' THEN 1 ELSE 0 END) AS kapanan,
       SUM(CASE WHEN mr.opened_at >= datetime('now', '-90 days') AND mr.status!='done' THEN 1 ELSE 0 END) AS acik
     FROM (SELECT DISTINCT block FROM rooms WHERE status='active') b
-    LEFT JOIN maintenance_requests mr ON mr.location LIKE '%' || b.block || '%'
-    GROUP BY block HAVING toplam > 0 ORDER BY toplam DESC
+    LEFT JOIN maintenance_requests mr
+      ON mr.block = b.block
+      OR (
+        mr.block IS NULL
+        AND (
+          trim(mr.location) = b.block
+          OR trim(mr.location) LIKE b.block || ' %'
+          OR trim(mr.location) LIKE b.block || '-%'
+        )
+      )
+    GROUP BY b.block HAVING toplam > 0 ORDER BY toplam DESC
   `).all()
 
   return { all, byPriority, byStatus, byTechnician, hotSpots, ageBuckets, longestOpen, monthlyTrend, topReporters, byBlock }

@@ -1,4 +1,6 @@
 import { getDB } from '../../shared/db/index.js'
+import { istanbulDate } from '../../shared/time.js'
+import { canonicalMaintenanceRow } from './location.js'
 
 // ── Maintenance Requests ─────────────────────────────────────────────────────
 
@@ -6,14 +8,14 @@ import { getDB } from '../../shared/db/index.js'
 // SQL üretmek yerine sabit lookup. Geçersiz priority gelirse medium varsayar.
 const SLA_HOURS_BY_PRIORITY = { high: 4, medium: 24, low: 72 }
 
-export function createRequest({ location, description, priority, reporterUserId, reporterPersonnelId, photoBefore, waitReason }) {
+export function createRequest({ location, block, roomId, description, priority, reporterUserId, reporterPersonnelId, photoBefore, waitReason }) {
   const db = getDB()
   const slaHours = SLA_HOURS_BY_PRIORITY[priority] ?? 24
   const safePriority = SLA_HOURS_BY_PRIORITY[priority] ? priority : 'medium'
   const r = db.prepare(`
-    INSERT INTO maintenance_requests(location,description,priority,reporter_user_id,reporter_personnel_id,photo_before,wait_reason,sla_deadline)
-    VALUES(?,?,?,?,?,?,?,datetime('now', ? || ' hours'))
-  `).run(location, description, safePriority, reporterUserId || null, reporterPersonnelId || null, photoBefore || null, waitReason || null, `+${slaHours}`)
+    INSERT INTO maintenance_requests(location,block,room_id,description,priority,reporter_user_id,reporter_personnel_id,photo_before,wait_reason,sla_deadline)
+    VALUES(?,?,?,?,?,?,?,?,?,datetime('now', ? || ' hours'))
+  `).run(location, block || null, roomId || null, description, safePriority, reporterUserId || null, reporterPersonnelId || null, photoBefore || null, waitReason || null, `+${slaHours}`)
   return r.lastInsertRowid
 }
 
@@ -145,7 +147,7 @@ export function getStats() {
   const total = db.prepare('SELECT COUNT(*) as c FROM maintenance_requests').get().c
   const open = db.prepare("SELECT COUNT(*) as c FROM maintenance_requests WHERE status='open'").get().c
   const waiting = db.prepare("SELECT COUNT(*) as c FROM maintenance_requests WHERE status='open' AND wait_reason IS NOT NULL AND wait_reason != ''").get().c
-  const closedToday = db.prepare("SELECT COUNT(*) as c FROM maintenance_requests WHERE status='done' AND DATE(closed_at)=DATE('now')").get().c
+  const closedToday = db.prepare("SELECT COUNT(*) as c FROM maintenance_requests WHERE status='done' AND DATE(closed_at, '+3 hours')=?").get(istanbulDate()).c
 
   const avgRow = db.prepare(`
     SELECT AVG(CAST((julianday(closed_at) - julianday(opened_at)) * 24 AS REAL)) as avg_hours
@@ -155,13 +157,19 @@ export function getStats() {
 
   // Blok adi location'in ilk kelimesidir (örn "M1 Kat 1 Oda 101" → "M1", "A Kat 2..." → "A").
   // Tum 19 blok (M1-M3, S1-S3, A, A1-A4, B, C, D, E, F, G, H, J) icin dinamik gruplama.
-  const byBlock = db.prepare(`
-    SELECT
-      SUBSTR(location, 1, INSTR(location || ' ', ' ') - 1) as block,
-      COUNT(*) as count
-    FROM maintenance_requests WHERE status != 'done'
-    GROUP BY block ORDER BY count DESC
+  const blockCounts = new Map()
+  const openLocations = db.prepare(`
+    SELECT location, block, room_id
+    FROM maintenance_requests
+    WHERE status != 'done'
   `).all()
+  for (const row of openLocations) {
+    const block = canonicalMaintenanceRow(db, row).canonical_block || 'Eşleşmemiş'
+    blockCounts.set(block, (blockCounts.get(block) || 0) + 1)
+  }
+  const byBlock = [...blockCounts.entries()]
+    .map(([block, count]) => ({ block, count }))
+    .sort((left, right) => right.count - left.count || left.block.localeCompare(right.block, 'tr'))
 
   const byPriority = db.prepare(`
     SELECT COALESCE(priority,'medium') as priority, COUNT(*) as count

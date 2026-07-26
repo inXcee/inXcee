@@ -3,6 +3,7 @@ import { createNotification } from '../../shared/notifications/service.js'
 import { sendPushToWorker } from '../../shared/notifications/push.js'
 import { logAudit } from '../../shared/audit.js'
 import { getDB } from '../../shared/db/index.js'
+import { resolveMaintenanceLocation } from './location.js'
 
 // AVS kiosk'tan bildirilen bir arıza çözülünce, bildiren personele push gönder
 // (telefonda abone olduysa). Reporter linki audit_log'ta tutuluyor (workerId).
@@ -26,7 +27,8 @@ function notifyAvsReporterResolved(id) {
 }
 
 export function createRequestService(data) {
-  const id = q.createRequest(data)
+  const canonical = resolveMaintenanceLocation(getDB(), data)
+  const id = q.createRequest({ ...data, ...canonical })
   createNotification({
     message: `Yeni arıza bildirimi: ${data.location} — ${data.description}`,
     type: data.priority === 'high' ? 'critical' : 'warning',

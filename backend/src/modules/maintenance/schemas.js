@@ -8,6 +8,8 @@ const priorityEnum = z.enum(PRIORITIES, { errorMap: () => ({ message: 'Geçersiz
 
 export const createRequestSchema = z.object({
   location: z.string().trim().min(2, 'Konum gerekli').max(200, 'Konum çok uzun'),
+  block: z.string().trim().min(1, 'Blok boş olamaz').max(8, 'Blok çok uzun').optional(),
+  room_id: z.coerce.number().int().positive('Geçersiz oda').optional(),
   description: z.string().trim().min(5, 'Açıklama en az 5 karakter olmalı').max(2000, 'Açıklama çok uzun'),
   priority: priorityEnum.optional().default('medium'),
   wait_reason: z.string().trim().max(500, 'Bekleme nedeni çok uzun').nullish(),

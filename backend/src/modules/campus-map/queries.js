@@ -1,16 +1,18 @@
 import { getDB } from '../../shared/db/index.js'
+import { istanbulDate } from '../../shared/time.js'
+import { blockFromLegacyLocation, canonicalMaintenanceRow } from '../maintenance/location.js'
 
 // Ariza konumundan blok adi — TEK KAYNAK. Blok adi location'in ilk kelimesidir
 // ("M1 Kat 1 Oda 101" → "M1", "M1 Ortak Alan" → "M1", "M1" → "M1").
 // getBlockFaults'taki SQL bunun birebir karsiligidir (location = ? OR LIKE ? || ' %');
 // ikisinin ayrismadigini campus-map.test.js "rozet ile liste ayni olmali" testi korur.
 export function blockOfLocation(location) {
-  return String(location || '').trim().split(/\s+/)[0] || ''
+  return blockFromLegacyLocation(location) || ''
 }
 
 // Tum bloklar icin tek seferde komuta merkezi ozet sorgusu.
 // Frontend bunu cagirir, mode switcher icin gerekli butun veriler tek seferde gelir.
-export function getCampusSummary() {
+export function getCampusSummary(date = istanbulDate()) {
   const db = getDB()
 
   // 1) Doluluk, oda durumu, bos oda — rooms + room_assignments
@@ -38,11 +40,10 @@ export function getCampusSummary() {
   // gercek bir odaya baglanabilen arizalari sayiyor, "M1 Ortak Alan" gibi odasiz
   // kayitlari gormezden geliyordu → pin rozeti ile panel listesi celisiyordu.
   const openFaultRows = db.prepare(`
-    SELECT location FROM maintenance_requests WHERE status != 'done'
+    SELECT id, location, block, room_id FROM maintenance_requests WHERE status != 'done'
   `).all()
 
   // 3) Bugun temizlik gorevleri
-  const today = new Date().toISOString().slice(0, 10)
   const cleaning = db.prepare(`
     SELECT block,
       COUNT(*) as cleaning_total,
@@ -51,7 +52,7 @@ export function getCampusSummary() {
     FROM cleaning_tasks
     WHERE date(scheduled_at) = ?
     GROUP BY block
-  `).all(today)
+  `).all(date)
 
   // 4) Vardiya dagilimi — aktif personelin vardiya tipine gore blok bazinda
   // Vardiya kaydi OLMAYAN sakin eskiden COALESCE ile sessizce "gunduz" sayiliyordu;
@@ -106,7 +107,7 @@ export function getCampusSummary() {
     }
   }
   for (const row of openFaultRows) {
-    const block = blockOfLocation(row.location)
+    const block = canonicalMaintenanceRow(db, row).canonical_block
     if (block && result[block]) result[block].open_faults += 1
   }
   for (const c of cleaning) {
@@ -138,18 +139,28 @@ export function getCampusSummary() {
 // Blok adi maintenance_requests.location'in ILK KELIMESIDIR ("M1 Kat 1 Oda 101").
 // Bosluklu on-ek eslesmesi 'A' ile 'A1'i karistirmaz — bu yuzden LIKE 'A %'.
 export function getBlockFaults(block) {
-  return getDB().prepare(`
+  const db = getDB()
+  return db.prepare(`
     SELECT mr.id, mr.location, mr.description, mr.priority, mr.status, mr.opened_at,
+      mr.block, mr.room_id,
       t.full_name AS technician_name
     FROM maintenance_requests mr
     LEFT JOIN technicians t ON t.id = mr.assigned_to
-    WHERE mr.status != 'done' AND (mr.location = ? OR mr.location LIKE ? || ' %')
+    WHERE mr.status != 'done'
     ORDER BY CASE mr.priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END, mr.opened_at DESC
-    LIMIT 100
-  `).all(block, block)
+    LIMIT 500
+  `).all()
+    .map(row => canonicalMaintenanceRow(db, row))
+    .filter(row => row.canonical_block === block)
+    .slice(0, 100)
+    .map(({ canonical_block, canonical_room_id, ...row }) => ({
+      ...row,
+      block: row.block || canonical_block,
+      room_id: row.room_id || canonical_room_id,
+    }))
 }
 
-export function getBlockCleaning(block, today = new Date().toISOString().slice(0, 10)) {
+export function getBlockCleaning(block, today = istanbulDate()) {
   const row = getDB().prepare(`
     SELECT COUNT(*) AS total,
       SUM(CASE WHEN completed_at IS NOT NULL THEN 1 ELSE 0 END) AS done,
@@ -248,4 +259,94 @@ export function getCampusTimeseries(days = 7) {
     }
   }
   return result
+}
+
+export function getMaintenanceDataQuality() {
+  const db = getDB()
+  const rows = db.prepare(`
+    SELECT id, location, description, priority, status, opened_at, block, room_id
+    FROM maintenance_requests
+    WHERE status != 'done'
+    ORDER BY opened_at DESC
+  `).all().map(row => canonicalMaintenanceRow(db, row))
+  const unmappedFaults = rows
+    .filter(row => !row.canonical_block)
+    .map(({ canonical_block, canonical_room_id, ...row }) => row)
+  return {
+    unmapped_fault_count: unmappedFaults.length,
+    unmapped_faults: unmappedFaults,
+  }
+}
+
+export function getUnknownShiftQueue() {
+  return getDB().prepare(`
+    SELECT p.id AS personnel_id, p.full_name, r.block, r.room_no
+    FROM room_assignments ra
+    JOIN rooms r ON r.id = ra.room_id
+    JOIN personnel p ON p.id = ra.personnel_id
+    LEFT JOIN shifts s ON s.personnel_id = p.id
+    WHERE ra.check_out_at IS NULL
+      AND (s.shift_type IS NULL OR s.shift_type NOT IN ('day','night'))
+    ORDER BY r.block, r.room_no, p.full_name
+    LIMIT 250
+  `).all()
+}
+
+export function getOpenFaultQueue() {
+  const db = getDB()
+  return db.prepare(`
+    SELECT mr.id, mr.location, mr.description, mr.priority, mr.status, mr.opened_at,
+      mr.block, mr.room_id, t.full_name AS technician_name
+    FROM maintenance_requests mr
+    LEFT JOIN technicians t ON t.id = mr.assigned_to
+    WHERE mr.status != 'done'
+    ORDER BY CASE mr.priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,
+      mr.opened_at ASC
+    LIMIT 250
+  `).all().map(row => {
+    const canonical = canonicalMaintenanceRow(db, row)
+    return {
+      ...row,
+      block: row.block || canonical.canonical_block,
+      room_id: row.room_id || canonical.canonical_room_id,
+    }
+  })
+}
+
+export function getCleaningQueue(date = istanbulDate()) {
+  return getDB().prepare(`
+    SELECT id, area, block, floor, task_type, qr_location, assigned_to,
+      scheduled_at, skipped, skip_reason
+    FROM cleaning_tasks
+    WHERE date(scheduled_at) = ? AND completed_at IS NULL AND COALESCE(skipped, 0) = 0
+    ORDER BY block, floor, area
+    LIMIT 250
+  `).all(date)
+}
+
+export function buildBlockHealth(block) {
+  const cleaningRemaining = Math.max(0, Number(block.cleaning_total || 0) - Number(block.cleaning_done || 0))
+  const occupancy = Number(block.occupancy_pct || 0)
+  const pressure = occupancy >= 100 ? 20 : occupancy >= 95 ? 12 : occupancy >= 90 ? 6 : 0
+  const risk = Math.min(100,
+    Number(block.open_faults || 0) * 18
+    + Number(block.quarantine || 0) * 14
+    + Number(block.maintenance || 0) * 10
+    + Math.min(cleaningRemaining, 10) * 2
+    + pressure
+  )
+  return { risk_score: risk, health_score: Math.max(0, 100 - risk) }
+}
+
+export function buildCampusHealth(blocks, dataQuality) {
+  const values = Object.values(blocks || {})
+  const risks = values.map(block => buildBlockHealth(block).risk_score)
+  const averageRisk = risks.length ? risks.reduce((sum, value) => sum + value, 0) / risks.length : 0
+  let healthScore = Math.max(0, Math.round(100 - averageRisk))
+  const hasDataIssue = Number(dataQuality?.unmapped_fault_count || 0) > 0
+  if (hasDataIssue) healthScore = Math.min(79, healthScore)
+  const status = hasDataIssue
+    ? 'data_issue'
+    : healthScore >= 85 ? 'healthy' : healthScore >= 65 ? 'watch' : 'intervention'
+  return { health_score: healthScore, status }
 }

@@ -30,6 +30,7 @@ import ComparePanel from './ComparePanel.jsx'
 import SidePanel from './SidePanel.jsx'
 import AttentionQueue from './AttentionQueue.jsx'
 import CampusOverviewTable from './CampusOverviewTable.jsx'
+import CampusCommandCenter from './CampusCommandCenter.jsx'
 
 export default function CampusMapPage() {
   const user = useAuthStore(s => s.user)
@@ -46,7 +47,10 @@ export default function CampusMapPage() {
   const [editMode, setEditMode] = useState(false)
   const [dragging, setDragging] = useState(null)
   const [panning, setPanning] = useState(null) // { startVx, startVy, startMx, startMy }
-  const [selectedBlock, setSelectedBlock] = useState(null)
+  const [selectedBlock, setSelectedBlock] = useState(() => {
+    const requested = new URLSearchParams(window.location.search).get('block')
+    return requested && BLOCK_BY_NAME[requested] ? requested : null
+  })
   const [multiSelect, setMultiSelect] = useState(() => new Set())
   const [typeFilter, setTypeFilter] = useState('all')
   const [hoverBlock, setHoverBlock] = useState(null)
@@ -70,9 +74,26 @@ export default function CampusMapPage() {
   const [searchOpen, setSearchOpen] = useState(false)
   const token = useAuthStore(s => s.token)
 
-  const { data: summary, isLoading } = useQuery({
+  const {
+    data: summary,
+    isLoading,
+    isFetching: isSummaryFetching,
+    dataUpdatedAt: summaryUpdatedAt,
+    refetch: refetchSummary,
+  } = useQuery({
     queryKey: ['campus-map-summary'],
     queryFn: () => api.get('/campus-map/summary').then(r => r.data),
+    staleTime: 20000,
+    refetchInterval: 30000,
+  })
+
+  const {
+    data: operations,
+    isFetching: isOperationsFetching,
+    refetch: refetchOperations,
+  } = useQuery({
+    queryKey: ['campus-map-operations'],
+    queryFn: () => api.get('/campus-map/operations').then(r => r.data),
     staleTime: 20000,
     refetchInterval: 30000,
   })
@@ -91,6 +112,7 @@ export default function CampusMapPage() {
       const label = vars.status === 'quarantine' ? 'karantinaya alindi' : vars.status === 'maintenance' ? 'bakima alindi' : 'aktif yapildi'
       addToast(`${data.count} oda ${label}`, 'success')
       queryClient.invalidateQueries({ queryKey: ['campus-map-summary'] })
+      queryClient.invalidateQueries({ queryKey: ['campus-map-operations'] })
       queryClient.invalidateQueries({ queryKey: ['capacity-rooms-all'] })
     },
     onError: (err) => addToast(err?.response?.data?.error || 'Bulk islem hatasi', 'error'),
@@ -162,6 +184,7 @@ export default function CampusMapPage() {
   const handleSSE = useCallback(({ event, data }) => {
     if (event === 'occupancy') {
       queryClient.invalidateQueries({ queryKey: ['campus-map-summary'] })
+      queryClient.invalidateQueries({ queryKey: ['campus-map-operations'] })
       queryClient.invalidateQueries({ queryKey: ['capacity-rooms-all'] })
       return
     }
@@ -193,6 +216,7 @@ export default function CampusMapPage() {
       // Capacity/maintenance/housekeeping olaylarinda ozet'i tazele
       if (['capacity', 'maintenance', 'housekeeping'].includes(data.module)) {
         queryClient.invalidateQueries({ queryKey: ['campus-map-summary'] })
+        queryClient.invalidateQueries({ queryKey: ['campus-map-operations'] })
       }
     }
   }, [queryClient])
@@ -244,6 +268,15 @@ export default function CampusMapPage() {
   })
 
   const stats = summary?.blocks || {}
+
+  // Paylaşılabilir blok bağlantısını seçime göre güncel tut.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (selectedBlock) params.set('block', selectedBlock)
+    else params.delete('block')
+    const search = params.toString()
+    window.history.replaceState(window.history.state, '', `${window.location.pathname}${search ? `?${search}` : ''}`)
+  }, [selectedBlock])
 
   const totalStats = useMemo(() => {
     let total_beds = 0, occupied = 0, empty = 0, q = 0, m = 0, f = 0,
@@ -455,6 +488,16 @@ export default function CampusMapPage() {
     setContextMenu({ block, x: e.clientX, y: e.clientY })
   }
 
+  async function refreshOperations() {
+    await Promise.all([
+      refetchSummary(),
+      refetchOperations(),
+      queryClient.invalidateQueries({ queryKey: ['capacity-rooms-all'] }),
+      queryClient.invalidateQueries({ queryKey: ['campus-map-timeseries'] }),
+    ])
+    addToast('Kampüs verileri güncellendi', 'success')
+  }
+
   return (
     <div style={{ padding: 12, color: 'var(--text)', minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       <style>{`
@@ -468,26 +511,54 @@ export default function CampusMapPage() {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 12 }}>
         <div>
-          <h2 style={{ fontFamily: 'var(--display)', fontSize: 22, letterSpacing: 3, margin: 0 }}>KAMPUS HARITASI<HelpHint topic="campus-map" title="KAMPUS HARITASI" /></h2>
+          <h2 style={{ fontFamily: 'var(--display)', fontSize: 22, letterSpacing: 3, margin: 0 }}>KAMPÜS OPERASYON MERKEZİ<HelpHint topic="campus-map" title="KAMPÜS HARİTASI" /></h2>
           <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', letterSpacing: 1, marginTop: 4 }}>
-            {isLoading ? 'YUKLENIYOR...' : `${BLOCKS.length} BLOK • CANLI • ${new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}`}
+            {isLoading
+              ? 'YÜKLENİYOR...'
+              : `${BLOCKS.length} BLOK · CANLI · SON GÜNCELLEME ${summaryUpdatedAt ? new Date(summaryUpdatedAt).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : '—'}`}
           </div>
         </div>
-        <div style={{
-          background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8,
-          padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 14,
-        }}>
-          <span style={{ fontSize: 22 }}>{currentMode?.icon}</span>
-          <div>
-            <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: 1.5 }}>
-              {topMetric.label}
-            </div>
-            <div style={{ fontFamily: 'var(--display)', fontSize: 22, letterSpacing: 2, color: 'var(--accent)' }}>
-              {topMetric.value} <span style={{ fontSize: 11, color: 'var(--text3)', letterSpacing: 1 }}>{topMetric.sub}</span>
+        <div style={{ display: 'flex', alignItems: 'stretch', gap: 8 }}>
+          <button
+            type="button"
+            onClick={refreshOperations}
+            disabled={isSummaryFetching || isOperationsFetching}
+            title="Kampüs verilerini şimdi yenile"
+            style={{
+              background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8,
+              padding: '8px 12px', color: 'var(--text2)', cursor: isSummaryFetching || isOperationsFetching ? 'wait' : 'pointer',
+              fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: 1,
+            }}
+          >
+            {isSummaryFetching || isOperationsFetching ? '↻ YENİLENİYOR' : '↻ YENİLE'}
+          </button>
+          <div style={{
+            background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8,
+            padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 14,
+          }}>
+            <span style={{ fontSize: 22 }}>{currentMode?.icon}</span>
+            <div>
+              <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: 1.5 }}>
+                {topMetric.label}
+              </div>
+              <div style={{ fontFamily: 'var(--display)', fontSize: 22, letterSpacing: 2, color: 'var(--accent)' }}>
+                {topMetric.value} <span style={{ fontSize: 11, color: 'var(--text3)', letterSpacing: 1 }}>{topMetric.sub}</span>
+              </div>
             </div>
           </div>
         </div>
       </div>
+
+      <CampusCommandCenter
+        stats={stats}
+        operations={operations}
+        onNavigate={navigate}
+        onModeChange={setMode}
+        onSelectBlock={(block) => {
+          zoomToBlock(block)
+          setSelectedBlock(block)
+        }}
+      />
 
       {/* Mode switcher */}
       <div style={{
