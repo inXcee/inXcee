@@ -295,8 +295,9 @@ export function swapPersonnel(personAId, personBId, userId) {
 export function reassignPersonnel(personnelId, newRoomId, userId) {
   const db = getDB()
   const tx = db.transaction(() => {
-    db.prepare("UPDATE room_assignments SET check_out_at=datetime('now') WHERE personnel_id=? AND check_out_at IS NULL").run(personnelId)
     const room = db.prepare('SELECT * FROM rooms WHERE id=?').get(newRoomId)
+    if (!room) throw new Error('Oda bulunamadı')
+    if (room.status !== 'active') throw new Error('Yalnız aktif odalara yerleştirme yapılabilir')
     const count = db.prepare('SELECT COUNT(*) as c FROM room_assignments WHERE room_id=? AND check_out_at IS NULL').get(newRoomId)
     if (count.c >= room.active_beds) throw new Error('Oda dolu')
 
@@ -313,6 +314,7 @@ export function reassignPersonnel(personnelId, newRoomId, userId) {
       if (conflict.c > 0) throw new Error(`Bu odada ${myShift === 'day' ? 'gece' : 'gündüz'} vardiyası var — aynı odaya farklı vardiya atanamaz`)
     }
 
+    db.prepare("UPDATE room_assignments SET check_out_at=datetime('now') WHERE personnel_id=? AND check_out_at IS NULL").run(personnelId)
     db.prepare('INSERT INTO room_assignments(personnel_id,room_id,bed_no,assigned_by) VALUES(?,?,?,?)').run(personnelId, newRoomId, count.c + 1, userId)
   })
   tx()

@@ -66,6 +66,14 @@ describe('BlockWorkspaceDrawer', () => {
     expect(onRoomChange).toHaveBeenCalledWith(21)
   })
 
+  it('veri yüklenirken geçerli derin bağlantı sekmesini overview ile ezmez', async () => {
+    const onTabChange = vi.fn()
+    renderDrawer({}, { tab: 'rooms', onTabChange })
+    expect(await screen.findByLabelText('Oda veya kişi filtrele')).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'ODALAR' })).toHaveAttribute('aria-selected', 'true')
+    expect(onTabChange).not.toHaveBeenCalled()
+  })
+
   it('teknik rolde oda, kişi ve temizlik alanlarını tamamen gizler', async () => {
     renderDrawer({
       permissions: { faults: true, cleaning: false, rooms: false },

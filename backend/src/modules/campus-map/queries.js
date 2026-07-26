@@ -178,7 +178,7 @@ export function getBlockCleaning(block, today = istanbulDate()) {
 export function getBlockRoomsWithOccupants(block) {
   const db = getDB()
   const rooms = db.prepare(`
-    SELECT r.id, r.room_no, r.floor, r.status, r.active_beds, r.notes,
+    SELECT r.id, r.room_no, r.floor, r.status, r.capacity, r.active_beds, r.notes,
       (SELECT COUNT(*) FROM room_assignments ra WHERE ra.room_id = r.id AND ra.check_out_at IS NULL) AS occupied
     FROM rooms r WHERE r.block = ?
     ORDER BY r.floor, r.room_no

@@ -1009,6 +1009,7 @@ export default function CampusMapPage() {
             onClose={() => setSelectedBlock(null)}
             onNavigate={navigate}
             onQuickFault={() => setQuickFault({ block: selectedBlock })}
+            role={user?.role}
             isNarrow={isNarrow}
           />
         ) : (

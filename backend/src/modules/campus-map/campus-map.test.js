@@ -111,6 +111,7 @@ describe('Campus operations contract', () => {
     expect(res.body.faults).toBeDefined()
     expect(res.body.cleaning).toBeUndefined()
     expect(res.body.rooms).toBeDefined()
+    expect(res.body.rooms[0]).toHaveProperty('capacity')
     expect(res.body.overview).toHaveProperty('health_score')
   })
 

@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { blockColor } from '../../shared/blocks.js'
 import { workspaceTabs } from './logic/campusWorkspace.js'
+import BlockRoomManager from './BlockRoomManager.jsx'
 
 const panel = {
   border: '1px solid var(--border)', borderRadius: 8, background: 'var(--surface2)', padding: 10,
@@ -58,62 +59,6 @@ function Overview({ data, onTabChange, onNavigate, onQuickFault }) {
         </div>
       </div>
     </>
-  )
-}
-
-function Rooms({ rooms, selectedRoomId, onRoomChange, onNavigate, block }) {
-  const selected = rooms.find(room => room.id === selectedRoomId)
-  return (
-    <div style={{ display: 'grid', gridTemplateColumns: selected ? 'minmax(150px, .8fr) minmax(190px, 1.2fr)' : '1fr', gap: 8 }}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(64px, 1fr))', gap: 5, alignContent: 'start' }}>
-        {rooms.map(room => (
-          <button
-            key={room.id}
-            type="button"
-            onClick={() => onRoomChange(room.id === selectedRoomId ? null : room.id)}
-            aria-pressed={room.id === selectedRoomId}
-            style={{
-              padding: '7px 4px', borderRadius: 6, cursor: 'pointer',
-              border: `1px solid ${room.id === selectedRoomId ? 'var(--accent)' : 'var(--border)'}`,
-              background: room.id === selectedRoomId ? 'rgba(245,158,11,.13)' : 'var(--surface2)',
-              color: room.status !== 'active' ? '#a855f7' : 'var(--text)',
-              fontFamily: 'var(--mono)', fontSize: 9,
-            }}
-          >
-            <strong style={{ display: 'block', fontSize: 11 }}>{room.room_no}</strong>
-            {room.occupied}/{room.active_beds}
-          </button>
-        ))}
-      </div>
-      {selected && (
-        <div style={panel}>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 8 }}>
-            <strong style={{ fontFamily: 'var(--display)', fontSize: 18 }}>ODA {selected.room_no}</strong>
-            <span style={{ marginLeft: 'auto', fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>
-              {selected.occupied}/{selected.active_beds} KİŞİ
-            </span>
-          </div>
-          {selected.occupants?.length ? selected.occupants.map(person => (
-            <button
-              key={person.personnel_id}
-              type="button"
-              onClick={() => onNavigate(`/personnel/${person.personnel_id}`)}
-              style={{
-                display: 'flex', width: '100%', gap: 6, padding: '6px 0', border: 0,
-                borderTop: '1px solid var(--border)', background: 'transparent',
-                color: 'var(--text)', cursor: 'pointer', textAlign: 'left',
-              }}
-            >
-              <span style={{ flex: 1, fontSize: 10 }}>{person.full_name}</span>
-              <span style={{ fontSize: 9, color: 'var(--text3)' }}>{person.company || '—'}</span>
-            </button>
-          )) : <div style={{ color: 'var(--text3)', fontSize: 10 }}>Bu oda boş.</div>}
-          <button type="button" onClick={() => onNavigate(`/capacity?block=${block}&room=${selected.id}`)} style={{ ...actionStyle('#38bdf8'), width: '100%', marginTop: 8 }}>
-            Oda detayını aç <span style={{ marginLeft: 'auto' }}>›</span>
-          </button>
-        </div>
-      )}
-    </div>
   )
 }
 
@@ -199,6 +144,7 @@ export default function BlockWorkspaceDrawer({
   onClose,
   onNavigate,
   onQuickFault,
+  role,
   isNarrow = false,
 }) {
   const [width, setWidth] = useState(470)
@@ -224,8 +170,8 @@ export default function BlockWorkspaceDrawer({
 
   const tabs = useMemo(() => workspaceTabs(query.data?.permissions || {}), [query.data?.permissions])
   useEffect(() => {
-    if (tabs.length && !tabs.some(item => item.id === tab)) onTabChange('overview')
-  }, [onTabChange, tab, tabs])
+    if (query.data && tabs.length && !tabs.some(item => item.id === tab)) onTabChange('overview')
+  }, [onTabChange, query.data, tab, tabs])
 
   const data = query.data
   const rooms = data?.rooms || []
@@ -312,7 +258,17 @@ export default function BlockWorkspaceDrawer({
           </div>
           <div style={{ padding: 12, overflowY: 'auto', flex: 1 }}>
             {currentTab === 'overview' && <Overview data={data} onTabChange={onTabChange} onNavigate={onNavigate} onQuickFault={onQuickFault} />}
-            {currentTab === 'rooms' && <Rooms rooms={rooms} selectedRoomId={selectedRoomId} onRoomChange={onRoomChange} onNavigate={onNavigate} block={block} />}
+            {currentTab === 'rooms' && (
+              <BlockRoomManager
+                block={block}
+                rooms={rooms}
+                selectedRoomId={selectedRoomId}
+                onRoomChange={onRoomChange}
+                onNavigate={onNavigate}
+                canEditRoom={role === 'campus_manager'}
+                onDataChanged={() => query.refetch()}
+              />
+            )}
             {currentTab === 'people' && <People rooms={rooms} onNavigate={onNavigate} />}
             {currentTab === 'faults' && <Faults faults={data.faults || []} onQuickFault={onQuickFault} onNavigate={onNavigate} block={block} />}
             {currentTab === 'cleaning' && <Cleaning cleaning={data.cleaning} onNavigate={onNavigate} block={block} />}

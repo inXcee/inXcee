@@ -7,8 +7,21 @@ export const getRoomsService = q.getRooms
 export const getRoomPersonnelService = q.getRoomPersonnel
 export const getBlockPersonnelService = q.getBlockPersonnel
 
-export function updateActiveBedsService(roomId, activeBeds) {
+export function updateActiveBedsService(roomId, activeBeds, userId) {
+  const db = getDB()
+  const room = db.prepare(`
+    SELECT r.block, r.room_no, r.capacity, r.active_beds,
+      (SELECT COUNT(*) FROM room_assignments ra
+       WHERE ra.room_id = r.id AND ra.check_out_at IS NULL) AS occupied
+    FROM rooms r WHERE r.id = ?
+  `).get(roomId)
+  if (!room) throw new Error('Oda bulunamadı')
+  if (!Number.isInteger(activeBeds) || activeBeds < room.occupied || activeBeds > room.capacity) {
+    throw new Error(`Aktif yatak ${room.occupied}-${room.capacity} aralığında olmalı`)
+  }
   q.updateActiveBeds(roomId, activeBeds)
+  logAudit(userId, 'room_beds_update', 'capacity', roomId, `${room.block}-${room.room_no}: ${room.active_beds} → ${activeBeds}`)
+  broadcastOccupancy()
 }
 
 export function updateRoomStatusService(roomId, status, userId) {
@@ -34,7 +47,13 @@ export function updateRoomStatusService(roomId, status, userId) {
 }
 
 export const updateFloorSupervisorService = q.updateFloorSupervisor
-export const updateRoomNotesService = q.updateRoomNotes
+export function updateRoomNotesService(roomId, notes, userId) {
+  const db = getDB()
+  const room = db.prepare('SELECT block, room_no FROM rooms WHERE id=?').get(roomId)
+  if (!room) throw new Error('Oda bulunamadı')
+  q.updateRoomNotes(roomId, notes)
+  logAudit(userId, 'room_notes_update', 'capacity', roomId, `${room.block}-${room.room_no} oda notu güncellendi`)
+}
 export const searchPersonnelService = q.searchPersonnel
 
 export function swapPersonnelService(personAId, personBId, userId) {

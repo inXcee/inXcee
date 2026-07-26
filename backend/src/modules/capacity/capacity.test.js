@@ -86,4 +86,49 @@ describe('Capacity', () => {
       .send({ personnel_id: p.lastInsertRowid, room_id: roomId })
     expect(res.status).toBe(400)
   })
+
+  it('bakım odasına taşımayı reddeder ve mevcut atamayı korur', async () => {
+    const db = (await import('../../shared/db/index.js')).getDB()
+    const rooms = db.prepare("SELECT id FROM rooms WHERE block='M1' AND status='active' ORDER BY id LIMIT 2").all()
+    if (rooms.length < 2) return
+    const source = rooms[0]
+    const target = rooms[1]
+    db.prepare("UPDATE rooms SET status='maintenance' WHERE id=?").run(target.id)
+    db.prepare("INSERT INTO personnel(id,tc_no,full_name) VALUES(9011,'88883333','Korunan Atama')").run()
+    db.prepare('INSERT INTO room_assignments(personnel_id,room_id,bed_no,assigned_by) VALUES(9011,?,1,1)').run(source.id)
+
+    const res = await request(app)
+      .post('/api/capacity/reassign')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ personnel_id: 9011, room_id: target.id })
+
+    expect(res.status).toBe(400)
+    expect(res.body.error).toMatch(/aktif odalara/)
+    const assignment = db.prepare('SELECT room_id FROM room_assignments WHERE personnel_id=9011 AND check_out_at IS NULL').get()
+    expect(assignment.room_id).toBe(source.id)
+    db.prepare("UPDATE rooms SET status='active' WHERE id=?").run(target.id)
+  })
+
+  it('aktif yatak sayısını mevcut doluluğun altına indirmez', async () => {
+    const db = (await import('../../shared/db/index.js')).getDB()
+    const room = db.prepare(`
+      SELECT r.id, r.active_beds,
+        (SELECT COUNT(*) FROM room_assignments ra WHERE ra.room_id=r.id AND ra.check_out_at IS NULL) AS occupied
+      FROM rooms r
+      WHERE r.status='active' AND EXISTS (
+        SELECT 1 FROM room_assignments ra WHERE ra.room_id=r.id AND ra.check_out_at IS NULL
+      )
+      ORDER BY r.id LIMIT 1
+    `).get()
+    if (!room) return
+
+    const res = await request(app)
+      .patch(`/api/capacity/rooms/${room.id}/beds`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ active_beds: Math.max(0, room.occupied - 1) })
+
+    expect(res.status).toBe(400)
+    expect(res.body.error).toMatch(/aralığında/)
+    expect(db.prepare('SELECT active_beds FROM rooms WHERE id=?').get(room.id).active_beds).toBe(room.active_beds)
+  })
 })

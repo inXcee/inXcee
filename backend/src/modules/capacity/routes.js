@@ -40,7 +40,7 @@ capacityRouter.get('/block/:block/personnel', ...mgmt, (req, res) => {
 
 capacityRouter.patch('/rooms/:id/beds', ...requireRole('campus_manager'), (req, res) => {
   try {
-    svc.updateActiveBedsService(+req.params.id, req.body.active_beds)
+    svc.updateActiveBedsService(+req.params.id, req.body.active_beds, req.user.id)
     res.json({ ok: true })
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
@@ -53,8 +53,8 @@ capacityRouter.patch('/rooms/:id/status', ...requireRole('campus_manager'), (req
 })
 
 capacityRouter.patch('/rooms/:id/notes', ...mgmt, (req, res) => {
-  try { svc.updateRoomNotesService(+req.params.id, req.body.notes ?? null); res.json({ ok: true }) }
-  catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+  try { svc.updateRoomNotesService(+req.params.id, req.body.notes ?? null, req.user.id); res.json({ ok: true }) }
+  catch (e) { res.status(400).json({ error: e.message }) }
 })
 
 capacityRouter.get('/personnel/search', ...mgmt, (req, res) => {
