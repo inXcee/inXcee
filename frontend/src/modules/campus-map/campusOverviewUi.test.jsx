@@ -159,3 +159,17 @@ describe('orderPanelSections — panel bölümleri modu takip eder', () => {
     }
   })
 })
+
+describe('CampusOverviewTable — rapor indirme (Faz D1)', () => {
+  it('veri varken Excel ve PDF butonlari cikar', () => {
+    render(<CampusOverviewTable stats={stats} onSelect={vi.fn()} />)
+    expect(screen.getByRole('button', { name: /Excel/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /PDF/ })).toBeInTheDocument()
+  })
+
+  it('veri yokken indirme butonlari cikmaz', () => {
+    render(<CampusOverviewTable stats={{}} onSelect={vi.fn()} />)
+    expect(screen.queryByRole('button', { name: /Excel/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /PDF/ })).not.toBeInTheDocument()
+  })
+})

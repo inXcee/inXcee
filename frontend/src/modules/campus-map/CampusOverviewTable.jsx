@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react'
 import { buildOverviewRows, sortOverviewRows } from './logic/campusOverview.js'
+import { exportCampusReportExcel, openCampusReportPrint } from './logic/campusReportExport.js'
+import { useToastStore } from '../../shared/store/toastStore.js'
 
 // Haritanın altında açılır tablo: 19 bloğun hepsi yan yana, tek bakışta.
 // Sütun başlığına tıkla sırala, satıra tıkla harita o bloğa odaklansın.
@@ -26,6 +28,19 @@ const cellColor = (column, value) => {
 export default function CampusOverviewTable({ stats, selectedBlock, onSelect }) {
   const [open, setOpen] = useState(true)
   const [sort, setSort] = useState({ key: 'occupancy_pct', dir: 'desc' })
+  const [busy, setBusy] = useState('')
+  const addToast = useToastStore(s => s.addToast)
+
+  const download = async (kind) => {
+    setBusy(kind)
+    const today = new Date().toLocaleDateString('sv-SE')
+    try {
+      if (kind === 'excel') await exportCampusReportExcel(stats, today)
+      else openCampusReportPrint(stats, today)
+    } catch (error) {
+      addToast(error?.message || 'Rapor olusturulamadi', 'error')
+    } finally { setBusy('') }
+  }
 
   const { rows, totals } = useMemo(() => buildOverviewRows(stats), [stats])
   const sorted = useMemo(() => sortOverviewRows(rows, sort.key, sort.dir), [rows, sort])
@@ -46,14 +61,36 @@ export default function CampusOverviewTable({ stats, selectedBlock, onSelect }) 
         <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>
           {rows.length} blok · doluluk %{totals.occupancy_pct} · {totals.open_faults} arıza
         </span>
-        <button
-          type="button"
-          onClick={() => setOpen(value => !value)}
-          aria-expanded={open}
-          style={{ marginLeft: 'auto', background: 'none', border: '1px solid var(--border)', borderRadius: 5, color: 'var(--text2)', cursor: 'pointer', fontSize: 10, padding: '3px 9px' }}
-        >
-          {open ? '▲ Gizle' : '▼ Aç'}
-        </button>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
+          {rows.length > 0 && (
+            <>
+              <button
+                type="button"
+                disabled={busy === 'excel'}
+                onClick={() => download('excel')}
+                style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 5, color: 'var(--text2)', cursor: 'pointer', fontSize: 10, padding: '3px 9px' }}
+              >
+                {busy === 'excel' ? '…' : '⬇ Excel'}
+              </button>
+              <button
+                type="button"
+                disabled={busy === 'print'}
+                onClick={() => download('print')}
+                style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 5, color: 'var(--text2)', cursor: 'pointer', fontSize: 10, padding: '3px 9px' }}
+              >
+                {busy === 'print' ? '…' : '⬇ PDF'}
+              </button>
+            </>
+          )}
+          <button
+            type="button"
+            onClick={() => setOpen(value => !value)}
+            aria-expanded={open}
+            style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 5, color: 'var(--text2)', cursor: 'pointer', fontSize: 10, padding: '3px 9px' }}
+          >
+            {open ? '▲ Gizle' : '▼ Aç'}
+          </button>
+        </div>
       </div>
 
       {open && (
