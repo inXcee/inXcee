@@ -5,6 +5,7 @@ import {
   parseShiftCell,
   parseQuickScheduleCode,
   cellToScheduleCode,
+  cellToClipboardCode,
   buildScheduleWarnings,
   buildStaffRecentSummary,
   buildPayrollClosingCheck,
@@ -287,6 +288,10 @@ describe('buildPayrollClosingCheck', () => {
 describe('planCellPaste', () => {
   const rowOrderIds = [10, 11, 12]
   const weekDays = WEEK
+  const workLocations = [
+    { id: 70, name: 'Isci Lokali', site: 'LOKAL', is_active: 1 },
+    { id: 80, name: 'Tas Bina', site: 'KAMP', is_active: 1 },
+  ]
 
   it('tek değer + çok hücre seçimi → broadcast (hepsine yayar)', () => {
     const targets = [
@@ -347,12 +352,71 @@ describe('planCellPaste', () => {
 
   it('boş metin → hiçbir şey', () => {
     const res = planCellPaste({ text: '', targets: [{ staffId: 10, date: WEEK[0] }], rowOrderIds, weekDays, shiftDefs: SHIFT_DEFS })
-    expect(res).toEqual({ assignments: [], deletions: [], mode: 'none' })
+    expect(res).toEqual({ assignments: [], deletions: [], errors: [], mode: 'none' })
+  })
+
+  it('vardiya + lokasyonu panodan birlikte çözer ve Türkçe karakter farkını tolere eder', () => {
+    const targets = [{ staffId: 10, date: WEEK[0] }]
+    const res = planCellPaste({
+      text: '1 @ İşçi Lokali',
+      targets,
+      rowOrderIds,
+      weekDays,
+      shiftDefs: SHIFT_DEFS,
+      workLocations,
+    })
+    expect(res.errors).toHaveLength(0)
+    expect(res.assignments[0]).toMatchObject({
+      shiftDefId: 10,
+      locationSpecified: true,
+      workLocationId: 70,
+      workLocationName: 'Isci Lokali',
+    })
+  })
+
+  it('bilinmeyen lokasyonu sessizce atamaz, açıklayıcı hata üretir', () => {
+    const res = planCellPaste({
+      text: '2 @ Olmayan Nokta',
+      targets: [{ staffId: 10, date: WEEK[0] }],
+      rowOrderIds,
+      weekDays,
+      shiftDefs: SHIFT_DEFS,
+      workLocations,
+    })
+    expect(res.assignments).toHaveLength(0)
+    expect(res.errors[0].message).toContain('lokasyonu bulunamadı')
+  })
+
+  it('OFF/izin kodlarında lokasyon atamaz', () => {
+    const res = planCellPaste({
+      text: 'OFF @ Isci Lokali',
+      targets: [{ staffId: 10, date: WEEK[0] }],
+      rowOrderIds,
+      weekDays,
+      shiftDefs: SHIFT_DEFS,
+      workLocations,
+    })
+    expect(res.errors).toHaveLength(0)
+    expect(res.assignments[0]).toMatchObject({ status: 'off' })
+    expect(res.assignments[0].locationSpecified).toBeUndefined()
+  })
+
+  it('kopyalama metnine çalışan hücrenin lokasyonunu ekler', () => {
+    expect(cellToClipboardCode({
+      status: 'scheduled',
+      shift_def_id: 10,
+      work_location_name: 'Isci Lokali',
+    }, SHIFT_DEFS)).toBe('1 @ Isci Lokali')
   })
 })
 
 describe('parseScheduleSheet', () => {
-  const ctx = { allStaff: [{ id: 1, full_name: 'Ali Veli', department_id: 5 }], shiftDefs: SHIFT_DEFS, weekDays: WEEK }
+  const ctx = {
+    allStaff: [{ id: 1, full_name: 'Ali Veli', department_id: 5 }],
+    shiftDefs: SHIFT_DEFS,
+    weekDays: WEEK,
+    workLocations: [{ id: 70, name: 'Isci Lokali', site: 'LOKAL', is_active: 1 }],
+  }
 
   it('boş sayfa hatası döner', () => {
     expect(parseScheduleSheet([], ctx)).toEqual({ error: 'Bos dosya' })
@@ -395,5 +459,17 @@ describe('parseScheduleSheet', () => {
     ]
     const res = parseScheduleSheet(rows, ctx)
     expect(res.entries.map(e => e.work_date)).toEqual(['2026-06-01', '2026-06-02', '2026-06-03'])
+  })
+
+  it('lokasyon başlığını algılar ve vardiya kayıtlarına uygular', () => {
+    const rows = [
+      ['Ad Soyad', 'Lokasyon Adı', 'Pzt', 'Sal'],
+      ['Ali Veli', 'İşçi Lokali', '1', 'OFF'],
+    ]
+    const res = parseScheduleSheet(rows, ctx)
+    expect(res.locations.columnFound).toBe(true)
+    expect(res.locations.matched[0]).toMatchObject({ name: 'İşçi Lokali', matchedTo: 'Isci Lokali', count: 1 })
+    expect(res.entries[0].work_location_id).toBe(70)
+    expect(res.entries[1].work_location_id).toBeUndefined()
   })
 })

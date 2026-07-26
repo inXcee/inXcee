@@ -11,7 +11,7 @@ import {
   shiftColor, deptColor, ModalOverlay, StaffSearch,
   formatShiftHours, shiftHoursFrom, leaveCellMeta, leaveTypeLabel,
 } from '../shared.jsx'
-import { buildStaffGrid, computeWeekStats, parseQuickScheduleCode, cellToScheduleCode, buildScheduleWarnings, planCellPaste } from '../logic/schedule.js'
+import { buildStaffGrid, computeWeekStats, parseQuickScheduleCode, cellToScheduleCode, cellToClipboardCode, buildScheduleWarnings, planCellPaste } from '../logic/schedule.js'
 import { DailyView, WeekFillSheet, CellAssignSheet } from './scheduleSheets.jsx'
 import LiveOccupancyBoard from './LiveOccupancyBoard.jsx'
 import ScheduleImportModal from './ScheduleImportModal.jsx'
@@ -639,7 +639,7 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
     const rowsByStaff = new Map()
     items.forEach(item => {
       if (!rowsByStaff.has(item.person.id)) rowsByStaff.set(item.person.id, new Map())
-      rowsByStaff.get(item.person.id).set(item.date, cellToScheduleCode(item.cell, shiftDefs))
+      rowsByStaff.get(item.person.id).set(item.date, cellToClipboardCode(item.cell, shiftDefs))
     })
     return [...rowsByStaff.entries()].map(([, byDate]) => {
       const cols = [...byDate.keys()].sort((a, b) => weekDays.indexOf(a) - weekDays.indexOf(b))
@@ -655,7 +655,7 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
     }
     setCellClipboard(text)
     try { await navigator.clipboard?.writeText?.(text) } catch { /* local clipboard fallback */ }
-    useToastStore.getState().addToast(`${selectedCellItems.length} hücre kopyalandı`, 'success')
+    useToastStore.getState().addToast(`${selectedCellItems.length} hücre vardiya ve lokasyonuyla kopyalandı`, 'success')
   }
 
   const cutSelectedCells = async () => {
@@ -689,7 +689,13 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
       rowOrderIds: visibleGrid.map(p => p.id),
       weekDays,
       shiftDefs,
+      workLocations,
     })
+    if (plan.errors?.length) {
+      const unique = [...new Set(plan.errors.map(error => error.message || `"${error.value}" anlaşılamadı`))]
+      useToastStore.getState().addToast(`${unique[0]}${unique.length > 1 ? ` (+${unique.length - 1} hata)` : ''}`, 'error')
+      return
+    }
     if (plan.mode === 'none' || (!plan.assignments.length && !plan.deletions.length)) {
       useToastStore.getState().addToast('Yapıştırılan kodlar anlaşılmadı', 'error')
       return
@@ -704,7 +710,9 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
         staff_id: a.staffId,
         dept_id: personById.get(a.staffId)?.dept_id,
         shift_def_id: a.shiftDefId,
-        work_location_id: cellOf(a.staffId, a.date)?.work_location_id || null,
+        work_location_id: a.locationSpecified
+          ? a.workLocationId
+          : (cellOf(a.staffId, a.date)?.work_location_id || null),
         work_date: a.date,
         status: a.status,
         leave_type: a.status === 'on_leave' ? (a.leaveType || null) : null,
@@ -1046,9 +1054,9 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
                 }}
               />
               <button className="btn btn-primary btn-sm" disabled={quickApply.isPending} onClick={() => applyQuickCode()}>Uygula</button>
-              <button className="btn btn-ghost btn-sm" title="Seçili hücreleri kopyala (Ctrl+C)" onClick={copySelectedCells}>Kopyala</button>
+              <button className="btn btn-ghost btn-sm" title="Seçili hücreleri vardiya + lokasyon bilgisiyle kopyala (Ctrl+C). Excel'e de yapıştırılabilir." onClick={copySelectedCells}>Kopyala + Lokasyon</button>
               <button className="btn btn-ghost btn-sm" title="Kes: kopyala + sil (Ctrl+X)" disabled={quickApply.isPending} onClick={cutSelectedCells}>Kes</button>
-              <button className="btn btn-ghost btn-sm" title="Yapıştır (Ctrl+V). Tek hücre kopyalayıp çok hücre seçiliyken tümünü doldurur." disabled={quickApply.isPending} onClick={pasteIntoSelection}>Yapıştır</button>
+              <button className="btn btn-ghost btn-sm" title={'Yapıştır (Ctrl+V). "1 @ İşçi Lokali" biçimi vardiya ve lokasyonu birlikte taşır; tek hücre çoklu seçime yayılır.'} disabled={quickApply.isPending} onClick={pasteIntoSelection}>Yapıştır</button>
               <button className="btn btn-ghost btn-sm" onClick={() => { setSelectedCells(new Set()); setSelectionAnchor(null) }}>Temizle</button>
               <button className="btn btn-ghost btn-sm" disabled={!actionHistory.length || undoQuickApply.isPending} onClick={() => actionHistory[0] && undoQuickApply.mutate(actionHistory[0])}>Geri al</button>
               {activeCell && (
@@ -1814,7 +1822,7 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
       )}
 
       {/* Excel import modal */}
-      {excelModal && <ScheduleImportModal onClose={() => setExcelModal(false)} allStaff={allStaff} shiftDefs={shiftDefs} weekDays={weekDays} />}
+      {excelModal && <ScheduleImportModal onClose={() => setExcelModal(false)} allStaff={allStaff} shiftDefs={shiftDefs} weekDays={weekDays} workLocations={workLocations} />}
 
       {shareModal && (
         <ScheduleShareModal

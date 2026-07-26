@@ -11,7 +11,7 @@ import { shiftColor, ModalOverlay, StaffSearch, formatShiftHours, leaveCellMeta,
 import { parseScheduleSheet } from '../logic/schedule.js'
 import { parseCampScheduleGrid } from '../logic/excelImport.js'
 
-export default function ScheduleImportModal({ onClose, allStaff, shiftDefs, weekDays }) {
+export default function ScheduleImportModal({ onClose, allStaff, shiftDefs, weekDays, workLocations = [] }) {
   const qc = useQueryClient()
   const [excelPreview, setExcelPreview] = useState(null) // { matched, unmatched, entries } — basit şablon
   const [excelError, setExcelError] = useState('')
@@ -96,30 +96,52 @@ export default function ScheduleImportModal({ onClose, allStaff, shiftDefs, week
       const buf = await file.arrayBuffer()
       const wb = new ExcelJS.Workbook()
       await wb.xlsx.load(buf)
-      const ws = wb.worksheets[0]
-      if (!ws) { setExcelError('Boş dosya'); return }
-      const rows = []
-      ws.eachRow(row => {
-        rows.push(row.values.slice(1).map(v => {
-          if (v == null) return ''
-          if (typeof v === 'object' && v.text != null) return v.text
-          if (typeof v === 'object' && v.result != null) return v.result
-          return v
-        }))
+      if (!wb.worksheets.length) { setExcelError('Boş dosya'); return }
+      const sheetRows = wb.worksheets.map(ws => {
+        const rows = []
+        ws.eachRow(row => {
+          rows.push(row.values.slice(1).map(v => {
+            if (v == null) return ''
+            if (typeof v === 'object' && v.text != null) return v.text
+            if (typeof v === 'object' && v.result != null) return v.result
+            return v
+          }))
+        })
+        return { name: ws.name, rows }
       })
 
-      // 1) Akıllı format (dosya kendi tarihlerini + departman bantlarını taşır)
-      const camp = parseCampScheduleGrid(rows)
-      if (!camp.error) {
-        setCampPayload(camp)
-        campDryRun.mutate(camp)
-        return
+      // 1) Akıllı format: kapak sayfası olan dosyalarda dahil tüm sekmeleri tara.
+      let campError = 'Tarih başlığı bulunamadı'
+      for (const sheet of sheetRows) {
+        const camp = parseCampScheduleGrid(sheet.rows)
+        if (!camp.error) {
+          setCampFileName(`${file.name || ''} · ${sheet.name}`)
+          setCampPayload(camp)
+          campDryRun.mutate(camp)
+          return
+        }
+        campError = camp.error || campError
       }
 
-      // 2) Basit şablon (isim + gün kodları, seçili haftaya yazılır)
-      const result = parseScheduleSheet(rows, { allStaff, shiftDefs, weekDays })
-      if (result.error) { setExcelError(`Dosya tanınamadı. ${camp.error}`); return }
-      setExcelPreview({ matched: result.matched, unmatched: result.unmatched, entries: result.entries })
+      // 2) Basit şablon: personel + gün başlığı bulunan ilk uygun sekmeyi kullan.
+      let bestSimple = null
+      for (const sheet of sheetRows) {
+        const result = parseScheduleSheet(sheet.rows, { allStaff, shiftDefs, weekDays, workLocations })
+        if (result.error || (!result.entries.length && !result.matched.length && !result.unmatched.length)) continue
+        const score = result.entries.length * 10 + result.matched.length * 2 - result.unmatched.length
+        if (!bestSimple || score > bestSimple.score) bestSimple = { result, sheetName: sheet.name, score }
+      }
+      if (bestSimple) {
+        setCampFileName(`${file.name || ''} · ${bestSimple.sheetName}`)
+        setExcelPreview({
+          matched: bestSimple.result.matched,
+          unmatched: bestSimple.result.unmatched,
+          entries: bestSimple.result.entries,
+          locations: bestSimple.result.locations,
+        })
+        return
+      }
+      setExcelError(`Dosya tanınamadı. ${campError}`)
     } catch (err) {
       setExcelError('Dosya okunamadi: ' + err.message)
     }
@@ -165,8 +187,22 @@ export default function ScheduleImportModal({ onClose, allStaff, shiftDefs, week
                     <Card n={cr.staff.matched} label="Eşleşen personel" color="var(--text2)" bg="var(--surface2)" />
                     <Card n={cr.depts.created.length} label="Yeni departman" color="#f59e0b" bg="rgba(245,158,11,.1)" />
                     <Card n={cr.shiftDefs.created.length} label="Yeni vardiya" color="#06b6d4" bg="rgba(6,182,212,.1)" />
+                    <Card n={cr.locations?.matched?.reduce((sum, item) => sum + item.count, 0) || 0} label="Lokasyonlu kayıt" color="#14b8a6" bg="rgba(20,184,166,.1)" />
                     {cr.unrecognized.length > 0 && <Card n={cr.unrecognized.length} label="Anlaşılmayan" color="#ef4444" bg="rgba(239,68,68,.1)" />}
                   </div>
+
+                  {(cr.locations?.unmatched?.length > 0 || cr.locations?.ambiguous?.length > 0) && (
+                    <div style={{ marginBottom: '12px', padding: '9px 12px', background: 'rgba(245,158,11,.08)', border: '1px solid rgba(245,158,11,.3)', borderRadius: '6px' }}>
+                      <div style={{ fontSize: '11px', color: '#f59e0b', fontWeight: 600, marginBottom: '4px' }}>
+                        Lokasyon kontrolü gerekli — eşleşmeyen kayıtların lokasyonu boş bırakılacak:
+                      </div>
+                      <div style={{ fontSize: '11px', color: 'var(--text2)' }}>
+                        {[...(cr.locations?.unmatched || []), ...(cr.locations?.ambiguous || [])]
+                          .map(item => `${item.excelName} (${item.count})${item.candidates?.length ? ` → ${item.candidates.join(' / ')}` : ''}`)
+                          .join(' · ')}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Yeni vs üzerine-yazılacak kayıt dağılımı */}
                   {(cr.scheduleUpdated > 0 || cr.scheduleNew > 0) && (
@@ -342,6 +378,8 @@ export default function ScheduleImportModal({ onClose, allStaff, shiftDefs, week
                 Excel dosyasını seçin. <strong style={{ color: 'var(--text)' }}>KAMP ALANI ÇİZELGE</strong> dosyaları otomatik tanınır
                 (departman, isim, tarih ve vardiya saatleri kendiliğinden alınır). Basit şablonlarda ilk sütun isim,
                 sonraki sütunlar günler; <strong>1/G</strong>=1.Vardiya, <strong>2/A</strong>=2.Vardiya, <strong>3/Ge</strong>=3.Vardiya, <strong>İ/izin</strong>=İzin.
+                <br /><strong style={{ color: '#14b8a6' }}>Lokasyon:</strong> “Lokasyon”, “Çalışma Lokasyonu”, “Konum” veya “Nokta” sütunları tanınır.
+                Hücre içinde <strong>1 @ İşçi Lokali</strong> ya da <strong>İşçi Lokali | 08:00-17:00</strong> biçimi de kullanılabilir.
               </p>
               {excelError && (
                 <div style={{ padding: '10px', background: 'rgba(239,68,68,.1)', border: '1px solid rgba(239,68,68,.3)', borderRadius: '6px', color: '#ef4444', fontSize: '12px', marginBottom: '12px' }}>
@@ -400,7 +438,21 @@ export default function ScheduleImportModal({ onClose, allStaff, shiftDefs, week
                   <div style={{ fontSize: '22px', fontWeight: 700, color: '#6366f1' }}>{excelPreview.entries.length}</div>
                   <div style={{ fontSize: '11px', color: 'var(--text2)' }}>Kayıt</div>
                 </div>
+                <div style={{ flex: 1, padding: '10px', background: 'rgba(20,184,166,.1)', border: '1px solid rgba(20,184,166,.3)', borderRadius: '6px', textAlign: 'center' }}>
+                  <div style={{ fontSize: '22px', fontWeight: 700, color: '#14b8a6' }}>{excelPreview.locations?.matched?.reduce((sum, item) => sum + item.count, 0) || 0}</div>
+                  <div style={{ fontSize: '11px', color: 'var(--text2)' }}>Lokasyonlu</div>
+                </div>
               </div>
+              {(excelPreview.locations?.unmatched?.length > 0 || excelPreview.locations?.ambiguous?.length > 0) && (
+                <div style={{ marginBottom: '12px', padding: '8px 12px', background: 'rgba(245,158,11,.08)', border: '1px solid rgba(245,158,11,.25)', borderRadius: '6px' }}>
+                  <div style={{ fontSize: '11px', color: '#f59e0b', marginBottom: '4px', fontWeight: 600 }}>Eşleşmeyen/belirsiz lokasyonlar:</div>
+                  <div style={{ fontSize: '11px', color: 'var(--text2)' }}>
+                    {[...(excelPreview.locations?.unmatched || []), ...(excelPreview.locations?.ambiguous || [])]
+                      .map(item => `${item.name} (${item.count})${item.candidates?.length ? ` → ${item.candidates.join(' / ')}` : ''}`)
+                      .join(' · ')}
+                  </div>
+                </div>
+              )}
               {excelPreview.unmatched.length > 0 && (
                 <div style={{ marginBottom: '12px', padding: '8px 12px', background: 'rgba(239,68,68,.08)', border: '1px solid rgba(239,68,68,.2)', borderRadius: '6px' }}>
                   <div style={{ fontSize: '11px', color: '#ef4444', marginBottom: '4px', fontWeight: 600 }}>Eşleşmeyen isimler:</div>

@@ -493,7 +493,7 @@ describe('Excel çizelge içe aktarımı (/import)', () => {
       {
         name: 'MELİKE EXCELTEST', deptName: 'KAT HİZMETLERİ EXCELTEST',
         cells: [
-          { date: '2026-07-06', startHour: 8, endHour: 17, status: 'scheduled', raw: '08:00 17:00' },
+          { date: '2026-07-06', startHour: 8, endHour: 17, status: 'scheduled', locationName: 'İşçi Lokali', raw: '08:00 17:00' },
           { date: '2026-07-12', startHour: null, endHour: null, status: 'off', leaveType: 'weekly_off', raw: 'OFF' },
         ],
       },
@@ -523,6 +523,7 @@ describe('Excel çizelge içe aktarımı (/import)', () => {
     // cinsiyet çıkarımı: MELİKE→female, ONUR→male (ikisi de tahmin edildi)
     expect(res.body.staff.genderGuessed).toBe(2)
     expect(res.body.staff.genderUnknown.length).toBe(0)
+    expect(res.body.locations.matched[0]).toMatchObject({ excelName: 'İşçi Lokali', matchedTo: 'Isci Lokali', count: 1 })
     // anomali raporu mevcut
     expect(Array.isArray(res.body.anomalies.warnings)).toBe(true)
     // dryRun yazmadı: personel hâlâ yok
@@ -569,6 +570,7 @@ describe('Excel çizelge içe aktarımı (/import)', () => {
     const melike = sched.body.find(r => r.full_name === 'MELİKE EXCELTEST' && r.work_date === '2026-07-06')
     expect(melike).toBeTruthy()
     expect(melike.start_hour).toBe(8)
+    expect(melike.work_location_name).toBe('Isci Lokali')
     const off = sched.body.find(r => r.full_name === 'MELİKE EXCELTEST' && r.work_date === '2026-07-12')
     expect(off.status).toBe('off')
   })

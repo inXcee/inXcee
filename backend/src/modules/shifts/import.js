@@ -81,6 +81,47 @@ export function buildLeaveRuns(rows) {
   return out
 }
 
+function addLocationCandidate(index, key, location) {
+  if (!key) return
+  if (!index.has(key)) index.set(key, [])
+  const candidates = index.get(key)
+  if (!candidates.some(item => item.id === location.id)) candidates.push(location)
+}
+
+export function buildLocationResolver(locations = []) {
+  const byId = new Map(locations.map(location => [Number(location.id), location]))
+  const byName = new Map()
+  const bySite = new Map()
+  for (const location of locations) {
+    const name = foldName(location.name)
+    const site = foldName(location.site)
+    addLocationCandidate(byName, name, location)
+    if (site) {
+      addLocationCandidate(byName, `${site} ${name}`, location)
+      addLocationCandidate(byName, `${name} ${site}`, location)
+      addLocationCandidate(bySite, site, location)
+    }
+  }
+
+  return (value) => {
+    const raw = String(value ?? '').trim()
+    if (!raw) return { status: 'empty', location: null, raw }
+    const numeric = raw.match(/^#?(\d+)$/)
+    if (numeric) {
+      const location = byId.get(Number(numeric[1]))
+      return location ? { status: 'matched', location, raw } : { status: 'unmatched', location: null, raw }
+    }
+    const key = foldName(raw)
+    const direct = byName.get(key) || []
+    if (direct.length === 1) return { status: 'matched', location: direct[0], raw }
+    if (direct.length > 1) return { status: 'ambiguous', location: null, candidates: direct, raw }
+    const site = bySite.get(key) || []
+    if (site.length === 1) return { status: 'matched', location: site[0], raw }
+    if (site.length > 1) return { status: 'ambiguous', location: null, candidates: site, raw }
+    return { status: 'unmatched', location: null, raw }
+  }
+}
+
 function normalizeScheduleStatus(cell) {
   return cell?.leaveType === 'weekly_off' ? 'off' : (cell?.status || 'scheduled')
 }
@@ -105,6 +146,13 @@ export function importSchedule(payload, userId, { dryRun = false, createMissing 
     db.prepare('SELECT id, name, start_hour, end_hour FROM shift_definitions').all()
       .map(s => [`${s.start_hour}-${s.end_hour}`, s])
   )
+  const workLocationRows = db.prepare(`
+    SELECT id, name, site, dept_id
+    FROM work_locations
+    WHERE is_active = 1
+    ORDER BY sort_order, name
+  `).all()
+  const resolveLocation = buildLocationResolver(workLocationRows)
   const allStaffRows = db.prepare('SELECT id, full_name, department_id FROM staff').all()
   const staffByName = new Map(allStaffRows.map(s => [normalizeName(s.full_name), s]))
   // Aksan-katlamalı ikincil indeks — yazım farkından doğan mükerrerleri yakalar.
@@ -132,6 +180,7 @@ export function importSchedule(payload, userId, { dryRun = false, createMissing 
     weekDates,
     depts: { matched: [], created: [] },
     shiftDefs: { matched: [], created: [] },
+    locations: { matched: [], unmatched: [], ambiguous: [], withoutLocation: 0 },
     staff: { matched: 0, matchedNames: [], created: [], fuzzyMatched: [], genderGuessed: 0, genderUnknown: [] },
     scheduleEntries: 0,
     scheduleNew: 0,
@@ -140,6 +189,38 @@ export function importSchedule(payload, userId, { dryRun = false, createMissing 
     deptSummary: [],
     skippedNoStaff: [],
     unrecognized,
+  }
+
+  // Lokasyonlar mevcut tanımlarla uzlaştırılır. Belirsiz/yanlış adlar sessizce
+  // başka bir noktaya atanmaz; önizlemede açıkça gösterilir ve kayıtta boş bırakılır.
+  const locationReport = new Map()
+  for (const r of rows) {
+    for (const c of r.cells || []) {
+      if (!['scheduled', 'worked', 'overtime'].includes(normalizeScheduleStatus(c))) continue
+      const excelName = String(c.locationName || r.locationName || '').trim()
+      if (!excelName) {
+        report.locations.withoutLocation++
+        continue
+      }
+      const resolved = resolveLocation(excelName)
+      const key = `${resolved.status}:${foldName(excelName)}`
+      if (!locationReport.has(key)) {
+        locationReport.set(key, {
+          excelName,
+          count: 0,
+          ...(resolved.location ? { id: resolved.location.id, matchedTo: resolved.location.name } : {}),
+          ...(resolved.candidates ? { candidates: resolved.candidates.map(item => item.name) } : {}),
+          status: resolved.status,
+        })
+      }
+      locationReport.get(key).count++
+    }
+  }
+  for (const item of locationReport.values()) {
+    const { status, ...summary } = item
+    if (status === 'matched') report.locations.matched.push(summary)
+    else if (status === 'ambiguous') report.locations.ambiguous.push(summary)
+    else report.locations.unmatched.push(summary)
   }
 
   // Departmanlar
@@ -254,18 +335,19 @@ export function importSchedule(payload, userId, { dryRun = false, createMissing 
   const insertShift = db.prepare('INSERT INTO shift_definitions(name, start_hour, end_hour, color_class) VALUES(?,?,?,?)')
   const insertStaff = db.prepare('INSERT INTO staff(full_name, department_id, gender, is_active) VALUES(?,?,?,1)')
   const upsert = db.prepare(`
-    INSERT INTO shift_schedule(staff_id, dept_id, shift_def_id, work_date, status, leave_type, created_by)
-    VALUES(@staff_id, @dept_id, @shift_def_id, @work_date, @status, @leave_type, @created_by)
+    INSERT INTO shift_schedule(staff_id, dept_id, shift_def_id, work_location_id, work_date, status, leave_type, created_by)
+    VALUES(@staff_id, @dept_id, @shift_def_id, @work_location_id, @work_date, @status, @leave_type, @created_by)
     ON CONFLICT(staff_id, work_date) DO UPDATE SET
       shift_def_id = excluded.shift_def_id,
       dept_id = excluded.dept_id,
+      work_location_id = excluded.work_location_id,
       status = excluded.status,
       leave_type = excluded.leave_type
   `)
 
   // Geri alma (undo) için snapshot: oturumun yarattığı + üzerine yazdığı her şey.
   const undo = { createdStaffIds: [], createdDeptIds: [], createdShiftDefIds: [], createdLeaves: [], schedulePrev: [], scheduleInserted: [] }
-  const getPrevStmt = db.prepare('SELECT dept_id, shift_def_id, status, leave_type FROM shift_schedule WHERE staff_id = ? AND work_date = ?')
+  const getPrevStmt = db.prepare('SELECT dept_id, shift_def_id, work_location_id, status, leave_type FROM shift_schedule WHERE staff_id = ? AND work_date = ?')
   const insBatch = db.prepare(`INSERT INTO schedule_import_batches(created_by, label, summary, undo_data) VALUES(?,?,?,?)`)
 
   const tx = db.transaction(() => {
@@ -314,10 +396,16 @@ export function importSchedule(payload, userId, { dryRun = false, createMissing 
         if (prev) { up++; undo.schedulePrev.push({ staff_id: staff.id, work_date: c.date, ...prev }) }
         else { nu++; undo.scheduleInserted.push({ staff_id: staff.id, work_date: c.date }) }
         const status = normalizeScheduleStatus(c)
+        const explicitLocation = c.locationName || r.locationName
+        const locationResult = explicitLocation ? resolveLocation(explicitLocation) : null
+        const workLocationId = ['scheduled', 'worked', 'overtime'].includes(status) && locationResult?.status === 'matched'
+          ? locationResult.location.id
+          : null
         upsert.run({
           staff_id: staff.id,
           dept_id: deptId,
           shift_def_id: shiftDefId,
+          work_location_id: workLocationId,
           work_date: c.date,
           status,
           leave_type: status === 'on_leave' ? (c.leaveType || null) : null,
@@ -359,7 +447,7 @@ export function importSchedule(payload, userId, { dryRun = false, createMissing 
     const summary = {
       weekDates, scheduleEntries: count, scheduleNew: nu, scheduleUpdated: up,
       staffCreated: report.staff.created.length, deptsCreated: report.depts.created.length,
-      shiftDefsCreated: report.shiftDefs.created.length, leavesCreated,
+      shiftDefsCreated: report.shiftDefs.created.length, locationsMatched: report.locations.matched.length, leavesCreated,
     }
     const label = weekDates.length ? `${weekDates[0]} → ${weekDates[weekDates.length - 1]}` : 'Excel içe aktarım'
     report.batchId = insBatch.run(userId || null, label, JSON.stringify(summary), JSON.stringify(undo)).lastInsertRowid
@@ -391,7 +479,7 @@ export function undoImportBatch(batchId) {
   if (!undo) throw new Error('Geri alma verisi okunamadı')
 
   const delSched = db.prepare('DELETE FROM shift_schedule WHERE staff_id = ? AND work_date = ?')
-  const restoreSched = db.prepare(`UPDATE shift_schedule SET dept_id = ?, shift_def_id = ?, status = ?, leave_type = ? WHERE staff_id = ? AND work_date = ?`)
+  const restoreSched = db.prepare(`UPDATE shift_schedule SET dept_id = ?, shift_def_id = ?, work_location_id = ?, status = ?, leave_type = ? WHERE staff_id = ? AND work_date = ?`)
   const delLeave = db.prepare('DELETE FROM leave_requests WHERE id = ?')
   const unbumpAnnual = db.prepare('UPDATE leave_balance SET annual_used = MAX(0, annual_used - ?) WHERE staff_id = ? AND year = ?')
   const unbumpSick = db.prepare('UPDATE leave_balance SET sick_used = MAX(0, sick_used - ?) WHERE staff_id = ? AND year = ?')
@@ -417,7 +505,10 @@ export function undoImportBatch(batchId) {
     // 2) Yeni eklenen çizelge satırlarını sil
     for (const s of undo.scheduleInserted || []) { delSched.run(s.staff_id, s.work_date); result.scheduleDeleted++ }
     // 3) Üzerine yazılanları eski değerlerine döndür
-    for (const p of undo.schedulePrev || []) { restoreSched.run(p.dept_id, p.shift_def_id, p.status, p.leave_type || null, p.staff_id, p.work_date); result.scheduleRestored++ }
+    for (const p of undo.schedulePrev || []) {
+      restoreSched.run(p.dept_id, p.shift_def_id, p.work_location_id || null, p.status, p.leave_type || null, p.staff_id, p.work_date)
+      result.scheduleRestored++
+    }
     // 4) Oluşturulan personeli (ve onlara ait tüm izleri) sil
     for (const sid of undo.createdStaffIds || []) {
       delSchedByStaff.run(sid); delLeaveByStaff.run(sid); delBalByStaff.run(sid); delStaff.run(sid)

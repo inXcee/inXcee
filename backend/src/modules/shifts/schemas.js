@@ -11,11 +11,13 @@ const importCell = z.object({
   status: z.enum(['scheduled', 'worked', 'absent', 'on_leave', 'overtime', 'off']),
   leaveType: z.enum(['weekly_off', 'sick', 'annual', 'unpaid']).optional(),
   raw: z.string().optional(),
+  locationName: z.string().trim().max(160).nullable().optional(),
 })
 
 const importRow = z.object({
   name: z.string().trim().min(1, 'Personel adı boş olamaz'),
   deptName: z.string().trim().nullable().optional(),
+  locationName: z.string().trim().max(160).nullable().optional(),
   cells: z.array(importCell).default([]),
 })
 

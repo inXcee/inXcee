@@ -1,3 +1,5 @@
+import { findLocationColumn, resolveWorkLocation, splitLocationDecoratedValue } from './locationImport.js'
+
 // Çizelge (Schedule) saf iş mantığı — UI'dan bağımsız, birim test edilebilir.
 // ScheduleTab bu fonksiyonları çağırır; davranış birebir korunur.
 
@@ -174,35 +176,90 @@ export function cellToScheduleCode(cell, shiftDefs = []) {
   return ''
 }
 
+export function cellToClipboardCode(cell, shiftDefs = []) {
+  const code = cellToScheduleCode(cell, shiftDefs)
+  if (!code || !cell?.work_location_name || !['scheduled', 'worked', 'overtime'].includes(cell.status)) return code
+  return `${code} @ ${cell.work_location_name}`
+}
+
+export function parseClipboardScheduleCode(value, shiftDefs = [], workLocations = []) {
+  const decorated = splitLocationDecoratedValue(value)
+  let parsed = parseQuickScheduleCode(decorated.value, shiftDefs)
+  let locationName = decorated.locationName
+
+  // "İşçi Lokali | 1" biçimini de kabul et.
+  if ((parsed.action === 'invalid' || parsed.action === 'noop') && decorated.alternateValue) {
+    const alternate = parseQuickScheduleCode(decorated.alternateValue, shiftDefs)
+    if (alternate.action !== 'invalid' && alternate.action !== 'noop') {
+      parsed = alternate
+      locationName = decorated.alternateLocationName
+    }
+  }
+
+  if (!locationName || parsed.action !== 'assign' || !['scheduled', 'worked', 'overtime'].includes(parsed.status)) {
+    return { ...parsed, locationSpecified: false }
+  }
+  const resolved = resolveWorkLocation(locationName, workLocations)
+  if (resolved.status !== 'matched') {
+    return {
+      action: 'invalid',
+      message: resolved.status === 'ambiguous'
+        ? `"${locationName}" birden fazla lokasyonla eşleşiyor`
+        : `"${locationName}" lokasyonu bulunamadı`,
+      locationName,
+    }
+  }
+  return {
+    ...parsed,
+    locationSpecified: true,
+    workLocationId: resolved.location.id,
+    workLocationName: resolved.location.name,
+  }
+}
+
 // Pano metnini ızgaraya yapıştırma planı — saf/test edilebilir çekirdek.
 // text: TSV (\t sütun, \n satır). targets: seçili {staffId,date} listesi (anchor = ilk).
 // Tek değer + çok hücre seçimi → broadcast (tüm seçime yayar); aksi halde anchor'dan
 // pozisyonel yapıştırır. Dönüş assignments {staffId,date,shiftDefId,status,leaveType} +
 // deletions {staffId,date}; çağıran dept_id/work_location_id ekleyip API entry'sine çevirir.
-export function planCellPaste({ text, targets = [], rowOrderIds = [], weekDays = [], shiftDefs = [] }) {
+export function planCellPaste({ text, targets = [], rowOrderIds = [], weekDays = [], shiftDefs = [], workLocations = [] }) {
   const grid = String(text || '').split(/\r?\n/).filter(line => line.length > 0).map(r => r.split('\t'))
   const assignments = []
   const deletions = []
-  if (!grid.length || !targets.length) return { assignments, deletions, mode: 'none' }
+  const errors = []
+  if (!grid.length || !targets.length) return { assignments, deletions, errors, mode: 'none' }
 
   const pushParsed = (staffId, date, code) => {
-    const parsed = parseQuickScheduleCode(code, shiftDefs)
+    const parsed = parseClipboardScheduleCode(code, shiftDefs, workLocations)
     if (parsed.action === 'delete') deletions.push({ staffId, date })
     else if (parsed.action === 'assign') {
-      assignments.push({ staffId, date, shiftDefId: parsed.shiftDefId, status: parsed.status, leaveType: parsed.leaveType ?? null })
+      assignments.push({
+        staffId,
+        date,
+        shiftDefId: parsed.shiftDefId,
+        status: parsed.status,
+        leaveType: parsed.leaveType ?? null,
+        ...(parsed.locationSpecified ? {
+          locationSpecified: true,
+          workLocationId: parsed.workLocationId,
+          workLocationName: parsed.workLocationName,
+        } : {}),
+      })
+    } else if (parsed.action === 'invalid') {
+      errors.push({ staffId, date, value: String(code ?? ''), message: parsed.message })
     }
   }
 
   const isSingle = grid.length === 1 && grid[0].length === 1
   if (isSingle && targets.length > 1) {
     targets.forEach(t => pushParsed(t.staffId, t.date, grid[0][0]))
-    return { assignments, deletions, mode: 'broadcast' }
+    return { assignments, deletions, errors, mode: 'broadcast' }
   }
 
   const anchor = targets[0]
   const rowStart = rowOrderIds.indexOf(anchor.staffId)
   const colStart = weekDays.indexOf(anchor.date)
-  if (rowStart < 0 || colStart < 0) return { assignments, deletions, mode: 'none' }
+  if (rowStart < 0 || colStart < 0) return { assignments, deletions, errors, mode: 'none' }
   grid.forEach((cols, ri) => {
     const staffId = rowOrderIds[rowStart + ri]
     if (staffId == null) return
@@ -212,7 +269,7 @@ export function planCellPaste({ text, targets = [], rowOrderIds = [], weekDays =
       pushParsed(staffId, date, code)
     })
   })
-  return { assignments, deletions, mode: 'positional' }
+  return { assignments, deletions, errors, mode: 'positional' }
 }
 
 function parseHour(value) {
@@ -591,33 +648,49 @@ const DAY_KEYS = [
   ['paz', 'pazar', 'sun', 'sunday'],
 ]
 
+function dayIndexFromHeader(value) {
+  const text = String(value || '').toLocaleLowerCase('tr').trim()
+  return DAY_KEYS.findIndex(keys => keys.some(key =>
+    text === key || text.startsWith(`${key} `) || text.startsWith(`${key}\n`) || text.startsWith(`${key}.`)
+  ))
+}
+
 // Excel sayfasının 2B hücre dizisini ayrıştır.
 // rows: ws.eachRow ile çıkarılmış satır dizisi (her satır hücre değerleri dizisi).
 // ctx: { allStaff, shiftDefs, weekDays }
 // Dönüş: { error } | { matched, unmatched, entries }
 //   matched: [{ staff, dayEntries }] · unmatched: [{ name, dayEntries }]
 //   entries: backend'e gönderilecek düz kayıtlar.
-export function parseScheduleSheet(rows, { allStaff, shiftDefs, weekDays }) {
+export function parseScheduleSheet(rows, { allStaff, shiftDefs, weekDays, workLocations = [] }) {
   if (!rows.length) return { error: 'Bos dosya' }
 
-  // Detect header row (first row with at least 3 cells)
-  const headerIdx = rows.findIndex(r => r.filter(Boolean).length >= 3)
+  // Önce gerçek çizelge başlığını ara; kapak/not/navigation satırlarını başlık sanma.
+  const looksLikeNameHeader = value => {
+    const text = String(value || '').toLocaleLowerCase('tr')
+    return text.includes('ad') || text.includes('isim') || text.includes('soyad') || text.includes('personel')
+  }
+  const dayHeaderCount = row => (row || []).reduce((count, value) => {
+    return count + (dayIndexFromHeader(value) >= 0 ? 1 : 0)
+  }, 0)
+  let headerIdx = rows.findIndex(row => row.some(looksLikeNameHeader) && dayHeaderCount(row) >= 2)
+  if (headerIdx === -1) headerIdx = rows.findIndex(r => r.filter(Boolean).length >= 3)
   if (headerIdx === -1) return { error: 'Baslik satiri bulunamadi' }
   const headers = rows[headerIdx].map(h => String(h || '').toLowerCase().trim())
 
   // Name column: first column or one containing "ad" / "isim" / "soyad"
-  const nameCol = headers.findIndex(h => h.includes('ad') || h.includes('isim') || h === '') || 0
+  const detectedNameCol = headers.findIndex(h => h.includes('ad') || h.includes('isim') || h.includes('soyad') || h.includes('personel'))
+  const nameCol = detectedNameCol >= 0 ? detectedNameCol : 0
+  const locationCol = findLocationColumn([rows[headerIdx]])
 
   // Day column map
   const dayColMap = {} // dayIdx (0-6) → colIdx
   headers.forEach((h, ci) => {
-    DAY_KEYS.forEach((keys, di) => {
-      if (keys.some(k => h.startsWith(k))) dayColMap[di] = ci
-    })
+    const dayIdx = dayIndexFromHeader(h)
+    if (dayIdx >= 0) dayColMap[dayIdx] = ci
   })
   // If no named columns found, try to map by position (cols after name col)
   if (Object.keys(dayColMap).length === 0) {
-    const startCol = nameCol + 1
+    const startCol = Math.max(nameCol, locationCol) + 1
     for (let di = 0; di < 7; di++) {
       if (startCol + di < headers.length) dayColMap[di] = startCol + di
     }
@@ -629,6 +702,9 @@ export function parseScheduleSheet(rows, { allStaff, shiftDefs, weekDays }) {
 
   const matched = [], unmatched = []
   const entries = []
+  const matchedLocationMap = new Map()
+  const unmatchedLocationMap = new Map()
+  const ambiguousLocationMap = new Map()
 
   rows.slice(headerIdx + 1).forEach((row) => {
     if (!row[nameCol]) return // skip empty rows
@@ -636,13 +712,43 @@ export function parseScheduleSheet(rows, { allStaff, shiftDefs, weekDays }) {
     if (!rawName) return
     const staff = staffByName.get(normalize(rawName))
 
+    const rowLocationName = locationCol >= 0 ? String(row[locationCol] ?? '').trim() : ''
     const dayEntries = []
     for (let di = 0; di < 7; di++) {
       const colIdx = dayColMap[di]
       if (colIdx === undefined) continue
-      const parsed = parseShiftCell(row[colIdx], shiftDefs)
+      const decorated = splitLocationDecoratedValue(row[colIdx])
+      let parsed = parseShiftCell(decorated.value, shiftDefs)
+      let cellLocationName = decorated.locationName || rowLocationName
+      if (!parsed && decorated.alternateValue) {
+        parsed = parseShiftCell(decorated.alternateValue, shiftDefs)
+        if (parsed) cellLocationName = decorated.alternateLocationName || rowLocationName
+      }
       if (!parsed) continue
-      dayEntries.push({ dayIdx: di, date: weekDays[di], ...parsed })
+      const location = parsed.status === 'scheduled'
+        ? resolveWorkLocation(cellLocationName, workLocations)
+        : { status: 'empty', location: null }
+      if (cellLocationName) {
+        const bucket = location.status === 'matched'
+          ? matchedLocationMap
+          : location.status === 'ambiguous' ? ambiguousLocationMap : unmatchedLocationMap
+        if (!bucket.has(cellLocationName)) bucket.set(cellLocationName, {
+          name: cellLocationName,
+          count: 0,
+          ...(location.location ? { id: location.location.id, matchedTo: location.location.name } : {}),
+          ...(location.candidates ? { candidates: location.candidates.map(item => item.name) } : {}),
+        })
+        bucket.get(cellLocationName).count += 1
+      }
+      dayEntries.push({
+        dayIdx: di,
+        date: weekDays[di],
+        ...parsed,
+        ...(location.status === 'matched' ? {
+          workLocationId: location.location.id,
+          workLocationName: location.location.name,
+        } : {}),
+      })
     }
 
     if (!staff) {
@@ -656,10 +762,21 @@ export function parseScheduleSheet(rows, { allStaff, shiftDefs, weekDays }) {
           work_date: e.date,
           shift_def_id: e.shiftDefId,
           status: e.status,
+          ...(e.workLocationId ? { work_location_id: e.workLocationId } : {}),
         })
       })
     }
   })
 
-  return { matched, unmatched, entries }
+  return {
+    matched,
+    unmatched,
+    entries,
+    locations: {
+      matched: [...matchedLocationMap.values()],
+      unmatched: [...unmatchedLocationMap.values()],
+      ambiguous: [...ambiguousLocationMap.values()],
+      columnFound: locationCol >= 0,
+    },
+  }
 }

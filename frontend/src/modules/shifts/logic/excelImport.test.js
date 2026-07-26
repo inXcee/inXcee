@@ -26,7 +26,7 @@ describe('classifyCell — hücre sınıflandırma', () => {
   })
 
   it('OTC / KAMP önekleri yok sayılır, saat aralığı alınır', () => {
-    expect(classifyCell('OTC 08:00-17:00')).toMatchObject({ startHour: 8, endHour: 17 })
+    expect(classifyCell('OTC 08:00-17:00')).toMatchObject({ startHour: 8, endHour: 17, locationName: 'OTC' })
     expect(classifyCell('OTC - 15:00-00:00')).toMatchObject({ startHour: 15, endHour: 24 })
     expect(classifyCell('KAMP 06:00-15:00')).toMatchObject({ startHour: 6, endHour: 15 })
   })
@@ -37,6 +37,7 @@ describe('classifyCell — hücre sınıflandırma', () => {
     expect(classifyCell('YILLIK İZİN')).toMatchObject({ leaveType: 'annual' })
     expect(classifyCell('Ü.İ')).toMatchObject({ leaveType: 'unpaid' })
     expect(classifyCell('ÜCRETSİZ İZİN')).toMatchObject({ leaveType: 'unpaid' })
+    expect(classifyCell('İşçi Lokali | OFF')).toMatchObject({ status: 'off', locationName: 'İşçi Lokali' })
   })
 
   it('anlaşılmayan metin → unknown', () => {
@@ -100,5 +101,17 @@ describe('parseCampScheduleGrid — tam çizelge', () => {
   it('tarih başlığı yoksa error (eski basit şablona düşülmesi için)', () => {
     const simple = [['İSİM', 'Pzt', 'Sal'], ['Ali', '1', '2']]
     expect(parseCampScheduleGrid(simple).error).toBeTruthy()
+  })
+
+  it('lokasyon sütununu ve hücre içi lokasyon önekini kanonik payload’a taşır', () => {
+    const locationGrid = [
+      ['SIRA NO', 'ADI SOYADI', 'Çalışma Lokasyonu', new Date(2026, 4, 18), new Date(2026, 4, 19), new Date(2026, 4, 20)],
+      ['1', 'MELİKE AKÇA', 'İşçi Lokali', '08:00-17:00', 'Taş Bina | 08:00-17:00', 'OFF'],
+    ]
+    const result = parseCampScheduleGrid(locationGrid)
+    expect(result.locationColumnFound).toBe(true)
+    expect(result.rows[0].locationName).toBe('İşçi Lokali')
+    expect(result.rows[0].cells[0].locationName).toBe('İşçi Lokali')
+    expect(result.rows[0].cells[1].locationName).toBe('Taş Bina')
   })
 })

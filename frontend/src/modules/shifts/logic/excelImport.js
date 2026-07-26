@@ -10,25 +10,28 @@
 // Çıktı backend /shifts/import'un beklediği kanonik yapı:
 //   { weekDates:[7 ISO], rows:[{ name, deptName, cells:[{date,startHour,endHour,status,raw}] }], unrecognized:[] }
 
+import { findLocationColumn, splitLocationDecoratedValue } from './locationImport.js'
+
 // ── Tek hücreyi sınıflandır ──
 // Dönüş: { kind:'blank' } | { kind:'shift', startHour, endHour, status:'scheduled' }
 //        | { kind:'leave', status:'on_leave'|'off', leaveType } | { kind:'unknown' }
 // leaveType: 'weekly_off' (OFF) | 'sick' (RAPORLU) | 'annual' (YILLIK İZİN) | 'unpaid' (Ü.İ)
 export function classifyCell(raw) {
   if (raw == null) return { kind: 'blank' }
-  const s = String(raw).trim()
+  const decorated = splitLocationDecoratedValue(raw)
+  const s = decorated.value
   if (!s || s === '-' || s === '—') return { kind: 'blank' }
 
   const upper = s.toLocaleUpperCase('tr')
   const noDots = upper.replace(/[.\s]/g, '')
 
   // İzin / tatil / rapor türleri. OFF haftalık izin statüsüdür; leave_request üretmez.
-  if (upper === 'OFF') return { kind: 'leave', status: 'off', leaveType: 'weekly_off' }
-  if (upper.includes('RAPOR')) return { kind: 'leave', status: 'on_leave', leaveType: 'sick' }
+  if (upper === 'OFF') return { kind: 'leave', status: 'off', leaveType: 'weekly_off', locationName: decorated.locationName }
+  if (upper.includes('RAPOR')) return { kind: 'leave', status: 'on_leave', leaveType: 'sick', locationName: decorated.locationName }
   if (upper.includes('ÜCRETSİZ') || upper.includes('UCRETSIZ') || noDots === 'Üİ' || noDots === 'UI')
-    return { kind: 'leave', status: 'on_leave', leaveType: 'unpaid' }
+    return { kind: 'leave', status: 'on_leave', leaveType: 'unpaid', locationName: decorated.locationName }
   if (upper.includes('İZİN') || upper.includes('IZIN'))
-    return { kind: 'leave', status: 'on_leave', leaveType: 'annual' }
+    return { kind: 'leave', status: 'on_leave', leaveType: 'annual', locationName: decorated.locationName }
 
   // Saat aralığı — OTC/KAMP gibi önekleri yok say, ilk "HH:MM - HH:MM" kalıbını yakala.
   const m = s.match(/(\d{1,2}):(\d{2})\s*[-–—\s]\s*(\d{1,2}):(\d{2})/)
@@ -37,7 +40,15 @@ export function classifyCell(raw) {
     let endHour = parseInt(m[3], 10)
     // Gece yarısı bitişi: 00:00 → 24 (yalnızca başlangıç 0 değilse; gece vardiyası 00:00-08:00 korunsun)
     if (endHour === 0 && startHour !== 0) endHour = 24
-    return { kind: 'shift', startHour, endHour, status: 'scheduled' }
+    return { kind: 'shift', startHour, endHour, status: 'scheduled', locationName: decorated.locationName }
+  }
+
+  // "İşçi Lokali | OFF" gibi lokasyonun solda olduğu izin hücreleri.
+  if (decorated.alternateValue) {
+    const alternate = classifyCell(decorated.alternateValue)
+    if (alternate.kind !== 'unknown' && alternate.kind !== 'blank') {
+      return { ...alternate, locationName: decorated.alternateLocationName }
+    }
   }
 
   return { kind: 'unknown' }
@@ -71,6 +82,8 @@ export function parseCampScheduleGrid(grid) {
 
   const weekDates = dayCols.map(d => d.date)
   const firstDayCol = dayCols[0].col
+  const headerRows = grid.slice(Math.max(0, dateRowIdx - 2), dateRowIdx + 1)
+  const locationCol = findLocationColumn(headerRows, firstDayCol)
 
   // 2) İsim sütunu: tarih satırında "ad/isim/soyad" geçen sütun; yoksa ilk gün sütununun solu.
   let nameCol = grid[dateRowIdx].findIndex(v => {
@@ -119,11 +132,17 @@ export function parseCampScheduleGrid(grid) {
         status: c.status,
         leaveType: c.kind === 'leave' ? c.leaveType : undefined,
         raw: String(c.raw ?? ''),
+        locationName: c.locationName || (locationCol >= 0 ? String(row[locationCol] ?? '').trim() || undefined : undefined),
       })
     }
-    rows.push({ name, deptName: currentDept, cells })
+    rows.push({
+      name,
+      deptName: currentDept,
+      locationName: locationCol >= 0 ? String(row[locationCol] ?? '').trim() || undefined : undefined,
+      cells,
+    })
   }
 
   if (rows.length === 0) return { error: 'Personel satırı bulunamadı' }
-  return { weekDates, rows, unrecognized }
+  return { weekDates, rows, unrecognized, locationColumnFound: locationCol >= 0 }
 }
