@@ -206,6 +206,62 @@ export function getBlockRoomsWithOccupants(block) {
   return rooms.map(room => ({ ...room, occupants: byRoom.get(room.id) || [] }))
 }
 
+// Kampüs rapor sihirbazının oda ve yerleşim veri seti. Tek blok seçildiğinde
+// parametreli filtre uygulanır; kampüs raporunda aynı sorgu tüm blokları döndürür.
+export function getCampusReportRooms(block = null) {
+  const db = getDB()
+  const rows = db.prepare(`
+    SELECT
+      r.id AS room_id, r.block, r.room_no, r.floor, r.status, r.capacity,
+      r.active_beds, r.notes,
+      ra.bed_no, ra.assigned_at,
+      p.id AS personnel_id, p.full_name, p.company, p.job_title,
+      p.phone_number, p.check_in_date,
+      d.name AS department_name
+    FROM rooms r
+    LEFT JOIN room_assignments ra
+      ON ra.room_id = r.id AND ra.check_out_at IS NULL
+    LEFT JOIN personnel p ON p.id = ra.personnel_id
+    LEFT JOIN departments d ON d.id = p.department_id
+    WHERE (? IS NULL OR r.block = ?)
+    ORDER BY r.block, r.floor, r.room_no, ra.bed_no, p.full_name
+  `).all(block, block)
+
+  const rooms = new Map()
+  for (const row of rows) {
+    if (!rooms.has(row.room_id)) {
+      rooms.set(row.room_id, {
+        id: row.room_id,
+        block: row.block,
+        room_no: row.room_no,
+        floor: row.floor,
+        status: row.status,
+        capacity: row.capacity,
+        active_beds: row.active_beds,
+        notes: row.notes || '',
+        occupants: [],
+      })
+    }
+    if (row.personnel_id) {
+      rooms.get(row.room_id).occupants.push({
+        personnel_id: row.personnel_id,
+        full_name: row.full_name,
+        company: row.company || '',
+        job_title: row.job_title || '',
+        department_name: row.department_name || '',
+        phone_number: row.phone_number || '',
+        check_in_date: row.check_in_date || null,
+        bed_no: row.bed_no ?? null,
+        assigned_at: row.assigned_at || null,
+      })
+    }
+  }
+  return Array.from(rooms.values()).map(room => ({
+    ...room,
+    occupied: room.occupants.length,
+  }))
+}
+
 // Per-blok son N gun doluluk zaman serisi (oda durumu degisiklikleri historik takip edilmedigi icin
 // sadece o tarihte aktif room_assignment'lara gore occupancy hesaplanir; total_beds suanki aktif yatak)
 export function getCampusTimeseries(days = 7) {

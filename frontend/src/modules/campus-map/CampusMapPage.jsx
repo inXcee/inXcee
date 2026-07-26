@@ -71,6 +71,7 @@ export default function CampusMapPage() {
   const [inspectorBlock, setInspectorBlock] = useState(null)
   const [contextMenu, setContextMenu] = useState(null) // { block, x, y }
   const [quickFault, setQuickFault] = useState(null) // { block } | null
+  const [reportOpen, setReportOpen] = useState(false)
   const [liveEvents, setLiveEvents] = useState([]) // son 5 olay
   const [pulseBlocks, setPulseBlocks] = useState({})
   // Zoom/Pan
@@ -613,6 +614,7 @@ export default function CampusMapPage() {
         role={user?.role}
         selectedBlock={selectedBlock}
         onNavigate={navigate}
+        onReport={() => setReportOpen(true)}
         onModeChange={setMode}
         onSelectBlock={(block) => {
           zoomToBlock(block)
@@ -1009,6 +1011,7 @@ export default function CampusMapPage() {
             onClose={() => setSelectedBlock(null)}
             onNavigate={navigate}
             onQuickFault={() => setQuickFault({ block: selectedBlock })}
+            onReport={() => setReportOpen(true)}
             role={user?.role}
             isNarrow={isNarrow}
           />
@@ -1028,6 +1031,10 @@ export default function CampusMapPage() {
         stats={stats}
         selectedBlock={selectedBlock}
         onSelect={(b) => { zoomToBlock(b); setSelectedBlock(b) }}
+        role={user?.role}
+        reportOpen={reportOpen}
+        onReportOpen={() => setReportOpen(true)}
+        onReportClose={() => setReportOpen(false)}
       />
     </div>
   )

@@ -44,6 +44,7 @@ export default function CampusCommandCenter({
   role = 'campus_manager',
   selectedBlock,
   onNavigate,
+  onReport,
   onModeChange,
   onSelectBlock,
 }) {
@@ -175,7 +176,7 @@ export default function CampusCommandCenter({
                 <button
                   key={action.id}
                   type="button"
-                  onClick={() => openAction(action.path)}
+                  onClick={() => action.id === 'reports' && onReport ? onReport() : openAction(action.path)}
                   style={{
                     display: 'flex', alignItems: 'center', gap: 8, minWidth: 0,
                     background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 9,

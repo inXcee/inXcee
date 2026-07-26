@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import { buildCampusReportHtml, campusReportRows } from './campusReportExport.js'
+import {
+  buildCampusReportHtml,
+  campusDetailedReportSections,
+  campusReportRows,
+} from './campusReportExport.js'
 
 const stats = {
   M1: { block: 'M1', total_rooms: 30, total_beds: 60, occupied: 55, occupancy_pct: 92, empty_rooms: 2, full_rooms: 28, quarantine: 1, maintenance: 0, open_faults: 3, cleaning_total: 30, cleaning_done: 22, cleaning_pct: 73 },
@@ -57,5 +61,62 @@ describe('buildCampusReportHtml', () => {
       X: { block: 'X', total_rooms: 4, total_beds: 8, occupied: 4, occupancy_pct: 50, empty_rooms: 2, full_rooms: 1, quarantine: 0, maintenance: 0, open_faults: 0, cleaning_total: 2, cleaning_done: 2, cleaning_pct: 100 },
     }, '2026-07-25')
     expect(html).toContain('Aksiyon bekleyen yok')
+  })
+})
+
+describe('campusDetailedReportSections', () => {
+  const rooms = [
+    {
+      id: 1, block: 'M1', room_no: '101', floor: 1, status: 'active',
+      capacity: 6, active_beds: 5, occupied: 1, notes: 'Sessiz oda',
+      occupants: [{
+        personnel_id: 10, full_name: 'Ayşe Demir', company: 'Yapı AŞ',
+        job_title: 'Kaynakçı', department_name: 'Saha', phone_number: '05320000000',
+        check_in_date: '2026-01-02', assigned_at: '2026-07-01 09:00:00', bed_no: 2,
+      }],
+    },
+    {
+      id: 2, block: 'M1', room_no: '102', floor: 1, status: 'maintenance',
+      capacity: 6, active_beds: 6, occupied: 0, notes: '', occupants: [],
+    },
+  ]
+
+  it('oda, kişi ve firma tablolarını ayrıntılı üretir', () => {
+    const report = campusDetailedReportSections(stats, rooms, {
+      includeNotes: true,
+      includeContact: true,
+    })
+    expect(report.counts).toEqual({ rooms: 2, people: 1, companies: 1 })
+    expect(report.rooms.headers).toContain('ODA NOTU')
+    expect(report.rooms.rows[0]).toEqual(['M1', '101', 1, 'Aktif', 1, 5, 6, 4, 'Sessiz oda'])
+    expect(report.people.headers).toContain('TELEFON')
+    expect(report.people.rows[0]).toEqual(expect.arrayContaining([
+      'M1', '101', 1, 2, 'Ayşe Demir', 'Yapı AŞ', 'Kaynakçı', 'Saha', '05320000000',
+    ]))
+    expect(report.companies.rows[0]).toEqual(['Yapı AŞ', 1, 1, 1, 'M1'])
+  })
+
+  it('boş ve aktif olmayan odaları seçeneklerle filtreler', () => {
+    const report = campusDetailedReportSections(stats, rooms, {
+      includeEmptyRooms: false,
+      onlyActiveRooms: true,
+    })
+    expect(report.counts.rooms).toBe(1)
+    expect(report.rooms.rows[0][1]).toBe('101')
+    expect(report.people.headers).not.toContain('TELEFON')
+  })
+
+  it('seçilen bölümleri PDF görünümüne taşır', () => {
+    const html = buildCampusReportHtml(stats, '2026-07-26', {
+      rooms,
+      options: {
+        title: 'M1 Oda ve Kişi Raporu',
+        sections: { summary: false, rooms: true, people: true, companies: true, attention: false },
+      },
+    })
+    expect(html).toContain('M1 ODA VE KİŞİ RAPORU')
+    expect(html).toContain('Ayşe Demir')
+    expect(html).toContain('FİRMALAR')
+    expect(html).not.toContain('DİKKAT GEREKENLER')
   })
 })

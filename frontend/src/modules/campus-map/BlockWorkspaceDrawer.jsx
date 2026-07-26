@@ -16,7 +16,7 @@ const actionStyle = color => ({
   fontFamily: 'var(--mono)', fontSize: 9,
 })
 
-function Overview({ data, onTabChange, onNavigate, onQuickFault }) {
+function Overview({ data, onTabChange, onNavigate, onQuickFault, onReport }) {
   const overview = data.overview || {}
   const permissions = data.permissions || {}
   const actions = [
@@ -26,6 +26,7 @@ function Overview({ data, onTabChange, onNavigate, onQuickFault }) {
     permissions.faults && { id: 'fault', label: 'Arıza bildir', color: '#dc2626', run: onQuickFault },
     permissions.faults && { id: 'fault-list', label: 'Blok arızalarını aç', color: '#ef4444', run: () => onTabChange('faults') },
     permissions.cleaning && { id: 'cleaning', label: 'Blok temizliğini aç', color: '#f59e0b', run: () => onTabChange('cleaning') },
+    permissions.rooms && { id: 'report', label: 'Blok raporu oluştur', color: '#8b5cf6', run: onReport },
     { id: 'history', label: 'Blok geçmişini aç', color: '#a78bfa', run: () => onNavigate(`/room-history?block=${data.block}`) },
   ].filter(Boolean)
 
@@ -144,6 +145,7 @@ export default function BlockWorkspaceDrawer({
   onClose,
   onNavigate,
   onQuickFault,
+  onReport,
   role,
   isNarrow = false,
 }) {
@@ -257,7 +259,7 @@ export default function BlockWorkspaceDrawer({
             ))}
           </div>
           <div style={{ padding: 12, overflowY: 'auto', flex: 1 }}>
-            {currentTab === 'overview' && <Overview data={data} onTabChange={onTabChange} onNavigate={onNavigate} onQuickFault={onQuickFault} />}
+            {currentTab === 'overview' && <Overview data={data} onTabChange={onTabChange} onNavigate={onNavigate} onQuickFault={onQuickFault} onReport={onReport} />}
             {currentTab === 'rooms' && (
               <BlockRoomManager
                 block={block}

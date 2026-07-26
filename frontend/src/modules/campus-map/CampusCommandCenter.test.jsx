@@ -45,6 +45,23 @@ describe('CampusCommandCenter', () => {
     await waitFor(() => expect(screen.queryByText('HIZLI İŞLEMLER')).not.toBeInTheDocument())
   })
 
+  it('blok raporları hızlı işlemi rapor sihirbazını açar', async () => {
+    const user = userEvent.setup()
+    const onReport = vi.fn()
+    render(
+      <CampusCommandCenter
+        stats={stats}
+        selectedBlock="M1"
+        onNavigate={vi.fn()}
+        onReport={onReport}
+        onModeChange={vi.fn()}
+        onSelectBlock={vi.fn()}
+      />,
+    )
+    await user.click(screen.getByText('Blok raporları'))
+    expect(onReport).toHaveBeenCalledTimes(1)
+  })
+
   it('rol dışı aksiyonları gizler ve seçili blok bağlamını hedefe ekler', async () => {
     const user = userEvent.setup()
     const onNavigate = vi.fn()

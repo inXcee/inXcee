@@ -161,15 +161,15 @@ describe('orderPanelSections — panel bölümleri modu takip eder', () => {
 })
 
 describe('CampusOverviewTable — rapor indirme (Faz D1)', () => {
-  it('veri varken Excel ve PDF butonlari cikar', () => {
-    render(<CampusOverviewTable stats={stats} onSelect={vi.fn()} />)
-    expect(screen.getByRole('button', { name: /Excel/ })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /PDF/ })).toBeInTheDocument()
+  it('veri varken yetkili role opsiyonel rapor sihirbazı gösterir', () => {
+    render(<CampusOverviewTable stats={stats} role="campus_manager" onSelect={vi.fn()} />)
+    expect(screen.getByRole('button', { name: /Rapor oluştur/ })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Excel$/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^PDF$/ })).not.toBeInTheDocument()
   })
 
   it('veri yokken indirme butonlari cikmaz', () => {
-    render(<CampusOverviewTable stats={{}} onSelect={vi.fn()} />)
-    expect(screen.queryByRole('button', { name: /Excel/ })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /PDF/ })).not.toBeInTheDocument()
+    render(<CampusOverviewTable stats={{}} role="campus_manager" onSelect={vi.fn()} />)
+    expect(screen.queryByRole('button', { name: /Rapor oluştur/ })).not.toBeInTheDocument()
   })
 })

@@ -1,10 +1,25 @@
 import { describe, it, expect, beforeAll } from 'vitest'
 import request from 'supertest'
 import app from '../../app.js'
-import { initDB } from '../../shared/db/index.js'
+import { getDB, initDB } from '../../shared/db/index.js'
 import { seedDev } from '../../shared/db/seed.js'
 
 let mgrToken, supToken, techToken, hkToken, laundryToken
+
+function createReportFixture() {
+  const db = getDB()
+  const room = db.prepare("SELECT id FROM rooms WHERE block='M1' ORDER BY room_no LIMIT 1").get()
+  const personId = Number(db.prepare(`
+    INSERT INTO personnel(full_name, company, job_title, phone_number, check_in_date)
+    VALUES('Rapor Test Kisi', 'Rapor Test Firma', 'Usta', '05320000000', '2026-07-01')
+  `).run().lastInsertRowid)
+  db.prepare('INSERT INTO room_assignments(personnel_id, room_id, bed_no) VALUES(?, ?, 6)')
+    .run(personId, room.id)
+  return () => {
+    db.prepare('DELETE FROM room_assignments WHERE personnel_id=?').run(personId)
+    db.prepare('DELETE FROM personnel WHERE id=?').run(personId)
+  }
+}
 beforeAll(async () => {
   process.env.DB_PATH = ':memory:'; initDB(); seedDev()
   mgrToken = (await request(app).post('/api/auth/login').send({ username: 'mudur', password: 'admin123' })).body.token
@@ -122,6 +137,45 @@ describe('Campus operations contract', () => {
     const unknownBlock = await request(app).get('/api/campus-map/block/ZZ/workspace')
       .set('Authorization', `Bearer ${mgrToken}`)
     expect(unknownBlock.status).toBe(404)
+  })
+
+  it('rapor verisini oda, kisi, firma ve yatak bilgileriyle dondurur', async () => {
+    const cleanup = createReportFixture()
+    const res = await request(app).get('/api/campus-map/report-data?block=M1')
+      .set('Authorization', `Bearer ${mgrToken}`)
+    expect(res.status).toBe(200)
+    expect(res.body).toMatchObject({
+      scope: 'block',
+      block: 'M1',
+      permissions: { contact_details: true },
+    })
+    expect(res.body.rooms.length).toBeGreaterThan(0)
+    expect(res.body.rooms.every(room => room.block === 'M1')).toBe(true)
+    const occupied = res.body.rooms.find(room => room.occupants.length > 0)
+    expect(occupied).toBeDefined()
+    expect(occupied.occupants[0]).toEqual(expect.objectContaining({
+      personnel_id: expect.any(Number),
+      full_name: expect.any(String),
+      company: expect.any(String),
+      bed_no: expect.any(Number),
+    }))
+    expect(occupied.occupants[0]).toHaveProperty('phone_number')
+    cleanup()
+  })
+
+  it('rapor verisinde iletisim alanini role gore gizler ve diger rolleri reddeder', async () => {
+    const cleanup = createReportFixture()
+    const supervisor = await request(app).get('/api/campus-map/report-data?block=M1')
+      .set('Authorization', `Bearer ${supToken}`)
+    expect(supervisor.status).toBe(200)
+    expect(supervisor.body.permissions.contact_details).toBe(false)
+    const person = supervisor.body.rooms.flatMap(room => room.occupants)[0]
+    expect(person).not.toHaveProperty('phone_number')
+
+    const technical = await request(app).get('/api/campus-map/report-data')
+      .set('Authorization', `Bearer ${techToken}`)
+    expect(technical.status).toBe(403)
+    cleanup()
   })
 })
 

@@ -1,10 +1,7 @@
 import { useMemo, useState } from 'react'
 import { buildOverviewRows, sortOverviewRows } from './logic/campusOverview.js'
-import { exportCampusReportExcel, openCampusReportPrint } from './logic/campusReportExport.js'
-import { useToastStore } from '../../shared/store/toastStore.js'
+import CampusReportDialog from './CampusReportDialog.jsx'
 
-// Haritanın altında açılır tablo: 19 bloğun hepsi yan yana, tek bakışta.
-// Sütun başlığına tıkla sırala, satıra tıkla harita o bloğa odaklansın.
 const COLUMNS = [
   { key: 'block', label: 'BLOK', align: 'left' },
   { key: 'occupancy_pct', label: 'DOLULUK', suffix: '%' },
@@ -25,36 +22,52 @@ const cellColor = (column, value) => {
   return 'var(--text)'
 }
 
-export default function CampusOverviewTable({ stats, selectedBlock, onSelect }) {
+export default function CampusOverviewTable({
+  stats,
+  selectedBlock,
+  onSelect,
+  role,
+  reportOpen = false,
+  onReportOpen,
+  onReportClose,
+}) {
   const [open, setOpen] = useState(true)
   const [sort, setSort] = useState({ key: 'occupancy_pct', dir: 'desc' })
-  const [busy, setBusy] = useState('')
-  const addToast = useToastStore(s => s.addToast)
-
-  const download = async (kind) => {
-    setBusy(kind)
-    const today = new Date().toLocaleDateString('sv-SE')
-    try {
-      if (kind === 'excel') await exportCampusReportExcel(stats, today)
-      else openCampusReportPrint(stats, today)
-    } catch (error) {
-      addToast(error?.message || 'Rapor olusturulamadi', 'error')
-    } finally { setBusy('') }
-  }
+  const [localReportOpen, setLocalReportOpen] = useState(false)
+  const canReport = role === 'campus_manager' || role === 'shift_supervisor'
+  const showReport = reportOpen || localReportOpen
+  const openReport = () => (onReportOpen ? onReportOpen() : setLocalReportOpen(true))
+  const closeReport = () => (onReportClose ? onReportClose() : setLocalReportOpen(false))
 
   const { rows, totals } = useMemo(() => buildOverviewRows(stats), [stats])
   const sorted = useMemo(() => sortOverviewRows(rows, sort.key, sort.dir), [rows, sort])
 
   const toggleSort = key => setSort(current => (
-    current.key === key ? { key, dir: current.dir === 'desc' ? 'asc' : 'desc' } : { key, dir: key === 'block' ? 'asc' : 'desc' }
+    current.key === key
+      ? { key, dir: current.dir === 'desc' ? 'asc' : 'desc' }
+      : { key, dir: key === 'block' ? 'asc' : 'desc' }
   ))
 
-  const th = { padding: '5px 7px', fontSize: 9, fontFamily: 'var(--mono)', letterSpacing: 0.5, color: 'var(--text3)', whiteSpace: 'nowrap', cursor: 'pointer', userSelect: 'none' }
-  const td = { padding: '4px 7px', fontSize: 11, fontFamily: 'var(--mono)', whiteSpace: 'nowrap' }
+  const th = {
+    padding: '5px 7px',
+    fontSize: 9,
+    fontFamily: 'var(--mono)',
+    letterSpacing: 0.5,
+    color: 'var(--text3)',
+    whiteSpace: 'nowrap',
+    cursor: 'pointer',
+    userSelect: 'none',
+  }
+  const td = {
+    padding: '4px 7px',
+    fontSize: 11,
+    fontFamily: 'var(--mono)',
+    whiteSpace: 'nowrap',
+  }
 
   return (
     <div style={{ marginTop: 10, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', flexWrap: 'wrap' }}>
         <span style={{ fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: 1, fontWeight: 700, color: 'var(--text2)' }}>
           ▦ KAMPÜS DURUM TABLOSU
         </span>
@@ -62,25 +75,14 @@ export default function CampusOverviewTable({ stats, selectedBlock, onSelect }) 
           {rows.length} blok · doluluk %{totals.occupancy_pct} · {totals.open_faults} arıza
         </span>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
-          {rows.length > 0 && (
-            <>
-              <button
-                type="button"
-                disabled={busy === 'excel'}
-                onClick={() => download('excel')}
-                style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 5, color: 'var(--text2)', cursor: 'pointer', fontSize: 10, padding: '3px 9px' }}
-              >
-                {busy === 'excel' ? '…' : '⬇ Excel'}
-              </button>
-              <button
-                type="button"
-                disabled={busy === 'print'}
-                onClick={() => download('print')}
-                style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 5, color: 'var(--text2)', cursor: 'pointer', fontSize: 10, padding: '3px 9px' }}
-              >
-                {busy === 'print' ? '…' : '⬇ PDF'}
-              </button>
-            </>
+          {rows.length > 0 && canReport && (
+            <button
+              type="button"
+              onClick={openReport}
+              style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 5, color: 'var(--text2)', cursor: 'pointer', fontSize: 10, padding: '3px 9px' }}
+            >
+              ↧ Rapor oluştur
+            </button>
           )}
           <button
             type="button"
@@ -154,6 +156,15 @@ export default function CampusOverviewTable({ stats, selectedBlock, onSelect }) 
             </table>
           </div>
         )
+      )}
+
+      {showReport && (
+        <CampusReportDialog
+          stats={stats}
+          selectedBlock={selectedBlock}
+          role={role}
+          onClose={closeReport}
+        />
       )}
     </div>
   )

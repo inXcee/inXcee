@@ -38,6 +38,7 @@ function renderDrawer(overrides = {}, props = {}) {
         onClose={vi.fn()}
         onNavigate={vi.fn()}
         onQuickFault={vi.fn()}
+        onReport={vi.fn()}
         {...props}
       />
     </QueryClientProvider>,
@@ -64,6 +65,14 @@ describe('BlockWorkspaceDrawer', () => {
     renderDrawer({}, { tab: 'rooms', onRoomChange })
     await user.click(await screen.findByRole('button', { name: /101/ }))
     expect(onRoomChange).toHaveBeenCalledWith(21)
+  })
+
+  it('blok raporu işlemini seçili blok bağlamında açar', async () => {
+    const user = userEvent.setup()
+    const onReport = vi.fn()
+    renderDrawer({}, { onReport })
+    await user.click(await screen.findByText('Blok raporu oluştur'))
+    expect(onReport).toHaveBeenCalledTimes(1)
   })
 
   it('veri yüklenirken geçerli derin bağlantı sekmesini overview ile ezmez', async () => {

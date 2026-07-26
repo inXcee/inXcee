@@ -4,6 +4,7 @@ import { getDB } from '../../shared/db/index.js'
 import {
   getCampusSummary, getCampusTimeseries,
   getBlockFaults, getBlockCleaning, getBlockRoomsWithOccupants,
+  getCampusReportRooms,
   getMaintenanceDataQuality, getUnknownShiftQueue, getOpenFaultQueue, getCleaningQueue,
   buildBlockHealth, buildCampusHealth,
 } from './queries.js'
@@ -156,6 +157,35 @@ campusMapRouter.get('/block/:block/workspace', requireAuth, (req, res) => {
     res.json(payload)
   } catch (e) {
     logger.error('[campus-map.block-workspace]', e)
+    res.status(500).json({ error: 'Sunucu hatasi' })
+  }
+})
+
+campusMapRouter.get('/report-data', ...requireRole('campus_manager', 'shift_supervisor'), (req, res) => {
+  try {
+    const requestedBlock = req.query.block ? String(req.query.block).trim() : null
+    if (requestedBlock && requestedBlock.length > 8) {
+      return res.status(400).json({ error: 'Gecersiz blok' })
+    }
+    if (requestedBlock && !getCampusSummary()[requestedBlock]) {
+      return res.status(404).json({ error: 'Blok bulunamadi' })
+    }
+    const canViewContact = req.user.role === 'campus_manager'
+    const rooms = getCampusReportRooms(requestedBlock).map(room => ({
+      ...room,
+      occupants: room.occupants.map(person => (
+        canViewContact ? person : { ...person, phone_number: undefined }
+      )),
+    }))
+    res.json({
+      generated_at: new Date().toISOString(),
+      scope: requestedBlock ? 'block' : 'campus',
+      block: requestedBlock,
+      permissions: { contact_details: canViewContact },
+      rooms,
+    })
+  } catch (e) {
+    logger.error('[campus-map.report-data]', e)
     res.status(500).json({ error: 'Sunucu hatasi' })
   }
 })
