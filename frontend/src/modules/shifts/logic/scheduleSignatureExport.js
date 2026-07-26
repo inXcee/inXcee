@@ -280,8 +280,9 @@ export function signaturePagesCss() {
     .sig-sub { font-size: 10px; color: #475569; margin-top: 2px; }
     .sig-meta { font-size: 9px; color: #475569; text-align: right; line-height: 1.5; }
     .sig-dept { font-size: 11px; font-weight: 700; background: #e2e8f0; padding: 3px 8px; margin: 8px 0 0; border-radius: 3px; }
-    table.sig { width: 100%; border-collapse: collapse; font-size: 9.5px; }
-    table.sig th, table.sig td { border: 1px solid #94a3b8; padding: 4px 5px; text-align: left; vertical-align: middle; }
+    table.sig { width: 100%; border-collapse: collapse; font-size: 9.5px; border: 2px solid #475569; }
+    table.sig th, table.sig td { border: 1.25px solid #64748b; padding: 4px 5px; text-align: left; vertical-align: middle; }
+    table.sig tbody tr td { border-top-width: 1.6px; border-bottom-width: 1.6px; }
     table.sig th { background: #f1f5f9; font-size: 8.5px; text-transform: uppercase; letter-spacing: .3px; }
     table.sig td.sig-cell { height: 30px; min-width: 90px; }
     table.sig td.no { width: 26px; text-align: center; }
@@ -298,15 +299,16 @@ export function signaturePagesCss() {
     .weekly-sig-title { font-size: 17px; font-weight: 800; letter-spacing: .4px; }
     .weekly-sig-sub { margin-top: 3px; color: #475569; font-size: 9px; font-weight: 700; }
     .weekly-sig-meta { text-align: right; color: #64748b; font-size: 8px; line-height: 1.5; }
-    table.weekly-sig { width: 100%; table-layout: fixed; border-collapse: collapse; }
-    table.weekly-sig th, table.weekly-sig td { border: 1px solid #94a3b8; }
+    table.weekly-sig { width: 100%; table-layout: fixed; border-collapse: collapse; border: 2px solid #475569; }
+    table.weekly-sig th, table.weekly-sig td { border: 1.25px solid #64748b; }
+    table.weekly-sig tbody tr:not(.weekly-dept-band) td { border-top-width: 1.6px; border-bottom-width: 1.6px; }
     table.weekly-sig th { padding: 4px 3px; background: #e2e8f0; font-size: 7px; text-align: center; }
     table.weekly-sig th span { display: block; margin-top: 2px; color: #475569; font-size: 6.5px; }
     table.weekly-sig td { height: 36px; padding: 3px; vertical-align: top; font-size: 7px; }
     table.weekly-sig .weekly-no { width: 24px; text-align: center; }
     table.weekly-sig .weekly-person { width: 130px; }
     table.weekly-sig .weekly-role { width: 82px; }
-    table.weekly-sig tr.weekly-dept-band td { height: 17px; padding: 2px 7px; background: #dbeafe; color: #1e3a8a; font-size: 6.5px; font-weight: 900; letter-spacing: .35px; vertical-align: middle; }
+    table.weekly-sig tr.weekly-dept-band td { height: 17px; padding: 2px 7px; background: #dbeafe; color: #1e3a8a; font-size: 6.5px; font-weight: 900; letter-spacing: .35px; vertical-align: middle; border-top: 2px solid #475569; border-bottom: 2px solid #64748b; }
     .weekly-person b { display: block; font-size: 8px; }
     .weekly-day { text-align: center; }
     .weekly-day > b { display: block; font-size: 7px; line-height: 1.15; }
@@ -321,7 +323,7 @@ export function signaturePagesCss() {
     .weekly-no-sign { display: block; margin-top: 9px; color: #94a3b8; font-size: 5.5px; font-style: italic; }
     .weekly-change-title { margin-top: 8px; font-size: 8px; font-weight: 800; }
     table.weekly-change { width: 100%; margin-top: 3px; border-collapse: collapse; table-layout: fixed; }
-    table.weekly-change th, table.weekly-change td { border: 1px solid #94a3b8; padding: 3px; font-size: 6.5px; }
+    table.weekly-change th, table.weekly-change td { border: 1.25px solid #64748b; padding: 3px; font-size: 6.5px; }
     table.weekly-change th { background: #f1f5f9; }
     table.weekly-change td { height: 20px; }
     .weekly-sig-footer { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 8px; }

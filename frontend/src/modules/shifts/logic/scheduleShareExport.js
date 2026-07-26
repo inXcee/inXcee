@@ -303,15 +303,16 @@ function buildStyles(opts) {
     .metric { border: 1px solid #cbd5e1; border-left: 5px solid #${accent}; border-radius: 8px; padding: 8px 10px; background: #f8fafc; }
     .metric b { display: block; font-size: 19px; line-height: 1; }
     .metric span { color: #64748b; font-size: 9px; font-weight: 800; text-transform: uppercase; }
-    table { width: 100%; border-collapse: collapse; table-layout: fixed; border: 1px solid #94a3b8; }
-    th, td { border: 1px solid #cbd5e1; vertical-align: middle; }
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; border: 2px solid #475569; }
+    th, td { border: 1.25px solid #94a3b8; vertical-align: middle; }
     thead th { background: #e2e8f0; color: #0f172a; font-size: ${density.head}px; padding: 7px 5px; text-align: center; }
     .person-head { width: ${density.name}px; text-align: left; }
     .day-date { display: block; color: #475569; font-size: 8px; margin-top: 2px; }
     .weekend { background: ${tint(weekend, 0.16)} !important; border-bottom: 3px solid #${weekend}; }
-    .dept-row td { background: #f1f5f9; padding: 7px 8px; font-size: 10px; font-weight: 900; color: #0f172a; }
+    .dept-row td { background: #f1f5f9; padding: 7px 8px; font-size: 10px; font-weight: 900; color: #0f172a; border-top: 2.5px solid #334155; border-bottom: 2px solid #64748b; }
     .dept-name { display: inline-block; border-radius: 999px; padding: 3px 8px; color: #fff; }
-    .person { width: ${density.name}px; padding: 7px 8px; background: #fff; }
+    tr.person-row > td { border-top: 1.6px solid #64748b !important; border-bottom: 1.6px solid #64748b !important; }
+    .person { width: ${density.name}px; padding: 7px 8px; background: #fff; border-right: 2px solid #475569 !important; }
     .p-name { font-size: 10px; font-weight: 900; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .p-meta { margin-top: 3px; color: #64748b; font-size: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .cell { min-height: ${density.row}px; padding: ${density.cellPad}px; text-align: center; line-height: 1.16; }
@@ -389,7 +390,7 @@ function renderScheduleBody(model) {
 
   const tableHeadFor = (dayStats = perDay) => `
       <thead>
-        <tr>
+        <tr class="person-row">
           <th class="person-head">Personel</th>
           ${weekDays.map((date, idx) => `
             <th class="${idx >= 5 ? 'weekend' : ''}">
@@ -430,7 +431,7 @@ function renderScheduleBody(model) {
             const text = opts.colorMode === 'mono' && cell ? '0F172A' : readableText(fill)
             const display = cellDisplay(cell, opts)
             const bg = cell ? `#${fill}` : '#F8FAFC'
-            const border = cell ? `#${fill}` : '#CBD5E1'
+            const border = '#64748B'
             return `
               <td class="cell" title="${escapeHtml(display.note)}" style="background:${bg};border-color:${border};color:#${text};">
                 <span class="main">${escapeHtml(display.main)}</span>
@@ -732,7 +733,8 @@ export function renderScheduleToCanvas(model, scale = 2) {
     const textColor = opts.colorMode === 'mono' && cell ? '#0F172A' : `#${readableText(cellHex(cell, person, opts))}`
     ctx.fillStyle = cell ? fill : '#F8FAFC'
     ctx.fillRect(cx, y, dayW, rowH)
-    ctx.strokeStyle = cell ? fill : '#CBD5E1'
+    ctx.strokeStyle = '#64748b'
+    ctx.lineWidth = 1.5
     ctx.strokeRect(cx + 0.5, y + 0.5, dayW - 1, rowH - 1)
     const disp = cellDisplay(cell, opts)
     ctx.textAlign = 'center'
@@ -750,7 +752,8 @@ export function renderScheduleToCanvas(model, scale = 2) {
       // Departman bandı
       ctx.fillStyle = '#f1f5f9'
       ctx.fillRect(pad, y, innerW, CANVAS_GEO.deptBand)
-      ctx.strokeStyle = '#cbd5e1'
+      ctx.strokeStyle = '#475569'
+      ctx.lineWidth = 2
       ctx.strokeRect(pad + 0.5, y + 0.5, innerW - 1, CANVAS_GEO.deptBand - 1)
       const deptColor = `#${cleanHex(deptHex(group.color), '64748B')}`
       ctx.font = '900 10px Arial'
@@ -770,7 +773,8 @@ export function renderScheduleToCanvas(model, scale = 2) {
         // İsim hücresi
         ctx.fillStyle = '#ffffff'
         ctx.fillRect(pad, y, nameW, rowH)
-        ctx.strokeStyle = '#cbd5e1'
+        ctx.strokeStyle = '#64748b'
+        ctx.lineWidth = 1.5
         ctx.strokeRect(pad + 0.5, y + 0.5, nameW - 1, rowH - 1)
         ctx.textAlign = 'left'
         ctx.fillStyle = '#0f172a'
@@ -787,6 +791,18 @@ export function renderScheduleToCanvas(model, scale = 2) {
         ctx.fillText(fitText(ctx, meta, nameW - 12), pad + 8, y + rowH / 2 + 8)
         // Gün hücreleri
         weekDays.forEach((date, idx) => drawCell(person.days?.[date], person, pad + nameW + idx * dayW))
+        // Renkli hücrelerin üzerinde de kişi satırı sınırı net kalsın.
+        ctx.beginPath()
+        ctx.strokeStyle = '#475569'
+        ctx.lineWidth = 1.75
+        ctx.moveTo(pad, y + rowH - 0.75)
+        ctx.lineTo(pad + innerW, y + rowH - 0.75)
+        ctx.stroke()
+        ctx.beginPath()
+        ctx.lineWidth = 2
+        ctx.moveTo(pad + nameW, y)
+        ctx.lineTo(pad + nameW, y + rowH)
+        ctx.stroke()
         y += rowH
       })
     })

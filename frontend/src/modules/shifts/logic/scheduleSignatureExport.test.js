@@ -103,7 +103,10 @@ describe('signature HTML rendering', () => {
     const models = buildSignatureModels({ people: PEOPLE, dates: [DATE, '2026-07-14'] })
     const html = renderSignaturePagesHtml(models, {})
     expect((html.match(/class="sig-page"/g) || []).length).toBe(2)
-    expect(signaturePagesCss()).toContain('@page signature')
+    const css = signaturePagesCss()
+    expect(css).toContain('@page signature')
+    expect(css).toContain('table.sig { width: 100%; border-collapse: collapse; font-size: 9.5px; border: 2px solid #475569; }')
+    expect(css).toContain('table.sig tbody tr td { border-top-width: 1.6px; border-bottom-width: 1.6px; }')
   })
 })
 
@@ -143,7 +146,9 @@ describe('weekly signature sheet', () => {
     expect(html).toContain('Sonradan Eklenen / Vardiyası Değişen')
     expect(html).toContain('Revizyon: 3')
     expect(html).not.toContain('Özel sağlık açıklaması')
-    expect(signaturePagesCss()).toContain('@page weekly-signature')
+    const css = signaturePagesCss()
+    expect(css).toContain('@page weekly-signature')
+    expect(css).toContain('table.weekly-sig { width: 100%; table-layout: fixed; border-collapse: collapse; border: 2px solid #475569; }')
   })
 
   it('fits 25 personnel plus change rows on one economical page', () => {

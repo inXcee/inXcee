@@ -142,8 +142,9 @@ export function buildDayDetailHtml(detail) {
   body { font-family: Arial, sans-serif; color: #0f172a; margin: 24px; font-size: 12px; }
   h1 { font-size: 18px; margin: 0 0 4px; }
   .summary { color: #475569; margin-bottom: 16px; font-size: 12px; }
-  .matrix { width: 100%; border-collapse: collapse; margin: 0 0 16px; font-size: 10px; }
-  .matrix th, .matrix td { border: 1px solid #cbd5e1; padding: 4px 5px; text-align: center; }
+  .matrix { width: 100%; border-collapse: collapse; margin: 0 0 16px; font-size: 10px; border: 2px solid #475569; }
+  .matrix th, .matrix td { border: 1.25px solid #64748b; padding: 4px 5px; text-align: center; }
+  .matrix tbody tr td { border-top-width: 1.6px; border-bottom-width: 1.6px; }
   .matrix th:first-child, .matrix td:first-child { text-align: left; }
   .matrix th { background: #0e7490; color: white; }
   .matrix th small { display: block; font-weight: 400; opacity: .8; margin-top: 2px; }

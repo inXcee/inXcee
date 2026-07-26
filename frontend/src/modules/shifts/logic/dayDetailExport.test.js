@@ -24,6 +24,8 @@ describe('buildDayDetailHtml', () => {
     expect(html).toContain('Yemekhane')
     expect(html).toContain('Sabah')
     expect(html).toContain('<table class="matrix">')
+    expect(html).toContain('border: 2px solid #475569')
+    expect(html).toContain('border-top-width: 1.6px')
     expect(html).toContain('Gün kadrosu')
     expect(html).toContain('Ali')
     expect(html).toContain('⚪ İzinli (1)')

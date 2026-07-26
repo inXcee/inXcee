@@ -59,11 +59,11 @@ function line(ctx, x1, y1, x2, y2, color = '#94a3b8', width = 1) {
   ctx.stroke()
 }
 
-function rect(ctx, x, y, width, height, fill = '#ffffff', stroke = '#94a3b8') {
+function rect(ctx, x, y, width, height, fill = '#ffffff', stroke = '#64748b', strokeWidth = 1.5) {
   ctx.fillStyle = fill
   ctx.fillRect(x, y, width, height)
   ctx.strokeStyle = stroke
-  ctx.lineWidth = 1
+  ctx.lineWidth = strokeWidth
   ctx.strokeRect(x + 0.5, y + 0.5, width - 1, height - 1)
 }
 
@@ -189,7 +189,7 @@ function drawPeopleRows(ctx, model, page, layout) {
   let previousDepartment = ''
   page.rows.forEach((row, index) => {
     if (showDepartmentBands && row.department !== previousDepartment) {
-      rect(ctx, margin, y, tableWidth, departmentBandHeight, '#dbeafe', '#93c5fd')
+      rect(ctx, margin, y, tableWidth, departmentBandHeight, '#dbeafe', '#475569', 2)
       ctx.textAlign = 'left'; ctx.fillStyle = '#1e3a8a'; ctx.font = `900 ${rowHeight < 30 ? 8 : 10}px Arial`
       ctx.fillText(row.department, margin + 8, y + departmentBandHeight / 2)
       y += departmentBandHeight
@@ -216,6 +216,8 @@ function drawPeopleRows(ctx, model, page, layout) {
       drawDayCell(ctx, day, x, y, dayWidth, rowHeight, model.opts.doubleSignature)
       x += dayWidth
     })
+    line(ctx, margin, y + rowHeight - 0.75, margin + tableWidth, y + rowHeight - 0.75, '#475569', 1.75)
+    line(ctx, margin + noWidth + personWidth + roleWidth, y, margin + noWidth + personWidth + roleWidth, y + rowHeight, '#475569', 2)
     y += rowHeight
   })
   return y

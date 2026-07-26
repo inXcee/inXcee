@@ -109,6 +109,9 @@ describe('scheduleShareExport', () => {
     expect(html).toContain('Gunduz')
     expect(html).toContain('#60A5FA')
     expect(html).toContain('Revizyon 1')
+    expect(html).toContain('class="person-row"')
+    expect(html).toContain('border: 2px solid #475569')
+    expect(html).toContain('border-top: 1.6px solid #64748b')
   })
 
   it('summarizes split-shift segments in personnel share output', () => {
