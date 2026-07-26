@@ -51,6 +51,7 @@ const ROOM_STATUS = [
 
 export default function BlockDetailSections({ block, onPersonClick, isManager = false }) {
   const [openRoom, setOpenRoom] = useState(null)
+  const [openFault, setOpenFault] = useState(null)
   const queryClient = useQueryClient()
   const addToast = useToastStore(s => s.addToast)
 
@@ -68,10 +69,36 @@ export default function BlockDetailSections({ block, onPersonClick, isManager = 
     onError: err => addToast(err?.response?.data?.error || 'Oda durumu degistirilemedi', 'error'),
   })
 
+  // Arıza yönetimi — yetki kümesi can.faults ile aynı (manager/supervisor/technical).
+  // Not: KAPATMA burada yok; /close fotoğraf istiyor, yarım akış olmasın diye
+  // "Bakım sayfasında aç" bağlantısı korunuyor.
+  const refreshFaults = () => {
+    queryClient.invalidateQueries({ queryKey: ['campus-block-detail', block] })
+    queryClient.invalidateQueries({ queryKey: ['campus-map-summary'] })
+  }
+  const assignFault = useMutation({
+    mutationFn: ({ id, technician_id }) => api.patch(`/maintenance/requests/${id}/assign`, { technician_id }),
+    onSuccess: () => { addToast('Ariza teknisyene atandi', 'success'); refreshFaults() },
+    onError: err => addToast(err?.response?.data?.error || 'Atama yapilamadi', 'error'),
+  })
+  const setPriority = useMutation({
+    mutationFn: ({ id, priority }) => api.patch(`/maintenance/requests/${id}/priority`, { priority }),
+    onSuccess: () => { addToast('Oncelik guncellendi', 'success'); refreshFaults() },
+    onError: err => addToast(err?.response?.data?.error || 'Oncelik degistirilemedi', 'error'),
+  })
+
   const { data, isPending, isError } = useQuery({
     queryKey: ['campus-block-detail', block],
     queryFn: () => api.get(`/campus-map/block/${encodeURIComponent(block)}/detail`).then(r => r.data),
     enabled: !!block,
+  })
+
+  // Teknisyen listesi yalnız bir arıza satırı açıldığında çekilir.
+  const { data: technicians = [] } = useQuery({
+    queryKey: ['maintenance-technicians'],
+    queryFn: () => api.get('/maintenance/technicians').then(r => r.data),
+    enabled: Boolean(data?.can?.faults) && openFault != null,
+    staleTime: 5 * 60_000,
   })
 
   if (isPending) return <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 8 }}>Detay yükleniyor…</div>
@@ -93,16 +120,75 @@ export default function BlockDetailSections({ block, onPersonClick, isManager = 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               {faults.map(fault => {
                 const priority = PRIORITY[fault.priority] || PRIORITY.low
+                const isOpen = openFault === fault.id
                 return (
                   <div key={fault.id} style={{ ...box, borderLeft: `3px solid ${priority.color}` }}>
-                    <div style={{ display: 'flex', gap: 6, alignItems: 'baseline' }}>
-                      <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: priority.color, fontWeight: 700 }}>{priority.label}</span>
-                      <span style={{ fontSize: 11, color: 'var(--text)', flex: '1 1 auto', minWidth: 0 }}>{fault.location}</span>
-                      <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>{fault.status}</span>
-                    </div>
-                    <div style={{ fontSize: 10, color: 'var(--text2)', marginTop: 2 }}>{fault.description}</div>
-                    {fault.technician_name && (
-                      <div style={{ fontSize: 9, color: 'var(--text3)', marginTop: 2 }}>atanan: {fault.technician_name}</div>
+                    <button
+                      type="button"
+                      onClick={() => setOpenFault(isOpen ? null : fault.id)}
+                      aria-expanded={isOpen}
+                      aria-label={`${fault.location} arizasi`}
+                      style={{
+                        display: 'block', width: '100%', textAlign: 'left', background: 'none',
+                        border: 'none', padding: 0, cursor: 'pointer', color: 'var(--text)',
+                      }}
+                    >
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'baseline' }}>
+                        <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: priority.color, fontWeight: 700 }}>{priority.label}</span>
+                        <span style={{ fontSize: 11, color: 'var(--text)', flex: '1 1 auto', minWidth: 0 }}>{fault.location}</span>
+                        <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>{fault.status}</span>
+                      </div>
+                      <div style={{ fontSize: 10, color: 'var(--text2)', marginTop: 2 }}>{fault.description}</div>
+                      <div style={{ fontSize: 9, color: 'var(--text3)', marginTop: 2 }}>
+                        {fault.technician_name ? `atanan: ${fault.technician_name}` : 'atanmamış'}
+                      </div>
+                    </button>
+
+                    {isOpen && (
+                      <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px dashed var(--border)' }}>
+                        <div style={{ ...caption, marginBottom: 4 }}>ÖNCELİK</div>
+                        <div style={{ display: 'flex', gap: 4, marginBottom: 7 }}>
+                          {Object.entries(PRIORITY).map(([key, item]) => (
+                            key === fault.priority ? null : (
+                              <button
+                                key={key}
+                                type="button"
+                                disabled={setPriority.isPending}
+                                onClick={() => setPriority.mutate({ id: fault.id, priority: key })}
+                                style={{
+                                  fontFamily: 'var(--mono)', fontSize: 9, padding: '3px 8px', cursor: 'pointer',
+                                  border: `1px solid ${item.color}`, borderRadius: 4, background: 'transparent', color: item.color,
+                                }}
+                              >
+                                {item.label}
+                              </button>
+                            )
+                          ))}
+                        </div>
+                        <div style={{ ...caption, marginBottom: 4 }}>TEKNİSYENE ATA</div>
+                        <select
+                          aria-label="Teknisyen seç"
+                          defaultValue=""
+                          disabled={assignFault.isPending}
+                          onChange={event => {
+                            const id = event.target.value
+                            if (id) assignFault.mutate({ id: fault.id, technician_id: Number(id) })
+                          }}
+                          style={{
+                            width: '100%', fontFamily: 'var(--mono)', fontSize: 10, padding: '4px 6px',
+                            background: 'var(--surface)', color: 'var(--text)',
+                            border: '1px solid var(--border)', borderRadius: 4,
+                          }}
+                        >
+                          <option value="">— teknisyen seç —</option>
+                          {technicians.map(t => (
+                            <option key={t.id} value={t.id}>{t.full_name}</option>
+                          ))}
+                        </select>
+                        <div style={{ fontSize: 9, color: 'var(--text3)', marginTop: 5 }}>
+                          Kapatma fotoğraf gerektirir → Bakım sayfasından yapılır.
+                        </div>
+                      </div>
                     )}
                   </div>
                 )

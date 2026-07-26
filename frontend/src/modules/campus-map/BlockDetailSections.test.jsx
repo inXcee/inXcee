@@ -137,3 +137,58 @@ describe('BlockDetailSections — tek oda durumu (Faz C1)', () => {
     expect(screen.queryByRole('button', { name: /KARANTINA/ })).not.toBeInTheDocument()
   })
 })
+
+describe('BlockDetailSections — arıza yönetimi (Faz C2)', () => {
+  const openFault = async (user) => {
+    await user.click(await screen.findByRole('button', { name: /M1 Kat 1 Oda 118 arizasi/ }))
+  }
+
+  it('arıza satırı açılınca öncelik butonları ve teknisyen listesi gelir', async () => {
+    api.get.mockImplementation(url => Promise.resolve({
+      data: url === '/maintenance/technicians'
+        ? [{ id: 7, full_name: 'Usta Ahmet' }, { id: 8, full_name: 'Usta Veli' }]
+        : full,
+    }))
+    const user = userEvent.setup()
+    renderSections()
+    await openFault(user)
+
+    expect(await screen.findByLabelText('Teknisyen seç')).toBeInTheDocument()
+    expect(await screen.findByRole('option', { name: 'Usta Ahmet' })).toBeInTheDocument()
+    // Mevcut öncelik (high/ACİL) buton olarak gösterilmez
+    expect(screen.queryByRole('button', { name: 'ACİL' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'normal' })).toBeInTheDocument()
+  })
+
+  it('önceliğe tıklayınca API çağrılır', async () => {
+    api.get.mockImplementation(url => Promise.resolve({
+      data: url === '/maintenance/technicians' ? [] : full,
+    }))
+    const user = userEvent.setup()
+    renderSections()
+    await openFault(user)
+    await user.click(screen.getByRole('button', { name: 'normal' }))
+    expect(api.patch).toHaveBeenCalledWith('/maintenance/requests/1/priority', { priority: 'medium' })
+  })
+
+  it('teknisyen seçilince atama yapılır', async () => {
+    api.get.mockImplementation(url => Promise.resolve({
+      data: url === '/maintenance/technicians' ? [{ id: 7, full_name: 'Usta Ahmet' }] : full,
+    }))
+    const user = userEvent.setup()
+    renderSections()
+    await openFault(user)
+    await user.selectOptions(await screen.findByLabelText('Teknisyen seç'), '7')
+    expect(api.patch).toHaveBeenCalledWith('/maintenance/requests/1/assign', { technician_id: 7 })
+  })
+
+  it('kapatmanın haritadan yapılamayacağı açıkça yazar', async () => {
+    api.get.mockImplementation(url => Promise.resolve({
+      data: url === '/maintenance/technicians' ? [] : full,
+    }))
+    const user = userEvent.setup()
+    renderSections()
+    await openFault(user)
+    expect(screen.getByText(/Kapatma fotoğraf gerektirir/)).toBeInTheDocument()
+  })
+})
