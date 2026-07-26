@@ -174,6 +174,208 @@ export function getBlockCleaning(block, today = istanbulDate()) {
   return { total, done, skipped, pending: Math.max(0, total - done - skipped), pct: total ? Math.round((done / total) * 100) : 0 }
 }
 
+export function getBlockShiftTracking(block) {
+  const residents = getDB().prepare(`
+    SELECT
+      p.id AS personnel_id,
+      p.full_name,
+      COALESCE(NULLIF(TRIM(p.company), ''), 'Şirket belirtilmemiş') AS company,
+      p.job_title,
+      r.id AS room_id,
+      r.room_no,
+      r.floor,
+      ra.bed_no,
+      CASE
+        WHEN s.shift_type = 'day' THEN 'day'
+        WHEN s.shift_type = 'night' THEN 'night'
+        ELSE 'unknown'
+      END AS shift_type,
+      s.start_hour,
+      s.end_hour
+    FROM room_assignments ra
+    JOIN rooms r ON r.id = ra.room_id
+    JOIN personnel p ON p.id = ra.personnel_id
+    LEFT JOIN shifts s ON s.id = (
+      SELECT latest.id
+      FROM shifts latest
+      WHERE latest.personnel_id = p.id
+      ORDER BY latest.id DESC
+      LIMIT 1
+    )
+    WHERE ra.check_out_at IS NULL
+      AND r.block = ?
+    ORDER BY r.floor, r.room_no, ra.bed_no, p.full_name
+  `).all(block)
+
+  const day = residents.filter(person => person.shift_type === 'day').length
+  const night = residents.filter(person => person.shift_type === 'night').length
+  const unknown = residents.length - day - night
+  return {
+    total: residents.length,
+    day,
+    night,
+    unknown,
+    coverage_pct: residents.length ? Math.round(((day + night) / residents.length) * 100) : 100,
+    residents,
+  }
+}
+
+function taskStatus(task) {
+  if (task.completed_at) return 'done'
+  if (Number(task.skipped || 0) === 1) return 'skipped'
+  return 'pending'
+}
+
+export function getBlockCleaningTracking(block, today = istanbulDate(), shiftTracking = null) {
+  const db = getDB()
+  const tasks = db.prepare(`
+    SELECT
+      ct.id, ct.area, ct.block, ct.floor, ct.task_type, ct.scheduled_at,
+      ct.completed_at, ct.skipped, ct.skip_reason, ct.assigned_to,
+      ct.verified_by_qr, ct.qr_location, ct.photo_url,
+      u.full_name AS assignee_name,
+      w.full_name AS worker_name,
+      r.id AS room_id,
+      r.room_no,
+      r.no_clean,
+      (SELECT COUNT(*) FROM cleaning_task_photos photo WHERE photo.task_id = ct.id) AS photo_count
+    FROM cleaning_tasks ct
+    LEFT JOIN users u ON u.id = ct.assigned_to
+    LEFT JOIN staff w ON w.id = ct.completed_by_worker_id
+    LEFT JOIN rooms r
+      ON r.block = ct.block
+      AND ct.qr_location = (ct.block || '-' || r.room_no)
+    WHERE ct.block = ?
+      AND date(ct.scheduled_at) = ?
+    ORDER BY ct.floor, CASE ct.task_type WHEN 'room' THEN 0 ELSE 1 END, ct.area
+  `).all(block, today)
+
+  const tracking = shiftTracking || getBlockShiftTracking(block)
+  const residentsByRoom = new Map()
+  for (const resident of tracking.residents) {
+    if (!residentsByRoom.has(resident.room_id)) residentsByRoom.set(resident.room_id, [])
+    residentsByRoom.get(resident.room_id).push(resident)
+  }
+
+  const detailedTasks = tasks.map(task => {
+    const residents = task.room_id ? (residentsByRoom.get(task.room_id) || []) : []
+    const day = residents.filter(person => person.shift_type === 'day').length
+    const night = residents.filter(person => person.shift_type === 'night').length
+    const unknown = residents.length - day - night
+    return {
+      ...task,
+      status: taskStatus(task),
+      companies: [...new Set(residents.map(person => person.company))].sort((left, right) => left.localeCompare(right, 'tr')),
+      shift_profile: { day, night, unknown, total: residents.length },
+    }
+  })
+
+  const countStatus = status => detailedTasks.filter(task => task.status === status).length
+  const total = detailedTasks.length
+  const done = countStatus('done')
+  const skipped = countStatus('skipped')
+  const pending = countStatus('pending')
+  const floors = [...new Set(detailedTasks.map(task => task.floor).filter(floor => floor !== null))]
+    .sort((left, right) => Number(left) - Number(right))
+    .map(floor => {
+      const floorTasks = detailedTasks.filter(task => task.floor === floor)
+      const floorDone = floorTasks.filter(task => task.status === 'done').length
+      return {
+        floor,
+        total: floorTasks.length,
+        done: floorDone,
+        pending: floorTasks.filter(task => task.status === 'pending').length,
+        skipped: floorTasks.filter(task => task.status === 'skipped').length,
+        pct: floorTasks.length ? Math.round((floorDone / floorTasks.length) * 100) : 0,
+      }
+    })
+
+  return {
+    total,
+    done,
+    skipped,
+    pending,
+    pct: total ? Math.round((done / total) * 100) : 0,
+    room_tasks: detailedTasks.filter(task => task.task_type === 'room').length,
+    common_area_tasks: detailedTasks.filter(task => task.task_type !== 'room').length,
+    photo_evidence_count: detailedTasks.filter(task => Number(task.photo_count || 0) > 0).length,
+    qr_verified_count: detailedTasks.filter(task => Number(task.verified_by_qr || 0) === 1).length,
+    night_shift_room_count: new Set(detailedTasks
+      .filter(task => task.room_id && task.shift_profile.night > 0)
+      .map(task => task.room_id)).size,
+    floors,
+    tasks: detailedTasks,
+  }
+}
+
+export function getBlockCompanyTracking(block, shiftTracking = null, cleaningTracking = null) {
+  const tracking = shiftTracking || getBlockShiftTracking(block)
+  const byCompany = new Map()
+  for (const resident of tracking.residents) {
+    if (!byCompany.has(resident.company)) {
+      byCompany.set(resident.company, {
+        company: resident.company,
+        people_count: 0,
+        day_count: 0,
+        night_count: 0,
+        unknown_count: 0,
+        rooms: new Map(),
+      })
+    }
+    const company = byCompany.get(resident.company)
+    company.people_count += 1
+    company[`${resident.shift_type}_count`] += 1
+    company.rooms.set(resident.room_id, {
+      room_id: resident.room_id,
+      room_no: resident.room_no,
+      floor: resident.floor,
+    })
+  }
+
+  const companies = Array.from(byCompany.values()).map(company => {
+    const rooms = Array.from(company.rooms.values())
+      .sort((left, right) => Number(left.floor) - Number(right.floor) || String(left.room_no).localeCompare(String(right.room_no), 'tr'))
+    const roomIds = new Set(rooms.map(room => room.room_id))
+    const relatedTasks = cleaningTracking
+      ? cleaningTracking.tasks.filter(task => task.room_id && roomIds.has(task.room_id))
+      : null
+    const cleaning = relatedTasks ? {
+      total: relatedTasks.length,
+      done: relatedTasks.filter(task => task.status === 'done').length,
+      pending: relatedTasks.filter(task => task.status === 'pending').length,
+      skipped: relatedTasks.filter(task => task.status === 'skipped').length,
+      pct: relatedTasks.length
+        ? Math.round((relatedTasks.filter(task => task.status === 'done').length / relatedTasks.length) * 100)
+        : 0,
+    } : null
+    const knownShiftCount = company.day_count + company.night_count
+    const dominant_shift = knownShiftCount === 0
+      ? 'unknown'
+      : company.night_count > company.day_count ? 'night'
+        : company.day_count > company.night_count ? 'day' : 'mixed'
+    return {
+      company: company.company,
+      people_count: company.people_count,
+      room_count: rooms.length,
+      share_pct: tracking.total ? Math.round((company.people_count / tracking.total) * 100) : 0,
+      day_count: company.day_count,
+      night_count: company.night_count,
+      unknown_count: company.unknown_count,
+      dominant_shift,
+      rooms,
+      cleaning,
+    }
+  }).sort((left, right) => right.people_count - left.people_count || left.company.localeCompare(right.company, 'tr'))
+
+  return {
+    total_companies: companies.length,
+    unassigned_company_count: companies
+      .filter(company => company.company === 'Şirket belirtilmemiş')
+      .reduce((total, company) => total + company.people_count, 0),
+    companies,
+  }
+}
+
 // Odalar + o odada kalanlar (oda tiklaninca sagdaki kisi paneli bunu kullanir).
 export function getBlockRoomsWithOccupants(block) {
   const db = getDB()

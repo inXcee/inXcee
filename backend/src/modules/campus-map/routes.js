@@ -4,6 +4,7 @@ import { getDB } from '../../shared/db/index.js'
 import {
   getCampusSummary, getCampusTimeseries,
   getBlockFaults, getBlockCleaning, getBlockRoomsWithOccupants,
+  getBlockShiftTracking, getBlockCleaningTracking, getBlockCompanyTracking,
   getCampusReportRooms,
   getMaintenanceDataQuality, getUnknownShiftQueue, getOpenFaultQueue, getCleaningQueue,
   buildBlockHealth, buildCampusHealth,
@@ -152,8 +153,16 @@ campusMapRouter.get('/block/:block/workspace', requireAuth, (req, res) => {
       },
     }
     if (permissions.faults) payload.faults = getBlockFaults(block)
-    if (permissions.cleaning) payload.cleaning = getBlockCleaning(block, date)
-    if (permissions.rooms) payload.rooms = getBlockRoomsWithOccupants(block)
+    const shiftTracking = permissions.rooms ? getBlockShiftTracking(block) : null
+    const cleaningTracking = permissions.cleaning
+      ? getBlockCleaningTracking(block, date, shiftTracking)
+      : null
+    if (permissions.cleaning) payload.cleaning = cleaningTracking
+    if (permissions.rooms) {
+      payload.rooms = getBlockRoomsWithOccupants(block)
+      payload.shifts = shiftTracking
+      payload.companies = getBlockCompanyTracking(block, shiftTracking, cleaningTracking)
+    }
     res.json(payload)
   } catch (e) {
     logger.error('[campus-map.block-workspace]', e)

@@ -20,6 +20,10 @@ describe('campusWorkspace logic', () => {
       .toEqual(expect.arrayContaining(['block', 'room', 'person', 'fault']))
     expect(buildCampusSearchResults({ ...common, query: 'doluluk' }))
       .toEqual(expect.arrayContaining([expect.objectContaining({ type: 'command', mode: 'occupancy' })]))
+    expect(buildCampusSearchResults({ ...common, query: 'gündüz gece' }))
+      .toEqual(expect.arrayContaining([expect.objectContaining({ type: 'command', mode: 'shifts' })]))
+    expect(buildCampusSearchResults({ ...common, query: 'firma' }))
+      .toEqual(expect.arrayContaining([expect.objectContaining({ type: 'command', mode: 'company' })]))
   })
 
   it('yetkisiz komutları ve rol dışı raporu arama sonuçlarına koymaz', () => {
@@ -48,5 +52,7 @@ describe('campusWorkspace logic', () => {
       .toEqual(['overview', 'faults', 'contact', 'activity'])
     expect(workspaceTabs({ faults: false, cleaning: true, rooms: false }).map(tab => tab.id))
       .toEqual(['overview', 'cleaning', 'activity'])
+    expect(workspaceTabs({ faults: true, cleaning: true, rooms: true }).map(tab => tab.id))
+      .toEqual(['overview', 'rooms', 'people', 'companies', 'shifts', 'faults', 'cleaning', 'contact', 'activity'])
   })
 })

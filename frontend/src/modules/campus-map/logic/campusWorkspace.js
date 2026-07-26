@@ -4,6 +4,8 @@ export const CAMPUS_COMMANDS = [
   { id: 'occupancy', label: 'Doluluk görünümünü aç', keywords: 'oda yatak kapasite doluluk', mode: 'occupancy' },
   { id: 'faults', label: 'Arıza görünümünü aç', keywords: 'arıza bakım teknik servis', mode: 'faults', permission: 'faults' },
   { id: 'cleaning', label: 'Temizlik görünümünü aç', keywords: 'temizlik housekeeping görev', mode: 'cleaning', permission: 'cleaning' },
+  { id: 'shifts', label: 'Gündüz gece vardiya görünümünü aç', keywords: 'vardiya gündüz gece çalışma saati', mode: 'shifts', permission: 'rooms' },
+  { id: 'company', label: 'Şirket dağılımı görünümünü aç', keywords: 'şirket firma taşeron dağılım', mode: 'company', permission: 'rooms' },
   { id: 'quarantine', label: 'Karantina görünümünü aç', keywords: 'karantina izole oda', mode: 'quarantine', permission: 'rooms' },
   { id: 'reports', label: 'Blok raporlarını aç', keywords: 'rapor dışa aktar çıktı', path: '/reports-advanced', roles: ['campus_manager', 'shift_supervisor'] },
 ]
@@ -86,6 +88,8 @@ export function workspaceTabs(permissions = {}) {
     { id: 'overview', label: 'Genel Bakış', visible: true },
     { id: 'rooms', label: 'Odalar', visible: permissions.rooms },
     { id: 'people', label: 'Kişiler', visible: permissions.rooms },
+    { id: 'companies', label: 'Şirketler', visible: permissions.rooms },
+    { id: 'shifts', label: 'Vardiyalar', visible: permissions.rooms },
     { id: 'faults', label: 'Arızalar', visible: permissions.faults },
     { id: 'cleaning', label: 'Temizlik', visible: permissions.cleaning },
     { id: 'contact', label: 'İletişim', visible: permissions.faults || permissions.rooms },

@@ -4,6 +4,7 @@ import api from '../../shared/api/client.js'
 import { blockColor } from '../../shared/blocks.js'
 import { workspaceTabs } from './logic/campusWorkspace.js'
 import BlockRoomManager from './BlockRoomManager.jsx'
+import { CleaningTracking, CompanyTracking, ShiftTracking } from './BlockTrackingPanels.jsx'
 
 const panel = {
   border: '1px solid var(--border)', borderRadius: 8, background: 'var(--surface2)', padding: 10,
@@ -21,6 +22,8 @@ function Overview({ data, onTabChange, onNavigate, onQuickFault, onReport }) {
   const permissions = data.permissions || {}
   const actions = [
     permissions.rooms && { id: 'rooms', label: 'Odaları ve kişileri aç', color: '#38bdf8', run: () => onTabChange('rooms') },
+    permissions.rooms && { id: 'companies', label: 'Şirket dağılımını incele', color: '#0ea5e9', run: () => onTabChange('companies') },
+    permissions.rooms && { id: 'shifts', label: 'Gündüz / gece takibini aç', color: '#8b5cf6', run: () => onTabChange('shifts') },
     permissions.rooms && { id: 'checkin', label: 'Bu bloğa check-in', color: '#16a34a', run: () => onNavigate(`/checkin?block=${data.block}`) },
     permissions.rooms && { id: 'checkout', label: 'Bu bloktan check-out', color: '#38bdf8', run: () => onNavigate(`/checkout?block=${data.block}`) },
     permissions.faults && { id: 'fault', label: 'Arıza bildir', color: '#dc2626', run: onQuickFault },
@@ -112,30 +115,6 @@ function Faults({ faults, onQuickFault, onNavigate, block }) {
   )
 }
 
-function Cleaning({ cleaning, onNavigate, block }) {
-  const pct = cleaning?.pct || 0
-  return (
-    <>
-      <div style={panel}>
-        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-          <strong style={{ fontFamily: 'var(--display)', fontSize: 22, color: '#16a34a' }}>%{pct}</strong>
-          <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>{cleaning?.done || 0}/{cleaning?.total || 0} tamam</span>
-        </div>
-        <div style={{ height: 7, borderRadius: 4, background: 'var(--surface3)', overflow: 'hidden', marginTop: 8 }}>
-          <div style={{ height: '100%', width: `${pct}%`, background: '#16a34a' }} />
-        </div>
-        <div style={{ display: 'flex', gap: 12, marginTop: 8, fontSize: 10, color: 'var(--text2)' }}>
-          <span>⏳ {cleaning?.pending || 0} bekliyor</span>
-          <span>↷ {cleaning?.skipped || 0} atlandı</span>
-        </div>
-      </div>
-      <button type="button" onClick={() => onNavigate(`/housekeeping?block=${block}`)} style={{ ...actionStyle('#f59e0b'), width: '100%', marginTop: 8 }}>
-        Temizlik görevlerini yönet <span style={{ marginLeft: 'auto' }}>›</span>
-      </button>
-    </>
-  )
-}
-
 export default function BlockWorkspaceDrawer({
   block,
   tab,
@@ -151,11 +130,15 @@ export default function BlockWorkspaceDrawer({
 }) {
   const [width, setWidth] = useState(470)
   const [resizing, setResizing] = useState(false)
+  const [trackingDate, setTrackingDate] = useState('')
   const query = useQuery({
-    queryKey: ['campus-block-workspace', block],
-    queryFn: () => api.get(`/campus-map/block/${encodeURIComponent(block)}/workspace`).then(response => response.data),
+    queryKey: ['campus-block-workspace', block, trackingDate],
+    queryFn: () => api.get(
+      `/campus-map/block/${encodeURIComponent(block)}/workspace${trackingDate ? `?date=${encodeURIComponent(trackingDate)}` : ''}`,
+    ).then(response => response.data),
     enabled: Boolean(block),
     staleTime: 20_000,
+    placeholderData: previous => previous,
   })
 
   useEffect(() => {
@@ -179,9 +162,13 @@ export default function BlockWorkspaceDrawer({
   const rooms = data?.rooms || []
   const currentTab = tabs.some(item => item.id === tab) ? tab : 'overview'
   const generatedAt = data?.generated_at ? new Date(data.generated_at).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : '—'
-  const partial = data && tabs.some(item => (
-    (item.id === 'rooms' || item.id === 'people') && !Array.isArray(data.rooms)
-  ))
+  const partial = data && tabs.some(item => {
+    if ((item.id === 'rooms' || item.id === 'people') && !Array.isArray(data.rooms)) return true
+    if (item.id === 'companies' && !data.companies) return true
+    if (item.id === 'shifts' && !data.shifts) return true
+    if (item.id === 'cleaning' && !data.cleaning) return true
+    return false
+  })
 
   return (
     <aside
@@ -255,7 +242,7 @@ export default function BlockWorkspaceDrawer({
                   color: currentTab === item.id ? '#000' : 'var(--text2)',
                   fontFamily: 'var(--mono)', fontSize: 8, letterSpacing: .5,
                 }}
-              >{item.label.toUpperCase()}</button>
+              >{item.label.toLocaleUpperCase('tr-TR')}</button>
             ))}
           </div>
           <div style={{ padding: 12, overflowY: 'auto', flex: 1 }}>
@@ -272,8 +259,24 @@ export default function BlockWorkspaceDrawer({
               />
             )}
             {currentTab === 'people' && <People rooms={rooms} onNavigate={onNavigate} />}
+            {currentTab === 'companies' && (
+              <CompanyTracking
+                data={data.companies}
+                date={trackingDate || data.date}
+                onDateChange={data.permissions?.cleaning ? setTrackingDate : undefined}
+              />
+            )}
+            {currentTab === 'shifts' && <ShiftTracking data={data.shifts} onNavigate={onNavigate} />}
             {currentTab === 'faults' && <Faults faults={data.faults || []} onQuickFault={onQuickFault} onNavigate={onNavigate} block={block} />}
-            {currentTab === 'cleaning' && <Cleaning cleaning={data.cleaning} onNavigate={onNavigate} block={block} />}
+            {currentTab === 'cleaning' && (
+              <CleaningTracking
+                data={data.cleaning}
+                date={trackingDate || data.date}
+                onDateChange={setTrackingDate}
+                onNavigate={onNavigate}
+                block={block}
+              />
+            )}
             {currentTab === 'contact' && (
               <div>
                 <div style={{ ...panel, color: 'var(--text2)', fontSize: 10, marginBottom: 8 }}>

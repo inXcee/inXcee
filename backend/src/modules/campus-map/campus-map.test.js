@@ -20,6 +20,53 @@ function createReportFixture() {
     db.prepare('DELETE FROM personnel WHERE id=?').run(personId)
   }
 }
+
+function createTrackingFixture() {
+  const db = getDB()
+  const roomId = Number(db.prepare(`
+    INSERT INTO rooms(block, floor, room_no, capacity, active_beds, status)
+    VALUES('M1', 9, 'TRACK-901', 4, 4, 'active')
+  `).run().lastInsertRowid)
+  const insertPerson = db.prepare(`
+    INSERT INTO personnel(full_name, company, job_title, check_in_date)
+    VALUES(?, ?, ?, '2026-07-01')
+  `)
+  const dayPersonId = Number(insertPerson.run('Takip Gündüz', 'Eksen Yapı', 'Usta').lastInsertRowid)
+  const nightPersonId = Number(insertPerson.run('Takip Gece', 'Eksen Yapı', 'Operatör').lastInsertRowid)
+  const unknownPersonId = Number(insertPerson.run('Takip Bilinmeyen', null, 'Teknisyen').lastInsertRowid)
+  const assignment = db.prepare(`
+    INSERT INTO room_assignments(personnel_id, room_id, bed_no) VALUES(?, ?, ?)
+  `)
+  assignment.run(dayPersonId, roomId, 1)
+  assignment.run(nightPersonId, roomId, 2)
+  assignment.run(unknownPersonId, roomId, 3)
+  db.prepare(`
+    INSERT INTO shifts(personnel_id, shift_type, start_hour, end_hour)
+    VALUES(?, 'day', 8, 17), (?, 'night', 20, 8)
+  `).run(dayPersonId, nightPersonId)
+  const taskId = Number(db.prepare(`
+    INSERT INTO cleaning_tasks(
+      area, block, floor, task_type, scheduled_at, completed_at, verified_by_qr, qr_location
+    ) VALUES(
+      'M1 Oda TRACK-901', 'M1', 9, 'room', '2026-07-26 08:00:00',
+      '2026-07-26 09:15:00', 1, 'M1-TRACK-901'
+    )
+  `).run().lastInsertRowid)
+  db.prepare(`
+    INSERT INTO cleaning_task_photos(task_id, photo_url, category)
+    VALUES(?, '/uploads/tracking-test.jpg', 'sonrasi')
+  `).run(taskId)
+
+  return () => {
+    db.prepare('DELETE FROM cleaning_task_photos WHERE task_id=?').run(taskId)
+    db.prepare('DELETE FROM cleaning_tasks WHERE id=?').run(taskId)
+    db.prepare('DELETE FROM shifts WHERE personnel_id IN (?, ?, ?)').run(dayPersonId, nightPersonId, unknownPersonId)
+    db.prepare('DELETE FROM room_assignments WHERE personnel_id IN (?, ?, ?)').run(dayPersonId, nightPersonId, unknownPersonId)
+    db.prepare('DELETE FROM personnel WHERE id IN (?, ?, ?)').run(dayPersonId, nightPersonId, unknownPersonId)
+    db.prepare('DELETE FROM rooms WHERE id=?').run(roomId)
+  }
+}
+
 beforeAll(async () => {
   process.env.DB_PATH = ':memory:'; initDB(); seedDev()
   mgrToken = (await request(app).post('/api/auth/login').send({ username: 'mudur', password: 'admin123' })).body.token
@@ -128,6 +175,68 @@ describe('Campus operations contract', () => {
     expect(res.body.rooms).toBeDefined()
     expect(res.body.rooms[0]).toHaveProperty('capacity')
     expect(res.body.overview).toHaveProperty('health_score')
+  })
+
+  it('workspace şirket, vardiya ve oda bağlantılı temizlik takibini ayrıntılı döndürür', async () => {
+    const cleanup = createTrackingFixture()
+    const res = await request(app).get('/api/campus-map/block/M1/workspace?date=2026-07-26')
+      .set('Authorization', `Bearer ${mgrToken}`)
+
+    expect(res.status).toBe(200)
+    expect(res.body.shifts).toEqual(expect.objectContaining({
+      total: expect.any(Number),
+      day: expect.any(Number),
+      night: expect.any(Number),
+      unknown: expect.any(Number),
+      coverage_pct: expect.any(Number),
+    }))
+    expect(res.body.shifts.residents).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        full_name: 'Takip Gündüz',
+        company: 'Eksen Yapı',
+        room_no: 'TRACK-901',
+        shift_type: 'day',
+      }),
+      expect.objectContaining({
+        full_name: 'Takip Gece',
+        shift_type: 'night',
+      }),
+    ]))
+
+    const company = res.body.companies.companies.find(item => item.company === 'Eksen Yapı')
+    expect(company).toEqual(expect.objectContaining({
+      people_count: 2,
+      room_count: 1,
+      day_count: 1,
+      night_count: 1,
+      dominant_shift: 'mixed',
+    }))
+    expect(company.cleaning).toEqual(expect.objectContaining({ total: 1, done: 1, pct: 100 }))
+
+    const task = res.body.cleaning.tasks.find(item => item.id > 0 && item.room_no === 'TRACK-901')
+    expect(task).toEqual(expect.objectContaining({
+      status: 'done',
+      photo_count: 1,
+      verified_by_qr: 1,
+      companies: ['Eksen Yapı', 'Şirket belirtilmemiş'],
+      shift_profile: { day: 1, night: 1, unknown: 1, total: 3 },
+    }))
+    cleanup()
+  })
+
+  it('şirket ve vardiya detaylarını oda yetkisiyle, temizlik ayrıntısını temizlik yetkisiyle sınırlar', async () => {
+    const supervisor = await request(app).get('/api/campus-map/block/M1/workspace?date=2026-07-26')
+      .set('Authorization', `Bearer ${supToken}`)
+    expect(supervisor.body.shifts).toBeDefined()
+    expect(supervisor.body.companies).toBeDefined()
+    expect(supervisor.body.companies.companies.every(company => company.cleaning === null)).toBe(true)
+    expect(supervisor.body.cleaning).toBeUndefined()
+
+    const housekeeper = await request(app).get('/api/campus-map/block/M1/workspace?date=2026-07-26')
+      .set('Authorization', `Bearer ${hkToken}`)
+    expect(housekeeper.body.cleaning.tasks).toBeDefined()
+    expect(housekeeper.body.shifts).toBeUndefined()
+    expect(housekeeper.body.companies).toBeUndefined()
   })
 
   it('gecersiz tarih ve bilinmeyen blok icin acik hata doner', async () => {
