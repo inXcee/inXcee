@@ -11,12 +11,13 @@ const KIND_STYLE = {
   maintenance: { icon: '⚒', color: '#f59e0b', label: 'BAKIM' },
 }
 
-export default function AttentionQueue({ stats, onSelect, modeDesc }) {
+export default function AttentionQueue({ stats, onSelect, modeDesc, isNarrow = false }) {
   const queue = useMemo(() => buildAttentionQueue(stats), [stats])
 
   return (
     <div style={{
-      width: 320, background: 'var(--surface)', border: '1px solid var(--border)',
+      width: isNarrow ? '100%' : 320, maxWidth: '100%',
+      background: 'var(--surface)', border: '1px solid var(--border)',
       borderRadius: 8, padding: 12, display: 'flex', flexDirection: 'column', gap: 8,
       maxHeight: '100%', overflowY: 'auto',
     }}

@@ -25,6 +25,7 @@ export default function HelpModal({ onClose }) {
           <kbd style={kbd}>F</kbd><span>Tum pin'leri sigdir</span>
           <kbd style={kbd}>← ↑ ↓ →</kbd><span>Pan (kaydir)</span>
           <kbd style={kbd}>1 - 6</kbd><span>Gorunum modlari</span>
+          <kbd style={kbd}>/</kbd><span>Aramaya odaklan</span>
           <kbd style={kbd}>Esc</kbd><span>Kapat / iptal</span>
           <kbd style={kbd}>?</kbd><span>Bu yardim ekrani</span>
         </div>

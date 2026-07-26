@@ -3,7 +3,7 @@
 import { BLOCK_BY_NAME, blockColor } from '../../shared/blocks.js'
 import { MiniStat, thStyle, tdStyle } from './shared.jsx'
 
-export default function ComparePanel({ blocks, stats, timeseries = {}, onClose, onSelectSingle }) {
+export default function ComparePanel({ blocks, stats, timeseries = {}, onClose, onSelectSingle, isNarrow = false }) {
   const items = blocks.map(b => ({ block: b, s: stats[b], cfg: BLOCK_BY_NAME[b] })).filter(x => x.s && x.cfg)
   // Aggregate
   const sum = items.reduce((a, { s }) => ({
@@ -24,7 +24,8 @@ export default function ComparePanel({ blocks, stats, timeseries = {}, onClose, 
 
   return (
     <div style={{
-      width: 340, background: 'var(--surface)', border: '1px solid var(--accent)',
+      width: isNarrow ? '100%' : 340, maxWidth: '100%',
+      background: 'var(--surface)', border: '1px solid var(--accent)',
       borderRadius: 8, padding: 16, position: 'sticky', top: 20,
       maxHeight: 'calc(100vh - 40px)', overflowY: 'auto',
     }}>

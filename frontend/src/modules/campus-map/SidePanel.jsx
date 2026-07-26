@@ -39,7 +39,7 @@ function PanelSection({ title, badge, badgeColor, primary = false, children }) {
   )
 }
 
-export default function SidePanel({ block, cfg, stats: s, rooms, mode, timeseries, onClose, onNavigate, onQuickFault, onPersonClick, isManager = false, onBulkAction }) {
+export default function SidePanel({ block, cfg, stats: s, rooms, mode, timeseries, onClose, onNavigate, onQuickFault, onPersonClick, isManager = false, onBulkAction, isNarrow = false }) {
   const sectionOrder = useMemo(() => orderPanelSections(mode), [mode])
   if (!cfg || !s) return null
   const pct = s.occupancy_pct
@@ -47,7 +47,8 @@ export default function SidePanel({ block, cfg, stats: s, rooms, mode, timeserie
 
   return (
     <div style={{
-      width: 340, background: 'var(--surface)', border: '1px solid var(--border)',
+      width: isNarrow ? '100%' : 340, maxWidth: '100%',
+      background: 'var(--surface)', border: '1px solid var(--border)',
       borderRadius: 8, padding: 16, position: 'sticky', top: 20,
       maxHeight: 'calc(100vh - 40px)', overflowY: 'auto',
     }}>

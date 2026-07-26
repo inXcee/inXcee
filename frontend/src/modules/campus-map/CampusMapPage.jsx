@@ -9,6 +9,7 @@ import api from '../../shared/api/client.js'
 import { useAuthStore } from '../../shared/store/authStore.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
 import { useEventStream } from '../../shared/hooks/useEventStream.js'
+import { useIsNarrow } from '../../shared/hooks/useMediaQuery.js'
 import { BLOCKS, BLOCK_BY_NAME, blockColor } from '../../shared/blocks.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 import HelpHint from '../../shared/components/HelpHint.jsx'
@@ -37,6 +38,9 @@ export default function CampusMapPage() {
   const queryClient = useQueryClient()
   const addToast = useToastStore(s => s.addToast)
   const svgRef = useRef(null)
+  const searchRef = useRef(null)
+  // Dar ekranda harita ve panel alt alta yigilir (sabit 320px panel tasiyordu)
+  const isNarrow = useIsNarrow(900)
 
   const [pins, setPins] = useState(defaultPins)
   const [editMode, setEditMode] = useState(false)
@@ -209,6 +213,8 @@ export default function CampusMapPage() {
         return
       }
       if (e.key === '?') { setShowHelp(s => !s); return }
+      // '/' → arama kutusuna odaklan (tarayicinin hizli-bul'unu engelle)
+      if (e.key === '/') { e.preventDefault(); searchRef.current?.focus(); setSearchOpen(true); return }
       if (e.key === '+' || e.key === '=') { zoomIn(); return }
       if (e.key === '-' || e.key === '_') { zoomOut(); return }
       if (e.key === '0') { resetView(); return }
@@ -512,6 +518,7 @@ export default function CampusMapPage() {
         {/* Arama */}
         <div style={{ position: 'relative', minWidth: 220 }}>
           <input
+            ref={searchRef}
             type="text"
             placeholder="◎ Blok veya personel ara..."
             value={searchQuery}
@@ -808,12 +815,17 @@ export default function CampusMapPage() {
       )}
 
       {/* Map + side panel */}
-      <div style={{ display: 'flex', gap: 12, alignItems: 'stretch', flex: 1, minHeight: 480,
-        maxHeight: 720, maxWidth: 1400, width: '100%', margin: '0 auto' }}>
+      <div style={{
+        display: 'flex', flexDirection: isNarrow ? 'column' : 'row', gap: 12,
+        alignItems: 'stretch', flex: 1,
+        minHeight: isNarrow ? 0 : 480, maxHeight: isNarrow ? 'none' : 720,
+        maxWidth: 1400, width: '100%', margin: '0 auto',
+      }}>
         <div style={{
           flex: 1, background: '#0a0a0a', border: '1px solid var(--border)',
           borderRadius: 8, overflow: 'hidden', position: 'relative',
-          maxWidth: 900,
+          maxWidth: isNarrow ? '100%' : 900,
+          minHeight: isNarrow ? 380 : undefined,
         }}>
           <svg
             ref={svgRef}
@@ -893,6 +905,7 @@ export default function CampusMapPage() {
             timeseries={timeseries}
             onClose={() => setMultiSelect(new Set())}
             onSelectSingle={(b) => { setSelectedBlock(b); setMultiSelect(new Set()) }}
+            isNarrow={isNarrow}
           />
         ) : selectedBlock ? (
           <SidePanel
@@ -908,6 +921,7 @@ export default function CampusMapPage() {
             onPersonClick={(personnelId) => navigate(`/personnel/${personnelId}`)}
             isManager={isManager}
             onBulkAction={(action) => bulkAction(action, [selectedBlock])}
+            isNarrow={isNarrow}
           />
         ) : (
           // Blok seçili değilken boş kutu yerine "şu an ne yapılmalı" listesi
@@ -915,6 +929,7 @@ export default function CampusMapPage() {
             stats={stats}
             modeDesc={currentMode?.desc}
             onSelect={(b) => { zoomToBlock(b); setSelectedBlock(b) }}
+            isNarrow={isNarrow}
           />
         )}
       </div>
