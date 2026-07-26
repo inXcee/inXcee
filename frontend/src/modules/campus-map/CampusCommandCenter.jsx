@@ -2,14 +2,12 @@ import { useMemo, useState } from 'react'
 import { buildCampusCommandSummary } from './logic/campusCommandCenter.js'
 
 const QUICK_ACTIONS = [
-  { id: 'checkin', icon: '↗', label: 'Check-in', desc: 'Yeni yerleşim', path: '/checkin', color: '#16a34a' },
-  { id: 'checkout', icon: '↙', label: 'Check-out', desc: 'Çıkış işlemi', path: '/checkout', color: '#38bdf8' },
-  { id: 'bulk', icon: '☷', label: 'Toplu işlem', desc: 'Çoklu personel', path: '/bulk-actions', color: '#a78bfa' },
-  { id: 'cleaning', icon: '◈', label: 'Temizlik', desc: 'Görevleri yönet', path: '/housekeeping', color: '#f59e0b' },
-  { id: 'maintenance', icon: '⚙', label: 'Teknik servis', desc: 'Arıza merkezi', path: '/maintenance', color: '#ef4444' },
-  { id: 'shifts', icon: '⧗', label: 'Vardiyalar', desc: 'Plan ve puantaj', path: '/shifts', color: '#8b5cf6' },
-  { id: 'inventory', icon: '▨', label: 'Envanter', desc: 'Stok ve zimmet', path: '/inventory', color: '#14b8a6' },
-  { id: 'reports', icon: '↧', label: 'Raporlar', desc: 'Analiz ve çıktı', path: '/reports-advanced', color: '#64748b' },
+  { id: 'checkin', icon: '↗', label: 'Check-in', desc: 'Bloğa yerleştir', path: '/checkin', color: '#16a34a', roles: ['campus_manager', 'shift_supervisor'] },
+  { id: 'checkout', icon: '↙', label: 'Check-out', desc: 'Bloktan çıkış', path: '/checkout', color: '#38bdf8', roles: ['campus_manager', 'shift_supervisor'] },
+  { id: 'bulk', icon: '☷', label: 'Toplu işlem', desc: 'Blok kişileri', path: '/bulk-actions', color: '#a78bfa', roles: ['campus_manager', 'shift_supervisor'] },
+  { id: 'cleaning', icon: '◈', label: 'Temizlik', desc: 'Blok görevleri', path: '/housekeeping', color: '#f59e0b', roles: ['campus_manager', 'shift_supervisor', 'housekeeper'] },
+  { id: 'maintenance', icon: '⚙', label: 'Teknik servis', desc: 'Blok arızaları', path: '/maintenance', color: '#ef4444', roles: ['campus_manager', 'shift_supervisor', 'technical'] },
+  { id: 'reports', icon: '↧', label: 'Blok raporları', desc: 'Analiz ve çıktı', path: '/reports-advanced', color: '#64748b', roles: ['campus_manager', 'shift_supervisor'] },
 ]
 
 function MetricButton({ label, value, color, hint, onClick }) {
@@ -40,10 +38,28 @@ function MetricButton({ label, value, color, hint, onClick }) {
   )
 }
 
-export default function CampusCommandCenter({ stats, operations, onNavigate, onModeChange, onSelectBlock }) {
+export default function CampusCommandCenter({
+  stats,
+  operations,
+  role = 'campus_manager',
+  selectedBlock,
+  onNavigate,
+  onModeChange,
+  onSelectBlock,
+}) {
   const [open, setOpen] = useState(true)
   const summary = useMemo(() => buildCampusCommandSummary(stats, operations), [operations, stats])
   const topRisks = summary.criticalBlocks.slice(0, 4)
+  const quickActions = QUICK_ACTIONS.filter(action => action.roles.includes(role))
+
+  function openAction(path) {
+    if (!selectedBlock) {
+      onNavigate(path)
+      return
+    }
+    const separator = path.includes('?') ? '&' : '?'
+    onNavigate(`${path}${separator}block=${encodeURIComponent(selectedBlock)}`)
+  }
 
   return (
     <section style={{
@@ -70,7 +86,7 @@ export default function CampusCommandCenter({ stats, operations, onNavigate, onM
             YÖNETİM MERKEZİ
           </strong>
           <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--text3)', letterSpacing: 1 }}>
-            KAMPÜSÜ TEK EKRANDAN YÖNET
+            {selectedBlock ? `${selectedBlock} BLOĞUNU TEK EKRANDAN YÖNET` : 'BLOK ODAKLI KAMPÜS YÖNETİMİ'}
           </span>
         </span>
         <span style={{
@@ -155,11 +171,11 @@ export default function CampusCommandCenter({ stats, operations, onNavigate, onM
               HIZLI İŞLEMLER
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(115px, 1fr))', gap: 7 }}>
-              {QUICK_ACTIONS.map(action => (
+              {quickActions.map(action => (
                 <button
                   key={action.id}
                   type="button"
-                  onClick={() => onNavigate(action.path)}
+                  onClick={() => openAction(action.path)}
                   style={{
                     display: 'flex', alignItems: 'center', gap: 8, minWidth: 0,
                     background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 9,

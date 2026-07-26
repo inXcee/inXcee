@@ -4,7 +4,7 @@
 // etkileşim mantığını yönetir.
 import { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import api from '../../shared/api/client.js'
 import { useAuthStore } from '../../shared/store/authStore.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
@@ -16,7 +16,7 @@ import HelpHint from '../../shared/components/HelpHint.jsx'
 import {
   VIEW_W, VIEW_H, MODES, extractBlock, eventColor, computeMetric, defaultPins, topMetricFor,
   chipBtn, lblToolbar, btnGhost, btnGreen, btnAccent, btnDanger, btnDangerSolid, btnWarn,
-  zoomBtn, searchItemStyle,
+  zoomBtn,
 } from './shared.jsx'
 import HelpModal from './HelpModal.jsx'
 import ModeKpis from './ModeKpis.jsx'
@@ -27,15 +27,19 @@ import PinInspector from './PinInspector.jsx'
 import MapPin from './MapPin.jsx'
 import HoverCard from './HoverCard.jsx'
 import ComparePanel from './ComparePanel.jsx'
-import SidePanel from './SidePanel.jsx'
 import AttentionQueue from './AttentionQueue.jsx'
 import CampusOverviewTable from './CampusOverviewTable.jsx'
 import CampusCommandCenter from './CampusCommandCenter.jsx'
+import BlockWorkspaceDrawer from './BlockWorkspaceDrawer.jsx'
+import CampusGlobalSearch from './CampusGlobalSearch.jsx'
+import CampusSavedViews from './CampusSavedViews.jsx'
+import { deriveCampusDataState } from './logic/campusWorkspace.js'
 
 export default function CampusMapPage() {
   const user = useAuthStore(s => s.user)
   const isManager = user?.role === 'campus_manager'
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const queryClient = useQueryClient()
   const addToast = useToastStore(s => s.addToast)
   const svgRef = useRef(null)
@@ -47,16 +51,18 @@ export default function CampusMapPage() {
   const [editMode, setEditMode] = useState(false)
   const [dragging, setDragging] = useState(null)
   const [panning, setPanning] = useState(null) // { startVx, startVy, startMx, startMy }
-  const [selectedBlock, setSelectedBlock] = useState(() => {
-    const requested = new URLSearchParams(window.location.search).get('block')
-    return requested && BLOCK_BY_NAME[requested] ? requested : null
-  })
+  const requestedBlock = searchParams.get('block')
+  const selectedBlock = requestedBlock && BLOCK_BY_NAME[requestedBlock] ? requestedBlock : null
+  const requestedMode = searchParams.get('mode')
+  const mode = MODES.some(item => item.id === requestedMode) ? requestedMode : 'occupancy'
+  const workspaceTab = searchParams.get('tab') || 'overview'
+  const requestedRoomId = Number(searchParams.get('room'))
+  const selectedRoomId = Number.isInteger(requestedRoomId) && requestedRoomId > 0 ? requestedRoomId : null
   const [multiSelect, setMultiSelect] = useState(() => new Set())
   const [typeFilter, setTypeFilter] = useState('all')
   const [hoverBlock, setHoverBlock] = useState(null)
   const [highlightedBlock, setHighlightedBlock] = useState(null) // arama sonucu vurgu
   const [showLabels, setShowLabels] = useState(true)
-  const [mode, setMode] = useState('occupancy')
   const [showHelp, setShowHelp] = useState(false)
   const [animateIn, setAnimateIn] = useState(true)
   const [imgOpacity, setImgOpacity] = useState(1)
@@ -72,11 +78,41 @@ export default function CampusMapPage() {
   // Arama
   const [searchQuery, setSearchQuery] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
+  const [online, setOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine)
   const token = useAuthStore(s => s.token)
+
+  const updateUrl = useCallback((changes, replace = false) => {
+    setSearchParams(previous => {
+      const next = new URLSearchParams(previous)
+      for (const [key, value] of Object.entries(changes)) {
+        if (value === null || value === undefined || value === '') next.delete(key)
+        else next.set(key, String(value))
+      }
+      return next
+    }, { replace })
+  }, [setSearchParams])
+
+  const setMode = useCallback(value => updateUrl({ mode: value === 'occupancy' ? null : value }), [updateUrl])
+
+  const setSelectedBlock = useCallback(block => {
+    updateUrl({
+      block,
+      tab: block ? 'overview' : null,
+      room: null,
+    })
+  }, [updateUrl])
+
+  const openWorkspace = useCallback((block, tab = 'overview', roomId = null) => {
+    updateUrl({ block, tab, room: roomId })
+  }, [updateUrl])
+
+  const setWorkspaceTab = useCallback(tab => updateUrl({ tab, room: tab === 'rooms' ? selectedRoomId : null }), [selectedRoomId, updateUrl])
+  const setSelectedRoomId = useCallback(roomId => updateUrl({ room: roomId }), [updateUrl])
 
   const {
     data: summary,
     isLoading,
+    isError: isSummaryError,
     isFetching: isSummaryFetching,
     dataUpdatedAt: summaryUpdatedAt,
     refetch: refetchSummary,
@@ -89,7 +125,9 @@ export default function CampusMapPage() {
 
   const {
     data: operations,
+    isError: isOperationsError,
     isFetching: isOperationsFetching,
+    dataUpdatedAt: operationsUpdatedAt,
     refetch: refetchOperations,
   } = useQuery({
     queryKey: ['campus-map-operations'],
@@ -113,6 +151,7 @@ export default function CampusMapPage() {
       addToast(`${data.count} oda ${label}`, 'success')
       queryClient.invalidateQueries({ queryKey: ['campus-map-summary'] })
       queryClient.invalidateQueries({ queryKey: ['campus-map-operations'] })
+      queryClient.invalidateQueries({ queryKey: ['campus-block-workspace'] })
       queryClient.invalidateQueries({ queryKey: ['capacity-rooms-all'] })
     },
     onError: (err) => addToast(err?.response?.data?.error || 'Bulk islem hatasi', 'error'),
@@ -161,13 +200,6 @@ export default function CampusMapPage() {
     staleTime: 10000,
   })
 
-  // Blok adi eslesmesi
-  const blockMatches = useMemo(() => {
-    if (trimmed.length < 1) return []
-    const upper = trimmed.toUpperCase()
-    return BLOCKS.filter(b => b.block.toUpperCase().includes(upper)).slice(0, 6)
-  }, [trimmed])
-
   useEffect(() => {
     if (pinsData?.pins && !editMode) {
       setPins({ ...defaultPins(), ...pinsData.pins })
@@ -180,11 +212,23 @@ export default function CampusMapPage() {
     return () => clearTimeout(t)
   }, [])
 
+  useEffect(() => {
+    const markOnline = () => setOnline(true)
+    const markOffline = () => setOnline(false)
+    window.addEventListener('online', markOnline)
+    window.addEventListener('offline', markOffline)
+    return () => {
+      window.removeEventListener('online', markOnline)
+      window.removeEventListener('offline', markOffline)
+    }
+  }, [])
+
   // SSE — canli olaylar
   const handleSSE = useCallback(({ event, data }) => {
     if (event === 'occupancy') {
       queryClient.invalidateQueries({ queryKey: ['campus-map-summary'] })
       queryClient.invalidateQueries({ queryKey: ['campus-map-operations'] })
+      queryClient.invalidateQueries({ queryKey: ['campus-block-workspace'] })
       queryClient.invalidateQueries({ queryKey: ['capacity-rooms-all'] })
       return
     }
@@ -217,6 +261,7 @@ export default function CampusMapPage() {
       if (['capacity', 'maintenance', 'housekeeping'].includes(data.module)) {
         queryClient.invalidateQueries({ queryKey: ['campus-map-summary'] })
         queryClient.invalidateQueries({ queryKey: ['campus-map-operations'] })
+        queryClient.invalidateQueries({ queryKey: ['campus-block-workspace'] })
       }
     }
   }, [queryClient])
@@ -267,16 +312,15 @@ export default function CampusMapPage() {
     onError: (err) => addToast(err?.response?.data?.error || 'Kaydedilemedi', 'error'),
   })
 
-  const stats = summary?.blocks || {}
-
-  // Paylaşılabilir blok bağlantısını seçime göre güncel tut.
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    if (selectedBlock) params.set('block', selectedBlock)
-    else params.delete('block')
-    const search = params.toString()
-    window.history.replaceState(window.history.state, '', `${window.location.pathname}${search ? `?${search}` : ''}`)
-  }, [selectedBlock])
+  const stats = operations?.blocks || summary?.blocks || {}
+  const lastUpdatedAt = Math.max(summaryUpdatedAt || 0, operationsUpdatedAt || 0)
+  const dataState = deriveCampusDataState({
+    online,
+    loading: isLoading && !summary && !operations,
+    summaryError: isSummaryError,
+    operationsError: isOperationsError,
+    updatedAt: lastUpdatedAt,
+  })
 
   const totalStats = useMemo(() => {
     let total_beds = 0, occupied = 0, empty = 0, q = 0, m = 0, f = 0,
@@ -454,13 +498,6 @@ export default function CampusMapPage() {
   const visibleBlocks = useMemo(() =>
     BLOCKS.filter(b => typeFilter === 'all' || b.type === typeFilter), [typeFilter])
 
-  const sel = selectedBlock ? stats[selectedBlock] : null
-  const selCfg = selectedBlock ? BLOCK_BY_NAME[selectedBlock] : null
-  const selRooms = useMemo(() => {
-    if (!selectedBlock) return []
-    return (rooms || []).filter(r => r.block === selectedBlock)
-  }, [selectedBlock, rooms])
-
   const currentMode = MODES.find(m => m.id === mode)
 
   // Top metric for current mode (header bar) — saf fonksiyon shared.jsx'te, testli.
@@ -515,7 +552,7 @@ export default function CampusMapPage() {
           <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', letterSpacing: 1, marginTop: 4 }}>
             {isLoading
               ? 'YÜKLENİYOR...'
-              : `${BLOCKS.length} BLOK · CANLI · SON GÜNCELLEME ${summaryUpdatedAt ? new Date(summaryUpdatedAt).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : '—'}`}
+              : `${BLOCKS.length} BLOK · ${dataState.label.toUpperCase()} · SON GÜNCELLEME ${lastUpdatedAt ? new Date(lastUpdatedAt).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : '—'}`}
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'stretch', gap: 8 }}>
@@ -549,14 +586,37 @@ export default function CampusMapPage() {
         </div>
       </div>
 
+      {dataState.id !== 'live' && dataState.id !== 'loading' && (
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, padding: '8px 11px',
+            border: `1px solid ${dataState.color}66`, borderRadius: 8,
+            background: `${dataState.color}12`, color: dataState.color, fontSize: 10,
+          }}
+        >
+          <span style={{ width: 7, height: 7, borderRadius: '50%', background: dataState.color, flexShrink: 0 }} />
+          <strong>{dataState.label}</strong>
+          <span style={{ color: 'var(--text2)' }}>
+            {dataState.id === 'offline' && 'Ağ bağlantısı kesildi; ekrandaki son alınan değerler gösteriliyor.'}
+            {dataState.id === 'partial' && 'Bazı kampüs kaynakları yenilenemedi; erişilebilen verilerle çalışmaya devam edebilirsiniz.'}
+            {dataState.id === 'stale' && 'Veriler 90 saniyeden uzun süredir yenilenmedi. Yenile düğmesini kullanın.'}
+            {dataState.id === 'error' && 'Kampüs verileri alınamadı. Bağlantıyı kontrol edip yeniden deneyin.'}
+          </span>
+        </div>
+      )}
+
       <CampusCommandCenter
         stats={stats}
         operations={operations}
+        role={user?.role}
+        selectedBlock={selectedBlock}
         onNavigate={navigate}
         onModeChange={setMode}
         onSelectBlock={(block) => {
           zoomToBlock(block)
-          setSelectedBlock(block)
+          openWorkspace(block)
         }}
       />
 
@@ -586,90 +646,48 @@ export default function CampusMapPage() {
 
       {/* Toolbar */}
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
-        {/* Arama */}
-        <div style={{ position: 'relative', minWidth: 220 }}>
-          <input
-            ref={searchRef}
-            type="text"
-            placeholder="◎ Blok veya personel ara..."
-            value={searchQuery}
-            onChange={e => { setSearchQuery(e.target.value); setSearchOpen(true) }}
-            onFocus={() => setSearchOpen(true)}
-            onBlur={() => setTimeout(() => setSearchOpen(false), 200)}
-            style={{
-              width: '100%', background: 'var(--surface2)', border: '1px solid var(--border)',
-              borderRadius: 6, padding: '6px 10px', color: 'var(--text)',
-              fontFamily: 'var(--mono)', fontSize: 11, letterSpacing: 0.5,
-            }}
-          />
-          {searchOpen && trimmed.length >= 1 && (blockMatches.length > 0 || personnelResults.length > 0) && (
-            <div style={{
-              position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0,
-              background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6,
-              maxHeight: 320, overflowY: 'auto', zIndex: 50,
-              boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
-            }}>
-              {blockMatches.length > 0 && (
-                <div style={{ padding: '6px 10px', fontFamily: 'var(--mono)', fontSize: 9,
-                  color: 'var(--text3)', letterSpacing: 1.5, borderBottom: '1px solid var(--border)' }}>
-                  BLOKLAR
-                </div>
-              )}
-              {blockMatches.map(b => {
-                const s = stats[b.block]
-                return (
-                  <button key={b.block}
-                    onMouseDown={() => { zoomToBlock(b.block); setSelectedBlock(b.block); setSearchQuery(''); setSearchOpen(false) }}
-                    style={searchItemStyle}>
-                    <span style={{ fontFamily: 'var(--display)', fontSize: 13, color: blockColor(b.block), letterSpacing: 1.5, minWidth: 32 }}>
-                      {b.block}
-                    </span>
-                    <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>
-                      TIP {b.type} • {b.floors}K
-                    </span>
-                    {s && (
-                      <span style={{ marginLeft: 'auto', fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text2)' }}>
-                        {s.occupied}/{s.total_beds}
-                      </span>
-                    )}
-                  </button>
-                )
-              })}
-              {personnelResults.length > 0 && (
-                <div style={{ padding: '6px 10px', fontFamily: 'var(--mono)', fontSize: 9,
-                  color: 'var(--text3)', letterSpacing: 1.5, borderTop: '1px solid var(--border)',
-                  borderBottom: '1px solid var(--border)' }}>
-                  PERSONEL ({personnelResults.length})
-                </div>
-              )}
-              {personnelResults.map(p => (
-                <button key={p.id}
-                  onMouseDown={() => {
-                    if (p.block) {
-                      zoomToBlock(p.block)
-                      setSelectedBlock(p.block)
-                    }
-                    setSearchQuery('')
-                    setSearchOpen(false)
-                  }}
-                  style={searchItemStyle}>
-                  <span style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--text)', flex: 1, textAlign: 'left' }}>
-                    {p.full_name}
-                  </span>
-                  {p.block ? (
-                    <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--accent)' }}>
-                      {p.block}-{p.room_no}
-                    </span>
-                  ) : (
-                    <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>
-                      ATANMAMIS
-                    </span>
-                  )}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+        <CampusGlobalSearch
+          searchRef={searchRef}
+          query={searchQuery}
+          open={searchOpen}
+          onQueryChange={setSearchQuery}
+          onOpenChange={setSearchOpen}
+          blocks={BLOCKS}
+          rooms={rooms}
+          personnel={personnelResults}
+          faults={operations?.queues?.faults || []}
+          permissions={operations?.permissions || {}}
+          role={user?.role}
+          onSelect={(result) => {
+            if (result.block) zoomToBlock(result.block)
+            if (result.type === 'block') openWorkspace(result.block)
+            if (result.type === 'room') openWorkspace(result.block, 'rooms', result.roomId)
+            if (result.type === 'person') {
+              if (result.block) openWorkspace(result.block, 'people', result.roomId)
+              else if (result.id) navigate(`/personnel/${result.id}`)
+            }
+            if (result.type === 'fault' && result.block) openWorkspace(result.block, 'faults')
+            if (result.type === 'command' && result.mode) setMode(result.mode)
+            if (result.type === 'command' && result.path) {
+              const context = selectedBlock ? `?block=${encodeURIComponent(selectedBlock)}` : ''
+              navigate(`${result.path}${context}`)
+            }
+            setSearchQuery('')
+            setSearchOpen(false)
+          }}
+        />
+
+        <CampusSavedViews
+          key={String(user?.id || user?.username || user?.role || 'anonymous')}
+          userKey={String(user?.id || user?.username || user?.role || 'anonymous')}
+          view={{ mode, typeFilter, showLabels, heatCloud }}
+          onApply={(saved) => {
+            if (MODES.some(item => item.id === saved.mode)) setMode(saved.mode)
+            if (['all', 'A', 'B'].includes(saved.typeFilter)) setTypeFilter(saved.typeFilter)
+            if (typeof saved.showLabels === 'boolean') setShowLabels(saved.showLabels)
+            if (typeof saved.heatCloud === 'boolean') setHeatCloud(saved.heatCloud)
+          }}
+        />
 
         <div style={{ width: 1, height: 22, background: 'var(--border)' }} />
 
@@ -864,6 +882,8 @@ export default function CampusMapPage() {
             setQuickFault(null)
             addToast('Ariza talebi acildi', 'success')
             queryClient.invalidateQueries({ queryKey: ['campus-map-summary'] })
+            queryClient.invalidateQueries({ queryKey: ['campus-map-operations'] })
+            queryClient.invalidateQueries({ queryKey: ['campus-block-workspace'] })
           }}
         />
       )}
@@ -968,7 +988,7 @@ export default function CampusMapPage() {
           <ModeLegend mode={mode} />
         </div>
 
-        {/* Side panel — multi-select varsa karsilastirma, tek secim varsa detay */}
+        {/* Çoklu seçimde karşılaştırma, tek seçimde blok çalışma alanı */}
         {multiSelect.size >= 2 ? (
           <ComparePanel
             blocks={Array.from(multiSelect)}
@@ -979,19 +999,16 @@ export default function CampusMapPage() {
             isNarrow={isNarrow}
           />
         ) : selectedBlock ? (
-          <SidePanel
+          <BlockWorkspaceDrawer
+            key={selectedBlock}
             block={selectedBlock}
-            cfg={selCfg}
-            stats={sel}
-            rooms={selRooms}
-            mode={mode}
-            timeseries={timeseries[selectedBlock]}
+            tab={workspaceTab}
+            selectedRoomId={selectedRoomId}
+            onTabChange={setWorkspaceTab}
+            onRoomChange={setSelectedRoomId}
             onClose={() => setSelectedBlock(null)}
             onNavigate={navigate}
             onQuickFault={() => setQuickFault({ block: selectedBlock })}
-            onPersonClick={(personnelId) => navigate(`/personnel/${personnelId}`)}
-            isManager={isManager}
-            onBulkAction={(action) => bulkAction(action, [selectedBlock])}
             isNarrow={isNarrow}
           />
         ) : (

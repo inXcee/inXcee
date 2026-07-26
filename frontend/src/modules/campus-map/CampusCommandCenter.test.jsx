@@ -12,12 +12,14 @@ const stats = {
 }
 
 describe('CampusCommandCenter', () => {
-  it('operasyon özeti ve tüm hızlı işlemleri gösterir', () => {
+  it('operasyon özeti ve blok odaklı hızlı işlemleri gösterir', () => {
     render(<CampusCommandCenter stats={stats} onNavigate={vi.fn()} onModeChange={vi.fn()} onSelectBlock={vi.fn()} />)
     expect(screen.getByText('YÖNETİM MERKEZİ')).toBeInTheDocument()
     expect(screen.getByText('Check-in')).toBeInTheDocument()
     expect(screen.getByText('Teknik servis')).toBeInTheDocument()
-    expect(screen.getByText('Raporlar')).toBeInTheDocument()
+    expect(screen.getByText('Blok raporları')).toBeInTheDocument()
+    expect(screen.queryByText('Vardiyalar')).not.toBeInTheDocument()
+    expect(screen.queryByText('Envanter')).not.toBeInTheDocument()
     expect(screen.getByText('M1')).toBeInTheDocument()
   })
 
@@ -41,6 +43,25 @@ describe('CampusCommandCenter', () => {
     render(<CampusCommandCenter stats={stats} onNavigate={vi.fn()} onModeChange={vi.fn()} onSelectBlock={vi.fn()} />)
     await user.click(screen.getByRole('button', { name: /YÖNETİM MERKEZİ/ }))
     await waitFor(() => expect(screen.queryByText('HIZLI İŞLEMLER')).not.toBeInTheDocument())
+  })
+
+  it('rol dışı aksiyonları gizler ve seçili blok bağlamını hedefe ekler', async () => {
+    const user = userEvent.setup()
+    const onNavigate = vi.fn()
+    render(
+      <CampusCommandCenter
+        stats={stats}
+        role="technical"
+        selectedBlock="M1"
+        onNavigate={onNavigate}
+        onModeChange={vi.fn()}
+        onSelectBlock={vi.fn()}
+      />,
+    )
+    expect(screen.queryByText('Check-in')).not.toBeInTheDocument()
+    expect(screen.queryByText('Blok raporları')).not.toBeInTheDocument()
+    await user.click(screen.getByText('Teknik servis'))
+    expect(onNavigate).toHaveBeenCalledWith('/maintenance?block=M1')
   })
 
   it('eşleşmemiş arızada backend veri kalitesi uyarısını gösterir', () => {
