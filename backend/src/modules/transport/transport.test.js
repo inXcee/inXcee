@@ -1,8 +1,14 @@
-import { describe, it, expect, beforeAll } from 'vitest'
+import { describe, it, expect, beforeAll, vi } from 'vitest'
 import request from 'supertest'
+
+vi.mock('./routing.js', () => ({
+  computeRoadRoute: vi.fn().mockResolvedValue([[41.40, 31.70], [41.42, 31.75]]),
+}))
+
 import app from '../../app.js'
 import { initDB } from '../../shared/db/index.js'
 import { seedDev } from '../../shared/db/seed.js'
+import { tickOnce } from '../../shared/jobs/index.js'
 
 let token
 beforeAll(async () => {
@@ -362,5 +368,101 @@ describe('Transport — path sorguları (queries.js)', () => {
     q.saveRoutePath(routeId, [[41.0, 31.0], [41.1, 31.1]], { isManual: true })
     q.addRouteStop(routeId, { pickup_point_id: p1 })
     expect(q.getRoutePath(routeId).is_manual).toBe(false)
+  })
+})
+
+describe('Transport — Rota yol geometrisi (path uçları)', () => {
+  it('durak eklenince path yeniden hesaplama kuyruga alinir', async () => {
+    const p1 = (await request(app).post('/api/transport/pickup-points').set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Path Durak A', lat: 41.40, lng: 31.70 })).body.id
+    const p2 = (await request(app).post('/api/transport/pickup-points').set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Path Durak B', lat: 41.42, lng: 31.75 })).body.id
+    const routeId = (await request(app).post('/api/transport/routes').set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Path Hat' })).body.id
+
+    await request(app).post(`/api/transport/routes/${routeId}/stops`).set('Authorization', `Bearer ${token}`)
+      .send({ pickup_point_id: p1 })
+    await request(app).post(`/api/transport/routes/${routeId}/stops`).set('Authorization', `Bearer ${token}`)
+      .send({ pickup_point_id: p2 })
+
+    while (await tickOnce()) { /* kuyruk temizlensin */ }
+
+    const list = await request(app).get('/api/transport/routes?with_stops=1').set('Authorization', `Bearer ${token}`)
+    const route = list.body.find(r => r.id === routeId)
+    expect(route.path_geometry).toEqual([[41.40, 31.70], [41.42, 31.75]])
+    expect(route.path_is_manual).toBe(false)
+  })
+
+  it('elle yol kaydi path_is_manual=1 yapar ve GET ile geri doner', async () => {
+    const routeId = (await request(app).post('/api/transport/routes').set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Elle Hat' })).body.id
+
+    const save = await request(app).put(`/api/transport/routes/${routeId}/path`).set('Authorization', `Bearer ${token}`)
+      .send({ geometry: [[41.40, 31.70], [41.41, 31.73], [41.42, 31.75]] })
+    expect(save.status).toBe(200)
+
+    const list = await request(app).get('/api/transport/routes?with_stops=1').set('Authorization', `Bearer ${token}`)
+    const route = list.body.find(r => r.id === routeId)
+    expect(route.path_is_manual).toBe(true)
+    expect(route.path_geometry).toEqual([[41.40, 31.70], [41.41, 31.73], [41.42, 31.75]])
+  })
+
+  it('gecersiz geometri (tek nokta) 400 doner', async () => {
+    const routeId = (await request(app).post('/api/transport/routes').set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Gecersiz Hat' })).body.id
+    const res = await request(app).put(`/api/transport/routes/${routeId}/path`).set('Authorization', `Bearer ${token}`)
+      .send({ geometry: [[41.40, 31.70]] })
+    expect(res.status).toBe(400)
+  })
+
+  it('yetkisiz rol path kaydedemez', async () => {
+    const t = (await request(app).post('/api/auth/login').send({ username: 'camasir', password: 'admin123' })).body.token
+    const routeId = (await request(app).post('/api/transport/routes').set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Yetki Hat' })).body.id
+    const res = await request(app).put(`/api/transport/routes/${routeId}/path`).set('Authorization', `Bearer ${t}`)
+      .send({ geometry: [[41.40, 31.70], [41.42, 31.75]] })
+    expect(res.status).toBe(403)
+  })
+
+  it('otomatik yeniden hesapla ucu senkron calisir ve gecerli sonuc doner', async () => {
+    const p1 = (await request(app).post('/api/transport/pickup-points').set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Recompute Durak A', lat: 41.40, lng: 31.70 })).body.id
+    const p2 = (await request(app).post('/api/transport/pickup-points').set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Recompute Durak B', lat: 41.42, lng: 31.75 })).body.id
+    const routeId = (await request(app).post('/api/transport/routes').set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Recompute Hat' })).body.id
+    await request(app).post(`/api/transport/routes/${routeId}/stops`).set('Authorization', `Bearer ${token}`)
+      .send({ pickup_point_id: p1 })
+    await request(app).post(`/api/transport/routes/${routeId}/stops`).set('Authorization', `Bearer ${token}`)
+      .send({ pickup_point_id: p2 })
+
+    const res = await request(app).post(`/api/transport/routes/${routeId}/recompute-path`).set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(200)
+    expect(res.body.geometry).toEqual([[41.40, 31.70], [41.42, 31.75]])
+  })
+
+  it('bir durak tasininca onu kullanan rota icin path yeniden hesaplanir', async () => {
+    const p1 = (await request(app).post('/api/transport/pickup-points').set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Tasima Durak A', lat: 41.40, lng: 31.70 })).body.id
+    const p2 = (await request(app).post('/api/transport/pickup-points').set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Tasima Durak B', lat: 41.42, lng: 31.75 })).body.id
+    const routeId = (await request(app).post('/api/transport/routes').set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Tasima Hat' })).body.id
+    await request(app).post(`/api/transport/routes/${routeId}/stops`).set('Authorization', `Bearer ${token}`)
+      .send({ pickup_point_id: p1 })
+    await request(app).post(`/api/transport/routes/${routeId}/stops`).set('Authorization', `Bearer ${token}`)
+      .send({ pickup_point_id: p2 })
+    while (await tickOnce()) { /* kuyruk temizlensin */ }
+    await request(app).put(`/api/transport/routes/${routeId}/path`).set('Authorization', `Bearer ${token}`)
+      .send({ geometry: [[41.40, 31.70], [41.41, 31.73], [41.42, 31.75]] })
+
+    await request(app).put(`/api/transport/pickup-points/${p1}`).set('Authorization', `Bearer ${token}`)
+      .send({ lat: 41.395, lng: 31.695 })
+    while (await tickOnce()) { /* kuyruk temizlensin */ }
+
+    const list = await request(app).get('/api/transport/routes?with_stops=1').set('Authorization', `Bearer ${token}`)
+    const route = list.body.find(r => r.id === routeId)
+    expect(route.path_is_manual).toBe(false)
+    expect(route.path_geometry).toEqual([[41.40, 31.70], [41.42, 31.75]])
   })
 })

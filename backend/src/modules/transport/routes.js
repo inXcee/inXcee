@@ -10,8 +10,10 @@ import { logger } from '../../shared/logger.js'
 import { validate } from '../../shared/middleware/validate.js'
 import {
   createPickupPointSchema, pickupPointUpdateSchema, createRouteSchema, routeUpdateSchema,
-  addStopSchema, stopUpdateSchema, setPickupSchema, assignSchema, boardQrSchema,
+  addStopSchema, stopUpdateSchema, setPickupSchema, assignSchema, boardQrSchema, savePathSchema,
 } from './schemas.js'
+import { enqueue } from '../../shared/jobs/index.js'
+import { recomputeRoutePathSync } from './jobs.js'
 
 export const transportRouter = Router()
 const mgr = requireRole('campus_manager', 'shift_supervisor')
@@ -32,7 +34,11 @@ transportRouter.post('/pickup-points', ...mgr, validate(createPickupPointSchema)
 })
 
 transportRouter.put('/pickup-points/:id', ...mgr, validate(pickupPointUpdateSchema), (req, res) => {
-  try { q.updatePickupPoint(+req.params.id, req.validated); res.json({ ok: true }) }
+  try {
+    const affectedRouteIds = q.updatePickupPoint(+req.params.id, req.validated)
+    affectedRouteIds.forEach(routeId => enqueue('transport.recompute-path', { routeId }))
+    res.json({ ok: true })
+  }
   catch (e) { res.status(400).json({ error: e.message }) }
 })
 
@@ -133,17 +139,27 @@ transportRouter.get('/routes/:id/stops', ...view, (req, res) => {
 transportRouter.post('/routes/:id/stops', ...mgr, validate(addStopSchema), (req, res) => {
   try {
     const id = q.addRouteStop(+req.params.id, req.validated)
+    enqueue('transport.recompute-path', { routeId: +req.params.id })
     res.status(201).json({ id })
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
 transportRouter.put('/stops/:id', ...mgr, validate(stopUpdateSchema), (req, res) => {
-  try { q.updateRouteStop(+req.params.id, req.validated); res.json({ ok: true }) }
+  try {
+    q.updateRouteStop(+req.params.id, req.validated)
+    const row = getDB().prepare('SELECT route_id FROM route_stops WHERE id=?').get(+req.params.id)
+    if (row) enqueue('transport.recompute-path', { routeId: row.route_id })
+    res.json({ ok: true })
+  }
   catch (e) { res.status(400).json({ error: e.message }) }
 })
 
 transportRouter.delete('/stops/:id', ...mgr, (req, res) => {
-  try { q.deleteRouteStop(+req.params.id); res.json({ ok: true }) }
+  try {
+    const routeId = q.deleteRouteStop(+req.params.id)
+    if (routeId) enqueue('transport.recompute-path', { routeId })
+    res.json({ ok: true })
+  }
   catch (e) { res.status(400).json({ error: e.message }) }
 })
 
@@ -152,8 +168,25 @@ transportRouter.post('/routes/:id/reorder-stops', ...mgr, (req, res) => {
     const ids = req.body?.stop_ids
     if (!Array.isArray(ids)) return res.status(400).json({ error: 'stop_ids dizisi gerekli' })
     q.reorderRouteStops(+req.params.id, ids)
+    enqueue('transport.recompute-path', { routeId: +req.params.id })
     res.json({ ok: true })
   } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+transportRouter.put('/routes/:id/path', ...mgr, validate(savePathSchema), (req, res) => {
+  try {
+    q.saveRoutePath(+req.params.id, req.validated.geometry, { isManual: true })
+    logAudit(req.user.id, 'transport_route_path_manual', 'transport', +req.params.id, null)
+    res.json({ ok: true })
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+transportRouter.post('/routes/:id/recompute-path', ...mgr, async (req, res) => {
+  try {
+    const geometry = await recomputeRoutePathSync(+req.params.id)
+    if (!geometry) return res.status(502).json({ error: 'Yol hesaplanamadı — OSRM ulaşılamadı ya da koordinatlı durak yok' })
+    res.json({ ok: true, geometry })
+  } catch (e) { logger.error('[Route] recompute-path:', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 // ── Staff pickup ──

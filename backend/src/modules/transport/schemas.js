@@ -60,3 +60,7 @@ export const boardQrSchema = z.object({
   qr_token: z.string().trim().min(1, 'qr_token gerekli').max(120, 'qr_token çok uzun'),
   work_date: dateStr.optional(),
 })
+
+export const savePathSchema = z.object({
+  geometry: z.array(z.tuple([z.number(), z.number()])).min(2, 'En az 2 nokta gerekli'),
+})
