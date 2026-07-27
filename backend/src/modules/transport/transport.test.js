@@ -341,3 +341,26 @@ describe('Transport — harita verisi', () => {
     }
   })
 })
+
+describe('Transport — path sorguları (queries.js)', () => {
+  it('saveRoutePath + getRoutePath round-trip çalışır', async () => {
+    const routeId = (await request(app).post('/api/transport/routes').set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Query Path Hat' })).body.id
+    const q = await import('./queries.js')
+    q.saveRoutePath(routeId, [[41.40, 31.70], [41.42, 31.75]], { isManual: true })
+    const saved = q.getRoutePath(routeId)
+    expect(saved.geometry).toEqual([[41.40, 31.70], [41.42, 31.75]])
+    expect(saved.is_manual).toBe(true)
+  })
+
+  it('addRouteStop path_is_manual bayrağını sıfırlar', async () => {
+    const q = await import('./queries.js')
+    const p1 = (await request(app).post('/api/transport/pickup-points').set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Trigger Durak', lat: 41.40, lng: 31.70 })).body.id
+    const routeId = (await request(app).post('/api/transport/routes').set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Trigger Hat' })).body.id
+    q.saveRoutePath(routeId, [[41.0, 31.0], [41.1, 31.1]], { isManual: true })
+    q.addRouteStop(routeId, { pickup_point_id: p1 })
+    expect(q.getRoutePath(routeId).is_manual).toBe(false)
+  })
+})

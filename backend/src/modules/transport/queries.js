@@ -34,9 +34,13 @@ export function updatePickupPoint(id, data) {
   fields.forEach(f => {
     if (data[f] !== undefined) { sets.push(`${f}=?`); params.push(data[f] === '' ? null : data[f]) }
   })
-  if (!sets.length) return
+  if (!sets.length) return []
   params.push(id)
   db.prepare(`UPDATE pickup_points SET ${sets.join(',')} WHERE id=?`).run(...params)
+  if (data.lat === undefined && data.lng === undefined) return []
+  const routeIds = db.prepare('SELECT DISTINCT route_id FROM route_stops WHERE pickup_point_id=?').all(id).map(r => r.route_id)
+  routeIds.forEach(routeId => db.prepare('UPDATE routes SET path_is_manual=0 WHERE id=?').run(routeId))
+  return routeIds
 }
 
 export function deletePickupPoint(id) {
@@ -94,6 +98,11 @@ export function listRoutes({ activeOnly = false, withStops = false, workDate = n
     ${where}
     ORDER BY r.name
   `).all()
+
+  routes.forEach(r => {
+    r.path_geometry = r.path_geometry ? JSON.parse(r.path_geometry) : null
+    r.path_is_manual = !!r.path_is_manual
+  })
 
   if (!withStops && !workDate) return routes
 
@@ -188,10 +197,12 @@ export function addRouteStop(routeId, data) {
   const db = getDB()
   // Sıra otomatik: en yüksek+1
   const max = db.prepare('SELECT COALESCE(MAX(sequence_order), 0) as m FROM route_stops WHERE route_id=?').get(routeId).m
-  return db.prepare(`
+  const id = db.prepare(`
     INSERT INTO route_stops(route_id, pickup_point_id, sequence_order, scheduled_time)
     VALUES(?,?,?,?)
   `).run(routeId, data.pickup_point_id, data.sequence_order ?? (max + 1), data.scheduled_time || null).lastInsertRowid
+  db.prepare('UPDATE routes SET path_is_manual=0 WHERE id=?').run(routeId)
+  return id
 }
 
 export function updateRouteStop(id, data) {
@@ -205,10 +216,16 @@ export function updateRouteStop(id, data) {
   if (!sets.length) return
   params.push(id)
   db.prepare(`UPDATE route_stops SET ${sets.join(',')} WHERE id=?`).run(...params)
+  const row = db.prepare('SELECT route_id FROM route_stops WHERE id=?').get(id)
+  if (row) db.prepare('UPDATE routes SET path_is_manual=0 WHERE id=?').run(row.route_id)
 }
 
 export function deleteRouteStop(id) {
-  getDB().prepare('DELETE FROM route_stops WHERE id=?').run(id)
+  const db = getDB()
+  const row = db.prepare('SELECT route_id FROM route_stops WHERE id=?').get(id)
+  db.prepare('DELETE FROM route_stops WHERE id=?').run(id)
+  if (row) db.prepare('UPDATE routes SET path_is_manual=0 WHERE id=?').run(row.route_id)
+  return row?.route_id ?? null
 }
 
 export function reorderRouteStops(routeId, orderedStopIds) {
@@ -216,6 +233,7 @@ export function reorderRouteStops(routeId, orderedStopIds) {
   const upd = db.prepare('UPDATE route_stops SET sequence_order = ? WHERE id = ? AND route_id = ?')
   const tx = db.transaction(() => {
     orderedStopIds.forEach((id, idx) => upd.run(idx + 1, id, routeId))
+    db.prepare('UPDATE routes SET path_is_manual=0 WHERE id=?').run(routeId)
   })
   tx()
 }
@@ -693,4 +711,21 @@ export function getReports({ startDate, endDate } = {}) {
     no_show_top: noShowTop,
     per_staff_usage: perStaffUsage,
   }
+}
+
+// ── Rota yol geometrisi (path) ──
+export function getRoutePath(routeId) {
+  const row = getDB().prepare('SELECT path_geometry, path_is_manual, path_computed_at FROM routes WHERE id=?').get(routeId)
+  if (!row) return null
+  return {
+    geometry: row.path_geometry ? JSON.parse(row.path_geometry) : null,
+    is_manual: !!row.path_is_manual,
+    computed_at: row.path_computed_at,
+  }
+}
+
+export function saveRoutePath(routeId, geometry, { isManual }) {
+  getDB().prepare(`
+    UPDATE routes SET path_geometry=?, path_is_manual=?, path_computed_at=datetime('now') WHERE id=?
+  `).run(JSON.stringify(geometry), isManual ? 1 : 0, routeId)
 }
