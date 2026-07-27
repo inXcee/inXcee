@@ -1,6 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { screen, fireEvent } from '@testing-library/react'
 import { renderWithProviders } from '../../../test/renderWithProviders.jsx'
+import { useAuthStore } from '../../../shared/store/authStore.js'
 
 // RouteMap'i mock'la (Leaflet jsdom'da render edilmez)
 vi.mock('../RouteMap.jsx', () => ({ default: () => <div data-testid="route-map" /> }))
@@ -42,5 +43,22 @@ describe('transport/MapTab smoke', () => {
     expect(toggle).toBeChecked()
     fireEvent.click(toggle)
     expect(toggle).not.toBeChecked()
+  })
+})
+
+describe('transport/MapTab smoke — düzenleme yetkisi', () => {
+  afterEach(() => useAuthStore.setState({ user: null }))
+
+  it('campus_manager için düzenle butonu görünür', async () => {
+    useAuthStore.setState({ user: { id: 1, role: 'campus_manager' } })
+    renderWithProviders(<MapTab />)
+    expect(await screen.findByLabelText('Kozlu Hatti rotasını haritadan düzenle')).toBeInTheDocument()
+  })
+
+  it('yetkisiz rol için düzenle butonu görünmez', async () => {
+    useAuthStore.setState({ user: { id: 2, role: 'laundry' } })
+    renderWithProviders(<MapTab />)
+    await screen.findByText('Kozlu Hatti')
+    expect(screen.queryByLabelText('Kozlu Hatti rotasını haritadan düzenle')).not.toBeInTheDocument()
   })
 })
