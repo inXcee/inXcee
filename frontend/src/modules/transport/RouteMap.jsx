@@ -189,9 +189,10 @@ export default function RouteMap({
               positions={editingRoute.path_geometry?.length >= 2 ? editingRoute.path_geometry : buildRoutePolyline(editingRoute, WORK_SITE)}
               pathOptions={{ color: editingRoute.color || FALLBACK_COLOR, weight: 5, opacity: 0.95 }}
               eventHandlers={{
-                click: () => setManualDraft(
-                  editingRoute.path_geometry?.length >= 2 ? editingRoute.path_geometry : buildRoutePolyline(editingRoute, WORK_SITE)
-                ),
+                // Elle bukme her zaman KABA (durak+isyeri) cizgiden baslar — ince OSRM
+                // egrisinin yuzlerce noktasi degil, yoksa her segment arasina bir hayalet
+                // nokta koyunca ekran kullanilamaz hale gelir (bkz. spec: "kaba nokta dizisi").
+                click: () => setManualDraft(buildRoutePolyline(editingRoute, WORK_SITE)),
               }}
             />
           )
