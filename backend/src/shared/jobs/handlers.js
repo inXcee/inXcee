@@ -8,6 +8,7 @@ import { logger } from '../logger.js'
 import { sendEmail } from '../../modules/email/service.js'
 import { sendDailyDigestMailJob, sendTruckArrivalMailJob } from '../../modules/water/jobs.js'
 import { sendWhatsAppText } from '../notifications/whatsapp-send.js'
+import { recomputeRoutePathJob } from '../../modules/transport/jobs.js'
 
 const PUBLIC = process.env.VAPID_PUBLIC_KEY
 const PRIVATE = process.env.VAPID_PRIVATE_KEY
@@ -76,4 +77,5 @@ export const handlers = {
   'water.daily-digest-mail': sendDailyDigestMailJob,
   'water.truck-mail': sendTruckArrivalMailJob,
   'whatsapp.send': sendWhatsAppJob,
+  'transport.recompute-path': recomputeRoutePathJob,
 }
