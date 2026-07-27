@@ -1,4 +1,4 @@
-import { MapContainer, TileLayer, Marker, Polyline, CircleMarker, Tooltip, Popup, useMap } from 'react-leaflet'
+import { MapContainer, TileLayer, Marker, Polyline, CircleMarker, Tooltip, Popup, useMap, useMapEvents } from 'react-leaflet'
 import { useEffect, useState } from 'react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -55,7 +55,8 @@ function ghostIcon() {
 // Rota duzenleme modunda: duraklar suruklenebilir numarali pin'e doner.
 // Bir pin rota cizgisine yakin birakilirsa sira degisir, uzak birakilirsa
 // durağın gercek konumu (pickup_point) degisir. Bkz: logic/routeMap.js#classifyDrop.
-function EditableStop({ stop, index, allStops, onMoveStop, onReorderStop, color }) {
+// Sag tik (contextmenu) durağı rotadan cikarir (pickup_point'in kendisi silinmez).
+function EditableStop({ stop, index, allStops, onMoveStop, onReorderStop, onDeleteStop, color }) {
   const [pos, setPos] = useState([stop.lat, stop.lng])
   useEffect(() => { setPos([stop.lat, stop.lng]) }, [stop.lat, stop.lng])
 
@@ -77,31 +78,41 @@ function EditableStop({ stop, index, allStops, onMoveStop, onReorderStop, color 
             onMoveStop(stop.pickup_point_id, dropPoint[0], dropPoint[1])
           }
         },
+        contextmenu: (e) => {
+          e.originalEvent?.preventDefault?.()
+          onDeleteStop(stop.id)
+        },
       }}
     >
-      <Tooltip>{index + 1}. {stop.point_name}</Tooltip>
+      <Tooltip>{index + 1}. {stop.point_name}<br />(sağ tık: rotadan çıkar)</Tooltip>
     </Marker>
   )
 }
 
-// Elle yol duzeltme: kaba nokta dizisini (duraklar + isyeri) suruklenebilir
-// hayalet noktalarla buker. "Kaydet" tiklaninca son hali backend'e gonderilir.
-function ManualPathEditor({ initialGeometry, color, onDraftChange }) {
-  const [draft, setDraft] = useState(initialGeometry)
-  useEffect(() => { onDraftChange(draft) }, [draft, onDraftChange])
+// Haritada bos bir yere tiklaninca yeni bir durak olusturup rotaya ekler.
+// Sadece duzenleme modunda ve elle yol bukme aktif degilken calisir (RouteMap'te kosullu render edilir).
+function MapClickToAddStop({ onAddStop }) {
+  useMapEvents({
+    click(e) { onAddStop(e.latlng.lat, e.latlng.lng) },
+  })
+  return null
+}
 
+// Elle yol duzeltme: kaba nokta dizisini (duraklar + isyeri) suruklenebilir
+// hayalet noktalarla buker. Draft'i ve gecmisi (Geri Al icin) parent (RouteMap) tutar.
+function ManualPathEditor({ geometry, color, onChange }) {
   return (
     <>
-      <Polyline positions={draft} pathOptions={{ color, weight: 5, opacity: 0.95, dashArray: '2 8' }} />
-      {draft.slice(0, -1).map((a, i) => {
-        const b = draft[i + 1]
+      <Polyline positions={geometry} pathOptions={{ color, weight: 5, opacity: 0.95, dashArray: '2 8' }} bubblingMouseEvents={false} />
+      {geometry.slice(0, -1).map((a, i) => {
+        const b = geometry[i + 1]
         const mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]
         return (
           <Marker key={i} position={mid} draggable icon={ghostIcon()}
             eventHandlers={{
               dragend: (e) => {
                 const latlng = e.target.getLatLng()
-                setDraft(prev => insertViaPoint(prev, i, [latlng.lat, latlng.lng]))
+                onChange(insertViaPoint(geometry, i, [latlng.lat, latlng.lng]))
               },
             }}
           />
@@ -121,14 +132,40 @@ function ManualPathEditor({ initialGeometry, color, onDraftChange }) {
 //  onMoveStop: (pickupPointId, lat, lng) => void
 //  onReorderStop: (routeId, stopIds) => void
 //  onSaveManualPath: (routeId, geometry) => void
+//  onDeleteStop: (stopId) => void
+//  onAddStop: (routeId, lat, lng) => void
 export default function RouteMap({
   routes, points, visibleRouteIds, selectedRouteId, onSelectRoute, height = 520,
-  editingRouteId = null, onMoveStop, onReorderStop, onSaveManualPath,
+  editingRouteId = null, onMoveStop, onReorderStop, onSaveManualPath, onDeleteStop, onAddStop,
 }) {
   const editingRoute = routes.find(r => r.id === editingRouteId) || null
   const [manualDraft, setManualDraft] = useState(null)
+  const [manualHistory, setManualHistory] = useState([])
 
-  useEffect(() => { setManualDraft(null) }, [editingRouteId])
+  useEffect(() => { setManualDraft(null); setManualHistory([]) }, [editingRouteId])
+
+  function startManualEdit(geometry) {
+    setManualDraft(geometry)
+    setManualHistory([])
+  }
+
+  function updateManualDraft(newDraft) {
+    setManualHistory(h => [...h, manualDraft])
+    setManualDraft(newDraft)
+  }
+
+  function undoManualDraft() {
+    setManualHistory(h => {
+      if (h.length === 0) return h
+      setManualDraft(h[h.length - 1])
+      return h.slice(0, -1)
+    })
+  }
+
+  function cancelManualEdit() {
+    setManualDraft(null)
+    setManualHistory([])
+  }
 
   const editingStops = editingRoute
     ? [...(editingRoute.stops || [])].filter(s => s.lat != null && s.lng != null).sort((a, b) => a.sequence_order - b.sequence_order)
@@ -163,6 +200,7 @@ export default function RouteMap({
                 weight: isSel ? 6 : 3,
                 opacity: dim ? 0.25 : 0.9,
               }}
+              bubblingMouseEvents={false}
               eventHandlers={{ click: () => onSelectRoute(r.id) }}
             >
               <Popup>
@@ -176,23 +214,29 @@ export default function RouteMap({
           )
         })}
 
+        {/* Duzenleme modunda bos haritaya tiklayinca yeni durak eklenir (elle bukme haric) */}
+        {editingRoute && !manualDraft && (
+          <MapClickToAddStop onAddStop={(lat, lng) => onAddStop(editingRoute.id, lat, lng)} />
+        )}
+
         {/* Duzenlenen rota: gercek yol/elle cizim + suruklenebilir duraklar */}
         {editingRoute && editingStops.length > 0 && (
           manualDraft ? (
             <ManualPathEditor
-              initialGeometry={manualDraft}
+              geometry={manualDraft}
               color={editingRoute.color || FALLBACK_COLOR}
-              onDraftChange={setManualDraft}
+              onChange={updateManualDraft}
             />
           ) : (
             <Polyline
               positions={editingRoute.path_geometry?.length >= 2 ? editingRoute.path_geometry : buildRoutePolyline(editingRoute, WORK_SITE)}
               pathOptions={{ color: editingRoute.color || FALLBACK_COLOR, weight: 5, opacity: 0.95 }}
+              bubblingMouseEvents={false}
               eventHandlers={{
                 // Elle bukme her zaman KABA (durak+isyeri) cizgiden baslar — ince OSRM
                 // egrisinin yuzlerce noktasi degil, yoksa her segment arasina bir hayalet
                 // nokta koyunca ekran kullanilamaz hale gelir (bkz. spec: "kaba nokta dizisi").
-                click: () => setManualDraft(buildRoutePolyline(editingRoute, WORK_SITE)),
+                click: () => startManualEdit(buildRoutePolyline(editingRoute, WORK_SITE)),
               }}
             />
           )
@@ -205,6 +249,7 @@ export default function RouteMap({
             allStops={editingStops}
             onMoveStop={onMoveStop}
             onReorderStop={(stopIds) => onReorderStop(editingRoute.id, stopIds)}
+            onDeleteStop={onDeleteStop}
             color={editingRoute.color || FALLBACK_COLOR}
           />
         ))}
@@ -218,6 +263,7 @@ export default function RouteMap({
               center={[p.lat, p.lng]}
               radius={6}
               pathOptions={{ color: '#fff', weight: 1.5, fillColor: '#f59e0b', fillOpacity: 0.9 }}
+              bubblingMouseEvents={false}
             >
               <Tooltip>{p.name}</Tooltip>
               <Popup>
@@ -244,19 +290,26 @@ export default function RouteMap({
         }}>
           {manualDraft ? (
             <>
+              {manualHistory.length > 0 && (
+                <button
+                  type="button"
+                  onClick={undoManualDraft}
+                  className="btn btn-ghost btn-xs" style={{ borderRadius: 6 }}
+                >↩ Geri Al</button>
+              )}
               <button
                 type="button"
-                onClick={() => { onSaveManualPath(editingRoute.id, manualDraft); setManualDraft(null) }}
+                onClick={() => { onSaveManualPath(editingRoute.id, manualDraft); cancelManualEdit() }}
                 className="btn btn-primary btn-xs" style={{ borderRadius: 6 }}
               >✔ Kaydet</button>
               <button
                 type="button"
-                onClick={() => setManualDraft(null)}
+                onClick={cancelManualEdit}
                 className="btn btn-ghost btn-xs" style={{ borderRadius: 6 }}
               >✕ Vazgeç</button>
             </>
           ) : (
-            <span style={{ color: 'var(--text3)' }}>Yolu düzeltmek için çizgiye tıkla</span>
+            <span style={{ color: 'var(--text3)' }}>Yolu düzeltmek için çizgiye tıkla · boş yere tıkla: yeni durak</span>
           )}
         </div>
       )}

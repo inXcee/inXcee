@@ -53,6 +53,19 @@ export default function MapTab() {
     onSuccess: () => { invalidateMap(); toast('Yol yeniden hesaplandı') },
     onError: toastErr,
   })
+  const deleteStopMut = useMutation({
+    mutationFn: (stopId) => api.delete(`/transport/stops/${stopId}`),
+    onSuccess: () => { invalidateMap(); toast('Durak rotadan çıkarıldı') },
+    onError: toastErr,
+  })
+  const addStopAtPointMut = useMutation({
+    mutationFn: async ({ routeId, lat, lng }) => {
+      const point = await api.post('/transport/pickup-points', { name: 'Yeni Durak', lat, lng })
+      return api.post(`/transport/routes/${routeId}/stops`, { pickup_point_id: point.data.id })
+    },
+    onSuccess: () => { invalidateMap(); toast('Yeni durak eklendi') },
+    onError: toastErr,
+  })
 
   const visibleRouteIds = useMemo(
     () => new Set(routes.filter(r => !hiddenIds.has(r.id)).map(r => r.id)),
@@ -157,6 +170,8 @@ export default function MapTab() {
               onMoveStop={(pickupPointId, lat, lng) => moveStopMut.mutate({ pickupPointId, lat, lng })}
               onReorderStop={(routeId, stopIds) => reorderMut.mutate({ routeId, stopIds })}
               onSaveManualPath={(routeId, geometry) => savePathMut.mutate({ routeId, geometry })}
+              onDeleteStop={(stopId) => deleteStopMut.mutate(stopId)}
+              onAddStop={(routeId, lat, lng) => addStopAtPointMut.mutate({ routeId, lat, lng })}
             />
           </Suspense>
         )}
