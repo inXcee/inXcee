@@ -4,7 +4,7 @@ import { initProdDB } from './shared/db/initProd.js'
 import { startCronJobs } from './shared/cron/index.js'
 import { seedDev } from './shared/db/seed.js'
 import { logger } from './shared/logger.js'
-import { startWorker, stopWorker } from './shared/jobs/index.js'
+import { startWorker, stopWorker, enqueue } from './shared/jobs/index.js'
 
 // ESM statik importlari modul govdesinden once calisir. App'i dinamik yukleyerek
 // Express Sentry hata middleware'inin init sonrasinda kurulmasini garanti et.
@@ -36,6 +36,15 @@ if (process.env.NODE_ENV === 'production') {
 
 startCronJobs()
 startWorker()
+
+// Migration sonrasi path_geometry hic hesaplanmamis eski rotalar icin
+// arka planda otomatik hesaplama kuyruga alinir (test ortaminda calismaz).
+if (process.env.NODE_ENV !== 'test') {
+  const missingPaths = getDB().prepare(
+    "SELECT id FROM routes WHERE is_active = 1 AND path_geometry IS NULL"
+  ).all()
+  missingPaths.forEach(r => enqueue('transport.recompute-path', { routeId: r.id }))
+}
 
 const port = process.env.PORT || 3001
 const server = app.listen(port, () => logger.info({ port }, `YYS Backend http://localhost:${port}`))
