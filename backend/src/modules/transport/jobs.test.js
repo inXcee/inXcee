@@ -32,22 +32,19 @@ beforeEach(() => {
 })
 
 describe('transport.recompute-path job', () => {
-  it('basarili OSRM cevabinda path_geometry kaydeder ve path_is_manual sifirlar', async () => {
+  it('basarili OSRM cevabinda path_geometry kaydeder', async () => {
     const routeId = makeRouteWithStops()
-    getDB().prepare('UPDATE routes SET path_is_manual=1 WHERE id=?').run(routeId)
     computeRoadRoute.mockResolvedValue([[41.40, 31.70], [41.41, 31.72], [41.42, 31.75]])
 
     enqueue('transport.recompute-path', { routeId })
     await tickOnce()
 
-    const saved = q.getRoutePath(routeId)
-    expect(saved.geometry).toEqual([[41.40, 31.70], [41.41, 31.72], [41.42, 31.75]])
-    expect(saved.is_manual).toBe(false)
+    expect(q.getRoutePath(routeId).geometry).toEqual([[41.40, 31.70], [41.41, 31.72], [41.42, 31.75]])
   })
 
   it('OSRM basarisiz olursa is yeniden denenir, eski geometri korunur', async () => {
     const routeId = makeRouteWithStops()
-    q.saveRoutePath(routeId, [[41.40, 31.70], [41.42, 31.75]], { isManual: false })
+    q.saveRoutePath(routeId, [[41.40, 31.70], [41.42, 31.75]])
     computeRoadRoute.mockResolvedValue(null)
 
     enqueue('transport.recompute-path', { routeId }, { maxAttempts: 5 })
@@ -77,7 +74,6 @@ describe('recomputeRoutePathSync', () => {
     computeRoadRoute.mockResolvedValue([[41.40, 31.70], [41.42, 31.75]])
     const geometry = await recomputeRoutePathSync(routeId)
     expect(geometry).toEqual([[41.40, 31.70], [41.42, 31.75]])
-    expect(q.getRoutePath(routeId).is_manual).toBe(false)
   })
 
   it('OSRM basarisiz olursa null doner', async () => {
@@ -85,5 +81,37 @@ describe('recomputeRoutePathSync', () => {
     computeRoadRoute.mockResolvedValue(null)
     const geometry = await recomputeRoutePathSync(routeId)
     expect(geometry).toBeNull()
+  })
+})
+
+describe('uğrakların waypoint sırası', () => {
+  it('uğraklar bağlı oldukları durağın hemen ardına girer', async () => {
+    const routeId = makeRouteWithStops()
+    const stops = getDB().prepare('SELECT id FROM route_stops WHERE route_id=? ORDER BY sequence_order').all(routeId)
+    q.saveRouteViaPoints(routeId, [{ after_stop_id: stops[0].id, lat: 41.405, lng: 31.72 }])
+    computeRoadRoute.mockResolvedValue([[41.40, 31.70], [41.42, 31.75]])
+
+    await recomputeRoutePathSync(routeId)
+
+    expect(computeRoadRoute).toHaveBeenCalledWith([
+      { lat: 41.40, lng: 31.70 },
+      { lat: 41.405, lng: 31.72 },
+      { lat: 41.42, lng: 31.75 },
+      { lat: 41.5750, lng: 32.0264 },
+    ])
+  })
+
+  it('mevcut olmayan durağa bağlı uğrak yok sayılır', async () => {
+    const routeId = makeRouteWithStops()
+    q.saveRouteViaPoints(routeId, [{ after_stop_id: 99999, lat: 41.405, lng: 31.72 }])
+    computeRoadRoute.mockResolvedValue([[41.40, 31.70], [41.42, 31.75]])
+
+    await recomputeRoutePathSync(routeId)
+
+    expect(computeRoadRoute).toHaveBeenCalledWith([
+      { lat: 41.40, lng: 31.70 },
+      { lat: 41.42, lng: 31.75 },
+      { lat: 41.5750, lng: 32.0264 },
+    ])
   })
 })
