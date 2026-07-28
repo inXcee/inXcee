@@ -11,11 +11,13 @@ import { validate } from '../../shared/middleware/validate.js'
 import {
   createPickupPointSchema, pickupPointUpdateSchema, createRouteSchema, routeUpdateSchema,
   addStopSchema, stopUpdateSchema, setPickupSchema, assignSchema, boardQrSchema, saveViaPointsSchema,
-  workSiteSchema,
+  workSiteSchema, vehicleCreateSchema, vehicleUpdateSchema, driverCreateSchema, driverUpdateSchema,
+  unavailabilitySchema, templateCreateSchema, templateUpdateSchema, planPreviewSchema, planPublishSchema,
 } from './schemas.js'
 import { enqueue } from '../../shared/jobs/index.js'
 import { recomputeRoutePathSync } from './jobs.js'
 import { getWorkSite, saveWorkSite } from './workSite.js'
+import * as planning from './planning-service.js'
 
 const WORK_SITE_NAME = 'Filyos Doğal Gaz İşleme Tesisi'
 const WORK_SITE_SHORT = 'FILYOS'
@@ -23,6 +25,12 @@ const WORK_SITE_SHORT = 'FILYOS'
 export const transportRouter = Router()
 const mgr = requireRole('campus_manager', 'shift_supervisor')
 const view = requireRole('campus_manager', 'shift_supervisor', 'laundry', 'housekeeper', 'technical')
+const admin = requireRole('campus_manager')
+
+function serviceError(res, error) {
+  const status = error.status || 400
+  res.status(status).json({ error: error.message, conflicts: error.conflicts })
+}
 
 // ── Is yeri (varis noktasi) ──
 // Konum system_settings'te; kod icindeki deger yalnizca varsayilan (bkz. workSite.js).
@@ -42,6 +50,135 @@ transportRouter.put('/work-site', ...mgr, validate(workSiteSchema), (req, res) =
     logAudit(req.user.id, 'transport_work_site_move', 'transport', null, `${lat},${lng}`)
     res.json({ ok: true, lat, lng, requeued: activeRoutes.length })
   } catch (e) { logger.error('[Route] work-site put:', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// ── V2 Kaynaklar: araç, şoför ve müsaitlik ──
+transportRouter.get('/vehicles', ...view, (req, res) => {
+  try { res.json(planning.listVehicles({ includeInactive: req.query.active !== '1' })) }
+  catch (e) { logger.error('[Transport/V2 vehicles]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+transportRouter.post('/vehicles', ...admin, validate(vehicleCreateSchema), (req, res) => {
+  try {
+    const result = planning.createVehicle(req.validated)
+    logAudit(req.user.id, 'transport_vehicle_create', 'transport', result.id, req.validated.plate)
+    res.status(201).json(result)
+  } catch (e) { serviceError(res, e) }
+})
+
+transportRouter.patch('/vehicles/:id', ...admin, validate(vehicleUpdateSchema), (req, res) => {
+  try {
+    const result = planning.updateVehicle(+req.params.id, req.validated)
+    if (!result) return res.status(404).json({ error: 'Araç bulunamadı' })
+    logAudit(req.user.id, 'transport_vehicle_update', 'transport', +req.params.id, null)
+    res.json(result)
+  } catch (e) { serviceError(res, e) }
+})
+
+transportRouter.delete('/vehicles/:id', ...admin, (req, res) => {
+  try {
+    const result = planning.deactivateVehicle(+req.params.id)
+    if (!result) return res.status(404).json({ error: 'Araç bulunamadı' })
+    logAudit(req.user.id, 'transport_vehicle_deactivate', 'transport', +req.params.id, null)
+    res.json(result)
+  } catch (e) { serviceError(res, e) }
+})
+
+transportRouter.get('/drivers', ...view, (req, res) => {
+  try { res.json(planning.listDrivers({ includeInactive: req.query.active !== '1' })) }
+  catch (e) { logger.error('[Transport/V2 drivers]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+transportRouter.post('/drivers', ...admin, validate(driverCreateSchema), (req, res) => {
+  try {
+    const result = planning.createDriver(req.validated)
+    logAudit(req.user.id, 'transport_driver_create', 'transport', result.id, req.validated.full_name)
+    res.status(201).json(result)
+  } catch (e) { serviceError(res, e) }
+})
+
+transportRouter.patch('/drivers/:id', ...admin, validate(driverUpdateSchema), (req, res) => {
+  try {
+    const result = planning.updateDriver(+req.params.id, req.validated)
+    if (!result) return res.status(404).json({ error: 'Şoför bulunamadı' })
+    logAudit(req.user.id, 'transport_driver_update', 'transport', +req.params.id, null)
+    res.json(result)
+  } catch (e) { serviceError(res, e) }
+})
+
+transportRouter.delete('/drivers/:id', ...admin, (req, res) => {
+  try {
+    const result = planning.deactivateDriver(+req.params.id)
+    if (!result) return res.status(404).json({ error: 'Şoför bulunamadı' })
+    logAudit(req.user.id, 'transport_driver_deactivate', 'transport', +req.params.id, null)
+    res.json(result)
+  } catch (e) { serviceError(res, e) }
+})
+
+transportRouter.get('/resource-unavailability', ...view, (req, res) => {
+  try { res.json(planning.listUnavailability({ from: req.query.from, to: req.query.to })) }
+  catch (e) { logger.error('[Transport/V2 unavailability]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+transportRouter.post('/resource-unavailability', ...admin, validate(unavailabilitySchema), (req, res) => {
+  try {
+    const result = planning.createUnavailability(req.validated, req.user.id)
+    logAudit(req.user.id, 'transport_resource_unavailable', 'transport', result.id, req.validated.reason)
+    res.status(201).json(result)
+  } catch (e) { serviceError(res, e) }
+})
+
+transportRouter.delete('/resource-unavailability/:id', ...admin, (req, res) => {
+  try {
+    const result = planning.deleteUnavailability(+req.params.id)
+    if (!result) return res.status(404).json({ error: 'Müsaitlik kaydı bulunamadı' })
+    res.json(result)
+  } catch (e) { serviceError(res, e) }
+})
+
+// ── V2 Sefer şablonları ve onaylı planlama ──
+transportRouter.get('/trip-templates', ...view, (req, res) => {
+  try { res.json(planning.listTemplates({ activeOnly: req.query.active === '1' })) }
+  catch (e) { logger.error('[Transport/V2 templates]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+transportRouter.post('/trip-templates', ...admin, validate(templateCreateSchema), (req, res) => {
+  try {
+    const result = planning.createTemplate(req.validated, req.user.id)
+    logAudit(req.user.id, 'transport_template_create', 'transport', result.id, req.validated.name)
+    res.status(201).json(result)
+  } catch (e) { serviceError(res, e) }
+})
+
+transportRouter.patch('/trip-templates/:id', ...admin, validate(templateUpdateSchema), (req, res) => {
+  try {
+    const result = planning.updateTemplate(+req.params.id, req.validated)
+    if (!result) return res.status(404).json({ error: 'Şablon bulunamadı' })
+    logAudit(req.user.id, 'transport_template_update', 'transport', +req.params.id, null)
+    res.json(result)
+  } catch (e) { serviceError(res, e) }
+})
+
+transportRouter.delete('/trip-templates/:id', ...admin, (req, res) => {
+  try {
+    const result = planning.deactivateTemplate(+req.params.id)
+    if (!result) return res.status(404).json({ error: 'Şablon bulunamadı' })
+    logAudit(req.user.id, 'transport_template_deactivate', 'transport', +req.params.id, null)
+    res.json(result)
+  } catch (e) { serviceError(res, e) }
+})
+
+transportRouter.post('/plan/preview', ...mgr, validate(planPreviewSchema), (req, res) => {
+  try { res.json(planning.previewPlan(req.validated)) }
+  catch (e) { logger.error('[Transport/V2 preview]', e); serviceError(res, e) }
+})
+
+transportRouter.post('/plan/publish', ...mgr, validate(planPublishSchema), (req, res) => {
+  try {
+    const result = planning.publishPlan(req.validated, req.user.id)
+    logAudit(req.user.id, 'transport_plan_publish', 'transport', null, `${result.trips.length} sefer`)
+    res.status(201).json(result)
+  } catch (e) { serviceError(res, e) }
 })
 
 // ── Pickup Points ──

@@ -73,3 +73,79 @@ export const saveViaPointsSchema = z.object({
     lng: z.coerce.number().min(-180).max(180),
   })).max(50, 'En fazla 50 uğrak'),
 })
+
+const resourceStatus = z.enum(['active', 'out_of_service', 'inactive'])
+const driverStatus = z.enum(['active', 'unavailable', 'inactive'])
+const positiveId = z.coerce.number().int().positive()
+
+export const vehicleCreateSchema = z.object({
+  plate: z.string().trim().min(2).max(20),
+  label: z.string().trim().max(120).nullish(),
+  capacity: z.coerce.number().int().positive().max(200),
+  status: resourceStatus.optional(),
+  notes: z.string().trim().max(2000).nullish(),
+})
+export const vehicleUpdateSchema = vehicleCreateSchema.partial()
+
+export const driverCreateSchema = z.object({
+  full_name: z.string().trim().min(2).max(120),
+  phone: z.string().trim().max(40).nullish(),
+  status: driverStatus.optional(),
+  notes: z.string().trim().max(2000).nullish(),
+})
+export const driverUpdateSchema = driverCreateSchema.partial()
+
+export const unavailabilitySchema = z.object({
+  vehicle_id: positiveId.nullish(),
+  driver_id: positiveId.nullish(),
+  starts_at: z.string().min(16).max(30),
+  ends_at: z.string().min(16).max(30),
+  reason: z.string().trim().max(500).nullish(),
+}).superRefine((value, ctx) => {
+  if (!!value.vehicle_id === !!value.driver_id) {
+    ctx.addIssue({ code: 'custom', message: 'Araç veya şoförden yalnızca biri seçilmeli' })
+  }
+  if (value.ends_at <= value.starts_at) {
+    ctx.addIssue({ code: 'custom', message: 'Bitiş başlangıçtan sonra olmalı' })
+  }
+})
+
+const templateFields = z.object({
+  name: z.string().trim().min(2).max(160),
+  route_id: positiveId,
+  shift_def_id: positiveId.nullish(),
+  direction: z.enum(['outbound', 'inbound']),
+  departure_time: z.string().regex(/^\d{2}:\d{2}$/),
+  days_of_week: z.array(z.coerce.number().int().min(0).max(6)).min(1).max(7),
+  default_vehicle_id: positiveId.nullish(),
+  default_driver_id: positiveId.nullish(),
+  valid_from: dateStr.nullish(),
+  valid_to: dateStr.nullish(),
+  is_active: flag,
+})
+const validateTemplateDates = (value, ctx) => {
+  if (value.valid_from && value.valid_to && value.valid_to < value.valid_from) {
+    ctx.addIssue({ code: 'custom', message: 'Geçerlilik bitişi başlangıçtan önce olamaz' })
+  }
+}
+export const templateCreateSchema = templateFields.superRefine(validateTemplateDates)
+export const templateUpdateSchema = templateFields.partial().superRefine(validateTemplateDates)
+
+export const planPreviewSchema = z.object({
+  start_date: dateStr,
+  end_date: dateStr,
+  template_ids: z.array(positiveId).max(100).optional(),
+}).superRefine((value, ctx) => {
+  const start = new Date(`${value.start_date}T00:00:00Z`)
+  const end = new Date(`${value.end_date}T00:00:00Z`)
+  const days = (end - start) / 86400000
+  if (days < 0 || days > 31) {
+    ctx.addIssue({ code: 'custom', message: 'Plan aralığı 1-32 gün olmalı' })
+  }
+})
+
+export const planPublishSchema = planPreviewSchema.safeExtend({
+  base_revision: z.coerce.number().int().min(0),
+  selected_trip_keys: z.array(z.string().max(100)).max(200).optional(),
+  warning_reason: z.string().trim().max(1000).optional(),
+})
