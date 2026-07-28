@@ -1,11 +1,12 @@
 import { test, expect } from '@playwright/test'
+const FRONTEND_URL = process.env.E2E_FRONTEND_URL || `http://localhost:${process.env.E2E_FRONTEND_PORT || '5174'}`
 
 async function loginAsMudur(page) {
   await page.goto('/login')
   await page.getByPlaceholder('örn. selam.aydin').fill('mudur')
   await page.getByPlaceholder('••••••••').fill('admin123')
   await page.getByRole('button', { name: /Giriş Yap/ }).click()
-  await expect(page).toHaveURL('http://localhost:5174/', { timeout: 10_000 })
+  await expect(page).toHaveURL(`${FRONTEND_URL}/`, { timeout: 10_000 })
 }
 
 test.describe('dashboard — smoke', () => {

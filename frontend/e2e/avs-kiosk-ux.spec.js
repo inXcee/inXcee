@@ -1,6 +1,6 @@
 import { test, expect, request as pwRequest } from '@playwright/test'
 
-const API = 'http://localhost:3001/api'
+const API = `${process.env.E2E_BACKEND_URL || `http://localhost:${process.env.E2E_BACKEND_PORT || '3001'}`}/api`
 const PINNED = `UX Test ${Date.now()}`
 let pinnedId
 

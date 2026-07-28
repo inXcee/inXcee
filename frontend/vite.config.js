@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react'
 import { readFileSync } from 'node:fs'
 
 const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf-8'))
+const backendTarget = process.env.VITE_BACKEND_TARGET || 'http://localhost:3001'
 
 export default defineConfig({
   plugins: [react()],
@@ -13,8 +14,9 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 5174,
     proxy: {
-      '/api': 'http://localhost:3001',
-      '/uploads': 'http://localhost:3001',
+      '/api': backendTarget,
+      '/public': backendTarget,
+      '/uploads': backendTarget,
     }
   },
   build: {

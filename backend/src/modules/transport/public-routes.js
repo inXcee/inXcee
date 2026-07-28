@@ -2,8 +2,20 @@ import { Router } from 'express'
 import { getDriverManifest, driverTransition } from './driver-access.js'
 import { logAudit } from '../../shared/audit.js'
 import { logger } from '../../shared/logger.js'
+import { getTransportRevision } from './v2-core.js'
 
 export const transportPublicRouter = Router()
+
+transportPublicRouter.use((req, res, next) => {
+  if (req.method !== 'POST') return next()
+  const sendJson = res.json.bind(res)
+  res.json = body => sendJson(
+    body && typeof body === 'object' && body.transport_revision === undefined
+      ? { ...body, transport_revision: getTransportRevision() }
+      : body,
+  )
+  next()
+})
 
 function handleError(res, error) {
   const status = error.status || 500

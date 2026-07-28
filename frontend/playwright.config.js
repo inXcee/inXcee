@@ -4,9 +4,13 @@ import { dirname, resolve } from 'node:path'
 import { randomBytes } from 'node:crypto'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
-const E2E_DB = resolve(__dirname, 'e2e/.tmp/yys-e2e.db')
-const E2E_UPLOADS = resolve(__dirname, 'e2e/.tmp/uploads')
-const BACKEND_DIR = resolve(__dirname, '../backend')
+const RUN_ID = `${process.pid}-${randomBytes(4).toString('hex')}`
+const E2E_DB = resolve(__dirname, `e2e/.tmp/yys-e2e-${RUN_ID}.db`)
+const E2E_UPLOADS = resolve(__dirname, `e2e/.tmp/uploads-${RUN_ID}`)
+const BACKEND_PORT = process.env.E2E_BACKEND_PORT || '3001'
+const FRONTEND_PORT = process.env.E2E_FRONTEND_PORT || '5174'
+const BACKEND_URL = `http://localhost:${BACKEND_PORT}`
+const FRONTEND_URL = `http://localhost:${FRONTEND_PORT}`
 
 // Test ortamı için ephemeral signing key — her run'da yeniden üretilir,
 // commit'lenmez. Key adı pre-commit secret tarayıcısını tetiklememek için
@@ -19,10 +23,10 @@ const E2E_ENV = {
   // ('development'ta limiter aktif kalıyordu). seedDev yine çalışır (server.js
   // sadece 'production'ı ayırır), DB_PATH korunur.
   NODE_ENV: 'test',
-  PORT: '3001',
+  PORT: BACKEND_PORT,
   DB_PATH: E2E_DB,
   UPLOADS_DIR: E2E_UPLOADS,
-  ALLOWED_ORIGIN: 'http://localhost:5174',
+  ALLOWED_ORIGIN: FRONTEND_URL,
   TRUST_PROXY: 'loopback',
   [SIGNING_KEY_NAME]: randomBytes(32).toString('hex'),
 }
@@ -36,7 +40,7 @@ export default defineConfig({
   reporter: process.env.CI ? [['github'], ['list']] : 'list',
   globalSetup: './e2e/global-setup.js',
   use: {
-    baseURL: 'http://localhost:5174',
+    baseURL: FRONTEND_URL,
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
@@ -45,7 +49,7 @@ export default defineConfig({
     storageState: {
       cookies: [],
       origins: [{
-        origin: 'http://localhost:5174',
+        origin: FRONTEND_URL,
         localStorage: [{ name: 'yys_passkey_cred_dismissed', value: '1' }],
       }],
     },
@@ -55,9 +59,9 @@ export default defineConfig({
   ],
   webServer: [
     {
-      command: 'npm run start:e2e',
-      cwd: BACKEND_DIR,
-      url: 'http://localhost:3001/api/health',
+      command: 'node e2e/start-backend.mjs',
+      cwd: __dirname,
+      url: `${BACKEND_URL}/api/health`,
       reuseExistingServer: !process.env.CI,
       timeout: 60_000,
       env: E2E_ENV,
@@ -65,10 +69,11 @@ export default defineConfig({
       stderr: 'pipe',
     },
     {
-      command: 'npm run dev',
-      url: 'http://localhost:5174',
+      command: `npx vite --host 0.0.0.0 --port ${FRONTEND_PORT}`,
+      url: FRONTEND_URL,
       reuseExistingServer: !process.env.CI,
       timeout: 60_000,
+      env: { VITE_BACKEND_TARGET: BACKEND_URL },
       stdout: 'pipe',
       stderr: 'pipe',
     },

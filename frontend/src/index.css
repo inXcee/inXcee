@@ -276,10 +276,21 @@ h1, h2, h3, h4 { font-family: var(--display); letter-spacing: 2px; }
 .transport-analytics td { padding: 10px 9px; border-top: 1px solid var(--border); color: var(--text2); }
 .transport-analytics__empty,
 .transport-analytics__loading { padding: 36px; text-align: center; color: var(--text3); }
+.transport-rollout-loading { min-height: 320px; display: grid; place-content: center; gap: 12px; color: var(--text3); text-align: center; }
+.transport-rollout-loading .skeleton { width: min(560px, 80vw); height: 120px; border-radius: 16px; }
+.transport-rollout-card { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-bottom: 18px; padding: 18px 20px; border: 1px solid color-mix(in srgb, var(--accent) 38%, var(--border)); border-radius: 16px; background: color-mix(in srgb, var(--accent) 6%, var(--surface)); }
+.transport-rollout-card p { max-width: 760px; margin: 6px 0; color: var(--text2); }
+.transport-rollout-card small { color: var(--text3); }
+.transport-rollout-card .status-dot { display: inline-block; width: 9px; height: 9px; margin-right: 8px; border-radius: 50%; background: var(--warning); }
+.transport-rollout-card .status-dot.is-ready { background: var(--success); }
+.transport-rollout-card .status-dot.is-blocked { background: var(--danger); }
+.transport-legacy__tabs button { justify-content: center; }
 @media (max-width: 600px) {
   .transport-analytics__filters { grid-template-columns: 1fr 1fr; }
   .transport-analytics__kpis { grid-template-columns: repeat(2, 1fr); }
   .transport-analytics__panel { padding: 12px; }
+  .transport-rollout-card { align-items: stretch; flex-direction: column; }
+  .transport-rollout-card .btn { min-height: 44px; width: 100%; }
 }
 .staff-directory-table .staff-directory-group-row td strong { float: right; color: var(--text3); font-size: 8px; }
 .staff-compare-table th:first-child,

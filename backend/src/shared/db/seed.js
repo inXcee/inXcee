@@ -31,6 +31,12 @@ export function seedDev() {
     ['email_cc',      ''],
   ]
   defaultSettings.forEach(([k, v]) => settingInsert.run(k, v))
+  if (process.env.NODE_ENV !== 'test') {
+    db.prepare(`
+      INSERT INTO system_settings(key, value) VALUES('transport_v2_enabled', '1')
+      ON CONFLICT(key) DO UPDATE SET value='1', updated_at=datetime('now')
+    `).run()
+  }
 
   // ── Odalar ──────────────────────────────────────────────────────────────────
   //

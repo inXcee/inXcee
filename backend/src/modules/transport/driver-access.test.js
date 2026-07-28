@@ -67,10 +67,14 @@ describe('Transport driver access, notifications and self-service', () => {
     expect(manifest.body.manifest[0].full_name).toBe(staff.full_name)
     expect(manifest.body.manifest[0]).not.toHaveProperty('phone')
 
-    expect((await request(app).post(`/public/transport/trips/${shared.body.token}`)
-      .send({ action: 'start' })).body.status).toBe('departed')
-    expect((await request(app).post(`/public/transport/trips/${shared.body.token}`)
-      .send({ action: 'complete' })).body.status).toBe('completed')
+    const started = (await request(app).post(`/public/transport/trips/${shared.body.token}`)
+      .send({ action: 'start' })).body
+    expect(started.status).toBe('departed')
+    expect(started.transport_revision).toBeGreaterThan(0)
+    const completed = (await request(app).post(`/public/transport/trips/${shared.body.token}`)
+      .send({ action: 'complete' })).body
+    expect(completed.status).toBe('completed')
+    expect(completed.transport_revision).toBeGreaterThan(started.transport_revision)
     expect(getDB().prepare(`
       SELECT COUNT(*) AS count FROM transport_trip_events
       WHERE trip_id=? AND actor_type='driver_link'

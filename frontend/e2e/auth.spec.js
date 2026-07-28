@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+const FRONTEND_URL = process.env.E2E_FRONTEND_URL || `http://localhost:${process.env.E2E_FRONTEND_PORT || '5174'}`
 
 test.describe('auth — login flow', () => {
   test('login page renders form', async ({ page }) => {
@@ -14,7 +15,7 @@ test.describe('auth — login flow', () => {
     await page.getByPlaceholder('••••••••').fill('admin123')
     await page.getByRole('button', { name: /Giriş Yap/ }).click()
 
-    await expect(page).toHaveURL('http://localhost:5174/', { timeout: 10_000 })
+    await expect(page).toHaveURL(`${FRONTEND_URL}/`, { timeout: 10_000 })
     await expect(page.getByRole('heading', { name: /^Dashboard/ })).toBeVisible({ timeout: 10_000 })
   })
 

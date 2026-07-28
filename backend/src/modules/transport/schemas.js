@@ -197,3 +197,8 @@ export const tripScanSchema = z.object({
 export const tripShareLinkSchema = z.object({
   expires_in_hours: z.coerce.number().int().min(1).max(24).default(24),
 })
+
+export const transportRolloutSchema = z.object({
+  enabled: z.boolean(),
+  reason: z.string().trim().min(3, 'Geçiş gerekçesi gerekli').max(1000),
+})

@@ -2,7 +2,7 @@ import { test, expect, request as pwRequest } from '@playwright/test'
 
 // Bildirim akışı (header zili) regresyon guard'ı:
 // login → zil görünür → panel açılır → seed'lenen duyuru feed'de görünür → kapanır.
-const API = 'http://localhost:3001/api'
+const API = `${process.env.E2E_BACKEND_URL || `http://localhost:${process.env.E2E_BACKEND_PORT || '3001'}`}/api`
 const WORKER = `Notif Test ${Date.now()}`
 const ANN_TITLE = `E2E Duyuru ${Date.now()}`
 let workerId

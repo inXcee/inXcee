@@ -16,7 +16,7 @@ import {
   unavailabilitySchema, templateCreateSchema, templateUpdateSchema, planPreviewSchema, planPublishSchema,
   tripCreateSchema, tripUpdateSchema, tripTransitionSchema, tripReopenSchema,
   tripAssignmentCreateSchema, tripAssignmentStatusSchema, tripScanSchema,
-  tripShareLinkSchema,
+  tripShareLinkSchema, transportRolloutSchema,
 } from './schemas.js'
 import { enqueue } from '../../shared/jobs/index.js'
 import { recomputeRoutePathSync } from './jobs.js'
@@ -30,6 +30,12 @@ import {
   getTransportAnalytics,
   writeAnalyticsPdf,
 } from './analytics-service.js'
+import {
+  changeTransportV2Status,
+  getTransportRevision,
+  getTransportV2Status,
+  rejectLegacyTransportWrite,
+} from './v2-core.js'
 
 const WORK_SITE_NAME = 'Filyos Doğal Gaz İşleme Tesisi'
 const WORK_SITE_SHORT = 'FILYOS'
@@ -39,10 +45,42 @@ const mgr = requireRole('campus_manager', 'shift_supervisor')
 const view = requireRole('campus_manager', 'shift_supervisor', 'laundry', 'housekeeper', 'technical')
 const admin = requireRole('campus_manager')
 
+transportRouter.use((req, res, next) => {
+  if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) return next()
+  const sendJson = res.json.bind(res)
+  res.json = body => {
+    if (body && typeof body === 'object' && !Buffer.isBuffer(body)
+      && body.transport_revision === undefined) {
+      return sendJson({ ...body, transport_revision: getTransportRevision() })
+    }
+    return sendJson(body)
+  }
+  next()
+})
+
 function serviceError(res, error) {
   const status = error.status || 400
   res.status(status).json({ error: error.message, conflicts: error.conflicts, details: error.details })
 }
+
+transportRouter.get('/v2/status', ...view, (req, res) => {
+  try { res.json(getTransportV2Status()) }
+  catch (e) { logger.error('[Transport/V2 status]', e); serviceError(res, e) }
+})
+
+transportRouter.patch('/v2/status', ...admin, validate(transportRolloutSchema), (req, res) => {
+  try {
+    const result = changeTransportV2Status(req.validated.enabled)
+    logAudit(
+      req.user.id,
+      req.validated.enabled ? 'transport_v2_enable' : 'transport_v2_disable',
+      'transport',
+      null,
+      req.validated.reason,
+    )
+    res.json(result)
+  } catch (e) { serviceError(res, e) }
+})
 
 // ── Is yeri (varis noktasi) ──
 // Konum system_settings'te; kod icindeki deger yalnizca varsayilan (bkz. workSite.js).
@@ -565,7 +603,7 @@ transportRouter.get('/routes/:id/manifest', ...view, (req, res) => {
   } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
-transportRouter.post('/auto-assign', ...mgr, (req, res) => {
+transportRouter.post('/auto-assign', ...mgr, rejectLegacyTransportWrite, (req, res) => {
   try {
     const date = req.body?.date || new Date().toISOString().slice(0, 10)
     const override = !!req.body?.override
@@ -575,7 +613,7 @@ transportRouter.post('/auto-assign', ...mgr, (req, res) => {
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
-transportRouter.post('/assign', ...mgr, validate(assignSchema), (req, res) => {
+transportRouter.post('/assign', ...mgr, rejectLegacyTransportWrite, validate(assignSchema), (req, res) => {
   try {
     const { staff_id, route_id, stop_id, work_date } = req.validated
     q.setAssignment({ staffId: staff_id, routeId: route_id, stopId: stop_id ?? null, workDate: work_date, userId: req.user.id })
@@ -670,7 +708,7 @@ transportRouter.get('/reports', ...view, (req, res) => {
   } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
-transportRouter.delete('/assign/:staff_id', ...mgr, (req, res) => {
+transportRouter.delete('/assign/:staff_id', ...mgr, rejectLegacyTransportWrite, (req, res) => {
   try {
     const date = req.query.date || new Date().toISOString().slice(0, 10)
     q.clearAssignment(+req.params.staff_id, date)
@@ -682,7 +720,7 @@ transportRouter.delete('/assign/:staff_id', ...mgr, (req, res) => {
 // QR ile biniş — kiosk QR kartı okutulur, bugünkü atama boarded işaretlenir.
 // Manuel toggle (PATCH /assignments/:id/boarded) ile aynı setBoarded'ı kullanır;
 // fark: kişiyi listede aramak yerine staff.qr_token'dan çözer.
-transportRouter.post('/board-qr', ...mgr, validate(boardQrSchema), (req, res) => {
+transportRouter.post('/board-qr', ...mgr, rejectLegacyTransportWrite, validate(boardQrSchema), (req, res) => {
   try {
     const db = getDB()
     const token = req.validated.qr_token.replace(/^AVS:/i, '')
@@ -713,7 +751,7 @@ transportRouter.post('/board-qr', ...mgr, validate(boardQrSchema), (req, res) =>
 })
 
 // Faz 6: katılım işaretle
-transportRouter.patch('/assignments/:id/boarded', ...mgr, (req, res) => {
+transportRouter.patch('/assignments/:id/boarded', ...mgr, rejectLegacyTransportWrite, (req, res) => {
   try {
     const id = +req.params.id
     const v = req.body?.boarded
@@ -811,7 +849,7 @@ transportRouter.get('/manifest/all/pdf', ...view, (req, res) => {
 })
 
 // Faz 8: waitlist'ten aktife terfi
-transportRouter.post('/assignments/:id/promote', ...mgr, (req, res) => {
+transportRouter.post('/assignments/:id/promote', ...mgr, rejectLegacyTransportWrite, (req, res) => {
   try {
     const id = +req.params.id
     q.promoteFromWaitlist(id)

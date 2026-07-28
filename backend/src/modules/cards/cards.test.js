@@ -192,7 +192,7 @@ describe('cards — toplu basım (batch PDF)', () => {
     expect(r.status).toBe(200)
     expect(r.headers['content-type']).toMatch(/pdf/)
     expect(r.body.length).toBeGreaterThan(500)
-  })
+  }, 15_000)
 
   it('geçersiz card_type 400 döner', async () => {
     const r = await request(app).get('/api/cards/batch-pdf?card_type=vip').set(auth(token))

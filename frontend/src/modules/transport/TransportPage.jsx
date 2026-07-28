@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import HelpHint from '../../shared/components/HelpHint.jsx'
+import { useAuthStore } from '../../shared/store/authStore.js'
 import { useUrlParamState } from '../../shared/hooks/useUrlParamState.js'
 import { todayStr } from './shared.jsx'
 import SetupWizard from './SetupWizard.jsx'
@@ -11,6 +12,11 @@ import ResourcesTab from './tabs/ResourcesTab.jsx'
 import PeopleTab from './tabs/PeopleTab.jsx'
 import AnalyticsTab from './tabs/AnalyticsTab.jsx'
 import OperationsTab from './tabs/OperationsTab.jsx'
+import DailyTab from './tabs/DailyTab.jsx'
+import RoutesTab from './tabs/RoutesTab.jsx'
+import PointsTab from './tabs/PointsTab.jsx'
+import MapTab from './tabs/MapTab.jsx'
+import ReportsTab from './tabs/ReportsTab.jsx'
 
 const TABS = [
   { key: 'operation', label: 'OPERASYON', icon: '🚌', description: 'Bugünün seferleri' },
@@ -30,6 +36,27 @@ const LEGACY_TAB = {
 }
 
 export default function TransportPage() {
+  const rollout = useQuery({
+    queryKey: ['transport-v2-status'],
+    queryFn: () => api.get('/transport/v2/status').then(response => response.data),
+    retry: false,
+  })
+
+  if (rollout.isLoading) {
+    return (
+      <main className="transport-v2 transport-rollout-loading" aria-busy="true">
+        <div className="skeleton" />
+        <span>Servis paneli hazırlanıyor…</span>
+      </main>
+    )
+  }
+  if (rollout.isError || rollout.data?.enabled === false) {
+    return <LegacyTransportPage status={rollout.data || null} />
+  }
+  return <TransportV2Page />
+}
+
+export function TransportV2Page() {
   const [tab, setTab] = useUrlParamState('tab', 'operation')
   const [lineView, setLineView] = useUrlParamState('view', 'routes')
   const [date, setDate] = useState(todayStr())
@@ -119,6 +146,99 @@ export default function TransportPage() {
       {searchOpen && (
         <GlobalSearch onClose={() => setSearchOpen(false)} onNavigate={navigate} />
       )}
+    </main>
+  )
+}
+
+const LEGACY_TABS = [
+  { key: 'daily', label: 'GÜNLÜK' },
+  { key: 'routes', label: 'ROTALAR' },
+  { key: 'points', label: 'DURAKLAR' },
+  { key: 'map', label: 'HARİTA' },
+  { key: 'people', label: 'PERSONEL' },
+  { key: 'reports', label: 'RAPORLAR' },
+]
+
+export function LegacyTransportPage({ status }) {
+  const queryClient = useQueryClient()
+  const role = useAuthStore(state => state.user?.role)
+  const [tab, setTab] = useUrlParamState('tab', 'daily')
+  const [date, setDate] = useState(todayStr())
+  const isManager = role === 'campus_manager'
+  const enable = useMutation({
+    mutationFn: () => api.patch('/transport/v2/status', {
+      enabled: true,
+      reason: 'Yönetici tarafından V2 arayüz geçişi onaylandı',
+    }),
+    onSuccess: response => queryClient.setQueryData(['transport-v2-status'], response.data),
+  })
+  const selected = LEGACY_TABS.some(item => item.key === tab) ? tab : 'daily'
+  const readiness = status?.readiness
+
+  return (
+    <main className="transport-v2 transport-legacy fade-up">
+      <header className="transport-v2__header">
+        <div>
+          <h1 className="transport-v2__title">SERVİSLER</h1>
+          <p className="transport-v2__subtitle">GÜVENLİ GEÇİŞ · LEGACY UYUMLULUK MODU</p>
+        </div>
+        {selected === 'daily' && (
+          <input type="date" className="form-input" value={date} aria-label="Operasyon tarihi"
+            onChange={event => setDate(event.target.value)} />
+        )}
+      </header>
+
+      <section className="transport-rollout-card" aria-label="Transport V2 geçiş durumu">
+        <div>
+          <span className={`status-dot ${status?.ready ? 'is-ready' : 'is-blocked'}`} aria-hidden="true" />
+          <strong>{status?.ready ? 'V2 veri katmanı hazır' : 'V2 hazırlık kontrolü gerekli'}</strong>
+          <p>
+            Eski günlük yazma akışı açık. V2 etkinleştirildiğinde planlama ve sefer tabanlı operasyon
+            arayüzü devreye girer.
+          </p>
+          {readiness && (
+            <small>
+              {readiness.routes} hat · {readiness.stops} durak · {readiness.vehicles} araç ·{' '}
+              {readiness.drivers} şoför · {readiness.staff_without_stop} durağı eksik personel
+            </small>
+          )}
+          {!!status?.blockers?.length && (
+            <ul>{status.blockers.map(item => <li key={item}>{item}</li>)}</ul>
+          )}
+        </div>
+        {isManager ? (
+          <button type="button" className="btn btn-primary" onClick={() => enable.mutate()}
+            disabled={!status?.ready || enable.isPending}>
+            {enable.isPending ? 'ETKİNLEŞTİRİLİYOR…' : 'V2 PANELİNİ ETKİNLEŞTİR'}
+          </button>
+        ) : (
+          <small>V2 geçişini kampüs müdürü etkinleştirebilir.</small>
+        )}
+        {enable.isError && (
+          <div className="form-error" role="alert">
+            {enable.error?.response?.data?.error || 'V2 etkinleştirilemedi'}
+          </div>
+        )}
+      </section>
+
+      <nav className="transport-v2__tabs transport-legacy__tabs" aria-label="Legacy servis bölümleri">
+        {LEGACY_TABS.map(item => (
+          <button key={item.key} type="button" onClick={() => setTab(item.key)}
+            className={selected === item.key ? 'is-active' : ''}
+            aria-current={selected === item.key ? 'page' : undefined}>
+            <strong>{item.label}</strong>
+          </button>
+        ))}
+      </nav>
+
+      <section className="transport-v2__content">
+        {selected === 'daily' && <DailyTab date={date} />}
+        {selected === 'routes' && <RoutesTab />}
+        {selected === 'points' && <PointsTab />}
+        {selected === 'map' && <MapTab />}
+        {selected === 'people' && <PeopleTab />}
+        {selected === 'reports' && <ReportsTab />}
+      </section>
     </main>
   )
 }
