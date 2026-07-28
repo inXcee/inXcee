@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import fs from 'fs'
 import PDFDocument from 'pdfkit'
+import QRCode from 'qrcode'
 import { requireRole } from '../../shared/auth/middleware.js'
 import { upload, verifyMagicBytes } from '../../shared/uploads/middleware.js'
 import { getDB } from '../../shared/db/index.js'
@@ -15,12 +16,14 @@ import {
   unavailabilitySchema, templateCreateSchema, templateUpdateSchema, planPreviewSchema, planPublishSchema,
   tripCreateSchema, tripUpdateSchema, tripTransitionSchema, tripReopenSchema,
   tripAssignmentCreateSchema, tripAssignmentStatusSchema, tripScanSchema,
+  tripShareLinkSchema,
 } from './schemas.js'
 import { enqueue } from '../../shared/jobs/index.js'
 import { recomputeRoutePathSync } from './jobs.js'
 import { getWorkSite, saveWorkSite } from './workSite.js'
 import * as planning from './planning-service.js'
 import * as operations from './operations-service.js'
+import * as driverAccess from './driver-access.js'
 
 const WORK_SITE_NAME = 'Filyos Doğal Gaz İşleme Tesisi'
 const WORK_SITE_SHORT = 'FILYOS'
@@ -255,6 +258,38 @@ transportRouter.patch('/trip-assignments/:id/status', ...mgr, validate(tripAssig
 transportRouter.post('/trips/:id/scan', ...mgr, validate(tripScanSchema), (req, res) => {
   try { res.json(operations.scanTrip(+req.params.id, req.validated, req.user.id)) }
   catch (e) { serviceError(res, e) }
+})
+
+transportRouter.get('/trips/:id/share-links', ...mgr, (req, res) => {
+  try { res.json(driverAccess.listDriverAccess(+req.params.id)) }
+  catch (e) { serviceError(res, e) }
+})
+
+transportRouter.post('/trips/:id/share-link', ...mgr, validate(tripShareLinkSchema), async (req, res) => {
+  try {
+    const result = driverAccess.createDriverAccess(
+      +req.params.id,
+      req.validated.expires_in_hours,
+      req.user.id,
+    )
+    const baseUrl = process.env.PUBLIC_APP_URL || req.get('origin') || `${req.protocol}://${req.get('host')}`
+    const url = `${baseUrl}${result.public_path}`
+    const qr_data_url = await QRCode.toDataURL(url, { width: 280, margin: 1 })
+    logAudit(req.user.id, 'transport_driver_link_create', 'transport', +req.params.id, result.expires_at)
+    res.status(201).json({ ...result, url, qr_data_url })
+  } catch (e) { serviceError(res, e) }
+})
+
+transportRouter.delete('/trips/:tripId/share-link/:tokenId', ...mgr, (req, res) => {
+  try {
+    const result = driverAccess.revokeDriverAccess(
+      +req.params.tripId,
+      +req.params.tokenId,
+      req.user.id,
+    )
+    logAudit(req.user.id, 'transport_driver_link_revoke', 'transport', +req.params.tripId, req.params.tokenId)
+    res.json(result)
+  } catch (e) { serviceError(res, e) }
 })
 
 // ── Pickup Points ──

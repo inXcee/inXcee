@@ -1,5 +1,6 @@
 import { getDB } from '../../shared/db/index.js'
 import { bumpTransportRevision, getTransportRevision } from './v2-core.js'
+import { notifyTripEvent } from './notifications.js'
 
 const TRIP_WINDOW_MINUTES = 180
 
@@ -473,5 +474,9 @@ export function publishPlan(data, userId) {
   })
 
   const trips = tx()
-  return { ok: true, trips, revision: bumpTransportRevision() }
+  const revision = bumpTransportRevision()
+  for (const trip of trips) {
+    if (!trip.existing) notifyTripEvent(trip.id, 'published', { dedupSuffix: revision })
+  }
+  return { ok: true, trips, revision }
 }

@@ -26,6 +26,7 @@ const RoomHistoryPage = lazy(() => import('./modules/room-history/RoomHistoryPag
 const WhatsAppPage = lazy(() => import('./modules/whatsapp/WhatsAppPage.jsx'))
 const ShiftsPage = lazy(() => import('./modules/shifts/ShiftsPage.jsx'))
 const TransportPage = lazy(() => import('./modules/transport/TransportPage.jsx'))
+const DriverTripPage = lazy(() => import('./modules/transport/DriverTripPage.jsx'))
 const Personnel360Page = lazy(() => import('./modules/personnel/Personnel360Page.jsx'))
 const StaffDossierPage = lazy(() => import('./modules/personnel/StaffDossierPage.jsx'))
 const PersonnelListPage = lazy(() => import('./modules/personnel/PersonnelListPage.jsx'))
@@ -241,7 +242,7 @@ function SetupGate({ children }) {
   const onSetup = location.pathname === '/setup'
   // Public sayfalar setup zorunluluğundan muaf (KVKK kanun gereği herkese açık)
   const publicPaths = ['/setup', '/kvkk']
-  const onPublic = publicPaths.includes(location.pathname)
+  const onPublic = publicPaths.includes(location.pathname) || location.pathname.startsWith('/driver/trips/')
   if (data?.needs_setup && !onPublic) return <Navigate to="/setup" replace />
   if (!data?.needs_setup && onSetup) return <Navigate to="/login" replace />
   return children
@@ -286,6 +287,7 @@ export default function App() {
           <Route path="/setup" element={<SetupPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/kvkk" element={<KvkkPage />} />
+          <Route path="/driver/trips/:token" element={<DriverTripPage />} />
           <Route path="/kiosk" element={<SelfServicePage />} />
           <Route path="/laundry-kiosk" element={<LaundryKioskPage />} />
           <Route path="/avs-kiosk" element={<AvsSelfServicePage />} />

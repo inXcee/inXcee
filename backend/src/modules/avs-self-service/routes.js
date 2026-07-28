@@ -14,6 +14,7 @@ import { getStaffActivity } from '../activity/service.js'
 import { MEAL_TYPES, localDay } from '../meals/service.js'
 import { validate } from '../../shared/middleware/validate.js'
 import { mealSelectionSchema, maintenanceSchema, feedbackSchema } from './schemas.js'
+import { getStaffTransport } from '../transport/self-service.js'
 
 export const avsSelfServiceRouter = Router()
 
@@ -82,11 +83,10 @@ avsSelfServiceRouter.get('/my-shifts', requireAvsKiosk, (req, res) => {
 avsSelfServiceRouter.get('/my-transport', requireAvsKiosk, (req, res) => {
   try {
     const db = getDB()
+    const v2 = getStaffTransport(req.user.workerId)
+    if (v2.schedule || v2.upcoming.length || v2.history.length) return res.json(v2)
     const staff = db.prepare('SELECT pickup_point_id FROM staff WHERE id=?').get(req.user.workerId)
-    const pickup = staff?.pickup_point_id ? db.prepare(`
-      SELECT name, district, neighborhood, notes, lat, lng
-      FROM pickup_points WHERE id = ?
-    `).get(staff.pickup_point_id) : null
+    const pickup = v2.pickup
 
     // Servis programı: önce bugünün ataması, yoksa durağın aktif route_stop'u
     let schedule = db.prepare(`
@@ -110,7 +110,7 @@ avsSelfServiceRouter.get('/my-transport', requireAvsKiosk, (req, res) => {
       `).get(staff.pickup_point_id)
     }
 
-    res.json({ pickup, schedule: schedule || null })
+    res.json({ ...v2, pickup, schedule: schedule || null })
   } catch (e) { logger.error('[avs my-transport]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 

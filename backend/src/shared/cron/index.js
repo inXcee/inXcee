@@ -24,6 +24,7 @@ import { cleanupWaterFiles } from '../../modules/water/file-lifecycle.js'
 import { captureError } from '../sentry.js'
 import { reconcileAttendanceService } from '../../modules/shifts/service.js'
 import { cleanupHousekeepingPhotos } from '../../modules/housekeeping/photo-retention.js'
+import { notifyUpcomingTrips } from '../../modules/transport/notifications.js'
 
 let emailJob = null
 export const WATER_TRUCK_ALERT_CRON = '* * * * *'
@@ -61,6 +62,10 @@ function withLock(name, fn) {
 }
 
 export function startCronJobs() {
+  cron.schedule('*/5 * * * *', withLock('transport-upcoming', () => {
+    notifyUpcomingTrips()
+  }), TZ)
+
   // Her gün 05:50'de günlük temizlik görevleri oluştur
   cron.schedule('50 5 * * *', () => {
     try {

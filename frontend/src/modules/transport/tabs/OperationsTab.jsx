@@ -252,6 +252,8 @@ function ManifestDrawer({ tripId, allTrips, selected, onSelected, onClose, onRef
   const qc = useQueryClient()
   const [cancelReason, setCancelReason] = useState('')
   const [resourceEdit, setResourceEdit] = useState(false)
+  const [shareLink, setShareLink] = useState(null)
+  const [shareBusy, setShareBusy] = useState(false)
   const { data: trip, isLoading } = useQuery({
     queryKey: ['transport-trip', tripId],
     queryFn: () => api.get(`/transport/trips/${tripId}`).then(response => response.data),
@@ -353,6 +355,28 @@ function ManifestDrawer({ tripId, allTrips, selected, onSelected, onClose, onRef
     window.open(`https://wa.me/?text=${encodeURIComponent(lines.join('\n'))}`, '_blank', 'noopener,noreferrer')
   }
 
+  const createDriverLink = async () => {
+    setShareBusy(true)
+    try {
+      const response = await api.post(`/transport/trips/${tripId}/share-link`, { expires_in_hours: 24 })
+      setShareLink(response.data)
+      toast('24 saatlik şoför bağlantısı hazır')
+    } catch (error) {
+      toastErr(error)
+    } finally {
+      setShareBusy(false)
+    }
+  }
+
+  const revokeDriverLink = async () => {
+    if (!shareLink) return
+    try {
+      await api.delete(`/transport/trips/${tripId}/share-link/${shareLink.id}`)
+      setShareLink(null)
+      toast('Şoför bağlantısı iptal edildi')
+    } catch (error) { toastErr(error) }
+  }
+
   return (
     <div className="transport-manifest" role="presentation" onMouseDown={onClose}>
       <aside role="dialog" aria-modal="true" aria-label="Sefer manifestosu"
@@ -371,8 +395,30 @@ function ManifestDrawer({ tripId, allTrips, selected, onSelected, onClose, onRef
               <button onClick={exportCsv}>CSV</button>
               <button onClick={() => window.print()}>PDF / YAZDIR</button>
               <button onClick={shareWhatsApp}>WHATSAPP</button>
+              {['published', 'boarding', 'departed'].includes(trip.status) && (
+                <button disabled={shareBusy} onClick={createDriverLink}>ŞOFÖR LİNKİ</button>
+              )}
               {trip.status === 'boarding' && <button onClick={() => onScan(trip)}>▣ QR OKUT</button>}
             </div>
+
+            {shareLink && (
+              <section className="transport-share-card">
+                <img src={shareLink.qr_data_url} alt="Şoför bağlantısı QR kodu" />
+                <div>
+                  <strong>Şoför erişimi hazır</strong>
+                  <small>{new Date(shareLink.expires_at).toLocaleString('tr-TR')} tarihine kadar geçerli</small>
+                  <div className="transport-share-card__actions">
+                    <button onClick={() => navigator.clipboard.writeText(shareLink.url).then(() => toast('Bağlantı kopyalandı'))}>
+                      KOPYALA
+                    </button>
+                    <button onClick={() => window.open(`https://wa.me/?text=${encodeURIComponent(shareLink.url)}`, '_blank', 'noopener,noreferrer')}>
+                      WHATSAPP
+                    </button>
+                    <button onClick={revokeDriverLink}>İPTAL ET</button>
+                  </div>
+                </div>
+              </section>
+            )}
 
             <section className="transport-manifest__resources">
               {resourceEdit ? (
@@ -466,6 +512,13 @@ function ManifestRow({ assignment, trip, selected, onSelect, onStatus, targets, 
         {actions.map(([nextStatus, label]) => (
           <button key={nextStatus} onClick={() => onStatus(nextStatus, label)}>{label}</button>
         ))}
+        {assignment.phone && (
+          <button onClick={() => {
+            const phone = String(assignment.phone).replace(/\D/g, '').replace(/^0/, '90')
+            const text = `${assignment.full_name}, ${trip.route_name} servisiniz ${trip.work_date} ${formatTime(trip.scheduled_departure)} saatinde. Durak: ${assignment.pickup_name || 'belirtilmedi'}.`
+            window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer')
+          }}>MESAJ</button>
+        )}
         {!['completed', 'cancelled'].includes(trip.status) && targets.length > 0 && (
           <span className="transport-manifest-row__move">
             <select value={target} onChange={event => setTarget(event.target.value)} aria-label={`${assignment.full_name} başka sefere taşı`}>

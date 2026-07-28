@@ -64,6 +64,13 @@ export const EVENT_KINDS = Object.freeze({
   SHIFT_ASSIGNED:         'shifts.shift.assigned',
   SHIFT_SWAPPED:          'shifts.shift.swapped',
 
+  // TRANSPORT
+  TRANSPORT_TRIP_PUBLISHED:    'transport.trip.published',
+  TRANSPORT_TRIP_CHANGED:      'transport.trip.changed',
+  TRANSPORT_TRIP_CANCELLED:    'transport.trip.cancelled',
+  TRANSPORT_WAITLIST_PROMOTED: 'transport.waitlist.promoted',
+  TRANSPORT_TRIP_UPCOMING:     'transport.trip.upcoming',
+
   // KVKK / SELF-SERVICE
   KVKK_CONSENT_GIVEN:     'kvkk.consent.given',
   SELF_SERVICE_FEEDBACK:  'self_service.feedback.received',
@@ -138,6 +145,12 @@ export const DEFAULT_SEVERITY = {
   [EVENT_KINDS.SHIFT_ASSIGNED]:         'info',
   [EVENT_KINDS.SHIFT_SWAPPED]:          'info',
 
+  [EVENT_KINDS.TRANSPORT_TRIP_PUBLISHED]:    'info',
+  [EVENT_KINDS.TRANSPORT_TRIP_CHANGED]:      'warning',
+  [EVENT_KINDS.TRANSPORT_TRIP_CANCELLED]:    'critical',
+  [EVENT_KINDS.TRANSPORT_WAITLIST_PROMOTED]: 'info',
+  [EVENT_KINDS.TRANSPORT_TRIP_UPCOMING]:     'info',
+
   [EVENT_KINDS.KVKK_CONSENT_GIVEN]:     'info',
   [EVENT_KINDS.SELF_SERVICE_FEEDBACK]:  'info',
 
@@ -170,6 +183,11 @@ export const LINK_TEMPLATES = {
   [EVENT_KINDS.ANNOUNCEMENT_PUBLISHED]:      '/announcements?id={entity_id}',
   [EVENT_KINDS.CHECKIN_DONE]:                '/checkin?id={entity_id}',
   [EVENT_KINDS.CHECKOUT_DONE]:                '/checkin?id={entity_id}',
+  [EVENT_KINDS.TRANSPORT_TRIP_PUBLISHED]:     '/transport?section=operation&trip={entity_id}',
+  [EVENT_KINDS.TRANSPORT_TRIP_CHANGED]:       '/transport?section=operation&trip={entity_id}',
+  [EVENT_KINDS.TRANSPORT_TRIP_CANCELLED]:     '/transport?section=operation&trip={entity_id}',
+  [EVENT_KINDS.TRANSPORT_WAITLIST_PROMOTED]:  '/transport?section=operation&trip={entity_id}',
+  [EVENT_KINDS.TRANSPORT_TRIP_UPCOMING]:      '/transport?section=operation&trip={entity_id}',
   [EVENT_KINDS.SYSTEM_BACKUP_FAILED]:         '/system/backups',
   [EVENT_KINDS.SYSTEM_ERROR_CRITICAL]:        '/system/errors',
 }

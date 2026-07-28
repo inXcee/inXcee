@@ -13,6 +13,7 @@ import { advanceItemService, batchAssignService, lostItemService, deleteItemServ
 import { sendFoundMessage } from '../laundry/whatsapp.js'
 import { upload, verifyMagicBytes } from '../../shared/uploads/middleware.js'
 import { logger } from '../../shared/logger.js'
+import { getStaffTransport } from '../transport/self-service.js'
 
 export const selfServiceRouter = Router()
 
@@ -216,8 +217,11 @@ selfServiceRouter.get('/my-transport', requireKioskOrStaff, (req, res) => {
     const date = req.query.date || new Date().toISOString().slice(0, 10)
     const p = db.prepare('SELECT tc_no FROM personnel WHERE id=?').get(req.user.personnelId)
     if (!p?.tc_no) return res.json({ today: null, pickup: null, date, message: 'TC numarası kayıtlı değil' })
-    const staff = db.prepare('SELECT id, pickup_point_id FROM staff WHERE tc_no = ? AND is_active = 1').get(p.tc_no)
+    const staff = db.prepare('SELECT id FROM staff WHERE tc_no = ? AND is_active = 1').get(p.tc_no)
     if (!staff) return res.json({ today: null, pickup: null, date, message: 'Personel kaydınız bulunamadı' })
+
+    const v2 = getStaffTransport(staff.id, date)
+    if (v2.today || v2.upcoming.length || v2.history.length) return res.json(v2)
 
     const today = db.prepare(`
       SELECT ra.id, ra.boarded, ra.is_waitlist,
@@ -230,11 +234,7 @@ selfServiceRouter.get('/my-transport', requireKioskOrStaff, (req, res) => {
       WHERE ra.staff_id = ? AND ra.work_date = ?
     `).get(staff.id, date) || null
 
-    const pickup = staff.pickup_point_id ? db.prepare(
-      'SELECT name, district, neighborhood, photo_url FROM pickup_points WHERE id = ?'
-    ).get(staff.pickup_point_id) : null
-
-    res.json({ today, pickup, date })
+    res.json({ ...v2, today })
   } catch (e) { logger.error('[my-transport]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 

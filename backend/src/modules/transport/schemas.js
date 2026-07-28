@@ -193,3 +193,7 @@ export const tripScanSchema = z.object({
   client_event_id: z.string().trim().min(8).max(120),
   device_time: z.string().min(16).max(40).optional(),
 })
+
+export const tripShareLinkSchema = z.object({
+  expires_in_hours: z.coerce.number().int().min(1).max(24).default(24),
+})

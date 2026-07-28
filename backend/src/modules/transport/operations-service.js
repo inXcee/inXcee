@@ -1,5 +1,6 @@
 import { getDB } from '../../shared/db/index.js'
 import { bumpTransportRevision, getTransportRevision } from './v2-core.js'
+import { notifyTripEvent } from './notifications.js'
 
 const TRANSITIONS = {
   draft: ['published', 'cancelled'],
@@ -220,7 +221,19 @@ export function updateTrip(id, data, userId) {
     UPDATE transport_trips SET ${sets.join(',')}, updated_by=?, updated_at=datetime('now') WHERE id=?
   `).run(...params)
   addEvent(id, 'trip_updated', trip.status, trip.status, userId, { changes: data, reason: data.change_reason || null })
-  return { ok: true, revision: bumpTransportRevision() }
+  const revision = bumpTransportRevision()
+  if (trip.status !== 'draft') {
+    const labels = []
+    if (data.scheduled_departure !== undefined) labels.push('saat')
+    if (data.route_id !== undefined) labels.push('hat')
+    if (data.vehicle_id !== undefined) labels.push('araç')
+    if (data.driver_id !== undefined) labels.push('şoför')
+    notifyTripEvent(id, 'changed', {
+      detail: labels.length ? `${labels.join(', ')} güncellendi` : 'sefer bilgileri güncellendi',
+      dedupSuffix: revision,
+    })
+  }
+  return { ok: true, revision }
 }
 
 export function transitionTrip(id, action, { reason, delay_minutes: delayMinutes } = {}, user) {
@@ -271,7 +284,12 @@ export function transitionTrip(id, action, { reason, delay_minutes: delayMinutes
     })
   })
   tx()
-  return { ok: true, status: target, revision: bumpTransportRevision() }
+  const revision = bumpTransportRevision()
+  if (target === 'published') notifyTripEvent(id, 'published', { dedupSuffix: revision })
+  if (target === 'cancelled' && trip.status !== 'draft') {
+    notifyTripEvent(id, 'cancelled', { detail: reason, dedupSuffix: revision })
+  }
+  return { ok: true, status: target, revision }
 }
 
 export function reopenTrip(id, reason, user) {
@@ -350,6 +368,11 @@ function promoteWaitlist(tripId, userId, approveAfterDeparture = false) {
     staff_id: waiting.staff_id,
     after_departure: ['departed', 'completed'].includes(trip.status),
   }, userId ? 'user' : 'system')
+  notifyTripEvent(tripId, 'promoted', {
+    staffId: waiting.staff_id,
+    detail: 'yedek listeden ana listeye alındınız',
+    dedupSuffix: waiting.id,
+  })
   return { promoted_assignment_id: waiting.id }
 }
 

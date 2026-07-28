@@ -71,6 +71,7 @@ import { emailRouter } from './modules/email/routes.js'
 import { announcementsRouter } from './modules/announcements/routes.js'
 import { avsWorkersRouter } from './modules/avs-workers/routes.js'
 import { transportRouter } from './modules/transport/routes.js'
+import { transportPublicRouter } from './modules/transport/public-routes.js'
 import { mobileAuthRouter } from './modules/mobile-auth/routes.js'
 import { setupRouter } from './modules/setup/routes.js'
 import { errorLogRouter } from './modules/error-log/routes.js'
@@ -338,10 +339,20 @@ const notificationsLimiter = rateLimit({
   keyGenerator: rateLimitKey,
 })
 
+const driverLinkLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  message: { error: 'Çok fazla şoför bağlantısı isteği. Lütfen daha sonra deneyin.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: req => `driver:${ipKeyGenerator(req.ip)}`,
+})
+
 // Setup — auth gerektirmez, ilk kurulum sihirbazı için açık endpoint.
 // authLimiter brute-force korur (15dk içinde 30 deneme).
 app.use('/api/setup', authLimiter, setupRouter)
 app.use('/api/auth', authLimiter, authRouter)
+app.use('/public/transport/trips', driverLinkLimiter, transportPublicRouter)
 app.use('/api/public', readLimiter, publicRouter)  // login öncesi güvenli toplu sayılar (auth yok)
 app.use('/api/mobile/auth', mobileAuthLimiter, mobileAuthRouter)
 app.use('/api/checkin', writeLimiter, checkinRouter)

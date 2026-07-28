@@ -690,6 +690,24 @@ export default function SelfServicePage() {
                   Bugün için servis ataman yok
                 </div>
               )}
+              {myTransport.upcoming?.length > 0 && (
+                <div className="bg-slate-900 rounded-2xl p-5">
+                  <h2 className="font-medium text-slate-300 mb-3">Yaklaşan gidiş ve dönüşler</h2>
+                  <div className="space-y-3">
+                    {myTransport.upcoming.map(trip => (
+                      <div key={trip.assignment_id} className="border-b border-slate-800 pb-3 last:border-0">
+                        <div className="flex justify-between gap-3">
+                          <strong className="text-slate-100">{trip.route_name}</strong>
+                          <span className="text-blue-400">{trip.direction === 'outbound' ? 'Gidiş' : 'Dönüş'}</span>
+                        </div>
+                        <div className="text-sm text-slate-400 mt-1">
+                          {trip.work_date} · {String(trip.scheduled_departure).slice(11, 16)} · {trip.stop_name || 'Durak belirtilmedi'}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </>
           )}
         </div>
