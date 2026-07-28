@@ -10,7 +10,7 @@ import PlanningTab from './tabs/PlanningTab.jsx'
 import ResourcesTab from './tabs/ResourcesTab.jsx'
 import PeopleTab from './tabs/PeopleTab.jsx'
 import ReportsTab from './tabs/ReportsTab.jsx'
-import DailyTab from './tabs/DailyTab.jsx'
+import OperationsTab from './tabs/OperationsTab.jsx'
 
 const TABS = [
   { key: 'operation', label: 'OPERASYON', icon: '🚌', description: 'Bugünün seferleri' },
@@ -108,7 +108,7 @@ export default function TransportPage() {
       )}
 
       <section className="transport-v2__content" aria-live="polite">
-        {tab === 'operation' && <DailyTab date={date} />}
+        {tab === 'operation' && <OperationsTab date={date} />}
         {tab === 'planning' && <PlanningTab />}
         {tab === 'lines' && <LinesTab view={lineView} onViewChange={setLineView} />}
         {tab === 'resources' && <ResourcesTab />}

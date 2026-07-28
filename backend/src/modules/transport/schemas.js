@@ -149,3 +149,47 @@ export const planPublishSchema = planPreviewSchema.safeExtend({
   selected_trip_keys: z.array(z.string().max(100)).max(200).optional(),
   warning_reason: z.string().trim().max(1000).optional(),
 })
+
+const tripFields = z.object({
+  route_id: positiveId,
+  work_date: dateStr,
+  direction: z.enum(['outbound', 'inbound']),
+  scheduled_departure: z.string().min(16).max(30),
+  vehicle_id: positiveId.nullish(),
+  driver_id: positiveId.nullish(),
+  capacity_snapshot: z.coerce.number().int().positive().max(200).optional(),
+  notes: z.string().trim().max(2000).nullish(),
+})
+
+export const tripCreateSchema = tripFields
+export const tripUpdateSchema = tripFields.partial().safeExtend({
+  change_reason: z.string().trim().max(1000).optional(),
+})
+
+export const tripTransitionSchema = z.object({
+  reason: z.string().trim().max(1000).optional(),
+  delay_minutes: z.coerce.number().int().min(0).max(1440).optional(),
+})
+
+export const tripReopenSchema = z.object({
+  reason: z.string().trim().min(3).max(1000),
+})
+
+export const tripAssignmentCreateSchema = z.object({
+  staff_id: positiveId,
+  stop_id: positiveId.nullish(),
+  status: z.enum(['assigned', 'waitlisted']).optional(),
+  reason: z.string().trim().max(1000).optional(),
+})
+
+export const tripAssignmentStatusSchema = z.object({
+  status: z.enum(['assigned', 'waitlisted', 'boarded', 'no_show', 'cancelled']),
+  reason: z.string().trim().max(1000).optional(),
+  approve_promotion: z.boolean().optional(),
+})
+
+export const tripScanSchema = z.object({
+  qr_token: z.string().trim().min(1).max(200),
+  client_event_id: z.string().trim().min(8).max(120),
+  device_time: z.string().min(16).max(40).optional(),
+})

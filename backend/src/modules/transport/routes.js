@@ -13,11 +13,14 @@ import {
   addStopSchema, stopUpdateSchema, setPickupSchema, assignSchema, boardQrSchema, saveViaPointsSchema,
   workSiteSchema, vehicleCreateSchema, vehicleUpdateSchema, driverCreateSchema, driverUpdateSchema,
   unavailabilitySchema, templateCreateSchema, templateUpdateSchema, planPreviewSchema, planPublishSchema,
+  tripCreateSchema, tripUpdateSchema, tripTransitionSchema, tripReopenSchema,
+  tripAssignmentCreateSchema, tripAssignmentStatusSchema, tripScanSchema,
 } from './schemas.js'
 import { enqueue } from '../../shared/jobs/index.js'
 import { recomputeRoutePathSync } from './jobs.js'
 import { getWorkSite, saveWorkSite } from './workSite.js'
 import * as planning from './planning-service.js'
+import * as operations from './operations-service.js'
 
 const WORK_SITE_NAME = 'Filyos Doğal Gaz İşleme Tesisi'
 const WORK_SITE_SHORT = 'FILYOS'
@@ -29,7 +32,7 @@ const admin = requireRole('campus_manager')
 
 function serviceError(res, error) {
   const status = error.status || 400
-  res.status(status).json({ error: error.message, conflicts: error.conflicts })
+  res.status(status).json({ error: error.message, conflicts: error.conflicts, details: error.details })
 }
 
 // ── Is yeri (varis noktasi) ──
@@ -179,6 +182,79 @@ transportRouter.post('/plan/publish', ...mgr, validate(planPublishSchema), (req,
     logAudit(req.user.id, 'transport_plan_publish', 'transport', null, `${result.trips.length} sefer`)
     res.status(201).json(result)
   } catch (e) { serviceError(res, e) }
+})
+
+// ── V2 Operasyon komuta merkezi ve sefer yaşam döngüsü ──
+transportRouter.get('/operations', ...view, (req, res) => {
+  try {
+    res.json(operations.getOperations(req.query))
+  } catch (e) { logger.error('[Transport/V2 operations]', e); serviceError(res, e) }
+})
+
+transportRouter.get('/trips', ...view, (req, res) => {
+  try { res.json(operations.listTrips(req.query)) }
+  catch (e) { logger.error('[Transport/V2 trips]', e); serviceError(res, e) }
+})
+
+transportRouter.get('/trips/:id', ...view, (req, res) => {
+  try { res.json(operations.getTrip(+req.params.id)) }
+  catch (e) { serviceError(res, e) }
+})
+
+transportRouter.post('/trips', ...mgr, validate(tripCreateSchema), (req, res) => {
+  try {
+    const result = operations.createTrip(req.validated, req.user.id)
+    logAudit(req.user.id, 'transport_trip_create', 'transport', result.id, req.validated.scheduled_departure)
+    res.status(201).json(result)
+  } catch (e) { serviceError(res, e) }
+})
+
+transportRouter.patch('/trips/:id', ...mgr, validate(tripUpdateSchema), (req, res) => {
+  try {
+    const result = operations.updateTrip(+req.params.id, req.validated, req.user.id)
+    logAudit(req.user.id, 'transport_trip_update', 'transport', +req.params.id, req.validated.change_reason || null)
+    res.json(result)
+  } catch (e) { serviceError(res, e) }
+})
+
+for (const action of ['publish', 'boarding', 'depart', 'complete', 'cancel']) {
+  transportRouter.post(`/trips/:id/${action}`, ...mgr, validate(tripTransitionSchema), (req, res) => {
+    try {
+      const result = operations.transitionTrip(+req.params.id, action, req.validated, req.user)
+      logAudit(req.user.id, `transport_trip_${action}`, 'transport', +req.params.id, req.validated.reason || null)
+      res.json(result)
+    } catch (e) { serviceError(res, e) }
+  })
+}
+
+transportRouter.post('/trips/:id/reopen', ...admin, validate(tripReopenSchema), (req, res) => {
+  try {
+    const result = operations.reopenTrip(+req.params.id, req.validated.reason, req.user)
+    logAudit(req.user.id, 'transport_trip_reopen', 'transport', +req.params.id, req.validated.reason)
+    res.json(result)
+  } catch (e) { serviceError(res, e) }
+})
+
+transportRouter.post('/trips/:id/assignments', ...mgr, validate(tripAssignmentCreateSchema), (req, res) => {
+  try {
+    const result = operations.addAssignment(+req.params.id, req.validated, req.user.id)
+    res.status(201).json(result)
+  } catch (e) { serviceError(res, e) }
+})
+
+transportRouter.delete('/trips/:tripId/assignments/:id', ...mgr, (req, res) => {
+  try { res.json(operations.removeAssignment(+req.params.id, req.user)) }
+  catch (e) { serviceError(res, e) }
+})
+
+transportRouter.patch('/trip-assignments/:id/status', ...mgr, validate(tripAssignmentStatusSchema), (req, res) => {
+  try { res.json(operations.updateAssignment(+req.params.id, req.validated, req.user)) }
+  catch (e) { serviceError(res, e) }
+})
+
+transportRouter.post('/trips/:id/scan', ...mgr, validate(tripScanSchema), (req, res) => {
+  try { res.json(operations.scanTrip(+req.params.id, req.validated, req.user.id)) }
+  catch (e) { serviceError(res, e) }
 })
 
 // ── Pickup Points ──
