@@ -61,6 +61,11 @@ export const boardQrSchema = z.object({
   work_date: dateStr.optional(),
 })
 
+export const workSiteSchema = z.object({
+  lat: z.coerce.number().min(-90).max(90),
+  lng: z.coerce.number().min(-180).max(180),
+})
+
 export const saveViaPointsSchema = z.object({
   via_points: z.array(z.object({
     after_stop_id: z.coerce.number().int().positive(),

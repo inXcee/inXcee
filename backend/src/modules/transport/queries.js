@@ -744,3 +744,42 @@ export function getRouteViaPoints(routeId) {
 export function saveRouteViaPoints(routeId, viaPoints) {
   getDB().prepare('UPDATE routes SET via_points=? WHERE id=?').run(JSON.stringify(viaPoints), routeId)
 }
+
+// ── Kalici durak silme ──
+// Soft delete (deletePickupPoint) yalnizca is_active=0 yapar; bu ise kaydi tamamen siler.
+// Foreign key'ler acik oldugu icin sira onemli: once referanslar, en son durak.
+// Etkilenen rota id'leri doner — cagiran yol yeniden hesaplamayi kuyruga atmalidir.
+export function deletePickupPointPermanent(id) {
+  const db = getDB()
+  const point = db.prepare('SELECT id FROM pickup_points WHERE id=?').get(id)
+  if (!point) return null
+
+  const affectedRouteIds = db.prepare('SELECT DISTINCT route_id FROM route_stops WHERE pickup_point_id=?')
+    .all(id).map(r => r.route_id)
+  const doomedStopIds = db.prepare('SELECT id FROM route_stops WHERE pickup_point_id=?').all(id).map(r => r.id)
+
+  let removedStops = 0
+  let unassignedStaff = 0
+  const tx = db.transaction(() => {
+    for (const routeId of affectedRouteIds) {
+      saveRouteViaPoints(routeId, getRouteViaPoints(routeId).filter(v => !doomedStopIds.includes(v.after_stop_id)))
+    }
+    removedStops = db.prepare('DELETE FROM route_stops WHERE pickup_point_id=?').run(id).changes
+    unassignedStaff = db.prepare('UPDATE staff SET pickup_point_id=NULL WHERE pickup_point_id=?').run(id).changes
+    db.prepare('DELETE FROM pickup_points WHERE id=?').run(id)
+  })
+  tx()
+
+  return { removed_stops: removedStops, unassigned_staff: unassignedStaff, affected_routes: affectedRouteIds }
+}
+
+// Pasif VE hicbir rotada/personelde gecmeyen duraklari toplu siler.
+// Aktif duraklara ve kullanimdaki pasif duraklara dokunmaz.
+export function cleanupUnusedPickupPoints() {
+  return getDB().prepare(`
+    DELETE FROM pickup_points
+    WHERE is_active = 0
+      AND id NOT IN (SELECT pickup_point_id FROM route_stops)
+      AND id NOT IN (SELECT pickup_point_id FROM staff WHERE pickup_point_id IS NOT NULL)
+  `).run().changes
+}

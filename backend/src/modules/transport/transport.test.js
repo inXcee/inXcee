@@ -473,3 +473,136 @@ describe('Transport — Uğrak noktaları (via-points ucu)', () => {
     expect(list.body.find(r => r.id === routeId).path_geometry).toEqual([[41.40, 31.70], [41.42, 31.75]])
   })
 })
+
+describe('Transport — İş yeri (Filyos) konumu', () => {
+  it('ayar yokken varsayilan konumu doner', async () => {
+    const res = await request(app).get('/api/transport/work-site').set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(200)
+    expect(res.body.lat).toBeCloseTo(41.5750, 4)
+    expect(res.body.lng).toBeCloseTo(32.0264, 4)
+  })
+
+  it('yeni konum kaydedilir ve GET ile geri doner', async () => {
+    const save = await request(app).put('/api/transport/work-site').set('Authorization', `Bearer ${token}`)
+      .send({ lat: 41.60, lng: 32.10 })
+    expect(save.status).toBe(200)
+
+    const res = await request(app).get('/api/transport/work-site').set('Authorization', `Bearer ${token}`)
+    expect(res.body.lat).toBeCloseTo(41.60, 4)
+    expect(res.body.lng).toBeCloseTo(32.10, 4)
+  })
+
+  it('konum degisince aktif rotalar yeniden hesaplama kuyruguna girer', async () => {
+    const db = (await import('../../shared/db/index.js')).getDB()
+    db.prepare("DELETE FROM job_queue WHERE type='transport.recompute-path'").run()
+    const activeCount = db.prepare('SELECT COUNT(*) AS c FROM routes WHERE is_active=1').get().c
+
+    const save = await request(app).put('/api/transport/work-site').set('Authorization', `Bearer ${token}`)
+      .send({ lat: 41.61, lng: 32.11 })
+    expect(save.status).toBe(200)
+    expect(save.body.requeued).toBe(activeCount)
+
+    const queued = db.prepare("SELECT COUNT(*) AS c FROM job_queue WHERE type='transport.recompute-path'").get().c
+    expect(queued).toBe(activeCount)
+  })
+
+  it('gecersiz koordinat 400 doner', async () => {
+    const res = await request(app).put('/api/transport/work-site').set('Authorization', `Bearer ${token}`)
+      .send({ lat: 999, lng: 32.10 })
+    expect(res.status).toBe(400)
+  })
+
+  it('yetkisiz rol is yeri konumunu degistiremez', async () => {
+    const t = (await request(app).post('/api/auth/login').send({ username: 'camasir', password: 'admin123' })).body.token
+    const res = await request(app).put('/api/transport/work-site').set('Authorization', `Bearer ${t}`)
+      .send({ lat: 41.60, lng: 32.10 })
+    expect(res.status).toBe(403)
+  })
+})
+
+describe('Transport — Kalıcı durak silme', () => {
+  it('kullanimdaki durak rota/ugrak/personel baglariyla birlikte silinir', async () => {
+    const q = await import('./queries.js')
+    const db = (await import('../../shared/db/index.js')).getDB()
+
+    const pid = (await request(app).post('/api/transport/pickup-points').set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Kalici Sil Durak', lat: 41.40, lng: 31.70 })).body.id
+    const routeId = (await request(app).post('/api/transport/routes').set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Kalici Sil Hat' })).body.id
+    const stopId = (await request(app).post(`/api/transport/routes/${routeId}/stops`).set('Authorization', `Bearer ${token}`)
+      .send({ pickup_point_id: pid })).body.id
+    q.saveRouteViaPoints(routeId, [{ after_stop_id: stopId, lat: 41.41, lng: 31.71 }])
+    const staffId = db.prepare('SELECT id FROM staff LIMIT 1').get().id
+    db.prepare('UPDATE staff SET pickup_point_id=? WHERE id=?').run(pid, staffId)
+
+    const res = await request(app).delete(`/api/transport/pickup-points/${pid}/permanent`)
+      .set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(200)
+    expect(res.body.removed_stops).toBe(1)
+    expect(res.body.unassigned_staff).toBe(1)
+
+    expect(db.prepare('SELECT COUNT(*) AS c FROM pickup_points WHERE id=?').get(pid).c).toBe(0)
+    expect(db.prepare('SELECT COUNT(*) AS c FROM route_stops WHERE pickup_point_id=?').get(pid).c).toBe(0)
+    expect(db.prepare('SELECT pickup_point_id FROM staff WHERE id=?').get(staffId).pickup_point_id).toBeNull()
+    expect(q.getRouteViaPoints(routeId)).toEqual([])
+  })
+
+  it('kullanilmayan durak da silinir', async () => {
+    const db = (await import('../../shared/db/index.js')).getDB()
+    const pid = (await request(app).post('/api/transport/pickup-points').set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Bos Sil Durak', lat: 41.40, lng: 31.70 })).body.id
+
+    const res = await request(app).delete(`/api/transport/pickup-points/${pid}/permanent`)
+      .set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(200)
+    expect(res.body.removed_stops).toBe(0)
+    expect(db.prepare('SELECT COUNT(*) AS c FROM pickup_points WHERE id=?').get(pid).c).toBe(0)
+  })
+
+  it('olmayan durak 404 doner', async () => {
+    const res = await request(app).delete('/api/transport/pickup-points/999999/permanent')
+      .set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(404)
+  })
+
+  it('yetkisiz rol kalici silemez', async () => {
+    const t = (await request(app).post('/api/auth/login').send({ username: 'camasir', password: 'admin123' })).body.token
+    const pid = (await request(app).post('/api/transport/pickup-points').set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Yetki Sil Durak', lat: 41.40, lng: 31.70 })).body.id
+    const res = await request(app).delete(`/api/transport/pickup-points/${pid}/permanent`)
+      .set('Authorization', `Bearer ${t}`)
+    expect(res.status).toBe(403)
+  })
+})
+
+describe('Transport — Kullanılmayan pasif durakları toplu temizle', () => {
+  it('yalnizca pasif ve kullanilmayan duraklari siler', async () => {
+    const db = (await import('../../shared/db/index.js')).getDB()
+
+    const pasifBos = (await request(app).post('/api/transport/pickup-points').set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Temizlik Pasif Bos', lat: 41.40, lng: 31.70, is_active: 0 })).body.id
+    const aktifBos = (await request(app).post('/api/transport/pickup-points').set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Temizlik Aktif Bos', lat: 41.41, lng: 31.71 })).body.id
+    const pasifKullanimda = (await request(app).post('/api/transport/pickup-points').set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Temizlik Pasif Dolu', lat: 41.42, lng: 31.72, is_active: 0 })).body.id
+    const routeId = (await request(app).post('/api/transport/routes').set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Temizlik Hat' })).body.id
+    await request(app).post(`/api/transport/routes/${routeId}/stops`).set('Authorization', `Bearer ${token}`)
+      .send({ pickup_point_id: pasifKullanimda })
+
+    const res = await request(app).post('/api/transport/pickup-points/cleanup-unused')
+      .set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(200)
+    expect(res.body.deleted).toBeGreaterThanOrEqual(1)
+
+    expect(db.prepare('SELECT COUNT(*) AS c FROM pickup_points WHERE id=?').get(pasifBos).c).toBe(0)
+    expect(db.prepare('SELECT COUNT(*) AS c FROM pickup_points WHERE id=?').get(aktifBos).c).toBe(1)
+    expect(db.prepare('SELECT COUNT(*) AS c FROM pickup_points WHERE id=?').get(pasifKullanimda).c).toBe(1)
+  })
+
+  it('yetkisiz rol toplu temizlik yapamaz', async () => {
+    const t = (await request(app).post('/api/auth/login').send({ username: 'camasir', password: 'admin123' })).body.token
+    const res = await request(app).post('/api/transport/pickup-points/cleanup-unused').set('Authorization', `Bearer ${t}`)
+    expect(res.status).toBe(403)
+  })
+})

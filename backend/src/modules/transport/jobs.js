@@ -1,5 +1,5 @@
 import { computeRoadRoute } from './routing.js'
-import { WORK_SITE } from './workSite.js'
+import { getWorkSite } from './workSite.js'
 import * as q from './queries.js'
 
 // Waypoint sirasi: durak₁, [durak₁'e bagli ugraklar], durak₂, …, son durak, [ugraklar], WORK_SITE.
@@ -18,7 +18,7 @@ function buildWaypoints(routeId) {
       if (via.after_stop_id === stop.id) coords.push({ lat: via.lat, lng: via.lng })
     }
   }
-  coords.push(WORK_SITE)
+  coords.push(getWorkSite())
   return coords
 }
 

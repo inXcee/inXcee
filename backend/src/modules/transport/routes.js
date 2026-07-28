@@ -11,13 +11,38 @@ import { validate } from '../../shared/middleware/validate.js'
 import {
   createPickupPointSchema, pickupPointUpdateSchema, createRouteSchema, routeUpdateSchema,
   addStopSchema, stopUpdateSchema, setPickupSchema, assignSchema, boardQrSchema, saveViaPointsSchema,
+  workSiteSchema,
 } from './schemas.js'
 import { enqueue } from '../../shared/jobs/index.js'
 import { recomputeRoutePathSync } from './jobs.js'
+import { getWorkSite, saveWorkSite } from './workSite.js'
+
+const WORK_SITE_NAME = 'Filyos Doğal Gaz İşleme Tesisi'
+const WORK_SITE_SHORT = 'FILYOS'
 
 export const transportRouter = Router()
 const mgr = requireRole('campus_manager', 'shift_supervisor')
 const view = requireRole('campus_manager', 'shift_supervisor', 'laundry', 'housekeeper', 'technical')
+
+// ── Is yeri (varis noktasi) ──
+// Konum system_settings'te; kod icindeki deger yalnizca varsayilan (bkz. workSite.js).
+transportRouter.get('/work-site', ...view, (req, res) => {
+  try {
+    res.json({ ...getWorkSite(), name: WORK_SITE_NAME, short: WORK_SITE_SHORT })
+  } catch (e) { logger.error('[Route] work-site get:', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// Konum degisince TUM aktif rotalarin yolu gecersiz olur — arka planda yeniden hesaplanir.
+transportRouter.put('/work-site', ...mgr, validate(workSiteSchema), (req, res) => {
+  try {
+    const { lat, lng } = req.validated
+    saveWorkSite({ lat, lng })
+    const activeRoutes = getDB().prepare('SELECT id FROM routes WHERE is_active = 1').all()
+    activeRoutes.forEach(r => enqueue('transport.recompute-path', { routeId: r.id }))
+    logAudit(req.user.id, 'transport_work_site_move', 'transport', null, `${lat},${lng}`)
+    res.json({ ok: true, lat, lng, requeued: activeRoutes.length })
+  } catch (e) { logger.error('[Route] work-site put:', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
 
 // ── Pickup Points ──
 transportRouter.get('/pickup-points', ...view, (req, res) => {
@@ -45,6 +70,28 @@ transportRouter.put('/pickup-points/:id', ...mgr, validate(pickupPointUpdateSche
 transportRouter.delete('/pickup-points/:id', ...mgr, (req, res) => {
   try { q.deletePickupPoint(+req.params.id); res.json({ ok: true }) }
   catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+// Pasif VE kullanilmayan duraklari toplu siler. Dinamik ':id' rotasindan ONCE
+// tanimlanmali, yoksa "cleanup-unused" id olarak yakalanir.
+transportRouter.post('/pickup-points/cleanup-unused', ...mgr, (req, res) => {
+  try {
+    const deleted = q.cleanupUnusedPickupPoints()
+    logAudit(req.user.id, 'transport_pickup_cleanup', 'transport', null, `${deleted} durak`)
+    res.json({ ok: true, deleted })
+  } catch (e) { logger.error('[Route] pickup cleanup:', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// Kalici silme: rota kayitlari, ugraklar ve personel baglari da temizlenir.
+transportRouter.delete('/pickup-points/:id/permanent', ...mgr, (req, res) => {
+  try {
+    const result = q.deletePickupPointPermanent(+req.params.id)
+    if (!result) return res.status(404).json({ error: 'Durak bulunamadı' })
+    result.affected_routes.forEach(routeId => enqueue('transport.recompute-path', { routeId }))
+    logAudit(req.user.id, 'transport_pickup_delete_permanent', 'transport', +req.params.id,
+      `${result.removed_stops} durak kaydı, ${result.unassigned_staff} personel`)
+    res.json({ ok: true, ...result })
+  } catch (e) { logger.error('[Route] pickup permanent delete:', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 // Durak fotoğrafı yükle
