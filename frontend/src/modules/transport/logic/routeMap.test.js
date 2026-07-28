@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   buildRoutePolyline, pointsWithCoords, pointsWithoutCoords,
-  distanceToSegmentMeters, classifyDrop, reorderedStopIds, insertViaPoint,
+  nearestPathIndex, insertViaAtPoint, moveStopInOrder,
 } from './routeMap.js'
 
 const workSite = { lat: 41.575, lng: 32.0264 }
@@ -54,54 +54,91 @@ describe('transport/logic/routeMap', () => {
   })
 })
 
-describe('transport/logic/routeMap — düzenleme yardımcıları', () => {
-  it('distanceToSegmentMeters: nokta segmentin tam ortasındaysa ~0 döner', () => {
-    const a = [41.40, 31.70]
-    const b = [41.42, 31.70]
-    const mid = [41.41, 31.70]
-    expect(distanceToSegmentMeters(mid, a, b)).toBeLessThan(1)
+describe('nearestPathIndex', () => {
+  const path = [[41.40, 31.70], [41.41, 31.71], [41.42, 31.72], [41.43, 31.73]]
+
+  it('en yakin geometri noktasinin indeksini doner', () => {
+    expect(nearestPathIndex(path, [41.4201, 31.7201])).toBe(2)
+    expect(nearestPathIndex(path, [41.40, 31.70])).toBe(0)
+    expect(nearestPathIndex(path, [41.43, 31.73])).toBe(3)
   })
 
-  it('distanceToSegmentMeters: segmentten uzak nokta büyük mesafe döner', () => {
-    const a = [41.40, 31.70]
-    const b = [41.42, 31.70]
-    const far = [41.41, 31.80]
-    expect(distanceToSegmentMeters(far, a, b)).toBeGreaterThan(5000)
+  it('bos geometride 0 doner', () => {
+    expect(nearestPathIndex([], [41.40, 31.70])).toBe(0)
+  })
+})
+
+describe('insertViaAtPoint', () => {
+  // Yol: durak1 → durak2 → isyeri, duz hat uzerinde artan sirada.
+  const geometry = [
+    [41.40, 31.70], [41.41, 31.71], [41.42, 31.72], [41.43, 31.73], [41.44, 31.74],
+  ]
+  const stops = [
+    { id: 1, sequence_order: 1, lat: 41.40, lng: 31.70 },
+    { id: 2, sequence_order: 2, lat: 41.43, lng: 31.73 },
+  ]
+
+  it('tiklama iki durak arasindaysa ilk duraga capalanir', () => {
+    const result = insertViaAtPoint({ geometry, stops, viaPoints: [], point: [41.41, 31.71] })
+    expect(result).toEqual([{ after_stop_id: 1, lat: 41.41, lng: 31.71 }])
   })
 
-  it('classifyDrop: eşik içinde reorder döner', () => {
-    const stops = [
-      { id: 1, lat: 41.40, lng: 31.70 },
-      { id: 2, lat: 41.42, lng: 31.70 },
-      { id: 3, lat: 41.44, lng: 31.70 },
-    ]
-    const drop = [41.41, 31.70]
-    expect(classifyDrop(drop, stops)).toEqual({ type: 'reorder', afterStopId: 1 })
+  it('tiklama son duraktan sonraysa son duraga capalanir', () => {
+    const result = insertViaAtPoint({ geometry, stops, viaPoints: [], point: [41.44, 31.74] })
+    expect(result).toEqual([{ after_stop_id: 2, lat: 41.44, lng: 31.74 }])
   })
 
-  it('classifyDrop: eşik dışında move döner', () => {
-    const stops = [
-      { id: 1, lat: 41.40, lng: 31.70 },
-      { id: 2, lat: 41.42, lng: 31.70 },
-    ]
-    const drop = [41.41, 31.90]
-    expect(classifyDrop(drop, stops)).toEqual({ type: 'move' })
-  })
-
-  it('classifyDrop: 2den az koordinatlı durakta move döner', () => {
-    expect(classifyDrop([41.41, 31.70], [{ id: 1, lat: 41.40, lng: 31.70 }])).toEqual({ type: 'move' })
-  })
-
-  it('reorderedStopIds: durak doğru pozisyona eklenir', () => {
-    const stops = [{ id: 1 }, { id: 2 }, { id: 3 }]
-    expect(reorderedStopIds(stops, 3, 1)).toEqual([1, 3, 2])
-    expect(reorderedStopIds(stops, 1, 2)).toEqual([2, 1, 3])
-  })
-
-  it('insertViaPoint: diziye doğru indekse nokta ekler', () => {
-    const geometry = [[41.40, 31.70], [41.42, 31.75]]
-    expect(insertViaPoint(geometry, 0, [41.41, 31.72])).toEqual([
-      [41.40, 31.70], [41.41, 31.72], [41.42, 31.75],
+  it('ayni bacaktaki ugraklar yol boyunca dogru sirada dizilir', () => {
+    const existing = [{ after_stop_id: 1, lat: 41.42, lng: 31.72 }]
+    const result = insertViaAtPoint({ geometry, stops, viaPoints: existing, point: [41.41, 31.71] })
+    expect(result).toEqual([
+      { after_stop_id: 1, lat: 41.41, lng: 31.71 },
+      { after_stop_id: 1, lat: 41.42, lng: 31.72 },
     ])
+  })
+
+  it('yeni ugrak mevcut ugragin ilerisindeyse ardina eklenir', () => {
+    const existing = [{ after_stop_id: 1, lat: 41.41, lng: 31.71 }]
+    const result = insertViaAtPoint({ geometry, stops, viaPoints: existing, point: [41.42, 31.72] })
+    expect(result).toEqual([
+      { after_stop_id: 1, lat: 41.41, lng: 31.71 },
+      { after_stop_id: 1, lat: 41.42, lng: 31.72 },
+    ])
+  })
+
+  it('baska capaya bagli ugraklar korunur', () => {
+    const existing = [{ after_stop_id: 2, lat: 41.44, lng: 31.74 }]
+    const result = insertViaAtPoint({ geometry, stops, viaPoints: existing, point: [41.41, 31.71] })
+    expect(result).toHaveLength(2)
+    expect(result).toContainEqual({ after_stop_id: 1, lat: 41.41, lng: 31.71 })
+    expect(result).toContainEqual({ after_stop_id: 2, lat: 41.44, lng: 31.74 })
+  })
+
+  it('koordinatli durak yoksa dizi degismez', () => {
+    const existing = [{ after_stop_id: 1, lat: 41.41, lng: 31.71 }]
+    expect(insertViaAtPoint({ geometry, stops: [], viaPoints: existing, point: [41.41, 31.71] }))
+      .toEqual(existing)
+  })
+})
+
+describe('moveStopInOrder', () => {
+  it('ortadaki durağı yukari tasir', () => {
+    expect(moveStopInOrder([1, 2, 3], 2, 'up')).toEqual([2, 1, 3])
+  })
+
+  it('ortadaki durağı asagi tasir', () => {
+    expect(moveStopInOrder([1, 2, 3], 2, 'down')).toEqual([1, 3, 2])
+  })
+
+  it('ilk durağı yukari tasimaya calisinca degismez', () => {
+    expect(moveStopInOrder([1, 2, 3], 1, 'up')).toEqual([1, 2, 3])
+  })
+
+  it('son durağı asagi tasimaya calisinca degismez', () => {
+    expect(moveStopInOrder([1, 2, 3], 3, 'down')).toEqual([1, 2, 3])
+  })
+
+  it('bilinmeyen durak id degisiklik yapmaz', () => {
+    expect(moveStopInOrder([1, 2, 3], 99, 'up')).toEqual([1, 2, 3])
   })
 })
