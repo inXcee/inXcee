@@ -3,8 +3,9 @@ import { lazyWithRetry as lazy } from '../../../shared/lazyWithRetry.js'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../../shared/api/client.js'
 import { useAuthStore } from '../../../shared/store/authStore.js'
-import { pointsWithoutCoords, moveStopInOrder } from '../logic/routeMap.js'
-import { toast, toastErr } from '../shared.jsx'
+import { pointsWithoutCoords, moveStopInOrder, nextAutoStopName } from '../logic/routeMap.js'
+import { useWorkSite, WORK_SITE_QUERY_KEY } from '../useWorkSite.js'
+import { ModalShell, Label, ModalActions, toast, toastErr } from '../shared.jsx'
 
 const RouteMap = lazy(() => import('../RouteMap.jsx'))
 const FALLBACK_COLOR = '#3b82f6'
@@ -27,10 +28,38 @@ export default function MapTab() {
   const [hiddenIds, setHiddenIds] = useState(() => new Set())
   const [selectedRouteId, setSelectedRouteId] = useState(null)
   const [editingRouteId, setEditingRouteId] = useState(null)
+  const [pendingStop, setPendingStop] = useState(null)
+
+  const workSite = useWorkSite()
 
   const invalidateMap = () => {
     qc.invalidateQueries({ queryKey: ['transport-routes-map'] })
     qc.invalidateQueries({ queryKey: ['transport-points-map'] })
+  }
+
+  const moveWorkSiteMut = useMutation({
+    mutationFn: ({ lat, lng }) => api.put('/transport/work-site', { lat, lng }),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: WORK_SITE_QUERY_KEY })
+      invalidateMap()
+      toast(`İş yeri taşındı · ${res.data.requeued} rota yeniden hesaplanıyor`)
+    },
+    onError: toastErr,
+  })
+
+  // Is yeri tasima TUM rotalari etkiler — kazara surukleme kalici olmasin diye onay istenir.
+  // false donerse RouteMap pini eski konumuna geri koyar.
+  async function handleMoveWorkSite(lat, lng) {
+    const ok = window.confirm(
+      'İş yeri (varış noktası) buraya taşınsın mı?\n\nTüm rotaların yolu yeniden hesaplanacak.'
+    )
+    if (!ok) return false
+    try {
+      await moveWorkSiteMut.mutateAsync({ lat, lng })
+      return true
+    } catch {
+      return false
+    }
   }
 
   const moveStopMut = useMutation({
@@ -60,11 +89,11 @@ export default function MapTab() {
     onError: toastErr,
   })
   const addStopAtPointMut = useMutation({
-    mutationFn: async ({ routeId, lat, lng }) => {
-      const point = await api.post('/transport/pickup-points', { name: 'Yeni Durak', lat, lng })
+    mutationFn: async ({ routeId, lat, lng, name }) => {
+      const point = await api.post('/transport/pickup-points', { name, lat, lng })
       return api.post(`/transport/routes/${routeId}/stops`, { pickup_point_id: point.data.id })
     },
-    onSuccess: () => { invalidateMap(); toast('Yeni durak eklendi') },
+    onSuccess: () => { invalidateMap(); setPendingStop(null); toast('Yeni durak eklendi') },
     onError: toastErr,
   })
 
@@ -211,11 +240,50 @@ export default function MapTab() {
               onChangeViaPoints={(routeId, viaPoints) => viaPointsMut.mutate({ routeId, viaPoints })}
               isBusy={viaPointsMut.isPending}
               onDeleteStop={(stopId) => deleteStopMut.mutate(stopId)}
-              onAddStop={(routeId, lat, lng) => addStopAtPointMut.mutate({ routeId, lat, lng })}
+              onAddStop={(routeId, lat, lng) => setPendingStop({ routeId, lat, lng })}
+              workSite={workSite}
+              onMoveWorkSite={canEdit ? handleMoveWorkSite : undefined}
             />
           </Suspense>
         )}
       </div>
+
+      {pendingStop && (
+        <NewStopNameModal
+          existingNames={points.map(p => p.name)}
+          pending={addStopAtPointMut.isPending}
+          onCancel={() => setPendingStop(null)}
+          onSave={(name) => addStopAtPointMut.mutate({ ...pendingStop, name })}
+        />
+      )}
     </div>
+  )
+}
+
+// Haritada bos yere tiklayinca acilir. Isim bos birakilirsa artan numarali ad uretilir —
+// eskiden hepsi sabit "Yeni Durak" oluyordu ve ayirt edilemez kayitlar birikiyordu.
+function NewStopNameModal({ existingNames, pending, onCancel, onSave }) {
+  const [name, setName] = useState('')
+  const autoName = nextAutoStopName(existingNames)
+
+  return (
+    <ModalShell onClose={onCancel} title="YENİ DURAK">
+      <div style={{ marginBottom: 10 }}>
+        <Label>Durak Adı</Label>
+        <input
+          className="form-input"
+          value={name}
+          onChange={e => setName(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') onSave(name.trim() || autoName) }}
+          placeholder={autoName}
+          autoFocus
+          style={{ borderRadius: 10 }}
+        />
+        <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', marginTop: 4 }}>
+          Boş bırakırsan “{autoName}” adıyla oluşturulur.
+        </div>
+      </div>
+      <ModalActions onClose={onCancel} onSave={() => onSave(name.trim() || autoName)} disabled={pending} loading={pending} />
+    </ModalShell>
   )
 }

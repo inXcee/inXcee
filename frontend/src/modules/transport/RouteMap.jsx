@@ -2,7 +2,7 @@ import { MapContainer, TileLayer, Marker, Polyline, CircleMarker, Tooltip, Popup
 import { useEffect, useState } from 'react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
-import { WORK_SITE, REGION_CENTER } from './zonguldakBartin.js'
+import { REGION_CENTER } from './zonguldakBartin.js'
 import { buildRoutePolyline, pointsWithCoords, insertViaAtPoint } from './logic/routeMap.js'
 
 // Default marker icon fix (leaflet bundler issue)
@@ -15,15 +15,15 @@ L.Icon.Default.mergeOptions({
 
 const FALLBACK_COLOR = '#3b82f6'
 
-function FitOnFirstLoad({ points }) {
+function FitOnFirstLoad({ points, workSite }) {
   const map = useMap()
   useEffect(() => {
     const coords = pointsWithCoords(points).map(p => [p.lat, p.lng])
-    coords.push([WORK_SITE.lat, WORK_SITE.lng])
+    coords.push([workSite.lat, workSite.lng])
     if (coords.length >= 2) {
       try { map.fitBounds(coords, { padding: [40, 40], maxZoom: 12 }) } catch { /* tek nokta */ }
     }
-  }, [points, map])
+  }, [points, workSite, map])
   return null
 }
 
@@ -103,6 +103,33 @@ function ViaMarker({ via, index, onMoveVia, onDeleteVia, color }) {
   )
 }
 
+// Varis noktasi (Filyos). onMoveWorkSite verilmisse surukleyerek tasinabilir —
+// tasima TUM rotalari etkiledigi icin onay cagirana birakilir; false donerse pin geri doner.
+function WorkSiteMarker({ workSite, onMoveWorkSite }) {
+  const [pos, setPos] = useState([workSite.lat, workSite.lng])
+  useEffect(() => { setPos([workSite.lat, workSite.lng]) }, [workSite.lat, workSite.lng])
+
+  return (
+    <Marker
+      position={pos}
+      draggable={!!onMoveWorkSite}
+      eventHandlers={onMoveWorkSite ? {
+        dragend: async (e) => {
+          const { lat, lng } = e.target.getLatLng()
+          const accepted = await onMoveWorkSite(lat, lng)
+          setPos(accepted ? [lat, lng] : [workSite.lat, workSite.lng])
+        },
+      } : {}}
+    >
+      <Tooltip permanent direction="top">{workSite.short}</Tooltip>
+      <Popup>
+        {workSite.name}
+        {onMoveWorkSite && <><br /><span style={{ color: '#64748b' }}>sürükleyerek taşıyabilirsin</span></>}
+      </Popup>
+    </Marker>
+  )
+}
+
 // Duzenleme modunda bos haritaya tiklaninca yeni durak olusturulup rotaya eklenir.
 function MapClickToAddStop({ onAddStop }) {
   useMapEvents({
@@ -123,9 +150,12 @@ function MapClickToAddStop({ onAddStop }) {
 //  onAddStop: (routeId, lat, lng) => void
 //  onChangeViaPoints: (routeId, viaPoints) => void — ekleme/tasima/silme hepsi bunu cagirir
 //  isBusy: boolean — ugrak hesaplamasi suruyor
+//  workSite: { lat, lng, name, short } — varis noktasi (sunucudan gelir)
+//  onMoveWorkSite: (lat, lng) => Promise<boolean> — is yerini tasi; false donerse pin eski yerine doner
 export default function RouteMap({
   routes, points, visibleRouteIds, selectedRouteId, onSelectRoute, height = 520,
   editingRouteId = null, onMoveStop, onDeleteStop, onAddStop, onChangeViaPoints, isBusy = false,
+  workSite, onMoveWorkSite,
 }) {
   const editingRoute = routes.find(r => r.id === editingRouteId) || null
 
@@ -138,7 +168,7 @@ export default function RouteMap({
   const editingLine = editingRoute
     ? (editingRoute.path_geometry?.length >= 2
       ? editingRoute.path_geometry
-      : buildRoutePolyline(editingRoute, WORK_SITE))
+      : buildRoutePolyline(editingRoute, workSite))
     : []
 
   function addViaAt(lat, lng) {
@@ -165,11 +195,11 @@ export default function RouteMap({
           attribution='&copy; OpenStreetMap'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
-        <FitOnFirstLoad points={points} />
+        <FitOnFirstLoad points={points} workSite={workSite} />
 
         {/* Rota cizgileri — path_geometry varsa gercek yol, yoksa duz cizgi fallback */}
         {routes.filter(r => visibleRouteIds.has(r.id) && r.id !== editingRouteId).map(r => {
-          const line = r.path_geometry && r.path_geometry.length >= 2 ? r.path_geometry : buildRoutePolyline(r, WORK_SITE)
+          const line = r.path_geometry && r.path_geometry.length >= 2 ? r.path_geometry : buildRoutePolyline(r, workSite)
           if (line.length < 2) return null
           const isSel = selectedRouteId === r.id
           const dim = selectedRouteId != null && !isSel
@@ -252,10 +282,7 @@ export default function RouteMap({
           ))}
 
         {/* Calisma alani (varis) */}
-        <Marker position={[WORK_SITE.lat, WORK_SITE.lng]}>
-          <Tooltip permanent direction="top">{WORK_SITE.short}</Tooltip>
-          <Popup>{WORK_SITE.name}</Popup>
-        </Marker>
+        <WorkSiteMarker workSite={workSite} onMoveWorkSite={onMoveWorkSite} />
       </MapContainer>
 
       {editingRoute && (

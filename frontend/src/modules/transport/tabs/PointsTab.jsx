@@ -24,11 +24,59 @@ export default function PointsTab() {
     onError: toastErr,
   })
 
+  const purgeMut = useMutation({
+    mutationFn: (id) => api.delete(`/transport/pickup-points/${id}/permanent`),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ['transport-points'] })
+      qc.invalidateQueries({ queryKey: ['transport-points-map'] })
+      qc.invalidateQueries({ queryKey: ['transport-routes-map'] })
+      const { removed_stops: stops, unassigned_staff: staff } = res.data
+      toast(stops || staff ? `Durak silindi · ${stops} rota kaydı, ${staff} personel bağı temizlendi` : 'Durak silindi')
+    },
+    onError: toastErr,
+  })
+
+  const cleanupMut = useMutation({
+    mutationFn: () => api.post('/transport/pickup-points/cleanup-unused'),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ['transport-points'] })
+      toast(`${res.data.deleted} kullanılmayan pasif durak silindi`)
+    },
+    onError: toastErr,
+  })
+
+  // Yalnizca pasif VE hicbir rotada/personelde gecmeyenler — sunucudaki kuralla ayni.
+  const purgeableCount = points.filter(p => !p.is_active && p.staff_count === 0 && p.route_count === 0).length
+
+  function confirmPurge(p) {
+    const inUse = p.route_count > 0 || p.staff_count > 0
+    const detail = inUse
+      ? `\n\n${p.route_count} rotada ve ${p.staff_count} personelde kullanılıyor — rotalardan çıkarılacak, personelin durağı boşaltılacak.`
+      : ''
+    if (window.confirm(`"${p.name}" kalıcı olarak silinsin mi?${detail}\n\nBu işlem geri alınamaz.`)) {
+      purgeMut.mutate(p.id)
+    }
+  }
+
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 14 }}>
         <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: 2 }}>{points.length} DURAK</div>
-        <button onClick={() => setCreating(true)} className="btn btn-primary btn-sm" style={{ borderRadius: 10 }}>+ DURAK</button>
+        <div style={{ display: 'flex', gap: 6 }}>
+          {purgeableCount > 0 && (
+            <button
+              onClick={() => {
+                if (window.confirm(`${purgeableCount} kullanılmayan pasif durak kalıcı olarak silinecek.\n\nAktif duraklara ve kullanımdakilere dokunulmaz. Devam edilsin mi?`)) {
+                  cleanupMut.mutate()
+                }
+              }}
+              disabled={cleanupMut.isPending}
+              className="btn btn-ghost btn-sm"
+              style={{ borderRadius: 10, color: 'var(--red)' }}
+            >⌫ KULLANILMAYAN PASİFLERİ TEMİZLE ({purgeableCount})</button>
+          )}
+          <button onClick={() => setCreating(true)} className="btn btn-primary btn-sm" style={{ borderRadius: 10 }}>+ DURAK</button>
+        </div>
       </div>
 
       {points.length === 0 ? (
@@ -63,7 +111,9 @@ export default function PointsTab() {
               {p.notes && <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 8 }}>{p.notes}</div>}
               <div style={{ display: 'flex', gap: 4 }}>
                 <button onClick={() => setEditing(p)} className="btn btn-ghost btn-xs" style={{ borderRadius: 8, flex: 1 }}>DÜZENLE</button>
-                {p.is_active && <button onClick={() => delMut.mutate(p.id)} className="btn btn-ghost btn-xs" style={{ borderRadius: 8, color: 'var(--red)' }}>KAPAT</button>}
+                {p.is_active && <button onClick={() => delMut.mutate(p.id)} className="btn btn-ghost btn-xs" style={{ borderRadius: 8, color: 'var(--amber)' }}>KAPAT</button>}
+                <button onClick={() => confirmPurge(p)} disabled={purgeMut.isPending}
+                  className="btn btn-ghost btn-xs" style={{ borderRadius: 8, color: 'var(--red)' }}>SİL</button>
               </div>
               </div>
             </div>

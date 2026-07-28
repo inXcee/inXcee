@@ -79,6 +79,22 @@ export function insertViaAtPoint({ geometry, stops, viaPoints = [], point }) {
   return next
 }
 
+// Haritadan isimsiz durak eklenirse artan numarali ad uretir.
+// "Yeni Durak" (numarasiz) 1 sayilir; en buyuk numaranin bir fazlasi kullanilir.
+const AUTO_STOP_PREFIX = 'Yeni Durak'
+const AUTO_STOP_RE = /^Yeni Durak(?:\s+(\d+))?$/
+
+export function nextAutoStopName(existingNames = []) {
+  let max = 0
+  for (const name of existingNames) {
+    const match = AUTO_STOP_RE.exec(String(name ?? '').trim())
+    if (!match) continue
+    const num = match[1] ? Number(match[1]) : 1
+    if (num > max) max = num
+  }
+  return `${AUTO_STOP_PREFIX} ${max + 1}`
+}
+
 // Durak sirasini ↑/↓ ile bir basamak kaydirir. Uclarda degisiklik yapmaz.
 export function moveStopInOrder(stopIds, stopId, direction) {
   const index = stopIds.indexOf(stopId)

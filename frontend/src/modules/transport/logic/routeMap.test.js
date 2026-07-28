@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   buildRoutePolyline, pointsWithCoords, pointsWithoutCoords,
-  nearestPathIndex, insertViaAtPoint, moveStopInOrder,
+  nearestPathIndex, insertViaAtPoint, moveStopInOrder, nextAutoStopName,
 } from './routeMap.js'
 
 const workSite = { lat: 41.575, lng: 32.0264 }
@@ -140,5 +140,27 @@ describe('moveStopInOrder', () => {
 
   it('bilinmeyen durak id degisiklik yapmaz', () => {
     expect(moveStopInOrder([1, 2, 3], 99, 'up')).toEqual([1, 2, 3])
+  })
+})
+
+describe('nextAutoStopName', () => {
+  it('bos listede 1 ile baslar', () => {
+    expect(nextAutoStopName([])).toBe('Yeni Durak 1')
+  })
+
+  it('numarasiz "Yeni Durak" 1 sayilir', () => {
+    expect(nextAutoStopName(['Yeni Durak'])).toBe('Yeni Durak 2')
+  })
+
+  it('en buyuk numaranin bir fazlasini kullanir', () => {
+    expect(nextAutoStopName(['Yeni Durak 7', 'Yeni Durak 3'])).toBe('Yeni Durak 8')
+  })
+
+  it('alakasiz isimleri saymaz', () => {
+    expect(nextAutoStopName(['Kozlu Meydan', 'Seka Sinema'])).toBe('Yeni Durak 1')
+  })
+
+  it('benzer ama eslesmeyen isimleri saymaz', () => {
+    expect(nextAutoStopName(['Yeni Durak A', 'Eski Yeni Durak 9'])).toBe('Yeni Durak 1')
   })
 })
